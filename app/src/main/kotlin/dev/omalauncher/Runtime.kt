@@ -84,6 +84,7 @@ class Runtime(
     val themes = ThemeStore(context, proot, isLinux = { linux }, onConfigChanged = ::syncGuest)
     private val audio = AudioBridge(proot)
     private val openBridge = OpenBridge(context, proot, onOpenFiles = ::openFiles)
+    val phoneBridge = dev.omalauncher.phone.PhoneBridge(context, proot)
     val agents = AgentStore(proot, onChanged = ::syncGuest)
     val pacman = Pacman(context, proot)
     val widgets = WidgetEngine(context, proot, this)
@@ -102,6 +103,7 @@ class Runtime(
                 { defaultApps(proot.applications) },
                 { bundledIcons(context, proot.home) },
                 openBridge::managed,
+                phoneBridge::managed,
                 pacman::managed,
                 agents::managed,
                 themes::managed,
@@ -278,6 +280,7 @@ class Runtime(
                 server.start()
                 proot.procShim.start()
                 openBridge.start()
+                phoneBridge.start()
             }
         } else {
             // Linux installed again: its new home has no foot-font.ini yet.

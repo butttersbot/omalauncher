@@ -2,4 +2,5 @@
 <resources>
     <string name="wallpaper_label">Omarchy</string>
     <string name="wallpaper_description">The current Omarchy theme background. System colors follow the theme.</string>
+    <string name="phone_control_description">Allows your agents to read screens and operate apps automatically when you ask for phone tasks. Screen content may be shared with your AI provider. Stop access from the notification or phone control screen.</string>
 </resources>

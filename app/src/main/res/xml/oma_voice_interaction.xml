@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<voice-interaction-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:recognitionService="dev.omalauncher.assist.OmaRecognitionService"
+    android:sessionService="dev.omalauncher.assist.OmaSessionService"
+    android:settingsActivity="dev.omalauncher.assist.AssistantSetupActivity"
+    android:supportsAssist="true" />

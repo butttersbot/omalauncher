@@ -49,9 +49,18 @@ fun agentInvocation(
     agentBin: String,
     prompt: String,
     readOnly: Boolean = false,
+    images: List<String> = emptyList(),
 ): String {
-    val quoted = shellQuote(prompt)
+    require(images.isEmpty() || agentBin == "codex" || agentBin == "claude") {
+        "Image attachments are supported by Claude Code and Codex."
+    }
+    val withImages = if (agentBin == "claude" && images.isNotEmpty()) {
+        prompt + "\n\nRead these attached images before answering:\n" + images.joinToString("\n")
+    } else prompt
+    val quoted = shellQuote(withImages)
     return when {
+        agentBin == "codex" && images.isNotEmpty() ->
+            "codex " + images.joinToString(" ") { "--image ${shellQuote(it)}" } + " -- $quoted"
         agentBin == "opencode" -> "$agentBin --prompt $quoted"
         agentBin == "claude" && readOnly -> "$agentBin --permission-mode plan $quoted"
         else -> "$agentBin $quoted"

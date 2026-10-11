@@ -13,6 +13,7 @@ class Proot(
     val filesDir: File = context.filesDir
     val rootfs = File(filesDir, "arch")
     val tmpDir = File(filesDir, "tmp")
+    val promptAttachments = File(filesDir, "attachments")
 
     /** Bound to XDG_RUNTIME_DIR inside the guest; holds the Wayland socket and the bridges' FIFOs. */
     val runtimeDir = File(filesDir, "xdg")
@@ -42,6 +43,7 @@ class Proot(
     /** Launcher data the guest sees in its home, kept outside the rootfs; see [LauncherData]. */
     private val dataBinds =
         listOf(
+            "$GUEST_HOME/.local/share/omalauncher/attachments" to promptAttachments,
             "$GUEST_HOME/.local/share/omarchy" to LauncherData.omarchyDir(context),
             "$GUEST_HOME/.config/omalauncher/widgets" to LauncherData.widgetsDir(context),
             "$GUEST_HOME/.config/omarchy/themes" to LauncherData.userThemesDir(context),
