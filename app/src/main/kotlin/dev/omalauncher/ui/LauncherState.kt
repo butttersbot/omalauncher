@@ -75,6 +75,11 @@ class LauncherState {
     /** Home page currently showing (1-based); the drawer pins apps there. */
     var currentPage by mutableStateOf(1)
 
+    /** Unsent images stay with the prompt while the photo picker or another panel is open. */
+    var promptImages by mutableStateOf<List<dev.omalauncher.linux.PromptImage>>(emptyList())
+    var importingImages by mutableStateOf(false)
+    var attachmentError by mutableStateOf<String?>(null)
+
     private var typed by mutableStateOf("")
 
     /** What's in the bar: an app to find, or a prompt for the agent. */

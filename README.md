@@ -1,3 +1,19 @@
+# Omalauncher Boss — agent preview
+
+An experimental fork of [Simon Schubert’s Omalauncher](https://github.com/SimonSchubert/omalauncher), with image attachments, background agent tasks, a slim home-screen status rail, phone controls, and a system assistant shortcut.
+
+**[Download the APK](https://github.com/butttersbot/omalauncher/releases/download/boss-preview-2026-10-11/omalauncher-boss.apk)** · **[Installation and setup](docs/INSTALL.md)**
+
+For ARM64 Android 10+ phones. The APK installs as **Omalauncher Boss** alongside the original app. Complete the optional Linux setup, install/sign in to your own Claude Code or Codex, and enable the phone permissions described in the guide. No account credentials or personal device data are included.
+
+Claude tool requests can pause for **Approve once / Deny** in the task panel. Codex has background progress/results; native approval forwarding is not implemented yet. One background task runs at a time. Completed results persist; model conversations and pending tasks do not survive app-process death. Foldable layouts have not been tested on hardware.
+
+The Android build tools installed on the development phone are separate Linux data, not bundled into this APK. [Build-tool notes](docs/PHONE-BUILD-TOOLS.md).
+
+Upstream project documentation follows.
+
+---
+
 # Omalauncher
 
 An Android home screen with the look of [Omarchy](https://omarchy.org), and an
@@ -48,6 +64,25 @@ Hardware keyboard shortcuts: Super+Enter (terminal), Super+Space or
 Super+A (the bar), Super+1..9 (home pages) on the home screen; Super+Enter
 and Super+W (close) in Linux windows.
 
+## Image attachments (custom build)
+
+Tap **+** in the prompt bar to select up to four JPEG, PNG, WebP or GIF images
+(20 MB each). Preview or remove them before sending. With images selected, Enter
+always asks the agent; an empty prompt asks it to describe the images. You can
+select images before Linux is ready; install Linux to send, and choose Claude Code or Codex. Other agents show an explicit error
+and keep the draft instead of silently dropping the images.
+
+Only selected files are copied into the app’s private attachments folder, bound into the guest at
+`~/.local/share/omalauncher/attachments`. Codex receives `--image` arguments;
+Claude receives image paths and an instruction to read them. Removed draft images
+are deleted; sent images stay there for follow-up questions and can be deleted
+using Files when no longer needed. Drafts are kept while opening the picker and
+launcher panels, but are not restored after the launcher process is killed.
+
+The debug build installs as **Omalauncher Boss** (`dev.omalauncher.boss`),
+alongside the Play Store app. It has independent Linux, settings and agent login
+data. The official install is not replaced.
+
 ## Building
 
 ```sh
@@ -89,3 +124,47 @@ settings › licenses.
 
 Omalauncher is an independent project and is not affiliated with or endorsed
 by Omarchy, Arch Linux, or the makers of the coding agents it installs.
+
+### Agent phone control (Boss build)
+
+Settings > agent phone control, or the **Phone control** app-drawer entry,
+opens the access screen. Enable the service yourself in Android Accessibility
+settings once. There is no manual Start step or timed session: phone tools work
+on demand when agents use them for your requested task. A notification appears
+when controls are used and provides Stop. Stop/Pause is an explicit persistent
+user override; only the control screen's Resume button clears it. Agents cannot
+resume paused access themselves. Screen-off and locked phones reject interaction.
+The Linux `oma-phone help` command documents screen reading, screenshots, node
+click/type/scroll, coordinate gestures and navigation. Bottom-bar agent prompts
+include instructions to use these tools and verify the result. Existing chats
+can read `~/.local/share/omalauncher/phone-control.md` or run `oma-phone help`.
+The Unix socket accepts only the launcher's Android UID, never remote TCP clients.
+All programs running inside the launcher share this permission while Accessibility
+is connected and access has not been paused. Screen content may reach the chosen
+AI provider. Password node text is redacted and password typing is rejected.
+Screenshots stay in the private attachment directory. Protected screens may
+block capture or expose incomplete controls. No root or ADB privileges are granted.
+
+### Assistant shortcut
+
+Settings > assistant shortcut (or the Oma assistant app-drawer entry) opens
+Android's default assistant chooser. Once selected, the system assistant gesture
+opens a compact voice/text prompt over the current app. Power-button invocation
+requires the phone's supported Digital assistant gesture setting. No hotword
+listening or lockscreen access is added. Speak is explicit and requires microphone
+permission; recognition may use Android's configured online recognizer.
+Send runs a single background Claude Code or Codex request using existing credentials.
+Home Claude/Codex prompts use the same task runner, including selected image attachments;
+other providers keep their interactive terminal flow. A slim home rail shows progress,
+pending approvals, and results. Tap it, the notification, or hold power to open the panel.
+Claude uses bidirectional stream-json: tool permissions pause the same live request and
+appear under Review approval. Approve once permits only that call, Deny rejects it, and
+Later leaves it paused. No persistent permission rule or bypass flag is added. Only
+oma-phone and Read are automatically allowed for Claude. Agent phone actions are blocked
+while approval is pending, so they cannot click their own approval UI. Codex still uses
+exec: progress and results work, but native approval forwarding is not implemented for it.
+Tasks stop on app-process death; completed results persist, but model context and pending
+approvals do not. One task can run at a time.
+
+The same arm64 APK installs on compatible Android 10+ phones, including Pixel
+foldables; Linux setup, permissions, assistant choice and logins are per device.

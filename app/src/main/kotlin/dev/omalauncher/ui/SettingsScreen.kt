@@ -62,6 +62,12 @@ fun SettingsScreen(
                 },
                 Triple("packages", if (installed) "install Linux apps and tools with pacman and the AUR" else "needs linux", if (installed) onPackages else onLinux),
                 Triple("widget store", "add widgets to the home screen", onStore),
+                Triple("assistant shortcut", "prompt from any app · voice and text") {
+                    context.startActivity(Intent(context, dev.omalauncher.assist.AssistantSetupActivity::class.java))
+                },
+                Triple("agent phone control", "automatic access · pause or resume") {
+                    context.startActivity(Intent(context, dev.omalauncher.phone.PhoneControlActivity::class.java))
+                },
                 Triple("android settings", "the phone's system settings") {
                     context.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 },

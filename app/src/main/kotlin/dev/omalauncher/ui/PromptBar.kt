@@ -2,6 +2,22 @@ package dev.omalauncher.ui
 
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import android.graphics.ImageDecoder
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import dev.omalauncher.linux.MAX_PROMPT_IMAGES
+import dev.omalauncher.linux.PromptImage
+import dev.omalauncher.linux.importPromptImage
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.BackHandler
@@ -115,6 +131,7 @@ internal fun PromptBar(
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val haptics = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
     val text = state.query
     var focused by remember { mutableStateOf(false) }
     val panelShown by remember(state) { derivedStateOf { state.drawer.value > 0.01f } }
@@ -131,7 +148,9 @@ internal fun PromptBar(
     }
 
     fun send(prompt: String) {
-        val p = prompt.trim()
+        if (state.importingImages) return
+        val images = state.promptImages
+        val p = prompt.trim().ifEmpty { if (images.isNotEmpty()) "Describe these images." else "" }
         if (p.isEmpty()) return
         if (!linux) return offerLinux()
         // Looked up now: speech results arrive after the bar may have recomposed.
@@ -141,7 +160,23 @@ internal fun PromptBar(
             state.agentsOpen = true
             return
         }
-        runtime.terminal("${agentInvocation(target.bin, p)}; exec bash", target.name, target)
+        if (images.isNotEmpty() && target.bin !in listOf("claude", "codex")) {
+            state.attachmentError = "Choose Claude Code or Codex to send images."
+            return
+        }
+        if (images.any { !it.file.isFile }) {
+            state.attachmentError = "An attached image is no longer available. Remove it and attach it again."
+            return
+        }
+        if (target.bin in listOf("claude", "codex")) {
+            try { dev.omalauncher.assist.AgentTasks.send(context, p, images.map { it.guestPath }) }
+            catch (e: Exception) { state.attachmentError = e.message; return }
+        } else {
+            runtime.terminal("${agentInvocation(target.bin, p + "\n\n" + dev.omalauncher.phone.PhoneBridge.INSTRUCTIONS)}; exec bash", target.name, target)
+        }
+        // Keep sent files: the agent may read them later in the terminal session.
+        state.promptImages = emptyList()
+        state.attachmentError = null
         state.query = ""
         focusManager.clearFocus()
         keyboard?.hide()
@@ -150,8 +185,31 @@ internal fun PromptBar(
 
     /** Enter: the highlighted app, or the agent. */
     fun submit() {
-        val hit = search.hits.getOrNull(highlighted)
+        if (state.importingImages) return
+        val hit = if (state.promptImages.isEmpty()) search.hits.getOrNull(highlighted) else null
         if (hit != null) onLaunch(hit) else send(text)
+    }
+
+    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(MAX_PROMPT_IMAGES)) { uris ->
+        if (uris.isNotEmpty()) {
+            state.importingImages = true
+            state.attachmentError = null
+            scope.launch {
+                try {
+                    val remaining = MAX_PROMPT_IMAGES - state.promptImages.size
+                    val results = withContext(Dispatchers.IO) {
+                        uris.take(remaining).map { uri ->
+                            runCatching { importPromptImage(context.contentResolver, uri, runtime.proot) }
+                        }
+                    }
+                    state.promptImages = state.promptImages + results.mapNotNull { it.getOrNull() }
+                    state.attachmentError = results.firstNotNullOfOrNull { it.exceptionOrNull()?.message }
+                        ?: if (uris.size > remaining) "You can attach up to $MAX_PROMPT_IMAGES images." else null
+                } finally {
+                    state.importingImages = false
+                }
+            }
+        }
     }
 
     /** Moves the highlight up the panel (away from the bar) or back down; the ask row sits lowest. */
@@ -231,6 +289,7 @@ internal fun PromptBar(
     Column(
         modifier
             .fillMaxWidth()
+            .onSizeChanged { frame = it.height }
             .pointerInput(Unit) {
                 detectTapGestures {
                     focus.requestFocus()
@@ -238,6 +297,24 @@ internal fun PromptBar(
                 }
             }.padding(6.dp),
     ) {
+        AgentRail()
+        state.attachmentError?.let { message ->
+            BasicText(message, Modifier.padding(8.dp), style = Mono.copy(color = Palette.red, fontSize = TextSize.Small))
+        }
+        if (state.promptImages.isNotEmpty()) {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(4.dp)) {
+                state.promptImages.forEachIndexed { index, image ->
+                    PromptImagePreview(image, index + 1, enabled = !state.importingImages) {
+                        state.promptImages = state.promptImages - image
+                        image.file.delete()
+                        state.attachmentError = null
+                    }
+                }
+            }
+        }
+        if (state.importingImages) {
+            BasicText("adding images…", Modifier.padding(8.dp), style = Mono.copy(color = Palette.muted))
+        }
         speech.error?.takeIf { !listening }?.let {
             BasicText(
                 it,
@@ -252,7 +329,7 @@ internal fun PromptBar(
                 style = Mono.copy(color = Palette.red, fontSize = TextSize.Small),
             )
         }
-        Box(Modifier.onSizeChanged { frame = it.height }) {
+        Box {
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -313,11 +390,20 @@ internal fun PromptBar(
                         }
                     },
                 )
-                if (text.isNotBlank() && !listening) {
+                if (!listening) {
+                    Box(
+                        Modifier
+                            .semantics { contentDescription = "Attach images" }
+                            .clickable(enabled = !state.importingImages && state.promptImages.size < MAX_PROMPT_IMAGES) {
+                                imagePicker.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            }.padding(horizontal = 12.dp, vertical = 12.dp),
+                    ) { BasicText("+", style = Mono.copy(color = Palette.accent)) }
+                }
+                if ((text.isNotBlank() || state.promptImages.isNotEmpty()) && !listening) {
                     // Says what Enter does, so opening an app instead of asking is never a surprise.
                     Box(
-                        Modifier.clickable(onClick = ::submit).padding(horizontal = 10.dp, vertical = 12.dp),
-                    ) { BasicText(if (highlighted >= 0) "▸ open" else "⏎ ask", style = Mono.copy(color = Palette.accent)) }
+                        Modifier.clickable(enabled = !state.importingImages, onClick = ::submit).padding(horizontal = 10.dp, vertical = 12.dp),
+                    ) { BasicText(if (highlighted >= 0 && state.promptImages.isEmpty()) "▸ open" else "⏎ ask", style = Mono.copy(color = Palette.accent)) }
                 }
                 MicButton(
                     listening = listening,
@@ -525,4 +611,29 @@ private object AboveAnchor : PopupPositionProvider {
         anchorBounds.left.coerceAtMost(windowSize.width - popupContentSize.width).coerceAtLeast(0),
         (anchorBounds.top - popupContentSize.height).coerceAtLeast(0),
     )
+}
+
+
+@Composable
+private fun PromptImagePreview(image: PromptImage, number: Int, enabled: Boolean, onRemove: () -> Unit) {
+    val preview by produceState<ImageBitmap?>(null, image.file) {
+        value = withContext(Dispatchers.IO) {
+            runCatching {
+                ImageDecoder.decodeBitmap(ImageDecoder.createSource(image.file)) { decoder, info, _ ->
+                    val ratio = 160f / maxOf(info.size.width, info.size.height).coerceAtLeast(160)
+                    decoder.setTargetSize((info.size.width * ratio).toInt().coerceAtLeast(1), (info.size.height * ratio).toInt().coerceAtLeast(1))
+                }.asImageBitmap()
+            }.getOrNull()
+        }
+    }
+    Column(Modifier.padding(4.dp)) {
+        val bitmap = preview
+        if (bitmap != null) Image(bitmap, "Attached image $number", Modifier.size(56.dp))
+        else BasicText("image $number", Modifier.size(56.dp), style = Mono.copy(color = Palette.muted))
+        BasicText(
+            "remove",
+            Modifier.semantics { contentDescription = "Remove image $number" }.clickable(enabled = enabled, onClick = onRemove).padding(vertical = 8.dp),
+            style = Mono.copy(color = Palette.accent, fontSize = TextSize.Small),
+        )
+    }
 }

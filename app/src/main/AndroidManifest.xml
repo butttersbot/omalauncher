@@ -30,7 +30,7 @@
         android:name=".App"
         android:extractNativeLibs="true"
         android:icon="@mipmap/ic_launcher"
-        android:label="Omalauncher"
+        android:label="${appLabel}"
         android:theme="@style/Theme.Omalauncher"
         android:usesCleartextTraffic="true">
 
@@ -154,13 +154,55 @@
             android:label="Files"
             android:launchMode="singleTask"
             android:resizeableActivity="true"
-            android:taskAffinity="dev.omalauncher.files"
+            android:taskAffinity="${applicationId}.files"
             android:theme="@style/Theme.Omalauncher.Window"
             android:windowSoftInputMode="adjustResize" />
 
+        <activity android:name=".phone.PhoneControlActivity" android:exported="true" android:label="Phone control">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <receiver android:name=".phone.StopPhoneControl" android:exported="false" />
+        <service android:name=".phone.PhoneService" android:exported="true"
+            android:label="Omalauncher Boss phone control"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter>
+            <meta-data android:name="android.accessibilityservice" android:resource="@xml/phone_accessibility" />
+        </service>
+
+        <activity android:name=".assist.AgentApprovalActivity" android:exported="false"
+            android:theme="@android:style/Theme.Material.Dialog.NoActionBar" />
+        <activity android:name=".assist.AssistantPromptActivity" android:exported="true"
+            android:label="Oma agent" android:theme="@android:style/Theme.Material.Dialog.NoActionBar"
+            android:excludeFromRecents="true" android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.ASSIST" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+        <activity android:name=".assist.AssistantSetupActivity" android:exported="true" android:label="Oma assistant">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <receiver android:name=".assist.StopAgentTask" android:exported="false" />
+        <service android:name=".assist.OmaVoiceService" android:exported="true"
+            android:label="Oma agent" android:permission="android.permission.BIND_VOICE_INTERACTION">
+            <intent-filter><action android:name="android.service.voice.VoiceInteractionService" /></intent-filter>
+            <meta-data android:name="android.voice_interaction" android:resource="@xml/oma_voice_interaction" />
+        </service>
+        <service android:name=".assist.OmaRecognitionService" android:exported="true"
+            android:permission="android.permission.BIND_SPEECH_RECOGNITION_SERVICE">
+            <intent-filter><action android:name="android.speech.RecognitionService" /></intent-filter>
+        </service>
+        <service android:name=".assist.OmaSessionService" android:exported="true"
+            android:permission="android.permission.BIND_VOICE_INTERACTION" />
         <provider
             android:name="androidx.core.content.FileProvider"
-            android:authorities="dev.omalauncher.files"
+            android:authorities="${applicationId}.files"
             android:exported="false"
             android:grantUriPermissions="true">
             <meta-data
