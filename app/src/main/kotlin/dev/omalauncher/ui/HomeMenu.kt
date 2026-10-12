@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.BasicText
@@ -105,7 +106,7 @@ fun HomeMenu(
 }
 
 @Composable
-private fun Menu(
+internal fun Menu(
     onDismiss: () -> Unit,
     content: @Composable () -> Unit,
 ) {
@@ -113,7 +114,9 @@ private fun Menu(
         Modifier
             .fillMaxSize()
             .background(Pack.overlay)
-            .clickable(onClick = onDismiss),
+            .clickable(onClick = onDismiss)
+            // A menu with a field in it stays above the keyboard.
+            .imePadding(),
         contentAlignment = Alignment.Center,
     ) {
         Column(
@@ -127,8 +130,9 @@ private fun Menu(
 }
 
 @Composable
-private fun MenuItem(
+internal fun MenuItem(
     label: String,
+    color: androidx.compose.ui.graphics.Color = Pack.foreground,
     onClick: () -> Unit,
 ) {
     Box(
@@ -136,5 +140,11 @@ private fun MenuItem(
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp),
-    ) { BasicText(label, style = Pack.body(Pack.size.item)) }
+    ) { BasicText(label, style = Pack.body(Pack.size.item, color)) }
+}
+
+/** What a menu is about, over its items. */
+@Composable
+internal fun MenuTitle(text: String) {
+    BasicText(text, Modifier.padding(horizontal = 12.dp, vertical = 10.dp), style = Pack.body(Pack.size.body, Pack.muted))
 }

@@ -11,6 +11,7 @@ import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.ui.input.pointer.AwaitPointerEventScope
 import androidx.compose.ui.input.pointer.PointerId
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.graphics.graphicsLayer
@@ -22,6 +23,7 @@ import dev.omalauncher.widgets.Cell
 import dev.omalauncher.widgets.Folder
 import dev.omalauncher.widgets.Shortcut
 import dev.omalauncher.widgets.HomeItem
+import dev.omalauncher.widgets.WidgetItem
 import dev.omalauncher.widgets.WidgetLayout
 import dev.omalauncher.widgets.layout.GridGeometry
 import kotlin.math.roundToInt
@@ -180,6 +182,9 @@ internal class Arrange {
     /** Dropping now puts the carried app into a folder with [swapWith], rather than swapping. */
     var grouping by mutableStateOf(false)
 
+    /** [page] is another page than the tile came from and has no room for it at all: a drop there is refused. */
+    var full by mutableStateOf(false)
+
     /** The open folder's key; its panel covers the grid until a tap outside, Back, or an app lifted out of it. */
     var folder by mutableStateOf<String?>(null)
 
@@ -194,6 +199,7 @@ internal class Arrange {
         preview = null
         swapWith = null
         grouping = false
+        full = false
     }
 }
 
@@ -203,7 +209,9 @@ internal class Arrange {
  * shows resize handles; drag them (or the frame) to resize, drag the tile to
  * move it, tap outside or press Back to finish. Hold a carried tile against a
  * side edge to turn the page; held past the last page, a new one is offered, which
- * stays only if the tile is dropped on it. Drop an app
+ * stays only if the tile is dropped on it. Over another page with no room for it
+ * the drop is refused, and the next page with room is turned to, or a new one
+ * offered at the end. Drop an app
  * on another app to put both in a folder, or on a folder to add it; tap a folder
  * to open it, and long-press an app in it to drag it to another place in it,
  * or back out.
@@ -248,9 +256,28 @@ internal fun HomeGrid(
     per: Int = 1,
     /** False until the notebook is read: the one page shown then is a stand-in, not an empty page of his. */
     ready: Boolean = true,
+    /** One finger draws on the page: it turns no page and lifts no tile. Nothing sets it yet. */
+    drawing: Boolean = false,
+    /** How far a pinch has shrunk the pages, 1 at rest; read while drawing. */
+    pinch: () -> Float = { 1f },
+    /** A pinch is under way, at this scale. */
+    onPinch: (Float) -> Unit = {},
+    /** The pinch let go, at this scale. */
+    onPinchEnd: (Float) -> Unit = {},
+    /** Where each page keeps a still of itself for the overview; none are kept without it. */
+    captures: PageCaptures? = null,
+    /** A drag upwards that is the app list's moved this many pixels down (negative is up). */
+    onDrawerDrag: (Float) -> Unit = {},
+    /** That drag let go, at this speed in px/s, negative upwards. */
+    onDrawerEnd: (Float) -> Unit = {},
 ) {
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
+    // Who each touch belongs to: every handler below asks it rather than deciding alone.
+    val arbiter = remember { GestureArbiter() }
+    val draws by rememberUpdatedState(drawing)
+    val pinched by rememberUpdatedState(onPinch to onPinchEnd)
+    val drawer by rememberUpdatedState(onDrawerDrag to onDrawerEnd)
 
     BoxWithConstraints(modifier) {
         val density = LocalDensity.current
@@ -288,6 +315,76 @@ internal fun HomeGrid(
         Box(
             Modifier
                 .fillMaxSize()
+                // Watches every finger without taking any, and tells the arbiter how many are down and how they move.
+                // Only a pinch is taken, and then from everything below: the pager, the tiles and a widget's own drag;
+                // and a drag upwards that the arbiter gives the app list, which follows the finger from then on.
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                        val slop = viewConfiguration.touchSlop
+                        var pair: Pair<PointerId, PointerId>? = null
+                        var span0 = 0f
+                        var scale = 1f
+                        var pinching = false
+                        // The app list coming up under the finger: where the finger last was, and how fast it goes.
+                        var pulling = false
+                        var lastY = 0f
+                        val speed = VelocityTracker()
+                        try {
+                            while (true) {
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                val pressed = event.changes.filter { it.pressed }
+                                if (pressed.isEmpty()) {
+                                    // The fingers' lifting is the pinch's too, or the list's, never a tap on what is under them.
+                                    if (pinching || pulling) event.changes.forEach { it.consume() }
+                                    break
+                                }
+                                arbiter.pointers(pressed.size)
+                                if (pressed.size >= 2) {
+                                    val span = (pressed[0].position - pressed[1].position).getDistance()
+                                    val ids = pressed[0].id to pressed[1].id
+                                    // Another pair of fingers carries on from the scale the last pair left.
+                                    if (ids != pair) {
+                                        pair = ids
+                                        span0 = span / scale
+                                    }
+                                    if (arbiter.moved(0f, 0f, span - span0, slop) == Owner.Pinch) {
+                                        pinching = true
+                                        scale = pinchScale(span0, span)
+                                        pinched.first(scale)
+                                    }
+                                } else {
+                                    pair = null
+                                    val first = event.changes.firstOrNull { it.id == down.id }
+                                    if (first != null && first.pressed) {
+                                        (first.position - down.position).let { arbiter.moved(it.x, it.y, 0f, slop) }
+                                        if (arbiter.owner == Owner.Drawer) {
+                                            // From where the finger is as the list becomes its, so it doesn't jump by the slop.
+                                            if (!pulling) {
+                                                pulling = true
+                                                lastY = first.position.y
+                                            }
+                                            speed.addPosition(first.uptimeMillis, first.position)
+                                            drawer.first(first.position.y - lastY)
+                                            lastY = first.position.y
+                                        }
+                                    }
+                                }
+                                if (arbiter.owner == Owner.Pinch || arbiter.owner == Owner.Drawer) event.changes.forEach { it.consume() }
+                            }
+                        } finally {
+                            arbiter.up()
+                            if (pinching) pinched.second(scale)
+                            if (pulling) drawer.second(speed.calculateVelocity().y)
+                        }
+                    }
+                }
+                // Below the watcher, which measures the fingers on the screen, not on the page as it shrinks.
+                .graphicsLayer {
+                    val s = pinch()
+                    scaleX = s
+                    scaleY = s
+                }
                 .pointerInput(Unit) {
                     /**
                      * Follows the finger, carrying [item] from [cell] on page [from]; returns whether it moved.
@@ -310,18 +407,25 @@ internal fun HomeGrid(
                         var position = start
                         // When the finger reached a side edge; the page turns after it rests there a moment.
                         var atEdgeSince = 0L
+                        // Since when it rests over another page that has no room for it.
+                        var fullSince = 0L
                         // Sorting the open folder: the place the finger is over and since when, and since when it's off the panel.
                         var sorting = folder
                         var aim = -1
                         var aimSince = 0L
                         var outSince = 0L
                         while (true) {
-                            val waiting = atEdgeSince > 0 || aimSince > 0 || outSince > 0
+                            val waiting = atEdgeSince > 0 || aimSince > 0 || outSince > 0 || fullSince > 0
                             val event = withTimeoutOrNull(if (waiting) 50L else Long.MAX_VALUE) { awaitPointerEvent(PointerEventPass.Initial) }
                             if (event != null) {
                                 val c = event.changes.firstOrNull { it.id == downId } ?: break
                                 c.consume()
                                 if (!c.pressed) break
+                                // A second finger made a pinch of it before the tile moved: it stays where it was.
+                                if (arbiter.owner == Owner.Pinch) {
+                                    arrange.drop()
+                                    return false
+                                }
                                 position = c.position
                             }
                             if (!moved && (position - start).getDistance() > viewConfiguration.touchSlop) {
@@ -386,10 +490,31 @@ internal fun HomeGrid(
                                 arrange.grouping = false
                                 arrange.swapWith = null
                                 arrange.preview = null
+                                arrange.full = false
+                                fullSince = 0L
                                 continue
                             }
                             val others = placedOn(page, g).filter { it.first.key != item.key }
                             val over = others.lastOrNull { (_, r) -> g.rect(r).has(at) }
+                            // Another page with no room for it anywhere: nothing lands there (a swap with a tile it is held
+                            // over aside). Rested there a moment, the next page with room is turned to, or a new one offered.
+                            val full = page != from && over == null && !layout.roomFor(cell, item.key, page, itemsOn(page), g.cols, g.rows)
+                            arrange.full = full
+                            when {
+                                !full -> fullSince = 0L
+                                fullSince == 0L -> fullSince = now
+                                now - fullSince > PAGE_TURN_MS && !pager.isScrollInProgress -> {
+                                    val next = layout.nextWithRoom(cell, item.key, page, itemsOn, g.cols, g.rows)
+                                    if (next != null) {
+                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        scope.launch { pager.animateScrollToPage(pages.indexOf(next) / g.per) }
+                                    } else if (arrange.offered == null) {
+                                        arrange.offered = onOfferPage()
+                                        if (arrange.offered != null) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    }
+                                    fullSince = now + PAGE_TURN_MS
+                                }
+                            }
                             // Apps group with apps and folders; anything else swaps, except an app from a folder, which has no cell to trade.
                             val groups = item is Shortcut && (over?.first is Shortcut || over?.first is Folder)
                             val target = over?.takeIf { groups || !inFolder }
@@ -401,7 +526,8 @@ internal fun HomeGrid(
                                 } else {
                                     val x = g.colLine(at - hold).coerceIn(0, (g.cols - cell.w).coerceAtLeast(0))
                                     val y = g.rowLine(at - hold).coerceIn(0, (g.rows - cell.h).coerceAtLeast(0))
-                                    Cell(x, y, cell.w, cell.h).takeIf { n -> others.none { it.second.overlaps(n) } }
+                                    // Nowhere on a page with no room, and never on a place kept for a widget whose file is missing.
+                                    Cell(x, y, cell.w, cell.h).takeIf { n -> !full && others.none { it.second.overlaps(n) } && layout.freeAt(n, item.key, page, itemsOn(page)) }
                                 }
                         }
                         val page = arrange.page
@@ -435,7 +561,10 @@ internal fun HomeGrid(
                         return moved
                     }
 
-                    /** Waits out a long press without taking the touch, so a tap still reaches the tile; false if it ended or moved first. */
+                    /**
+                     * Waits out a long press without taking the touch, so a tap still reaches the tile; false if it ended or
+                     * moved first, or the arbiter gave the touch to something else: a second finger came down.
+                     */
                     suspend fun AwaitPointerEventScope.awaitLongPress(
                         downId: PointerId,
                         start: Offset,
@@ -443,8 +572,9 @@ internal fun HomeGrid(
                         while (true) {
                             val c = awaitPointerEvent(PointerEventPass.Initial).changes.firstOrNull { it.id == downId } ?: return@withTimeoutOrNull
                             if (!c.pressed || (c.position - start).getDistance() > viewConfiguration.touchSlop) return@withTimeoutOrNull
+                            if (arbiter.owner != Owner.Undecided) return@withTimeoutOrNull
                         }
-                    } == null
+                    } == null && arbiter.longPress().let { it == Owner.Arrange || it == Owner.Menu }
 
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
@@ -456,6 +586,11 @@ internal fun HomeGrid(
                         if (page != null) onTouch(page)
                         val at = g.local(start, side)
                         val placed = page?.let { placedOn(it, g) }.orEmpty()
+                        // Drawing: the finger is the pen's. Nothing here lifts a tile, opens the menu or ends an edit.
+                        if (draws) {
+                            arbiter.down(TouchStart.Page, HomeModes(drawing = true))
+                            return@awaitEachGesture
+                        }
 
                         // An open folder takes every touch: a tap on an app opens it (the tile gets the tap),
                         // a long-press lifts it to sort it in or drag it out, a tap outside closes the folder. Its panel is centered on
@@ -466,7 +601,8 @@ internal fun HomeGrid(
                         if (open != null && folderPage != null) {
                             val fg = FolderGeometry(size.width, g.height, g.cellW, g.cellH, g.gap, open.apps.size, this)
                             val hit = open.apps.indices.firstOrNull { fg.app(it).has(start) }
-                            if (hit == null) {
+                            val owner = arbiter.down(if (hit == null) TouchStart.Page else TouchStart.Tile, HomeModes(folderOpen = true))
+                            if (hit == null || owner == Owner.Editor) {
                                 down.consume()
                                 if (!fg.panel.has(start)) arrange.folder = null
                                 while (true) {
@@ -493,21 +629,34 @@ internal fun HomeGrid(
                         val selectedItem = shown.getOrNull(selSide)?.let { p -> placedOn(p, g).firstOrNull { it.first.key == sel } }
                         val selAt = g.local(start, selSide.coerceAtLeast(0))
                         // Except the action bar: leave its taps unconsumed so its buttons get them.
-                        if (selectedItem != null && arrange.bar?.has(selAt) == true) return@awaitEachGesture
+                        if (selectedItem != null && arrange.bar?.has(selAt) == true) {
+                            arbiter.down(TouchStart.Bar, HomeModes(editing = true))
+                            return@awaitEachGesture
+                        }
                         if (selectedItem != null) {
                             down.consume()
                             val (item, cell) = selectedItem
+                            val rect = g.rect(cell)
+                            val edges = if (item.resizable) edgesAt(rect, selAt, grab, sideGrab) else Edges(false, false, false, false)
+                            val owner =
+                                arbiter.down(
+                                    when {
+                                        edges.any -> TouchStart.Handle
+                                        rect.has(selAt) -> TouchStart.Selected
+                                        else -> TouchStart.Page
+                                    },
+                                    HomeModes(editing = true),
+                                )
                             arrange.holding = true
                             try {
-                                val rect = g.rect(cell)
-                                val edges = if (item.resizable) edgesAt(rect, selAt, grab, sideGrab) else Edges(false, false, false, false)
-                                when {
-                                    edges.any -> {
+                                when (owner) {
+                                    Owner.Resize -> {
                                         val others = placed.filter { it.first.key != item.key }.map { it.second }
                                         while (true) {
                                             val c = awaitPointerEvent(PointerEventPass.Initial).changes.firstOrNull { it.id == down.id } ?: break
                                             c.consume()
                                             if (!c.pressed) break
+                                            if (arbiter.owner == Owner.Pinch) break
                                             val (minW, minH) = item.minSize
                                             val p = g.local(c.position, selSide)
                                             val x0 = if (edges.left) g.colLine(p).coerceAtMost(cell.right - minW) else cell.x
@@ -520,7 +669,7 @@ internal fun HomeGrid(
                                         }
                                         layout.save()
                                     }
-                                    rect.has(selAt) -> shown[selSide]?.let { moveDrag(down.id, start, item, cell, it, g.screen(rect, selSide)) }
+                                    Owner.Arrange -> shown[selSide]?.let { moveDrag(down.id, start, item, cell, it, g.screen(rect, selSide)) }
                                     else -> {
                                         // Tap outside finishes editing; a drag outside does nothing.
                                         onSelect(null)
@@ -538,8 +687,19 @@ internal fun HomeGrid(
                         }
 
                         // The empty half of the last pair takes its own taps, to add a page.
-                        if (page == null) return@awaitEachGesture
+                        if (page == null) {
+                            arbiter.down(TouchStart.Page, HomeModes())
+                            return@awaitEachGesture
+                        }
                         val hit = placed.lastOrNull { (_, c) -> g.rect(c).has(at) }
+                        arbiter.down(
+                            when (hit?.first) {
+                                null -> TouchStart.Page
+                                is WidgetItem -> TouchStart.Widget
+                                else -> TouchStart.Tile
+                            },
+                            HomeModes(),
+                        )
                         if (!awaitLongPress(down.id, start)) return@awaitEachGesture
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         if (hit == null) {
@@ -560,11 +720,11 @@ internal fun HomeGrid(
                     }
                 },
         ) {
-            HorizontalPager(pager, Modifier.fillMaxSize(), key = { pages.getOrNull(it * grid.per) ?: "slot $it" }) { slot ->
+            HorizontalPager(pager, Modifier.fillMaxSize(), userScrollEnabled = !drawing, key ={ pages.getOrNull(it * grid.per) ?: "slot $it" }) { slot ->
                 Row(Modifier.fillMaxSize()) {
                     for (page in pagesAt(slot, pages, grid)) {
                         Box(Modifier.width(with(density) { grid.width.toDp() }).fillMaxHeight()) {
-                            if (page == null) PlusPage(grid, onAddPage) else TiledPage(page, itemsOn(page), layout, grid, arrange, selected, render, actions, onNoRoom, ready)
+                            if (page == null) PlusPage(grid, onAddPage) else TiledPage(page, itemsOn(page), layout, grid, arrange, selected, render, actions, onNoRoom, ready, captures)
                         }
                     }
                 }
@@ -615,6 +775,17 @@ private fun DropPreview(
     arrange: Arrange,
 ) {
     if (arrange.page != page) return
+    if (arrange.full) {
+        // Over the tiles: a page with no room is covered in them.
+        Box(Modifier.fillMaxSize().zIndex(4f), contentAlignment = Alignment.Center) {
+            BasicText(
+                "no room on this page",
+                Modifier.background(Pack.background.copy(alpha = 0.8f)).padding(horizontal = 12.dp, vertical = 6.dp),
+                style = Pack.body(),
+            )
+        }
+        return
+    }
     val cell = arrange.preview ?: return
     val density = LocalDensity.current
     val r = grid.rect(cell)
@@ -670,13 +841,14 @@ private fun TiledPage(
     actions: @Composable (HomeItem) -> Unit,
     onNoRoom: (HomeItem) -> Unit,
     ready: Boolean,
+    captures: PageCaptures?,
 ) {
     val density = LocalDensity.current
     val carried = arrange.carry?.item?.key
     LaunchedEffect(items.map { it.key }, grid.cols, grid.rows) {
         layout.place(items, grid.cols, grid.rows, page).forEach(onNoRoom)
     }
-    BoxWithConstraints(Modifier.fillMaxSize()) {
+    BoxWithConstraints(Modifier.fillMaxSize().captured(page, captures)) {
         val pageWidth = constraints.maxWidth
         if (selected != null || (carried != null && arrange.folder == null)) {
             // Grid guides while arranging; not while sorting an open folder, which covers the grid.

@@ -221,7 +221,8 @@ private fun DesktopScreen(
                     // Stays laid out under the open list, so what it measures for home and what it's hearing carry on.
                     Box(Modifier.fadesUnderDrawer(state)) {
                         // Insets itself by the grid gap, so it lines up with the tiles and the gap still takes taps.
-                        DockBand(runtime, state, dock)
+                        // A drag upwards from the dock opens the app list, as from the pages above it.
+                        DockBand(runtime, state, dock, Modifier.opensDrawer(state, screenHeight) { runtime.terminals.active == null })
                         if (panelShown) DockCover(state, Modifier.matchParentSize())
                     }
                 }
@@ -248,6 +249,9 @@ private fun DesktopScreen(
             }
         }
     }
+
+    // Every page at once, over the whole window: over the dock too, and under the ring and the full-screen panels.
+    Overview(runtime, state)
 
     // The agent's light along the screen's edge, over home and its dock and in nothing's way: it takes no touch and no room.
     HomeRing()

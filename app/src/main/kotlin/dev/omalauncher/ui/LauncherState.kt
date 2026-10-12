@@ -43,7 +43,7 @@ class LauncherState {
 
     /** The open drawer or a full-screen panel hides the home screen; animated widgets stop ticking under it. */
     val homeCovered: Boolean
-        get() = drawer.value > 0.99f || settingsOpen || styleOpen || themeBrowserOpen || agentsOpen || storeOpen || packagesOpen || linuxOpen || licensesOpen || shared != null || sharing != null
+        get() = drawer.value > 0.99f || overviewOpen || settingsOpen || styleOpen || themeBrowserOpen || agentsOpen || storeOpen || packagesOpen || linuxOpen || licensesOpen || shared != null || sharing != null
 
     /** Closes every overlay screen (settings and what it opens). */
     fun closeScreens() {
@@ -57,6 +57,7 @@ class LauncherState {
         licensesOpen = false
         settingsOpen = false
         homeMenuOpen = false
+        overviewOpen = false
         shared = null
         sharing = null
     }
@@ -83,8 +84,26 @@ class LauncherState {
     /** What the hinge reports while the window lies across it; null on a closed foldable, and on what doesn't fold. */
     var hinge by mutableStateOf<dev.omalauncher.widgets.layout.Hinge?>(null)
 
-    /** The page name on home was tapped. The overview of all pages opens from here once there is one; nothing yet. */
-    fun openOverview() {}
+    /** The overview of all pages is over home; see [Overview]. */
+    var overviewOpen by mutableStateOf(false)
+        private set
+
+    /** Opens the overview of all pages: the page name on home was tapped, or a pinch settled into it. A tile being edited is let go. */
+    fun openOverview() {
+        editing = null
+        homeMenuOpen = false
+        overviewOpen = true
+    }
+
+    fun closeOverview() {
+        overviewOpen = false
+    }
+
+    /**
+     * One finger draws on the page instead of turning it or lifting a tile; two still pinch (PRD AC-22). Nothing
+     * sets it yet: drawing comes with a later slice, and home's gestures already keep out of its way.
+     */
+    var drawing by mutableStateOf(false)
 
     private var typed by mutableStateOf("")
 

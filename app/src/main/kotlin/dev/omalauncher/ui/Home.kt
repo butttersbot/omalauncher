@@ -1,6 +1,14 @@
 package dev.omalauncher.ui
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.platform.LocalWindowInfo
@@ -67,6 +75,67 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.geometry.Rect
 import dev.omalauncher.widgets.layout.wallpaperOffset
 
+/**
+ * A one-finger drag upwards that starts here opens the app list under the finger (PRD AC-1): for the bands
+ * around the pages, the page names above them and the dock below. Asked of a [GestureArbiter], as on the pages:
+ * a drag more sideways than upwards, one downwards, a second finger or drawing mode leave it shut. What is
+ * here keeps its own touches: a press that rests as long as a long press, or that something here has taken
+ * (the agent button held to talk), is not a drag. [windowHeight] is what the list's position is a fraction of.
+ */
+internal fun Modifier.opensDrawer(
+    state: LauncherState,
+    windowHeight: Float,
+    /** Asked as a touch comes down: false keeps the list shut, as while a terminal tile has the keyboard. */
+    allowed: () -> Boolean = { true },
+): Modifier =
+    pointerInput(state, windowHeight) {
+        awaitEachGesture {
+            // After what is here has seen each move, so what it takes shows.
+            val down = awaitFirstDown(requireUnconsumed = false)
+            // Not from under the list, which closes its own way, nor from under the overview.
+            if (state.drawer.value > 0.01f || state.overviewOpen || !allowed()) return@awaitEachGesture
+            val arbiter = GestureArbiter()
+            arbiter.down(TouchStart.Page, HomeModes(drawing = state.drawing))
+            val speed = VelocityTracker()
+            var pulling = false
+            var lastY = 0f
+            try {
+                while (true) {
+                    val event = awaitPointerEvent()
+                    val pressed = event.changes.count { it.pressed }
+                    val finger = event.changes.firstOrNull { it.id == down.id }
+                    if (pressed == 0 || finger == null || !finger.pressed) {
+                        if (pulling) event.changes.forEach { it.consume() }
+                        break
+                    }
+                    arbiter.pointers(pressed)
+                    if (!pulling) {
+                        if (finger.isConsumed) break
+                        if (finger.uptimeMillis - down.uptimeMillis >= viewConfiguration.longPressTimeoutMillis) arbiter.longPress()
+                        val by = finger.position - down.position
+                        when (arbiter.moved(by.x, by.y, 0f, viewConfiguration.touchSlop)) {
+                            Owner.Undecided -> continue
+                            Owner.Drawer -> {
+                                pulling = true
+                                lastY = finger.position.y
+                            }
+                            else -> break
+                        }
+                    }
+                    speed.addPosition(finger.uptimeMillis, finger.position)
+                    state.dragBy(-(finger.position.y - lastY) / windowHeight)
+                    lastY = finger.position.y
+                    event.changes.forEach { it.consume() }
+                }
+            } finally {
+                if (pulling) state.settle(speed.calculateVelocity().y)
+            }
+        }
+    }
+
+/** How long home rests on a page before it takes a still of it for the overview. */
+private const val STILL_AFTER_MS = 700L
+
 /** The band above the pages that names the page showing; the page's room starts below it. */
 val PageNameHeight = 28.dp
 
@@ -105,6 +174,19 @@ fun HomeScreen(
         showPage = null
     }
     var menuFor by remember { mutableStateOf<HomeItem?>(null) }
+    // How far a pinch has shrunk the pages: it follows the fingers, and springs back when they let go.
+    val pinch = remember { Animatable(1f) }
+    val pinching = remember { booleanArrayOf(false) }
+    // What the app list's position is a fraction of, as where it is dragged shut.
+    val windowHeight = with(density) { LocalConfiguration.current.screenHeightDp.dp.toPx() }
+    val scope = rememberCoroutineScope()
+    // A still of the pages showing, a moment after arriving on them, for the overview to show when they're left.
+    LaunchedEffect(pager.settledPage, engine.notebook.opened) {
+        delay(STILL_AFTER_MS)
+        if (engine.notebook.opened && !state.homeCovered && engine.openScreen == null) runtime.pageStills.request()
+    }
+    // An open folder doesn't wait under the overview.
+    LaunchedEffect(state.overviewOpen) { if (state.overviewOpen) arrange.folder = null }
 
     val terminals = runtime.terminals
     BackHandler(enabled = terminals.active != null) { terminals.deactivate() }
@@ -132,8 +214,13 @@ fun HomeScreen(
     }
     // Turning to other pages makes the left one of them the page last touched, until a finger lands on the right one.
     // The drawer pins apps to it.
-    LaunchedEffect(pager.currentPage, pages) {
+    LaunchedEffect(pager.currentPage, pages, state.overviewOpen) {
         val shown = pagesAt(pager.currentPage, pages, per).filterNotNull()
+        // Not while the overview moves pages about under the pager: the page he came from is still the one to go back to.
+        if (state.overviewOpen) {
+            engine.activePage = shown.firstOrNull()
+            return@LaunchedEffect
+        }
         if (state.currentPage !in shown) shown.firstOrNull()?.let { state.currentPage = it }
         engine.activePage = shown.firstOrNull()
     }
@@ -284,8 +371,15 @@ fun HomeScreen(
             // Not before the notebook is read: the page shown until then is a stand-in.
             names = pagesAt(pager.currentPage, pages, per).map { page -> page?.takeIf { engine.notebook.opened }?.let(engine.notebook::name) },
             hidden = { state.homeCovered || engine.openScreen != null },
-            faded = { state.drawer.value },
-            onOpen = state::openOverview,
+            // Gone as the pages shrink under a pinch: the overview names every page itself.
+            faded = { maxOf(state.drawer.value, (1f - pinch.value) / (1f - OVERVIEW_AT)) },
+            // The pages showing are caught as they are on the way in.
+            onOpen = {
+                runtime.pageStills.request()
+                state.openOverview()
+            },
+            // 5. Not under a terminal tile's keyboard, as on the pages.
+            modifier = Modifier.opensDrawer(state, windowHeight) { terminals.active == null },
         )
         HomeGrid(
             pager = pager,
@@ -307,7 +401,8 @@ fun HomeScreen(
                             state.sharing = item.spec
                         }
                     }
-                    EditAction("remove", Pack.red) { remove(item) }
+                    // Not in a session that isn't being saved: the widget's file would be gone and the store still list it.
+                    if (engine.notebook.kept) EditAction("remove", Pack.red) { remove(item) } else EditAction("can't remove: not saved", Pack.muted) {}
                 }
             },
             render = { item, tile, highlighted ->
@@ -373,6 +468,26 @@ fun HomeScreen(
             room = if (Pack.recentApps && side == null) RecentStripHeight else 0.dp,
             per = per,
             ready = engine.notebook.opened,
+            drawing = state.drawing,
+            captures = runtime.pageStills,
+            // Not under a terminal tile's keyboard: the list comes up with no keyboard showing.
+            onDrawerDrag = { dy -> if (terminals.active == null) state.dragBy(-dy / windowHeight) },
+            onDrawerEnd = { velocity -> if (terminals.active == null) state.settle(velocity) },
+            pinch = { pinch.value },
+            onPinch = { scale ->
+                // The pages are caught as they were when the pinch began.
+                if (!pinching[0]) {
+                    pinching[0] = true
+                    runtime.pageStills.request()
+                }
+                scope.launch { pinch.snapTo(scale) }
+            },
+            onPinchEnd = { scale ->
+                pinching[0] = false
+                // Not over a stand-in page: there is no notebook to show until it is read.
+                if (settlesIntoOverview(scale) && engine.notebook.opened) state.openOverview()
+                scope.launch { pinch.animateTo(1f, spring(stiffness = Spring.StiffnessMediumLow)) }
+            },
             onLongPressEmpty = { openMenu(null) },
             onNoRoom = { item -> showPage = engine.moveToFreePage(item) },
             onMove = { item, page ->
@@ -429,9 +544,10 @@ private fun PageNames(
     hidden: () -> Boolean,
     faded: () -> Float,
     onOpen: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        Modifier
+        modifier
             .fillMaxWidth()
             .height(PageNameHeight)
             .graphicsLayer { alpha = if (hidden()) 0f else 1f - faded().coerceIn(0f, 1f) },

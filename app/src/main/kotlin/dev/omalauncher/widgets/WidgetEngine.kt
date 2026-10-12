@@ -306,17 +306,49 @@ class WidgetEngine(
      * being deleted: it may be an agent's work, and this is easy to undo by hand.
      */
     fun removeWidget(spec: WidgetSpec) {
+        setAside(spec)
+        forget(spec.file.name)
+    }
+
+    /** Moves a widget's file to .removed/ and stops it. Its place in the notebook is still there for the caller to clear. */
+    private fun setAside(spec: WidgetSpec) {
         val trash = File(dir, ".removed").apply { mkdirs() }
         spec.file.renameTo(File(trash, spec.file.name))
         instances.remove(spec.file.name)?.stop()
         if (openScreen == spec.file.name) openScreen = null
         specs.remove(spec)
-        forget(spec.file.name)
+    }
+
+    /**
+     * Deletes the page with the id [page], unless it is the only one; null then, and nothing changed. With [move]
+     * what is on it goes to the page before it, or to a new page for what has no room there. Without, it is taken
+     * off home as "remove" on each tile would: apps and folders unpinned, and each widget's file moved to
+     * .removed/, not destroyed. The notebook is written once.
+     */
+    fun deletePage(
+        page: String,
+        move: Boolean,
+    ): PageGone? {
+        // Nothing leaves the disk in a session whose notebook isn't written: the store would still list it next start.
+        if (!notebook.canDelete(page) || (!move && !notebook.kept)) return null
+        val files = specs.map { it.file.name }.toSet()
+        if (!move) {
+            for (spec in specs.filter { notebook.pageOf(it.file.name) == page }) {
+                setAside(spec)
+                clean(spec.file.name)
+            }
+        }
+        return notebook.deletePage(page, files, move)
     }
 
     /** A widget file that's gone takes its place, page and saved values along, so a new file of that name starts fresh. */
     private fun forget(fileName: String) {
         layout.remove(fileName)
+        clean(fileName)
+    }
+
+    /** Deletes what the launcher kept for a widget file besides its place: its saved values, its check and its previews. */
+    private fun clean(fileName: String) {
         File(stateDir, "$fileName.json").delete()
         hashes.remove(fileName)
         File(checkDir, "$fileName.txt").delete()

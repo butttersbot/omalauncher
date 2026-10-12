@@ -13,12 +13,55 @@ import dev.omalauncher.widgets.layout.NotebookItem
 import dev.omalauncher.widgets.layout.NotebookPage
 import dev.omalauncher.widgets.layout.NotebookStore
 import dev.omalauncher.widgets.layout.PinnedApp
+import dev.omalauncher.widgets.layout.firstFit
 import dev.omalauncher.widgets.layout.rescale
+import dev.omalauncher.widgets.layout.shown
 
 /** A page as home lists it: what it's called, and the [id] its items go by, which never changes. */
 data class PageLabel(
     val id: String,
     val name: String,
+)
+
+/** The longest name a page takes. Asking Oma for a page by name matches names up to twice this. */
+const val PAGE_NAME_MAX = 40
+
+/**
+ * A name as a page takes it: without blank space around it or more than one space in a row, without characters
+ * that don't show, and no longer than [PAGE_NAME_MAX]. Null when that leaves nothing: a page is never nameless.
+ */
+fun pageName(typed: String): String? {
+    // Every kind of blank space is a space; then what isn't to be seen goes: control characters, and format
+    // characters, which is where the marks that turn the writing direction round are.
+    val clean = typed.replace(BLANKS, " ").replace(UNSEEN, "").replace(SPACES, " ").trim()
+    return clipped(clean).trim().ifEmpty { null }
+}
+
+private val BLANKS = Regex("[\\s\\p{Z}]+")
+private val UNSEEN = Regex("[\\p{Cc}\\p{Cf}]")
+private val SPACES = Regex(" +")
+
+/** [text] cut to [max] characters, on one line, and not through the middle of a character that takes two. */
+fun clipped(
+    text: String,
+    max: Int = PAGE_NAME_MAX,
+): String {
+    val line = text.replace('\n', ' ').replace('\r', ' ')
+    return if (line.length <= max) line else line.take(if (line[max - 1].isHighSurrogate()) max - 1 else max)
+}
+
+/**
+ * What became of a deleted page's things: [moved] went to the page [to]; [spilled] found no room there and are
+ * on the new page [spill]; [removed] were taken off home with the page (a folder stands for its apps); [dropped]
+ * are the entries of widgets whose files were missing, which only held a place on it.
+ */
+data class PageGone(
+    val to: String?,
+    val moved: List<String>,
+    val spill: String?,
+    val spilled: List<String>,
+    val removed: List<String>,
+    val dropped: List<String>,
 )
 
 /** A pinned app in the notebook: on a page by itself, or inside [folder]. */
@@ -46,7 +89,7 @@ class LiveNotebook(
         private set
 
     /** Whether changes are written. */
-    var kept = false
+    var kept by mutableStateOf(false)
         private set
 
     /** Rows of every page; the columns are [GRID_COLUMNS]. */
@@ -179,13 +222,134 @@ class LiveNotebook(
     fun addPage(): String? = if (opened) newPage() else null
 
     private fun newPage(): String {
-        val id = "p" + ((pages.mapNotNull { it.id.removePrefix("p").toIntOrNull() }.maxOrNull() ?: 0) + 1)
+        val page = PageLabel(freeId(), freeName())
+        pages += page
+        save()
+        return page.id
+    }
+
+    /** An id no page has. */
+    private fun freeId() = "p" + ((pages.mapNotNull { it.id.removePrefix("p").toIntOrNull() }.maxOrNull() ?: 0) + 1)
+
+    /** "Page N" for the place after the last page, or the next number no page is called by. */
+    private fun freeName(): String {
         var number = pages.size + 1
         while (pages.any { it.name == "Page $number" }) number++
-        pages += PageLabel(id, "Page $number")
-        save()
-        return id
+        return "Page $number"
     }
+
+    /**
+     * Whether a page other than [except] goes by [name], whatever its capitals. Two pages may share a name, but
+     * "open my trip page" then can't choose between them, so whoever names one is told.
+     */
+    fun nameTaken(
+        name: String,
+        except: String? = null,
+    ) = pages.any { it.id != except && it.name.equals(name, ignoreCase = true) }
+
+    /**
+     * Calls [page] by [name], tidied as [pageName] does; false, and nothing changed, for a name with nothing in it.
+     * Its id stays, and so does everything on it.
+     */
+    fun renamePage(
+        page: String,
+        name: String,
+    ): Boolean {
+        val at = position(page)
+        val clean = pageName(name)
+        if (!opened || at < 0 || clean == null) return false
+        if (pages[at].name != clean) {
+            pages[at] = pages[at].copy(name = clean)
+            save()
+        }
+        return true
+    }
+
+    /**
+     * Moves [page] [by] places among the pages: -1 is one earlier, 1 one later. False at either end, where there is
+     * nowhere to go. Pages side by side are paired by position, so the pairs follow the new order.
+     */
+    fun movePage(
+        page: String,
+        by: Int,
+    ): Boolean {
+        val from = position(page)
+        val to = from + by
+        if (!opened || from < 0 || by == 0 || to !in pages.indices) return false
+        pages.add(to, pages.removeAt(from))
+        save()
+        return true
+    }
+
+    /** Whether [page] can be deleted: it is there, and it isn't the only one. */
+    fun canDelete(page: String) = opened && pages.size > 1 && position(page) >= 0
+
+    /**
+     * Deletes [page]; null, and nothing changed, if it [canDelete] not. With [move], what is on it goes to the
+     * page before it (the one after, for the first page): each thing to the first free cells at its size, in
+     * reading order, and what finds none stays together, in its own cells, on a new page where the deleted one
+     * was. Without [move] it is all taken off home: apps and folders unpinned, widgets forgotten, whose files
+     * the caller moves aside; refused while the notebook isn't [kept].
+     *
+     * [widgets] are the widget files there are now. A widget's entry whose file is missing shows nothing and
+     * was only holding its place: it goes with the page either way.
+     */
+    fun deletePage(
+        page: String,
+        widgets: Set<String>,
+        move: Boolean,
+    ): PageGone? {
+        // Removing moves widget files aside for good; in a session that isn't written the store would still list them.
+        if (!canDelete(page) || (!move && !kept)) return null
+        val at = position(page)
+        val here = home.filterValues { it == page }.keys.sorted()
+        val (shown, held) = here.partition { it in widgets || !isWidget(it) }
+        held.forEach {
+            home.remove(it)
+            cells.remove(it)
+        }
+        val moved = ArrayList<String>()
+        val spilled = ArrayList<String>()
+        var to: String? = null
+        var spill: PageLabel? = null
+        if (move) {
+            val target = pages[if (at == 0) 1 else at - 1].id
+            to = target
+            val taken = home.filterValues { it == target }.keys.mapNotNullTo(ArrayList()) { shownCell(it) }
+            for (key in shown.sortedWith(compareBy({ cells[it]?.y ?: Int.MAX_VALUE }, { cells[it]?.x ?: Int.MAX_VALUE }))) {
+                val cell = shownCell(key)
+                // Not placed yet: home finds it cells when it lays the page out, as for any newcomer.
+                val spot = if (cell == null) null else firstFit(cell.w, cell.h, taken, GRID_COLUMNS, rows)
+                if (cell != null && spot == null) {
+                    spilled += key
+                    continue
+                }
+                if (spot != null) {
+                    cells[key] = spot
+                    taken += spot
+                }
+                home[key] = target
+                moved += key
+            }
+            // Before the page goes, so its id isn't handed to the page that takes its place.
+            if (spilled.isNotEmpty()) spill = PageLabel(freeId(), "")
+        } else {
+            shown.forEach(::take)
+        }
+        pages.removeAt(at)
+        spill?.let { made ->
+            pages.add(at, made.copy(name = freeName()))
+            spilled.forEach { home[it] = made.id }
+        }
+        save()
+        return PageGone(to, moved, spill?.id, spilled, if (move) emptyList() else shown, held)
+    }
+
+    /** Whether [key] is a widget's, rather than an app's or a folder's. */
+    private fun isWidget(key: String) = key !in folders && apps.none { it.app.key == key }
+
+    /** The cells [key] takes up: an app or a folder shows as 1x1, whatever an old saved cell says. */
+    private fun shownCell(key: String) = cells[key]?.shown(isWidget(key))
 
     /** Takes back a page that was only offered and never used: an empty one, never the only one. */
     fun withdrawPage(page: String): Boolean {
@@ -267,6 +431,13 @@ class LiveNotebook(
     /** Takes an app, or a folder with all its apps, off the home screen. */
     fun unpin(key: String) {
         if (!opened) return
+        take(key)
+        tidy()
+        save()
+    }
+
+    /** Takes [key] off the grid with its cell and its page; a folder with all its apps. */
+    private fun take(key: String) {
         if (folders.remove(key)) {
             apps.filter { it.folder == key }.forEach { cells.remove(it.app.key) }
             apps.removeAll { it.folder == key }
@@ -274,8 +445,6 @@ class LiveNotebook(
         apps.removeAll { it.app.key == key }
         cells.remove(key)
         home.remove(key)
-        tidy()
-        save()
     }
 
     /**
