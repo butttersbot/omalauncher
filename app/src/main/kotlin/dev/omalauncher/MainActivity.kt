@@ -17,9 +17,12 @@ import androidx.window.layout.WindowInfoTracker
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import dev.omalauncher.phone.HomeDoor
-import dev.omalauncher.ui.Palette
+import dev.omalauncher.ui.Pack
 import dev.omalauncher.ui.applySystemBars
 import dev.omalauncher.ui.LauncherRoot
 import dev.omalauncher.ui.LauncherState
@@ -46,14 +49,21 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        applySystemBars(this, Palette.isLight)
+        applySystemBars(this, Pack.look.barsOnLight(drawer = false, panel = false))
         runtime.start()
         HomeDoor.enter(door)
         // A page asked for while there was no home screen to turn.
         door.turn()
         setContent {
             LauncherRoot(runtime, state)
-            LaunchedEffect(Palette.isLight) { applySystemBars(this@MainActivity, Palette.isLight) }
+            // The bars' clock and icons follow what is behind them: the look's page, its app list once that is most of
+            // the way up, or a full-screen panel. Read as state, so picking another look over home turns them at once.
+            val barsOnLight by remember {
+                derivedStateOf {
+                    Pack.look.barsOnLight(drawer = state.drawer.value > 0.5f, panel = state.panelOpen || runtime.widgets.openScreen != null)
+                }
+            }
+            LaunchedEffect(barsOnLight) { applySystemBars(this@MainActivity, barsOnLight) }
         }
         handleDebugExec(intent)
         handleSharedWidget(intent)

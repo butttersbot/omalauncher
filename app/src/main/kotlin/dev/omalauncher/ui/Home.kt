@@ -278,7 +278,8 @@ fun HomeScreen(
         state.requestedPage = null
         pages.getOrNull(at)?.let {
             state.currentPage = it
-            pager.animateScrollToPage(at / per)
+            // Not in this effect: clearing the request restarts it, which would stop the turn as it began.
+            scope.launch { pager.animateScrollToPage(at / per) }
         }
     }
 

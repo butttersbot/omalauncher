@@ -11,9 +11,13 @@ class ListeningLookTest {
         assertEquals(listOf(ListeningAct.Cancel), look.acts)
     }
 
-    /** The beat before the words go looks no different, and Cancel still stops them. */
-    @Test fun theBeatBeforeSendingLooksLikeListening() {
-        assertEquals(listeningLook(ListeningPhase.Listening, heard = "open my trip page"), listeningLook(ListeningPhase.Sending, heard = "open my trip page"))
+    /** The words that wait keep their place, with sending first, then saying more, then the way out. */
+    @Test fun whatWasHeardWaitsWithSendAddAndAWayOut() {
+        val look = listeningLook(ListeningPhase.Heard, heard = "open my trip page", note = "with this screen")
+        assertEquals("Send this?", look.caption)
+        assertEquals("open my trip page", look.words)
+        assertEquals(listOf(ListeningAct.Send, ListeningAct.Add, ListeningAct.Cancel), look.acts)
+        assertEquals("with this screen", look.note)
     }
 
     @Test fun theScreenNoteShowsOnlyWhileARequestIsBeingTaken() {

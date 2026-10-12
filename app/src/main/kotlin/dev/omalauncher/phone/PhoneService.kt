@@ -26,9 +26,12 @@ class PhoneService : AccessibilityService() {
         @Volatile var instance: PhoneService? = null; private set
         /** How long a note waits for its page to be read: less than the bridge waits for an answer. */
         private const val NOTE_WAIT_MILLIS = 6000L
+        private const val TAP_MILLIS = 80L
     }
     private var snapshot = ""
     private var signatures = emptyMap<String, String>()
+    /** When this service last did something to the screen, by the clock that stops in sleep; null until it has. */
+    private var acted: Long? = null
     private val main = Handler(Looper.getMainLooper())
     /** The ring over other apps: on unless the stored setting says no. */
     private val ring = RingOverlay(ServiceRingWindow(this), ::ringFacts)
@@ -103,16 +106,63 @@ class PhoneService : AccessibilityService() {
         val bounds = Rect(); node.getBoundsInScreen(bounds)
         return listOf(node.packageName, node.viewIdResourceName, node.className, node.text, node.contentDescription, bounds).joinToString("|")
     }
-    private fun root(): AccessibilityNodeInfo = rootInActiveWindow ?: error("No readable window. Try again after the screen settles.")
+    /**
+     * The window in front as it is now. Android keeps the nodes it has handed out and only drops them when the
+     * app's own change events arrive, which come late and not for everything a Compose screen does; so what is
+     * kept is thrown away first, and the app is asked again.
+     */
+    private fun root(): AccessibilityNodeInfo {
+        if (Build.VERSION.SDK_INT >= 33) clearCache()
+        return rootInActiveWindow ?: error("No readable window. Try again after the screen settles.")
+    }
+    /** Before Android 13 what is kept can't be thrown away, so each node is asked for again. False: it has gone. */
+    private fun current(node: AccessibilityNodeInfo) = Build.VERSION.SDK_INT >= 33 || node.refresh()
     private fun resolve(path: String): AccessibilityNodeInfo {
         var node = root()
         try {
+            check(current(node)) { "Screen changed. Read it again." }
             if (path != "root") for (part in path.removePrefix("root.").split('.')) {
                 val next = node.getChild(part.toInt()) ?: error("Screen changed. Read it again.")
                 node.recycle(); node = next
+                check(current(node)) { "Screen changed. Read it again." }
             }
             return node
         } catch (e: Exception) { node.recycle(); throw e }
+    }
+    /** Something was done to the screen: what was read of it no longer holds, and the next read gives it time to show. */
+    private fun changed() { snapshot = ""; signatures = emptyMap(); acted = SystemClock.uptimeMillis() }
+    /** The screen's controls, under a new snapshot id. */
+    private fun read(): JSONObject {
+        val nodes = JSONArray(); val next = mutableMapOf<String, String>()
+        fun visit(node: AccessibilityNodeInfo, path: String, depth: Int) {
+            try {
+                if (depth > 40 || nodes.length() >= 600 || !current(node)) return
+                val bounds = Rect(); node.getBoundsInScreen(bounds)
+                if (node.isVisibleToUser) {
+                    nodes.put(JSONObject().put("id", path).put("text", if (node.isPassword) "[password]" else node.text?.toString().orEmpty())
+                        .put("description", if (node.isPassword) "" else node.contentDescription?.toString().orEmpty())
+                        .put("package", node.packageName?.toString()).put("viewId", node.viewIdResourceName)
+                        .put("bounds", JSONArray(listOf(bounds.left, bounds.top, bounds.right, bounds.bottom)))
+                        .put("clickable", node.isClickable).put("editable", node.isEditable).put("scrollable", node.isScrollable)
+                        .put("checked", node.isChecked).put("enabled", node.isEnabled))
+                    next[path] = signature(node)
+                }
+                for (i in 0 until node.childCount) node.getChild(i)?.let { visit(it, "$path.$i", depth + 1) }
+            } finally { node.recycle() }
+        }
+        visit(root(), "root", 0)
+        snapshot = UUID.randomUUID().toString(); signatures = next
+        return JSONObject().put("ok", true).put("snapshot", snapshot).put("nodes", nodes)
+    }
+    /** One finger along [path] for [duration]; [reply] hears once it has lifted, or that Android cancelled it. */
+    private fun stroke(path: Path, duration: Long, reply: (JSONObject) -> Unit) {
+        changed()
+        val gesture = GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, duration)).build()
+        check(dispatchGesture(gesture, object : GestureResultCallback() {
+            // The screen starts to change when the finger lifts, not when it lands.
+            override fun onCompleted(gestureDescription: GestureDescription?) { changed(); reply(JSONObject().put("ok", true)) }
+            override fun onCancelled(gestureDescription: GestureDescription?) { reply(JSONObject().put("ok", false).put("error", "Gesture cancelled")) }
+        }, null)) { "Android rejected gesture" }
     }
     /** The notebook for the page commands. Turning a page is an explicit start of our own home activity, with nothing in the intent. */
     private fun homeBook() = object : HomeBook {
@@ -124,7 +174,7 @@ class PhoneService : AccessibilityService() {
         override fun show(index: Int) {
             HomeDoor.ask(notebook.pages[index].id)
             startActivity(Intent(this@PhoneService, dev.omalauncher.MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            snapshot = ""; signatures = emptyMap()
+            changed()
         }
     }
     /** Home's pages for the note and board commands: which one a note goes on, the book it is written in, and what is on a page. */
@@ -202,29 +252,17 @@ class PhoneService : AccessibilityService() {
                     val intent = if (name == "settings") android.content.Intent(android.provider.Settings.ACTION_SETTINGS)
                         else packageManager.getLaunchIntentForPackage(name) ?: error("No visible launcher activity for this package. Run apps.")
                     startActivity(intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
-                    snapshot = ""; signatures = emptyMap()
+                    changed()
                 }
                 "read" -> {
-                    val nodes = JSONArray(); val next = mutableMapOf<String, String>()
-                    fun visit(node: AccessibilityNodeInfo, path: String, depth: Int) {
-                        try {
-                            if (depth > 40 || nodes.length() >= 600) return
-                            val bounds = Rect(); node.getBoundsInScreen(bounds)
-                            if (node.isVisibleToUser) {
-                                nodes.put(JSONObject().put("id", path).put("text", if (node.isPassword) "[password]" else node.text?.toString().orEmpty())
-                                    .put("description", if (node.isPassword) "" else node.contentDescription?.toString().orEmpty())
-                                    .put("package", node.packageName?.toString()).put("viewId", node.viewIdResourceName)
-                                    .put("bounds", JSONArray(listOf(bounds.left, bounds.top, bounds.right, bounds.bottom)))
-                                    .put("clickable", node.isClickable).put("editable", node.isEditable).put("scrollable", node.isScrollable)
-                                    .put("checked", node.isChecked).put("enabled", node.isEnabled))
-                                next[path] = signature(node)
-                            }
-                            for (i in 0 until node.childCount) node.getChild(i)?.let { visit(it, "$path.$i", depth + 1) }
-                        } finally { node.recycle() }
-                    }
-                    visit(root(), "root", 0)
-                    snapshot = UUID.randomUUID().toString(); signatures = next
-                    output.put("snapshot", snapshot).put("nodes", nodes)
+                    // Right after one of this service's own actions the screen is still on its way to what the action did.
+                    val wait = PhoneTouch.settleWait(SystemClock.uptimeMillis(), acted)
+                    if (wait == 0L) { reply(read()); return }
+                    main.postDelayed({
+                        try { PhoneAccess.requireAccess(this); reply(read()) }
+                        catch (e: Exception) { reply(JSONObject().put("ok", false).put("error", e.message ?: "Phone control failed")) }
+                    }, wait)
+                    return
                 }
                 "click", "type", "scroll" -> {
                     check(input.getString("snapshot") == snapshot && snapshot.isNotEmpty()) { "Read the screen first; snapshot is stale." }
@@ -240,27 +278,31 @@ class PhoneService : AccessibilityService() {
                             }
                             else -> node.performAction(if (input.optString("direction", "forward") == "backward") AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD else AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
                         }
+                        if (!done && command == "click") {
+                            // Not every control takes a click from here, but a finger on its middle is what its owner would do.
+                            val bounds = Rect(); node.getBoundsInScreen(bounds)
+                            val metrics = resources.displayMetrics
+                            val (x, y) = PhoneTouch.middle(bounds.left, bounds.top, bounds.right, bounds.bottom, metrics.widthPixels, metrics.heightPixels)
+                                ?: error("Android rejected this click and the control is not on screen to tap. Read the screen again.")
+                            stroke(Path().apply { moveTo(x, y) }, TAP_MILLIS) { reply(if (it.optBoolean("ok")) it.put("tapped", true) else it) }
+                            return
+                        }
                         check(done) { "Android rejected this action. Read the screen again or use a gesture." }
-                        snapshot = ""; signatures = emptyMap()
+                        changed()
                     } finally { node.recycle() }
                 }
                 "back", "home", "recents", "notifications" -> {
                     val action = when (command) { "back" -> GLOBAL_ACTION_BACK; "home" -> GLOBAL_ACTION_HOME; "recents" -> GLOBAL_ACTION_RECENTS; else -> GLOBAL_ACTION_NOTIFICATIONS }
                     check(performGlobalAction(action)) { "Android rejected navigation" }
-                    snapshot = ""; signatures = emptyMap()
+                    changed()
                 }
                 "tap", "swipe" -> {
                     val metrics = resources.displayMetrics
                     fun coordinate(key: String, limit: Int) = input.getDouble(key).toFloat().also { require(it.isFinite() && it >= 0 && it < limit) { "Coordinate outside screen: $key" } }
                     val x = coordinate("x", metrics.widthPixels); val y = coordinate("y", metrics.heightPixels)
                     val path = Path().apply { moveTo(x, y); if (command == "swipe") lineTo(coordinate("endX", metrics.widthPixels), coordinate("endY", metrics.heightPixels)) }
-                    val duration = if (command == "tap") 80L else input.optLong("duration", 400).also { require(it in 100..2000) }
-                    snapshot = ""; signatures = emptyMap()
-                    val gesture = GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, duration)).build()
-                    check(dispatchGesture(gesture, object : GestureResultCallback() {
-                        override fun onCompleted(gestureDescription: GestureDescription?) { reply(JSONObject().put("ok", true)) }
-                        override fun onCancelled(gestureDescription: GestureDescription?) { reply(JSONObject().put("ok", false).put("error", "Gesture cancelled")) }
-                    }, null)) { "Android rejected gesture" }
+                    val duration = if (command == "tap") TAP_MILLIS else input.optLong("duration", 400).also { require(it in PhoneTouch.SWIPE_MILLIS) { "Swipe duration must be ${PhoneTouch.SWIPE_MILLIS.first} to ${PhoneTouch.SWIPE_MILLIS.last} ms." } }
+                    stroke(path, duration, reply)
                     return
                 }
                 else -> error("Unknown phone command: $command")

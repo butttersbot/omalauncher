@@ -466,6 +466,22 @@ fun carryScrap(
         }
     }
 
+/**
+ * The pages a note or sticker in hand may go to from [on], the page it is on, in the order to ask them.
+ * [showing] are the pages on screen, the one under the finger first. While its own page shows it goes only to
+ * the page under the finger. Once its own has been turned away it goes to whichever page showing takes it,
+ * so that it is never left out of sight while a page in sight has room for it.
+ */
+fun landings(
+    on: String,
+    showing: List<String>,
+): List<String> =
+    when {
+        showing.firstOrNull() == on -> emptyList()
+        on in showing -> showing.take(1)
+        else -> showing
+    }
+
 /** A note of this size and place as a page keeps it: no smaller than can be read or taken hold of, and all of it on the page. */
 fun StickyNote.fitted(): StickyNote {
     val w = unit(w.coerceIn(AnnotationLimits.MIN_NOTE, 1f))

@@ -56,6 +56,7 @@ import dev.omalauncher.widgets.annotations.PageArea
 import dev.omalauncher.widgets.annotations.Scrap
 import dev.omalauncher.widgets.annotations.StickyNote
 import dev.omalauncher.widgets.annotations.TURN_STEP
+import dev.omalauncher.widgets.annotations.landings
 import dev.omalauncher.widgets.annotations.noteText
 import dev.omalauncher.widgets.annotations.scrap
 import dev.omalauncher.widgets.annotations.scrapAt
@@ -86,14 +87,16 @@ internal fun Scrap.rect(area: PageArea): Rect =
 private fun IntRect.area() = PageArea(left.toFloat(), top.toFloat(), width.toFloat(), height.toFloat())
 
 /**
- * What a note or sticker in hand needs of home to change pages, as a tile does: [area], where a page is on
- * screen now, or null if it isn't showing; [under], the page a place on screen is over, with where it is; and
- * [rest], told where the finger is every moment it is down, so that resting at a side edge turns the page.
+ * What a note or sticker in hand needs of home to change pages, as a tile does: [near], the pages showing
+ * now with where each is on screen, the one a place on screen is over first, or the nearest to it where it
+ * is over none; [rest], told where the finger is every moment it is down, so that resting at a side edge
+ * turns the page, or past the last page offers a new one; and [end], told the page it is on when the finger
+ * lets go of it, however that comes about.
  */
 internal class Crossing(
-    val area: (page: String) -> PageArea?,
-    val under: (Offset) -> Pair<String, PageArea>?,
+    val near: (Offset) -> List<Pair<String, PageArea>>,
     val rest: (Offset) -> Unit,
+    val end: (page: String) -> Unit,
 )
 
 /** How often a finger that isn't moving is looked at again, for a rest at the edge to be noticed. */
@@ -129,49 +132,66 @@ private suspend fun AwaitPointerEventScope.follow(
 }
 
 /**
- * Carries [scrap], lifted on [page] by a finger that came down at [start] on screen, by as far as the finger
- * goes. All of it stays on its page until the finger is over another, which it then goes to ([crossing]): the
- * other page of a pair, or the one turned to at a side edge. A page that takes no more leaves it where it is.
- * A note the owner moves is on top, and his.
+ * Carries [scrap], lifted on [page] by the finger [down], by as far as the finger goes; true if it moved at
+ * all. [at] is where the finger came down and [area] the page, both in the page's own coordinates. All of it
+ * stays on its page until the finger is over another, which it then goes to ([crossing], [landings]): the
+ * other page of a pair, or the one turned to at a side edge. A page that takes no more, or whose file
+ * couldn't be read, leaves it where it is and is asked once only, so the owner is told once. A note the
+ * owner moves is on top, and his.
  */
-private fun carry(
+private suspend fun AwaitPointerEventScope.carry(
+    down: PointerInputChange,
+    at: Offset,
+    area: PageArea,
     book: AnnotationBook,
     marks: Marks,
     page: String,
     scrap: Scrap,
-    start: Offset,
+    arbiter: GestureArbiter,
     crossing: Crossing,
-): (Offset) -> Unit {
+): Boolean {
     var on = page
     var id = scrap.id
-    val (x, y) =
-        when (scrap) {
-            is Scrap.Note -> scrap.note.x to scrap.note.y
-            is Scrap.Stuck -> scrap.sticker.x to scrap.sticker.y
-        }
     // From the corner or centre it is placed by to the finger, which it keeps on whatever page.
-    val hold = crossing.area(page)?.let { start - Offset(it.x(x), it.y(y)) } ?: Offset.Zero
-    return { by ->
-        val finger = start + by
-        crossing.rest(finger)
-        val over = crossing.under(finger)
-        if (over != null && over.first != on) {
-            val (to, area) = over
-            book.moveScrap(on, to, id, area.across(finger.x - hold.x), area.down(finger.y - hold.y))?.let { there ->
-                if (marks.selected == Chosen(on, id)) marks.selected = Chosen(to, there)
+    val hold =
+        when (scrap) {
+            is Scrap.Note -> at - Offset(area.x(scrap.note.x), area.y(scrap.note.y))
+            is Scrap.Stuck -> at - Offset(area.x(scrap.sticker.x), area.y(scrap.sticker.y))
+        }
+    val refused = HashSet<String>()
+    return try {
+        follow(down.id, down.position, arbiter, resting = true) { by ->
+            val finger = down.position + by
+            crossing.rest(finger)
+            val showing = crossing.near(finger)
+            for (to in landings(on, showing.map { it.first })) {
+                if (to in refused) continue
+                // A page turned to is read as it comes into view: it is asked again in a moment.
+                val status = book.status(to)
+                if (status != AnnotationBook.Status.Ready && status != AnnotationBook.Status.Unreadable) break
+                val there = showing.first { it.first == to }.second
+                val landed = book.moveScrap(on, to, id, there.across(finger.x - hold.x), there.down(finger.y - hold.y))
+                if (landed == null) {
+                    refused += to
+                    continue
+                }
+                if (marks.selected == Chosen(on, id)) marks.selected = Chosen(to, landed)
                 on = to
-                id = there
+                id = landed
+                break
+            }
+            // Not showing while the page turns under it: it waits where it is.
+            showing.firstOrNull { it.first == on }?.second?.let { here ->
+                val x = here.across(finger.x - hold.x)
+                val y = here.down(finger.y - hold.y)
+                when (scrap) {
+                    is Scrap.Note -> book.changeNote(on, id, raise = true) { it.copy(x = x, y = y) }
+                    is Scrap.Stuck -> book.changeSticker(on, id) { it.copy(x = x, y = y) }
+                }
             }
         }
-        // Not showing while the page turns under it: it waits where it is.
-        crossing.area(on)?.let { area ->
-            val ax = area.across(finger.x - hold.x)
-            val ay = area.down(finger.y - hold.y)
-            when (scrap) {
-                is Scrap.Note -> book.changeNote(on, id, raise = true) { it.copy(x = ax, y = ay) }
-                is Scrap.Stuck -> book.changeSticker(on, id) { it.copy(x = ax, y = ay) }
-            }
-        }
+    } finally {
+        crossing.end(on)
     }
 }
 
@@ -213,7 +233,7 @@ internal suspend fun AwaitPointerEventScope.liftScrap(
     marks.holding = true
     val moved =
         try {
-            follow(down.id, down.position, arbiter, resting = true, onMove = carry(book, marks, page, scrap, down.position, crossing))
+            carry(down, at, area, book, marks, page, scrap, arbiter, crossing)
         } finally {
             marks.holding = false
         }
@@ -265,7 +285,7 @@ internal suspend fun AwaitPointerEventScope.editScrap(
     try {
         when (owner) {
             Owner.Resize -> follow(down.id, down.position, arbiter, onMove = resize(book, chosen.page, scrap, area))
-            Owner.Note -> follow(down.id, down.position, arbiter, resting = true, onMove = carry(book, marks, chosen.page, scrap, down.position, crossing))
+            Owner.Note -> carry(down, at, area, book, marks, chosen.page, scrap, arbiter, crossing)
             else -> {
                 // A tap outside finishes; a drag outside does nothing.
                 marks.selected = null

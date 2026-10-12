@@ -449,4 +449,20 @@ class AnnotationsTest {
         assertNull(carryScrap(from, full, "n1", 0.2f, 0.2f, now = 5))
         assertNull(carryScrap(from, Annotations(), "gone", 0.2f, 0.2f, now = 5))
     }
+
+    @Test fun whatIsInHandGoesToThePageUnderTheFingerWhileItsOwnShows() {
+        // Under the finger's own page it stays.
+        assertEquals(emptyList<String>(), landings("p1", listOf("p1", "p2")))
+        assertEquals(emptyList<String>(), landings("p1", listOf("p1")))
+        // Over the other of a pair, that one and no other.
+        assertEquals(listOf("p2"), landings("p1", listOf("p2", "p1")))
+    }
+
+    @Test fun whatIsInHandGoesToAnyPageShowingOnceItsOwnIsTurnedAway() {
+        // The one under the finger first, then the one beside it.
+        assertEquals(listOf("p4", "p3"), landings("p2", listOf("p4", "p3")))
+        // Over the empty half of the last pair only the page beside it is showing.
+        assertEquals(listOf("p3"), landings("p2", listOf("p3")))
+        assertEquals(emptyList<String>(), landings("p2", emptyList()))
+    }
 }

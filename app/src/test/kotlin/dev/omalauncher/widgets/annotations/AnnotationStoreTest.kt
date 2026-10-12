@@ -678,4 +678,105 @@ class AnnotationStoreTest {
         book.flush()
         assertEquals(1, onDisk("p1")!!.strokes.size)
     }
+
+    // Carried to another page.
+
+    @Test fun aNoteAndAStickerAreCarriedFromOnePageToAnotherAndBothAreWritten() {
+        val bench = Bench()
+        val book = bench.opened("p1", "p2")
+        val note = book.addNote("p1")!!
+        book.changeNote("p1", note) { it.copy(text = "milk") }
+        val sticker = book.addSticker("p1", StickerKind.Star)!!
+        val stays = book.addNote("p2")!!
+        assertEquals(note, book.moveScrap("p1", "p2", note, 0.4f, 0.6f))
+        assertEquals(sticker, book.moveScrap("p1", "p2", sticker, 0.25f, 0.75f))
+        assertTrue(book.on("p1").isEmpty)
+        val landed = book.on("p2").notes.first { it.id == note }
+        assertEquals("milk", landed.text)
+        assertEquals(0.4f, landed.x, 1f / UNITS)
+        assertEquals(0.6f, landed.y, 1f / UNITS)
+        // On top of the note that was there, which is none the worse.
+        assertTrue(landed.z > book.on("p2").notes.first { it.id == stays }.z)
+        assertEquals(0.25f, book.on("p2").stickers.single().x, 1f / UNITS)
+        assertEquals(0.75f, book.on("p2").stickers.single().y, 1f / UNITS)
+        assertNull(book.notice)
+        bench.later()
+        assertEquals(book.on("p1"), onDisk("p1"))
+        assertEquals(book.on("p2"), onDisk("p2"))
+    }
+
+    @Test fun aFullPageTakesNothingCarriedToItAndSaysSo() {
+        val bench = Bench()
+        val book = bench.opened("p1", "p2")
+        val note = book.addNote("p1")!!
+        val sticker = book.addSticker("p1", StickerKind.Star)!!
+        repeat(AnnotationLimits.NOTES) { book.addNote("p2") }
+        repeat(AnnotationLimits.STICKERS) { book.addSticker("p2", StickerKind.Heart) }
+        assertEquals(AnnotationLimits.NOTES, book.on("p2").notes.size)
+        assertEquals(AnnotationLimits.STICKERS, book.on("p2").stickers.size)
+        bench.later()
+        val from = book.on("p1")
+        val to = book.on("p2")
+        assertNull(book.notice)
+        assertNull(book.moveScrap("p1", "p2", note, 0.4f, 0.6f))
+        assertEquals(AnnotationBook.NO_ROOM_NOTE, book.notice)
+        assertNull(book.moveScrap("p1", "p2", sticker, 0.4f, 0.6f))
+        assertEquals(AnnotationBook.NO_ROOM_STICKER, book.notice)
+        // Both pages are as they were, and nothing is waiting to be written.
+        assertEquals(from, book.on("p1"))
+        assertEquals(to, book.on("p2"))
+        assertTrue(bench.deferred.isEmpty())
+        // What isn't on the page goes nowhere, and nothing is said of it.
+        book.notice = null
+        assertNull(book.moveScrap("p1", "p2", "gone", 0.4f, 0.6f))
+        assertNull(book.notice)
+    }
+
+    @Test fun aPageThatWasNotReadTakesNothingCarriedToIt() {
+        dir.mkdirs()
+        val file = File(dir, "p2.json").apply { writeText("{ cut sho") }
+        val bench = Bench()
+        val book = bench.opened("p1", "p2")
+        val note = book.addNote("p1")!!
+        bench.later()
+        val from = book.on("p1")
+        book.notice = null
+        // One whose file can't be read: he is told, and its file is left as it is.
+        assertNull(book.moveScrap("p1", "p2", note, 0.4f, 0.6f))
+        assertEquals(AnnotationBook.UNREADABLE, book.notice)
+        // One that was never opened: nothing to say.
+        book.notice = null
+        assertNull(book.moveScrap("p1", "p3", note, 0.4f, 0.6f))
+        assertNull(book.notice)
+        assertEquals(from, book.on("p1"))
+        assertTrue(book.on("p2").isEmpty)
+        assertTrue(book.on("p3").isEmpty)
+        bench.later()
+        book.flush()
+        assertEquals("{ cut sho", file.readText())
+        assertFalse(files.file("p3").exists())
+    }
+
+    @Test fun aPageStillBeingReadTakesWhatIsCarriedToItOnceItIsRead() {
+        files.write("p2", sample)
+        val waiting = ArrayList<() -> Unit>()
+        var reads = false
+        val book = AnnotationBook(files, background = { task -> if (reads) task() else waiting.add(task) }, foreground = { it() }, defer = { _, save -> save?.invoke() }, now = { 5 })
+        reads = true
+        book.keep(setOf("p1", "p2"))
+        book.open("p1")
+        val note = book.addNote("p1")!!
+        reads = false
+        book.open("p2")
+        assertEquals(AnnotationBook.Status.Reading, book.status("p2"))
+        assertNull(book.moveScrap("p1", "p2", note, 0.4f, 0.6f))
+        assertNull(book.notice)
+        assertEquals(note, book.on("p1").notes.single().id)
+        waiting.toList().also { waiting.clear() }.forEach { it() }
+        val landed = book.moveScrap("p1", "p2", note, 0.4f, 0.6f)!!
+        assertTrue(book.on("p1").isEmpty)
+        // With what the page had, none of which is gone.
+        assertEquals(sample.notes.map { it.id } + landed, book.on("p2").notes.map { it.id })
+        assertEquals(sample.strokes, book.on("p2").strokes)
+    }
 }

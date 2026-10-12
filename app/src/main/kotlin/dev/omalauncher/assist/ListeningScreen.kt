@@ -55,8 +55,8 @@ enum class ListeningPhase {
     /** The microphone is open: what is heard is written over the page. */
     Listening,
 
-    /** The words are final and about to go: the beat in which Cancel still stops them. */
-    Sending,
+    /** The microphone has closed and the words wait for his go: nothing is sent until he says so. */
+    Heard,
 
     /** Nothing was heard. */
     Missed,
@@ -76,6 +76,8 @@ enum class ListeningPhase {
 
 /** The underlined words under what was heard. */
 enum class ListeningAct(val label: String) {
+    Send("Send"),
+    Add("Add more"),
     Cancel("Cancel"),
     Retry("Try again"),
     Allow("Allow"),
@@ -101,8 +103,9 @@ fun listeningLook(
     note: String = "",
 ): ListeningLook =
     when (phase) {
-        // The beat before sending looks like listening, as in the prototype: the words stay, then the page comes back.
-        ListeningPhase.Listening, ListeningPhase.Sending -> ListeningLook("Listening", heard, listOf(ListeningAct.Cancel), note)
+        ListeningPhase.Listening -> ListeningLook("Listening", heard, listOf(ListeningAct.Cancel), note)
+        // The words stay as they were written; sending is his to tap, and he can say more first.
+        ListeningPhase.Heard -> ListeningLook("Send this?", heard, listOf(ListeningAct.Send, ListeningAct.Add, ListeningAct.Cancel), note)
         ListeningPhase.Missed -> ListeningLook("Didn't catch that", "", listOf(ListeningAct.Retry, ListeningAct.Cancel), note)
         ListeningPhase.Failed -> ListeningLook("That didn't work", detail, listOf(ListeningAct.Retry, ListeningAct.Cancel), note)
         ListeningPhase.NoMic -> ListeningLook("Microphone is off", "Allow the microphone to talk to Oma", listOf(ListeningAct.Allow, ListeningAct.Cancel))
@@ -124,9 +127,6 @@ fun marginNote(label: String): String {
         }
     return "$doing…"
 }
-
-/** How long the final words stay before they are sent, as in the prototype. */
-const val LISTENING_BEAT_MILLIS = 900L
 
 /** The prototype's `.dim` and `.listen` transitions, in milliseconds. */
 const val LISTENING_DIM_MILLIS = 450

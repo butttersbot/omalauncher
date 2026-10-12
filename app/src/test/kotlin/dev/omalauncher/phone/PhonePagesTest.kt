@@ -160,7 +160,8 @@ class PhonePagesTest {
         assertFalse(head.contains("command =="))
         assertFalse(head.contains("command in"))
         assertFalse(service.contains("requireNoPendingApproval"))
-        assertEquals(2, service.split("PhoneAccess.requireAccess(").size - 1)
+        // Besides admit's, only what answers later asks again as it does: the screenshot, and a read put off while the screen settles.
+        assertEquals(3, service.split("PhoneAccess.requireAccess(").size - 1)
     }
 
     /** Home as the commands see it, recording what they turned to. */

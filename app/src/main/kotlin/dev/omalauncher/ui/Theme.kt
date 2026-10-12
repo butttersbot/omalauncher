@@ -1,6 +1,5 @@
 package dev.omalauncher.ui
 
-import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -258,17 +257,34 @@ object Glyph {
     const val ChevronUp = "\uDB80\uDD43"
 }
 
-/** Status/navigation bar icons follow the theme's light or dark mode. */
+/**
+ * Lays [activity] out behind clear system bars, their clock and icons dark when [light] says what is behind
+ * them is light. Set on the window itself: androidx's enableEdgeToEdge keeps the style of its first call and
+ * puts it back at every configuration change, so after a fold or a turn the bars were drawn for whatever
+ * showed when the activity started, not for the look picked since.
+ */
+@Suppress("DEPRECATION")
 fun applySystemBars(
     activity: androidx.activity.ComponentActivity,
     light: Boolean,
 ) {
+    val window = activity.window
     val transparent = android.graphics.Color.TRANSPARENT
-    val style =
-        if (light) {
-            androidx.activity.SystemBarStyle.light(transparent, transparent)
+    androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+    // Before Android 15 the bars are filled unless told otherwise; from then on they are clear and these two say nothing.
+    window.statusBarColor = transparent
+    window.navigationBarColor = transparent
+    // No scrim of the system's own behind either bar.
+    window.isStatusBarContrastEnforced = false
+    window.isNavigationBarContrastEnforced = false
+    window.attributes.layoutInDisplayCutoutMode =
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
         } else {
-            androidx.activity.SystemBarStyle.dark(transparent)
+            android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
-    activity.enableEdgeToEdge(style, style)
+    androidx.core.view.WindowInsetsControllerCompat(window, window.decorView).run {
+        isAppearanceLightStatusBars = light
+        isAppearanceLightNavigationBars = light
+    }
 }

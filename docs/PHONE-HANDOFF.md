@@ -48,8 +48,16 @@ Boss talks to you through Oma (voice or the Oma chat). Be short: he is often rea
    (never print lines 53-54 of that file whole: they are huge embedded images).
 
 ## Decisions that are Boss's, not yours
-Auto-send after he stops talking, or a confirm step; the LINUX/ANDROID labels and the gear in the app list; note and
-sticker buttons in the drawing tools row; text sizes on the prototype's scale; whether setup should offer looks.
+Decided 2026-10-12, from the phone:
+- Voice: a confirm step for now, no auto-send after he stops talking.
+- App list: the settings gear stays. The LINUX/ANDROID headings stay until he has a reason to change them for something better.
+- Drawing tools row: add sticky note and sticker buttons, and a text button for typing text onto the page. Cove already has a
+  sticker drawer that can be pulled from; its drawing tools are tldraw, which this app does not use, so only the art and the
+  idea carry over, not the code.
+- Text sizes: leave as they are; come back only if it proves a problem.
+- First-run setup offering looks: not now. To do later.
+- Promotion: he does not want the real launcher updated after every small change. Bundle fixes and features, test them in
+  Oma Dev, and ask once when a batch is ready.
 
 ## When you finish a piece of work
 Write what you did, what you saw, and what is next at the top of `docs/PHONE-TEST-RESULTS.md`, then `oma-sync`.

@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.TextStyle
@@ -291,6 +292,21 @@ class PackLook(
 
     /** True when panels are light, for the system bars' icons over a full-screen one like the chat. */
     val panelsLight = if (ownsPage) background.luminance() > 0.5f else p.isLight
+
+    /**
+     * True when the system bars' clock and icons over home should be dark: what is behind them is light. That
+     * is the page's paper, under the app list's fill while the [drawer] is up, under the scrim of a full-screen
+     * [panel] while one is open. A look's panels can be light on a dark page, or dark on a light one. Console
+     * leaves the page to a wallpaper that can be anything, so the theme's own mode stands.
+     */
+    fun barsOnLight(
+        drawer: Boolean,
+        panel: Boolean,
+    ): Boolean {
+        if (!ownsPage) return p.isLight
+        val listed = if (drawer) drawerFill.compositeOver(paper) else paper
+        return (if (panel) overlay.compositeOver(listed) else listed).luminance() > 0.5f
+    }
 
     private fun textShadow(shadow: PackShadow) = Shadow(shadow.color.toColor(), Offset(shadow.x, shadow.y), shadow.blur)
 

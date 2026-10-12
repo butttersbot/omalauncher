@@ -27,6 +27,7 @@ import dev.omalauncher.widgets.WidgetItem
 import dev.omalauncher.widgets.WidgetLayout
 import dev.omalauncher.widgets.annotations.PageArea
 import dev.omalauncher.widgets.layout.GridGeometry
+import kotlin.math.abs
 import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -193,7 +194,7 @@ internal class Arrange {
     /** The id of the page the finger is over, where [preview] and [swapWith] apply; null over no page. */
     var page by mutableStateOf<String?>(null)
 
-    /** A page added for the tile being carried, because it was held past the last one; taken back if nothing lands on it. */
+    /** A page added for the tile, note or sticker being carried, because it was held past the last one; taken back if nothing lands on it. */
     var offered: String? = null
     var preview by mutableStateOf<Cell?>(null)
     var swapWith by mutableStateOf<String?>(null)
@@ -248,7 +249,7 @@ internal class Arrange {
  * With [marks], each page also shows what is free on it: its ink, sticky notes
  * and stickers. While [drawing], one finger draws there and does nothing else;
  * otherwise a note or sticker is tapped, or lifted by a long press, like a tile
- * that sits in no cell.
+ * that sits in no cell, and carried to another page as a tile is.
  */
 @Composable
 internal fun HomeGrid(
@@ -674,19 +675,19 @@ internal fun HomeGrid(
                             return@awaitEachGesture
                         }
 
+                        val pad = marked
+                        val notes = pad?.book
                         // A note or a sticker in hand changes pages as a tile does: side by side the finger picks the page,
-                        // and resting at a side edge turns to the next one.
+                        // and resting at a side edge turns to the next one, or past the last page has a new one offered.
                         var scrapAtEdgeSince = 0L
                         val crossing =
                             Crossing(
-                                area = { p ->
+                                near = { finger ->
                                     val (all, room) = current
-                                    pagesAt(pager.targetPage, all, room).indexOf(p).takeIf { it >= 0 }?.let { room.area(it) }
-                                },
-                                under = { finger ->
-                                    val (all, room) = current
+                                    val showing = pagesAt(pager.targetPage, all, room)
                                     val over = room.side(finger)
-                                    all.getOrNull(pager.targetPage * room.per + over)?.let { it to room.area(over) }
+                                    // The empty half of the last pair is no page: over it, the page beside it is the nearest.
+                                    (0 until room.per).sortedBy { abs(it - over) }.mapNotNull { side -> showing[side]?.let { it to room.area(side) } }
                                 },
                                 rest = { finger ->
                                     val time = SystemClock.uptimeMillis()
@@ -699,17 +700,30 @@ internal fun HomeGrid(
                                             if (next in 0 until pager.pageCount) {
                                                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                                 scope.launch { pager.animateScrollToPage(next) }
+                                            } else if (edgeSide > 0 && arrange.offered == null) {
+                                                // Past the last page: a new one to leave it on, as a carried tile is offered.
+                                                arrange.offered = onOfferPage()
+                                                if (arrange.offered != null) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                             }
                                             // Turning again takes a longer rest, so the page just reached can be looked at.
                                             scrapAtEdgeSince = time + PAGE_TURN_MS
                                         }
                                     }
                                 },
+                                end = { left ->
+                                    // An offered page it wasn't left on, with no tile on it either, is taken back.
+                                    arrange.offered?.let { offered ->
+                                        arrange.offered = null
+                                        if (itemsOn(offered).isEmpty() && notes?.on(offered)?.isEmpty != false) onWithdrawPage(offered)
+                                    }
+                                    // Left on a page that was turned away from, since the one turned to took no more: that page shows again.
+                                    val (all, room) = current
+                                    val slot = all.indexOf(left).takeIf { it >= 0 }?.let { it / room.per }
+                                    if (slot != null && slot != pager.targetPage) scope.launch { pager.animateScrollToPage(slot) }
+                                },
                             )
                         // A note or a sticker being edited takes every touch, as a tile being edited does below. One whose
                         // page no longer shows is let go.
-                        val pad = marked
-                        val notes = pad?.book
                         val chosen = pad?.selected
                         if (pad != null && chosen != null) {
                             val chosenSide = shown.indexOf(chosen.page)

@@ -143,8 +143,9 @@ class AssistantPromptActivity : Activity() {
 /**
  * The listening screen as a view, for the assistant session's window and the prompt activity: the ring along
  * the window's edge and [ListeningLayer] inside it, as design/oma-scrapbook-prototype.html draws them. The
- * microphone opens as the screen comes up; what is heard goes to the agent a beat after the last word, unless
- * Cancel or a tap on the paper stops it. Typing, attachments, the answer and New thread live in the Oma chat.
+ * microphone opens as the screen comes up; what is heard waits on the screen until he taps Send, and he can
+ * speak again to add to it first. Cancel or a tap on the paper leaves and sends nothing; [ListeningRequest]
+ * decides all of that. Typing, attachments, the answer and New thread live in the Oma chat.
  */
 class ListeningHost(private val owner: Context, private val dismiss: () -> Unit) : FrameLayout(owner) {
     private val ring = RingView(owner)
@@ -153,11 +154,10 @@ class ListeningHost(private val owner: Context, private val dismiss: () -> Unit)
     private val speech = Speech(owner)
     /** The paper over whatever is underneath, as the window's background so it reaches under the system bars. */
     private val paper = ColorDrawable(Color.TRANSPARENT)
-    private var phase by mutableStateOf<ListeningPhase?>(null)
-    private var heard by mutableStateOf("")
-    private var detail by mutableStateOf("")
+    /** The request being taken; null while the screen is away or on its way out. */
+    private var request by mutableStateOf<ListeningRequest?>(null)
     private var chipState by mutableStateOf(ScreenContext.None)
-    /** Counts requests, so a beat or a fade from an earlier one does nothing. */
+    /** Counts requests, so a recognizer's answer or a fade from an earlier one does nothing. */
     private var turn = 0
     private var disposed = false
     /** The screenshot that sending would attach; never set without the note saying so. */
@@ -169,14 +169,13 @@ class ListeningHost(private val owner: Context, private val dismiss: () -> Unit)
         compose.attach(this)
         addView(ComposeView(owner).apply {
             setContent {
-                val now = phase
-                val look = now?.let {
+                val look = request?.let {
                     val claude = (owner.applicationContext as App).runtime.agents.default?.bin == "claude"
-                    listeningLook(it, if (it == ListeningPhase.Listening) speech.text else heard, detail, screenChipText(chipState, keptInConversation = claude))
+                    it.look(speech.text, screenChipText(chipState, keptInConversation = claude))
                 }
                 // The recognizer can fail without a word: that is a problem to show, not a silence.
                 val failed = speech.error
-                LaunchedEffect(failed) { if (failed != null && phase == ListeningPhase.Listening) show(ListeningPhase.Failed, failed) }
+                LaunchedEffect(failed) { if (failed != null) spoke("") }
                 ListeningLayer(look, ::act, onNote = { showScreen(ScreenContext.None, null); onScreenLetGo?.invoke() }, onDim = { paper.color = Pack.paper.copy(alpha = it).toArgb() })
             }
         }, LayoutParams(-1, -1))
@@ -206,10 +205,10 @@ class ListeningHost(private val owner: Context, private val dismiss: () -> Unit)
         turn++
         AgentTasks.restore(owner)
         when {
-            AgentTasks.pending.isNotEmpty() -> show(ListeningPhase.NeedsOk, "Oma is waiting for your answer")
-            AgentTasks.working -> { show(ListeningPhase.Busy, marginNote(AgentTasks.label)); follow(turn) }
-            owner.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED -> show(ListeningPhase.NoMic)
-            else -> listen()
+            AgentTasks.pending.isNotEmpty() -> show(ListeningRequest(ListeningPhase.NeedsOk, detail = "Oma is waiting for your answer"))
+            AgentTasks.working -> { show(ListeningRequest(ListeningPhase.Busy, detail = marginNote(AgentTasks.label))); follow(turn) }
+            owner.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED -> show(ListeningRequest(ListeningPhase.NoMic))
+            else -> listen(ListeningRequest(ListeningPhase.Listening))
         }
     }
 
@@ -224,53 +223,58 @@ class ListeningHost(private val owner: Context, private val dismiss: () -> Unit)
 
     fun dispose() { disposed = true; end(); handler.removeCallbacksAndMessages(null); compose.destroy() }
 
-    /** The ring listens for as long as a request is being taken, and no longer. */
-    private fun show(next: ListeningPhase?, said: String = "") {
-        phase = next; detail = said
-        OmaRing.hearing(this, next == ListeningPhase.Listening || next == ListeningPhase.Sending)
+    /** The ring listens for as long as the microphone is open, and no longer. */
+    private fun show(next: ListeningRequest?) {
+        request = next
+        OmaRing.hearing(this, next?.phase == ListeningPhase.Listening)
     }
 
-    private fun listen() {
+    /** Opens the microphone for [next], which already holds whatever the new words are to be added to. */
+    private fun listen(next: ListeningRequest) {
         val mine = ++turn
-        heard = ""
-        show(ListeningPhase.Listening)
-        speech.start(hold = false) { said ->
-            if (mine != turn) return@start
-            if (said.isBlank()) return@start show(if (speech.error != null) ListeningPhase.Failed else ListeningPhase.Missed, speech.error.orEmpty())
-            heard = said
-            show(ListeningPhase.Sending)
-            handler.postDelayed({ if (mine == turn && phase == ListeningPhase.Sending) send() }, LISTENING_BEAT_MILLIS)
-        }
+        show(next)
+        speech.start(hold = false) { said -> if (mine == turn) spoke(said) }
     }
 
-    private fun send() {
+    /** The microphone closed: the words wait for his go, and nothing is sent from here. */
+    private fun spoke(said: String) {
+        val now = request ?: return
+        if (now.phase == ListeningPhase.Listening) show(now.spoke(said, speech.error))
+    }
+
+    private fun send(text: String) {
         try {
             // Only the screenshot the note is showing goes along, and it is AgentTasks's to delete from here.
-            AgentTasks.send(owner, heard, screen = screen)
+            AgentTasks.send(owner, text, screen = screen)
             screen = null; showScreen(ScreenContext.None, null); onScreenLetGo?.invoke()
             leave()
-        } catch (e: Exception) { show(ListeningPhase.Failed, e.message ?: "The request could not be sent") }
+        } catch (e: Exception) { show(ListeningRequest(ListeningPhase.Failed, detail = e.message ?: "The request could not be sent")) }
     }
 
     /** While a task runs, the screen says what it is doing, and goes when it is over. */
     private fun follow(mine: Int) {
         handler.postDelayed({
-            if (mine != turn || phase != ListeningPhase.Busy) return@postDelayed
+            val now = request
+            if (mine != turn || now?.phase != ListeningPhase.Busy) return@postDelayed
             AgentTasks.restore(owner)
             if (!AgentTasks.working) return@postDelayed leave()
-            detail = marginNote(AgentTasks.label)
+            request = now.copy(detail = marginNote(AgentTasks.label))
             follow(mine)
         }, 500)
     }
 
     private fun act(act: ListeningAct) {
-        when (act) {
-            // A tap on the paper is this too: it never sends, and a screenshot on the note is discarded on the way out.
-            ListeningAct.Cancel, ListeningAct.Close -> leave()
-            ListeningAct.Retry -> listen()
-            ListeningAct.Allow -> { owner.startActivity(Intent(owner, AssistantSetupActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); leave() }
-            ListeningAct.Stop -> { AgentTasks.stop(owner); leave() }
-            ListeningAct.Review -> {
+        // Once the screen is on its way out a second tap finds no request, so nothing is sent twice.
+        val step = request?.act(act) ?: return
+        when (val effect = step.effect) {
+            null -> {}
+            ListeningEffect.Listen -> step.next?.let(::listen)
+            is ListeningEffect.Send -> send(effect.text)
+            // A screenshot on the note is discarded on the way out.
+            ListeningEffect.Leave -> leave()
+            ListeningEffect.Allow -> { owner.startActivity(Intent(owner, AssistantSetupActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); leave() }
+            ListeningEffect.Stop -> { AgentTasks.stop(owner); leave() }
+            ListeningEffect.Review -> {
                 // The oldest one, chosen at the tap; the screen then answers only that one.
                 AgentTasks.pending.firstOrNull()?.let { owner.startActivity(AgentNotices.reviewIntent(owner, it)) }
                 turn++; show(null)
