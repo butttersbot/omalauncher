@@ -113,6 +113,12 @@ class LiveNotebook(
     var dock by mutableStateOf(emptyList<PinnedApp>())
         private set
 
+    /**
+     * Told the id of a page that has just gone, by [deletePage] or [withdrawPage]: what is kept by page id
+     * outside the notebook (the page's ink and notes) goes with it, so a later page given that id starts clean.
+     */
+    var onPageGone: ((String) -> Unit)? = null
+
     /** Replaces everything with [notebook]. Not [kept]: nothing is written from here on. */
     fun open(
         notebook: Notebook,
@@ -342,6 +348,7 @@ class LiveNotebook(
             spilled.forEach { home[it] = made.id }
         }
         save()
+        onPageGone?.invoke(page)
         return PageGone(to, moved, spill?.id, spilled, if (move) emptyList() else shown, held)
     }
 
@@ -356,6 +363,7 @@ class LiveNotebook(
         if (!opened || pages.size < 2 || home.values.any { it == page }) return false
         if (!pages.removeAll { it.id == page }) return false
         save()
+        onPageGone?.invoke(page)
         return true
     }
 
