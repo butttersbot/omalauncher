@@ -1,5 +1,13 @@
 # Phone test results
 
+## Latest: Oma Dev through setup to home (2026-10-12, 15:58–16:01 PDT)
+- Boss said the download is fine (unlimited hotspot data) and asked to verify where the note lands.
+- Setup "start" (default theme tokyo night, Linux box left unticked): PASS. Home came up on the cover screen: "Page 1  1/3", the today tile, the fetch tile (Android 17, 69 apps), the "OMA ready" tile, a terminal tile saying "needs Linux ... install", and the dock with only "↑" and "✎". No crash in the crash log.
+- Android then asked "Set Oma Dev as your default home app?". Not accepted: `oma-phone tap` on Cancel did nothing (system dialog), `oma-phone back` dismissed it. HOME still resolves to dev.omalauncher.boss.
+- COULD NOT TEST in Oma Dev: note placement. It is only reached through the agent's `oma-phone note` / `board` (phone/PhonePages.kt), and `oma-phone` talks to the launcher the agent runs in, which is the real one. Oma Dev has no Linux and no agent, so nothing there can leave an agent note.
+- The real launcher is build 29 installed 15:03:03, before the note-placement commit (539db8a, 15:07:54), so it does not have the change: the notes left today overlap widgets, as Boss saw. Verifying needs promotion (`oma-try`), which is waiting on Boss's yes.
+- Also changed at Boss's request (15:57): screen timeout set from 30000 ms to 2147483647 (never) with `settings put system screen_off_timeout` over local adb. Put it back to 30000 when he says.
+
 ## Latest: note placement as Oma Dev — starts (2026-10-12, 15:54–15:56 PDT)
 - Installer is back: Boss turned wireless debugging off and on while on a hotspot; adb is "device" on 127.0.0.1:37779. So the earlier block was wireless debugging not serving once off its Wi-Fi, with the switch still showing on.
 - `oma-dev --no-open` at c420089 (source 78ea5a9 plus results-file commits): exit 0, "Oma Dev installed: versionCode 29, 0.5.0-boss-preview.19. The working launcher was not touched." lastUpdateTime 15:55:14.
