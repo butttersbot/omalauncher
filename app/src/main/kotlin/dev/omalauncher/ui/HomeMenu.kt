@@ -82,7 +82,7 @@ fun HomeMenu(
                 state.homeMenuOpen = false
                 state.editing = null
                 // Selected as it lands, so it can be dragged, resized, turned or taken off again at once.
-                book.addSticker(page, kind)?.let {
+                book.addSticker(page, kind, state.homeMenuAt)?.let {
                     state.arrivals.expect(it, from)
                     state.marks.selected = Chosen(page, it)
                 }
@@ -95,11 +95,11 @@ fun HomeMenu(
                 state.homeMenuOpen = false
                 if (book.takes(page)) state.startDrawing()
             }
-            // Lands on the page in the next free place of a cascade, with its text open to type.
+            // Lands where he pressed, or as near it as is clear of the tiles and of what is stuck there, with its text open to type.
             MenuItem("new sticky note", modifier = Modifier.onGloballyPositioned { noteFrom[0] = it.boundsInWindow().center }) {
                 state.homeMenuOpen = false
                 state.editing = null
-                book.addNote(page)?.let {
+                book.addNote(page, state.homeMenuAt)?.let {
                     state.arrivals.expect(it, noteFrom[0])
                     state.marks.editing = Chosen(page, it)
                 }

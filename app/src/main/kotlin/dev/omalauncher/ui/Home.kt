@@ -285,9 +285,11 @@ fun HomeScreen(
     fun openMenu(
         item: HomeItem?,
         from: Offset? = null,
+        at: Pair<Float, Float>? = null,
     ) {
         menuFor = item
         state.homeMenuFrom = from
+        state.homeMenuAt = at
         state.homeMenuOpen = true
     }
 
@@ -525,7 +527,7 @@ fun HomeScreen(
                 if (settlesIntoOverview(scale) && engine.notebook.opened) state.openOverview()
                 scope.launch { pinch.moveTo(1f) }
             },
-            onLongPressEmpty = { at -> openMenu(null, at) },
+            onLongPressEmpty = { from, at -> openMenu(null, from, at) },
             arrivals = state.arrivals,
             rooms = state.pageRooms,
             onNoRoom = { item -> showPage = engine.moveToFreePage(item) },

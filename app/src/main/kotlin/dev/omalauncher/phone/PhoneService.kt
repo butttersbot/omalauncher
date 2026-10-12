@@ -127,7 +127,7 @@ class PhoneService : AccessibilityService() {
             snapshot = ""; signatures = emptyMap()
         }
     }
-    /** Home's pages for the note command: which one a note goes on, and the book it is written in. */
+    /** Home's pages for the note and board commands: which one a note goes on, the book it is written in, and what is on a page. */
     private fun notePad() = object : NotePad {
         private val notebook = (application as dev.omalauncher.App).runtime.widgets.notebook
         private val book = dev.omalauncher.widgets.annotations.HomeAnnotations.of(this@PhoneService)
@@ -135,12 +135,16 @@ class PhoneService : AccessibilityService() {
         // Only while its task runs: a page some earlier request came from is not where a later note belongs.
         override val asked get() = dev.omalauncher.assist.AgentTasks.asked?.takeIf { it.ended == null }?.page
         override val showing get() = HomeDoor.home?.showing
+        override val pages get() = if (notebook.opened) notebook.pages.map { it.id } else emptyList()
         override fun name(page: String) = if (notebook.opened) notebook.name(page) else null
-        override fun leave(page: String, text: String, then: (dev.omalauncher.widgets.annotations.NoteLeft) -> Unit) = book.whenRead(page) {
+        override fun leave(page: String, text: String, near: Pair<Int, Int>?, then: (dev.omalauncher.widgets.annotations.NoteLeft) -> Unit) = book.whenRead(page) {
             // The bridge has stopped waiting by then and told the agent so: nothing is written behind that answer.
             if (SystemClock.elapsedRealtime() > until) then(dev.omalauncher.widgets.annotations.NoteLeft.Refused("Home took too long to read that page. Nothing was written."))
-            else then(book.leaveNote(page, text))
+            else then(book.leaveNote(page, text, near))
         }
+        // The same tiles a note is kept clear of, and the notes as the book has them: what `board` tells is what `note` avoids.
+        override fun look(page: String, then: (dev.omalauncher.widgets.annotations.PageBoard, dev.omalauncher.widgets.annotations.Annotations?) -> Unit) =
+            book.whenRead(page) { read -> then(notebook.board(page), if (read) book.on(page) else null) }
     }
     fun request(input: JSONObject, reply: (JSONObject) -> Unit) {
         try {
@@ -151,6 +155,8 @@ class PhoneService : AccessibilityService() {
             if (route == PhoneRequests.Route.Stop) { PhoneAccess.stop(this); reply(JSONObject().put("ok", true)); return }
             // Home's pages: read and turned behind the same gates as everything else, and never while an approval waits.
             if (route == PhoneRequests.Route.Pages) { reply(PhonePages.reply(input, homeBook())); return }
+            // What is where on a home page, behind the same gates as the page commands: it only looks.
+            if (route == PhoneRequests.Route.Board) { PhoneBoard.reply(input, notePad(), reply); return }
             // A sticky note on home, behind the same gates: one note, on one page, and nothing else.
             if (route == PhoneRequests.Route.Note) { PhoneNotes.reply(input, notePad(), reply); return }
             if (route == PhoneRequests.Route.Screenshot) {

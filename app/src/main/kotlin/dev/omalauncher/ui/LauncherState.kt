@@ -43,6 +43,9 @@ class LauncherState {
     /** Where the long press that opened it was, in the window, for the menu to grow out of; null grows it where it stands. */
     var homeMenuFrom: Offset? = null
 
+    /** Where on its page that long press was, as fractions of the page: a note or sticker asked for from the menu lands as near there as is free. */
+    var homeMenuAt: Pair<Float, Float>? = null
+
     /** Where the pages showing on home stand, for a page opened from the overview to grow onto. */
     internal val pageRooms = PageRooms()
 

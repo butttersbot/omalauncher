@@ -8,6 +8,9 @@ Dates are when the build was uploaded to Play.
 
 - Apps from a work profile show up next to your own, marked with a briefcase,
   and dimmed while work apps are paused.
+- A new sticky note, yours or the agent's, lands in free space on the page
+  instead of on top of a widget. Agents can ask what is where on a page with
+  `oma-phone board`.
 
 ## 0.5.0 (versionCode 10) – 2026-10-11
 

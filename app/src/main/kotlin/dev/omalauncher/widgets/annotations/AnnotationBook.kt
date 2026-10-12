@@ -30,6 +30,9 @@ import java.util.concurrent.Executors
  *    takes no change this session. A new page never starts with an old page's ink, and never writes over it;
  *  - what was set aside is thinned once at the start ([AnnotationFiles.prune]), off the main thread.
  *
+ * Whatever is put on a page by itself, a note from the owner's menu, a sticker or an agent's note, is placed
+ * here and nowhere else, clear of the page's tiles and of what is already stuck on it ([PageBoard.noteSpot]).
+ *
  * Main thread only. [background] runs a task off it, one at a time and in order; [foreground] brings one
  * back; [defer] runs a page's save a moment later, replacing the one already waiting for that page, or with
  * null calls it off.
@@ -40,6 +43,8 @@ class AnnotationBook(
     private val foreground: (() -> Unit) -> Unit,
     private val defer: (page: String, save: (() -> Unit)?) -> Unit,
     private val now: () -> Long = System::currentTimeMillis,
+    /** A page's grid and the tiles on it, by its id: what a new note or sticker is kept clear of. */
+    private val board: (page: String) -> PageBoard = { PageBoard() },
 ) {
     enum class Status {
         /** Its file is being read. */
@@ -203,13 +208,20 @@ class AnnotationBook(
 
     fun redo(page: String): Boolean = change(page) { was -> was.ink.takeIf { it.canRedo }?.let { was.with(it.redo()) } }
 
-    /** A new note from the owner at the next free place of the cascade; its id, or null if the page takes none. */
-    fun addNote(page: String): String? {
+    /**
+     * A new note from the owner, clear of the page's tiles and of the notes and stickers on it, as near as
+     * there is room to [near], the place on the page (in fractions of it) he pressed to ask for it: the note
+     * comes up under his finger where that is free. Its id, or null if the page takes none.
+     */
+    fun addNote(
+        page: String,
+        near: Pair<Float, Float>? = null,
+    ): String? {
         var id: String? = null
         change(page) { was ->
             if (was.marks.notes.size >= AnnotationLimits.NOTES) return@change null.also { notice = NO_ROOM_NOTE }
-            val (x, y) = cascade(was.marks.notes.map { it.x to it.y }, NOTE_WIDTH, NOTE_HEIGHT)
-            val note = StickyNote(freshId(was.marks, "n", now()), x, y, NOTE_WIDTH, NOTE_HEIGHT, "", z = top(was.marks) + 1, at = now()).fitted()
+            val spot = board(page).noteSpot(was.marks.scraps(), near?.let { it.first - NOTE_WIDTH / 2f to it.second - NOTE_HEIGHT / 2f }).box
+            val note = StickyNote(freshId(was.marks, "n", now()), spot.x, spot.y, spot.w, spot.h, "", z = top(was.marks) + 1, at = now()).fitted()
             id = note.id
             was.with(was.marks.copy(notes = was.marks.notes + note))
         }
@@ -248,16 +260,24 @@ class AnnotationBook(
             was.with(was.marks.copy(notes = was.marks.notes.map { if (it.id == id) note.copy(author = Author.Owner) else it }))
         }
 
+    /**
+     * A new sticker, clear of the page's tiles and of what is stuck on it where there is room, as near as that
+     * allows to [near], the place on the page he pressed; without one, to the middle of the page's top half.
+     */
     fun addSticker(
         page: String,
         kind: StickerKind,
+        near: Pair<Float, Float>? = null,
     ): String? {
         var id: String? = null
         change(page) { was ->
             if (was.marks.stickers.size >= AnnotationLimits.STICKERS) return@change null.also { notice = NO_ROOM_STICKER }
-            // Their centres cascade from the middle of the page's top half, as notes' corners do from its corner.
-            val (x, y) = cascade(was.marks.stickers.map { it.x - 0.3f to it.y - 0.2f }, STICKER_SIZE, STICKER_SIZE)
-            val sticker = Sticker(freshId(was.marks, "s", now()), kind, x + 0.3f, y + 0.2f, STICKER_SIZE).fitted()
+            // It is square on screen, so less tall than wide in fractions of the page.
+            val tall = STICKER_SIZE / PAGE_TALL
+            val centre = near ?: STICKER_START
+            val tiles = board(page).let { board -> board.tiles.map { board.box(it.cell) } }
+            val spot = clearSpot(tiles + was.marks.scraps(), STICKER_SIZE, tall, centre.first - STICKER_SIZE / 2f to centre.second - tall / 2f).box
+            val sticker = Sticker(freshId(was.marks, "s", now()), kind, spot.x + STICKER_SIZE / 2f, spot.y + tall / 2f, STICKER_SIZE).fitted()
             id = sticker.id
             was.with(was.marks.copy(stickers = was.marks.stickers + sticker))
         }
@@ -286,15 +306,19 @@ class AnnotationBook(
             was.with(was.marks.copy(notes = was.marks.notes.filter { it.id != id }, stickers = was.marks.stickers.filter { it.id != id }))
         }
 
-    /** An agent's note on [page]; see [leaveAgentNote]. The page must have been read ([whenRead]). */
+    /**
+     * An agent's note on [page], near the cell [near] (column, row) when one is asked for; see [leaveAgentNote].
+     * The page must have been read ([whenRead]).
+     */
     fun leaveNote(
         page: String,
         text: String,
+        near: Pair<Int, Int>? = null,
     ): NoteLeft {
         val there = pages[page]
         if (!writable) return NoteLeft.Refused("Home's layout isn't being saved this session, so no note can be kept. Nothing was written.")
         if (there?.status != Status.Ready) return NoteLeft.Refused("That page's notes can't be read, so nothing was written.")
-        val left = leaveAgentNote(there.marks, text, now())
+        val left = leaveAgentNote(there.marks, text, now(), board(page), near)
         if (left is NoteLeft.Left) change(page) { it.with(left.page) }
         return left
     }
@@ -353,6 +377,9 @@ class AnnotationBook(
         const val NO_ROOM_STICKER = "This page has all the stickers it takes. Delete one to add another."
         const val NOT_SAVED = "The last change to this page's ink and notes couldn't be saved yet. It will be tried again."
 
+        /** Where a sticker's centre is wanted when no place was pressed: the middle of the page's top half. */
+        private val STICKER_START = 0.5f to 0.25f
+
         private val EMPTY = Annotations()
         private val NO_INK = Ink()
     }
@@ -379,6 +406,7 @@ object HomeAnnotations {
                     files = AnnotationFiles(File(app.filesDir, "annotations")),
                     background = { task -> io.execute(task) },
                     foreground = { task -> main.post(task) },
+                    board = notebook::board,
                     defer = { page, save ->
                         saves.remove(page)?.let(main::removeCallbacks)
                         if (save != null) {

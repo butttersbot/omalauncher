@@ -262,8 +262,8 @@ internal fun HomeGrid(
     onSelect: (String?) -> Unit,
     render: @Composable (HomeItem, Modifier, Boolean) -> Unit,
     actions: @Composable (HomeItem) -> Unit,
-    /** A long press on empty space, at this point in the window; null if where the grid is isn't known. */
-    onLongPressEmpty: (Offset?) -> Unit,
+    /** A long press on empty space, at this point in the window (null if where the grid is isn't known), and at these fractions of its page. */
+    onLongPressEmpty: (Offset?, Pair<Float, Float>) -> Unit,
     onNoRoom: (HomeItem) -> Unit,
     onMove: (HomeItem, String) -> Unit,
     /** A press landed on this page: of two side by side, it is the one folding shows. */
@@ -778,7 +778,7 @@ internal fun HomeGrid(
                         if (!awaitLongPress(down.id, start)) return@awaitEachGesture
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         if (hit == null) {
-                            onLongPressEmpty(gridAt[0]?.takeIf { it.isAttached }?.localToWindow(start))
+                            onLongPressEmpty(gridAt[0]?.takeIf { it.isAttached }?.localToWindow(start), g.area(0).let { it.across(at.x) to it.down(at.y) })
                             return@awaitEachGesture
                         }
                         // Lifted: select it, and let the same finger drag it without letting go.

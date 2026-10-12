@@ -315,27 +315,6 @@ class AnnotationsTest {
         assertEquals("", noteText(""))
     }
 
-    @Test fun newThingsCascadeSoNoneLiesExactlyOnAnother() {
-        val taken = ArrayList<Pair<Float, Float>>()
-        repeat(30) {
-            val spot = cascade(taken, NOTE_WIDTH, NOTE_HEIGHT)
-            assertTrue("$spot is taken", taken.none { abs(it.first - spot.first) < 0.02f && abs(it.second - spot.second) < 0.02f })
-            // All of it is on the page.
-            assertTrue(spot.first >= 0f && spot.first + NOTE_WIDTH <= 1.0001f)
-            assertTrue(spot.second >= 0f && spot.second + NOTE_HEIGHT <= 1.0001f)
-            taken += spot
-        }
-        // The first is at the top-left, and the next a little right of and below it.
-        assertEquals(0.06f to 0.06f, taken[0])
-        assertEquals(0.1f to 0.11f, taken[1])
-        // A place that was freed is the next one given.
-        assertEquals(taken[3], cascade(taken - taken[3], NOTE_WIDTH, NOTE_HEIGHT))
-        // With every place taken it still answers, on the page.
-        val all = ArrayList<Pair<Float, Float>>()
-        repeat(200) { all += cascade(all, NOTE_WIDTH, NOTE_HEIGHT) }
-        assertTrue(all.all { it.first in 0f..1f - NOTE_WIDTH + 0.0001f && it.second in 0f..1f - NOTE_HEIGHT + 0.0001f })
-    }
-
     // The agent's note (PRD AC-29).
 
     private fun left(
@@ -353,8 +332,9 @@ class AnnotationsTest {
         assertEquals(8, result.note.z)
         assertEquals(1_000L, result.note.at)
         assertNull(result.replaced)
-        // Not exactly on the owner's note, which is where the cascade starts.
-        assertEquals(0.1f to 0.11f, result.note.x to result.note.y)
+        // Not on the owner's note, which is where a note would go on an empty page, and it says so.
+        assertEquals(0f, result.note.box().overlap(mine.box()), 0f)
+        assertTrue(result.clear)
         assertEquals(listOf(mine, result.note), result.page.notes)
 
         assertTrue(leaveAgentNote(Annotations(), "", 1) is NoteLeft.Refused)

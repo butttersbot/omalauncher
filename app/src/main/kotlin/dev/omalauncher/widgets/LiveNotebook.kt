@@ -6,6 +6,8 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import dev.omalauncher.widgets.annotations.PageBoard
+import dev.omalauncher.widgets.annotations.PageTile
 import dev.omalauncher.widgets.layout.ItemKind
 import dev.omalauncher.widgets.layout.NOTEBOOK_MIN_ROWS
 import dev.omalauncher.widgets.layout.Notebook
@@ -198,6 +200,25 @@ class LiveNotebook(
         page: String,
         except: Set<String>,
     ): List<Cell> = home.entries.filter { it.value == page && it.key !in except }.mapNotNull { cells[it.key] }
+
+    /**
+     * [page] as what is placed on it by itself sees it: its grid, and every tile with a cell on it as it
+     * shows. A widget goes by its file name, there or not (a missing file's place is still its), an app by
+     * its label, and a folder by the labels of the apps in it; apps and folders take one cell.
+     */
+    fun board(page: String): PageBoard {
+        val tiles =
+            home.entries.filter { it.value == page }.sortedBy { it.key }.mapNotNull { (key, _) ->
+                val cell = cells[key] ?: return@mapNotNull null
+                val app = apps.firstOrNull { it.folder == null && it.app.key == key }
+                when {
+                    app != null -> PageTile(app.app.label, cell.shown(resizable = false), "app")
+                    key in folders -> PageTile(apps.filter { it.folder == key }.joinToString(", ") { it.app.label }, cell.shown(resizable = false), "folder")
+                    else -> PageTile(key, cell, "widget")
+                }
+            }
+        return PageBoard(rows, tiles.sortedWith(compareBy({ it.cell.y }, { it.cell.x })))
+    }
 
     /** Writes the notebook, unless this start isn't kept. */
     fun save() {

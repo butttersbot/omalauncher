@@ -135,7 +135,10 @@ when controls are used and provides Stop. Stop/Pause is an explicit persistent
 user override; only the control screen's Resume button clears it. Agents cannot
 resume paused access themselves. Screen-off and locked phones reject interaction.
 The Linux `oma-phone help` command documents screen reading, screenshots, node
-click/type/scroll, coordinate gestures and navigation. Bottom-bar agent prompts
+click/type/scroll, coordinate gestures and navigation, and home's own commands:
+`pages`, `page NAME`, `where FILE.owl`, `board [PAGE NAME]` (what is where on a
+page: grid, tiles, notes, stickers and the free cells) and `note TEXT` (a sticky
+note that lands in free space, never on a widget). Bottom-bar agent prompts
 include instructions to use these tools and verify the result. Existing chats
 can read `~/.local/share/omalauncher/phone-control.md` or run `oma-phone help`.
 The Unix socket accepts only the launcher's Android UID, never remote TCP clients.

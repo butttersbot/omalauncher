@@ -84,7 +84,7 @@ class PhonePagesTest {
 
     // The order of the gates.
 
-    private val everyCommand = listOf("apps", "open", "read", "screenshot", "click", "type", "scroll", "tap", "swipe", "back", "home", "recents", "notifications", "pages", "page", "where", "unknown", "")
+    private val everyCommand = listOf("apps", "open", "read", "screenshot", "click", "type", "scroll", "tap", "swipe", "back", "home", "recents", "notifications", "pages", "page", "where", "board", "unknown", "")
 
     /** What [PhoneRequests.admit] consulted, in order, and what came of it. */
     private fun admitted(
@@ -142,6 +142,7 @@ class PhonePagesTest {
             val expected =
                 when (command) {
                     "pages", "page", "where" -> PhoneRequests.Route.Pages
+                    "board" -> PhoneRequests.Route.Board
                     "screenshot" -> PhoneRequests.Route.Screenshot
                     else -> PhoneRequests.Route.Control
                 }

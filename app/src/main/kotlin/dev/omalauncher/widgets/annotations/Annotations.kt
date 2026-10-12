@@ -1,5 +1,6 @@
 package dev.omalauncher.widgets.annotations
 
+import dev.omalauncher.widgets.Cell
 import dev.omalauncher.widgets.layout.PAGE_ASPECT
 import kotlin.math.hypot
 import kotlin.math.roundToInt
@@ -472,31 +473,6 @@ const val NOTE_HEIGHT = 0.16f
 /** A new sticker's size. */
 const val STICKER_SIZE = 0.14f
 
-/** Two notes whose corners are closer than this, across and down, lie exactly on each other as far as the eye can tell. */
-private const val SAME_SPOT = 0.02f
-
-/**
- * Where a new thing [w] by [h] goes so it doesn't lie exactly on another: the first place of a cascade, each a
- * little right of and below the one before, that none of [taken] (top-left corners) is at. The cascade starts
- * again further right when it reaches the bottom; with every place taken, they are gone through again in order.
- */
-fun cascade(
-    taken: List<Pair<Float, Float>>,
-    w: Float,
-    h: Float,
-): Pair<Float, Float> {
-    fun place(k: Int): Pair<Float, Float> {
-        val step = k % CASCADE_STEPS
-        val run = k / CASCADE_STEPS
-        return unit((0.06f + step * 0.04f + run * 0.1f).coerceAtMost(1f - w).coerceAtLeast(0f)) to unit((0.06f + step * 0.05f).coerceAtMost(1f - h).coerceAtLeast(0f))
-    }
-    val places = (0 until CASCADE_STEPS * CASCADE_RUNS).map(::place).distinct()
-    return places.firstOrNull { (x, y) -> taken.none { kotlin.math.abs(it.first - x) < SAME_SPOT && kotlin.math.abs(it.second - y) < SAME_SPOT } } ?: places[taken.size % places.size]
-}
-
-private const val CASCADE_STEPS = 8
-private const val CASCADE_RUNS = 5
-
 /** An id nothing on [page] has, from [stem] and the time. */
 fun freshId(
     page: Annotations,
@@ -513,11 +489,17 @@ fun freshId(
 
 /** What came of an agent asking to leave a note. */
 sealed interface NoteLeft {
-    /** The page with the note on it; [replaced] is the agent's own older note that made way for it, if one did. */
+    /**
+     * The page with the note on it; [replaced] is the agent's own older note that made way for it, if one did.
+     * [cells] are the cells of the page's grid the note lies on, and [clear] whether it lies on nothing else:
+     * false only when the page had no clear place left and it had to overlap ([NOTE_OVERLAPS]).
+     */
     data class Left(
         val page: Annotations,
         val note: StickyNote,
         val replaced: StickyNote?,
+        val cells: Cell,
+        val clear: Boolean,
     ) : NoteLeft
 
     /** Nothing changed, and why. */
@@ -527,37 +509,55 @@ sealed interface NoteLeft {
 }
 
 /**
- * Puts a note from an agent on [page]: plain text of at most [AnnotationLimits.AGENT_TEXT] characters, in the
- * first free place of the [cascade], on top. A page keeps [AnnotationLimits.AGENT_NOTES] of an agent's notes;
- * one more takes the place of the oldest of them, and so does one for a page with no room for another note.
- * Only an agent's own untouched notes are ever replaced: never one the owner wrote, and never one of the
+ * Puts a note from an agent on [page]: plain text of at most [AnnotationLimits.AGENT_TEXT] characters, on top,
+ * in a place of [board] clear of its tiles and of the notes and stickers there ([PageBoard.noteSpot]): near
+ * the cell [near] (column, row) when one is asked for, and never on a tile because it was asked for. Only on a
+ * page with no clear place left does it overlap, and then the answer says so ([NoteLeft.Left.clear]).
+ * A page keeps [AnnotationLimits.AGENT_NOTES] of an agent's notes;
+ * one more takes the place of the oldest of them, and so does one for a page with no room for another note,
+ * or with no clear place for one where taking an own note away makes one. Only an agent's own untouched notes are ever replaced: never one the owner wrote, and never one of the
  * agent's that he has since edited or moved, which is his from then on. A page full of his notes takes none.
  */
 fun leaveAgentNote(
     page: Annotations,
     text: String,
     now: Long,
+    board: PageBoard = PageBoard(),
+    near: Pair<Int, Int>? = null,
 ): NoteLeft {
     if (text.trim().length > AnnotationLimits.AGENT_TEXT) return NoteLeft.Refused("Note too long: keep it to ${AnnotationLimits.AGENT_TEXT} characters. Nothing was written.")
     val clean = noteText(text.trim(), AnnotationLimits.AGENT_TEXT).trim()
     if (clean.isEmpty()) return NoteLeft.Refused("Note text required.")
+    if (near != null && (near.first !in 0 until board.columns || near.second !in 0 until board.rows)) {
+        return NoteLeft.Refused("No such cell: the page's grid is ${board.columns} columns by ${board.rows} rows, counted from 0. Nothing was written.")
+    }
     val own = page.notes.filter { it.author == Author.Agent }.sortedWith(compareBy({ it.at }, { it.z }))
-    val replaced = if (own.size >= AnnotationLimits.AGENT_NOTES || page.notes.size >= AnnotationLimits.NOTES) own.firstOrNull() else null
-    val rest = if (replaced == null) page.notes else page.notes.filter { it.id != replaced.id }
-    if (rest.size >= AnnotationLimits.NOTES) return NoteLeft.Refused("That page has no room for another note. Nothing was written.")
-    val (x, y) = cascade(rest.map { it.x to it.y }, NOTE_WIDTH, NOTE_HEIGHT)
+    val due = if (own.size >= AnnotationLimits.AGENT_NOTES || page.notes.size >= AnnotationLimits.NOTES) own.firstOrNull() else null
+    if (page.notes.size - (if (due == null) 0 else 1) >= AnnotationLimits.NOTES) return NoteLeft.Refused("That page has no room for another note. Nothing was written.")
+
+    fun spot(without: StickyNote?): Spot {
+        val scraps = page.copy(notes = page.notes.filter { it.id != without?.id }).scraps()
+        return if (near == null) board.noteSpot(scraps) else board.noteSpotAt(scraps, near.first, near.second)
+    }
+    // A page with no clear place left has no room either: before anything is overlapped, one of the agent's
+    // own makes way, the oldest whose going leaves the new note a clear place.
+    val (replaced, spot) =
+        spot(due).let { first ->
+            if (!first.compromised || due != null) due to first else own.firstNotNullOfOrNull { old -> spot(old).takeIf { !it.compromised }?.let { old to it } } ?: (null to first)
+        }
+    val rest = page.notes.filter { it.id != replaced?.id }
     val note =
         StickyNote(
             id = freshId(page.copy(notes = rest), "n", now),
-            x = x,
-            y = y,
-            w = NOTE_WIDTH,
-            h = NOTE_HEIGHT,
+            x = spot.box.x,
+            y = spot.box.y,
+            w = spot.box.w,
+            h = spot.box.h,
             text = clean,
             role = NoteRole.Alt,
             z = (rest.maxOfOrNull { it.z } ?: 0) + 1,
             author = Author.Agent,
             at = now,
         ).fitted()
-    return NoteLeft.Left(page.copy(notes = rest + note), note, replaced)
+    return NoteLeft.Left(page.copy(notes = rest + note), note, replaced, board.cells(note.box()), !spot.compromised)
 }
