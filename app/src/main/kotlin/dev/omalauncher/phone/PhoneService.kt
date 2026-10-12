@@ -97,6 +97,19 @@ class PhoneService : AccessibilityService() {
             return node
         } catch (e: Exception) { node.recycle(); throw e }
     }
+    /** The notebook for the page commands. Turning a page is an explicit start of our own home activity, with nothing in the intent. */
+    private fun homeBook() = object : HomeBook {
+        private val notebook = (application as dev.omalauncher.App).runtime.widgets.notebook
+        override val pages get() = if (notebook.opened) notebook.pages.map { it.name } else null
+        override val showing get() = HomeDoor.home?.showing?.let(notebook::position)?.takeIf { it >= 0 }
+        override fun pageOf(widget: String) = notebook.pageOf(widget)?.let(notebook::position)?.takeIf { it >= 0 }
+        override fun placed(widget: String) = notebook.cell(widget) != null
+        override fun show(index: Int) {
+            HomeDoor.ask(notebook.pages[index].id)
+            startActivity(Intent(this@PhoneService, dev.omalauncher.MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            snapshot = ""; signatures = emptyMap()
+        }
+    }
     fun request(input: JSONObject, reply: (JSONObject) -> Unit) {
         try {
             val command = input.getString("command")
@@ -104,6 +117,8 @@ class PhoneService : AccessibilityService() {
             if (command == "stop") { PhoneAccess.stop(this); reply(JSONObject().put("ok", true)); return }
             PhoneAccess.requireAccess(this)
             PhoneControlPolicy.requireNoPendingApproval(dev.omalauncher.assist.AgentTasks.pending.size, command)
+            // Home's pages: read and turned behind the same gates as everything else, and never while an approval waits.
+            if (command in PhonePages.commands) { reply(PhonePages.reply(input, homeBook())); return }
             if (command == "screenshot") {
                 if (Build.VERSION.SDK_INT < 30) error("Screenshots require Android 11 or later.")
                 // The overlay is never in the agent's picture: it comes down first and goes back once the picture is taken.

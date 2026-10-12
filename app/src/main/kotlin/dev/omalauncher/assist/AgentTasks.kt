@@ -11,6 +11,7 @@ import dev.omalauncher.oma.ChatTask
 import dev.omalauncher.oma.ScreenShots
 import dev.omalauncher.oma.TaskStatus
 import dev.omalauncher.oma.ring.OmaRing
+import dev.omalauncher.phone.HomeDoor
 import dev.omalauncher.phone.PhoneBridge
 import java.io.File
 import java.io.BufferedWriter
@@ -41,6 +42,8 @@ object AgentTasks {
     private var restored = false
     /** Which task of the Oma thread the running request is. */
     @Volatile private var taskTime = 0L
+    /** The home page the latest request was sent from, and how long its task ran: a widget made meanwhile lands there. */
+    @Volatile var asked: PageAsk? = null; private set
     /** Far above what a scaled-down screenshot weighs; anything bigger isn't one. */
     private const val MAX_SCREENSHOT_BYTES = 8L * 1024 * 1024
     @Synchronized fun restore(context: Context) {
@@ -63,8 +66,9 @@ object AgentTasks {
     /**
      * [screen] is the screenshot behind the "this screen" chip, and only that: once this returns the file is
      * gone from where the chip kept it. If it throws, nothing was sent and the file is still the caller's.
+     * [page] is the id of the home page he was on when he asked: the one home shows, unless the caller knows better.
      */
-    @Synchronized fun send(context: Context, prompt: String, images: List<String> = emptyList(), screen: File? = null) {
+    @Synchronized fun send(context: Context, prompt: String, images: List<String> = emptyList(), screen: File? = null, page: String? = HomeDoor.home?.showing) {
         restore(context)
         check(prompt.isNotBlank()) { "Type or speak a request first." }
         check(!working) { "An agent is already working. Stop it before starting another task." }
@@ -93,6 +97,7 @@ object AgentTasks {
         val log = ChatLog.of(context)
         val time = System.currentTimeMillis()
         taskTime = time
+        asked = page?.let { PageAsk(it, time) }
         log.begin(ChatTask(time, agent.name, prompt, images, screen = screen != null, newThread = resumed == null))
         working = true; stopping = false; ledger.clear(); published(); answer = ""; label = "${agent.name} is working"
         notify(context)
@@ -180,6 +185,7 @@ object AgentTasks {
                     task.copy(result = answer, status = status, approvals = task.approvals.map { if (it.answer == ApprovalAnswer.Waiting) it.copy(answer = ApprovalAnswer.Unanswered) else it })
                 }
                 process = null; working = false
+                asked = asked?.let { if (it.started == time && it.ended == null) it.copy(ended = System.currentTimeMillis()) else it }
                 context.getSharedPreferences("assistant-result", Context.MODE_PRIVATE).edit()
                     .putString("label", label).putString("answer", answer).putString("thread", thread).apply()
                 File(context.filesDir, "assistant-last-result.txt").writeText(answer)
@@ -260,6 +266,27 @@ object AgentTasks {
         OmaRing.task(working, pending.size, succeeded = label == "Done")
         OmaTiles.refresh(context)
         AgentNotices.task(context, working, label, answer, approvals.size)
+    }
+}
+
+/**
+ * The home page a request was sent from: [page] is its id, [started] when the task began and [ended] when it
+ * finished (null while it runs), by the wall clock that file times use.
+ */
+data class PageAsk(val page: String, val started: Long, val ended: Long? = null) {
+    /**
+     * Whether a widget file first seen at [now], last written at [written], is this task's doing as far as can
+     * be told: written since the task began, and seen while it runs, just after it ended, or shortly after it
+     * started if it was over sooner than that. A file from before the task, or one turning up long after, isn't.
+     */
+    fun covers(written: Long, now: Long): Boolean = written >= started && now >= started && now <= maxOf((ended ?: now) + SEEN_MILLIS, started + SHORTLY_MILLIS)
+
+    companion object {
+        /** How long after a task started a new widget still counts as asked for from that page. */
+        const val SHORTLY_MILLIS = 120_000L
+
+        /** The launcher sees a file a moment after it is written: this long after the task ended still counts. */
+        const val SEEN_MILLIS = 30_000L
     }
 }
 
