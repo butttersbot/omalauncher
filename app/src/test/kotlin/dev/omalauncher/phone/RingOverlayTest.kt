@@ -23,8 +23,12 @@ class RingOverlayTest {
             return accepts
         }
 
-        override fun remove() {
-            removes++
+        /** While true, the window won't come down. */
+        var stuck = false
+
+        override fun remove(): Boolean {
+            if (!stuck) removes++
+            return !stuck
         }
     }
 
@@ -191,6 +195,35 @@ class RingOverlayTest {
         overlay.afterCapture()
         assertEquals(CAPTURE_SETTLE_MILLIS, overlay.beforeCapture())
         assertFalse(window.up)
+    }
+
+    @Test fun aWindowThatWillNotComeDownRefusesTheScreenshot() {
+        val window = FakeWindow()
+        var facts = allGo
+        val overlay = RingOverlay(window) { facts }
+        overlay.sync()
+        window.stuck = true
+        assertEquals("no picture with the ring in it", CAPTURE_REFUSED, overlay.beforeCapture())
+        assertTrue("it is still on the screen, and counted so", overlay.shown)
+        assertEquals(CAPTURE_REFUSED, overlay.beforeCapture())
+        // Wanted down for any other reason, it stays counted as up and is tried again at the next look.
+        facts = allGo.copy(locked = true)
+        overlay.sync()
+        overlay.close()
+        assertTrue(overlay.shown)
+        assertEquals(0, window.removes)
+        window.stuck = false
+        overlay.sync()
+        assertFalse(overlay.shown)
+        assertEquals(1, window.removes)
+        // The refused screenshots left nothing held down: it comes back as soon as the facts allow.
+        facts = allGo
+        overlay.sync()
+        assertTrue(window.up)
+        assertEquals(CAPTURE_SETTLE_MILLIS, overlay.beforeCapture())
+        assertFalse(window.up)
+        overlay.afterCapture()
+        assertTrue(window.up)
     }
 
     @Test fun itIsOutOfTheWayBeforeTheAssistantShowsAndBackAfter() {

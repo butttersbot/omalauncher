@@ -142,6 +142,7 @@ class AssistantPromptActivity : Activity() {
 class AssistantPanel(private val owner: Context, private val dismiss: () -> Unit) : FrameLayout(owner) {
     private val ring = RingView(owner)
     private val column = LinearLayout(owner)
+    private val scroll = ScrollView(owner)
     private val input = EditText(owner)
     private val status = TextView(owner)
     private val output = TextView(owner)
@@ -213,7 +214,13 @@ class AssistantPanel(private val owner: Context, private val dismiss: () -> Unit
     init {
         column.orientation = LinearLayout.VERTICAL
         column.setPadding(dp(26), dp(24), dp(26), dp(28))
-        addView(column, LayoutParams(-1, -2, Gravity.BOTTOM))
+        // No taller than the window: with the keyboard up on a small screen the column scrolls, starting at the words.
+        scroll.addView(column, LayoutParams(-1, -2))
+        // Taps between the controls stop here, so only the dim outside the column closes the screen.
+        scroll.isClickable = true
+        addView(scroll, LayoutParams(-1, -2, Gravity.BOTTOM))
+        // A tap on the dim closes, exactly as Hide does: it never sends, and a screenshot on the chip is discarded on the way out.
+        setOnClickListener { dismiss() }
         // Clear of the system bars, the camera cutout and the keyboard, where the window doesn't already keep clear itself.
         setOnApplyWindowInsetsListener { _, insets ->
             if (Build.VERSION.SDK_INT >= 30) {
@@ -231,7 +238,8 @@ class AssistantPanel(private val owner: Context, private val dismiss: () -> Unit
         input.hint = "What would you like me to do?"
         input.background = null; input.setPadding(0, 0, 0, 0)
         input.typeface = Typeface.MONOSPACE; input.textSize = WORDS_SP
-        input.minLines = 2; input.maxLines = 6
+        // Longer requests scroll inside the field, so the words never push Send off the screen.
+        input.minLines = 2; input.maxLines = 4
         input.inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
         column.addView(input, LinearLayout.LayoutParams(-1, -2))
         chip.orientation = LinearLayout.HORIZONTAL; chip.gravity = Gravity.CENTER_VERTICAL; chip.visibility = GONE
@@ -259,10 +267,9 @@ class AssistantPanel(private val owner: Context, private val dismiss: () -> Unit
         hideButton = button("Hide") { dismiss() }
         output.typeface = Typeface.MONOSPACE; output.textSize = TextSize.Body.value
         resultScroll = ScrollView(owner).apply { addView(output) }
-        column.addView(resultScroll, LinearLayout.LayoutParams(-1, dp(140)).apply { topMargin = dp(8) })
         column.addView(row)
-        // What only shows while there is a task, an approval or a thread to act on.
-        taskRow = LinearLayout(owner)
+        // What only shows while there is a task, an approval or a thread to act on: one under the other, so no label is cut short.
+        taskRow = LinearLayout(owner).apply { orientation = LinearLayout.VERTICAL }
         stopButton = control(taskRow, "Stop current task") { AgentTasks.stop(owner) }
         approvalButton = control(taskRow, "Review approval") { reviewApproval() }
         newThreadButton = control(taskRow, "New thread") {
@@ -270,6 +277,8 @@ class AssistantPanel(private val owner: Context, private val dismiss: () -> Unit
             refresh()
         }
         column.addView(taskRow)
+        // The answer comes last: when the screen is short it is what scrolls out of sight, not the words or Send.
+        column.addView(resultScroll, LinearLayout.LayoutParams(-1, dp(140)).apply { topMargin = dp(8) })
         refresh(); handler.post(update)
     }
     /** Oma is taking a request for as long as this screen is up: the ring listens, wherever it is drawn. */

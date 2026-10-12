@@ -109,6 +109,8 @@ class PhoneService : AccessibilityService() {
                 // The overlay is never in the agent's picture: it comes down first and goes back once the picture is taken.
                 // With no overlay up there is nothing to wait for, and the screenshot is taken at once, as before.
                 val settle = ring.beforeCapture()
+                // It wouldn't come down: no picture is taken with it up.
+                if (settle == CAPTURE_REFUSED) error("Screenshot unavailable: the ring overlay could not be removed. Try again.")
                 fun captured() = lookAgain(ring.afterCapture())
                 val capture = Runnable { try { takeScreenshot(android.view.Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
                     override fun onFailure(code: Int) { captured(); reply(JSONObject().put("ok", false).put("error", "Screenshot unavailable: $code. Protected screens cannot be captured.")) }

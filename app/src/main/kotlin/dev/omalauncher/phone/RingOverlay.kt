@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.graphics.PixelFormat
 import android.os.Build
+import android.util.Log
 import android.view.WindowManager
 import dev.omalauncher.oma.ring.RingView
 
@@ -133,8 +134,12 @@ interface RingWindow {
     /** False if Android refused the window. */
     fun add(): Boolean
 
-    fun remove()
+    /** False if the window could not be taken down and is still on the screen. */
+    fun remove(): Boolean
 }
+
+/** What [RingOverlay.beforeCapture] answers when the window is still up: no screenshot may be taken. */
+const val CAPTURE_REFUSED = -1L
 
 /**
  * Keeps the overlay's window matching [facts]. All of when it shows is here and in [ringOverlayWanted]:
@@ -161,12 +166,17 @@ class RingOverlay(private val window: RingWindow, private val facts: () -> Overl
 
     /**
      * Before the service takes a screenshot for the agent: the window comes down and stays down until
-     * [afterCapture]. Returns how long to wait for it to leave the screen; 0 if it wasn't up.
+     * [afterCapture]. Returns how long to wait for it to leave the screen; 0 if it wasn't up. If it couldn't
+     * be taken down it answers [CAPTURE_REFUSED]: the screenshot must not be taken, and no [afterCapture] follows.
      */
     fun beforeCapture(): Long {
-        captures++
-        if (!shown) return 0L
+        if (!shown) {
+            captures++
+            return 0L
+        }
         hide()
+        if (shown) return CAPTURE_REFUSED
+        captures++
         return CAPTURE_SETTLE_MILLIS
     }
 
@@ -179,10 +189,10 @@ class RingOverlay(private val window: RingWindow, private val facts: () -> Overl
     /** The service is paused, unbound or going away. */
     fun close() = hide()
 
+    /** A window that won't come down still counts as up, so nothing is captured with it and the next look tries again. */
     private fun hide() {
         if (!shown) return
-        window.remove()
-        shown = false
+        shown = !window.remove()
     }
 }
 
@@ -196,8 +206,16 @@ class ServiceRingWindow(private val service: AccessibilityService) : RingWindow 
         view = ring
     }.isSuccess
 
-    override fun remove() {
-        view?.let { runCatching { service.getSystemService(WindowManager::class.java).removeViewImmediate(it) } }
+    override fun remove(): Boolean {
+        val ring = view ?: return true
+        try {
+            // One that never got attached, or already lost its window, isn't on the screen.
+            if (ring.isAttachedToWindow) service.getSystemService(WindowManager::class.java).removeViewImmediate(ring)
+        } catch (e: Exception) {
+            Log.w("ring", "The ring overlay could not be removed", e)
+            if (ring.isAttachedToWindow) return false
+        }
         view = null
+        return true
     }
 }
