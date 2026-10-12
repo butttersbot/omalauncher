@@ -36,3 +36,22 @@ Look at start: riso. Page showing at start: Page 2 (home shows both, label "Page
 
 ### End state
 Home, riso look, Page 2 showing, no menu, overview, app list or drawing tools open. One sticky note left on Page 2 by `oma-phone note` (the harness asks for one per finished task); delete it if unwanted. Nothing typed into any app, no tiles/pages/notes changed, no Android settings changed, nothing installed.
+
+## Oma Dev, the second launcher (2026-10-12, 14:43–14:44 PDT)
+- `git pull --ff-only`: fast-forward db7b921..1df463f (4 files: ON-PHONE-TESTS.md, fold-development README, dev.init.gradle, oma-dev).
+- `install -m755 tools/fold-development/oma-dev /usr/local/bin/oma-dev`: exit 0, no output.
+- `oma-dev --no-open`: PASS, exit 0, 38 s wall clock. Gradle: BUILD SUCCESSFUL in 32s, 42 tasks (16 executed, 26 up to date). No errors; warnings only (experimental aapt2 override, a manifest warning at AndroidManifest.xml:33, Gradle deprecations). Last lines of output, exactly:
+```
+42 actionable tasks: 16 executed, 26 up-to-date
+Configuration cache entry stored.
+Oma Dev installed: versionCode 28, 0.5.0-boss-preview.18. The working launcher was not touched.
+```
+- `oma-dev --status`: exit 0. Exact output:
+```
+Oma Dev is installed: versionCode 28, 0.5.0-boss-preview.18
+```
+- Working launcher untouched: PASS. `dumpsys package` afterwards: dev.omalauncher.boss versionCode 28, 0.5.0-boss-preview.18, lastUpdateTime 2026-10-12 14:27:21 (before this run), same process still running, still the HOME app. dev.omalauncher.dev versionCode 28, firstInstallTime and lastUpdateTime 2026-10-12 14:43:48. This session kept running, so the launcher was not restarted.
+- Oma Dev was not opened (`--no-open`) and has not been tested yet.
+- Note — Oma Dev's versionName is "0.5.0-boss-preview.18", the same as the working launcher's; only the package and label tell them apart.
+- Note — side effect: oma-dev moves the built APK to /root/.cache/oma-dev/oma-dev.apk, so `oma-install --status` now answers "No working-launcher APK found. Run oma-build first." instead of the installed version (it said "Working launcher installed version: 28" just before). As intended for installing, but the status check is lost until the next oma-build.
+- `oma-install` and `oma-try` were not run.
