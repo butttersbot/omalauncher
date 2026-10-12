@@ -189,9 +189,6 @@ internal class TileBounds {
     }
 }
 
-/** The longest a screen takes to shrink back into its tile, in milliseconds, whatever becomes of its animation. */
-private const val LEAVE_LIMIT_MS = 600L
-
 /**
  * A widget's screen growing out of its tile and shrinking back into it (PRD AC-31). One host is composed, at
  * the size it has full screen, from the moment the screen opens until it has shrunk away; [progress] (0 at the

@@ -2,7 +2,14 @@ package dev.omalauncher.ui
 
 import android.graphics.Bitmap
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.core.Animatable
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.key
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import dev.omalauncher.widgets.layout.foldView
+import dev.omalauncher.widgets.layout.posture
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -236,6 +243,9 @@ fun Overview(
     runtime: Runtime,
     state: LauncherState,
 ) {
+    // The page last opened from here, growing out of its tile over home; it outlives the overview by that moment.
+    val opening = remember { PageOpening() }
+    PageOpens(opening)
     if (!state.overviewOpen) return
     val engine = runtime.widgets
     val notebook = engine.notebook
@@ -249,21 +259,43 @@ fun Overview(
     // Where each tile is, for a pinch to find the page under it.
     val bounds = remember { HashMap<String, Rect>() }
     var origin by remember { mutableStateOf(Offset.Zero) }
+    // The overview's own size, which is the window's, and how many pages home shows side by side in it.
+    val room = remember { intArrayOf(0, 0) }
+    val density = LocalDensity.current
+    val window = LocalWindowInfo.current.containerSize
+    val per =
+        with(density) {
+            val width = window.width.toDp().value
+            val height = window.height.toDp().value
+            foldView(width, height, posture(width, height, state.hinge), 0, pages.size).per
+        }
 
     fun open(page: String) {
         val at = notebook.position(page)
         if (at >= 0) state.requestedPage = at
+        // Its still grows from its tile to where the page is on home, if both are there to be seen.
+        val image = runtime.pageStills[page]
+        val tile = bounds[page]?.takeIf { grid.layoutInfo.visibleItemsInfo.any { item -> item.key == page } }
+        opening.page =
+            if (at < 0 || image == null || tile == null || Motion.reduced || room[0] <= 0) {
+                null
+            } else {
+                PageOpened(image, tile.translate(-origin), pagePlace(at, per, room[0].toFloat(), room[1].toFloat()))
+            }
         state.closeOverview()
     }
 
     // Back goes to the page he came from, wherever the pages were moved meanwhile.
     BackHandler { open(state.currentPage) }
-    val shown = remember { Animatable(0f) }
-    LaunchedEffect(Unit) { shown.animateTo(1f) }
+    val shown = rememberAppearing()
     Box(
         Modifier
             .fillMaxSize()
-            .onGloballyPositioned { origin = it.positionInRoot() }
+            .onGloballyPositioned {
+                origin = it.positionInRoot()
+                room[0] = it.size.width
+                room[1] = it.size.height
+            }
             .graphicsLayer {
                 alpha = shown.value
                 val s = 1.06f - 0.06f * shown.value
@@ -451,6 +483,56 @@ fun Overview(
                     MenuItem("cancel") { ask = null }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Where the page at position [at] stands on home, in a window [width] by [height] that shows [per] pages
+ * side by side: all of it, or its half. What grows out of an overview tile grows to here.
+ */
+internal fun pagePlace(
+    at: Int,
+    per: Int,
+    width: Float,
+    height: Float,
+): Rect {
+    val columns = per.coerceAtLeast(1)
+    val column = at.coerceAtLeast(0) % columns
+    return Rect(width * column / columns, 0f, width * (column + 1) / columns, height)
+}
+
+/** A page opened from the overview: its still, the tile it was in and where the page is on home, both in the overview's own space. */
+private class PageOpened(
+    val image: ImageBitmap,
+    val from: Rect,
+    val to: Rect,
+)
+
+@Stable
+private class PageOpening {
+    var page by mutableStateOf<PageOpened?>(null)
+}
+
+/**
+ * The still of a page that was just opened from the overview, growing from its tile to the page's place
+ * on home and fading off it as it gets there. It is only drawn, over home as it comes back: it takes no
+ * touch and no room, and is gone within [LEAVE_LIMIT_MS] whatever happens.
+ */
+@Composable
+private fun PageOpens(opening: PageOpening) {
+    val page = opening.page ?: return
+    key(page) {
+        val left = rememberLeaving { if (opening.page === page) opening.page = null }
+        Canvas(Modifier.fillMaxSize()) {
+            val at = growRect(page.from, page.to, 1f - left.value)
+            if (at.width < 1f || at.height < 1f) return@Canvas
+            drawImage(
+                page.image,
+                dstOffset = IntOffset(at.left.roundToInt(), at.top.roundToInt()),
+                dstSize = IntSize(at.width.roundToInt(), at.height.roundToInt()),
+                alpha = appearAlpha(left.value),
+            )
         }
     }
 }

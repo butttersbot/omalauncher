@@ -9,14 +9,26 @@ import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.AnimationVector1D
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Home's motion, in one place: what grows out of the thing that was touched and goes back into it moves
@@ -25,8 +37,8 @@ import androidx.compose.ui.unit.LayoutDirection
  * nowhere else, so they feel alike and are tuned here.
  */
 object Motion {
-    /** How stiff the spring is: a tile-sized thing settles in about a quarter of a second. */
-    const val STIFFNESS = 600f
+    /** How stiff the spring is: what it moves is all but there in a fifth of a second. */
+    const val STIFFNESS = 1000f
 
     /** Critically damped: nothing overshoots, so a size or a clip never passes where it is going. */
     const val DAMPING = 1f
@@ -141,6 +153,90 @@ internal fun growTilt(
     tilt: Float,
     t: Float,
 ): Float = between(tilt, 0f, t)
+
+/** How small something starts that eases in where it stands: a menu, a bar, a page. */
+internal const val APPEAR_SCALE = 0.85f
+
+/** How much of the way in something is, by which it is fully opaque; the rest of the way it only grows. */
+internal const val APPEAR_IN_BY = 0.5f
+
+/** The opacity of something easing in at [t] of the way, or easing out at [t] left of it. */
+internal fun appearAlpha(t: Float): Float = (t / APPEAR_IN_BY).coerceIn(0f, 1f)
+
+/** The longest something takes to ease out, in milliseconds, whatever becomes of its animation: then it is gone. */
+internal const val LEAVE_LIMIT_MS = 600L
+
+/**
+ * Where [point] is along something that starts at [start] and is [length] long, as the fraction a layer is
+ * scaled about: 0 at its start, 1 at its end, and beyond either for a point outside it. The middle for
+ * something with no length.
+ */
+internal fun pivotFraction(
+    point: Float,
+    start: Float,
+    length: Float,
+): Float = if (length <= 0f) 0.5f else (point - start) / length
+
+/** The point a layer of [size] at [topLeft] is scaled about for it to grow out of [point], which is in the space [topLeft] is in. */
+internal fun pivotAt(
+    point: Offset,
+    topLeft: Offset,
+    size: Size,
+): TransformOrigin = TransformOrigin(pivotFraction(point.x, topLeft.x, size.width), pivotFraction(point.y, topLeft.y, size.height))
+
+/**
+ * How far in something is that eases in as it first shows: 0 then, 1 at rest, along the shared spring.
+ * With the system's animations off it is at rest from the start. A new [key] eases in again.
+ */
+@Composable
+internal fun rememberAppearing(key: Any? = Unit): Animatable<Float, AnimationVector1D> {
+    val shown = remember(key) { Animatable(if (Motion.reduced) 1f else 0f) }
+    LaunchedEffect(shown) { shown.moveTo(1f) }
+    return shown
+}
+
+/**
+ * How much is left of something that eases out before it goes: 1 at first, 0 as [onGone] is called. That is
+ * called within [LEAVE_LIMIT_MS] by the clock, whether or not frames were drawn meanwhile.
+ */
+@Composable
+internal fun rememberLeaving(onGone: () -> Unit): Animatable<Float, AnimationVector1D> {
+    val left = remember { Animatable(1f) }
+    val gone by rememberUpdatedState(onGone)
+    LaunchedEffect(left) {
+        withTimeoutOrNull(LEAVE_LIMIT_MS) { left.moveTo(0f) }
+        gone()
+    }
+    return left
+}
+
+/**
+ * Eases in (or out) as [shown] goes from 0 to 1 (or back): scaled from [from] about [pivot], and faded with
+ * [fade]. It is one layer's scale and opacity: what it is on is measured and placed as it is at rest, and is
+ * touched where it is drawn. At rest nothing is set.
+ */
+internal fun Modifier.appears(
+    shown: () -> Float,
+    from: Float = APPEAR_SCALE,
+    fade: Boolean = true,
+    pivot: GraphicsLayerScope.() -> TransformOrigin = { TransformOrigin.Center },
+): Modifier =
+    graphicsLayer {
+        val t = shown()
+        if (t >= 1f) return@graphicsLayer
+        if (fade) alpha = appearAlpha(t)
+        val scale = between(from, 1f, t)
+        scaleX = scale
+        scaleY = scale
+        transformOrigin = pivot()
+    }
+
+/** Fades with [shown], from nothing at 0 to all there by [APPEAR_IN_BY]; at rest nothing is set. */
+internal fun Modifier.fades(shown: () -> Float): Modifier =
+    graphicsLayer {
+        val t = shown()
+        if (t < 1f) alpha = appearAlpha(t)
+    }
 
 /**
  * A rounded rectangle anywhere inside what it clips, not only around all of it: a layer clipped to this

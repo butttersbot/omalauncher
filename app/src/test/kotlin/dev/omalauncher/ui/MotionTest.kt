@@ -106,6 +106,100 @@ class MotionTest {
         assertTrue(Motion.FADE_MS in 1..300)
     }
 
+    @Test fun somethingEasingInIsOpaqueHalfWayAndOnlyGrowsAfter() {
+        assertEquals(0f, appearAlpha(0f), 0f)
+        assertEquals(0.5f, appearAlpha(APPEAR_IN_BY / 2f), 1e-6f)
+        assertEquals(1f, appearAlpha(APPEAR_IN_BY), 0f)
+        assertEquals(1f, appearAlpha(1f), 0f)
+        assertEquals(0f, appearAlpha(-0.3f), 0f)
+        assertTrue(APPEAR_SCALE > 0f && APPEAR_SCALE < 1f)
+    }
+
+    @Test fun aLayerGrowsOutOfThePointThatWasTouched() {
+        // Inside it: the fraction of the way across.
+        assertEquals(0.25f, pivotFraction(150f, 100f, 200f), 0f)
+        assertEquals(0f, pivotFraction(100f, 100f, 200f), 0f)
+        assertEquals(1f, pivotFraction(300f, 100f, 200f), 0f)
+        // Outside it, as a touch on the page is outside the menu in the middle of the window: beyond 0 or 1.
+        assertEquals(-0.5f, pivotFraction(0f, 100f, 200f), 0f)
+        assertEquals(2f, pivotFraction(500f, 100f, 200f), 0f)
+        // Nothing to divide by before it is measured.
+        assertEquals(0.5f, pivotFraction(150f, 100f, 0f), 0f)
+        val origin = pivotAt(androidx.compose.ui.geometry.Offset(150f, 500f), androidx.compose.ui.geometry.Offset(100f, 400f), androidx.compose.ui.geometry.Size(200f, 400f))
+        assertEquals(0.25f, origin.pivotFractionX, 0f)
+        assertEquals(0.25f, origin.pivotFractionY, 0f)
+    }
+
+    @Test fun aFolderOpensAsWideAsItsTile() {
+        assertEquals(0.25f, folderScale(panelWidth = 800, tileWidth = 200), 0f)
+        // Never from a dot, never from larger than itself, and where it stands without a tile.
+        assertEquals(0.2f, folderScale(panelWidth = 2000, tileWidth = 100), 0f)
+        assertEquals(1f, folderScale(panelWidth = 300, tileWidth = 400), 0f)
+        assertEquals(0.8f, folderScale(panelWidth = 800, tileWidth = null), 0f)
+        assertEquals(0.8f, folderScale(panelWidth = 0, tileWidth = 200), 0f)
+    }
+
+    @Test fun aPageOpenedFromTheOverviewGrowsToItsPlaceOnHome() {
+        // Folded: every page is the whole window.
+        assertEquals(Rect(0f, 0f, 1080f, 2300f), pagePlace(0, 1, 1080f, 2300f))
+        assertEquals(Rect(0f, 0f, 1080f, 2300f), pagePlace(3, 1, 1080f, 2300f))
+        // Unfolded: fixed neighbours, the even positions on the left half and the odd ones on the right.
+        assertEquals(Rect(0f, 0f, 906f, 2176f), pagePlace(0, 2, 1812f, 2176f))
+        assertEquals(Rect(906f, 0f, 1812f, 2176f), pagePlace(1, 2, 1812f, 2176f))
+        assertEquals(Rect(0f, 0f, 906f, 2176f), pagePlace(4, 2, 1812f, 2176f))
+        // Nothing asks with none or less; if something did, it is the whole window.
+        assertEquals(Rect(0f, 0f, 1812f, 2176f), pagePlace(1, 0, 1812f, 2176f))
+    }
+
+    @Test fun onlyTheScrapTheMenuJustAddedEasesInAndOnlyOnce() {
+        val arrivals = Arrivals()
+        val from = androidx.compose.ui.geometry.Offset(400f, 900f)
+        assertEquals(null, arrivals.take("n1", now = 0))
+        arrivals.expect("n2", from, now = 1000)
+        // Every other scrap on the page is simply there.
+        assertEquals(null, arrivals.take("n1", now = 1010))
+        assertEquals(from, arrivals.take("n2", now = 1010)?.from)
+        // The page composed again: it doesn't ease in twice.
+        assertEquals(null, arrivals.take("n2", now = 1020))
+        // One that only shows much later (its page wasn't showing) is simply there, and not owed an entrance after.
+        arrivals.expect("n3", null, now = 5000)
+        assertEquals(null, arrivals.take("n3", now = 60_000))
+        assertEquals(null, arrivals.take("n3", now = 5010))
+        // Without a place in the menu it still eases in, where it stands.
+        arrivals.expect("n4", null, now = 7000)
+        val arrival = arrivals.take("n4", now = 7001)
+        assertTrue(arrival != null && arrival.from == null)
+    }
+
+    private fun note(id: String) = dev.omalauncher.widgets.annotations.Scrap.Note(dev.omalauncher.widgets.annotations.StickyNote(id, 0.1f, 0.1f, 0.3f, 0.2f, "milk"))
+
+    @Test fun whatIsTakenOffAPageShrinksAwayOnce() {
+        val leaving = ScrapsLeaving()
+        val a = note("a")
+        val b = note("b")
+        // What is there when the page first shows is not leaving, and neither is what is added.
+        leaving.see(listOf(a), still = false)
+        assertTrue(leaving.none)
+        leaving.see(listOf(a, b), still = false)
+        assertTrue(leaving.none)
+        // Taken off: it is what shrinks away, as it last was.
+        leaving.see(listOf(b), still = false)
+        assertEquals(listOf(a), leaving.left)
+        // Composed again meanwhile: still the one, not twice.
+        leaving.see(listOf(b), still = false)
+        assertEquals(listOf(a), leaving.left)
+        leaving.gone("a")
+        assertTrue(leaving.none)
+        // Put back while it shrinks: it is on the page, not leaving it.
+        leaving.see(emptyList(), still = false)
+        assertEquals(listOf(b), leaving.left)
+        leaving.see(listOf(b), still = false)
+        assertTrue(leaving.none)
+        // With the system's animations off, nothing shrinks away.
+        leaving.see(emptyList(), still = true)
+        assertTrue(leaving.none)
+    }
+
     @Test fun aTilesPlaceIsItsNewestTiles() {
         val tiles = TileBounds()
         val first = Any()

@@ -62,6 +62,11 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.toOffset
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import androidx.compose.animation.core.Animatable
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 
 /**
  * The home grid's pixel geometry on screen: [GridGeometry], which has the arithmetic, in Compose's
@@ -247,7 +252,8 @@ internal fun HomeGrid(
     onSelect: (String?) -> Unit,
     render: @Composable (HomeItem, Modifier, Boolean) -> Unit,
     actions: @Composable (HomeItem) -> Unit,
-    onLongPressEmpty: () -> Unit,
+    /** A long press on empty space, at this point in the window; null if where the grid is isn't known. */
+    onLongPressEmpty: (Offset?) -> Unit,
     onNoRoom: (HomeItem) -> Unit,
     onMove: (HomeItem, String) -> Unit,
     /** A press landed on this page: of two side by side, it is the one folding shows. */
@@ -281,8 +287,12 @@ internal fun HomeGrid(
     onDrawerDrag: (Float) -> Unit = {},
     /** That drag let go, at this speed in px/s, negative upwards. */
     onDrawerEnd: (Float) -> Unit = {},
+    /** The note or sticker the menu just put on a page, which eases in from where it was picked. */
+    arrivals: Arrivals? = null,
 ) {
     val haptics = LocalHapticFeedback.current
+    // Where the grid is in the window, for what grows out of a touch on it. Only listened to.
+    val gridAt = remember { arrayOfNulls<LayoutCoordinates>(1) }
     val scope = rememberCoroutineScope()
     // Who each touch belongs to: every handler below asks it rather than deciding alone.
     val arbiter = remember { GestureArbiter() }
@@ -327,6 +337,7 @@ internal fun HomeGrid(
         Box(
             Modifier
                 .fillMaxSize()
+                .onGloballyPositioned { gridAt[0] = it }
                 // Watches every finger without taking any, and tells the arbiter how many are down and how they move.
                 // Only a pinch is taken, and then from everything below: the pager, the tiles and a widget's own drag;
                 // and a drag upwards that the arbiter gives the app list, which follows the finger from then on.
@@ -742,7 +753,7 @@ internal fun HomeGrid(
                         if (!awaitLongPress(down.id, start)) return@awaitEachGesture
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         if (hit == null) {
-                            onLongPressEmpty()
+                            onLongPressEmpty(gridAt[0]?.takeIf { it.isAttached }?.localToWindow(start))
                             return@awaitEachGesture
                         }
                         // Lifted: select it, and let the same finger drag it without letting go.
@@ -763,7 +774,7 @@ internal fun HomeGrid(
                 Row(Modifier.fillMaxSize()) {
                     for (page in pagesAt(slot, pages, grid)) {
                         Box(Modifier.width(with(density) { grid.width.toDp() }).fillMaxHeight()) {
-                            if (page == null) PlusPage(grid, onAddPage) else TiledPage(page, itemsOn(page), layout, grid, arrange, selected, render, actions, onNoRoom, ready, captures, marks)
+                            if (page == null) PlusPage(grid, onAddPage) else TiledPage(page, itemsOn(page), layout, grid, arrange, selected, render, actions, onNoRoom, ready, captures, marks, arrivals)
                         }
                     }
                 }
@@ -771,9 +782,34 @@ internal fun HomeGrid(
 
             // The open folder, over the page it's on.
             val openFolder = arrange.folder?.let { key -> pagesAt(pager.currentPage, pages, grid).firstNotNullOfOrNull { p -> p?.let { itemsOn(it).firstOrNull { item -> item.key == key } as? Folder } } }
+            // It opens out of its tile and closes back into it: how far open it is, and what is left of it as it closes.
+            val folderShown = remember { Animatable(0f) }
+            val folderLeft = remember { FolderLeft() }
+            LaunchedEffect(openFolder?.key) {
+                if (openFolder != null) {
+                    folderLeft.gone = false
+                    folderShown.moveTo(1f)
+                } else {
+                    // By the clock, so a launcher that stopped drawing mid-way has let go of it when it is back.
+                    withTimeoutOrNull(LEAVE_LIMIT_MS) { folderShown.moveTo(0f) }
+                    folderShown.snapTo(0f)
+                    folderLeft.gone = true
+                }
+            }
             if (openFolder != null) {
                 val fg = FolderGeometry(width * per, grid.height, grid.cellW, grid.cellH, gap, openFolder.apps.size, density)
-                FolderPanel(openFolder, fg, render, arrange.carry?.item?.key)
+                // Its tile, on whichever of the pages showing it is on.
+                val shown = pagesAt(pager.currentPage, pages, grid)
+                val side = sideOf(openFolder.key, shown)
+                val tile = shown.getOrNull(side)?.let { p -> placedOn(p, grid).firstOrNull { it.first.key == openFolder.key } }?.let { grid.screen(grid.rect(it.second), side) }
+                SideEffect {
+                    folderLeft.panel = fg.panel
+                    folderLeft.tile = tile
+                }
+                FolderPanel(openFolder, fg, render, arrange.carry?.item?.key, { folderShown.value }, tile)
+            } else if (!folderLeft.gone && !Motion.reduced) {
+                // Closed: its apps are gone at once, and take no touch; its panel goes back into the tile.
+                folderLeft.panel?.let { panel -> FolderClosing(panel, { folderShown.value }, folderLeft.tile) }
             }
 
             // The stroke under the finger, over the pages, redrawn by itself as it grows.
@@ -858,10 +894,13 @@ private fun PlusPage(
 ) {
     val density = LocalDensity.current
     val r = grid.page
+    // Eases in where it stands, as the half it fills comes to be empty or comes into view.
+    val shown = rememberAppearing()
     Box(
         Modifier
             .offset { IntOffset(r.left, r.top) }
             .size(with(density) { r.width.toDp() }, with(density) { r.height.toDp() })
+            .appears({ shown.value }, PAGE_APPEAR_SCALE)
             .padding(with(density) { grid.gap.toDp() })
             .framed(Pack.hair, Pack.pageLine.copy(alpha = 0.5f))
             .clickable(onClick = onAdd),
@@ -870,6 +909,12 @@ private fun PlusPage(
         BasicText("+ new page", style = Pack.body(color = Pack.pageMuted))
     }
 }
+
+/** How small a page starts that eases in: the "+ new page" half, and a page offered to a tile being carried. */
+private const val PAGE_APPEAR_SCALE = 0.94f
+
+/** How small the selected tile's frame and handles start as they ease in around it. */
+private const val FRAME_APPEAR_SCALE = 0.94f
 
 /** How long a carried tile rests against a side edge before the page turns. */
 private const val PAGE_TURN_MS = 600L
@@ -895,16 +940,20 @@ private fun TiledPage(
     ready: Boolean,
     captures: PageCaptures?,
     marks: Marks?,
+    arrivals: Arrivals?,
 ) {
     val density = LocalDensity.current
     val carried = arrange.carry?.item?.key
+    // A page offered to the tile being carried eases in; every other page is simply there.
+    val offered = remember { arrange.offered == page }
+    val pageShown = if (offered) rememberAppearing() else null
     // What is free on the page: read from its file the first time the page shows.
     val book = marks?.book
     LaunchedEffect(book, page) { book?.open(page) }
     LaunchedEffect(items.map { it.key }, grid.cols, grid.rows) {
         layout.place(items, grid.cols, grid.rows, page).forEach(onNoRoom)
     }
-    BoxWithConstraints(Modifier.fillMaxSize().captured(page, captures)) {
+    BoxWithConstraints(Modifier.fillMaxSize().then(if (pageShown != null) Modifier.appears({ pageShown.value }, PAGE_APPEAR_SCALE) else Modifier).captured(page, captures)) {
         val pageWidth = constraints.maxWidth
         if (selected != null || (carried != null && arrange.folder == null)) {
             // Grid guides while arranging; not while sorting an open folder, which covers the grid.
@@ -949,7 +998,7 @@ private fun TiledPage(
         }
         // Over the tiles, inside what is caught for the overview: the page's notes and stickers, and over those its
         // ink, each in a scope of its own so a new stroke or a note being dragged recomposes no tile.
-        if (book != null && marks != null) PageScraps(book, marks, page, grid.page, pageWidth, constraints.maxHeight)
+        if (book != null && marks != null) PageScraps(book, marks, page, grid.page, pageWidth, constraints.maxHeight, arrivals)
         if (book != null) PageInk(book, page, grid.page)
         // Selection frame: handles on each edge for widgets, plus the action bar.
         val sel = items.firstOrNull { it.key == selected }
@@ -958,7 +1007,9 @@ private fun TiledPage(
             val r = grid.rect(selCell)
             val handle = with(density) { 14.dp.roundToPx() }
             if (sel.resizable) {
-                Canvas(Modifier.fillMaxSize().zIndex(2f)) {
+                // The frame and its handles ease in from the tile; they are only drawn, and are grabbed by the cell's rectangle.
+                val frameShown = rememberAppearing(sel.key)
+                Canvas(Modifier.fillMaxSize().zIndex(2f).appears({ frameShown.value }, FRAME_APPEAR_SCALE) { pivotAt(r.center.toOffset(), Offset.Zero, size) }) {
                     drawRect(
                         Pack.accent,
                         topLeft = Offset(r.left.toFloat(), r.top.toFloat()),
@@ -999,11 +1050,14 @@ private fun TiledPage(
                         )
                     }
                 DisposableEffect(Unit) { onDispose { arrange.bar = null } }
+                // The bar eases in from the edge of the tile it stands at. Its place and size, which its taps are found by, are as at rest.
+                val barShown = rememberAppearing(sel.key)
                 Box(
                     Modifier
                         .zIndex(3f)
                         .offset { at }
-                        .onSizeChanged { arrange.bar = IntRect(at, it) },
+                        .onSizeChanged { arrange.bar = IntRect(at, it) }
+                        .appears({ barShown.value }) { TransformOrigin(0f, if (barAbove) 1f else 0f) },
                 ) { actions(sel) }
             }
         }

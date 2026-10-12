@@ -1,8 +1,6 @@
 package dev.omalauncher.ui
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -281,8 +279,12 @@ fun HomeScreen(
         }
     }
 
-    fun openMenu(item: HomeItem?) {
+    fun openMenu(
+        item: HomeItem?,
+        from: Offset? = null,
+    ) {
         menuFor = item
+        state.homeMenuFrom = from
         state.homeMenuOpen = true
     }
 
@@ -516,9 +518,10 @@ fun HomeScreen(
                 pinching[0] = false
                 // Not over a stand-in page: there is no notebook to show until it is read.
                 if (settlesIntoOverview(scale) && engine.notebook.opened) state.openOverview()
-                scope.launch { pinch.animateTo(1f, spring(stiffness = Spring.StiffnessMediumLow)) }
+                scope.launch { pinch.moveTo(1f) }
             },
-            onLongPressEmpty = { openMenu(null) },
+            onLongPressEmpty = { at -> openMenu(null, at) },
+            arrivals = state.arrivals,
             onNoRoom = { item -> showPage = engine.moveToFreePage(item) },
             onMove = { item, page ->
                 engine.moveToPage(item, page)

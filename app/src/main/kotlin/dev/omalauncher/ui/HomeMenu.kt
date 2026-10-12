@@ -19,6 +19,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.unit.dp
 import dev.omalauncher.Runtime
 import dev.omalauncher.linux.newAppCommand
@@ -75,14 +80,19 @@ fun HomeMenu(
     val book = state.marks.book
     // "New sticker" turns the menu into the stickers to pick from, until it closes.
     var stickers by remember { mutableStateOf(false) }
-    Menu(onDismiss = { state.homeMenuOpen = false }) {
+    // Where "new sticky note" is in the window: the note comes out of it.
+    val noteFrom = remember { arrayOfNulls<Offset>(1) }
+    Menu(onDismiss = { state.homeMenuOpen = false }, from = { state.homeMenuFrom }) {
         if (book != null && stickers) {
             MenuTitle("stick on this page")
-            StickerPicker { kind ->
+            StickerPicker { kind, from ->
                 state.homeMenuOpen = false
                 state.editing = null
                 // Selected as it lands, so it can be dragged, resized, turned or taken off again at once.
-                book.addSticker(page, kind)?.let { state.marks.selected = Chosen(page, it) }
+                book.addSticker(page, kind)?.let {
+                    state.arrivals.expect(it, from)
+                    state.marks.selected = Chosen(page, it)
+                }
             }
             return@Menu
         }
@@ -93,10 +103,13 @@ fun HomeMenu(
                 if (book.takes(page)) state.startDrawing()
             }
             // Lands on the page in the next free place of a cascade, with its text open to type.
-            MenuItem("new sticky note") {
+            MenuItem("new sticky note", modifier = Modifier.onGloballyPositioned { noteFrom[0] = it.boundsInWindow().center }) {
                 state.homeMenuOpen = false
                 state.editing = null
-                book.addNote(page)?.let { state.marks.editing = Chosen(page, it) }
+                book.addNote(page)?.let {
+                    state.arrivals.expect(it, noteFrom[0])
+                    state.marks.editing = Chosen(page, it)
+                }
             }
             MenuItem("new sticker") { if (book.takes(page)) stickers = true else state.homeMenuOpen = false }
         }
@@ -136,14 +149,24 @@ fun HomeMenu(
     }
 }
 
+/**
+ * A menu over everything, in the middle of the window. With [from], it grows out of that point in the
+ * window (the touch that asked for it) as its scrim fades in: its panel is laid out where it ends up and
+ * only its layer is scaled. Without one it is simply there.
+ */
 @Composable
 internal fun Menu(
     onDismiss: () -> Unit,
+    from: (() -> Offset?)? = null,
     content: @Composable () -> Unit,
 ) {
+    val shown = if (from != null) rememberAppearing() else null
+    // Where the panel is in the window, for the point it grows out of.
+    val at = remember { floatArrayOf(0f, 0f) }
     Box(
         Modifier
             .fillMaxSize()
+            .then(if (shown != null) Modifier.fades { shown.value } else Modifier)
             .background(Pack.overlay)
             .clickable(onClick = onDismiss)
             // A menu with a field in it stays above the keyboard.
@@ -153,21 +176,38 @@ internal fun Menu(
         Column(
             Modifier
                 .widthIn(min = 240.dp, max = 360.dp)
-                .panel(20.dp)
+                .then(
+                    if (shown != null && from != null) {
+                        Modifier
+                            .onGloballyPositioned {
+                                val origin = it.positionInWindow()
+                                at[0] = origin.x
+                                at[1] = origin.y
+                            }.appears({ shown.value }, MENU_APPEAR_SCALE, fade = false) {
+                                from()?.let { touch -> pivotAt(touch, Offset(at[0], at[1]), size) } ?: TransformOrigin.Center
+                            }
+                    } else {
+                        Modifier
+                    },
+                ).panel(20.dp)
                 .clickable(enabled = false) {}
                 .padding(8.dp),
         ) { content() }
     }
 }
 
+/** How small the home menu starts as it grows out of the touch. */
+private const val MENU_APPEAR_SCALE = 0.6f
+
 @Composable
 internal fun MenuItem(
     label: String,
     color: androidx.compose.ui.graphics.Color = Pack.foreground,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     Box(
-        Modifier
+        modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp),
