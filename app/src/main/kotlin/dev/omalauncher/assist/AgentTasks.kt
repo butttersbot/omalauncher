@@ -11,7 +11,10 @@ import java.io.BufferedWriter
 import org.json.JSONObject
 import kotlin.concurrent.thread
 
-/** A single background request stays alive with the existing Linux foreground service. */
+/**
+ * A single background request stays alive with the existing Linux foreground service.
+ * Claude requests continue one conversation, resumed by session id, until [newThread].
+ */
 object AgentTasks {
     @Volatile var working = false; private set
     @Volatile var answer = ""; private set
@@ -19,6 +22,8 @@ object AgentTasks {
     @Volatile private var process: Process? = null
     @Volatile private var stopping = false
     @Volatile var approvals: List<AgentApproval> = emptyList(); private set
+    /** The Claude session that the next request follows up on. */
+    @Volatile var thread: String? = null; private set
     private var inputWriter: BufferedWriter? = null
     private var restored = false
     @Synchronized fun restore(context: Context) {
@@ -27,6 +32,15 @@ object AgentTasks {
         val saved = context.getSharedPreferences("assistant-result", Context.MODE_PRIVATE)
         answer = saved.getString("answer", "") ?: ""
         label = saved.getString("label", "Ready") ?: "Ready"
+        thread = saved.getString("thread", null)
+    }
+    @Synchronized fun newThread(context: Context) {
+        restore(context)
+        check(!working) { "An agent is still working. Stop it before starting a new thread." }
+        thread = null; answer = ""; label = "Ready"
+        context.getSharedPreferences("assistant-result", Context.MODE_PRIVATE).edit()
+            .remove("thread").putString("label", label).putString("answer", answer).apply()
+        notify(context)
     }
     @Synchronized fun send(context: Context, prompt: String, images: List<String> = emptyList()) {
         restore(context)
@@ -37,7 +51,8 @@ object AgentTasks {
         val agent = runtime.agents.default ?: error("Install and sign in to an agent in Omalauncher first.")
         val imagePrompt = if (agent.bin == "claude" && images.isNotEmpty()) prompt + "\n\nRead these attached images before answering:\n" + images.joinToString("\n") else prompt
         val fullPrompt = imagePrompt + "\n\n" + PhoneBridge.INSTRUCTIONS + "\nAndroid build tools, when installed, are in /opt/android-sdk. Run oma-build-check to check the toolchain. Use the approval UI for blocked tools; never ask for blanket permission bypass.\n"
-        val command = if (agent.bin == "claude") claudeStreamCommand() else backgroundAgentCommand(agent.bin, fullPrompt, images)
+        val resumed = thread.takeIf { agent.bin == "claude" }
+        val command = if (agent.bin == "claude") claudeStreamCommand(resumed) else backgroundAgentCommand(agent.bin, fullPrompt, images)
         working = true; stopping = false; approvals = emptyList(); answer = ""; label = "${agent.name} is working"
         notify(context)
         thread(name = "assistant-agent", isDaemon = true) {
@@ -50,11 +65,16 @@ object AgentTasks {
                     writeEvent(JSONObject().put("type", "control_request").put("request_id", "oma-init")
                         .put("request", JSONObject().put("subtype", "initialize")))
                     var sent = false
+                    var session: String? = null
+                    var lost = false
                     child.inputStream.bufferedReader().use { reader ->
                         while (true) {
                             val line = reader.readLine() ?: break
                             val event = runCatching { JSONObject(line) }.getOrNull()
-                            if (event == null) continue
+                            if (event == null) {
+                                if (resumed != null && line.startsWith("No conversation found")) lost = true
+                                continue
+                            }
                             if (!sent && event.optString("type") == "control_response" && event.optJSONObject("response")?.optString("request_id") == "oma-init") {
                                 check(event.getJSONObject("response").optString("subtype") != "error") { "Agent initialization failed" }
                                 writeEvent(ClaudeProtocol.user(fullPrompt)); sent = true
@@ -79,7 +99,10 @@ object AgentTasks {
                                         }
                                     }
                                 }
+                                "system" -> if (event.optString("subtype") == "init") session = event.optString("session_id").ifBlank { null }
                                 "result" -> {
+                                    // A failed first request may leave no conversation to return to.
+                                    if (!event.optBoolean("is_error") || resumed != null) thread = event.optString("session_id").ifBlank { thread }
                                     val result = event.optString("result")
                                     if (result.isNotBlank()) answer = result.takeLast(40_000)
                                     if (event.optBoolean("is_error")) {
@@ -90,6 +113,10 @@ object AgentTasks {
                             }
                         }
                     }
+                    if (lost) {
+                        thread = null
+                        answer = "The earlier thread is no longer available. Send your request again to start a new one."
+                    } else if (stopping && session != null) thread = session // A stopped request can still be followed up.
                 } else {
                     child.outputStream.close()
                     child.inputStream.bufferedReader().forEachLine { answer = (answer + it + "\n").takeLast(40_000) }
@@ -102,7 +129,7 @@ object AgentTasks {
                 synchronized(this) { inputWriter?.runCatching { close() }; inputWriter = null; approvals = emptyList() }
                 process = null; working = false
                 context.getSharedPreferences("assistant-result", Context.MODE_PRIVATE).edit()
-                    .putString("label", label).putString("answer", answer).apply()
+                    .putString("label", label).putString("answer", answer).putString("thread", thread).apply()
                 File(context.filesDir, "assistant-last-result.txt").writeText(answer)
                 notify(context)
             }
@@ -143,10 +170,13 @@ object AgentTasks {
     }
 }
 
-fun claudeStreamCommand(): String = "claude -p --input-format stream-json --output-format stream-json --verbose --permission-prompt-tool stdio --allowedTools ${shellQuote("Bash(oma-phone *)")} Read"
+private val SESSION_ID = Regex("[0-9a-fA-F-]{36}")
+
+/** [resume] is the session id of the conversation to continue; anything else starts a new one. */
+fun claudeStreamCommand(resume: String? = null): String = "claude -p " + (resume?.takeIf(SESSION_ID::matches)?.let { "--resume $it " } ?: "") + "--input-format stream-json --output-format stream-json --verbose --permission-mode auto --permission-prompt-tool stdio --allowedTools ${shellQuote("Bash(oma-phone *)")} Read"
 
 fun backgroundAgentCommand(agent: String, prompt: String, images: List<String> = emptyList()): String = when (agent) {
-    "claude" -> "claude -p --allowedTools ${shellQuote("Bash(oma-phone *)")} Read -- ${shellQuote(prompt)} < /dev/null"
+    "claude" -> "claude -p --permission-mode auto --allowedTools ${shellQuote("Bash(oma-phone *)")} Read -- ${shellQuote(prompt)} < /dev/null"
     "codex" -> "codex exec --skip-git-repo-check " + images.joinToString(" ") { "--image ${shellQuote(it)}" }.let { if (it.isBlank()) "" else "$it " } + "-- ${shellQuote(prompt)} < /dev/null"
     else -> error("The assistant currently supports Claude Code and Codex. Choose one in Omalauncher.")
 }
