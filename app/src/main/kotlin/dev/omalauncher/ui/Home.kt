@@ -61,6 +61,10 @@ import dev.omalauncher.widgets.fixDependenciesCommand
 import dev.omalauncher.widgets.layout.foldView
 import dev.omalauncher.widgets.layout.pagesAt
 import dev.omalauncher.widgets.layout.posture
+import dev.omalauncher.widgets.layout.slideUp
+import dev.omalauncher.widgets.render.LocalTypingAt
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.geometry.Rect
 import dev.omalauncher.widgets.layout.wallpaperOffset
 
 /** The band above the pages that names the page showing; the page's room starts below it. */
@@ -206,6 +210,10 @@ fun HomeScreen(
         snapshotFlow { imeTarget.getBottom(density) == 0 && terminals.keyboard?.wanted == true }.collect { terminals.keyboardLeaving = it }
     }
     var origin by remember { mutableStateOf(Offset.Zero) }
+    // The widget input that has the keyboard, where it is with the page not slid up; and how far the page is slid for it.
+    var typingAt by remember { mutableStateOf<Rect?>(null) }
+    val slid = remember { floatArrayOf(0f) }
+    val reportTyping = remember { { at: Rect? -> typingAt = at?.translate(0f, slid[0]) } }
     val extraKeys = terminals.active != null && extraKeysWanted()
     val side = homeSide()
     val sideRoom = sideWidth()
@@ -232,15 +240,20 @@ fun HomeScreen(
             // stays above it, but not under the status bar; a tile too tall for both gives up the rest at its bottom.
             .graphicsLayer {
                 val keys = if (extraKeys) ExtraKeysHeight.toPx() else 0f
-                translationY =
-                    -terminals.liftFor(
+                val ceiling = statusBar.getTop(density) + 6.dp.toPx()
+                val forTerminal =
+                    terminals.liftFor(
                         imeHeight = ime.getBottom(density),
                         imeTarget = imeTarget.getBottom(density),
                         windowHeight = view.height,
                         margin = 8.dp.toPx() + keys,
-                        top = statusBar.getTop(density) + 6.dp.toPx(),
+                        top = ceiling,
                         minHeight = 64.dp.toPx(),
                     )
+                // An input in a widget: the same slide, clear of the dock too, which the keyboard lifts with it.
+                val forInput = typingAt?.let { slideUp(it.top, it.bottom, ime.getBottom(density), view.height, 8.dp.toPx() + barRoom.toPx(), ceiling) } ?: 0f
+                slid[0] = forInput
+                translationY = -(if (terminals.active != null) forTerminal else forInput)
             }
             // Nothing below where the typing tile ends, above the extra keys, so the gaps around them show the wallpaper, and
             // nothing lifted under the status bar.
@@ -266,6 +279,7 @@ fun HomeScreen(
                 bottom = if (side != null) 0.dp else barRoom,
             ),
     ) {
+      CompositionLocalProvider(LocalTypingAt provides reportTyping) {
         PageNames(
             names = pagesAt(pager.currentPage, pages, per).map { it?.let(engine.notebook::name) },
             hidden = { state.homeCovered || engine.openScreen != null },
@@ -370,6 +384,7 @@ fun HomeScreen(
             onGroup = { app, target -> engine.shortcuts.group(app, target) },
             onReorder = { app, before -> engine.shortcuts.moveBefore(app.key, before) },
         )
+      }
     }
 
     // What the start had to say about the layout (a migration that moved tiles, or couldn't be saved), until tapped away.

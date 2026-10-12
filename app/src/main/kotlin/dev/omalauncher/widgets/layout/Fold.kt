@@ -63,6 +63,24 @@ fun foldView(
 }
 
 /**
+ * How far a page slides up when the keyboard opens for something on it, so that what is typed in (from [top]
+ * to [bottom] in a window [windowHeight] tall) stays clear of a keyboard [ime] tall by [margin], without its top
+ * going above [ceiling]. The page only moves: its grid never shrinks or re-flows for a keyboard.
+ */
+fun slideUp(
+    top: Float,
+    bottom: Float,
+    ime: Int,
+    windowHeight: Int,
+    margin: Float,
+    ceiling: Float,
+): Float {
+    if (ime <= 0) return 0f
+    val covered = (bottom + margin - (windowHeight - ime)).coerceAtLeast(0f)
+    return minOf(covered, (top - ceiling).coerceAtLeast(0f))
+}
+
+/**
  * Whether the dock stands in a rail beside the page instead of under it: only in a phone's landscape (a folded
  * foldable's too), which is too short for it below. An unfolded window keeps the dock across the bottom.
  */

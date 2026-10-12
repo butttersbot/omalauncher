@@ -366,6 +366,46 @@ class NotebookStartTest {
         }
     }
 
+    /** A notebook that reads only in part would lose the rest at its first save: the whole of it is set aside before that. */
+    @Test fun aNotebookThatReadsOnlyInPartIsSetAsideBeforeItIsSavedOver() {
+        val whole = start(FakeFiles.of("normal"), FakeFiles.widgets("normal")).notebook
+        val root = JSONObject(NotebookStore.write(whole))
+        root.getJSONObject("data").getJSONArray("pages").getJSONObject(0).getJSONArray("items").getJSONObject(0).put("kind", "hologram")
+        val damaged = root.toString()
+        val lost = whole.pages[0].items[0].key
+
+        val files = FakeFiles.of("normal")
+        files.exists = true
+        files.stored = damaged
+        val start = NotebookOpening(files) { 7 }.saved()!!
+        assertTrue(start.saved)
+        assertEquals(NotebookOpening.PARTLY_READ, start.message)
+        assertEquals(listOf("notebook", "aside", "commit"), files.log)
+        assertEquals(listOf(7L to damaged), files.aside)
+        assertFalse(start.notebook.pages.flatMap { it.items }.any { it.key == lost })
+        assertEquals(whole.pages[1], start.notebook.pages[1])
+        // What is there now reads whole, so the next start has nothing to set aside.
+        files.log.clear()
+        assertNull(NotebookOpening(files).saved()!!.message)
+        assertEquals(listOf("notebook"), files.log)
+        files.oldStoresUntouched()
+
+        // If it can't be set aside, or the clean copy can't be written, the store is left exactly as it was.
+        for (failing in listOf("aside", "commit")) {
+            for (outcome in listOf(false, null)) {
+                val stuck = FakeFiles.of("normal")
+                stuck.exists = true
+                stuck.stored = damaged
+                if (failing == "aside") stuck.setAside = outcome else stuck.commit = outcome
+                val unsaved = NotebookOpening(stuck).saved()!!
+                assertFalse(unsaved.saved)
+                assertEquals(NotebookOpening.PARTLY_READ_UNSAVED, unsaved.message)
+                assertEquals(damaged, stuck.stored)
+                assertEquals(start.notebook, unsaved.notebook)
+            }
+        }
+    }
+
     @Test fun aNotebookStoreThatCantBeOpenedIsNotTakenForAbsent() {
         val files = FakeFiles.of(BOSS).apply { notebookFails = true }
         val start = start(files, FakeFiles.widgets(BOSS))

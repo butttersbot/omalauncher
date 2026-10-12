@@ -77,6 +77,33 @@ class NotebookStoreTest {
         assertEquals(notebook.pages[1], read.pages[1])
     }
 
+    @Test fun sayingHowMuchWasLeftOut() {
+        assertEquals(0, NotebookStore.inspect(NotebookStore.write(notebook))!!.skipped)
+        assertNull(NotebookStore.inspect("{not json"))
+        val root = JSONObject(NotebookStore.write(notebook))
+        val data = root.getJSONObject("data")
+        val pages = data.getJSONArray("pages")
+        val items = pages.getJSONObject(0).getJSONArray("items")
+        // An unknown kind, a stray string, an app without its app, an item saved twice, a folder's app without a key,
+        // a page saved twice, a page without a name, and a dock entry without a label: eight entries that can't be kept.
+        items.getJSONObject(0).put("kind", "hologram")
+        items.put("junk")
+        items.getJSONObject(1).remove("app")
+        items.put(JSONObject(items.getJSONObject(2).toString()))
+        items.getJSONObject(3).getJSONArray("apps").getJSONObject(0).remove("key")
+        pages.put(JSONObject(pages.getJSONObject(1).toString()))
+        pages.put(JSONObject().put("id", "p9"))
+        data.getJSONArray("dock").getJSONObject(0).remove("label")
+        val read = NotebookStore.inspect(root.toString())!!
+        assertEquals(8, read.skipped)
+        assertEquals(listOf("p1", "p2"), read.notebook.pages.map { it.id })
+        assertEquals(listOf(firefox.key, "folder:a", "folder:none", "unplaced.owl"), read.notebook.pages[0].items.map { it.key })
+        assertEquals(listOf(htop), read.notebook.pages[0].items[1].apps)
+        assertEquals(listOf(firefox), read.notebook.dock)
+        // What is written from it reads whole.
+        assertEquals(0, NotebookStore.inspect(NotebookStore.write(read.notebook))!!.skipped)
+    }
+
     /** The layout core is plain Kotlin: nothing from Android or Compose, so JVM tests can run all of it. */
     @Test fun theCoreImportsNothingFromAndroid() {
         val files = File("src/main/kotlin/dev/omalauncher/widgets/layout").listFiles { f -> f.extension == "kt" }.orEmpty()

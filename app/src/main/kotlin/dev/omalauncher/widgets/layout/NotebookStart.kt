@@ -12,7 +12,8 @@ import org.json.JSONArray
  *    in one commit, after which the old stores are never written again;
  *  - if anything could not be read, or the commit fails, nothing is saved anywhere: home shows what was converted,
  *    the old stores stay as they are, and the next start tries again;
- *  - a saved notebook that doesn't read is never migrated over: it is set aside first, and if that fails nothing is saved.
+ *  - a saved notebook that doesn't read is never migrated over: it is set aside first, and if that fails nothing is saved;
+ *  - a saved notebook that reads only in part is used, and likewise set aside before anything is saved over it.
  *
  * Nothing here writes an old store, whatever happens.
  */
@@ -70,9 +71,14 @@ class NotebookOpening(
                 SavedNotebook(exists = true, text = null)
             }
         if (!saved.exists) return null
-        val notebook = NotebookStore.read(saved.text)
-        unreadable = notebook == null
-        return notebook?.let { NotebookStart(it, saved = true) }
+        val read = NotebookStore.inspect(saved.text)
+        unreadable = read == null
+        if (read == null) return null
+        if (read.skipped == 0) return NotebookStart(read.notebook, saved = true)
+        // Part of it didn't read, and the first save would drop that part for good. So the store as it is goes aside
+        // first, and what did read is written in its place; if either fails, this start keeps nothing.
+        val kept = attempt { files.setAside(now()) } && attempt { files.commit(NotebookStore.write(read.notebook)) }
+        return NotebookStart(read.notebook, saved = kept, message = if (kept) PARTLY_READ else PARTLY_READ_UNSAVED)
     }
 
     /**
@@ -168,6 +174,12 @@ class NotebookOpening(
         const val UNSAVED =
             "Your home layout couldn't be moved to the new pages, so it is shown as far as it could be read: " +
                 "changes you make now won't be kept, and it will be tried again the next time the launcher starts."
+
+        /** For a saved notebook that read only in part. */
+        const val PARTLY_READ = "Part of your saved pages couldn't be read and is left out; the pages as they were saved were set aside."
+        const val PARTLY_READ_UNSAVED =
+            "Part of your saved pages couldn't be read and is left out: changes you make now won't be kept, " +
+                "and it will be tried again the next time the launcher starts."
 
         private const val WIDGET_FILE = ".owl"
     }

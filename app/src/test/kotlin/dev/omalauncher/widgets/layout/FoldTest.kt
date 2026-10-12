@@ -124,6 +124,18 @@ class FoldTest {
         assertEquals(1, foldView(475f, 751f, posture(475f, 751f, null), 0, 4).per)
     }
 
+    /** UP-8: the keyboard moves the page, as far as it covers what is typed in and no further; it never resizes it. */
+    @Test fun thePageSlidesUpOnlyAsFarAsTheKeyboardCovers() {
+        // No keyboard: nothing moves.
+        assertEquals(0f, slideUp(1300f, 1500f, 0, 2000, 20f, 80f), 0f)
+        // A keyboard 800 tall in a window of 2000 leaves what ends above 1200 alone.
+        assertEquals(0f, slideUp(900f, 1100f, 800, 2000, 20f, 80f), 0f)
+        assertEquals(320f, slideUp(1300f, 1500f, 800, 2000, 20f, 80f), 0f)
+        // Never further than brings its top to the ceiling.
+        assertEquals(120f, slideUp(200f, 1500f, 800, 2000, 20f, 80f), 0f)
+        assertEquals(0f, slideUp(50f, 1500f, 800, 2000, 20f, 80f), 0f)
+    }
+
     @Test fun theDockStandsBesideThePageOnlyInAPhonesLandscape() {
         assertTrue(dockBeside(751f, 475f))
         assertFalse(dockBeside(475f, 751f))

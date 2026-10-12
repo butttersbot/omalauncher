@@ -84,45 +84,63 @@ object NotebookStore {
         return Versioned.write(VERSION, data)
     }
 
+    /** A notebook as read, and how many of its saved entries (pages, items, apps) were [skipped] because they didn't parse or came twice. */
+    class Read(
+        val notebook: Notebook,
+        val skipped: Int,
+    )
+
     /**
      * The saved notebook, or null if there is none or it can't be read: no pages, or no rows, is not a notebook.
      * An entry that doesn't parse is skipped, not fatal; so is a page whose id, or an item whose key, came before.
      * Nothing it is given makes it throw, errors included (Android's org.json recurses without a limit).
      */
-    fun read(text: String?): Notebook? =
+    fun read(text: String?): Notebook? = inspect(text)?.notebook
+
+    /** As [read], and saying how much was left out: what is saved from a notebook that skipped something no longer has it. */
+    fun inspect(text: String?): Read? =
         try {
             (Versioned.read(text, VERSION) as? JSONObject)?.let(::parse)
         } catch (e: Throwable) {
             null
         }
 
-    private fun parse(data: JSONObject): Notebook? {
+    private fun parse(data: JSONObject): Read? {
+        var skipped = 0
+
+        fun <T : Any> JSONArray.all(parse: (JSONObject) -> T?): List<T> = mapObjects(parse).also { skipped += length() - it.size }
+
+        fun <T> List<T>.once(key: (T) -> String): List<T> = distinctBy(key).also { skipped += size - it.size }
+
         val seen = HashSet<String>()
         val pages =
             data
                 .getJSONArray("pages")
-                .mapObjects { p ->
+                .all { p ->
                     val items =
-                        (p.optJSONArray("items") ?: JSONArray()).mapObjects { o ->
+                        (p.optJSONArray("items") ?: JSONArray()).all { o ->
                             NotebookItem(
                                 key = o.getString("key"),
                                 kind = ItemKind.entries.first { it.name.lowercase() == o.getString("kind") },
                                 cell = o.optJSONObject("cell")?.let { Cell(it.getInt("x"), it.getInt("y"), it.getInt("w"), it.getInt("h")) },
                                 app = o.optJSONObject("app")?.let(::app),
-                                apps = o.optJSONArray("apps")?.mapObjects(::app).orEmpty(),
-                            )
+                                apps = o.optJSONArray("apps")?.all(::app).orEmpty(),
+                                // An app without what it opens is no entry at all.
+                            ).also { require(it.kind != ItemKind.App || it.app != null) }
                         }
                     NotebookPage(p.getString("id"), p.getString("name"), items)
-                }.distinctBy { it.id }
-                .map { page -> page.copy(items = page.items.filter { seen.add(it.key) }) }
+                }.once { it.id }
+                .map { page -> page.copy(items = page.items.filter { seen.add(it.key) }.also { skipped += page.items.size - it.size }) }
         val rows = data.getInt("rows")
         if (pages.isEmpty() || rows < 1) return null
-        return Notebook(
-            rows = rows,
-            pages = pages,
-            dock = data.optJSONArray("dock")?.mapObjects(::app).orEmpty(),
-            columns = data.optInt("columns", GRID_COLUMNS),
-        )
+        val notebook =
+            Notebook(
+                rows = rows,
+                pages = pages,
+                dock = data.optJSONArray("dock")?.all(::app).orEmpty(),
+                columns = data.optInt("columns", GRID_COLUMNS),
+            )
+        return Read(notebook, skipped)
     }
 
     private fun app(a: PinnedApp): JSONObject {
