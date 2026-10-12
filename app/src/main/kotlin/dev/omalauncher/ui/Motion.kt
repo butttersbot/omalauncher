@@ -148,11 +148,53 @@ internal fun growPaper(t: Float): Float =
         else -> 1f - (t - GROW_IN_BY) / (GROW_PAPER_OFF_BY - GROW_IN_BY)
     }
 
+/**
+ * How far back a screen that is shrinking away is, by which it is no longer there itself: from here down to
+ * the tile only the tile's paper is drawn, and nothing of the screen is drawn or can be touched.
+ */
+internal const val GROW_LEAVES_BY = 0.5f
+
+/** A leaving screen's opacity at [t]: all there as it closes (1), gone by [GROW_LEAVES_BY]. */
+internal fun leaveAlpha(t: Float): Float = ((t - GROW_LEAVES_BY) / (1f - GROW_LEAVES_BY)).coerceIn(0f, 1f)
+
+/**
+ * How much of the tile's paper lies over a leaving screen at [t]: none as it closes, all of it by
+ * [GROW_LEAVES_BY], where it takes over from the screen, and so down to the tile, where it fades off over
+ * the last [GROW_IN_BY] to leave the real tile.
+ */
+internal fun leavePaper(t: Float): Float =
+    when {
+        t <= 0f || t >= 1f -> 0f
+        t < GROW_IN_BY -> t / GROW_IN_BY
+        else -> 1f - leaveAlpha(t)
+    }
+
 /** The part of a tilt, in degrees, that is left at [t] of a grow: all of it at the tile, none at full screen. */
 internal fun growTilt(
     tilt: Float,
     t: Float,
 ): Float = between(tilt, 0f, t)
+
+/**
+ * A clip that shows nothing and takes no touch: a rectangle with a size, since an outline with none is no
+ * clip at all, outside whatever it is on.
+ */
+internal val NowhereShape: Shape = RectShape(Rect(-2f, -2f, -1f, -1f), 0f)
+
+/** The rectangle a picture [width] by [height] is drawn in when it is fitted whole into [box], in the middle of it. */
+internal fun fitIn(
+    box: Rect,
+    width: Int,
+    height: Int,
+): Rect {
+    if (width <= 0 || height <= 0 || box.width <= 0f || box.height <= 0f) return box
+    val scale = minOf(box.width / width, box.height / height)
+    val w = width * scale
+    val h = height * scale
+    val left = box.left + (box.width - w) / 2f
+    val top = box.top + (box.height - h) / 2f
+    return Rect(left, top, left + w, top + h)
+}
 
 /** How small something starts that eases in where it stands: a menu, a bar, a page. */
 internal const val APPEAR_SCALE = 0.85f

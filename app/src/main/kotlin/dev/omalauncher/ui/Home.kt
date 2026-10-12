@@ -522,6 +522,7 @@ fun HomeScreen(
             },
             onLongPressEmpty = { at -> openMenu(null, at) },
             arrivals = state.arrivals,
+            rooms = state.pageRooms,
             onNoRoom = { item -> showPage = engine.moveToFreePage(item) },
             onMove = { item, page ->
                 engine.moveToPage(item, page)

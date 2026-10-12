@@ -208,9 +208,14 @@ private class Grow(
     var held by mutableStateOf(open)
 
     /** Closed, and still shrinking away: it takes no touches of its own any more. */
-    var leaving = false
+    var leaving by mutableStateOf(false)
 
-    private var name = open?.first?.file?.name
+    /**
+     * The widget [progress] is for. A screen composed before its own grow has begun (another widget's opened
+     * while this one was closing, or this one's again after it had gone) is not shown at all until it is.
+     */
+    var name by mutableStateOf(open?.first?.file?.name)
+        private set
 
     /** [screen] opened: from [tile], or from where it had shrunk to if it was on its way out. */
     suspend fun enter(
@@ -218,9 +223,10 @@ private class Grow(
         tile: Rect?,
     ) {
         if (screen != name) {
-            // Another widget's screen, or this one's again after it had gone: it starts at its tile.
-            name = screen
+            // Another widget's screen, or this one's again after it had gone: it starts at its tile, and shows from there.
             progress.snapTo(0f)
+            from = tile
+            name = screen
         }
         from = tile
         progress.moveTo(1f)
@@ -300,19 +306,28 @@ internal fun WidgetScreenHost(
             // Open, this is the plain full-screen panel: no layer property is set and nothing is clipped.
             .graphicsLayer {
                 val t = progress.value
+                val leaving = grow.leaving
+                // Not this screen's grow yet, or the last half of its way out, which is the tile's paper alone: it is
+                // neither drawn nor touched, so a press there goes to home (a tap on its tile opens it again).
+                if (grow.name != spec.file.name || (leaving && t < GROW_LEAVES_BY)) {
+                    alpha = 0f
+                    clip = true
+                    shape = NowhereShape
+                    return@graphicsLayer
+                }
                 if (t >= 1f) return@graphicsLayer
                 val tile = tileIn(size)
                 if (tile == null) {
-                    alpha = t.coerceIn(0f, 1f)
+                    alpha = if (leaving) leaveAlpha(t) else t.coerceIn(0f, 1f)
                 } else {
-                    alpha = growAlpha(t)
+                    alpha = if (leaving) leaveAlpha(t) else growAlpha(t)
                     // Clipped to the growing rectangle, which is also all of it that can be touched.
                     clip = true
                     shape = RectShape(growRect(tile, size.toRect(), t), between(cornerRadius(tileShape, tile.size, direction, density), 0f, t))
                 }
             }
-            // Inside the clip. A screen on its way out does nothing more: a press on what is left of it ends it
-            // there, so the next one reaches home.
+            // Inside the clip. A screen on its way out does nothing more: while most of it is still there, a press
+            // on it ends it there and goes no further.
             .pointerInput(grow) {
                 awaitPointerEventScope {
                     while (true) {
@@ -335,7 +350,8 @@ internal fun WidgetScreenHost(
     val lineWidth = scrap.surface.border
     Canvas(Modifier.fillMaxSize()) {
         val t = progress.value
-        val paper = growPaper(t)
+        if (grow.name != spec.file.name) return@Canvas
+        val paper = if (grow.leaving) leavePaper(t) else growPaper(t)
         if (paper <= 0f) return@Canvas
         val tile = tileIn(size) ?: return@Canvas
         val at = growRect(tile, size.toRect(), t)

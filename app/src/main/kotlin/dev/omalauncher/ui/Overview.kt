@@ -259,8 +259,8 @@ fun Overview(
     // Where each tile is, for a pinch to find the page under it.
     val bounds = remember { HashMap<String, Rect>() }
     var origin by remember { mutableStateOf(Offset.Zero) }
-    // The overview's own size, which is the window's, and how many pages home shows side by side in it.
-    val room = remember { intArrayOf(0, 0) }
+    // Where each tile's picture of its page is, and how many pages home shows side by side.
+    val pictures = remember { HashMap<String, Rect>() }
     val density = LocalDensity.current
     val window = LocalWindowInfo.current.containerSize
     val per =
@@ -273,14 +273,16 @@ fun Overview(
     fun open(page: String) {
         val at = notebook.position(page)
         if (at >= 0) state.requestedPage = at
-        // Its still grows from its tile to where the page is on home, if both are there to be seen.
+        // Its still grows from where it is drawn in its tile to the room the page has on home, which is what the
+        // still is a picture of; if either isn't there to be seen, home is simply back.
         val image = runtime.pageStills[page]
-        val tile = bounds[page]?.takeIf { grid.layoutInfo.visibleItemsInfo.any { item -> item.key == page } }
+        val picture = pictures[page]?.takeIf { grid.layoutInfo.visibleItemsInfo.any { item -> item.key == page } }
+        val place = if (at < 0) null else state.pageRooms.of(at % per.coerceAtLeast(1))
         opening.page =
-            if (at < 0 || image == null || tile == null || Motion.reduced || room[0] <= 0) {
+            if (image == null || picture == null || place == null || Motion.reduced) {
                 null
             } else {
-                PageOpened(image, tile.translate(-origin), pagePlace(at, per, room[0].toFloat(), room[1].toFloat()))
+                PageOpened(image, fitIn(picture, image.width, image.height).translate(-origin), place.translate(-origin))
             }
         state.closeOverview()
     }
@@ -291,11 +293,7 @@ fun Overview(
     Box(
         Modifier
             .fillMaxSize()
-            .onGloballyPositioned {
-                origin = it.positionInRoot()
-                room[0] = it.size.width
-                room[1] = it.size.height
-            }
+            .onGloballyPositioned { origin = it.positionInRoot() }
             .graphicsLayer {
                 alpha = shown.value
                 val s = 1.06f - 0.06f * shown.value
@@ -352,6 +350,7 @@ fun Overview(
                         cells = { notebook.cellsOn(page.id, emptySet()) },
                         rows = notebook.rows,
                         modifier = Modifier.onGloballyPositioned { bounds[page.id] = it.boundsInRoot() },
+                        onPicture = { pictures[page.id] = it },
                         onTap = { open(page.id) },
                         onHold = {
                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -487,22 +486,7 @@ fun Overview(
     }
 }
 
-/**
- * Where the page at position [at] stands on home, in a window [width] by [height] that shows [per] pages
- * side by side: all of it, or its half. What grows out of an overview tile grows to here.
- */
-internal fun pagePlace(
-    at: Int,
-    per: Int,
-    width: Float,
-    height: Float,
-): Rect {
-    val columns = per.coerceAtLeast(1)
-    val column = at.coerceAtLeast(0) % columns
-    return Rect(width * column / columns, 0f, width * (column + 1) / columns, height)
-}
-
-/** A page opened from the overview: its still, the tile it was in and where the page is on home, both in the overview's own space. */
+/** A page opened from the overview: its still, where that was drawn in its tile and the room the page has on home, both in the overview's own space. */
 private class PageOpened(
     val image: ImageBitmap,
     val from: Rect,
@@ -583,6 +567,8 @@ private fun PageTile(
     onHold: () -> Unit,
     modifier: Modifier = Modifier,
     plus: Boolean = false,
+    /** Told where the box its still is fitted into is, in the root; only listened to. */
+    onPicture: (Rect) -> Unit = {},
 ) {
     val scrim = Pack.look.pack.page.overviewScrim.toColor()
     Column(modifier.padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -596,7 +582,7 @@ private fun PageTile(
         ) {
             when {
                 plus -> BasicText("+", style = Pack.display(Pack.size.title, Pack.muted))
-                image != null -> Image(image, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+                image != null -> Image(image, contentDescription = null, modifier = Modifier.fillMaxSize().onGloballyPositioned { onPicture(it.boundsInRoot()) }, contentScale = ContentScale.Fit)
                 else -> {
                     val line = Pack.muted
                     Canvas(Modifier.fillMaxSize()) {

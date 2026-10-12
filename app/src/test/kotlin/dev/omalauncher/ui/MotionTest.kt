@@ -139,16 +139,41 @@ class MotionTest {
         assertEquals(0.8f, folderScale(panelWidth = 0, tileWidth = 200), 0f)
     }
 
-    @Test fun aPageOpenedFromTheOverviewGrowsToItsPlaceOnHome() {
-        // Folded: every page is the whole window.
-        assertEquals(Rect(0f, 0f, 1080f, 2300f), pagePlace(0, 1, 1080f, 2300f))
-        assertEquals(Rect(0f, 0f, 1080f, 2300f), pagePlace(3, 1, 1080f, 2300f))
-        // Unfolded: fixed neighbours, the even positions on the left half and the odd ones on the right.
-        assertEquals(Rect(0f, 0f, 906f, 2176f), pagePlace(0, 2, 1812f, 2176f))
-        assertEquals(Rect(906f, 0f, 1812f, 2176f), pagePlace(1, 2, 1812f, 2176f))
-        assertEquals(Rect(0f, 0f, 906f, 2176f), pagePlace(4, 2, 1812f, 2176f))
-        // Nothing asks with none or less; if something did, it is the whole window.
-        assertEquals(Rect(0f, 0f, 1812f, 2176f), pagePlace(1, 0, 1812f, 2176f))
+    @Test fun aPagesStillGrowsFromWhereItIsDrawnInItsTile() {
+        // Taller than its box: as tall as the box, in the middle of its width.
+        assertEquals(Rect(125f, 200f, 175f, 400f), fitIn(Rect(100f, 200f, 200f, 400f), 120, 480))
+        // Wider than its box: as wide, in the middle of its height.
+        assertEquals(Rect(100f, 275f, 200f, 325f), fitIn(Rect(100f, 200f, 200f, 400f), 480, 240))
+        // The box's own shape: all of it.
+        assertEquals(Rect(100f, 200f, 200f, 400f), fitIn(Rect(100f, 200f, 200f, 400f), 240, 480))
+        // Nothing to fit, or nowhere to: the box as it is.
+        assertEquals(Rect(100f, 200f, 200f, 400f), fitIn(Rect(100f, 200f, 200f, 400f), 0, 480))
+        assertEquals(Rect.Zero, fitIn(Rect.Zero, 240, 480))
+    }
+
+    @Test fun aLeavingScreenIsGoneByHalfWayAndItsPaperCarriesOn() {
+        // As it closes it is all there, with no paper over it.
+        assertEquals(1f, leaveAlpha(1f), 0f)
+        assertEquals(0f, leavePaper(1f), 0f)
+        // Half way back the screen is gone and the paper has taken over: from here nothing of the screen is drawn or touched.
+        assertEquals(0f, leaveAlpha(GROW_LEAVES_BY), 0f)
+        assertEquals(1f, leavePaper(GROW_LEAVES_BY), 0f)
+        assertEquals(0f, leaveAlpha(0.2f), 0f)
+        assertEquals(1f, leavePaper(0.2f), 0f)
+        // Between the two, one takes over from the other.
+        for (step in 50..100) assertEquals(1f, leaveAlpha(step / 100f) + leavePaper(step / 100f), 1e-5f)
+        // At the tile the paper fades off the real tile.
+        assertEquals(0.5f, leavePaper(GROW_IN_BY / 2f), 1e-6f)
+        assertEquals(0f, leavePaper(0f), 0f)
+        for (step in 0..100) assertTrue(leavePaper(step / 100f) in 0f..1f && leaveAlpha(step / 100f) in 0f..1f)
+    }
+
+    @Test fun theClipThatShowsNothingHasASizeAndIsOutsideWhatItIsOn() {
+        val outline = NowhereShape.createOutline(androidx.compose.ui.geometry.Size(1812f, 2176f), androidx.compose.ui.unit.LayoutDirection.Ltr, androidx.compose.ui.unit.Density(3f))
+        val rect = outline.bounds
+        // An outline with no size is no clip at all.
+        assertTrue(rect.width > 0f && rect.height > 0f)
+        assertTrue(rect.right <= 0f && rect.bottom <= 0f)
     }
 
     @Test fun onlyTheScrapTheMenuJustAddedEasesInAndOnlyOnce() {

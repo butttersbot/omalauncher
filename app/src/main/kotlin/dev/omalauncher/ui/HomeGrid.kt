@@ -67,6 +67,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 
 /**
  * The home grid's pixel geometry on screen: [GridGeometry], which has the arithmetic, in Compose's
@@ -162,6 +163,15 @@ private fun edgesAt(
         right = inY && p.x < rect.right + grab && p.x > rect.right - gx,
         bottom = inX && p.y < rect.bottom + grab && p.y > rect.bottom - gy,
     )
+}
+
+/**
+ * Where the pages showing on home stand: [of] gives the room the page at a side (0 the left one, or the
+ * only one) has, in the root, as the grid is when it is asked; null when there is no such side or home
+ * isn't there. A page's still for the overview is a picture of exactly this room.
+ */
+internal class PageRooms {
+    var of: (Int) -> androidx.compose.ui.geometry.Rect? = { null }
 }
 
 /** A tile a finger is carrying, possibly across pages. [grab] is where the finger holds it, from its top-left corner. */
@@ -289,6 +299,8 @@ internal fun HomeGrid(
     onDrawerEnd: (Float) -> Unit = {},
     /** The note or sticker the menu just put on a page, which eases in from where it was picked. */
     arrivals: Arrivals? = null,
+    /** Told how to find the room each page showing has, for what is drawn onto a page from elsewhere. */
+    rooms: PageRooms? = null,
 ) {
     val haptics = LocalHapticFeedback.current
     // Where the grid is in the window, for what grows out of a touch on it. Only listened to.
@@ -315,6 +327,19 @@ internal fun HomeGrid(
         val sideGrab = with(density) { 36.dp.roundToPx() }
         val edge = with(density) { 28.dp.roundToPx() }
         val current by rememberUpdatedState(Triple(pages, grid, selected))
+        // Worked out when asked, from where the grid is then: nothing here is measured or placed for it.
+        if (rooms != null) {
+            DisposableEffect(rooms) {
+                rooms.of = { side ->
+                    val g = current.second
+                    gridAt[0]?.takeIf { it.isAttached && side in 0 until g.per }?.let { at ->
+                        val origin = at.positionInRoot()
+                        androidx.compose.ui.geometry.Rect(origin.x + side * g.width, origin.y, origin.x + (side + 1) * g.width, origin.y + at.size.height)
+                    }
+                }
+                onDispose { rooms.of = { null } }
+            }
+        }
 
         fun placedOn(
             page: String,

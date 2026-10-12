@@ -21,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
@@ -161,8 +162,10 @@ internal fun Menu(
     content: @Composable () -> Unit,
 ) {
     val shown = if (from != null) rememberAppearing() else null
-    // Where the panel is in the window, for the point it grows out of.
+    // Where the panel is in the window, for the point it grows out of. It is known only once the panel has been
+    // placed, which is after its layer was first set up: until then the panel is not drawn at all.
     val at = remember { floatArrayOf(0f, 0f) }
+    var placed by remember { mutableStateOf(false) }
     Box(
         Modifier
             .fillMaxSize()
@@ -183,7 +186,9 @@ internal fun Menu(
                                 val origin = it.positionInWindow()
                                 at[0] = origin.x
                                 at[1] = origin.y
-                            }.appears({ shown.value }, MENU_APPEAR_SCALE, fade = false) {
+                                placed = true
+                            }.graphicsLayer { if (!placed && shown.value < 1f) alpha = 0f }
+                            .appears({ shown.value }, MENU_APPEAR_SCALE) {
                                 from()?.let { touch -> pivotAt(touch, Offset(at[0], at[1]), size) } ?: TransformOrigin.Center
                             }
                     } else {

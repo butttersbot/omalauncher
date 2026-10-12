@@ -43,6 +43,9 @@ class LauncherState {
     /** Where the long press that opened it was, in the window, for the menu to grow out of; null grows it where it stands. */
     var homeMenuFrom: Offset? = null
 
+    /** Where the pages showing on home stand, for a page opened from the overview to grow onto. */
+    internal val pageRooms = PageRooms()
+
     /** The note or sticker just put on a page from the menu, and where in the menu it came from. */
     internal val arrivals = Arrivals()
 
