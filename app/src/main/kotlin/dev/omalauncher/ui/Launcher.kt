@@ -249,6 +249,9 @@ private fun DesktopScreen(
         }
     }
 
+    // Every page at once, over the whole window: over the dock too, and under the ring and the full-screen panels.
+    Overview(runtime, state)
+
     // The agent's light along the screen's edge, over home and its dock and in nothing's way: it takes no touch and no room.
     HomeRing()
 

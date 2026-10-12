@@ -257,6 +257,8 @@ internal fun HomeGrid(
     onPinch: (Float) -> Unit = {},
     /** The pinch let go, at this scale. */
     onPinchEnd: (Float) -> Unit = {},
+    /** Where each page keeps a still of itself for the overview; none are kept without it. */
+    captures: PageCaptures? = null,
 ) {
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
@@ -668,7 +670,7 @@ internal fun HomeGrid(
                 Row(Modifier.fillMaxSize()) {
                     for (page in pagesAt(slot, pages, grid)) {
                         Box(Modifier.width(with(density) { grid.width.toDp() }).fillMaxHeight()) {
-                            if (page == null) PlusPage(grid, onAddPage) else TiledPage(page, itemsOn(page), layout, grid, arrange, selected, render, actions, onNoRoom, ready)
+                            if (page == null) PlusPage(grid, onAddPage) else TiledPage(page, itemsOn(page), layout, grid, arrange, selected, render, actions, onNoRoom, ready, captures)
                         }
                     }
                 }
@@ -774,13 +776,14 @@ private fun TiledPage(
     actions: @Composable (HomeItem) -> Unit,
     onNoRoom: (HomeItem) -> Unit,
     ready: Boolean,
+    captures: PageCaptures?,
 ) {
     val density = LocalDensity.current
     val carried = arrange.carry?.item?.key
     LaunchedEffect(items.map { it.key }, grid.cols, grid.rows) {
         layout.place(items, grid.cols, grid.rows, page).forEach(onNoRoom)
     }
-    BoxWithConstraints(Modifier.fillMaxSize()) {
+    BoxWithConstraints(Modifier.fillMaxSize().captured(page, captures)) {
         val pageWidth = constraints.maxWidth
         if (selected != null || (carried != null && arrange.folder == null)) {
             // Grid guides while arranging; not while sorting an open folder, which covers the grid.

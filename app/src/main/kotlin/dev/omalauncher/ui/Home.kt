@@ -1,5 +1,11 @@
 package dev.omalauncher.ui
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -67,6 +73,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.geometry.Rect
 import dev.omalauncher.widgets.layout.wallpaperOffset
 
+/** How long home rests on a page before it takes a still of it for the overview. */
+private const val STILL_AFTER_MS = 700L
+
 /** The band above the pages that names the page showing; the page's room starts below it. */
 val PageNameHeight = 28.dp
 
@@ -105,6 +114,17 @@ fun HomeScreen(
         showPage = null
     }
     var menuFor by remember { mutableStateOf<HomeItem?>(null) }
+    // How far a pinch has shrunk the pages: it follows the fingers, and springs back when they let go.
+    val pinch = remember { Animatable(1f) }
+    val pinching = remember { booleanArrayOf(false) }
+    val scope = rememberCoroutineScope()
+    // A still of the pages showing, a moment after arriving on them, for the overview to show when they're left.
+    LaunchedEffect(pager.settledPage, engine.notebook.opened) {
+        delay(STILL_AFTER_MS)
+        if (engine.notebook.opened && !state.homeCovered && engine.openScreen == null) state.captures.request()
+    }
+    // An open folder doesn't wait under the overview.
+    LaunchedEffect(state.overviewOpen) { if (state.overviewOpen) arrange.folder = null }
 
     val terminals = runtime.terminals
     BackHandler(enabled = terminals.active != null) { terminals.deactivate() }
@@ -132,7 +152,9 @@ fun HomeScreen(
     }
     // Turning to other pages makes the left one of them the page last touched, until a finger lands on the right one.
     // The drawer pins apps to it.
-    LaunchedEffect(pager.currentPage, pages) {
+    LaunchedEffect(pager.currentPage, pages, state.overviewOpen) {
+        // Not while the overview moves pages about under the pager: the page he came from is still the one to go back to.
+        if (state.overviewOpen) return@LaunchedEffect
         val shown = pagesAt(pager.currentPage, pages, per).filterNotNull()
         if (state.currentPage !in shown) shown.firstOrNull()?.let { state.currentPage = it }
         engine.activePage = shown.firstOrNull()
@@ -284,7 +306,8 @@ fun HomeScreen(
             // Not before the notebook is read: the page shown until then is a stand-in.
             names = pagesAt(pager.currentPage, pages, per).map { page -> page?.takeIf { engine.notebook.opened }?.let(engine.notebook::name) },
             hidden = { state.homeCovered || engine.openScreen != null },
-            faded = { state.drawer.value },
+            // Gone as the pages shrink under a pinch: the overview names every page itself.
+            faded = { maxOf(state.drawer.value, (1f - pinch.value) / (1f - OVERVIEW_AT)) },
             onOpen = state::openOverview,
         )
         HomeGrid(
@@ -374,6 +397,22 @@ fun HomeScreen(
             per = per,
             ready = engine.notebook.opened,
             drawing = state.drawing,
+            captures = state.captures,
+            pinch = { pinch.value },
+            onPinch = { scale ->
+                // The pages are caught as they were when the pinch began.
+                if (!pinching[0]) {
+                    pinching[0] = true
+                    state.captures.request()
+                }
+                scope.launch { pinch.snapTo(scale) }
+            },
+            onPinchEnd = { scale ->
+                pinching[0] = false
+                // Not over a stand-in page: there is no notebook to show until it is read.
+                if (settlesIntoOverview(scale) && engine.notebook.opened) state.openOverview()
+                scope.launch { pinch.animateTo(1f, spring(stiffness = Spring.StiffnessMediumLow)) }
+            },
             onLongPressEmpty = { openMenu(null) },
             onNoRoom = { item -> showPage = engine.moveToFreePage(item) },
             onMove = { item, page ->
