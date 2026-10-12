@@ -1,5 +1,12 @@
 package dev.omalauncher.ui
 
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
+import dev.omalauncher.assist.prototypeUnit
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -447,21 +454,69 @@ fun DrawTools(
             .padding(PageGap),
         contentAlignment = Alignment.Center,
     ) {
-        Row(
-            Modifier.fillMaxWidth().panel().padding(horizontal = 4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Tool("pen", marks.tool == DrawTool.Pen, swatch = if (marks.second) InkRole.Second else InkRole.Pen) {
-                if (marks.tool == DrawTool.Pen) marks.second = !marks.second else marks.tool = DrawTool.Pen
+        if (Pack.ownsPage) {
+            // The prototype's `.tools`: square buttons like the dock's, from the left, the tool in hand in the emphasised colors.
+            val u = LocalConfiguration.current.run { prototypeUnit(screenWidthDp.toFloat(), screenHeightDp.toFloat()) }
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = (14 * u).dp - PageGap),
+                horizontalArrangement = Arrangement.spacedBy((6 * u).dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ToolKey("✎", "pen", u, marks.tool == DrawTool.Pen, swatch = if (marks.second) InkRole.Second else InkRole.Pen) {
+                    if (marks.tool == DrawTool.Pen) marks.second = !marks.second else marks.tool = DrawTool.Pen
+                }
+                ToolKey("▬", "highlighter", u, marks.tool == DrawTool.Highlighter, swatch = InkRole.Highlighter) { marks.tool = DrawTool.Highlighter }
+                ToolKey("⌫", "eraser", u, marks.tool == DrawTool.Eraser) { marks.tool = DrawTool.Eraser }
+                // Not in the middle of a stroke or an eraser's pass, held with another finger.
+                ToolKey("↶", "undo", u, enabled = ink.canUndo && !marks.busy) { marks.undo(page) }
+                ToolKey("↷", "redo", u, enabled = ink.canRedo && !marks.busy) { marks.redo(page) }
+                ToolKey("×", "close drawing tools", u) { state.stopDrawing() }
             }
-            Tool("marker", marks.tool == DrawTool.Highlighter, swatch = InkRole.Highlighter) { marks.tool = DrawTool.Highlighter }
-            Tool("erase", marks.tool == DrawTool.Eraser) { marks.tool = DrawTool.Eraser }
-            // Not in the middle of a stroke or an eraser's pass, held with another finger.
-            Tool("undo", enabled = ink.canUndo && !marks.busy) { marks.undo(page) }
-            Tool("redo", enabled = ink.canRedo && !marks.busy) { marks.redo(page) }
-            Tool("done") { state.stopDrawing() }
+        } else {
+            Row(
+                Modifier.fillMaxWidth().panel().padding(horizontal = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Tool("pen", marks.tool == DrawTool.Pen, swatch = if (marks.second) InkRole.Second else InkRole.Pen) {
+                    if (marks.tool == DrawTool.Pen) marks.second = !marks.second else marks.tool = DrawTool.Pen
+                }
+                Tool("marker", marks.tool == DrawTool.Highlighter, swatch = InkRole.Highlighter) { marks.tool = DrawTool.Highlighter }
+                Tool("erase", marks.tool == DrawTool.Eraser) { marks.tool = DrawTool.Eraser }
+                // Not in the middle of a stroke or an eraser's pass, held with another finger.
+                Tool("undo", enabled = ink.canUndo && !marks.busy) { marks.undo(page) }
+                Tool("redo", enabled = ink.canRedo && !marks.busy) { marks.redo(page) }
+                Tool("done") { state.stopDrawing() }
+            }
         }
+    }
+}
+
+/** One of the prototype's drawing tools: a glyph on the dock's surface, in the look's emphasised fill while it is the tool in hand. */
+@Composable
+private fun ToolKey(
+    mark: String,
+    label: String,
+    u: Float,
+    picked: Boolean = false,
+    enabled: Boolean = true,
+    swatch: InkRole? = null,
+    onClick: () -> Unit,
+) {
+    val pack = Pack.look.pack
+    val surface = if (picked) pack.dock.surface.copy(fill = pack.scrap.alt.fill, ink = pack.scrap.alt.ink) else pack.dock.surface
+    Box(
+        Modifier
+            .size((44 * u).dp)
+            .alpha(if (enabled) 1f else 0.4f)
+            .surface(surface, focused = false)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        BasicText(mark, style = Pack.display((17 * u).sp, surface.ink.toColor()))
+        // The ink this tool lays down, in the corner.
+        if (swatch != null) Box(Modifier.align(Alignment.BottomEnd).padding((5 * u).dp).size((7 * u).dp).background(inkColor(swatch), Pack.round(4.dp)))
     }
 }
 

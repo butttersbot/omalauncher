@@ -463,7 +463,7 @@ internal fun AppPanel(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 SectionLabel("all apps")
-                BasicText("close ↓", Modifier.clickable { state.close() }.padding(vertical = 8.dp), style = Pack.mono(Pack.size.small, Pack.onPage))
+                BasicText(Pack.caption("close ↓"), Modifier.clickable { state.close() }.padding(top = 12.dp, bottom = 4.dp), style = Pack.mono(color = Pack.muted))
             }
         } else {
             searchRow()

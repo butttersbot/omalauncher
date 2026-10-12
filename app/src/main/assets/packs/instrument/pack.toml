@@ -34,7 +34,8 @@ uppercase = true
 
 [type.body]
 family = "monospace"
-file = "fonts/JetBrainsMono-Medium.ttf"
+file = "fonts/JetBrainsMono.ttf"
+weight = 500
 
 [type.hand]
 family = "monospace"
@@ -43,7 +44,8 @@ weight = 700
 
 [type.mono]
 family = "monospace"
-file = "fonts/JetBrainsMono-Medium.ttf"
+file = "fonts/JetBrainsMono.ttf"
+weight = 500
 uppercase = true
 tracking = 0.09
 

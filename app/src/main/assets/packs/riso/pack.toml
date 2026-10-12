@@ -32,16 +32,17 @@ weight = 400
 
 [type.body]
 family = "sans-serif"
-file = "fonts/SchibstedGrotesk-Regular.ttf"
+file = "fonts/SchibstedGrotesk.ttf"
 
 [type.hand]
 family = "cursive"
-file = "fonts/Caveat-Bold.ttf"
+file = "fonts/Caveat.ttf"
 weight = 700
 
 [type.mono]
 family = "monospace"
-file = "fonts/JetBrainsMono-Medium.ttf"
+file = "fonts/JetBrainsMono.ttf"
+weight = 500
 uppercase = true
 tracking = 0.09
 

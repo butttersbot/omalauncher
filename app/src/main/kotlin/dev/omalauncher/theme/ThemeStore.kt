@@ -1,5 +1,11 @@
 package dev.omalauncher.theme
 
+import dev.omalauncher.theme.pack.FONT_WEIGHTS
+import dev.omalauncher.theme.pack.fontHasVariations
+import androidx.compose.ui.text.font.FontVariation
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.Font
 import android.app.WallpaperManager
 import android.content.ComponentName
 import android.content.Context
@@ -221,7 +227,12 @@ class ThemeStore(
             // Typeface reads a file, so the font is copied out of the pack.
             val file = File(File(context.cacheDir, "pack-fonts/$id").apply { mkdirs() }, path.replace('/', '_'))
             file.writeBytes(bytes)
-            FontFamily(Typeface.createFromFile(file))
+            // A variable font gives every weight its own drawing; a single face is what it is, and Android thickens it for bold.
+            if (fontHasVariations(bytes)) {
+                FontFamily(FONT_WEIGHTS.map { w -> Font(file, FontWeight(w), FontStyle.Normal, FontVariation.Settings(FontVariation.weight(w))) })
+            } else {
+                FontFamily(Typeface.createFromFile(file))
+            }
         }.onFailure { Log.w(TAG, "pack $id font $path", it) }.getOrNull()
 
     /** A pack's wallpaper, read no further than an image's size limit and decoded no larger than the screen needs. */

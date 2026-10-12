@@ -1,5 +1,6 @@
 package dev.omalauncher.ui
 
+import androidx.compose.ui.draw.alpha
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -221,7 +222,8 @@ private fun DesktopScreen(
                     // Home only: the open app list has everything.
                     if (Pack.recentApps && !panelShown) RecentStrip(runtime, handlers)
                     // Stays laid out under the open list, so what it measures for home and what it's hearing carry on.
-                    Box(Modifier.fadesUnderDrawer(state)) {
+                    // The drawing tools take the dock's place, as in the prototype: in a look with its own page it isn't behind them.
+                    Box(Modifier.fadesUnderDrawer(state).then(if (state.drawing && Pack.ownsPage) Modifier.alpha(0f) else Modifier)) {
                         // Insets itself by the grid gap, so it lines up with the tiles and the gap still takes taps.
                         // A drag upwards from the dock opens the app list, as from the pages above it.
                         DockBand(runtime, state, dock, Modifier.opensDrawer(state, screenHeight) { runtime.terminals.active == null })
