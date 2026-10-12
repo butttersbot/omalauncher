@@ -199,16 +199,26 @@ class LiveNotebook(
      * Puts widget files the notebook hasn't seen on the page each asks for, by position (1 is the first page).
      * Those asking for a page past the last get new pages after it, one for each number asked, in order.
      * A widget the notebook knows stays where the owner has it, whatever its file says.
+     *
+     * [prefer] names, for a new file, the id of a page to put it on instead of the one it asks for: the page the
+     * owner was on when he asked an agent for it. Returns the files that went to such a page.
      */
-    fun adopt(widgets: List<Pair<String, Int>>) {
+    fun adopt(
+        widgets: List<Pair<String, Int>>,
+        prefer: (String) -> String? = { null },
+    ): List<String> {
         val fresh = widgets.filter { (key) -> key !in home }
-        if (!opened || fresh.isEmpty()) return
+        if (!opened || fresh.isEmpty()) return emptyList()
         val count = pages.size
         val added = HashMap<Int, String>()
+        val preferred = ArrayList<String>()
         for ((key, asks) in fresh.sortedBy { it.second }) {
-            home[key] = pages.getOrNull(asks.coerceAtLeast(1) - 1)?.id?.takeIf { asks <= count } ?: added.getOrPut(asks) { newPage() }
+            val wanted = prefer(key)?.takeIf { position(it) >= 0 }
+            if (wanted != null) preferred += key
+            home[key] = wanted ?: pages.getOrNull(asks.coerceAtLeast(1) - 1)?.id?.takeIf { asks <= count } ?: added.getOrPut(asks) { newPage() }
         }
         save()
+        return preferred
     }
 
     /** Says where a widget file that isn't written yet will go, so it lands there rather than where its file asks. */

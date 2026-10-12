@@ -14,6 +14,7 @@ import androidx.compose.runtime.snapshotFlow
 import dev.omalauncher.BuildConfig
 import dev.omalauncher.LauncherData
 import dev.omalauncher.Runtime
+import dev.omalauncher.assist.AgentTasks
 import dev.omalauncher.linux.Agent
 import dev.omalauncher.linux.Proot
 import dev.omalauncher.linux.pacmanInstall
@@ -437,7 +438,13 @@ class WidgetEngine(
         specs.clear()
         specs += parsed.sortedWith(compareBy({ it.startPage }, { it.order }, { it.file.name }))
         // New files go where they ask to start; the ones the notebook knows stay where the owner has them.
-        notebook.adopt(parsed.map { it.file.name to it.startPage })
+        // One an agent wrote while working on a request goes to the page that request was sent from instead.
+        val ask = AgentTasks.asked
+        val now = System.currentTimeMillis()
+        val made = parsed.filter { ask != null && isOwnWidget(it) && ask.covers(it.stamp, now) }.associateBy { it.file.name }
+        val landed = notebook.adopt(parsed.map { it.file.name to it.startPage }) { name -> ask?.page?.takeIf { name in made } }
+        // Its cells are given now where home has a grid, so the agent can say at once which page it is on.
+        landed.mapNotNull(made::get).forEach { layout.land(WidgetItem(it), ::itemsOn) }
         // Unchanged files keep their running instance; changed ones start fresh but keep their values.
         val previous = HashMap(instances)
         instances.clear()

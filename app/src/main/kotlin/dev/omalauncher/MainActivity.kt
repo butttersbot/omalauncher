@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
+import dev.omalauncher.phone.HomeDoor
 import dev.omalauncher.ui.Palette
 import dev.omalauncher.ui.applySystemBars
 import dev.omalauncher.ui.LauncherRoot
@@ -31,10 +32,25 @@ class MainActivity : ComponentActivity() {
     private val runtime get() = (application as App).runtime
     private val state = LauncherState()
 
+    /** Home as the agent's bridge reaches it, inside this process: which page shows, and a page asked for by name. */
+    private val door =
+        object : HomeDoor.Home {
+            override val showing get() = state.currentPage
+
+            override fun turn() {
+                val page = HomeDoor.take() ?: return
+                // The pager goes by position; unfolded, to the pair that page is in.
+                runtime.widgets.notebook.position(page).takeIf { it >= 0 }?.let { state.requestedPage = it }
+            }
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         applySystemBars(this, Palette.isLight)
         runtime.start()
+        HomeDoor.enter(door)
+        // A page asked for while there was no home screen to turn.
+        door.turn()
         setContent {
             LauncherRoot(runtime, state)
             LaunchedEffect(Palette.isLight) { applySystemBars(this@MainActivity, Palette.isLight) }
@@ -163,6 +179,11 @@ class MainActivity : ComponentActivity() {
         runtime.usage.settle()
         runtime.widgets.homeStopped()
         runtime.screenStopped()
+    }
+
+    override fun onDestroy() {
+        HomeDoor.leave(door)
+        super.onDestroy()
     }
 
     private fun shortcut(keyCode: Int): Boolean {
