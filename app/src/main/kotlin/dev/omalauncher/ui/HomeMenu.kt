@@ -68,7 +68,17 @@ fun HomeMenu(
         // Until all themes are downloaded, one that isn't there yet is fetched on its own.
         scope.launch { if (runtime.themes.complete) runtime.themes.applyPicked() else runtime.themes.fetchPicked() }
     }
+    // The page the long press was on: what is drawn or stuck from here goes there.
+    val page = state.currentPage
+    val book = state.marks.book
     Menu(onDismiss = { state.homeMenuOpen = false }) {
+        if (book != null) {
+            // Not in a session that isn't being saved, nor on a page whose ink couldn't be read: the book says which.
+            MenuItem("draw on this page") {
+                state.homeMenuOpen = false
+                if (book.takes(page)) state.startDrawing()
+            }
+        }
         MenuItem("new widget with $agentName") {
             state.homeMenuOpen = false
             when {

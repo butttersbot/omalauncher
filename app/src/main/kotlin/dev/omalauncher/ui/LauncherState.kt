@@ -58,6 +58,7 @@ class LauncherState {
         settingsOpen = false
         homeMenuOpen = false
         overviewOpen = false
+        stopDrawing()
         shared = null
         sharing = null
     }
@@ -88,10 +89,14 @@ class LauncherState {
     var overviewOpen by mutableStateOf(false)
         private set
 
-    /** Opens the overview of all pages: the page name on home was tapped, or a pinch settled into it. A tile being edited is let go. */
+    /**
+     * Opens the overview of all pages: the page name on home was tapped, or a pinch settled into it. A tile being
+     * edited is let go, and so is the pen.
+     */
     fun openOverview() {
         editing = null
         homeMenuOpen = false
+        stopDrawing()
         overviewOpen = true
     }
 
@@ -100,10 +105,29 @@ class LauncherState {
     }
 
     /**
-     * One finger draws on the page instead of turning it or lifting a tile; two still pinch (PRD AC-22). Nothing
-     * sets it yet: drawing comes with a later slice, and home's gestures already keep out of its way.
+     * One finger draws on the page instead of turning it or lifting a tile; two still pinch (PRD AC-22). On from
+     * [startDrawing] until [stopDrawing]: the tool strip's "done", Back, the overview, or leaving home.
      */
     var drawing by mutableStateOf(false)
+        private set
+
+    /** The tool in hand, the stroke under the finger and the note or sticker that is selected. */
+    val marks = Marks()
+
+    /** One finger draws from now on. A tile or a note being edited is let go, and the menu this came from closes. */
+    fun startDrawing() {
+        editing = null
+        homeMenuOpen = false
+        marks.selected = null
+        marks.editing = null
+        drawing = true
+    }
+
+    /** One finger is home's again: it turns pages, opens tiles and lifts them, as it did. */
+    fun stopDrawing() {
+        drawing = false
+        marks.live.clear()
+    }
 
     private var typed by mutableStateOf("")
 

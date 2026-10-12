@@ -34,6 +34,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.unit.IntOffset
@@ -248,6 +249,11 @@ private fun DesktopScreen(
                 )
             }
         }
+    }
+
+    // The drawing tools stand over the dock while one finger draws, and take its place.
+    if (state.drawing) {
+        Box(Modifier.fillMaxSize().safePadding(), contentAlignment = Alignment.BottomCenter) { DrawTools(state) }
     }
 
     // Every page at once, over the whole window: over the dock too, and under the ring and the full-screen panels.

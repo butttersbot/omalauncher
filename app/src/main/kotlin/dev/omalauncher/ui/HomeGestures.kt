@@ -30,7 +30,7 @@ data class HomeModes(
     val editing: Boolean = false,
     /** A folder's panel is open over the page. */
     val folderOpen: Boolean = false,
-    /** One finger draws on the page. Nothing sets it yet: drawing comes with a later slice (PRD AC-22). */
+    /** One finger draws on the page (PRD AC-22). */
     val drawing: Boolean = false,
 )
 
@@ -69,6 +69,9 @@ enum class Owner {
     /** One finger in drawing mode. */
     Draw,
 
+    /** A sticky note or a sticker lifted by a long press, or the selected one taken hold of: it is carried over the page. */
+    Note,
+
     /** Two fingers moving apart or together. */
     Pinch,
 }
@@ -84,6 +87,10 @@ enum class Owner {
  * drawn on included; only a tile already being carried or resized keeps the touch, since letting go of it
  * for a second finger would drop it somewhere he didn't choose, and the app list once it is coming up.
  *
+ * A sticky note or a sticker is a tile that floats: a tap is its own, a drag across it turns the page or
+ * opens the app list as from any app, and only a long press lifts it. Lifted, it is the [Owner.Note]'s, which
+ * carries it over the page and into no cell.
+ *
  * A drag upwards opens the app list where nothing else wants it: from the bare page, an app or a folder, with
  * no tile being edited, no folder open and no drawing. A widget keeps its own drags, upwards too (it may be a
  * list, or a terminal). The list is harder to claim than a page turn or a tap: the finger has to go upwards
@@ -96,6 +103,9 @@ class GestureArbiter {
 
     private var start = TouchStart.Page
     private var folder = false
+
+    /** The touch came down on a note or a sticker. */
+    private var note = false
     private var pointers = 0
 
     /** More than one finger has been down since the first: no long press comes of this sequence, nor a one-finger drag. */
@@ -107,12 +117,17 @@ class GestureArbiter {
     /** The owner can't change any more: a pinch under way, or a tile that has moved under the finger. */
     private var held = false
 
-    /** The first finger came down on [start] while home was in [modes]. */
+    /**
+     * The first finger came down on [start] while home was in [modes]. With [note] what it came down on is a
+     * sticky note or a sticker, or one's handle or bar while it is the thing being edited, rather than a tile.
+     */
     fun down(
         start: TouchStart,
         modes: HomeModes,
+        note: Boolean = false,
     ): Owner {
         this.start = start
+        this.note = note
         folder = modes.folderOpen
         pointers = 1
         several = false
@@ -126,7 +141,7 @@ class GestureArbiter {
                     when (start) {
                         TouchStart.Bar -> Owner.Buttons
                         TouchStart.Handle -> Owner.Resize
-                        TouchStart.Selected -> Owner.Arrange
+                        TouchStart.Selected -> if (note) Owner.Note else Owner.Arrange
                         else -> Owner.Editor
                     }
                 else -> Owner.Undecided
@@ -143,7 +158,14 @@ class GestureArbiter {
 
     /** The first finger has rested where it came down for as long as a long press takes. */
     fun longPress(): Owner {
-        if (owner == Owner.Undecided && !several && !wandered && pointers == 1) owner = if (start == TouchStart.Page) Owner.Menu else Owner.Arrange
+        if (owner == Owner.Undecided && !several && !wandered && pointers == 1) {
+            owner =
+                when {
+                    note -> Owner.Note
+                    start == TouchStart.Page -> Owner.Menu
+                    else -> Owner.Arrange
+                }
+        }
         return owner
     }
 
@@ -183,7 +205,7 @@ class GestureArbiter {
                     // The app list is under the finger from here on: a second finger doesn't let go of it half open.
                     if (owner == Owner.Drawer) held = true
                 }
-            Owner.Arrange, Owner.Resize -> held = true
+            Owner.Arrange, Owner.Resize, Owner.Note -> held = true
             else -> {}
         }
         return owner
@@ -192,6 +214,7 @@ class GestureArbiter {
     /** Every finger is up. */
     fun up() {
         owner = Owner.Undecided
+        note = false
         pointers = 0
         several = false
         wandered = false
