@@ -2,6 +2,8 @@ package dev.omalauncher
 
 import android.app.ActivityManager
 import android.content.ComponentCallbacks
+import android.content.ComponentCallbacks2
+import dev.omalauncher.ui.PageCaptures
 import android.content.Context
 import android.content.res.Configuration
 import android.content.Intent
@@ -88,6 +90,24 @@ class Runtime(
     val agents = AgentStore(proot, onChanged = ::syncGuest)
     val pacman = Pacman(context, proot)
     val widgets = WidgetEngine(context, proot, this)
+
+    /**
+     * Stills of the home pages, for the overview's tiles. Only a convenience: dropped when home stops showing and
+     * whenever Android asks for memory, after which a page shows as the outline of its cells until it is seen again.
+     */
+    val pageStills =
+        PageCaptures().also { stills ->
+            context.registerComponentCallbacks(
+                object : ComponentCallbacks2 {
+                    override fun onConfigurationChanged(newConfig: Configuration) = Unit
+
+                    @Deprecated("Deprecated in Java")
+                    override fun onLowMemory() = stills.clear()
+
+                    override fun onTrimMemory(level: Int) = stills.clear()
+                },
+            )
+        }
     val updates = SystemUpdates(proot, pacman, agents)
     val gpu = Gpu(context, proot)
 
@@ -370,6 +390,7 @@ class Runtime(
     fun screenStopped() {
         screens = (screens - 1).coerceAtLeast(0)
         if (screens == 0) proot.procShim.setActive(false)
+        if (screens == 0) pageStills.clear()
     }
 
     /** Rescans .desktop entries; the list only changes (and recomposes) when entries do. */

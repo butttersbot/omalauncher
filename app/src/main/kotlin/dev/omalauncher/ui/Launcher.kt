@@ -222,7 +222,7 @@ private fun DesktopScreen(
                     Box(Modifier.fadesUnderDrawer(state)) {
                         // Insets itself by the grid gap, so it lines up with the tiles and the gap still takes taps.
                         // A drag upwards from the dock opens the app list, as from the pages above it.
-                        DockBand(runtime, state, dock, Modifier.opensDrawer(state, screenHeight))
+                        DockBand(runtime, state, dock, Modifier.opensDrawer(state, screenHeight) { runtime.terminals.active == null })
                         if (panelShown) DockCover(state, Modifier.matchParentSize())
                     }
                 }

@@ -98,6 +98,17 @@ class WidgetLayout(
         mover: String,
     ) = held(page, items) + items.filter { it.key != mover }.mapNotNull { notebook.cell(it.key)?.shown(it.resizable) }
 
+    /**
+     * Whether the tile [mover] can be put down in exactly [cell] on [page], which shows [items]: on no other
+     * tile, and not on the place kept for a widget whose file is missing, which shows nothing but is still its.
+     */
+    fun freeAt(
+        cell: Cell,
+        mover: String,
+        page: String,
+        items: List<HomeItem>,
+    ) = takenOn(page, items, mover).none { it.overlaps(cell) }
+
     /** Whether [page], showing [items], has a free spot for the tile [mover] at the size of [cell]. */
     fun roomFor(
         cell: Cell,

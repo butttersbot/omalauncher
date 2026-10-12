@@ -88,17 +88,10 @@ class LauncherState {
     var overviewOpen by mutableStateOf(false)
         private set
 
-    /** Stills of the pages as they last showed, for the overview's tiles. */
-    val captures = PageCaptures()
-
-    /**
-     * Opens the overview of all pages: the page name on home was tapped, or a pinch settled into it. The pages
-     * showing are asked for a fresh still on the way, and a tile being edited is let go.
-     */
+    /** Opens the overview of all pages: the page name on home was tapped, or a pinch settled into it. A tile being edited is let go. */
     fun openOverview() {
         editing = null
         homeMenuOpen = false
-        captures.request()
         overviewOpen = true
     }
 

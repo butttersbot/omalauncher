@@ -27,14 +27,27 @@ data class PageLabel(
 const val PAGE_NAME_MAX = 40
 
 /**
- * A name as a page takes it: without blank space around it or more than one space in a row, and no longer than
- * [PAGE_NAME_MAX]. Null when that leaves nothing: a page is never nameless.
+ * A name as a page takes it: without blank space around it or more than one space in a row, without characters
+ * that don't show, and no longer than [PAGE_NAME_MAX]. Null when that leaves nothing: a page is never nameless.
  */
 fun pageName(typed: String): String? {
-    val clean = typed.trim().replace(Regex("\\s+"), " ")
-    // Not through the middle of a character that takes two.
-    val cut = if (clean.length > PAGE_NAME_MAX && clean[PAGE_NAME_MAX - 1].isHighSurrogate()) PAGE_NAME_MAX - 1 else PAGE_NAME_MAX
-    return clean.take(cut).trim().ifEmpty { null }
+    // Every kind of blank space is a space; then what isn't to be seen goes: control characters, and format
+    // characters, which is where the marks that turn the writing direction round are.
+    val clean = typed.replace(BLANKS, " ").replace(UNSEEN, "").replace(SPACES, " ").trim()
+    return clipped(clean).trim().ifEmpty { null }
+}
+
+private val BLANKS = Regex("[\\s\\p{Z}]+")
+private val UNSEEN = Regex("[\\p{Cc}\\p{Cf}]")
+private val SPACES = Regex(" +")
+
+/** [text] cut to [max] characters, on one line, and not through the middle of a character that takes two. */
+fun clipped(
+    text: String,
+    max: Int = PAGE_NAME_MAX,
+): String {
+    val line = text.replace('\n', ' ').replace('\r', ' ')
+    return if (line.length <= max) line else line.take(if (line[max - 1].isHighSurrogate()) max - 1 else max)
 }
 
 /**
@@ -76,7 +89,7 @@ class LiveNotebook(
         private set
 
     /** Whether changes are written. */
-    var kept = false
+    var kept by mutableStateOf(false)
         private set
 
     /** Rows of every page; the columns are [GRID_COLUMNS]. */
@@ -276,7 +289,7 @@ class LiveNotebook(
      * page before it (the one after, for the first page): each thing to the first free cells at its size, in
      * reading order, and what finds none stays together, in its own cells, on a new page where the deleted one
      * was. Without [move] it is all taken off home: apps and folders unpinned, widgets forgotten, whose files
-     * the caller moves aside.
+     * the caller moves aside; refused while the notebook isn't [kept].
      *
      * [widgets] are the widget files there are now. A widget's entry whose file is missing shows nothing and
      * was only holding its place: it goes with the page either way.
@@ -286,7 +299,8 @@ class LiveNotebook(
         widgets: Set<String>,
         move: Boolean,
     ): PageGone? {
-        if (!canDelete(page)) return null
+        // Removing moves widget files aside for good; in a session that isn't written the store would still list them.
+        if (!canDelete(page) || (!move && !kept)) return null
         val at = position(page)
         val here = home.filterValues { it == page }.keys.sorted()
         val (shown, held) = here.partition { it in widgets || !isWidget(it) }

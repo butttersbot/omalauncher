@@ -73,6 +73,7 @@ import dev.omalauncher.widgets.GRID_COLUMNS
 import dev.omalauncher.widgets.PAGE_NAME_MAX
 import dev.omalauncher.widgets.PageGone
 import dev.omalauncher.widgets.PageLabel
+import dev.omalauncher.widgets.clipped
 import dev.omalauncher.widgets.pageName
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -120,6 +121,13 @@ open class CaptureCache<T : Any>(
         val image = kept.remove(page) ?: return
         held -= bytes(image)
         order.remove(page)
+    }
+
+    /** Lets go of everything: memory is wanted elsewhere. */
+    fun clear() {
+        kept.clear()
+        order.clear()
+        held = 0
     }
 }
 
@@ -308,7 +316,7 @@ fun Overview(
                     PageTile(
                         name = page.name,
                         current = page.id == state.currentPage,
-                        image = state.captures[page.id],
+                        image = runtime.pageStills[page.id],
                         cells = { notebook.cellsOn(page.id, emptySet()) },
                         rows = notebook.rows,
                         modifier = Modifier.onGloballyPositioned { bounds[page.id] = it.boundsInRoot() },
@@ -359,10 +367,10 @@ fun Overview(
     ) {
         ask = null
         val gone = engine.deletePage(page.id, move) ?: return
-        state.captures.drop(page.id)
+        runtime.pageStills.drop(page.id)
         bounds.remove(page.id)
         // The page things moved to no longer looks like its still.
-        gone.to?.takeIf { gone.moved.isNotEmpty() }?.let(state.captures::drop)
+        gone.to?.takeIf { gone.moved.isNotEmpty() }?.let(runtime.pageStills::drop)
         tell(gone, page.name)
     }
 
@@ -413,8 +421,12 @@ fun Overview(
             Menu(onDismiss = { ask = null }) {
                 MenuTitle("${asked.page.name} has $things on it")
                 MenuItem("move ${if (count == 1) "it" else "them"} to $neighbour") { delete(asked.page, move = true) }
-                MenuItem(if (sure) "tap again to remove $things from home" else "remove ${if (count == 1) "it" else "them"} from home", Pack.red) {
-                    if (sure) delete(asked.page, move = false) else sure = true
+                if (notebook.kept) {
+                    MenuItem(if (sure) "tap again to remove $things from home" else "remove ${if (count == 1) "it" else "them"} from home", Pack.red) {
+                        if (sure) delete(asked.page, move = false) else sure = true
+                    }
+                } else {
+                    MenuTitle("this session isn't being saved, so nothing can be removed in it")
                 }
                 MenuItem("keep the page") { ask = null }
             }
@@ -496,8 +508,11 @@ private fun RenamePage(
         MenuTitle("rename ${page.name}")
         BasicTextField(
             value = field,
-            // One line, and never longer than a name can be.
-            onValueChange = { typed -> if (typed.text.length <= PAGE_NAME_MAX && '\n' !in typed.text) field = typed },
+            // Never longer than a name can be: what is typed or pasted past that is cut off.
+            onValueChange = { typed ->
+                val text = clipped(typed.text)
+                field = if (text == typed.text) typed else TextFieldValue(text, TextRange(typed.selection.end.coerceAtMost(text.length)))
+            },
             singleLine = true,
             textStyle = Pack.body(Pack.size.item),
             cursorBrush = SolidColor(Pack.accent),

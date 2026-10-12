@@ -291,10 +291,58 @@ class PageOperationsTest {
         assertTrue(unkept.movePage("p1", 1))
         assertNotNull(unkept.addPage())
         assertNotNull(unkept.deletePage("p2", files, move = true))
-        assertNotNull(unkept.deletePage("p3", files, move = false))
-        assertEquals(listOf("p1", "p4"), ids(unkept))
+        assertEquals(listOf("p1", "p3", "p4"), ids(unkept))
         assertEquals("Now", unkept.name("p1"))
         assertTrue(writes.isEmpty())
+    }
+
+    /**
+     * Removing moves widget files aside for good. In a session that isn't written the store would still list
+     * them at the next start, with their files gone: so there it is refused, and moving is what there is.
+     */
+    @Test fun nothingIsRemovedInAnUnsavedSession() {
+        val unkept = live(kept = false)
+        val before = unkept.snapshot()
+        assertTrue(unkept.canDelete("p2"))
+        assertNull(unkept.deletePage("p2", files, move = false))
+        // An empty page too: the answer is the session's, not the page's.
+        val spare = unkept.addPage()!!
+        assertNull(unkept.deletePage(spare, files, move = false))
+        assertTrue(unkept.withdrawPage(spare))
+        assertEquals(before, unkept.snapshot())
+        assertTrue(writes.isEmpty())
+        // Once the session is kept, removing is there again.
+        unkept.keep()
+        assertNotNull(unkept.deletePage("p2", files, move = false))
+        assertEquals(2, writes.size)
+    }
+
+    @Test fun aNameHasNothingInItThatDoesNotShow() {
+        // Marks that turn the writing direction round, zero-width ones, and control characters go.
+        assertEquals("Trip", pageName("\u202ETrip\u202C"))
+        assertEquals("Trip", pageName("\u200BT\u200Dr\u2066i\u2069p\uFEFF\u0000\u0007\u001B\u007F\u0085"))
+        assertEquals("Trip", pageName("\u200E\u200FTrip\u061C"))
+        // Every kind of blank space is one space, and none is left at the ends.
+        assertEquals("Trip to Lisbon", pageName("\u00A0Trip\u2003\u3000to\u2028\u2029Lisbon\u1680\u202F"))
+        assertEquals("a b", pageName("a \u200B b"))
+        // What is only such characters is no name.
+        for (nothing in listOf("\u202E\u202C", "\u00A0\u3000", "\u200B", "\u0000 \t")) assertNull(pageName(nothing))
+        val live = live()
+        assertFalse(live.renamePage("p2", "\u202E\u00A0\u200B"))
+        assertTrue(live.renamePage("p2", "\u202Eevil\u202C\u00A0page"))
+        assertEquals("evil page", live.name("p2"))
+        // Letters of every script and marks on them stay as typed.
+        assertEquals("旅行 – São Paulo ✈", pageName("旅行 – São Paulo ✈"))
+    }
+
+    @Test fun whatIsTypedOrPastedPastTheLimitIsCutOff() {
+        assertEquals("abc", clipped("abc"))
+        assertEquals("x".repeat(PAGE_NAME_MAX), clipped("x".repeat(PAGE_NAME_MAX)))
+        assertEquals("x".repeat(PAGE_NAME_MAX), clipped("x".repeat(PAGE_NAME_MAX) + "y".repeat(500)))
+        // Not through the middle of a character that takes two, and on one line; a space at the end stays while typing.
+        assertEquals("x".repeat(PAGE_NAME_MAX - 1), clipped("x".repeat(PAGE_NAME_MAX - 1) + "😀"))
+        assertEquals("a b c ", clipped("a\nb\rc "))
+        assertEquals("", clipped(""))
     }
 
     /** Tiles as home shows them: no two on a page share a cell. */

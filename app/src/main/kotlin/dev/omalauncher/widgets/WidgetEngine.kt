@@ -329,7 +329,8 @@ class WidgetEngine(
         page: String,
         move: Boolean,
     ): PageGone? {
-        if (!notebook.canDelete(page)) return null
+        // Nothing leaves the disk in a session whose notebook isn't written: the store would still list it next start.
+        if (!notebook.canDelete(page) || (!move && !notebook.kept)) return null
         val files = specs.map { it.file.name }.toSet()
         if (!move) {
             for (spec in specs.filter { notebook.pageOf(it.file.name) == page }) {

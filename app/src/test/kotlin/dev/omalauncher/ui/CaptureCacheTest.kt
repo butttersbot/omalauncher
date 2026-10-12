@@ -66,6 +66,21 @@ class CaptureCacheTest {
         assertEquals(20, cache.held)
     }
 
+    @Test fun everythingGoesWhenMemoryIsWanted() {
+        val cache = cache()
+        cache.put("p1", 10)
+        cache.put("p2", 20)
+        cache.clear()
+        assertNull(cache["p1"])
+        assertNull(cache["p2"])
+        assertEquals(emptyList<String>(), cache.pages)
+        assertEquals(0, cache.held)
+        // And it keeps stills again afterwards.
+        cache.put("p1", 5)
+        assertEquals(5L, cache["p1"])
+        assertEquals(5, cache.held)
+    }
+
     @Test fun aCacheForNothingKeepsNothing() {
         val cache = cache(count = 0)
         cache.put("p1", 1)

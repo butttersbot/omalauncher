@@ -71,12 +71,12 @@ class HomeGesturesTest {
     @Test fun aDragUpwardsOpensTheAppListOnlyWhereNothingElseWantsIt() {
         for ((start, modes) in cases) {
             val opens = modes == HomeModes() && (start == TouchStart.Page || start == TouchStart.Tile)
-            for ((dx, dy) in listOf(0f to -40f, 12f to -40f, -39f to -40f)) {
+            for ((dx, dy) in listOf(0f to -40f, 12f to -40f, -26f to -40f, 0f to -21f)) {
                 val owner = touch(start, modes).moved(dx, dy, 0f, slop)
                 assertEquals("$start $modes by $dx,$dy", opens, owner == Owner.Drawer)
             }
             // Never from a drag downwards or sideways, whatever it started on.
-            for ((dx, dy) in listOf(0f to 40f, 40f to 0f, -40f to -12f, 41f to -40f)) {
+            for ((dx, dy) in listOf(0f to 40f, 40f to 0f, -40f to -12f, 41f to -40f, -39f to -40f, 27f to -40f, 0f to -20f, 0f to -12f)) {
                 assertFalse("$start $modes by $dx,$dy", touch(start, modes).moved(dx, dy, 0f, slop) == Owner.Drawer)
             }
         }
@@ -95,22 +95,66 @@ class HomeGesturesTest {
             dx: Float,
             dy: Float,
         ) = touch(TouchStart.Page, HomeModes()).moved(dx, dy, 0f, slop)
-        // At the slop nothing yet; just past it, the list.
+        // The list takes twice the slop, straight up: at the slop, and all the way to twice it, nothing is decided.
         assertEquals(Owner.Undecided, drag(0f, -10f))
-        assertEquals(Owner.Undecided, drag(6f, -8f))
-        assertEquals(Owner.Drawer, drag(0f, -10.5f))
-        // More sideways than upwards is the pager's, by however little; exactly between the two goes upwards.
-        assertEquals(Owner.Pager, drag(20.5f, -20f))
-        assertEquals(Owner.Pager, drag(-20.5f, -20f))
-        assertEquals(Owner.Drawer, drag(20f, -20f))
-        assertEquals(Owner.Drawer, drag(-20f, -20.5f))
+        assertEquals(Owner.Undecided, drag(0f, -10.5f))
+        assertEquals(Owner.Undecided, drag(3f, -15f))
+        assertEquals(Owner.Undecided, drag(0f, -20f))
+        assertEquals(Owner.Drawer, drag(0f, -20.5f))
+        assertEquals(2f, DRAWER_SLOPS, 0f)
+        // And one and a half times as far up as sideways: at that slant it is the list's, a hair flatter the pager's.
+        assertEquals(Owner.Drawer, drag(20f, -30f))
+        assertEquals(Owner.Drawer, drag(-20f, -30f))
+        assertEquals(Owner.Pager, drag(20.5f, -30f))
+        assertEquals(Owner.Pager, drag(-20.5f, -30f))
+        assertEquals(1.5f, DRAWER_STEEP, 0f)
+        // Ties and near-ties go to the pager, which keeps its own slop: it doesn't wait for twice of it.
+        assertEquals(Owner.Pager, drag(20f, -20f))
+        assertEquals(Owner.Pager, drag(8f, -8f))
+        assertEquals(Owner.Pager, drag(7f, -9f))
+        assertEquals(Owner.Pager, drag(10.5f, 0f))
+        assertEquals(Owner.Pager, drag(-11f, 3f))
         assertEquals(Owner.Nobody, drag(20f, 20f))
+        assertEquals(Owner.Nobody, drag(0f, 10.5f))
         // Decided once: a swipe that began sideways stays the pager's when it curls upwards, and the other way round.
         val sideways = touch(TouchStart.Page, HomeModes()).also { it.moved(30f, -5f, 0f, slop) }
         assertEquals(Owner.Pager, sideways.moved(30f, -200f, 0f, slop))
         val upwards = touch(TouchStart.Tile, HomeModes()).also { it.moved(2f, -30f, 0f, slop) }
         assertEquals(Owner.Drawer, upwards.moved(200f, -30f, 0f, slop))
         assertEquals(Owner.Drawer, upwards.moved(0f, 50f, 0f, slop))
+    }
+
+    @Test fun aTapWhoseFingerDriftsUpwardsIsStillATap() {
+        for (start in listOf(TouchStart.Page, TouchStart.Tile)) {
+            val arbiter = touch(start, HomeModes())
+            // Past the slop, short of twice it, sample after sample: nobody takes the touch, so nothing is consumed
+            // and the app, the dock icon or the page name under the finger still gets its tap when it lifts.
+            for ((dx, dy) in listOf(0f to -6f, 1f to -11f, 2f to -14f, 2f to -19f, 1f to -16f)) {
+                assertEquals("$start by $dx,$dy", Owner.Undecided, arbiter.moved(dx, dy, 0f, slop))
+            }
+            // Nor is it a long press any more: a finger that wandered and then rests lifts no tile and opens no menu.
+            assertEquals(Owner.Undecided, arbiter.longPress())
+            arbiter.up()
+            assertEquals(Owner.Undecided, arbiter.owner)
+        }
+        // Going on upwards from such a drift is the list's after all, from where it passes twice the slop.
+        val goesOn = touch(TouchStart.Tile, HomeModes())
+        assertEquals(Owner.Undecided, goesOn.moved(1f, -15f, 0f, slop))
+        assertEquals(Owner.Drawer, goesOn.moved(2f, -24f, 0f, slop))
+    }
+
+    @Test fun aSwipeThatArcsUpwardsStaysThePagers() {
+        // A thumb's arc: it leaves the slop going mostly up, then sweeps sideways.
+        val arc = touch(TouchStart.Page, HomeModes())
+        assertEquals(Owner.Undecided, arc.moved(3f, -11f, 0f, slop))
+        assertEquals(Owner.Pager, arc.moved(13f, -17f, 0f, slop))
+        for ((dx, dy) in listOf(40f to -30f, 120f to -45f, 200f to -20f, 30f to -300f)) assertEquals(Owner.Pager, arc.moved(dx, dy, 0f, slop))
+        // One that is as much up as sideways from its first sample past the slop is the pager's at once.
+        assertEquals(Owner.Pager, touch(TouchStart.Tile, HomeModes()).moved(8f, -9f, 0f, slop))
+        // And the page turns from the pager's own slop, however the finger got there.
+        val flat = touch(TouchStart.Page, HomeModes())
+        assertEquals(Owner.Undecided, flat.moved(9f, -2f, 0f, slop))
+        assertEquals(Owner.Pager, flat.moved(11f, -2f, 0f, slop))
     }
 
     @Test fun theMenuTheLiftAndThePinchStillWinOverTheAppList() {

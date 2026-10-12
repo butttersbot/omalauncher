@@ -85,13 +85,15 @@ import dev.omalauncher.widgets.layout.wallpaperOffset
 internal fun Modifier.opensDrawer(
     state: LauncherState,
     windowHeight: Float,
+    /** Asked as a touch comes down: false keeps the list shut, as while a terminal tile has the keyboard. */
+    allowed: () -> Boolean = { true },
 ): Modifier =
     pointerInput(state, windowHeight) {
         awaitEachGesture {
             // After what is here has seen each move, so what it takes shows.
             val down = awaitFirstDown(requireUnconsumed = false)
             // Not from under the list, which closes its own way, nor from under the overview.
-            if (state.drawer.value > 0.01f || state.overviewOpen) return@awaitEachGesture
+            if (state.drawer.value > 0.01f || state.overviewOpen || !allowed()) return@awaitEachGesture
             val arbiter = GestureArbiter()
             arbiter.down(TouchStart.Page, HomeModes(drawing = state.drawing))
             val speed = VelocityTracker()
@@ -181,7 +183,7 @@ fun HomeScreen(
     // A still of the pages showing, a moment after arriving on them, for the overview to show when they're left.
     LaunchedEffect(pager.settledPage, engine.notebook.opened) {
         delay(STILL_AFTER_MS)
-        if (engine.notebook.opened && !state.homeCovered && engine.openScreen == null) state.captures.request()
+        if (engine.notebook.opened && !state.homeCovered && engine.openScreen == null) runtime.pageStills.request()
     }
     // An open folder doesn't wait under the overview.
     LaunchedEffect(state.overviewOpen) { if (state.overviewOpen) arrange.folder = null }
@@ -371,8 +373,13 @@ fun HomeScreen(
             hidden = { state.homeCovered || engine.openScreen != null },
             // Gone as the pages shrink under a pinch: the overview names every page itself.
             faded = { maxOf(state.drawer.value, (1f - pinch.value) / (1f - OVERVIEW_AT)) },
-            onOpen = state::openOverview,
-            modifier = Modifier.opensDrawer(state, windowHeight),
+            // The pages showing are caught as they are on the way in.
+            onOpen = {
+                runtime.pageStills.request()
+                state.openOverview()
+            },
+            // 5. Not under a terminal tile's keyboard, as on the pages.
+            modifier = Modifier.opensDrawer(state, windowHeight) { terminals.active == null },
         )
         HomeGrid(
             pager = pager,
@@ -394,7 +401,8 @@ fun HomeScreen(
                             state.sharing = item.spec
                         }
                     }
-                    EditAction("remove", Pack.red) { remove(item) }
+                    // Not in a session that isn't being saved: the widget's file would be gone and the store still list it.
+                    if (engine.notebook.kept) EditAction("remove", Pack.red) { remove(item) } else EditAction("can't remove: not saved", Pack.muted) {}
                 }
             },
             render = { item, tile, highlighted ->
@@ -461,7 +469,7 @@ fun HomeScreen(
             per = per,
             ready = engine.notebook.opened,
             drawing = state.drawing,
-            captures = state.captures,
+            captures = runtime.pageStills,
             // Not under a terminal tile's keyboard: the list comes up with no keyboard showing.
             onDrawerDrag = { dy -> if (terminals.active == null) state.dragBy(-dy / windowHeight) },
             onDrawerEnd = { velocity -> if (terminals.active == null) state.settle(velocity) },
@@ -470,7 +478,7 @@ fun HomeScreen(
                 // The pages are caught as they were when the pinch began.
                 if (!pinching[0]) {
                     pinching[0] = true
-                    state.captures.request()
+                    runtime.pageStills.request()
                 }
                 scope.launch { pinch.snapTo(scale) }
             },

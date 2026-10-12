@@ -114,6 +114,32 @@ class FullPageDropTest {
         assertTrue(room(wall, "p4", mover = "wall.owl"))
     }
 
+    /** The drop preview's check: a tile is put down on no other tile, and not on a missing widget's place. */
+    @Test fun aTileIsNeverPutDownOnAPlaceKeptForAMissingWidget() {
+        fun free(
+            cell: Cell,
+            page: String,
+            mover: String = "clock.owl",
+        ) = layout.freeAt(cell, mover, page, itemsOn(page))
+        // Work's lower rows show nothing, and are gone.owl's: nothing lands on any part of them.
+        assertFalse(free(Cell(0, 2, 3, 2), "p3"))
+        assertFalse(free(Cell(5, 3, 1, 1), "p3"))
+        assertFalse(free(Cell(2, 1, 1, 2), "p3"))
+        // The same page with the file back would refuse it too, so the answer doesn't depend on the file.
+        assertFalse(layout.freeAt(Cell(0, 2, 3, 2), "clock.owl", "p3", itemsOn("p3") + widget("gone.owl")))
+        // Where nothing shows and nothing is kept, it lands; an app takes the one cell it shows in.
+        assertTrue(free(Cell(1, 3, 5, 1), "p2"))
+        assertFalse(free(Cell(0, 3, 1, 1), "p2"))
+        assertTrue(free(Cell(3, 0, 3, 2), "p1"))
+        assertTrue(free(Cell(0, 0, 6, 4), "p5"))
+        // Its own cells are not in its way, another tile's are.
+        assertTrue(free(Cell(1, 0, 3, 2), "p1"))
+        assertFalse(free(Cell(1, 0, 3, 2), "p1", mover = chrome.key))
+        // A page that has no room has no free cell to show a preview in, wherever the finger is.
+        for (x in 0..3) for (y in 0..2) assertFalse(free(Cell(x, y, 3, 2), "p3"))
+        assertFalse(room(notebook.cell("clock.owl")!!, "p3"))
+    }
+
     @Test fun theClockCarriedOverAFullPageIsOfferedTheNextWithRoom() {
         val clock = notebook.cell("clock.owl")!!
         val before = notebook.snapshot()

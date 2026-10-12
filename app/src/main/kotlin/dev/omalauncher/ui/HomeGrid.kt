@@ -526,7 +526,8 @@ internal fun HomeGrid(
                                 } else {
                                     val x = g.colLine(at - hold).coerceIn(0, (g.cols - cell.w).coerceAtLeast(0))
                                     val y = g.rowLine(at - hold).coerceIn(0, (g.rows - cell.h).coerceAtLeast(0))
-                                    Cell(x, y, cell.w, cell.h).takeIf { n -> others.none { it.second.overlaps(n) } }
+                                    // Nowhere on a page with no room, and never on a place kept for a widget whose file is missing.
+                                    Cell(x, y, cell.w, cell.h).takeIf { n -> !full && others.none { it.second.overlaps(n) } && layout.freeAt(n, item.key, page, itemsOn(page)) }
                                 }
                         }
                         val page = arrange.page

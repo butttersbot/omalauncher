@@ -86,8 +86,9 @@ enum class Owner {
  *
  * A drag upwards opens the app list where nothing else wants it: from the bare page, an app or a folder, with
  * no tile being edited, no folder open and no drawing. A widget keeps its own drags, upwards too (it may be a
- * list, or a terminal); a drag more sideways than upwards is the pager's, and one exactly between the two goes
- * upwards.
+ * list, or a terminal). The list is harder to claim than a page turn or a tap: the finger has to go upwards
+ * at least [DRAWER_STEEP] times as far as sideways, and [DRAWER_SLOPS] times the slop, before it is the list's.
+ * A slanted swipe is the pager's, and a tap that drifts a little is nobody's and still lands.
  */
 class GestureArbiter {
     var owner = Owner.Undecided
@@ -99,6 +100,9 @@ class GestureArbiter {
 
     /** More than one finger has been down since the first: no long press comes of this sequence, nor a one-finger drag. */
     private var several = false
+
+    /** The first finger has left the slop without anyone taking the touch yet: resting now is no long press. */
+    private var wandered = false
 
     /** The owner can't change any more: a pinch under way, or a tile that has moved under the finger. */
     private var held = false
@@ -112,6 +116,7 @@ class GestureArbiter {
         folder = modes.folderOpen
         pointers = 1
         several = false
+        wandered = false
         held = false
         owner =
             when {
@@ -138,7 +143,7 @@ class GestureArbiter {
 
     /** The first finger has rested where it came down for as long as a long press takes. */
     fun longPress(): Owner {
-        if (owner == Owner.Undecided && !several && pointers == 1) owner = if (start == TouchStart.Page) Owner.Menu else Owner.Arrange
+        if (owner == Owner.Undecided && !several && !wandered && pointers == 1) owner = if (start == TouchStart.Page) Owner.Menu else Owner.Arrange
         return owner
     }
 
@@ -163,11 +168,16 @@ class GestureArbiter {
         when (owner) {
             Owner.Undecided ->
                 if (!several) {
+                    wandered = true
+                    val upwards = dy < 0 && !folder && (start == TouchStart.Page || start == TouchStart.Tile)
                     owner =
                         when {
                             start == TouchStart.Widget -> Owner.Widget
-                            abs(dx) > abs(dy) -> Owner.Pager
-                            dy < 0 && !folder && (start == TouchStart.Page || start == TouchStart.Tile) -> Owner.Drawer
+                            // Clearly upwards: the app list's, but only once it has gone far enough to be meant. Until
+                            // then nothing is decided, and a tap whose finger drifted up is still a tap.
+                            upwards && -dy >= DRAWER_STEEP * abs(dx) -> if (hypot(dx, dy) > DRAWER_SLOPS * slop) Owner.Drawer else Owner.Undecided
+                            // Sideways, or upwards at a slant a thumb's arc has: the pager's.
+                            upwards || abs(dx) > abs(dy) -> Owner.Pager
                             else -> Owner.Nobody
                         }
                     // The app list is under the finger from here on: a second finger doesn't let go of it half open.
@@ -184,9 +194,16 @@ class GestureArbiter {
         owner = Owner.Undecided
         pointers = 0
         several = false
+        wandered = false
         held = false
     }
 }
+
+/** How many times as far upwards as sideways a drag goes before it is the app list's rather than the pager's. */
+const val DRAWER_STEEP = 1.5f
+
+/** How many times the touch slop a drag upwards travels before it is the app list's: a tap's drift is shorter. */
+const val DRAWER_SLOPS = 2f
 
 /** A pinch released at this scale or less settles into the overview of all pages (PRD AC-13). */
 const val OVERVIEW_AT = 0.82f
