@@ -189,6 +189,8 @@ class ListeningHost(private val owner: Context, private val dismiss: () -> Unit)
     fun dress(window: Window) {
         window.setBackgroundDrawable(paper)
         window.statusBarColor = Color.TRANSPARENT; window.navigationBarColor = Color.TRANSPARENT
+        // No scrim of the system's behind its buttons: the paper is the only thing over the screen.
+        window.isNavigationBarContrastEnforced = false; window.isStatusBarContrastEnforced = false
         // The window's own root has to carry the owners: Compose looks for them from there.
         compose.attach(window.decorView)
         if (ring.parent != null) return

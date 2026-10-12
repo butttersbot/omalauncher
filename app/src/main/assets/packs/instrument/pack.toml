@@ -1,13 +1,8 @@
 # Instrument, after design/oma-scrapbook-prototype.html ("in"): every scrap is an LCD window
 # sunk into a grey chassis, and the dock is a row of key caps. One orange for everything lit.
 #
-# What it leaves out is Console's (assets/packs/console/pack.toml). It ships no font files:
-# none could be bundled, so each voice names the system family nearest the prototype's font,
-# for a later pass to replace with a file in fonts/:
-#   display  Doto, weight 900, capitals  -> monospace, heaviest weight, capitals
-#   body     JetBrains Mono              -> monospace
-#   hand     Doto, weight 600            -> monospace, semibold
-#   mono     the prototype's caps        -> monospace, in capitals, spaced out
+# What it leaves out is Console's (assets/packs/console/pack.toml).
+# Its fonts are the prototype's, in fonts/ (SIL Open Font License); each voice also names the nearest system family as a fallback.
 [pack]
 format = 1
 name = "Instrument"
@@ -33,18 +28,22 @@ glass = "background"
 
 [type.display]
 family = "monospace"
-weight = 900
+file = "fonts/Doto-Bold.ttf"
+weight = 700
 uppercase = true
 
 [type.body]
 family = "monospace"
+file = "fonts/JetBrainsMono-Medium.ttf"
 
 [type.hand]
 family = "monospace"
-weight = 600
+file = "fonts/Doto-Bold.ttf"
+weight = 700
 
 [type.mono]
 family = "monospace"
+file = "fonts/JetBrainsMono-Medium.ttf"
 uppercase = true
 tracking = 0.09
 

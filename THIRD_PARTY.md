@@ -41,3 +41,22 @@ Omalauncher is not affiliated with Omarchy.
 talloc (LGPL-3.0) and libandroid-shmem (BSD-3-Clause); they are not in this
 repository. The app lists every component it ships, with its license, under
 settings › licenses (`ui/LicensesScreen.kt`, texts in `app/src/main/assets/licenses/`).
+
+## Theme pack fonts
+
+`app/src/main/assets/packs/<id>/fonts/*.ttf`, in the riso, custard, tiny-magazine, bujo, dial-up,
+city-pop, instrument and one-bit packs. Static instances downloaded from
+[Google Fonts](https://fonts.google.com); each file's embedded license field names the license below.
+
+| Family | License |
+|---|---|
+| Caveat | SIL OFL 1.1 |
+| Dela Gothic One | SIL OFL 1.1 |
+| Schibsted Grotesk | SIL OFL 1.1 |
+| JetBrains Mono | SIL OFL 1.1 |
+| Playfair Display | SIL OFL 1.1 |
+| Patrick Hand | SIL OFL 1.1 |
+| Pixelify Sans | SIL OFL 1.1 |
+| Montserrat | SIL OFL 1.1 |
+| Doto | SIL OFL 1.1 |
+| Permanent Marker | Apache-2.0 |

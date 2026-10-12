@@ -222,6 +222,8 @@ private fun DesktopScreen(
             // Hidden while a terminal tile types: it would sit on the keyboard, over the tile.
             if (side == null && (runtime.terminals.active == null || runtime.terminals.keyboardLeaving)) {
                 Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Bottom) {
+                    // Over the dock and whatever stands on it, where the prototype pencils what the agent is doing.
+                    if (!panelShown) MarginNote(voice)
                     // Home only: the open app list has everything.
                     if (LauncherStyle.recentApps && !panelShown) RecentStrip(runtime, handlers)
                     // Stays laid out under the open list, so what it measures for home and what it's hearing carry on.

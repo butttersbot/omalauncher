@@ -162,7 +162,7 @@ class ThemeStore(
         LauncherStyle.bareAppIcons = prefs.getBoolean(BARE_APP_ICONS, false)
         LauncherStyle.recentApps = prefs.getBoolean(RECENT_APPS, true)
         LauncherStyle.corners = Corners.of(prefs.getString(CORNERS, null))
-        usePack(PackRegistry.choose(prefs.getString(PACK, null), ::packSource))
+        usePack(PackRegistry.choose(prefs.getString(PACK, DEFAULT_PACK), ::packSource))
     }
 
     /** The theme packs shipped in the app's assets, by folder name. Console is built in and isn't one of them. */
@@ -584,6 +584,9 @@ class ThemeStore(
         private const val RECENT_APPS = "recent_apps"
         private const val CORNERS = "corners"
         private const val PACK = "pack"
+
+        /** The look until one is picked: the prototype's own (design/oma-scrapbook-prototype.html opens in Riso). Console stays in the picker. */
+        private const val DEFAULT_PACK = "riso"
 
         /** The assets folder each shipped theme pack has a folder in. */
         private const val PACKS = "packs"

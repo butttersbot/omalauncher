@@ -39,6 +39,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -53,6 +54,7 @@ import dev.omalauncher.Runtime
 import dev.omalauncher.assist.AgentTasks
 import dev.omalauncher.assist.AssistantPromptActivity
 import dev.omalauncher.assist.marginNote
+import dev.omalauncher.assist.prototypeUnit
 import dev.omalauncher.linux.FILES_COMMAND
 import dev.omalauncher.spokenLabel
 import dev.omalauncher.theme.pack.DockStyle
@@ -124,7 +126,7 @@ private fun DockEntry.shortcut() = Shortcut(key, label, component = component?.l
 
 /**
  * The band at the bottom of home: one row with the dock's pinned apps and the agent button, across the whole
- * width, also where home shows two pages. What the agent is doing is pencilled in the margin above it, and
+ * width, also where home shows two pages. What the agent is doing is pencilled in the margin above it (the launcher's margin note), and
  * what it hears is written over the whole page (the launcher's listening layer), so the row never changes.
  */
 @Composable
@@ -147,7 +149,6 @@ internal fun DockBand(
             .onSizeChanged { frame = it.height }
             .padding(DockBandPadding),
     ) {
-        MarginNote(voice)
         Row(
             Modifier
                 .fillMaxWidth()
@@ -194,6 +195,8 @@ internal fun MarginNote(voice: AgentVoice) {
     if (text != null) last = text
     val shown by animateFloatAsState(if (text != null) 1f else 0f, Motion.timed(300), label = "margin")
     if (shown == 0f) return
+    // In the prototype's units, like the listening screen: 19 of them on a phone 380 across.
+    val u = LocalConfiguration.current.run { prototypeUnit(screenWidthDp.toFloat(), screenHeightDp.toFloat()) }
     BasicText(
         "✎ Oma: $last",
         Modifier
@@ -212,7 +215,7 @@ internal fun MarginNote(voice: AgentVoice) {
                     openOmaChat(context)
                 }
             },
-        style = Pack.hand(19.sp, Pack.onPage).copy(fontWeight = FontWeight.Bold, lineHeight = 21.sp),
+        style = Pack.hand((19 * u).sp, Pack.onPage).copy(fontWeight = FontWeight.Bold, lineHeight = (21 * u).sp),
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
     )

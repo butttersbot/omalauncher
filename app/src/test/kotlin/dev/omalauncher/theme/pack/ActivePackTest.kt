@@ -103,9 +103,12 @@ class ActivePackTest {
             assertEquals(id, load.pack.id)
             assertEquals(name, load.pack.name)
             assertEquals(PackSchema.FORMAT, load.tokens.format)
-            // No font or wallpaper file is shipped, so nothing names one.
+            // Every voice names one of the prototype's fonts, and the file is in the pack. No wallpaper file is shipped, so nothing names one.
             val type = load.pack.type
-            assertEquals("$id fonts", listOf("", "", "", ""), listOf(type.display, type.body, type.hand, type.mono).map { it.file })
+            for (font in listOf(type.display, type.body, type.hand, type.mono)) {
+                assertTrue("$id names no font file for a voice", font.file.startsWith("fonts/"))
+                assertTrue("$id: ${font.file} isn't in the pack", moduleFile("src/main/assets/packs/$id/${font.file}").isFile)
+            }
             assertEquals("", load.pack.page.wallpaperCover + load.pack.page.wallpaperInner)
             // Each draws its own page, and none is Console under another name.
             assertEquals(PageKind.Paper, load.pack.page.kind)

@@ -132,8 +132,13 @@ class PackWallpaperTest {
         val packs = moduleFile("src/main/assets/packs").listFiles().orEmpty().filter { it.isDirectory }
         assertEquals(9, packs.size)
         for (dir in packs) {
-            assertEquals(dir.name, listOf(PackLoader.MANIFEST), dir.walkTopDown().filter { it.isFile }.map { it.relativeTo(dir).path }.toList())
-            if (dir.name == ConsolePack.ID) continue
+            // Beside the manifest a look carries only its fonts; Console carries nothing.
+            val others = dir.walkTopDown().filter { it.isFile }.map { it.relativeTo(dir).path }.filter { it != PackLoader.MANIFEST }.toList()
+            assertEquals(dir.name, emptyList<String>(), others.filterNot { it.startsWith("fonts/") && it.endsWith(".ttf") })
+            if (dir.name == ConsolePack.ID) {
+                assertEquals(emptyList<String>(), others)
+                continue
+            }
             val page = PackLoader.load(DirectoryPackSource(dir), dir.name).pack.page
             assertEquals(dir.name, "", page.wallpaperCover + page.wallpaperInner)
             assertEquals(dir.name, PageKind.Paper, page.kind)

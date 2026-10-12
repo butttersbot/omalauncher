@@ -137,7 +137,7 @@ private const val WORD_MILLIS = 250
 private const val DIM = 0.88f
 
 /** The prototype's phone is 380 units wide closed and 760 open; a wider screen draws its units larger, up to half again. */
-private fun unit(widthDp: Float, heightDp: Float): Float {
+internal fun prototypeUnit(widthDp: Float, heightDp: Float): Float {
     val across = if (widthDp > heightDp * 1.1f) 760f else 380f
     return (widthDp / across).coerceIn(1f, 1.5f)
 }
@@ -174,7 +174,7 @@ internal fun ListeningLayer(
                 if (shown) Modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClickLabel = "Cancel") { onAct(ListeningAct.Cancel) } else Modifier,
             ),
     ) {
-        val u = unit(maxWidth.value, maxHeight.value)
+        val u = prototypeUnit(maxWidth.value, maxHeight.value)
         val below = WindowInsets.safeDrawing.asPaddingValues().calculateBottomPadding()
         Column(
             Modifier

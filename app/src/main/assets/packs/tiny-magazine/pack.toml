@@ -1,13 +1,8 @@
 # Tiny Magazine, after design/oma-scrapbook-prototype.html ("tm"): a blue zine spread with
 # white clippings, an italic serif masthead, and a pen that writes in white.
 #
-# What it leaves out is Console's (assets/packs/console/pack.toml). It ships no font files:
-# none could be bundled, so each voice names the system family nearest the prototype's font,
-# for a later pass to replace with a file in fonts/:
-#   display  Playfair Display, italic 700  -> serif, italic, bold
-#   body     Schibsted Grotesk             -> sans-serif
-#   hand     Caveat                        -> cursive, bold
-#   mono     the prototype's caps          -> monospace, in capitals, spaced out
+# What it leaves out is Console's (assets/packs/console/pack.toml).
+# Its fonts are the prototype's, in fonts/ (SIL Open Font License); each voice also names the nearest system family as a fallback.
 [pack]
 format = 1
 name = "Tiny Magazine"
@@ -38,18 +33,22 @@ glass = "background"
 
 [type.display]
 family = "serif"
+file = "fonts/PlayfairDisplay-BoldItalic.ttf"
 weight = 700
 italic = true
 
 [type.body]
 family = "sans-serif"
+file = "fonts/SchibstedGrotesk-Regular.ttf"
 
 [type.hand]
 family = "cursive"
+file = "fonts/Caveat-Bold.ttf"
 weight = 700
 
 [type.mono]
 family = "monospace"
+file = "fonts/JetBrainsMono-Medium.ttf"
 uppercase = true
 tracking = 0.09
 
