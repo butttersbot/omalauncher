@@ -56,6 +56,8 @@ class HomeGesturesTest {
                     when {
                         before != Owner.Undecided -> before
                         start == TouchStart.Widget -> Owner.Widget
+                        // Upwards is the app list's only from the bare page or an app, and not over an open folder.
+                        free == Owner.Drawer && (modes.folderOpen || (start != TouchStart.Page && start != TouchStart.Tile)) -> Owner.Nobody
                         else -> free
                     }
                 assertEquals("$start $modes by $dx,$dy", expected, touch(start, modes).also { it.pointers(1) }.moved(dx, dy, 0f, slop))
@@ -63,6 +65,77 @@ class HomeGesturesTest {
             // Within the slop nothing is decided, and a tap is still a tap.
             assertEquals("$start $modes", before, touch(start, modes).moved(6f, 6f, 0f, slop))
         }
+    }
+
+    /** PRD AC-1: the one touch that opens the app list on home. */
+    @Test fun aDragUpwardsOpensTheAppListOnlyWhereNothingElseWantsIt() {
+        for ((start, modes) in cases) {
+            val opens = modes == HomeModes() && (start == TouchStart.Page || start == TouchStart.Tile)
+            for ((dx, dy) in listOf(0f to -40f, 12f to -40f, -39f to -40f)) {
+                val owner = touch(start, modes).moved(dx, dy, 0f, slop)
+                assertEquals("$start $modes by $dx,$dy", opens, owner == Owner.Drawer)
+            }
+            // Never from a drag downwards or sideways, whatever it started on.
+            for ((dx, dy) in listOf(0f to 40f, 40f to 0f, -40f to -12f, 41f to -40f)) {
+                assertFalse("$start $modes by $dx,$dy", touch(start, modes).moved(dx, dy, 0f, slop) == Owner.Drawer)
+            }
+        }
+        // A widget keeps a drag upwards for itself: it may be a list, or a terminal.
+        assertEquals(Owner.Widget, touch(TouchStart.Widget, HomeModes()).moved(0f, -40f, 0f, slop))
+        // A tile being edited, its handles and its bar are the editor's; an open folder's and the pen's likewise.
+        assertEquals(Owner.Arrange, touch(TouchStart.Selected, HomeModes(editing = true)).moved(0f, -40f, 0f, slop))
+        assertEquals(Owner.Resize, touch(TouchStart.Handle, HomeModes(editing = true)).moved(0f, -40f, 0f, slop))
+        assertEquals(Owner.Editor, touch(TouchStart.Page, HomeModes(editing = true)).moved(0f, -40f, 0f, slop))
+        assertEquals(Owner.Nobody, touch(TouchStart.Tile, HomeModes(folderOpen = true)).moved(0f, -40f, 0f, slop))
+        assertEquals(Owner.Draw, touch(TouchStart.Page, HomeModes(drawing = true)).moved(0f, -40f, 0f, slop))
+    }
+
+    @Test fun upwardsOrSidewaysIsDecidedWhereTheFingerLeavesTheSlop() {
+        fun drag(
+            dx: Float,
+            dy: Float,
+        ) = touch(TouchStart.Page, HomeModes()).moved(dx, dy, 0f, slop)
+        // At the slop nothing yet; just past it, the list.
+        assertEquals(Owner.Undecided, drag(0f, -10f))
+        assertEquals(Owner.Undecided, drag(6f, -8f))
+        assertEquals(Owner.Drawer, drag(0f, -10.5f))
+        // More sideways than upwards is the pager's, by however little; exactly between the two goes upwards.
+        assertEquals(Owner.Pager, drag(20.5f, -20f))
+        assertEquals(Owner.Pager, drag(-20.5f, -20f))
+        assertEquals(Owner.Drawer, drag(20f, -20f))
+        assertEquals(Owner.Drawer, drag(-20f, -20.5f))
+        assertEquals(Owner.Nobody, drag(20f, 20f))
+        // Decided once: a swipe that began sideways stays the pager's when it curls upwards, and the other way round.
+        val sideways = touch(TouchStart.Page, HomeModes()).also { it.moved(30f, -5f, 0f, slop) }
+        assertEquals(Owner.Pager, sideways.moved(30f, -200f, 0f, slop))
+        val upwards = touch(TouchStart.Tile, HomeModes()).also { it.moved(2f, -30f, 0f, slop) }
+        assertEquals(Owner.Drawer, upwards.moved(200f, -30f, 0f, slop))
+        assertEquals(Owner.Drawer, upwards.moved(0f, 50f, 0f, slop))
+    }
+
+    @Test fun theMenuTheLiftAndThePinchStillWinOverTheAppList() {
+        // Rested as long as a long press first: the home menu on the bare page, a lift on a tile, whatever comes after.
+        val menu = touch(TouchStart.Page, HomeModes())
+        assertEquals(Owner.Menu, menu.longPress())
+        assertEquals(Owner.Menu, menu.moved(0f, -80f, 0f, slop))
+        val lifted = touch(TouchStart.Tile, HomeModes())
+        assertEquals(Owner.Arrange, lifted.longPress())
+        assertEquals(Owner.Arrange, lifted.moved(0f, -80f, 0f, slop))
+        // Two fingers down before either moved: the pinch, and no list from the finger left over.
+        val two = touch(TouchStart.Page, HomeModes()).also { it.pointers(2) }
+        assertEquals(Owner.Undecided, two.moved(0f, -80f, 5f, slop))
+        assertEquals(Owner.Pinch, two.moved(0f, -80f, -30f, slop))
+        val left = touch(TouchStart.Page, HomeModes()).also { it.pointers(2) }
+        left.pointers(1)
+        assertEquals(Owner.Undecided, left.moved(0f, -80f, 0f, slop))
+        // Once the list is coming up under a finger, a second one doesn't leave it half open, and no long press comes of it.
+        val pulling = touch(TouchStart.Page, HomeModes())
+        assertEquals(Owner.Drawer, pulling.moved(0f, -40f, 0f, slop))
+        pulling.pointers(2)
+        assertEquals(Owner.Drawer, pulling.moved(0f, -40f, -60f, slop))
+        assertEquals(Owner.Drawer, pulling.longPress())
+        pulling.up()
+        assertEquals(Owner.Undecided, pulling.owner)
     }
 
     @Test fun aLongPressLiftsATileOrOpensTheMenuAndNothingElse() {

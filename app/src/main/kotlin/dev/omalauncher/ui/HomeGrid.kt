@@ -11,6 +11,7 @@ import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.ui.input.pointer.AwaitPointerEventScope
 import androidx.compose.ui.input.pointer.PointerId
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.graphics.graphicsLayer
@@ -265,6 +266,10 @@ internal fun HomeGrid(
     onPinchEnd: (Float) -> Unit = {},
     /** Where each page keeps a still of itself for the overview; none are kept without it. */
     captures: PageCaptures? = null,
+    /** A drag upwards that is the app list's moved this many pixels down (negative is up). */
+    onDrawerDrag: (Float) -> Unit = {},
+    /** That drag let go, at this speed in px/s, negative upwards. */
+    onDrawerEnd: (Float) -> Unit = {},
 ) {
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
@@ -272,6 +277,7 @@ internal fun HomeGrid(
     val arbiter = remember { GestureArbiter() }
     val draws by rememberUpdatedState(drawing)
     val pinched by rememberUpdatedState(onPinch to onPinchEnd)
+    val drawer by rememberUpdatedState(onDrawerDrag to onDrawerEnd)
 
     BoxWithConstraints(modifier) {
         val density = LocalDensity.current
@@ -310,7 +316,8 @@ internal fun HomeGrid(
             Modifier
                 .fillMaxSize()
                 // Watches every finger without taking any, and tells the arbiter how many are down and how they move.
-                // Only a pinch is taken, and then from everything below: the pager, the tiles and a widget's own drag.
+                // Only a pinch is taken, and then from everything below: the pager, the tiles and a widget's own drag;
+                // and a drag upwards that the arbiter gives the app list, which follows the finger from then on.
                 .pointerInput(Unit) {
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
@@ -319,13 +326,17 @@ internal fun HomeGrid(
                         var span0 = 0f
                         var scale = 1f
                         var pinching = false
+                        // The app list coming up under the finger: where the finger last was, and how fast it goes.
+                        var pulling = false
+                        var lastY = 0f
+                        val speed = VelocityTracker()
                         try {
                             while (true) {
                                 val event = awaitPointerEvent(PointerEventPass.Initial)
                                 val pressed = event.changes.filter { it.pressed }
                                 if (pressed.isEmpty()) {
-                                    // The fingers' lifting is the pinch's too, never a tap on what is under them.
-                                    if (pinching) event.changes.forEach { it.consume() }
+                                    // The fingers' lifting is the pinch's too, or the list's, never a tap on what is under them.
+                                    if (pinching || pulling) event.changes.forEach { it.consume() }
                                     break
                                 }
                                 arbiter.pointers(pressed.size)
@@ -345,13 +356,26 @@ internal fun HomeGrid(
                                 } else {
                                     pair = null
                                     val first = event.changes.firstOrNull { it.id == down.id }
-                                    if (first != null && first.pressed) (first.position - down.position).let { arbiter.moved(it.x, it.y, 0f, slop) }
+                                    if (first != null && first.pressed) {
+                                        (first.position - down.position).let { arbiter.moved(it.x, it.y, 0f, slop) }
+                                        if (arbiter.owner == Owner.Drawer) {
+                                            // From where the finger is as the list becomes its, so it doesn't jump by the slop.
+                                            if (!pulling) {
+                                                pulling = true
+                                                lastY = first.position.y
+                                            }
+                                            speed.addPosition(first.uptimeMillis, first.position)
+                                            drawer.first(first.position.y - lastY)
+                                            lastY = first.position.y
+                                        }
+                                    }
                                 }
-                                if (arbiter.owner == Owner.Pinch) event.changes.forEach { it.consume() }
+                                if (arbiter.owner == Owner.Pinch || arbiter.owner == Owner.Drawer) event.changes.forEach { it.consume() }
                             }
                         } finally {
                             arbiter.up()
                             if (pinching) pinched.second(scale)
+                            if (pulling) drawer.second(speed.calculateVelocity().y)
                         }
                     }
                 }

@@ -45,10 +45,10 @@ enum class Owner {
     /** A drag that began on a widget: its content takes what it wants, and the pager what it leaves. */
     Widget,
 
-    /** A drag upwards: the app list. */
+    /** A drag upwards from the bare page, an app or a folder: the app list comes up under the finger (PRD AC-1). */
     Drawer,
 
-    /** A drag downwards, which home has no use for. */
+    /** A drag downwards, or upwards over an open folder, which home has no use for. */
     Nobody,
 
     /** A long press on the bare page: the home menu. */
@@ -82,13 +82,19 @@ enum class Owner {
  * the menu, the selected tile is carried or resized, and a widget's own drag is the widget's. Two fingers
  * moving apart or together are the pinch from wherever they came down, a widget that drags or a page being
  * drawn on included; only a tile already being carried or resized keeps the touch, since letting go of it
- * for a second finger would drop it somewhere he didn't choose.
+ * for a second finger would drop it somewhere he didn't choose, and the app list once it is coming up.
+ *
+ * A drag upwards opens the app list where nothing else wants it: from the bare page, an app or a folder, with
+ * no tile being edited, no folder open and no drawing. A widget keeps its own drags, upwards too (it may be a
+ * list, or a terminal); a drag more sideways than upwards is the pager's, and one exactly between the two goes
+ * upwards.
  */
 class GestureArbiter {
     var owner = Owner.Undecided
         private set
 
     private var start = TouchStart.Page
+    private var folder = false
     private var pointers = 0
 
     /** More than one finger has been down since the first: no long press comes of this sequence, nor a one-finger drag. */
@@ -103,6 +109,7 @@ class GestureArbiter {
         modes: HomeModes,
     ): Owner {
         this.start = start
+        folder = modes.folderOpen
         pointers = 1
         several = false
         held = false
@@ -160,9 +167,11 @@ class GestureArbiter {
                         when {
                             start == TouchStart.Widget -> Owner.Widget
                             abs(dx) > abs(dy) -> Owner.Pager
-                            dy < 0 -> Owner.Drawer
+                            dy < 0 && !folder && (start == TouchStart.Page || start == TouchStart.Tile) -> Owner.Drawer
                             else -> Owner.Nobody
                         }
+                    // The app list is under the finger from here on: a second finger doesn't let go of it half open.
+                    if (owner == Owner.Drawer) held = true
                 }
             Owner.Arrange, Owner.Resize -> held = true
             else -> {}

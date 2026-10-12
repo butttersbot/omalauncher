@@ -7,6 +7,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.platform.LocalWindowInfo
@@ -73,6 +75,62 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.geometry.Rect
 import dev.omalauncher.widgets.layout.wallpaperOffset
 
+/**
+ * A one-finger drag upwards that starts here opens the app list under the finger (PRD AC-1): for the bands
+ * around the pages, the page names above them and the dock below. Asked of a [GestureArbiter], as on the pages:
+ * a drag more sideways than upwards, one downwards, a second finger or drawing mode leave it shut. What is
+ * here keeps its own touches: a press that rests as long as a long press, or that something here has taken
+ * (the agent button held to talk), is not a drag. [windowHeight] is what the list's position is a fraction of.
+ */
+internal fun Modifier.opensDrawer(
+    state: LauncherState,
+    windowHeight: Float,
+): Modifier =
+    pointerInput(state, windowHeight) {
+        awaitEachGesture {
+            // After what is here has seen each move, so what it takes shows.
+            val down = awaitFirstDown(requireUnconsumed = false)
+            // Not from under the list, which closes its own way, nor from under the overview.
+            if (state.drawer.value > 0.01f || state.overviewOpen) return@awaitEachGesture
+            val arbiter = GestureArbiter()
+            arbiter.down(TouchStart.Page, HomeModes(drawing = state.drawing))
+            val speed = VelocityTracker()
+            var pulling = false
+            var lastY = 0f
+            try {
+                while (true) {
+                    val event = awaitPointerEvent()
+                    val pressed = event.changes.count { it.pressed }
+                    val finger = event.changes.firstOrNull { it.id == down.id }
+                    if (pressed == 0 || finger == null || !finger.pressed) {
+                        if (pulling) event.changes.forEach { it.consume() }
+                        break
+                    }
+                    arbiter.pointers(pressed)
+                    if (!pulling) {
+                        if (finger.isConsumed) break
+                        if (finger.uptimeMillis - down.uptimeMillis >= viewConfiguration.longPressTimeoutMillis) arbiter.longPress()
+                        val by = finger.position - down.position
+                        when (arbiter.moved(by.x, by.y, 0f, viewConfiguration.touchSlop)) {
+                            Owner.Undecided -> continue
+                            Owner.Drawer -> {
+                                pulling = true
+                                lastY = finger.position.y
+                            }
+                            else -> break
+                        }
+                    }
+                    speed.addPosition(finger.uptimeMillis, finger.position)
+                    state.dragBy(-(finger.position.y - lastY) / windowHeight)
+                    lastY = finger.position.y
+                    event.changes.forEach { it.consume() }
+                }
+            } finally {
+                if (pulling) state.settle(speed.calculateVelocity().y)
+            }
+        }
+    }
+
 /** How long home rests on a page before it takes a still of it for the overview. */
 private const val STILL_AFTER_MS = 700L
 
@@ -117,6 +175,8 @@ fun HomeScreen(
     // How far a pinch has shrunk the pages: it follows the fingers, and springs back when they let go.
     val pinch = remember { Animatable(1f) }
     val pinching = remember { booleanArrayOf(false) }
+    // What the app list's position is a fraction of, as where it is dragged shut.
+    val windowHeight = with(density) { LocalConfiguration.current.screenHeightDp.dp.toPx() }
     val scope = rememberCoroutineScope()
     // A still of the pages showing, a moment after arriving on them, for the overview to show when they're left.
     LaunchedEffect(pager.settledPage, engine.notebook.opened) {
@@ -312,6 +372,7 @@ fun HomeScreen(
             // Gone as the pages shrink under a pinch: the overview names every page itself.
             faded = { maxOf(state.drawer.value, (1f - pinch.value) / (1f - OVERVIEW_AT)) },
             onOpen = state::openOverview,
+            modifier = Modifier.opensDrawer(state, windowHeight),
         )
         HomeGrid(
             pager = pager,
@@ -401,6 +462,9 @@ fun HomeScreen(
             ready = engine.notebook.opened,
             drawing = state.drawing,
             captures = state.captures,
+            // Not under a terminal tile's keyboard: the list comes up with no keyboard showing.
+            onDrawerDrag = { dy -> if (terminals.active == null) state.dragBy(-dy / windowHeight) },
+            onDrawerEnd = { velocity -> if (terminals.active == null) state.settle(velocity) },
             pinch = { pinch.value },
             onPinch = { scale ->
                 // The pages are caught as they were when the pinch began.
@@ -472,9 +536,10 @@ private fun PageNames(
     hidden: () -> Boolean,
     faded: () -> Float,
     onOpen: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        Modifier
+        modifier
             .fillMaxWidth()
             .height(PageNameHeight)
             .graphicsLayer { alpha = if (hidden()) 0f else 1f - faded().coerceIn(0f, 1f) },
