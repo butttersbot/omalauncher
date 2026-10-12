@@ -10,3 +10,29 @@ The launcher installed on the phone reports version code 28 (`oma-install --stat
 - Debug APK: built, `app/build/outputs/apk/debug/app-debug.apk`, 38,075,842 bytes, written 14:40.
 - Errors: none. Only Kotlin warnings (unnecessary `!!` in NotebookStartTest.kt, deprecations).
 - Not installed: `oma-install` and `oma-try` were not run.
+
+## On-phone checks (2026-10-12, 14:40–14:42 PDT)
+Phone state: unlocked, OPEN (inner screen, screenshot 2448x1848), `oma-phone status` connected and active.
+Look at start: riso. Page showing at start: Page 2 (home shows both, label "Page 1 + Page 2  1/2").
+
+### If the phone is CLOSED (checks 1–6)
+1. COULD NOT TEST — phone is open; folding needs Boss's hands.
+2. COULD NOT TEST — same.
+3. COULD NOT TEST — same.
+4. COULD NOT TEST — same.
+5. COULD NOT TEST — same.
+6. COULD NOT TEST on the cover screen. Seen on the open screen only: the date "12" and "using Bash…" are in a heavy display face, "MONDAY", "TUE", "WED", "OMA" in spaced capitals.
+
+### In either state (checks 7–9)
+7. PASS — `oma-phone pages` lists "Page 1", "Page 2". From Page 1, `oma-phone page "page two"` answered `{"ok":true,"page":"Page 2"}` and `pages` then reported showing "Page 2". `oma-phone page "holiday"` answered "No page matches that name. Nothing was changed." with showing unchanged. Left on Page 2, as found. Limit: open, home shows both pages side by side, so the turn is only visible in the `showing` value, not on screen.
+8. PASS — app list opened ("ALL APPS", "CLOSE ↓", eight apps across on the open screen, search field and gear at the bottom). Gear opened settings (look: riso). "look" showed nine looks as small pages: console, bujo, city pop, custard, dial-up, instrument, 1-bit, riso, tiny magazine; riso outlined in pink and marked "IN USE". Closed with ×; no look was changed.
+9. PASS — the "oma" widget on Page 1 read "using Bash…" in every screenshot while working, never "ready".
+
+### Seen along the way (not on the list)
+- FAIL (phone control) — `oma-phone click SNAPSHOT NODE` returned ok but did nothing on the dock's "All apps" node (root.0.0.0.2.9) and on the app list's gear node (root.0.0.0.2.4); `oma-phone tap X Y` on the same spots worked.
+- FAIL (phone control) — `oma-phone read` lags the screen: right after a tap it returned the previous screen's nodes (home after the app list had opened; settings after settings and the app list had closed), each time with a new snapshot id. Screenshots were correct. A second read a moment later was sometimes still stale.
+- Note — opening the app list focuses search and raises the keyboard, which moves the gear from the bottom of the screen to mid-screen; a tap aimed at the gear's first position landed on the keyboard area (nothing was typed, the field stayed empty).
+- Note — closing settings with its × also left the app list closed: one tap went from settings straight to home.
+
+### End state
+Home, riso look, Page 2 showing, no menu, overview, app list or drawing tools open. Nothing typed into any app, no tiles/pages/notes changed, no Android settings changed, nothing installed.
