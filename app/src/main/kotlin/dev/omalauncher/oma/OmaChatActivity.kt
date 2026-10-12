@@ -75,15 +75,13 @@ import dev.omalauncher.linux.agentInvocation
 import dev.omalauncher.linux.importPromptImage
 import dev.omalauncher.phone.PhoneBridge
 import dev.omalauncher.ui.BracketAction
-import dev.omalauncher.ui.HomeGap
 import dev.omalauncher.ui.MicIcon
-import dev.omalauncher.ui.Mono
-import dev.omalauncher.ui.Palette
+import dev.omalauncher.ui.Pack
+import dev.omalauncher.ui.PageGap
 import dev.omalauncher.ui.ReadingWidth
 import dev.omalauncher.ui.Speech
-import dev.omalauncher.ui.TextSize
 import dev.omalauncher.ui.applySystemBars
-import dev.omalauncher.ui.frame
+import dev.omalauncher.ui.framed
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -108,9 +106,9 @@ class OmaChatActivity : ComponentActivity() {
         runtime.start()
         AgentTasks.restore(this)
         if (savedInstanceState == null) prefill = textOf(intent)
-        applySystemBars(this, Palette.isLight)
+        applySystemBars(this, Pack.isLight)
         setContent {
-            LaunchedEffect(Palette.isLight) { applySystemBars(this@OmaChatActivity, Palette.isLight) }
+            LaunchedEffect(Pack.isLight) { applySystemBars(this@OmaChatActivity, Pack.isLight) }
             OmaChatScreen(runtime, prefill, onPrefilled = { prefill = null })
         }
     }
@@ -243,20 +241,20 @@ private fun OmaChatScreen(
     }
 
     val listening = speech.listening
-    Box(Modifier.fillMaxSize().background(Palette.background).safeDrawingPadding().padding(HomeGap), contentAlignment = Alignment.TopCenter) {
+    Box(Modifier.fillMaxSize().background(Pack.background).safeDrawingPadding().padding(PageGap), contentAlignment = Alignment.TopCenter) {
         Column(Modifier.fillMaxSize().widthIn(max = ReadingWidth)) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                BasicText("oma", style = Mono.copy(color = Palette.accent, fontSize = TextSize.Title))
+                BasicText(Pack.heading("oma"), style = Pack.display(color = Pack.accent))
                 Spacer(Modifier.width(10.dp))
                 BasicText(
                     listOfNotNull(runtime.agents.default?.name, label.takeIf { it != "Ready" }).joinToString(" · ").ifEmpty { "no agent yet" },
                     Modifier.weight(1f),
-                    style = Mono.copy(color = Palette.muted, fontSize = TextSize.Small),
+                    style = Pack.body(Pack.size.small, Pack.muted),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 if (followUp && !working) {
-                    BracketAction("new thread", Palette.accent) {
+                    BracketAction("new thread", Pack.accent) {
                         try {
                             AgentTasks.newThread(context)
                             notice = null
@@ -274,7 +272,7 @@ private fun OmaChatScreen(
                         BasicText(
                             "Ask Oma for something. Follow-ups continue the same conversation until you start a new thread.",
                             Modifier.fillMaxWidth().padding(vertical = 24.dp),
-                            style = Mono.copy(color = Palette.muted, textAlign = TextAlign.Center),
+                            style = Pack.body(color = Pack.muted).copy(textAlign = TextAlign.Center),
                         )
                     }
                 }
@@ -284,10 +282,10 @@ private fun OmaChatScreen(
                 }
             }
             notice?.let {
-                BasicText(it, Modifier.clickable { notice = null }.padding(8.dp), style = Mono.copy(color = Palette.red, fontSize = TextSize.Small))
+                BasicText(it, Modifier.clickable { notice = null }.padding(8.dp), style = Pack.body(Pack.size.small, Pack.red))
             }
             speech.error?.takeIf { !listening }?.let {
-                BasicText(it, Modifier.clickable { speech.error = null }.padding(8.dp), style = Mono.copy(color = Palette.red, fontSize = TextSize.Small))
+                BasicText(it, Modifier.clickable { speech.error = null }.padding(8.dp), style = Pack.body(Pack.size.small, Pack.red))
             }
             if (images.isNotEmpty()) {
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(4.dp)) {
@@ -301,9 +299,9 @@ private fun OmaChatScreen(
                     }
                 }
             }
-            if (importing) BasicText("adding images…", Modifier.padding(8.dp), style = Mono.copy(color = Palette.muted))
+            if (importing) BasicText("adding images…", Modifier.padding(8.dp), style = Pack.body(color = Pack.muted))
             Row(
-                Modifier.fillMaxWidth().heightIn(min = 48.dp).frame(2.dp, if (listening || focused) Palette.accent else Palette.border, Palette.surface),
+                Modifier.fillMaxWidth().heightIn(min = 48.dp).framed(Pack.mark, if (listening || focused) Pack.accent else Pack.border, Pack.surface),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 val shown = if (listening) appendSpeech(before, speech.text) else draft
@@ -315,8 +313,8 @@ private fun OmaChatScreen(
                     },
                     readOnly = listening,
                     maxLines = 6,
-                    textStyle = Mono.copy(fontSize = TextSize.Item, color = if (listening) Palette.accent else Palette.foreground),
-                    cursorBrush = SolidColor(Palette.accent),
+                    textStyle = Pack.body(Pack.size.item, if (listening) Pack.accent else Pack.foreground),
+                    cursorBrush = SolidColor(Pack.accent),
                     modifier =
                         Modifier
                             .weight(1f)
@@ -334,7 +332,7 @@ private fun OmaChatScreen(
                         Box(Modifier.padding(horizontal = 12.dp, vertical = 12.dp)) {
                             if (shown.isEmpty()) {
                                 val hint = if (listening) "listening…" else if (followUp) "follow up on this thread…" else "ask oma…"
-                                BasicText(hint, style = Mono.copy(color = Palette.muted, fontSize = TextSize.Item), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                BasicText(hint, style = Pack.body(Pack.size.item, Pack.muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                             inner()
                         }
@@ -347,24 +345,24 @@ private fun OmaChatScreen(
                             .clickable(enabled = !importing && images.size < MAX_PROMPT_IMAGES) {
                                 picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                             }.padding(horizontal = 12.dp, vertical = 12.dp),
-                    ) { BasicText("+", style = Mono.copy(color = Palette.accent)) }
+                    ) { BasicText("+", style = Pack.body(color = Pack.accent)) }
                 }
                 // Tap to dictate into the field; it stops at the next pause, or at another tap.
                 Box(
                     Modifier
                         .size(48.dp)
-                        .background(if (listening) Palette.red else Palette.surface)
+                        .background(if (listening) Pack.red else Pack.surface)
                         .semantics { contentDescription = if (listening) "Stop listening" else "Dictate" }
                         .clickable { if (speech.listening) speech.stop() else talk() },
                     contentAlignment = Alignment.Center,
-                ) { MicIcon(if (listening) Palette.background else Palette.foreground) }
+                ) { MicIcon(if (listening) Pack.background else Pack.foreground) }
                 if (working) {
-                    BracketAction("stop", Palette.red) {
+                    BracketAction("stop", Pack.red) {
                         AgentTasks.stop(context)
                         tick++
                     }
                 } else if (!listening) {
-                    BracketAction("send", if (draft.isBlank() && images.isEmpty()) Palette.muted else Palette.accent, ::send)
+                    BracketAction("send", if (draft.isBlank() && images.isEmpty()) Pack.muted else Pack.accent, ::send)
                 }
             }
         }
@@ -381,12 +379,12 @@ private fun TaskEntry(
     pending: List<PendingApproval>,
     onAnswer: (PendingApproval, Boolean) -> Unit,
 ) {
-    val small = Mono.copy(color = Palette.muted, fontSize = TextSize.Small)
+    val small = Pack.mono(Pack.size.small, Pack.muted)
     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         val sent = remember(task.time) { DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(task.time)) }
         BasicText(if (task.newThread) "new thread · $sent" else sent, Modifier.fillMaxWidth().padding(bottom = 4.dp), style = small.copy(textAlign = TextAlign.Center))
-        Column(Modifier.fillMaxWidth().frame(1.dp, Palette.border, Palette.surface, radius = 12.dp).padding(10.dp)) {
-            BasicText(task.prompt, style = Mono)
+        Column(Modifier.fillMaxWidth().framed(Pack.hair, Pack.border, Pack.surface, radius = 12.dp).padding(10.dp)) {
+            BasicText(task.prompt, style = Pack.body())
             val attached = listOfNotNull(
                 task.images.size.takeIf { it > 0 }?.let { if (it == 1) "1 image" else "$it images" },
                 "this screen".takeIf { task.screen },
@@ -397,37 +395,37 @@ private fun TaskEntry(
         for (approval in task.approvals) {
             val waiting = if (approval.answer == ApprovalAnswer.Waiting) pending.firstOrNull { it.nonce == approval.key } else null
             if (waiting != null) {
-                Column(Modifier.fillMaxWidth().padding(top = 8.dp).frame(2.dp, Palette.accent, Palette.surface, radius = 12.dp).padding(10.dp)) {
-                    BasicText("Allow ${approval.tool}?", style = Mono.copy(color = Palette.accent))
+                Column(Modifier.fillMaxWidth().padding(top = 8.dp).framed(Pack.mark, Pack.accent, Pack.surface, radius = 12.dp).padding(10.dp)) {
+                    BasicText("Allow ${approval.tool}?", style = Pack.body(color = Pack.accent))
                     if (waiting.approval.explanation.isNotBlank()) BasicText(waiting.approval.explanation.take(300), Modifier.padding(top = 4.dp), style = small)
-                    BasicText(approval.detail, Modifier.padding(top = 4.dp), style = Mono, maxLines = 10, overflow = TextOverflow.Ellipsis)
+                    BasicText(approval.detail, Modifier.padding(top = 4.dp), style = Pack.body(), maxLines = 10, overflow = TextOverflow.Ellipsis)
                     BasicText("Approve once allows this action only.", Modifier.padding(top = 4.dp), style = small)
                     Row {
-                        BracketAction("approve once", Palette.green) { onAnswer(waiting, true) }
-                        BracketAction("deny", Palette.red) { onAnswer(waiting, false) }
+                        BracketAction("approve once", Pack.green) { onAnswer(waiting, true) }
+                        BracketAction("deny", Pack.red) { onAnswer(waiting, false) }
                     }
                 }
             } else {
                 // A waiting approval that can no longer be answered here reads as not answered.
                 val answer = if (approval.answer == ApprovalAnswer.Waiting && !running) ApprovalAnswer.Unanswered else approval.answer
                 val color = when (answer) {
-                    ApprovalAnswer.Approved -> Palette.green
-                    ApprovalAnswer.Denied, ApprovalAnswer.Refused -> Palette.red
-                    else -> Palette.muted
+                    ApprovalAnswer.Approved -> Pack.green
+                    ApprovalAnswer.Denied, ApprovalAnswer.Refused -> Pack.red
+                    else -> Pack.muted
                 }
                 BasicText("${approval.tool} · ${answer.label}", Modifier.padding(top = 6.dp), style = small.copy(color = color))
                 BasicText(approval.detail, style = small, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
-        if (running) BasicText("$label…", Modifier.padding(top = 6.dp), style = small.copy(color = Palette.accent))
-        if (result.isNotBlank()) SelectionContainer { BasicText(result.trim(), Modifier.padding(top = 6.dp), style = Mono) }
+        if (running) BasicText("$label…", Modifier.padding(top = 6.dp), style = small.copy(color = Pack.accent))
+        if (result.isNotBlank()) SelectionContainer { BasicText(result.trim(), Modifier.padding(top = 6.dp), style = Pack.body()) }
         val ended = when (task.status) {
             TaskStatus.Stopped -> "stopped"
             TaskStatus.Failed -> "needs attention"
             TaskStatus.Interrupted -> "interrupted: the app was closed while this ran"
             else -> null
         }
-        if (ended != null && !running) BasicText(ended, Modifier.padding(top = 4.dp), style = small.copy(color = Palette.red))
+        if (ended != null && !running) BasicText(ended, Modifier.padding(top = 4.dp), style = small.copy(color = Pack.red))
     }
 }
 
@@ -453,12 +451,12 @@ private fun AttachmentPreview(
         if (bitmap != null) {
             Image(bitmap, "Attached image $number", Modifier.size(56.dp))
         } else {
-            BasicText("image $number", Modifier.size(56.dp), style = Mono.copy(color = Palette.muted))
+            BasicText("image $number", Modifier.size(56.dp), style = Pack.body(color = Pack.muted))
         }
         BasicText(
             "remove",
             Modifier.semantics { contentDescription = "Remove image $number" }.clickable(enabled = enabled, onClick = onRemove).padding(vertical = 8.dp),
-            style = Mono.copy(color = Palette.accent, fontSize = TextSize.Small),
+            style = Pack.body(Pack.size.small, Pack.accent),
         )
     }
 }

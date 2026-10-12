@@ -18,7 +18,29 @@ class PackSourceCheckTest {
      * Files already converted to draw from the pack, as paths under the source root
      * ("ui/Home.kt"). Add each file here as it is converted, and it can't slip back.
      */
-    private val converted = setOf<String>()
+    private val converted =
+        setOf(
+            // Home: the page, its tiles, folders, the edit bar and the long-press menu.
+            "ui/Home.kt",
+            "ui/HomeGrid.kt",
+            "ui/WidgetTile.kt",
+            "ui/ShortcutTile.kt",
+            "ui/Folders.kt",
+            "ui/HomeMenu.kt",
+            // The drawer, the dock, the agent button and the rails.
+            "ui/AppDrawer.kt",
+            "ui/AppSearch.kt",
+            "ui/Dock.kt",
+            "ui/AgentButton.kt",
+            "ui/AgentRail.kt",
+            "ui/SideRail.kt",
+            // What those share with every other screen.
+            "ui/Components.kt",
+            "ui/Icons.kt",
+            "ui/IconMask.kt",
+            // The Oma chat.
+            "oma/OmaChatActivity.kt",
+        )
 
     /** Where the accessors are defined, which is counted apart from the files that use them. */
     private val definitions = "ui/Theme.kt"
