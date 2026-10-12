@@ -25,6 +25,20 @@ on this phone; no keys or credentials are copied in or exported.
 Installing the preview and choosing it as home are separate steps; do not
 replace the working launcher unless asked.
 
+## Source synchronization
+
+- GitHub branch: `phone/fold-development`
+- Mac mirror: `/Users/jackkim/Projects/omalauncher-fold`
+
+After a successful build, `oma-build` automatically commits the source edits
+and pushes them to the GitHub branch `phone/fold-development`. Use `oma-sync`
+to save unfinished edits the same way without building; describe untested work
+as such. If the push fails because the phone is offline, the commits stay local
+and the next `oma-sync` retries it.
+
+The Mac mirror fast-forwards to the branch about once a minute and preserves
+any local edits made there.
+
 ## Status
 
 Verified on the Fold on 2026-10-11 (Boss client date): `oma-build` on `phone/fold-development`
