@@ -17,7 +17,7 @@ import androidx.compose.runtime.setValue
 import java.util.Locale
 
 /**
- * Android speech recognition for the prompt bar. The guest has no microphone,
+ * Android speech recognition for the agent button. The guest has no microphone,
  * so speech becomes text here and only text reaches Linux. Prefers the
  * on-device recognizer (offline, fast) and falls back to the regular one when
  * it has no model for the language. Main thread only, like SpeechRecognizer.

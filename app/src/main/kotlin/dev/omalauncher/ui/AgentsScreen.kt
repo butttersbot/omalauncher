@@ -21,7 +21,30 @@ import dev.omalauncher.linux.Agent
 import dev.omalauncher.linux.JobState
 import kotlinx.coroutines.launch
 
-/** Install and launch coding agents (Claude Code, OpenCode, Codex, Grok, ...). */
+/** What an agent's row says about being the default: the one the agent button, the Oma chat and widget work go to. */
+internal enum class DefaultMark {
+    /** Not installed, so it can't be the default. */
+    None,
+
+    /** It is the default. */
+    Default,
+
+    /** Installed beside the default: a tap makes it the default. */
+    CanChoose,
+}
+
+/** The mark for the agent [bin], given the bins [installed] and the default's (null when there is none). */
+internal fun defaultMark(
+    bin: String,
+    installed: List<String>,
+    default: String?,
+) = when {
+    bin !in installed -> DefaultMark.None
+    bin == default -> DefaultMark.Default
+    else -> DefaultMark.CanChoose
+}
+
+/** Install and launch coding agents (Claude Code, OpenCode, Codex, Grok, ...), and choose the default one. */
 @Composable
 fun AgentsScreen(
     runtime: Runtime,
@@ -42,6 +65,8 @@ fun AgentsScreen(
                     agent = agent,
                     installed = agent in store.installed,
                     state = store.states[agent.bin] ?: JobState.Idle,
+                    mark = defaultMark(agent.bin, store.installed.map { it.bin }, store.default?.bin),
+                    onChoose = { store.choose(agent) },
                     onInstall = { scope.launch { store.install(agent) } },
                     onRemove = { scope.launch { store.remove(agent) } },
                     onOpen = { onOpen(agent) },
@@ -56,6 +81,8 @@ private fun AgentRow(
     agent: Agent,
     installed: Boolean,
     state: JobState,
+    mark: DefaultMark,
+    onChoose: () -> Unit,
     onInstall: () -> Unit,
     onRemove: () -> Unit,
     onOpen: () -> Unit,
@@ -80,6 +107,12 @@ private fun AgentRow(
                 }
                 else -> BracketAction("install", Palette.accent, onInstall)
             }
+        }
+        // On a line of its own: three actions beside the name leave a phone no room for the name.
+        when (mark) {
+            DefaultMark.Default -> BasicText("● default", Modifier.padding(top = 6.dp), style = Mono.copy(color = Palette.accent, fontSize = TextSize.Small))
+            DefaultMark.CanChoose -> BracketAction("make default", Palette.accent, onChoose)
+            DefaultMark.None -> {}
         }
         JobLog(state)
     }

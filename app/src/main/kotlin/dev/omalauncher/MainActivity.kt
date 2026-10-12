@@ -18,7 +18,7 @@ import dev.omalauncher.ui.Palette
 import dev.omalauncher.ui.applySystemBars
 import dev.omalauncher.ui.LauncherRoot
 import dev.omalauncher.ui.LauncherState
-import dev.omalauncher.ui.PromptRequest
+import dev.omalauncher.ui.openOmaChat
 import dev.omalauncher.widgets.market.Share
 
 /** The home screen: widgets, pinned apps and the drawer; Linux windows open as their own tasks. */
@@ -143,7 +143,7 @@ class MainActivity : ComponentActivity() {
         when (keyCode) {
             KeyEvent.KEYCODE_ENTER -> runtime.terminal(null, "Terminal")
             KeyEvent.KEYCODE_SPACE -> state.toggle()
-            KeyEvent.KEYCODE_A -> state.promptRequest = PromptRequest.Type
+            KeyEvent.KEYCODE_A -> openOmaChat(this)
             in KeyEvent.KEYCODE_1..KeyEvent.KEYCODE_9 -> state.requestedPage = keyCode - KeyEvent.KEYCODE_1
             else -> return false
         }

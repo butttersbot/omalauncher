@@ -27,8 +27,19 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
+import android.content.res.Configuration
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -37,6 +48,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.text.KeyboardActions
@@ -70,7 +82,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import dev.omalauncher.linux.FILES_COMMAND
 import dev.omalauncher.linux.LinuxApp
 
-/** One app in the bar's results. */
+/** One app in the app list or its search results. */
 internal sealed interface AppHit {
     /** Stable id, also the [dev.omalauncher.AppUsage] key. */
     val key: String
@@ -104,7 +116,7 @@ internal sealed interface AppHit {
     }
 }
 
-/** What the bar's query matched: apps best first, and whether Enter opens the first rather than asking the agent. */
+/** What the search field's query matched: apps best first, and whether Enter opens the first rather than asking the agent. */
 internal class BarSearch(
     val hits: List<AppHit>,
     val opensApp: Boolean,
@@ -125,25 +137,35 @@ internal fun searchApps(
     return BarSearch(ranked.map { it.first }, ranked.firstOrNull()?.let { isStrongMatch(it.second, query) } == true)
 }
 
-/** What the app cells do: open, pin to home, and the Android app's info and uninstall. */
+/** What the app cells do: open, pin to home, pin to the dock or unpin, and the Android app's info and uninstall. */
 internal class AppHandlers(
     val launch: (AppHit) -> Unit,
     val pin: (AppHit) -> Unit,
+    /** Whether the app is in the dock, which decides what [dock] is called in the menu. */
+    val docked: (AppHit) -> Boolean,
+    /** Pins the app to the dock, or unpins it if it's there. */
+    val dock: (AppHit) -> Unit,
     val info: (AndroidApp) -> Unit,
     val uninstall: (AndroidApp) -> Unit,
 )
 
-/** The long-press menu of an app cell: pin to home, and for Android apps their info and uninstall. */
-private fun AppHit.actions(handlers: AppHandlers): List<Pair<String, () -> Unit>> =
-    when (this) {
-        is AppHit.Linux -> listOf("add to home" to { handlers.pin(this) })
+/** What the long-press menu calls [AppHandlers.dock] for an app that is or isn't [docked]. */
+internal fun dockActionLabel(docked: Boolean) = if (docked) "unpin from dock" else "pin to dock"
+
+/** The long-press menu of an app cell: pin to home, pin to the dock or unpin, and for Android apps their info and uninstall. */
+private fun AppHit.actions(handlers: AppHandlers): List<Pair<String, () -> Unit>> {
+    val dock = dockActionLabel(handlers.docked(this)) to { handlers.dock(this) }
+    return when (this) {
+        is AppHit.Linux -> listOf("add to home" to { handlers.pin(this) }, dock)
         is AppHit.Android ->
             listOfNotNull(
                 "add to home" to { handlers.pin(this) },
+                dock,
                 "app info" to { handlers.info(app) },
                 if (app.system) null else "uninstall" to { handlers.uninstall(app) },
             )
     }
+}
 
 /** The app's icon and its silhouette (each null until loaded or if it has none), and a glyph for built-in apps (Files). */
 private fun AppHit.icons(runtime: Runtime): Triple<ImageBitmap?, ImageBitmap?, ImageVector?> =
@@ -163,11 +185,11 @@ private fun HitCell(
     AppCell(hit.label, icon, mask, onClick = { handlers.launch(hit) }, actions = { hit.actions(handlers) }, glyph = glyph, selected = selected, spoken = hit.spoken, paused = hit.paused(runtime))
 }
 
-/** Height of the recent apps strip; home keeps this much room for it above the bar, even while it's empty. */
+/** Height of the recent apps strip; home keeps this much room for it above the dock, even while it's empty. */
 val RecentStripHeight = 56.dp
 
 /**
- * The apps opened lately, on home right above the bar, scrolling sideways; [vertical] stands it up
+ * The apps opened lately, on home right above the dock, scrolling sideways; [vertical] stands it up
  * beside the grid in landscape, scrolling down. A home tile like the others: frame, fill and gaps,
  * or bare when home icons are. Can be hidden in themes.
  */
@@ -208,9 +230,9 @@ internal fun RecentStrip(
     }
 }
 
-/** An app in the recent strip, drawn like a pinned app's tile: the icon alone, or on a badge when bare. */
+/** An app in the recent strip or the dock, drawn like a pinned app's tile: the icon alone, or on a badge when bare. */
 @Composable
-private fun StripCell(
+internal fun StripCell(
     label: String,
     icon: ImageBitmap?,
     mask: ImageBitmap?,
@@ -222,12 +244,13 @@ private fun StripCell(
     spoken: String = label,
     /** As in [AppHit.paused]: drawn dimmed, like stock launchers. */
     paused: Boolean = false,
+    /** The icon's size inside the 48dp cell. */
+    size: Dp = 40.dp,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val haptics = LocalHapticFeedback.current
     val mono = LauncherStyle.monochromeIcons
     val bare = LauncherStyle.bareAppIcons
-    val size = 40.dp
     Box(
         Modifier
             .size(48.dp)
@@ -271,14 +294,26 @@ private fun recentApps(
 }
 
 /**
- * The bar's results, growing up from it. Empty query: Linux and Android apps to browse.
- * Typing: matches best first, and a row that asks the agent.
+ * Whether opening the app list puts the cursor in its search field: only with a physical keyboard out
+ * ([keyboard] and [hardKeyboardHidden] as in [Configuration]), which types there without an on-screen
+ * keyboard coming up. Otherwise the field waits to be tapped, and the list opens at full height.
+ */
+internal fun focusesSearchOnOpen(
+    keyboard: Int,
+    hardKeyboardHidden: Int,
+) = keyboard == Configuration.KEYBOARD_QWERTY && hardKeyboardHidden == Configuration.HARDKEYBOARDHIDDEN_NO
+
+/**
+ * The app list, over all of home: a search field and settings at the top, the apps below. Empty query:
+ * Linux and Android apps to browse. Typing: a row that asks the agent, then matches best first.
+ * The field takes the keyboard only when it's tapped.
  */
 @Composable
 internal fun AppPanel(
     runtime: Runtime,
     state: LauncherState,
     search: BarSearch,
+    /** What Enter acts on: an index into the search hits, or -1 for the agent. */
     highlighted: Int,
     handlers: AppHandlers,
     onAsk: () -> Unit,
@@ -290,11 +325,37 @@ internal fun AppPanel(
     val linuxState by runtime.bootstrap.state.collectAsState()
     val query = state.query
     val listState = rememberLazyListState()
-    // New results start at the bar, where the best match is.
+    // New results start at the top, where the best match is.
     LaunchedEffect(query.isBlank(), search) { listState.scrollToItem(0) }
 
-    val screenHeight = with(LocalDensity.current) { LocalConfiguration.current.screenHeightDp.dp.toPx() }
-    // Pulling down past the end of the list drags the panel closed, like stock drawers.
+    val focus = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    val configuration = LocalConfiguration.current
+    LaunchedEffect(Unit) {
+        if (focusesSearchOnOpen(configuration.keyboard, configuration.hardKeyboardHidden)) focus.requestFocus()
+    }
+    // Closed: the keyboard goes with the field, and the next opening starts from the whole list.
+    DisposableEffect(state) {
+        onDispose {
+            keyboard?.hide()
+            state.query = ""
+        }
+    }
+
+    /** Enter: the highlighted app, or the agent. */
+    fun submit() {
+        val hit = search.hits.getOrNull(highlighted)
+        if (hit != null) handlers.launch(hit) else if (query.isNotBlank()) onAsk()
+    }
+
+    /** Moves the highlight down the results (away from the field) or back up; the ask row sits highest. */
+    fun pick(step: Int) {
+        if (query.isBlank()) return
+        state.picked = (highlighted + step).coerceIn(-1, search.hits.lastIndex)
+    }
+
+    val screenHeight = with(LocalDensity.current) { configuration.screenHeightDp.dp.toPx() }
+    // Pulling down from the top of the list drags the panel closed, like stock drawers.
     val pullToClose =
         remember(state, screenHeight) {
             object : NestedScrollConnection {
@@ -326,93 +387,113 @@ internal fun AppPanel(
             }
         }
 
-    Box(modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
-        // Full width: a wide screen fits more icons in each row rather than leaving the sides empty.
-        Column(Modifier.fillMaxSize()) {
-            Row(Modifier.fillMaxWidth().padding(top = 12.dp, start = 12.dp, end = 12.dp, bottom = 8.dp), horizontalArrangement = Arrangement.End) {
-                Box(
+    // Full width: a wide screen fits more icons in each row rather than leaving the sides empty.
+    Column(modifier.fillMaxSize()) {
+        Row(
+            Modifier.fillMaxWidth().padding(top = 12.dp, start = 12.dp, end = 12.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SearchField(
+                query,
+                onChange = { state.query = it },
+                onGo = ::submit,
+                placeholder = "search apps",
+                modifier =
                     Modifier
-                        .size(44.dp)
-                        .clip(LauncherStyle.shape(22.dp))
-                        .background(Palette.surface)
-                        .clickable(onClick = onSettings),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Image(Icons.Gear, "settings", Modifier.size(22.dp), colorFilter = ColorFilter.tint(Palette.accent))
-                    // Updates are waiting: settings › system updates lists them.
-                    if ((runtime.updates.pending?.count ?: 0) > 0) {
-                        Box(
-                            Modifier
-                                .align(Alignment.TopEnd)
-                                .padding(8.dp)
-                                .size(8.dp)
-                                .background(Palette.red, CircleShape),
-                        )
-                    }
+                        .weight(1f)
+                        .focusRequester(focus)
+                        // A hardware Enter submits. Tab and the arrows move the highlight.
+                        .onPreviewKeyEvent { e ->
+                            if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                            when {
+                                e.key == Key.Enter -> submit()
+                                e.key == Key.Tab -> pick(if (e.isShiftPressed) -1 else 1)
+                                e.key == Key.DirectionDown -> pick(1)
+                                e.key == Key.DirectionUp -> pick(-1)
+                                else -> return@onPreviewKeyEvent false
+                            }
+                            true
+                        },
+            )
+            Spacer(Modifier.width(8.dp))
+            Box(
+                Modifier
+                    .size(44.dp)
+                    .clip(LauncherStyle.shape(22.dp))
+                    .background(Palette.surface)
+                    .clickable(onClick = onSettings),
+                contentAlignment = Alignment.Center,
+            ) {
+                Image(Icons.Gear, "settings", Modifier.size(22.dp), colorFilter = ColorFilter.tint(Palette.accent))
+                // Updates are waiting: settings › system updates lists them.
+                if ((runtime.updates.pending?.count ?: 0) > 0) {
+                    Box(
+                        Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(8.dp)
+                            .size(8.dp)
+                            .background(Palette.red, CircleShape),
+                    )
                 }
             }
-            // Only as tall as its rows, so taps above a short list reach the scrim behind and close the panel.
-            Column(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp), verticalArrangement = Arrangement.Bottom) {
-                // Clipped, so rows scrolled up or stretched by an overscroll stop short of the settings button.
-                BoxWithConstraints(Modifier.weight(1f, fill = false).clipToBounds()) {
-                    val columns = (maxWidth / 76.dp).toInt().coerceAtLeast(1)
-                    // Rows bottom-up: the first item sits right above the bar.
-                    LazyColumn(
-                        state = listState,
-                        reverseLayout = true,
-                        modifier = Modifier.fillMaxWidth().nestedScroll(pullToClose),
-                        contentPadding = PaddingValues(top = 8.dp, bottom = 4.dp),
+        }
+        // Only as tall as its rows, so taps below a short list reach the scrim behind and close the panel.
+        Column(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp)) {
+            if (query.isNotBlank()) AskRow(runtime, linuxState == LinuxState.Installed, query, highlighted == -1, onAsk)
+            // Clipped, so rows scrolled up or stretched by an overscroll stop short of the search field.
+            BoxWithConstraints(Modifier.weight(1f, fill = false).clipToBounds()) {
+                val columns = (maxWidth / 76.dp).toInt().coerceAtLeast(1)
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxWidth().nestedScroll(pullToClose),
+                    contentPadding = PaddingValues(top = 4.dp, bottom = 8.dp),
+                ) {
+                    fun row(
+                        key: String,
+                        cells: List<AppHit>,
+                        selected: Int = -1,
+                    ) = item(key = key) {
+                        Row(Modifier.fillMaxWidth()) {
+                            cells.forEachIndexed { i, hit -> Box(Modifier.weight(1f)) { HitCell(runtime, hit, handlers, selected = i == selected) } }
+                            repeat(columns - cells.size) { Spacer(Modifier.weight(1f)) }
+                        }
+                    }
+
+                    fun section(
+                        title: String,
+                        apps: List<AppHit>,
                     ) {
-                        fun row(
-                            key: String,
-                            cells: List<AppHit>,
-                            selected: Int = -1,
-                        ) = item(key = key) {
-                            Row(Modifier.fillMaxWidth()) {
-                                cells.forEachIndexed { i, hit -> Box(Modifier.weight(1f)) { HitCell(runtime, hit, handlers, selected = i == selected) } }
-                                repeat(columns - cells.size) { Spacer(Modifier.weight(1f)) }
-                            }
-                        }
+                        if (apps.isEmpty()) return
+                        item(key = "h:$title") { SectionLabel(title, Modifier.padding(start = 8.dp)) }
+                        apps.chunked(columns).forEachIndexed { r, cells -> row("$title:$r", cells) }
+                    }
 
-                        // Each section reads top-down above the one before it.
-                        fun section(
-                            title: String,
-                            apps: List<AppHit>,
-                        ) {
-                            if (apps.isEmpty()) return
-                            val rows = apps.chunked(columns)
-                            for (r in rows.indices.reversed()) row("$title:$r", rows[r])
-                            item(key = "h:$title") { SectionLabel(title, Modifier.padding(start = 8.dp)) }
-                        }
-
-                        if (query.isNotBlank()) {
-                            search.hits.chunked(columns).forEachIndexed { r, cells -> row("q:$r", cells, highlighted - r * columns) }
+                    if (query.isNotBlank()) {
+                        search.hits.chunked(columns).forEachIndexed { r, cells -> row("q:$r", cells, highlighted - r * columns) }
+                    } else {
+                        if (linuxState == LinuxState.Installed) {
+                            section("linux", runtime.linuxApps.map { AppHit.Linux(it) })
                         } else {
-                            if (linuxState == LinuxState.Installed) {
-                                section("linux", runtime.linuxApps.map { AppHit.Linux(it) })
-                            } else {
-                                // Linux apps would be listed here; without Linux, one quiet offer instead.
-                                item(key = "linux-offer") {
-                                    Row(Modifier.padding(top = 12.dp, bottom = 4.dp, start = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        BasicText("linux apps", Modifier.weight(1f), style = Mono.copy(color = Palette.muted))
-                                        BracketAction(if (linuxState is LinuxState.Installing) "installing…" else "install linux", Palette.accent) {
-                                            state.closeNow()
-                                            state.linuxOpen = true
-                                        }
+                            // Linux apps would be listed here; without Linux, one quiet offer instead.
+                            item(key = "linux-offer") {
+                                Row(Modifier.padding(top = 12.dp, bottom = 4.dp, start = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    BasicText("linux apps", Modifier.weight(1f), style = Mono.copy(color = Palette.muted))
+                                    BracketAction(if (linuxState is LinuxState.Installing) "installing…" else "install linux", Palette.accent) {
+                                        state.closeNow()
+                                        state.linuxOpen = true
                                     }
                                 }
                             }
-                            section("android", runtime.androidApps.apps.map { AppHit.Android(it) })
                         }
+                        section("android", runtime.androidApps.apps.map { AppHit.Android(it) })
                     }
                 }
-                if (query.isNotBlank()) AskRow(runtime, linuxState == LinuxState.Installed, query, highlighted == -1, onAsk)
             }
         }
     }
 }
 
-/** The one line above the bar that sends what's typed to the agent. */
+/** The one line under the search field that takes what's typed to the agent: it opens the Oma chat with it, not sent. */
 @Composable
 private fun AskRow(
     runtime: Runtime,
@@ -494,7 +575,7 @@ private fun AppCell(
     actions: () -> List<Pair<String, () -> Unit>>,
     /** Built-in apps (Files) draw a theme-colored glyph instead of a bitmap. */
     glyph: ImageVector? = null,
-    /** What Enter in the bar would open: outlined in the accent color. */
+    /** What Enter in the search field would open: outlined in the accent color. */
     selected: Boolean = false,
     /** As in [AppHit.spoken]. */
     spoken: String = label,
@@ -556,7 +637,7 @@ private fun AppCell(
 
 /** The long-press popup: sits above the cell (below it when there's no room), closes on outside tap. */
 @Composable
-private fun AppActions(
+internal fun AppActions(
     actions: List<Pair<String, () -> Unit>>,
     onDismiss: () -> Unit,
 ) {
