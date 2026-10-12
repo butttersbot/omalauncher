@@ -86,6 +86,12 @@ class LauncherState {
     /** The page name on home was tapped. The overview of all pages opens from here once there is one; nothing yet. */
     fun openOverview() {}
 
+    /**
+     * One finger draws on the page instead of turning it or lifting a tile; two still pinch (PRD AC-22). Nothing
+     * sets it yet: drawing comes with a later slice, and home's gestures already keep out of its way.
+     */
+    var drawing by mutableStateOf(false)
+
     private var typed by mutableStateOf("")
 
     /** What's in the app list's search field: an app to find, or something to take to the agent. */

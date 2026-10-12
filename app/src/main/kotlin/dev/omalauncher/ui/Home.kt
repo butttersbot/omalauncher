@@ -373,6 +373,7 @@ fun HomeScreen(
             room = if (Pack.recentApps && side == null) RecentStripHeight else 0.dp,
             per = per,
             ready = engine.notebook.opened,
+            drawing = state.drawing,
             onLongPressEmpty = { openMenu(null) },
             onNoRoom = { item -> showPage = engine.moveToFreePage(item) },
             onMove = { item, page ->
