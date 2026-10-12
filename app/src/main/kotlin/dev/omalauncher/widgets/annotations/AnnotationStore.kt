@@ -196,7 +196,8 @@ class AnnotationFiles(
     /**
      * Takes [page]'s file away, for a page that was deleted: moved into `.removed/` under a name with [stamp]
      * in it, like a removed widget's file, not destroyed. True if no file is left under the page's id, so a
-     * later page given the same id starts with nothing on it.
+     * later page given the same id starts with nothing on it. If it can't be moved it stays where it is, and
+     * this is false: nothing he wrote is deleted because a folder couldn't be made.
      */
     fun remove(
         page: String,
@@ -208,11 +209,28 @@ class AnnotationFiles(
         var to = File(aside, "$page-$stamp.json")
         var n = 2
         while (to.exists()) to = File(aside, "$page-$stamp-${n++}.json")
-        return file.renameTo(to) || file.delete() || !file.exists()
+        if (!file.renameTo(to)) return !file.exists()
+        // Dated by when it was set aside, which is what [prune] goes by.
+        to.setLastModified(stamp)
+        return true
+    }
+
+    /**
+     * Thins what was set aside: the [REMOVED_KEPT] most recently removed stay, unless removed more than
+     * [REMOVED_DAYS] days before [now]; the rest are deleted. Returns how many went.
+     */
+    fun prune(now: Long): Int {
+        val aside = File(dir, REMOVED).listFiles().orEmpty().filter { it.isFile }.sortedByDescending { it.lastModified() }
+        val old = now - REMOVED_DAYS * 24L * 60 * 60 * 1000
+        return aside.filterIndexed { i, file -> i >= REMOVED_KEPT || file.lastModified() < old }.count { it.delete() }
     }
 
     companion object {
         const val REMOVED = ".removed"
+
+        /** How many deleted pages' annotations are kept set aside, and for how long. */
+        const val REMOVED_KEPT = 30
+        const val REMOVED_DAYS = 90
         private val ID = Regex("[A-Za-z0-9_-]{1,64}")
     }
 }

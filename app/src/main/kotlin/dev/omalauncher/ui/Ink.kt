@@ -96,8 +96,14 @@ class Marks {
     /** The stroke being drawn. */
     internal val live = LiveStroke()
 
-    /** The note or sticker that is selected: its handle and its bar show. */
-    var selected by mutableStateOf<Chosen?>(null)
+    /** The note or sticker that is selected: its handle and its bar show. A note he selects is his from then on. */
+    var selected: Chosen?
+        get() = picked
+        set(value) {
+            picked = value
+            if (value != null) book?.claimNote(value.page, value.id)
+        }
+    private var picked by mutableStateOf<Chosen?>(null)
 
     /** Where the selected one's bar is, in its page's coordinates; taps there are the bar's. */
     internal var bar by mutableStateOf<IntRect?>(null)
@@ -105,8 +111,21 @@ class Marks {
     /** A finger is holding the selected one; its bar waits for release. */
     internal var holding by mutableStateOf(false)
 
-    /** The note whose text is being typed. */
-    var editing by mutableStateOf<Chosen?>(null)
+    /** The note whose text is being typed. A note he opens is his from then on. */
+    var editing: Chosen?
+        get() = typing
+        set(value) {
+            typing = value
+            if (value != null) book?.claimNote(value.page, value.id)
+        }
+    private var typing by mutableStateOf<Chosen?>(null)
+
+    /** A stroke or a pass of the eraser is under way: undo and redo wait for it, since it would do over what they undid. */
+    val busy get() = live.busy
+
+    fun undo(page: String) = !busy && book?.undo(page) == true
+
+    fun redo(page: String) = !busy && book?.redo(page) == true
 
     /**
      * A finger came down at [at] to draw on [page], which is at [area] in the same coordinates; [pen] is the
@@ -153,7 +172,10 @@ class Marks {
         if (more) book?.erase(page, from, live.hit)
     }
 
-    /** The finger lifted: the stroke is the page's now. An eraser's pass already is. */
+    /**
+     * The finger lifted, or drawing mode ended under it: the stroke is the page's now, on the page it was drawn
+     * on. An eraser's pass already is.
+     */
     internal fun finish() {
         val page = live.page ?: return
         if (live.tool != DrawTool.Eraser && live.count > 0) {
@@ -180,6 +202,10 @@ class Marks {
  */
 internal class LiveStroke {
     var tick by mutableIntStateOf(0)
+
+    /** Whether there is a stroke at all, as state: the tools show it. */
+    var busy by mutableStateOf(false)
+        private set
     var page: String? = null
         private set
     var area = PageArea(0f, 0f, 1f, 1f)
@@ -210,6 +236,7 @@ internal class LiveStroke {
         width: Float,
     ) {
         clear()
+        busy = true
         this.page = page
         this.area = area
         this.tool = tool
@@ -232,6 +259,7 @@ internal class LiveStroke {
     }
 
     fun clear() {
+        busy = false
         page = null
         count = 0
         eraser = null
@@ -429,8 +457,9 @@ fun DrawTools(
             }
             Tool("marker", marks.tool == DrawTool.Highlighter, swatch = InkRole.Highlighter) { marks.tool = DrawTool.Highlighter }
             Tool("erase", marks.tool == DrawTool.Eraser) { marks.tool = DrawTool.Eraser }
-            Tool("undo", enabled = ink.canUndo) { book.undo(page) }
-            Tool("redo", enabled = ink.canRedo) { book.redo(page) }
+            // Not in the middle of a stroke or an eraser's pass, held with another finger.
+            Tool("undo", enabled = ink.canUndo && !marks.busy) { marks.undo(page) }
+            Tool("redo", enabled = ink.canRedo && !marks.busy) { marks.redo(page) }
             Tool("done") { state.stopDrawing() }
         }
     }

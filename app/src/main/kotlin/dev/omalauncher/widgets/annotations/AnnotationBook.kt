@@ -25,8 +25,10 @@ import java.util.concurrent.Executors
  *  - a change is written [SAVE_AFTER_MILLIS] after the last one, never on the main thread, by replacing the
  *    file in one rename; [flush] writes at once, for when home is left;
  *  - a deleted page's file goes with it ([pageGone]), set aside, not destroyed. A file found at the start for
- *    an id no page has is left alone, unless a new page is later given that id: then it is set aside first, so
- *    a new page never starts with an old page's ink.
+ *    an id no page has, or one that couldn't be set aside when its page went, is left alone, unless a new page
+ *    is later given that id: then it is set aside first, and if even that fails the new page shows nothing and
+ *    takes no change this session. A new page never starts with an old page's ink, and never writes over it;
+ *  - what was set aside is thinned once at the start ([AnnotationFiles.prune]), off the main thread.
  *
  * Main thread only. [background] runs a task off it, one at a time and in order; [foreground] brings one
  * back; [defer] runs a page's save a moment later, replacing the one already waiting for that page, or with
@@ -77,7 +79,10 @@ class AnnotationBook(
     fun keep(ids: Set<String>) {
         if (writable) return
         writable = true
-        background { runCatching { strays += files.pages() - ids } }
+        background {
+            runCatching { strays += files.pages() - ids }
+            runCatching { files.prune(now()) }
+        }
     }
 
     /** Has [page]'s file read, if it hasn't been. */
@@ -92,8 +97,10 @@ class AnnotationBook(
         val kept = writable
         background {
             // A file from before this page was made: an older page's, whose id this one was given.
-            if (kept && strays.remove(page)) runCatching { files.remove(page, now()) }
-            val read = files.read(page)
+            // If it can't be set aside it is still not this page's: nothing of it shows, and nothing is written over it.
+            val others = kept && page in strays && !(runCatching { files.remove(page, now()) }.getOrDefault(false))
+            if (!others) strays -= page
+            val read = if (others) AnnotationsRead.Unreadable(AnnotationsRead.Why.Failed) else files.read(page)
             foreground { if ((lives[page] ?: 0) == life && pages[page]?.status == Status.Reading) arrived(page, read) }
         }
     }
@@ -222,6 +229,19 @@ class AnnotationBook(
             was.with(was.marks.copy(notes = was.marks.notes.map { if (it.id == id) next else it }))
         }
 
+    /**
+     * The owner has taken the note [id] in hand: opened it to type in, or selected it. It is his from now on,
+     * whatever he then does with it, so an agent's next note never takes its place while he is at it.
+     */
+    fun claimNote(
+        page: String,
+        id: String,
+    ): Boolean =
+        change(page) { was ->
+            val note = was.marks.notes.firstOrNull { it.id == id && it.author != Author.Owner } ?: return@change null
+            was.with(was.marks.copy(notes = was.marks.notes.map { if (it.id == id) note.copy(author = Author.Owner) else it }))
+        }
+
     fun addSticker(
         page: String,
         kind: StickerKind,
@@ -311,7 +331,8 @@ class AnnotationBook(
         pages.remove(page)
         waiting.remove(page)?.forEach { it(false) }
         // In a session that isn't kept the page is back at the next start, and its file with it.
-        if (writable && files.valid(page)) background { runCatching { files.remove(page, now()) } }
+        // One that can't be set aside stays, marked as no page's: whoever is given this id next doesn't get it.
+        if (writable && files.valid(page)) background { if (!runCatching { files.remove(page, now()) }.getOrDefault(false)) strays += page }
     }
 
     companion object {

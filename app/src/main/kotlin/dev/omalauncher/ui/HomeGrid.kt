@@ -949,7 +949,7 @@ private fun TiledPage(
         }
         // Over the tiles, inside what is caught for the overview: the page's notes and stickers, and over those its
         // ink, each in a scope of its own so a new stroke or a note being dragged recomposes no tile.
-        if (book != null && marks != null) PageScraps(book, marks, page, grid.page, pageWidth)
+        if (book != null && marks != null) PageScraps(book, marks, page, grid.page, pageWidth, constraints.maxHeight)
         if (book != null) PageInk(book, page, grid.page)
         // Selection frame: handles on each edge for widgets, plus the action bar.
         val sel = items.firstOrNull { it.key == selected }

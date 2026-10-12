@@ -5,7 +5,9 @@ import dev.omalauncher.widgets.annotations.AnnotationBook
 import dev.omalauncher.widgets.annotations.AnnotationFiles
 import dev.omalauncher.widgets.annotations.AnnotationLimits
 import dev.omalauncher.widgets.annotations.Annotations
+import dev.omalauncher.widgets.annotations.Author
 import dev.omalauncher.widgets.annotations.InkRole
+import dev.omalauncher.widgets.annotations.NoteLeft
 import dev.omalauncher.widgets.annotations.InkTool
 import dev.omalauncher.widgets.annotations.PageArea
 import dev.omalauncher.widgets.annotations.Scrap
@@ -302,6 +304,108 @@ class InkGesturesTest {
             assertEquals("s", page.scrapAt(area.across(s.right - 1f), area.down(s.bottom - 1f))?.id)
             assertEquals("n", page.scrapAt(area.across(s.right + 1f), area.down(s.bottom + 1f))?.id)
             assertNull(page.scrapAt(area.across(n.right + 1f), area.down(n.bottom + 1f)))
+        }
+    }
+
+    @Test fun undoAndRedoWaitForTheStrokeOrThePassUnderWay() {
+        val marks = marks()
+        val book = marks.book!!
+        val lines = listOf(0.2f, 0.4f, 0.6f).map { x -> Stroke(InkTool.Pen, InkRole.Pen, 0.006f, floatArrayOf(x, 0.1f, x, 0.9f)) }
+        lines.forEach { book.draw("p1", it) }
+        assertFalse(marks.busy)
+        // The eraser is down and has taken one line; a second finger taps undo.
+        marks.tool = DrawTool.Eraser
+        marks.begin("p1", cover, at(cover, 0.1f, 0.5f), 8f)
+        marks.extend(at(cover, 0.25f, 0.5f))
+        assertTrue(marks.busy)
+        assertEquals(2, book.on("p1").strokes.size)
+        assertFalse(marks.undo("p1"))
+        assertFalse(marks.redo("p1"))
+        assertEquals(2, book.on("p1").strokes.size)
+        // The pass goes on as if nothing had been tapped, and is still one step.
+        marks.extend(at(cover, 0.45f, 0.5f))
+        marks.finish()
+        assertFalse(marks.busy)
+        assertEquals(listOf(lines[2]), book.on("p1").strokes)
+        assertTrue(marks.undo("p1"))
+        assertEquals(lines, book.on("p1").strokes)
+        assertTrue(marks.redo("p1"))
+        // The same while the pen is down.
+        marks.tool = DrawTool.Pen
+        marks.begin("p1", cover, at(cover, 0.8f, 0.2f), 8f)
+        assertFalse(marks.undo("p1"))
+        marks.cancel()
+        assertFalse(marks.busy)
+        assertTrue(marks.undo("p1"))
+    }
+
+    @Test fun leavingDrawingModeKeepsTheStrokeUnderTheFinger() {
+        val state = LauncherState()
+        state.marks.book = marks("p1", "p2").book
+        val book = state.marks.book!!
+        state.startDrawing()
+        assertTrue(state.drawing)
+        // Drawn on the second page of a pair, while the first is the one last touched.
+        state.currentPage = "p1"
+        state.marks.begin("p2", inner, at(inner, 0.2f, 0.2f), 8f)
+        state.marks.extend(at(inner, 0.6f, 0.2f))
+        // Done, Back, Home, the app list and the overview all end it this way.
+        state.stopDrawing()
+        assertFalse(state.drawing)
+        assertEquals(listOf(0.2f, 0.2f, 0.6f, 0.2f), book.on("p2").strokes.single().points.toList())
+        assertTrue(book.on("p1").isEmpty)
+        assertFalse(state.marks.busy)
+        // What the finger does next, still down, draws nothing more.
+        state.marks.extend(at(inner, 0.9f, 0.9f))
+        state.marks.finish()
+        assertEquals(1, book.on("p2").strokes.size)
+        // The overview and Home end it too, with the stroke kept.
+        for (leave in listOf<() -> Unit>({ state.openOverview() }, { state.closeScreens() })) {
+            state.startDrawing()
+            state.marks.begin("p1", cover, at(cover, 0.3f, 0.3f), 8f)
+            leave()
+            assertFalse(state.drawing)
+        }
+        assertEquals(2, book.on("p1").strokes.size)
+        // A second finger still drops it.
+        state.startDrawing()
+        state.marks.begin("p1", cover, at(cover, 0.5f, 0.5f), 8f)
+        state.marks.cancel()
+        state.stopDrawing()
+        assertEquals(2, book.on("p1").strokes.size)
+    }
+
+    @Test fun aNoteHeOpensOrSelectsIsHisAtOnce() {
+        val marks = marks()
+        val book = marks.book!!
+        val first = (book.leaveNote("p1", "did 1") as NoteLeft.Left).note
+        val second = (book.leaveNote("p1", "did 2") as NoteLeft.Left).note
+        marks.editing = Chosen("p1", first.id)
+        assertEquals(Author.Owner, book.on("p1").notes.first { it.id == first.id }.author)
+        marks.selected = Chosen("p1", second.id)
+        assertEquals(Author.Owner, book.on("p1").notes.first { it.id == second.id }.author)
+        // While his editor is open the agent leaves more than it keeps: neither of his goes.
+        repeat(AnnotationLimits.AGENT_NOTES + 2) { book.leaveNote("p1", "later $it") }
+        assertEquals(setOf("did 1", "did 2"), book.on("p1").notes.filter { it.author == Author.Owner }.map { it.text }.toSet())
+        // Letting go claims nothing, and a sticker is nobody's note.
+        marks.editing = null
+        marks.selected = Chosen("p1", book.addSticker("p1", StickerKind.Star)!!)
+        assertEquals(AnnotationLimits.AGENT_NOTES, book.on("p1").notes.count { it.author == Author.Agent })
+    }
+
+    @Test fun theBarOfASelectedNoteStaysOnThePage() {
+        val bar = 48
+        val gap = 12
+        val room = 1000
+        // Above when there is room, else below.
+        assertEquals(352, barTop(400, 600, room, bar, gap))
+        assertEquals(212, barTop(30, 200, room, bar, gap))
+        // A note over the whole page: inside its top edge, not above or below the page where it would be cut away.
+        assertEquals(12, barTop(0, 1000, room, bar, gap))
+        assertEquals(42, barTop(30, 990, room, bar, gap))
+        for (top in 0..1000 step 7) for (bottom in top..1000 step 13) {
+            val at = barTop(top, bottom, room, bar, gap)
+            assertTrue("$top $bottom -> $at", at >= 0 && at + bar <= room)
         }
     }
 

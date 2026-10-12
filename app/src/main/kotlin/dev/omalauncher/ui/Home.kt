@@ -243,6 +243,9 @@ fun HomeScreen(
         engine.activePage = shown.firstOrNull()
     }
     LaunchedEffect(per) { engine.activeSpan = per }
+    // Folded, unfolded or turned in the middle of a stroke: the page is somewhere else now, so the stroke ends
+    // here and is kept as it was drawn. Drawing mode stays on.
+    LaunchedEffect(per, window) { marks.finish() }
     // The background slides with the pages, like stock launchers. Our live wallpaper gets it through Android.
     val view = LocalView.current
     LaunchedEffect(pager, view) {

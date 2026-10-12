@@ -418,8 +418,12 @@ fun Overview(
             val neighbour = pages.getOrNull(if (at == 0) 1 else at - 1)?.name.orEmpty()
             // Removing takes a second tap: it is the one choice here that can't be taken back from home.
             var sure by remember(asked) { mutableStateOf(false) }
+            // What is drawn or stuck on the page is the page's: it is read here in case the page never showed.
+            val book = state.marks.book
+            LaunchedEffect(asked, book) { book?.open(asked.page.id) }
             Menu(onDismiss = { ask = null }) {
                 MenuTitle("${asked.page.name} has $things on it")
+                if (book?.on(asked.page.id)?.isEmpty == false) MenuTitle("what is written or stuck on the page goes with it")
                 MenuItem("move ${if (count == 1) "it" else "them"} to $neighbour") { delete(asked.page, move = true) }
                 if (notebook.kept) {
                     MenuItem(if (sure) "tap again to remove $things from home" else "remove ${if (count == 1) "it" else "them"} from home", Pack.red) {

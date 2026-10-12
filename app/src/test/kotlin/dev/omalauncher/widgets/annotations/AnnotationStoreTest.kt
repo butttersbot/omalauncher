@@ -10,6 +10,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import java.io.File
 import java.nio.file.Files
@@ -310,6 +311,127 @@ class AnnotationStoreTest {
         assertFalse(book.draw("p1", stroke(0.1f, 0.1f)))
         bench.later()
         assertTrue(File(dir, "p1.json").isDirectory)
+    }
+
+    @Test fun aFileThatIsThereButCannotBeOpenedIsUnreadableAndKeepsEveryByte() {
+        files.write("p1", sample)
+        val file = files.file("p1")
+        val bytes = file.readBytes()
+        assumeTrue(file.setReadable(false, false))
+        // Running as root nothing is unreadable, and there is nothing to test.
+        assumeTrue(!file.canRead())
+        try {
+            // Not "no file": that would make the page empty, and the first stroke would write over what is there.
+            assertEquals(AnnotationsRead.Unreadable(AnnotationsRead.Why.Failed), files.read("p1"))
+            val bench = Bench()
+            val book = bench.opened("p1")
+            assertEquals(AnnotationBook.Status.Unreadable, book.status("p1"))
+            assertEquals(AnnotationBook.UNREADABLE, book.notice)
+            assertTrue(book.on("p1").isEmpty)
+            assertFalse(book.roomToDraw("p1"))
+            assertFalse(book.draw("p1", stroke(0.1f, 0.1f, 0.2f, 0.2f)))
+            assertNull(book.addNote("p1"))
+            assertTrue(book.leaveNote("p1", "did it") is NoteLeft.Refused)
+            bench.later()
+            book.flush()
+            bench.later()
+        } finally {
+            file.setReadable(true, false)
+        }
+        assertTrue(bytes.contentEquals(file.readBytes()))
+        assertEquals(listOf("p1.json"), dir.list()!!.toList())
+    }
+
+    @Test fun aNoteTheOwnerHasInHandIsHisBeforeHeChangesAnything() {
+        val bench = Bench()
+        val book = bench.opened("p1")
+        val made = (1..AnnotationLimits.AGENT_NOTES).map { (book.leaveNote("p1", "did $it") as NoteLeft.Left).note }
+        // He opens the oldest to type in it, and types nothing yet.
+        assertTrue(book.claimNote("p1", made[0].id))
+        assertEquals(Author.Owner, book.on("p1").notes.first { it.id == made[0].id }.author)
+        // Claimed once; and his own notes, stickers and things that aren't there are nothing to claim.
+        assertFalse(book.claimNote("p1", made[0].id))
+        assertFalse(book.claimNote("p1", "nothing"))
+        // The agent's next notes go round it: the one in his hands is never the one replaced.
+        repeat(AnnotationLimits.AGENT_NOTES + 2) {
+            val left = book.leaveNote("p1", "later $it") as NoteLeft.Left
+            assertFalse(left.replaced?.id == made[0].id)
+        }
+        assertEquals("did 1", book.on("p1").notes.first { it.id == made[0].id }.text)
+        bench.later()
+        assertEquals(Author.Owner, onDisk("p1")!!.notes.first { it.id == made[0].id }.author)
+    }
+
+    @Test fun whatWasSetAsideIsThinnedByCountAndAge() {
+        val day = 24L * 60 * 60 * 1000
+        val now = 1_000 * day
+        // More than are kept, removed a day apart, and two from long ago.
+        for (i in 1..AnnotationFiles.REMOVED_KEPT + 5) {
+            files.write("p$i", sample)
+            assertTrue(files.remove("p$i", now - i * 1000L))
+        }
+        for (i in listOf(900, 901)) {
+            files.write("p$i", sample)
+            assertTrue(files.remove("p$i", now - (AnnotationFiles.REMOVED_DAYS + 1) * day - i))
+        }
+        files.write("p1", sample)
+        val aside = File(dir, AnnotationFiles.REMOVED)
+        assertEquals(AnnotationFiles.REMOVED_KEPT + 7, aside.list()!!.size)
+        assertEquals(7, files.prune(now))
+        // The most recently removed stay; the pages' own files are never looked at.
+        val kept = aside.list()!!.toSet()
+        assertEquals((1..AnnotationFiles.REMOVED_KEPT).map { "p$it-${now - it * 1000L}.json" }.toSet(), kept)
+        assertEquals(sample, onDisk("p1"))
+        assertEquals(0, files.prune(now))
+        // Old ones go however few there are.
+        assertEquals(AnnotationFiles.REMOVED_KEPT, files.prune(now + (AnnotationFiles.REMOVED_DAYS + 1) * day))
+        assertEquals(30, AnnotationFiles.REMOVED_KEPT)
+        assertEquals(90, AnnotationFiles.REMOVED_DAYS)
+        // The book does it once, at the start.
+        files.write("p7", sample)
+        files.remove("p7", day)
+        Bench().also { it.time = 200 * day }.opened("p1")
+        assertEquals(0, aside.list()!!.size)
+    }
+
+    @Test fun aFileThatCannotBeSetAsideStaysAndIsNeverANewPagesInk() {
+        val bench = Bench()
+        val book = bench.opened("p1", "p2", "p3")
+        val live = notebook(book)
+        book.draw("p3", stroke(0.1f, 0.1f, 0.9f, 0.9f))
+        bench.later()
+        val text = files.file("p3").readText()
+        // The folder it would be moved to can't be made.
+        val blocker = File(dir, AnnotationFiles.REMOVED).apply { writeText("in the way") }
+        assertFalse(files.remove("p3", 1))
+        assertEquals(text, files.file("p3").readText())
+        live.deletePage("p3", emptySet(), move = true)
+        // Left where it is, not deleted.
+        assertEquals(text, files.file("p3").readText())
+        // The notebook gives the id out again: the new page shows none of it, takes no change, and writes nothing over it.
+        assertEquals("p3", live.addPage())
+        book.open("p3")
+        assertEquals(AnnotationBook.Status.Unreadable, book.status("p3"))
+        assertTrue(book.on("p3").isEmpty)
+        assertFalse(book.draw("p3", stroke(0.5f, 0.5f)))
+        assertNull(book.addNote("p3"))
+        bench.later()
+        book.flush()
+        assertEquals(text, files.file("p3").readText())
+        // The same at the next start, for as long as it can't be moved: the page was made while the file was no page's.
+        live.deletePage("p3", emptySet(), move = true)
+        val next = Bench()
+        val later = next.opened("p1", "p2")
+        later.open("p3")
+        assertEquals(AnnotationBook.Status.Unreadable, later.status("p3"))
+        assertEquals(text, files.file("p3").readText())
+        // Once it can be, it is set aside whole and the page starts clean.
+        blocker.delete()
+        val last = Bench().opened("p1", "p2")
+        last.open("p3")
+        assertEquals(AnnotationBook.Status.Ready, last.status("p3"))
+        assertTrue(last.on("p3").isEmpty)
+        assertEquals(text, File(dir, AnnotationFiles.REMOVED).listFiles()!!.single().readText())
     }
 
     @Test fun nothingIsChangedOrWrittenUntilTheNotebookIsKept() {

@@ -221,6 +221,7 @@ internal fun PageScraps(
     page: String,
     area: IntRect,
     roomWidth: Int,
+    roomHeight: Int,
 ) {
     val on = book.on(page)
     if (on.notes.isEmpty() && on.stickers.isEmpty()) return
@@ -252,7 +253,7 @@ internal fun PageScraps(
             with(density) {
                 IntOffset(
                     r.left.roundToInt().coerceAtMost(roomWidth - 200.dp.roundToPx()).coerceAtLeast(0),
-                    if (r.top > 56.dp.toPx()) r.top.roundToInt() - 48.dp.roundToPx() else r.bottom.roundToInt() + 12.dp.roundToPx(),
+                    barTop(r.top.roundToInt(), r.bottom.roundToInt(), roomHeight, 48.dp.roundToPx(), 12.dp.roundToPx()),
                 )
             }
         DisposableEffect(Unit) { onDispose { marks.bar = null } }
@@ -274,6 +275,24 @@ internal fun PageScraps(
         }
     }
 }
+
+/**
+ * Where the selected one's bar goes, [bar] tall with [gap] to spare, in a room [room] tall: above it; below it
+ * when there is no room above; and when there is none below either (a note stretched over the whole page),
+ * inside its top edge, so the bar is never off the page where the pager would cut it away.
+ */
+internal fun barTop(
+    top: Int,
+    bottom: Int,
+    room: Int,
+    bar: Int,
+    gap: Int,
+): Int =
+    when {
+        top - bar - gap >= 0 -> top - bar
+        bottom + gap + bar <= room -> bottom + gap
+        else -> (top + gap).coerceIn(0, (room - bar).coerceAtLeast(0))
+    }
 
 /** What a note of [role] is cut from: the pack's sticky note, or its emphasised scrap for one an agent left. */
 private class NoteLook(

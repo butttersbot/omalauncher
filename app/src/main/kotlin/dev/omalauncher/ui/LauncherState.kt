@@ -123,10 +123,13 @@ class LauncherState {
         drawing = true
     }
 
-    /** One finger is home's again: it turns pages, opens tiles and lifts them, as it did. */
+    /**
+     * One finger is home's again: it turns pages, opens tiles and lifts them, as it did. A stroke still under
+     * the finger is kept, on the page it was drawn on.
+     */
     fun stopDrawing() {
         drawing = false
-        marks.live.clear()
+        marks.finish()
     }
 
     private var typed by mutableStateOf("")
