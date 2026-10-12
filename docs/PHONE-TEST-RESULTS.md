@@ -1,5 +1,20 @@
 # Phone test results
 
+## Latest: the closed-screen checks, run on the OPEN inner display (2026-10-12, 16:13–16:16 PDT)
+Boss opened the phone and asked for the inner-display tests. ON-PHONE-TESTS.md lists 1–6 for the cover screen only, so these are the same checks adapted to the inner screen (2448x1848), build 29 with note placement, look riso. The cover-screen versions are still not done as a set.
+1. PASS — home shows both pages side by side, label "Page 1 + Page 2  1/2"; the dock is one row of ten app icons, then "↑" and "✎".
+2. PASS (seen 14:41 on build 28, not repeated) — app list: "ALL APPS", "CLOSE ↓", eight apps across on this screen, search and gear at the bottom.
+3. PASS — tapping the page label opens "all pages": Page 1 and Page 2 as small pages on plain paper with handwritten names, and a dashed "+". Back closes it.
+4. PASS — "✎" replaces the dock with a centred row of six square buttons (pen, line, eraser, undo, redo, ×); "×" closes it and the dock returns.
+5. PASS — a long press on an empty spot of Page 2 opens the menu; its last row is "LOOK". Tapped bujo, then city pop: home redrew in each behind the open menu (paper, tiles, dock buttons, city pop's wallpaper). Scrolled the row and tapped riso: home is back in riso.
+6. PASS — "12" and "using Bash…" in the heavy display face; "MONDAY", "TUE", "WED", "OMA" in spaced capitals.
+7. PASS (commands) — `page "page two"` answered Page 2 and `pages` showed it; "holiday" answered no match; turned back to Page 1. Both pages are on screen here, so nothing visible changes.
+9. PASS — the "oma" tile read "using Bash…" throughout.
+- Seen: in bujo the status bar's clock and icons are white on white paper and cannot be read (only the battery "93" shows); in city pop they are faint. In riso they are dark and fine.
+- Seen: on the inner screen the note in cells 3,8 touches the OMA tile's shadow but covers no tile.
+- COULD NOT TEST — dragging a note. The code has it (ui/Notes.kt: tap opens the text, a long press lifts the note to drag, a long press that does not move selects it with a resize handle). `oma-phone swipe` moves from the first instant, so it cannot hold and then drag. Boss asked for notes to be draggable; he needs to try a long press and say whether it fails.
+- End state: home, riso, Page 1, no menu open. Nothing of Boss's moved or changed.
+
 ## Latest: old notes removed; Oma Dev told apart by name and colour (2026-10-12, 16:07–16:12 PDT)
 Asked by Boss from the phone.
 - Notes: deleted the three notes left by the old build over widgets (one on Page 1 over the today tile, two on Page 2 over the terminal), each by tapping it and "delete" in the note menu. `oma-phone board` afterwards: Page 2 has no notes, Page 1 has only the one in the free strip. The later `oma-phone note` replaced that one in place (`replaced:true`, cells 3,8 3x1, `clear:true`).
