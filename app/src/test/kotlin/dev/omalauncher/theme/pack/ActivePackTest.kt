@@ -77,7 +77,17 @@ class ActivePackTest {
         assertEquals(listOf("dial-up"), opened)
     }
 
-    private val shipped = listOf("riso" to "Riso", "instrument" to "Instrument", "one-bit" to "1-bit")
+    private val shipped =
+        listOf(
+            "riso" to "Riso",
+            "instrument" to "Instrument",
+            "one-bit" to "1-bit",
+            "city-pop" to "City Pop",
+            "custard" to "Custard",
+            "tiny-magazine" to "Tiny Magazine",
+            "bujo" to "Bujo",
+            "dial-up" to "Dial-Up",
+        )
 
     private fun shippedPack(id: String) = PackLoader.load(DirectoryPackSource(moduleFile("src/main/assets/packs/$id")), id)
 
@@ -147,6 +157,113 @@ class ActivePackTest {
         assertEquals(IconTreatment.Grayscale, oneBit.icons.treatment)
         assertTrue(oneBit.scrap.sticky.dashed)
         assertEquals(0f, oneBit.ring.glow, 0f)
+
+        /** Both colors of every state of the ring. */
+        fun ring(pack: ThemePack) = pack.ring.run { listOf(listening, working, needsYou, done) }.flatMap { listOf(it.color1, it.color2) }.distinct()
+
+        val cityPop = shippedPack("city-pop").pack
+        assertEquals(color("#0f4fc9"), cityPop.page.color)
+        assertEquals(color("#ffffff"), cityPop.palette.onPage)
+        assertEquals(color("#ffffff"), cityPop.scrap.surface.fill)
+        assertEquals(color("#12296b"), cityPop.scrap.surface.ink)
+        assertEquals(0f, cityPop.scrap.surface.border, 0f)
+        // rgba(8,28,96,.55), alpha first.
+        assertEquals(PackShadow(5f, 5f, 0f, color("#8c081c60"), inset = false), cityPop.scrap.surface.shadow)
+        assertEquals(color("#19c3c9"), cityPop.scrap.alt.fill)
+        assertEquals(color("#0b2260"), cityPop.scrap.alt.ink)
+        assertEquals(color("#ff4f9a"), cityPop.scrap.tape.color)
+        assertEquals(color("#ffe14d"), cityPop.palette.highlight)
+        assertEquals(0f, cityPop.scrap.tiltMax - cityPop.scrap.tiltMin, 0f)
+        assertEquals(PackShadow(0f, 2f, 0f, color("#bf081c60"), inset = false), cityPop.page.textShadow)
+        assertEquals(color("#33ffffff"), cityPop.page.overviewScrim)
+        assertFalse(cityPop.page.gutter)
+        assertTrue(cityPop.type.display.run { italic && uppercase && weight == 800 && family == FontGeneric.SansSerif })
+        assertEquals(listOf(color("#ff4f9a"), color("#ffe14d")), ring(cityPop))
+        assertEquals(color("#ffffff"), cityPop.ink.pen)
+
+        val custard = shippedPack("custard").pack
+        assertEquals(color("#f7e9b5"), custard.page.color)
+        assertEquals(PaperPattern.Lines, custard.page.pattern)
+        assertEquals(26f, custard.page.patternSize, 0f)
+        assertEquals(color("#26241f").withAlpha(0.07f), custard.page.patternColor)
+        assertEquals(color("#ffffff"), custard.scrap.surface.fill)
+        assertEquals(color("#26241f"), custard.scrap.surface.ink)
+        assertEquals(0f, custard.scrap.surface.border, 0f)
+        assertEquals(PackShadow(0f, 2f, 0f, color("#2e26241f"), inset = false), custard.scrap.surface.shadow)
+        assertTrue(custard.scrap.surface.shadow2.run { visible && blur > 0f && y > 2f })
+        assertEquals(color("#26241f"), custard.scrap.alt.fill)
+        assertEquals(color("#fbf6e7"), custard.scrap.alt.ink)
+        assertEquals(Dressing.Solid, custard.scrap.tape.style)
+        assertEquals(color("#c9a36b"), custard.scrap.tape.color)
+        assertEquals(color("#f3d96b"), custard.palette.highlight)
+        assertTrue(custard.type.displayHighlighter)
+        assertEquals(FontGeneric.Cursive, custard.type.display.family)
+        assertTrue(custard.scrap.tiltMin < 0f && custard.scrap.tiltMax > 0f)
+        assertEquals(listOf(color("#26241f"), color("#f3d96b")), ring(custard))
+
+        val tinyMagazine = shippedPack("tiny-magazine").pack
+        assertEquals(color("#1257c4"), tinyMagazine.page.color)
+        assertEquals(PaperPattern.Lines, tinyMagazine.page.pattern)
+        assertEquals(24f, tinyMagazine.page.patternSize, 0f)
+        assertEquals(color("#ffffff"), tinyMagazine.palette.onPage)
+        assertEquals(color("#ffffff"), tinyMagazine.scrap.surface.fill)
+        assertEquals(color("#1a2434"), tinyMagazine.scrap.surface.ink)
+        assertEquals(PackShadow(0f, 5f, 0f, color("#66081c50"), inset = false), tinyMagazine.scrap.surface.shadow)
+        assertEquals(color("#c9e1f6"), tinyMagazine.scrap.alt.fill)
+        assertEquals(color("#1257c4"), tinyMagazine.palette.accent)
+        assertEquals(color("#bfffffff"), tinyMagazine.scrap.tape.color)
+        assertEquals(CornerStyle.Edge, tinyMagazine.shape.corners)
+        assertTrue(tinyMagazine.type.display.run { italic && family == FontGeneric.Serif && weight == 700 })
+        assertEquals(color("#ffffff"), tinyMagazine.ink.pen)
+        assertEquals(listOf(color("#ffffff"), color("#c9e1f6")), ring(tinyMagazine))
+
+        val bujo = shippedPack("bujo").pack
+        assertEquals(color("#ffffff"), bujo.page.color)
+        assertEquals(PaperPattern.Dots, bujo.page.pattern)
+        assertEquals(color("#c5c0b4"), bujo.page.patternColor)
+        assertEquals(16f, bujo.page.patternSize, 0f)
+        assertEquals(1.5f, bujo.scrap.surface.border, 0f)
+        assertEquals(color("#33312c"), bujo.scrap.surface.borderColor)
+        assertEquals(color("#33312c"), bujo.scrap.surface.ink)
+        assertFalse(bujo.scrap.surface.shadow.visible || bujo.scrap.surface.shadow2.visible)
+        assertEquals(color("#f2cfd4"), bujo.scrap.alt.fill)
+        assertEquals(Dressing.Stripes, bujo.scrap.tape.style)
+        assertEquals(listOf(color("#efe0ae"), color("#f7efd0")), bujo.scrap.tape.run { listOf(this.color, color2) })
+        assertEquals(12f, bujo.shape.radius, 0f)
+        assertEquals(CornerStyle.Round, bujo.shape.corners)
+        assertEquals(color("#b86578"), bujo.ink.pen)
+        assertEquals(color("#b86578"), bujo.scrap.surface.focusColor)
+        assertEquals(listOf(color("#b86578"), color("#efe0ae")), ring(bujo))
+
+        val dialUp = shippedPack("dial-up").pack
+        assertEquals(color("#f7f3ee"), dialUp.page.color)
+        assertEquals(PaperPattern.Grid, dialUp.page.pattern)
+        assertEquals(14f, dialUp.page.patternSize, 0f)
+        assertEquals(color("#4a5590").withAlpha(0.16f), dialUp.page.patternColor)
+        assertEquals(color("#f7f3ee"), dialUp.scrap.surface.fill)
+        assertEquals(color("#4a5590"), dialUp.scrap.surface.ink)
+        assertEquals(2f, dialUp.scrap.surface.border, 0f)
+        assertEquals(PackShadow(4f, 4f, 0f, color("#4a5590"), inset = false), dialUp.scrap.surface.shadow)
+        assertEquals(PackTitleBar(Dressing.Solid, 20f, color("#4a5590"), color("#f7f3ee"), "×", 0f), dialUp.scrap.titleBar)
+        assertEquals(Dressing.None, dialUp.scrap.tape.style)
+        assertEquals(color("#efd9ec"), dialUp.scrap.alt.fill)
+        assertEquals(CornerStyle.Edge, dialUp.shape.corners)
+        assertEquals(listOf(FontGeneric.Monospace, FontGeneric.Monospace), dialUp.type.run { listOf(display.family, body.family) })
+        assertEquals(color("#a94fa4"), dialUp.ink.pen)
+        // The prototype's magenta for focus, told from the indigo outline by its weight.
+        assertEquals(color("#a94fa4"), dialUp.scrap.surface.focusColor)
+        assertEquals(4f, dialUp.scrap.surface.focusWidth, 0f)
+        assertEquals(listOf(color("#a94fa4"), color("#4a5590")), ring(dialUp))
+
+        // The five are scrapbooks: a row of buttons for a dock, icons in their own colors with the prototype's small shadow, a letter for a missing one.
+        for (pack in listOf(cityPop, custard, tinyMagazine, bujo, dialUp)) {
+            assertEquals(pack.id, DockStyle.Buttons, pack.dock.style)
+            assertEquals(pack.id, IconTreatment.Original, pack.icons.treatment)
+            assertEquals(pack.id, 1f, pack.icons.saturation * pack.icons.contrast, 0f)
+            assertTrue(pack.id, pack.icons.shadow)
+            assertEquals(pack.id, PlaceholderStyle.Letter, pack.icons.placeholder.style)
+            assertEquals(pack.id, FontGeneric.Cursive, pack.type.hand.family)
+        }
     }
 
     @Test fun thePickerSaysWhatIsWrong() {
@@ -241,8 +358,8 @@ class ActivePackTest {
                 assertTrue("$id $name", shadow.visible)
             }
         }
-        // Riso's two, Instrument's six and 1-bit's two.
-        assertEquals(10, declared)
+        // Riso's two, Instrument's six and 1-bit's two; City Pop's four, Custard's six, Tiny Magazine's three, Bujo's none and Dial-Up's three.
+        assertEquals(26, declared)
         // No color anywhere in a shipped manifest is written with eight digits and a clear alpha.
         for ((id, _) in shipped) {
             val clear = Regex("\"#00[0-9a-fA-F]{6}\"").findAll(moduleFile("src/main/assets/packs/$id/pack.toml").readText()).map { it.value }.toList()

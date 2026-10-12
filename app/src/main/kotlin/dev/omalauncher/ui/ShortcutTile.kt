@@ -15,7 +15,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.background
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
@@ -65,21 +64,21 @@ fun ShortcutTile(
                 // Bare silhouettes and initials sit on a badge, as in the drawer, so they read on any wallpaper.
                 bare && (mono || bmp == null) ->
                     Box(
-                        Modifier.size(iconSize).clip(Pack.shape(iconSize / 2)).background(Pack.badge),
+                        Modifier.iconBadge(iconSize),
                         contentAlignment = Alignment.Center,
                     ) {
                         if (bmp != null) {
                             Image(bmp, spoken, Modifier.size(iconSize * 0.75f), colorFilter = Pack.tinted())
                         } else {
-                            BasicText(initials(shortcut.label), style = Pack.placeholder((iconSize.value * 0.35f).sp))
+                            BasicText(Pack.placeholderText(shortcut.label), style = Pack.placeholder((iconSize.value * 0.35f).sp))
                         }
                     }
                 bmp != null ->
-                    Image(bmp, spoken, Modifier.size(iconSize), colorFilter = Pack.icon(mono))
+                    AppIcon(bmp, spoken, Modifier.size(iconSize), mono, framed = !bare)
                 else ->
-                    // Apps without an icon get their initials.
+                    // Apps without an icon get the pack's placeholder: their initials, in Console.
                     Box(Modifier.size(iconSize), contentAlignment = Alignment.Center) {
-                        BasicText(initials(shortcut.label), style = Pack.placeholder((iconSize.value * 0.45f).sp))
+                        BasicText(Pack.placeholderText(shortcut.label), style = Pack.placeholder((iconSize.value * 0.45f).sp))
                     }
             }
             if (showLabel) TileLabel(shortcut.label)

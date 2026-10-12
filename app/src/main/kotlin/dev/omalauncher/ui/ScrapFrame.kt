@@ -9,6 +9,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.PaintingStyle
@@ -58,8 +59,29 @@ fun Modifier.scrap(
     return surface(scrap.surface, focused, tilt = tilt, tape = tape, bar = bar)
 }
 
-/** An outline alone in the focus color, for a bare icon that is focused or being edited. */
-fun Modifier.scrapFocus(): Modifier = framed(Pack.mark, Pack.look.pack.scrap.surface.focusColor.toColor())
+/**
+ * An outline alone, for a bare icon that is focused or being edited. It is drawn straight on the page, so
+ * it is in the page's focus color, which a pack picks to show there; as wide as a focused scrap's line in all.
+ */
+fun Modifier.scrapFocus(): Modifier {
+    val pack = Pack.look.pack
+    return framed(focusWidth(pack.scrap.surface).dp, pack.page.focusColor.toColor())
+}
+
+/** How wide [surface]'s focus line is in all: the pack's focus width, or the surface's own outline where that is wider. */
+internal fun focusWidth(surface: PackSurface) = maxOf(surface.border, surface.focusWidth)
+
+/**
+ * How much of that is inside the surface's edge, over its fill: the outline's own width, and the
+ * launcher's mark at least. Nothing the surface holds is covered further than that.
+ */
+internal fun focusInside(surface: PackSurface) = maxOf(surface.border, PackLook.MIN_MARK)
+
+/**
+ * The rest, which is drawn outside the edge, on the page, in the page's focus color: a line a pack
+ * makes heavier grows outward, and shows on the page whatever color the part on the fill has to be.
+ */
+internal fun focusOutside(surface: PackSurface) = (focusWidth(surface) - focusInside(surface)).coerceAtLeast(0f)
 
 /** The dock's bar, the recent apps strip and the side rail: the pack's `[dock]` surface, outlined in its focus color while [focused]. */
 fun Modifier.dockBar(focused: Boolean = false): Modifier = surface(Pack.look.pack.dock.surface, focused)
@@ -99,9 +121,11 @@ internal fun Modifier.surface(
             focused -> surface.focusColor.toColor()
             else -> surface.borderColor.toColor()
         }
-    // Focus shows even where the pack's scraps have no outline.
-    val width = if (focused && outlined) maxOf(surface.border, PackLook.MIN_MARK) else surface.border
-    val plain = !surface.shadow.visible && !surface.shadow2.visible && tilt == 0f && tape == null && bar == null
+    // Focus shows even where the pack's scraps have no outline, and at the pack's own weight where it gives one.
+    val width = if (focused && outlined) focusInside(surface) else surface.border
+    val outside = if (focused && outlined) focusOutside(surface) else 0f
+    val halo = Pack.look.pack.page.focusColor.toColor()
+    val plain = !surface.shadow.visible && !surface.shadow2.visible && tilt == 0f && tape == null && bar == null && outside == 0f
     if (plain) {
         val filled = clip(shape).background(fill, shape)
         // A border of no width would still draw a hairline.
@@ -118,6 +142,8 @@ internal fun Modifier.surface(
             onDrawWithContent {
                 rotate(tilt) {
                     for ((shadow, paint) in cast) shadow(path, shadow, paint)
+                    // Only what falls outside the edge: a fill that lets the page through shows none of it.
+                    if (outside > 0f) clipPath(path, clipOp = ClipOp.Difference) { drawPath(path, halo, style = Stroke(outside.dp.toPx() * 2f)) }
                     drawPath(path, fill)
                     clipPath(path) {
                         this@onDrawWithContent.drawContent()

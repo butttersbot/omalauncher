@@ -31,7 +31,6 @@ import androidx.compose.ui.unit.sp
 import dev.omalauncher.theme.pack.CornerStyle
 import dev.omalauncher.theme.pack.DockStyle
 import dev.omalauncher.theme.pack.FontGeneric
-import dev.omalauncher.theme.pack.IconTreatment
 import dev.omalauncher.theme.pack.PackColor
 import dev.omalauncher.theme.pack.PackFont
 import dev.omalauncher.theme.pack.PackPick
@@ -270,27 +269,18 @@ class PackLook(
     val folio: TextStyle = if (ownsPage) style(TypeRole.Hand, sizes.body, onPage) else style(TypeRole.Body, sizes.body, muted)
     val folioPlate = if (ownsPage) plate else background.copy(alpha = 0.6f)
 
+    /** How the pack treats app icons, as plain values (see [IconLook]). */
+    val icons = iconLook(pack.icons)
+
     /** An icon in its own colors as the pack treats it; null leaves it alone. */
-    val iconFilter: ColorFilter? =
-        pack.icons.run {
-            val s = if (treatment == IconTreatment.Grayscale) 0f else saturation
-            if (s == 1f && contrast == 1f) return@run null
-            val matrix = ColorMatrix().apply { setToSaturation(s) }
-            if (contrast != 1f) {
-                // Contrast about mid grey, after the saturation.
-                val shift = 127.5f * (1f - contrast)
-                matrix.timesAssign(ColorMatrix(floatArrayOf(contrast, 0f, 0f, 0f, shift, 0f, contrast, 0f, 0f, shift, 0f, 0f, contrast, 0f, shift, 0f, 0f, 0f, 1f, 0f)))
-            }
-            ColorFilter.colorMatrix(matrix)
-        }
+    val iconFilter: ColorFilter? = icons.matrix?.let { ColorFilter.colorMatrix(ColorMatrix(it.toFloatArray())) }
 
     /** Whether icons are silhouettes in [tint]: the pack's say, or the switch in settings. */
-    fun monoIcons(user: Boolean) =
-        when (pack.icons.treatment) {
-            IconTreatment.User -> user
-            IconTreatment.Monochrome -> true
-            IconTreatment.Original, IconTreatment.Grayscale -> false
-        }
+    fun monoIcons(user: Boolean) = icons.mono(user)
+
+    /** The outline of the placeholder's badge; no width in Console, whose badge is a fill alone. */
+    val badgeLine = pack.icons.placeholder.surface.border.dp
+    val badgeEdge = pack.icons.placeholder.surface.borderColor.toColor()
 
     /** True when panels are light, for the system bars' icons over a full-screen one like the chat. */
     val panelsLight = if (ownsPage) background.luminance() > 0.5f else p.isLight
@@ -420,6 +410,18 @@ object Pack {
 
     /** How an icon is drawn: a silhouette in [tint] when [mono], else in its own colors as the pack treats them. */
     fun icon(mono: Boolean): ColorFilter? = if (mono) ColorFilter.tint(look.tint) else look.iconFilter
+
+    /** True when an icon in its own colors gets the pack's small shadow: not a silhouette, and not [framed] by a tile or a button. */
+    fun iconShadowed(
+        mono: Boolean,
+        framed: Boolean,
+    ) = look.icons.shadowed(mono, framed)
+
+    /** What that shadow is drawn with: the icon's own outline in a thin black. */
+    val iconShadow: ColorFilter by lazy { ColorFilter.tint(Color.Black.copy(alpha = IconLook.SHADOW_ALPHA)) }
+
+    /** What stands in for an icon [label]'s app doesn't have: its initials, the pack's one mark, or nothing. */
+    fun placeholderText(label: String) = look.icons.placeholderText(label)
 
     /** A glyph drawn in [color]. */
     fun tinted(color: Color = look.tint): ColorFilter = ColorFilter.tint(color)

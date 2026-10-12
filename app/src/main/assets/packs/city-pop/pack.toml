@@ -1,0 +1,176 @@
+# City Pop, after design/oma-scrapbook-prototype.html ("cp") and Hiroshi Nagai's poolsides:
+# a cobalt sky, white cards with hard noon shadows, a turquoise pool, pink and yellow for
+# everything lit.
+#
+# The prototype lays a painted wallpaper over the cobalt, one for each display. No image is
+# shipped here, so the page is the cobalt alone; a later pass adds the two files and sets
+#   kind = "wallpaper", wallpaper_cover = "…", wallpaper_inner = "…"
+# under [page].
+#
+# What it leaves out is Console's (assets/packs/console/pack.toml). It ships no font files:
+# none could be bundled, so each voice names the system family nearest the prototype's font,
+# for a later pass to replace with a file in fonts/:
+#   display  Montserrat, italic 800, capitals  -> sans-serif, italic, weight 800, capitals
+#   body     Schibsted Grotesk                 -> sans-serif
+#   hand     Caveat                            -> cursive, bold
+#   mono     the prototype's caps              -> monospace, in capitals, spaced out
+[pack]
+format = 1
+name = "City Pop"
+
+# The background is a card's white, not the sky: panels are cards too, and what widgets draw
+# sits on a scrap. The sky is the page, below.
+#
+# Changed from the prototype so text can be read (4.5 to 1 on the background and the surface):
+#   accent  #ff4f9a is 3.1 to 1 on white; darkened to #bd3a72. The tape, the focus line and
+#           the ring keep the prototype's pink.
+#   muted   the ink at 0.62 is 4.2 to 1 on white and 4.1 on the surface; 0.68 here.
+# Not in the prototype at all: surface (the pool's turquoise, thinned on white), border, and
+# red and green, which are picked to read on both.
+[palette]
+mode = "light"
+background = "#ffffff"
+surface = "#dff7f7"
+foreground = "#12296b"
+muted = "foreground@0.68"
+accent = "#bd3a72"
+border = "foreground@0.55"
+red = "#c33d41"
+green = "#257b47"
+on_page = "#ffffff"
+highlight = "#ffe14d"
+alt = "#19c3c9"
+on_alt = "#0b2260"
+overlay = "background@0.94"
+glass = "background"
+
+[type.display]
+family = "sans-serif"
+weight = 800
+italic = true
+uppercase = true
+tracking = -0.02
+
+[type.body]
+family = "sans-serif"
+
+[type.hand]
+family = "cursive"
+weight = 700
+
+[type.mono]
+family = "monospace"
+uppercase = true
+tracking = 0.09
+
+[shape]
+radius = 2
+corners = "round"
+
+# Nothing leans. The prototype's shadow is 7 down and across; on a grid with a 6dp gap that
+# would run under the next tile, so it is 5 here.
+[scrap]
+fill = "background"
+ink = "foreground"
+border = 0
+border_color = "foreground"
+focus_color = "#ff4f9a"
+muted = "muted"
+# No color stands 3 to 1 off both white and this cobalt, so the line is doubled: pink inside the
+# edge, the page's yellow outside it.
+focus_width = 4
+
+[scrap.shadow]
+x = 5
+y = 5
+color = "#8c081c60"
+
+# The pool. With no outline of its own, a panel still gets a hairline in the ink. The pink
+# is lost on turquoise (1.4 to 1), so here the focus line is the pool's own ink.
+[scrap.alt]
+fill = "alt"
+ink = "on_alt"
+border = 0
+border_color = "foreground"
+focus_color = "on_alt"
+focus_width = 4
+
+[scrap.alt.shadow]
+x = 5
+y = 5
+color = "#8c081c60"
+
+[scrap.tape]
+style = "solid"
+color = "#ff4f9a"
+opacity = 0.9
+width = 66
+height = 21
+angle = -3
+
+[scrap.sticky]
+fill = "highlight"
+ink = "#26241f"
+border = 0
+
+[page]
+# A focused bare icon is outlined in the yellow: the pink is 2.3 to 1 on the cobalt.
+kind = "paper"
+color = "#0f4fc9"
+pattern = "none"
+overview_scrim = "#33ffffff"
+drawer_fill = "background@0.97"
+focus_color = "highlight"
+
+[page.text_shadow]
+x = 0
+y = 2
+color = "#bf081c60"
+
+[icons]
+treatment = "original"
+tint = "foreground"
+shadow = true
+
+[icons.placeholder]
+style = "letter"
+font = "display"
+fill = "surface"
+ink = "foreground"
+
+# Pink running into yellow in every state, as the prototype's does.
+[ring.listening]
+color1 = "#ff4f9a"
+color2 = "#ffe14d"
+
+[ring.working]
+color1 = "#ff4f9a"
+color2 = "#ffe14d"
+
+[ring.needs_you]
+color1 = "#ff4f9a"
+color2 = "#ffe14d"
+
+[ring.done]
+color1 = "#ff4f9a"
+color2 = "#ffe14d"
+
+[ink]
+pen = "#ffffff"
+second = "#ff4f9a"
+highlighter = "highlight@0.5"
+
+[dock]
+style = "buttons"
+tilt = 0
+fill = "background"
+ink = "foreground"
+border = 0
+border_color = "foreground"
+focus_color = "#ff4f9a"
+focus_width = 4
+
+[dock.shadow]
+x = 3
+y = 3
+color = "#8c081c60"

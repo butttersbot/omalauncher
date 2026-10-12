@@ -1,0 +1,165 @@
+# Tiny Magazine, after design/oma-scrapbook-prototype.html ("tm"): a blue zine spread with
+# white clippings, an italic serif masthead, and a pen that writes in white.
+#
+# What it leaves out is Console's (assets/packs/console/pack.toml). It ships no font files:
+# none could be bundled, so each voice names the system family nearest the prototype's font,
+# for a later pass to replace with a file in fonts/:
+#   display  Playfair Display, italic 700  -> serif, italic, bold
+#   body     Schibsted Grotesk             -> sans-serif
+#   hand     Caveat                        -> cursive, bold
+#   mono     the prototype's caps          -> monospace, in capitals, spaced out
+[pack]
+format = 1
+name = "Tiny Magazine"
+
+# The background is a clipping's white, not the spread: panels are clippings too, and what
+# widgets draw sits on a scrap. The blue is the page, below, and the accent.
+#
+# Changed from the prototype so text can be read (4.5 to 1 on the background and the surface):
+#   muted   the ink at 0.62 is 4.5 to 1 on white and 4.0 on the surface; 0.69 here.
+# Not in the prototype at all: border, and red and green, which are picked to read on both.
+# The surface is the prototype's pale blue, which it uses for an emphasised clipping.
+[palette]
+mode = "light"
+background = "#ffffff"
+surface = "#c9e1f6"
+foreground = "#1a2434"
+muted = "foreground@0.69"
+accent = "#1257c4"
+border = "foreground@0.55"
+red = "#ac363a"
+green = "#206d3f"
+on_page = "#ffffff"
+highlight = "#c9e1f6"
+alt = "#c9e1f6"
+on_alt = "#1a2434"
+overlay = "background@0.94"
+glass = "background"
+
+[type.display]
+family = "serif"
+weight = 700
+italic = true
+
+[type.body]
+family = "sans-serif"
+
+[type.hand]
+family = "cursive"
+weight = 700
+
+[type.mono]
+family = "monospace"
+uppercase = true
+tracking = 0.09
+
+[shape]
+radius = 0
+corners = "edge"
+
+# No outline: a clipping is cut paper with one hard shadow straight down. The prototype's
+# is 6 down, the whole of the grid's gap, so it is 5 here; and its scraps lean up to two and
+# a half degrees, which on that gap would run one tile over the next, so they lean less.
+[scrap]
+fill = "background"
+ink = "foreground"
+border = 0
+border_color = "foreground"
+focus_color = "accent"
+muted = "muted"
+tilt_min = -1
+tilt_max = 1
+# The accent is the page's own blue, so the line is doubled: blue inside the edge, white outside it.
+focus_width = 4
+
+[scrap.shadow]
+x = 0
+y = 5
+color = "#66081c50"
+
+[scrap.alt]
+fill = "alt"
+ink = "on_alt"
+border = 0
+border_color = "foreground"
+focus_width = 4
+
+[scrap.alt.shadow]
+x = 0
+y = 5
+color = "#66081c50"
+
+# White tape, three quarters there: it shows where it laps onto the blue.
+[scrap.tape]
+style = "solid"
+color = "#bfffffff"
+opacity = 0.9
+width = 66
+height = 21
+angle = -3
+
+[scrap.sticky]
+fill = "highlight"
+ink = "#26241f"
+border = 0
+
+# Ruled in a thin white, a line every 24dp.
+[page]
+# A focused bare icon is outlined in white: the accent is the page itself.
+kind = "paper"
+color = "#1257c4"
+pattern = "lines"
+pattern_color = "#21ffffff"
+pattern_size = 24
+pattern_weight = 1
+gutter = true
+drawer_fill = "background@0.97"
+focus_color = "on_page"
+
+[icons]
+treatment = "original"
+tint = "foreground"
+shadow = true
+
+[icons.placeholder]
+style = "letter"
+font = "display"
+fill = "surface"
+ink = "foreground"
+
+# White running into the pale blue in every state, as the prototype's does.
+[ring.listening]
+color1 = "#ffffff"
+color2 = "#c9e1f6"
+
+[ring.working]
+color1 = "#ffffff"
+color2 = "#c9e1f6"
+
+[ring.needs_you]
+color1 = "#ffffff"
+color2 = "#c9e1f6"
+
+[ring.done]
+color1 = "#ffffff"
+color2 = "#c9e1f6"
+
+[ink]
+pen = "#ffffff"
+second = "#c9e1f6"
+highlighter = "highlight@0.5"
+
+[dock]
+style = "buttons"
+tilt = 1.5
+fill = "background"
+ink = "foreground"
+border = 0
+border_color = "foreground"
+focus_color = "accent"
+focus_width = 4
+
+[dock.shadow]
+x = 0
+y = 3
+color = "#66081c50"

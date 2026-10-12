@@ -61,6 +61,8 @@ border = 0
 border_color = "border"
 focus_color = "accent"
 muted = "muted"
+# The orange is 2.2 to 1 on the chassis, so a focused display also gets a line of the chassis ink outside its edge.
+focus_width = 4
 
 [scrap.shadow]
 x = 0
@@ -80,6 +82,7 @@ fill = "alt"
 ink = "on_alt"
 border = 2
 border_color = "#a2a29b"
+focus_color = "on_alt"
 
 [scrap.alt.shadow]
 x = 0
@@ -98,6 +101,7 @@ ink = "#1c1d1b"
 border = 0
 
 [page]
+# A focused bare icon is outlined in the chassis ink: the orange is 2.2 to 1 on the grey.
 kind = "paper"
 color = "#d7d7d1"
 pattern = "dots"
@@ -105,6 +109,7 @@ pattern_color = "#bdbdb6"
 pattern_size = 10
 pattern_weight = 2
 drawer_fill = "background@0.97"
+focus_color = "on_page"
 
 # Icons a little washed out, as behind an LCD's glass.
 [icons]
@@ -146,6 +151,7 @@ tilt = 0
 fill = "alt"
 ink = "on_alt"
 border = 0
+focus_color = "on_alt"
 
 [dock.shadow]
 x = 0

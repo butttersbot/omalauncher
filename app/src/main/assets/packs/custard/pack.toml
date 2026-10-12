@@ -1,0 +1,182 @@
+# Custard, after design/oma-scrapbook-prototype.html ("cu"): a butter-yellow journal page,
+# white scraps held on with kraft tape, marker headings over a stroke of yellow highlighter.
+#
+# What it leaves out is Console's (assets/packs/console/pack.toml). It ships no font files:
+# none could be bundled, so each voice names the system family nearest the prototype's font,
+# for a later pass to replace with a file in fonts/:
+#   display  Permanent Marker      -> cursive, bold
+#   body     Schibsted Grotesk     -> sans-serif
+#   hand     Caveat                -> cursive, bold
+#   mono     the prototype's caps  -> monospace, in capitals, spaced out
+[pack]
+format = 1
+name = "Custard"
+
+# The background is a scrap's white, not the page: panels are scraps too. The accent is the
+# ink itself, as in the prototype; what is lit is lit by the highlighter.
+#
+# Changed from the prototype so text can be read (4.5 to 1 on the background and the surface):
+#   muted   the ink at 0.62 is just under 4.5 to 1 on white and 4.1 on the surface; 0.67 here.
+# Not in the prototype at all: border, and red and green, which are picked to read on both.
+[palette]
+mode = "light"
+background = "#ffffff"
+surface = "#f7e9b5"
+foreground = "#26241f"
+muted = "foreground@0.67"
+accent = "#26241f"
+border = "foreground@0.55"
+red = "#b93a3e"
+green = "#237644"
+on_page = "foreground"
+highlight = "#f3d96b"
+alt = "#26241f"
+on_alt = "#fbf6e7"
+overlay = "background@0.94"
+glass = "background"
+
+[type.display]
+family = "cursive"
+weight = 700
+highlighter = true
+
+[type.body]
+family = "sans-serif"
+
+[type.hand]
+family = "cursive"
+weight = 700
+
+[type.mono]
+family = "monospace"
+uppercase = true
+tracking = 0.09
+
+[shape]
+radius = 3
+corners = "round"
+
+# No outline: a scrap is a piece of paper, told from the page by its two shadows. The
+# prototype leans its scraps up to three degrees; on a grid with a 6dp gap that would run
+# one tile over the next, so they lean less here.
+[scrap]
+fill = "background"
+ink = "foreground"
+border = 0
+border_color = "foreground"
+focus_color = "accent"
+muted = "muted"
+tilt_min = -1.2
+tilt_max = 1.2
+
+# The paper's own edge.
+[scrap.shadow]
+x = 0
+y = 2
+color = "#2e26241f"
+
+# The soft cast under it. The prototype's is 8 down, blurred 14 and pulled in by 8, which
+# the format has no word for; drawn at the scrap's full width it is lighter and tighter here.
+[scrap.shadow2]
+x = 0
+y = 8
+blur = 10
+color = "#4026241f"
+
+# The ink turned over: cream on black, so its focus line is the highlighter, not the ink.
+[scrap.alt]
+fill = "alt"
+ink = "on_alt"
+border = 0
+border_color = "foreground"
+focus_color = "highlight"
+focus_width = 4
+
+[scrap.alt.shadow]
+x = 0
+y = 2
+color = "#2e26241f"
+
+[scrap.alt.shadow2]
+x = 0
+y = 8
+blur = 10
+color = "#4026241f"
+
+[scrap.tape]
+style = "solid"
+color = "#c9a36b"
+opacity = 0.9
+width = 66
+height = 21
+angle = -3
+
+[scrap.sticky]
+fill = "highlight"
+ink = "#26241f"
+border = 0
+
+# Ruled like a journal: a faint line every 26dp.
+[page]
+kind = "paper"
+color = "#f7e9b5"
+pattern = "lines"
+pattern_color = "foreground@0.07"
+pattern_size = 26
+pattern_weight = 1
+gutter = true
+drawer_fill = "background@0.97"
+focus_color = "foreground"
+
+[icons]
+treatment = "original"
+tint = "foreground"
+shadow = true
+
+[icons.placeholder]
+style = "letter"
+font = "display"
+fill = "surface"
+ink = "foreground"
+
+# The ink running into the highlighter in every state, as the prototype's does.
+[ring.listening]
+color1 = "#26241f"
+color2 = "#f3d96b"
+
+[ring.working]
+color1 = "#26241f"
+color2 = "#f3d96b"
+
+[ring.needs_you]
+color1 = "#26241f"
+color2 = "#f3d96b"
+
+[ring.done]
+color1 = "#26241f"
+color2 = "#f3d96b"
+
+[ink]
+pen = "foreground"
+second = "#c9a36b"
+highlighter = "highlight@0.5"
+
+[dock]
+style = "buttons"
+tilt = 1.9
+fill = "background"
+ink = "foreground"
+border = 0
+border_color = "foreground"
+focus_color = "accent"
+
+[dock.shadow]
+x = 0
+y = 2
+color = "#2e26241f"
+
+[dock.shadow2]
+x = 0
+y = 6
+blur = 8
+color = "#4026241f"

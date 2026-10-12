@@ -1,0 +1,152 @@
+# Bujo, after design/oma-scrapbook-prototype.html ("bj"): a dot-grid bullet journal with
+# outlined boxes, striped washi tape and a dusty-pink pen.
+#
+# What it leaves out is Console's (assets/packs/console/pack.toml). It ships no font files:
+# none could be bundled, so each voice names the system family nearest the prototype's font,
+# for a later pass to replace with a file in fonts/:
+#   display  Patrick Hand          -> cursive, semibold
+#   body     Schibsted Grotesk     -> sans-serif
+#   hand     Caveat                -> cursive, bold
+#   mono     the prototype's caps  -> monospace, in capitals, spaced out
+[pack]
+format = 1
+name = "Bujo"
+
+# The page is the background too: white throughout, and a box is told from the page by its
+# pencil line.
+#
+# Changed from the prototype so text can be read (4.5 to 1 on the background and the surface):
+#   accent  #b86578 is 4.1 to 1 on white; darkened to #9c5666. The pen, the focus line and
+#           the ring keep the prototype's pink.
+#   muted   the ink at 0.62 is 4.0 to 1 on white and 3.8 on the surface; 0.71 here.
+# Not in the prototype at all: red and green, which are picked to read on both. The surface
+# is the lighter stripe of the prototype's washi tape.
+[palette]
+mode = "light"
+background = "#ffffff"
+surface = "#f7efd0"
+foreground = "#33312c"
+muted = "foreground@0.71"
+accent = "#9c5666"
+border = "foreground"
+red = "#be3c40"
+green = "#247a46"
+on_page = "foreground"
+highlight = "#f2cfd4"
+alt = "#f2cfd4"
+on_alt = "#33312c"
+overlay = "background@0.94"
+glass = "background"
+
+[type.display]
+family = "cursive"
+weight = 600
+
+[type.body]
+family = "sans-serif"
+
+[type.hand]
+family = "cursive"
+weight = 700
+
+[type.mono]
+family = "monospace"
+uppercase = true
+tracking = 0.09
+
+[shape]
+radius = 12
+corners = "round"
+
+# A pencil line and no shadow. The focus line is the prototype's pink, which stands 3.2 to 1
+# off the outline it replaces; the darker accent would not. The prototype leans its scraps
+# up to a degree and a half; they lean less here, as in the other packs.
+[scrap]
+fill = "background"
+ink = "foreground"
+border = 1.5
+border_color = "foreground"
+focus_color = "#b86578"
+muted = "muted"
+tilt_min = -0.6
+tilt_max = 0.6
+
+[scrap.alt]
+# The pink is under 3 to 1 on this pink, so its focus is the pencil line at twice the weight.
+fill = "alt"
+ink = "on_alt"
+border = 1.5
+border_color = "foreground"
+focus_color = "foreground"
+focus_width = 3
+
+# Washi tape: two creams in stripes.
+[scrap.tape]
+style = "stripes"
+color = "#efe0ae"
+color2 = "#f7efd0"
+opacity = 0.9
+width = 66
+height = 21
+angle = -3
+
+[scrap.sticky]
+fill = "highlight"
+ink = "#26241f"
+border = 0
+
+# A dot every 16dp.
+[page]
+kind = "paper"
+color = "#ffffff"
+pattern = "dots"
+pattern_color = "#c5c0b4"
+pattern_size = 16
+pattern_weight = 2.2
+gutter = true
+drawer_fill = "background@0.97"
+focus_color = "#b86578"
+
+[icons]
+treatment = "original"
+tint = "foreground"
+shadow = true
+
+[icons.placeholder]
+style = "letter"
+font = "display"
+fill = "surface"
+ink = "foreground"
+border = 1.5
+border_color = "foreground"
+
+# The pen's pink running into the tape's cream in every state, as the prototype's does.
+[ring.listening]
+color1 = "#b86578"
+color2 = "#efe0ae"
+
+[ring.working]
+color1 = "#b86578"
+color2 = "#efe0ae"
+
+[ring.needs_you]
+color1 = "#b86578"
+color2 = "#efe0ae"
+
+[ring.done]
+color1 = "#b86578"
+color2 = "#efe0ae"
+
+[ink]
+pen = "#b86578"
+second = "foreground"
+highlighter = "highlight@0.5"
+
+[dock]
+style = "buttons"
+tilt = 1
+fill = "background"
+ink = "foreground"
+border = 1.5
+border_color = "foreground"
+focus_color = "#b86578"

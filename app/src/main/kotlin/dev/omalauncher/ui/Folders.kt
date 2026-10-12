@@ -1,7 +1,6 @@
 package dev.omalauncher.ui
 
 import androidx.compose.animation.core.animateIntOffsetAsState
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -18,7 +17,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -56,7 +54,7 @@ fun FolderTile(
         val badge = min(maxWidth, maxHeight) * if (bare) 0.95f else 0.85f
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Box(
-                Modifier.size(badge).clip(Pack.shape(badge / 3)).background(Pack.badge),
+                Modifier.iconBadge(badge, radius = badge / 3),
                 contentAlignment = Alignment.Center,
             ) {
                 val mini = badge * 0.36f
@@ -85,9 +83,10 @@ private fun AppGlyph(
     size: Dp,
 ) {
     if (icon != null) {
-        Image(icon, label, Modifier.size(size), colorFilter = Pack.icon(Pack.monoIcons))
+        // Inside the folder's badge, which is its frame: the pack's treatment, without the shadow of an icon that stands alone.
+        AppIcon(icon, label, Modifier.size(size), Pack.monoIcons, framed = true)
     } else {
-        BasicText(initials(label), style = Pack.placeholder((size.value * 0.45f).sp))
+        BasicText(Pack.placeholderText(label), style = Pack.placeholder((size.value * 0.45f).sp))
     }
 }
 

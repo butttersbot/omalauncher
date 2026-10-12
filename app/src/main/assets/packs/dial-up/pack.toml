@@ -1,0 +1,165 @@
+# Dial-Up, after design/oma-scrapbook-prototype.html ("du"): graph paper and little OS
+# windows with title bars, in one indigo and one magenta. Almost nothing is crooked.
+#
+# What it leaves out is Console's (assets/packs/console/pack.toml). It ships no font files:
+# none could be bundled, so each voice names the system family nearest the prototype's font,
+# for a later pass to replace with a file in fonts/:
+#   display  Pixelify Sans         -> monospace, bold
+#   body     Pixelify Sans         -> monospace
+#   hand     Caveat                -> cursive, bold
+#   mono     the prototype's caps  -> monospace, in capitals, spaced out
+[pack]
+format = 1
+name = "Dial-Up"
+
+# The paper is the background and the surface too: a window is told from the desk by its
+# outline, not its fill.
+#
+# Changed from the prototype so text can be read (4.5 to 1 on the background):
+#   accent  #a94fa4 is 4.4 to 1 on the paper; darkened a little to #a24c9d. The pen and the
+#           ring keep the prototype's magenta.
+#   muted   the ink at 0.72 is 3.4 to 1; 0.87 here, which is as light as the indigo can get.
+# Not in the prototype at all: red and green, which are picked to read on the paper.
+[palette]
+mode = "light"
+background = "#f7f3ee"
+surface = "#f7f3ee"
+foreground = "#4a5590"
+muted = "foreground@0.87"
+accent = "#a24c9d"
+border = "foreground"
+red = "#c33d41"
+green = "#257d48"
+on_page = "foreground"
+highlight = "#efd9ec"
+alt = "#efd9ec"
+on_alt = "#4a5590"
+overlay = "background@0.94"
+glass = "background"
+
+[type.display]
+family = "monospace"
+weight = 700
+
+[type.body]
+family = "monospace"
+
+[type.hand]
+family = "cursive"
+weight = 700
+
+[type.mono]
+family = "monospace"
+uppercase = true
+tracking = 0.09
+
+[shape]
+radius = 0
+corners = "edge"
+
+# Focus is the prototype's magenta at twice the outline's weight. Magenta and indigo are
+# close in brightness (1.5 to 1), so the color alone would not tell a focused window from
+# any other; the weight does.
+[scrap]
+fill = "background"
+ink = "foreground"
+border = 2
+border_color = "foreground"
+muted = "muted"
+tilt_min = -0.3
+tilt_max = 0.3
+focus_color = "#a94fa4"
+focus_width = 4
+
+[scrap.shadow]
+x = 4
+y = 4
+color = "foreground"
+
+[scrap.alt]
+fill = "alt"
+ink = "on_alt"
+border = 2
+border_color = "foreground"
+focus_color = "#a94fa4"
+focus_width = 4
+
+[scrap.alt.shadow]
+x = 4
+y = 4
+color = "foreground"
+
+# A window's title bar, with its close box. No tape: windows aren't stuck down.
+[scrap.title_bar]
+style = "solid"
+height = 20
+fill = "foreground"
+ink = "background"
+glyph = "×"
+
+[scrap.sticky]
+fill = "highlight"
+ink = "#26241f"
+border = 0
+
+# Graph paper: a faint line each way every 14dp.
+[page]
+kind = "paper"
+color = "#f7f3ee"
+pattern = "grid"
+pattern_color = "foreground@0.16"
+pattern_size = 14
+pattern_weight = 1
+gutter = true
+drawer_fill = "background@0.97"
+focus_color = "#a94fa4"
+
+[icons]
+treatment = "original"
+tint = "foreground"
+shadow = true
+
+[icons.placeholder]
+style = "letter"
+font = "display"
+fill = "background"
+ink = "foreground"
+border = 2
+border_color = "foreground"
+
+# Magenta running into indigo in every state, as the prototype's does.
+[ring.listening]
+color1 = "#a94fa4"
+color2 = "#4a5590"
+
+[ring.working]
+color1 = "#a94fa4"
+color2 = "#4a5590"
+
+[ring.needs_you]
+color1 = "#a94fa4"
+color2 = "#4a5590"
+
+[ring.done]
+color1 = "#a94fa4"
+color2 = "#4a5590"
+
+[ink]
+pen = "#a94fa4"
+second = "foreground"
+highlighter = "highlight@0.5"
+
+[dock]
+style = "buttons"
+tilt = 0.5
+fill = "background"
+ink = "foreground"
+border = 2
+border_color = "foreground"
+focus_color = "#a94fa4"
+focus_width = 4
+
+[dock.shadow]
+x = 3
+y = 3
+color = "foreground"

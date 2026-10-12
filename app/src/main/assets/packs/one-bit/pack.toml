@@ -51,12 +51,14 @@ radius = 0
 corners = "edge"
 
 [scrap]
+# With two colors, focus is weight: the black outline at twice its width.
 fill = "#ffffff"
 ink = "#000000"
 border = 2
 border_color = "#000000"
 focus_color = "#000000"
 muted = "#000000"
+focus_width = 4
 
 [scrap.shadow]
 x = 3
@@ -68,6 +70,8 @@ fill = "#000000"
 ink = "#ffffff"
 border = 2
 border_color = "#000000"
+focus_color = "#ffffff"
+focus_width = 4
 
 # Ruled like an old window's: black lines on white, with a line under it.
 [scrap.title_bar]
@@ -94,6 +98,7 @@ pattern_size = 2
 pattern_weight = 1
 plate = "paper"
 drawer_fill = "#ffffff"
+focus_color = "#000000"
 
 [icons]
 treatment = "grayscale"
@@ -141,6 +146,8 @@ fill = "#ffffff"
 ink = "#000000"
 border = 2
 border_color = "#000000"
+focus_color = "#000000"
+focus_width = 4
 
 [dock.shadow]
 x = 3
