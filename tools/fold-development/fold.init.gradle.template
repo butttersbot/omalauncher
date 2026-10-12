@@ -1,0 +1,15 @@
+allprojects { p ->
+    p.plugins.withId('com.android.application') {
+        p.androidComponents.finalizeDsl { android ->
+            android.ndkVersion = '29.0.14206865'
+            android.buildToolsVersion = '36.0.0'
+            android.defaultConfig.versionCode = new File('/root/.config/oma-development/next-version-code').text.trim().toInteger()
+            android.buildTypes.debug.applicationIdSuffix = '.boss'
+            android.buildTypes.debug.manifestPlaceholders['appLabel'] = 'Omalauncher Boss'
+            android.signingConfigs.debug.storeFile = new File('/root/.config/oma-development/working-debug.keystore')
+            android.signingConfigs.debug.storePassword = 'android'
+            android.signingConfigs.debug.keyAlias = 'androiddebugkey'
+            android.signingConfigs.debug.keyPassword = 'android'
+        }
+    }
+}
