@@ -1,432 +1,576 @@
 <title>Oma OS Prototype</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Schibsted+Grotesk:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@500;800;900&family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,800&family=Dela+Gothic+One&family=Doto:wght@500;800&family=Instrument+Serif:ital@1&family=JetBrains+Mono:wght@400;500;700&family=Pixelify+Sans:wght@400;600&family=Schibsted+Grotesk:wght@400;500;600;700&display=swap">
 <style>
-/* Layout: a working phone on the left, the controls and notes for driving it on the right; stacks on narrow screens. */
+/* Layout: controls on top, one foldable device centred below that switches between cover and inner display; notes underneath. */
 :root{
-  --bg:#eef0ee; --panel:#f8f9f7; --fg:#18201e; --mute:#5b6763; --line:#cfd6d2; --accent:#1f4fd1; --accent-fg:#fff; --bezel:#0c0e10;
+  --bg:#eef0ee; --panel:#f8f9f7; --fg:#18201e; --mute:#5b6763; --line:#cfd6d2; --accent:#1f4fd1; --accent-fg:#fff; --bezel:#0c0e10; --key:#3a3f44;
   --ui:"Schibsted Grotesk",system-ui,-apple-system,"Segoe UI",sans-serif;
   --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
 }
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#101413;--panel:#171c1b;--fg:#e7ecea;--mute:#96a39f;--line:#2b3331;--accent:#8fb0ff;--accent-fg:#0b1020;--bezel:#000;color-scheme:dark}}
-:root[data-theme="dark"]{--bg:#101413;--panel:#171c1b;--fg:#e7ecea;--mute:#96a39f;--line:#2b3331;--accent:#8fb0ff;--accent-fg:#0b1020;--bezel:#000;color-scheme:dark}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#101413;--panel:#171c1b;--fg:#e7ecea;--mute:#96a39f;--line:#2b3331;--accent:#8fb0ff;--accent-fg:#0b1020;--bezel:#000;--key:#4a5157;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#101413;--panel:#171c1b;--fg:#e7ecea;--mute:#96a39f;--line:#2b3331;--accent:#8fb0ff;--accent-fg:#0b1020;--bezel:#000;--key:#4a5157;color-scheme:dark}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 body{background:var(--bg);color:var(--fg);font:15px/1.5 var(--ui)}
-.page{max-width:1040px;margin:0 auto;padding-inline:20px;padding-block:28px 56px;display:grid;grid-template-columns:minmax(0,400px) minmax(0,1fr);gap:40px;align-items:start}
-@media (max-width:820px){.page{grid-template-columns:minmax(0,1fr);gap:24px}}
+.page{max-width:1000px;margin:0 auto;padding-inline:20px;padding-block:26px 56px;display:flex;flex-direction:column;gap:22px}
 h1{font-size:26px;line-height:1.15;margin:0;font-weight:700;letter-spacing:-.01em;text-wrap:balance}
-.lede{color:var(--mute);margin:8px 0 0;max-width:58ch}
-.side{display:flex;flex-direction:column;gap:22px;min-width:0}
-.group{display:flex;flex-direction:column;gap:8px}
+.lede{color:var(--mute);margin:6px 0 0;max-width:62ch}
+.controls{display:flex;flex-wrap:wrap;gap:14px 26px}
+.group{display:flex;flex-direction:column;gap:7px;min-width:0}
 .label{font:500 11px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--mute)}
-.row{display:flex;flex-wrap:wrap;gap:8px}
+.row{display:flex;flex-wrap:wrap;gap:6px}
 .btn{font:500 14px/1 var(--ui);color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:10px 13px;cursor:pointer}
 .btn:hover{border-color:var(--fg)}
 .btn[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
 .btn.go{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
-.btn small{display:block;font:400 11px/1.3 var(--ui);opacity:.75;margin-top:4px}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.readout{font:13px/1.45 var(--mono);background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:11px 13px;min-height:44px}
-.notes{border-top:1px solid var(--line);padding-top:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:18px 28px}
+.readout{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:12px 14px;display:grid;gap:4px}
+.readout b{font-weight:600}
+.readout span{color:var(--mute);font:13px/1.45 var(--mono)}
+.notes{border-top:1px solid var(--line);padding-top:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px 28px}
 .notes h2{font:500 11px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--mute);margin:0 0 8px}
 .notes ul{margin:0;padding-left:18px;color:var(--mute);font-size:14px}
 .notes li{margin:3px 0}
 
-/* ---------- the phone ---------- */
-.stage{width:100%;max-width:400px;margin-inline:auto;position:relative}
-.bezel{width:400px;height:624px;padding:8px;border-radius:38px;background:var(--bezel);transform-origin:top left;box-shadow:0 18px 40px -18px rgba(0,0,0,.5)}
-.phone{--aw:2px;--ab:16px;position:relative;width:384px;height:608px;border-radius:30px;overflow:hidden;color:var(--p-fg);font-family:var(--p-font);font-size:13px;line-height:1.35;touch-action:none;user-select:none;-webkit-user-select:none;isolation:isolate}
+/* ---------- device ---------- */
+.stage{width:100%;position:relative;display:flex;justify-content:center}
+.bezel{position:relative;padding:8px;border-radius:38px;background:var(--bezel);transform-origin:top center;box-shadow:0 18px 40px -18px rgba(0,0,0,.5);flex:none}
+.sidekey{position:absolute;right:-5px;top:150px;width:6px;height:74px;border-radius:0 4px 4px 0;background:var(--key);border:0;padding:0;cursor:pointer}
+.sidekey::after{content:"";position:absolute;inset:-10px -14px -10px -4px}
+.phone{--W:384px;--H:608px;position:relative;width:var(--W);height:var(--H);border-radius:30px;overflow:hidden;background:var(--p-bg);color:var(--p-fg);font-family:var(--p-font);font-size:13px;line-height:1.35;touch-action:none;user-select:none;-webkit-user-select:none;isolation:isolate}
+.phone[data-fold="inner"]{--W:760px;--H:574px}
 :where(.phone) button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;text-align:inherit}
-.phone[data-skin="halo"]{--p-fg:#f3f4fa;--p-dim:rgba(243,244,250,.62);--p-card:rgba(255,255,255,.09);--p-solid:#171a2c;--p-line:rgba(255,255,255,.14);--p-acc:#9db9ff;--p-acc-fg:#0b1020;--p-warn:#ffb86b;--p-ok:#7be0b0;--p-r:24px;--p-rs:16px;--p-font:"Schibsted Grotesk",system-ui,sans-serif;--p-display:"Schibsted Grotesk",system-ui,sans-serif;--p-dw:600;--p-blur:blur(22px) saturate(1.3);--au1:#7aa2ff;--au2:#ff7ad9;--au3:#6ff0d0;--aw:3px;--ab:18px;
-  --wall:radial-gradient(120% 70% at 85% 8%,#3a2a7a 0,transparent 60%),radial-gradient(90% 60% at 10% 95%,#0e5a66 0,transparent 62%),radial-gradient(70% 50% at 60% 60%,#5a1f57 0,transparent 70%),#0a0c18}
-.phone[data-skin="vellum"]{--p-fg:#15302b;--p-dim:rgba(21,48,43,.64);--p-card:rgba(255,255,255,.6);--p-solid:#f4f7f5;--p-line:rgba(21,48,43,.16);--p-acc:#2447c9;--p-acc-fg:#fff;--p-warn:#b85c00;--p-ok:#177a4d;--p-r:14px;--p-rs:10px;--p-font:"Schibsted Grotesk",system-ui,sans-serif;--p-display:"Newsreader",Georgia,serif;--p-dw:400;--p-blur:blur(14px);--au1:#2447c9;--au2:#7f9bff;--au3:#2447c9;--aw:5px;--ab:26px;
-  --wall:radial-gradient(80% 50% at 20% 12%,#f2f6f3 0,transparent 70%),radial-gradient(90% 60% at 90% 90%,#a9c2c4 0,transparent 65%),linear-gradient(165deg,#dde6e1,#c4d3d0)}
-.phone[data-skin="console"]{--p-fg:#ccd4f5;--p-dim:#7781ad;--p-card:#161927;--p-solid:#161927;--p-line:#3b4366;--p-acc:#ffb454;--p-acc-fg:#161927;--p-warn:#ff7a90;--p-ok:#9ece6a;--p-r:2px;--p-rs:2px;--p-font:"JetBrains Mono",ui-monospace,monospace;--p-display:"JetBrains Mono",ui-monospace,monospace;--p-dw:500;--p-blur:none;--au1:#ffb454;--au2:transparent;--au3:transparent;--aw:2px;--ab:5px;
-  --wall:linear-gradient(rgba(59,67,102,.28) 1px,transparent 1px) 0 0/100% 32px,linear-gradient(90deg,rgba(59,67,102,.28) 1px,transparent 1px) 0 0/32px 100%,#0f111a}
-.phone[data-skin="console"]{font-size:12px}
-.wall{position:absolute;inset:0;background:var(--wall);z-index:0}
-.status{position:absolute;inset:0 0 auto;height:34px;padding:12px 20px 0;display:flex;justify-content:space-between;font-weight:600;font-size:12px;z-index:6;font-variant-numeric:tabular-nums;pointer-events:none}
-.card{background:var(--p-card);border:1px solid var(--p-line);border-radius:var(--p-r);backdrop-filter:var(--p-blur);-webkit-backdrop-filter:var(--p-blur)}
-.dimt{color:var(--p-dim)}
-.cap{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--p-dim)}
-.scene{position:absolute;inset:0;transition:transform .45s cubic-bezier(.2,.8,.2,1),opacity .35s}
+.status{position:absolute;inset:0 0 auto;height:34px;padding:11px 22px 0;display:flex;justify-content:space-between;gap:10px;font:600 12px/1.2 var(--ui);z-index:6;font-variant-numeric:tabular-nums;color:var(--p-fg)}
+.status button{display:flex;align-items:center;gap:6px;max-width:60%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.status .led{width:6px;height:6px;border-radius:50%;background:var(--rc1);flex:none;animation:breathe 1.2s ease-in-out infinite}
+.home{position:absolute;inset:0;z-index:1;transition:opacity .35s,transform .45s cubic-bezier(.2,.8,.2,1)}
+.phone[data-drawer="true"] .home{opacity:.12;transform:scale(.96)}
+.homebar{position:absolute;left:50%;bottom:7px;width:110px;height:4px;margin-left:-55px;border-radius:2px;background:var(--p-fg);opacity:.55;z-index:12;pointer-events:none}
 
-/* home */
-#home{z-index:1;padding:46px 16px 0;display:flex;flex-direction:column;gap:10px}
-.phone[data-drawer="true"] #home{transform:scale(.94);opacity:.25}
-.clock{font-family:var(--p-display);font-weight:var(--p-dw);font-size:64px;line-height:.95;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
-.hero{padding:6px 4px 4px}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.w{padding:12px 13px;display:flex;flex-direction:column;gap:4px;min-width:0}
-.w b{font-weight:600}
-.w .big{font-family:var(--p-display);font-weight:var(--p-dw);font-size:22px;line-height:1.1}
-.tasks{display:flex;flex-direction:column;gap:5px;margin-top:2px}
-.tasks span{display:flex;gap:8px;justify-content:space-between}
-.tasks i{font-style:normal;color:var(--p-dim);flex:none}
-.dock{position:absolute;left:16px;right:16px;bottom:66px;display:flex;justify-content:space-between;padding:10px 14px}
-.ico{width:46px;height:46px;border-radius:var(--p-rs);border:1px solid var(--p-line);background:var(--p-card);display:grid;place-items:center;font-family:var(--p-display);font-size:19px;font-weight:var(--p-dw)}
-.phone[data-skin="halo"] .ico{border-radius:15px}
-.swipehint{position:absolute;left:0;right:0;bottom:148px;text-align:center}
+/* ===== look 1: Perimeter — everything lives on the edge, the middle stays empty ===== */
+.phone[data-skin="pm"]{--p-bg:#07080c;--p-fg:#eef0f6;--p-dim:rgba(238,240,246,.55);--p-solid:rgba(7,8,12,.94);--p-line:rgba(238,240,246,.22);--p-acc:#8ad8ff;--p-warn:#ffb057;--p-ok:#7dffb2;--p-font:"Big Shoulders Display","Arial Narrow",sans-serif;--p-display:"Big Shoulders Display","Arial Narrow",sans-serif;--rc1:#8ad8ff;--rc2:#ff8ae2;--l-bg:transparent;--l-fg:#eef0f6;--l-size:46px;--dimbg:rgba(7,8,12,.72)}
+.pm .field{position:absolute;inset:-20%;background:radial-gradient(38% 30% at 30% 35%,#134a63 0,transparent 70%),radial-gradient(40% 34% at 70% 62%,#3a1d63 0,transparent 70%),radial-gradient(30% 26% at 55% 30%,#0f5a4a 0,transparent 70%);filter:blur(30px);animation:drift 18s ease-in-out infinite alternate}
+@keyframes drift{to{transform:translate(4%,-3%) rotate(8deg) scale(1.08)}}
+.pm .edge{position:absolute;font-weight:500;font-size:15px;letter-spacing:.12em;text-transform:uppercase;white-space:nowrap}
+.pm .edge b{font-weight:800;color:var(--p-acc)}
+.pm .e-top{top:42px;left:24px}
+.pm .e-right{right:12px;top:74px;writing-mode:vertical-rl}
+.pm .e-left{left:12px;bottom:74px;writing-mode:vertical-rl;transform:rotate(180deg)}
+.pm .e-bot{position:absolute;left:24px;right:24px;bottom:28px;display:flex;justify-content:space-between}
+.pm .e-bot button{letter-spacing:.12em;text-transform:uppercase;font-weight:800;font-size:15px}
+.pm .e-bot .all{color:var(--p-acc)}
+.pm .mid{position:absolute;left:44px;right:44px;top:50%;transform:translateY(-52%);display:flex;flex-direction:column;align-items:flex-start}
+.pm .num{font-weight:900;font-size:260px;line-height:.8;letter-spacing:-.04em;color:transparent;-webkit-text-stroke:1.5px var(--p-fg)}
+.pm .mid small{font-size:17px;letter-spacing:.14em;text-transform:uppercase;margin:14px 0 0 6px;color:var(--p-dim)}
+.pm.inner .mid{right:auto;left:60px}
+.pm.inner .num{font-size:300px}
+.pm .float{position:absolute;right:56px;top:86px;width:300px;font:11.5px/1.6 var(--mono);color:var(--p-dim);white-space:pre}
+.pm .float b{color:var(--p-fg);font-weight:500}
+.pm .float.two{top:auto;bottom:74px}
 
-/* app drawer */
-#apps{z-index:3;transform:translateY(102%);background:var(--p-solid);padding:44px 16px 0;display:flex;flex-direction:column}
-.phone[data-skin="halo"] #apps{background:rgba(12,14,28,.72);backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px)}
+/* ===== look 2: Prose — no widgets, Oma writes the home screen as a paragraph ===== */
+.phone[data-skin="pr"]{--p-bg:#1b2bff;--p-fg:#ffe6f1;--p-dim:rgba(255,230,241,.6);--p-solid:#1b2bff;--p-line:rgba(255,230,241,.4);--p-acc:#ffe6f1;--p-warn:#ffd34d;--p-ok:#9dffcf;--p-font:"Bricolage Grotesque",system-ui,sans-serif;--p-display:"Bricolage Grotesque",system-ui,sans-serif;--rc1:#ffe6f1;--rc2:#ff9ad0;--l-bg:transparent;--l-fg:#ffe6f1;--l-size:38px;--dimbg:rgba(27,43,255,.93)}
+.pr .para{position:absolute;left:22px;right:22px;top:52px;font-weight:800;font-size:35px;line-height:1.02;letter-spacing:-.025em;margin:0}
+.pr .para em,.pr .more em{font-family:"Instrument Serif",Georgia,serif;font-style:italic;font-weight:400;letter-spacing:0;font-size:1.12em}
+.pr u{text-decoration-thickness:2px;text-underline-offset:4px}
+.pr .words{position:absolute;left:22px;right:22px;bottom:30px;font-weight:500;font-size:16px;line-height:1.5}
+.pr .words button{text-decoration:underline;text-underline-offset:3px}
+.pr.inner .para{right:auto;width:400px;font-size:40px;top:56px}
+.pr .more{position:absolute;right:26px;top:60px;width:270px;font-weight:500;font-size:15px;line-height:1.45;display:flex;flex-direction:column;gap:16px}
+.pr .more pre{margin:0;font:11.5px/1.55 var(--mono);opacity:.85}
+.pr.inner .words{right:auto;width:400px}
+
+/* ===== look 3: Riso — two inks, printed out of register, stuck on crooked ===== */
+.phone[data-skin="rs"]{--p-bg:#e7e5ee;--p-fg:#2337ff;--p-dim:rgba(35,55,255,.62);--p-solid:#e7e5ee;--p-line:#2337ff;--p-acc:#ff3d8b;--p-warn:#ff3d8b;--p-ok:#2337ff;--p-font:"JetBrains Mono",ui-monospace,monospace;--p-display:"Dela Gothic One","Arial Black",sans-serif;--rc1:#ff3d8b;--rc2:#2337ff;--l-bg:transparent;--l-fg:#2337ff;--l-size:27px;--dimbg:rgba(231,229,238,.93)}
+.rs{background:radial-gradient(rgba(35,55,255,.09) 1px,transparent 1.4px) 0 0/5px 5px}
+.rs>*{position:absolute;mix-blend-mode:multiply}
+.rs .sun{width:250px;height:250px;border-radius:50%;background:#ff3d8b;right:-40px;top:48px}
+.rs .deg{font:400 96px/1 var(--p-display);right:34px;top:116px;color:#2337ff;letter-spacing:-.04em}
+.rs .rain{left:24px;top:60px;font-size:11px;line-height:1.5;text-transform:uppercase;letter-spacing:.06em}
+.rs .slab{left:14px;top:300px;width:300px;padding:16px 18px;background:#2337ff;color:#e7e5ee;transform:rotate(-4deg);font:400 30px/1.02 var(--p-display);mix-blend-mode:normal;box-shadow:5px 5px 0 #ff3d8b}
+.rs .slab small{display:block;font:500 12px/1.4 var(--p-font);margin-top:8px;letter-spacing:.04em}
+.rs .dotz{right:18px;top:286px;width:110px;height:110px;background:radial-gradient(#ff3d8b 2.6px,transparent 3px) 0 0/9px 9px}
+.rs .stk{width:104px;height:104px;border-radius:50%;background:#ff3d8b;color:#e7e5ee;display:grid;place-items:center;text-align:center;font:400 17px/1 var(--p-display);transform:rotate(11deg);right:26px;top:416px;mix-blend-mode:normal;border:2px solid #2337ff}
+.rs .cap2{left:24px;top:452px;font-size:11px;line-height:1.55;text-transform:uppercase;letter-spacing:.06em}
+.rs .dockr{left:20px;right:20px;bottom:26px;display:flex;justify-content:space-between}
+.rs .dockr button{width:52px;height:52px;border-radius:50%;background:#2337ff;color:#e7e5ee;font:400 17px/1 var(--p-display);text-align:center}
+.rs .dockr button:nth-child(even){background:#ff3d8b}
+.rs.inner .sun{width:330px;height:330px;right:120px;top:30px}
+.rs.inner .deg{right:230px;top:130px;font-size:120px}
+.rs.inner .slab{top:330px;left:34px;width:340px}
+.rs.inner .dotz{right:40px;top:60px;width:150px;height:200px}
+.rs.inner .stk{right:60px;top:300px}
+.rs.inner .term{left:300px;top:210px;width:270px;padding:12px 14px;border:2px solid #2337ff;background:#e7e5ee;transform:rotate(3deg);font-size:11px;line-height:1.55;white-space:pre;mix-blend-mode:normal;box-shadow:-5px 5px 0 #ff3d8b}
+.rs.inner .cap2{top:230px}
+.rs.inner .dockr{right:auto;width:330px;left:34px}
+
+/* ===== look 4: Instrument — the phone as a piece of hardware ===== */
+.phone[data-skin="in"]{--p-bg:#d7d7d1;--p-fg:#1c1d1b;--p-dim:#6c6d68;--p-solid:#d7d7d1;--p-line:#a5a59e;--p-acc:#ff5a1f;--p-warn:#ff5a1f;--p-ok:#1f9d55;--p-font:"JetBrains Mono",ui-monospace,monospace;--p-display:"Doto","JetBrains Mono",monospace;--rc1:#ff5a1f;--rc2:#ff5a1f;--l-bg:#191b18;--l-fg:#cfe0a8;--l-size:24px;--dimbg:rgba(215,215,209,.8)}
+.in{padding:46px 18px 30px;display:flex;flex-direction:column;gap:12px}
+.in::before,.in::after{content:"";position:absolute;top:40px;width:7px;height:7px;border-radius:50%;background:radial-gradient(#8d8d86 35%,#b9b9b2 40%);left:9px}
+.in::after{left:auto;right:9px}
+.in .lcd{background:#191b18;color:#cfe0a8;border-radius:6px;padding:12px 14px;font:800 23px/1.15 var(--p-display);letter-spacing:.02em;box-shadow:inset 0 0 0 1px #000,inset 0 2px 8px rgba(0,0,0,.8),0 1px 0 #f3f3ee;text-transform:uppercase}
+.in .lcd small{display:block;font:500 13px/1.4 var(--p-display);opacity:.7}
+.in .lcd.s{font-size:18px;padding:10px 12px}
+.in .lab{font-size:8px;letter-spacing:.16em;text-transform:uppercase;color:var(--p-dim);display:flex;justify-content:space-between;margin-bottom:5px}
+.in .two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.in .knobs{display:flex;justify-content:space-around;align-items:flex-end;margin-top:4px}
+.in .knob{display:flex;flex-direction:column;align-items:center;gap:6px;font-size:8px;letter-spacing:.16em}
+.in .knob i{width:50px;height:50px;border-radius:50%;background:linear-gradient(145deg,#f1f1ec,#bdbdb6);box-shadow:0 3px 5px rgba(0,0,0,.28),inset 0 0 0 1px #9b9b94;position:relative;transform:rotate(var(--t,0deg))}
+.in .knob i::after{content:"";position:absolute;left:50%;top:5px;width:2px;height:13px;margin-left:-1px;background:#1c1d1b}
+.in .knob.o i::after{background:var(--p-acc)}
+.in .grille{flex:1;min-height:20px;background:radial-gradient(#8f8f88 1.3px,transparent 1.6px) 0 0/8px 8px;opacity:.8;margin:2px 30px}
+.in .keys{display:flex;justify-content:space-between}
+.in .key{display:flex;flex-direction:column;align-items:center;gap:5px;font-size:8px;letter-spacing:.14em}
+.in .key i{width:54px;height:46px;border-radius:5px;background:#ecece6;box-shadow:0 4px 0 #a2a29b,0 5px 6px rgba(0,0,0,.25);display:block}
+.in .key.o i{background:var(--p-acc);box-shadow:0 4px 0 #b53a0e,0 5px 6px rgba(0,0,0,.25)}
+.in .key:active i{transform:translateY(3px);box-shadow:0 1px 0 #a2a29b}
+.in.inner{display:grid;grid-template-columns:1.25fr 1fr;grid-template-rows:auto 1fr auto;gap:14px 22px;padding:48px 28px 30px}
+.in.inner .big{grid-row:1/3;display:flex;flex-direction:column}
+.in.inner .big .lcd{flex:1;font:500 15px/1.5 var(--p-display);white-space:pre;text-transform:none}
+.in.inner .keys{grid-column:1/3}
+.in.inner .key i{width:62px}
+
+/* ===== look 5: 1-bit — black and white pixels only ===== */
+.phone[data-skin="ob"]{--p-bg:#fff;--p-fg:#000;--p-dim:#000;--p-solid:#fff;--p-line:#000;--p-acc:#000;--p-warn:#000;--p-ok:#000;--p-font:"Pixelify Sans","Courier New",monospace;--p-display:"Pixelify Sans","Courier New",monospace;--rc1:#000;--rc2:#000;--l-bg:#fff;--l-fg:#000;--l-size:24px;--dimbg:repeating-conic-gradient(#000 0 25%,#fff 0 50%) 0 0/4px 4px}
+.phone[data-skin="ob"] .status{background:#fff;border-bottom:2px solid #000;height:32px;padding-top:9px;font-family:var(--p-font);font-size:13px}
+.ob{background:repeating-conic-gradient(#000 0 25%,#fff 0 50%) 0 0/4px 4px;font-size:15px;line-height:1.25}
+.ob .win{position:absolute;background:#fff;border:2px solid #000;box-shadow:3px 3px 0 #000}
+.ob .tb{height:20px;border-bottom:2px solid #000;background:repeating-linear-gradient(#000 0 1px,#fff 1px 3px);display:flex;justify-content:center;align-items:center}
+.ob .tb span{background:#fff;padding:0 8px;font-weight:600;font-size:13px;line-height:18px}
+.ob .bd{padding:9px 11px}
+.ob .bd b{font-weight:600;font-size:22px;line-height:1.05;display:block}
+.ob .blk{background:#000;color:#fff}
+.ob pre{margin:0;font:inherit;line-height:1.15}
+.ob .w1{left:14px;top:48px;width:270px}
+.ob .w2{right:14px;top:176px;width:190px}
+.ob .w3{left:26px;top:292px;width:232px}
+.ob .dockb{position:absolute;left:14px;right:14px;bottom:24px;background:#fff;border:2px solid #000;box-shadow:3px 3px 0 #000;display:flex;justify-content:space-around;padding:8px 4px}
+.ob .dockb button{width:46px;height:42px;border:2px solid #000;text-align:center;font-weight:600;font-size:17px}
+.ob .dockb button:last-child,.ob .dockb button:hover{background:#000;color:#fff}
+.ob.inner .w1{left:30px;top:54px;width:300px}
+.ob.inner .w2{left:230px;right:auto;top:200px;width:210px}
+.ob.inner .w3{left:44px;top:330px;width:250px}
+.ob.inner .w4{right:26px;top:70px;width:300px}
+.ob.inner .w5{right:60px;top:330px;width:230px}
+.ob.inner .dockb{right:auto;width:330px;left:30px}
+
+/* ---------- app drawer (one structure, five dialects) ---------- */
+#apps{position:absolute;inset:0;z-index:3;transform:translateY(102%);transition:transform .45s cubic-bezier(.2,.8,.2,1);background:var(--p-solid);padding:44px 20px 0;display:flex;flex-direction:column}
 .phone[data-drawer="true"] #apps{transform:none}
-.grab{width:36px;height:4px;border-radius:2px;background:var(--p-dim);opacity:.5;margin:0 auto 10px;flex:none}
 .appscroll{flex:1;overflow-y:auto;touch-action:pan-y;padding-bottom:86px;scrollbar-width:none}
-.appgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px 6px;margin:8px 0 14px}
+.cap{font:500 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--p-dim);margin:8px 0}
+.appgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px 6px;margin-bottom:14px}
+.phone[data-fold="inner"] .appgrid{grid-template-columns:repeat(8,1fr)}
 .app{display:flex;flex-direction:column;align-items:center;gap:5px;font-size:11px;min-width:0}
-.app span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.search{position:absolute;left:16px;right:16px;bottom:20px;height:46px;display:flex;align-items:center;gap:8px;padding:0 16px;background:var(--p-solid)}
-.phone[data-skin="halo"] .search{background:rgba(40,44,70,.9)}
-.search input{flex:1;min-width:0;background:none;border:0;outline:0;color:inherit;font:inherit;font-size:14px;user-select:text;-webkit-user-select:text}
+.app .nm{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ico{width:48px;height:48px;display:grid;place-items:center;font:400 18px/1 var(--p-display)}
+.search{position:absolute;left:20px;right:20px;bottom:20px;height:46px;display:flex;align-items:center;gap:8px;padding:0 16px;background:var(--p-solid);border:1.5px solid var(--p-line)}
+.search input{flex:1;min-width:0;background:none;border:0;outline:0;color:inherit;font:inherit;font-size:15px;user-select:text;-webkit-user-select:text}
 .search input::placeholder{color:var(--p-dim)}
-.search:focus-within{border-color:var(--p-acc)}
+.phone[data-skin="pm"] .appgrid,.phone[data-skin="pr"] .appgrid{display:block}
+.phone[data-skin="pm"] .ico,.phone[data-skin="pr"] .ico{display:none}
+.phone[data-skin="pm"] .app{display:block;font:800 46px/.98 var(--p-display);text-transform:uppercase;letter-spacing:-.01em;opacity:calc(.35 + var(--f)*.65)}
+.phone[data-skin="pm"][data-fold="inner"] .appgrid{columns:3}
+.phone[data-skin="pr"] .app{display:inline;font:800 calc(17px + var(--f)*26px)/1.08 var(--p-display);letter-spacing:-.02em}
+.phone[data-skin="pr"] .app .nm{white-space:normal;overflow:visible}
+.phone[data-skin="pr"] .app::after{content:", ";font-weight:500;opacity:.6}
+.phone[data-skin="pr"] .search{border-width:0 0 2px;padding:0}
+.phone[data-skin="rs"] .ico{border-radius:50%;background:#2337ff;color:#e7e5ee;width:52px;height:52px}
+.phone[data-skin="rs"] .app:nth-child(3n+1) .ico{background:#ff3d8b;transform:rotate(-6deg)}
+.phone[data-skin="rs"] .app{font-size:10px;text-transform:uppercase}
+.phone[data-skin="in"] .ico{border-radius:5px;background:#ecece6;box-shadow:0 4px 0 #a2a29b,0 5px 6px rgba(0,0,0,.25);font:800 17px/1 var(--p-display);margin-bottom:4px}
+.phone[data-skin="in"] .app{font-size:8px;letter-spacing:.12em;text-transform:uppercase}
+.phone[data-skin="in"] .search{background:#191b18;color:#cfe0a8;border:0;border-radius:6px;font-family:var(--p-display);font-weight:800}
+.phone[data-skin="in"] .search input::placeholder{color:rgba(207,224,168,.55)}
+.phone[data-skin="ob"] .ico{border:2px solid #000;box-shadow:2px 2px 0 #000;font-weight:600;width:46px;height:44px}
+.phone[data-skin="ob"] .app{font-size:13px}
+.phone[data-skin="ob"] .search{border-width:2px;box-shadow:3px 3px 0 #000}
 
-/* quick panel */
-#panel{z-index:5;transform:translateY(-102%);background:var(--p-solid);padding:44px 16px 18px;display:flex;flex-direction:column;gap:10px}
-.phone[data-skin="halo"] #panel{background:rgba(12,14,28,.78);backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px)}
-.phone[data-panel="true"] #panel{transform:none}
-.toggles{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.tg{padding:11px 13px;border:1px solid var(--p-line);border-radius:var(--p-rs);background:var(--p-card);display:flex;flex-direction:column;gap:1px}
-.phone .tg[aria-pressed="true"]{background:var(--p-acc);color:var(--p-acc-fg);border-color:var(--p-acc)}
-.tg small{font-size:10.5px;opacity:.72}
-.bar{height:30px;border:1px solid var(--p-line);border-radius:var(--p-rs);background:var(--p-card);overflow:hidden;position:relative}
-.bar::before{content:"";position:absolute;inset:0 38% 0 0;background:var(--p-fg);opacity:.85}
-.omablock{padding:12px 13px;display:flex;flex-direction:column;gap:8px}
-.kv{display:flex;justify-content:space-between;gap:10px;align-items:center}
-.chip{padding:6px 11px;border:1px solid var(--p-line);border-radius:999px;font-size:12px;font-weight:600}
-.phone[data-skin="console"] .chip{border-radius:2px}
-.phone .chip.acc{background:var(--p-acc);color:var(--p-acc-fg);border-color:var(--p-acc)}
-.note{padding:10px 13px}
-.panelclose{margin-top:auto;align-self:center;padding:8px 18px}
-
-/* lock */
-#lock{z-index:4;background:var(--wall);padding:70px 22px 0;display:flex;flex-direction:column;gap:14px}
-#lock::before{content:"";position:absolute;inset:0;background:rgba(0,0,0,.18)}
-.phone[data-skin="vellum"] #lock::before{background:rgba(255,255,255,.2)}
-#lock>*{position:relative}
-.phone[data-screen="home"] #lock{transform:translateY(-102%)}
-#lock .clock{font-size:92px}
-.unlock{position:absolute!important;left:0;right:0;bottom:52px;text-align:center;padding:10px}
-
-/* ---------- Oma layer ---------- */
-.dim{position:absolute;inset:0;z-index:7;background:rgba(4,6,14,.55);opacity:0;pointer-events:none;transition:opacity .45s}
-.phone[data-skin="vellum"] .dim{background:rgba(236,241,238,.72)}
-.phone[data-agent="listening"] .dim{opacity:1;pointer-events:auto;backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px)}
+/* ---------- Oma: the ring, the words, and Samsung's notification ---------- */
+.dim{position:absolute;inset:0;z-index:7;background:var(--dimbg);opacity:0;pointer-events:none;transition:opacity .45s}
+.phone[data-agent="listening"] .dim{opacity:1;pointer-events:auto}
 @property --ang{syntax:"<angle>";inherits:false;initial-value:0deg}
 @keyframes spin{to{--ang:360deg}}
-@keyframes breathe{50%{opacity:.45}}
-.aura{position:absolute;inset:0;z-index:8;border-radius:inherit;padding:var(--aw);pointer-events:none;opacity:0;transition:opacity .6s;
-  background:conic-gradient(from var(--ang),var(--au1),var(--au2),var(--au3),var(--au1));
+@keyframes spinr{to{--ang:-360deg}}
+@keyframes breathe{50%{opacity:.4}}
+@keyframes march{to{stroke-dashoffset:-16}}
+.ringwrap{position:absolute;inset:0;z-index:8;border-radius:inherit;pointer-events:none;opacity:0;transition:opacity .6s}
+.phone[data-agent="listening"] .ringwrap,.phone[data-agent="approval"] .ringwrap{opacity:1}
+.phone[data-agent="working"] .ringwrap{opacity:.75}
+.phone[data-agent="waiting"] .ringwrap{opacity:.55}
+.phone[data-agent="done"] .ringwrap{opacity:1;animation:breathe 1.6s ease-in-out 2}
+.phone[data-agent="approval"],.phone[data-agent="waiting"]{--rc1:var(--p-warn);--rc2:var(--p-warn)}
+.phone[data-agent="done"]{--rc1:var(--p-ok);--rc2:var(--p-ok)}
+.ring{position:absolute;inset:0;border-radius:inherit;padding:1.5px;
+  background:conic-gradient(from var(--ang),transparent 0 22%,var(--rc1) 44%,#fff 50%,transparent 50.2% 72%,var(--rc2) 94%,#fff 100%);
   -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask:linear-gradient(#000 0 0) content-box exclude,linear-gradient(#000 0 0);
-  animation:spin 5s linear infinite}
-.aura.soft{padding:calc(var(--aw)*5);filter:blur(var(--ab))}
-.phone[data-agent="listening"] .aura{opacity:1}
-.phone[data-agent="working"] .aura{opacity:.55;animation-duration:9s}
-.phone[data-agent="working"] .aura.soft{opacity:.3}
-.phone[data-agent="approval"],.phone[data-agent="waiting"]{--au1:var(--p-warn);--au2:transparent;--au3:var(--p-warn)}
-.phone[data-agent="approval"] .aura{opacity:1}
-.phone[data-agent="waiting"] .aura{opacity:.5}
-.phone[data-agent="done"]{--au1:var(--p-ok);--au2:var(--p-ok);--au3:var(--p-ok)}
-.phone[data-agent="done"] .aura{opacity:.7;animation:breathe 2.4s ease-in-out 2}
+  animation:spin 4.2s linear infinite}
+.ring.glow{padding:5px;filter:blur(7px);opacity:.7}
+.ring.base{background:var(--rc1);opacity:.22;animation:none;padding:1px}
+.phone[data-agent="working"] .ring{animation-duration:9s}
+.phone[data-agent="approval"] .ring,.phone[data-agent="waiting"] .ring{animation-duration:14s}
+.phone[data-skin="pr"] .ring,.phone[data-skin="rs"] .ring{background:conic-gradient(from var(--ang),transparent 0 60%,var(--rc1) 99%,transparent 100%)}
+.phone[data-skin="rs"] .ringwrap{mix-blend-mode:multiply}
+.phone[data-skin="rs"] .ring{padding:3px}
+.phone[data-skin="rs"] .ring.glow{filter:none;opacity:1;inset:3px;border-radius:27px;animation-name:spinr;animation-duration:5.3s;background:conic-gradient(from var(--ang),transparent 0 55%,var(--rc2) 99%,transparent 100%)}
+.phone[data-skin="rs"] .ring.base{display:none}
+.phone[data-skin="in"] .ring,.phone[data-skin="ob"] .ring{display:none}
+.ants{position:absolute;inset:0;width:100%;height:100%;display:none;overflow:visible}
+.phone[data-skin="in"] .ants,.phone[data-skin="ob"] .ants{display:block}
+.ants rect{x:3px;y:3px;width:calc(100% - 6px);height:calc(100% - 6px);rx:27px;fill:none}
+.ants .u{stroke:#fff;stroke-width:3}
+.ants .d{stroke:#000;stroke-width:3;stroke-dasharray:8 8;animation:march .45s linear infinite}
+.phone[data-skin="ob"][data-agent="working"] .ants .d{animation-duration:1.1s}
+.phone[data-skin="ob"][data-agent="approval"] .ants .d,.phone[data-skin="ob"][data-agent="waiting"] .ants .d{stroke-dasharray:2 6;animation-duration:1.6s}
+.phone[data-skin="ob"][data-agent="done"] .ants .d{stroke-dasharray:none;animation:none}
+.phone[data-skin="in"] .ants .u{stroke:#191b18;stroke-width:5}
+.phone[data-skin="in"] .ants .d{stroke:var(--rc1);stroke-width:3;stroke-dasharray:10 6;animation-duration:.9s;filter:drop-shadow(0 0 3px var(--rc1))}
 
-.listen{position:absolute;left:24px;right:24px;bottom:84px;z-index:9;opacity:0;transform:translateY(14px);transition:.4s;pointer-events:none}
+.listen{position:absolute;left:26px;right:26px;bottom:60px;z-index:9;opacity:0;transform:translateY(14px);transition:.4s;pointer-events:none;color:var(--l-fg);background:var(--l-bg)}
+.phone[data-fold="inner"] .listen{right:auto;width:520px;left:44px}
 .phone[data-agent="listening"] .listen{opacity:1;transform:none;pointer-events:auto}
-.said{font-family:var(--p-display);font-weight:var(--p-dw);font-size:27px;line-height:1.18;letter-spacing:-.01em;min-height:96px;margin:10px 0 14px;text-wrap:balance}
-.phone[data-skin="console"] .said{font-size:20px;line-height:1.3}
+.phone[data-skin="in"] .listen{padding:14px 16px;border-radius:6px;box-shadow:inset 0 2px 8px #000,0 1px 0 #f3f3ee}
+.phone[data-skin="ob"] .listen{padding:12px 14px;border:2px solid #000;box-shadow:3px 3px 0 #000}
+.lcap{font:500 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;opacity:.75}
+.said{font:800 var(--l-size)/1.04 var(--p-display);letter-spacing:-.01em;min-height:3.2em;margin:10px 0 12px;text-wrap:balance}
+.phone[data-skin="pm"] .said{text-transform:uppercase}
+.phone[data-skin="rs"] .said{font-weight:400;text-shadow:2px 2px 0 #ff3d8b}
+.phone[data-skin="in"] .said{text-transform:uppercase;line-height:1.15}
+.phone[data-skin="ob"] .said{font-weight:600}
 .said span{opacity:0;animation:word .25s forwards}
-.said .caret{display:inline-block;width:2px;height:.9em;background:var(--p-acc);margin-left:3px;vertical-align:-.08em;opacity:1;animation:breathe 1s steps(2) infinite}
+.said .caret{display:inline-block;width:.09em;min-width:2px;height:.85em;background:currentColor;margin-left:3px;vertical-align:-.06em;opacity:1;animation:breathe 1s steps(2) infinite}
 @keyframes word{to{opacity:1}}
-.bars{display:inline-flex;gap:3px;align-items:center;height:14px;vertical-align:-2px;margin-right:8px}
-.bars i{width:3px;background:var(--p-acc);border-radius:2px;animation:bar .9s ease-in-out infinite}
-.bars i:nth-child(1){height:6px}.bars i:nth-child(2){height:13px;animation-delay:.15s}.bars i:nth-child(3){height:9px;animation-delay:.3s}.bars i:nth-child(4){height:12px;animation-delay:.45s}
+.bars{display:inline-flex;gap:3px;align-items:center;height:12px;vertical-align:-2px;margin-right:8px}
+.bars i{width:3px;background:currentColor;animation:bar .9s ease-in-out infinite}
+.bars i:nth-child(1){height:5px}.bars i:nth-child(2){height:12px;animation-delay:.15s}.bars i:nth-child(3){height:8px;animation-delay:.3s}.bars i:nth-child(4){height:11px;animation-delay:.45s}
 @keyframes bar{50%{transform:scaleY(.35)}}
+.cancel{font:500 12px/1 var(--mono);text-decoration:underline;text-underline-offset:3px}
 
-.pill{position:absolute;left:50%;bottom:22px;z-index:10;transform:translateX(-50%);display:flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;border:1px solid var(--p-line);background:var(--p-solid);white-space:nowrap;font-weight:600;font-size:12px;transition:bottom .4s,opacity .3s,border-color .3s;box-shadow:0 6px 20px -8px rgba(0,0,0,.5)}
-.phone[data-skin="console"] .pill{border-radius:2px;box-shadow:none}
-.phone[data-skin="halo"] .pill{background:rgba(18,20,38,.82);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
-.pill .dot{width:7px;height:7px;border-radius:50%;background:var(--p-dim)}
-.phone[data-agent="working"] .pill .dot{background:var(--p-acc);animation:breathe 1.2s ease-in-out infinite}
-.phone[data-agent="waiting"] .pill{border-color:var(--p-warn)}
-.phone[data-agent="waiting"] .pill .dot{background:var(--p-warn)}
-.phone[data-agent="done"] .pill .dot{background:var(--p-ok)}
-.phone[data-agent="listening"] .pill,.phone[data-agent="approval"] .pill{opacity:0;pointer-events:none}
-.phone[data-drawer="true"] .pill{bottom:76px}
-.phone[data-drawer="true"][data-agent="idle"] .pill,.phone[data-panel="true"][data-agent="idle"] .pill{opacity:0;pointer-events:none}
-.pill .t{font-variant-numeric:tabular-nums;color:var(--p-dim);font-weight:500}
-
-.sheet{position:absolute;left:14px;right:14px;bottom:64px;z-index:9;padding:14px 15px;background:var(--p-solid);opacity:0;transform:translateY(16px) scale(.97);transform-origin:bottom center;transition:.35s cubic-bezier(.2,.8,.2,1);pointer-events:none;display:flex;flex-direction:column;gap:9px}
-.phone[data-skin="halo"] .sheet,.phone[data-skin="halo"] .heads{background:rgba(18,20,38,.86)}
-.phone[data-sheet="true"] .sheet{opacity:1;transform:none;pointer-events:auto}
-.steps{display:flex;flex-direction:column;gap:5px;margin:0;padding:0;list-style:none}
-.steps li{display:flex;gap:9px;color:var(--p-dim)}
-.steps li.on{color:var(--p-fg)}
-.steps li::before{content:"○";flex:none}
-.steps li.ok::before{content:"●";color:var(--p-ok)}
-.steps li.on::before{content:"◐";color:var(--p-acc)}
-.quote{border-left:2px solid var(--p-acc);padding:2px 0 2px 10px;font-family:var(--p-display);font-size:16px;line-height:1.3}
-.phone[data-skin="console"] .quote{font-size:13px}
-
-.heads{position:absolute;left:12px;right:12px;top:40px;z-index:11;padding:14px 15px;background:var(--p-solid);border-color:var(--p-warn);transform:translateY(-140%);opacity:0;transition:.45s cubic-bezier(.2,.9,.2,1);display:flex;flex-direction:column;gap:9px}
-.phone[data-agent="approval"] .heads{transform:none;opacity:1}
-.acts{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.acts .chip{padding:9px 14px;font-size:13px}
-.lockonly{display:none;color:var(--p-dim)}
-.phone[data-screen="lock"] .heads .acts{display:none}
-.phone[data-screen="lock"] .heads .lockonly{display:block}
-.homebar{position:absolute;left:50%;bottom:7px;width:110px;height:4px;margin-left:-55px;border-radius:2px;background:var(--p-fg);opacity:.55;z-index:12;pointer-events:none}
+/* Samsung's own heads-up notification: deliberately not restyled per look */
+.heads{position:absolute;left:10px;right:10px;top:38px;z-index:11;padding:14px 16px;border-radius:26px;background:#20242b;color:#f2f4f7;font:14px/1.4 var(--ui);box-shadow:0 10px 30px -10px rgba(0,0,0,.6);transform:translateY(-150%);opacity:0;transition:.45s cubic-bezier(.2,.9,.2,1);display:flex;flex-direction:column;gap:6px}
+.phone[data-fold="inner"] .heads{left:50%;right:auto;width:380px;margin-left:-190px}
+.phone[data-agent="approval"] .heads,.phone[data-agent="done"] .heads{transform:none;opacity:1}
+.heads .hd{display:flex;align-items:center;gap:8px;font-size:12px;color:#aab2bd}
+.heads .hd i{width:18px;height:18px;border-radius:50%;background:#f2f4f7;flex:none}
+.heads .hd button{margin-left:auto;font-size:16px;line-height:1;padding:2px 6px}
+.heads b{font-weight:600}
+.heads .q{color:#cfd5dd}
+.heads .acts{display:flex;gap:22px;margin-top:6px;font-weight:600;color:#8fb7ff}
 @media (prefers-reduced-motion:reduce){.phone *,.phone *::before{animation:none!important;transition-duration:.01s!important}.said span{opacity:1}}
 </style>
 
 <div class="page">
-  <div class="stage" id="stage">
-    <div class="bezel" id="bezel">
-      <div class="phone" id="phone" data-skin="halo" data-screen="home" data-drawer="false" data-panel="false" data-agent="idle" data-sheet="false">
-        <div class="wall"></div>
-        <div class="status"><span>6:52</span><span>5G &nbsp;94%</span></div>
-
-        <section class="scene" id="home" aria-label="Home screen">
-          <div class="hero">
-            <div class="clock">6:52</div>
-            <div class="dimt">Monday, October 12 · 68° patchy rain, Anaheim</div>
-          </div>
-          <div class="card w">
-            <span class="cap">Next</span>
-            <span class="big">Dinner with Mina</span>
-            <span class="dimt">7:30 PM · Kato · 24 min drive</span>
-          </div>
-          <div class="grid2">
-            <div class="card w">
-              <span class="cap">Oma today</span>
-              <div class="tasks">
-                <span>Sorted 214 photos <i>2h</i></span>
-                <span>Summarized 3 threads <i>5h</i></span>
-              </div>
-            </div>
-            <div class="card w">
-              <span class="cap">Arch Linux</span>
-              <span><b>283</b> packages</span>
-              <span class="dimt">up 2h 56m · 4 updates</span>
-            </div>
-          </div>
-          <div class="swipehint cap">swipe up for apps</div>
-          <div class="card dock" aria-label="Dock">
-            <button class="ico" aria-label="Messages">M</button><button class="ico" aria-label="Camera">C</button><button class="ico" aria-label="Browser">B</button><button class="ico" aria-label="Terminal">›_</button><button class="ico" data-act="apps" aria-label="All apps">⋯</button>
-          </div>
-        </section>
-
-        <section class="scene" id="apps" aria-label="App drawer">
-          <div class="grab"></div>
-          <div class="appscroll">
-            <div class="cap">Recent</div>
-            <div class="appgrid" id="recent"></div>
-            <div class="cap" id="allcap">All apps</div>
-            <div class="appgrid" id="appgrid"></div>
-          </div>
-          <label class="card search"><span class="dimt">⌕</span><input id="appsearch" type="text" placeholder="Search apps" autocomplete="off" aria-label="Search apps"></label>
-        </section>
-
-        <section class="scene" id="lock" aria-label="Lock screen">
-          <div>
-            <div class="dimt">Monday, October 12</div>
-            <div class="clock">6:52</div>
-          </div>
-          <div class="card note"><div class="kv"><b>Mina</b><span class="dimt">Messages · 6:49</span></div><div>Still on for 7:30?</div></div>
-          <div class="card note"><div class="kv"><b>Oma</b><span class="dimt" id="lockoma">idle</span></div><div class="dimt">Hold the side button to talk</div></div>
-          <button class="unlock cap" data-act="unlock">swipe up to unlock</button>
-        </section>
-
-        <section class="scene" id="panel" aria-label="Quick panel">
-          <div class="kv"><span class="clock" style="font-size:34px">6:52</span><span class="dimt">Mon, Oct 12</span></div>
-          <div class="toggles">
-            <button class="tg" aria-pressed="true">Wi‑Fi<small>Harbor‑5G</small></button>
-            <button class="tg" aria-pressed="true">Tailscale<small>mac‑pro reachable</small></button>
-            <button class="tg" aria-pressed="false">Bluetooth<small>Off</small></button>
-            <button class="tg" aria-pressed="false">Do not disturb<small>Off</small></button>
-          </div>
-          <div class="bar" role="img" aria-label="Brightness 62%"></div>
-          <div class="card omablock">
-            <div class="kv"><b>Oma</b><span class="dimt" id="panelstate">Idle</span></div>
-            <div class="kv"><span>Phone control</span><button class="chip acc" id="pc" aria-pressed="true">Allowed</button></div>
-            <div class="kv"><span class="dimt" id="paneltask">No task running</span><button class="chip" data-act="stop" id="panelstop" hidden>Stop</button></div>
-          </div>
-          <div class="card note"><div class="kv"><b>Mina</b><span class="dimt">6:49</span></div><div>Still on for 7:30?</div></div>
-          <button class="chip panelclose" data-act="closepanel">Close</button>
-        </section>
-
-        <!-- Oma -->
-        <div class="dim" data-act="cancel"></div>
-        <div class="aura soft"></div><div class="aura"></div>
-
-        <div class="listen" aria-live="polite">
-          <span class="cap"><span class="bars"><i></i><i></i><i></i><i></i></span>Listening</span>
-          <div class="said" id="said"></div>
-          <div class="acts"><button class="chip" data-act="cancel">Cancel</button><span class="dimt">sends when you stop talking</span></div>
-        </div>
-
-        <div class="card sheet" id="sheet">
-          <div class="kv"><b id="sheettitle">Tell Mina I'm running late</b><button class="chip" data-act="stop" id="sheetstop">Stop</button></div>
-          <ul class="steps" id="steps"></ul>
-          <div class="quote" id="resultquote" hidden>Running about 10 min late — see you at 7:40!</div>
-          <div class="acts" id="doneacts" hidden><button class="chip acc" data-act="dismiss">Done</button></div>
-        </div>
-
-        <div class="card heads" role="alertdialog" aria-label="Oma needs approval">
-          <div class="kv"><span class="cap">Oma needs your OK</span><span class="dimt">Messages</span></div>
-          <b>Send this to Mina?</b>
-          <div class="quote">Running about 10 min late — see you at 7:40!</div>
-          <div class="acts"><button class="chip acc" data-act="approve">Send once</button><button class="chip" data-act="deny">Don't send</button><button class="chip" data-act="later">Later</button></div>
-          <div class="lockonly">Unlock to respond</div>
-        </div>
-
-        <button class="pill" id="pill" data-act="pill"><span class="dot"></span><span id="pilltext">Oma</span><span class="t" id="pilltime"></span></button>
-        <div class="homebar"></div>
-      </div>
-    </div>
+  <div>
+    <h1>Oma OS, five ways to break the home screen</h1>
+    <p class="lede">Each look breaks a different rule on purpose. Fold and unfold the device: the cover and the inner display keep separate layouts.</p>
   </div>
 
-  <div class="side">
-    <div>
-      <h1>Oma OS, as a phone you can poke</h1>
-      <p class="lede">Every surface is live: swipe inside the phone or use the buttons. Three looks share one structure, so you can judge the look and the behaviour separately.</p>
-    </div>
+  <div class="controls">
     <div class="group"><span class="label">Look</span>
       <div class="row" id="skins">
-        <button class="btn" data-skin="halo" aria-pressed="true">Halo<small>glass, iridescent aura</small></button>
-        <button class="btn" data-skin="vellum" aria-pressed="false">Vellum<small>light, serif, one blue</small></button>
-        <button class="btn" data-skin="console" aria-pressed="false">Console<small>mono, square, tracer line</small></button>
+        <button class="btn" data-skin="pm" aria-pressed="true">Perimeter</button>
+        <button class="btn" data-skin="pr" aria-pressed="false">Prose</button>
+        <button class="btn" data-skin="rs" aria-pressed="false">Riso</button>
+        <button class="btn" data-skin="in" aria-pressed="false">Instrument</button>
+        <button class="btn" data-skin="ob" aria-pressed="false">1‑bit</button>
+      </div>
+    </div>
+    <div class="group"><span class="label">Display</span>
+      <div class="row">
+        <button class="btn" data-fold="cover" aria-pressed="true">Cover</button>
+        <button class="btn" data-fold="inner" aria-pressed="false">Unfolded</button>
       </div>
     </div>
     <div class="group"><span class="label">Go to</span>
       <div class="row">
-        <button class="btn" data-go="lock">Lock screen</button>
         <button class="btn" data-go="home">Home</button>
-        <button class="btn" data-go="apps">App drawer</button>
-        <button class="btn" data-go="panel">Quick panel</button>
+        <button class="btn" data-go="apps">Apps</button>
       </div>
     </div>
     <div class="group"><span class="label">Oma</span>
       <div class="row">
         <button class="btn go" data-go="play">Play the whole flow</button>
-        <button class="btn" data-go="summon">Summon only</button>
+        <button class="btn" data-go="summon">Hold side button</button>
         <button class="btn" data-go="reset">Reset</button>
       </div>
-      <div class="readout" id="readout" aria-live="polite"></div>
     </div>
-    <div class="notes">
-      <div><h2>In the phone</h2><ul>
-        <li>Swipe up on home: apps, full height, no keyboard.</li>
-        <li>Swipe down: quick panel. Swipe up on the lock screen: unlock.</li>
-        <li>Tap the Oma pill: summon when idle, open the task while it works.</li>
-        <li>Approval arrives on its own, from the top, wherever you are.</li>
-      </ul></div>
-      <div><h2>Not modeled</h2><ul>
-        <li>Typing a prompt instead of speaking, and image attachments.</li>
-        <li>Errors: no network, agent signed out, speech not understood.</li>
-        <li>Several tasks at once, and the task history.</li>
-        <li>The inner (unfolded) display and landscape.</li>
-        <li>Editing widgets, folders, and the Linux windows.</li>
-      </ul></div>
+  </div>
+  <div class="readout" aria-live="polite"><b id="blurb"></b><span id="readout"></span></div>
+
+  <div class="stage" id="stage">
+    <div class="bezel" id="bezel">
+      <button class="sidekey" data-go="summon" title="Side button: hold to summon Oma" aria-label="Side button: summon Oma"></button>
+      <div class="phone" id="phone" data-skin="pm" data-fold="cover" data-drawer="false" data-agent="idle">
+        <div class="status"><button id="sb" data-act="sb" aria-label="Status bar"><span>6:52</span><span class="led" id="led" hidden></span><span id="sbtext"></span></button><span>5G &nbsp;94%</span></div>
+
+        <!-- Perimeter -->
+        <section class="home pm cover" data-skin="pm" data-fold="cover">
+          <div class="field"></div>
+          <div class="edge e-top">Mon 12 Oct · <b>68°</b> patchy rain · Anaheim</div>
+          <div class="edge e-right">Dinner with Mina <b>7:30</b> · Kato · leave by 7:06</div>
+          <div class="edge e-left">Arch <b>283</b> pkg · 4 updates · Oma sorted 214 photos</div>
+          <div class="mid"><span class="num">38</span><small>minutes until Mina</small></div>
+          <div class="e-bot"><button>Msg</button><button>Cam</button><button>Web</button><button>Term</button><button class="all" data-act="apps">All ↑</button></div>
+        </section>
+        <section class="home pm inner" data-skin="pm" data-fold="inner" hidden>
+          <div class="field"></div>
+          <div class="edge e-top">Mon 12 Oct · <b>68°</b> patchy rain · Anaheim · Tue 71° · Wed 74° · sunrise 6:54</div>
+          <div class="edge e-right">Dinner with Mina <b>7:30</b> · Kato · leave by 7:06</div>
+          <div class="edge e-left">Arch <b>283</b> pkg · 4 updates · up 2h 56m</div>
+          <div class="mid"><span class="num">38</span><small>minutes until Mina</small></div>
+          <div class="float"><b>~ $ pacman -Qu</b>
+linux-aarch64   6.12.58 → 6.12.61
+mesa            25.2.4  → 25.2.5
+foot            1.23.0  → 1.23.1
+claude-code     2.4.1   → 2.4.3</div>
+          <div class="float two"><b>OMA · TODAY</b>
+14:02  sorted 214 photos by date
+11:40  summarized 3 unread threads
+09:15  renewed the Kato booking</div>
+          <div class="e-bot"><button>Msg</button><button>Cam</button><button>Web</button><button>Term</button><button>Files</button><button>Claude</button><button class="all" data-act="apps">All ↑</button></div>
+        </section>
+
+        <!-- Prose -->
+        <section class="home pr cover" data-skin="pr" data-fold="cover" hidden>
+          <p class="para">It’s raining a little in Anaheim, 68°. <u><em>Dinner with Mina</em></u> is at 7:30, so leave by 7:06. Arch has <u>4 updates</u> waiting.</p>
+          <div class="words"><button>Messages</button>, <button>Camera</button>, <button>Browser</button>, <button>Terminal</button>, or <button data-act="apps">everything else ↑</button></div>
+        </section>
+        <section class="home pr inner" data-skin="pr" data-fold="inner" hidden>
+          <p class="para">It’s raining a little in Anaheim, 68°. <u><em>Dinner with Mina</em></u> is at 7:30, so leave by 7:06. Arch has <u>4 updates</u> waiting.</p>
+          <div class="more">
+            <div>While you were out I <u>sorted 214 photos</u> by date and <u>summarized 3 threads</u>. Nothing needed you.</div>
+            <div><em>This week</em> — Tue, dentist at 9. Thu, flight to Seattle 6:10 AM. Sat, nothing, on purpose.</div>
+            <pre>~ $ uptime
+ 18:52  up 2h 56m,  load 0.41
+~ $ █</pre>
+          </div>
+          <div class="words"><button>Messages</button>, <button>Camera</button>, <button>Browser</button>, <button>Terminal</button>, <button>Files</button>, or <button data-act="apps">everything else ↑</button></div>
+        </section>
+
+        <!-- Riso -->
+        <section class="home rs cover" data-skin="rs" data-fold="cover" hidden>
+          <div class="sun"></div><div class="deg">68°</div>
+          <div class="rain">Patchy rain<br>Anaheim<br>Mon 12 Oct</div>
+          <div class="dotz"></div>
+          <div class="slab">DINNER<br>w/ MINA<small>7:30 PM · KATO · LEAVE BY 7:06</small></div>
+          <div class="stk">4 NEW<br>PKGS</div>
+          <div class="cap2">Arch · 283 pkg<br>Oma sorted<br>214 photos</div>
+          <div class="dockr"><button>M</button><button>C</button><button>B</button><button>T</button><button data-act="apps">↑</button></div>
+        </section>
+        <section class="home rs inner" data-skin="rs" data-fold="inner" hidden>
+          <div class="sun"></div><div class="deg">68°</div>
+          <div class="rain">Patchy rain<br>Anaheim<br>Mon 12 Oct</div>
+          <div class="dotz"></div>
+          <div class="term">~ $ pacman -Qu
+linux-aarch64 6.12.61
+mesa          25.2.5
+foot          1.23.1
+~ $ _</div>
+          <div class="slab">DINNER<br>w/ MINA<small>7:30 PM · KATO · LEAVE BY 7:06</small></div>
+          <div class="stk">4 NEW<br>PKGS</div>
+          <div class="cap2">Oma sorted<br>214 photos</div>
+          <div class="dockr"><button>M</button><button>C</button><button>B</button><button>T</button><button data-act="apps">↑</button></div>
+        </section>
+
+        <!-- Instrument -->
+        <section class="home in cover" data-skin="in" data-fold="cover" hidden>
+          <div><div class="lab"><span>Next event</span><span>CH 1</span></div><div class="lcd">Dinner / Mina<small>19:30 Kato · leave 19:06</small></div></div>
+          <div class="two">
+            <div><div class="lab"><span>Weather</span><span>ANA</span></div><div class="lcd s">68°F rain</div></div>
+            <div><div class="lab"><span>Arch</span><span>UPD 04</span></div><div class="lcd s">283 pkg</div></div>
+          </div>
+          <div class="knobs"><div class="knob" style="--t:-40deg"><i></i>VOLUME</div><div class="knob o" style="--t:70deg"><i></i>OMA</div><div class="knob" style="--t:20deg"><i></i>BRIGHT</div></div>
+          <div class="grille"></div>
+          <div class="keys"><button class="key"><i></i>MSG</button><button class="key"><i></i>CAM</button><button class="key"><i></i>WEB</button><button class="key"><i></i>TERM</button><button class="key o" data-act="apps"><i></i>APPS</button></div>
+        </section>
+        <section class="home in inner" data-skin="in" data-fold="inner" hidden>
+          <div class="big"><div class="lab"><span>Terminal</span><span>TTY 1</span></div><div class="lcd">~ $ pacman -Qu
+linux-aarch64  6.12.61
+mesa           25.2.5
+foot           1.23.1
+claude-code    2.4.3
+~ $ uptime
+ 18:52 up 2h 56m load 0.41
+~ $ █</div></div>
+          <div><div class="lab"><span>Next event</span><span>CH 1</span></div><div class="lcd">Dinner / Mina<small>19:30 Kato · leave 19:06</small></div></div>
+          <div><div class="two">
+            <div><div class="lab"><span>Weather</span><span>ANA</span></div><div class="lcd s">68°F rain</div></div>
+            <div><div class="lab"><span>Oma</span><span>LOG</span></div><div class="lcd s">214 sorted</div></div>
+          </div>
+          <div class="knobs" style="margin-top:14px"><div class="knob" style="--t:-40deg"><i></i>VOLUME</div><div class="knob o" style="--t:70deg"><i></i>OMA</div><div class="knob" style="--t:20deg"><i></i>BRIGHT</div></div></div>
+          <div class="keys"><button class="key"><i></i>MSG</button><button class="key"><i></i>CAM</button><button class="key"><i></i>WEB</button><button class="key"><i></i>TERM</button><button class="key"><i></i>FILES</button><button class="key"><i></i>CLAUDE</button><button class="key"><i></i>CODEX</button><button class="key o" data-act="apps"><i></i>APPS</button></div>
+        </section>
+
+        <!-- 1-bit -->
+        <section class="home ob cover" data-skin="ob" data-fold="cover" hidden>
+          <div class="win w1"><div class="tb"><span>Next</span></div><div class="bd"><b>Dinner with Mina</b>7:30 PM at Kato<br>leave by 7:06</div></div>
+          <div class="win w2"><div class="tb"><span>Sky</span></div><div class="bd blk"><b>68°</b>patchy rain</div></div>
+          <div class="win w3"><div class="tb"><span>Oma</span></div><div class="bd"><pre> {o,o}  283 pkgs
+ /)_)   4 updates
+  " "   214 sorted</pre></div></div>
+          <div class="dockb"><button>M</button><button>C</button><button>B</button><button>T</button><button data-act="apps">↑</button></div>
+        </section>
+        <section class="home ob inner" data-skin="ob" data-fold="inner" hidden>
+          <div class="win w1"><div class="tb"><span>Next</span></div><div class="bd"><b>Dinner with Mina</b>7:30 PM at Kato<br>leave by 7:06</div></div>
+          <div class="win w3"><div class="tb"><span>Oma</span></div><div class="bd"><pre> {o,o}  283 pkgs
+ /)_)   4 updates
+  " "   214 sorted</pre></div></div>
+          <div class="win w2"><div class="tb"><span>Sky</span></div><div class="bd blk"><b>68°</b>patchy rain</div></div>
+          <div class="win w4"><div class="tb"><span>Terminal</span></div><div class="bd blk"><pre>~ $ pacman -Qu
+linux-aarch64 6.12.61
+mesa          25.2.5
+foot          1.23.1
+~ $ █</pre></div></div>
+          <div class="win w5"><div class="tb"><span>Week</span></div><div class="bd">Tue  dentist 9:00<br>Thu  SEA 6:10 AM<br>Sat  nothing</div></div>
+          <div class="dockb"><button>M</button><button>C</button><button>B</button><button>T</button><button data-act="apps">↑</button></div>
+        </section>
+
+        <section id="apps" aria-label="App drawer">
+          <div class="appscroll">
+            <div class="cap" id="reccap">Recent</div>
+            <div class="appgrid" id="recent"></div>
+            <div class="cap" id="allcap">All apps</div>
+            <div class="appgrid" id="appgrid"></div>
+          </div>
+          <label class="search"><span>⌕</span><input id="appsearch" type="text" placeholder="Search apps" autocomplete="off" aria-label="Search apps"></label>
+        </section>
+
+        <div class="dim" data-act="cancel"></div>
+        <div class="ringwrap">
+          <div class="ring base"></div><div class="ring glow"></div><div class="ring"></div>
+          <svg class="ants" aria-hidden="true"><rect class="u"></rect><rect class="d"></rect></svg>
+        </div>
+
+        <div class="listen" aria-live="polite">
+          <span class="lcap"><span class="bars"><i></i><i></i><i></i><i></i></span>Listening</span>
+          <div class="said" id="said"></div>
+          <button class="cancel" data-act="cancel">Cancel</button>
+        </div>
+
+        <div class="heads" role="alertdialog" aria-label="Notification from Oma">
+          <div class="hd"><i></i><span>Oma · now</span><button data-act="collapse" aria-label="Dismiss to the notification panel">⌃</button></div>
+          <b id="ntitle"></b>
+          <div class="q" id="nbody"></div>
+          <div class="acts" id="nacts"></div>
+        </div>
+        <div class="homebar"></div>
+      </div>
     </div>
+  </div>
+
+  <div class="notes">
+    <div><h2>Changed since the last pass</h2><ul>
+      <li>No clock on home; the status bar already has one.</li>
+      <li>No pill. Progress sits in the status bar, and approvals and results arrive as Samsung's own notifications.</li>
+      <li>The ring is thinner, with two light heads and a soft trail.</li>
+      <li>Cover and unfolded are separate layouts with different widgets.</li>
+    </ul></div>
+    <div><h2>In the device</h2><ul>
+      <li>Swipe up on home for apps; swipe down to close them.</li>
+      <li>Press the side button on the bezel to summon Oma.</li>
+      <li>Dismiss an approval with ⌃, then tap the status bar to bring it back.</li>
+    </ul></div>
+    <div><h2>Not modeled</h2><ul>
+      <li>Lock screen and quick panel: Samsung's, styled through Good Lock, so left out of this round.</li>
+      <li>Typed prompts, image attachments, errors, several tasks at once.</li>
+      <li>Editing and arranging widgets on either display.</li>
+    </ul></div>
   </div>
 </div>
 
 <script>
 (function(){
   var $=function(id){return document.getElementById(id)};
-  var phone=$('phone'), S={screen:'home',drawer:false,panel:false,agent:'idle',sheet:false,step:0,outcome:'',auto:false};
-  var timers=[], t0=0, tick=null;
-  var APPS=['Calendar','Camera','Chrome','Claude','Clock','Codex','Files','Firefox','Gmail','Maps','Messages','Notes','Photos','Play Store','Resy','Settings','Signal','Spotify','Terminal','Wallet','Weather','btop'];
-  var STEPS=['Opened Messages','Found the thread with Mina','Drafted a reply','Waiting for your OK to send','Sent to Mina at 6:53 PM'];
+  var phone=$('phone'), S={skin:'pm',fold:'cover',drawer:false,agent:'idle',step:0,outcome:'',auto:false};
+  var timers=[];
+  var APPS=[['Calendar',.5],['Camera',.8],['Chrome',.9],['Claude',1],['Clock',.2],['Codex',.6],['Files',.5],['Firefox',.3],['Gmail',.7],['Maps',.6],['Messages',1],['Notes',.4],['Photos',.7],['Play Store',.2],['Resy',.5],['Settings',.3],['Signal',.6],['Spotify',.8],['Terminal',.9],['Wallet',.2],['Weather',.3],['btop',.4]];
+  var STEPS=['Opened Messages','Found the thread with Mina','Drafted a reply'];
   var PROMPT="Tell Mina I'm running ten minutes late".split(' ');
+  var MSG='“Running about 10 min late — see you at 7:40!”';
+  var BLURB={pm:'Perimeter. The interface lives on the edge of the glass and the middle stays empty. Rule broken: put the important thing in the centre.',
+    pr:'Prose. No widgets and no grid: Oma writes the home screen as one paragraph, and the underlined words are the buttons. Rule broken: a home screen is a grid.',
+    rs:'Riso. Two inks, printed out of register and stuck on crooked; where they overlap they make a third colour. Rule broken: align everything.',
+    'in':'Instrument. The phone as a piece of hardware, with LCD windows, knobs and one orange key. Rule broken: flat is modern.',
+    ob:'1‑bit. Black and white pixels only, and the ring becomes marching ants. Rule broken: more colour is better.'};
 
-  function appEl(n){var b=document.createElement('button');b.className='app';b.innerHTML='<span class="ico">'+(n==='Terminal'?'›_':n[0].toUpperCase())+'</span><span></span>';b.lastChild.textContent=n;return b}
-  ['Messages','Resy','Terminal','Claude'].forEach(function(n){$('recent').appendChild(appEl(n))});
-  function drawApps(q){var g=$('appgrid');g.textContent='';var hits=APPS.filter(function(n){return n.toLowerCase().indexOf(q)>=0});
-    hits.forEach(function(n){g.appendChild(appEl(n))});
+  function appEl(a){var b=document.createElement('button');b.className='app';b.style.setProperty('--f',a[1]);
+    b.innerHTML='<span class="ico"></span><span class="nm"></span>';b.firstChild.textContent=a[0]==='Terminal'?'›_':a[0][0].toUpperCase();b.lastChild.textContent=a[0];return b}
+  [['Messages',1],['Resy',.8],['Terminal',.8],['Claude',.8]].forEach(function(a){$('recent').appendChild(appEl(a))});
+  function drawApps(q){var g=$('appgrid');g.textContent='';var hits=APPS.filter(function(a){return a[0].toLowerCase().indexOf(q)>=0});
+    hits.forEach(function(a){g.appendChild(appEl(a))});
     $('allcap').textContent=q?(hits.length?hits.length+' match'+(hits.length>1?'es':''):'No app named "'+q+'"'):'All apps';
-    $('recent').hidden=!!q;$('recent').previousElementSibling.hidden=!!q}
+    $('recent').hidden=!!q;$('reccap').hidden=!!q}
   drawApps('');
   $('appsearch').addEventListener('input',function(e){drawApps(e.target.value.trim().toLowerCase())});
 
   function later(fn,ms){timers.push(setTimeout(fn,ms))}
-  function clearAll(){timers.forEach(clearTimeout);timers=[];clearInterval(tick);tick=null}
+  function clearAll(){timers.forEach(clearTimeout);timers=[]}
   function set(p){for(var k in p)S[k]=p[k];render()}
-  function elapsed(){var s=Math.floor((Date.now()-t0)/1000);return '0:'+(s<10?'0':'')+s}
+  function acts(list){var n=$('nacts');n.textContent='';list.forEach(function(x){var b=document.createElement('button');b.textContent=x[0];b.dataset.act=x[1];n.appendChild(b)})}
 
   function render(){
-    phone.dataset.screen=S.screen;phone.dataset.drawer=S.drawer;phone.dataset.panel=S.panel;phone.dataset.agent=S.agent;phone.dataset.sheet=S.sheet;
-    var a=S.agent, label={idle:'Oma',listening:'',working:STEPS[Math.min(S.step,2)],approval:'',waiting:'Needs your OK',done:S.outcome==='ok'?'Sent to Mina':'Stopped, nothing sent'}[a];
-    $('pilltext').textContent=label;$('pilltime').textContent=a==='working'?elapsed():'';
-    $('pill').setAttribute('aria-label',a==='idle'?'Summon Oma':'Oma: '+label);
-    var ul=$('steps');ul.textContent='';
-    STEPS.forEach(function(s,i){if(a==='done'&&S.outcome!=='ok'&&i>2)return;var li=document.createElement('li');li.textContent=s;
-      li.className=i<S.step||(a==='done'&&S.outcome==='ok')?'ok':(i===S.step&&a!=='done'?'on':'');ul.appendChild(li)});
-    if(a==='done'&&S.outcome!=='ok'){var li=document.createElement('li');li.textContent=S.outcome==='denied'?'You chose not to send it':'You stopped the task';li.className='on';ul.appendChild(li)}
-    $('resultquote').hidden=!(a==='done'&&S.outcome==='ok');$('doneacts').hidden=a!=='done';$('sheetstop').hidden=a==='done'||a==='idle';
-    var busy=a==='working'||a==='waiting'||a==='approval';
-    $('panelstate').textContent={idle:'Idle',listening:'Listening',working:'Working',approval:'Needs your OK',waiting:'Needs your OK',done:'Finished'}[a];
-    $('paneltask').textContent=busy?"Tell Mina I'm running late":'No task running';$('panelstop').hidden=!busy;
-    $('lockoma').textContent=$('panelstate').textContent.toLowerCase();
-    $('readout').textContent=({idle:'Idle. Oma is a small pill at the bottom; nothing else is on screen.',
-      listening:'Listening. The screen edge lights up and your words appear over the dimmed home screen. No box.',
-      working:'Working. The overlay is gone; a pill and a faint edge light are all that remain. Tap the pill for the steps.',
-      approval:'Approval. A separate card drops from the top and the edge turns amber. It is not part of the listening screen.',
-      waiting:'Parked. You chose Later, so the pill waits in amber. Tap it to bring the approval back.',
-      done:S.outcome==='ok'?'Done. The edge flashes green once and the result opens from the pill.':'Stopped. Nothing was sent.'}[a])+
-      (S.screen==='lock'?' (Lock screen)':S.drawer?' (App drawer open)':S.panel?' (Quick panel open)':'');
+    phone.dataset.skin=S.skin;phone.dataset.fold=S.fold;phone.dataset.drawer=S.drawer;phone.dataset.agent=S.agent;
+    document.querySelectorAll('.home').forEach(function(h){h.hidden=!(h.dataset.skin===S.skin&&h.dataset.fold===S.fold)});
+    document.querySelectorAll('.btn[data-skin]').forEach(function(b){b.setAttribute('aria-pressed',b.dataset.skin===S.skin)});
+    document.querySelectorAll('.btn[data-fold]').forEach(function(b){b.setAttribute('aria-pressed',b.dataset.fold===S.fold)});
+    var a=S.agent;
+    $('led').hidden=!(a==='working'||a==='waiting');
+    $('sbtext').textContent=a==='working'?(S.step>2?'Sending':STEPS[S.step]):a==='waiting'?'Oma needs your OK':'';
+    if(a==='approval'){$('ntitle').textContent='Send this to Mina?';$('nbody').textContent=MSG;acts([['Send once','approve'],["Don't send",'deny']])}
+    if(a==='done'){var ok=S.outcome==='ok';$('ntitle').textContent=ok?'Sent to Mina':S.outcome==='denied'?'Not sent':'Stopped';
+      $('nbody').textContent=ok?MSG:'Nothing left your phone.';acts([['OK','dismiss']])}
+    $('blurb').textContent=BLURB[S.skin];
+    $('readout').textContent=(S.fold==='inner'?'Unfolded · ':'Cover · ')+({idle:S.drawer?'App drawer open, no keyboard until you tap search.':'Idle. Nothing of Oma is on screen.',
+      listening:'Listening: the ring runs the edge and your words are set over the home screen.',
+      working:'Working: only the ring and one line in the status bar. Keep using the phone.',
+      approval:'Needs your OK: a normal Samsung notification, with the ring slowed and recoloured.',
+      waiting:'Parked in the notification panel. Tap the status bar to bring it back.',
+      done:'Finished: one notification with the result.'}[a]);
   }
 
   function summon(){if(S.agent!=='idle'&&S.agent!=='done')return;clearAll();$('said').textContent='';
-    set({agent:'listening',sheet:false,drawer:false,panel:false,step:0,outcome:''});
+    set({agent:'listening',drawer:false,step:0,outcome:''});
     PROMPT.forEach(function(w,i){later(function(){var s=document.createElement('span');s.textContent=w+' ';$('said').appendChild(s)},500+i*190)});
     later(function(){var c=document.createElement('span');c.className='caret';$('said').appendChild(c)},500+PROMPT.length*190);
     later(work,500+PROMPT.length*190+900)}
-  function work(){t0=Date.now();set({agent:'working',step:0});tick=setInterval(render,1000);
-    later(function(){set({step:1})},1400);later(function(){set({step:2})},2800);
-    later(function(){set({agent:'approval',step:3,sheet:false});if(S.auto)later(approve,2600)},4300)}
-  function approve(){if(S.agent!=='approval')return;set({agent:'working',step:4});later(function(){finish('ok')},1300)}
-  function finish(o){clearAll();set({agent:'done',outcome:o,sheet:true,auto:false})}
-  function reset(){clearAll();set({agent:'idle',sheet:false,step:0,outcome:'',auto:false})}
+  function work(){set({agent:'working',step:0});later(function(){set({step:1})},1400);later(function(){set({step:2})},2800);
+    later(function(){set({agent:'approval'});if(S.auto)later(approve,2600)},4300)}
+  function approve(){if(S.agent!=='approval')return;set({agent:'working',step:3});later(function(){finish('ok')},1300)}
+  function finish(o){clearAll();set({agent:'done',outcome:o,auto:false})}
+  function reset(){clearAll();set({agent:'idle',step:0,outcome:'',auto:false})}
 
   var ACT={
-    apps:function(){set({drawer:true,panel:false})},
-    unlock:function(){set({screen:'home'})},
-    closepanel:function(){set({panel:false})},
+    apps:function(){set({drawer:true})},
     cancel:function(){if(S.agent==='listening')reset()},
     approve:approve,
     deny:function(){finish('denied')},
-    later:function(){set({agent:'waiting'})},
-    stop:function(){finish('stopped')},
+    collapse:function(){if(S.agent==='approval')set({agent:'waiting'});else reset()},
     dismiss:reset,
-    pill:function(){var a=S.agent;if(a==='idle')summon();else if(a==='waiting')set({agent:'approval',sheet:false});else set({sheet:!S.sheet})}
+    sb:function(){if(S.agent==='waiting')set({agent:'approval'})}
   };
   var swiped=0;
   phone.addEventListener('click',function(e){if(Date.now()-swiped<250){e.preventDefault();return}
-    var t=e.target.closest('[data-act]');if(t){ACT[t.dataset.act]();return}
-    var tg=e.target.closest('.tg,#pc');if(tg){var on=tg.getAttribute('aria-pressed')!=='true';tg.setAttribute('aria-pressed',on);
-      if(tg.id==='pc')tg.textContent=on?'Allowed':'Paused';else tg.lastChild.textContent=on?'On':'Off'}});
+    var t=e.target.closest('[data-act]');if(t)ACT[t.dataset.act]()});
   var py=null;
   phone.addEventListener('pointerdown',function(e){py=e.target.closest('.appscroll,input')?null:e.clientY});
   phone.addEventListener('pointerup',function(e){if(py===null)return;var dy=e.clientY-py;py=null;if(Math.abs(dy)<45)return;swiped=Date.now();
     if(S.agent==='listening')return;
-    if(dy<0){if(S.panel)set({panel:false});else if(S.screen==='lock')set({screen:'home'});else if(!S.drawer)set({drawer:true})}
-    else{if(S.drawer)set({drawer:false});else if(S.screen==='home')set({panel:true})}});
+    if(dy<0&&!S.drawer)set({drawer:true});else if(dy>0&&S.drawer)set({drawer:false})});
 
   document.querySelectorAll('[data-go]').forEach(function(b){b.addEventListener('click',function(){var g=b.dataset.go;
-    if(g==='lock')set({screen:'lock',drawer:false,panel:false});
-    else if(g==='home')set({screen:'home',drawer:false,panel:false});
-    else if(g==='apps')set({screen:'home',drawer:true,panel:false});
-    else if(g==='panel')set({screen:'home',drawer:false,panel:true});
+    if(g==='home')set({drawer:false});
+    else if(g==='apps')set({drawer:true});
     else if(g==='reset')reset();
-    else{reset();set({screen:'home',drawer:false,panel:false,auto:g==='play'});summon()}})});
-  document.querySelectorAll('[data-skin].btn').forEach(function(b){b.addEventListener('click',function(){phone.dataset.skin=b.dataset.skin;
-    document.querySelectorAll('[data-skin].btn').forEach(function(o){o.setAttribute('aria-pressed',o===b)});
-    try{localStorage.setItem('oma-skin',b.dataset.skin)}catch(e){}})});
-  try{var k=localStorage.getItem('oma-skin');if(k){var kb=document.querySelector('.btn[data-skin="'+k+'"]');if(kb)kb.click()}}catch(e){}
+    else{reset();set({drawer:false,auto:g==='play'});summon()}})});
+  document.querySelectorAll('.btn[data-skin]').forEach(function(b){b.addEventListener('click',function(){set({skin:b.dataset.skin});
+    try{localStorage.setItem('oma-look',S.skin)}catch(e){}})});
+  document.querySelectorAll('.btn[data-fold]').forEach(function(b){b.addEventListener('click',function(){set({fold:b.dataset.fold});fit()})});
+  try{var k=localStorage.getItem('oma-look');if(k&&BLURB[k])S.skin=k}catch(e){}
 
-  function fit(){var w=$('stage').clientWidth,s=Math.min(1,w/400);$('bezel').style.transform='scale('+s+')';$('stage').style.height=(624*s)+'px'}
-  if(window.ResizeObserver)new ResizeObserver(fit).observe($('stage'));window.addEventListener('resize',fit);fit();
-  render();
+  function fit(){var W=(S.fold==='inner'?760:384)+16,H=(S.fold==='inner'?574:608)+16,w=$('stage').clientWidth-12,s=Math.min(1,w/W);
+    $('bezel').style.transform='scale('+s+')';$('stage').style.height=(H*s)+'px'}
+  if(window.ResizeObserver)new ResizeObserver(fit).observe($('stage'));window.addEventListener('resize',fit);
+  render();fit();
 })();
 </script>
