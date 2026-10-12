@@ -115,7 +115,7 @@ shadow = true
 [icons.placeholder]
 style = "letter"
 font = "display"
-fill = "surface"
+fill = "background"
 ink = "foreground"
 border = 1.5
 border_color = "foreground"
@@ -144,7 +144,7 @@ highlighter = "highlight@0.5"
 
 [dock]
 style = "buttons"
-tilt = 1
+tilt = 1.25
 fill = "background"
 ink = "foreground"
 border = 1.5

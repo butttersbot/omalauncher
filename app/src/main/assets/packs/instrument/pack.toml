@@ -35,7 +35,6 @@ uppercase = true
 [type.body]
 family = "monospace"
 file = "fonts/JetBrainsMono.ttf"
-weight = 500
 
 [type.hand]
 family = "monospace"
@@ -81,7 +80,7 @@ color = "#f3f3ee"
 [scrap.alt]
 fill = "alt"
 ink = "on_alt"
-border = 2
+border = 0
 border_color = "#a2a29b"
 focus_color = "on_alt"
 
@@ -98,7 +97,7 @@ color = "#40000000"
 
 [scrap.sticky]
 fill = "accent"
-ink = "#1c1d1b"
+ink = "#26241f"
 border = 0
 
 [page]
@@ -109,7 +108,8 @@ pattern = "dots"
 pattern_color = "#bdbdb6"
 pattern_size = 10
 pattern_weight = 2
-drawer_fill = "background"
+gutter = true
+drawer_fill = "#d7d7d1"
 focus_color = "on_page"
 
 # Icons a little washed out, as behind an LCD's glass.
@@ -117,12 +117,13 @@ focus_color = "on_page"
 treatment = "original"
 tint = "foreground"
 saturation = 0.75
+shadow = true
 
 [icons.placeholder]
 style = "letter"
 font = "display"
-fill = "surface"
-ink = "foreground"
+fill = "alt"
+ink = "on_alt"
 
 # One orange all the way round.
 [ring.listening]

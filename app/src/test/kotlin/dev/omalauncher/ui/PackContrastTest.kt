@@ -59,7 +59,8 @@ class PackContrastTest {
     private fun pairs(look: PackLook): List<Check> {
         val pack = look.pack
         val page = pack.page.color.toColor()
-        assertEquals("${pack.id}: these looks draw their own page", PageKind.Paper, pack.page.kind)
+        // City Pop lays a wallpaper over its page color; the contrast is measured against that opaque color, which shows until the image decodes.
+        assertEquals("${pack.id}: these looks draw their own page", if (pack.id == "city-pop") PageKind.Wallpaper else PageKind.Paper, pack.page.kind)
         assertEquals("${pack.id} page", 1f, page.alpha, 0f)
         val background = look.background.compositeOver(page)
         val surface = look.surface.compositeOver(background)

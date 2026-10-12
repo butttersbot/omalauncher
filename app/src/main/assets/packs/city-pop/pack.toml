@@ -2,10 +2,11 @@
 # a cobalt sky, white cards with hard noon shadows, a turquoise pool, pink and yellow for
 # everything lit.
 #
-# The prototype lays a painted wallpaper over the cobalt, one for each display. No image is
-# shipped here, so the page is the cobalt alone; a later pass adds the two files and sets
-#   kind = "wallpaper", wallpaper_cover = "…", wallpaper_inner = "…"
-# under [page].
+# The prototype lays a painted wallpaper over the cobalt, one for each display, and this look
+# ships both, lifted from the prototype itself: paper/cover.jpg (760 by 1216) for the folded
+# display and paper/inner.jpg (1140 by 861) for the unfolded one. The page picks by the window's
+# shape and crops it to cover; the cobalt shows only until the image has decoded. There is no
+# gutter, and the overview lays a thin white veil over each page.
 #
 # What it leaves out is Console's (assets/packs/console/pack.toml).
 # Its fonts are the prototype's, in fonts/ (SIL Open Font License); each voice also names the nearest system family as a fallback.
@@ -67,8 +68,8 @@ tracking = 0.09
 radius = 2
 corners = "round"
 
-# Nothing leans. The prototype's shadow is 7 down and across; on a grid with a 6dp gap that
-# would run under the next tile, so it is 5 here.
+# Nothing leans (--rot is 0). The shadow is the prototype's: 7 down and across, hard, in the
+# cobalt's own shade at .55; the dock's buttons and the search field cast the same.
 [scrap]
 fill = "background"
 ink = "foreground"
@@ -81,8 +82,8 @@ muted = "muted"
 focus_width = 4
 
 [scrap.shadow]
-x = 5
-y = 5
+x = 7
+y = 7
 color = "#8c081c60"
 
 # The pool. With no outline of its own, a panel still gets a hairline in the ink. The pink
@@ -96,8 +97,8 @@ focus_color = "on_alt"
 focus_width = 4
 
 [scrap.alt.shadow]
-x = 5
-y = 5
+x = 7
+y = 7
 color = "#8c081c60"
 
 [scrap.tape]
@@ -114,12 +115,19 @@ ink = "#26241f"
 border = 0
 
 [page]
-# A focused bare icon is outlined in the yellow: the pink is 2.3 to 1 on the cobalt.
-kind = "paper"
+# The cobalt is what shows before a wallpaper decodes. A focused bare icon is outlined in the
+# yellow: the pink is 2.3 to 1 on the cobalt.
+kind = "wallpaper"
 color = "#0f4fc9"
 pattern = "none"
+wallpaper_cover = "paper/cover.jpg"
+wallpaper_inner = "paper/inner.jpg"
+gutter = false
+# rgba(255,255,255,.2) over each page in the overview (the prototype blurs it too, which a
+# scrim cannot say).
 overview_scrim = "#33ffffff"
-drawer_fill = "background"
+# The app list: rgba(10,48,150,.9).
+drawer_fill = "#e60a3096"
 focus_color = "highlight"
 
 [page.text_shadow]
@@ -132,11 +140,18 @@ treatment = "original"
 tint = "foreground"
 shadow = true
 
+# The prototype's .ico: a card with the tile's shadow.
 [icons.placeholder]
 style = "letter"
 font = "display"
-fill = "surface"
+fill = "background"
 ink = "foreground"
+border = 0
+
+[icons.placeholder.shadow]
+x = 7
+y = 7
+color = "#8c081c60"
 
 # Pink running into yellow in every state, as the prototype's does.
 [ring.listening]
@@ -160,6 +175,7 @@ pen = "#ffffff"
 second = "#ff4f9a"
 highlighter = "highlight@0.5"
 
+# The dock's buttons are cards with the tile's shadow, and lean 2.5 times --rot, which is none.
 [dock]
 style = "buttons"
 tilt = 0
@@ -171,6 +187,6 @@ focus_color = "#ff4f9a"
 focus_width = 4
 
 [dock.shadow]
-x = 3
-y = 3
+x = 7
+y = 7
 color = "#8c081c60"

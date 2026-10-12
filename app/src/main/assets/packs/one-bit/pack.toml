@@ -74,6 +74,11 @@ border_color = "#000000"
 focus_color = "#ffffff"
 focus_width = 4
 
+[scrap.alt.shadow]
+x = 3
+y = 3
+color = "#000000"
+
 # Ruled like an old window's: black lines on white, with a line under it.
 [scrap.title_bar]
 style = "stripes"
@@ -97,6 +102,7 @@ pattern = "checker"
 pattern_color = "#000000"
 pattern_size = 2
 pattern_weight = 1
+gutter = true
 plate = "paper"
 drawer_fill = "#ffffff"
 focus_color = "#000000"
@@ -105,6 +111,7 @@ focus_color = "#000000"
 treatment = "grayscale"
 tint = "#000000"
 contrast = 1.5
+shadow = true
 
 [icons.placeholder]
 style = "letter"
@@ -114,10 +121,9 @@ ink = "#000000"
 border = 2
 border_color = "#000000"
 
-# A bare line, black running into white, with no glow.
+# A bare line, black running into white, with the prototype's soft glow behind it.
 [ring]
 width = 2
-glow = 0
 
 [ring.listening]
 color1 = "#000000"

@@ -151,7 +151,7 @@ highlighter = "highlight@0.5"
 
 [dock]
 style = "buttons"
-tilt = 0.5
+tilt = 0.6
 fill = "background"
 ink = "foreground"
 border = 2
@@ -160,6 +160,6 @@ focus_color = "#a94fa4"
 focus_width = 4
 
 [dock.shadow]
-x = 3
-y = 3
+x = 4
+y = 4
 color = "foreground"

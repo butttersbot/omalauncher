@@ -103,15 +103,21 @@ class ActivePackTest {
             assertEquals(id, load.pack.id)
             assertEquals(name, load.pack.name)
             assertEquals(PackSchema.FORMAT, load.tokens.format)
-            // Every voice names one of the prototype's fonts, and the file is in the pack. No wallpaper file is shipped, so nothing names one.
+            // Every voice names one of the prototype's fonts, and the file is in the pack. Only City Pop names wallpapers (its two images, checked in PackWallpaperTest).
             val type = load.pack.type
             for (font in listOf(type.display, type.body, type.hand, type.mono)) {
                 assertTrue("$id names no font file for a voice", font.file.startsWith("fonts/"))
                 assertTrue("$id: ${font.file} isn't in the pack", moduleFile("src/main/assets/packs/$id/${font.file}").isFile)
             }
-            assertEquals("", load.pack.page.wallpaperCover + load.pack.page.wallpaperInner)
-            // Each draws its own page, and none is Console under another name.
-            assertEquals(PageKind.Paper, load.pack.page.kind)
+            if (id == "city-pop") {
+                assertEquals(id, "paper/cover.jpg", load.pack.page.wallpaperCover)
+                assertEquals(id, "paper/inner.jpg", load.pack.page.wallpaperInner)
+                assertTrue(id, moduleFile("src/main/assets/packs/$id/${load.pack.page.wallpaperCover}").isFile && moduleFile("src/main/assets/packs/$id/${load.pack.page.wallpaperInner}").isFile)
+            } else {
+                assertEquals(id, "", load.pack.page.wallpaperCover + load.pack.page.wallpaperInner)
+            }
+            // Each draws its own page (City Pop lays a wallpaper on its color), and none is Console under another name.
+            assertEquals(id, if (id == "city-pop") PageKind.Wallpaper else PageKind.Paper, load.pack.page.kind)
             assertFalse(load.pack == ConsolePack.pack.copy(id = id, name = name))
             // Text on a scrap, on a panel and on the page can be told from what it is on.
             val pack = load.pack
@@ -139,6 +145,11 @@ class ActivePackTest {
 
         val instrument = shippedPack("instrument").pack
         assertEquals(color("#d7d7d1"), instrument.page.color)
+        assertEquals(color("#d7d7d1"), instrument.page.drawerFill)
+        assertTrue(instrument.page.gutter && instrument.icons.shadow)
+        assertEquals(0f, instrument.scrap.alt.border, 0f)
+        assertEquals(color("#26241f"), instrument.scrap.sticky.ink)
+        assertEquals(400, instrument.type.body.weight)
         assertEquals(color("#191b18"), instrument.scrap.surface.fill)
         assertEquals(color("#cfe0a8"), instrument.scrap.surface.ink)
         assertEquals(0f, instrument.scrap.surface.border, 0f)
@@ -159,7 +170,11 @@ class ActivePackTest {
         assertEquals(Dressing.Stripes, oneBit.scrap.titleBar.style)
         assertEquals(IconTreatment.Grayscale, oneBit.icons.treatment)
         assertTrue(oneBit.scrap.sticky.dashed)
-        assertEquals(0f, oneBit.ring.glow, 0f)
+        // The ring keeps the default glow, as the prototype's does.
+        assertEquals(ConsolePack.pack.ring.glow, oneBit.ring.glow, 0f)
+        assertTrue(oneBit.ring.glow > 0f)
+        assertTrue(oneBit.icons.shadow && oneBit.page.gutter)
+        assertEquals(PackShadow(3f, 3f, 0f, color("#000000"), inset = false), oneBit.scrap.alt.shadow)
 
         /** Both colors of every state of the ring. */
         fun ring(pack: ThemePack) = pack.ring.run { listOf(listening, working, needsYou, done) }.flatMap { listOf(it.color1, it.color2) }.distinct()
@@ -171,7 +186,12 @@ class ActivePackTest {
         assertEquals(color("#12296b"), cityPop.scrap.surface.ink)
         assertEquals(0f, cityPop.scrap.surface.border, 0f)
         // rgba(8,28,96,.55), alpha first.
-        assertEquals(PackShadow(5f, 5f, 0f, color("#8c081c60"), inset = false), cityPop.scrap.surface.shadow)
+        assertEquals(PackShadow(7f, 7f, 0f, color("#8c081c60"), inset = false), cityPop.scrap.surface.shadow)
+        assertEquals(PackShadow(7f, 7f, 0f, color("#8c081c60"), inset = false), cityPop.scrap.alt.shadow)
+        assertEquals(PackShadow(7f, 7f, 0f, color("#8c081c60"), inset = false), cityPop.dock.surface.shadow)
+        assertEquals(PackShadow(7f, 7f, 0f, color("#8c081c60"), inset = false), cityPop.icons.placeholder.surface.shadow)
+        // The app list is the prototype's translucent blue, rgba(10,48,150,.9).
+        assertEquals(color("#e60a3096"), cityPop.page.drawerFill)
         assertEquals(color("#19c3c9"), cityPop.scrap.alt.fill)
         assertEquals(color("#0b2260"), cityPop.scrap.alt.ink)
         assertEquals(color("#ff4f9a"), cityPop.scrap.tape.color)
@@ -361,8 +381,9 @@ class ActivePackTest {
                 assertTrue("$id $name", shadow.visible)
             }
         }
-        // Riso's two, Instrument's six and 1-bit's two; City Pop's four, Custard's six, Tiny Magazine's three, Bujo's none and Dial-Up's three.
-        assertEquals(26, declared)
+        // Riso's two, Instrument's six and 1-bit's three (its alt scrap casts the black one now); City Pop's five (scrap, alt, dock, placeholder, text),
+        // Custard's eight (its placeholder carries the scrap's two), Tiny Magazine's four (its placeholder casts the clipping's), Bujo's none and Dial-Up's three.
+        assertEquals(31, declared)
         // No color anywhere in a shipped manifest is written with eight digits and a clear alpha.
         for ((id, _) in shipped) {
             val clear = Regex("\"#00[0-9a-fA-F]{6}\"").findAll(moduleFile("src/main/assets/packs/$id/pack.toml").readText()).map { it.value }.toList()

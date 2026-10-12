@@ -116,7 +116,7 @@ fill = "highlight"
 ink = "#26241f"
 border = 0
 
-# Ruled like a journal: a faint line every 26dp.
+# Ruled like a journal: a faint line every 26dp. The app list stands on the same yellow.
 [page]
 kind = "paper"
 color = "#f7e9b5"
@@ -125,7 +125,7 @@ pattern_color = "foreground@0.07"
 pattern_size = 26
 pattern_weight = 1
 gutter = true
-drawer_fill = "background"
+drawer_fill = "#f7e9b5"
 focus_color = "foreground"
 
 [icons]
@@ -133,11 +133,23 @@ treatment = "original"
 tint = "foreground"
 shadow = true
 
+# A bare app is a scrap in miniature, as the prototype's .ico is: white, with the scrap's two shadows.
 [icons.placeholder]
 style = "letter"
 font = "display"
-fill = "surface"
+fill = "background"
 ink = "foreground"
+
+[icons.placeholder.shadow]
+x = 0
+y = 2
+color = "#2e26241f"
+
+[icons.placeholder.shadow2]
+x = 0
+y = 8
+blur = 10
+color = "#4026241f"
 
 # The ink running into the highlighter in every state, as the prototype's does.
 [ring.listening]
@@ -163,7 +175,7 @@ highlighter = "highlight@0.5"
 
 [dock]
 style = "buttons"
-tilt = 1.9
+tilt = 2.5
 fill = "background"
 ink = "foreground"
 border = 0
@@ -177,6 +189,6 @@ color = "#2e26241f"
 
 [dock.shadow2]
 x = 0
-y = 6
-blur = 8
+y = 8
+blur = 10
 color = "#4026241f"

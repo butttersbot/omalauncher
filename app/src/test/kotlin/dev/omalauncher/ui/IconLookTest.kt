@@ -221,11 +221,11 @@ class IconLookTest {
         assertEquals(3, PlaceholderStyle.entries.size)
     }
 
-    /** The treatment each shipped look has, as the prototype has it. */
+    /** The treatment each shipped look has, as the prototype has it: it draws a drop shadow under a real icon in every look. */
     @Test fun theShippedPacksTreatIconsAsThePrototypeDoes() {
         assertEquals(IconLook(false, null, false, PlaceholderStyle.Letter), iconLook(shipped("riso").icons))
-        assertEquals(iconLook(icons(IconTreatment.Original, saturation = 0.75f)), iconLook(shipped("instrument").icons))
-        assertEquals(iconLook(icons(IconTreatment.Grayscale, contrast = 1.5f)), iconLook(shipped("one-bit").icons))
+        assertEquals(iconLook(icons(IconTreatment.Original, saturation = 0.75f, shadow = true)), iconLook(shipped("instrument").icons))
+        assertEquals(iconLook(icons(IconTreatment.Grayscale, contrast = 1.5f, shadow = true)), iconLook(shipped("one-bit").icons))
         for (id in listOf("city-pop", "custard", "tiny-magazine", "bujo", "dial-up")) {
             val pack = shipped(id)
             assertEquals(id, IconLook(mono = false, matrix = null, shadow = true, placeholder = PlaceholderStyle.Letter), iconLook(pack.icons))

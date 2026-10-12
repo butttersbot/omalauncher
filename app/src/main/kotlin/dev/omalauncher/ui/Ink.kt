@@ -459,7 +459,8 @@ fun DrawTools(
             val u = LocalConfiguration.current.run { prototypeUnit(screenWidthDp.toFloat(), screenHeightDp.toFloat()) }
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = (14 * u).dp - PageGap),
-                horizontalArrangement = Arrangement.spacedBy((6 * u).dp),
+                // In the middle of the row, as Boss asked (2026-10-12); the prototype starts them from the left.
+                horizontalArrangement = Arrangement.spacedBy((6 * u).dp, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 ToolKey("✎", "pen", u, marks.tool == DrawTool.Pen, swatch = if (marks.second) InkRole.Second else InkRole.Pen) {

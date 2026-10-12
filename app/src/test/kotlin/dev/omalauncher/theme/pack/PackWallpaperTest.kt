@@ -12,8 +12,8 @@ import java.nio.file.Files
 import javax.imageio.ImageIO
 
 /**
- * A pack that carries a wallpaper for each display (PRD AC-20). No shipped look has image files yet,
- * so the path is walked here with a pack made on the spot: two real PNGs of a few pixels, read back
+ * A pack that carries a wallpaper for each display (PRD AC-20). Only City Pop ships image files, and the
+ * ones it has are checked at the end; the path is walked here with a pack made on the spot: two real PNGs of a few pixels, read back
  * through the same loader, size limit and picking rules the launcher uses. Decoding to a bitmap and
  * drawing are Android's and are not reached from here.
  */
@@ -127,21 +127,42 @@ class PackWallpaperTest {
         }
     }
 
-    /** None of the looks shipped in the app names a wallpaper: there are no image files to name. */
-    @Test fun noShippedLookNamesAWallpaperYet() {
+    /**
+     * Only City Pop names wallpapers, and ships them: paper/cover.jpg and paper/inner.jpg beside its fonts,
+     * both real JPEGs. Every other look carries its manifest and fonts and draws its own paper; Console carries nothing.
+     */
+    @Test fun onlyCityPopShipsAndNamesWallpapers() {
         val packs = moduleFile("src/main/assets/packs").listFiles().orEmpty().filter { it.isDirectory }
         assertEquals(9, packs.size)
         for (dir in packs) {
-            // Beside the manifest a look carries only its fonts; Console carries nothing.
-            val others = dir.walkTopDown().filter { it.isFile }.map { it.relativeTo(dir).path }.filter { it != PackLoader.MANIFEST }.toList()
-            assertEquals(dir.name, emptyList<String>(), others.filterNot { it.startsWith("fonts/") && it.endsWith(".ttf") })
-            if (dir.name == ConsolePack.ID) {
-                assertEquals(emptyList<String>(), others)
-                continue
-            }
+            val others = dir.walkTopDown().filter { it.isFile }.map { it.relativeTo(dir).path.replace(File.separatorChar, '/') }.filter { it != PackLoader.MANIFEST }.toList()
+            val fonts = others.filter { it.startsWith("fonts/") && it.endsWith(".ttf") }
             val page = PackLoader.load(DirectoryPackSource(dir), dir.name).pack.page
-            assertEquals(dir.name, "", page.wallpaperCover + page.wallpaperInner)
-            assertEquals(dir.name, PageKind.Paper, page.kind)
+            when (dir.name) {
+                ConsolePack.ID -> {
+                    assertEquals(emptyList<String>(), others)
+                    // It has no page of its own to name, and no wallpaper.
+                    assertEquals(dir.name, "", page.wallpaperCover + page.wallpaperInner)
+                }
+                "city-pop" -> {
+                    assertEquals(dir.name, listOf("paper/cover.jpg", "paper/inner.jpg"), (others - fonts.toSet()).sorted())
+                    assertEquals(dir.name, PageKind.Wallpaper, page.kind)
+                    assertEquals(dir.name, "paper/cover.jpg", page.wallpaperCover)
+                    assertEquals(dir.name, "paper/inner.jpg", page.wallpaperInner)
+                    for (path in listOf(page.wallpaperCover, page.wallpaperInner)) {
+                        val file = File(dir, path)
+                        assertTrue("$path exists", file.isFile)
+                        val head = file.inputStream().use { it.readNBytes(3) }.map { it.toInt() and 0xff }
+                        assertEquals("$path starts with JPEG magic bytes", listOf(0xFF, 0xD8, 0xFF), head)
+                    }
+                }
+                else -> {
+                    // Beside the manifest such a look carries only its fonts.
+                    assertEquals(dir.name, emptyList<String>(), others - fonts.toSet())
+                    assertEquals(dir.name, "", page.wallpaperCover + page.wallpaperInner)
+                    assertEquals(dir.name, PageKind.Paper, page.kind)
+                }
+            }
         }
     }
 }

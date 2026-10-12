@@ -121,11 +121,17 @@ treatment = "original"
 tint = "foreground"
 shadow = true
 
+# A bare app is a clipping in miniature, as the prototype's .ico is: white, with the clipping's shadow.
 [icons.placeholder]
 style = "letter"
 font = "display"
-fill = "surface"
+fill = "background"
 ink = "foreground"
+
+[icons.placeholder.shadow]
+x = 0
+y = 5
+color = "#66081c50"
 
 # White running into the pale blue in every state, as the prototype's does.
 [ring.listening]
@@ -151,7 +157,7 @@ highlighter = "highlight@0.5"
 
 [dock]
 style = "buttons"
-tilt = 1.5
+tilt = 2
 fill = "background"
 ink = "foreground"
 border = 0
@@ -161,5 +167,5 @@ focus_width = 4
 
 [dock.shadow]
 x = 0
-y = 3
+y = 6
 color = "#66081c50"
