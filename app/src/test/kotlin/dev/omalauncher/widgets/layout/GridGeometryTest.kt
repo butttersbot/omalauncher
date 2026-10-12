@@ -2,106 +2,141 @@ package dev.omalauncher.widgets.layout
 
 import dev.omalauncher.widgets.Cell
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.math.abs
 
 /**
- * Pins the home grid's arithmetic as ui/HomeGrid.kt and ui/Home.kt had it. The Fold's sizes are its
- * panels' whole windows with an 18px gap (6dp at a density of 3, an assumption): the grid on the
- * phone is smaller by the status bar, the bar and the recent apps strip, which no test here knows.
+ * The home page's arithmetic: a grid of 6 by R cells scaled as a whole into the room a page has. The rooms
+ * here are the Fold's, in pixels: its cover (1248 wide) and half of its inner screen (1224 wide), less what
+ * the status bar, the page name, the dock and the recent apps strip take, which is a guess no test here
+ * depends on: every claim holds for any room.
  */
 class GridGeometryTest {
-    private val gap = 18
+    /** The cover's room for a page, and an inner half's: about 0.85 and 0.91 wide for their height. */
+    private val cover = GridGeometry(1248, 1462, rows = 9)
+    private val half = GridGeometry(1224, 1339, rows = 9, per = 2)
 
-    @Test fun rowsOfSquareishCells() {
-        // Cover, 1248x1972: cells 205 wide, 9.53 of them down.
-        assertEquals(9, squareRows(1248, 1972, gap))
-        // Half of the inner screen, 1224x1848.
-        assertEquals(9, squareRows(1224, 1848, gap))
-        // The inner screen whole, upright (1848x2448) and as a single wide page.
-        assertEquals(7, squareRows(1848, 2448, gap))
-        assertEquals(4, squareRows(2448, 1848, gap))
-        // Never none.
-        assertEquals(1, squareRows(1000, 100, gap))
-    }
-
-    @Test fun theFoldsWindows() {
-        // Cover: one page, upright.
-        assertFalse(showsTwoPages(1248, 1972))
-        assertFalse(homeTurned(1248, 1972))
-        assertEquals(9, GridGeometry(1248, 1972, gap).rows)
-        // Inner, 2448x1848: each half is 0.662 wide for its height, just past what counts as phone-shaped, so today's
-        // rule shows one page on its side there, with the rows portrait had (7 from the same window upright).
-        assertFalse(showsTwoPages(2448, 1848))
-        assertTrue(homeTurned(2448, 1848))
-        assertEquals(7, GridGeometry(2448, 1848, gap, turned = true).rows)
-        assertEquals(9, GridGeometry(2448, 1848, gap, turned = true, portraitRows = 9).rows)
-        // Inner, upright.
-        assertFalse(showsTwoPages(1848, 2448))
-        assertFalse(homeTurned(1848, 2448))
-        assertEquals(7, GridGeometry(1848, 2448, gap).rows)
-        // Were it shown as two pages, each half would have the cover's rows.
-        assertEquals(9, GridGeometry(1224, 1848, gap, per = 2).rows)
-        // Both orientations of a window share their saved row count.
-        assertEquals("1848x2448", windowKey(2448, 1848))
-        assertEquals("1848x2448", windowKey(1848, 2448))
-        assertEquals("1248x1972", windowKey(1248, 1972))
-    }
-
-    @Test fun twoPagesWhenEachHalfIsPhoneShaped() {
-        assertTrue(showsTwoPages(2208, 1840))
-        assertFalse(homeTurned(2208, 1840))
-        // From 0.4 to 0.65 wide for its height, both included.
-        assertTrue(showsTwoPages(800, 1000))
-        assertFalse(showsTwoPages(798, 1000))
-        assertTrue(showsTwoPages(1300, 1000))
-        assertFalse(showsTwoPages(1302, 1000))
-        // A phone on its side.
-        assertFalse(showsTwoPages(2340, 1080))
-        assertTrue(homeTurned(2340, 1080))
-    }
-
-    @Test fun neverFewerRowsThanTilesReach() {
-        val grid = GridGeometry(1248, 1972, gap, used = 12)
-        assertEquals(12, grid.rows)
-        // The same width; shorter cells.
-        assertEquals(205f, grid.cellW, 0f)
-        assertEquals(1954 / 12f, grid.cellH, 0f)
-        assertEquals(9, GridGeometry(1248, 1972, gap, used = 4).rows)
-        // On its side too, over the rows portrait had.
-        assertEquals(11, GridGeometry(1972, 1248, gap, turned = true, portraitRows = 9, used = 11).rows)
-    }
-
-    @Test fun cellsToPixels() {
-        val grid = GridGeometry(1248, 1972, gap)
-        assertEquals(6, grid.cols)
-        assertEquals(205f, grid.cellW, 0f)
-        assertEquals(1954 / 9f, grid.cellH, 0f)
-        // A gap before each tile; the next cell's gap ends it.
-        assertEquals(PxRect(18, 18, 615, 434), grid.rect(Cell(0, 0, 3, 2)))
-        assertEquals(PxRect(633, 1538, 1230, 1954), grid.rect(Cell(3, 7, 3, 2)))
-        assertEquals(PxRect(18, 18, 205, 217), grid.rect(Cell(0, 0, 1, 1)))
-    }
-
-    @Test fun landscapeLaysTheGridOnItsSide() {
-        val upright = GridGeometry(1248, 1972, gap)
-        val turned = GridGeometry(1972, 1248, gap, turned = true, portraitRows = upright.rows)
-        assertEquals(upright.rows, turned.rows)
-        // A cell's width and height trade places, and so do its tiles' sides.
-        assertEquals(upright.cellH, turned.cellW, 0f)
-        assertEquals(upright.cellW, turned.cellH, 0f)
-        for (c in listOf(Cell(0, 0, 3, 2), Cell(3, 7, 3, 2), Cell(5, 8, 1, 1))) {
-            val r = upright.rect(c)
-            assertEquals(PxRect(r.top, r.left, r.bottom, r.right), turned.rect(c))
+    /** Every cell rectangle a 6 x 9 page can hold, from a single cell to the whole page. */
+    private val cells =
+        buildList {
+            for (x in 0 until 6) for (y in 0 until 9) for (w in 1..6 - x) for (h in 1..9 - y) add(Cell(x, y, w, h))
         }
-        // Lines too: columns are counted down the screen.
-        assertEquals(upright.colLine(420f, 1000f), turned.colLine(1000f, 420f))
-        assertEquals(upright.rowLine(420f, 1000f), turned.rowLine(1000f, 420f))
+
+    private fun close(
+        expected: Float,
+        actual: Float,
+        what: String,
+    ) = assertTrue("$what: $expected and $actual differ by more than 0.5%", abs(expected - actual) <= 0.005f * abs(expected))
+
+    @Test fun thePageIsOneShapeScaledIntoItsRoomAndCentred() {
+        // The cover's room is narrower for its height than the page: the page takes its whole height.
+        assertEquals(1462f * PAGE_ASPECT, cover.pageWidth, 0.01f)
+        assertEquals(1462f, cover.pageHeight, 0.01f)
+        assertEquals((1248 - cover.pageWidth) / 2f, cover.pageLeft, 0.01f)
+        assertEquals(0f, cover.pageTop, 0f)
+        // A tall room: the page takes its whole width, and the rest is margin above and below.
+        val tall = GridGeometry(1000, 2000, rows = 9)
+        assertEquals(1000f, tall.pageWidth, 0f)
+        assertEquals(1200f, tall.pageHeight, 0.01f)
+        assertEquals(400f, tall.pageTop, 0.01f)
+        assertEquals(PxRect(0, 400, 1000, 1600), tall.page)
+        for (g in listOf(cover, half, tall)) {
+            assertEquals(PAGE_ASPECT, g.pageWidth / g.pageHeight, 0.0001f)
+            assertTrue(g.pageLeft >= 0f && g.pageTop >= 0f)
+            assertTrue(g.pageWidth <= g.width && g.pageHeight <= g.height + 0.01f)
+        }
+    }
+
+    /** AC-7: the same cell is the same shape, and the same share of the page, on the cover and on an inner half. */
+    @Test fun aCellIsTheSameShapeAndShareOfThePageOnBothDisplays() {
+        assertTrue(cover.pageWidth != half.pageWidth)
+        close(cover.cellW / cover.cellH, half.cellW / half.cellH, "a cell's shape")
+        for (c in cells) {
+            val a = cover.bounds(c)
+            val b = half.bounds(c)
+            close(a.width / a.height, b.width / b.height, "$c shape")
+            close(a.width / cover.pageWidth, b.width / half.pageWidth, "$c width")
+            close(a.height / cover.pageHeight, b.height / half.pageHeight, "$c height")
+            // Where it starts, as a share of the page; compared against the page, since a share near 0 has no percent.
+            assertEquals("$c left", (a.left - cover.pageLeft) / cover.pageWidth, (b.left - half.pageLeft) / half.pageWidth, 0.0005f)
+            assertEquals("$c top", (a.top - cover.pageTop) / cover.pageHeight, (b.top - half.pageTop) / half.pageHeight, 0.0005f)
+        }
+    }
+
+    /** The same in whole pixels, where a tile's edges are rounded: its share of the page stays within 0.5% of the page. */
+    @Test fun roundedToPixelsATileKeepsItsShareOfThePage() {
+        for (c in cells) {
+            val a = cover.rect(c)
+            val b = half.rect(c)
+            assertEquals("$c width", a.width / cover.pageWidth, b.width / half.pageWidth, 0.005f)
+            assertEquals("$c height", a.height / cover.pageHeight, b.height / half.pageHeight, 0.005f)
+            assertEquals("$c left", (a.left - cover.pageLeft) / cover.pageWidth, (b.left - half.pageLeft) / half.pageWidth, 0.005f)
+            assertEquals("$c top", (a.top - cover.pageTop) / cover.pageHeight, (b.top - half.pageTop) / half.pageHeight, 0.005f)
+        }
+    }
+
+    @Test fun everyCellOfOneGridHasOneShape() {
+        for (g in listOf(cover, half)) {
+            val one = g.bounds(Cell(0, 0, 1, 1))
+            for (x in 0 until 6) for (y in 0 until 9) {
+                val b = g.bounds(Cell(x, y, 1, 1))
+                close(one.width, b.width, "width at $x,$y")
+                close(one.height, b.height, "height at $x,$y")
+            }
+        }
+    }
+
+    /** Nothing is transposed: columns run across and rows down in every room, a wide one included. */
+    @Test fun nothingIsLaidOnItsSide() {
+        val wide = GridGeometry(2448, 1400, rows = 9)
+        for (g in listOf(cover, half, wide)) {
+            assertEquals(6, g.cols)
+            assertEquals(9, g.rows)
+            val first = g.rect(Cell(0, 0, 1, 1))
+            val across = g.rect(Cell(1, 0, 1, 1))
+            val down = g.rect(Cell(0, 1, 1, 1))
+            assertTrue(across.left > first.left && across.top == first.top)
+            assertTrue(down.top > first.top && down.left == first.left)
+            // A 3x2 tile is wider than tall wherever it is shown.
+            g.rect(Cell(0, 0, 3, 2)).let { assertTrue(it.width > it.height) }
+        }
+        // The wide room holds the same page, as large as its height allows, in the middle.
+        assertEquals(1400f, wide.pageHeight, 0.01f)
+        assertEquals((2448 - wide.pageWidth) / 2f, wide.pageLeft, 0.01f)
+    }
+
+    @Test fun theRowsAreTheNotebooksWhateverTheRoom() {
+        for ((w, h) in listOf(1248 to 1462, 1224 to 1339, 2448 to 1400, 300 to 200, 1848 to 1900)) {
+            assertEquals(9, GridGeometry(w, h, rows = 9).rows)
+            assertEquals(12, GridGeometry(w, h, rows = 12).rows)
+        }
+        // More rows on the same page are shorter cells, not a longer page.
+        val twelve = GridGeometry(1248, 1462, rows = 12)
+        assertEquals(cover.pageHeight, twelve.pageHeight, 0f)
+        assertEquals(cover.cellW, twelve.cellW, 0f)
+        assertTrue(twelve.cellH < cover.cellH)
+    }
+
+    @Test fun tilesStayOnThePageWithAGapAround() {
+        for (g in listOf(cover, half)) {
+            val page = g.page
+            assertTrue(g.gap >= 1)
+            for (c in cells) {
+                val r = g.rect(c)
+                assertTrue("$c", r.left >= page.left && r.top >= page.top && r.right <= page.right && r.bottom <= page.bottom)
+                assertTrue("$c", r.width > 0 && r.height > 0)
+            }
+            // The gap before a tile is the gap after its neighbour.
+            val a = g.bounds(Cell(0, 0, 3, 2))
+            val b = g.bounds(Cell(3, 0, 3, 2))
+            assertEquals(a.left - g.pageLeft, b.left - a.right, 0.01f)
+            assertEquals(a.left - g.pageLeft, g.pageLeft + g.pageWidth - b.right, 0.01f)
+        }
     }
 
     @Test fun savedCellsAreShownWithinTheGrid() {
-        val grid = GridGeometry(1248, 1972, gap)
+        val grid = cover
         assertEquals(Cell(1, 2, 3, 4), grid.fit(Cell(1, 2, 3, 4), true))
         // Too big: cut to the grid, and pulled in from the far edges.
         assertEquals(Cell(1, 0, 5, 9), grid.fit(Cell(4, 0, 5, 20), true))
@@ -112,52 +147,43 @@ class GridGeometryTest {
     }
 
     @Test fun nearestLines() {
-        val grid = GridGeometry(1248, 1972, gap)
-        assertEquals(0, grid.colLine(100f, 0f))
-        assertEquals(1, grid.colLine(112f, 0f))
-        // Lines run down the middle of the gaps, half a gap in: 111 is still nearer the first, 117 down too.
-        assertEquals(0, grid.colLine(111f, 0f))
-        assertEquals(0, grid.rowLine(0f, 117f))
-        assertEquals(1, grid.rowLine(0f, 118f))
-        assertEquals(2, grid.colLine(420f, 0f))
-        assertEquals(6, grid.colLine(5000f, 0f))
-        assertEquals(0, grid.colLine(-50f, 0f))
-        assertEquals(5, grid.rowLine(0f, 1000f))
-        assertEquals(9, grid.rowLine(0f, 1972f))
-        assertEquals(0, grid.rowLine(0f, -1f))
+        for (g in listOf(cover, half)) {
+            // Lines run down the middle of the gaps: each cell's own corner is nearest its own lines.
+            for (x in 0..6) assertEquals(x, g.colLine(g.pageLeft + g.gap / 2f + x * g.cellW))
+            for (y in 0..9) assertEquals(y, g.rowLine(g.pageTop + g.gap / 2f + y * g.cellH))
+            assertEquals(2, g.colLine(g.pageLeft + g.gap / 2f + 2.4f * g.cellW))
+            assertEquals(3, g.colLine(g.pageLeft + g.gap / 2f + 2.6f * g.cellW))
+            // In the margin beside the page, and beyond it: the first and last lines.
+            assertEquals(0, g.colLine(0f))
+            assertEquals(0, g.colLine(-500f))
+            assertEquals(6, g.colLine(g.width.toFloat()))
+            assertEquals(6, g.colLine(9000f))
+            assertEquals(0, g.rowLine(-1f))
+            assertEquals(9, g.rowLine(9000f))
+        }
     }
 
     @Test fun pagesSideBySide() {
-        val grid = GridGeometry(1224, 1848, gap, per = 2)
-        assertEquals(0, grid.side(0f))
-        assertEquals(0, grid.side(1223f))
-        assertEquals(1, grid.side(1224f))
-        assertEquals(1, grid.side(5000f))
-        assertEquals(0, grid.side(-40f))
-        assertEquals(0, grid.left(0))
-        assertEquals(1224, grid.left(1))
+        assertEquals(0, half.side(0f))
+        assertEquals(0, half.side(1223f))
+        assertEquals(1, half.side(1224f))
+        assertEquals(1, half.side(5000f))
+        assertEquals(0, half.side(-40f))
+        assertEquals(0, half.left(0))
+        assertEquals(1224, half.left(1))
         // One page: every point is over it.
-        assertEquals(0, GridGeometry(1248, 1972, gap).side(5000f))
+        assertEquals(0, cover.side(5000f))
     }
 
-    @Test fun anEmptyPageWaitsAfterTheLast() {
-        assertEquals(listOf(1), shownPages(listOf(1), 1) { true })
-        assertEquals(listOf(1, 2), shownPages(listOf(1), 1) { false })
-        // Page numbers may have holes; the new page follows the last.
-        assertEquals(listOf(1, 3, 7, 8), shownPages(listOf(1, 3, 7), 1) { false })
-        assertEquals(listOf(1, 3, 7), shownPages(listOf(1, 3, 7), 1) { it == 7 })
-    }
-
-    @Test fun inPairsAnOddLastPageGetsAPartner() {
-        assertEquals(listOf(1, 2), shownPages(listOf(1), 2) { true })
-        assertEquals(listOf(1, 2), shownPages(listOf(1), 2) { false })
-        assertEquals(listOf(1, 3, 4, 5), shownPages(listOf(1, 3), 2) { false })
-        assertEquals(listOf(1, 2, 3, 4), shownPages(listOf(1, 2, 3), 2) { it == 3 })
-        assertEquals(listOf(1, 3), pagesAt(0, listOf(1, 3, 4, 5), 2))
-        assertEquals(listOf(4, 5), pagesAt(1, listOf(1, 3, 4, 5), 2))
-        // A slot past the end shows page 1.
-        assertEquals(listOf(1, 1), pagesAt(2, listOf(1, 3, 4, 5), 2))
-        assertEquals(listOf(4), pagesAt(2, listOf(1, 3, 4, 5), 1))
+    @Test fun aSlotShowsItsPagesAndNothingPastTheLast() {
+        val pages = listOf("p1", "p3", "p4")
+        assertEquals(listOf("p1"), pagesAt(0, pages, 1))
+        assertEquals(listOf("p4"), pagesAt(2, pages, 1))
+        assertEquals(listOf("p1", "p3"), pagesAt(0, pages, 2))
+        // An odd last page: the right half has no page.
+        assertEquals(listOf("p4", null), pagesAt(1, pages, 2))
+        assertEquals(listOf(null, null), pagesAt(2, pages, 2))
+        assertEquals(listOf<String?>(null), pagesAt(3, pages, 1))
     }
 
     @Test fun wallpaperSlidesWithThePages() {

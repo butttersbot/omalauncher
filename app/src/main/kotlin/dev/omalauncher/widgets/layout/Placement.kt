@@ -132,12 +132,6 @@ class Placement<T>(
  */
 fun usedRows(tiles: List<Pair<Cell?, Boolean>>) = tiles.maxOfOrNull { (cell, resizable) -> cell?.let { if (resizable) it.bottom else it.y + 1 } ?: 0 } ?: 0
 
-/** A tile's cells as shown: [turned] (landscape) lays them on their side. */
-fun shownSize(
-    cells: Pair<Int, Int>,
-    turned: Boolean,
-) = if (turned) cells.second to cells.first else cells
-
 /** The grid's cell width and height and its gap, guessed from a screen [widthPixels] wide before the home grid was laid out. */
 fun estimatedGeometry(
     widthPixels: Int,
@@ -152,9 +146,7 @@ fun estimatedGeometry(
 fun tilePx(
     cells: Pair<Int, Int>,
     geometry: Triple<Float, Float, Int>,
-    turned: Boolean,
 ): Pair<Int, Int> {
     val (cellW, cellH, gap) = geometry
-    val (across, down) = shownSize(cells, turned)
-    return (across * cellW).toInt() - gap to (down * cellH).toInt() - gap
+    return (cells.first * cellW).toInt() - gap to (cells.second * cellH).toInt() - gap
 }

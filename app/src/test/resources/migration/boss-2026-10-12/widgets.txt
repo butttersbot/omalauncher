@@ -1,0 +1,8 @@
+# The owner's home layout as read from his phone on 2026-10-12 (widget_grid only: it has no shortcuts and no dock file yet).
+# file name, the page its file asks for, its declared size: those of the widgets this app ships under these names.
+# The pages chosen on the phone (terminal on 3, owl on 1) are in the layout and win over these.
+10-today.owl 1 3x3
+20-fetch.owl 1 3x3
+45-terminal.owl 1 6x4
+50-koi.owl 1 6x3
+60-owl.owl 2 3x3

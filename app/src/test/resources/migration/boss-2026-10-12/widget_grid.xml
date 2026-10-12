@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <string name="layout">{&quot;v&quot;:1,&quot;data&quot;:{&quot;columns&quot;:6,&quot;cells&quot;:{&quot;20-fetch.owl&quot;:{&quot;x&quot;:3,&quot;y&quot;:0,&quot;w&quot;:3,&quot;h&quot;:3},&quot;60-owl.owl&quot;:{&quot;x&quot;:0,&quot;y&quot;:6,&quot;w&quot;:3,&quot;h&quot;:3},&quot;45-terminal.owl&quot;:{&quot;x&quot;:0,&quot;y&quot;:0,&quot;w&quot;:6,&quot;h&quot;:4},&quot;50-koi.owl&quot;:{&quot;x&quot;:0,&quot;y&quot;:3,&quot;w&quot;:6,&quot;h&quot;:3},&quot;10-today.owl&quot;:{&quot;x&quot;:0,&quot;y&quot;:0,&quot;w&quot;:3,&quot;h&quot;:3}},&quot;pages&quot;:{&quot;45-terminal.owl&quot;:3,&quot;60-owl.owl&quot;:1}}}</string>
+    <int name="portrait_rows_1248x1972" value="9" />
+    <int name="portrait_rows_1848x2448" value="9" />
+</map>

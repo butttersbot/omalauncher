@@ -72,6 +72,8 @@ composeCompiler {
 
 dependencies {
     implementation(libs.androidx.activity.compose)
+    // The hinge of a foldable: half-opened or flat.
+    implementation(libs.androidx.window)
     implementation(libs.compose.runtime)
     implementation(libs.compose.foundation)
     implementation(libs.compose.ui)

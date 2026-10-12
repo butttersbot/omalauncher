@@ -117,7 +117,7 @@ internal fun AppHit.dockEntry() =
     }
 
 /** The entry as a home shortcut, which the runtime knows how to draw and open. */
-private fun DockEntry.shortcut() = Shortcut(key, 1, label, component = component?.let(ComponentName::unflattenFromString), profile = profile, linux = linux)
+private fun DockEntry.shortcut() = Shortcut(key, label, component = component?.let(ComponentName::unflattenFromString), profile = profile, linux = linux)
 
 /**
  * The band at the bottom of home, where the prompt bar was: the agent's status strip over one row with

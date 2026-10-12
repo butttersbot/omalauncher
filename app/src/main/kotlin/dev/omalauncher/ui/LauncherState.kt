@@ -74,8 +74,17 @@ class LauncherState {
      */
     var barHeight by mutableIntStateOf(0)
 
-    /** Home page currently showing (1-based); the drawer pins apps there. */
-    var currentPage by mutableStateOf(1)
+    /**
+     * The id of the home page last touched: the one showing, or of two side by side the one a finger was last on
+     * (the left one until then). The drawer pins apps there, and folding the phone shows it.
+     */
+    var currentPage by mutableStateOf("p1")
+
+    /** What the hinge reports while the window lies across it; null on a closed foldable, and on what doesn't fold. */
+    var hinge by mutableStateOf<dev.omalauncher.widgets.layout.Hinge?>(null)
+
+    /** The page name on home was tapped. The overview of all pages opens from here once there is one; nothing yet. */
+    fun openOverview() {}
 
     private var typed by mutableStateOf("")
 
@@ -99,7 +108,7 @@ class LauncherState {
     /** The result chosen with Tab or the arrow keys (-1 = ask the agent); null follows the ranking. Reset by typing. */
     var picked by mutableStateOf<Int?>(null)
 
-    /** Home page to scroll to (e.g. from Super+number); consumed by the pager. */
+    /** Home page to scroll to, by its position from 0 (e.g. from Super+number); consumed by the pager. */
     var requestedPage by mutableStateOf<Int?>(null)
 
     /** A composition scope: animations need its frame clock. Null until the UI is composed. */

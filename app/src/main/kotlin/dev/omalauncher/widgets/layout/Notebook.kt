@@ -84,12 +84,24 @@ object NotebookStore {
         return Versioned.write(VERSION, data)
     }
 
-    /** The saved notebook, or null if there is none or it can't be read. An entry that doesn't parse is skipped, not fatal. */
-    fun read(text: String?): Notebook? {
-        val data = Versioned.read(text, VERSION) as? JSONObject ?: return null
-        return runCatching {
-            val pages =
-                data.getJSONArray("pages").mapObjects { p ->
+    /**
+     * The saved notebook, or null if there is none or it can't be read: no pages, or no rows, is not a notebook.
+     * An entry that doesn't parse is skipped, not fatal; so is a page whose id, or an item whose key, came before.
+     * Nothing it is given makes it throw, errors included (Android's org.json recurses without a limit).
+     */
+    fun read(text: String?): Notebook? =
+        try {
+            (Versioned.read(text, VERSION) as? JSONObject)?.let(::parse)
+        } catch (e: Throwable) {
+            null
+        }
+
+    private fun parse(data: JSONObject): Notebook? {
+        val seen = HashSet<String>()
+        val pages =
+            data
+                .getJSONArray("pages")
+                .mapObjects { p ->
                     val items =
                         (p.optJSONArray("items") ?: JSONArray()).mapObjects { o ->
                             NotebookItem(
@@ -101,14 +113,16 @@ object NotebookStore {
                             )
                         }
                     NotebookPage(p.getString("id"), p.getString("name"), items)
-                }
-            Notebook(
-                rows = data.getInt("rows"),
-                pages = pages,
-                dock = data.optJSONArray("dock")?.mapObjects(::app).orEmpty(),
-                columns = data.optInt("columns", GRID_COLUMNS),
-            )
-        }.getOrNull()
+                }.distinctBy { it.id }
+                .map { page -> page.copy(items = page.items.filter { seen.add(it.key) }) }
+        val rows = data.getInt("rows")
+        if (pages.isEmpty() || rows < 1) return null
+        return Notebook(
+            rows = rows,
+            pages = pages,
+            dock = data.optJSONArray("dock")?.mapObjects(::app).orEmpty(),
+            columns = data.optInt("columns", GRID_COLUMNS),
+        )
     }
 
     private fun app(a: PinnedApp): JSONObject {

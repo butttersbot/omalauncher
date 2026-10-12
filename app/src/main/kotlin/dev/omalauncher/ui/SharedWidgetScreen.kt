@@ -41,7 +41,7 @@ import kotlinx.coroutines.withContext
 fun SharedWidgetScreen(
     engine: WidgetEngine,
     link: String,
-    page: Int,
+    page: String,
     onReview: (path: String) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -98,7 +98,7 @@ fun SharedWidgetScreen(
                                 }
                             }
                         null ->
-                            BracketAction("add to page $page", Palette.accent) {
+                            BracketAction("add to ${engine.notebook.name(page) ?: "this page"}", Palette.accent) {
                                 scope.launch {
                                     engine.addSharedWidget(shared, page)
                                     onDismiss()

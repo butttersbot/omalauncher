@@ -8,8 +8,12 @@ import android.util.Log
 import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.withResumed
+import androidx.window.layout.FoldingFeature
+import androidx.window.layout.WindowInfoTracker
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.LaunchedEffect
@@ -19,6 +23,7 @@ import dev.omalauncher.ui.applySystemBars
 import dev.omalauncher.ui.LauncherRoot
 import dev.omalauncher.ui.LauncherState
 import dev.omalauncher.ui.openOmaChat
+import dev.omalauncher.widgets.layout.Hinge
 import dev.omalauncher.widgets.market.Share
 
 /** The home screen: widgets, pinned apps and the drawer; Linux windows open as their own tasks. */
@@ -36,12 +41,33 @@ class MainActivity : ComponentActivity() {
         }
         handleDebugExec(intent)
         handleSharedWidget(intent)
+        watchHinge()
         // Asked on arriving at the home screen, not over the welcome screen of a fresh install,
         // and once nothing else is in front: not over the notification permission dialog that
         // opting into Linux there brings up.
         lifecycleScope.launch {
             snapshotFlow { runtime.launcherReady }.first { it }
             withResumed { requestHomeRole() }
+        }
+    }
+
+    /**
+     * Follows the hinge of a foldable, which home needs to tell a half-opened device from a flat one. Jetpack
+     * reports it only while this window lies across it: not on the cover screen, and not on what doesn't fold.
+     */
+    private fun watchHinge() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                WindowInfoTracker.getOrCreate(this@MainActivity).windowLayoutInfo(this@MainActivity).collect { info ->
+                    val fold = info.displayFeatures.filterIsInstance<FoldingFeature>().firstOrNull()
+                    state.hinge =
+                        when (fold?.state) {
+                            FoldingFeature.State.HALF_OPENED -> Hinge.HalfOpened
+                            FoldingFeature.State.FLAT -> Hinge.Flat
+                            else -> null
+                        }
+                }
+            }
         }
     }
 
@@ -144,6 +170,7 @@ class MainActivity : ComponentActivity() {
             KeyEvent.KEYCODE_ENTER -> runtime.terminal(null, "Terminal")
             KeyEvent.KEYCODE_SPACE -> state.toggle()
             KeyEvent.KEYCODE_A -> openOmaChat(this)
+            // The page at that position in the notebook; unfolded, the pair it is in.
             in KeyEvent.KEYCODE_1..KeyEvent.KEYCODE_9 -> state.requestedPage = keyCode - KeyEvent.KEYCODE_1
             else -> return false
         }

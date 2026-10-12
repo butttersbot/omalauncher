@@ -11,8 +11,15 @@ import dev.omalauncher.widgets.Folder
 import dev.omalauncher.widgets.HomeItem
 import dev.omalauncher.widgets.Shortcut
 import dev.omalauncher.widgets.WidgetItem
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -51,11 +58,15 @@ import androidx.compose.runtime.collectAsState
 import dev.omalauncher.Runtime
 import dev.omalauncher.widgets.editWidgetCommand
 import dev.omalauncher.widgets.fixDependenciesCommand
-import dev.omalauncher.widgets.layout.shownPages
-import dev.omalauncher.widgets.layout.shownSize
+import dev.omalauncher.widgets.layout.foldView
+import dev.omalauncher.widgets.layout.pagesAt
+import dev.omalauncher.widgets.layout.posture
 import dev.omalauncher.widgets.layout.wallpaperOffset
 
-/** Home pages of JSON widgets on a snap grid, bordered and gapped like Omarchy windows. */
+/** The band above the pages that names the page showing; the page's room starts below it. */
+val PageNameHeight = 28.dp
+
+/** Home: the notebook's pages of widgets and pinned apps on a snap grid, bordered and gapped like Omarchy windows. */
 @Composable
 fun HomeScreen(
     runtime: Runtime,
@@ -65,17 +76,28 @@ fun HomeScreen(
     val engine = runtime.widgets
     val linuxState by runtime.bootstrap.state.collectAsState()
     val arrange = remember { Arrange() }
-    // One empty page always waits after the last one, to drop tiles on or pin apps to. Pages only exist
-    // while they hold something, so it becomes a real page once used and a new empty one follows.
-    // Unfolded, pages show in pairs: the pager counts pairs, and an odd last page gets an empty partner.
-    val per = if (showsTwoPages(LocalWindowInfo.current.containerSize)) 2 else 1
-    val pageNumbers = shownPages(engine.pages, per) { engine.itemsOn(it).isEmpty() }
-    val pager = rememberPagerState { pageNumbers.size / per }
-    // A tile dropped on another page: show that page once the page list has caught up.
-    var showPage by remember { mutableStateOf<Int?>(null) }
-    LaunchedEffect(showPage, pageNumbers) {
-        val i = showPage?.let(pageNumbers::indexOf) ?: return@LaunchedEffect
-        if (i >= 0) pager.scrollToPage(i / per)
+    // The notebook's pages, by id and in its order; they stay when they're empty. How many show side by side is
+    // the notebook's fold rule: one, or unfolded and wider than tall two fixed neighbours, where the pager counts
+    // pairs and an odd last page has an empty right half that offers a new page.
+    val pages = engine.pages
+    val density = LocalDensity.current
+    val window = LocalWindowInfo.current.containerSize
+    val fold =
+        with(density) {
+            val width = window.width.toDp().value
+            val height = window.height.toDp().value
+            foldView(width, height, posture(width, height, state.hinge), pages.indexOf(state.currentPage), pages.size)
+        }
+    val per = fold.per
+    val pager = rememberPagerState(initialPage = fold.slot) { fold.slots }
+    // A tile dropped on another page, or a page just added: show it once the page list has caught up.
+    var showPage by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(showPage, pages, per) {
+        val i = showPage?.let(pages::indexOf) ?: return@LaunchedEffect
+        if (i >= 0) {
+            state.currentPage = pages[i]
+            pager.scrollToPage(i / per)
+        }
         showPage = null
     }
     var menuFor by remember { mutableStateOf<HomeItem?>(null) }
@@ -97,19 +119,21 @@ fun HomeScreen(
             }
         }
     }
-    // Folding or unfolding keeps the page that was showing: unfolded, the pair it's in; folded, the left one of the pair.
+    // Folding shows the page last touched; unfolding shows the pair it's in.
     var shownPer by remember { mutableIntStateOf(per) }
     LaunchedEffect(per) {
         if (per == shownPer) return@LaunchedEffect
-        val i = pageNumbers.indexOf(state.currentPage)
         shownPer = per
-        if (i >= 0) pager.scrollToPage(i / per)
+        pager.scrollToPage(fold.slot)
     }
-    // The drawer pins apps to whichever page is showing (the left one of a pair).
-    LaunchedEffect(pager.currentPage, pageNumbers) {
-        state.currentPage = pageNumbers.getOrElse(pager.currentPage * per) { 1 }
-        engine.activePage = state.currentPage
+    // Turning to other pages makes the left one of them the page last touched, until a finger lands on the right one.
+    // The drawer pins apps to it.
+    LaunchedEffect(pager.currentPage, pages) {
+        val shown = pagesAt(pager.currentPage, pages, per).filterNotNull()
+        if (state.currentPage !in shown) shown.firstOrNull()?.let { state.currentPage = it }
+        engine.activePage = shown.firstOrNull()
     }
+    LaunchedEffect(per) { engine.activeSpan = per }
     // The background slides with the pages, like stock launchers. Our live wallpaper gets it through Android.
     val view = LocalView.current
     LaunchedEffect(pager, view) {
@@ -134,8 +158,12 @@ fun HomeScreen(
     val typing = terminals.active != null
     LaunchedEffect(typing) { if (!typing) terminals.keyboard?.hide() }
     LaunchedEffect(state.requestedPage) {
-        state.requestedPage?.let { if (it < pageNumbers.size) pager.animateScrollToPage(it / per) }
+        val at = state.requestedPage ?: return@LaunchedEffect
         state.requestedPage = null
+        pages.getOrNull(at)?.let {
+            state.currentPage = it
+            pager.animateScrollToPage(at / per)
+        }
     }
 
     fun openMenu(item: HomeItem?) {
@@ -160,7 +188,6 @@ fun HomeScreen(
     }
 
     // Overlays below are siblings of the pager inside this Box, so they never change the page's size.
-    val density = LocalDensity.current
     val ime = WindowInsets.ime
     // Where the keyboard ends up, so a terminal tile resizes once rather than with every frame of its animation.
     @OptIn(ExperimentalLayoutApi::class)
@@ -181,7 +208,6 @@ fun HomeScreen(
     var origin by remember { mutableStateOf(Offset.Zero) }
     val extraKeys = terminals.active != null && extraKeysWanted()
     val side = homeSide()
-    val turned = homeTurned()
     val sideRoom = sideWidth()
     val barRoom = with(density) { state.barHeight.takeIf { it > 0 }?.toDp() ?: (PromptBarHeight + 12.dp) }
     LaunchedEffect(extraKeys) { if (!extraKeys) terminals.extraKeys = null }
@@ -202,8 +228,8 @@ fun HomeScreen(
     Column(
         Modifier
             .fillMaxSize()
-            // Typing in a terminal tile: lift the pages so the tile stays above the keyboard, but not under the status
-            // bar; a tile too tall for both gives up the rest at its bottom.
+            // Typing in a terminal tile: the keyboard never shrinks or re-flows the grid. The pages slide up so the tile
+            // stays above it, but not under the status bar; a tile too tall for both gives up the rest at its bottom.
             .graphicsLayer {
                 val keys = if (extraKeys) ExtraKeysHeight.toPx() else 0f
                 translationY =
@@ -232,18 +258,24 @@ fun HomeScreen(
                 }
             }
             // Room for the bar, which DesktopScreen draws over the pages (so the keyboard lifts it without shrinking
-            // the grid). The grid ends with its own gap; below it the strip, a gap, the bar and a gap: the bar as
-            // measured, since a large font makes it taller. In a phone's landscape they stand beside it instead, on
-            // the side portrait's bottom turned to.
+            // the grid). The page's room ends above the strip, a gap, the bar and a gap: the bar as
+            // measured, since a large font makes it taller. In a phone's landscape they stand beside it instead.
             .padding(
                 start = if (side == HomeSide.Left) sideRoom else 0.dp,
                 end = if (side == HomeSide.Right) sideRoom else 0.dp,
                 bottom = if (side != null) 0.dp else barRoom,
             ),
     ) {
+        PageNames(
+            names = pagesAt(pager.currentPage, pages, per).map { it?.let(engine.notebook::name) },
+            hidden = { state.homeCovered || engine.openScreen != null },
+            faded = { state.drawer.value },
+            onOpen = state::openOverview,
+        )
         HomeGrid(
             pager = pager,
-            pages = pageNumbers,
+            pages = pages,
+            rows = engine.notebook.rows,
             itemsOn = engine::itemsOn,
             layout = engine.layout,
             arrange = arrange,
@@ -271,8 +303,7 @@ fun HomeScreen(
                         WidgetTile(
                             spec = item.spec,
                             instance = engine.instance(item.spec),
-                            // As shown: on its side in landscape.
-                            cells = engine.layout.cell(item.key)?.let { shownSize(it.w to it.h, turned) },
+                            cells = engine.layout.cell(item.key)?.let { it.w to it.h },
                             // Accent like Hyprland's active border: only while one of its terminals has the keyboard.
                             focused = highlighted || typing,
                             modifier =
@@ -325,7 +356,6 @@ fun HomeScreen(
             // The recent apps strip's room: kept while it's empty, so tiles don't reflow when it fills, and still
             // home's to swipe and long-press there until it does.
             room = if (LauncherStyle.recentApps && side == null) RecentStripHeight else 0.dp,
-            turned = turned,
             per = per,
             onLongPressEmpty = { openMenu(null) },
             onNoRoom = { item -> showPage = engine.moveToFreePage(item) },
@@ -333,9 +363,28 @@ fun HomeScreen(
                 engine.moveToPage(item, page)
                 showPage = page
             },
+            onTouch = { state.currentPage = it },
+            onAddPage = { showPage = engine.addPage() },
+            onOfferPage = { engine.addPage().also { showPage = it } },
+            onWithdrawPage = { engine.notebook.withdrawPage(it) },
             onGroup = { app, target -> engine.shortcuts.group(app, target) },
             onReorder = { app, before -> engine.shortcuts.moveBefore(app.key, before) },
         )
+    }
+
+    // What the start had to say about the layout (a migration that moved tiles, or couldn't be saved), until tapped away.
+    engine.notice?.let { text ->
+        Column(
+            Modifier
+                .align(Alignment.TopCenter)
+                .padding(start = HomeGap, end = HomeGap, top = PageNameHeight)
+                .frame(2.dp, Palette.accent, Palette.background)
+                .clickable { engine.notice = null }
+                .padding(12.dp),
+        ) {
+            BasicText(text, style = Mono)
+            BasicText("tap to hide", style = Mono.copy(color = Palette.muted, fontSize = TextSize.Small))
+        }
     }
 
     if (extraKeys) {
@@ -351,3 +400,40 @@ fun HomeScreen(
     }
 }
 
+/**
+ * The name of the page showing, top-left over it; of two pages side by side, each over its own half.
+ * [hidden] and [faded] (the drawer's position, 0 to 1) are read while drawing: under the app list or a
+ * full-screen panel it isn't there. A tap opens the overview of all pages ([onOpen]).
+ */
+@Composable
+private fun PageNames(
+    names: List<String?>,
+    hidden: () -> Boolean,
+    faded: () -> Float,
+    onOpen: () -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .height(PageNameHeight)
+            .graphicsLayer { alpha = if (hidden()) 0f else 1f - faded().coerceIn(0f, 1f) },
+    ) {
+        for (name in names) {
+            Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.CenterStart) {
+                if (name != null) {
+                    BasicText(
+                        name,
+                        Modifier
+                            .padding(start = HomeGap)
+                            .clickable(onClick = onOpen)
+                            .background(Palette.background.copy(alpha = 0.6f))
+                            .padding(horizontal = 8.dp, vertical = 2.dp),
+                        style = Mono.copy(color = Palette.muted),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
