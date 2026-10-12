@@ -1,0 +1,17 @@
+// The throwaway second launcher, "Oma Dev": the same source built under its own package, so it installs
+// beside the working launcher with its own data and can be broken, replaced and removed without touching it.
+// Used by oma-dev only. The working launcher's own configuration is the private fold.init.gradle.
+allprojects { p ->
+    p.plugins.withId('com.android.application') {
+        p.androidComponents.finalizeDsl { android ->
+            android.ndkVersion = '29.0.14206865'
+            android.buildToolsVersion = '36.0.0'
+            android.buildTypes.debug.applicationIdSuffix = '.dev'
+            android.buildTypes.debug.manifestPlaceholders['appLabel'] = 'Oma Dev'
+            android.signingConfigs.debug.storeFile = new File('/root/.config/oma-development/working-debug.keystore')
+            android.signingConfigs.debug.storePassword = 'android'
+            android.signingConfigs.debug.keyAlias = 'androiddebugkey'
+            android.signingConfigs.debug.keyPassword = 'android'
+        }
+    }
+}

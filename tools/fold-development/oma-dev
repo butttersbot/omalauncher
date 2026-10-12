@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+"""oma-dev: build this checkout as "Oma Dev" (dev.omalauncher.dev) and put it on the Fold beside the working launcher.
+
+  oma-dev            build, install or replace Oma Dev, and open it
+  oma-dev --no-open  the same, without opening it
+  oma-dev --open     open the Oma Dev that is installed
+  oma-dev --status   say whether Oma Dev is installed, and which build
+  oma-dev --remove   uninstall Oma Dev and its data
+
+It never touches the working launcher (dev.omalauncher.boss): every adb command here names the dev package,
+and an APK that is not the dev package is refused. Oma Dev has its own data: no Linux, no agent login and an
+empty notebook. It is not the home app or the assistant, so it is opened like any app.
+"""
+import concurrent.futures, json, os, pathlib, re, shutil, socket, subprocess, sys
+REPO = pathlib.Path('/root/Projects/omalauncher')
+CONFIG = pathlib.Path('/root/.config/oma-development')
+PACKAGE = 'dev.omalauncher.dev'
+WORKING = 'dev.omalauncher.boss'
+BUILT = REPO / 'app/build/outputs/apk/debug/app-debug.apk'
+KEPT = pathlib.Path('/root/.cache/oma-dev/oma-dev.apk')
+REMOTE = '/data/local/tmp/oma-dev.apk'
+assert PACKAGE != WORKING and PACKAGE.endswith('.dev')
+
+def run(args, timeout=60, **kw):
+    return subprocess.run(args, capture_output=True, text=True, timeout=timeout, **kw)
+
+def endpoint():
+    """The phone's own adb over loopback, as oma-install finds it: the cached port, else a probe, checked by serial."""
+    serial = json.loads((CONFIG / 'device.json').read_text())['serial']
+    cache = CONFIG / 'install-port'
+    run(['adb', 'start-server'])
+    def connect(port):
+        at = '127.0.0.1:' + str(port)
+        if run(['adb', 'connect', at], 10).returncode: return None
+        r = run(['adb', '-s', at, 'shell', 'getprop', 'ro.serialno'], 10)
+        return at if r.returncode == 0 and r.stdout.strip() == serial else None
+    found = None
+    if cache.exists():
+        try: found = connect(int(cache.read_text().strip()))
+        except (ValueError, subprocess.TimeoutExpired): pass
+    if not found:
+        def probe(port):
+            try:
+                with socket.create_connection(('127.0.0.1', port), timeout=.03): return port
+            except OSError: return None
+        with concurrent.futures.ThreadPoolExecutor(max_workers=96) as pool:
+            ports = [p for p in pool.map(probe, range(30000, 65536)) if p]
+        for port in ports:
+            try: found = connect(port)
+            except subprocess.TimeoutExpired: continue
+            if found: cache.write_text(str(port)); break
+    if not found: sys.exit('Local installer is disconnected. Wireless debugging must be on (it needs Wi-Fi). Nothing was changed.')
+    return found
+
+def installed(at):
+    r = run(['adb', '-s', at, 'shell', 'dumpsys', 'package', PACKAGE])
+    code = re.search(r'versionCode=(\d+)', r.stdout)
+    name = re.search(r'versionName=(\S+)', r.stdout)
+    return (code.group(1), name.group(1) if name else '?') if code else None
+
+def build():
+    env = dict(os.environ, ANDROID_HOME='/opt/android-sdk', ANDROID_SDK_ROOT='/opt/android-sdk', TMPDIR='/tmp', JAVA_HOME='/usr/lib/jvm/default')
+    env['PATH'] = '/opt/gradle-9.8.0/bin:' + env.get('PATH', '')
+    init = REPO / 'tools/fold-development/dev.init.gradle'
+    r = subprocess.run(['gradle', '-I', str(init), '--no-daemon', '--console=plain', ':app:assembleDebug'], cwd=REPO, env=env)
+    if r.returncode: sys.exit('Oma Dev did not build. Nothing was installed.')
+    badge = run(['/opt/android-sdk/build-tools/36.0.0/aapt2', 'dump', 'badging', str(BUILT)])
+    name = re.search(r"package: name='([^']+)'", badge.stdout)
+    if badge.returncode or not name or name.group(1) != PACKAGE:
+        sys.exit('Refused: the APK that was built is not Oma Dev (' + (name.group(1) if name else 'unreadable') + '). Nothing was installed.')
+    KEPT.parent.mkdir(parents=True, exist_ok=True)
+    # Moved out of the build folder, so oma-install can never mistake it for the working launcher's APK.
+    shutil.move(str(BUILT), str(KEPT))
+    meta = BUILT.parent / 'output-metadata.json'
+    if meta.exists(): meta.unlink()
+
+def main():
+    args = sys.argv[1:]
+    if args not in ([], ['--no-open'], ['--open'], ['--status'], ['--remove']): sys.exit(__doc__)
+    if args in ([], ['--no-open']): build()
+    at = endpoint()
+    if args == ['--status']:
+        now = installed(at)
+        print('Oma Dev is installed: versionCode ' + now[0] + ', ' + now[1] if now else 'Oma Dev is not installed.')
+        return
+    if args == ['--remove']:
+        if not installed(at): print('Oma Dev is not installed.'); return
+        r = run(['adb', '-s', at, 'uninstall', PACKAGE], 120)
+        print('Oma Dev removed.' if r.returncode == 0 and 'Success' in r.stdout else 'Could not remove Oma Dev: ' + (r.stdout + r.stderr).strip())
+        return
+    if args != ['--open']:
+        if run(['adb', '-s', at, 'push', str(KEPT), REMOTE], 180).returncode: sys.exit('Could not copy Oma Dev to the phone. Nothing was installed.')
+        r = run(['adb', '-s', at, 'shell', 'pm', 'install', '-r', REMOTE], 180)
+        run(['adb', '-s', at, 'shell', 'rm', '-f', REMOTE])
+        if r.returncode or 'Success' not in r.stdout: sys.exit('Oma Dev was not installed: ' + (r.stdout + r.stderr).strip())
+        now = installed(at)
+        print('Oma Dev installed: versionCode ' + now[0] + ', ' + now[1] + '. The working launcher was not touched.')
+    if args != ['--no-open']:
+        if not installed(at): sys.exit('Oma Dev is not installed. Run oma-dev first.')
+        r = run(['adb', '-s', at, 'shell', 'am', 'start', '-n', PACKAGE + '/dev.omalauncher.MainActivity'])
+        print('Oma Dev opened.' if r.returncode == 0 else 'Could not open Oma Dev: ' + r.stderr.strip())
+
+main()

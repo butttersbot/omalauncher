@@ -11,6 +11,11 @@ scripts, not code bundled into the Android app.
   shell job to update/reopen the working launcher in 10 seconds.
 - oma-install --status checks the installed version and detached job result.
 - oma-try builds, syncs and schedules the update.
+- oma-dev builds this checkout as a second, throwaway launcher, "Oma Dev" (dev.omalauncher.dev), and installs it
+  beside the working one: its own data, no Linux, an empty notebook. Break it freely; the working launcher and its
+  agent are untouched. `oma-dev --status`, `--open`, `--no-open`, `--remove`. Test a change there first, then
+  oma-try the same commit onto the working launcher. Install it once with
+  `install -m755 tools/fold-development/oma-dev /usr/local/bin/oma-dev`; it reads tools/fold-development/dev.init.gradle.
 
 Updating the app stops its current agent run. Install LAST; do not uninstall or
 clear data. Persistent Linux, logins and settings survive. Android signing key must
