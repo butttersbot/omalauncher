@@ -168,6 +168,17 @@ class MotionTest {
         for (step in 0..100) assertTrue(leavePaper(step / 100f) in 0f..1f && leaveAlpha(step / 100f) in 0f..1f)
     }
 
+    /** In numbers, not by the constant: half way is where a leaving screen stops being drawn and touched. */
+    @Test fun halfWayIsOneHalf() {
+        assertEquals(0.5f, GROW_LEAVES_BY, 0f)
+        assertEquals(0f, leaveAlpha(0.5f), 0f)
+        assertEquals(0f, leaveAlpha(0.45f), 0f)
+        assertTrue(leaveAlpha(0.55f) > 0f)
+        assertEquals(0.1f, leaveAlpha(0.55f), 1e-5f)
+        assertEquals(1f, leavePaper(0.5f), 0f)
+        assertTrue(leavePaper(0.55f) < 1f)
+    }
+
     @Test fun theClipThatShowsNothingHasASizeAndIsOutsideWhatItIsOn() {
         val outline = NowhereShape.createOutline(androidx.compose.ui.geometry.Size(1812f, 2176f), androidx.compose.ui.unit.LayoutDirection.Ltr, androidx.compose.ui.unit.Density(3f))
         val rect = outline.bounds

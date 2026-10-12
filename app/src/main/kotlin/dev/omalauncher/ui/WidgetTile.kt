@@ -242,6 +242,8 @@ private class Grow(
 
     /** Gone, now: it has shrunk away, or that was cut short by a touch, a fold or a turn. */
     fun end() {
+        // Only what is leaving ends: a way out that finishes late, after another screen has opened, takes nothing from that one.
+        if (!leaving) return
         held = null
         name = null
     }
