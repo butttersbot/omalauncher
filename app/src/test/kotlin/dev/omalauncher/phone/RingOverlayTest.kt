@@ -58,13 +58,14 @@ class RingOverlayTest {
 
     // The setting.
 
-    @Test fun theOverlayIsOffUnlessTheStoredSettingIsTrue() {
-        assertFalse("with nothing stored, as on every install", ringOverlayAllowed(Prefs()))
+    /** The owner switched the ring over other apps on (2026-10-12): it is on unless the stored setting is false. */
+    @Test fun theOverlayIsOnUnlessTheStoredSettingSaysNo() {
+        assertTrue("with nothing stored, as on every install", ringOverlayAllowed(Prefs()))
         assertFalse(ringOverlayAllowed(Prefs(mapOf("ring_overlay" to false))))
         assertFalse("a value that isn't a boolean is off, not a crash", ringOverlayAllowed(Prefs(mapOf("ring_overlay" to "true"))))
         assertFalse(ringOverlayAllowed(Prefs(mapOf("ring_overlay" to 1))))
         assertFalse(ringOverlayAllowed(Prefs(mapOf("ring_overlay" to null))))
-        assertFalse("another key being true doesn't switch it on", ringOverlayAllowed(Prefs(mapOf("overlay" to true, "told_home_only" to true))))
+        assertTrue("another key says nothing about it", ringOverlayAllowed(Prefs(mapOf("overlay" to false, "told_home_only" to true))))
         assertTrue(ringOverlayAllowed(Prefs(mapOf("ring_overlay" to true))))
     }
 
@@ -106,8 +107,8 @@ class RingOverlayTest {
         assertEquals(setOf(home), sources.filterValues { "RING_OVERLAY_KEY" in it }.keys)
         assertEquals(2, count(sources.getValue(home), "RING_OVERLAY_KEY"))
         assertEquals(1, sources.values.sumOf { count(it, "\"ring_overlay\"") })
-        val read = Regex("""fun ringOverlayAllowed\(prefs: SharedPreferences\): Boolean = runCatching \{ prefs\.getBoolean\(RING_OVERLAY_KEY, false\) \}\.getOrDefault\(false\)""")
-        assertTrue("the setting's default is no longer off", read.containsMatchIn(sources.getValue(home)))
+        val read = Regex("""fun ringOverlayAllowed\(prefs: SharedPreferences\): Boolean = runCatching \{ prefs\.getBoolean\(RING_OVERLAY_KEY, true\) \}\.getOrDefault\(false\)""")
+        assertTrue("the setting is no longer read as on by default and off when unreadable", read.containsMatchIn(sources.getValue(home)))
         // Its file: opened through ringPrefs only, and written once, to remember the one-time line.
         assertEquals(setOf(home, "phone/PhoneService.kt"), sources.filterValues { "ringPrefs(" in it }.keys)
         assertEquals(1, sources.values.sumOf { count(it, "RING_PREFS,") })
@@ -121,8 +122,9 @@ class RingOverlayTest {
         assertEquals(0, sources.values.sumOf { count(it, "allowed = true") } - count(sources.getValue("phone/PhoneService.kt"), "allowed = true"))
         assertEquals(1, count(sources.getValue("phone/PhoneService.kt"), "allowed = true"))
         assertTrue("if (!ringOverlayAllowed(ringPrefs(this))) return OverlayFacts()" in sources.getValue("phone/PhoneService.kt"))
-        // One window, added in one place by one owner.
-        assertEquals(setOf(home), sources.filterValues { "TYPE_ACCESSIBILITY_OVERLAY" in it }.keys)
+        // Two overlay windows in all, each added in one place: the ring's, and the answer card's, which the owner asked for.
+        assertEquals(setOf(home, "phone/AnswerCard.kt"), sources.filterValues { "TYPE_ACCESSIBILITY_OVERLAY" in it }.keys)
+        assertEquals(1, count(sources.getValue("phone/AnswerCard.kt"), "TYPE_ACCESSIBILITY_OVERLAY"))
         assertEquals(setOf(home, "phone/PhoneService.kt"), sources.filterValues { "ServiceRingWindow(" in it }.keys)
         assertEquals(1, count(sources.getValue("phone/PhoneService.kt"), "ServiceRingWindow("))
         assertEquals(1, count(sources.getValue(home), ".addView("))

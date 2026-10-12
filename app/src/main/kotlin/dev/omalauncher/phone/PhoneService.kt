@@ -30,8 +30,10 @@ class PhoneService : AccessibilityService() {
     private var snapshot = ""
     private var signatures = emptyMap<String, String>()
     private val main = Handler(Looper.getMainLooper())
-    /** The ring over other apps. Off: [ringFacts] says it isn't allowed unless the stored setting is true, which nothing sets. */
+    /** The ring over other apps: on unless the stored setting says no. */
     private val ring = RingOverlay(ServiceRingWindow(this), ::ringFacts)
+    /** The agent's answer over other apps. */
+    private val answer = AnswerCard(this)
     private val checkRing = Runnable { syncRing() }
     private var unwatchRing: (() -> Unit)? = null
     private val screenChanged = object : BroadcastReceiver() {
@@ -39,7 +41,7 @@ class PhoneService : AccessibilityService() {
     }
     override fun onServiceConnected() { PhoneAccess.load(this); instance = this; watchRing() }
     /** A window changed, the lock screen's among them: an overlay that is up looks again at once. */
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) { if (ring.shown) syncRing() }
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) { if (ring.shown || answer.shown) syncRing() }
     override fun onInterrupt() = Unit
     /** Folded, unfolded or turned. */
     override fun onConfigurationChanged(newConfig: Configuration) { super.onConfigurationChanged(newConfig); lookAgain(ring.relayout()) }
@@ -62,12 +64,17 @@ class PhoneService : AccessibilityService() {
         runCatching { unregisterReceiver(screenChanged) }
         main.removeCallbacks(checkRing)
         ring.close()
+        answer.close()
     }
     /** What the overlay is decided from. While the setting is off, not allowed is the whole answer: nothing else is even looked at. */
     private fun ringFacts(): OverlayFacts {
         if (!ringOverlayAllowed(ringPrefs(this))) return OverlayFacts()
+        return facts(allowed = true)
+    }
+    /** The facts as they are, whatever the ring's setting says: the answer card asks these. */
+    private fun facts(allowed: Boolean): OverlayFacts {
         return OverlayFacts(
-            allowed = true,
+            allowed = allowed,
             connected = instance === this,
             paused = !PhoneAccess.active,
             locked = getSystemService(KeyguardManager::class.java).isKeyguardLocked,
@@ -78,7 +85,13 @@ class PhoneService : AccessibilityService() {
         )
     }
     /** Matches the overlay to the facts, and keeps looking while it is up or could be. Main thread. */
-    private fun syncRing() = lookAgain(ring.sync())
+    private fun syncRing() {
+        // An answer doesn't outlast what it answered: a new task, the assistant or the lock screen takes it down.
+        if (answer.shown && (!answerCardWanted(facts(allowed = false)) || OmaRing.signals.working)) answer.close()
+        lookAgain(ring.sync())
+    }
+    /** Shows the agent's answer over whatever is in front, if it may be shown now. False: say it another way. Main thread. */
+    fun showAnswer(caption: String, text: String): Boolean = answerCardWanted(facts(allowed = false)) && answer.show(caption, text)
     private fun lookAgain(soon: Boolean) {
         main.removeCallbacks(checkRing)
         if (soon) main.postDelayed(checkRing, OVERLAY_CHECK_MILLIS)
@@ -144,6 +157,7 @@ class PhoneService : AccessibilityService() {
                 if (Build.VERSION.SDK_INT < 30) error("Screenshots require Android 11 or later.")
                 // The overlay is never in the agent's picture: it comes down first and goes back once the picture is taken.
                 // With no overlay up there is nothing to wait for, and the screenshot is taken at once, as before.
+                answer.close()
                 val settle = ring.beforeCapture()
                 // It wouldn't come down: no picture is taken with it up.
                 if (settle == CAPTURE_REFUSED) error("Screenshot unavailable: the ring overlay could not be removed. Try again.")

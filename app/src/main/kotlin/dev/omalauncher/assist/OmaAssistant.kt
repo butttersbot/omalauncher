@@ -306,7 +306,7 @@ class ListeningHost(private val owner: Context, private val dismiss: () -> Unit)
 }
 
 /** What a Compose view needs from the window it is in, for windows that no activity of androidx owns. */
-private class ComposeHost : LifecycleOwner, SavedStateRegistryOwner {
+internal class ComposeHost : LifecycleOwner, SavedStateRegistryOwner {
     private val registry = LifecycleRegistry(this)
     private val saved = SavedStateRegistryController.create(this).apply { performRestore(null) }
     override val lifecycle: Lifecycle get() = registry

@@ -190,6 +190,8 @@ object AgentTasks {
                     .putString("label", label).putString("answer", answer).putString("thread", thread).apply()
                 File(context.filesDir, "assistant-last-result.txt").writeText(answer)
                 notify(context)
+                // A task the owner stopped says nothing more; any other ending brings its answer to him.
+                if (status != TaskStatus.Stopped) AgentNotices.answered(context, label, answer)
             }
         }
     }

@@ -18,12 +18,14 @@ internal object AgentNotices {
     private const val BRIEF = 42
     private const val TASK_CHANNEL = "agent-task-updates"
     private const val APPROVAL_CHANNEL = "agent-approvals"
+    private const val ANSWER_CHANNEL = "agent-answers"
     private const val FLAGS = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
 
     private fun manager(context: Context): NotificationManager {
         val nm = context.getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel(TASK_CHANNEL, "Agent progress and results", NotificationManager.IMPORTANCE_DEFAULT))
         nm.createNotificationChannel(NotificationChannel(APPROVAL_CHANNEL, "Agent approvals", NotificationManager.IMPORTANCE_HIGH))
+        nm.createNotificationChannel(NotificationChannel(ANSWER_CHANNEL, "Agent answers that pop up", NotificationManager.IMPORTANCE_HIGH))
         return nm
     }
 
@@ -46,6 +48,23 @@ internal object AgentNotices {
             if (requestsLiveUpdate(Build.VERSION.SDK_INT, Build.VERSION_CODES_FULL.BAKLAVA_1) { Build.VERSION.SDK_INT_FULL }) builder.setRequestPromotedOngoing(true)
         }
         nm.notify(TASK, builder.build())
+    }
+
+    /**
+     * A task just ended with [answer]: it comes up over whatever is in front as a card in the active look,
+     * drawn by the accessibility service, and the task's quiet notification stays in the shade. Where the card
+     * can't show (phone control off or paused, the phone locked or asleep) that notification pops up instead.
+     * Its text stays off the lock screen either way: notifications here are private.
+     */
+    fun answered(context: Context, label: String, answer: String) {
+        val notice = taskNotice(false, label, answer, 0) ?: return
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            val carded = dev.omalauncher.phone.PhoneService.instance?.showAnswer(dev.omalauncher.phone.answerCardCaption(label), answer) == true
+            if (carded) return@post
+            manager(context).notify(TASK, Notification.Builder(context, ANSWER_CHANNEL).setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(notice.title).setContentText(notice.text).setContentIntent(open(context)).setAutoCancel(true)
+                .apply { notice.expanded?.let { setStyle(Notification.BigTextStyle().bigText(it)) } }.build())
+        }
     }
 
     fun surface(context: Context): ApprovalSurface {

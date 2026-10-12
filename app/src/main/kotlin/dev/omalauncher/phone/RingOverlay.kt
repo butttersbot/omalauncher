@@ -9,13 +9,13 @@ import android.util.Log
 import android.view.WindowManager
 import dev.omalauncher.oma.ring.RingView
 
-// The ring over other apps: a window the accessibility service would draw the same ring in. It is built
-// and switched off. Whether it may ever show is one stored setting that nothing in the app writes and no
-// screen offers; the owner approves the overlay before a later change adds the switch.
+// The ring over other apps: a window the accessibility service draws the same ring in. The owner approved
+// it (2026-10-12), so it is on unless the one stored setting says otherwise; nothing in the app writes that
+// setting yet and no screen offers it.
 
 private const val RING_PREFS = "ring"
 
-/** The setting. Read by [ringOverlayAllowed] and by nothing else; written by nothing. */
+/** The setting: false switches the overlay off. Read by [ringOverlayAllowed] and by nothing else; written by nothing. */
 private const val RING_OVERLAY_KEY = "ring_overlay"
 
 /** Set once the owner has been told the ring stays on home. */
@@ -25,10 +25,10 @@ private const val RING_TOLD_KEY = "told_home_only"
 fun ringPrefs(context: Context): SharedPreferences = context.getSharedPreferences(RING_PREFS, Context.MODE_PRIVATE)
 
 /**
- * Whether the overlay may show at all: false unless the stored setting is true. Missing, not a boolean
- * or unreadable all mean off. This is the only place the setting is read.
+ * Whether the overlay may show at all: yes unless the stored setting is false. Not a boolean or unreadable
+ * mean off. This is the only place the setting is read.
  */
-fun ringOverlayAllowed(prefs: SharedPreferences): Boolean = runCatching { prefs.getBoolean(RING_OVERLAY_KEY, false) }.getOrDefault(false)
+fun ringOverlayAllowed(prefs: SharedPreferences): Boolean = runCatching { prefs.getBoolean(RING_OVERLAY_KEY, true) }.getOrDefault(false)
 
 /** Everything that decides whether the overlay is up at this moment. */
 data class OverlayFacts(
