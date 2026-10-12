@@ -75,9 +75,12 @@ data class ScreenOffer(
             Shot.Missing -> false
         })
 
-    /** Android answered, with a screenshot or without. One that could never be attached isn't even saved. */
+    /**
+     * Android answered, with a screenshot or without. One that could never be attached isn't even saved, and
+     * neither is one that comes after the chip already said there is none: it never turns to attached by itself.
+     */
     fun arrived(screenshot: Boolean) = when {
-        closed || context == ScreenContext.None -> this
+        closed || context == ScreenContext.None || shot == Shot.Missing -> this
         screenshot -> copy(shot = Shot.Saving)
         else -> copy(shot = Shot.Missing)
     }

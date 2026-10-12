@@ -55,8 +55,8 @@ class ScreenContextTest {
         // The timeout doesn't cut off a screenshot that is being written, or take one away.
         assertEquals(ScreenContext.Waiting, gesture().arrived(true).timedOut().context)
         assertEquals(ScreenContext.Attached, gesture().arrived(true).saved(true).timedOut().context)
-        // One that comes after the timeout still attaches, visibly.
-        assertEquals(ScreenContext.Attached, gesture().timedOut().arrived(true).saved(true).context)
+        // One that comes after the chip said there is none is not attached behind the owner's back.
+        assertEquals(ScreenContext.Unavailable, gesture().timedOut().arrived(true).saved(true).context)
     }
     @Test fun afterSendOrRemovalALateScreenshotIsDropped() {
         // Send tapped while still waiting: the request went without the screen.
