@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Lets the agent's progress notification ask to be a Live Update (Android 16 QPR1 and later). -->
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
     <!-- Speech input for the agent prompt bar; only recognized text reaches Linux. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
@@ -208,6 +210,8 @@
             </intent-filter>
         </activity>
         <receiver android:name=".assist.StopAgentTask" android:exported="false" />
+        <!-- Approve once / Deny on an approval notification; only this app's own PendingIntents reach it. -->
+        <receiver android:name=".assist.ApprovalActionReceiver" android:exported="false" />
         <service android:name=".assist.OmaVoiceService" android:exported="true"
             android:label="Oma agent" android:permission="android.permission.BIND_VOICE_INTERACTION">
             <intent-filter><action android:name="android.service.voice.VoiceInteractionService" /></intent-filter>

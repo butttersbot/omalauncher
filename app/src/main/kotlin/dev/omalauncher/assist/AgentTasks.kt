@@ -1,9 +1,7 @@
 package dev.omalauncher.assist
 
-import android.app.*
 import android.content.*
 import dev.omalauncher.App
-import dev.omalauncher.R
 import dev.omalauncher.linux.*
 import dev.omalauncher.phone.PhoneBridge
 import java.io.File
@@ -22,6 +20,9 @@ object AgentTasks {
     @Volatile private var process: Process? = null
     @Volatile private var stopping = false
     @Volatile var approvals: List<AgentApproval> = emptyList(); private set
+    /** The same approvals, each with what its notification and buttons are keyed by. */
+    @Volatile var pending: List<PendingApproval> = emptyList(); private set
+    private val ledger = ApprovalLedger()
     /** The Claude session that the next request follows up on. */
     @Volatile var thread: String? = null; private set
     private var inputWriter: BufferedWriter? = null
@@ -33,6 +34,7 @@ object AgentTasks {
         answer = saved.getString("answer", "") ?: ""
         label = saved.getString("label", "Ready") ?: "Ready"
         thread = saved.getString("thread", null)
+        AgentNotices.clearStale(context)
     }
     @Synchronized fun newThread(context: Context) {
         restore(context)
@@ -53,7 +55,7 @@ object AgentTasks {
         val fullPrompt = imagePrompt + "\n\n" + PhoneBridge.INSTRUCTIONS + "\nAndroid build tools, when installed, are in /opt/android-sdk. Run oma-build-check to check the toolchain. Use the approval UI for blocked tools; never ask for blanket permission bypass.\n"
         val resumed = thread.takeIf { agent.bin == "claude" }
         val command = if (agent.bin == "claude") claudeStreamCommand(resumed) else backgroundAgentCommand(agent.bin, fullPrompt, images)
-        working = true; stopping = false; approvals = emptyList(); answer = ""; label = "${agent.name} is working"
+        working = true; stopping = false; ledger.clear(); published(); answer = ""; label = "${agent.name} is working"
         notify(context)
         thread(name = "assistant-agent", isDaemon = true) {
             try {
@@ -79,15 +81,16 @@ object AgentTasks {
                                 check(event.getJSONObject("response").optString("subtype") != "error") { "Agent initialization failed" }
                                 writeEvent(ClaudeProtocol.user(fullPrompt)); sent = true
                             }
-                            val approval = ClaudeProtocol.approval(event)
-                            if (approval != null) {
-                                synchronized(this) { approvals = approvals + approval; label = "Approval needed" }
-                                notify(context)
-                            }
+                            ClaudeProtocol.approval(event)?.let { admit(context, it) }
                             when (event.optString("type")) {
-                                "control_cancel_request" -> synchronized(this) {
-                                    approvals = approvals.filterNot { it.id == event.optString("request_id") }
-                                    if (approvals.isEmpty() && !stopping) label = "${agent.name} is working"
+                                "control_cancel_request" -> {
+                                    val gone = synchronized(this) {
+                                        ledger.withdraw(event.optString("request_id"))?.also {
+                                            published()
+                                            if (approvals.isEmpty() && !stopping) label = "${agent.name} is working"
+                                        }
+                                    }
+                                    if (gone != null) { AgentNotices.withdraw(context, gone); notify(context) }
                                 }
                                 "assistant" -> {
                                     val content = event.optJSONObject("message")?.optJSONArray("content")
@@ -95,7 +98,7 @@ object AgentTasks {
                                         val block = content.optJSONObject(i) ?: continue
                                         when (block.optString("type")) {
                                             "text" -> answer = (answer + block.optString("text") + "\n").takeLast(40_000)
-                                            "tool_use" -> if (approvals.isEmpty()) label = "Using ${block.optString("name")}"
+                                            "tool_use" -> if (approvals.isEmpty()) { label = "Using ${block.optString("name").take(60)}"; notify(context) }
                                         }
                                     }
                                 }
@@ -126,7 +129,9 @@ object AgentTasks {
                 if (answer.isBlank()) answer = if (code == 0) "Task completed." else "The agent exited with status $code. Open its terminal to check sign-in or permissions."
             } catch (e: Exception) { label = "Could not run agent"; answer = e.message ?: "Please open Omalauncher and try again." }
             finally {
-                synchronized(this) { inputWriter?.runCatching { close() }; inputWriter = null; approvals = emptyList() }
+                // Whatever was still unanswered goes with the task, notifications included.
+                val unanswered = synchronized(this) { inputWriter?.runCatching { close() }; inputWriter = null; ledger.clear().also { published() } }
+                unanswered.forEach { AgentNotices.withdraw(context, it) }
                 process = null; working = false
                 context.getSharedPreferences("assistant-result", Context.MODE_PRIVATE).edit()
                     .putString("label", label).putString("answer", answer).putString("thread", thread).apply()
@@ -139,34 +144,58 @@ object AgentTasks {
         val writer = inputWriter ?: error("The agent session has ended.")
         writer.write(event.toString()); writer.newLine(); writer.flush()
     }
-    @Synchronized fun decide(context: Context, id: String, allow: Boolean) {
-        val approval = approvals.firstOrNull { it.id == id } ?: return
-        check(working && !stopping) { "This request is no longer active." }
-        writeEvent(ClaudeProtocol.decision(approval, allow))
-        approvals = approvals.filterNot { it.id == id }
-        label = if (approvals.isEmpty()) "Agent is working" else "Approval needed"
+    /** Under the lock: republishes the ledger for readers on other threads. */
+    private fun published() { pending = ledger.live; approvals = pending.map { it.approval } }
+    /** A request from the agent's stream: shown to the owner, or denied unseen if it can't be shown safely. */
+    private fun admit(context: Context, approval: AgentApproval) {
+        val shown = synchronized(this) {
+            if (stopping) return
+            when (val admission = ledger.admit(approval)) {
+                is Admission.Shown -> { published(); label = "Approval needed"; admission.entry }
+                Admission.Duplicate -> return
+                Admission.Refused -> { runCatching { writeEvent(ClaudeProtocol.decision(approval, false)) }; return }
+            }
+        }
+        AgentNotices.request(context, shown)
         notify(context)
     }
-    @Synchronized fun stop(context: Context) {
-        if (!working) return
-        stopping = true; approvals = emptyList()
-        inputWriter?.runCatching { close() }; inputWriter = null
-        process?.destroy(); label = "Stopping…"; notify(context)
+    /**
+     * Answers the one approval with this [id] and [nonce]; the notification buttons, the approval screen and
+     * the chat thread all come through here. Nothing is answered from a locked phone, and an approval that was
+     * already answered, withdrawn, stopped or lost to a restart is [ApprovalOutcome.Expired] and changes nothing.
+     */
+    fun answerApproval(context: Context, id: String, nonce: String, allow: Boolean): ApprovalOutcome {
+        val locked = AgentNotices.deviceLocked(context)
+        val (entry, told) = synchronized(this) {
+            when (val claim = ledger.claim(id, nonce, locked, active = working && !stopping)) {
+                Claim.Locked -> return ApprovalOutcome.Locked
+                Claim.Expired -> return ApprovalOutcome.Expired
+                is Claim.Granted -> {
+                    published()
+                    label = if (approvals.isEmpty()) "Agent is working" else "Approval needed"
+                    // An agent that has just gone can't be told; the request is over either way.
+                    claim.entry to runCatching { writeEvent(ClaudeProtocol.decision(claim.entry.approval, allow)) }.isSuccess
+                }
+            }
+        }
+        AgentNotices.withdraw(context, entry)
+        notify(context)
+        return if (told) ApprovalOutcome.Decided else ApprovalOutcome.Expired
+    }
+    fun stop(context: Context) {
+        val unanswered = synchronized(this) {
+            if (!working) return
+            stopping = true
+            inputWriter?.runCatching { close() }; inputWriter = null
+            process?.destroy(); label = "Stopping…"
+            ledger.clear().also { published() }
+        }
+        unanswered.forEach { AgentNotices.withdraw(context, it) }
+        notify(context)
     }
     private fun notify(context: Context) {
         OmaTiles.refresh(context)
-        val nm = context.getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(NotificationChannel("agent-task-updates", "Agent progress and results", NotificationManager.IMPORTANCE_DEFAULT))
-        val open = PendingIntent.getActivity(context, 0, Intent(context, AssistantPromptActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
-        val builder = Notification.Builder(context, "agent-task-updates").setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(label).setContentText(if (approvals.isNotEmpty()) "${approvals.first().tool} · tap to review and approve once" else if (working) "Request received · tap to check progress" else answer.take(180).ifBlank { "Tap to read the result" })
-            .setContentIntent(open).setOnlyAlertOnce(working && approvals.isEmpty()).setOngoing(working)
-        if (!working) builder.setStyle(Notification.BigTextStyle().bigText(answer.take(1500)))
-        if (working) {
-            val stop = PendingIntent.getBroadcast(context, 0, Intent(context, StopAgentTask::class.java), PendingIntent.FLAG_IMMUTABLE)
-            builder.addAction(Notification.Action.Builder(null, "Stop", stop).build())
-        }
-        nm.notify(41, builder.build())
+        AgentNotices.task(context, working, label, answer, approvals.size)
     }
 }
 

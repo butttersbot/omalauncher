@@ -92,7 +92,6 @@ class AssistantPanel(private val owner: Context, private val dismiss: () -> Unit
                 message = null; input.setText(""); input.clearFocus()
                 owner.getSystemService(android.view.inputmethod.InputMethodManager::class.java).hideSoftInputFromWindow(input.windowToken, 0)
                 refresh()
-                Toast.makeText(owner, "Request sent · you can keep using your phone", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) { message = e.message; refresh() }
         }
         button("Hide") { dismiss() }
@@ -129,8 +128,9 @@ class AssistantPanel(private val owner: Context, private val dismiss: () -> Unit
         approvalButton.visibility = if (AgentTasks.approvals.isNotEmpty()) VISIBLE else GONE
     }
     private fun reviewApproval() {
-        if (AgentTasks.approvals.isEmpty()) return
-        owner.startActivity(Intent(owner, AgentApprovalActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        // The oldest one, chosen at the tap; the screen then answers only that one.
+        val oldest = AgentTasks.pending.firstOrNull() ?: return
+        owner.startActivity(AgentNotices.reviewIntent(owner, oldest))
         dismiss() // VoiceInteractionSession otherwise stays above the activity's modal.
     }
     private fun listen() {
@@ -145,7 +145,7 @@ class AssistantPanel(private val owner: Context, private val dismiss: () -> Unit
         fun heard(results: Bundle?) {
             val said = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.trim().orEmpty()
             if (said.isEmpty()) return
-            input.setText(if (before.isEmpty()) said else "$before $said"); input.setSelection(input.text.length)
+            input.setText(appendSpeech(before, said)); input.setSelection(input.text.length)
         }
         recognizer = try { assistantRecognizer(owner) } catch (e: Exception) { message = e.message; return }
         recognizer?.apply {
