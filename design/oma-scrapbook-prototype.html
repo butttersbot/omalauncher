@@ -1,0 +1,396 @@
+<title>Oma Scrapbook Prototype</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Dela+Gothic+One&family=JetBrains+Mono:wght@400;500;700&family=M+PLUS+Rounded+1c:wght@800&family=Patrick+Hand&family=Permanent+Marker&family=Pixelify+Sans:wght@400;600&family=Playfair+Display:ital,wght@1,700&family=Schibsted+Grotesk:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: controls on top, one foldable device centred below whose home screen is a page you can draw on; notes underneath. */
+:root{
+  --bg:#eef0ee; --panel:#f8f9f7; --fg:#18201e; --mute:#5b6763; --line:#cfd6d2; --accent:#1f4fd1; --accent-fg:#fff; --bezel:#0c0e10; --key:#3a3f44;
+  --ui:"Schibsted Grotesk",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#101413;--panel:#171c1b;--fg:#e7ecea;--mute:#96a39f;--line:#2b3331;--accent:#8fb0ff;--accent-fg:#0b1020;--bezel:#000;--key:#4a5157;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#101413;--panel:#171c1b;--fg:#e7ecea;--mute:#96a39f;--line:#2b3331;--accent:#8fb0ff;--accent-fg:#0b1020;--bezel:#000;--key:#4a5157;color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--fg);font:15px/1.5 var(--ui)}
+.wrap{max-width:1000px;margin:0 auto;padding-inline:20px;padding-block:26px 56px;display:flex;flex-direction:column;gap:22px}
+h1{font-size:26px;line-height:1.15;margin:0;font-weight:700;letter-spacing:-.01em;text-wrap:balance}
+.lede{color:var(--mute);margin:6px 0 0;max-width:64ch}
+.controls{display:flex;flex-wrap:wrap;gap:14px 26px}
+.group{display:flex;flex-direction:column;gap:7px;min-width:0}
+.label{font:500 11px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--mute)}
+.row{display:flex;flex-wrap:wrap;gap:6px}
+.btn{font:500 14px/1 var(--ui);color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:10px 13px;cursor:pointer}
+.btn:hover{border-color:var(--fg)}
+.btn[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.btn.go{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.readout{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:12px 14px;display:grid;gap:4px}
+.readout b{font-weight:600}
+.readout span{color:var(--mute);font:13px/1.45 var(--mono)}
+.notes{border-top:1px solid var(--line);padding-top:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px 28px}
+.notes h2{font:500 11px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--mute);margin:0 0 8px}
+.notes ul{margin:0;padding-left:18px;color:var(--mute);font-size:14px}
+.notes li{margin:3px 0}
+
+/* ---------- device ---------- */
+.stage{width:100%;position:relative;display:flex;justify-content:center}
+.bezel{position:relative;padding:8px;border-radius:38px;background:var(--bezel);transform-origin:top center;box-shadow:0 18px 40px -18px rgba(0,0,0,.5);flex:none}
+.sidekey{position:absolute;right:-5px;top:150px;width:6px;height:74px;border-radius:0 4px 4px 0;background:var(--key);border:0;padding:0;cursor:pointer}
+.sidekey::after{content:"";position:absolute;inset:-10px -14px -10px -4px}
+.phone{position:relative;width:380px;height:608px;border-radius:30px;overflow:hidden;background:var(--paper-c);color:var(--ink);font:13px/1.35 var(--f-body);touch-action:none;user-select:none;-webkit-user-select:none;isolation:isolate;transition:width .7s cubic-bezier(.3,.8,.2,1),height .7s cubic-bezier(.3,.8,.2,1)}
+.phone[data-fold="inner"]{width:760px;height:574px}
+:where(.phone) button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;text-align:inherit}
+
+/* themes: Riso plus five carried over from Cove's token packs */
+.phone{--f-body:"Schibsted Grotesk",system-ui,sans-serif;--f-hand:"Caveat","Comic Sans MS",cursive;--rot:1;--r:3px;--page-ink:var(--ink);--alt-ink:var(--ink)}
+.phone[data-theme="rs"]{--paper-c:#e7e5ee;--paper:radial-gradient(rgba(35,55,255,.1) 1px,transparent 1.4px) 0 0/5px 5px,#e7e5ee;--ink:#2337ff;--mute:rgba(35,55,255,.65);--scrap:#e7e5ee;--alt:#2337ff;--alt-ink:#e7e5ee;--edge:2px solid #2337ff;--shadow:5px 5px 0 #ff3d8b;--tape:#ff3d8b;--acc:#ff3d8b;--hl:#ff3d8b;--pen:#2337ff;--r:0px;--rot:1.3;--f-display:"Dela Gothic One","Arial Black",sans-serif;--rc1:#ff3d8b;--rc2:#2337ff}
+.phone[data-theme="cu"]{--paper-c:#f7e9b5;--paper:linear-gradient(rgba(38,36,31,.07) 1px,transparent 1px) 0 12px/100% 26px,#f7e9b5;--ink:#26241f;--mute:rgba(38,36,31,.62);--scrap:#fff;--alt:#26241f;--alt-ink:#fbf6e7;--edge:0 solid transparent;--shadow:0 2px 0 rgba(38,36,31,.18),0 8px 14px -8px rgba(38,36,31,.35);--tape:#c9a36b;--acc:#26241f;--hl:#f3d96b;--pen:#26241f;--r:3px;--rot:1;--f-display:"Permanent Marker","Comic Sans MS",cursive;--rc1:#26241f;--rc2:#f3d96b}
+.phone[data-theme="tm"]{--paper-c:#1257c4;--paper:linear-gradient(rgba(255,255,255,.13) 1px,transparent 1px) 0 10px/100% 24px,#1257c4;--ink:#1a2434;--page-ink:#fff;--mute:rgba(26,36,52,.62);--scrap:#fff;--alt:#c9e1f6;--edge:0 solid transparent;--shadow:0 6px 0 rgba(8,28,80,.4);--tape:rgba(255,255,255,.75);--acc:#1257c4;--hl:#c9e1f6;--pen:#fff;--r:0px;--rot:.8;--f-display:"Playfair Display",Georgia,serif;--rc1:#fff;--rc2:#c9e1f6}
+.phone[data-theme="bj"]{--paper-c:#fff;--paper:radial-gradient(#c5c0b4 1.1px,transparent 1.5px) 0 0/16px 16px,#fff;--ink:#33312c;--mute:rgba(51,49,44,.62);--scrap:#fff;--alt:#f2cfd4;--edge:1.5px solid #33312c;--shadow:none;--tape:repeating-linear-gradient(45deg,#efe0ae 0 6px,#f7efd0 6px 12px);--acc:#b86578;--hl:#f2cfd4;--pen:#b86578;--r:12px;--rot:.5;--f-display:"Patrick Hand","Comic Sans MS",cursive;--rc1:#b86578;--rc2:#efe0ae}
+.phone[data-theme="du"]{--paper-c:#f7f3ee;--paper:linear-gradient(rgba(74,85,144,.16) 1px,transparent 1px) 0 0/100% 14px,linear-gradient(90deg,rgba(74,85,144,.16) 1px,transparent 1px) 0 0/14px 100%,#f7f3ee;--ink:#4a5590;--mute:rgba(74,85,144,.72);--scrap:#f7f3ee;--alt:#efd9ec;--edge:2px solid #4a5590;--shadow:4px 4px 0 #4a5590;--tape:#a94fa4;--acc:#a94fa4;--hl:#efd9ec;--pen:#a94fa4;--r:0px;--rot:.25;--f-display:"Pixelify Sans","Courier New",monospace;--f-body:"Pixelify Sans","Courier New",monospace;--rc1:#a94fa4;--rc2:#4a5590}
+.phone[data-theme="cp"]{--paper-c:#ff9a8b;--paper:linear-gradient(170deg,#ffc27a 0,#ff8fa3 46%,#9a7be0 100%);--ink:#16324f;--mute:rgba(22,50,79,.66);--scrap:#fff;--alt:#d3f1f4;--edge:2px solid #16324f;--shadow:0 5px 0 #16324f;--tape:#ffe066;--acc:#148fa0;--hl:#ffe066;--pen:#16324f;--r:18px;--rot:1;--f-display:"M PLUS Rounded 1c","Arial Rounded MT Bold",sans-serif;--rc1:#148fa0;--rc2:#ffe066}
+
+.status{position:absolute;inset:0 0 auto;height:34px;padding:11px 22px 0;display:flex;justify-content:space-between;font:600 12px/1.2 var(--ui);z-index:6;color:var(--page-ink);pointer-events:none;font-variant-numeric:tabular-nums}
+.book{position:absolute;left:0;top:0;width:760px;height:608px;background:var(--paper);z-index:1;transition:opacity .35s,transform .45s}
+.book::after{content:"";position:absolute;left:372px;top:0;bottom:0;width:16px;background:linear-gradient(90deg,transparent,rgba(0,0,0,.14) 45%,rgba(0,0,0,.14) 55%,transparent);pointer-events:none}
+.phone[data-drawer="true"] .book{opacity:.15}
+#ink{position:absolute;inset:0;width:760px;height:608px;z-index:3;pointer-events:none}
+.phone[data-theme="rs"] #ink{mix-blend-mode:multiply}
+.scrap{position:absolute;z-index:2;background:var(--scrap);color:var(--ink);border:var(--edge);border-radius:var(--r);box-shadow:var(--shadow);padding:11px 13px;transform:rotate(calc(var(--a,0deg)*var(--rot)));cursor:grab;touch-action:none}
+.scrap.alt{background:var(--alt);color:var(--alt-ink)}
+.scrap.bare{background:none;border:0;box-shadow:none;color:var(--page-ink);padding:0}
+.scrap.drag{cursor:grabbing;z-index:9;filter:drop-shadow(0 10px 10px rgba(0,0,0,.25))}
+.scrap.tape::before{content:"";position:absolute;top:-11px;left:50%;width:66px;height:21px;margin-left:-33px;background:var(--tape);opacity:.9;transform:rotate(-3deg)}
+.phone[data-theme="du"] .scrap:not(.bare):not(.stick){padding-top:30px}
+.phone[data-theme="du"] .scrap:not(.bare):not(.stick)::after{content:"×";position:absolute;left:0;right:0;top:0;height:20px;background:var(--ink);color:#f7f3ee;text-align:right;padding-right:7px;font:600 14px/20px var(--f-body)}
+.phone[data-theme="du"] .scrap.tape::before{display:none}
+.phone[data-theme="rs"] .scrap.alt{box-shadow:5px 5px 0 #ff3d8b}
+.cap{font:500 9.5px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--mute)}
+.scrap.alt .cap{color:inherit;opacity:.7}
+.disp{font-family:var(--f-display);font-size:25px;line-height:1.05;margin:5px 0 3px}
+.phone[data-theme="cu"] .disp span{background:linear-gradient(transparent 55%,var(--hl) 55%)}
+.phone[data-theme="cu"] .alt .disp span{background:none}
+.hand{font:700 22px/1.05 var(--f-hand)}
+.mono{font:11px/1.55 var(--mono);white-space:pre}
+.photo{height:104px;margin:-2px -4px 8px;background:radial-gradient(60% 50% at 30% 70%,#f2c48a 0,transparent 70%),radial-gradient(40% 40% at 72% 38%,#f7e3b0 0,transparent 70%),linear-gradient(160deg,#5b4636,#2c2420)}
+.drops{display:flex;gap:5px;margin-top:8px}
+.drops button{width:17px;height:21px;border:1.5px solid currentColor;border-radius:50% 50% 50% 50%/62% 62% 38% 38%;transform:rotate(180deg)}
+.drops button[aria-pressed="true"]{background:var(--acc);border-color:var(--acc)}
+.stick{font:700 20px/1.05 var(--f-hand);background:var(--hl);color:#26241f;border:0;box-shadow:0 6px 10px -6px rgba(0,0,0,.4);border-radius:1px;min-height:74px;cursor:text;outline:0;user-select:text;-webkit-user-select:text}
+.sticker{font-size:44px;line-height:1;color:var(--acc);text-shadow:2px 2px 0 var(--scrap)}
+@keyframes drop{from{opacity:0;translate:0 -34px;scale:1.2}}
+.scrap.new{animation:drop .5s cubic-bezier(.2,1.4,.4,1)}
+/* a scrap morphing into a full screen: same object, bigger vessel */
+.scrap.morph{transition:left .5s cubic-bezier(.3,.9,.2,1),top .5s cubic-bezier(.3,.9,.2,1),width .5s cubic-bezier(.3,.9,.2,1),height .5s cubic-bezier(.3,.9,.2,1),transform .5s,border-radius .5s;z-index:20}
+.scrap.open{transform:none;border-radius:0;cursor:default;padding:54px 26px 26px;box-shadow:none}
+.scrap.open.tape::before,.phone[data-theme="du"] .scrap.open::after{display:none}
+.scrap .full{display:none}
+.scrap.open .full{display:flex;flex-direction:column;gap:14px;margin-top:18px}
+.scrap.open .disp{font-size:44px}
+.full .route{display:flex;align-items:center;gap:10px;font:700 26px/1 var(--f-hand)}
+.full .route i{flex:1;border-top:2.5px dashed currentColor}
+.full .acts{display:flex;gap:10px;flex-wrap:wrap}
+.full .acts button{border:2px solid currentColor;border-radius:var(--r);padding:10px 14px;font-weight:600}
+.closex{position:absolute;right:18px;top:44px;font-size:26px;line-height:1;padding:6px 10px;display:none}
+.scrap.open .closex{display:block}
+
+.dock,.tools{position:absolute;left:14px;width:352px;bottom:22px;z-index:5;display:flex;justify-content:space-between;gap:6px;transition:opacity .25s,transform .3s}
+.dock button,.tools button{width:48px;height:48px;background:var(--scrap);color:var(--ink);border:var(--edge);border-radius:var(--r);box-shadow:var(--shadow);text-align:center;font:400 18px/1 var(--f-display)}
+.phone[data-theme="cu"] .dock button,.phone[data-theme="tm"] .dock button,.phone[data-theme="cu"] .tools button,.phone[data-theme="tm"] .tools button{border:0}
+.dock button:nth-child(odd){transform:rotate(calc(-2deg*var(--rot)))}
+.dock button:nth-child(even){transform:rotate(calc(2.5deg*var(--rot)))}
+.dock .pen,.tools button[aria-pressed="true"]{background:var(--alt);color:var(--alt-ink)}
+.tools button{width:42px;height:44px;font:600 17px/1 var(--f-body)}
+.tools{opacity:0;pointer-events:none;transform:translateY(16px)}
+.phone[data-tools="true"] .tools{opacity:1;pointer-events:auto;transform:none}
+.phone[data-tools="true"] .dock{opacity:0;pointer-events:none}
+.marg{position:absolute;left:22px;bottom:84px;z-index:4;font:700 19px/1.1 var(--f-hand);color:var(--page-ink);transform:rotate(-2deg);opacity:0;transition:opacity .3s}
+.phone[data-agent="working"] .marg{opacity:1}
+.swipe{position:absolute;left:0;right:0;bottom:0;height:22px;z-index:12}
+.homebar{position:absolute;left:50%;bottom:7px;width:110px;height:4px;margin-left:-55px;border-radius:2px;background:var(--page-ink);opacity:.55;z-index:12;pointer-events:none}
+
+#apps{position:absolute;inset:0;z-index:10;transform:translateY(102%);transition:transform .45s cubic-bezier(.2,.8,.2,1);background:var(--paper);color:var(--page-ink);padding:44px 20px 0;display:flex;flex-direction:column}
+.phone[data-drawer="true"] #apps{transform:none}
+.appscroll{flex:1;overflow-y:auto;touch-action:pan-y;padding-bottom:86px;scrollbar-width:none}
+#apps .cap{color:inherit;opacity:.75;margin:8px 0;display:flex;justify-content:space-between}
+.appgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px 6px;margin-bottom:14px}
+.phone[data-fold="inner"] .appgrid{grid-template-columns:repeat(8,1fr)}
+.app{display:flex;flex-direction:column;align-items:center;gap:6px;font-size:11px;min-width:0}
+.app .nm{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ico{width:50px;height:50px;display:grid;place-items:center;background:var(--scrap);color:var(--ink);border:var(--edge);border-radius:var(--r);box-shadow:var(--shadow);font:400 19px/1 var(--f-display)}
+.app:nth-child(3n) .ico{background:var(--alt);color:var(--alt-ink);transform:rotate(calc(3deg*var(--rot)))}
+.app:nth-child(3n+1) .ico{transform:rotate(calc(-3deg*var(--rot)))}
+.search{position:absolute;left:20px;right:20px;bottom:20px;height:46px;display:flex;align-items:center;gap:8px;padding:0 16px;background:var(--scrap);color:var(--ink);border:var(--edge);border-radius:var(--r);box-shadow:var(--shadow)}
+.search input{flex:1;min-width:0;background:none;border:0;outline:0;color:inherit;font:inherit;font-size:15px;user-select:text;-webkit-user-select:text}
+.search input::placeholder{color:var(--mute)}
+
+/* Oma */
+.dim{position:absolute;inset:0;z-index:13;background:var(--paper-c);opacity:0;pointer-events:none;transition:opacity .45s}
+.phone[data-agent="listening"] .dim{opacity:.88;pointer-events:auto}
+@property --ang{syntax:"<angle>";inherits:false;initial-value:0deg}
+@keyframes spin{to{--ang:360deg}}
+@keyframes breathe{50%{opacity:.4}}
+.ringwrap{position:absolute;inset:0;z-index:14;border-radius:inherit;pointer-events:none;opacity:0;transition:opacity .6s}
+.phone[data-agent="listening"] .ringwrap,.phone[data-agent="approval"] .ringwrap{opacity:1}
+.phone[data-agent="working"] .ringwrap{opacity:.8}
+.phone[data-agent="done"] .ringwrap{opacity:1;animation:breathe 1.6s ease-in-out 2}
+.ring{position:absolute;inset:0;border-radius:inherit;padding:2px;
+  background:conic-gradient(from var(--ang),transparent 0 22%,var(--rc1) 46%,var(--rc2) 50%,transparent 50.2% 72%,var(--rc2) 96%,var(--rc1) 100%);
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask:linear-gradient(#000 0 0) content-box exclude,linear-gradient(#000 0 0);
+  animation:spin 4.2s linear infinite}
+.ring.glow{padding:5px;filter:blur(6px);opacity:.6}
+.phone[data-agent="working"] .ring{animation-duration:9s}
+.phone[data-agent="approval"] .ring{animation-duration:14s}
+.listen{position:absolute;left:26px;width:330px;bottom:70px;z-index:15;opacity:0;transform:translateY(14px);transition:.4s;pointer-events:none;color:var(--page-ink)}
+.phone[data-agent="listening"] .listen{opacity:1;transform:none;pointer-events:auto}
+.said{font:700 40px/1 var(--f-hand);min-height:3em;margin:10px 0 12px;text-wrap:balance}
+.said span{opacity:0;animation:word .25s forwards}
+@keyframes word{to{opacity:1}}
+.lcap{font:500 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;opacity:.8}
+.cancel{font:500 12px/1 var(--mono);text-decoration:underline;text-underline-offset:3px}
+.heads{position:absolute;left:10px;width:360px;top:38px;z-index:16;padding:14px 16px;border-radius:26px;background:#20242b;color:#f2f4f7;font:14px/1.4 var(--ui);box-shadow:0 10px 30px -10px rgba(0,0,0,.6);transform:translateY(-150%);opacity:0;transition:.45s cubic-bezier(.2,.9,.2,1);display:flex;flex-direction:column;gap:6px}
+.phone[data-fold="inner"] .heads{left:200px}
+.phone[data-agent="approval"] .heads{transform:none;opacity:1}
+.heads .hd{display:flex;align-items:center;gap:8px;font-size:12px;color:#aab2bd}
+.heads .hd i{width:18px;height:18px;border-radius:50%;background:#f2f4f7;flex:none}
+.heads b{font-weight:600}
+.heads .q{color:#cfd5dd}
+.heads .acts{display:flex;gap:22px;margin-top:6px;font-weight:600;color:#8fb7ff}
+@media (prefers-reduced-motion:reduce){.phone,.phone *,.phone *::before{animation:none!important;transition-duration:.01s!important}.said span{opacity:1}}
+</style>
+
+<div class="wrap">
+  <div>
+    <h1>Oma as a scrapbook you can write in</h1>
+    <p class="lede">The home screen is a page, not a grid. Drag anything, draw on it, stick notes to it. Unfold the phone and the same page opens into a two-page spread. Themes come from Cove's token packs.</p>
+  </div>
+
+  <div class="controls">
+    <div class="group"><span class="label">Theme</span>
+      <div class="row">
+        <button class="btn" data-theme="rs" aria-pressed="true">Riso</button>
+        <button class="btn" data-theme="cu" aria-pressed="false">Custard</button>
+        <button class="btn" data-theme="tm" aria-pressed="false">Tiny Magazine</button>
+        <button class="btn" data-theme="bj" aria-pressed="false">Bujo</button>
+        <button class="btn" data-theme="du" aria-pressed="false">Dial‑Up</button>
+        <button class="btn" data-theme="cp" aria-pressed="false">City Pop</button>
+      </div>
+    </div>
+    <div class="group"><span class="label">Display</span>
+      <div class="row">
+        <button class="btn" data-fold="cover" aria-pressed="true">Cover</button>
+        <button class="btn" data-fold="inner" aria-pressed="false">Unfold</button>
+      </div>
+    </div>
+    <div class="group"><span class="label">Ask Oma</span>
+      <div class="row">
+        <button class="btn go" data-go="text">“Tell Mina I'm late”</button>
+        <button class="btn go" data-go="widget">“Make me a water tracker”</button>
+        <button class="btn" data-go="reset">Reset page</button>
+      </div>
+    </div>
+  </div>
+  <div class="readout" aria-live="polite"><b id="blurb"></b><span id="readout"></span></div>
+
+  <div class="stage" id="stage">
+    <div class="bezel" id="bezel">
+      <button class="sidekey" data-go="text" title="Side button: hold to summon Oma" aria-label="Side button: summon Oma"></button>
+      <div class="phone" id="phone" data-theme="rs" data-fold="cover" data-drawer="false" data-agent="idle" data-tools="false">
+        <div class="book" id="book">
+          <div class="scrap" id="s-sky" style="left:22px;top:48px;width:150px;--a:-3deg"><span class="cap">Anaheim</span><div class="disp"><span>68°</span></div>patchy rain</div>
+          <div class="scrap" id="s-arch" style="left:196px;top:60px;width:160px;--a:2deg"><span class="cap">Arch Linux</span><div class="mono">283 pkg · 4 updates
+up 2h 56m</div></div>
+          <div class="scrap alt tape" id="s-next" data-open="1" style="left:26px;top:158px;width:296px;height:128px;--a:-1.5deg">
+            <span class="cap">Next · tap to open</span><div class="disp"><span>Dinner with Mina</span></div>7:30 PM · Kato · leave by 7:06
+            <button class="closex" data-act="close" aria-label="Close">×</button>
+            <div class="full">
+              <div class="route"><span>home</span><i></i><span>24 min</span><i></i><span>Kato</span></div>
+              <div>Leave by <b>7:06</b>. Light rain on the 5, no delays. Table for two under Mina's name.</div>
+              <div class="acts"><button>Directions</button><button>Message Mina</button><button>Move the booking</button></div>
+              <div class="cap">Same card, bigger vessel. It never left the page.</div>
+            </div>
+          </div>
+          <div class="scrap bare" id="s-late" style="left:34px;top:304px;--a:-6deg"><span class="hand">don't be late!! ↑</span></div>
+          <div class="scrap tape" id="s-photo" style="left:196px;top:310px;width:152px;--a:4deg"><div class="photo"></div><span class="hand" style="font-size:19px">Kato, last time</span></div>
+          <div class="scrap" id="s-log" style="left:26px;top:388px;width:156px;--a:-2deg"><span class="cap">Oma today</span><div>sorted 214 photos<br>summed 3 threads</div></div>
+
+          <div class="scrap bare" style="left:410px;top:50px;--a:-2deg"><span class="disp" style="font-size:32px">this week</span></div>
+          <div class="scrap tape" style="left:404px;top:104px;width:318px;--a:1deg"><span class="cap">Terminal</span><div class="mono">~ $ pacman -Qu
+linux-aarch64   6.12.58 → 6.12.61
+mesa            25.2.4  → 25.2.5
+foot            1.23.0  → 1.23.1
+~ $ █</div></div>
+          <div class="scrap" style="left:410px;top:270px;width:176px;--a:-2deg"><span class="hand">Tue — dentist 9<br>Thu — SEA 6:10am<br>Sat — nothing :)</span></div>
+          <div class="scrap alt" style="left:604px;top:284px;width:128px;--a:3deg"><span class="cap">Sleep</span><div class="disp"><span>6h 40</span></div>4 of 7 nights</div>
+          <div class="scrap bare sticker" style="left:560px;top:400px;--a:-12deg">✿</div>
+          <canvas id="ink" width="1520" height="1216"></canvas>
+        </div>
+
+        <div class="status"><span>6:52</span><span>5G &nbsp;94%</span></div>
+        <div class="marg" id="marg"></div>
+        <div class="dock"><button aria-label="Messages">M</button><button aria-label="Camera">C</button><button aria-label="Browser">B</button><button aria-label="Terminal">T</button><button data-act="apps" aria-label="All apps">↑</button><button class="pen" data-act="tools" aria-label="Open drawing tools">✎</button></div>
+        <div class="tools" role="toolbar" aria-label="Drawing tools">
+          <button data-tool="move" aria-pressed="true" aria-label="Move things">✥</button>
+          <button data-tool="pen" aria-pressed="false" aria-label="Pen">✎</button>
+          <button data-tool="hl" aria-pressed="false" aria-label="Highlighter">▬</button>
+          <button data-tool="note" aria-pressed="false" aria-label="Sticky note">☐</button>
+          <button data-tool="sticker" aria-pressed="false" aria-label="Sticker">★</button>
+          <button data-act="undo" aria-label="Undo last stroke">↶</button>
+          <button data-act="tools" aria-label="Close drawing tools">×</button>
+        </div>
+
+        <section id="apps" aria-label="App drawer">
+          <div class="appscroll">
+            <div class="cap"><span>Recent</span><button data-act="closeapps">close ↓</button></div>
+            <div class="appgrid" id="recent"></div>
+            <div class="cap" id="allcap">All apps</div>
+            <div class="appgrid" id="appgrid"></div>
+          </div>
+          <label class="search"><span>⌕</span><input id="appsearch" type="text" placeholder="Search apps" autocomplete="off" aria-label="Search apps"></label>
+        </section>
+
+        <div class="dim" data-act="cancel"></div>
+        <div class="ringwrap"><div class="ring glow"></div><div class="ring"></div></div>
+        <div class="listen" aria-live="polite">
+          <span class="lcap">Listening</span>
+          <div class="said" id="said"></div>
+          <button class="cancel" data-act="cancel">Cancel</button>
+        </div>
+        <div class="heads" role="alertdialog" aria-label="Notification from Oma">
+          <div class="hd"><i></i><span>Oma · now</span></div>
+          <b>Send this to Mina?</b>
+          <div class="q">“Running about 10 min late — see you at 7:40!”</div>
+          <div class="acts"><button data-act="approve">Send once</button><button data-act="deny">Don't send</button></div>
+        </div>
+        <div class="swipe" id="swipe"></div>
+        <div class="homebar"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <div><h2>Try this</h2><ul>
+      <li>Drag any scrap. Tap ✎ in the dock, then draw, highlight, add a note or a sticker.</li>
+      <li>Tap “Dinner with Mina”: the card grows into a full screen and shrinks back.</li>
+      <li>Unfold: the cover page stays exactly as you left it and a second page opens beside it.</li>
+      <li>Ask Oma for a tracker: it lands on your page as a new scrap you can tap.</li>
+    </ul></div>
+    <div><h2>What carries over from Cove</h2><ul>
+      <li>The canvas is the water: content sits on it, controls float above it.</li>
+      <li>A theme is a token pack, so the same page re-dresses without moving anything.</li>
+      <li>Tapping a card changes its vessel, not its contents.</li>
+      <li>What the agent makes is ordinary page content you can move, draw over or throw away.</li>
+    </ul></div>
+    <div><h2>Not modeled</h2><ul>
+      <li>More than two pages, pinch-zoom and panning the canvas.</li>
+      <li>Resizing or deleting scraps, erasing part of a stroke.</li>
+      <li>Typed prompts, errors, and the lock screen and quick panel.</li>
+      <li>Real Cove kit art: stickers and tape here are stand-ins.</li>
+    </ul></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var $=function(id){return document.getElementById(id)};
+  var phone=$('phone'),book=$('book'),cv=$('ink'),ctx=cv.getContext('2d');ctx.scale(2,2);ctx.lineCap='round';ctx.lineJoin='round';
+  var S={theme:'rs',fold:'cover',drawer:false,agent:'idle',tools:false,tool:'move',flow:''};
+  var strokes=[],timers=[],made=[],home=book.innerHTML,stickerN=0;
+  var APPS=['Calendar','Camera','Chrome','Claude','Clock','Codex','Cove','Files','Firefox','Gmail','Maps','Messages','Notes','Photos','Play Store','Resy','Settings','Signal','Spotify','Terminal','Wallet','Weather','btop'];
+  var BLURB={rs:'Riso. Two inks out of register; your pen prints in blue and overprints the pink.',
+    cu:'Custard. Butter-yellow journal page, white scraps on kraft tape, marker-black headings on yellow highlighter.',
+    tm:'Tiny Magazine. A blue zine spread with white clippings and an italic serif masthead; your pen writes in white.',
+    bj:'Bujo. Dot-grid bullet journal with outlined boxes, washi tape and a dusty-pink pen.',
+    du:'Dial‑Up. Graph paper and little OS windows with title bars; almost nothing is crooked.',
+    cp:'City Pop. A sunset wash, rounded sticker cards with hard navy shadows, teal and lemon.'};
+  var PROMPTS={text:"Tell Mina I'm running ten minutes late",widget:'Make me a water tracker for this week'};
+
+  function appEl(n){var b=document.createElement('button');b.className='app';b.innerHTML='<span class="ico"></span><span class="nm"></span>';b.firstChild.textContent=n[0].toUpperCase();b.lastChild.textContent=n;return b}
+  ['Messages','Cove','Terminal','Claude'].forEach(function(n){$('recent').appendChild(appEl(n))});
+  function drawApps(q){var g=$('appgrid');g.textContent='';var hits=APPS.filter(function(n){return n.toLowerCase().indexOf(q)>=0});hits.forEach(function(n){g.appendChild(appEl(n))});
+    $('allcap').textContent=q?(hits.length?hits.length+' match'+(hits.length>1?'es':''):'No app named "'+q+'"'):'All apps'}
+  drawApps('');$('appsearch').addEventListener('input',function(e){drawApps(e.target.value.trim().toLowerCase())});
+
+  function css(v){return getComputedStyle(phone).getPropertyValue(v).trim()}
+  function paint(){ctx.clearRect(0,0,760,608);strokes.forEach(function(s){ctx.globalAlpha=s.hl?.5:1;ctx.strokeStyle=css(s.hl?'--hl':'--pen');ctx.lineWidth=s.hl?15:2.6;ctx.beginPath();
+    s.p.forEach(function(q,i){i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1])});if(s.p.length===1)ctx.lineTo(s.p[0][0]+.1,s.p[0][1]);ctx.stroke()});ctx.globalAlpha=1}
+  function later(fn,ms){timers.push(setTimeout(fn,ms))}
+  function clearAll(){timers.forEach(clearTimeout);timers=[]}
+  function set(p){for(var k in p)S[k]=p[k];render()}
+  function render(){
+    var themed=phone.dataset.theme!==S.theme;
+    phone.dataset.theme=S.theme;phone.dataset.fold=S.fold;phone.dataset.drawer=S.drawer;phone.dataset.agent=S.agent;phone.dataset.tools=S.tools;
+    document.querySelectorAll('.btn[data-theme]').forEach(function(b){b.setAttribute('aria-pressed',b.dataset.theme===S.theme)});
+    document.querySelectorAll('.btn[data-fold]').forEach(function(b){b.setAttribute('aria-pressed',b.dataset.fold===S.fold)});
+    document.querySelectorAll('[data-tool]').forEach(function(b){b.setAttribute('aria-pressed',b.dataset.tool===S.tool)});
+    if(themed)paint();
+    $('blurb').textContent=BLURB[S.theme];
+    var tool={move:'Drag scraps to rearrange them.',pen:'Pen: draw anywhere on the page.',hl:'Highlighter: swipe across anything.',note:'Tap the page to stick a note, then type on it.',sticker:'Tap the page to place a sticker.'}[S.tool];
+    $('readout').textContent=(S.fold==='inner'?'Unfolded, two-page spread · ':'Cover, one page · ')+({idle:S.drawer?'App drawer.':S.tools?tool:'Idle. Tap ✎ to write on the page.',
+      listening:'Listening: your words are handwritten over the page.',working:'Working: just the ring and a pencilled note in the margin.',
+      approval:'Needs your OK, as a normal Samsung notification.',done:'Done: what Oma made is now a scrap on your page.'}[S.agent]);
+  }
+
+  /* ----- pointer: draw, drag, tap ----- */
+  function pos(e){var r=book.getBoundingClientRect();return [(e.clientX-r.left)*760/r.width,(e.clientY-r.top)*608/r.height]}
+  var cur=null,drag=null;
+  function addScrap(html,cls,x,y,w,a){var d=document.createElement('div');d.className='scrap new '+cls;d.style.left=x+'px';d.style.top=y+'px';if(w)d.style.width=w+'px';d.style.setProperty('--a',a+'deg');d.innerHTML=html;book.insertBefore(d,cv);made.push(d);return d}
+  book.addEventListener('pointerdown',function(e){
+    if(e.target.closest('.open'))return;
+    var q=pos(e);
+    if(S.tools&&(S.tool==='pen'||S.tool==='hl')){cur={hl:S.tool==='hl',p:[q]};strokes.push(cur);paint();book.setPointerCapture(e.pointerId);return}
+    if(S.tools&&S.tool==='note'){var n=addScrap('','stick',q[0]-60,q[1]-30,124,(Math.random()*8-4).toFixed(1));n.contentEditable='true';n.textContent='write here';set({tool:'move'});
+      setTimeout(function(){n.focus();try{document.getSelection().selectAllChildren(n)}catch(_){}} ,60);return}
+    if(S.tools&&S.tool==='sticker'){addScrap('★✿♥✦☻'.charAt(stickerN++%5),'bare sticker',q[0]-22,q[1]-22,0,(Math.random()*40-20).toFixed(0));return}
+    var s=e.target.closest('.scrap');if(!s||e.target.closest('button'))return;
+    if(document.activeElement===s)return;
+    drag={el:s,x:q[0],y:q[1],l:parseFloat(s.style.left),t:parseFloat(s.style.top),moved:false};book.setPointerCapture(e.pointerId)});
+  book.addEventListener('pointermove',function(e){var q=pos(e);
+    if(cur){cur.p.push(q);paint();return}
+    if(drag){var dx=q[0]-drag.x,dy=q[1]-drag.y;if(!drag.moved&&Math.abs(dx)+Math.abs(dy)<5)return;drag.moved=true;drag.el.classList.add('drag');drag.el.style.left=(drag.l+dx)+'px';drag.el.style.top=(drag.t+dy)+'px'}});
+  function up(){cur=null;if(!drag)return;var d=drag;drag=null;d.el.classList.remove('drag');
+    if(!d.moved){if(d.el.dataset.open)openScrap(d.el);else if(d.el.isContentEditable)d.el.focus()}}
+  book.addEventListener('pointerup',up);book.addEventListener('pointercancel',up);
+  function openScrap(el){if(S.agent==='listening')return;el.dataset.back=[el.style.left,el.style.top,el.style.width,el.style.height].join('|');el.classList.add('morph');
+    requestAnimationFrame(function(){el.classList.add('open');el.style.left='0px';el.style.top='0px';el.style.width=(S.fold==='inner'?760:380)+'px';el.style.height=(S.fold==='inner'?574:608)+'px'})}
+  function closeScrap(){var el=book.querySelector('.scrap.open');if(!el)return;var b=el.dataset.back.split('|');el.classList.remove('open');el.style.left=b[0];el.style.top=b[1];el.style.width=b[2];el.style.height=b[3];
+    setTimeout(function(){el.classList.remove('morph')},520)}
+  book.addEventListener('click',function(e){var d=e.target.closest('.drops button');if(d)d.setAttribute('aria-pressed',d.getAttribute('aria-pressed')!=='true')});
+
+  /* ----- Oma ----- */
+  function summon(flow){if(S.agent!=='idle'&&S.agent!=='done')return;clearAll();closeScrap();$('said').textContent='';
+    set({agent:'listening',drawer:false,flow:flow});var words=PROMPTS[flow].split(' ');
+    words.forEach(function(w,i){later(function(){var s=document.createElement('span');s.textContent=w+' ';$('said').appendChild(s)},500+i*190)});
+    later(function(){work(flow)},500+words.length*190+900)}
+  function note(t){$('marg').textContent='✎ Oma: '+t}
+  function work(flow){set({agent:'working'});
+    if(flow==='text'){note('opened Messages…');later(function(){note('found Mina…')},1300);later(function(){note('drafted a reply…')},2600);later(function(){set({agent:'approval'})},3900)}
+    else{note('pouring a tracker…');later(function(){note('counting to seven…')},1300);later(function(){finish('<span class="cap">Water · this week</span><div class="drops">'+Array(8).join('<button aria-pressed="false" aria-label="Glass"></button>')+'</div>','',196,442,158,-3)},2600)}}
+  function finish(html,cls,x,y,w,a){clearAll();if(html)addScrap(html,cls,x,y,w,a);set({agent:'done'});later(function(){if(S.agent==='done')set({agent:'idle'})},3400)}
+  function resetPage(){clearAll();strokes=[];book.innerHTML=home;cv=$('ink');ctx=cv.getContext('2d');ctx.scale(2,2);ctx.lineCap='round';ctx.lineJoin='round';made=[];set({agent:'idle',drawer:false,tools:false,tool:'move'})}
+
+  var ACT={
+    apps:function(){set({drawer:true,tools:false})},closeapps:function(){set({drawer:false})},
+    tools:function(){set({tools:!S.tools,tool:'move'})},
+    undo:function(){strokes.pop();paint()},
+    close:closeScrap,
+    cancel:function(){if(S.agent==='listening'){clearAll();set({agent:'idle'})}},
+    approve:function(){set({agent:'working'});note('sending…');later(function(){finish('told Mina ✓<br>running 10 late','stick',228,246,118,5)},1300)},
+    deny:function(){finish('','',0,0,0,0)}
+  };
+  phone.addEventListener('click',function(e){var t=e.target.closest('[data-act]');if(t){e.stopPropagation();ACT[t.dataset.act]();return}
+    var b=e.target.closest('[data-tool]');if(b)set({tool:b.dataset.tool})});
+  var sy=null;$('swipe').addEventListener('pointerdown',function(e){sy=e.clientY});
+  window.addEventListener('pointerup',function(e){if(sy!==null&&sy-e.clientY>30)set({drawer:true,tools:false});sy=null});
+
+  document.querySelectorAll('[data-go]').forEach(function(b){b.addEventListener('click',function(){var g=b.dataset.go;if(g==='reset')resetPage();else{if(S.agent==='done')set({agent:'idle'});summon(g)}})});
+  document.querySelectorAll('.btn[data-theme]').forEach(function(b){b.addEventListener('click',function(){set({theme:b.dataset.theme});try{localStorage.setItem('oma-scrap-theme',S.theme)}catch(e){}})});
+  document.querySelectorAll('.btn[data-fold]').forEach(function(b){b.addEventListener('click',function(){closeScrap();set({fold:b.dataset.fold});fit()})});
+  try{var k=localStorage.getItem('oma-scrap-theme');if(k&&BLURB[k])S.theme=k}catch(e){}
+
+  function fit(){var W=(S.fold==='inner'?760:380)+16,H=(S.fold==='inner'?574:608)+16,w=$('stage').clientWidth-12,s=Math.min(1,w/W);
+    $('bezel').style.transform='scale('+s+')';$('stage').style.height=(H*s)+'px'}
+  if(window.ResizeObserver)new ResizeObserver(fit).observe($('stage'));window.addEventListener('resize',fit);
+  render();fit();if(document.fonts&&document.fonts.ready)document.fonts.ready.then(paint);
+})();
+</script>
