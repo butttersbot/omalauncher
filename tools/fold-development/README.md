@@ -11,6 +11,11 @@ scripts, not code bundled into the Android app.
   shell job to update/reopen the working launcher in 10 seconds.
 - oma-install --status checks the installed version and detached job result.
 - oma-try builds, syncs and schedules the update.
+- oma-door is a small private door for the Mac session to reach the agent here when adb can't: it listens on the
+  phone's Tailscale address only (port 8477), needs the token in /root/.config/oma-door/token with every request,
+  and hands a prompt to the same agent the launcher runs, one job at a time. It runs no command of its own. The
+  launcher starts it with Linux when both the token and /usr/local/bin/oma-door are there. To shut it for good,
+  delete the token.
 - oma-dev builds this checkout as a second, throwaway launcher, "Oma Dev" (dev.omalauncher.dev), and installs it
   beside the working one: its own data, no Linux, an empty notebook. Break it freely; the working launcher and its
   agent are untouched. `oma-dev --status`, `--open`, `--no-open`, `--remove`. Test a change there first, then
