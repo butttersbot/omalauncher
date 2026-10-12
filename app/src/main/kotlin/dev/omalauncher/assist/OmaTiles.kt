@@ -19,7 +19,8 @@ abstract class OmaTile : TileService() {
     abstract val title: String
     open fun active() = false
     open fun subtitle() = "Tap to open"
-    open fun destination(): Intent = Intent(this, AssistantPromptActivity::class.java)
+    /** The Oma app. A tile attaches no screen, whatever app is underneath. */
+    open fun destination(): Intent = dev.omalauncher.oma.OmaChatActivity.intent(this)
     override fun onStartListening() {
         super.onStartListening()
         AgentTasks.restore(this)

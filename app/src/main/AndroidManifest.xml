@@ -193,6 +193,28 @@
             <meta-data android:name="android.service.quicksettings.ACTIVE_TILE" android:value="true" />
         </service>
 
+        <!-- The Oma app: the agent's thread, typed messages and image attachments. Opened inside the app by its action. -->
+        <activity
+            android:name=".oma.OmaChatActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|density|uiMode"
+            android:exported="false"
+            android:label="Oma"
+            android:launchMode="singleTask"
+            android:resizeableActivity="true"
+            android:taskAffinity="${applicationId}.oma"
+            android:theme="@style/Theme.Omalauncher.Window"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="dev.omalauncher.action.OMA_CHAT" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+        <!-- Holds no data: it runs first in the process, to know when one of the app's own screens is showing. -->
+        <provider
+            android:name=".oma.OmaStartup"
+            android:authorities="${applicationId}.oma-startup"
+            android:exported="false" />
+
         <activity android:name=".assist.AgentApprovalActivity" android:exported="false"
             android:theme="@android:style/Theme.Material.Dialog.NoActionBar" />
         <activity android:name=".assist.AssistantPromptActivity" android:exported="true"

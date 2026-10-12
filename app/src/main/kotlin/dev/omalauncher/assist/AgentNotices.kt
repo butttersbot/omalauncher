@@ -27,9 +27,9 @@ internal object AgentNotices {
         return nm
     }
 
-    /** Where tapping the task notification goes. */
+    /** Tapping the task notification opens the Oma app, where the thread is. */
     private fun open(context: Context): PendingIntent =
-        PendingIntent.getActivity(context, 0, Intent(context, AssistantPromptActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+        PendingIntent.getActivity(context, 0, dev.omalauncher.oma.OmaChatActivity.intent(context), PendingIntent.FLAG_IMMUTABLE)
 
     /** The ongoing step while a task runs, replaced by its result when it ends. */
     fun task(context: Context, working: Boolean, label: String, answer: String, pending: Int) {

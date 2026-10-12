@@ -3,6 +3,8 @@ package dev.omalauncher.assist
 import android.app.*
 import android.content.*
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.*
@@ -11,6 +13,12 @@ import android.speech.*
 import android.view.*
 import android.widget.*
 import dev.omalauncher.App
+import dev.omalauncher.oma.OwnScreens
+import dev.omalauncher.oma.ScreenContext
+import dev.omalauncher.oma.ScreenShots
+import dev.omalauncher.oma.Summon
+import dev.omalauncher.oma.screenContext
+import java.io.File
 
 class OmaVoiceService : VoiceInteractionService()
 class OmaSessionService : VoiceInteractionSessionService() {
@@ -18,6 +26,9 @@ class OmaSessionService : VoiceInteractionSessionService() {
 }
 class OmaSession(context: Context) : VoiceInteractionSession(context) {
     private var panel: AssistantPanel? = null
+    /** How this showing came about; null while hidden, so a late screenshot attaches to nothing. */
+    private var showing: Showing? = null
+    private class Showing(val summon: Summon, val locked: Boolean, var own: Boolean)
     override fun onCreateContentView(): View {
         (context.applicationContext as App).runtime.start()
         return AssistantPanel(context, { hide() }).also { panel = it }
@@ -25,9 +36,26 @@ class OmaSession(context: Context) : VoiceInteractionSession(context) {
     override fun onShow(args: Bundle?, showFlags: Int) {
         super.onShow(args, showFlags)
         window.window?.apply { setGravity(Gravity.BOTTOM); setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT) }
+        // Only Android's own assistant gesture brings the screen along; Android then sends its screenshot to onHandleScreenshot.
+        val summon = if (showFlags and SHOW_SOURCE_ASSIST_GESTURE != 0) Summon.AssistGesture else Summon.Other
+        showing = Showing(summon, context.getSystemService(KeyguardManager::class.java).isKeyguardLocked, OwnScreens.visible)
+        offer(null)
         panel?.refresh()
     }
-    override fun onHide() { panel?.cancelSpeech(); super.onHide() }
+    /** When Android says which app is underneath (it may not): over Oma's own screens nothing is attached. */
+    override fun onHandleAssist(state: AssistState) {
+        if (state.assistStructure?.activityComponent?.packageName == context.packageName) { showing?.own = true; offer(null) }
+    }
+    /** The only source of the screen: Android's screenshot for this session, null for secure windows or when switched off. */
+    override fun onHandleScreenshot(screenshot: Bitmap?) = offer(screenshot)
+    private fun offer(screenshot: Bitmap?) {
+        val now = showing ?: return
+        val panel = panel ?: return
+        val decided = screenContext(now.summon, launcherInFront = now.own, locked = now.locked, screenshot = screenshot != null)
+        val file = if (decided == ScreenContext.Attached && screenshot != null) ScreenShots.keep(context, screenshot) else null
+        panel.showScreen(if (decided == ScreenContext.Attached && file == null) ScreenContext.Unavailable else decided, file)
+    }
+    override fun onHide() { panel?.cancelSpeech(); showing = null; panel?.showScreen(ScreenContext.None, null); super.onHide() }
     override fun onDestroy() { panel?.dispose(); super.onDestroy() }
 }
 
@@ -62,6 +90,11 @@ class AssistantPanel(private val owner: Context, private val dismiss: () -> Unit
     private lateinit var newThreadButton: Button
     private var disposed = false
     private var message: String? = null
+    private val chip = LinearLayout(owner)
+    private val chipImage = ImageView(owner)
+    private val chipText = TextView(owner)
+    /** The screenshot that Send would attach; never set without the chip showing it. */
+    private var screen: File? = null
     private val update = object : Runnable {
         override fun run() { if (!disposed) { refresh(); handler.postDelayed(this, 500) } }
     }
@@ -79,6 +112,14 @@ class AssistantPanel(private val owner: Context, private val dismiss: () -> Unit
         input.minLines = 2; input.maxLines = 4
         input.inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
         addView(input, LayoutParams(-1, -2))
+        chip.orientation = HORIZONTAL; chip.gravity = Gravity.CENTER_VERTICAL; chip.visibility = GONE
+        chip.setPadding(dp(10), dp(8), dp(10), dp(8))
+        chip.background = GradientDrawable().apply { setColor(Color.rgb(40, 45, 62)); cornerRadius = dp(12).toFloat() }
+        chip.addView(chipImage, LayoutParams(dp(48), dp(48)).apply { marginEnd = dp(10) })
+        chipText.setTextColor(Color.WHITE); chipText.textSize = 14f
+        chip.addView(chipText, LayoutParams(0, -2, 1f))
+        chip.setOnClickListener { showScreen(ScreenContext.None, null) }
+        addView(chip, LayoutParams(-1, -2).apply { topMargin = dp(8) })
         val row = LinearLayout(owner)
         fun button(text: String, action: () -> Unit): Button = Button(owner).apply {
             this.text = text; setOnClickListener { action() }
@@ -88,7 +129,9 @@ class AssistantPanel(private val owner: Context, private val dismiss: () -> Unit
         sendButton = button("Send") {
             try {
                 cancelSpeech()
-                AgentTasks.send(owner, input.text.toString().trim())
+                // Only the screenshot the chip is showing goes along, and it is AgentTasks's to delete from here.
+                AgentTasks.send(owner, input.text.toString().trim(), screen = screen)
+                screen = null; showScreen(ScreenContext.None, null)
                 message = null; input.setText(""); input.clearFocus()
                 owner.getSystemService(android.view.inputmethod.InputMethodManager::class.java).hideSoftInputFromWindow(input.windowToken, 0)
                 refresh()
@@ -126,6 +169,21 @@ class AssistantPanel(private val owner: Context, private val dismiss: () -> Unit
         resultScroll.visibility = if (output.text.isNotBlank()) VISIBLE else GONE
         stopButton.visibility = if (AgentTasks.working) VISIBLE else GONE
         approvalButton.visibility = if (AgentTasks.approvals.isNotEmpty()) VISIBLE else GONE
+    }
+    /**
+     * The "this screen" chip. A screenshot is held only while the chip shows it: tapping the chip, hiding
+     * the panel and sending all let go of it, and whatever is let go of unsent is deleted.
+     */
+    fun showScreen(state: ScreenContext, file: File?) {
+        val kept = file?.takeIf { state == ScreenContext.Attached }
+        if (screen != kept) ScreenShots.discard(screen)
+        if (file != kept) ScreenShots.discard(file)
+        screen = kept
+        chip.visibility = if (state == ScreenContext.None) GONE else VISIBLE
+        chipImage.visibility = if (kept != null) VISIBLE else GONE
+        chipImage.setImageBitmap(kept?.let { BitmapFactory.decodeFile(it.path, BitmapFactory.Options().apply { inSampleSize = 8 }) })
+        chipText.text = if (kept != null) "This screen goes with your request · tap to remove"
+            else "This screen isn't attached: Android gave no screenshot of it (protected screens can't be shared) · tap to hide"
     }
     private fun reviewApproval() {
         // The oldest one, chosen at the tap; the screen then answers only that one.
@@ -167,7 +225,7 @@ class AssistantPanel(private val owner: Context, private val dismiss: () -> Unit
         }
     }
     fun cancelSpeech() { recognizer?.cancel(); recognizer?.destroy(); recognizer = null }
-    fun dispose() { disposed = true; handler.removeCallbacksAndMessages(null); cancelSpeech() }
+    fun dispose() { disposed = true; handler.removeCallbacksAndMessages(null); cancelSpeech(); showScreen(ScreenContext.None, null) }
 }
 
 class AssistantSetupActivity : Activity() {
