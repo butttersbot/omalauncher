@@ -55,7 +55,7 @@ android {
         debug {
             applicationIdSuffix = ".boss"
             manifestPlaceholders["appLabel"] = "Omalauncher Boss"
-            versionNameSuffix = "-boss-preview.2"
+            versionNameSuffix = "-boss-preview.3"
         }
         release {
             // Shrinks the APK and drops what the app doesn't use, like the owl module's unused parts.
