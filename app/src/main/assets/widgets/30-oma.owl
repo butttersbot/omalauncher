@@ -1,0 +1,31 @@
+widget "oma" {
+  page: 1
+  order: 3
+  size: 3x2
+  minSize: 2x1
+  meta { description: "What Oma is doing: working, waiting for your OK, or the last thing it finished. Tap it for the chat"; version: "1.0"; license: "MIT"; category: "agents"; owl: 5 }
+
+  // Written by the launcher whenever the agent's task changes; no polling and no shell.
+  source agent = file("~/.cache/oma/agent.json") json optional
+  let state = agent == null ? "ready" : (agent.state ?? "ready")
+  let busy = state == "working" || state == "waiting"
+  let line = state == "working" ? (agent.doing ?? "working…")
+    : state == "waiting" ? "needs your OK"
+    : state == "done" ? "done"
+    : state == "stopped" ? "stopped"
+    : state == "failed" ? "needs attention"
+    : "ready"
+  let tint = state == "waiting" || state == "failed" ? red : busy ? accent : foreground
+  let answer = agent == null ? "" : trim(agent.answer ?? "")
+
+  onTap: launcher("oma")
+
+  Column {
+    gap: 4
+    Text { text: "oma"; style: label; color: muted; maxLines: 1 }
+    Text { text: line; style: title; color: tint; maxLines: 2 }
+    if !busy && answer != "" {
+      Text { text: answer; style: small; color: muted; maxLines: 3 }
+    }
+  }
+}

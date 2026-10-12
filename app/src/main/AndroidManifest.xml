@@ -215,6 +215,18 @@
             android:authorities="${applicationId}.oma-startup"
             android:exported="false" />
 
+        <!-- The Oma chat's place in the app list, now that the dock has no button for it. -->
+        <activity-alias
+            android:name=".oma.OmaChatEntry"
+            android:exported="true"
+            android:label="Oma"
+            android:targetActivity=".oma.OmaChatActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
         <activity android:name=".assist.AgentApprovalActivity" android:exported="false"
             android:theme="@android:style/Theme.Material.Dialog.NoActionBar" />
         <activity android:name=".assist.AssistantPromptActivity" android:exported="true"

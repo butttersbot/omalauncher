@@ -410,7 +410,8 @@ object Pack {
     val bareIcons get() = LauncherStyle.bareAppIcons
 
     /** The strip of recently used apps: the user's choice, and room on home that no pack changes. */
-    val recentApps get() = LauncherStyle.recentApps
+    /** The strip of recent apps over the dock: Console's. A look that draws its own page has the prototype's dock, which the recent apps fill instead. */
+    val recentApps get() = LauncherStyle.recentApps && !look.ownsPage
 
     /** How an icon is drawn: a silhouette in [tint] when [mono], else in its own colors as the pack treats them. */
     fun icon(mono: Boolean): ColorFilter? = if (mono) ColorFilter.tint(look.tint) else look.iconFilter

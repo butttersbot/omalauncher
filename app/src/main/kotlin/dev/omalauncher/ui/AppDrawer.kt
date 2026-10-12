@@ -248,6 +248,8 @@ internal fun StripCell(
     size: Dp = 40.dp,
     /** The cell's own button, in a dock of buttons: see [dockButton]. */
     chrome: Modifier = Modifier,
+    /** The cell itself: what is touched. */
+    cell: Dp = 48.dp,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val haptics = LocalHapticFeedback.current
@@ -255,7 +257,7 @@ internal fun StripCell(
     val bare = Pack.bareIcons
     Box(
         Modifier
-            .size(48.dp)
+            .size(cell)
             .then(chrome)
             .alpha(if (paused) PausedAlpha else 1f)
             .clip(Pack.shape(12.dp))
@@ -294,7 +296,7 @@ internal fun StripCell(
 }
 
 /** The apps opened lately, last opened first; ones not installed (or not loaded yet) are skipped. */
-private fun recentApps(
+internal fun recentApps(
     runtime: Runtime,
     limit: Int,
 ): List<AppHit> {

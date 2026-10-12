@@ -215,6 +215,7 @@ fun HomeScreen(
                 // "themes" from before the screen was style; widgets still send it.
                 "style", "themes" -> state.styleOpen = true
                 "agents" -> state.agentsOpen = true
+                "oma" -> openOmaChat(context)
                 "store" -> state.storeOpen = true
                 "linux" -> state.linuxOpen = true
                 "drawer" -> state.open()

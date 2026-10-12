@@ -1,55 +1,51 @@
 package dev.omalauncher.ui
 
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.activity.compose.BackHandler
-import androidx.compose.ui.graphics.graphicsLayer
-import kotlinx.coroutines.launch
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.displayCutout
-import androidx.compose.foundation.layout.systemBars
-import androidx.compose.foundation.layout.union
-import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import dev.omalauncher.Runtime
 import dev.omalauncher.linux.LinuxState
-import dev.omalauncher.assist.ListeningLayer
-import dev.omalauncher.assist.ListeningPhase
-import dev.omalauncher.assist.listeningLook
 import dev.omalauncher.oma.ring.HomeRing
 import dev.omalauncher.widgets.checkSecretsCommand
 import dev.omalauncher.widgets.publishWidgetCommand
-import dev.omalauncher.widgets.reviewSharedWidgetCommand
 import dev.omalauncher.widgets.render.LocalHomeCovered
+import dev.omalauncher.widgets.reviewSharedWidgetCommand
+import kotlinx.coroutines.launch
 
 @Composable
 fun LauncherRoot(
@@ -205,11 +201,9 @@ private fun DesktopScreen(
     // touches while the list is closed, except the dock and the strip. A phone's landscape stands them in a rail
     // beside the grid, and opens the list over it, centered.
     val side = homeSide()
-    // One microphone for whichever dock is showing, and for the listening layer over them.
-    val voice = rememberAgentVoice()
     if (side != null && !panelShown) {
         if (runtime.terminals.active == null) {
-            SideRail(runtime, state, handlers, dock, side, voice, Modifier.fillMaxSize().safePadding())
+            SideRail(runtime, state, handlers, dock, side, Modifier.fillMaxSize().safePadding())
         }
     } else {
         Box(
@@ -222,15 +216,13 @@ private fun DesktopScreen(
             // Hidden while a terminal tile types: it would sit on the keyboard, over the tile.
             if (side == null && (runtime.terminals.active == null || runtime.terminals.keyboardLeaving)) {
                 Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Bottom) {
-                    // Over the dock and whatever stands on it, where the prototype pencils what the agent is doing.
-                    if (!panelShown) MarginNote(voice)
                     // Home only: the open app list has everything.
-                    if (LauncherStyle.recentApps && !panelShown) RecentStrip(runtime, handlers)
+                    if (Pack.recentApps && !panelShown) RecentStrip(runtime, handlers)
                     // Stays laid out under the open list, so what it measures for home and what it's hearing carry on.
                     Box(Modifier.fadesUnderDrawer(state)) {
                         // Insets itself by the grid gap, so it lines up with the tiles and the gap still takes taps.
                         // A drag upwards from the dock opens the app list, as from the pages above it.
-                        DockBand(runtime, state, dock, voice, Modifier.opensDrawer(state, screenHeight) { runtime.terminals.active == null })
+                        DockBand(runtime, state, dock, Modifier.opensDrawer(state, screenHeight) { runtime.terminals.active == null })
                         if (panelShown) DockCover(state, Modifier.matchParentSize())
                     }
                 }
@@ -270,12 +262,6 @@ private fun DesktopScreen(
 
     // Every page at once, over the whole window: over the dock too, and under the ring and the full-screen panels.
     Overview(runtime, state)
-
-    // What Oma hears from the dock's button, handwritten on the paper over all of home, as the assistant's window shows it.
-    ListeningLayer(
-        if (voice.taking) listeningLook(ListeningPhase.Listening, voice.beat ?: voice.speech.text) else null,
-        onAct = { voice.cancel() },
-    )
 
     // The agent's light along the screen's edge, over home and its dock and in nothing's way: it takes no touch and no room.
     HomeRing()

@@ -266,6 +266,19 @@ object AgentTasks {
         OmaRing.task(working, pending.size, succeeded = label == "Done")
         OmaTiles.refresh(context)
         AgentNotices.task(context, working, label, answer, approvals.size)
+        writeStatus(context)
+    }
+
+    /**
+     * The task as a widget can read it: a `file("~/.cache/oma/agent.json")` source sees every change the
+     * moment it is written. Home has no strip or note of its own for this; the widget is the place for it.
+     */
+    private fun writeStatus(context: Context) {
+        runCatching {
+            val file = File((context.applicationContext as App).runtime.proot.home, AGENT_STATUS_FILE)
+            file.parentFile?.mkdirs()
+            file.writeText(agentStatus(working, label, answer, approvals.size, System.currentTimeMillis() / 1000).toString())
+        }
     }
 }
 
@@ -293,6 +306,32 @@ data class PageAsk(val page: String, val started: Long, val ended: Long? = null)
 private val SESSION_ID = Regex("[0-9a-fA-F-]{36}")
 
 /** [resume] is the session id of the conversation to continue; anything else starts a new one. */
+/** Where the agent's status is written in the Linux home, for widgets. */
+const val AGENT_STATUS_FILE = ".cache/oma/agent.json"
+
+/**
+ * The agent's task for a widget: whether it is `working`, how many `approvals` wait, `state` as one word
+ * (working, waiting, done, stopped, failed or ready), `doing` as home used to pencil it, the first lines of
+ * the last `answer`, and when this was `updated` in Unix seconds.
+ */
+fun agentStatus(working: Boolean, label: String, answer: String, approvals: Int, now: Long): JSONObject {
+    val state = when {
+        approvals > 0 -> "waiting"
+        working -> "working"
+        label == "Done" -> "done"
+        label == "Stopped" -> "stopped"
+        label == "Ready" -> "ready"
+        else -> "failed"
+    }
+    return JSONObject()
+        .put("working", working).put("approvals", approvals).put("state", state).put("label", label)
+        .put("doing", if (working || approvals > 0) marginNote(label) else "")
+        .put("answer", answer.trim().take(AGENT_STATUS_ANSWER)).put("updated", now)
+}
+
+/** How much of an answer the status file carries: enough for a tile, not the whole thread. */
+const val AGENT_STATUS_ANSWER = 400
+
 fun claudeStreamCommand(resume: String? = null): String = "claude -p " + (resume?.takeIf(SESSION_ID::matches)?.let { "--resume $it " } ?: "") + "--input-format stream-json --output-format stream-json --verbose --permission-mode auto --permission-prompt-tool stdio --allowedTools ${shellQuote("Bash(oma-phone *)")} Read"
 
 fun backgroundAgentCommand(agent: String, prompt: String, images: List<String> = emptyList()): String = when (agent) {

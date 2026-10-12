@@ -6,7 +6,6 @@ import android.os.Looper
 import android.view.Surface
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,9 +22,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalWindowInfo
@@ -92,7 +88,6 @@ internal fun SideRail(
     handlers: AppHandlers,
     dock: DockStore,
     side: HomeSide,
-    voice: AgentVoice,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -103,51 +98,43 @@ internal fun SideRail(
         val strip = @Composable { if (Pack.recentApps) RecentStrip(runtime, handlers, vertical = true) }
         if (side == HomeSide.Left) {
             Spacer(Modifier.width(6.dp))
-            DockRail(runtime, state, dock, voice)
+            DockRail(runtime, state, dock)
             Spacer(Modifier.width(6.dp))
             strip()
         } else {
             strip()
             Spacer(Modifier.width(6.dp))
-            DockRail(runtime, state, dock, voice)
+            DockRail(runtime, state, dock)
             Spacer(Modifier.width(6.dp))
         }
     }
 }
 
 /**
- * The dock stood on end: its pinned apps down the rail, as many as fit, and the agent button below them.
- * A tap on the rail between the icons opens the app list. While the button is held, how loud it hears
- * runs up the rail's edge; the rail is too narrow for the words.
+ * The dock stood on end: its pinned apps down the rail, as many as fit, and the app list's button and the
+ * pen's below them. A tap on the rail between the icons opens the app list.
  */
 @Composable
 private fun DockRail(
     runtime: Runtime,
     state: LauncherState,
     dock: DockStore,
-    voice: AgentVoice,
 ) {
-    val listening = voice.speech.listening
-    val accent = Pack.accent
     Column(
         Modifier
             .width(PromptBarHeight)
             .fillMaxHeight()
-            .dockBar(listening)
-            .drawWithContent {
-                drawContent()
-                if (listening) {
-                    val h = size.height * (0.05f + 0.95f * voice.level.value)
-                    drawRect(accent, Offset(0f, size.height - h), Size(3.dp.toPx(), h))
-                }
-            },
+            .then(if (Pack.dockButtons) Modifier else Modifier.dockBar()),
         horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(DockGap),
     ) {
-        // The click is the icons' area's, not the whole rail's: the agent button's taps are its own.
+        var shown = 0
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().clickable { state.open() }.padding(vertical = DockGap)) {
             val count = with(LocalDensity.current) { dockFits(constraints.maxHeight, DockSlot.roundToPx(), DockGap.roundToPx()) }
-            Column(verticalArrangement = Arrangement.spacedBy(DockGap)) { DockCells(runtime, dock, count) }
+            val entries = dockEntries(runtime, dock, count)
+            shown = entries.size
+            Column(verticalArrangement = Arrangement.spacedBy(DockGap)) { DockCells(runtime, dock, entries) }
         }
-        AgentButton(runtime, state, voice)
+        DockKeys(state, first = shown, slot = DockSlot, u = 1f)
     }
 }

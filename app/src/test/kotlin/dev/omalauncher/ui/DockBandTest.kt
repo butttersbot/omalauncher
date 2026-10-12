@@ -30,8 +30,10 @@ class DockBandTest {
         assertEquals(312, bandHeight(300, 6))
     }
 
-    @Test fun iconsKeepAtLeastEightBetweenThem() {
-        assertTrue(DockGap >= 8.dp)
+    @Test fun iconsKeepTheHomeGapBetweenThemAndTheDockEdgeIsInset() {
+        assertEquals(6.dp, DockGap)
+        assertEquals(HomeGap, DockGap)
+        assertEquals(14.dp, DockEdge)
     }
 
     @Test fun onlyAPhysicalKeyboardPutsTheCursorInTheSearchFieldOnOpening() {

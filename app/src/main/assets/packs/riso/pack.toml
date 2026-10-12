@@ -137,6 +137,6 @@ focus_color = "foreground"
 focus_width = 4
 
 [dock.shadow]
-x = 3
-y = 3
+x = 5
+y = 5
 color = "accent"

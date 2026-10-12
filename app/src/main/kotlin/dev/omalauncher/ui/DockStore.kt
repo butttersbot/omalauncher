@@ -11,14 +11,12 @@ import dev.omalauncher.upgrade.mapObjects
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** Key of the dock's built-in entry: the Oma chat, which is not an installed app. */
+/** Key of the entry the dock once always had for the Oma chat; a saved dock that still has it reads without it. */
 const val OMA_CHAT_KEY = "oma:chat"
 
 /**
  * One thing pinned to the dock. An app is keyed and saved the way a home shortcut is
  * ([dev.omalauncher.widgets.Shortcuts]): `app:` and the Android app's key, or `linux:` and the desktop id.
- * The built-in Oma chat has [OMA_CHAT_KEY] and neither a [component] nor a [linux] entry; it is always
- * in the dock, since nothing could pin it back.
  */
 data class DockEntry(
     val key: String,
@@ -29,20 +27,17 @@ data class DockEntry(
     val profile: Long? = null,
     /** A snapshot of the desktop entry, as home shortcuts keep one. */
     val linux: LinuxApp? = null,
-) {
-    /** The Oma chat rather than an app. */
-    val builtIn get() = key == OMA_CHAT_KEY
-}
+)
 
-/** The dock of a launcher that never saved one: the Oma chat alone. */
-internal val DefaultDock = listOf(DockEntry(OMA_CHAT_KEY, "Oma"))
+/** The dock of a launcher that never saved one: nothing pinned yet, as the prototype's dock has no button of Oma's. */
+internal val DefaultDock = emptyList<DockEntry>()
 
 /** Pins [entry] after the others; one that's already pinned keeps its place and takes the new label. */
 internal fun List<DockEntry>.pinned(entry: DockEntry): List<DockEntry> =
     if (any { it.key == entry.key }) map { if (it.key == entry.key) entry else it } else this + entry
 
-/** Takes the app [key] out; the Oma chat stays. */
-internal fun List<DockEntry>.unpinned(key: String): List<DockEntry> = filter { it.key != key || it.builtIn }
+/** Takes the app [key] out. */
+internal fun List<DockEntry>.unpinned(key: String): List<DockEntry> = filter { it.key != key }
 
 /** Moves the entry [key] by [step] places (negative is earlier), stopping at either end. */
 internal fun List<DockEntry>.moved(
@@ -72,7 +67,7 @@ internal fun List<DockEntry>.actions(key: String): List<DockAction> {
     return listOfNotNull(
         DockAction.Earlier.takeIf { i > 0 },
         DockAction.Later.takeIf { i < lastIndex },
-        DockAction.Unpin.takeIf { !this[i].builtIn },
+        DockAction.Unpin,
     )
 }
 
@@ -121,14 +116,13 @@ internal fun writeDock(entries: List<DockEntry>): String {
 }
 
 /**
- * The saved dock, or [DefaultDock] when there is none or it can't be read. Entries that are neither an app
- * nor the Oma chat are skipped, and a key keeps its first entry only. A dock saved without the Oma chat
- * can only be damaged, as no menu unpins it: it gets the chat back, first.
+ * The saved dock, or [DefaultDock] when there is none or it can't be read. Entries that aren't an app are
+ * skipped (the Oma chat's old entry among them), and a key keeps its first entry only.
  */
 internal fun readDock(text: String?): List<DockEntry> {
     val array = Versioned.read(text, DOCK_VERSION) as? JSONArray ?: return DefaultDock
     val saved = readEntries(array)
-    return if (saved.any { it.builtIn }) saved else DefaultDock + saved
+    return saved
 }
 
 private fun readEntries(array: JSONArray): List<DockEntry> =
@@ -151,7 +145,7 @@ private fun readEntries(array: JSONArray): List<DockEntry> =
                 component = o.optString("component").ifEmpty { null },
                 profile = if (o.has("profile")) o.getLong("profile") else null,
                 linux = linux,
-            ).takeIf { it.builtIn || it.component != null || it.linux != null }
+            ).takeIf { it.component != null || it.linux != null }
         }.distinctBy { it.key }
 
 /** A dock entry as the notebook keeps it, and back. */

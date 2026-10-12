@@ -11,46 +11,54 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DockStoreTest {
-    private val chat = DefaultDock.single()
+    /** The entry the dock once always had for the Oma chat; old saved docks may still carry it. */
+    private val oldChat = DockEntry(OMA_CHAT_KEY, "Oma")
     private val mail = DockEntry("app:com.mail/.Main", "Mail", component = "com.mail/com.mail.Main")
     private val workMail = DockEntry("app:com.mail/.Main@10", "Mail", component = "com.mail/com.mail.Main", profile = 10L)
     private val foot = DockEntry("linux:foot", "Foot", linux = LinuxApp("Foot", "foot", terminal = false, id = "foot", wmClass = null, icon = "foot"))
 
     private fun keys(entries: List<DockEntry>) = entries.map { it.key }
 
-    @Test fun aLauncherThatNeverSavedADockHasTheChatAlone() {
-        assertEquals(listOf(OMA_CHAT_KEY), keys(readDock(null)))
-        assertEquals(listOf(OMA_CHAT_KEY), keys(readDock("")))
-        assertTrue(readDock(null).single().builtIn)
+    @Test fun aLauncherThatNeverSavedADockHasNothingPinned() {
+        assertTrue(DefaultDock.isEmpty())
+        assertEquals(emptyList<DockEntry>(), readDock(null))
+        assertEquals(emptyList<DockEntry>(), readDock(""))
     }
 
-    @Test fun anUnreadableDockFallsBackToTheDefault() {
+    @Test fun anUnreadableDockFallsBackToTheEmptyDefault() {
+        assertEquals(emptyList<DockEntry>(), readDock("{not json"))
         assertEquals(DefaultDock, readDock("{not json"))
         // An object where the array should be.
-        assertEquals(DefaultDock, readDock(Versioned.write(1, JSONObject())))
+        assertEquals(emptyList<DockEntry>(), readDock(Versioned.write(1, JSONObject())))
     }
 
     @Test fun roundTripsAppsWithTheirProfileAndOrder() {
-        val saved = listOf(chat, workMail, foot, mail)
+        val saved = listOf(workMail, foot, mail)
         assertEquals(saved, readDock(writeDock(saved)))
     }
 
-    @Test fun aDockSavedWithoutTheChatGetsItBackFirst() {
-        // No menu unpins the chat, so a dock without it is damaged, and nothing else could pin it back.
-        assertEquals(DefaultDock, readDock(writeDock(emptyList())))
-        assertEquals(listOf(chat, mail, foot), readDock(writeDock(listOf(mail, foot))))
-        // Where it was put, it stays.
-        assertEquals(listOf(mail, chat), readDock(writeDock(listOf(mail, chat))))
+    @Test fun aDockSavedEmptyStaysEmptyAndNothingIsAddedToIt() {
+        assertEquals(emptyList<DockEntry>(), readDock(writeDock(emptyList())))
+        assertEquals(listOf(mail, foot), readDock(writeDock(listOf(mail, foot))))
     }
 
-    @Test fun aDockWhoseEntriesAreAllUnusableStillHasTheChat() {
+    @Test fun anOldSavedChatEntryIsDroppedOnReadWhereverItWas() {
+        // The dock once always had the chat; an entry that is neither an Android app nor a desktop one is skipped.
+        assertEquals(listOf(mail, foot), readDock(writeDock(listOf(oldChat, mail, foot))))
+        assertEquals(listOf(mail, foot), readDock(writeDock(listOf(mail, oldChat, foot))))
+        assertEquals(listOf(mail), readDock(writeDock(listOf(mail, oldChat))))
+        assertEquals(emptyList<DockEntry>(), readDock(writeDock(listOf(oldChat))))
+    }
+
+    @Test fun aDockWhoseEntriesAreAllUnusableIsEmpty() {
         val array = JSONArray().put(JSONObject().put("key", "mystery").put("label", "?")).put(JSONObject().put("label", "no key"))
-        assertEquals(DefaultDock, readDock(Versioned.write(1, array)))
+        assertEquals(emptyList<DockEntry>(), readDock(Versioned.write(1, array)))
     }
 
-    @Test fun theChatCannotBeUnpinned() {
-        assertEquals(listOf(chat, mail), listOf(chat, mail).unpinned(OMA_CHAT_KEY))
-        assertEquals(listOf(chat, mail), listOf(chat, mail).after(DockAction.Unpin, OMA_CHAT_KEY))
+    @Test fun anyEntryCanBeUnpinned() {
+        assertEquals(listOf(mail), listOf(foot, mail).unpinned(foot.key))
+        assertEquals(listOf(foot), listOf(foot, mail).after(DockAction.Unpin, mail.key))
+        assertEquals(emptyList<DockEntry>(), listOf(mail).unpinned(mail.key))
     }
 
     /** A store over one saved document, as the preferences file is. */
@@ -70,22 +78,22 @@ class DockStoreTest {
         val notebook = dev.omalauncher.widgets.LiveNotebook()
         val store = DockStore(notebook)
         store.pin(mail)
-        store.act(DockAction.Later, OMA_CHAT_KEY)
-        assertEquals(DefaultDock, store.items.toList())
+        store.act(DockAction.Later, mail.key)
+        assertEquals(emptyList<DockEntry>(), store.items.toList())
         assertTrue(notebook.dock.isEmpty())
         // Opened with a saved dock, it shows that and takes pins.
-        notebook.open(dev.omalauncher.widgets.layout.Notebook(9, listOf(dev.omalauncher.widgets.layout.NotebookPage("p1", "Page 1")), dock = listOf(chat.pinned(), foot.pinned())), kept = true)
+        notebook.open(dev.omalauncher.widgets.layout.Notebook(9, listOf(dev.omalauncher.widgets.layout.NotebookPage("p1", "Page 1")), dock = listOf(workMail.pinned(), foot.pinned())), kept = true)
         store.reload()
-        assertEquals(listOf(chat, foot), store.items.toList())
+        assertEquals(listOf(workMail, foot), store.items.toList())
         store.pin(mail)
-        assertEquals(listOf(chat, foot, mail), store.items.toList())
-        assertEquals(listOf(chat, foot, mail), notebook.dock.map { it.dockEntry() })
+        assertEquals(listOf(workMail, foot, mail), store.items.toList())
+        assertEquals(listOf(workMail, foot, mail), notebook.dock.map { it.dockEntry() })
     }
 
     @Test fun theStoreSavesWhatItPinsAndReadsItBack() {
         val saved = Saved()
         val store = saved.store()
-        assertEquals(DefaultDock, store.items.toList())
+        assertEquals(emptyList<DockEntry>(), store.items.toList())
         assertEquals(0, saved.writes)
         store.pin(mail)
         store.pin(workMail)
@@ -93,48 +101,52 @@ class DockStoreTest {
         assertEquals(3, saved.writes)
         assertTrue(store.isPinned(workMail.key))
         assertFalse(store.isPinned("app:gone/.Gone"))
-        assertEquals(listOf(chat, mail, workMail, foot), store.items.toList())
-        assertEquals(listOf(chat, mail, workMail, foot), saved.store().items.toList())
+        assertEquals(listOf(mail, workMail, foot), store.items.toList())
+        assertEquals(listOf(mail, workMail, foot), saved.store().items.toList())
     }
 
     @Test fun theStoreUnpinsOneAppAndKeepsTheRest() {
-        val saved = Saved(writeDock(listOf(chat, mail, workMail, foot)))
+        val saved = Saved(writeDock(listOf(mail, workMail, foot)))
         val store = saved.store()
         store.unpin(mail.key)
-        assertEquals(listOf(chat, workMail, foot), store.items.toList())
-        assertEquals(listOf(chat, workMail, foot), saved.store().items.toList())
-        store.unpin(OMA_CHAT_KEY)
-        assertEquals(listOf(chat, workMail, foot), saved.store().items.toList())
+        assertEquals(listOf(workMail, foot), store.items.toList())
+        assertEquals(listOf(workMail, foot), saved.store().items.toList())
+        store.unpin(foot.key)
+        assertEquals(listOf(workMail), saved.store().items.toList())
+        store.unpin(workMail.key)
+        assertEquals(emptyList<DockEntry>(), saved.store().items.toList())
     }
 
     @Test fun theStoreSavesMovesAndMenuActions() {
-        val saved = Saved(writeDock(listOf(chat, mail, foot)))
+        val saved = Saved(writeDock(listOf(workMail, mail, foot)))
         val store = saved.store()
-        store.act(DockAction.Later, chat.key)
-        assertEquals(listOf(mail, chat, foot), saved.store().items.toList())
+        store.act(DockAction.Later, workMail.key)
+        assertEquals(listOf(mail, workMail, foot), saved.store().items.toList())
         store.act(DockAction.Earlier, foot.key)
-        assertEquals(listOf(mail, foot, chat), saved.store().items.toList())
+        assertEquals(listOf(mail, foot, workMail), saved.store().items.toList())
         store.act(DockAction.Unpin, mail.key)
-        assertEquals(listOf(foot, chat), store.items.toList())
-        assertEquals(listOf(foot, chat), saved.store().items.toList())
+        assertEquals(listOf(foot, workMail), store.items.toList())
+        assertEquals(listOf(foot, workMail), saved.store().items.toList())
     }
 
     @Test fun theStoreDoesNotWriteWhenNothingChanged() {
-        val saved = Saved(writeDock(listOf(chat, mail)))
+        val saved = Saved(writeDock(listOf(workMail, mail)))
         val store = saved.store()
         store.pin(mail)
         store.unpin(foot.key)
-        store.act(DockAction.Earlier, chat.key)
+        store.act(DockAction.Earlier, workMail.key)
         assertEquals(0, saved.writes)
-        assertEquals(listOf(chat, mail), store.items.toList())
+        assertEquals(listOf(workMail, mail), store.items.toList())
     }
 
-    @Test fun aDamagedDockIsRepairedInMemoryAndSavedOnTheNextChange() {
-        val saved = Saved(writeDock(listOf(mail)))
+    @Test fun anOldDockWithTheChatShowsWithoutItAndIsSavedWithoutItOnTheNextChange() {
+        val saved = Saved(writeDock(listOf(oldChat, mail)))
         val store = saved.store()
-        assertEquals(listOf(chat, mail), store.items.toList())
+        assertEquals(listOf(mail), store.items.toList())
+        assertEquals(0, saved.writes)
         store.pin(foot)
-        assertEquals(listOf(chat, mail, foot), readDock(saved.text))
+        assertEquals(listOf(mail, foot), readDock(saved.text))
+        assertEquals(listOf(mail.key, foot.key), JSONObject(saved.text!!).getJSONArray("data").let { a -> (0 until a.length()).map { a.getJSONObject(it).getString("key") } })
     }
 
     @Test fun isSavedVersionedUnderAShortcutsFieldNames() {
@@ -158,22 +170,23 @@ class DockStoreTest {
                 .put(JSONObject().put("key", "app:a/.A").put("label", "A").put("component", "a/a.A"))
                 // No label.
                 .put(JSONObject().put("key", "app:b/.B").put("component", "b/b.B"))
-                // Neither an app nor the chat.
+                // Not an app.
                 .put(JSONObject().put("key", "mystery").put("label", "?"))
                 .put(JSONObject().put("key", "app:a/.A").put("label", "A again").put("component", "a/a.A"))
                 .put(JSONObject().put("key", OMA_CHAT_KEY).put("label", "Oma"))
         val read = readDock(Versioned.write(1, array))
-        assertEquals(listOf("app:a/.A", OMA_CHAT_KEY), keys(read))
+        // The chat has no component or desktop entry, so it is skipped like the other.
+        assertEquals(listOf("app:a/.A"), keys(read))
         assertEquals("A", read.first().label)
     }
 
     @Test fun pinningAddsAtTheEnd() {
-        assertEquals(listOf(OMA_CHAT_KEY, mail.key, foot.key), keys(DefaultDock.pinned(mail).pinned(foot)))
+        assertEquals(listOf(mail.key, foot.key), keys(DefaultDock.pinned(mail).pinned(foot)))
     }
 
     @Test fun pinningAgainKeepsThePlaceAndTakesTheNewLabel() {
-        val dock = listOf(chat, mail, foot).pinned(mail.copy(label = "Post"))
-        assertEquals(listOf(OMA_CHAT_KEY, mail.key, foot.key), keys(dock))
+        val dock = listOf(workMail, mail, foot).pinned(mail.copy(label = "Post"))
+        assertEquals(listOf(workMail.key, mail.key, foot.key), keys(dock))
         assertEquals("Post", dock[1].label)
     }
 
@@ -186,33 +199,36 @@ class DockStoreTest {
     }
 
     @Test fun unpinningSomethingNotPinnedChangesNothing() {
-        assertEquals(listOf(chat, mail), listOf(chat, mail).unpinned(foot.key))
+        assertEquals(listOf(workMail, mail), listOf(workMail, mail).unpinned(foot.key))
     }
 
     @Test fun movesByOnePlaceAndStopsAtTheEnds() {
-        val dock = listOf(chat, mail, foot)
-        assertEquals(listOf(mail.key, OMA_CHAT_KEY, foot.key), keys(dock.moved(mail.key, -1)))
-        assertEquals(listOf(OMA_CHAT_KEY, foot.key, mail.key), keys(dock.moved(mail.key, 1)))
-        assertSame(dock, dock.moved(chat.key, -1))
+        val dock = listOf(workMail, mail, foot)
+        assertEquals(listOf(mail.key, workMail.key, foot.key), keys(dock.moved(mail.key, -1)))
+        assertEquals(listOf(workMail.key, foot.key, mail.key), keys(dock.moved(mail.key, 1)))
+        assertSame(dock, dock.moved(workMail.key, -1))
         assertSame(dock, dock.moved(foot.key, 1))
         assertSame(dock, dock.moved("app:gone/.Gone", 1))
-        assertEquals(listOf(foot.key, OMA_CHAT_KEY, mail.key), keys(dock.moved(foot.key, -5)))
+        assertEquals(listOf(foot.key, workMail.key, mail.key), keys(dock.moved(foot.key, -5)))
     }
 
     @Test fun theMenuOffersOnlyWhatCanBeDone() {
-        val dock = listOf(chat, mail, foot)
-        assertEquals(listOf(DockAction.Later), dock.actions(chat.key))
+        val dock = listOf(workMail, mail, foot)
+        // Every entry can be unpinned; the ends can't move further out.
+        assertEquals(listOf(DockAction.Later, DockAction.Unpin), dock.actions(workMail.key))
         assertEquals(listOf(DockAction.Earlier, DockAction.Later, DockAction.Unpin), dock.actions(mail.key))
         assertEquals(listOf(DockAction.Earlier, DockAction.Unpin), dock.actions(foot.key))
-        assertEquals(emptyList<DockAction>(), DefaultDock.actions(chat.key))
+        // The only one in the dock can still be unpinned.
+        assertEquals(listOf(DockAction.Unpin), listOf(mail).actions(mail.key))
+        assertEquals(emptyList<DockAction>(), DefaultDock.actions(mail.key))
         assertEquals(emptyList<DockAction>(), dock.actions("app:gone/.Gone"))
     }
 
     @Test fun menuActionsDoWhatTheySay() {
-        val dock = listOf(chat, mail, foot)
-        assertEquals(listOf(mail.key, OMA_CHAT_KEY, foot.key), keys(dock.after(DockAction.Earlier, mail.key)))
-        assertEquals(listOf(OMA_CHAT_KEY, foot.key, mail.key), keys(dock.after(DockAction.Later, mail.key)))
-        assertEquals(listOf(OMA_CHAT_KEY, foot.key), keys(dock.after(DockAction.Unpin, mail.key)))
+        val dock = listOf(workMail, mail, foot)
+        assertEquals(listOf(mail.key, workMail.key, foot.key), keys(dock.after(DockAction.Earlier, mail.key)))
+        assertEquals(listOf(workMail.key, foot.key, mail.key), keys(dock.after(DockAction.Later, mail.key)))
+        assertEquals(listOf(workMail.key, foot.key), keys(dock.after(DockAction.Unpin, mail.key)))
     }
 
     @Test fun drawerMenuNamesTheDockActionByWhetherTheAppIsPinned() {
