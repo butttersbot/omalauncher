@@ -206,6 +206,26 @@ class PhonePagesTest {
         assertEquals(listOf(2), book.shown)
     }
 
+    /** Said aloud, a page is as often its number as its name: "open my page two" has to find the second page. */
+    @Test fun aPageCanBeAskedForByItsPlaceWhenNoNameMatches() {
+        val pages = listOf("Today", "Trip", "Trip to Lisbon")
+        assertEquals(PageMatch.Found(1), matchPage(pages, "page two"))
+        assertEquals(PageMatch.Found(1), matchPage(pages, "my second page"))
+        assertEquals(PageMatch.Found(2), matchPage(pages, "Page 3"))
+        assertEquals(PageMatch.Found(2), matchPage(pages, "the last page"))
+        assertEquals(PageMatch.Found(0), matchPage(pages, "page number one"))
+        // A place the notebook doesn't have is no page, and more than a number is not a place.
+        assertEquals(PageMatch.None, matchPage(pages, "page four"))
+        assertEquals(PageMatch.None, matchPage(pages, "page two and three"))
+        assertEquals(PageMatch.None, matchPage(pages, "page zero"))
+    }
+
+    /** A page that is called by a number keeps it: the name is looked for first. */
+    @Test fun aNameThatLooksLikeAPlaceWins() {
+        assertEquals(PageMatch.Found(0), matchPage(listOf("Page 2", "Page 1"), "page 2"))
+        assertEquals(PageMatch.Found(1), matchPage(listOf("Two", "Page two"), "page two"))
+    }
+
     @Test fun noMatchOrSeveralChangesNothingAndListsTheNames() {
         val book = Book()
         val none = ask(book, """{"command":"page","name":"holiday"}""")

@@ -73,6 +73,8 @@ private fun plain(name: String): String {
  * Finds [asked] among [names], the pages in order: the page called exactly that, else the one whose name starts
  * with it, else the one whose name contains it. The first of those three that matches anything decides: one
  * page there is [PageMatch.Found], several are [PageMatch.Several], and a weaker kind of match is not looked at.
+ * Only when no name matches at all is [asked] read as a page's place in the notebook, as it is spoken:
+ * "page two", "the second page", "page 2", "last page".
  */
 fun matchPage(
     names: List<String>,
@@ -88,7 +90,34 @@ fun matchPage(
         if (hits.size == 1) return PageMatch.Found(hits.single())
         if (hits.size > 1) return PageMatch.Several(hits)
     }
+    pagePlace(want, names.size)?.let { return PageMatch.Found(it) }
     return PageMatch.None
+}
+
+private val PLACES =
+    listOf(
+        listOf("1", "one", "first", "1st"), listOf("2", "two", "second", "2nd"), listOf("3", "three", "third", "3rd"),
+        listOf("4", "four", "fourth", "4th"), listOf("5", "five", "fifth", "5th"), listOf("6", "six", "sixth", "6th"),
+        listOf("7", "seven", "seventh", "7th"), listOf("8", "eight", "eighth", "8th"), listOf("9", "nine", "ninth", "9th"),
+        listOf("10", "ten", "tenth", "10th"), listOf("11", "eleven", "eleventh", "11th"), listOf("12", "twelve", "twelfth", "12th"),
+    )
+
+/** Words that go around a page's number when it is said aloud. */
+private val AROUND = setOf("page", "my", "the", "number", "no", "#")
+
+/**
+ * The place, from 0, that [asked] (already plain) names among [count] pages: one number, in digits or as a
+ * word, with nothing else but the words that go around it; or "last". Null for anything else, and for a
+ * place the notebook doesn't have.
+ */
+internal fun pagePlace(
+    asked: String,
+    count: Int,
+): Int? {
+    val words = asked.split(' ', '.', ',').filter { it.isNotEmpty() && it !in AROUND }
+    val word = words.singleOrNull() ?: return null
+    val place = if (word == "last") count - 1 else PLACES.indexOfFirst { word in it }.takeIf { it >= 0 } ?: word.toIntOrNull()?.minus(1) ?: return null
+    return place.takeIf { it in 0 until count }
 }
 
 /** The notebook's pages as the bridge's page commands see them. Main thread, like the notebook. */
