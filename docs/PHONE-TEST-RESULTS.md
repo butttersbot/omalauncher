@@ -1,5 +1,18 @@
 # Phone test results
 
+## Latest: notes and stickers can be carried to another page (2026-10-12, 16:17–16:26 PDT)
+Asked by Boss: a long press lifts a note, but it could not be dragged from one page to another.
+- Change (commit 0c1ec9a): `carryScrap` in widgets/annotations/Annotations.kt (the rule: off one page, onto another at a place, the owner's and on top, a new id if the page has one like it, refused if that page is full), `AnnotationBook.moveScrap`, and in ui/Notes.kt the carry now follows the finger in screen coordinates and changes page through a `Crossing` that HomeGrid.kt gives it: side by side the finger picks the page; resting at a side edge for PAGE_TURN_MS turns the page, as for a tile.
+- `oma-build`: PASS, 684 tests (5 new in AnnotationsTest), 0 failures.
+- Seen in Oma Dev on the inner screen (a note selected by long press, then dragged with `oma-phone swipe`):
+  - PASS — dragged from Page 1 to Page 2 of the open pair: it left Page 1, landed on Page 2 under the finger, still selected with its edit/delete bar and handle.
+  - PASS — a note on Page 3 held at the left edge: the page turned to "Page 1 + Page 2" and the note landed on Page 1.
+  - As built — a note on Page 2 held at the right edge: the page turned to Page 3, but the finger was then over the empty "+ new page" half, so the note stayed on Page 2 (a tile has nowhere to land there either).
+- NOT tested: the cover screen (one page at a time), stickers by hand, a long press and drag in one touch (`oma-phone swipe` cannot hold first; it only drags a note already selected), and a full target page.
+- Not promoted: the real launcher does not have this yet. Asked Boss.
+- Oma Dev is left with two test notes ("edge test" on Page 1, "drag test" on Page 2).
+- Limit found: `oma-phone swipe` refuses a duration over 2000 ms ("Failed requirement.").
+
 ## Latest: the closed-screen checks, run on the OPEN inner display (2026-10-12, 16:13–16:16 PDT)
 Boss opened the phone and asked for the inner-display tests. ON-PHONE-TESTS.md lists 1–6 for the cover screen only, so these are the same checks adapted to the inner screen (2448x1848), build 29 with note placement, look riso. The cover-screen versions are still not done as a set.
 1. PASS — home shows both pages side by side, label "Page 1 + Page 2  1/2"; the dock is one row of ten app icons, then "↑" and "✎".
