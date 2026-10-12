@@ -1,6 +1,7 @@
 package dev.omalauncher
 
 import dev.omalauncher.assist.backgroundAgentCommand
+import dev.omalauncher.assist.claudeStreamCommand
 import org.junit.Assert.*
 import org.junit.Test
 import java.nio.file.Files
@@ -26,6 +27,12 @@ class AssistantCommandTest {
                 assertFalse(output.contains("dangerously"))
             }
         } finally { dir.deleteRecursively() }
+    }
+    @Test fun followUpsResumeTheSavedSessionAndNothingElse() {
+        assertFalse(claudeStreamCommand().contains("--resume"))
+        val id = "9c2386fd-2736-408a-a815-6f6732bddf85"
+        assertTrue(claudeStreamCommand(id).startsWith("claude -p --resume $id --input-format stream-json "))
+        assertEquals(claudeStreamCommand(), claudeStreamCommand("x; touch unsafe"))
     }
     @Test fun unsupportedAgentsDoNotSilentlyLaunchInteractiveTerminal() {
         assertThrows(IllegalStateException::class.java) { backgroundAgentCommand("grok", "test") }

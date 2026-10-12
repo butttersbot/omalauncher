@@ -59,6 +59,7 @@ class AssistantPanel(private val owner: Context, private val dismiss: () -> Unit
     private lateinit var sendButton: Button
     private lateinit var speakButton: Button
     private lateinit var approvalButton: Button
+    private lateinit var newThreadButton: Button
     private var disposed = false
     private var message: String? = null
     private val update = object : Runnable {
@@ -103,6 +104,14 @@ class AssistantPanel(private val owner: Context, private val dismiss: () -> Unit
         addView(stopButton)
         approvalButton = Button(owner).apply { text = "Review approval"; setOnClickListener { reviewApproval() } }
         addView(approvalButton)
+        newThreadButton = Button(owner).apply {
+            text = "New thread"
+            setOnClickListener {
+                try { AgentTasks.newThread(owner); message = null } catch (e: Exception) { message = e.message }
+                refresh()
+            }
+        }
+        addView(newThreadButton)
         refresh(); handler.post(update)
     }
     fun refresh() {
@@ -112,6 +121,9 @@ class AssistantPanel(private val owner: Context, private val dismiss: () -> Unit
         sendButton.isEnabled = !AgentTasks.working
         speakButton.isEnabled = !AgentTasks.working
         input.isEnabled = !AgentTasks.working
+        val followUp = AgentTasks.thread != null
+        input.hint = if (followUp) "Follow up on this thread…" else "What would you like me to do?"
+        newThreadButton.visibility = if (followUp && !AgentTasks.working) VISIBLE else GONE
         resultScroll.visibility = if (output.text.isNotBlank()) VISIBLE else GONE
         stopButton.visibility = if (AgentTasks.working) VISIBLE else GONE
         approvalButton.visibility = if (AgentTasks.approvals.isNotEmpty()) VISIBLE else GONE
