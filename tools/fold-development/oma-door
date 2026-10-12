@@ -1,0 +1,168 @@
+#!/usr/bin/env python3
+"""oma-door: a small private door for the Mac session to reach the agent on the Fold when adb can't.
+
+Boss allowed this on 2026-10-12. It listens on the phone's Tailscale address only, so it is reachable from his
+own tailnet and from nowhere else, and every request must carry the token in /root/.config/oma-door/token. It
+does one thing: hand a prompt to the same agent Oma runs (Claude Code, with the flags the launcher uses), one
+job at a time, and say what came of it. It is not a shell: there is no endpoint that runs a command.
+
+  GET  /health          {ok, busy, job, commit}
+  POST /ask   {prompt}  starts a job; 409 while one runs      -> {id}
+  GET  /job/<id>        {state: running|done|stopped, code, seconds, output (the last 60 kB)}
+  POST /stop            stops the running job
+
+Start it under the launcher's own Linux (so it has the launcher's environment). It ends when the launcher
+restarts. To close the door for good, delete the token file: it then refuses to start.
+"""
+import hmac, json, os, pathlib, secrets, shlex, signal, socket, subprocess, sys, threading, time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+CONFIG = pathlib.Path('/root/.config/oma-door')
+JOBS = pathlib.Path('/root/.cache/oma-door/jobs')
+REPO = '/root/Projects/omalauncher'
+PORT = 8477
+MAX_PROMPT = 20000
+TAIL = 60000
+
+
+def tailscale_address():
+    """The phone's own address on the tailnet (100.64.0.0/10), found without running anything."""
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        probe.connect(('100.100.100.100', 53))
+        address = probe.getsockname()[0]
+    except OSError:
+        return None
+    finally:
+        probe.close()
+    first, second = (int(part) for part in address.split('.')[:2])
+    return address if first == 100 and 64 <= second <= 127 else None
+
+
+lock = threading.Lock()
+job = None  # {'id', 'process', 'started', 'log'}
+
+
+def state_of(entry_id):
+    log = JOBS / (entry_id + '.log')
+    meta = JOBS / (entry_id + '.json')
+    if not log.exists():
+        return None
+    data = log.read_bytes()[-TAIL:].decode('utf-8', 'replace')
+    info = json.loads(meta.read_text()) if meta.exists() else {}
+    with lock:
+        running = job is not None and job['id'] == entry_id and job['process'].poll() is None
+        seconds = int(time.time() - job['started']) if running else info.get('seconds')
+    return {'id': entry_id, 'state': 'running' if running else info.get('state', 'done'), 'code': info.get('code'), 'seconds': seconds, 'output': data}
+
+
+def watch(entry):
+    code = entry['process'].wait()
+    entry['log'].close()
+    stopped = entry.get('stopped', False)
+    (JOBS / (entry['id'] + '.json')).write_text(json.dumps({'state': 'stopped' if stopped else 'done', 'code': code, 'seconds': int(time.time() - entry['started'])}))
+
+
+def ask(prompt):
+    global job
+    with lock:
+        if job is not None and job['process'].poll() is None:
+            return None
+        entry_id = time.strftime('%Y%m%d-%H%M%S-') + secrets.token_hex(3)
+        JOBS.mkdir(parents=True, exist_ok=True)
+        log = open(JOBS / (entry_id + '.log'), 'wb')
+        # The launcher's own way of running Claude for a request: same permission mode, same tools.
+        command = 'claude -p --permission-mode auto --allowedTools ' + shlex.quote('Bash(oma-phone *)') + ' Read -- ' + shlex.quote(prompt) + ' < /dev/null'
+        process = subprocess.Popen(['/bin/bash', '-lc', command], cwd=REPO, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+        job = {'id': entry_id, 'process': process, 'started': time.time(), 'log': log}
+        threading.Thread(target=watch, args=(job,), daemon=True).start()
+        return entry_id
+
+
+def stop():
+    with lock:
+        if job is None or job['process'].poll() is not None:
+            return False
+        job['stopped'] = True
+        try:
+            os.killpg(job['process'].pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        return True
+
+
+class Door(BaseHTTPRequestHandler):
+    server_version = 'oma-door'
+    token = ''
+
+    def log_message(self, form, *args):
+        sys.stderr.write(time.strftime('%H:%M:%S ') + self.address_string() + ' ' + (form % args) + '\n')
+
+    def answer(self, code, body):
+        data = json.dumps(body).encode()
+        self.send_response(code)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def allowed(self):
+        given = self.headers.get('Authorization', '')
+        if hmac.compare_digest(given.encode(), ('Bearer ' + self.token).encode()):
+            return True
+        time.sleep(1)
+        self.answer(401, {'ok': False, 'error': 'no'})
+        return False
+
+    def do_GET(self):
+        if not self.allowed():
+            return
+        if self.path == '/health':
+            with lock:
+                busy = job is not None and job['process'].poll() is None
+                current = job['id'] if job else None
+            commit = subprocess.run(['git', '-C', REPO, 'rev-parse', '--short', 'HEAD'], capture_output=True, text=True).stdout.strip()
+            return self.answer(200, {'ok': True, 'busy': busy, 'job': current, 'commit': commit})
+        if self.path.startswith('/job/'):
+            entry_id = self.path[5:]
+            found = state_of(entry_id) if entry_id.replace('-', '').isalnum() else None
+            return self.answer(200, found) if found else self.answer(404, {'ok': False, 'error': 'no such job'})
+        self.answer(404, {'ok': False, 'error': 'not found'})
+
+    def do_POST(self):
+        if not self.allowed():
+            return
+        length = int(self.headers.get('Content-Length') or 0)
+        if length > MAX_PROMPT * 4:
+            return self.answer(413, {'ok': False, 'error': 'too long'})
+        raw = self.rfile.read(length) if length else b'{}'
+        if self.path == '/stop':
+            return self.answer(200, {'ok': True, 'stopped': stop()})
+        if self.path == '/ask':
+            try:
+                prompt = str(json.loads(raw)['prompt']).strip()
+            except (ValueError, KeyError):
+                return self.answer(400, {'ok': False, 'error': 'a JSON body with "prompt" is needed'})
+            if not prompt or len(prompt) > MAX_PROMPT:
+                return self.answer(400, {'ok': False, 'error': 'prompt empty or too long'})
+            entry_id = ask(prompt)
+            return self.answer(200, {'ok': True, 'id': entry_id}) if entry_id else self.answer(409, {'ok': False, 'error': 'a job is running'})
+        self.answer(404, {'ok': False, 'error': 'not found'})
+
+
+def main():
+    token_file = CONFIG / 'token'
+    if not token_file.exists():
+        sys.exit('oma-door: no token at ' + str(token_file) + '; the door stays shut.')
+    Door.token = token_file.read_text().strip()
+    if len(Door.token) < 32:
+        sys.exit('oma-door: the token is too short; the door stays shut.')
+    address = tailscale_address()
+    if not address:
+        sys.exit('oma-door: this phone has no Tailscale address right now; the door stays shut.')
+    server = ThreadingHTTPServer((address, PORT), Door)
+    print('oma-door listening on ' + address + ':' + str(PORT), flush=True)
+    server.serve_forever()
+
+
+main()
