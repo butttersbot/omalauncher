@@ -344,6 +344,17 @@ class NotebookMigrationTest {
         }
     }
 
+    /** The JVM's org.json refuses nesting past 512 levels with an exception; Android's overflows the stack instead, which this can't raise. */
+    @Test fun aDeeplyNestedDocumentIsUnreadableNotFatal() {
+        val deep = "[".repeat(200_000)
+        val nested = "{\"v\":1,\"data\":{\"cells\":" + "{\"a\":".repeat(100_000) + "1" + "}".repeat(100_000) + "}}"
+        for (text in listOf(deep, nested)) {
+            val m = checked(OldStores(layout = text, legacyCells = text, shortcuts = text, folders = text), listOf(OldWidget("a.owl", 1)))
+            assertEquals(listOf("a.owl"), m.notebook.pages.flatMap { it.items }.map { it.key })
+            assertFalse(m.report.clean)
+        }
+    }
+
     @Test fun wildCellsNeverThrowOrLoseAnItem() {
         val cells =
             mapOf(

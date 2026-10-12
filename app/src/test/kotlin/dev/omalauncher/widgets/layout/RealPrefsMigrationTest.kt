@@ -58,23 +58,29 @@ class RealPrefsMigrationTest {
         old: OldStores,
         notes: MutableList<String>,
     ): List<OldWidget> {
-        val files = File(dir, "widgets").listFiles { f -> f.extension == "owl" }?.sortedBy { it.name }
+        val files = File(dir, "widgets").listFiles { f -> f.extension == "owl" }
         val listed = File(dir, "widgets.txt")
         return when {
             files != null ->
-                files.map { f ->
-                    runCatching { Compiler.compile(f.readText()) }.fold(
-                        { OldWidget(f.name, it.page, it.size) },
-                        {
-                            notes += "${f.name} doesn't compile; taken as page 1 without a size, where the launcher would keep its last page"
-                            OldWidget(f.name, 1)
-                        },
-                    )
-                }
-            listed.exists() -> readWidgets(listed)
+                // As the launcher lists them: by page, then the file's order, then its name. Items without a cell are
+                // placed in this order. A page chosen on the phone moves a widget between pages, not within one.
+                files
+                    .map { f ->
+                        runCatching { Compiler.compile(f.readText()) }.fold(
+                            { OldWidget(f.name, it.page, it.size) to it.order },
+                            {
+                                notes += "${f.name} doesn't compile; taken as page 1 without a size and last in order, where the launcher would keep its last page"
+                                OldWidget(f.name, 1) to 999
+                            },
+                        )
+                    }.sortedWith(compareBy({ it.first.page }, { it.second }, { it.first.key }))
+                    .map { it.first }
+                    .also { notes += "order: widgets by page, the file's order, then file name, as the launcher lists them; then apps, then folders" }
+            listed.exists() -> readWidgets(listed).also { notes += "order: widgets as listed in widgets.txt; then apps, then folders" }
             else -> {
                 // Everything with a saved cell or page that isn't an app or a folder; its file's own page is unknown here.
                 val m = migrate(old, emptyList())
+                notes += "order: widgets as their cells were saved; then apps, then folders"
                 notes += "no widgets folder or widgets.txt: widgets guessed from saved cells, each on page 1 unless moved on the phone. A widget whose file names another page will be on the wrong page here."
                 m.report.orphans.filter { !it.startsWith("app:") && !it.startsWith("linux:") && !it.startsWith("folder:") }.map { OldWidget(it, 1) }
             }

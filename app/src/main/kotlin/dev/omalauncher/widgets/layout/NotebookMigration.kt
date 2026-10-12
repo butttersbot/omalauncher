@@ -6,6 +6,15 @@ import dev.omalauncher.widgets.GRID_COLUMNS
 import org.json.JSONArray
 import org.json.JSONObject
 
+/*
+ * For whoever wires this in: never save a migration whose report isn't clean (UP-2). Show home from it and
+ * leave the old stores as they are, so the next start tries again.
+ *
+ * The tests run on the JVM's org.json; the phone has Android's. They differ where the launcher's own writers
+ * never go: a key given twice in one object, optString of a JSON null (Android gives the string "null"), and
+ * getInt of a number written as a string. A store edited by hand may migrate differently there than here.
+ */
+
 /** Rows of a notebook page when nothing saved reaches further down, and the most a page may have. */
 const val NOTEBOOK_MIN_ROWS = 9
 const val NOTEBOOK_MAX_ROWS = 12
@@ -118,7 +127,10 @@ fun migrate(
 ): Migration =
     try {
         Migrator(old, widgets).run()
-    } catch (e: Exception) {
+    } catch (e: Throwable) {
+        // Not only exceptions: Android's org.json reads nested values by recursion with no limit, so a document nested
+        // deeply enough ends in a StackOverflowError. The JVM's stops at 512 levels with an exception, so no test here
+        // can raise the error itself; the test of deep nesting only sees that exception.
         val report =
             MigrationReport(NOTEBOOK_MIN_ROWS, 0, 0, 0, 0, 0, emptyList(), mapOf(1 to "p1"), 0, emptyList(), old.portraitRows, listOf("migration failed: $e"))
         Migration(Notebook(NOTEBOOK_MIN_ROWS, listOf(NotebookPage("p1", "Page 1"))), report)
@@ -232,7 +244,7 @@ private class Migrator(
 
     /** Cells and page choices as [dev.omalauncher.widgets.WidgetLayout] loads them: the versioned layout, then what a launcher before versioning left, which wins. */
     private fun readLayout() {
-        val data = Versioned.read(old.layout, 1) as? JSONObject
+        val data = read(old.layout) as? JSONObject
         if (data == null && !old.layout.isNullOrBlank()) problems += "the saved layout (widget_grid: layout) can't be read; items were placed afresh"
         data?.let { load(it, "widget_grid: layout") }
         if (old.legacyCells != null) {
@@ -278,19 +290,30 @@ private class Migrator(
     /** Pinned apps (each with its folder, if that exists, and its page) and folders (key and page), as [dev.omalauncher.widgets.Shortcuts] loads them. */
     private fun readShortcuts(): Pair<List<Triple<PinnedApp, String?, Int>>, List<Pair<String, Int>>> {
         // Version 0 (before versioning) is the same array, unwrapped.
-        val array = Versioned.read(old.shortcuts, 1) { _, data -> data } as? JSONArray
+        val array = read(old.shortcuts) { _, data -> data } as? JSONArray
         if (array == null && !old.shortcuts.isNullOrBlank()) problems += "the pinned apps (shortcuts: items) can't be read"
         val apps =
             array.objects("pinned apps (shortcuts: items)") { o ->
                 Triple(NotebookStore.app(o), o.optString("folder").ifEmpty { null }, o.optInt("page", 1))
             }
-        val folderArray = Versioned.read(old.folders, 1) as? JSONArray
+        val folderArray = read(old.folders) as? JSONArray
         if (folderArray == null && !old.folders.isNullOrBlank()) problems += "the folders (shortcuts: folders) can't be read"
         val folders = folderArray.objects("folders (shortcuts: folders)") { it.getString("key") to it.optInt("page", 1) }
         // An app whose folder is gone goes back on the grid.
         val known = folders.map { it.first }.toSet()
         return apps.map { if (it.second?.let(known::contains) == true) it else it.copy(second = null) } to folders
     }
+
+    /** [Versioned.read] at version 1, with anything it throws, errors too, taken as unreadable. */
+    private fun read(
+        text: String?,
+        migrate: ((Int, Any) -> Any)? = null,
+    ): Any? =
+        try {
+            if (migrate == null) Versioned.read(text, 1) else Versioned.read(text, 1, migrate)
+        } catch (e: Throwable) {
+            null
+        }
 
     private fun <T : Any> JSONArray?.objects(
         what: String,

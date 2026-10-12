@@ -192,6 +192,8 @@ class PlacementTest {
         assertEquals(597 to 416, tilePx(3 to 2, geometry, turned = false))
         // On its side, its columns run down the screen.
         assertEquals(392 to 633, tilePx(3 to 2, geometry, turned = true))
+        // Cut down to whole pixels, not rounded: 616.5 and 435.5 lose their halves.
+        assertEquals(598 to 417, tilePx(3 to 2, Triple(205.5f, 217.75f, 18), turned = false))
         assertEquals(3 to 2, shownSize(3 to 2, false))
         assertEquals(2 to 3, shownSize(3 to 2, true))
     }

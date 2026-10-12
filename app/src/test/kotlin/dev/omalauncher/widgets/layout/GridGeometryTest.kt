@@ -115,6 +115,10 @@ class GridGeometryTest {
         val grid = GridGeometry(1248, 1972, gap)
         assertEquals(0, grid.colLine(100f, 0f))
         assertEquals(1, grid.colLine(112f, 0f))
+        // Lines run down the middle of the gaps, half a gap in: 111 is still nearer the first, 117 down too.
+        assertEquals(0, grid.colLine(111f, 0f))
+        assertEquals(0, grid.rowLine(0f, 117f))
+        assertEquals(1, grid.rowLine(0f, 118f))
         assertEquals(2, grid.colLine(420f, 0f))
         assertEquals(6, grid.colLine(5000f, 0f))
         assertEquals(0, grid.colLine(-50f, 0f))
