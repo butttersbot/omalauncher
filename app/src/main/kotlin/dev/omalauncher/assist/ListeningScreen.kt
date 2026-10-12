@@ -12,6 +12,9 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -172,12 +175,14 @@ internal fun ListeningLayer(
             ),
     ) {
         val u = unit(maxWidth.value, maxHeight.value)
+        val below = WindowInsets.safeDrawing.asPaddingValues().calculateBottomPadding()
         Column(
             Modifier
                 .align(Alignment.BottomStart)
-                .windowInsetsPadding(WindowInsets.safeDrawing)
-                // The links stand on 12 units of their own, for the finger: the block ends where the prototype's does.
-                .padding(start = (26 * u).dp, bottom = (58 * u).dp)
+                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+                // The links stand on 12 units of their own, for the finger: the block ends where the prototype's does,
+                // 70 units up, which already clears a navigation bar; only a taller bar or a keyboard lifts it further.
+                .padding(start = (26 * u).dp, bottom = maxOf((58 * u).dp, below))
                 .width((330 * u).dp)
                 .graphicsLayer {
                     alpha = rise
