@@ -1,5 +1,15 @@
 # Phone test results
 
+## Latest: note placement as Oma Dev — BLOCKED at install (2026-10-12, 15:42–15:47 PDT)
+Asked by Boss from the phone: PHONE-HANDOFF.md, "Next" item 1.
+- `git pull --ff-only`: fast-forward to 78ea5a9 (note placement, build 29, the handoff).
+- `oma-build`: PASS. BUILD SUCCESSFUL in 1m 3s; 679 unit tests, 0 failures, 0 errors, 2 skipped (includes NotePlacementTest and PhoneNotesTest). This only passed tests; nothing was seen running.
+- `oma-dev --no-open`: FAIL, exit 1. The build step succeeded, then: "Local installer is disconnected. Wireless debugging must be on (it needs Wi-Fi). Nothing was changed." `oma-dev --status` gives the same line. Oma Dev was not replaced and not opened, so "confirm it starts" is NOT done.
+- What I saw: Wi-Fi is up (wlan0 192.168.0.187). The cached port 44421 is closed. A port scan of loopback finds 42939 open and adb connects to it, but the device stays "offline" (never "device") through adb kill-server, disconnect/connect and 20 s of waiting; the same over the Wi-Fi address. So wireless debugging is listening on a new port but is not accepting this checkout's adb key. An hour earlier (14:43) the same key worked on 44421.
+- Not tried, because they are Boss's: toggling wireless debugging, pairing again, any Android setting.
+- Next: Boss opens Developer options > Wireless debugging and checks it is on and that this device is still listed under paired devices (pair again if not). Then rerun `oma-dev --no-open`, `oma-dev --open`, screenshot, `oma-phone home`, and ask Boss about promoting.
+- Note — `oma-install`/`oma-try` use the same local adb, so promotion is blocked by this too.
+
 Written by the agent on the Fold (Oma). Build under test: 0.5.0-boss-preview.18 (versionCode 28).
 The launcher installed on the phone reports version code 28 (`oma-install --status`).
 
