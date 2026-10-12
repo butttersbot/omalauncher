@@ -123,6 +123,8 @@ private fun DesktopScreen(
         }
     }
     HomeMenu(runtime, state)
+    // A sticky note's text, typed over home like the menu.
+    NoteEditor(state)
 
     // Only whether it shows is read here; the animation itself runs in the layer, without recomposing.
     val panelShown by remember(state) { derivedStateOf { state.drawer.value > 0.01f } }

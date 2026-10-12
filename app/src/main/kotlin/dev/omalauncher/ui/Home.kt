@@ -209,6 +209,7 @@ fun HomeScreen(
     BackHandler(enabled = state.homeMenuOpen) { state.homeMenuOpen = false }
     BackHandler(enabled = state.editing != null && !state.homeMenuOpen) { state.editing = null }
     BackHandler(enabled = arrange.folder != null && !state.homeMenuOpen) { arrange.folder = null }
+    BackHandler(enabled = marks.selected != null && !state.homeMenuOpen) { marks.selected = null }
     BackHandler(enabled = state.drawing && !state.homeMenuOpen) { state.stopDrawing() }
     LaunchedEffect(engine) {
         engine.launcherAction = { action ->
@@ -260,8 +261,11 @@ fun HomeScreen(
             }
         }
     }
-    // A terminal tile keeps the keyboard only while its page shows.
-    LaunchedEffect(pager.currentPage) { terminals.deactivate() }
+    // A terminal tile keeps the keyboard only while its page shows, and a note or a sticker stays selected only while its does.
+    LaunchedEffect(pager.currentPage) {
+        terminals.deactivate()
+        marks.selected = null
+    }
     // Its shell exited, or the app lost focus: the soft keyboard goes too.
     val typing = terminals.active != null
     LaunchedEffect(typing) { if (!typing) terminals.keyboard?.hide() }
@@ -407,7 +411,11 @@ fun HomeScreen(
             arrange = arrange,
             modifier = Modifier.weight(1f).fillMaxWidth(),
             selected = state.editing,
-            onSelect = { state.editing = it },
+            onSelect = {
+                state.editing = it
+                // One thing is edited at a time: a tile, or a note.
+                if (it != null) marks.selected = null
+            },
             actions = { item ->
                 EditBar {
                     if (item is WidgetItem) EditAction("edit") { edit(item) }

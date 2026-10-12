@@ -8,6 +8,11 @@ import dev.omalauncher.widgets.annotations.Annotations
 import dev.omalauncher.widgets.annotations.InkRole
 import dev.omalauncher.widgets.annotations.InkTool
 import dev.omalauncher.widgets.annotations.PageArea
+import dev.omalauncher.widgets.annotations.Scrap
+import dev.omalauncher.widgets.annotations.Sticker
+import dev.omalauncher.widgets.annotations.StickerKind
+import dev.omalauncher.widgets.annotations.StickyNote
+import dev.omalauncher.widgets.annotations.scrapAt
 import dev.omalauncher.widgets.annotations.Stroke
 import dev.omalauncher.widgets.layout.GridGeometry
 import org.junit.After
@@ -275,6 +280,29 @@ class InkGesturesTest {
         marks.begin("p1", cover, at(cover, 0.95f, 0.95f), 8f)
         marks.finish()
         assertEquals(lines, book.on("p1").strokes)
+    }
+
+    @Test fun aNoteAndAStickerAreWhereTheirFractionsSayOnEitherDisplay() {
+        val note = Scrap.Note(StickyNote("n", 0.25f, 0.5f, 0.5f, 0.25f, "x"))
+        val sticker = Scrap.Stuck(Sticker("s", StickerKind.Star, 0.5f, 0.5f, 0.2f))
+        for (area in listOf(cover, inner)) {
+            val n = note.rect(area)
+            assertEquals(area.left + area.width / 4f, n.left, 0.01f)
+            assertEquals(area.top + area.height / 2f, n.top, 0.01f)
+            assertEquals(area.width / 2f, n.width, 0.01f)
+            assertEquals(area.height / 4f, n.height, 0.01f)
+            // A sticker is square in pixels, centred where it was put, and a fifth of the page across.
+            val s = sticker.rect(area)
+            assertEquals(s.width, s.height, 0.01f)
+            assertEquals(area.width / 5f, s.width, 0.01f)
+            assertEquals(area.left + area.width / 2f, s.center.x, 0.01f)
+            assertEquals(area.top + area.height / 2f, s.center.y, 0.01f)
+            // Where a finger takes hold of it is where it is drawn.
+            val page = Annotations(notes = listOf(note.note), stickers = listOf(sticker.sticker))
+            assertEquals("s", page.scrapAt(area.across(s.right - 1f), area.down(s.bottom - 1f))?.id)
+            assertEquals("n", page.scrapAt(area.across(s.right + 1f), area.down(s.bottom + 1f))?.id)
+            assertNull(page.scrapAt(area.across(n.right + 1f), area.down(n.bottom + 1f)))
+        }
     }
 
     @Test fun aFullPageRefusesThePenButNotTheEraser() {

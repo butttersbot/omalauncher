@@ -33,8 +33,9 @@ class PackSourceCheckTest {
             // Home's gestures and the overview of all pages.
             "ui/HomeGestures.kt",
             "ui/Overview.kt",
-            // Writing on pages: the ink and the drawing tools.
+            // Writing on pages: the ink and the drawing tools, sticky notes and stickers.
             "ui/Ink.kt",
+            "ui/Notes.kt",
             // The drawer, the dock, the agent button and the rails.
             "ui/AppDrawer.kt",
             "ui/AppSearch.kt",
@@ -125,7 +126,7 @@ class PackSourceCheckTest {
     /** Every file the slice set out to convert is on the list, so none can be dropped from it quietly. */
     @Test fun theConvertedListIsWhole() {
         val expected =
-            listOf("Home", "HomeGrid", "WidgetTile", "ShortcutTile", "Folders", "HomeMenu", "HomeGestures", "Overview", "AppDrawer", "AppSearch", "Dock", "AgentButton", "AgentRail", "SideRail", "Components", "Icons", "IconMask", "Ink")
+            listOf("Home", "HomeGrid", "WidgetTile", "ShortcutTile", "Folders", "HomeMenu", "HomeGestures", "Overview", "AppDrawer", "AppSearch", "Dock", "AgentButton", "AgentRail", "SideRail", "Components", "Icons", "IconMask", "Ink", "Notes")
                 .map { "ui/$it.kt" } + "oma/OmaChatActivity.kt"
         assertEquals(expected.toSet(), converted)
     }

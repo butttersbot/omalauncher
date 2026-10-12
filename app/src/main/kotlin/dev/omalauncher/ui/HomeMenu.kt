@@ -78,6 +78,12 @@ fun HomeMenu(
                 state.homeMenuOpen = false
                 if (book.takes(page)) state.startDrawing()
             }
+            // Lands on the page in the next free place of a cascade, with its text open to type.
+            MenuItem("new sticky note") {
+                state.homeMenuOpen = false
+                state.editing = null
+                book.addNote(page)?.let { state.marks.editing = Chosen(page, it) }
+            }
         }
         MenuItem("new widget with $agentName") {
             state.homeMenuOpen = false

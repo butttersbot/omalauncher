@@ -638,6 +638,20 @@ internal fun HomeGrid(
                             return@awaitEachGesture
                         }
 
+                        // A note or a sticker being edited takes every touch, as a tile being edited does below. One whose
+                        // page no longer shows is let go.
+                        val pad = marked
+                        val notes = pad?.book
+                        val chosen = pad?.selected
+                        if (pad != null && chosen != null) {
+                            val chosenSide = shown.indexOf(chosen.page)
+                            if (chosenSide < 0 || notes == null) {
+                                pad.selected = null
+                            } else if (editScrap(down, g.local(start, chosenSide), chosen, g.area(0), pad, notes, arbiter, grab.toFloat())) {
+                                return@awaitEachGesture
+                            }
+                        }
+
                         // Edit mode: every touch belongs to the editor, nothing reaches the tiles. The selected
                         // tile may be on the other page of a pair; the editor works in its page's coordinates.
                         val selSide = sideOf(sel, shown)
@@ -705,6 +719,16 @@ internal fun HomeGrid(
                         if (page == null) {
                             arbiter.down(TouchStart.Page, HomeModes())
                             return@awaitEachGesture
+                        }
+                        // A sticky note or a sticker floats over the tiles: a touch on one is its, and a long press lifts it.
+                        // On a page with neither, nothing here is any different.
+                        if (pad != null && notes != null) {
+                            val lifted =
+                                liftScrap(down, at, page, g.area(0), pad, notes, arbiter, { awaitLongPress(down.id, start) }) {
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onSelect(null)
+                                }
+                            if (lifted) return@awaitEachGesture
                         }
                         val hit = placed.lastOrNull { (_, c) -> g.rect(c).has(at) }
                         arbiter.down(
@@ -923,8 +947,9 @@ private fun TiledPage(
                 )
             }
         }
-        // Over the tiles, inside what is caught for the overview: the page's ink, in a scope of its own so a new
-        // stroke recomposes no tile.
+        // Over the tiles, inside what is caught for the overview: the page's notes and stickers, and over those its
+        // ink, each in a scope of its own so a new stroke or a note being dragged recomposes no tile.
+        if (book != null && marks != null) PageScraps(book, marks, page, grid.page, pageWidth)
         if (book != null) PageInk(book, page, grid.page)
         // Selection frame: handles on each edge for widgets, plus the action bar.
         val sel = items.firstOrNull { it.key == selected }
