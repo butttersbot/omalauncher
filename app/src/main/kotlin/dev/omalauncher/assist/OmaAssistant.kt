@@ -140,6 +140,13 @@ class AssistantPanel(private val owner: Context, private val dismiss: () -> Unit
         }
         if (!SpeechRecognizer.isRecognitionAvailable(owner)) { message = "Voice recognition unavailable; you can type instead."; return }
         cancelSpeech()
+        // Speaking again adds to what's already in the field instead of replacing it.
+        val before = input.text.toString().trim()
+        fun heard(results: Bundle?) {
+            val said = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.trim().orEmpty()
+            if (said.isEmpty()) return
+            input.setText(if (before.isEmpty()) said else "$before $said"); input.setSelection(input.text.length)
+        }
         recognizer = try { assistantRecognizer(owner) } catch (e: Exception) { message = e.message; return }
         recognizer?.apply {
             setRecognitionListener(object : RecognitionListener {
@@ -150,10 +157,10 @@ class AssistantPanel(private val owner: Context, private val dismiss: () -> Unit
                 override fun onEndOfSpeech() { message = "Finishing…" }
                 override fun onError(error: Int) { message = "Could not hear that. Try Speak again or type."; cancelSpeech() }
                 override fun onResults(results: Bundle?) {
-                    results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.let { input.setText(it); input.setSelection(input.text.length) }
+                    heard(results)
                     message = "Ready to send"; cancelSpeech()
                 }
-                override fun onPartialResults(results: Bundle?) { results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.let(input::setText) }
+                override fun onPartialResults(results: Bundle?) = heard(results)
                 override fun onEvent(eventType: Int, params: Bundle?) = Unit
             })
             startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM).putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true))

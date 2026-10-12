@@ -42,7 +42,7 @@ val AGENTS =
 /**
  * Starts [agentBin] with a first prompt; OpenCode takes it as --prompt, the others as an argument.
  * [readOnly], for reading something untrusted: Claude Code starts in plan mode, where it can read but not
- * run commands or change files whatever the user's settings say. The others have no flag for that we can
+ * run commands or change files whatever the user's settings say; otherwise it starts in auto mode. The others have no flag for that we can
  * rely on inside proot, and only have the prompt.
  */
 fun agentInvocation(
@@ -63,6 +63,7 @@ fun agentInvocation(
             "codex " + images.joinToString(" ") { "--image ${shellQuote(it)}" } + " -- $quoted"
         agentBin == "opencode" -> "$agentBin --prompt $quoted"
         agentBin == "claude" && readOnly -> "$agentBin --permission-mode plan $quoted"
+        agentBin == "claude" -> "$agentBin --permission-mode auto $quoted"
         else -> "$agentBin $quoted"
     }
 }

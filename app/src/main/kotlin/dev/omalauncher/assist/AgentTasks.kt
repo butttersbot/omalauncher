@@ -173,10 +173,10 @@ object AgentTasks {
 private val SESSION_ID = Regex("[0-9a-fA-F-]{36}")
 
 /** [resume] is the session id of the conversation to continue; anything else starts a new one. */
-fun claudeStreamCommand(resume: String? = null): String = "claude -p " + (resume?.takeIf(SESSION_ID::matches)?.let { "--resume $it " } ?: "") + "--input-format stream-json --output-format stream-json --verbose --permission-prompt-tool stdio --allowedTools ${shellQuote("Bash(oma-phone *)")} Read"
+fun claudeStreamCommand(resume: String? = null): String = "claude -p " + (resume?.takeIf(SESSION_ID::matches)?.let { "--resume $it " } ?: "") + "--input-format stream-json --output-format stream-json --verbose --permission-mode auto --permission-prompt-tool stdio --allowedTools ${shellQuote("Bash(oma-phone *)")} Read"
 
 fun backgroundAgentCommand(agent: String, prompt: String, images: List<String> = emptyList()): String = when (agent) {
-    "claude" -> "claude -p --allowedTools ${shellQuote("Bash(oma-phone *)")} Read -- ${shellQuote(prompt)} < /dev/null"
+    "claude" -> "claude -p --permission-mode auto --allowedTools ${shellQuote("Bash(oma-phone *)")} Read -- ${shellQuote(prompt)} < /dev/null"
     "codex" -> "codex exec --skip-git-repo-check " + images.joinToString(" ") { "--image ${shellQuote(it)}" }.let { if (it.isBlank()) "" else "$it " } + "-- ${shellQuote(prompt)} < /dev/null"
     else -> error("The assistant currently supports Claude Code and Codex. Choose one in Omalauncher.")
 }
