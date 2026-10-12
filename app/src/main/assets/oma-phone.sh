@@ -34,7 +34,7 @@ where)
 tap|swipe)
   request=$(jq -cn --arg command "$command" --arg x "${1:?X required}" --arg y "${2:?Y required}" --arg ex "${3:-0}" --arg ey "${4:-0}" --arg ms "${5:-400}" \
     '{command:$command,x:($x|tonumber),y:($y|tonumber)} + (if $command=="swipe" then {endX:($ex|tonumber),endY:($ey|tonumber),duration:($ms|tonumber)} else {} end)');;
-status|pages|read|screenshot|back|home|recents|notifications|stop)
+status|pages|apps|read|screenshot|back|home|recents|notifications|stop)
   request=$(jq -cn --arg command "$command" '{command:$command}');;
 *) echo 'Unknown command. Run oma-phone help.' >&2; exit 2;;
 esac
