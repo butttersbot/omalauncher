@@ -1,5 +1,14 @@
 # Phone test results
 
+## Latest: note placement on the real launcher — PASS (2026-10-12, 16:04 PDT)
+- `oma-install --status` after the restart: "INSTALL_SUCCESS ... In-place launcher update verified." Linux, login and this agent came back.
+- `oma-phone board` (Page 1, cover screen, grid 6x9): five tiles, one old note on cells 0,0 3x2 (over the today tile, left by the old build), free: one rectangle, col 3 row 8, 3x1.
+- `oma-phone note ...`: `{"ok":true,"page":"Page 1","replaced":false,"cells":{"col":3,"row":8,"w":3,"h":1},"clear":true}`. Board afterwards lists it at x 0.5064 y 0.8901 w 0.44 h 0.0992 and free is now empty.
+- Screenshot: PASS. The new note sits in the strip under the "OMA" tile, right of the owl tile, above the dock, and covers no widget. Its top edge meets the OMA tile's pink shadow; its text is cut to one line ("Update landed. This note w...") because the spot is one cell high.
+- Still there: the old note over the today tile (not moved; Boss's page). Page 1 now has no free cells, so the next note should answer clear:false.
+- Seen: the dock shows two Oma-style icons (one is presumably Oma Dev). Not touched.
+- Screen timeout is still set to never (was 30000 ms).
+
 ## Latest: promotion started (2026-10-12, about 16:03 PDT)
 - Boss said "promote it". Running `oma-try` as the last step of this run; the result of the update is NOT known from this run.
 - Next, in a new request after Oma reopens: `oma-install --status`, `oma-phone board`, one note on Page 1, screenshot, check it sits in the free area and covers no widget. Screen timeout is still set to never (was 30000 ms).
