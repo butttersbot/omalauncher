@@ -16,6 +16,8 @@ android {
     defaultConfig {
         applicationId = "dev.omalauncher"
         manifestPlaceholders["appLabel"] = "Omalauncher"
+        // Added to the names of the app's other entries in the app list, so a second copy can be told apart.
+        manifestPlaceholders["labelSuffix"] = ""
         minSdk = 29
         targetSdk = 37
         versionCode = 29

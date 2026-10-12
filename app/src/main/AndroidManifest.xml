@@ -160,7 +160,7 @@
             android:theme="@style/Theme.Omalauncher.Window"
             android:windowSoftInputMode="adjustResize" />
 
-        <activity android:name=".phone.PhoneControlActivity" android:exported="true" android:label="Phone control">
+        <activity android:name=".phone.PhoneControlActivity" android:exported="true" android:label="Phone control${labelSuffix}">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -168,7 +168,7 @@
         </activity>
         <receiver android:name=".phone.StopPhoneControl" android:exported="false" />
         <service android:name=".phone.PhoneService" android:exported="true"
-            android:label="Omalauncher Boss phone control"
+            android:label="${appLabel} phone control"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter>
             <meta-data android:name="android.accessibilityservice" android:resource="@xml/phone_accessibility" />
@@ -219,7 +219,7 @@
         <activity-alias
             android:name=".oma.OmaChatEntry"
             android:exported="true"
-            android:label="Oma"
+            android:label="Oma${labelSuffix}"
             android:targetActivity=".oma.OmaChatActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
