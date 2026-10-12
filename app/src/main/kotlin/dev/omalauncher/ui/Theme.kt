@@ -63,16 +63,31 @@ class ThemePalette(
  * they're the defaults above, which match Tokyo Night.
  */
 object Palette {
-    var current by mutableStateOf(ThemePalette(emptyMap()))
+    /** The applied Omarchy theme's colors, whichever theme pack is drawn. */
+    var theme by mutableStateOf(ThemePalette(emptyMap()))
         private set
 
+    /** A theme pack's own colors, while a pack other than Console is in use: see [cover]. */
+    private var packed by mutableStateOf<ThemePalette?>(null)
+
+    /** What is drawn in: the theme's colors, or the pack's own. */
+    val current: ThemePalette get() = packed ?: theme
+
     fun apply(theme: Map<String, String>) {
-        current = ThemePalette(theme)
+        this.theme = ThemePalette(theme)
     }
 
     /** Puts back a palette taken from [current], after drawing in other colors for a while. */
     fun restore(palette: ThemePalette) {
-        current = palette
+        if (palette !== packed) theme = palette
+    }
+
+    /**
+     * Draws everything that still reads these colors (widgets, settings) in [palette], a theme pack's own,
+     * so they can be read on its scraps; null goes back to the theme's. The theme stays applied underneath.
+     */
+    internal fun cover(palette: ThemePalette?) {
+        packed = palette
     }
 
     fun named(name: String): Color? = current.named[name]
