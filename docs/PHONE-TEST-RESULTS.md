@@ -1,5 +1,9 @@
 # Phone test results
 
+## Latest: promotion started (2026-10-12, about 16:03 PDT)
+- Boss said "promote it". Running `oma-try` as the last step of this run; the result of the update is NOT known from this run.
+- Next, in a new request after Oma reopens: `oma-install --status`, `oma-phone board`, one note on Page 1, screenshot, check it sits in the free area and covers no widget. Screen timeout is still set to never (was 30000 ms).
+
 ## Latest: Oma Dev through setup to home (2026-10-12, 15:58–16:01 PDT)
 - Boss said the download is fine (unlimited hotspot data) and asked to verify where the note lands.
 - Setup "start" (default theme tokyo night, Linux box left unticked): PASS. Home came up on the cover screen: "Page 1  1/3", the today tile, the fetch tile (Android 17, 69 apps), the "OMA ready" tile, a terminal tile saying "needs Linux ... install", and the dock with only "↑" and "✎". No crash in the crash log.
