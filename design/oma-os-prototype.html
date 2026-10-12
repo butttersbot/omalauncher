@@ -1,5 +1,5 @@
 <title>Oma OS Prototype</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@500;800;900&family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,800&family=Dela+Gothic+One&family=Doto:wght@500;800&family=Instrument+Serif:ital@1&family=JetBrains+Mono:wght@400;500;700&family=Pixelify+Sans:wght@400;600&family=Schibsted+Grotesk:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Architects+Daughter&family=Big+Shoulders+Display:wght@500;800;900&family=Dela+Gothic+One&family=Doto:wght@500;800&family=JetBrains+Mono:wght@400;500;700&family=Pixelify+Sans:wght@400;600&family=Schibsted+Grotesk:wght@400;500;600;700&display=swap">
 <style>
 /* Layout: controls on top, one foldable device centred below that switches between cover and inner display; notes underneath. */
 :root{
@@ -47,38 +47,87 @@ h1{font-size:26px;line-height:1.15;margin:0;font-weight:700;letter-spacing:-.01e
 .phone[data-drawer="true"] .home{opacity:.12;transform:scale(.96)}
 .homebar{position:absolute;left:50%;bottom:7px;width:110px;height:4px;margin-left:-55px;border-radius:2px;background:var(--p-fg);opacity:.55;z-index:12;pointer-events:none}
 
-/* ===== look 1: Perimeter — everything lives on the edge, the middle stays empty ===== */
-.phone[data-skin="pm"]{--p-bg:#07080c;--p-fg:#eef0f6;--p-dim:rgba(238,240,246,.55);--p-solid:rgba(7,8,12,.94);--p-line:rgba(238,240,246,.22);--p-acc:#8ad8ff;--p-warn:#ffb057;--p-ok:#7dffb2;--p-font:"Big Shoulders Display","Arial Narrow",sans-serif;--p-display:"Big Shoulders Display","Arial Narrow",sans-serif;--rc1:#8ad8ff;--rc2:#ff8ae2;--l-bg:transparent;--l-fg:#eef0f6;--l-size:46px;--dimbg:rgba(7,8,12,.72)}
-.pm .field{position:absolute;inset:-20%;background:radial-gradient(38% 30% at 30% 35%,#134a63 0,transparent 70%),radial-gradient(40% 34% at 70% 62%,#3a1d63 0,transparent 70%),radial-gradient(30% 26% at 55% 30%,#0f5a4a 0,transparent 70%);filter:blur(30px);animation:drift 18s ease-in-out infinite alternate}
-@keyframes drift{to{transform:translate(4%,-3%) rotate(8deg) scale(1.08)}}
-.pm .edge{position:absolute;font-weight:500;font-size:15px;letter-spacing:.12em;text-transform:uppercase;white-space:nowrap}
-.pm .edge b{font-weight:800;color:var(--p-acc)}
-.pm .e-top{top:42px;left:24px}
-.pm .e-right{right:12px;top:74px;writing-mode:vertical-rl}
-.pm .e-left{left:12px;bottom:74px;writing-mode:vertical-rl;transform:rotate(180deg)}
-.pm .e-bot{position:absolute;left:24px;right:24px;bottom:28px;display:flex;justify-content:space-between}
-.pm .e-bot button{letter-spacing:.12em;text-transform:uppercase;font-weight:800;font-size:15px}
-.pm .e-bot .all{color:var(--p-acc)}
-.pm .mid{position:absolute;left:44px;right:44px;top:50%;transform:translateY(-52%);display:flex;flex-direction:column;align-items:flex-start}
-.pm .num{font-weight:900;font-size:260px;line-height:.8;letter-spacing:-.04em;color:transparent;-webkit-text-stroke:1.5px var(--p-fg)}
-.pm .mid small{font-size:17px;letter-spacing:.14em;text-transform:uppercase;margin:14px 0 0 6px;color:var(--p-dim)}
-.pm.inner .mid{right:auto;left:60px}
-.pm.inner .num{font-size:300px}
-.pm .float{position:absolute;right:56px;top:86px;width:300px;font:11.5px/1.6 var(--mono);color:var(--p-dim);white-space:pre}
-.pm .float b{color:var(--p-fg);font-weight:500}
-.pm .float.two{top:auto;bottom:74px}
+/* ===== Flap — a departures board ===== */
+.phone[data-skin="fl"]{--p-bg:#0e0e0d;--p-fg:#f3f0e4;--p-dim:#8d8b80;--p-solid:#0e0e0d;--p-line:#3a3a36;--p-acc:#ffd21f;--p-warn:#ff5b3a;--p-ok:#5fe08a;--p-font:"JetBrains Mono",ui-monospace,monospace;--p-display:"Big Shoulders Display","Arial Narrow",sans-serif;--rc1:#ffd21f;--rc2:#ffd21f;--l-bg:transparent;--l-fg:#f3f0e4;--l-size:40px;--dimbg:rgba(14,14,13,.92)}
+.fl{padding:46px 16px 0;display:flex;flex-direction:column;gap:5px}
+.fl .hdr{display:flex;justify-content:space-between;font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:var(--p-acc);margin:9px 2px 2px}
+.fl .rowf{display:flex;gap:2px}
+.fl .c{width:23px;height:32px;flex:none;border-radius:3px;background:linear-gradient(#272725 0 48%,#050505 48% 52%,#1c1c1a 52%);font:800 25px/32px var(--p-display);text-align:center;text-transform:uppercase}
+.fl .rowf.y .c{color:var(--p-acc)}
+.fl .foot{position:absolute;left:16px;bottom:26px;display:flex;flex-direction:column;gap:5px}
 
-/* ===== look 2: Prose — no widgets, Oma writes the home screen as a paragraph ===== */
-.phone[data-skin="pr"]{--p-bg:#1b2bff;--p-fg:#ffe6f1;--p-dim:rgba(255,230,241,.6);--p-solid:#1b2bff;--p-line:rgba(255,230,241,.4);--p-acc:#ffe6f1;--p-warn:#ffd34d;--p-ok:#9dffcf;--p-font:"Bricolage Grotesque",system-ui,sans-serif;--p-display:"Bricolage Grotesque",system-ui,sans-serif;--rc1:#ffe6f1;--rc2:#ff9ad0;--l-bg:transparent;--l-fg:#ffe6f1;--l-size:38px;--dimbg:rgba(27,43,255,.93)}
-.pr .para{position:absolute;left:22px;right:22px;top:52px;font-weight:800;font-size:35px;line-height:1.02;letter-spacing:-.025em;margin:0}
-.pr .para em,.pr .more em{font-family:"Instrument Serif",Georgia,serif;font-style:italic;font-weight:400;letter-spacing:0;font-size:1.12em}
-.pr u{text-decoration-thickness:2px;text-underline-offset:4px}
-.pr .words{position:absolute;left:22px;right:22px;bottom:30px;font-weight:500;font-size:16px;line-height:1.5}
-.pr .words button{text-decoration:underline;text-underline-offset:3px}
-.pr.inner .para{right:auto;width:400px;font-size:40px;top:56px}
-.pr .more{position:absolute;right:26px;top:60px;width:270px;font-weight:500;font-size:15px;line-height:1.45;display:flex;flex-direction:column;gap:16px}
-.pr .more pre{margin:0;font:11.5px/1.55 var(--mono);opacity:.85}
-.pr.inner .words{right:auto;width:400px}
+/* ===== Transit — a subway map ===== */
+.phone[data-skin="tr"]{--p-bg:#111;--p-fg:#fff;--p-dim:#a9a9a9;--p-solid:#111;--p-line:#fff;--p-acc:#fccc0a;--p-warn:#ff6319;--p-ok:#00933c;--p-font:"Helvetica Neue",Helvetica,Arial,sans-serif;--p-display:"Helvetica Neue",Helvetica,Arial,sans-serif;--rc1:#ee352e;--rc2:#ee352e;--l-bg:transparent;--l-fg:#fff;--l-size:34px;--dimbg:rgba(17,17,17,.93)}
+.tr{font-weight:700;letter-spacing:-.01em}
+.tr .sign{position:absolute;left:18px;right:18px;top:40px;border-top:3px solid #fff;padding-top:8px;font-size:22px;line-height:1.05;display:flex;justify-content:space-between;align-items:flex-start}
+.tr small{display:block;font-size:12px;font-weight:400;color:var(--p-dim);letter-spacing:0}
+.tr svg{position:absolute;inset:0;width:100%;height:100%;fill:none;stroke-width:9;stroke-linecap:round}
+.tr svg circle{fill:#fff;stroke:#111;stroke-width:3}
+.tr .st{position:absolute;left:66px;font-size:19px;line-height:1.12}
+.tr .st.c2{left:426px}
+.tr .b{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;font-size:14px;color:#fff;background:#ee352e;flex:none}
+.tr .b.bl{background:#0039a6}.tr .b.y{background:#fccc0a;color:#111}.tr .b.g{background:#00933c}.tr .b.o{background:#ff6319}
+.tr .bul{position:absolute;left:18px;right:18px;bottom:26px;display:flex;justify-content:space-between;border-top:3px solid #fff;padding-top:12px}
+.tr .bul .b{width:46px;height:46px;font-size:22px}
+.tr .notice{position:absolute;right:26px;bottom:110px;width:300px;border:3px solid #fccc0a;padding:10px 12px;font:500 11px/1.5 var(--mono);letter-spacing:0;white-space:pre}
+.tr .notice b{display:block;font:700 14px/1.3 var(--p-font);color:#fccc0a}
+
+/* ===== Receipt — printed on thermal paper ===== */
+.phone[data-skin="rc"]{--p-bg:#b3b0a8;--p-fg:#1a1a1a;--p-dim:#5e5c57;--p-solid:#f7f5ef;--p-line:#1a1a1a;--p-acc:#1a1a1a;--p-warn:#c8102e;--p-ok:#1a1a1a;--p-font:"JetBrains Mono",ui-monospace,monospace;--p-display:"JetBrains Mono",ui-monospace,monospace;--rc1:#1a1a1a;--rc2:#1a1a1a;--l-bg:#f7f5ef;--l-fg:#1a1a1a;--l-size:21px;--dimbg:rgba(160,157,149,.88)}
+.rc{background:radial-gradient(120% 80% at 30% 20%,#c6c3bb,#a19e96)}
+.rc .slip{position:absolute;left:34px;width:316px;top:42px;bottom:20px;background:#f7f5ef;padding:24px 16px 20px;font-size:12px;line-height:1.55;text-transform:uppercase;transform:rotate(-1.2deg);filter:drop-shadow(0 8px 10px rgba(0,0,0,.3));display:flex;flex-direction:column;gap:1px;
+  -webkit-mask:conic-gradient(from 135deg at top,#0000,#000 1deg 89deg,#0000 90deg) top/10px 51% repeat-x,conic-gradient(from -45deg at bottom,#0000,#000 1deg 89deg,#0000 90deg) bottom/10px 51% repeat-x;
+  mask:conic-gradient(from 135deg at top,#0000,#000 1deg 89deg,#0000 90deg) top/10px 51% repeat-x,conic-gradient(from -45deg at bottom,#0000,#000 1deg 89deg,#0000 90deg) bottom/10px 51% repeat-x}
+.rc .ctr{text-align:center}
+.rc .ln{display:flex;gap:6px;align-items:baseline}
+.rc .ln i{flex:1;border-bottom:1.5px dotted #1a1a1a}
+.rc .hr{border-top:1.5px dashed #1a1a1a;margin:7px 0}
+.rc .tot{font-weight:700;font-size:21px;line-height:1.2}
+.rc .bc{height:34px;margin:8px 20px 2px;background:repeating-linear-gradient(90deg,#1a1a1a 0 2px,transparent 2px 3px,#1a1a1a 3px 6px,transparent 6px 8px,#1a1a1a 8px 9px,transparent 9px 12px)}
+.rc .keys2{margin-top:auto;display:flex;gap:6px}
+.rc .keys2 button{border:1.5px solid #1a1a1a;padding:5px 0;flex:1;text-align:center;font-weight:700}
+.rc .keys2 button:last-child{background:#1a1a1a;color:#f7f5ef;flex:2.4}
+.rc.inner .slip{left:50px}
+.rc.inner .slip.b2{left:400px;width:300px;top:60px;bottom:70px;transform:rotate(2deg);text-transform:none;white-space:pre-wrap}
+
+/* ===== Atomic — see-through purple plastic with a green dot-matrix screen ===== */
+.phone[data-skin="at"]{--p-bg:#4a2fa8;--p-fg:#efe9ff;--p-dim:rgba(239,233,255,.7);--p-solid:#3f2596;--p-line:rgba(239,233,255,.5);--p-acc:#c8f000;--p-warn:#ff3ea5;--p-ok:#c8f000;--p-font:"Pixelify Sans","Courier New",monospace;--p-display:"Pixelify Sans","Courier New",monospace;--rc1:#ff3ea5;--rc2:#c8f000;--l-bg:#9bbc0f;--l-fg:#0f380f;--l-size:24px;--dimbg:rgba(50,28,128,.85)}
+.at{background:linear-gradient(90deg,transparent 47%,rgba(20,8,70,.32) 47% 53%,transparent 53%) 0 0/46px 100%,radial-gradient(rgba(20,8,70,.42) 3px,transparent 3.5px) 0 0/46px 58px,linear-gradient(160deg,#6a48d8,#3f2596 60%,#55309f);padding:46px 20px 30px;display:flex;flex-direction:column;gap:12px}
+.at::after{content:"";position:absolute;inset:0;background:linear-gradient(115deg,rgba(255,255,255,.2) 0 16%,transparent 16.5% 58%,rgba(255,255,255,.08) 58.5% 66%,transparent 66.5%);pointer-events:none}
+.at .scr{background:#2b2b33;border-radius:10px 10px 34px 10px;padding:12px 18px 18px;box-shadow:inset 0 2px 6px rgba(0,0,0,.6)}
+.at .scr.s{border-radius:8px;padding:10px 12px 12px}
+.at .scr small{display:flex;justify-content:space-between;color:#9a9ab0;font:500 8px/1 var(--mono);letter-spacing:.14em;margin-bottom:8px}
+.at .gb{background:#9bbc0f;color:#0f380f;padding:10px 12px;font-size:17px;line-height:1.15;box-shadow:inset 0 0 0 2px #8bac0f,inset 3px 3px 0 2px rgba(15,56,15,.22)}
+.at .gb b{display:block;font-size:27px;font-weight:600;line-height:1}
+.at .gb pre{margin:0;font:inherit;font-size:14px;line-height:1.25}
+.at .two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.at .emb{font:700 10px/1.5 var(--ui);letter-spacing:.16em;text-transform:uppercase;color:rgba(30,12,90,.7);text-shadow:0 1px 0 rgba(255,255,255,.3)}
+.at .pad{margin-top:auto;display:flex;justify-content:space-between;align-items:center;position:relative;z-index:1}
+.at .dpad{width:84px;height:84px;background:linear-gradient(#26242e,#26242e) center/28px 100% no-repeat,linear-gradient(#26242e,#26242e) center/100% 28px no-repeat;filter:drop-shadow(0 3px 2px rgba(0,0,0,.45))}
+.at .pill2{padding:6px 16px;border-radius:99px;background:#26242e;color:#cfc8ee;font:700 9px/1.4 var(--ui);letter-spacing:.14em;transform:rotate(-18deg);box-shadow:0 2px 2px rgba(0,0,0,.4)}
+.at .ab{display:grid;grid-template-columns:repeat(2,46px);gap:10px 12px;transform:rotate(-18deg)}
+.at .ab button{width:46px;height:46px;border-radius:50%;text-align:center;font-size:18px;color:#fff;background:radial-gradient(circle at 35% 30%,#ff7cc4,#d4107c);box-shadow:0 4px 0 #8e0a52,0 6px 6px rgba(0,0,0,.35)}
+.at .ab button:nth-child(2),.at .ab button:nth-child(3){background:radial-gradient(circle at 35% 30%,#e6ff66,#a5c800);box-shadow:0 4px 0 #6f8700,0 6px 6px rgba(0,0,0,.35);color:#1e0c5a}
+.at.inner{display:grid;grid-template-columns:1.2fr 1fr;grid-template-rows:1fr auto;gap:14px 20px;padding:48px 28px 30px}
+.at.inner .col{display:flex;flex-direction:column;gap:12px}
+.at.inner .scr.big{display:flex;flex-direction:column}
+.at.inner .scr.big .gb{flex:1}
+.at.inner .pad{grid-column:1/3}
+
+/* ===== Blueprint — a drawing of your day ===== */
+.phone[data-skin="bp"]{--p-bg:#1548a8;--p-fg:#eaf2ff;--p-dim:rgba(234,242,255,.72);--p-solid:#1548a8;--p-line:#eaf2ff;--p-acc:#fff;--p-warn:#ffe14d;--p-ok:#fff;--p-font:"Architects Daughter","Comic Sans MS",cursive;--p-display:"Architects Daughter","Comic Sans MS",cursive;--rc1:#eaf2ff;--rc2:#eaf2ff;--l-bg:transparent;--l-fg:#eaf2ff;--l-size:27px;--dimbg:rgba(21,72,168,.94)}
+.bp{background:linear-gradient(rgba(234,242,255,.17) 1px,transparent 1px) 0 0/100% 80px,linear-gradient(90deg,rgba(234,242,255,.17) 1px,transparent 1px) 0 0/80px 100%,linear-gradient(rgba(234,242,255,.07) 1px,transparent 1px) 0 0/100% 16px,linear-gradient(90deg,rgba(234,242,255,.07) 1px,transparent 1px) 0 0/16px 100%;text-transform:uppercase;font-size:12px;letter-spacing:.04em}
+.bp svg{position:absolute;inset:0;width:100%;height:100%;fill:none;stroke:#eaf2ff;stroke-width:1.3}
+.bp svg .dash{stroke-dasharray:5 4;stroke-width:.9}
+.bp .t{position:absolute;white-space:pre;line-height:1.3}
+.bp .t.big{font-size:25px;line-height:1.02}
+.bp .tblk{position:absolute;right:16px;bottom:92px;border:1.5px solid #eaf2ff;display:grid;grid-template-columns:auto auto;font-size:10px}
+.bp .tblk span{padding:3px 8px;border:.5px solid rgba(234,242,255,.6)}
+.bp .secs{position:absolute;left:18px;right:18px;bottom:26px;display:flex;justify-content:space-between}
+.bp .secs button{width:48px;height:48px;border-radius:50%;border:1.5px solid #eaf2ff;text-align:center;font-size:17px;line-height:23px;background:linear-gradient(#eaf2ff,#eaf2ff) center/100% 1px no-repeat}
+.bp .secs button small{display:block;font-size:9px;line-height:20px}
+.bp.inner .secs{right:auto;width:340px}
+.bp.inner .tblk{bottom:34px}
 
 /* ===== look 3: Riso — two inks, printed out of register, stuck on crooked ===== */
 .phone[data-skin="rs"]{--p-bg:#e7e5ee;--p-fg:#2337ff;--p-dim:rgba(35,55,255,.62);--p-solid:#e7e5ee;--p-line:#2337ff;--p-acc:#ff3d8b;--p-warn:#ff3d8b;--p-ok:#2337ff;--p-font:"JetBrains Mono",ui-monospace,monospace;--p-display:"Dela Gothic One","Arial Black",sans-serif;--rc1:#ff3d8b;--rc2:#2337ff;--l-bg:transparent;--l-fg:#2337ff;--l-size:27px;--dimbg:rgba(231,229,238,.93)}
@@ -168,14 +217,6 @@ h1{font-size:26px;line-height:1.15;margin:0;font-weight:700;letter-spacing:-.01e
 .search{position:absolute;left:20px;right:20px;bottom:20px;height:46px;display:flex;align-items:center;gap:8px;padding:0 16px;background:var(--p-solid);border:1.5px solid var(--p-line)}
 .search input{flex:1;min-width:0;background:none;border:0;outline:0;color:inherit;font:inherit;font-size:15px;user-select:text;-webkit-user-select:text}
 .search input::placeholder{color:var(--p-dim)}
-.phone[data-skin="pm"] .appgrid,.phone[data-skin="pr"] .appgrid{display:block}
-.phone[data-skin="pm"] .ico,.phone[data-skin="pr"] .ico{display:none}
-.phone[data-skin="pm"] .app{display:block;font:800 46px/.98 var(--p-display);text-transform:uppercase;letter-spacing:-.01em;opacity:calc(.35 + var(--f)*.65)}
-.phone[data-skin="pm"][data-fold="inner"] .appgrid{columns:3}
-.phone[data-skin="pr"] .app{display:inline;font:800 calc(17px + var(--f)*26px)/1.08 var(--p-display);letter-spacing:-.02em}
-.phone[data-skin="pr"] .app .nm{white-space:normal;overflow:visible}
-.phone[data-skin="pr"] .app::after{content:", ";font-weight:500;opacity:.6}
-.phone[data-skin="pr"] .search{border-width:0 0 2px;padding:0}
 .phone[data-skin="rs"] .ico{border-radius:50%;background:#2337ff;color:#e7e5ee;width:52px;height:52px}
 .phone[data-skin="rs"] .app:nth-child(3n+1) .ico{background:#ff3d8b;transform:rotate(-6deg)}
 .phone[data-skin="rs"] .app{font-size:10px;text-transform:uppercase}
@@ -186,6 +227,28 @@ h1{font-size:26px;line-height:1.15;margin:0;font-weight:700;letter-spacing:-.01e
 .phone[data-skin="ob"] .ico{border:2px solid #000;box-shadow:2px 2px 0 #000;font-weight:600;width:46px;height:44px}
 .phone[data-skin="ob"] .app{font-size:13px}
 .phone[data-skin="ob"] .search{border-width:2px;box-shadow:3px 3px 0 #000}
+
+.phone[data-skin="fl"] .appgrid,.phone[data-skin="tr"] .appgrid,.phone[data-skin="rc"] .appgrid{display:block}
+.phone[data-skin="fl"] .ico,.phone[data-skin="rc"] .ico{display:none}
+.phone[data-skin="fl"] .app{display:block;font:800 29px/38px var(--p-display);text-transform:uppercase;letter-spacing:.04em;padding:0 10px;margin-bottom:3px;border-radius:3px;background:linear-gradient(#272725 0 48%,#050505 48% 52%,#1c1c1a 52%)}
+.phone[data-fold="inner"][data-skin="fl"] .appgrid,.phone[data-fold="inner"][data-skin="tr"] .appgrid,.phone[data-fold="inner"][data-skin="rc"] .appgrid{columns:2;column-gap:24px}
+.phone[data-skin="tr"] .app{flex-direction:row;gap:12px;font-size:19px;font-weight:700;padding:7px 0;border-bottom:1px solid #333;break-inside:avoid}
+.phone[data-skin="tr"] .ico{width:30px;height:30px;border-radius:50%;background:#ee352e;font-size:15px;flex:none}
+.phone[data-skin="tr"] .app:nth-child(4n+2) .ico{background:#0039a6}
+.phone[data-skin="tr"] .app:nth-child(4n+3) .ico{background:#00933c}
+.phone[data-skin="tr"] .app:nth-child(4n) .ico{background:#fccc0a;color:#111}
+.phone[data-skin="rc"] .app{flex-direction:row;font-size:13px;text-transform:uppercase;padding:6px 0;border-bottom:1.5px dotted #1a1a1a;break-inside:avoid}
+.phone[data-skin="rc"] #apps{color:#1a1a1a}
+.phone[data-skin="rc"] .app,.phone[data-skin="tr"] .app{width:100%;justify-content:flex-start}
+.phone[data-skin="at"] .ico{background:#9bbc0f;color:#0f380f;box-shadow:0 0 0 4px #2b2b33;border-radius:2px;width:42px;height:42px;font-weight:600;margin:4px}
+.phone[data-skin="at"] .app{font-size:13px}
+.phone[data-skin="bp"] .ico{border:1.5px solid #eaf2ff;border-radius:50%}
+.phone[data-skin="bp"] .app{font-size:11px;text-transform:uppercase}
+.phone[data-skin="at"] .listen{padding:12px 14px;box-shadow:0 0 0 9px #2b2b33;border-radius:1px}
+.phone[data-skin="rc"] .listen{padding:16px 14px;box-shadow:0 8px 14px -6px rgba(0,0,0,.4)}
+.phone[data-skin="fl"] .said,.phone[data-skin="bp"] .said{text-transform:uppercase}
+.phone[data-skin="tr"] .said{font-weight:700}
+.phone[data-skin="bp"] .said,.phone[data-skin="rc"] .said{font-weight:400}
 
 /* ---------- Oma: the ring, the words, and Samsung's notification ---------- */
 .dim{position:absolute;inset:0;z-index:7;background:var(--dimbg);opacity:0;pointer-events:none;transition:opacity .45s}
@@ -210,14 +273,30 @@ h1{font-size:26px;line-height:1.15;margin:0;font-weight:700;letter-spacing:-.01e
 .ring.base{background:var(--rc1);opacity:.22;animation:none;padding:1px}
 .phone[data-agent="working"] .ring{animation-duration:9s}
 .phone[data-agent="approval"] .ring,.phone[data-agent="waiting"] .ring{animation-duration:14s}
-.phone[data-skin="pr"] .ring,.phone[data-skin="rs"] .ring{background:conic-gradient(from var(--ang),transparent 0 60%,var(--rc1) 99%,transparent 100%)}
+.phone[data-skin="rs"] .ring{background:conic-gradient(from var(--ang),transparent 0 60%,var(--rc1) 99%,transparent 100%)}
 .phone[data-skin="rs"] .ringwrap{mix-blend-mode:multiply}
 .phone[data-skin="rs"] .ring{padding:3px}
 .phone[data-skin="rs"] .ring.glow{filter:none;opacity:1;inset:3px;border-radius:27px;animation-name:spinr;animation-duration:5.3s;background:conic-gradient(from var(--ang),transparent 0 55%,var(--rc2) 99%,transparent 100%)}
 .phone[data-skin="rs"] .ring.base{display:none}
-.phone[data-skin="in"] .ring,.phone[data-skin="ob"] .ring{display:none}
 .ants{position:absolute;inset:0;width:100%;height:100%;display:none;overflow:visible}
-.phone[data-skin="in"] .ants,.phone[data-skin="ob"] .ants{display:block}
+.phone:not([data-ring="css"]) .ring{display:none}
+.phone:not([data-ring="css"]) .ants{display:block}
+.ants .t{display:none;stroke:var(--rc1);stroke-linecap:round}
+.phone[data-ring="bulb"] .ants .d,.phone[data-ring="train"] .ants .d{display:none}
+.phone[data-ring="bulb"] .ants .t,.phone[data-ring="train"] .ants .t{display:block}
+@keyframes run{to{stroke-dashoffset:-1000}}
+@keyframes chase{to{stroke-dashoffset:-25}}
+@keyframes march32{to{stroke-dashoffset:-32}}
+.phone[data-ring="bulb"] .ants .u{stroke:#1c1c1a;stroke-width:9}
+.phone[data-ring="bulb"] .ants .t{stroke-width:5;stroke-dasharray:0 12.5;animation:chase .7s linear infinite;filter:drop-shadow(0 0 3px var(--rc1))}
+.phone[data-ring="bulb"][data-agent="working"] .ants .t{animation-duration:1.8s}
+.phone[data-ring="train"] .ants .u{stroke:#3a3a3a;stroke-width:3}
+.phone[data-ring="train"] .ants .t{stroke-width:6;stroke-dasharray:70 930;animation:run 4.5s linear infinite}
+.phone[data-ring="train"][data-agent="working"] .ants .t{animation-duration:9s}
+.phone[data-ring="train"][data-agent="approval"] .ants .t,.phone[data-ring="train"][data-agent="waiting"] .ants .t{animation-play-state:paused;stroke-dasharray:70 55}
+.phone[data-skin="rc"] .ants .u,.phone[data-skin="bp"] .ants .u{stroke:none}
+.phone[data-skin="rc"] .ants .d{stroke:var(--rc1);stroke-width:1.5;animation-duration:1.2s}
+.phone[data-skin="bp"] .ants .d{stroke:var(--rc1);stroke-width:1.3;stroke-dasharray:14 6 4 8;animation:march32 1.4s linear infinite}
 .ants rect{x:3px;y:3px;width:calc(100% - 6px);height:calc(100% - 6px);rx:27px;fill:none}
 .ants .u{stroke:#fff;stroke-width:3}
 .ants .d{stroke:#000;stroke-width:3;stroke-dasharray:8 8;animation:march .45s linear infinite}
@@ -234,7 +313,6 @@ h1{font-size:26px;line-height:1.15;margin:0;font-weight:700;letter-spacing:-.01e
 .phone[data-skin="ob"] .listen{padding:12px 14px;border:2px solid #000;box-shadow:3px 3px 0 #000}
 .lcap{font:500 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;opacity:.75}
 .said{font:800 var(--l-size)/1.04 var(--p-display);letter-spacing:-.01em;min-height:3.2em;margin:10px 0 12px;text-wrap:balance}
-.phone[data-skin="pm"] .said{text-transform:uppercase}
 .phone[data-skin="rs"] .said{font-weight:400;text-shadow:2px 2px 0 #ff3d8b}
 .phone[data-skin="in"] .said{text-transform:uppercase;line-height:1.15}
 .phone[data-skin="ob"] .said{font-weight:600}
@@ -262,18 +340,25 @@ h1{font-size:26px;line-height:1.15;margin:0;font-weight:700;letter-spacing:-.01e
 
 <div class="page">
   <div>
-    <h1>Oma OS, five ways to break the home screen</h1>
-    <p class="lede">Each look breaks a different rule on purpose. Fold and unfold the device: the cover and the inner display keep separate layouts.</p>
+    <h1>Oma OS, eight candidate themes</h1>
+    <p class="lede">Three you liked and five new ones, each borrowed from a real object. Fold and unfold the device: the cover and the inner display keep separate layouts.</p>
   </div>
 
   <div class="controls">
-    <div class="group"><span class="label">Look</span>
-      <div class="row" id="skins">
-        <button class="btn" data-skin="pm" aria-pressed="true">Perimeter</button>
-        <button class="btn" data-skin="pr" aria-pressed="false">Prose</button>
+    <div class="group"><span class="label">Keepers</span>
+      <div class="row">
         <button class="btn" data-skin="rs" aria-pressed="false">Riso</button>
         <button class="btn" data-skin="in" aria-pressed="false">Instrument</button>
         <button class="btn" data-skin="ob" aria-pressed="false">1‑bit</button>
+      </div>
+    </div>
+    <div class="group"><span class="label">New</span>
+      <div class="row">
+        <button class="btn" data-skin="fl" aria-pressed="true">Flap</button>
+        <button class="btn" data-skin="tr" aria-pressed="false">Transit</button>
+        <button class="btn" data-skin="rc" aria-pressed="false">Receipt</button>
+        <button class="btn" data-skin="at" aria-pressed="false">Atomic</button>
+        <button class="btn" data-skin="bp" aria-pressed="false">Blueprint</button>
       </div>
     </div>
     <div class="group"><span class="label">Display</span>
@@ -301,51 +386,165 @@ h1{font-size:26px;line-height:1.15;margin:0;font-weight:700;letter-spacing:-.01e
   <div class="stage" id="stage">
     <div class="bezel" id="bezel">
       <button class="sidekey" data-go="summon" title="Side button: hold to summon Oma" aria-label="Side button: summon Oma"></button>
-      <div class="phone" id="phone" data-skin="pm" data-fold="cover" data-drawer="false" data-agent="idle">
+      <div class="phone" id="phone" data-skin="fl" data-ring="bulb" data-fold="cover" data-drawer="false" data-agent="idle">
         <div class="status"><button id="sb" data-act="sb" aria-label="Status bar"><span>6:52</span><span class="led" id="led" hidden></span><span id="sbtext"></span></button><span>5G &nbsp;94%</span></div>
 
-        <!-- Perimeter -->
-        <section class="home pm cover" data-skin="pm" data-fold="cover">
-          <div class="field"></div>
-          <div class="edge e-top">Mon 12 Oct · <b>68°</b> patchy rain · Anaheim</div>
-          <div class="edge e-right">Dinner with Mina <b>7:30</b> · Kato · leave by 7:06</div>
-          <div class="edge e-left">Arch <b>283</b> pkg · 4 updates · Oma sorted 214 photos</div>
-          <div class="mid"><span class="num">38</span><small>minutes until Mina</small></div>
-          <div class="e-bot"><button>Msg</button><button>Cam</button><button>Web</button><button>Term</button><button class="all" data-act="apps">All ↑</button></div>
+        <!-- Flap -->
+        <section class="home fl cover" data-skin="fl" data-fold="cover" hidden>
+          <div class="hdr"><span>Time</span><span>Monday 12 October</span></div>
+          <div class="rowf" data-t="19:30 DINNER"></div>
+          <div class="rowf" data-t="      W/ MINA"></div>
+          <div class="rowf" data-t="      AT KATO"></div>
+          <div class="rowf y" data-t="19:06 LEAVE"></div>
+          <div class="hdr"><span>Now</span><span>Anaheim</span></div>
+          <div class="rowf" data-t="68F PATCHYRAIN"></div>
+          <div class="rowf" data-t="ARCH 283 PKG"></div>
+          <div class="rowf" data-t="OMA 214 SORTED"></div>
+          <div class="foot"><div class="rowf" data-t="MSG CAM WEB TR"></div><button class="rowf y" data-act="apps" data-t="ALL APPS     ^"></button></div>
         </section>
-        <section class="home pm inner" data-skin="pm" data-fold="inner" hidden>
-          <div class="field"></div>
-          <div class="edge e-top">Mon 12 Oct · <b>68°</b> patchy rain · Anaheim · Tue 71° · Wed 74° · sunrise 6:54</div>
-          <div class="edge e-right">Dinner with Mina <b>7:30</b> · Kato · leave by 7:06</div>
-          <div class="edge e-left">Arch <b>283</b> pkg · 4 updates · up 2h 56m</div>
-          <div class="mid"><span class="num">38</span><small>minutes until Mina</small></div>
-          <div class="float"><b>~ $ pacman -Qu</b>
-linux-aarch64   6.12.58 → 6.12.61
-mesa            25.2.4  → 25.2.5
-foot            1.23.0  → 1.23.1
-claude-code     2.4.1   → 2.4.3</div>
-          <div class="float two"><b>OMA · TODAY</b>
-14:02  sorted 214 photos by date
-11:40  summarized 3 unread threads
-09:15  renewed the Kato booking</div>
-          <div class="e-bot"><button>Msg</button><button>Cam</button><button>Web</button><button>Term</button><button>Files</button><button>Claude</button><button class="all" data-act="apps">All ↑</button></div>
+        <section class="home fl inner" data-skin="fl" data-fold="inner" hidden>
+          <div class="hdr"><span>Time · event</span><span>Monday 12 October</span></div>
+          <div class="rowf" data-t="19:30 DINNER WITH MINA   KATO"></div>
+          <div class="rowf y" data-t="19:06 LEAVE BY         24 MIN"></div>
+          <div class="rowf" data-t="TUE   DENTIST           09:00"></div>
+          <div class="rowf" data-t="THU   FLIGHT SEATTLE    06:10"></div>
+          <div class="hdr"><span>Now</span><span>Anaheim</span></div>
+          <div class="rowf" data-t="68F PATCHY RAIN   TUE 71F"></div>
+          <div class="rowf" data-t="ARCH 283 PKG      4 UPDATES"></div>
+          <div class="rowf" data-t="OMA  214 PHOTOS SORTED"></div>
+          <div class="foot"><div class="rowf" data-t="MSG CAM WEB TERM FILES CLAUDE"></div><button class="rowf y" data-act="apps" data-t="ALL APPS                    ^"></button></div>
         </section>
 
-        <!-- Prose -->
-        <section class="home pr cover" data-skin="pr" data-fold="cover" hidden>
-          <p class="para">It’s raining a little in Anaheim, 68°. <u><em>Dinner with Mina</em></u> is at 7:30, so leave by 7:06. Arch has <u>4 updates</u> waiting.</p>
-          <div class="words"><button>Messages</button>, <button>Camera</button>, <button>Browser</button>, <button>Terminal</button>, or <button data-act="apps">everything else ↑</button></div>
+        <!-- Transit -->
+        <section class="home tr cover" data-skin="tr" data-fold="cover" hidden>
+          <svg viewBox="0 0 384 608" preserveAspectRatio="none"><path d="M40 122V300" stroke="#ee352e"/><path d="M40 300C40 330 40 330 40 356V486" stroke="#0039a6"/><circle cx="40" cy="132" r="7"/><circle cx="40" cy="212" r="7"/><circle cx="40" cy="298" r="11"/><circle cx="40" cy="388" r="7"/><circle cx="40" cy="452" r="7"/></svg>
+          <div class="sign"><span>Monday<small>12 October</small></span><span class="b">1</span></div>
+          <div class="st" style="top:120px">68° patchy rain<small>Anaheim · now</small></div>
+          <div class="st" style="top:200px">Leave<small>7:06 PM · 24 min drive</small></div>
+          <div class="st" style="top:278px;font-size:25px">Dinner with Mina<small>7:30 PM · Kato · transfer to <b>evening</b></small></div>
+          <div class="st" style="top:376px">Arch Linux<small>283 packages · 4 updates</small></div>
+          <div class="st" style="top:440px">Oma<small>sorted 214 photos today</small></div>
+          <div class="bul"><button class="b">M</button><button class="b bl">C</button><button class="b g">B</button><button class="b o">T</button><button class="b y" data-act="apps">↑</button></div>
         </section>
-        <section class="home pr inner" data-skin="pr" data-fold="inner" hidden>
-          <p class="para">It’s raining a little in Anaheim, 68°. <u><em>Dinner with Mina</em></u> is at 7:30, so leave by 7:06. Arch has <u>4 updates</u> waiting.</p>
-          <div class="more">
-            <div>While you were out I <u>sorted 214 photos</u> by date and <u>summarized 3 threads</u>. Nothing needed you.</div>
-            <div><em>This week</em> — Tue, dentist at 9. Thu, flight to Seattle 6:10 AM. Sat, nothing, on purpose.</div>
-            <pre>~ $ uptime
- 18:52  up 2h 56m,  load 0.41
-~ $ █</pre>
+        <section class="home tr inner" data-skin="tr" data-fold="inner" hidden>
+          <svg viewBox="0 0 760 574" preserveAspectRatio="none"><path d="M40 122V300" stroke="#ee352e"/><path d="M40 300V452" stroke="#0039a6"/><path d="M400 122V300" stroke="#00933c"/><circle cx="40" cy="132" r="7"/><circle cx="40" cy="212" r="7"/><circle cx="40" cy="298" r="11"/><circle cx="40" cy="388" r="7"/><circle cx="40" cy="452" r="7"/><circle cx="400" cy="132" r="7"/><circle cx="400" cy="212" r="7"/><circle cx="400" cy="292" r="7"/></svg>
+          <div class="sign"><span>Monday<small>12 October</small></span><span style="display:flex;gap:6px"><span class="b">1</span><span class="b bl">A</span><span class="b g">W</span></span></div>
+          <div class="st" style="top:120px">68° patchy rain<small>Anaheim · now</small></div>
+          <div class="st" style="top:200px">Leave<small>7:06 PM · 24 min drive</small></div>
+          <div class="st" style="top:278px;font-size:25px">Dinner with Mina<small>7:30 PM · Kato</small></div>
+          <div class="st" style="top:376px">Arch Linux<small>283 packages · 4 updates</small></div>
+          <div class="st" style="top:440px">Oma<small>sorted 214 photos today</small></div>
+          <div class="st c2" style="top:120px">Tuesday<small>Dentist · 9:00 AM</small></div>
+          <div class="st c2" style="top:200px">Thursday<small>Flight to Seattle · 6:10 AM</small></div>
+          <div class="st c2" style="top:280px">Saturday<small>Nothing, on purpose</small></div>
+          <div class="notice"><b>Service notice · Arch</b>linux-aarch64  6.12.61
+mesa           25.2.5
+foot           1.23.1</div>
+          <div class="bul"><button class="b">M</button><button class="b bl">C</button><button class="b g">B</button><button class="b o">T</button><button class="b bl">F</button><button class="b">A</button><button class="b y" data-act="apps">↑</button></div>
+        </section>
+
+        <!-- Receipt -->
+        <section class="home rc cover" data-skin="rc" data-fold="cover" hidden>
+          <div class="slip">
+            <div class="ctr"><b>*** MONDAY 12 OCT ***</b><br>ANAHEIM · 68F PATCHY RAIN</div>
+            <div class="hr"></div>
+            <div class="ln"><span>Dinner w/ Mina</span><i></i><span>7:30P</span></div>
+            <div class="ln"><span>&nbsp;@Kato, leave by</span><i></i><span>7:06P</span></div>
+            <div class="ln"><span>Arch packages</span><i></i><span>283</span></div>
+            <div class="ln"><span>&nbsp;updates due</span><i></i><span>4</span></div>
+            <div class="ln"><span>Photos sorted</span><i></i><span>214</span></div>
+            <div class="ln"><span>Threads summed</span><i></i><span>3</span></div>
+            <div class="hr"></div>
+            <div class="ln tot"><span>Free</span><i></i><span>38 min</span></div>
+            <div class="bc"></div>
+            <div class="ctr">Served by Oma · No. 0412</div>
+            <div class="keys2"><button>M</button><button>C</button><button>B</button><button>T</button><button data-act="apps">All apps ↑</button></div>
           </div>
-          <div class="words"><button>Messages</button>, <button>Camera</button>, <button>Browser</button>, <button>Terminal</button>, <button>Files</button>, or <button data-act="apps">everything else ↑</button></div>
+        </section>
+        <section class="home rc inner" data-skin="rc" data-fold="inner" hidden>
+          <div class="slip">
+            <div class="ctr"><b>*** MONDAY 12 OCT ***</b><br>ANAHEIM · 68F PATCHY RAIN</div>
+            <div class="hr"></div>
+            <div class="ln"><span>Dinner w/ Mina</span><i></i><span>7:30P</span></div>
+            <div class="ln"><span>&nbsp;@Kato, leave by</span><i></i><span>7:06P</span></div>
+            <div class="ln"><span>Photos sorted</span><i></i><span>214</span></div>
+            <div class="ln"><span>Threads summed</span><i></i><span>3</span></div>
+            <div class="hr"></div>
+            <div class="ln tot"><span>Free</span><i></i><span>38 min</span></div>
+            <div class="bc"></div>
+            <div class="ctr">Served by Oma · No. 0412</div>
+            <div class="keys2"><button>M</button><button>C</button><button>B</button><button>T</button><button data-act="apps">All apps ↑</button></div>
+          </div>
+          <div class="slip b2"><b>~ $ pacman -Qu</b>
+linux-aarch64   6.12.61
+mesa            25.2.5
+foot            1.23.1
+claude-code     2.4.3
+- - - - - - - - - - - - - - -
+THIS WEEK
+Tue  dentist          9:00A
+Thu  flight SEA       6:10A
+Sat  nothing</div>
+        </section>
+
+        <!-- Atomic -->
+        <section class="home at cover" data-skin="at" data-fold="cover" hidden>
+          <div class="scr"><small><span>● Battery</span><span>Next · dot matrix</span></small><div class="gb"><b>DINNER w/ MINA</b>7:30 Kato · leave 7:06</div></div>
+          <div class="two">
+            <div class="scr s"><small><span>Sky</span></small><div class="gb"><b>68°</b>rain</div></div>
+            <div class="scr s"><small><span>Arch</span></small><div class="gb"><b>283</b>pkg ▲4</div></div>
+          </div>
+          <div class="emb">Oma · sorted 214 photos today</div>
+          <div class="pad"><div class="dpad"></div><button class="pill2" data-act="apps">Apps</button><div class="ab"><button>M</button><button>C</button><button>B</button><button>T</button></div></div>
+        </section>
+        <section class="home at inner" data-skin="at" data-fold="inner" hidden>
+          <div class="scr big"><small><span>● Battery</span><span>Terminal · dot matrix</span></small><div class="gb"><pre>~ $ pacman -Qu
+linux-aarch64  6.12.61
+mesa           25.2.5
+foot           1.23.1
+claude-code    2.4.3
+~ $ uptime
+ 18:52 up 2h 56m
+~ $ █</pre></div></div>
+          <div class="col">
+            <div class="scr s"><small><span>Next</span></small><div class="gb"><b>DINNER w/ MINA</b>7:30 Kato · leave 7:06</div></div>
+            <div class="two">
+              <div class="scr s"><small><span>Sky</span></small><div class="gb"><b>68°</b>rain</div></div>
+              <div class="scr s"><small><span>Oma</span></small><div class="gb"><b>214</b>sorted</div></div>
+            </div>
+            <div class="emb">Tue dentist 9:00 · Thu SEA 6:10 AM</div>
+          </div>
+          <div class="pad"><div class="dpad"></div><button class="pill2" data-act="apps">Apps</button><div class="ab"><button>M</button><button>C</button><button>B</button><button>T</button></div></div>
+        </section>
+
+        <!-- Blueprint -->
+        <section class="home bp cover" data-skin="bp" data-fold="cover" hidden>
+          <svg viewBox="0 0 384 608" preserveAspectRatio="none"><rect x="40" y="96" width="250" height="118"/><path d="M40 238H290M40 230v16M290 230v16M44 234l-4 4 4 4M286 234l4 4-4 4"/><circle cx="296" cy="332" r="44"/><path class="dash" d="M240 332H352M296 276V388"/><path d="M252 332H176"/><rect x="40" y="398" width="160" height="62"/><path class="dash" d="M40 418l20-20M40 438l40-40M40 458l60-60M60 460l62-62M100 460l62-62M140 460l60-60M180 460l20-20"/></svg>
+          <div class="t big" style="left:54px;top:112px">Dinner<br>w/ Mina</div>
+          <div class="t" style="left:54px;top:180px">Kato · 7:30 PM</div>
+          <div class="t" style="left:96px;top:244px">38 min · leave 7:06</div>
+          <div class="t" style="left:40px;top:310px">68° patchy rain<br>Anaheim</div>
+          <div class="t" style="left:210px;top:408px">Arch · 283 pkg<br>4 updates</div>
+          <div class="tblk"><span>Project</span><span>Mon 12 Oct</span><span>Sheet</span><span>1 of 2</span><span>Drawn</span><span>Oma</span></div>
+          <div class="secs"><button>M<small>1</small></button><button>C<small>2</small></button><button>B<small>3</small></button><button>T<small>4</small></button><button data-act="apps">↑<small>all</small></button></div>
+        </section>
+        <section class="home bp inner" data-skin="bp" data-fold="inner" hidden>
+          <svg viewBox="0 0 760 574" preserveAspectRatio="none"><rect x="40" y="96" width="250" height="118"/><path d="M40 238H290M40 230v16M290 230v16M44 234l-4 4 4 4M286 234l4 4-4 4"/><circle cx="380" cy="160" r="52"/><path class="dash" d="M312 160H448M380 92V228"/><path d="M432 160H500"/><rect x="40" y="300" width="250" height="150"/><path class="dash" d="M40 330H290"/><rect x="470" y="270" width="250" height="150"/><path class="dash" d="M470 300H720"/></svg>
+          <div class="t big" style="left:54px;top:112px">Dinner<br>w/ Mina</div>
+          <div class="t" style="left:54px;top:180px">Kato · 7:30 PM</div>
+          <div class="t" style="left:96px;top:244px">38 min · leave 7:06</div>
+          <div class="t" style="left:510px;top:140px">68° patchy rain<br>Anaheim</div>
+          <div class="t" style="left:52px;top:308px">Notes · terminal</div>
+          <div class="t" style="left:52px;top:340px;text-transform:none;font-family:var(--mono);font-size:11px">~ $ pacman -Qu
+linux-aarch64  6.12.61
+mesa           25.2.5
+foot           1.23.1</div>
+          <div class="t" style="left:482px;top:278px">Schedule · week</div>
+          <div class="t" style="left:482px;top:312px">Tue   dentist 9:00
+Thu   Seattle 6:10 AM
+Sat   nothing</div>
+          <div class="tblk"><span>Project</span><span>Mon 12 Oct</span><span>Sheet</span><span>2 of 2</span><span>Drawn</span><span>Oma</span></div>
+          <div class="secs"><button>M<small>1</small></button><button>C<small>2</small></button><button>B<small>3</small></button><button>T<small>4</small></button><button data-act="apps">↑<small>all</small></button></div>
         </section>
 
         <!-- Riso -->
@@ -439,7 +638,7 @@ foot          1.23.1
         <div class="dim" data-act="cancel"></div>
         <div class="ringwrap">
           <div class="ring base"></div><div class="ring glow"></div><div class="ring"></div>
-          <svg class="ants" aria-hidden="true"><rect class="u"></rect><rect class="d"></rect></svg>
+          <svg class="ants" aria-hidden="true"><rect class="u"></rect><rect class="d"></rect><rect class="t" pathLength="1000"></rect></svg>
         </div>
 
         <div class="listen" aria-live="polite">
@@ -465,6 +664,7 @@ foot          1.23.1
       <li>No pill. Progress sits in the status bar, and approvals and results arrive as Samsung's own notifications.</li>
       <li>The ring is thinner, with two light heads and a soft trail.</li>
       <li>Cover and unfolded are separate layouts with different widgets.</li>
+      <li>Perimeter and Prose are out; five new looks are in.</li>
     </ul></div>
     <div><h2>In the device</h2><ul>
       <li>Swipe up on home for apps; swipe down to close them.</li>
@@ -482,14 +682,18 @@ foot          1.23.1
 <script>
 (function(){
   var $=function(id){return document.getElementById(id)};
-  var phone=$('phone'), S={skin:'pm',fold:'cover',drawer:false,agent:'idle',step:0,outcome:'',auto:false};
+  var phone=$('phone'), S={skin:'fl',fold:'cover',drawer:false,agent:'idle',step:0,outcome:'',auto:false};
   var timers=[];
   var APPS=[['Calendar',.5],['Camera',.8],['Chrome',.9],['Claude',1],['Clock',.2],['Codex',.6],['Files',.5],['Firefox',.3],['Gmail',.7],['Maps',.6],['Messages',1],['Notes',.4],['Photos',.7],['Play Store',.2],['Resy',.5],['Settings',.3],['Signal',.6],['Spotify',.8],['Terminal',.9],['Wallet',.2],['Weather',.3],['btop',.4]];
   var STEPS=['Opened Messages','Found the thread with Mina','Drafted a reply'];
   var PROMPT="Tell Mina I'm running ten minutes late".split(' ');
   var MSG='“Running about 10 min late — see you at 7:40!”';
-  var BLURB={pm:'Perimeter. The interface lives on the edge of the glass and the middle stays empty. Rule broken: put the important thing in the centre.',
-    pr:'Prose. No widgets and no grid: Oma writes the home screen as one paragraph, and the underlined words are the buttons. Rule broken: a home screen is a grid.',
+  var RING={rs:'css',at:'css','in':'ants',ob:'ants',rc:'ants',bp:'ants',fl:'bulb',tr:'train'};
+  var BLURB={fl:'Flap. A station departures board: every character is a split flap that clatters into place. The ring is a row of chasing bulbs.',
+    tr:'Transit. Your day as a subway line, with stops for what is next and a transfer to the system line. The ring is a train running the track around the screen.',
+    rc:'Receipt. The day printed on thermal paper, itemised, with a total of free time. The ring is a cut-here line.',
+    at:'Atomic. See-through purple plastic with the circuit board showing and green dot-matrix screens. The ring runs pink and lime.',
+    bp:'Blueprint. A drawing of your day with dimension lines and a title block; the inner display is sheet 2. The ring is a drafting centre line.',
     rs:'Riso. Two inks, printed out of register and stuck on crooked; where they overlap they make a third colour. Rule broken: align everything.',
     'in':'Instrument. The phone as a piece of hardware, with LCD windows, knobs and one orange key. Rule broken: flat is modern.',
     ob:'1‑bit. Black and white pixels only, and the ring becomes marching ants. Rule broken: more colour is better.'};
@@ -504,16 +708,22 @@ foot          1.23.1
   drawApps('');
   $('appsearch').addEventListener('input',function(e){drawApps(e.target.value.trim().toLowerCase())});
 
+  var CH='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', still=window.matchMedia&&matchMedia('(prefers-reduced-motion:reduce)').matches;
+  document.querySelectorAll('.rowf').forEach(function(r){var n=r.closest('.inner')?29:14,t=(r.dataset.t+Array(n+1).join(' ')).slice(0,n);
+    t.split('').forEach(function(ch){var c=document.createElement('span');c.className='c';c.dataset.ch=ch==='^'?'↑':ch;c.textContent=c.dataset.ch;r.appendChild(c)})});
+  function flap(){if(still)return;document.querySelectorAll('.home.fl:not([hidden]) .c').forEach(function(c,i){if(c.dataset.ch===' ')return;
+    var n=3+(i*7)%9,iv=setInterval(function(){if(n--<=0){clearInterval(iv);c.textContent=c.dataset.ch}else c.textContent=CH[(i*13+n*5)%36]},60)})}
   function later(fn,ms){timers.push(setTimeout(fn,ms))}
   function clearAll(){timers.forEach(clearTimeout);timers=[]}
   function set(p){for(var k in p)S[k]=p[k];render()}
   function acts(list){var n=$('nacts');n.textContent='';list.forEach(function(x){var b=document.createElement('button');b.textContent=x[0];b.dataset.act=x[1];n.appendChild(b)})}
 
   function render(){
-    phone.dataset.skin=S.skin;phone.dataset.fold=S.fold;phone.dataset.drawer=S.drawer;phone.dataset.agent=S.agent;
+    var fresh=phone.dataset.skin!==S.skin||phone.dataset.fold!==S.fold;phone.dataset.skin=S.skin;phone.dataset.ring=RING[S.skin];phone.dataset.fold=S.fold;phone.dataset.drawer=S.drawer;phone.dataset.agent=S.agent;
     document.querySelectorAll('.home').forEach(function(h){h.hidden=!(h.dataset.skin===S.skin&&h.dataset.fold===S.fold)});
     document.querySelectorAll('.btn[data-skin]').forEach(function(b){b.setAttribute('aria-pressed',b.dataset.skin===S.skin)});
     document.querySelectorAll('.btn[data-fold]').forEach(function(b){b.setAttribute('aria-pressed',b.dataset.fold===S.fold)});
+    if(fresh&&S.skin==='fl')flap();
     var a=S.agent;
     $('led').hidden=!(a==='working'||a==='waiting');
     $('sbtext').textContent=a==='working'?(S.step>2?'Sending':STEPS[S.step]):a==='waiting'?'Oma needs your OK':'';
