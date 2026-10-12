@@ -110,11 +110,13 @@ ink = "#26241f"
 border = 0
 
 [page]
+# A focused bare icon is outlined in the yellow: the pink is 2.3 to 1 on the cobalt.
 kind = "paper"
 color = "#0f4fc9"
 pattern = "none"
 overview_scrim = "#33ffffff"
 drawer_fill = "background@0.97"
+focus_color = "highlight"
 
 [page.text_shadow]
 x = 0

@@ -610,10 +610,9 @@ private fun AppCell(
     ) {
         val mono = Pack.monoIcons
         // Badges are circles when rounded, squares with Omarchy's sharp edges.
-        val badge = Pack.shape(26.dp)
         if (glyph != null) {
             Box(
-                Modifier.size(52.dp).clip(badge).background(if (mono) Pack.badge else Pack.accent),
+                Modifier.iconBadge(52.dp, fill = if (mono) Pack.badge else Pack.accent),
                 contentAlignment = Alignment.Center,
             ) {
                 Image(glyph, label, Modifier.size(26.dp), colorFilter = Pack.tinted(if (mono) Pack.tint else Pack.background))

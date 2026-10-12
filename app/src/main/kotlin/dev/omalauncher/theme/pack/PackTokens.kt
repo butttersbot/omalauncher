@@ -105,6 +105,7 @@ internal class PackBuilder(
             border = number("$key.border"),
             borderColor = color("$key.border_color"),
             focusColor = color("$key.focus_color"),
+            focusWidth = number("$key.focus_width"),
             shadow = shadow("$key.shadow"),
             shadow2 = shadow("$key.shadow2"),
         )
@@ -220,6 +221,7 @@ internal class PackBuilder(
                     gutter = flag("page.gutter"),
                     overviewScrim = color("page.overview_scrim"),
                     drawerFill = color("page.drawer_fill"),
+                    focusColor = color("page.focus_color"),
                     plate = choice("page.plate"),
                     textShadow = shadow("page.text_shadow"),
                 ),

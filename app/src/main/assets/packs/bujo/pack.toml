@@ -72,11 +72,13 @@ tilt_min = -0.6
 tilt_max = 0.6
 
 [scrap.alt]
+# The pink is under 3 to 1 on this pink, so its focus is the pencil line at twice the weight.
 fill = "alt"
 ink = "on_alt"
 border = 1.5
 border_color = "foreground"
-focus_color = "#b86578"
+focus_color = "foreground"
+focus_width = 3
 
 # Washi tape: two creams in stripes.
 [scrap.tape]
@@ -103,6 +105,7 @@ pattern_size = 16
 pattern_weight = 2.2
 gutter = true
 drawer_fill = "background@0.97"
+focus_color = "#b86578"
 
 [icons]
 treatment = "original"

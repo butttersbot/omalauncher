@@ -125,6 +125,7 @@ pattern_size = 26
 pattern_weight = 1
 gutter = true
 drawer_fill = "background@0.97"
+focus_color = "foreground"
 
 [icons]
 treatment = "original"

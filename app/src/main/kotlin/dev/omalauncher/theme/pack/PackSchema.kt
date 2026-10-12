@@ -171,6 +171,7 @@ object PackSchema {
                 number("$key.border", 0f, 8f, border)
                 paint("$key.border_color", borderColor)
                 paint("$key.focus_color", "accent")
+                number("$key.focus_width", 2f, 8f, 2)
                 shadow("$key.shadow")
                 shadow("$key.shadow2")
             }
@@ -251,6 +252,7 @@ object PackSchema {
             flag("page.gutter", false)
             paint("page.overview_scrim", CLEAR)
             paint("page.drawer_fill", "overlay")
+            paint("page.focus_color", "accent")
             choice("page.plate", PagePlate.entries, PagePlate.None)
             shadow("page.text_shadow")
 

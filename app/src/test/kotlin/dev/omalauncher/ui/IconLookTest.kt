@@ -1,11 +1,17 @@
 package dev.omalauncher.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.unit.dp
 import dev.omalauncher.theme.pack.ConsolePack
 import dev.omalauncher.theme.pack.DirectoryPackSource
 import dev.omalauncher.theme.pack.IconTreatment
 import dev.omalauncher.theme.pack.PackIcons
 import dev.omalauncher.theme.pack.PackLoader
+import dev.omalauncher.theme.pack.PackPick
 import dev.omalauncher.theme.pack.PlaceholderStyle
 import dev.omalauncher.theme.pack.moduleFile
 import org.junit.Assert.assertEquals
@@ -65,6 +71,40 @@ class IconLookTest {
         assertTrue(adapted.monoIcons(true) && !adapted.monoIcons(false))
         // Its badge is a fill with no outline.
         assertEquals(0f, adapted.badgeLine.value, 0f)
+    }
+
+    /**
+     * Console's badges are the chains the launcher built in place before: sized, clipped and filled,
+     * under an app's initials, under a folder's four icons (a third of its size for a radius) and
+     * under the drawer's own entries (in the accent). Modifier elements compare by value.
+     */
+    @Test fun consolesBadgesAreTheChainsDrawnBefore() {
+        ActivePack.choose(PackPick.Console)
+        for (corners in Corners.entries) {
+            LauncherStyle.corners = corners
+            try {
+                for (size in listOf(18.dp, 40.dp, 52.dp)) {
+                    assertEquals("$corners $size", Modifier.size(size).clip(Pack.shape(size / 2)).background(Pack.badge), Modifier.iconBadge(size))
+                    assertEquals("$corners $size folder", Modifier.size(size).clip(Pack.shape(size / 3)).background(Pack.badge), Modifier.iconBadge(size, radius = size / 3))
+                    assertEquals("$corners $size entry", Modifier.size(size).clip(Pack.shape(size / 2)).background(Pack.accent), Modifier.iconBadge(size, fill = Pack.accent))
+                }
+            } finally {
+                LauncherStyle.corners = Corners.Edge
+            }
+        }
+    }
+
+    /** Every place that draws an app's icon or its stand-in goes through the pack: folders and the drawer's entries too. */
+    @Test fun iconsAreDrawnThroughThePackEverywhere() {
+        val ui = moduleFile("src/main/kotlin/dev/omalauncher/ui")
+        for (name in listOf("ShortcutTile.kt", "AppDrawer.kt", "Folders.kt")) {
+            val code = java.io.File(ui, name).readLines().map { it.trim() }.filterNot { it.startsWith("//") || it.startsWith("*") || it.startsWith("/*") || it.startsWith("internal fun initials") }
+            assertFalse("$name spells a placeholder itself", code.any { "initials(" in it })
+            assertFalse("$name filters an icon itself", code.any { "Pack.icon(" in it })
+            assertFalse("$name builds a badge itself", code.any { ".background(Pack.badge)" in it })
+            assertTrue("$name draws icons with AppIcon", code.any { "AppIcon(" in it })
+            assertTrue("$name sits them on iconBadge", code.any { ".iconBadge(" in it })
+        }
     }
 
     /** `user` leaves silhouettes to the switch; the other three decide for themselves, whatever the switch says. */

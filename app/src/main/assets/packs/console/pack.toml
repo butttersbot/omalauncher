@@ -94,6 +94,7 @@ ink = "foreground"
 border = 2
 border_color = "border"
 focus_color = "accent"
+focus_width = 2
 muted = "muted"
 tilt_min = 0
 tilt_max = 0
@@ -118,6 +119,7 @@ ink = "foreground"
 border = 2
 border_color = "accent"
 focus_color = "accent"
+focus_width = 2
 
 [scrap.alt.shadow]
 x = 0
@@ -172,6 +174,7 @@ wallpaper_inner = ""
 gutter = false
 overview_scrim = "#00000000"
 drawer_fill = "overlay"
+focus_color = "accent"
 plate = "none"
 
 [page.text_shadow]
@@ -199,6 +202,7 @@ ink = "accent"
 border = 0
 border_color = "border"
 focus_color = "accent"
+focus_width = 2
 
 [icons.placeholder.shadow]
 x = 0
@@ -266,6 +270,7 @@ ink = "foreground"
 border = 2
 border_color = "border"
 focus_color = "accent"
+focus_width = 2
 
 [dock.shadow]
 x = 0

@@ -102,6 +102,7 @@ border = 0
 
 # Ruled in a thin white, a line every 24dp.
 [page]
+# A focused bare icon is outlined in white: the accent is the page itself.
 kind = "paper"
 color = "#1257c4"
 pattern = "lines"
@@ -110,6 +111,7 @@ pattern_size = 24
 pattern_weight = 1
 gutter = true
 drawer_fill = "background@0.97"
+focus_color = "on_page"
 
 [icons]
 treatment = "original"

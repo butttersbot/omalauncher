@@ -250,6 +250,9 @@ class ActivePackTest {
         assertEquals(CornerStyle.Edge, dialUp.shape.corners)
         assertEquals(listOf(FontGeneric.Monospace, FontGeneric.Monospace), dialUp.type.run { listOf(display.family, body.family) })
         assertEquals(color("#a94fa4"), dialUp.ink.pen)
+        // The prototype's magenta for focus, told from the indigo outline by its weight.
+        assertEquals(color("#a94fa4"), dialUp.scrap.surface.focusColor)
+        assertEquals(4f, dialUp.scrap.surface.focusWidth, 0f)
         assertEquals(listOf(color("#a94fa4"), color("#4a5590")), ring(dialUp))
 
         // The five are scrapbooks: a row of buttons for a dock, icons in their own colors with the prototype's small shadow, a letter for a missing one.

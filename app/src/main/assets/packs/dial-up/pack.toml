@@ -57,20 +57,19 @@ tracking = 0.09
 radius = 0
 corners = "edge"
 
-# The focus line is not the prototype's magenta: that is 1.5 to 1 against the indigo outline
-# it replaces, so a focused window looked like any other. This lilac is the same magenta let
-# out until it stands 3 to 1 off the outline. It can't also stand 3 to 1 off the paper (no
-# color does both against a mid indigo); it is 2.1 to 1 there, with the title bar and the
-# shadow still in indigo around it.
+# Focus is the prototype's magenta at twice the outline's weight. Magenta and indigo are
+# close in brightness (1.5 to 1), so the color alone would not tell a focused window from
+# any other; the weight does.
 [scrap]
 fill = "background"
 ink = "foreground"
 border = 2
 border_color = "foreground"
-focus_color = "#ce9bcb"
 muted = "muted"
 tilt_min = -0.3
 tilt_max = 0.3
+focus_color = "#a94fa4"
+focus_width = 4
 
 [scrap.shadow]
 x = 4
@@ -82,7 +81,8 @@ fill = "alt"
 ink = "on_alt"
 border = 2
 border_color = "foreground"
-focus_color = "#ce9bcb"
+focus_color = "#a94fa4"
+focus_width = 4
 
 [scrap.alt.shadow]
 x = 4
@@ -112,6 +112,7 @@ pattern_size = 14
 pattern_weight = 1
 gutter = true
 drawer_fill = "background@0.97"
+focus_color = "#a94fa4"
 
 [icons]
 treatment = "original"
@@ -155,7 +156,8 @@ fill = "background"
 ink = "foreground"
 border = 2
 border_color = "foreground"
-focus_color = "#ce9bcb"
+focus_color = "#a94fa4"
+focus_width = 4
 
 [dock.shadow]
 x = 3

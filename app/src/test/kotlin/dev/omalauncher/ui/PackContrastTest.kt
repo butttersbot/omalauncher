@@ -118,21 +118,16 @@ class PackContrastTest {
         large("a silhouette on its badge", look.tint, badge)
         large("a glyph in the tint", look.tint, background)
 
-        // Outlines, and the focus line that replaces one. Where a surface has no outline the focus line is drawn on its fill.
+        // Outlines. The focus line that replaces one has its own rule, below, for every look.
         fun frame(
             name: String,
             surface: PackSurface,
             on: Color,
         ) {
+            if (surface.border <= 0f) return
             val fill = surface.fill.toColor().compositeOver(on)
-            val focus = surface.focusColor.toColor()
-            if (surface.border > 0f) {
-                large("$name outline on its fill", surface.borderColor.toColor(), fill)
-                large("$name outline on what is around it", surface.borderColor.toColor(), on)
-                large("$name focus against its outline", focus, surface.borderColor.toColor().compositeOver(fill))
-            } else {
-                large("$name focus on its fill", focus, fill)
-            }
+            large("$name outline on its fill", surface.borderColor.toColor(), fill)
+            large("$name outline on what is around it", surface.borderColor.toColor(), on)
         }
         frame("scrap", pack.scrap.surface, page)
         frame("emphasised scrap", pack.scrap.alt, page)
@@ -166,15 +161,60 @@ class PackContrastTest {
         for (id in checked) assertEquals("$id", emptyList<String>(), report(id))
     }
 
-    /** A focus line the color of what it is drawn on, or of the outline it replaces, shows nothing. */
-    @Test fun theFocusLineIsNeverTheOutlinesColorOrTheFills() {
-        for (id in checked) {
+    /**
+     * Which tile is focused has to show, in every look and with framed or bare icons. The focus line
+     * stands 3 to 1 off the fill it borders; a bare icon's, which is drawn straight on the page, stands
+     * 3 to 1 off the page; and it is told from the outline it replaces by color (3 to 1 again) or by
+     * weight (half as wide again, at least). The page is measured as its paper color: 1-bit's dither
+     * and the other patterns are not.
+     */
+    @Test fun focusShowsInEveryLook() {
+        val failed = ArrayList<String>()
+        for (id in checked + earlier) {
             val pack = look(id).pack
+            val page = pack.page.color.toColor()
+            println("focus, $id:")
+            val bare = ratio(pack.page.focusColor.toColor(), page)
+            println("  %-18s %s  %.0fdp  on the page %.2f".format("bare icon", pack.page.focusColor, focusWidth(pack.scrap.surface), bare))
+            if (bare < LARGE) failed += "$id: a bare icon's focus is %.2f to 1 on the page".format(bare)
             for ((name, surface) in listOf("scrap" to pack.scrap.surface, "scrap.alt" to pack.scrap.alt, "dock" to pack.dock.surface)) {
-                assertTrue("$id $name focus is its fill", surface.focusColor != surface.fill)
-                if (surface.border > 0f) assertTrue("$id $name focus is its outline", surface.focusColor != surface.borderColor)
+                val fill = surface.fill.toColor().compositeOver(page)
+                val focus = surface.focusColor.toColor()
+                val width = focusWidth(surface)
+                val onFill = ratio(focus, fill)
+                val outlined = surface.border > 0f
+                val offOutline = if (outlined) ratio(focus, surface.borderColor.toColor().compositeOver(fill)) else null
+                val wider = if (outlined) width / surface.border else null
+                println(
+                    "  %-18s %s  %.0fdp  on its fill %.2f  against its outline %s".format(
+                        name,
+                        surface.focusColor,
+                        width,
+                        onFill,
+                        if (outlined) "%.2f, %.1f times as wide".format(offOutline, wider) else "(none)",
+                    ),
+                )
+                if (onFill < LARGE) failed += "$id $name: focus is %.2f to 1 on its fill".format(onFill)
+                if (outlined && offOutline!! < LARGE && wider!! < 1.5f) failed += "$id $name: focus is %.2f to 1 against its outline and only %.1f times as wide".format(offOutline, wider)
+                // Never thinner than the launcher's own mark.
+                assertTrue("$id $name", width >= PackLook.MIN_MARK)
             }
         }
+        assertEquals(emptyList<String>(), failed)
+    }
+
+    /** Console's focus is as wide as it always was, and a bare icon's is the scrap's own color. */
+    @Test fun consolesFocusIsUnchanged() {
+        val console = dev.omalauncher.theme.pack.ConsolePack.pack
+        for (surface in listOf(console.scrap.surface, console.scrap.alt, console.dock.surface, console.icons.placeholder.surface)) {
+            assertEquals(2f, surface.focusWidth, 0f)
+            assertEquals(2f, focusWidth(surface), 0f)
+        }
+        assertEquals(console.scrap.surface.focusColor, console.page.focusColor)
+        assertEquals(console.palette.accent, console.page.focusColor)
+        // A pack's width only ever adds weight: an outline wider than it stays as wide.
+        assertEquals(5f, focusWidth(console.scrap.surface.copy(border = 5f)), 0f)
+        assertEquals(4f, focusWidth(console.scrap.surface.copy(focusWidth = 4f)), 0f)
     }
 
     /** The measure itself, against known answers. */

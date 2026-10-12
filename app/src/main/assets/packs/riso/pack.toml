@@ -53,14 +53,17 @@ corners = "edge"
 # The prototype leans its scraps up to four degrees; on a grid with a 6dp gap that would run
 # one tile over the next, so they lean less here.
 [scrap]
+# Focus is the blue again at twice the weight: the pink is under 3 to 1 on this paper, and 2 to 1
+# against the blue outline it would replace.
 fill = "background"
 ink = "foreground"
 border = 2
 border_color = "foreground"
-focus_color = "accent"
 muted = "muted"
 tilt_min = -1.6
 tilt_max = 1.6
+focus_color = "foreground"
+focus_width = 4
 
 [scrap.shadow]
 x = 5
@@ -72,6 +75,7 @@ fill = "foreground"
 ink = "background"
 border = 2
 border_color = "foreground"
+focus_color = "background"
 
 [scrap.tape]
 style = "solid"
@@ -95,6 +99,7 @@ pattern_size = 5
 pattern_weight = 2
 gutter = true
 drawer_fill = "background@0.97"
+focus_color = "foreground"
 
 [icons]
 treatment = "original"
@@ -128,6 +133,8 @@ fill = "background"
 ink = "foreground"
 border = 2
 border_color = "foreground"
+focus_color = "foreground"
+focus_width = 4
 
 [dock.shadow]
 x = 3

@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.translate
@@ -231,11 +232,17 @@ private fun Modifier.iconShadow(bitmap: ImageBitmap): Modifier {
 }
 
 /**
- * What an app without an icon, or a bare silhouette, sits on: the pack's placeholder surface, [size]
- * across. Console's is a fill alone, as it always was; a pack that outlines its placeholder gets the line.
+ * What an app without an icon, a bare silhouette, a folder's four icons or one of the drawer's own
+ * entries sits on: the pack's placeholder surface, [size] across, its corners of [radius], in [fill]
+ * where that isn't the placeholder's own. Console's is a fill alone, as it always was; a pack that
+ * outlines its placeholder gets the line.
  */
-fun Modifier.iconBadge(size: Dp): Modifier {
+fun Modifier.iconBadge(
+    size: Dp,
+    radius: Dp = size / 2,
+    fill: Color = Pack.badge,
+): Modifier {
     val look = Pack.look
     val sized = size(size)
-    return if (look.badgeLine.value > 0f) sized.framed(look.badgeLine, look.badgeEdge, Pack.badge, size / 2) else sized.clip(Pack.shape(size / 2)).background(Pack.badge)
+    return if (look.badgeLine.value > 0f) sized.framed(look.badgeLine, look.badgeEdge, fill, radius) else sized.clip(Pack.shape(radius)).background(fill)
 }

@@ -58,8 +58,17 @@ fun Modifier.scrap(
     return surface(scrap.surface, focused, tilt = tilt, tape = tape, bar = bar)
 }
 
-/** An outline alone in the focus color, for a bare icon that is focused or being edited. */
-fun Modifier.scrapFocus(): Modifier = framed(Pack.mark, Pack.look.pack.scrap.surface.focusColor.toColor())
+/**
+ * An outline alone, for a bare icon that is focused or being edited. It is drawn straight on the page, so
+ * it is in the page's focus color, which a pack picks to show there; as wide as a focused scrap's.
+ */
+fun Modifier.scrapFocus(): Modifier {
+    val pack = Pack.look.pack
+    return framed(focusWidth(pack.scrap.surface).dp, pack.page.focusColor.toColor())
+}
+
+/** How wide [surface]'s outline is while focused: the pack's focus width, or the surface's own outline where that is wider. */
+internal fun focusWidth(surface: PackSurface) = maxOf(surface.border, surface.focusWidth)
 
 /** The dock's bar, the recent apps strip and the side rail: the pack's `[dock]` surface, outlined in its focus color while [focused]. */
 fun Modifier.dockBar(focused: Boolean = false): Modifier = surface(Pack.look.pack.dock.surface, focused)
@@ -99,8 +108,8 @@ internal fun Modifier.surface(
             focused -> surface.focusColor.toColor()
             else -> surface.borderColor.toColor()
         }
-    // Focus shows even where the pack's scraps have no outline.
-    val width = if (focused && outlined) maxOf(surface.border, PackLook.MIN_MARK) else surface.border
+    // Focus shows even where the pack's scraps have no outline, and at the pack's own weight where it gives one.
+    val width = if (focused && outlined) focusWidth(surface) else surface.border
     val plain = !surface.shadow.visible && !surface.shadow2.visible && tilt == 0f && tape == null && bar == null
     if (plain) {
         val filled = clip(shape).background(fill, shape)
