@@ -63,6 +63,9 @@ class LauncherState {
         sharing = null
     }
 
+    /** Where the widget tiles on the pages showing are, for a widget's screen to grow out of. */
+    internal val tiles = TileBounds()
+
     /** Key of the home tile in edit mode (handles and action bar shown), if any. */
     var editing by mutableStateOf<String?>(null)
 

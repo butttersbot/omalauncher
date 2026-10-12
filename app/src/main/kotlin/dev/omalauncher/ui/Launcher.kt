@@ -277,7 +277,13 @@ private fun ThemesOverlay(
     state: LauncherState,
 ) {
     // A widget's screen first: what it opens (themes, agents) draws on top of it.
-    runtime.widgets.screenInstance()?.let { (spec, inst) -> WidgetScreenPanel(spec, inst, onDismiss = { runtime.widgets.openScreen = null }) }
+    // It grows out of its tile, and stays until it has shrunk back into it.
+    WidgetScreenHost(
+        open = runtime.widgets.screenInstance(),
+        tiles = state.tiles,
+        running = { spec, inst -> runtime.widgets.instance(spec) === inst },
+        onDismiss = { runtime.widgets.openScreen = null },
+    )
     // Settings first so the screens it opens draw on top of it.
     if (state.settingsOpen) {
         SettingsScreen(

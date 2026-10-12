@@ -458,6 +458,7 @@ fun HomeScreen(
                             onInstall = { engine.installDependencies(item.spec) },
                             waitsForLinux = if (engine.waitsForLinux(item.spec)) linuxState else null,
                             onInstallLinux = { state.linuxOpen = true },
+                            tiles = state.tiles,
                             onFix = { log ->
                                 val agent = runtime.agents.default
                                 if (agent == null) {
