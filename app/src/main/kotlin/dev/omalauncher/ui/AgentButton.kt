@@ -40,6 +40,7 @@ import dev.omalauncher.Runtime
 import dev.omalauncher.assist.AgentTasks
 import dev.omalauncher.linux.LinuxState
 import dev.omalauncher.linux.agentInvocation
+import dev.omalauncher.oma.ring.OmaRing
 import dev.omalauncher.phone.PhoneBridge
 import kotlinx.coroutines.flow.collectLatest
 
@@ -88,6 +89,11 @@ internal fun rememberAgentVoice(): AgentVoice {
     DisposableEffect(voice) { onDispose { speech.cancel() } }
     BackHandler(enabled = speech.listening) { speech.cancel() }
     val listening = speech.listening
+    // The ring listens for exactly as long as the recognizer is live: a release, a cancel and an error all end it here.
+    DisposableEffect(voice, listening) {
+        OmaRing.hearing(voice, listening)
+        onDispose { OmaRing.hearing(voice, false) }
+    }
     // Followed in an effect and read only when drawing the level bar: the mic updates it many times a second,
     // and reading it in composition would recompose the whole band each time.
     LaunchedEffect(voice, listening) {
