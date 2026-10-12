@@ -7,6 +7,9 @@
 # Lengths are dp, text sizes sp, angles degrees, times milliseconds. A color is "#rrggbb",
 # "#aarrggbb", or the name of a [palette] color, and any of them may end in "@" and an alpha
 # from 0 to 1: "background@0.88". Files are paths inside the pack's folder, "" for none.
+#
+# Compatibility: a key's meaning never changes; a new format number only adds keys; and a
+# build ignores the keys it doesn't know. A token that must mean something else gets a new key.
 
 [pack]
 format = 1

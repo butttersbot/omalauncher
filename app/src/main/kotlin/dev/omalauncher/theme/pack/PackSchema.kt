@@ -69,6 +69,9 @@ data class PackPaint(
     companion object {
         private val NAME = Regex("^[a-z0-9_]{1,40}$")
 
+        /** True when [text] gives an alpha outside 0 to 1, which [parse] pulls in. */
+        fun alphaOutOfRange(text: String) = '@' in text && text.substringAfter('@').trim().toFloatOrNull()?.let { it < 0f || it > 1f } == true
+
         /** Null unless [text] is a color, or names one of [roles] or `extra.` one of [extras]. */
         fun parse(
             text: String,
@@ -95,6 +98,11 @@ data class PackPaint(
  * Console pack and the tests all read. Adding a token means adding it here, reading it in
  * [PackBuilder], and adding it to assets/packs/console/pack.toml; the tests fail until all
  * three agree.
+ *
+ * How the format stays compatible: a key's meaning never changes; a new format number only
+ * adds keys; and a build ignores the keys it doesn't know. So an old pack loads on a new build
+ * with Console's value for what was added since, and a new pack loads on an old build without
+ * what that build can't draw. A token that has to mean something else gets a new key.
  */
 object PackSchema {
     /** The format this build writes. A pack says which it was written for in `[pack] format`. */
@@ -297,10 +305,20 @@ object PackSchema {
         val pulses: Int,
     )
 
+    /** The longest path a manifest may give for a file. */
+    const val MAX_PATH = 200
+
+    /**
+     * True for a character text shown to the user may not hold: a control character, or one of
+     * Unicode's direction controls (U+202A to U+202E, U+2066 to U+2069), which would turn the
+     * text around them back to front.
+     */
+    fun unshowable(c: Char) = c < ' ' || c == '\u007f' || c in '‪'..'‮' || c in '⁦'..'⁩'
+
     /** A path a manifest may give for a file: relative, inside the pack, and plainly spelled. Null if it's fine. */
     fun pathProblem(path: String): String? =
         when {
-            path.length > 200 -> "the path is too long"
+            path.length > MAX_PATH -> "the path is too long"
             path.any { it < ' ' || it == '\\' || it == ':' || it == '\u007f' } -> "the path has a character a pack's files can't"
             path.startsWith("/") || path.startsWith("~") -> "the path isn't inside the pack"
             path.split('/').any { it.isEmpty() || it == "." || it == ".." } -> "the path isn't inside the pack"
@@ -339,7 +357,7 @@ internal fun PackToken.read(
 ): TokenRead =
     when (val kind = kind) {
         TokenKind.Paint ->
-            (raw as? String)?.let { PackPaint.parse(it, PackSchema.roles.toSet(), extras) }?.let { TokenRead.Ok(it) }
+            (raw as? String)?.let { text -> PackPaint.parse(text, PackSchema.roles.toSet(), extras)?.let { TokenRead.Ok(it, PackPaint.alphaOutOfRange(text)) } }
                 ?: TokenRead.Bad("not a color or a palette role")
         is TokenKind.Number -> {
             val n = (raw as? Number)?.toDouble()
@@ -365,7 +383,7 @@ internal fun PackToken.read(
             when {
                 raw !is String -> TokenRead.Bad("not text")
                 raw.length > kind.max -> TokenRead.Bad("longer than ${kind.max} characters")
-                raw.any { it < ' ' || it == '\u007f' } -> TokenRead.Bad("has a character that can't be shown")
+                raw.any(PackSchema::unshowable) -> TokenRead.Bad("has a character that can't be shown")
                 else -> TokenRead.Ok(raw)
             }
         TokenKind.Flag -> (raw as? Boolean)?.let { TokenRead.Ok(it) } ?: TokenRead.Bad("not true or false")
@@ -373,6 +391,7 @@ internal fun PackToken.read(
             when {
                 raw !is String -> TokenRead.Bad("not a file name")
                 raw.isEmpty() -> TokenRead.Ok(raw)
+                raw.length > PackSchema.MAX_PATH -> TokenRead.Bad("a path of more than ${PackSchema.MAX_PATH} characters")
                 PackSchema.pathProblem(raw) != null -> TokenRead.Bad(PackSchema.pathProblem(raw)!!, PackIssue.Kind.FileOutside)
                 raw.substringAfterLast('.', "").lowercase() !in kind.type.extensions ->
                     TokenRead.Bad("not a ${kind.type.extensions.joinToString(", ")} file")

@@ -11,8 +11,14 @@ object PackManifest {
     class Parsed(
         /** Each key's value: a String, Long, Double or Boolean. The first of a repeated key wins. */
         val values: Map<String, Any>,
-        /** One sentence per line that was skipped, with its line number. */
+        /** One sentence per line that was skipped and named no key, with its line number. */
         val problems: List<String>,
+        /**
+         * Keys that were set to something this build can't read (`radius = NaN`, a list), each with
+         * a sentence saying where, so a slip isn't taken for a key left out. A key also in
+         * [values] was set again, readably.
+         */
+        val unreadable: Map<String, String> = emptyMap(),
     )
 
     /** No token needs a longer line, and a short one keeps the patterns below cheap whatever a pack holds. */
@@ -27,6 +33,7 @@ object PackManifest {
     fun parse(text: String): Parsed {
         val values = LinkedHashMap<String, Any>()
         val problems = ArrayList<String>()
+        val unreadable = LinkedHashMap<String, String>()
         var section = ""
         // A section header we couldn't read hides its keys, rather than filing them under the one before.
         var lost = false
@@ -54,12 +61,12 @@ object PackManifest {
             val key = if (section.isEmpty()) match.groupValues[1] else section + "." + match.groupValues[1]
             val value = value(match.groupValues[2])
             when {
-                value == null -> problems += "$at: $key has a value this build can't read"
+                value == null -> unreadable.putIfAbsent(key, "$at: not a value this build can read")
                 key in values -> problems += "$at: $key is set twice; the first one counts"
                 else -> values[key] = value
             }
         }
-        return Parsed(values, problems)
+        return Parsed(values, problems, unreadable)
     }
 
     /** One value with what follows it on the line, which may only be a comment. Null if it isn't one we read. */

@@ -49,8 +49,9 @@ internal class PackBuilder(
         colors?.let { theme ->
             PackSchema.themeRoles.zip(THEME_KEYS).mapNotNull { (role, key) -> theme[key]?.let(PackColor::parse)?.let { "palette.$role" to it } }.toMap()
         } ?: emptyMap()
+    /** The pack's own extra colors, with the theme's laid over them. */
     private val named: Map<String, PackColor> =
-        colors?.mapNotNull { (key, value) -> PackColor.parse(value)?.let { key to it } }?.toMap() ?: tokens.extra
+        tokens.extra + colors.orEmpty().mapNotNull { (key, value) -> PackColor.parse(value)?.let { key to it } }
     private val light: Boolean? = colors?.let { it["mode"] == "light" }
 
     private fun value(key: String): Any {

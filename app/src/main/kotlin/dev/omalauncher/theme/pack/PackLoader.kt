@@ -50,11 +50,30 @@ class PackLoad(
 ) {
     /** The tokens that got Console's value instead of the pack's (PRD UP-10). */
     val fallbacks get() = issues.filter { it.kind.fellBack }
+
+    /**
+     * True when something in the pack is wrong, rather than merely left to Console: the manifest
+     * couldn't be used, or an issue is of a kind other than Missing, Ignored or Newer. A pack that
+     * sets only a few tokens isn't broken; one with a bad value, a lost file or a clamped number is.
+     */
+    val broken get() = error != null || issues.any { it.kind !in QUIET }
+
+    private companion object {
+        val QUIET = setOf(PackIssue.Kind.Missing, PackIssue.Kind.Ignored, PackIssue.Kind.Newer)
+    }
 }
 
 /**
  * Reads a pack folder into a [ThemePack]. Whatever is in the folder, this returns: a token the
  * pack leaves out or gets wrong is Console's, and a manifest that can't be read is all of Console.
+ *
+ * Two things this leaves to whoever builds on it:
+ * - A font or image is checked against its size limit ([AssetType.maxBytes]) by what
+ *   [PackSource.stat] reports, once, here. The code that later opens the file to decode it must
+ *   stop reading at the limit itself, since the file may have changed or the source misreported.
+ * - Any [id] of the right shape is taken, "console" included, from any source. The registry
+ *   that lists installed packs must keep [ConsolePack.ID] for the built-in one, or a
+ *   downloaded folder named console would pass for it.
  */
 object PackLoader {
     const val MANIFEST = "pack.toml"
@@ -94,15 +113,24 @@ object PackLoader {
         val issues = ArrayList<PackIssue>()
         parsed.problems.mapTo(issues) { PackIssue("", PackIssue.Kind.Ignored, it) }
 
-        if (raw.isEmpty()) return failed("$MANIFEST has nothing in it this build can read.")
+        val unreadable = parsed.unreadable.filterKeys { it !in raw }
+        if (raw.isEmpty() && unreadable.isEmpty()) return failed("$MANIFEST has nothing in it this build can read.")
         val format = (raw["pack.format"] as? Long)?.takeIf { it in 1..Int.MAX_VALUE }?.toInt()
-            ?: return failed("$MANIFEST doesn't say which pack format it is written for ([pack] format = ${PackSchema.FORMAT}).")
+        if (format == null) {
+            return failed(
+                if ("pack.format" in raw || "pack.format" in unreadable) {
+                    "$MANIFEST's pack format has to be a whole number from 1 up ([pack] format = ${PackSchema.FORMAT})."
+                } else {
+                    "$MANIFEST doesn't say which pack format it is written for ([pack] format = ${PackSchema.FORMAT})."
+                },
+            )
+        }
         if (format > PackSchema.FORMAT) {
             issues += PackIssue("pack.format", PackIssue.Kind.Newer, "written for format $format; this build reads ${PackSchema.FORMAT} and skips what it doesn't know")
         }
         val given = raw["pack.name"]
-        val named = (given as? String)?.trim()?.takeIf { it.isNotEmpty() && it.length <= 40 && it.none { c -> c < ' ' || c == '\u007f' } }
-        if (given != null && named == null) {
+        val named = (given as? String)?.trim()?.takeIf { it.isNotEmpty() && it.length <= 40 && it.none(PackSchema::unshowable) }
+        if ((given != null || "pack.name" in unreadable) && named == null) {
             issues += PackIssue("pack.name", PackIssue.Kind.Invalid, "not a name of up to 40 characters; the folder's name is used")
         }
         val name = named ?: id
@@ -125,7 +153,9 @@ object PackLoader {
             val console = ConsolePack.tokens.values.getValue(key)
             val given = raw[key]
             if (given == null) {
-                issues += PackIssue(key, PackIssue.Kind.Missing, "not set")
+                // Set to something unreadable is a mistake to show; not set at all is a pack saying less.
+                val slip = unreadable[key]
+                issues += if (slip != null) PackIssue(key, PackIssue.Kind.Invalid, slip) else PackIssue(key, PackIssue.Kind.Missing, "not set")
                 values[key] = console
                 continue
             }
@@ -150,6 +180,9 @@ object PackLoader {
             if (key !in PackSchema.byKey && key !in META && !key.startsWith(EXTRA_PREFIX)) {
                 issues += PackIssue(key, PackIssue.Kind.Ignored, "not a key this build knows")
             }
+        }
+        for ((key, slip) in unreadable) {
+            if (key !in PackSchema.byKey && key !in META) issues += PackIssue(key, PackIssue.Kind.Ignored, slip)
         }
 
         val tokens = PackTokens(id, name, format, values, extra)

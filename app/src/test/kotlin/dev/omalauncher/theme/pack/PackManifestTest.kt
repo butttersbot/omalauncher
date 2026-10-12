@@ -69,7 +69,10 @@ class PackManifestTest {
                 ).joinToString("\n"),
             )
         assertEquals(mapOf<String, Any>("pack.format" to 1L, "fine.kept" to 1L), parsed.values)
-        assertEquals(listOf(3, 4, 5, 6, 7, 8, 9, 10, 11, 15), parsed.problems.map { it.substringAfter("line ").substringBefore(':').toInt() })
+        assertEquals(listOf(9, 10, 11, 15), parsed.problems.map { it.substringAfter("line ").substringBefore(':').toInt() })
+        // A key set to something unreadable is remembered as that, not lost among the lines.
+        assertEquals(listOf("pack.list", "pack.table", "pack.open", "pack.junk", "pack.bad", "pack.date"), parsed.unreadable.keys.toList())
+        assertEquals(listOf(3, 4, 5, 6, 7, 8), parsed.unreadable.values.map { it.substringAfter("line ").substringBefore(':').toInt() })
     }
 
     @Test fun neverThrowsOnNoise() {

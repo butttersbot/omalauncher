@@ -179,7 +179,6 @@ class PackLoaderTest {
                 "fonts/..",
                 "..",
                 "fonts/secret.ttf/",
-                "a/".repeat(120) + "secret.ttf",
             )
         for (path in outside) {
             val source = packOf(consoleManifest(mapOf("type.display.file" to path, "page.wallpaper_cover" to path.replace(".ttf", ".png"))))
@@ -194,6 +193,88 @@ class PackLoaderTest {
         // A control character smuggled in by an escape is no better.
         val load = loadPack("[pack]\nformat = 1\n[type.display]\nfile = \"a\\u0000.ttf\"\n", "a")
         assertEquals(PackIssue.Kind.FileOutside, kinds(load)["type.display.file"])
+
+        // A path that is only too long says so, and isn't looked for either.
+        val long = packOf(consoleManifest(mapOf("type.display.file" to "a/".repeat(120) + "font.ttf", "type.body.file" to "b".repeat(196) + ".ttf")), "b".repeat(196) + ".ttf")
+        val tooLong = PackLoader.load(long, "test")
+        assertEquals(listOf(PackIssue("type.display.file", PackIssue.Kind.Invalid, "a path of more than 200 characters")), tooLong.issues)
+        assertEquals("", tooLong.pack.type.display.file)
+        assertEquals(200, tooLong.pack.type.body.file.length)
+        assertTrue(long.asked.none { it.startsWith("a/") })
+    }
+
+    /** `radius = NaN` is a slip to show the author; it mustn't read as a pack that left radius alone. */
+    @Test fun aValueTheParserCantReadIsInvalidNotMissing() {
+        val load =
+            loadPack(
+                "[pack]\nformat = 1\nname = [\"a\"]\n[shape]\nradius = NaN\ngap = 0x10\ncorners = round\nsquircle = [1]\n" +
+                    "[scrap]\nborder = 1_000\nfill = \"unclosed\n[type.display]\nweight = 4 00\nweight = 700\n[palette.extra]\nspot = {}\n",
+            )
+        assertNull(load.error)
+        val slips = load.issues.filter { it.kind != PackIssue.Kind.Missing }
+        assertEquals(
+            mapOf(
+                "pack.name" to PackIssue.Kind.Invalid,
+                "shape.radius" to PackIssue.Kind.Invalid,
+                "shape.gap" to PackIssue.Kind.Invalid,
+                "shape.corners" to PackIssue.Kind.Invalid,
+                "scrap.border" to PackIssue.Kind.Invalid,
+                "scrap.fill" to PackIssue.Kind.Invalid,
+                "shape.squircle" to PackIssue.Kind.Ignored,
+                "palette.extra.spot" to PackIssue.Kind.Ignored,
+            ),
+            slips.associate { it.token to it.kind },
+        )
+        assertTrue(slips.toString(), slips.none { it.token.isEmpty() })
+        assertEquals("line 5: not a value this build can read", slips.first { it.token == "shape.radius" }.detail)
+        assertEquals(ConsolePack.pack.shape, load.pack.shape)
+        // Set again readably, the key has the value that could be read.
+        assertEquals(700, load.pack.type.display.weight)
+        assertTrue(load.broken)
+    }
+
+    @Test fun tellsABrokenPackFromASparseOne() {
+        assertTrue(!PackLoader.load(DirectoryPackSource(moduleFile("src/test/resources/packs/dial-up")), "dial-up").broken)
+        assertTrue(!loadPack("[pack]\nformat = 3\n[hologram]\nshimmer = 1\n").broken)
+        assertTrue(!loadPack(consoleManifest()).broken)
+        assertTrue(loadPack("").broken)
+        assertTrue(loadPack(consoleManifest(mapOf("shape.radius" to 400))).broken)
+        assertTrue(loadPack(consoleManifest(mapOf("shape.radius" to "big"))).broken)
+        assertTrue(loadPack(consoleManifest(mapOf("type.hand.file" to "gone.ttf"))).broken)
+        assertTrue(loadPack(consoleManifest(mapOf("type.hand.file" to "../gone.ttf"))).broken)
+    }
+
+    @Test fun saysWhenAnAlphaIsOutOfRange() {
+        val load = loadPack(consoleManifest(mapOf("scrap.fill" to "accent@-1", "scrap.ink" to "#ffffff@7", "dock.fill" to "accent@1", "dock.ink" to "accent@0")))
+        assertNull(load.error)
+        assertEquals(mapOf("scrap.fill" to PackIssue.Kind.Clamped, "scrap.ink" to PackIssue.Kind.Clamped), kinds(load))
+        assertEquals(emptyList<PackIssue>(), load.fallbacks)
+        assertEquals("#007aa2f7", load.pack.scrap.surface.fill.toString())
+        assertEquals("#ffffffff", load.pack.scrap.surface.ink.toString())
+        assertTrue(load.issues.first().detail, load.issues.first().detail.contains("accent@0.0"))
+    }
+
+    @Test fun refusesTextThatWouldTurnTheScreenAround() {
+        for (control in listOf('‪', '‫', '‬', '‭', '‮', '⁦', '⁧', '⁨', '⁩')) {
+            val load = loadPack(consoleManifest(mapOf("pack.name" to "${control}emosewa", "scrap.title_bar.glyph" to "$control×")))
+            assertEquals(mapOf("pack.name" to PackIssue.Kind.Invalid, "scrap.title_bar.glyph" to PackIssue.Kind.Invalid), kinds(load))
+            assertEquals("test", load.pack.name)
+            assertEquals("", load.pack.scrap.titleBar.glyph)
+        }
+        // Text that merely is right-to-left is fine.
+        assertEquals("שלום", loadPack(consoleManifest(mapOf("pack.name" to "שלום"))).pack.name)
+    }
+
+    @Test fun saysWhatIsWrongWithTheFormat() {
+        for (bad in listOf("1.0", "\"1\"", "2147483648", "0", "-1", "1e0", "true", "0x1", "[1]", "one")) {
+            val error = loadPack("[pack]\nformat = $bad\n[shape]\nradius = 4\n").error
+            assertNotNull(bad, error)
+            assertTrue("$bad: $error", error!!.contains("whole number from 1 up"))
+        }
+        for (absent in listOf("[shape]\nradius = 4\n", "[pack]\nname = \"x\"\n", "format = 1\n")) {
+            assertTrue(absent, loadPack(absent).error!!.contains("doesn't say which pack format"))
+        }
+        assertNull(loadPack("[pack]\nformat = 2147483647\n").error)
     }
 
     @Test fun aFolderNeverReadsThroughALinkOutOfIt() {
@@ -346,6 +427,8 @@ class PackLoaderTest {
         assertEquals(ConsolePack.pack.shape, odd.pack.shape)
         assertEquals(2f, odd.pack.scrap.surface.border, 0f)
         assertEquals(PackIssue.Kind.Invalid, kinds(odd)["scrap.border"])
+        assertEquals(PackIssue.Kind.Invalid, kinds(odd)["shape.radius"])
+        assertEquals(PackIssue.Kind.Invalid, kinds(odd)["shape.gap"])
     }
 
     @Test fun ignoresKeysItDoesntKnow() {
@@ -358,7 +441,7 @@ class PackLoaderTest {
         assertEquals(
             mapOf(
                 "pack.format" to PackIssue.Kind.Newer,
-                "" to PackIssue.Kind.Ignored,
+                "hologram.layers" to PackIssue.Kind.Ignored,
                 "hologram.shimmer" to PackIssue.Kind.Ignored,
                 "shape.squircle" to PackIssue.Kind.Ignored,
                 "pack.author" to PackIssue.Kind.Ignored,
@@ -504,6 +587,13 @@ class PackLoaderTest {
             ),
             kinds(load),
         )
+        // Drawn in an Omarchy theme's colors, the pack keeps its own extras, and the theme's win a shared name.
+        val themed = load.tokens.resolve(mapOf("accent" to "#ff0000", "yellow" to "#ffff00")).palette
+        assertEquals(mapOf("washi" to "#ffefe0ae", "accent" to "#ffff0000", "yellow" to "#ffffff00"), themed.named.mapValues { it.value.toString() })
+        assertEquals("#ffff0000", themed.accent.toString())
+        val shared = loadPack(consoleManifest() + "\n[palette.extra]\nyellow = \"#111111\"\nwashi = \"#efe0ae\"\n").tokens.resolve(mapOf("yellow" to "#ffff00")).palette
+        assertEquals(mapOf("yellow" to "#ffffff00", "washi" to "#ffefe0ae"), shared.named.mapValues { it.value.toString() })
+
         val many = (0 until 100).joinToString("\n") { "c$it = \"#000000\"" }
         assertEquals(64, loadPack(consoleManifest() + "\n[palette.extra]\n$many\n").pack.palette.named.size)
     }
