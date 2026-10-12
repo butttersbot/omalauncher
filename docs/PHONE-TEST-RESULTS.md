@@ -1,5 +1,17 @@
 # Phone test results
 
+## Latest: a bundle from four agents in parallel (2026-10-12, 16:30–16:50 PDT)
+Boss asked for the open items to be done in parallel and bundled; nothing here is promoted. Commit 4c8934a. `oma-build`: PASS, 712 tests, 0 failures.
+- Voice confirm step (assist/ListeningRequest.kt new, ListeningScreen.kt, OmaAssistant.kt): after he stops talking the words wait under "SEND THIS?" with Send, Add more, Cancel; no timer, nothing sent until Send; Add more appends with one space; Cancel or a tap on the paper sends nothing. Tests: ListeningRequestTest (10), including Cancel sends nothing (handoff item 4). NOT seen running: Oma Dev has no assistant; needs the real launcher.
+- Phone control (phone/PhoneService.kt, PhoneControlPolicy.kt `PhoneTouch`): `read` clears Android's node cache and waits out 350 ms after this service's own action; `click` resolves on fresh nodes and falls back to a tap at the node's centre when ACTION_CLICK is refused; swipe may last 5000 ms. On theory only, not confirmed; `oma-phone` talks to the real launcher, so none of it can be tried before promotion. PhonePagesTest's pinned count of access checks went from 2 to 3 on purpose: the delayed read asks again, as the screenshot does.
+- `page` not turning on the cover screen: cause found in ui/Home.kt, the effect keyed on `requestedPage` cleared its own key before `animateScrollToPage`, which cancelled the scroll a frame in (since c64a8d0). Fixed by launching the scroll in the composition's scope. Also affects turning from the overview. Not seen running yet.
+- A note sent while another page shows going to the page the request came from: by design (PRD AC-29), no change.
+- Status bar (ui/Theme.kt, PackAdapter.kt `barsOnLight`, LauncherState.kt, MainActivity.kt): cause was `enableEdgeToEdge` re-applying the bars from activity start on every fold or rotation. Bars are now set directly from the look, the app list and any open panel. SEEN in Oma Dev, inner screen: bujo has dark, readable clock and icons; city pop has white ones on its blue sky. Not seen: after a fold, panels in city pop and instrument.
+- Carrying notes (ui/Notes.kt, HomeGrid.kt, annotations): past the last page a new page is offered and withdrawn if nothing lands; a note is no longer left on a page that turned away; a full page says so once. SEEN in Oma Dev, inner screen: the note on Page 2 held at the right edge now lands on Page 3 as the page turns (it stayed behind before). Not seen: the offered page (needs a hold longer than the 2000 ms the installed launcher's swipe allows), the cover screen, a full page.
+- Decisions Boss made today are in PHONE-HANDOFF.md.
+- Oma Dev is left in riso with the test notes on Pages 1 and 3.
+- Next in this bundle: note, sticker and text buttons in the drawing tools row.
+
 ## Latest: notes and stickers can be carried to another page (2026-10-12, 16:17–16:26 PDT)
 Asked by Boss: a long press lifts a note, but it could not be dragged from one page to another.
 - Change (commit 0c1ec9a): `carryScrap` in widgets/annotations/Annotations.kt (the rule: off one page, onto another at a place, the owner's and on top, a new id if the page has one like it, refused if that page is full), `AnnotationBook.moveScrap`, and in ui/Notes.kt the carry now follows the finger in screen coordinates and changes page through a `Crossing` that HomeGrid.kt gives it: side by side the finger picks the page; resting at a side edge for PAGE_TURN_MS turns the page, as for a tile.
