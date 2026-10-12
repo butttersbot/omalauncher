@@ -1,5 +1,15 @@
 # Phone test results
 
+## Latest: old notes removed; Oma Dev told apart by name and colour (2026-10-12, 16:07–16:12 PDT)
+Asked by Boss from the phone.
+- Notes: deleted the three notes left by the old build over widgets (one on Page 1 over the today tile, two on Page 2 over the terminal), each by tapping it and "delete" in the note menu. `oma-phone board` afterwards: Page 2 has no notes, Page 1 has only the one in the free strip. The later `oma-phone note` replaced that one in place (`replaced:true`, cells 3,8 3x1, `clear:true`).
+- Change (commits aa0f13e, 4f9ba4c): a `labelSuffix` manifest placeholder, empty by default, on the three other app-list entries ("Oma", "Phone control", "Oma assistant"); the accessibility service is now "${appLabel} phone control". dev.init.gradle sets the suffix to " Dev", names the app "Omalauncher Dev" and adds `tools/fold-development/dev-res` (a magenta icon background) to the debug resources.
+- `oma-build`: PASS, 679 tests, 0 failures. The working launcher's APK keeps its labels: "Omalauncher Boss", "Phone control", "Oma assistant", "Oma". It was built (versionCode 31) but NOT installed.
+- `oma-dev --no-open`: installed. Its APK's labels: "Omalauncher Dev", "Phone control Dev", "Oma assistant Dev", "Oma Dev".
+- Seen on the phone: searching "oma" in the app list shows "Oma" with the dark icon and "Oma assistant Dev", "Oma Dev", "Omalauncher Dev" with magenta icons. The dock's Oma Dev icon is magenta too.
+- FAIL (phone control, new): on the cover screen `oma-phone page "Page 2"` answered ok and `pages` said showing "Page 2", but the screen stayed on "Page 1  1/2". A swipe turned it. And `oma-phone note` sent while Page 2 was showing went to Page 1.
+- Screen timeout is still set to never (was 30000 ms).
+
 ## Latest: note placement on the real launcher — PASS (2026-10-12, 16:04 PDT)
 - `oma-install --status` after the restart: "INSTALL_SUCCESS ... In-place launcher update verified." Linux, login and this agent came back.
 - `oma-phone board` (Page 1, cover screen, grid 6x9): five tiles, one old note on cells 0,0 3x2 (over the today tile, left by the old build), free: one rectangle, col 3 row 8, 3x1.
