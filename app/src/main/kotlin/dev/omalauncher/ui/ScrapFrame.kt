@@ -6,7 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.omalauncher.theme.pack.Dressing
@@ -106,20 +107,27 @@ internal fun Modifier.surface(
         // A border of no width would still draw a hairline.
         return if (width > 0f) filled.border(width.dp, line, shape) else filled
     }
+    // The second shadow lies under the first.
+    val shadows = listOf(surface.shadow2, surface.shadow).filter { it.visible }
     val drawn =
-        drawWithContent {
-            val path = Path().apply { addOutline(shape.createOutline(size, layoutDirection, this@drawWithContent)) }
-            rotate(tilt) {
-                for (shadow in listOf(surface.shadow2, surface.shadow)) if (shadow.visible && !shadow.inset) castShadow(path, shadow)
-                drawPath(path, fill)
-                clipPath(path) {
-                    this@drawWithContent.drawContent()
-                    for (shadow in listOf(surface.shadow2, surface.shadow)) if (shadow.visible && shadow.inset) insetShadow(path, shadow)
-                    if (bar != null) titleBar(bar, surface.borderColor.toColor())
-                    // Half of a stroke twice as wide falls outside the clip, which leaves the outline inside the edge.
-                    if (width > 0f) drawPath(path, line, style = Stroke(width.dp.toPx() * 2f))
+        drawWithCache {
+            // Built when the scrap's size changes, not on every frame.
+            val path = Path().apply { addOutline(shape.createOutline(size, layoutDirection, this@drawWithCache)) }
+            val cast = shadows.filter { !it.inset }.map { it to shadowPaint(it, inset = false) }
+            val sunk = shadows.filter { it.inset }.map { it to shadowPaint(it, inset = true) }
+            onDrawWithContent {
+                rotate(tilt) {
+                    for ((shadow, paint) in cast) shadow(path, shadow, paint)
+                    drawPath(path, fill)
+                    clipPath(path) {
+                        this@onDrawWithContent.drawContent()
+                        for ((shadow, paint) in sunk) shadow(path, shadow, paint)
+                        if (bar != null) titleBar(bar, surface.borderColor.toColor())
+                        // Half of a stroke twice as wide falls outside the clip, which leaves the outline inside the edge.
+                        if (width > 0f) drawPath(path, line, style = Stroke(width.dp.toPx() * 2f))
+                    }
+                    if (tape != null) tape(tape)
                 }
-                if (tape != null) tape(tape)
             }
         }
     return if (bar != null) drawn.padding(top = bar.height.dp) else drawn
@@ -127,35 +135,29 @@ internal fun Modifier.surface(
 
 private const val FOCUS_WIDTH = 2f
 
-private fun blurred(
-    color: Color,
-    blur: Float,
+/**
+ * What [shadow] is painted with. A cast shadow fills the scrap's outline again; one that falls inward,
+ * like a recessed display's, is a blurred line along the outline, drawn inside the scrap's clip.
+ */
+private fun Density.shadowPaint(
+    shadow: PackShadow,
+    inset: Boolean,
 ) = Paint().apply {
-    this.color = color
-    if (blur > 0f) asFrameworkPaint().maskFilter = BlurMaskFilter(blur, BlurMaskFilter.Blur.NORMAL)
-}
-
-/** [path] again in the shadow's color, moved by its offset, under the scrap. */
-private fun DrawScope.castShadow(
-    path: Path,
-    shadow: PackShadow,
-) {
-    val paint = blurred(shadow.color.toColor(), shadow.blur.dp.toPx())
-    translate(shadow.x.dp.toPx(), shadow.y.dp.toPx()) { drawIntoCanvas { it.drawPath(path, paint) } }
-}
-
-/** A shadow falling inward from the scrap's edge, like a recessed display; drawn inside the scrap's clip. */
-private fun DrawScope.insetShadow(
-    path: Path,
-    shadow: PackShadow,
-) {
+    color = shadow.color.toColor()
     val blur = shadow.blur.dp.toPx()
-    val reach = maxOf(kotlin.math.abs(shadow.x.dp.toPx()), kotlin.math.abs(shadow.y.dp.toPx()))
-    val paint =
-        blurred(shadow.color.toColor(), blur).apply {
-            style = PaintingStyle.Stroke
-            strokeWidth = (blur + reach) * 2f
-        }
+    if (blur > 0f) asFrameworkPaint().maskFilter = BlurMaskFilter(blur, BlurMaskFilter.Blur.NORMAL)
+    if (inset) {
+        style = PaintingStyle.Stroke
+        strokeWidth = blur + 2f * maxOf(kotlin.math.abs(shadow.x.dp.toPx()), kotlin.math.abs(shadow.y.dp.toPx()))
+    }
+}
+
+/** [path] again with the shadow's paint, moved by its offset. */
+private fun DrawScope.shadow(
+    path: Path,
+    shadow: PackShadow,
+    paint: Paint,
+) {
     translate(shadow.x.dp.toPx(), shadow.y.dp.toPx()) { drawIntoCanvas { it.drawPath(path, paint) } }
 }
 
