@@ -1,9 +1,21 @@
 package dev.omalauncher.phone
 
 import android.accessibilityservice.*
+import android.app.KeyguardManager
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.res.Configuration
 import android.graphics.*
 import android.os.*
 import android.view.accessibility.*
+import dev.omalauncher.oma.OwnScreens
+import dev.omalauncher.oma.ring.OmaRing
+import dev.omalauncher.oma.ring.RingState
+import dev.omalauncher.oma.ring.doneMillis
+import dev.omalauncher.oma.ring.ringState
+import dev.omalauncher.oma.ring.ringStyle
 import org.json.*
 import java.io.File
 import java.util.UUID
@@ -13,10 +25,62 @@ class PhoneService : AccessibilityService() {
     companion object { @Volatile var instance: PhoneService? = null; private set }
     private var snapshot = ""
     private var signatures = emptyMap<String, String>()
-    override fun onServiceConnected() { PhoneAccess.load(this); instance = this }
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
+    private val main = Handler(Looper.getMainLooper())
+    /** The ring over other apps. Off: [ringFacts] says it isn't allowed unless the stored setting is true, which nothing sets. */
+    private val ring = RingOverlay(ServiceRingWindow(this), ::ringFacts)
+    private val checkRing = Runnable { syncRing() }
+    private var unwatchRing: (() -> Unit)? = null
+    private val screenChanged = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) = syncRing()
+    }
+    override fun onServiceConnected() { PhoneAccess.load(this); instance = this; watchRing() }
+    /** A window changed, the lock screen's among them: an overlay that is up looks again at once. */
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) { if (ring.shown) syncRing() }
     override fun onInterrupt() = Unit
-    override fun onDestroy() { instance = null; PhoneAccess.clearIndicator(this); super.onDestroy() }
+    /** Folded, unfolded or turned. */
+    override fun onConfigurationChanged(newConfig: Configuration) { super.onConfigurationChanged(newConfig); lookAgain(ring.relayout()) }
+    override fun onUnbind(intent: Intent?): Boolean { closeRing(); return super.onUnbind(intent) }
+    override fun onDestroy() { instance = null; closeRing(); PhoneAccess.clearIndicator(this); super.onDestroy() }
+
+    private fun watchRing() {
+        closeRing()
+        unwatchRing = OmaRing.watch { main.post(checkRing) }
+        // The screen going off, or coming back at the lock: checked at once rather than at the next look.
+        runCatching {
+            registerReceiver(screenChanged, IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_OFF); addAction(Intent.ACTION_SCREEN_ON); addAction(Intent.ACTION_USER_PRESENT)
+            })
+        }
+        syncRing()
+    }
+    private fun closeRing() {
+        unwatchRing?.invoke(); unwatchRing = null
+        runCatching { unregisterReceiver(screenChanged) }
+        main.removeCallbacks(checkRing)
+        ring.close()
+    }
+    /** What the overlay is decided from. While the setting is off, not allowed is the whole answer: nothing else is even looked at. */
+    private fun ringFacts(): OverlayFacts {
+        if (!ringOverlayAllowed(ringPrefs(this))) return OverlayFacts()
+        return OverlayFacts(
+            allowed = true,
+            connected = instance === this,
+            paused = !PhoneAccess.active,
+            locked = getSystemService(KeyguardManager::class.java).isKeyguardLocked,
+            awake = getSystemService(PowerManager::class.java).isInteractive,
+            assistantUp = OmaRing.assistantUp,
+            ownScreen = OwnScreens.visible,
+            lit = ringState(OmaRing.signals, OmaRing.now(), doneMillis(ringStyle().done)) != RingState.Off,
+        )
+    }
+    /** Matches the overlay to the facts, and keeps looking while it is up or could be. Main thread. */
+    private fun syncRing() = lookAgain(ring.sync())
+    private fun lookAgain(soon: Boolean) {
+        main.removeCallbacks(checkRing)
+        if (soon) main.postDelayed(checkRing, OVERLAY_CHECK_MILLIS)
+    }
+    /** Phone control was paused or resumed. From any thread. */
+    fun ringChanged() { main.post(checkRing) }
 
     private fun signature(node: AccessibilityNodeInfo): String {
         val bounds = Rect(); node.getBoundsInScreen(bounds)
@@ -42,9 +106,14 @@ class PhoneService : AccessibilityService() {
             PhoneControlPolicy.requireNoPendingApproval(dev.omalauncher.assist.AgentTasks.pending.size, command)
             if (command == "screenshot") {
                 if (Build.VERSION.SDK_INT < 30) error("Screenshots require Android 11 or later.")
-                takeScreenshot(android.view.Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
-                    override fun onFailure(code: Int) { reply(JSONObject().put("ok", false).put("error", "Screenshot unavailable: $code. Protected screens cannot be captured.")) }
+                // The overlay is never in the agent's picture: it comes down first and goes back once the picture is taken.
+                // With no overlay up there is nothing to wait for, and the screenshot is taken at once, as before.
+                val settle = ring.beforeCapture()
+                fun captured() = lookAgain(ring.afterCapture())
+                val capture = Runnable { try { takeScreenshot(android.view.Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
+                    override fun onFailure(code: Int) { captured(); reply(JSONObject().put("ok", false).put("error", "Screenshot unavailable: $code. Protected screens cannot be captured.")) }
                     override fun onSuccess(result: ScreenshotResult) {
+                        captured()
                         val hardware = result.hardwareBuffer
                         try {
                             PhoneAccess.requireAccess(this@PhoneService)
@@ -59,7 +128,8 @@ class PhoneService : AccessibilityService() {
                         } catch (e: Exception) { reply(JSONObject().put("ok", false).put("error", e.message)) }
                         finally { hardware.close() }
                     }
-                })
+                }) } catch (e: Exception) { captured(); reply(JSONObject().put("ok", false).put("error", e.message ?: "Phone control failed")) } }
+                if (settle == 0L) capture.run() else main.postDelayed(capture, settle)
                 return
             }
             val output = JSONObject().put("ok", true)

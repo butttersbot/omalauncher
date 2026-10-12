@@ -6,13 +6,23 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.os.*
 import android.service.voice.*
 import android.speech.*
 import android.view.*
 import android.widget.*
+import androidx.compose.ui.graphics.toArgb
 import dev.omalauncher.App
+import dev.omalauncher.oma.ring.OmaRing
+import dev.omalauncher.oma.ring.RingView
+import dev.omalauncher.ui.HomeGap
+import dev.omalauncher.ui.LauncherStyle
+import dev.omalauncher.ui.Palette
+import dev.omalauncher.ui.TextSize
+import dev.omalauncher.ui.ThemePalette
 import dev.omalauncher.oma.OwnScreens
 import dev.omalauncher.oma.SCREENSHOT_WAIT_MILLIS
 import dev.omalauncher.oma.ScreenContext
@@ -42,9 +52,21 @@ class OmaSession(context: Context) : VoiceInteractionSession(context) {
             it.onScreenLetGo = { offer = offer?.close() }
         }
     }
+    /** The earliest word that the assistant is coming up: the ring over other apps gets out of the way of Android's screenshot. */
+    override fun onPrepareShow(args: Bundle?, showFlags: Int) {
+        OmaRing.assistant(true)
+        super.onPrepareShow(args, showFlags)
+    }
     override fun onShow(args: Bundle?, showFlags: Int) {
         super.onShow(args, showFlags)
-        window.window?.apply { setGravity(Gravity.BOTTOM); setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT) }
+        OmaRing.assistant(true)
+        // The whole screen: the words sit over the dimmed app, with the ring at the screen's edge.
+        window.window?.let {
+            it.setGravity(Gravity.FILL)
+            it.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
+            it.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+            panel?.dress(it)
+        }
         // Only Android's own assistant gesture brings the screen along; Android then sends its screenshot to onHandleScreenshot.
         val summon = if (showFlags and SHOW_SOURCE_ASSIST_GESTURE != 0) Summon.AssistGesture else Summon.Other
         val no = ++showingNo
@@ -87,40 +109,54 @@ class OmaSession(context: Context) : VoiceInteractionSession(context) {
         panel?.cancelSpeech()
         showingNo++; offer = null
         panel?.showScreen(ScreenContext.None, null)
+        OmaRing.assistant(false)
         super.onHide()
     }
-    override fun onDestroy() { panel?.dispose(); super.onDestroy() }
+    override fun onDestroy() { panel?.dispose(); OmaRing.assistant(false); super.onDestroy() }
 }
 
 /** Fallback assist intent and notification entry; leaves the current app visible underneath. */
 class AssistantPromptActivity : Activity() {
     private lateinit var panel: AssistantPanel
     override fun onCreate(state: Bundle?) {
+        // The manifest's dialog theme keeps the app underneath showing; the window itself is drawn without the dialog's box.
+        setTheme(android.R.style.Theme_Material_NoActionBar)
         super.onCreate(state)
         (application as App).runtime.start()
-        window.setGravity(Gravity.BOTTOM)
-        window.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT)
+        window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+        window.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         panel = AssistantPanel(this, { finish() })
         setContentView(panel)
+        panel.dress(window)
     }
     override fun onDestroy() { panel.dispose(); super.onDestroy() }
     override fun onPause() { panel.cancelSpeech(); super.onPause() }
 }
 
-/** Shared compact prompt UI, with explicit mic activation and background dispatch. */
-class AssistantPanel(private val owner: Context, private val dismiss: () -> Unit) : LinearLayout(owner) {
+/**
+ * The listening screen, shared by the assistant session and the prompt activity: the owner's words, large,
+ * over the dimmed screen, with the ring at its edge and no panel around them. The words are a text field,
+ * so tapping them edits; the mic starts only from Speak, and nothing is sent until Send is tapped.
+ */
+class AssistantPanel(private val owner: Context, private val dismiss: () -> Unit) : FrameLayout(owner) {
+    private val ring = RingView(owner)
+    private val column = LinearLayout(owner)
     private val input = EditText(owner)
     private val status = TextView(owner)
     private val output = TextView(owner)
     private val handler = Handler(Looper.getMainLooper())
     private var recognizer: SpeechRecognizer? = null
     private lateinit var resultScroll: ScrollView
-    private lateinit var stopButton: Button
-    private lateinit var sendButton: Button
-    private lateinit var speakButton: Button
-    private lateinit var approvalButton: Button
-    private lateinit var newThreadButton: Button
+    private lateinit var stopButton: TextView
+    private lateinit var sendButton: TextView
+    private lateinit var speakButton: TextView
+    private lateinit var approvalButton: TextView
+    private lateinit var newThreadButton: TextView
+    private lateinit var hideButton: TextView
+    private lateinit var taskRow: LinearLayout
+    /** The theme the views were last colored from. */
+    private var dressed: ThemePalette? = null
     private var disposed = false
     private var message: String? = null
     private val chip = LinearLayout(owner)
@@ -135,32 +171,78 @@ class AssistantPanel(private val owner: Context, private val dismiss: () -> Unit
         override fun run() { if (!disposed) { refresh(); handler.postDelayed(this, 500) } }
     }
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
+    /** A control in the launcher's look: mono text in a frame, like its tiles. */
+    private fun control(row: LinearLayout, text: String, action: () -> Unit): TextView = TextView(owner).apply {
+        this.text = text; typeface = Typeface.MONOSPACE; textSize = TextSize.Body.value
+        setPadding(dp(14), dp(10), dp(14), dp(10))
+        isClickable = true; isFocusable = true
+        setOnClickListener { action() }
+        row.addView(this, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(HomeGap.value.toInt()); topMargin = dp(HomeGap.value.toInt()) })
+    }
+    /** The launcher's frame for a plain view: Modifier.frame's fill, line and corner style. */
+    private fun frame(fill: androidx.compose.ui.graphics.Color, line: androidx.compose.ui.graphics.Color) = GradientDrawable().apply {
+        setColor(fill.toArgb()); setStroke(dp(2), line.toArgb()); cornerRadius = dp(16) * LauncherStyle.corners.scale
+    }
+    /** Colors everything from the theme; again whenever the theme has changed since. */
+    private fun dress() {
+        val palette = Palette.current
+        if (dressed === palette) return
+        dressed = palette
+        status.setTextColor(palette.accent.toArgb())
+        input.setTextColor(palette.foreground.toArgb()); input.setHintTextColor(palette.muted.toArgb())
+        chip.background = frame(Palette.glass, palette.border)
+        chipText.setTextColor(palette.foreground.toArgb())
+        output.setTextColor(palette.foreground.toArgb())
+        for (button in listOf(speakButton, hideButton, stopButton, newThreadButton)) { button.setTextColor(palette.foreground.toArgb()); button.background = frame(Palette.glass, palette.border) }
+        // The two that act for him stand out: sending, and an approval that is waiting.
+        sendButton.setTextColor(palette.accent.toArgb()); sendButton.background = frame(Palette.glass, palette.accent)
+        approvalButton.setTextColor(palette.red.toArgb()); approvalButton.background = frame(Palette.glass, palette.red)
+    }
+    /**
+     * Makes [window] the listening screen's: the dim over whatever is underneath as its background, and the
+     * ring along its real edges, behind the words. Called again each time the window shows.
+     */
+    fun dress(window: Window) {
+        window.setBackgroundDrawable(ColorDrawable(Palette.background.copy(alpha = DIM).toArgb()))
+        window.statusBarColor = Color.TRANSPARENT; window.navigationBarColor = Color.TRANSPARENT
+        if (ring.parent != null) return
+        // Straight in the window's own frame, which the system bars don't inset; failing that, around the words' area.
+        val edge = window.decorView as? ViewGroup ?: this
+        edge.addView(ring, 0, ViewGroup.LayoutParams(-1, -1))
+    }
     init {
-        orientation = VERTICAL
-        setPadding(dp(20), dp(16), dp(20), dp(20))
-        background = GradientDrawable().apply { setColor(Color.rgb(24, 27, 38)); cornerRadius = dp(24).toFloat() }
-        val heading = TextView(owner).apply { text = "✦ Oma agent"; setTextColor(Color.WHITE); textSize = 21f }
-        addView(heading)
-        status.setTextColor(Color.rgb(170, 186, 225)); status.textSize = 14f
-        addView(status, LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
-        input.hint = "What would you like me to do?"
-        input.setTextColor(Color.WHITE); input.setHintTextColor(Color.GRAY)
-        input.minLines = 2; input.maxLines = 4
-        input.inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
-        addView(input, LayoutParams(-1, -2))
-        chip.orientation = HORIZONTAL; chip.gravity = Gravity.CENTER_VERTICAL; chip.visibility = GONE
-        chip.setPadding(dp(10), dp(8), dp(10), dp(8))
-        chip.background = GradientDrawable().apply { setColor(Color.rgb(40, 45, 62)); cornerRadius = dp(12).toFloat() }
-        chip.addView(chipImage, LayoutParams(dp(48), dp(48)).apply { marginEnd = dp(10) })
-        chipText.setTextColor(Color.WHITE); chipText.textSize = 14f
-        chip.addView(chipText, LayoutParams(0, -2, 1f))
-        chip.setOnClickListener { showScreen(ScreenContext.None, null); onScreenLetGo?.invoke() }
-        addView(chip, LayoutParams(-1, -2).apply { topMargin = dp(8) })
-        val row = LinearLayout(owner)
-        fun button(text: String, action: () -> Unit): Button = Button(owner).apply {
-            this.text = text; setOnClickListener { action() }
-            row.addView(this, LayoutParams(0, -2, 1f))
+        column.orientation = LinearLayout.VERTICAL
+        column.setPadding(dp(26), dp(24), dp(26), dp(28))
+        addView(column, LayoutParams(-1, -2, Gravity.BOTTOM))
+        // Clear of the system bars, the camera cutout and the keyboard, where the window doesn't already keep clear itself.
+        setOnApplyWindowInsetsListener { _, insets ->
+            if (Build.VERSION.SDK_INT >= 30) {
+                val clear = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout() or WindowInsets.Type.ime())
+                setPadding(clear.left, clear.top, clear.right, clear.bottom)
+            } else {
+                @Suppress("DEPRECATION")
+                setPadding(insets.systemWindowInsetLeft, insets.systemWindowInsetTop, insets.systemWindowInsetRight, insets.systemWindowInsetBottom)
+            }
+            insets
         }
+        status.typeface = Typeface.MONOSPACE; status.textSize = TextSize.Small.value
+        column.addView(status, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
+        // His words: large, straight on the dimmed screen, and still a field to tap and edit.
+        input.hint = "What would you like me to do?"
+        input.background = null; input.setPadding(0, 0, 0, 0)
+        input.typeface = Typeface.MONOSPACE; input.textSize = WORDS_SP
+        input.minLines = 2; input.maxLines = 6
+        input.inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+        column.addView(input, LinearLayout.LayoutParams(-1, -2))
+        chip.orientation = LinearLayout.HORIZONTAL; chip.gravity = Gravity.CENTER_VERTICAL; chip.visibility = GONE
+        chip.setPadding(dp(10), dp(8), dp(10), dp(8))
+        chip.addView(chipImage, LinearLayout.LayoutParams(dp(48), dp(48)).apply { marginEnd = dp(10) })
+        chipText.typeface = Typeface.MONOSPACE; chipText.textSize = TextSize.Body.value
+        chip.addView(chipText, LinearLayout.LayoutParams(0, -2, 1f))
+        chip.setOnClickListener { showScreen(ScreenContext.None, null); onScreenLetGo?.invoke() }
+        column.addView(chip, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+        val row = LinearLayout(owner)
+        fun button(text: String, action: () -> Unit) = control(row, text, action)
         speakButton = button("Speak") { listen() }
         sendButton = button("Send") {
             try {
@@ -174,27 +256,31 @@ class AssistantPanel(private val owner: Context, private val dismiss: () -> Unit
                 refresh()
             } catch (e: Exception) { message = e.message; refresh() }
         }
-        button("Hide") { dismiss() }
-        addView(row)
-        output.setTextColor(Color.WHITE); output.textSize = 14f
+        hideButton = button("Hide") { dismiss() }
+        output.typeface = Typeface.MONOSPACE; output.textSize = TextSize.Body.value
         resultScroll = ScrollView(owner).apply { addView(output) }
-        addView(resultScroll, LayoutParams(-1, dp(140)))
-        stopButton = Button(owner).apply { text = "Stop current task"; setOnClickListener { AgentTasks.stop(owner) } }
-        addView(stopButton)
-        approvalButton = Button(owner).apply { text = "Review approval"; setOnClickListener { reviewApproval() } }
-        addView(approvalButton)
-        newThreadButton = Button(owner).apply {
-            text = "New thread"
-            setOnClickListener {
-                try { AgentTasks.newThread(owner); message = null } catch (e: Exception) { message = e.message }
-                refresh()
-            }
+        column.addView(resultScroll, LinearLayout.LayoutParams(-1, dp(140)).apply { topMargin = dp(8) })
+        column.addView(row)
+        // What only shows while there is a task, an approval or a thread to act on.
+        taskRow = LinearLayout(owner)
+        stopButton = control(taskRow, "Stop current task") { AgentTasks.stop(owner) }
+        approvalButton = control(taskRow, "Review approval") { reviewApproval() }
+        newThreadButton = control(taskRow, "New thread") {
+            try { AgentTasks.newThread(owner); message = null } catch (e: Exception) { message = e.message }
+            refresh()
         }
-        addView(newThreadButton)
+        column.addView(taskRow)
         refresh(); handler.post(update)
     }
+    /** Oma is taking a request for as long as this screen is up: the ring listens, wherever it is drawn. */
+    override fun onWindowVisibilityChanged(visibility: Int) {
+        super.onWindowVisibilityChanged(visibility)
+        OmaRing.hearing(this, visibility == VISIBLE && !disposed)
+    }
+    override fun onDetachedFromWindow() { OmaRing.hearing(this, false); super.onDetachedFromWindow() }
     fun refresh() {
         AgentTasks.restore(owner)
+        dress()
         status.text = message ?: AgentTasks.label
         output.text = if (AgentTasks.working && AgentTasks.answer.isBlank()) "Request received. The agent is working in the background. You can hide this panel and return with the power button or notification." else AgentTasks.answer
         sendButton.isEnabled = !AgentTasks.working
@@ -206,6 +292,8 @@ class AssistantPanel(private val owner: Context, private val dismiss: () -> Unit
         resultScroll.visibility = if (output.text.isNotBlank()) VISIBLE else GONE
         stopButton.visibility = if (AgentTasks.working) VISIBLE else GONE
         approvalButton.visibility = if (AgentTasks.approvals.isNotEmpty()) VISIBLE else GONE
+        for (button in listOf(sendButton, speakButton)) button.alpha = if (button.isEnabled) 1f else DISABLED
+        input.alpha = if (input.isEnabled) 1f else DISABLED
         labelChip()
     }
     /**
@@ -269,7 +357,16 @@ class AssistantPanel(private val owner: Context, private val dismiss: () -> Unit
         }
     }
     fun cancelSpeech() { recognizer?.cancel(); recognizer?.destroy(); recognizer = null }
-    fun dispose() { disposed = true; handler.removeCallbacksAndMessages(null); cancelSpeech(); showScreen(ScreenContext.None, null) }
+    fun dispose() { disposed = true; OmaRing.hearing(this, false); handler.removeCallbacksAndMessages(null); cancelSpeech(); showScreen(ScreenContext.None, null) }
+
+    private companion object {
+        /** How much of the theme's background lies over the screen underneath. */
+        const val DIM = 0.8f
+        /** The size of his words, in sp. */
+        const val WORDS_SP = 28f
+        /** How faint a control is while it can't be used. */
+        const val DISABLED = 0.4f
+    }
 }
 
 class AssistantSetupActivity : Activity() {

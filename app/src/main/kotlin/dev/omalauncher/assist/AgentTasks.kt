@@ -10,6 +10,7 @@ import dev.omalauncher.oma.ChatLog
 import dev.omalauncher.oma.ChatTask
 import dev.omalauncher.oma.ScreenShots
 import dev.omalauncher.oma.TaskStatus
+import dev.omalauncher.oma.ring.OmaRing
 import dev.omalauncher.phone.PhoneBridge
 import java.io.File
 import java.io.BufferedWriter
@@ -255,6 +256,8 @@ object AgentTasks {
         notify(context)
     }
     private fun notify(context: Context) {
+        // The ring follows the task from here, the one place every change of it passes.
+        OmaRing.task(working, pending.size, succeeded = label == "Done")
         OmaTiles.refresh(context)
         AgentNotices.task(context, working, label, answer, approvals.size)
     }
