@@ -1,5 +1,9 @@
 package dev.omalauncher.ui
 
+import dev.omalauncher.widgets.annotations.NoteRole
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.semantics.semantics
@@ -432,8 +436,9 @@ internal fun LiveInk(
 
 /**
  * The drawing tools, standing where the dock does while one finger draws: pen (again for the pack's second
- * ink), highlighter, eraser, undo and redo for the page last touched, and done. Its band takes every touch
- * that lands on it, so nothing under it is opened through it.
+ * ink), highlighter, eraser, a sticky note, a sticker and plain text to put on the page last touched, undo
+ * and redo for it, and done. Its band takes every touch that lands on it, so nothing under it is opened
+ * through it.
  */
 @Composable
 fun DrawTools(
@@ -446,6 +451,32 @@ fun DrawTools(
     val page = state.currentPage
     val ink = book.ink(page)
     val density = LocalDensity.current
+    // "Sticker" opens the stickers to pick from, over the row.
+    var stickers by remember { mutableStateOf(false) }
+
+    // A note, a sticker or text put on the page ends the drawing: while a finger draws, nothing on the page can be
+    // moved or typed in, and what was just added is to be placed or written at once.
+    fun write(role: NoteRole) {
+        if (!book.takes(page)) return
+        state.stopDrawing()
+        book.addNote(page, role = role)?.let {
+            state.arrivals.expect(it, null)
+            marks.editing = Chosen(page, it)
+        }
+    }
+    if (stickers) {
+        Menu(onDismiss = { stickers = false }) {
+            MenuTitle("stick on this page")
+            StickerPicker { kind, from ->
+                stickers = false
+                state.stopDrawing()
+                book.addSticker(page, kind)?.let {
+                    state.arrivals.expect(it, from)
+                    marks.selected = Chosen(page, it)
+                }
+            }
+        }
+    }
     Box(
         modifier
             .fillMaxWidth()
@@ -456,26 +487,34 @@ fun DrawTools(
     ) {
         if (Pack.ownsPage) {
             // The prototype's `.tools`: square buttons like the dock's, from the left, the tool in hand in the emphasised colors.
-            val u = LocalConfiguration.current.run { prototypeUnit(screenWidthDp.toFloat(), screenHeightDp.toFloat()) }
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = (14 * u).dp - PageGap),
-                // In the middle of the row, as Boss asked (2026-10-12); the prototype starts them from the left.
-                horizontalArrangement = Arrangement.spacedBy((6 * u).dp, Alignment.CenterHorizontally),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                ToolKey("✎", "pen", u, marks.tool == DrawTool.Pen, swatch = if (marks.second) InkRole.Second else InkRole.Pen) {
-                    if (marks.tool == DrawTool.Pen) marks.second = !marks.second else marks.tool = DrawTool.Pen
+            val wide = LocalConfiguration.current.run { prototypeUnit(screenWidthDp.toFloat(), screenHeightDp.toFloat()) }
+            BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = (14 * wide).dp - PageGap), contentAlignment = Alignment.Center) {
+                // Nine keys are more than the prototype's seven: on a narrow screen they shrink together to fit the row.
+                val u = wide.coerceAtMost(maxWidth.value / toolsWidth(TOOL_KEYS))
+                Row(
+                    // In the middle of the row, as Boss asked (2026-10-12); the prototype starts them from the left.
+                    horizontalArrangement = Arrangement.spacedBy((TOOL_GAP * u).dp, Alignment.CenterHorizontally),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ToolKey("✎", "pen", u, marks.tool == DrawTool.Pen, swatch = if (marks.second) InkRole.Second else InkRole.Pen) {
+                        if (marks.tool == DrawTool.Pen) marks.second = !marks.second else marks.tool = DrawTool.Pen
+                    }
+                    ToolKey("▬", "highlighter", u, marks.tool == DrawTool.Highlighter, swatch = InkRole.Highlighter) { marks.tool = DrawTool.Highlighter }
+                    ToolKey("⌫", "eraser", u, marks.tool == DrawTool.Eraser) { marks.tool = DrawTool.Eraser }
+                    // The prototype's note and sticker keys, and one for text, which Boss asked for (2026-10-12).
+                    ToolKey("☐", "sticky note", u, enabled = !marks.busy) { write(NoteRole.Sticky) }
+                    ToolKey("★", "sticker", u, enabled = !marks.busy) { if (book.takes(page)) stickers = true }
+                    ToolKey("T", "text", u, enabled = !marks.busy) { write(NoteRole.Text) }
+                    // Not in the middle of a stroke or an eraser's pass, held with another finger.
+                    ToolKey("↶", "undo", u, enabled = ink.canUndo && !marks.busy) { marks.undo(page) }
+                    ToolKey("↷", "redo", u, enabled = ink.canRedo && !marks.busy) { marks.redo(page) }
+                    ToolKey("×", "close drawing tools", u) { state.stopDrawing() }
                 }
-                ToolKey("▬", "highlighter", u, marks.tool == DrawTool.Highlighter, swatch = InkRole.Highlighter) { marks.tool = DrawTool.Highlighter }
-                ToolKey("⌫", "eraser", u, marks.tool == DrawTool.Eraser) { marks.tool = DrawTool.Eraser }
-                // Not in the middle of a stroke or an eraser's pass, held with another finger.
-                ToolKey("↶", "undo", u, enabled = ink.canUndo && !marks.busy) { marks.undo(page) }
-                ToolKey("↷", "redo", u, enabled = ink.canRedo && !marks.busy) { marks.redo(page) }
-                ToolKey("×", "close drawing tools", u) { state.stopDrawing() }
             }
         } else {
             Row(
-                Modifier.fillMaxWidth().panel().padding(horizontal = 4.dp),
+                // More tools than a narrow screen holds in words: the row slides.
+                Modifier.fillMaxWidth().panel().horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -484,6 +523,9 @@ fun DrawTools(
                 }
                 Tool("marker", marks.tool == DrawTool.Highlighter, swatch = InkRole.Highlighter) { marks.tool = DrawTool.Highlighter }
                 Tool("erase", marks.tool == DrawTool.Eraser) { marks.tool = DrawTool.Eraser }
+                Tool("note", enabled = !marks.busy) { write(NoteRole.Sticky) }
+                Tool("sticker", enabled = !marks.busy) { if (book.takes(page)) stickers = true }
+                Tool("text", enabled = !marks.busy) { write(NoteRole.Text) }
                 // Not in the middle of a stroke or an eraser's pass, held with another finger.
                 Tool("undo", enabled = ink.canUndo && !marks.busy) { marks.undo(page) }
                 Tool("redo", enabled = ink.canRedo && !marks.busy) { marks.redo(page) }
@@ -492,6 +534,14 @@ fun DrawTools(
         }
     }
 }
+
+/** How many keys the drawing tools have, and a key's side and the gap between two in the prototype's units. */
+internal const val TOOL_KEYS = 9
+internal const val TOOL_KEY = 44f
+internal const val TOOL_GAP = 6f
+
+/** How wide a row of [keys] drawing tools is, in the prototype's units. */
+internal fun toolsWidth(keys: Int) = keys * TOOL_KEY + (keys - 1) * TOOL_GAP
 
 /** One of the prototype's drawing tools: a glyph on the dock's surface, in the look's emphasised fill while it is the tool in hand. */
 @Composable
@@ -508,7 +558,7 @@ private fun ToolKey(
     val surface = if (picked) pack.dock.surface.copy(fill = pack.scrap.alt.fill, ink = pack.scrap.alt.ink) else pack.dock.surface
     Box(
         Modifier
-            .size((44 * u).dp)
+            .size((TOOL_KEY * u).dp)
             .alpha(if (enabled) 1f else 0.4f)
             .surface(surface, focused = false)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)

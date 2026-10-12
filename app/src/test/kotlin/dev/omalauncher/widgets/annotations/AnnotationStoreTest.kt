@@ -38,6 +38,7 @@ class AnnotationStoreTest {
                 listOf(
                     StickyNote("n1", 0.06f, 0.06f, 0.44f, 0.16f, "milk\neggs \"quoted\" \\ 日本語 ☕", NoteRole.Sticky, 1, Author.Owner, 1_700_000_000_000),
                     StickyNote("n2", 0.1f, 0.11f, 0.44f, 0.16f, "Booked the table.", NoteRole.Alt, 2, Author.Agent, 1_700_000_000_500),
+                    StickyNote("n3", 0.3f, 0.5f, 0.44f, 0.16f, "typed on the page", NoteRole.Text, 3, Author.Owner, 1_700_000_000_900),
                 ),
             stickers = listOf(Sticker("s1", StickerKind.Star, 0.5f, 0.5f, 0.14f, 345), Sticker("s2", StickerKind.Smile, 0.2f, 0.9f, 0.3f)),
         )

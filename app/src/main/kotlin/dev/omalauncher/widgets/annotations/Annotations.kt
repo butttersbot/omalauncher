@@ -111,6 +111,9 @@ enum class NoteRole(
 
     /** Its emphasised scrap: what an agent's note comes in, so it is told from the owner's at a glance. */
     Alt("alt"),
+
+    /** Words typed straight onto the page: no paper under them, in the ink the page is written in. */
+    Text("text"),
 }
 
 /** Who a note is from. */

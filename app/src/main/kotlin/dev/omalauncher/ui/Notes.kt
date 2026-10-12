@@ -498,14 +498,21 @@ internal fun barTop(
         else -> (top + gap).coerceIn(0, (room - bar).coerceAtLeast(0))
     }
 
-/** What a note of [role] is cut from: the pack's sticky note, or its emphasised scrap for one an agent left. */
+/**
+ * What a note of [role] is cut from: the pack's sticky note, its emphasised scrap for one an agent left, or
+ * nothing at all for plain text, which is written in the page's own ink. [onPage] is false in the menu its
+ * words are typed in, where the page's ink may not show.
+ */
 private class NoteLook(
     role: NoteRole,
+    onPage: Boolean = true,
 ) {
     private val scrap = Pack.look.pack.scrap
-    val fill = (if (role == NoteRole.Alt) scrap.alt.fill else scrap.sticky.fill).toColor()
-    val ink = (if (role == NoteRole.Alt) scrap.alt.ink else scrap.sticky.ink).toColor()
-    val line = if (role == NoteRole.Alt) scrap.alt.border else scrap.sticky.border
+    private val bare = role == NoteRole.Text
+    /** Null for plain text, which has no paper. */
+    val fill = if (bare) null else (if (role == NoteRole.Alt) scrap.alt.fill else scrap.sticky.fill).toColor()
+    val ink = if (!bare) (if (role == NoteRole.Alt) scrap.alt.ink else scrap.sticky.ink).toColor() else if (onPage) Pack.pageLabel().color else Pack.foreground
+    val line = if (bare) 0f else if (role == NoteRole.Alt) scrap.alt.border else scrap.sticky.border
     val edge = (if (role == NoteRole.Alt) scrap.alt.borderColor else scrap.sticky.borderColor).toColor()
     val dashed = role == NoteRole.Sticky && scrap.sticky.dashed
 }
@@ -513,7 +520,7 @@ private class NoteLook(
 /** A note's paper: filled, and outlined as the pack outlines it. */
 private fun Modifier.notePaper(look: NoteLook) =
     drawBehind {
-        drawRect(look.fill)
+        look.fill?.let { drawRect(it) }
         if (look.line > 0f) {
             val width = look.line.dp.toPx()
             val dashes = if (look.dashed) PathEffect.dashPathEffect(floatArrayOf(width * 3f, width * 2f)) else null
@@ -571,7 +578,7 @@ fun NoteEditor(state: LauncherState) {
         return
     }
     var field by remember(chosen) { mutableStateOf(TextFieldValue(note.text, TextRange(note.text.length))) }
-    val look = NoteLook(note.role)
+    val look = NoteLook(note.role, onPage = false)
     val focus = remember { FocusRequester() }
     LaunchedEffect(chosen) { focus.requestFocus() }
 

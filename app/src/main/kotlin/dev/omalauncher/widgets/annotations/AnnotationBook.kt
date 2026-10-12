@@ -211,17 +211,19 @@ class AnnotationBook(
     /**
      * A new note from the owner, clear of the page's tiles and of the notes and stickers on it, as near as
      * there is room to [near], the place on the page (in fractions of it) he pressed to ask for it: the note
-     * comes up under his finger where that is free. Its id, or null if the page takes none.
+     * comes up under his finger where that is free. Of [role]: a sticky note, or plain text on the page. Its id,
+     * or null if the page takes none.
      */
     fun addNote(
         page: String,
         near: Pair<Float, Float>? = null,
+        role: NoteRole = NoteRole.Sticky,
     ): String? {
         var id: String? = null
         change(page) { was ->
             if (was.marks.notes.size >= AnnotationLimits.NOTES) return@change null.also { notice = NO_ROOM_NOTE }
             val spot = board(page).noteSpot(was.marks.scraps(), near?.let { it.first - NOTE_WIDTH / 2f to it.second - NOTE_HEIGHT / 2f }).box
-            val note = StickyNote(freshId(was.marks, "n", now()), spot.x, spot.y, spot.w, spot.h, "", z = top(was.marks) + 1, at = now()).fitted()
+            val note = StickyNote(freshId(was.marks, "n", now()), spot.x, spot.y, spot.w, spot.h, "", role, z = top(was.marks) + 1, at = now()).fitted()
             id = note.id
             was.with(was.marks.copy(notes = was.marks.notes + note))
         }
