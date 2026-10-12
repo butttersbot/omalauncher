@@ -1,5 +1,16 @@
 package dev.omalauncher.ui
 
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.foundation.border
+import androidx.compose.ui.draw.drawBehind
+import dev.omalauncher.assist.prototypeUnit
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import android.graphics.Bitmap
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Stable
@@ -299,7 +310,8 @@ fun Overview(
                 val s = 1.06f - 0.06f * shown.value
                 scaleX = s
                 scaleY = s
-            }.background(Pack.background.copy(alpha = 0.94f))
+            // A look with its own page lays every page out on its paper, as the prototype does; Console dims home behind them.
+            }.background(if (Pack.ownsPage) Pack.paper else Pack.background.copy(alpha = 0.94f))
             // Two fingers spreading on a page open it. Seen before the tiles, and taken from them once it is a pinch.
             .pointerInput(Unit) {
                 awaitEachGesture {
@@ -336,16 +348,32 @@ fun Overview(
             .padding(PageGap),
     ) {
         Column(Modifier.fillMaxSize()) {
-            BasicText(
-                told ?: "tap a page to open it · hold one to rename, move or delete it",
-                Modifier.padding(horizontal = 6.dp, vertical = 8.dp),
-                style = Pack.body(Pack.size.small, if (told != null) Pack.accent else Pack.muted),
-            )
-            LazyVerticalGrid(GridCells.Adaptive(132.dp), Modifier.fillMaxSize(), grid, contentPadding = PaddingValues(bottom = 24.dp)) {
-                items(pages, key = { it.id }) { page ->
+            val owns = Pack.ownsPage
+            val u = LocalConfiguration.current.run { prototypeUnit(screenWidthDp.toFloat(), screenHeightDp.toFloat()) }
+            if (owns) {
+                // The prototype's folio, where home has its page names; what just happened is said in its place.
+                BasicText(
+                    told ?: "all pages",
+                    Modifier.padding(start = (16 * u).dp, top = 2.dp, bottom = (14 * u).dp),
+                    style = if (told != null) Pack.body(Pack.size.small, Pack.accent) else Pack.folio,
+                )
+            } else {
+                BasicText(
+                    told ?: "tap a page to open it · hold one to rename, move or delete it",
+                    Modifier.padding(horizontal = 6.dp, vertical = 8.dp),
+                    style = Pack.body(Pack.size.small, if (told != null) Pack.accent else Pack.muted),
+                )
+            }
+            // In the prototype a page is 106 of its units across here, with 36 between it and the next.
+            val cell = if (owns) GridCells.Adaptive((142 * u).dp) else GridCells.Adaptive(132.dp)
+            val around = if (owns) PaddingValues(start = (16 * u).dp, end = (16 * u).dp, bottom = 24.dp) else PaddingValues(bottom = 24.dp)
+            val showing = pages.indexOfFirst { it.id == state.currentPage }.let { if (it < 0) -1 else it / state.pagesAcross.coerceAtLeast(1) }
+            LazyVerticalGrid(cell, Modifier.fillMaxSize(), grid, contentPadding = around) {
+                itemsIndexed(pages, key = { _, it -> it.id }) { index, page ->
                     PageTile(
                         name = page.name,
-                        current = page.id == state.currentPage,
+                        // Both pages of the spread that was showing, as the prototype marks them.
+                        current = if (owns) index / state.pagesAcross.coerceAtLeast(1) == showing else page.id == state.currentPage,
                         image = runtime.pageStills[page.id],
                         cells = { notebook.cellsOn(page.id, emptySet()) },
                         rows = notebook.rows,
@@ -555,7 +583,12 @@ internal fun deleteQuestion(
         else -> DeleteQuestion.None
     }
 
-/** One page in the overview: its still, or its cells in outline, under the pack's scrim, and its name below. */
+/**
+ * One page in the overview: its still, or its cells in outline, under the pack's scrim, and its name below.
+ * In a look with its own page it is the prototype's: the page on its paper with rounded corners inside a line
+ * of the page's ink, heavier and in the accent where it is showing, its name handwritten under it, and a
+ * dashed outline for the page that isn't there yet.
+ */
 @Composable
 private fun PageTile(
     name: String,
@@ -571,20 +604,37 @@ private fun PageTile(
     onPicture: (Rect) -> Unit = {},
 ) {
     val scrim = Pack.look.pack.page.overviewScrim.toColor()
-    Column(modifier.padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    val owns = Pack.ownsPage
+    val u = LocalConfiguration.current.run { prototypeUnit(screenWidthDp.toFloat(), screenHeightDp.toFloat()) }
+    val ink = Pack.onPage
+    val frame =
+        when {
+            !owns -> Modifier.framed(if (current) Pack.mark else Pack.hair, if (current) Pack.accent else Pack.border, Pack.surface)
+            plus ->
+                Modifier.drawBehind {
+                    val w = 3 * u * density
+                    val dash = PathEffect.dashPathEffect(floatArrayOf(3 * w, 2 * w))
+                    drawRoundRect(ink.copy(alpha = ink.alpha * 0.8f), Offset(w / 2, w / 2), Size(size.width - w, size.height - w), CornerRadius(6 * u * density), style = Stroke(w, pathEffect = dash))
+                }
+            else ->
+                Modifier.pageOutline((if (current) 4.5f * u else 2f * u).dp, if (current) Pack.accent else ink, Pack.paper, (6 * u).dp, lifted = (10 * u).dp)
+        }
+    Column(modifier.padding(if (owns) PaddingValues(horizontal = (18 * u).dp, vertical = (8 * u).dp) else PaddingValues(6.dp)), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             Modifier
                 .fillMaxWidth()
                 .aspectRatio(PAGE_SHAPE)
-                .framed(if (current) Pack.mark else Pack.hair, if (current) Pack.accent else Pack.border, Pack.surface)
+                .then(frame)
+                .then(if (plus && owns) Modifier.semantics { contentDescription = "new page" } else Modifier)
                 .combinedClickable(onClick = onTap, onLongClick = onHold),
             contentAlignment = Alignment.Center,
         ) {
             when {
+                plus && owns -> BasicText("+", style = Pack.hand((42 * u).sp, ink.copy(alpha = ink.alpha * 0.8f)).copy(fontWeight = FontWeight.Bold))
                 plus -> BasicText("+", style = Pack.display(Pack.size.title, Pack.muted))
                 image != null -> Image(image, contentDescription = null, modifier = Modifier.fillMaxSize().onGloballyPositioned { onPicture(it.boundsInRoot()) }, contentScale = ContentScale.Fit)
                 else -> {
-                    val line = Pack.muted
+                    val line = if (owns) ink.copy(alpha = ink.alpha * 0.5f) else Pack.muted
                     Canvas(Modifier.fillMaxSize()) {
                         val w = size.width / GRID_COLUMNS
                         val h = size.height / rows.coerceAtLeast(1)
@@ -602,13 +652,24 @@ private fun PageTile(
             }
             if (!plus) Box(Modifier.fillMaxSize().background(scrim))
         }
-        BasicText(
-            name,
-            Modifier.padding(top = 4.dp),
-            style = Pack.body(Pack.size.small, if (current) Pack.accent else Pack.foreground),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        if (owns) {
+            // The page that isn't there yet has no name, as in the prototype; a screen reader still gets one from the tile.
+            BasicText(
+                if (plus) "" else name,
+                Modifier.padding(top = (5 * u).dp),
+                style = Pack.hand((23 * u).sp, ink).copy(fontWeight = FontWeight.Bold, lineHeight = (24 * u).sp),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        } else {
+            BasicText(
+                name,
+                Modifier.padding(top = 4.dp),
+                style = Pack.body(Pack.size.small, if (current) Pack.accent else Pack.foreground),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 

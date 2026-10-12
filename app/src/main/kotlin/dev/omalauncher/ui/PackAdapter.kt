@@ -1,5 +1,6 @@
 package dev.omalauncher.ui
 
+import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -448,6 +449,21 @@ fun Modifier.framed(
 ): Modifier {
     val shape = Pack.shape(radius)
     return clip(shape).background(fill, shape).border(width, color, shape)
+}
+
+/**
+ * A page as the overview shows it: [fill] inside a line of [color], with corners rounded by [radius] in every
+ * look, since a page's corners are the notebook's and not the look's scraps'. [lifted] puts a soft shadow under it.
+ */
+fun Modifier.pageOutline(
+    width: Dp,
+    color: Color,
+    fill: Color,
+    radius: Dp,
+    lifted: Dp = 0.dp,
+): Modifier {
+    val shape = RoundedCornerShape(radius)
+    return shadow(lifted, shape).clip(shape).background(fill, shape).border(width, color, shape)
 }
 
 /** A panel over home: a menu, a dialog, an open folder, the edit bar. The emphasised scrap's outline on the pack's opaque background. */
