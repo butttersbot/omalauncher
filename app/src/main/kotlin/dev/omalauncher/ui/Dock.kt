@@ -37,7 +37,6 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -54,6 +53,7 @@ import dev.omalauncher.Runtime
 import dev.omalauncher.assist.AssistantPromptActivity
 import dev.omalauncher.linux.FILES_COMMAND
 import dev.omalauncher.spokenLabel
+import dev.omalauncher.theme.pack.DockStyle
 import dev.omalauncher.widgets.Shortcut
 
 /**
@@ -135,11 +135,11 @@ internal fun DockBand(
     val voice = rememberAgentVoice()
     val speech = voice.speech
     val listening = speech.listening
-    val bare = LauncherStyle.bareAppIcons
+    val bare = Pack.bareIcons
     val panelShown by remember(state) { derivedStateOf { state.drawer.value > 0.01f } }
     // Measured rather than assumed (a large system font makes the band taller), and passed on while home shows.
     var frame by remember { mutableIntStateOf(0) }
-    val gap = with(LocalDensity.current) { HomeGap.roundToPx() }
+    val gap = with(LocalDensity.current) { PageGap.roundToPx() }
     LaunchedEffect(frame, panelShown, gap) { if (frame > 0 && !panelShown) state.barHeight = bandHeight(frame, gap) }
     Column(
         modifier
@@ -158,12 +158,12 @@ internal fun DockBand(
                     .layout { measurable, constraints ->
                         val p = measurable.measure(constraints)
                         layout(p.width, 0) { p.place(0, -p.height) }
-                    }.background(Palette.background)
+                    }.background(Pack.background)
                     .clickable {
                         speech.error = null
                         voice.notice = null
                     }.padding(horizontal = 10.dp, vertical = 4.dp),
-                style = Mono.copy(color = if (failed != null) Palette.red else Palette.accent, fontSize = TextSize.Small),
+                style = Pack.body(Pack.size.small, if (failed != null) Pack.red else Pack.accent),
             )
         }
         Box {
@@ -171,13 +171,14 @@ internal fun DockBand(
                 Modifier
                     .fillMaxWidth()
                     .heightIn(min = PromptBarHeight)
-                    // A tile's fill without its border, which would run over icons as tall as the row; outlined while
-                    // listening, as the bar was. Bare icons sit on the wallpaper, as in the recent apps strip.
+                    // The bar's fill without its border, which would run over icons as tall as the row; outlined while
+                    // listening, as the bar was. Bare icons sit on the wallpaper, as in the recent apps strip, and so
+                    // does a pack's dock of separate buttons or of icons alone. The row is as tall either way.
                     .then(
                         when {
-                            listening -> Modifier.tile(true)
-                            bare -> Modifier
-                            else -> Modifier.frame(2.dp, Color.Transparent, Palette.glass)
+                            listening -> Modifier.dockBar(true)
+                            bare || Pack.dock != DockStyle.Bar -> Modifier
+                            else -> Modifier.dockBarFill()
                         },
                     ),
                 verticalAlignment = Alignment.CenterVertically,
@@ -189,7 +190,7 @@ internal fun DockBand(
                         BasicText(
                             speech.text.ifEmpty { "listening…" },
                             Modifier.wrapContentWidth(Alignment.End, unbounded = true),
-                            style = Mono.copy(fontSize = TextSize.Item, color = Palette.accent),
+                            style = Pack.hand(Pack.size.item, Pack.accent),
                             maxLines = 1,
                             softWrap = false,
                         )
@@ -202,11 +203,12 @@ internal fun DockBand(
                         }
                     }
                 }
-                AgentButton(runtime, state, voice, resting = if (bare) Palette.surface else Color.Transparent)
+                // In a dock of buttons the agent button is one more of them, leaning its own way.
+                AgentButton(runtime, state, voice, Modifier.dockButton(1), resting = if (bare && !Pack.dockButtons) Pack.surface else Pack.clear)
             }
             // Input level along the bottom edge while listening.
             if (listening) {
-                val accent = Palette.accent
+                val accent = Pack.accent
                 Box(
                     Modifier.matchParentSize().drawBehind {
                         val h = 3.dp.toPx()
@@ -226,9 +228,9 @@ internal fun DockBand(
 @Composable
 private fun FieldStrut() {
     Box(Modifier.width(0.dp).padding(vertical = 12.dp).alpha(0f).clearAndSetSemantics {}) {
-        BasicText(" ", style = Mono.copy(fontSize = TextSize.Item), maxLines = 1, softWrap = false)
-        BasicText("+", style = Mono, maxLines = 1, softWrap = false)
-        Symbol(Glyph.ChevronDown, Color.Transparent)
+        BasicText(" ", style = Pack.strut(Pack.size.item), maxLines = 1, softWrap = false)
+        BasicText("+", style = Pack.strut(Pack.size.body), maxLines = 1, softWrap = false)
+        Symbol(Glyph.ChevronDown, Pack.clear)
     }
 }
 
@@ -241,11 +243,13 @@ internal fun DockCells(
 ) {
     val context = LocalContext.current
     val entries = dock.items
-    for (entry in entries.take(count)) {
+    // A pack's dock of buttons frames each icon, which is drawn smaller to sit inside its button.
+    val buttons = Pack.dockButtons
+    entries.take(count).forEachIndexed { index, entry ->
         val actions = { entries.actions(entry.key).map { action -> action.label to { dock.act(action, entry.key) } } }
         if (entry.builtIn) {
-            ChatCell(onClick = { openOmaChat(context) }, actions = actions)
-            continue
+            ChatCell(onClick = { openOmaChat(context) }, actions = actions, chrome = Modifier.dockButton(index))
+            return@forEachIndexed
         }
         val shortcut = remember(entry) { entry.shortcut() }
         StripCell(
@@ -257,24 +261,33 @@ internal fun DockCells(
             glyph = if (entry.linux?.exec == FILES_COMMAND) Icons.Folder else null,
             spoken = spokenLabel(entry.label, entry.profile),
             paused = runtime.androidApps.paused(entry.profile),
-            size = DockSlot,
+            size = if (buttons) DockSlot * DOCK_BUTTON_ICON else DockSlot,
+            chrome = Modifier.dockButton(index),
         )
     }
 }
+
+/** How much of its button a dock icon fills, in a pack whose dock is a row of buttons. */
+private const val DOCK_BUTTON_ICON = 0.66f
 
 /** The Oma chat's place in the dock: a mark on a badge, as apps without an icon get their initials. */
 @Composable
 private fun ChatCell(
     onClick: () -> Unit,
     actions: () -> List<Pair<String, () -> Unit>>,
+    /** Its button, in a pack whose dock is a row of buttons: see [dockButton]. */
+    chrome: Modifier = Modifier,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val haptics = LocalHapticFeedback.current
+    val buttons = Pack.dockButtons
     Box(
         Modifier
             .size(DockSlot)
-            .clip(LauncherStyle.shape(DockSlot / 2))
-            .background(Palette.surface)
+            .then(chrome)
+            .clip(Pack.shape(DockSlot / 2))
+            // A button is its own badge.
+            .background(if (buttons) Pack.clear else Pack.badge)
             .semantics { contentDescription = "Oma chat" }
             .combinedClickable(
                 onClick = onClick,
@@ -288,7 +301,7 @@ private fun ChatCell(
             ),
         contentAlignment = Alignment.Center,
     ) {
-        BasicText("✦", style = Mono.copy(color = Palette.accent, fontSize = TextSize.Title))
+        BasicText("✦", style = Pack.placeholder(Pack.size.title))
         if (menuOpen) AppActions(actions(), onDismiss = { menuOpen = false })
     }
 }

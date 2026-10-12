@@ -206,14 +206,14 @@ internal fun RecentStrip(
         Spacer(if (vertical) modifier.width(RecentStripHeight) else modifier.height(RecentStripHeight))
         return
     }
-    val bare = LauncherStyle.bareAppIcons
+    val bare = Pack.bareIcons
     val listState = rememberLazyListState()
     // Back on home, the strip starts at the app opened last, wherever it was scrolled to before.
     LaunchedEffect(runtime.usage.settled) { listState.scrollToItem(0) }
     Box(
         modifier
-            .then(if (vertical) Modifier.fillMaxHeight().width(RecentStripHeight) else Modifier.padding(horizontal = HomeGap).fillMaxWidth().height(RecentStripHeight))
-            .then(if (bare) Modifier else Modifier.tile()),
+            .then(if (vertical) Modifier.fillMaxHeight().width(RecentStripHeight) else Modifier.padding(horizontal = PageGap).fillMaxWidth().height(RecentStripHeight))
+            .then(if (bare) Modifier else Modifier.dockBar()),
         contentAlignment = if (vertical) Alignment.TopCenter else Alignment.CenterStart,
     ) {
         val cells: LazyListScope.() -> Unit = {
@@ -246,16 +246,19 @@ internal fun StripCell(
     paused: Boolean = false,
     /** The icon's size inside the 48dp cell. */
     size: Dp = 40.dp,
+    /** The cell's own button, in a dock of buttons: see [dockButton]. */
+    chrome: Modifier = Modifier,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val haptics = LocalHapticFeedback.current
-    val mono = LauncherStyle.monochromeIcons
-    val bare = LauncherStyle.bareAppIcons
+    val mono = Pack.monoIcons
+    val bare = Pack.bareIcons
     Box(
         Modifier
             .size(48.dp)
+            .then(chrome)
             .alpha(if (paused) PausedAlpha else 1f)
-            .clip(LauncherStyle.shape(12.dp))
+            .clip(Pack.shape(12.dp))
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = {
@@ -267,18 +270,18 @@ internal fun StripCell(
     ) {
         val bmp = if (mono) mask else icon
         when {
-            glyph != null -> Image(glyph, label, Modifier.size(size * 0.7f), colorFilter = ColorFilter.tint(Palette.accent))
+            glyph != null -> Image(glyph, label, Modifier.size(size * 0.7f), colorFilter = Pack.tinted())
             // Bare silhouettes and initials sit on a badge, as pinned apps do, so they read on any wallpaper.
             bare && (mono || bmp == null) ->
-                Box(Modifier.size(size).clip(LauncherStyle.shape(size / 2)).background(Palette.surface), contentAlignment = Alignment.Center) {
+                Box(Modifier.size(size).clip(Pack.shape(size / 2)).background(Pack.badge), contentAlignment = Alignment.Center) {
                     if (bmp != null) {
-                        Image(bmp, spoken, Modifier.size(size * 0.75f), colorFilter = ColorFilter.tint(Palette.accent))
+                        Image(bmp, spoken, Modifier.size(size * 0.75f), colorFilter = Pack.tinted())
                     } else {
-                        BasicText(initials(label), style = Mono.copy(color = Palette.accent, fontSize = TextSize.Body))
+                        BasicText(initials(label), style = Pack.placeholder(Pack.size.body))
                     }
                 }
-            bmp != null -> Image(bmp, spoken, Modifier.size(size * if (mono) 0.85f else 1f), colorFilter = if (mono) ColorFilter.tint(Palette.accent) else null)
-            else -> BasicText(initials(label), style = Mono.copy(color = Palette.accent, fontSize = TextSize.Large))
+            bmp != null -> Image(bmp, spoken, Modifier.size(size * if (mono) 0.85f else 1f), colorFilter = Pack.icon(mono))
+            else -> BasicText(initials(label), style = Pack.placeholder(Pack.size.large))
         }
         if (menuOpen) AppActions(actions(), onDismiss = { menuOpen = false })
     }
@@ -419,12 +422,12 @@ internal fun AppPanel(
             Box(
                 Modifier
                     .size(44.dp)
-                    .clip(LauncherStyle.shape(22.dp))
-                    .background(Palette.surface)
+                    .clip(Pack.shape(22.dp))
+                    .background(Pack.surface)
                     .clickable(onClick = onSettings),
                 contentAlignment = Alignment.Center,
             ) {
-                Image(Icons.Gear, "settings", Modifier.size(22.dp), colorFilter = ColorFilter.tint(Palette.accent))
+                Image(Icons.Gear, "settings", Modifier.size(22.dp), colorFilter = Pack.tinted())
                 // Updates are waiting: settings › system updates lists them.
                 if ((runtime.updates.pending?.count ?: 0) > 0) {
                     Box(
@@ -432,7 +435,7 @@ internal fun AppPanel(
                             .align(Alignment.TopEnd)
                             .padding(8.dp)
                             .size(8.dp)
-                            .background(Palette.red, CircleShape),
+                            .background(Pack.red, CircleShape),
                     )
                 }
             }
@@ -477,8 +480,8 @@ internal fun AppPanel(
                             // Linux apps would be listed here; without Linux, one quiet offer instead.
                             item(key = "linux-offer") {
                                 Row(Modifier.padding(top = 12.dp, bottom = 4.dp, start = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    BasicText("linux apps", Modifier.weight(1f), style = Mono.copy(color = Palette.muted))
-                                    BracketAction(if (linuxState is LinuxState.Installing) "installing…" else "install linux", Palette.accent) {
+                                    BasicText("linux apps", Modifier.weight(1f), style = Pack.body(color = Pack.muted))
+                                    BracketAction(if (linuxState is LinuxState.Installing) "installing…" else "install linux", Pack.accent) {
                                         state.closeNow()
                                         state.linuxOpen = true
                                     }
@@ -513,15 +516,15 @@ private fun AskRow(
         Modifier
             .padding(bottom = 6.dp)
             .fillMaxWidth()
-            .then(if (selected) Modifier.frame(2.dp, Palette.accent, Palette.background) else Modifier.clip(LauncherStyle.shape()))
+            .then(if (selected) Modifier.panel() else Modifier.clip(Pack.shape()))
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        BasicText("⏎ ", style = Mono.copy(color = if (selected) Palette.accent else Palette.muted))
+        BasicText("⏎ ", style = Pack.body(color = if (selected) Pack.accent else Pack.muted))
         BasicText(
             label,
-            style = Mono.copy(color = if (selected) Palette.foreground else Palette.muted),
+            style = Pack.body(color = if (selected) Pack.foreground else Pack.muted),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -536,24 +539,24 @@ internal fun SearchField(
     placeholder: String,
     modifier: Modifier = Modifier,
 ) {
-    val style = Mono.copy(fontSize = TextSize.Item)
+    val style = Pack.body(Pack.size.item)
     BasicTextField(
         value = query,
         onValueChange = onChange,
         singleLine = true,
         textStyle = style,
-        cursorBrush = SolidColor(Palette.accent),
+        cursorBrush = SolidColor(Pack.accent),
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
         keyboardActions = KeyboardActions(onGo = { onGo() }),
         modifier =
             modifier
                 .fillMaxWidth()
-                .clip(LauncherStyle.shape(24.dp))
-                .background(Palette.surface)
+                .clip(Pack.shape(24.dp))
+                .background(Pack.surface)
                 .padding(horizontal = 18.dp, vertical = 12.dp),
         decorationBox = { inner ->
             Box {
-                if (query.isEmpty()) BasicText(placeholder, style = style.copy(color = Palette.muted))
+                if (query.isEmpty()) BasicText(placeholder, style = style.copy(color = Pack.muted))
                 inner()
             }
         },
@@ -588,8 +591,8 @@ private fun AppCell(
         Modifier
             .fillMaxWidth()
             .alpha(if (paused) PausedAlpha else 1f)
-            .clip(LauncherStyle.shape(16.dp))
-            .then(if (selected) Modifier.frame(2.dp, Palette.accent) else Modifier)
+            .clip(Pack.shape(16.dp))
+            .then(if (selected) Modifier.framed(Pack.mark, Pack.accent) else Modifier)
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = {
@@ -599,31 +602,31 @@ private fun AppCell(
             ).padding(horizontal = 4.dp, vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        val mono = LauncherStyle.monochromeIcons
+        val mono = Pack.monoIcons
         // Badges are circles when rounded, squares with Omarchy's sharp edges.
-        val badge = LauncherStyle.shape(26.dp)
+        val badge = Pack.shape(26.dp)
         if (glyph != null) {
             Box(
-                Modifier.size(52.dp).clip(badge).background(if (mono) Palette.surface else Palette.accent),
+                Modifier.size(52.dp).clip(badge).background(if (mono) Pack.badge else Pack.accent),
                 contentAlignment = Alignment.Center,
             ) {
-                Image(glyph, label, Modifier.size(26.dp), colorFilter = ColorFilter.tint(if (mono) Palette.accent else Palette.background))
+                Image(glyph, label, Modifier.size(26.dp), colorFilter = Pack.tinted(if (mono) Pack.tint else Pack.background))
             }
         } else if (mono && mask != null) {
-            Box(Modifier.size(52.dp).clip(badge).background(Palette.surface), contentAlignment = Alignment.Center) {
-                Image(mask, spoken, Modifier.size(36.dp), colorFilter = ColorFilter.tint(Palette.accent))
+            Box(Modifier.size(52.dp).clip(badge).background(Pack.badge), contentAlignment = Alignment.Center) {
+                Image(mask, spoken, Modifier.size(36.dp), colorFilter = Pack.tinted())
             }
         } else if (!mono && icon != null) {
-            Image(icon, spoken, Modifier.size(52.dp))
+            Image(icon, spoken, Modifier.size(52.dp), colorFilter = Pack.icon(false))
         } else {
-            Box(Modifier.size(52.dp).clip(badge).background(Palette.surface), contentAlignment = Alignment.Center) {
-                BasicText(initials(label), style = Mono.copy(color = Palette.accent, fontSize = TextSize.Title))
+            Box(Modifier.size(52.dp).clip(badge).background(Pack.badge), contentAlignment = Alignment.Center) {
+                BasicText(initials(label), style = Pack.placeholder(Pack.size.title))
             }
         }
         Spacer(Modifier.height(6.dp))
         BasicText(
             label,
-            style = Mono.copy(fontSize = TextSize.Small, textAlign = TextAlign.Center),
+            style = Pack.body(Pack.size.small).copy(textAlign = TextAlign.Center),
             // Always two lines tall, so a row keeps its height whichever apps fill it while typing.
             maxLines = 2,
             minLines = 2,
@@ -659,6 +662,6 @@ internal fun AppActions(
             }
         }
     Popup(popupPositionProvider = position, onDismissRequest = onDismiss, properties = PopupProperties(focusable = true)) {
-        MenuItems(actions, onDismiss, minWidth = 160.dp, itemPadding = 12.dp, fontSize = TextSize.Item)
+        MenuItems(actions, onDismiss, minWidth = 160.dp, itemPadding = 12.dp, fontSize = Pack.size.item)
     }
 }
