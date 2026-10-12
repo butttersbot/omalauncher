@@ -66,6 +66,6 @@ Verified on the Fold on 2026-10-11 (Boss client date): `oma-build` on `phone/fol
 - APK: `app/build/outputs/apk/debug/app-debug.apk` (about 30 MB), application ID
   `dev.omalauncher.boss.folddev` per `output-metadata.json`.
 
-On 2026-10-12, `oma-install --no-open` updated the existing Oma Fold Dev
+On 2026-10-11 (Boss client date), `oma-install --no-open` updated the existing Oma Fold Dev
 preview from that phone-built APK without a rebuild. The preview has not been
 set as home, and nothing has been published.
