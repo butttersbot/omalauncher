@@ -24,6 +24,9 @@ import dev.omalauncher.widgets.Shortcut
 import dev.omalauncher.widgets.GRID_COLUMNS
 import dev.omalauncher.widgets.HomeItem
 import dev.omalauncher.widgets.WidgetLayout
+import dev.omalauncher.widgets.layout.GridGeometry
+import dev.omalauncher.widgets.layout.usedRows
+import dev.omalauncher.widgets.layout.windowKey
 import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -62,88 +65,64 @@ import androidx.compose.ui.unit.toOffset
 import kotlinx.coroutines.launch
 
 /**
- * Pixel geometry of the home grid: cells separated by Omarchy-style gaps, as many rows of
- * square-ish cells as fit, but never fewer than the [used] rows tiles were placed on. A layout
- * made on a tall screen keeps its arrangement on a squarer one (a foldable's inner screen) with
- * shorter cells, rather than tiles stacking. [turned] (landscape) lays portrait's grid on its
- * side: the same cells, [rows] of them across and [cols] down, so tiles keep their place and
- * shape. Everything else here works in those portrait cells.
- *
- * [per] pages stand side by side, each [width] wide (two on a foldable's inner screen); a page's
- * cells are in its own coordinates, [local] and [screen] convert.
+ * The home grid's pixel geometry on screen: [GridGeometry], which has the arithmetic, in Compose's
+ * points and rects. [turned] (landscape) lays portrait's grid on its side; [per] pages stand side
+ * by side, each [width] wide, a page's cells in its own coordinates, [local] and [screen] convert.
  */
 @Immutable
 private class Grid(
-    val width: Int,
+    width: Int,
     height: Int,
-    val gap: Int,
-    val turned: Boolean = false,
+    gap: Int,
+    turned: Boolean = false,
     portraitRows: Int? = null,
     used: Int = 0,
-    val per: Int = 1,
+    per: Int = 1,
 ) {
-    val cols = GRID_COLUMNS
-    val height = height
-    val rows = maxOf(if (turned) portraitRows ?: squareRows(height, width, gap) else squareRows(width, height, gap), used)
+    private val geometry = GridGeometry(width, height, gap, turned, portraitRows, used, per)
+    val width get() = geometry.width
+    val height get() = geometry.height
+    val gap get() = geometry.gap
+    val turned get() = geometry.turned
+    val per get() = geometry.per
+    val cols get() = geometry.cols
+    val rows get() = geometry.rows
 
     /** A screen cell's width and height. */
-    val cellW = (width - gap) / (if (turned) rows else cols).toFloat()
-    val cellH = (height - gap) / (if (turned) cols else rows).toFloat()
+    val cellW get() = geometry.cellW
+    val cellH get() = geometry.cellH
 
-    // Rounded, not truncated: rows * cellH can come out a hair under the grid's height, which would leave the
-    // bottom row a pixel short of the strip below.
-    fun rect(c: Cell) =
-        if (turned) {
-            IntRect((gap + c.y * cellW).roundToInt(), (gap + c.x * cellH).roundToInt(), (c.bottom * cellW).roundToInt(), (c.right * cellH).roundToInt())
-        } else {
-            IntRect((gap + c.x * cellW).roundToInt(), (gap + c.y * cellH).roundToInt(), (c.right * cellW).roundToInt(), (c.bottom * cellH).roundToInt())
-        }
+    fun rect(c: Cell) = geometry.rect(c).let { IntRect(it.left, it.top, it.right, it.bottom) }
 
     /** A saved cell as shown on this grid; only affects display, the saved cell stays as it is. */
     fun fit(
         c: Cell,
         item: HomeItem,
-    ): Cell {
-        val w = if (item.resizable) c.w.coerceIn(1, cols) else 1
-        val h = if (item.resizable) c.h.coerceIn(1, rows) else 1
-        return Cell(c.x.coerceIn(0, cols - w), c.y.coerceIn(0, rows - h), w, h)
-    }
+    ) = geometry.fit(c, item.resizable)
 
     /** Nearest column line to a point on screen. */
-    fun colLine(p: Offset) = (if (turned) line(p.y, cellH) else line(p.x, cellW)).coerceIn(0, cols)
+    fun colLine(p: Offset) = geometry.colLine(p.x, p.y)
 
-    fun rowLine(p: Offset) = (if (turned) line(p.x, cellW) else line(p.y, cellH)).coerceIn(0, rows)
-
-    private fun line(
-        px: Float,
-        cell: Float,
-    ) = ((px - gap / 2f) / cell).roundToInt()
+    fun rowLine(p: Offset) = geometry.rowLine(p.x, p.y)
 
     /** The tile edges under the screen edges a press grabbed. */
     fun edges(e: Edges) = if (turned) Edges(left = e.top, top = e.left, right = e.bottom, bottom = e.right) else e
 
     /** Which of the pages on screen, left to right, a point is over. */
-    fun side(p: Offset) = (p.x / width).toInt().coerceIn(0, per - 1)
+    fun side(p: Offset) = geometry.side(p.x)
 
     /** A point on screen in the coordinates of the page at [side]. */
     fun local(
         p: Offset,
         side: Int,
-    ) = p - Offset((side * width).toFloat(), 0f)
+    ) = p - Offset(geometry.left(side).toFloat(), 0f)
 
     /** A rect on the page at [side] in screen coordinates. */
     fun screen(
         r: IntRect,
         side: Int,
-    ) = r.translate(side * width, 0)
+    ) = r.translate(geometry.left(side), 0)
 }
-
-/** How many rows of square-ish cells fit [long] beside [GRID_COLUMNS] of them across [short]. */
-private fun squareRows(
-    short: Int,
-    long: Int,
-    gap: Int,
-) = ((long - gap) / ((short - gap) / GRID_COLUMNS.toFloat())).toInt().coerceAtLeast(1)
 
 internal fun IntRect.has(p: Offset) = p.x >= left && p.x < right && p.y >= top && p.y < bottom
 
@@ -276,11 +255,11 @@ internal fun HomeGrid(
         // Landscape turns portrait's grid on its side; the window's size (short side first, so both orientations
         // share it) remembers how many rows portrait had.
         val window = LocalWindowInfo.current.containerSize
-        val windowSize = "${minOf(window.width, window.height)}x${maxOf(window.width, window.height)}"
+        val windowSize = windowKey(window.width, window.height)
         // Rows the tiles on every page reach down to (apps show as 1x1); the pages share one grid.
         // Derived, so moving or resizing a tile recomposes only its page, unless it changes how far down they reach.
         val used by remember(pages, itemsOn, layout) {
-            derivedStateOf { pages.flatMap(itemsOn).maxOfOrNull { item -> layout.cell(item.key)?.let { if (item.resizable) it.bottom else it.y + 1 } ?: 0 } ?: 0 }
+            derivedStateOf { usedRows(pages.flatMap(itemsOn).map { item -> layout.cell(item.key) to item.resizable }) }
         }
         val grid =
             remember(width, height, gap, turned, windowSize, used, per) {
@@ -308,7 +287,7 @@ internal fun HomeGrid(
             slot: Int,
             pages: List<Int>,
             g: Grid,
-        ) = (0 until g.per).map { pages.getOrElse(slot * g.per + it) { 1 } }
+        ) = dev.omalauncher.widgets.layout.pagesAt(slot, pages, g.per)
 
         /** Which of [shown] holds [key], or -1. */
         fun sideOf(
