@@ -33,3 +33,17 @@ installation while preserving app data. The custom package is dev.omalauncher.bo
 and coexists with the official Play Store app.
 
 The slim agent rail is built into the launcher. Claude tool approvals use Review approval → Approve once / Deny; Codex native approval forwarding is not yet implemented. The on-phone build toolchain is separate private Linux data and must be installed on the new device; see PHONE-BUILD-TOOLS.md.
+
+## Native Quick Settings controls (next preview)
+
+The next preview adds **Oma prompt**, **Agent activity**, and **Oma approvals**
+through Android native Quick Settings tiles. Use the system panel editor to add
+them; on Samsung One UI 9, choose **Edit > Add a control > Omalauncher Boss**.
+Prompt opens the compact composer, activity reopens progress/results, and
+approvals opens the review dialog when a Claude tool request is waiting. Android
+requires unlocking before opening the panel. These changes are installed on the
+Fold locally; the linked initial public release does not yet include the tiles.
+
+Galaxy Z Fold8 cover and inner displays were checked on hardware. The inner
+display completed a Claude background prompt and returned its result through
+the activity tile. This is a basic device check, not an exhaustive foldable audit.

@@ -6,7 +6,7 @@ An experimental fork of [Simon Schubert’s Omalauncher](https://github.com/Simo
 
 For ARM64 Android 10+ phones. The APK installs as **Omalauncher Boss** alongside the original app. Complete the optional Linux setup, install/sign in to your own Claude Code or Codex, and enable the phone permissions described in the guide. No account credentials or personal device data are included.
 
-Claude tool requests can pause for **Approve once / Deny** in the task panel. Codex has background progress/results; native approval forwarding is not implemented yet. One background task runs at a time. Completed results persist; model conversations and pending tasks do not survive app-process death. Foldable layouts have not been tested on hardware.
+Claude tool requests can pause for **Approve once / Deny** in the task panel. Codex has background progress/results; native approval forwarding is not implemented yet. One background task runs at a time. Completed results persist; model conversations and pending tasks do not survive app-process death. The Galaxy Z Fold8 cover and inner displays have had a basic hardware check; an inner-screen Claude task and native activity tile returned a real result. Broader foldable transitions remain untested.
 
 The Android build tools installed on the development phone are separate Linux data, not bundled into this APK. [Build-tool notes](docs/PHONE-BUILD-TOOLS.md).
 
