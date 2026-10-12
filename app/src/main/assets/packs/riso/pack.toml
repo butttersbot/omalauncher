@@ -78,6 +78,11 @@ border_color = "foreground"
 focus_color = "background"
 focus_width = 4
 
+[scrap.alt.shadow]
+x = 5
+y = 5
+color = "accent"
+
 [scrap.tape]
 style = "solid"
 color = "accent"
@@ -105,6 +110,7 @@ focus_color = "foreground"
 [icons]
 treatment = "original"
 tint = "foreground"
+shadow = true
 
 [icons.placeholder]
 style = "letter"

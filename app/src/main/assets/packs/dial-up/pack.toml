@@ -34,8 +34,8 @@ glass = "background"
 
 [type.display]
 family = "monospace"
-file = "fonts/PixelifySans-SemiBold.ttf"
-weight = 600
+file = "fonts/PixelifySans-Regular.ttf"
+weight = 400
 
 [type.body]
 family = "monospace"

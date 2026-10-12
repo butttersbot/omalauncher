@@ -462,8 +462,8 @@ internal fun AppPanel(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                SectionLabel("all apps")
-                BasicText(Pack.caption("close ↓"), Modifier.clickable { state.close() }.padding(top = 12.dp, bottom = 4.dp), style = Pack.mono(color = Pack.muted))
+                SectionLabel("all apps", color = Pack.pageMuted)
+                BasicText(Pack.caption("close ↓"), Modifier.clickable { state.close() }.padding(top = 12.dp, bottom = 4.dp), style = Pack.mono(color = Pack.pageMuted))
             }
         } else {
             searchRow()
@@ -496,7 +496,7 @@ internal fun AppPanel(
                         apps: List<AppHit>,
                     ) {
                         if (apps.isEmpty()) return
-                        item(key = "h:$title") { SectionLabel(title, Modifier.padding(start = 8.dp)) }
+                        item(key = "h:$title") { SectionLabel(title, Modifier.padding(start = 8.dp), color = Pack.pageMuted) }
                         apps.chunked(columns).forEachIndexed { r, cells -> row("$title:$r", cells) }
                     }
 
@@ -657,7 +657,8 @@ private fun AppCell(
         Spacer(Modifier.height(6.dp))
         BasicText(
             label,
-            style = Pack.body(Pack.size.small).copy(textAlign = TextAlign.Center),
+            // The list stands on the look's paper where it has one: names are in the page's ink, as the prototype's are.
+            style = Pack.body(Pack.size.small, if (Pack.ownsPage) Pack.onPage else Pack.foreground).copy(textAlign = TextAlign.Center),
             // Always two lines tall, so a row keeps its height whichever apps fill it while typing.
             maxLines = 2,
             minLines = 2,

@@ -89,7 +89,9 @@ fun Modifier.bleed(gutter: Dp) =
 fun SectionLabel(
     text: String,
     modifier: Modifier = Modifier,
-) = BasicText(Pack.caption(text), modifier.padding(top = 12.dp, bottom = 4.dp), style = Pack.mono(color = Pack.muted))
+    /** On a panel by default; a heading straight on the page takes the page's own muted ink. */
+    color: Color = Pack.muted,
+) = BasicText(Pack.caption(text), modifier.padding(top = 12.dp, bottom = 4.dp), style = Pack.mono(color = color))
 
 /** A [Glyph] from the launcher's Nerd Font subset, sized like text. */
 @Composable

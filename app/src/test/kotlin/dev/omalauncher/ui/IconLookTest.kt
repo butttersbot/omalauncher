@@ -223,7 +223,7 @@ class IconLookTest {
 
     /** The treatment each shipped look has, as the prototype has it: it draws a drop shadow under a real icon in every look. */
     @Test fun theShippedPacksTreatIconsAsThePrototypeDoes() {
-        assertEquals(IconLook(false, null, false, PlaceholderStyle.Letter), iconLook(shipped("riso").icons))
+        assertEquals(IconLook(false, null, true, PlaceholderStyle.Letter), iconLook(shipped("riso").icons))
         assertEquals(iconLook(icons(IconTreatment.Original, saturation = 0.75f, shadow = true)), iconLook(shipped("instrument").icons))
         assertEquals(iconLook(icons(IconTreatment.Grayscale, contrast = 1.5f, shadow = true)), iconLook(shipped("one-bit").icons))
         for (id in listOf("city-pop", "custard", "tiny-magazine", "bujo", "dial-up")) {

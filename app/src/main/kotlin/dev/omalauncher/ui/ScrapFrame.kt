@@ -238,11 +238,14 @@ private fun DrawScope.tape(tape: PackTape) {
         if (tape.style == Dressing.Stripes) {
             val second = tape.color2.toColor().let { it.copy(alpha = it.alpha * tape.opacity) }
             val band = 6.dp.toPx()
+            // Washi stripes run across the tape at 45 degrees, as the prototype's do.
             clipRect(left, -h / 2f, left + w, h / 2f) {
-                var x = left + band
-                while (x < left + w) {
-                    drawRect(second, Offset(x, -h / 2f), Size(band, h))
-                    x += band * 2f
+                rotate(45f, pivot = Offset(left + w / 2f, 0f)) {
+                    var x = left - w
+                    while (x < left + 2f * w) {
+                        drawRect(second, Offset(x, -w), Size(band, 2f * w))
+                        x += band * 2f
+                    }
                 }
             }
         }

@@ -60,7 +60,7 @@ internal fun ThemePalette.packColors(): Map<String, String> =
     named.mapValues { PackColor(it.value.toArgb()).toString() } + ("mode" to if (isLight) "light" else "dark")
 
 /** True when text straight on [pack]'s page should be dark: its paper is light, or its palette says so. */
-internal fun pageIsLight(pack: ThemePack) = if (pack.page.kind == PageKind.Paper) pack.page.color.toColor().luminance() > 0.5f else pack.palette.isLight
+internal fun pageIsLight(pack: ThemePack) = if (pack.page.kind != PageKind.System) pack.page.color.toColor().luminance() > 0.5f else pack.palette.isLight
 
 /**
  * [pack]'s own palette as the colors everything not yet drawn from the pack reads: its eight theme roles

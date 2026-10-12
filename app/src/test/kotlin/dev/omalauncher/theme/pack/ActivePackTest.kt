@@ -381,9 +381,9 @@ class ActivePackTest {
                 assertTrue("$id $name", shadow.visible)
             }
         }
-        // Riso's two, Instrument's six and 1-bit's three (its alt scrap casts the black one now); City Pop's five (scrap, alt, dock, placeholder, text),
+        // Riso's three (its emphasised scrap casts the pink one too), Instrument's six and 1-bit's three (its alt scrap casts the black one now); City Pop's five (scrap, alt, dock, placeholder, text),
         // Custard's eight (its placeholder carries the scrap's two), Tiny Magazine's four (its placeholder casts the clipping's), Bujo's none and Dial-Up's three.
-        assertEquals(31, declared)
+        assertEquals(32, declared)
         // No color anywhere in a shipped manifest is written with eight digits and a clear alpha.
         for ((id, _) in shipped) {
             val clear = Regex("\"#00[0-9a-fA-F]{6}\"").findAll(moduleFile("src/main/assets/packs/$id/pack.toml").readText()).map { it.value }.toList()
