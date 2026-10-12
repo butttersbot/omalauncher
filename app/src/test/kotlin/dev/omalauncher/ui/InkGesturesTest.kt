@@ -409,6 +409,42 @@ class InkGesturesTest {
         }
     }
 
+    @Test fun deletingAPageAsksWheneverSomethingWouldGoWithIt() {
+        // Nothing on it: deleted on the tap, as before.
+        val nothing = deleteQuestion(0, marked = false)
+        assertEquals(DeleteQuestion.None, nothing)
+        assertFalse(nothing.asks)
+        // Tiles only: the choices there always were, and no word about ink.
+        val tiles = deleteQuestion(3, marked = false)
+        assertEquals(DeleteQuestion.Things, tiles)
+        assertTrue(tiles.asks && tiles.offersMove)
+        assertFalse(tiles.saysMarksGo)
+        // Ink, notes or stickers and no tiles: asked, told they go, and nothing to move.
+        val marks = deleteQuestion(0, marked = true)
+        assertEquals(DeleteQuestion.Marks, marks)
+        assertTrue(marks.asks && marks.saysMarksGo)
+        assertFalse(marks.offersMove)
+        // Both: the tiles' choices and the line.
+        val both = deleteQuestion(1, marked = true)
+        assertEquals(DeleteQuestion.ThingsAndMarks, both)
+        assertTrue(both.asks && both.offersMove && both.saysMarksGo)
+        // Only a page with nothing at all goes unasked.
+        assertEquals(listOf(DeleteQuestion.None), DeleteQuestion.entries.filter { !it.asks })
+
+        // What counts as marked: anything that shows, and a file that couldn't be read.
+        java.io.File(dir, "p3.json").apply { dir.mkdirs() }.writeText("{ cut sho")
+        val book = marks("p1", "p2", "p3").book!!
+        assertFalse(book.marked("p1"))
+        assertFalse(book.marked("never opened"))
+        book.addSticker("p1", StickerKind.Heart)
+        book.draw("p2", Stroke(InkTool.Pen, InkRole.Pen, 0.006f, floatArrayOf(0.1f, 0.1f)))
+        assertTrue(book.marked("p1"))
+        assertTrue(book.marked("p2"))
+        assertTrue(book.marked("p3"))
+        book.undo("p2")
+        assertFalse(book.marked("p2"))
+    }
+
     @Test fun aFullPageRefusesThePenButNotTheEraser() {
         val full = (0 until AnnotationLimits.STROKES).map { Stroke(InkTool.Pen, InkRole.Pen, 0.006f, floatArrayOf(it / 2000f, 0.5f)) }
         AnnotationFiles(dir).write("p1", Annotations(strokes = full))

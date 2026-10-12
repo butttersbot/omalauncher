@@ -136,6 +136,12 @@ class AnnotationBook(
 
     fun ink(page: String): Ink = pages[page]?.ink ?: NO_INK
 
+    /**
+     * Whether [page] has anything written or stuck on it that would go with the page: what shows, or a file
+     * that couldn't be read, which holds something even though none of it shows.
+     */
+    fun marked(page: String): Boolean = pages[page]?.let { it.status == Status.Unreadable || !it.marks.isEmpty } ?: false
+
     /** Whether [page] takes a change now; says why not where that is worth saying. */
     fun takes(page: String): Boolean = editable(page) != null
 

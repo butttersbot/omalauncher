@@ -396,8 +396,16 @@ fun Overview(
                 // The only page stays.
                 if (notebook.canDelete(asked.page.id)) {
                     MenuItem("delete", Pack.red) {
-                        // An empty page has nothing to ask about.
-                        if (engine.itemsOn(asked.page.id).isEmpty()) delete(asked.page, move = true) else ask = PageAsk.Delete(asked.page)
+                        val page = asked.page
+                        val tiles = engine.itemsOn(page.id).size
+
+                        // An empty page has nothing to ask about; one with only ink or notes on it does.
+                        fun decide(marked: Boolean) {
+                            if (deleteQuestion(tiles, marked).asks) ask = PageAsk.Delete(page) else delete(page, move = true)
+                        }
+                        // Its ink and notes are read first, in case the page never showed this session.
+                        val book = state.marks.book
+                        if (book == null) decide(false) else book.whenRead(page.id) { decide(book.marked(page.id)) }
                     }
                 }
             }
@@ -421,22 +429,65 @@ fun Overview(
             // What is drawn or stuck on the page is the page's: it is read here in case the page never showed.
             val book = state.marks.book
             LaunchedEffect(asked, book) { book?.open(asked.page.id) }
+            val question = deleteQuestion(count, book?.marked(asked.page.id) == true)
             Menu(onDismiss = { ask = null }) {
-                MenuTitle("${asked.page.name} has $things on it")
-                if (book?.on(asked.page.id)?.isEmpty == false) MenuTitle("what is written or stuck on the page goes with it")
-                MenuItem("move ${if (count == 1) "it" else "them"} to $neighbour") { delete(asked.page, move = true) }
-                if (notebook.kept) {
-                    MenuItem(if (sure) "tap again to remove $things from home" else "remove ${if (count == 1) "it" else "them"} from home", Pack.red) {
-                        if (sure) delete(asked.page, move = false) else sure = true
+                if (question.offersMove) {
+                    MenuTitle("${asked.page.name} has $things on it")
+                    if (question.saysMarksGo) MenuTitle("what is written or stuck on the page goes with it")
+                    MenuItem("move ${if (count == 1) "it" else "them"} to $neighbour") { delete(asked.page, move = true) }
+                    if (notebook.kept) {
+                        MenuItem(if (sure) "tap again to remove $things from home" else "remove ${if (count == 1) "it" else "them"} from home", Pack.red) {
+                            if (sure) delete(asked.page, move = false) else sure = true
+                        }
+                    } else {
+                        MenuTitle("this session isn't being saved, so nothing can be removed in it")
                     }
+                    MenuItem("keep the page") { ask = null }
                 } else {
-                    MenuTitle("this session isn't being saved, so nothing can be removed in it")
+                    // No tiles, so nothing to move: only whether what he drew or stuck there is to go.
+                    MenuTitle("delete ${asked.page.name}?")
+                    MenuTitle("what is written or stuck on the page goes with it")
+                    MenuItem("delete the page", Pack.red) { delete(asked.page, move = true) }
+                    MenuItem("cancel") { ask = null }
                 }
-                MenuItem("keep the page") { ask = null }
             }
         }
     }
 }
+
+/** What deleting a page asks first, by what is on it. */
+internal enum class DeleteQuestion(
+    /** Whether anything is asked at all; if not, the page is deleted on the tap. */
+    val asks: Boolean,
+    /** Whether there are tiles, so moving them to the neighbour or removing them is offered; else only delete and cancel. */
+    val offersMove: Boolean,
+    /** Whether he is told that what is written or stuck on the page goes with it. */
+    val saysMarksGo: Boolean,
+) {
+    /** Nothing on the page. */
+    None(false, false, false),
+
+    /** Ink, notes or stickers and no tiles: delete or cancel. */
+    Marks(true, false, true),
+
+    /** Tiles only: move them, remove them, or keep the page. */
+    Things(true, true, false),
+
+    /** Both: the tiles' choices, and a line about the rest. */
+    ThingsAndMarks(true, true, true),
+}
+
+/** The question for a page with [tiles] tiles on it that is [marked], or not, by ink, notes or stickers. */
+internal fun deleteQuestion(
+    tiles: Int,
+    marked: Boolean,
+): DeleteQuestion =
+    when {
+        tiles > 0 && marked -> DeleteQuestion.ThingsAndMarks
+        tiles > 0 -> DeleteQuestion.Things
+        marked -> DeleteQuestion.Marks
+        else -> DeleteQuestion.None
+    }
 
 /** One page in the overview: its still, or its cells in outline, under the pack's scrim, and its name below. */
 @Composable
