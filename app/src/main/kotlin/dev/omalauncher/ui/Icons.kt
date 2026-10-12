@@ -1,9 +1,24 @@
 package dev.omalauncher.ui
 
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathParser
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import dev.omalauncher.theme.pack.IconTreatment
+import dev.omalauncher.theme.pack.PackIcons
+import dev.omalauncher.theme.pack.PlaceholderStyle
+import kotlin.math.roundToInt
 
 /** A 24dp Material glyph (Apache 2.0), filled white so it can be tinted where it's drawn. */
 private fun icon(
@@ -110,4 +125,117 @@ object Icons {
 
     /** Points up; rotate it for the other arrow keys. */
     val Chevron by lazy { icon("chevron", "M7.41,15.41L12,10.83l4.59,4.58L18,14l-6,-6 -6,6z") }
+}
+
+/**
+ * How app icons are drawn under a pack, worked out once from its `[icons]`: plain values, so it is
+ * tested without a screen. Home, the dock, the drawer and the recent strip all draw from it, through
+ * [AppIcon] and [Pack].
+ */
+data class IconLook(
+    /** Silhouettes in the pack's tint (true), each icon's own colors (false), or null: the monochrome switch in settings decides. */
+    val mono: Boolean?,
+    /** What an icon's own colors go through, as the 20 numbers of a 4 by 5 color matrix, row by row; null leaves them alone. */
+    val matrix: List<Float>?,
+    /** A small shadow under an icon that is drawn in its own colors with no frame around it. */
+    val shadow: Boolean,
+    /** What an app without an icon gets. */
+    val placeholder: PlaceholderStyle,
+) {
+    /** Whether icons are silhouettes, given the switch in settings. */
+    fun mono(user: Boolean) = mono ?: user
+
+    /** True when an icon gets the shadow: only one in its own colors, and never one [framed] by a tile or a button of its own. */
+    fun shadowed(
+        mono: Boolean,
+        framed: Boolean,
+    ) = shadow && !mono && !framed
+
+    /** What stands in for an icon [label]'s app doesn't have. */
+    fun placeholderText(label: String) =
+        when (placeholder) {
+            PlaceholderStyle.Letter -> initials(label)
+            PlaceholderStyle.Glyph -> PLACEHOLDER_GLYPH
+            PlaceholderStyle.Blank -> ""
+        }
+
+    companion object {
+        /** The one mark every app gets in a pack whose placeholder is a glyph: a bullet, which every system font has. */
+        const val PLACEHOLDER_GLYPH = "•"
+
+        /** The shadow, as the design prototype has it under every real icon: 2dp down, a quarter black. */
+        const val SHADOW_DROP = 2f
+        const val SHADOW_ALPHA = 0.25f
+    }
+}
+
+/** [icons] as what is drawn. Console comes out as no treatment at all: the user's switch, no matrix, no shadow, a letter. */
+fun iconLook(icons: PackIcons) =
+    IconLook(
+        mono =
+            when (icons.treatment) {
+                IconTreatment.User -> null
+                IconTreatment.Monochrome -> true
+                IconTreatment.Original, IconTreatment.Grayscale -> false
+            },
+        // Gray is no saturation, whatever the pack's own says.
+        matrix = iconMatrix(if (icons.treatment == IconTreatment.Grayscale) 0f else icons.saturation, icons.contrast),
+        shadow = icons.shadow,
+        placeholder = icons.placeholder.style,
+    )
+
+/**
+ * The color matrix for icons at [saturation] (1 as they are, 0 gray) and [contrast] (1 as they are,
+ * about mid gray): each row gives red, green, blue or alpha from the four of them and a constant on
+ * the 0 to 255 scale. Null when both are 1, so an untreated icon is drawn with no filter at all.
+ */
+fun iconMatrix(
+    saturation: Float,
+    contrast: Float,
+): List<Float>? {
+    if (saturation == 1f && contrast == 1f) return null
+    // How bright each of red, green and blue looks: the gray an icon fades to.
+    val gray = floatArrayOf(0.213f, 0.715f, 0.072f)
+    val shift = 127.5f * (1f - contrast)
+    val rows =
+        (0 until 3).flatMap { row ->
+            (0 until 3).map { column -> contrast * (gray[column] * (1f - saturation) + if (row == column) saturation else 0f) } + listOf(0f, shift)
+        }
+    return rows + listOf(0f, 0f, 0f, 1f, 0f)
+}
+
+/**
+ * An app's icon as the pack treats it: a silhouette in the pack's tint when [mono], else in its own
+ * colors through the pack's matrix, with the pack's shadow under it unless it is [framed] by a tile or
+ * a button of its own. In Console this is the plain image the launcher always drew.
+ */
+@Composable
+fun AppIcon(
+    bitmap: ImageBitmap,
+    description: String,
+    modifier: Modifier,
+    mono: Boolean,
+    framed: Boolean = false,
+) {
+    Image(bitmap, description, if (Pack.iconShadowed(mono, framed)) modifier.iconShadow(bitmap) else modifier, colorFilter = Pack.icon(mono))
+}
+
+/** [bitmap]'s own outline again under it, a little lower: a shadow that follows the icon's shape, whatever it is. */
+private fun Modifier.iconShadow(bitmap: ImageBitmap): Modifier {
+    val filter = Pack.iconShadow
+    return drawBehind {
+        translate(top = IconLook.SHADOW_DROP.dp.toPx()) {
+            drawImage(bitmap, dstSize = IntSize(size.width.roundToInt(), size.height.roundToInt()), colorFilter = filter)
+        }
+    }
+}
+
+/**
+ * What an app without an icon, or a bare silhouette, sits on: the pack's placeholder surface, [size]
+ * across. Console's is a fill alone, as it always was; a pack that outlines its placeholder gets the line.
+ */
+fun Modifier.iconBadge(size: Dp): Modifier {
+    val look = Pack.look
+    val sized = size(size)
+    return if (look.badgeLine.value > 0f) sized.framed(look.badgeLine, look.badgeEdge, Pack.badge, size / 2) else sized.clip(Pack.shape(size / 2)).background(Pack.badge)
 }

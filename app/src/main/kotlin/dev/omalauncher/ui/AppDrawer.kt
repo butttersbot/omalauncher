@@ -273,20 +273,21 @@ internal fun StripCell(
         val onButton = chrome !== Modifier
         when {
             onButton && glyph != null -> Image(glyph, label, Modifier.size(size * 0.7f), colorFilter = Pack.tinted(Pack.dockInk))
-            onButton && bmp != null -> Image(bmp, spoken, Modifier.size(size), colorFilter = if (mono) Pack.tinted(Pack.dockInk) else Pack.icon(false))
-            onButton -> BasicText(initials(label), style = Pack.placeholder(Pack.size.large, Pack.dockInk))
+            onButton && bmp != null && mono -> Image(bmp, spoken, Modifier.size(size), colorFilter = Pack.tinted(Pack.dockInk))
+            onButton && bmp != null -> AppIcon(bmp, spoken, Modifier.size(size), mono = false, framed = true)
+            onButton -> BasicText(Pack.placeholderText(label), style = Pack.placeholder(Pack.size.large, Pack.dockInk))
             glyph != null -> Image(glyph, label, Modifier.size(size * 0.7f), colorFilter = Pack.tinted())
             // Bare silhouettes and initials sit on a badge, as pinned apps do, so they read on any wallpaper.
             bare && (mono || bmp == null) ->
-                Box(Modifier.size(size).clip(Pack.shape(size / 2)).background(Pack.badge), contentAlignment = Alignment.Center) {
+                Box(Modifier.iconBadge(size), contentAlignment = Alignment.Center) {
                     if (bmp != null) {
                         Image(bmp, spoken, Modifier.size(size * 0.75f), colorFilter = Pack.tinted())
                     } else {
-                        BasicText(initials(label), style = Pack.placeholder(Pack.size.body))
+                        BasicText(Pack.placeholderText(label), style = Pack.placeholder(Pack.size.body))
                     }
                 }
-            bmp != null -> Image(bmp, spoken, Modifier.size(size * if (mono) 0.85f else 1f), colorFilter = Pack.icon(mono))
-            else -> BasicText(initials(label), style = Pack.placeholder(Pack.size.large))
+            bmp != null -> AppIcon(bmp, spoken, Modifier.size(size * if (mono) 0.85f else 1f), mono)
+            else -> BasicText(Pack.placeholderText(label), style = Pack.placeholder(Pack.size.large))
         }
         if (menuOpen) AppActions(actions(), onDismiss = { menuOpen = false })
     }
@@ -618,14 +619,14 @@ private fun AppCell(
                 Image(glyph, label, Modifier.size(26.dp), colorFilter = Pack.tinted(if (mono) Pack.tint else Pack.background))
             }
         } else if (mono && mask != null) {
-            Box(Modifier.size(52.dp).clip(badge).background(Pack.badge), contentAlignment = Alignment.Center) {
+            Box(Modifier.iconBadge(52.dp), contentAlignment = Alignment.Center) {
                 Image(mask, spoken, Modifier.size(36.dp), colorFilter = Pack.tinted())
             }
         } else if (!mono && icon != null) {
-            Image(icon, spoken, Modifier.size(52.dp), colorFilter = Pack.icon(false))
+            AppIcon(icon, spoken, Modifier.size(52.dp), mono = false)
         } else {
-            Box(Modifier.size(52.dp).clip(badge).background(Pack.badge), contentAlignment = Alignment.Center) {
-                BasicText(initials(label), style = Pack.placeholder(Pack.size.title))
+            Box(Modifier.iconBadge(52.dp), contentAlignment = Alignment.Center) {
+                BasicText(Pack.placeholderText(label), style = Pack.placeholder(Pack.size.title))
             }
         }
         Spacer(Modifier.height(6.dp))
