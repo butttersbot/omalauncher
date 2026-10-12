@@ -41,11 +41,17 @@ internal class NotebookPrefs(
     /** Synchronous, unlike [save]: the migration is only done once this is on disk. */
     override fun commit(text: String) = prefs.edit().putString(KEY, text).commit()
 
-    /** A copy beside the app's files: the unreadable value, or the whole file if that is what's damaged. */
+    /**
+     * A copy beside the app's files, byte for byte: the value that can't be used, or the whole file if that is
+     * what's damaged. One copy of the same thing is enough, however many starts find it still there.
+     */
     override fun setAside(stamp: Long): Boolean {
-        val copy = File(context.filesDir, "notebook-unreadable-$stamp")
-        if (prefs.contains(KEY)) copy.writeText(prefs.all[KEY].toString()) else file.copyTo(copy, overwrite = true)
-        return copy.isFile
+        val bytes = if (prefs.contains(KEY)) prefs.all[KEY].toString().toByteArray() else file.readBytes()
+        val copies = context.filesDir.listFiles { f -> f.name.startsWith(ASIDE) }.orEmpty()
+        if (copies.any { it.length() == bytes.size.toLong() && it.readBytes().contentEquals(bytes) }) return true
+        val copy = File(context.filesDir, "$ASIDE$stamp")
+        copy.writeBytes(bytes)
+        return copy.isFile && copy.length() == bytes.size.toLong()
     }
 
     /** Keeps a change made on home. */
@@ -54,5 +60,6 @@ internal class NotebookPrefs(
     private companion object {
         const val FILE = "notebook"
         const val KEY = "notebook"
+        const val ASIDE = "notebook-unreadable-"
     }
 }

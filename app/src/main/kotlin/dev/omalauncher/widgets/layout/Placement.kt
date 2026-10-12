@@ -76,6 +76,8 @@ class Placement<T>(
         items: List<T>,
         cols: Int,
         rows: Int,
+        /** Cells on the page that belong to something not among [items] (a widget whose file isn't there now): not free. */
+        taken: List<Cell> = emptyList(),
     ): List<T> {
         grid = cols to rows
         var changed = false
@@ -83,7 +85,7 @@ class Placement<T>(
         for (item in items) {
             val key = tile(item).key
             if (cells[key] != null) continue
-            val spot = freeSpot(item, items, cols, rows)
+            val spot = freeSpot(item, items, cols, rows, taken)
             if (spot == null) {
                 homeless += item
                 continue
@@ -103,11 +105,12 @@ class Placement<T>(
     fun claim(
         item: T,
         others: List<T>,
+        taken: List<Cell> = emptyList(),
     ): Boolean {
         val (cols, rows) = grid ?: return false
         val key = tile(item).key
-        place(others.filter { tile(it).key != key }, cols, rows)
-        cells[key] = freeSpot(item, others, cols, rows) ?: return false
+        place(others.filter { tile(it).key != key }, cols, rows, taken)
+        cells[key] = freeSpot(item, others, cols, rows, taken) ?: return false
         save()
         return true
     }
@@ -118,9 +121,10 @@ class Placement<T>(
         items: List<T>,
         cols: Int,
         rows: Int,
+        taken: List<Cell> = emptyList(),
     ): Cell? {
         val me = tile(item)
-        val others = items.mapNotNull { other -> tile(other).let { o -> if (o.key == me.key) null else cells[o.key]?.shown(o.resizable) } }
+        val others = taken + items.mapNotNull { other -> tile(other).let { o -> if (o.key == me.key) null else cells[o.key]?.shown(o.resizable) } }
         val (w, h) = placedSize(me.size, cols, rows)
         return firstFit(w, h, others, cols, rows)
     }

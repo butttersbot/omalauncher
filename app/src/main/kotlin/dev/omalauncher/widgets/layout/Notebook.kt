@@ -6,6 +6,7 @@ import dev.omalauncher.widgets.Cell
 import dev.omalauncher.widgets.GRID_COLUMNS
 import org.json.JSONArray
 import org.json.JSONObject
+import org.json.JSONTokener
 
 /** A Linux .desktop entry as a pinned app remembers it, for when the entry is gone. */
 data class LinuxEntry(
@@ -96,6 +97,17 @@ object NotebookStore {
      * Nothing it is given makes it throw, errors included (Android's org.json recurses without a limit).
      */
     fun read(text: String?): Notebook? = inspect(text)?.notebook
+
+    /**
+     * Whether [text] was written by a launcher newer than this one. Such a document may hold what this one
+     * doesn't know of, and writing it back would lose that: it is read, never rewritten.
+     */
+    fun newer(text: String?): Boolean =
+        try {
+            if (text.isNullOrBlank()) false else (JSONTokener(text).nextValue() as? JSONObject)?.let { it.has("v") && it.has("data") && it.getInt("v") > VERSION } ?: false
+        } catch (e: Throwable) {
+            false
+        }
 
     /** As [read], and saying how much was left out: what is saved from a notebook that skipped something no longer has it. */
     fun inspect(text: String?): Read? =

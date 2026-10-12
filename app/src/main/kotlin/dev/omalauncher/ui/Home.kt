@@ -281,7 +281,8 @@ fun HomeScreen(
     ) {
       CompositionLocalProvider(LocalTypingAt provides reportTyping) {
         PageNames(
-            names = pagesAt(pager.currentPage, pages, per).map { it?.let(engine.notebook::name) },
+            // Not before the notebook is read: the page shown until then is a stand-in.
+            names = pagesAt(pager.currentPage, pages, per).map { page -> page?.takeIf { engine.notebook.opened }?.let(engine.notebook::name) },
             hidden = { state.homeCovered || engine.openScreen != null },
             faded = { state.drawer.value },
             onOpen = state::openOverview,
@@ -371,6 +372,7 @@ fun HomeScreen(
             // home's to swipe and long-press there until it does.
             room = if (LauncherStyle.recentApps && side == null) RecentStripHeight else 0.dp,
             per = per,
+            ready = engine.notebook.opened,
             onLongPressEmpty = { openMenu(null) },
             onNoRoom = { item -> showPage = engine.moveToFreePage(item) },
             onMove = { item, page ->
@@ -378,8 +380,9 @@ fun HomeScreen(
                 showPage = page
             },
             onTouch = { state.currentPage = it },
-            onAddPage = { showPage = engine.addPage() },
-            onOfferPage = { engine.addPage().also { showPage = it } },
+            // Only while the pages are odd, which is when the empty half shows: a second tap on its heels adds nothing.
+            onAddPage = { if (engine.pages.size % 2 == 1) showPage = engine.addPage() },
+            onOfferPage = { engine.addPage()?.also { showPage = it } },
             onWithdrawPage = { engine.notebook.withdrawPage(it) },
             onGroup = { app, target -> engine.shortcuts.group(app, target) },
             onReorder = { app, before -> engine.shortcuts.moveBefore(app.key, before) },

@@ -167,11 +167,14 @@ internal fun PinnedApp.dockEntry() = DockEntry(key, label, component, profile, l
 class DockStore(
     private val load: () -> String?,
     private val save: (String) -> Unit,
+    /** Whether a change can be taken now. Not before the notebook is opened: it would be thrown away when it is. */
+    private val ready: () -> Boolean = { true },
 ) {
     /** The dock of [notebook], read and written as the document the dock always was. */
     constructor(notebook: LiveNotebook) : this(
         load = { writeDock(notebook.dock.map { it.dockEntry() }) },
         save = { notebook.changeDock(readDock(it).map { entry -> entry.pinned() }) },
+        ready = { notebook.opened },
     )
 
     val items = mutableStateListOf<DockEntry>()
@@ -202,7 +205,7 @@ class DockStore(
     private fun replace(changed: List<DockEntry>) {
         // A copy first: a change that changes nothing hands back [items] itself, which clearing would empty.
         val next = changed.toList()
-        if (next == items.toList()) return
+        if (!ready() || next == items.toList()) return
         items.clear()
         items += next
         save(writeDock(next))

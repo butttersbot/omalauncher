@@ -32,9 +32,10 @@ data class Pinned(
  * pinned apps and their folders, and the dock. Everything home shows of its layout is read from here, and
  * [save] writes all of it as one document through [persist]. A page stays when its last item leaves.
  *
- * Until [open] is given the saved (or migrated) notebook it holds one empty page and keeps nothing. Opened as
- * not kept, it works the same and still writes nothing: that is a start whose migration couldn't be saved.
- * Main thread only.
+ * Until [open] is given the saved (or migrated) notebook it holds one empty page and takes no change at all:
+ * whatever was pinned, moved or added then would be thrown away when the real pages arrive, so it is refused
+ * instead. Opened as not kept, it works and still writes nothing: that is a start whose migration couldn't be
+ * saved. Main thread only.
  */
 class LiveNotebook(
     private val persist: (String) -> Unit = {},
@@ -133,6 +134,22 @@ class LiveNotebook(
         )
     }
 
+    /** From here on changes are written, and what was changed meanwhile with them: the start's disk work came out well. */
+    fun keep() {
+        if (!opened || kept) return
+        kept = true
+        save()
+    }
+
+    /**
+     * The cells on [page] of what isn't among [except]: in practice widgets whose files aren't there now. They
+     * show nothing, but the place is still theirs, so nothing else is put there by itself.
+     */
+    fun cellsOn(
+        page: String,
+        except: Set<String>,
+    ): List<Cell> = home.entries.filter { it.value == page && it.key !in except }.mapNotNull { cells[it.key] }
+
     /** Writes the notebook, unless this start isn't kept. */
     fun save() {
         if (opened && kept) persist(NotebookStore.write(snapshot()))
@@ -155,11 +172,13 @@ class LiveNotebook(
         key: String,
         cell: Cell,
     ) {
-        if (cells[key] != cell) cells[key] = cell
+        if (opened && cells[key] != cell) cells[key] = cell
     }
 
-    /** A new, empty page after the last one; returns its id. */
-    fun addPage(): String {
+    /** A new, empty page after the last one; returns its id, or null before the notebook is opened. */
+    fun addPage(): String? = if (opened) newPage() else null
+
+    private fun newPage(): String {
         val id = "p" + ((pages.mapNotNull { it.id.removePrefix("p").toIntOrNull() }.maxOrNull() ?: 0) + 1)
         var number = pages.size + 1
         while (pages.any { it.name == "Page $number" }) number++
@@ -170,7 +189,7 @@ class LiveNotebook(
 
     /** Takes back a page that was only offered and never used: an empty one, never the only one. */
     fun withdrawPage(page: String): Boolean {
-        if (pages.size < 2 || home.values.any { it == page }) return false
+        if (!opened || pages.size < 2 || home.values.any { it == page }) return false
         if (!pages.removeAll { it.id == page }) return false
         save()
         return true
@@ -183,11 +202,11 @@ class LiveNotebook(
      */
     fun adopt(widgets: List<Pair<String, Int>>) {
         val fresh = widgets.filter { (key) -> key !in home }
-        if (fresh.isEmpty()) return
+        if (!opened || fresh.isEmpty()) return
         val count = pages.size
         val added = HashMap<Int, String>()
         for ((key, asks) in fresh.sortedBy { it.second }) {
-            home[key] = pages.getOrNull(asks.coerceAtLeast(1) - 1)?.id?.takeIf { asks <= count } ?: added.getOrPut(asks) { addPage() }
+            home[key] = pages.getOrNull(asks.coerceAtLeast(1) - 1)?.id?.takeIf { asks <= count } ?: added.getOrPut(asks) { newPage() }
         }
         save()
     }
@@ -197,7 +216,7 @@ class LiveNotebook(
         key: String,
         page: String,
     ) {
-        if (position(page) < 0) return
+        if (!opened || position(page) < 0) return
         home[key] = page
         save()
     }
@@ -207,7 +226,7 @@ class LiveNotebook(
         key: String,
         page: String,
     ) {
-        if (position(page) < 0) return
+        if (!opened || position(page) < 0) return
         val i = apps.indexOfFirst { it.app.key == key }
         if (i >= 0 && apps[i].folder != null) apps[i] = apps[i].copy(folder = null)
         home[key] = page
@@ -217,6 +236,7 @@ class LiveNotebook(
 
     /** Forgets a widget: its cell and its page. */
     fun forget(key: String) {
+        if (!opened) return
         val known = cells.remove(key) != null
         if (home.remove(key) != null || known) save()
     }
@@ -226,6 +246,7 @@ class LiveNotebook(
         app: PinnedApp,
         page: String,
     ) {
+        if (!opened) return
         apps.removeAll { it.app.key == app.key }
         apps += Pinned(app)
         home[app.key] = page.takeIf { position(it) >= 0 } ?: first
@@ -235,6 +256,7 @@ class LiveNotebook(
 
     /** Takes an app, or a folder with all its apps, off the home screen. */
     fun unpin(key: String) {
+        if (!opened) return
         if (folders.remove(key)) {
             apps.filter { it.folder == key }.forEach { cells.remove(it.app.key) }
             apps.removeAll { it.folder == key }
@@ -254,7 +276,7 @@ class LiveNotebook(
         key: String,
         target: String,
     ): String? {
-        if (key == target) return null
+        if (!opened || key == target) return null
         val app = apps.firstOrNull { it.app.key == key } ?: return null
         val folder =
             when {
@@ -297,7 +319,7 @@ class LiveNotebook(
     ) {
         val i = apps.indexOfFirst { it.app.key == key }
         val folder = apps.getOrNull(i)?.folder ?: return
-        if (key == before) return
+        if (!opened || key == before) return
         val app = apps.removeAt(i)
         val at = before?.let { b -> apps.indexOfFirst { it.app.key == b && it.folder == folder } }?.takeIf { it >= 0 } ?: (apps.indexOfLast { it.folder == folder } + 1)
         apps.add(at, app)
@@ -325,6 +347,7 @@ class LiveNotebook(
     }
 
     fun changeDock(entries: List<PinnedApp>) {
+        if (!opened) return
         dock = entries
         save()
     }

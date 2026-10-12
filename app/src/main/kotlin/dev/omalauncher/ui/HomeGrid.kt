@@ -246,6 +246,8 @@ internal fun HomeGrid(
     modifier: Modifier = Modifier,
     room: Dp = 0.dp,
     per: Int = 1,
+    /** False until the notebook is read: the one page shown then is a stand-in, not an empty page of his. */
+    ready: Boolean = true,
 ) {
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
@@ -562,7 +564,7 @@ internal fun HomeGrid(
                 Row(Modifier.fillMaxSize()) {
                     for (page in pagesAt(slot, pages, grid)) {
                         Box(Modifier.width(with(density) { grid.width.toDp() }).fillMaxHeight()) {
-                            if (page == null) PlusPage(grid, onAddPage) else TiledPage(page, itemsOn(page), layout, grid, arrange, selected, render, actions, onNoRoom)
+                            if (page == null) PlusPage(grid, onAddPage) else TiledPage(page, itemsOn(page), layout, grid, arrange, selected, render, actions, onNoRoom, ready)
                         }
                     }
                 }
@@ -667,11 +669,12 @@ private fun TiledPage(
     render: @Composable (HomeItem, Modifier, Boolean) -> Unit,
     actions: @Composable (HomeItem) -> Unit,
     onNoRoom: (HomeItem) -> Unit,
+    ready: Boolean,
 ) {
     val density = LocalDensity.current
     val carried = arrange.carry?.item?.key
     LaunchedEffect(items.map { it.key }, grid.cols, grid.rows) {
-        layout.place(items, grid.cols, grid.rows).forEach(onNoRoom)
+        layout.place(items, grid.cols, grid.rows, page).forEach(onNoRoom)
     }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val pageWidth = constraints.maxWidth
@@ -691,7 +694,7 @@ private fun TiledPage(
                 }
             }
         }
-        if (items.none { it.key != carried }) {
+        if (ready && items.none { it.key != carried }) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 BasicText(
                     if (carried != null) "drop here" else "no widgets on this page · long-press for a new one",

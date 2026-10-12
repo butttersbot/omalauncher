@@ -51,7 +51,14 @@ class WidgetLayout(
         items: List<HomeItem>,
         cols: Int,
         rows: Int,
-    ): List<HomeItem> = placement.place(items, cols, rows)
+        /** The id of the page being laid out: the cells of widgets on it whose files aren't there now stay theirs. */
+        page: String? = null,
+    ): List<HomeItem> = placement.place(items, cols, rows, held(page, items))
+
+    private fun held(
+        page: String?,
+        items: List<HomeItem>,
+    ) = page?.let { notebook.cellsOn(it, except = items.map { item -> item.key }.toSet()) }.orEmpty()
 
     /**
      * Gives [item] a free spot at its size among [others]; false when there's none, or no page was laid out yet.
@@ -61,7 +68,8 @@ class WidgetLayout(
     fun claim(
         item: HomeItem,
         others: List<HomeItem>,
-    ): Boolean = placement.claim(item, others)
+        page: String? = null,
+    ): Boolean = placement.claim(item, others, held(page, others + item))
 
     /** Forgets everything about [name]: its cell and page. */
     fun remove(name: String) = notebook.forget(name)

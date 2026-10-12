@@ -122,7 +122,7 @@ class NotebookStartTest {
         files: FakeFiles,
         widgets: List<OldWidget>?,
     ): NotebookStart {
-        val opening = NotebookOpening(files) { 1760000000000 }
+        val opening = NotebookOpening(files, { 1760000000000 })
         return opening.saved() ?: opening.migrate(widgets)
     }
 
@@ -248,7 +248,7 @@ class NotebookStartTest {
         live.setCell("10-today.owl", Cell(3, 6, 3, 3))
         live.save()
         live.move("10-today.owl", "p2")
-        val added = live.addPage()
+        val added = live.addPage()!!
         live.move("20-fetch.owl", added)
         live.changeDock(listOf(PinnedApp("app:x", "X", "x/.X")))
         live.forget("50-koi.owl")
@@ -295,6 +295,12 @@ class NotebookStartTest {
         // The pages are what they were without a dock.
         assertEquals(start(FakeFiles.of(BOSS), FakeFiles.widgets(BOSS)).notebook.pages, start.notebook.pages)
         files.oldStoresUntouched()
+    }
+
+    @Test fun aDockEntrySavedTwiceArrivesOnce() {
+        val start = start(FakeFiles.of(BOSS, dock = dock(chat, chrome, workMail, chrome, chat)), FakeFiles.widgets(BOSS))
+        assertTrue(start.saved)
+        assertEquals(listOf("oma:chat", "app:com.android.chrome/.Main#0", "app:com.mail/.Main#10"), start.notebook.dock.map { it.key })
     }
 
     @Test fun noDockFileIsAnEmptyDockAndClean() {
@@ -366,7 +372,10 @@ class NotebookStartTest {
         }
     }
 
-    /** A notebook that reads only in part would lose the rest at its first save: the whole of it is set aside before that. */
+    /**
+     * A notebook that reads only in part would lose the rest at its first save: the whole of it is set aside before
+     * that. Reading it writes nothing (that is on the main thread, at start); [NotebookOpening.finish] does the rest.
+     */
     @Test fun aNotebookThatReadsOnlyInPartIsSetAsideBeforeItIsSavedOver() {
         val whole = start(FakeFiles.of("normal"), FakeFiles.widgets("normal")).notebook
         val root = JSONObject(NotebookStore.write(whole))
@@ -377,16 +386,29 @@ class NotebookStartTest {
         val files = FakeFiles.of("normal")
         files.exists = true
         files.stored = damaged
-        val start = NotebookOpening(files) { 7 }.saved()!!
-        assertTrue(start.saved)
-        assertEquals(NotebookOpening.PARTLY_READ, start.message)
-        assertEquals(listOf("notebook", "aside", "commit"), files.log)
-        assertEquals(listOf(7L to damaged), files.aside)
+        val opening = NotebookOpening(files, { 7 })
+        val start = opening.saved()!!
+        // Shown, but not kept yet, and nothing touched.
+        assertFalse(start.saved)
+        assertTrue(start.pending)
+        assertNull(start.message)
+        assertEquals(listOf("notebook"), files.log)
+        assertEquals(damaged, files.stored)
         assertFalse(start.notebook.pages.flatMap { it.items }.any { it.key == lost })
         assertEquals(whole.pages[1], start.notebook.pages[1])
+
+        assertEquals(true to NotebookOpening.PARTLY_READ, opening.finish())
+        assertEquals(listOf("notebook", "aside", "commit"), files.log)
+        assertEquals(listOf(7L to damaged), files.aside)
+        assertEquals(start.notebook, NotebookStore.read(files.stored))
+        // Done once.
+        assertEquals(true to null, opening.finish())
+        assertEquals(1, files.commits)
         // What is there now reads whole, so the next start has nothing to set aside.
         files.log.clear()
-        assertNull(NotebookOpening(files).saved()!!.message)
+        val next = NotebookOpening(files).saved()!!
+        assertTrue(next.saved)
+        assertFalse(next.pending)
         assertEquals(listOf("notebook"), files.log)
         files.oldStoresUntouched()
 
@@ -397,13 +419,133 @@ class NotebookStartTest {
                 stuck.exists = true
                 stuck.stored = damaged
                 if (failing == "aside") stuck.setAside = outcome else stuck.commit = outcome
-                val unsaved = NotebookOpening(stuck).saved()!!
-                assertFalse(unsaved.saved)
-                assertEquals(NotebookOpening.PARTLY_READ_UNSAVED, unsaved.message)
+                val unsaved = NotebookOpening(stuck)
+                assertEquals(start.notebook, unsaved.saved()!!.notebook)
+                assertEquals(false to NotebookOpening.PARTLY_READ_UNSAVED, unsaved.finish())
                 assertEquals(damaged, stuck.stored)
-                assertEquals(start.notebook, unsaved.notebook)
+                if (failing == "aside") assertEquals(0, stuck.commits)
             }
         }
+    }
+
+    /** A store from a newer launcher is not this one's to rewrite: set aside as it is, shown, and nothing written all session. */
+    @Test fun aNotebookFromANewerLauncherIsNeverRewritten() {
+        val whole = start(FakeFiles.of(BOSS), FakeFiles.widgets(BOSS)).notebook
+        val root = JSONObject(NotebookStore.write(whole)).put("v", 2)
+        root.getJSONObject("data").put("ink", JSONObject().put("p1", "strokes this launcher knows nothing of"))
+        val newer = root.toString()
+        assertTrue(NotebookStore.newer(newer))
+        assertFalse(NotebookStore.newer(NotebookStore.write(whole)))
+        assertFalse(NotebookStore.newer(null))
+        assertFalse(NotebookStore.newer("{not json"))
+        assertFalse(NotebookStore.newer("[]"))
+
+        val files = FakeFiles.of(BOSS)
+        files.exists = true
+        files.stored = newer
+        val opening = NotebookOpening(files, { 9 })
+        val start = opening.saved()!!
+        assertFalse(start.saved)
+        assertTrue(start.pending)
+        // What it can read of it is what home shows.
+        assertEquals(whole, start.notebook)
+        assertEquals(listOf("notebook"), files.log)
+        assertEquals(false to NotebookOpening.NEWER, opening.finish())
+        assertEquals(listOf("notebook", "aside"), files.log)
+        assertEquals(listOf(9L to newer), files.aside)
+        // A whole session of changes writes nothing, and the store is byte for byte what it was.
+        val live = LiveNotebook(persist = files::save)
+        live.open(start.notebook, kept = start.saved)
+        live.move("10-today.owl", "p2")
+        live.addPage()
+        live.changeDock(listOf(PinnedApp("app:x", "X", "x/.X")))
+        live.save()
+        assertEquals(listOf("notebook", "aside"), files.log)
+        assertEquals(newer, files.stored)
+        assertEquals(0, files.commits)
+        files.oldStoresUntouched()
+        // Even if it can't be set aside, it isn't written.
+        val stuck = FakeFiles.of(BOSS)
+        stuck.exists = true
+        stuck.stored = newer
+        stuck.setAside = null
+        val again = NotebookOpening(stuck)
+        assertFalse(again.saved()!!.saved)
+        assertEquals(false to NotebookOpening.NEWER, again.finish())
+        assertEquals(newer, stuck.stored)
+    }
+
+    @Test fun aNewerNotebookThatDoesntReadIsNotMigratedOverEither() {
+        for (newer in listOf("""{"v":2,"data":{"pages":"elsewhere"}}""", """{"v":7,"data":[]}""")) {
+            val files = FakeFiles.of(BOSS)
+            files.exists = true
+            files.stored = newer
+            val opening = NotebookOpening(files, { 9 })
+            assertNull(opening.saved())
+            val start = opening.migrate(FakeFiles.widgets(BOSS))
+            // Home has the layout from before to show, and keeps nothing.
+            assertFalse(start.saved)
+            assertEquals(NotebookOpening.NEWER, start.message)
+            assertEquals(5, start.notebook.pages.sumOf { it.items.size })
+            assertEquals(0, files.commits)
+            assertEquals(newer, files.stored)
+            assertEquals(listOf(9L to newer), files.aside)
+            files.oldStoresUntouched()
+        }
+    }
+
+    /**
+     * The first listing can miss a file (one being rewritten at that instant). Its place is the owner's all the
+     * same: it goes into the notebook with the page and cell he had it in, and the file lands there when it is seen.
+     */
+    @Test fun aWidgetMissingFromTheFirstListingKeepsItsPageAndCell() {
+        val files = FakeFiles.of(BOSS)
+        val four = FakeFiles.widgets(BOSS).filter { it.key != "45-terminal.owl" }
+        assertEquals(4, four.size)
+        val start = start(files, four)
+        assertTrue(start.saved)
+        assertNull(start.message)
+        assertTrue(start.report!!.orphans.isEmpty())
+        // Exactly the notebook all five give.
+        assertEquals(start(FakeFiles.of(BOSS), FakeFiles.widgets(BOSS)).notebook.pages.map { p -> p.copy(items = p.items.sortedBy { it.key }) }, start.notebook.pages.map { p -> p.copy(items = p.items.sortedBy { it.key }) })
+        assertEquals(listOf(NotebookItem("45-terminal.owl", ItemKind.Widget, Cell(0, 0, 6, 4))), start.notebook.pages[1].items)
+        assertEquals(start.notebook, NotebookStore.read(files.stored))
+
+        // Running: the file isn't there, so nothing shows, but its cell is not free for anything else.
+        val live = LiveNotebook(persist = files::save)
+        live.open(start.notebook, kept = true)
+        live.adopt(four.map { it.key to it.page })
+        assertEquals(listOf(Cell(0, 0, 6, 4)), live.cellsOn("p2", except = emptySet()))
+        assertEquals(Cell(0, 4, 6, 3), Placement<String>(HashMap(), {}) { Tile(it, 6 to 3) }.freeSpot("new.owl", emptyList(), 6, 9, live.cellsOn("p2", except = emptySet())))
+        // Then the file is seen, asking for page 1 as the shipped one does: it is on Page 2 at (0,0,6,4), where he had it.
+        live.adopt(FakeFiles.widgets(BOSS).map { it.key to it.page })
+        assertEquals("p2", live.pageOf("45-terminal.owl"))
+        assertEquals(Cell(0, 0, 6, 4), live.cell("45-terminal.owl"))
+        assertEquals(listOf("p1", "p2"), live.pages.map { it.id })
+        // The next start reads the same.
+        assertEquals(live.snapshot(), NotebookOpening(files).saved()!!.notebook)
+        files.oldStoresUntouched()
+    }
+
+    @Test fun aWidgetPlacedDuringMigrationDoesNotTakeAMissingWidgetsCell() {
+        // A sixth widget with no saved cell that asks for the page the terminal is on (old page 3), terminal's file missing.
+        val widgets = FakeFiles.widgets(BOSS).filter { it.key != "45-terminal.owl" } + OldWidget("zz-new.owl", 3, 6 to 4)
+        val start = start(FakeFiles.of(BOSS), widgets)
+        assertTrue(start.saved)
+        assertEquals(mapOf("45-terminal.owl" to Cell(0, 0, 6, 4), "zz-new.owl" to Cell(0, 4, 6, 4)), start.notebook.pages[1].items.associate { it.key to it.cell })
+    }
+
+    /** Only what reads back as itself is committed. */
+    @Test fun aDocumentThatDoesNotReadBackAsTheNotebookIsNotCommitted() {
+        val files = FakeFiles.of(BOSS)
+        val lossy = NotebookOpening(files, write = { NotebookStore.write(it.copy(pages = it.pages.dropLast(1))) })
+        assertNull(lossy.saved())
+        val start = lossy.migrate(FakeFiles.widgets(BOSS))
+        assertFalse(start.saved)
+        assertEquals(NotebookOpening.UNSAVED, start.message)
+        assertEquals(0, files.commits)
+        assertFalse(files.exists)
+        assertEquals(2, start.notebook.pages.size)
     }
 
     @Test fun aNotebookStoreThatCantBeOpenedIsNotTakenForAbsent() {
@@ -490,24 +632,44 @@ class NotebookStartTest {
         }
     }
 
+    /** The preferences files a source text opens: for each `getSharedPreferences(` call, the names its argument can stand for. */
+    private fun opens(
+        text: String,
+        constants: Map<String, Set<String>>,
+    ): List<Set<String>> {
+        val own = constantsOf(text)
+        return Regex("""getSharedPreferences\(\s*("[^"]*"|[\w.]+)""").findAll(text).map { call ->
+            val arg = call.groupValues[1]
+            // A literal is its own name; a constant is what it is set to, in this file first, else wherever it is defined.
+            if (arg.startsWith("\"")) setOf(arg.trim('"')) else arg.substringAfterLast('.').let { own[it] ?: constants[it].orEmpty() }
+        }.toList()
+    }
+
+    private fun constantsOf(text: String): Map<String, Set<String>> =
+        Regex("""\bval\s+(\w+)(?:\s*:\s*String)?\s*=\s*"([^"]*)"""").findAll(text).groupBy({ it.groupValues[1] }, { it.groupValues[2] }).mapValues { it.value.toSet() }
+
     /**
-     * Nothing in the launcher writes the stores from before the notebook: only [dev.omalauncher.widgets.NotebookPrefs]
-     * names them, and it opens them to read. A source check, since no JVM test can open a phone's preferences.
+     * Nothing in the launcher but [dev.omalauncher.widgets.NotebookPrefs] opens the notebook's store or the stores from
+     * before it, by a name written out or through a constant; and NotebookPrefs opens the old ones only to read. A
+     * source check, since no JVM test can open a phone's preferences. Other files open what preferences they like.
      */
-    @Test fun onlyTheNotebookPrefsNameTheOldStoresAndTheyOnlyReadThem() {
+    @Test fun onlyTheNotebookPrefsOpenTheLayoutStoresAndTheOldOnesOnlyToRead() {
         val root = File("src/main/kotlin/dev/omalauncher")
-        val old = setOf("\"widget_grid\"", "\"shortcuts\"", "\"widget_pages\"", "\"dock\"")
-        // Every preferences file the launcher opens, by the name it is opened with: a literal, or a variable.
-        val opened =
-            root.walkTopDown().filter { it.extension == "kt" }.flatMap { f ->
-                Regex("""getSharedPreferences\(\s*("[^"]*"|\w+)""").findAll(f.readText()).map { f.name to it.groupValues[1] }
-            }.toList()
+        val layout = setOf("widget_grid", "shortcuts", "widget_pages", "dock", "notebook")
+        val sources = root.walkTopDown().filter { it.extension == "kt" }.associate { it.name to it.readText() }
+        val constants = sources.values.flatMap { constantsOf(it).entries }.groupBy({ it.key }, { it.value }).mapValues { it.value.flatten().toSet() }
+        val opened = sources.flatMap { (file, text) -> opens(text, constants).map { file to it } }
         assertTrue(opened.size > 5)
-        assertEquals("an old store is opened by name", emptyList<Pair<String, String>>(), opened.filter { it.second in old })
-        // Only the notebook's own files open one by a name that isn't written out there: theirs, and the old ones to read.
-        assertEquals(setOf("NotebookPrefs.kt" to "FILE", "NotebookPrefs.kt" to "name"), opened.filter { !it.second.startsWith("\"") }.toSet())
-        val prefs = File(root, "widgets/NotebookPrefs.kt").readText()
-        for (name in old) assertTrue(name, "old($name)" in prefs)
+        assertEquals("a layout store is opened outside NotebookPrefs.kt", emptyList<Pair<String, Set<String>>>(), opened.filter { (file, names) -> file != "NotebookPrefs.kt" && names.any { it in layout } })
+        // The check sees a literal, a constant of the same file, and one defined elsewhere; and lets other names be.
+        assertEquals(listOf(setOf("dock")), opens("""ctx.getSharedPreferences("dock", 0)""", emptyMap()))
+        assertEquals(listOf(setOf("shortcuts")), opens("""private const val OLD = "shortcuts"\nfun f() = ctx.getSharedPreferences(OLD, 0)""", mapOf("OLD" to setOf("ring"))))
+        assertEquals(listOf(setOf("widget_grid")), opens("""ctx.getSharedPreferences(Names.GRID, 0)""", mapOf("GRID" to setOf("widget_grid"))))
+        assertEquals(listOf(setOf("ring")), opens("""const val RING_PREFS = "ring"\nfun f() = context.getSharedPreferences(RING_PREFS, Context.MODE_PRIVATE)""", constants))
+        assertEquals(listOf(emptySet<String>()), opens("""ctx.getSharedPreferences(name, 0)""", emptyMap()))
+
+        val prefs = sources.getValue("NotebookPrefs.kt")
+        for (name in layout - "notebook") assertTrue(name, "old(\"$name\")" in prefs)
         // Its two edits are both of the notebook's own preferences.
         assertEquals(2, Regex("""\.edit\(\)""").findAll(prefs).count())
         assertEquals(2, Regex("""prefs\.edit\(\)\.putString\(KEY, text\)""").findAll(prefs).count())

@@ -13,7 +13,11 @@ import org.json.JSONArray
  *  - if anything could not be read, or the commit fails, nothing is saved anywhere: home shows what was converted,
  *    the old stores stay as they are, and the next start tries again;
  *  - a saved notebook that doesn't read is never migrated over: it is set aside first, and if that fails nothing is saved;
- *  - a saved notebook that reads only in part is used, and likewise set aside before anything is saved over it.
+ *  - a saved notebook that reads only in part is used, and likewise set aside before anything is saved over it;
+ *  - a saved notebook written by a newer launcher is not this one's to rewrite: it is set aside as it is, shown if
+ *    it reads, and nothing is saved for the whole session;
+ *  - every widget the old layout has a place for goes into the notebook with that place, whether or not its file
+ *    was seen: a file that turns up later lands where the owner had it.
  *
  * Nothing here writes an old store, whatever happens.
  */
@@ -51,15 +55,24 @@ class NotebookStart(
     val report: MigrationReport? = null,
     /** Unsaved only because no widget file was seen: worth migrating again once they show up. */
     val widgetsMissing: Boolean = false,
+    /** There is disk work left that decides whether this start is kept: [NotebookOpening.finish], off the main thread. */
+    val pending: Boolean = false,
 )
 
 /** Reads the saved notebook, or migrates into one; see the rules above. */
 class NotebookOpening(
     private val files: NotebookFiles,
     private val now: () -> Long = System::currentTimeMillis,
+    private val write: (Notebook) -> String = NotebookStore::write,
 ) {
     /** The `notebook` store is there but can't be read: it has to be set aside before anything is written over it. */
     private var unreadable = false
+
+    /** The `notebook` store was written by a newer launcher: nothing is written this session. */
+    private var newer = false
+
+    /** What a store that read only in part gave, until [finish] has written it in the store's place. */
+    private var partly: Notebook? = null
 
     /** The saved notebook, if there is one that reads; null means there is none to use, and [migrate] is next. */
     fun saved(): NotebookStart? {
@@ -72,13 +85,33 @@ class NotebookOpening(
             }
         if (!saved.exists) return null
         val read = NotebookStore.inspect(saved.text)
+        if (NotebookStore.newer(saved.text)) {
+            // Not this launcher's to rewrite. Shown as far as it reads; if it doesn't, [migrate] shows the old layout, unsaved.
+            newer = true
+            return read?.let { NotebookStart(it.notebook, saved = false, pending = true) }
+        }
         unreadable = read == null
         if (read == null) return null
         if (read.skipped == 0) return NotebookStart(read.notebook, saved = true)
-        // Part of it didn't read, and the first save would drop that part for good. So the store as it is goes aside
-        // first, and what did read is written in its place; if either fails, this start keeps nothing.
-        val kept = attempt { files.setAside(now()) } && attempt { files.commit(NotebookStore.write(read.notebook)) }
-        return NotebookStart(read.notebook, saved = kept, message = if (kept) PARTLY_READ else PARTLY_READ_UNSAVED)
+        // Part of it didn't read, and the first save would drop that part for good: nothing is kept until [finish]
+        // has set the store aside as it is and written what did read in its place.
+        partly = read.notebook
+        return NotebookStart(read.notebook, saved = false, pending = true)
+    }
+
+    /**
+     * The disk work a [NotebookStart.pending] start still needs, which waits to be off the main thread: whether the
+     * session is kept after it, and what to tell the owner.
+     */
+    fun finish(): Pair<Boolean, String?> {
+        if (newer) {
+            attempt { files.setAside(now()) }
+            return false to NEWER
+        }
+        val notebook = partly ?: return true to null
+        val kept = attempt { files.setAside(now()) } && attempt { files.commit(write(notebook)) }
+        if (kept) partly = null
+        return kept to if (kept) PARTLY_READ else PARTLY_READ_UNSAVED
     }
 
     /**
@@ -92,19 +125,29 @@ class NotebookOpening(
             } catch (e: Throwable) {
                 return unsaved(Notebook(NOTEBOOK_MIN_ROWS, listOf(NotebookPage("p1", "Page 1"))), null)
             }
-        val migration = migrate(old, widgets.orEmpty())
+        val listed = widgets.orEmpty()
+        val seen = migrate(old, listed)
+        // Widgets the layout has a place for whose files weren't in the listing (it can catch a file half written).
+        // They go into the notebook all the same, on the page and in the cell the owner had them, so that the file
+        // lands there when it is seen. A file's own page isn't known without the file: page 1, unless he chose one.
+        val absent = seen.report.orphans.filter { it.endsWith(WIDGET_FILE) }
+        val migration = if (absent.isEmpty() || listed.isEmpty()) seen else migrate(old, listed + absent.map { OldWidget(it, 1) })
         val problems = ArrayList(migration.report.problems)
         // A layout that names widgets, and not one widget to be seen: their files are what's missing, not their places.
-        val missing = widgets.isNullOrEmpty() && migration.report.orphans.any { it.endsWith(WIDGET_FILE) }
+        val missing = listed.isEmpty() && absent.isNotEmpty()
         if (widgets == null) problems += "the widget files couldn't be listed" else if (missing) problems += "none of the widgets the saved layout names were found"
         val dock = oldDock(problems)
         val notebook = migration.notebook.copy(dock = dock)
         val report = migration.report.copy(problems = problems)
+        if (newer) {
+            attempt { files.setAside(now()) }
+            return NotebookStart(notebook, saved = false, message = NEWER, report = report)
+        }
         if (!report.clean) return unsaved(notebook, report, widgetsMissing = widgets == null || missing)
 
         val text =
             try {
-                NotebookStore.write(notebook)
+                write(notebook)
             } catch (e: Throwable) {
                 return unsaved(notebook, report)
             }
@@ -174,6 +217,11 @@ class NotebookOpening(
         const val UNSAVED =
             "Your home layout couldn't be moved to the new pages, so it is shown as far as it could be read: " +
                 "changes you make now won't be kept, and it will be tried again the next time the launcher starts."
+
+        /** For a saved notebook from a newer launcher. */
+        const val NEWER =
+            "Your saved pages were written by a newer version of the launcher, so this one leaves them as they are: " +
+                "a copy was set aside, and changes you make now won't be kept."
 
         /** For a saved notebook that read only in part. */
         const val PARTLY_READ = "Part of your saved pages couldn't be read and is left out; the pages as they were saved were set aside."

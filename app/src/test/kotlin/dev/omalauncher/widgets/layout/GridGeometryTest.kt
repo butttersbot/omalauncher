@@ -17,6 +17,9 @@ class GridGeometryTest {
     private val cover = GridGeometry(1248, 1462, rows = 9)
     private val half = GridGeometry(1224, 1339, rows = 9, per = 2)
 
+    /** A room taller than the page: the page takes its width, with margin above and below. */
+    private val tall = GridGeometry(1248, 1700, rows = 9)
+
     /** Every cell rectangle a 6 x 9 page can hold, from a single cell to the whole page. */
     private val cells =
         buildList {
@@ -51,33 +54,58 @@ class GridGeometryTest {
     /** AC-7: the same cell is the same shape, and the same share of the page, on the cover and on an inner half. */
     @Test fun aCellIsTheSameShapeAndShareOfThePageOnBothDisplays() {
         assertTrue(cover.pageWidth != half.pageWidth)
-        close(cover.cellW / cover.cellH, half.cellW / half.cellH, "a cell's shape")
-        for (c in cells) {
-            val a = cover.bounds(c)
-            val b = half.bounds(c)
-            close(a.width / a.height, b.width / b.height, "$c shape")
-            close(a.width / cover.pageWidth, b.width / half.pageWidth, "$c width")
-            close(a.height / cover.pageHeight, b.height / half.pageHeight, "$c height")
-            // Where it starts, as a share of the page; compared against the page, since a share near 0 has no percent.
-            assertEquals("$c left", (a.left - cover.pageLeft) / cover.pageWidth, (b.left - half.pageLeft) / half.pageWidth, 0.0005f)
-            assertEquals("$c top", (a.top - cover.pageTop) / cover.pageHeight, (b.top - half.pageTop) / half.pageHeight, 0.0005f)
+        // The tall room is the other case: the page is as wide as the room and centred down it.
+        assertEquals(1248f, tall.pageWidth, 0f)
+        assertTrue(tall.pageTop > 0f)
+        assertEquals((1700 - tall.pageHeight) / 2f, tall.pageTop, 0.01f)
+        assertEquals(tall.pageHeight, tall.gap / 1f + 9 * tall.cellH, 1f)
+        for (other in listOf(half, tall)) {
+            close(cover.cellW / cover.cellH, other.cellW / other.cellH, "a cell's shape")
+            for (c in cells) {
+                val a = cover.bounds(c)
+                val b = other.bounds(c)
+                close(a.width / a.height, b.width / b.height, "$c shape")
+                close(a.width / cover.pageWidth, b.width / other.pageWidth, "$c width")
+                close(a.height / cover.pageHeight, b.height / other.pageHeight, "$c height")
+                // Where it starts, as a share of the page; compared against the page, since a share near 0 has no percent.
+                assertEquals("$c left", (a.left - cover.pageLeft) / cover.pageWidth, (b.left - other.pageLeft) / other.pageWidth, 0.0005f)
+                assertEquals("$c top", (a.top - cover.pageTop) / cover.pageHeight, (b.top - other.pageTop) / other.pageHeight, 0.0005f)
+                // And it is on the page, not in the margin around it.
+                assertTrue("$c", b.top >= other.pageTop && b.bottom <= other.pageTop + other.pageHeight + 0.01f)
+            }
         }
     }
 
     /** The same in whole pixels, where a tile's edges are rounded: its share of the page stays within 0.5% of the page. */
     @Test fun roundedToPixelsATileKeepsItsShareOfThePage() {
-        for (c in cells) {
-            val a = cover.rect(c)
-            val b = half.rect(c)
-            assertEquals("$c width", a.width / cover.pageWidth, b.width / half.pageWidth, 0.005f)
-            assertEquals("$c height", a.height / cover.pageHeight, b.height / half.pageHeight, 0.005f)
-            assertEquals("$c left", (a.left - cover.pageLeft) / cover.pageWidth, (b.left - half.pageLeft) / half.pageWidth, 0.005f)
-            assertEquals("$c top", (a.top - cover.pageTop) / cover.pageHeight, (b.top - half.pageTop) / half.pageHeight, 0.005f)
+        for (other in listOf(half, tall)) {
+            for (c in cells) {
+                val a = cover.rect(c)
+                val b = other.rect(c)
+                assertEquals("$c width", a.width / cover.pageWidth, b.width / other.pageWidth, 0.005f)
+                assertEquals("$c height", a.height / cover.pageHeight, b.height / other.pageHeight, 0.005f)
+                assertEquals("$c left", (a.left - cover.pageLeft) / cover.pageWidth, (b.left - other.pageLeft) / other.pageWidth, 0.005f)
+                assertEquals("$c top", (a.top - cover.pageTop) / cover.pageHeight, (b.top - other.pageTop) / other.pageHeight, 0.005f)
+            }
+        }
+    }
+
+    /** The gap is 6dp on a page 468dp wide, and scales with the page. */
+    @Test fun theGapIsAFixedShareOfThePagesWidth() {
+        assertEquals(6f / 468f, GAP_SHARE, 0f)
+        assertEquals(16, GridGeometry(1248, 1700, rows = 9).gap)
+        assertEquals(8, GridGeometry(624, 850, rows = 9).gap)
+        for (g in listOf(cover, half, tall)) {
+            val first = g.bounds(Cell(0, 0, 1, 1))
+            assertEquals(g.pageWidth / 78f, first.left - g.pageLeft, 0.001f)
+            assertEquals(g.pageWidth / 78f, first.top - g.pageTop, 0.001f)
+            assertEquals((g.pageWidth - g.pageWidth / 78f) / 6f, g.cellW, 0.001f)
+            assertEquals((g.pageHeight - g.pageWidth / 78f) / 9f, g.cellH, 0.001f)
         }
     }
 
     @Test fun everyCellOfOneGridHasOneShape() {
-        for (g in listOf(cover, half)) {
+        for (g in listOf(cover, half, tall)) {
             val one = g.bounds(Cell(0, 0, 1, 1))
             for (x in 0 until 6) for (y in 0 until 9) {
                 val b = g.bounds(Cell(x, y, 1, 1))

@@ -113,8 +113,14 @@ class WidgetEngine(
     /** The migration couldn't be saved because no widget file was seen; tried again when they show up. */
     private var widgetsMissing = false
 
+    /** The saved notebook is shown, but whether this start is kept waits for disk work; see [NotebookOpening.finish]. */
+    private var finishPending = false
+
     init {
-        opening.saved()?.let(::open)
+        opening.saved()?.let {
+            finishPending = it.pending
+            open(it)
+        }
     }
 
     private fun open(start: NotebookStart) {
@@ -215,7 +221,7 @@ class WidgetEngine(
     /** A widget with no room on its page moves to the next page with room at its size, or a new one after the last. Returns the page's id. */
     fun moveToFreePage(item: HomeItem): String {
         val from = notebook.position(notebook.pageOf(item.key))
-        val page = pages.drop(from + 1).firstOrNull { layout.claim(item, itemsOn(it)) } ?: notebook.addPage()
+        val page = pages.drop(from + 1).firstOrNull { layout.claim(item, itemsOn(it), it) } ?: notebook.addPage() ?: return notebook.first
         moveToPage(item, page)
         return page
     }
@@ -226,8 +232,8 @@ class WidgetEngine(
         page: String,
     ) = notebook.move(item.key, page)
 
-    /** A new, empty page after the last one; returns its id. */
-    fun addPage(): String = notebook.addPage()
+    /** A new, empty page after the last one; returns its id, or null while the notebook isn't opened yet. */
+    fun addPage(): String? = notebook.addPage()
 
     private fun agentWidgetFile(agent: Agent) = "agent-${agent.bin}.owl"
 
@@ -348,6 +354,12 @@ class WidgetEngine(
 
     fun start() {
         scope.launch {
+            if (finishPending) {
+                finishPending = false
+                val (kept, message) = withContext(Dispatchers.IO) { opening.finish() }
+                if (kept) notebook.keep()
+                notice = message
+            }
             withContext(Dispatchers.IO) {
                 dir.mkdirs()
                 checkDir.mkdirs()

@@ -105,6 +105,21 @@ class FoldTest {
         assertEquals(FoldView(2, 1, 0, true), view(inner, Posture.Opened, pages = 0))
     }
 
+    /** A window is an unfolded one from a short side of 600dp, and not a dp under. */
+    @Test fun theThresholdIs600dpOnTheShortSide() {
+        assertEquals(600f, UNFOLDED_MIN_DP, 0f)
+        assertEquals(Posture.Closed, posture(599f, 800f, null))
+        assertEquals(Posture.Opened, posture(600f, 800f, null))
+        assertEquals(Posture.Closed, posture(800f, 599f, null))
+        assertEquals(Posture.Opened, posture(800f, 600f, null))
+        // Wide, but too short to be unfolded: one page, whatever is said of the posture.
+        for (posture in Posture.entries) assertEquals(1, foldView(1200f, 599f, posture, 0, 4).per)
+        assertEquals(2, foldView(1200f, 600f, Posture.Opened, 0, 4).per)
+        assertEquals(1, foldView(1200f, 599f, posture(1200f, 599f, Hinge.Flat), 0, 4).per)
+        assertTrue(dockBeside(1200f, 599f))
+        assertFalse(dockBeside(1200f, 600f))
+    }
+
     @Test fun postureFromTheWindowAndTheHinge() {
         // The cover has no hinge across it, and whatever a hinge said, a window that small is the folded one.
         for (hinge in listOf(null, Hinge.Flat, Hinge.HalfOpened)) {

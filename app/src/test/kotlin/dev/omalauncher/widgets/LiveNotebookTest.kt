@@ -91,7 +91,7 @@ class LiveNotebookTest {
         val id = live.addPage()
         assertEquals("p4", id)
         assertEquals(listOf("p1", "p2", "p3", "p4"), live.pages.map { it.id })
-        assertEquals("Page 4", live.name(id))
+        assertEquals("Page 4", live.name(id!!))
         assertEquals(live.snapshot(), reopened().snapshot())
         // Ids are never reused for a page that is still there, and a taken name is passed over.
         val named = live(Notebook(9, listOf(NotebookPage("p7", "Page 3"), NotebookPage("home", "Home"))))
@@ -101,12 +101,12 @@ class LiveNotebookTest {
 
     @Test fun anOfferedPageIsTakenBackOnlyWhileEmptyAndNeverTheLastOne() {
         val live = live()
-        val offered = live.addPage()
+        val offered = live.addPage()!!
         assertTrue(live.withdrawPage(offered))
         assertEquals(listOf("p1", "p2", "p3"), live.pages.map { it.id })
         assertFalse(live.withdrawPage("p1"))
         assertFalse(live.withdrawPage("nowhere"))
-        val used = live.addPage()
+        val used = live.addPage()!!
         live.move("clock.owl", used)
         assertFalse(live.withdrawPage(used))
         val single = live(Notebook(9, listOf(NotebookPage("p1", "Page 1"))))
@@ -226,19 +226,48 @@ class LiveNotebookTest {
         assertEquals(saved.pages, reopened().snapshot().pages)
     }
 
-    @Test fun nothingIsWrittenBeforeItIsOpenedOrWhenItIsntKept() {
+    /**
+     * Before the saved pages are read, the notebook is a stand-in: whatever was pinned, moved or added then would be
+     * thrown away when they arrive, so every way in is shut until it is opened.
+     */
+    @Test fun nothingIsTakenBeforeItIsOpened() {
         val closed = LiveNotebook(persist = { writes += it })
         assertFalse(closed.opened)
         assertEquals(listOf("p1"), closed.pages.map { it.id })
-        closed.addPage()
+        assertNull(closed.addPage())
         closed.pin(chrome, "p1")
         closed.changeDock(listOf(camera))
+        closed.expect("store.owl", "p1")
+        closed.adopt(listOf("clock.owl" to 1, "far.owl" to 3))
+        closed.move("clock.owl", "p1")
+        closed.setCell("clock.owl", Cell(0, 0, 1, 1))
+        assertNull(closed.group(chrome.key, camera.key))
+        closed.moveBefore(chrome.key, null)
+        closed.unpin(chrome.key)
+        closed.forget("clock.owl")
+        assertFalse(closed.withdrawPage("p1"))
+        closed.keep()
         closed.save()
+        // Nothing was taken, and nothing written.
+        assertEquals(listOf(PageLabel("p1", "Page 1")), closed.pages.toList())
+        assertTrue(closed.apps.isEmpty())
+        assertTrue(closed.folders.isEmpty())
+        assertTrue(closed.dock.isEmpty())
+        assertNull(closed.pageOf(chrome.key))
+        assertNull(closed.pageOf("store.owl"))
+        assertNull(closed.pageOf("clock.owl"))
+        assertNull(closed.cell("clock.owl"))
+        assertEquals(Notebook(9, listOf(NotebookPage("p1", "Page 1"))), closed.snapshot())
         assertTrue(writes.isEmpty())
-        // Opening replaces whatever was done before it.
+        // Opened, it is what was saved, and takes changes.
         closed.open(saved, kept = true)
         assertEquals(saved, closed.snapshot())
+        assertEquals("p4", closed.addPage())
+        closed.pin(camera, "p2")
+        assertEquals("p2", closed.pageOf(camera.key))
+    }
 
+    @Test fun nothingIsWrittenWhenItIsntKeptUntilItIs() {
         val unkept = live(kept = false)
         unkept.move("clock.owl", "p2")
         unkept.setCell("clock.owl", Cell(0, 0, 1, 1))
@@ -248,6 +277,26 @@ class LiveNotebookTest {
         assertTrue(writes.isEmpty())
         // It still works for the session.
         assertEquals("p2", unkept.pageOf("clock.owl"))
+        // Once the start's disk work came out well, it is kept from then on, with what was changed meanwhile.
+        unkept.keep()
+        assertEquals(1, writes.size)
+        assertEquals(unkept.snapshot(), reopened().snapshot())
+        assertEquals("p2", reopened().pageOf("clock.owl"))
+        unkept.keep()
+        assertEquals(1, writes.size)
+        unkept.move("clock.owl", "p3")
+        assertEquals(2, writes.size)
+    }
+
+    @Test fun theCellsOfWhatIsNotShownAreStillHeld() {
+        val live = live()
+        assertEquals(setOf(Cell(0, 0, 3, 2), Cell(0, 2, 1, 1), Cell(1, 2, 1, 1)), live.cellsOn("p1", except = emptySet()).toSet())
+        // clock.owl's file is gone: everything else on the page is shown, and its cell is what is held.
+        assertEquals(listOf(Cell(0, 0, 3, 2)), live.cellsOn("p1", except = setOf(chrome.key, "folder:a")))
+        assertEquals(emptyList<Cell>(), live.cellsOn("p2", except = emptySet()))
+        // One expected but not placed yet holds nothing.
+        live.expect("store.owl", "p2")
+        assertEquals(emptyList<Cell>(), live.cellsOn("p2", except = emptySet()))
     }
 
     @Test fun aDamagedDocumentStillOpensConsistent() {
