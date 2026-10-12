@@ -7,6 +7,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -23,7 +24,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.platform.LocalConfiguration
@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.platform.LocalContext
 import dev.omalauncher.Runtime
+import dev.omalauncher.linux.LinuxState
 import dev.omalauncher.widgets.checkSecretsCommand
 import dev.omalauncher.widgets.publishWidgetCommand
 import dev.omalauncher.widgets.reviewSharedWidgetCommand
@@ -133,8 +134,9 @@ private fun DesktopScreen(
         }
     }
 
+    val dock = remember(context) { DockStore(context.applicationContext) }
     val handlers =
-        remember(runtime, state, context) {
+        remember(runtime, state, context, dock) {
             AppHandlers(
                 launch = ::launch,
                 // Pins to the page that's showing; the panel closes so the new tile is visible.
@@ -145,6 +147,12 @@ private fun DesktopScreen(
                     }
                     state.close()
                 },
+                docked = { hit -> dock.isPinned(hit.dockKey()) },
+                // The panel closes here too, so the dock shows what changed.
+                dock = { hit ->
+                    if (dock.isPinned(hit.dockKey())) dock.unpin(hit.dockKey()) else dock.pin(hit.dockEntry())
+                    state.close()
+                },
                 info = { app ->
                     state.closeNow()
                     runtime.androidApps.openInfo(app)
@@ -152,6 +160,22 @@ private fun DesktopScreen(
                 uninstall = { app -> runtime.androidApps.uninstall(app) },
             )
         }
+
+    /** The ask row: what's typed goes to the Oma chat's field, not sent; without Linux or an agent, to setting one up. */
+    fun ask() {
+        val query = state.query
+        when (agentRoute(runtime.bootstrap.state.value == LinuxState.Installed, runtime.agents.default?.bin)) {
+            AgentRoute.InstallLinux -> {
+                state.closeNow()
+                state.linuxOpen = true
+            }
+            AgentRoute.ChooseAgent -> state.agentsOpen = true
+            AgentRoute.Background, AgentRoute.Terminal -> {
+                state.closeNow()
+                openOmaChat(context, query)
+            }
+        }
+    }
 
     val screenHeight = with(LocalDensity.current) { LocalConfiguration.current.screenHeightDp.dp.toPx() }
     if (panelShown) {
@@ -169,54 +193,59 @@ private fun DesktopScreen(
                 ),
         )
     }
-    // The bar and the panel above it; the keyboard lifts both. Nothing here takes touches while the panel is closed,
-    // except the bar. A phone's landscape folds them into a rail beside the grid, and unfolds them over it, centered.
+    // The dock at the bottom of home, and the app list over all of it; the keyboard lifts both. Nothing here takes
+    // touches while the list is closed, except the dock and the strip. A phone's landscape stands them in a rail
+    // beside the grid, and opens the list over it, centered.
     val side = homeSide()
     if (side != null && !panelShown) {
         if (runtime.terminals.active == null) {
-            SideRail(runtime, state, handlers, side, Modifier.fillMaxSize().safePadding())
+            SideRail(runtime, state, handlers, dock, side, Modifier.fillMaxSize().safePadding())
         }
     } else {
-        Column(
+        Box(
             Modifier
                 .fillMaxSize()
                 .safePadding()
                 .imePadding()
                 .then(if (side != null) Modifier.wrapContentWidth().widthIn(max = ReadingWidth) else Modifier),
         ) {
-            Box(Modifier.weight(1f).fillMaxWidth()) {
-                if (panelShown) {
-                    AppPanel(
-                        runtime = runtime,
-                        state = state,
-                        search = search,
-                        highlighted = highlighted,
-                        handlers = handlers,
-                        onAsk = { state.promptRequest = PromptRequest.Send },
-                        onSettings = {
-                            state.closeNow()
-                            state.settingsOpen = true
-                        },
-                        modifier =
-                            Modifier.graphicsLayer {
-                                val progress = state.drawer.value
-                                alpha = progress.coerceAtMost(1f)
-                                translationY = (1f - progress) * size.height * 0.6f
-                            },
-                    )
+            // Hidden while a terminal tile types: it would sit on the keyboard, over the tile.
+            if (side == null && (runtime.terminals.active == null || runtime.terminals.keyboardLeaving)) {
+                Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Bottom) {
+                    // Home only: the open app list has everything.
+                    if (LauncherStyle.recentApps && !panelShown) RecentStrip(runtime, handlers)
+                    // Stays laid out under the open list, so what it measures for home and what it's hearing carry on.
+                    Box(Modifier.fadesUnderDrawer(state)) {
+                        // Insets itself by the grid gap, so it lines up with the tiles and the gap still takes taps.
+                        DockBand(runtime, state, dock)
+                        if (panelShown) DockCover(state, Modifier.matchParentSize())
+                    }
                 }
             }
-            // Hidden while a terminal tile types: it would sit on the keyboard, over the tile.
-            if (runtime.terminals.active == null || runtime.terminals.keyboardLeaving) {
-                // Home only: the open app list has everything.
-                if (LauncherStyle.recentApps && !panelShown) RecentStrip(runtime, handlers)
-                // Insets itself by the grid gap, so it lines up with the tiles and the gap still takes taps.
-                PromptBar(runtime, state, search = search, highlighted = highlighted, onLaunch = handlers.launch)
+            if (panelShown) {
+                AppPanel(
+                    runtime = runtime,
+                    state = state,
+                    search = search,
+                    highlighted = highlighted,
+                    handlers = handlers,
+                    onAsk = ::ask,
+                    onSettings = {
+                        state.closeNow()
+                        state.settingsOpen = true
+                    },
+                    modifier =
+                        Modifier.graphicsLayer {
+                            val progress = state.drawer.value
+                            alpha = progress.coerceAtMost(1f)
+                            translationY = (1f - progress) * size.height * 0.6f
+                        },
+                )
             }
         }
     }
 
-    // Full-screen panels draw over the bar.
+    // Full-screen panels draw over the dock.
     ThemesOverlay(runtime, state)
 }
 

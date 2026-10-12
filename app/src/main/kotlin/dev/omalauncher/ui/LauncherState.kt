@@ -16,7 +16,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.Dispatchers
 
-/** App panel position (above the bar): 0 = closed, 1 = open. Follows the finger while dragging. */
+/** App list position (over home): 0 = closed, 1 = open. Follows the finger while dragging. */
 class LauncherState {
     val drawer = Animatable(0f)
     var styleOpen by mutableStateOf(false)
@@ -67,22 +67,18 @@ class LauncherState {
     var wallpaperOffset by mutableFloatStateOf(0.5f)
 
     /**
-     * The bar's height in px with its gaps above and below, as last laid out over home (0 until then). A large
-     * system font makes it taller than [PromptBarHeight]; home ends its grid above what it really takes.
+     * The dock band's height in px with its gaps above and below, as last laid out over home (0 until then), under
+     * the name it had as the prompt bar's. A large system font makes it taller than [PromptBarHeight]; home ends its
+     * grid above what it really takes.
      */
     var barHeight by mutableIntStateOf(0)
 
     /** Home page currently showing (1-based); the drawer pins apps there. */
     var currentPage by mutableStateOf(1)
 
-    /** Unsent images stay with the prompt while the photo picker or another panel is open. */
-    var promptImages by mutableStateOf<List<dev.omalauncher.linux.PromptImage>>(emptyList())
-    var importingImages by mutableStateOf(false)
-    var attachmentError by mutableStateOf<String?>(null)
-
     private var typed by mutableStateOf("")
 
-    /** What's in the bar: an app to find, or a prompt for the agent. */
+    /** What's in the app list's search field: an app to find, or something to take to the agent. */
     var query: String
         get() = typed
         set(value) {
@@ -92,9 +88,6 @@ class LauncherState {
 
     /** The result chosen with Tab or the arrow keys (-1 = ask the agent); null follows the ranking. Reset by typing. */
     var picked by mutableStateOf<Int?>(null)
-
-    /** Asks the prompt bar to start typing (Super+A) or to send (the ask row); consumed by the bar. */
-    var promptRequest by mutableStateOf<PromptRequest?>(null)
 
     /** Home page to scroll to (e.g. from Super+number); consumed by the pager. */
     var requestedPage by mutableStateOf<Int?>(null)
