@@ -9,12 +9,15 @@ help)
 oma-phone apps | open PACKAGE_OR_settings
 oma-phone status | read | screenshot | back | home | recents | notifications | stop
 oma-phone pages | page NAME | where WIDGET_FILE
+oma-phone note TEXT
 oma-phone click SNAPSHOT NODE_ID
 oma-phone type SNAPSHOT NODE_ID TEXT
 oma-phone scroll SNAPSHOT NODE_ID [forward|backward]
 oma-phone tap X Y
 oma-phone swipe X Y END_X END_Y [DURATION_MS]
 pages lists home's pages, page opens one by name, where says which page a widget file is on.
+note leaves a short sticky note (plain text, at most 280 characters) on the home page the request
+came from: after finishing something the user asked for, leave one saying what was done.
 Read after each action. Use screenshot's path with your agent's image tool.
 Works automatically after Accessibility is enabled, on an unlocked phone.
 Stop pauses access until the user resumes it.
@@ -29,6 +32,9 @@ open)
 page)
   [ "$#" -ge 1 ] || { echo 'Page name required' >&2; exit 2; }
   request=$(jq -cn --arg name "$*" '{command:"page",name:$name}');;
+note)
+  [ "$#" -ge 1 ] || { echo 'Note text required' >&2; exit 2; }
+  request=$(jq -cn --arg text "$*" '{command:"note",text:$text}');;
 where)
   request=$(jq -cn --arg widget "${1:?Widget file name required}" '{command:"where",widget:$widget}');;
 tap|swipe)
