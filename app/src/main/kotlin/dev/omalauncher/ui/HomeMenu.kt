@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -71,7 +73,19 @@ fun HomeMenu(
     // The page the long press was on: what is drawn or stuck from here goes there.
     val page = state.currentPage
     val book = state.marks.book
+    // "New sticker" turns the menu into the stickers to pick from, until it closes.
+    var stickers by remember { mutableStateOf(false) }
     Menu(onDismiss = { state.homeMenuOpen = false }) {
+        if (book != null && stickers) {
+            MenuTitle("stick on this page")
+            StickerPicker { kind ->
+                state.homeMenuOpen = false
+                state.editing = null
+                // Selected as it lands, so it can be dragged, resized, turned or taken off again at once.
+                book.addSticker(page, kind)?.let { state.marks.selected = Chosen(page, it) }
+            }
+            return@Menu
+        }
         if (book != null) {
             // Not in a session that isn't being saved, nor on a page whose ink couldn't be read: the book says which.
             MenuItem("draw on this page") {
@@ -84,6 +98,7 @@ fun HomeMenu(
                 state.editing = null
                 book.addNote(page)?.let { state.marks.editing = Chosen(page, it) }
             }
+            MenuItem("new sticker") { if (book.takes(page)) stickers = true else state.homeMenuOpen = false }
         }
         MenuItem("new widget with $agentName") {
             state.homeMenuOpen = false

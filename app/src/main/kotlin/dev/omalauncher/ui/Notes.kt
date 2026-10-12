@@ -50,6 +50,7 @@ import dev.omalauncher.widgets.annotations.NoteRole
 import dev.omalauncher.widgets.annotations.PageArea
 import dev.omalauncher.widgets.annotations.Scrap
 import dev.omalauncher.widgets.annotations.StickyNote
+import dev.omalauncher.widgets.annotations.TURN_STEP
 import dev.omalauncher.widgets.annotations.noteText
 import dev.omalauncher.widgets.annotations.scrap
 import dev.omalauncher.widgets.annotations.scrapAt
@@ -230,6 +231,12 @@ internal fun PageScraps(
             NoteScrap(note, Scrap.Note(note).rect(within)) { if (book.takes(page)) marks.editing = Chosen(page, note.id) }
         }
     }
+    // Stickers lie over the notes, the last one stuck on top. A tap selects one.
+    for (sticker in on.stickers) {
+        key(sticker.id) {
+            StickerScrap(sticker, Scrap.Stuck(sticker).rect(within)) { if (book.takes(page)) marks.selected = Chosen(page, sticker.id) }
+        }
+    }
     val chosen = marks.selected?.takeIf { it.page == page }?.let { on.scrap(it.id) } ?: return
     val density = LocalDensity.current
     val r = chosen.rect(within)
@@ -257,6 +264,8 @@ internal fun PageScraps(
                         marks.editing = Chosen(page, chosen.id)
                     }
                 }
+                // A step at a time, all the way round.
+                if (chosen is Scrap.Stuck) EditAction("turn") { book.changeSticker(page, chosen.id) { it.copy(turn = it.turn + TURN_STEP) } }
                 EditAction("delete", Pack.red) {
                     marks.selected = null
                     book.remove(page, chosen.id)
