@@ -110,6 +110,7 @@ class DockStoreTest {
         store.unpin(foot.key)
         store.act(DockAction.Earlier, chat.key)
         assertEquals(0, saved.writes)
+        assertEquals(listOf(chat, mail), store.items.toList())
     }
 
     @Test fun aDamagedDockIsRepairedInMemoryAndSavedOnTheNextChange() {

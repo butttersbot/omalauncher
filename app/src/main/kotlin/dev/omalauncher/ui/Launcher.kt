@@ -319,7 +319,8 @@ private fun ThemesOverlay(
             // Words said before there was an agent go on to the Oma chat's field, to send from there.
             onDismiss = { state.closeAgents()?.let { openOmaChat(context, it) } },
             onOpen = { agent ->
-                state.agentsOpen = false
+                // Words held for an agent that wasn't there yet don't wait for some later visit to this screen.
+                state.closeAgents()
                 runtime.terminal(agent.bin, agent.name, agent)
             },
         )
