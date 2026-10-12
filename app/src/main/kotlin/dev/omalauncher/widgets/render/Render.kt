@@ -45,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
@@ -91,6 +92,12 @@ import kotlin.math.min
 
 /** Whether the home screen is hidden (drawer, full-screen panel); animated widgets stop ticking while it is. */
 val LocalHomeCovered = staticCompositionLocalOf<() -> Boolean> { { false } }
+
+/**
+ * Told where the input that has the keyboard is, in the window, and null when none has it any more: home
+ * slides its page up from under the keyboard. Nothing listens on a widget's own screen, which resizes instead.
+ */
+val LocalTypingAt = staticCompositionLocalOf<(Rect?) -> Unit> { {} }
 
 /** The widget's content inside its tile: padding, optional background, and the node tree. */
 @Composable

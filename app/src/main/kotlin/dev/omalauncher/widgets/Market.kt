@@ -84,7 +84,7 @@ class Market(
     /** Downloads, verifies and installs [e] on [page]; its packages install right after. Returns an error, or null. */
     suspend fun install(
         e: CatalogEntry,
-        page: Int,
+        page: String,
     ): String? {
         busy[e.id] = "installing…"
         try {

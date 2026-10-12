@@ -134,7 +134,7 @@ private fun DesktopScreen(
         }
     }
 
-    val dock = remember(context) { DockStore(context.applicationContext) }
+    val dock = runtime.widgets.dock
     val handlers =
         remember(runtime, state, context, dock) {
             AppHandlers(

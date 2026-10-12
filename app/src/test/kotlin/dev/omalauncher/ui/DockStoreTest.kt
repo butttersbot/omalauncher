@@ -66,6 +66,22 @@ class DockStoreTest {
             })
     }
 
+    @Test fun nothingIsPinnedBeforeTheNotebookIsOpened() {
+        val notebook = dev.omalauncher.widgets.LiveNotebook()
+        val store = DockStore(notebook)
+        store.pin(mail)
+        store.act(DockAction.Later, OMA_CHAT_KEY)
+        assertEquals(DefaultDock, store.items.toList())
+        assertTrue(notebook.dock.isEmpty())
+        // Opened with a saved dock, it shows that and takes pins.
+        notebook.open(dev.omalauncher.widgets.layout.Notebook(9, listOf(dev.omalauncher.widgets.layout.NotebookPage("p1", "Page 1")), dock = listOf(chat.pinned(), foot.pinned())), kept = true)
+        store.reload()
+        assertEquals(listOf(chat, foot), store.items.toList())
+        store.pin(mail)
+        assertEquals(listOf(chat, foot, mail), store.items.toList())
+        assertEquals(listOf(chat, foot, mail), notebook.dock.map { it.dockEntry() })
+    }
+
     @Test fun theStoreSavesWhatItPinsAndReadsItBack() {
         val saved = Saved()
         val store = saved.store()

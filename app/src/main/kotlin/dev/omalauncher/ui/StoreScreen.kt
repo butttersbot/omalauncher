@@ -66,7 +66,7 @@ import kotlinx.coroutines.launch
 fun StoreScreen(
     engine: WidgetEngine,
     agents: List<Agent>,
-    page: Int,
+    page: String,
     /** The Omarchy theme in use, so previews show widgets in its colors. */
     theme: String?,
     onDismiss: () -> Unit,
@@ -100,7 +100,7 @@ fun StoreScreen(
                     e = e,
                     theme = theme,
                     linux = engine.linux,
-                    page = page,
+                    page = engine.notebook.name(page) ?: "this page",
                     message = message,
                     showBack = showBack,
                     modifier = modifier,
@@ -156,7 +156,7 @@ private class StoreFilter {
 private fun StoreList(
     engine: WidgetEngine,
     agents: List<Agent>,
-    page: Int,
+    page: String,
     theme: String?,
     filter: StoreFilter,
     selected: String?,
@@ -210,7 +210,7 @@ private fun StoreList(
             if (filter.tab == ALL && q.isEmpty()) {
                 item(key = "builtin", span = { GridItemSpan(maxLineSpan) }) { Caption("built in") }
                 item(key = "terminal", span = { GridItemSpan(maxLineSpan) }) {
-                    BuiltInEntry("terminal", "6x4 · a shell in ~", "A shell on the home screen. Add as many as you like; tap one to type.", added = false, page = page) {
+                    BuiltInEntry("terminal", "6x4 · a shell in ~", "A shell on the home screen. Add as many as you like; tap one to type.", added = false, page = engine.notebook.name(page) ?: "this page") {
                         scope.launch {
                             engine.addTerminalWidget(page)
                             onDismiss()
@@ -223,7 +223,7 @@ private fun StoreList(
                         "6x6 · runs ${agent.bin} in ~",
                         "${agent.description}, in a terminal on the home screen. Tap the tile to type.",
                         added = engine.hasAgentWidget(agent),
-                        page = page,
+                        page = engine.notebook.name(page) ?: "this page",
                     ) {
                         scope.launch {
                             engine.addAgentWidget(agent, page)
@@ -278,7 +278,7 @@ private fun BuiltInEntry(
     details: String,
     description: String,
     added: Boolean,
-    page: Int,
+    page: String,
     onAdd: () -> Unit,
 ) {
     Column(
@@ -291,7 +291,7 @@ private fun BuiltInEntry(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             BasicText(name, Modifier.weight(1f), style = Mono.copy(fontSize = TextSize.Item))
-            BasicText(if (added) "on the home screen" else "tap to add to page $page", style = Mono.copy(color = Palette.muted, fontSize = TextSize.Small))
+            BasicText(if (added) "on the home screen" else "tap to add to $page", style = Mono.copy(color = Palette.muted, fontSize = TextSize.Small))
         }
         BasicText("built in · $details", style = Mono.copy(color = Palette.muted, fontSize = TextSize.Small))
         BasicText(description, style = Mono.copy(fontSize = TextSize.Small))
@@ -360,7 +360,7 @@ private fun Detail(
     e: CatalogEntry,
     theme: String?,
     linux: Boolean,
-    page: Int,
+    page: String,
     message: String?,
     /** The way back to the grid; off where the grid stays beside the page. */
     showBack: Boolean,
@@ -403,7 +403,7 @@ private fun Detail(
             !e.supported -> BasicText("needs a newer launcher (owl ${e.owl}); update the launcher to install it", style = Mono.copy(color = Palette.red, fontSize = TextSize.Small))
             update -> BracketAction("update ${installed?.version} → ${e.version}", Palette.accent, onInstall)
             installed != null -> BasicText("✓ on your home screen", style = Mono.copy(color = Palette.green))
-            else -> BracketAction("add to page $page", Palette.accent, onInstall)
+            else -> BracketAction("add to $page", Palette.accent, onInstall)
         }
         message?.let { BasicText(it, style = Mono.copy(color = Palette.red, fontSize = TextSize.Small)) }
         if (!linux && e.needsLinux) {

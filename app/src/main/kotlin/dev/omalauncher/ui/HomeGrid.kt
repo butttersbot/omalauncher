@@ -6,6 +6,7 @@ import androidx.compose.foundation.pager.PagerState
 import android.os.SystemClock
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.ui.input.pointer.AwaitPointerEventScope
@@ -16,17 +17,13 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.zIndex
 import dev.omalauncher.widgets.Cell
 import dev.omalauncher.widgets.Folder
 import dev.omalauncher.widgets.Shortcut
-import dev.omalauncher.widgets.GRID_COLUMNS
 import dev.omalauncher.widgets.HomeItem
 import dev.omalauncher.widgets.WidgetLayout
 import dev.omalauncher.widgets.layout.GridGeometry
-import dev.omalauncher.widgets.layout.usedRows
-import dev.omalauncher.widgets.layout.windowKey
 import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -44,7 +41,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -66,25 +62,25 @@ import kotlinx.coroutines.launch
 
 /**
  * The home grid's pixel geometry on screen: [GridGeometry], which has the arithmetic, in Compose's
- * points and rects. [turned] (landscape) lays portrait's grid on its side; [per] pages stand side
- * by side, each [width] wide, a page's cells in its own coordinates, [local] and [screen] convert.
+ * points and rects. The page is scaled as a whole into the room it has and centred there; [per] pages
+ * stand side by side, each in a room [width] wide, a page's cells in its own room's coordinates, [local]
+ * and [screen] convert.
  */
 @Immutable
 private class Grid(
     width: Int,
     height: Int,
-    gap: Int,
-    turned: Boolean = false,
-    portraitRows: Int? = null,
-    used: Int = 0,
+    rows: Int,
     per: Int = 1,
 ) {
-    private val geometry = GridGeometry(width, height, gap, turned, portraitRows, used, per)
+    private val geometry = GridGeometry(width, height, rows, per)
     val width get() = geometry.width
     val height get() = geometry.height
     val gap get() = geometry.gap
-    val turned get() = geometry.turned
     val per get() = geometry.per
+
+    /** The page itself, within its room. */
+    val page get() = geometry.page.let { IntRect(it.left, it.top, it.right, it.bottom) }
     val cols get() = geometry.cols
     val rows get() = geometry.rows
 
@@ -100,13 +96,10 @@ private class Grid(
         item: HomeItem,
     ) = geometry.fit(c, item.resizable)
 
-    /** Nearest column line to a point on screen. */
-    fun colLine(p: Offset) = geometry.colLine(p.x, p.y)
+    /** Nearest column line to a point in the page's room. */
+    fun colLine(p: Offset) = geometry.colLine(p.x)
 
-    fun rowLine(p: Offset) = geometry.rowLine(p.x, p.y)
-
-    /** The tile edges under the screen edges a press grabbed. */
-    fun edges(e: Edges) = if (turned) Edges(left = e.top, top = e.left, right = e.bottom, bottom = e.right) else e
+    fun rowLine(p: Offset) = geometry.rowLine(p.y)
 
     /** Which of the pages on screen, left to right, a point is over. */
     fun side(p: Offset) = geometry.side(p.x)
@@ -163,7 +156,7 @@ private fun edgesAt(
 /** A tile a finger is carrying, possibly across pages. [grab] is where the finger holds it, from its top-left corner. */
 internal class Carry(
     val item: HomeItem,
-    val from: Int,
+    val from: String,
     val cell: Cell,
     val grab: Offset,
 )
@@ -176,8 +169,11 @@ internal class Arrange {
     /** The finger, in page coordinates. */
     var finger by mutableStateOf(Offset.Zero)
 
-    /** The page the finger is over, where [preview] and [swapWith] apply. */
-    var page by mutableStateOf(0)
+    /** The id of the page the finger is over, where [preview] and [swapWith] apply; null over no page. */
+    var page by mutableStateOf<String?>(null)
+
+    /** A page added for the tile being carried, because it was held past the last one; taken back if nothing lands on it. */
+    var offered: String? = null
     var preview by mutableStateOf<Cell?>(null)
     var swapWith by mutableStateOf<String?>(null)
 
@@ -206,7 +202,8 @@ internal class Arrange {
  * lift it and drag it right away, or release to select it. A selected widget
  * shows resize handles; drag them (or the frame) to resize, drag the tile to
  * move it, tap outside or press Back to finish. Hold a carried tile against a
- * side edge to turn the page; the last page is always an empty one. Drop an app
+ * side edge to turn the page; held past the last page, a new one is offered, which
+ * stays only if the tile is dropped on it. Drop an app
  * on another app to put both in a folder, or on a folder to add it; tap a folder
  * to open it, and long-press an app in it to drag it to another place in it,
  * or back out.
@@ -214,18 +211,19 @@ internal class Arrange {
  * Gestures live here, around the pager, rather than on each page: a drag that
  * turns the page has to survive leaving the page it started on. [room] at the
  * bottom has no tiles but takes swipes and long-presses like empty space; what's
- * drawn over it (the recent apps strip) can take them first. [turned] lays
- * portrait's grid on its side, for landscape.
+ * drawn over it (the recent apps strip) can take them first.
  *
- * With [per] of 2 (an unfolded foldable) each pager slot shows two of [pages]
- * side by side, so every tile keeps the size it has folded; [pages] then holds
- * an even number, and the pager counts slots.
+ * [pages] are the notebook's page ids in order, each a grid of 6 by [rows] cells.
+ * With [per] of 2 (an unfolded foldable) each pager slot shows two of them side
+ * by side, and the pager counts slots; with an odd number of pages the last
+ * slot's right half is empty and offers a new page ([onAddPage]).
  */
 @Composable
 internal fun HomeGrid(
     pager: PagerState,
-    pages: List<Int>,
-    itemsOn: (Int) -> List<HomeItem>,
+    pages: List<String>,
+    rows: Int,
+    itemsOn: (String) -> List<HomeItem>,
     layout: WidgetLayout,
     arrange: Arrange,
     selected: String?,
@@ -234,66 +232,58 @@ internal fun HomeGrid(
     actions: @Composable (HomeItem) -> Unit,
     onLongPressEmpty: () -> Unit,
     onNoRoom: (HomeItem) -> Unit,
-    onMove: (HomeItem, Int) -> Unit,
+    onMove: (HomeItem, String) -> Unit,
+    /** A press landed on this page: of two side by side, it is the one folding shows. */
+    onTouch: (String) -> Unit,
+    onAddPage: () -> Unit,
+    /** Adds a page for a tile held past the last one and shows it; its id, or null if none was added. */
+    onOfferPage: () -> String?,
+    /** Takes back an offered page nothing was dropped on. */
+    onWithdrawPage: (String) -> Unit,
     onGroup: (Shortcut, HomeItem) -> Unit,
     /** Moves an app within its folder to just before another of its apps, or with null to the end. */
     onReorder: (Shortcut, String?) -> Unit,
     modifier: Modifier = Modifier,
     room: Dp = 0.dp,
-    turned: Boolean = false,
     per: Int = 1,
+    /** False until the notebook is read: the one page shown then is a stand-in, not an empty page of his. */
+    ready: Boolean = true,
 ) {
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
 
     BoxWithConstraints(modifier) {
         val density = LocalDensity.current
-        val gap = with(density) { HomeGap.roundToPx() }
         // The grid stops [room] short of the bottom; the pages and their gestures go on below it.
         val height = constraints.maxHeight - with(density) { room.roundToPx() }
         val width = constraints.maxWidth / per
-        // Landscape turns portrait's grid on its side; the window's size (short side first, so both orientations
-        // share it) remembers how many rows portrait had.
-        val window = LocalWindowInfo.current.containerSize
-        val windowSize = windowKey(window.width, window.height)
-        // Rows the tiles on every page reach down to (apps show as 1x1); the pages share one grid.
-        // Derived, so moving or resizing a tile recomposes only its page, unless it changes how far down they reach.
-        val used by remember(pages, itemsOn, layout) {
-            derivedStateOf { usedRows(pages.flatMap(itemsOn).map { item -> layout.cell(item.key) to item.resizable }) }
-        }
-        val grid =
-            remember(width, height, gap, turned, windowSize, used, per) {
-                // Not seen in portrait yet: square cells across.
-                Grid(width, height, gap, turned, if (turned) layout.portraitRows(windowSize) else null, used, per)
-            }
-        if (!turned) SideEffect { layout.setPortraitRows(windowSize, grid.rows) }
+        // Every page is the same 6 by [rows] cells, whatever the window: only its scale follows the room it has.
+        val grid = remember(width, height, rows, per) { Grid(width, height, rows, per) }
+        val gap = grid.gap
         // Previews draw tiles at the size they have here.
-        SideEffect {
-            layout.geometry = Triple(grid.cellW, grid.cellH, gap)
-            layout.turned = turned
-        }
+        SideEffect { layout.geometry = Triple(grid.cellW, grid.cellH, gap) }
         val grab = with(density) { 20.dp.roundToPx() }
         val sideGrab = with(density) { 36.dp.roundToPx() }
         val edge = with(density) { 28.dp.roundToPx() }
         val current by rememberUpdatedState(Triple(pages, grid, selected))
 
         fun placedOn(
-            page: Int,
+            page: String,
             g: Grid,
         ) = itemsOn(page).mapNotNull { item -> layout.cell(item.key)?.let { item to g.fit(it, item) } }
 
-        /** The pages a pager slot shows, left to right. */
+        /** The pages a pager slot shows, left to right; null where the last slot has no second page. */
         fun pagesAt(
             slot: Int,
-            pages: List<Int>,
+            pages: List<String>,
             g: Grid,
         ) = dev.omalauncher.widgets.layout.pagesAt(slot, pages, g.per)
 
         /** Which of [shown] holds [key], or -1. */
         fun sideOf(
             key: String?,
-            shown: List<Int>,
-        ) = if (key == null) -1 else shown.indexOfFirst { page -> itemsOn(page).any { it.key == key } }
+            shown: List<String?>,
+        ) = if (key == null) -1 else shown.indexOfFirst { page -> page != null && itemsOn(page).any { it.key == key } }
 
         Box(
             Modifier
@@ -310,7 +300,7 @@ internal fun HomeGrid(
                         start: Offset,
                         item: HomeItem,
                         cell: Cell,
-                        from: Int,
+                        from: String,
                         origin: IntRect,
                         folder: FolderGeometry? = null,
                     ): Boolean {
@@ -376,6 +366,10 @@ internal fun HomeGrid(
                                     if (next in 0 until pager.pageCount) {
                                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         scope.launch { pager.animateScrollToPage(next) }
+                                    } else if (edgeSide > 0 && arrange.offered == null) {
+                                        // Past the last page: a new one to drop on, like the empty page that used to wait there.
+                                        arrange.offered = onOfferPage()
+                                        if (arrange.offered != null) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     }
                                     // Turning again takes a longer rest, so the page just reached can be looked at.
                                     atEdgeSince = now + PAGE_TURN_MS
@@ -385,8 +379,15 @@ internal fun HomeGrid(
                             // Side by side, the finger picks the page; the drop preview works in its coordinates.
                             val side = g.side(position)
                             val at = g.local(position, side)
-                            val page = pages.getOrElse(pager.targetPage * g.per + side) { from }
+                            val page = pages.getOrNull(pager.targetPage * g.per + side)
                             arrange.page = page
+                            if (page == null) {
+                                // Over the empty half of the last pair: nowhere to land.
+                                arrange.grouping = false
+                                arrange.swapWith = null
+                                arrange.preview = null
+                                continue
+                            }
                             val others = placedOn(page, g).filter { it.first.key != item.key }
                             val over = others.lastOrNull { (_, r) -> g.rect(r).has(at) }
                             // Apps group with apps and folders; anything else swaps, except an app from a folder, which has no cell to trade.
@@ -404,11 +405,12 @@ internal fun HomeGrid(
                                 }
                         }
                         val page = arrange.page
-                        val target = arrange.swapWith?.let { key -> itemsOn(page).firstOrNull { it.key == key } }
+                        val target = if (page == null) null else arrange.swapWith?.let { key -> itemsOn(page).firstOrNull { it.key == key } }
                         val drop = arrange.preview
                         val grouping = arrange.grouping
                         arrange.drop()
                         when {
+                            page == null -> {}
                             target != null && grouping && moved -> onGroup(item as Shortcut, target)
                             // Swapping trades places and sizes, like swapping windows in Hyprland; across pages it trades pages too.
                             target != null ->
@@ -426,6 +428,10 @@ internal fun HomeGrid(
                             }
                         }
                         layout.save()
+                        arrange.offered?.let { offered ->
+                            arrange.offered = null
+                            if (itemsOn(offered).isEmpty()) onWithdrawPage(offered)
+                        }
                         return moved
                     }
 
@@ -447,8 +453,9 @@ internal fun HomeGrid(
                         val shown = pagesAt(pager.currentPage, pages, g)
                         val side = g.side(start)
                         val page = shown[side]
+                        if (page != null) onTouch(page)
                         val at = g.local(start, side)
-                        val placed = placedOn(page, g)
+                        val placed = page?.let { placedOn(it, g) }.orEmpty()
 
                         // An open folder takes every touch: a tap on an app opens it (the tile gets the tap),
                         // a long-press lifts it to sort it in or drag it out, a tap outside closes the folder. Its panel is centered on
@@ -493,7 +500,7 @@ internal fun HomeGrid(
                             arrange.holding = true
                             try {
                                 val rect = g.rect(cell)
-                                val edges = if (item.resizable) g.edges(edgesAt(rect, selAt, grab, sideGrab)) else Edges(false, false, false, false)
+                                val edges = if (item.resizable) edgesAt(rect, selAt, grab, sideGrab) else Edges(false, false, false, false)
                                 when {
                                     edges.any -> {
                                         val others = placed.filter { it.first.key != item.key }.map { it.second }
@@ -513,7 +520,7 @@ internal fun HomeGrid(
                                         }
                                         layout.save()
                                     }
-                                    rect.has(selAt) -> moveDrag(down.id, start, item, cell, shown[selSide], g.screen(rect, selSide))
+                                    rect.has(selAt) -> shown[selSide]?.let { moveDrag(down.id, start, item, cell, it, g.screen(rect, selSide)) }
                                     else -> {
                                         // Tap outside finishes editing; a drag outside does nothing.
                                         onSelect(null)
@@ -530,6 +537,8 @@ internal fun HomeGrid(
                             return@awaitEachGesture
                         }
 
+                        // The empty half of the last pair takes its own taps, to add a page.
+                        if (page == null) return@awaitEachGesture
                         val hit = placed.lastOrNull { (_, c) -> g.rect(c).has(at) }
                         if (!awaitLongPress(down.id, start)) return@awaitEachGesture
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -551,18 +560,18 @@ internal fun HomeGrid(
                     }
                 },
         ) {
-            HorizontalPager(pager, Modifier.fillMaxSize(), key = { pages.getOrElse(it * grid.per) { -it } }) { slot ->
+            HorizontalPager(pager, Modifier.fillMaxSize(), key = { pages.getOrNull(it * grid.per) ?: "slot $it" }) { slot ->
                 Row(Modifier.fillMaxSize()) {
                     for (page in pagesAt(slot, pages, grid)) {
                         Box(Modifier.width(with(density) { grid.width.toDp() }).fillMaxHeight()) {
-                            TiledPage(page, itemsOn(page), layout, grid, arrange, selected, render, actions, onNoRoom)
+                            if (page == null) PlusPage(grid, onAddPage) else TiledPage(page, itemsOn(page), layout, grid, arrange, selected, render, actions, onNoRoom, ready)
                         }
                     }
                 }
             }
 
             // The open folder, over the page it's on.
-            val openFolder = arrange.folder?.let { key -> pagesAt(pager.currentPage, pages, grid).firstNotNullOfOrNull { p -> itemsOn(p).firstOrNull { it.key == key } as? Folder } }
+            val openFolder = arrange.folder?.let { key -> pagesAt(pager.currentPage, pages, grid).firstNotNullOfOrNull { p -> p?.let { itemsOn(it).firstOrNull { item -> item.key == key } as? Folder } } }
             if (openFolder != null) {
                 val fg = FolderGeometry(width * per, grid.height, grid.cellW, grid.cellH, gap, openFolder.apps.size, density)
                 FolderPanel(openFolder, fg, render, arrange.carry?.item?.key)
@@ -601,7 +610,7 @@ internal fun HomeGrid(
  */
 @Composable
 private fun DropPreview(
-    page: Int,
+    page: String,
     grid: Grid,
     arrange: Arrange,
 ) {
@@ -618,6 +627,27 @@ private fun DropPreview(
     )
 }
 
+/** The empty right half of the last pair, when the pages are odd: the page's outline, and a tap adds the page. */
+@Composable
+private fun PlusPage(
+    grid: Grid,
+    onAdd: () -> Unit,
+) {
+    val density = LocalDensity.current
+    val r = grid.page
+    Box(
+        Modifier
+            .offset { IntOffset(r.left, r.top) }
+            .size(with(density) { r.width.toDp() }, with(density) { r.height.toDp() })
+            .padding(with(density) { grid.gap.toDp() })
+            .frame(1.dp, Palette.border.copy(alpha = 0.5f))
+            .clickable(onClick = onAdd),
+        contentAlignment = Alignment.Center,
+    ) {
+        BasicText("+ new page", style = Mono.copy(color = Palette.muted))
+    }
+}
+
 /** How long a carried tile rests against a side edge before the page turns. */
 private const val PAGE_TURN_MS = 600L
 
@@ -630,7 +660,7 @@ private const val FOLDER_EXIT_MS = 400L
 /** One home page: its tiles, and while arranging the grid guides, drop preview and selection frame. */
 @Composable
 private fun TiledPage(
-    page: Int,
+    page: String,
     items: List<HomeItem>,
     layout: WidgetLayout,
     grid: Grid,
@@ -639,11 +669,12 @@ private fun TiledPage(
     render: @Composable (HomeItem, Modifier, Boolean) -> Unit,
     actions: @Composable (HomeItem) -> Unit,
     onNoRoom: (HomeItem) -> Unit,
+    ready: Boolean,
 ) {
     val density = LocalDensity.current
     val carried = arrange.carry?.item?.key
     LaunchedEffect(items.map { it.key }, grid.cols, grid.rows) {
-        layout.place(items, grid.cols, grid.rows).forEach(onNoRoom)
+        layout.place(items, grid.cols, grid.rows, page).forEach(onNoRoom)
     }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val pageWidth = constraints.maxWidth
@@ -663,7 +694,7 @@ private fun TiledPage(
                 }
             }
         }
-        if (items.none { it.key != carried }) {
+        if (ready && items.none { it.key != carried }) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 BasicText(
                     if (carried != null) "drop here" else "no widgets on this page · long-press for a new one",

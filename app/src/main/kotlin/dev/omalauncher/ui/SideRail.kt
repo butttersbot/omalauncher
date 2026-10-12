@@ -29,24 +29,17 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalWindowInfo
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.omalauncher.Runtime
+import dev.omalauncher.widgets.layout.dockBeside
 
 /** Where landscape home keeps the recent apps strip and the dock: the side portrait's bottom turned to. */
 enum class HomeSide { Left, Right }
 
-/** Whether home turns portrait's grid on its side: landscape, unless the window shows two pages. */
-@Composable
-internal fun homeTurned(): Boolean {
-    val window = LocalWindowInfo.current.containerSize
-    return window.width > window.height && !showsTwoPages(window)
-}
-
 /**
- * The side for the strip and the dock where home turns its grid on its side; null in portrait. Only a phone's
- * landscape is too short for them below the grid: a tablet keeps them there.
+ * The side for the strip and the dock in a phone's landscape, which is too short for them below the page; null
+ * everywhere else: upright, and on an unfolded foldable or a tablet either way up. The page itself is never turned.
  */
 @Composable
 internal fun homeSide(): HomeSide? {
@@ -69,19 +62,13 @@ internal fun homeSide(): HomeSide? {
         onDispose { displays.unregisterDisplayListener(listener) }
     }
     val window = LocalWindowInfo.current.containerSize
-    val tablet = with(LocalDensity.current) { minOf(window.width, window.height).toDp() } >= 600.dp
+    val beside = with(LocalDensity.current) { dockBeside(window.width.toDp().value, window.height.toDp().value) }
     return when {
-        !homeTurned() || tablet -> null
+        !beside -> null
         rotation == Surface.ROTATION_270 -> HomeSide.Left
         else -> HomeSide.Right
     }
 }
-
-/**
- * Whether home shows two pages side by side: when each half of the window is phone-shaped, as on a
- * foldable's inner screen in either orientation. Phones, tablets and phone landscape show one.
- */
-internal fun showsTwoPages(window: IntSize) = window.width / 2f / window.height in 0.4f..0.65f
 
 /**
  * Room the side takes beside the grid: the strip, the rail and the gaps after them (the grid's own gap comes before).
@@ -95,8 +82,8 @@ internal fun sideWidth(): Dp =
     }
 
 /**
- * Landscape home's side: portrait's bottom turned with the grid. The recent apps strip stands
- * beside the grid with its icons upright, and the dock stands in a rail at the edge.
+ * Landscape home's side on a phone: the recent apps strip stands beside the page with its icons upright,
+ * and the dock stands in a rail at the edge.
  */
 @Composable
 internal fun SideRail(

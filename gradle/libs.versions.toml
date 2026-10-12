@@ -3,6 +3,7 @@ agp = "9.4.1"
 kotlin = "2.4.20"
 compose-multiplatform = "1.12.1"
 androidx-activity = "1.13.0"
+androidx-window = "1.5.0"
 androidsvg = "1.4"
 commons-compress = "1.28.0"
 zxing = "3.5.4"
@@ -11,6 +12,7 @@ org-json = "20260814"
 
 [libraries]
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activity" }
+androidx-window = { module = "androidx.window:window", version.ref = "androidx-window" }
 compose-runtime = { module = "org.jetbrains.compose.runtime:runtime", version.ref = "compose-multiplatform" }
 compose-foundation = { module = "org.jetbrains.compose.foundation:foundation", version.ref = "compose-multiplatform" }
 compose-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "compose-multiplatform" }

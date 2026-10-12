@@ -10,50 +10,75 @@ data class PxRect(
     val top: Int,
     val right: Int,
     val bottom: Int,
-)
+) {
+    val width get() = right - left
+    val height get() = bottom - top
+}
 
-/** How many rows of square-ish cells fit [long] beside [GRID_COLUMNS] of them across [short]. */
-fun squareRows(
-    short: Int,
-    long: Int,
-    gap: Int,
-) = ((long - gap) / ((short - gap) / GRID_COLUMNS.toFloat())).toInt().coerceAtLeast(1)
+/** A rectangle before it is rounded to pixels. */
+data class Bounds(
+    val left: Float,
+    val top: Float,
+    val right: Float,
+    val bottom: Float,
+) {
+    val width get() = right - left
+    val height get() = bottom - top
+}
 
 /**
- * Pixel geometry of the home grid: cells separated by Omarchy-style gaps, as many rows of
- * square-ish cells as fit, but never fewer than the [used] rows tiles were placed on. A layout
- * made on a tall screen keeps its arrangement on a squarer one (a foldable's inner screen) with
- * shorter cells, rather than tiles stacking. [turned] (landscape) lays portrait's grid on its
- * side: the same cells, [rows] of them across and [cols] down, so tiles keep their place and
- * shape. Everything else here works in those portrait cells.
+ * A page's shape, its width over its height, the same on every display: five wide for six tall. The room a
+ * page gets differs a little from one display to the next (a foldable's cover and half of its inner screen);
+ * the page is the largest rectangle of this shape that fits, and what is left over is margin.
+ */
+const val PAGE_ASPECT = 5f / 6f
+
+/** The gap around tiles as a share of the page's width: 6dp on a page 468dp wide. It scales with the page, like everything on it. */
+const val GAP_SHARE = 1f / 78f
+
+/**
+ * Pixel geometry of a home page: a grid of [GRID_COLUMNS] by [rows] cells, scaled uniformly into the room a
+ * page has ([width] by [height]) and centred there. The page keeps one shape ([PAGE_ASPECT]), so for a
+ * given [rows] every cell has one shape too, and a tile takes the same share of the page wherever the page is
+ * shown. Nothing is ever laid on its side, and the grid never re-flows: a smaller room is a smaller page.
  *
- * [per] pages stand side by side, each [width] wide (two on a foldable's inner screen); a page's
- * cells are in its own coordinates.
+ * [per] pages stand side by side, each in a room [width] wide (two on a foldable's inner screen); a page's
+ * rectangles are in its own room's coordinates.
  */
 class GridGeometry(
     val width: Int,
     val height: Int,
-    val gap: Int,
-    val turned: Boolean = false,
-    portraitRows: Int? = null,
-    used: Int = 0,
+    rows: Int,
     val per: Int = 1,
 ) {
     val cols = GRID_COLUMNS
-    val rows = maxOf(if (turned) portraitRows ?: squareRows(height, width, gap) else squareRows(width, height, gap), used)
+    val rows = rows.coerceAtLeast(1)
 
-    /** A screen cell's width and height. */
-    val cellW = (width - gap) / (if (turned) rows else cols).toFloat()
-    val cellH = (height - gap) / (if (turned) cols else rows).toFloat()
+    /** The page's size, and where it starts in its room. */
+    private val wide = width > height * PAGE_ASPECT
+    val pageWidth = (if (wide) height * PAGE_ASPECT else width.toFloat()).coerceAtLeast(1f)
+    val pageHeight = if (wide) height.toFloat().coerceAtLeast(1f / PAGE_ASPECT) else pageWidth / PAGE_ASPECT
+    val pageLeft = (width - pageWidth) / 2f
+    val pageTop = (height - pageHeight) / 2f
 
-    // Rounded, not truncated: rows * cellH can come out a hair under the grid's height, which would leave the
-    // bottom row a pixel short of the strip below.
-    fun rect(c: Cell) =
-        if (turned) {
-            PxRect((gap + c.y * cellW).roundToInt(), (gap + c.x * cellH).roundToInt(), (c.bottom * cellW).roundToInt(), (c.right * cellH).roundToInt())
-        } else {
-            PxRect((gap + c.x * cellW).roundToInt(), (gap + c.y * cellH).roundToInt(), (c.right * cellW).roundToInt(), (c.bottom * cellH).roundToInt())
-        }
+    private val gapSize = pageWidth * GAP_SHARE
+
+    /** The gap between tiles, in whole pixels, for what is drawn to match the grid. */
+    val gap = gapSize.roundToInt()
+
+    /** A cell's width and height. */
+    val cellW = (pageWidth - gapSize) / cols
+    val cellH = (pageHeight - gapSize) / this.rows
+
+    /** The page in its room. */
+    val page get() = PxRect(pageLeft.roundToInt(), pageTop.roundToInt(), (pageLeft + pageWidth).roundToInt(), (pageTop + pageHeight).roundToInt())
+
+    /** A tile's rectangle: a gap before it, and the next cell's gap after it. */
+    fun bounds(c: Cell) = Bounds(pageLeft + gapSize + c.x * cellW, pageTop + gapSize + c.y * cellH, pageLeft + c.right * cellW, pageTop + c.bottom * cellH)
+
+    // Rounded, not truncated: rows * cellH can come out a hair under the page's height, which would leave the
+    // bottom row a pixel short.
+    fun rect(c: Cell) = bounds(c).let { PxRect(it.left.roundToInt(), it.top.roundToInt(), it.right.roundToInt(), it.bottom.roundToInt()) }
 
     /** A saved cell as shown on this grid; only affects display, the saved cell stays as it is. */
     fun fit(
@@ -65,71 +90,30 @@ class GridGeometry(
         return Cell(c.x.coerceIn(0, cols - w), c.y.coerceIn(0, rows - h), w, h)
     }
 
-    /** Nearest column line to a point on screen. */
-    fun colLine(
-        x: Float,
-        y: Float,
-    ) = (if (turned) line(y, cellH) else line(x, cellW)).coerceIn(0, cols)
+    /** Nearest column line to a point [x] across the page's room. */
+    fun colLine(x: Float) = line(x - pageLeft, cellW).coerceIn(0, cols)
 
-    fun rowLine(
-        x: Float,
-        y: Float,
-    ) = (if (turned) line(x, cellW) else line(y, cellH)).coerceIn(0, rows)
+    /** Nearest row line to a point [y] down the page's room. */
+    fun rowLine(y: Float) = line(y - pageTop, cellH).coerceIn(0, rows)
 
     private fun line(
         px: Float,
         cell: Float,
-    ) = ((px - gap / 2f) / cell).roundToInt()
+    ) = ((px - gapSize / 2f) / cell).roundToInt()
 
     /** Which of the pages on screen, left to right, a point [x] across is over. */
     fun side(x: Float) = (x / width).toInt().coerceIn(0, per - 1)
 
-    /** Where the page at [side] starts across the screen. */
+    /** Where the room of the page at [side] starts across the screen. */
     fun left(side: Int) = side * width
 }
 
-/** A window's size as the key its portrait row count is saved under: short side first, so both orientations share it. */
-fun windowKey(
-    width: Int,
-    height: Int,
-) = "${minOf(width, height)}x${maxOf(width, height)}"
-
-/**
- * Whether home shows two pages side by side: when each half of the window is phone-shaped, as on a
- * foldable's inner screen in either orientation. Phones, tablets and phone landscape show one.
- * The rule of `showsTwoPages` in ui/SideRail.kt, kept here beside its test until that one goes.
- */
-fun showsTwoPages(
-    width: Int,
-    height: Int,
-) = width / 2f / height in 0.4f..0.65f
-
-/** Whether home turns portrait's grid on its side: landscape, unless the window shows two pages. As `homeTurned` in ui/SideRail.kt. */
-fun homeTurned(
-    width: Int,
-    height: Int,
-) = width > height && !showsTwoPages(width, height)
-
-/**
- * The pages home shows, from those that hold something. One empty page always waits after the last one
- * (unless the last is empty already, by [isEmpty]); with [per] of 2 pages show in pairs, and an odd last
- * page gets an empty partner.
- */
-fun shownPages(
-    pages: List<Int>,
-    per: Int,
-    isEmpty: (Int) -> Boolean,
-): List<Int> =
-    pages
-        .let { if (isEmpty(it.last())) it else it + (it.last() + 1) }
-        .let { if (it.size % per == 0) it else it + (it.last() + 1) }
-
-/** The pages a pager slot shows, left to right; a slot past the end shows page 1. */
-fun pagesAt(
+/** The pages a pager slot shows, left to right; null where there is no page: the right half of the last pair when the pages are odd. */
+fun <T : Any> pagesAt(
     slot: Int,
-    pages: List<Int>,
+    pages: List<T>,
     per: Int,
-) = (0 until per).map { pages.getOrElse(slot * per + it) { 1 } }
+): List<T?> = (0 until per).map { pages.getOrNull(slot * per + it) }
 
 /** How far along the wallpaper is, 0 to 1, with the pager at [page] plus [fraction] of [pageCount] slots; centered when there's one. */
 fun wallpaperOffset(

@@ -187,15 +187,29 @@ class PlacementTest {
         assertEquals(6, usedRows(listOf(Cell(0, 5, 3, 3) to false)))
     }
 
+    @Test fun cellsHeldByWhatIsNotAmongTheItemsAreNotFree() {
+        val cells = HashMap<String, Cell>()
+        val placement = Placement<Tile>(cells, {}) { it }
+        val held = listOf(Cell(0, 0, 6, 4))
+        val a = Tile("a", 3 to 2)
+        val b = Tile("b", 6 to 5)
+        // Without it the first tile would take the top left corner.
+        assertEquals(Cell(0, 4, 3, 2), placement.freeSpot(a, listOf(a), 6, 9, held))
+        assertEquals(emptyList<Tile>(), placement.place(listOf(a), 6, 9, held))
+        assertEquals(Cell(0, 4, 3, 2), cells["a"])
+        // What no longer fits beside it has no room, rather than the held cell.
+        assertEquals(listOf(b), placement.place(listOf(a, b), 6, 9, held))
+        assertFalse(placement.claim(b, listOf(a), held))
+        assertTrue(placement.claim(Tile("c", 3 to 2), listOf(a), held))
+        assertEquals(Cell(3, 4, 3, 2), cells["c"])
+    }
+
     @Test fun tileSizeInPixels() {
         val geometry = Triple(205f, 217.1f, 18)
-        assertEquals(597 to 416, tilePx(3 to 2, geometry, turned = false))
-        // On its side, its columns run down the screen.
-        assertEquals(392 to 633, tilePx(3 to 2, geometry, turned = true))
+        // A tile is never laid on its side: its columns always run across.
+        assertEquals(597 to 416, tilePx(3 to 2, geometry))
         // Cut down to whole pixels, not rounded: 616.5 and 435.5 lose their halves.
-        assertEquals(598 to 417, tilePx(3 to 2, Triple(205.5f, 217.75f, 18), turned = false))
-        assertEquals(3 to 2, shownSize(3 to 2, false))
-        assertEquals(2 to 3, shownSize(3 to 2, true))
+        assertEquals(598 to 417, tilePx(3 to 2, Triple(205.5f, 217.75f, 18)))
     }
 
     @Test fun geometryGuessedFromTheScreenWidth() {

@@ -12,6 +12,10 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -155,6 +159,10 @@ internal fun InputNode(
 
     var field by remember(p.el, p.env) { mutableStateOf(TextFieldValue(given.orEmpty())) }
     var focused by remember { mutableStateOf(false) }
+    // Home keeps the field that has the keyboard above it.
+    val typingAt = LocalTypingAt.current
+    var placed by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    DisposableEffect(typingAt) { onDispose { if (focused) typingAt(null) } }
     LaunchedEffect(given) { if (given != null && given != field.text) field = TextFieldValue(given, TextRange(given.length)) }
 
     fun edit(v: TextFieldValue) {
@@ -168,7 +176,11 @@ internal fun InputNode(
         onValueChange = ::edit,
         modifier =
             (if (sized) mod else mod.fillMaxWidth())
-                .onFocusChanged { focused = it.isFocused }
+                .onGloballyPositioned { placed = it }
+                .onFocusChanged {
+                    focused = it.isFocused
+                    typingAt(if (it.isFocused) placed?.takeIf { c -> c.isAttached }?.boundsInWindow() else null)
+                }
                 .drawBehind {
                     val w = 1.dp.toPx()
                     drawRect(if (focused) Palette.accent else Palette.border, Offset(0f, size.height - w), Size(size.width, w))

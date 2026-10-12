@@ -1,9 +1,11 @@
 package dev.omalauncher.ui
 
-import android.content.Context
-import android.content.SharedPreferences
 import androidx.compose.runtime.mutableStateListOf
 import dev.omalauncher.linux.LinuxApp
+import dev.omalauncher.widgets.LiveNotebook
+import dev.omalauncher.widgets.app
+import dev.omalauncher.widgets.entry
+import dev.omalauncher.widgets.layout.PinnedApp
 import dev.omalauncher.upgrade.Versioned
 import dev.omalauncher.upgrade.mapObjects
 import org.json.JSONArray
@@ -152,26 +154,41 @@ private fun readEntries(array: JSONArray): List<DockEntry> =
             ).takeIf { it.builtIn || it.component != null || it.linux != null }
         }.distinctBy { it.key }
 
+/** A dock entry as the notebook keeps it, and back. */
+internal fun DockEntry.pinned() = PinnedApp(key, label, component, profile, linux?.entry())
+
+internal fun PinnedApp.dockEntry() = DockEntry(key, label, component, profile, linux?.app())
+
 /**
- * The dock's pinned apps in order, saved in a preferences file of their own (`dock`), apart from the
- * home shortcuts and the grid, so the layout migration can import it and leave the original as a backup.
+ * The dock's pinned apps in order. They are saved with the notebook, the one store of the home layout;
+ * the `dock` preferences file they had before it is left as it was, as the backup of that time.
  * [load] gives the saved document, if any, and [save] keeps a new one.
  */
 class DockStore(
-    load: () -> String?,
+    private val load: () -> String?,
     private val save: (String) -> Unit,
+    /** Whether a change can be taken now. Not before the notebook is opened: it would be thrown away when it is. */
+    private val ready: () -> Boolean = { true },
 ) {
-    constructor(context: Context) : this(context.getSharedPreferences("dock", Context.MODE_PRIVATE))
-
-    private constructor(prefs: SharedPreferences) : this(
-        load = { prefs.getString(ITEMS, null) },
-        save = { prefs.edit().putString(ITEMS, it).apply() },
+    /** The dock of [notebook], read and written as the document the dock always was. */
+    constructor(notebook: LiveNotebook) : this(
+        load = { writeDock(notebook.dock.map { it.dockEntry() }) },
+        save = { notebook.changeDock(readDock(it).map { entry -> entry.pinned() }) },
+        ready = { notebook.opened },
     )
 
     val items = mutableStateListOf<DockEntry>()
 
     init {
         items += readDock(load())
+    }
+
+    /** Reads the saved dock again, after what [load] reads from was replaced. */
+    fun reload() {
+        val saved = readDock(load())
+        if (saved == items.toList()) return
+        items.clear()
+        items += saved
     }
 
     fun isPinned(key: String) = items.any { it.key == key }
@@ -188,13 +205,9 @@ class DockStore(
     private fun replace(changed: List<DockEntry>) {
         // A copy first: a change that changes nothing hands back [items] itself, which clearing would empty.
         val next = changed.toList()
-        if (next == items.toList()) return
+        if (!ready() || next == items.toList()) return
         items.clear()
         items += next
         save(writeDock(next))
-    }
-
-    private companion object {
-        const val ITEMS = "items"
     }
 }

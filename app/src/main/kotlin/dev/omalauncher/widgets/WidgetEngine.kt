@@ -2,6 +2,7 @@ package dev.omalauncher.widgets
 
 import android.content.Context
 import android.os.FileObserver
+import android.util.Log
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -18,6 +19,7 @@ import dev.omalauncher.linux.Proot
 import dev.omalauncher.linux.pacmanInstall
 import dev.omalauncher.linux.runJob
 import dev.omalauncher.linux.shellQuote
+import dev.omalauncher.ui.DockStore
 import dev.omalauncher.ui.Palette
 import dev.omalauncher.upgrade.Managed
 import dev.omalauncher.upgrade.Policy
@@ -26,6 +28,9 @@ import dev.omalauncher.widgets.lang.Compiler
 import dev.omalauncher.widgets.lang.Json
 import dev.omalauncher.widgets.lang.Program
 import dev.omalauncher.widgets.lang.Source
+import dev.omalauncher.widgets.layout.NotebookOpening
+import dev.omalauncher.widgets.layout.NotebookStart
+import dev.omalauncher.widgets.layout.OldWidget
 import dev.omalauncher.widgets.market.Review
 import dev.omalauncher.widgets.market.Shared
 import dev.omalauncher.widgets.runtime.WidgetInstance
@@ -45,7 +50,8 @@ import java.io.File
 class WidgetSpec(
     val file: File,
     val name: String,
-    val page: Int,
+    /** The page its file asks to start on, by position (1 is the first). Where it is now is the notebook's to say. */
+    val startPage: Int,
     val order: Int,
     val program: Program?,
     val error: String? = null,
@@ -55,9 +61,7 @@ class WidgetSpec(
     val minSize: Pair<Int, Int> = 1 to 1,
     /** The file's modification time when it was compiled; unchanged files aren't recompiled. */
     val stamp: Long = 0,
-) {
-    fun onPage(page: Int) = WidgetSpec(file, name, page, order, program, error, size, minSize, stamp)
-}
+)
 
 /**
  * Loads widgets (`*.owl`) from [dir], ~/.config/omalauncher/widgets in the guest,
@@ -90,8 +94,42 @@ class WidgetEngine(
     private val stateDir = File(context.filesDir, "widget-state")
     val specs = mutableStateListOf<WidgetSpec>()
     private val instances = HashMap<String, WidgetInstance>()
-    val layout = WidgetLayout(context)
-    val shortcuts = Shortcuts(context, layout)
+    private val notebookFiles = NotebookPrefs(context)
+
+    /** The pages, what is on each and where, the pinned apps and the dock: the one store of the home layout. */
+    val notebook = LiveNotebook(persist = notebookFiles::save)
+    val layout = WidgetLayout(notebook)
+    val shortcuts = Shortcuts(notebook)
+
+    /** The dock's pinned apps, kept in the notebook. */
+    val dock = DockStore(notebook)
+
+    /** Something the owner has to be told about his layout, until he taps it away; see [NotebookOpening]. */
+    var notice by mutableStateOf<String?>(null)
+
+    /** Reads the saved notebook or migrates into one; the migration waits for the first listing of the widget files. */
+    private val opening = NotebookOpening(notebookFiles)
+
+    /** The migration couldn't be saved because no widget file was seen; tried again when they show up. */
+    private var widgetsMissing = false
+
+    /** The saved notebook is shown, but whether this start is kept waits for disk work; see [NotebookOpening.finish]. */
+    private var finishPending = false
+
+    init {
+        opening.saved()?.let {
+            finishPending = it.pending
+            open(it)
+        }
+    }
+
+    private fun open(start: NotebookStart) {
+        notebook.open(start.notebook, kept = start.saved)
+        widgetsMissing = start.widgetsMissing
+        notice = start.message
+        start.report?.let { Log.i("notebook", (if (start.saved) "migrated: " else "migrated, not saved: ") + it.summary()) }
+        dock.reload()
+    }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val services = WidgetServices(context, proot, runtime, scope)
 
@@ -168,36 +206,34 @@ class WidgetEngine(
         return instance(spec)?.takeIf { it.program.screen != null }?.let { spec to it }
     }
 
-    /** The page on screen; widgets on it and its neighbours stay live, the rest pause. */
-    var activePage by mutableIntStateOf(1)
+    /** The id of the page on screen (the left one of two); widgets on those and their neighbours stay live, the rest pause. */
+    var activePage by mutableStateOf<String?>(null)
 
-    /** Pages chosen on the phone override the file's own `page:`, so store installs land where you are without editing the file. */
+    /** How many pages show side by side. */
+    var activeSpan by mutableIntStateOf(1)
+
+    /** A page chosen on the phone wins over the file's own `page:`, so store installs land where you are without editing the file. */
     fun setPage(
         fileName: String,
-        page: Int,
-    ) = layout.setPage(fileName, page)
+        page: String,
+    ) = notebook.expect(fileName, page)
 
-    /** A widget with no room on its page moves to the next page with room at its size, or a new one after the last. Returns the page. */
-    fun moveToFreePage(item: HomeItem): Int {
-        val page = pages.firstOrNull { it > item.page && layout.claim(item, itemsOn(it)) } ?: ((pages.maxOrNull() ?: 1) + 1)
+    /** A widget with no room on its page moves to the next page with room at its size, or a new one after the last. Returns the page's id. */
+    fun moveToFreePage(item: HomeItem): String {
+        val from = notebook.position(notebook.pageOf(item.key))
+        val page = pages.drop(from + 1).firstOrNull { layout.claim(item, itemsOn(it), it) } ?: notebook.addPage() ?: return notebook.first
         moveToPage(item, page)
         return page
     }
 
-    /** Puts [item] on [page]: a widget through its page override, a shortcut in place. */
+    /** Puts [item] on the page with the id [page]. */
     fun moveToPage(
         item: HomeItem,
-        page: Int,
-    ) {
-        when (item) {
-            is WidgetItem -> {
-                setPage(item.key, page)
-                val i = specs.indexOfFirst { it.file.name == item.key }
-                if (i >= 0) specs[i] = specs[i].onPage(page)
-            }
-            is Shortcut, is Folder -> shortcuts.move(item.key, page)
-        }
-    }
+        page: String,
+    ) = notebook.move(item.key, page)
+
+    /** A new, empty page after the last one; returns its id, or null while the notebook isn't opened yet. */
+    fun addPage(): String? = notebook.addPage()
 
     private fun agentWidgetFile(agent: Agent) = "agent-${agent.bin}.owl"
 
@@ -218,7 +254,7 @@ class WidgetEngine(
     /** Adds a terminal tile running [agent] to [page]; see [agentWidget]. */
     suspend fun addAgentWidget(
         agent: Agent,
-        page: Int,
+        page: String,
     ) = withContext(Dispatchers.IO) {
         val name = agentWidgetFile(agent)
         setPage(name, page)
@@ -229,7 +265,7 @@ class WidgetEngine(
      * Adds another plain terminal tile to [page], a copy of the default one. Each is a file of its own, so there
      * can be any number, and one removed (the default included) is always a tap away in the store.
      */
-    suspend fun addTerminalWidget(page: Int) =
+    suspend fun addTerminalWidget(page: String) =
         withContext(Dispatchers.IO) {
             val name = TERMINAL_PREFIX + System.currentTimeMillis().toString(36) + ".owl"
             setPage(name, page)
@@ -245,7 +281,7 @@ class WidgetEngine(
      */
     suspend fun addSharedWidget(
         shared: Shared,
-        page: Int,
+        page: String,
     ) = withContext(Dispatchers.IO) {
         val name = shared.fileName
         if (!File(dir, name).exists()) setPage(name, page)
@@ -287,14 +323,14 @@ class WidgetEngine(
         File(previewDir, "$fileName.screen.png").delete()
     }
 
-    /** Widgets, pinned apps and folders on [page]. Wrappers compare by spec, so unchanged pages skip recomposition. */
-    fun itemsOn(page: Int): List<HomeItem> = specs.filter { it.page == page }.map(::WidgetItem) + shortcuts.onGrid().filter { it.page == page }
+    /** Widgets, pinned apps and folders on the page with the id [page]. Wrappers compare by spec, so unchanged pages skip recomposition. */
+    fun itemsOn(page: String): List<HomeItem> =
+        specs.filter { notebook.pageOf(it.file.name) == page }.map(::WidgetItem) + shortcuts.onGrid().filter { notebook.pageOf(it.key) == page }
 
-    private val pageList by derivedStateOf {
-        (specs.map { it.page } + shortcuts.onGrid().map { it.page }).distinct().sorted().ifEmpty { listOf(1) }
-    }
+    private val pageList by derivedStateOf { notebook.pages.map { it.id } }
 
-    val pages: List<Int> get() = pageList
+    /** The pages' ids, in the notebook's order. Empty pages are pages too. */
+    val pages: List<String> get() = pageList
 
     fun instance(spec: WidgetSpec): WidgetInstance? = instances[spec.file.name]?.takeIf { it.program === spec.program }
 
@@ -318,6 +354,12 @@ class WidgetEngine(
 
     fun start() {
         scope.launch {
+            if (finishPending) {
+                finishPending = false
+                val (kept, message) = withContext(Dispatchers.IO) { opening.finish() }
+                if (kept) notebook.keep()
+                notice = message
+            }
             withContext(Dispatchers.IO) {
                 dir.mkdirs()
                 checkDir.mkdirs()
@@ -375,17 +417,27 @@ class WidgetEngine(
         }
     }
 
-    private fun widgetFiles() = dir.listFiles { f -> !f.name.startsWith(".") && f.extension == "owl" }.orEmpty().sortedBy { it.name }
+    /** The widget files, or null if the directory couldn't be listed. */
+    private fun widgetFiles() = dir.listFiles { f -> !f.name.startsWith(".") && f.extension == "owl" }?.sortedBy { it.name }
 
-    private suspend fun reload(files: List<File>) {
+    private suspend fun reload(listed: List<File>?) {
+        val files = listed.orEmpty()
         val old = specs.associateBy { it.file.name }
         val changed = ArrayList<String>()
         val parsed =
             withContext(Dispatchers.IO) {
                 files.map { f -> old[f.name]?.takeIf { it.stamp == f.lastModified() } ?: compile(f, old[f.name]).also { changed += f.name } }
             }
+        // The first listing is what the migration waited for: it needs to know which widgets exist. Its one write
+        // is a synchronous commit, so off the main thread; home shows nothing of the layout until it is back.
+        if (!notebook.opened || (widgetsMissing && files.isNotEmpty())) {
+            val widgets = listed?.let { parsed.map { OldWidget(it.file.name, it.startPage, it.size) } }
+            open(withContext(Dispatchers.IO) { opening.migrate(widgets) })
+        }
         specs.clear()
-        specs += parsed.sortedWith(compareBy({ it.page }, { it.order }, { it.file.name }))
+        specs += parsed.sortedWith(compareBy({ it.startPage }, { it.order }, { it.file.name }))
+        // New files go where they ask to start; the ones the notebook knows stay where the owner has them.
+        notebook.adopt(parsed.map { it.file.name to it.startPage })
         // Unchanged files keep their running instance; changed ones start fresh but keep their values.
         val previous = HashMap(instances)
         instances.clear()
@@ -553,10 +605,9 @@ class WidgetEngine(
         if (!visible) return false
         // Its screen is open: it's on screen wherever the pages are.
         if (spec.file.name == openScreen) return true
-        val pages = pages
-        val here = pages.indexOf(activePage)
-        val there = pages.indexOf(spec.page)
-        return here < 0 || there < 0 || kotlin.math.abs(here - there) <= 1
+        val here = notebook.position(activePage)
+        val there = notebook.position(notebook.pageOf(spec.file.name))
+        return here < 0 || there < 0 || there in here - 1..here + activeSpan
     }
 
     private fun compile(
@@ -572,7 +623,7 @@ class WidgetEngine(
             val p = Compiler.compile(text)
             writeError(file, null)
             writeCheck(file, hash, "ok")
-            WidgetSpec(file, p.name, layout.page(file.name) ?: p.page, p.order, p, null, p.size, p.minSize, stamp)
+            WidgetSpec(file, p.name, p.page, p.order, p, null, p.size, p.minSize, stamp)
         } catch (e: CompileError) {
             broken(file, previous, stamp, Source(text).format(e), hash)
         } catch (e: RuntimeException) {
@@ -592,7 +643,7 @@ class WidgetEngine(
     ): WidgetSpec {
         writeError(file, error)
         writeCheck(file, hash, "error")
-        return WidgetSpec(file, file.nameWithoutExtension, previous?.page ?: 1, previous?.order ?: 999, null, error, previous?.size, previous?.minSize ?: (1 to 1), stamp)
+        return WidgetSpec(file, file.nameWithoutExtension, previous?.startPage ?: 1, previous?.order ?: 999, null, error, previous?.size, previous?.minSize ?: (1 to 1), stamp)
     }
 
     /** Error files are written in order: a clear must never land after the error that follows it. */
