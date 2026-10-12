@@ -26,9 +26,13 @@ object AgentTasks {
     @Volatile var label = "Ready"; private set
     @Volatile private var process: Process? = null
     @Volatile private var stopping = false
-    @Volatile var approvals: List<AgentApproval> = emptyList(); private set
-    /** The same approvals, each with what its notification and buttons are keyed by. */
+    /**
+     * The approvals waiting for the owner, each with what its notification and buttons are keyed by. This one
+     * immutable list is all that is published of the ledger, so no reader (the phone control guard above all)
+     * can see "none waiting" from one field while another still holds an entry.
+     */
     @Volatile var pending: List<PendingApproval> = emptyList(); private set
+    val approvals: List<AgentApproval> get() = pending.map { it.approval }
     private val ledger = ApprovalLedger()
     /** The Claude session that the next request follows up on. */
     @Volatile var thread: String? = null; private set
@@ -187,7 +191,7 @@ object AgentTasks {
         writer.write(event.toString()); writer.newLine(); writer.flush()
     }
     /** Under the lock: republishes the ledger for readers on other threads. */
-    private fun published() { pending = ledger.live; approvals = pending.map { it.approval } }
+    private fun published() { pending = ledger.live }
     /** A request from the agent's stream: shown to the owner, or denied unseen if it can't be shown safely. */
     private fun admit(context: Context, approval: AgentApproval) {
         fun logged(answer: ApprovalAnswer, key: String) = ChatLog.of(context).update(taskTime, save = true) {
@@ -207,6 +211,8 @@ object AgentTasks {
         }
         logged(ApprovalAnswer.Waiting, shown.nonce)
         AgentNotices.request(context, shown)
+        // Stop may have cleared the ledger between admitting and posting; its withdrawal then ran before there was anything to take down.
+        if (pending.none { it.nonce == shown.nonce }) AgentNotices.withdraw(context, shown)
         notify(context)
     }
     /**

@@ -140,6 +140,12 @@ fun approvalSurface(notificationsEnabled: Boolean, channelBlocked: Boolean) =
 /** A notification button can only demand an unlock from Android 12; before that it opens the approval screen instead. */
 fun actionDecidesDirectly(sdk: Int) = sdk >= 31
 
+/**
+ * Whether the progress notification may ask to be a Live Update. That arrived in Android 16 QPR1 ([since], 36.1),
+ * where the major level is still 36; [sdkFull] is only read from 36 on, because the field it reads doesn't exist before.
+ */
+fun requestsLiveUpdate(sdk: Int, since: Int, sdkFull: () -> Int) = sdk >= 36 && sdkFull() >= since
+
 /** What the task notification shows; [expanded] is the longer text of a finished task. */
 data class TaskNotice(val title: String, val text: String, val ongoing: Boolean, val expanded: String? = null)
 

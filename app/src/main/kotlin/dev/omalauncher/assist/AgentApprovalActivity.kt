@@ -31,7 +31,12 @@ class AgentApprovalActivity : Activity() {
             setPadding(40, 24, 40, 24); setTextIsSelectable(true)
         }
         fun decide(allow: Boolean) {
-            if (AgentTasks.answerApproval(this, entry.id, entry.nonce, allow) == ApprovalOutcome.Expired) AgentNotices.expired(this)
+            when (AgentTasks.answerApproval(this, entry.id, entry.nonce, allow)) {
+                ApprovalOutcome.Decided -> Unit
+                ApprovalOutcome.Expired -> AgentNotices.expired(this)
+                // Nothing was answered and the request is still waiting.
+                ApprovalOutcome.Locked -> AgentNotices.locked(this)
+            }
         }
         dialog = AlertDialog.Builder(this).setTitle("Allow ${approval.tool.take(60)}?")
             .setView(ScrollView(this).apply { addView(detail) })

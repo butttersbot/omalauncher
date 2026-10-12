@@ -127,6 +127,16 @@ class ApprovalsTest {
         assertTrue(actionDecidesDirectly(31)); assertTrue(actionDecidesDirectly(37))
     }
 
+    @Test fun aLiveUpdateIsAskedForFromAndroid16Qpr1() {
+        val qpr1 = 3_600_001
+        assertEquals(qpr1, android.os.Build.VERSION_CODES_FULL.BAKLAVA_1)
+        // Before 36 the full level doesn't exist and must not be read.
+        for (sdk in 29..35) assertFalse(requestsLiveUpdate(sdk, qpr1) { throw NoSuchFieldError("SDK_INT_FULL") })
+        assertFalse(requestsLiveUpdate(36, qpr1) { 3_600_000 })
+        assertTrue(requestsLiveUpdate(36, qpr1) { 3_600_001 })
+        assertTrue(requestsLiveUpdate(37, qpr1) { 3_700_000 })
+    }
+
     @Test fun theTaskNotificationShowsTheStepThenTheResult() {
         val step = taskNotice(working = true, label = "Using Bash", answer = "Looking at the build.\n\n", pending = 0)!!
         assertEquals("Using Bash", step.title); assertEquals("Looking at the build.", step.text)

@@ -43,7 +43,7 @@ internal object AgentNotices {
             val stop = PendingIntent.getBroadcast(context, 0, Intent(context, StopAgentTask::class.java), PendingIntent.FLAG_IMMUTABLE)
             builder.addAction(Notification.Action.Builder(null, "Stop", stop).build())
             // Asks for a Live Update; whether One UI shows it as one is for the phone to say.
-            if (Build.VERSION.SDK_INT >= 37) builder.setRequestPromotedOngoing(true)
+            if (requestsLiveUpdate(Build.VERSION.SDK_INT, Build.VERSION_CODES_FULL.BAKLAVA_1) { Build.VERSION.SDK_INT_FULL }) builder.setRequestPromotedOngoing(true)
         }
         nm.notify(TASK, builder.build())
     }
