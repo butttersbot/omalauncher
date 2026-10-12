@@ -153,9 +153,12 @@ fun HomeScreen(
     // Turning to other pages makes the left one of them the page last touched, until a finger lands on the right one.
     // The drawer pins apps to it.
     LaunchedEffect(pager.currentPage, pages, state.overviewOpen) {
-        // Not while the overview moves pages about under the pager: the page he came from is still the one to go back to.
-        if (state.overviewOpen) return@LaunchedEffect
         val shown = pagesAt(pager.currentPage, pages, per).filterNotNull()
+        // Not while the overview moves pages about under the pager: the page he came from is still the one to go back to.
+        if (state.overviewOpen) {
+            engine.activePage = shown.firstOrNull()
+            return@LaunchedEffect
+        }
         if (state.currentPage !in shown) shown.firstOrNull()?.let { state.currentPage = it }
         engine.activePage = shown.firstOrNull()
     }
