@@ -102,9 +102,13 @@ class MainActivity : ComponentActivity() {
      * Debug builds: `adb shell am start -n dev.omalauncher/.MainActivity --es exec foot`,
      * or `--es theme kanagawa` to apply a theme (scripts/collage-captures.sh).
      */
+    private val debugExecSwitch = "allow-debug-exec"
+
     private fun handleDebugExec(intent: Intent) {
         if (!BuildConfig.DEBUG) return
-        intent.getStringExtra("exec")?.let(runtime::launch)
+        // Any app can send this activity an intent, so a guest command from one is taken only while the owner has
+        // left the switch file in the app's own files, which only adb's run-as can write: off unless he turns it on.
+        if (java.io.File(filesDir, debugExecSwitch).isFile) intent.getStringExtra("exec")?.let(runtime::launch)
         intent.getStringExtra("theme")?.let { name ->
             lifecycleScope.launch {
                 snapshotFlow { runtime.themes.loaded }.first { it }

@@ -1,5 +1,6 @@
 package dev.omalauncher
 
+import java.io.File
 import android.app.ActivityManager
 import android.content.ComponentCallbacks
 import android.content.ComponentCallbacks2
@@ -318,6 +319,7 @@ class Runtime(
             agents.load()
         }
         widgets.linuxChanged(true)
+        openDoor()
         refreshApps()
         withContext(Dispatchers.IO) { updates.load() }
         scope.launch {
@@ -526,6 +528,21 @@ class Runtime(
         )
     }
 
+    /**
+     * Starts oma-door (tools/fold-development/oma-door) with Linux, once, if the owner set it up (Boss, 2026-10-12):
+     * the private door on the phone's Tailscale address through which his Mac session reaches the agent here.
+     * Both its token and the command have to be there, and only he or his own tooling puts them there; the
+     * launcher ships neither. It ends with the launcher, which is why it is started again here.
+     */
+    private fun openDoor() {
+        if (doorOpened) return
+        if (!File(proot.home, DOOR_TOKEN).isFile || !File(proot.rootfs, DOOR_COMMAND).isFile) return
+        doorOpened = true
+        launch("oma-door") { doorOpened = false }
+    }
+
+    @Volatile private var doorOpened = false
+
     /** Starts a command inside the guest; its output goes to logcat. Returns at once; [onExit] runs on the launch thread. */
     fun launch(
         command: String,
@@ -545,6 +562,8 @@ class Runtime(
     }
 
     companion object {
+        private const val DOOR_TOKEN = ".config/oma-door/token"
+        private const val DOOR_COMMAND = "usr/local/bin/oma-door"
         private const val TAG = "runtime"
         private const val SETUP_DONE = "setup_done"
     }
