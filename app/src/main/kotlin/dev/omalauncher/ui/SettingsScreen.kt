@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import dev.omalauncher.Runtime
 import dev.omalauncher.linux.JobState
 import dev.omalauncher.linux.LinuxState
+import dev.omalauncher.theme.pack.ConsolePack
 
 /** The launcher's settings hub, opened from the gear next to the drawer's search. */
 @Composable
@@ -51,9 +52,12 @@ fun SettingsScreen(
                 LinuxState.Removing -> "removing…"
                 else -> "not installed · install Arch Linux for terminal apps and agents"
             }
+        // The look being drawn; Console also names the Omarchy theme that colors it.
+        val look = ActivePack.pack
+        val theme = runtime.themes.current?.title?.takeIf { look.id == ConsolePack.ID }
         val rows =
             listOf(
-                Triple("style", runtime.themes.current?.title ?: "theme, background, home screen", onStyle),
+                Triple("look", listOfNotNull(look.name, theme).joinToString(" · ").lowercase(), onStyle),
                 Triple("linux", linuxStatus, onLinux),
                 if (installed) {
                     Triple("coding agents", runtime.agents.default?.let { "default: ${it.name}" } ?: "install Claude Code, OpenCode, …", onAgents)

@@ -55,15 +55,20 @@ import dev.omalauncher.theme.OmarchyTheme
 import dev.omalauncher.theme.ThemeDirs
 import dev.omalauncher.theme.ThemeDownload
 import dev.omalauncher.theme.ThemeStore
-import dev.omalauncher.theme.pack.PackOption
+import dev.omalauncher.theme.pack.ConsolePack
+import dev.omalauncher.theme.pack.CornerStyle
+import dev.omalauncher.theme.pack.IconTreatment
+import dev.omalauncher.theme.pack.PageKind
+import dev.omalauncher.theme.pack.ThemePack
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * Omarchy's Style menu: the theme, its background, how the home screen
- * draws itself and, with Linux, the terminal's text size.
+ * The look screen: which look the launcher is drawn from, first and largest; then only what still changes
+ * something under that look (see [styleChoices]); and, with Linux, the terminal's font and text size.
+ * Omarchy's themes and their backgrounds are Console's alone, and are offered only while Console is the look.
  */
 @Composable
 fun StyleScreen(
@@ -78,25 +83,38 @@ fun StyleScreen(
     var installOpen by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf<OmarchyTheme?>(null) }
     val linux by runtime.bootstrap.state.collectAsState()
-    OverlayPanel("style", onDismiss) {
+    OverlayPanel("look", onDismiss) {
         Column(Modifier.verticalScroll(rememberScrollState())) {
-            LookSection(store)
-            ThemeSection(
-                store,
-                onBrowse = onBrowse,
-                onInstall = {
-                    store.clearInstallError()
-                    installOpen = true
-                },
-                onRemove = { removing = it },
-            )
-            store.current?.let { BackgroundSection(store, it) }
-            // Style choices don't depend on a theme, so they're offered before themes are downloaded too.
+            LookPicker(store, Modifier.padding(top = 4.dp))
+            // The look being drawn, which is Console when the picked one couldn't be used.
+            val choices = styleChoices(ActivePack.pack)
+            if (StyleChoice.Theme in choices) {
+                ConsoleOnly()
+                ThemeSection(
+                    store,
+                    onBrowse = onBrowse,
+                    onInstall = {
+                        store.clearInstallError()
+                        installOpen = true
+                    },
+                    onRemove = { removing = it },
+                )
+            }
+            if (StyleChoice.Background in choices) store.current?.let { BackgroundSection(store, it) }
+            // These don't depend on a theme, so they're offered before themes are downloaded too.
             Heading("home screen")
-            StyleOption("icons", listOf("monochrome", "colored"), if (LauncherStyle.monochromeIcons) 0 else 1) { store.setMonochromeIcons(it == 0) }
-            StyleOption("home apps", listOf("boxed", "icon only"), if (LauncherStyle.bareAppIcons) 1 else 0) { store.setBareAppIcons(it == 1) }
-            StyleOption("recent apps", listOf("shown", "hidden"), if (LauncherStyle.recentApps) 0 else 1) { store.setRecentApps(it == 0) }
-            StyleOption("corners", Corners.entries.map { it.label }, LauncherStyle.corners.ordinal) { store.setCorners(Corners.entries[it]) }
+            if (StyleChoice.Icons in choices) {
+                StyleOption("icons", listOf("monochrome", "colored"), if (LauncherStyle.monochromeIcons) 0 else 1) { store.setMonochromeIcons(it == 0) }
+            }
+            if (StyleChoice.HomeApps in choices) {
+                StyleOption("home apps", listOf("boxed", "icon only"), if (LauncherStyle.bareAppIcons) 1 else 0) { store.setBareAppIcons(it == 1) }
+            }
+            if (StyleChoice.RecentApps in choices) {
+                StyleOption("recent apps", listOf("shown", "hidden"), if (LauncherStyle.recentApps) 0 else 1) { store.setRecentApps(it == 0) }
+            }
+            if (StyleChoice.Corners in choices) {
+                StyleOption("corners", Corners.entries.map { it.label }, LauncherStyle.corners.ordinal) { store.setCorners(Corners.entries[it]) }
+            }
             if (linux == LinuxState.Installed) TerminalSection(runtime.terminalFont)
         }
         if (installOpen) {
@@ -126,28 +144,54 @@ fun StyleScreen(
     }
 }
 
+/** One thing the look screen can offer under the looks themselves. */
+internal enum class StyleChoice {
+    /** An Omarchy theme: Console's colors. */
+    Theme,
+
+    /** The theme's background: Console's wallpaper. */
+    Background,
+
+    /** App icons as silhouettes or in their own colors. */
+    Icons,
+
+    /** Home's apps framed or bare. */
+    HomeApps,
+
+    /** The strip of recent apps over the dock. */
+    RecentApps,
+
+    /** How frames round their corners. */
+    Corners,
+}
+
 /**
- * The look: which theme pack home, the drawer, the dock and the Oma chat are drawn from. A choice apart
- * from the theme, which colors Console; any other pack has its own colors and keeps them whichever theme
- * is picked. A pack that couldn't be loaded, or has something wrong in it, says so here and nowhere else.
+ * What is worth offering while the launcher is drawn from [pack]: only what would change something there.
+ * A look decides much of this itself. Omarchy's themes and backgrounds color and paper Console alone; a look
+ * that treats icons its own way ignores the monochrome switch; one that draws its own page has the
+ * prototype's dock and no recent apps strip; and one with a corner style of its own ignores the user's.
+ * Framed or bare apps on home is the user's choice in every look.
  */
+internal fun styleChoices(pack: ThemePack): Set<StyleChoice> =
+    buildSet {
+        if (pack.id == ConsolePack.ID) {
+            add(StyleChoice.Theme)
+            add(StyleChoice.Background)
+        }
+        if (pack.icons.treatment == IconTreatment.User) add(StyleChoice.Icons)
+        add(StyleChoice.HomeApps)
+        if (pack.page.kind == PageKind.System) add(StyleChoice.RecentApps)
+        if (pack.shape.corners == CornerStyle.User) add(StyleChoice.Corners)
+    }
+
+/** Says plainly, over the theme and its background, that they are Console's and no other look's. */
 @Composable
-private fun LookSection(store: ThemeStore) {
-    val options by produceState(emptyList<PackOption>(), store) { value = store.packOptions() }
-    val picked = ActivePack.pick
-    Heading("look")
-    if (options.isNotEmpty()) {
-        StyleOption("pack", options.map { it.name.lowercase() }, options.indexOfFirst { it.id == picked.id }.coerceAtLeast(0)) { store.pickPack(options[it].id) }
-    }
-    val problem = picked.error?.let { "$it Console is shown instead." } ?: options.firstOrNull { it.id == picked.id }?.problem
-    if (problem != null) BasicText(problem, Modifier.padding(top = 4.dp), style = Mono.copy(color = Palette.red, fontSize = TextSize.Small))
-    if (!picked.isConsole) {
-        BasicText(
-            "This look has its own colors. The theme below stays picked and shows again with console.",
-            Modifier.padding(top = 4.dp),
-            style = Mono.copy(color = Palette.muted, fontSize = TextSize.Small),
-        )
-    }
+private fun ConsoleOnly() {
+    Heading("for console only")
+    BasicText(
+        "Omarchy's themes color Console and give it its wallpaper. Every other look brings its own colors and paper.",
+        style = Pack.body(Pack.size.small, Pack.muted),
+    )
 }
 
 /** The installed themes in a row, starting at the current one; browse has Omarchy's whole catalog. */
@@ -265,7 +309,7 @@ private fun TerminalSection(font: TerminalFont) {
     BasicText(
         "terminals opened from now on · more with pacman, like ttf-cascadia-code",
         Modifier.padding(start = 104.dp, bottom = 4.dp),
-        style = Mono.copy(color = Palette.muted, fontSize = TextSize.Small),
+        style = Pack.body(Pack.size.small, Pack.muted),
     )
     StyleOption("text", TerminalText.entries.map { it.label }, font.text.ordinal) { font.select(TerminalText.entries[it]) }
     // In portrait, where columns run short; landscape has plenty.
@@ -274,7 +318,7 @@ private fun TerminalSection(font: TerminalFont) {
     BasicText(
         "${TerminalFont.format(font.size).removeSuffix(".0")} pt · $columns columns in portrait",
         Modifier.padding(start = 104.dp, top = 2.dp),
-        style = Mono.copy(color = Palette.muted, fontSize = TextSize.Small),
+        style = Pack.body(Pack.size.small, Pack.muted),
     )
 }
 
@@ -285,7 +329,7 @@ private fun Heading(
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     Row(Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        BasicText(text, Modifier.weight(1f), style = Mono.copy(color = Palette.accent), softWrap = false)
+        BasicText(Pack.caption(text), Modifier.weight(1f), style = Pack.mono(color = Pack.accent), softWrap = false)
         actions()
     }
 }
@@ -298,17 +342,17 @@ private fun FontOption(
     onSelect: (String) -> Unit,
 ) {
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        BasicText("font", Modifier.widthIn(min = 104.dp).padding(top = 8.dp, end = 8.dp), style = Mono.copy(color = Palette.muted), softWrap = false)
+        BasicText("font", Modifier.widthIn(min = 104.dp).padding(top = 8.dp, end = 8.dp), style = Pack.body(color = Pack.muted), softWrap = false)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             for (family in families) {
                 val active = family == selected
                 BasicText(
                     family,
                     Modifier
-                        .frame(1.dp, Palette.border, if (active) Palette.accent else Color.Transparent, radius = 12.dp)
+                        .framed(Pack.hair, Pack.border, if (active) Pack.accent else Pack.clear, radius = 12.dp)
                         .clickable { onSelect(family) }
                         .padding(horizontal = 14.dp, vertical = 8.dp),
-                    style = Mono.copy(color = if (active) Palette.background else Palette.foreground),
+                    style = Pack.body(color = if (active) Pack.background else Pack.foreground),
                     softWrap = false,
                 )
             }
@@ -325,19 +369,19 @@ private fun StyleOption(
     onSelect: (Int) -> Unit,
 ) {
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        BasicText(label, Modifier.widthIn(min = 104.dp).padding(end = 8.dp), style = Mono.copy(color = Palette.muted), softWrap = false)
+        BasicText(label, Modifier.widthIn(min = 104.dp).padding(end = 8.dp), style = Pack.body(color = Pack.muted), softWrap = false)
         // At a large Android font size the options may not fit: they scroll rather than wrap.
         Box(Modifier.horizontalScroll(rememberScrollState())) {
-            Row(Modifier.frame(1.dp, Palette.border, radius = 12.dp)) {
+            Row(Modifier.framed(Pack.hair, Pack.border, radius = 12.dp)) {
                 options.forEachIndexed { i, option ->
                     val active = i == selected
                     BasicText(
                         option,
                         Modifier
-                            .background(if (active) Palette.accent else Color.Transparent)
+                            .background(if (active) Pack.accent else Pack.clear)
                             .clickable { onSelect(i) }
                             .padding(horizontal = 14.dp, vertical = 8.dp),
-                        style = Mono.copy(color = if (active) Palette.background else Palette.foreground),
+                        style = Pack.body(color = if (active) Pack.background else Pack.foreground),
                         softWrap = false,
                     )
                 }
