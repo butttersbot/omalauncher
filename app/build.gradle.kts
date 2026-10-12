@@ -18,7 +18,7 @@ android {
         manifestPlaceholders["appLabel"] = "Omalauncher"
         minSdk = 29
         targetSdk = 37
-        versionCode = 9
+        versionCode = 10
         versionName = "0.4.0"
         ndk { abiFilters += "arm64-v8a" }
     }
@@ -55,7 +55,7 @@ android {
         debug {
             applicationIdSuffix = ".boss"
             manifestPlaceholders["appLabel"] = "Omalauncher Boss"
-            versionNameSuffix = "-attachments"
+            versionNameSuffix = "-boss-preview.2"
         }
         release {
             // Shrinks the APK and drops what the app doesn't use, like the owl module's unused parts.

@@ -172,6 +172,25 @@
             <meta-data android:name="android.accessibilityservice" android:resource="@xml/phone_accessibility" />
         </service>
 
+        <service android:name=".assist.OmaPromptTile" android:exported="true"
+            android:label="Oma prompt" android:icon="@drawable/ic_oma_prompt_tile"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>
+            <meta-data android:name="android.service.quicksettings.ACTIVE_TILE" android:value="true" />
+        </service>
+        <service android:name=".assist.OmaActivityTile" android:exported="true"
+            android:label="Agent activity" android:icon="@drawable/ic_oma_activity_tile"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>
+            <meta-data android:name="android.service.quicksettings.ACTIVE_TILE" android:value="true" />
+        </service>
+        <service android:name=".assist.OmaApprovalsTile" android:exported="true"
+            android:label="Oma approvals" android:icon="@drawable/ic_oma_approval_tile"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>
+            <meta-data android:name="android.service.quicksettings.ACTIVE_TILE" android:value="true" />
+        </service>
+
         <activity android:name=".assist.AgentApprovalActivity" android:exported="false"
             android:theme="@android:style/Theme.Material.Dialog.NoActionBar" />
         <activity android:name=".assist.AssistantPromptActivity" android:exported="true"

@@ -127,6 +127,7 @@ object AgentTasks {
         process?.destroy(); label = "Stopping…"; notify(context)
     }
     private fun notify(context: Context) {
+        OmaTiles.refresh(context)
         val nm = context.getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel("agent-task-updates", "Agent progress and results", NotificationManager.IMPORTANCE_DEFAULT))
         val open = PendingIntent.getActivity(context, 0, Intent(context, AssistantPromptActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
