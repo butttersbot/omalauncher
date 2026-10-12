@@ -8,6 +8,7 @@ import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.runtime.Composable
@@ -57,6 +58,18 @@ object Motion {
 
     /** For what appears or goes without moving. */
     fun <T> fade(): FiniteAnimationSpec<T> = tween(FADE_MS, easing = easing)
+
+    /** CSS's `ease`, which the prototypes' transitions run on unless they name another. */
+    val ease: Easing = CubicBezierEasing(0.25f, 0.1f, 0.25f, 1f)
+
+    /**
+     * For a transition the prototype times itself (design/oma-scrapbook-prototype.html): its [millis] on its
+     * [easing], so the launcher moves as the mockup does. An immediate change with "remove animations" on.
+     */
+    fun <T> timed(
+        millis: Int,
+        easing: Easing = ease,
+    ): FiniteAnimationSpec<T> = if (reduced) snap() else tween(millis, easing = easing)
 
     /** The system's "remove animations" is on: every transition here is an immediate change instead. */
     val reduced: Boolean get() = reducedMotion(if (ValueAnimator.areAnimatorsEnabled()) 1f else 0f)

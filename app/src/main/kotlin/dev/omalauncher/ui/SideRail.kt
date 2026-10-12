@@ -92,6 +92,7 @@ internal fun SideRail(
     handlers: AppHandlers,
     dock: DockStore,
     side: HomeSide,
+    voice: AgentVoice,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -102,13 +103,13 @@ internal fun SideRail(
         val strip = @Composable { if (Pack.recentApps) RecentStrip(runtime, handlers, vertical = true) }
         if (side == HomeSide.Left) {
             Spacer(Modifier.width(6.dp))
-            DockRail(runtime, state, dock)
+            DockRail(runtime, state, dock, voice)
             Spacer(Modifier.width(6.dp))
             strip()
         } else {
             strip()
             Spacer(Modifier.width(6.dp))
-            DockRail(runtime, state, dock)
+            DockRail(runtime, state, dock, voice)
             Spacer(Modifier.width(6.dp))
         }
     }
@@ -124,8 +125,8 @@ private fun DockRail(
     runtime: Runtime,
     state: LauncherState,
     dock: DockStore,
+    voice: AgentVoice,
 ) {
-    val voice = rememberAgentVoice()
     val listening = voice.speech.listening
     val accent = Pack.accent
     Column(

@@ -247,6 +247,9 @@ class PackLook(
     /** True when the pack draws its own page, rather than leaving the system's or the theme's wallpaper. */
     val ownsPage = pack.page.kind != PageKind.System
 
+    /** The stock the page is made of, for what is laid over it: the pack's paper, or the theme's background where the pack has none. */
+    val paper = if (ownsPage) pack.page.color.toColor() else background
+
     /**
      * A name straight on the page, under a bare icon. Over the system's wallpaper, which can be anything:
      * light text with a shadow, like stock launchers. On a pack's own page: its page ink and text shadow.
@@ -323,6 +326,7 @@ object Pack {
     val green get() = look.green
     val glass get() = look.glass
     val onPage get() = look.onPage
+    val paper get() = look.paper
     val highlight get() = look.highlight
     /** Glyphs on the dock's own surface. */
     val dockInk get() = look.pack.dock.surface.ink.toColor()

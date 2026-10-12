@@ -38,10 +38,12 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import dev.omalauncher.Runtime
 import dev.omalauncher.assist.AgentTasks
+import dev.omalauncher.assist.LISTENING_BEAT_MILLIS
 import dev.omalauncher.linux.LinuxState
 import dev.omalauncher.linux.agentInvocation
 import dev.omalauncher.oma.ring.OmaRing
 import dev.omalauncher.phone.PhoneBridge
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 
 /** Where a request for the agent goes. */
@@ -79,6 +81,18 @@ internal class AgentVoice(
 
     /** A line for whoever draws around the button to show where [Speech.error] goes: not a failure, something to do next. */
     var notice by mutableStateOf<String?>(null)
+
+    /** The final words, for the beat they stay on the listening screen before they are sent; cancelling clears them unsent. */
+    var beat by mutableStateOf<String?>(null)
+
+    /** A request is being taken: the listening screen is over home. */
+    val taking get() = speech.listening || beat != null
+
+    /** Stops listening and drops what was heard. */
+    fun cancel() {
+        speech.cancel()
+        beat = null
+    }
 }
 
 @Composable
@@ -86,12 +100,13 @@ internal fun rememberAgentVoice(): AgentVoice {
     val context = LocalContext.current
     val voice = remember { AgentVoice(context.applicationContext) }
     val speech = voice.speech
-    DisposableEffect(voice) { onDispose { speech.cancel() } }
-    BackHandler(enabled = speech.listening) { speech.cancel() }
+    DisposableEffect(voice) { onDispose { voice.cancel() } }
+    BackHandler(enabled = voice.taking) { voice.cancel() }
     val listening = speech.listening
-    // The ring listens for exactly as long as the recognizer is live: a release, a cancel and an error all end it here.
-    DisposableEffect(voice, listening) {
-        OmaRing.hearing(voice, listening)
+    val taking = voice.taking
+    // The ring listens for as long as a request is being taken: a cancel, an error and the words going out all end it here.
+    DisposableEffect(voice, taking) {
+        OmaRing.hearing(voice, taking)
         onDispose { OmaRing.hearing(voice, false) }
     }
     // Followed in an effect and read only when drawing the level bar: the mic updates it many times a second,
@@ -162,7 +177,17 @@ internal fun AgentButton(
         }
         voice.notice = null
         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-        speech.start(hold = true) { heard -> send(heard) }
+        voice.beat = null
+        speech.start(hold = true) { heard -> voice.beat = heard.trim().ifEmpty { null } }
+    }
+
+    // The words stay on the listening screen for a beat, as in the prototype; Cancel in that beat sends nothing.
+    val beat = voice.beat
+    LaunchedEffect(beat) {
+        if (beat == null) return@LaunchedEffect
+        delay(if (Motion.reduced) 0L else LISTENING_BEAT_MILLIS)
+        send(beat)
+        voice.beat = null
     }
 
     MicButton(
@@ -174,7 +199,7 @@ internal fun AgentButton(
         onHold = ::talk,
         onRelease = { if (speech.listening) speech.stop() },
         onCancel = {
-            speech.cancel()
+            voice.cancel()
             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
         },
     )

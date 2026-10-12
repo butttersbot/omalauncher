@@ -42,6 +42,9 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.platform.LocalContext
 import dev.omalauncher.Runtime
 import dev.omalauncher.linux.LinuxState
+import dev.omalauncher.assist.ListeningLayer
+import dev.omalauncher.assist.ListeningPhase
+import dev.omalauncher.assist.listeningLook
 import dev.omalauncher.oma.ring.HomeRing
 import dev.omalauncher.widgets.checkSecretsCommand
 import dev.omalauncher.widgets.publishWidgetCommand
@@ -202,9 +205,11 @@ private fun DesktopScreen(
     // touches while the list is closed, except the dock and the strip. A phone's landscape stands them in a rail
     // beside the grid, and opens the list over it, centered.
     val side = homeSide()
+    // One microphone for whichever dock is showing, and for the listening layer over them.
+    val voice = rememberAgentVoice()
     if (side != null && !panelShown) {
         if (runtime.terminals.active == null) {
-            SideRail(runtime, state, handlers, dock, side, Modifier.fillMaxSize().safePadding())
+            SideRail(runtime, state, handlers, dock, side, voice, Modifier.fillMaxSize().safePadding())
         }
     } else {
         Box(
@@ -223,7 +228,7 @@ private fun DesktopScreen(
                     Box(Modifier.fadesUnderDrawer(state)) {
                         // Insets itself by the grid gap, so it lines up with the tiles and the gap still takes taps.
                         // A drag upwards from the dock opens the app list, as from the pages above it.
-                        DockBand(runtime, state, dock, Modifier.opensDrawer(state, screenHeight) { runtime.terminals.active == null })
+                        DockBand(runtime, state, dock, voice, Modifier.opensDrawer(state, screenHeight) { runtime.terminals.active == null })
                         if (panelShown) DockCover(state, Modifier.matchParentSize())
                     }
                 }
@@ -263,6 +268,12 @@ private fun DesktopScreen(
 
     // Every page at once, over the whole window: over the dock too, and under the ring and the full-screen panels.
     Overview(runtime, state)
+
+    // What Oma hears from the dock's button, handwritten on the paper over all of home, as the assistant's window shows it.
+    ListeningLayer(
+        if (voice.taking) listeningLook(ListeningPhase.Listening, voice.beat ?: voice.speech.text) else null,
+        onAct = { voice.cancel() },
+    )
 
     // The agent's light along the screen's edge, over home and its dock and in nothing's way: it takes no touch and no room.
     HomeRing()

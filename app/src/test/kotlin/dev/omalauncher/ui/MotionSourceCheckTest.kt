@@ -81,7 +81,8 @@ class MotionSourceCheckTest {
     @Test fun theSpecsAreMadeInOnePlace() {
         val motion = code(moduleFile("src/main/kotlin/dev/omalauncher/ui/Motion.kt"))
         assertEquals("one spring", 1, motion.count { adHoc.getValue("spring(").containsMatchIn(it) })
-        assertEquals("one fade", 1, motion.count { adHoc.getValue("tween(").containsMatchIn(it) })
+        // The fade, and Motion.timed: the one door for a transition the prototype times itself.
+        assertEquals("one fade and one prototype timing", 2, motion.count { adHoc.getValue("tween(").containsMatchIn(it) })
         // And the one decision about "remove animations" is asked from the one place that reads the system's setting.
         assertEquals(1, motion.count { "areAnimatorsEnabled" in it })
         assertTrue(motion.any { "reducedMotion(" in it && "areAnimatorsEnabled" in it })

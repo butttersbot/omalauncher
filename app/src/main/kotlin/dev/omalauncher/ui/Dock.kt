@@ -5,6 +5,7 @@ import android.content.ActivityNotFoundException
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -19,7 +20,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -33,10 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -48,13 +45,19 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import dev.omalauncher.Runtime
+import dev.omalauncher.assist.AgentTasks
 import dev.omalauncher.assist.AssistantPromptActivity
+import dev.omalauncher.assist.marginNote
 import dev.omalauncher.linux.FILES_COMMAND
 import dev.omalauncher.spokenLabel
 import dev.omalauncher.theme.pack.DockStyle
 import dev.omalauncher.widgets.Shortcut
+import kotlinx.coroutines.delay
 
 /**
  * Height of the dock's row of icons, as of the prompt bar it replaced; the home grid leaves this much
@@ -120,21 +123,18 @@ internal fun AppHit.dockEntry() =
 private fun DockEntry.shortcut() = Shortcut(key, label, component = component?.let(ComponentName::unflattenFromString), profile = profile, linux = linux)
 
 /**
- * The band at the bottom of home, where the prompt bar was: the agent's status strip over one row with
- * the dock's pinned apps and the agent button. Exactly as tall as the bar's band, so the grid above keeps its
- * rows; one row across the whole width, also where home shows two pages. While the button is held, the
- * row shows what's heard instead of the icons.
+ * The band at the bottom of home: one row with the dock's pinned apps and the agent button, across the whole
+ * width, also where home shows two pages. What the agent is doing is pencilled in the margin above it, and
+ * what it hears is written over the whole page (the launcher's listening layer), so the row never changes.
  */
 @Composable
 internal fun DockBand(
     runtime: Runtime,
     state: LauncherState,
     dock: DockStore,
+    voice: AgentVoice,
     modifier: Modifier = Modifier,
 ) {
-    val voice = rememberAgentVoice()
-    val speech = voice.speech
-    val listening = speech.listening
     val bare = Pack.bareIcons
     val panelShown by remember(state) { derivedStateOf { state.drawer.value > 0.01f } }
     // Measured rather than assumed (a large system font makes the band taller), and passed on while home shows.
@@ -147,77 +147,75 @@ internal fun DockBand(
             .onSizeChanged { frame = it.height }
             .padding(DockBandPadding),
     ) {
-        AgentRail()
-        // What went wrong, in red, or what to do next.
-        val failed = speech.error
-        (failed ?: voice.notice)?.takeIf { !listening }?.let {
-            BasicText(
-                it,
-                Modifier
-                    // Takes no room: it shows over the recent apps strip rather than pushing it into the grid.
-                    .layout { measurable, constraints ->
-                        val p = measurable.measure(constraints)
-                        layout(p.width, 0) { p.place(0, -p.height) }
-                    }.background(Pack.background)
-                    .clickable {
-                        speech.error = null
-                        voice.notice = null
-                    }.padding(horizontal = 10.dp, vertical = 4.dp),
-                style = Pack.body(Pack.size.small, if (failed != null) Pack.red else Pack.accent),
-            )
-        }
-        Box {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = PromptBarHeight)
-                    // The bar's fill without its border, which would run over icons as tall as the row; outlined while
-                    // listening, as the bar was. Bare icons sit on the wallpaper, as in the recent apps strip, and so
-                    // does a pack's dock of separate buttons or of icons alone. The row is as tall either way.
-                    .then(
-                        when {
-                            listening -> Modifier.dockBar(true)
-                            bare || Pack.dock != DockStyle.Bar -> Modifier
-                            else -> Modifier.dockBarFill()
-                        },
-                    ),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                FieldStrut()
-                if (listening) {
-                    // One line, so the band keeps its height; cut at the start, so the latest words show.
-                    Box(Modifier.weight(1f).padding(horizontal = 12.dp).clipToBounds(), contentAlignment = Alignment.CenterEnd) {
-                        BasicText(
-                            speech.text.ifEmpty { "listening…" },
-                            Modifier.wrapContentWidth(Alignment.End, unbounded = true),
-                            style = Pack.hand(Pack.size.item, Pack.accent),
-                            maxLines = 1,
-                            softWrap = false,
-                        )
-                    }
-                } else {
-                    BoxWithConstraints(Modifier.weight(1f).padding(horizontal = DockGap)) {
-                        val count = with(LocalDensity.current) { dockFits(constraints.maxWidth, DockSlot.roundToPx(), DockGap.roundToPx()) }
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(DockGap, Alignment.CenterHorizontally)) {
-                            DockCells(runtime, dock, count)
-                        }
-                    }
+        MarginNote(voice)
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = PromptBarHeight)
+                // The bar's fill without its border, which would run over icons as tall as the row. Bare icons sit on
+                // the wallpaper, as in the recent apps strip, and so does a pack's dock of separate buttons or of
+                // icons alone. The row is as tall either way.
+                .then(if (bare || Pack.dock != DockStyle.Bar) Modifier else Modifier.dockBarFill()),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            FieldStrut()
+            BoxWithConstraints(Modifier.weight(1f).padding(horizontal = DockGap)) {
+                val count = with(LocalDensity.current) { dockFits(constraints.maxWidth, DockSlot.roundToPx(), DockGap.roundToPx()) }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(DockGap, Alignment.CenterHorizontally)) {
+                    DockCells(runtime, dock, count)
                 }
-                // In a dock of buttons the agent button is one more of them, leaning its own way.
-                AgentButton(runtime, state, voice, Modifier.dockButton(1), resting = if (bare && !Pack.dockButtons) Pack.surface else Pack.clear)
             }
-            // Input level along the bottom edge while listening.
-            if (listening) {
-                val accent = Pack.accent
-                Box(
-                    Modifier.matchParentSize().drawBehind {
-                        val h = 3.dp.toPx()
-                        drawRect(accent, Offset(0f, size.height - h), Size(size.width * (0.05f + 0.95f * voice.level.value), h))
-                    },
-                )
-            }
+            // In a dock of buttons the agent button is one more of them, leaning its own way.
+            AgentButton(runtime, state, voice, Modifier.dockButton(1), resting = if (bare && !Pack.dockButtons) Pack.surface else Pack.clear)
         }
     }
+}
+
+/**
+ * The prototype's `.marg`: while the agent works, what it is doing, pencilled at a slant in the margin over
+ * the dock; also where the microphone says what it needs. It takes no room, so the pages above keep theirs.
+ * A tap opens the Oma chat, or puts a message from the microphone away.
+ */
+@Composable
+internal fun MarginNote(voice: AgentVoice) {
+    val context = LocalContext.current
+    var tick by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            AgentTasks.restore(context)
+            tick++
+            delay(500)
+        }
+    }
+    val doing = remember(tick) { if (AgentTasks.working) marginNote(AgentTasks.label) else null }
+    val said = (voice.speech.error ?: voice.notice)?.takeIf { !voice.taking }
+    val text = said ?: doing
+    var last by remember { mutableStateOf("") }
+    if (text != null) last = text
+    val shown by animateFloatAsState(if (text != null) 1f else 0f, Motion.timed(300), label = "margin")
+    if (shown == 0f) return
+    BasicText(
+        "✎ Oma: $last",
+        Modifier
+            .layout { measurable, constraints ->
+                val p = measurable.measure(constraints.copy(minWidth = 0))
+                layout(p.width, 0) { p.place(16.dp.roundToPx(), -p.height - 8.dp.roundToPx()) }
+            }.graphicsLayer {
+                alpha = shown
+                rotationZ = -2f
+                transformOrigin = TransformOrigin(0f, 1f)
+            }.clickable(enabled = text != null) {
+                if (said != null) {
+                    voice.speech.error = null
+                    voice.notice = null
+                } else {
+                    openOmaChat(context)
+                }
+            },
+        style = Pack.hand(19.sp, Pack.onPage).copy(fontWeight = FontWeight.Bold, lineHeight = 21.sp),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
 }
 
 /**

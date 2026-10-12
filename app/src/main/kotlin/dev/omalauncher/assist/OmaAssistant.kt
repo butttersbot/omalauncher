@@ -4,25 +4,32 @@ import android.app.*
 import android.content.*
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Color
-import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
-import android.graphics.drawable.GradientDrawable
 import android.os.*
 import android.service.voice.*
-import android.speech.*
 import android.view.*
 import android.widget.*
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.ComposeView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.setViewTreeLifecycleOwner
+import androidx.savedstate.SavedStateRegistry
+import androidx.savedstate.SavedStateRegistryController
+import androidx.savedstate.SavedStateRegistryOwner
+import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import dev.omalauncher.App
 import dev.omalauncher.oma.ring.OmaRing
 import dev.omalauncher.oma.ring.RingView
-import dev.omalauncher.ui.HomeGap
-import dev.omalauncher.ui.LauncherStyle
-import dev.omalauncher.ui.Palette
-import dev.omalauncher.ui.TextSize
-import dev.omalauncher.ui.ThemePalette
+import dev.omalauncher.ui.Motion
+import dev.omalauncher.ui.Pack
+import dev.omalauncher.ui.Speech
 import dev.omalauncher.oma.OwnScreens
 import dev.omalauncher.oma.SCREENSHOT_WAIT_MILLIS
 import dev.omalauncher.oma.ScreenContext
@@ -38,7 +45,7 @@ class OmaSessionService : VoiceInteractionSessionService() {
     override fun onNewSession(args: Bundle?): VoiceInteractionSession = OmaSession(this)
 }
 class OmaSession(context: Context) : VoiceInteractionSession(context) {
-    private var panel: AssistantPanel? = null
+    private var panel: ListeningHost? = null
     /** This showing and what is known of its screenshot; null while hidden, so a late screenshot attaches to nothing. */
     private var offer: ScreenOffer? = null
     /** Counts showings, so a timeout or a saved file from an earlier one is recognised and dropped. */
@@ -46,9 +53,9 @@ class OmaSession(context: Context) : VoiceInteractionSession(context) {
     private val main = Handler(Looper.getMainLooper())
     override fun onCreateContentView(): View {
         (context.applicationContext as App).runtime.start()
-        return AssistantPanel(context, { hide() }).also {
+        return ListeningHost(context) { hide() }.also {
             panel = it
-            // Sent, or the chip tapped off: whatever screenshot arrives after that is dropped.
+            // Sent, or the note tapped off: whatever screenshot arrives after that is dropped.
             it.onScreenLetGo = { offer = offer?.close() }
         }
     }
@@ -60,11 +67,10 @@ class OmaSession(context: Context) : VoiceInteractionSession(context) {
     override fun onShow(args: Bundle?, showFlags: Int) {
         super.onShow(args, showFlags)
         OmaRing.assistant(true)
-        // The whole screen: the words sit over the dimmed app, with the ring at the screen's edge.
+        // The whole screen: the words sit on the paper over the app, with the ring at the screen's edge.
         window.window?.let {
             it.setGravity(Gravity.FILL)
             it.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
-            it.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
             panel?.dress(it)
         }
         // Only Android's own assistant gesture brings the screen along; Android then sends its screenshot to onHandleScreenshot.
@@ -74,7 +80,7 @@ class OmaSession(context: Context) : VoiceInteractionSession(context) {
         update(ScreenOffer(summon, OwnScreens.visible, context.getSystemService(KeyguardManager::class.java).isKeyguardLocked))
         // With the system's "use screenshot" setting off, Android may never call back.
         main.postDelayed({ if (no == showingNo) offer?.let { update(it.timedOut()) } }, SCREENSHOT_WAIT_MILLIS)
-        panel?.refresh()
+        panel?.begin()
     }
     /** Shows a changed state on the chip. [file] is the screenshot just saved, and only ever comes with the attached state. */
     private fun update(next: ScreenOffer, file: File? = null) {
@@ -106,9 +112,8 @@ class OmaSession(context: Context) : VoiceInteractionSession(context) {
         }
     }
     override fun onHide() {
-        panel?.cancelSpeech()
         showingNo++; offer = null
-        panel?.showScreen(ScreenContext.None, null)
+        panel?.end()
         OmaRing.assistant(false)
         super.onHide()
     }
@@ -117,7 +122,7 @@ class OmaSession(context: Context) : VoiceInteractionSession(context) {
 
 /** Fallback assist intent and notification entry; leaves the current app visible underneath. */
 class AssistantPromptActivity : Activity() {
-    private lateinit var panel: AssistantPanel
+    private lateinit var panel: ListeningHost
     override fun onCreate(state: Bundle?) {
         // The manifest's dialog theme keeps the app underneath showing; the window itself is drawn without the dialog's box.
         setTheme(android.R.style.Theme_Material_NoActionBar)
@@ -125,257 +130,189 @@ class AssistantPromptActivity : Activity() {
         (application as App).runtime.start()
         window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
         window.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
-        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-        panel = AssistantPanel(this, { finish() })
+        panel = ListeningHost(this) { finish() }
         setContentView(panel)
         panel.dress(window)
+        panel.begin()
     }
     override fun onDestroy() { panel.dispose(); super.onDestroy() }
-    override fun onPause() { panel.cancelSpeech(); super.onPause() }
+    /** Covered or left: the microphone doesn't stay open behind something else. */
+    override fun onPause() { super.onPause(); if (!isFinishing) { panel.end(); finish() } }
 }
 
 /**
- * The listening screen, shared by the assistant session and the prompt activity: the owner's words, large,
- * over the dimmed screen, with the ring at its edge and no panel around them. The words are a text field,
- * so tapping them edits; the mic starts only from Speak, and nothing is sent until Send is tapped.
+ * The listening screen as a view, for the assistant session's window and the prompt activity: the ring along
+ * the window's edge and [ListeningLayer] inside it, as design/oma-scrapbook-prototype.html draws them. The
+ * microphone opens as the screen comes up; what is heard goes to the agent a beat after the last word, unless
+ * Cancel or a tap on the paper stops it. Typing, attachments, the answer and New thread live in the Oma chat.
  */
-class AssistantPanel(private val owner: Context, private val dismiss: () -> Unit) : FrameLayout(owner) {
+class ListeningHost(private val owner: Context, private val dismiss: () -> Unit) : FrameLayout(owner) {
     private val ring = RingView(owner)
-    private val column = LinearLayout(owner)
-    private val scroll = ScrollView(owner)
-    private val input = EditText(owner)
-    private val status = TextView(owner)
-    private val output = TextView(owner)
+    private val compose = ComposeHost()
     private val handler = Handler(Looper.getMainLooper())
-    private var recognizer: SpeechRecognizer? = null
-    private lateinit var resultScroll: ScrollView
-    private lateinit var stopButton: TextView
-    private lateinit var sendButton: TextView
-    private lateinit var speakButton: TextView
-    private lateinit var approvalButton: TextView
-    private lateinit var newThreadButton: TextView
-    private lateinit var hideButton: TextView
-    private lateinit var taskRow: LinearLayout
-    /** The theme the views were last colored from. */
-    private var dressed: ThemePalette? = null
+    private val speech = Speech(owner)
+    /** The paper over whatever is underneath, as the window's background so it reaches under the system bars. */
+    private val paper = ColorDrawable(Color.TRANSPARENT)
+    private var phase by mutableStateOf<ListeningPhase?>(null)
+    private var heard by mutableStateOf("")
+    private var detail by mutableStateOf("")
+    private var chipState by mutableStateOf(ScreenContext.None)
+    /** Counts requests, so a beat or a fade from an earlier one does nothing. */
+    private var turn = 0
     private var disposed = false
-    private var message: String? = null
-    private val chip = LinearLayout(owner)
-    private val chipImage = ImageView(owner)
-    private val chipText = TextView(owner)
-    /** The screenshot that Send would attach; never set without the chip showing it. */
+    /** The screenshot that sending would attach; never set without the note saying so. */
     private var screen: File? = null
-    private var chipState = ScreenContext.None
-    /** Told when Send went out or the chip was tapped off, so a screenshot still on its way is dropped. */
+    /** Told when the request went out or the note was tapped off, so a screenshot still on its way is dropped. */
     var onScreenLetGo: (() -> Unit)? = null
-    private val update = object : Runnable {
-        override fun run() { if (!disposed) { refresh(); handler.postDelayed(this, 500) } }
+
+    init {
+        compose.attach(this)
+        addView(ComposeView(owner).apply {
+            setContent {
+                val now = phase
+                val look = now?.let {
+                    val claude = (owner.applicationContext as App).runtime.agents.default?.bin == "claude"
+                    listeningLook(it, if (it == ListeningPhase.Listening) speech.text else heard, detail, screenChipText(chipState, keptInConversation = claude))
+                }
+                // The recognizer can fail without a word: that is a problem to show, not a silence.
+                val failed = speech.error
+                LaunchedEffect(failed) { if (failed != null && phase == ListeningPhase.Listening) show(ListeningPhase.Failed, failed) }
+                ListeningLayer(look, ::act, onNote = { showScreen(ScreenContext.None, null); onScreenLetGo?.invoke() }, onDim = { paper.color = Pack.paper.copy(alpha = it).toArgb() })
+            }
+        }, LayoutParams(-1, -1))
     }
-    private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
-    /** A control in the launcher's look: mono text in a frame, like its tiles. */
-    private fun control(row: LinearLayout, text: String, action: () -> Unit): TextView = TextView(owner).apply {
-        this.text = text; typeface = Typeface.MONOSPACE; textSize = TextSize.Body.value
-        setPadding(dp(14), dp(10), dp(14), dp(10))
-        isClickable = true; isFocusable = true
-        setOnClickListener { action() }
-        row.addView(this, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(HomeGap.value.toInt()); topMargin = dp(HomeGap.value.toInt()) })
-    }
-    /** The launcher's frame for a plain view: Modifier.frame's fill, line and corner style. */
-    private fun frame(fill: androidx.compose.ui.graphics.Color, line: androidx.compose.ui.graphics.Color) = GradientDrawable().apply {
-        setColor(fill.toArgb()); setStroke(dp(2), line.toArgb()); cornerRadius = dp(16) * LauncherStyle.corners.scale
-    }
-    /** Colors everything from the theme; again whenever the theme has changed since. */
-    private fun dress() {
-        val palette = Palette.current
-        if (dressed === palette) return
-        dressed = palette
-        status.setTextColor(palette.accent.toArgb())
-        input.setTextColor(palette.foreground.toArgb()); input.setHintTextColor(palette.muted.toArgb())
-        chip.background = frame(Palette.glass, palette.border)
-        chipText.setTextColor(palette.foreground.toArgb())
-        output.setTextColor(palette.foreground.toArgb())
-        for (button in listOf(speakButton, hideButton, stopButton, newThreadButton)) { button.setTextColor(palette.foreground.toArgb()); button.background = frame(Palette.glass, palette.border) }
-        // The two that act for him stand out: sending, and an approval that is waiting.
-        sendButton.setTextColor(palette.accent.toArgb()); sendButton.background = frame(Palette.glass, palette.accent)
-        approvalButton.setTextColor(palette.red.toArgb()); approvalButton.background = frame(Palette.glass, palette.red)
-    }
+
     /**
-     * Makes [window] the listening screen's: the dim over whatever is underneath as its background, and the
-     * ring along its real edges, behind the words. Called again each time the window shows.
+     * Makes [window] the listening screen's: the paper as its background and the ring along its real edges,
+     * behind the words. Called again each time the window shows.
      */
     fun dress(window: Window) {
-        window.setBackgroundDrawable(ColorDrawable(Palette.background.copy(alpha = DIM).toArgb()))
+        window.setBackgroundDrawable(paper)
         window.statusBarColor = Color.TRANSPARENT; window.navigationBarColor = Color.TRANSPARENT
+        // The window's own root has to carry the owners: Compose looks for them from there.
+        compose.attach(window.decorView)
         if (ring.parent != null) return
         // Straight in the window's own frame, which the system bars don't inset; failing that, around the words' area.
         val edge = window.decorView as? ViewGroup ?: this
         edge.addView(ring, 0, ViewGroup.LayoutParams(-1, -1))
     }
-    init {
-        column.orientation = LinearLayout.VERTICAL
-        column.setPadding(dp(26), dp(24), dp(26), dp(28))
-        // No taller than the window: with the keyboard up on a small screen the column scrolls, starting at the words.
-        scroll.addView(column, LayoutParams(-1, -2))
-        // Taps between the controls stop here, so only the dim outside the column closes the screen.
-        scroll.isClickable = true
-        addView(scroll, LayoutParams(-1, -2, Gravity.BOTTOM))
-        // A tap on the dim closes, exactly as Hide does: it never sends, and a screenshot on the chip is discarded on the way out.
-        setOnClickListener { dismiss() }
-        // Clear of the system bars, the camera cutout and the keyboard, where the window doesn't already keep clear itself.
-        setOnApplyWindowInsetsListener { _, insets ->
-            if (Build.VERSION.SDK_INT >= 30) {
-                val clear = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout() or WindowInsets.Type.ime())
-                setPadding(clear.left, clear.top, clear.right, clear.bottom)
-            } else {
-                @Suppress("DEPRECATION")
-                setPadding(insets.systemWindowInsetLeft, insets.systemWindowInsetTop, insets.systemWindowInsetRight, insets.systemWindowInsetBottom)
-            }
-            insets
-        }
-        status.typeface = Typeface.MONOSPACE; status.textSize = TextSize.Small.value
-        column.addView(status, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
-        // His words: large, straight on the dimmed screen, and still a field to tap and edit.
-        input.hint = "What would you like me to do?"
-        input.background = null; input.setPadding(0, 0, 0, 0)
-        input.typeface = Typeface.MONOSPACE; input.textSize = WORDS_SP
-        // Longer requests scroll inside the field, so the words never push Send off the screen.
-        input.minLines = 2; input.maxLines = 4
-        input.inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
-        column.addView(input, LinearLayout.LayoutParams(-1, -2))
-        chip.orientation = LinearLayout.HORIZONTAL; chip.gravity = Gravity.CENTER_VERTICAL; chip.visibility = GONE
-        chip.setPadding(dp(10), dp(8), dp(10), dp(8))
-        chip.addView(chipImage, LinearLayout.LayoutParams(dp(48), dp(48)).apply { marginEnd = dp(10) })
-        chipText.typeface = Typeface.MONOSPACE; chipText.textSize = TextSize.Body.value
-        chip.addView(chipText, LinearLayout.LayoutParams(0, -2, 1f))
-        chip.setOnClickListener { showScreen(ScreenContext.None, null); onScreenLetGo?.invoke() }
-        column.addView(chip, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
-        val row = LinearLayout(owner)
-        fun button(text: String, action: () -> Unit) = control(row, text, action)
-        speakButton = button("Speak") { listen() }
-        sendButton = button("Send") {
-            try {
-                cancelSpeech()
-                // Only the screenshot the chip is showing goes along, and it is AgentTasks's to delete from here.
-                // While the chip is still getting the screen there is none: the request goes without it.
-                AgentTasks.send(owner, input.text.toString().trim(), screen = screen)
-                screen = null; showScreen(ScreenContext.None, null); onScreenLetGo?.invoke()
-                message = null; input.setText(""); input.clearFocus()
-                owner.getSystemService(android.view.inputmethod.InputMethodManager::class.java).hideSoftInputFromWindow(input.windowToken, 0)
-                refresh()
-            } catch (e: Exception) { message = e.message; refresh() }
-        }
-        hideButton = button("Hide") { dismiss() }
-        output.typeface = Typeface.MONOSPACE; output.textSize = TextSize.Body.value
-        resultScroll = ScrollView(owner).apply { addView(output) }
-        column.addView(row)
-        // What only shows while there is a task, an approval or a thread to act on: one under the other, so no label is cut short.
-        taskRow = LinearLayout(owner).apply { orientation = LinearLayout.VERTICAL }
-        stopButton = control(taskRow, "Stop current task") { AgentTasks.stop(owner) }
-        approvalButton = control(taskRow, "Review approval") { reviewApproval() }
-        newThreadButton = control(taskRow, "New thread") {
-            try { AgentTasks.newThread(owner); message = null } catch (e: Exception) { message = e.message }
-            refresh()
-        }
-        column.addView(taskRow)
-        // The answer comes last: when the screen is short it is what scrolls out of sight, not the words or Send.
-        column.addView(resultScroll, LinearLayout.LayoutParams(-1, dp(140)).apply { topMargin = dp(8) })
-        refresh(); handler.post(update)
-    }
-    /** Oma is taking a request for as long as this screen is up: the ring listens, wherever it is drawn. */
-    override fun onWindowVisibilityChanged(visibility: Int) {
-        super.onWindowVisibilityChanged(visibility)
-        OmaRing.hearing(this, visibility == VISIBLE && !disposed)
-    }
-    override fun onDetachedFromWindow() { OmaRing.hearing(this, false); super.onDetachedFromWindow() }
-    fun refresh() {
+
+    /** The screen came up: says what is in the way of a new request, or opens the microphone. */
+    fun begin() {
+        if (disposed) return
+        compose.resume()
+        turn++
         AgentTasks.restore(owner)
-        dress()
-        status.text = message ?: AgentTasks.label
-        output.text = if (AgentTasks.working && AgentTasks.answer.isBlank()) "Request received. The agent is working in the background. You can hide this panel and return with the power button or notification." else AgentTasks.answer
-        sendButton.isEnabled = !AgentTasks.working
-        speakButton.isEnabled = !AgentTasks.working
-        input.isEnabled = !AgentTasks.working
-        val followUp = AgentTasks.thread != null
-        input.hint = if (followUp) "Follow up on this thread…" else "What would you like me to do?"
-        newThreadButton.visibility = if (followUp && !AgentTasks.working) VISIBLE else GONE
-        resultScroll.visibility = if (output.text.isNotBlank()) VISIBLE else GONE
-        stopButton.visibility = if (AgentTasks.working) VISIBLE else GONE
-        approvalButton.visibility = if (AgentTasks.approvals.isNotEmpty()) VISIBLE else GONE
-        for (button in listOf(sendButton, speakButton)) button.alpha = if (button.isEnabled) 1f else DISABLED
-        input.alpha = if (input.isEnabled) 1f else DISABLED
-        labelChip()
+        when {
+            AgentTasks.pending.isNotEmpty() -> show(ListeningPhase.NeedsOk, "Oma is waiting for your answer")
+            AgentTasks.working -> { show(ListeningPhase.Busy, marginNote(AgentTasks.label)); follow(turn) }
+            owner.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED -> show(ListeningPhase.NoMic)
+            else -> listen()
+        }
     }
+
+    /** The screen went away, whoever took it: nothing is heard, sent or kept after this. */
+    fun end() {
+        turn++
+        speech.cancel()
+        show(null)
+        showScreen(ScreenContext.None, null)
+        compose.pause()
+    }
+
+    fun dispose() { disposed = true; end(); handler.removeCallbacksAndMessages(null); compose.destroy() }
+
+    /** The ring listens for as long as a request is being taken, and no longer. */
+    private fun show(next: ListeningPhase?, said: String = "") {
+        phase = next; detail = said
+        OmaRing.hearing(this, next == ListeningPhase.Listening || next == ListeningPhase.Sending)
+    }
+
+    private fun listen() {
+        val mine = ++turn
+        heard = ""
+        show(ListeningPhase.Listening)
+        speech.start(hold = false) { said ->
+            if (mine != turn) return@start
+            if (said.isBlank()) return@start show(if (speech.error != null) ListeningPhase.Failed else ListeningPhase.Missed, speech.error.orEmpty())
+            heard = said
+            show(ListeningPhase.Sending)
+            handler.postDelayed({ if (mine == turn && phase == ListeningPhase.Sending) send() }, LISTENING_BEAT_MILLIS)
+        }
+    }
+
+    private fun send() {
+        try {
+            // Only the screenshot the note is showing goes along, and it is AgentTasks's to delete from here.
+            AgentTasks.send(owner, heard, screen = screen)
+            screen = null; showScreen(ScreenContext.None, null); onScreenLetGo?.invoke()
+            leave()
+        } catch (e: Exception) { show(ListeningPhase.Failed, e.message ?: "The request could not be sent") }
+    }
+
+    /** While a task runs, the screen says what it is doing, and goes when it is over. */
+    private fun follow(mine: Int) {
+        handler.postDelayed({
+            if (mine != turn || phase != ListeningPhase.Busy) return@postDelayed
+            AgentTasks.restore(owner)
+            if (!AgentTasks.working) return@postDelayed leave()
+            detail = marginNote(AgentTasks.label)
+            follow(mine)
+        }, 500)
+    }
+
+    private fun act(act: ListeningAct) {
+        when (act) {
+            // A tap on the paper is this too: it never sends, and a screenshot on the note is discarded on the way out.
+            ListeningAct.Cancel, ListeningAct.Close -> leave()
+            ListeningAct.Retry -> listen()
+            ListeningAct.Allow -> { owner.startActivity(Intent(owner, AssistantSetupActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); leave() }
+            ListeningAct.Stop -> { AgentTasks.stop(owner); leave() }
+            ListeningAct.Review -> {
+                // The oldest one, chosen at the tap; the screen then answers only that one.
+                AgentTasks.pending.firstOrNull()?.let { owner.startActivity(AgentNotices.reviewIntent(owner, it)) }
+                turn++; show(null)
+                dismiss() // VoiceInteractionSession otherwise stays above the activity's modal.
+            }
+        }
+    }
+
+    /** Lifts the paper, then closes the window under it. */
+    private fun leave() {
+        val mine = ++turn
+        speech.cancel()
+        show(null)
+        handler.postDelayed({ if (mine == turn) dismiss() }, if (Motion.reduced) 0L else LISTENING_DIM_MILLIS.toLong())
+    }
+
     /**
-     * The "this screen" chip. A screenshot is held only while the chip shows it: tapping the chip, hiding
-     * the panel and sending all let go of it, and whatever is let go of unsent is deleted.
+     * The "this screen" note. A screenshot is held only while the note shows it: tapping the note, closing
+     * the screen and sending all let go of it, and whatever is let go of unsent is deleted.
      */
     fun showScreen(state: ScreenContext, file: File?) {
         val kept = file?.takeIf { state == ScreenContext.Attached }
         if (screen != kept) ScreenShots.discard(screen)
         if (file != kept) ScreenShots.discard(file)
         screen = kept
-        chip.visibility = if (state == ScreenContext.None) GONE else VISIBLE
-        chipImage.visibility = if (kept != null) VISIBLE else GONE
-        chipImage.setImageBitmap(kept?.let { BitmapFactory.decodeFile(it.path, BitmapFactory.Options().apply { inSampleSize = 8 }) })
         // Attached without a file can't be sent, so it never reads as attached.
         chipState = if (state == ScreenContext.Attached && kept == null) ScreenContext.Unavailable else state
-        labelChip()
     }
-    /** A screen sent to Claude stays in its conversation, which every follow-up sends again: the chip says so. */
-    private fun labelChip() {
-        val claude = (owner.applicationContext as App).runtime.agents.default?.bin == "claude"
-        chipText.text = screenChipText(chipState, keptInConversation = claude)
-    }
-    private fun reviewApproval() {
-        // The oldest one, chosen at the tap; the screen then answers only that one.
-        val oldest = AgentTasks.pending.firstOrNull() ?: return
-        owner.startActivity(AgentNotices.reviewIntent(owner, oldest))
-        dismiss() // VoiceInteractionSession otherwise stays above the activity's modal.
-    }
-    private fun listen() {
-        if (owner.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            owner.startActivity(Intent(owner, AssistantSetupActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            message = "Allow microphone access in Oma assistant setup, then tap Speak."; return
-        }
-        if (!SpeechRecognizer.isRecognitionAvailable(owner)) { message = "Voice recognition unavailable; you can type instead."; return }
-        cancelSpeech()
-        // Speaking again adds to what's already in the field instead of replacing it.
-        val before = input.text.toString().trim()
-        fun heard(results: Bundle?) {
-            val said = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.trim().orEmpty()
-            if (said.isEmpty()) return
-            input.setText(appendSpeech(before, said)); input.setSelection(input.text.length)
-        }
-        recognizer = try { assistantRecognizer(owner) } catch (e: Exception) { message = e.message; return }
-        recognizer?.apply {
-            setRecognitionListener(object : RecognitionListener {
-                override fun onReadyForSpeech(params: Bundle?) { message = "Listening…" }
-                override fun onBeginningOfSpeech() = Unit
-                override fun onRmsChanged(rmsdB: Float) = Unit
-                override fun onBufferReceived(buffer: ByteArray?) = Unit
-                override fun onEndOfSpeech() { message = "Finishing…" }
-                override fun onError(error: Int) { message = "Could not hear that. Try Speak again or type."; cancelSpeech() }
-                override fun onResults(results: Bundle?) {
-                    heard(results)
-                    message = "Ready to send"; cancelSpeech()
-                }
-                override fun onPartialResults(results: Bundle?) = heard(results)
-                override fun onEvent(eventType: Int, params: Bundle?) = Unit
-            })
-            startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM).putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true))
-        }
-    }
-    fun cancelSpeech() { recognizer?.cancel(); recognizer?.destroy(); recognizer = null }
-    fun dispose() { disposed = true; OmaRing.hearing(this, false); handler.removeCallbacksAndMessages(null); cancelSpeech(); showScreen(ScreenContext.None, null) }
 
-    private companion object {
-        /** How much of the theme's background lies over the screen underneath. */
-        const val DIM = 0.8f
-        /** The size of his words, in sp. */
-        const val WORDS_SP = 28f
-        /** How faint a control is while it can't be used. */
-        const val DISABLED = 0.4f
-    }
+    /** Before the Compose view inside attaches and looks for its owners from the window's root. */
+    override fun onAttachedToWindow() { compose.attach(rootView); super.onAttachedToWindow() }
+    override fun onDetachedFromWindow() { OmaRing.hearing(this, false); super.onDetachedFromWindow() }
+}
+
+/** What a Compose view needs from the window it is in, for windows that no activity of androidx owns. */
+private class ComposeHost : LifecycleOwner, SavedStateRegistryOwner {
+    private val registry = LifecycleRegistry(this)
+    private val saved = SavedStateRegistryController.create(this).apply { performRestore(null) }
+    override val lifecycle: Lifecycle get() = registry
+    override val savedStateRegistry: SavedStateRegistry get() = saved.savedStateRegistry
+    fun attach(view: View) { view.setViewTreeLifecycleOwner(this); view.setViewTreeSavedStateRegistryOwner(this) }
+    fun resume() { if (registry.currentState != Lifecycle.State.DESTROYED) registry.currentState = Lifecycle.State.RESUMED }
+    fun pause() { if (registry.currentState != Lifecycle.State.DESTROYED) registry.currentState = Lifecycle.State.CREATED }
+    fun destroy() { registry.currentState = Lifecycle.State.DESTROYED }
 }
 
 class AssistantSetupActivity : Activity() {
