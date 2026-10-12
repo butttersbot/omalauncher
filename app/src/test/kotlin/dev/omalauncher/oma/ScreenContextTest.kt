@@ -26,9 +26,72 @@ class ScreenContextTest {
     }
     @Test fun onlyOneCombinationAttaches() {
         var attached = 0
-        for (summon in Summon.entries) for (launcher in listOf(true, false)) for (locked in listOf(true, false)) for (screenshot in listOf(true, false))
+        for (summon in Summon.entries) for (launcher in listOf(true, false)) for (locked in listOf(true, false)) for (screenshot in listOf(true, false, null))
             if (screenContext(summon, launcher, locked, screenshot) == ScreenContext.Attached) attached++
         assertEquals(1, attached)
+    }
+
+    private fun gesture() = ScreenOffer(Summon.AssistGesture, launcherInFront = false, locked = false)
+
+    @Test fun untilAndroidAnswersTheChipIsWaitingAndNothingIsAttached() {
+        assertEquals(ScreenContext.Waiting, screenContext(Summon.AssistGesture, launcherInFront = false, locked = false, screenshot = null))
+        assertEquals(ScreenContext.Waiting, gesture().context)
+        // Where nothing could attach there is nothing to wait for either.
+        for (launcher in listOf(true, false)) for (locked in listOf(true, false)) assertEquals(ScreenContext.None, screenContext(Summon.Other, launcher, locked, null))
+        assertEquals(ScreenContext.None, screenContext(Summon.AssistGesture, launcherInFront = true, locked = false, screenshot = null))
+        assertEquals(ScreenContext.None, screenContext(Summon.AssistGesture, launcherInFront = false, locked = true, screenshot = null))
+    }
+    @Test fun aScreenshotAttachesOnlyOnceItsFileIsWritten() {
+        val saving = gesture().arrived(screenshot = true)
+        assertEquals(Shot.Saving, saving.shot); assertEquals(ScreenContext.Waiting, saving.context)
+        assertEquals(ScreenContext.Attached, saving.saved(written = true).context)
+        assertEquals(ScreenContext.Unavailable, saving.saved(written = false).context)
+        // A file can't be reported for a screenshot that never arrived.
+        assertEquals(ScreenContext.Waiting, gesture().saved(written = true).context)
+    }
+    @Test fun unavailableOnlyAfterAndroidSaysSoOrStaysSilent() {
+        assertEquals(ScreenContext.Unavailable, gesture().arrived(screenshot = false).context)
+        assertEquals(ScreenContext.Unavailable, gesture().timedOut().context)
+        // The timeout doesn't cut off a screenshot that is being written, or take one away.
+        assertEquals(ScreenContext.Waiting, gesture().arrived(true).timedOut().context)
+        assertEquals(ScreenContext.Attached, gesture().arrived(true).saved(true).timedOut().context)
+        // One that comes after the timeout still attaches, visibly.
+        assertEquals(ScreenContext.Attached, gesture().timedOut().arrived(true).saved(true).context)
+    }
+    @Test fun afterSendOrRemovalALateScreenshotIsDropped() {
+        // Send tapped while still waiting: the request went without the screen.
+        val sent = gesture().close()
+        assertEquals(ScreenContext.None, sent.context)
+        assertEquals(sent, sent.arrived(screenshot = true))
+        assertNotEquals(Shot.Saving, sent.arrived(true).shot)
+        assertEquals(ScreenContext.None, sent.arrived(true).saved(true).timedOut().context)
+        // Closed while its file was being written.
+        assertEquals(ScreenContext.None, gesture().arrived(true).close().saved(true).context)
+        // Removed after it attached.
+        assertEquals(ScreenContext.None, gesture().arrived(true).saved(true).close().context)
+    }
+    @Test fun whatCouldNeverAttachIsNotEvenSaved() {
+        for (offer in listOf(ScreenOffer(Summon.Other, false, false), ScreenOffer(Summon.AssistGesture, true, false), ScreenOffer(Summon.AssistGesture, false, true))) {
+            assertEquals(Shot.Awaited, offer.arrived(screenshot = true).shot)
+            assertEquals(ScreenContext.None, offer.arrived(true).saved(true).context)
+            assertEquals(ScreenContext.None, offer.timedOut().context)
+        }
+    }
+    @Test fun learningThatOmaItselfIsUnderneathDetaches() {
+        assertEquals(ScreenContext.None, gesture().arrived(true).saved(true).overOwnScreen().context)
+        assertEquals(ScreenContext.None, gesture().overOwnScreen().arrived(true).saved(true).context)
+    }
+    @Test fun theChipSaysWhatHappensToTheScreen() {
+        assertEquals("", screenChipText(ScreenContext.None, true))
+        assertEquals("Getting this screen…", screenChipText(ScreenContext.Waiting, true))
+        val claude = screenChipText(ScreenContext.Attached, keptInConversation = true)
+        assertTrue(claude.contains("goes with this request and stays in this conversation until New thread"))
+        assertFalse(screenChipText(ScreenContext.Attached, keptInConversation = false).contains("stays in this conversation"))
+        for (kept in listOf(true, false)) {
+            assertTrue(screenChipText(ScreenContext.Unavailable, kept).contains("isn't attached"))
+            // Only the attached chip may read as if something is sent.
+            for (state in listOf(ScreenContext.Waiting, ScreenContext.Unavailable, ScreenContext.None)) assertFalse(screenChipText(state, kept).contains("goes with"))
+        }
     }
 
     @Test fun screenshotsAreScaledDownAndNeverUp() {

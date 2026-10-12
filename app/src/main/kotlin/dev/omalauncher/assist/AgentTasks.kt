@@ -200,7 +200,8 @@ object AgentTasks {
         val shown = synchronized(this) {
             if (stopping) return
             when (val admission = ledger.admit(approval)) {
-                is Admission.Shown -> { published(); label = "Approval needed"; admission.entry }
+                // In the thread as waiting before any reader can see it pending.
+                is Admission.Shown -> { logged(ApprovalAnswer.Waiting, admission.entry.nonce); published(); label = "Approval needed"; admission.entry }
                 Admission.Duplicate -> return
                 Admission.Refused -> {
                     runCatching { writeEvent(ClaudeProtocol.decision(approval, false)) }
@@ -209,7 +210,6 @@ object AgentTasks {
                 }
             }
         }
-        logged(ApprovalAnswer.Waiting, shown.nonce)
         AgentNotices.request(context, shown)
         // Stop may have cleared the ledger between admitting and posting; its withdrawal then ran before there was anything to take down.
         if (pending.none { it.nonce == shown.nonce }) AgentNotices.withdraw(context, shown)

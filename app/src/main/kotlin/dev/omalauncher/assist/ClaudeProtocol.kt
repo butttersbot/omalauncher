@@ -23,7 +23,11 @@ object ClaudeProtocol {
         return JSONObject().put("type", "control_response").put("response", JSONObject()
             .put("subtype", "success").put("request_id", approval.id).put("response", decision))
     }
-    /** [jpeg] is a base64 JPEG sent inside the message itself, so no file has to outlive the request. */
+    /**
+     * [jpeg] is a base64 JPEG sent inside the message itself, so no file has to outlive the request.
+     * It goes with this request and stays in this conversation until New thread: Claude Code keeps the
+     * transcript in the guest, and resuming sends all of it, image included, to the provider with each follow-up.
+     */
     fun user(prompt: String, jpeg: String? = null): JSONObject {
         val content: Any = if (jpeg == null) prompt else org.json.JSONArray()
             .put(JSONObject().put("type", "text").put("text", prompt))

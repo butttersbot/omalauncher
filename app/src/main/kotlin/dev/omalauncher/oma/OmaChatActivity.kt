@@ -146,6 +146,8 @@ private fun OmaChatScreen(
         }
     }
     val store = remember { ChatLog.of(context) }
+    // Unsent attachments are listed on disk, so the ones a killed process leaves are deleted at the next start.
+    val drafts = remember { ChatDrafts.of(context) }
     val tasks = remember(tick) { store.tasks }
     val working = remember(tick) { AgentTasks.working }
     val pending = remember(tick) { AgentTasks.pending }
@@ -167,6 +169,7 @@ private fun OmaChatScreen(
             speech.cancel()
             // Attached but never sent: the copies in the guest go with the screen.
             images.forEach { it.file.delete() }
+            drafts.remove(images.map { it.file })
         }
     }
     LaunchedEffect(prefill) {
@@ -194,7 +197,8 @@ private fun OmaChatScreen(
                 }
             is Outgoing.Terminal -> if (agent != null) runtime.terminal("${agentInvocation(agent.bin, out.prompt + "\n\n" + PhoneBridge.INSTRUCTIONS)}; exec bash", agent.name, agent)
         }
-        // Sent files stay: the agent reads them while it works.
+        // Sent files stay: the agent reads them while it works, and the saved task names them.
+        drafts.remove(images.map { it.file })
         images = emptyList()
         notice = null
         draft = ""
@@ -218,7 +222,9 @@ private fun OmaChatScreen(
         notice = null
         scope.launch {
             try {
-                val results = withContext(Dispatchers.IO) { uris.take(take).map { runCatching { importPromptImage(context.contentResolver, it, runtime.proot) } } }
+                val results = withContext(Dispatchers.IO) {
+                    uris.take(take).map { uri -> runCatching { importPromptImage(context.contentResolver, uri, runtime.proot).also { drafts.add(listOf(it.file)) } } }
+                }
                 images = images + results.mapNotNull { it.getOrNull() }
                 notice = results.firstNotNullOfOrNull { it.exceptionOrNull()?.message } ?: tooMany
             } finally {
@@ -289,6 +295,7 @@ private fun OmaChatScreen(
                         AttachmentPreview(image, index + 1, enabled = !importing) {
                             images = images - image
                             image.file.delete()
+                            drafts.remove(listOf(image.file))
                             notice = null
                         }
                     }

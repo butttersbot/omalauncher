@@ -73,6 +73,61 @@ class ChatHistoryTest {
         assertEquals(TaskStatus.Interrupted, read[1].status); assertEquals(ApprovalAnswer.Unanswered, read[1].approvals.single().answer)
     }
 
+    @Test fun aFileWithMoreThanFiftyTasksLoadsOnlyTheNewestFifty() {
+        // Written by hand, not by encode, which would already have cut it.
+        val text = (1..75).joinToString(",", """{"version":1,"tasks":[""", "]}") { """{"time":$it,"prompt":"p$it","status":"done"}""" }
+        val read = ChatHistory.decode(text)
+        assertEquals(ChatHistory.MAX_TASKS, read.size)
+        assertEquals(26L, read.first().time); assertEquals(75L, read.last().time)
+    }
+
+    @Test fun anOversizedFileIsNotRead() {
+        val dir = Files.createTempDirectory("oma-chat-test").toFile()
+        try {
+            val file = File(dir, "oma-chat.json")
+            file.writeText(ChatHistory.encode(listOf(task(1))))
+            assertEquals(1, ChatStore(file).apply { load() }.tasks.size)
+            // The same readable file, one byte over and exactly at the limit.
+            assertTrue(ChatStore(file, maxBytes = file.length() - 1).apply { load() }.tasks.isEmpty())
+            assertEquals(1, ChatStore(file, maxBytes = file.length()).apply { load() }.tasks.size)
+            // The real limit is far above the largest thread this app writes.
+            assertTrue(ChatHistory.MAX_FILE_BYTES > 3L * 2_500_000)
+        } finally { dir.deleteRecursively() }
+    }
+
+    @Test fun onlyUnsentChatAttachmentsAreSweptAtStartup() {
+        val dir = Files.createTempDirectory("oma-drafts-test").toFile()
+        try {
+            val attachments = File(dir, "attachments").apply { mkdirs() }
+            fun image(name: String) = File(attachments, name).apply { writeText("x") }
+            val unsent = image("11111111-1111-4111-8111-111111111111.jpg")
+            val sent = image("22222222-2222-4222-8222-222222222222.png")
+            val fromHome = image("33333333-3333-4333-8333-333333333333.webp") // Never listed: not the chat's.
+            val phone = image("phone-screen-44444444-4444-4444-8444-444444444444.png")
+            val list = File(dir, "oma-chat-drafts.txt")
+            val before = ChatDrafts(list, attachments)
+            before.add(listOf(unsent, sent))
+            // The process dies after `sent` went out in a task but before it came off the list.
+            val saved = listOf(task(1).copy(images = listOf("/root/.local/share/omalauncher/attachments/${sent.name}")))
+
+            ChatDrafts(list, attachments).sweep(saved)
+            assertFalse(unsent.exists())
+            assertTrue(sent.exists()); assertTrue(fromHome.exists()); assertTrue(phone.exists())
+            assertFalse(list.exists())
+
+            // Removed or sent drafts come off the list and are left alone by a later sweep.
+            val again = ChatDrafts(list, attachments)
+            again.add(listOf(fromHome)); again.remove(listOf(fromHome)); again.sweep(emptyList())
+            assertTrue(fromHome.exists())
+        } finally { dir.deleteRecursively() }
+    }
+
+    @Test fun aDraftListCannotNameAnythingButImportedImages() {
+        val saved = emptyList<ChatTask>()
+        val good = "11111111-1111-4111-8111-111111111111.jpg"
+        assertEquals(listOf(good), unsentDrafts(listOf(good, good, "../oma-chat.json", "/etc/passwd", "a.jpg", "phone-screen-$good", "$good/..", ""), saved))
+    }
+
     @Test fun stepsAreOneLineAndDoNotRepeat() {
         var t = task(1)
         t = ChatHistory.withStep(t, "Bash:  oma-phone\n read")

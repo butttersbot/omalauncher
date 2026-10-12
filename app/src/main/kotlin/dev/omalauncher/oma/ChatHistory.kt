@@ -65,6 +65,9 @@ object ChatHistory {
     const val MAX_DETAIL = 600
     const val MAX_RESULT = 8_000
     const val MAX_IMAGES = 4
+
+    /** Several times the largest file [encode] writes; anything bigger isn't ours and isn't read. */
+    const val MAX_FILE_BYTES = 16L * 1024 * 1024
     private const val VERSION = 1
 
     /** A task cut to the limits: the newest steps and approvals, the start of the prompt, the end of the result. */
@@ -123,12 +126,13 @@ object ChatHistory {
 }
 
 /** The thread on disk, in the app's private files. Read and written from the agent's thread and the screen. */
-class ChatStore(private val file: File) {
+class ChatStore(private val file: File, private val maxBytes: Long = ChatHistory.MAX_FILE_BYTES) {
     @Volatile var tasks: List<ChatTask> = emptyList(); private set
 
     /** Reads the thread a previous run left, as [ChatHistory.afterRestart] sees it. */
     @Synchronized fun load() {
-        tasks = ChatHistory.afterRestart(runCatching { ChatHistory.decode(file.readText()) }.getOrDefault(emptyList()))
+        val saved = runCatching { if (file.length() <= maxBytes)ChatHistory.decode(file.readText()) else emptyList() }
+        tasks = ChatHistory.afterRestart(saved.getOrDefault(emptyList()))
     }
 
     /** A new task, saved at once so its prompt survives the process. */
@@ -148,6 +152,50 @@ class ChatStore(private val file: File) {
             val next = File(file.parentFile, file.name + ".new")
             next.writeText(ChatHistory.encode(tasks))
             check(next.renameTo(file)) { "Could not replace ${file.name}" }
+        }
+    }
+}
+
+/** The file names among [drafts] that no saved task refers to: copied in for the chat, never sent, and safe to delete. */
+fun unsentDrafts(drafts: Collection<String>, saved: List<ChatTask>): List<String> {
+    val sent = saved.flatMap { it.images }.map { it.substringAfterLast('/') }.toSet()
+    return drafts.filter { ChatDrafts.NAME.matches(it) && it !in sent }.distinct()
+}
+
+/**
+ * The images the chat copied into the guest's attachments folder and hasn't sent. The list is on disk so that
+ * what a killed process left unsent is deleted at the next start; images of sent tasks, and files the list
+ * never named, are not touched.
+ */
+class ChatDrafts(private val list: File, private val attachments: File) {
+    private fun read(): Set<String> = runCatching { list.readLines().filter(NAME::matches).take(200).toSet() }.getOrDefault(emptySet())
+
+    private fun write(names: Set<String>) {
+        runCatching { if (names.isEmpty()) list.delete() else list.writeText(names.joinToString("\n")) }
+    }
+
+    @Synchronized fun add(files: Collection<File>) = write(read() + files.map { it.name })
+
+    /** Sent or removed: no longer the chat's to clean up. */
+    @Synchronized fun remove(files: Collection<File>) = write(read() - files.map { it.name }.toSet())
+
+    /** At process start, before the chat can have added anything: whatever is listed was never sent. */
+    @Synchronized fun sweep(saved: List<ChatTask>) {
+        val listed = read()
+        val unsent = unsentDrafts(listed, saved)
+        for (name in unsent) File(attachments, name).delete()
+        // Only what was listed when the sweep began comes off; an image attached meanwhile stays listed.
+        write(read() - listed)
+    }
+
+    companion object {
+        /** The names importPromptImage gives its copies; nothing else is ever listed or deleted. */
+        val NAME = Regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.(jpg|png|webp|gif)")
+
+        @Volatile private var shared: ChatDrafts? = null
+
+        fun of(context: android.content.Context): ChatDrafts = shared ?: synchronized(this) {
+            shared ?: ChatDrafts(File(context.filesDir, "oma-chat-drafts.txt"), File(context.filesDir, "attachments")).also { shared = it }
         }
     }
 }
