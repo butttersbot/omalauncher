@@ -107,7 +107,7 @@ pattern = "dots"
 pattern_color = "#bdbdb6"
 pattern_size = 10
 pattern_weight = 2
-drawer_fill = "background@0.97"
+drawer_fill = "background"
 focus_color = "on_page"
 
 # Icons a little washed out, as behind an LCD's glass.

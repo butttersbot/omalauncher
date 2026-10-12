@@ -103,7 +103,7 @@ pattern_color = "#c5c0b4"
 pattern_size = 16
 pattern_weight = 2.2
 gutter = true
-drawer_fill = "background@0.97"
+drawer_fill = "background"
 focus_color = "#b86578"
 
 [icons]

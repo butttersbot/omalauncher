@@ -112,7 +112,7 @@ pattern_color = "#21ffffff"
 pattern_size = 24
 pattern_weight = 1
 gutter = true
-drawer_fill = "background@0.97"
+drawer_fill = "background"
 focus_color = "on_page"
 
 [icons]

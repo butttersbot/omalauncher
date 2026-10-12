@@ -118,7 +118,7 @@ kind = "paper"
 color = "#0f4fc9"
 pattern = "none"
 overview_scrim = "#33ffffff"
-drawer_fill = "background@0.97"
+drawer_fill = "background"
 focus_color = "highlight"
 
 [page.text_shadow]

@@ -1,5 +1,6 @@
 package dev.omalauncher.ui
 
+import dev.omalauncher.assist.prototypeUnit
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalConfiguration
@@ -400,60 +401,80 @@ internal fun AppPanel(
 
     // Full width: a wide screen fits more icons in each row rather than leaving the sides empty.
     Column(modifier.fillMaxSize()) {
-        Row(
-            Modifier.fillMaxWidth().padding(top = 12.dp, start = 12.dp, end = 12.dp, bottom = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            SearchField(
-                query,
-                onChange = { state.query = it },
-                onGo = ::submit,
-                placeholder = "search apps",
-                modifier =
-                    Modifier
-                        .weight(1f)
-                        .focusRequester(focus)
-                        // A hardware Enter submits. Tab and the arrows move the highlight.
-                        .onPreviewKeyEvent { e ->
-                            if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                            when {
-                                e.key == Key.Enter -> submit()
-                                e.key == Key.Tab -> pick(if (e.isShiftPressed) -1 else 1)
-                                e.key == Key.DirectionDown -> pick(1)
-                                e.key == Key.DirectionUp -> pick(-1)
-                                else -> return@onPreviewKeyEvent false
-                            }
-                            true
-                        },
-            )
-            Spacer(Modifier.width(8.dp))
-            Box(
-                Modifier
-                    .size(44.dp)
-                    .clip(Pack.shape(22.dp))
-                    .background(Pack.surface)
-                    .clickable(onClick = onSettings),
-                contentAlignment = Alignment.Center,
+        val owns = Pack.ownsPage
+        val u = LocalConfiguration.current.run { prototypeUnit(screenWidthDp.toFloat(), screenHeightDp.toFloat()) }
+        // The search field and settings: over the list in Console, and under it where the look has the prototype's drawer.
+        val searchRow: @Composable () -> Unit = {
+            Row(
+                Modifier.fillMaxWidth().padding(if (owns) PaddingValues(start = (20 * u).dp, end = (20 * u).dp, top = 8.dp, bottom = (16 * u).dp) else PaddingValues(top = 12.dp, start = 12.dp, end = 12.dp, bottom = 8.dp)),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Image(Icons.Gear, "settings", Modifier.size(22.dp), colorFilter = Pack.tinted())
-                // Updates are waiting: settings › system updates lists them.
-                if ((runtime.updates.pending?.count ?: 0) > 0) {
-                    Box(
+                SearchField(
+                    query,
+                    onChange = { state.query = it },
+                    onGo = ::submit,
+                    placeholder = "search apps",
+                    scrap = owns,
+                    modifier =
                         Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(8.dp)
-                            .size(8.dp)
-                            .background(Pack.red, CircleShape),
-                    )
+                            .weight(1f)
+                            .focusRequester(focus)
+                            // A hardware Enter submits. Tab and the arrows move the highlight.
+                            .onPreviewKeyEvent { e ->
+                                if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                                when {
+                                    e.key == Key.Enter -> submit()
+                                    e.key == Key.Tab -> pick(if (e.isShiftPressed) -1 else 1)
+                                    e.key == Key.DirectionDown -> pick(1)
+                                    e.key == Key.DirectionUp -> pick(-1)
+                                    else -> return@onPreviewKeyEvent false
+                                }
+                                true
+                            },
+                )
+                Spacer(Modifier.width(8.dp))
+                Box(
+                    Modifier
+                        .size(44.dp)
+                        .clip(Pack.shape(22.dp))
+                        .background(Pack.surface)
+                        .clickable(onClick = onSettings),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Image(Icons.Gear, "settings", Modifier.size(22.dp), colorFilter = Pack.tinted())
+                    // Updates are waiting: settings › system updates lists them.
+                    if ((runtime.updates.pending?.count ?: 0) > 0) {
+                        Box(
+                            Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(8.dp)
+                                .size(8.dp)
+                                .background(Pack.red, CircleShape),
+                        )
+                    }
                 }
             }
         }
+        if (owns) {
+            // The prototype's caption over the list, with its way back down.
+            Row(
+                Modifier.fillMaxWidth().padding(start = (20 * u).dp, end = (20 * u).dp, top = (12 * u).dp, bottom = (4 * u).dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                SectionLabel("all apps")
+                BasicText("close ↓", Modifier.clickable { state.close() }.padding(vertical = 8.dp), style = Pack.mono(Pack.size.small, Pack.onPage))
+            }
+        } else {
+            searchRow()
+        }
         // Only as tall as its rows, so taps below a short list reach the scrim behind and close the panel.
-        Column(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp)) {
+        Column(Modifier.weight(1f).fillMaxWidth().padding(horizontal = if (owns) (14 * u).dp else 12.dp)) {
             if (query.isNotBlank()) AskRow(runtime, linuxState == LinuxState.Installed, query, highlighted == -1, onAsk)
             // Clipped, so rows scrolled up or stretched by an overscroll stop short of the search field.
             BoxWithConstraints(Modifier.weight(1f, fill = false).clipToBounds()) {
-                val columns = (maxWidth / 76.dp).toInt().coerceAtLeast(1)
+                // The prototype has four across closed and eight open: a column is 85 of its units.
+                val columns = (maxWidth / if (owns) (85 * u).dp else 76.dp).toInt().coerceAtLeast(1)
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxWidth().nestedScroll(pullToClose),
@@ -501,6 +522,7 @@ internal fun AppPanel(
                 }
             }
         }
+        if (owns) searchRow()
     }
 }
 
@@ -546,8 +568,11 @@ internal fun SearchField(
     onGo: () -> Unit,
     placeholder: String,
     modifier: Modifier = Modifier,
+    /** Drawn as one of the look's scraps, as the prototype's search field is, instead of the plain rounded field. */
+    scrap: Boolean = false,
 ) {
-    val style = Pack.body(Pack.size.item)
+    val paper = Pack.look.pack.scrap.surface
+    val style = Pack.body(Pack.size.item, if (scrap) paper.ink.toColor() else Pack.foreground)
     BasicTextField(
         value = query,
         onValueChange = onChange,
@@ -559,12 +584,11 @@ internal fun SearchField(
         modifier =
             modifier
                 .fillMaxWidth()
-                .clip(Pack.shape(24.dp))
-                .background(Pack.surface)
+                .then(if (scrap) Modifier.surface(paper, focused = false) else Modifier.clip(Pack.shape(24.dp)).background(Pack.surface))
                 .padding(horizontal = 18.dp, vertical = 12.dp),
         decorationBox = { inner ->
             Box {
-                if (query.isEmpty()) BasicText(placeholder, style = style.copy(color = Pack.muted))
+                if (query.isEmpty()) BasicText(placeholder, style = style.copy(color = if (scrap) Pack.scrapMuted else Pack.muted))
                 inner()
             }
         },

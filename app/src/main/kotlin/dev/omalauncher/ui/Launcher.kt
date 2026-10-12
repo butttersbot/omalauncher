@@ -184,12 +184,13 @@ private fun DesktopScreen(
 
     val screenHeight = with(LocalDensity.current) { LocalConfiguration.current.screenHeightDp.dp.toPx() }
     if (panelShown) {
-        // Near-opaque like stock drawers: home widgets bleeding through made icons hard to read.
+        // Near-opaque like stock drawers: home widgets bleeding through made icons hard to read. A look with its
+        // own page says what the list stands on: the prototype's drawer is the paper itself, with nothing showing through.
         Box(
             Modifier
                 .fillMaxSize()
                 .graphicsLayer { alpha = state.drawer.value.coerceAtMost(1f) }
-                .background(Palette.background.copy(alpha = 0.97f))
+                .background(if (Pack.ownsPage) Pack.drawerFill else Palette.background.copy(alpha = 0.97f))
                 .clickable { state.close() }
                 .draggable(
                     orientation = Orientation.Vertical,

@@ -248,6 +248,9 @@ class PackLook(
     /** True when the pack draws its own page, rather than leaving the system's or the theme's wallpaper. */
     val ownsPage = pack.page.kind != PageKind.System
 
+    /** What the app list stands on where the look draws its own page: the pack's `page.drawer_fill`. */
+    val drawerFill = pack.page.drawerFill.toColor()
+
     /** The stock the page is made of, for what is laid over it: the pack's paper, or the theme's background where the pack has none. */
     val paper = if (ownsPage) pack.page.color.toColor() else background
 
@@ -328,6 +331,7 @@ object Pack {
     val glass get() = look.glass
     val onPage get() = look.onPage
     val paper get() = look.paper
+    val drawerFill get() = look.drawerFill
     val highlight get() = look.highlight
     /** Glyphs on the dock's own surface. */
     val dockInk get() = look.pack.dock.surface.ink.toColor()
