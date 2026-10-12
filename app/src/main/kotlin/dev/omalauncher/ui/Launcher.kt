@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.platform.LocalContext
 import dev.omalauncher.Runtime
 import dev.omalauncher.linux.LinuxState
+import dev.omalauncher.oma.ring.HomeRing
 import dev.omalauncher.widgets.checkSecretsCommand
 import dev.omalauncher.widgets.publishWidgetCommand
 import dev.omalauncher.widgets.reviewSharedWidgetCommand
@@ -245,7 +246,10 @@ private fun DesktopScreen(
         }
     }
 
-    // Full-screen panels draw over the dock.
+    // The agent's light along the screen's edge, over home and its dock and in nothing's way: it takes no touch and no room.
+    HomeRing()
+
+    // Full-screen panels draw over the dock and the ring.
     ThemesOverlay(runtime, state)
 }
 

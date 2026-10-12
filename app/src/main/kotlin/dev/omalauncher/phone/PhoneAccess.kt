@@ -15,11 +15,14 @@ object PhoneAccess {
     fun resume(context: Context) {
         paused = false
         context.getSharedPreferences("phone-control", Context.MODE_PRIVATE).edit().putBoolean("paused", false).apply()
+        PhoneService.instance?.ringChanged()
     }
     fun stop(context: Context) {
         paused = true
         context.getSharedPreferences("phone-control", Context.MODE_PRIVATE).edit().putBoolean("paused", true).apply()
         clearIndicator(context)
+        // Paused: the ring over other apps goes with it.
+        PhoneService.instance?.ringChanged()
     }
     fun clearIndicator(context: Context) {
         context.getSystemService(NotificationManager::class.java).cancel(40)
