@@ -1,0 +1,67 @@
+# Dial-Up, after the design prototype: graph paper and little OS windows with title bars.
+# A test fixture, not a shipped pack; the font and wallpaper files are stand-ins.
+[pack]
+format = 1
+name = "Dial-Up"
+
+[palette]
+mode = "light"
+background = "#f7f3ee"
+surface = "#f7f3ee"
+foreground = "#4a5590"
+muted = "foreground@0.72"
+accent = "#a94fa4"
+border = "foreground"
+highlight = "#efd9ec"
+alt = "highlight"
+
+[palette.extra]
+phosphor = "#33ff66"
+
+[type.display]
+family = "monospace"
+file = "fonts/pixelify.ttf"
+weight = 600
+
+[type.body]
+file = "fonts/pixelify.ttf"
+
+[shape]
+radius = 0
+corners = "edge"
+
+[scrap]
+fill = "background"
+border_color = "foreground"
+tilt_min = -0.5
+tilt_max = 0.5
+
+[scrap.shadow]
+x = 4
+y = 4
+color = "foreground"
+
+[scrap.title_bar]
+style = "solid"
+height = 20
+fill = "foreground"
+ink = "background"
+glyph = "×"
+
+[page]
+kind = "paper"
+pattern = "grid"
+pattern_color = "foreground@0.16"
+pattern_size = 14
+wallpaper_cover = "paper/cover.png"
+
+[ring.listening]
+color1 = "accent"
+color2 = "extra.phosphor"
+
+[ink]
+pen = "accent"
+
+[dock]
+style = "buttons"
+tilt = 0.6
