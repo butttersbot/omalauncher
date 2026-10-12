@@ -1,8 +1,7 @@
 package dev.omalauncher.ui
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
+import androidx.compose.ui.geometry.Offset
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.background
@@ -41,6 +40,15 @@ class LauncherState {
     /** The menu from long-pressing empty home space. */
     var homeMenuOpen by mutableStateOf(false)
 
+    /** Where the long press that opened it was, in the window, for the menu to grow out of; null grows it where it stands. */
+    var homeMenuFrom: Offset? = null
+
+    /** Where the pages showing on home stand, for a page opened from the overview to grow onto. */
+    internal val pageRooms = PageRooms()
+
+    /** The note or sticker just put on a page from the menu, and where in the menu it came from. */
+    internal val arrivals = Arrivals()
+
     /** The open drawer or a full-screen panel hides the home screen; animated widgets stop ticking under it. */
     val homeCovered: Boolean
         get() = drawer.value > 0.99f || overviewOpen || settingsOpen || styleOpen || themeBrowserOpen || agentsOpen || storeOpen || packagesOpen || linuxOpen || licensesOpen || shared != null || sharing != null
@@ -62,6 +70,9 @@ class LauncherState {
         shared = null
         sharing = null
     }
+
+    /** Where the widget tiles on the pages showing are, for a widget's screen to grow out of. */
+    internal val tiles = TileBounds()
 
     /** Key of the home tile in edit mode (handles and action bar shown), if any. */
     var editing by mutableStateOf<String?>(null)
@@ -167,16 +178,17 @@ class LauncherState {
         SideEffect { composeScope = s }
     }
 
-    /** Animates when composed; before that (e.g. Home pressed during startup) just jumps. */
-    private fun animate(
-        target: Float,
-        stiffness: Float,
-    ) = composeScope?.launch { drawer.animateTo(target, spring(stiffness = stiffness)) }
-        ?: scope.launch { drawer.snapTo(target) }
+    /**
+     * Animates when composed; before that (e.g. Home pressed during startup) just jumps. The list settles on
+     * the spring everything on home moves on, and the dock, which fades by where the list is, with it.
+     */
+    private fun animate(target: Float) =
+        composeScope?.launch { drawer.moveTo(target) }
+            ?: scope.launch { drawer.snapTo(target) }
 
-    fun open() = animate(1f, Spring.StiffnessMediumLow)
+    fun open() = animate(1f)
 
-    fun close() = animate(0f, Spring.StiffnessMedium)
+    fun close() = animate(0f)
 
     /**
      * Closes without animating. Used when leaving the launcher: animations pause

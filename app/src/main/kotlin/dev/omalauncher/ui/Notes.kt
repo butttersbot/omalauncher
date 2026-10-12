@@ -18,8 +18,13 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import android.os.SystemClock
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -222,20 +227,36 @@ internal fun PageScraps(
     area: IntRect,
     roomWidth: Int,
     roomHeight: Int,
+    /** The one the menu just put here, which eases in from where it was picked. */
+    arrivals: Arrivals? = null,
 ) {
     val on = book.on(page)
-    if (on.notes.isEmpty() && on.stickers.isEmpty()) return
+    // What was on the page when it was last composed: one that is gone since shrinks away instead of vanishing.
+    val leaving = remember(book, page) { ScrapsLeaving() }
+    leaving.see(on.notes.map { Scrap.Note(it) } + on.stickers.map { Scrap.Stuck(it) }, Motion.reduced)
+    if (on.notes.isEmpty() && on.stickers.isEmpty() && leaving.none) return
     val within = area.area()
     for (note in on.notes.sortedBy { it.z }) {
         key(note.id) {
             // A tap opens its text, unless the page takes no change, which the book then says.
-            NoteScrap(note, Scrap.Note(note).rect(within)) { if (book.takes(page)) marks.editing = Chosen(page, note.id) }
+            NoteScrap(note, Scrap.Note(note).rect(within), arriving(note.id, arrivals)) { if (book.takes(page)) marks.editing = Chosen(page, note.id) }
         }
     }
     // Stickers lie over the notes, the last one stuck on top. A tap selects one.
     for (sticker in on.stickers) {
         key(sticker.id) {
-            StickerScrap(sticker, Scrap.Stuck(sticker).rect(within)) { if (book.takes(page)) marks.selected = Chosen(page, sticker.id) }
+            StickerScrap(sticker, Scrap.Stuck(sticker).rect(within), arriving(sticker.id, arrivals)) { if (book.takes(page)) marks.selected = Chosen(page, sticker.id) }
+        }
+    }
+    // What was just taken off, shrinking away where it was. Only drawn: it takes no touch.
+    for (scrap in leaving.left) {
+        key("gone", scrap.id) {
+            val left = rememberLeaving { leaving.gone(scrap.id) }
+            val motion = Modifier.appears({ left.value }, SCRAP_LEAVE_SCALE)
+            when (scrap) {
+                is Scrap.Note -> NoteScrap(scrap.note, scrap.rect(within), motion, onTap = null)
+                is Scrap.Stuck -> StickerScrap(scrap.sticker, scrap.rect(within), motion, onTap = null)
+            }
         }
     }
     val chosen = marks.selected?.takeIf { it.page == page }?.let { on.scrap(it.id) } ?: return
@@ -273,6 +294,109 @@ internal fun PageScraps(
                 }
             }
         }
+    }
+}
+
+/** How small a note or a sticker starts as it comes out of the menu, and how small it gets as it shrinks away. */
+private const val SCRAP_ARRIVE_SCALE = 0.3f
+private const val SCRAP_LEAVE_SCALE = 0.5f
+
+/** How long after the menu put a note or a sticker on a page it still eases in, in milliseconds: one that shows later is simply there. */
+private const val ARRIVAL_MS = 2000L
+
+/**
+ * The note or sticker the menu just put on a page, and where in the window it was picked. The one scrap
+ * with that id eases in from there the first time it shows, once; every other scrap is simply there.
+ */
+internal class Arrivals {
+    private var id: String? = null
+    private var from: Offset? = null
+    private var at = 0L
+
+    fun expect(
+        id: String,
+        from: Offset?,
+        now: Long = SystemClock.uptimeMillis(),
+    ) {
+        this.id = id
+        this.from = from
+        at = now
+    }
+
+    /** Whether [id] is the one that just arrived, and where from; asked by the scrap as it first shows, and true once. */
+    fun take(
+        id: String,
+        now: Long = SystemClock.uptimeMillis(),
+    ): Arrival? {
+        if (id != this.id) return null
+        this.id = null
+        return if (now - at in 0..ARRIVAL_MS) Arrival(from) else null
+    }
+}
+
+/** Where in the window something that just arrived came from; null when that isn't known, and it eases in where it stands. */
+internal class Arrival(
+    val from: Offset?,
+)
+
+/** The layer a scrap eases in by if it is the one that just arrived; nothing at all for any other. */
+@Composable
+private fun arriving(
+    id: String,
+    arrivals: Arrivals?,
+): Modifier {
+    val arrival = remember { arrivals?.take(id) } ?: return Modifier
+    val shown = rememberAppearing()
+    val at = remember { floatArrayOf(0f, 0f) }
+    return Modifier
+        .onGloballyPositioned {
+            val origin = it.positionInWindow()
+            at[0] = origin.x
+            at[1] = origin.y
+        }.appears({ shown.value }, SCRAP_ARRIVE_SCALE) {
+            arrival.from?.let { from -> pivotAt(from, Offset(at[0], at[1]), size) } ?: TransformOrigin.Center
+        }
+}
+
+/**
+ * The notes and stickers of one page that were taken off it and are still shrinking away. [see] is told
+ * what is on the page each time it is composed, and keeps what is missing since the last time in [left]
+ * until [gone] is called for it.
+ */
+internal class ScrapsLeaving {
+    private val seen = LinkedHashMap<String, Scrap>()
+    private val going = LinkedHashMap<String, Scrap>()
+    private var changed by mutableIntStateOf(0)
+
+    /** What is shrinking away, oldest first. */
+    val left: List<Scrap>
+        get() {
+            changed
+            return going.values.toList()
+        }
+
+    val none: Boolean
+        get() {
+            changed
+            return going.isEmpty()
+        }
+
+    /** [now] is what is on the page. With [still] (the system's animations are off) nothing shrinks away: it is just gone. */
+    fun see(
+        now: List<Scrap>,
+        still: Boolean,
+    ) {
+        val ids = now.mapTo(HashSet()) { it.id }
+        if (!still) for ((id, scrap) in seen) if (id !in ids) going[id] = scrap
+        // One that is back (taken off and put back) is on the page, not leaving it.
+        going.keys.retainAll { it !in ids }
+        seen.clear()
+        for (scrap in now) seen[scrap.id] = scrap
+    }
+
+    /** [id] has shrunk away. */
+    fun gone(id: String) {
+        if (going.remove(id) != null) changed++
     }
 }
 
@@ -322,7 +446,10 @@ private fun Modifier.notePaper(look: NoteLook) =
 private fun NoteScrap(
     note: StickyNote,
     rect: Rect,
-    onTap: () -> Unit,
+    /** How it eases in or out, if it does: its own layer, after its place and size. */
+    motion: Modifier = Modifier,
+    /** Null for one that is on its way off the page: it is only drawn. */
+    onTap: (() -> Unit)?,
 ) {
     val density = LocalDensity.current
     val look = NoteLook(note.role)
@@ -334,8 +461,9 @@ private fun NoteScrap(
             .zIndex(1f)
             .offset { IntOffset(rect.left.roundToInt(), rect.top.roundToInt()) }
             .size(with(density) { rect.width.toDp() }, with(density) { rect.height.toDp() })
+            .then(motion)
             .notePaper(look)
-            .clickable(onClick = onTap)
+            .then(if (onTap != null) Modifier.clickable(onClick = onTap) else Modifier)
             .padding(with(density) { (pageWidth * NOTE_PAD_SHARE).toDp() }),
     ) {
         // Who left it, when it wasn't him.

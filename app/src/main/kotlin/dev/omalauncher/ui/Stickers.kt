@@ -10,6 +10,9 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -128,7 +131,10 @@ internal fun StickerGlyph(
 internal fun StickerScrap(
     sticker: Sticker,
     rect: Rect,
-    onTap: () -> Unit,
+    /** How it eases in or out, if it does: its own layer, after its place and size. */
+    motion: Modifier = Modifier,
+    /** Null for one that is on its way off the page: it is only drawn. */
+    onTap: (() -> Unit)?,
 ) {
     val density = LocalDensity.current
     Box(
@@ -136,18 +142,27 @@ internal fun StickerScrap(
             .zIndex(1f)
             .offset { IntOffset(rect.left.roundToInt(), rect.top.roundToInt()) }
             .size(with(density) { rect.width.toDp() }, with(density) { rect.height.toDp() })
-            .clickable(onClick = onTap),
+            .then(motion)
+            .then(if (onTap != null) Modifier.clickable(onClick = onTap) else Modifier),
     ) {
         Canvas(Modifier.fillMaxSize().graphicsLayer { rotationZ = sticker.turn.toFloat() }) { drawSticker(sticker.kind) }
     }
 }
 
-/** The stickers there are, in a row to pick one from. */
+/** The stickers there are, in a row to pick one from. [onPick] is told where in the window the one picked was. */
 @Composable
-internal fun StickerPicker(onPick: (StickerKind) -> Unit) {
+internal fun StickerPicker(onPick: (StickerKind, Offset?) -> Unit) {
+    val places = remember { HashMap<StickerKind, Offset>() }
     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         for (kind in StickerKind.entries) {
-            Box(Modifier.weight(1f).clickable { onPick(kind) }.padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier
+                    .weight(1f)
+                    .onGloballyPositioned { places[kind] = it.boundsInWindow().center }
+                    .clickable { onPick(kind, places[kind]) }
+                    .padding(vertical = 8.dp),
+                contentAlignment = Alignment.Center,
+            ) {
                 StickerGlyph(kind, Modifier.size(36.dp))
             }
         }
