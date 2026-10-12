@@ -123,8 +123,6 @@ private fun DesktopScreen(
         }
     }
     HomeMenu(runtime, state)
-    // A sticky note's text, typed over home like the menu.
-    NoteEditor(state)
 
     // Only whether it shows is read here; the animation itself runs in the layer, without recomposing.
     val panelShown by remember(state) { derivedStateOf { state.drawer.value > 0.01f } }
@@ -253,10 +251,15 @@ private fun DesktopScreen(
         }
     }
 
-    // The drawing tools stand over the dock while one finger draws, and take its place.
-    if (state.drawing) {
+    // The drawing tools stand over the dock while one finger draws, and take its place. The app list coming up
+    // (from a keyboard, or a widget asking for it) puts the pen down: the tools are never over it.
+    LaunchedEffect(panelShown) { if (panelShown) state.stopDrawing() }
+    if (state.drawing && !panelShown) {
         Box(Modifier.fillMaxSize().safePadding(), contentAlignment = Alignment.BottomCenter) { DrawTools(state) }
     }
+
+    // A sticky note's text, typed over home and over the dock, which the keyboard would otherwise lift into it.
+    NoteEditor(state)
 
     // Every page at once, over the whole window: over the dock too, and under the ring and the full-screen panels.
     Overview(runtime, state)
