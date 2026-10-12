@@ -113,13 +113,13 @@ class PhoneService : AccessibilityService() {
     fun request(input: JSONObject, reply: (JSONObject) -> Unit) {
         try {
             val command = input.getString("command")
-            if (command == "status") { reply(JSONObject().put("ok", true).put("active", PhoneAccess.active).put("connected", true)); return }
-            if (command == "stop") { PhoneAccess.stop(this); reply(JSONObject().put("ok", true)); return }
-            PhoneAccess.requireAccess(this)
-            PhoneControlPolicy.requireNoPendingApproval(dev.omalauncher.assist.AgentTasks.pending.size, command)
+            // The checks and their order are PhoneRequests.admit's; nothing below runs for a request it didn't let through.
+            val route = PhoneRequests.admit(command, { PhoneAccess.requireAccess(this) }) { dev.omalauncher.assist.AgentTasks.pending.size }
+            if (route == PhoneRequests.Route.Status) { reply(JSONObject().put("ok", true).put("active", PhoneAccess.active).put("connected", true)); return }
+            if (route == PhoneRequests.Route.Stop) { PhoneAccess.stop(this); reply(JSONObject().put("ok", true)); return }
             // Home's pages: read and turned behind the same gates as everything else, and never while an approval waits.
-            if (command in PhonePages.commands) { reply(PhonePages.reply(input, homeBook())); return }
-            if (command == "screenshot") {
+            if (route == PhoneRequests.Route.Pages) { reply(PhonePages.reply(input, homeBook())); return }
+            if (route == PhoneRequests.Route.Screenshot) {
                 if (Build.VERSION.SDK_INT < 30) error("Screenshots require Android 11 or later.")
                 // The overlay is never in the agent's picture: it comes down first and goes back once the picture is taken.
                 // With no overlay up there is nothing to wait for, and the screenshot is taken at once, as before.

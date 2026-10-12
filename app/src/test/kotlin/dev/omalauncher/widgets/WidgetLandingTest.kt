@@ -198,6 +198,26 @@ class WidgetLandingTest {
         assertEquals("p2", home.notebook.pageOf("map.owl"))
     }
 
+    @Test fun landingAPlacedWidgetChangesNothing() {
+        val home = home()
+        // Whether or not home has a grid yet.
+        for (laidOut in listOf(false, true)) {
+            if (laidOut) home.layOut("p1")
+            // At another size than its saved cells, on a page with room for it elsewhere: it stays as it is.
+            assertEquals("p1", home.layout.land(item("clock.owl", 2 to 2), home::itemsOn))
+            assertEquals("p1", home.layout.land(item("clock.owl", null), home::itemsOn))
+            // On a full page it isn't moved on either.
+            assertEquals("p2", home.layout.land(item("map.owl", 1 to 1), home::itemsOn))
+            assertEquals(saved, home.notebook.snapshot())
+        }
+        // A held entry: the file is away, and what is landed is some item by its name.
+        home.items.removeAll { it.key == "mail.owl" }
+        assertEquals("p3", home.layout.land(item("mail.owl", 2 to 2), home::itemsOn))
+        assertEquals(Cell(0, 0, 6, 2), home.notebook.cell("mail.owl"))
+        assertEquals(saved, home.notebook.snapshot())
+        assertTrue(writes.isEmpty())
+    }
+
     @Test fun beforeHomeHasAGridItWaitsOnItsPage() {
         val home = home()
         val weather = item("weather.owl")

@@ -66,6 +66,102 @@ class PhonePagesTest {
         assertEquals(PageMatch.Found(6), matchPage(odd, "の旅"))
     }
 
+    @Test fun aLetterIsTheSameHoweverItWasTyped() {
+        val composed = listOf("Café", "Trip", "Ångström")
+        // The accent as a character of its own, in either case.
+        assertEquals(PageMatch.Found(0), matchPage(composed, "café"))
+        assertEquals(PageMatch.Found(0), matchPage(composed, "CAFÉ"))
+        assertEquals(PageMatch.Found(2), matchPage(composed, "ångström"))
+        // And the other way round: the page was named with the separate accent.
+        assertEquals(PageMatch.Found(0), matchPage(listOf("Café notes", "Trip"), "café"))
+        // Full-width letters and a no-break space are the letters and the space they stand for.
+        assertEquals(PageMatch.Found(1), matchPage(composed, "ＴＲＩＰ"))
+        assertEquals(PageMatch.Found(0), matchPage(listOf("My Day", "Other"), "my day"))
+        // An unaccented name is still a different name from an accented one at the exact level.
+        assertEquals(PageMatch.Found(1), matchPage(listOf("Café", "Cafe"), "cafe"))
+        assertEquals(PageMatch.Found(0), matchPage(listOf("Café", "Cafe"), "café"))
+    }
+
+    // The order of the gates.
+
+    private val everyCommand = listOf("apps", "open", "read", "screenshot", "click", "type", "scroll", "tap", "swipe", "back", "home", "recents", "notifications", "pages", "page", "where", "unknown", "")
+
+    /** What [PhoneRequests.admit] consulted, in order, and what came of it. */
+    private fun admitted(
+        command: String,
+        access: Boolean = true,
+        pending: Int = 0,
+    ): Pair<List<String>, Result<PhoneRequests.Route>> {
+        val asked = ArrayList<String>()
+        val result =
+            runCatching {
+                PhoneRequests.admit(command, {
+                    asked += "access"
+                    check(access) { "no access" }
+                }) {
+                    asked += "pending"
+                    pending
+                }
+            }
+        return asked to result
+    }
+
+    @Test fun statusAndStopAreAnsweredBeforeAnyCheck() {
+        for ((command, route) in listOf("status" to PhoneRequests.Route.Status, "stop" to PhoneRequests.Route.Stop)) {
+            for (access in listOf(true, false)) for (pending in listOf(0, 3)) {
+                val (asked, result) = admitted(command, access, pending)
+                assertEquals(route, result.getOrThrow())
+                assertTrue(asked.isEmpty())
+            }
+        }
+    }
+
+    @Test fun everythingElseNeedsAccessFirstThenNoPendingApproval() {
+        for (command in everyCommand) {
+            // Without access nothing more is even looked at, whatever is or isn't pending.
+            for (pending in listOf(0, 1)) {
+                val (asked, result) = admitted(command, access = false, pending = pending)
+                assertEquals(command, listOf("access"), asked)
+                assertEquals("no access", result.exceptionOrNull()?.message)
+            }
+            // With access, the approval check comes next, once, and before any route is given.
+            val (asked, result) = admitted(command, pending = 1)
+            assertEquals(command, listOf("access", "pending"), asked)
+            if (command in PhoneControlPolicy.whilePending) {
+                assertTrue(command, result.isSuccess)
+            } else {
+                assertTrue(command, result.exceptionOrNull()!!.message!!.contains("approval is pending"))
+            }
+        }
+    }
+
+    @Test fun anAdmittedRequestGoesToItsHandler() {
+        for (command in everyCommand) {
+            val (asked, result) = admitted(command)
+            assertEquals(command, listOf("access", "pending"), asked)
+            val expected =
+                when (command) {
+                    "pages", "page", "where" -> PhoneRequests.Route.Pages
+                    "screenshot" -> PhoneRequests.Route.Screenshot
+                    else -> PhoneRequests.Route.Control
+                }
+            assertEquals(command, expected, result.getOrThrow())
+        }
+        // The page commands are never routed while an approval waits: none of them is a way round it.
+        for (command in PhonePages.commands) for (pending in listOf(1, 2, 16)) assertTrue(admitted(command, pending = pending).second.isFailure)
+        // The service follows this and nothing else: it has no check of its own to move.
+        val service = java.io.File("src/main/kotlin/dev/omalauncher/phone/PhoneService.kt").readText()
+        val request = service.substringAfter("fun request(input: JSONObject")
+        assertTrue(request.indexOf("PhoneRequests.admit(") in 0 until request.indexOf("reply("))
+        // Up to where the handlers begin, it goes by the route alone, never by the command's name.
+        val head = request.substringBefore("if (route == PhoneRequests.Route.Screenshot)")
+        assertTrue(head.length < request.length && head.contains("PhoneRequests.Route.Pages"))
+        assertFalse(head.contains("command =="))
+        assertFalse(head.contains("command in"))
+        assertFalse(service.contains("requireNoPendingApproval"))
+        assertEquals(2, service.split("PhoneAccess.requireAccess(").size - 1)
+    }
+
     /** Home as the commands see it, recording what they turned to. */
     private class Book(
         override val pages: List<String>? = listOf("Today", "Trip", "Trip to Lisbon"),

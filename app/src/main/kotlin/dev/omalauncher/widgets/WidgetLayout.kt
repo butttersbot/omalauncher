@@ -78,15 +78,18 @@ class WidgetLayout(
      * Gives [item], just put on a page, its cells without waiting for home to show that page: the first free
      * ones there, or on the next page with room at its size, or on a new page after the last. [itemsOn] lists
      * what is on a page by its id. Returns the id of the page it is on now; null, and nothing changed, when it
-     * is on no page or home has no grid yet (it is placed when its page is first laid out, as always).
+     * is on no page or home has no grid yet (it is placed when its page is first laid out, as always). One that
+     * has cells already keeps them and its page, whoever calls: this places, it never rearranges.
      */
     fun land(
         item: HomeItem,
         itemsOn: (String) -> List<HomeItem>,
     ): String? {
         val from = notebook.position(notebook.pageOf(item.key))
-        if (from < 0 || !laidOut) return null
+        if (from < 0) return null
         val pages = notebook.pages.map { it.id }
+        if (notebook.cell(item.key) != null) return pages[from]
+        if (!laidOut) return null
         val page = pages.drop(from).firstOrNull { claim(item, itemsOn(it), it) } ?: notebook.addPage() ?: return null
         if (page != pages[from]) notebook.move(item.key, page)
         return page

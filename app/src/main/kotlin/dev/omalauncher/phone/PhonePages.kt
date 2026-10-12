@@ -2,7 +2,42 @@ package dev.omalauncher.phone
 
 import org.json.JSONArray
 import org.json.JSONObject
+import java.text.Normalizer
 import java.util.Locale
+
+/**
+ * The order every bridge request goes through, in one place: what it is, then the checks, then who handles it.
+ * `status` and `stop` are answered whatever the state (stopping must always work). Everything else first needs
+ * access (connected, not paused, unlocked, awake), then no approval waiting for the owner unless it only looks,
+ * and only then is it handed on. Nothing is dispatched before [admit] returns.
+ */
+object PhoneRequests {
+    /** Who handles an admitted request. */
+    enum class Route { Status, Stop, Pages, Screenshot, Control }
+
+    /**
+     * Runs the checks for [command] in order and says who handles it; throws what the first failing check
+     * throws. [requireAccess] and [pending] are not consulted for `status` and `stop`, and [pending] not
+     * unless access was given.
+     */
+    fun admit(
+        command: String,
+        requireAccess: () -> Unit,
+        pending: () -> Int,
+    ): Route {
+        when (command) {
+            "status" -> return Route.Status
+            "stop" -> return Route.Stop
+        }
+        requireAccess()
+        PhoneControlPolicy.requireNoPendingApproval(pending(), command)
+        return when (command) {
+            in PhonePages.commands -> Route.Pages
+            "screenshot" -> Route.Screenshot
+            else -> Route.Control
+        }
+    }
+}
 
 /** How a page name that was asked for compares with the notebook's page names. */
 sealed interface PageMatch {
@@ -21,8 +56,15 @@ sealed interface PageMatch {
 /** Longer than this is not a page name someone said. */
 const val MAX_PAGE_QUERY = 80
 
-/** As names are compared: no case, and spaces around or doubled inside don't count. */
-private fun plain(name: String) = name.trim().split(Regex("\\s+")).joinToString(" ").lowercase(Locale.ROOT)
+/**
+ * As names are compared: no case, spaces around or doubled inside don't count, and a letter is the same letter
+ * however it was typed (an accent as its own character, a full-width form). Normalised again after the case is
+ * folded, which can itself take a letter apart.
+ */
+private fun plain(name: String): String {
+    val folded = Normalizer.normalize(name, Normalizer.Form.NFKC).lowercase(Locale.ROOT)
+    return Normalizer.normalize(folded, Normalizer.Form.NFKC).trim().split(Regex("\\s+")).joinToString(" ")
+}
 
 /**
  * Finds [asked] among [names], the pages in order: the page called exactly that, else the one whose name starts
