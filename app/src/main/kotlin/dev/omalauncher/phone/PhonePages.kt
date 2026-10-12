@@ -1,5 +1,6 @@
 package dev.omalauncher.phone
 
+import dev.omalauncher.widgets.annotations.NoteLeft
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.Normalizer
@@ -9,11 +10,12 @@ import java.util.Locale
  * The order every bridge request goes through, in one place: what it is, then the checks, then who handles it.
  * `status` and `stop` are answered whatever the state (stopping must always work). Everything else first needs
  * access (connected, not paused, unlocked, awake), then no approval waiting for the owner unless it only looks,
- * and only then is it handed on. Nothing is dispatched before [admit] returns.
+ * and only then is it handed on. Nothing is dispatched before [admit] returns. Leaving a note writes on home, so
+ * it is no exception to either check.
  */
 object PhoneRequests {
     /** Who handles an admitted request. */
-    enum class Route { Status, Stop, Pages, Screenshot, Control }
+    enum class Route { Status, Stop, Pages, Note, Screenshot, Control }
 
     /**
      * Runs the checks for [command] in order and says who handles it; throws what the first failing check
@@ -33,6 +35,7 @@ object PhoneRequests {
         PhoneControlPolicy.requireNoPendingApproval(pending(), command)
         return when (command) {
             in PhonePages.commands -> Route.Pages
+            PhoneNotes.COMMAND -> Route.Note
             "screenshot" -> Route.Screenshot
             else -> Route.Control
         }
@@ -165,6 +168,56 @@ object PhonePages {
         val name = asked.trim().let { if (it.endsWith(".owl")) it else "$it.owl" }
         require(name.length in 5..200 && !name.startsWith(".") && name.none { it == '/' || it == '\\' || it.isISOControl() }) { "Give the widget's file name, like weather.owl." }
         return name
+    }
+}
+
+/** Home's pages as the bridge's note command sees them. Main thread, like the notebook. */
+interface NotePad {
+    /** The id of the home page the request that is running now was sent from; null when none is running, or it came from no page. */
+    val asked: String?
+
+    /** The id of the page home shows (of two side by side, the one last touched); null when home isn't there to say. */
+    val showing: String?
+
+    /** The name of the page with the id [page]; null if the notebook has no such page, or hasn't been read. */
+    fun name(page: String): String?
+
+    /** Leaves a note saying [text] on [page] and tells [then], once, what came of it; see [dev.omalauncher.widgets.annotations.leaveAgentNote]. */
+    fun leave(
+        page: String,
+        text: String,
+        then: (NoteLeft) -> Unit,
+    )
+}
+
+/**
+ * The bridge's `note` command: the agent leaves one sticky note saying what it did (PRD AC-29). It goes on the
+ * page the running request was asked from, or, with no such request or page, on the page home shows. That is
+ * all it does: the text is drawn as plain letters and never read as anything else, it is no longer than a
+ * note from an agent may be, it lands on that one page in the next free place, and of what is already there
+ * it can only take the place of the agent's own oldest untouched note. Nothing of the owner's is moved,
+ * changed or removed, no page is turned, and nothing outside home is touched.
+ */
+object PhoneNotes {
+    const val COMMAND = "note"
+
+    fun reply(
+        input: JSONObject,
+        pad: NotePad,
+        reply: (JSONObject) -> Unit,
+    ) {
+        val text = input.getString("text")
+        val page =
+            listOfNotNull(pad.asked, pad.showing).firstOrNull { pad.name(it) != null }
+                ?: error("Home isn't showing a page to leave the note on. Nothing was written.")
+        pad.leave(page, text) { left ->
+            reply(
+                when (left) {
+                    is NoteLeft.Left -> JSONObject().put("ok", true).put("page", pad.name(page) ?: "").put("replaced", left.replaced != null)
+                    is NoteLeft.Refused -> JSONObject().put("ok", false).put("error", left.reason)
+                },
+            )
+        }
     }
 }
 

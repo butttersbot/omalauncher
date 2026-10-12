@@ -22,7 +22,11 @@ import java.util.UUID
 
 /** Android owns binding; Linux commands are gated by PhoneAccess on every request. */
 class PhoneService : AccessibilityService() {
-    companion object { @Volatile var instance: PhoneService? = null; private set }
+    companion object {
+        @Volatile var instance: PhoneService? = null; private set
+        /** How long a note waits for its page to be read: less than the bridge waits for an answer. */
+        private const val NOTE_WAIT_MILLIS = 6000L
+    }
     private var snapshot = ""
     private var signatures = emptyMap<String, String>()
     private val main = Handler(Looper.getMainLooper())
@@ -110,6 +114,21 @@ class PhoneService : AccessibilityService() {
             snapshot = ""; signatures = emptyMap()
         }
     }
+    /** Home's pages for the note command: which one a note goes on, and the book it is written in. */
+    private fun notePad() = object : NotePad {
+        private val notebook = (application as dev.omalauncher.App).runtime.widgets.notebook
+        private val book = dev.omalauncher.widgets.annotations.HomeAnnotations.of(this@PhoneService)
+        private val until = SystemClock.elapsedRealtime() + NOTE_WAIT_MILLIS
+        // Only while its task runs: a page some earlier request came from is not where a later note belongs.
+        override val asked get() = dev.omalauncher.assist.AgentTasks.asked?.takeIf { it.ended == null }?.page
+        override val showing get() = HomeDoor.home?.showing
+        override fun name(page: String) = if (notebook.opened) notebook.name(page) else null
+        override fun leave(page: String, text: String, then: (dev.omalauncher.widgets.annotations.NoteLeft) -> Unit) = book.whenRead(page) {
+            // The bridge has stopped waiting by then and told the agent so: nothing is written behind that answer.
+            if (SystemClock.elapsedRealtime() > until) then(dev.omalauncher.widgets.annotations.NoteLeft.Refused("Home took too long to read that page. Nothing was written."))
+            else then(book.leaveNote(page, text))
+        }
+    }
     fun request(input: JSONObject, reply: (JSONObject) -> Unit) {
         try {
             val command = input.getString("command")
@@ -119,6 +138,8 @@ class PhoneService : AccessibilityService() {
             if (route == PhoneRequests.Route.Stop) { PhoneAccess.stop(this); reply(JSONObject().put("ok", true)); return }
             // Home's pages: read and turned behind the same gates as everything else, and never while an approval waits.
             if (route == PhoneRequests.Route.Pages) { reply(PhonePages.reply(input, homeBook())); return }
+            // A sticky note on home, behind the same gates: one note, on one page, and nothing else.
+            if (route == PhoneRequests.Route.Note) { PhoneNotes.reply(input, notePad(), reply); return }
             if (route == PhoneRequests.Route.Screenshot) {
                 if (Build.VERSION.SDK_INT < 30) error("Screenshots require Android 11 or later.")
                 // The overlay is never in the agent's picture: it comes down first and goes back once the picture is taken.

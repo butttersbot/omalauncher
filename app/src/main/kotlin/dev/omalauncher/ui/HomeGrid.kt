@@ -25,6 +25,7 @@ import dev.omalauncher.widgets.Shortcut
 import dev.omalauncher.widgets.HomeItem
 import dev.omalauncher.widgets.WidgetItem
 import dev.omalauncher.widgets.WidgetLayout
+import dev.omalauncher.widgets.annotations.PageArea
 import dev.omalauncher.widgets.layout.GridGeometry
 import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.Box
@@ -117,6 +118,9 @@ private class Grid(
         r: IntRect,
         side: Int,
     ) = r.translate(geometry.left(side), 0)
+
+    /** The page at [side] as what is free on it is placed by: its rectangle on screen, which fractions of the page are taken of. */
+    fun area(side: Int) = screen(page, side).let { PageArea(it.left.toFloat(), it.top.toFloat(), it.width.toFloat(), it.height.toFloat()) }
 }
 
 internal fun IntRect.has(p: Offset) = p.x >= left && p.x < right && p.y >= top && p.y < bottom
@@ -225,6 +229,11 @@ internal class Arrange {
  * With [per] of 2 (an unfolded foldable) each pager slot shows two of them side
  * by side, and the pager counts slots; with an odd number of pages the last
  * slot's right half is empty and offers a new page ([onAddPage]).
+ *
+ * With [marks], each page also shows what is free on it: its ink, sticky notes
+ * and stickers. While [drawing], one finger draws there and does nothing else;
+ * otherwise a note or sticker is tapped, or lifted by a long press, like a tile
+ * that sits in no cell.
  */
 @Composable
 internal fun HomeGrid(
@@ -256,8 +265,10 @@ internal fun HomeGrid(
     per: Int = 1,
     /** False until the notebook is read: the one page shown then is a stand-in, not an empty page of his. */
     ready: Boolean = true,
-    /** One finger draws on the page: it turns no page and lifts no tile. Nothing sets it yet. */
+    /** One finger draws on the page: it turns no page and lifts no tile. */
     drawing: Boolean = false,
+    /** The ink, notes and stickers on the pages, and the pen; without it the pages show and take none. */
+    marks: Marks? = null,
     /** How far a pinch has shrunk the pages, 1 at rest; read while drawing. */
     pinch: () -> Float = { 1f },
     /** A pinch is under way, at this scale. */
@@ -276,6 +287,7 @@ internal fun HomeGrid(
     // Who each touch belongs to: every handler below asks it rather than deciding alone.
     val arbiter = remember { GestureArbiter() }
     val draws by rememberUpdatedState(drawing)
+    val marked by rememberUpdatedState(marks)
     val pinched by rememberUpdatedState(onPinch to onPinchEnd)
     val drawer by rememberUpdatedState(onDrawerDrag to onDrawerEnd)
 
@@ -574,7 +586,7 @@ internal fun HomeGrid(
                             if (!c.pressed || (c.position - start).getDistance() > viewConfiguration.touchSlop) return@withTimeoutOrNull
                             if (arbiter.owner != Owner.Undecided) return@withTimeoutOrNull
                         }
-                    } == null && arbiter.longPress().let { it == Owner.Arrange || it == Owner.Menu }
+                    } == null && arbiter.longPress().let { it == Owner.Arrange || it == Owner.Menu || it == Owner.Note }
 
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
@@ -589,6 +601,9 @@ internal fun HomeGrid(
                         // Drawing: the finger is the pen's. Nothing here lifts a tile, opens the menu or ends an edit.
                         if (draws) {
                             arbiter.down(TouchStart.Page, HomeModes(drawing = true))
+                            // On the page it came down on, to the end of the stroke. The empty half of the last pair keeps its tap.
+                            val pen = marked
+                            if (pen != null && page != null) draw(down, pen, page, g.area(side), Pack.look.pack.ink.width.dp.toPx(), arbiter)
                             return@awaitEachGesture
                         }
 
@@ -621,6 +636,20 @@ internal fun HomeGrid(
                                 arrange.holding = false
                             }
                             return@awaitEachGesture
+                        }
+
+                        // A note or a sticker being edited takes every touch, as a tile being edited does below. One whose
+                        // page no longer shows is let go.
+                        val pad = marked
+                        val notes = pad?.book
+                        val chosen = pad?.selected
+                        if (pad != null && chosen != null) {
+                            val chosenSide = shown.indexOf(chosen.page)
+                            if (chosenSide < 0 || notes == null) {
+                                pad.selected = null
+                            } else if (editScrap(down, g.local(start, chosenSide), chosen, g.area(0), pad, notes, arbiter, grab.toFloat())) {
+                                return@awaitEachGesture
+                            }
                         }
 
                         // Edit mode: every touch belongs to the editor, nothing reaches the tiles. The selected
@@ -691,6 +720,16 @@ internal fun HomeGrid(
                             arbiter.down(TouchStart.Page, HomeModes())
                             return@awaitEachGesture
                         }
+                        // A sticky note or a sticker floats over the tiles: a touch on one is its, and a long press lifts it.
+                        // On a page with neither, nothing here is any different.
+                        if (pad != null && notes != null) {
+                            val lifted =
+                                liftScrap(down, at, page, g.area(0), pad, notes, arbiter, { awaitLongPress(down.id, start) }) {
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onSelect(null)
+                                }
+                            if (lifted) return@awaitEachGesture
+                        }
                         val hit = placed.lastOrNull { (_, c) -> g.rect(c).has(at) }
                         arbiter.down(
                             when (hit?.first) {
@@ -724,7 +763,7 @@ internal fun HomeGrid(
                 Row(Modifier.fillMaxSize()) {
                     for (page in pagesAt(slot, pages, grid)) {
                         Box(Modifier.width(with(density) { grid.width.toDp() }).fillMaxHeight()) {
-                            if (page == null) PlusPage(grid, onAddPage) else TiledPage(page, itemsOn(page), layout, grid, arrange, selected, render, actions, onNoRoom, ready, captures)
+                            if (page == null) PlusPage(grid, onAddPage) else TiledPage(page, itemsOn(page), layout, grid, arrange, selected, render, actions, onNoRoom, ready, captures, marks)
                         }
                     }
                 }
@@ -736,6 +775,9 @@ internal fun HomeGrid(
                 val fg = FolderGeometry(width * per, grid.height, grid.cellW, grid.cellH, gap, openFolder.apps.size, density)
                 FolderPanel(openFolder, fg, render, arrange.carry?.item?.key)
             }
+
+            // The stroke under the finger, over the pages, redrawn by itself as it grows.
+            if (drawing && marks != null) LiveInk(marks)
 
             // The carried tile floats above the pager, so it stays put while pages turn, and above an open folder it's sorting.
             arrange.carry?.let { carry ->
@@ -798,6 +840,16 @@ private fun DropPreview(
     )
 }
 
+/** What is drawn on [page], over its tiles. */
+@Composable
+private fun PageInk(
+    book: dev.omalauncher.widgets.annotations.AnnotationBook,
+    page: String,
+    area: IntRect,
+) {
+    InkLayer(book.on(page).strokes, area, Modifier.zIndex(1f))
+}
+
 /** The empty right half of the last pair, when the pages are odd: the page's outline, and a tap adds the page. */
 @Composable
 private fun PlusPage(
@@ -842,9 +894,13 @@ private fun TiledPage(
     onNoRoom: (HomeItem) -> Unit,
     ready: Boolean,
     captures: PageCaptures?,
+    marks: Marks?,
 ) {
     val density = LocalDensity.current
     val carried = arrange.carry?.item?.key
+    // What is free on the page: read from its file the first time the page shows.
+    val book = marks?.book
+    LaunchedEffect(book, page) { book?.open(page) }
     LaunchedEffect(items.map { it.key }, grid.cols, grid.rows) {
         layout.place(items, grid.cols, grid.rows, page).forEach(onNoRoom)
     }
@@ -891,6 +947,10 @@ private fun TiledPage(
                 )
             }
         }
+        // Over the tiles, inside what is caught for the overview: the page's notes and stickers, and over those its
+        // ink, each in a scope of its own so a new stroke or a note being dragged recomposes no tile.
+        if (book != null && marks != null) PageScraps(book, marks, page, grid.page, pageWidth, constraints.maxHeight)
+        if (book != null) PageInk(book, page, grid.page)
         // Selection frame: handles on each edge for widgets, plus the action bar.
         val sel = items.firstOrNull { it.key == selected }
         val selCell = sel?.let { layout.cell(it.key)?.let { c -> grid.fit(c, it) } }

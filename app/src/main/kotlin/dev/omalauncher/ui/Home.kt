@@ -64,6 +64,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.collectAsState
 import dev.omalauncher.Runtime
+import dev.omalauncher.widgets.annotations.HomeAnnotations
+import androidx.compose.ui.platform.LocalContext
 import dev.omalauncher.widgets.editWidgetCommand
 import dev.omalauncher.widgets.fixDependenciesCommand
 import dev.omalauncher.widgets.layout.foldView
@@ -189,10 +191,26 @@ fun HomeScreen(
     LaunchedEffect(state.overviewOpen) { if (state.overviewOpen) arrange.folder = null }
 
     val terminals = runtime.terminals
+    // What is free on the pages: their ink, notes and stickers. It takes changes once the notebook is read and kept.
+    val marks = state.marks
+    val context = LocalContext.current
+    LaunchedEffect(engine.notebook.opened, engine.notebook.kept) { marks.book = HomeAnnotations.of(context) }
+    // Written a moment after each change; at once when home loses the window, or the pen is put down.
+    val focused = LocalWindowInfo.current.isWindowFocused
+    LaunchedEffect(focused, state.drawing) { if (!focused || !state.drawing) marks.book?.flush() }
+    // The pen has the page to itself: no folder open under it, and no terminal tile typing.
+    LaunchedEffect(state.drawing) {
+        if (state.drawing) {
+            arrange.folder = null
+            terminals.deactivate()
+        }
+    }
     BackHandler(enabled = terminals.active != null) { terminals.deactivate() }
     BackHandler(enabled = state.homeMenuOpen) { state.homeMenuOpen = false }
     BackHandler(enabled = state.editing != null && !state.homeMenuOpen) { state.editing = null }
     BackHandler(enabled = arrange.folder != null && !state.homeMenuOpen) { arrange.folder = null }
+    BackHandler(enabled = marks.selected != null && !state.homeMenuOpen) { marks.selected = null }
+    BackHandler(enabled = state.drawing && !state.homeMenuOpen) { state.stopDrawing() }
     LaunchedEffect(engine) {
         engine.launcherAction = { action ->
             when (action) {
@@ -225,6 +243,9 @@ fun HomeScreen(
         engine.activePage = shown.firstOrNull()
     }
     LaunchedEffect(per) { engine.activeSpan = per }
+    // Folded, unfolded or turned in the middle of a stroke: the page is somewhere else now, so the stroke ends
+    // here and is kept as it was drawn. Drawing mode stays on.
+    LaunchedEffect(per, window) { marks.finish() }
     // The background slides with the pages, like stock launchers. Our live wallpaper gets it through Android.
     val view = LocalView.current
     LaunchedEffect(pager, view) {
@@ -243,8 +264,11 @@ fun HomeScreen(
             }
         }
     }
-    // A terminal tile keeps the keyboard only while its page shows.
-    LaunchedEffect(pager.currentPage) { terminals.deactivate() }
+    // A terminal tile keeps the keyboard only while its page shows, and a note or a sticker stays selected only while its does.
+    LaunchedEffect(pager.currentPage) {
+        terminals.deactivate()
+        marks.selected = null
+    }
     // Its shell exited, or the app lost focus: the soft keyboard goes too.
     val typing = terminals.active != null
     LaunchedEffect(typing) { if (!typing) terminals.keyboard?.hide() }
@@ -390,7 +414,11 @@ fun HomeScreen(
             arrange = arrange,
             modifier = Modifier.weight(1f).fillMaxWidth(),
             selected = state.editing,
-            onSelect = { state.editing = it },
+            onSelect = {
+                state.editing = it
+                // One thing is edited at a time: a tile, or a note.
+                if (it != null) marks.selected = null
+            },
             actions = { item ->
                 EditBar {
                     if (item is WidgetItem) EditAction("edit") { edit(item) }
@@ -469,6 +497,7 @@ fun HomeScreen(
             per = per,
             ready = engine.notebook.opened,
             drawing = state.drawing,
+            marks = marks,
             captures = runtime.pageStills,
             // Not under a terminal tile's keyboard: the list comes up with no keyboard showing.
             onDrawerDrag = { dy -> if (terminals.active == null) state.dragBy(-dy / windowHeight) },
@@ -505,19 +534,11 @@ fun HomeScreen(
       }
     }
 
-    // What the start had to say about the layout (a migration that moved tiles, or couldn't be saved), until tapped away.
-    engine.notice?.let { text ->
-        Column(
-            Modifier
-                .align(Alignment.TopCenter)
-                .padding(start = PageGap, end = PageGap, top = PageNameHeight)
-                .panel()
-                .clickable { engine.notice = null }
-                .padding(12.dp),
-        ) {
-            BasicText(text, style = Pack.body())
-            BasicText("tap to hide", style = Pack.body(Pack.size.small, Pack.muted))
-        }
+    // What the start had to say about the layout (a migration that moved tiles, or couldn't be saved), and what
+    // the pages have to say about their ink and notes (a file that can't be read, a page full of ink), until tapped away.
+    Column(Modifier.align(Alignment.TopCenter).padding(start = PageGap, end = PageGap, top = PageNameHeight)) {
+        engine.notice?.let { text -> Notice(text) { engine.notice = null } }
+        marks.book?.let { book -> book.notice?.let { text -> Notice(text) { book.notice = null } } }
     }
 
     if (extraKeys) {
@@ -530,6 +551,18 @@ fun HomeScreen(
         )
     }
 
+    }
+}
+
+/** One thing the owner has to be told, over the top of the page until he taps it away. */
+@Composable
+private fun Notice(
+    text: String,
+    onHide: () -> Unit,
+) {
+    Column(Modifier.padding(bottom = PageGap).panel().clickable(onClick = onHide).padding(12.dp)) {
+        BasicText(text, style = Pack.body())
+        BasicText("tap to hide", style = Pack.body(Pack.size.small, Pack.muted))
     }
 }
 
