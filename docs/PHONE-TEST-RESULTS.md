@@ -1,5 +1,14 @@
 # Phone test results
 
+## Latest: note placement as Oma Dev — starts (2026-10-12, 15:54–15:56 PDT)
+- Installer is back: Boss turned wireless debugging off and on while on a hotspot; adb is "device" on 127.0.0.1:37779. So the earlier block was wireless debugging not serving once off its Wi-Fi, with the switch still showing on.
+- `oma-dev --no-open` at c420089 (source 78ea5a9 plus results-file commits): exit 0, "Oma Dev installed: versionCode 29, 0.5.0-boss-preview.19. The working launcher was not touched." lastUpdateTime 15:55:14.
+- `oma-dev --open`: PASS for "it starts". Process running (pid 32512), crash log empty, screenshot shows first-run setup on the cover screen (omalauncher title, THEME row, "also set up Arch Linux", start).
+- Not done: setup was not completed (start downloads about 70 MB and Boss is on a hotspot), so home and note placement were NOT seen in Oma Dev. Note placement itself has only passed unit tests (679, 0 failures).
+- Seen, matches "Next" item 3: setup still offers the Omarchy themes (tokyo night, vantablack, white...) and no look.
+- Left on the working launcher's home. Asked Boss whether to promote; `oma-try` not run.
+- Next after promotion, in a new request: `oma-phone board`, one note on Page 1, screenshot, check it covers no widget.
+
 ## Latest: note placement as Oma Dev — BLOCKED at install (2026-10-12, 15:42–15:47 PDT)
 Asked by Boss from the phone: PHONE-HANDOFF.md, "Next" item 1.
 - `git pull --ff-only`: fast-forward to 78ea5a9 (note placement, build 29, the handoff).
