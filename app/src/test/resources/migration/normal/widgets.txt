@@ -1,0 +1,5 @@
+# file name, the page its file asks for, its declared size (or - for none)
+clock.owl 1 3x2
+weather.owl 1 3x2
+agent-claude.owl 1 6x5
+notes.owl 2 -

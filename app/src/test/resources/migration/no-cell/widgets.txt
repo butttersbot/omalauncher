@@ -1,0 +1,6 @@
+# file name, the page its file asks for, its declared size (or - for none)
+a.owl 1 -
+sized.owl 1 2x2
+plain.owl 1 -
+huge.owl 1 9x30
+full.owl 1 -

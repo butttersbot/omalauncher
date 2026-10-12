@@ -1,0 +1,5 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <string name="items">{&quot;v&quot;:1,&quot;data&quot;:[{&quot;key&quot;:&quot;app:com.android.chrome/com.google.android.apps.chrome.Main#0&quot;,&quot;page&quot;:1,&quot;label&quot;:&quot;Chrome&quot;,&quot;component&quot;:&quot;com.android.chrome/com.google.android.apps.chrome.Main&quot;,&quot;profile&quot;:0},{&quot;key&quot;:&quot;app:com.sec.android.app.camera/com.sec.android.app.camera.Camera#0&quot;,&quot;page&quot;:2,&quot;label&quot;:&quot;Camera&quot;,&quot;component&quot;:&quot;com.sec.android.app.camera/com.sec.android.app.camera.Camera&quot;,&quot;profile&quot;:0}]}</string>
+    <string name="folders">{&quot;v&quot;:1,&quot;data&quot;:[]}</string>
+</map>

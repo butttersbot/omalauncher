@@ -1,0 +1,4 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <string name="layout">{&quot;v&quot;:1,&quot;data&quot;:{&quot;columns&quot;:6,&quot;cells&quot;:{&quot;a.owl&quot;:{&quot;x&quot;:0,&quot;y&quot;:0,&quot;w&quot;:4,&quot;h&quot;:3},&quot;b.owl&quot;:{&quot;x&quot;:2,&quot;y&quot;:1,&quot;w&quot;:4,&quot;h&quot;:3},&quot;app:com.android.chrome/com.google.android.apps.chrome.Main#0&quot;:{&quot;x&quot;:0,&quot;y&quot;:0,&quot;w&quot;:1,&quot;h&quot;:1}},&quot;pages&quot;:{}}}</string>
+</map>

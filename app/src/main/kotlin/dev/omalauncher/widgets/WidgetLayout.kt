@@ -4,6 +4,10 @@ import android.content.Context
 import androidx.compose.runtime.mutableStateMapOf
 import dev.omalauncher.upgrade.Versioned
 import dev.omalauncher.upgrade.mapEntries
+import dev.omalauncher.widgets.layout.Placement
+import dev.omalauncher.widgets.layout.Tile
+import dev.omalauncher.widgets.layout.estimatedGeometry
+import dev.omalauncher.widgets.layout.rescale
 import org.json.JSONObject
 
 /** A widget's place on its page's grid, in cells. */
@@ -62,16 +66,6 @@ class WidgetLayout(
         oldPages.edit().clear().apply()
     }
 
-    /** A cell saved on a grid of [columns], moved onto today's. */
-    private fun rescale(
-        c: Cell,
-        columns: Int,
-    ): Cell {
-        if (columns == GRID_COLUMNS || columns <= 0) return c
-        val x = c.x * GRID_COLUMNS / columns
-        return c.copy(x = x, w = (c.w * GRID_COLUMNS / columns).coerceIn(1, GRID_COLUMNS - x))
-    }
-
     /** The page [name] was moved to on the phone, if it was. */
     fun page(name: String) = pages[name]
 
@@ -106,8 +100,8 @@ class WidgetLayout(
         if (portraitRows(size) != rows) prefs.edit().putInt(PORTRAIT_ROWS + size, rows).apply()
     }
 
-    /** The grid last laid out on screen; every page shares it. */
-    private var grid: Pair<Int, Int>? = null
+    /** Finds the cells; the arithmetic lives in the layout core, shared with its tests. */
+    private val placement = Placement<HomeItem>(cells, ::save) { Tile(it.key, it.size, it.resizable) }
 
     /**
      * Gives widgets that have no cell yet one at their declared size, in the
@@ -123,23 +117,7 @@ class WidgetLayout(
         items: List<HomeItem>,
         cols: Int,
         rows: Int,
-    ): List<HomeItem> {
-        grid = cols to rows
-        var changed = false
-        val homeless = ArrayList<HomeItem>()
-        for (item in items) {
-            if (cells[item.key] != null) continue
-            val spot = freeSpot(item, items, cols, rows)
-            if (spot == null) {
-                homeless += item
-                continue
-            }
-            cells[item.key] = spot
-            changed = true
-        }
-        if (changed) save()
-        return homeless
-    }
+    ): List<HomeItem> = placement.place(items, cols, rows)
 
     /**
      * Gives [item] a free spot at its size among [others]; false when there's none, or no page was laid out yet.
@@ -149,32 +127,7 @@ class WidgetLayout(
     fun claim(
         item: HomeItem,
         others: List<HomeItem>,
-    ): Boolean {
-        val (cols, rows) = grid ?: return false
-        place(others.filter { it.key != item.key }, cols, rows)
-        cells[item.key] = freeSpot(item, others, cols, rows) ?: return false
-        save()
-        return true
-    }
-
-    /** First spot where [item] fits at its size beside the placed [items]; null when the page is full. */
-    private fun freeSpot(
-        item: HomeItem,
-        items: List<HomeItem>,
-        cols: Int,
-        rows: Int,
-    ): Cell? {
-        // Shortcuts always show as 1x1, whatever an old saved cell says.
-        val others = items.mapNotNull { other -> if (other.key == item.key) null else cells[other.key]?.let { if (other.resizable) it else it.copy(w = 1, h = 1) } }
-        val (pw, ph) = item.size ?: (cols / 2 to 3)
-        val w = pw.coerceIn(1, cols)
-        val h = ph.coerceIn(1, rows)
-        for (y in 0..rows - h) for (x in 0..cols - w) {
-            val c = Cell(x, y, w, h)
-            if (others.none { it.overlaps(c) }) return c
-        }
-        return null
-    }
+    ): Boolean = placement.claim(item, others)
 
     /** Forgets everything about [name]: its cell and page. */
     fun remove(name: String) {
@@ -193,16 +146,7 @@ class WidgetLayout(
     fun tilePx(
         cells: Pair<Int, Int>,
         metrics: android.util.DisplayMetrics,
-    ): Pair<Int, Int> {
-        val (cellW, cellH, gap) =
-            geometry ?: run {
-                val gap = Math.round(6 * metrics.density)
-                val cell = (metrics.widthPixels - gap) / GRID_COLUMNS.toFloat()
-                Triple(cell, cell, gap)
-            }
-        val (across, down) = if (turned) cells.second to cells.first else cells
-        return (across * cellW).toInt() - gap to (down * cellH).toInt() - gap
-    }
+    ): Pair<Int, Int> = dev.omalauncher.widgets.layout.tilePx(cells, geometry ?: estimatedGeometry(metrics.widthPixels, metrics.density), turned)
 
     fun save() {
         val json = JSONObject()

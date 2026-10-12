@@ -51,6 +51,9 @@ import androidx.compose.runtime.collectAsState
 import dev.omalauncher.Runtime
 import dev.omalauncher.widgets.editWidgetCommand
 import dev.omalauncher.widgets.fixDependenciesCommand
+import dev.omalauncher.widgets.layout.shownPages
+import dev.omalauncher.widgets.layout.shownSize
+import dev.omalauncher.widgets.layout.wallpaperOffset
 
 /** Home pages of JSON widgets on a snap grid, bordered and gapped like Omarchy windows. */
 @Composable
@@ -66,10 +69,7 @@ fun HomeScreen(
     // while they hold something, so it becomes a real page once used and a new empty one follows.
     // Unfolded, pages show in pairs: the pager counts pairs, and an odd last page gets an empty partner.
     val per = if (showsTwoPages(LocalWindowInfo.current.containerSize)) 2 else 1
-    val pageNumbers =
-        engine.pages
-            .let { if (engine.itemsOn(it.last()).isEmpty()) it else it + (it.last() + 1) }
-            .let { if (it.size % per == 0) it else it + (it.last() + 1) }
+    val pageNumbers = shownPages(engine.pages, per) { engine.itemsOn(it).isEmpty() }
     val pager = rememberPagerState { pageNumbers.size / per }
     // A tile dropped on another page: show that page once the page list has caught up.
     var showPage by remember { mutableStateOf<Int?>(null) }
@@ -115,8 +115,7 @@ fun HomeScreen(
     LaunchedEffect(pager, view) {
         val wallpapers = WallpaperManager.getInstance(view.context)
         snapshotFlow {
-            val last = pager.pageCount - 1
-            val offset = if (last <= 0) 0.5f else ((pager.currentPage + pager.currentPageOffsetFraction) / last).coerceIn(0f, 1f)
+            val offset = wallpaperOffset(pager.currentPage, pager.currentPageOffsetFraction, pager.pageCount)
             // Also resent when our live wallpaper is picked, which starts out centered.
             offset to runtime.themes.liveWallpaperActive
         }.collect { (offset, live) ->
@@ -273,7 +272,7 @@ fun HomeScreen(
                             spec = item.spec,
                             instance = engine.instance(item.spec),
                             // As shown: on its side in landscape.
-                            cells = engine.layout.cell(item.key)?.let { if (turned) it.h to it.w else it.w to it.h },
+                            cells = engine.layout.cell(item.key)?.let { shownSize(it.w to it.h, turned) },
                             // Accent like Hyprland's active border: only while one of its terminals has the keyboard.
                             focused = highlighted || typing,
                             modifier =
