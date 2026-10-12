@@ -19,7 +19,8 @@ abstract class OmaTile : TileService() {
     abstract val title: String
     open fun active() = false
     open fun subtitle() = "Tap to open"
-    open fun destination(): Class<*> = AssistantPromptActivity::class.java
+    /** The Oma app. A tile attaches no screen, whatever app is underneath. */
+    open fun destination(): Intent = dev.omalauncher.oma.OmaChatActivity.intent(this)
     override fun onStartListening() {
         super.onStartListening()
         AgentTasks.restore(this)
@@ -35,7 +36,7 @@ abstract class OmaTile : TileService() {
         if (isLocked) unlockAndRun { openPanel() } else openPanel()
     }
     private fun openPanel() {
-        val intent = Intent(this, destination()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val intent = destination().addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         if (Build.VERSION.SDK_INT >= 34) {
             val pending = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
             startActivityAndCollapse(pending)
@@ -55,5 +56,6 @@ class OmaApprovalsTile : OmaTile() {
     override val title = "Oma approvals"
     override fun active() = AgentTasks.approvals.isNotEmpty()
     override fun subtitle() = if (active()) "${AgentTasks.approvals.size} to review" else "No approvals"
-    override fun destination(): Class<*> = if (active()) AgentApprovalActivity::class.java else AssistantPromptActivity::class.java
+    /** The oldest approval, chosen when the tile is tapped; the screen then answers only that one. */
+    override fun destination(): Intent = AgentTasks.pending.firstOrNull()?.let { AgentNotices.reviewIntent(this, it) } ?: super.destination()
 }

@@ -3,6 +3,8 @@ package dev.omalauncher.assist
 import android.app.*
 import android.content.*
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.*
@@ -11,6 +13,15 @@ import android.speech.*
 import android.view.*
 import android.widget.*
 import dev.omalauncher.App
+import dev.omalauncher.oma.OwnScreens
+import dev.omalauncher.oma.SCREENSHOT_WAIT_MILLIS
+import dev.omalauncher.oma.ScreenContext
+import dev.omalauncher.oma.ScreenOffer
+import dev.omalauncher.oma.ScreenShots
+import dev.omalauncher.oma.Shot
+import dev.omalauncher.oma.Summon
+import dev.omalauncher.oma.screenChipText
+import java.io.File
 
 class OmaVoiceService : VoiceInteractionService()
 class OmaSessionService : VoiceInteractionSessionService() {
@@ -18,16 +29,66 @@ class OmaSessionService : VoiceInteractionSessionService() {
 }
 class OmaSession(context: Context) : VoiceInteractionSession(context) {
     private var panel: AssistantPanel? = null
+    /** This showing and what is known of its screenshot; null while hidden, so a late screenshot attaches to nothing. */
+    private var offer: ScreenOffer? = null
+    /** Counts showings, so a timeout or a saved file from an earlier one is recognised and dropped. */
+    private var showingNo = 0
+    private val main = Handler(Looper.getMainLooper())
     override fun onCreateContentView(): View {
         (context.applicationContext as App).runtime.start()
-        return AssistantPanel(context, { hide() }).also { panel = it }
+        return AssistantPanel(context, { hide() }).also {
+            panel = it
+            // Sent, or the chip tapped off: whatever screenshot arrives after that is dropped.
+            it.onScreenLetGo = { offer = offer?.close() }
+        }
     }
     override fun onShow(args: Bundle?, showFlags: Int) {
         super.onShow(args, showFlags)
         window.window?.apply { setGravity(Gravity.BOTTOM); setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT) }
+        // Only Android's own assistant gesture brings the screen along; Android then sends its screenshot to onHandleScreenshot.
+        val summon = if (showFlags and SHOW_SOURCE_ASSIST_GESTURE != 0) Summon.AssistGesture else Summon.Other
+        val no = ++showingNo
+        offer = null
+        update(ScreenOffer(summon, OwnScreens.visible, context.getSystemService(KeyguardManager::class.java).isKeyguardLocked))
+        // With the system's "use screenshot" setting off, Android may never call back.
+        main.postDelayed({ if (no == showingNo) offer?.let { update(it.timedOut()) } }, SCREENSHOT_WAIT_MILLIS)
         panel?.refresh()
     }
-    override fun onHide() { panel?.cancelSpeech(); super.onHide() }
+    /** Shows a changed state on the chip. [file] is the screenshot just saved, and only ever comes with the attached state. */
+    private fun update(next: ScreenOffer, file: File? = null) {
+        if (next == offer) return ScreenShots.discard(file)
+        offer = next
+        val state = next.context
+        if (state != ScreenContext.Attached) ScreenShots.discard(file)
+        panel?.showScreen(state, file.takeIf { state == ScreenContext.Attached }) ?: ScreenShots.discard(file)
+    }
+    /** When Android says which app is underneath (it may not): over Oma's own screens nothing is attached. */
+    override fun onHandleAssist(state: AssistState) {
+        if (state.assistStructure?.activityComponent?.packageName == context.packageName) offer?.let { update(it.overOwnScreen()) }
+    }
+    /** The only source of the screen: Android's screenshot for this session, null for secure windows or when switched off. */
+    override fun onHandleScreenshot(screenshot: Bitmap?) {
+        val arrived = offer?.arrived(screenshot != null) ?: return
+        update(arrived)
+        if (screenshot == null || arrived.shot != Shot.Saving) return
+        // Scaling and compressing a full screen takes a moment: the chip says it is getting the screen meanwhile.
+        val no = showingNo
+        val app = context.applicationContext
+        kotlin.concurrent.thread(name = "oma-screen") {
+            val file = ScreenShots.keep(app, screenshot)
+            main.post {
+                val now = offer
+                // Hidden, or shown again, while it was being written: it belongs to no chip.
+                if (no != showingNo || now == null) ScreenShots.discard(file) else update(now.saved(file != null), file)
+            }
+        }
+    }
+    override fun onHide() {
+        panel?.cancelSpeech()
+        showingNo++; offer = null
+        panel?.showScreen(ScreenContext.None, null)
+        super.onHide()
+    }
     override fun onDestroy() { panel?.dispose(); super.onDestroy() }
 }
 
@@ -62,6 +123,14 @@ class AssistantPanel(private val owner: Context, private val dismiss: () -> Unit
     private lateinit var newThreadButton: Button
     private var disposed = false
     private var message: String? = null
+    private val chip = LinearLayout(owner)
+    private val chipImage = ImageView(owner)
+    private val chipText = TextView(owner)
+    /** The screenshot that Send would attach; never set without the chip showing it. */
+    private var screen: File? = null
+    private var chipState = ScreenContext.None
+    /** Told when Send went out or the chip was tapped off, so a screenshot still on its way is dropped. */
+    var onScreenLetGo: (() -> Unit)? = null
     private val update = object : Runnable {
         override fun run() { if (!disposed) { refresh(); handler.postDelayed(this, 500) } }
     }
@@ -79,6 +148,14 @@ class AssistantPanel(private val owner: Context, private val dismiss: () -> Unit
         input.minLines = 2; input.maxLines = 4
         input.inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
         addView(input, LayoutParams(-1, -2))
+        chip.orientation = HORIZONTAL; chip.gravity = Gravity.CENTER_VERTICAL; chip.visibility = GONE
+        chip.setPadding(dp(10), dp(8), dp(10), dp(8))
+        chip.background = GradientDrawable().apply { setColor(Color.rgb(40, 45, 62)); cornerRadius = dp(12).toFloat() }
+        chip.addView(chipImage, LayoutParams(dp(48), dp(48)).apply { marginEnd = dp(10) })
+        chipText.setTextColor(Color.WHITE); chipText.textSize = 14f
+        chip.addView(chipText, LayoutParams(0, -2, 1f))
+        chip.setOnClickListener { showScreen(ScreenContext.None, null); onScreenLetGo?.invoke() }
+        addView(chip, LayoutParams(-1, -2).apply { topMargin = dp(8) })
         val row = LinearLayout(owner)
         fun button(text: String, action: () -> Unit): Button = Button(owner).apply {
             this.text = text; setOnClickListener { action() }
@@ -88,11 +165,13 @@ class AssistantPanel(private val owner: Context, private val dismiss: () -> Unit
         sendButton = button("Send") {
             try {
                 cancelSpeech()
-                AgentTasks.send(owner, input.text.toString().trim())
+                // Only the screenshot the chip is showing goes along, and it is AgentTasks's to delete from here.
+                // While the chip is still getting the screen there is none: the request goes without it.
+                AgentTasks.send(owner, input.text.toString().trim(), screen = screen)
+                screen = null; showScreen(ScreenContext.None, null); onScreenLetGo?.invoke()
                 message = null; input.setText(""); input.clearFocus()
                 owner.getSystemService(android.view.inputmethod.InputMethodManager::class.java).hideSoftInputFromWindow(input.windowToken, 0)
                 refresh()
-                Toast.makeText(owner, "Request sent · you can keep using your phone", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) { message = e.message; refresh() }
         }
         button("Hide") { dismiss() }
@@ -127,10 +206,33 @@ class AssistantPanel(private val owner: Context, private val dismiss: () -> Unit
         resultScroll.visibility = if (output.text.isNotBlank()) VISIBLE else GONE
         stopButton.visibility = if (AgentTasks.working) VISIBLE else GONE
         approvalButton.visibility = if (AgentTasks.approvals.isNotEmpty()) VISIBLE else GONE
+        labelChip()
+    }
+    /**
+     * The "this screen" chip. A screenshot is held only while the chip shows it: tapping the chip, hiding
+     * the panel and sending all let go of it, and whatever is let go of unsent is deleted.
+     */
+    fun showScreen(state: ScreenContext, file: File?) {
+        val kept = file?.takeIf { state == ScreenContext.Attached }
+        if (screen != kept) ScreenShots.discard(screen)
+        if (file != kept) ScreenShots.discard(file)
+        screen = kept
+        chip.visibility = if (state == ScreenContext.None) GONE else VISIBLE
+        chipImage.visibility = if (kept != null) VISIBLE else GONE
+        chipImage.setImageBitmap(kept?.let { BitmapFactory.decodeFile(it.path, BitmapFactory.Options().apply { inSampleSize = 8 }) })
+        // Attached without a file can't be sent, so it never reads as attached.
+        chipState = if (state == ScreenContext.Attached && kept == null) ScreenContext.Unavailable else state
+        labelChip()
+    }
+    /** A screen sent to Claude stays in its conversation, which every follow-up sends again: the chip says so. */
+    private fun labelChip() {
+        val claude = (owner.applicationContext as App).runtime.agents.default?.bin == "claude"
+        chipText.text = screenChipText(chipState, keptInConversation = claude)
     }
     private fun reviewApproval() {
-        if (AgentTasks.approvals.isEmpty()) return
-        owner.startActivity(Intent(owner, AgentApprovalActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        // The oldest one, chosen at the tap; the screen then answers only that one.
+        val oldest = AgentTasks.pending.firstOrNull() ?: return
+        owner.startActivity(AgentNotices.reviewIntent(owner, oldest))
         dismiss() // VoiceInteractionSession otherwise stays above the activity's modal.
     }
     private fun listen() {
@@ -145,7 +247,7 @@ class AssistantPanel(private val owner: Context, private val dismiss: () -> Unit
         fun heard(results: Bundle?) {
             val said = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.trim().orEmpty()
             if (said.isEmpty()) return
-            input.setText(if (before.isEmpty()) said else "$before $said"); input.setSelection(input.text.length)
+            input.setText(appendSpeech(before, said)); input.setSelection(input.text.length)
         }
         recognizer = try { assistantRecognizer(owner) } catch (e: Exception) { message = e.message; return }
         recognizer?.apply {
@@ -167,7 +269,7 @@ class AssistantPanel(private val owner: Context, private val dismiss: () -> Unit
         }
     }
     fun cancelSpeech() { recognizer?.cancel(); recognizer?.destroy(); recognizer = null }
-    fun dispose() { disposed = true; handler.removeCallbacksAndMessages(null); cancelSpeech() }
+    fun dispose() { disposed = true; handler.removeCallbacksAndMessages(null); cancelSpeech(); showScreen(ScreenContext.None, null) }
 }
 
 class AssistantSetupActivity : Activity() {

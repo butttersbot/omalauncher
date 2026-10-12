@@ -23,6 +23,24 @@ object ClaudeProtocol {
         return JSONObject().put("type", "control_response").put("response", JSONObject()
             .put("subtype", "success").put("request_id", approval.id).put("response", decision))
     }
-    fun user(prompt: String) = JSONObject().put("type", "user").put("session_id", "")
-        .put("message", JSONObject().put("role", "user").put("content", prompt))
+    /**
+     * [jpeg] is a base64 JPEG sent inside the message itself, so no file has to outlive the request.
+     * It goes with this request and stays in this conversation until New thread: Claude Code keeps the
+     * transcript in the guest, and resuming sends all of it, image included, to the provider with each follow-up.
+     */
+    fun user(prompt: String, jpeg: String? = null): JSONObject {
+        val content: Any = if (jpeg == null) prompt else org.json.JSONArray()
+            .put(JSONObject().put("type", "text").put("text", prompt))
+            .put(JSONObject().put("type", "image").put("source", JSONObject().put("type", "base64").put("media_type", "image/jpeg").put("data", jpeg)))
+        return JSONObject().put("type", "user").put("session_id", "")
+            .put("message", JSONObject().put("role", "user").put("content", content))
+    }
+    /** A tool call as one line of the thread: the tool and what it was pointed at. */
+    fun step(block: JSONObject): String {
+        val input = block.optJSONObject("input")
+        val target = listOf("command", "file_path", "path", "pattern", "url", "description")
+            .firstNotNullOfOrNull { key -> input?.optString(key)?.takeIf { it.isNotBlank() } }
+        val name = block.optString("name").ifBlank { "a tool" }.take(60)
+        return if (target == null) name else "$name: ${target.lines().first().take(120)}"
+    }
 }

@@ -8,4 +8,14 @@ object PhoneControlPolicy {
         check(!locked) { "Phone is locked. Unlock it yourself." }
         check(awake) { "Screen is off." }
     }
+
+    /** What an agent may still do while its owner has an approval to answer: look, never touch. */
+    val whilePending = setOf("read", "apps", "screenshot")
+
+    /** An agent that could tap could answer its own request, in the notification shade or on the approval screen. */
+    fun requireNoPendingApproval(pending: Int, command: String) {
+        check(pending == 0 || command in whilePending) {
+            "A human approval is pending. Phone actions cannot approve or dismiss it."
+        }
+    }
 }

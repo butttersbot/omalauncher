@@ -39,9 +39,7 @@ class PhoneService : AccessibilityService() {
             if (command == "status") { reply(JSONObject().put("ok", true).put("active", PhoneAccess.active).put("connected", true)); return }
             if (command == "stop") { PhoneAccess.stop(this); reply(JSONObject().put("ok", true)); return }
             PhoneAccess.requireAccess(this)
-            check(dev.omalauncher.assist.AgentTasks.approvals.isEmpty() || command in setOf("read", "apps", "screenshot")) {
-                "A human approval is pending. Phone actions cannot approve or dismiss it."
-            }
+            PhoneControlPolicy.requireNoPendingApproval(dev.omalauncher.assist.AgentTasks.pending.size, command)
             if (command == "screenshot") {
                 if (Build.VERSION.SDK_INT < 30) error("Screenshots require Android 11 or later.")
                 takeScreenshot(android.view.Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
