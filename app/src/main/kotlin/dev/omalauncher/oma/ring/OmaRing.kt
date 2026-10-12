@@ -1,12 +1,8 @@
 package dev.omalauncher.oma.ring
 
 import android.os.SystemClock
-import androidx.compose.ui.graphics.toArgb
-import dev.omalauncher.theme.pack.ConsolePack
-import dev.omalauncher.theme.pack.PackColor
 import dev.omalauncher.theme.pack.PackRing
-import dev.omalauncher.ui.Palette
-import dev.omalauncher.ui.ThemePalette
+import dev.omalauncher.ui.ActivePack
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
@@ -54,16 +50,8 @@ object OmaRing {
     }
 }
 
-@Volatile private var styled: Pair<ThemePalette, PackRing>? = null
-
 /**
- * The ring's style from the theme pack, in the applied theme's colors. Console is the only pack the launcher
- * draws from so far; when another can be chosen, this is the one place that has to ask which.
+ * The ring's style from the active theme pack: Console's in the applied theme's colors, or the chosen
+ * pack's own. This is the one place the ring asks which.
  */
-fun ringStyle(): PackRing {
-    val palette = Palette.current
-    styled?.let { (of, ring) -> if (of === palette) return ring }
-    val ring = ConsolePack.withColors(palette.named.mapValues { PackColor(it.value.toArgb()).toString() }).ring
-    styled = palette to ring
-    return ring
-}
+fun ringStyle(): PackRing = ActivePack.pack.ring

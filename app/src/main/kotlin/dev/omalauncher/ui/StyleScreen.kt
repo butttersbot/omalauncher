@@ -55,6 +55,7 @@ import dev.omalauncher.theme.OmarchyTheme
 import dev.omalauncher.theme.ThemeDirs
 import dev.omalauncher.theme.ThemeDownload
 import dev.omalauncher.theme.ThemeStore
+import dev.omalauncher.theme.pack.PackOption
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -79,6 +80,7 @@ fun StyleScreen(
     val linux by runtime.bootstrap.state.collectAsState()
     OverlayPanel("style", onDismiss) {
         Column(Modifier.verticalScroll(rememberScrollState())) {
+            LookSection(store)
             ThemeSection(
                 store,
                 onBrowse = onBrowse,
@@ -121,6 +123,30 @@ fun StyleScreen(
                 scope.launch { store.remove(theme) }
             }
         }
+    }
+}
+
+/**
+ * The look: which theme pack home, the drawer, the dock and the Oma chat are drawn from. A choice apart
+ * from the theme, which colors Console; any other pack has its own colors and keeps them whichever theme
+ * is picked. A pack that couldn't be loaded, or has something wrong in it, says so here and nowhere else.
+ */
+@Composable
+private fun LookSection(store: ThemeStore) {
+    val options by produceState(emptyList<PackOption>(), store) { value = store.packOptions() }
+    val picked = ActivePack.pick
+    Heading("look")
+    if (options.isNotEmpty()) {
+        StyleOption("pack", options.map { it.name.lowercase() }, options.indexOfFirst { it.id == picked.id }.coerceAtLeast(0)) { store.pickPack(options[it].id) }
+    }
+    val problem = picked.error?.let { "$it Console is shown instead." } ?: options.firstOrNull { it.id == picked.id }?.problem
+    if (problem != null) BasicText(problem, Modifier.padding(top = 4.dp), style = Mono.copy(color = Palette.red, fontSize = TextSize.Small))
+    if (!picked.isConsole) {
+        BasicText(
+            "This look has its own colors. The theme below stays picked and shows again with console.",
+            Modifier.padding(top = 4.dp),
+            style = Mono.copy(color = Palette.muted, fontSize = TextSize.Small),
+        )
     }
 }
 

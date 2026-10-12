@@ -1,0 +1,159 @@
+# Instrument, after design/oma-scrapbook-prototype.html ("in"): every scrap is an LCD window
+# sunk into a grey chassis, and the dock is a row of key caps. One orange for everything lit.
+#
+# What it leaves out is Console's (assets/packs/console/pack.toml). It ships no font files:
+# none could be bundled, so each voice names the system family nearest the prototype's font,
+# for a later pass to replace with a file in fonts/:
+#   display  Doto, weight 900, capitals  -> monospace, heaviest weight, capitals
+#   body     JetBrains Mono              -> monospace
+#   hand     Doto, weight 600            -> monospace, semibold
+#   mono     the prototype's caps        -> monospace, in capitals, spaced out
+[pack]
+format = 1
+name = "Instrument"
+
+# The background is the LCD, not the chassis: panels are displays too, and what widgets draw
+# sits on a scrap. The chassis is the page, below.
+[palette]
+mode = "dark"
+background = "#191b18"
+surface = "#262a24"
+foreground = "#cfe0a8"
+muted = "foreground@0.66"
+accent = "#ff5a1f"
+border = "#3a3f36"
+red = "#ff5a1f"
+green = "#a8e05a"
+on_page = "#1c1d1b"
+highlight = "accent"
+alt = "#ecece6"
+on_alt = "#1c1d1b"
+overlay = "#101210@0.85"
+glass = "background"
+
+[type.display]
+family = "monospace"
+weight = 900
+uppercase = true
+
+[type.body]
+family = "monospace"
+
+[type.hand]
+family = "monospace"
+weight = 600
+
+[type.mono]
+family = "monospace"
+uppercase = true
+tracking = 0.09
+
+[shape]
+radius = 6
+corners = "round"
+
+# No outline: the display is set into the chassis, shadowed inside along its top and lit along
+# its bottom edge.
+[scrap]
+fill = "background"
+ink = "foreground"
+border = 0
+border_color = "border"
+focus_color = "accent"
+muted = "muted"
+
+[scrap.shadow]
+x = 0
+y = 2
+blur = 8
+color = "#000000"
+inset = true
+
+[scrap.shadow2]
+x = 0
+y = 1
+color = "#f3f3ee"
+
+# A key cap: what an emphasised scrap and the dock's buttons are.
+[scrap.alt]
+fill = "alt"
+ink = "on_alt"
+border = 2
+border_color = "#a2a29b"
+
+[scrap.alt.shadow]
+x = 0
+y = 4
+color = "#a2a29b"
+
+[scrap.alt.shadow2]
+x = 0
+y = 6
+blur = 8
+color = "#40000000"
+
+[scrap.sticky]
+fill = "accent"
+ink = "#1c1d1b"
+border = 0
+
+[page]
+kind = "paper"
+color = "#d7d7d1"
+pattern = "dots"
+pattern_color = "#bdbdb6"
+pattern_size = 10
+pattern_weight = 2
+drawer_fill = "background@0.97"
+
+# Icons a little washed out, as behind an LCD's glass.
+[icons]
+treatment = "original"
+tint = "foreground"
+saturation = 0.75
+
+[icons.placeholder]
+style = "letter"
+font = "display"
+fill = "surface"
+ink = "foreground"
+
+# One orange all the way round.
+[ring.listening]
+color1 = "accent"
+color2 = "accent"
+
+[ring.working]
+color1 = "accent"
+color2 = "accent"
+
+[ring.needs_you]
+color1 = "accent"
+color2 = "accent"
+
+[ring.done]
+color1 = "accent"
+color2 = "accent"
+
+[ink]
+pen = "on_page"
+second = "accent"
+highlighter = "accent@0.5"
+
+[dock]
+style = "buttons"
+tilt = 0
+fill = "alt"
+ink = "on_alt"
+border = 0
+
+[dock.shadow]
+x = 0
+y = 4
+color = "#a2a29b"
+
+[dock.shadow2]
+x = 0
+y = 6
+blur = 8
+color = "#40000000"

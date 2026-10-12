@@ -1,0 +1,148 @@
+# 1-bit, after design/oma-scrapbook-prototype.html ("ob"): black and white and nothing else.
+# A dithered desktop, hard-edged windows with ruled title bars, and white plates under any text
+# that would otherwise sit on the dither.
+#
+# What it leaves out is Console's (assets/packs/console/pack.toml). It ships no font files:
+# none could be bundled, so each voice names the system family nearest the prototype's font,
+# for a later pass to replace with a file in fonts/:
+#   display, body  Pixelify Sans            -> monospace
+#   hand           Pixelify Sans, semibold  -> monospace, semibold
+#   mono           the prototype's caps     -> monospace, in capitals, spaced out
+[pack]
+format = 1
+name = "1-bit"
+
+# Two colors: red and green are black as well, so what they mark is told by its words.
+[palette]
+mode = "light"
+background = "#ffffff"
+surface = "#ffffff"
+foreground = "#000000"
+muted = "#000000"
+accent = "#000000"
+border = "#000000"
+red = "#000000"
+green = "#000000"
+on_page = "#000000"
+highlight = "#000000"
+alt = "#000000"
+on_alt = "#ffffff"
+overlay = "#ffffff@0.9"
+glass = "#ffffff"
+
+[type.display]
+family = "monospace"
+weight = 700
+
+[type.body]
+family = "monospace"
+
+[type.hand]
+family = "monospace"
+weight = 600
+
+[type.mono]
+family = "monospace"
+uppercase = true
+tracking = 0.09
+
+[shape]
+radius = 0
+corners = "edge"
+
+[scrap]
+fill = "#ffffff"
+ink = "#000000"
+border = 2
+border_color = "#000000"
+focus_color = "#000000"
+muted = "#000000"
+
+[scrap.shadow]
+x = 3
+y = 3
+color = "#000000"
+
+[scrap.alt]
+fill = "#000000"
+ink = "#ffffff"
+border = 2
+border_color = "#000000"
+
+# Ruled like an old window's: black lines on white, with a line under it.
+[scrap.title_bar]
+style = "stripes"
+height = 18
+fill = "#000000"
+ink = "#ffffff"
+border = 2
+
+[scrap.sticky]
+fill = "#ffffff"
+ink = "#000000"
+border = 2
+border_color = "#000000"
+dashed = true
+
+# The dither: a checker of 2dp squares. Text on it gets a plate of the paper.
+[page]
+kind = "paper"
+color = "#ffffff"
+pattern = "checker"
+pattern_color = "#000000"
+pattern_size = 2
+pattern_weight = 1
+plate = "paper"
+drawer_fill = "#ffffff"
+
+[icons]
+treatment = "grayscale"
+tint = "#000000"
+contrast = 1.5
+
+[icons.placeholder]
+style = "letter"
+font = "display"
+fill = "#ffffff"
+ink = "#000000"
+border = 2
+border_color = "#000000"
+
+# A bare line, black running into white, with no glow.
+[ring]
+width = 2
+glow = 0
+
+[ring.listening]
+color1 = "#000000"
+color2 = "#ffffff"
+
+[ring.working]
+color1 = "#000000"
+color2 = "#ffffff"
+
+[ring.needs_you]
+color1 = "#000000"
+color2 = "#ffffff"
+
+[ring.done]
+color1 = "#000000"
+color2 = "#ffffff"
+
+[ink]
+pen = "#000000"
+second = "#000000"
+highlighter = "#000000@0.5"
+
+[dock]
+style = "buttons"
+tilt = 0
+fill = "#ffffff"
+ink = "#000000"
+border = 2
+border_color = "#000000"
+
+[dock.shadow]
+x = 3
+y = 3
+color = "#000000"

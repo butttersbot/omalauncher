@@ -623,7 +623,7 @@ private fun DropPreview(
             .offset { IntOffset(r.left, r.top) }
             .size(with(density) { r.width.toDp() }, with(density) { r.height.toDp() })
             // Grouping fills more, so it reads as "into" rather than "in place of".
-            .frame(2.dp, Palette.accent, Palette.accent.copy(alpha = if (arrange.grouping) 0.35f else 0.12f)),
+            .framed(Pack.mark, Pack.accent, Pack.accent.copy(alpha = if (arrange.grouping) 0.35f else 0.12f)),
     )
 }
 
@@ -640,11 +640,11 @@ private fun PlusPage(
             .offset { IntOffset(r.left, r.top) }
             .size(with(density) { r.width.toDp() }, with(density) { r.height.toDp() })
             .padding(with(density) { grid.gap.toDp() })
-            .frame(1.dp, Palette.border.copy(alpha = 0.5f))
+            .framed(Pack.hair, Pack.pageLine.copy(alpha = 0.5f))
             .clickable(onClick = onAdd),
         contentAlignment = Alignment.Center,
     ) {
-        BasicText("+ new page", style = Mono.copy(color = Palette.muted))
+        BasicText("+ new page", style = Pack.body(color = Pack.pageMuted))
     }
 }
 
@@ -685,7 +685,7 @@ private fun TiledPage(
                     for (y in 0 until grid.rows) {
                         val r = grid.rect(Cell(x, y, 1, 1))
                         drawRect(
-                            Palette.border.copy(alpha = 0.35f),
+                            Pack.pageLine.copy(alpha = 0.35f),
                             topLeft = Offset(r.left.toFloat(), r.top.toFloat()),
                             size = androidx.compose.ui.geometry.Size(r.width.toFloat(), r.height.toFloat()),
                             style = Stroke(1.dp.toPx()),
@@ -698,8 +698,8 @@ private fun TiledPage(
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 BasicText(
                     if (carried != null) "drop here" else "no widgets on this page · long-press for a new one",
-                    Modifier.background(Palette.background.copy(alpha = 0.8f)).padding(horizontal = 12.dp, vertical = 6.dp),
-                    style = Mono,
+                    Modifier.background(Pack.background.copy(alpha = 0.8f)).padding(horizontal = 12.dp, vertical = 6.dp),
+                    style = Pack.body(),
                 )
             }
         }
@@ -728,7 +728,7 @@ private fun TiledPage(
             if (sel.resizable) {
                 Canvas(Modifier.fillMaxSize().zIndex(2f)) {
                     drawRect(
-                        Palette.accent,
+                        Pack.accent,
                         topLeft = Offset(r.left.toFloat(), r.top.toFloat()),
                         size = androidx.compose.ui.geometry.Size(r.width.toFloat(), r.height.toFloat()),
                         style = Stroke(3.dp.toPx()),
@@ -739,8 +739,8 @@ private fun TiledPage(
                         Offset(r.left.toFloat(), r.center.y.toFloat()),
                         Offset(r.right.toFloat(), r.center.y.toFloat()),
                     )) {
-                        drawCircle(Palette.background, handle / 2f + 2.dp.toPx(), p)
-                        drawCircle(Palette.accent, handle / 2f, p)
+                        drawCircle(Pack.background, handle / 2f + 2.dp.toPx(), p)
+                        drawCircle(Pack.accent, handle / 2f, p)
                     }
                 }
                 // Keep the back gesture off the side handles, so a tile against the screen edge can be resized.

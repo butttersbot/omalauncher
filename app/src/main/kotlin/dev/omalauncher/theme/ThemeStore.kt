@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Typeface
 import android.net.Uri
 import android.util.Log
 import androidx.compose.runtime.derivedStateOf
@@ -14,10 +15,21 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.text.font.FontFamily
 import dev.omalauncher.LauncherData
 import dev.omalauncher.linux.Proot
+import dev.omalauncher.theme.pack.AssetPackSource
+import dev.omalauncher.theme.pack.AssetType
+import dev.omalauncher.theme.pack.ConsolePack
+import dev.omalauncher.theme.pack.PackOption
+import dev.omalauncher.theme.pack.PackPick
+import dev.omalauncher.theme.pack.PackRegistry
+import dev.omalauncher.theme.pack.PackSource
+import dev.omalauncher.theme.pack.readCapped
+import dev.omalauncher.ui.ActivePack
 import dev.omalauncher.ui.Corners
 import dev.omalauncher.ui.LauncherStyle
+import dev.omalauncher.ui.PackWallpapers
 import dev.omalauncher.ui.Palette
 import dev.omalauncher.ui.decodeForScreen
 import dev.omalauncher.upgrade.appStamp
@@ -27,6 +39,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -149,7 +162,82 @@ class ThemeStore(
         LauncherStyle.bareAppIcons = prefs.getBoolean(BARE_APP_ICONS, false)
         LauncherStyle.recentApps = prefs.getBoolean(RECENT_APPS, true)
         LauncherStyle.corners = Corners.of(prefs.getString(CORNERS, null))
+        usePack(PackRegistry.choose(prefs.getString(PACK, null), ::packSource))
     }
+
+    /** The theme packs shipped in the app's assets, by folder name. Console is built in and isn't one of them. */
+    private val packIds: List<String> by lazy { runCatching { context.assets.list(PACKS).orEmpty().toList() }.getOrDefault(emptyList()) }
+
+    /** Where the pack [id] is read from, or null when there is none. Only assets so far. */
+    private fun packSource(id: String): PackSource? = if (id != ConsolePack.ID && id in packIds) AssetPackSource(context.assets, "$PACKS/$id") else null
+
+    /** The looks to pick from, Console first, each with what loading it came to. Reads every pack's manifest. */
+    suspend fun packOptions(): List<PackOption> = withContext(Dispatchers.IO) { PackRegistry.options(packIds, ::packSource) }
+
+    /**
+     * Draws the launcher from the pack [id] and remembers it. The Omarchy theme stays picked: Console
+     * shows it, and any other pack draws in its own colors until Console is picked again. A pack that
+     * can't be loaded leaves Console drawing, and the picker says why.
+     */
+    fun pickPack(id: String) {
+        prefs.edit().putString(PACK, id).apply()
+        usePack(PackRegistry.choose(id, ::packSource))
+    }
+
+    private fun usePack(pick: PackPick) {
+        ActivePack.choose(pick)
+        val load = pick.load?.takeIf { !pick.isConsole } ?: return
+        val source = packSource(pick.id) ?: return
+        // Fonts and wallpapers arrive after the first frame; until then each font is its system family and the page its paper color.
+        scope.launch(Dispatchers.IO) {
+            val type = load.pack.type
+            val fonts =
+                listOf(type.display, type.body, type.hand, type.mono)
+                    .map { it.file }
+                    .filter { it.isNotEmpty() }
+                    .distinct()
+                    .mapNotNull { path -> packFont(source, pick.id, path)?.let { path to it } }
+                    .toMap()
+            val page = load.pack.page
+            val wallpapers = PackWallpapers(packImage(source, page.wallpaperCover), packImage(source, page.wallpaperInner))
+            withContext(Dispatchers.Main) {
+                // Another pack may have been picked meanwhile.
+                if (ActivePack.pick === pick) {
+                    ActivePack.fonts = fonts
+                    ActivePack.wallpapers = wallpapers
+                }
+            }
+        }
+    }
+
+    /** A pack's font file as a font family, read no further than a font's size limit; null if it can't be used. */
+    private fun packFont(
+        source: PackSource,
+        id: String,
+        path: String,
+    ): FontFamily? =
+        runCatching {
+            val bytes = readCapped(source, path, AssetType.Font.maxBytes) ?: return null
+            // Typeface reads a file, so the font is copied out of the pack.
+            val file = File(File(context.cacheDir, "pack-fonts/$id").apply { mkdirs() }, path.replace('/', '_'))
+            file.writeBytes(bytes)
+            FontFamily(Typeface.createFromFile(file))
+        }.onFailure { Log.w(TAG, "pack $id font $path", it) }.getOrNull()
+
+    /** A pack's wallpaper, read no further than an image's size limit and decoded no larger than the screen needs. */
+    private fun packImage(
+        source: PackSource,
+        path: String,
+    ): ImageBitmap? =
+        runCatching {
+            val bytes = readCapped(source, path, AssetType.Image.maxBytes) ?: return null
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            val screen = context.resources.displayMetrics.let { maxOf(it.widthPixels, it.heightPixels) }
+            var sample = 1
+            while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= screen) sample *= 2
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })?.asImageBitmap()
+        }.onFailure { Log.w(TAG, "pack wallpaper $path", it) }.getOrNull()
 
     fun setMonochromeIcons(on: Boolean) {
         LauncherStyle.monochromeIcons = on
@@ -495,6 +583,10 @@ class ThemeStore(
         private const val BARE_APP_ICONS = "bare_app_icons"
         private const val RECENT_APPS = "recent_apps"
         private const val CORNERS = "corners"
+        private const val PACK = "pack"
+
+        /** The assets folder each shipped theme pack has a folder in. */
+        private const val PACKS = "packs"
         private const val RENDERED_BY = "rendered_by"
         private const val DEFAULT_THEME = "tokyo-night"
 

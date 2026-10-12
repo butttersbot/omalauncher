@@ -4,7 +4,6 @@ import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -13,7 +12,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import dev.omalauncher.assist.AgentTasks
 import dev.omalauncher.assist.AssistantPromptActivity
 import dev.omalauncher.oma.ring.OmaRing
@@ -37,17 +35,17 @@ import kotlinx.coroutines.delay
     val homeOnly = remember(tick) {
         RingFollow.homeOnly(context, lit = ringState(OmaRing.signals, OmaRing.now(), doneMillis(ringStyle().done)) != RingState.Off)
     }
-    val color = Palette.accent
+    val color = Pack.accent
     Row(Modifier.fillMaxWidth().padding(bottom = 6.dp).heightIn(min = 38.dp)
-        .clip(RoundedCornerShape(10.dp)).background(Palette.surface)
+        .clip(Pack.round(10.dp)).background(Pack.surface)
         .clickable { context.startActivity(Intent(context, AssistantPromptActivity::class.java)) }
         .padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(5.dp).clip(RoundedCornerShape(3.dp)).background(color))
+        Box(Modifier.size(5.dp).clip(Pack.round(3.dp)).background(color))
         Spacer(Modifier.width(9.dp))
         BasicText(if (homeOnly) RING_STAYS_HOME else if (label == "Ready") "Oma agent" else label, Modifier.weight(1f),
-            style = Mono.copy(color = Palette.foreground, fontSize = 12.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            style = Pack.body(Pack.size.small), maxLines = 1, overflow = TextOverflow.Ellipsis)
         Spacer(Modifier.width(8.dp))
         BasicText(if (pending) "Review" else if (working) "View" else if (label == "Ready") "Ask" else "Result",
-            style = Mono.copy(color = color, fontSize = 12.sp))
+            style = Pack.body(Pack.size.small, color))
     }
 }

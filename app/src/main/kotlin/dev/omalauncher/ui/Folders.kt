@@ -19,7 +19,6 @@ import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -47,17 +46,17 @@ fun FolderTile(
     modifier: Modifier,
     onTap: () -> Unit,
 ) {
-    val bare = LauncherStyle.bareAppIcons
+    val bare = Pack.bareIcons
     BoxWithConstraints(
         modifier
-            .tileFrame(focused)
+            .tileFrame(focused, folder.key)
             .pointerInput(folder.key) { detectTapGestures(onTap = { onTap() }) }
             .padding(4.dp),
     ) {
         val badge = min(maxWidth, maxHeight) * if (bare) 0.95f else 0.85f
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Box(
-                Modifier.size(badge).clip(LauncherStyle.shape(badge / 3)).background(Palette.surface),
+                Modifier.size(badge).clip(Pack.shape(badge / 3)).background(Pack.badge),
                 contentAlignment = Alignment.Center,
             ) {
                 val mini = badge * 0.36f
@@ -86,9 +85,9 @@ private fun AppGlyph(
     size: Dp,
 ) {
     if (icon != null) {
-        Image(icon, label, Modifier.size(size), colorFilter = if (LauncherStyle.monochromeIcons) ColorFilter.tint(Palette.accent) else null)
+        Image(icon, label, Modifier.size(size), colorFilter = Pack.icon(Pack.monoIcons))
     } else {
-        BasicText(initials(label), style = Mono.copy(color = Palette.accent, fontSize = (size.value * 0.45f).sp))
+        BasicText(initials(label), style = Pack.placeholder((size.value * 0.45f).sp))
     }
 }
 
@@ -150,13 +149,13 @@ internal fun FolderPanel(
     carried: String? = null,
 ) {
     val density = LocalDensity.current
-    Box(Modifier.fillMaxSize().zIndex(4f).background(Palette.overlay.copy(alpha = 0.6f))) {
+    Box(Modifier.fillMaxSize().zIndex(4f).background(Pack.overlay.copy(alpha = 0.6f))) {
         val p = geometry.panel
         Box(
             Modifier
                 .offset { IntOffset(p.left, p.top) }
                 .size(with(density) { p.width.toDp() }, with(density) { p.height.toDp() })
-                .frame(2.dp, Palette.accent, Palette.background, radius = 20.dp),
+                .panel(20.dp),
         )
         folder.apps.forEachIndexed { i, app ->
             if (app.key == carried) return@forEachIndexed

@@ -588,18 +588,19 @@ class WidgetEngine(
         val cells = layout.cell(name)?.let { it.w to it.h } ?: spec.size?.let { (w, h) -> w.coerceIn(1, GRID_COLUMNS) to h.coerceAtLeast(1) } ?: (3 to 3)
         val (w, h) = layout.tilePx(cells, context.resources.displayMetrics)
         val themes = withContext(Dispatchers.IO) { runtime.themes.bundled }
-        val before = Palette.current
         val dir = File(previewDir, "themes")
         previewing += name
         try {
             val loaded: suspend () -> Unit = { snapshotFlow { inst.loaded() }.first { it } }
             withTimeoutOrNull(30_000) { loaded() }
-            for (theme in themes) {
-                Palette.apply(theme.colors)
-                previews.render(spec, inst, cells, w, h, File(dir, "${theme.name}/$name.png"), loaded)
+            // Each theme in its own colors whichever theme pack is in use; the theme and the pack's colors are back afterwards.
+            Palette.uncovered {
+                for (theme in themes) {
+                    Palette.apply(theme.colors)
+                    previews.render(spec, inst, cells, w, h, File(dir, "${theme.name}/$name.png"), loaded)
+                }
             }
         } finally {
-            Palette.restore(before)
             previewing.remove(name)
         }
         withContext(Dispatchers.IO) { File(dir, "$name.done").writeText("${cells.first}x${cells.second} ${w}x$h\n") }

@@ -77,8 +77,8 @@ internal fun homeSide(): HomeSide? {
 @Composable
 internal fun sideWidth(): Dp =
     with(LocalDensity.current) {
-        val gap = HomeGap.roundToPx()
-        ((if (LauncherStyle.recentApps) RecentStripHeight.roundToPx() + gap else 0) + PromptBarHeight.roundToPx() + gap).toDp()
+        val gap = PageGap.roundToPx()
+        ((if (Pack.recentApps) RecentStripHeight.roundToPx() + gap else 0) + PromptBarHeight.roundToPx() + gap).toDp()
     }
 
 /**
@@ -99,7 +99,7 @@ internal fun SideRail(
         horizontalArrangement = if (side == HomeSide.Left) Arrangement.Start else Arrangement.End,
     ) {
         // Outward from the grid, like portrait from the grid down: the strip, then the dock.
-        val strip = @Composable { if (LauncherStyle.recentApps) RecentStrip(runtime, handlers, vertical = true) }
+        val strip = @Composable { if (Pack.recentApps) RecentStrip(runtime, handlers, vertical = true) }
         if (side == HomeSide.Left) {
             Spacer(Modifier.width(6.dp))
             DockRail(runtime, state, dock)
@@ -127,12 +127,12 @@ private fun DockRail(
 ) {
     val voice = rememberAgentVoice()
     val listening = voice.speech.listening
-    val accent = Palette.accent
+    val accent = Pack.accent
     Column(
         Modifier
             .width(PromptBarHeight)
             .fillMaxHeight()
-            .tile(listening)
+            .dockBar(listening)
             .drawWithContent {
                 drawContent()
                 if (listening) {

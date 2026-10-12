@@ -1,0 +1,135 @@
+# Riso, after design/oma-scrapbook-prototype.html ("rs"): two inks out of register. Blue on
+# speckled paper, a pink second run under every scrap, pink tape, and a pen that overprints.
+#
+# What it leaves out is Console's (assets/packs/console/pack.toml). It ships no font files:
+# none could be bundled, so each voice names the system family nearest the prototype's font,
+# for a later pass to replace with a file in fonts/:
+#   display  Dela Gothic One       -> sans-serif, heaviest weight
+#   body     Schibsted Grotesk     -> sans-serif
+#   hand     Caveat                -> cursive, bold
+#   mono     the prototype's caps  -> monospace, in capitals, spaced out
+[pack]
+format = 1
+name = "Riso"
+
+# The paper is the background too, so panels and what widgets draw are on the same stock.
+[palette]
+mode = "light"
+background = "#e7e5ee"
+surface = "#d9d6e6"
+foreground = "#2337ff"
+muted = "foreground@0.65"
+accent = "#ff3d8b"
+border = "foreground"
+red = "#ff3d8b"
+green = "#2337ff"
+on_page = "foreground"
+highlight = "accent"
+alt = "foreground"
+on_alt = "background"
+overlay = "background@0.94"
+glass = "background"
+
+[type.display]
+family = "sans-serif"
+weight = 900
+
+[type.body]
+family = "sans-serif"
+
+[type.hand]
+family = "cursive"
+weight = 700
+
+[type.mono]
+family = "monospace"
+uppercase = true
+tracking = 0.09
+
+[shape]
+radius = 0
+corners = "edge"
+
+# The prototype leans its scraps up to four degrees; on a grid with a 6dp gap that would run
+# one tile over the next, so they lean less here.
+[scrap]
+fill = "background"
+ink = "foreground"
+border = 2
+border_color = "foreground"
+focus_color = "accent"
+muted = "muted"
+tilt_min = -1.6
+tilt_max = 1.6
+
+[scrap.shadow]
+x = 5
+y = 5
+color = "accent"
+
+[scrap.alt]
+fill = "foreground"
+ink = "background"
+border = 2
+border_color = "foreground"
+
+[scrap.tape]
+style = "solid"
+color = "accent"
+opacity = 0.9
+width = 66
+height = 21
+angle = -3
+
+[scrap.sticky]
+fill = "accent"
+ink = "#26241f"
+border = 0
+
+[page]
+kind = "paper"
+color = "background"
+pattern = "dots"
+pattern_color = "foreground@0.1"
+pattern_size = 5
+pattern_weight = 2
+gutter = true
+drawer_fill = "background@0.97"
+
+[icons]
+treatment = "original"
+tint = "foreground"
+
+[icons.placeholder]
+style = "letter"
+font = "display"
+fill = "surface"
+ink = "foreground"
+
+# The ring runs pink into blue in every state, as the prototype's does.
+[ring.needs_you]
+color1 = "accent"
+color2 = "foreground"
+
+[ring.done]
+color1 = "accent"
+color2 = "foreground"
+
+[ink]
+pen = "foreground"
+second = "accent"
+highlighter = "accent@0.5"
+blend = "multiply"
+
+[dock]
+style = "buttons"
+tilt = 2.5
+fill = "background"
+ink = "foreground"
+border = 2
+border_color = "foreground"
+
+[dock.shadow]
+x = 3
+y = 3
+color = "accent"

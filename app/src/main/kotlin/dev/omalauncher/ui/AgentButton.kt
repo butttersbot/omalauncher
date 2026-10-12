@@ -112,7 +112,7 @@ internal fun AgentButton(
     state: LauncherState,
     voice: AgentVoice,
     modifier: Modifier = Modifier,
-    resting: Color = Color.Transparent,
+    resting: Color = Pack.clear,
 ) {
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
@@ -209,8 +209,8 @@ private fun MicButton(
     Box(
         modifier
             .size(PromptBarHeight)
-            .clip(LauncherStyle.shape(PromptBarHeight / 2))
-            .background(if (listening) Palette.red else resting)
+            .clip(Pack.shape(PromptBarHeight / 2))
+            .background(if (listening) Pack.red else resting)
             .semantics { contentDescription = "Oma agent: hold to talk, tap to open the chat" }
             .pointerInput(Unit) {
                 val slop = 64.dp.toPx()
@@ -257,7 +257,7 @@ private fun MicButton(
                 }
             },
         contentAlignment = Alignment.Center,
-    ) { MicIcon(if (listening) Palette.background else Palette.foreground) }
+    ) { MicIcon(if (listening) Pack.background else Pack.dockInk) }
 }
 
 /** A microphone drawn on a 24-unit grid, like the home screen's other icons. */

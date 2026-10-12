@@ -10,15 +10,40 @@ import java.io.File
  * except through the active pack. That rules out both the accessors in ui/Theme.kt (Palette,
  * Mono, TextSize, HomeGap, LauncherStyle, Corners, frame(), tile(), hexColor()) and Compose's
  * own (FontFamily, RoundedCornerShape, CutCornerShape, border(), Color(…), Color.White and the
- * like). Nothing draws from the pack yet, so for now this counts the references and prints
- * them; it fails only for a file listed in [converted] that still has one.
+ * like). Home, the drawer, the dock and the Oma chat draw from the pack and are listed in
+ * [converted]; this fails for a listed file that has a reference, and counts and prints the
+ * rest (settings, setup, the store, files, terminals), which are still on the old accessors.
+ * The adapter itself (ui/PackAdapter.kt, ui/ScrapFrame.kt, ui/PagePaper.kt) is where a pack's
+ * numbers become Compose's colors and shapes, so it is counted but can't be listed.
  */
 class PackSourceCheckTest {
     /**
      * Files already converted to draw from the pack, as paths under the source root
      * ("ui/Home.kt"). Add each file here as it is converted, and it can't slip back.
      */
-    private val converted = setOf<String>()
+    private val converted =
+        setOf(
+            // Home: the page, its tiles, folders, the edit bar and the long-press menu.
+            "ui/Home.kt",
+            "ui/HomeGrid.kt",
+            "ui/WidgetTile.kt",
+            "ui/ShortcutTile.kt",
+            "ui/Folders.kt",
+            "ui/HomeMenu.kt",
+            // The drawer, the dock, the agent button and the rails.
+            "ui/AppDrawer.kt",
+            "ui/AppSearch.kt",
+            "ui/Dock.kt",
+            "ui/AgentButton.kt",
+            "ui/AgentRail.kt",
+            "ui/SideRail.kt",
+            // What those share with every other screen.
+            "ui/Components.kt",
+            "ui/Icons.kt",
+            "ui/IconMask.kt",
+            // The Oma chat.
+            "oma/OmaChatActivity.kt",
+        )
 
     /** Where the accessors are defined, which is counted apart from the files that use them. */
     private val definitions = "ui/Theme.kt"
@@ -69,6 +94,35 @@ class PackSourceCheckTest {
 
         for (file in converted) assertTrue("$file is listed as converted but isn't a source file", File(root, file).isFile)
         assertEquals("converted files that still read a font, shape, border or color directly", emptyMap<String, Map<String, Int>>(), found.filterKeys { it in converted })
+    }
+
+    /**
+     * PRD AC-18: a theme never moves an item. The grid, the notebook and the fold rule don't know there
+     * is a pack, so nothing a pack says can reach a page or a cell; and home's gaps are [PageGap]'s
+     * fixed 6dp, not the pack's.
+     */
+    @Test fun theGridNeverAsksThePack() {
+        val root = moduleFile("src/main/kotlin/dev/omalauncher")
+        val layout = File(root, "widgets/layout").walkTopDown().filter { it.extension == "kt" }.toList()
+        assertTrue("the grid's sources aren't under $root", layout.isNotEmpty())
+        val asks = Regex("""\b(?:ActivePack|PackLook|ThemePack|Pack\s*\.)|theme\.pack""")
+        assertEquals(emptyList<String>(), layout.filter { file -> file.readLines().any { asks.containsMatchIn(it) } }.map { it.name })
+        // Where home lays out by a gap, it is the fixed one.
+        val gap = Regex("""shape\s*\.\s*gap""")
+        val reads =
+            listOf("ui", "oma").flatMap { File(root, it).walkTopDown().filter { f -> f.extension == "kt" } }.filter { file ->
+                file.readLines().map { it.trim() }.any { !it.startsWith("*") && !it.startsWith("//") && !it.startsWith("/*") && gap.containsMatchIn(it) }
+            }
+        assertEquals(emptyList<String>(), reads.map { it.name })
+        assertEquals(6f, ConsolePack.pack.shape.gap, 0f)
+    }
+
+    /** Every file the slice set out to convert is on the list, so none can be dropped from it quietly. */
+    @Test fun theConvertedListIsWhole() {
+        val expected =
+            listOf("Home", "HomeGrid", "WidgetTile", "ShortcutTile", "Folders", "HomeMenu", "AppDrawer", "AppSearch", "Dock", "AgentButton", "AgentRail", "SideRail", "Components", "Icons", "IconMask")
+                .map { "ui/$it.kt" } + "oma/OmaChatActivity.kt"
+        assertEquals(expected.toSet(), converted)
     }
 
     @Test fun countsReferencesButNotImportsOrComments() {

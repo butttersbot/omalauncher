@@ -1,6 +1,5 @@
 package dev.omalauncher.ui
 
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathParser
@@ -13,7 +12,7 @@ private fun icon(
 ): ImageVector =
     ImageVector
         .Builder(name, 24.dp, 24.dp, 24f, 24f)
-        .addPath(PathParser().parsePathString(path).toNodes(), fill = SolidColor(Color.White))
+        .addPath(PathParser().parsePathString(path).toNodes(), fill = SolidColor(MaskInk))
         .build()
 
 /** The glyphs the launcher and Files use; tint with ColorFilter.tint. */

@@ -16,9 +16,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.foundation.background
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
@@ -31,12 +28,12 @@ import dev.omalauncher.widgets.Shortcut
 
 /**
  * A pinned app: its icon (a silhouette in the accent color, or full color), framed
- * like a widget, or bare on the wallpaper like a stock launcher (LauncherStyle.bareAppIcons).
+ * like a widget, or bare on the wallpaper like a stock launcher (Pack.bareIcons).
  */
 @Composable
 fun ShortcutTile(
     shortcut: Shortcut,
-    /** From the app catalogs, as the drawer shows it: a silhouette when [LauncherStyle.monochromeIcons]; null for initials. */
+    /** From the app catalogs, as the drawer shows it: a silhouette when [Pack.monoIcons]; null for initials. */
     icon: ImageBitmap?,
     focused: Boolean,
     modifier: Modifier,
@@ -44,13 +41,13 @@ fun ShortcutTile(
     /** In a paused work profile: drawn dimmed, like stock launchers. */
     paused: Boolean = false,
 ) {
-    val mono = LauncherStyle.monochromeIcons
-    val bare = LauncherStyle.bareAppIcons
+    val mono = Pack.monoIcons
+    val bare = Pack.bareIcons
     val spoken = spokenLabel(shortcut.label, shortcut.profile)
     BoxWithConstraints(
         modifier
             .alpha(if (paused) PausedAlpha else 1f)
-            .tileFrame(focused)
+            .tileFrame(focused, shortcut.key)
             .pointerInput(shortcut.key) { detectTapGestures(onTap = { onTap() }) }
             .padding(4.dp),
     ) {
@@ -68,21 +65,21 @@ fun ShortcutTile(
                 // Bare silhouettes and initials sit on a badge, as in the drawer, so they read on any wallpaper.
                 bare && (mono || bmp == null) ->
                     Box(
-                        Modifier.size(iconSize).clip(LauncherStyle.shape(iconSize / 2)).background(Palette.surface),
+                        Modifier.size(iconSize).clip(Pack.shape(iconSize / 2)).background(Pack.badge),
                         contentAlignment = Alignment.Center,
                     ) {
                         if (bmp != null) {
-                            Image(bmp, spoken, Modifier.size(iconSize * 0.75f), colorFilter = ColorFilter.tint(Palette.accent))
+                            Image(bmp, spoken, Modifier.size(iconSize * 0.75f), colorFilter = Pack.tinted())
                         } else {
-                            BasicText(initials(shortcut.label), style = Mono.copy(color = Palette.accent, fontSize = (iconSize.value * 0.35f).sp))
+                            BasicText(initials(shortcut.label), style = Pack.placeholder((iconSize.value * 0.35f).sp))
                         }
                     }
                 bmp != null ->
-                    Image(bmp, spoken, Modifier.size(iconSize), colorFilter = if (mono) ColorFilter.tint(Palette.accent) else null)
+                    Image(bmp, spoken, Modifier.size(iconSize), colorFilter = Pack.icon(mono))
                 else ->
                     // Apps without an icon get their initials.
                     Box(Modifier.size(iconSize), contentAlignment = Alignment.Center) {
-                        BasicText(initials(shortcut.label), style = Mono.copy(color = Palette.accent, fontSize = (iconSize.value * 0.45f).sp))
+                        BasicText(initials(shortcut.label), style = Pack.placeholder((iconSize.value * 0.45f).sp))
                     }
             }
             if (showLabel) TileLabel(shortcut.label)
@@ -93,26 +90,31 @@ fun ShortcutTile(
 /** How opaque an app from a paused work profile is drawn. */
 internal const val PausedAlpha = 0.4f
 
-/** An app tile's frame, or none for bare icons unless [focused]. */
-internal fun Modifier.tileFrame(focused: Boolean) =
-    when {
-        !LauncherStyle.bareAppIcons -> tile(focused)
-        // Bare icons still show which tile is focused or being edited.
-        focused -> frame(2.dp, Palette.accent)
-        else -> this
-    }
+/** An app tile's frame from the pack, the scrap known by [key]; none for bare icons unless [focused]. */
+internal fun Modifier.tileFrame(
+    focused: Boolean,
+    key: String,
+) = when {
+    !Pack.bareIcons -> scrap(focused, key)
+    // Bare icons still show which tile is focused or being edited.
+    focused -> scrapFocus()
+    else -> this
+}
 
 /** The name under an app tile's icon. */
 @Composable
 internal fun TileLabel(text: String) {
+    val bare = Pack.bareIcons
     BasicText(
         text,
+        // Straight on the page, a name gets the page's plate where the pack has one.
+        if (bare) Modifier.background(Pack.plate) else Modifier,
         style =
-            if (LauncherStyle.bareAppIcons) {
-                // On the wallpaper: light text with a shadow, like stock launchers.
-                Mono.copy(fontSize = TextSize.Small, textAlign = TextAlign.Center, color = Color.White, shadow = Shadow(Color.Black.copy(alpha = 0.7f), blurRadius = 6f))
+            if (bare) {
+                // On the wallpaper: light text with a shadow, like stock launchers; on a pack's own page, its page ink.
+                Pack.pageLabel().copy(textAlign = TextAlign.Center)
             } else {
-                Mono.copy(fontSize = TextSize.Small, textAlign = TextAlign.Center)
+                Pack.body(Pack.size.small, Pack.scrapInk).copy(textAlign = TextAlign.Center)
             },
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
