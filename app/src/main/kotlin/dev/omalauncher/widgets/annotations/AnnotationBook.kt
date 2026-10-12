@@ -307,6 +307,33 @@ class AnnotationBook(
         }
 
     /**
+     * Carries the note or sticker [id] from [from] over to [to], to [x], [y] of that page; see [carryScrap].
+     * Its id there, or null, and nothing changed, if either page takes no change or [to] is full, which it says.
+     */
+    fun moveScrap(
+        from: String,
+        to: String,
+        id: String,
+        x: Float,
+        y: Float,
+    ): String? {
+        val here = editable(from) ?: return null
+        val there = editable(to) ?: return null
+        val crossed = carryScrap(here.marks, there.marks, id, x, y, now())
+        if (crossed == null) {
+            when (here.marks.scrap(id)) {
+                is Scrap.Note -> notice = NO_ROOM_NOTE
+                is Scrap.Stuck -> notice = NO_ROOM_STICKER
+                null -> {}
+            }
+            return null
+        }
+        change(to) { it.with(crossed.to) }
+        change(from) { it.with(crossed.from) }
+        return crossed.id
+    }
+
+    /**
      * An agent's note on [page], near the cell [near] (column, row) when one is asked for; see [leaveAgentNote].
      * The page must have been read ([whenRead]).
      */

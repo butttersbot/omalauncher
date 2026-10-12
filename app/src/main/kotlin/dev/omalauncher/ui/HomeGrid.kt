@@ -674,6 +674,38 @@ internal fun HomeGrid(
                             return@awaitEachGesture
                         }
 
+                        // A note or a sticker in hand changes pages as a tile does: side by side the finger picks the page,
+                        // and resting at a side edge turns to the next one.
+                        var scrapAtEdgeSince = 0L
+                        val crossing =
+                            Crossing(
+                                area = { p ->
+                                    val (all, room) = current
+                                    pagesAt(pager.targetPage, all, room).indexOf(p).takeIf { it >= 0 }?.let { room.area(it) }
+                                },
+                                under = { finger ->
+                                    val (all, room) = current
+                                    val over = room.side(finger)
+                                    all.getOrNull(pager.targetPage * room.per + over)?.let { it to room.area(over) }
+                                },
+                                rest = { finger ->
+                                    val time = SystemClock.uptimeMillis()
+                                    val edgeSide = if (finger.x < edge) -1 else if (finger.x > size.width - edge) 1 else 0
+                                    when {
+                                        edgeSide == 0 -> scrapAtEdgeSince = 0L
+                                        scrapAtEdgeSince == 0L -> scrapAtEdgeSince = time
+                                        time - scrapAtEdgeSince > PAGE_TURN_MS && !pager.isScrollInProgress -> {
+                                            val next = pager.currentPage + edgeSide
+                                            if (next in 0 until pager.pageCount) {
+                                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                scope.launch { pager.animateScrollToPage(next) }
+                                            }
+                                            // Turning again takes a longer rest, so the page just reached can be looked at.
+                                            scrapAtEdgeSince = time + PAGE_TURN_MS
+                                        }
+                                    }
+                                },
+                            )
                         // A note or a sticker being edited takes every touch, as a tile being edited does below. One whose
                         // page no longer shows is let go.
                         val pad = marked
@@ -683,7 +715,7 @@ internal fun HomeGrid(
                             val chosenSide = shown.indexOf(chosen.page)
                             if (chosenSide < 0 || notes == null) {
                                 pad.selected = null
-                            } else if (editScrap(down, g.local(start, chosenSide), chosen, g.area(0), pad, notes, arbiter, grab.toFloat())) {
+                            } else if (editScrap(down, g.local(start, chosenSide), chosen, g.area(0), pad, notes, arbiter, crossing, grab.toFloat())) {
                                 return@awaitEachGesture
                             }
                         }
@@ -760,7 +792,7 @@ internal fun HomeGrid(
                         // On a page with neither, nothing here is any different.
                         if (pad != null && notes != null) {
                             val lifted =
-                                liftScrap(down, at, page, g.area(0), pad, notes, arbiter, { awaitLongPress(down.id, start) }) {
+                                liftScrap(down, at, page, g.area(0), pad, notes, arbiter, crossing, { awaitLongPress(down.id, start) }) {
                                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                     onSelect(null)
                                 }

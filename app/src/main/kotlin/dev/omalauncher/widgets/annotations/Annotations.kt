@@ -429,6 +429,43 @@ fun Annotations.scrapAt(
 
 fun Annotations.scrap(id: String): Scrap? = notes.firstOrNull { it.id == id }?.let(Scrap::Note) ?: stickers.firstOrNull { it.id == id }?.let(Scrap::Stuck)
 
+/** A note or sticker carried from one page to another: both pages after it, and its id on the one it went to. */
+data class Crossed(
+    val from: Annotations,
+    val to: Annotations,
+    val id: String,
+)
+
+/**
+ * Carries the note or sticker [id] off the page [from] and onto [to] at [x], [y] of that page: a note's top
+ * left corner, a sticker's centre. As when the owner moves one on its page, a note he carries over is his and
+ * lies on top. It keeps its id unless [to] has one like it. Null, and nothing changed, if [from] has none such
+ * or [to] already holds all it takes of them.
+ */
+fun carryScrap(
+    from: Annotations,
+    to: Annotations,
+    id: String,
+    x: Float,
+    y: Float,
+    now: Long,
+): Crossed? =
+    when (val scrap = from.scrap(id)) {
+        null -> null
+        is Scrap.Note -> {
+            if (to.notes.size >= AnnotationLimits.NOTES) return null
+            val there = if (to.scrap(id) == null) id else freshId(to, "n", now)
+            val note = scrap.note.copy(id = there, x = x, y = y, author = Author.Owner, z = (to.notes.maxOfOrNull { it.z } ?: 0) + 1).fitted()
+            Crossed(from.copy(notes = from.notes.filter { it.id != id }), to.copy(notes = to.notes + note), there)
+        }
+        is Scrap.Stuck -> {
+            if (to.stickers.size >= AnnotationLimits.STICKERS) return null
+            val there = if (to.scrap(id) == null) id else freshId(to, "s", now)
+            val sticker = scrap.sticker.copy(id = there, x = x, y = y).fitted()
+            Crossed(from.copy(stickers = from.stickers.filter { it.id != id }), to.copy(stickers = to.stickers + sticker), there)
+        }
+    }
+
 /** A note of this size and place as a page keeps it: no smaller than can be read or taken hold of, and all of it on the page. */
 fun StickyNote.fitted(): StickyNote {
     val w = unit(w.coerceIn(AnnotationLimits.MIN_NOTE, 1f))

@@ -404,4 +404,49 @@ class AnnotationsTest {
         // Not a sticker's id either.
         assertFalse(result.note.id in stickers.map { it.id })
     }
+
+    // Carried to another page.
+
+    @Test fun aNoteCarriedToAnotherPageLeavesTheOneAndLandsOnTopOfTheOther() {
+        val note = StickyNote("n1", 0.1f, 0.1f, 0.3f, 0.1f, "milk", author = Author.Agent, z = 1)
+        val from = Annotations(notes = listOf(note, StickyNote("n2", 0.5f, 0.5f, 0.3f, 0.1f, "stays")))
+        val to = Annotations(notes = listOf(StickyNote("m1", 0.2f, 0.2f, 0.3f, 0.1f, "there", z = 7)), stickers = listOf(Sticker("s1", StickerKind.Star, 0.5f, 0.5f, 0.14f)))
+        val crossed = carryScrap(from, to, "n1", 0.4f, 0.6f, now = 5)!!
+        assertEquals(listOf("n2"), crossed.from.notes.map { it.id })
+        assertEquals("n1", crossed.id)
+        val landed = crossed.to.notes.first { it.id == "n1" }
+        assertEquals(note.copy(x = 0.4f, y = 0.6f, author = Author.Owner, z = 8), landed)
+        assertEquals(2, crossed.to.notes.size)
+        assertSame(to.stickers, crossed.to.stickers)
+    }
+
+    @Test fun whatIsCarriedPastThePagesEdgeStaysWhollyOnIt() {
+        val from = Annotations(notes = listOf(StickyNote("n1", 0.1f, 0.1f, 0.3f, 0.1f, "milk")))
+        val landed = carryScrap(from, Annotations(), "n1", 0.9f, -0.2f, now = 5)!!.to.notes.single()
+        assertEquals(0.7f, landed.x, 1f / UNITS)
+        assertEquals(0f, landed.y, 0f)
+    }
+
+    @Test fun aStickerIsCarriedOverToo() {
+        val from = Annotations(stickers = listOf(Sticker("s1", StickerKind.Star, 0.5f, 0.5f, 0.14f, turn = 30)))
+        val crossed = carryScrap(from, Annotations(), "s1", 0.25f, 0.75f, now = 5)!!
+        assertTrue(crossed.from.stickers.isEmpty())
+        assertEquals(Sticker("s1", StickerKind.Star, 0.25f, 0.75f, 0.14f, turn = 30), crossed.to.stickers.single())
+    }
+
+    @Test fun oneCarriedToAPageWithItsIdGetsAnotherThere() {
+        val from = Annotations(notes = listOf(StickyNote("n1", 0.1f, 0.1f, 0.3f, 0.1f, "mine")))
+        val to = Annotations(notes = listOf(StickyNote("n1", 0.5f, 0.5f, 0.3f, 0.1f, "theirs")))
+        val crossed = carryScrap(from, to, "n1", 0.2f, 0.2f, now = 5)!!
+        assertFalse(crossed.id == "n1")
+        assertEquals(setOf("n1", crossed.id), crossed.to.notes.map { it.id }.toSet())
+        assertEquals("mine", crossed.to.notes.first { it.id == crossed.id }.text)
+    }
+
+    @Test fun aFullPageTakesNoneAndWhatIsNotThereGoesNowhere() {
+        val from = Annotations(notes = listOf(StickyNote("n1", 0.1f, 0.1f, 0.3f, 0.1f, "mine")))
+        val full = Annotations(notes = (0 until AnnotationLimits.NOTES).map { StickyNote("m$it", 0.1f, 0.03f * it, 0.3f, 0.1f, "there", z = it) })
+        assertNull(carryScrap(from, full, "n1", 0.2f, 0.2f, now = 5))
+        assertNull(carryScrap(from, Annotations(), "gone", 0.2f, 0.2f, now = 5))
+    }
 }
