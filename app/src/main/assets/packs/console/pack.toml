@@ -1,0 +1,281 @@
+# Console: the launcher's default pack, and the one every other pack is written from.
+#
+# It sets every token there is. A pack that leaves a token out, or names a font or wallpaper
+# it doesn't hold, gets the value here for that token only. The launcher has the same values
+# built in (theme/pack/PackSchema.kt) and a test keeps this file and the code in step.
+#
+# Lengths are dp, text sizes sp, angles degrees, times milliseconds. A color is "#rrggbb",
+# "#aarrggbb", or the name of a [palette] color, and any of them may end in "@" and an alpha
+# from 0 to 1: "background@0.88". Files are paths inside the pack's folder, "" for none.
+#
+# Compatibility: a key's meaning never changes; a new format number only adds keys; and a
+# build ignores the keys it doesn't know. A token that must mean something else gets a new key.
+
+[pack]
+format = 1
+name = "Console"
+
+# The first eight are replaced by the Omarchy theme that is picked; these are Tokyo Night's,
+# which is what shows before one is. The rest follow from them.
+[palette]
+mode = "dark"
+background = "#1a1b26"
+surface = "#24283b"
+foreground = "#c0caf5"
+muted = "#565f89"
+accent = "#7aa2f7"
+border = "#414868"
+red = "#f7768e"
+green = "#9ece6a"
+on_page = "foreground"
+highlight = "accent"
+alt = "surface"
+on_alt = "foreground"
+overlay = "background@0.9"
+glass = "background@0.88"
+
+# Four voices: display for headings, body for reading, hand for notes, mono for captions and
+# code. family is the system font used without a file: monospace, sans-serif, serif or cursive.
+[type.display]
+family = "monospace"
+file = ""
+weight = 400
+scale = 1
+italic = false
+uppercase = false
+tracking = 0
+highlighter = false
+
+[type.body]
+family = "monospace"
+file = ""
+weight = 400
+scale = 1
+italic = false
+uppercase = false
+tracking = 0
+
+[type.hand]
+family = "monospace"
+file = ""
+weight = 400
+scale = 1
+italic = false
+uppercase = false
+tracking = 0
+
+[type.mono]
+family = "monospace"
+file = ""
+weight = 400
+scale = 1
+italic = false
+uppercase = false
+tracking = 0
+
+[type.size]
+small = 12
+body = 14
+item = 15
+large = 16
+title = 18
+
+# corners: user (the corner style in settings), edge, soft or round.
+[shape]
+radius = 16
+corners = "user"
+gap = 6
+
+# A scrap is a tile on the page. [scrap.alt] is an emphasised one; tape and title bars are
+# none, solid or stripes.
+[scrap]
+fill = "glass"
+ink = "foreground"
+border = 2
+border_color = "border"
+focus_color = "accent"
+muted = "muted"
+tilt_min = 0
+tilt_max = 0
+
+[scrap.shadow]
+x = 0
+y = 0
+blur = 0
+color = "#00000000"
+inset = false
+
+[scrap.shadow2]
+x = 0
+y = 0
+blur = 0
+color = "#00000000"
+inset = false
+
+[scrap.alt]
+fill = "glass"
+ink = "foreground"
+border = 2
+border_color = "accent"
+focus_color = "accent"
+
+[scrap.alt.shadow]
+x = 0
+y = 0
+blur = 0
+color = "#00000000"
+inset = false
+
+[scrap.alt.shadow2]
+x = 0
+y = 0
+blur = 0
+color = "#00000000"
+inset = false
+
+[scrap.tape]
+style = "none"
+color = "accent"
+color2 = "accent"
+opacity = 0.9
+width = 66
+height = 21
+angle = -3
+
+[scrap.title_bar]
+style = "none"
+height = 20
+fill = "foreground"
+ink = "background"
+glyph = ""
+border = 0
+
+[scrap.sticky]
+fill = "surface"
+ink = "foreground"
+border = 2
+border_color = "border"
+dashed = false
+
+# kind: system (the system wallpaper), paper (color and pattern) or wallpaper (the two files,
+# cover for the folded display and inner for the unfolded). pattern: none, dots, lines, grid
+# or checker. plate: none, or paper to back text on the page with the page color.
+[page]
+kind = "system"
+color = "background"
+pattern = "none"
+pattern_color = "border"
+pattern_size = 16
+pattern_weight = 1
+wallpaper_cover = ""
+wallpaper_inner = ""
+gutter = false
+overview_scrim = "#00000000"
+drawer_fill = "overlay"
+plate = "none"
+
+[page.text_shadow]
+x = 0
+y = 0
+blur = 0
+color = "#00000000"
+inset = false
+
+# treatment: user (the monochrome switch in settings), original, monochrome or grayscale.
+# The placeholder stands in for an app with no icon: letter, glyph or blank.
+[icons]
+treatment = "user"
+tint = "accent"
+saturation = 1
+contrast = 1
+shadow = false
+
+[icons.placeholder]
+style = "letter"
+font = "mono"
+fill = "surface"
+ink = "foreground"
+border = 0
+border_color = "border"
+focus_color = "accent"
+
+[icons.placeholder.shadow]
+x = 0
+y = 0
+blur = 0
+color = "#00000000"
+inset = false
+
+[icons.placeholder.shadow2]
+x = 0
+y = 0
+blur = 0
+color = "#00000000"
+inset = false
+
+# The light around the screen's edge, in its four states. period is one trip around; pulses
+# is how many times it breathes before fading.
+[ring]
+width = 2
+glow = 6
+glow_opacity = 0.6
+
+[ring.listening]
+color1 = "accent"
+color2 = "foreground"
+opacity = 1
+period = 4200
+pulses = 0
+
+[ring.working]
+color1 = "accent"
+color2 = "foreground"
+opacity = 0.8
+period = 9000
+pulses = 0
+
+[ring.needs_you]
+color1 = "red"
+color2 = "accent"
+opacity = 1
+period = 14000
+pulses = 0
+
+[ring.done]
+color1 = "green"
+color2 = "green"
+opacity = 1
+period = 4200
+pulses = 2
+
+# What the pen draws with. blend: normal or multiply.
+[ink]
+pen = "on_page"
+second = "accent"
+highlighter = "highlight@0.5"
+width = 3
+blend = "normal"
+
+# style: bar (one framed bar), buttons (a row of framed buttons) or bare.
+[dock]
+style = "bar"
+tilt = 0
+fill = "glass"
+ink = "foreground"
+border = 2
+border_color = "border"
+focus_color = "accent"
+
+[dock.shadow]
+x = 0
+y = 0
+blur = 0
+color = "#00000000"
+inset = false
+
+[dock.shadow2]
+x = 0
+y = 0
+blur = 0
+color = "#00000000"
+inset = false
