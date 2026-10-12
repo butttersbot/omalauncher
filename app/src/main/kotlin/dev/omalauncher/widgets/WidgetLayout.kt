@@ -3,6 +3,8 @@ package dev.omalauncher.widgets
 import dev.omalauncher.widgets.layout.Placement
 import dev.omalauncher.widgets.layout.Tile
 import dev.omalauncher.widgets.layout.estimatedGeometry
+import dev.omalauncher.widgets.layout.firstFit
+import dev.omalauncher.widgets.layout.shown
 
 /** A widget's place on its page's grid, in cells. */
 data class Cell(
@@ -19,6 +21,21 @@ data class Cell(
 
 /** Columns of the home grid. Saved with the layout, so changing it rescales saved cells rather than scrambling them. */
 const val GRID_COLUMNS = 6
+
+/**
+ * Where a tile of [w] by [h] cells goes on from a page with no room for it (PRD UP-1): the first of [pages]
+ * after the one at position [from] with a free spot at that size, [takenOn] giving the cells taken on a page.
+ * Null when none has: then a new page after the last is what there is to offer.
+ */
+fun nextPageWithRoom(
+    pages: List<String>,
+    from: Int,
+    w: Int,
+    h: Int,
+    cols: Int,
+    rows: Int,
+    takenOn: (String) -> List<Cell>,
+): String? = pages.drop(from + 1).firstOrNull { firstFit(w, h, takenOn(it), cols, rows) != null }
 
 /**
  * Where each widget and pinned app sits on its page's grid, keyed by file name (or shortcut key). The cells
@@ -70,6 +87,36 @@ class WidgetLayout(
         others: List<HomeItem>,
         page: String? = null,
     ): Boolean = placement.claim(item, others, held(page, others + item))
+
+    /**
+     * The cells taken on [page], which shows [items], for a tile that isn't [mover]: the tiles as they show (an
+     * app as 1x1) and the places kept for widgets whose files are missing.
+     */
+    private fun takenOn(
+        page: String,
+        items: List<HomeItem>,
+        mover: String,
+    ) = held(page, items) + items.filter { it.key != mover }.mapNotNull { notebook.cell(it.key)?.shown(it.resizable) }
+
+    /** Whether [page], showing [items], has a free spot for the tile [mover] at the size of [cell]. */
+    fun roomFor(
+        cell: Cell,
+        mover: String,
+        page: String,
+        items: List<HomeItem>,
+        cols: Int,
+        rows: Int,
+    ) = firstFit(cell.w, cell.h, takenOn(page, items, mover), cols, rows) != null
+
+    /** The next page after [page] with room for the tile [mover] at the size of [cell]; null when none has. See [nextPageWithRoom]. */
+    fun nextWithRoom(
+        cell: Cell,
+        mover: String,
+        page: String,
+        itemsOn: (String) -> List<HomeItem>,
+        cols: Int,
+        rows: Int,
+    ): String? = nextPageWithRoom(notebook.pages.map { it.id }, notebook.position(page), cell.w, cell.h, cols, rows) { takenOn(it, itemsOn(it), mover) }
 
     /** Whether home has laid a page out yet; before that there is no grid to [claim] a spot on. */
     val laidOut get() = placement.grid != null
