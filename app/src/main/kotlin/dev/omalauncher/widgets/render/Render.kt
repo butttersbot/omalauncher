@@ -72,7 +72,11 @@ import androidx.compose.ui.unit.sp
 import dev.omalauncher.ui.Mono
 import dev.omalauncher.ui.NerdSymbols
 import dev.omalauncher.ui.LauncherStyle
+import dev.omalauncher.ui.Pack
 import dev.omalauncher.ui.Palette
+import dev.omalauncher.theme.pack.TypeRole
+import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.em
 import dev.omalauncher.ui.TerminalView
 import dev.omalauncher.widgets.lang.Action
 import dev.omalauncher.widgets.lang.Builtins
@@ -302,7 +306,7 @@ private fun Element(
                     }.padding(horizontal = 10.dp, vertical = 6.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                BasicText(p.observe("text")?.text().orEmpty(), style = WidgetMono, maxLines = 1, overflow = TextOverflow.Ellipsis, color = ColorProducer { color() })
+                BasicText(p.observe("text")?.text().orEmpty(), style = widgetVoice(TypeRole.Body, 13.sp), maxLines = 1, overflow = TextOverflow.Ellipsis, color = ColorProducer { color() })
             }
         }
         "Progress" -> {
@@ -568,33 +572,83 @@ private fun handlers(p: Props): Modifier {
     return m
 }
 
+/**
+ * The voice a widget's text is set in. In a look that draws its own page it is one of the look's, as the
+ * prototype's scraps are: big text in the display voice, captions in the small spaced capitals, the rest in
+ * the body voice, and `font:` picks another. In Console everything is the launcher's monospace, as it always was.
+ */
+internal fun widgetRole(
+    style: String?,
+    font: String?,
+): TypeRole? =
+    when (font) {
+        "mono" -> TypeRole.Mono
+        "hand" -> TypeRole.Hand
+        "display" -> TypeRole.Display
+        "body" -> TypeRole.Body
+        // The system's own faces and the symbol font are no voice of the look's.
+        "sans", "serif", "icon" -> null
+        else ->
+            when (style) {
+                "huge", "title" -> TypeRole.Display
+                "label" -> TypeRole.Mono
+                else -> TypeRole.Body
+            }
+    }
+
+/** How much of its monospace size `huge` text keeps in a look's display voice: the prototype's 34 against 44. */
+internal const val HUGE_IN_DISPLAY = 34f / 44f
+
+/** The prototype's line height for its display voice, in ems. */
+internal const val DISPLAY_LINE = 1.05f
+
+/** [size] of text in [role], for a widget: the look's voice where it has the page, else the launcher's monospace. */
+internal fun widgetVoice(
+    role: TypeRole?,
+    size: TextUnit,
+    /** A caption keeps the voice's spacing; other text in the same voice (a table set in mono) is set plainly. */
+    spaced: Boolean = false,
+): TextStyle {
+    if (role == null || !Pack.ownsPage) return Mono.copy(fontSize = size)
+    val voice = Pack.look.style(role, size, Color.Unspecified)
+    // The prototype sets its display voice tight (`.disp`: line-height 1.05): a heading takes no more of a tile than it did in monospace.
+    val set = if (role == TypeRole.Display) voice.copy(lineHeight = DISPLAY_LINE.em) else voice
+    return if (spaced) set else set.copy(letterSpacing = TextUnit.Unspecified)
+}
+
 @Composable
 private fun TextNode(
     p: Props,
     mod: Modifier,
 ) {
     val style = p.observe("style")?.toString()
-    val base =
-        when (style) {
-            "huge" -> WidgetMono.copy(fontSize = 44.sp)
-            "title" -> WidgetMono.copy(fontSize = 20.sp)
-            "small", "label" -> WidgetMono.copy(fontSize = 11.sp)
-            else -> WidgetMono
+    val font = p.observe("font")?.toString()
+    val size =
+        p.observe("fontSize")?.num()?.sp ?: when (style) {
+            "huge" -> 44.sp
+            "title" -> 20.sp
+            "small", "label" -> 11.sp
+            else -> 13.sp
         }
+    val label = style == "label" && font == null
+    val role = widgetRole(style, font)
+    // The biggest text is the prototype's `.head`, 34 units: a display face is far wider than the monospace that 44 was chosen for.
+    val shrunk = style == "huge" && role == TypeRole.Display && Pack.ownsPage && !p.has("fontSize")
+    val voice = widgetVoice(role, if (shrunk) size * HUGE_IN_DISPLAY else size, spaced = label)
     val defaultColor: () -> Color = if (style == "muted" || style == "label") ({ Palette.muted }) else ({ Palette.foreground })
     val color = p.color("color", defaultColor)
     val textStyle =
-        TextStyle(
+        voice.copy(
             fontFamily =
-                when (p.observe("font")?.toString()) {
+                when (font) {
                     "sans" -> FontFamily.SansSerif
                     "serif" -> FontFamily.Serif
                     "icon" -> NerdSymbols
-                    else -> FontFamily.Monospace
+                    else -> voice.fontFamily ?: FontFamily.Monospace
                 },
-            fontSize = p.observe("fontSize")?.num()?.sp ?: base.fontSize,
-            fontWeight = if (p.observe("bold")?.truthy == true) FontWeight.Bold else null,
-            fontStyle = if (p.observe("italic")?.truthy == true) FontStyle.Italic else null,
+            fontSize = if (p.has("fontSize")) size else voice.fontSize,
+            fontWeight = if (p.observe("bold")?.truthy == true) FontWeight.Bold else voice.fontWeight,
+            fontStyle = if (p.observe("italic")?.truthy == true) FontStyle.Italic else voice.fontStyle,
             textAlign =
                 when (p.observe("align")?.toString()) {
                     "center" -> TextAlign.Center
@@ -602,8 +656,10 @@ private fun TextNode(
                     else -> TextAlign.Start
                 },
         )
+    val text = p.observe("text")?.text().orEmpty()
     BasicText(
-        p.observe("text")?.text().orEmpty(),
+        // A caption is spelled as the look spells one: in capitals where its caption voice says so.
+        if (label && Pack.ownsPage) Pack.caption(text) else text,
         if (p.has("width") || p.has("weight") || p.has("fill")) mod else mod.fillMaxWidth(),
         style = textStyle,
         // Big text stays on one line in narrow tiles instead of breaking mid-word.

@@ -179,7 +179,7 @@ when lists reorder), and `let x = ...` inside any node.
 | `Flow` | a Row that wraps to new lines |
 | `Box` | stacks children on top of each other; `align: center/top/bottom/start/end/topStart/topEnd/bottomStart/bottomEnd` |
 | `Grid` | `columns` (2), `gap`; children fill cells left to right |
-| `Text` | `text`, `style: huge/title/body/small/muted/label`, `color`, `fontSize`, `bold`, `italic`, `font: mono/sans/serif/icon` (`icon` draws the Nerd Font weather glyphs U+E300–E3E3, plus 󰄬 U+F012C and 󰅖 U+F0156), `align: start/center/end`, `maxLines` |
+| `Text` | `text`, `style: huge/title/body/small/muted/label`, `color`, `fontSize`, `bold`, `italic`, `font: mono/display/body/hand/sans/serif/icon` (in a look with its own page, text is in the look's voices: `huge` and `title` in its display voice, `label` in its caption capitals, the rest in its body voice, and `mono`, `display`, `body` or `hand` picks one; in Console all of it is monospace) (`icon` draws the Nerd Font weather glyphs U+E300–E3E3, plus 󰄬 U+F012C and 󰅖 U+F0156), `align: start/center/end`, `maxLines` |
 | `Button` | `text`, `color`, `onTap` |
 | `Progress` | `value`, `max` (100), `color`, `track` |
 | `Ring` | circular progress: `value`, `max` (1), `color`, `track`, `thickness` (6), `start`/`sweep` (degrees; `start: 225; sweep: 270` makes a gauge). 64 dp unless sized |

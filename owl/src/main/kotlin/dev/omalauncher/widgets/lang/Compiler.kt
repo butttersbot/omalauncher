@@ -72,7 +72,7 @@ class Compiler private constructor(
                 "align" to ALIGN,
                 "justify" to setOf("start", "center", "end", "spaceBetween", "spaceAround", "spaceEvenly"),
                 "fit" to setOf("contain", "cover", "fill"),
-                "font" to setOf("mono", "sans", "serif", "icon"),
+                "font" to setOf("mono", "display", "body", "hand", "sans", "serif", "icon"),
                 "fill" to setOf("width", "height"),
                 "cap" to setOf("round", "butt", "square"),
             )
