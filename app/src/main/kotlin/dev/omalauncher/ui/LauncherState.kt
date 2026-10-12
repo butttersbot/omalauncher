@@ -87,6 +87,9 @@ class LauncherState {
      */
     var barHeight by mutableIntStateOf(0)
 
+    /** How many pages home shows side by side: two when unfolded into a spread. The paper's gutters are drawn from it. */
+    var pagesAcross by mutableIntStateOf(1)
+
     /**
      * The id of the home page last touched: the one showing, or of two side by side the one a finger was last on
      * (the left one until then). The drawer pins apps there, and folding the phone shows it.

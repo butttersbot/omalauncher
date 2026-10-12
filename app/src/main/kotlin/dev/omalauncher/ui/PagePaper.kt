@@ -1,5 +1,9 @@
 package dev.omalauncher.ui
 
+import dev.omalauncher.assist.prototypeUnit
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -95,4 +99,26 @@ private fun patternTile(
         }
     }
     return tile
+}
+
+/**
+ * The prototype's `.page::before`: a soft shadow down the inner edge of each page, nine of its units wide, in
+ * a look whose page has a gutter. With [across] pages side by side there is one at the screen's edge and one
+ * at each page's start after it, which on a spread is the fold.
+ */
+@Composable
+fun PageGutters(across: Int) {
+    if (!Pack.look.pack.page.gutter || across < 1) return
+    Canvas(Modifier.fillMaxSize()) {
+        val u = prototypeUnit(size.width / density, size.height / density)
+        val wide = 9f * u * density
+        for (page in 0 until across) {
+            val x = size.width * page / across
+            drawRect(
+                Brush.horizontalGradient(listOf(Color.Black.copy(alpha = 0.16f), Color.Transparent), startX = x, endX = x + wide),
+                topLeft = Offset(x, 0f),
+                size = Size(wide, size.height),
+            )
+        }
+    }
 }

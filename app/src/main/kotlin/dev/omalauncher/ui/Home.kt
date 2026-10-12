@@ -55,6 +55,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -162,6 +163,7 @@ fun HomeScreen(
             foldView(width, height, posture(width, height, state.hinge), pages.indexOf(state.currentPage), pages.size)
         }
     val per = fold.per
+    SideEffect { state.pagesAcross = per }
     val pager = rememberPagerState(initialPage = fold.slot) { fold.slots }
     // A tile dropped on another page, or a page just added: show it once the page list has caught up.
     var showPage by remember { mutableStateOf<String?>(null) }
@@ -397,6 +399,8 @@ fun HomeScreen(
         PageNames(
             // Not before the notebook is read: the page shown until then is a stand-in.
             names = pagesAt(pager.currentPage, pages, per).map { page -> page?.takeIf { engine.notebook.opened }?.let(engine.notebook::name) },
+            first = pager.currentPage * per,
+            total = pages.size,
             hidden = { state.homeCovered || engine.openScreen != null },
             // Gone as the pages shrink under a pinch: the overview names every page itself.
             faded = { maxOf(state.drawer.value, (1f - pinch.value) / (1f - OVERVIEW_AT)) },
@@ -573,6 +577,21 @@ private fun Notice(
 }
 
 /**
+ * The prototype's folio: the names of the pages showing joined with a plus, then the first one's number out of
+ * all, as in "Today + Week  1/5". Null when no page showing has a name yet.
+ */
+internal fun folio(
+    names: List<String?>,
+    first: Int,
+    total: Int,
+): String? {
+    val named = names.filterNotNull().filter { it.isNotBlank() }
+    if (named.isEmpty()) return null
+    val place = if (total > 1) "  ${first + 1}/$total" else ""
+    return named.joinToString(" + ") + place
+}
+
+/**
  * The name of the page showing, top-left over it; of two pages side by side, each over its own half.
  * [hidden] and [faded] (the drawer's position, 0 to 1) are read while drawing: under the app list or a
  * full-screen panel it isn't there. A tap opens the overview of all pages ([onOpen]).
@@ -580,6 +599,9 @@ private fun Notice(
 @Composable
 private fun PageNames(
     names: List<String?>,
+    /** The first showing page's place among all [total], from 0. */
+    first: Int,
+    total: Int,
     hidden: () -> Boolean,
     faded: () -> Float,
     onOpen: () -> Unit,
@@ -591,7 +613,9 @@ private fun PageNames(
             .height(PageNameHeight)
             .graphicsLayer { alpha = if (hidden()) 0f else 1f - faded().coerceIn(0f, 1f) },
     ) {
-        for (name in names) {
+        // A look with its own page has the prototype's one folio: the names showing and where they are in the notebook.
+        val shown = if (Pack.ownsPage) listOf(folio(names, first, total)) else names
+        for (name in shown) {
             Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.CenterStart) {
                 if (name != null) {
                     BasicText(
