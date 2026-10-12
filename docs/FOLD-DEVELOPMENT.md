@@ -26,4 +26,8 @@ The earlier separate preview workflow is superseded.
 
 Actual Fold APK compilation including native CMake and 83 app tests previously
 passed. Claude itself edited source docs, built, synced and installed the separate
-preview. Working-launcher update verification is in progress (2026-10-11).
+preview. Working-launcher in-place update verified on 2026-10-11: actual Fold build passed
+83 tests, matching certificate verified, Claude scheduled install, detached Android
+installer returned INSTALL_SUCCESS, installed version advanced10→11, same app
+remained default, Claude login remained active, source and phone control survived.
+No new Linux or login setup was needed. Next build code12 is stored privately.
