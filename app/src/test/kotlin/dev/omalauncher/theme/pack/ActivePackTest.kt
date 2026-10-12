@@ -224,24 +224,29 @@ class ActivePackTest {
         assertNull(readCapped(failing, "x.ttf", 10))
     }
 
-    /** PRD 6.5: tilt is visual only. Whatever the angle, a scrap is touched on its cell's upright rectangle. */
-    @Test fun theHitRectangleIsTheCellWhateverTheTilt() {
-        val cell = listOf(40f, 100f, 240f, 220f)
-        for (tilt in listOf(-12f, -3.5f, -0.25f, 0f, 0.25f, 1.3f, 7f, 12f, 45f, 90f, 180f)) {
-            val box = ScrapBox(cell[0], cell[1], cell[2], cell[3], tilt)
-            assertEquals("tilt $tilt", cell, box.hit)
-            // Corners of the cell, in and out.
-            assertTrue(box.hits(40f, 100f))
-            assertTrue(box.hits(239.9f, 219.9f))
-            assertFalse(box.hits(39.9f, 100f))
-            assertFalse(box.hits(240f, 220f))
-            assertFalse(box.hits(140f, 99.9f))
-            // What is drawn does turn: the middle stays put and the corners move, unless it is upright.
-            val drawn = box.drawn()
-            assertEquals(140f, drawn.map { it.first }.average().toFloat(), 0.01f)
-            assertEquals(160f, drawn.map { it.second }.average().toFloat(), 0.01f)
-            val moved = drawn[0] != (40f to 100f)
-            assertEquals("tilt $tilt", tilt != 0f, moved)
+    /**
+     * A shadow a shipped pack gives an offset or a blur has to show. Colors are `#aarrggbb`: written the
+     * way CSS has it, `#00000040`, a shadow is fully clear and never drawn.
+     */
+    @Test fun everyShadowAShippedPackDeclaresIsVisible() {
+        var declared = 0
+        for ((id, _) in shipped) {
+            val pack = shippedPack(id).pack
+            val surfaces = mapOf("scrap" to pack.scrap.surface, "scrap.alt" to pack.scrap.alt, "dock" to pack.dock.surface, "icons.placeholder" to pack.icons.placeholder.surface)
+            val shadows = surfaces.flatMap { (name, s) -> listOf("$name.shadow" to s.shadow, "$name.shadow2" to s.shadow2) } + ("page.text_shadow" to pack.page.textShadow)
+            for ((name, shadow) in shadows) {
+                if (shadow.x == 0f && shadow.y == 0f && shadow.blur == 0f) continue
+                declared++
+                assertTrue("$id $name is ${shadow.color}, which has no alpha", shadow.color.argb ushr 24 != 0)
+                assertTrue("$id $name", shadow.visible)
+            }
+        }
+        // Riso's two, Instrument's six and 1-bit's two.
+        assertEquals(10, declared)
+        // No color anywhere in a shipped manifest is written with eight digits and a clear alpha.
+        for ((id, _) in shipped) {
+            val clear = Regex("\"#00[0-9a-fA-F]{6}\"").findAll(moduleFile("src/main/assets/packs/$id/pack.toml").readText()).map { it.value }.toList()
+            assertEquals("$id", emptyList<String>(), clear)
         }
     }
 

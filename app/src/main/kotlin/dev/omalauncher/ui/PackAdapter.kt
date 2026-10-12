@@ -114,7 +114,8 @@ object ActivePack {
         fonts = emptyMap()
         wallpapers = PackWallpapers()
         this.pick = pick
-        Palette.cover(if (pick.isConsole) null else pick.load?.let { packPalette(it.pack, Palette.theme) })
+        // Made again from each theme that is applied, so the named colors under the pack's are never a past theme's.
+        Palette.cover(if (pick.isConsole) null else pick.load?.let { load -> { under: ThemePalette -> packPalette(load.pack, under) } })
     }
 
     @Volatile private var resolved: Triple<PackPick, ThemePalette, ThemePack>? = null
@@ -122,7 +123,8 @@ object ActivePack {
     /** The pack to draw from, every token resolved. Read in a composable, it follows the choice and the theme. */
     val pack: ThemePack
         get() {
-            val pick = pick
+            // While the pack's colors are lifted off the theme's (Palette.uncovered, for previews), Console is drawn.
+            val pick = pick.let { if (it.isConsole || Palette.covered) it else PackPick.Console }
             val theme = Palette.theme
             resolved?.let { (of, colors, pack) -> if (of === pick && colors === theme) return pack }
             return PackRegistry.resolve(pick, theme.packColors()).also { resolved = Triple(pick, theme, it) }
@@ -295,15 +297,15 @@ class PackLook(
 
     private fun textShadow(shadow: PackShadow) = Shadow(shadow.color.toColor(), Offset(shadow.x, shadow.y), shadow.blur)
 
-    private companion object {
+    internal companion object {
         /** Console's frame radius, which every caller's own radius is written against. */
-        const val CONSOLE_RADIUS = 16f
+        private const val CONSOLE_RADIUS = 16f
 
         /** Focus and selection are never drawn thinner than this, even in a pack whose scraps have no outline. */
         const val MIN_MARK = 2f
-        const val MIN_HAIR = 1f
+        private const val MIN_HAIR = 1f
 
-        fun FontGeneric.family(): FontFamily =
+        private fun FontGeneric.family(): FontFamily =
             when (this) {
                 FontGeneric.Monospace -> FontFamily.Monospace
                 FontGeneric.SansSerif -> FontFamily.SansSerif

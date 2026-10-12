@@ -38,9 +38,9 @@ import dev.omalauncher.theme.pack.scrapTilt
  * tape, a title bar, the focus color and the tilt all come from the pack's `[scrap]`; every tile on home
  * is dressed by this one modifier.
  *
- * Tilt is only drawn. The scrap is turned on the canvas while it draws; there is no layer and no layout
- * change, so it is measured, placed, touched, dragged and resized on its cell's upright rectangle, and
- * the handles and guides around it stay square to the grid (PRD 6.5).
+ * Tilt is only drawn. The scrap is turned on the canvas while it draws; nothing here turns a layer or
+ * changes a layout, so it is measured, placed, touched, dragged and resized on its cell's upright
+ * rectangle, and the handles and guides around it stay square to the grid (PRD 6.5).
  *
  * [key] picks the scrap's fixed angle, and is the item's key; without one it stands straight. [dressed]
  * adds the pack's tape and title bar, for widget tiles: an app's icon has no room under a title bar.
@@ -100,7 +100,7 @@ internal fun Modifier.surface(
             else -> surface.borderColor.toColor()
         }
     // Focus shows even where the pack's scraps have no outline.
-    val width = if (focused && outlined) maxOf(surface.border, FOCUS_WIDTH) else surface.border
+    val width = if (focused && outlined) maxOf(surface.border, PackLook.MIN_MARK) else surface.border
     val plain = !surface.shadow.visible && !surface.shadow2.visible && tilt == 0f && tape == null && bar == null
     if (plain) {
         val filled = clip(shape).background(fill, shape)
@@ -130,10 +130,19 @@ internal fun Modifier.surface(
                 }
             }
         }
-    return if (bar != null) drawn.padding(top = bar.height.dp) else drawn
+    // Nothing here is laid out: the title bar is drawn over the top of the cell, and what is inside makes room with scrapContent().
+    return drawn
 }
 
-private const val FOCUS_WIDTH = 2f
+/**
+ * Room for a dressed scrap's title bar above its content, in a pack that has one; nothing otherwise.
+ * It goes after the tile's pointer input, on the content alone: the whole cell stays the tile's to tap,
+ * bar included, whatever the pack.
+ */
+fun Modifier.scrapContent(): Modifier {
+    val bar = Pack.look.pack.scrap.titleBar
+    return if (bar.style != Dressing.None && bar.height > 0f) padding(top = bar.height.dp) else this
+}
 
 /**
  * What [shadow] is painted with. A cast shadow fills the scrap's outline again; one that falls inward,

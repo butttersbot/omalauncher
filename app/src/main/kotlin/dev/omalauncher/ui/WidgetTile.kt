@@ -44,7 +44,9 @@ internal fun WidgetTile(
     Box(
         modifier
             .scrap(focused, spec.file.name, dressed = true)
-            .pointerInput(spec) { detectTapGestures(onTap = { onTap() }) },
+            .pointerInput(spec) { detectTapGestures(onTap = { onTap() }) }
+            // After the pointer input: a tap on the pack's title bar is still a tap on the tile.
+            .scrapContent(),
     ) {
         if (waitsForLinux != null) {
             // While an installed Linux starts up the tile stays empty; it only offers an install when there's none.

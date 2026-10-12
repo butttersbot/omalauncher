@@ -219,6 +219,101 @@ class PackAdapterTest {
         assertTodaysTile(ThemePalette(themes.getValue("gruvbox")), ActivePack.look, "gruvbox again")
     }
 
+    private fun useDialUp() = ActivePack.choose(PackRegistry.choose("dial-up") { DirectoryPackSource(moduleFile("src/test/resources/packs/dial-up")) })
+
+    /**
+     * What still reads the theme's named colors under a pack (a widget asking for "yellow") gets the theme
+     * that is picked now, not the one that was picked when the pack was chosen.
+     */
+    @Test fun thePacksCoverFollowsTheTheme() {
+        val first = mapOf("background" to "#101010", "yellow" to "#aaaa00", "orange" to "#aa5500")
+        val second = mapOf("background" to "#202020", "yellow" to "#ffff00")
+        val paper = Color(0xFFF7F3EE)
+        Palette.apply(first)
+        useDialUp()
+        assertTrue(Palette.covered)
+        assertEquals(Color(0xFFAAAA00), Palette.named("yellow"))
+        assertEquals(Color(0xFFAA5500), Palette.named("orange"))
+        val covered = Palette.current
+
+        Palette.apply(second)
+        assertEquals(Color(0xFFFFFF00), Palette.named("yellow"))
+        // A color only the earlier theme had is gone, as it would be without a pack.
+        assertNull(Palette.named("orange"))
+        assertTrue(covered !== Palette.current)
+        // The pack's own colors still lie over the theme's, and its extra ones are still there.
+        assertEquals(paper, Palette.background)
+        assertEquals(paper, Palette.named("background"))
+        assertEquals(Color(0xFF33FF66), Palette.named("phosphor"))
+        assertEquals(Color(0xFF202020), Palette.theme.background)
+        // The same palette until the theme changes again, so nothing redraws for nothing.
+        assertSame(Palette.current, Palette.current)
+
+        ActivePack.choose(PackPick.Console)
+        assertTrue(!Palette.covered)
+        Palette.apply(first)
+        assertSame(Palette.theme, Palette.current)
+        assertEquals(Color(0xFFAA5500), Palette.named("orange"))
+    }
+
+    /**
+     * Widget previews draw each Omarchy theme in its own colors whichever pack is in use, and leave the
+     * theme and the pack's colors exactly as they were, also when a preview fails.
+     */
+    @Test fun previewsShowEachThemeUncoveredAndPutEverythingBack() {
+        val themes = themes()
+        for (pack in listOf("dial-up", null)) {
+            Palette.apply(themes.getValue("nord"))
+            if (pack != null) useDialUp() else ActivePack.choose(PackPick.Console)
+            val theme = Palette.theme
+            val current = Palette.current
+            val drawn = ActivePack.pack
+            assertEquals(pack != null, Palette.covered)
+
+            val shown = ArrayList<String>()
+            val result =
+                Palette.uncovered {
+                    for ((name, colors) in themes) {
+                        Palette.apply(colors)
+                        // The theme's own colors, for what reads Palette and for what reads the pack.
+                        val own = ThemePalette(colors)
+                        assertEquals(name, own.background, Palette.background)
+                        assertEquals(name, own.accent, Palette.accent)
+                        assertEquals(name, own.named, Palette.current.named)
+                        assertSame(name, Palette.theme, Palette.current)
+                        assertEquals(name, ConsolePack.ID, ActivePack.pack.id)
+                        assertTodaysTile(own, ActivePack.look, "preview of $name")
+                        shown += name
+                    }
+                    "done"
+                }
+            assertEquals("done", result)
+            assertEquals(themes.keys.toList(), shown)
+            assertSame("$pack theme", theme, Palette.theme)
+            assertSame("$pack current", current, Palette.current)
+            assertEquals("$pack pack", drawn, ActivePack.pack)
+            assertEquals(pack != null, Palette.covered)
+
+            // A preview that throws.
+            val thrown =
+                runCatching {
+                    Palette.uncovered {
+                        Palette.apply(themes.getValue("gruvbox"))
+                        error("the render failed")
+                    }
+                }.exceptionOrNull()
+            assertEquals("the render failed", thrown?.message)
+            assertSame("$pack theme after a throw", theme, Palette.theme)
+            assertSame("$pack current after a throw", current, Palette.current)
+            assertEquals("$pack pack after a throw", drawn, ActivePack.pack)
+
+            // The cover still follows the theme afterwards.
+            Palette.apply(themes.getValue("gruvbox"))
+            assertEquals(pack != null, Palette.covered)
+            if (pack != null) assertEquals(Color(0xFFF7F3EE), Palette.background) else assertSame(Palette.theme, Palette.current)
+        }
+    }
+
     @Test fun aPacksTypeAndShapeReachCompose() {
         val manifest =
             consoleManifest(

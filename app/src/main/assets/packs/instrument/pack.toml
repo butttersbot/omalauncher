@@ -90,7 +90,7 @@ color = "#a2a29b"
 x = 0
 y = 6
 blur = 8
-color = "#00000040"
+color = "#40000000"
 
 [scrap.sticky]
 fill = "accent"
@@ -156,4 +156,4 @@ color = "#a2a29b"
 x = 0
 y = 6
 blur = 8
-color = "#00000040"
+color = "#40000000"

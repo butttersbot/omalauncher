@@ -67,27 +67,70 @@ object Palette {
     var theme by mutableStateOf(ThemePalette(emptyMap()))
         private set
 
-    /** A theme pack's own colors, while a pack other than Console is in use: see [cover]. */
+    /** Makes a theme pack's own colors from the theme's, while a pack other than Console is in use: see [cover]. */
+    private var covering: ((ThemePalette) -> ThemePalette)? = null
+
+    /** What [covering] made of [theme], made again whenever either changes; null without a cover. */
     private var packed by mutableStateOf<ThemePalette?>(null)
 
     /** What is drawn in: the theme's colors, or the pack's own. */
     val current: ThemePalette get() = packed ?: theme
 
-    fun apply(theme: Map<String, String>) {
-        this.theme = ThemePalette(theme)
-    }
+    /** True while a theme pack's own colors are laid over the theme's. */
+    val covered get() = packed != null
 
-    /** Puts back a palette taken from [current], after drawing in other colors for a while. */
-    fun restore(palette: ThemePalette) {
-        if (palette !== packed) theme = palette
+    fun apply(theme: Map<String, String>) {
+        val applied = ThemePalette(theme)
+        this.theme = applied
+        // The pack's colors lie over the theme's named ones, so they are made again from the new theme.
+        packed = covering?.invoke(applied)
     }
 
     /**
-     * Draws everything that still reads these colors (widgets, settings) in [palette], a theme pack's own,
-     * so they can be read on its scraps; null goes back to the theme's. The theme stays applied underneath.
+     * Draws everything that still reads these colors (widgets, settings) in what [cover] makes of the
+     * theme: a theme pack's own colors, so they can be read on its scraps. Null goes back to the theme's.
+     * The theme stays applied underneath, and the cover follows it when another is applied.
      */
-    internal fun cover(palette: ThemePalette?) {
-        packed = palette
+    internal fun cover(cover: ((ThemePalette) -> ThemePalette)?) {
+        covering = cover
+        packed = cover?.invoke(theme)
+    }
+
+    /**
+     * Runs [block] with no pack's colors over the theme's, so each theme [apply] is given inside it shows
+     * in its own colors whichever pack is in use; the launcher draws Console meanwhile. Afterwards the
+     * theme and the cover are exactly what they were, also when [block] throws. For rendering previews.
+     */
+    inline fun <T> uncovered(block: () -> T): T {
+        val saved = lift()
+        try {
+            return block()
+        } finally {
+            putBack(saved)
+        }
+    }
+
+    /** What [uncovered] takes away and puts back. */
+    @PublishedApi
+    internal class Saved(
+        val theme: ThemePalette,
+        val covering: ((ThemePalette) -> ThemePalette)?,
+        val packed: ThemePalette?,
+    )
+
+    @PublishedApi
+    internal fun lift(): Saved {
+        val saved = Saved(theme, covering, packed)
+        covering = null
+        packed = null
+        return saved
+    }
+
+    @PublishedApi
+    internal fun putBack(saved: Saved) {
+        theme = saved.theme
+        covering = saved.covering
+        packed = saved.packed
     }
 
     fun named(name: String): Color? = current.named[name]

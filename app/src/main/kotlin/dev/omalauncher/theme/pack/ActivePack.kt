@@ -132,40 +132,6 @@ fun readCapped(
 }
 
 /**
- * How one scrap is tilted. Tilt is only ever drawn: the scrap is laid out, touched, dragged and resized on
- * its cell's upright rectangle, so [hit] is that rectangle whatever the angle (PRD 6.5).
- */
-class ScrapBox(
-    val left: Float,
-    val top: Float,
-    val right: Float,
-    val bottom: Float,
-    /** Degrees, clockwise. */
-    val tilt: Float,
-) {
-    /** Where the scrap takes touches: its cell, never turned. */
-    val hit get() = listOf(left, top, right, bottom)
-
-    /** True when ([x], [y]) is on the scrap as far as touch goes. */
-    fun hits(
-        x: Float,
-        y: Float,
-    ) = x >= left && x < right && y >= top && y < bottom
-
-    /** The corners as drawn, turned about the middle: top left, top right, bottom right, bottom left. */
-    fun drawn(): List<Pair<Float, Float>> {
-        val cx = (left + right) / 2f
-        val cy = (top + bottom) / 2f
-        val a = Math.toRadians(tilt.toDouble())
-        val cos = Math.cos(a).toFloat()
-        val sin = Math.sin(a).toFloat()
-        return listOf(left to top, right to top, right to bottom, left to bottom).map { (x, y) ->
-            (cx + (x - cx) * cos - (y - cy) * sin) to (cy + (x - cx) * sin + (y - cy) * cos)
-        }
-    }
-}
-
-/**
  * The angle the scrap known by [key] is drawn at: fixed for that key, somewhere from [min] to [max]
  * degrees, so a scrap leans the same way every time it is drawn and after every restart. 0 when the pack
  * doesn't tilt.
