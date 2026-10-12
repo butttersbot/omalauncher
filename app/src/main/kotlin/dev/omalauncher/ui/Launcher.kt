@@ -97,7 +97,10 @@ private fun DesktopScreen(
         }
     }
 
-    if (!runtime.themes.liveWallpaperActive) {
+    if (Pack.ownsPage) {
+        // A theme pack with its own page: its paper or wallpaper is behind home instead of the theme's, the live one included.
+        PagePaper()
+    } else if (!runtime.themes.liveWallpaperActive) {
         runtime.themes.wallpaper?.let { bmp ->
             // Read while drawing, so swiping pages only redraws this.
             Canvas(Modifier.fillMaxSize()) {

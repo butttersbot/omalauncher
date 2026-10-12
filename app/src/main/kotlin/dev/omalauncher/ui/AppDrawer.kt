@@ -269,7 +269,12 @@ internal fun StripCell(
         contentAlignment = Alignment.Center,
     ) {
         val bmp = if (mono) mask else icon
+        // On a dock button of its own, a glyph, silhouette or letter is in the dock's ink, and the button is its badge.
+        val onButton = chrome !== Modifier
         when {
+            onButton && glyph != null -> Image(glyph, label, Modifier.size(size * 0.7f), colorFilter = Pack.tinted(Pack.dockInk))
+            onButton && bmp != null -> Image(bmp, spoken, Modifier.size(size), colorFilter = if (mono) Pack.tinted(Pack.dockInk) else Pack.icon(false))
+            onButton -> BasicText(initials(label), style = Pack.placeholder(Pack.size.large, Pack.dockInk))
             glyph != null -> Image(glyph, label, Modifier.size(size * 0.7f), colorFilter = Pack.tinted())
             // Bare silhouettes and initials sit on a badge, as pinned apps do, so they read on any wallpaper.
             bare && (mono || bmp == null) ->

@@ -190,11 +190,12 @@ saturation = 1
 contrast = 1
 shadow = false
 
+# Its ink is the letter's color: the accent, as initials have always been drawn.
 [icons.placeholder]
 style = "letter"
 font = "mono"
 fill = "surface"
-ink = "foreground"
+ink = "accent"
 border = 0
 border_color = "border"
 focus_color = "accent"

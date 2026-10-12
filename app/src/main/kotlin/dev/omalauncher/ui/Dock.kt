@@ -301,7 +301,7 @@ private fun ChatCell(
             ),
         contentAlignment = Alignment.Center,
     ) {
-        BasicText("✦", style = Pack.placeholder(Pack.size.title))
+        BasicText("✦", style = if (buttons) Pack.placeholder(Pack.size.title, Pack.dockInk) else Pack.placeholder(Pack.size.title))
         if (menuOpen) AppActions(actions(), onDismiss = { menuOpen = false })
     }
 }

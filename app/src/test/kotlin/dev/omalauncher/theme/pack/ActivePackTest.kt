@@ -77,6 +77,78 @@ class ActivePackTest {
         assertEquals(listOf("dial-up"), opened)
     }
 
+    private val shipped = listOf("riso" to "Riso", "instrument" to "Instrument", "one-bit" to "1-bit")
+
+    private fun shippedPack(id: String) = PackLoader.load(DirectoryPackSource(moduleFile("src/main/assets/packs/$id")), id)
+
+    /** Each pack shipped beside Console loads from its asset folder with nothing wrong: only tokens it leaves to Console. */
+    @Test fun theShippedPacksLoadClean() {
+        val folders = moduleFile("src/main/assets/packs").listFiles().orEmpty().filter { it.isDirectory }.map { it.name }.sorted()
+        assertEquals((shipped.map { it.first } + ConsolePack.ID).sorted(), folders)
+        for ((id, name) in shipped) {
+            val load = shippedPack(id)
+            assertNull("$id: ${load.error}", load.error)
+            assertFalse("$id: ${load.issues.filter { it.kind != PackIssue.Kind.Missing }}", load.broken)
+            assertEquals("$id: ${load.issues.filter { it.kind != PackIssue.Kind.Missing }}", emptyList<PackIssue>(), load.issues.filter { it.kind != PackIssue.Kind.Missing })
+            assertEquals(id, load.pack.id)
+            assertEquals(name, load.pack.name)
+            assertEquals(PackSchema.FORMAT, load.tokens.format)
+            // No font or wallpaper file is shipped, so nothing names one.
+            val type = load.pack.type
+            assertEquals("$id fonts", listOf("", "", "", ""), listOf(type.display, type.body, type.hand, type.mono).map { it.file })
+            assertEquals("", load.pack.page.wallpaperCover + load.pack.page.wallpaperInner)
+            // Each draws its own page, and none is Console under another name.
+            assertEquals(PageKind.Paper, load.pack.page.kind)
+            assertFalse(load.pack == ConsolePack.pack.copy(id = id, name = name))
+            // Text on a scrap, on a panel and on the page can be told from what it is on.
+            val pack = load.pack
+            assertFalse("$id scrap", pack.scrap.surface.ink == pack.scrap.surface.fill)
+            assertFalse("$id panel", pack.palette.foreground == pack.palette.background)
+            assertFalse("$id page", pack.palette.onPage == pack.page.color)
+            assertFalse("$id dock", pack.dock.surface.ink == pack.dock.surface.fill)
+            assertFalse("$id letter", pack.icons.placeholder.surface.ink == pack.icons.placeholder.surface.fill)
+        }
+    }
+
+    /** The looks, as the prototype has them: the tokens that make each pack what it is. */
+    @Test fun theShippedPacksLookLikeThePrototype() {
+        fun color(hex: String) = PackColor.parse(hex)!!
+        val riso = shippedPack("riso").pack
+        assertEquals(color("#e7e5ee"), riso.page.color)
+        assertEquals(color("#2337ff"), riso.scrap.surface.ink)
+        assertEquals(PackShadow(5f, 5f, 0f, color("#ff3d8b"), inset = false), riso.scrap.surface.shadow)
+        assertEquals(Dressing.Solid, riso.scrap.tape.style)
+        assertTrue(riso.scrap.tiltMin < 0f && riso.scrap.tiltMax > 0f)
+        assertEquals(InkBlend.Multiply, riso.ink.blend)
+        assertEquals(CornerStyle.Edge, riso.shape.corners)
+        assertEquals(FontGeneric.Cursive, riso.type.hand.family)
+        assertEquals(DockStyle.Buttons, riso.dock.style)
+
+        val instrument = shippedPack("instrument").pack
+        assertEquals(color("#d7d7d1"), instrument.page.color)
+        assertEquals(color("#191b18"), instrument.scrap.surface.fill)
+        assertEquals(color("#cfe0a8"), instrument.scrap.surface.ink)
+        assertEquals(0f, instrument.scrap.surface.border, 0f)
+        assertTrue(instrument.scrap.surface.shadow.inset)
+        assertEquals(0f, instrument.scrap.tiltMax - instrument.scrap.tiltMin, 0f)
+        assertEquals(Dressing.None, instrument.scrap.tape.style)
+        assertEquals(color("#ecece6"), instrument.dock.surface.fill)
+        assertEquals(0.75f, instrument.icons.saturation, 0f)
+        assertTrue(instrument.type.display.uppercase)
+        assertEquals(listOf(instrument.palette.accent), listOf(instrument.ring.listening, instrument.ring.working, instrument.ring.needsYou, instrument.ring.done).flatMap { listOf(it.color1, it.color2) }.distinct())
+
+        val oneBit = shippedPack("one-bit").pack
+        val colors = oneBit.palette.run { listOf(background, surface, foreground, muted, accent, border, red, green, onPage, highlight, alt, onAlt) } +
+            oneBit.scrap.surface.run { listOf(fill, ink, borderColor, focusColor, shadow.color) } + listOf(oneBit.page.color, oneBit.page.patternColor)
+        assertEquals(setOf(color("#000000"), color("#ffffff")), colors.toSet())
+        assertEquals(PaperPattern.Checker, oneBit.page.pattern)
+        assertEquals(PagePlate.Paper, oneBit.page.plate)
+        assertEquals(Dressing.Stripes, oneBit.scrap.titleBar.style)
+        assertEquals(IconTreatment.Grayscale, oneBit.icons.treatment)
+        assertTrue(oneBit.scrap.sticky.dashed)
+        assertEquals(0f, oneBit.ring.glow, 0f)
+    }
+
     @Test fun thePickerSaysWhatIsWrong() {
         val options = PackRegistry.options(listOf("a", "b", "c")) { id ->
             when (id) {

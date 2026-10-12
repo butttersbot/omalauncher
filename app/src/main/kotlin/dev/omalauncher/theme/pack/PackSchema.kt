@@ -164,9 +164,10 @@ object PackSchema {
                 fill: String,
                 border: Number,
                 borderColor: String,
+                ink: String = "foreground",
             ) {
                 paint("$key.fill", fill)
-                paint("$key.ink", "foreground")
+                paint("$key.ink", ink)
                 number("$key.border", 0f, 8f, border)
                 paint("$key.border_color", borderColor)
                 paint("$key.focus_color", "accent")
@@ -253,7 +254,7 @@ object PackSchema {
             choice("page.plate", PagePlate.entries, PagePlate.None)
             shadow("page.text_shadow")
 
-            // Icons: the monochrome switch in settings decides; a missing icon is a letter on the surface color.
+            // Icons: the monochrome switch in settings decides; a missing icon is a letter in the accent color on the surface color.
             choice("icons.treatment", IconTreatment.entries, IconTreatment.User)
             paint("icons.tint", "accent")
             number("icons.saturation", 0f, 2f, 1)
@@ -261,7 +262,7 @@ object PackSchema {
             flag("icons.shadow", false)
             choice("icons.placeholder.style", PlaceholderStyle.entries, PlaceholderStyle.Letter)
             choice("icons.placeholder.font", TypeRole.entries, TypeRole.Mono)
-            surface("icons.placeholder", "surface", 0, "border")
+            surface("icons.placeholder", "surface", 0, "border", ink = "accent")
 
             // Ring: timings are the prototype's; Console lights it in the theme's accent.
             number("ring.width", 0.5f, 8f, 2)

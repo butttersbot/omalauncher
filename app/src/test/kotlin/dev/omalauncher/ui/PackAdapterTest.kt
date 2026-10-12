@@ -86,6 +86,7 @@ class PackAdapterTest {
         assertEquals(palette.muted, look.scrapMuted)
         // Silhouettes and initials were the accent color, on the surface color.
         assertEquals(palette.accent, look.tint)
+        assertEquals(palette.accent, look.letter)
         assertEquals(palette.surface, look.badge)
         assertNull(look.iconFilter)
 

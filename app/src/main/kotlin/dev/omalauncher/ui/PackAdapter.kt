@@ -177,10 +177,11 @@ class PackLook(
     val scrapInk = pack.scrap.surface.ink.toColor()
     val scrapMuted = pack.scrap.muted.toColor()
 
-    /** Monochrome icons, and the letter standing in for an icon. */
+    /** Monochrome icons and the launcher's own glyphs. */
     val tint = pack.icons.tint.toColor()
 
-    /** What the letter standing in for an icon sits on. */
+    /** The letter standing in for an icon, and what it and a bare silhouette sit on. */
+    val letter = pack.icons.placeholder.surface.ink.toColor()
     val badge = pack.icons.placeholder.surface.fill.toColor()
 
     val sizes = pack.type.sizes.run { PackSizes(small.sp, body.sp, item.sp, large.sp, title.sp) }
@@ -373,8 +374,11 @@ object Pack {
         color: Color = look.foreground,
     ) = look.style(TypeRole.Mono, size, color)
 
-    /** The letter standing in for an app's icon. */
-    fun placeholder(size: TextUnit) = look.style(look.pack.icons.placeholder.font, size, look.tint)
+    /** The letter standing in for an app's icon, in the placeholder's ink unless [color] says otherwise. */
+    fun placeholder(
+        size: TextUnit,
+        color: Color = look.letter,
+    ) = look.style(look.pack.icons.placeholder.font, size, color)
 
     /** A glyph of the launcher's symbol font, which no pack replaces. */
     fun symbol(
