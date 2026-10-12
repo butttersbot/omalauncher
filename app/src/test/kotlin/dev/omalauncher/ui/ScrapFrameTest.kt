@@ -95,7 +95,7 @@ class ScrapFrameTest {
     @Test fun aScrapIsOnlyEverDrawnSoItsHitRectangleIsItsCell() {
         val keys = widgets + listOf("app:com.example/.Main", "folder:1")
         var tilted = 0
-        for (id in listOf("riso", "instrument", "one-bit")) {
+        for (id in listOf("riso", "instrument", "one-bit", "city-pop", "custard", "tiny-magazine", "bujo", "dial-up")) {
             use(id)
             assertEquals(id, ActivePack.pack.id)
             val scrap = ActivePack.pack.scrap
@@ -136,10 +136,14 @@ class ScrapFrameTest {
         assertEquals(18f, bar.height, 0f)
         assertEquals(Modifier.padding(top = 18.dp), Modifier.scrapContent())
         for (key in widgets) assertFalse(Modifier.scrap(false, key, dressed = true).elements().any { it is LayoutModifier })
-        for (id in listOf("riso", "instrument")) {
+        for (id in listOf("riso", "instrument", "city-pop", "custard", "tiny-magazine", "bujo")) {
             use(id)
             assertSame(id, Modifier, Modifier.scrapContent())
         }
+        // Dial-Up's windows have a bar too, and it is dealt with the same way.
+        use("dial-up")
+        assertEquals(Modifier.padding(top = 20.dp), Modifier.scrapContent())
+        for (key in widgets) assertFalse(Modifier.scrap(false, key, dressed = true).elements().any { it is LayoutModifier })
         val tile = moduleFile("src/main/kotlin/dev/omalauncher/ui/WidgetTile.kt").readText()
         val frame = tile.indexOf(".scrap(focused")
         val tap = tile.indexOf(".pointerInput(spec)")
