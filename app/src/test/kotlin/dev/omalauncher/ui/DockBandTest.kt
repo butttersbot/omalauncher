@@ -53,6 +53,26 @@ class DockBandTest {
         assertEquals(AgentRoute.Terminal, agentRoute(linux = true, bin = "gemini"))
     }
 
+    @Test fun anAgentsRowSaysWhetherItIsTheDefaultOrCanBe() {
+        val installed = listOf("claude", "codex")
+        assertEquals(DefaultMark.Default, defaultMark("claude", installed, default = "claude"))
+        assertEquals(DefaultMark.CanChoose, defaultMark("codex", installed, default = "claude"))
+        assertEquals(DefaultMark.None, defaultMark("gemini", installed, default = "claude"))
+        // Nothing installed: nothing to choose.
+        assertEquals(DefaultMark.None, defaultMark("claude", emptyList(), default = null))
+        // Exactly one row is the default.
+        assertEquals(1, installed.count { defaultMark(it, installed, "codex") == DefaultMark.Default })
+    }
+
+    @Test fun wordsSaidBeforeThereWasAnAgentAreHandedOnOnceWhenTheAgentsScreenCloses() {
+        val state = LauncherState()
+        state.heldPrompt = "what's the weather"
+        state.agentsOpen = true
+        assertEquals("what's the weather", state.closeAgents())
+        assertFalse(state.agentsOpen)
+        assertEquals(null, state.closeAgents())
+    }
+
     @Test fun theChatIsOpenedByTheAgreedAction() {
         assertEquals("dev.omalauncher.action.OMA_CHAT", OMA_CHAT_ACTION)
     }

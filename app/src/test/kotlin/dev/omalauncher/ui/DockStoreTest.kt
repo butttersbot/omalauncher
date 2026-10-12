@@ -35,10 +35,89 @@ class DockStoreTest {
         assertEquals(saved, readDock(writeDock(saved)))
     }
 
-    @Test fun aDockSavedEmptyStaysEmpty() {
-        assertEquals(emptyList<DockEntry>(), readDock(writeDock(emptyList())))
-        // The chat, once taken out, isn't put back by reading.
-        assertEquals(listOf(mail), readDock(writeDock(listOf(mail))))
+    @Test fun aDockSavedWithoutTheChatGetsItBackFirst() {
+        // No menu unpins the chat, so a dock without it is damaged, and nothing else could pin it back.
+        assertEquals(DefaultDock, readDock(writeDock(emptyList())))
+        assertEquals(listOf(chat, mail, foot), readDock(writeDock(listOf(mail, foot))))
+        // Where it was put, it stays.
+        assertEquals(listOf(mail, chat), readDock(writeDock(listOf(mail, chat))))
+    }
+
+    @Test fun aDockWhoseEntriesAreAllUnusableStillHasTheChat() {
+        val array = JSONArray().put(JSONObject().put("key", "mystery").put("label", "?")).put(JSONObject().put("label", "no key"))
+        assertEquals(DefaultDock, readDock(Versioned.write(1, array)))
+    }
+
+    @Test fun theChatCannotBeUnpinned() {
+        assertEquals(listOf(chat, mail), listOf(chat, mail).unpinned(OMA_CHAT_KEY))
+        assertEquals(listOf(chat, mail), listOf(chat, mail).after(DockAction.Unpin, OMA_CHAT_KEY))
+    }
+
+    /** A store over one saved document, as the preferences file is. */
+    private class Saved(
+        var text: String? = null,
+    ) {
+        var writes = 0
+
+        fun store() =
+            DockStore(load = { text }, save = {
+                text = it
+                writes++
+            })
+    }
+
+    @Test fun theStoreSavesWhatItPinsAndReadsItBack() {
+        val saved = Saved()
+        val store = saved.store()
+        assertEquals(DefaultDock, store.items.toList())
+        assertEquals(0, saved.writes)
+        store.pin(mail)
+        store.pin(workMail)
+        store.pin(foot)
+        assertEquals(3, saved.writes)
+        assertTrue(store.isPinned(workMail.key))
+        assertFalse(store.isPinned("app:gone/.Gone"))
+        assertEquals(listOf(chat, mail, workMail, foot), store.items.toList())
+        assertEquals(listOf(chat, mail, workMail, foot), saved.store().items.toList())
+    }
+
+    @Test fun theStoreUnpinsOneAppAndKeepsTheRest() {
+        val saved = Saved(writeDock(listOf(chat, mail, workMail, foot)))
+        val store = saved.store()
+        store.unpin(mail.key)
+        assertEquals(listOf(chat, workMail, foot), store.items.toList())
+        assertEquals(listOf(chat, workMail, foot), saved.store().items.toList())
+        store.unpin(OMA_CHAT_KEY)
+        assertEquals(listOf(chat, workMail, foot), saved.store().items.toList())
+    }
+
+    @Test fun theStoreSavesMovesAndMenuActions() {
+        val saved = Saved(writeDock(listOf(chat, mail, foot)))
+        val store = saved.store()
+        store.act(DockAction.Later, chat.key)
+        assertEquals(listOf(mail, chat, foot), saved.store().items.toList())
+        store.act(DockAction.Earlier, foot.key)
+        assertEquals(listOf(mail, foot, chat), saved.store().items.toList())
+        store.act(DockAction.Unpin, mail.key)
+        assertEquals(listOf(foot, chat), store.items.toList())
+        assertEquals(listOf(foot, chat), saved.store().items.toList())
+    }
+
+    @Test fun theStoreDoesNotWriteWhenNothingChanged() {
+        val saved = Saved(writeDock(listOf(chat, mail)))
+        val store = saved.store()
+        store.pin(mail)
+        store.unpin(foot.key)
+        store.act(DockAction.Earlier, chat.key)
+        assertEquals(0, saved.writes)
+    }
+
+    @Test fun aDamagedDockIsRepairedInMemoryAndSavedOnTheNextChange() {
+        val saved = Saved(writeDock(listOf(mail)))
+        val store = saved.store()
+        assertEquals(listOf(chat, mail), store.items.toList())
+        store.pin(foot)
+        assertEquals(listOf(chat, mail, foot), readDock(saved.text))
     }
 
     @Test fun isSavedVersionedUnderAShortcutsFieldNames() {
@@ -86,6 +165,7 @@ class DockStoreTest {
         assertEquals(listOf(mail.key, workMail.key), keys(dock))
         assertEquals(10L, dock[1].profile)
         assertEquals(listOf(workMail), dock.unpinned(mail.key))
+        assertEquals(listOf(mail), dock.unpinned(workMail.key))
     }
 
     @Test fun unpinningSomethingNotPinnedChangesNothing() {

@@ -17,6 +17,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
@@ -73,6 +75,9 @@ internal class AgentVoice(
 ) {
     val speech = Speech(context)
     val level = Animatable(0f)
+
+    /** A line for whoever draws around the button to show where [Speech.error] goes: not a failure, something to do next. */
+    var notice by mutableStateOf<String?>(null)
 }
 
 @Composable
@@ -117,7 +122,11 @@ internal fun AgentButton(
                 state.closeNow()
                 state.linuxOpen = true
             }
-            AgentRoute.ChooseAgent -> state.agentsOpen = true
+            // Nobody to send them to yet: the words wait, and go to the Oma chat's field when the agents screen closes.
+            AgentRoute.ChooseAgent -> {
+                state.heldPrompt = p
+                state.agentsOpen = true
+            }
             AgentRoute.Background ->
                 try {
                     AgentTasks.send(context, p)
@@ -129,8 +138,11 @@ internal fun AgentButton(
         }
     }
 
-    // A press that had to ask for the mic first can't still be held: the next hold talks.
-    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    // A press that had to ask for the mic first can't still be held: the next hold talks, and the band says so.
+    val permission =
+        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) voice.notice = HOLD_TO_TALK
+        }
 
     fun talk() {
         if (runtime.bootstrap.state.value != LinuxState.Installed) {
@@ -142,6 +154,7 @@ internal fun AgentButton(
             permission.launch(Manifest.permission.RECORD_AUDIO)
             return
         }
+        voice.notice = null
         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
         speech.start(hold = true) { heard -> send(heard) }
     }
@@ -160,6 +173,9 @@ internal fun AgentButton(
         },
     )
 }
+
+/** What the band says once the microphone is allowed: the press that asked is over. */
+internal const val HOLD_TO_TALK = "Hold to talk"
 
 /** How long a press on the mic waits before it counts as hold-to-talk rather than a tap or a passing swipe. */
 private const val HOLD_MILLIS = 250L
@@ -200,7 +216,11 @@ private fun MicButton(
                             while (true) {
                                 val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: return@withTimeoutOrNull false
                                 if (change.isConsumed) return@withTimeoutOrNull false
-                                if (!change.pressed) return@withTimeoutOrNull true
+                                if (!change.pressed) {
+                                    // The tap is the button's alone: what's around it (the rail) mustn't take it for a click too.
+                                    change.consume()
+                                    return@withTimeoutOrNull true
+                                }
                                 if ((change.position - down.position).getDistance() > viewConfiguration.touchSlop) return@withTimeoutOrNull false
                             }
                             @Suppress("UNREACHABLE_CODE")

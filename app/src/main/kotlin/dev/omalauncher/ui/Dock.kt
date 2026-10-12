@@ -148,7 +148,9 @@ internal fun DockBand(
             .padding(DockBandPadding),
     ) {
         AgentRail()
-        speech.error?.takeIf { !listening }?.let {
+        // What went wrong, in red, or what to do next.
+        val failed = speech.error
+        (failed ?: voice.notice)?.takeIf { !listening }?.let {
             BasicText(
                 it,
                 Modifier
@@ -157,9 +159,11 @@ internal fun DockBand(
                         val p = measurable.measure(constraints)
                         layout(p.width, 0) { p.place(0, -p.height) }
                     }.background(Palette.background)
-                    .clickable { speech.error = null }
-                    .padding(horizontal = 10.dp, vertical = 4.dp),
-                style = Mono.copy(color = Palette.red, fontSize = TextSize.Small),
+                    .clickable {
+                        speech.error = null
+                        voice.notice = null
+                    }.padding(horizontal = 10.dp, vertical = 4.dp),
+                style = Mono.copy(color = if (failed != null) Palette.red else Palette.accent, fontSize = TextSize.Small),
             )
         }
         Box {

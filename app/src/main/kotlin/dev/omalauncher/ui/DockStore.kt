@@ -1,6 +1,7 @@
 package dev.omalauncher.ui
 
 import android.content.Context
+import android.content.SharedPreferences
 import androidx.compose.runtime.mutableStateListOf
 import dev.omalauncher.linux.LinuxApp
 import dev.omalauncher.upgrade.Versioned
@@ -14,7 +15,8 @@ const val OMA_CHAT_KEY = "oma:chat"
 /**
  * One thing pinned to the dock. An app is keyed and saved the way a home shortcut is
  * ([dev.omalauncher.widgets.Shortcuts]): `app:` and the Android app's key, or `linux:` and the desktop id.
- * The built-in Oma chat has [OMA_CHAT_KEY] and neither a [component] nor a [linux] entry.
+ * The built-in Oma chat has [OMA_CHAT_KEY] and neither a [component] nor a [linux] entry; it is always
+ * in the dock, since nothing could pin it back.
  */
 data class DockEntry(
     val key: String,
@@ -37,7 +39,8 @@ internal val DefaultDock = listOf(DockEntry(OMA_CHAT_KEY, "Oma"))
 internal fun List<DockEntry>.pinned(entry: DockEntry): List<DockEntry> =
     if (any { it.key == entry.key }) map { if (it.key == entry.key) entry else it } else this + entry
 
-internal fun List<DockEntry>.unpinned(key: String): List<DockEntry> = filter { it.key != key }
+/** Takes the app [key] out; the Oma chat stays. */
+internal fun List<DockEntry>.unpinned(key: String): List<DockEntry> = filter { it.key != key || it.builtIn }
 
 /** Moves the entry [key] by [step] places (negative is earlier), stopping at either end. */
 internal fun List<DockEntry>.moved(
@@ -116,12 +119,18 @@ internal fun writeDock(entries: List<DockEntry>): String {
 }
 
 /**
- * The saved dock, or [DefaultDock] when there is none or it can't be read. A dock saved empty stays empty.
- * Entries that are neither an app nor the Oma chat are skipped, and a key keeps its first entry only.
+ * The saved dock, or [DefaultDock] when there is none or it can't be read. Entries that are neither an app
+ * nor the Oma chat are skipped, and a key keeps its first entry only. A dock saved without the Oma chat
+ * can only be damaged, as no menu unpins it: it gets the chat back, first.
  */
 internal fun readDock(text: String?): List<DockEntry> {
     val array = Versioned.read(text, DOCK_VERSION) as? JSONArray ?: return DefaultDock
-    return array
+    val saved = readEntries(array)
+    return if (saved.any { it.builtIn }) saved else DefaultDock + saved
+}
+
+private fun readEntries(array: JSONArray): List<DockEntry> =
+    array
         .mapObjects { o ->
             val linux =
                 o.optJSONObject("linux")?.let {
@@ -142,20 +151,27 @@ internal fun readDock(text: String?): List<DockEntry> {
                 linux = linux,
             ).takeIf { it.builtIn || it.component != null || it.linux != null }
         }.distinctBy { it.key }
-}
 
 /**
  * The dock's pinned apps in order, saved in a preferences file of their own (`dock`), apart from the
  * home shortcuts and the grid, so the layout migration can import it and leave the original as a backup.
+ * [load] gives the saved document, if any, and [save] keeps a new one.
  */
 class DockStore(
-    context: Context,
+    load: () -> String?,
+    private val save: (String) -> Unit,
 ) {
-    private val prefs = context.getSharedPreferences("dock", Context.MODE_PRIVATE)
+    constructor(context: Context) : this(context.getSharedPreferences("dock", Context.MODE_PRIVATE))
+
+    private constructor(prefs: SharedPreferences) : this(
+        load = { prefs.getString(ITEMS, null) },
+        save = { prefs.edit().putString(ITEMS, it).apply() },
+    )
+
     val items = mutableStateListOf<DockEntry>()
 
     init {
-        items += readDock(prefs.getString(ITEMS, null))
+        items += readDock(load())
     }
 
     fun isPinned(key: String) = items.any { it.key == key }
@@ -169,11 +185,13 @@ class DockStore(
         key: String,
     ) = replace(items.after(action, key))
 
-    private fun replace(next: List<DockEntry>) {
+    private fun replace(changed: List<DockEntry>) {
+        // A copy first: a change that changes nothing hands back [items] itself, which clearing would empty.
+        val next = changed.toList()
         if (next == items.toList()) return
         items.clear()
         items += next
-        prefs.edit().putString(ITEMS, writeDock(next)).apply()
+        save(writeDock(next))
     }
 
     private companion object {

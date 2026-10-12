@@ -23,6 +23,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalWindowInfo
@@ -126,7 +129,8 @@ internal fun SideRail(
 
 /**
  * The dock stood on end: its pinned apps down the rail, as many as fit, and the agent button below them.
- * A tap on the rail itself opens the app list.
+ * A tap on the rail between the icons opens the app list. While the button is held, how loud it hears
+ * runs up the rail's edge; the rail is too narrow for the words.
  */
 @Composable
 private fun DockRail(
@@ -135,15 +139,24 @@ private fun DockRail(
     dock: DockStore,
 ) {
     val voice = rememberAgentVoice()
+    val listening = voice.speech.listening
+    val accent = Palette.accent
     Column(
         Modifier
             .width(PromptBarHeight)
             .fillMaxHeight()
-            .tile(voice.speech.listening)
-            .clickable { state.open() },
+            .tile(listening)
+            .drawWithContent {
+                drawContent()
+                if (listening) {
+                    val h = size.height * (0.05f + 0.95f * voice.level.value)
+                    drawRect(accent, Offset(0f, size.height - h), Size(3.dp.toPx(), h))
+                }
+            },
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(vertical = DockGap)) {
+        // The click is the icons' area's, not the whole rail's: the agent button's taps are its own.
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().clickable { state.open() }.padding(vertical = DockGap)) {
             val count = with(LocalDensity.current) { dockFits(constraints.maxHeight, DockSlot.roundToPx(), DockGap.roundToPx()) }
             Column(verticalArrangement = Arrangement.spacedBy(DockGap)) { DockCells(runtime, dock, count) }
         }

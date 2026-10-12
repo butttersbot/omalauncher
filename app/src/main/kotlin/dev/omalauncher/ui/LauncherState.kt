@@ -50,6 +50,7 @@ class LauncherState {
         styleOpen = false
         themeBrowserOpen = false
         agentsOpen = false
+        heldPrompt = null
         storeOpen = false
         packagesOpen = false
         linuxOpen = false
@@ -85,6 +86,15 @@ class LauncherState {
             if (value != typed) picked = null
             typed = value
         }
+
+    /** What was said to the agent button while no agent was installed, kept while the agents screen is open. */
+    var heldPrompt by mutableStateOf<String?>(null)
+
+    /** Closes the agents screen and hands back what was waiting for an agent, once. */
+    fun closeAgents(): String? {
+        agentsOpen = false
+        return heldPrompt.also { heldPrompt = null }
+    }
 
     /** The result chosen with Tab or the arrow keys (-1 = ask the agent); null follows the ranking. Reset by typing. */
     var picked by mutableStateOf<Int?>(null)

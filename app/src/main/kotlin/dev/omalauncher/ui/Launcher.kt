@@ -85,7 +85,7 @@ private fun DesktopScreen(
             state.sharing != null -> state.sharing = null
             state.linuxOpen -> state.linuxOpen = false
             state.licensesOpen -> state.licensesOpen = false
-            state.agentsOpen -> state.agentsOpen = false
+            state.agentsOpen -> state.closeAgents()?.let { openOmaChat(context, it) }
             state.storeOpen -> state.storeOpen = false
             state.themeBrowserOpen -> state.themeBrowserOpen = false
             state.styleOpen -> state.styleOpen = false
@@ -313,9 +313,11 @@ private fun ThemesOverlay(
         )
     }
     if (state.agentsOpen) {
+        val context = LocalContext.current
         AgentsScreen(
             runtime,
-            onDismiss = { state.agentsOpen = false },
+            // Words said before there was an agent go on to the Oma chat's field, to send from there.
+            onDismiss = { state.closeAgents()?.let { openOmaChat(context, it) } },
             onOpen = { agent ->
                 state.agentsOpen = false
                 runtime.terminal(agent.bin, agent.name, agent)
