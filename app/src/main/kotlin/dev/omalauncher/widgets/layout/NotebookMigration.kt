@@ -107,9 +107,18 @@ data class MigrationReport(
         }
 }
 
+/** What the old layout saved for a key that belongs to nothing that exists: its cell, if it had one, and the old page number it was on. */
+data class LeftBehind(
+    val key: String,
+    val cell: Cell?,
+    val page: Int,
+)
+
 class Migration(
     val notebook: Notebook,
     val report: MigrationReport,
+    /** The report's orphans, with what was saved for each. */
+    val leftBehind: List<LeftBehind> = emptyList(),
 )
 
 /**
@@ -224,7 +233,7 @@ private class Migrator(
                 portraitRows = old.portraitRows,
                 problems = problems,
             )
-        return Migration(Notebook(rows, pages), report)
+        return Migration(Notebook(rows, pages), report, report.orphans.map { LeftBehind(it, cells[it], pageChoices[it] ?: 1) })
     }
 
     private fun OldItem.at(cell: Cell) = NotebookItem(key, kind, cell, app, apps)

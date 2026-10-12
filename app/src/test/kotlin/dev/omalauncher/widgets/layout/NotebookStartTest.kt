@@ -494,45 +494,163 @@ class NotebookStartTest {
         }
     }
 
-    /**
-     * The first listing can miss a file (one being rewritten at that instant). Its place is the owner's all the
-     * same: it goes into the notebook with the page and cell he had it in, and the file lands there when it is seen.
-     */
-    @Test fun aWidgetMissingFromTheFirstListingKeepsItsPageAndCell() {
-        val files = FakeFiles.of(BOSS)
-        val four = FakeFiles.widgets(BOSS).filter { it.key != "45-terminal.owl" }
-        assertEquals(4, four.size)
-        val start = start(files, four)
-        assertTrue(start.saved)
-        assertNull(start.message)
-        assertTrue(start.report!!.orphans.isEmpty())
-        // Exactly the notebook all five give.
-        assertEquals(start(FakeFiles.of(BOSS), FakeFiles.widgets(BOSS)).notebook.pages.map { p -> p.copy(items = p.items.sortedBy { it.key }) }, start.notebook.pages.map { p -> p.copy(items = p.items.sortedBy { it.key }) })
-        assertEquals(listOf(NotebookItem("45-terminal.owl", ItemKind.Widget, Cell(0, 0, 6, 4))), start.notebook.pages[1].items)
-        assertEquals(start.notebook, NotebookStore.read(files.stored))
-
-        // Running: the file isn't there, so nothing shows, but its cell is not free for anything else.
-        val live = LiveNotebook(persist = files::save)
-        live.open(start.notebook, kept = true)
-        live.adopt(four.map { it.key to it.page })
-        assertEquals(listOf(Cell(0, 0, 6, 4)), live.cellsOn("p2", except = emptySet()))
-        assertEquals(Cell(0, 4, 6, 3), Placement<String>(HashMap(), {}) { Tile(it, 6 to 3) }.freeSpot("new.owl", emptyList(), 6, 9, live.cellsOn("p2", except = emptySet())))
-        // Then the file is seen, asking for page 1 as the shipped one does: it is on Page 2 at (0,0,6,4), where he had it.
-        live.adopt(FakeFiles.widgets(BOSS).map { it.key to it.page })
-        assertEquals("p2", live.pageOf("45-terminal.owl"))
-        assertEquals(Cell(0, 0, 6, 4), live.cell("45-terminal.owl"))
-        assertEquals(listOf("p1", "p2"), live.pages.map { it.id })
-        // The next start reads the same.
-        assertEquals(live.snapshot(), NotebookOpening(files).saved()!!.notebook)
-        files.oldStoresUntouched()
+    /** His layout with one more saved cell, and optionally a page choice for it. */
+    private fun bossWith(
+        key: String,
+        cell: Cell?,
+        page: Int? = null,
+    ): FakeFiles {
+        val grid = LinkedHashMap(readPrefs(File("src/test/resources/migration/$BOSS/widget_grid.xml")))
+        val root = JSONObject(grid.getValue("layout") as String)
+        val data = root.getJSONObject("data")
+        cell?.let { data.getJSONObject("cells").put(key, JSONObject().put("x", it.x).put("y", it.y).put("w", it.w).put("h", it.h)) }
+        page?.let { data.getJSONObject("pages").put(key, it) }
+        grid["layout"] = root.toString()
+        return FakeFiles(grid)
     }
 
-    @Test fun aWidgetPlacedDuringMigrationDoesNotTakeAMissingWidgetsCell() {
-        // A sixth widget with no saved cell that asks for the page the terminal is on (old page 3), terminal's file missing.
+    private fun Notebook.sorted() = pages.map { p -> p.copy(items = p.items.sortedBy { it.key }) }
+
+    private val five by lazy { start(FakeFiles.of(BOSS), FakeFiles.widgets(BOSS)) }
+
+    /**
+     * The first listing can miss a file (one being rewritten at that instant). Its cell is the owner's all the
+     * same: it stays in the notebook, on the page he had it, and the file lands there when it is seen.
+     */
+    @Test fun aWidgetMissingFromTheFirstListingKeepsItsPageAndCell() {
+        for (gone in listOf("10-today.owl", "20-fetch.owl", "50-koi.owl", "60-owl.owl")) {
+            val files = FakeFiles.of(BOSS)
+            val four = FakeFiles.widgets(BOSS).filter { it.key != gone }
+            val start = start(files, four)
+            assertTrue(gone, start.saved)
+            assertNull(gone, start.message)
+            // Exactly the notebook all five give, and nothing said of it.
+            assertEquals(gone, five.notebook.sorted(), start.notebook.sorted())
+            assertEquals(gone, 9, start.notebook.rows)
+            assertEquals(gone, emptyList<Moved>(), start.report!!.moved)
+            assertEquals(gone, 4, start.report!!.items)
+            assertEquals(start.notebook, NotebookStore.read(files.stored))
+
+            // Running: the file isn't there, so nothing shows; then it is seen, whatever page it asks for.
+            val live = LiveNotebook(persist = files::save)
+            live.open(start.notebook, kept = true)
+            live.adopt(four.map { it.key to it.page })
+            live.adopt(FakeFiles.widgets(BOSS).map { it.key to if (it.key == gone) 2 else it.page })
+            assertEquals(gone, "p1", live.pageOf(gone))
+            assertEquals(gone, five.notebook.pages[0].items.first { it.key == gone }.cell, live.cell(gone))
+            // The next start reads the same (the store lists a page's items in the order they were written).
+            assertEquals(live.snapshot().sorted(), NotebookOpening(files).saved()!!.notebook.sorted())
+            files.oldStoresUntouched()
+        }
+    }
+
+    /**
+     * The one case of his layout that isn't kept: the terminal is alone on its page, and a held place never makes
+     * a page. Without its file there is no Page 2; the file, when seen, starts where it asks, like a new one.
+     */
+    @Test fun aMissingWidgetAloneOnItsPageDoesNotMakeThePage() {
+        val files = FakeFiles.of(BOSS)
+        val start = start(files, FakeFiles.widgets(BOSS).filter { it.key != "45-terminal.owl" })
+        assertTrue(start.saved)
+        assertNull(start.message)
+        assertEquals(listOf("p1"), start.notebook.pages.map { it.id })
+        assertEquals(five.notebook.pages[0].copy(items = five.notebook.pages[0].items.sortedBy { it.key }), start.notebook.sorted()[0])
+        assertEquals(listOf("45-terminal.owl"), start.report!!.orphans)
+    }
+
+    /** A cell left from a widget long gone, far down a page: the grid stays 6 x 9 and nothing is said. */
+    @Test fun aStaleCellNeverChangesTheRowsOrIsReported() {
+        for (cell in listOf(Cell(0, 20, 3, 3), Cell(0, 7, 3, 3), Cell(4, 0, 3, 2), Cell(-1, 0, 2, 2), Cell(0, 0, 0, 2))) {
+            val files = bossWith("gone.owl", cell)
+            val start = start(files, FakeFiles.widgets(BOSS))
+            assertTrue("$cell", start.saved)
+            assertNull("$cell", start.message)
+            assertEquals("$cell", 9, start.notebook.rows)
+            assertEquals("$cell", five.notebook, start.notebook)
+            assertEquals(0, start.report!!.replaced + start.report!!.placed + start.report!!.pagesAdded)
+            assertEquals(listOf("gone.owl"), start.report!!.orphans)
+            assertEquals(5, start.report!!.items)
+        }
+        // One that fits the rows there are, on a page there is, is held: invisible, and nothing else differs.
+        val held = start(bossWith("gone.owl", Cell(3, 6, 3, 3)), FakeFiles.widgets(BOSS))
+        assertNull(held.message)
+        assertEquals(9, held.notebook.rows)
+        assertEquals(five.notebook.pages[0].items + NotebookItem("gone.owl", ItemKind.Widget, Cell(3, 6, 3, 3)), held.notebook.pages[0].items)
+        assertEquals(five.notebook.pages[1], held.notebook.pages[1])
+        assertEquals(emptyList<Moved>(), held.report!!.moved)
+        assertEquals(5, held.report!!.items)
+    }
+
+    @Test fun aPageChoiceWithoutACellHoldsNothingAndMakesNoPage() {
+        for (page in listOf(1, 3, 7)) {
+            val start = start(bossWith("gone.owl", null, page), FakeFiles.widgets(BOSS))
+            assertTrue(start.saved)
+            assertNull(start.message)
+            assertEquals("page $page", five.notebook, start.notebook)
+        }
+    }
+
+    @Test fun aStaleCellOnAPageNothingIsOnMakesNoPage() {
+        for (page in listOf(2, 7)) {
+            val start = start(bossWith("gone.owl", Cell(0, 0, 3, 3), page), FakeFiles.widgets(BOSS))
+            assertTrue(start.saved)
+            assertNull(start.message)
+            assertEquals("page $page", five.notebook, start.notebook)
+            assertEquals(mapOf(1 to "p1", 3 to "p2"), start.report!!.pageIds)
+        }
+        // On the page the terminal is on (his old page 3), it is held there.
+        val held = start(bossWith("gone.owl", Cell(0, 4, 3, 3), 3), FakeFiles.widgets(BOSS))
+        assertEquals(listOf("45-terminal.owl", "gone.owl"), held.notebook.pages[1].items.map { it.key })
+        assertEquals(five.notebook.pages[0], held.notebook.pages[0])
+    }
+
+    /** Only widget files are held: a cell left from an app that was unpinned, or a folder that is gone, stays behind. */
+    @Test fun aStaleCellOfAnAppOrFolderIsNotHeldAsAWidget() {
+        for (key in listOf("app:x", "linux:foot", "folder:abc", "notes.txt", "owl")) {
+            val start = start(bossWith(key, Cell(3, 6, 1, 1)), FakeFiles.widgets(BOSS))
+            assertTrue(key, start.saved)
+            assertEquals(key, five.notebook, start.notebook)
+            assertEquals(key, listOf(key), start.report!!.orphans)
+        }
+    }
+
+    /** A tile the migration had to find a cell for is where the first pass put it; a held place never moves it, or lies over it. */
+    @Test fun aHeldPlaceNeverLiesOverATileTheMigrationPlaced() {
+        // A sixth widget with no saved cell asks for the page the terminal is on (old page 3), and the terminal's file is missing.
         val widgets = FakeFiles.widgets(BOSS).filter { it.key != "45-terminal.owl" } + OldWidget("zz-new.owl", 3, 6 to 4)
         val start = start(FakeFiles.of(BOSS), widgets)
         assertTrue(start.saved)
-        assertEquals(mapOf("45-terminal.owl" to Cell(0, 0, 6, 4), "zz-new.owl" to Cell(0, 4, 6, 4)), start.notebook.pages[1].items.associate { it.key to it.cell })
+        assertEquals(mapOf("zz-new.owl" to Cell(0, 0, 6, 4)), start.notebook.pages[1].items.associate { it.key to it.cell })
+        // Beside it there is room: held.
+        val beside = start(bossWith("gone.owl", Cell(0, 5, 3, 3), 3), widgets)
+        assertEquals(mapOf("zz-new.owl" to Cell(0, 0, 6, 4), "gone.owl" to Cell(0, 5, 3, 3)), beside.notebook.pages[1].items.associate { it.key to it.cell })
+    }
+
+    /** Running, a held cell is not free: home's own placing goes around it, and takes it without the page to ask about. */
+    @Test fun homePlacesNothingOnAHeldCell() {
+        val start = start(bossWith("gone.owl", Cell(0, 4, 6, 3), 3), FakeFiles.widgets(BOSS))
+        val live = LiveNotebook()
+        live.open(start.notebook, kept = false)
+        val layout = dev.omalauncher.widgets.WidgetLayout(live)
+
+        fun widget(
+            name: String,
+            size: Pair<Int, Int>,
+        ) = dev.omalauncher.widgets.WidgetItem(dev.omalauncher.widgets.WidgetSpec(File(name), name, 1, 0, null, size = size))
+
+        val terminal = widget("45-terminal.owl", 6 to 4)
+        val fresh = widget("fresh.owl", 6 to 2)
+        live.expect("fresh.owl", "p2")
+        // The terminal has (0,0,6,4) and the held cell (0,4,6,3): the first free rows are the last two.
+        assertEquals(emptyList<dev.omalauncher.widgets.HomeItem>(), layout.place(listOf(terminal, fresh), 6, 9, "p2"))
+        assertEquals(Cell(0, 7, 6, 2), layout.cell("fresh.owl"))
+        // The page is then full: nothing more is claimed on it, held cell included.
+        val more = widget("more.owl", 3 to 2)
+        assertFalse(layout.claim(more, listOf(terminal, fresh), "p2"))
+        assertNull(layout.cell("more.owl"))
+        // Asked without the page, nothing is known to be held, and the held cell is taken: the page is what makes the difference.
+        assertTrue(layout.claim(more, listOf(terminal, fresh)))
+        assertEquals(Cell(0, 4, 3, 2), layout.cell("more.owl"))
     }
 
     /** Only what reads back as itself is committed. */

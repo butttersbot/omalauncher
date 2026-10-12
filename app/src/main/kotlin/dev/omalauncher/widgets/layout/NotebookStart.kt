@@ -16,8 +16,8 @@ import org.json.JSONArray
  *  - a saved notebook that reads only in part is used, and likewise set aside before anything is saved over it;
  *  - a saved notebook written by a newer launcher is not this one's to rewrite: it is set aside as it is, shown if
  *    it reads, and nothing is saved for the whole session;
- *  - every widget the old layout has a place for goes into the notebook with that place, whether or not its file
- *    was seen: a file that turns up later lands where the owner had it.
+ *  - a widget the old layout has a cell for, whose file wasn't seen, keeps that cell in the notebook where that
+ *    changes nothing else: on a page that exists, within its rows. A file that turns up later lands where it was.
  *
  * Nothing here writes an old store, whatever happens.
  */
@@ -126,18 +126,13 @@ class NotebookOpening(
                 return unsaved(Notebook(NOTEBOOK_MIN_ROWS, listOf(NotebookPage("p1", "Page 1"))), null)
             }
         val listed = widgets.orEmpty()
-        val seen = migrate(old, listed)
-        // Widgets the layout has a place for whose files weren't in the listing (it can catch a file half written).
-        // They go into the notebook all the same, on the page and in the cell the owner had them, so that the file
-        // lands there when it is seen. A file's own page isn't known without the file: page 1, unless he chose one.
-        val absent = seen.report.orphans.filter { it.endsWith(WIDGET_FILE) }
-        val migration = if (absent.isEmpty() || listed.isEmpty()) seen else migrate(old, listed + absent.map { OldWidget(it, 1) })
+        val migration = migrate(old, listed)
         val problems = ArrayList(migration.report.problems)
         // A layout that names widgets, and not one widget to be seen: their files are what's missing, not their places.
-        val missing = listed.isEmpty() && absent.isNotEmpty()
+        val missing = listed.isEmpty() && migration.report.orphans.any { it.endsWith(WIDGET_FILE) }
         if (widgets == null) problems += "the widget files couldn't be listed" else if (missing) problems += "none of the widgets the saved layout names were found"
         val dock = oldDock(problems)
-        val notebook = migration.notebook.copy(dock = dock)
+        val notebook = withHeldPlaces(migration).copy(dock = dock)
         val report = migration.report.copy(problems = problems)
         if (newer) {
             attempt { files.setAside(now()) }
@@ -158,6 +153,30 @@ class NotebookOpening(
         val wasUnreadable = unreadable
         unreadable = false
         return NotebookStart(notebook, saved = true, message = savedMessage(report, wasUnreadable), report = report)
+    }
+
+    /**
+     * The migrated notebook, and in it the saved cells of widgets whose files weren't in the listing (it can catch
+     * a file half written, and a cell may be left from a widget long gone). Such an entry shows nothing; it only
+     * holds the cell, so that the file lands where the owner had it if it is seen again. It changes nothing else:
+     * it is kept only on a page the migration made anyway (its file's own page isn't known without the file, so
+     * that is the page he chose for it, else the first), only if its cell lies within the rows the items that exist
+     * gave the grid, and not over a tile the migration had to find a new cell for. It adds no page and no row, moves
+     * nothing, and isn't counted or reported: whatever doesn't meet this stays behind, as every orphan did.
+     */
+    private fun withHeldPlaces(migration: Migration): Notebook {
+        val notebook = migration.notebook
+        val placed = migration.report.moved.map { it.key }.toSet()
+        val held = HashMap<String, ArrayList<NotebookItem>>()
+        for (left in migration.leftBehind) {
+            if (!left.key.endsWith(WIDGET_FILE)) continue
+            val cell = left.cell ?: continue
+            if (cell.x < 0 || cell.y < 0 || cell.w < 1 || cell.h < 1 || cell.right > notebook.columns || cell.bottom > notebook.rows) continue
+            val page = notebook.pages.firstOrNull { it.id == migration.report.pageIds[left.page] } ?: continue
+            if (page.items.any { it.key in placed && it.cell?.overlaps(cell) == true }) continue
+            held.getOrPut(page.id) { ArrayList() } += NotebookItem(left.key, ItemKind.Widget, cell)
+        }
+        return if (held.isEmpty()) notebook else notebook.copy(pages = notebook.pages.map { p -> held[p.id]?.let { p.copy(items = p.items + it) } ?: p })
     }
 
     /** The dock's entries as the `dock` store has them; no store is an empty dock, one that can't be read a problem. */
