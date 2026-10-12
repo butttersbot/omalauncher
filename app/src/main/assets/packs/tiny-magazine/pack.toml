@@ -69,6 +69,8 @@ focus_color = "accent"
 muted = "muted"
 tilt_min = -1
 tilt_max = 1
+# The accent is the page's own blue, so the line is doubled: blue inside the edge, white outside it.
+focus_width = 4
 
 [scrap.shadow]
 x = 0
@@ -80,6 +82,7 @@ fill = "alt"
 ink = "on_alt"
 border = 0
 border_color = "foreground"
+focus_width = 4
 
 [scrap.alt.shadow]
 x = 0
@@ -154,6 +157,7 @@ ink = "foreground"
 border = 0
 border_color = "foreground"
 focus_color = "accent"
+focus_width = 4
 
 [dock.shadow]
 x = 0

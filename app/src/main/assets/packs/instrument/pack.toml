@@ -61,6 +61,8 @@ border = 0
 border_color = "border"
 focus_color = "accent"
 muted = "muted"
+# The orange is 2.2 to 1 on the chassis, so a focused display also gets a line of the chassis ink outside its edge.
+focus_width = 4
 
 [scrap.shadow]
 x = 0

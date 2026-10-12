@@ -165,8 +165,10 @@ class PackContrastTest {
      * Which tile is focused has to show, in every look and with framed or bare icons. The focus line
      * stands 3 to 1 off the fill it borders; a bare icon's, which is drawn straight on the page, stands
      * 3 to 1 off the page; and it is told from the outline it replaces by color (3 to 1 again) or by
-     * weight (half as wide again, at least). The page is measured as its paper color: 1-bit's dither
-     * and the other patterns are not.
+     * weight (half as wide again, at least). A surface sits on the page, so its line has to show from
+     * outside too: its color stands 3 to 1 off the page, or the line reaches outside the edge, where
+     * it is in the page's focus color, which does. The page is measured as its paper color: 1-bit's
+     * dither and the other patterns are not.
      */
     @Test fun focusShowsInEveryLook() {
         val failed = ArrayList<String>()
@@ -185,17 +187,25 @@ class PackContrastTest {
                 val outlined = surface.border > 0f
                 val offOutline = if (outlined) ratio(focus, surface.borderColor.toColor().compositeOver(fill)) else null
                 val wider = if (outlined) width / surface.border else null
+                val onPage = ratio(focus, page)
+                val outside = focusOutside(surface)
                 println(
-                    "  %-18s %s  %.0fdp  on its fill %.2f  against its outline %s".format(
+                    "  %-18s %s  %.0fdp (%.0f outside)  on its fill %.2f  on the page %.2f  against its outline %s".format(
                         name,
                         surface.focusColor,
                         width,
+                        outside,
                         onFill,
+                        onPage,
                         if (outlined) "%.2f, %.1f times as wide".format(offOutline, wider) else "(none)",
                     ),
                 )
                 if (onFill < LARGE) failed += "$id $name: focus is %.2f to 1 on its fill".format(onFill)
                 if (outlined && offOutline!! < LARGE && wider!! < 1.5f) failed += "$id $name: focus is %.2f to 1 against its outline and only %.1f times as wide".format(offOutline, wider)
+                if (onPage < LARGE && outside <= 0f) failed += "$id $name: focus is %.2f to 1 on the page and no part of it is outside the edge".format(onPage)
+                // What is inside never covers more of a tile than the outline or the launcher's mark did.
+                assertEquals("$id $name", maxOf(surface.border, PackLook.MIN_MARK), focusInside(surface), 0f)
+                assertEquals("$id $name", width, focusInside(surface) + outside, 0f)
                 // Never thinner than the launcher's own mark.
                 assertTrue("$id $name", width >= PackLook.MIN_MARK)
             }
@@ -215,6 +225,11 @@ class PackContrastTest {
         // A pack's width only ever adds weight: an outline wider than it stays as wide.
         assertEquals(5f, focusWidth(console.scrap.surface.copy(border = 5f)), 0f)
         assertEquals(4f, focusWidth(console.scrap.surface.copy(focusWidth = 4f)), 0f)
+        // Console's line is all inside the edge, as it was; a heavier one grows outward only.
+        for (surface in listOf(console.scrap.surface, console.scrap.alt, console.dock.surface)) assertEquals(0f, focusOutside(surface), 0f)
+        assertEquals(2f, focusInside(console.scrap.surface.copy(focusWidth = 4f)), 0f)
+        assertEquals(2f, focusOutside(console.scrap.surface.copy(focusWidth = 4f)), 0f)
+        assertEquals(0f, focusOutside(console.scrap.surface.copy(border = 5f, focusWidth = 4f)), 0f)
     }
 
     /** The measure itself, against known answers. */

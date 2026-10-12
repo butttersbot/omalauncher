@@ -71,6 +71,7 @@ ink = "#ffffff"
 border = 2
 border_color = "#000000"
 focus_color = "#ffffff"
+focus_width = 4
 
 # Ruled like an old window's: black lines on white, with a line under it.
 [scrap.title_bar]

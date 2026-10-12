@@ -76,6 +76,7 @@ ink = "background"
 border = 2
 border_color = "foreground"
 focus_color = "background"
+focus_width = 4
 
 [scrap.tape]
 style = "solid"

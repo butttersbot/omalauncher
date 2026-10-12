@@ -165,7 +165,11 @@ data class PackSurface(
     val borderColor: PackColor,
     /** The outline while focused or listening. */
     val focusColor: PackColor,
-    /** How wide that outline is, where the surface's own isn't wider: a look can mark focus by weight as well as by color. */
+    /**
+     * How wide the focus line is in all, where the surface's own outline isn't wider. What is over 2
+     * (or over the outline) is drawn outside the surface's edge in the page's focus color, so a look
+     * can mark focus by weight, and so the line shows on the page as well as on the fill.
+     */
     val focusWidth: Float,
     val shadow: PackShadow,
     /** A second shadow under the first, for a key cap's edge or a soft cast below a hard one. */
@@ -260,7 +264,7 @@ data class PackPage(
     val overviewScrim: PackColor,
     /** What the app drawer is filled with. */
     val drawerFill: PackColor,
-    /** The outline of a focused bare icon, which is drawn straight on the page and so has to show there, not on a scrap. */
+    /** Focus where it is drawn straight on the page and so has to show there: a bare icon's outline, and the part of a surface's focus line outside its edge. */
     val focusColor: PackColor,
     val plate: PagePlate,
     /** Under text drawn straight on the page; [PackShadow.inset] means nothing here. */

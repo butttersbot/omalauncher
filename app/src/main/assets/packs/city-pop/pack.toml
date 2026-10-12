@@ -76,6 +76,9 @@ border = 0
 border_color = "foreground"
 focus_color = "#ff4f9a"
 muted = "muted"
+# No color stands 3 to 1 off both white and this cobalt, so the line is doubled: pink inside the
+# edge, the page's yellow outside it.
+focus_width = 4
 
 [scrap.shadow]
 x = 5
@@ -90,6 +93,7 @@ ink = "on_alt"
 border = 0
 border_color = "foreground"
 focus_color = "on_alt"
+focus_width = 4
 
 [scrap.alt.shadow]
 x = 5
@@ -164,6 +168,7 @@ ink = "foreground"
 border = 0
 border_color = "foreground"
 focus_color = "#ff4f9a"
+focus_width = 4
 
 [dock.shadow]
 x = 3

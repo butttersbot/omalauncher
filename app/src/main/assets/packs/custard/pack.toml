@@ -90,6 +90,7 @@ ink = "on_alt"
 border = 0
 border_color = "foreground"
 focus_color = "highlight"
+focus_width = 4
 
 [scrap.alt.shadow]
 x = 0
