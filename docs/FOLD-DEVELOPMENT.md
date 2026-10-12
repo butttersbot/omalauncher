@@ -25,6 +25,20 @@ on this phone; no keys or credentials are copied in or exported.
 Installing the preview and choosing it as home are separate steps; do not
 replace the working launcher unless asked.
 
+## Installing on the phone
+
+- `oma-install` installs the built APK as the Oma Fold Dev preview and opens it.
+- `oma-install --no-open` installs it and leaves the current screen alone.
+- `oma-try` builds, then syncs the source to GitHub, then installs and opens
+  the preview.
+
+These only target `dev.omalauncher.boss.folddev`. They install over wireless
+debugging, which must stay enabled while the phone is on Wi-Fi.
+
+The preview keeps its own app data, separate from the working launcher. Agent
+logins are not transferred automatically, so the preview may need its own
+optional Linux/agent setup. None of these commands change the default home app.
+
 ## Source synchronization
 
 - GitHub branch: `phone/fold-development`
@@ -52,5 +66,6 @@ Verified on the Fold on 2026-10-11 (Boss client date): `oma-build` on `phone/fol
 - APK: `app/build/outputs/apk/debug/app-debug.apk` (about 30 MB), application ID
   `dev.omalauncher.boss.folddev` per `output-metadata.json`.
 
-The APK has only been built. It has not been installed or set as home, and
-nothing has been published.
+On 2026-10-12, `oma-install --no-open` updated the existing Oma Fold Dev
+preview from that phone-built APK without a rebuild. The preview has not been
+set as home, and nothing has been published.
