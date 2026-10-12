@@ -44,24 +44,24 @@ fun OverlayPanel(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Palette.overlay)
+            .background(Pack.overlay)
             .clickable(onClick = onDismiss)
             .safeDrawingPadding()
-            .padding(HomeGap),
+            .padding(PageGap),
     ) {
         Column(
             Modifier
                 .fillMaxSize()
-                .frame(2.dp, Palette.accent, Palette.background, radius = 20.dp)
+                .panel(20.dp)
                 // Taps inside the panel don't reach the scrim behind it.
                 .pointerInput(Unit) { detectTapGestures { } }
                 .padding(PanelPadding),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                BasicText(title, style = Mono.copy(color = Palette.accent, fontSize = TextSize.Title))
+                BasicText(Pack.heading(title), style = Pack.display(Pack.size.title, Pack.accent))
                 Spacer(Modifier.weight(1f))
                 actions()
-                Symbol(Glyph.Close, Palette.red, Modifier.clickable(onClick = onDismiss).padding(8.dp), TextSize.Title)
+                Symbol(Glyph.Close, Pack.red, Modifier.clickable(onClick = onDismiss).padding(8.dp), Pack.size.title)
             }
             Spacer(Modifier.height(8.dp))
             if (contentWidth == Dp.Unspecified) {
@@ -89,7 +89,7 @@ fun Modifier.bleed(gutter: Dp) =
 fun SectionLabel(
     text: String,
     modifier: Modifier = Modifier,
-) = BasicText(text, modifier.padding(top = 12.dp, bottom = 4.dp), style = Mono.copy(color = Palette.muted))
+) = BasicText(Pack.caption(text), modifier.padding(top = 12.dp, bottom = 4.dp), style = Pack.mono(color = Pack.muted))
 
 /** A [Glyph] from the launcher's Nerd Font subset, sized like text. */
 @Composable
@@ -97,8 +97,8 @@ fun Symbol(
     glyph: String,
     color: Color,
     modifier: Modifier = Modifier,
-    fontSize: TextUnit = TextSize.Body,
-) = BasicText(glyph, modifier, style = Mono.copy(color = color, fontSize = fontSize, fontFamily = NerdSymbols))
+    fontSize: TextUnit = Pack.size.body,
+) = BasicText(glyph, modifier, style = Pack.symbol(fontSize, color))
 
 /** A terminal-style `[ label ]` button. */
 @Composable
@@ -108,7 +108,7 @@ fun BracketAction(
     onClick: () -> Unit,
 ) {
     Box(Modifier.clickable(onClick = onClick).padding(horizontal = 8.dp, vertical = 6.dp)) {
-        BasicText("[ $label ]", style = Mono.copy(color = color))
+        BasicText("[ $label ]", style = Pack.body(color = color))
     }
 }
 
@@ -126,7 +126,7 @@ fun JobLog(
         }
     if (log.isEmpty()) return
     Spacer(Modifier.height(6.dp))
-    val style = Mono.copy(color = if (state is JobState.Failed) Palette.red else Palette.muted, fontSize = TextSize.Small)
+    val style = Pack.body(Pack.size.small, if (state is JobState.Failed) Pack.red else Pack.muted)
     // A failure's reason is usually at the end of the line: let it wrap.
     for (line in log.takeLast(lines)) BasicText(line, style = style, maxLines = if (state is JobState.Failed) 3 else 1)
 }
@@ -144,7 +144,7 @@ fun MenuItems(
         Modifier
             .width(IntrinsicSize.Max)
             .widthIn(min = minWidth)
-            .frame(1.dp, Palette.border, Palette.surface)
+            .framed(Pack.hair, Pack.border, Pack.surface)
             .padding(vertical = 6.dp),
     ) {
         for ((label, action) in items) {
@@ -156,7 +156,7 @@ fun MenuItems(
                         onDismiss()
                         action()
                     }.padding(horizontal = 18.dp, vertical = itemPadding),
-                style = Mono.copy(fontSize = fontSize),
+                style = Pack.body(fontSize),
             )
         }
     }

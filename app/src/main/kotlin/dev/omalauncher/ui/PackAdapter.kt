@@ -256,6 +256,10 @@ class PackLook(
             style(TypeRole.Body, size, Color.White).copy(shadow = Shadow(Color.Black.copy(alpha = 0.7f), blurRadius = 6f))
         }
 
+    /** Quiet text and guide lines straight on the page: the theme's over the system's wallpaper, the page's ink on a pack's own page. */
+    val pageMuted = if (ownsPage) onPage.copy(alpha = onPage.alpha * 0.7f) else muted
+    val pageLine = if (ownsPage) onPage else border
+
     /** What sits behind text straight on the page, for pages too busy to read on; clear when the pack wants none. */
     val plate = if (ownsPage && pack.page.plate == PagePlate.Paper) pack.page.color.toColor() else Color.Transparent
 
@@ -327,12 +331,16 @@ object Pack {
     val glass get() = look.glass
     val onPage get() = look.onPage
     val highlight get() = look.highlight
+    /** Glyphs on the dock's own surface. */
+    val dockInk get() = look.pack.dock.surface.ink.toColor()
     val scrapInk get() = look.scrapInk
     val scrapMuted get() = look.scrapMuted
     val tint get() = look.tint
     val badge get() = look.badge
     val plate get() = look.plate
     val folioPlate get() = look.folioPlate
+    val pageMuted get() = look.pageMuted
+    val pageLine get() = look.pageLine
 
     /** No color at all. */
     val clear = Color.Transparent
@@ -384,10 +392,11 @@ object Pack {
 
     val folio get() = look.folio
 
-    fun cased(
-        role: TypeRole,
-        text: String,
-    ) = look.cased(role, text)
+    /** [text] as the pack spells a heading: in capitals where its display voice says so. */
+    fun heading(text: String) = look.cased(TypeRole.Display, text)
+
+    /** [text] as the pack spells a caption. */
+    fun caption(text: String) = look.cased(TypeRole.Mono, text)
 
     /** The shape frames use: square, or [radius] scaled by the corner style. */
     fun shape(radius: Dp = look.radius): Shape = look.shape(radius, LauncherStyle.corners.scale)

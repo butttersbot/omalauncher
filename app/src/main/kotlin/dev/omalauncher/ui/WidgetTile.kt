@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -44,7 +43,7 @@ internal fun WidgetTile(
 ) {
     Box(
         modifier
-            .tile(focused)
+            .scrap(focused, spec.file.name, dressed = true)
             .pointerInput(spec) { detectTapGestures(onTap = { onTap() }) },
     ) {
         if (waitsForLinux != null) {
@@ -54,24 +53,24 @@ internal fun WidgetTile(
             }
         } else if (instance != null && needs.isNotEmpty()) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                BasicText(spec.name, style = Mono.copy(color = Palette.muted))
-                BasicText("needs ${needs.joinToString(", ")}", style = Mono)
+                BasicText(spec.name, style = Pack.body(color = Pack.scrapMuted))
+                BasicText("needs ${needs.joinToString(", ")}", style = Pack.body(color = Pack.scrapInk))
                 when (install) {
-                    WidgetEngine.Install.Running -> BasicText("installing…", style = Mono.copy(color = Palette.accent))
+                    WidgetEngine.Install.Running -> BasicText("installing…", style = Pack.body(color = Pack.accent))
                     is WidgetEngine.Install.Failed -> {
-                        BasicText(install.log.lines().lastOrNull { it.isNotBlank() }.orEmpty(), style = Mono.copy(color = Palette.red, fontSize = TextSize.Small), maxLines = 2)
+                        BasicText(install.log.lines().lastOrNull { it.isNotBlank() }.orEmpty(), style = Pack.body(Pack.size.small, Pack.red), maxLines = 2)
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            TileButton("retry", Palette.accent, onInstall)
-                            TileButton("fix with agent", Palette.muted) { onFix(install.log) }
+                            TileButton("retry", Pack.accent, onInstall)
+                            TileButton("fix with agent", Pack.scrapMuted) { onFix(install.log) }
                         }
                     }
-                    null -> TileButton("install", Palette.accent, onInstall)
+                    null -> TileButton("install", Pack.accent, onInstall)
                 }
             }
         } else if (instance == null) {
             Column(Modifier.padding(12.dp)) {
-                BasicText(spec.file.name, style = Mono.copy(color = Palette.red))
-                BasicText(spec.error.orEmpty(), style = Mono.copy(color = Palette.muted, fontSize = TextSize.Small))
+                BasicText(spec.file.name, style = Pack.body(color = Pack.red))
+                BasicText(spec.error.orEmpty(), style = Pack.body(Pack.size.small, Pack.scrapMuted))
             }
         } else {
             WidgetContent(instance, Modifier.fillMaxSize(), cells)
@@ -87,16 +86,16 @@ private fun LinuxPlaceholder(
     onInstall: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        BasicText(name, style = Mono.copy(color = Palette.muted), maxLines = 1)
+        BasicText(name, style = Pack.body(color = Pack.scrapMuted), maxLines = 1)
         Spacer(Modifier.weight(1f))
-        BasicText("needs Linux", style = Mono.copy(color = Palette.accent))
+        BasicText("needs Linux", style = Pack.body(color = Pack.accent))
         BasicText(
             "runs commands in the optional Arch Linux",
-            style = Mono.copy(color = Palette.muted, fontSize = TextSize.Small),
+            style = Pack.body(Pack.size.small, Pack.scrapMuted),
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
-        TileButton(if (installing) "installing…" else "install", Palette.accent, onInstall)
+        TileButton(if (installing) "installing…" else "install", Pack.accent, onInstall)
     }
 }
 
@@ -109,10 +108,10 @@ private fun TileButton(
     BasicText(
         label,
         Modifier
-            .frame(1.dp, color, radius = 8.dp)
+            .framed(Pack.hair, color, radius = 8.dp)
             .clickable(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 6.dp),
-        style = Mono.copy(color = color),
+        style = Pack.body(color = color),
     )
 }
 

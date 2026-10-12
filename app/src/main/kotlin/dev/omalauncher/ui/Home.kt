@@ -307,7 +307,7 @@ fun HomeScreen(
                             state.sharing = item.spec
                         }
                     }
-                    EditAction("remove", Palette.red) { remove(item) }
+                    EditAction("remove", Pack.red) { remove(item) }
                 }
             },
             render = { item, tile, highlighted ->
@@ -348,7 +348,7 @@ fun HomeScreen(
                     is Shortcut ->
                         ShortcutTile(
                             shortcut = item,
-                            icon = runtime.shortcutIcon(item, LauncherStyle.monochromeIcons),
+                            icon = runtime.shortcutIcon(item, Pack.monoIcons),
                             focused = highlighted,
                             modifier = tile,
                             onTap = {
@@ -361,7 +361,7 @@ fun HomeScreen(
                     is Folder ->
                         FolderTile(
                             folder = item,
-                            icons = item.apps.take(4).map { runtime.shortcutIcon(it, LauncherStyle.monochromeIcons) },
+                            icons = item.apps.take(4).map { runtime.shortcutIcon(it, Pack.monoIcons) },
                             focused = highlighted,
                             modifier = tile,
                             onTap = { arrange.folder = item.key },
@@ -370,7 +370,7 @@ fun HomeScreen(
             },
             // The recent apps strip's room: kept while it's empty, so tiles don't reflow when it fills, and still
             // home's to swipe and long-press there until it does.
-            room = if (LauncherStyle.recentApps && side == null) RecentStripHeight else 0.dp,
+            room = if (Pack.recentApps && side == null) RecentStripHeight else 0.dp,
             per = per,
             ready = engine.notebook.opened,
             onLongPressEmpty = { openMenu(null) },
@@ -395,13 +395,13 @@ fun HomeScreen(
         Column(
             Modifier
                 .align(Alignment.TopCenter)
-                .padding(start = HomeGap, end = HomeGap, top = PageNameHeight)
-                .frame(2.dp, Palette.accent, Palette.background)
+                .padding(start = PageGap, end = PageGap, top = PageNameHeight)
+                .panel()
                 .clickable { engine.notice = null }
                 .padding(12.dp),
         ) {
-            BasicText(text, style = Mono)
-            BasicText("tap to hide", style = Mono.copy(color = Palette.muted, fontSize = TextSize.Small))
+            BasicText(text, style = Pack.body())
+            BasicText("tap to hide", style = Pack.body(Pack.size.small, Pack.muted))
         }
     }
 
@@ -442,11 +442,11 @@ private fun PageNames(
                     BasicText(
                         name,
                         Modifier
-                            .padding(start = HomeGap)
+                            .padding(start = PageGap)
                             .clickable(onClick = onOpen)
-                            .background(Palette.background.copy(alpha = 0.6f))
+                            .background(Pack.folioPlate)
                             .padding(horizontal = 8.dp, vertical = 2.dp),
-                        style = Mono.copy(color = Palette.muted),
+                        style = Pack.folio,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )

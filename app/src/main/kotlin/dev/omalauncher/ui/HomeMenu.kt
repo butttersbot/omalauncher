@@ -16,7 +16,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import dev.omalauncher.Runtime
 import dev.omalauncher.linux.newAppCommand
@@ -27,7 +26,7 @@ import kotlinx.coroutines.launch
 internal fun EditBar(content: @Composable () -> Unit) {
     Row(
         Modifier
-            .frame(2.dp, Palette.accent, Palette.background)
+            .panel()
             .padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) { content() }
@@ -36,11 +35,11 @@ internal fun EditBar(content: @Composable () -> Unit) {
 @Composable
 internal fun EditAction(
     label: String,
-    color: androidx.compose.ui.graphics.Color = Palette.foreground,
+    color: androidx.compose.ui.graphics.Color = Pack.foreground,
     onClick: () -> Unit,
 ) {
     Box(Modifier.clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 10.dp)) {
-        BasicText(label, style = Mono.copy(color = color, fontSize = TextSize.Body))
+        BasicText(label, style = Pack.body(Pack.size.body, color))
     }
 }
 
@@ -113,14 +112,14 @@ private fun Menu(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Palette.overlay)
+            .background(Pack.overlay)
             .clickable(onClick = onDismiss),
         contentAlignment = Alignment.Center,
     ) {
         Column(
             Modifier
                 .widthIn(min = 240.dp, max = 360.dp)
-                .frame(2.dp, Palette.accent, Palette.background, radius = 20.dp)
+                .panel(20.dp)
                 .clickable(enabled = false) {}
                 .padding(8.dp),
         ) { content() }
@@ -137,5 +136,5 @@ private fun MenuItem(
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp),
-    ) { BasicText(label, style = Mono.copy(fontSize = TextSize.Item)) }
+    ) { BasicText(label, style = Pack.body(Pack.size.item)) }
 }
