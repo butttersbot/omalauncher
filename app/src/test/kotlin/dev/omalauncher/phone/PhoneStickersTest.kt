@@ -9,6 +9,7 @@ import dev.omalauncher.widgets.annotations.StickerChoice
 import dev.omalauncher.widgets.annotations.StickerGroup
 import dev.omalauncher.widgets.annotations.StickerKind
 import dev.omalauncher.widgets.annotations.StickerLibrary
+import dev.omalauncher.widgets.annotations.StickyNote
 import dev.omalauncher.widgets.annotations.fitted
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -33,7 +34,10 @@ class PhoneStickersTest {
     private class Home(
         var stickers: List<Sticker> = emptyList(),
         val library: StickerLibrary? = null,
+        val notes: List<StickyNote> = emptyList(),
     ) : NotePad, StickerPad {
+        /** Every id the book was asked to take off. */
+        val removed = ArrayList<String>()
         val stuck = ArrayList<Pair<StickerChoice, Pair<Float, Float>?>>()
         override val asked: String? = "p1"
         override val showing: String? = "p1"
@@ -51,7 +55,7 @@ class PhoneStickersTest {
         override fun look(
             page: String,
             then: (PageBoard, Annotations?) -> Unit,
-        ) = then(PageBoard(9), Annotations(stickers = if (page == "p1") stickers else emptyList()))
+        ) = then(PageBoard(9), if (page == "p1") Annotations(notes = notes, stickers = stickers) else Annotations())
 
         override fun library(then: (StickerLibrary?) -> Unit) = then(library)
 
@@ -79,6 +83,7 @@ class PhoneStickersTest {
             page: String,
             id: String,
         ): Boolean {
+            removed += id
             stickers = stickers.filter { it.id != id }
             return true
         }
@@ -170,6 +175,18 @@ class PhoneStickersTest {
         assertEquals(before, home.stickers)
         assertThrows(IllegalStateException::class.java) { ask(home, "action" to "remove", "id" to "s1", "page" to "holiday") }
         assertThrows(IllegalStateException::class.java) { ask(home, "action" to "polish", "id" to "s1") }
+    }
+
+    @Test fun aNoteIsNeverTakenOffOrChangedByItsId() {
+        // The owner's note on the very page asked about: its id is no sticker's, so the book is never asked.
+        val home = Home(listOf(Sticker("s1", StickerKind.Star, 0.5f, 0.5f, 0.14f)), notes = listOf(StickyNote("n1", 0.1f, 0.1f, 0.44f, 0.16f, "call mum")))
+        for (action in listOf("remove", "turn", "size", "move")) {
+            val told = ask(home, "action" to action, "id" to "n1", "value" to if (action == "move") "1,1" else "20")
+            assertFalse(told.toString(), told.getBoolean("ok"))
+            assertTrue(told.getString("error").contains("No sticker n1"))
+        }
+        assertTrue(home.removed.isEmpty())
+        assertEquals(listOf("s1"), home.stickers.map { it.id })
     }
 
     @Test fun stickerCommandsPassTheSameGatesAndNeverRunWhileAnApprovalWaits() {

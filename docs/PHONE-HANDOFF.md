@@ -15,10 +15,10 @@ Boss talks to you through Oma (voice or the Oma chat). Be short: he is often rea
   plain words on the oma tile and in the task notification, numbered lists in a column, the sticker picker's scrim
   over the bars, no hint on an empty page. NOT seen: the answer card's plain words, a voice request over seven lines,
   any of it on the inner screen.
-- Phone control by what controls say (versionCode 35 on): `oma-phone screen`, `press`, `fill`, `expect`, with
-  `--in PACKAGE`. And by name on home (36 on): `stickers`, `stick`, `sticker ID turn|size|move|remove`, `page-add`,
+- Phone control by what controls say (versionCode 35 on): `oma-phone screen`, `press`, `fill`, with
+  `--in PACKAGE`. (`expect` is built but not on the launcher yet: see Next, item 1.) And by name on home (36 on): `stickers`, `stick`, `sticker ID turn|size|move|remove`, `page-add`,
   `page-rename`, `page-delete` (empty pages only); `board` gives every note and sticker an id. Run by you on a
-  throwaway page on 2026-10-12: all passed, 70–150 ms a call. Use these, not taps aimed off a screenshot.
+  throwaway page on 2026-10-12: all passed; 70–150 ms a sticker, page or board call, about 550 ms a press or fill. Use these, not taps aimed off a screenshot.
 - Phone control after an update: Android can leave the service switched on and never bound. `oma-install`'s job now
   waits 20 seconds and turns it off and on if so; `oma-install --status` says BOUND, HEALED or STILL_DISCONNECTED.
   Seen healing a stuck update once (19:29). The launcher also tells: `oma-phone status` has `link`, and the oma tile
@@ -35,12 +35,12 @@ Boss talks to you through Oma (voice or the Oma chat). Be short: he is often rea
 
 ## How a change reaches the phone
 1. Edit and commit here. `oma-sync` commits and pushes to the shared branch (the Mac pulls from it).
-2. `oma-build` runs the unit tests and builds; it must be green before anything else. About 2.5 minutes.
+2. `oma-build` runs the unit tests and builds; it must be green before anything else. Under a minute once Gradle is warm; about 2.5 minutes the first time.
 3. `oma-dev --no-open` builds the same source as Oma Dev and installs it beside the real launcher (under a minute).
-   Then `oma-dev --open`, look at it with `oma-phone screenshot` / `read`, tap with `oma-phone tap X Y`, and
-   `oma-phone home` to come back. Oma Dev has no Linux, no agent and an empty notebook: it shows that the build
-   starts and how home, the looks, the app list, the overview, settings and the drawing tools look. It cannot show
-   voice, the answer card, or Boss's own pages.
+   Then `oma-dev --open` and look at it; `oma-phone home` to come back. Oma Dev has no Linux and no agent, and
+   `oma-phone` talks only to the real launcher, so it shows that the build starts and how home, the looks, the app
+   list, the overview, settings and the drawing tools look. It cannot show voice, follow-ups, the answer card, the
+   phone-control or sticker commands, or Boss's own pages. It has test notes, stickers and a sample chat in it.
 4. Promote to the real launcher ONLY when Boss says so in that conversation: `oma-try` (it builds, syncs and
    schedules the update). The update restarts the launcher and ENDS YOUR OWN RUN, so make it the last thing you do,
    and tell Boss first what to check afterwards. Never uninstall or clear the real launcher.
@@ -49,7 +49,7 @@ Boss talks to you through Oma (voice or the Oma chat). Be short: he is often rea
 - This is Boss's daily phone. Do not open banking, payment, messaging or email apps, do not type into other apps, do
   not change Android settings, do not approve anything on his behalf.
 - Do not move, resize, rename or delete his tiles, pages, notes or pinned apps unless he asks for exactly that.
-- Drive the phone with `oma-phone screen`, `press`, `fill` and `expect`, and home with the sticker and page commands;
+- Drive the phone with `oma-phone screen`, `press` and `fill` (and `expect` once it is promoted), and home with the sticker and page commands;
   `read`, `click` and `tap` are for what those can't reach. System dialogs still ignore `tap`; use `oma-phone back` there.
 - Some tests pin what may write to Boss's pages (PhoneNotesTest) and what may run while an approval waits. If one
   fails, stop and say so: it is not yours to loosen.
@@ -61,8 +61,8 @@ Boss talks to you through Oma (voice or the Oma chat). Be short: he is often rea
 ## Next, in order (ask Boss which, if he hasn't said)
 1. Small, built but not promoted (after 842f045): `board` tells each sticker's size and turn; `oma-phone expect`.
 2. Open from the 2026-10-12 runs: `sticker size` can grow one over its neighbours (only `stick` places clear);
-   removing a real note's id with `sticker ... remove` on its own page is refused in unit tests but was not tried on
-   the phone; the dock on the cover screen now starts with btop, cause not known.
+   `sticker ID remove` given a note's id on the note's own page is refused in a unit test, and was not tried on the
+   phone; the dock on the cover screen now starts with btop, cause not known.
 3. Not started: a command to set the look; the commands from the Mac without typing into the chat; a pilot of Jev
    (TypeSafe's fast chooser, text only) for routing a spoken request. The last two wait on Boss.
 4. Move the sticker library out of the Linux root so it survives a reinstall (`linux/Proot.kt`, `LauncherData.kt`, a bind
@@ -83,8 +83,8 @@ Decided 2026-10-12, from the phone:
   idea carry over, not the code.
 - Text sizes: leave as they are; come back only if it proves a problem.
 - First-run setup offering looks: not now. To do later.
-- Promotion: he does not want the real launcher updated after every small change. Bundle fixes and features, test them in
-  Oma Dev, and ask once when a batch is ready.
+- Promotion: he does not want the real launcher updated after every small change. Bundle fixes and features, test in
+  Oma Dev what it can show, and ask once when a batch is ready.
 
 ## When you finish a piece of work
 Write what you did, what you saw, and what is next at the top of `docs/PHONE-TEST-RESULTS.md`, then `oma-sync`.
