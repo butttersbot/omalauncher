@@ -18,6 +18,7 @@ import dev.omalauncher.App
 import dev.omalauncher.R
 import dev.omalauncher.assist.OmaClockWidget
 import dev.omalauncher.assist.OmaLockWidget
+import dev.omalauncher.assist.OmaWatchWidget
 import dev.omalauncher.theme.pack.Dressing
 import dev.omalauncher.theme.pack.FontGeneric
 import dev.omalauncher.theme.pack.PackFont
@@ -59,10 +60,15 @@ object LookWidgets {
         }, changes)
     }
 
-    /** Draws every placed copy again; with [clockOnly], only the clocks. Does nothing where none is placed. */
+    /**
+     * Draws every placed copy again; with [clockOnly], only what the time changes: the clocks, and the watchlist,
+     * whose prices are asked for again when they have grown old; with [watchOnly], only the watchlist, when
+     * those prices came. Does nothing where none is placed.
+     */
     fun refresh(
         context: Context,
         clockOnly: Boolean = false,
+        watchOnly: Boolean = false,
     ) {
         runCatching {
             val app = context.applicationContext
@@ -70,11 +76,22 @@ object LookWidgets {
             (app as App).runtime
             val pack = ActivePack.pack
             val manager = AppWidgetManager.getInstance(app)
-            for (id in manager.getAppWidgetIds(ComponentName(app, OmaClockWidget::class.java))) {
-                val (w, h) = size(app, manager, id, 260, 110)
-                manager.updateAppWidget(id, picture(app, clock(app, pack, w, h, Date()), OmaClockWidget.tap(app)))
+            if (!watchOnly) {
+                for (id in manager.getAppWidgetIds(ComponentName(app, OmaClockWidget::class.java))) {
+                    val (w, h) = size(app, manager, id, 260, 110)
+                    manager.updateAppWidget(id, picture(app, clock(app, pack, w, h, Date()), OmaClockWidget.tap(app)))
+                }
             }
-            if (clockOnly) return
+            val lists = manager.getAppWidgetIds(ComponentName(app, OmaWatchWidget::class.java))
+            if (lists.isNotEmpty()) {
+                val (gainers, age) = OmaWatchWidget.shown(app)
+                for (id in lists) {
+                    val (w, h) = size(app, manager, id, 180, 120)
+                    manager.updateAppWidget(id, picture(app, watch(app, pack, w, h, gainers, age), OmaWatchWidget.tap(app)))
+                }
+                if (!watchOnly) OmaWatchWidget.freshen(app)
+            }
+            if (clockOnly || watchOnly) return
             for (id in manager.getAppWidgetIds(ComponentName(app, OmaLockWidget::class.java))) {
                 val (w, h) = size(app, manager, id, 180, 70)
                 manager.updateAppWidget(id, picture(app, status(app, pack, w, h, OmaLockWidget.state()), OmaLockWidget.tap(app)))
@@ -208,17 +225,18 @@ object LookWidgets {
         return bitmap
     }
 
-    /** Oma's state as a scrap of the look: its fill, border, shadow and tape, "OMA" in small capitals over the state in the display face. */
-    private fun status(
+    /**
+     * A scrap of the look filling [width] by [height]: its shadow, fill, border and tape. The box left inside for
+     * what is written on it: room is kept for the shadow at the side it falls to, and for the tape over the top.
+     */
+    private fun scrap(
         context: Context,
+        canvas: Canvas,
         pack: ThemePack,
         width: Int,
         height: Int,
-        state: String,
-    ): Bitmap {
+    ): RectF {
         val density = context.resources.displayMetrics.density
-        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bitmap)
         val surface = pack.scrap.surface
         val shadow = surface.shadow
         val dx = if (shadow.visible && !shadow.inset) shadow.x * density else 0f
@@ -226,7 +244,6 @@ object LookWidgets {
         val tape = pack.scrap.tape
         val taped = tape.style != Dressing.None
         val edge = surface.border * density / 2f + 1f
-        // Room is left for the shadow at the side it falls to, and for the tape that sticks out over the top.
         val box = RectF(edge + maxOf(0f, -dx), edge + maxOf(0f, -dy) + (if (taped) tape.height * density / 2f else 0f), width - edge - maxOf(0f, dx), height - edge - maxOf(0f, dy))
         val radius = pack.shape.radius * density
         if (dx != 0f || dy != 0f) canvas.drawRoundRect(RectF(box).apply { offset(dx, dy) }, radius, radius, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = shadow.color.argb })
@@ -238,16 +255,88 @@ object LookWidgets {
             canvas.drawRect(box.centerX() - tape.width * density / 2f, box.top - tape.height * density / 2f, box.centerX() + tape.width * density / 2f, box.top + tape.height * density / 2f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = tape.color.withAlpha(tape.opacity).argb })
             canvas.restore()
         }
+        return box
+    }
+
+    /** Oma's state as a scrap of the look: "OMA" in small capitals over the state in the display face. */
+    private fun status(
+        context: Context,
+        pack: ThemePack,
+        width: Int,
+        height: Int,
+        state: String,
+    ): Bitmap {
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val box = scrap(context, canvas, pack, width, height)
         val pad = box.height() * 0.14f
         val room = box.width() - pad * 2f
         val caption = paint(context, pack, pack.type.mono, box.height() * 0.17f, pack.scrap.muted.argb)
-        val line = paint(context, pack, pack.type.display, box.height() * 0.36f, surface.ink.argb)
+        val line = paint(context, pack, pack.type.display, box.height() * 0.36f, pack.scrap.surface.ink.argb)
         val name = spelled("oma", pack.type.mono)
         fitted(caption, name, room)
         fitted(line, state, room)
         val top = box.top + pad - caption.fontMetrics.ascent
         canvas.drawText(name, box.left + pad, top, caption)
         canvas.drawText(state, box.left + pad, top + caption.fontMetrics.descent + box.height() * 0.06f - line.fontMetrics.ascent * 0.9f, line)
+        return bitmap
+    }
+
+    /** How old prices are said to be once that is worth saying: nothing for the first quarter of an hour. */
+    internal fun ageText(seconds: Long): String =
+        when {
+            seconds < 15 * 60 -> ""
+            seconds < 60 * 60 -> "${seconds / 60}m old"
+            seconds < 48 * 60 * 60 -> "${seconds / 3600}h old"
+            else -> "${seconds / 86400}d old"
+        }
+
+    /**
+     * The watchlist's biggest gainers as a scrap of the look: a caption in small capitals, then a line each, the
+     * ticker in the display face and its change at the right in the look's green or red.
+     */
+    private fun watch(
+        context: Context,
+        pack: ThemePack,
+        width: Int,
+        height: Int,
+        gainers: List<OmaWatchWidget.Gainer>,
+        age: Long,
+    ): Bitmap {
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val box = scrap(context, canvas, pack, width, height)
+        val pad = minOf(box.height(), box.width()) * 0.1f
+        val room = box.width() - pad * 2f
+        val caption = paint(context, pack, pack.type.mono, box.height() * 0.1f, pack.scrap.muted.argb)
+        val old = ageText(age)
+        val title = spelled(if (old.isEmpty()) "top gainers" else "gainers · $old", pack.type.mono)
+        fitted(caption, title, room)
+        val top = box.top + pad - caption.fontMetrics.ascent
+        canvas.drawText(title, box.left + pad, top, caption)
+        val below = top + caption.fontMetrics.descent
+        if (gainers.isEmpty()) {
+            val none = paint(context, pack, pack.type.body, box.height() * 0.13f, pack.scrap.muted.argb)
+            fitted(none, "no prices yet", room)
+            canvas.drawText("no prices yet", box.left + pad, below + box.height() * 0.08f - none.fontMetrics.ascent, none)
+            return bitmap
+        }
+        val step = (box.bottom - pad - below) / OmaWatchWidget.SHOWN
+        val names = paint(context, pack, pack.type.display, step * 0.6f, pack.scrap.surface.ink.argb)
+        val changes = paint(context, pack, pack.type.mono, step * 0.5f, pack.palette.green.argb)
+        // One size for every line, set by the widest, so the tickers stand in a column and the changes in another.
+        val widestName = gainers.maxOf { names.measureText(it.code) }
+        val widestChange = gainers.maxOf { changes.measureText(it.change) }
+        val gap = room * 0.06f
+        val shrink = minOf(1f, room / (widestName + gap + widestChange))
+        names.textSize *= shrink
+        changes.textSize *= shrink
+        gainers.forEachIndexed { i, gainer ->
+            val base = below + step * i + step * 0.5f - (names.fontMetrics.ascent + names.fontMetrics.descent) / 2f
+            canvas.drawText(gainer.code, box.left + pad, base, names)
+            changes.color = if (gainer.up) pack.palette.green.argb else pack.palette.red.argb
+            canvas.drawText(gainer.change, box.right - pad - changes.measureText(gainer.change), base, changes)
+        }
         return bitmap
     }
 }

@@ -264,6 +264,10 @@
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/oma_clock_widget" />
         </receiver>
+        <receiver android:name=".assist.OmaWatchWidget" android:exported="true" android:label="Oma watchlist${labelSuffix}">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/oma_watch_widget" />
+        </receiver>
         <!-- Approve once / Deny on an approval notification; only this app's own PendingIntents reach it. -->
         <receiver android:name=".assist.ApprovalActionReceiver" android:exported="false" />
         <service android:name=".assist.OmaVoiceService" android:exported="true"
