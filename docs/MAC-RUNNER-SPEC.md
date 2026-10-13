@@ -1,7 +1,8 @@
 # A runner on the Mac for Oma's builders
 
 For the Mac session, to build on the Mac Pro with Boss. Written 2026-10-13 by the agent on the Fold.
-Nothing here is built. The phone side that would call it is not built either: say what you change in this file.
+The Mac side is built and running (see "As built on the Mac" at the end, which wins where it differs from
+the text above it). The phone side that would call it is not built: say what you change in this file.
 
 ## Start here (Boss's request to the Mac session, 2026-10-13)
 Boss could not paste this in, so it stands here for him. He wants this runner built on the Mac Pro.
@@ -91,3 +92,78 @@ is logged and for how long.
 From the phone: `/health` answers; a thread on a scratch directory answers "what files are here"; a request
 that needs a write shows a card on the phone and waits; deny refuses it; allow does it; the link is dropped in
 the middle (turn Tailscale off) and the stream is picked up again without the task starting twice.
+
+## As built on the Mac (2026-10-13, by the Mac session with Boss)
+The runner is `tools/mac-runner/oma-runner` (Python, no dependencies), installed on the Mac Pro as
+`~/.local/bin/oma-runner` and running now at `http://100.120.219.46:8478`. Its proof is
+`tools/mac-runner/test-runner.py` (35 checks against `fake-agent`, a stand-in that speaks Claude Code's lines).
+
+### What Boss decided
+- Port 8478, on the Mac's Tailscale address only (8477 is taken on the Mac). The secret is in
+  `~/agents/claude-code/oma-runner.token` on the Mac, readable by him only. He gives it to the phone himself.
+- Allowed roots: `~/Projects` and `~/ClaudeSync/projects`. Not the rest of ClaudeSync.
+- No limit on how many threads work at once. He does not want a number until a real situation asks for one.
+- Starts at login and restarts if it dies (launchd, `dev.omalauncher.runner`). `oma-runner stop | start | status |
+  uninstall` on the Mac. Stopping keeps the threads.
+- Claude Code only. Each thread carries `kind: "claude"` so Codex can be a second kind later.
+- Everything is kept until he clears it: each thread's events, and one line per request (time, caller, method,
+  path, answer). The key and request bodies are never logged.
+
+### What the phone sends
+Every request carries `Authorization: Bearer KEY`. Without it: 401 `{"ok":false,"error":"no"}` after a second.
+Bodies and answers are JSON; every answer has `ok`.
+- `GET /health` -> `{ok, runner:"oma-runner", threads, working, waiting}`.
+- `GET /threads` -> `{threads:[THREAD]}`; `GET /threads/ID` -> `{thread:THREAD}`. THREAD is `{id, name, project,
+  home:"mac", kind, summary, status, last_worked, tail, waiting_turns, last_event, pending:[...]}`. `summary` is the
+  first line of the owner's last message, `tail` the last 300 characters the agent said, `last_worked` Unix
+  seconds, `status` one of `idle`, `working`, `waiting`, `interrupted`. `pending` lists the approval requests
+  waiting now (same fields as the `approval` event), so a card can be drawn again without the stream.
+- `POST /threads {name, project}` -> `{thread}`. The project must be an existing folder under a root (`~` is
+  understood; links that lead out are refused): otherwise 403 with the roots. The runner makes no folders.
+- `POST /threads/ID/messages {text}` -> `{taken:"now"}` or `{taken:"queued", position}`. The text goes to the
+  agent exactly as sent; the runner adds nothing. Images are not passed on yet.
+- `GET /threads/ID/stream` -> server-sent events, each `id: N`, `event: TYPE`, `data: {id, time, type, ...}`. Ids
+  count from 1 per thread with no gaps. Ask from where you were with `?after=N` or the `Last-Event-ID` header. A
+  comment line comes every 15 seconds while nothing happens. `GET /threads/ID/events?after=N` gives the same
+  events as `{status, events:[...]}` without holding a link open.
+- `POST /threads/ID/approvals/APPROVAL {decision:"allow"|"deny", nonce}` -> 200; 403 for a wrong nonce (the
+  request goes on waiting); 404 once answered or gone.
+- `POST /threads/ID/stop` -> `{stopped}`. Messages waiting their turn are dropped; the `stopped` event says how
+  many.
+
+Event types: `status {status}`; `message {text}` (the owner's words, when taken); `text {text}`; `step {text,
+tool}` (one line, written as `ClaudeProtocol.step` writes it); `approval {approval, nonce, tool, input,
+explanation}`; `approval_result {approval, decision}` (`allow`, `deny`, or `withdrawn` when the agent took the
+request back); `result {text, failed}`; `stopped {dropped}`; `error {text, code}`.
+
+### How it keeps the rules above
+- The agent runs as the phone's does (`claude -p`, stream-json both ways, `--permission-prompt-tool stdio`,
+  `--resume` with the thread's session), but in `--permission-mode manual` with no `--allowedTools`: no classifier
+  allows anything. A request waits for the phone for as long as it takes; nothing is allowed by time.
+- Claude Code's hooks are switched off for runner threads. The Mac has a hook (the notch) that can answer a
+  permission request from the Mac's screen, and only the phone may. This also switches off Boss's other Mac
+  hooks in these threads. His to change.
+- Allow rules already written in the Mac's own Claude settings still apply and show no card. Today that is one
+  rule, for a Clawffice restart script. A project's own settings file can hold more.
+- "Signed" is, for now: the key on the request plus that request's nonce. Nothing more is checked.
+- The key file and the runner's records are denied to the agent's file tools.
+- If the runner itself stops (restart, crash, `oma-runner stop`), tasks end with it. Their threads come back as
+  `interrupted` with their history; waiting approvals are gone; nothing is started again until the owner's next
+  message, which continues the same conversation.
+
+### Proved, and not
+- Proved on the Mac with the stand-in agent: every line of "First proof" except the phone itself, and also wrong
+  key, wrong nonce, an answer used twice, paths and links out of the roots, a message waiting its turn, stop, a
+  runner restart under a waiting request.
+- Seen on the real service: it listens on the Tailscale address only (nothing on loopback), refuses without the
+  key, refuses `~/agents`, comes back by itself about ten seconds after being killed.
+- NOT proved: a real Claude Code turn. The Mac's command-line login has expired ("OAuth session expired"); a
+  thread says so as its answer. Boss has to run `claude auth login` on the Mac. Until then the real approval
+  request has only been read from the phone's own code, not seen from this Mac's Claude Code.
+- Not tried from the phone at all.
+
+### For the phone side
+Build the caller to the list above. Ask `/health` with a two-second limit before each hand-over. Keep the last
+event id per thread and ask the stream from it. Show `approval` events as the card you already have and answer
+with the nonce. The FF4 mod is at `~/ClaudeSync/projects/ffiv-ds-better-menu-mod` on the Mac, under a root, so
+its thread can be made there now.

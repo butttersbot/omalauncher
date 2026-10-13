@@ -1,0 +1,546 @@
+#!/usr/bin/env python3
+"""oma-runner: runs Oma's builders on the Mac Pro for the agent on the Fold. See docs/MAC-RUNNER-SPEC.md.
+
+It listens on the Mac's Tailscale address only and every request must carry the key in
+~/agents/claude-code/oma-runner.token. It does one thing: run Claude Code in a named project thread, under a
+folder Boss allowed, and stream what it says. It is not a shell: there is no endpoint that runs a command. It
+approves nothing itself: every request for approval waits for the phone's answer, however long that takes.
+
+  GET  /health                           {ok, working, waiting}
+  GET  /threads                          every thread: id, name, summary, status, last_worked, tail, pending
+  POST /threads   {name, project}        makes one; the project must be a folder under an allowed root
+  GET  /threads/ID                       one thread
+  POST /threads/ID/messages   {text}     the owner's words; {taken: "now"} or {taken: "queued", position}
+  GET  /threads/ID/stream[?after=N]      server-sent events from event N+1 on (or the Last-Event-ID header)
+  GET  /threads/ID/events[?after=N]      the same events as plain JSON, for asking without holding a link
+  POST /threads/ID/approvals/APPROVAL    {decision: "allow"|"deny", nonce}   answers that one request, once
+  POST /threads/ID/stop                  stops the task and drops what was waiting its turn; what was said stays
+
+  oma-runner serve | install | start | stop | status | uninstall
+"""
+import hmac, json, os, pathlib, plistlib, secrets, shutil, signal, socket, subprocess, sys, threading, time, urllib.parse, urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+HOME = pathlib.Path.home()
+PORT = int(os.environ.get('OMA_RUNNER_PORT', 8478))
+TOKEN_FILE = pathlib.Path(os.environ.get('OMA_RUNNER_TOKEN', HOME / 'agents/claude-code/oma-runner.token'))
+STATE = pathlib.Path(os.environ.get('OMA_RUNNER_STATE', HOME / 'Library/Application Support/oma-runner'))
+LOGS = pathlib.Path(os.environ.get('OMA_RUNNER_LOGS', HOME / 'Library/Logs/oma-runner'))
+ROOTS = [pathlib.Path(root) for root in os.environ['OMA_RUNNER_ROOTS'].split(':')] if os.environ.get('OMA_RUNNER_ROOTS') else [HOME / 'Projects', HOME / 'ClaudeSync/projects']
+AGENT = os.environ.get('OMA_RUNNER_AGENT', 'claude')
+LABEL = 'dev.omalauncher.runner'
+INSTALLED = HOME / '.local/bin/oma-runner'
+PLIST = HOME / 'Library/LaunchAgents' / (LABEL + '.plist')
+MAX_BODY = 1_000_000
+KEEPALIVE = 15
+DENIED = 'The user declined this action. Do not retry it through another tool.'
+
+
+def tailscale_address():
+    """The Mac's own address on the tailnet (100.64.0.0/10), found without running anything."""
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        probe.connect(('100.100.100.100', 53))
+        address = probe.getsockname()[0]
+    except OSError:
+        return None
+    finally:
+        probe.close()
+    first, second = (int(part) for part in address.split('.')[:2])
+    return address if first == 100 and 64 <= second <= 127 else None
+
+
+def agent_command(session):
+    """Claude Code as the phone runs it, but asking about everything the phone would be asked about.
+
+    manual mode with the prompts sent to us: nothing is allowed by a classifier. Hooks are off because the Mac's
+    own PermissionRequest hook (the notch) can answer a request, and only the phone may. The key and the runner's
+    own records are out of the agent's reach.
+    """
+    settings = {'disableAllHooks': True, 'permissions': {'deny': [
+        'Read(/' + str(TOKEN_FILE) + ')', 'Read(/' + str(STATE) + '/**)', 'Edit(/' + str(STATE) + '/**)']}}
+    return [AGENT, '-p'] + (['--resume', session] if session else []) + [
+        '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
+        '--permission-mode', 'manual', '--permission-prompt-tool', 'stdio', '--settings', json.dumps(settings)]
+
+
+def step(block):
+    """A tool call as one line of the thread: the tool and what it was pointed at (as the phone writes it)."""
+    given = block.get('input') or {}
+    target = next((str(given[key]) for key in ('command', 'file_path', 'path', 'pattern', 'url', 'description') if str(given.get(key) or '').strip()), None)
+    name = (block.get('name') or 'a tool')[:60]
+    return name if target is None else name + ': ' + target.strip().splitlines()[0][:120]
+
+
+changed = threading.Condition()  # guards every thread's state; told whenever an event is added
+threads = {}
+closing = False
+
+
+class Thread:
+    def __init__(self, meta):
+        self.meta = meta
+        self.folder = STATE / 'threads' / meta['id']
+        self.events = []
+        self.queue = meta.setdefault('queue', [])
+        self.worker = None
+        self.process = None
+        self.pending = {}  # approval id -> {'nonce', 'request', 'tool', 'input', 'explanation'}
+        self.stopped = False
+
+    def save(self):
+        self.folder.mkdir(parents=True, exist_ok=True)
+        fresh = self.folder / 'thread.json.new'
+        fresh.write_text(json.dumps(self.meta, indent=1))
+        fresh.replace(self.folder / 'thread.json')
+
+    def emit(self, kind, **data):
+        """Adds one event to the thread's record. Call with `changed` held."""
+        event = {'id': len(self.events) + 1, 'time': int(time.time()), 'type': kind, **data}
+        self.events.append(event)
+        with open(self.folder / 'events.jsonl', 'a') as record:
+            record.write(json.dumps(event) + '\n')
+        if kind == 'text':
+            self.meta['tail'] = data['text'][-300:]
+        changed.notify_all()
+        return event
+
+    def status(self, status):
+        if self.meta.get('status') != status:
+            self.meta['status'] = status
+            self.save()
+            self.emit('status', status=status)
+
+    def view(self):
+        return {'id': self.meta['id'], 'name': self.meta['name'], 'project': self.meta['project'], 'home': 'mac',
+                'kind': self.meta['kind'], 'summary': self.meta.get('summary', ''), 'status': self.meta['status'],
+                'last_worked': self.meta.get('last_worked'), 'tail': self.meta.get('tail', ''), 'waiting_turns': len(self.queue),
+                'last_event': len(self.events),
+                'pending': [{'approval': key, 'nonce': entry['nonce'], 'tool': entry['tool'], 'input': entry['input'], 'explanation': entry['explanation']} for key, entry in self.pending.items()]}
+
+    def say(self, message):
+        """One line to the agent's stdin. Call with `changed` held."""
+        try:
+            self.process.stdin.write(json.dumps(message) + '\n')
+            self.process.stdin.flush()
+            return True
+        except (OSError, ValueError, AttributeError):
+            return False
+
+
+def load():
+    for file in sorted((STATE / 'threads').glob('*/thread.json')):
+        thread = Thread(json.loads(file.read_text()))
+        record = thread.folder / 'events.jsonl'
+        if record.exists():
+            thread.events = [json.loads(line) for line in record.read_text().splitlines() if line.strip()]
+        threads[thread.meta['id']] = thread
+        if thread.meta['status'] in ('working', 'waiting'):
+            # The runner went away under a task. It is not started again: the owner says what happens next.
+            with changed:
+                thread.status('interrupted')
+
+
+def allowed_project(given):
+    try:
+        path = pathlib.Path(str(given)).expanduser().resolve(strict=True)
+    except (OSError, RuntimeError, ValueError):
+        return None
+    if not path.is_dir():
+        return None
+    for root in ROOTS:
+        try:
+            base = root.expanduser().resolve(strict=True)
+        except OSError:
+            continue
+        if path == base or base in path.parents:
+            return path
+    return None
+
+
+def make(name, project):
+    with changed:
+        entry_id = 't' + secrets.token_hex(4)
+        thread = Thread({'id': entry_id, 'name': name, 'project': str(project), 'kind': 'claude', 'session': None,
+                         'status': 'idle', 'created': int(time.time()), 'last_worked': None, 'summary': '', 'tail': ''})
+        thread.save()
+        threads[entry_id] = thread
+        return thread
+
+
+def take(thread, text):
+    """The owner's words: at once when the thread is free, otherwise when the turn before them ends."""
+    with changed:
+        thread.queue.append(text)
+        thread.save()
+        if thread.worker is None:
+            thread.worker = threading.Thread(target=drain, args=(thread,), daemon=True)
+            thread.worker.start()
+            return {'taken': 'now'}
+        return {'taken': 'queued', 'position': len(thread.queue)}
+
+
+def drain(thread):
+    while True:
+        with changed:
+            if not thread.queue or closing:
+                thread.worker = None
+                if not closing:
+                    thread.status('idle')
+                return
+            text = thread.queue.pop(0)
+            thread.meta['summary'] = (text.strip().splitlines() or [''])[0][:120]
+            thread.meta['last_worked'] = int(time.time())
+            thread.stopped = False
+            thread.status('working')
+            thread.emit('message', text=text)
+        turn(thread, text)
+        with changed:
+            thread.meta['last_worked'] = int(time.time())
+            if thread.stopped and not closing:
+                dropped = len(thread.queue)
+                del thread.queue[:]
+                thread.emit('stopped', dropped=dropped)
+            thread.save()
+
+
+def turn(thread, text):
+    environment = {key: value for key, value in os.environ.items() if not key.startswith(('CLAUDE', 'ANTHROPIC', 'OMA_RUNNER'))}
+    try:
+        process = subprocess.Popen(agent_command(thread.meta.get('session')), cwd=thread.meta['project'], env=environment, text=True,
+                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
+    except OSError as problem:
+        with changed:
+            thread.emit('error', text='The agent could not be started on the Mac: ' + str(problem))
+        return
+    with changed:
+        thread.process = process
+        thread.say({'type': 'user', 'session_id': '', 'message': {'role': 'user', 'content': text}})
+    answered, stray = False, []
+    for line in process.stdout:
+        try:
+            event = json.loads(line)
+        except ValueError:
+            stray.append(line.strip())
+            continue
+        if not isinstance(event, dict):
+            continue
+        with changed:
+            if closing:
+                break
+            answered = heard(thread, event) or answered
+    code = process.wait()
+    with changed:
+        thread.process = None
+        thread.pending.clear()
+        if closing:
+            return
+        if not answered and not thread.stopped:
+            thread.emit('error', code=code, text=('\n'.join(stray)[-2000:] or 'The agent ended without an answer.'))
+
+
+def heard(thread, event):
+    """One line from the agent, turned into what the phone is shown. True when it is the turn's result."""
+    kind = event.get('type')
+    if kind == 'system' and event.get('subtype') == 'init' and event.get('session_id'):
+        if thread.meta.get('session') != event['session_id']:
+            thread.meta['session'] = event['session_id']
+            thread.save()
+    elif kind == 'assistant':
+        for block in (event.get('message') or {}).get('content') or []:
+            if block.get('type') == 'text' and block.get('text', '').strip():
+                thread.emit('text', text=block['text'])
+            elif block.get('type') == 'tool_use':
+                thread.emit('step', text=step(block), tool=block.get('name'))
+    elif kind == 'control_request':
+        request = event.get('request') or {}
+        if request.get('subtype') == 'can_use_tool' and event.get('request_id'):
+            approval, nonce = 'a' + secrets.token_hex(6), secrets.token_urlsafe(24)
+            entry = {'nonce': nonce, 'request': event['request_id'], 'tool': request.get('tool_name', ''), 'input': request.get('input') or {},
+                     'explanation': request.get('description') or request.get('decision_reason') or ''}
+            thread.pending[approval] = entry
+            thread.status('waiting')
+            thread.emit('approval', approval=approval, nonce=nonce, tool=entry['tool'], input=entry['input'], explanation=entry['explanation'])
+        elif event.get('request_id'):
+            thread.say({'type': 'control_response', 'response': {'subtype': 'error', 'request_id': event['request_id'], 'error': 'oma-runner does not answer this kind of request'}})
+    elif kind == 'control_cancel_request':
+        for approval, entry in list(thread.pending.items()):
+            if entry['request'] == event.get('request_id'):
+                del thread.pending[approval]
+                thread.emit('approval_result', approval=approval, decision='withdrawn')
+        if not thread.pending:
+            thread.status('working')
+    elif kind == 'result':
+        thread.emit('result', text=str(event.get('result') or ''), failed=bool(event.get('is_error')))
+        try:
+            thread.process.stdin.close()
+        except OSError:
+            pass
+        return True
+    return False
+
+
+def decide(thread, approval, body):
+    """Allow or deny one waiting request. Only an answer carrying that request's nonce is taken, and only once."""
+    with changed:
+        entry = thread.pending.get(approval)
+        if entry is None:
+            return 404, {'ok': False, 'error': 'no such request is waiting'}
+        if not hmac.compare_digest(str(body.get('nonce', '')).encode(), entry['nonce'].encode()):
+            return 403, {'ok': False, 'error': 'wrong nonce'}
+        if body.get('decision') not in ('allow', 'deny'):
+            return 400, {'ok': False, 'error': 'decision must be "allow" or "deny"'}
+        allow = body['decision'] == 'allow'
+        decision = {'behavior': 'allow', 'updatedInput': entry['input']} if allow else {'behavior': 'deny', 'message': DENIED}
+        del thread.pending[approval]
+        if not thread.say({'type': 'control_response', 'response': {'subtype': 'success', 'request_id': entry['request'], 'response': decision}}):
+            return 409, {'ok': False, 'error': 'the task is no longer running'}
+        thread.emit('approval_result', approval=approval, decision=body['decision'])
+        if not thread.pending:
+            thread.status('working')
+        return 200, {'ok': True, 'decision': body['decision']}
+
+
+def stop(thread):
+    with changed:
+        if thread.process is None or thread.process.poll() is not None:
+            return False
+        thread.stopped = True
+        try:
+            os.killpg(thread.process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        return True
+
+
+class Runner(BaseHTTPRequestHandler):
+    server_version = 'oma-runner'
+    token = ''
+
+    def log_message(self, form, *args):
+        pass
+
+    def note(self, code):
+        """One line per request: when, who, what, and how it was answered. Never the key, never a body."""
+        with open(LOGS / 'requests.log', 'a') as record:
+            record.write('%s %s %s %s %d\n' % (time.strftime('%Y-%m-%d %H:%M:%S'), self.client_address[0], self.command, self.path.split('?')[0], code))
+
+    def answer(self, code, body):
+        data = json.dumps(body).encode()
+        self.send_response(code)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+        self.note(code)
+
+    def allowed(self):
+        given = self.headers.get('Authorization', '')
+        if hmac.compare_digest(given.encode(), ('Bearer ' + self.token).encode()):
+            return True
+        time.sleep(1)
+        self.answer(401, {'ok': False, 'error': 'no'})
+        return False
+
+    def parts(self):
+        address = urllib.parse.urlsplit(self.path)
+        return [part for part in address.path.split('/') if part], urllib.parse.parse_qs(address.query)
+
+    def after(self, query):
+        given = (query.get('after') or [self.headers.get('Last-Event-ID') or '0'])[0]
+        return int(given) if given.isdigit() else 0
+
+    def do_GET(self):
+        if not self.allowed():
+            return
+        parts, query = self.parts()
+        if parts == ['health']:
+            with changed:
+                states = [thread.meta['status'] for thread in threads.values()]
+            return self.answer(200, {'ok': True, 'runner': 'oma-runner', 'threads': len(states), 'working': states.count('working'), 'waiting': states.count('waiting')})
+        if parts == ['threads']:
+            with changed:
+                return self.answer(200, {'ok': True, 'threads': [thread.view() for thread in threads.values()]})
+        thread = threads.get(parts[1]) if len(parts) in (2, 3) and parts[0] == 'threads' else None
+        if thread is None:
+            return self.answer(404, {'ok': False, 'error': 'not found'})
+        if len(parts) == 2:
+            with changed:
+                return self.answer(200, {'ok': True, 'thread': thread.view()})
+        if parts[2] == 'events':
+            with changed:
+                return self.answer(200, {'ok': True, 'status': thread.meta['status'], 'events': thread.events[self.after(query):]})
+        if parts[2] == 'stream':
+            return self.stream(thread, self.after(query))
+        self.answer(404, {'ok': False, 'error': 'not found'})
+
+    def stream(self, thread, sent):
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/event-stream')
+        self.send_header('Cache-Control', 'no-store')
+        self.end_headers()
+        self.note(200)
+        try:
+            while True:
+                with changed:
+                    if len(thread.events) <= sent:
+                        changed.wait(KEEPALIVE)
+                    fresh = thread.events[sent:]
+                for event in fresh:
+                    self.wfile.write(('id: %d\nevent: %s\ndata: %s\n\n' % (event['id'], event['type'], json.dumps(event))).encode())
+                if not fresh:
+                    self.wfile.write(b': still here\n\n')
+                self.wfile.flush()
+                sent += len(fresh)
+        except OSError:
+            pass
+
+    def do_POST(self):
+        if not self.allowed():
+            return
+        length = int(self.headers.get('Content-Length') or 0)
+        if length > MAX_BODY:
+            return self.answer(413, {'ok': False, 'error': 'too long'})
+        try:
+            body = json.loads(self.rfile.read(length)) if length else {}
+        except ValueError:
+            body = None
+        if not isinstance(body, dict):
+            return self.answer(400, {'ok': False, 'error': 'a JSON object is needed'})
+        parts, _ = self.parts()
+        if parts == ['threads']:
+            name = str(body.get('name') or '').strip()[:80]
+            project = allowed_project(body.get('project') or '')
+            if not name:
+                return self.answer(400, {'ok': False, 'error': 'a name is needed'})
+            if project is None:
+                return self.answer(403, {'ok': False, 'error': 'the project must be an existing folder under an allowed root', 'roots': [str(root) for root in ROOTS]})
+            return self.answer(200, {'ok': True, 'thread': make(name, project).view()})
+        thread = threads.get(parts[1]) if len(parts) in (3, 4) and parts[0] == 'threads' else None
+        if thread is None:
+            return self.answer(404, {'ok': False, 'error': 'not found'})
+        if parts[2:] == ['messages']:
+            text = body.get('text')
+            if not isinstance(text, str) or not text.strip():
+                return self.answer(400, {'ok': False, 'error': 'a JSON body with "text" is needed'})
+            return self.answer(200, {'ok': True, **take(thread, text)})
+        if parts[2:] == ['stop']:
+            return self.answer(200, {'ok': True, 'stopped': stop(thread)})
+        if len(parts) == 4 and parts[2] == 'approvals':
+            code, result = decide(thread, parts[3], body)
+            return self.answer(code, result)
+        self.answer(404, {'ok': False, 'error': 'not found'})
+
+
+def read_token():
+    if not TOKEN_FILE.exists():
+        sys.exit('oma-runner: no key at ' + str(TOKEN_FILE) + '; run "oma-runner install" to make one.')
+    token = TOKEN_FILE.read_text().strip()
+    if len(token) < 32:
+        sys.exit('oma-runner: the key is too short; the runner stays shut.')
+    return token
+
+
+def serve():
+    global closing
+    Runner.token = read_token()
+    LOGS.mkdir(parents=True, exist_ok=True)
+    (STATE / 'threads').mkdir(parents=True, exist_ok=True)
+    load()
+    # A test may ask for this machine's own loopback; anything else is the tailnet address or nothing.
+    address = '127.0.0.1' if os.environ.get('OMA_RUNNER_BIND') == '127.0.0.1' else None
+    while address is None:
+        address = tailscale_address()
+        if address is None:
+            print('oma-runner: no Tailscale address yet; waiting', flush=True)
+            time.sleep(10)
+    ThreadingHTTPServer.daemon_threads = True
+    server = ThreadingHTTPServer((address, PORT), Runner)
+
+    def close(*_):
+        # Tasks end with the runner; their threads come back as interrupted and are not started again.
+        global closing
+        closing = True
+        for thread in threads.values():
+            if thread.process is not None and thread.process.poll() is None:
+                try:
+                    os.killpg(thread.process.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+        os._exit(0)
+
+    signal.signal(signal.SIGTERM, close)
+    signal.signal(signal.SIGINT, close)
+    print('oma-runner listening on ' + address + ':' + str(PORT), flush=True)
+    server.serve_forever()
+
+
+def launchctl(*arguments):
+    return subprocess.run(['launchctl', *arguments], capture_output=True, text=True)
+
+
+def install():
+    if not TOKEN_FILE.exists():
+        TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+        TOKEN_FILE.touch(mode=0o600)
+        TOKEN_FILE.write_text(secrets.token_urlsafe(32) + '\n')
+        print('made a new key at ' + str(TOKEN_FILE))
+    TOKEN_FILE.chmod(0o600)
+    INSTALLED.parent.mkdir(parents=True, exist_ok=True)
+    if pathlib.Path(__file__).resolve() != INSTALLED.resolve():
+        shutil.copyfile(__file__, INSTALLED)
+    INSTALLED.chmod(0o755)
+    LOGS.mkdir(parents=True, exist_ok=True)
+    path = ':'.join([str(HOME / '.local/bin'), str(HOME / '.bun/bin'), '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin'])
+    PLIST.parent.mkdir(parents=True, exist_ok=True)
+    PLIST.write_bytes(plistlib.dumps({
+        'Label': LABEL, 'ProgramArguments': [shutil.which('python3') or sys.executable, str(INSTALLED), 'serve'], 'RunAtLoad': True, 'KeepAlive': True,
+        'EnvironmentVariables': {'PATH': path, 'HOME': str(HOME)}, 'WorkingDirectory': str(HOME),
+        'StandardOutPath': str(LOGS / 'runner.log'), 'StandardErrorPath': str(LOGS / 'runner.log')}))
+    stop_service()
+    start_service()
+
+
+def start_service():
+    result = launchctl('bootstrap', 'gui/%d' % os.getuid(), str(PLIST))
+    print('started' if result.returncode == 0 else 'not started: ' + result.stderr.strip())
+
+
+def stop_service():
+    return launchctl('bootout', 'gui/%d/%s' % (os.getuid(), LABEL)).returncode == 0
+
+
+def status():
+    loaded = launchctl('print', 'gui/%d/%s' % (os.getuid(), LABEL)).returncode == 0
+    print('launchd: ' + ('loaded (starts at login, restarts if it dies)' if loaded else 'not loaded'))
+    address = tailscale_address()
+    if address is None:
+        return print('no Tailscale address on this Mac right now')
+    try:
+        request = urllib.request.Request('http://%s:%d/health' % (address, PORT), headers={'Authorization': 'Bearer ' + read_token()})
+        print('http://%s:%d ' % (address, PORT) + urllib.request.urlopen(request, timeout=3).read().decode())
+    except OSError as problem:
+        print('http://%s:%d does not answer: %s' % (address, PORT, problem))
+
+
+def main():
+    command = sys.argv[1] if len(sys.argv) > 1 else ''
+    if command == 'serve':
+        serve()
+    elif command == 'install':
+        install()
+    elif command == 'start':
+        start_service()
+    elif command == 'stop':
+        print('stopped; threads are kept and come back when it starts' if stop_service() else 'it was not running')
+    elif command == 'status':
+        status()
+    elif command == 'uninstall':
+        stop_service()
+        PLIST.unlink(missing_ok=True)
+        print('removed from login. The key, the threads and the logs are left where they are.')
+    else:
+        sys.exit(__doc__)
+
+
+main()

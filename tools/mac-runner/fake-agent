@@ -1,0 +1,41 @@
+#!/usr/bin/env python3
+"""A stand-in for `claude -p --input-format stream-json ... --permission-prompt-tool stdio`, for test-runner.py.
+
+It speaks the same lines Claude Code does and decides what to do from words in the prompt: "write" asks for
+approval to write written.txt and writes it only when allowed; "slow" takes three seconds first. Every start is
+added to starts.log in the project, so a test can see a task was not started twice.
+"""
+import json, pathlib, sys, time, uuid
+
+
+def out(event):
+    print(json.dumps(event), flush=True)
+
+
+def said(text):
+    out({'type': 'assistant', 'message': {'role': 'assistant', 'content': [{'type': 'text', 'text': text}]}})
+
+
+arguments = sys.argv[1:]
+session = arguments[arguments.index('--resume') + 1] if '--resume' in arguments else str(uuid.uuid4())
+prompt = json.loads(sys.stdin.readline())['message']['content']
+with open('starts.log', 'a') as log:
+    log.write(json.dumps({'prompt': prompt, 'resumed': '--resume' in arguments, 'manual': 'manual' in arguments}) + '\n')
+out({'type': 'system', 'subtype': 'init', 'session_id': session})
+said('Heard: ' + prompt)
+if 'slow' in prompt:
+    time.sleep(3)
+if 'write' in prompt:
+    given = {'file_path': str(pathlib.Path.cwd() / 'written.txt'), 'content': 'hi'}
+    out({'type': 'assistant', 'message': {'role': 'assistant', 'content': [{'type': 'tool_use', 'id': 'tool1', 'name': 'Write', 'input': given}]}})
+    out({'type': 'control_request', 'request_id': 'r-' + uuid.uuid4().hex[:8], 'request': {'subtype': 'can_use_tool', 'tool_name': 'Write', 'input': given}})
+    reply = json.loads(sys.stdin.readline())['response']['response']
+    if reply['behavior'] == 'allow':
+        pathlib.Path(reply['updatedInput']['file_path']).write_text(reply['updatedInput']['content'])
+        said('Wrote it.')
+    else:
+        said('Not allowed, so nothing was written.')
+elif 'files' in prompt:
+    said('Files here: ' + ', '.join(sorted(path.name for path in pathlib.Path.cwd().iterdir())))
+out({'type': 'result', 'subtype': 'success', 'is_error': False, 'result': 'done', 'session_id': session})
+sys.stdin.read()
