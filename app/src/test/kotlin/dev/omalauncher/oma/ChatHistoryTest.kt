@@ -73,6 +73,53 @@ class ChatHistoryTest {
         assertEquals(after, ChatHistory.afterRestart(ChatHistory.decode(ChatHistory.encode(after))))
     }
 
+    @Test fun aQuickQuestionIsSavedLikeAnyTaskAndKnownByItsAgent() {
+        val quick = ChatTask(1_760_000_000_500, QUICK_AGENT, "what day is it?", steps = listOf("Bash: date"), result = "**Tuesday**", status = TaskStatus.Done)
+        val build = task(1_760_000_000_000).copy(status = TaskStatus.Done)
+        val read = ChatHistory.decode(ChatHistory.encode(listOf(build, quick)))
+        assertEquals(listOf(build, quick), read)
+        assertEquals(listOf(false, true), read.map { it.quick })
+        assertEquals("quick", QUICK_AGENT)
+        // No field of its own: a file with quick questions in it has the same shape as one without.
+        val fields = JSONObject(ChatHistory.encode(listOf(quick))).getJSONArray("tasks").getJSONObject(0)
+        assertEquals(setOf("time", "agent", "prompt", "images", "screen", "newThread", "steps", "result", "status", "approvals"), fields.keys().asSequence().toSet())
+        // A file from before the quick lane has none.
+        assertTrue(ChatHistory.decode("""{"version":1,"tasks":[{"time":5,"agent":"Claude Code","prompt":"ok","status":"done"},{"time":6,"prompt":"no agent","status":"done"}]}""").none { it.quick })
+    }
+
+    @Test fun aRestartInterruptsAQuickQuestionAndTheTaskBesideItAlike() {
+        val before = listOf(
+            task(1).copy(status = TaskStatus.Running, approvals = listOf(ChatApproval("Bash", "rm", ApprovalAnswer.Waiting, key = "k"))),
+            task(2).copy(status = TaskStatus.Queued),
+            ChatTask(3, QUICK_AGENT, "quick one", result = "half an ans", status = TaskStatus.Running),
+            ChatTask(4, QUICK_AGENT, "answered", result = "yes", status = TaskStatus.Done),
+        )
+        val after = ChatHistory.afterRestart(ChatHistory.decode(ChatHistory.encode(before)))
+        assertEquals(listOf(TaskStatus.Interrupted, TaskStatus.Dropped, TaskStatus.Interrupted, TaskStatus.Done), after.map { it.status })
+        assertEquals(listOf("", FollowUpQueue.RESTARTED, "half an ans", "yes"), after.map { it.result })
+        assertEquals(ApprovalAnswer.Unanswered, after[0].approvals.single().answer)
+        assertEquals(listOf(false, false, true, true), after.map { it.quick })
+        // With the quick question left out, the build task and its follow-up end exactly as they do beside it.
+        assertEquals(after.filterNot { it.quick }, ChatHistory.afterRestart(ChatHistory.decode(ChatHistory.encode(before.filterNot { it.quick }))))
+    }
+
+    @Test fun aQuickQuestionTakesATimeOfItsOwnBesideARunningTask() {
+        val dir = Files.createTempDirectory("oma-chat-test").toFile()
+        try {
+            val store = ChatStore(File(dir, "oma-chat.json")).apply { load() }
+            store.begin(task(100))
+            val asked = ChatHistory.stamp(store.tasks, 100)
+            store.begin(ChatTask(asked, QUICK_AGENT, "quick one"))
+            assertEquals(101L, asked)
+            // Each lane writes only its own entry.
+            store.update(asked, save = true) { it.copy(result = "quick answer", status = TaskStatus.Done) }
+            store.update(100) { ChatHistory.withStep(it, "Bash: ls") }
+            assertEquals(listOf(TaskStatus.Running, TaskStatus.Done), store.tasks.map { it.status })
+            assertEquals(listOf("", "quick answer"), store.tasks.map { it.result })
+            assertEquals(listOf(listOf("Bash: ls"), emptyList()), store.tasks.map { it.steps })
+        } finally { dir.deleteRecursively() }
+    }
+
     @Test fun onlyAWaitingFollowUpCanBeDropped() {
         assertEquals(task(1).copy(status = TaskStatus.Dropped, result = "why"), ChatHistory.dropped(task(1).copy(status = TaskStatus.Queued), "why"))
         for (status in listOf(TaskStatus.Running, TaskStatus.Done, TaskStatus.Stopped, TaskStatus.Failed, TaskStatus.Interrupted)) {

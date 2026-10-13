@@ -68,6 +68,7 @@ import dev.omalauncher.Runtime
 import dev.omalauncher.assist.AgentTasks
 import dev.omalauncher.assist.ApprovalOutcome
 import dev.omalauncher.assist.PendingApproval
+import dev.omalauncher.assist.QuickLane
 import dev.omalauncher.assist.appendSpeech
 import dev.omalauncher.linux.LinuxState
 import dev.omalauncher.linux.MAX_PROMPT_IMAGES
@@ -92,9 +93,10 @@ import java.util.Date
 
 /**
  * The Oma app: one thread of requests to the background agent, with a field for typed messages and image
- * attachments. Opened by [ACTION] from the dock, Super+A, the agent's notifications and the tiles; text passed
- * as `Intent.EXTRA_TEXT` is put in the field and not sent. It never attaches the screen: only the assistant
- * gesture over another app does (see ScreenContext.kt).
+ * attachments, and a choice of lane: build sends to that agent, quick asks [QuickLane] beside it. Opened by
+ * [ACTION] from the dock, Super+A, the agent's notifications and the tiles; text passed as `Intent.EXTRA_TEXT`
+ * is put in the field and not sent. It never attaches the screen: only the assistant gesture over another app
+ * does (see ScreenContext.kt).
  */
 class OmaChatActivity : ComponentActivity() {
     private val runtime get() = (application as App).runtime
@@ -106,6 +108,7 @@ class OmaChatActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         runtime.start()
         AgentTasks.restore(this)
+        QuickLane.restore(this)
         if (savedInstanceState == null) prefill = textOf(intent)
         applySystemBars(this, Pack.isLight)
         setContent {
@@ -153,6 +156,12 @@ private fun OmaChatScreen(
     val label = remember(tick) { AgentTasks.label }
     val liveAnswer = remember(tick) { AgentTasks.answer }
     val followUp = remember(tick) { AgentTasks.thread != null }
+    // The quick lane's own state, read the same way and kept apart: each lane's goes only to its own entry.
+    val quickWorking = remember(tick) { QuickLane.working }
+    val quickTime = remember(tick) { QuickLane.time }
+    val quickLabel = remember(tick) { QuickLane.label }
+    val quickAnswer = remember(tick) { QuickLane.answer }
+    val quickContinuing = remember(tick) { QuickLane.continuing }
     val linuxState by runtime.bootstrap.state.collectAsState()
 
     var draft by rememberSaveable { mutableStateOf("") }
@@ -160,6 +169,8 @@ private fun OmaChatScreen(
     var importing by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
     var focused by remember { mutableStateOf(false) }
+    val prefs = remember { context.getSharedPreferences("oma-chat", android.content.Context.MODE_PRIVATE) }
+    var lane by remember { mutableStateOf(Lane.of(prefs.getString("lane", null))) }
     val speech = remember { Speech(context.applicationContext) }
     /** What was in the field when listening began; speech is added after it. */
     var before by remember { mutableStateOf("") }
@@ -180,7 +191,10 @@ private fun OmaChatScreen(
 
     fun send() {
         val agent = runtime.agents.default
-        val out = outgoing(draft, images.size, images.any { !it.file.isFile }, importing || speech.listening, linuxState == LinuxState.Installed, agent?.bin, working)
+        val out = outgoing(
+            draft, images.size, images.any { !it.file.isFile }, importing || speech.listening, linuxState == LinuxState.Installed, agent?.bin, working,
+            lane, quickReady = runtime.agents.installed.any { it.bin == "claude" }, quickBusy = QuickLane.working,
+        )
         when (out) {
             Outgoing.Nothing -> return
             is Outgoing.Refused -> {
@@ -197,6 +211,13 @@ private fun OmaChatScreen(
             is Outgoing.Queued ->
                 try {
                     AgentTasks.followUp(context, out.prompt, images.map { it.guestPath })
+                } catch (e: Exception) {
+                    notice = e.message
+                    return
+                }
+            is Outgoing.Quick ->
+                try {
+                    QuickLane.ask(context, out.prompt)
                 } catch (e: Exception) {
                     notice = e.message
                     return
@@ -261,10 +282,12 @@ private fun OmaChatScreen(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                if (followUp && !working) {
+                if ((followUp || quickContinuing) && !working) {
                     BracketAction("new thread", Pack.accent) {
                         try {
-                            AgentTasks.newThread(context)
+                            // Both lanes start over together; with no build conversation there is nothing of the build lane to clear.
+                            if (followUp) AgentTasks.newThread(context)
+                            QuickLane.newThread(context)
                             notice = null
                         } catch (e: Exception) {
                             notice = e.message
@@ -288,10 +311,21 @@ private fun OmaChatScreen(
                         )
                     }
                 }
+                // Follow-ups wait below the task that is running, so it is the last one running, not the last one; and a
+                // quick question running beside it is not it.
+                val building = tasks.lastOrNull { it.status == TaskStatus.Running && !it.quick }?.time
                 items(tasks.asReversed(), key = { it.time }) { task ->
-                    // Follow-ups wait below the task that is running, so it is the last one running, not the last one.
-                    val running = working && task.time == tasks.lastOrNull { it.status == TaskStatus.Running }?.time
-                    TaskEntry(task, running, label, if (running) liveAnswer else task.result, if (running) pending else emptyList(), ::answer)
+                    if (task.quick) {
+                        // Never the build task's answer or label, and never an approval: the quick lane can't be asked for one.
+                        val running = quickWorking && task.time == quickTime
+                        TaskEntry(task, running, quickLabel, if (running) quickAnswer else task.result, emptyList(), ::answer) {
+                            QuickLane.stop()
+                            tick++
+                        }
+                    } else {
+                        val running = working && task.time == building
+                        TaskEntry(task, running, label, if (running) liveAnswer else task.result, if (running) pending else emptyList(), ::answer)
+                    }
                 }
             }
             notice?.let {
@@ -313,6 +347,17 @@ private fun OmaChatScreen(
                 }
             }
             if (importing) BasicText("adding images…", Modifier.padding(8.dp), style = Pack.body(color = Pack.muted))
+            // Where Send goes: kept across launches, and changed without touching what is running in either lane.
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                for (choice in Lane.entries) {
+                    BracketAction(choice.id, if (choice == lane) Pack.accent else Pack.muted) {
+                        lane = choice
+                        prefs.edit().putString("lane", choice.id).apply()
+                        notice = null
+                    }
+                }
+                BasicText(lane.does, Modifier.weight(1f).padding(horizontal = 4.dp), style = Pack.mono(Pack.size.small, Pack.muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
             Row(
                 Modifier.fillMaxWidth().heightIn(min = 48.dp).framed(Pack.mark, if (listening || focused) Pack.accent else Pack.border, Pack.surface),
                 verticalAlignment = Alignment.CenterVertically,
@@ -344,7 +389,12 @@ private fun OmaChatScreen(
                     decorationBox = { inner ->
                         Box(Modifier.padding(horizontal = 12.dp, vertical = 12.dp)) {
                             if (shown.isEmpty()) {
-                                val hint = if (listening) "listening…" else if (working) "follow up when this is done…" else if (followUp) "follow up on this thread…" else "ask oma…"
+                                val hint =
+                                    if (listening) "listening…"
+                                    else if (lane == Lane.Quick) "ask something quick…"
+                                    else if (working) "follow up when this is done…"
+                                    else if (followUp) "follow up on this thread…"
+                                    else "ask oma…"
                                 BasicText(hint, style = Pack.body(Pack.size.item, Pack.muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                             inner()
@@ -369,7 +419,8 @@ private fun OmaChatScreen(
                         .clickable { if (speech.listening) speech.stop() else talk() },
                     contentAlignment = Alignment.Center,
                 ) { MicIcon(if (listening) Pack.background else Pack.foreground) }
-                // While a task runs Send queues a follow-up behind it, and Stop stays beside it.
+                // While a task runs Send queues a follow-up behind it, and Stop stays beside it. Stop is the build task's:
+                // a quick question has its own, on its entry.
                 if (!listening) BracketAction("send", if (draft.isBlank() && images.isEmpty()) Pack.muted else Pack.accent, ::send)
                 if (working) {
                     BracketAction("stop", Pack.red) {
@@ -382,7 +433,10 @@ private fun OmaChatScreen(
     }
 }
 
-/** One request in the thread: the prompt, the steps the agent reported, its approvals and the result. */
+/**
+ * One request in the thread: the prompt, the steps the agent reported, its approvals and the result. A quick
+ * question says so beside its time, and while it runs has [onStop] beside what it is doing.
+ */
 @Composable
 private fun TaskEntry(
     task: ChatTask,
@@ -391,11 +445,12 @@ private fun TaskEntry(
     result: String,
     pending: List<PendingApproval>,
     onAnswer: (PendingApproval, Boolean) -> Unit,
+    onStop: (() -> Unit)? = null,
 ) {
     val small = Pack.mono(Pack.size.small, Pack.muted)
     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         val sent = remember(task.time) { DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(task.time)) }
-        BasicText(if (task.newThread) "new thread · $sent" else sent, Modifier.fillMaxWidth().padding(bottom = 4.dp), style = small.copy(textAlign = TextAlign.Center))
+        BasicText(listOfNotNull(Lane.Quick.id.takeIf { task.quick }, "new thread".takeIf { task.newThread }, sent).joinToString(" · "), Modifier.fillMaxWidth().padding(bottom = 4.dp), style = small.copy(textAlign = TextAlign.Center))
         Column(Modifier.fillMaxWidth().framed(Pack.hair, Pack.border, Pack.surface, radius = 12.dp).padding(10.dp)) {
             BasicText(task.prompt, style = Pack.body())
             val attached = listOfNotNull(
@@ -430,7 +485,12 @@ private fun TaskEntry(
                 BasicText(approval.detail, style = small, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
-        if (running) BasicText("$label…", Modifier.padding(top = 6.dp), style = small.copy(color = Pack.accent))
+        if (running) {
+            Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                BasicText("$label…", style = small.copy(color = Pack.accent))
+                if (onStop != null) BracketAction("stop", Pack.red, onStop)
+            }
+        }
         if (task.status == TaskStatus.Queued) BasicText("waiting for the agent to finish…", Modifier.padding(top = 6.dp), style = small.copy(color = Pack.accent))
         if (result.isNotBlank()) {
             // What stands here for a task that failed or was never sent is an error or the launcher's own words, not the agent's Markdown.

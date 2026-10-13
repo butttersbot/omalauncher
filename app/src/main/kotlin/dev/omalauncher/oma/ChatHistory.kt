@@ -44,7 +44,7 @@ data class ChatApproval(val tool: String, val detail: String, val answer: Approv
 /**
  * One request in the Oma thread: what was asked, the steps the agent reported, the approvals and how they
  * were answered, and the result. [images] are the guest paths the app already keeps, never image bytes;
- * [screen] only records that the screen was attached.
+ * [screen] only records that the screen was attached. [agent] names who was asked.
  */
 data class ChatTask(
     /** When it was sent; also what identifies it in the store. */
@@ -59,7 +59,13 @@ data class ChatTask(
     val approvals: List<ChatApproval> = emptyList(),
     val result: String = "",
     val status: TaskStatus = TaskStatus.Running,
-)
+) {
+    /** Asked in the quick lane: answered beside the build task, never by it or in its queue. */
+    val quick get() = agent == QUICK_AGENT
+}
+
+/** What [ChatTask.agent] says for a quick question, where a build task has its agent's name. Saved: never rename. */
+const val QUICK_AGENT = "quick"
 
 /** The limits of the saved thread and its JSON form. */
 object ChatHistory {
