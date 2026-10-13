@@ -295,12 +295,29 @@ class ThemeStore(
         if (page.kind == PageKind.Wallpaper && wallpapers.cover == null && wallpapers.inner == null) return
         lockSetting += key
         val density = context.resources.displayMetrics.density
+        // A fold's other display, by the size it was last seen at: it is given the paper now too, so its lock screen
+        // has the new look the next time the phone is folded or opened, not one unlock late.
+        val here = "${bounds.width()}x${bounds.height()}"
+        val sizes = prefs.getStringSet(LOCK_SIZES, emptySet()).orEmpty()
+        if (here !in sizes) prefs.edit().putStringSet(LOCK_SIZES, sizes + here).apply()
+        val other = LockPaper.otherDisplay(sizes, bounds.width(), bounds.height())
         scope.launch(Dispatchers.IO) {
+            val both = WallpaperManager.FLAG_LOCK or WallpaperManager.FLAG_SYSTEM
+            if (other != null) {
+                // Asked for by Samsung's own mark for a display. Whether it is honored from here can't be told, so that
+                // display is not counted as done: it is set again, the sure way, when home next shows on it.
+                runCatching {
+                    val paper = LockPaper.render(pack, wallpapers, other.width, other.height, density)
+                    WallpaperManager.getInstance(context).setBitmap(paper, null, true, both or other.mark)
+                    paper.recycle()
+                }.onFailure { Log.w(TAG, "lock paper for the other display", it) }
+            }
             val set =
                 runCatching {
                     val paper = LockPaper.render(pack, wallpapers, bounds.width(), bounds.height(), density)
-                    // Home's too: it shows behind recents, and the system's color palette is taken from it.
-                    WallpaperManager.getInstance(context).setBitmap(paper, null, true, WallpaperManager.FLAG_LOCK or WallpaperManager.FLAG_SYSTEM)
+                    // Home's too: it shows behind recents, and the system's color palette is taken from it. Set last,
+                    // so this display is right even if the request for the other one landed here.
+                    WallpaperManager.getInstance(context).setBitmap(paper, null, true, both)
                     paper.recycle()
                 }.onFailure { Log.w(TAG, "lock paper $key", it) }.isSuccess
             withContext(Dispatchers.Main) {
@@ -654,6 +671,7 @@ class ThemeStore(
         private const val LOCK_FOLLOWS = "lock_follows_look"
         // Renamed when what is set changed (the home wallpaper too, and scraps on the paper), so it is set again once.
         private const val LOCK_DONE = "lock_paper_done_2"
+        private const val LOCK_SIZES = "lock_paper_sizes"
         private const val CORNERS = "corners"
         private const val PACK = "pack"
 

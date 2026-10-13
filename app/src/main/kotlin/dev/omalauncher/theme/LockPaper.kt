@@ -34,6 +34,32 @@ object LockPaper {
         height: Int,
     ) = "$look|${width}x$height"
 
+    /** A fold's other display: its size in pixels and the mark Samsung's wallpaper service knows it by. */
+    class Other(
+        val width: Int,
+        val height: Int,
+        val mark: Int,
+    )
+
+    /** Samsung's marks for a fold's two displays, as its wallpaper service lists them (One UI 9): the open one, and the cover. */
+    const val MAIN_DISPLAY = 4
+    const val SUB_DISPLAY = 16
+
+    /**
+     * The display that isn't the one in use, [width] by [height]: the one other size among those seen, when
+     * there is exactly one. The larger of the two is the open display, the smaller the cover.
+     */
+    fun otherDisplay(
+        sizes: Set<String>,
+        width: Int,
+        height: Int,
+    ): Other? {
+        val others = sizes.mapNotNull { size -> size.split('x').mapNotNull(String::toIntOrNull).takeIf { it.size == 2 } }.filter { it[0] != width || it[1] != height }
+        val (w, h) = others.singleOrNull() ?: return null
+        if (w <= 0 || h <= 0) return null
+        return Other(w, h, if (w.toLong() * h > width.toLong() * height) MAIN_DISPLAY else SUB_DISPLAY)
+    }
+
     /** Whether a display that has [done] still needs [key]'s paper: the option is on, the look has paper, and it isn't there yet. */
     fun wanted(
         on: Boolean,

@@ -38,4 +38,17 @@ class LockPaperTest {
         assertEquals(1, cover.count { it.taped })
         assertEquals(1, cover.count { it.alt })
     }
+
+    @Test fun theOtherDisplayOfAFoldIsTheOneOtherSizeSeen() {
+        val seen = setOf("1248x1972", "2448x1848")
+        // Open, the other is the cover; folded, the other is the open display.
+        val cover = LockPaper.otherDisplay(seen, 2448, 1848)!!
+        assertEquals(listOf(1248, 1972, LockPaper.SUB_DISPLAY), listOf(cover.width, cover.height, cover.mark))
+        val open = LockPaper.otherDisplay(seen, 1248, 1972)!!
+        assertEquals(listOf(2448, 1848, LockPaper.MAIN_DISPLAY), listOf(open.width, open.height, open.mark))
+        // A phone with one display, or sizes that can't be told apart into one other, has none.
+        assertEquals(null, LockPaper.otherDisplay(setOf("1248x1972"), 1248, 1972))
+        assertEquals(null, LockPaper.otherDisplay(setOf("1248x1972", "2448x1848", "1848x2448"), 1248, 1972))
+        assertEquals(null, LockPaper.otherDisplay(setOf("junk", "0x0"), 1248, 1972))
+    }
 }
