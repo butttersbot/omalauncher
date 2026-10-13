@@ -14,7 +14,8 @@ scripts, not code bundled into the Android app.
   switched on in Accessibility and not bound after 20 seconds (an update can leave it so), the job turns it off
   and on, as Android's shell, and logs PHONE_CONTROL_HEALED or _STILL_DISCONNECTED; `--status` says which.
   Switched off, it is left off. The off-and-on has not yet been seen mending a stuck update on the Fold; Boss
-  doing the same by hand in settings did (2026-10-12).
+  doing the same by hand in settings did (2026-10-12). The job's off-and-on was seen unbinding and rebinding a
+  working service that day (18:47), when its first check misread two bound services as none.
 - oma-try builds, syncs and schedules the update.
 - oma-door is a small private door for the Mac session to reach the agent here when adb can't: it listens on the
   phone's Tailscale address only (port 8477), needs the token in /root/.config/oma-door/token with every request,

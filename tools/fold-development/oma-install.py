@@ -12,8 +12,10 @@ service=package+'/dev.omalauncher.phone.PhoneService'
 # stops the package once more, and does not try again. Turning the switch off and on mends it. The job does that,
 # as Android's shell, only when the switch is still on and the service is not bound; switched off, it is left off.
 # The log line it leaves is one of PHONE_CONTROL_OFF, _BOUND, _HEALED, _STILL_DISCONNECTED.
+# Android prints each bound service on a line of its own, so the whole block is read: with a second service
+# bound (Oma Dev's), a look at the first line alone missed this one and turned a working service off and on.
 HEAL=r'''  svc=__SERVICE__
-  bound() { dumpsys accessibility | grep 'Bound services' | grep -q "id=$svc[,}]"; }
+  bound() { dumpsys accessibility | sed -n '/Bound services:/,/Enabled services:/p' | grep -q "id=$svc[,}]"; }
   tries=0
   until bound || [ $tries -ge 10 ]; do sleep 2; tries=$((tries+1)); done
   on=$(settings get secure enabled_accessibility_services)
