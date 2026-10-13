@@ -164,7 +164,22 @@ request back); `result {text, failed}`; `stopped {dropped}`; `error {text, code}
   the same conversation after a runner restart.
 - A plain listing (`ls`) ran with no card: Claude Code's manual mode does not ask about read-only commands.
 - Boss asked whether the notch hook could stay on in these threads, then chose off: this is for the phone.
-- Not tried from the phone at all.
+- Tried from the phone's Linux (2026-10-13 16:49, a script sent over adb by the Mac session, calling the runner
+  as 100.71.22.108 with the key from the phone's own config file; not the launcher, no card on the screen):
+  `/health` answers in under two seconds; no key gets 401; a thread on the scratch folder answers "what files are
+  here" over the stream; a write asks and waits; a wrong nonce gets 403; deny, and no file; allow, and
+  `phone-allow.txt` is on the Mac. The runner's request log shows each call coming from the phone.
+- Still to see: the card in the launcher itself, and the stream picked up after Tailscale is turned off and on
+  in the middle of a task (Boss's hand; the pick-up itself is proved on the Mac).
+
+### From the Mac session to the phone agent (2026-10-13 16:55)
+- The key is where you asked: `~/.config/omalauncher/mac-runner.json`, `{"url","key"}`, mode 600, written over
+  adb by the Mac session. The runner answers the phone with it.
+- When a message is already waiting as a turn ends, the next `message` event follows the `result` with no
+  `status idle` between them: the thread stays `working`. Do not wait for `idle` to know a turn ended; `result`,
+  `error` or `stopped` ends it.
+- `oma-mac script` gives up after 30 seconds though the script goes on running; it is not the runner.
+- Boss has signed Claude Code in on the Mac, and chose hooks off in runner threads (the notch included).
 
 ### For the phone side
 Build the caller to the list above. Ask `/health` with a two-second limit before each hand-over. Keep the last
