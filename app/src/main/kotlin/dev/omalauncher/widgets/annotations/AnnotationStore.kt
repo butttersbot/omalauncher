@@ -42,6 +42,10 @@ sealed interface AnnotationsRead {
  * `{"strokes": [{"t": tool, "c": ink, "w": width, "p": [x, y, x, y…]}],
  *   "notes": [{"id", "x", "y", "w", "h", "text", "c": surface, "z", "by", "at"}],
  *   "stickers": [{"id", "k": kind, "x", "y", "s": size, "r": degrees}]}`.
+ * A picture sticker has no "k": it has `"img"`, the name of the launcher's copy of its image, `"n"`, what it is
+ * called, and `"a"`, its width over its height in [ASPECT_UNITS]. A launcher from before there were pictures
+ * finds no kind in it and so leaves that page's file alone, as it does one it can't read, rather than save it
+ * back without the picture.
  * Every fraction is a whole number of [UNITS]. Reading is strict: a document with anything in it that doesn't
  * parse is unreadable as a whole, and is left alone, rather than read in part and saved back without the rest.
  */
@@ -73,7 +77,10 @@ object AnnotationStore {
         }
         val stickers = JSONArray()
         for (s in annotations.stickers) {
-            stickers.put(JSONObject().put("id", s.id).put("k", s.kind.id).put("x", steps(s.x)).put("y", steps(s.y)).put("s", steps(s.size)).put("r", s.turn))
+            val o = JSONObject().put("id", s.id).put("x", steps(s.x)).put("y", steps(s.y)).put("s", steps(s.size)).put("r", s.turn)
+            val picture = s.picture
+            if (picture == null) o.put("k", s.kind.id) else o.put("img", picture.file).put("n", picture.name).put("a", (picture.aspect * ASPECT_UNITS).roundToInt())
+            stickers.put(o)
         }
         return Versioned.write(VERSION, JSONObject().put("strokes", strokes).put("notes", notes).put("stickers", stickers))
     }
@@ -123,13 +130,16 @@ object AnnotationStore {
             }
         val stickers =
             data.list("stickers") { o ->
+                // The name of a copy the launcher made, and nothing else: never a path to somewhere.
+                val picture = if (o.has("img")) Picture(o.getString("img").also { require(isSnapshotName(it)) }, o.getString("n"), o.getInt("a") / ASPECT_UNITS.toFloat()) else null
                 Sticker(
                     id = o.getString("id").also { require(it.isNotEmpty()) },
-                    kind = StickerKind.entries.first { it.id == o.getString("k") },
+                    kind = if (picture == null) StickerKind.entries.first { it.id == o.getString("k") } else PICTURE_KIND,
                     x = fraction(o.getInt("x")),
                     y = fraction(o.getInt("y")),
                     size = fraction(o.getInt("s")),
                     turn = o.getInt("r"),
+                    picture = picture,
                 ).fitted()
             }
         // Two things with one id couldn't be told apart when one of them is moved or deleted.
@@ -189,6 +199,21 @@ class AnnotationFiles(
         page: String,
         annotations: Annotations,
     ) = writeAtomically(file(page), AnnotationStore.write(annotations).toByteArray())
+
+    /**
+     * The names of the picture copies any page's file speaks of, the files of deleted pages that are set aside
+     * among them. The files are searched as text, not read as documents, so that one this launcher can't read
+     * still keeps its pictures. Null if any of them couldn't be looked at: then nothing is known to be unused.
+     */
+    fun pictures(): Set<String>? =
+        try {
+            // A folder that is there and can't be listed is not an empty one.
+            val kept = listOf(dir, File(dir, REMOVED)).filter { it.exists() }.map { it.listFiles() }
+            val documents = kept.filterNotNull().flatMap { it.asList() }.filter { it.isFile && it.name.endsWith(".json") }
+            if (kept.any { it == null } || documents.any { it.length() > AnnotationLimits.FILE_BYTES }) null else documents.flatMap { snapshotsNamed(it.readText()) }.toSet()
+        } catch (e: Throwable) {
+            null
+        }
 
     /** The ids of the pages that have a file. */
     fun pages(): Set<String> = dir.listFiles().orEmpty().filter { it.isFile && it.name.endsWith(".json") && valid(it.name.removeSuffix(".json")) }.map { it.name.removeSuffix(".json") }.toSet()

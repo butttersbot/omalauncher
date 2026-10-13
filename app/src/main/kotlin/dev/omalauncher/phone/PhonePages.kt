@@ -313,6 +313,9 @@ object PhoneBoard {
     /** How much of a note's text is told: enough to know which note it is. */
     const val TEXT_SHOWN = 60
 
+    /** The kind a sticker that is a picture is told as; its `name` says which picture. */
+    const val PICTURE_STICKER = "picture"
+
     fun reply(
         input: JSONObject,
         pad: NotePad,
@@ -348,7 +351,8 @@ object PhoneBoard {
         fun placed(box: Box) = JSONObject().put("x", share(box.x)).put("y", share(box.y)).put("w", share(box.w)).put("h", share(box.h)).put("cells", cellsJson(board.cells(box)))
         val notes = marks?.notes.orEmpty().sortedBy { it.z }
         output.put("notes", JSONArray(notes.map { placed(it.box()).put("author", it.author.id).put("text", noteText(it.text, TEXT_SHOWN)) }))
-        output.put("stickers", JSONArray(marks?.stickers.orEmpty().map { placed(it.taken()).put("kind", it.kind.id) }))
+        // A picture sticker is told by what its picture is called, as it has no kind of its own.
+        output.put("stickers", JSONArray(marks?.stickers.orEmpty().map { s -> placed(s.taken()).put("kind", if (s.picture == null) s.kind.id else PICTURE_STICKER).putOpt("name", s.picture?.name) }))
         output.put("free", JSONArray(board.free(marks?.scraps().orEmpty()).map(::cellsJson)))
         if (marks == null) output.put("note", "This page's notes and stickers can't be read, so none are listed and free counts tiles only.")
         return output

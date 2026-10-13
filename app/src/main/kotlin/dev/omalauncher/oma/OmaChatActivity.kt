@@ -427,7 +427,13 @@ private fun TaskEntry(
         }
         if (running) BasicText("$label…", Modifier.padding(top = 6.dp), style = small.copy(color = Pack.accent))
         if (task.status == TaskStatus.Queued) BasicText("waiting for the agent to finish…", Modifier.padding(top = 6.dp), style = small.copy(color = Pack.accent))
-        if (result.isNotBlank()) SelectionContainer { BasicText(result.trim(), Modifier.padding(top = 6.dp), style = Pack.body()) }
+        if (result.isNotBlank()) {
+            // What stands here for a task that failed or was never sent is an error or the launcher's own words, not the agent's Markdown.
+            val answered = task.status != TaskStatus.Failed && task.status != TaskStatus.Dropped
+            SelectionContainer {
+                if (answered) MarkdownText(result.trim(), Modifier.padding(top = 6.dp)) else BasicText(result.trim(), Modifier.padding(top = 6.dp), style = Pack.body())
+            }
+        }
         val ended = when (task.status) {
             TaskStatus.Stopped -> "stopped"
             TaskStatus.Failed -> "needs attention"

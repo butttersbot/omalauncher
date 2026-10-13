@@ -467,12 +467,14 @@ fun DrawTools(
     if (stickers) {
         Menu(onDismiss = { stickers = false }) {
             MenuTitle("stick on this page")
-            StickerPicker { kind, from ->
+            StickerPicker { choice, from ->
                 stickers = false
                 state.stopDrawing()
-                book.addSticker(page, kind)?.let {
-                    state.arrivals.expect(it, from)
-                    marks.selected = Chosen(page, it)
+                book.stick(page, choice) { stuck ->
+                    if (stuck != null) {
+                        state.arrivals.expect(stuck, from)
+                        marks.selected = Chosen(page, stuck)
+                    }
                 }
             }
         }

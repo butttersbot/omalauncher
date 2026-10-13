@@ -28,7 +28,10 @@ import java.util.concurrent.Executors
  *    an id no page has, or one that couldn't be set aside when its page went, is left alone, unless a new page
  *    is later given that id: then it is set aside first, and if even that fails the new page shows nothing and
  *    takes no change this session. A new page never starts with an old page's ink, and never writes over it;
- *  - what was set aside is thinned once at the start ([AnnotationFiles.prune]), off the main thread.
+ *  - what was set aside is thinned once at the start ([AnnotationFiles.prune]), off the main thread;
+ *  - a picture sticker shows the launcher's own copy of its image, made when it was stuck ([stick]), so the
+ *    file it was picked from can change or go; a copy no page's file speaks of any more is deleted once at the
+ *    start, and never while any file couldn't be looked at ([AnnotationFiles.pictures]).
  *
  * Whatever is put on a page by itself, a note from the owner's menu, a sticker or an agent's note, is placed
  * here and nowhere else, clear of the page's tiles and of what is already stuck on it ([PageBoard.noteSpot]).
@@ -45,6 +48,8 @@ class AnnotationBook(
     private val now: () -> Long = System::currentTimeMillis,
     /** A page's grid and the tiles on it, by its id: what a new note or sticker is kept clear of. */
     private val board: (page: String) -> PageBoard = { PageBoard() },
+    /** The launcher's own copies of the pictures stuck on pages; without them no picture is stuck. */
+    private val snapshots: StickerSnapshots? = null,
 ) {
     enum class Status {
         /** Its file is being read. */
@@ -87,6 +92,8 @@ class AnnotationBook(
         background {
             runCatching { strays += files.pages() - ids }
             runCatching { files.prune(now()) }
+            // Before anything is stuck this session: a copy made from here on is made by a later task than this one.
+            runCatching { snapshots?.let { copies -> files.pictures()?.let(copies::sweep) } }
         }
     }
 
@@ -270,20 +277,65 @@ class AnnotationBook(
         page: String,
         kind: StickerKind,
         near: Pair<Float, Float>? = null,
+    ): String? = place(page, kind, null, near)
+
+    private fun place(
+        page: String,
+        kind: StickerKind,
+        picture: Picture?,
+        near: Pair<Float, Float>?,
     ): String? {
         var id: String? = null
         change(page) { was ->
             if (was.marks.stickers.size >= AnnotationLimits.STICKERS) return@change null.also { notice = NO_ROOM_STICKER }
-            // It is square on screen, so less tall than wide in fractions of the page.
-            val tall = STICKER_SIZE / PAGE_TALL
             val centre = near ?: STICKER_START
+            // The room it takes where it is wanted: a square on screen, so less tall than wide in fractions of the page, or its picture's shape.
+            val wanted = Sticker("", kind, centre.first, centre.second, STICKER_SIZE, picture = picture?.fitted()).taken()
             val tiles = board(page).let { board -> board.tiles.map { board.box(it.cell) } }
-            val spot = clearSpot(tiles + was.marks.scraps(), STICKER_SIZE, tall, centre.first - STICKER_SIZE / 2f to centre.second - tall / 2f).box
-            val sticker = Sticker(freshId(was.marks, "s", now()), kind, spot.x + STICKER_SIZE / 2f, spot.y + tall / 2f, STICKER_SIZE).fitted()
+            val spot = clearSpot(tiles + was.marks.scraps(), wanted.w, wanted.h, wanted.x to wanted.y).box
+            val sticker = Sticker(freshId(was.marks, "s", now()), kind, spot.x + spot.w / 2f, spot.y + spot.h / 2f, STICKER_SIZE, picture = picture).fitted()
             id = sticker.id
             was.with(was.marks.copy(stickers = was.marks.stickers + sticker))
         }
         return id
+    }
+
+    /**
+     * Sticks what was picked on [page], as [addSticker] does, and tells [then] its id, or null if the page took
+     * none. A built-in sticker is there at once. A picture is first copied into the launcher's own files, off
+     * the main thread, and the sticker shows that copy: the file it was picked from may change or go afterwards
+     * and what is stuck stays as it was. One that can't be read as a picture is not stuck, and the owner is told.
+     */
+    fun stick(
+        page: String,
+        choice: StickerChoice,
+        near: Pair<Float, Float>? = null,
+        then: (String?) -> Unit,
+    ) {
+        when (choice) {
+            is StickerChoice.BuiltIn -> then(addSticker(page, choice.kind, near))
+            is StickerChoice.Pictured -> {
+                val copies = snapshots
+                val there = editable(page)
+                if (copies == null || there == null) return then(null)
+                // Asked before the copy is made, so a full page leaves none behind.
+                if (there.marks.stickers.size >= AnnotationLimits.STICKERS) {
+                    notice = NO_ROOM_STICKER
+                    return then(null)
+                }
+                val life = lives[page] ?: 0
+                background {
+                    val picture = copies.take(choice.file, choice.name)
+                    foreground {
+                        when {
+                            (lives[page] ?: 0) != life -> then(null)
+                            picture == null -> then(null).also { notice = NO_PICTURE }
+                            else -> then(place(page, PICTURE_KIND, picture, near))
+                        }
+                    }
+                }
+            }
+        }
     }
 
     fun changeSticker(
@@ -404,6 +456,7 @@ class AnnotationBook(
         const val FULL = "This page is full of ink (2,000 strokes). Nothing more is added; erase some to draw again."
         const val NO_ROOM_NOTE = "This page has all the notes it takes. Delete one to add another."
         const val NO_ROOM_STICKER = "This page has all the stickers it takes. Delete one to add another."
+        const val NO_PICTURE = "That picture couldn't be read, so no sticker was made of it."
         const val NOT_SAVED = "The last change to this page's ink and notes couldn't be saved yet. It will be tried again."
 
         /** Where a sticker's centre is wanted when no place was pressed: the middle of the page's top half. */
@@ -420,8 +473,9 @@ object HomeAnnotations {
 
     /**
      * The book, made on first use: its files are `annotations/` in the app's private files, read and written on
-     * a thread of their own. Each call also lets it take changes once the notebook is read and kept, and from
-     * the first one the notebook tells it of every page that goes. Main thread.
+     * a thread of their own, and the pictures stuck on pages are [HomeStickers]' copies beside them. Each call
+     * also lets it take changes once the notebook is read and kept, and from the first one the notebook tells it
+     * of every page that goes. Main thread.
      */
     fun of(context: Context): AnnotationBook {
         val app = context.applicationContext
@@ -433,6 +487,7 @@ object HomeAnnotations {
                 val saves = HashMap<String, Runnable>()
                 AnnotationBook(
                     files = AnnotationFiles(File(app.filesDir, "annotations")),
+                    snapshots = HomeStickers.of(app).snapshots,
                     background = { task -> io.execute(task) },
                     foreground = { task -> main.post(task) },
                     board = notebook::board,

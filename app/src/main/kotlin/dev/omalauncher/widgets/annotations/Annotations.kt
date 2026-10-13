@@ -153,7 +153,39 @@ enum class StickerKind(
     Smile("smile"),
 }
 
-/** A sticker: its centre as fractions of the page, [size] across as a fraction of the page's width, turned [turn] degrees. */
+/**
+ * The picture a sticker is, when it isn't one of the built-in ones. [file] names the launcher's own copy of the
+ * image, made when the sticker was placed ([snapshotName]), never the file in the library it was picked from:
+ * replacing or deleting that one later changes nothing already stuck on a page. [name] is what it is called
+ * where it has to be told in words, and [aspect] its width over its height.
+ */
+data class Picture(
+    val file: String,
+    val name: String,
+    val aspect: Float = 1f,
+)
+
+/** How much wider than tall, or taller than wide, a picture sticker is at most: a longer one is drawn whole inside a box of this shape. */
+const val PICTURE_SKEW = 4f
+
+/** The steps a picture's shape is kept in. */
+const val ASPECT_UNITS = 1_000
+
+/** The characters of a picture's name that are kept. */
+const val PICTURE_NAME = 40
+
+/** A picture as a page keeps it: its shape within bounds and on its step, its name one short line. */
+fun Picture.fitted() =
+    copy(
+        name = noteText(name.replace('\n', ' '), PICTURE_NAME).trim(),
+        aspect = ((if (aspect.isNaN()) 1f else aspect).coerceIn(1f / PICTURE_SKEW, PICTURE_SKEW) * ASPECT_UNITS).roundToInt() / ASPECT_UNITS.toFloat(),
+    )
+
+/**
+ * A sticker: its centre as fractions of the page, [size] its longer side as a fraction of the page's width,
+ * turned [turn] degrees. It is the built-in [kind], square, unless it has a [picture]: then it is that, in the
+ * picture's own shape, and its kind says nothing.
+ */
 data class Sticker(
     val id: String,
     val kind: StickerKind,
@@ -161,7 +193,15 @@ data class Sticker(
     val y: Float,
     val size: Float,
     val turn: Int = 0,
-)
+    val picture: Picture? = null,
+) {
+    /** Its width and its height, both as fractions of the page's width: [size] is the longer of them. */
+    val wide get() = size * minOf(1f, picture?.aspect ?: 1f)
+    val high get() = size / maxOf(1f, picture?.aspect ?: 1f)
+}
+
+/** The kind a picture sticker is given, so that two of one picture are told alike: it is never drawn. */
+val PICTURE_KIND = StickerKind.Star
 
 /** Everything free on one page. Strokes are in the order drawn; stickers lie over notes, later ones on top. */
 data class Annotations(
@@ -417,8 +457,11 @@ sealed interface Scrap {
 /** A stroke as a page keeps it: every point on the page and on its step, and its width within bounds. */
 fun Stroke.fitted() = Stroke(tool, role, unit(width.coerceIn(AnnotationLimits.MIN_WIDTH, AnnotationLimits.MAX_WIDTH)), FloatArray(points.size - points.size % 2) { unit(points[it]) })
 
-/** A sticker's box as fractions of the page: left, top, right, bottom. It is square on screen, so less tall than wide in fractions. */
-fun Sticker.box(tall: Float = PAGE_TALL) = floatArrayOf(x - size / 2f, y - size / 2f / tall, x + size / 2f, y + size / 2f / tall)
+/**
+ * A sticker's box as fractions of the page: left, top, right, bottom. A built-in one is square on screen, so
+ * less tall than wide in fractions; a picture has the picture's shape.
+ */
+fun Sticker.box(tall: Float = PAGE_TALL) = floatArrayOf(x - wide / 2f, y - high / 2f / tall, x + wide / 2f, y + high / 2f / tall)
 
 /** The topmost note or sticker at the fractions [x], [y] of the page, if any: stickers lie over notes. */
 fun Annotations.scrapAt(
@@ -442,7 +485,8 @@ data class Crossed(
 /**
  * Carries the note or sticker [id] off the page [from] and onto [to] at [x], [y] of that page: a note's top
  * left corner, a sticker's centre. As when the owner moves one on its page, a note he carries over is his and
- * lies on top. It keeps its id unless [to] has one like it. Null, and nothing changed, if [from] has none such
+ * lies on top. It keeps its id unless [to] has one like it, and a picture sticker keeps its picture: the copy it
+ * shows is every page's, so none is made. Null, and nothing changed, if [from] has none such
  * or [to] already holds all it takes of them.
  */
 fun carryScrap(
@@ -492,13 +536,18 @@ fun StickyNote.fitted(): StickyNote {
     return copy(x = unit(x.coerceIn(0f, 1f - w)), y = unit(y.coerceIn(0f, 1f - h)), w = w, h = h)
 }
 
-/** A sticker as a page keeps it: its centre on the page, its size within bounds, turned by whole degrees under a full turn. */
+/**
+ * A sticker as a page keeps it: its centre on the page, its size within bounds, turned by whole degrees under a
+ * full turn, and its picture, if it is one, as a page keeps that.
+ */
 fun Sticker.fitted() =
     copy(
+        kind = if (picture == null) kind else PICTURE_KIND,
         x = unit(x),
         y = unit(y),
         size = unit(size.coerceIn(AnnotationLimits.MIN_STICKER, AnnotationLimits.MAX_STICKER)),
         turn = ((turn % 360) + 360) % 360,
+        picture = picture?.fitted(),
     )
 
 /** How far a sticker turns at a time. */

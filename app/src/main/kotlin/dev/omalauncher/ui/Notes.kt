@@ -77,11 +77,15 @@ private const val NOTE_TEXT_SHARE = 1f / 24f
 /** The space between a note's edge and its writing, as a share of the page's width. */
 private const val NOTE_PAD_SHARE = 0.018f
 
-/** Where a note or a sticker is in [area], in the same pixels. A sticker is square, whatever the page's shape. */
+/** Where a note or a sticker is in [area], in the same pixels. A built-in sticker is square, whatever the page's shape, and a picture keeps its own. */
 internal fun Scrap.rect(area: PageArea): Rect =
     when (this) {
         is Scrap.Note -> Rect(area.x(note.x), area.y(note.y), area.x(note.x + note.w), area.y(note.y + note.h))
-        is Scrap.Stuck -> area.length(sticker.size / 2f).let { half -> Rect(area.x(sticker.x) - half, area.y(sticker.y) - half, area.x(sticker.x) + half, area.y(sticker.y) + half) }
+        is Scrap.Stuck -> {
+            val across = area.length(sticker.wide / 2f)
+            val down = area.length(sticker.high / 2f)
+            Rect(area.x(sticker.x) - across, area.y(sticker.y) - down, area.x(sticker.x) + across, area.y(sticker.y) + down)
+        }
     }
 
 private fun IntRect.area() = PageArea(left.toFloat(), top.toFloat(), width.toFloat(), height.toFloat())
@@ -195,7 +199,7 @@ private suspend fun AwaitPointerEventScope.carry(
     }
 }
 
-/** Resizes [scrap] by its bottom-right handle: a note's corner follows the finger, a sticker grows about its centre. */
+/** Resizes [scrap] by its bottom-right handle: a note's corner follows the finger, a sticker grows about its centre in the shape it has. */
 private fun resize(
     book: AnnotationBook,
     page: String,

@@ -78,13 +78,16 @@ fun HomeMenu(
     Menu(onDismiss = { state.homeMenuOpen = false }, from = { state.homeMenuFrom }) {
         if (book != null && stickers) {
             MenuTitle("stick on this page")
-            StickerPicker { kind, from ->
+            StickerPicker { choice, from ->
                 state.homeMenuOpen = false
                 state.editing = null
-                // Selected as it lands, so it can be dragged, resized, turned or taken off again at once.
-                book.addSticker(page, kind, state.homeMenuAt)?.let {
-                    state.arrivals.expect(it, from)
-                    state.marks.selected = Chosen(page, it)
+                // Selected as it lands, so it can be dragged, resized, turned or taken off again at once. A picture
+                // lands a moment after the menu has gone, once the launcher has made its own copy of it.
+                book.stick(page, choice, state.homeMenuAt) { stuck ->
+                    if (stuck != null) {
+                        state.arrivals.expect(stuck, from)
+                        state.marks.selected = Chosen(page, stuck)
+                    }
                 }
             }
             return@Menu

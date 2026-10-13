@@ -18,6 +18,10 @@ import dev.omalauncher.widgets.annotations.Author
 import dev.omalauncher.widgets.annotations.InkRole
 import dev.omalauncher.widgets.annotations.InkTool
 import dev.omalauncher.widgets.annotations.NoteLeft
+import dev.omalauncher.widgets.annotations.PAGE_TALL
+import dev.omalauncher.widgets.annotations.PICTURE_KIND
+import dev.omalauncher.widgets.annotations.Picture
+import dev.omalauncher.widgets.annotations.snapshotName
 import dev.omalauncher.widgets.annotations.StickerKind
 import dev.omalauncher.widgets.annotations.Stroke
 import org.json.JSONObject
@@ -469,5 +473,17 @@ class PhoneNotesTest {
         val unread = PhoneBoard.described("Today", board, null)
         assertTrue(unread.getBoolean("ok") && unread.list("notes").isEmpty() && unread.getString("note").contains("can't be read"))
         assertEquals(2, unread.list("tiles").size)
+    }
+
+    @Test fun theBoardTellsAPictureStickerByItsName() {
+        val moon = Picture(snapshotName("moon".toByteArray(), "webp"), "moon", 2f)
+        val marks = Annotations(stickers = listOf(Sticker("s1", StickerKind.Heart, 0.2f, 0.2f, 0.14f), Sticker("s2", PICTURE_KIND, 0.5f, 0.5f, 0.2f, picture = moon)))
+        val told = PhoneBoard.described("Today", PageBoard(9), marks).list("stickers")
+        assertEquals(listOf("heart", "picture"), told.map { it.getString("kind") })
+        assertFalse(told[0].has("name"))
+        assertEquals("moon", told[1].getString("name"))
+        // Its true rectangle: twice as wide as tall on screen.
+        assertEquals(0.2, told[1].getDouble("w"), 1e-4)
+        assertEquals(0.1 / PAGE_TALL, told[1].getDouble("h"), 1e-4)
     }
 }

@@ -1,5 +1,18 @@
 # Phone test results
 
+## Latest: the cover-screen checks, on the promoted bundle (2026-10-12, 17:23–17:26 PDT)
+Boss closed the phone. Screenshots 1248x1972, look riso.
+1. PASS — one page, label "Page 1  1/2", dock is four app icons then "↑" and "✎".
+2. PASS — "↑" opens the app list: "ALL APPS", "CLOSE ↓", four apps across, search and the gear at the bottom.
+3. PASS — the page label opens "all pages": both pages on plain paper with handwritten names and a dashed "+".
+4. PASS, changed on purpose — "✎" replaces the dock with a centred row of NINE square keys (pen, highlighter, eraser, note, sticker, text, undo, redo, ×), shrunk to fit edge to edge; "×" brings the dock back.
+5. Not repeated here (looks were tried on the inner screen today).
+6. PASS — heavy display numbers and spaced capitals, as on the inner screen.
+7. PASS, fixed — `oma-phone page "Page 2"` now really turns the cover screen to "Page 2  2/2" (it only changed the reported page before), and `page "Page 1"` turns back.
+- Status bar: dark and readable in riso on the cover screen after the fold.
+- Not compared pixel by pixel with design/oma-scrapbook-prototype.html; that comparison is still open.
+- Boss also decided: Cove's stickers are saved locally on the phone for now. Two agents are at work: Markdown in the Oma chat, and picture stickers from ~/.config/omalauncher/stickers. The Mac is unreachable over Tailscale right now, so Cove's art itself cannot be copied yet.
+
 ## Latest: the bundle is on the real launcher (2026-10-12, 17:06–17:15 PDT)
 - `oma-install --status`: "In-place launcher update verified."
 - FAIL (new, after the update): phone control came back disconnected. `oma-phone status` said active false, connected false; `dumpsys accessibility` listed dev.omalauncher.boss/.phone.PhoneService under "Enabled services" and "Crashed services" with nothing bound, for at least a minute. The earlier promotions today reconnected by themselves. No crash was in the log by then (it had rolled over), so whether the new service crashed on its first bind or Android just did not rebind it after the package update is not known. The phone then restarted itself for a security update, and after that it was connected and active. Watch this on the next promotion.
