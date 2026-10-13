@@ -31,7 +31,7 @@ import kotlin.math.roundToInt
  */
 object PhoneRequests {
     /** Who handles an admitted request. */
-    enum class Route { Status, Stop, Pages, Board, Note, Stickers, Screenshot, Control }
+    enum class Route { Status, Stop, Pages, Board, Note, Stickers, PageEdits, Screenshot, Control }
 
     /**
      * Runs the checks for [command] in order and says who handles it; throws what the first failing check
@@ -54,6 +54,7 @@ object PhoneRequests {
             PhoneBoard.COMMAND -> Route.Board
             PhoneNotes.COMMAND -> Route.Note
             PhoneStickers.COMMAND -> Route.Stickers
+            PhonePageEdits.COMMAND -> Route.PageEdits
             "screenshot" -> Route.Screenshot
             else -> Route.Control
         }
@@ -564,6 +565,92 @@ object PhoneStickers {
                 }
             }
             else -> error("Unknown sticker action: $action")
+        }
+    }
+}
+
+/** The notebook's pages as the bridge's page-editing commands reach them. Main thread, like the notebook. */
+interface PagePad {
+    /** A new, empty page after the last; its id, or null while the notebook can't take one. */
+    fun add(): String?
+
+    /** Whether a page other than [except] is already called [name]. */
+    fun taken(
+        name: String,
+        except: String?,
+    ): Boolean
+
+    /** Calls [page] by [name]; false, and nothing changed, for a name with nothing in it. */
+    fun rename(
+        page: String,
+        name: String,
+    ): Boolean
+
+    /** Deletes the empty page [page]; false, and nothing changed, if it is the only page or can't be deleted now. */
+    fun delete(page: String): Boolean
+}
+
+/**
+ * The bridge's page-editing commands: a new page, a page renamed, an empty page deleted. Each is one call that
+ * answers with the pages as they then are. A page with anything on it, a tile, a note, a sticker or ink, is
+ * never deleted from here: that is the owner's to do in the overview, where he is asked what becomes of it.
+ */
+object PhonePageEdits {
+    const val COMMAND = "pageedit"
+
+    private fun fail(error: String) = JSONObject().put("ok", false).put("error", error)
+
+    private fun pages(pad: NotePad) = JSONArray(pad.pages.map { pad.name(it) ?: "" })
+
+    private fun found(
+        pad: NotePad,
+        asked: String,
+    ): String {
+        val ids = pad.pages
+        val names = ids.map { pad.name(it) ?: "" }
+        return when (val match = matchPage(names, asked)) {
+            is PageMatch.Found -> ids[match.index]
+            is PageMatch.Refused -> error(match.reason)
+            else -> error("No one page matches \"$asked\". Pages: ${names.joinToString(", ")}. Nothing was changed.")
+        }
+    }
+
+    fun reply(
+        input: JSONObject,
+        pad: NotePad,
+        edits: PagePad,
+        reply: (JSONObject) -> Unit,
+    ) {
+        if (pad.pages.isEmpty()) error("Home is still loading. Try again in a moment.")
+        when (val action = input.getString("action")) {
+            "add" -> {
+                val name = input.optString("name").trim()
+                if (name.isNotEmpty() && edits.taken(name, null)) error("A page is already called \"$name\". Nothing was added.")
+                val id = edits.add() ?: error("Home can't take a new page now. Nothing was added.")
+                if (name.isNotEmpty()) edits.rename(id, name)
+                reply(JSONObject().put("ok", true).put("page", pad.name(id) ?: "").put("pages", pages(pad)))
+            }
+            "rename" -> {
+                val id = found(pad, input.getString("name"))
+                val to = input.getString("to").trim()
+                if (edits.taken(to, id)) error("Another page is already called \"$to\". Nothing was changed.")
+                if (!edits.rename(id, to)) error("That is not a name a page can have. Nothing was changed.")
+                reply(JSONObject().put("ok", true).put("page", pad.name(id) ?: "").put("pages", pages(pad)))
+            }
+            "delete" -> {
+                val id = found(pad, input.getString("name"))
+                val name = pad.name(id) ?: ""
+                pad.look(id) { board, marks ->
+                    try {
+                        check(board.tiles.isEmpty() && marks != null && marks.isEmpty) { "\"$name\" has things on it. Only an empty page is deleted from here; the user deletes this one in the overview. Nothing was changed." }
+                        check(edits.delete(id)) { "\"$name\" can't be deleted: it is the only page, or home can't be changed now. Nothing was changed." }
+                        reply(JSONObject().put("ok", true).put("deleted", name).put("pages", pages(pad)))
+                    } catch (e: Exception) {
+                        reply(fail(e.message ?: "Phone control failed"))
+                    }
+                }
+            }
+            else -> error("Unknown page action: $action")
         }
     }
 }

@@ -240,6 +240,16 @@ class PhoneService : AccessibilityService() {
         // The book takes a note off by its id as readily as a sticker: only a sticker is asked of it here.
         override fun remove(page: String, id: String) = book.on(page).stickers.any { it.id == id } && book.remove(page, id)
     }
+    /** The notebook for the page-editing commands, changed as the overview changes it. */
+    private fun pagePad() = object : PagePad {
+        private val runtime = (application as dev.omalauncher.App).runtime
+        private val notebook = runtime.widgets.notebook
+        override fun add() = runtime.widgets.addPage()
+        override fun taken(name: String, except: String?) = notebook.nameTaken(name, except)
+        override fun rename(page: String, name: String) = notebook.renamePage(page, name)
+        // An empty page has nothing to move: its still goes with it, as when it is deleted in the overview.
+        override fun delete(page: String) = runtime.widgets.deletePage(page, move = true)?.also { runtime.pageStills.drop(page) } != null
+    }
     fun request(input: JSONObject, reply: (JSONObject) -> Unit) {
         try {
             val command = input.getString("command")
@@ -255,6 +265,8 @@ class PhoneService : AccessibilityService() {
             if (route == PhoneRequests.Route.Note) { PhoneNotes.reply(input, notePad(), reply); return }
             // Stickers on home, behind the same gates: listed, stuck, turned, resized, moved or taken off, and nothing else.
             if (route == PhoneRequests.Route.Stickers) { PhoneStickers.reply(input, notePad(), stickerPad(), reply); return }
+            // A page added, renamed, or deleted while it is empty, behind the same gates.
+            if (route == PhoneRequests.Route.PageEdits) { PhonePageEdits.reply(input, notePad(), pagePad(), reply); return }
             if (route == PhoneRequests.Route.Screenshot) {
                 if (Build.VERSION.SDK_INT < 30) error("Screenshots require Android 11 or later.")
                 // The overlay is never in the agent's picture: it comes down first and goes back once the picture is taken.

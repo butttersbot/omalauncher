@@ -12,6 +12,7 @@ oma-phone screen [--until TEXT]
 oma-phone press [--in PACKAGE] LABEL
 oma-phone fill [--in PACKAGE] LABEL TEXT
 oma-phone pages | page NAME | where WIDGET_FILE
+oma-phone page-add [NAME] | page-rename NAME --to NEW NAME | page-delete NAME
 oma-phone board [PAGE NAME]
 oma-phone note [--near COL,ROW] TEXT
 oma-phone stickers
@@ -23,6 +24,8 @@ oma-phone scroll SNAPSHOT NODE_ID [forward|backward]
 oma-phone tap X Y
 oma-phone swipe X Y END_X END_Y [DURATION_MS]
 pages lists home's pages, page opens one by name, where says which page a widget file is on.
+page-add makes a new empty page after the last, page-rename gives one another name, and
+page-delete deletes a page only while nothing is on it. Each answers with the pages there then are.
 board says what is where on a home page (the one the request came from, or the one named): its
 grid, each tile's cells, each note and sticker (page fractions and the cells it lies on), and
 free, the biggest empty rectangles of cells. It only looks. Run it before placing anything.
@@ -70,6 +73,17 @@ open)
 page)
   [ "$#" -ge 1 ] || { echo 'Page name required' >&2; exit 2; }
   request=$(jq -cn --arg name "$*" '{command:"page",name:$name}');;
+page-add)
+  request=$(jq -cn --arg name "$*" '{command:"pageedit",action:"add"} + (if $name=="" then {} else {name:$name} end)');;
+page-delete)
+  [ "$#" -ge 1 ] || { echo 'Page name required' >&2; exit 2; }
+  request=$(jq -cn --arg name "$*" '{command:"pageedit",action:"delete",name:$name}');;
+page-rename)
+  name=''
+  while [ "$#" -gt 0 ] && [ "$1" != '--to' ]; do name="${name:+$name }$1"; shift; done
+  [ -n "$name" ] && [ "$#" -ge 2 ] || { echo 'Usage: oma-phone page-rename NAME --to NEW NAME' >&2; exit 2; }
+  shift
+  request=$(jq -cn --arg name "$name" --arg to "$*" '{command:"pageedit",action:"rename",name:$name,to:$to}');;
 board)
   request=$(jq -cn --arg name "$*" '{command:"board"} + (if $name=="" then {} else {name:$name} end)');;
 note)
