@@ -246,8 +246,8 @@ private sealed interface PageAsk {
 }
 
 /** How far out of focus the look's paper is behind the overview, and how much of the paper's color lies over it. */
-private val OVERVIEW_BLUR = 22.dp
-private const val OVERVIEW_WASH = 0.55f
+private val OVERVIEW_BLUR = 12.dp
+private const val OVERVIEW_WASH = 0.4f
 
 /**
  * Every page of the notebook as a still tile, in order, over the whole window: tap one to open it (its pair,
