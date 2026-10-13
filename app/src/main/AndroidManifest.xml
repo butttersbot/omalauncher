@@ -4,6 +4,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- The lock and home wallpapers in the look's paper, when the owner turns that on in Style. -->
     <uses-permission android:name="android.permission.SET_WALLPAPER" />
+    <!-- Never given by Android itself: the owner grants it over adb, and only LockStar's layout is asked for with it. -->
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
     <!-- Samsung's own lock-screen widgets hold this; asked for in case its lock screen wants it of ours. -->
     <uses-permission android:name="com.samsung.systemui.permission.FACE_WIDGET" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -22,6 +24,8 @@
         android:required="false" />
 
     <queries>
+        <!-- LockStar's share provider, for the lock-screen layout; see theme/LockStarShare.kt. -->
+        <package android:name="com.samsung.systemui.lockstar" />
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />

@@ -31,7 +31,7 @@ import kotlin.math.roundToInt
  */
 object PhoneRequests {
     /** Who handles an admitted request. */
-    enum class Route { Status, Stop, Pages, Board, Note, Stickers, PageEdits, Looks, Screenshot, Control }
+    enum class Route { Status, Stop, Pages, Board, Note, Stickers, PageEdits, Looks, LockStar, Screenshot, Control }
 
     /**
      * Runs the checks for [command] in order and says who handles it; throws what the first failing check
@@ -56,6 +56,7 @@ object PhoneRequests {
             PhoneStickers.COMMAND -> Route.Stickers
             PhonePageEdits.COMMAND -> Route.PageEdits
             PhoneLooks.COMMAND -> Route.Looks
+            PhoneLockStar.COMMAND -> Route.LockStar
             "screenshot" -> Route.Screenshot
             else -> Route.Control
         }
@@ -700,6 +701,40 @@ object PhoneLooks {
         }
         return JSONObject().put("ok", true).put("look", pad.current).put("looks", JSONArray(pad.looks))
     }
+}
+
+/** LockStar's layout as the bridge's lockstar command reaches it. Its calls block: not on the main thread. */
+interface LockStarPad {
+    val names: List<String>
+
+    /** Takes LockStar's layout as [name] and says what it holds. */
+    fun capture(name: String): JSONObject
+
+    /** Hands [name] back to LockStar; true if it answered. */
+    fun apply(name: String): Boolean
+}
+
+/**
+ * The bridge's `lockstar` command: the lock-screen layouts kept, one taken from LockStar as it now is, or one
+ * handed back to it. Applying changes the owner's lock screen, so it is for when he asked for exactly that.
+ */
+object PhoneLockStar {
+    const val COMMAND = "lockstar"
+
+    fun reply(
+        input: JSONObject,
+        pad: LockStarPad,
+    ): JSONObject =
+        when (val action = input.optString("action", "list")) {
+            "list" -> JSONObject().put("ok", true).put("captures", JSONArray(pad.names))
+            "capture" -> pad.capture(input.getString("name")).put("ok", true)
+            "apply" -> {
+                val name = input.getString("name")
+                val answered = pad.apply(name)
+                JSONObject().put("ok", answered).put("applied", name).also { if (!answered) it.put("error", "LockStar did not answer in time. Look at the lock screen before trying again.") }
+            }
+            else -> error("Unknown lockstar action: $action")
+        }
 }
 
 /**

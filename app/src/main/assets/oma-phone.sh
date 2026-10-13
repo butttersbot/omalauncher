@@ -17,6 +17,7 @@ oma-phone pages | page NAME | where WIDGET_FILE
 oma-phone page-add [NAME] | page-rename NAME --to NEW NAME | page-delete NAME
 oma-phone board [PAGE NAME]
 oma-phone looks | look NAME
+oma-phone lockstar [capture NAME | apply NAME]
 oma-phone note [--near COL,ROW] TEXT
 oma-phone stickers
 oma-phone stick [--page NAME] [--near COL,ROW] STICKER
@@ -29,6 +30,8 @@ oma-phone swipe X Y END_X END_Y [DURATION_MS]
 pages lists home's pages, page opens one by name, where says which page a widget file is on.
 page-add makes a new empty page after the last, page-rename gives one another name, and
 page-delete deletes a page only while nothing is on it. Each answers with the pages there then are.
+lockstar lists the lock-screen layouts kept; capture NAME keeps LockStar's layout as it now is, and
+apply NAME hands one back to LockStar, which changes the lock screen: only when the user asked for it.
 looks lists the looks home can be drawn in and which is picked; look NAME picks one.
 board says what is where on a home page (the one the request came from, or the one named): its
 grid, each tile's cells, each note and sticker (page fractions and the cells it lies on), and
@@ -95,6 +98,12 @@ page-rename)
   [ -n "$name" ] && [ "$#" -ge 2 ] || { echo 'Usage: oma-phone page-rename NAME --to NEW NAME' >&2; exit 2; }
   shift
   request=$(jq -cn --arg name "$name" --arg to "$*" '{command:"pageedit",action:"rename",name:$name,to:$to}');;
+lockstar)
+  case "${1:-list}" in
+  list) request=$(jq -cn '{command:"lockstar",action:"list"}');;
+  capture|apply) request=$(jq -cn --arg action "$1" --arg name "${2:?Name required}" '{command:"lockstar",action:$action,name:$name}');;
+  *) echo 'Usage: oma-phone lockstar [capture NAME | apply NAME]' >&2; exit 2;;
+  esac;;
 looks)
   request=$(jq -cn '{command:"look"}');;
 look)

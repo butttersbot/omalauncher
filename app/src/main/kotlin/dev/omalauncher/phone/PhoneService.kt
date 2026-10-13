@@ -250,6 +250,11 @@ class PhoneService : AccessibilityService() {
         // An empty page has nothing to move: its still goes with it, as when it is deleted in the overview.
         override fun delete(page: String) = runtime.widgets.deletePage(page, move = true)?.also { runtime.pageStills.drop(page) } != null
     }
+    private fun lockStarPad() = object : LockStarPad {
+        override val names get() = dev.omalauncher.theme.LockStarShare.names(this@PhoneService)
+        override fun capture(name: String) = dev.omalauncher.theme.LockStarShare.capture(this@PhoneService, name)
+        override fun apply(name: String) = dev.omalauncher.theme.LockStarShare.apply(this@PhoneService, name)
+    }
     /** The looks for the look command, picked as the style screen picks one. */
     private fun lookPad() = object : LookPad {
         private val themes = (application as dev.omalauncher.App).runtime.themes
@@ -276,6 +281,14 @@ class PhoneService : AccessibilityService() {
             if (route == PhoneRequests.Route.PageEdits) { PhonePageEdits.reply(input, notePad(), pagePad(), reply); return }
             // The look home is drawn in, told or picked, behind the same gates.
             if (route == PhoneRequests.Route.Looks) { reply(PhoneLooks.reply(input, lookPad())); return }
+            // LockStar's layout, kept or handed back: its provider is slow and may refuse, so off the main thread.
+            if (route == PhoneRequests.Route.LockStar) {
+                kotlin.concurrent.thread(name = "lockstar") {
+                    val answer = try { PhoneLockStar.reply(input, lockStarPad()) } catch (e: Exception) { JSONObject().put("ok", false).put("error", e.message ?: e.javaClass.simpleName) }
+                    main.post { reply(answer) }
+                }
+                return
+            }
             if (route == PhoneRequests.Route.Screenshot) {
                 if (Build.VERSION.SDK_INT < 30) error("Screenshots require Android 11 or later.")
                 // The overlay is never in the agent's picture: it comes down first and goes back once the picture is taken.
