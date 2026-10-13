@@ -27,6 +27,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.draw.blur
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -243,6 +245,10 @@ private sealed interface PageAsk {
     data class Delete(override val page: PageLabel) : PageAsk
 }
 
+/** How far out of focus the look's paper is behind the overview, and how much of the paper's color lies over it. */
+private val OVERVIEW_BLUR = 22.dp
+private const val OVERVIEW_WASH = 0.55f
+
 /**
  * Every page of the notebook as a still tile, in order, over the whole window: tap one to open it (its pair,
  * unfolded), long-press for rename, move and delete, "+" for a new page at the end. A pinch outwards on a
@@ -310,8 +316,10 @@ fun Overview(
                 val s = 1.06f - 0.06f * shown.value
                 scaleX = s
                 scaleY = s
-            // A look with its own page lays every page out on its paper, as the prototype does; Console dims home behind them.
-            }.background(if (Pack.ownsPage) Pack.paper else Pack.background.copy(alpha = 0.94f))
+            // A look with its own page has its backdrop drawn below; Console dims home behind the pages.
+            }.then(if (Pack.ownsPage) Modifier else Modifier.background(Pack.background.copy(alpha = 0.94f)))
+            // A tap on nothing, where no page and no word takes it, leaves as Back does (Boss, 2026-10-13).
+            .pointerInput(Unit) { detectTapGestures { open(state.currentPage) } }
             // Two fingers spreading on a page open it. Seen before the tiles, and taken from them once it is a pinch.
             .pointerInput(Unit) {
                 awaitEachGesture {
@@ -344,10 +352,15 @@ fun Overview(
                     val page = over
                     if (pinching && page != null && opensFromOverview(ratio)) open(page)
                 }
-            }.safeDrawingPadding()
-            .padding(PageGap),
+            },
     ) {
-        Column(Modifier.fillMaxSize()) {
+        if (Pack.ownsPage) {
+            // The look's own paper or wallpaper, out of focus and under a wash of the paper's color, so the pages
+            // stand on what home stands on and can still be read (Boss, 2026-10-13); the prototype has plain paper.
+            PagePaper(Modifier.blur(OVERVIEW_BLUR))
+            Box(Modifier.fillMaxSize().background(Pack.paper.copy(alpha = OVERVIEW_WASH)))
+        }
+        Column(Modifier.fillMaxSize().safeDrawingPadding().padding(PageGap)) {
             val owns = Pack.ownsPage
             val u = LocalConfiguration.current.run { prototypeUnit(screenWidthDp.toFloat(), screenHeightDp.toFloat()) }
             if (owns) {
