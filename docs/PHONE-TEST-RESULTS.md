@@ -1,5 +1,16 @@
 # Phone test results
 
+## Latest: rich text in the Oma chat and picture stickers, for the next bundle (2026-10-12, 17:26–17:42 PDT)
+Commit 0eee452. `oma-build`: PASS, 760 tests, 0 failures. Not promoted; the real launcher is on the earlier bundle.
+- Markdown in the chat (oma/Markdown.kt, MarkdownText.kt new; OmaChatActivity.kt): the agent's answers are parsed and drawn from the pack: headings, bold, italic, strikethrough, inline code, numbered and nested bullet lists, quotes, fenced code that scrolls sideways, pipe tables as a grid, links in the accent colour. His own messages, step lines, errors and "not sent" lines stay plain.
+  - SEEN in Oma Dev on the cover screen, with a chat history file put in place by hand: every one of those drew as it should; `snake_case_name` in code and "2*3*4" stayed literal. NOT seen: tapping a link, a live streaming answer, a very long answer, the inner screen.
+- Picture stickers (annotations/StickerPictures.kt, StickerBitmaps.kt new; Annotations.kt, AnnotationStore.kt, AnnotationBook.kt, ui/Stickers.kt, Notes.kt, HomeMenu.kt, Ink.kt, phone/PhonePages.kt): every PNG, WebP, JPEG or GIF in the guest's ~/.config/omalauncher/stickers (one folder down is a group) is in the sticker picker after the six drawn ones. Placing one copies its bytes to filesDir/annotations/stickers/<hash>.<ext>; the page names only that copy. A page with a picture sticker cannot be read by an older build.
+  - SEEN in Oma Dev on the cover screen, with a 192x96 test PNG put in stickers/cove/ by hand: the picker showed it under a "cove" caption; tapped, it landed on Page 1 in free space, selected, in a frame of its own 2:1 shape with turn/delete. After the library folder was deleted and Oma Dev restarted, the sticker was still drawn from its copy. No crash.
+  - NOT seen: resize, turn, carry to another page, many pictures (scrolling), a corrupt file, `oma-phone board` listing one.
+  - Found: a launcher with no Linux removes files/arch at start, so the library cannot exist there; and the library is inside the Linux root, so reinstalling Linux empties it (placed stickers stay). Moving it out needs Proot.kt/LauncherData.kt.
+- Cove's own art: not copied. The Mac did not answer over Tailscale (ssh timeout to 100.120.219.46) at 17:20. On the real phone ~/.config/omalauncher/stickers now exists and is empty, waiting for it.
+- Oma Dev is left with the sample chat and the test sticker.
+
 ## Latest: the cover-screen checks, on the promoted bundle (2026-10-12, 17:23–17:26 PDT)
 Boss closed the phone. Screenshots 1248x1972, look riso.
 1. PASS — one page, label "Page 1  1/2", dock is four app icons then "↑" and "✎".
