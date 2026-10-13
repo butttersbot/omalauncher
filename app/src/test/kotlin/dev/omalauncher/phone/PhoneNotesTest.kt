@@ -100,9 +100,13 @@ class PhoneNotesTest {
         assertEquals(1, request.split("PhoneRequests.Route.Note").size - 1)
         assertEquals(1, request.split("PhoneNotes.reply(").size - 1)
         assertFalse(request.contains("\"note\""))
-        // Only the one pad reaches the pages' annotations from the service, and it writes through leaveNote alone: the board only reads.
-        assertEquals(1, service.split("HomeAnnotations.of(").size - 1)
+        // Two pads reach the pages' annotations from the service. The note pad writes through leaveNote alone, and the
+        // board only reads. The sticker pad (Boss, 2026-10-12) writes stickers and nothing else: it sticks one, changes
+        // one or takes one off (after looking that it is a sticker), and has no way to a note, to ink or to a tile.
+        assertEquals(2, service.split("HomeAnnotations.of(").size - 1)
         assertEquals(1, service.split("leaveNote(").size - 1)
+        val stickers = service.substringAfter("private fun stickerPad()").substringBefore("fun request(input: JSONObject")
+        assertEquals(listOf("book.stick(", "book.changeSticker(", "book.on(", "book.remove("), Regex("""book\.\w+\(""").findAll(stickers).map { it.value }.toList())
     }
 
     // Which page, and what the command answers.

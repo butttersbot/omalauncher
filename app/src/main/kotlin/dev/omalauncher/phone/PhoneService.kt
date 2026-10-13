@@ -237,7 +237,8 @@ class PhoneService : AccessibilityService() {
         }
         override fun stick(page: String, choice: dev.omalauncher.widgets.annotations.StickerChoice, near: Pair<Float, Float>?, then: (String?) -> Unit) = book.stick(page, choice, near, then)
         override fun change(page: String, id: String, edit: (dev.omalauncher.widgets.annotations.Sticker) -> dev.omalauncher.widgets.annotations.Sticker) = book.changeSticker(page, id, edit)
-        override fun remove(page: String, id: String) = book.remove(page, id)
+        // The book takes a note off by its id as readily as a sticker: only a sticker is asked of it here.
+        override fun remove(page: String, id: String) = book.on(page).stickers.any { it.id == id } && book.remove(page, id)
     }
     fun request(input: JSONObject, reply: (JSONObject) -> Unit) {
         try {
