@@ -1,5 +1,15 @@
 # Phone test results
 
+## Latest: a quick lane beside the build lane, built, not promoted (2026-10-13, about 15:30 PDT)
+Boss wants quick questions answered without waiting for the heavy model or for a running build; agreed plan: a fast front lane first (fast Claude, his pick over Grok), per-project threads next, automatic routing last.
+- New assist/QuickLane.kt and a lane choice in the Oma chat (oma/ChatComposer.kt, ChatHistory.kt, OmaChatActivity.kt): `[ quick ] [ build ]` above the field, kept in prefs. Build is unchanged. Quick runs `claude -p --model haiku` in its own process and session beside AgentTasks, streams its answer into its own entry (caption "quick · time", own stop), text only.
+- It can look and not act: tools are Read, WebSearch, WebFetch and Bash limited to `oma-phone status|screen*|read|pages|board*|looks|stickers` and `date*`; `--permission-prompts none`, so anything else is refused without asking and it can never raise or answer an approval. No notification, tile or lock widget follows it. Tests pin that its command has no write tool and no permission prompt.
+- `oma-build`: PASS, 831 tests, 0 failures. Commit 02492a4.
+- Checked on the phone: `claude -p --model haiku` answers here (claude-haiku-5-5), about 6 s for a one-line answer, mostly start-up. The agent that wrote it ran the real command: `date` allowed, `touch` refused, `--resume` continued.
+- SEEN in Oma Dev, inner screen: the chat opens, the lane row shows, picking quick turns it accent with "answers now, looks only" and the hint "ask something quick…".
+- NOT seen: a quick question answered in the chat (Oma Dev has no Linux), one asked while a build runs, a web search, an `oma-phone` look from it. First real test is after promotion.
+- Not in this step: voice still goes to build; no automatic routing; one quick question at a time; it runs in /root and can Read any file in the guest.
+
 ## Latest: promoting the overview backdrop, tap-to-close and the note instruction (2026-10-13, about 15:05 PDT)
 - Boss saw the overview in Oma Dev, asked for less blur (now 12dp under a 40% wash, commit 12ecc62), said it looks good and to promote. Running `oma-try` last; the result is NOT known from this run.
 - Goes with it: 08b5600 (no sticky note unless asked). To check after: `oma-install --status`, the overview on the real launcher in city pop on both screens, a tap on empty space there.
