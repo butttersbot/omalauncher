@@ -157,9 +157,13 @@ request back); `result {text, failed}`; `stopped {dropped}`; `error {text, code}
   runner restart under a waiting request.
 - Seen on the real service: it listens on the Tailscale address only (nothing on loopback), refuses without the
   key, refuses `~/agents`, comes back by itself about ten seconds after being killed.
-- NOT proved: a real Claude Code turn. The Mac's command-line login has expired ("OAuth session expired"); a
-  thread says so as its answer. Boss has to run `claude auth login` on the Mac. Until then the real approval
-  request has only been read from the phone's own code, not seen from this Mac's Claude Code.
+- Seen with the real Claude Code on the Mac (Boss signed it in again, 2026-10-13), hooks off: a thread on a
+  scratch folder answers "what files are here"; asked to write a file it sends an `approval` for `Write` with
+  the path and content and waits (still waiting after 30 seconds, no file); a wrong nonce gets 403; deny, and
+  the agent says it was refused and no file is made; allow, and the file is there. The later turns continued
+  the same conversation after a runner restart.
+- A plain listing (`ls`) ran with no card: Claude Code's manual mode does not ask about read-only commands.
+- Boss asked whether the notch hook could stay on in these threads, then chose off: this is for the phone.
 - Not tried from the phone at all.
 
 ### For the phone side
