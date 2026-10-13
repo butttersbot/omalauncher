@@ -1,5 +1,13 @@
 # Phone test results
 
+## Latest: Cove's stickers are on the phone (2026-10-12, 17:47–17:50 PDT)
+- The Mac was never down: Tailscale was not running on the phone after its restart for the security update (no tun0, no process). Boss said to start it; opening the Tailscale app brought it up connected, with no switch to press.
+- Cove's art bank is ClaudeSync projects/pond/data/art-bank/catalog.json (29 assets: 12 stickers, 8 papers, 5 images, 4 backgrounds), bytes in projects/pond/data/assets/<sha256>.<ext>.
+- The 12 stickers (sky-journal and Blush Journal sets) were read with `oma-context`, each checked against its sha256, and saved as ~/.config/omalauncher/stickers/cove/<name>.png on the phone. 10.9 MB in all, the largest 3.8 MB. Papers, images and backgrounds were not copied.
+- SEEN in Oma Dev on the cover screen, with the same twelve copied in while it ran: all twelve show under "cove" in the picker with their transparency; the butterfly landed on Page 1 in its own shape, selected. The 3.8 MB stamp decoded without trouble.
+- The real launcher will show them once the bundle with picture stickers is promoted.
+- Left behind: 12 PNGs in /data/local/tmp/cove on the phone (the copies pushed for Oma Dev); a safety check stopped their removal. Harmless; Boss or the Mac session can delete that folder.
+
 ## Latest: the chat scrolls to a message just sent (2026-10-12, 17:45 PDT)
 - Boss: a sent message ended up under the field and the keyboard. Cause: the thread is a reversed LazyColumn with keys and no scroll handling, so adding the new task kept the old newest one in view and put the new one below the edge.
 - Change (commit a180b2d, oma/OmaChatActivity.kt): the list has a state, and whenever the newest task changes it scrolls to it. Covers a message sent from the field, a follow-up, and one that came in by voice while the chat is open.
