@@ -1,5 +1,10 @@
 # Phone test results
 
+## Latest: no sticky note after every task (2026-10-13, about 14:30 PDT)
+- Boss: the agent need not leave a note after everything it does. The instruction came from the launcher (phone/PhoneBridge.kt INSTRUCTIONS, and oma-phone's help), not from the agent.
+- Changed (commit 08b5600): the sentence now reads "Only when the user asks for a sticky note ... Do not leave one to say what you did."; the help text likewise; PhoneNotesTest's pinned sentence changed on purpose, at his word. `oma-build`: PASS.
+- Not promoted (bundled): the installed launcher still sends the old sentence with each message; the agent on the phone ignores it from now on.
+
 ## Latest: swipe gestures in place of the three buttons, at Boss's word (2026-10-13, about 14:20 PDT)
 - Boss wanted swipe-to-go-back in apps as on an iPhone. Cause: the phone was on button navigation (`settings get secure navigation_mode` 0), which has no back swipe. He said to switch it.
 - Changed in Settings > Display > Navigation bar by `oma-phone press "Swipe gestures"`; read back `navigation_mode` 2, and the screenshot shows it selected with a handle at the bottom. (The phone locked itself once mid-way; he unlocked it.) To undo: the same screen, "Buttons".
