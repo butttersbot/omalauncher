@@ -224,6 +224,21 @@ class PhoneService : AccessibilityService() {
         } finally { node.recycle() }
         reply(JSONObject().put("ok", true))
     }
+    /** The owner's stickers for the sticker commands: his library, and the book the pages' stickers are kept in. */
+    private fun stickerPad() = object : StickerPad {
+        private val book = dev.omalauncher.widgets.annotations.HomeAnnotations.of(this@PhoneService)
+        private val shelf = dev.omalauncher.widgets.annotations.HomeStickers.of(this@PhoneService)
+        // The library is a folder to list and files to look into: not on the main thread.
+        override fun library(then: (dev.omalauncher.widgets.annotations.StickerLibrary?) -> Unit) {
+            kotlin.concurrent.thread(name = "sticker-library") {
+                val found = runCatching { shelf.look() }.getOrNull()
+                main.post { then(found) }
+            }
+        }
+        override fun stick(page: String, choice: dev.omalauncher.widgets.annotations.StickerChoice, near: Pair<Float, Float>?, then: (String?) -> Unit) = book.stick(page, choice, near, then)
+        override fun change(page: String, id: String, edit: (dev.omalauncher.widgets.annotations.Sticker) -> dev.omalauncher.widgets.annotations.Sticker) = book.changeSticker(page, id, edit)
+        override fun remove(page: String, id: String) = book.remove(page, id)
+    }
     fun request(input: JSONObject, reply: (JSONObject) -> Unit) {
         try {
             val command = input.getString("command")
@@ -237,6 +252,8 @@ class PhoneService : AccessibilityService() {
             if (route == PhoneRequests.Route.Board) { PhoneBoard.reply(input, notePad(), reply); return }
             // A sticky note on home, behind the same gates: one note, on one page, and nothing else.
             if (route == PhoneRequests.Route.Note) { PhoneNotes.reply(input, notePad(), reply); return }
+            // Stickers on home, behind the same gates: listed, stuck, turned, resized, moved or taken off, and nothing else.
+            if (route == PhoneRequests.Route.Stickers) { PhoneStickers.reply(input, notePad(), stickerPad(), reply); return }
             if (route == PhoneRequests.Route.Screenshot) {
                 if (Build.VERSION.SDK_INT < 30) error("Screenshots require Android 11 or later.")
                 // The overlay is never in the agent's picture: it comes down first and goes back once the picture is taken.

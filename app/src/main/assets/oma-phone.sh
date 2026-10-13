@@ -14,6 +14,9 @@ oma-phone fill [--in PACKAGE] LABEL TEXT
 oma-phone pages | page NAME | where WIDGET_FILE
 oma-phone board [PAGE NAME]
 oma-phone note [--near COL,ROW] TEXT
+oma-phone stickers
+oma-phone stick [--page NAME] [--near COL,ROW] STICKER
+oma-phone sticker [--page NAME] ID turn DEGREES | size HUNDREDTHS | move COL,ROW | remove
 oma-phone click SNAPSHOT NODE_ID
 oma-phone type SNAPSHOT NODE_ID TEXT
 oma-phone scroll SNAPSHOT NODE_ID [forward|backward]
@@ -28,6 +31,12 @@ came from: after finishing something the user asked for, leave one saying what w
 in free space by itself, never on a widget; the reply says which cells it lies on, and clear is
 false with a reason only when the page is full. --near COL,ROW (a cell from board) says where to
 start looking; the note still goes to the nearest clear place, not onto what is there.
+stickers lists the stickers there are: the built-in ones and the pictures in the owner's library.
+stick puts one on a home page (the one the request came from, or --page NAME), clear of what is
+there, near the cell given; the answer has its id and the cells it lies on. sticker changes one
+that is there, by its id from board: turn to DEGREES, size as hundredths of the page's width (4 to
+50), move its middle to a cell, or remove. Only stickers are touched, and only when the user asked.
+Read after each action. Use screenshot's path with your agent's image tool.
 screen is read cut down to what you act on: the app in front and each control that says something,
 with whether it takes a press, text or a scroll. --until TEXT waits up to 5 seconds for TEXT to show.
 press finds the one control that says LABEL (its whole label first, then part of it), presses it and
@@ -71,6 +80,29 @@ note)
   fi
   [ "$#" -ge 1 ] || { echo 'Note text required' >&2; exit 2; }
   request=$(jq -cn --arg text "$*" --arg near "$near" '{command:"note",text:$text} + (if $near=="" then {} else {near:$near} end)');;
+stickers)
+  request=$(jq -cn '{command:"sticker",action:"list"}');;
+stick|sticker)
+  page=''; near=''
+  while [ "${1:-}" = '--page' ] || [ "${1:-}" = '--near' ]; do
+    [ "$#" -ge 2 ] || { echo "Value required after $1" >&2; exit 2; }
+    if [ "$1" = '--page' ]; then page=$2; else near=$2; fi
+    shift 2
+  done
+  if [ "$command" = stick ]; then
+    [ "$#" -ge 1 ] || { echo 'Sticker name required. Run oma-phone stickers.' >&2; exit 2; }
+    request=$(jq -cn --arg name "$*" --arg page "$page" --arg near "$near" \
+      '{command:"sticker",action:"add",name:$name} + (if $page=="" then {} else {page:$page} end) + (if $near=="" then {} else {near:$near} end)')
+  else
+    [ "$#" -ge 2 ] || { echo 'Usage: oma-phone sticker [--page NAME] ID turn DEGREES | size HUNDREDTHS | move COL,ROW | remove' >&2; exit 2; }
+    case "$2" in
+    turn|size|move) [ "$#" -ge 3 ] || { echo "Value required for $2" >&2; exit 2; };;
+    remove) ;;
+    *) echo 'Unknown sticker action. Use turn, size, move or remove.' >&2; exit 2;;
+    esac
+    request=$(jq -cn --arg id "$1" --arg action "$2" --arg value "${3:-}" --arg page "$page" \
+      '{command:"sticker",action:$action,id:$id} + (if $action=="remove" then {} else {value:$value} end) + (if $page=="" then {} else {page:$page} end)')
+  fi;;
 where)
   request=$(jq -cn --arg widget "${1:?Widget file name required}" '{command:"where",widget:$widget}');;
 tap|swipe)

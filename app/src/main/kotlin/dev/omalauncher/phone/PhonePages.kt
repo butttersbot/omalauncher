@@ -5,7 +5,12 @@ import dev.omalauncher.widgets.annotations.Annotations
 import dev.omalauncher.widgets.annotations.Box
 import dev.omalauncher.widgets.annotations.NOTE_OVERLAPS
 import dev.omalauncher.widgets.annotations.NoteLeft
+import dev.omalauncher.widgets.annotations.LibrarySticker
 import dev.omalauncher.widgets.annotations.PageBoard
+import dev.omalauncher.widgets.annotations.Sticker
+import dev.omalauncher.widgets.annotations.StickerChoice
+import dev.omalauncher.widgets.annotations.StickerKind
+import dev.omalauncher.widgets.annotations.StickerLibrary
 import dev.omalauncher.widgets.annotations.UNITS
 import dev.omalauncher.widgets.annotations.box
 import dev.omalauncher.widgets.annotations.noteText
@@ -26,7 +31,7 @@ import kotlin.math.roundToInt
  */
 object PhoneRequests {
     /** Who handles an admitted request. */
-    enum class Route { Status, Stop, Pages, Board, Note, Screenshot, Control }
+    enum class Route { Status, Stop, Pages, Board, Note, Stickers, Screenshot, Control }
 
     /**
      * Runs the checks for [command] in order and says who handles it; throws what the first failing check
@@ -48,6 +53,7 @@ object PhoneRequests {
             in PhonePages.commands -> Route.Pages
             PhoneBoard.COMMAND -> Route.Board
             PhoneNotes.COMMAND -> Route.Note
+            PhoneStickers.COMMAND -> Route.Stickers
             "screenshot" -> Route.Screenshot
             else -> Route.Control
         }
@@ -350,9 +356,9 @@ object PhoneBoard {
 
         fun placed(box: Box) = JSONObject().put("x", share(box.x)).put("y", share(box.y)).put("w", share(box.w)).put("h", share(box.h)).put("cells", cellsJson(board.cells(box)))
         val notes = marks?.notes.orEmpty().sortedBy { it.z }
-        output.put("notes", JSONArray(notes.map { placed(it.box()).put("author", it.author.id).put("text", noteText(it.text, TEXT_SHOWN)) }))
+        output.put("notes", JSONArray(notes.map { placed(it.box()).put("id", it.id).put("author", it.author.id).put("text", noteText(it.text, TEXT_SHOWN)) }))
         // A picture sticker is told by what its picture is called, as it has no kind of its own.
-        output.put("stickers", JSONArray(marks?.stickers.orEmpty().map { s -> placed(s.taken()).put("kind", if (s.picture == null) s.kind.id else PICTURE_STICKER).putOpt("name", s.picture?.name) }))
+        output.put("stickers", JSONArray(marks?.stickers.orEmpty().map { s -> placed(s.taken()).put("id", s.id).put("kind", if (s.picture == null) s.kind.id else PICTURE_STICKER).putOpt("name", s.picture?.name) }))
         output.put("free", JSONArray(board.free(marks?.scraps().orEmpty()).map(::cellsJson)))
         if (marks == null) output.put("note", "This page's notes and stickers can't be read, so none are listed and free counts tiles only.")
         return output
@@ -360,6 +366,206 @@ object PhoneBoard {
 
     /** A fraction of the page as it is told: to the step fractions are kept in, with no stray digits after it. */
     private fun share(value: Float) = (value * UNITS).roundToInt() / UNITS.toDouble()
+}
+
+/** The stickers as the bridge's sticker commands reach them. Main thread, like the notebook. */
+interface StickerPad {
+    /** Looks at the owner's sticker library and tells [then], once, what is in it; null where there is none. */
+    fun library(then: (StickerLibrary?) -> Unit)
+
+    /** Sticks [choice] on [page] near [near] (fractions of the page), clear of what is there, and tells [then] its id, or null if the page took none. */
+    fun stick(
+        page: String,
+        choice: StickerChoice,
+        near: Pair<Float, Float>?,
+        then: (String?) -> Unit,
+    )
+
+    /** Changes the sticker [id] on [page]; false if nothing changed. */
+    fun change(
+        page: String,
+        id: String,
+        edit: (Sticker) -> Sticker,
+    ): Boolean
+
+    /** Takes the sticker [id] off [page]; false if the page can't be changed. */
+    fun remove(
+        page: String,
+        id: String,
+    ): Boolean
+}
+
+/**
+ * The bridge's sticker commands: the stickers there are, one stuck on a home page, and one that is there turned,
+ * resized, moved to a cell or taken off, each by its id from `board`. They do in one call, and answer with what
+ * came of it, what would otherwise be a dozen taps aimed by eye. They touch stickers only: no tile, note or page
+ * is changed, and a new sticker lands clear of what is on the page as one picked by hand does.
+ */
+object PhoneStickers {
+    const val COMMAND = "sticker"
+
+    /** A sticker's size as it is asked for: its longer side in hundredths of the page's width. */
+    val SIZES = 4.0..50.0
+
+    private val CELL = Regex("\\s*(\\d{1,2})\\s*,\\s*(\\d{1,2})\\s*")
+
+    /** What picking a sticker by name came to. */
+    internal sealed interface Picked {
+        data class One(val choice: StickerChoice, val name: String) : Picked
+
+        data class Several(val names: List<String>) : Picked
+
+        data object None : Picked
+    }
+
+    /** A library picture as it is named to the agent: under its folder, when it is in one. */
+    internal fun called(sticker: LibrarySticker) = if (sticker.group.isEmpty()) sticker.name else "${sticker.group}/${sticker.name}"
+
+    /** The sticker [name] means: a built-in one by its word, else a library picture by its full name, else by its name in any folder. */
+    internal fun pick(
+        name: String,
+        library: StickerLibrary?,
+    ): Picked {
+        val asked = name.trim().lowercase()
+        StickerKind.entries.firstOrNull { it.id == asked }?.let { return Picked.One(StickerChoice.BuiltIn(it), it.id) }
+        val all = library?.groups.orEmpty().flatMap { it.stickers }
+        val found = all.filter { called(it).lowercase() == asked }.ifEmpty { all.filter { it.name.lowercase() == asked } }
+        return when {
+            library == null || found.isEmpty() -> Picked.None
+            found.size == 1 -> Picked.One(StickerChoice.Pictured(library.file(found[0]), found[0].name), called(found[0]))
+            else -> Picked.Several(found.map(::called))
+        }
+    }
+
+    private fun fail(error: String) = JSONObject().put("ok", false).put("error", error)
+
+    private fun cell(text: String): Pair<Int, Int> {
+        val cell = CELL.matchEntire(text) ?: error("Give a cell as COL,ROW from oma-phone board, like 3,8. Nothing was changed.")
+        return cell.groupValues[1].toInt() to cell.groupValues[2].toInt()
+    }
+
+    /** The middle of the cell [at] of [board], as fractions of the page. */
+    private fun middle(
+        board: PageBoard,
+        at: Pair<Int, Int>,
+    ): Pair<Float, Float> {
+        require(at.first < board.columns && at.second < board.rows) { "That cell is off the page: its grid is ${board.columns} by ${board.rows}. Nothing was changed." }
+        return board.box(Cell(at.first, at.second, 1, 1)).let { it.x + it.w / 2f to it.y + it.h / 2f }
+    }
+
+    /** The page the command is about: the one named, or the one a note would go on. */
+    private fun page(
+        input: JSONObject,
+        pad: NotePad,
+    ): String {
+        val ids = pad.pages
+        if (ids.isEmpty()) error("Home is still loading. Try again in a moment.")
+        val asked = input.optString("page")
+        if (asked.isBlank()) return pad.here() ?: error("Home isn't showing a page. Name one with --page.")
+        val names = ids.map { pad.name(it) ?: "" }
+        return when (val match = matchPage(names, asked)) {
+            is PageMatch.Found -> ids[match.index]
+            is PageMatch.Refused -> error(match.reason)
+            else -> error("No one page matches \"$asked\". Pages: ${names.joinToString(", ")}. Nothing was changed.")
+        }
+    }
+
+    /** What happens after the bridge's own checks runs later, where nothing catches for it: a failure there is an answer too. */
+    private inline fun answering(
+        reply: (JSONObject) -> Unit,
+        run: () -> Unit,
+    ) {
+        try {
+            run()
+        } catch (e: Exception) {
+            reply(fail(e.message ?: "Phone control failed"))
+        }
+    }
+
+    /** Answers with the sticker [id] as it now is on [page]. */
+    private fun told(
+        pad: NotePad,
+        page: String,
+        id: String,
+        reply: (JSONObject) -> Unit,
+    ) = pad.look(page) { board, marks ->
+        answering(reply) {
+            val sticker = marks?.stickers?.firstOrNull { it.id == id } ?: error("The sticker is not on that page any more.")
+            val box = sticker.taken()
+            reply(
+                JSONObject().put("ok", true).put("page", pad.name(page) ?: "").put("id", id)
+                    .put("kind", if (sticker.picture == null) sticker.kind.id else PhoneBoard.PICTURE_STICKER).putOpt("name", sticker.picture?.name)
+                    .put("size", (sticker.size * 100).roundToInt()).put("turn", sticker.turn).put("cells", cellsJson(board.cells(box))),
+            )
+        }
+    }
+
+    fun reply(
+        input: JSONObject,
+        pad: NotePad,
+        stickers: StickerPad,
+        reply: (JSONObject) -> Unit,
+    ) {
+        val action = input.getString("action")
+        if (action == "list") {
+            return stickers.library { library ->
+                answering(reply) {
+                    reply(JSONObject().put("ok", true).put("builtIn", JSONArray(StickerKind.entries.map { it.id })).put("pictures", JSONArray(library?.groups.orEmpty().flatMap { it.stickers }.map(::called))))
+                }
+            }
+        }
+        val page = page(input, pad)
+        when (action) {
+            "add" -> {
+                val name = input.getString("name")
+                val near = input.optString("near").takeIf { it.isNotEmpty() }?.let(::cell)
+                stickers.library { library ->
+                    answering(reply) {
+                        when (val picked = pick(name, library)) {
+                            Picked.None -> reply(fail("No sticker is called \"$name\". Run oma-phone stickers. Nothing was stuck."))
+                            is Picked.Several -> reply(fail("More than one sticker is called that; give its folder too. Nothing was stuck.").put("matches", JSONArray(picked.names)))
+                            is Picked.One ->
+                                pad.look(page) { board, _ ->
+                                    answering(reply) {
+                                        stickers.stick(page, picked.choice, near?.let { middle(board, it) }) { id ->
+                                            if (id == null) reply(fail("That page took no sticker: it is full, can't be written now, or the picture can't be read.")) else told(pad, page, id, reply)
+                                        }
+                                    }
+                                }
+                        }
+                    }
+                }
+            }
+            "turn", "size", "move" -> {
+                val id = input.getString("id")
+                val value = input.getString("value")
+                pad.look(page) { board, marks ->
+                    answering(reply) {
+                        val was = marks?.stickers?.firstOrNull { it.id == id } ?: error("No sticker $id is on that page. Run oma-phone board for ids. Nothing was changed.")
+                        val next =
+                            when (action) {
+                                "turn" -> was.copy(turn = value.trim().toIntOrNull()?.takeIf { it in -360..360 } ?: error("Give the turn in whole degrees, like 15 or -30. Nothing was changed."))
+                                "size" -> was.copy(size = (value.trim().toDoubleOrNull()?.takeIf { it in SIZES } ?: error("Give the size as hundredths of the page's width, ${SIZES.start.toInt()} to ${SIZES.endInclusive.toInt()}. Nothing was changed.")).toFloat() / 100f)
+                                else -> middle(board, cell(value)).let { was.copy(x = it.first, y = it.second) }
+                            }
+                        stickers.change(page, id) { next }
+                        told(pad, page, id, reply)
+                    }
+                }
+            }
+            "remove" -> {
+                val id = input.getString("id")
+                pad.look(page) { _, marks ->
+                    answering(reply) {
+                        if (marks?.stickers?.none { it.id == id } != false) error("No sticker $id is on that page. Run oma-phone board for ids. Nothing was removed.")
+                        if (!stickers.remove(page, id)) error("That page can't be changed now. Nothing was removed.")
+                        reply(JSONObject().put("ok", true).put("page", pad.name(page) ?: "").put("removed", id))
+                    }
+                }
+            }
+            else -> error("Unknown sticker action: $action")
+        }
+    }
 }
 
 /**
