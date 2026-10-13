@@ -179,7 +179,7 @@ private fun OmaChatScreen(
 
     fun send() {
         val agent = runtime.agents.default
-        val out = outgoing(draft, images.size, images.any { !it.file.isFile }, working || importing || speech.listening, linuxState == LinuxState.Installed, agent?.bin)
+        val out = outgoing(draft, images.size, images.any { !it.file.isFile }, importing || speech.listening, linuxState == LinuxState.Installed, agent?.bin, working)
         when (out) {
             Outgoing.Nothing -> return
             is Outgoing.Refused -> {
@@ -189,6 +189,13 @@ private fun OmaChatScreen(
             is Outgoing.Background ->
                 try {
                     AgentTasks.send(context, out.prompt, images.map { it.guestPath })
+                } catch (e: Exception) {
+                    notice = e.message
+                    return
+                }
+            is Outgoing.Queued ->
+                try {
+                    AgentTasks.followUp(context, out.prompt, images.map { it.guestPath })
                 } catch (e: Exception) {
                     notice = e.message
                     return
@@ -277,7 +284,8 @@ private fun OmaChatScreen(
                     }
                 }
                 items(tasks.asReversed(), key = { it.time }) { task ->
-                    val running = working && task.status == TaskStatus.Running && task.time == tasks.last().time
+                    // Follow-ups wait below the task that is running, so it is the last one running, not the last one.
+                    val running = working && task.time == tasks.lastOrNull { it.status == TaskStatus.Running }?.time
                     TaskEntry(task, running, label, if (running) liveAnswer else task.result, if (running) pending else emptyList(), ::answer)
                 }
             }
@@ -331,7 +339,7 @@ private fun OmaChatScreen(
                     decorationBox = { inner ->
                         Box(Modifier.padding(horizontal = 12.dp, vertical = 12.dp)) {
                             if (shown.isEmpty()) {
-                                val hint = if (listening) "listening…" else if (followUp) "follow up on this thread…" else "ask oma…"
+                                val hint = if (listening) "listening…" else if (working) "follow up when this is done…" else if (followUp) "follow up on this thread…" else "ask oma…"
                                 BasicText(hint, style = Pack.body(Pack.size.item, Pack.muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                             inner()
@@ -356,13 +364,13 @@ private fun OmaChatScreen(
                         .clickable { if (speech.listening) speech.stop() else talk() },
                     contentAlignment = Alignment.Center,
                 ) { MicIcon(if (listening) Pack.background else Pack.foreground) }
+                // While a task runs Send queues a follow-up behind it, and Stop stays beside it.
+                if (!listening) BracketAction("send", if (draft.isBlank() && images.isEmpty()) Pack.muted else Pack.accent, ::send)
                 if (working) {
                     BracketAction("stop", Pack.red) {
                         AgentTasks.stop(context)
                         tick++
                     }
-                } else if (!listening) {
-                    BracketAction("send", if (draft.isBlank() && images.isEmpty()) Pack.muted else Pack.accent, ::send)
                 }
             }
         }
@@ -418,11 +426,13 @@ private fun TaskEntry(
             }
         }
         if (running) BasicText("$label…", Modifier.padding(top = 6.dp), style = small.copy(color = Pack.accent))
+        if (task.status == TaskStatus.Queued) BasicText("waiting for the agent to finish…", Modifier.padding(top = 6.dp), style = small.copy(color = Pack.accent))
         if (result.isNotBlank()) SelectionContainer { BasicText(result.trim(), Modifier.padding(top = 6.dp), style = Pack.body()) }
         val ended = when (task.status) {
             TaskStatus.Stopped -> "stopped"
             TaskStatus.Failed -> "needs attention"
             TaskStatus.Interrupted -> "interrupted: the app was closed while this ran"
+            TaskStatus.Dropped -> "not sent"
             else -> null
         }
         if (ended != null && !running) BasicText(ended, Modifier.padding(top = 4.dp), style = small.copy(color = Pack.red))

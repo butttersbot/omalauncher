@@ -7,7 +7,7 @@ val BACKGROUND_AGENTS = setOf("claude", "codex")
 
 /** What Send does with what's in the composer. */
 sealed interface Outgoing {
-    /** Nothing to send, or something is still in the way (a running task, images being added, dictation). */
+    /** Nothing to send, or something is still in the way (images being added, dictation). */
     data object Nothing : Outgoing
 
     /** Can't be sent as it is; [reason] is shown above the field and the draft stays. */
@@ -15,11 +15,17 @@ sealed interface Outgoing {
 
     data class Background(val prompt: String) : Outgoing
 
+    /** A task is running: this waits behind it and is sent when it has finished. */
+    data class Queued(val prompt: String) : Outgoing
+
     data class Terminal(val prompt: String) : Outgoing
 }
 
-/** [agent] is the default agent's command, null when none is installed. Images alone ask for a description, as on home. */
-fun outgoing(draft: String, images: Int, imageMissing: Boolean, busy: Boolean, linux: Boolean, agent: String?): Outgoing {
+/**
+ * [agent] is the default agent's command, null when none is installed. Images alone ask for a description, as on home.
+ * [working] is whether a background task is running: what would have been sent then waits as a follow-up.
+ */
+fun outgoing(draft: String, images: Int, imageMissing: Boolean, busy: Boolean, linux: Boolean, agent: String?, working: Boolean = false): Outgoing {
     val prompt = draft.trim().ifEmpty { if (images > 0) "Describe these images." else "" }
     return when {
         busy || prompt.isEmpty() -> Outgoing.Nothing
@@ -27,7 +33,8 @@ fun outgoing(draft: String, images: Int, imageMissing: Boolean, busy: Boolean, l
         agent == null -> Outgoing.Refused("Install and sign in to an agent in Omalauncher first.")
         images > 0 && agent !in BACKGROUND_AGENTS -> Outgoing.Refused("Choose Claude Code or Codex to send images.")
         imageMissing -> Outgoing.Refused("An attached image is no longer available. Remove it and attach it again.")
-        agent in BACKGROUND_AGENTS -> Outgoing.Background(prompt)
+        agent in BACKGROUND_AGENTS -> if (working) Outgoing.Queued(prompt) else Outgoing.Background(prompt)
+        working -> Outgoing.Refused("Wait for the running task or stop it first.")
         else -> Outgoing.Terminal(prompt)
     }
 }

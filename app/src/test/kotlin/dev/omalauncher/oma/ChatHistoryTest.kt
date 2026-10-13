@@ -63,6 +63,32 @@ class ChatHistoryTest {
         assertTrue(after.flatMap { it.approvals }.all { it.key.isEmpty() })
     }
 
+    @Test fun aRestartDropsWaitingFollowUpsAndSaysSo() {
+        val before = listOf(task(1).copy(status = TaskStatus.Running), task(2).copy(status = TaskStatus.Queued), task(3).copy(status = TaskStatus.Queued))
+        val after = ChatHistory.afterRestart(ChatHistory.decode(ChatHistory.encode(before)))
+        assertEquals(listOf(TaskStatus.Interrupted, TaskStatus.Dropped, TaskStatus.Dropped), after.map { it.status })
+        assertEquals(listOf("", FollowUpQueue.RESTARTED, FollowUpQueue.RESTARTED), after.map { it.result })
+        assertEquals(listOf("prompt 2", "prompt 3"), after.drop(1).map { it.prompt })
+        // Said once: the next restart finds them already dropped.
+        assertEquals(after, ChatHistory.afterRestart(ChatHistory.decode(ChatHistory.encode(after))))
+    }
+
+    @Test fun onlyAWaitingFollowUpCanBeDropped() {
+        assertEquals(task(1).copy(status = TaskStatus.Dropped, result = "why"), ChatHistory.dropped(task(1).copy(status = TaskStatus.Queued), "why"))
+        for (status in listOf(TaskStatus.Running, TaskStatus.Done, TaskStatus.Stopped, TaskStatus.Failed, TaskStatus.Interrupted)) {
+            val sent = task(1).copy(status = status, result = "answer")
+            assertEquals(sent, ChatHistory.dropped(sent, "why"))
+        }
+    }
+
+    @Test fun aNewTaskIsAlwaysFiledAfterTheOnesInTheThread() {
+        assertEquals(500L, ChatHistory.stamp(emptyList(), 500))
+        assertEquals(500L, ChatHistory.stamp(listOf(task(100), task(200)), 500))
+        // Two in the same millisecond, or a clock set back, still get times of their own, in order.
+        assertEquals(501L, ChatHistory.stamp(listOf(task(100), task(500)), 500))
+        assertEquals(901L, ChatHistory.stamp(listOf(task(900), task(300)), 500))
+    }
+
     @Test fun damagedFilesLoadAsWhatCanBeRead() {
         assertEquals(emptyList<ChatTask>(), ChatHistory.decode(""))
         assertEquals(emptyList<ChatTask>(), ChatHistory.decode("{not json"))

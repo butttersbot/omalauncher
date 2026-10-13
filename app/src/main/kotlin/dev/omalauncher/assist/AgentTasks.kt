@@ -8,6 +8,8 @@ import dev.omalauncher.oma.ChatApproval
 import dev.omalauncher.oma.ChatHistory
 import dev.omalauncher.oma.ChatLog
 import dev.omalauncher.oma.ChatTask
+import dev.omalauncher.oma.FollowUp
+import dev.omalauncher.oma.FollowUpQueue
 import dev.omalauncher.oma.ScreenShots
 import dev.omalauncher.oma.TaskStatus
 import dev.omalauncher.oma.ring.OmaRing
@@ -21,6 +23,7 @@ import kotlin.concurrent.thread
 /**
  * A single background request stays alive with the existing Linux foreground service.
  * Claude requests continue one conversation, resumed by session id, until [newThread].
+ * What he sends while a request runs waits in [followUps] and is sent as the next request when it has finished.
  */
 object AgentTasks {
     @Volatile var working = false; private set
@@ -36,6 +39,8 @@ object AgentTasks {
     @Volatile var pending: List<PendingApproval> = emptyList(); private set
     val approvals: List<AgentApproval> get() = pending.map { it.approval }
     private val ledger = ApprovalLedger()
+    /** Only touched under the lock. Each one is also a waiting task in the thread, which is where the chat reads them. */
+    private val followUps = FollowUpQueue()
     /** The Claude session that the next request follows up on. */
     @Volatile var thread: String? = null; private set
     private var inputWriter: BufferedWriter? = null
@@ -69,6 +74,27 @@ object AgentTasks {
      * [page] is the id of the home page he was on when he asked: the one home shows, unless the caller knows better.
      */
     @Synchronized fun send(context: Context, prompt: String, images: List<String> = emptyList(), screen: File? = null, page: String? = HomeDoor.home?.showing) {
+        start(context, prompt, images, screen, page, queued = null)
+    }
+    /**
+     * A message sent while a request runs. It is in the thread at once as his, waiting; the running agent is
+     * not told, stopped or restarted, so it can't answer or skip an approval. It is sent as a request of its
+     * own when the one ahead has finished, and dropped, with the thread saying why, if that one is stopped or
+     * fails or the app is closed first. With nothing running it is simply sent.
+     */
+    @Synchronized fun followUp(context: Context, prompt: String, images: List<String> = emptyList(), page: String? = HomeDoor.home?.showing) {
+        restore(context)
+        check(prompt.isNotBlank()) { "Type or speak a request first." }
+        if (!working) return start(context, prompt, images, null, page, queued = null)
+        check(!stopping) { "The agent is stopping. Send this again in a moment." }
+        val agent = (context.applicationContext as App).runtime.agents.default ?: error("Install and sign in to an agent in Omalauncher first.")
+        val log = ChatLog.of(context)
+        val time = ChatHistory.stamp(log.tasks, System.currentTimeMillis())
+        check(followUps.add(FollowUp(time, prompt, images, page))) { FollowUpQueue.FULL }
+        log.begin(ChatTask(time, agent.name, prompt, images, status = TaskStatus.Queued))
+    }
+    /** [queued] is the time of the waiting task this request already is in the thread; null for one sent just now. */
+    @Synchronized private fun start(context: Context, prompt: String, images: List<String>, screen: File?, page: String?, queued: Long?) {
         restore(context)
         check(prompt.isNotBlank()) { "Type or speak a request first." }
         check(!working) { "An agent is already working. Stop it before starting another task." }
@@ -95,10 +121,12 @@ object AgentTasks {
             backgroundAgentCommand(agent.bin, fullPrompt, images + listOfNotNull(handed?.let(runtime.proot::guestPath)))
         }
         val log = ChatLog.of(context)
-        val time = System.currentTimeMillis()
+        val began = System.currentTimeMillis()
+        val time = queued ?: ChatHistory.stamp(log.tasks, began)
         taskTime = time
-        asked = page?.let { PageAsk(it, time) }
-        log.begin(ChatTask(time, agent.name, prompt, images, screen = screen != null, newThread = resumed == null))
+        asked = page?.let { PageAsk(it, began) }
+        if (queued == null) log.begin(ChatTask(time, agent.name, prompt, images, screen = screen != null, newThread = resumed == null))
+        else log.update(time, save = true) { it.copy(agent = agent.name, newThread = resumed == null, status = TaskStatus.Running) }
         working = true; stopping = false; ledger.clear(); published(); answer = ""; label = "${agent.name} is working"
         notify(context)
         thread(name = "assistant-agent", isDaemon = true) {
@@ -184,16 +212,42 @@ object AgentTasks {
                 log.update(time, save = true) { task ->
                     task.copy(result = answer, status = status, approvals = task.approvals.map { if (it.answer == ApprovalAnswer.Waiting) it.copy(answer = ApprovalAnswer.Unanswered) else it })
                 }
-                process = null; working = false
-                asked = asked?.let { if (it.started == time && it.ended == null) it.copy(ended = System.currentTimeMillis()) else it }
-                context.getSharedPreferences("assistant-result", Context.MODE_PRIVATE).edit()
-                    .putString("label", label).putString("answer", answer).putString("thread", thread).apply()
-                File(context.filesDir, "assistant-last-result.txt").writeText(answer)
-                notify(context)
-                // A task the owner stopped says nothing more; any other ending brings its answer to him.
-                if (status != TaskStatus.Stopped) AgentNotices.answered(context, label, answer)
+                // One step under the lock, so a follow-up that waited starts before anything else can find the agent idle.
+                synchronized(this) {
+                    process = null; working = false
+                    asked = asked?.let { if (it.started == began && it.ended == null) it.copy(ended = System.currentTimeMillis()) else it }
+                    context.getSharedPreferences("assistant-result", Context.MODE_PRIVATE).edit()
+                        .putString("label", label).putString("answer", answer).putString("thread", thread).apply()
+                    File(context.filesDir, "assistant-last-result.txt").writeText(answer)
+                    notify(context)
+                    // A task the owner stopped says nothing more, and one with a follow-up now running has its answer in
+                    // the thread, under a task notification that is ongoing again; any other ending brings its answer to him.
+                    if (!advance(context, status) && status != TaskStatus.Stopped) AgentNotices.answered(context, label, answer)
+                }
             }
         }
+    }
+    /**
+     * Under the lock, as a task ends with [status]: sends the follow-up that waited behind it, or says in the
+     * thread why none will be. True when one is now running.
+     */
+    private fun advance(context: Context, status: TaskStatus): Boolean {
+        val handoff = followUps.after(status)
+        dropped(context, handoff.dropped, FollowUpQueue.FAILED)
+        val next = handoff.next ?: return false
+        return try {
+            start(context, next.prompt, next.images, null, next.page, queued = next.time)
+            true
+        } catch (e: Exception) {
+            // What stopped this one from starting would stop the ones behind it too.
+            dropped(context, listOf(next) + followUps.drop(), e.message ?: FollowUpQueue.FAILED)
+            false
+        }
+    }
+    /** Marks follow-ups that will never be sent, with the [reason] where their answer would have been. */
+    private fun dropped(context: Context, unsent: List<FollowUp>, reason: String) {
+        val log = ChatLog.of(context)
+        unsent.forEach { followUp -> log.update(followUp.time, save = true) { ChatHistory.dropped(it, reason) } }
     }
     @Synchronized private fun writeEvent(event: JSONObject) {
         val writer = inputWriter ?: error("The agent session has ended.")
@@ -253,14 +307,16 @@ object AgentTasks {
         task.copy(approvals = task.approvals.map { if (it.key == entry.nonce) it.copy(answer = answer) else it })
     }
     fun stop(context: Context) {
-        val unanswered = synchronized(this) {
+        val (unanswered, unsent) = synchronized(this) {
             if (!working) return
             stopping = true
             inputWriter?.runCatching { close() }; inputWriter = null
             process?.destroy(); label = "Stopping…"
-            ledger.clear().also { published() }
+            ledger.clear().also { published() } to followUps.drop()
         }
         unanswered.forEach { record(context, it, ApprovalAnswer.Unanswered); AgentNotices.withdraw(context, it) }
+        // Stop means stop: what waited behind the task is not sent after it.
+        dropped(context, unsent, FollowUpQueue.STOPPED)
         notify(context)
     }
     private fun notify(context: Context) {

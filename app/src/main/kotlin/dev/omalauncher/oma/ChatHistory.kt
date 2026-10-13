@@ -10,6 +10,12 @@ enum class TaskStatus(val id: String) {
 
     /** The app's process died while the task ran. */
     Interrupted("interrupted"),
+
+    /** A follow-up sent while another task ran, waiting for it to finish. */
+    Queued("queued"),
+
+    /** A follow-up that was never sent to the agent; the task's result says why. */
+    Dropped("dropped"),
     ;
 
     companion object { fun of(id: String?) = entries.firstOrNull { it.id == id } ?: Interrupted }
@@ -89,8 +95,18 @@ object ChatHistory {
         return if (text.isEmpty() || task.steps.lastOrNull() == text) task else task.copy(steps = (task.steps + text).takeLast(MAX_STEPS))
     }
 
-    /** What a restart leaves of a thread: nothing is running any more and nothing can still be answered. */
-    fun afterRestart(tasks: List<ChatTask>) = tasks.map { task ->
+    /** When a task sent at [now] is filed: after every task already in the thread, since the time is what identifies it. */
+    fun stamp(tasks: List<ChatTask>, now: Long) = maxOf(now, (tasks.maxOfOrNull { it.time } ?: 0L) + 1)
+
+    /** A waiting follow-up that will never be sent, with [reason] where its answer would have been. */
+    fun dropped(task: ChatTask, reason: String) = if (task.status == TaskStatus.Queued) task.copy(status = TaskStatus.Dropped, result = reason) else task
+
+    /**
+     * What a restart leaves of a thread: nothing is running any more and nothing can still be answered. A
+     * follow-up that was waiting is not sent later behind his back; it says it was dropped.
+     */
+    fun afterRestart(tasks: List<ChatTask>) = tasks.map { saved ->
+        val task = dropped(saved, FollowUpQueue.RESTARTED)
         task.copy(
             status = if (task.status == TaskStatus.Running) TaskStatus.Interrupted else task.status,
             approvals = task.approvals.map { if (it.answer == ApprovalAnswer.Waiting) it.copy(answer = ApprovalAnswer.Unanswered, key = "") else it.copy(key = "") },

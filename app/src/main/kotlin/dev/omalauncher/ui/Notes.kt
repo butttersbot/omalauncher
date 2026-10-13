@@ -588,7 +588,7 @@ fun NoteEditor(state: LauncherState) {
     }
     BackHandler { close() }
     Menu(onDismiss = ::close) {
-        MenuTitle("note")
+        MenuTitle(if (note.role == NoteRole.Text) "text" else "note")
         BasicTextField(
             value = field,
             // Never more than a note takes: what is typed or pasted past that is cut off.

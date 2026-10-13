@@ -4,8 +4,8 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ChatComposerTest {
-    private fun out(draft: String = "hello", images: Int = 0, missing: Boolean = false, busy: Boolean = false, linux: Boolean = true, agent: String? = "claude") =
-        outgoing(draft, images, missing, busy, linux, agent)
+    private fun out(draft: String = "hello", images: Int = 0, missing: Boolean = false, busy: Boolean = false, linux: Boolean = true, agent: String? = "claude", working: Boolean = false) =
+        outgoing(draft, images, missing, busy, linux, agent, working)
 
     @Test fun typedTextGoesToTheBackgroundAgent() {
         assertEquals(Outgoing.Background("hello"), out("  hello \n"))
@@ -14,6 +14,20 @@ class ChatComposerTest {
     @Test fun nothingIsSentWhileBusyOrEmpty() {
         assertEquals(Outgoing.Nothing, out(busy = true))
         assertEquals(Outgoing.Nothing, out(draft = "  "))
+    }
+    @Test fun whileATaskRunsWhatIsSentWaitsAsAFollowUp() {
+        assertEquals(Outgoing.Queued("hello"), out("  hello \n", working = true))
+        assertEquals(Outgoing.Queued("Describe these images."), out(draft = "", images = 2, agent = "codex", working = true))
+        assertEquals(Outgoing.Nothing, out(draft = " ", working = true))
+        assertEquals(Outgoing.Nothing, out(busy = true, working = true))
+    }
+    @Test fun aFollowUpIsRefusedForTheSameReasonsAsAMessage() {
+        assertTrue(out(linux = false, working = true) is Outgoing.Refused)
+        assertTrue(out(agent = null, working = true) is Outgoing.Refused)
+        assertTrue(out(images = 1, missing = true, working = true) is Outgoing.Refused)
+    }
+    @Test fun noTerminalOpensBesideARunningTask() {
+        assertEquals(Outgoing.Refused("Wait for the running task or stop it first."), out(agent = "grok", working = true))
     }
     @Test fun imagesAloneAskForADescription() {
         assertEquals(Outgoing.Background("Describe these images."), out(draft = "", images = 2))
