@@ -77,7 +77,7 @@ that read it redraw. Properties are separated by newlines or `;`.
 | `asset logo = base64"iVBOR..."` | an embedded image (under 2 MB) for `Image { src: logo }`, so the widget is one self-contained file |
 | `requires { pacman: ["jq", "curl"] }` | packages the widget's commands need; see Dependencies |
 | `meta { description: "..."; version: "1.0"; license: "MIT"; category: "news" }` | needed to publish to the widget store (see Sharing) |
-| `meta { owl: 5 }` | the language version the widget needs (this launcher has 5; the default is 1). Older launchers say "update the launcher" instead of failing on what they don't know. `Terminal` needs 2, `sprite` 3, triggers, `file`, `Slider`, `Input`, `android.notifications`, `android.volume`, `volume` and `notification` need 4, and `screen { }`, `screen()`, `close()`, `screenWidth` and `screenHeight` need 5; using them without declaring it is an error |
+| `meta { owl: 6 }` | the language version the widget needs (this launcher has 6; the default is 1). Older launchers say "update the launcher" instead of failing on what they don't know. `Terminal` needs 2, `sprite` 3, triggers, `file`, `Slider`, `Input`, `android.notifications`, `android.volume`, `volume` and `notification` need 4, and `screen { }`, `screen()`, `close()`, `screenWidth` and `screenHeight` need 5, and `Web`, `onHold`, `onHoldDrag` and `onDrop` need 6; using them without declaring it is an error |
 | `onTap: ...` | runs when the tile (not a button inside it) is tapped |
 | `screen { ... }` | a full-screen view of the widget, opened with `screen()`; see Screens (owl 5) |
 | `every 10s { ... }`, `at t { ... }`, `when c { ... }`, `on x { ... }` | statements that run without a tap; see Triggers |
@@ -190,6 +190,7 @@ when lists reorder), and `let x = ...` inside any node.
 | `Spacer` | empty space: `size`, `width`, `height` or `weight` |
 | `Slider` | a horizontal slider: `value`, `min` (0), `max` (100), `step`, `color`, `track`, `live`. `onChange` gets the chosen `value` when the finger lifts, or at every step while dragging with `live: true`. Full width and 28 dp tall unless sized (owl 4) |
 | `Input` | a one-line text field: `text` (what it shows; replaces what's typed when it changes), `placeholder`, `color`, `fontSize`, `clear: true` (empty it after submitting). `onChange` gets the text as `value` as it's typed, `onSubmit` when the keyboard's send key is pressed (owl 4) |
+| `Web` | a web page shown as a picture, on the widget's screen only: `src`, an https page from `www.tradingview-widget.com` or `s.tradingview.com` (TradingView's embeddable charts). It takes no touches and follows no links. `onLoad` runs when the page has loaded and `onError` when it couldn't or took over 10 s, so the widget can show something of its own instead. In a tile it is empty space (owl 6) |
 | `Terminal` | a live terminal (foot) in the tile: `command` (default: the login shell), `fontSize` (points; foot.ini has 8). Fills the space unless sized. See below |
 
 Every node also takes:
@@ -200,8 +201,12 @@ Every node also takes:
   (without `radius`, bordered elements follow the launcher's corner style: 0 for edge, 4 for soft, 8 for round)
 - `opacity`, `rotation` (degrees), `scale`, `offset: [x, y]` (dp), `visible`
 - handlers: `onTap` (with `x`, `y`) and `onDrag` (with `dx`, `dy`, `x`, `y`); `Slider` and `Input` also take
-  `onChange`, and `Input` `onSubmit`, both with `value`. Long-press
-  belongs to the home screen, which uses it to move and resize tiles
+  `onChange`, and `Input` `onSubmit`, both with `value`. On a tile a long-press
+  belongs to the home screen, which uses it to move and resize tiles. On the widget's screen
+  a node can take it (owl 6): `onHold` (with `x`, `y`) when a finger has rested on it,
+  `onHoldDrag` (with `dx`, `dy`, `x`, `y`) as that finger then moves, and `onDrop` when it
+  lifts. For a list to reorder: note the row in `onHold`, add up `dy` and move the row with
+  `offset` in `onHoldDrag`, and write the new order in `onDrop`
 - `animate prop: spring()` or `tween(300ms, "linear"/"in"/"out"/"ease")`, for `value`,
   `opacity`, `rotation`, `scale`, `color` or `background`. For springs:
   `spring(damping, stiffness)`
@@ -271,7 +276,8 @@ widget "weather" {
   `if tab == "hours" { ... } else { ... }`.
 
 Screens are for showing more, not for building apps: there's no navigation between screens, no
-lists that load as they scroll, and only the nodes above (no maps, web pages or video).
+lists that load as they scroll, and only the nodes above (no maps or video, and of web pages
+only what `Web` allows).
 
 ## Components
 

@@ -24,7 +24,9 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import dev.omalauncher.ui.WidgetScreenPanel
 import dev.omalauncher.ui.WidgetTile
+import dev.omalauncher.widgets.render.LocalWidgetPreview
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
@@ -109,7 +111,7 @@ internal class Previews(
                     window?.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
                     val view =
                         ComposeView(this.context).apply {
-                            setContent { content() }
+                            setContent { CompositionLocalProvider(LocalWidgetPreview provides true) { content() } }
                         }
                     setContentView(view, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
                     window?.decorView?.let {

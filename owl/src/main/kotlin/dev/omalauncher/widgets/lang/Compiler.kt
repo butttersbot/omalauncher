@@ -22,7 +22,7 @@ class Compiler private constructor(
          * instead of failing on what they don't know. Bump it with every
          * addition a widget could depend on: nodes, properties, builtins.
          */
-        const val LEVEL = 5
+        const val LEVEL = 6
         private const val MAX_ASSET_BYTES = 2 shl 20
 
         fun compile(src: String): Program =
@@ -55,7 +55,18 @@ class Compiler private constructor(
                 // owl 4: input.
                 "Slider" to Kind(setOf("value", "min", "max", "step", "color", "track", "live"), Children.NONE),
                 "Input" to Kind(setOf("text", "placeholder", "color", "fontSize", "clear"), Children.NONE),
+                // owl 6: a web page from one of [WEB_HOSTS], shown as a picture on the widget's screen.
+                "Web" to Kind(setOf("src"), Children.NONE),
             )
+
+        /**
+         * The hosts a Web node may show: pages made to be embedded in other pages, with nothing to sign in to.
+         * A widget is somebody else's code; any page at all would let it show one that asks for a password.
+         */
+        val WEB_HOSTS = setOf("www.tradingview-widget.com", "s.tradingview.com")
+
+        /** Whether a Web node may show [url]: https, from one of [WEB_HOSTS]. */
+        fun webAllowed(url: String): Boolean = WEB_HOSTS.any { url.startsWith("https://$it/") }
 
         val COMMON =
             setOf(
@@ -102,9 +113,12 @@ class Compiler private constructor(
             mapOf("Terminal" to 2, "sprite" to 3) +
                 listOf("Slider", "Input", "file", "android.notifications", "android.volume", "volume", "notification", "every", "at", "when", "on").associateWith { 4 } +
                 // owl 5: a full-screen view of the widget.
-                listOf("screen", "close", "screenWidth", "screenHeight", "optional", "linux", "android.system").associateWith { 5 }
+                listOf("screen", "close", "screenWidth", "screenHeight", "optional", "linux", "android.system").associateWith { 5 } +
+                // owl 6: a web page, and a long press that turns into a drag, both on the widget's screen.
+                listOf("Web", "onLoad", "onError", "onHold", "onHoldDrag", "onDrop").associateWith { 6 }
 
-        // No onLongPress: long-press belongs to the home screen, which lifts the tile to move it.
+        // On a tile a long press belongs to the home screen, which lifts the tile to move it: onHold, onHoldDrag
+        // and onDrop only do anything on the widget's own screen.
         /**
          * Package managers a widget can declare in `requires`, with what a
          * package name may look like. Names end up in a shell command, so the
@@ -113,10 +127,21 @@ class Compiler private constructor(
         val MANAGERS = mapOf("pacman" to Regex("[a-z0-9@_+][a-z0-9@._+-]*"))
 
         private val HANDLER_PARAMS =
-            mapOf("onTap" to listOf("x", "y"), "onDrag" to listOf("dx", "dy", "x", "y"), "onChange" to listOf("value"), "onSubmit" to listOf("value"))
+            mapOf(
+                "onTap" to listOf("x", "y"),
+                "onDrag" to listOf("dx", "dy", "x", "y"),
+                "onChange" to listOf("value"),
+                "onSubmit" to listOf("value"),
+                "onHold" to listOf("x", "y"),
+                "onHoldDrag" to listOf("dx", "dy", "x", "y"),
+                "onDrop" to emptyList(),
+                "onLoad" to emptyList(),
+                "onError" to emptyList(),
+            )
 
         /** Handlers only some nodes have. */
-        private val HANDLER_KINDS = mapOf("onChange" to setOf("Slider", "Input"), "onSubmit" to setOf("Input"))
+        private val HANDLER_KINDS =
+            mapOf("onChange" to setOf("Slider", "Input"), "onSubmit" to setOf("Input"), "onLoad" to setOf("Web"), "onError" to setOf("Web"))
 
         /** What triggers bind in their statements. */
         private val TRIGGER_PARAMS = mapOf("on" to listOf("value", "old"))
@@ -540,6 +565,7 @@ class Compiler private constructor(
             body.handlers.associate { h ->
                 if (h.name !in HANDLER_PARAMS) fail("unknown handler '${h.name}' (${HANDLER_PARAMS.keys.joinToString()})", h.pos)
                 HANDLER_KINDS[h.name]?.let { kinds -> if (n.type !in kinds) fail("${h.name} only works on ${kinds.joinToString(" and ")}", h.pos) }
+                since(h.name, h.pos)
                 h.name to handler(h, scope)
             }
         val animations =
@@ -554,6 +580,11 @@ class Compiler private constructor(
             (command?.const as? Str)?.v?.let { scripts += it }
             commands += if (command == null) "a terminal running the login shell" else (command.const as? Str)?.v ?: "Terminal command built from widget values"
             guest = true
+        }
+        if (n.type == "Web") {
+            val src = props["src"] ?: fail("Web needs src: the page to show", n.pos)
+            (src.const as? Str)?.v?.let { if (!webAllowed(it)) fail("Web only shows https pages from ${WEB_HOSTS.joinToString(" and ")}", n.pos) }
+            commands += "web page " + ((src.const as? Str)?.v ?: "(a URL built from widget values)")
         }
         // Shaders get `time` whether they use it or not.
         if (n.type == "Shader") animated = true

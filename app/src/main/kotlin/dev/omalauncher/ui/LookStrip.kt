@@ -37,6 +37,7 @@ import dev.omalauncher.theme.ThemeStore
 import dev.omalauncher.theme.pack.ConsolePack
 import dev.omalauncher.theme.pack.PackOption
 import dev.omalauncher.theme.pack.PackPick
+import dev.omalauncher.theme.pack.PackRegistry
 import dev.omalauncher.theme.pack.ThemePack
 import kotlin.math.ceil
 import kotlin.math.floor
@@ -52,9 +53,10 @@ internal fun LookStrip(
     store: ThemeStore,
     modifier: Modifier = Modifier,
 ) {
-    val options by produceState(emptyList<PackOption>(), store) { value = store.packOptions() }
-    if (options.isEmpty()) return
+    val all by produceState(emptyList<PackOption>(), store) { value = store.packOptions() }
+    if (all.isEmpty()) return
     val picked = ActivePack.pick.id
+    val options = PackRegistry.offered(all, picked)
     Column(modifier) {
         SectionLabel("look", Modifier.padding(bottom = 4.dp))
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -155,9 +157,10 @@ internal fun LookPicker(
     store: ThemeStore,
     modifier: Modifier = Modifier,
 ) {
-    val options by produceState(emptyList<PackOption>(), store) { value = store.packOptions() }
-    if (options.isEmpty()) return
+    val all by produceState(emptyList<PackOption>(), store) { value = store.packOptions() }
+    if (all.isEmpty()) return
     val picked = ActivePack.pick
+    val options = PackRegistry.offered(all, picked.id)
     val u = LocalConfiguration.current.run { prototypeUnit(screenWidthDp.toFloat(), screenHeightDp.toFloat()) }
     BoxWithConstraints(modifier.fillMaxWidth()) {
         val grid = lookGrid(options.size, maxWidth.value, u)

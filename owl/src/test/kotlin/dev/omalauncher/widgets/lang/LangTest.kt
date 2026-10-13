@@ -529,6 +529,30 @@ class LangTest {
         assertTrue(compileError("widget {\n Slider { value: 1 } }").contains("Slider needs owl 4"))
     }
 
+    /** owl 6: a long press that turns into a drag, and a web page from an allowed host. */
+    @Test fun holdAndWeb() {
+        val page = "https://www.tradingview-widget.com/embed-widget/mini-symbol-overview/?symbol=NASDAQ%3ATSLA"
+        val p =
+            Compiler.compile(
+                "widget \"w\" {\n meta { owl: 6 }\n state at = 0\n state ok = false\n onTap: screen()\n Text { text: at }\n" +
+                    " screen {\n  Column {\n" +
+                    "   Box { onHold: at = y; onHoldDrag: at = at + dy; onDrop: at = 0; Text { text: at } }\n" +
+                    "   Web { src: \"$page\"; onLoad: ok = true; onError: ok = false }\n  }\n }\n}",
+            )
+        assertEquals(listOf("web page $page"), p.commands)
+        assertTrue(compileError("widget {\n meta { owl: 5 }\n state at = 0\n Box { onHold: at = y; Text { text: at } } }").contains("onHold needs owl 6"))
+        assertTrue(compileError("widget {\n meta { owl: 5 }\n Web { src: \"$page\" } }").contains("Web needs owl 6"))
+        assertTrue(compileError("widget {\n meta { owl: 6 }\n Web { } }").contains("Web needs src"))
+        assertTrue(compileError("widget {\n meta { owl: 6 }\n Web { src: \"https://example.com/\" } }").contains("Web only shows https pages from"))
+        assertTrue(compileError("widget {\n meta { owl: 6 }\n Web { src: \"http://www.tradingview-widget.com/x\" } }").contains("Web only shows"))
+        assertTrue(compileError("widget {\n meta { owl: 6 }\n state ok = false\n Text { text: ok; onLoad: ok = true } }").contains("onLoad only works on Web"))
+        assertTrue(Compiler.webAllowed("https://s.tradingview.com/embed-widget/x"))
+        assertFalse(Compiler.webAllowed("https://www.tradingview-widget.com.evil.example/x"))
+        // A page built from the widget's values compiles; the launcher checks the host again when it shows it.
+        val built = Compiler.compile("widget {\n meta { owl: 6 }\n state s = \"x\"\n Text { text: s }\n screen { Web { src: \"https://www.tradingview-widget.com/?symbol=\${s}\" } } }")
+        assertEquals(listOf("web page (a URL built from widget values)"), built.commands)
+    }
+
     @Test fun screens() {
         val p =
             Compiler.compile(

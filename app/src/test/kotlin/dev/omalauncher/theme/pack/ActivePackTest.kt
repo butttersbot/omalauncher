@@ -77,6 +77,16 @@ class ActivePackTest {
         assertEquals(listOf("dial-up"), opened)
     }
 
+    /** Console is the base, not a look to pick: the pickers leave it out unless it is the one in use. */
+    @Test fun consoleIsNotOffered() {
+        val options = PackRegistry.options(listOf("dial-up")) { dialUp }
+        assertEquals(listOf("console", "dial-up"), options.map { it.id })
+        assertEquals(listOf("dial-up"), PackRegistry.offered(options, "dial-up").map { it.id })
+        assertEquals(listOf("console", "dial-up"), PackRegistry.offered(options, "console").map { it.id })
+        val alone = PackRegistry.options(emptyList()) { null }
+        assertEquals(listOf("console"), PackRegistry.offered(alone, "dial-up").map { it.id })
+    }
+
     private val shipped =
         listOf(
             "riso" to "Riso",

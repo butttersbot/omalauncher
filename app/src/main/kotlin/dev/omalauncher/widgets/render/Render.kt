@@ -22,12 +22,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
@@ -94,6 +96,15 @@ import dev.omalauncher.widgets.runtime.WidgetInstance
 import kotlinx.coroutines.flow.first
 import kotlin.math.min
 
+/**
+ * True inside a widget's own screen { }. A long press on a tile is the home screen's, and a web page is too
+ * heavy for one, so the hold handlers and Web nodes only work where this is true.
+ */
+val LocalWidgetScreen = staticCompositionLocalOf { false }
+
+/** True while a widget is drawn for a preview picture, off screen: a Web node draws nothing there. */
+val LocalWidgetPreview = staticCompositionLocalOf { false }
+
 /** Whether the home screen is hidden (drawer, full-screen panel); animated widgets stop ticking while it is. */
 val LocalHomeCovered = staticCompositionLocalOf<() -> Boolean> { { false } }
 
@@ -140,8 +151,10 @@ fun WidgetScreen(
     BoxWithConstraints(modifier) {
         // Set before the nodes compose, so the first frame already has the size instead of null.
         inst.setScreen(maxWidth.value.toDouble(), maxHeight.value.toDouble())
-        Column(Modifier.fillMaxSize()) {
-            Nodes(nodes, inst.root, inst, this)
+        CompositionLocalProvider(LocalWidgetScreen provides true) {
+            Column(Modifier.fillMaxSize()) {
+                Nodes(nodes, inst.root, inst, this)
+            }
         }
     }
 }
@@ -417,6 +430,7 @@ private fun Element(
         "Spacer" -> Spacer(mod)
         "Slider" -> SliderNode(p, mod, sized)
         "Input" -> InputNode(p, mod, sized)
+        "Web" -> WebNode(p, mod.then(if (sized) Modifier else Modifier.fillMaxSize()))
         "Terminal" -> {
             val command = p.observe("command")
             val fontSize = p.observe("fontSize")?.num()
@@ -568,6 +582,23 @@ private fun handlers(p: Props): Modifier {
     }
     el.handlers["onDrag"]?.let { a ->
         m = m.pointerInput(el, p.env) { detectDragGestures { change, drag -> change.consume(); fire(a, drag.x, drag.y, change.position.x, change.position.y) } }
+    }
+    val hold = el.handlers["onHold"]
+    val holdDrag = el.handlers["onHoldDrag"]
+    val drop = el.handlers["onDrop"]
+    if (LocalWidgetScreen.current && (hold != null || holdDrag != null || drop != null)) {
+        m =
+            m.pointerInput(el, p.env) {
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { o -> hold?.let { fire(it, o.x, o.y) } },
+                    // A drag that is taken away (the screen closed under the finger) is dropped too, so nothing stays lifted.
+                    onDragEnd = { drop?.let { fire(it) } },
+                    onDragCancel = { drop?.let { fire(it) } },
+                ) { change, drag ->
+                    change.consume()
+                    holdDrag?.let { fire(it, drag.x, drag.y, change.position.x, change.position.y) }
+                }
+            }
     }
     return m
 }

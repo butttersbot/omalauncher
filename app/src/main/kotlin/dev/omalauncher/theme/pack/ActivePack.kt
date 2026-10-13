@@ -56,6 +56,16 @@ object PackRegistry {
                 PackOption(id, if (load.error == null) load.pack.name else id, load)
             }
 
+    /**
+     * The looks offered in the pickers. Console is left out: it is the built-in base every look falls back
+     * to, not one Boss picks. It is still offered while it is the one in use (so the picker shows what is
+     * drawn), and when there is nothing else.
+     */
+    fun offered(
+        options: List<PackOption>,
+        picked: String,
+    ): List<PackOption> = options.filter { it.id != ConsolePack.ID || picked == ConsolePack.ID }.ifEmpty { options }
+
     /** Loads the pack [id]; null for Console or a folder that isn't there. Never throws. */
     fun load(
         id: String,
