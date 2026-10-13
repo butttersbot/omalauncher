@@ -26,4 +26,16 @@ class LockPaperTest {
     @Test fun aLookThatLeavesThePageToTheSystemHasNoPaperToGive() {
         assertFalse(LockPaper.wanted(true, PageKind.System, emptySet(), cover))
     }
+
+    @Test fun theScrapsKeepClearOfSamsungsClockAndShortcuts() {
+        // Folded: the clock is in the top third and the shortcuts in the bottom tenth.
+        val cover = LockPaper.scraps(1248, 1972)
+        assertEquals(2, cover.size)
+        assertTrue(cover.all { it.top >= 1972 * 0.45f && it.bottom <= 1972 * 0.80f && it.left >= 0f && it.right <= 1248f })
+        // Unfolded they stand to the right, where the clock is not.
+        val inner = LockPaper.scraps(2448, 1848)
+        assertTrue(inner.all { it.left >= 2448 * 0.5f && it.right <= 2448f && it.bottom <= 1848 * 0.75f })
+        assertEquals(1, cover.count { it.taped })
+        assertEquals(1, cover.count { it.alt })
+    }
 }

@@ -265,8 +265,8 @@ class ThemeStore(
     }
 
     /**
-     * Whether the lock screen's wallpaper follows the look. Turned on, the display in use gets the look's paper
-     * now. Turned off, the lock screen keeps what it has: the wallpaper it had before is not ours to put back.
+     * Whether the phone's lock and home wallpapers follow the look. Turned on, the display in use gets the look's
+     * paper now. Turned off, they keep what they have: the wallpapers they had before are not ours to put back.
      */
     fun setLockFollowsLook(on: Boolean) {
         LauncherStyle.lockFollowsLook = on
@@ -281,7 +281,8 @@ class ThemeStore(
      */
     fun syncLockPaper() {
         val pick = ActivePack.pick
-        val page = ActivePack.pack.page
+        val pack = ActivePack.pack
+        val page = pack.page
         val bounds = context.getSystemService(android.view.WindowManager::class.java).maximumWindowMetrics.bounds
         val key = LockPaper.key(pick.id, bounds.width(), bounds.height())
         val done = prefs.getStringSet(LOCK_DONE, emptySet()).orEmpty().filter { it.startsWith("${pick.id}|") }.toSet()
@@ -294,8 +295,9 @@ class ThemeStore(
         scope.launch(Dispatchers.IO) {
             val set =
                 runCatching {
-                    val paper = LockPaper.render(page, wallpapers, bounds.width(), bounds.height(), density)
-                    WallpaperManager.getInstance(context).setBitmap(paper, null, true, WallpaperManager.FLAG_LOCK)
+                    val paper = LockPaper.render(pack, wallpapers, bounds.width(), bounds.height(), density)
+                    // Home's too: it shows behind recents, and the system's color palette is taken from it.
+                    WallpaperManager.getInstance(context).setBitmap(paper, null, true, WallpaperManager.FLAG_LOCK or WallpaperManager.FLAG_SYSTEM)
                     paper.recycle()
                 }.onFailure { Log.w(TAG, "lock paper $key", it) }.isSuccess
             withContext(Dispatchers.Main) {
@@ -647,7 +649,8 @@ class ThemeStore(
         private const val BARE_APP_ICONS = "bare_app_icons"
         private const val RECENT_APPS = "recent_apps"
         private const val LOCK_FOLLOWS = "lock_follows_look"
-        private const val LOCK_DONE = "lock_paper_done"
+        // Renamed when what is set changed (the home wallpaper too, and scraps on the paper), so it is set again once.
+        private const val LOCK_DONE = "lock_paper_done_2"
         private const val CORNERS = "corners"
         private const val PACK = "pack"
 
