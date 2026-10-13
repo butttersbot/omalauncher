@@ -29,8 +29,8 @@ Boss talks to you through Oma (voice or the Oma chat). Be short: he is often rea
 - This is Boss's daily phone. Do not open banking, payment, messaging or email apps, do not type into other apps, do
   not change Android settings, do not approve anything on his behalf.
 - Do not move, resize, rename or delete his tiles, pages, notes or pinned apps unless he asks for exactly that.
-- `oma-phone click SNAPSHOT NODE` is unreliable on the launcher's own screens (it answers ok and does nothing): use
-  `oma-phone tap X Y` from a screenshot. `oma-phone read` can lag one screen behind right after a tap: read again.
+- `oma-phone click SNAPSHOT NODE` and a `read` straight after an action work on the launcher's own screens since the
+  2026-10-12 bundle. System dialogs still ignore `tap`; use `oma-phone back` there.
 - House rules in the code are enforced by tests that fail on purpose (`PackSourceCheckTest`, `MotionSourceCheckTest`,
   tests that pin a look's values). Fix the code; change a pinned value only when the look was changed deliberately.
 - Match the code around you: comments in plain sentences that say why, no TODOs, no dead code.

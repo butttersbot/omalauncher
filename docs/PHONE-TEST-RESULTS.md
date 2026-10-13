@@ -1,5 +1,14 @@
 # Phone test results
 
+## Latest: the bundle is on the real launcher (2026-10-12, 17:06–17:15 PDT)
+- `oma-install --status`: "In-place launcher update verified."
+- FAIL (new, after the update): phone control came back disconnected. `oma-phone status` said active false, connected false; `dumpsys accessibility` listed dev.omalauncher.boss/.phone.PhoneService under "Enabled services" and "Crashed services" with nothing bound, for at least a minute. The earlier promotions today reconnected by themselves. No crash was in the log by then (it had rolled over), so whether the new service crashed on its first bind or Android just did not rebind it after the package update is not known. The phone then restarted itself for a security update, and after that it was connected and active. Watch this on the next promotion.
+- PASS — `oma-phone click` on the dock's "All apps" node opened the app list; on the list's gear node opened settings; on the close node closed it. These did nothing before.
+- PASS — `oma-phone read` straight after each of those returned the new screen ("ALL APPS | CLOSE ↓ ...", then "settings ...", then home), not the previous one.
+- PASS — a 3000 ms `oma-phone swipe` is accepted (the limit was 2000).
+- NOT seen yet: `page "Page 2"` turning on the cover screen (phone is open), the voice confirm step and a chat follow-up (Boss's to try), the status bar after a fold, the cover screen's nine drawing keys.
+- End state: home, riso, no menu open. Screen timeout is still set to never (was 30000 ms).
+
 ## Latest: the bundle is being promoted (2026-10-12, about 17:10 PDT)
 - Boss said "promote". Running `oma-try` as the last step of this run; the result is NOT known from this run.
 - Next, in a new request after Oma reopens: `oma-install --status`; then try what could not be seen before promotion: `oma-phone click` on the dock's "All apps" and `read` straight after a tap, `page "Page 2"` on the cover screen, a swipe longer than 2 s, the voice confirm step, a follow-up sent while a task runs, the status bar after a fold. Then discuss next steps with Boss (Cove's picture stickers are one candidate).
