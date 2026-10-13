@@ -359,7 +359,7 @@ object PhoneBoard {
         val notes = marks?.notes.orEmpty().sortedBy { it.z }
         output.put("notes", JSONArray(notes.map { placed(it.box()).put("id", it.id).put("author", it.author.id).put("text", noteText(it.text, TEXT_SHOWN)) }))
         // A picture sticker is told by what its picture is called, as it has no kind of its own.
-        output.put("stickers", JSONArray(marks?.stickers.orEmpty().map { s -> placed(s.taken()).put("id", s.id).put("kind", if (s.picture == null) s.kind.id else PICTURE_STICKER).putOpt("name", s.picture?.name) }))
+        output.put("stickers", JSONArray(marks?.stickers.orEmpty().map { s -> placed(s.taken()).put("id", s.id).put("kind", if (s.picture == null) s.kind.id else PICTURE_STICKER).putOpt("name", s.picture?.name).put("size", (s.size * 100).roundToInt()).put("turn", s.turn) }))
         output.put("free", JSONArray(board.free(marks?.scraps().orEmpty()).map(::cellsJson)))
         if (marks == null) output.put("note", "This page's notes and stickers can't be read, so none are listed and free counts tiles only.")
         return output

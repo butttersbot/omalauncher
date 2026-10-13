@@ -3,12 +3,14 @@
 set -euo pipefail
 command=${1:-help}
 shift || true
+expect=0
 case "$command" in
 help)
   cat <<'HELP'
 oma-phone apps | open PACKAGE_OR_settings
 oma-phone status | read | screenshot | back | home | recents | notifications | stop
 oma-phone screen [--until TEXT]
+oma-phone expect TEXT
 oma-phone press [--in PACKAGE] LABEL
 oma-phone fill [--in PACKAGE] LABEL TEXT
 oma-phone pages | page NAME | where WIDGET_FILE
@@ -47,6 +49,9 @@ answers with the screen that follows: one call per step, no numbers read off a p
 same for a text field, found by its hint or contents; LABEL "" is the screen's only text field.
 --in PACKAGE refuses unless that app is in front. Two controls that answer to
 LABEL are never chosen between: the error lists their ids for click or type.
+expect waits up to 5 seconds for TEXT to show and fails if it does not, so steps can be chained and
+stop at the first screen that is not the one meant:
+  oma-phone press --in PACKAGE "Search" && oma-phone fill "" "milk" && oma-phone expect "results"
 Prefer press, fill and screen. Use read, click, tap and screenshot when they are not enough.
 Works automatically after Accessibility is enabled, on an unlocked phone.
 Stop pauses access until the user resumes it.
@@ -56,6 +61,10 @@ click|type|scroll)
   [ "$#" -ge 2 ] || { echo 'Snapshot and node id required' >&2; exit 2; }
   request=$(jq -cn --arg command "$command" --arg snapshot "$1" --arg id "$2" --arg value "${3:-}" \
     '{command:$command,snapshot:$snapshot,id:$id} + (if $command=="type" then {text:$value} elif $command=="scroll" then {direction:(if $value=="" then "forward" else $value end)} else {} end)');;
+expect)
+  [ "$#" -ge 1 ] || { echo 'Text required' >&2; exit 2; }
+  expect=1
+  request=$(jq -cn --arg until "$*" '{command:"screen",until:$until}');;
 screen)
   until=''
   if [ "${1:-}" = '--until' ]; then until=${2:?Text required: --until TEXT}; shift 2; fi
@@ -132,3 +141,5 @@ response=$(curl --silent --show-error --max-time 12 --abstract-unix-socket '__SO
 }
 printf '%s\n' "$response" | jq .
 printf '%s\n' "$response" | jq -e '.ok == true' >/dev/null
+# expect fails when the words did not show, so a chain of steps stops there.
+if [ "$expect" = 1 ]; then printf '%s\n' "$response" | jq -e '.shows == true' >/dev/null || { echo 'Not on screen after waiting.' >&2; exit 1; }; fi
