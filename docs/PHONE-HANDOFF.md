@@ -3,9 +3,9 @@
 For the agent on the Fold (Oma), when Boss works with no Mac in the loop. Written 2026-10-12 by the Mac session.
 Boss talks to you through Oma (voice or the Oma chat). Be short: he is often reading on the move.
 
-## Where things stand (checkpoint 2026-10-12, about 20:45 PDT, written by the Mac session)
+## Where things stand (checkpoint 2026-10-12, about 21:10 PDT, written by the Mac session)
 - This checkout: `/root/Projects/omalauncher`, branch `phone/fold-development`. `git pull --ff-only` first.
-- Installed: the real launcher `dev.omalauncher.boss`, versionCode 37 (commit 0934c31), and the throwaway
+- Installed: the real launcher `dev.omalauncher.boss`, versionCode 38 (commit 44370bb), and the throwaway
   `dev.omalauncher.dev` ("Oma Dev": every entry says Dev, magenta icon), older. You are running inside the real one.
 - The goal of the project: make the launcher match the agreed prototypes in `design/` one-to-one. Status and
   information surfaces are placeable widgets, not always-on chrome. No Oma button in the dock.
@@ -14,18 +14,22 @@ Boss talks to you through Oma (voice or the Oma chat). Be short: he is often rea
   packs placed, resized, turned and carried, the voice confirm step (Send, Add more, Cancel), follow-ups (Boss),
   plain words on the oma tile and in the task notification, numbered lists in a column, the sticker picker's scrim
   over the bars, no hint on an empty page. NOT seen: the answer card's plain words, a voice request over seven lines,
-  any of it on the inner screen.
+  the "phone control disconnected" state of the oma tile. Seen on the inner screen too (20:30–20:50): home, the
+  chat with Markdown, the answer card in plain words, the listening screen, the nine drawing keys, the sticker
+  picker with its scrim, and the sticker, page and look commands.
 - Phone control by what controls say (versionCode 35 on): `oma-phone screen`, `press`, `fill`, with
   `--in PACKAGE`, and `expect` (37 on). And by name on home (36 on): `stickers`, `stick`, `sticker ID turn|size|move|remove`, `page-add`,
-  `page-rename`, `page-delete` (empty pages only); `board` gives every note and sticker an id. Run by you on a
+  `page-rename`, `page-delete` (empty pages only), `looks` and `look NAME` (38 on); `board` gives every note and
+  sticker an id, size and turn, and a changed sticker's answer says `clear:false` when it lies on something. Run by you on a
   throwaway page on 2026-10-12: all passed; 70–150 ms a sticker, page or board call, about 550 ms a press or fill. Use these, not taps aimed off a screenshot.
 - Phone control after an update: Android can leave the service switched on and never bound. `oma-install`'s job now
   waits 20 seconds and turns it off and on if so; `oma-install --status` says BOUND, HEALED or STILL_DISCONNECTED.
   Seen healing a stuck update once (19:29). The launcher also tells: `oma-phone status` has `link`, and the oma tile
   reads "needs attention" with the remedy when it is disconnected between tasks (that tile state is not yet seen).
-- Stickers: 79 pictures on the phone in the guest's `~/.config/omalauncher/stickers/` (cove 12, pepe-blanket 20,
-  donut-frog 26, rabbit-shark 21), copied from ClaudeSync `projects/pond`. They are on the phone only, not in Git.
-  The folder is inside the Linux root: reinstalling Linux empties it; stickers already placed keep their own copies.
+- Stickers: 79 pictures (cove 12, pepe-blanket 20, donut-frog 26, rabbit-shark 21), copied from ClaudeSync
+  `projects/pond`. On the phone only, not in Git. Since versionCode 38 the library is the launcher's own
+  `files/sticker-library`, bound into the guest as `~/.config/omalauncher/stickers`: it outlives a reinstall of
+  Linux. The move was checked file by file (79 of 79, same checksums).
 - Changed on the phone for Boss, to put back when he says: screen timeout is set to never (`settings put system
   screen_off_timeout 2147483647`; it was 30000).
 - Tailscale on the phone does not come back by itself after a restart; opening the Tailscale app reconnects it.
@@ -62,18 +66,22 @@ Boss talks to you through Oma (voice or the Oma chat). Be short: he is often rea
 ## Next, in order (ask Boss which, if he hasn't said)
 1. The Mac session can run commands in this Linux through the debug door, with `tools/fold-development/oma-mac`
    on the Mac. The door needs a key since versionCode 37 and is shut unless the Mac has opened it; never create
-   `allow-debug-exec` yourself. Boss is holding the Jev pilot.
-2. Open from the 2026-10-12 runs: `sticker size` can grow one over its neighbours (only `stick` places clear);
-   `sticker ID remove` given a note's id on the note's own page is refused in a unit test, and was not tried on the
-   phone; the dock on the cover screen now starts with btop, cause not known.
-3. Not started: a command to set the look.
-4. Move the sticker library out of the Linux root so it survives a reinstall (`linux/Proot.kt`, `LauncherData.kt`, a bind
-   like the widgets folder). Cove's papers, images and backgrounds (17 in the art bank) have no place here yet.
-5. Small: MarkdownText.kt is not in PackSourceCheckTest's converted list; a carried note leaves a shrinking ghost on
-   the page it left.
-6. Compare the cover display with `design/oma-scrapbook-prototype.html` side by side (never print lines 53-54 of that file
-   whole: they are huge embedded images). The cover-screen checks pass, but that comparison has not been done.
-7. Later, parked by Boss: first-run setup offering looks instead of Omarchy themes (`ui/Setup.kt`); text sizes on the
+   `allow-debug-exec` yourself. Since 38 it is a broadcast, so a command brings nothing to the front. Boss is
+   holding the Jev pilot.
+2. Built and on the launcher but not seen: a carried note no longer shrinking away on the page it left (unit test
+   only); `clear:false` after a sticker is grown over another (unit test only; the one try on the phone did not
+   overlap); the oma tile's disconnected state. The dock fills up with recently opened apps when fewer are pinned
+   than fit (ui/Dock.kt), which is why btop led it after a test opened btop: as built, not a fault.
+3. Cove's papers, images and backgrounds (17 in the art bank) have no place here yet.
+4. Compared with `design/oma-scrapbook-prototype.html` in riso on 2026-10-12 (rendered on the Mac beside the
+   phone's screenshots, by eye, not pixel by pixel). Alike: the dotted paper, tilted tiles with the blue line and
+   pink offset, the handwritten page name top left, the dock's icons then "↑" outlined and "✎" filled, heavy display
+   numerals, spaced capitals, the open pair with one dock across. Different: the prototype draws its own status
+   line in the look's ink and a gesture pill, the phone has Samsung's status bar and three-button bar; the
+   prototype's scraps are freer (overlapping, varied, tape on most), the phone's tiles sit on the grid and only the
+   terminal has tape; the prototype's open dock has a terminal key in the look's style. Never print lines 53-54 of
+   that file whole: they are huge embedded images.
+5. Later, parked by Boss: first-run setup offering looks instead of Omarchy themes (`ui/Setup.kt`); text sizes on the
    prototype's scale.
 
 ## Decisions that are Boss's, not yours
