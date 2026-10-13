@@ -14,10 +14,11 @@ class LockStarShareTest {
     @Test fun anEmptyCellHoldsNothingAndALayoutIsCounted() {
         // What LockStar answered on the Fold when no item was asked for by name.
         assertEquals(0, LockStarShare.summary("""{"category":"com.samsung.android.gts.category.DEFAULT","items":[],"version":1}""").getInt("items"))
-        val told = LockStarShare.summary("""{"items":[{"key":"lock_star","value":"abcdef","tags":{"device_type":"Fold"},"embeddedItems":{"/a":{},"/b":{}}}]}""")
+        // The shape of a real capture from the Fold (2026-10-12), cut down: the layout is JSON inside a string.
+        val told = LockStarShare.summary("""{"items":[{"item_key":"lock_star","item_value":"{\"items\":[{},{},{}]}","item_tags":{"device_type":"FOLD"},"item_embedded_items":{"/a":{},"/b":{}}}]}""")
         assertEquals(1, told.getInt("items"))
-        assertEquals(6, told.getInt("layoutChars"))
+        assertEquals(3, told.getInt("layoutItems"))
         assertEquals(2, told.getInt("files"))
-        assertEquals("Fold", told.getString("device"))
+        assertEquals("FOLD", told.getString("device"))
     }
 }

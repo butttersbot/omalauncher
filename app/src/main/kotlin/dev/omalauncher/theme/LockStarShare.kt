@@ -37,9 +37,12 @@ object LockStarShare {
         val out = JSONObject().put("items", items?.length() ?: 0)
         for (i in 0 until (items?.length() ?: 0)) {
             val item = items!!.getJSONObject(i)
-            if (item.optString("key") != ITEM) continue
-            out.put("layoutChars", item.optString("value").length).put("files", item.optJSONObject("embeddedItems")?.length() ?: item.optJSONObject("embedded_items")?.length() ?: 0)
-            item.optJSONObject("tags")?.optString("device_type")?.takeIf { it.isNotEmpty() }?.let { out.put("device", it) }
+            // The field names are the share format's own, as LockStar 9.0 writes them.
+            if (item.optString("item_key") != ITEM) continue
+            val layout = item.optString("item_value")
+            out.put("layoutChars", layout.length).put("files", item.optJSONObject("item_embedded_items")?.length() ?: 0)
+            runCatching { JSONObject(layout).optJSONArray("items")?.length() }.getOrNull()?.let { out.put("layoutItems", it) }
+            item.optJSONObject("item_tags")?.optString("device_type")?.takeIf { it.isNotEmpty() }?.let { out.put("device", it) }
         }
         return out
     }
