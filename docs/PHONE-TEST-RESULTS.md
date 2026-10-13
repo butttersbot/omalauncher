@@ -1,5 +1,10 @@
 # Phone test results
 
+## Latest: the bundle is being promoted (2026-10-12, about 17:10 PDT)
+- Boss said "promote". Running `oma-try` as the last step of this run; the result is NOT known from this run.
+- Next, in a new request after Oma reopens: `oma-install --status`; then try what could not be seen before promotion: `oma-phone click` on the dock's "All apps" and `read` straight after a tap, `page "Page 2"` on the cover screen, a swipe longer than 2 s, the voice confirm step, a follow-up sent while a task runs, the status bar after a fold. Then discuss next steps with Boss (Cove's picture stickers are one candidate).
+- Screen timeout is still set to never (was 30000 ms).
+
 ## Latest: drawing-tools keys and follow-ups in the Oma chat, added to the bundle (2026-10-12, 16:50–17:05 PDT)
 Commit add2e27. `oma-build`: PASS, 723 tests, 0 failures. Nothing promoted.
 - Drawing tools row (ui/Ink.kt, ui/Notes.kt, annotations): nine keys now: pen, highlighter, eraser, sticky note, sticker, text, undo, redo, close. New `NoteRole.Text` ("text"): a note with no paper, in the page's ink. A page file with a text note cannot be read by a build older than this one. The keys shrink together when nine do not fit the row (cover screen). Adding any of the three ends drawing, since nothing on the page can be moved or typed in while a finger draws.
