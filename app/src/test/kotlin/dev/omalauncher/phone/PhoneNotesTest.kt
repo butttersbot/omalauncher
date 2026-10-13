@@ -78,7 +78,7 @@ class PhoneNotesTest {
         }
         // It writes on home: it is not one of the commands that only look.
         assertFalse(PhoneNotes.COMMAND in PhoneControlPolicy.whilePending)
-        assertEquals(setOf("read", "apps", "screenshot"), PhoneControlPolicy.whilePending)
+        assertEquals(setOf("read", "screen", "apps", "screenshot"), PhoneControlPolicy.whilePending)
         assertThrows(IllegalStateException::class.java) { PhoneControlPolicy.requireNoPendingApproval(1, "note") }
     }
 

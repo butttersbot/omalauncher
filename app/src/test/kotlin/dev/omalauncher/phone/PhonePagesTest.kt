@@ -84,7 +84,7 @@ class PhonePagesTest {
 
     // The order of the gates.
 
-    private val everyCommand = listOf("apps", "open", "read", "screenshot", "click", "type", "scroll", "tap", "swipe", "back", "home", "recents", "notifications", "pages", "page", "where", "board", "unknown", "")
+    private val everyCommand = listOf("apps", "open", "read", "screen", "screenshot", "click", "type", "scroll", "press", "fill", "tap", "swipe", "back", "home", "recents", "notifications", "pages", "page", "where", "board", "unknown", "")
 
     /** What [PhoneRequests.admit] consulted, in order, and what came of it. */
     private fun admitted(
@@ -160,8 +160,9 @@ class PhonePagesTest {
         assertFalse(head.contains("command =="))
         assertFalse(head.contains("command in"))
         assertFalse(service.contains("requireNoPendingApproval"))
-        // Besides admit's, only what answers later asks again as it does: the screenshot, and a read put off while the screen settles.
-        assertEquals(3, service.split("PhoneAccess.requireAccess(").size - 1)
+        // Besides admit's, only what answers later asks again as it does: the screenshot, a read put off while the
+        // screen settles, each look of `screen`, and the screen read back after a press or a fill.
+        assertEquals(5, service.split("PhoneAccess.requireAccess(").size - 1)
     }
 
     /** Home as the commands see it, recording what they turned to. */
