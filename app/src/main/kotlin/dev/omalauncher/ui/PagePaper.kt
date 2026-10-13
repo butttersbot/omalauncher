@@ -73,7 +73,7 @@ fun PagePaper(modifier: Modifier = Modifier) {
 }
 
 /** One repeat of [page]'s pattern on a clear ground, [density] pixels to the dp. */
-private fun patternTile(
+internal fun patternTile(
     page: PackPage,
     density: Float,
 ): ImageBitmap {

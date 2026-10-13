@@ -109,6 +109,7 @@ fun StyleScreen(
             if (StyleChoice.HomeApps in choices) {
                 StyleOption("home apps", listOf("boxed", "icon only"), if (LauncherStyle.bareAppIcons) 1 else 0) { store.setBareAppIcons(it == 1) }
             }
+            StyleOption("lock screen", listOf("as it is", "look's paper"), if (LauncherStyle.lockFollowsLook) 1 else 0) { store.setLockFollowsLook(it == 1) }
             if (StyleChoice.RecentApps in choices) {
                 StyleOption("recent apps", listOf("shown", "hidden"), if (LauncherStyle.recentApps) 0 else 1) { store.setRecentApps(it == 0) }
             }

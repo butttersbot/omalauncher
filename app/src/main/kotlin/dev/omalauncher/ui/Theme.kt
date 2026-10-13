@@ -160,6 +160,9 @@ object LauncherStyle {
     /** The strip of recently used apps above the bar on home. */
     var recentApps by mutableStateOf(true)
 
+    /** The lock screen's wallpaper is the look's paper, set again whenever another look is picked. */
+    var lockFollowsLook by mutableStateOf(false)
+
     /** How frames (tiles, panels, menus, fields) round their corners. */
     var corners by mutableStateOf(Corners.Edge)
 

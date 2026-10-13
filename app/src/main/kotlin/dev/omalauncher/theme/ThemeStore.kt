@@ -32,6 +32,7 @@ import dev.omalauncher.theme.pack.PackPick
 import dev.omalauncher.theme.pack.PackRegistry
 import dev.omalauncher.theme.pack.PackSource
 import dev.omalauncher.theme.pack.readCapped
+import dev.omalauncher.theme.pack.PageKind
 import dev.omalauncher.ui.ActivePack
 import dev.omalauncher.ui.Corners
 import dev.omalauncher.ui.LauncherStyle
@@ -167,6 +168,7 @@ class ThemeStore(
         LauncherStyle.monochromeIcons = prefs.getBoolean(MONO_ICONS, false)
         LauncherStyle.bareAppIcons = prefs.getBoolean(BARE_APP_ICONS, false)
         LauncherStyle.recentApps = prefs.getBoolean(RECENT_APPS, true)
+        LauncherStyle.lockFollowsLook = prefs.getBoolean(LOCK_FOLLOWS, false)
         LauncherStyle.corners = Corners.of(prefs.getString(CORNERS, null))
         usePack(PackRegistry.choose(prefs.getString(PACK, DEFAULT_PACK), ::packSource))
     }
@@ -217,6 +219,7 @@ class ThemeStore(
                 if (ActivePack.pick === pick) {
                     ActivePack.fonts = fonts
                     ActivePack.wallpapers = wallpapers
+                    syncLockPaper()
                 }
             }
         }
@@ -260,6 +263,50 @@ class ThemeStore(
         LauncherStyle.monochromeIcons = on
         prefs.edit().putBoolean(MONO_ICONS, on).apply()
     }
+
+    /**
+     * Whether the lock screen's wallpaper follows the look. Turned on, the display in use gets the look's paper
+     * now. Turned off, the lock screen keeps what it has: the wallpaper it had before is not ours to put back.
+     */
+    fun setLockFollowsLook(on: Boolean) {
+        LauncherStyle.lockFollowsLook = on
+        prefs.edit().putBoolean(LOCK_FOLLOWS, on).remove(LOCK_DONE).apply()
+        syncLockPaper()
+    }
+
+    /**
+     * Gives the lock screen of the display in use the look's paper, if it is to follow the look and doesn't
+     * have it yet. Called when a look is picked and whenever home shows, which is when the other display of a
+     * fold first comes by. Main thread; the drawing and the setting are done off it.
+     */
+    fun syncLockPaper() {
+        val pick = ActivePack.pick
+        val page = ActivePack.pack.page
+        val bounds = context.getSystemService(android.view.WindowManager::class.java).maximumWindowMetrics.bounds
+        val key = LockPaper.key(pick.id, bounds.width(), bounds.height())
+        val done = prefs.getStringSet(LOCK_DONE, emptySet()).orEmpty().filter { it.startsWith("${pick.id}|") }.toSet()
+        if (!LockPaper.wanted(LauncherStyle.lockFollowsLook, page.kind, done, key) || key in lockSetting) return
+        // A look whose paper is its own image waits for that image; it comes back here once it is read.
+        val wallpapers = ActivePack.wallpapers
+        if (page.kind == PageKind.Wallpaper && wallpapers.cover == null && wallpapers.inner == null) return
+        lockSetting += key
+        val density = context.resources.displayMetrics.density
+        scope.launch(Dispatchers.IO) {
+            val set =
+                runCatching {
+                    val paper = LockPaper.render(page, wallpapers, bounds.width(), bounds.height(), density)
+                    WallpaperManager.getInstance(context).setBitmap(paper, null, true, WallpaperManager.FLAG_LOCK)
+                    paper.recycle()
+                }.onFailure { Log.w(TAG, "lock paper $key", it) }.isSuccess
+            withContext(Dispatchers.Main) {
+                lockSetting -= key
+                if (set) prefs.edit().putStringSet(LOCK_DONE, done + key).apply()
+            }
+        }
+    }
+
+    /** The displays whose lock paper is being set now, so one isn't set twice at once. Main thread. */
+    private val lockSetting = HashSet<String>()
 
     fun setBareAppIcons(on: Boolean) {
         LauncherStyle.bareAppIcons = on
@@ -599,6 +646,8 @@ class ThemeStore(
         private const val MONO_ICONS = "mono_icons"
         private const val BARE_APP_ICONS = "bare_app_icons"
         private const val RECENT_APPS = "recent_apps"
+        private const val LOCK_FOLLOWS = "lock_follows_look"
+        private const val LOCK_DONE = "lock_paper_done"
         private const val CORNERS = "corners"
         private const val PACK = "pack"
 

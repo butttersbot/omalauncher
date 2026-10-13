@@ -150,6 +150,8 @@ class MainActivity : ComponentActivity() {
         removeStaleWindowTasks()
         // The user may have set or replaced the wallpaper while we were in the background.
         lifecycleScope.launch { runtime.themes.refreshLiveWallpaper() }
+        // Folded or unfolded since: the display now in use may not have the look's paper on its lock screen yet.
+        runtime.themes.syncLockPaper()
     }
 
     /** Drops Recents cards whose Linux window no longer exists (app exited or process restarted). */
