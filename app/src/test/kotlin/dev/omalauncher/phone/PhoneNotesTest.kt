@@ -321,7 +321,9 @@ class PhoneNotesTest {
     @Test fun theAgentIsToldOfTheNoteInOneSentence() {
         val told = PhoneBridge.INSTRUCTIONS.lines().filter { it.contains("oma-phone note") }
         assertEquals(1, told.size)
-        assertTrue(told.single().contains("After finishing something the user asked for"))
+        // Boss, 2026-10-13: no note after every task; only when he asks for one.
+        assertTrue(told.single().contains("Only when the user asks for a sticky note"))
+        assertFalse(PhoneBridge.INSTRUCTIONS.contains("After finishing something"))
         assertTrue(told.single().contains("${AnnotationLimits.AGENT_TEXT} characters"))
         val script = moduleFile("src/main/assets/oma-phone.sh").readText()
         assertTrue(script.contains("oma-phone note [--near COL,ROW] TEXT"))

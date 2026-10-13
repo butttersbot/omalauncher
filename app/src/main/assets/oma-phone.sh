@@ -37,7 +37,7 @@ board says what is where on a home page (the one the request came from, or the o
 grid, each tile's cells, each note and sticker (page fractions and the cells it lies on), and
 free, the biggest empty rectangles of cells. It only looks. Run it before placing anything.
 note leaves a short sticky note (plain text, at most 280 characters) on the home page the request
-came from: after finishing something the user asked for, leave one saying what was done. It goes
+came from, only when the user asked for one: not to say what was done. It goes
 in free space by itself, never on a widget; the reply says which cells it lies on, and clear is
 false with a reason only when the page is full. --near COL,ROW (a cell from board) says where to
 start looking; the note still goes to the nearest clear place, not onto what is there.
