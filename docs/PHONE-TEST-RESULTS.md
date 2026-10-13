@@ -1,5 +1,10 @@
 # Phone test results
 
+## Latest: the chat scrolls to a message just sent (2026-10-12, 17:45 PDT)
+- Boss: a sent message ended up under the field and the keyboard. Cause: the thread is a reversed LazyColumn with keys and no scroll handling, so adding the new task kept the old newest one in view and put the new one below the edge.
+- Change (commit a180b2d, oma/OmaChatActivity.kt): the list has a state, and whenever the newest task changes it scrolls to it. Covers a message sent from the field, a follow-up, and one that came in by voice while the chat is open.
+- `oma-build`: PASS. NOT seen running: Oma Dev has no agent, so nothing can be sent there. In the next bundle, not promoted.
+
 ## Latest: rich text in the Oma chat and picture stickers, for the next bundle (2026-10-12, 17:26–17:42 PDT)
 Commit 0eee452. `oma-build`: PASS, 760 tests, 0 failures. Not promoted; the real launcher is on the earlier bundle.
 - Markdown in the chat (oma/Markdown.kt, MarkdownText.kt new; OmaChatActivity.kt): the agent's answers are parsed and drawn from the pack: headings, bold, italic, strikethrough, inline code, numbered and nested bullet lists, quotes, fenced code that scrolls sideways, pipe tables as a grid, links in the accent colour. His own messages, step lines, errors and "not sent" lines stay plain.
