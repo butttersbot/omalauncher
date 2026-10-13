@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
@@ -272,8 +273,12 @@ private fun OmaChatScreen(
                     }
                 }
             }
-            // Newest at the bottom, and it stays in view as the thread grows.
-            LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 6.dp), reverseLayout = true) {
+            // Newest at the bottom. A list keeps what is in view where it is when something is added, which would leave
+            // a message just sent below the edge, under the field and the keyboard: so a new one is scrolled to.
+            val thread = rememberLazyListState()
+            val newest = tasks.lastOrNull()?.time
+            LaunchedEffect(newest) { if (newest != null) thread.scrollToItem(0) }
+            LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 6.dp), state = thread, reverseLayout = true) {
                 if (tasks.isEmpty()) {
                     item {
                         BasicText(
