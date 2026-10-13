@@ -1,6 +1,19 @@
 # Phone test results
 
-## Latest: one Oma, routed automatically (2026-10-13, about 16:20 PDT, commit f95ba46) — NOT promoted, NOT seen on a screen
+## Latest: the front agent timed and its routing counted (2026-10-13, about 17:10 PDT) — no code changed
+
+Run in the guest with the real instructions from `quickSystemPrompt()`, a board, and the real flags (scripts in /tmp, not kept).
+- Model is `claude-haiku-5-5`. Time to a decision, fresh or resumed: 1.4 to 2.6 s, of which 0.8 to 1.4 s is Claude
+  Code starting. The 5 to 7 s reported earlier was measured while the subagent itself was working on the phone.
+  So keeping the process alive would save about a second; not built.
+- Reasoning: none on a plain question; a short thinking block before a tool call. `--effort low`,
+  `MAX_THINKING_TOKENS=0`, `alwaysThinkingEnabled:false` and `CLAUDE_CODE_DISABLE_THINKING=1` did not remove it.
+- Routing, 12 requests x 2 boards x 3 runs, three times over (216 runs): 5 wrong, every one a plain question
+  ("capital of France", "thanks in Korean") handed to build; no build request was ever answered by the front agent.
+  One added sentence to the instructions did not lower it, so the instructions are as they were.
+- Still not seen on a screen, still not promoted.
+
+## Earlier: one Oma, routed automatically (2026-10-13, about 16:20 PDT, commit f95ba46) — NOT promoted, NOT seen on a screen
 
 Boss's word: he will not pick a lane; he talks to one agent and it must route itself.
 - Every typed request, and a spoken one with no screenshot, goes first to the front agent (`claude -p --model haiku`,
