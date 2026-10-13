@@ -31,7 +31,7 @@ import kotlin.math.roundToInt
  */
 object PhoneRequests {
     /** Who handles an admitted request. */
-    enum class Route { Status, Stop, Pages, Board, Note, Stickers, PageEdits, Screenshot, Control }
+    enum class Route { Status, Stop, Pages, Board, Note, Stickers, PageEdits, Looks, Screenshot, Control }
 
     /**
      * Runs the checks for [command] in order and says who handles it; throws what the first failing check
@@ -55,6 +55,7 @@ object PhoneRequests {
             PhoneNotes.COMMAND -> Route.Note
             PhoneStickers.COMMAND -> Route.Stickers
             PhonePageEdits.COMMAND -> Route.PageEdits
+            PhoneLooks.COMMAND -> Route.Looks
             "screenshot" -> Route.Screenshot
             else -> Route.Control
         }
@@ -493,10 +494,13 @@ object PhoneStickers {
         answering(reply) {
             val sticker = marks?.stickers?.firstOrNull { it.id == id } ?: error("The sticker is not on that page any more.")
             val box = sticker.taken()
+            // Where it now lies on a tile or on another note or sticker, the answer says so: it was asked for, and is not refused.
+            val others = board.tiles.map { board.box(it.cell) } + marks?.notes.orEmpty().map { it.box() } + marks?.stickers.orEmpty().filter { it.id != id }.map { it.taken() }
             reply(
                 JSONObject().put("ok", true).put("page", pad.name(page) ?: "").put("id", id)
                     .put("kind", if (sticker.picture == null) sticker.kind.id else PhoneBoard.PICTURE_STICKER).putOpt("name", sticker.picture?.name)
-                    .put("size", (sticker.size * 100).roundToInt()).put("turn", sticker.turn).put("cells", cellsJson(board.cells(box))),
+                    .put("size", (sticker.size * 100).roundToInt()).put("turn", sticker.turn).put("cells", cellsJson(board.cells(box)))
+                    .put("clear", others.none { it.overlap(box) > 0f }),
             )
         }
     }
@@ -652,6 +656,49 @@ object PhonePageEdits {
             }
             else -> error("Unknown page action: $action")
         }
+    }
+}
+
+/** The launcher's looks as the bridge's look command reaches them. Main thread. */
+interface LookPad {
+    /** The looks there are, by id, Console first. */
+    val looks: List<String>
+
+    /** The id of the look that is picked. */
+    val current: String
+
+    /** Draws the launcher from the look [id] from now on, and remembers it. */
+    fun pick(id: String)
+}
+
+/**
+ * The bridge's `look` command: which looks there are and which is picked, or, with a name, that look picked.
+ * A look changes how home is drawn and nothing else: no tile, note or page moves, and picking another puts it back.
+ */
+object PhoneLooks {
+    const val COMMAND = "look"
+
+    private val SPACES = Regex("[\\s_]+")
+
+    /** The look [asked] names, as it is said or as its id is written: "tiny magazine", "Tiny-Magazine". */
+    internal fun match(
+        looks: List<String>,
+        asked: String,
+    ): String? {
+        val want = asked.trim().lowercase().replace(SPACES, "-")
+        return looks.firstOrNull { it.lowercase() == want }
+    }
+
+    fun reply(
+        input: JSONObject,
+        pad: LookPad,
+    ): JSONObject {
+        val asked = input.optString("name")
+        if (asked.isNotBlank()) {
+            val id = match(pad.looks, asked) ?: error("No look is called \"$asked\". Looks: ${pad.looks.joinToString(", ")}. Nothing was changed.")
+            pad.pick(id)
+        }
+        return JSONObject().put("ok", true).put("look", pad.current).put("looks", JSONArray(pad.looks))
     }
 }
 

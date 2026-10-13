@@ -34,12 +34,19 @@ object LauncherData {
     /** Widget files. The guest sees ~/.config/omalauncher/widgets. */
     fun widgetsDir(context: Context) = File(context.filesDir, "widgets")
 
+    /**
+     * The owner's sticker pictures, to pick from. The guest sees ~/.config/omalauncher/stickers, where he and his
+     * agents put them; here they outlive a reinstall of Linux and are there without it.
+     */
+    fun stickersDir(context: Context) = File(context.filesDir, "sticker-library")
+
     /** Manifest of the launcher-side [dev.omalauncher.upgrade.Provisioner]; the guest's is managed.json. */
     const val LAUNCHER_MANIFEST = "launcher-managed.json"
     const val GUEST_MANIFEST = "managed.json"
 
     private const val OLD_OMARCHY = "arch/root/.local/share/omarchy"
     private const val OLD_WIDGETS = "arch/root/.config/omalauncher/widgets"
+    private const val OLD_STICKERS = "arch/root/.config/omalauncher/stickers"
 
     /**
      * Launchers before Linux was optional kept this data inside the rootfs.
@@ -50,6 +57,16 @@ object LauncherData {
         val files = context.filesDir
         move(File(files, OLD_OMARCHY), omarchyDir(context))
         if (move(File(files, OLD_WIDGETS), widgetsDir(context))) moveManifestEntries(files)
+        moveOver(File(files, OLD_STICKERS), stickersDir(context))
+    }
+
+    /** As [move], and an empty [to] made in passing (a look at the library before this ran) doesn't keep [from] where it is. */
+    private fun moveOver(
+        from: File,
+        to: File,
+    ): Boolean {
+        if (from.isDirectory && !from.list().isNullOrEmpty() && to.isDirectory && to.list().isNullOrEmpty()) to.delete()
+        return move(from, to)
     }
 
     /** Renames [from] to [to] if [from] is a real directory and [to] doesn't exist yet. */

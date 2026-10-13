@@ -101,18 +101,17 @@ class StickerBitmaps {
 
 /**
  * Where the launcher's stickers are: the library the owner fills, the copies of what he stuck, and their pixels.
- * The library is `~/.config/omalauncher/stickers` in the Linux guest's home, beside the widgets there, so he and
- * his agents put pictures in it as they write widgets. Without Linux there is no such home and no library: only
- * the built-in stickers are offered, and what was already stuck still shows, from the copies.
+ * The library is the launcher's own folder [dev.omalauncher.LauncherData.stickersDir], which the Linux guest sees
+ * as `~/.config/omalauncher/stickers`, beside the widgets there, so he and his agents put pictures in it as they
+ * write widgets. It is kept outside the Linux root: reinstalling Linux leaves it, and it is there without Linux.
  */
 class StickerShelf(
-    private val home: File,
-    private val config: File,
+    private val folder: File,
     val snapshots: StickerSnapshots,
     val bitmaps: StickerBitmaps = StickerBitmaps(),
 ) {
-    /** The library's folder, made if it isn't there; null while there is no guest home for it to be in. Not on the main thread. */
-    fun library(): File? = if (home.isDirectory) File(config, LIBRARY).also { it.mkdirs() }.takeIf { it.isDirectory } else null
+    /** The library's folder, made if it isn't there; null if it can't be. Not on the main thread. */
+    fun library(): File? = folder.also { it.mkdirs() }.takeIf { it.isDirectory }
 
     /**
      * The pictures to pick from, in their groups; those whose file is no image are left out. Null while there
@@ -136,10 +135,6 @@ class StickerShelf(
         BitmapFactory.decodeFile(file.path, bounds)
         return sized(bounds) != null
     }
-
-    companion object {
-        const val LIBRARY = "stickers"
-    }
 }
 
 /** The library as it was when looked at: its folder [dir] and the pictures in it. */
@@ -160,9 +155,6 @@ object HomeStickers {
     /** The shelf, made on first use: the copies are `annotations/stickers/` in the app's private files, beside the pages' files. */
     fun of(context: Context): StickerShelf {
         val app = context.applicationContext
-        return shelf ?: run {
-            val proot = (app as App).runtime.proot
-            StickerShelf(proot.home, proot.launcherConfig, StickerSnapshots(File(app.filesDir, "annotations/stickers"), ::measurePicture)).also { shelf = it }
-        }
+        return shelf ?: StickerShelf(dev.omalauncher.LauncherData.stickersDir(app), StickerSnapshots(File(app.filesDir, "annotations/stickers"), ::measurePicture)).also { shelf = it }
     }
 }

@@ -177,6 +177,15 @@ class PhoneStickersTest {
         assertThrows(IllegalStateException::class.java) { ask(home, "action" to "polish", "id" to "s1") }
     }
 
+    @Test fun aStickerGrownOverAnotherIsToldAsNotClear() {
+        val home = Home(listOf(Sticker("s1", StickerKind.Star, 0.3f, 0.3f, 0.1f), Sticker("s2", StickerKind.Heart, 0.5f, 0.3f, 0.1f)))
+        assertTrue(ask(home, "action" to "turn", "id" to "s1", "value" to "15").getBoolean("clear"))
+        // Grown to half the page's width it lies over its neighbour: done as asked, and said.
+        val grown = ask(home, "action" to "size", "id" to "s1", "value" to "50")
+        assertTrue(grown.getBoolean("ok"))
+        assertFalse(grown.getBoolean("clear"))
+    }
+
     @Test fun aNoteIsNeverTakenOffOrChangedByItsId() {
         // The owner's note on the very page asked about: its id is no sticker's, so the book is never asked.
         val home = Home(listOf(Sticker("s1", StickerKind.Star, 0.5f, 0.5f, 0.14f)), notes = listOf(StickyNote("n1", 0.1f, 0.1f, 0.44f, 0.16f, "call mum")))

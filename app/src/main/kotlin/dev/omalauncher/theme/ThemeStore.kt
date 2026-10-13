@@ -174,6 +174,12 @@ class ThemeStore(
     /** The theme packs shipped in the app's assets, by folder name. Console is built in and isn't one of them. */
     private val packIds: List<String> by lazy { runCatching { context.assets.list(PACKS).orEmpty().toList() }.getOrDefault(emptyList()) }
 
+    /** The looks there are, by id, Console first. */
+    val lookIds: List<String> get() = listOf(ConsolePack.ID) + packIds.filter { it != ConsolePack.ID }
+
+    /** The id of the look that is picked. */
+    val pickedPack: String get() = prefs.getString(PACK, DEFAULT_PACK) ?: DEFAULT_PACK
+
     /** Where the pack [id] is read from, or null when there is none. Only assets so far. */
     private fun packSource(id: String): PackSource? = if (id != ConsolePack.ID && id in packIds) AssetPackSource(context.assets, "$PACKS/$id") else null
 

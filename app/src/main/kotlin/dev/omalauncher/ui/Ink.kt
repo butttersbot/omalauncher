@@ -116,6 +116,22 @@ class Marks {
         }
     private var picked by mutableStateOf<Chosen?>(null)
 
+    /** Notes and stickers a finger carried off a page: they did not leave it to shrink away there, they went along. */
+    private val carried = HashSet<Chosen>()
+
+    internal fun carriedOff(
+        page: String,
+        id: String,
+    ) {
+        carried += Chosen(page, id)
+    }
+
+    /** Whether [id] was carried off [page]; true once. */
+    internal fun takeCarried(
+        page: String,
+        id: String,
+    ) = carried.remove(Chosen(page, id))
+
     /** Where the selected one's bar is, in its page's coordinates; taps there are the bar's. */
     internal var bar by mutableStateOf<IntRect?>(null)
 

@@ -250,6 +250,13 @@ class PhoneService : AccessibilityService() {
         // An empty page has nothing to move: its still goes with it, as when it is deleted in the overview.
         override fun delete(page: String) = runtime.widgets.deletePage(page, move = true)?.also { runtime.pageStills.drop(page) } != null
     }
+    /** The looks for the look command, picked as the style screen picks one. */
+    private fun lookPad() = object : LookPad {
+        private val themes = (application as dev.omalauncher.App).runtime.themes
+        override val looks get() = themes.lookIds
+        override val current get() = themes.pickedPack
+        override fun pick(id: String) = themes.pickPack(id)
+    }
     fun request(input: JSONObject, reply: (JSONObject) -> Unit) {
         try {
             val command = input.getString("command")
@@ -267,6 +274,8 @@ class PhoneService : AccessibilityService() {
             if (route == PhoneRequests.Route.Stickers) { PhoneStickers.reply(input, notePad(), stickerPad(), reply); return }
             // A page added, renamed, or deleted while it is empty, behind the same gates.
             if (route == PhoneRequests.Route.PageEdits) { PhonePageEdits.reply(input, notePad(), pagePad(), reply); return }
+            // The look home is drawn in, told or picked, behind the same gates.
+            if (route == PhoneRequests.Route.Looks) { reply(PhoneLooks.reply(input, lookPad())); return }
             if (route == PhoneRequests.Route.Screenshot) {
                 if (Build.VERSION.SDK_INT < 30) error("Screenshots require Android 11 or later.")
                 // The overlay is never in the agent's picture: it comes down first and goes back once the picture is taken.

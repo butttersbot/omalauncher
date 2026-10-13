@@ -209,6 +209,16 @@ class MotionTest {
 
     private fun note(id: String) = dev.omalauncher.widgets.annotations.Scrap.Note(dev.omalauncher.widgets.annotations.StickyNote(id, 0.1f, 0.1f, 0.3f, 0.2f, "milk"))
 
+    @Test fun whatAFingerCarriedToAnotherPageDoesNotShrinkAwayBehindIt() {
+        val leaving = ScrapsLeaving()
+        val a = note("a")
+        val b = note("b")
+        leaving.see(listOf(a, b), still = false)
+        // Both are missing now: a went to another page under a finger, b was taken off.
+        leaving.see(emptyList(), still = false) { it == "a" }
+        assertEquals(listOf(b), leaving.left)
+    }
+
     @Test fun whatIsTakenOffAPageShrinksAwayOnce() {
         val leaving = ScrapsLeaving()
         val a = note("a")

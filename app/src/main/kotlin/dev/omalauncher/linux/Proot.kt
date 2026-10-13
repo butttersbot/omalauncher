@@ -46,6 +46,7 @@ class Proot(
             "$GUEST_HOME/.local/share/omalauncher/attachments" to promptAttachments,
             "$GUEST_HOME/.local/share/omarchy" to LauncherData.omarchyDir(context),
             "$GUEST_HOME/.config/omalauncher/widgets" to LauncherData.widgetsDir(context),
+            "$GUEST_HOME/.config/omalauncher/stickers" to LauncherData.stickersDir(context),
             "$GUEST_HOME/.config/omarchy/themes" to LauncherData.userThemesDir(context),
             "$GUEST_HOME/.config/omarchy/backgrounds" to LauncherData.userBackgroundsDir(context),
         )

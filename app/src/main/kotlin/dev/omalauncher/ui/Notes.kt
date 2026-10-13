@@ -179,6 +179,7 @@ private suspend fun AwaitPointerEventScope.carry(
                     refused += to
                     continue
                 }
+                marks.carriedOff(on, id)
                 if (marks.selected == Chosen(on, id)) marks.selected = Chosen(to, landed)
                 on = to
                 id = landed
@@ -317,7 +318,7 @@ internal fun PageScraps(
     val on = book.on(page)
     // What was on the page when it was last composed: one that is gone since shrinks away instead of vanishing.
     val leaving = remember(book, page) { ScrapsLeaving() }
-    leaving.see(on.notes.map { Scrap.Note(it) } + on.stickers.map { Scrap.Stuck(it) }, Motion.reduced)
+    leaving.see(on.notes.map { Scrap.Note(it) } + on.stickers.map { Scrap.Stuck(it) }, Motion.reduced) { marks.takeCarried(page, it) }
     if (on.notes.isEmpty() && on.stickers.isEmpty() && leaving.none) return
     val within = area.area()
     for (note in on.notes.sortedBy { it.z }) {
@@ -465,13 +466,17 @@ internal class ScrapsLeaving {
             return going.isEmpty()
         }
 
-    /** [now] is what is on the page. With [still] (the system's animations are off) nothing shrinks away: it is just gone. */
+    /**
+     * [now] is what is on the page. With [still] (the system's animations are off) nothing shrinks away: it is just
+     * gone. Nor does one that was [carried] to another page under a finger: it is there now, not vanishing here.
+     */
     fun see(
         now: List<Scrap>,
         still: Boolean,
+        carried: (String) -> Boolean = { false },
     ) {
         val ids = now.mapTo(HashSet()) { it.id }
-        if (!still) for ((id, scrap) in seen) if (id !in ids) going[id] = scrap
+        for ((id, scrap) in seen) if (id !in ids && !carried(id) && !still) going[id] = scrap
         // One that is back (taken off and put back) is on the page, not leaving it.
         going.keys.retainAll { it !in ids }
         seen.clear()

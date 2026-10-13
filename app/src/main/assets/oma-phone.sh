@@ -16,6 +16,7 @@ oma-phone fill [--in PACKAGE] LABEL TEXT
 oma-phone pages | page NAME | where WIDGET_FILE
 oma-phone page-add [NAME] | page-rename NAME --to NEW NAME | page-delete NAME
 oma-phone board [PAGE NAME]
+oma-phone looks | look NAME
 oma-phone note [--near COL,ROW] TEXT
 oma-phone stickers
 oma-phone stick [--page NAME] [--near COL,ROW] STICKER
@@ -28,6 +29,7 @@ oma-phone swipe X Y END_X END_Y [DURATION_MS]
 pages lists home's pages, page opens one by name, where says which page a widget file is on.
 page-add makes a new empty page after the last, page-rename gives one another name, and
 page-delete deletes a page only while nothing is on it. Each answers with the pages there then are.
+looks lists the looks home can be drawn in and which is picked; look NAME picks one.
 board says what is where on a home page (the one the request came from, or the one named): its
 grid, each tile's cells, each note and sticker (page fractions and the cells it lies on), and
 free, the biggest empty rectangles of cells. It only looks. Run it before placing anything.
@@ -40,7 +42,7 @@ stickers lists the stickers there are: the built-in ones and the pictures in the
 stick puts one on a home page (the one the request came from, or --page NAME), clear of what is
 there, near the cell given; the answer has its id and the cells it lies on. sticker changes one
 that is there, by its id from board: turn to DEGREES, size as hundredths of the page's width (4 to
-50), move its middle to a cell, or remove. Only stickers are touched, and only when the user asked.
+50), move its middle to a cell, or remove. clear is false when it then lies on a tile or another one. Only stickers are touched, and only when the user asked.
 Read after each action. Use screenshot's path with your agent's image tool.
 screen is read cut down to what you act on: the app in front and each control that says something,
 with whether it takes a press, text or a scroll. --until TEXT waits up to 5 seconds for TEXT to show.
@@ -93,6 +95,11 @@ page-rename)
   [ -n "$name" ] && [ "$#" -ge 2 ] || { echo 'Usage: oma-phone page-rename NAME --to NEW NAME' >&2; exit 2; }
   shift
   request=$(jq -cn --arg name "$name" --arg to "$*" '{command:"pageedit",action:"rename",name:$name,to:$to}');;
+looks)
+  request=$(jq -cn '{command:"look"}');;
+look)
+  [ "$#" -ge 1 ] || { echo 'Look name required. Run oma-phone looks.' >&2; exit 2; }
+  request=$(jq -cn --arg name "$*" '{command:"look",name:$name}');;
 board)
   request=$(jq -cn --arg name "$*" '{command:"board"} + (if $name=="" then {} else {name:$name} end)');;
 note)

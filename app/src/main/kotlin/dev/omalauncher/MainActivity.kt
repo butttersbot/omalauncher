@@ -112,7 +112,7 @@ class MainActivity : ComponentActivity() {
      * Debug builds: `adb shell am start -n dev.omalauncher/.MainActivity --es key KEY --es exec foot`,
      * or `--es theme kanagawa` to apply a theme (scripts/collage-captures.sh).
      */
-    private val debugExecSwitch = "allow-debug-exec"
+    private val debugExecSwitch = DEBUG_EXEC_SWITCH
 
     private fun handleDebugExec(intent: Intent) {
         if (!BuildConfig.DEBUG) return
@@ -212,6 +212,25 @@ class MainActivity : ComponentActivity() {
             else -> return false
         }
         return true
+    }
+}
+
+/** The switch file of the debug door, in the app's own files. */
+const val DEBUG_EXEC_SWITCH = "allow-debug-exec"
+
+/**
+ * The debug door without the activity: `adb shell am broadcast -n <package>/dev.omalauncher.DebugExecReceiver
+ * --es key KEY --es exec COMMAND` runs a guest command as the intent to [MainActivity] does, behind the same key,
+ * and brings nothing to the front, so a screen being looked at stays as it is. Debug builds only.
+ */
+class DebugExecReceiver : android.content.BroadcastReceiver() {
+    override fun onReceive(
+        context: android.content.Context,
+        intent: Intent,
+    ) {
+        if (!BuildConfig.DEBUG) return
+        val key = runCatching { java.io.File(context.filesDir, DEBUG_EXEC_SWITCH).readText() }.getOrNull()
+        if (debugExecAllowed(key, intent.getStringExtra("key"))) intent.getStringExtra("exec")?.let((context.applicationContext as App).runtime::launch)
     }
 }
 

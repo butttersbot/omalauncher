@@ -49,6 +49,7 @@ class PackSourceCheckTest {
             "ui/IconMask.kt",
             // The Oma chat and the listening screen.
             "oma/OmaChatActivity.kt",
+            "oma/MarkdownText.kt",
             "assist/ListeningScreen.kt",
         )
 
@@ -128,7 +129,7 @@ class PackSourceCheckTest {
     @Test fun theConvertedListIsWhole() {
         val expected =
             listOf("Home", "HomeGrid", "WidgetTile", "ShortcutTile", "Folders", "HomeMenu", "HomeGestures", "Overview", "AppDrawer", "AppSearch", "Dock", "AgentButton", "SideRail", "Components", "Icons", "IconMask", "Ink", "Notes", "Stickers")
-                .map { "ui/$it.kt" } + "oma/OmaChatActivity.kt" + "assist/ListeningScreen.kt"
+                .map { "ui/$it.kt" } + "oma/OmaChatActivity.kt" + "oma/MarkdownText.kt" + "assist/ListeningScreen.kt"
         assertEquals(expected.toSet(), converted)
     }
 
