@@ -105,8 +105,8 @@ class PhoneNotesTest {
         // one or takes one off (after looking that it is a sticker), and has no way to a note, to ink or to a tile.
         assertEquals(2, service.split("HomeAnnotations.of(").size - 1)
         assertEquals(1, service.split("leaveNote(").size - 1)
-        val stickers = service.substringAfter("private fun stickerPad()").substringBefore("fun request(input: JSONObject")
-        assertEquals(listOf("book.stick(", "book.changeSticker(", "book.on(", "book.remove("), Regex("""book\.\w+\(""").findAll(stickers).map { it.value }.toList())
+        val stickers = service.substringAfter("private fun stickerPad()").substringBefore("private fun pagePad()")
+        assertEquals(listOf("book.stick(", "book.changeSticker(", "book.on(", "book.remove("), Regex("""\bbook\.\w+\(""").findAll(stickers).map { it.value }.toList())
     }
 
     // Which page, and what the command answers.
