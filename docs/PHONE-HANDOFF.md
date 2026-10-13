@@ -3,9 +3,9 @@
 For the agent on the Fold (Oma), when Boss works with no Mac in the loop. Written 2026-10-12 by the Mac session.
 Boss talks to you through Oma (voice or the Oma chat). Be short: he is often reading on the move.
 
-## Where things stand (checkpoint 2026-10-12, about 21:10 PDT, written by the Mac session)
+## Where things stand (checkpoint 2026-10-12, about 23:00 PDT, written by the Mac session)
 - This checkout: `/root/Projects/omalauncher`, branch `phone/fold-development`. `git pull --ff-only` first.
-- Installed: the real launcher `dev.omalauncher.boss`, versionCode 38 (commit 44370bb), and the throwaway
+- Installed: the real launcher `dev.omalauncher.boss`, versionCode 42 (commit 0c85999), and the throwaway
   `dev.omalauncher.dev` ("Oma Dev": every entry says Dev, magenta icon), older. You are running inside the real one.
 - The goal of the project: make the launcher match the agreed prototypes in `design/` one-to-one. Status and
   information surfaces are placeable widgets, not always-on chrome. No Oma button in the dock.
@@ -30,6 +30,16 @@ Boss talks to you through Oma (voice or the Oma chat). Be short: he is often rea
   `projects/pond`. On the phone only, not in Git. Since versionCode 38 the library is the launcher's own
   `files/sticker-library`, bound into the guest as `~/.config/omalauncher/stickers`: it outlives a reinstall of
   Linux. The move was checked file by file (79 of 79, same checksums).
+- Lock screen (versionCode 39 to 42, 2026-10-12 evening). Style > "wallpapers: look's paper" is ON: the launcher
+  sets the lock and home wallpapers to the look's paper when a look is picked, per display (seen for City Pop on the
+  cover; a paper look's two scraps have not been looked at). Two widgets the launcher draws in the look: "Oma status"
+  (on the cover lock screen now, placed through LockStar's App Widgets) and "Oma clock" (Boss does not want it on
+  the lock screen; Samsung's clock stays). `oma-phone lockstar [capture NAME | apply NAME]` keeps and hands back
+  LockStar's layout through Good Lock's share provider; an apply drops app widgets, so it is a backup tool, not
+  how looks are followed. The launcher holds WRITE_SECURE_SETTINGS for it, granted by Boss over adb.
+  `tools/fold-development/oma-locktidy` lays lock-screen widgets out on the home grid from the open editor; it has
+  only been run from the Mac, on one widget. In Samsung's editor never press Back with a widget selected (it leaves
+  and drops unsaved work), and never tap near Done.
 - Changed on the phone for Boss, to put back when he says: screen timeout is set to never (`settings put system
   screen_off_timeout 2147483647`; it was 30000).
 - Tailscale on the phone does not come back by itself after a restart; opening the Tailscale app reconnects it.
