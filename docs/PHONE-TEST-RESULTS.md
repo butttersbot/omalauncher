@@ -1,5 +1,18 @@
 # Phone test results
 
+## Latest: drawing-tools keys and follow-ups in the Oma chat, added to the bundle (2026-10-12, 16:50–17:05 PDT)
+Commit add2e27. `oma-build`: PASS, 723 tests, 0 failures. Nothing promoted.
+- Drawing tools row (ui/Ink.kt, ui/Notes.kt, annotations): nine keys now: pen, highlighter, eraser, sticky note, sticker, text, undo, redo, close. New `NoteRole.Text` ("text"): a note with no paper, in the page's ink. A page file with a text note cannot be read by a build older than this one. The keys shrink together when nine do not fit the row (cover screen). Adding any of the three ends drawing, since nothing on the page can be moved or typed in while a finger draws.
+  - SEEN in Oma Dev, inner screen: nine keys in the row; "T" opened a typing box titled "note" (now "text") with no paper, and the words landed on Page 1 in free space in the page's blue; "★" opened "stick on this page" with the six stickers, the heart landed selected with its turn/delete bar and the tools closed.
+  - Not seen: the sticky note key itself (same path as text), the cover screen's smaller keys, the console look's word row.
+  - Seen, cosmetic: the sticker picker's dim does not reach under the status and navigation bars when opened from the tools row.
+- Follow-ups while a task runs (oma/FollowUps.kt new, ChatHistory.kt, ChatComposer.kt, OmaChatActivity.kt, assist/AgentTasks.kt): the chat's bar keeps the field and shows send beside stop; a follow-up waits in a queue of at most five and is sent as the next request when the task ends, in the same Claude session; stop, a failed task, or the app being closed drops what waits and the thread says so. It never touches the running process, so it cannot answer an approval. Writing into Claude's stdin mid-turn was not done: the end of a task is told by the first `result`, and that could not be checked without running it.
+  - SEEN: Oma Dev's chat screen opens without a crash. NOT seen: a follow-up sent while a task runs; Oma Dev has no agent, so this needs the real launcher.
+- Cove's sticker drawer: it is pond's "art bank" (src/client/components/bench/ArtBankShelf.tsx, shapes/StickerShape.tsx): image files per board from Cove's server, placed as pictures. This app's stickers are six drawn shapes. Bringing Cove's in needs picture stickers and a source for the art; not in this bundle, waiting on Boss.
+
+### The bundle waiting for one promotion
+Carrying notes across pages and past the last page; note, sticker and text keys; voice confirm step; follow-ups in the chat; status bar follows the look; phone control (read, click, page turn, 5 s swipes). First real test of the voice, chat and phone-control parts is after promotion.
+
 ## Latest: a bundle from four agents in parallel (2026-10-12, 16:30–16:50 PDT)
 Boss asked for the open items to be done in parallel and bundled; nothing here is promoted. Commit 4c8934a. `oma-build`: PASS, 712 tests, 0 failures.
 - Voice confirm step (assist/ListeningRequest.kt new, ListeningScreen.kt, OmaAssistant.kt): after he stops talking the words wait under "SEND THIS?" with Send, Add more, Cancel; no timer, nothing sent until Send; Add more appends with one space; Cancel or a tap on the paper sends nothing. Tests: ListeningRequestTest (10), including Cancel sends nothing (handoff item 4). NOT seen running: Oma Dev has no assistant; needs the real launcher.
