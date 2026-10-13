@@ -3,6 +3,15 @@
 For the Mac session, to build on the Mac Pro with Boss. Written 2026-10-13 by the agent on the Fold.
 Nothing here is built. The phone side that would call it is not built either: say what you change in this file.
 
+## Start here (Boss's request to the Mac session, 2026-10-13)
+Boss could not paste this in, so it stands here for him. He wants this runner built on the Mac Pro.
+1. Before writing any code, take him through "To decide with Boss on the Mac" one question at a time, with your
+   recommendation for each.
+2. Build it, and prove it locally with the "First proof" list as far as you can without the phone.
+3. Write what you decide and change back into this file and push, so the phone agent can build its side to match.
+4. Find the handoff for his Final Fantasy 4 better-menu mod (on the laptop; he believes it is in ClaudeSync) and
+   tell him where it is.
+
 ## Why
 Boss talks to one agent, Oma, from the phone. A fast front agent on the phone answers quick things and hands
 work, word for word, to a builder in a project thread. Builders on the phone are slow and he wants at most two
