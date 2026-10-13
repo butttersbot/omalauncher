@@ -1,5 +1,11 @@
 # Phone test results
 
+## Latest: Cove's three sticker packs are on the phone too (2026-10-12, 17:52–17:56 PDT)
+- Boss remembered a Pepe sticker and others. They are not in the art bank but in ClaudeSync projects/pond/public/stickers (packs.json: rabbit-shark, pepe-blanket, donut-frog; sheets in studio/sticker-sheets).
+- All 67 PNGs were read with `oma-context` and saved on the phone under ~/.config/omalauncher/stickers/: pepe-blanket (20), donut-frog (26), rabbit-shark (21); 8.0 MB. With the 12 in cove/ the library holds 79 pictures, 18.9 MB, none over 5 MB. The packs' manifest.json files were not copied.
+- SEEN in Oma Dev on the cover screen, with the library copied in while it ran: the picker scrolls through cove, donut-frog and pepe-blanket under their captions, five across; all twenty Pepe stickers drew with clean edges. rabbit-shark was not scrolled to. None of these was placed on a page this time.
+- The real launcher shows none of them until the bundle with picture stickers is promoted.
+
 ## Latest: Cove's stickers are on the phone (2026-10-12, 17:47–17:50 PDT)
 - The Mac was never down: Tailscale was not running on the phone after its restart for the security update (no tun0, no process). Boss said to start it; opening the Tailscale app brought it up connected, with no switch to press.
 - Cove's art bank is ClaudeSync projects/pond/data/art-bank/catalog.json (29 assets: 12 stickers, 8 papers, 5 images, 4 backgrounds), bytes in projects/pond/data/assets/<sha256>.<ext>.
