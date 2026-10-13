@@ -27,6 +27,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -258,7 +259,10 @@ private fun DesktopScreen(
     // (from a keyboard, or a widget asking for it) puts the pen down: the tools are never over it.
     LaunchedEffect(panelShown) { if (panelShown) state.stopDrawing() }
     if (state.drawing && !panelShown) {
-        Box(Modifier.fillMaxSize().safePadding(), contentAlignment = Alignment.BottomCenter) { DrawTools(state) }
+        var stickers by remember { mutableStateOf(false) }
+        Box(Modifier.fillMaxSize().safePadding(), contentAlignment = Alignment.BottomCenter) { DrawTools(state, onStickers = { stickers = true }) }
+        // Outside the bars' padding, so the scrim reaches under the status and navigation bars as the home menu's does.
+        if (stickers) DrawStickers(state) { stickers = false }
     }
 
     // A sticky note's text, typed over home and over the dock, which the keyboard would otherwise lift into it.

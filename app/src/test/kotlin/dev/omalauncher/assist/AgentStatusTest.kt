@@ -31,6 +31,11 @@ class AgentStatusTest {
         assertEquals(AGENT_STATUS_ANSWER, status.getString("answer").length)
     }
 
+    @Test fun theAnswerIsCarriedAsPlainWords() {
+        val status = agentStatus(working = false, label = "Done", answer = "## Display test\n\n| Element | Example |\n|---|---|\n| Bold | **strong** |", approvals = 0, now = 0)
+        assertEquals("Display test\nElement · Example\nBold · strong", status.getString("answer"))
+    }
+
     @Test fun theOtherEndingsAreToldApart() {
         fun state(label: String) = agentStatus(false, label, "", 0, 0).getString("state")
         assertEquals("ready", state("Ready"))

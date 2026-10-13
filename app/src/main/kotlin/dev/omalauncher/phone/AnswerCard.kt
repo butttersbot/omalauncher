@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import dev.omalauncher.assist.ComposeHost
 import dev.omalauncher.assist.prototypeUnit
+import dev.omalauncher.oma.Markdown
 import dev.omalauncher.oma.OmaChatActivity
 import dev.omalauncher.ui.Motion
 import dev.omalauncher.ui.Pack
@@ -111,7 +112,8 @@ class AnswerCard(private val service: AccessibilityService) {
         compose.setContent {
             AnswerCardContent(
                 caption,
-                text.trim().take(ANSWER_CARD_CHARS),
+                // The card writes by hand and draws no Markdown: it gets the words without their markers.
+                Markdown.plain(text.trim().take(4 * ANSWER_CARD_CHARS)).take(ANSWER_CARD_CHARS),
                 up,
                 onOpen = {
                     runCatching { service.startActivity(OmaChatActivity.intent(service)) }

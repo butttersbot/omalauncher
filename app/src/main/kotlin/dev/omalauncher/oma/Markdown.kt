@@ -51,6 +51,28 @@ object Markdown {
 
     fun parse(text: String): List<MdBlock> = blocks(text.lines(), 0)
 
+    /**
+     * An answer as plain words, for a place that draws no Markdown: a tile, the answer card, a notification.
+     * The markers go; the words stay, a line for each block, list item and table row.
+     */
+    fun plain(text: String): String = plain(parse(text)).joinToString("\n")
+
+    private fun plain(blocks: List<MdBlock>): List<String> =
+        blocks.flatMap { block ->
+            when (block) {
+                is MdBlock.Paragraph -> listOf(block.spans.words())
+                is MdBlock.Heading -> listOf(block.spans.words())
+                is MdBlock.Bullet -> listOf("  ".repeat(block.depth) + "• " + block.spans.words())
+                is MdBlock.Numbered -> listOf("  ".repeat(block.depth) + block.number + ". " + block.spans.words())
+                is MdBlock.Code -> listOf(block.code)
+                is MdBlock.Quote -> plain(block.blocks)
+                MdBlock.Rule -> emptyList()
+                is MdBlock.Table -> (listOf(block.header) + block.rows).map { row -> row.joinToString(" · ") { it.words() } }
+            }
+        }
+
+    private fun List<MdSpan>.words() = joinToString("") { it.text }
+
     /** The spans of one line or paragraph of running text. */
     fun inline(text: String): List<MdSpan> = Inline(text).spans()
 

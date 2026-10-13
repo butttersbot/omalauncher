@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
@@ -22,6 +23,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.LinkInteractionListener
@@ -30,6 +32,8 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
@@ -109,13 +113,37 @@ private fun Blocks(
     look: MarkdownLook,
     modifier: Modifier = Modifier,
 ) {
+    val digits = remember(blocks) { numberDigits(blocks) }
     Column(modifier) {
         blocks.forEachIndexed { index, block ->
             // The items of one list stand closer together than blocks do.
             val above = if (index == 0) 0.dp else if (block.listed && blocks[index - 1].listed) 3.dp else 8.dp
-            Block(block, look, Modifier.padding(top = above))
+            Block(block, digits[index], look, Modifier.padding(top = above))
         }
     }
+}
+
+/**
+ * For each numbered item, the digits in the longest number of its list at its depth, a list being the items
+ * with nothing else between them; 0 for every other block. The numbers of one list are set in a column that
+ * wide, so "9." and "10." end in line and the words after them start in line.
+ */
+internal fun numberDigits(blocks: List<MdBlock>): IntArray {
+    val digits = IntArray(blocks.size)
+    var start = 0
+    while (start < blocks.size) {
+        var end = start
+        while (end < blocks.size && blocks[end].listed) end++
+        if (end == start) {
+            start++
+            continue
+        }
+        val widest = HashMap<Int, Int>()
+        for (i in start until end) (blocks[i] as? MdBlock.Numbered)?.let { widest[it.depth] = maxOf(widest[it.depth] ?: 0, it.number.length) }
+        for (i in start until end) (blocks[i] as? MdBlock.Numbered)?.let { digits[i] = widest.getValue(it.depth) }
+        start = end
+    }
+    return digits
 }
 
 private val MdBlock.listed get() = this is MdBlock.Bullet || this is MdBlock.Numbered
@@ -123,14 +151,15 @@ private val MdBlock.listed get() = this is MdBlock.Bullet || this is MdBlock.Num
 @Composable
 private fun Block(
     block: MdBlock,
+    digits: Int,
     look: MarkdownLook,
     modifier: Modifier,
 ) {
     when (block) {
         is MdBlock.Paragraph -> Spans(block.spans, look, look.body, modifier)
         is MdBlock.Heading -> Heading(block, look, modifier)
-        is MdBlock.Bullet -> Item("•", block.depth, block.spans, look, modifier)
-        is MdBlock.Numbered -> Item("${block.number}.", block.depth, block.spans, look, modifier)
+        is MdBlock.Bullet -> Item("•", 0, block.depth, block.spans, look, modifier)
+        is MdBlock.Numbered -> Item("${block.number}.", digits, block.depth, block.spans, look, modifier)
         is MdBlock.Code -> CodeBlock(block, modifier)
         is MdBlock.Quote -> {
             val line = Pack.border
@@ -172,13 +201,19 @@ private fun Heading(
 @Composable
 private fun Item(
     marker: String,
+    digits: Int,
     depth: Int,
     spans: List<MdSpan>,
     look: MarkdownLook,
     modifier: Modifier,
 ) {
+    val style = remember(look) { look.body.copy(color = Pack.muted, textAlign = TextAlign.End) }
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    // A number stands at the right of a column as wide as its list's longest; a bullet is as wide as itself.
+    val column = if (digits > 0) remember(digits, style, density) { with(density) { measurer.measure("0".repeat(digits) + ".", style).size.width.toDp() } } else null
     Row(modifier.padding(start = ListIndent * minOf(depth, MAX_INDENT))) {
-        BasicText(marker, Modifier.padding(end = 8.dp), style = look.body.copy(color = Pack.muted))
+        BasicText(marker, Modifier.padding(end = 8.dp).then(if (column != null) Modifier.width(column) else Modifier), style = style)
         Spans(spans, look, look.body, Modifier.weight(1f))
     }
 }

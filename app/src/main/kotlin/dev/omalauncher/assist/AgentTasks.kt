@@ -10,6 +10,7 @@ import dev.omalauncher.oma.ChatLog
 import dev.omalauncher.oma.ChatTask
 import dev.omalauncher.oma.FollowUp
 import dev.omalauncher.oma.FollowUpQueue
+import dev.omalauncher.oma.Markdown
 import dev.omalauncher.oma.ScreenShots
 import dev.omalauncher.oma.TaskStatus
 import dev.omalauncher.oma.ring.OmaRing
@@ -370,7 +371,7 @@ const val AGENT_STATUS_FILE = ".cache/oma/agent.json"
 /**
  * The agent's task for a widget: whether it is `working`, how many `approvals` wait, `state` as one word
  * (working, waiting, done, stopped, failed or ready), `doing` as home used to pencil it, the first lines of
- * the last `answer`, and when this was `updated` in Unix seconds.
+ * the last `answer` as plain words (a tile draws no Markdown), and when this was `updated` in Unix seconds.
  */
 fun agentStatus(working: Boolean, label: String, answer: String, approvals: Int, now: Long): JSONObject {
     val state = when {
@@ -384,7 +385,7 @@ fun agentStatus(working: Boolean, label: String, answer: String, approvals: Int,
     return JSONObject()
         .put("working", working).put("approvals", approvals).put("state", state).put("label", label)
         .put("doing", if (working || approvals > 0) marginNote(label) else "")
-        .put("answer", answer.trim().take(AGENT_STATUS_ANSWER)).put("updated", now)
+        .put("answer", Markdown.plain(answer.trim().take(4 * AGENT_STATUS_ANSWER)).take(AGENT_STATUS_ANSWER)).put("updated", now)
 }
 
 /** How much of an answer the status file carries: enough for a tile, not the whole thread. */

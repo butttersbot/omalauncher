@@ -1,5 +1,6 @@
 package dev.omalauncher.assist
 
+import dev.omalauncher.oma.Markdown
 import java.util.UUID
 
 /*
@@ -153,16 +154,19 @@ data class TaskNotice(val title: String, val text: String, val ongoing: Boolean,
  * The task notification for a state: the current step while working, the result once done,
  * and nothing (null) when there is neither, such as after a new thread.
  */
+/** How much of an answer is read for its notification: its markers are taken out of this much, and 1500 characters of it are shown. */
+private const val NOTICE_SOURCE = 6000
+
 fun taskNotice(working: Boolean, label: String, answer: String, pending: Int): TaskNotice? = when {
     working -> TaskNotice(
         label,
         when {
             pending == 1 -> "1 request is waiting for your answer"
             pending > 1 -> "$pending requests are waiting for your answer"
-            else -> answer.trim().lines().lastOrNull { it.isNotBlank() }?.take(180) ?: "Request received"
+            else -> answer.trim().lines().lastOrNull { it.isNotBlank() }?.let { Markdown.plain(it).take(180) } ?: "Request received"
         },
         ongoing = true,
     )
-    answer.isNotBlank() -> TaskNotice(label, answer.trim().take(180), ongoing = false, expanded = answer.trim().take(1500))
+    answer.isNotBlank() -> Markdown.plain(answer.trim().take(NOTICE_SOURCE)).let { TaskNotice(label, it.take(180), ongoing = false, expanded = it.take(1500)) }
     else -> null
 }

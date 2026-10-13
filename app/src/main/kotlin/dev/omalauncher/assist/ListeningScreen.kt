@@ -16,10 +16,13 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -214,6 +217,9 @@ internal fun ListeningLayer(
     }
 }
 
+/** The most lines of handwriting on the screen at once; the prototype keeps three and a cover screen has room for these. */
+private const val SAID_LINES = 7
+
 /** The prototype's handwriting: three lines kept for it, each word coming up as it is heard. */
 @Composable
 private fun Said(
@@ -242,9 +248,12 @@ private fun Said(
                 append(' ')
             }
         }
+    // A long request would climb off the top of the screen: past [SAID_LINES] it scrolls, and stays at its newest words.
+    val scroll = rememberScrollState()
+    LaunchedEffect(words, scroll.maxValue) { scroll.scrollTo(scroll.maxValue) }
     BasicText(
         text,
-        modifier,
+        modifier.heightIn(max = (40 * u * SAID_LINES).dp).verticalScroll(scroll),
         style = Pack.hand((40 * u).sp, ink).copy(fontWeight = FontWeight.Bold, lineHeight = (40 * u).sp),
         minLines = 3,
     )

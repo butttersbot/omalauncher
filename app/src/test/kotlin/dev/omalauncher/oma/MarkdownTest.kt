@@ -17,6 +17,26 @@ class MarkdownTest {
         assertEquals(emptyList<MdBlock>(), Markdown.parse(" \n\n"))
     }
 
+    @Test fun plainWordsKeepTheTextAndDropTheMarkers() {
+        assertEquals("Task completed.", Markdown.plain("Task completed."))
+        assertEquals("", Markdown.plain(" \n\n"))
+        assertEquals("Display test\nBold and code", Markdown.plain("## Display test\n\n**Bold** and `code`"))
+        assertEquals("Element · Example\nBold · strong", Markdown.plain("| Element | Example |\n|---|---|\n| Bold | **strong** |"))
+        assertEquals("• one\n  • two\n3. three", Markdown.plain("- one\n  - two\n\n3. three"))
+        assertEquals("quoted\nthe docs, gone", Markdown.plain("> quoted\n\n---\n\n[the docs](https://x.dev), ~~gone~~"))
+        assertEquals("ls -la", Markdown.plain("```sh\nls -la\n```"))
+    }
+
+    @Test fun theNumbersOfOneListShareAColumn() {
+        val nine = MdBlock.Numbered(0, "9", plain("nine"))
+        val ten = MdBlock.Numbered(0, "10", plain("ten"))
+        val inner = MdBlock.Numbered(1, "1", plain("inner"))
+        val bullet = MdBlock.Bullet(0, plain("dot"))
+        val words = MdBlock.Paragraph(plain("words"))
+        assertEquals(listOf(2, 1, 2, 0, 0, 1), numberDigits(listOf(nine, inner, ten, bullet, words, nine)).toList())
+        assertEquals(emptyList<Int>(), numberDigits(emptyList()).toList())
+    }
+
     @Test fun aParagraphKeepsItsLinesAndABlankLineStartsAnother() {
         assertEquals(
             listOf(MdBlock.Paragraph(plain("first line\nsecond line")), MdBlock.Paragraph(plain("another"))),

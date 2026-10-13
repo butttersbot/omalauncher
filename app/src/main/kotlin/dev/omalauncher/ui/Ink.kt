@@ -435,6 +435,33 @@ internal fun LiveInk(
 }
 
 /**
+ * The stickers to pick from while drawing, asked for with the tools' "sticker". A menu over the whole window:
+ * its host lays it outside the bars' padding. Picking one puts the pen down, as a note or text does.
+ */
+@Composable
+fun DrawStickers(
+    state: LauncherState,
+    onClose: () -> Unit,
+) {
+    val marks = state.marks
+    val book = marks.book ?: return
+    val page = state.currentPage
+    Menu(onDismiss = onClose) {
+        MenuTitle("stick on this page")
+        StickerPicker { choice, from ->
+            onClose()
+            state.stopDrawing()
+            book.stick(page, choice) { stuck ->
+                if (stuck != null) {
+                    state.arrivals.expect(stuck, from)
+                    marks.selected = Chosen(page, stuck)
+                }
+            }
+        }
+    }
+}
+
+/**
  * The drawing tools, standing where the dock does while one finger draws: pen (again for the pack's second
  * ink), highlighter, eraser, a sticky note, a sticker and plain text to put on the page last touched, undo
  * and redo for it, and done. Its band takes every touch that lands on it, so nothing under it is opened
@@ -443,6 +470,7 @@ internal fun LiveInk(
 @Composable
 fun DrawTools(
     state: LauncherState,
+    onStickers: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     if (!state.drawing) return
@@ -451,8 +479,6 @@ fun DrawTools(
     val page = state.currentPage
     val ink = book.ink(page)
     val density = LocalDensity.current
-    // "Sticker" opens the stickers to pick from, over the row.
-    var stickers by remember { mutableStateOf(false) }
 
     // A note, a sticker or text put on the page ends the drawing: while a finger draws, nothing on the page can be
     // moved or typed in, and what was just added is to be placed or written at once.
@@ -462,21 +488,6 @@ fun DrawTools(
         book.addNote(page, role = role)?.let {
             state.arrivals.expect(it, null)
             marks.editing = Chosen(page, it)
-        }
-    }
-    if (stickers) {
-        Menu(onDismiss = { stickers = false }) {
-            MenuTitle("stick on this page")
-            StickerPicker { choice, from ->
-                stickers = false
-                state.stopDrawing()
-                book.stick(page, choice) { stuck ->
-                    if (stuck != null) {
-                        state.arrivals.expect(stuck, from)
-                        marks.selected = Chosen(page, stuck)
-                    }
-                }
-            }
         }
     }
     Box(
@@ -505,7 +516,7 @@ fun DrawTools(
                     ToolKey("⌫", "eraser", u, marks.tool == DrawTool.Eraser) { marks.tool = DrawTool.Eraser }
                     // The prototype's note and sticker keys, and one for text, which Boss asked for (2026-10-12).
                     ToolKey("☐", "sticky note", u, enabled = !marks.busy) { write(NoteRole.Sticky) }
-                    ToolKey("★", "sticker", u, enabled = !marks.busy) { if (book.takes(page)) stickers = true }
+                    ToolKey("★", "sticker", u, enabled = !marks.busy) { if (book.takes(page)) onStickers() }
                     ToolKey("T", "text", u, enabled = !marks.busy) { write(NoteRole.Text) }
                     // Not in the middle of a stroke or an eraser's pass, held with another finger.
                     ToolKey("↶", "undo", u, enabled = ink.canUndo && !marks.busy) { marks.undo(page) }
@@ -526,7 +537,7 @@ fun DrawTools(
                 Tool("marker", marks.tool == DrawTool.Highlighter, swatch = InkRole.Highlighter) { marks.tool = DrawTool.Highlighter }
                 Tool("erase", marks.tool == DrawTool.Eraser) { marks.tool = DrawTool.Eraser }
                 Tool("note", enabled = !marks.busy) { write(NoteRole.Sticky) }
-                Tool("sticker", enabled = !marks.busy) { if (book.takes(page)) stickers = true }
+                Tool("sticker", enabled = !marks.busy) { if (book.takes(page)) onStickers() }
                 Tool("text", enabled = !marks.busy) { write(NoteRole.Text) }
                 // Not in the middle of a stroke or an eraser's pass, held with another finger.
                 Tool("undo", enabled = ink.canUndo && !marks.busy) { marks.undo(page) }
