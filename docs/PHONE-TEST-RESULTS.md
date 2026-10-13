@@ -1,5 +1,10 @@
 # Phone test results
 
+## Latest: checkpoint, and bundle 2 is being promoted (2026-10-12, about 18:00 PDT)
+- Boss has his laptop and will continue from there. The state of everything is in docs/PHONE-HANDOFF.md ("Where things stand" and "Next"), rewritten now.
+- Boss said "promote it". Running `oma-try` as the last step of this run; the result is NOT known from this run. Bundle 2: Markdown in the chat, picture stickers, the chat scrolling to a sent message. Last green build: 760 tests.
+- First thing for whoever is next: `oma-install --status` and `oma-phone status` (see "Next" item 2).
+
 ## Latest: Cove's three sticker packs are on the phone too (2026-10-12, 17:52–17:56 PDT)
 - Boss remembered a Pepe sticker and others. They are not in the art bank but in ClaudeSync projects/pond/public/stickers (packs.json: rabbit-shark, pepe-blanket, donut-frog; sheets in studio/sticker-sheets).
 - All 67 PNGs were read with `oma-context` and saved on the phone under ~/.config/omalauncher/stickers/: pepe-blanket (20), donut-frog (26), rabbit-shark (21); 8.0 MB. With the 12 in cove/ the library holds 79 pictures, 18.9 MB, none over 5 MB. The packs' manifest.json files were not copied.
