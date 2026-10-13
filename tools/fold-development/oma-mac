@@ -47,6 +47,8 @@ run)
   [ "$#" -ge 1 ] || { echo 'Command required' >&2; exit 2; }
   [ -f "$KEYFILE" ] || { echo 'The door is closed. Run: oma-mac open' >&2; exit 2; }
   id=$(openssl rand -hex 8)
+  # OMA_DOOR=activity is the door of versionCode 37, which brings the launcher to the front on every run.
+  if [ "${OMA_DOOR:-}" = activity ]; then DOOR="am start -n $PACKAGE/dev.omalauncher.MainActivity"; else DOOR="am broadcast -n $PACKAGE/dev.omalauncher.DebugExecReceiver"; fi
   # The command goes over as a file, each word quoted, so nothing in it is read by a shell on the way.
   {
     printf 'cd /root\n{ '
@@ -54,7 +56,7 @@ run)
     printf '; } > /root/.cache/oma-mac/%s.out 2>&1\necho $? > /root/.cache/oma-mac/%s.code\n' "$id" "$id"
   } | adb_ shell run-as "$PACKAGE" sh -c "'cat > $GUEST/$id.sh'"
   # One string for the phone's shell, so the command stays one word of the intent. The key is hex and the id too.
-  adb_ shell "am broadcast -n $PACKAGE/dev.omalauncher.DebugExecReceiver --es key $(cat "$KEYFILE") --es exec 'bash /root/.cache/oma-mac/$id.sh'" >/dev/null 2>&1
+  adb_ shell "$DOOR --es key $(cat "$KEYFILE") --es exec 'bash /root/.cache/oma-mac/$id.sh'" >/dev/null 2>&1
   code=''
   for _ in $(seq 1 "${OMA_MAC_WAIT:-150}"); do
     code=$(app sh -c "'cat $GUEST/$id.code 2>/dev/null'" | tr -d '\r\n' || true)
