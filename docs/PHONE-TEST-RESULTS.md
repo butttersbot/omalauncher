@@ -1,5 +1,9 @@
 # Phone test results
 
+## Latest: promoting the overview backdrop, tap-to-close and the note instruction (2026-10-13, about 15:05 PDT)
+- Boss saw the overview in Oma Dev, asked for less blur (now 12dp under a 40% wash, commit 12ecc62), said it looks good and to promote. Running `oma-try` last; the result is NOT known from this run.
+- Goes with it: 08b5600 (no sticky note unless asked). To check after: `oma-install --status`, the overview on the real launcher in city pop on both screens, a tap on empty space there.
+
 ## Latest: the overview closes on a tap of nothing, and stands on the look's wallpaper (2026-10-13, about 15:00 PDT)
 Asked by Boss from the phone, looking at "all pages" in city pop on the inner screen.
 - Change (commit e23e3d5, ui/Overview.kt): a tap that no page and no word takes leaves the overview as Back does; in a look with its own page the backdrop is `PagePaper` (the look's paper or wallpaper) blurred 22dp under a 55% wash of the paper's color, in place of the flat paper. The prototype has plain paper; this is Boss's word. Console is as it was.
