@@ -6,7 +6,7 @@
 - The 12 stickers (sky-journal and Blush Journal sets) were read with `oma-context`, each checked against its sha256, and saved as ~/.config/omalauncher/stickers/cove/<name>.png on the phone. 10.9 MB in all, the largest 3.8 MB. Papers, images and backgrounds were not copied.
 - SEEN in Oma Dev on the cover screen, with the same twelve copied in while it ran: all twelve show under "cove" in the picker with their transparency; the butterfly landed on Page 1 in its own shape, selected. The 3.8 MB stamp decoded without trouble.
 - The real launcher will show them once the bundle with picture stickers is promoted.
-- Left behind: 12 PNGs in /data/local/tmp/cove on the phone (the copies pushed for Oma Dev); a safety check stopped their removal. Harmless; Boss or the Mac session can delete that folder.
+- The copies pushed to /data/local/tmp/cove for Oma Dev were removed afterwards; nothing is left there.
 
 ## Latest: the chat scrolls to a message just sent (2026-10-12, 17:45 PDT)
 - Boss: a sent message ended up under the field and the keyboard. Cause: the thread is a reversed LazyColumn with keys and no scroll handling, so adding the new task kept the old newest one in view and put the new one below the edge.
