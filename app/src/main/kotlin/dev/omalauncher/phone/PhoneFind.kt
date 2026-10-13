@@ -68,8 +68,25 @@ object PhoneFind {
         return one(named(nodes, label).map(::target).distinct())
     }
 
-    /** The text field for [label]: one that says it, as its hint or its contents. */
-    fun field(nodes: List<SeenNode>, label: String): Found = one(named(nodes.filter { it.editable }, label).map { it.id })
+    /**
+     * The text field for [label]: the one that says it as its hint or its contents, or that the words stand
+     * inside of, since a hint is often a node of its own within the field. No label at all is the screen's
+     * only text field, when it has just one.
+     */
+    fun field(nodes: List<SeenNode>, label: String): Found {
+        val fields = nodes.filter { it.editable && it.enabled }
+        if (words(label).isEmpty()) return one(fields.map { it.id })
+        val ids = fields.map { it.id }.toSet()
+        fun around(node: SeenNode): String? {
+            var id = node.id
+            while (true) {
+                if (id in ids) return id
+                if ('.' !in id) return null
+                id = id.substringBeforeLast('.')
+            }
+        }
+        return one(named(nodes, label).mapNotNull(::around).distinct())
+    }
 }
 
 /** The screen as `read` gives it, cut down to what an agent acts on: far fewer words to read after every step. */
@@ -103,16 +120,18 @@ object PhoneScreen {
     fun brief(read: JSONObject): JSONObject {
         val all = nodes(read)
         val pressable = all.filter { it.clickable && it.enabled }.map { it.id }.toSet()
-        fun pressed(id: String): Boolean {
+        fun pressed(id: String): String? {
             var at = id
             while (true) {
-                if (at in pressable) return true
-                if ('.' !in at) return false
+                if (at in pressable) return at
+                if ('.' !in at) return null
                 at = at.substringBeforeLast('.')
             }
         }
         val raw = read.optJSONArray("nodes") ?: JSONArray()
         val controls = JSONArray()
+        // One button is often several nodes that say the same thing, its icon and its words: it is listed once.
+        val listed = HashSet<Pair<String, String>>()
         for (i in 0 until raw.length()) {
             if (controls.length() >= MAX_CONTROLS) break
             val node = raw.getJSONObject(i)
@@ -120,7 +139,11 @@ object PhoneScreen {
             val editable = node.optBoolean("editable")
             val scrollable = node.optBoolean("scrollable")
             if (says.isEmpty() && !editable && !scrollable) continue
-            val can = listOfNotNull("press".takeIf { pressed(node.getString("id")) }, "fill".takeIf { editable }, "scroll".takeIf { scrollable })
+            val press = pressed(node.getString("id"))
+            // An icon drawn as a letter of its own font says nothing to read: it is listed only if it does something.
+            if (press == null && !editable && !scrollable && says.none { it.isLetterOrDigit() }) continue
+            if (press != null && !editable && !scrollable && !listed.add(press to says.lowercase())) continue
+            val can = listOfNotNull("press".takeIf { press != null }, "fill".takeIf { editable }, "scroll".takeIf { scrollable })
             val control = JSONObject().put("id", node.getString("id")).put("says", says).put("can", JSONArray(can))
             if (node.optBoolean("checked")) control.put("checked", true)
             if (!node.optBoolean("enabled", true)) control.put("enabled", false)

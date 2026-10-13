@@ -54,6 +54,30 @@ class PhoneFindTest {
         assertEquals(Found.None, PhoneFind.field(chat, "send"))
     }
 
+    @Test fun aFieldIsFoundByAHintThatStandsInsideIt() {
+        // The app list's search field as the Fold gave it: the field says nothing, its hint is a node within.
+        val list = listOf(node("root"), node("root.3", editable = true, clickable = true), node("root.3.0", text = "search apps", clickable = true), node("root.4", text = "search tips"))
+        assertEquals(Found.One("root.3"), PhoneFind.field(list, "search apps"))
+        assertEquals(Found.One("root.3"), PhoneFind.field(list, "apps"))
+        // Words outside any field name none.
+        assertEquals(Found.None, PhoneFind.field(list, "tips"))
+    }
+
+    @Test fun noLabelIsTheOnlyTextFieldAndNeverOneOfTwo() {
+        assertEquals(Found.One("root.1"), PhoneFind.field(chat, ""))
+        assertEquals(Found.Several(listOf("a", "b")), PhoneFind.field(listOf(node("a", editable = true), node("b", editable = true)), " "))
+        assertEquals(Found.None, PhoneFind.field(listOf(node("a", text = "x")), ""))
+    }
+
+    @Test fun aButtonSaidTwiceIsListedOnceAndASilentIconNotAtAll() {
+        fun json(id: String, text: String, clickable: Boolean = false) = JSONObject().put("id", id).put("text", text).put("description", "").put("clickable", clickable).put("enabled", true)
+        val read = JSONObject().put("snapshot", "s").put("nodes", JSONArray()
+            .put(json("root", "")).put(json("root.0", "", clickable = true)).put(json("root.0.0", "btop")).put(json("root.0.1", "btop"))
+            .put(json("root.1", "\uE88A")).put(json("root.2", "\u2191", clickable = true)).put(json("root.3", "ALL APPS")))
+        val controls = PhoneScreen.brief(read).getJSONArray("controls")
+        assertEquals(listOf("root.0.0", "root.2", "root.3"), (0 until controls.length()).map { controls.getJSONObject(it).getString("id") })
+    }
+
     private fun read() =
         JSONObject().put("ok", true).put("snapshot", "s1").put(
             "nodes",

@@ -32,7 +32,8 @@ screen is read cut down to what you act on: the app in front and each control th
 with whether it takes a press, text or a scroll. --until TEXT waits up to 5 seconds for TEXT to show.
 press finds the one control that says LABEL (its whole label first, then part of it), presses it and
 answers with the screen that follows: one call per step, no numbers read off a picture. fill does the
-same for a text field. --in PACKAGE refuses unless that app is in front. Two controls that answer to
+same for a text field, found by its hint or contents; LABEL "" is the screen's only text field.
+--in PACKAGE refuses unless that app is in front. Two controls that answer to
 LABEL are never chosen between: the error lists their ids for click or type.
 Prefer press, fill and screen. Use read, click, tap and screenshot when they are not enough.
 Works automatically after Accessibility is enabled, on an unlocked phone.
