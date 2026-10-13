@@ -669,8 +669,8 @@ class ThemeStore(
         private const val BARE_APP_ICONS = "bare_app_icons"
         private const val RECENT_APPS = "recent_apps"
         private const val LOCK_FOLLOWS = "lock_follows_look"
-        // Renamed when what is set changed (the home wallpaper too, and scraps on the paper), so it is set again once.
-        private const val LOCK_DONE = "lock_paper_done_2"
+        // Renamed when what is set changed (the home wallpaper too; then scraps on the paper, and off again), so it is set again once.
+        private const val LOCK_DONE = "lock_paper_done_3"
         private const val LOCK_SIZES = "lock_paper_sizes"
         private const val CORNERS = "corners"
         private const val PACK = "pack"

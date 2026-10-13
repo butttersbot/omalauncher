@@ -5,10 +5,8 @@ import android.graphics.BitmapShader
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Rect
-import android.graphics.RectF
 import android.graphics.Shader
 import androidx.compose.ui.graphics.asAndroidBitmap
-import dev.omalauncher.theme.pack.Dressing
 import dev.omalauncher.theme.pack.PageKind
 import dev.omalauncher.theme.pack.PaperPattern
 import dev.omalauncher.theme.pack.ThemePack
@@ -69,10 +67,10 @@ object LockPaper {
     ) = on && kind != PageKind.System && key !in done
 
     /**
-     * The look's paper as home draws it, [width] by [height] pixels at [density] pixels to the dp, and on a
-     * paper of color and pattern, two empty scraps taped to it in the look's own dress, so the lock screen
-     * reads as a page of the same notebook. A look whose paper is a picture is left as the picture. Not on the
-     * main thread.
+     * The look's paper as home draws it, [width] by [height] pixels at [density] pixels to the dp, with nothing on
+     * it: its picture, or its color and pattern. What stands on a lock screen is the owner's to place there, as
+     * widgets; scraps drawn into the paper looked like widgets that did nothing, in the room his own go (Boss,
+     * 2026-10-12). Not on the main thread.
      */
     fun render(
         pack: ThemePack,
@@ -104,66 +102,6 @@ object LockPaper {
             val tile = patternTile(page, density).asAndroidBitmap()
             canvas.drawPaint(Paint().apply { shader = BitmapShader(tile, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT) })
         }
-        for (scrap in scraps(width, height)) scrap(canvas, pack, scrap, density)
         return bitmap
-    }
-
-    /** A scrap on the lock paper: its rectangle in pixels, whether it is the emphasised kind, which way it tilts, and whether tape holds it. */
-    class LockScrap(
-        val left: Float,
-        val top: Float,
-        val right: Float,
-        val bottom: Float,
-        val alt: Boolean,
-        val tiltUp: Boolean,
-        val taped: Boolean,
-    )
-
-    /**
-     * Where the scraps go on a lock screen of [width] by [height]: in its lower half, under Samsung's clock and
-     * over its shortcuts, which is the part of the screen nothing of Samsung's is drawn on. Two that overlap a
-     * little, as on a page; on a wide screen they stand side by side to the right of the clock instead.
-     */
-    fun scraps(
-        width: Int,
-        height: Int,
-    ): List<LockScrap> {
-        val w = width.toFloat()
-        val h = height.toFloat()
-        return if (width > height) {
-            listOf(LockScrap(w * 0.56f, h * 0.24f, w * 0.80f, h * 0.52f, alt = false, tiltUp = true, taped = true), LockScrap(w * 0.70f, h * 0.44f, w * 0.92f, h * 0.70f, alt = true, tiltUp = false, taped = false))
-        } else {
-            listOf(LockScrap(w * 0.38f, h * 0.60f, w * 0.90f, h * 0.76f, alt = false, tiltUp = true, taped = false), LockScrap(w * 0.10f, h * 0.50f, w * 0.60f, h * 0.66f, alt = true, tiltUp = false, taped = true))
-        }
-    }
-
-    private fun scrap(
-        canvas: Canvas,
-        pack: ThemePack,
-        at: LockScrap,
-        density: Float,
-    ) {
-        val surface = if (at.alt) pack.scrap.alt else pack.scrap.surface
-        val radius = pack.shape.radius * density
-        val box = RectF(at.left, at.top, at.right, at.bottom)
-        canvas.save()
-        canvas.rotate(if (at.tiltUp) pack.scrap.tiltMax else pack.scrap.tiltMin, box.centerX(), box.centerY())
-        val shadow = surface.shadow
-        if (shadow.visible && !shadow.inset) {
-            canvas.drawRoundRect(RectF(box).apply { offset(shadow.x * density, shadow.y * density) }, radius, radius, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = shadow.color.argb })
-        }
-        canvas.drawRoundRect(box, radius, radius, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = surface.fill.argb })
-        if (surface.border > 0f) {
-            canvas.drawRoundRect(box, radius, radius, Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = surface.border * density; color = surface.borderColor.argb })
-        }
-        val tape = pack.scrap.tape
-        if (at.taped && tape.style != Dressing.None) {
-            // Home's tapes are sized for tiles; a scrap this big takes one half again as large.
-            val tw = tape.width * density * 1.5f
-            val th = tape.height * density * 1.5f
-            canvas.rotate(tape.angle, box.centerX(), box.top)
-            canvas.drawRect(box.centerX() - tw / 2f, box.top - th / 2f, box.centerX() + tw / 2f, box.top + th / 2f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = tape.color.withAlpha(tape.opacity).argb })
-        }
-        canvas.restore()
     }
 }
