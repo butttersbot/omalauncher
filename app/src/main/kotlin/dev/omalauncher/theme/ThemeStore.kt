@@ -288,6 +288,11 @@ class ThemeStore(
         val page = pack.page
         val bounds = context.getSystemService(android.view.WindowManager::class.java).maximumWindowMetrics.bounds
         val key = LockPaper.key(pick.id, bounds.width(), bounds.height())
+        // The display in use is noted every time, before anything is decided: one already in the look's paper was
+        // otherwise never noted, and a fold's other display stayed unknown (seen on the Fold, 2026-10-12).
+        val here = "${bounds.width()}x${bounds.height()}"
+        val sizes = prefs.getStringSet(LOCK_SIZES, emptySet()).orEmpty().toSet()
+        if (here !in sizes) prefs.edit().putStringSet(LOCK_SIZES, sizes + here).apply()
         val done = prefs.getStringSet(LOCK_DONE, emptySet()).orEmpty().filter { it.startsWith("${pick.id}|") }.toSet()
         if (!LockPaper.wanted(LauncherStyle.lockFollowsLook, page.kind, done, key) || key in lockSetting) return
         // A look whose paper is its own image waits for that image; it comes back here once it is read.
@@ -297,10 +302,7 @@ class ThemeStore(
         val density = context.resources.displayMetrics.density
         // A fold's other display, by the size it was last seen at: it is given the paper now too, so its lock screen
         // has the new look the next time the phone is folded or opened, not one unlock late.
-        val here = "${bounds.width()}x${bounds.height()}"
-        val sizes = prefs.getStringSet(LOCK_SIZES, emptySet()).orEmpty()
-        if (here !in sizes) prefs.edit().putStringSet(LOCK_SIZES, sizes + here).apply()
-        val other = LockPaper.otherDisplay(sizes, bounds.width(), bounds.height())
+        val other = LockPaper.otherDisplay(sizes + here, bounds.width(), bounds.height())
         scope.launch(Dispatchers.IO) {
             val both = WallpaperManager.FLAG_LOCK or WallpaperManager.FLAG_SYSTEM
             if (other != null) {
