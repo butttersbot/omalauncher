@@ -1,5 +1,13 @@
 # Phone test results
 
+## Latest: swipe gestures in place of the three buttons, at Boss's word (2026-10-13, about 14:20 PDT)
+- Boss wanted swipe-to-go-back in apps as on an iPhone. Cause: the phone was on button navigation (`settings get secure navigation_mode` 0), which has no back swipe. He said to switch it.
+- Changed in Settings > Display > Navigation bar by `oma-phone press "Swipe gestures"`; read back `navigation_mode` 2, and the screenshot shows it selected with a handle at the bottom. (The phone locked itself once mid-way; he unlocked it.) To undo: the same screen, "Buttons".
+- Checked through Oma on the cover screen, all PASS: swipe up from the bottom edge in Settings goes home to Oma; a swipe in from the left edge closes the app list; from the right edge closes Oma's settings; a swipe across the middle still turns pages both ways; a swipe up from mid-screen still opens the app list; in Android Settings a swipe from either edge goes back a level and then out to home; `oma-phone back`, `home` and `status` still work.
+- Seen: home is taller now (no button bar); tiles and the dock moved to fit, nothing covered. Closing Oma's settings by an edge swipe went straight to home, the app list under it closed too.
+- NOT checked: the X app itself, the recents gesture, the inner screen, a page swipe that starts at the very edge (the system would take it as back).
+- "Oma watchlist" lock widget: Boss placed it himself after the promotion of d3d5d16; I have not seen it.
+
 ## Latest: a watchlist widget for the lock screen, built, not promoted (2026-10-13, about 13:25 PDT)
 Asked by Boss from the phone: the watchlist on the lock screen, small, the top three gainers, in the active look.
 - New "Oma watchlist" app widget (assist/OmaWatchWidget.kt, res/xml/oma_watch_widget.xml, a manifest receiver), drawn by theme/LookWidgets.kt like "Oma status": a scrap of the look with "top gainers" in small capitals and three lines, ticker in the display face, change at the right in the look's green or red. No prices. LookWidgets' scrap frame is now one helper shared with the status widget.
