@@ -1,5 +1,13 @@
 # Phone test results
 
+## Latest: the overview closes on a tap of nothing, and stands on the look's wallpaper (2026-10-13, about 15:00 PDT)
+Asked by Boss from the phone, looking at "all pages" in city pop on the inner screen.
+- Change (commit e23e3d5, ui/Overview.kt): a tap that no page and no word takes leaves the overview as Back does; in a look with its own page the backdrop is `PagePaper` (the look's paper or wallpaper) blurred 22dp under a 55% wash of the paper's color, in place of the flat paper. The prototype has plain paper; this is Boss's word. Console is as it was.
+- `oma-build`: PASS. Not promoted (bundled with 08b5600, the note instruction).
+- SEEN in Oma Dev, inner screen, city pop: the overview shows the pool wallpaper out of focus under blue, the pages and their names read clearly; a tap on empty space returned to home; a tap on a page still opens that page.
+- NOT seen: the cover screen, a paper look (riso, bujo: a blurred pattern under a wash, likely near plain), a phone below Android 12 (no blur there, only the wash).
+- Oma Dev is left in city pop.
+
 ## Latest: no sticky note after every task (2026-10-13, about 14:30 PDT)
 - Boss: the agent need not leave a note after everything it does. The instruction came from the launcher (phone/PhoneBridge.kt INSTRUCTIONS, and oma-phone's help), not from the agent.
 - Changed (commit 08b5600): the sentence now reads "Only when the user asks for a sticky note ... Do not leave one to say what you did."; the help text likewise; PhoneNotesTest's pinned sentence changed on purpose, at his word. `oma-build`: PASS.
