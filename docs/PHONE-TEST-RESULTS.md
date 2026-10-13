@@ -1,5 +1,13 @@
 # Phone test results
 
+## Latest: a watchlist widget for the lock screen, built, not promoted (2026-10-13, about 13:25 PDT)
+Asked by Boss from the phone: the watchlist on the lock screen, small, the top three gainers, in the active look.
+- New "Oma watchlist" app widget (assist/OmaWatchWidget.kt, res/xml/oma_watch_widget.xml, a manifest receiver), drawn by theme/LookWidgets.kt like "Oma status": a scrap of the look with "top gainers" in small capitals and three lines, ticker in the display face, change at the right in the look's green or red. No prices. LookWidgets' scrap frame is now one helper shared with the status widget.
+- Data: it reads the home widget's kept quotes (files/widget-state/watchlist.owl.json). That widget only fetches while home shows, so when the quotes are over 2 minutes old the lock widget asks TradingView's scanner itself for the same symbols (on a tick or when the screen comes on) and keeps its own copy. Past 15 minutes the caption says the age.
+- `oma-build`: PASS, 815 tests (7 new in OmaWatchWidgetTest), 0 failures. Commit 7cdd03a.
+- Checked on the phone: the real launcher's state file is there under that name with 13 symbols; by the widget's rule it would show NEET +6.5%, BOT +3.3%, ENA +2.6% now. Look in use: city-pop.
+- NOT seen: the widget itself. It cannot be placed until promoted, and placing is in LockStar's App Widgets editor. Its own fetch has never run.
+
 ## Latest: checkpoint, and bundle 2 is being promoted (2026-10-12, about 18:00 PDT)
 - Boss has his laptop and will continue from there. The state of everything is in docs/PHONE-HANDOFF.md ("Where things stand" and "Next"), rewritten now.
 - Boss said "promote it". Running `oma-try` as the last step of this run; the result is NOT known from this run. Bundle 2: Markdown in the chat, picture stickers, the chat scrolling to a sent message. Last green build: 760 tests.
