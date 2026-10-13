@@ -1,6 +1,26 @@
 # Phone test results
 
-## Latest: a quick lane beside the build lane, built, not promoted (2026-10-13, about 15:30 PDT)
+## Latest: one Oma, routed automatically (2026-10-13, about 16:20 PDT, commit f95ba46) — NOT promoted, NOT seen on a screen
+
+Boss's word: he will not pick a lane; he talks to one agent and it must route itself.
+- Every typed request, and a spoken one with no screenshot, goes first to the front agent (`claude -p --model haiku`,
+  looks only, as the quick lane was). It answers, or replies `<<build>>` and the launcher hands Boss's own words to
+  `AgentTasks` unchanged. The `[ quick ] [ build ]` row is gone. `assist/FrontAgent.kt` is new; `AgentTasks.kt` untouched.
+- A front answer has a small `[ send to build ]`; using it sends the words to build and adds a line to
+  `files/oma-routing.jsonl`. Images, a busy or failed front agent, and requests over 4000 characters go straight to build.
+- `oma-build` green (unit tests and APK). Oma Dev installed with it (versionCode 29). The phone was locked, so
+  nothing was looked at: not the chat without the lane row, not a hand-over, not `[ send to build ]`, not voice.
+- Routing tried for real by the subagent with the real command and a stub `oma-phone`: 10 of 10 as intended after two
+  rewordings of the prompt (it first handed over "what are you working on"). 5 to 7 s to a decision, about 3.5 s of
+  it Claude Code starting.
+- The pin in `QuickLaneTest` on "can look, not act" was reworded on purpose (it named the lanes); the pins on
+  permission-prompt-tool, Edit, Write and "dangerously" are as they were.
+- Open, for Boss: a held-button request over another app carries a screenshot and so always goes to build; the
+  listening screen still says busy while build works; a hand-over to a working builder is queued.
+- Also new: `docs/MAC-RUNNER-SPEC.md` (550e66d), for the Mac session. Nothing in it is built.
+- Next: see it in the real launcher when Boss says promote; then project threads (two builders on the phone).
+
+## Earlier: a quick lane beside the build lane, built, not promoted (2026-10-13, about 15:30 PDT)
 Boss wants quick questions answered without waiting for the heavy model or for a running build; agreed plan: a fast front lane first (fast Claude, his pick over Grok), per-project threads next, automatic routing last.
 - New assist/QuickLane.kt and a lane choice in the Oma chat (oma/ChatComposer.kt, ChatHistory.kt, OmaChatActivity.kt): `[ quick ] [ build ]` above the field, kept in prefs. Build is unchanged. Quick runs `claude -p --model haiku` in its own process and session beside AgentTasks, streams its answer into its own entry (caption "quick · time", own stop), text only.
 - It can look and not act: tools are Read, WebSearch, WebFetch and Bash limited to `oma-phone status|screen*|read|pages|board*|looks|stickers` and `date*`; `--permission-prompts none`, so anything else is refused without asking and it can never raise or answer an approval. No notification, tile or lock widget follows it. Tests pin that its command has no write tool and no permission prompt.
