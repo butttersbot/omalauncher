@@ -109,7 +109,7 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Debug builds: `adb shell am start -n dev.omalauncher/.MainActivity --es exec foot`,
+     * Debug builds: `adb shell am start -n dev.omalauncher/.MainActivity --es key KEY --es exec foot`,
      * or `--es theme kanagawa` to apply a theme (scripts/collage-captures.sh).
      */
     private val debugExecSwitch = "allow-debug-exec"
@@ -117,8 +117,10 @@ class MainActivity : ComponentActivity() {
     private fun handleDebugExec(intent: Intent) {
         if (!BuildConfig.DEBUG) return
         // Any app can send this activity an intent, so a guest command from one is taken only while the owner has
-        // left the switch file in the app's own files, which only adb's run-as can write: off unless he turns it on.
-        if (java.io.File(filesDir, debugExecSwitch).isFile) intent.getStringExtra("exec")?.let(runtime::launch)
+        // left a key in the switch file in the app's own files, which only adb's run-as can write or read, and the
+        // intent brings the same key: off unless he turns it on, and then open only to who he gave the key.
+        val key = runCatching { java.io.File(filesDir, debugExecSwitch).readText() }.getOrNull()
+        if (debugExecAllowed(key, intent.getStringExtra("key"))) intent.getStringExtra("exec")?.let(runtime::launch)
         intent.getStringExtra("theme")?.let { name ->
             lifecycleScope.launch {
                 snapshotFlow { runtime.themes.loaded }.first { it }
@@ -211,4 +213,22 @@ class MainActivity : ComponentActivity() {
         }
         return true
     }
+}
+
+/** The fewest characters a key for the debug door may have: a guess is not worth making. */
+const val DEBUG_EXEC_KEY_LENGTH = 32
+
+/**
+ * Whether a guest command from an intent is run: the switch file holds a [kept] key of at least
+ * [DEBUG_EXEC_KEY_LENGTH] characters and the intent [offered] the same one. No file, an empty file (how the
+ * switch used to be turned on) or a short key keeps the door shut. Compared without stopping at the first
+ * character that differs.
+ */
+fun debugExecAllowed(
+    kept: String?,
+    offered: String?,
+): Boolean {
+    val key = kept?.trim().orEmpty()
+    if (key.length < DEBUG_EXEC_KEY_LENGTH || offered == null) return false
+    return java.security.MessageDigest.isEqual(key.toByteArray(), offered.toByteArray())
 }

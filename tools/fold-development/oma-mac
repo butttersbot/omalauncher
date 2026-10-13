@@ -1,0 +1,62 @@
+#!/bin/bash
+# oma-mac: run a command in the launcher's Linux from the Mac, over adb, through the debug build's keyed door.
+#
+#   oma-mac open            make a key, keep it here (mode 600) and in the app's own files on the phone
+#   oma-mac run COMMAND...  run it in the guest as the launcher would, print its output, exit with its status
+#   oma-mac phone ARGS...   the same for oma-phone (oma-mac phone board, oma-mac phone press "All apps")
+#   oma-mac status          whether the door is open
+#   oma-mac close           take the key off the phone and off this Mac
+#
+# The door is MainActivity's debug exec: it runs a guest command from an intent only while the switch file in the
+# app's files holds a key and the intent brings the same one. Only adb's run-as can write or read that file, so
+# with the door open it is still shut to every other app on the phone. Leave it closed when not working.
+# Each run brings the launcher to the front, as any start of its activity does.
+# ADB_SERIAL names the phone when more than one is attached. The key is never printed.
+set -euo pipefail
+PACKAGE=${OMA_PACKAGE:-dev.omalauncher.boss}
+KEYFILE=${OMA_MAC_KEY:-$HOME/.config/oma-mac/key}
+GUEST=files/arch/root/.cache/oma-mac
+adb_() { if [ -n "${ADB_SERIAL:-}" ]; then adb -s "$ADB_SERIAL" "$@"; else adb "$@"; fi; }
+app() { adb_ shell run-as "$PACKAGE" "$@"; }
+case "${1:-}" in
+open)
+  mkdir -p "$(dirname "$KEYFILE")"; chmod 700 "$(dirname "$KEYFILE")"
+  (umask 077; openssl rand -hex 32 > "$KEYFILE")
+  adb_ shell run-as "$PACKAGE" sh -c "'umask 077; cat > files/allow-debug-exec'" < "$KEYFILE"
+  app sh -c "'mkdir -p $GUEST'"
+  echo 'Door open. Close it with: oma-mac close';;
+close)
+  app rm -f files/allow-debug-exec || true
+  app sh -c "'rm -rf $GUEST'" || true
+  rm -f "$KEYFILE"
+  echo 'Door closed.';;
+status)
+  if [ -f "$KEYFILE" ] && app sh -c "'test -s files/allow-debug-exec'" 2>/dev/null; then echo open; else echo closed; fi;;
+phone)
+  shift; exec "$0" run oma-phone "$@";;
+run)
+  shift
+  [ "$#" -ge 1 ] || { echo 'Command required' >&2; exit 2; }
+  [ -f "$KEYFILE" ] || { echo 'The door is closed. Run: oma-mac open' >&2; exit 2; }
+  id=$(openssl rand -hex 8)
+  # The command goes over as a file, each word quoted, so nothing in it is read by a shell on the way.
+  {
+    printf 'cd /root\n{ '
+    printf '%q ' "$@"
+    printf '; } > /root/.cache/oma-mac/%s.out 2>&1\necho $? > /root/.cache/oma-mac/%s.code\n' "$id" "$id"
+  } | adb_ shell run-as "$PACKAGE" sh -c "'cat > $GUEST/$id.sh'"
+  # One string for the phone's shell, so the command stays one word of the intent. The key is hex and the id too.
+  adb_ shell "am start -n $PACKAGE/dev.omalauncher.MainActivity --es key $(cat "$KEYFILE") --es exec 'bash /root/.cache/oma-mac/$id.sh'" >/dev/null
+  code=''
+  for _ in $(seq 1 "${OMA_MAC_WAIT:-150}"); do
+    code=$(app sh -c "'cat $GUEST/$id.code 2>/dev/null'" | tr -d '\r\n' || true)
+    [ -n "$code" ] && break
+    sleep 0.2
+  done
+  app sh -c "'cat $GUEST/$id.out 2>/dev/null'" || true
+  app sh -c "'rm -f $GUEST/$id.sh $GUEST/$id.out $GUEST/$id.code'" || true
+  [ -n "$code" ] || { echo 'No answer: is this build'"'"'s door keyed (versionCode 37 on), and Linux running?' >&2; exit 1; }
+  exit "$code";;
+*)
+  sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 2;;
+esac

@@ -22,8 +22,11 @@ scripts, not code bundled into the Android app.
   and hands a prompt to the same agent the launcher runs, one job at a time. It runs no command of its own. The
   launcher starts it with Linux when both the token and /usr/local/bin/oma-door are there. To shut it for good,
   delete the token.
-- A debug build takes a guest command from an intent (`--es exec`) only while the file `allow-debug-exec` is in
-  the app's own files directory (`adb shell run-as <package> touch files/allow-debug-exec`).
+- A debug build takes a guest command from an intent (`--es exec`) only while the file `allow-debug-exec` in the
+  app's own files directory holds a key of 32 characters or more and the intent brings the same one (`--es key`).
+  An empty file no longer opens it: any app on the phone can send that intent. `oma-mac` (run on the Mac, over adb)
+  opens and closes the door with a fresh key and runs commands through it: `oma-mac open`, `oma-mac phone board`,
+  `oma-mac run CMD`, `oma-mac close`. Leave it closed when not working.
 - oma-dev builds this checkout as a second, throwaway launcher, "Oma Dev" (dev.omalauncher.dev), and installs it
   beside the working one: its own data, no Linux, an empty notebook. Break it freely; the working launcher and its
   agent are untouched. `oma-dev --status`, `--open`, `--no-open`, `--remove`. Test a change there first, then
