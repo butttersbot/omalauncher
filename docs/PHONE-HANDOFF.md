@@ -3,9 +3,9 @@
 For the agent on the Fold (Oma), when Boss works with no Mac in the loop. Written 2026-10-12 by the Mac session.
 Boss talks to you through Oma (voice or the Oma chat). Be short: he is often reading on the move.
 
-## Where things stand (checkpoint 2026-10-12, about 20:15 PDT, written by the Mac session)
+## Where things stand (checkpoint 2026-10-12, about 20:45 PDT, written by the Mac session)
 - This checkout: `/root/Projects/omalauncher`, branch `phone/fold-development`. `git pull --ff-only` first.
-- Installed: the real launcher `dev.omalauncher.boss`, versionCode 36 (commit 842f045), and the throwaway
+- Installed: the real launcher `dev.omalauncher.boss`, versionCode 37 (commit 0934c31), and the throwaway
   `dev.omalauncher.dev` ("Oma Dev": every entry says Dev, magenta icon), older. You are running inside the real one.
 - The goal of the project: make the launcher match the agreed prototypes in `design/` one-to-one. Status and
   information surfaces are placeable widgets, not always-on chrome. No Oma button in the dock.
@@ -16,7 +16,7 @@ Boss talks to you through Oma (voice or the Oma chat). Be short: he is often rea
   over the bars, no hint on an empty page. NOT seen: the answer card's plain words, a voice request over seven lines,
   any of it on the inner screen.
 - Phone control by what controls say (versionCode 35 on): `oma-phone screen`, `press`, `fill`, with
-  `--in PACKAGE`. (`expect` is built but not on the launcher yet: see Next, item 1.) And by name on home (36 on): `stickers`, `stick`, `sticker ID turn|size|move|remove`, `page-add`,
+  `--in PACKAGE`, and `expect` (37 on). And by name on home (36 on): `stickers`, `stick`, `sticker ID turn|size|move|remove`, `page-add`,
   `page-rename`, `page-delete` (empty pages only); `board` gives every note and sticker an id. Run by you on a
   throwaway page on 2026-10-12: all passed; 70–150 ms a sticker, page or board call, about 550 ms a press or fill. Use these, not taps aimed off a screenshot.
 - Phone control after an update: Android can leave the service switched on and never bound. `oma-install`'s job now
@@ -30,7 +30,8 @@ Boss talks to you through Oma (voice or the Oma chat). Be short: he is often rea
   screen_off_timeout 2147483647`; it was 30000).
 - Tailscale on the phone does not come back by itself after a restart; opening the Tailscale app reconnects it.
 - `oma-dev` moves the built APK away, so `oma-install --status` says "No working-launcher APK found" until the next `oma-build`.
-- The Mac session reaches you by typing into the Oma chat over adb and reading `files/oma-chat.json`. It has no
+- The Mac session reaches you by typing into the Oma chat over adb and reading `files/oma-chat.json`, and runs
+  commands itself through the debug door when it has opened it. It has no
   Android SDK: what it pushes is unbuilt until you run `oma-build`, and it says so in each commit.
 
 ## How a change reaches the phone
@@ -49,7 +50,7 @@ Boss talks to you through Oma (voice or the Oma chat). Be short: he is often rea
 - This is Boss's daily phone. Do not open banking, payment, messaging or email apps, do not type into other apps, do
   not change Android settings, do not approve anything on his behalf.
 - Do not move, resize, rename or delete his tiles, pages, notes or pinned apps unless he asks for exactly that.
-- Drive the phone with `oma-phone screen`, `press` and `fill` (and `expect` once it is promoted), and home with the sticker and page commands;
+- Drive the phone with `oma-phone screen`, `press`, `fill` and `expect`, and home with the sticker and page commands;
   `read`, `click` and `tap` are for what those can't reach. System dialogs still ignore `tap`; use `oma-phone back` there.
 - Some tests pin what may write to Boss's pages (PhoneNotesTest) and what may run while an approval waits. If one
   fails, stop and say so: it is not yours to loosen.
@@ -59,12 +60,13 @@ Boss talks to you through Oma (voice or the Oma chat). Be short: he is often rea
 - Say plainly what you saw working and what only passed tests. If a step failed or was skipped, say so.
 
 ## Next, in order (ask Boss which, if he hasn't said)
-1. Small, built but not promoted (after 842f045): `board` tells each sticker's size and turn; `oma-phone expect`.
+1. The Mac session can run commands in this Linux through the debug door, with `tools/fold-development/oma-mac`
+   on the Mac. The door needs a key since versionCode 37 and is shut unless the Mac has opened it; never create
+   `allow-debug-exec` yourself. Boss is holding the Jev pilot.
 2. Open from the 2026-10-12 runs: `sticker size` can grow one over its neighbours (only `stick` places clear);
    `sticker ID remove` given a note's id on the note's own page is refused in a unit test, and was not tried on the
    phone; the dock on the cover screen now starts with btop, cause not known.
-3. Not started: a command to set the look; the commands from the Mac without typing into the chat; a pilot of Jev
-   (TypeSafe's fast chooser, text only) for routing a spoken request. The last two wait on Boss.
+3. Not started: a command to set the look.
 4. Move the sticker library out of the Linux root so it survives a reinstall (`linux/Proot.kt`, `LauncherData.kt`, a bind
    like the widgets folder). Cove's papers, images and backgrounds (17 in the art bank) have no place here yet.
 5. Small: MarkdownText.kt is not in PackSourceCheckTest's converted list; a carried note leaves a shrinking ghost on
