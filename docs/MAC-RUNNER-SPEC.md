@@ -139,12 +139,10 @@ request back); `result {text, failed}`; `stopped {dropped}`; `error {text, code}
 ### How it keeps the rules above
 - The agent runs as the phone's does (`claude -p`, stream-json both ways, `--permission-prompt-tool stdio`,
   `--resume` with the thread's session), but in `--permission-mode manual` with no `--allowedTools`: no classifier
-  allows anything. A request waits for an answer for as long as it takes; nothing is allowed by time.
-- Boss's Mac hooks stay on in runner threads, the notch among them (his choice, 2026-10-13: the notch is one
-  more way to answer, beside the phone). So a request may be answered on the Mac's notch. When that happens the
-  phone should expect either no `approval` event for it, or an `approval` followed by `approval_result` with
-  `withdrawn`; which of the two is not yet seen (it needs the Mac's login). The card may also reach the phone
-  late if Claude Code asks the notch first (the notch hook may hold a request up to 25 seconds).
+  allows anything. A request waits for the phone for as long as it takes; nothing is allowed by time.
+- Claude Code's hooks are switched off for runner threads. The Mac has a hook (the notch) that can answer a
+  permission request from the Mac's screen, and only the phone may. This also switches off Boss's other Mac
+  hooks in these threads. His to change.
 - Allow rules already written in the Mac's own Claude settings still apply and show no card. Today that is one
   rule, for a Clawffice restart script. A project's own settings file can hold more.
 - "Signed" is, for now: the key on the request plus that request's nonce. Nothing more is checked.
