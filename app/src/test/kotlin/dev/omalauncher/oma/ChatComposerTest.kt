@@ -6,8 +6,8 @@ import org.junit.Test
 class ChatComposerTest {
     private fun out(
         draft: String = "hello", images: Int = 0, missing: Boolean = false, busy: Boolean = false, linux: Boolean = true, agent: String? = "claude", working: Boolean = false,
-        lane: Lane = Lane.Build, quickReady: Boolean = true, quickBusy: Boolean = false,
-    ) = outgoing(draft, images, missing, busy, linux, agent, working, lane, quickReady, quickBusy)
+        frontReady: Boolean = false, frontBusy: Boolean = false,
+    ) = outgoing(draft, images, missing, busy, linux, agent, working, frontReady, frontBusy)
 
     @Test fun typedTextGoesToTheBackgroundAgent() {
         assertEquals(Outgoing.Background("hello"), out("  hello \n"))
@@ -43,41 +43,47 @@ class ChatComposerTest {
     @Test fun otherAgentsStillOpenInATerminal() {
         assertEquals(Outgoing.Terminal("hello"), out(agent = "grok"))
     }
-    @Test fun aQuickQuestionGoesAtOnceWhetherOrNotATaskRuns() {
-        assertEquals(Outgoing.Quick("hello"), out("  hello \n", lane = Lane.Quick))
-        assertEquals(Outgoing.Quick("hello"), out(lane = Lane.Quick, working = true))
-        // Whichever agent builds, or none: Claude Code answers quick questions.
-        assertEquals(Outgoing.Quick("hello"), out(lane = Lane.Quick, agent = "grok", working = true))
-        assertEquals(Outgoing.Quick("hello"), out(lane = Lane.Quick, agent = null))
-        assertEquals(Outgoing.Nothing, out(draft = " ", lane = Lane.Quick))
-        assertEquals(Outgoing.Nothing, out(busy = true, lane = Lane.Quick, working = true))
+    /** The lane choice is gone on purpose (Boss, 2026-10-13): these replace the tests of the quick and build lanes. */
+    @Test fun wordsAloneAreHeardByTheFrontAgentFirstWhetherOrNotATaskRuns() {
+        assertEquals(Outgoing.Front("hello"), out("  hello \n", frontReady = true))
+        assertEquals(Outgoing.Front("hello"), out(frontReady = true, working = true))
+        // Whichever background agent builds: Claude Code is the front agent.
+        assertEquals(Outgoing.Front("hello"), out(agent = "codex", frontReady = true, working = true))
+        assertEquals(Outgoing.Nothing, out(draft = " ", frontReady = true))
+        assertEquals(Outgoing.Nothing, out(busy = true, frontReady = true, working = true))
     }
-    @Test fun aQuickQuestionTakesNoImages() {
-        assertEquals(Outgoing.Refused(QUICK_NO_IMAGES), out(images = 1, lane = Lane.Quick))
-        assertEquals(Outgoing.Refused(QUICK_NO_IMAGES), out(draft = "", images = 2, lane = Lane.Quick, working = true))
-        assertEquals(Outgoing.Refused(QUICK_NO_IMAGES), out(images = 1, missing = true, lane = Lane.Quick))
-        assertTrue(QUICK_NO_IMAGES.contains("build"))
+    @Test fun imagesGoStraightToTheBuildLane() {
+        assertEquals(Outgoing.Background("hello"), out(images = 1, frontReady = true))
+        assertEquals(Outgoing.Queued("Describe these images."), out(draft = "", images = 2, frontReady = true, working = true))
+        assertTrue(out(images = 1, missing = true, frontReady = true) is Outgoing.Refused)
     }
-    @Test fun aSecondQuickQuestionWaitsForTheFirst() {
-        assertEquals(Outgoing.Refused(QUICK_BUSY), out(lane = Lane.Quick, quickBusy = true))
-        assertEquals(Outgoing.Refused(QUICK_BUSY), out(lane = Lane.Quick, quickBusy = true, working = true))
-        assertEquals(Outgoing.Refused(QUICK_NEEDS_CLAUDE), out(lane = Lane.Quick, agent = "codex", quickReady = false))
-        assertTrue(out(lane = Lane.Quick, linux = false) is Outgoing.Refused)
+    @Test fun whatIsSentWhileTheFrontAgentIsBusyIsNeverRefused() {
+        assertEquals(Outgoing.Background("hello"), out(frontReady = true, frontBusy = true))
+        assertEquals(Outgoing.Queued("hello"), out(frontReady = true, frontBusy = true, working = true))
     }
-    @Test fun theBuildLaneIsUntouchedByTheQuickOne() {
-        // A quick question being answered, or no Claude Code to answer one, changes nothing about a build message.
-        for (quickBusy in listOf(false, true)) for (quickReady in listOf(false, true)) {
-            assertEquals(Outgoing.Background("hello"), out(quickBusy = quickBusy, quickReady = quickReady))
-            assertEquals(Outgoing.Queued("hello"), out(working = true, quickBusy = quickBusy, quickReady = quickReady))
-            assertEquals(Outgoing.Background("Describe these images."), out(draft = "", images = 2, quickBusy = quickBusy, quickReady = quickReady))
-            assertEquals(Outgoing.Terminal("hello"), out(agent = "grok", quickBusy = quickBusy, quickReady = quickReady))
+    @Test fun withNoFrontAgentEverythingGoesAsItAlwaysDid() {
+        for (frontBusy in listOf(false, true)) {
+            assertEquals(Outgoing.Background("hello"), out(frontBusy = frontBusy))
+            assertEquals(Outgoing.Queued("hello"), out(working = true, frontBusy = frontBusy))
+            assertEquals(Outgoing.Background("Describe these images."), out(draft = "", images = 2, frontBusy = frontBusy))
         }
-        assertEquals(outgoing("hello", 0, false, false, true, "claude", true), out(working = true, lane = Lane.Build))
+        assertEquals(outgoing("hello", 0, false, false, true, "claude", true), out(working = true))
     }
-    @Test fun theLaneIsSavedByItsWordAndStartsAsBuild() {
-        assertEquals(listOf("quick", "build"), Lane.entries.map { it.id })
-        for (lane in Lane.entries) assertEquals(lane, Lane.of(lane.id))
-        assertEquals(Lane.Build, Lane.of(null)); assertEquals(Lane.Build, Lane.of("??"))
+    @Test fun aTerminalAgentIsNeverRoutedThroughTheFrontAgent() {
+        for (frontReady in listOf(false, true)) for (frontBusy in listOf(false, true)) {
+            assertEquals(Outgoing.Terminal("hello"), out(agent = "grok", frontReady = frontReady, frontBusy = frontBusy))
+            assertEquals(Outgoing.Refused("Wait for the running task or stop it first."), out(agent = "grok", working = true, frontReady = frontReady, frontBusy = frontBusy))
+        }
+    }
+    @Test fun theFrontAgentDoesNotGetWhatCouldNotBeSentAnyway() {
+        assertTrue(out(linux = false, frontReady = true) is Outgoing.Refused)
+        assertTrue(out(agent = null, frontReady = true) is Outgoing.Refused)
+    }
+    @Test fun aRequestLongerThanTheThreadKeepsGoesStraightToTheBuildLane() {
+        val whole = "a".repeat(ChatHistory.MAX_PROMPT)
+        assertEquals(Outgoing.Front(whole), out(whole, frontReady = true))
+        assertEquals(Outgoing.Background(whole + "b"), out(whole + "b", frontReady = true))
+        assertEquals(Outgoing.Queued(whole + "b"), out(whole + "b", frontReady = true, working = true))
     }
     @Test fun atMostFourImagesAreAttached() {
         assertEquals(4 to null, imagesToTake(0, 4))

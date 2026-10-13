@@ -16,6 +16,8 @@ import dev.omalauncher.R
 internal object AgentNotices {
     private const val TASK = 41
     private const val BRIEF = 42
+    /** The front agent's answer to a spoken request, where no card can show it: apart from the task's, which may be running. */
+    const val FRONT = 43
     private const val TASK_CHANNEL = "agent-task-updates"
     private const val APPROVAL_CHANNEL = "agent-approvals"
     private const val ANSWER_CHANNEL = "agent-answers"
@@ -54,14 +56,15 @@ internal object AgentNotices {
      * A task just ended with [answer]: it comes up over whatever is in front as a card in the active look,
      * drawn by the accessibility service, and the task's quiet notification stays in the shade. Where the card
      * can't show (phone control off or paused, the phone locked or asleep) that notification pops up instead.
-     * Its text stays off the lock screen either way: notifications here are private.
+     * Its text stays off the lock screen either way: notifications here are private. [id] is which notification
+     * that is: the task's own, unless the answer is not a task's.
      */
-    fun answered(context: Context, label: String, answer: String) {
+    fun answered(context: Context, label: String, answer: String, id: Int = TASK) {
         val notice = taskNotice(false, label, answer, 0) ?: return
         android.os.Handler(android.os.Looper.getMainLooper()).post {
             val carded = dev.omalauncher.phone.PhoneService.instance?.showAnswer(dev.omalauncher.phone.answerCardCaption(label), answer) == true
             if (carded) return@post
-            manager(context).notify(TASK, Notification.Builder(context, ANSWER_CHANNEL).setSmallIcon(R.drawable.ic_notification)
+            manager(context).notify(id, Notification.Builder(context, ANSWER_CHANNEL).setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(notice.title).setContentText(notice.text).setContentIntent(open(context)).setAutoCancel(true)
                 .apply { notice.expanded?.let { setStyle(Notification.BigTextStyle().bigText(it)) } }.build())
         }

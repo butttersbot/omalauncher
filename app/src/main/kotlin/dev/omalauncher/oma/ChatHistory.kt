@@ -44,7 +44,8 @@ data class ChatApproval(val tool: String, val detail: String, val answer: Approv
 /**
  * One request in the Oma thread: what was asked, the steps the agent reported, the approvals and how they
  * were answered, and the result. [images] are the guest paths the app already keeps, never image bytes;
- * [screen] only records that the screen was attached. [agent] names who was asked.
+ * [screen] only records that the screen was attached. [agent] names who was asked: the build lane's agent,
+ * [QUICK_AGENT] once the front agent has answered it itself, [UNDECIDED_AGENT] while that is still open.
  */
 data class ChatTask(
     /** When it was sent; also what identifies it in the store. */
@@ -59,13 +60,27 @@ data class ChatTask(
     val approvals: List<ChatApproval> = emptyList(),
     val result: String = "",
     val status: TaskStatus = TaskStatus.Running,
+    /** He sent this request, which the front agent had answered, to the build lane himself. Once only. */
+    val sentToBuild: Boolean = false,
 ) {
-    /** Asked in the quick lane: answered beside the build task, never by it or in its queue. */
+    /** Answered by the front agent itself, beside the build task: never by it or in its queue. */
     val quick get() = agent == QUICK_AGENT
+
+    /** With the front agent, which has neither answered it nor handed it to the build lane yet. */
+    val undecided get() = agent == UNDECIDED_AGENT
+
+    /** A request of the build lane's: sent to it, or waiting for it. */
+    val build get() = !quick && !undecided
 }
 
-/** What [ChatTask.agent] says for a quick question, where a build task has its agent's name. Saved: never rename. */
+/** What [ChatTask.agent] says for a request the front agent answered, where a build task has its agent's name. Saved: never rename. */
 const val QUICK_AGENT = "quick"
+
+/**
+ * What [ChatTask.agent] says while the front agent decides. Saved, so a restart finds the request in the
+ * thread as interrupted; nothing else remembers it, so it is not sent later behind his back. Never rename.
+ */
+const val UNDECIDED_AGENT = "oma"
 
 /** The limits of the saved thread and its JSON form. */
 object ChatHistory {
@@ -108,6 +123,18 @@ object ChatHistory {
     fun dropped(task: ChatTask, reason: String) = if (task.status == TaskStatus.Queued) task.copy(status = TaskStatus.Dropped, result = reason) else task
 
     /**
+     * [task] marked as sent to the build lane by him; null when that can't be done: it isn't an answer of the
+     * front agent's, it is still being answered, or he has sent it already.
+     */
+    fun sentToBuild(task: ChatTask): ChatTask? = if (task.quick && !task.sentToBuild && task.status != TaskStatus.Running) task.copy(sentToBuild = true) else null
+
+    /**
+     * The thread without the request sent at [time], while the front agent still has it: one it hands over
+     * is filed by the build lane as its own task, and this is how the two stay one entry.
+     */
+    fun handedOver(tasks: List<ChatTask>, time: Long) = tasks.filterNot { it.time == time && !it.build }
+
+    /**
      * What a restart leaves of a thread: nothing is running any more and nothing can still be answered. A
      * follow-up that was waiting is not sent later behind his back; it says it was dropped.
      */
@@ -124,6 +151,8 @@ object ChatHistory {
             .put("images", JSONArray(task.images)).put("screen", task.screen).put("newThread", task.newThread)
             .put("steps", JSONArray(task.steps)).put("result", task.result).put("status", task.status.id)
             .put("approvals", JSONArray(task.approvals.map { JSONObject().put("tool", it.tool).put("detail", it.detail).put("answer", it.answer.id) }))
+            // Written only where it is set, so every other task keeps the shape it has always had.
+            .apply { if (task.sentToBuild) put("sentToBuild", true) }
     })).toString()
 
     /** The saved thread; an unreadable file is an empty thread, and an unreadable task is left out. */
@@ -141,6 +170,7 @@ object ChatHistory {
                     approvals = (0 until (approvals?.length() ?: 0)).mapNotNull { approvals?.optJSONObject(it) }
                         .map { ChatApproval(it.optString("tool"), it.optString("detail"), ApprovalAnswer.of(it.optString("answer"))) },
                     result = task.optString("result"), status = TaskStatus.of(task.optString("status")),
+                    sentToBuild = task.optBoolean("sentToBuild"),
                 ))
             }.getOrNull()
         }.takeLast(MAX_TASKS)
@@ -167,6 +197,12 @@ class ChatStore(private val file: File, private val maxBytes: Long = ChatHistory
     @Synchronized fun update(time: Long, save: Boolean = false, change: (ChatTask) -> ChatTask) {
         tasks = tasks.map { if (it.time == time) ChatHistory.bounded(change(it)) else it }
         if (save) save()
+    }
+
+    /** Takes out the request sent at [time] that the front agent handed over; see [ChatHistory.handedOver]. */
+    @Synchronized fun handedOver(time: Long) {
+        tasks = ChatHistory.handedOver(tasks, time)
+        save()
     }
 
     private fun save() {

@@ -244,8 +244,10 @@ class ListeningHost(private val owner: Context, private val dismiss: () -> Unit)
 
     private fun send(text: String) {
         try {
+            // The front agent hears words alone first, and its answer comes to him as a task's does. With the screen
+            // attached, or when it can't be asked now, the request goes straight to the build lane as it always did.
             // Only the screenshot the note is showing goes along, and it is AgentTasks's to delete from here.
-            AgentTasks.send(owner, text, screen = screen)
+            if (screen != null || !QuickLane.offer(owner, text, away = true)) AgentTasks.send(owner, text, screen = screen)
             screen = null; showScreen(ScreenContext.None, null); onScreenLetGo?.invoke()
             leave()
         } catch (e: Exception) { show(ListeningRequest(ListeningPhase.Failed, detail = e.message ?: "The request could not be sent")) }

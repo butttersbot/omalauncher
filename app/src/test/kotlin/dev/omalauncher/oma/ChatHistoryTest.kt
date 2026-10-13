@@ -120,6 +120,88 @@ class ChatHistoryTest {
         } finally { dir.deleteRecursively() }
     }
 
+    private fun undecided(time: Long, prompt: String = "prompt $time") = ChatTask(time, UNDECIDED_AGENT, prompt)
+
+    @Test fun anUndecidedRequestThatIsHandedOverBecomesTheBuildLanesOneEntry() {
+        val dir = Files.createTempDirectory("oma-chat-test").toFile()
+        try {
+            val file = File(dir, "oma-chat.json")
+            val store = ChatStore(file).apply { load() }
+            store.begin(task(100).copy(status = TaskStatus.Done))
+            store.begin(undecided(200, "fix the overview"))
+            assertEquals(listOf(false, true), store.tasks.map { it.undecided })
+            assertTrue(store.tasks.none { it.quick }); assertEquals(listOf(true, false), store.tasks.map { it.build })
+            // The build lane files the request as its own task, as it does for any; the undecided entry then goes.
+            store.begin(task(ChatHistory.stamp(store.tasks, 200), "fix the overview"))
+            store.handedOver(200)
+            assertEquals(listOf(100L, 201L), store.tasks.map { it.time })
+            assertEquals(listOf("Claude Code", "Claude Code"), store.tasks.map { it.agent })
+            assertEquals("fix the overview", store.tasks.last().prompt)
+            // On disk too: a restart finds one entry for the request, not two.
+            assertEquals(listOf(100L, 201L), ChatStore(file).apply { load() }.tasks.map { it.time })
+        } finally { dir.deleteRecursively() }
+    }
+
+    @Test fun onlyARequestTheFrontAgentStillHasIsTakenOutAsHandedOver() {
+        val tasks = listOf(task(1), undecided(2), ChatTask(3, QUICK_AGENT, "looked first"))
+        assertEquals(listOf(1L, 3L), ChatHistory.handedOver(tasks, 2).map { it.time })
+        assertEquals(listOf(1L, 2L), ChatHistory.handedOver(tasks, 3).map { it.time })
+        // Never a task of the build lane's, and never anything else.
+        assertEquals(tasks, ChatHistory.handedOver(tasks, 1))
+        assertEquals(tasks, ChatHistory.handedOver(tasks, 99))
+    }
+
+    @Test fun anUndecidedRequestTheFrontAgentAnswersBecomesItsAnswer() {
+        val dir = Files.createTempDirectory("oma-chat-test").toFile()
+        try {
+            val store = ChatStore(File(dir, "oma-chat.json")).apply { load() }
+            store.begin(undecided(200, "capital of France?"))
+            store.update(200, save = true) { it.copy(agent = QUICK_AGENT) }
+            store.update(200, save = true) { it.copy(result = "Paris.", status = TaskStatus.Done) }
+            val answered = store.tasks.single()
+            assertTrue(answered.quick); assertFalse(answered.undecided); assertFalse(answered.build)
+            assertEquals(ChatTask(200, QUICK_AGENT, "capital of France?", result = "Paris.", status = TaskStatus.Done), answered)
+        } finally { dir.deleteRecursively() }
+    }
+
+    @Test fun aRestartInterruptsAnUndecidedRequestAndNothingIsLeftToSendIt() {
+        assertEquals("oma", UNDECIDED_AGENT)
+        val before = listOf(task(1).copy(status = TaskStatus.Running), undecided(2))
+        val after = ChatHistory.afterRestart(ChatHistory.decode(ChatHistory.encode(before)))
+        assertEquals(listOf(TaskStatus.Interrupted, TaskStatus.Interrupted), after.map { it.status })
+        assertTrue(after[1].undecided); assertEquals("prompt 2", after[1].prompt); assertEquals("", after[1].result)
+        // It is neither running nor waiting, which are the only two states anything is ever sent from; and it stays so.
+        assertTrue(after.none { it.status == TaskStatus.Running || it.status == TaskStatus.Queued })
+        assertEquals(after, ChatHistory.afterRestart(ChatHistory.decode(ChatHistory.encode(after))))
+        // An undecided request has the shape of any task.
+        val fields = JSONObject(ChatHistory.encode(listOf(undecided(2)))).getJSONArray("tasks").getJSONObject(0)
+        assertEquals(setOf("time", "agent", "prompt", "images", "screen", "newThread", "steps", "result", "status", "approvals"), fields.keys().asSequence().toSet())
+    }
+
+    @Test fun aFrontAnswerIsSentToBuildOnce() {
+        val answered = ChatTask(5, QUICK_AGENT, "add a star sticker", result = "You could add one from the menu.", status = TaskStatus.Done)
+        val marked = ChatHistory.sentToBuild(answered)
+        assertEquals(answered.copy(sentToBuild = true), marked)
+        assertNull(ChatHistory.sentToBuild(marked!!))
+        // Not while it is still being answered, and never for anything but an answer of the front agent's.
+        assertNull(ChatHistory.sentToBuild(answered.copy(status = TaskStatus.Running)))
+        assertNull(ChatHistory.sentToBuild(task(1).copy(status = TaskStatus.Done)))
+        assertNull(ChatHistory.sentToBuild(undecided(2).copy(status = TaskStatus.Interrupted)))
+        for (status in listOf(TaskStatus.Stopped, TaskStatus.Failed, TaskStatus.Interrupted)) assertNotNull(ChatHistory.sentToBuild(answered.copy(status = status)))
+        // The mark survives saving, as a key that only a marked entry has; a file from before has none.
+        assertEquals(listOf(marked), ChatHistory.decode(ChatHistory.encode(listOf(marked))))
+        val fields = JSONObject(ChatHistory.encode(listOf(marked))).getJSONArray("tasks").getJSONObject(0)
+        assertEquals(setOf("time", "agent", "prompt", "images", "screen", "newThread", "steps", "result", "status", "approvals", "sentToBuild"), fields.keys().asSequence().toSet())
+        assertFalse(ChatHistory.decode("""{"version":1,"tasks":[{"time":5,"agent":"quick","prompt":"ok","status":"done"}]}""").single().sentToBuild)
+        val dir = Files.createTempDirectory("oma-chat-test").toFile()
+        try {
+            val store = ChatStore(File(dir, "oma-chat.json")).apply { load() }
+            store.begin(answered)
+            repeat(2) { store.update(5, save = true) { ChatHistory.sentToBuild(it) ?: it } }
+            assertEquals(listOf(marked), ChatStore(File(dir, "oma-chat.json")).apply { load() }.tasks)
+        } finally { dir.deleteRecursively() }
+    }
+
     @Test fun onlyAWaitingFollowUpCanBeDropped() {
         assertEquals(task(1).copy(status = TaskStatus.Dropped, result = "why"), ChatHistory.dropped(task(1).copy(status = TaskStatus.Queued), "why"))
         for (status in listOf(TaskStatus.Running, TaskStatus.Done, TaskStatus.Stopped, TaskStatus.Failed, TaskStatus.Interrupted)) {
