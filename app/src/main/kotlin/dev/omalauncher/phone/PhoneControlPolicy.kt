@@ -10,7 +10,7 @@ object PhoneControlPolicy {
     }
 
     /** What an agent may still do while its owner has an approval to answer: look, never touch. */
-    val whilePending = setOf("read", "apps", "screenshot")
+    val whilePending = setOf("read", "screen", "apps", "screenshot")
 
     /** An agent that could tap could answer its own request, in the notification shade or on the approval screen. */
     fun requireNoPendingApproval(pending: Int, command: String) {
@@ -50,6 +50,10 @@ object PhoneTouch {
 
     /** How long the screen is given to show what an action did before it is read: a screen sliding in is over by then. */
     const val SETTLE_MILLIS = 350L
+
+    /** How long `screen --until` waits for words to show, and how often it looks: inside what the bridge waits for an answer. */
+    const val UNTIL_MILLIS = 5000L
+    const val UNTIL_STEP_MILLIS = 250L
 
     /** How much longer a read at [now] waits, when the screen was last acted on at [acted] (null: never); 0 is read at once. */
     fun settleWait(now: Long, acted: Long?): Long = if (acted == null) 0L else (acted + SETTLE_MILLIS - now).coerceIn(0L, SETTLE_MILLIS)

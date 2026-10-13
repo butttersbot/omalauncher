@@ -196,6 +196,34 @@ class PhoneService : AccessibilityService() {
         override fun look(page: String, then: (dev.omalauncher.widgets.annotations.PageBoard, dev.omalauncher.widgets.annotations.Annotations?) -> Unit) =
             book.whenRead(page) { read -> then(notebook.board(page), if (read) book.on(page) else null) }
     }
+    /** Does [command] (click, type or scroll) to the control at [id] of the screen last read; [reply] hears how it went. */
+    private fun act(command: String, id: String, input: JSONObject, reply: (JSONObject) -> Unit) {
+        val node = resolve(id)
+        try {
+            check(node.isVisibleToUser && node.isEnabled && signatures[id] == signature(node)) { "Screen changed. Read it again." }
+            val done = when (command) {
+                "click" -> node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                "type" -> {
+                    check(node.isEditable && !node.isPassword) { "Only non-password text fields can be typed into." }
+                    val text = input.getString("text"); require(text.length <= 10_000) { "Text too long" }
+                    node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text) })
+                }
+                else -> node.performAction(if (input.optString("direction", "forward") == "backward") AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD else AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+            }
+            if (!done && command == "click") {
+                // Not every control takes a click from here, but a finger on its middle is what its owner would do.
+                val bounds = Rect(); node.getBoundsInScreen(bounds)
+                val metrics = resources.displayMetrics
+                val (x, y) = PhoneTouch.middle(bounds.left, bounds.top, bounds.right, bounds.bottom, metrics.widthPixels, metrics.heightPixels)
+                    ?: error("Android rejected this click and the control is not on screen to tap. Read the screen again.")
+                stroke(Path().apply { moveTo(x, y) }, TAP_MILLIS) { reply(if (it.optBoolean("ok")) it.put("tapped", true) else it) }
+                return
+            }
+            check(done) { "Android rejected this action. Read the screen again or use a gesture." }
+            changed()
+        } finally { node.recycle() }
+        reply(JSONObject().put("ok", true))
+    }
     fun request(input: JSONObject, reply: (JSONObject) -> Unit) {
         try {
             val command = input.getString("command")
@@ -266,30 +294,44 @@ class PhoneService : AccessibilityService() {
                 }
                 "click", "type", "scroll" -> {
                     check(input.getString("snapshot") == snapshot && snapshot.isNotEmpty()) { "Read the screen first; snapshot is stale." }
-                    val id = input.getString("id"); val node = resolve(id)
-                    try {
-                        check(node.isVisibleToUser && node.isEnabled && signatures[id] == signature(node)) { "Screen changed. Read it again." }
-                        val done = when (command) {
-                            "click" -> node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                            "type" -> {
-                                check(node.isEditable && !node.isPassword) { "Only non-password text fields can be typed into." }
-                                val text = input.getString("text"); require(text.length <= 10_000) { "Text too long" }
-                                node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text) })
-                            }
-                            else -> node.performAction(if (input.optString("direction", "forward") == "backward") AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD else AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
-                        }
-                        if (!done && command == "click") {
-                            // Not every control takes a click from here, but a finger on its middle is what its owner would do.
-                            val bounds = Rect(); node.getBoundsInScreen(bounds)
-                            val metrics = resources.displayMetrics
-                            val (x, y) = PhoneTouch.middle(bounds.left, bounds.top, bounds.right, bounds.bottom, metrics.widthPixels, metrics.heightPixels)
-                                ?: error("Android rejected this click and the control is not on screen to tap. Read the screen again.")
-                            stroke(Path().apply { moveTo(x, y) }, TAP_MILLIS) { reply(if (it.optBoolean("ok")) it.put("tapped", true) else it) }
-                            return
-                        }
-                        check(done) { "Android rejected this action. Read the screen again or use a gesture." }
-                        changed()
-                    } finally { node.recycle() }
+                    act(command, input.getString("id"), input, reply)
+                    return
+                }
+                "screen" -> {
+                    val until = input.optString("until")
+                    val deadline = SystemClock.uptimeMillis() + if (until.isEmpty()) 0L else PhoneTouch.UNTIL_MILLIS
+                    // Looks again until the words show or the time is up; what it then gives is the screen as it stands.
+                    fun look() {
+                        try {
+                            PhoneAccess.requireAccess(this)
+                            val seen = read()
+                            val shows = until.isEmpty() || PhoneScreen.says(seen, until)
+                            if (!shows && SystemClock.uptimeMillis() < deadline) { main.postDelayed({ look() }, PhoneTouch.UNTIL_STEP_MILLIS); return }
+                            reply(PhoneScreen.brief(seen).also { if (until.isNotEmpty()) it.put("shows", shows) })
+                        } catch (e: Exception) { reply(JSONObject().put("ok", false).put("error", e.message ?: "Phone control failed")) }
+                    }
+                    main.postDelayed({ look() }, PhoneTouch.settleWait(SystemClock.uptimeMillis(), acted))
+                    return
+                }
+                "press", "fill" -> {
+                    val label = input.getString("label")
+                    val seen = read()
+                    PhoneScreen.requireFront(seen, input.optString("in"))
+                    val nodes = PhoneScreen.nodes(seen)
+                    val id = when (val found = if (command == "press") PhoneFind.press(nodes, label) else PhoneFind.field(nodes, label)) {
+                        is Found.One -> found.id
+                        is Found.Several -> error("Several controls answer to \"$label\": ${found.ids.joinToString(", ")}. Nothing was done. Use a longer label, or click/type with snapshot $snapshot and one of these ids.")
+                        Found.None -> error("Nothing on screen ${if (command == "press") "says" else "is a text field that says"} \"$label\". Nothing was done. Run oma-phone screen.")
+                    }
+                    // One call does the step and gives back what it led to, so the next step starts from the real screen.
+                    act(if (command == "press") "click" else "type", id, input) { done ->
+                        if (!done.optBoolean("ok")) { reply(done); return@act }
+                        main.postDelayed({
+                            try { PhoneAccess.requireAccess(this); reply(PhoneScreen.brief(read()).put("did", command).put("on", id)) }
+                            catch (e: Exception) { reply(JSONObject().put("ok", false).put("error", e.message ?: "Phone control failed")) }
+                        }, PhoneTouch.SETTLE_MILLIS)
+                    }
+                    return
                 }
                 "back", "home", "recents", "notifications" -> {
                     val action = when (command) { "back" -> GLOBAL_ACTION_BACK; "home" -> GLOBAL_ACTION_HOME; "recents" -> GLOBAL_ACTION_RECENTS; else -> GLOBAL_ACTION_NOTIFICATIONS }
