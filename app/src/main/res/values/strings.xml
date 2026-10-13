@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="wallpaper_label">Omarchy</string>
+    <string name="oma_clock_widget_description">The date and the time in the look you picked in Oma.</string>
     <string name="oma_lock_widget_description">What Oma is doing: working, waiting for your OK, or done. Tap for the chat.</string>
     <string name="wallpaper_description">The current Omarchy theme background. System colors follow the theme.</string>
     <string name="phone_control_description">Allows your agents to read screens and operate apps automatically when you ask for phone tasks. Screen content may be shared with your AI provider. Stop access from the notification or phone control screen.</string>

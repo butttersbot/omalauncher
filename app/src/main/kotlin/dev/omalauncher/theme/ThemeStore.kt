@@ -196,6 +196,8 @@ class ThemeStore(
     fun pickPack(id: String) {
         prefs.edit().putString(PACK, id).apply()
         usePack(PackRegistry.choose(id, ::packSource))
+        // At once in the new look's colors; again, with its own typefaces, once those are read.
+        LookWidgets.refresh(context)
     }
 
     private fun usePack(pick: PackPick) {
@@ -220,6 +222,7 @@ class ThemeStore(
                     ActivePack.fonts = fonts
                     ActivePack.wallpapers = wallpapers
                     syncLockPaper()
+                    LookWidgets.refresh(context)
                 }
             }
         }
