@@ -53,11 +53,11 @@ def tailscale_address():
 def agent_command(session):
     """Claude Code as the phone runs it, but asking about everything the phone would be asked about.
 
-    manual mode with the prompts sent to us: nothing is allowed by a classifier. Hooks are off because the Mac's
-    own PermissionRequest hook (the notch) can answer a request, and only the phone may. The key and the runner's
-    own records are out of the agent's reach.
+    manual mode with the prompts sent to us: nothing is allowed by a classifier. The Mac's own hooks stay on, so
+    a thread shows on Boss's notch and he may answer a request there as well as on the phone (his choice,
+    2026-10-13). The key and the runner's own records are out of the agent's reach.
     """
-    settings = {'disableAllHooks': True, 'permissions': {'deny': [
+    settings = {'permissions': {'deny': [
         'Read(/' + str(TOKEN_FILE) + ')', 'Read(/' + str(STATE) + '/**)', 'Edit(/' + str(STATE) + '/**)']}}
     return [AGENT, '-p'] + (['--resume', session] if session else []) + [
         '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
