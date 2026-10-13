@@ -327,6 +327,7 @@ object AgentTasks {
         // The ring follows the task from here, the one place every change of it passes.
         OmaRing.task(working, pending.size, succeeded = label == "Done")
         OmaTiles.refresh(context)
+        OmaLockWidget.refresh(context)
         AgentNotices.task(context, working, label, answer, approvals.size)
         writeStatus(context)
     }

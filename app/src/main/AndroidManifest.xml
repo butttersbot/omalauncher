@@ -4,6 +4,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- The lock and home wallpapers in the look's paper, when the owner turns that on in Style. -->
     <uses-permission android:name="android.permission.SET_WALLPAPER" />
+    <!-- Samsung's own lock-screen widgets hold this; asked for in case its lock screen wants it of ours. -->
+    <uses-permission android:name="com.samsung.systemui.permission.FACE_WIDGET" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -248,6 +250,12 @@
             </intent-filter>
         </activity>
         <receiver android:name=".assist.StopAgentTask" android:exported="false" />
+        <!-- Oma's state as a widget: the standard declaration, and the one Samsung's lock screen reads from its own apps. -->
+        <receiver android:name=".assist.OmaLockWidget" android:exported="true" android:label="Oma status${labelSuffix}">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/oma_lock_widget" />
+            <meta-data android:name="samsung.appwidget.monotone.info" android:resource="@xml/oma_lock_widget_monotone" />
+        </receiver>
         <!-- Approve once / Deny on an approval notification; only this app's own PendingIntents reach it. -->
         <receiver android:name=".assist.ApprovalActionReceiver" android:exported="false" />
         <service android:name=".assist.OmaVoiceService" android:exported="true"

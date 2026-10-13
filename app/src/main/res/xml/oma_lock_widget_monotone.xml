@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- For Samsung's lock screen: target host 2, sizes 0xb and style 2 are what its own lock-screen widgets give. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:targetCellHeight="1"
+    android:targetCellWidth="1"
+    app:monotoneInitialLayoutMedium="@layout/oma_lock_widget"
+    app:monotoneInitialLayoutSmall="@layout/oma_lock_widget"
+    app:monotoneInitialLayoutTiny="@layout/oma_lock_widget"
+    app:monotonePreviewLayoutMedium="@layout/oma_lock_widget"
+    app:monotonePreviewLayoutSmall="@layout/oma_lock_widget"
+    app:monotonePreviewLayoutTiny="@layout/oma_lock_widget"
+    app:targetHost="2"
+    app:widgetSize="11"
+    app:widgetStyle="2" />
