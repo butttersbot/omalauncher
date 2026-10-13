@@ -1,5 +1,7 @@
 package dev.omalauncher.assist
 
+import dev.omalauncher.phone.PHONE_DISCONNECTED
+import dev.omalauncher.phone.PhoneLink
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -34,6 +36,19 @@ class AgentStatusTest {
     @Test fun theAnswerIsCarriedAsPlainWords() {
         val status = agentStatus(working = false, label = "Done", answer = "## Display test\n\n| Element | Example |\n|---|---|\n| Bold | **strong** |", approvals = 0, now = 0)
         assertEquals("Display test\nElement · Example\nBold · strong", status.getString("answer"))
+    }
+
+    @Test fun phoneControlLeftDisconnectedNeedsAttentionBetweenTasks() {
+        val idle = agentStatus(working = false, label = "Done", answer = "All good.", approvals = 0, now = 0, phone = PhoneLink.Disconnected)
+        assertEquals("failed", idle.getString("state"))
+        assertEquals(PHONE_DISCONNECTED, idle.getString("answer"))
+        assertEquals("disconnected", idle.getString("phone"))
+        // A task in hand keeps the tile: what it is doing matters more.
+        val busy = agentStatus(working = true, label = "Using Bash", answer = "", approvals = 0, now = 0, phone = PhoneLink.Disconnected)
+        assertEquals("working", busy.getString("state"))
+        assertEquals("disconnected", busy.getString("phone"))
+        val fine = agentStatus(working = false, label = "Done", answer = "All good.", approvals = 0, now = 0)
+        assertEquals("done", fine.getString("state")); assertEquals("All good.", fine.getString("answer")); assertEquals("on", fine.getString("phone"))
     }
 
     @Test fun theOtherEndingsAreToldApart() {

@@ -42,14 +42,14 @@ class PhoneService : AccessibilityService() {
     private val screenChanged = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) = syncRing()
     }
-    override fun onServiceConnected() { PhoneAccess.load(this); instance = this; watchRing() }
+    override fun onServiceConnected() { PhoneAccess.load(this); instance = this; watchRing(); dev.omalauncher.assist.AgentTasks.phoneChanged(this) }
     /** A window changed, the lock screen's among them: an overlay that is up looks again at once. */
     override fun onAccessibilityEvent(event: AccessibilityEvent?) { if (ring.shown || answer.shown) syncRing() }
     override fun onInterrupt() = Unit
     /** Folded, unfolded or turned. */
     override fun onConfigurationChanged(newConfig: Configuration) { super.onConfigurationChanged(newConfig); lookAgain(ring.relayout()) }
     override fun onUnbind(intent: Intent?): Boolean { closeRing(); return super.onUnbind(intent) }
-    override fun onDestroy() { instance = null; closeRing(); PhoneAccess.clearIndicator(this); super.onDestroy() }
+    override fun onDestroy() { instance = null; closeRing(); PhoneAccess.clearIndicator(this); dev.omalauncher.assist.AgentTasks.phoneChanged(this); super.onDestroy() }
 
     private fun watchRing() {
         closeRing()

@@ -9,6 +9,13 @@ import dev.omalauncher.R
 object PhoneAccess {
     @Volatile private var paused = false
     val active get() = PhoneService.instance != null && !paused
+    /** Where the service stands with Android now, read from its settings: see [PhoneLink]. */
+    fun link(context: Context): PhoneLink {
+        val mine = ComponentName(context, PhoneService::class.java)
+        val listed = android.provider.Settings.Secure.getString(context.contentResolver, android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
+            .orEmpty().split(':').any { ComponentName.unflattenFromString(it) == mine }
+        return phoneLink(PhoneService.instance != null, listed, SystemClock.elapsedRealtime() - android.os.Process.getStartElapsedRealtime())
+    }
     fun load(context: Context) {
         paused = context.getSharedPreferences("phone-control", Context.MODE_PRIVATE).getBoolean("paused", false)
     }

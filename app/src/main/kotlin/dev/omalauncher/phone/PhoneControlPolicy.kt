@@ -20,6 +20,29 @@ object PhoneControlPolicy {
     }
 }
 
+/**
+ * Where phone control stands with Android: bound and working, switched off, or switched on in Accessibility
+ * and not bound. The last is what an update can leave behind: Android starts binding the new build, stops the
+ * package once more, and never binds again until the switch is turned off and on or the phone restarts.
+ */
+enum class PhoneLink(val id: String) { On("on"), Off("off"), Disconnected("disconnected") }
+
+/** How long after the app starts Android is given to bind the service before it counts as disconnected. */
+const val PHONE_BIND_GRACE_MILLIS = 20_000L
+
+/** What the owner and the agent are told while phone control is switched on and not bound. */
+const val PHONE_DISCONNECTED = "Phone control is disconnected. Turn it off and on in Accessibility settings, or restart the phone."
+
+/** [bound]: the service is running. [switchedOn]: Android's settings list it. [upMillis]: how long this process has run. */
+fun phoneLink(bound: Boolean, switchedOn: Boolean, upMillis: Long): PhoneLink =
+    when {
+        bound -> PhoneLink.On
+        !switchedOn -> PhoneLink.Off
+        // Still within the time Android takes to bind it after a start.
+        upMillis < PHONE_BIND_GRACE_MILLIS -> PhoneLink.On
+        else -> PhoneLink.Disconnected
+    }
+
 /** The numbers the bridge's touches and reads go by, kept apart from the service so they can be checked without a phone. */
 object PhoneTouch {
     /** How long a swipe may take: at most long enough to hold at a screen edge, and well inside what the bridge waits for an answer. */

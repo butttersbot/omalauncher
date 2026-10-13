@@ -60,4 +60,12 @@ class PhoneTouchTest {
         // The bridge answers a swipe when the finger lifts, and waits eight seconds for that.
         assertTrue(PhoneTouch.SWIPE_MILLIS.last + PhoneTouch.SETTLE_MILLIS < 8_000)
     }
+
+    @Test fun switchedOnAndUnboundIsDisconnectedOnlyAfterTheTimeToBind() {
+        assertEquals(PhoneLink.On, phoneLink(bound = true, switchedOn = true, upMillis = 0))
+        assertEquals(PhoneLink.On, phoneLink(bound = true, switchedOn = false, upMillis = 60_000))
+        assertEquals(PhoneLink.Off, phoneLink(bound = false, switchedOn = false, upMillis = 60_000))
+        assertEquals(PhoneLink.On, phoneLink(bound = false, switchedOn = true, upMillis = PHONE_BIND_GRACE_MILLIS - 1))
+        assertEquals(PhoneLink.Disconnected, phoneLink(bound = false, switchedOn = true, upMillis = PHONE_BIND_GRACE_MILLIS))
+    }
 }

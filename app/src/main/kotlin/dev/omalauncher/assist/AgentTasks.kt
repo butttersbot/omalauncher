@@ -15,7 +15,10 @@ import dev.omalauncher.oma.ScreenShots
 import dev.omalauncher.oma.TaskStatus
 import dev.omalauncher.oma.ring.OmaRing
 import dev.omalauncher.phone.HomeDoor
+import dev.omalauncher.phone.PHONE_DISCONNECTED
+import dev.omalauncher.phone.PhoneAccess
 import dev.omalauncher.phone.PhoneBridge
+import dev.omalauncher.phone.PhoneLink
 import java.io.File
 import java.io.BufferedWriter
 import org.json.JSONObject
@@ -332,11 +335,17 @@ object AgentTasks {
      * The task as a widget can read it: a `file("~/.cache/oma/agent.json")` source sees every change the
      * moment it is written. Home has no strip or note of its own for this; the widget is the place for it.
      */
+    /** Phone control came, went or was found disconnected: the status file says so. Nothing about the task has changed. */
+    fun phoneChanged(context: Context) {
+        restore(context)
+        writeStatus(context)
+    }
+
     private fun writeStatus(context: Context) {
         runCatching {
             val file = File((context.applicationContext as App).runtime.proot.home, AGENT_STATUS_FILE)
             file.parentFile?.mkdirs()
-            file.writeText(agentStatus(working, label, answer, approvals.size, System.currentTimeMillis() / 1000).toString())
+            file.writeText(agentStatus(working, label, answer, approvals.size, System.currentTimeMillis() / 1000, PhoneAccess.link(context)).toString())
         }
     }
 }
@@ -371,12 +380,16 @@ const val AGENT_STATUS_FILE = ".cache/oma/agent.json"
 /**
  * The agent's task for a widget: whether it is `working`, how many `approvals` wait, `state` as one word
  * (working, waiting, done, stopped, failed or ready), `doing` as home used to pencil it, the first lines of
- * the last `answer` as plain words (a tile draws no Markdown), and when this was `updated` in Unix seconds.
+ * the last `answer` as plain words (a tile draws no Markdown), `phone` control as on, off or disconnected, and
+ * when this was `updated` in Unix seconds. Disconnected between tasks, `state` is failed and `answer` says how to mend it.
  */
-fun agentStatus(working: Boolean, label: String, answer: String, approvals: Int, now: Long): JSONObject {
+fun agentStatus(working: Boolean, label: String, answer: String, approvals: Int, now: Long, phone: PhoneLink = PhoneLink.On): JSONObject {
+    // Between tasks, a tile has room to say that phone control needs him: it reads as needing attention, with how to mend it.
+    val cut = phone == PhoneLink.Disconnected && !working && approvals == 0
     val state = when {
         approvals > 0 -> "waiting"
         working -> "working"
+        cut -> "failed"
         label == "Done" -> "done"
         label == "Stopped" -> "stopped"
         label == "Ready" -> "ready"
@@ -385,7 +398,8 @@ fun agentStatus(working: Boolean, label: String, answer: String, approvals: Int,
     return JSONObject()
         .put("working", working).put("approvals", approvals).put("state", state).put("label", label)
         .put("doing", if (working || approvals > 0) marginNote(label) else "")
-        .put("answer", Markdown.plain(answer.trim().take(4 * AGENT_STATUS_ANSWER)).take(AGENT_STATUS_ANSWER)).put("updated", now)
+        .put("answer", if (cut) PHONE_DISCONNECTED else Markdown.plain(answer.trim().take(4 * AGENT_STATUS_ANSWER)).take(AGENT_STATUS_ANSWER))
+        .put("phone", phone.id).put("updated", now)
 }
 
 /** How much of an answer the status file carries: enough for a tile, not the whole thread. */

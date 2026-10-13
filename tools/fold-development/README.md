@@ -10,6 +10,11 @@ scripts, not code bundled into the Android app.
 - oma-install verifies package/signature/version and schedules a detached Android
   shell job to update/reopen the working launcher in 10 seconds.
 - oma-install --status checks the installed version and detached job result.
+- After a successful install the detached job waits for Android to bind phone control again. If it is still
+  switched on in Accessibility and not bound after 20 seconds (an update can leave it so), the job turns it off
+  and on, as Android's shell, and logs PHONE_CONTROL_HEALED or _STILL_DISCONNECTED; `--status` says which.
+  Switched off, it is left off. The off-and-on has not yet been seen mending a stuck update on the Fold; Boss
+  doing the same by hand in settings did (2026-10-12).
 - oma-try builds, syncs and schedules the update.
 - oma-door is a small private door for the Mac session to reach the agent here when adb can't: it listens on the
   phone's Tailscale address only (port 8477), needs the token in /root/.config/oma-door/token with every request,

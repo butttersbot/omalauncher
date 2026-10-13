@@ -23,6 +23,8 @@ class PhoneBridge(private val context: Context, private val proot: Proot) {
         if (started) return
         val server = LocalServerSocket(socketName)
         started = true
+        // Once Android has had its time to bind the service: if it is switched on and still not bound, the status file says so.
+        Handler(Looper.getMainLooper()).postDelayed({ dev.omalauncher.assist.AgentTasks.phoneChanged(context) }, PHONE_BIND_GRACE_MILLIS + 1000)
         thread(name = "phone-bridge", isDaemon = true) {
             while (true) {
                 val socket = runCatching { server.accept() }.getOrNull() ?: break
@@ -39,11 +41,13 @@ class PhoneBridge(private val context: Context, private val proot: Proot) {
                                 val service = PhoneService.instance
                                 when {
                                     input.optString("command") == "status" -> {
-                                        result = JSONObject().put("ok", true).put("active", PhoneAccess.active).put("connected", service != null)
+                                        val link = PhoneAccess.link(context)
+                                        result = JSONObject().put("ok", true).put("active", PhoneAccess.active).put("connected", service != null).put("link", link.id)
+                                        if (link == PhoneLink.Disconnected) result.put("note", PHONE_DISCONNECTED)
                                         latch.countDown()
                                     }
                                     input.optString("command") == "stop" -> { PhoneAccess.stop(context); result = JSONObject().put("ok", true); latch.countDown() }
-                                    service == null -> { result = JSONObject().put("ok", false).put("error", "Enable Omalauncher Accessibility access in Android settings."); latch.countDown() }
+                                    service == null -> { result = JSONObject().put("ok", false).put("error", if (PhoneAccess.link(context) == PhoneLink.Disconnected) PHONE_DISCONNECTED else "Enable Omalauncher Accessibility access in Android settings."); latch.countDown() }
                                     else -> service.request(input) { value -> result = value; latch.countDown() }
                                 }
                             }
