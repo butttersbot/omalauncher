@@ -1,6 +1,16 @@
 # Phone test results
 
-## Latest: ＋ never asks which project; Tailscale heal respects a manual off (2026-10-14) — tests only, NOT promoted
+## Latest: bug noted — `oma-phone fill` said ok but the text never landed (2026-10-14, 04:15 PDT)
+
+In the Oma chat, on a Mac thread's tab, `oma-phone fill --in dev.omalauncher.boss "to Back up projects before
+phone…" "<text>"` answered `ok: true`, yet the field stayed empty and [ send ] sent nothing. `oma-phone read` shows
+why the label matched: the placeholder "to NAME…" is its own non-editable child node (root.0.0.0.5.0.0) inside the
+editable field (root.0.0.0.5.0, whose own text is empty). `read` + `type` on the editable node worked first time.
+Two things to fix: (1) `fill` must resolve a matched label to the nearest editable node (the field the placeholder
+sits in), and (2) `fill` must read the field back and answer `ok: false` when the text is not there. Also seen:
+`type` after `read` failed with "Screen changed" while the chat streamed; it took a retry loop. Not fixed yet.
+
+## Earlier: ＋ never asks which project; Tailscale heal respects a manual off (2026-10-14) — tests only, NOT promoted
 
 - Boss: "i shouldn't be asked which project" and "yes, respect the manual off".
 - ＋ chat: the "Which project on the Mac?" question and its answer-matching are gone. A `<<mac ID>>`/`<<mac-new ID>>`
