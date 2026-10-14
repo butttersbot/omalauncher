@@ -34,12 +34,30 @@ Boss moves to a new, higher-RAM phone tomorrow (2026-10-14/15). Everything below
    "running on the Mac" with "running on the Mac: copy the games" as its line, and as a quiet line at the bottom of
    the thread's tab. Unit tested (MacRunnerTest, MacThreadsTest, AgentThreadsTest, ChatHistoryTest). To check on the
    new phone: start background work from a Mac tab, watch the "Still running…" line, the tile label, and the report.
+   **Seen on the real launcher 2026-10-14 16:28–16:32 (thread "Background keep-alive check", t9f70c3fc), driven
+   over adb because phone control was off:** PASS — the answer came back in the tab; "· Still running on the Mac:
+   Wait 90 seconds then print done…" showed under the answer; the Agents tile read "RUNNING ON THE MAC" with "running
+   on the Mac: Wait 90 seconds then print done", then "DONE" after it ended; the job survived its turn (the runner's
+   log: note "completed (exit code 0)" 16:31:34, Claude Code's report "The 90-second timer finished without errors and
+   printed "done"." 16:31:37). FAIL — that report never reached the phone (tab still showed "Still running…" at 16:32,
+   no report); the follower seems to stop at the turn's result, so events between turns are only picked up later or
+   not at all. FAIL — his own first message, sent from this phone's tab, shows as "Sent from elsewhere: say hi …".
+   Not seen: a separate "still running" line at the bottom of the tab. Screens: /root/.cache/bgcheck/*.png.
 10. **Mac work is not on the oma tile, ring or lock widget** (they read the phone builders only).
 11. **A thread tab shows only what the phone sent**: "Earlier work on the Mac is not shown". Fetch the thread's events.
 12. **The Claude→Codex→Cursor limit memory (15 min) is lost on a launcher restart.**
 13. **A ＋ chat needs the phone's Linux to send** (the front agent runs there) although its work is the Mac's.
 14. **Design question for Boss:** a ＋ chat he named but never wrote in blocks ＋ (＋ reopens it instead of a new one).
 15. **Two phone builders share one checkout**; the "use your own worktree" note is advice, not enforced.
+
+## Found 2026-10-14 afternoon (on the real launcher)
+16. **Opening the chat on a thread by intent does nothing when the chat is already open**
+    (`OmaChatEntry` + `dev.omalauncher.extra.THREAD` is delivered to the running activity; onNewIntent ignores it).
+17. **The chat field shows no text to accessibility** (uiautomator: the field node's text is empty even with text in
+    it). Likely the real cause of #3: `fill` sets text the field never reports back. Make the composer expose its
+    value (semantics editableText) and update the tab's draft from the field.
+18. **Phone control stays off after an update** ("switched off in Accessibility settings; left off") — see #5.
+19. **`oma status` Mac threads go stale**: during the run above it still showed the previous request and "idle".
 
 ## Built but never seen on a screen (check on the new phone)
 ＋ starting in `~/Projects` without a question; the Tailscale self-heal (after a reboot) and its respect for a
