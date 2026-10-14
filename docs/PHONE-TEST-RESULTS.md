@@ -1,6 +1,20 @@
 # Phone test results
 
-## Latest: second routing bundle on the real launcher (2026-10-13, about 19:40 PDT, versionCode 50, commit 812a96c)
+## Latest: Agents page and chat tabs (2026-10-13, about 21:00 PDT, commit b450d76) — NOT promoted, NOT seen on a screen
+
+Built from `design/oma-threads-mockup.html`, which Boss approved ("it looks good"; tabs folded behind "▾", state
+dots in the header). `oma-build` green.
+- Chat: header = name + one dot per thread + "▾"; tabs Oma, Phone, then Mac threads; a thread's tab shows its
+  entries only and its field goes straight to it (front agent skipped, no context block); "→ NAME" opens the tab;
+  `OmaChatActivity.EXTRA_THREAD` ("phone" / "mac:<id>"). Mac work started at the Mac is not fetched yet.
+- Home: a page "Agents" is made the first time a tile is needed; native tiles of kind "thread" (`ui/AgentTile.kt`,
+  `widgets/AgentTiles.kt`, `widgets/AgentTileKeeper.kt`) only on that page, 3x3, keyed "thread:phone" /
+  "thread:mac:<id>". Never leaves while working, queued or waiting for his OK; idle or failed, fades in the 12th hour
+  and goes. A tile he drags elsewhere is his. Pinned: only the Agents page is ever written (AgentTilesTest).
+- No tape or alt fill on the tiles: ScrapFrameTest pins that only widget tiles are dressed.
+- The failed-thread rule above was changed by me after the subagent (it kept red tiles forever).
+
+## Earlier: second routing bundle on the real launcher (2026-10-13, about 19:40 PDT, versionCode 50, commit 812a96c)
 
 - Promoted at Boss's word; `oma-install --status` verified, phone control bound by itself.
 - Seen: `oma-thread list` against the real runner; `oma-thread new` made "FF4 better menu mod" (t5e121ba2) on
