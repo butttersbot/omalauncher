@@ -297,3 +297,19 @@ and Cursor on the Mac; see "Seen with the real agents".
   turn on: the same words go to `POST /threads {name, project, kind}` with the next of claude, codex, cursor that is
   installed, named "NAME · Codex". A limit is remembered for 15 minutes, so new requests start on an agent not at one.
 - A new chat (＋ in the chat) only ever makes Mac threads; it never sends `model`.
+
+## Asked next by Boss (2026-10-14): the Mac does the building, the phone only installs
+Boss agreed to simplify: real work happens on the Mac; the phone keeps one small builder for what must touch the
+phone (`oma-phone`, the final install). For Oma's own code that means:
+1. **Android toolchain on the Mac Pro**, matching the phone: JDK for Gradle 9.8, Android SDK platform 37 (compileSdk
+   37), build-tools 36.0.0, NDK 29.0.14206865, AGP 9.4.1 / Kotlin 2.4.20 come from the build files. `./gradlew
+   :app:testDebugUnitTest :app:assembleDebug` green in `~/Projects/omalauncher-fold` (or a dedicated checkout under
+   `~/Projects`, so runner threads may work there) on branch `phone/fold-development`.
+2. **An `omalauncher` thread on the Mac** in that checkout, so the front agent can send launcher code work there
+   (`<<mac ID>>`) instead of to a phone builder. It commits and pushes to `phone/fold-development` as the phone does;
+   it never force-pushes.
+3. **The signing key stays on the phone.** The in-place update must be signed with the working launcher's key, and
+   no key or credential is moved off the phone (standing rule). So the Mac builds and tests; installing stays a phone
+   step: the phone pulls, `oma-build`, `oma-try` (about two minutes). If Boss ever wants the Mac to install too, that
+   is his decision about his key, not ours.
+4. Say here what you installed, the test count, and how long a clean build and a test run take on the Mac.
