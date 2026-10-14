@@ -6,6 +6,12 @@ approval to write written.txt and writes it only when allowed, in every mode (it
 classifier sends to the prompt tool); "edit" writes edited.txt as a routine edit: at once in auto mode, after asking
 in any other; "slow" takes three seconds first; "limit" answers as Claude Code does at a usage limit. Every start is
 added to starts.log in the project, with its permission mode, so a test can see a task was not started twice.
+
+"background" starts a background command and answers at once; like Claude Code it then stays alive while that
+command runs, until it is ended, which leaves the command unfinished in the session. The next start that resumes
+finds it orphaned and, as Claude Code 2.1 does, first runs a turn of its own about it (a task_notification, then an
+empty result with no user_message_uuid) before the owner's message. Results of the owner's turns name the uuid he
+sent as Claude Code does, unless the prompt says "old" (a Claude Code from before those fields).
 """
 import json, pathlib, sys, time, uuid
 
@@ -20,7 +26,10 @@ def said(text):
 
 arguments = sys.argv[1:]
 session = arguments[arguments.index('--resume') + 1] if '--resume' in arguments else str(uuid.uuid4())
-prompt = json.loads(sys.stdin.readline())['message']['content']
+given = json.loads(sys.stdin.readline())
+prompt = given['message']['content']
+echo = {'user_message_uuid': given['uuid'], 'user_message_uuids': [given['uuid']]} if given.get('uuid') and 'old' not in prompt else {}
+orphan = pathlib.Path('background.running')
 with open('starts.log', 'a') as log:
     log.write(json.dumps({'prompt': prompt, 'resumed': '--resume' in arguments, 'mode': arguments[arguments.index('--permission-mode') + 1],
                          'prompt_tool': arguments[arguments.index('--permission-prompt-tool') + 1]}) + '\n')
@@ -28,9 +37,14 @@ if '--model' in arguments:
     with open('models.log', 'a') as log:
         log.write(arguments[arguments.index('--model') + 1] + '\n')
 out({'type': 'system', 'subtype': 'init', 'session_id': session, 'model': 'claude-fake'})
+if '--resume' in arguments and orphan.exists():
+    orphan.unlink()
+    out({'type': 'system', 'subtype': 'task_notification', 'task_id': 'b1', 'status': 'stopped', 'output_file': '/tmp/b1.output',
+         'summary': "Background shell command didn't finish before the previous session ended", 'session_id': session})
+    out({'type': 'result', 'subtype': 'success', 'is_error': False, 'result': '', 'num_turns': 0, 'session_id': session})
 if 'limit' in prompt:
     out({'type': 'assistant', 'error': 'rate_limit', 'message': {'role': 'assistant', 'content': [{'type': 'text', 'text': "You've hit your limit · resets 5pm"}]}})
-    out({'type': 'result', 'subtype': 'success', 'is_error': True, 'result': "You've hit your limit · resets 5pm", 'session_id': session})
+    out({'type': 'result', 'subtype': 'success', 'is_error': True, 'result': "You've hit your limit · resets 5pm", 'session_id': session, **echo})
     sys.stdin.read()
     sys.exit(0)
 said('Heard: ' + prompt)
@@ -51,5 +65,13 @@ if 'write' in prompt or 'edit' in prompt:
         said('Not allowed, so nothing was written.')
 elif 'files' in prompt:
     said('Files here: ' + ', '.join(sorted(path.name for path in pathlib.Path.cwd().iterdir())))
-out({'type': 'result', 'subtype': 'success', 'is_error': False, 'result': 'done', 'session_id': session})
+elif 'background' in prompt:
+    task = {'task_id': 'b1', 'task_type': 'local_bash', 'description': 'copy the games'}
+    out({'type': 'system', 'subtype': 'task_started', 'session_id': session, **task})
+    out({'type': 'system', 'subtype': 'background_tasks_changed', 'tasks': [task], 'session_id': session})
+    orphan.write_text('b1')
+    said('Started copying in the background.')
+out({'type': 'result', 'subtype': 'success', 'is_error': False, 'result': 'done', 'session_id': session, **echo})
 sys.stdin.read()
+if orphan.exists():
+    time.sleep(60)

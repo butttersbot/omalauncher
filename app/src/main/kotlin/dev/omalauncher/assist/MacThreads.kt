@@ -70,6 +70,7 @@ const val MAC_NOT_TAKEN = "Mac unreachable: it did not take this."
 const val MAC_NO_ANSWER = "The Mac ended this without an answer."
 const val MAC_INTERRUPTED = "The runner on the Mac restarted while this ran. Nothing is started again until you say."
 const val MAC_STOPPED_UNTAKEN = "Stopped before the Mac took it."
+const val MAC_EMPTY_TURN = "The Mac ended this turn without an answer."
 
 /** How long to wait before asking a Mac that did not answer again: 2 s, 5 s, 15 s, then every 30 s. [misses] counts from 1. */
 fun macRetryDelay(misses: Int): Long = when {
@@ -217,8 +218,8 @@ fun macTaken(task: ChatTask) = if (task.mac && task.status == TaskStatus.Queued)
 fun macUnsent(task: ChatTask, reason: String) = if (task.mac && task.status == TaskStatus.Queued) task.copy(status = TaskStatus.Dropped, result = reason) else task
 
 /**
- * [task] as it is sent again; null when it must not be: only a request the Mac never got is, and never one it
- * took, finished or may still have.
+ * [task] as it is sent again; null when it must not be: only a request the Mac never got, or whose turn ended with
+ * nothing in it ([MAC_EMPTY_TURN]), is, and never one it took and answered or may still have.
  */
 fun macRetried(task: ChatTask): ChatTask? = if (task.mac && task.status == TaskStatus.Dropped) task.copy(status = TaskStatus.Queued, result = "") else null
 
@@ -280,9 +281,14 @@ fun macApply(tasks: List<ChatTask>, threadId: String, event: MacEvent, inFlight:
         is MacEvent.Approval -> macAsked(tasks, threadId, event.request)
         is MacEvent.ApprovalResult -> macAnswered(tasks, threadId, event.approval, approvalAnswer(event.decision))
         // The result is the whole answer, as it is for the phone's builder; with no words, what was said so far stays.
+        // An empty one ending a turn in which nothing at all happened answered nothing (a runner before 2026-10-14
+        // ended his turn on Claude Code's own turn about background work): his to send again, never "Task completed.".
         is MacEvent.Result -> running {
-            val none = if (event.failed) "The agent needs attention." else "Task completed."
-            it.over(if (event.failed) TaskStatus.Failed else TaskStatus.Done, event.text.ifBlank { it.result.ifBlank { none } }).copy(answeredBy = it.answeredBy.ifEmpty { answeredBy })
+            if (!event.failed && event.text.isBlank() && it.result.isBlank() && it.steps.isEmpty() && it.approvals.isEmpty()) it.over(TaskStatus.Dropped, MAC_EMPTY_TURN)
+            else {
+                val none = if (event.failed) "The agent needs attention." else "Task completed."
+                it.over(if (event.failed) TaskStatus.Failed else TaskStatus.Done, event.text.ifBlank { it.result.ifBlank { none } }).copy(answeredBy = it.answeredBy.ifEmpty { answeredBy })
+            }
         }
         is MacEvent.Stopped -> tasks.map {
             when {
@@ -861,7 +867,7 @@ object MacThreads {
     }
 
     /**
-     * `[ try again ]` on a request the Mac never got: the same step once more, and a line in the routing log.
+     * `[ try again ]` on a request the Mac never got or ended with nothing: the same step once more, and a line in the routing log.
      * One whose new thread was never made is placed again from how the threads stand now.
      */
     fun tryAgain(context: Context, time: Long) {
@@ -1106,7 +1112,7 @@ object MacThreads {
                 val gone = synchronized(this) { book.ended(threadId, event.id).also { published() } }
                 gone.forEach { AgentNotices.macWithdraw(context, it) }
                 // A request of his that just ended comes to him as the phone builder's does; one he stopped says nothing more.
-                // Dropped here only when every agent was at its limit, which needs him as a failure does.
+                // Dropped here when every agent was at its limit or the turn ended empty, which needs him as a failure does.
                 val ended = log.tasks.firstOrNull { now ->
                     now.thread == threadId && now.status in ENDINGS && before.any { it.time == now.time && it.status == TaskStatus.Running }
                 }

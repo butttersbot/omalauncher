@@ -9,6 +9,8 @@ Pull `phone/fold-development` first. In order of importance:
    Then on a scratch thread check that a plain edit runs with no card and something risky still sends a card to
    the phone. Claude: `--permission-mode auto` + stdio prompts. Codex: its "Auto" preset (on-request +
    workspace-write). Cursor: unchanged (manual).
+   The same `oma-runner install` also carries the stale-result fix (a message no longer ends on Claude Code's own
+   empty turn about orphaned background work): "As built: stale results (2026-10-14)" in `docs/MAC-RUNNER-SPEC.md`.
 2. **Security gap to close before relying on Codex in auto:** Codex's sandbox can read the runner key file, and in
    auto mode it may do so without a card; with the key it could start or message other threads. Either move the key
    where the Codex sandbox cannot read it (and tell Boss where it went), or set Codex threads to `mode: "manual"`

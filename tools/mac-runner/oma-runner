@@ -19,7 +19,7 @@ approves nothing itself: every request for approval waits for the phone's answer
 
   oma-runner serve | install | start | stop | status | uninstall
 """
-import hmac, json, os, pathlib, plistlib, re, secrets, select, shlex, shutil, signal, socket, subprocess, sys, threading, time, tomllib, urllib.parse, urllib.request
+import hmac, json, os, pathlib, plistlib, re, secrets, select, shlex, shutil, signal, socket, subprocess, sys, threading, time, tomllib, urllib.parse, urllib.request, uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HOME = pathlib.Path.home()
@@ -108,9 +108,17 @@ class Claude:
     rest to the permission prompt tool, which is us: a card on the phone. In manual mode every request is a card.
     Hooks are off because the Mac's own PermissionRequest hook (the notch) can answer a request, and only the phone
     may. The key and the runner's own records are out of the agent's reach in both modes.
+
+    A turn ends only on the result of the owner's message. Claude Code can run turns of its own in the same process:
+    resuming a conversation whose last process was ended under a background command, it first runs a turn telling
+    the model that command was orphaned, which ends in an empty result before his message is even read. So the
+    message carries a uuid, which Claude Code names on the result that answers it (user_message_uuid(s)); any other
+    result is a note, and the turn goes on.
     """
     def __init__(self, thread, text):
         self.thread, self.text, self.limited = thread, text, None
+        self.uuid, self.spoke = str(uuid.uuid4()), False
+        self.background = {}  # task id -> description: the background work Claude Code last said is running
 
     def command(self):
         meta = self.thread.meta
@@ -123,7 +131,16 @@ class Claude:
         return clean_environment()
 
     def begin(self):
-        self.thread.say({'type': 'user', 'session_id': '', 'message': {'role': 'user', 'content': self.text}})
+        self.thread.say({'type': 'user', 'session_id': '', 'uuid': self.uuid, 'message': {'role': 'user', 'content': self.text}})
+
+    def answers(self, event):
+        """Whether a result is the one for the owner's message."""
+        named = event.get('user_message_uuids') or ([event['user_message_uuid']] if event.get('user_message_uuid') else [])
+        if named:
+            return self.uuid in named
+        # Named no message: a turn Claude Code began itself, or any turn of a Claude Code too old to name one. Taken
+        # as the answer only with something in it, so the empty turn about an orphaned command is not.
+        return self.spoke or bool(event.get('is_error')) or bool(str(event.get('result') or '').strip())
 
     def heard(self, event):
         """One line from Claude Code, turned into what the phone is shown. True when the turn is over."""
@@ -133,7 +150,12 @@ class Claude:
             if event.get('session_id') and thread.meta.get('session') != event['session_id']:
                 thread.meta['session'] = event['session_id']
                 thread.save()
+        elif kind == 'system' and event.get('subtype') == 'task_notification':
+            thread.emit('note', text=str(event.get('summary') or '').strip() or 'A background task ended: ' + str(event.get('status')))
+        elif kind == 'system' and event.get('subtype') == 'background_tasks_changed':
+            self.background = {task.get('task_id'): str(task.get('description') or task.get('task_id')) for task in event.get('tasks') or []}
         elif kind == 'assistant':
+            self.spoke = True
             if event.get('error') in ('rate_limit', 'billing_error'):
                 self.limited = event['error']
             for block in (event.get('message') or {}).get('content') or []:
@@ -151,6 +173,10 @@ class Claude:
             thread.withdraw(event.get('request_id'))
         elif kind == 'result':
             text = str(event.get('result') or '')
+            if not self.answers(event):
+                thread.emit('note', text='Claude Code ended a turn of its own (such as one about background work) before this message; its answer is still to come.')
+                self.spoke = False
+                return False
             if event.get('is_error') and (self.limited or LIMIT.search(text)):
                 thread.emit('error', code='limit', text=text or self.limited)
             else:
@@ -631,6 +657,9 @@ def turn(thread, text):
         thread.pending.clear()
         if closing:
             return
+        if getattr(driver, 'background', None):
+            # The agent's process group ends with the turn, and background work it started ends with it.
+            thread.emit('note', text='Stopped when the turn ended, unfinished: ' + '; '.join(driver.background.values())[:500])
         if not answered and not thread.stopped:
             left = '\n'.join(stray)[-2000:]
             thread.emit('error', code='limit' if LIMIT.search(left) else code, text=left or 'The agent ended without an answer.')

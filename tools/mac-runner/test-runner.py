@@ -211,6 +211,26 @@ try:
     stream(made['thread']['id'])
     check('a model asked for is passed to Claude Code', code == 200 and 'claude-opus-5-5' in (project / 'models.log').read_text())
 
+    # Thread t91462875, 2026-10-14: a turn left a background command running; the next message's turn ended 2 s
+    # after it began on an empty result Claude Code made for that command, and his words got no answer.
+    for words in ('background copy', 'background copy, old'):
+        code, made = call('POST', '/threads', {'name': 'Copy', 'project': str(project)})
+        copy = made['thread']['id']
+        call('POST', '/threads/%s/messages' % copy, {'text': words})
+        events = stream(copy)
+        check(words + ': background work the turn leaves running is told of when the turn ends', settle(copy, 'idle', 10)
+              and any(event['type'] == 'note' and 'copy the games' in event['text'] for event in call('GET', '/threads/%s/events' % copy)[1]['events']))
+        last = call('GET', '/threads/' + copy)[1]['thread']['last_event']
+        asked = 'what files are here' + (', old' if 'old' in words else '')
+        call('POST', '/threads/%s/messages' % copy, {'text': asked})
+        events = stream(copy, after=last)
+        results = [event for event in events if event['type'] == 'result']
+        check(words + ': the empty result Claude Code makes for the orphaned command does not end the next turn', len(results) == 1 and results[0]['text'] == 'done'
+              and any(event['type'] == 'text' and event['text'] == 'Heard: ' + asked for event in events))
+        said = [event for event in events if event['type'] != 'status']
+        check(words + ': the stopped command and the turn Claude Code took for it are notes', [event['type'] for event in said[:4]] == ['message', 'note', 'note', 'text']
+              and "didn't finish" in said[1]['text'])
+
     for kind, tool in (('codex', 'Edit'), ('cursor', 'Bash')):
         (project / 'written.txt').unlink(missing_ok=True)
         code, made = call('POST', '/threads', {'name': kind.title(), 'project': str(project), 'kind': kind})

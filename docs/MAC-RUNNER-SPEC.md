@@ -347,3 +347,35 @@ checkout (it copies itself to `~/.local/bin/oma-runner` and restarts), or copy i
 oma-runner start`. Running tasks end with the restart and their threads come back `interrupted`. Then, on a scratch
 thread: a plain file edit should run with no card, and something risky (e.g. `rm` outside the project, a push)
 should still show one.
+
+## As built: stale results (2026-10-14, by the agent on the Fold)
+Seen in thread t91462875 (claude, opus): a turn started a long copy with a background Bash command and answered at
+04:05:39. At 04:09:51 Boss's next message ended 2 s later on `result {text: "", failed: false}` with nothing in
+between; the phone said "Task completed." and his words were never answered (again at 04:12:41). Changed in
+`tools/mac-runner/oma-runner` and the phone; proof: `test-runner.py`, now 88 checks, against `fake-agent`, which
+now plays the same sequence.
+
+- **The cause.** The runner runs one `claude -p --resume` process per turn. After the turn's `result` it closes
+  stdin, waits 5 s and ends the process group. Claude Code stays alive while background work runs, so the group was
+  ended 5 s later (`status idle` at 04:05:44), the copy with it, and nothing recorded that the command finished.
+  The next `--resume` finds that command "orphaned by previous process exit" and, before reading the new message,
+  queues a task notification of its own (priority next, no model call): a `system task_notification` (status
+  `stopped`, "Background shell command didn't finish before the previous session ended") and a turn that ends in an
+  empty `result` naming no user message. The runner took that result as the answer, ended the process, and his
+  message was lost with it. Read from Claude Code 2.1.296 (`restoreBackgroundTasksFromMessages` in print mode);
+  the second miss fits a background command left by the turn in between, which the log excerpt does not show.
+- **Runner: a turn ends on its own result.** The owner's message now goes to Claude Code with a `uuid`; Claude Code
+  names it on the result that answers it (`user_message_uuid`, `user_message_uuids`). A result naming other uuids,
+  or none and with nothing in it (no assistant line, no text, not an error), is not his: it becomes a `note` and
+  the turn goes on. A result naming none but with something in it still ends the turn, so a Claude Code too old to
+  name uuids works as before.
+- **New event `note {text}`**, for what the agent did that is not the owner's answer: each `task_notification`
+  (its summary), a result Claude Code made for a turn of its own, and, when a turn's process ends while Claude Code
+  still listed background work running (`background_tasks_changed`), "Stopped when the turn ended, unfinished: …"
+  with the descriptions. The phone shows nothing for `note` yet (it counts it, as any unknown event).
+- **Not changed:** background work still ends with the turn, because each turn is its own process. Keeping a
+  thread's process alive while its background work runs (and sending the next message into it) would let a long
+  copy finish; that is a larger change, not made here.
+- **Phone:** a `result` with no words, not failed, ending a turn in which nothing happened (no text, step or card)
+  no longer reads "Task completed.": the entry says "The Mac ended this turn without an answer.", needs attention,
+  and has `[ try again ]`, which sends the same words to the thread again.

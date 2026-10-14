@@ -2,6 +2,7 @@ package dev.omalauncher.assist
 
 import dev.omalauncher.oma.ApprovalAnswer
 import dev.omalauncher.oma.ChatApproval
+import dev.omalauncher.oma.ChatHistory
 import dev.omalauncher.oma.ChatTask
 import dev.omalauncher.oma.TaskStatus
 import dev.omalauncher.oma.UNDECIDED_AGENT
@@ -107,7 +108,8 @@ class MacThreadsTest {
         assertEquals(TaskStatus.Failed, failed.status); assertEquals("half\n", failed.result)
         assertEquals(ApprovalAnswer.Unanswered, failed.approvals.single().answer)
         assertEquals("The agent needs attention.", macApply(listOf(taken(5)), id, MacEvent.Result(1, 0, "", failed = true)).single().result)
-        assertEquals("Task completed.", macApply(listOf(taken(5)), id, MacEvent.Result(1, 0, " ", failed = false)).single().result)
+        // A turn that did something and said nothing is still done.
+        assertEquals("Task completed.", macApply(listOf(ChatHistory.withStep(taken(5), "Bash: make")), id, MacEvent.Result(1, 0, " ", failed = false)).single().result)
         val erred = macApply(listOf(running), id, MacEvent.Error(1, 0, "The agent ended without an answer.", 1)).single()
         assertEquals(TaskStatus.Failed, erred.status); assertEquals("half\n\nThe agent ended without an answer.", erred.result)
         assertEquals(MAC_NO_ANSWER, macApply(listOf(taken(5)), id, MacEvent.Error(1, 0, "", null)).single().result)
@@ -116,6 +118,20 @@ class MacThreadsTest {
         assertEquals(listOf(TaskStatus.Stopped, TaskStatus.Stopped, TaskStatus.Queued), stopped.map { it.status })
         assertEquals(listOf("half\n", MAC_STOPPED_UNTAKEN, ""), stopped.map { it.result })
         assertEquals(ApprovalAnswer.Unanswered, stopped[0].approvals.single().answer)
+    }
+
+    /** Thread t91462875: a result with no words ended a turn in which nothing happened, and he read "Task completed." for words no one answered. */
+    @Test fun anEmptyTurnNeedsHimAndCanBeSentAgain() {
+        val ended = macApply(listOf(taken(5, "flip to auto mode")), id, MacEvent.Result(1, 0, "", failed = false)).single()
+        assertEquals(TaskStatus.Dropped, ended.status); assertEquals(MAC_EMPTY_TURN, ended.result)
+        assertEquals("The Mac ended this turn without an answer.", MAC_EMPTY_TURN)
+        assertEquals(taken(5, "flip to auto mode").copy(status = TaskStatus.Queued), macRetried(ended))
+        // A waiting card was something in the turn: its end is the turn's, not one to send again.
+        val asked = taken(5).copy(approvals = listOf(ChatApproval("Write", "{}", ApprovalAnswer.Waiting, "a1")))
+        assertEquals(TaskStatus.Done, macApply(listOf(asked), id, MacEvent.Result(1, 0, "", failed = false)).single().status)
+        // Notes and other events the phone does not show do not count as something said.
+        val noted = macApply(listOf(taken(5)), id, MacEvent.Other(1, 0, "note"))
+        assertEquals(TaskStatus.Dropped, macApply(noted, id, MacEvent.Result(2, 0, "", failed = false)).single().status)
     }
 
     @Test fun anApprovalIsALineOnTheRunningEntryAndEndsAsTheMacSays() {
