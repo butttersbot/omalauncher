@@ -1,6 +1,19 @@
 # Phone test results
 
-## Latest: Codex and Cursor when Claude is at its limit; ＋ is always the Mac (2026-10-14) — NOT promoted, NOT seen on a screen
+## Latest: promoting the night's batch, then simplifying (2026-10-14, Boss: "Yeah, let's do it")
+
+Promoted at Boss's word: chat dots at the right, ＋ new chat (always a Mac session), auto-named tabs, tab long-press
+menu, italic placeholder, Builder B's tile timers and editable voice words, Mac reply names, Claude→Codex→Cursor
+fallback. Unit tests green (1106); NOT seen on a screen before the update.
+Next, in order (agreed with Boss after the herdr discussion: no herdr; simplify instead):
+1. After the update: the Critic (Fable, foreground, `subagent_type: critic`) actuates the batch on the real launcher.
+2. Mac builds Oma: request written at the end of MAC-RUNNER-SPEC.md (toolchain, an `omalauncher` thread; the
+   signing key stays on the phone, so install stays a phone step).
+3. Shrink the front agent to two jobs (answer, or which project); stop/restart/clean become tab-menu buttons; drop
+   the builder A/B, restart and clean marks.
+4. One `oma` command for the small guest tools (threads, keep, status).
+
+## Earlier: Codex and Cursor when Claude is at its limit; ＋ is always the Mac (2026-10-14) — NOT promoted, NOT seen on a screen
 
 Boss: "if we hit our limit on claude code … we should have codex available … or cursor", then "The plus button should
 always open up a Mac session. If I need to do anything on the phone, I'm gonna be using the hold to talk." Compile-checked
