@@ -124,7 +124,7 @@ data class AgentThread(
     val since: Long? = null,
     /** Whether it runs on the Mac: a Mac thread, or a new chat, which is the Mac's even before it has a thread there. */
     val mac: Boolean = macThreadId(key) != null,
-    /** A new chat with no thread on the Mac yet: its words wait for a project, or for the Mac. */
+    /** A new chat with no thread on the Mac yet: nothing sent, its thread being made, or its words waiting for the Mac. */
     val unplaced: Boolean = false,
 )
 

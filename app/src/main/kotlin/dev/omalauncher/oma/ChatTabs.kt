@@ -116,7 +116,6 @@ fun fieldHint(to: SendTo): String? = when (to) {
     is SendTo.Mac -> "to ${to.name}…"
     is SendTo.Chat -> "start this chat on the Mac…"
     is SendTo.ChatStarting -> "starting a new thread on the Mac…"
-    is SendTo.ChatProject -> "name a project on the Mac…"
 }
 
 /**
@@ -124,13 +123,13 @@ fun fieldHint(to: SendTo): String? = when (to) {
  * is deciding with it: so it shows on the Oma tab while either goes on, on a builder's tab while that builder
  * works ([working] is then that builder's), on a new chat with nowhere to go yet while the front agent decides
  * its words ([deciding] is then that chat's), and never on a Mac thread's tab, whose tasks each have a stop of
- * their own on their entry, nor on a chat that waits for him to name its project.
+ * their own on their entry.
  */
 fun fieldStop(to: SendTo, working: Boolean, deciding: Boolean): Boolean = when (to) {
     SendTo.Oma -> working || deciding
     SendTo.Phone, SendTo.PhoneB -> working
     is SendTo.Chat, is SendTo.ChatStarting -> deciding
-    is SendTo.Mac, is SendTo.ChatProject -> false
+    is SendTo.Mac -> false
 }
 
 /** What a long press on a tab can do. */

@@ -1,90 +1,70 @@
 package dev.omalauncher.assist
 
+import dev.omalauncher.oma.ChatTask
+import dev.omalauncher.oma.NEW_CHAT_NAME
+import dev.omalauncher.oma.TaskStatus
+
 /*
- * Which project a new chat starts on (Boss, 2026-10-13: "The plus button should always open up a Mac session. If
- * I need to do anything on the phone, I'm gonna be using the hold to talk"). A new chat's work always goes to a
- * new thread on the Mac. When the front agent names no project for it, or would give it to the phone, the
- * launcher asks him in the tab which project folder on the Mac, and his next words there name one. Which folders
- * there are, the question and how his answer is read are plain functions here, unit tested.
+ * Where a new chat starts on the Mac (Boss, 2026-10-13: "The plus button should always open up a Mac session";
+ * 2026-10-14: "i shouldn't be asked which project"). A new chat's first words always go to a new thread on the
+ * Mac and nothing asks him where: in the folder of the thread the front agent named, or else in one default
+ * folder, from which the session can go into any project itself. The rules are plain functions here, unit tested.
  */
 
 /**
- * A project folder on the Mac, as the threads in it show it: [folder] is its last part, which is what he is
- * asked to pick from, [thread] the thread in it that worked last, and [names] what its threads are called, which
- * he may name it by as well ("FF4" for ffiv-ds-better-menu-mod).
+ * The folder a new chat's thread is made in when no thread was named. The runner takes a folder under its allowed
+ * roots, the root itself included, and `~/Projects` is the first of those (tools/mac-runner/oma-runner, ROOTS).
  */
-data class MacProject(val folder: String, val thread: MacThread, val names: List<String>)
-
-/** The project folders of [threads], the one worked in last first. Threads with no project are in none. */
-fun macProjects(threads: List<MacThread>): List<MacProject> =
-    threads.filter { macProjectKey(it.project).isNotEmpty() }
-        .groupBy { macProjectKey(it.project) }.values
-        .map { there -> there.sortedByDescending { it.lastWorked ?: Long.MIN_VALUE } }
-        .sortedByDescending { it.first().lastWorked ?: Long.MIN_VALUE }
-        .map { there -> MacProject(macFolder(there.first().project), there.first(), there.map { macName(it.name) }.distinct()) }
-
-/** What a new chat says when no project folder on the Mac is known: there is nothing to pick from, so nothing is asked. */
-const val MAC_NO_PROJECTS = "This chat is for work on the Mac, and no project on the Mac is known on this phone yet. Nothing was sent."
+const val MAC_DEFAULT_PROJECT = "~/Projects"
 
 /**
- * What a new chat's words that name no thread there say while the Mac is out of reach. They are kept, nothing is
- * sent and no phone builder takes them: `[ try again ]` under them asks Oma again once the Mac is back.
+ * What a new chat's entry waits under while its thread in [MAC_DEFAULT_PROJECT] is made. The runner's ids are a
+ * "t" and hex digits, so no thread on the Mac is ever called this, and nothing follows it there.
+ */
+const val MAC_NEW_THREAD = "new-chat"
+
+/**
+ * What a new chat's words say while the Mac is out of reach. They are kept, nothing is sent and no phone builder
+ * takes them: `[ try again ]` under them asks Oma again once the Mac is back.
  */
 const val MAC_CHAT_UNREACHABLE = "Mac unreachable — this chat is for the Mac."
 
-/** What becomes of a new chat's words that name no thread on the Mac ([chatPlace]). */
+/** What becomes of a new chat's first words ([chatPlace]). */
 enum class ChatPlace {
-    /** He is asked which project folder they are for. */
-    Ask,
+    /** A new thread is made for them on the Mac. */
+    Start,
 
-    /** No Mac is set up on this phone: said, and nothing asked. */
+    /** No Mac is set up on this phone: said, and nothing sent. */
     NotSetUp,
 
     /** The Mac did not answer at the last try: his words wait with `[ try again ]` under them. */
     Unreachable,
-
-    /** The Mac answers but no project folder of it is known: said, and nothing asked. */
-    NoProjects,
 }
 
-/**
- * Where a new chat's words go when they name no thread: with a Mac [setUp] that is [reachable] and has [projects]
- * folders known, to the question of which; otherwise they stay, saying why. Never to the phone.
- */
-fun chatPlace(setUp: Boolean, reachable: Boolean, projects: Int): ChatPlace = when {
+/** Where a new chat's first words go: to a new thread on a Mac that is [setUp] and [reachable]; otherwise they stay, saying why. */
+fun chatPlace(setUp: Boolean, reachable: Boolean): ChatPlace = when {
     !setUp -> ChatPlace.NotSetUp
     !reachable -> ChatPlace.Unreachable
-    projects == 0 -> ChatPlace.NoProjects
-    else -> ChatPlace.Ask
+    else -> ChatPlace.Start
 }
-
-/** The one short line a new chat asks him with, naming every folder of [projects]. */
-fun macProjectQuestion(projects: List<MacProject>): String = "Which project on the Mac? " + projects.joinToString(", ") { it.folder }
-
-/** Words in lower case with everything that is not a letter or a digit a space between them, so "FF4-mod" is "ff4 mod". */
-private fun plainWords(text: String) = text.lowercase().split(Regex("[^\\p{L}\\p{N}]+")).filter { it.isNotEmpty() }
-
-/** Words that say nothing about which project he means, so a reply such as "the FF4 one" is read by "ff4" alone. */
-private val FILLER = setOf("the", "one", "project", "projects", "folder", "repo", "mac", "for", "and", "its", "that", "this", "please", "use", "put", "on", "in", "it")
 
 /**
- * The project of [projects] his [words] name; null when they name none, or more than one, and he is asked again.
- * Case does not matter. A folder or thread name his words hold whole, or that holds his words whole, names it
- * first; failing that, a word of his that is a word of only one project's names. Nothing is guessed past that.
+ * The thread whose folder a new chat's first thread is made in: the one the front agent named with a mark
+ * ([FrontRoute.Mac]), when it has a folder. Null for anything else (no mark, the build mark, an id not on the
+ * board, work held back from the front agent, or a front agent that failed): the thread is then made in
+ * [MAC_DEFAULT_PROJECT].
  */
-fun macPickProject(words: String, projects: List<MacProject>): MacProject? {
-    val said = plainWords(words)
-    if (said.isEmpty()) return null
-    val saying = " " + said.joinToString(" ") + " "
-    fun names(project: MacProject) = (listOf(project.folder) + project.names.map(::macBaseName)).map(::plainWords).filter { it.isNotEmpty() }
-    val whole = projects.filter { project ->
-        names(project).any { name -> val named = " " + name.joinToString(" ") + " "; saying.contains(named) || named.contains(saying) }
-    }
-    if (whole.size == 1) return whole.single()
-    if (whole.size > 1) return null
-    val telling = said.filter { it !in FILLER && it.length >= 2 }.toSet()
-    return projects.filter { project -> names(project).any { name -> name.any { it in telling } } }.singleOrNull()
-}
+fun chatBeside(route: FrontRoute?): MacThread? = (route as? FrontRoute.Mac)?.thread?.takeIf { macProjectKey(it.project).isNotEmpty() }
 
-/** Who the launcher's own words in the chat are from, such as the question above: Oma, never a model. */
+/** What the thread made in the default folder is called: the chat's own name, its auto title once it has one. */
+fun chatThreadName(title: String?): String = title?.trim()?.takeIf { it.isNotEmpty() }?.take(FRESH_NAME_CHARS)?.trimEnd() ?: NEW_CHAT_NAME
+
+/**
+ * The entry of a new chat's first words while their thread called [name] is made in the default folder: the
+ * receipt of the new thread, waiting under [MAC_NEW_THREAD] and marked [ChatTask.fresh] until the thread is there.
+ */
+fun macChatStart(task: ChatTask, name: String) =
+    task.copy(agent = macReceipt(name), thread = MAC_NEW_THREAD, threadName = macName(name), status = TaskStatus.Queued, result = "", fresh = true)
+
+/** Who the launcher's own words in the chat are from: Oma, never a model. */
 const val OMA_NAME = "Oma"

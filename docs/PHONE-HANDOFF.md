@@ -13,8 +13,8 @@ Boss talks to you through Oma (voice or the Oma chat). Be short: he is often rea
   not the model's. Hand-overs carry the recent front exchanges as context; a hidden note asks parallel agents to
   use their own worktree.
 - **Chat:** header dots per thread at the right, "▾" folds a tab strip (Oma, Phone A/B, Mac threads, ＋). ＋ is
-  always a Mac session (web tools only for the front agent there; work waits for a project or says the Mac is
-  unreachable). Tabs auto-name, long-press: Rename, Pin, Stop, Restart, Copy last answer, Archive, Archived (N).
+  always a Mac session (web tools only for the front agent there; never asks which project: a named thread's folder,
+  else a new thread in `~/Projects`, or says the Mac is unreachable). Tabs auto-name, long-press: Rename, Pin, Stop, Restart, Copy last answer, Archive, Archived (N).
 - **Home:** page "Agents" holds live thread tiles (only that page is ever written); idle ones leave after 12 h.
 - **Mac runner:** Claude, Codex and Cursor threads; a Claude limit falls back to Codex then Cursor (15 min memory).
 - **Guest tools:** `oma threads | keep | status | help` (old names `oma-thread`, `oma-keep`, `oma-agents` alias it).
@@ -23,7 +23,7 @@ Boss talks to you through Oma (voice or the Oma chat). Be short: he is often rea
   tasks, big batches or escalations (it is slow and takes over his screen); a background subagent dies when a new
   message restarts the builder, so run long subagents in the foreground; Tailscale on the phone does not come back
   by itself after a reboot (the Mac reads unreachable until he opens the Tailscale app — it was unreachable at this
-  checkpoint).
+  checkpoint); `assist/TailscaleHeal.kt` turns it on only if it has not been up since boot, so his manual off stands.
 - **Agreed next:** the Mac builds and tests Oma (request at the end of MAC-RUNNER-SPEC.md; the signing key stays on
   the phone, so the install stays a phone step). Open question for Boss: should a named-but-empty ＋ chat let ＋
   start a fresh one?

@@ -149,7 +149,7 @@ sealed interface FrontRoute {
 
     /**
      * A mark that names no thread on the board. Nothing is guessed from it: the request goes nowhere, and he
-     * is asked which project it is for with his words kept.
+     * is asked which project it is for with his words kept; in a new chat it starts the chat in the default folder.
      */
     data class Unknown(val named: String) : FrontRoute
 }
@@ -378,8 +378,8 @@ private fun ago(millis: Long): String {
  * What the front agent is told of the Mac: its project [threads], already cut to the ones the board lists,
  * whether it was [reachable] at the last check, and when it last answered ([seen], in milliseconds like [now];
  * null if it never has). [tailscale] says, while the Mac is out of reach, that Tailscale was found off on this
- * phone and is being turned back on ([healNote]), so the front agent can tell Boss the cause and that it is in
- * hand. Nothing of an approval is ever part of it: the threads' waiting requests are left out of the text, and
+ * phone and is being turned back on, or that he turned it off himself ([healNote]), so the front agent can tell
+ * Boss the cause. Nothing of an approval is ever part of it: the threads' waiting requests are left out of the text, and
  * only their status says that one waits for Boss.
  */
 data class MacBoard(val threads: List<MacThread>, val reachable: Boolean, val seen: Long?, val now: Long, val tailscale: String? = null)
@@ -420,7 +420,8 @@ private fun macLines(mac: MacBoard?): List<String> {
         mac.seen == null -> "Mac: not reachable, not seen yet"
         else -> "Mac: not reachable, last seen ${ago((mac.now - mac.seen).coerceAtLeast(0))}"
     }
-    val link = if (away == null) "Mac: reachable." else away + mac.tailscale?.let { " — $it" }.orEmpty() + "."
+    // A note that is a whole sentence already ends in a full stop, and the line gets only the one.
+    val link = if (away == null) "Mac: reachable." else away + mac.tailscale?.let { " — ${it.removeSuffix(".")}" }.orEmpty() + "."
     val threads = if (mac.threads.isEmpty()) listOf("Project threads on the Mac: none.") else listOf("Project threads on the Mac:") + mac.threads.map { macThreadLine(it, mac.now) }
     return listOf(link) + threads
 }

@@ -419,6 +419,9 @@ class FrontAgentTest {
         val away = boardText(BuildBoard(false), macBoard(emptyList(), reachable = false, seen = now - 5 * minute, now = now, tailscale = note))
         assertTrue(away, away.contains("\nMac: not reachable, last seen 5 min ago — $note.\n"))
         assertTrue(boardText(BuildBoard(false), macBoard(emptyList(), false, null, now, note)).contains("\nMac: not reachable, not seen yet — $note.\n"))
+        // His own off is a whole sentence already, and the line ends with one full stop.
+        val chosen = boardText(BuildBoard(false), macBoard(emptyList(), false, now - 5 * minute, now, TAILSCALE_OFF_BY_HIM))
+        assertTrue(chosen, chosen.contains("\nMac: not reachable, last seen 5 min ago — Tailscale is off on this phone (turned off by you); the Mac can't be reached until it is on.\n"))
         // Once the Mac answers, the note explains nothing and is not said.
         assertTrue(boardText(BuildBoard(false), macBoard(emptyList(), true, now, now, note)).contains("\nMac: reachable.\n"))
     }

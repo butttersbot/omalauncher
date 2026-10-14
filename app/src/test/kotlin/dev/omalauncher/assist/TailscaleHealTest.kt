@@ -14,8 +14,8 @@ class TailscaleHealTest {
     private val minute = 60_000L
     private val up = MacHealthResult.Up(MacHealth(1, 0, 0))
 
-    private fun step(link: MacLink, vpnUp: Boolean = false, installed: Boolean = true, at: Long = now, state: HealState = HealState()) =
-        healStep(link, vpnUp, installed, at, state)
+    private fun step(link: MacLink, vpnUp: Boolean = false, installed: Boolean = true, upThisBoot: Boolean = false, at: Long = now, state: HealState = HealState()) =
+        healStep(link, vpnUp, installed, upThisBoot, at, state)
 
     @Test fun healthResultsMapToWhatTheHealCaresAbout() {
         assertEquals(MacLink.Answered, macLink(up))
@@ -50,10 +50,63 @@ class TailscaleHealTest {
             listOf(MacLink.Answered, true, true, HealState(now - minute, 4, true)) to (false to HealState()),
         )
         for ((given, want) in table) {
-            val got = healStep(given[0] as MacLink, given[1] as Boolean, given[2] as Boolean, now, given[3] as HealState)
+            val got = healStep(given[0] as MacLink, given[1] as Boolean, given[2] as Boolean, false, now, given[3] as HealState)
             assertEquals(given.toString(), want.first, got.send)
             assertEquals(given.toString(), want.second, got.state)
         }
+    }
+
+    /** Boss, 2026-10-14: "yes, respect the manual off". */
+    @Test fun aTailscaleSeenUpSinceBootAndOffNowIsHisChoice() {
+        val tried = HealState(now - 61 * second, 1, off = true)
+        val chosen = HealState(off = false, chosen = true)
+        // link, VPN up, up this boot, state before -> send, state after
+        val table = listOf(
+            listOf(MacLink.NoAnswer, false, false, HealState()) to (true to HealState(now, 1, off = true)),
+            listOf(MacLink.NoAnswer, false, true, HealState()) to (false to chosen),
+            // Healing after a reboot, then he turns it off once it was up: the back-off is kept but nothing is sent.
+            listOf(MacLink.NoAnswer, false, true, tried) to (false to tried.copy(off = false, chosen = true)),
+            listOf(MacLink.NoAnswer, false, false, chosen) to (true to HealState(now, 1, off = true)),
+            listOf(MacLink.NoAnswer, true, true, chosen) to (false to HealState()),
+            listOf(MacLink.Answered, false, true, chosen) to (false to HealState()),
+            listOf(MacLink.NotSetUp, false, true, chosen) to (false to HealState()),
+        )
+        for ((given, want) in table) {
+            val got = healStep(given[0] as MacLink, given[1] as Boolean, true, given[2] as Boolean, now, given[3] as HealState)
+            assertEquals(given.toString(), want.first, got.send)
+            assertEquals(given.toString(), want.second, got.state)
+        }
+        assertFalse(step(MacLink.NoAnswer, installed = false, upThisBoot = true).state.chosen)
+    }
+
+    @Test fun seenUpCountsOnlyUntilThePhoneReboots() {
+        val seen = TailscaleSeen(elapsed = 5 * minute, boot = 41)
+        // seen, boot clock now, boot count now -> seen since boot
+        val table = listOf(
+            Triple(null, 9 * minute, 41) to false,
+            // The launcher restarted, the phone did not: the boot clock ran on and the count is the same.
+            Triple(seen, 9 * minute, 41) to true,
+            Triple(seen, 5 * minute, 41) to true,
+            // Rebooted: the boot clock started again below it, or the count moved on even past it.
+            Triple(seen, 2 * minute, 41) to false,
+            Triple(seen, 2 * minute, null) to false,
+            Triple(seen, 90 * minute, 42) to false,
+            // Where the count can't be read the boot clock alone decides.
+            Triple(seen, 9 * minute, null) to true,
+            Triple(seen.copy(boot = null), 9 * minute, 42) to true,
+            Triple(seen.copy(boot = null), 2 * minute, 42) to false,
+        )
+        for ((given, want) in table) assertEquals(given.toString(), want, seenThisBoot(given.first, given.second, given.third))
+    }
+
+    @Test fun tailscaleIsKnownByItsAddressesOrByTheMacAnsweringOverAVpn() {
+        for (host in listOf("100.64.0.1", "100.120.219.46", "100.127.255.254", "fd7a:115c:a1e0::1", "FD7A:115C:A1E0:ab12::5%tun0")) assertTrue(host, tailscaleAddress(host))
+        for (host in listOf("100.63.255.255", "100.128.0.1", "10.0.0.2", "192.168.1.4", "fd00::1", "", "100.64.0")) assertFalse(host, tailscaleAddress(host))
+        assertTrue(tailscaleSeenUp(MacLink.NoAnswer, vpnUp = true, tailscaleVpn = true))
+        assertTrue(tailscaleSeenUp(MacLink.Answered, vpnUp = true, tailscaleVpn = false))
+        // Another VPN with the Mac silent, or the Mac answering with no VPN at all, says nothing of Tailscale.
+        assertFalse(tailscaleSeenUp(MacLink.NoAnswer, vpnUp = true, tailscaleVpn = false))
+        assertFalse(tailscaleSeenUp(MacLink.Answered, vpnUp = false, tailscaleVpn = false))
     }
 
     @Test fun neverMoreThanOnceAMinuteThenBackingOff() {
@@ -88,6 +141,9 @@ class TailscaleHealTest {
         assertEquals("Tailscale was off on this phone; reconnecting (tried 3 min ago)", healNote(HealState(now - 3 * minute, 2, off = true), now))
         assertNull(healNote(HealState(now - 20 * second, 1, off = false), now))
         assertNull(healNote(HealState(), now))
+        // Off by his choice it says so, so the front agent tells him rather than promising a reconnect.
+        assertEquals("Tailscale is off on this phone (turned off by you); the Mac can't be reached until it is on.", healNote(HealState(off = false, chosen = true), now))
+        assertEquals(TAILSCALE_OFF_BY_HIM, healNote(step(MacLink.NoAnswer, upThisBoot = true).state, now))
         // Waiting out the back-off it is still the cause, and still said.
         val waiting = step(MacLink.NoAnswer, at = now + 30 * second, state = HealState(now, 1, off = true))
         assertFalse(waiting.send)

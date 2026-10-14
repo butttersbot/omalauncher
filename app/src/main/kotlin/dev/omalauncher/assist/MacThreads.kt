@@ -12,7 +12,7 @@ import dev.omalauncher.oma.ChatTask
 import dev.omalauncher.oma.QUICK_AGENT
 import dev.omalauncher.oma.TabBook
 import dev.omalauncher.oma.TaskStatus
-import dev.omalauncher.oma.asking
+import dev.omalauncher.oma.chatKey
 import dev.omalauncher.oma.onMac
 import dev.omalauncher.upgrade.Managed
 import dev.omalauncher.upgrade.Policy
@@ -690,7 +690,8 @@ object MacThreads {
                     reached(app, listed is MacAnswer.Ok)
                     val busy = threads.filter { !macResting(it.status) || it.pending.isNotEmpty() }.map { it.id }
                     val owed = ChatLog.of(app).tasks.filter { it.mac && (it.status == TaskStatus.Running || it.status == TaskStatus.Queued) }.map { it.thread }
-                    for (threadId in (busy + owed).distinct()) follow(app, threadId)
+                    // A new chat's thread still being made is nothing on the Mac yet, so there is nothing to follow.
+                    for (threadId in (busy + owed).distinct() - MAC_NEW_THREAD) follow(app, threadId)
                 }
             } finally {
                 refreshing.set(false)
@@ -873,6 +874,8 @@ object MacThreads {
         val busy = view.threads.firstOrNull { it.id == task.thread }
         // Sent again as it was, unless its agent is known to be at its limit, as when every agent was.
         if (!task.fresh) return if (busy != null) deliver(app, time, task.prompt, busy, away = false) else send(app, time, sentText(app, time, task.prompt, task.thread), task.thread, away = false)
+        // A new chat's first words whose thread in the default folder was never made: it is made again.
+        if (task.thread == MAC_NEW_THREAD) return makeForChat(app, time, task.prompt, away = false, task.chat)
         // A new chat's first words that never got their thread are given a new one again, never the busy one.
         val newChat = task.chat.isNotEmpty() && TabBook.of(app).chat(task.chat)?.bound == false
         if (busy != null) return place(app, time, task.prompt, busy, away = false, newChat)
@@ -1142,60 +1145,35 @@ object MacThreads {
     }
 
     /**
-     * The words of the new chat [chat], filed at [asked], are for the Mac and name no project there: the front
-     * agent named none, or would have given them to the phone, which a new chat never is. The entry asks him in
-     * the tab, in one line, which project folder on the Mac, and his next words there answer it ([choose]); his
-     * words wait meanwhile and nothing is sent. With no Mac set up, or no folder known, it says so and asks nothing;
-     * with the Mac out of reach his words are kept, unsent, with `[ try again ]` under them ([chatPlace]).
+     * The first words of the new chat [chat], filed at [asked], with no thread named for them: they go to a new
+     * thread in [MAC_DEFAULT_PROJECT], called by the chat's name, and nothing asks him which project (Boss,
+     * 2026-10-14: "i shouldn't be asked which project"). With no Mac set up it says so; with the Mac out of reach
+     * his words are kept, unsent, with `[ try again ]` under them ([chatPlace]).
      */
-    fun askProject(context: Context, asked: Long, chat: String) {
+    fun startChat(context: Context, asked: Long, prompt: String, away: Boolean, chat: String) {
         restore(context)
         val app = context.applicationContext
         val log = ChatLog.of(app)
-        val projects = macProjects(view.threads)
-        val none = when (chatPlace(config(app) != null, view.reachable, projects.size)) {
-            ChatPlace.Ask -> null
-            ChatPlace.NotSetUp -> MAC_NOT_SET_UP
-            ChatPlace.NoProjects -> MAC_NO_PROJECTS
+        when (chatPlace(config(app) != null, view.reachable)) {
+            ChatPlace.NotSetUp -> log.update(asked, save = true) { it.copy(agent = QUICK_AGENT, result = MAC_NOT_SET_UP, status = TaskStatus.Failed) }
             ChatPlace.Unreachable -> {
                 log.update(asked, save = true) { it.copy(agent = QUICK_AGENT, result = MAC_CHAT_UNREACHABLE, status = TaskStatus.Dropped, answeredBy = OMA_NAME) }
                 refresh(app)
-                return
             }
+            ChatPlace.Start -> makeForChat(app, asked, prompt, away, chat)
         }
-        if (none != null) {
-            log.update(asked, save = true) { it.copy(agent = QUICK_AGENT, result = none, status = TaskStatus.Failed) }
-            // The Mac may only not have been heard from yet in this run: its folders are asked for, for the next try.
-            refresh(app)
-            return
-        }
-        log.update(asked, save = true) { it.copy(agent = QUICK_AGENT, result = macProjectQuestion(projects), status = TaskStatus.Done, answeredBy = OMA_NAME) }
-        TabBook.change(app) { it.asking(chat, asked) }
     }
 
     /**
-     * His answer, [words], in the new chat [chat] whose words wait for a project ([askProject]). Words that name
-     * one folder ([macPickProject]) send the words that waited, as they were, to a new thread in that folder, as a
-     * new chat's first words always go. Any others are filed with the question asked again, and nothing is sent.
+     * Makes the thread for the new chat [chat] in [MAC_DEFAULT_PROJECT] and sends it the words filed at [time]. It
+     * runs the first agent the Mac has that is not known to be at its limit, named after it when that is not Claude.
      */
-    fun choose(context: Context, chat: String, words: String) {
-        restore(context)
-        val app = context.applicationContext
-        val log = ChatLog.of(app)
-        val asked = TabBook.of(app).chat(chat)?.asking ?: 0L
-        val waiting = log.tasks.firstOrNull { it.time == asked }
-        val projects = macProjects(view.threads)
-        val pick = macPickProject(words, projects)
-        if (waiting == null || pick == null) {
-            val again = if (projects.isEmpty()) MAC_NO_PROJECTS else macProjectQuestion(projects)
-            synchronized(AgentTasks) {
-                log.begin(ChatTask(ChatHistory.stamp(log.tasks, System.currentTimeMillis()), QUICK_AGENT, words, result = again, status = TaskStatus.Done, answeredBy = OMA_NAME, chat = chat))
-            }
-            return
-        }
-        TabBook.change(app) { it.asking(chat, 0L) }
-        log.update(asked, save = true) { it.copy(status = TaskStatus.Queued, result = "", answeredBy = "") }
-        place(app, asked, waiting.prompt, pick.thread, away = false, newChat = true)
+    private fun makeForChat(context: Context, time: Long, prompt: String, away: Boolean, chat: String) {
+        val name = chatThreadName(TabBook.of(context).names[chatKey(chat)])
+        val kind = macKind(kinds, limited()) ?: macInstalled(kinds).first()
+        val named = if (kind == MAC_CLAUDE) name else macKindThreadName(name, kind, view.threads.map { it.name })
+        ChatLog.of(context).update(time, save = true) { macChatStart(it, named) }
+        make(context, time, MacFresh.Make(named, MAC_DEFAULT_PROJECT), away, kind) { sentText(context, time, prompt, it) }
     }
 
     /**

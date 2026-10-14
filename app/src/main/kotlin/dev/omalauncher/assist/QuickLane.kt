@@ -254,10 +254,11 @@ object QuickLane {
                         }
                         // Handed on the moment the mark is whole; the process is not waited for, and what it says after is not read.
                         is FrontRead.HandOver -> {
-                            handed = when (val route = frontRoute(read.to, mac)) {
-                                FrontRoute.Build -> pass(context, asked, prompt, page, away, asking, chat)
-                                is FrontRoute.Mac -> passToMac(context, asked, prompt, route.thread, away, route.fresh, chat)
-                                is FrontRoute.Unknown -> unplaced(context, asked, prompt, away, chat)
+                            val route = frontRoute(read.to, mac)
+                            handed = if (chat.isNotEmpty()) toChat(context, asked, prompt, away, chat, route) else when (route) {
+                                FrontRoute.Build -> pass(context, asked, prompt, page, away, asking)
+                                is FrontRoute.Mac -> passToMac(context, asked, prompt, route.thread, away, route.fresh)
+                                is FrontRoute.Unknown -> unplaced(context, asked, prompt, away)
                             }
                             session?.let { next = it }
                             child.destroy()
@@ -272,7 +273,9 @@ object QuickLane {
             finally {
                 var outcome = frontOutcome(handed, stopping, failed, answer.isNotBlank())
                 // He may stop it in the moment it is being sent on: then it is not sent.
-                if (outcome == FrontOutcome.FellBack && !pass(context, asked, prompt, page, away, chat = chat)) outcome = FrontOutcome.Stopped
+                if (outcome == FrontOutcome.FellBack && !(if (chat.isNotEmpty()) toChat(context, asked, prompt, away, chat, route = null) else pass(context, asked, prompt, page, away))) {
+                    outcome = FrontOutcome.Stopped
+                }
                 val status = when (outcome) {
                     FrontOutcome.Answered -> TaskStatus.Done
                     FrontOutcome.Stopped -> TaskStatus.Stopped
@@ -308,15 +311,11 @@ object QuickLane {
      * entry, the notification and the logs keep his words alone. The entry sent
      * at [asked] then goes, since the build lane has filed the request as its own; if the build lane refuses,
      * the entry stays and says why, which is the only time a failure here is mentioned. False if he stopped it
-     * first: nothing is sent then. Words of the new chat [chat] never go to a phone builder (Boss, 2026-10-13: "The
-     * plus button should always open up a Mac session"): he is asked which project on the Mac they are for instead.
+     * first: nothing is sent then. Words of a new chat never come here: they go to the Mac ([toChat]).
      */
-    private fun pass(context: Context, asked: Long, prompt: String, page: String?, away: Boolean, builder: BuilderId? = null, chat: String = ""): Boolean = synchronized(this) {
+    private fun pass(context: Context, asked: Long, prompt: String, page: String?, away: Boolean, builder: BuilderId? = null): Boolean = synchronized(this) {
         if (stopping) false
-        else if (chat.isNotEmpty()) {
-            MacThreads.askProject(context, asked, chat)
-            true
-        } else {
+        else {
             val log = ChatLog.of(context)
             // What went ahead of his words is from the Oma stream alone: a new chat's talk never reaches a builder.
             val said = log.tasks.filter { it.chat.isEmpty() }
@@ -343,16 +342,35 @@ object QuickLane {
      * which [MacThreads] gives a new thread there. Nothing here can end with the phone's builder doing the work
      * instead. False if he stopped it first: nothing is sent then.
      */
-    private fun passToMac(context: Context, asked: Long, prompt: String, thread: MacThread, away: Boolean, fresh: Boolean, chat: String = ""): Boolean = synchronized(this) {
+    private fun passToMac(context: Context, asked: Long, prompt: String, thread: MacThread, away: Boolean, fresh: Boolean): Boolean = synchronized(this) {
         if (stopping) false
         else {
-            // A new chat's words go to the thread made for it, or, before it has one, to a new thread on the project named.
+            MacThreads.handOver(context, asked, prompt, thread, away, fresh)
+            true
+        }
+    }
+
+    /**
+     * Gives [prompt], words of the new chat [chat], to the Mac whatever the front agent did with them ([route] is
+     * null when it said nothing it could be read by, held them back or failed): never to a phone builder (Boss,
+     * 2026-10-13: "The plus button should always open up a Mac session"), and nothing asks him which project (Boss,
+     * 2026-10-14: "i shouldn't be asked which project"). Words of a chat that has its thread go to that thread.
+     * Before it has one, a new thread is made in the folder of the thread the front agent named ([chatBeside]),
+     * or else in the default folder ([MacThreads.startChat]). An id not on the board is noted in the routing log.
+     * False if he stopped it first: nothing is sent then.
+     */
+    private fun toChat(context: Context, asked: Long, prompt: String, away: Boolean, chat: String, route: FrontRoute?): Boolean = synchronized(this) {
+        if (stopping) false
+        else {
+            if (route is FrontRoute.Unknown) RoutingLog.corrected(context, prompt, UNKNOWN_THREAD)
             val bound = TabBook.of(context).chat(chat)?.mac?.takeIf { it.isNotEmpty() }
             val own = bound?.let { id -> MacThreads.view.threads.firstOrNull { it.id == id } }
+            val beside = chatBeside(route)
             when {
                 own != null -> MacThreads.handOver(context, asked, prompt, own, away)
-                chat.isNotEmpty() && bound == null -> MacThreads.handOver(context, asked, prompt, thread, away, fresh = true, newChat = true)
-                else -> MacThreads.handOver(context, asked, prompt, thread, away, fresh)
+                bound != null && route is FrontRoute.Mac -> MacThreads.handOver(context, asked, prompt, route.thread, away, route.fresh)
+                beside != null -> MacThreads.handOver(context, asked, prompt, beside, away, fresh = true, newChat = true)
+                else -> MacThreads.startChat(context, asked, prompt, away, chat)
             }
             true
         }
@@ -361,16 +379,12 @@ object QuickLane {
     /**
      * The front agent named a thread that is not on the board. No thread is guessed and nothing is sent: the
      * entry keeps his words and asks which project he meant, with `[ send to build ]` under it in case it was
-     * phone work after all; in a new chat ([chat]) he is asked which project on the Mac, from the folders known.
-     * Noted in the routing log. False if he stopped it first.
+     * phone work after all. A new chat's words never come here: they go to the Mac ([toChat]). Noted in the
+     * routing log. False if he stopped it first.
      */
-    private fun unplaced(context: Context, asked: Long, prompt: String, away: Boolean, chat: String = ""): Boolean = synchronized(this) {
+    private fun unplaced(context: Context, asked: Long, prompt: String, away: Boolean): Boolean = synchronized(this) {
         if (stopping) false
-        else if (chat.isNotEmpty()) {
-            MacThreads.askProject(context, asked, chat)
-            RoutingLog.corrected(context, prompt, UNKNOWN_THREAD)
-            true
-        } else {
+        else {
             ChatLog.of(context).update(asked, save = true) { it.copy(agent = QUICK_AGENT, result = WHICH_PROJECT, status = TaskStatus.Failed) }
             RoutingLog.corrected(context, prompt, UNKNOWN_THREAD)
             if (away) AgentNotices.answered(context, INCOMPLETE, WHICH_PROJECT, AgentNotices.FRONT)

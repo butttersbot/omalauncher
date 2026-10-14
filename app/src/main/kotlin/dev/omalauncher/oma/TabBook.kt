@@ -35,8 +35,7 @@ const val TAB_NAME_CHARS = 32
  * A chat he started with ＋, which is always for the Mac (Boss, 2026-10-13: "The plus button should always open
  * up a Mac session"). Its first words that are handed on go to a new thread on the Mac and bind it: [mac] is that
  * thread's id. Until then it is unbound and the front agent hears it first, in a conversation of its own whose
- * session is [front]; while [asking] is not 0, the words of the entry filed then wait for him to name the project
- * they are for. [made] is when he started it, and [used] when he last renamed or restored it, 0 if never: until
+ * session is [front]. [made] is when he started it, and [used] when he last renamed or restored it, 0 if never: until
  * it is bound, the later of those and its newest entry is when it was last used.
  */
 data class NewChat(
@@ -44,7 +43,6 @@ data class NewChat(
     val made: Long,
     val mac: String = "",
     val front: String = "",
-    val asking: Long = 0L,
     val used: Long = 0L,
 ) {
     val key get() = chatKey(id)
@@ -111,12 +109,9 @@ private fun TabMeta.changed(id: String, change: (NewChat) -> NewChat) = copy(cha
 
 /**
  * Chat [id] living on the Mac thread [mac] from now on: the one made for its first words, or the one its words
- * went on to when another agent's turn ended at a limit. Nothing waits for a project once it has a thread.
+ * went on to when another agent's turn ended at a limit.
  */
-fun TabMeta.onMac(id: String, mac: String): TabMeta = changed(id) { it.copy(mac = mac, asking = 0L) }
-
-/** Chat [id] waiting for him to name the project of the words filed at [time]; 0 is waiting for nothing. */
-fun TabMeta.asking(id: String, time: Long): TabMeta = changed(id) { it.copy(asking = time) }
+fun TabMeta.onMac(id: String, mac: String): TabMeta = changed(id) { it.copy(mac = mac) }
 
 /** The front agent's session for chat [id], which its next message there continues. */
 fun TabMeta.heard(id: String, session: String?): TabMeta = changed(id) { it.copy(front = session.orEmpty()) }
@@ -168,7 +163,6 @@ fun tabMetaText(meta: TabMeta): String = JSONObject().apply {
             JSONObject().put("id", chat.id).put("made", chat.made)
                 .apply { if (chat.mac.isNotEmpty()) put("mac", chat.mac) }
                 .apply { if (chat.front.isNotEmpty()) put("front", chat.front) }
-                .apply { if (chat.asking != 0L) put("asking", chat.asking) }
                 .apply { if (chat.used != 0L) put("used", chat.used) }
         }))
     }
@@ -177,7 +171,8 @@ fun tabMetaText(meta: TabMeta): String = JSONObject().apply {
 /**
  * The kept book; what can't be read is left out, and an unreadable whole is an empty book. A chat kept with a
  * phone builder (the "builder" of an earlier version, before new chats were the Mac's alone) loads unbound: its
- * entries stay in its tab, and its next words go to the Mac as a new chat's do.
+ * entries stay in its tab, and its next words go to the Mac as a new chat's do. The "asking" an earlier version kept
+ * while a chat waited for him to name a project is not read: its next words simply start the chat on the Mac.
  */
 fun tabMetaFrom(text: String?): TabMeta {
     val saved = runCatching { JSONObject(text.orEmpty()) }.getOrNull() ?: return TabMeta()
@@ -187,7 +182,7 @@ fun tabMetaFrom(text: String?): TabMeta {
     val chats = saved.optJSONArray("chats")?.let { a ->
         (0 until a.length()).mapNotNull { a.optJSONObject(it) }.mapNotNull { o ->
             val id = o.optString("id").takeIf { it.isNotEmpty() && it.length <= ChatHistory.MAX_CHAT } ?: return@mapNotNull null
-            NewChat(id, o.optLong("made"), o.optString("mac"), o.optString("front"), o.optLong("asking"), o.optLong("used"))
+            NewChat(id, o.optLong("made"), o.optString("mac"), o.optString("front"), used = o.optLong("used"))
         }
     }.orEmpty().distinctBy { it.id }
     return TabMeta(names, pinned, archived, chats)

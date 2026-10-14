@@ -475,8 +475,8 @@ class AgentTilesTest {
     /** The critic's case (2026-10-14): a ＋ chat's tile said THIS PHONE before the chat had a thread on the Mac. */
     @Test fun aNewChatsTileSaysItIsTheMacsBeforeItHasAThread() {
         val chat = AgentThread("chat:c1", "New chat", ThreadState.Idle, "", "done", now - 150_000, mac = true, unplaced = true)
-        assertEquals("MAC · WAITING FOR A PROJECT", tileWhere(AgentTile("New chat", chat), now))
-        assertEquals("MAC · WAITING FOR A PROJECT", tileWhere(AgentTile("New chat", chat.copy(state = ThreadState.Attention)), now))
+        assertEquals("MAC · NOT STARTED", tileWhere(AgentTile("New chat", chat), now))
+        assertEquals("MAC · NOT STARTED", tileWhere(AgentTile("New chat", chat.copy(state = ThreadState.Attention)), now))
         assertEquals("MAC · OUT OF REACH", tileWhere(AgentTile("New chat", chat.copy(reachable = false)), now))
         assertEquals("MAC · 0:07", tileWhere(AgentTile("New chat", chat.copy(state = ThreadState.Working, since = now - 7_400)), now))
         for (state in ThreadState.entries) for (reachable in listOf(true, false)) {

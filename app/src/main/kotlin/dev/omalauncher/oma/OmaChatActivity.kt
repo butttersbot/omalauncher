@@ -358,8 +358,6 @@ private fun OmaChatScreen(
             }
             // From a Mac thread's own tab: the same sending a hand-over has, with nobody asked first and nothing added.
             is Outgoing.Mac -> MacThreads.say(context, out.prompt, out.thread, out.name, to.chat)
-            // His answer to which project a new chat's words are for: the launcher reads it, and sends the words that waited.
-            is Outgoing.Project -> MacThreads.choose(context, out.chat, out.prompt)
             is Outgoing.Terminal -> if (agent != null) runtime.terminal("${agentInvocation(agent.bin, out.prompt + "\n\n" + PhoneBridge.INSTRUCTIONS)}; exec bash", agent.name, agent)
         }
         // Sent files stay: the agent reads them while it works, and the saved task names them.

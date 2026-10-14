@@ -287,13 +287,13 @@ fun agentWrites(pages: List<PageLabel>, placed: Map<String, String>, plan: TileP
  * The small line over a tile's name: where the thread runs and, while it works, how long its turn has run,
  * counting up as a terminal agent's does ("THIS PHONE · 2:14"); at rest, how long ago it last worked
  * ("MAC · 2 MIN"). A busy thread whose turn the phone did not see begin says "NOW". A new chat is the Mac's
- * before it has a thread there too: at rest it says it waits for a project, never "THIS PHONE".
+ * before it has a thread there too: at rest it says it has not started there yet, never "THIS PHONE".
  */
 fun tileWhere(tile: AgentTile, now: Long): String {
     val thread = tile.thread ?: return "MAC · NOT HEARD FROM"
     val place = if (thread.mac) "MAC" else "THIS PHONE"
     if (thread.mac && !thread.reachable) return "$place · OUT OF REACH"
-    if (thread.unplaced && thread.state != ThreadState.Working && thread.state != ThreadState.Queued) return "$place · WAITING FOR A PROJECT"
+    if (thread.unplaced && thread.state != ThreadState.Working && thread.state != ThreadState.Queued) return "$place · NOT STARTED"
     if (!thread.state.active) return "$place · " + agoWords(thread.worked, now)
     return "$place · " + (thread.since?.let { elapsedWords(it, now) } ?: "NOW")
 }

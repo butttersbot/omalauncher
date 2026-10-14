@@ -1,5 +1,18 @@
 # Phone test results
 
+## Latest: ＋ never asks which project; Tailscale heal respects a manual off (2026-10-14) — tests only, NOT promoted
+
+- Boss: "i shouldn't be asked which project" and "yes, respect the manual off".
+- ＋ chat: the "Which project on the Mac?" question and its answer-matching are gone. A `<<mac ID>>`/`<<mac-new ID>>`
+  makes the new thread in that thread's folder as before; anything else (no mark, `<<build>>`, unknown id, held work,
+  front agent failing) makes it in `~/Projects` (the runner accepts its root itself), named by the chat's title or
+  "New chat". Unreachable + `[ try again ]` stays. Old saved "asking" state is ignored. Tile caption at rest for a ＋
+  chat with no thread is now "MAC · NOT STARTED".
+- Tailscale heal: sends CONNECT_VPN only if Tailscale has not been seen up since boot (boot clock + boot count, kept in
+  prefs). Seen up = a VPN with a Tailscale address, or the Mac answering while a VPN is up. Off after that: nothing sent,
+  board and `oma status` say "Tailscale is off on this phone (turned off by you); the Mac can't be reached until it is on."
+- Only unit tests and the shell tests passed; nothing seen on the phone yet.
+
 ## Latest: simplification pass + Critic fixes (2026-10-14, about 03:10 PDT, commit 02f3280) — NOT promoted
 
 - Front agent has two jobs (answer, or which project): marks only `<<build>>`, `<<mac ID>>`, `<<mac-new ID>>`;

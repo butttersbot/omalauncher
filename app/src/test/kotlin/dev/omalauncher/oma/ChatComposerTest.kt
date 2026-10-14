@@ -143,10 +143,5 @@ class ChatComposerTest {
         assertEquals(Outgoing.Refused(NO_IMAGES_IN_CHAT), out(images = 1, frontReady = true, to = chat))
         assertEquals(Outgoing.Refused(CHAT_MAKING), out(frontReady = true, to = SendTo.ChatStarting("c1", "N")))
         assertEquals(Outgoing.Mac("hello", "t-new", "Menu"), out(frontReady = true, to = SendTo.Mac("t-new", "Menu", "c1")))
-        // His answer to which project is read by the launcher, with no Linux or agent needed, and takes no images.
-        val asking = SendTo.ChatProject("c1", "N")
-        assertEquals(Outgoing.Project("ff4", "c1"), out(draft = "ff4", frontReady = true, to = asking))
-        assertEquals(Outgoing.Project("ff4", "c1"), out(draft = "ff4", linux = false, agent = null, to = asking))
-        assertEquals(Outgoing.Refused(NO_IMAGES_IN_CHAT), out(draft = "ff4", images = 1, to = asking))
     }
 }

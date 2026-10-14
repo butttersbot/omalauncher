@@ -199,23 +199,20 @@ class ChatTabsTest {
         val waitsForThread = ChatTask(31, "→ FF4 2", "x", thread = "t-ff4", threadName = "FF4 2", fresh = true, status = TaskStatus.Queued, chat = "c3")
         assertEquals(SendTo.ChatStarting("c3", NEW_CHAT_NAME), sendTo(chatNew.key, shown, book, listOf(waitsForThread)))
         assertEquals(SendTo.Chat("c3", NEW_CHAT_NAME), sendTo(chatNew.key, shown, book, listOf(waitsForThread.copy(status = TaskStatus.Dropped))))
-        // Asked which project, the field answers that; once the entry that waits is gone, it is a new chat's again.
+        // A chat an earlier version left asking which project is a new chat's again: its next words start it on the Mac.
         val question = ChatTask(32, QUICK_AGENT, "fix the menu", result = "Which project on the Mac? ff4, pond", status = TaskStatus.Done, chat = "c3")
-        val asking = book.asking("c3", 32)
-        assertEquals(SendTo.ChatProject("c3", NEW_CHAT_NAME), sendTo(chatNew.key, shown, asking, listOf(question)))
-        assertEquals(SendTo.Chat("c3", NEW_CHAT_NAME), sendTo(chatNew.key, shown, asking, emptyList()))
+        val wasAsking = tabMetaFrom(tabMetaText(book).replace("\"id\":\"c3\"", "\"id\":\"c3\",\"asking\":32"))
+        assertEquals(book, wasAsking)
+        assertEquals(SendTo.Chat("c3", NEW_CHAT_NAME), sendTo(chatNew.key, shown, wasAsking, listOf(question)))
         // Who it goes to.
         assertNull(SendTo.Chat("c3", "N").builder); assertEquals(BuilderId.A, SendTo.Phone.builder)
         assertEquals("c2", SendTo.Mac("t-new", "M", "c2").chat); assertEquals("", SendTo.Phone.chat); assertEquals("c3", SendTo.ChatStarting("c3", "N").chat)
-        assertEquals("c3", SendTo.ChatProject("c3", "N").chat)
     }
 
     @Test fun theFieldsHintAndStopOnANewChat() {
         assertEquals("start this chat on the Mac…", fieldHint(SendTo.Chat("c", "N")))
         assertEquals("starting a new thread on the Mac…", fieldHint(SendTo.ChatStarting("c", "N")))
-        assertEquals("name a project on the Mac…", fieldHint(SendTo.ChatProject("c", "N")))
         assertTrue(fieldStop(SendTo.Chat("c", "N"), working = false, deciding = true)); assertFalse(fieldStop(SendTo.Chat("c", "N"), working = true, deciding = false))
-        for (working in listOf(true, false)) for (deciding in listOf(true, false)) assertFalse(fieldStop(SendTo.ChatProject("c", "N"), working, deciding))
     }
 
     @Test fun theMenuOffersWhatMakesSenseAndArchivedIsAlwaysLast() {

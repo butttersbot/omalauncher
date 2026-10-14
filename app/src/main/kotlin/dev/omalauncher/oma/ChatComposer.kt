@@ -37,9 +37,6 @@ sealed interface Outgoing {
      * are, with the front agent not asked.
      */
     data class Mac(val prompt: String, val thread: String, val name: String) : Outgoing
-
-    /** His answer in the new chat [chat] to which project on the Mac its words are for: read by the launcher, sent to nobody. */
-    data class Project(val prompt: String, val chat: String) : Outgoing
 }
 
 /** Whom the field talks to, which is the tab that is open. */
@@ -64,9 +61,6 @@ sealed interface SendTo {
 
     /** A new chat whose words are on their way to a new thread on the Mac, which takes a moment to make. */
     data class ChatStarting(val chat: String, val name: String) : SendTo
-
-    /** A new chat that asked him which project on the Mac its words are for: what he sends now is his answer. */
-    data class ChatProject(val chat: String, val name: String) : SendTo
 }
 
 /** The builder the field on a builder's tab sends to; null on every other tab. */
@@ -81,14 +75,13 @@ val SendTo.chat: String get() = when (this) {
     is SendTo.Mac -> chat
     is SendTo.Chat -> chat
     is SendTo.ChatStarting -> chat
-    is SendTo.ChatProject -> chat
     else -> ""
 }
 
 /**
  * Whom the field talks to on [tab], which is one of [threads] or the Oma tab. A tab that is no thread's talks to
  * Oma. [meta] knows the new chats; [tasks] is the Oma thread, which says whether a chat's words are still on their
- * way to a new thread, or are there to wait for a project.
+ * way to a new thread.
  */
 fun sendTo(
     tab: String,
@@ -102,7 +95,6 @@ fun sendTo(
         return when {
             chat.mac.isNotEmpty() -> SendTo.Mac(chat.mac, thread.name, chat.id)
             tasks.any { it.chat == chat.id && it.fresh && it.status == TaskStatus.Queued } -> SendTo.ChatStarting(chat.id, thread.name)
-            chat.asking != 0L && tasks.any { it.time == chat.asking } -> SendTo.ChatProject(chat.id, thread.name)
             else -> SendTo.Chat(chat.id, thread.name)
         }
     }
@@ -137,7 +129,7 @@ const val CHAT_UNREAD = "Oma can't read this now, and a new chat is only for the
  * phone builder's tab sends as the build lane always took it, and a Mac thread's tab sends to that thread,
  * which needs neither Linux nor an agent on the phone, and takes no images. A new chat with nowhere to go yet
  * is heard by the front agent first, as the Oma tab is, and never goes to the phone's builders: with no front
- * agent to read it, or images, it is not sent. A new chat that asked which project is answered from the field.
+ * agent to read it, or images, it is not sent.
  */
 fun outgoing(
     draft: String,
@@ -155,7 +147,6 @@ fun outgoing(
         busy || prompt.isEmpty() -> Outgoing.Nothing
         to is SendTo.ChatStarting -> Outgoing.Refused(CHAT_MAKING)
         to is SendTo.Mac -> if (images > 0) Outgoing.Refused(noImagesTo(to.name)) else Outgoing.Mac(prompt, to.thread, to.name)
-        to is SendTo.ChatProject -> if (images > 0) Outgoing.Refused(NO_IMAGES_IN_CHAT) else Outgoing.Project(prompt, to.chat)
         !linux -> Outgoing.Refused("Open Omalauncher and finish Linux setup first.")
         agent == null -> Outgoing.Refused("Install and sign in to an agent in Omalauncher first.")
         images > 0 && agent !in BACKGROUND_AGENTS -> Outgoing.Refused("Choose Claude Code or Codex to send images.")
