@@ -3,6 +3,8 @@
 For the agent on the Fold (Oma), when Boss works with no Mac in the loop. Written 2026-10-12 by the Mac session.
 Boss talks to you through Oma (voice or the Oma chat). Be short: he is often reading on the move.
 
+**Moving to a new phone (2026-10-14): read `docs/OPEN-BUGS.md` first — open bugs, unseen features, and what is not in git.**
+
 ## Where things stand (checkpoint 2026-10-14, about 03:20 PDT, written by the agent on the Fold)
 - Branch `phone/fold-development` at 6446e93 and after; promoted right after this checkpoint (the batch below).
   The day's detail is at the top of `docs/PHONE-TEST-RESULTS.md`; the Mac side is `docs/MAC-RUNNER-SPEC.md`.
