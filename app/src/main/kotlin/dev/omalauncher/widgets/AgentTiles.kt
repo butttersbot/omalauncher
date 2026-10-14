@@ -223,12 +223,24 @@ fun agentWrites(pages: List<PageLabel>, placed: Map<String, String>, plan: TileP
         add.filter { it !in placed }.map { AgentWrite.Place(agents, it) }
 }
 
-/** The small line over a tile's name: where the thread runs and how long ago it last worked, "MAC · 2 MIN" or "THIS PHONE · NOW". */
+/**
+ * The small line over a tile's name: where the thread runs and, while it works, how long its turn has run,
+ * counting up as a terminal agent's does ("THIS PHONE · 2:14"); at rest, how long ago it last worked
+ * ("MAC · 2 MIN"). A busy thread whose turn the phone did not see begin says "NOW".
+ */
 fun tileWhere(tile: AgentTile, now: Long): String {
     val thread = tile.thread ?: return "MAC · NOT HEARD FROM"
     val place = if (thread.mac) "MAC" else "THIS PHONE"
     if (thread.mac && !thread.reachable) return "$place · OUT OF REACH"
-    return "$place · " + if (thread.state.active) "NOW" else agoWords(thread.worked, now)
+    if (!thread.state.active) return "$place · " + agoWords(thread.worked, now)
+    return "$place · " + (thread.since?.let { elapsedWords(it, now) } ?: "NOW")
+}
+
+/** How long since [since], as a clock counts it: "0:07", "12:40", "1:05:09". */
+fun elapsedWords(since: Long, now: Long): String {
+    val seconds = maxOf(0L, now - since) / 1000L
+    val (h, m, s) = Triple(seconds / 3600, seconds / 60 % 60, seconds % 60)
+    return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
 }
 
 /** How long ago [then] was, in a tile's few capitals; "NOW" within the minute, and for a time not known. */

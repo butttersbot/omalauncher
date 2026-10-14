@@ -434,6 +434,16 @@ class AgentTilesTest {
         assertEquals("MAC · NOT HEARD FROM", tileWhere(AgentTile("FF4", null), now))
     }
 
+    @Test fun aWorkingTileCountsItsTurnUp() {
+        assertEquals("THIS PHONE · 0:07", tileWhere(AgentTile("Phone", phone.copy(since = now - 7_400)), now))
+        assertEquals("MAC · 12:40", tileWhere(AgentTile("FF4", ff4.copy(since = now - 760_000)), now))
+        assertEquals("MAC · 1:05:09", tileWhere(AgentTile("FF4", ff4.copy(since = now - 3_909_000)), now))
+        // A clock a little behind the turn's start reads naught, not a minus.
+        assertEquals("THIS PHONE · 0:00", tileWhere(AgentTile("Phone", phone.copy(since = now + 900)), now))
+        // At rest the line goes back to how long ago, whatever start is left on it.
+        assertEquals("MAC · 2 MIN", tileWhere(AgentTile("FF4", ff4.copy(state = ThreadState.Idle, worked = now - 150_000, since = now - 9_000)), now))
+    }
+
     /** The launcher's one writer to his pages reaches the notebook through these calls and no others. */
     @Test fun theKeeperChangesTheNotebookOnlyAsTheWritesSay() {
         val keeper = dev.omalauncher.theme.pack.moduleFile("src/main/kotlin/dev/omalauncher/widgets/AgentTileKeeper.kt").readLines()

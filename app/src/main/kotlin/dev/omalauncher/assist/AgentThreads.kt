@@ -117,12 +117,14 @@ data class AgentThread(
     val worked: Long? = null,
     /** False for a thread on a Mac the phone could not reach at its last try: what is shown is what was last heard. */
     val reachable: Boolean = true,
+    /** When the turn it is at began, in milliseconds, so a tile can count it up; null while it rests, or when the phone did not see it begin. */
+    val since: Long? = null,
 ) {
     val mac get() = macThreadId(key) != null
 }
 
-/** One of the phone's builders as it stands: whether a task runs, its label, and what waits for his approval. */
-data class BuilderNow(val working: Boolean = false, val label: String = "", val asks: List<ThreadAsk> = emptyList())
+/** One of the phone's builders as it stands: whether a task runs, its label, what waits for his approval, and when the task began ([since], 0 if none). */
+data class BuilderNow(val working: Boolean = false, val label: String = "", val asks: List<ThreadAsk> = emptyList(), val since: Long = 0L)
 
 private fun queuedLine(running: String, waiting: List<ChatTask>, waits: Int): String {
     val next = waiting.firstOrNull()?.let { firstLine(it.prompt) }.orEmpty()
@@ -168,7 +170,8 @@ fun phoneThread(tasks: List<ChatTask>, builder: BuilderNow, which: BuilderId = B
         ThreadState.Attention -> NEEDS_ATTENTION
         ThreadState.Idle -> restLabel(last, worked = false)
     }
-    return AgentThread(which.thread, name, state, doing, label, entries.maxOfOrNull { it.time })
+    val since = if (builder.working) builder.since.takeIf { it > 0 } ?: running?.time else null
+    return AgentThread(which.thread, name, state, doing, label, entries.maxOfOrNull { it.time }, since = since)
 }
 
 /**
@@ -230,7 +233,9 @@ fun macThreadNow(thread: MacThread?, id: String, tasks: List<ChatTask>, asks: Li
         ThreadState.Idle -> restLabel(last, worked = thread?.lastWorked != null)
     }
     val worked = listOfNotNull(thread?.lastWorked?.let { it * 1000 }, entries.maxOfOrNull { it.time }).maxOrNull()
-    return AgentThread(macThreadKey(id), name, state, doing, label, worked, reachable)
+    // The request the Mac is at was sent from here; one he typed on the Mac itself has no start the phone saw.
+    val since = if (working) running?.time else null
+    return AgentThread(macThreadKey(id), name, state, doing, label, worked, reachable, since)
 }
 
 /**
@@ -252,7 +257,7 @@ fun agentThreads(tasks: List<ChatTask>, builder: BuilderNow, mac: MacView, asks:
  * often as they draw; they restore [AgentTasks] and [MacThreads] once, before the first read.
  */
 fun agentThreadsNow(context: Context): List<AgentThread> {
-    fun now(builder: Builder) = BuilderNow(builder.working, builder.label, builder.pending.map { ThreadAsk(it.approval.tool, askTarget(it.approval.input.toString())) })
+    fun now(builder: Builder) = BuilderNow(builder.working, builder.label, builder.pending.map { ThreadAsk(it.approval.tool, askTarget(it.approval.input.toString())) }, builder.startedAt)
     val asks = MacThreads.pending.groupBy({ it.threadId }) { ThreadAsk(it.request.tool, askTarget(it.request.input)) }
     return agentThreads(ChatLog.of(context).tasks, now(AgentTasks.of(BuilderId.A)), MacThreads.view, asks, now(AgentTasks.of(BuilderId.B)))
 }

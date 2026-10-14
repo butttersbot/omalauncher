@@ -59,6 +59,9 @@ class AgentThreadsTest {
         val running = build(10, TaskStatus.Running, "add thread tiles", steps = listOf("Edit: ui/AgentTile.kt", "Bash: oma-build"))
         val working = phoneThread(listOf(running), BuilderNow(working = true, label = "Using Bash"))
         assertEquals(ThreadState.Working, working.state); assertEquals("Bash: oma-build", working.doing); assertEquals("working", working.label)
+        // Its turn is counted from when the builder began it, which a request that waited in the queue was sent before.
+        assertEquals(10L, working.since)
+        assertEquals(15L, phoneThread(listOf(running), BuilderNow(working = true, since = 15L)).since)
         // Before it has reported a step, the builder's own label stands.
         assertEquals("Using Bash", phoneThread(listOf(running.copy(steps = emptyList())), BuilderNow(true, "Using Bash")).doing)
 
@@ -75,6 +78,7 @@ class AgentThreadsTest {
 
         val done = phoneThread(listOf(build(10, TaskStatus.Done, result = "**Done.** The clock is bigger.")), BuilderNow(label = "Done"))
         assertEquals(ThreadState.Idle, done.state); assertEquals("Done. The clock is bigger.", done.doing); assertEquals("done", done.label)
+        assertNull(done.since)
         assertEquals("stopped", phoneThread(listOf(build(10, TaskStatus.Stopped)), BuilderNow()).label)
         // Closing the app under a task is not his to mend: it reads as interrupted and lets the tile grow old.
         val cut = phoneThread(listOf(build(10, TaskStatus.Interrupted)), BuilderNow())
@@ -91,8 +95,10 @@ class AgentThreadsTest {
         val running = mac(20, TaskStatus.Running, "make the magic menu remember the cursor too", steps = listOf("Read: src/menu/magic.c", "Edit: src/menu/menu_cursor.c"))
         val working = macThreadNow(thread(MacThreadStatus.Working, lastWorked = 5), id, listOf(running), emptyList(), reachable = true)
         // It last worked at whichever is later: what the Mac says, in seconds, or the last request the phone sent it.
-        assertEquals(AgentThread("mac:$id", "FF4 better menu mod", ThreadState.Working, "Edit: src/menu/menu_cursor.c", "working", 5_000L), working)
+        assertEquals(AgentThread("mac:$id", "FF4 better menu mod", ThreadState.Working, "Edit: src/menu/menu_cursor.c", "working", 5_000L, since = 20L), working)
         assertTrue(working.mac)
+        // Its turn is counted from the request the phone sent; a turn begun at the Mac has no start the phone saw.
+        assertNull(macThreadNow(thread(MacThreadStatus.Working), id, emptyList(), emptyList(), true).since)
         // Work begun at the Mac has no entry here: the Mac's summary of what it was asked stands.
         assertEquals("fix the build", macThreadNow(thread(MacThreadStatus.Working, summary = "fix the build"), id, emptyList(), emptyList(), true).doing)
         assertEquals("Working", macThreadNow(thread(MacThreadStatus.Working), id, emptyList(), emptyList(), true).doing)

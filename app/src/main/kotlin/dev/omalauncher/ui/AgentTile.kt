@@ -40,8 +40,11 @@ internal const val AGENT_TILE_FADED = 0.62f
 internal const val THREAD_DOT_DIM = 0.45f
 internal const val THREAD_PULSE_MS = 600
 
-/** How often a tile looks at the clock for its "2 MIN". */
+/** How often a resting tile looks at the clock for its "2 MIN". */
 private const val TILE_CLOCK_MS = 30_000L
+
+/** How often a working tile's turn clock ticks: each second, as a terminal agent's does. */
+private const val TILE_TICK_MS = 1_000L
 
 /**
  * A thread's state as a dot, the same on its tile and in the chat's header and tabs: green and gently pulsing
@@ -106,9 +109,11 @@ internal fun AgentTileView(
     val state = thread?.state ?: ThreadState.Idle
     val needsOk = state == ThreadState.NeedsOk
     val name = tile?.name?.ifBlank { null } ?: "Thread"
-    val now by produceState(System.currentTimeMillis()) {
+    val counting = thread?.state?.active == true && thread.since != null
+    val now by produceState(System.currentTimeMillis(), counting) {
+        value = System.currentTimeMillis()
         while (true) {
-            delay(TILE_CLOCK_MS)
+            delay(if (counting) TILE_TICK_MS else TILE_CLOCK_MS)
             value = System.currentTimeMillis()
         }
     }
