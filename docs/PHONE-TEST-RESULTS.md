@@ -1,6 +1,20 @@
 # Phone test results
 
-## Latest: the front agent has two jobs; stop, restart and clean are on the tab (2026-10-14) — NOT promoted, NOT seen on a screen
+## Latest: simplification pass + Critic fixes (2026-10-14, about 03:10 PDT, commit 02f3280) — NOT promoted
+
+- Front agent has two jobs (answer, or which project): marks only `<<build>>`, `<<mac ID>>`, `<<mac-new ID>>`;
+  stop / restart / clean are tab-menu rows (Restart only when stalled or dead). Haiku trial: 36/36 (old prompt 31/36).
+- One `oma` guest command: `oma threads [new … --kind]`, `oma keep …`, `oma status`, `oma help`; old names alias it.
+- Critic on the real launcher (e2657e5): UI items passed; FAILED "＋ always the Mac" (a ＋ chat was answered on the
+  phone, with Bash) and Back in the tab menu closed the chat. Fixed (9aa78da): ＋ chats get web tools only, work is
+  held for the Mac (project question, or "Mac unreachable — this chat is for the Mac." + try again), never THIS PHONE;
+  Back steps through the menu; the strip scrolls to the open tab; dots and tiles are one set.
+- Critic in Oma Dev on 9aa78da found a regression (renamed empty ＋ chats vanished); fixed in 02f3280 with one draft
+  per tab and no keyboard pop on tab taps. Critic in Oma Dev on 02f3280: PASS.
+- Not seen yet: any of it on the real launcher with the Mac reachable; the 12 h archive path; "MAC · WAITING FOR A
+  PROJECT" caption.
+
+## Earlier: the front agent has two jobs; stop, restart and clean are on the tab (2026-10-14) — NOT promoted, NOT seen on a screen
 
 Boss: "Shrink the front agent to two jobs: answer, or say which project. Stop, restart and clean move to buttons on the
 tab's long-press menu. The tabs and ＋ are explicit routing; the model should only guess when you don't choose."
