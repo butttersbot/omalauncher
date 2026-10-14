@@ -280,7 +280,10 @@ fun chatThread(
         ThreadState.Attention -> NEEDS_ATTENTION
         else -> if (entries.isEmpty()) "new" else restLabel(last, worked = false)
     }
-    return AgentThread(chat.key, name, state, doing, label, entries.maxOfOrNull { it.time }, mac.reachable, since = running?.time, mac = true, unplaced = true)
+    // Last used when he started it, renamed or restored it, or last wrote in it: an empty chat lives its hours as any
+    // thread does rather than leaving the strip as soon as another tab is open, and the book puts it away after them (retired).
+    val used = listOfNotNull(chat.made.takeIf { it > 0L }, chat.used.takeIf { it > 0L }, entries.maxOfOrNull { it.time }).maxOrNull()
+    return AgentThread(chat.key, name, state, doing, label, used, mac.reachable, since = running?.time, mac = true, unplaced = true)
 }
 
 /**

@@ -245,3 +245,10 @@ fun lastAnswer(entries: List<ChatTask>): String? = entries.lastOrNull { it.statu
 
 /** What a Mac thread's tab says above its entries: the phone shows what it sent, not what was begun at the Mac. */
 const val MAC_EARLIER = "Earlier work on the Mac is not shown"
+
+/**
+ * The field's words, kept for each tab by its key, as [drafts] holds them, once [tab]'s are [text]: each tab has its
+ * own, so what was typed on one is never left in the field of another and sent to the wrong thread. A tab with an
+ * empty field keeps nothing.
+ */
+fun withDraft(drafts: Map<String, String>, tab: String, text: String): Map<String, String> = if (text.isEmpty()) drafts - tab else drafts + (tab to text)

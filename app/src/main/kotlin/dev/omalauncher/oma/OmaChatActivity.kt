@@ -75,6 +75,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.contentDescription
@@ -242,9 +243,10 @@ private fun OmaChatScreen(
     val macPending = remember(tick) { MacThreads.pending }
     val begun = "${runtime.agents.default?.name ?: "Oma"} is working"
     val linuxState by runtime.bootstrap.state.collectAsState()
-    // Every thread as it stands, and what he made of the tabs: an archived one that has new work comes back here.
+    // Every thread as it stands, and what he made of the tabs: an archived one that has new work comes back here, and
+    // a new chat that has rested its hours goes.
     val all = remember(tick) { agentThreadsNow(context) }
-    val book = remember(tick) { TabBook.change(context) { it.revive(all, tasks) } }
+    val book = remember(tick) { TabBook.change(context) { it.settled(all, tasks, System.currentTimeMillis()) } }
     LaunchedEffect(tick) { ChatTitles.check(context) }
     // The header's dots and the tabs: the threads home has tiles for, from the same stamps, the pinned first. The tab that
     // shows follows from what was asked for.
@@ -272,8 +274,21 @@ private fun OmaChatScreen(
             keyboard?.show()
         }
     }
+    // Any other tab he opens, by its dot, its tab, a receipt or Restore, is opened to be read: the caret leaves the
+    // field and the keyboard goes, rather than coming up over what he came to see.
+    val focusManager = LocalFocusManager.current
+    fun pick(key: String) {
+        focusManager.clearFocus()
+        keyboard?.hide()
+        onTab(key)
+    }
 
-    var draft by rememberSaveable { mutableStateOf("") }
+    // What is in the field, one for each tab: switching tabs puts away this tab's words and brings back the other's.
+    var typed by rememberSaveable { mutableStateOf(mapOf<String, String>()) }
+    val draft = typed[tab].orEmpty()
+    fun type(text: String) {
+        typed = withDraft(typed, tab, text)
+    }
     var images by remember { mutableStateOf(listOf<PromptImage>()) }
     var importing by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
@@ -291,7 +306,7 @@ private fun OmaChatScreen(
     }
     LaunchedEffect(prefill) {
         if (prefill != null) {
-            draft = appendSpeech(draft, prefill)
+            type(appendSpeech(draft, prefill))
             onPrefilled()
         }
     }
@@ -351,7 +366,7 @@ private fun OmaChatScreen(
         drafts.remove(images.map { it.file })
         images = emptyList()
         notice = null
-        draft = ""
+        type("")
         tick++
     }
 
@@ -417,7 +432,7 @@ private fun OmaChatScreen(
 
     fun listen() {
         before = draft
-        speech.start(hold = false) { heard -> draft = appendSpeech(before, heard) }
+        speech.start(hold = false) { heard -> type(appendSpeech(before, heard)) }
     }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> if (granted) listen() }
     fun talk() {
@@ -436,7 +451,7 @@ private fun OmaChatScreen(
                         Box(
                             Modifier
                                 .semantics { contentDescription = "${thread.name}: ${thread.label}" }
-                                .clickable { onTab(dotTap(tab, thread.key)) }
+                                .clickable { pick(dotTap(tab, thread.key)) }
                                 .padding(vertical = 12.dp)
                                 .width(DOT_PITCH),
                             contentAlignment = Alignment.Center,
@@ -451,7 +466,7 @@ private fun OmaChatScreen(
             }
             if (tabsOpen) {
                 TabStrip(
-                    threads, tab, onTab,
+                    threads, tab, ::pick,
                     onMenu = { menuFor = it },
                     onNew = {
                         // An empty new chat is opened again rather than a second one made.
@@ -513,7 +528,7 @@ private fun OmaChatScreen(
                                 tick++
                             },
                             // In the Oma stream the receipt is the way into its thread's tab; on that tab it would say where he already is.
-                            onReceipt = receiptTab(task, book)?.takeIf { tab == OMA_TAB }?.let { key -> { onTab(key) } },
+                            onReceipt = receiptTab(task, book)?.takeIf { tab == OMA_TAB }?.let { key -> { pick(key) } },
                         )
                         // No answer and no stop of its own yet: he can't tell it from a task the build lane has just begun.
                         // One the front agent has not come to says so, and can be taken back until it is read.
@@ -590,7 +605,7 @@ private fun OmaChatScreen(
                 BasicTextField(
                     value = shown,
                     onValueChange = {
-                        if (!listening) draft = it
+                        if (!listening) type(it)
                         notice = null
                     },
                     readOnly = listening,
@@ -679,12 +694,12 @@ private fun OmaChatScreen(
                 archived = archived,
                 onDismiss = { menuFor = null },
                 onRename = { name ->
-                    TabBook.change(context) { it.renamed(key, name) }
+                    TabBook.change(context) { it.renamed(key, name, System.currentTimeMillis()) }
                     tick++
                 },
                 onRestore = { back ->
-                    TabBook.change(context) { it.restored(back) }
-                    onTab(back)
+                    TabBook.change(context) { it.restored(back, System.currentTimeMillis()) }
+                    pick(back)
                     tick++
                 },
                 onAction = { action ->
@@ -714,7 +729,7 @@ private fun OmaChatScreen(
                             // Archived after its newest entry, so only what is sent to it from now on brings it back.
                             val at = maxOf(System.currentTimeMillis(), shown.maxOfOrNull { it.time } ?: 0L)
                             TabBook.change(context) { it.archivedAs(key, at) }
-                            if (key == tab) onTab(OMA_TAB)
+                            if (key == tab) pick(OMA_TAB)
                         }
                         TabAction.Rename, TabAction.Archived -> {}
                     }

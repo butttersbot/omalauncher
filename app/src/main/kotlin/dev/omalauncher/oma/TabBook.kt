@@ -3,6 +3,8 @@ package dev.omalauncher.oma
 import android.content.Context
 import dev.omalauncher.assist.AgentThread
 import dev.omalauncher.assist.ThreadState
+import dev.omalauncher.widgets.TileLife
+import dev.omalauncher.widgets.tileLife
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -34,7 +36,8 @@ const val TAB_NAME_CHARS = 32
  * up a Mac session"). Its first words that are handed on go to a new thread on the Mac and bind it: [mac] is that
  * thread's id. Until then it is unbound and the front agent hears it first, in a conversation of its own whose
  * session is [front]; while [asking] is not 0, the words of the entry filed then wait for him to name the project
- * they are for. [made] is when he started it.
+ * they are for. [made] is when he started it, and [used] when he last renamed or restored it, 0 if never: until
+ * it is bound, the later of those and its newest entry is when it was last used.
  */
 data class NewChat(
     val id: String,
@@ -42,6 +45,7 @@ data class NewChat(
     val mac: String = "",
     val front: String = "",
     val asking: Long = 0L,
+    val used: Long = 0L,
 ) {
     val key get() = chatKey(id)
     val bound get() = mac.isNotEmpty()
@@ -70,10 +74,19 @@ data class TabMeta(
 /** [raw] as a tab's name: one line, its spaces collapsed, no longer than [TAB_NAME_CHARS]; null when nothing is left. */
 fun tabName(raw: String): String? = raw.replace(Regex("\\s+"), " ").trim().take(TAB_NAME_CHARS).trim().ifEmpty { null }
 
-/** [key] called [name] from now on; a name that is blank gives it back its own. */
-fun TabMeta.renamed(key: String, name: String): TabMeta = when (val clean = tabName(name)) {
+/**
+ * [key] called [name] from now on; a name that is blank gives it back its own. A new chat he renames at [at] counts
+ * as used then, so a chat he has only named rests its full time like one he wrote in; Oma's own naming passes no [at].
+ */
+fun TabMeta.renamed(key: String, name: String, at: Long = 0L): TabMeta = when (val clean = tabName(name)) {
     null -> copy(names = names - key)
     else -> copy(names = names + (key to clean))
+}.usedAt(key, at)
+
+/** The new chat whose tab [key] is, used at [at] ([NewChat.used]); any other tab, or no time, leaves the book as it is. */
+private fun TabMeta.usedAt(key: String, at: Long): TabMeta {
+    val chat = chatOf(key)?.takeIf { at > 0L } ?: return this
+    return changed(chat.id) { it.copy(used = at) }
 }
 
 /** [key] named by Oma: only while it has no name, so a name he gave it is never replaced. */
@@ -88,7 +101,8 @@ fun TabMeta.pinnedAs(key: String, on: Boolean): TabMeta = when {
 /** [key] put away at [at]. A pinned tab archived is no longer pinned: the two say opposite things about it. */
 fun TabMeta.archivedAs(key: String, at: Long): TabMeta = copy(archived = archived + (key to at), pinned = pinned - key)
 
-fun TabMeta.restored(key: String): TabMeta = if (key in archived) copy(archived = archived - key) else this
+/** [key] back from Archived. A new chat he restores at [at] counts as used then, so it is not put away again at the next look. */
+fun TabMeta.restored(key: String, at: Long = 0L): TabMeta = if (key in archived) copy(archived = archived - key).usedAt(key, at) else this
 
 /** A new chat with the id [id], started at [made]. */
 fun TabMeta.started(id: String, made: Long): TabMeta = if (chat(id) != null) this else copy(chats = chats + NewChat(id, made))
@@ -121,6 +135,24 @@ fun emptyChat(meta: TabMeta, tasks: List<ChatTask>): String? =
     meta.chats.lastOrNull { chat -> !chat.bound && chat.key !in meta.archived && tasks.none { it.chat == chat.id } }?.id
 
 /**
+ * [this] once the new chats with nowhere to go yet have had their time (the Critic, 2026-10-14): one that has rested
+ * as long as a thread's tile stays ([tileLife]) leaves the strip, and so as not to lose what he made of it, one
+ * he named or wrote in goes to Archived at [now], where he can bring it back; one with neither is let go. A chat
+ * bound to a thread on the Mac rests as that thread does, and a pinned one never leaves. [threads] is every
+ * thread as it stands, the chats among them, and [tasks] the Oma thread.
+ */
+fun TabMeta.retired(threads: List<AgentThread>, tasks: List<ChatTask>, now: Long): TabMeta =
+    chats.fold(this) { meta, chat ->
+        val thread = threads.firstOrNull { it.key == chat.key }
+        when {
+            chat.bound || chat.key in archived || chat.key in pinned || thread == null -> meta
+            tileLife(thread.state, thread.worked, now) != TileLife.Gone -> meta
+            chat.key in names || tasks.any { it.chat == chat.id } -> meta.archivedAs(chat.key, now)
+            else -> meta.copy(chats = meta.chats - chat)
+        }
+    }
+
+/**
  * Whether an archived tab comes back by itself: it needs his OK, or something was sent to it after he archived
  * it at [at]. [newest] is when its newest entry was sent, null for none.
  */
@@ -137,6 +169,7 @@ fun tabMetaText(meta: TabMeta): String = JSONObject().apply {
                 .apply { if (chat.mac.isNotEmpty()) put("mac", chat.mac) }
                 .apply { if (chat.front.isNotEmpty()) put("front", chat.front) }
                 .apply { if (chat.asking != 0L) put("asking", chat.asking) }
+                .apply { if (chat.used != 0L) put("used", chat.used) }
         }))
     }
 }.toString()
@@ -154,7 +187,7 @@ fun tabMetaFrom(text: String?): TabMeta {
     val chats = saved.optJSONArray("chats")?.let { a ->
         (0 until a.length()).mapNotNull { a.optJSONObject(it) }.mapNotNull { o ->
             val id = o.optString("id").takeIf { it.isNotEmpty() && it.length <= ChatHistory.MAX_CHAT } ?: return@mapNotNull null
-            NewChat(id, o.optLong("made"), o.optString("mac"), o.optString("front"), o.optLong("asking"))
+            NewChat(id, o.optLong("made"), o.optString("mac"), o.optString("front"), o.optLong("asking"), o.optLong("used"))
         }
     }.orEmpty().distinctBy { it.id }
     return TabMeta(names, pinned, archived, chats)
@@ -194,3 +227,6 @@ fun revivals(meta: TabMeta, threads: List<AgentThread>, tasks: List<ChatTask>): 
 
 /** [meta] with the tabs of [revivals] brought back. */
 fun TabMeta.revive(threads: List<AgentThread>, tasks: List<ChatTask>): TabMeta = revivals(this, threads, tasks).fold(this) { meta, key -> meta.restored(key) }
+
+/** What the chat and home make of the book at each look at [now]: archived tabs with new work back ([revive]), rested new chats away ([retired]). */
+fun TabMeta.settled(threads: List<AgentThread>, tasks: List<ChatTask>, now: Long): TabMeta = revive(threads, tasks).retired(threads, tasks, now)

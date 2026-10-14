@@ -19,7 +19,7 @@ import dev.omalauncher.assist.ChatTitles
 import dev.omalauncher.assist.agentThreadsNow
 import dev.omalauncher.oma.ChatLog
 import dev.omalauncher.oma.TabBook
-import dev.omalauncher.oma.revive
+import dev.omalauncher.oma.settled
 import dev.omalauncher.widgets.Folder
 import dev.omalauncher.widgets.HomeItem
 import dev.omalauncher.widgets.Shortcut
@@ -228,9 +228,10 @@ fun HomeScreen(
             // Not while he is arranging: a tile appearing under one he carries would change where it can land.
             if (state.editing == null && arrange.carry == null) {
                 // What he did to the chat's tabs reaches the tiles too: a pinned one never leaves, an archived one goes
-                // until new work brings it back, and a new chat is named here even while the chat is closed.
+                // until new work brings it back, a new chat is named here even while the chat is closed, and one that has
+                // rested its hours is put away.
                 val threads = agentThreadsNow(context)
-                val tabs = TabBook.change(context) { it.revive(threads, ChatLog.of(context).tasks) }
+                val tabs = TabBook.change(context) { it.settled(threads, ChatLog.of(context).tasks, now) }
                 ChatTitles.check(context)
                 engine.agentTiles.keep(threads, MacThreads.view.listed, now, tabs.pinned.toSet(), tabs.archived.keys) { page ->
                     // The page's notes and stickers, read if they never were: a tile is placed clear of them too.

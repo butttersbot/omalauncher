@@ -2,8 +2,13 @@ package dev.omalauncher.oma
 
 import dev.omalauncher.assist.AgentThread
 import dev.omalauncher.assist.BuilderId
+import dev.omalauncher.assist.BuilderNow
+import dev.omalauncher.assist.MacView
 import dev.omalauncher.assist.PHONE_THREAD
 import dev.omalauncher.assist.ThreadState
+import dev.omalauncher.assist.agentThreads
+import dev.omalauncher.widgets.AGENT_TILE_IDLE_HOURS
+import dev.omalauncher.widgets.liveThreads
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
@@ -100,5 +105,78 @@ class TabBookTest {
         assertEquals(listOf(NewChat("c1", 1, front = "s-1")), tabMetaFrom("""{"chats":[{"id":"c1","made":1,"builder":"B","front":"s-1"}]}""").chats)
         // A chat with an id too long to be ours, or none, is left out.
         assertEquals(emptyList<NewChat>(), tabMetaFrom("""{"chats":[{"id":""},{"id":"${"x".repeat(80)}"}]}""").chats)
+    }
+
+    private val hour = 3_600_000L
+    private val t0 = 1_800_000_000_000L
+
+    /** The strip as the chat shows it at [now], with [wanted] open: the same functions, in the same order, as the screen. */
+    private fun strip(meta: TabMeta, tasks: List<ChatTask>, now: Long, wanted: String? = null): List<String> {
+        val all = agentThreads(tasks, BuilderNow(), MacView(reachable = true), chats = meta.chats, names = meta.names)
+        val book = meta.settled(all, tasks, now)
+        val live = liveThreads(all, emptyMap(), now, listed = true, book.pinned.toSet(), book.archived.keys)
+        return shownThreads(live, book.pinned, all, book.archived.keys, wanted).map { it.key }
+    }
+
+    /**
+     * The Critic's case (2026-10-14): ＋, renamed "Harbour", then the OMA tab: the chat left the strip at once, was
+     * not in Archived, and with a newer empty chat ＋ opened only that one, so Harbour could not be reached at all.
+     */
+    @Test fun anEmptyChatHeRenamedStaysOnTheStripWhenAnotherTabIsOpen() {
+        val harbour = TabMeta().started("c1", t0).renamed("chat:c1", "Harbour", t0 + 60_000)
+        assertEquals(t0 + 60_000, harbour.chat("c1")!!.used)
+        assertTrue("chat:c1" in strip(harbour, emptyList(), t0 + 2 * 60_000, wanted = null))
+        val newer = harbour.started("c2", t0 + 3 * 60_000)
+        assertEquals("c2", emptyChat(newer, emptyList()))
+        assertEquals(listOf("chat:c1", "chat:c2"), strip(newer, emptyList(), t0 + 4 * 60_000))
+    }
+
+    /** A new chat lives [AGENT_TILE_IDLE_HOURS] from its last use, as any thread does, and not a moment more. */
+    @Test fun aNewChatRestsTwelveHoursFromItsLastUse() {
+        val idle = AGENT_TILE_IDLE_HOURS * hour
+        val empty = TabMeta().started("c1", t0)
+        assertEquals(listOf("chat:c1"), strip(empty, emptyList(), t0 + idle - 1))
+        assertEquals(emptyList<String>(), strip(empty, emptyList(), t0 + idle))
+        // Renamed later, it counts from then.
+        val named = empty.renamed("chat:c1", "Harbour", t0 + 5 * hour)
+        assertEquals(listOf("chat:c1"), strip(named, emptyList(), t0 + 5 * hour + idle - 1))
+        // Written in later, from its newest entry.
+        val said = listOf(ChatTask(t0 + 8 * hour, QUICK_AGENT, "hi", result = "Hello.", status = TaskStatus.Done, chat = "c1"))
+        assertEquals(listOf("chat:c1"), strip(empty, said, t0 + 8 * hour + idle - 1))
+        assertEquals(emptyList<String>(), strip(empty, said, t0 + 8 * hour + idle))
+    }
+
+    /** Rested, a chat he named or wrote in goes to Archived, where he can bring it back; an empty, unnamed one is let go. */
+    @Test fun aRestedChatHeNamedOrWroteInIsArchivedNotLost() {
+        val later = t0 + AGENT_TILE_IDLE_HOURS * hour + 1
+        val meta = TabMeta().started("c1", t0).started("c2", t0).started("c3", t0).renamed("chat:c1", "Harbour", t0)
+        val tasks = listOf(ChatTask(t0, QUICK_AGENT, "hi", result = "Hello.", status = TaskStatus.Done, chat = "c2"))
+        val all = agentThreads(tasks, BuilderNow(), MacView(), chats = meta.chats, names = meta.names)
+        val after = meta.settled(all, tasks, later)
+        assertEquals(mapOf("chat:c1" to later, "chat:c2" to later), after.archived)
+        assertEquals(listOf("c1", "c2"), after.chats.map { it.id })
+        // Not brought back by what it held before; restored, it is on the strip again and rests its hours from then.
+        assertEquals(after, after.settled(all, tasks, later + 1))
+        val back = after.restored("chat:c1", later + 2)
+        assertEquals(listOf("chat:c1"), strip(back, tasks, later + 3))
+        assertEquals(emptyList<String>(), strip(back, tasks, later + 2 + AGENT_TILE_IDLE_HOURS * hour))
+        // Before its time nothing is touched.
+        assertEquals(meta, meta.settled(all, tasks, later - 2))
+    }
+
+    /** A pinned chat never leaves, and a bound one rests as its thread on the Mac does, not here. */
+    @Test fun aPinnedOrBoundChatIsNotRetired() {
+        val later = t0 + 3 * AGENT_TILE_IDLE_HOURS * hour
+        val meta = TabMeta().started("c1", t0).pinnedAs("chat:c1", true).started("c2", t0).onMac("c2", "t9")
+        val all = agentThreads(emptyList(), BuilderNow(), MacView(), chats = meta.chats, names = meta.names)
+        assertEquals(meta, meta.settled(all, emptyList(), later))
+        assertEquals(listOf("chat:c1"), strip(meta, emptyList(), later).filter { it == "chat:c1" })
+    }
+
+    @Test fun whenHeLastUsedAChatIsKeptAndOmasNamingIsNotAUse() {
+        val meta = TabMeta().started("c1", 1).renamed("chat:c1", "Harbour", 50)
+        assertEquals(meta, tabMetaFrom(tabMetaText(meta)))
+        assertEquals(0L, TabMeta().started("c1", 1).titled("chat:c1", "Worktrees").chat("c1")!!.used)
+        assertEquals(0L, TabMeta().started("c1", 1).renamed("chat:c1", "Harbour").chat("c1")!!.used)
     }
 }

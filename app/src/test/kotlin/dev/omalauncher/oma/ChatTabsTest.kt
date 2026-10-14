@@ -254,4 +254,14 @@ class ChatTabsTest {
         assertNull(lastAnswer(listOf(failed, running)))
         assertNull(lastAnswer(emptyList()))
     }
+
+    /** The Critic's case (2026-10-14): words typed in a ＋ chat stayed in the field on the Oma tab and could be sent from there. */
+    @Test fun eachTabKeepsItsOwnDraft() {
+        val typed = withDraft(emptyMap(), "chat:c1", "half a thought")
+        assertEquals("", typed[OMA_TAB].orEmpty())
+        val both = withDraft(typed, OMA_TAB, "for oma")
+        assertEquals(mapOf("chat:c1" to "half a thought", OMA_TAB to "for oma"), both)
+        // Sent or cleared, a tab keeps nothing, and the other tab's words are untouched.
+        assertEquals(mapOf(OMA_TAB to "for oma"), withDraft(both, "chat:c1", ""))
+    }
 }
