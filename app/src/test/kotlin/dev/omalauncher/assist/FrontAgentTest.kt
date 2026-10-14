@@ -196,140 +196,58 @@ class FrontAgentTest {
         }
     }
 
-    // Orders to stop
+    // Marks taught before 2026-10-14 (Boss: "Shrink the front agent to two jobs: answer, or say which project")
 
-    @Test fun aMarkThatStopsIsNotDecidedUntilItIsWhole() {
-        assertEquals("<<stop>>", STOP); assertEquals(STOP, stopMark(Route.BUILD)); assertEquals("<<stop mac t1a2b3c4d>>", stopMark(Route.mac("t1a2b3c4d")))
-        for (partial in listOf("<<s", "<<st", "<<stop", "<<stop>", "<<stop ", "<<stop m", "<<stop mac", "<<stop mac ", "<<stop mac t1a2", "<<stop mac t1a2b3c4d>", " `<<stop", "```\n<<stop mac t1")) {
+    /**
+     * Stop, restart and clean are a tab's menu's now, and a builder is never named by a mark. A front conversation
+     * begun before may still say one of the old marks: each is a plain hand-over to the phone's builders, read as
+     * <<build>> is, never carried out and never shown to him.
+     */
+    @Test fun aRemovedMarkIsAPlainHandOverAndNeverCarriedOut() {
+        val board = macBoard(listOf(onMac("t1a2b3c4d", "FF4 mod", MacThreadStatus.Working)), reachable = true, seen = now, now = now)
+        val removed = listOf(
+            "<<stop>>", "<<stop B>>", "<<stop a>>", "<<stop mac t1a2b3c4d>>", "<<stop t1a2b3c4d>>", "<<restart>>", "<<restart A>>", "<<restart B>>",
+            "<<clean>>", "<<build A>>", "<<build B>>", "<<build 2>>", "<<build the other one>>", "<<build >>",
+            " <<stop>>\n", "`<<restart>>`", "```\n<<clean>>\n```", "<<stop>>\nStopping it now.", "<<restart>> now", "<<stop>><<build>>",
+        )
+        for (mark in removed) {
+            assertEquals(mark, FrontRead.HandOver(Route.BUILD), frontRead(mark))
+            assertEquals(mark, FrontRead.HandOver(Route.BUILD), frontRead(mark, ended = true))
+            for (mac in listOf(board, null)) assertEquals(mark, FrontRoute.Build, frontRoute((frontRead(mark) as FrontRead.HandOver).to, mac))
+        }
+        // One that never closes is still work for the phone, never shown; while it may still close, nothing is decided.
+        for (broken in listOf("<<stop mac t1", "<<restart B", "<<build B>", "<<stop ")) assertEquals(broken, FrontRead.HandOver(Route.BUILD), frontRead(broken, ended = true))
+        assertEquals(FrontRead.HandOver(Route.BUILD), frontRead("<<stop mac t1\nand more"))
+        for (partial in listOf("<<s", "<<st", "<<stop", "<<stop>", "<<stop ", "<<stop mac t1a2", "<<r", "<<restart", "<<restart B>", "<<c", "<<clean>", "<<build ", "<<build B", " `<<stop")) {
             assertEquals(partial, FrontRead.Undecided, frontRead(partial))
         }
-        for (whole in listOf("<<stop>>", " <<stop>>\n", "`<<stop>>`", "```\n<<stop>>\n```", "<<stop>> done", "<<stop>>\nStopping it now.", "<<stop>><<build>>")) {
-            assertEquals(whole, FrontRead.Stop(Route.BUILD), frontRead(whole))
-            assertEquals(whole, FrontRead.Stop(Route.BUILD), frontRead(whole, ended = true))
-        }
-        for (whole in listOf("<<stop mac t1a2b3c4d>>", " <<stop mac t1a2b3c4d>>\n", "`<<stop mac t1a2b3c4d>>`", "<<stop mac  t1a2b3c4d >> ok", "<<stop mac t1a2b3c4d>>\nStopped.")) {
-            assertEquals(whole, FrontRead.Stop("mac t1a2b3c4d"), frontRead(whole))
-            assertEquals(whole, FrontRead.Stop("mac t1a2b3c4d"), frontRead(whole, ended = true))
-        }
-        // Seen from the real model: the id alone after the word. It names the same thread.
-        assertEquals(FrontRead.Stop("mac t1a2b3c4d"), frontRead("<<stop t1a2b3c4d>>"))
-        // The stream of a real one is decided at the closing bracket, and a hand-over's mark is still a hand-over.
+        // The stream of a real one is decided at the closing bracket.
         var said = QuickAnswer()
         val reads = listOf("<<st", "op mac t1", ">", ">", " ok").map { piece ->
             said = said.after(QuickEvent.Delta(piece))
             frontRead(said.text)
         }
-        assertEquals(listOf(FrontRead.Undecided, FrontRead.Undecided, FrontRead.Undecided, FrontRead.Stop("mac t1"), FrontRead.Stop("mac t1")), reads)
-        assertEquals(FrontRead.HandOver(Route.BUILD), frontRead("<<build>><<stop>>"))
+        assertEquals(listOf(FrontRead.Undecided, FrontRead.Undecided, FrontRead.Undecided, FrontRead.HandOver(Route.BUILD), FrontRead.HandOver(Route.BUILD)), reads)
+        // Behind another mark it is nothing: the first one decides.
         assertEquals(FrontRead.HandOver("mac t1"), frontRead("<<mac t1>> <<stop>>"))
     }
 
-    @Test fun aMarkThatStopsAndNeverClosesOrNamesNoThreadStopsNothing() {
-        // Half of the builder's mark at the end is not the mark: it is shown, as half of a hand-over's is.
-        assertEquals(FrontRead.Answer("<<stop"), frontRead("<<stop", ended = true))
-        assertEquals(FrontRead.Answer("<<stop>"), frontRead("<<stop>", ended = true))
-        for (near in listOf("<<Stop>>", "<< stop >>", "<stop>", "stop", "<<stopped>>", "<<stops>>")) assertTrue(near, frontRead(near, ended = true) is FrontRead.Answer)
-        // One for a thread that never closes, breaks over a line or is far too long names nothing.
-        for (broken in listOf("<<stop mac t1", "<<stop mac t1>", "<<stop mac", "<<stop ")) assertEquals(broken, FrontRead.Stop("mac "), frontRead(broken, ended = true))
-        assertEquals(FrontRead.Stop("mac "), frontRead("<<stop mac t1\nand more"))
-        assertEquals(FrontRead.Stop("mac "), frontRead("<<stop mac " + "y".repeat(MAC_ID_CHARS + 1) + ">>"))
-        // Whatever it names is looked up on the board by its exact id, and anything else is nobody: nothing is stopped on a guess.
-        val board = macBoard(listOf(onMac("t1a2b3c4d", "FF4 mod", MacThreadStatus.Working), onMac("t9z8y7x6w", "Cove")), reachable = true, seen = now, now = now)
-        assertEquals(FrontRoute.Build, frontRoute((frontRead("<<stop>>") as FrontRead.Stop).of, board))
-        assertEquals("t1a2b3c4d", (frontRoute((frontRead("<<stop mac t1a2b3c4d>>") as FrontRead.Stop).of, board) as FrontRoute.Mac).thread.id)
-        for (mark in listOf("<<stop mac t1a2b3c4>>", "<<stop mac FF4 mod>>", "<<stop mac>>", "<<stop the FF4 one>>", "<<stop mac t1a2b3c4d; rm -rf />>", "<<stop mac T1A2B3C4D>>", "<<stop >>")) {
-            val of = (frontRead(mark, ended = true) as FrontRead.Stop).of
-            assertTrue(mark, frontRoute(of, board) is FrontRoute.Unknown)
-        }
-        assertEquals(FrontRoute.Unknown("t1a2b3c4d"), frontRoute((frontRead("<<stop mac t1a2b3c4d>>") as FrontRead.Stop).of, null))
-        assertTrue(WHICH_TASK.startsWith("Which task should stop?"))
-    }
-
-    @Test fun anAnswerThatOnlyMentionsAMarkThatStopsIsShownWithoutItAndStopsNothing() {
+    @Test fun anAnswerThatOnlyMentionsARemovedMarkIsShownWithoutIt() {
         assertEquals(FrontRead.Answer("Sure!"), frontRead("Sure! <<stop>>"))
-        assertEquals(FrontRead.Answer("Sure!"), frontRead("Sure! <<stop>>", ended = true))
         assertEquals(FrontRead.Answer("I could  it for you."), frontRead("I could <<stop>> it for you.", ended = true))
         assertEquals(FrontRead.Answer("Say  to end FF4."), frontRead("Say <<stop mac t1a2b3c4d>> to end FF4.", ended = true))
-        // While it is still arriving, the start of one at the end is held back; one that never completes is shown.
-        for (arriving in listOf("Sure! <<s", "Sure! <<stop", "Sure! <<stop>", "Sure! <<stop mac t1", "Sure! <<stop mac t1>")) assertEquals(arriving, FrontRead.Answer("Sure!"), frontRead(arriving))
-        assertEquals(FrontRead.Answer("Sure! <<stop mac t1"), frontRead("Sure! <<stop mac t1", ended = true))
-        assertEquals(FrontRead.Answer("To stop a Gradle daemon run `./gradlew --stop`."), frontRead("To stop a Gradle daemon run `./gradlew --stop`.", ended = true))
-    }
-
-    @Test fun aStopHisOwnWordsDoNotBearOutStopsNothingAndIsHandedOverInstead() {
-        for (order in listOf("stop", "Stop.", "cancel that", "wait stop", "abort", "never mind, forget it", "nevermind", "ok hold on", "that's enough", "kill it", "stop the FF4 one", "STOP")) {
-            assertTrue(order, wordsOfStopping(order))
-            assertEquals(order, FrontRead.Stop(Route.BUILD), borneOut(FrontRead.Stop(Route.BUILD), order))
-            assertEquals(order, FrontRead.Stop("mac t1"), borneOut(FrontRead.Stop("mac t1"), order))
-        }
-        // Seen from the real model while the builder worked: the mark that stops, for words like these.
-        for (plain in listOf("thanks", "what is the capital of France", "is it done yet", "make it blue", "", "unstoppable", "a nonstop flight")) {
-            assertFalse(plain, wordsOfStopping(plain))
-            assertEquals(plain, FrontRead.HandOver(Route.BUILD), borneOut(FrontRead.Stop(Route.BUILD), plain))
-            assertEquals(plain, FrontRead.HandOver("mac t1"), borneOut(FrontRead.Stop("mac t1"), plain))
-        }
-        // It only ever takes a stop away. Nothing else the front agent says is changed, whatever his words were.
-        for (read in listOf(FrontRead.Undecided, FrontRead.Answer("Run `./gradlew --stop`."), FrontRead.HandOver(Route.BUILD), FrontRead.HandOver("mac t1"))) {
-            for (words in listOf("stop", "thanks", "stop using red and make it blue")) assertEquals(read, borneOut(read, words))
-        }
-    }
-
-    @Test fun whatWasStoppedIsSaidInOneLine() {
-        assertEquals("Stopped the builder.", stoppedText(BUILDER, running = true))
-        assertEquals("Stopped FF4 mod.", stoppedText("FF4 mod", running = true))
-        assertEquals("Nothing was running.", stoppedText(BUILDER, running = false))
-        assertEquals("Nothing was running.", NOTHING_RUNNING)
-    }
-
-    // Mending a stuck builder
-
-    @Test fun aMarkThatMendsIsNotDecidedUntilItIsWholeAndAMentionMendsNothing() {
-        assertEquals("<<restart>>", RESTART); assertEquals("<<clean>>", CLEAN)
-        for (partial in listOf("<<r", "<<rest", "<<restart", "<<restart>", "<<c", "<<clea", "<<clean>", " `<<restart")) assertEquals(partial, FrontRead.Undecided, frontRead(partial))
-        for (whole in listOf("<<restart>>", " <<restart>>\n", "`<<restart>>`", "<<restart>> now")) {
-            assertEquals(whole, FrontRead.Restart, frontRead(whole)); assertEquals(whole, FrontRead.Restart, frontRead(whole, ended = true))
-        }
-        for (whole in listOf("<<clean>>", "```\n<<clean>>\n```", "<<clean>>\nDone.")) assertEquals(whole, FrontRead.Clean, frontRead(whole, ended = true))
-        // The stream of a real one is decided at the closing bracket.
-        var said = QuickAnswer()
-        val reads = listOf("<<re", "start", ">", ">").map { piece -> said = said.after(QuickEvent.Delta(piece)); frontRead(said.text) }
-        assertEquals(listOf(FrontRead.Undecided, FrontRead.Undecided, FrontRead.Undecided, FrontRead.Restart), reads)
-        // Only a reply that starts with one mends; a mention is shown without it, and half of one at the end is held back until it cannot be one.
         assertEquals(FrontRead.Answer("I can  it if it is stuck."), frontRead("I can <<restart>> it if it is stuck.", ended = true))
         assertEquals(FrontRead.Answer("Say so and I will ."), frontRead("Say so and I will <<clean>>.", ended = true))
-        assertEquals(FrontRead.Answer("Sure!"), frontRead("Sure! <<resta"))
-        assertEquals(FrontRead.Answer("Sure! <<resta"), frontRead("Sure! <<resta", ended = true))
-        for (near in listOf("<<Restart>>", "<< restart >>", "<restart>", "restart", "<<restarted>>", "<<cleanup>>")) assertTrue(near, frontRead(near, ended = true) is FrontRead.Answer)
-        assertEquals(FrontRead.HandOver(Route.BUILD), frontRead("<<build>><<restart>>"))
-    }
-
-    @Test fun aMendHisOwnWordsDoNotBearOutIsHandedOverInstead() {
-        for (asked in listOf("is the builder frozen?", "it's stuck", "restart it", "fix the builder", "he seems hung", "why is it so slow", "kick it", "clean up the leftover processes", "it froze", "Restart.", "is it broken")) {
-            assertTrue(asked, wordsOfMending(asked))
-            assertEquals(asked, FrontRead.Restart, borneOut(FrontRead.Restart, asked))
-            assertEquals(asked, FrontRead.Clean, borneOut(FrontRead.Clean, asked))
+        assertEquals(FrontRead.Answer("Sure!"), frontRead("Sure! <<build B>>", ended = true))
+        // While it is still arriving, the start of one at the end is held back; one that never completes is shown.
+        for (arriving in listOf("Sure! <<s", "Sure! <<stop", "Sure! <<stop>", "Sure! <<stop mac t1", "Sure! <<resta", "Sure! <<build B")) assertEquals(arriving, FrontRead.Answer("Sure!"), frontRead(arriving))
+        assertEquals(FrontRead.Answer("Sure! <<stop mac t1"), frontRead("Sure! <<stop mac t1", ended = true))
+        assertEquals(FrontRead.Answer("<<stop"), frontRead("<<stop", ended = true))
+        assertEquals(FrontRead.Answer("To stop a Gradle daemon run `./gradlew --stop`."), frontRead("To stop a Gradle daemon run `./gradlew --stop`.", ended = true))
+        // Close to a mark is not one.
+        for (near in listOf("<<Stop>>", "<< stop >>", "<stop>", "stop", "<<stopped>>", "<<stops>>", "<<Restart>>", "<<restarted>>", "<<restartB>>", "<<cleanup>>", "<<builder>>")) {
+            assertTrue(near, frontRead(near, ended = true) is FrontRead.Answer)
         }
-        for (plain in listOf("thanks", "what's it doing", "check on the builder", "make it blue", "", "is it done yet", "stop")) {
-            assertFalse(plain, wordsOfMending(plain))
-            assertEquals(plain, FrontRead.HandOver(Route.BUILD), borneOut(FrontRead.Restart, plain))
-            assertEquals(plain, FrontRead.HandOver(Route.BUILD), borneOut(FrontRead.Clean, plain))
-        }
-        // Mending words do not make a stop of anything, nor bear one out.
-        assertEquals(FrontRead.HandOver(Route.BUILD), borneOut(FrontRead.Stop(Route.BUILD), "restart it"))
-    }
-
-    /** Boss 2026-10-13: two builders. Once asked which to restart, the front agent names one, under the same guard. */
-    @Test fun aRestartThatNamesABuilderIsReadWholeAndGuardedAlike() {
-        assertEquals("<<restart A>>", restartMark(BuilderId.A)); assertEquals("<<restart B>>", restartMark(BuilderId.B))
-        for (partial in listOf("<<restart ", "<<restart B", "<<restart B>")) assertEquals(partial, FrontRead.Undecided, frontRead(partial))
-        assertEquals(FrontRead.RestartOne(BuilderId.B), frontRead("<<restart B>>"))
-        assertEquals(FrontRead.RestartOne(BuilderId.A), frontRead("`<<restart A>>`", ended = true))
-        assertEquals(FrontRead.Restart, frontRead("<<restart>>"))
-        for (near in listOf("<<restart C>>", "<<restart b>>", "<<restartB>>")) assertTrue(near, frontRead(near, ended = true) is FrontRead.Answer)
-        assertEquals(FrontRead.Answer("Say  and it restarts."), frontRead("Say <<restart B>> and it restarts.", ended = true))
-        assertEquals(FrontRead.RestartOne(BuilderId.B), borneOut(FrontRead.RestartOne(BuilderId.B), "B, restart it"))
-        // Words that do not ask to mend make it a hand-over to the builder it named, as a stop's does.
-        assertEquals(FrontRead.HandOver(Route.builder(BuilderId.B)), borneOut(FrontRead.RestartOne(BuilderId.B), "B please"))
     }
 
     private val minute = 60_000L
@@ -654,45 +572,33 @@ class FrontAgentTest {
 
     // The phone's two builders (Boss 2026-10-13: two builders)
 
-    @Test fun aMarkNamesOneBuilderAndIsNotDecidedUntilItCloses() {
-        assertEquals("<<build A>>", handOverMark(Route.builder(BuilderId.A))); assertEquals("<<build B>>", handOverMark(Route.builder(BuilderId.B)))
-        assertEquals("<<stop A>>", stopMark(Route.builder(BuilderId.A))); assertEquals("<<stop B>>", stopMark(Route.builder(BuilderId.B)))
-        assertEquals(BuilderId.B, Route.builderOf("build B")); assertNull(Route.builderOf(Route.BUILD)); assertNull(Route.builderOf("mac B")); assertNull(Route.builderOf("build C"))
-        for (partial in listOf("<<build ", "<<build B", "<<build B>", " `<<build A")) assertEquals(partial, FrontRead.Undecided, frontRead(partial))
-        for (whole in listOf("<<build B>>", " <<build B>>\n", "`<<build B>>`", "<<build b>> sure", "<<build 2>>", "<<build  B >>")) {
-            assertEquals(whole, FrontRead.HandOver("build B"), frontRead(whole))
-            assertEquals(whole, FrontRead.HandOver("build B"), frontRead(whole, ended = true))
+    /**
+     * Boss 2026-10-14: the front agent only says <<build>>, and the launcher picks the builder. The one builder that
+     * finished by asking him something gets his words, since they answer it; with none, or both, asking, whichever
+     * is free does ([pickBuilder]).
+     */
+    @Test fun aHandOverAnswersTheOneBuilderThatAskedAndOtherwiseGoesToWhicheverIsFree() {
+        val asked = BuildBoard(working = false, lastAnswer = "Done. Want me to make it bigger?", spokeAgo = minute)
+        val told = BuildBoard(working = false, lastAnswer = "Done. The clock tile is on page 2.", spokeAgo = minute)
+        val busy = BuildBoard(working = true, label = "Using Bash", request = "make the clock tile", spokeAgo = minute)
+        val never = BuildBoard(working = false)
+        assertEquals(BuilderId.B, askingBuilder(mapOf(BuilderId.A to busy, BuilderId.B to asked)))
+        assertEquals(BuilderId.A, askingBuilder(mapOf(BuilderId.A to asked, BuilderId.B to told)))
+        assertEquals(BuilderId.B, askingBuilder(mapOf(BuilderId.A to never, BuilderId.B to asked.copy(lastAnswer = "It is on page 2.\n\n**Shall I go on?**\n"))))
+        // Nobody asking, or both: nothing is guessed, and the words go to whichever is free.
+        for (boards in listOf(mapOf(BuilderId.A to told, BuilderId.B to never), mapOf(BuilderId.A to busy, BuilderId.B to never), mapOf(BuilderId.A to asked, BuilderId.B to asked), emptyMap())) {
+            assertNull(boards.toString(), askingBuilder(boards))
         }
-        assertEquals(FrontRead.HandOver("build A"), frontRead("<<build A>>"))
-        // One that names no builder, or never closes, is still work for the phone: new work, never nowhere and never shown.
-        for (odd in listOf("<<build C>>", "<<build the other one>>", "<<build >>")) assertEquals(odd, FrontRead.HandOver(Route.BUILD), frontRead(odd))
-        assertEquals(FrontRead.HandOver(Route.BUILD), frontRead("<<build B", ended = true))
-        // A mention is shown without it, and half of one at the end is held back while more may come.
-        assertEquals(FrontRead.Answer("Sure!"), frontRead("Sure! <<build B>>", ended = true))
-        assertEquals(FrontRead.Answer("Sure!"), frontRead("Sure! <<build B"))
-        // The stream of a real one is decided at the closing bracket.
-        var said = QuickAnswer()
-        val reads = listOf("<<bu", "ild", " B", ">", ">").map { piece ->
-            said = said.after(QuickEvent.Delta(piece))
-            frontRead(said.text)
-        }
-        assertEquals(listOf(FrontRead.Undecided, FrontRead.Undecided, FrontRead.Undecided, FrontRead.Undecided, FrontRead.HandOver("build B")), reads)
-    }
-
-    @Test fun aBuildersMarkGoesToThatBuilderAndABareOneToWhicheverIsFree() {
+        // One at work is not asking, whatever its last answer said: words for a working builder go by its tab.
+        assertNull(askingBuilder(mapOf(BuilderId.A to busy.copy(lastAnswer = "Shall I?"), BuilderId.B to never)))
+        // Then [pickBuilder] does as it always did: the one asking gets them, free as it is; otherwise the first free one.
+        val loads = mapOf(BuilderId.A to BuilderLoad(false), BuilderId.B to BuilderLoad(false))
+        assertEquals(BuilderId.B, pickBuilder(askingBuilder(mapOf(BuilderId.A to told, BuilderId.B to asked)), loads))
+        assertEquals(BuilderId.A, pickBuilder(askingBuilder(mapOf(BuilderId.A to told, BuilderId.B to told)), loads))
+        assertEquals(BuilderId.B, pickBuilder(askingBuilder(mapOf(BuilderId.A to busy, BuilderId.B to told)), mapOf(BuilderId.A to BuilderLoad(true), BuilderId.B to BuilderLoad(false))))
+        // Every hand-over to the phone is the one route, Mac or no Mac.
         val board = macBoard(listOf(onMac("t1a2b3c4d", "FF4 mod")), reachable = true, seen = now, now = now)
-        for (mac in listOf(board, null)) {
-            assertEquals(FrontRoute.Build, frontRoute((frontRead("<<build>>") as FrontRead.HandOver).to, mac))
-            assertEquals(FrontRoute.Builder(BuilderId.B), frontRoute((frontRead("<<build B>>") as FrontRead.HandOver).to, mac))
-            assertEquals(FrontRoute.Builder(BuilderId.A), frontRoute((frontRead("<<build A>>") as FrontRead.HandOver).to, mac))
-        }
-        // Stopping one builder by its letter; a thread's id is never a letter, so the two are never mixed up.
-        assertEquals(FrontRead.Stop("build B"), frontRead("<<stop B>>"))
-        assertEquals(FrontRead.Stop("build A"), frontRead("<<stop a>>", ended = true))
-        assertEquals(FrontRoute.Builder(BuilderId.B), frontRoute((frontRead("<<stop B>>") as FrontRead.Stop).of, board))
-        assertEquals("t1a2b3c4d", (frontRoute((frontRead("<<stop mac t1a2b3c4d>>") as FrontRead.Stop).of, board) as FrontRoute.Mac).thread.id)
-        // A stop his words do not bear out is a hand-over to the same builder.
-        assertEquals(FrontRead.HandOver("build B"), borneOut(frontRead("<<stop B>>"), "thanks"))
+        for (mac in listOf(board, null)) assertEquals(FrontRoute.Build, frontRoute((frontRead("<<build>>") as FrontRead.HandOver).to, mac))
     }
 
     @Test fun theBoardNamesEachBuilderOnceBHasWorked() {
@@ -767,8 +673,8 @@ class FrontAgentTest {
         for (broken in listOf("<<mac-new t1", "<<mac-new t1>", "<<mac-new")) assertEquals(broken, FrontRead.HandOver("mac-new "), frontRead(broken, ended = true))
         assertEquals(FrontRead.HandOver("mac-new "), frontRead("<<mac-new t1\nand more"))
         assertEquals(FrontRead.HandOver("mac-new "), frontRead("<<mac-new " + "y".repeat(MAC_ID_CHARS + 1) + ">>"))
-        // A stop that names it stops nothing on a guess.
-        assertTrue(frontRoute((frontRead("<<stop mac-new t5e121ba2>>") as FrontRead.Stop).of, macBoard(listOf(onMac("t5e121ba2")), true, now, now)) is FrontRoute.Unknown)
+        // A removed stop mark that names it is a plain hand-over to the phone, and starts nothing on the Mac.
+        assertEquals(FrontRoute.Build, frontRoute((frontRead("<<stop mac-new t5e121ba2>>") as FrontRead.HandOver).to, macBoard(listOf(onMac("t5e121ba2")), true, now, now)))
     }
 
     @Test fun aFreshThreadsMarkGoesOnlyToAThreadOnTheBoardAndSaysItIsSeparateWork() {
@@ -778,8 +684,6 @@ class FrontAgentTest {
         // An id not on the board is what an unknown thread's mark always was: he is asked which project, and nothing is sent.
         for (named in listOf("", "T5E121BA2", "t5e121ba", "FF4 better menu mod", "t1; rm -rf /")) assertEquals(named, FrontRoute.Unknown(named), frontRoute(Route.macNew(named), board))
         assertEquals(FrontRoute.Unknown("t5e121ba2"), frontRoute(Route.macNew("t5e121ba2"), null))
-        // A mark that names a thread but is not borne out as a stop stays what it was.
-        assertEquals(FrontRead.HandOver("mac-new t5e121ba2"), borneOut(frontRead("<<mac-new t5e121ba2>>"), "separately, add save anywhere"))
     }
 
     @Test fun theBoardShowsEachThreadsFolderSoTwoOnOneProjectCanBeSeen() {

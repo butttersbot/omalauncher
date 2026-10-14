@@ -91,6 +91,7 @@ import dev.omalauncher.assist.RoutingLog
 import dev.omalauncher.assist.agentThreadsNow
 import dev.omalauncher.assist.appendSpeech
 import dev.omalauncher.assist.BuilderId
+import dev.omalauncher.assist.BuilderWatch
 import dev.omalauncher.assist.ChatTitles
 import dev.omalauncher.assist.builderApprovalTitle
 import dev.omalauncher.assist.builderId
@@ -139,7 +140,7 @@ import java.util.Date
  * talks straight to it. A home tile of a thread opens its tab by [EXTRA_THREAD]; every other way in opens Oma.
  * ＋ at the end of the tabs starts a new chat, which is always for the Mac: what its first message hands on goes
  * to a new thread there, and the chat is named after it;
- * a long press on a tab renames, pins, stops, copies from or archives it (ChatTabs.kt, TabBook.kt).
+ * a long press on a tab renames, pins, stops, restarts or cleans up after, copies from or archives it (ChatTabs.kt, TabBook.kt).
  */
 class OmaChatActivity : ComponentActivity() {
     private val runtime get() = (application as App).runtime
@@ -645,10 +646,18 @@ private fun OmaChatScreen(
             val shown = tabEntries(tasks, key, book)
             val answer = lastAnswer(shown)
             val stop = tabStop(key, thread, book)
+            // From the last look at the builders; on a phone tab a fresh one is taken as the menu opens, and its rows follow it.
+            val mend = tabMend(key, BuilderWatch.last)
+            LaunchedEffect(key) {
+                if (tabBuilder(key) != null) {
+                    withContext(Dispatchers.IO) { BuilderWatch.look(context) }
+                    tick++
+                }
+            }
             val archived = all.filter { it.key in book.archived }
             TabMenu(
                 title = tabTitle(key, all),
-                actions = tabMenu(key, key in book.pinned, stop != null, answer != null, archived.size),
+                actions = tabMenu(key, key in book.pinned, stop != null, answer != null, archived.size, mend),
                 archived = archived,
                 onDismiss = { menuFor = null },
                 onRename = { name ->
@@ -670,6 +679,17 @@ private fun OmaChatScreen(
                                 tick++
                             }
                             null -> {}
+                        }
+                        // The watch looks again and checks every guard again before it stops anything; what it did is said here.
+                        TabAction.Restart -> mend.restart?.let { builder ->
+                            BuilderWatch.restart(context, builder) { said ->
+                                notice = said
+                                tick++
+                            }
+                        }
+                        TabAction.Clean -> BuilderWatch.clean(context) { said ->
+                            notice = said
+                            tick++
                         }
                         TabAction.Copy -> answer?.let { copied(context, it) }
                         TabAction.Archive -> {
@@ -775,7 +795,7 @@ private fun TabMenu(
                 BasicText(Pack.caption(title), Modifier.padding(horizontal = 12.dp, vertical = 10.dp), style = caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 for (action in actions) {
                     val label = if (action == TabAction.Archived) archivedRow(archived.size) else action.label
-                    MenuItem(label, if (action == TabAction.Stop) Pack.red else Pack.foreground) {
+                    MenuItem(label, if (action == TabAction.Stop || action == TabAction.Restart) Pack.red else Pack.foreground) {
                         when (action) {
                             TabAction.Rename -> page = MenuPage.Rename
                             TabAction.Archived -> page = MenuPage.Archived

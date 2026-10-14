@@ -22,7 +22,8 @@ import kotlin.concurrent.thread
 // How the phone's builder is doing, for the front agent to see and Boss to ask about (Boss, 2026-10-13: the
 // builder sat on one task for 45 minutes printing nothing, and the front agent could only say it was busy).
 // Everything that decides is pure and at the top, made from plain facts so a pool of builders can use it as is;
-// BuilderWatch at the end reads /proc and the build lane, writes the status file and carries out a repair.
+// BuilderWatch at the end reads /proc and the build lane, writes the status file and carries out a repair, which
+// Boss asks for from a phone tab's long-press menu (Boss, 2026-10-14), never the front agent.
 
 /** No line from the builder for this long and it is no longer simply working: it is quiet. */
 const val QUIET_MS = 3 * 60_000L
@@ -278,7 +279,7 @@ fun healthSummary(facts: BuilderFacts, verdict: BuilderVerdict = builderVerdict(
 
 /**
  * The board's one line about the builder's health, or null when it is idle and nothing is wrong. The front
- * agent answers "is it frozen?" from this, and decides from it whether a restart can be asked for. [name] is
+ * agent answers "is it frozen?" from this, and says where Restart is when it is stalled or dead. [name] is
  * "Builder" while the phone shows one builder, and "Builder A" or "Builder B" once B has worked.
  */
 fun healthLine(facts: BuilderFacts, name: String = "Builder"): String? {
@@ -309,21 +310,7 @@ fun restartedText(facts: BuilderFacts, dropped: Int, name: String = "the builder
 
 const val RESTART_NOTHING = "The builder had already finished, so nothing was restarted."
 const val RESTART_APPROVAL = "The builder is waiting for your approval, so it was not restarted."
-const val RESTART_STUCK = "Stopped the builder, but its task has not let go yet, so it was not sent again. Ask me again in a minute."
-
-/**
- * Which builder a restart is for, from each builder's [verdicts] now, read as a bare stop is ([bareStop]): with
- * [named] (he said which) that one, if it is [restartable]; otherwise the one builder that is. None restartable
- * is [BareStop.Nothing]; both is [BareStop.Which], and he is asked which rather than either being restarted on a
- * guess. One that waits for an approval is never restartable, so never picked.
- */
-fun restartPick(verdicts: Map<BuilderId, BuilderVerdict>, named: BuilderId? = null): BareStop {
-    val stuck = verdicts.filterValues(::restartable).keys.sorted()
-    return if (named != null) (if (named in stuck) BareStop.One(named) else BareStop.Nothing) else bareStop(stuck)
-}
-
-/** What he reads when he asked for a restart and both builders are stuck. Nothing is restarted until he says which. */
-const val WHICH_RESTART = "Both builders look stuck. Which one should restart, A or B?"
+const val RESTART_STUCK = "Stopped the builder, but its task has not let go yet, so it was not sent again. Try Restart again in a minute."
 
 /** What the chat entry says once leftovers were looked for: [found] of them, [ended] of those now gone. */
 fun cleanedText(found: Int, ended: Int): String = when {
@@ -382,8 +369,8 @@ fun agentsGuestTools(context: Context, rootfs: File): List<Managed> =
     listOf(Managed(File(rootfs, "usr/local/bin/oma-agents"), Policy.Owned, executable = true) { context.assets.open("oma-agents.sh").use { it.readBytes() } })
 
 /**
- * Looks at the phone's builders: from /proc, cheaply, every [LOOK_EVERY_MS] while any works and whenever the front
- * agent is asked something, writing the status file each time. It changes nothing of the build lane except
+ * Looks at the phone's builders: from /proc, cheaply, every [LOOK_EVERY_MS] while any works, whenever the front
+ * agent is asked something and whenever a phone tab's menu opens, writing the status file each time. It changes nothing of the build lane except
  * through [restart], which is one builder's own stop and send, and ends no process except leftovers in [clean]:
  * a process either builder's task owns is never one.
  */
@@ -393,6 +380,9 @@ object BuilderWatch {
     private val watching = AtomicBoolean()
     /** The builders whose notification says they stalled; only touched under this object's lock. */
     private val noticed = HashSet<BuilderId>()
+
+    /** Each builder's facts at the last look, for a tab's menu to show at once what it can mend; empty before the first. */
+    @Volatile var last: Map<BuilderId, BuilderFacts> = emptyMap(); private set
 
     /** A task started, changed or ended: while any works they are looked at until none does, and once more after. */
     fun watch(context: Context) {
@@ -457,6 +447,7 @@ object BuilderWatch {
                 )
             }
         }
+        last = seen
         write(app, seen, builderBShown(tasks, working[BuilderId.B] == true))
         notice(app, seen)
         return seen

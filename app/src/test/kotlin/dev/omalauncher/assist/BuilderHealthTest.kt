@@ -1,5 +1,10 @@
 package dev.omalauncher.assist
 
+import dev.omalauncher.oma.OMA_TAB
+import dev.omalauncher.oma.TabAction
+import dev.omalauncher.oma.TabMend
+import dev.omalauncher.oma.tabMend
+import dev.omalauncher.oma.tabMenu
 import dev.omalauncher.theme.pack.moduleFile
 import org.json.JSONObject
 import org.junit.Assert.*
@@ -115,24 +120,39 @@ class BuilderHealthTest {
         assertEquals(listOf(501), same.leftovers.map { it.pid })
     }
 
-    /** Boss 2026-10-13: a restart with two builders restarts the stuck one, and asks which when both are. */
-    @Test fun aRestartGoesToTheStuckBuilderAndAsksWhichWhenBothAre() {
-        val stalled = BuilderVerdict.Stalled; val dead = BuilderVerdict.Dead
-        assertEquals(BareStop.Nothing, restartPick(mapOf(BuilderId.A to BuilderVerdict.Idle, BuilderId.B to BuilderVerdict.Working)))
-        assertEquals(BareStop.One(BuilderId.A), restartPick(mapOf(BuilderId.A to stalled, BuilderId.B to BuilderVerdict.Working)))
-        assertEquals(BareStop.One(BuilderId.B), restartPick(mapOf(BuilderId.A to BuilderVerdict.Quiet, BuilderId.B to dead)))
-        assertEquals(BareStop.Which, restartPick(mapOf(BuilderId.A to stalled, BuilderId.B to dead)))
-        // Once he says which, that one, and only if it is stuck.
-        assertEquals(BareStop.One(BuilderId.B), restartPick(mapOf(BuilderId.A to stalled, BuilderId.B to dead), BuilderId.B))
-        assertEquals(BareStop.Nothing, restartPick(mapOf(BuilderId.A to stalled, BuilderId.B to BuilderVerdict.Working), BuilderId.B))
-        // A builder that waits for an approval is never picked, named or not: the other is, or none.
-        val waits = BuilderVerdict.WaitingForBoss
-        assertEquals(BareStop.One(BuilderId.B), restartPick(mapOf(BuilderId.A to waits, BuilderId.B to stalled)))
-        assertEquals(BareStop.Nothing, restartPick(mapOf(BuilderId.A to waits, BuilderId.B to waits)))
-        assertEquals(BareStop.Nothing, restartPick(mapOf(BuilderId.A to waits, BuilderId.B to stalled), BuilderId.A))
-        assertEquals("Both builders look stuck. Which one should restart, A or B?", WHICH_RESTART)
-        // One builder alone, as before there were two.
-        assertEquals(BareStop.One(BuilderId.A), restartPick(mapOf(BuilderId.A to stalled)))
+    /**
+     * Boss 2026-10-14: Restart and Clean up leftovers are rows of a phone tab's menu, not the front agent's. Restart
+     * only on the stalled or dead builder's own tab, never on one waiting for his approval; clean on either phone
+     * tab while leftovers run; neither on any other tab.
+     */
+    @Test fun aPhoneTabOffersRestartOnlyForItsStuckBuilderAndCleanOnlyWithLeftovers() {
+        val stalled = facts(quiet = 11 * minute, cpuMoved = 12 * minute)
+        val dead = facts(quiet = minute, cpuMoved = null, pid = null)
+        val working = facts(quiet = minute, cpuMoved = null)
+        val quiet = facts(quiet = 40 * minute, cpuMoved = minute)
+        val waits = facts(quiet = 11 * minute, cpuMoved = 12 * minute, approval = true)
+        assertEquals(BuilderVerdict.Stalled, builderVerdict(stalled)); assertEquals(BuilderVerdict.Dead, builderVerdict(dead))
+        assertEquals(BuilderVerdict.WaitingForBoss, builderVerdict(waits))
+        val seen = mapOf(BuilderId.A to stalled, BuilderId.B to working)
+        assertEquals(TabMend(restart = BuilderId.A), tabMend(PHONE_THREAD, seen))
+        assertEquals(TabMend(), tabMend(PHONE_THREAD_B, seen))
+        assertEquals(TabMend(restart = BuilderId.B), tabMend(PHONE_THREAD_B, mapOf(BuilderId.A to quiet, BuilderId.B to dead)))
+        // Never with an approval waiting, never for a builder that is only quiet, and never before the first look.
+        assertEquals(TabMend(), tabMend(PHONE_THREAD, mapOf(BuilderId.A to waits)))
+        assertEquals(TabMend(), tabMend(PHONE_THREAD, mapOf(BuilderId.A to quiet)))
+        assertEquals(TabMend(), tabMend(PHONE_THREAD, emptyMap()))
+        // Leftovers are offered on either phone tab, and on no other.
+        val left = mapOf(BuilderId.A to BuilderFacts(start, working = false, leftovers = listOf(row(501))), BuilderId.B to dead)
+        assertEquals(TabMend(clean = true), tabMend(PHONE_THREAD, left))
+        assertEquals(TabMend(restart = BuilderId.B, clean = true), tabMend(PHONE_THREAD_B, left))
+        for (other in listOf(OMA_TAB, "mac:t1a2b3c4d", "chat:c1")) assertEquals(other, TabMend(), tabMend(other, left + (BuilderId.A to stalled)))
+        // The rows it adds stand after Stop and before Copy, and only when there is something to mend.
+        assertEquals(
+            listOf(TabAction.Rename, TabAction.Pin, TabAction.Stop, TabAction.Restart, TabAction.Clean, TabAction.Copy, TabAction.Archive),
+            tabMenu(PHONE_THREAD, pinned = false, stoppable = true, answered = true, archived = 0, mend = TabMend(BuilderId.A, clean = true)),
+        )
+        assertEquals(listOf(TabAction.Rename, TabAction.Pin, TabAction.Archive), tabMenu(PHONE_THREAD, pinned = false, stoppable = false, answered = false, archived = 0))
+        assertEquals("Restart", TabAction.Restart.label); assertEquals("Clean up leftovers", TabAction.Clean.label)
     }
 
     @Test fun withTwoBuildersEachHasItsHealthLineAndStatus() {

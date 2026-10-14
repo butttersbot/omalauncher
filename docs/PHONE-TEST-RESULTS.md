@@ -1,5 +1,23 @@
 # Phone test results
 
+## Latest: the front agent has two jobs; stop, restart and clean are on the tab (2026-10-14) — NOT promoted, NOT seen on a screen
+
+Boss: "Shrink the front agent to two jobs: answer, or say which project. Stop, restart and clean move to buttons on the
+tab's long-press menu. The tabs and ＋ are explicit routing; the model should only guess when you don't choose."
+Compile-checked and unit tested only (1096 tests green); no gradle build run.
+- Marks: only `<<build>>`, `<<mac ID>>`, `<<mac-new ID>>`. `<<build A|B>>`, every `<<stop…>>`, `<<restart…>>` and
+  `<<clean>>` are gone from the prompt and the reader; one that still arrives is a plain `<<build>>`, never carried out.
+  `borneOut`, `wordsOfStopping`, `wordsOfMending`, `halt`, `mend`, `restartPick`, `bareStop` are removed.
+- `<<build>>` goes to the one phone builder that finished by asking him a question (`askingBuilder`), else to whichever is
+  free (`pickBuilder`); with both asking, the free rule. Hand-over context is unchanged.
+- Asked to stop, restart or clean up, it answers: long-press its tab and choose Stop or Restart.
+- Tab menu: Restart (red, after Stop) on a phone builder's tab while that builder is stalled or dead and waits for no
+  approval (`tabMend`; `BuilderWatch.restart` checks again); "Clean up leftovers" on Phone tabs while leftover builder
+  processes run (`BuilderWatch.clean`). Opening a phone tab's menu takes a fresh look. What was done shows as the notice line.
+- Prompt 5,328 → 4,169 characters with a Mac. Real Haiku, 12 requests × 3: new prompt 36/36 as intended; old prompt
+  31/36 by its own marks (sent "thanks" to builder A twice, FF4 work to builder A once, a restart for "is it frozen?").
+- To see: the Restart and Clean rows appearing only when they should, a restart from the menu, "yes" after a builder's question.
+
 ## Latest: promoting the night's batch, then simplifying (2026-10-14, Boss: "Yeah, let's do it")
 
 Promoted at Boss's word: chat dots at the right, ＋ new chat (always a Mac session), auto-named tabs, tab long-press
