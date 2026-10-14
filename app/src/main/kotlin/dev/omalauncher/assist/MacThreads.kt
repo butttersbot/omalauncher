@@ -150,9 +150,10 @@ private fun approvalAnswer(decision: MacDecision) = when (decision) {
  * says belongs to the one entry of its that is running. A `message` event is the thread taking his words: the
  * oldest waiting entry with exactly those words begins, unless one is already running, which is then the one
  * meant. The thread says back all it was sent, so the words are looked for after the context too ([handOverWords]). Events of a task that was not sent from this phone find no entry and change nothing. [inFlight] are
- * the entries still on their way to the Mac, which a stop that came before them does not end.
+ * the entries still on their way to the Mac, which a stop that came before them does not end. [answeredBy] is
+ * what the reply is named, given to the entry with its first words unless it already has a name.
  */
-fun macApply(tasks: List<ChatTask>, threadId: String, event: MacEvent, inFlight: Set<Long> = emptySet()): List<ChatTask> {
+fun macApply(tasks: List<ChatTask>, threadId: String, event: MacEvent, inFlight: Set<Long> = emptySet(), answeredBy: String = ""): List<ChatTask> {
     val current = tasks.firstOrNull { it.thread == threadId && it.status == TaskStatus.Running }
     fun running(change: (ChatTask) -> ChatTask) = if (current == null) tasks else tasks.map { if (it.time == current.time) change(it) else it }
     return when (event) {
@@ -161,14 +162,14 @@ fun macApply(tasks: List<ChatTask>, threadId: String, event: MacEvent, inFlight:
             val next = if (current != null) null else tasks.firstOrNull { it.thread == threadId && it.status == TaskStatus.Queued && (it.prompt == event.text || it.prompt == words) }
             if (next == null) tasks else tasks.map { if (it.time == next.time) it.copy(status = TaskStatus.Running) else it }
         }
-        is MacEvent.Text -> running { it.copy(result = it.result + event.text.trimEnd() + "\n") }
+        is MacEvent.Text -> running { it.copy(result = it.result + event.text.trimEnd() + "\n", answeredBy = it.answeredBy.ifEmpty { answeredBy }) }
         is MacEvent.Step -> running { ChatHistory.withStep(it, event.text) }
         is MacEvent.Approval -> macAsked(tasks, threadId, event.request)
         is MacEvent.ApprovalResult -> macAnswered(tasks, threadId, event.approval, approvalAnswer(event.decision))
         // The result is the whole answer, as it is for the phone's builder; with no words, what was said so far stays.
         is MacEvent.Result -> running {
             val none = if (event.failed) "The agent needs attention." else "Task completed."
-            it.over(if (event.failed) TaskStatus.Failed else TaskStatus.Done, event.text.ifBlank { it.result.ifBlank { none } })
+            it.over(if (event.failed) TaskStatus.Failed else TaskStatus.Done, event.text.ifBlank { it.result.ifBlank { none } }).copy(answeredBy = it.answeredBy.ifEmpty { answeredBy })
         }
         is MacEvent.Stopped -> tasks.map {
             when {
@@ -805,7 +806,9 @@ object MacThreads {
         val log = ChatLog.of(context)
         val before = log.tasks
         val flying = synchronized(this) { sentAt.filterValues { it == IN_FLIGHT }.keys.toSet() }
-        log.revise { macApply(it, threadId, event, flying) }
+        // The runner says which agent a thread runs ("claude") but not which model answers, so its replies carry the agent's name.
+        val by = agentName(view.threads.firstOrNull { it.id == threadId }?.kind).orEmpty()
+        log.revise { macApply(it, threadId, event, flying, by) }
         when (event) {
             is MacEvent.Approval -> {
                 val threadName = name(context, threadId)

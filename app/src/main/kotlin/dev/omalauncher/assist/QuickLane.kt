@@ -188,7 +188,7 @@ object QuickLane {
                 var its = false
                 // The entry reads as a task just begun until the front agent shows it is answering this one itself.
                 fun own() {
-                    if (!its) log.update(asked, save = true) { it.copy(agent = QUICK_AGENT) }
+                    if (!its) log.update(asked, save = true) { it.copy(agent = QUICK_AGENT, answeredBy = agentName(QUICK_MODEL).orEmpty()) }
                     its = true
                 }
                 child.inputStream.bufferedReader().forEachLine { line ->
