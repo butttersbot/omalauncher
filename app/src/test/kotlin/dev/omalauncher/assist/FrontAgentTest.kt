@@ -78,14 +78,207 @@ class FrontAgentTest {
         }
     }
 
-    @Test fun onlyWordsAloneWithAFreeFrontAgentAreAskedFirst() {
-        assertTrue(frontFirst("hello", images = 0, ready = true, busy = false))
-        assertFalse(frontFirst("hello", images = 1, ready = true, busy = false))
-        assertFalse(frontFirst("hello", images = 0, ready = false, busy = false))
-        assertFalse(frontFirst("hello", images = 0, ready = true, busy = true))
+    /**
+     * Changed on purpose (Boss, 2026-10-13: "I shouldn't have to wait for a job to finish to be able to talk to
+     * the AI"): a front agent that is still on the request before no longer sends this one past it to the
+     * builder. It is asked first all the same, and waits its turn in [FrontQueue].
+     */
+    @Test fun wordsAloneAreAskedFirstWhetherOrNotTheFrontAgentIsFree() {
+        assertTrue(frontFirst("hello", images = 0, ready = true))
+        assertFalse(frontFirst("hello", images = 1, ready = true))
+        assertFalse(frontFirst("hello", images = 0, ready = false))
         assertEquals(ChatHistory.MAX_PROMPT, FRONT_MAX_REQUEST)
-        assertTrue(frontFirst("a".repeat(FRONT_MAX_REQUEST), 0, ready = true, busy = false))
-        assertFalse(frontFirst("a".repeat(FRONT_MAX_REQUEST + 1), 0, ready = true, busy = false))
+        assertTrue(frontFirst("a".repeat(FRONT_MAX_REQUEST), 0, ready = true))
+        assertFalse(frontFirst("a".repeat(FRONT_MAX_REQUEST + 1), 0, ready = true))
+    }
+
+    // The front agent's own queue
+
+    private fun waiting(time: Long) = FrontWaiting(time, "prompt $time", "page", away = time % 2 == 0L)
+
+    @Test fun whatWaitsForTheFrontAgentIsReadOldestFirstOneAtATime() {
+        val queue = FrontQueue()
+        for (time in 1..3L) assertTrue(queue.add(waiting(time)))
+        assertEquals(listOf(1L, 2L, 3L), queue.waiting.map { it.time })
+        // Each keeps his words, the page he was on and whether he spoke it; nothing of a board is kept with it.
+        assertEquals(FrontWaiting(1, "prompt 1", "page", away = false), queue.next())
+        assertEquals(listOf(2L, 3L), queue.waiting.map { it.time })
+        assertEquals(waiting(2), queue.next()); assertEquals(waiting(3), queue.next())
+        assertNull(queue.next()); assertEquals(emptyList<FrontWaiting>(), queue.waiting)
+    }
+
+    @Test fun noMoreWaitForTheFrontAgentThanFit() {
+        assertEquals(8, FrontQueue.MAX_WAITING)
+        val queue = FrontQueue()
+        for (time in 1..8L) assertTrue(queue.add(waiting(time)))
+        assertFalse(queue.add(waiting(9)))
+        assertEquals((1..8L).toList(), queue.waiting.map { it.time })
+        // Room again once the oldest has been read.
+        queue.next()
+        assertTrue(queue.add(waiting(9)))
+        assertEquals((2..9L).toList(), queue.waiting.map { it.time })
+        val small = FrontQueue(limit = 1)
+        assertTrue(small.add(waiting(1))); assertFalse(small.add(waiting(2)))
+        // What he is told above the field says how many, and the refusal carries exactly that.
+        assertEquals("8 messages are already waiting for Oma to read. Send this one in a moment.", FrontQueue.FULL)
+        assertEquals(FrontQueue.FULL, FrontQueueFull().message)
+    }
+
+    @Test fun aWaitingRequestCanBeCancelledUntilItIsRead() {
+        val queue = FrontQueue()
+        for (time in 1..3L) queue.add(waiting(time))
+        assertEquals(waiting(2), queue.cancel(2))
+        assertEquals(listOf(1L, 3L), queue.waiting.map { it.time })
+        // Once only, and never one that is not there: one already being read has left the queue.
+        assertNull(queue.cancel(2)); assertNull(queue.cancel(99))
+        assertEquals(waiting(1), queue.next())
+        assertNull(queue.cancel(1))
+        assertEquals(listOf(3L), queue.waiting.map { it.time })
+        // The order of the rest is as he sent them.
+        queue.add(waiting(4)); queue.add(waiting(5)); queue.cancel(4)
+        assertEquals(listOf(3L, 5L), queue.waiting.map { it.time })
+    }
+
+    @Test fun stopBesideTheFieldEmptiesTheQueueAndARestartLeavesNone() {
+        val queue = FrontQueue()
+        for (time in 1..3L) queue.add(waiting(time))
+        assertEquals(listOf(1L, 2L, 3L), queue.drop().map { it.time })
+        assertEquals(emptyList<FrontWaiting>(), queue.waiting); assertNull(queue.next())
+        assertEquals(emptyList<FrontWaiting>(), queue.drop())
+        // Nothing of the queue is saved: the one a new process has is empty, whatever waited in the last.
+        assertEquals(emptyList<FrontWaiting>(), FrontQueue().waiting)
+        // The entries are what a restart finds, and it leaves them interrupted with his words: never read later behind his back.
+        val before = listOf(ChatTask(1, UNDECIDED_AGENT, "being read"), ChatTask(2, UNDECIDED_AGENT, "waits first", status = TaskStatus.Queued), ChatTask(3, UNDECIDED_AGENT, "waits second", status = TaskStatus.Queued))
+        val after = ChatHistory.afterRestart(ChatHistory.decode(ChatHistory.encode(before)))
+        assertEquals(listOf(TaskStatus.Interrupted, TaskStatus.Interrupted, TaskStatus.Interrupted), after.map { it.status })
+        assertEquals(listOf("being read", "waits first", "waits second"), after.map { it.prompt })
+        assertTrue(after.all { it.undecided && it.result.isEmpty() })
+    }
+
+    @Test fun aRequestThatWaitsToBeReadIsNoPartOfTheBoardOrOfAnotherRequestsContext() {
+        val tasks = listOf(
+            built(1, "make a tile", result = "Made it."),
+            answered(2, "can we build Android apps here?", "Yes."),
+            ChatTask(3, UNDECIDED_AGENT, "being read"),
+            ChatTask(4, UNDECIDED_AGENT, "put that on the list", status = TaskStatus.Queued),
+            ChatTask(5, UNDECIDED_AGENT, "and what time is it", status = TaskStatus.Queued),
+        )
+        // The board is the builder's alone, as it is with nothing waiting.
+        assertEquals(buildBoard(tasks.take(2), working = false, label = "Done", now = 10), buildBoard(tasks, working = false, label = "Done", now = 10))
+        // Read in turn, each is handed over with what was answered before it and nothing of the ones still waiting.
+        assertEquals(listOf(FrontExchange("can we build Android apps here?", "Yes.")), handOverContext(tasks, 3, ::builderGot))
+        assertEquals(listOf(FrontExchange("can we build Android apps here?", "Yes.")), handOverContext(tasks, 5, ::builderGot))
+        val sent = handOverText(handOverPreface(handOverContext(tasks, 5, ::builderGot)), "and what time is it")
+        for (never in listOf("being read", "put that on the list")) assertFalse(never, sent.contains(never))
+        // One he cancelled before it was read is not an exchange either: the front agent never answered it.
+        val cancelled = tasks.map { if (it.time == 4L) ChatHistory.dropped(it, FrontQueue.CANCELLED) else it }
+        assertEquals(TaskStatus.Dropped, cancelled[3].status); assertEquals("put that on the list", cancelled[3].prompt)
+        assertEquals(listOf(FrontExchange("can we build Android apps here?", "Yes.")), handOverContext(cancelled, 5, ::builderGot))
+    }
+
+    // Where an entry waits
+
+    @Test fun anEntryThatWaitsSaysWhereAndWhetherItCanBeTakenBack() {
+        val unread = ChatTask(4, UNDECIDED_AGENT, "x", status = TaskStatus.Queued)
+        assertEquals(WaitingLine("Oma will read this next", cancel = true), waitingLine(unread))
+        assertEquals(WaitingLine("Oma will read this after 1 more", cancel = true), waitingLine(unread, ahead = 1))
+        assertEquals(WaitingLine("Oma will read this after 7 more", cancel = true), waitingLine(unread, ahead = 7))
+        assertEquals(WaitingLine("queued → the builder", cancel = true), waitingLine(built(5, "x", status = TaskStatus.Queued)))
+        // The runner on the Mac cannot take one waiting request back, so none of the Mac's is ever offered a cancel.
+        val onMac = toThread(6, "x", "t1a2b3c4d", TaskStatus.Queued)
+        assertEquals(WaitingLine("queued → FF4 mod · queued on the Mac", cancel = false), waitingLine(onMac, macLabel = MAC_QUEUED))
+        assertEquals(WaitingLine("Sending to the Mac…", cancel = false), waitingLine(onMac, macLabel = macEntryLabel(TaskStatus.Queued, sending = true, reachable = true, approvals = false)))
+        assertEquals(WaitingLine("Sent; the Mac is out of reach…", cancel = false), waitingLine(onMac, macLabel = macEntryLabel(TaskStatus.Queued, sending = false, reachable = false, approvals = false)))
+        assertEquals(MAC_QUEUED, macEntryLabel(TaskStatus.Queued, sending = false, reachable = true, approvals = false))
+        // Nothing that is not waiting has such a line: not one being read, running, answered, dropped or interrupted.
+        for (status in TaskStatus.entries - TaskStatus.Queued) {
+            for (task in listOf(unread, built(5, "x"), onMac, answered(7, "x", "X."))) assertNull("$status ${task.agent}", waitingLine(task.copy(status = status), ahead = 2, macLabel = MAC_QUEUED))
+        }
+    }
+
+    // Orders to stop
+
+    @Test fun aMarkThatStopsIsNotDecidedUntilItIsWhole() {
+        assertEquals("<<stop>>", STOP); assertEquals(STOP, stopMark(Route.BUILD)); assertEquals("<<stop mac t1a2b3c4d>>", stopMark(Route.mac("t1a2b3c4d")))
+        for (partial in listOf("<<s", "<<st", "<<stop", "<<stop>", "<<stop ", "<<stop m", "<<stop mac", "<<stop mac ", "<<stop mac t1a2", "<<stop mac t1a2b3c4d>", " `<<stop", "```\n<<stop mac t1")) {
+            assertEquals(partial, FrontRead.Undecided, frontRead(partial))
+        }
+        for (whole in listOf("<<stop>>", " <<stop>>\n", "`<<stop>>`", "```\n<<stop>>\n```", "<<stop>> done", "<<stop>>\nStopping it now.", "<<stop>><<build>>")) {
+            assertEquals(whole, FrontRead.Stop(Route.BUILD), frontRead(whole))
+            assertEquals(whole, FrontRead.Stop(Route.BUILD), frontRead(whole, ended = true))
+        }
+        for (whole in listOf("<<stop mac t1a2b3c4d>>", " <<stop mac t1a2b3c4d>>\n", "`<<stop mac t1a2b3c4d>>`", "<<stop mac  t1a2b3c4d >> ok", "<<stop mac t1a2b3c4d>>\nStopped.")) {
+            assertEquals(whole, FrontRead.Stop("mac t1a2b3c4d"), frontRead(whole))
+            assertEquals(whole, FrontRead.Stop("mac t1a2b3c4d"), frontRead(whole, ended = true))
+        }
+        // Seen from the real model: the id alone after the word. It names the same thread.
+        assertEquals(FrontRead.Stop("mac t1a2b3c4d"), frontRead("<<stop t1a2b3c4d>>"))
+        // The stream of a real one is decided at the closing bracket, and a hand-over's mark is still a hand-over.
+        var said = QuickAnswer()
+        val reads = listOf("<<st", "op mac t1", ">", ">", " ok").map { piece ->
+            said = said.after(QuickEvent.Delta(piece))
+            frontRead(said.text)
+        }
+        assertEquals(listOf(FrontRead.Undecided, FrontRead.Undecided, FrontRead.Undecided, FrontRead.Stop("mac t1"), FrontRead.Stop("mac t1")), reads)
+        assertEquals(FrontRead.HandOver(Route.BUILD), frontRead("<<build>><<stop>>"))
+        assertEquals(FrontRead.HandOver("mac t1"), frontRead("<<mac t1>> <<stop>>"))
+    }
+
+    @Test fun aMarkThatStopsAndNeverClosesOrNamesNoThreadStopsNothing() {
+        // Half of the builder's mark at the end is not the mark: it is shown, as half of a hand-over's is.
+        assertEquals(FrontRead.Answer("<<stop"), frontRead("<<stop", ended = true))
+        assertEquals(FrontRead.Answer("<<stop>"), frontRead("<<stop>", ended = true))
+        for (near in listOf("<<Stop>>", "<< stop >>", "<stop>", "stop", "<<stopped>>", "<<stops>>")) assertTrue(near, frontRead(near, ended = true) is FrontRead.Answer)
+        // One for a thread that never closes, breaks over a line or is far too long names nothing.
+        for (broken in listOf("<<stop mac t1", "<<stop mac t1>", "<<stop mac", "<<stop ")) assertEquals(broken, FrontRead.Stop("mac "), frontRead(broken, ended = true))
+        assertEquals(FrontRead.Stop("mac "), frontRead("<<stop mac t1\nand more"))
+        assertEquals(FrontRead.Stop("mac "), frontRead("<<stop mac " + "y".repeat(MAC_ID_CHARS + 1) + ">>"))
+        // Whatever it names is looked up on the board by its exact id, and anything else is nobody: nothing is stopped on a guess.
+        val board = macBoard(listOf(onMac("t1a2b3c4d", "FF4 mod", MacThreadStatus.Working), onMac("t9z8y7x6w", "Cove")), reachable = true, seen = now, now = now)
+        assertEquals(FrontRoute.Build, frontRoute((frontRead("<<stop>>") as FrontRead.Stop).of, board))
+        assertEquals("t1a2b3c4d", (frontRoute((frontRead("<<stop mac t1a2b3c4d>>") as FrontRead.Stop).of, board) as FrontRoute.Mac).thread.id)
+        for (mark in listOf("<<stop mac t1a2b3c4>>", "<<stop mac FF4 mod>>", "<<stop mac>>", "<<stop the FF4 one>>", "<<stop mac t1a2b3c4d; rm -rf />>", "<<stop mac T1A2B3C4D>>", "<<stop >>")) {
+            val of = (frontRead(mark, ended = true) as FrontRead.Stop).of
+            assertTrue(mark, frontRoute(of, board) is FrontRoute.Unknown)
+        }
+        assertEquals(FrontRoute.Unknown("t1a2b3c4d"), frontRoute((frontRead("<<stop mac t1a2b3c4d>>") as FrontRead.Stop).of, null))
+        assertTrue(WHICH_TASK.startsWith("Which task should stop?"))
+    }
+
+    @Test fun anAnswerThatOnlyMentionsAMarkThatStopsIsShownWithoutItAndStopsNothing() {
+        assertEquals(FrontRead.Answer("Sure!"), frontRead("Sure! <<stop>>"))
+        assertEquals(FrontRead.Answer("Sure!"), frontRead("Sure! <<stop>>", ended = true))
+        assertEquals(FrontRead.Answer("I could  it for you."), frontRead("I could <<stop>> it for you.", ended = true))
+        assertEquals(FrontRead.Answer("Say  to end FF4."), frontRead("Say <<stop mac t1a2b3c4d>> to end FF4.", ended = true))
+        // While it is still arriving, the start of one at the end is held back; one that never completes is shown.
+        for (arriving in listOf("Sure! <<s", "Sure! <<stop", "Sure! <<stop>", "Sure! <<stop mac t1", "Sure! <<stop mac t1>")) assertEquals(arriving, FrontRead.Answer("Sure!"), frontRead(arriving))
+        assertEquals(FrontRead.Answer("Sure! <<stop mac t1"), frontRead("Sure! <<stop mac t1", ended = true))
+        assertEquals(FrontRead.Answer("To stop a Gradle daemon run `./gradlew --stop`."), frontRead("To stop a Gradle daemon run `./gradlew --stop`.", ended = true))
+    }
+
+    @Test fun aStopHisOwnWordsDoNotBearOutStopsNothingAndIsHandedOverInstead() {
+        for (order in listOf("stop", "Stop.", "cancel that", "wait stop", "abort", "never mind, forget it", "nevermind", "ok hold on", "that's enough", "kill it", "stop the FF4 one", "STOP")) {
+            assertTrue(order, wordsOfStopping(order))
+            assertEquals(order, FrontRead.Stop(Route.BUILD), borneOut(FrontRead.Stop(Route.BUILD), order))
+            assertEquals(order, FrontRead.Stop("mac t1"), borneOut(FrontRead.Stop("mac t1"), order))
+        }
+        // Seen from the real model while the builder worked: the mark that stops, for words like these.
+        for (plain in listOf("thanks", "what is the capital of France", "is it done yet", "make it blue", "", "unstoppable", "a nonstop flight")) {
+            assertFalse(plain, wordsOfStopping(plain))
+            assertEquals(plain, FrontRead.HandOver(Route.BUILD), borneOut(FrontRead.Stop(Route.BUILD), plain))
+            assertEquals(plain, FrontRead.HandOver("mac t1"), borneOut(FrontRead.Stop("mac t1"), plain))
+        }
+        // It only ever takes a stop away. Nothing else the front agent says is changed, whatever his words were.
+        for (read in listOf(FrontRead.Undecided, FrontRead.Answer("Run `./gradlew --stop`."), FrontRead.HandOver(Route.BUILD), FrontRead.HandOver("mac t1"))) {
+            for (words in listOf("stop", "thanks", "stop using red and make it blue")) assertEquals(read, borneOut(read, words))
+        }
+    }
+
+    @Test fun whatWasStoppedIsSaidInOneLine() {
+        assertEquals("Stopped the builder.", stoppedText(BUILDER, running = true))
+        assertEquals("Stopped FF4 mod.", stoppedText("FF4 mod", running = true))
+        assertEquals("Nothing was running.", stoppedText(BUILDER, running = false))
+        assertEquals("Nothing was running.", NOTHING_RUNNING)
     }
 
     private val minute = 60_000L

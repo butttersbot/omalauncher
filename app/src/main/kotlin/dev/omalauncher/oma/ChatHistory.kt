@@ -11,7 +11,10 @@ enum class TaskStatus(val id: String) {
     /** The app's process died while the task ran. */
     Interrupted("interrupted"),
 
-    /** A follow-up sent while another task ran, waiting for it to finish. */
+    /**
+     * A follow-up sent while another task ran, waiting for it to finish; or a request sent while the front agent
+     * was reading the one before, waiting to be read.
+     */
     Queued("queued"),
 
     /** A follow-up that was never sent to the agent; the task's result says why. */
@@ -71,7 +74,10 @@ data class ChatTask(
     /** Answered by the front agent itself, beside the build task: never by it or in its queue. */
     val quick get() = agent == QUICK_AGENT
 
-    /** With the front agent, which has neither answered it nor handed it to the build lane yet. */
+    /**
+     * With the front agent, which has neither answered it nor handed it to the build lane yet: it is reading
+     * it, or, while this is [TaskStatus.Queued], has not come to it.
+     */
     val undecided get() = agent == UNDECIDED_AGENT
 
     /**
@@ -153,10 +159,12 @@ object ChatHistory {
      * follow-up that was waiting is not sent later behind his back; it says it was dropped. A request handed to
      * the Mac is the exception: the Mac goes on with it whatever becomes of this app, so it loads as it was
      * saved and is followed again from its thread's last event. Only its waiting approvals go, to be drawn
-     * again from what the Mac says is still waiting.
+     * again from what the Mac says is still waiting. A request that waited for the front agent to read it was
+     * never anyone's follow-up: it loads as interrupted with his words kept, as one it was reading does.
      */
     fun afterRestart(tasks: List<ChatTask>) = tasks.map { saved ->
         if (saved.mac) return@map saved.copy(approvals = saved.approvals.filter { it.answer != ApprovalAnswer.Waiting }.map { it.copy(key = "") })
+        if (saved.undecided && saved.status == TaskStatus.Queued) return@map saved.copy(status = TaskStatus.Interrupted)
         val task = dropped(saved, FollowUpQueue.RESTARTED)
         task.copy(
             status = if (task.status == TaskStatus.Running) TaskStatus.Interrupted else task.status,

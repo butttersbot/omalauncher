@@ -8,8 +8,8 @@ import org.json.JSONObject
 import java.io.File
 
 // Boss talks to one Oma (Boss, 2026-10-13). The front agent, which is the fast model of [QuickLane], hears a
-// request first and either answers it or hands his words on unchanged. Everything that decides that is here
-// and pure; QuickLane runs the process and does what these say.
+// request first and answers it, hands his words on unchanged, or says which task he has ordered to stop.
+// Everything that decides that is here and pure; QuickLane runs the process and does what these say.
 
 /**
  * Where a request can go. An id and not an enum, because every project thread on the Mac is one more: the
@@ -43,6 +43,23 @@ const val MAC_ID_CHARS = 64
 private val MAC_MARK = Regex(Regex.escape(MAC_OPEN) + "[^<>\\n]{0,80}>>")
 private val MAC_ARRIVING = Regex(Regex.escape(MAC_OPEN) + "[^<>\\n]{0,80}>?")
 
+/**
+ * The whole reply the front agent gives when his words are an order to stop what [route] is working on: the
+ * phone's builder, or one thread on the Mac. Never shown and never saved, as a hand-over's mark is not.
+ */
+fun stopMark(route: String) = if (route == Route.BUILD) "<<stop>>" else "<<stop $route>>"
+
+val STOP = stopMark(Route.BUILD)
+
+/**
+ * How a mark that stops a thread on the Mac begins, and the same two readings of it as a hand-over's has. The
+ * real model now and then leaves the word for the Mac out and writes the id alone (seen 2026-10-13), so
+ * whatever stands after the space is read as the thread it names, with or without that word before it.
+ */
+private const val STOP_NAMED_OPEN = "<<stop "
+private val STOP_NAMED_MARK = Regex(Regex.escape(STOP_NAMED_OPEN) + "[^<>\\n]{0,80}>>")
+private val STOP_NAMED_ARRIVING = Regex(Regex.escape(STOP_NAMED_OPEN) + "[^<>\\n]{0,80}>?")
+
 /** Whether a thread with this id can be named by a mark at all: no spaces, no brackets, no backticks, not too long. */
 fun macNameable(threadId: String) = threadId.length in 1..MAC_ID_CHARS && threadId.none { it.isWhitespace() || it in "<>`" }
 
@@ -56,11 +73,15 @@ sealed interface FrontRead {
 
     /** The request goes to [to], as he said it. */
     data class HandOver(val to: String) : FrontRead
+
+    /** His words were an order to stop: the task [of] is on is stopped, and his words go nowhere. */
+    data class Stop(val of: String) : FrontRead
 }
 
 /** Whether [tail], the end of what has been said, could still grow into a mark. */
 private fun opensMark(tail: String) =
-    (tail.length < HAND_OVER.length && HAND_OVER.startsWith(tail)) || MAC_OPEN.startsWith(tail) || MAC_ARRIVING.matches(tail)
+    (tail.length < HAND_OVER.length && HAND_OVER.startsWith(tail)) || MAC_OPEN.startsWith(tail) || MAC_ARRIVING.matches(tail) ||
+        (tail.length < STOP.length && STOP.startsWith(tail)) || STOP_NAMED_OPEN.startsWith(tail) || STOP_NAMED_ARRIVING.matches(tail)
 
 /** How many characters at the end of [said] are the start of a mark that may still be arriving. */
 private fun arrivingMark(said: String): Int {
@@ -70,27 +91,56 @@ private fun arrivingMark(said: String): Int {
 }
 
 /**
+ * The thread a mark for the Mac at the start of [lead] names, [open] being how that mark begins; null while
+ * its closing `>>` may still be coming. One that never closes, or is too long to be an id, names nothing.
+ */
+private fun macNamed(lead: String, open: String, arriving: Regex, ended: Boolean): String? {
+    val close = lead.indexOf(">>")
+    if (close < 0 && !ended && arriving.matches(lead)) return null
+    val named = if (close < 0) "" else lead.substring(open.length, close).trim()
+    return named.takeIf { it.length <= MAC_ID_CHARS }.orEmpty()
+}
+
+/**
  * Reads [text], everything the front agent has said so far; [ended] once no more is coming. A reply that
  * starts with a mark hands over, whatever follows it and whatever spaces or backticks stand before it. One
  * that only mentions a mark is an answer, shown without it: handing over on a mention would send work he
  * never asked for. While more may come, the start of a mark at the end is held back so it never flickers by.
  * A mark for a thread on the Mac is read up to its closing `>>` and names whatever stands there; whether
  * that is a thread at all is [frontRoute]'s to say. One that never closes names nothing, and is still a
- * hand-over, to nowhere: it is never shown to him as an answer.
+ * hand-over, to nowhere: it is never shown to him as an answer. A mark that stops is read by the same rules,
+ * so a mention of one stops nothing and one for a thread that never closes stops nothing either.
  */
 fun frontRead(text: String, ended: Boolean = false): FrontRead {
     val lead = text.trimStart { it.isWhitespace() || it == '`' }
     if (lead.startsWith(HAND_OVER)) return FrontRead.HandOver(Route.BUILD)
-    if (lead.startsWith(MAC_OPEN)) {
-        val close = lead.indexOf(">>")
-        if (close < 0 && !ended && MAC_ARRIVING.matches(lead)) return FrontRead.Undecided
-        val named = if (close < 0) "" else lead.substring(MAC_OPEN.length, close).trim()
-        return FrontRead.HandOver(Route.mac(named.takeIf { it.length <= MAC_ID_CHARS }.orEmpty()))
+    if (lead.startsWith(STOP)) return FrontRead.Stop(Route.BUILD)
+    if (lead.startsWith(STOP_NAMED_OPEN)) {
+        val named = macNamed(lead, STOP_NAMED_OPEN, STOP_NAMED_ARRIVING, ended) ?: return FrontRead.Undecided
+        return FrontRead.Stop(Route.mac(named.removePrefix(Route.MAC + " ").trim()))
     }
-    if (lead.isEmpty() || (!ended && (HAND_OVER.startsWith(lead) || MAC_OPEN.startsWith(lead)))) return FrontRead.Undecided
-    val said = text.replace(HAND_OVER, "").replace(MAC_MARK, "")
+    if (lead.startsWith(MAC_OPEN)) return macNamed(lead, MAC_OPEN, MAC_ARRIVING, ended)?.let { FrontRead.HandOver(Route.mac(it)) } ?: FrontRead.Undecided
+    if (lead.isEmpty() || (!ended && listOf(HAND_OVER, MAC_OPEN, STOP, STOP_NAMED_OPEN).any { it.startsWith(lead) })) return FrontRead.Undecided
+    val said = text.replace(HAND_OVER, "").replace(STOP, "").replace(STOP_NAMED_MARK, "").replace(MAC_MARK, "")
     return FrontRead.Answer(said.dropLast(if (ended) 0 else arrivingMark(said)).trimEnd())
 }
+
+/**
+ * The words that can make his request an order to stop. The front agent alone decides that it is one; this is
+ * only what the launcher asks for besides, because stopping throws work away and the real model was seen to
+ * answer a plain "thanks" with the mark that stops (2026-10-13).
+ */
+private val STOP_WORDS = Regex("\\b(stop|cancel|abort|halt|kill|quit|pause|scrap|enough|wait|never ?mind|forget (it|that|about it)|hold on)\\b", RegexOption.IGNORE_CASE)
+
+/** Whether [words], what he said, could be an order to stop at all: they have a word of stopping in them. */
+fun wordsOfStopping(words: String) = STOP_WORDS.containsMatchIn(words)
+
+/**
+ * [read] as the launcher acts on it for [words], his own. A mark that stops which his words do not bear out
+ * stops nothing: it is read as a hand-over to the same place, which is where the front agent's mistaken marks
+ * have always gone, and his words then wait there like any other request.
+ */
+fun borneOut(read: FrontRead, words: String): FrontRead = if (read is FrontRead.Stop && !wordsOfStopping(words)) FrontRead.HandOver(read.of) else read
 
 /** Where a hand-over goes, once the mark is checked against the threads the front agent was shown. */
 sealed interface FrontRoute {
@@ -106,7 +156,7 @@ sealed interface FrontRoute {
     data class Unknown(val named: String) : FrontRoute
 }
 
-/** [to] is what [FrontRead.HandOver] carries; [mac] is the board the front agent read, null when no Mac is set up. */
+/** [to] is what [FrontRead.HandOver] or [FrontRead.Stop] carries; [mac] is the board the front agent read, null when no Mac is set up. */
 fun frontRoute(to: String, mac: MacBoard?): FrontRoute {
     val named = Route.macThread(to) ?: return FrontRoute.Build
     val thread = mac?.threads?.firstOrNull { it.id == named } ?: return FrontRoute.Unknown(named)
@@ -116,9 +166,20 @@ fun frontRoute(to: String, mac: MacBoard?): FrontRoute {
 /** What he reads in place of an answer when the front agent named a thread that is not there. */
 const val WHICH_PROJECT = "Which project is this for? Say it again with the project's name."
 
+/** What he reads when the front agent would stop a thread that is not there. Nothing is stopped on a guess. */
+const val WHICH_TASK = "Which task should stop? Say it again with the project's name."
+
+const val NOTHING_RUNNING = "Nothing was running."
+
+/** How the phone's builder is called in the lines about where his words wait and what was stopped. */
+const val BUILDER = "the builder"
+
+/** What he reads once an order to stop was carried out: [what] is the builder or a thread's name, [running] whether it had a task. */
+fun stoppedText(what: String, running: Boolean) = if (running) "Stopped $what." else NOTHING_RUNNING
+
 /** How a request to the front agent ended. */
 enum class FrontOutcome {
-    /** It handed the request on, which is done by the time this is known. */
+    /** It handed the request on, or had a task stopped, which is done by the time this is known. */
     HandedOver,
 
     /** It answered. */
@@ -154,11 +215,75 @@ fun frontOutcome(handed: Boolean, stopped: Boolean, failed: Boolean, answered: B
 const val FRONT_MAX_REQUEST = ChatHistory.MAX_PROMPT
 
 /**
- * Whether the front agent hears a request before the build lane does. Images are the builder's to read, and
- * the front agent takes one request at a time: what he sends while it is on another goes straight on, never refused.
+ * Whether the front agent hears a request before the build lane does. Images are the builder's to read.
+ * Whether it is still on the request before makes no difference (Boss, 2026-10-13): this one then waits its
+ * turn in [FrontQueue], and is never sent past the front agent to the builder because of it.
  */
-fun frontFirst(prompt: String, images: Int, ready: Boolean, busy: Boolean): Boolean =
-    images == 0 && ready && !busy && prompt.length <= FRONT_MAX_REQUEST
+fun frontFirst(prompt: String, images: Int, ready: Boolean): Boolean = images == 0 && ready && prompt.length <= FRONT_MAX_REQUEST
+
+/**
+ * A request he sent while the front agent was still reading the one before. [time] is its entry in the thread,
+ * where it already shows as his, waiting. [page] is the home page he was on and [away] whether he spoke it on
+ * the listening screen. Nothing of the board is kept with it: it is read with the board as it stands then.
+ */
+data class FrontWaiting(val time: Long, val prompt: String, val page: String? = null, val away: Boolean = false)
+
+/**
+ * The requests waiting their turn for the front agent, oldest first. Each is read as a request of its own once
+ * the one ahead is answered or handed on, so the order he sent them in is the order they are decided in. Kept
+ * in memory only: after a restart there is none, and the entries say they were interrupted. Not safe to share
+ * between threads; QuickLane holds its lock around every call.
+ */
+class FrontQueue(private val limit: Int = MAX_WAITING) {
+    private val queue = ArrayDeque<FrontWaiting>()
+
+    val waiting: List<FrontWaiting> get() = queue.toList()
+
+    /** False when as many as fit already wait; nothing is added then. */
+    fun add(request: FrontWaiting): Boolean {
+        if (queue.size >= limit) return false
+        queue.addLast(request)
+        return true
+    }
+
+    /** The oldest, which is read now; null when none waits. */
+    fun next(): FrontWaiting? = queue.removeFirstOrNull()
+
+    /** Takes out the one filed at [time]; null when it does not wait any more, and nothing changes then. */
+    fun cancel(time: Long): FrontWaiting? = queue.firstOrNull { it.time == time }?.also { queue.remove(it) }
+
+    /** Empties the queue and returns what was waiting, for the thread to say so. */
+    fun drop(): List<FrontWaiting> = queue.toList().also { queue.clear() }
+
+    companion object {
+        /** Past this the newest would wait minutes to be read at all, so he is told instead. */
+        const val MAX_WAITING = 8
+
+        const val FULL = "$MAX_WAITING messages are already waiting for Oma to read. Send this one in a moment."
+        const val CANCELLED = "You cancelled this before Oma read it."
+        const val STOPPED = "You pressed stop before Oma read this, so it was not sent."
+        const val UNREAD = "Oma could not read this."
+    }
+}
+
+/** As many requests as fit already wait for the front agent. The one that met this is nowhere: not filed, not sent. */
+class FrontQueueFull : IllegalStateException(FrontQueue.FULL)
+
+/** What an entry that waits says about where, and whether `[ cancel ]` stands beside it. */
+data class WaitingLine(val text: String, val cancel: Boolean)
+
+/**
+ * The line under [task] while it waits, null when it does not. One the front agent has not read says when it
+ * will be, [ahead] being how many wait before it. One handed to the phone's builder says so, and either can
+ * still be taken back. One on the Mac says which thread has it once the Mac holds it, and before that what
+ * [macLabel] says of its sending; the runner cannot take a single waiting request back, so no cancel is offered.
+ */
+fun waitingLine(task: ChatTask, ahead: Int = 0, macLabel: String = ""): WaitingLine? = when {
+    task.status != TaskStatus.Queued -> null
+    task.undecided -> WaitingLine(if (ahead <= 0) "Oma will read this next" else "Oma will read this after $ahead more", cancel = true)
+    task.mac -> WaitingLine(if (macLabel == MAC_QUEUED) "queued → ${task.threadName} · queued on the Mac" else "$macLabel…", cancel = false)
+    else -> WaitingLine("queued → $BUILDER", cancel = true)
+}
 
 /**
  * What the front agent is told of the build lane before each request: whether it is [working], its [label]

@@ -86,17 +86,26 @@ object AgentTasks {
      * own when the one ahead has finished, and dropped, with the thread saying why, if that one is stopped or
      * fails or the app is closed first. With nothing running it is simply sent. [earlier] is what the agent is
      * sent ahead of [prompt] and he is never shown: the context of a request the front agent hands over.
+     * [screen] is as for [send]: the screenshot of a spoken request, which waits with it and is this object's
+     * to delete once this returns.
      */
-    @Synchronized fun followUp(context: Context, prompt: String, images: List<String> = emptyList(), page: String? = HomeDoor.home?.showing, earlier: String = "") {
+    @Synchronized fun followUp(context: Context, prompt: String, images: List<String> = emptyList(), page: String? = HomeDoor.home?.showing, earlier: String = "", screen: File? = null) {
         restore(context)
         check(prompt.isNotBlank()) { "Type or speak a request first." }
-        if (!working) return start(context, prompt, images, null, page, queued = null, earlier = earlier)
+        if (!working) return start(context, prompt, images, screen, page, queued = null, earlier = earlier)
         check(!stopping) { "The agent is stopping. Send this again in a moment." }
         val agent = (context.applicationContext as App).runtime.agents.default ?: error("Install and sign in to an agent in Omalauncher first.")
         val log = ChatLog.of(context)
         val time = ChatHistory.stamp(log.tasks, System.currentTimeMillis())
-        check(followUps.add(FollowUp(time, prompt, images, page, earlier))) { FollowUpQueue.FULL }
-        log.begin(ChatTask(time, agent.name, prompt, images, status = TaskStatus.Queued))
+        check(followUps.add(FollowUp(time, prompt, images, page, earlier, screen))) { FollowUpQueue.FULL }
+        log.begin(ChatTask(time, agent.name, prompt, images, screen = screen != null, status = TaskStatus.Queued))
+    }
+    /**
+     * `[ cancel ]` on a follow-up that still waits: it leaves the queue and the thread says so. One that has
+     * begun is no longer in the queue and is not touched, and nothing of the running task changes.
+     */
+    @Synchronized fun cancelFollowUp(context: Context, time: Long) {
+        followUps.cancel(time)?.let { dropped(context, listOf(it), FollowUpQueue.CANCELLED) }
     }
     /** [queued] is the time of the waiting task this request already is in the thread; null for one sent just now. */
     @Synchronized private fun start(context: Context, prompt: String, images: List<String>, screen: File?, page: String?, queued: Long?, earlier: String = "") {
@@ -241,7 +250,7 @@ object AgentTasks {
         dropped(context, handoff.dropped, FollowUpQueue.FAILED)
         val next = handoff.next ?: return false
         return try {
-            start(context, next.prompt, next.images, null, next.page, queued = next.time, earlier = next.earlier)
+            start(context, next.prompt, next.images, next.screen, next.page, queued = next.time, earlier = next.earlier)
             true
         } catch (e: Exception) {
             // What stopped this one from starting would stop the ones behind it too.
@@ -249,10 +258,13 @@ object AgentTasks {
             false
         }
     }
-    /** Marks follow-ups that will never be sent, with the [reason] where their answer would have been. */
+    /** Marks follow-ups that will never be sent, with the [reason] where their answer would have been. A screenshot that waited with one goes. */
     private fun dropped(context: Context, unsent: List<FollowUp>, reason: String) {
         val log = ChatLog.of(context)
-        unsent.forEach { followUp -> log.update(followUp.time, save = true) { ChatHistory.dropped(it, reason) } }
+        unsent.forEach { followUp ->
+            ScreenShots.discard(followUp.screen)
+            log.update(followUp.time, save = true) { ChatHistory.dropped(it, reason) }
+        }
     }
     @Synchronized private fun writeEvent(event: JSONObject) {
         val writer = inputWriter ?: error("The agent session has ended.")

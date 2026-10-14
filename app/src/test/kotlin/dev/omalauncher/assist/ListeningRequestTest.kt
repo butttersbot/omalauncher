@@ -2,6 +2,7 @@ package dev.omalauncher.assist
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ListeningRequestTest {
@@ -119,14 +120,31 @@ class ListeningRequestTest {
         assertEquals(ListeningStep(ListeningRequest(ListeningPhase.Listening), ListeningEffect.Listen), ListeningRequest(ListeningPhase.Failed, detail = "no network").act(ListeningAct.Retry))
         val waiting = ListeningRequest(ListeningPhase.Heard, "book a table")
         assertEquals(waiting, waiting.spoke("for nine"))
-        val busy = ListeningRequest(ListeningPhase.Busy, detail = "using Bash…")
-        assertEquals(busy, busy.spoke("for nine"))
+        val waitingForHim = ListeningRequest(ListeningPhase.NeedsOk, detail = "Oma is waiting for your answer")
+        assertEquals(waitingForHim, waitingForHim.spoke("for nine"))
     }
 
     @Test fun theOtherPhasesKeepTheirWaysOut() {
-        assertEquals(ListeningStep(null, ListeningEffect.Leave), ListeningRequest(ListeningPhase.Busy).act(ListeningAct.Close))
-        assertEquals(ListeningStep(null, ListeningEffect.Stop), ListeningRequest(ListeningPhase.Busy).act(ListeningAct.Stop))
+        assertEquals(ListeningStep(null, ListeningEffect.Leave), ListeningRequest(ListeningPhase.NeedsOk).act(ListeningAct.Close))
         assertEquals(ListeningStep(null, ListeningEffect.Review), ListeningRequest(ListeningPhase.NeedsOk).act(ListeningAct.Review))
         assertEquals(ListeningStep(null, ListeningEffect.Allow), ListeningRequest(ListeningPhase.NoMic).act(ListeningAct.Allow))
+    }
+
+    /**
+     * Changed on purpose (Boss, 2026-10-13: "I shouldn't have to wait for a job to finish to be able to talk to
+     * the AI"). There used to be a phase for a running task, which took no request and offered Stop and Close.
+     * It is gone: no phase stands for a task that runs and no tap on this screen stops one. What waits for his
+     * answer is as it was.
+     */
+    @Test fun aRunningTaskIsNoPhaseOfTheScreenAndAnApprovalStillIs() {
+        assertEquals(
+            listOf(ListeningPhase.Listening, ListeningPhase.Heard, ListeningPhase.Missed, ListeningPhase.Failed, ListeningPhase.NoMic, ListeningPhase.NeedsOk),
+            ListeningPhase.entries.toList(),
+        )
+        assertTrue(ListeningAct.entries.none { it.label == "Stop" })
+        // While an approval waits nothing is heard and nothing is sent: only Review and Close do anything.
+        val waitingForHim = ListeningRequest(ListeningPhase.NeedsOk, heard = "do it anyway", detail = "Oma is waiting for your answer")
+        for (act in listOf(ListeningAct.Send, ListeningAct.Add)) assertEquals(ListeningStep(waitingForHim, null), waitingForHim.act(act))
+        assertEquals("Oma is waiting for your answer", waitingForHim.look().words)
     }
 }

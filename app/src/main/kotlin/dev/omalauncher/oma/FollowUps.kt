@@ -1,12 +1,22 @@
 package dev.omalauncher.oma
 
+import java.io.File
+
 /**
  * A message sent while the agent was still on the task before it. [time] is its task in the thread, where it
  * already shows as his message; [prompt] is kept whole here, since the thread only keeps the start of a long one.
  * [page] is the home page he was on when he sent it. [earlier] is sent to the agent ahead of [prompt] and is
- * never shown: what he and the front agent said before a request it handed over.
+ * never shown: what he and the front agent said before a request it handed over. [screen] is the screenshot
+ * that came with a spoken request, kept until the request is sent or dropped.
  */
-data class FollowUp(val time: Long, val prompt: String, val images: List<String> = emptyList(), val page: String? = null, val earlier: String = "")
+data class FollowUp(
+    val time: Long,
+    val prompt: String,
+    val images: List<String> = emptyList(),
+    val page: String? = null,
+    val earlier: String = "",
+    val screen: File? = null,
+)
 
 /** What the end of a task means for the follow-ups behind it: [next] is sent now, the [dropped] never are. */
 data class Handoff(val next: FollowUp? = null, val dropped: List<FollowUp> = emptyList())
@@ -34,6 +44,9 @@ class FollowUpQueue(private val limit: Int = MAX_WAITING) {
      */
     fun after(status: TaskStatus): Handoff = if (status == TaskStatus.Done) Handoff(next = queue.removeFirstOrNull()) else Handoff(dropped = drop())
 
+    /** Takes out the one filed at [time], which he cancelled; null when it no longer waits, and nothing changes then. */
+    fun cancel(time: Long): FollowUp? = queue.firstOrNull { it.time == time }?.also { queue.remove(it) }
+
     /** Empties the queue and returns what was waiting, for the thread to say so. */
     fun drop(): List<FollowUp> = queue.toList().also { queue.clear() }
 
@@ -44,6 +57,7 @@ class FollowUpQueue(private val limit: Int = MAX_WAITING) {
         const val FULL = "$MAX_WAITING follow-ups are already waiting. Send this one when the agent has caught up."
         const val STOPPED = "You stopped the task before this one, so it was not sent."
         const val FAILED = "The task before this one did not finish, so it was not sent."
+        const val CANCELLED = "You cancelled this before it was sent."
         const val RESTARTED = "The app was closed before the agent got to this, so it was not sent."
     }
 }

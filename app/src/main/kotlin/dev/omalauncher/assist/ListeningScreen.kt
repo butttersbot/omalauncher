@@ -70,9 +70,6 @@ enum class ListeningPhase {
     /** The microphone isn't allowed yet. */
     NoMic,
 
-    /** A task is already running; the detail is what it is doing. */
-    Busy,
-
     /** An approval is waiting for the owner. */
     NeedsOk,
 }
@@ -84,7 +81,6 @@ enum class ListeningAct(val label: String) {
     Cancel("Cancel"),
     Retry("Try again"),
     Allow("Allow"),
-    Stop("Stop"),
     Review("Review"),
     Close("Close"),
 }
@@ -98,7 +94,7 @@ data class ListeningLook(
     val note: String = "",
 )
 
-/** The look of [phase]: [heard] is what the microphone has so far, [detail] what a problem or a running task says. */
+/** The look of [phase]: [heard] is what the microphone has so far, [detail] what a problem or a waiting approval says. */
 fun listeningLook(
     phase: ListeningPhase,
     heard: String = "",
@@ -112,7 +108,6 @@ fun listeningLook(
         ListeningPhase.Missed -> ListeningLook("Didn't catch that", "", listOf(ListeningAct.Retry, ListeningAct.Cancel), note)
         ListeningPhase.Failed -> ListeningLook("That didn't work", detail, listOf(ListeningAct.Retry, ListeningAct.Cancel), note)
         ListeningPhase.NoMic -> ListeningLook("Microphone is off", "Allow the microphone to talk to Oma", listOf(ListeningAct.Allow, ListeningAct.Cancel))
-        ListeningPhase.Busy -> ListeningLook("Working", detail, listOf(ListeningAct.Stop, ListeningAct.Close))
         ListeningPhase.NeedsOk -> ListeningLook("Needs your OK", detail, listOf(ListeningAct.Review, ListeningAct.Close))
     }
 

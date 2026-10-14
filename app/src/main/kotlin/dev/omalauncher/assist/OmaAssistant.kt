@@ -198,7 +198,10 @@ class ListeningHost(private val owner: Context, private val dismiss: () -> Unit)
         edge.addView(ring, 0, ViewGroup.LayoutParams(-1, -1))
     }
 
-    /** The screen came up: says what is in the way of a new request, or opens the microphone. */
+    /**
+     * The screen came up: says what is in the way of a new request, or opens the microphone. A task that is
+     * running is not in the way (Boss, 2026-10-13): what he says then waits its turn, as what he writes does.
+     */
     fun begin() {
         if (disposed) return
         compose.resume()
@@ -208,7 +211,6 @@ class ListeningHost(private val owner: Context, private val dismiss: () -> Unit)
         MacThreads.open(owner)
         when {
             AgentTasks.pending.isNotEmpty() -> show(ListeningRequest(ListeningPhase.NeedsOk, detail = "Oma is waiting for your answer"))
-            AgentTasks.working -> { show(ListeningRequest(ListeningPhase.Busy, detail = marginNote(AgentTasks.label))); follow(turn) }
             owner.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED -> show(ListeningRequest(ListeningPhase.NoMic))
             else -> listen(ListeningRequest(ListeningPhase.Listening))
         }
@@ -246,25 +248,14 @@ class ListeningHost(private val owner: Context, private val dismiss: () -> Unit)
 
     private fun send(text: String) {
         try {
-            // The front agent hears words alone first, and its answer comes to him as a task's does. With the screen
-            // attached, or when it can't be asked now, the request goes straight to the build lane as it always did.
+            // The front agent hears words alone first, or next if it is still on a request, and its answer comes to
+            // him as a task's does. With the screen attached, or with no front agent to ask, the request goes
+            // straight to the build lane as it always did, and waits behind the task that runs there if one does.
             // Only the screenshot the note is showing goes along, and it is AgentTasks's to delete from here.
-            if (screen != null || !QuickLane.offer(owner, text, away = true)) AgentTasks.send(owner, text, screen = screen)
+            if (screen != null || !QuickLane.offer(owner, text, away = true)) AgentTasks.followUp(owner, text, screen = screen)
             screen = null; showScreen(ScreenContext.None, null); onScreenLetGo?.invoke()
             leave()
         } catch (e: Exception) { show(ListeningRequest(ListeningPhase.Failed, detail = e.message ?: "The request could not be sent")) }
-    }
-
-    /** While a task runs, the screen says what it is doing, and goes when it is over. */
-    private fun follow(mine: Int) {
-        handler.postDelayed({
-            val now = request
-            if (mine != turn || now?.phase != ListeningPhase.Busy) return@postDelayed
-            AgentTasks.restore(owner)
-            if (!AgentTasks.working) return@postDelayed leave()
-            request = now.copy(detail = marginNote(AgentTasks.label))
-            follow(mine)
-        }, 500)
     }
 
     private fun act(act: ListeningAct) {
@@ -277,7 +268,6 @@ class ListeningHost(private val owner: Context, private val dismiss: () -> Unit)
             // A screenshot on the note is discarded on the way out.
             ListeningEffect.Leave -> leave()
             ListeningEffect.Allow -> { owner.startActivity(Intent(owner, AssistantSetupActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); leave() }
-            ListeningEffect.Stop -> { AgentTasks.stop(owner); leave() }
             ListeningEffect.Review -> {
                 // The oldest one, chosen at the tap; the screen then answers only that one.
                 AgentTasks.pending.firstOrNull()?.let { owner.startActivity(AgentNotices.reviewIntent(owner, it)) }

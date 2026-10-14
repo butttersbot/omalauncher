@@ -6,8 +6,8 @@ import org.junit.Test
 class ChatComposerTest {
     private fun out(
         draft: String = "hello", images: Int = 0, missing: Boolean = false, busy: Boolean = false, linux: Boolean = true, agent: String? = "claude", working: Boolean = false,
-        frontReady: Boolean = false, frontBusy: Boolean = false,
-    ) = outgoing(draft, images, missing, busy, linux, agent, working, frontReady, frontBusy)
+        frontReady: Boolean = false,
+    ) = outgoing(draft, images, missing, busy, linux, agent, working, frontReady)
 
     @Test fun typedTextGoesToTheBackgroundAgent() {
         assertEquals(Outgoing.Background("hello"), out("  hello \n"))
@@ -57,22 +57,31 @@ class ChatComposerTest {
         assertEquals(Outgoing.Queued("Describe these images."), out(draft = "", images = 2, frontReady = true, working = true))
         assertTrue(out(images = 1, missing = true, frontReady = true) is Outgoing.Refused)
     }
-    @Test fun whatIsSentWhileTheFrontAgentIsBusyIsNeverRefused() {
-        assertEquals(Outgoing.Background("hello"), out(frontReady = true, frontBusy = true))
-        assertEquals(Outgoing.Queued("hello"), out(frontReady = true, frontBusy = true, working = true))
+    /**
+     * Changed on purpose (Boss, 2026-10-13: "I should be able to send as many messages as I want"). This used to
+     * pin that words sent while the front agent was still on a request went past it, straight to the builder.
+     * Send no longer knows whether the front agent is busy at all: his words are for it to hear, now or next.
+     */
+    @Test fun whatIsSentWhileTheFrontAgentIsBusyStillGoesToItAndIsNeverRefused() {
+        assertEquals(Outgoing.Front("hello"), out(frontReady = true))
+        assertEquals(Outgoing.Front("hello"), out(frontReady = true, working = true))
+        // Nothing a busy builder or a busy front agent changes: the only things in the way are his own draft and setup.
+        for (working in listOf(false, true)) {
+            assertTrue(out(frontReady = true, working = working) !is Outgoing.Refused)
+            assertTrue(out(images = 1, frontReady = true, working = working) !is Outgoing.Refused)
+            assertTrue(out(frontReady = false, working = working) !is Outgoing.Refused)
+        }
     }
     @Test fun withNoFrontAgentEverythingGoesAsItAlwaysDid() {
-        for (frontBusy in listOf(false, true)) {
-            assertEquals(Outgoing.Background("hello"), out(frontBusy = frontBusy))
-            assertEquals(Outgoing.Queued("hello"), out(working = true, frontBusy = frontBusy))
-            assertEquals(Outgoing.Background("Describe these images."), out(draft = "", images = 2, frontBusy = frontBusy))
-        }
+        assertEquals(Outgoing.Background("hello"), out())
+        assertEquals(Outgoing.Queued("hello"), out(working = true))
+        assertEquals(Outgoing.Background("Describe these images."), out(draft = "", images = 2))
         assertEquals(outgoing("hello", 0, false, false, true, "claude", true), out(working = true))
     }
     @Test fun aTerminalAgentIsNeverRoutedThroughTheFrontAgent() {
-        for (frontReady in listOf(false, true)) for (frontBusy in listOf(false, true)) {
-            assertEquals(Outgoing.Terminal("hello"), out(agent = "grok", frontReady = frontReady, frontBusy = frontBusy))
-            assertEquals(Outgoing.Refused("Wait for the running task or stop it first."), out(agent = "grok", working = true, frontReady = frontReady, frontBusy = frontBusy))
+        for (frontReady in listOf(false, true)) {
+            assertEquals(Outgoing.Terminal("hello"), out(agent = "grok", frontReady = frontReady))
+            assertEquals(Outgoing.Refused("Wait for the running task or stop it first."), out(agent = "grok", working = true, frontReady = frontReady))
         }
     }
     @Test fun theFrontAgentDoesNotGetWhatCouldNotBeSentAnyway() {

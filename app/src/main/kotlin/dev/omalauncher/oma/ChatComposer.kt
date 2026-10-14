@@ -21,7 +21,10 @@ sealed interface Outgoing {
 
     data class Terminal(val prompt: String) : Outgoing
 
-    /** For the front agent to hear first: it answers, or hands his words to the build lane as [Background] or [Queued] would. */
+    /**
+     * For the front agent to hear first: it answers, or hands his words to the build lane as [Background] or
+     * [Queued] would. If it is still on the request before, this one waits for it and is read next.
+     */
     data class Front(val prompt: String) : Outgoing
 }
 
@@ -30,7 +33,8 @@ sealed interface Outgoing {
  * [working] is whether a background task is running: what would have been sent then waits as a follow-up.
  * There is no lane to choose (Boss, 2026-10-13): what a background agent would get goes to the front agent
  * first when [frontFirst] says so, [frontReady] being whether Claude Code, which is the front agent, is
- * installed and [frontBusy] whether it is still on the request before. Otherwise it goes straight on as it always did.
+ * installed. Nothing here asks whether the front agent or the builder is busy: his words are taken at once,
+ * and wait their turn wherever they go. Otherwise it goes straight on as it always did.
  */
 fun outgoing(
     draft: String,
@@ -41,7 +45,6 @@ fun outgoing(
     agent: String?,
     working: Boolean = false,
     frontReady: Boolean = false,
-    frontBusy: Boolean = false,
 ): Outgoing {
     val prompt = draft.trim().ifEmpty { if (images > 0) "Describe these images." else "" }
     return when {
@@ -51,7 +54,7 @@ fun outgoing(
         images > 0 && agent !in BACKGROUND_AGENTS -> Outgoing.Refused("Choose Claude Code or Codex to send images.")
         imageMissing -> Outgoing.Refused("An attached image is no longer available. Remove it and attach it again.")
         agent in BACKGROUND_AGENTS -> when {
-            frontFirst(prompt, images, frontReady, frontBusy) -> Outgoing.Front(prompt)
+            frontFirst(prompt, images, frontReady) -> Outgoing.Front(prompt)
             working -> Outgoing.Queued(prompt)
             else -> Outgoing.Background(prompt)
         }

@@ -101,6 +101,22 @@ class QuickLaneTest {
         assertTrue(told.length < 2_400)
     }
 
+    /** Stop never sits in a queue (Boss, 2026-10-13): the third thing it may do, tried on the real model. */
+    @Test fun itIsToldWhenHisWordsAreAnOrderToStopAndWhenTheyAreNot() {
+        val told = quickSystemPrompt()
+        assertEquals("<<stop>>", STOP)
+        assertTrue(told.contains("Do exactly one of three things."))
+        assertTrue(told.contains(
+            "STOP: only if his own words say to stop, cancel or abort the work under way (\"stop\", \"cancel that\", \"never mind\"), " +
+                "reply with the single line <<stop>> and nothing else.",
+        ))
+        // Not a question about stopping, and not a change of plan, which is a follow-up and is handed over.
+        assertTrue(told.contains("Asking about stopping is a question; stopping one thing to do another is rule (3)."))
+        // It comes after the reasons to hand over and before what it answers itself.
+        assertTrue(told.indexOf("HAND OVER:") < told.indexOf("STOP:")); assertTrue(told.indexOf("STOP:") < told.indexOf("ANSWER:"))
+        assertEquals(1, Regex("<<stop>>").findAll(told).count())
+    }
+
     @Test fun theStreamIsReadForTheSessionTheWordsAndTheResult() {
         assertEquals(QuickEvent.Session(id), quickEvent("""{"type":"system","subtype":"init","cwd":"/root","session_id":"$id","tools":["Bash","Read","WebFetch","WebSearch"],"model":"claude-haiku-5-5","permissionMode":"default"}"""))
         assertEquals(
@@ -216,7 +232,14 @@ class QuickLaneTest {
         // Still no command that acts on the phone, and nothing of an approval or of the Mac's key.
         assertEquals(7, Regex("oma-phone").findAll(told).count())
         for (never in listOf("approv", "nonce", "Bearer", "key", "8478")) assertFalse(never, quickMacRules().contains(never))
-        assertTrue(quickMacRules().length < 1_200)
+        // Stopping a thread has a mark of its own, and a bare "stop" with several at work is asked about, not guessed.
+        assertTrue(told.contains(
+            "An order to stop a thread's work gets the single line <<stop mac ID>> with that thread's id, and <<stop>> stops only the builder's. " +
+                "A bare \"stop\" means whichever one is working; if several are, ask him which.",
+        ))
+        assertEquals("<<stop mac ID>>", stopMark(Route.mac("ID")))
+        // Raised from 1,200 on purpose (2026-10-13): the rule for stopping a thread is some 210 characters and nothing pinned could give them up.
+        assertTrue(quickMacRules().length < 1_400)
         // The command differs only in what it is told; what it may do is the same.
         val command = quickCommand("question", id, mac = true)
         assertTrue(command.contains("<<mac ID>>"))

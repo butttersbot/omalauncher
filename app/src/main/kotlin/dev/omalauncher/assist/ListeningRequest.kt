@@ -14,9 +14,6 @@ sealed interface ListeningEffect {
     /** Open the microphone's setup, then close the screen. */
     data object Allow : ListeningEffect
 
-    /** Stop the running task, then close the screen. */
-    data object Stop : ListeningEffect
-
     /** Open the waiting approval in place of the screen. */
     data object Review : ListeningEffect
 }
@@ -26,7 +23,8 @@ data class ListeningStep(val next: ListeningRequest?, val effect: ListeningEffec
 
 /**
  * A request to Oma while the listening screen is up, and every decision about it, kept apart from Android so
- * it can be tested: [heard] is what has been heard and kept so far, [detail] what a problem or a running task says.
+ * it can be tested: [heard] is what has been heard and kept so far, [detail] what a problem or a waiting approval says.
+ * A task that is running is no part of it (Boss, 2026-10-13): he can always speak, and what he sends waits its turn.
  * Nothing here sends on its own: only [ListeningAct.Send], tapped while the words wait, gives [ListeningEffect.Send].
  */
 data class ListeningRequest(
@@ -55,7 +53,6 @@ data class ListeningRequest(
             ListeningAct.Add -> if (phase == ListeningPhase.Heard) ListeningStep(ListeningRequest(ListeningPhase.Listening, heard), ListeningEffect.Listen) else ListeningStep(this, null)
             ListeningAct.Retry -> ListeningStep(ListeningRequest(ListeningPhase.Listening), ListeningEffect.Listen)
             ListeningAct.Allow -> ListeningStep(null, ListeningEffect.Allow)
-            ListeningAct.Stop -> ListeningStep(null, ListeningEffect.Stop)
             ListeningAct.Review -> ListeningStep(null, ListeningEffect.Review)
         }
 

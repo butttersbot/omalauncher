@@ -67,6 +67,7 @@ import dev.omalauncher.App
 import dev.omalauncher.Runtime
 import dev.omalauncher.assist.AgentTasks
 import dev.omalauncher.assist.ApprovalOutcome
+import dev.omalauncher.assist.FrontQueueFull
 import dev.omalauncher.assist.MacPending
 import dev.omalauncher.assist.MacThreads
 import dev.omalauncher.assist.PendingApproval
@@ -78,6 +79,7 @@ import dev.omalauncher.assist.handOverContext
 import dev.omalauncher.assist.handOverPreface
 import dev.omalauncher.assist.macApprovalDetail
 import dev.omalauncher.assist.macApprovalNotice
+import dev.omalauncher.assist.waitingLine
 import dev.omalauncher.linux.LinuxState
 import dev.omalauncher.linux.MAX_PROMPT_IMAGES
 import dev.omalauncher.linux.PromptImage
@@ -103,7 +105,8 @@ import java.util.Date
  * The Oma app: one thread of requests to Oma, with a field for typed messages and image attachments. There is
  * one Oma to talk to and no lane to pick (Boss, 2026-10-13): [QuickLane], the front agent, hears a request
  * first and answers it or hands it to the background agent or to a project thread on the Mac ([MacThreads]),
- * and the thread shows which only by what comes back and, for the Mac, by a receipt naming the project. Opened by [ACTION] from the dock, Super+A, the agent's notifications and the tiles; text passed as
+ * and the thread shows which only by what comes back and, for the Mac, by a receipt naming the project. Send
+ * never waits for either of them: what he sends is in the thread at once, and an entry that waits says where. Opened by [ACTION] from the dock, Super+A, the agent's notifications and the tiles; text passed as
  * `Intent.EXTRA_TEXT` is put in the field and not sent. It never attaches the screen: only the assistant
  * gesture over another app does (see ScreenContext.kt).
  */
@@ -218,7 +221,7 @@ private fun OmaChatScreen(
         val agent = runtime.agents.default
         val out = outgoing(
             draft, images.size, images.any { !it.file.isFile }, importing || speech.listening, linuxState == LinuxState.Installed, agent?.bin, working,
-            frontReady = QuickLane.ready(context), frontBusy = QuickLane.working,
+            frontReady = QuickLane.ready(context),
         )
         when (out) {
             Outgoing.Nothing -> return
@@ -228,8 +231,16 @@ private fun OmaChatScreen(
             }
             is Outgoing.Background -> if (!build(out.prompt, queue = false)) return
             is Outgoing.Queued -> if (!build(out.prompt, queue = true)) return
-            // A front agent that can't even be asked is not his problem: the request goes on as it would have without one.
-            is Outgoing.Front -> if (runCatching { QuickLane.ask(context, out.prompt) }.isFailure && !build(out.prompt, queue = working)) return
+            is Outgoing.Front -> try {
+                QuickLane.ask(context, out.prompt)
+            } catch (full: FrontQueueFull) {
+                // Too many already wait to be read: he is told, and the draft stays, rather than his words going past the front agent.
+                notice = full.message
+                return
+            } catch (e: Exception) {
+                // A front agent that can't even be asked is not his problem: the request goes on as it would have without one.
+                if (!build(out.prompt, queue = working)) return
+            }
             is Outgoing.Terminal -> if (agent != null) runtime.terminal("${agentInvocation(agent.bin, out.prompt + "\n\n" + PhoneBridge.INSTRUCTIONS)}; exec bash", agent.name, agent)
         }
         // Sent files stay: the agent reads them while it works, and the saved task names them.
@@ -376,7 +387,15 @@ private fun OmaChatScreen(
                             },
                         )
                         // No answer and no stop of its own yet: he can't tell it from a task the build lane has just begun.
-                        task.undecided -> TaskEntry(task, front, begun, task.result, emptyMap())
+                        // One the front agent has not come to says so, and can be taken back until it is read.
+                        task.undecided -> TaskEntry(
+                            task, front, begun, task.result, emptyMap(),
+                            ahead = tasks.count { it.undecided && it.status == TaskStatus.Queued && it.time < task.time },
+                            onCancel = {
+                                QuickLane.cancel(context, task.time)
+                                tick++
+                            },
+                        )
                         // Never the build task's answer or label, and never an approval: the front agent can't be asked for one.
                         task.quick -> TaskEntry(
                             task, front, frontLabel, if (front) frontAnswer else task.result, emptyMap(),
@@ -389,7 +408,13 @@ private fun OmaChatScreen(
                         else -> {
                             val running = working && task.time == building
                             val cards = if (running) pending.associate { it.nonce to ApprovalCard(it.approval.explanation) { allow -> answer(it, allow) } } else emptyMap()
-                            TaskEntry(task, running, label, if (running) liveAnswer else task.result, cards)
+                            TaskEntry(
+                                task, running, label, if (running) liveAnswer else task.result, cards,
+                                onCancel = {
+                                    AgentTasks.cancelFollowUp(context, task.time)
+                                    tick++
+                                },
+                            )
                         }
                     }
                 }
@@ -444,9 +469,10 @@ private fun OmaChatScreen(
                     decorationBox = { inner ->
                         Box(Modifier.padding(horizontal = 12.dp, vertical = 12.dp)) {
                             if (shown.isEmpty()) {
+                                // Never a word about waiting for the task that runs: he can say more at any time.
                                 val hint =
                                     if (listening) "listening…"
-                                    else if (working) "follow up when this is done…"
+                                    else if (working) "ask, or add to this, any time…"
                                     else if (followUp) "follow up on this thread…"
                                     else "ask oma…"
                                 BasicText(hint, style = Pack.body(Pack.size.item, Pack.muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -475,12 +501,14 @@ private fun OmaChatScreen(
                 ) { MicIcon(if (listening) Pack.background else Pack.foreground) }
                 // While a task runs Send still sends, and Stop stays beside it. Stop is the build task's, and a request
                 // still undecided goes with it, as one waiting behind the task would: stop means nothing more is sent.
+                // So what waits to be read goes too, each entry saying so with his words kept.
                 // An answer the front agent is writing has its own stop, on its entry, and so has each task on the Mac:
                 // this one never reaches a thread there.
                 if (!listening) BracketAction("send", if (draft.isBlank() && images.isEmpty()) Pack.muted else Pack.accent, ::send)
                 if (working || deciding) {
                     BracketAction("stop", Pack.red) {
                         if (deciding) QuickLane.stop()
+                        QuickLane.dropWaiting(context)
                         if (working) AgentTasks.stop(context)
                         tick++
                     }
@@ -519,7 +547,8 @@ private fun ApprovalBox(
  * [cards] are the approvals of this entry still waiting, by the key their lines carry. An answer of the front
  * agent's has [onStop] beside what it is doing while it runs, and [onBuild] under it afterwards, once:
  * `[ send to build ]`, for when he wanted the work done instead. A request the Mac never got has [onAgain]
- * under it: `[ try again ]`.
+ * under it: `[ try again ]`. One that waits says where ([waitingLine], with [ahead] the requests the front
+ * agent reads before it) and has `[ cancel ]` beside that while [onCancel] can still take it back.
  */
 @Composable
 private fun TaskEntry(
@@ -531,6 +560,8 @@ private fun TaskEntry(
     onStop: (() -> Unit)? = null,
     onBuild: (() -> Unit)? = null,
     onAgain: (() -> Unit)? = null,
+    ahead: Int = 0,
+    onCancel: (() -> Unit)? = null,
 ) {
     val small = Pack.mono(Pack.size.small, Pack.muted)
     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
@@ -569,7 +600,13 @@ private fun TaskEntry(
                 if (onStop != null) BracketAction("stop", Pack.red, onStop)
             }
         }
-        if (task.status == TaskStatus.Queued) BasicText(if (task.mac) "$label…" else "waiting for the agent to finish…", Modifier.padding(top = 6.dp), style = small.copy(color = Pack.accent))
+        waitingLine(task, ahead, label)?.let { waiting ->
+            Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                BasicText(waiting.text, Modifier.weight(1f, fill = false), style = small.copy(color = Pack.accent), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                // Small and muted, as the other rare ways out under an entry are.
+                if (waiting.cancel && onCancel != null) BasicText("[ cancel ]", Modifier.clickable(onClick = onCancel).padding(horizontal = 8.dp, vertical = 8.dp), style = small)
+            }
+        }
         if (result.isNotBlank()) {
             // What stands here for a task that failed or was never sent is an error or the launcher's own words, not the agent's Markdown.
             val answered = task.status != TaskStatus.Failed && task.status != TaskStatus.Dropped

@@ -41,6 +41,36 @@ class FollowUpsTest {
         }
     }
 
+    @Test fun oneFollowUpCanBeCancelledWhileItWaitsAndTheRestKeepTheirOrder() {
+        val queue = queue(1, 2, 3)
+        assertEquals(followUp(2), queue.cancel(2))
+        assertEquals(listOf(1L, 3L), queue.waiting.map { it.time })
+        // Once only, and never one that is not waiting: the one that has been sent is not in the queue any more.
+        assertNull(queue.cancel(2)); assertNull(queue.cancel(99))
+        assertEquals(Handoff(next = followUp(1)), queue.after(TaskStatus.Done))
+        assertNull(queue.cancel(1))
+        assertEquals(Handoff(next = followUp(3)), queue.after(TaskStatus.Done))
+        assertEquals(Handoff(), queue.after(TaskStatus.Done))
+        // A cancelled one leaves room for another.
+        val full = FollowUpQueue(limit = 2).apply { add(followUp(1)); add(followUp(2)) }
+        assertFalse(full.add(followUp(3)))
+        full.cancel(1)
+        assertTrue(full.add(followUp(3)))
+        assertEquals(listOf(2L, 3L), full.waiting.map { it.time })
+    }
+
+    @Test fun aSpokenFollowUpKeepsItsScreenshotUntilItIsSentOrDropped() {
+        val shot = java.io.File("/data/oma-screen/screen-1.jpg")
+        val spoken = FollowUp(4, "what is this", page = "page-1", screen = shot)
+        val queue = FollowUpQueue().apply { add(followUp(1)); add(spoken) }
+        assertEquals(listOf(null, shot), queue.waiting.map { it.screen })
+        assertEquals(followUp(1), queue.after(TaskStatus.Done).next)
+        assertEquals(spoken, queue.after(TaskStatus.Done).next)
+        // Dropped or cancelled, it is handed back with its file, for the one who drops it to delete.
+        assertEquals(shot, FollowUpQueue().apply { add(spoken) }.drop().single().screen)
+        assertEquals(shot, FollowUpQueue().apply { add(spoken) }.cancel(4)?.screen)
+    }
+
     @Test fun noMoreWaitThanFit() {
         val queue = FollowUpQueue(limit = 2)
         assertTrue(queue.add(followUp(1))); assertTrue(queue.add(followUp(2)))

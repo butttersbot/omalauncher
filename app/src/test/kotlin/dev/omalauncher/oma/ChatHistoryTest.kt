@@ -173,6 +173,15 @@ class ChatHistoryTest {
         // It is neither running nor waiting, which are the only two states anything is ever sent from; and it stays so.
         assertTrue(after.none { it.status == TaskStatus.Running || it.status == TaskStatus.Queued })
         assertEquals(after, ChatHistory.afterRestart(ChatHistory.decode(ChatHistory.encode(after))))
+        // One that still waited to be read ends the same way: interrupted with his words, not dropped as a follow-up is.
+        val waited = ChatHistory.afterRestart(ChatHistory.decode(ChatHistory.encode(listOf(undecided(3).copy(status = TaskStatus.Queued), task(4).copy(status = TaskStatus.Queued)))))
+        assertEquals(listOf(TaskStatus.Interrupted, TaskStatus.Dropped), waited.map { it.status })
+        assertEquals(listOf("", FollowUpQueue.RESTARTED), waited.map { it.result })
+        assertTrue(waited[0].undecided); assertEquals("prompt 3", waited[0].prompt)
+        // One he cancelled before it was read stays as it was: not sent, with why.
+        val cancelled = ChatHistory.dropped(undecided(5).copy(status = TaskStatus.Queued), "You cancelled this before Oma read it.")
+        assertEquals(listOf(cancelled), ChatHistory.afterRestart(ChatHistory.decode(ChatHistory.encode(listOf(cancelled)))))
+        assertEquals(TaskStatus.Dropped, cancelled.status)
         // An undecided request has the shape of any task.
         val fields = JSONObject(ChatHistory.encode(listOf(undecided(2)))).getJSONArray("tasks").getJSONObject(0)
         assertEquals(setOf("time", "agent", "prompt", "images", "screen", "newThread", "steps", "result", "status", "approvals"), fields.keys().asSequence().toSet())

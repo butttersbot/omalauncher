@@ -199,9 +199,12 @@ fun macAbandon(tasks: List<ChatTask>, threadId: String?, reason: String): List<C
     else task
 }
 
+/** What an entry says once the Mac holds its request behind the task the thread is on. */
+const val MAC_QUEUED = "Queued on the Mac"
+
 /** What stands beside an entry of the Mac's while it is not over. */
 fun macEntryLabel(status: TaskStatus, sending: Boolean, reachable: Boolean, approvals: Boolean): String = when {
-    status == TaskStatus.Queued -> if (sending) "Sending to the Mac" else if (reachable) "Queued on the Mac" else "Sent; the Mac is out of reach"
+    status == TaskStatus.Queued -> if (sending) "Sending to the Mac" else if (reachable) MAC_QUEUED else "Sent; the Mac is out of reach"
     approvals -> "Approval needed"
     reachable -> "Working on the Mac"
     else -> "Mac out of reach; still working there"

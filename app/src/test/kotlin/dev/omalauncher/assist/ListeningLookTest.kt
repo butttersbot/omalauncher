@@ -23,7 +23,7 @@ class ListeningLookTest {
     @Test fun theScreenNoteShowsOnlyWhileARequestIsBeingTaken() {
         assertEquals("with this screen", listeningLook(ListeningPhase.Listening, note = "with this screen").note)
         assertEquals("with this screen", listeningLook(ListeningPhase.Missed, note = "with this screen").note)
-        for (phase in listOf(ListeningPhase.NoMic, ListeningPhase.Busy, ListeningPhase.NeedsOk)) assertEquals("", listeningLook(phase, note = "with this screen").note)
+        for (phase in listOf(ListeningPhase.NoMic, ListeningPhase.NeedsOk)) assertEquals("", listeningLook(phase, note = "with this screen").note)
     }
 
     @Test fun aProblemOffersAnotherTryAndAWayOut() {
@@ -34,12 +34,15 @@ class ListeningLookTest {
         assertEquals(listOf(ListeningAct.Allow, ListeningAct.Cancel), listeningLook(ListeningPhase.NoMic).acts)
     }
 
-    /** Nothing new is taken while a task runs or an approval waits: the screen says so and offers what fits. */
-    @Test fun aRunningTaskOrAWaitingApprovalTakesNoRequest() {
-        val busy = listeningLook(ListeningPhase.Busy, heard = "ignored", detail = "using Bash…")
-        assertEquals("using Bash…", busy.words)
-        assertEquals(listOf(ListeningAct.Stop, ListeningAct.Close), busy.acts)
-        assertEquals(listOf(ListeningAct.Review, ListeningAct.Close), listeningLook(ListeningPhase.NeedsOk).acts)
+    /**
+     * Nothing new is taken while an approval waits: the screen says so and offers what fits. Changed on purpose
+     * (Boss, 2026-10-13): a task that runs no longer does the same, so the look it had ("Working", Stop, Close) is gone.
+     */
+    @Test fun aWaitingApprovalTakesNoRequest() {
+        val waiting = listeningLook(ListeningPhase.NeedsOk, heard = "ignored", detail = "Oma is waiting for your answer")
+        assertEquals("Needs your OK", waiting.caption)
+        assertEquals("Oma is waiting for your answer", waiting.words)
+        assertEquals(listOf(ListeningAct.Review, ListeningAct.Close), waiting.acts)
     }
 
     @Test fun theMarginNoteIsAFewLowerCaseWordsThatTrailOff() {
