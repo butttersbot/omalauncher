@@ -1,6 +1,18 @@
 # Phone test results
 
-## Latest: fresh Mac threads and the worktree note; promoted (2026-10-13, about 23:45 PDT, commit 9b7db8a)
+## Latest: the big bundle on the real launcher (2026-10-13, about 22:35 PDT, commit f132cbe)
+
+- `oma-install --status`: verified; phone control had to be healed by the installer (PHONE_CONTROL_HEALED), then connected.
+- Seen: the page "Agents" was made, with tiles `thread:phone`, `thread:mac:t7d995963`, `thread:mac:t4f497a23`
+  (`oma-phone board Agents`); the chat header shows a dot per thread ("Phone: working", "Scratch: done",
+  "Phone proof: done", "FF4 better menu mod: idle") and "▾" (read from the screen, not looked at as a picture);
+  `oma-agents status` answers with the builder's health and the Mac threads; `oma-keep run probe` started a process.
+- The first status file said `"alive": false` for the running builder (verdict still "working"); a minute later
+  `true`. Watch for a false "dead".
+- Still to see: the tiles drawn, a tile opening its tab, two builders at once, `probe` still kept in a later turn,
+  a fresh Mac thread, the AI names on replies.
+
+## Earlier: fresh Mac threads and the worktree note; promoted (2026-10-13, about 23:45 PDT, commit 9b7db8a)
 
 - `<<mac-new ID>>`: separate or urgent work on a project whose thread is busy makes "NAME 2" on the same folder
   (`POST /threads`) and hands his words to it; idle thread -> as `<<mac ID>>`; at most 3 working per folder, then it
