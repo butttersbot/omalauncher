@@ -31,6 +31,19 @@ fun agentName(id: String?): String? {
 }
 
 /**
+ * The name over a reply of a thread on the Mac, from the agent [kind] and the [model] the runner says answered
+ * (docs/MAC-RUNNER-SPEC.md, "As built: Codex and Cursor threads"). Codex and Cursor go by their own names
+ * whatever model they run ("gpt-6.1-sol", "cursor-auto"); a Claude thread, or one of no kind named, which is
+ * the runner's default, by its model's family, else "Claude". Null for an agent of no kind known here whose
+ * model says nothing anyone would recognise.
+ */
+fun macReplyName(kind: String, model: String): String? = when (val agent = macKindOf(kind)) {
+    MAC_CLAUDE -> agentName(model) ?: "Claude"
+    in MAC_KINDS -> macKindName(agent)
+    else -> agentName(model) ?: agentName(kind)
+}
+
+/**
  * The name of the model a line of Claude Code's stream-json says is answering: the `model` of its `system`
  * `init` line, or of an `assistant` message. Null for every other line.
  */

@@ -37,6 +37,9 @@ sealed interface Outgoing {
      * are, with the front agent not asked.
      */
     data class Mac(val prompt: String, val thread: String, val name: String) : Outgoing
+
+    /** His answer in the new chat [chat] to which project on the Mac its words are for: read by the launcher, sent to nobody. */
+    data class Project(val prompt: String, val chat: String) : Outgoing
 }
 
 /** Whom the field talks to, which is the tab that is open. */
@@ -55,31 +58,21 @@ sealed interface SendTo {
 
     /**
      * A new chat called [name] whose first message has gone nowhere yet: the front agent hears it first, and
-     * what it hands on starts a fresh session, never one that has a conversation in it.
+     * what it hands on goes to a new thread on the Mac, never to the phone.
      */
     data class Chat(val chat: String, val name: String) : SendTo
 
-    /**
-     * A new chat whose first message is on its way to a fresh session. On the phone, more words wait with it
-     * for the same session; on the Mac ([mac]) the new thread is being made, which takes a moment.
-     */
-    data class ChatStarting(val chat: String, val name: String, val mac: Boolean) : SendTo
+    /** A new chat whose words are on their way to a new thread on the Mac, which takes a moment to make. */
+    data class ChatStarting(val chat: String, val name: String) : SendTo
 
-    /** A new chat that [builder] serves: straight to that builder, in the session it began for the chat. */
-    data class ChatOn(val chat: String, val name: String, val builder: BuilderId) : SendTo
-
-    /**
-     * A tab whose conversation has ended: its builder began a fresh session for a newer chat. Its entries stay to
-     * be read and nothing is sent from it.
-     */
-    data class Ended(val name: String) : SendTo
+    /** A new chat that asked him which project on the Mac its words are for: what he sends now is his answer. */
+    data class ChatProject(val chat: String, val name: String) : SendTo
 }
 
-/** The builder the field on a builder's tab, or on a chat a builder serves, sends to; null on every other tab. */
+/** The builder the field on a builder's tab sends to; null on every other tab. */
 val SendTo.builder: BuilderId? get() = when (this) {
     SendTo.Phone -> BuilderId.A
     SendTo.PhoneB -> BuilderId.B
-    is SendTo.ChatOn -> builder
     else -> null
 }
 
@@ -88,40 +81,36 @@ val SendTo.chat: String get() = when (this) {
     is SendTo.Mac -> chat
     is SendTo.Chat -> chat
     is SendTo.ChatStarting -> chat
-    is SendTo.ChatOn -> chat
+    is SendTo.ChatProject -> chat
     else -> ""
 }
 
 /**
  * Whom the field talks to on [tab], which is one of [threads] or the Oma tab. A tab that is no thread's talks to
- * Oma. [meta] knows the new chats and [owners] whose session each builder runs now, by chat id, empty for its
- * own; [tasks] is the Oma thread, which says whether a chat's first message is still on its way.
+ * Oma. [meta] knows the new chats; [tasks] is the Oma thread, which says whether a chat's words are still on their
+ * way to a new thread, or are there to wait for a project.
  */
 fun sendTo(
     tab: String,
     threads: List<AgentThread>,
     meta: TabMeta = TabMeta(),
-    owners: Map<BuilderId, String> = emptyMap(),
     tasks: List<ChatTask> = emptyList(),
 ): SendTo {
     val thread = threads.firstOrNull { it.key == tab } ?: return SendTo.Oma
     val chat = meta.chatOf(tab)
     if (chat != null) {
-        val builder = chat.builder
         return when {
-            builder != null -> if (owners[builder] == chat.id) SendTo.ChatOn(chat.id, thread.name, builder) else SendTo.Ended(thread.name)
             chat.mac.isNotEmpty() -> SendTo.Mac(chat.mac, thread.name, chat.id)
-            else -> tasks.lastOrNull { it.chat == chat.id && it.fresh && it.status == TaskStatus.Queued }
-                ?.let { SendTo.ChatStarting(chat.id, thread.name, mac = it.mac) } ?: SendTo.Chat(chat.id, thread.name)
+            tasks.any { it.chat == chat.id && it.fresh && it.status == TaskStatus.Queued } -> SendTo.ChatStarting(chat.id, thread.name)
+            chat.asking != 0L && tasks.any { it.time == chat.asking } -> SendTo.ChatProject(chat.id, thread.name)
+            else -> SendTo.Chat(chat.id, thread.name)
         }
     }
-    val own = when (thread.key) {
-        PHONE_THREAD -> BuilderId.A
-        PHONE_THREAD_B -> BuilderId.B
-        else -> null
+    return when (thread.key) {
+        PHONE_THREAD -> SendTo.Phone
+        PHONE_THREAD_B -> SendTo.PhoneB
+        else -> macThreadId(thread.key)?.let { SendTo.Mac(it, thread.name) } ?: SendTo.Oma
     }
-    if (own != null) return if (owners[own].isNullOrEmpty()) (if (own == BuilderId.A) SendTo.Phone else SendTo.PhoneB) else SendTo.Ended(thread.name)
-    return macThreadId(thread.key)?.let { SendTo.Mac(it, thread.name) } ?: SendTo.Oma
 }
 
 /** Why nothing is sent on a new chat whose thread on the Mac is still being made. */
@@ -129,6 +118,12 @@ const val CHAT_MAKING = "The new thread on the Mac is still being made. Send thi
 
 /** Why images are not sent from a Mac thread's tab. */
 fun noImagesTo(name: String) = "$name is on the Mac, which takes no images from here. Remove them, or send this from the Oma tab."
+
+/** Why images are not sent in a new chat, whose work is the Mac's. */
+const val NO_IMAGES_IN_CHAT = "A new chat is for the Mac, which takes no images from here. Remove them, or send this from the Oma tab."
+
+/** Why a new chat's words are not sent when Oma, which reads them first, can't be asked. */
+const val CHAT_UNREAD = "Oma can't read this now, and a new chat is only for the Mac. Send it from the Oma tab, or try again in a moment."
 
 /**
  * [agent] is the default agent's command, null when none is installed. Images alone ask for a description, as on home.
@@ -141,7 +136,8 @@ fun noImagesTo(name: String) = "$name is on the Mac, which takes no images from 
  * [to] is the open tab. On a thread's own tab the front agent is skipped whatever [frontReady] says: the
  * phone builder's tab sends as the build lane always took it, and a Mac thread's tab sends to that thread,
  * which needs neither Linux nor an agent on the phone, and takes no images. A new chat with nowhere to go yet
- * is heard by the front agent first, as the Oma tab is; an ended tab sends nothing.
+ * is heard by the front agent first, as the Oma tab is, and never goes to the phone's builders: with no front
+ * agent to read it, or images, it is not sent. A new chat that asked which project is answered from the field.
  */
 fun outgoing(
     draft: String,
@@ -156,15 +152,21 @@ fun outgoing(
 ): Outgoing {
     val prompt = draft.trim().ifEmpty { if (images > 0) "Describe these images." else "" }
     return when {
-        busy || prompt.isEmpty() || to is SendTo.Ended -> Outgoing.Nothing
-        to is SendTo.ChatStarting && to.mac -> Outgoing.Refused(CHAT_MAKING)
+        busy || prompt.isEmpty() -> Outgoing.Nothing
+        to is SendTo.ChatStarting -> Outgoing.Refused(CHAT_MAKING)
         to is SendTo.Mac -> if (images > 0) Outgoing.Refused(noImagesTo(to.name)) else Outgoing.Mac(prompt, to.thread, to.name)
+        to is SendTo.ChatProject -> if (images > 0) Outgoing.Refused(NO_IMAGES_IN_CHAT) else Outgoing.Project(prompt, to.chat)
         !linux -> Outgoing.Refused("Open Omalauncher and finish Linux setup first.")
         agent == null -> Outgoing.Refused("Install and sign in to an agent in Omalauncher first.")
         images > 0 && agent !in BACKGROUND_AGENTS -> Outgoing.Refused("Choose Claude Code or Codex to send images.")
         imageMissing -> Outgoing.Refused("An attached image is no longer available. Remove it and attach it again.")
+        to is SendTo.Chat -> when {
+            images > 0 -> Outgoing.Refused(NO_IMAGES_IN_CHAT)
+            agent in BACKGROUND_AGENTS && frontFirst(prompt, images, frontReady) -> Outgoing.Front(prompt)
+            else -> Outgoing.Refused(CHAT_UNREAD)
+        }
         agent in BACKGROUND_AGENTS -> when {
-            (to == SendTo.Oma || to is SendTo.Chat) && frontFirst(prompt, images, frontReady) -> Outgoing.Front(prompt)
+            to == SendTo.Oma && frontFirst(prompt, images, frontReady) -> Outgoing.Front(prompt)
             working -> Outgoing.Queued(prompt)
             else -> Outgoing.Background(prompt)
         }

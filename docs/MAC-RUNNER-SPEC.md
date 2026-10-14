@@ -291,3 +291,9 @@ and Cursor on the Mac; see "Seen with the real agents".
 - Found and fixed on the way: Codex starts a helper (`codex-code-mode-host`) in a process group of its own that
   holds the output pipe open, so a turn could look unfinished long after Codex answered. The runner now stops
   reading at the turn's end, and when the agent itself has exited.
+
+### The phone's side of it (2026-10-14, by the agent on the Fold; unit tested, not yet run against the runner)
+- Reads `/health` `kinds`, `kind`/`model` on `text` and `result`, and `error` codes as words. Only `code: "limit"` sends a
+  turn on: the same words go to `POST /threads {name, project, kind}` with the next of claude, codex, cursor that is
+  installed, named "NAME · Codex". A limit is remembered for 15 minutes, so new requests start on an agent not at one.
+- A new chat (＋ in the chat) only ever makes Mac threads; it never sends `model`.

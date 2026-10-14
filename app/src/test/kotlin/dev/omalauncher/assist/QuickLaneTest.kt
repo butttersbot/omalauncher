@@ -301,4 +301,19 @@ class QuickLaneTest {
         assertEquals(quickCommand("question", id).substringAfter(" --tools "), command.substringAfter(" --tools "))
         for (never in listOf("permission-prompt-tool", "Edit", "Write", "dangerously", "bypass", "acceptEdits", "--input-format", "stdio")) assertFalse("$never in $command", command.contains(never))
     }
+
+    /**
+     * Boss 2026-10-13 ("The plus button should always open up a Mac session"): a new chat's request is told, in one
+     * line at the very end, that the chat is for the Mac. Every other request is told exactly what it was before.
+     */
+    @Test fun aNewChatIsToldItIsForTheMac() {
+        assertEquals(" This is a new chat, for work on the Mac: phone work is not taken here.", quickNewChatRule())
+        assertEquals(quickSystemPrompt(mac = true) + quickNewChatRule(), quickSystemPrompt(mac = true, newChat = true))
+        assertEquals(quickSystemPrompt() + quickNewChatRule(), quickSystemPrompt(newChat = true))
+        assertFalse(quickSystemPrompt(mac = true).contains(quickNewChatRule()))
+        assertTrue(quickCommand("q", id, mac = true, newChat = true).contains("phone work is not taken here"))
+        assertEquals(quickCommand("q", id, mac = true), quickCommand("q", id, mac = true, newChat = false))
+        assertEquals(quickCommand("q", id).substringAfter(" --tools "), quickCommand("q", id, mac = true, newChat = true).substringAfter(" --tools "))
+        assertTrue(quickNewChatRule().length < 120)
+    }
 }

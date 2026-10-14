@@ -98,6 +98,9 @@ class MacRunnerTest {
         val make = MacRequests.makeThread("FF4 mod", "~/ClaudeSync/projects/ffiv-ds-better-menu-mod")
         assertEquals("POST", make.method); assertEquals("/threads", make.path)
         assertEquals(setOf("name", "project"), JSONObject(make.body!!).keys().asSequence().toSet())
+        // The agent the thread runs goes with it when one is named.
+        val codex = MacRequests.makeThread("FF4 mod · Codex", "~/p/ff4", "codex")
+        assertEquals("codex", JSONObject(codex.body!!).getString("kind")); assertEquals(setOf("name", "project", "kind"), JSONObject(codex.body!!).keys().asSequence().toSet())
         assertEquals("FF4 mod", JSONObject(make.body!!).getString("name"))
         assertEquals("~/ClaudeSync/projects/ffiv-ds-better-menu-mod", JSONObject(make.body!!).getString("project"))
 
@@ -129,6 +132,8 @@ class MacRunnerTest {
     @Test fun healthIsRead() {
         assertEquals(MacAnswer.Ok(MacHealth(3, 1, 2)), parseMacHealth(ok("""{"ok": true, "runner": "oma-runner", "threads": 3, "working": 1, "waiting": 2}""")))
         assertEquals(MacAnswer.Ok(MacHealth(0, 0, 0)), parseMacHealth(ok("""{"ok": true, "runner": "oma-runner"}""")))
+        assertEquals(MacAnswer.Ok(MacHealth(1, 0, 0, listOf("claude", "codex", "cursor"))), parseMacHealth(ok("""{"ok": true, "runner": "oma-runner", "threads": 1, "kinds": ["claude", "codex", "cursor"]}""")))
+        assertEquals(MacAnswer.Ok(MacHealth(0, 0, 0, listOf("claude"))), parseMacHealth(ok("""{"ok": true, "runner": "oma-runner", "kinds": ["claude", "", null, 3]}""")))
         // Something else on that port is not the runner.
         for (other in listOf("""{"ok": true}""", """{"ok": true, "runner": "other"}""", """{"ok": false, "runner": "oma-runner"}""", "<html>hello</html>", ""))
             assertEquals(other, MacAnswer.Failed(200, "not an answer from oma-runner"), parseMacHealth(ok(other)))
@@ -231,6 +236,12 @@ class MacRunnerTest {
         assertEquals(MacEvent.Stopped(4, 1760000000, 1), read(""""type": "stopped", "dropped": 1"""))
         assertEquals(MacEvent.Error(4, 1760000000, "The agent ended without an answer.", 1), read(""""type": "error", "code": 1, "text": "The agent ended without an answer.""""))
         assertEquals(MacEvent.Error(4, 1760000000, "The agent could not be started on the Mac: no such file", null), read(""""type": "error", "text": "The agent could not be started on the Mac: no such file""""))
+        // A word in place of an exit code says why the turn ended: "limit" is an agent at its usage or concurrency limit.
+        assertEquals(MacEvent.Error(4, 1760000000, "You've hit your limit", null, "limit"), read(""""type": "error", "code": "limit", "text": "You've hit your limit""""))
+        assertEquals(MacEvent.Error(4, 1760000000, "refused", null, "agent"), read(""""type": "error", "code": "agent", "text": "refused""""))
+        // The first words of a turn, and its result, say which agent and model answered.
+        assertEquals(MacEvent.Text(4, 1760000000, "Hi", "codex", "gpt-6.1-sol"), read(""""type": "text", "text": "Hi", "kind": "codex", "model": "gpt-6.1-sol""""))
+        assertEquals(MacEvent.Result(4, 1760000000, "done", false, "cursor", "cursor-auto"), read(""""type": "result", "text": "done", "failed": false, "kind": "cursor", "model": "cursor-auto""""))
     }
 
     @Test fun anApprovalEventCarriesWhatTheCardAndTheAnswerNeed() {

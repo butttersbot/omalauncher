@@ -103,7 +103,8 @@ class ChatTabsTest {
     }
 
     // New chats, pins, archive and the long-press menu (Boss, 2026-10-13).
-    private val chatA = NewChat("c1", 10, builder = BuilderId.A)
+    /** A chat a builder took in an earlier version: it loads unbound, with its entries still its own. */
+    private val chatA = NewChat("c1", 10)
     private val chatMac = NewChat("c2", 11, mac = "t-new")
     private val chatNew = NewChat("c3", 12)
     private val book = TabMeta(chats = listOf(chatA, chatMac, chatNew))
@@ -138,35 +139,34 @@ class ChatTabsTest {
         assertNull(tabMacThread(chatA.key, book)); assertNull(tabMacThread(chatNew.key, book)); assertNull(tabMacThread(OMA_TAB, book))
     }
 
-    @Test fun aNewChatsFieldGoesFirstToOmaThenToTheSessionItIsBoundTo() {
+    @Test fun aNewChatsFieldGoesFirstToOmaThenToTheMacThreadMadeForIt() {
         val shown = threads + listOf(chatThread(chatA, "Worktrees"), chatThread(chatMac, "Menu fix"), chatThread(chatNew))
-        val serving = mapOf(BuilderId.A to "c1")
-        assertEquals(SendTo.Chat("c3", NEW_CHAT_NAME), sendTo(chatNew.key, shown, book, serving))
-        assertEquals(SendTo.ChatOn("c1", "Worktrees", BuilderId.A), sendTo(chatA.key, shown, book, serving))
-        assertEquals(SendTo.Mac("t-new", "Menu fix", "c2"), sendTo(chatMac.key, shown, book, serving))
-        // Builder A went on to the new chat: its own tab has ended, and so does the chat once A goes on again.
-        assertEquals(SendTo.Ended("Phone"), sendTo(PHONE_THREAD, shown, book, serving))
-        assertEquals(SendTo.Ended("Worktrees"), sendTo(chatA.key, shown, book, mapOf(BuilderId.A to "c9")))
+        assertEquals(SendTo.Chat("c3", NEW_CHAT_NAME), sendTo(chatNew.key, shown, book))
+        // A chat a builder took in an earlier version goes to Oma first, as any new chat does; the builder's tab is its own.
+        assertEquals(SendTo.Chat("c1", "Worktrees"), sendTo(chatA.key, shown, book))
+        assertEquals(SendTo.Mac("t-new", "Menu fix", "c2"), sendTo(chatMac.key, shown, book))
         assertEquals(SendTo.Phone, sendTo(PHONE_THREAD, shown, book))
-        // While its first words wait for a fresh session they say so, on the phone or on the Mac.
-        val waitsForBuilder = ChatTask(30, "Claude Code", "x", fresh = true, status = TaskStatus.Queued, chat = "c3")
+        // While its words wait for a new thread on the Mac it says so.
         val waitsForThread = ChatTask(31, "→ FF4 2", "x", thread = "t-ff4", threadName = "FF4 2", fresh = true, status = TaskStatus.Queued, chat = "c3")
-        assertEquals(SendTo.ChatStarting("c3", NEW_CHAT_NAME, mac = false), sendTo(chatNew.key, shown, book, tasks = listOf(waitsForBuilder)))
-        assertEquals(SendTo.ChatStarting("c3", NEW_CHAT_NAME, mac = true), sendTo(chatNew.key, shown, book, tasks = listOf(waitsForThread)))
-        assertEquals(SendTo.Chat("c3", NEW_CHAT_NAME), sendTo(chatNew.key, shown, book, tasks = listOf(waitsForThread.copy(status = TaskStatus.Dropped))))
+        assertEquals(SendTo.ChatStarting("c3", NEW_CHAT_NAME), sendTo(chatNew.key, shown, book, listOf(waitsForThread)))
+        assertEquals(SendTo.Chat("c3", NEW_CHAT_NAME), sendTo(chatNew.key, shown, book, listOf(waitsForThread.copy(status = TaskStatus.Dropped))))
+        // Asked which project, the field answers that; once the entry that waits is gone, it is a new chat's again.
+        val question = ChatTask(32, QUICK_AGENT, "fix the menu", result = "Which project on the Mac? ff4, pond", status = TaskStatus.Done, chat = "c3")
+        val asking = book.asking("c3", 32)
+        assertEquals(SendTo.ChatProject("c3", NEW_CHAT_NAME), sendTo(chatNew.key, shown, asking, listOf(question)))
+        assertEquals(SendTo.Chat("c3", NEW_CHAT_NAME), sendTo(chatNew.key, shown, asking, emptyList()))
         // Who it goes to.
-        assertEquals(BuilderId.A, SendTo.ChatOn("c1", "W", BuilderId.A).builder); assertNull(SendTo.Chat("c3", "N").builder)
-        assertEquals("c2", SendTo.Mac("t-new", "M", "c2").chat); assertEquals("", SendTo.Phone.chat); assertEquals("c3", SendTo.ChatStarting("c3", "N", false).chat)
+        assertNull(SendTo.Chat("c3", "N").builder); assertEquals(BuilderId.A, SendTo.Phone.builder)
+        assertEquals("c2", SendTo.Mac("t-new", "M", "c2").chat); assertEquals("", SendTo.Phone.chat); assertEquals("c3", SendTo.ChatStarting("c3", "N").chat)
+        assertEquals("c3", SendTo.ChatProject("c3", "N").chat)
     }
 
     @Test fun theFieldsHintAndStopOnANewChat() {
-        assertEquals("start this chat…", fieldHint(SendTo.Chat("c", "N")))
-        assertEquals("to Worktrees…", fieldHint(SendTo.ChatOn("c", "Worktrees", BuilderId.B)))
-        assertEquals(ENDED_HINT, fieldHint(SendTo.Ended("Phone")))
-        assertEquals("starting a new thread on the Mac…", fieldHint(SendTo.ChatStarting("c", "N", mac = true)))
+        assertEquals("start this chat on the Mac…", fieldHint(SendTo.Chat("c", "N")))
+        assertEquals("starting a new thread on the Mac…", fieldHint(SendTo.ChatStarting("c", "N")))
+        assertEquals("name a project on the Mac…", fieldHint(SendTo.ChatProject("c", "N")))
         assertTrue(fieldStop(SendTo.Chat("c", "N"), working = false, deciding = true)); assertFalse(fieldStop(SendTo.Chat("c", "N"), working = true, deciding = false))
-        assertTrue(fieldStop(SendTo.ChatOn("c", "N", BuilderId.A), working = true, deciding = false))
-        for (working in listOf(true, false)) for (deciding in listOf(true, false)) assertFalse(fieldStop(SendTo.Ended("Phone"), working, deciding))
+        for (working in listOf(true, false)) for (deciding in listOf(true, false)) assertFalse(fieldStop(SendTo.ChatProject("c", "N"), working, deciding))
     }
 
     @Test fun theMenuOffersWhatMakesSenseAndArchivedIsAlwaysLast() {
@@ -185,18 +185,16 @@ class ChatTabsTest {
 
     @Test fun stopInTheMenuIsTheTabsOwnTaskAndOnlyWhileItHasOne() {
         val working = ThreadState.Working
-        val serving = mapOf(BuilderId.A to "c1")
-        assertEquals(TabStop.Mac("t-ff4"), tabStop("mac:t-ff4", ff4, TabMeta(), emptyMap()))
-        assertEquals(TabStop.Builder(BuilderId.A), tabStop(PHONE_THREAD, phone.copy(state = working), TabMeta(), emptyMap()))
-        assertEquals(TabStop.Builder(BuilderId.A), tabStop(chatA.key, chatThread(chatA, state = working), book, serving))
-        assertEquals(TabStop.Mac("t-new"), tabStop(chatMac.key, chatThread(chatMac, state = ThreadState.NeedsOk), book, serving))
-        // Resting, needing attention, ended, or a chat whose first words have gone nowhere: nothing to stop.
-        assertNull(tabStop(PHONE_THREAD, phone, TabMeta(), emptyMap()))
-        assertNull(tabStop("mac:t-ff4", ff4.copy(state = ThreadState.Attention), TabMeta(), emptyMap()))
-        assertNull(tabStop(PHONE_THREAD, phone.copy(state = working), book, serving))
-        assertNull(tabStop(chatA.key, chatThread(chatA, state = working), book, mapOf(BuilderId.A to "c9")))
-        assertNull(tabStop(chatNew.key, chatThread(chatNew, state = working), book, serving))
-        assertNull(tabStop("mac:t-gone", null, TabMeta(), emptyMap()))
+        assertEquals(TabStop.Mac("t-ff4"), tabStop("mac:t-ff4", ff4, TabMeta()))
+        assertEquals(TabStop.Builder(BuilderId.A), tabStop(PHONE_THREAD, phone.copy(state = working), TabMeta()))
+        assertEquals(TabStop.Builder(BuilderId.A), tabStop(PHONE_THREAD, phone.copy(state = working), book))
+        assertEquals(TabStop.Mac("t-new"), tabStop(chatMac.key, chatThread(chatMac, state = ThreadState.NeedsOk), book))
+        // Resting, needing attention, or a chat whose first words have gone nowhere: nothing to stop.
+        assertNull(tabStop(PHONE_THREAD, phone, TabMeta()))
+        assertNull(tabStop("mac:t-ff4", ff4.copy(state = ThreadState.Attention), TabMeta()))
+        assertNull(tabStop(chatA.key, chatThread(chatA, state = working), book))
+        assertNull(tabStop(chatNew.key, chatThread(chatNew, state = working), book))
+        assertNull(tabStop("mac:t-gone", null, TabMeta()))
     }
 
     @Test fun copyTakesTheNewestFinishedAnswer() {

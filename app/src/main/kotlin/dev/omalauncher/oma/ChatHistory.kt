@@ -79,8 +79,7 @@ data class ChatTask(
     /**
      * Separate work for the project of [thread], which was busy: a new thread is made there and his words go to it.
      * Until it is made the entry stands under the busy thread's id, and once made it is that new thread's and this is false.
-     * For a request of the build lane's it is the first word of a new chat waiting for a free builder, which starts
-     * a fresh session for it; once a builder has begun on it, this is false.
+     * The same holds for a request whose turn ended at its agent's limit, while a thread of the next agent is made.
      */
     val fresh: Boolean = false,
     /**

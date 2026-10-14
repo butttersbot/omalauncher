@@ -82,27 +82,23 @@ fun fieldHint(to: SendTo): String? = when (to) {
     SendTo.Phone -> "to $PHONE_THREAD_NAME…"
     SendTo.PhoneB -> "to $PHONE_THREAD_B_NAME…"
     is SendTo.Mac -> "to ${to.name}…"
-    is SendTo.Chat -> "start this chat…"
-    is SendTo.ChatStarting -> if (to.mac) "starting a new thread on the Mac…" else "add to this, any time…"
-    is SendTo.ChatOn -> "to ${to.name}…"
-    is SendTo.Ended -> ENDED_HINT
+    is SendTo.Chat -> "start this chat on the Mac…"
+    is SendTo.ChatStarting -> "starting a new thread on the Mac…"
+    is SendTo.ChatProject -> "name a project on the Mac…"
 }
-
-/** What an ended tab's field says: its builder went on to a newer chat, so nothing more is sent from here. */
-const val ENDED_HINT = "ended · its builder moved on to a new chat"
 
 /**
  * Whether the red stop beside the field shows. It is the phone builders' stop, and takes what the front agent
- * is deciding with it: so it shows on the Oma tab while either goes on, on a builder's tab, or a chat a builder
- * serves, while that builder works ([working] is then that builder's), on a chat with nowhere to go yet while
- * the front agent decides its words ([deciding] is then that chat's), and never on a Mac thread's tab, whose
- * tasks each have a stop of their own on their entry, nor on an ended one.
+ * is deciding with it: so it shows on the Oma tab while either goes on, on a builder's tab while that builder
+ * works ([working] is then that builder's), on a new chat with nowhere to go yet while the front agent decides
+ * its words ([deciding] is then that chat's), and never on a Mac thread's tab, whose tasks each have a stop of
+ * their own on their entry, nor on a chat that waits for him to name its project.
  */
 fun fieldStop(to: SendTo, working: Boolean, deciding: Boolean): Boolean = when (to) {
     SendTo.Oma -> working || deciding
-    SendTo.Phone, SendTo.PhoneB, is SendTo.ChatOn -> working
+    SendTo.Phone, SendTo.PhoneB -> working
     is SendTo.Chat, is SendTo.ChatStarting -> deciding
-    is SendTo.Mac, is SendTo.Ended -> false
+    is SendTo.Mac, is SendTo.ChatProject -> false
 }
 
 /** What a long press on a tab can do. */
@@ -151,23 +147,15 @@ sealed interface TabStop {
 
 /**
  * What Stop in [tab]'s menu stops, the same as its entry's `[ stop ]`: while [thread] works, queues or waits for
- * his OK, its builder (a builder's own tab while it runs its own conversation, a chat while its builder serves
- * it) or its Mac thread; null otherwise, and for a chat whose first message has gone nowhere yet, whose entry
- * has its own way out. [owners] is whose session each builder runs, by chat id.
+ * his OK, its builder or its Mac thread, a new chat's being the thread made for it; null otherwise, and for a
+ * chat whose first message has gone nowhere yet, whose entry has its own way out.
  */
-fun tabStop(tab: String, thread: AgentThread?, meta: TabMeta, owners: Map<BuilderId, String>): TabStop? {
+fun tabStop(tab: String, thread: AgentThread?, meta: TabMeta): TabStop? {
     if (thread == null || !thread.state.active || thread.state == ThreadState.Attention) return null
-    meta.chatOf(tab)?.let { chat ->
-        val builder = chat.builder
-        return when {
-            builder != null -> TabStop.Builder(builder).takeIf { owners[builder] == chat.id }
-            chat.mac.isNotEmpty() -> TabStop.Mac(chat.mac)
-            else -> null
-        }
-    }
+    meta.chatOf(tab)?.let { chat -> return chat.mac.takeIf { it.isNotEmpty() }?.let(TabStop::Mac) }
     return when (tab) {
-        PHONE_THREAD -> TabStop.Builder(BuilderId.A).takeIf { owners[BuilderId.A].isNullOrEmpty() }
-        PHONE_THREAD_B -> TabStop.Builder(BuilderId.B).takeIf { owners[BuilderId.B].isNullOrEmpty() }
+        PHONE_THREAD -> TabStop.Builder(BuilderId.A)
+        PHONE_THREAD_B -> TabStop.Builder(BuilderId.B)
         else -> macThreadId(tab)?.let(TabStop::Mac)
     }
 }

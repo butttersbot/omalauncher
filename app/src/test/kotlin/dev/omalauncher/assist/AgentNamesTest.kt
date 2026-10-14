@@ -75,4 +75,17 @@ class AgentNamesTest {
         assertNull(replyName(ChatTask(3, "→ FF4 mod", "fix it", result = "Fixed.", status = TaskStatus.Done, thread = "t1a2b3c4d", threadName = "FF4 mod"), "Fixed."))
         assertNull(replyName(ChatTask(4, UNDECIDED_AGENT, "hm", result = "x", status = TaskStatus.Interrupted), "x"))
     }
+
+    /** The runner says which agent and model answered (MAC-RUNNER-SPEC.md, "As built: Codex and Cursor threads"). */
+    @Test fun aMacReplyIsNamedByItsAgentThenItsModel() {
+        assertEquals("Codex", macReplyName("codex", "gpt-6.1-sol"))
+        assertEquals("Cursor", macReplyName("cursor", "cursor-auto"))
+        // Cursor running a Claude model is still Cursor's answer.
+        assertEquals("Cursor", macReplyName("cursor", "claude-sonnet-4-5"))
+        assertEquals("Opus", macReplyName("claude", "claude-opus-5-5"))
+        assertEquals("Claude", macReplyName("claude", ""))
+        // No kind is the runner's default, Claude.
+        assertEquals("Sonnet", macReplyName("", "claude-sonnet-4-5")); assertEquals("Claude", macReplyName("", ""))
+        assertEquals("Grok", macReplyName("grok", "")); assertNull(macReplyName("nobody", "x-1"))
+    }
 }

@@ -12,8 +12,6 @@ import dev.omalauncher.oma.FollowUp
 import dev.omalauncher.oma.FollowUpQueue
 import dev.omalauncher.oma.Markdown
 import dev.omalauncher.oma.ScreenShots
-import dev.omalauncher.oma.TabBook
-import dev.omalauncher.oma.bound
 import dev.omalauncher.oma.TaskStatus
 import dev.omalauncher.oma.ring.OmaRing
 import dev.omalauncher.phone.HomeDoor
@@ -85,73 +83,6 @@ object AgentTasks {
         AgentNotices.clearStale(context)
     }
 
-    /** The new chat each builder serves now, by id; empty for one still in its own conversation. */
-    val owners: Map<BuilderId, String> get() = builders.associate { it.id to it.owner }
-
-    /**
-     * The first words of new chats that wait for a free builder, oldest first: each starts a fresh session on the
-     * first builder to finish. Only touched under the lock; each is also a waiting entry in the thread.
-     */
-    private val fresh = ArrayList<FreshWait>()
-
-    /**
-     * Words of the new chat [chat] for a fresh session (Boss, 2026-10-13: a new chat never goes into a
-     * conversation that has anything in it). The first builder that is free begins a new conversation with them
-     * and serves the chat from then on; with both at work they wait, saying so, for the first to finish. Words
-     * sent to the chat meanwhile wait with them and go to the same session. [earlier] and [screen] are as
-     * [Builder.followUp] has them. Says which builder took it, or null while it waits.
-     */
-    @Synchronized fun startChat(context: Context, chat: String, prompt: String, images: List<String> = emptyList(), page: String? = HomeDoor.home?.showing, earlier: String = "", screen: File? = null): BuilderId? {
-        restore(context)
-        check(prompt.isNotBlank()) { "Type or speak a request first." }
-        val free = builders.firstOrNull { !it.working }.takeIf { fresh.none { it.chat == chat } }
-        if (free != null) {
-            free.startFresh(context, chat, FollowUp(0L, prompt, images, page, earlier, screen), queued = null)
-            return free.id
-        }
-        val agent = (context.applicationContext as App).runtime.agents.default ?: error("Install and sign in to an agent in Omalauncher first.")
-        check(fresh.size < FollowUpQueue.MAX_WAITING) { FollowUpQueue.FULL }
-        val log = ChatLog.of(context)
-        val time = ChatHistory.stamp(log.tasks, System.currentTimeMillis())
-        fresh += FreshWait(chat, FollowUp(time, prompt, images, page, earlier, screen))
-        log.begin(ChatTask(time, agent.name, prompt, images, screen = screen != null, status = TaskStatus.Queued, fresh = true, chat = chat))
-        return null
-    }
-
-    /**
-     * Under the lock, as [builder] ends a task with nothing of its own behind it: it begins the oldest new chat
-     * that waits for a free builder, in a fresh session, and takes that chat's later words behind it. True when
-     * one now runs. One that cannot even begin says why in its entry, as a follow-up that could not does.
-     */
-    internal fun takeFresh(context: Context, builder: Builder): Boolean {
-        val first = fresh.removeFirstOrNull() ?: return false
-        val more = fresh.filter { it.chat == first.chat }
-        fresh.removeAll(more)
-        return try {
-            builder.startFresh(context, first.chat, first.item, queued = first.item.time, more = more.map { it.item })
-            true
-        } catch (e: Exception) {
-            val log = ChatLog.of(context)
-            for (wait in listOf(first) + more) {
-                ScreenShots.discard(wait.item.screen)
-                log.update(wait.item.time, save = true) { ChatHistory.dropped(it, e.message ?: FollowUpQueue.FAILED) }
-            }
-            false
-        }
-    }
-
-    /** Takes the new chat's words filed at [time] out of the wait for a free builder; null when they no longer wait. */
-    private fun cancelFresh(time: Long): FollowUp? = fresh.firstOrNull { it.item.time == time }?.also { fresh.remove(it) }?.item
-
-    /** Empties the wait for a free builder, the entries saying [reason]. */
-    private fun dropFresh(context: Context, reason: String) {
-        val log = ChatLog.of(context)
-        for (wait in fresh.toList().also { fresh.clear() }) {
-            ScreenShots.discard(wait.item.screen)
-            log.update(wait.item.time, save = true) { ChatHistory.dropped(it, reason) }
-        }
-    }
-
     /** The builder that gets a request for [named], or new work when that is null: see [pickBuilder]. */
     @Synchronized fun pick(named: BuilderId? = null): BuilderId = pickBuilder(named, builders.associate { it.id to BuilderLoad(it.working, it.waiting) })
 
@@ -188,13 +119,7 @@ object AgentTasks {
     }
 
     /** `[ cancel ]` on a follow-up that still waits, whichever builder it waits for. */
-    @Synchronized fun cancelFollowUp(context: Context, time: Long) {
-        cancelFresh(time)?.let { gone ->
-            ScreenShots.discard(gone.screen)
-            ChatLog.of(context).update(gone.time, save = true) { ChatHistory.dropped(it, FollowUpQueue.CANCELLED) }
-        }
-        builders.forEach { it.cancelFollowUp(context, time) }
-    }
+    @Synchronized fun cancelFollowUp(context: Context, time: Long) = builders.forEach { it.cancelFollowUp(context, time) }
 
     /**
      * Answers the one approval with this [id] and [nonce], through the builder that holds it and no other. The
@@ -211,14 +136,9 @@ object AgentTasks {
 
     private fun waiting(): Map<BuilderId, List<PendingApproval>> = builders.associate { it.id to it.pending }
 
-    /**
-     * Stops [builder]'s task, or every builder's when it is null: stop beside the Oma tab's field means nothing
-     * more runs, so new chats waiting for a free builder are not begun either.
-     */
+    /** Stops [builder]'s task, or every builder's when it is null: stop beside the Oma tab's field means nothing more runs. */
     fun stop(context: Context, builder: BuilderId? = null) {
-        if (builder != null) return of(builder).stop(context)
-        synchronized(this) { dropFresh(context, FollowUpQueue.STOPPED) }
-        builders.forEach { it.stop(context) }
+        if (builder == null) builders.forEach { it.stop(context) } else of(builder).stop(context)
     }
 
     /** The slots of every builder's waiting approvals but [builder]'s: under the lock, so no two notifications are given one. */
@@ -258,7 +178,7 @@ object AgentTasks {
 
 /**
  * One of the phone's builders. A single background request stays alive with the existing Linux foreground service.
- * Claude requests continue one conversation, resumed by session id, until [newThread].
+ * Claude requests continue one conversation, resumed by session id.
  * What he sends while a request runs waits in [followUps] and is sent as the next request when it has finished.
  * Builder A keeps what was saved before there were two; every builder takes the lock of [AgentTasks].
  */
@@ -284,11 +204,6 @@ class Builder(val id: BuilderId) {
     val waiting: Int get() = synchronized(lock) { followUps.waiting.size }
     /** The Claude session that the next request follows up on. */
     @Volatile var thread: String? = null; private set
-    /**
-     * The new chat whose session this is, by id; empty while it is the builder's own conversation. Every entry it
-     * files is that chat's, so what it says stays in one tab whoever sent the words.
-     */
-    @Volatile var owner = ""; private set
     private var inputWriter: BufferedWriter? = null
     private var restored = false
     /** Which task of the Oma thread the running request is. */
@@ -312,32 +227,6 @@ class Builder(val id: BuilderId) {
         answer = saved.getString("answer", "") ?: ""
         label = saved.getString("label", "Ready") ?: "Ready"
         thread = saved.getString("thread", null)
-        owner = saved.getString("chat", null).orEmpty()
-    }
-    /**
-     * Begins a new conversation for the new chat [chat] with [first], and serves that chat from then on: no
-     * `--resume`, so nothing this builder said before reaches it. [queued] is the time of the entry [first]
-     * already is; [more] are that chat's later words, which wait behind it. The conversation it leaves stays
-     * readable where it was, and ends there. If it can't begin, nothing changes and it throws.
-     */
-    internal fun startFresh(context: Context, chat: String, first: FollowUp, queued: Long?, more: List<FollowUp> = emptyList()): Unit = synchronized(lock) {
-        restore(context)
-        check(!working) { "An agent is already working. Stop it before starting another task." }
-        val was = thread to owner
-        thread = null; owner = chat
-        try {
-            start(context, first.prompt, first.images, first.screen, first.page, queued, first.earlier)
-        } catch (e: Exception) {
-            thread = was.first; owner = was.second
-            throw e
-        }
-        context.getSharedPreferences(prefs, Context.MODE_PRIVATE).edit().remove("thread").putString("chat", chat).apply()
-        TabBook.change(context) { it.bound(chat, builder = id) }
-        val log = ChatLog.of(context)
-        for (word in more) {
-            if (followUps.add(word)) log.update(word.time, save = true) { it.copy(builder = id.saved, fresh = false) }
-            else log.update(word.time, save = true) { ChatHistory.dropped(it, FollowUpQueue.FULL) }
-        }
     }
     /**
      * [screen] is the screenshot behind the "this screen" chip, and only that: once this returns the file is
@@ -365,7 +254,7 @@ class Builder(val id: BuilderId) {
         val log = ChatLog.of(context)
         val time = ChatHistory.stamp(log.tasks, System.currentTimeMillis())
         check(followUps.add(FollowUp(time, prompt, images, page, earlier, screen))) { FollowUpQueue.FULL }
-        log.begin(ChatTask(time, agent.name, prompt, images, screen = screen != null, status = TaskStatus.Queued, builder = id.saved, chat = owner))
+        log.begin(ChatTask(time, agent.name, prompt, images, screen = screen != null, status = TaskStatus.Queued, builder = id.saved))
     }
     /**
      * `[ cancel ]` on a follow-up that still waits: it leaves the queue and the thread says so. One that has
@@ -407,8 +296,8 @@ class Builder(val id: BuilderId) {
         taskTime = time
         startedAt = began; heardAt = began; lastStep = ""; lastStepAt = 0L
         asked = page?.let { PageAsk(it, began) }
-        if (queued == null) log.begin(ChatTask(time, agent.name, prompt, images, screen = screen != null, newThread = resumed == null, answeredBy = builderName(agent.bin), builder = id.saved, chat = owner))
-        else log.update(time, save = true) { it.copy(agent = agent.name, newThread = resumed == null, status = TaskStatus.Running, answeredBy = builderName(agent.bin), builder = id.saved, fresh = false) }
+        if (queued == null) log.begin(ChatTask(time, agent.name, prompt, images, screen = screen != null, newThread = resumed == null, answeredBy = builderName(agent.bin), builder = id.saved))
+        else log.update(time, save = true) { it.copy(agent = agent.name, newThread = resumed == null, status = TaskStatus.Running, answeredBy = builderName(agent.bin)) }
         working = true; stopping = false; ledger.clear(); published(); answer = ""; label = "${agent.name} is working"
         notify(context)
         thread(name = "assistant-agent-" + id.letter.lowercase(), isDaemon = true) {
@@ -513,10 +402,7 @@ class Builder(val id: BuilderId) {
                     notify(context)
                     // A task the owner stopped says nothing more, and one with a follow-up now running has its answer in
                     // the thread, under a task notification that is ongoing again; any other ending brings its answer to him.
-                    val more = advance(context, status)
-                    if (!more && status != TaskStatus.Stopped) AgentNotices.answered(context, label, answer, AgentNotices.answerId(id))
-                    // Free now: a new chat waiting for a builder begins here, in a session of its own.
-                    if (!more) AgentTasks.takeFresh(context, this)
+                    if (!advance(context, status) && status != TaskStatus.Stopped) AgentNotices.answered(context, label, answer, AgentNotices.answerId(id))
                 }
             }
         }
@@ -623,9 +509,6 @@ class Builder(val id: BuilderId) {
         BuilderWatch.watch(context)
     }
 }
-
-/** The first words of a new chat waiting for a free builder ([AgentTasks.startChat]). */
-private data class FreshWait(val chat: String, val item: FollowUp)
 
 /**
  * The home page a request was sent from: [page] is its id, [started] when the task began and [ended] when it

@@ -1,5 +1,30 @@
 # Phone test results
 
+## Latest: Codex and Cursor when Claude is at its limit; ＋ is always the Mac (2026-10-14) — NOT promoted, NOT seen on a screen
+
+Boss: "if we hit our limit on claude code … we should have codex available … or cursor", then "The plus button should
+always open up a Mac session. If I need to do anything on the phone, I'm gonna be using the hold to talk." Compile-checked
+and unit tested only (1106 tests green); no gradle build run, nothing sent to the Mac.
+- Fallback (assist/MacKinds.kt): a Mac turn that ends with `error {code:"limit"}` is sent again, the same words with the
+  same context block and worktree note, to a new thread on the same project of the next agent in claude → codex → cursor
+  that /health `kinds` lists ("FF4 better menu mod · Codex"). The entry gets the step "Claude hit its limit · sent to
+  Codex" and the receipt "→ FF4 better menu mod · Codex"; with none left it reads "Every agent on the Mac is at its limit
+  (Claude, Codex, Cursor)." with `[ try again ]`. Only a `limit` error does this. A limit is remembered 15 minutes
+  (in memory): meanwhile a request for a thread of that agent goes to a free thread of the next agent on the project,
+  or a new one, saying "Claude is at its limit · using Codex"; new threads start on the first agent not at a limit.
+- Reply names come from the event's `kind`/`model`: Codex and Cursor by name, a Claude thread by its model ("Opus").
+- ＋: a new chat never reaches a phone builder. Its first words go to Oma (told one extra line: "This is a new chat, for
+  work on the Mac: phone work is not taken here."; real Haiku, 13 tries, 12 as intended). A thread's mark makes a new
+  thread on that project. `<<build>>`, a builder's mark, a mark for no thread, a mending mark or Oma failing all make the
+  launcher ask in the tab "Which project on the Mac? ffiv-ds-better-menu-mod, pond, …" (folders of the threads the phone
+  knows); his next words there are matched to a folder or its threads' names, case-insensitive, else asked again.
+  Images, or no Oma to read it, are refused in a new chat. `[ send to build ]` is not offered under a new chat's answers.
+- Removed: `AgentTasks.startChat`, the wait for a free builder (`takeFresh`, `cancelFresh`, `dropFresh`, `FreshWait`),
+  `Builder.startFresh` and `owner`, `AgentTasks.owners`, the "ended" tab (`SendTo.Ended`, `ENDED`, `ENDED_HINT`),
+  `SendTo.ChatOn`, `FRESH_WAITING`, `NewChat.builder` and `chatHandOver`. A chat saved with a builder loads unbound; a
+  builder's saved "chat" pref is no longer read. Voice (hold to talk) is unchanged.
+- To see: a real limit falling over to Codex, the question and an answer to it in a new chat, the reply names.
+
 ## Latest: chat header dots, ＋ new chat, tab menu (2026-10-13, late) — NOT promoted, NOT seen on a screen
 
 From Boss's look at the real launcher. Compile-checked and unit tested only (1091 tests green); no gradle build run.

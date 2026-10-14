@@ -837,11 +837,8 @@ class FrontAgentTest {
         assertFalse(builderShares(BuilderId.A, emptyMap()))
     }
 
-    /** Boss 2026-10-13: a new chat's first words, with both builders busy, wait for the first free one and say so. */
-    @Test fun aNewChatWaitingForABuilderSaysItStartsFresh() {
-        val waiting = ChatTask(1, "Claude Code", "go", status = TaskStatus.Queued, fresh = true, chat = "c1")
-        assertEquals(WaitingLine(FRESH_WAITING, cancel = true), waitingLine(waiting))
-        assertNull(waitingLine(waiting.copy(status = TaskStatus.Running)))
+    /** Boss 2026-10-13: stop on a new chat's tab is that chat's alone. */
+    @Test fun stopOnAChatDropsThatChatsWaitingWords() {
         // Stop on a chat's tab drops that chat's words waiting for Oma, and leaves the others'.
         val queue = FrontQueue()
         queue.add(FrontWaiting(1, "a")); queue.add(FrontWaiting(2, "b", chat = "c1")); queue.add(FrontWaiting(3, "c", chat = "c2"))

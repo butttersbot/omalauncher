@@ -46,7 +46,8 @@ sealed interface MacEvent {
     /** The owner's words, at the moment the thread took them. */
     data class Message(override val id: Long, override val time: Long, val text: String) : MacEvent
 
-    data class Text(override val id: Long, override val time: Long, val text: String) : MacEvent
+    /** Words of the agent. The first of a turn names the agent's [kind] and the [model] answering; the others leave them empty. */
+    data class Text(override val id: Long, override val time: Long, val text: String, val kind: String = "", val model: String = "") : MacEvent
 
     /** A tool call as one line, written as [ClaudeProtocol.step] writes it. */
     data class Step(override val id: Long, override val time: Long, val text: String, val tool: String) : MacEvent
@@ -55,13 +56,18 @@ sealed interface MacEvent {
 
     data class ApprovalResult(override val id: Long, override val time: Long, val approval: String, val decision: MacDecision) : MacEvent
 
-    data class Result(override val id: Long, override val time: Long, val text: String, val failed: Boolean) : MacEvent
+    /** The turn's answer, with the agent's [kind] and the [model] that answered when the runner says them. */
+    data class Result(override val id: Long, override val time: Long, val text: String, val failed: Boolean, val kind: String = "", val model: String = "") : MacEvent
 
     /** The task was stopped; [dropped] messages that were waiting their turn went with it. */
     data class Stopped(override val id: Long, override val time: Long, val dropped: Int) : MacEvent
 
-    /** [code] is the agent's exit code when it ended without an answer, and null when it never started. */
-    data class Error(override val id: Long, override val time: Long, val text: String, val code: Int?) : MacEvent
+    /**
+     * [code] is the agent's exit code when it ended without an answer, and null when it never started or the
+     * runner gave a word instead. [cause] is that word: [MAC_LIMIT] for an agent at its usage or concurrency
+     * limit, "agent" for one that refused, "runner" for the runner failing in the turn; empty for an exit code.
+     */
+    data class Error(override val id: Long, override val time: Long, val text: String, val code: Int?, val cause: String = "") : MacEvent
 
     /**
      * An event of a type this phone does not know, or one it knows with a part missing. Nothing is shown for it,
@@ -97,13 +103,14 @@ internal fun macEvent(json: JSONObject, lineId: Long? = null, lineType: String? 
     return when (type) {
         "status" -> MacEvent.Status(id, time, MacThreadStatus.of(json.macText("status")))
         "message" -> MacEvent.Message(id, time, json.macText("text"))
-        "text" -> MacEvent.Text(id, time, json.macText("text"))
+        "text" -> MacEvent.Text(id, time, json.macText("text"), json.macText("kind"), json.macText("model"))
         "step" -> MacEvent.Step(id, time, json.macText("text"), json.macText("tool"))
         "approval" -> macApproval(json)?.let { MacEvent.Approval(id, time, it) } ?: MacEvent.Other(id, time, type)
         "approval_result" -> MacEvent.ApprovalResult(id, time, json.macText("approval"), MacDecision.of(json.macText("decision")))
-        "result" -> MacEvent.Result(id, time, json.macText("text"), json.optBoolean("failed"))
+        "result" -> MacEvent.Result(id, time, json.macText("text"), json.optBoolean("failed"), json.macText("kind"), json.macText("model"))
         "stopped" -> MacEvent.Stopped(id, time, (json.macWhole("dropped") ?: 0L).toInt())
-        "error" -> MacEvent.Error(id, time, json.macText("text"), json.macWhole("code")?.toInt())
+        // The runner's code is a number when the agent died and a word when it says why the turn ended.
+        "error" -> MacEvent.Error(id, time, json.macText("text"), json.macWhole("code")?.toInt(), (json.opt("code") as? String).orEmpty())
         else -> MacEvent.Other(id, time, type)
     }
 }

@@ -383,18 +383,13 @@ data class WaitingLine(val text: String, val cancel: Boolean)
  * will be, [ahead] being how many wait before it. One handed to the phone's builder says so, and either can
  * still be taken back. One on the Mac says which thread has it once the Mac holds it, and before that what
  * [macLabel] says of its sending; the runner cannot take a single waiting request back, so no cancel is offered.
- * A new chat's first words waiting for a free builder say that it will start afresh, and can be taken back.
  */
 fun waitingLine(task: ChatTask, ahead: Int = 0, macLabel: String = ""): WaitingLine? = when {
     task.status != TaskStatus.Queued -> null
     task.undecided -> WaitingLine(if (ahead <= 0) "Oma will read this next" else "Oma will read this after $ahead more", cancel = true)
     task.mac -> WaitingLine(if (macLabel == MAC_QUEUED) "queued → ${task.threadName} · queued on the Mac" else "$macLabel…", cancel = false)
-    task.fresh -> WaitingLine(FRESH_WAITING, cancel = true)
     else -> WaitingLine("queued → " + if (task.builderId == BuilderId.A) BUILDER else builderCalled(task.builderId), cancel = true)
 }
-
-/** What a new chat's first words say while both builders are busy: they wait for the first free one, which starts afresh. */
-const val FRESH_WAITING = "both builders are busy · starts a fresh session on the first one free"
 
 /**
  * What the front agent is told of the build lane before each request: whether it is [working], its [label]

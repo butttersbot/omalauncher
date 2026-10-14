@@ -40,17 +40,22 @@ class TabBookTest {
         assertSame(away, away.restored("zzz"))
     }
 
-    @Test fun aNewChatIsBoundOnceAndNeverMoved() {
+    @Test fun aNewChatLivesOnTheMacThreadItsWordsLastWentTo() {
         val started = TabMeta().started("c1", 10).started("c1", 99)
-        assertEquals(listOf(NewChat("c1", 10)), started.chats)
-        val onA = started.bound("c1", builder = BuilderId.A)
-        assertEquals(BuilderId.A, onA.chat("c1")!!.builder); assertTrue(onA.chat("c1")!!.bound)
-        assertEquals(onA, onA.bound("c1", mac = "t9"))
-        val onMac = started.bound("c1", mac = "t9")
+        assertEquals(listOf(NewChat("c1", 10)), started.chats); assertFalse(started.chat("c1")!!.bound)
+        // Waiting for him to name a project, then on the thread made there, which ends the wait.
+        val asking = started.asking("c1", 42)
+        assertEquals(42L, asking.chat("c1")!!.asking)
+        val onMac = asking.onMac("c1", "t9")
+        assertTrue(onMac.chat("c1")!!.bound); assertEquals(0L, onMac.chat("c1")!!.asking)
         assertEquals("c1", onMac.chatOnMac("t9")!!.id); assertNull(onMac.chatOnMac("t1"))
+        // A turn there that ends at its agent's limit goes on to another agent's thread, and the chat with it.
+        val moved = onMac.onMac("c1", "t10")
+        assertEquals("c1", moved.chatOnMac("t10")!!.id); assertNull(moved.chatOnMac("t9"))
+        assertEquals(0L, started.asking("c1", 42).asking("c1", 0).chat("c1")!!.asking)
         assertEquals("s-1", started.heard("c1", "s-1").chat("c1")!!.front)
         assertEquals("", started.heard("c1", "s-1").heard("c1", null).chat("c1")!!.front)
-        assertEquals(onA.chat("c1"), onA.chatOf("chat:c1")); assertNull(onA.chatOf(PHONE_THREAD))
+        assertEquals(onMac.chat("c1"), onMac.chatOf("chat:c1")); assertNull(onMac.chatOf(PHONE_THREAD))
     }
 
     @Test fun newChatIdsAreNeverTakenTwice() {
@@ -65,7 +70,7 @@ class TabBookTest {
         assertEquals("c2", emptyChat(meta, emptyList()))
         assertEquals("c1", emptyChat(meta, listOf(ChatTask(5, QUICK_AGENT, "hi", chat = "c2"))))
         assertNull(emptyChat(meta.archivedAs("chat:c1", 3), listOf(ChatTask(5, QUICK_AGENT, "hi", chat = "c2"))))
-        assertNull(emptyChat(meta.bound("c1", builder = BuilderId.B), listOf(ChatTask(5, QUICK_AGENT, "hi", chat = "c2"))))
+        assertNull(emptyChat(meta.onMac("c1", "t9"), listOf(ChatTask(5, QUICK_AGENT, "hi", chat = "c2"))))
     }
 
     @Test fun anArchivedTabComesBackWithNewWorkOrAnApprovalAndNotOtherwise() {
@@ -84,13 +89,15 @@ class TabBookTest {
     @Test fun theBookSurvivesARestartAndWritesOnlyWhatIsSet() {
         assertEquals("{}", tabMetaText(TabMeta()))
         assertEquals(TabMeta(), tabMetaFrom(null)); assertEquals(TabMeta(), tabMetaFrom("not json"))
-        val chats = TabMeta().started("c1", 1).started("c2", 2).started("c3", 3).bound("c1", builder = BuilderId.B).bound("c2", mac = "t9").heard("c3", "s-3")
+        val chats = TabMeta().started("c1", 1).started("c2", 2).started("c3", 3).asking("c1", 7).onMac("c2", "t9").heard("c3", "s-3")
         val meta = chats.renamed("chat:c1", "Dock").pinnedAs("mac:t1", true).archivedAs(PHONE_THREAD, 77)
         assertEquals(meta, tabMetaFrom(tabMetaText(meta)))
         // An unbound chat keeps the shape it was made with: only its id and when.
         val saved = JSONObject(tabMetaText(TabMeta().started("c1", 1)))
         assertEquals(setOf("chats"), saved.keys().asSequence().toSet())
         assertEquals(setOf("id", "made"), saved.getJSONArray("chats").getJSONObject(0).keys().asSequence().toSet())
+        // A chat a phone builder took in an earlier version loads unbound, its builder forgotten.
+        assertEquals(listOf(NewChat("c1", 1, front = "s-1")), tabMetaFrom("""{"chats":[{"id":"c1","made":1,"builder":"B","front":"s-1"}]}""").chats)
         // A chat with an id too long to be ours, or none, is left out.
         assertEquals(emptyList<NewChat>(), tabMetaFrom("""{"chats":[{"id":""},{"id":"${"x".repeat(80)}"}]}""").chats)
     }

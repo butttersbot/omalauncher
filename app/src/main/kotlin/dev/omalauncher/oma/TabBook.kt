@@ -2,7 +2,6 @@ package dev.omalauncher.oma
 
 import android.content.Context
 import dev.omalauncher.assist.AgentThread
-import dev.omalauncher.assist.BuilderId
 import dev.omalauncher.assist.ThreadState
 import org.json.JSONArray
 import org.json.JSONObject
@@ -31,20 +30,21 @@ const val NEW_CHAT_NAME = "New chat"
 const val TAB_NAME_CHARS = 32
 
 /**
- * A chat he started with ＋. Its first message goes to a fresh session and binds it: [builder] once one of the
- * phone's builders has begun a new conversation for it, or [mac], the id of the thread made for it on the Mac.
- * Until then it is unbound and the front agent hears it first, in a conversation of its own whose session is
- * [front]. [made] is when he started it.
+ * A chat he started with ＋, which is always for the Mac (Boss, 2026-10-13: "The plus button should always open
+ * up a Mac session"). Its first words that are handed on go to a new thread on the Mac and bind it: [mac] is that
+ * thread's id. Until then it is unbound and the front agent hears it first, in a conversation of its own whose
+ * session is [front]; while [asking] is not 0, the words of the entry filed then wait for him to name the project
+ * they are for. [made] is when he started it.
  */
 data class NewChat(
     val id: String,
     val made: Long,
-    val builder: BuilderId? = null,
     val mac: String = "",
     val front: String = "",
+    val asking: Long = 0L,
 ) {
     val key get() = chatKey(id)
-    val bound get() = builder != null || mac.isNotEmpty()
+    val bound get() = mac.isNotEmpty()
 }
 
 /**
@@ -96,10 +96,13 @@ fun TabMeta.started(id: String, made: Long): TabMeta = if (chat(id) != null) thi
 private fun TabMeta.changed(id: String, change: (NewChat) -> NewChat) = copy(chats = chats.map { if (it.id == id) change(it) else it })
 
 /**
- * Chat [id] bound to [builder], or to the Mac thread [mac]. Only an unbound chat is: its first message decides
- * where it lives, and nothing later moves it.
+ * Chat [id] living on the Mac thread [mac] from now on: the one made for its first words, or the one its words
+ * went on to when another agent's turn ended at a limit. Nothing waits for a project once it has a thread.
  */
-fun TabMeta.bound(id: String, builder: BuilderId? = null, mac: String = ""): TabMeta = changed(id) { if (it.bound) it else it.copy(builder = builder, mac = mac) }
+fun TabMeta.onMac(id: String, mac: String): TabMeta = changed(id) { it.copy(mac = mac, asking = 0L) }
+
+/** Chat [id] waiting for him to name the project of the words filed at [time]; 0 is waiting for nothing. */
+fun TabMeta.asking(id: String, time: Long): TabMeta = changed(id) { it.copy(asking = time) }
 
 /** The front agent's session for chat [id], which its next message there continues. */
 fun TabMeta.heard(id: String, session: String?): TabMeta = changed(id) { it.copy(front = session.orEmpty()) }
@@ -131,14 +134,18 @@ fun tabMetaText(meta: TabMeta): String = JSONObject().apply {
     if (meta.chats.isNotEmpty()) {
         put("chats", JSONArray(meta.chats.map { chat ->
             JSONObject().put("id", chat.id).put("made", chat.made)
-                .apply { chat.builder?.let { put("builder", it.letter) } }
                 .apply { if (chat.mac.isNotEmpty()) put("mac", chat.mac) }
                 .apply { if (chat.front.isNotEmpty()) put("front", chat.front) }
+                .apply { if (chat.asking != 0L) put("asking", chat.asking) }
         }))
     }
 }.toString()
 
-/** The kept book; what can't be read is left out, and an unreadable whole is an empty book. */
+/**
+ * The kept book; what can't be read is left out, and an unreadable whole is an empty book. A chat kept with a
+ * phone builder (the "builder" of an earlier version, before new chats were the Mac's alone) loads unbound: its
+ * entries stay in its tab, and its next words go to the Mac as a new chat's do.
+ */
 fun tabMetaFrom(text: String?): TabMeta {
     val saved = runCatching { JSONObject(text.orEmpty()) }.getOrNull() ?: return TabMeta()
     val names = saved.optJSONObject("names")?.let { o -> o.keys().asSequence().mapNotNull { key -> tabName(o.optString(key))?.let { key to it } }.toMap() }.orEmpty()
@@ -147,7 +154,7 @@ fun tabMetaFrom(text: String?): TabMeta {
     val chats = saved.optJSONArray("chats")?.let { a ->
         (0 until a.length()).mapNotNull { a.optJSONObject(it) }.mapNotNull { o ->
             val id = o.optString("id").takeIf { it.isNotEmpty() && it.length <= ChatHistory.MAX_CHAT } ?: return@mapNotNull null
-            NewChat(id, o.optLong("made"), BuilderId.named(o.optString("builder").ifEmpty { null }), o.optString("mac"), o.optString("front"))
+            NewChat(id, o.optLong("made"), o.optString("mac"), o.optString("front"), o.optLong("asking"))
         }
     }.orEmpty().distinctBy { it.id }
     return TabMeta(names, pinned, archived, chats)

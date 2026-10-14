@@ -76,7 +76,9 @@ object MacRequests {
 
     fun thread(threadId: String) = MacRequest("GET", "/threads/${part(threadId)}")
 
-    fun makeThread(name: String, project: String) = MacRequest("POST", "/threads", JSONObject().put("name", name).put("project", project).toString())
+    /** A new thread called [name] in [project], running the agent [kind] (`claude`, `codex` or `cursor`); none named is the runner's default, Claude. */
+    fun makeThread(name: String, project: String, kind: String = "") =
+        MacRequest("POST", "/threads", JSONObject().put("name", name).put("project", project).apply { if (kind.isNotEmpty()) put("kind", kind) }.toString())
 
     /** The owner's words exactly as he said them: nothing is trimmed or added here. */
     fun sendMessage(threadId: String, text: String) = MacRequest("POST", "/threads/${part(threadId)}/messages", JSONObject().put("text", text).toString())
@@ -120,7 +122,8 @@ sealed interface MacAnswer<out T> {
 
 const val MAC_RUNNER_NAME = "oma-runner"
 
-data class MacHealth(val threads: Int, val working: Int, val waiting: Int)
+/** What `/health` says. [kinds] are the agents installed on the Mac, as the runner names them; empty from a runner that does not say. */
+data class MacHealth(val threads: Int, val working: Int, val waiting: Int, val kinds: List<String> = emptyList())
 
 /** Where a thread's builder runs, set when the thread is made. [word] is the runner's. */
 enum class ThreadHome(val word: String) { Mac("mac"), Phone("phone") }
@@ -200,7 +203,11 @@ private fun <T : Any> macAnswer(reply: MacReply?, read: (JSONObject) -> T?): Mac
 
 /** `GET /health`. Something else answering on the runner's port is not the runner. */
 fun parseMacHealth(reply: MacReply?): MacAnswer<MacHealth> = macAnswer(reply) { json ->
-    if (json.macText("runner") == MAC_RUNNER_NAME) MacHealth(json.macCount("threads"), json.macCount("working"), json.macCount("waiting")) else null
+    if (json.macText("runner") != MAC_RUNNER_NAME) null
+    else {
+        val kinds = json.optJSONArray("kinds")
+        MacHealth(json.macCount("threads"), json.macCount("working"), json.macCount("waiting"), (0 until (kinds?.length() ?: 0)).mapNotNull { (kinds?.opt(it) as? String)?.takeIf(String::isNotBlank) })
+    }
 }
 
 /** `GET /threads`. */
@@ -307,7 +314,7 @@ class MacRunnerClient(private val config: MacRunnerConfig?) {
 
     fun thread(threadId: String): MacAnswer<MacThread> = parseMacThread(send(MacRequests.thread(threadId)))
 
-    fun makeThread(name: String, project: String): MacAnswer<MacThread> = parseMacThread(send(MacRequests.makeThread(name, project)))
+    fun makeThread(name: String, project: String, kind: String = ""): MacAnswer<MacThread> = parseMacThread(send(MacRequests.makeThread(name, project, kind)))
 
     fun sendMessage(threadId: String, text: String): MacAnswer<MacTaken> = parseMacTaken(send(MacRequests.sendMessage(threadId, text)))
 

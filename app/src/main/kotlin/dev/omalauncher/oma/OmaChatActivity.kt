@@ -92,7 +92,6 @@ import dev.omalauncher.assist.agentThreadsNow
 import dev.omalauncher.assist.appendSpeech
 import dev.omalauncher.assist.BuilderId
 import dev.omalauncher.assist.ChatTitles
-import dev.omalauncher.assist.chatHandOver
 import dev.omalauncher.assist.builderApprovalTitle
 import dev.omalauncher.assist.builderId
 import dev.omalauncher.assist.gotBy
@@ -138,7 +137,8 @@ import java.util.Date
  * That stream is the Oma tab. Each thread, the phone's builder and every project thread on the Mac, has a
  * tab of its own beside it (Boss, 2026-10-13; ChatTabs.kt): the thread's entries alone, and a field that
  * talks straight to it. A home tile of a thread opens its tab by [EXTRA_THREAD]; every other way in opens Oma.
- * ＋ at the end of the tabs starts a new chat, whose first message goes to a fresh session and names the tab;
+ * ＋ at the end of the tabs starts a new chat, which is always for the Mac: what its first message hands on goes
+ * to a new thread there, and the chat is named after it;
  * a long press on a tab renames, pins, stops, copies from or archives it (ChatTabs.kt, TabBook.kt).
  */
 class OmaChatActivity : ComponentActivity() {
@@ -221,8 +221,6 @@ private fun OmaChatScreen(
     // Each builder's own state, read the same way: each one's goes only to its own entries.
     val builders = remember(tick) { AgentTasks.builders.associate { it.id to BuilderState(it.working, it.pending, it.label, it.answer) } }
     val followUp = remember(tick) { AgentTasks.continuing }
-    // Whose session each builder runs now: a builder that began one for a new chat serves that chat alone.
-    val owners = remember(tick) { AgentTasks.owners }
     // The front agent's own state, read the same way and kept apart: each one's goes only to its own entry.
     val frontWorking = remember(tick) { QuickLane.working }
     val frontTime = remember(tick) { QuickLane.time }
@@ -239,9 +237,9 @@ private fun OmaChatScreen(
     // The header's dots and the tabs: nothing archived, the pinned first. The tab that shows follows from what was asked for.
     val threads = shownThreads(all, book.pinned, book.archived.keys)
     val tab = openTab(wanted, threads)
-    val to = sendTo(tab, threads, book, owners, tasks)
-    // On a builder's tab, or a chat a builder serves, the field and its stop are that builder's alone; on the Oma tab
-    // they are every builder's; on any other tab no builder's.
+    val to = sendTo(tab, threads, book, tasks)
+    // On a builder's tab the field and its stop are that builder's alone; on the Oma tab they are every builder's;
+    // on any other tab no builder's.
     val tabWorking = to.builder?.let { builders[it]?.working == true } ?: (to == SendTo.Oma && working)
     // A request the front agent has neither answered nor handed on reads as a task just begun, here and in its entry.
     // On a new chat's tab only that chat's counts.
@@ -291,12 +289,8 @@ private fun OmaChatScreen(
     fun build(prompt: String, queue: Boolean): Boolean =
         try {
             val paths = images.map { it.guestPath }
-            when {
-                // A new chat with nowhere to go yet starts a fresh session; one whose first words wait for it goes with them.
-                to is SendTo.Chat || to is SendTo.ChatStarting -> AgentTasks.startChat(context, to.chat, prompt, paths)
-                queue -> AgentTasks.followUp(context, prompt, paths, builder = to.builder)
-                else -> AgentTasks.send(context, prompt, paths, builder = to.builder)
-            }
+            if (queue) AgentTasks.followUp(context, prompt, paths, builder = to.builder)
+            else AgentTasks.send(context, prompt, paths, builder = to.builder)
             true
         } catch (e: Exception) {
             notice = e.message
@@ -326,10 +320,17 @@ private fun OmaChatScreen(
                 return
             } catch (e: Exception) {
                 // A front agent that can't even be asked is not his problem: the request goes on as it would have without one.
+                // A new chat's words never go to the phone's builders, so there he is told, and the draft stays.
+                if (to is SendTo.Chat) {
+                    notice = e.message ?: CHAT_UNREAD
+                    return
+                }
                 if (!build(out.prompt, queue = tabWorking)) return
             }
             // From a Mac thread's own tab: the same sending a hand-over has, with nobody asked first and nothing added.
             is Outgoing.Mac -> MacThreads.say(context, out.prompt, out.thread, out.name, to.chat)
+            // His answer to which project a new chat's words are for: the launcher reads it, and sends the words that waited.
+            is Outgoing.Project -> MacThreads.choose(context, out.chat, out.prompt)
             is Outgoing.Terminal -> if (agent != null) runtime.terminal("${agentInvocation(agent.bin, out.prompt + "\n\n" + PhoneBridge.INSTRUCTIONS)}; exec bash", agent.name, agent)
         }
         // Sent files stay: the agent reads them while it works, and the saved task names them.
@@ -343,13 +344,15 @@ private fun OmaChatScreen(
     /**
      * The one-tap fix for an answer where he wanted work done: the entry's request goes to the build lane word
      * for word, as new work, sent or queued as Send would, and the entry is marked so it can't be sent twice. The
-     * builder that takes it is also told, as context, what he and the front agent said since it last got
-     * anything, this answer included: "look into it" needs what "it" was. None of that is shown or logged.
+     * builder that takes it is also told, as context, what he and the front agent said in the Oma stream since it
+     * last got anything, this answer included: "look into it" needs what "it" was. None of that is shown or logged.
+     * Only the Oma stream's answers have it: a new chat's work is never the phone's.
      */
     fun sendToBuild(time: Long) {
-        val marked = store.tasks.firstOrNull { it.time == time }?.let(ChatHistory::sentToBuild) ?: return
+        val marked = store.tasks.firstOrNull { it.time == time }?.takeIf { it.chat.isEmpty() }?.let(ChatHistory::sentToBuild) ?: return
+        val said = store.tasks.filter { it.chat.isEmpty() }
         try {
-            chatHandOver(context, marked.chat, marked.prompt, dev.omalauncher.phone.HomeDoor.home?.showing) { to, said -> handOverPreface(handOverContext(said, Long.MAX_VALUE, gotBy(to))) }
+            AgentTasks.handOver(context, marked.prompt, dev.omalauncher.phone.HomeDoor.home?.showing, null) { to -> handOverPreface(handOverContext(said, Long.MAX_VALUE, gotBy(to))) }
         } catch (e: Exception) {
             notice = e.message
             return
@@ -460,7 +463,7 @@ private fun OmaChatScreen(
                         BasicText(
                             when {
                                 tab == OMA_TAB -> "Ask Oma for something. For a fresh conversation, start a new chat with ＋ at the end of the tabs (▾)."
-                                to is SendTo.Chat -> "A new chat. Its first message starts a fresh session, on the phone or on the Mac, and names the tab."
+                                to is SendTo.Chat -> "A new chat, for work on the Mac. Its first message starts a new thread there and names the tab. For the phone, hold to talk."
                                 else -> "Nothing has been sent to ${tabTitle(tab, threads)} from this phone yet."
                             },
                             Modifier.fillMaxWidth().padding(vertical = 24.dp),
@@ -515,7 +518,8 @@ private fun OmaChatScreen(
                                 QuickLane.stop()
                                 tick++
                             },
-                            onBuild = { sendToBuild(task.time) },
+                            // A new chat's answers have none: its work is the Mac's, never the phone's.
+                            onBuild = if (task.chat.isEmpty()) ({ sendToBuild(task.time) }) else null,
                         )
                         // A builder's entry reads that builder's state alone, and only its approvals are cards under it.
                         else -> {
@@ -570,8 +574,7 @@ private fun OmaChatScreen(
                         if (!listening) draft = it
                         notice = null
                     },
-                    // An ended tab keeps its history to read; nothing more is sent from it.
-                    readOnly = listening || to is SendTo.Ended,
+                    readOnly = listening,
                     maxLines = 6,
                     textStyle = Pack.body(Pack.size.item, if (listening) Pack.accent else Pack.foreground),
                     cursorBrush = SolidColor(Pack.accent),
@@ -641,7 +644,7 @@ private fun OmaChatScreen(
             val thread = all.firstOrNull { it.key == key }
             val shown = tabEntries(tasks, key, book)
             val answer = lastAnswer(shown)
-            val stop = tabStop(key, thread, book, owners)
+            val stop = tabStop(key, thread, book)
             val archived = all.filter { it.key in book.archived }
             TabMenu(
                 title = tabTitle(key, all),

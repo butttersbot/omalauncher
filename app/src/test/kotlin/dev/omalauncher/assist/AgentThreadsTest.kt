@@ -199,35 +199,33 @@ class AgentThreadsTest {
         assertEquals(ThreadState.Idle, failed.state)
     }
 
-    /** Boss 2026-10-13: a new chat is a thread of its own, and the builder or Mac thread it took is shown as it. */
-    @Test fun aNewChatIsAThreadOfTheSessionItTook() {
-        val onA = NewChat("c1", 1, builder = BuilderId.A)
+    /**
+     * Boss 2026-10-13: a new chat is a thread of its own, the Mac thread made for it is shown as it, and the
+     * builders' threads are their own conversations whatever an earlier version gave a chat.
+     */
+    @Test fun aNewChatIsAThreadOfTheMacThreadMadeForIt() {
         val onMac = NewChat("c2", 2, mac = "t-new")
         val fresh = NewChat("c3", 3)
         val own = build(10, TaskStatus.Done, result = "old work done")
-        val inChat = build(20, TaskStatus.Running, steps = listOf("Edit: Dock.kt")).copy(chat = "c1")
+        // Filed in a chat by a builder of an earlier version: it stays in that chat, and out of the builder's thread.
+        val older = build(20, TaskStatus.Done, result = "chat work").copy(chat = "c1")
         val onNew = mac(30, TaskStatus.Running, threadId = "t-new").copy(chat = "c2")
         val asked = ChatTask(40, QUICK_AGENT, "what is a worktree", result = "A second checkout.", status = TaskStatus.Done, chat = "c3")
-        val tasks = listOf(own, inChat, onNew, asked)
+        val tasks = listOf(own, older, onNew, asked)
         val busy = BuilderNow(working = true, label = "Using Edit", since = 20)
         val view = MacView(listOf(thread(MacThreadStatus.Working, threadId = "t-new", name = "FF4 2"), thread()), reachable = true)
-        val all = agentThreads(tasks, busy, view, chats = listOf(onA, onMac, fresh), owners = mapOf(BuilderId.A to "c1"), names = mapOf("chat:c1" to "Dock icons"))
-        assertEquals(listOf(PHONE_THREAD, macThreadKey(id), "chat:c1", "chat:c2", "chat:c3"), all.map { it.key })
-        // Builder A went on to the chat: its own thread rests as ended, and the chat has A's work.
+        val all = agentThreads(tasks, busy, view, chats = listOf(onMac, fresh), names = mapOf("chat:c3" to "Worktrees"))
+        assertEquals(listOf(PHONE_THREAD, macThreadKey(id), "chat:c2", "chat:c3"), all.map { it.key })
         val phone = all[0]
-        assertEquals(ThreadState.Idle, phone.state); assertEquals(ENDED, phone.label); assertEquals("old work done", phone.doing)
-        val dock = all[2]
-        assertEquals("Dock icons", dock.name); assertEquals(ThreadState.Working, dock.state); assertEquals("Edit: Dock.kt", dock.doing); assertFalse(dock.mac)
+        assertEquals(ThreadState.Working, phone.state); assertEquals("working", phone.label)
         // The Mac thread made for a chat is that chat, and not a tab of its own besides.
-        val menu = all[3]
+        val menu = all[2]
         assertEquals(NEW_CHAT_NAME, menu.name); assertEquals(ThreadState.Working, menu.state); assertTrue(menu.mac)
-        assertEquals("done", all[4].label); assertEquals("A second checkout.", all[4].doing)
-        // Once A has gone on to another chat, this one has ended.
-        val ended = agentThreads(tasks, busy, view, chats = listOf(onA), owners = mapOf(BuilderId.A to "c9")).first { it.key == "chat:c1" }
-        assertEquals(ThreadState.Idle, ended.state)
-        // A chat with nothing in it is new; one whose first words wait for a builder is at work.
+        assertEquals("Worktrees", all[3].name); assertEquals("done", all[3].label); assertEquals("A second checkout.", all[3].doing)
+        // A chat with nothing in it is new; one whose words wait for a new thread on the Mac is at work, and says so.
         assertEquals("new", agentThreads(emptyList(), BuilderNow(), MacView(), chats = listOf(fresh)).last().label)
-        val starting = ChatTask(50, "Claude Code", "go", status = TaskStatus.Queued, fresh = true, chat = "c3")
-        assertEquals(ThreadState.Working, agentThreads(listOf(starting), BuilderNow(), MacView(), chats = listOf(fresh)).last().state)
+        val starting = ChatTask(50, "→ FF4 2", "go", status = TaskStatus.Queued, thread = id, threadName = "FF4 2", fresh = true, chat = "c3")
+        val making = agentThreads(listOf(starting), BuilderNow(), MacView(), chats = listOf(fresh)).last()
+        assertEquals(ThreadState.Working, making.state); assertEquals(MAC_MAKING, making.doing)
     }
 }

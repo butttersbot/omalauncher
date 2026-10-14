@@ -131,17 +131,22 @@ class ChatComposerTest {
         assertEquals(0 to null, imagesToTake(4, 0))
     }
 
-    /** Boss 2026-10-13: a new chat is heard by Oma first, then goes to the session it started; an ended tab sends nothing. */
-    @Test fun aNewChatGoesToOmaFirstAndAnEndedTabSendsNothing() {
+    /**
+     * Boss 2026-10-13 ("The plus button should always open up a Mac session"): a new chat is heard by Oma first and
+     * never goes to the phone's builders, so with no front agent, or with images, nothing is sent from it.
+     */
+    @Test fun aNewChatGoesToOmaFirstAndNeverToTheBuilders() {
         val chat = SendTo.Chat("c1", "New chat")
         assertEquals(Outgoing.Front("hello"), out(frontReady = true, to = chat))
-        // With no front agent, or with images, it starts its fresh session straight away.
-        assertEquals(Outgoing.Background("hello"), out(frontReady = false, to = chat))
-        assertEquals(Outgoing.Background("hello"), out(images = 1, frontReady = true, to = chat))
-        assertEquals(Outgoing.Background("hello"), out(frontReady = true, to = SendTo.ChatStarting("c1", "N", mac = false)))
-        assertEquals(Outgoing.Refused(CHAT_MAKING), out(frontReady = true, to = SendTo.ChatStarting("c1", "N", mac = true)))
-        assertEquals(Outgoing.Queued("hello"), out(frontReady = true, working = true, to = SendTo.ChatOn("c1", "N", dev.omalauncher.assist.BuilderId.B)))
+        assertEquals(Outgoing.Front("hello"), out(frontReady = true, working = true, to = chat))
+        assertEquals(Outgoing.Refused(CHAT_UNREAD), out(frontReady = false, to = chat))
+        assertEquals(Outgoing.Refused(NO_IMAGES_IN_CHAT), out(images = 1, frontReady = true, to = chat))
+        assertEquals(Outgoing.Refused(CHAT_MAKING), out(frontReady = true, to = SendTo.ChatStarting("c1", "N")))
         assertEquals(Outgoing.Mac("hello", "t-new", "Menu"), out(frontReady = true, to = SendTo.Mac("t-new", "Menu", "c1")))
-        assertEquals(Outgoing.Nothing, out(frontReady = true, to = SendTo.Ended("Phone")))
+        // His answer to which project is read by the launcher, with no Linux or agent needed, and takes no images.
+        val asking = SendTo.ChatProject("c1", "N")
+        assertEquals(Outgoing.Project("ff4", "c1"), out(draft = "ff4", frontReady = true, to = asking))
+        assertEquals(Outgoing.Project("ff4", "c1"), out(draft = "ff4", linux = false, agent = null, to = asking))
+        assertEquals(Outgoing.Refused(NO_IMAGES_IN_CHAT), out(draft = "ff4", images = 1, to = asking))
     }
 }
