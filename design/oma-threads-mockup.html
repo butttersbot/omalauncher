@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Oma threads: mock-up</title>
+<style>
+  /* City Pop's tokens, from app/src/main/assets/packs/city-pop/pack.toml. */
+  :root {
+    --page: #0f4fc9; --bg: #ffffff; --surface: #dff7f7; --ink: #12296b; --muted: rgba(18,41,107,.68);
+    --accent: #bd3a72; --pink: #ff4f9a; --alt: #19c3c9; --on-alt: #0b2260; --yellow: #ffe14d;
+    --red: #c33d41; --green: #257b47; --shadow: rgba(140,8,28,.38);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin: 0; background: #0a0f24; color: var(--ink); font: 15px/1.35 "Schibsted Grotesk", system-ui, sans-serif; }
+  .note { color: #cfd6f5; max-width: 420px; margin: 14px auto 6px; padding: 0 14px; font-size: 13px; }
+  .note b { color: #fff; }
+  .phone { width: min(420px, 100vw); height: min(860px, 92vh); margin: 8px auto 30px; position: relative; overflow: hidden;
+    border-radius: 22px; background: linear-gradient(160deg, #1463e6 0%, var(--page) 45%, #0a2f96 100%); }
+  .screen { position: absolute; inset: 0; display: none; flex-direction: column; }
+  .screen.on { display: flex; }
+  .display { font-family: Montserrat, "Arial Black", system-ui, sans-serif; font-weight: 800; font-style: italic; text-transform: uppercase; letter-spacing: -.02em; }
+  .mono { font-family: "JetBrains Mono", ui-monospace, monospace; text-transform: uppercase; letter-spacing: .09em; font-size: 10.5px; font-weight: 500; }
+  .hand { font-family: Caveat, "Segoe Script", cursive; font-weight: 700; }
+
+  /* Home page */
+  .pagename { color: #fff; font-size: 30px; padding: 22px 20px 4px; text-shadow: 0 2px rgba(8,28,96,.75); }
+  .pagesub { color: rgba(255,255,255,.85); padding: 0 22px 10px; }
+  .grid { flex: 1; overflow: auto; padding: 8px 18px 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 18px 16px; align-content: start; }
+  .tile { background: var(--bg); padding: 12px 12px 10px; box-shadow: 7px 7px 0 var(--shadow); position: relative; cursor: pointer; min-height: 132px;
+    display: flex; flex-direction: column; gap: 5px; border-radius: 2px; }
+  .tile:nth-child(odd) { transform: rotate(-1.1deg); } .tile:nth-child(even) { transform: rotate(.9deg); }
+  .tile.wide { grid-column: span 2; min-height: 118px; }
+  .tile.alt { background: var(--alt); color: var(--on-alt); }
+  .tile.ok { outline: 4px solid var(--pink); }
+  .tile.fading { opacity: .62; }
+  .tape { position: absolute; top: -9px; left: 50%; width: 66px; height: 21px; margin-left: -33px; background: var(--pink); opacity: .9; transform: rotate(-3deg); }
+  .tile h3 { margin: 0; font-size: 17px; line-height: 1.05; }
+  .where { color: var(--muted); } .alt .where { color: rgba(11,34,96,.75); }
+  .doing { font-size: 13px; flex: 1; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .state { display: flex; align-items: center; gap: 6px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+  .working .dot { background: var(--green); animation: pulse 1.2s ease-in-out infinite; }
+  .needsok .dot { background: var(--pink); } .attention .dot { background: var(--red); } .queued .dot { background: var(--yellow); outline: 1px solid var(--ink); }
+  @keyframes pulse { 50% { transform: scale(1.6); opacity: .45; } }
+  .pill { background: var(--pink); color: #fff; padding: 2px 7px; align-self: flex-start; }
+  .dock { display: flex; justify-content: center; gap: 14px; padding: 10px 0 16px; }
+  .dock i { width: 44px; height: 44px; background: rgba(255,255,255,.92); display: block; box-shadow: 4px 4px 0 var(--shadow); }
+  .dock i.oma { background: var(--yellow); display: grid; place-items: center; font-style: normal; cursor: pointer; }
+
+  /* Chat */
+  .chat { background: var(--bg); }
+  .bar { display: flex; align-items: center; gap: 10px; padding: 14px 14px 8px; }
+  .bar .back { cursor: pointer; font-size: 22px; line-height: 1; padding: 2px 8px; }
+  .bar h2 { margin: 0; font-size: 22px; flex: 1; }
+  .tabs { display: flex; gap: 6px; overflow-x: auto; padding: 4px 12px 10px; border-bottom: 2px solid var(--ink); scrollbar-width: none; }
+  .tab { flex: none; padding: 6px 10px; background: var(--surface); cursor: pointer; display: flex; align-items: center; gap: 6px; border-radius: 2px; white-space: nowrap; }
+  .tab.on { background: var(--ink); color: #fff; }
+  .tab.on .dot { outline: 1px solid #fff; }
+  .log { flex: 1; overflow: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; }
+  .entry .time { color: var(--muted); }
+  .entry .me { font-weight: 700; margin: 2px 0; }
+  .entry .to { color: var(--accent); cursor: pointer; }
+  .entry .step { color: var(--muted); font-size: 13px; }
+  .entry .ans { background: var(--surface); padding: 8px 10px; margin-top: 4px; border-radius: 2px; }
+  .card { border: 2px solid var(--pink); padding: 8px 10px; margin-top: 4px; }
+  .card .acts { display: flex; gap: 14px; margin-top: 6px; } .card .acts span { cursor: pointer; }
+  .field { display: flex; gap: 8px; padding: 10px 12px 14px; border-top: 2px solid var(--ink); align-items: center; }
+  .field .in { flex: 1; background: var(--surface); padding: 10px; color: var(--muted); border-radius: 2px; }
+  .field .send { cursor: pointer; }
+  .hint { padding: 0 14px 8px; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<p class="note"><b>Mock-up, not the launcher.</b> Tap a tile to open that thread in the Oma chat. In the chat, tap a tab, or a pink "→ name" on the Oma tab. The yellow square in the dock opens the chat on Oma. "‹" goes back to the page.</p>
+
+<div class="phone">
+  <!-- The Agents page: a home page like any other, kept by the launcher. -->
+  <section class="screen on" id="home">
+    <div class="pagename display">Agents</div>
+    <div class="pagesub hand" style="font-size:19px">what's running, where</div>
+    <div class="grid" id="grid"></div>
+    <div class="dock"><i></i><i></i><i class="oma mono" onclick="openChat('oma')">oma</i><i></i><i></i></div>
+  </section>
+
+  <!-- The Oma chat, with a tab per thread. -->
+  <section class="screen chat" id="chat">
+    <div class="bar"><span class="back" onclick="show('home')">‹</span><h2 class="display" id="title">Oma</h2></div>
+    <div class="tabs" id="tabs"></div>
+    <div class="log" id="log"></div>
+    <div class="hint mono" id="hint"></div>
+    <div class="field"><div class="in" id="field"></div><span class="send mono">[ send ]</span></div>
+  </section>
+</div>
+
+<p class="note">Tiles appear on this page when a thread starts work and leave after 12 hours idle (the faded one is about to). A tile never leaves while it is working, queued, or waiting for you. Drag one to another page to keep it.</p>
+
+<script>
+const threads = [
+  { id: 'ff4', name: 'FF4 better menu mod', where: 'Mac', state: 'working', label: 'working', ago: 'now',
+    doing: 'Editing menu_cursor.c: saving the cursor per character', alt: true, tape: true,
+    log: [
+      { time: '7:52 PM', me: 'make the magic menu remember the cursor too', steps: ['Read: src/menu/magic.c', 'Edit: src/menu/menu_cursor.c'], working: 'Editing menu_cursor.c…' },
+      { time: '5:10 PM', me: 'make the item menu remember the cursor', ans: 'Done. The cursor is saved per character. Want me to do the magic menu too?' },
+    ] },
+  { id: 'pond', name: 'Pond', where: 'Mac', state: 'needsok', label: 'needs your OK', ago: '2 min',
+    doing: 'Wants to write stickers/frog-pack/manifest.json', ok: true,
+    log: [
+      { time: '7:49 PM', me: 'add a frog sticker pack', steps: ['Read: stickers/index.json'], card: { tool: 'Write', what: 'stickers/frog-pack/manifest.json' } },
+    ] },
+  { id: 'phone', name: 'Phone', where: 'this phone', state: 'queued', label: '1 queued', ago: 'now',
+    doing: 'Building the launcher · then: "make the clock tile bigger"',
+    log: [
+      { time: '7:55 PM', me: 'make the clock tile bigger', queued: 'queued → Phone', cancel: true },
+      { time: '7:41 PM', me: 'add thread tiles to the Agents page', steps: ['Edit: ui/AgentTile.kt', 'Bash: oma-build'], working: 'Using Bash…' },
+    ] },
+  { id: 'scratch', name: 'Scratch', where: 'Mac', state: 'idle', label: 'done', ago: '11 hr', fading: true,
+    doing: 'Done — phone-test.txt created in the scratch folder.',
+    log: [
+      { time: '7:44 PM', me: 'write a file called phone-test.txt containing the word hello', steps: ['Write: phone-test.txt · approved once'], ans: 'Done — phone-test.txt created in the scratch folder containing hello.' },
+    ] },
+];
+const oma = [
+  { time: '7:55 PM', me: 'make the clock tile bigger', to: 'phone', queued: 'queued → Phone' },
+  { time: '7:53 PM', me: 'what is 15% of 240?', ans: '15% of 240 is **36**.', build: true },
+  { time: '7:52 PM', me: 'make the magic menu remember the cursor too', to: 'ff4', working: 'Editing menu_cursor.c…' },
+  { time: '7:49 PM', me: 'add a frog sticker pack', to: 'pond', card: { tool: 'Write', what: 'stickers/frog-pack/manifest.json' } },
+  { time: '7:44 PM', me: 'write a file called phone-test.txt containing the word hello', to: 'scratch', ans: 'Done — phone-test.txt created in the scratch folder containing hello.' },
+];
+const by = id => threads.find(t => t.id === id);
+const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+const stateClass = { working: 'working', needsok: 'needsok', queued: 'queued', idle: '', attention: 'attention' };
+
+function show(id) { document.querySelectorAll('.screen').forEach(s => s.classList.toggle('on', s.id === id)); }
+
+document.getElementById('grid').innerHTML = threads.map((t, i) => `
+  <div class="tile ${t.alt ? 'alt' : ''} ${t.ok ? 'ok' : ''} ${t.fading ? 'fading' : ''} ${i === 0 ? 'wide' : ''}" onclick="openChat('${t.id}')">
+    ${t.tape ? '<span class="tape"></span>' : ''}
+    <div class="mono where">${t.where} · ${t.ago}</div>
+    <h3 class="display">${t.name}</h3>
+    <div class="doing">${esc(t.doing)}</div>
+    ${t.ok ? '<span class="pill mono">needs your OK</span>' : `<div class="state mono ${stateClass[t.state]}"><span class="dot"></span>${t.label}</div>`}
+  </div>`).join('');
+
+function entry(e, onOma) {
+  const t = e.to && by(e.to);
+  return `<div class="entry">
+    <div class="time mono">${e.time}${t && onOma ? ` · <span class="to" onclick="openChat('${t.id}')">→ ${t.name}</span>` : ''}</div>
+    <div class="me">${esc(e.me)}</div>
+    ${(e.steps || []).map(s => `<div class="step">· ${esc(s)}</div>`).join('')}
+    ${e.queued ? `<div class="step mono">${e.queued}${e.cancel ? ' &nbsp; [ cancel ]' : ''}</div>` : ''}
+    ${e.working ? `<div class="state mono working"><span class="dot"></span>${esc(e.working)}</div>` : ''}
+    ${e.card ? `<div class="card"><b>Allow ${e.card.tool}${t && onOma ? ' on ' + t.name : ''}?</b><div class="step">${e.card.what}</div><div class="acts mono"><span>[ approve once ]</span><span>[ deny ]</span></div></div>` : ''}
+    ${e.ans ? `<div class="ans">${esc(e.ans)}</div>` : ''}
+    ${e.build ? '<div class="step mono">[ send to build ]</div>' : ''}
+  </div>`;
+}
+
+function openChat(id) {
+  const t = by(id);
+  document.getElementById('title').textContent = t ? t.name : 'Oma';
+  document.getElementById('tabs').innerHTML =
+    `<div class="tab mono ${t ? '' : 'on'}" onclick="openChat('oma')">Oma</div>` +
+    threads.map(x => `<div class="tab mono ${stateClass[x.state]} ${x === t ? 'on' : ''}" onclick="openChat('${x.id}')"><span class="dot"></span>${x.name}</div>`).join('');
+  document.getElementById('log').innerHTML = t ? t.log.map(e => entry(e, false)).join('') : oma.map(e => entry(e, true)).join('');
+  document.getElementById('hint').textContent = t ? `straight to ${t.name} · Oma is not asked` : 'Oma reads this first and sends it where it belongs';
+  document.getElementById('field').textContent = t ? `to ${t.name}…` : 'ask, or add to this, any time…';
+  show('chat');
+}
+</script>
+</body>
+</html>
