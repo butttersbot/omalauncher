@@ -1,6 +1,20 @@
 # Phone test results
 
-## Latest: context on hand-over, never-blocked input, stop marks (2026-10-13, about 19:45 PDT, commit b6a3ff4) — NOT promoted, NOT seen on a screen
+## Latest: second routing bundle on the real launcher (2026-10-13, about 19:40 PDT, versionCode 50, commit 812a96c)
+
+- Promoted at Boss's word; `oma-install --status` verified, phone control bound by itself.
+- Seen: `oma-thread list` against the real runner; `oma-thread new` made "FF4 better menu mod" (t5e121ba2) on
+  `~/ClaudeSync/projects/ffiv-ds-better-menu-mod`. Two messages sent one after the other in the chat: the second
+  read "Oma will read this next" with `[ cancel ]`, then was answered ("15% of 240 is 36.", with `[ send to build ]`).
+  The first was handed to the Mac: the entry read "→ Scratch".
+- The Mac answered that request "Failed to authenticate: OAuth session expired and could not be refreshed", shown
+  as "needs attention". So the hand-over, the stream and the error path work from the chat; a real answer and an
+  approval card from the Mac are still NOT seen. The Mac's Claude Code login has to be renewed there (second time
+  today: worth asking the Mac session whether the runner under launchd can reach the refreshed login).
+- Not tried: "stop" (the builder was this run), a spoken request while the builder works, `[ cancel ]`, a locked-phone run.
+- Next, Boss's request: a thread view in the Oma chat (see every thread, open one, prompt it directly).
+
+## Earlier: context on hand-over, never-blocked input, stop marks (2026-10-13, about 19:45 PDT, commit b6a3ff4) — NOT promoted, NOT seen on a screen
 
 Two batches by subagents, each built green by `oma-build` afterwards. The real launcher is still versionCode 49 (75f0cf8).
 - A hand-over now carries the last front exchanges ahead of his words, marked "[Earlier, between Boss and Oma's
