@@ -2,6 +2,11 @@
 
 Pull `phone/fold-development` first. In order of importance:
 
+0. **Files between the Macs and the phone (`oma drop`, 2026-10-14).** Run `oma-runner install` again: it now also
+   takes files from the phone (`POST /files`, kept in `~/Downloads/From Fold`, never over a file already there).
+   Mac agents send to the phone with `tailscale file cp FILE jacks-z-fold8:`, which lands in the phone's
+   Download/Taildrop, and the phone agent picks it up with `oma drop get`. Details: "As built: files (2026-10-14)" in
+   `docs/MAC-RUNNER-SPEC.md`.
 1. **Install the new runner: Mac threads now default to auto mode** (Boss: "default those sessions to start on auto
    mode. So I don't have to keep clicking approve a 100 times"). From the checkout run `oma-runner install` (copies to
    `~/.local/bin/oma-runner` and restarts it; a plain stop/start does NOT pick up new code). Running tasks end with the

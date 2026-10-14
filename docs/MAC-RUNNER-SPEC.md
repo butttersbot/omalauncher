@@ -410,3 +410,29 @@ with nothing running it exits, sometimes only after ~30 s.
   takes more messages, reports, exits); and on the Mac with real Claude Code on a loopback runner: a 40 s
   background command survived its turn and a second message, wrote its file, was reported, and the process was
   gone ~1 s after the next answer.
+
+## As built: files (2026-10-14, by the agent on the Fold)
+Boss: "It was really just the mac to phone that we needed. but yeah, if we can make a 2 way command that would be
+nice. so that I could just tell you or the other agents to send something, and then you guys can just do it with the
+command." The phone's command is `oma drop` (`app/src/main/assets/oma-drop.sh`).
+- **Mac to phone:** Mac agents send to the phone with `tailscale file cp FILE jacks-z-fold8:`, which lands in the
+  phone's Download/Taildrop, and the phone agent picks it up with `oma drop get` (into `~/Inbox` in its Linux; moved
+  off the phone once the copy is whole, `--keep` leaves it). It reaches Download/Taildrop through the phone's own adb
+  over loopback; with Wireless debugging off it says to turn it on.
+- **Phone to Mac:** `oma drop send FILE...` asks the runner. Run `oma-runner install` on the Mac to have it.
+  `POST /files?name=NAME`, the body the file's bytes, `Content-Length` required (411 without), at most 2 GB (413,
+  answered before reading). The same key as every other request. Written to disk as it arrives under a hidden
+  `.partial-…` name in `~/Downloads/From Fold/` (made when needed), then moved to NAME; an existing file is never
+  replaced: "NAME (2)", "NAME (3)"… before the extension. NAME loses `/`, `\`, `:` and control characters (each
+  becomes `_`) and its leading dots, is cut to 200 bytes keeping its extension, and is `file` when nothing is left.
+  A file that does not arrive whole is not kept (400). Answer: `{ok, path, bytes}`. The request log has its line
+  (`POST /files 200`), never the name or the bytes.
+- `GET /health` carries `files: true`; without it the phone says the runner is too old and sends nothing. If the
+  runner cannot be reached it says so and points to Quick Share; it never drives the phone's screen.
+- Proved: `tools/mac-runner/test-runner.py` (upload, no overwrite, names made safe, no key refused, over the cap
+  refused, no length refused, cut short not kept, nothing half-written left, logged without the name) and
+  `app/src/test/shell/test_oma.sh` (stand-ins for adb, oma-dev and curl: moving, copying, no overwrite in `~/Inbox`,
+  a stale port refreshed once, Wireless debugging off, an old runner, the Mac unreachable, and the key only on curl's
+  standard input). Also `oma drop send` against a loopback runner in the phone's Linux: a 3 MB file arrived byte for
+  byte and a second file of one name became "a (2).txt". Not yet seen: the real Taildrop folder through the phone's
+  adb, and an upload to the Mac Pro over Tailscale.

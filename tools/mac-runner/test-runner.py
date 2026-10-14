@@ -3,7 +3,7 @@
 
 The spec's "First proof" list, as far as it goes without the phone and without a signed-in Claude Code.
 """
-import json, os, pathlib, signal, socket, subprocess, sys, tempfile, time, urllib.error, urllib.request
+import json, os, pathlib, signal, socket, subprocess, sys, tempfile, time, urllib.error, urllib.parse, urllib.request
 
 HERE = pathlib.Path(__file__).resolve().parent
 work = pathlib.Path(tempfile.mkdtemp(prefix='oma-runner-test-')).resolve()
@@ -20,7 +20,9 @@ free.close()
 base = 'http://127.0.0.1:%d' % port
 environment = {**os.environ, 'OMA_RUNNER_PORT': str(port), 'OMA_RUNNER_TOKEN': str(work / 'token'), 'OMA_RUNNER_STATE': str(work / 'state'),
                'OMA_RUNNER_LOGS': str(work / 'logs'), 'OMA_RUNNER_ROOTS': str(root), 'OMA_RUNNER_AGENT': str(HERE / 'fake-agent'), 'OMA_RUNNER_BIND': '127.0.0.1',
-               'OMA_RUNNER_CODEX': str(HERE / 'fake-codex'), 'OMA_RUNNER_CURSOR': str(HERE / 'fake-cursor'), 'CODEX_HOME': str(work / 'codex')}
+               'OMA_RUNNER_CODEX': str(HERE / 'fake-codex'), 'OMA_RUNNER_CURSOR': str(HERE / 'fake-cursor'), 'CODEX_HOME': str(work / 'codex'),
+               'OMA_RUNNER_FILES': str(work / 'From Fold'), 'OMA_RUNNER_MAX_FILE': str(3 * 1024 * 1024)}
+received = work / 'From Fold'
 (work / 'codex').mkdir()
 (work / 'codex' / 'config.toml').write_text('[mcp_servers.paper]\nurl = "http://127.0.0.1:1/mcp"\n')
 passed = 0
@@ -40,6 +42,25 @@ def call(method, path, body=None, token='k' * 40):
             return reply.status, json.loads(reply.read())
     except urllib.error.HTTPError as problem:
         return problem.code, json.loads(problem.read())
+
+
+def upload(name, data, token='k' * 40):
+    """POST /files?name=NAME with DATA as the body, as `oma drop send` does."""
+    request = urllib.request.Request(base + '/files?' + urllib.parse.urlencode({'name': name}), method='POST', data=data,
+                                     headers={'Authorization': 'Bearer ' + token} if token else {})
+    try:
+        with urllib.request.urlopen(request, timeout=10) as reply:
+            return reply.status, json.loads(reply.read())
+    except urllib.error.HTTPError as problem:
+        return problem.code, json.loads(problem.read())
+
+
+def raw(head):
+    """Sends HEAD as the whole request on a socket of its own, then nothing more; the status code answered."""
+    with socket.create_connection(('127.0.0.1', port), timeout=10) as connection:
+        connection.sendall(head)
+        connection.shutdown(socket.SHUT_WR)
+        return int(connection.makefile('rb').readline().split()[1])
 
 
 def stream(thread, after=0, until=('result',), limit=20):
@@ -82,7 +103,7 @@ runner = start()
 try:
     check('no key: 401', call('GET', '/health', token=None)[0] == 401)
     check('wrong key: 401 and nothing else', call('GET', '/health', token='x' * 40) == (401, {'ok': False, 'error': 'no'}))
-    check('/health answers, naming the agents the Mac has', call('GET', '/health') == (200, {'ok': True, 'runner': 'oma-runner', 'threads': 0, 'working': 0, 'waiting': 0, 'kinds': ['claude', 'codex', 'cursor']}))
+    check('/health answers, naming the agents the Mac has', call('GET', '/health') == (200, {'ok': True, 'runner': 'oma-runner', 'threads': 0, 'working': 0, 'waiting': 0, 'kinds': ['claude', 'codex', 'cursor'], 'files': True}))
     check('a project outside the roots is refused', call('POST', '/threads', {'name': 'x', 'project': str(outside)})[0] == 403)
     check('a path that climbs out of a root is refused', call('POST', '/threads', {'name': 'x', 'project': str(project / '..' / '..' / 'outside')})[0] == 403)
     (root / 'link').symlink_to(outside)
@@ -362,7 +383,29 @@ try:
     cursor = [entry for entry in starts() if entry.get('kind') == 'cursor'][-1]['permissions']
     check('cursor: its own edits are denied, nothing is allowed without asking, the key is out of reach', 'Write(**)' in cursor['deny'] and cursor['allow'] == []
           and any(str(work / 'token') in rule for rule in cursor['deny']))
+    data = os.urandom(2 * 1024 * 1024 + 7)
+    code, kept = upload('photo one.jpg', data)
+    check('a file from the phone is kept in From Fold, made for it, and its path and size answered', code == 200 and kept == {'ok': True, 'path': str(received / 'photo one.jpg'), 'bytes': len(data)}
+          and (received / 'photo one.jpg').read_bytes() == data)
+    code, again = upload('photo one.jpg', b'second')
+    code3, third = upload('photo one.jpg', b'third')
+    check('a second file of that name is "(2)", then "(3)", and the first is untouched', again['path'] == str(received / 'photo one (2).jpg') and third['path'] == str(received / 'photo one (3).jpg')
+          and (received / 'photo one (2).jpg').read_bytes() == b'second' and (received / 'photo one.jpg').read_bytes() == data)
+    check('a name with folders in it stays in From Fold', upload('../../outside/x.txt', b'x')[1]['path'] == str(received / '_.._outside_x.txt') and not (outside / 'x.txt').exists())
+    check('a hidden name is made plain', upload('..bashrc', b'x')[1]['path'] == str(received / 'bashrc'))
+    check('a name of nothing but dots, or none, is "file"', upload('...', b'x')[1]['path'] == str(received / 'file') and upload('', b'x')[1]['path'] == str(received / 'file (2)'))
+    check('control characters and backslashes go', upload('a\\b\nc:d.txt', b'x')[1]['path'] == str(received / 'a_b_c_d.txt'))
+    long = upload('n' * 300 + '.pdf', b'x')[1]['path']
+    check('a long name is cut, keeping its extension', pathlib.Path(long).name == 'n' * 196 + '.pdf')
+    check('a file without the key is refused, and nothing is kept', upload('nokey.txt', b'x', token=None)[0] == 401 and not (received / 'nokey.txt').exists())
+    check('a file over the cap is refused before it is read', raw(b'POST /files?name=big HTTP/1.0\r\nAuthorization: Bearer ' + b'k' * 40 + b'\r\nContent-Length: %d\r\n\r\n' % (3 * 1024 * 1024 + 1)) == 413
+          and not (received / 'big').exists())
+    check('a file without a Content-Length is refused', raw(b'POST /files?name=nolength HTTP/1.0\r\nAuthorization: Bearer ' + b'k' * 40 + b'\r\n\r\nabc') == 411)
+    check('a file cut short is not kept', raw(b'POST /files?name=short HTTP/1.0\r\nAuthorization: Bearer ' + b'k' * 40 + b'\r\nContent-Length: 10\r\n\r\nabc') == 400
+          and not (received / 'short').exists())
+    check('nothing half-written is left behind', not any(entry.name.startswith('.') for entry in received.iterdir()))
     log = (work / 'logs' / 'requests.log').read_text()
+    check('each upload is logged by its line, never its name or bytes', 'POST /files 200' in log and 'photo' not in log)
     check('each request is logged, and the key never is', 'POST /threads/%s/messages 200' % thread in log and 'k' * 40 not in log and ' 401' in log)
     print('\nall %d checks passed' % passed)
 finally:

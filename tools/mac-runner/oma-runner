@@ -16,6 +16,7 @@ approves nothing itself: every request for approval waits for the phone's answer
   GET  /threads/ID/events[?after=N]      the same events as plain JSON, for asking without holding a link
   POST /threads/ID/approvals/APPROVAL    {decision: "allow"|"deny", nonce}   answers that one request, once
   POST /threads/ID/stop                  stops the task and drops what was waiting its turn; what was said stays
+  POST /files?name=NAME   (the bytes)    a file from the phone, kept in ~/Downloads/From Fold; {path, bytes}
 
   oma-runner serve | install | start | stop | status | uninstall
 """
@@ -37,6 +38,10 @@ LABEL = 'dev.omalauncher.runner'
 INSTALLED = HOME / '.local/bin/oma-runner'
 PLIST = HOME / 'Library/LaunchAgents' / (LABEL + '.plist')
 MAX_BODY = 1_000_000
+# Where `oma drop send` puts files from the phone, and the largest it takes. A folder of its own, so nothing the phone
+# sends can land beside or over anything else of Boss's.
+FILES = pathlib.Path(os.environ.get('OMA_RUNNER_FILES', HOME / 'Downloads/From Fold'))
+MAX_FILE = int(os.environ.get('OMA_RUNNER_MAX_FILE', 2 * 1024 ** 3))
 KEEPALIVE = 15
 DENIED = 'The user declined this action. Do not retry it through another tool.'
 # What an agent says when it cannot take more work right now: its plan's usage, a rate or concurrency limit, or an
@@ -936,7 +941,7 @@ class Runner(BaseHTTPRequestHandler):
             with changed:
                 states = [thread.meta['status'] for thread in threads.values()]
             return self.answer(200, {'ok': True, 'runner': 'oma-runner', 'threads': len(states), 'working': states.count('working'), 'waiting': states.count('waiting'),
-                                     'kinds': [kind for kind in KINDS if program(kind)]})
+                                     'kinds': [kind for kind in KINDS if program(kind)], 'files': True})
         if parts == ['threads']:
             with changed:
                 return self.answer(200, {'ok': True, 'threads': [thread.view() for thread in threads.values()]})
@@ -977,6 +982,9 @@ class Runner(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self.allowed():
             return
+        parts, query = self.parts()
+        if parts == ['files']:
+            return self.receive(query)
         length = int(self.headers.get('Content-Length') or 0)
         if length > MAX_BODY:
             return self.answer(413, {'ok': False, 'error': 'too long'})
@@ -986,7 +994,6 @@ class Runner(BaseHTTPRequestHandler):
             body = None
         if not isinstance(body, dict):
             return self.answer(400, {'ok': False, 'error': 'a JSON object is needed'})
-        parts, _ = self.parts()
         if parts == ['threads']:
             name = str(body.get('name') or '').strip()[:80]
             project = allowed_project(body.get('project') or '')
@@ -1020,6 +1027,74 @@ class Runner(BaseHTTPRequestHandler):
             code, result = decide(thread, parts[3], body)
             return self.answer(code, result)
         self.answer(404, {'ok': False, 'error': 'not found'})
+
+
+    def receive(self, query):
+        """A file from the phone, written to disk as it arrives (it may be gigabytes) under a hidden name, then moved to
+        a name of its own (keep_as). Nothing is kept of a file that did not arrive whole."""
+        given = self.headers.get('Content-Length') or ''
+        if not given.isdigit():
+            return self.answer(411, {'ok': False, 'error': 'Content-Length is needed'})
+        length = int(given)
+        if length > MAX_FILE:
+            return self.answer(413, {'ok': False, 'error': 'larger than %d bytes' % MAX_FILE})
+        name = file_name((query.get('name') or [''])[0])
+        partial = FILES / ('.partial-' + secrets.token_hex(8))
+        # A phone that stops sending mid-file must not hold this handler for ever.
+        self.connection.settimeout(120)
+        left = length
+        try:
+            FILES.mkdir(parents=True, exist_ok=True)
+            with open(partial, 'xb') as out:
+                while left:
+                    try:
+                        chunk = self.rfile.read(min(left, 1 << 20))
+                    except OSError:
+                        break
+                    if not chunk:
+                        break
+                    out.write(chunk)
+                    left -= len(chunk)
+            path = None if left else keep_as(partial, name)
+        except OSError as problem:
+            return self.answer(507, {'ok': False, 'error': 'the Mac could not save it: ' + (problem.strerror or 'error')})
+        finally:
+            partial.unlink(missing_ok=True)
+        if left:
+            return self.answer(400, {'ok': False, 'error': 'the file was cut short'})
+        return self.answer(200, {'ok': True, 'path': str(path), 'bytes': length})
+
+
+def keep_as(partial, name):
+    """Moves PARTIAL into FILES as NAME, or "NAME (2)", "NAME (3)"... before the extension. Each name is first taken
+    with an exclusive create, so a file already there is never replaced and two uploads of one name at once cannot
+    take the same one; the finished file then goes over that empty placeholder."""
+    stem, dot, extension = name.rpartition('.') if '.' in name else (name, '', '')
+    number = 1
+    while True:
+        path = FILES / (name if number == 1 else '%s (%d)%s%s' % (stem, number, dot, extension))
+        try:
+            os.close(os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644))
+        except FileExistsError:
+            number += 1
+            continue
+        try:
+            os.replace(partial, path)
+        except OSError:
+            path.unlink(missing_ok=True)
+            raise
+        return path
+
+
+def file_name(given):
+    """NAME as a plain file name in FILES: no folders, nothing hidden, nothing a terminal or Finder reads as more."""
+    name = re.sub(r'[/\\:\x00-\x1f\x7f]', '_', given).strip().lstrip('.').strip()
+    if len(name.encode()) > 200:
+        stem, dot, extension = name.rpartition('.')
+        extension = extension if dot and len(extension) <= 16 else ''
+        stem = (stem if extension else name).encode()[:200 - len(extension) - 1].decode(errors='ignore')
+        name = stem + ('.' + extension if extension else '')
+    return name or 'file'
 
 
 def read_token():
