@@ -68,25 +68,36 @@ object PhoneFind {
         return one(named(nodes, label).map(::target).distinct())
     }
 
+    /** [id] and every node it stands inside of, nearest first. */
+    private fun lineage(id: String) = generateSequence(id) { if ('.' in it) it.substringBeforeLast('.') else null }
+
     /**
      * The text field for [label]: the one that says it as its hint or its contents, or that the words stand
-     * inside of, since a hint is often a node of its own within the field. No label at all is the screen's
-     * only text field, when it has just one.
+     * inside of, since a hint is often a node of its own within the field (Compose draws its placeholder as a
+     * child that takes no text). Words beside a field rather than in it name the one field inside the nearest
+     * control around them that takes a press, as a hint drawn next to its box does; with two fields in there,
+     * neither. No label at all is the screen's only text field, when it has just one.
      */
     fun field(nodes: List<SeenNode>, label: String): Found {
         val fields = nodes.filter { it.editable && it.enabled }
         if (words(label).isEmpty()) return one(fields.map { it.id })
-        val ids = fields.map { it.id }.toSet()
+        val ids = fields.map { it.id }
+        val pressable = nodes.filter { it.clickable && it.enabled }.map { it.id }.toSet()
         fun around(node: SeenNode): String? {
-            var id = node.id
-            while (true) {
-                if (id in ids) return id
-                if ('.' !in id) return null
-                id = id.substringBeforeLast('.')
-            }
+            lineage(node.id).firstOrNull { it in ids }?.let { return it }
+            // The window's root taking a press holds every field on the screen: it is no box around one.
+            val box = lineage(node.id).firstOrNull { it in pressable && it != "root" } ?: return null
+            return ids.singleOrNull { it.startsWith("$box.") }
         }
         return one(named(nodes, label).mapNotNull(::around).distinct())
     }
+
+    /**
+     * Whether the field at [id] now shows [text]. Android can answer yes to setting a field's text that the
+     * app then never shows, so a fill is only done once the field is read back holding it.
+     */
+    fun holds(nodes: List<SeenNode>, id: String, text: String): Boolean =
+        nodes.any { it.id == id && it.editable && it.text.trim() == text.trim() }
 }
 
 /** The screen as `read` gives it, cut down to what an agent acts on: far fewer words to read after every step. */
@@ -150,6 +161,18 @@ object PhoneScreen {
             controls.put(control)
         }
         return JSONObject().put("ok", true).put("snapshot", read.optString("snapshot")).put("package", front(read)).put("controls", controls)
+    }
+
+    /**
+     * What a press or fill answers once it is done: the screen it led to, and for a fill ([text] not null), not ok
+     * unless the field holds the text, with the snapshot to type into it by id.
+     */
+    fun after(read: JSONObject, command: String, id: String, text: String?): JSONObject {
+        val answer = brief(read).put("did", command).put("on", id)
+        if (text != null && !PhoneFind.holds(nodes(read), id, text)) {
+            answer.put("ok", false).put("error", "The text did not land in the field $id. Read the screen, then type into the field with its snapshot and id, and check it shows.")
+        }
+        return answer
     }
 
     /** Whether any control on the screen says [text], in whole or in part. */

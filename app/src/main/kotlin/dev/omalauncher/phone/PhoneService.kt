@@ -380,7 +380,7 @@ class PhoneService : AccessibilityService() {
                     act(if (command == "press") "click" else "type", id, input) { done ->
                         if (!done.optBoolean("ok")) { reply(done); return@act }
                         main.postDelayed({
-                            try { PhoneAccess.requireAccess(this); reply(PhoneScreen.brief(read()).put("did", command).put("on", id)) }
+                            try { PhoneAccess.requireAccess(this); reply(PhoneScreen.after(read(), command, id, if (command == "fill") input.getString("text") else null)) }
                             catch (e: Exception) { reply(JSONObject().put("ok", false).put("error", e.message ?: "Phone control failed")) }
                         }, PhoneTouch.SETTLE_MILLIS)
                     }

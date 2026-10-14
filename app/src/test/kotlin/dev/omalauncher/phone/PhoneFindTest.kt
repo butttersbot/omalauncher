@@ -63,6 +63,81 @@ class PhoneFindTest {
         assertEquals(Found.None, PhoneFind.field(list, "tips"))
     }
 
+    // The Oma chat's composer as the real launcher gave it on 2026-10-14: a Compose BasicTextField whose own text is
+    // empty, its placeholder a node of its own inside it that takes no text, next to a tab that says the same name.
+    private val composer =
+        listOf(
+            node("root"),
+            node("root.0.0.0.4", clickable = true),
+            node("root.0.0.0.4.0", text = "Back up projects before phone…"),
+            node("root.0.0.0.5", clickable = false),
+            node("root.0.0.0.5.0", editable = true, clickable = true),
+            node("root.0.0.0.5.0.0", text = "to Back up projects before phone…"),
+            node("root.0.0.0.6", clickable = true),
+            node("root.0.0.0.6.0", text = "[ send ]"),
+        )
+
+    @Test fun aPlaceholderInsideAComposeFieldFillsTheField() {
+        assertEquals(Found.One("root.0.0.0.5.0"), PhoneFind.field(composer, "to Back up projects before phone…"))
+        // In part, the placeholder and the tab both say it; only the placeholder stands in a field.
+        assertEquals(Found.One("root.0.0.0.5.0"), PhoneFind.field(composer, "back up projects"))
+        assertEquals(Found.None, PhoneFind.field(composer, "[ send ]"))
+    }
+
+    @Test fun aFieldThatSaysTheLabelItselfIsFilledThoughItsBoxHoldsAnother() {
+        val box = listOf(node("root"), node("root.1", clickable = true), node("root.1.0", text = "Ann", editable = true), node("root.1.1", editable = true))
+        assertEquals(Found.One("root.1.0"), PhoneFind.field(box, "ann"))
+    }
+
+    @Test fun aHintBesideItsFieldFillsTheOneFieldInTheBoxAroundThem() {
+        // A View text field with its hint drawn as a sibling, both inside one control that takes a press.
+        val form =
+            listOf(
+                node("root", clickable = true),
+                node("root.0", clickable = true),
+                node("root.0.0", text = "Email"),
+                node("root.0.1", editable = true),
+                node("root.1", clickable = true),
+                node("root.1.0", text = "Name or number"),
+                node("root.1.1", editable = true),
+                node("root.1.2", editable = true),
+                node("root.2", text = "Password"),
+                node("root.3", editable = true),
+            )
+        assertEquals(Found.One("root.0.1"), PhoneFind.field(form, "email"))
+        // Two fields in the box: neither is guessed at.
+        assertEquals(Found.None, PhoneFind.field(form, "name or number"))
+        // Nothing but the window's root takes a press around it: no box, so no field.
+        assertEquals(Found.None, PhoneFind.field(form, "password"))
+    }
+
+    @Test fun aFillIsOnlyDoneWhenTheFieldIsReadBackHoldingTheText() {
+        val filled = composer.map { if (it.editable) it.copy(text = "Back up all of it ") else it }
+        assertTrue(PhoneFind.holds(filled, "root.0.0.0.5.0", " Back up all of it"))
+        // Android said yes and the field stayed empty, with only its placeholder showing.
+        assertFalse(PhoneFind.holds(composer, "root.0.0.0.5.0", "Back up all of it"))
+        // The placeholder saying the words is not the field holding them.
+        assertFalse(PhoneFind.holds(composer, "root.0.0.0.5.0.0", "to Back up projects before phone…"))
+        assertFalse(PhoneFind.holds(filled, "root.0.0.0.6", "Back up all of it"))
+    }
+
+    @Test fun aFillThatDidNotLandIsNotOkAndAPressIs() {
+        fun json(text: String) =
+            JSONObject().put("snapshot", "s2").put("nodes", JSONArray()
+                .put(JSONObject().put("id", "root").put("text", "").put("package", "dev.omalauncher.boss").put("enabled", true))
+                .put(JSONObject().put("id", "root.1").put("text", text).put("editable", true).put("clickable", true).put("enabled", true)))
+        val missed = PhoneScreen.after(json(""), "fill", "root.1", "hello")
+        assertFalse(missed.getBoolean("ok"))
+        assertTrue(missed.getString("error").startsWith("The text did not land in the field root.1."))
+        // The answer still carries the screen, so the field can be typed into by its snapshot and id.
+        assertEquals("s2", missed.getString("snapshot"))
+        val landed = PhoneScreen.after(json("hello"), "fill", "root.1", "hello")
+        assertTrue(landed.getBoolean("ok"))
+        assertEquals("fill", landed.getString("did"))
+        assertEquals("root.1", landed.getString("on"))
+        assertTrue(PhoneScreen.after(json(""), "press", "root.1", null).getBoolean("ok"))
+    }
+
     @Test fun noLabelIsTheOnlyTextFieldAndNeverOneOfTwo() {
         assertEquals(Found.One("root.1"), PhoneFind.field(chat, ""))
         assertEquals(Found.Several(listOf("a", "b")), PhoneFind.field(listOf(node("a", editable = true), node("b", editable = true)), " "))

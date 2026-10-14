@@ -52,6 +52,7 @@ with whether it takes a press, text or a scroll. --until TEXT waits up to 5 seco
 press finds the one control that says LABEL (its whole label first, then part of it), presses it and
 answers with the screen that follows: one call per step, no numbers read off a picture. fill does the
 same for a text field, found by its hint or contents; LABEL "" is the screen's only text field.
+fill is not ok unless the field then shows TEXT.
 --in PACKAGE refuses unless that app is in front. Two controls that answer to
 LABEL are never chosen between: the error lists their ids for click or type.
 expect waits up to 5 seconds for TEXT to show and fails if it does not, so steps can be chained and
