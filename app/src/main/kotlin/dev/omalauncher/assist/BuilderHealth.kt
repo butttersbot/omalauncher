@@ -332,7 +332,7 @@ fun cleanedText(found: Int, ended: Int): String = when {
     else -> "Ended $ended of $found leftover builder processes; the rest would not end."
 }
 
-/** Where the launcher writes how its agents stand, in the Linux home, for `oma-agents status`. */
+/** Where the launcher writes how its agents stand, in the Linux home, for `oma status`. */
 const val AGENTS_STATUS_FILE = ".cache/oma-agents/status.json"
 
 private fun minutesAgo(now: Long, at: Long?) = at?.let { (now - it).coerceAtLeast(0) / 60_000 }
@@ -377,9 +377,9 @@ private fun builderStatus(facts: BuilderFacts): JSONObject {
         .put("leftovers", JSONArray(facts.leftovers.map { JSONObject().put("pid", it.pid).put("startedMinAgo", minutesAgo(now, it.startedAt)).put("cpuSeconds", it.cpuMs / 1000) }))
 }
 
-/** The guest's `oma-agents`, which prints the status file: a reader only, so the front agent may run it. */
+/** The guest's `oma status`, which prints the status file: a reader only, so the front agent may run it. */
 fun agentsGuestTools(context: Context, rootfs: File): List<Managed> =
-    listOf(Managed(File(rootfs, "usr/local/bin/oma-agents"), Policy.Owned, executable = true) { context.assets.open("oma-agents.sh").use { it.readBytes() } })
+    listOf(Managed(File(rootfs, "usr/local/lib/oma/agents"), Policy.Owned, executable = true) { context.assets.open("oma-agents.sh").use { it.readBytes() } })
 
 /**
  * Looks at the phone's builders: from /proc, cheaply, every [LOOK_EVERY_MS] while any works and whenever the front

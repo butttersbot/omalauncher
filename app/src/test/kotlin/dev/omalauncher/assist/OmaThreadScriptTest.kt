@@ -9,9 +9,9 @@ import java.io.File
 import java.nio.file.Files
 
 /**
- * `oma-thread`, the guest command that lists the Mac's threads and makes one. It is run here against a
- * stand-in for curl that records what it was given, so nothing reaches a network. What is pinned: the key is
- * handed to curl on its standard input and is in no argument, no output and no error.
+ * `oma threads` (assets/oma-thread.sh), the guest command that lists the Mac's threads and makes one. It is run
+ * here against a stand-in for curl that records what it was given, so nothing reaches a network. What is pinned:
+ * the key is handed to curl on its standard input and is in no argument, no output and no error.
  */
 class OmaThreadScriptTest {
     private val script = moduleFile("src/main/assets/oma-thread.sh")
@@ -80,6 +80,9 @@ class OmaThreadScriptTest {
         assertEquals("POST", sent[sent.indexOf("--request") + 1])
         assertEquals(JSONObject().put("name", "FF4 mod").put("project", "~/ClaudeSync/projects/ff4").toString(), JSONObject(sent[sent.indexOf("--data-binary") + 1]).toString())
         assertEquals("http://192.0.2.1:8478/threads", sent.last { it.isNotEmpty() })
+        // --kind goes to the runner as its kind; without it the request has none and the runner starts Claude.
+        val codex = run(config(), """{"ok":true,"thread":{"id":"t1","name":"n","project":"/p","status":"idle"}}""", 200, "new", "n", "~/p", "--kind", "codex").arguments.lines()
+        assertEquals(JSONObject().put("name", "n").put("project", "~/p").put("kind", "codex").toString(), JSONObject(codex[codex.indexOf("--data-binary") + 1]).toString())
         val refused = run(config(), roots, 403, "new", "Elsewhere", "/etc")
         assertEquals(1, refused.code); assertEquals("", refused.out)
         assertEquals("The Mac refused: the project must be an existing folder under an allowed root.\nIt takes an existing folder under one of:\n  /Users/boss/Projects\n  /Users/boss/ClaudeSync/projects\n", refused.err)
@@ -96,10 +99,13 @@ class OmaThreadScriptTest {
             run("""{"url":"http://192.0.2.1:8478","key":"two words"}""", "{}", 200, "list") to "no usable \"key\"",
             run(config("http://192.0.2.1:8478/somewhere?else"), "{}", 200, "list") to "no usable \"url\"",
             run(config("file:///etc/passwd"), "{}", 200, "list") to "no usable \"url\"",
-            run(config(), "{}", 200) to "usage: oma-thread list",
-            run(config(), "{}", 200, "delete", "t1") to "usage: oma-thread list",
-            run(config(), "{}", 200, "new", "only a name") to "usage: oma-thread list",
-            run(config(), "{}", 200, "list", "extra") to "usage: oma-thread list",
+            run(config(), "{}", 200) to "usage: oma threads list",
+            run(config(), "{}", 200, "delete", "t1") to "usage: oma threads list",
+            run(config(), "{}", 200, "new", "only a name") to "usage: oma threads list",
+            run(config(), "{}", 200, "list", "extra") to "usage: oma threads list",
+            run(config(), "{}", 200, "new", "n", "~/p", "--kind", "gemini") to "usage: oma threads list",
+            run(config(), "{}", 200, "new", "n", "~/p", "--kind") to "usage: oma threads list",
+            run(config(), "{}", 200, "new", "n", "~/p", "--model", "codex") to "usage: oma threads list",
         )
         for ((ran, why) in unasked) {
             assertNotEquals(0, ran.code); assertTrue(ran.err, ran.err.contains(why)); assertEquals("", ran.arguments); assertEquals("", ran.out)

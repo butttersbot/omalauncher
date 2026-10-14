@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""oma-keep: keeps a guest command running after the agent turn that started it has ended.
+"""oma keep: keeps a guest command running after the agent turn that started it has ended.
 
 An agent's turn runs in a proot of its own that ends everything started in it when the turn ends, nohup and
-setsid or not. The keeper runs in the launcher's long-lived Linux instead (Runtime starts `oma-keep serve`, as
+setsid or not. The keeper runs in the launcher's long-lived Linux instead (Runtime starts `oma keep serve`, as
 it starts oma-door) and starts commands there when asked over a unix socket that only root in the guest can
 open. What it keeps ends with it: when Linux stops or the launcher restarts, everything kept stops too.
 
-  oma-keep run NAME [--] COMMAND [ARG...]   starts COMMAND (exactly these words, no shell) in this folder
-  oma-keep list                             name, pid, state, uptime and command of each kept process
-  oma-keep log NAME [LINES]                 the last LINES lines of its output (100)
-  oma-keep stop NAME                        TERM to its process group, KILL 5 s later if still there
+  oma keep run NAME [--] COMMAND [ARG...]   starts COMMAND (exactly these words, no shell) in this folder
+  oma keep list                             name, pid, state, uptime and command of each kept process
+  oma keep log NAME [LINES]                 the last LINES lines of its output (100)
+  oma keep stop NAME                        TERM to its process group, KILL 5 s later if still there
 """
 import json, os, re, shlex, signal, socket, subprocess, sys, threading, time
 
@@ -22,13 +22,13 @@ STOP_GRACE = 5.0
 MAX_REQUEST = 256 * 1024
 LOG_LINES = 100
 
-USAGE = """usage: oma-keep run NAME [--] COMMAND [ARG...]
-       oma-keep list
-       oma-keep log NAME [LINES]
-       oma-keep stop NAME
+USAGE = """usage: oma keep run NAME [--] COMMAND [ARG...]
+       oma keep list
+       oma keep log NAME [LINES]
+       oma keep stop NAME
 
 Keeps COMMAND running after the agent turn or terminal that started it ends,
-until it exits, `oma-keep stop NAME`, or Linux stops. COMMAND runs exactly as
+until it exits, `oma keep stop NAME`, or Linux stops. COMMAND runs exactly as
 given in the current folder, without a shell: write `bash -c '...'` for one.
 NAME is 1 to 32 of a-z, 0-9 and -. At most 8 are kept at a time. Output goes
 to ~/.cache/oma-keep/NAME.log, of which the last 1 MB is kept."""
@@ -58,7 +58,7 @@ def parse(args):
         if argv[:1] == ['--']:
             argv = argv[1:]
         if not argv:
-            raise Usage('oma-keep run: no command given')
+            raise Usage('oma keep run: no command given')
         check_name(name)
         return {'op': 'run', 'name': name, 'argv': argv}
     if op == 'list' and not rest:
@@ -71,7 +71,7 @@ def parse(args):
         lines = LOG_LINES
         if len(rest) == 2:
             if not rest[1].isdigit() or int(rest[1]) < 1:
-                raise Usage('oma-keep log: LINES is a whole number above 0')
+                raise Usage('oma keep log: LINES is a whole number above 0')
             lines = int(rest[1])
         return {'op': 'log', 'name': rest[0], 'lines': lines}
     if op == 'serve' and not rest:
@@ -81,7 +81,7 @@ def parse(args):
 
 def check_name(name):
     if not valid_name(name):
-        raise Usage('oma-keep: a name is 1 to 32 of a-z, 0-9 and -, not %r' % name)
+        raise Usage('oma keep: a name is 1 to 32 of a-z, 0-9 and -, not %r' % name)
 
 
 def check_argv(argv):
@@ -304,7 +304,7 @@ def serve():
     probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
         probe.connect(SOCKET)
-        print('oma-keep: a keeper is already running', file=sys.stderr)
+        print('oma keep: a keeper is already running', file=sys.stderr)
         return 0
     except OSError:
         pass
@@ -340,7 +340,7 @@ def serve():
 
     for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
         signal.signal(sig, leave)
-    print('oma-keep: keeping at %s' % SOCKET, file=sys.stderr, flush=True)
+    print('oma keep: keeping at %s' % SOCKET, file=sys.stderr, flush=True)
     while True:
         connection, _ = server.accept()
         threading.Thread(target=handle, args=(connection,), daemon=True).start()
@@ -416,7 +416,7 @@ def main(args):
         print(e, file=sys.stderr)
         return 2
     except Refused as e:
-        print('oma-keep: %s' % e, file=sys.stderr)
+        print('oma keep: %s' % e, file=sys.stderr)
         return 1
 
 

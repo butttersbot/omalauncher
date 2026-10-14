@@ -58,6 +58,8 @@ class QuickLaneTest {
                 "Bash(oma-phone board*)", "Bash(oma-phone looks)", "Bash(oma-phone stickers)", "Bash(date*)",
                 // Added on purpose (Boss, 2026-10-13): it only prints the status file the launcher writes.
                 "Bash(oma-agents status)",
+                // The same reader under the one `oma` command (Boss, 2026-10-14); the old name is still an alias of it.
+                "Bash(oma status)",
             ),
             QUICK_ALLOWED,
         )
@@ -156,6 +158,7 @@ class QuickLaneTest {
         assertEquals(1, Regex("<<restart>>").findAll(told).count()); assertEquals(1, Regex("<<clean>>").findAll(told).count())
         // It can only print what the launcher wrote; mending is the launcher's, never a command of its own.
         assertTrue(QUICK_ALLOWED.none { it.startsWith("Bash(oma-agents") && it != "Bash(oma-agents status)" })
+        assertTrue(QUICK_ALLOWED.none { (it.startsWith("Bash(oma ") || it.startsWith("Bash(oma*")) && it != "Bash(oma status)" })
         for (never in listOf("kill", "pkill", "signal")) assertFalse(never, told.contains(never))
     }
 

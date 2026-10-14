@@ -28,6 +28,7 @@ import dev.omalauncher.linux.Gpu
 import dev.omalauncher.linux.KEEP_COMMAND
 import dev.omalauncher.linux.KEEP_PYTHON
 import dev.omalauncher.linux.LinuxApp
+import dev.omalauncher.linux.OMA_COMMAND
 import dev.omalauncher.linux.OpenBridge
 import dev.omalauncher.linux.Pacman
 import dev.omalauncher.linux.Proot
@@ -37,6 +38,7 @@ import dev.omalauncher.linux.TerminalFont
 import dev.omalauncher.linux.bundledIcons
 import dev.omalauncher.linux.defaultApps
 import dev.omalauncher.linux.keepGuestTools
+import dev.omalauncher.linux.omaGuestTools
 import dev.omalauncher.linux.loadLinuxApps
 import dev.omalauncher.linux.matches
 import dev.omalauncher.linux.resolveLinuxIcon
@@ -138,6 +140,7 @@ class Runtime(
                 { macGuestTools(context, proot.rootfs) },
                 { keepGuestTools(context, proot.rootfs) },
                 { agentsGuestTools(context, proot.rootfs) },
+                { omaGuestTools(context, proot.rootfs) },
             ),
         )
     val bootstrap = Bootstrap(context, proot, agents, pacman, provisioner)
@@ -558,12 +561,12 @@ class Runtime(
 
     @Volatile private var doorOpened = false
 
-    /** Starts oma-keep's keeper (see linux/Keeper.kt) in a proot of its own, which a builder turn ending leaves running. */
+    /** Starts `oma keep`'s keeper (see linux/Keeper.kt) in a proot of its own, which a builder turn ending leaves running. */
     private fun openKeeper() {
         if (keeperOpen) return
-        if (!File(proot.rootfs, KEEP_COMMAND).isFile || !File(proot.rootfs, KEEP_PYTHON).isFile) return
+        if (listOf(OMA_COMMAND, KEEP_COMMAND, KEEP_PYTHON).any { !File(proot.rootfs, it).isFile }) return
         keeperOpen = true
-        launch("oma-keep serve") { keeperOpen = false }
+        launch("oma keep serve") { keeperOpen = false }
     }
 
     @Volatile private var keeperOpen = false

@@ -1,6 +1,6 @@
 #!/bin/bash
-# Omalauncher: lists the project threads on the Mac and makes a new one, by asking the runner on the Mac
-# (docs/MAC-RUNNER-SPEC.md) with the address and key in ~/.config/omalauncher/mac-runner.json.
+# Omalauncher: `oma threads`, which lists the project threads on the Mac and makes a new one, by asking the runner on
+# the Mac (docs/MAC-RUNNER-SPEC.md) with the address and key in ~/.config/omalauncher/mac-runner.json.
 # The key is read by jq and piped to curl as a config on its standard input. It is never an argument of any
 # command, never in a variable of this script and never in a file of its own, so nothing here can print it and
 # `ps` cannot show it. The runner decides which folders may hold a thread; this makes no folder anywhere.
@@ -9,13 +9,14 @@ config="${HOME:?}/.config/omalauncher/mac-runner.json"
 
 usage() {
   cat >&2 <<USAGE
-usage: oma-thread list
-       oma-thread new NAME PROJECT_PATH
+usage: oma threads list
+       oma threads new NAME PROJECT_PATH [--kind claude|codex|cursor]
 
 list prints one line per thread on the Mac: id, state, name and project folder.
 new makes a thread called NAME for the folder PROJECT_PATH on the Mac (~ is the
 Mac's home there) and prints its id. The folder must already exist under one of
 the roots the Mac allows; otherwise the Mac refuses and its roots are printed.
+--kind chooses the agent that works in it; without it the Mac starts Claude.
 USAGE
   exit 2
 }
@@ -61,7 +62,15 @@ command=$1
 shift
 case $command in
   list) [ $# -eq 0 ] || usage ;;
-  new) [ $# -eq 2 ] && [ -n "$1" ] && [ -n "$2" ] || usage ;;
+  new)
+    [ $# -ge 2 ] && [ -n "$1" ] && [ -n "$2" ] || usage
+    # The runner's own kinds; anything else would only come back as its 400.
+    kind=
+    case $#:${3-}:${4-} in
+      2::) ;;
+      4:--kind:claude | 4:--kind:codex | 4:--kind:cursor) kind=$4 ;;
+      *) usage ;;
+    esac ;;
   *) usage ;;
 esac
 
@@ -81,7 +90,7 @@ case $command in
     [ "$code" = 200 ] || refused "$code" "$answer"
     printf '%s' "$answer" | jq -r '.threads[] | [.id, .status, .name, .project] | map(tostring) | join("\t")' ;;
   new)
-    request=$(jq -cn --arg name "$1" --arg project "$2" '{name: $name, project: $project}')
+    request=$(jq -cn --arg name "$1" --arg project "$2" --arg kind "$kind" '{name: $name, project: $project} + if $kind == "" then {} else {kind: $kind} end')
     reply=$(call POST /threads "$request") || die 'Mac unreachable. Nothing was made.'
     code=${reply##*$'\n'}
     answer=${reply%$'\n'*}

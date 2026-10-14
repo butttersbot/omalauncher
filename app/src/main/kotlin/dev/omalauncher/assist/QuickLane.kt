@@ -467,7 +467,7 @@ val QUICK_TOOLS = listOf("Read", "Bash", "WebSearch", "WebFetch")
 val QUICK_ALLOWED = listOf(
     "Read", "WebSearch", "WebFetch",
     "Bash(oma-phone status)", "Bash(oma-phone screen*)", "Bash(oma-phone read)", "Bash(oma-phone pages)",
-    "Bash(oma-phone board*)", "Bash(oma-phone looks)", "Bash(oma-phone stickers)", "Bash(date*)", "Bash(oma-agents status)",
+    "Bash(oma-phone board*)", "Bash(oma-phone looks)", "Bash(oma-phone stickers)", "Bash(date*)", "Bash(oma-agents status)", "Bash(oma status)",
 )
 
 /**

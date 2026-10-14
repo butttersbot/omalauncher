@@ -49,12 +49,12 @@ fun macOwnSummary(thread: MacThread, tasks: List<ChatTask>): MacThread =
     else thread.copy(summary = tasks.lastOrNull { threadGot(it, thread.id) }?.prompt?.lineSequence()?.firstOrNull { it.isNotBlank() }?.trim().orEmpty())
 
 /**
- * The guest's `oma-thread`, which lists the Mac's threads and makes one in a folder Boss names. A command and
+ * The guest's `oma threads`, which lists the Mac's threads and makes one in a folder Boss names. A command and
  * not a power of the front agent's: the phone's builder runs it under his approval rules, or he does in a
  * terminal, and the runner alone decides which folders it takes. Installed with the other guest tools.
  */
 fun macGuestTools(context: Context, rootfs: File): List<Managed> =
-    listOf(Managed(File(rootfs, "usr/local/bin/oma-thread"), Policy.Owned, executable = true) { context.assets.open("oma-thread.sh").use { it.readBytes() } })
+    listOf(Managed(File(rootfs, "usr/local/lib/oma/thread"), Policy.Owned, executable = true) { context.assets.open("oma-thread.sh").use { it.readBytes() } })
 
 /** A thread's name as he is shown it; one without a name is still somewhere on the Mac. */
 fun macName(name: String) = name.trim().ifEmpty { "Mac" }
