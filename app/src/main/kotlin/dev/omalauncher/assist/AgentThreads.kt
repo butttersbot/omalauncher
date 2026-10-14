@@ -16,7 +16,7 @@ import org.json.JSONObject
  * Nothing here sends, stops or answers anything, and of an approval it knows the tool and its target alone.
  */
 
-/** The key of the phone's builder among the threads: what its tile and the chat's intent call it. Saved: never rename. */
+/** The key of the phone's builder A among the threads: what its tile and the chat's intent call it. Saved: never rename. */
 const val PHONE_THREAD = "phone"
 
 /** What the builder's tile and tab are called. */
@@ -105,7 +105,7 @@ private fun firstLine(text: String) = text.lineSequence().firstOrNull { it.isNot
 
 /** One agent at work as he is shown it: a tab and a dot in the chat, and a tile on home. */
 data class AgentThread(
-    /** [PHONE_THREAD], or [macThreadKey] of a thread on the Mac. */
+    /** [PHONE_THREAD] or [PHONE_THREAD_B], or [macThreadKey] of a thread on the Mac. */
     val key: String,
     val name: String,
     val state: ThreadState,
@@ -118,10 +118,10 @@ data class AgentThread(
     /** False for a thread on a Mac the phone could not reach at its last try: what is shown is what was last heard. */
     val reachable: Boolean = true,
 ) {
-    val mac get() = key != PHONE_THREAD
+    val mac get() = macThreadId(key) != null
 }
 
-/** The phone's builder as it stands: whether a task runs, its label, and what waits for his approval. */
+/** One of the phone's builders as it stands: whether a task runs, its label, and what waits for his approval. */
 data class BuilderNow(val working: Boolean = false, val label: String = "", val asks: List<ThreadAsk> = emptyList())
 
 private fun queuedLine(running: String, waiting: List<ChatTask>, waits: Int): String {
@@ -137,12 +137,13 @@ private fun restLabel(last: ChatTask?, worked: Boolean) = when {
 }
 
 /**
- * The phone's builder as a thread, from its own entries in the Oma thread ([ChatTask.build]) and from
- * [builder]. Working with requests waiting behind the task reads as queued; a waiting approval comes before
- * either; a last request that failed needs him, until the next one is sent.
+ * One of the phone's builders as a thread, from its own entries in the Oma thread ([ChatTask.build] and
+ * [ChatTask.builderId]) and from [builder]. Working with requests waiting behind the task reads as queued; a
+ * waiting approval comes before either; a last request that failed needs him, until the next one is sent.
+ * [which] is the builder, and [name] what its tab and tile are called.
  */
-fun phoneThread(tasks: List<ChatTask>, builder: BuilderNow): AgentThread {
-    val entries = tasks.filter { it.build }
+fun phoneThread(tasks: List<ChatTask>, builder: BuilderNow, which: BuilderId = BuilderId.A, name: String = PHONE_THREAD_NAME): AgentThread {
+    val entries = tasks.filter { it.build && it.builderId == which }
     val running = entries.lastOrNull { it.status == TaskStatus.Running }
     val waiting = entries.filter { it.status == TaskStatus.Queued }
     val last = entries.lastOrNull { it.status != TaskStatus.Queued }
@@ -167,8 +168,22 @@ fun phoneThread(tasks: List<ChatTask>, builder: BuilderNow): AgentThread {
         ThreadState.Attention -> NEEDS_ATTENTION
         ThreadState.Idle -> restLabel(last, worked = false)
     }
-    return AgentThread(PHONE_THREAD, PHONE_THREAD_NAME, state, doing, label, entries.maxOfOrNull { it.time })
+    return AgentThread(which.thread, name, state, doing, label, entries.maxOfOrNull { it.time })
 }
+
+/**
+ * The phone's builders as threads: builder A always, as "Phone" while it is the only one that ever worked, and
+ * builder B beside it once [builderBShown], when the two are "Phone A" and "Phone B". [builders] is how each stands.
+ */
+fun phoneThreads(tasks: List<ChatTask>, builders: Map<BuilderId, BuilderNow>): List<AgentThread> {
+    val a = builders[BuilderId.A] ?: BuilderNow()
+    val b = builders[BuilderId.B] ?: BuilderNow()
+    if (!builderBShown(tasks, b.working || b.asks.isNotEmpty())) return listOf(phoneThread(tasks, a, BuilderId.A, PHONE_THREAD_NAME))
+    return listOf(phoneThread(tasks, a, BuilderId.A, PHONE_THREAD_A_NAME), phoneThread(tasks, b, BuilderId.B, PHONE_THREAD_B_NAME))
+}
+
+/** What builder A's tab and tile are called once builder B is shown beside it. */
+const val PHONE_THREAD_A_NAME = "Phone A"
 
 const val NEEDS_OK = "needs your OK"
 const val NEEDS_ATTENTION = "needs attention"
@@ -218,16 +233,16 @@ fun macThreadNow(thread: MacThread?, id: String, tasks: List<ChatTask>, asks: Li
 }
 
 /**
- * Every thread there is to show, in the order the chat's tabs stand in: the phone's builder, then the Mac's
- * threads, the one that worked last first. A Mac thread is one the Mac lists, or one a request in the Oma
+ * Every thread there is to show, in the order the chat's tabs stand in: the phone's builders ([phoneThreads],
+ * [builder] being A and [second] B), then the Mac's threads, the one that worked last first. A Mac thread is one the Mac lists, or one a request in the Oma
  * thread was handed to, so its entries can be opened before the Mac has answered and after it has gone.
  * [asks] are the Mac's waiting requests by thread id.
  */
-fun agentThreads(tasks: List<ChatTask>, builder: BuilderNow, mac: MacView, asks: Map<String, List<ThreadAsk>> = emptyMap()): List<AgentThread> {
+fun agentThreads(tasks: List<ChatTask>, builder: BuilderNow, mac: MacView, asks: Map<String, List<ThreadAsk>> = emptyMap(), second: BuilderNow = BuilderNow()): List<AgentThread> {
     val listed = mac.threads.associateBy { it.id }
     val ids = (mac.threads.map { it.id } + tasks.filter { it.mac }.map { it.thread }).distinct()
     val threads = ids.map { id -> macThreadNow(listed[id], id, tasks, asks[id].orEmpty(), mac.reachable) }
-    return listOf(phoneThread(tasks, builder)) + threads.sortedWith(compareByDescending<AgentThread> { it.worked ?: Long.MIN_VALUE }.thenBy { it.name }.thenBy { it.key })
+    return phoneThreads(tasks, mapOf(BuilderId.A to builder, BuilderId.B to second)) + threads.sortedWith(compareByDescending<AgentThread> { it.worked ?: Long.MIN_VALUE }.thenBy { it.name }.thenBy { it.key })
 }
 
 /**
@@ -236,7 +251,7 @@ fun agentThreads(tasks: List<ChatTask>, builder: BuilderNow, mac: MacView, asks:
  * often as they draw; they restore [AgentTasks] and [MacThreads] once, before the first read.
  */
 fun agentThreadsNow(context: Context): List<AgentThread> {
-    val builder = BuilderNow(AgentTasks.working, AgentTasks.label, AgentTasks.pending.map { ThreadAsk(it.approval.tool, askTarget(it.approval.input.toString())) })
+    fun now(builder: Builder) = BuilderNow(builder.working, builder.label, builder.pending.map { ThreadAsk(it.approval.tool, askTarget(it.approval.input.toString())) })
     val asks = MacThreads.pending.groupBy({ it.threadId }) { ThreadAsk(it.request.tool, askTarget(it.request.input)) }
-    return agentThreads(ChatLog.of(context).tasks, builder, MacThreads.view, asks)
+    return agentThreads(ChatLog.of(context).tasks, now(AgentTasks.of(BuilderId.A)), MacThreads.view, asks, now(AgentTasks.of(BuilderId.B)))
 }

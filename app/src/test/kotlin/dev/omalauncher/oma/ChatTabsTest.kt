@@ -1,7 +1,9 @@
 package dev.omalauncher.oma
 
 import dev.omalauncher.assist.AgentThread
+import dev.omalauncher.assist.BuilderId
 import dev.omalauncher.assist.PHONE_THREAD
+import dev.omalauncher.assist.PHONE_THREAD_B
 import dev.omalauncher.assist.ThreadState
 import dev.omalauncher.assist.macThreadKey
 import org.junit.Assert.*
@@ -80,5 +82,25 @@ class ChatTabsTest {
         assertFalse(fieldStop(SendTo.Oma, working = false, deciding = false))
         assertTrue(fieldStop(SendTo.Phone, working = true, deciding = true)); assertFalse(fieldStop(SendTo.Phone, working = false, deciding = true))
         for (working in listOf(true, false)) for (deciding in listOf(true, false)) assertFalse(fieldStop(SendTo.Mac("t", "T"), working, deciding))
+    }
+
+    /** Boss 2026-10-13: two builders. Builder B has a tab of its own once it has worked, and its field talks to B alone. */
+    @Test fun builderBsTabShowsItsEntriesAndTalksToItAlone() {
+        val phoneB = AgentThread(PHONE_THREAD_B, "Phone B", ThreadState.Working, "Editing", "working")
+        val both = listOf(phone.copy(name = "Phone A"), phoneB, ff4)
+        val toB = ChatTask(8, "Claude Code", "fix the dock", builder = "B")
+        val all = tasks + toB
+        assertEquals(listOf(OMA_TAB, PHONE_THREAD, PHONE_THREAD_B, "mac:t-ff4"), chatTabs(both))
+        assertEquals(PHONE_THREAD_B, openTab("phone-b", both)); assertEquals(OMA_TAB, openTab("phone-b", threads))
+        assertEquals(listOf(toB), tabEntries(all, PHONE_THREAD_B))
+        // A's tab keeps A's entries alone, and the Oma tab has them all.
+        assertEquals(listOf(built, waiting), tabEntries(all, PHONE_THREAD))
+        assertEquals(all, tabEntries(all, OMA_TAB))
+        assertEquals(SendTo.PhoneB, sendTo(PHONE_THREAD_B, both)); assertEquals(SendTo.Phone, sendTo(PHONE_THREAD, both))
+        assertEquals(BuilderId.B, SendTo.PhoneB.builder); assertEquals(BuilderId.A, SendTo.Phone.builder)
+        assertNull(SendTo.Oma.builder); assertNull(SendTo.Mac("t", "T").builder)
+        assertEquals("straight to Phone B · Oma is not asked", straightLine(SendTo.PhoneB)); assertEquals("to Phone B…", fieldHint(SendTo.PhoneB))
+        assertTrue(fieldStop(SendTo.PhoneB, working = true, deciding = false)); assertFalse(fieldStop(SendTo.PhoneB, working = false, deciding = true))
+        assertEquals("Phone B", tabTitle(PHONE_THREAD_B, both))
     }
 }

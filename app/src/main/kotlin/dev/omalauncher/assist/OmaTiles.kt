@@ -50,7 +50,7 @@ class OmaPromptTile : OmaTile() { override val title = "Oma prompt"; override fu
 class OmaActivityTile : OmaTile() {
     override val title = "Agent activity"
     override fun active() = AgentTasks.working
-    override fun subtitle() = AgentTasks.label
+    override fun subtitle() = AgentTasks.headline
 }
 class OmaApprovalsTile : OmaTile() {
     override val title = "Oma approvals"

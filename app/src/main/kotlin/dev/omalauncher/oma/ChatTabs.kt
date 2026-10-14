@@ -1,8 +1,12 @@
 package dev.omalauncher.oma
 
 import dev.omalauncher.assist.AgentThread
+import dev.omalauncher.assist.BuilderId
 import dev.omalauncher.assist.PHONE_THREAD
+import dev.omalauncher.assist.PHONE_THREAD_B
+import dev.omalauncher.assist.PHONE_THREAD_B_NAME
 import dev.omalauncher.assist.PHONE_THREAD_NAME
+import dev.omalauncher.assist.builderId
 import dev.omalauncher.assist.macThreadId
 import dev.omalauncher.assist.macThreadKey
 
@@ -14,7 +18,7 @@ import dev.omalauncher.assist.macThreadKey
  * functions here, unit tested; the screen only draws what they say.
  */
 
-/** The Oma tab's key. No thread has it: the builder's is "phone" and a Mac thread's begins "mac:". */
+/** The Oma tab's key. No thread has it: the builders' are "phone" and "phone-b", and a Mac thread's begins "mac:". */
 const val OMA_TAB = "oma"
 
 /** The tabs in the order the strip shows them: Oma, then [threads] as they come, the builder first and the Mac's newest worked after it. */
@@ -31,13 +35,14 @@ fun openTab(wanted: String?, threads: List<AgentThread>): String = wanted?.takeI
 fun dotTap(open: String, tapped: String): String = if (tapped == open) OMA_TAB else tapped
 
 /**
- * The entries [tab] shows, oldest first as [tasks] are: all of them on the Oma tab, the build lane's on the
- * builder's tab, and on a Mac thread's tab the requests that went to that thread. A request the front agent
- * answered itself, or has not decided, is on the Oma tab alone.
+ * The entries [tab] shows, oldest first as [tasks] are: all of them on the Oma tab, on a builder's tab the
+ * build lane's that went to that builder, and on a Mac thread's tab the requests that went to that thread. A
+ * request the front agent answered itself, or has not decided, is on the Oma tab alone.
  */
 fun tabEntries(tasks: List<ChatTask>, tab: String): List<ChatTask> = when {
     tab == OMA_TAB -> tasks
-    tab == PHONE_THREAD -> tasks.filter { it.build }
+    tab == PHONE_THREAD -> tasks.filter { it.build && it.builderId == BuilderId.A }
+    tab == PHONE_THREAD_B -> tasks.filter { it.build && it.builderId == BuilderId.B }
     else -> macThreadId(tab)?.let { id -> tasks.filter { it.thread == id } }.orEmpty()
 }
 
@@ -51,6 +56,7 @@ fun tabTitle(tab: String, threads: List<AgentThread>): String = threads.firstOrN
 fun straightLine(to: SendTo): String? = when (to) {
     SendTo.Oma -> null
     SendTo.Phone -> "straight to $PHONE_THREAD_NAME · Oma is not asked"
+    SendTo.PhoneB -> "straight to $PHONE_THREAD_B_NAME · Oma is not asked"
     is SendTo.Mac -> "straight to ${to.name} · Oma is not asked"
 }
 
@@ -58,17 +64,19 @@ fun straightLine(to: SendTo): String? = when (to) {
 fun fieldHint(to: SendTo): String? = when (to) {
     SendTo.Oma -> null
     SendTo.Phone -> "to $PHONE_THREAD_NAME…"
+    SendTo.PhoneB -> "to $PHONE_THREAD_B_NAME…"
     is SendTo.Mac -> "to ${to.name}…"
 }
 
 /**
- * Whether the red stop beside the field shows. It is the phone builder's stop, and takes what the front agent
- * is deciding with it: so it shows on the Oma tab while either goes on, on the builder's tab while the builder
- * works, and never on a Mac thread's tab, whose tasks each have a stop of their own on their entry.
+ * Whether the red stop beside the field shows. It is the phone builders' stop, and takes what the front agent
+ * is deciding with it: so it shows on the Oma tab while either goes on, on a builder's tab while that builder
+ * works ([working] is then that builder's), and never on a Mac thread's tab, whose tasks each have a stop of
+ * their own on their entry.
  */
 fun fieldStop(to: SendTo, working: Boolean, deciding: Boolean): Boolean = when (to) {
     SendTo.Oma -> working || deciding
-    SendTo.Phone -> working
+    SendTo.Phone, SendTo.PhoneB -> working
     is SendTo.Mac -> false
 }
 

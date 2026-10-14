@@ -382,4 +382,20 @@ class ChatHistoryTest {
         // Written only where it is set, so every other task keeps the shape it has always had.
         assertFalse(fields.getJSONObject(1).has("direct"))
     }
+
+    /** Boss 2026-10-13: two builders. An entry says which builder it went to; one saved before there were two is A's. */
+    @Test fun aBuildersEntryRemembersWhichBuilderItWentTo() {
+        val toB = ChatTask(7, "Claude Code", "fix the dock", status = TaskStatus.Done, result = "Fixed.", builder = "B")
+        val toA = toB.copy(time = 8, builder = "")
+        assertEquals(listOf(toB, toA), ChatHistory.afterRestart(ChatHistory.decode(ChatHistory.encode(listOf(toB, toA)))))
+        val fields = JSONObject(ChatHistory.encode(listOf(toB, toA))).getJSONArray("tasks")
+        assertEquals("B", fields.getJSONObject(0).getString("builder"))
+        // Written only where it is set, so every entry of builder A's keeps the shape it has always had.
+        assertFalse(fields.getJSONObject(1).has("builder"))
+        assertEquals(setOf("time", "agent", "prompt", "images", "screen", "newThread", "steps", "result", "status", "approvals"), fields.getJSONObject(1).keys().asSequence().toSet())
+        // A follow-up that waited for B is dropped on a restart as any is, and stays B's.
+        val waiting = ChatHistory.afterRestart(listOf(toB.copy(status = TaskStatus.Queued, result = ""))).single()
+        assertEquals(TaskStatus.Dropped, waiting.status); assertEquals("B", waiting.builder)
+        assertEquals(ChatHistory.MAX_BUILDER, ChatHistory.bounded(toB.copy(builder = "x".repeat(100))).builder.length)
+    }
 }

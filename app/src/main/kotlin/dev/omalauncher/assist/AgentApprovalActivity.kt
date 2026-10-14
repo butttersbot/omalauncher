@@ -28,6 +28,8 @@ class AgentApprovalActivity : Activity() {
             AgentNotices.expired(this); finish(); return
         }
         val approval = entry.approval
+        // The title names the builder that asks, so he never answers one builder's request thinking it is the other's.
+        val builder = AgentTasks.holder(entry) ?: BuilderId.A
         val detail = TextView(this).apply {
             text = "${approval.explanation}\n\n${approval.detail}\n\nApprove once allows this action only. Future actions may ask again."
             setPadding(40, 24, 40, 24); setTextIsSelectable(true)
@@ -40,7 +42,7 @@ class AgentApprovalActivity : Activity() {
                 ApprovalOutcome.Locked -> AgentNotices.locked(this)
             }
         }
-        dialog = AlertDialog.Builder(this).setTitle("Allow ${approval.tool.take(60)}?")
+        dialog = AlertDialog.Builder(this).setTitle(builderApprovalTitle(approval.tool, builder))
             .setView(ScrollView(this).apply { addView(detail) })
             .setPositiveButton("Approve once") { _, _ -> decide(true) }
             .setNegativeButton("Deny") { _, _ -> decide(false) }

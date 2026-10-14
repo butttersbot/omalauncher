@@ -1,7 +1,9 @@
 package dev.omalauncher.oma
 
 import dev.omalauncher.assist.AgentThread
+import dev.omalauncher.assist.BuilderId
 import dev.omalauncher.assist.PHONE_THREAD
+import dev.omalauncher.assist.PHONE_THREAD_B
 import dev.omalauncher.assist.frontFirst
 import dev.omalauncher.assist.macThreadId
 import dev.omalauncher.linux.MAX_PROMPT_IMAGES
@@ -42,17 +44,28 @@ sealed interface SendTo {
     /** The Oma tab: the front agent hears it first, as before there were tabs. */
     data object Oma : SendTo
 
-    /** The phone builder's tab: straight to the build lane. */
+    /** Builder A's tab: straight to the build lane, to builder A. */
     data object Phone : SendTo
+
+    /** Builder B's tab: straight to builder B. */
+    data object PhoneB : SendTo
 
     /** A Mac thread's tab: straight to that thread. */
     data class Mac(val thread: String, val name: String) : SendTo
+}
+
+/** The builder the field on a builder's tab sends to; null on every other tab. */
+val SendTo.builder: BuilderId? get() = when (this) {
+    SendTo.Phone -> BuilderId.A
+    SendTo.PhoneB -> BuilderId.B
+    else -> null
 }
 
 /** Whom the field talks to on [tab], which is one of [threads] or the Oma tab. A tab that is no thread's talks to Oma. */
 fun sendTo(tab: String, threads: List<AgentThread>): SendTo {
     val thread = threads.firstOrNull { it.key == tab } ?: return SendTo.Oma
     if (thread.key == PHONE_THREAD) return SendTo.Phone
+    if (thread.key == PHONE_THREAD_B) return SendTo.PhoneB
     return macThreadId(thread.key)?.let { SendTo.Mac(it, thread.name) } ?: SendTo.Oma
 }
 

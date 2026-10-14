@@ -24,6 +24,12 @@ object Route {
 
     fun mac(threadId: String) = "$MAC $threadId"
 
+    /** The route to one of the phone's builders by name: a follow-up to what that builder asked or is doing. */
+    fun builder(id: BuilderId) = "$BUILD ${id.letter}"
+
+    /** The builder [route] names, or null for a route that names none, [BUILD] itself included. */
+    fun builderOf(route: String): BuilderId? = if (route.startsWith("$BUILD ")) BuilderId.named(route.removePrefix("$BUILD ")) else null
+
     /** The id of the thread [route] names, or null for a route that is not to the Mac. */
     fun macThread(route: String): String? = if (route.startsWith("$MAC ")) route.removePrefix("$MAC ") else null
 }
@@ -44,10 +50,23 @@ private val MAC_MARK = Regex(Regex.escape(MAC_OPEN) + "[^<>\\n]{0,80}>>")
 private val MAC_ARRIVING = Regex(Regex.escape(MAC_OPEN) + "[^<>\\n]{0,80}>?")
 
 /**
- * The whole reply the front agent gives when his words are an order to stop what [route] is working on: the
- * phone's builder, or one thread on the Mac. Never shown and never saved, as a hand-over's mark is not.
+ * How a mark for one of the phone's builders begins, and the same two readings of it as a thread's has:
+ * `<<build B>>` hands his words to builder B, whatever else it is doing.
  */
-fun stopMark(route: String) = if (route == Route.BUILD) "<<stop>>" else "<<stop $route>>"
+private const val BUILD_NAMED_OPEN = "<<" + Route.BUILD + " "
+private val BUILD_NAMED_MARK = Regex(Regex.escape(BUILD_NAMED_OPEN) + "[^<>\\n]{0,80}>>")
+private val BUILD_NAMED_ARRIVING = Regex(Regex.escape(BUILD_NAMED_OPEN) + "[^<>\\n]{0,80}>?")
+
+/**
+ * The whole reply the front agent gives when his words are an order to stop what [route] is working on: the
+ * phone's builders, one of them by name, or one thread on the Mac. Never shown and never saved, as a
+ * hand-over's mark is not.
+ */
+fun stopMark(route: String) = when {
+    route == Route.BUILD -> "<<stop>>"
+    Route.builderOf(route) != null -> "<<stop ${Route.builderOf(route)?.letter}>>"
+    else -> "<<stop $route>>"
+}
 
 val STOP = stopMark(Route.BUILD)
 
@@ -81,6 +100,7 @@ sealed interface FrontRead {
 /** Whether [tail], the end of what has been said, could still grow into a mark. */
 private fun opensMark(tail: String) =
     (tail.length < HAND_OVER.length && HAND_OVER.startsWith(tail)) || MAC_OPEN.startsWith(tail) || MAC_ARRIVING.matches(tail) ||
+        BUILD_NAMED_OPEN.startsWith(tail) || BUILD_NAMED_ARRIVING.matches(tail) ||
         (tail.length < STOP.length && STOP.startsWith(tail)) || STOP_NAMED_OPEN.startsWith(tail) || STOP_NAMED_ARRIVING.matches(tail)
 
 /** How many characters at the end of [said] are the start of a mark that may still be arriving. */
@@ -114,14 +134,21 @@ private fun macNamed(lead: String, open: String, arriving: Regex, ended: Boolean
 fun frontRead(text: String, ended: Boolean = false): FrontRead {
     val lead = text.trimStart { it.isWhitespace() || it == '`' }
     if (lead.startsWith(HAND_OVER)) return FrontRead.HandOver(Route.BUILD)
+    // A builder's mark that names no builder is still work for the phone: it goes as new work, never nowhere.
+    if (lead.startsWith(BUILD_NAMED_OPEN)) {
+        val named = macNamed(lead, BUILD_NAMED_OPEN, BUILD_NAMED_ARRIVING, ended) ?: return FrontRead.Undecided
+        return FrontRead.HandOver(BuilderId.named(named)?.let(Route::builder) ?: Route.BUILD)
+    }
     if (lead.startsWith(STOP)) return FrontRead.Stop(Route.BUILD)
     if (lead.startsWith(STOP_NAMED_OPEN)) {
         val named = macNamed(lead, STOP_NAMED_OPEN, STOP_NAMED_ARRIVING, ended) ?: return FrontRead.Undecided
+        // A builder's letter is never a thread's id, which is nine characters.
+        BuilderId.named(named.removePrefix(Route.BUILD + " "))?.let { return FrontRead.Stop(Route.builder(it)) }
         return FrontRead.Stop(Route.mac(named.removePrefix(Route.MAC + " ").trim()))
     }
     if (lead.startsWith(MAC_OPEN)) return macNamed(lead, MAC_OPEN, MAC_ARRIVING, ended)?.let { FrontRead.HandOver(Route.mac(it)) } ?: FrontRead.Undecided
-    if (lead.isEmpty() || (!ended && listOf(HAND_OVER, MAC_OPEN, STOP, STOP_NAMED_OPEN).any { it.startsWith(lead) })) return FrontRead.Undecided
-    val said = text.replace(HAND_OVER, "").replace(STOP, "").replace(STOP_NAMED_MARK, "").replace(MAC_MARK, "")
+    if (lead.isEmpty() || (!ended && listOf(HAND_OVER, BUILD_NAMED_OPEN, MAC_OPEN, STOP, STOP_NAMED_OPEN).any { it.startsWith(lead) })) return FrontRead.Undecided
+    val said = text.replace(HAND_OVER, "").replace(BUILD_NAMED_MARK, "").replace(STOP, "").replace(STOP_NAMED_MARK, "").replace(MAC_MARK, "")
     return FrontRead.Answer(said.dropLast(if (ended) 0 else arrivingMark(said)).trimEnd())
 }
 
@@ -144,8 +171,11 @@ fun borneOut(read: FrontRead, words: String): FrontRead = if (read is FrontRead.
 
 /** Where a hand-over goes, once the mark is checked against the threads the front agent was shown. */
 sealed interface FrontRoute {
-    /** The phone's builder. */
+    /** New work for the phone's builders: whichever is free takes it ([pickBuilder]). */
     data object Build : FrontRoute
+
+    /** One builder by name: his words follow up on what it asked or is doing, and wait behind its task if it has one. */
+    data class Builder(val builder: BuilderId) : FrontRoute
 
     data class Mac(val thread: MacThread) : FrontRoute
 
@@ -158,6 +188,7 @@ sealed interface FrontRoute {
 
 /** [to] is what [FrontRead.HandOver] or [FrontRead.Stop] carries; [mac] is the board the front agent read, null when no Mac is set up. */
 fun frontRoute(to: String, mac: MacBoard?): FrontRoute {
+    Route.builderOf(to)?.let { return FrontRoute.Builder(it) }
     val named = Route.macThread(to) ?: return FrontRoute.Build
     val thread = mac?.threads?.firstOrNull { it.id == named } ?: return FrontRoute.Unknown(named)
     return FrontRoute.Mac(thread)
@@ -282,7 +313,7 @@ fun waitingLine(task: ChatTask, ahead: Int = 0, macLabel: String = ""): WaitingL
     task.status != TaskStatus.Queued -> null
     task.undecided -> WaitingLine(if (ahead <= 0) "Oma will read this next" else "Oma will read this after $ahead more", cancel = true)
     task.mac -> WaitingLine(if (macLabel == MAC_QUEUED) "queued → ${task.threadName} · queued on the Mac" else "$macLabel…", cancel = false)
-    else -> WaitingLine("queued → $BUILDER", cancel = true)
+    else -> WaitingLine("queued → " + if (task.builderId == BuilderId.A) BUILDER else builderCalled(task.builderId), cancel = true)
 }
 
 /**
@@ -301,9 +332,12 @@ data class BuildBoard(
 const val BOARD_REQUEST_CHARS = 200
 const val BOARD_ANSWER_CHARS = 300
 
-/** The board as the thread and the build lane's state have it at [now]. Front answers are no part of the build lane. */
-fun buildBoard(tasks: List<ChatTask>, working: Boolean, label: String, now: Long): BuildBoard {
-    val sent = tasks.filter { it.build && it.status != TaskStatus.Dropped }
+/**
+ * The board of [builder] as the thread and its state have it at [now]. Front answers are no part of the build
+ * lane, and another builder's requests are no part of this one's.
+ */
+fun buildBoard(tasks: List<ChatTask>, working: Boolean, label: String, now: Long, builder: BuilderId = BuilderId.A): BuildBoard {
+    val sent = tasks.filter { it.build && it.builderId == builder && it.status != TaskStatus.Dropped }
     val ended = sent.lastOrNull { it.status != TaskStatus.Running && it.status != TaskStatus.Queued && it.result.isNotBlank() }
     return BuildBoard(
         working = working,
@@ -387,12 +421,13 @@ private const val BOARD_OPEN_QUESTIONS = 2
  * to it, and each idle thread's last words and when it last worked. One that is working, or waiting for an
  * approval, has not finished speaking and is not named. Null when nobody has said anything.
  */
-private fun lastToSpeak(board: BuildBoard, mac: MacBoard): String? {
-    val builder = if (!board.working && board.lastAnswer.isNotBlank() && board.spokeAgo != null) Spoke("the builder", board.spokeAgo, asks(board.lastAnswer)) else null
+private fun lastToSpeak(board: BuildBoard, mac: MacBoard, second: BuildBoard?): String? {
+    fun spoke(who: String, board: BuildBoard) = if (!board.working && board.lastAnswer.isNotBlank() && board.spokeAgo != null) Spoke(who, board.spokeAgo, asks(board.lastAnswer)) else null
+    val builders = if (second == null) listOfNotNull(spoke("the builder", board)) else listOfNotNull(spoke("builder A", board), spoke("builder B", second))
     val threads = mac.threads.filter { it.status == MacThreadStatus.Idle && it.tail.isNotBlank() && it.lastWorked != null }.map {
         Spoke("thread \"${oneLine(it.name).take(BOARD_NAME_CHARS)}\" (id ${it.id})", (mac.now - (it.lastWorked ?: 0L) * 1000).coerceAtLeast(0), asks(it.tail))
     }
-    val spoke = (listOfNotNull(builder) + threads).sortedBy { it.since }
+    val spoke = (builders + threads).sortedBy { it.since }
     val last = spoke.firstOrNull() ?: return null
     val open = spoke.drop(1).filter { it.asked }.take(BOARD_OPEN_QUESTIONS)
     val others = if (last.asked) " An older question also waits: " else " A question still waits for an answer from Boss: "
@@ -400,30 +435,34 @@ private fun lastToSpeak(board: BuildBoard, mac: MacBoard): String? {
         (if (open.isEmpty()) "" else others + open.joinToString("; ") { "${it.who}, ${ago(it.since)}" } + ".")
 }
 
-/**
- * The board in the words the front agent reads, ending where his own words begin. He never sees it. With no
- * Mac set up ([mac] null) it is the builder's lines and nothing else, exactly as it was before there were threads.
- */
-fun boardText(board: BuildBoard, mac: MacBoard? = null): String {
+/** A builder's two lines on the board: how it stands, called [name], and when he last spoke to it, called [spoken]. */
+private fun builderLines(board: BuildBoard, name: String, spoken: String): List<String> {
     val request = oneLine(board.request)
     val answer = oneLine(board.lastAnswer)
     val builder = when {
-        board.working -> "Builder: working (${oneLine(board.label).take(80)})" +
+        board.working -> "$name: working (${oneLine(board.label).take(80)})" +
             (if (request.isEmpty()) "." else " on \"${request.take(BOARD_REQUEST_CHARS)}${if (request.length > BOARD_REQUEST_CHARS) "..." else ""}\".")
-        answer.isNotEmpty() -> "Builder: idle. Its last answer ended: \"${if (answer.length > BOARD_ANSWER_CHARS) "..." else ""}${answer.takeLast(BOARD_ANSWER_CHARS)}\""
-        board.spokeAgo == null -> "Builder: idle. It has not been asked anything yet."
-        else -> "Builder: idle."
+        answer.isNotEmpty() -> "$name: idle. Its last answer ended: \"${if (answer.length > BOARD_ANSWER_CHARS) "..." else ""}${answer.takeLast(BOARD_ANSWER_CHARS)}\""
+        board.spokeAgo == null -> "$name: idle. It has not been asked anything yet."
+        else -> "$name: idle."
     }
-    val lines = listOfNotNull(
-        "[Board, for you only; Boss does not see it]",
-        builder,
-        board.spokeAgo?.let { "Boss last spoke to the builder ${ago(it)}." },
-    )
-    return (lines + macLines(mac) + listOfNotNull(mac?.let { lastToSpeak(board, it) }) + "[Boss says]").joinToString("\n")
+    return listOfNotNull(builder, board.spokeAgo?.let { "Boss last spoke to $spoken ${ago(it)}." })
+}
+
+/**
+ * The board in the words the front agent reads, ending where his own words begin. He never sees it. With no
+ * Mac set up ([mac] null) and builder B never at work ([second] null) it is the builder's lines and nothing
+ * else, exactly as it was before there were threads; once B is, each builder has its lines under its letter.
+ */
+fun boardText(board: BuildBoard, mac: MacBoard? = null, second: BuildBoard? = null): String {
+    val builders = if (second == null) builderLines(board, "Builder", "the builder")
+    else builderLines(board, "Builder A", "builder A") + builderLines(second, "Builder B", "builder B")
+    val lines = listOf("[Board, for you only; Boss does not see it]") + builders
+    return (lines + macLines(mac) + listOfNotNull(mac?.let { lastToSpeak(board, it, second) }) + "[Boss says]").joinToString("\n")
 }
 
 /** What the front agent is sent: the board, then [request] exactly as he said it. */
-fun frontPrompt(board: BuildBoard, request: String, mac: MacBoard? = null): String = boardText(board, mac) + "\n" + request
+fun frontPrompt(board: BuildBoard, request: String, mac: MacBoard? = null, second: BuildBoard? = null): String = boardText(board, mac, second) + "\n" + request
 
 /**
  * One request the front agent answered itself: [said] is his words and [answered] what it told him. The
@@ -441,8 +480,11 @@ const val CONTEXT_OPEN = "[Earlier, between Boss and Oma's quick answers; contex
 /** The line the context ends with. Everything after it is his words, untouched. */
 const val CONTEXT_CLOSE = "[Boss now says]"
 
-/** Whether the phone's builder was sent [task]: a request of its own that was not dropped before it got there. */
+/** Whether the phone's builders were sent [task]: a request of their own that was not dropped before it got there. */
 fun builderGot(task: ChatTask) = task.build && task.status != TaskStatus.Dropped
+
+/** Whether [builder] itself was sent a task, as [builderGot] has it: what another builder was sent, this one missed. */
+fun gotBy(builder: BuilderId): (ChatTask) -> Boolean = { builderGot(it) && it.builderId == builder }
 
 /** Whether the thread [threadId] on the Mac was sent [task], or is being sent it. */
 fun threadGot(task: ChatTask, threadId: String) = task.thread == threadId && task.status != TaskStatus.Dropped

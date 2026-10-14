@@ -76,7 +76,10 @@ import dev.omalauncher.assist.QuickLane
 import dev.omalauncher.assist.RoutingLog
 import dev.omalauncher.assist.agentThreadsNow
 import dev.omalauncher.assist.appendSpeech
-import dev.omalauncher.assist.builderGot
+import dev.omalauncher.assist.BuilderId
+import dev.omalauncher.assist.builderApprovalTitle
+import dev.omalauncher.assist.builderId
+import dev.omalauncher.assist.gotBy
 import dev.omalauncher.assist.handOverContext
 import dev.omalauncher.assist.handOverPreface
 import dev.omalauncher.assist.macApprovalDetail
@@ -195,10 +198,9 @@ private fun OmaChatScreen(
     val drafts = remember { ChatDrafts.of(context) }
     val tasks = remember(tick) { store.tasks }
     val working = remember(tick) { AgentTasks.working }
-    val pending = remember(tick) { AgentTasks.pending }
-    val label = remember(tick) { AgentTasks.label }
-    val liveAnswer = remember(tick) { AgentTasks.answer }
-    val followUp = remember(tick) { AgentTasks.thread != null }
+    // Each builder's own state, read the same way: each one's goes only to its own entries.
+    val builders = remember(tick) { AgentTasks.builders.associate { it.id to BuilderState(it.working, it.pending, it.label, it.answer) } }
+    val followUp = remember(tick) { AgentTasks.continuing }
     // The front agent's own state, read the same way and kept apart: each one's goes only to its own entry.
     val frontWorking = remember(tick) { QuickLane.working }
     val frontTime = remember(tick) { QuickLane.time }
@@ -215,6 +217,8 @@ private fun OmaChatScreen(
     val threads = remember(tick) { agentThreadsNow(context) }
     val tab = openTab(wanted, threads)
     val to = sendTo(tab, threads)
+    // On a builder's tab the field and its stop are that builder's alone; on the Oma tab they are every builder's.
+    val tabWorking = to.builder?.let { builders[it]?.working } ?: working
     // The tab strip is folded away each time the chat opens: the dots say how the threads stand without it.
     var tabsOpen by remember { mutableStateOf(false) }
 
@@ -241,11 +245,14 @@ private fun OmaChatScreen(
         }
     }
 
-    /** Straight to the build lane: sent now, or behind the running task when [queue]. False, with why above the field, if it refuses. */
+    /**
+     * Straight to the build lane: sent now, or behind the running task when [queue]. On a builder's tab to that
+     * builder, and otherwise as new work to whichever is free. False, with why above the field, if it refuses.
+     */
     fun build(prompt: String, queue: Boolean): Boolean =
         try {
             val paths = images.map { it.guestPath }
-            if (queue) AgentTasks.followUp(context, prompt, paths) else AgentTasks.send(context, prompt, paths)
+            if (queue) AgentTasks.followUp(context, prompt, paths, builder = to.builder) else AgentTasks.send(context, prompt, paths, builder = to.builder)
             true
         } catch (e: Exception) {
             notice = e.message
@@ -255,7 +262,7 @@ private fun OmaChatScreen(
     fun send() {
         val agent = runtime.agents.default
         val out = outgoing(
-            draft, images.size, images.any { !it.file.isFile }, importing || speech.listening, linuxState == LinuxState.Installed, agent?.bin, working,
+            draft, images.size, images.any { !it.file.isFile }, importing || speech.listening, linuxState == LinuxState.Installed, agent?.bin, tabWorking,
             frontReady = QuickLane.ready(context),
             to = to,
         )
@@ -275,7 +282,7 @@ private fun OmaChatScreen(
                 return
             } catch (e: Exception) {
                 // A front agent that can't even be asked is not his problem: the request goes on as it would have without one.
-                if (!build(out.prompt, queue = working)) return
+                if (!build(out.prompt, queue = tabWorking)) return
             }
             // From a Mac thread's own tab: the same sending a hand-over has, with nobody asked first and nothing added.
             is Outgoing.Mac -> MacThreads.say(context, out.prompt, out.thread, out.name)
@@ -291,14 +298,14 @@ private fun OmaChatScreen(
 
     /**
      * The one-tap fix for an answer where he wanted work done: the entry's request goes to the build lane word
-     * for word, sent or queued as Send would, and the entry is marked so it can't be sent twice. The builder is
-     * also told, as context, what he and the front agent said since it last got anything, this answer included:
-     * "look into it" needs what "it" was. None of that is shown or logged.
+     * for word, as new work, sent or queued as Send would, and the entry is marked so it can't be sent twice. The
+     * builder that takes it is also told, as context, what he and the front agent said since it last got
+     * anything, this answer included: "look into it" needs what "it" was. None of that is shown or logged.
      */
     fun sendToBuild(time: Long) {
         val marked = store.tasks.firstOrNull { it.time == time }?.let(ChatHistory::sentToBuild) ?: return
         try {
-            AgentTasks.followUp(context, marked.prompt, earlier = handOverPreface(handOverContext(store.tasks, Long.MAX_VALUE, ::builderGot)))
+            AgentTasks.handOver(context, marked.prompt, dev.omalauncher.phone.HomeDoor.home?.showing, null) { to -> handOverPreface(handOverContext(store.tasks, Long.MAX_VALUE, gotBy(to))) }
         } catch (e: Exception) {
             notice = e.message
             return
@@ -411,8 +418,8 @@ private fun OmaChatScreen(
                     }
                 }
                 // Follow-ups wait below the task that is running, so it is the last one running, not the last one; and a
-                // request the front agent has beside it is not it.
-                val building = tasks.lastOrNull { it.status == TaskStatus.Running && it.build }?.time
+                // request the front agent has beside it is not it. Each builder has its own.
+                val building = BuilderId.entries.associateWith { id -> tasks.lastOrNull { it.status == TaskStatus.Running && it.build && it.builderId == id }?.time }
                 // A request waiting on the Mac for work that has no entry here, such as a task begun at the Mac itself: still his to answer.
                 // On a thread's tab only that thread's: the builder's tab has none, since its requests are always an entry's.
                 val loose = macPending.filter { waiting -> tasks.none { it.thread == waiting.threadId && it.approvals.any { line -> line.key == waiting.request.approval } } }
@@ -459,11 +466,13 @@ private fun OmaChatScreen(
                             },
                             onBuild = { sendToBuild(task.time) },
                         )
+                        // A builder's entry reads that builder's state alone, and only its approvals are cards under it.
                         else -> {
-                            val running = working && task.time == building
-                            val cards = if (running) pending.associate { it.nonce to ApprovalCard(it.approval.explanation) { allow -> answer(it, allow) } } else emptyMap()
+                            val by = builders[task.builderId] ?: BuilderState()
+                            val running = by.working && task.time == building[task.builderId]
+                            val cards = if (running) by.pending.associate { it.nonce to ApprovalCard(it.approval.explanation) { allow -> answer(it, allow) } } else emptyMap()
                             TaskEntry(
-                                task, running, label, if (running) liveAnswer else task.result, cards,
+                                task, running, by.label, if (running) by.answer else task.result, cards,
                                 onCancel = {
                                     AgentTasks.cancelFollowUp(context, task.time)
                                     tick++
@@ -563,11 +572,11 @@ private fun OmaChatScreen(
                 // An answer the front agent is writing has its own stop, on its entry, and so has each task on the Mac:
                 // this one never reaches a thread there, and is not shown on a Mac thread's tab.
                 if (!listening) BracketAction("send", if (draft.isBlank() && images.isEmpty()) Pack.muted else Pack.accent, ::send)
-                if (fieldStop(to, working, deciding)) {
+                if (fieldStop(to, tabWorking, deciding)) {
                     BracketAction("stop", Pack.red) {
                         if (deciding) QuickLane.stop()
                         QuickLane.dropWaiting(context)
-                        if (working) AgentTasks.stop(context)
+                        if (tabWorking) AgentTasks.stop(context, to.builder)
                         tick++
                     }
                 }
@@ -607,6 +616,9 @@ private fun TabStrip(
         }
     }
 }
+
+/** One builder as the chat reads it twice a second: whether it works, what waits for his OK, its label and its live answer. */
+private data class BuilderState(val working: Boolean = false, val pending: List<PendingApproval> = emptyList(), val label: String = "", val answer: String = "")
 
 /** A waiting approval as its card needs it: why the agent asks, and where his tap goes. */
 private class ApprovalCard(val explanation: String, val answer: (Boolean) -> Unit)
@@ -675,7 +687,7 @@ private fun TaskEntry(
         for (approval in task.approvals) {
             val waiting = if (approval.answer == ApprovalAnswer.Waiting) cards[approval.key] else null
             if (waiting != null) {
-                ApprovalBox(if (task.mac) "Allow ${approval.tool} on ${task.threadName}?" else "Allow ${approval.tool}?", approval.detail, waiting)
+                ApprovalBox(if (task.mac) "Allow ${approval.tool} on ${task.threadName}?" else builderApprovalTitle(approval.tool, task.builderId), approval.detail, waiting)
             } else {
                 // A waiting approval that can no longer be answered here reads as not answered.
                 val answer = if (approval.answer == ApprovalAnswer.Waiting && !running) ApprovalAnswer.Unanswered else approval.answer
