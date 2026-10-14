@@ -139,8 +139,8 @@ object AgentTasks {
         val time = queued ?: ChatHistory.stamp(log.tasks, began)
         taskTime = time
         asked = page?.let { PageAsk(it, began) }
-        if (queued == null) log.begin(ChatTask(time, agent.name, prompt, images, screen = screen != null, newThread = resumed == null))
-        else log.update(time, save = true) { it.copy(agent = agent.name, newThread = resumed == null, status = TaskStatus.Running) }
+        if (queued == null) log.begin(ChatTask(time, agent.name, prompt, images, screen = screen != null, newThread = resumed == null, answeredBy = builderName(agent.bin)))
+        else log.update(time, save = true) { it.copy(agent = agent.name, newThread = resumed == null, status = TaskStatus.Running, answeredBy = builderName(agent.bin)) }
         working = true; stopping = false; ledger.clear(); published(); answer = ""; label = "${agent.name} is working"
         notify(context)
         thread(name = "assistant-agent", isDaemon = true) {
@@ -155,6 +155,7 @@ object AgentTasks {
                     var sent = false
                     var session: String? = null
                     var lost = false
+                    var named = ""
                     child.inputStream.bufferedReader().use { reader ->
                         while (true) {
                             val line = reader.readLine() ?: break
@@ -168,6 +169,11 @@ object AgentTasks {
                                 writeEvent(ClaudeProtocol.user(fullPrompt, shot)); shot = null; sent = true
                             }
                             ClaudeProtocol.approval(event)?.let { admit(context, it) }
+                            // The reply is named after the model Claude Code says answers it, whatever alias it was started with.
+                            streamAgentName(event)?.takeIf { it != named }?.let { name ->
+                                named = name
+                                log.update(time, save = true) { it.copy(answeredBy = name) }
+                            }
                             when (event.optString("type")) {
                                 "control_cancel_request" -> {
                                     val gone = synchronized(this) {

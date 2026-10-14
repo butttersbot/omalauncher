@@ -353,4 +353,19 @@ class MacThreadsTest {
         assertEquals(true, macRetried(unsent)?.direct)
         assertEquals("Mac", macDirect(9, "x", id, " ").threadName)
     }
+
+    @Test fun aThreadsReplyIsNamedWithItsFirstWords() {
+        var tasks = listOf(taken(5, "fix the menu"))
+        fun hear(event: MacEvent) { tasks = macApply(tasks, id, event, answeredBy = "Claude") }
+        // The receipt says where his words went; the name comes with the answer, not before it.
+        assertEquals("", tasks.single().answeredBy)
+        hear(MacEvent.Step(1, 0, "Read: menu.c", "Read")); assertEquals("", tasks.single().answeredBy)
+        hear(MacEvent.Text(2, 0, "Looking.")); assertEquals("Claude", tasks.single().answeredBy)
+        assertEquals("→ FF4 mod", tasks.single().agent)
+        // A name it already has stays; a result with no words before it names the entry too.
+        assertEquals("Opus", macApply(listOf(taken(6).copy(answeredBy = "Opus")), id, MacEvent.Text(1, 0, "x"), answeredBy = "Claude").single().answeredBy)
+        assertEquals("Claude", macApply(listOf(taken(7)), id, MacEvent.Result(1, 0, "Done.", failed = false), answeredBy = "Claude").single().answeredBy)
+        // With nothing known of who runs the thread, it stays unnamed.
+        assertEquals("", macApply(listOf(taken(8)), id, MacEvent.Text(1, 0, "x")).single().answeredBy)
+    }
 }

@@ -82,6 +82,7 @@ import dev.omalauncher.assist.handOverPreface
 import dev.omalauncher.assist.macApprovalDetail
 import dev.omalauncher.assist.macApprovalNotice
 import dev.omalauncher.assist.macThreadId
+import dev.omalauncher.assist.replyName
 import dev.omalauncher.assist.waitingLine
 import dev.omalauncher.linux.LinuxState
 import dev.omalauncher.linux.MAX_PROMPT_IMAGES
@@ -632,8 +633,9 @@ private fun ApprovalBox(
 }
 
 /**
- * One request in the thread: the prompt, the steps the agent reported, its approvals and the result. Nothing
- * says who answered, except that one handed to a thread on the Mac carries a receipt naming the project.
+ * One request in the thread: the prompt, the steps the agent reported, its approvals and the result, with the
+ * name of the AI that wrote it over it ([replyName]). One handed to a thread on the Mac also carries a receipt
+ * naming the project, under his words: the receipt says where they went, the name who answered.
  * [cards] are the approvals of this entry still waiting, by the key their lines carry. An answer of the front
  * agent's has [onStop] beside what it is doing while it runs, and [onBuild] under it afterwards, once:
  * `[ send to build ]`, for when he wanted the work done instead. A request the Mac never got has [onAgain]
@@ -701,6 +703,8 @@ private fun TaskEntry(
                 if (waiting.cancel && onCancel != null) BasicText("[ cancel ]", Modifier.clickable(onClick = onCancel).padding(horizontal = 8.dp, vertical = 8.dp), style = small)
             }
         }
+        // Who wrote the reply, quietly, in the look's mono face as the receipt and the steps are.
+        replyName(task, result)?.let { BasicText(Pack.caption(it), Modifier.padding(top = 6.dp), style = small, maxLines = 1) }
         if (result.isNotBlank()) {
             // What stands here for a task that failed or was never sent is an error or the launcher's own words, not the agent's Markdown.
             val answered = task.status != TaskStatus.Failed && task.status != TaskStatus.Dropped

@@ -382,4 +382,16 @@ class ChatHistoryTest {
         // Written only where it is set, so every other task keeps the shape it has always had.
         assertFalse(fields.getJSONObject(1).has("direct"))
     }
+
+    @Test fun whoAnsweredIsKeptWhereItIsKnown() {
+        val named = ChatTask(9, "Claude Code", "fix it", result = "Fixed.", status = TaskStatus.Done, answeredBy = "Opus")
+        val unnamed = named.copy(time = 10, answeredBy = "")
+        assertEquals(listOf(named, unnamed), ChatHistory.decode(ChatHistory.encode(listOf(named, unnamed))))
+        val fields = JSONObject(ChatHistory.encode(listOf(named, unnamed))).getJSONArray("tasks")
+        assertEquals("Opus", fields.getJSONObject(0).getString("answeredBy"))
+        // Written only where it is set, so every other task keeps the shape it has always had, and a file from before loads unnamed.
+        assertFalse(fields.getJSONObject(1).has("answeredBy"))
+        assertEquals("", ChatHistory.decode("""{"version":1,"tasks":[{"time":5,"agent":"quick","prompt":"ok","status":"done"}]}""").single().answeredBy)
+        assertEquals(40, ChatHistory.bounded(named.copy(answeredBy = "x".repeat(500))).answeredBy.length)
+    }
 }
