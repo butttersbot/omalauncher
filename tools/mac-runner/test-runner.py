@@ -276,13 +276,13 @@ try:
               and events[-1]['dropped'] == 1 and settle(other, 'idle'))
         check(kind + ': a late allow does nothing', call('POST', '/threads/%s/approvals/%s' % (other, card['approval']), {'decision': 'allow', 'nonce': card['nonce']})[0] == 404)
     codex = [entry for entry in starts() if entry.get('kind') == 'codex'][-1]
-    check('codex: auto by default, in the workspace sandbox asking only for more, and asks us, not its own reviewer', codex['policy'] == 'on-request'
+    check('codex: manual by default, in the workspace sandbox, and asks us, not its own reviewer', codex['policy'] == 'untrusted'
           and codex['sandbox'] == 'workspace-write' and codex['reviewer'] == 'user'
           and 'approvals_reviewer="user"' in codex['arguments'] and 'notify=[]' in codex['arguments'] and 'mcp_servers.paper.enabled=false' in codex['arguments'])
-    code, made = call('POST', '/threads', {'name': 'Codex careful', 'project': str(project), 'kind': 'codex', 'mode': 'manual'})
+    code, made = call('POST', '/threads', {'name': 'Codex auto', 'project': str(project), 'kind': 'codex', 'mode': 'auto'})
     call('POST', '/threads/%s/messages' % made['thread']['id'], {'text': 'what files are here'})
     stream(made['thread']['id'])
-    check('codex: manual asks about everything not read-only', made['thread']['mode'] == 'manual' and starts()[-1]['policy'] == 'untrusted'
+    check('codex: auto when asked for by name, asking only for more than the sandbox gives', made['thread']['mode'] == 'auto' and starts()[-1]['policy'] == 'on-request'
           and starts()[-1]['sandbox'] == 'workspace-write')
     code, made = call('POST', '/threads', {'name': 'Cursor auto', 'project': str(project), 'kind': 'cursor', 'mode': 'auto'})
     check('cursor: has no auto mode, so its threads are manual even when auto is asked for', code == 200 and made['thread']['mode'] == 'manual')

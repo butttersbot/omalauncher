@@ -97,8 +97,12 @@ def mode(meta):
     guard): routine work in the project runs and anything risky still comes to the phone. "manual": everything the
     agent would ask about is a card. Threads saved before modes existed have none and are auto. Cursor has no mode
     that runs routine work and still asks about the rest (its only run-everything mode asks about nothing), so its
-    threads are always manual."""
-    return 'manual' if meta['kind'] == 'cursor' else meta.get('mode') or 'auto'
+    threads are always manual. Codex threads are manual unless auto is asked for by name: its sandbox can read any
+    file this Mac user can, the runner key included, and only its blocked network keeps it from using the key
+    without a card (decided 2026-10-14, until the key lives somewhere Codex cannot read)."""
+    if meta['kind'] == 'cursor':
+        return 'manual'
+    return meta.get('mode') or ('manual' if meta['kind'] == 'codex' else 'auto')
 
 
 class Claude:
@@ -558,7 +562,7 @@ def allowed_project(given):
     return None
 
 
-def make(name, project, kind='claude', model=None, chosen='auto'):
+def make(name, project, kind='claude', model=None, chosen=None):
     with changed:
         entry_id = 't' + secrets.token_hex(4)
         thread = Thread({'id': entry_id, 'name': name, 'project': str(project), 'kind': kind, 'model': model, 'session': None,
@@ -838,8 +842,8 @@ class Runner(BaseHTTPRequestHandler):
             model = body.get('model')
             if model is not None and not (isinstance(model, str) and re.fullmatch(r'[A-Za-z0-9][\w.:=,\[\]-]{0,99}', model)):
                 return self.answer(400, {'ok': False, 'error': 'model must be a model name'})
-            chosen = body.get('mode') or 'auto'
-            if chosen not in MODES:
+            chosen = body.get('mode') or None
+            if chosen is not None and chosen not in MODES:
                 return self.answer(400, {'ok': False, 'error': 'mode must be "auto" or "manual"'})
             return self.answer(200, {'ok': True, 'thread': make(name, project, kind, model, chosen).view()})
         thread = threads.get(parts[1]) if len(parts) in (3, 4) and parts[0] == 'threads' else None
