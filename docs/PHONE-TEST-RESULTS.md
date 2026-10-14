@@ -1,6 +1,14 @@
 # Phone test results
 
-## Latest: bug noted — `oma-phone fill` said ok but the text never landed (2026-10-14, 04:15 PDT)
+## Latest: promoting for the Mac's background-work check (2026-10-14, 15:10 PDT) — Boss: "Yeah"
+
+The Mac session sent a check (Taildrop → `oma drop get` → ~/Inbox/fold-check-prompt.md): send "say hi and list the
+files in this folder" in a Mac thread tab, then "start `sleep 90 && echo done` in the background, tell me it started,
+then report when it finishes"; watch the tile ("running on the Mac"), the "· Still running on the Mac: …" lines,
+Claude Code's report under the answer when it ends, the tile back to "done"; screenshot each; update OPEN-BUGS #9.
+It needs the real launcher (Oma Dev has no agents), so: promote first, then run it after the restart.
+
+## Earlier: bug noted — `oma-phone fill` said ok but the text never landed (2026-10-14, 04:15 PDT)
 
 In the Oma chat, on a Mac thread's tab, `oma-phone fill --in dev.omalauncher.boss "to Back up projects before
 phone…" "<text>"` answered `ok: true`, yet the field stayed empty and [ send ] sent nothing. `oma-phone read` shows
