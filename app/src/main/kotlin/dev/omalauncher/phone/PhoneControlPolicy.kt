@@ -33,11 +33,15 @@ const val PHONE_BIND_GRACE_MILLIS = 20_000L
 /** What the owner and the agent are told while phone control is switched on and not bound. */
 const val PHONE_DISCONNECTED = "Phone control is disconnected. Turn it off and on in Accessibility settings, or restart the phone."
 
-/** [bound]: the service is running. [switchedOn]: Android's settings list it. [upMillis]: how long this process has run. */
-fun phoneLink(bound: Boolean, switchedOn: Boolean, upMillis: Long): PhoneLink =
+/**
+ * [bound]: the service is running. [switchedOn]: Android's settings list it. [upMillis]: how long this process has
+ * run. [healGaveUp]: PhoneControlHeal has spent its tries on a service he wants on, so off is not his choice and
+ * reads as disconnected, with the remedy.
+ */
+fun phoneLink(bound: Boolean, switchedOn: Boolean, upMillis: Long, healGaveUp: Boolean = false): PhoneLink =
     when {
         bound -> PhoneLink.On
-        !switchedOn -> PhoneLink.Off
+        !switchedOn -> if (healGaveUp) PhoneLink.Disconnected else PhoneLink.Off
         // Still within the time Android takes to bind it after a start.
         upMillis < PHONE_BIND_GRACE_MILLIS -> PhoneLink.On
         else -> PhoneLink.Disconnected

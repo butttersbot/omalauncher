@@ -484,16 +484,19 @@ private fun builderLines(board: BuildBoard, name: String, spoken: String): List<
  * The board in the words the front agent reads, ending where his own words begin. He never sees it. With no
  * Mac set up ([mac] null) and builder B never at work ([second] null) it is the builder's lines and nothing
  * else, exactly as it was before there were threads; once B is, each builder has its lines under its letter.
+ * [phone] is PhoneControlHeal's line, so the front agent can tell him phone control is off by his own choice, or
+ * was off and has been turned back on; null says nothing and leaves the board as it was.
  */
-fun boardText(board: BuildBoard, mac: MacBoard? = null, second: BuildBoard? = null): String {
+fun boardText(board: BuildBoard, mac: MacBoard? = null, second: BuildBoard? = null, phone: String? = null): String {
     val builders = if (second == null) builderLines(board, "Builder", "the builder")
     else builderLines(board, "Builder A", "builder A") + builderLines(second, "Builder B", "builder B")
-    val lines = listOf("[Board, for you only; Boss does not see it]") + builders
+    val lines = listOf("[Board, for you only; Boss does not see it]") + builders + listOfNotNull(phone)
     return (lines + macLines(mac) + listOfNotNull(mac?.let { lastToSpeak(board, it, second) }) + "[Boss says]").joinToString("\n")
 }
 
 /** What the front agent is sent: the board, then [request] exactly as he said it. */
-fun frontPrompt(board: BuildBoard, request: String, mac: MacBoard? = null, second: BuildBoard? = null): String = boardText(board, mac, second) + "\n" + request
+fun frontPrompt(board: BuildBoard, request: String, mac: MacBoard? = null, second: BuildBoard? = null, phone: String? = null): String =
+    boardText(board, mac, second, phone) + "\n" + request
 
 /**
  * One request the front agent answered itself: [said] is his words and [answered] what it told him. The

@@ -44,6 +44,7 @@ class PhoneBridge(private val context: Context, private val proot: Proot) {
                                         val link = PhoneAccess.link(context)
                                         result = JSONObject().put("ok", true).put("active", PhoneAccess.active).put("connected", service != null).put("link", link.id)
                                         if (link == PhoneLink.Disconnected) result.put("note", PHONE_DISCONNECTED)
+                                        PhoneControlHeal.status(context, result)
                                         latch.countDown()
                                     }
                                     input.optString("command") == "stop" -> { PhoneAccess.stop(context); result = JSONObject().put("ok", true); latch.countDown() }

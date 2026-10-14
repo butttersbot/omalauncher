@@ -211,6 +211,8 @@ class Runtime(
     fun start() {
         if (started) return
         started = true
+        // Phone control switched off by a force-stop or an update, while he wanted it on, is put back: off this thread.
+        dev.omalauncher.phone.PhoneControlHeal.atStart(context)
         scope.launch {
             withContext(Dispatchers.IO) {
                 LauncherData.migrate(context)

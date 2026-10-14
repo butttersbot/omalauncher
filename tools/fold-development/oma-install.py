@@ -11,10 +11,14 @@ service=package+'/dev.omalauncher.phone.PhoneService'
 # After an update Android can leave phone control switched on and never bound: it starts binding the new build,
 # stops the package once more, and does not try again. Turning the switch off and on mends it. The job does that,
 # as Android's shell, only when the switch is still on and the service is not bound; switched off, it is left off.
-# The log line it leaves is one of PHONE_CONTROL_OFF, _BOUND, _HEALED, _STILL_DISCONNECTED.
+# Switched off while the launcher's own record says Boss wants it on (a force-stop drops it from the list), the
+# launcher puts it back itself at start and respects his own switch-off, so the job leaves it to the launcher.
+# The working launcher is a debug build, so Android's shell can read that record with run-as.
+# The log line it leaves is one of PHONE_CONTROL_OFF, _LEFT_TO_LAUNCHER, _BOUND, _HEALED, _STILL_DISCONNECTED.
 # Android prints each bound service on a line of its own, so the whole block is read: with a second service
 # bound (Oma Dev's), a look at the first line alone missed this one and turned a working service off and on.
 HEAL=r'''  svc=__SERVICE__
+  wanted() { run-as __PACKAGE__ cat shared_prefs/phone-control-heal.xml 2>/dev/null | grep -q 'name="wanted-since"'; }
   bound() { dumpsys accessibility | sed -n '/Bound services:/,/Enabled services:/p' | grep -q "id=$svc[,}]"; }
   tries=0
   until bound || [ $tries -ge 10 ]; do sleep 2; tries=$((tries+1)); done
@@ -33,7 +37,7 @@ HEAL=r'''  svc=__SERVICE__
       until bound || [ $tries -ge 10 ]; do sleep 2; tries=$((tries+1)); done
       if bound; then echo PHONE_CONTROL_HEALED; else echo PHONE_CONTROL_STILL_DISCONNECTED; fi
     fi ;;
-  *) echo PHONE_CONTROL_OFF ;;
+  *) if wanted; then echo PHONE_CONTROL_LEFT_TO_LAUNCHER; else echo PHONE_CONTROL_OFF; fi ;;
   esac'''
 def run(args, timeout=30):
  return subprocess.run(args,capture_output=True,text=True,timeout=timeout)
@@ -84,7 +88,7 @@ if '--status' in sys.argv:
   log=run(['adb','-s',endpoint,'shell','cat',plan['log']])
   print(log.stdout.strip() or 'Update has not completed yet.')
   if installed==plan['version'] and 'INSTALL_SUCCESS' in log.stdout:print('In-place launcher update verified.')
-  for mark,told in [('PHONE_CONTROL_BOUND','Phone control reconnected by itself.'),('PHONE_CONTROL_HEALED','Phone control did not reconnect; the installer turned it off and on, and it is connected.'),('PHONE_CONTROL_STILL_DISCONNECTED','Phone control is DISCONNECTED: turning it off and on did not reconnect it. Boss needs to toggle it in Accessibility settings or restart the phone.'),('PHONE_CONTROL_OFF','Phone control is switched off in Accessibility settings; left off.')]:
+  for mark,told in [('PHONE_CONTROL_BOUND','Phone control reconnected by itself.'),('PHONE_CONTROL_HEALED','Phone control did not reconnect; the installer turned it off and on, and it is connected.'),('PHONE_CONTROL_STILL_DISCONNECTED','Phone control is DISCONNECTED: turning it off and on did not reconnect it. Boss needs to toggle it in Accessibility settings or restart the phone.'),('PHONE_CONTROL_LEFT_TO_LAUNCHER','Phone control was found switched off, but Boss had it on: left to the launcher, which turns it back on by itself.'),('PHONE_CONTROL_OFF','Phone control is switched off in Accessibility settings; left off.')]:
    if mark in log.stdout:print(told)
  sys.exit(0)
 if version<=installed:
@@ -96,7 +100,7 @@ log='/data/local/tmp/oma-update-'+uid+'.log'
 script=pathlib.Path('/root/.config/oma-development/install-job.sh')
 lines=['#!/system/bin/sh','sleep 10','if pm install -r '+shlex.quote(remote)+'; then','  echo INSTALL_SUCCESS']
 if '--no-open' not in sys.argv:lines+=['  am start -n '+package+'/dev.omalauncher.MainActivity']
-lines+=HEAL.replace('__SERVICE__',service).splitlines()
+lines+=HEAL.replace('__SERVICE__',service).replace('__PACKAGE__',package).splitlines()
 lines+=['else','  echo INSTALL_FAILED','fi','rm -f '+shlex.quote(remote)+' '+shlex.quote(remote_script)]
 script.write_text('\n'.join(lines)+'\n')
 for source,dest in [(apk,remote),(script,remote_script)]:

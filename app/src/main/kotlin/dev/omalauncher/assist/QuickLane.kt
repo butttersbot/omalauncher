@@ -172,6 +172,8 @@ object QuickLane {
         val mac = MacThreads.board(context, began)
         // How the builders are doing, looked at now from /proc, so "is it frozen?" is answered from what is so.
         val health = BuilderWatch.look(context)
+        // Phone control off by his choice, or put back by itself, so the front agent says which.
+        val phone = dev.omalauncher.phone.PhoneControlHeal.note(context, System.currentTimeMillis())
         // A task's time is what identifies it, and the build lane files its tasks under its own lock: held here
         // so the two can't take the same one, and so the board is the build lane as it stands at this moment.
         // Nothing of the build lane is changed.
@@ -188,7 +190,7 @@ object QuickLane {
             val asking = askingBuilder(mapOf(BuilderId.A to board, BuilderId.B to (second ?: buildBoard(log.tasks, b.working, b.label, began, BuilderId.B))))
             val filed = waited?.also { time -> log.update(time, save = true) { it.copy(status = TaskStatus.Running) } }
                 ?: ChatHistory.stamp(log.tasks, began).also { log.begin(ChatTask(it, UNDECIDED_AGENT, prompt, chat = chat)) }
-            Triple(filed, quickCommand(frontPrompt(board, prompt, mac, second), resumed, mac = mac != null, newChat = chat.isNotEmpty()), asking)
+            Triple(filed, quickCommand(frontPrompt(board, prompt, mac, second, phone), resumed, mac = mac != null, newChat = chat.isNotEmpty()), asking)
         }
         time = asked; working = true; stopping = false; answer = ""; label = ANSWERING
         // A new chat's work that it answers in prose is not shown, and goes to the Mac as if it had said nothing.

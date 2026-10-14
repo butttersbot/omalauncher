@@ -152,6 +152,8 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch { runtime.themes.refreshLiveWallpaper() }
         // Folded or unfolded since: the display now in use may not have the look's paper on its lock screen yet.
         runtime.themes.syncLockPaper()
+        // Coming home is when phone control is next wanted: put back if something other than him switched it off.
+        dev.omalauncher.phone.PhoneControlHeal.look(this)
     }
 
     /** Drops Recents cards whose Linux window no longer exists (app exited or process restarted). */

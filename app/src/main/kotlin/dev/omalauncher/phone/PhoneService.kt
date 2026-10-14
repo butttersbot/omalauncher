@@ -42,13 +42,22 @@ class PhoneService : AccessibilityService() {
     private val screenChanged = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) = syncRing()
     }
-    override fun onServiceConnected() { PhoneAccess.load(this); instance = this; watchRing(); dev.omalauncher.assist.AgentTasks.phoneChanged(this) }
+    /** The package of the last window to come to the front: an unbind with his settings there is him switching it off. */
+    @Volatile private var front: String? = null
+    override fun onServiceConnected() {
+        PhoneAccess.load(this); instance = this
+        PhoneControlHeal.connected(this, paused = !PhoneAccess.active)
+        watchRing(); dev.omalauncher.assist.AgentTasks.phoneChanged(this)
+    }
     /** A window changed, the lock screen's among them: an overlay that is up looks again at once. */
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) { if (ring.shown || answer.shown) syncRing() }
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) event.packageName?.let { front = it.toString() }
+        if (ring.shown || answer.shown) syncRing()
+    }
     override fun onInterrupt() = Unit
     /** Folded, unfolded or turned. */
     override fun onConfigurationChanged(newConfig: Configuration) { super.onConfigurationChanged(newConfig); lookAgain(ring.relayout()) }
-    override fun onUnbind(intent: Intent?): Boolean { closeRing(); return super.onUnbind(intent) }
+    override fun onUnbind(intent: Intent?): Boolean { PhoneControlHeal.unbound(this, front); closeRing(); return super.onUnbind(intent) }
     override fun onDestroy() { instance = null; closeRing(); PhoneAccess.clearIndicator(this); dev.omalauncher.assist.AgentTasks.phoneChanged(this); super.onDestroy() }
 
     private fun watchRing() {

@@ -14,7 +14,7 @@ object PhoneAccess {
         val mine = ComponentName(context, PhoneService::class.java)
         val listed = android.provider.Settings.Secure.getString(context.contentResolver, android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
             .orEmpty().split(':').any { ComponentName.unflattenFromString(it) == mine }
-        return phoneLink(PhoneService.instance != null, listed, SystemClock.elapsedRealtime() - android.os.Process.getStartElapsedRealtime())
+        return phoneLink(PhoneService.instance != null, listed, SystemClock.elapsedRealtime() - android.os.Process.getStartElapsedRealtime(), PhoneControlHeal.gaveUp(context))
     }
     fun load(context: Context) {
         paused = context.getSharedPreferences("phone-control", Context.MODE_PRIVATE).getBoolean("paused", false)
@@ -22,11 +22,13 @@ object PhoneAccess {
     fun resume(context: Context) {
         paused = false
         context.getSharedPreferences("phone-control", Context.MODE_PRIVATE).edit().putBoolean("paused", false).apply()
+        PhoneControlHeal.resumed(context)
         PhoneService.instance?.ringChanged()
     }
     fun stop(context: Context) {
         paused = true
         context.getSharedPreferences("phone-control", Context.MODE_PRIVATE).edit().putBoolean("paused", true).apply()
+        PhoneControlHeal.paused(context)
         clearIndicator(context)
         // Paused: the ring over other apps goes with it.
         PhoneService.instance?.ringChanged()
