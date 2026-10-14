@@ -124,6 +124,17 @@ class ListeningRequestTest {
         assertEquals(waitingForHim, waitingForHim.spoke("for nine"))
     }
 
+    /** What he changed by hand is what goes, and what saying more adds to; cleared, Send does nothing. */
+    @Test fun editedWordsAreTheOnesSent() {
+        val waiting = ListeningRequest(ListeningPhase.Heard, "book a table for to").edited("book a table for two")
+        assertEquals(ListeningStep(null, ListeningEffect.Send("book a table for two")), waiting.act(ListeningAct.Send))
+        assertEquals(ListeningRequest(ListeningPhase.Listening, "book a table for two"), waiting.act(ListeningAct.Add).next)
+        val cleared = waiting.edited("  ")
+        assertEquals(ListeningStep(cleared, null), cleared.act(ListeningAct.Send))
+        val listening = ListeningRequest(ListeningPhase.Listening, "book")
+        assertEquals(listening, listening.edited("something else"))
+    }
+
     @Test fun theOtherPhasesKeepTheirWaysOut() {
         assertEquals(ListeningStep(null, ListeningEffect.Leave), ListeningRequest(ListeningPhase.NeedsOk).act(ListeningAct.Close))
         assertEquals(ListeningStep(null, ListeningEffect.Review), ListeningRequest(ListeningPhase.NeedsOk).act(ListeningAct.Review))

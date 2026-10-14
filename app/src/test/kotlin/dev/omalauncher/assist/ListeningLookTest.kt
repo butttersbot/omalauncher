@@ -20,6 +20,12 @@ class ListeningLookTest {
         assertEquals("with this screen", look.note)
     }
 
+    /** Only the words that wait for his go can be changed by hand: while the microphone is open they are still coming. */
+    @Test fun onlyTheWaitingWordsCanBeEdited() {
+        assertEquals(true, listeningLook(ListeningPhase.Heard, heard = "open my trip page").editable)
+        for (phase in ListeningPhase.entries.filter { it != ListeningPhase.Heard }) assertEquals(false, listeningLook(phase, heard = "x", detail = "y").editable)
+    }
+
     @Test fun theScreenNoteShowsOnlyWhileARequestIsBeingTaken() {
         assertEquals("with this screen", listeningLook(ListeningPhase.Listening, note = "with this screen").note)
         assertEquals("with this screen", listeningLook(ListeningPhase.Missed, note = "with this screen").note)

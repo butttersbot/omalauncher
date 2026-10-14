@@ -176,7 +176,7 @@ class ListeningHost(private val owner: Context, private val dismiss: () -> Unit)
                 // The recognizer can fail without a word: that is a problem to show, not a silence.
                 val failed = speech.error
                 LaunchedEffect(failed) { if (failed != null) spoke("") }
-                ListeningLayer(look, ::act, onNote = { showScreen(ScreenContext.None, null); onScreenLetGo?.invoke() }, onDim = { paper.color = Pack.paper.copy(alpha = it).toArgb() })
+                ListeningLayer(look, ::act, onNote = { showScreen(ScreenContext.None, null); onScreenLetGo?.invoke() }, onDim = { paper.color = Pack.paper.copy(alpha = it).toArgb() }, onEdit = { text -> request = request?.edited(text) })
             }
         }, LayoutParams(-1, -1))
     }

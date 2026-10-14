@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -36,14 +37,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -92,6 +96,8 @@ data class ListeningLook(
     val acts: List<ListeningAct>,
     /** A smaller line over the caption, for the screen that goes with the request; tapping it lets the screen go. */
     val note: String = "",
+    /** The words are his to change before sending: tapped, they take a cursor, a selection and the keyboard. */
+    val editable: Boolean = false,
 )
 
 /** The look of [phase]: [heard] is what the microphone has so far, [detail] what a problem or a waiting approval says. */
@@ -104,7 +110,7 @@ fun listeningLook(
     when (phase) {
         ListeningPhase.Listening -> ListeningLook("Listening", heard, listOf(ListeningAct.Cancel), note)
         // The words stay as they were written; sending is his to tap, and he can say more first.
-        ListeningPhase.Heard -> ListeningLook("Send this?", heard, listOf(ListeningAct.Send, ListeningAct.Add, ListeningAct.Cancel), note)
+        ListeningPhase.Heard -> ListeningLook("Send this?", heard, listOf(ListeningAct.Send, ListeningAct.Add, ListeningAct.Cancel), note, editable = true)
         ListeningPhase.Missed -> ListeningLook("Didn't catch that", "", listOf(ListeningAct.Retry, ListeningAct.Cancel), note)
         ListeningPhase.Failed -> ListeningLook("That didn't work", detail, listOf(ListeningAct.Retry, ListeningAct.Cancel), note)
         ListeningPhase.NoMic -> ListeningLook("Microphone is off", "Allow the microphone to talk to Oma", listOf(ListeningAct.Allow, ListeningAct.Cancel))
@@ -144,7 +150,8 @@ internal fun prototypeUnit(widthDp: Float, heightDp: Float): Float {
  * The listening screen: the paper laid over whatever is underneath, the words handwritten bottom left as
  * they are heard, and an underlined way out. [look] null is the screen going away; it fades as it came.
  * A tap on the paper is [ListeningAct.Cancel]. With [onDim] the host lays the paper itself (a window does,
- * so it reaches under the system bars) and is told how much of it to show.
+ * so it reaches under the system bars) and is told how much of it to show. [onEdit] is told the words as he
+ * changes them by hand, while they wait for his go.
  */
 @Composable
 internal fun ListeningLayer(
@@ -153,6 +160,7 @@ internal fun ListeningLayer(
     modifier: Modifier = Modifier,
     onNote: () -> Unit = {},
     onDim: ((Float) -> Unit)? = null,
+    onEdit: (String) -> Unit = {},
 ) {
     var last by remember { mutableStateOf(look) }
     if (look != null) last = look
@@ -198,7 +206,11 @@ internal fun ListeningLayer(
                 showing.caption.uppercase(),
                 style = Pack.mono((10 * u).sp, ink.copy(alpha = ink.alpha * 0.8f)).copy(fontWeight = FontWeight.Medium, letterSpacing = 0.12.em, lineHeight = (10 * u).sp),
             )
-            Said(showing.words, ink, u, Modifier.padding(top = (10 * u).dp))
+            if (showing.editable && shown) {
+                Written(showing.words, ink, u, onEdit, Modifier.padding(top = (10 * u).dp))
+            } else {
+                Said(showing.words, ink, u, Modifier.padding(top = (10 * u).dp))
+            }
             Row(horizontalArrangement = Arrangement.spacedBy((22 * u).dp)) {
                 for (act in showing.acts) {
                     BasicText(
@@ -250,6 +262,33 @@ private fun Said(
         text,
         modifier.heightIn(max = (40 * u * SAID_LINES).dp).verticalScroll(scroll),
         style = Pack.hand((40 * u).sp, ink).copy(fontWeight = FontWeight.Bold, lineHeight = (40 * u).sp),
+        minLines = 3,
+    )
+}
+
+/**
+ * The words once the microphone has closed, the same handwriting as [Said] but a text field (Boss, 2026-10-13):
+ * a tap puts the cursor there, a press and drag selects, and the keyboard deletes and types. Nothing about the
+ * screen changes until he touches them. The cursor and selection are kept here; words added by speaking again
+ * come back as new [words] and take their place, with the cursor at the end.
+ */
+@Composable
+private fun Written(
+    words: String,
+    ink: Color,
+    u: Float,
+    onEdit: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var field by remember { mutableStateOf(TextFieldValue(words, TextRange(words.length))) }
+    if (field.text != words) field = TextFieldValue(words, TextRange(words.length))
+    val scroll = rememberScrollState()
+    BasicTextField(
+        field,
+        { next -> field = next; if (next.text != words) onEdit(next.text) },
+        modifier.heightIn(max = (40 * u * SAID_LINES).dp).verticalScroll(scroll),
+        textStyle = Pack.hand((40 * u).sp, ink).copy(fontWeight = FontWeight.Bold, lineHeight = (40 * u).sp),
+        cursorBrush = SolidColor(ink),
         minLines = 3,
     )
 }

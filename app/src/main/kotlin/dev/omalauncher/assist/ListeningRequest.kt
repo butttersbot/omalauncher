@@ -44,6 +44,9 @@ data class ListeningRequest(
         }
     }
 
+    /** He changed the waiting words by hand to [text]; at any other moment there are no words of his to change. */
+    fun edited(text: String): ListeningRequest = if (phase == ListeningPhase.Heard) copy(heard = text) else this
+
     /** The owner tapped [act]. */
     fun act(act: ListeningAct): ListeningStep =
         when (act) {
