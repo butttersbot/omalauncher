@@ -8,12 +8,14 @@ import org.json.JSONObject
 import java.io.File
 
 // Boss talks to one Oma (Boss, 2026-10-13). The front agent, which is the fast model of [QuickLane], hears a
-// request first and answers it, hands his words on unchanged, or says which task he has ordered to stop.
+// request first and does one of two things (Boss, 2026-10-14: "Shrink the front agent to two jobs: answer, or
+// say which project"): it answers, or it hands his words on unchanged to the phone's builders or a project on
+// the Mac. Stopping, restarting and cleaning up are buttons on a tab's long-press menu, never its to do.
 // Everything that decides that is here and pure; QuickLane runs the process and does what these say.
 
 /**
  * Where a request can go. An id and not an enum, because every project thread on the Mac is one more: the
- * front agent answers, hands on to the phone's builder, or hands on to one of those threads.
+ * front agent answers, hands on to the phone's builders, or hands on to one of those threads.
  */
 object Route {
     const val FRONT = "front"
@@ -34,12 +36,6 @@ object Route {
 
     /** The id of the busy thread [route] names for a fresh thread on its project, or null for any other route. */
     fun macNewThread(route: String): String? = if (route.startsWith("$MAC_NEW ")) route.removePrefix("$MAC_NEW ") else null
-
-    /** The route to one of the phone's builders by name: a follow-up to what that builder asked or is doing. */
-    fun builder(id: BuilderId) = "$BUILD ${id.letter}"
-
-    /** The builder [route] names, or null for a route that names none, [BUILD] itself included. */
-    fun builderOf(route: String): BuilderId? = if (route.startsWith("$BUILD ")) BuilderId.named(route.removePrefix("$BUILD ")) else null
 
     /** The id of the thread [route] names, or null for a route that is not to the Mac. */
     fun macThread(route: String): String? = if (route.startsWith("$MAC ")) route.removePrefix("$MAC ") else null
@@ -67,51 +63,21 @@ private val MAC_ARRIVING = Regex(Regex.escape(MAC_OPEN) + "[^<>\\n]{0,80}>?")
 private const val MAC_NEW_OPEN = "<<" + Route.MAC_NEW
 
 /**
- * How a mark for one of the phone's builders begins, and the same two readings of it as a thread's has:
- * `<<build B>>` hands his words to builder B, whatever else it is doing.
+ * The words of the phone's marks: [Route.BUILD], and the ones the prompt taught before 2026-10-14 (a builder by
+ * letter, stop, restart, clean). A front conversation begun before then may still say one of those, so each is
+ * read as [HAND_OVER] is, and is a plain hand-over: never carried out, and never shown to him.
  */
-private const val BUILD_NAMED_OPEN = "<<" + Route.BUILD + " "
-private val BUILD_NAMED_MARK = Regex(Regex.escape(BUILD_NAMED_OPEN) + "[^<>\\n]{0,80}>>")
-private val BUILD_NAMED_ARRIVING = Regex(Regex.escape(BUILD_NAMED_OPEN) + "[^<>\\n]{0,80}>?")
+private val PHONE_WORDS = listOf(Route.BUILD, "stop", "restart", "clean")
 
-/**
- * The whole reply the front agent gives when his words are an order to stop what [route] is working on: the
- * phone's builders, one of them by name, or one thread on the Mac. Never shown and never saved, as a
- * hand-over's mark is not.
- */
-fun stopMark(route: String) = when {
-    route == Route.BUILD -> "<<stop>>"
-    Route.builderOf(route) != null -> "<<stop ${Route.builderOf(route)?.letter}>>"
-    else -> "<<stop $route>>"
-}
+/** A whole phone mark, wherever it stands, and one still arriving at the end of what has been said. */
+private val PHONE_MARK = Regex("<<(?:${PHONE_WORDS.joinToString("|")})(?: [^<>\\n]{0,80})?>>")
+private val PHONE_ARRIVING = Regex("<<(?:${PHONE_WORDS.joinToString("|")})(?: [^<>\\n]{0,80})?>?")
 
-val STOP = stopMark(Route.BUILD)
+/** How every mark begins, for holding back the start of one while it may still be arriving. */
+private val OPENS = PHONE_WORDS.map { "<<$it" } + MAC_OPEN
 
-/**
- * How a mark that stops a thread on the Mac begins, and the same two readings of it as a hand-over's has. The
- * real model now and then leaves the word for the Mac out and writes the id alone (seen 2026-10-13), so
- * whatever stands after the space is read as the thread it names, with or without that word before it.
- */
-private const val STOP_NAMED_OPEN = "<<stop "
-private val STOP_NAMED_MARK = Regex(Regex.escape(STOP_NAMED_OPEN) + "[^<>\\n]{0,80}>>")
-private val STOP_NAMED_ARRIVING = Regex(Regex.escape(STOP_NAMED_OPEN) + "[^<>\\n]{0,80}>?")
-
-/**
- * The whole reply the front agent gives when his words ask for the phone's builder to be mended: [RESTART] stops
- * its stuck task and sends the same request again, [CLEAN] ends builder processes no task owns. The launcher
- * carries both out, never the front agent, and only as [BuilderWatch] finds things when the mark arrives.
- */
-const val RESTART = "<<restart>>"
-const val CLEAN = "<<clean>>"
-
-/**
- * With two builders, the mark that restarts the one named, as [RESTART] does the one that is stuck: what the
- * front agent replies once he has said which. Carried out under the same checks, and only on that builder.
- */
-fun restartMark(builder: BuilderId) = "<<restart ${builder.letter}>>"
-
-/** Every mark that mends, each read whole: no part of one is ever shown as an answer. */
-private val MENDING_MARKS = listOf(RESTART, CLEAN) + BuilderId.entries.map(::restartMark)
+/** Whether [lead] opens with a phone mark: its word, then the closing brackets or a space before what it named. */
+private fun phoneMark(lead: String) = PHONE_WORDS.any { lead.startsWith("<<$it>") || lead.startsWith("<<$it ") }
 
 /** Whether a thread with this id can be named by a mark at all: no spaces, no brackets, no backticks, not too long. */
 fun macNameable(threadId: String) = threadId.length in 1..MAC_ID_CHARS && threadId.none { it.isWhitespace() || it in "<>`" }
@@ -126,26 +92,10 @@ sealed interface FrontRead {
 
     /** The request goes to [to], as he said it. */
     data class HandOver(val to: String) : FrontRead
-
-    /** His words were an order to stop: the task [of] is on is stopped, and his words go nowhere. */
-    data class Stop(val of: String) : FrontRead
-
-    /** He asked for the stuck builder to be restarted. */
-    data object Restart : FrontRead
-
-    /** He asked for [builder], by name, to be restarted: the answer to being asked which. */
-    data class RestartOne(val builder: BuilderId) : FrontRead
-
-    /** He asked for leftover builder processes to be ended. */
-    data object Clean : FrontRead
 }
 
 /** Whether [tail], the end of what has been said, could still grow into a mark. */
-private fun opensMark(tail: String) =
-    (tail.length < HAND_OVER.length && HAND_OVER.startsWith(tail)) || MAC_OPEN.startsWith(tail) || MAC_ARRIVING.matches(tail) ||
-        BUILD_NAMED_OPEN.startsWith(tail) || BUILD_NAMED_ARRIVING.matches(tail) ||
-        (tail.length < STOP.length && STOP.startsWith(tail)) || STOP_NAMED_OPEN.startsWith(tail) || STOP_NAMED_ARRIVING.matches(tail) ||
-        MENDING_MARKS.any { tail.length < it.length && it.startsWith(tail) }
+private fun opensMark(tail: String) = OPENS.any { it.startsWith(tail) } || PHONE_ARRIVING.matches(tail) || MAC_ARRIVING.matches(tail)
 
 /** How many characters at the end of [said] are the start of a mark that may still be arriving. */
 private fun arrivingMark(said: String): Int {
@@ -158,9 +108,9 @@ private fun arrivingMark(said: String): Int {
  * The thread a mark for the Mac at the start of [lead] names, [open] being how that mark begins; null while
  * its closing `>>` may still be coming. One that never closes, or is too long to be an id, names nothing.
  */
-private fun macNamed(lead: String, open: String, arriving: Regex, ended: Boolean): String? {
+private fun macNamed(lead: String, open: String, ended: Boolean): String? {
     val close = lead.indexOf(">>")
-    if (close < 0 && !ended && arriving.matches(lead)) return null
+    if (close < 0 && !ended && MAC_ARRIVING.matches(lead)) return null
     val named = if (close < 0) "" else lead.substring(open.length, close).trim()
     return named.takeIf { it.length <= MAC_ID_CHARS }.orEmpty()
 }
@@ -170,81 +120,25 @@ private fun macNamed(lead: String, open: String, arriving: Regex, ended: Boolean
  * starts with a mark hands over, whatever follows it and whatever spaces or backticks stand before it. One
  * that only mentions a mark is an answer, shown without it: handing over on a mention would send work he
  * never asked for. While more may come, the start of a mark at the end is held back so it never flickers by.
- * A mark for a thread on the Mac is read up to its closing `>>` and names whatever stands there; whether
- * that is a thread at all is [frontRoute]'s to say. One that never closes names nothing, and is still a
- * hand-over, to nowhere: it is never shown to him as an answer. A mark that stops is read by the same rules,
- * so a mention of one stops nothing and one for a thread that never closes stops nothing either.
+ * A phone mark is read once it closes, or once nothing more comes, and is new work for the phone's builders
+ * whatever it named. A mark for a thread on the Mac is read up to its closing `>>` and names whatever stands
+ * there; whether that is a thread at all is [frontRoute]'s to say. One that never closes names nothing, and is
+ * still a hand-over, to nowhere: it is never shown to him as an answer.
  */
 fun frontRead(text: String, ended: Boolean = false): FrontRead {
     val lead = text.trimStart { it.isWhitespace() || it == '`' }
-    if (lead.startsWith(HAND_OVER)) return FrontRead.HandOver(Route.BUILD)
-    // A builder's mark that names no builder is still work for the phone: it goes as new work, never nowhere.
-    if (lead.startsWith(BUILD_NAMED_OPEN)) {
-        val named = macNamed(lead, BUILD_NAMED_OPEN, BUILD_NAMED_ARRIVING, ended) ?: return FrontRead.Undecided
-        return FrontRead.HandOver(BuilderId.named(named)?.let(Route::builder) ?: Route.BUILD)
-    }
-    if (lead.startsWith(STOP)) return FrontRead.Stop(Route.BUILD)
-    if (lead.startsWith(RESTART)) return FrontRead.Restart
-    BuilderId.entries.firstOrNull { lead.startsWith(restartMark(it)) }?.let { return FrontRead.RestartOne(it) }
-    if (lead.startsWith(CLEAN)) return FrontRead.Clean
-    if (lead.startsWith(STOP_NAMED_OPEN)) {
-        val named = macNamed(lead, STOP_NAMED_OPEN, STOP_NAMED_ARRIVING, ended) ?: return FrontRead.Undecided
-        // A builder's letter is never a thread's id, which is nine characters.
-        BuilderId.named(named.removePrefix(Route.BUILD + " "))?.let { return FrontRead.Stop(Route.builder(it)) }
-        return FrontRead.Stop(Route.mac(named.removePrefix(Route.MAC + " ").trim()))
-    }
-    if (lead.startsWith(MAC_NEW_OPEN)) return macNamed(lead, MAC_NEW_OPEN, MAC_ARRIVING, ended)?.let { FrontRead.HandOver(Route.macNew(it)) } ?: FrontRead.Undecided
-    if (lead.startsWith(MAC_OPEN)) return macNamed(lead, MAC_OPEN, MAC_ARRIVING, ended)?.let { FrontRead.HandOver(Route.mac(it)) } ?: FrontRead.Undecided
-    if (lead.isEmpty() || (!ended && (listOf(HAND_OVER, BUILD_NAMED_OPEN, MAC_OPEN, STOP, STOP_NAMED_OPEN) + MENDING_MARKS).any { it.startsWith(lead) })) return FrontRead.Undecided
-    val said = MENDING_MARKS.fold(text.replace(HAND_OVER, "").replace(BUILD_NAMED_MARK, "").replace(STOP, "")) { left, mark -> left.replace(mark, "") }
-        .replace(STOP_NAMED_MARK, "").replace(MAC_MARK, "")
+    if (phoneMark(lead)) return if (ended || lead.contains(">>") || !PHONE_ARRIVING.matches(lead)) FrontRead.HandOver(Route.BUILD) else FrontRead.Undecided
+    if (lead.startsWith(MAC_NEW_OPEN)) return macNamed(lead, MAC_NEW_OPEN, ended)?.let { FrontRead.HandOver(Route.macNew(it)) } ?: FrontRead.Undecided
+    if (lead.startsWith(MAC_OPEN)) return macNamed(lead, MAC_OPEN, ended)?.let { FrontRead.HandOver(Route.mac(it)) } ?: FrontRead.Undecided
+    if (lead.isEmpty() || (!ended && OPENS.any { it.startsWith(lead) })) return FrontRead.Undecided
+    val said = text.replace(PHONE_MARK, "").replace(MAC_MARK, "")
     return FrontRead.Answer(said.dropLast(if (ended) 0 else arrivingMark(said)).trimEnd())
-}
-
-/**
- * The words that can make his request an order to stop. The front agent alone decides that it is one; this is
- * only what the launcher asks for besides, because stopping throws work away and the real model was seen to
- * answer a plain "thanks" with the mark that stops (2026-10-13).
- */
-private val STOP_WORDS = Regex("\\b(stop|cancel|abort|halt|kill|quit|pause|scrap|enough|wait|never ?mind|forget (it|that|about it)|hold on)\\b", RegexOption.IGNORE_CASE)
-
-/** Whether [words], what he said, could be an order to stop at all: they have a word of stopping in them. */
-fun wordsOfStopping(words: String) = STOP_WORDS.containsMatchIn(words)
-
-/**
- * The words that can make his request one to mend the builder: about it being stuck, frozen, slow or broken, or
- * asking to restart, fix or clean it up. As with stopping, the front agent decides; this is what the launcher
- * asks for besides, because a restart throws the work under way away.
- */
-private val MENDING_WORDS = Regex(
-    "\\b(stuck|frozen|freez\\w*|froze|hung|hang\\w*|slow\\w*|broke\\w*|dead|crash\\w*|unresponsive|wedged|restart\\w*|reboot|" +
-        "unstick|unfreeze|kick|fix\\w*|repair|reset|mend|clean\\w*|leftover\\w*|orphan\\w*|zombie\\w*)\\b",
-    RegexOption.IGNORE_CASE,
-)
-
-/** Whether [words], what he said, could ask for the builder to be mended at all. */
-fun wordsOfMending(words: String) = MENDING_WORDS.containsMatchIn(words)
-
-/**
- * [read] as the launcher acts on it for [words], his own. A mark that stops which his words do not bear out
- * stops nothing: it is read as a hand-over to the same place, which is where the front agent's mistaken marks
- * have always gone, and his words then wait there like any other request. A mark that restarts or cleans which
- * his words do not bear out is a hand-over to the builder the same way.
- */
-fun borneOut(read: FrontRead, words: String): FrontRead = when {
-    read is FrontRead.Stop && !wordsOfStopping(words) -> FrontRead.HandOver(read.of)
-    (read == FrontRead.Restart || read == FrontRead.Clean) && !wordsOfMending(words) -> FrontRead.HandOver(Route.BUILD)
-    read is FrontRead.RestartOne && !wordsOfMending(words) -> FrontRead.HandOver(Route.builder(read.builder))
-    else -> read
 }
 
 /** Where a hand-over goes, once the mark is checked against the threads the front agent was shown. */
 sealed interface FrontRoute {
-    /** New work for the phone's builders: whichever is free takes it ([pickBuilder]). */
+    /** Work for the phone's builders: the one that asked him, if [askingBuilder] finds one, else whichever is free ([pickBuilder]). */
     data object Build : FrontRoute
-
-    /** One builder by name: his words follow up on what it asked or is doing, and wait behind its task if it has one. */
-    data class Builder(val builder: BuilderId) : FrontRoute
 
     /**
      * A thread on the Mac. [fresh] is the front agent's word that his request is separate work on that thread's
@@ -259,9 +153,8 @@ sealed interface FrontRoute {
     data class Unknown(val named: String) : FrontRoute
 }
 
-/** [to] is what [FrontRead.HandOver] or [FrontRead.Stop] carries; [mac] is the board the front agent read, null when no Mac is set up. */
+/** [to] is what [FrontRead.HandOver] carries; [mac] is the board the front agent read, null when no Mac is set up. */
 fun frontRoute(to: String, mac: MacBoard?): FrontRoute {
-    Route.builderOf(to)?.let { return FrontRoute.Builder(it) }
     val fresh = Route.macNewThread(to)
     val named = fresh ?: Route.macThread(to) ?: return FrontRoute.Build
     val thread = mac?.threads?.firstOrNull { it.id == named } ?: return FrontRoute.Unknown(named)
@@ -271,20 +164,12 @@ fun frontRoute(to: String, mac: MacBoard?): FrontRoute {
 /** What he reads in place of an answer when the front agent named a thread that is not there. */
 const val WHICH_PROJECT = "Which project is this for? Say it again with the project's name."
 
-/** What he reads when the front agent would stop a thread that is not there. Nothing is stopped on a guess. */
-const val WHICH_TASK = "Which task should stop? Say it again with the project's name."
-
-const val NOTHING_RUNNING = "Nothing was running."
-
-/** How the phone's builder is called in the lines about where his words wait and what was stopped. */
+/** How the phone's builder is called in the line about where his words wait. */
 const val BUILDER = "the builder"
-
-/** What he reads once an order to stop was carried out: [what] is the builder or a thread's name, [running] whether it had a task. */
-fun stoppedText(what: String, running: Boolean) = if (running) "Stopped $what." else NOTHING_RUNNING
 
 /** How a request to the front agent ended. */
 enum class FrontOutcome {
-    /** It handed the request on, or had a task stopped, which is done by the time this is known. */
+    /** It handed the request on. */
     HandedOver,
 
     /** It answered. */
@@ -490,6 +375,16 @@ private data class Spoke(val who: String, val since: Long, val asked: Boolean)
 
 /** Whether [said] leaves him with a question: it ends in one, whatever Markdown or quote marks close it. */
 private fun asks(said: String) = said.trimEnd { it.isWhitespace() || it in "*_`\"')" }.endsWith("?")
+
+/**
+ * The builder a plain hand-over goes to when it is not new work: the one builder that has finished and asked him
+ * something he has not answered, of [boards], each builder's board. His words then answer it, in its own
+ * conversation, without the front agent having to name it. Null with none asking, or with both, when it cannot
+ * be told which he means; [pickBuilder] then gives his words to whichever is free. One that asks is idle, so the
+ * words never wait behind work for it.
+ */
+fun askingBuilder(boards: Map<BuilderId, BuildBoard>): BuilderId? =
+    boards.filterValues { !it.working && it.lastAnswer.isNotBlank() && asks(it.lastAnswer) }.keys.singleOrNull()
 
 /** How many others with a question still open the line names besides the last to speak. */
 private const val BOARD_OPEN_QUESTIONS = 2

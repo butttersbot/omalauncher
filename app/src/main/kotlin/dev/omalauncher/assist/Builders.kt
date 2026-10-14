@@ -7,15 +7,15 @@ import dev.omalauncher.oma.ChatTask
  * to never be bottlenecked by one agent that's working", and "we can start with 2 Builders"). Each builder is
  * a Claude Code conversation of its own, with its own process, follow-up queue, answer and approvals; new work
  * goes to whichever is free, and only a follow-up to what one of them is doing goes to that one. Which builder
- * gets a request, what each is called and how a bare stop is read are plain functions here, unit tested;
- * AgentTasks runs the builders and does what these say.
+ * gets a request and what each is called are plain functions here, unit tested; AgentTasks runs the builders
+ * and does what these say.
  */
 
 /** How many builders the phone runs at once at most. Boss set it: more would load the phone more than he wants. */
 const val PHONE_BUILDERS = 2
 
 /**
- * One of the phone's builders. [letter] is how he, the front agent and the chat know it, and is saved in the
+ * One of the phone's builders. [letter] is how he, the board and the chat know it, and is saved in the
  * chat's entries; builder A is the one there always was, so everything saved before there were two is A's.
  */
 enum class BuilderId(val letter: String) {
@@ -31,7 +31,7 @@ enum class BuilderId(val letter: String) {
 
     companion object {
         /**
-         * The builder [name] stands for: its letter or its number, as he or the front agent may write it. Null for
+         * The builder [name] stands for: its letter or its number, as a saved entry or a notification may write it. Null for
          * anything else, so a name that is no builder's is never taken for one.
          */
         fun named(name: String?): BuilderId? = when (name?.trim()?.uppercase()) {
@@ -58,8 +58,8 @@ val ChatTask.builderId: BuilderId get() = BuilderId.of(builder)
 data class BuilderLoad(val working: Boolean, val waiting: Int = 0)
 
 /**
- * The builder that gets a request. One [named] for it is a follow-up to what that builder asked or is doing,
- * and goes to it whatever it is doing: started now if it is free, behind its task if not. New work ([named]
+ * The builder that gets a request. One [named] for it, by his tab or by [askingBuilder], is a follow-up to what
+ * that builder asked or is doing, and goes to it whatever it is doing: started now if it is free, behind its task if not. New work ([named]
  * null) goes to the first free builder in order, A before B, so with A free nothing differs from before there
  * were two; with every builder busy it waits behind the one with the fewest waiting, A on a tie.
  */
@@ -77,24 +77,6 @@ fun pickBuilder(named: BuilderId?, loads: Map<BuilderId, BuilderLoad>): BuilderI
  */
 fun builderShares(receiver: BuilderId, working: Map<BuilderId, Boolean>): Boolean = working.any { (id, busy) -> id != receiver && busy }
 
-/** What a bare order to stop, which names no builder, comes to while [working] are the builders with a task. */
-sealed interface BareStop {
-    /** Nothing runs: nothing is stopped, and he is told so. */
-    data object Nothing : BareStop
-
-    /** One builder works, and it is the one he means. */
-    data class One(val builder: BuilderId) : BareStop
-
-    /** More than one works: none is stopped on a guess, and he is asked which. */
-    data object Which : BareStop
-}
-
-fun bareStop(working: List<BuilderId>): BareStop = when (working.size) {
-    0 -> BareStop.Nothing
-    1 -> BareStop.One(working.single())
-    else -> BareStop.Which
-}
-
 /**
  * Which builder holds the approval with this [id] and [nonce], from what each builder has [waiting]; null when
  * none does. The nonce is made on the phone for one request of one builder, so at most one can hold it, and
@@ -103,10 +85,7 @@ fun bareStop(working: List<BuilderId>): BareStop = when (working.size) {
 fun approvalHolder(waiting: Map<BuilderId, List<PendingApproval>>, id: String, nonce: String): BuilderId? =
     waiting.entries.firstOrNull { (_, entries) -> entries.any { it.id == id && it.nonce == nonce } }?.key
 
-/** What he reads when he said stop while both builders work. Nothing is stopped until he says which. */
-const val WHICH_BUILDER = "Both builders are working. Which one should stop, A or B?"
-
-/** How a builder is called in the lines about what was stopped and where his words wait. */
+/** How a builder is called in the lines about where his words wait and what was restarted. */
 fun builderCalled(builder: BuilderId) = "builder ${builder.letter}"
 
 /**

@@ -52,15 +52,6 @@ class BuildersTest {
         assertEquals(BuilderId.B, pickBuilder(BuilderId.B, mapOf(BuilderId.A to BuilderLoad(false), BuilderId.B to BuilderLoad(true))))
     }
 
-    @Test fun aBareStopStopsTheOneAtWorkAndAsksWhichWhenBothAre() {
-        assertEquals(BareStop.Nothing, bareStop(emptyList()))
-        assertEquals(BareStop.One(BuilderId.B), bareStop(listOf(BuilderId.B)))
-        assertEquals(BareStop.One(BuilderId.A), bareStop(listOf(BuilderId.A)))
-        assertEquals(BareStop.Which, bareStop(listOf(BuilderId.A, BuilderId.B)))
-        assertTrue(WHICH_BUILDER.endsWith("A or B?"))
-        assertEquals("Stopped builder B.", stoppedText(builderCalled(BuilderId.B), running = true))
-    }
-
     @Test fun theNotificationFollowsOneBuilderAndSaysWhenTheOtherWorksToo() {
         assertEquals("Using Bash", poolLabel(BuilderId.A, "Using Bash", 0))
         assertEquals("Using Bash · and 1 more", poolLabel(BuilderId.A, "Using Bash", 1))

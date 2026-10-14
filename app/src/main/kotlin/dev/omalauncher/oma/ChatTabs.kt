@@ -1,6 +1,7 @@
 package dev.omalauncher.oma
 
 import dev.omalauncher.assist.AgentThread
+import dev.omalauncher.assist.BuilderFacts
 import dev.omalauncher.assist.BuilderId
 import dev.omalauncher.assist.PHONE_THREAD
 import dev.omalauncher.assist.PHONE_THREAD_B
@@ -8,8 +9,10 @@ import dev.omalauncher.assist.PHONE_THREAD_B_NAME
 import dev.omalauncher.assist.PHONE_THREAD_NAME
 import dev.omalauncher.assist.ThreadState
 import dev.omalauncher.assist.builderId
+import dev.omalauncher.assist.builderVerdict
 import dev.omalauncher.assist.macThreadId
 import dev.omalauncher.assist.macThreadKey
+import dev.omalauncher.assist.restartable
 
 /*
  * The Oma chat's tabs (Boss, 2026-10-13; design/oma-threads-mockup.html): the Oma tab, which is the one
@@ -107,6 +110,12 @@ enum class TabAction(val label: String) {
     Pin("Pin"),
     Unpin("Unpin"),
     Stop("Stop"),
+
+    /** A stuck phone builder's task stopped and sent again ([tabMend]). */
+    Restart("Restart"),
+
+    /** Builder processes no task owns ended ([tabMend]). */
+    Clean("Clean up leftovers"),
     Copy("Copy last answer"),
     Archive("Archive"),
 
@@ -116,12 +125,12 @@ enum class TabAction(val label: String) {
 
 /**
  * The rows of the menu a long press on [tab] opens, in order. [pinned] is whether it is pinned, [stoppable]
- * whether it has a task its stop would end ([tabStop]), [answered] whether it has an answer to copy
- * ([lastAnswer]), and [archived] how many tabs are archived. The Oma tab can be neither renamed, pinned nor
- * archived: it is the stream everything else hangs from. No row deletes a word of history or a thread on the
- * Mac, and none answers an approval.
+ * whether it has a task its stop would end ([tabStop]), [mend] what of a phone builder it can mend ([tabMend]),
+ * [answered] whether it has an answer to copy ([lastAnswer]), and [archived] how many tabs are archived. The Oma
+ * tab can be neither renamed, pinned nor archived: it is the stream everything else hangs from. No row deletes a
+ * word of history or a thread on the Mac, and none answers an approval.
  */
-fun tabMenu(tab: String, pinned: Boolean, stoppable: Boolean, answered: Boolean, archived: Int): List<TabAction> =
+fun tabMenu(tab: String, pinned: Boolean, stoppable: Boolean, answered: Boolean, archived: Int, mend: TabMend = TabMend()): List<TabAction> =
     if (tab == OMA_TAB) {
         listOfNotNull(TabAction.Copy.takeIf { answered }, TabAction.Archived.takeIf { archived > 0 })
     } else {
@@ -129,11 +138,40 @@ fun tabMenu(tab: String, pinned: Boolean, stoppable: Boolean, answered: Boolean,
             TabAction.Rename,
             if (pinned) TabAction.Unpin else TabAction.Pin,
             TabAction.Stop.takeIf { stoppable },
+            TabAction.Restart.takeIf { mend.restart != null },
+            TabAction.Clean.takeIf { mend.clean },
             TabAction.Copy.takeIf { answered },
             TabAction.Archive,
             TabAction.Archived.takeIf { archived > 0 },
         )
     }
+
+/**
+ * What a phone builder's tab can mend (Boss, 2026-10-14: stop, restart and clean are buttons on the tab, not the
+ * front agent's): [restart] is its builder while that one is stalled or dead, and [clean] whether builder
+ * processes no task owns are running.
+ */
+data class TabMend(val restart: BuilderId? = null, val clean: Boolean = false)
+
+/** The phone builder whose tab [tab] is; null for every other tab. */
+fun tabBuilder(tab: String): BuilderId? = when (tab) {
+    PHONE_THREAD -> BuilderId.A
+    PHONE_THREAD_B -> BuilderId.B
+    else -> null
+}
+
+/**
+ * What [tab]'s menu offers to mend, from each builder's facts at the last look ([seen]). Only a phone builder's
+ * tab offers either: Restart while its builder is [restartable], which one waiting for his approval never is,
+ * and Clean up leftovers on either phone tab while any are found. The restart itself looks again and checks
+ * again before it stops anything, so a menu opened on an older look cannot restart a builder that moved since.
+ */
+fun tabMend(tab: String, seen: Map<BuilderId, BuilderFacts>): TabMend {
+    val builder = tabBuilder(tab) ?: return TabMend()
+    val facts = seen[builder]
+    val stuck = facts != null && !facts.approval && restartable(builderVerdict(facts))
+    return TabMend(builder.takeIf { stuck }, seen.values.any { it.leftovers.isNotEmpty() })
+}
 
 /** The row that lists the archived tabs, with how many there are. */
 fun archivedRow(count: Int) = "${TabAction.Archived.label} ($count)"
