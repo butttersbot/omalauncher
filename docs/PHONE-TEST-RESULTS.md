@@ -1,6 +1,30 @@
 # Phone test results
 
-## Latest: Mac threads wired into Oma (2026-10-13, about 17:45 PDT, commit 2390694 and the one after) — NOT promoted, NOT seen on a screen
+## Latest: the routing bundle is on the real launcher (2026-10-13, about 18:30 PDT, versionCode 49, commit 75f0cf8)
+
+- Promoted at Boss's word: quick lane, automatic routing, Mac threads, keep-awake. `oma-install --status`: verified,
+  phone control bound by itself.
+- Seen on the real launcher: the front agent answering ("can we build Android apps here", "why is wireless
+  debugging off") and handing over to the phone builder three times; its board listing the Mac's two threads as
+  reachable; `PARTIAL_WAKE_LOCK 'omalauncher:agent-working'` held in `dumpsys power` while the builder worked.
+- NOT seen yet: a hand-over to a Mac thread from the chat, a Mac approval card, `[ send to build ]`, a task
+  finishing with the phone locked. The launcher is not exempt from battery limits (`deviceidle whitelist` has no
+  line for it): Boss sets Unrestricted himself.
+- Found: the builder is handed his words only, not what he and the front agent said just before, so "put it on our
+  list" and "look into it" arrived with nothing to refer to. Read from the front agent's transcript by hand this
+  time. To fix: hand over the last few front exchanges with the request, marked as context.
+- Wrong report of mine: "wireless debugging is off". It was on (`adb_wifi_enabled` 1); its port had changed
+  (34043 to 36141) and the saved one was stale. `oma-dev --status` refreshes it.
+
+### The list, after the tries (Boss, 2026-10-13)
+1. Builder gets the front conversation as context on a hand-over (above).
+2. Building other Android apps on the phone and installing them, all locally. The SDK is in /opt/android-sdk and
+   Oma and Oma Dev are already built and installed from here, so it is the same route: not tried for a new app.
+3. Making a Mac thread from the phone (the FF4 mod thread); Mac threads picked up at launcher start; Mac work on
+   the tiles, ring and lock widget.
+4. The misroute seen in trials: a "yes" meant for a Mac thread going to the phone builder.
+
+## Earlier: Mac threads wired into Oma (2026-10-13, about 17:45 PDT, commit 2390694 and the one after) — NOT promoted, NOT seen on a screen
 
 - New `assist/MacRunner.kt`, `MacRunnerEvents.kt` (the client) and `MacThreads.kt` (the phone's view of the Mac:
   thread list, cursors, followers, approvals). With no `~/.config/omalauncher/mac-runner.json` nothing changes
