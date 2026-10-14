@@ -1,0 +1,162 @@
+package dev.omalauncher.assist
+
+import dev.omalauncher.oma.ChatTask
+import dev.omalauncher.oma.QUICK_AGENT
+import dev.omalauncher.oma.TaskStatus
+import org.junit.Assert.*
+import org.junit.Test
+
+/**
+ * Every thread Boss is shown, as the chat's dots and home's tiles read it (Boss, 2026-10-13): how each stands,
+ * what it says it is doing, and the order they come in. Nothing here reaches the Mac or the builder.
+ */
+class AgentThreadsTest {
+    private val id = "t5e121ba2"
+    private val write = MacApproval("a1", "n-secret", "Write", """{"file_path":"/Users/boss/ClaudeSync/projects/pond/stickers/frog-pack/manifest.json","content":"SECRET BODY"}""", "why")
+
+    private fun thread(
+        status: MacThreadStatus = MacThreadStatus.Idle, threadId: String = id, name: String = "FF4 better menu mod", summary: String = "", tail: String = "",
+        lastWorked: Long? = null, waitingTurns: Int = 0, pending: List<MacApproval> = emptyList(),
+    ) = MacThread(threadId, name, "/p", ThreadHome.Mac, "claude", summary, status, lastWorked, tail, waitingTurns, 0, pending)
+
+    private fun build(time: Long, status: TaskStatus, prompt: String = "prompt $time", steps: List<String> = emptyList(), result: String = "") =
+        ChatTask(time, "Claude Code", prompt, steps = steps, result = result, status = status)
+
+    private fun mac(time: Long, status: TaskStatus, prompt: String = "prompt $time", steps: List<String> = emptyList(), result: String = "", threadId: String = id) =
+        ChatTask(time, "→ FF4", prompt, steps = steps, result = result, status = status, thread = threadId, threadName = "FF4")
+
+    @Test fun aKeyNamesTheBuilderOrOneMacThreadAndNeverBoth() {
+        assertEquals("mac:t5e121ba2", macThreadKey(id))
+        assertEquals(id, macThreadId(macThreadKey(id)))
+        // A thread the Mac chose to call "phone" is still a Mac thread.
+        assertEquals("phone", macThreadId(macThreadKey(PHONE_THREAD)))
+        assertNotEquals(PHONE_THREAD, macThreadKey(PHONE_THREAD))
+        for (other in listOf(PHONE_THREAD, "oma", "", "mac:", "thread:mac:x")) assertNull(other, macThreadId(other))
+    }
+
+    @Test fun anApprovalIsKnownByItsToolAndTargetAndNothingElse() {
+        assertEquals("stickers/frog-pack/manifest.json", askTarget(write.input))
+        assertEquals("a.txt", askTarget("""{"path":"a.txt"}"""))
+        // Of a command only the program: its arguments are the approval's content.
+        assertEquals("rm", askTarget("""{"command":"  /bin/rm -rf ~/secret-folder"}"""))
+        assertEquals("example.com", askTarget("""{"url":"https://example.com/private?token=abc"}"""))
+        assertEquals("", askTarget("""{"query":"something private"}"""))
+        assertEquals("", askTarget("not json"))
+        assertEquals("Wants to write stickers/frog-pack/manifest.json", wantsLine(ThreadAsk("Write", askTarget(write.input))))
+        assertEquals("Wants to run git", wantsLine(ThreadAsk("Bash", "git")))
+        assertEquals("Wants to edit a.kt", wantsLine(ThreadAsk("Edit", "a.kt")))
+        assertEquals("Wants to use WebSearch", wantsLine(ThreadAsk("WebSearch", "")))
+        assertEquals("Wants to use a tool", wantsLine(ThreadAsk("", "")))
+        val shown = macThreadNow(thread(MacThreadStatus.Waiting, pending = listOf(write)), id, emptyList(), emptyList(), reachable = true)
+        assertFalse(shown.toString().contains("SECRET")); assertFalse(shown.toString().contains("n-secret"))
+    }
+
+    @Test fun theBuilderWorksQueuesWaitsFailsAndRests() {
+        val idle = phoneThread(emptyList(), BuilderNow())
+        assertEquals(AgentThread(PHONE_THREAD, "Phone", ThreadState.Idle, "", "idle", null), idle)
+        assertFalse(idle.mac)
+
+        val running = build(10, TaskStatus.Running, "add thread tiles", steps = listOf("Edit: ui/AgentTile.kt", "Bash: oma-build"))
+        val working = phoneThread(listOf(running), BuilderNow(working = true, label = "Using Bash"))
+        assertEquals(ThreadState.Working, working.state); assertEquals("Bash: oma-build", working.doing); assertEquals("working", working.label)
+        // Before it has reported a step, the builder's own label stands.
+        assertEquals("Using Bash", phoneThread(listOf(running.copy(steps = emptyList())), BuilderNow(true, "Using Bash")).doing)
+
+        val queued = phoneThread(listOf(running, build(11, TaskStatus.Queued, "make the clock tile bigger\nplease"), build(12, TaskStatus.Queued)), BuilderNow(true, "Using Bash"))
+        assertEquals(ThreadState.Queued, queued.state); assertEquals("2 queued", queued.label)
+        assertEquals("Bash: oma-build · then: “make the clock tile bigger”", queued.doing)
+        assertEquals(12L, queued.worked)
+
+        val asking = phoneThread(listOf(running, build(11, TaskStatus.Queued)), BuilderNow(true, "Approval needed", listOf(ThreadAsk("Bash", "oma-build"))))
+        assertEquals(ThreadState.NeedsOk, asking.state); assertEquals("Wants to run oma-build", asking.doing); assertEquals(NEEDS_OK, asking.label)
+
+        val failed = phoneThread(listOf(build(10, TaskStatus.Failed, result = "The agent exited with status 1.")), BuilderNow(label = "Agent needs attention"))
+        assertEquals(ThreadState.Attention, failed.state); assertEquals("The agent exited with status 1.", failed.doing); assertEquals(NEEDS_ATTENTION, failed.label)
+
+        val done = phoneThread(listOf(build(10, TaskStatus.Done, result = "**Done.** The clock is bigger.")), BuilderNow(label = "Done"))
+        assertEquals(ThreadState.Idle, done.state); assertEquals("Done. The clock is bigger.", done.doing); assertEquals("done", done.label)
+        assertEquals("stopped", phoneThread(listOf(build(10, TaskStatus.Stopped)), BuilderNow()).label)
+        // Closing the app under a task is not his to mend: it reads as interrupted and lets the tile grow old.
+        val cut = phoneThread(listOf(build(10, TaskStatus.Interrupted)), BuilderNow())
+        assertEquals(ThreadState.Idle, cut.state); assertEquals("interrupted", cut.label)
+    }
+
+    @Test fun onlyTheBuildLanesEntriesAreTheBuilders() {
+        val tasks = listOf(ChatTask(1, QUICK_AGENT, "what is 15% of 240?", result = "36", status = TaskStatus.Failed), mac(2, TaskStatus.Failed))
+        val phone = phoneThread(tasks, BuilderNow())
+        assertEquals(ThreadState.Idle, phone.state); assertNull(phone.worked); assertEquals("idle", phone.label)
+    }
+
+    @Test fun aMacThreadReadsFromTheMacsWordAndThePhonesEntries() {
+        val running = mac(20, TaskStatus.Running, "make the magic menu remember the cursor too", steps = listOf("Read: src/menu/magic.c", "Edit: src/menu/menu_cursor.c"))
+        val working = macThreadNow(thread(MacThreadStatus.Working, lastWorked = 5), id, listOf(running), emptyList(), reachable = true)
+        // It last worked at whichever is later: what the Mac says, in seconds, or the last request the phone sent it.
+        assertEquals(AgentThread("mac:$id", "FF4 better menu mod", ThreadState.Working, "Edit: src/menu/menu_cursor.c", "working", 5_000L), working)
+        assertTrue(working.mac)
+        // Work begun at the Mac has no entry here: the Mac's summary of what it was asked stands.
+        assertEquals("fix the build", macThreadNow(thread(MacThreadStatus.Working, summary = "fix the build"), id, emptyList(), emptyList(), true).doing)
+        assertEquals("Working", macThreadNow(thread(MacThreadStatus.Working), id, emptyList(), emptyList(), true).doing)
+        // A summary that is only the hand-over's context heading gives way to his own words.
+        assertEquals("fix the menu", macThreadNow(thread(MacThreadStatus.Working, summary = CONTEXT_OPEN), id, listOf(mac(20, TaskStatus.Running, "fix the menu")), emptyList(), true).doing)
+
+        val queued = macThreadNow(thread(MacThreadStatus.Working, waitingTurns = 1), id, listOf(running, mac(21, TaskStatus.Queued, "and the item menu")), emptyList(), true)
+        assertEquals(ThreadState.Queued, queued.state); assertEquals("1 queued", queued.label)
+        assertEquals("Edit: src/menu/menu_cursor.c · then: “and the item menu”", queued.doing)
+        // Turns that wait on the Mac for work this phone did not send are counted, with nothing to quote.
+        assertEquals("fix it · 2 waiting", macThreadNow(thread(MacThreadStatus.Working, summary = "fix it", waitingTurns = 2), id, emptyList(), emptyList(), true).doing)
+
+        val asking = macThreadNow(thread(MacThreadStatus.Waiting, pending = listOf(write)), id, listOf(running), emptyList(), true)
+        assertEquals(ThreadState.NeedsOk, asking.state); assertEquals("Wants to write stickers/frog-pack/manifest.json", asking.doing)
+        // What the phone itself holds as waiting comes before the Mac's older list.
+        assertEquals("Wants to run git", macThreadNow(thread(MacThreadStatus.Waiting, pending = listOf(write)), id, emptyList(), listOf(ThreadAsk("Bash", "git")), true).doing)
+        assertEquals("Waiting for your OK", macThreadNow(thread(MacThreadStatus.Waiting), id, emptyList(), emptyList(), true).doing)
+
+        val idle = macThreadNow(thread(tail = "Done — phone-test.txt created in the scratch folder.", lastWorked = 100), id, listOf(mac(20, TaskStatus.Done, result = "older")), emptyList(), true)
+        assertEquals(ThreadState.Idle, idle.state); assertEquals("Done — phone-test.txt created in the scratch folder.", idle.doing); assertEquals("done", idle.label)
+        assertEquals(100_000L, idle.worked)
+        assertEquals("idle", macThreadNow(thread(), id, emptyList(), emptyList(), true).label)
+        assertNull(macThreadNow(thread(), id, emptyList(), emptyList(), true).worked)
+    }
+
+    @Test fun aMacThreadNeedsAttentionWhenItsLastRequestFailedOrNeverArrived() {
+        val failed = macThreadNow(thread(lastWorked = 1), id, listOf(mac(20, TaskStatus.Failed, result = "Failed to authenticate: OAuth session expired")), emptyList(), true)
+        assertEquals(ThreadState.Attention, failed.state); assertEquals("Failed to authenticate: OAuth session expired", failed.doing); assertEquals(NEEDS_ATTENTION, failed.label)
+        assertEquals(ThreadState.Attention, macThreadNow(thread(), id, listOf(mac(20, TaskStatus.Dropped, result = MAC_UNREACHABLE)), emptyList(), false).state)
+        val cut = macThreadNow(thread(MacThreadStatus.Interrupted), id, emptyList(), emptyList(), true)
+        assertEquals(ThreadState.Attention, cut.state); assertEquals(MAC_INTERRUPTED, cut.doing)
+        // Working again, an old failure is over.
+        assertEquals(ThreadState.Working, macThreadNow(thread(MacThreadStatus.Working), id, listOf(mac(20, TaskStatus.Failed), mac(21, TaskStatus.Running)), emptyList(), true).state)
+    }
+
+    @Test fun aThreadTheMacHasNotListedIsReadFromItsEntriesAlone() {
+        val running = macThreadNow(null, id, listOf(mac(20, TaskStatus.Running, steps = listOf("Read: a.c"))), emptyList(), reachable = false)
+        assertEquals("FF4", running.name); assertEquals(ThreadState.Working, running.state); assertEquals("Read: a.c", running.doing); assertFalse(running.reachable)
+        val sending = macThreadNow(null, id, listOf(mac(20, TaskStatus.Queued, "fix it")), emptyList(), false)
+        assertEquals(ThreadState.Queued, sending.state); assertEquals("Sending to the Mac · then: “fix it”", sending.doing)
+        assertEquals(ThreadState.Idle, macThreadNow(null, id, listOf(mac(20, TaskStatus.Done, result = "ok")), emptyList(), false).state)
+        assertEquals("Mac", macThreadNow(null, id, emptyList(), emptyList(), false).name)
+    }
+
+    @Test fun theBuilderComesFirstThenTheMacsThreadsNewestWorkedFirst() {
+        val view = MacView(
+            listOf(thread(threadId = "t-old", name = "Old", lastWorked = 10), thread(threadId = "t-new", name = "New", lastWorked = 30), thread(threadId = "t-never", name = "Never")),
+            reachable = true, listed = true,
+        )
+        val tasks = listOf(build(1, TaskStatus.Done), mac(25_000, TaskStatus.Done, threadId = "t-gone"), mac(40_000, TaskStatus.Done, threadId = "t-old"))
+        val threads = agentThreads(tasks, BuilderNow(), view, mapOf("t-new" to listOf(ThreadAsk("Bash", "git"))))
+        // t-old was sent something after t-new last worked; t-gone is known only by the request once handed to it.
+        assertEquals(listOf(PHONE_THREAD, "mac:t-old", "mac:t-new", "mac:t-gone", "mac:t-never"), threads.map { it.key })
+        assertEquals(ThreadState.NeedsOk, threads[2].state)
+        assertEquals("FF4", threads[3].name)
+        // With no Mac at all there is the builder alone.
+        assertEquals(listOf(PHONE_THREAD), agentThreads(listOf(build(1, TaskStatus.Done)), BuilderNow(), MacView()).map { it.key })
+    }
+
+    @Test fun anAnswersEndIsPlainWordsCutAtAWord() {
+        assertEquals("", endOf("  "))
+        assertEquals("Done. See menu.c", endOf("**Done.**\n\nSee `menu.c`"))
+        val long = endOf("one two three four five six seven eight nine ten", chars = 20)
+        assertEquals("…eight nine ten", long)
+        assertTrue(endOf("x".repeat(500)).length <= TILE_DOING_CHARS + 1)
+    }
+}

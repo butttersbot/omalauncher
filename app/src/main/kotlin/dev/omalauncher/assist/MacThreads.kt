@@ -27,8 +27,12 @@ import kotlin.concurrent.thread
  * A thread is known by its id everywhere: two threads can share a name and a project.
  */
 
-/** What the phone last heard of the Mac: its [threads], whether it answered at the last try, and when it last did. */
-data class MacView(val threads: List<MacThread> = emptyList(), val reachable: Boolean = false, val seen: Long? = null)
+/**
+ * What the phone last heard of the Mac: its [threads], whether it answered at the last try, and when it last did.
+ * [listed] is whether [threads] is the Mac's own whole list, heard since this process began: until then a
+ * thread missing from it is only not heard of yet, and nothing kept for it is taken for gone.
+ */
+data class MacView(val threads: List<MacThread> = emptyList(), val reachable: Boolean = false, val seen: Long? = null, val listed: Boolean = false)
 
 /**
  * [thread] with the summary the board should carry. The runner's summary is the first line of what it was last
@@ -85,6 +89,14 @@ fun macUnfinished(task: ChatTask, threadId: String) = task.thread == threadId &&
  */
 fun macHandOver(task: ChatTask, thread: MacThread) =
     task.copy(agent = macReceipt(thread.name), thread = thread.id, threadName = macName(thread.name), status = TaskStatus.Queued, result = "")
+
+/**
+ * The entry of words he sent straight to a thread from its tab in the chat, filed at [time]: the same entry a
+ * hand-over leaves, receipt and all, so it stands in the Oma stream too. It is marked [ChatTask.direct], and so
+ * is sent, now and at any `[ try again ]`, as his words alone.
+ */
+fun macDirect(time: Long, prompt: String, threadId: String, name: String) =
+    ChatTask(time, macReceipt(name), prompt, thread = threadId, threadName = macName(name), status = TaskStatus.Queued, direct = true)
 
 /** The Mac took the request at once. One the thread has already ended, or begun, stays as it is. */
 fun macTaken(task: ChatTask) = if (task.mac && task.status == TaskStatus.Queued) task.copy(status = TaskStatus.Running) else task
@@ -477,6 +489,15 @@ object MacThreads {
         return macBoard(known.threads.map { macOwnSummary(it, tasks) }, known.reachable, known.seen, now)
     }
 
+    /**
+     * Home is showing its thread tiles at [now]: a list grown old is asked for again, as [board] does for the
+     * front agent, so a thread that began work at the Mac itself gets its tile. With no Mac set up nothing is asked.
+     */
+    fun glance(context: Context, now: Long) {
+        restore(context)
+        if (now - checked > STALE_MS && config(context) != null) refresh(context)
+    }
+
     /** What stands beside [task], an entry of the Mac's, while it is not over. */
     fun label(task: ChatTask): String = macEntryLabel(task.status, task.time in sending, view.reachable, pending.any { it.threadId == task.thread })
 
@@ -521,7 +542,7 @@ object MacThreads {
                     val client = MacRunnerClient(config)
                     val listed = if (client.health() is MacHealthResult.Up) client.threads() else MacAnswer.Unreachable
                     val threads = if (listed is MacAnswer.Ok) listed.value else emptyList()
-                    if (listed is MacAnswer.Ok) synchronized(this) { view = view.copy(threads = threads) }
+                    if (listed is MacAnswer.Ok) synchronized(this) { view = view.copy(threads = threads, listed = true) }
                     reached(app, listed is MacAnswer.Ok)
                     val busy = threads.filter { !macResting(it.status) || it.pending.isNotEmpty() }.map { it.id }
                     val owed = ChatLog.of(app).tasks.filter { it.mac && (it.status == TaskStatus.Running || it.status == TaskStatus.Queued) }.map { it.thread }
@@ -556,11 +577,31 @@ object MacThreads {
     }
 
     /**
-     * What the thread is sent for the request filed at [asked]: his words, behind what he and the front agent
-     * said since that thread last got anything. The entry and the routing log are given [prompt] alone.
+     * His words typed on a thread's own tab in the chat: they go to the thread [threadId], called [name], as
+     * they are. The front agent is not asked and nothing is put ahead of them. The entry is filed first, under
+     * the build lane's lock as every entry's time is taken, and the words then go the way a hand-over's do:
+     * the Mac is asked how it is, and one that does not answer leaves the entry saying so with `[ try again ]`.
      */
-    private fun sentText(context: Context, asked: Long, prompt: String, threadId: String): String =
-        handOverText(handOverPreface(handOverContext(ChatLog.of(context).tasks, asked) { threadGot(it, threadId) }), prompt)
+    fun say(context: Context, prompt: String, threadId: String, name: String) {
+        restore(context)
+        val app = context.applicationContext
+        val log = ChatLog.of(app)
+        val time = synchronized(AgentTasks) {
+            ChatHistory.stamp(log.tasks, System.currentTimeMillis()).also { log.begin(macDirect(it, prompt, threadId, name)) }
+        }
+        send(app, time, prompt, threadId, away = false)
+    }
+
+    /**
+     * What the thread is sent for the request filed at [asked]: his words, behind what he and the front agent
+     * said since that thread last got anything. The entry and the routing log are given [prompt] alone. Words he
+     * sent straight to the thread go as they are, however often they are sent again.
+     */
+    private fun sentText(context: Context, asked: Long, prompt: String, threadId: String): String {
+        val tasks = ChatLog.of(context).tasks
+        if (tasks.any { it.time == asked && it.direct }) return prompt
+        return handOverText(handOverPreface(handOverContext(tasks, asked) { threadGot(it, threadId) }), prompt)
+    }
 
     /** `[ try again ]` on a request the Mac never got: the same step once more, and a line in the routing log. */
     fun tryAgain(context: Context, time: Long) {

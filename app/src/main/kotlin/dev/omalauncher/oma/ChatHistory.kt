@@ -70,6 +70,8 @@ data class ChatTask(
     val thread: String = "",
     /** That thread's name as it was when he asked, which is what the entry and its approval cards call it. */
     val threadName: String = "",
+    /** He sent this straight to its thread from the thread's tab: the front agent was not asked and nothing was put ahead of his words. */
+    val direct: Boolean = false,
 ) {
     /** Answered by the front agent itself, beside the build task: never by it or in its queue. */
     val quick get() = agent == QUICK_AGENT
@@ -180,6 +182,7 @@ object ChatHistory {
             // Written only where it is set, so every other task keeps the shape it has always had.
             .apply { if (task.sentToBuild) put("sentToBuild", true) }
             .apply { if (task.mac) put("thread", task.thread).put("threadName", task.threadName) }
+            .apply { if (task.direct) put("direct", true) }
     })).toString()
 
     /** The saved thread; an unreadable file is an empty thread, and an unreadable task is left out. */
@@ -199,6 +202,7 @@ object ChatHistory {
                     result = task.optString("result"), status = TaskStatus.of(task.optString("status")),
                     sentToBuild = task.optBoolean("sentToBuild"),
                     thread = task.optString("thread"), threadName = task.optString("threadName"),
+                    direct = task.optBoolean("direct"),
                 ))
             }.getOrNull()
         }.takeLast(MAX_TASKS)

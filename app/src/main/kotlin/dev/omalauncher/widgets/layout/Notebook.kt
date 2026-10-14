@@ -27,11 +27,16 @@ data class PinnedApp(
     val linux: LinuxEntry? = null,
 )
 
-enum class ItemKind { Widget, App, Folder }
+enum class ItemKind {
+    Widget, App, Folder,
+
+    /** A thread's tile, which the launcher draws itself: no file and no app, only its key, which names the thread. */
+    Thread,
+}
 
 /**
  * One thing on a notebook page. A widget is its file, named by [key]; an app carries itself in [app];
- * a folder carries its [apps], in order. [cell] is null only for an item not placed yet.
+ * a folder carries its [apps], in order; a thread's tile is its [key] alone. [cell] is null only for an item not placed yet.
  */
 data class NotebookItem(
     val key: String,

@@ -76,19 +76,25 @@ internal fun bandHeight(
 /** The action that opens the Oma chat, inside this app only. */
 const val OMA_CHAT_ACTION = "dev.omalauncher.action.OMA_CHAT"
 
+/** The extra that names the thread whose tab the chat opens on; OmaChatActivity.EXTRA_THREAD, which a build without the chat has not. */
+const val OMA_CHAT_THREAD = "dev.omalauncher.extra.THREAD"
+
 /**
  * Opens the Oma chat, with [text] waiting in its field (not sent) when there is some. The one way in for
  * the dock entry, a tap on the agent button, Super+A and the drawer's ask row. A build without the chat
- * opens the assistant prompt instead, which takes no text.
+ * opens the assistant prompt instead, which takes no text. [thread] is the key of the thread whose tab to
+ * open, which only a thread's tile on home gives; every other way in opens the Oma tab.
  */
 fun openOmaChat(
     context: Context,
     text: String? = null,
+    thread: String? = null,
 ) {
     // From anything but an activity, a start needs its own task.
     val flags = if (context is Activity) 0 else Intent.FLAG_ACTIVITY_NEW_TASK
     val chat = Intent(OMA_CHAT_ACTION).setPackage(context.packageName).addFlags(flags)
     if (!text.isNullOrBlank()) chat.putExtra(Intent.EXTRA_TEXT, text)
+    if (!thread.isNullOrBlank()) chat.putExtra(OMA_CHAT_THREAD, thread)
     try {
         context.startActivity(chat)
     } catch (e: ActivityNotFoundException) {

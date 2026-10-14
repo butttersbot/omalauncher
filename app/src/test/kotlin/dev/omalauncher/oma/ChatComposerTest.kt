@@ -6,8 +6,37 @@ import org.junit.Test
 class ChatComposerTest {
     private fun out(
         draft: String = "hello", images: Int = 0, missing: Boolean = false, busy: Boolean = false, linux: Boolean = true, agent: String? = "claude", working: Boolean = false,
-        frontReady: Boolean = false,
-    ) = outgoing(draft, images, missing, busy, linux, agent, working, frontReady)
+        frontReady: Boolean = false, to: SendTo = SendTo.Oma,
+    ) = outgoing(draft, images, missing, busy, linux, agent, working, frontReady, to)
+
+    /** A thread's own tab (Boss, 2026-10-13): the field talks straight to the thread, and the front agent is never asked. */
+    @Test fun onTheBuildersTabWordsGoStraightToTheBuildLane() {
+        assertEquals(Outgoing.Background("hello"), out(frontReady = true, to = SendTo.Phone))
+        assertEquals(Outgoing.Queued("hello"), out(frontReady = true, working = true, to = SendTo.Phone))
+        assertEquals(Outgoing.Background("hello"), out(images = 1, frontReady = true, to = SendTo.Phone))
+        // Refused for the reasons a message to the build lane always was.
+        assertTrue(out(linux = false, frontReady = true, to = SendTo.Phone) is Outgoing.Refused)
+        assertTrue(out(agent = null, to = SendTo.Phone) is Outgoing.Refused)
+        assertEquals(Outgoing.Nothing, out(draft = " ", to = SendTo.Phone))
+    }
+    @Test fun onAMacThreadsTabWordsGoStraightToThatThread() {
+        val pond = SendTo.Mac("t-pond", "Pond")
+        assertEquals(Outgoing.Mac("hello", "t-pond", "Pond"), out("  hello \n", frontReady = true, to = pond))
+        // Whatever the phone's builder is doing, and with no Linux or agent on the phone: the Mac does this work.
+        assertEquals(Outgoing.Mac("hello", "t-pond", "Pond"), out(working = true, to = pond))
+        assertEquals(Outgoing.Mac("hello", "t-pond", "Pond"), out(linux = false, agent = null, to = pond))
+        assertEquals(Outgoing.Mac("hello", "t-pond", "Pond"), out(agent = "grok", working = true, to = pond))
+        assertEquals(Outgoing.Nothing, out(draft = " ", to = pond)); assertEquals(Outgoing.Nothing, out(busy = true, to = pond))
+        // The runner takes no images: nothing is sent, he is told why, and they never go to the builder instead.
+        assertEquals(Outgoing.Refused(noImagesTo("Pond")), out(images = 1, to = pond))
+        assertEquals(Outgoing.Refused(noImagesTo("Pond")), out(draft = "", images = 2, working = true, to = pond))
+        assertTrue(noImagesTo("Pond").contains("Pond"))
+    }
+    @Test fun theOmaTabSendsAsItAlwaysDid() {
+        for (working in listOf(true, false)) for (ready in listOf(true, false)) for (images in listOf(0, 1)) {
+            assertEquals(outgoing("hello", images, false, false, true, "claude", working, ready), out(images = images, working = working, frontReady = ready, to = SendTo.Oma))
+        }
+    }
 
     @Test fun typedTextGoesToTheBackgroundAgent() {
         assertEquals(Outgoing.Background("hello"), out("  hello \n"))

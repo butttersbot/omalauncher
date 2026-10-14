@@ -52,6 +52,17 @@ data class Folder(
     override val resizable get() = false
 }
 
+/**
+ * A thread's tile ([threadTileKey]): the phone's builder or a project thread on the Mac, drawn by the launcher
+ * from how the thread stands. It has no file and no app; what it shows is looked up by its [key] as it is drawn.
+ */
+data class ThreadItem(
+    override val key: String,
+) : HomeItem {
+    override val size get() = AGENT_TILE_SIZE
+    override val minSize get() = AGENT_TILE_MIN
+}
+
 /** A desktop entry as the notebook keeps it, and back: a snapshot for when the entry is gone. */
 fun LinuxApp.entry() = LinuxEntry(name, exec, terminal, id, wmClass, icon)
 

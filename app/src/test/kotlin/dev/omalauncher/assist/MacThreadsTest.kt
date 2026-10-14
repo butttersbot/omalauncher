@@ -339,4 +339,18 @@ class MacThreadsTest {
             for (never in listOf("answerApproval", "MacPending", "MacApprovalBook", ".nonce", ".pending", "MacThreads.answer")) assertFalse("$never in $front", code.contains(never))
         }
     }
+
+    @Test fun wordsSentStraightToAThreadLeaveTheEntryAHandOverDoes() {
+        val direct = macDirect(9, "fix the menu", id, "FF4 mod")
+        // The same receipt, thread and waiting state: it is in the Oma stream marked "→ FF4 mod", and the thread's events find it.
+        assertEquals(handed(9, "fix the menu").copy(direct = true), direct)
+        assertTrue(direct.mac); assertTrue(threadGot(direct, id))
+        assertEquals(TaskStatus.Running, macTaken(direct).status)
+        assertEquals(TaskStatus.Running, macApply(listOf(direct), id, MacEvent.Message(1, 0, "fix the menu")).single().status)
+        // One the Mac never got can be sent again, and stays marked as his words alone.
+        val unsent = macUnsent(direct, MAC_UNREACHABLE)
+        assertEquals(TaskStatus.Dropped, unsent.status)
+        assertEquals(true, macRetried(unsent)?.direct)
+        assertEquals("Mac", macDirect(9, "x", id, " ").threadName)
+    }
 }

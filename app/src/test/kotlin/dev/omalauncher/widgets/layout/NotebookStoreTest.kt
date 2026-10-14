@@ -115,4 +115,14 @@ class NotebookStoreTest {
             if (file.name in setOf("Placement.kt", "GridGeometry.kt")) assertTrue(file.name, imports.none { "org.json" in it || "upgrade" in it })
         }
     }
+
+    /** A thread's tile (Boss, 2026-10-13) is kept by its key, page and cell, under a kind of its own. */
+    @Test fun aThreadTileIsWrittenAndReadBackAsItsOwnKind() {
+        val notebook = Notebook(9, listOf(NotebookPage("p1", "Agents", listOf(NotebookItem("thread:mac:t1", ItemKind.Thread, Cell(0, 0, 3, 3)), NotebookItem("thread:phone", ItemKind.Thread, Cell(3, 0, 3, 3))))))
+        val text = NotebookStore.write(notebook)
+        assertTrue(text.contains("\"kind\":\"thread\""))
+        val read = NotebookStore.inspect(text)!!
+        assertEquals(notebook, read.notebook)
+        assertEquals(0, read.skipped)
+    }
 }

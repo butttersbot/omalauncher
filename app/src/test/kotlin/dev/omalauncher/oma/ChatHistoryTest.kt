@@ -371,4 +371,15 @@ class ChatHistoryTest {
             assertEquals("Done.", store.tasks[0].result)
         } finally { dir.deleteRecursively() }
     }
+
+    @Test fun wordsSentStraightToAThreadAreRememberedAsSuch() {
+        val direct = ChatTask(7, "→ Pond", "add frogs", status = TaskStatus.Dropped, result = "Mac unreachable", thread = "t-pond", threadName = "Pond", direct = true)
+        val handed = direct.copy(time = 8, direct = false)
+        // A restart keeps it: `[ try again ]` afterwards still sends his words alone.
+        assertEquals(listOf(direct, handed), ChatHistory.afterRestart(ChatHistory.decode(ChatHistory.encode(listOf(direct, handed)))))
+        val fields = JSONObject(ChatHistory.encode(listOf(direct, handed))).getJSONArray("tasks")
+        assertTrue(fields.getJSONObject(0).getBoolean("direct"))
+        // Written only where it is set, so every other task keeps the shape it has always had.
+        assertFalse(fields.getJSONObject(1).has("direct"))
+    }
 }

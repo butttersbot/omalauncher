@@ -160,7 +160,7 @@ private fun nearestClear(
 data class PageTile(
     val name: String,
     val cell: Cell,
-    /** What kind of thing it is, in a word: "widget", "app" or "folder". */
+    /** What kind of thing it is, in a word: "widget", "app" or "folder", or "agent" for a thread's tile. */
     val kind: String = "widget",
 )
 

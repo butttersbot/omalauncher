@@ -138,7 +138,8 @@ class LiveNotebook(
             for (item in page.items) {
                 if (item.key in home) continue
                 when (item.kind) {
-                    ItemKind.Widget -> {}
+                    // Known by their keys alone: a page and a cell is all the notebook keeps of either.
+                    ItemKind.Widget, ItemKind.Thread -> {}
                     ItemKind.App -> if (!load(item.app ?: continue, null)) continue
                     ItemKind.Folder -> {
                         folders += item.key
@@ -168,7 +169,8 @@ class LiveNotebook(
     fun snapshot(): Notebook {
         val grid = apps.filter { it.folder == null }
         val appKeys = apps.map { it.app.key }.toSet()
-        val widgets = home.keys.filter { it !in appKeys && it !in folders }.sorted()
+        val keyed = home.keys.filter { it !in appKeys && it !in folders }.sorted()
+        val (threads, widgets) = keyed.partition(::isThreadTile)
         return Notebook(
             rows = rows,
             pages =
@@ -177,6 +179,7 @@ class LiveNotebook(
                         page.id,
                         page.name,
                         widgets.filter { home[it] == page.id }.map { NotebookItem(it, ItemKind.Widget, cells[it]) } +
+                            threads.filter { home[it] == page.id }.map { NotebookItem(it, ItemKind.Thread, cells[it]) } +
                             grid.filter { home[it.app.key] == page.id }.map { NotebookItem(it.app.key, ItemKind.App, cells[it.app.key], app = it.app) } +
                             folders.filter { home[it] == page.id }.map { f -> NotebookItem(f, ItemKind.Folder, cells[f], apps = apps.filter { it.folder == f }.map { it.app }) },
                     )
@@ -204,7 +207,8 @@ class LiveNotebook(
     /**
      * [page] as what is placed on it by itself sees it: its grid, and every tile with a cell on it as it
      * shows. A widget goes by its file name, there or not (a missing file's place is still its), an app by
-     * its label, and a folder by the labels of the apps in it; apps and folders take one cell.
+     * its label, and a folder by the labels of the apps in it; apps and folders take one cell. A thread's tile
+     * goes by its key, as the kind "agent".
      */
     fun board(page: String): PageBoard {
         val tiles =
@@ -214,10 +218,31 @@ class LiveNotebook(
                 when {
                     app != null -> PageTile(app.app.label, cell.shown(resizable = false), "app")
                     key in folders -> PageTile(apps.filter { it.folder == key }.joinToString(", ") { it.app.label }, cell.shown(resizable = false), "folder")
+                    isThreadTile(key) -> PageTile(key, cell, AGENT_TILE_KIND)
                     else -> PageTile(key, cell, "widget")
                 }
             }
         return PageBoard(rows, tiles.sortedWith(compareBy({ it.cell.y }, { it.cell.x })))
+    }
+
+    /** The thread tiles there are, by key, with the id of the page each is on. */
+    fun threadTiles(): Map<String, String> = home.filterKeys(::isThreadTile)
+
+    /**
+     * Puts the thread tile [key] on [page] in [cell], page and cell in one step so it is never on a page
+     * without a place. False, and nothing changed, for a key that is no thread tile's, a page that isn't
+     * there, or a tile that is in the notebook already: this places a new tile and moves none.
+     */
+    fun placeThreadTile(
+        key: String,
+        page: String,
+        cell: Cell,
+    ): Boolean {
+        if (!opened || !isThreadTile(key) || position(page) < 0 || key in home) return false
+        home[key] = page
+        cells[key] = cell
+        save()
+        return true
     }
 
     /** Writes the notebook, unless this start isn't kept. */
@@ -330,7 +355,8 @@ class LiveNotebook(
         if (!canDelete(page) || (!move && !kept)) return null
         val at = position(page)
         val here = home.filterValues { it == page }.keys.sorted()
-        val (shown, held) = here.partition { it in widgets || !isWidget(it) }
+        // A thread's tile has no file to be missing: it shows, and moves or goes as he chooses for the page's other tiles.
+        val (shown, held) = here.partition { isThreadTile(it) || it in widgets || !isWidget(it) }
         held.forEach {
             home.remove(it)
             cells.remove(it)

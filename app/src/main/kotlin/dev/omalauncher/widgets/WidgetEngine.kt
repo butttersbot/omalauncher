@@ -105,6 +105,15 @@ class WidgetEngine(
     /** The dock's pinned apps, kept in the notebook. */
     val dock = DockStore(notebook)
 
+    /** The thread tiles: which there are and where is decided in AgentTiles.kt, and home asks this to look while it shows. */
+    val agentTiles =
+        AgentTileKeeper(
+            notebook,
+            saved = context.getSharedPreferences(AGENT_TILES_PREFS, Context.MODE_PRIVATE).getString("stamps", null),
+            save = { context.getSharedPreferences(AGENT_TILES_PREFS, Context.MODE_PRIVATE).edit().putString("stamps", it).apply() },
+            log = { Log.i("agent-tiles", it) },
+        )
+
     /** Something the owner has to be told about his layout, until he taps it away; see [NotebookOpening]. */
     var notice by mutableStateOf<String?>(null)
 
@@ -356,9 +365,10 @@ class WidgetEngine(
         File(previewDir, "$fileName.screen.png").delete()
     }
 
-    /** Widgets, pinned apps and folders on the page with the id [page]. Wrappers compare by spec, so unchanged pages skip recomposition. */
+    /** Widgets, pinned apps, folders and thread tiles on the page with the id [page]. Wrappers compare by spec, so unchanged pages skip recomposition. */
     fun itemsOn(page: String): List<HomeItem> =
-        specs.filter { notebook.pageOf(it.file.name) == page }.map(::WidgetItem) + shortcuts.onGrid().filter { notebook.pageOf(it.key) == page }
+        specs.filter { notebook.pageOf(it.file.name) == page }.map(::WidgetItem) + shortcuts.onGrid().filter { notebook.pageOf(it.key) == page } +
+            notebook.threadTiles().filterValues { it == page }.keys.sorted().map(::ThreadItem)
 
     private val pageList by derivedStateOf { notebook.pages.map { it.id } }
 
@@ -839,3 +849,6 @@ class WidgetEngine(
                 "widget's state or refresh it with `owl-send <file> set <state> <value>` and `owl-send <file> refresh`.\n"
     }
 }
+
+/** Where the thread tiles' stamps are kept. */
+private const val AGENT_TILES_PREFS = "agent-tiles"

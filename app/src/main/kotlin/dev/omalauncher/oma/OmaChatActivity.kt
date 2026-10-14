@@ -66,6 +66,7 @@ import androidx.compose.ui.unit.dp
 import dev.omalauncher.App
 import dev.omalauncher.Runtime
 import dev.omalauncher.assist.AgentTasks
+import dev.omalauncher.assist.AgentThread
 import dev.omalauncher.assist.ApprovalOutcome
 import dev.omalauncher.assist.FrontQueueFull
 import dev.omalauncher.assist.MacPending
@@ -73,12 +74,14 @@ import dev.omalauncher.assist.MacThreads
 import dev.omalauncher.assist.PendingApproval
 import dev.omalauncher.assist.QuickLane
 import dev.omalauncher.assist.RoutingLog
+import dev.omalauncher.assist.agentThreadsNow
 import dev.omalauncher.assist.appendSpeech
 import dev.omalauncher.assist.builderGot
 import dev.omalauncher.assist.handOverContext
 import dev.omalauncher.assist.handOverPreface
 import dev.omalauncher.assist.macApprovalDetail
 import dev.omalauncher.assist.macApprovalNotice
+import dev.omalauncher.assist.macThreadId
 import dev.omalauncher.assist.waitingLine
 import dev.omalauncher.linux.LinuxState
 import dev.omalauncher.linux.MAX_PROMPT_IMAGES
@@ -92,6 +95,7 @@ import dev.omalauncher.ui.Pack
 import dev.omalauncher.ui.PageGap
 import dev.omalauncher.ui.ReadingWidth
 import dev.omalauncher.ui.Speech
+import dev.omalauncher.ui.ThreadDot
 import dev.omalauncher.ui.applySystemBars
 import dev.omalauncher.ui.framed
 import kotlinx.coroutines.Dispatchers
@@ -109,12 +113,19 @@ import java.util.Date
  * never waits for either of them: what he sends is in the thread at once, and an entry that waits says where. Opened by [ACTION] from the dock, Super+A, the agent's notifications and the tiles; text passed as
  * `Intent.EXTRA_TEXT` is put in the field and not sent. It never attaches the screen: only the assistant
  * gesture over another app does (see ScreenContext.kt).
+ *
+ * That stream is the Oma tab. Each thread, the phone's builder and every project thread on the Mac, has a
+ * tab of its own beside it (Boss, 2026-10-13; ChatTabs.kt): the thread's entries alone, and a field that
+ * talks straight to it. A home tile of a thread opens its tab by [EXTRA_THREAD]; every other way in opens Oma.
  */
 class OmaChatActivity : ComponentActivity() {
     private val runtime get() = (application as App).runtime
 
     /** Text another screen asked to put in the field; taken once. */
     private var prefill by mutableStateOf<String?>(null)
+
+    /** The key of the thread whose tab was asked for, by a tile or a tap in here; null is the Oma tab. See [openTab]. */
+    private var wanted by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -124,22 +135,36 @@ class OmaChatActivity : ComponentActivity() {
         // Asked on a thread of its own: the chat never waits for the Mac, and shows what was last known until it answers.
         MacThreads.open(this)
         if (savedInstanceState == null) prefill = textOf(intent)
+        wanted = if (savedInstanceState == null) threadOf(intent) else savedInstanceState.getString(STATE_TAB)
         applySystemBars(this, Pack.isLight)
         setContent {
             LaunchedEffect(Pack.isLight) { applySystemBars(this@OmaChatActivity, Pack.isLight) }
-            OmaChatScreen(runtime, prefill, onPrefilled = { prefill = null })
+            OmaChatScreen(runtime, prefill, onPrefilled = { prefill = null }, wanted = wanted, onTab = { wanted = it.takeIf { tab -> tab != OMA_TAB } })
         }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         textOf(intent)?.let { prefill = it }
+        // The dock, a notification and voice name no thread, and open Oma whatever tab was left showing.
+        wanted = threadOf(intent)
     }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString(STATE_TAB, wanted)
+    }
+
+    private fun threadOf(intent: Intent?) = intent?.getStringExtra(EXTRA_THREAD)?.take(ChatHistory.MAX_THREAD + 8)?.takeIf { it.isNotBlank() }
 
     private fun textOf(intent: Intent?) = intent?.getStringExtra(Intent.EXTRA_TEXT)?.take(ChatHistory.MAX_PROMPT)?.takeIf { it.isNotBlank() }
 
     companion object {
         const val ACTION = "dev.omalauncher.action.OMA_CHAT"
+
+        /** The key of the thread whose tab to open ([AgentThread.key]); a key that is no thread's opens Oma. */
+        const val EXTRA_THREAD = dev.omalauncher.ui.OMA_CHAT_THREAD
+        private const val STATE_TAB = "tab"
 
         fun intent(context: android.content.Context): Intent = Intent(context, OmaChatActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
@@ -150,6 +175,10 @@ private fun OmaChatScreen(
     runtime: Runtime,
     prefill: String?,
     onPrefilled: () -> Unit,
+    /** The key of the thread whose tab was asked for; null for Oma. */
+    wanted: String?,
+    /** A tab was picked in here, by its key. */
+    onTab: (String) -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -182,6 +211,12 @@ private fun OmaChatScreen(
     val deciding = frontWorking && tasks.any { it.time == frontTime && it.undecided }
     val begun = "${runtime.agents.default?.name ?: "Oma"} is working"
     val linuxState by runtime.bootstrap.state.collectAsState()
+    // Every thread as it stands, for the header's dots and the tabs; the tab that shows follows from what was asked for.
+    val threads = remember(tick) { agentThreadsNow(context) }
+    val tab = openTab(wanted, threads)
+    val to = sendTo(tab, threads)
+    // The tab strip is folded away each time the chat opens: the dots say how the threads stand without it.
+    var tabsOpen by remember { mutableStateOf(false) }
 
     var draft by rememberSaveable { mutableStateOf("") }
     var images by remember { mutableStateOf(listOf<PromptImage>()) }
@@ -222,6 +257,7 @@ private fun OmaChatScreen(
         val out = outgoing(
             draft, images.size, images.any { !it.file.isFile }, importing || speech.listening, linuxState == LinuxState.Installed, agent?.bin, working,
             frontReady = QuickLane.ready(context),
+            to = to,
         )
         when (out) {
             Outgoing.Nothing -> return
@@ -241,6 +277,8 @@ private fun OmaChatScreen(
                 // A front agent that can't even be asked is not his problem: the request goes on as it would have without one.
                 if (!build(out.prompt, queue = working)) return
             }
+            // From a Mac thread's own tab: the same sending a hand-over has, with nobody asked first and nothing added.
+            is Outgoing.Mac -> MacThreads.say(context, out.prompt, out.thread, out.name)
             is Outgoing.Terminal -> if (agent != null) runtime.terminal("${agentInvocation(agent.bin, out.prompt + "\n\n" + PhoneBridge.INSTRUCTIONS)}; exec bash", agent.name, agent)
         }
         // Sent files stay: the agent reads them while it works, and the saved task names them.
@@ -321,17 +359,10 @@ private fun OmaChatScreen(
     val listening = speech.listening
     Box(Modifier.fillMaxSize().background(Pack.background).safeDrawingPadding().padding(PageGap), contentAlignment = Alignment.TopCenter) {
         Column(Modifier.fillMaxSize().widthIn(max = ReadingWidth)) {
+            // The open tab's name, a dot for each thread in its state's colour, and the arrow that drops the tabs down.
             Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                BasicText(Pack.heading("oma"), style = Pack.display(color = Pack.accent))
-                Spacer(Modifier.width(10.dp))
-                BasicText(
-                    listOfNotNull(runtime.agents.default?.name, (if (deciding && !working) begun else label).takeIf { it != "Ready" }).joinToString(" · ").ifEmpty { "no agent yet" },
-                    Modifier.weight(1f),
-                    style = Pack.body(Pack.size.small, Pack.muted),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if ((followUp || frontContinuing) && !working) {
+                BasicText(Pack.heading(tabTitle(tab, threads)), Modifier.weight(1f), style = Pack.display(color = Pack.accent), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (tab == OMA_TAB && (followUp || frontContinuing) && !working) {
                     BracketAction("new thread", Pack.accent) {
                         try {
                             // Both agents start over together; with no build conversation there is nothing of the build lane to clear.
@@ -344,17 +375,36 @@ private fun OmaChatScreen(
                         tick++
                     }
                 }
+                Row(Modifier.weight(1f, fill = false).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+                    for (thread in threads) {
+                        Box(
+                            Modifier
+                                .semantics { contentDescription = "${thread.name}: ${thread.label}" }
+                                .clickable { onTab(dotTap(tab, thread.key)) }
+                                .padding(horizontal = 6.dp, vertical = 12.dp),
+                        ) { ThreadDot(thread.state, Pack.muted, here = thread.key == tab) }
+                    }
+                }
+                BasicText(
+                    if (tabsOpen) "▴" else "▾",
+                    Modifier.semantics { contentDescription = if (tabsOpen) "Hide the tabs" else "Show the tabs" }.clickable { tabsOpen = !tabsOpen }.padding(horizontal = 10.dp, vertical = 6.dp),
+                    style = Pack.body(Pack.size.large),
+                )
             }
+            if (tabsOpen) TabStrip(threads, tab, onTab)
             // Newest at the bottom. A list keeps what is in view where it is when something is added, which would leave
             // a message just sent below the edge, under the field and the keyboard: so a new one is scrolled to.
             val thread = rememberLazyListState()
-            val newest = tasks.lastOrNull()?.time
-            LaunchedEffect(newest) { if (newest != null) thread.scrollToItem(0) }
+            val entries = tabEntries(tasks, tab)
+            val newest = entries.lastOrNull()?.time
+            // A tab just opened shows its newest entry too.
+            LaunchedEffect(newest, tab) { if (newest != null) thread.scrollToItem(0) }
             LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 6.dp), state = thread, reverseLayout = true) {
-                if (tasks.isEmpty()) {
+                if (entries.isEmpty()) {
                     item {
                         BasicText(
-                            "Ask Oma for something. Follow-ups continue the same conversation until you start a new thread.",
+                            if (tab == OMA_TAB) "Ask Oma for something. Follow-ups continue the same conversation until you start a new thread."
+                            else "Nothing has been sent to ${tabTitle(tab, threads)} from this phone yet.",
                             Modifier.fillMaxWidth().padding(vertical = 24.dp),
                             style = Pack.body(color = Pack.muted).copy(textAlign = TextAlign.Center),
                         )
@@ -364,11 +414,13 @@ private fun OmaChatScreen(
                 // request the front agent has beside it is not it.
                 val building = tasks.lastOrNull { it.status == TaskStatus.Running && it.build }?.time
                 // A request waiting on the Mac for work that has no entry here, such as a task begun at the Mac itself: still his to answer.
+                // On a thread's tab only that thread's: the builder's tab has none, since its requests are always an entry's.
                 val loose = macPending.filter { waiting -> tasks.none { it.thread == waiting.threadId && it.approvals.any { line -> line.key == waiting.request.approval } } }
+                    .filter { tab == OMA_TAB || it.threadId == macThreadId(tab) }
                 items(loose, key = { it.ticket }) { waiting ->
                     ApprovalBox("Allow ${waiting.request.tool} on ${waiting.threadName}?", macApprovalDetail(waiting.request), macCard(waiting))
                 }
-                items(tasks.asReversed(), key = { it.time }) { task ->
+                items(entries.asReversed(), key = { it.time }) { task ->
                     val front = frontWorking && task.time == frontTime
                     when {
                         // The Mac does this one: its answer is in the entry as it arrives, and only its own thread's requests show under it.
@@ -385,6 +437,8 @@ private fun OmaChatScreen(
                                 MacThreads.tryAgain(context, task.time)
                                 tick++
                             },
+                            // In the Oma stream the receipt is the way into its thread's tab; on that tab it would say where he already is.
+                            onReceipt = receiptTab(task)?.takeIf { tab == OMA_TAB }?.let { key -> { onTab(key) } },
                         )
                         // No answer and no stop of its own yet: he can't tell it from a task the build lane has just begun.
                         // One the front agent has not come to says so, and can be taken back until it is read.
@@ -418,7 +472,14 @@ private fun OmaChatScreen(
                         }
                     }
                 }
+                // Above the oldest entry of a Mac thread's tab: what was begun at the Mac itself never came through this phone.
+                if (to is SendTo.Mac) {
+                    item {
+                        BasicText(MAC_EARLIER, Modifier.fillMaxWidth().padding(vertical = 12.dp), style = Pack.mono(Pack.size.small, Pack.muted).copy(textAlign = TextAlign.Center))
+                    }
+                }
             }
+            straightLine(to)?.let { BasicText(Pack.caption(it), Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = Pack.mono(Pack.size.small, Pack.muted), maxLines = 1, overflow = TextOverflow.Ellipsis) }
             notice?.let {
                 BasicText(it, Modifier.clickable { notice = null }.padding(8.dp), style = Pack.body(Pack.size.small, Pack.red))
             }
@@ -470,11 +531,8 @@ private fun OmaChatScreen(
                         Box(Modifier.padding(horizontal = 12.dp, vertical = 12.dp)) {
                             if (shown.isEmpty()) {
                                 // Never a word about waiting for the task that runs: he can say more at any time.
-                                val hint =
-                                    if (listening) "listening…"
-                                    else if (working) "ask, or add to this, any time…"
-                                    else if (followUp) "follow up on this thread…"
-                                    else "ask oma…"
+                                val oma = if (working) "ask, or add to this, any time…" else if (followUp) "follow up on this thread…" else "ask oma…"
+                                val hint = if (listening) "listening…" else fieldHint(to) ?: oma
                                 BasicText(hint, style = Pack.body(Pack.size.item, Pack.muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                             inner()
@@ -503,9 +561,9 @@ private fun OmaChatScreen(
                 // still undecided goes with it, as one waiting behind the task would: stop means nothing more is sent.
                 // So what waits to be read goes too, each entry saying so with his words kept.
                 // An answer the front agent is writing has its own stop, on its entry, and so has each task on the Mac:
-                // this one never reaches a thread there.
+                // this one never reaches a thread there, and is not shown on a Mac thread's tab.
                 if (!listening) BracketAction("send", if (draft.isBlank() && images.isEmpty()) Pack.muted else Pack.accent, ::send)
-                if (working || deciding) {
+                if (fieldStop(to, working, deciding)) {
                     BracketAction("stop", Pack.red) {
                         if (deciding) QuickLane.stop()
                         QuickLane.dropWaiting(context)
@@ -513,6 +571,38 @@ private fun OmaChatScreen(
                         tick++
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * The tabs, dropped down under the header: Oma, then each thread with its dot, scrolling sideways when they
+ * are more than fit. The open one is filled in.
+ */
+@Composable
+private fun TabStrip(
+    threads: List<AgentThread>,
+    open: String,
+    onTab: (String) -> Unit,
+) {
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 6.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        for (key in chatTabs(threads)) {
+            val thread = threads.firstOrNull { it.key == key }
+            val on = key == open
+            Row(
+                Modifier
+                    .padding(end = 6.dp)
+                    .framed(Pack.hair, if (on) Pack.foreground else Pack.border, if (on) Pack.foreground else Pack.surface, radius = 6.dp)
+                    .clickable { onTab(key) }
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (thread != null) {
+                    ThreadDot(thread.state, if (on) Pack.background else Pack.muted)
+                    Spacer(Modifier.width(6.dp))
+                }
+                BasicText(Pack.caption(tabTitle(key, threads)), style = Pack.mono(Pack.size.small, if (on) Pack.background else Pack.foreground), maxLines = 1)
             }
         }
     }
@@ -548,7 +638,8 @@ private fun ApprovalBox(
  * agent's has [onStop] beside what it is doing while it runs, and [onBuild] under it afterwards, once:
  * `[ send to build ]`, for when he wanted the work done instead. A request the Mac never got has [onAgain]
  * under it: `[ try again ]`. One that waits says where ([waitingLine], with [ahead] the requests the front
- * agent reads before it) and has `[ cancel ]` beside that while [onCancel] can still take it back.
+ * agent reads before it) and has `[ cancel ]` beside that while [onCancel] can still take it back. The receipt of
+ * a request handed to the Mac shows while [onReceipt] is given, and a tap on it opens that thread's tab.
  */
 @Composable
 private fun TaskEntry(
@@ -562,6 +653,7 @@ private fun TaskEntry(
     onAgain: (() -> Unit)? = null,
     ahead: Int = 0,
     onCancel: (() -> Unit)? = null,
+    onReceipt: (() -> Unit)? = null,
 ) {
     val small = Pack.mono(Pack.size.small, Pack.muted)
     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
@@ -575,8 +667,10 @@ private fun TaskEntry(
             )
             if (attached.isNotEmpty()) BasicText("with " + attached.joinToString(" and "), Modifier.padding(top = 4.dp), style = small)
         }
-        // The receipt: where his words went.
-        if (task.mac) BasicText(task.agent, Modifier.padding(top = 4.dp), style = small, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        // The receipt: where his words went. In the accent as what can be tapped is: it opens that thread's tab.
+        if (task.mac && onReceipt != null) {
+            BasicText(task.agent, Modifier.clickable(onClick = onReceipt).padding(top = 4.dp, bottom = 4.dp, end = 12.dp), style = small.copy(color = Pack.accent), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
         for (step in task.steps) BasicText("· $step", Modifier.padding(top = 4.dp), style = small, maxLines = 1, overflow = TextOverflow.Ellipsis)
         for (approval in task.approvals) {
             val waiting = if (approval.answer == ApprovalAnswer.Waiting) cards[approval.key] else null

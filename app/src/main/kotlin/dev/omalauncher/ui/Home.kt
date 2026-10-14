@@ -13,10 +13,17 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import android.app.WallpaperManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.snapshotFlow
+import dev.omalauncher.assist.AgentTasks
+import dev.omalauncher.assist.MacThreads
+import dev.omalauncher.assist.agentThreadsNow
 import dev.omalauncher.widgets.Folder
 import dev.omalauncher.widgets.HomeItem
 import dev.omalauncher.widgets.Shortcut
+import dev.omalauncher.widgets.ThreadItem
 import dev.omalauncher.widgets.WidgetItem
+import dev.omalauncher.widgets.annotations.AnnotationBook
+import dev.omalauncher.widgets.annotations.scraps
+import dev.omalauncher.widgets.tileThread
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -134,6 +141,10 @@ internal fun Modifier.opensDrawer(
         }
     }
 
+/** How often home looks at the threads for their tiles, and how often it lets the Mac's list be asked for again. */
+private const val AGENT_TILES_EVERY_MS = 2_000L
+private const val AGENT_TILES_GLANCE_MS = 60_000L
+
 /** How long home rests on a page before it takes a still of it for the overview. */
 private const val STILL_AFTER_MS = 700L
 
@@ -198,6 +209,33 @@ fun HomeScreen(
     // Written a moment after each change; at once when home loses the window, or the pen is put down.
     val focused = LocalWindowInfo.current.isWindowFocused
     LaunchedEffect(focused, state.drawing) { if (!focused || !state.drawing) marks.book?.flush() }
+    // The thread tiles follow their threads while home has the window: a look now and then, which asks the Mac
+    // nothing itself. Its list is asked for again only when it has grown old, and never with no Mac set up.
+    LaunchedEffect(focused, engine.notebook.opened, engine.notebook.kept) {
+        AgentTasks.restore(context)
+        MacThreads.restore(context)
+        var glanced = 0L
+        while (focused) {
+            val now = System.currentTimeMillis()
+            if (now - glanced >= AGENT_TILES_GLANCE_MS) {
+                glanced = now
+                MacThreads.glance(context, now)
+            }
+            // Not while he is arranging: a tile appearing under one he carries would change where it can land.
+            if (state.editing == null && arrange.carry == null) engine.agentTiles.keep(agentThreadsNow(context), MacThreads.view.listed, now) { page ->
+                // The page's notes and stickers, read if they never were: a tile is placed clear of them too.
+                marks.book?.let { book ->
+                    book.open(page)
+                    when (book.status(page)) {
+                        AnnotationBook.Status.Ready -> book.on(page).scraps()
+                        AnnotationBook.Status.Unreadable -> emptyList()
+                        else -> null
+                    }
+                }
+            }
+            delay(AGENT_TILES_EVERY_MS)
+        }
+    }
     // The pen has the page to itself: no folder open under it, and no terminal tile typing.
     LaunchedEffect(state.drawing) {
         if (state.drawing) {
@@ -299,6 +337,8 @@ fun HomeScreen(
         when (item) {
             is WidgetItem -> engine.removeWidget(item.spec)
             is Shortcut, is Folder -> engine.shortcuts.remove(item.key)
+            // Nothing of a thread's tile is kept but its place, which goes below; it stays off until its thread next starts work.
+            is ThreadItem -> {}
         }
         engine.layout.remove(item.key)
     }
@@ -500,6 +540,14 @@ fun HomeScreen(
                             modifier = tile,
                             onTap = { arrange.folder = item.key },
                         )
+                    is ThreadItem ->
+                        AgentTileView(
+                            tile = engine.agentTiles.tiles[item.key],
+                            key = item.key,
+                            focused = highlighted,
+                            modifier = tile,
+                            onTap = { openOmaChat(context, thread = tileThread(item.key)) },
+                        )
                 }
             },
             // The recent apps strip's room: kept while it's empty, so tiles don't reflow when it fills, and still
@@ -531,7 +579,9 @@ fun HomeScreen(
             onLongPressEmpty = { from, at -> openMenu(null, from, at) },
             arrivals = state.arrivals,
             rooms = state.pageRooms,
-            onNoRoom = { item -> showPage = engine.moveToFreePage(item) },
+            // A thread's tile is placed with its cells and has no page to be moved on to: the launcher puts one on the
+            // Agents page or nowhere. One that has lost its place is taken off, not sent to a page of his.
+            onNoRoom = { item -> if (item is ThreadItem) engine.layout.remove(item.key) else showPage = engine.moveToFreePage(item) },
             onMove = { item, page ->
                 engine.moveToPage(item, page)
                 showPage = page

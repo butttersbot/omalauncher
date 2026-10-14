@@ -1,6 +1,9 @@
 package dev.omalauncher.oma
 
+import dev.omalauncher.assist.AgentThread
+import dev.omalauncher.assist.PHONE_THREAD
 import dev.omalauncher.assist.frontFirst
+import dev.omalauncher.assist.macThreadId
 import dev.omalauncher.linux.MAX_PROMPT_IMAGES
 
 /** The agents Oma runs in the background under its approvals; the others still open in a terminal. */
@@ -26,7 +29,35 @@ sealed interface Outgoing {
      * [Queued] would. If it is still on the request before, this one waits for it and is read next.
      */
     data class Front(val prompt: String) : Outgoing
+
+    /**
+     * Straight to the thread [thread] on the Mac, called [name], from that thread's own tab: his words as they
+     * are, with the front agent not asked.
+     */
+    data class Mac(val prompt: String, val thread: String, val name: String) : Outgoing
 }
+
+/** Whom the field talks to, which is the tab that is open. */
+sealed interface SendTo {
+    /** The Oma tab: the front agent hears it first, as before there were tabs. */
+    data object Oma : SendTo
+
+    /** The phone builder's tab: straight to the build lane. */
+    data object Phone : SendTo
+
+    /** A Mac thread's tab: straight to that thread. */
+    data class Mac(val thread: String, val name: String) : SendTo
+}
+
+/** Whom the field talks to on [tab], which is one of [threads] or the Oma tab. A tab that is no thread's talks to Oma. */
+fun sendTo(tab: String, threads: List<AgentThread>): SendTo {
+    val thread = threads.firstOrNull { it.key == tab } ?: return SendTo.Oma
+    if (thread.key == PHONE_THREAD) return SendTo.Phone
+    return macThreadId(thread.key)?.let { SendTo.Mac(it, thread.name) } ?: SendTo.Oma
+}
+
+/** Why images are not sent from a Mac thread's tab. */
+fun noImagesTo(name: String) = "$name is on the Mac, which takes no images from here. Remove them, or send this from the Oma tab."
 
 /**
  * [agent] is the default agent's command, null when none is installed. Images alone ask for a description, as on home.
@@ -35,6 +66,10 @@ sealed interface Outgoing {
  * first when [frontFirst] says so, [frontReady] being whether Claude Code, which is the front agent, is
  * installed. Nothing here asks whether the front agent or the builder is busy: his words are taken at once,
  * and wait their turn wherever they go. Otherwise it goes straight on as it always did.
+ *
+ * [to] is the open tab. On a thread's own tab the front agent is skipped whatever [frontReady] says: the
+ * phone builder's tab sends as the build lane always took it, and a Mac thread's tab sends to that thread,
+ * which needs neither Linux nor an agent on the phone, and takes no images.
  */
 fun outgoing(
     draft: String,
@@ -45,16 +80,18 @@ fun outgoing(
     agent: String?,
     working: Boolean = false,
     frontReady: Boolean = false,
+    to: SendTo = SendTo.Oma,
 ): Outgoing {
     val prompt = draft.trim().ifEmpty { if (images > 0) "Describe these images." else "" }
     return when {
         busy || prompt.isEmpty() -> Outgoing.Nothing
+        to is SendTo.Mac -> if (images > 0) Outgoing.Refused(noImagesTo(to.name)) else Outgoing.Mac(prompt, to.thread, to.name)
         !linux -> Outgoing.Refused("Open Omalauncher and finish Linux setup first.")
         agent == null -> Outgoing.Refused("Install and sign in to an agent in Omalauncher first.")
         images > 0 && agent !in BACKGROUND_AGENTS -> Outgoing.Refused("Choose Claude Code or Codex to send images.")
         imageMissing -> Outgoing.Refused("An attached image is no longer available. Remove it and attach it again.")
         agent in BACKGROUND_AGENTS -> when {
-            frontFirst(prompt, images, frontReady) -> Outgoing.Front(prompt)
+            to == SendTo.Oma && frontFirst(prompt, images, frontReady) -> Outgoing.Front(prompt)
             working -> Outgoing.Queued(prompt)
             else -> Outgoing.Background(prompt)
         }

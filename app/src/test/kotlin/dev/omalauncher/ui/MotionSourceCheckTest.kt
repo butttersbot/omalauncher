@@ -17,6 +17,8 @@ class MotionSourceCheckTest {
     private val moving =
         listOf(
             "ui/WidgetTile.kt",
+            // The working dot's pulse (Boss, 2026-10-13): on the shared timing like every other transition.
+            "ui/AgentTile.kt",
             "ui/Home.kt",
             "ui/HomeGrid.kt",
             "ui/HomeMenu.kt",
