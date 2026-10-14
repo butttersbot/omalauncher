@@ -1,6 +1,17 @@
 # Phone test results
 
-## Latest: four pieces in parallel, merged (2026-10-13, about 22:30 PDT, commit 69f3470 and after) — NOT promoted, NOT seen on a screen
+## Latest: fresh Mac threads and the worktree note; promoted (2026-10-13, about 23:45 PDT, commit 9b7db8a)
+
+- `<<mac-new ID>>`: separate or urgent work on a project whose thread is busy makes "NAME 2" on the same folder
+  (`POST /threads`) and hands his words to it; idle thread -> as `<<mac ID>>`; at most 3 working per folder, then it
+  queues. Real Haiku: 47 of 48 as intended (one "separately…" queued on the busy thread instead).
+- When another phone builder, or another thread on the same folder, is working, the receiver gets a hidden note to
+  work on its own branch in a git worktree and stop on a merge conflict. Not shown to Boss.
+- `quickMacRules` length pin raised 1,400 -> 2,000 (the new rule is about 600 characters).
+- `oma-build` green; promoted at Boss's word with everything since versionCode 50: Agents page and tabs, names,
+  oma-keep, two builders, builder health, fresh threads. Nothing of it seen on a screen before the update.
+
+## Earlier: four pieces in parallel, merged (2026-10-13, about 22:30 PDT, commit 69f3470 and after) — NOT promoted, NOT seen on a screen
 
 At Boss's word ("fan out a bunch of sub agents"), four agents in separate worktrees (/root/wt/*), merged by a fifth;
 `oma-build` green on the merge.
