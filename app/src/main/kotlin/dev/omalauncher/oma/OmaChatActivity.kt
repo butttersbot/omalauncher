@@ -108,6 +108,7 @@ import dev.omalauncher.assist.handOverContext
 import dev.omalauncher.assist.handOverPreface
 import dev.omalauncher.assist.macApprovalDetail
 import dev.omalauncher.assist.macApprovalNotice
+import dev.omalauncher.assist.macBackgroundLine
 import dev.omalauncher.assist.replyName
 import dev.omalauncher.assist.waitingLine
 import dev.omalauncher.linux.LinuxState
@@ -507,6 +508,13 @@ private fun OmaChatScreen(
                     .filter { tab == OMA_TAB || it.threadId == tabMacThread(tab, book) }
                 items(loose, key = { it.ticket }) { waiting ->
                     ApprovalBox("Allow ${waiting.request.tool} on ${waiting.threadName}?", macApprovalDetail(waiting.request), macCard(waiting))
+                }
+                // Work the thread left running on the Mac, quietly under its newest entry, for as long as the Mac says it runs.
+                val background = tabMacThread(tab, book)?.let { id -> macBackgroundLine(MacThreads.view.threads.firstOrNull { it.id == id }?.background.orEmpty()) }
+                if (background != null) {
+                    item(key = "background") {
+                        BasicText("· $background", Modifier.fillMaxWidth().padding(vertical = 6.dp), style = Pack.mono(Pack.size.small, Pack.muted), maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    }
                 }
                 items(entries.asReversed(), key = { it.time }) { task ->
                     val front = frontWorking && task.time == frontTime
@@ -1021,6 +1029,12 @@ private fun TaskEntry(
             else BasicText("[ send to build ]", Modifier.clickable(onClick = onBuild).padding(vertical = 8.dp), style = small)
         }
         if (onAgain != null && task.status == TaskStatus.Dropped) BasicText("[ try again ]", Modifier.clickable(onClick = onAgain).padding(vertical = 8.dp), style = small)
+        // What its thread on the Mac said after the answer, between his messages: notes and steps quietly, as the
+        // steps above are, and the agent's own report on its background work as an answer is.
+        for (said in task.later) {
+            if (said.words) SelectionContainer { MarkdownText(said.text.trim(), Modifier.padding(top = 6.dp)) }
+            else BasicText("· ${said.text}", Modifier.padding(top = 4.dp), style = small, maxLines = 3, overflow = TextOverflow.Ellipsis)
+        }
     }
 }
 

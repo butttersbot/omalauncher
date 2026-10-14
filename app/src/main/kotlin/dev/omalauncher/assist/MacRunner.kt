@@ -131,7 +131,8 @@ enum class ThreadHome(val word: String) { Mac("mac"), Phone("phone") }
 /**
  * A thread as the runner lists it. [summary] is the first line of the owner's last message, [tail] the last 300
  * characters the agent said, [lastWorked] Unix seconds or null before its first task, [waitingTurns] the messages
- * waiting their turn, [lastEvent] the id of its newest event, [pending] the approvals waiting now.
+ * waiting their turn, [lastEvent] the id of its newest event, [pending] the approvals waiting now, and
+ * [background] what the agent left running on the Mac after its answer, in its own words; empty when nothing is.
  */
 data class MacThread(
     val id: String,
@@ -146,6 +147,7 @@ data class MacThread(
     val waitingTurns: Int,
     val lastEvent: Long,
     val pending: List<MacApproval>,
+    val background: List<String> = emptyList(),
 )
 
 /** What became of the owner's words: taken at once, or waiting behind [Queued.position] - 1 others. */
@@ -178,6 +180,7 @@ internal fun macThread(json: JSONObject): MacThread? {
         waitingTurns = json.macCount("waiting_turns"),
         lastEvent = json.macWhole("last_event") ?: 0L,
         pending = json.optJSONArray("pending").macObjects().mapNotNull { macApproval(it) },
+        background = json.optJSONArray("background").let { list -> (0 until (list?.length() ?: 0)).mapNotNull { (list?.opt(it) as? String)?.trim()?.takeIf(String::isNotEmpty) } },
     )
 }
 

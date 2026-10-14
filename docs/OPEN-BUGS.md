@@ -25,7 +25,15 @@ Boss moves to a new, higher-RAM phone tomorrow (2026-10-14/15). Everything below
 7. **Front agent misroutes, rare:** a plain question handed to a builder (about 2 in 100); "thanks" while a builder
    works sometimes handed over. Harmless but slow.
 8. **The Oma prompt still names `oma-agents status`** (works as an alias; should say `oma status`).
-9. **`note` events from the runner** (background-task notices) reach the phone and show nothing yet.
+9. ~~**`note` events from the runner** (background-task notices) reach the phone and show nothing yet.~~ BUILT
+   2026-10-14 by a Mac session, **not yet seen on a screen** (Boss was changing phones; nothing installed). A `note`
+   during a turn is a step line of its entry; after the answer, or between his messages, it is a quiet `·` line under
+   his newest entry in that thread. Claude Code's own report between his messages (its text, steps and any card it
+   asks for) lands there too instead of being dropped; words sent to the thread from elsewhere are marked "Sent from
+   elsewhere: …" so their answer does not read as his. `background` from `/threads` shows on the tile and dot label as
+   "running on the Mac" with "running on the Mac: copy the games" as its line, and as a quiet line at the bottom of
+   the thread's tab. Unit tested (MacRunnerTest, MacThreadsTest, AgentThreadsTest, ChatHistoryTest). To check on the
+   new phone: start background work from a Mac tab, watch the "Still running…" line, the tile label, and the report.
 10. **Mac work is not on the oma tile, ring or lock widget** (they read the phone builders only).
 11. **A thread tab shows only what the phone sent**: "Earlier work on the Mac is not shown". Fetch the thread's events.
 12. **The Claude→Codex→Cursor limit memory (15 min) is lost on a launcher restart.**

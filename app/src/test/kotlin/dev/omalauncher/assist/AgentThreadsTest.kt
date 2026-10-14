@@ -18,8 +18,8 @@ class AgentThreadsTest {
 
     private fun thread(
         status: MacThreadStatus = MacThreadStatus.Idle, threadId: String = id, name: String = "FF4 better menu mod", summary: String = "", tail: String = "",
-        lastWorked: Long? = null, waitingTurns: Int = 0, pending: List<MacApproval> = emptyList(),
-    ) = MacThread(threadId, name, "/p", ThreadHome.Mac, "claude", summary, status, lastWorked, tail, waitingTurns, 0, pending)
+        lastWorked: Long? = null, waitingTurns: Int = 0, pending: List<MacApproval> = emptyList(), background: List<String> = emptyList(),
+    ) = MacThread(threadId, name, "/p", ThreadHome.Mac, "claude", summary, status, lastWorked, tail, waitingTurns, 0, pending, background)
 
     private fun build(time: Long, status: TaskStatus, prompt: String = "prompt $time", steps: List<String> = emptyList(), result: String = "") =
         ChatTask(time, "Claude Code", prompt, steps = steps, result = result, status = status)
@@ -247,5 +247,20 @@ class AgentThreadsTest {
         // Bound, it is its thread, and has a place on the Mac.
         val bound = agentThreads(emptyList(), BuilderNow(), MacView(reachable = true), chats = listOf(NewChat("c2", 2, mac = "t-new"))).last()
         assertTrue(bound.mac); assertFalse(bound.unplaced)
+    }
+
+    @Test fun aRestingThreadSaysWhatItLeftRunningOnTheMac() {
+        val done = listOf(mac(10, TaskStatus.Done, result = "Copying in the background."))
+        val resting = macThreadNow(thread(MacThreadStatus.Idle, lastWorked = 5, tail = "Copying in the background.", background = listOf("copy the games")), id, done, emptyList(), reachable = true)
+        assertEquals(ThreadState.Idle, resting.state)
+        assertEquals("running on the Mac: copy the games", resting.doing); assertEquals(MAC_BACKGROUND, resting.label)
+        // Once it is over the thread reads as done again.
+        val over = macThreadNow(thread(MacThreadStatus.Idle, lastWorked = 5, tail = "Copying in the background."), id, done, emptyList(), reachable = true)
+        assertEquals("Copying in the background.", over.doing); assertEquals("done", over.label)
+        // At work, what it does now comes first.
+        assertEquals("working", macThreadNow(thread(MacThreadStatus.Working, background = listOf("copy the games")), id, emptyList(), emptyList(), true).label)
+        assertEquals("running on the Mac: copy the games; npm run dev", macBackgroundLine(listOf("copy the games", " npm  run dev ")))
+        assertNull(macBackgroundLine(listOf(" ")))
+        assertEquals(TILE_DOING_CHARS, macBackgroundLine(listOf("x".repeat(500)))!!.length)
     }
 }

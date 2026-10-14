@@ -59,6 +59,12 @@ sealed interface MacEvent {
     /** The turn's answer, with the agent's [kind] and the [model] that answered when the runner says them. */
     data class Result(override val id: Long, override val time: Long, val text: String, val failed: Boolean, val kind: String = "", val model: String = "") : MacEvent
 
+    /**
+     * The runner's word on what the agent did that is not his answer: background work still running, ended or
+     * stopped unfinished, or a turn of the agent's own between his messages. Said quietly, never as the answer.
+     */
+    data class Note(override val id: Long, override val time: Long, val text: String) : MacEvent
+
     /** The task was stopped; [dropped] messages that were waiting their turn went with it. */
     data class Stopped(override val id: Long, override val time: Long, val dropped: Int) : MacEvent
 
@@ -108,6 +114,7 @@ internal fun macEvent(json: JSONObject, lineId: Long? = null, lineType: String? 
         "approval" -> macApproval(json)?.let { MacEvent.Approval(id, time, it) } ?: MacEvent.Other(id, time, type)
         "approval_result" -> MacEvent.ApprovalResult(id, time, json.macText("approval"), MacDecision.of(json.macText("decision")))
         "result" -> MacEvent.Result(id, time, json.macText("text"), json.optBoolean("failed"), json.macText("kind"), json.macText("model"))
+        "note" -> json.macText("text").trim().takeIf { it.isNotEmpty() }?.let { MacEvent.Note(id, time, it) } ?: MacEvent.Other(id, time, type)
         "stopped" -> MacEvent.Stopped(id, time, (json.macWhole("dropped") ?: 0L).toInt())
         // The runner's code is a number when the agent died and a word when it says why the turn ended.
         "error" -> MacEvent.Error(id, time, json.macText("text"), json.macWhole("code")?.toInt(), (json.opt("code") as? String).orEmpty())

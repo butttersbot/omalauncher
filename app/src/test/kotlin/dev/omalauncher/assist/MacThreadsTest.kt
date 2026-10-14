@@ -3,6 +3,7 @@ package dev.omalauncher.assist
 import dev.omalauncher.oma.ApprovalAnswer
 import dev.omalauncher.oma.ChatApproval
 import dev.omalauncher.oma.ChatHistory
+import dev.omalauncher.oma.ChatLater
 import dev.omalauncher.oma.ChatTask
 import dev.omalauncher.oma.TaskStatus
 import dev.omalauncher.oma.UNDECIDED_AGENT
@@ -53,10 +54,12 @@ class MacThreadsTest {
         hear(MacEvent.Result(7, 0, "Fixed.", failed = false))
         assertEquals(TaskStatus.Done, tasks[1].status); assertEquals("Fixed.", tasks[1].result)
         assertEquals(phone, tasks[0])
-        // What the thread says with no request of his running, such as work begun at the Mac, changes nothing here.
-        val after = tasks
+        // What the thread says with no request of his running (Claude Code's own report on background work) goes under
+        // his newest entry, after its answer; a result or an error of such a turn ends nothing of his.
+        val answer = tasks[1]
         hear(MacEvent.Text(8, 0, "more")); hear(MacEvent.Result(9, 0, "other", failed = false)); hear(MacEvent.Error(10, 0, "x", 1))
-        assertEquals(after, tasks)
+        assertEquals(answer.copy(later = listOf(ChatLater("more", words = true))), tasks[1])
+        assertEquals(phone, tasks[0])
         // Another thread's events never reach this thread's entry.
         assertEquals(listOf(taken(5)), macApply(listOf(taken(5)), "t99999999", MacEvent.Text(1, 0, "theirs")))
     }
@@ -75,6 +78,8 @@ class MacThreadsTest {
         hear(MacEvent.Result(5, 0, "", failed = false)); hear(MacEvent.Message(6, 0, "from the Mac itself"))
         assertEquals(listOf(TaskStatus.Done, TaskStatus.Done, TaskStatus.Queued), tasks.map { it.status })
         assertEquals("Two.\n", tasks[1].result)
+        // They are marked, so their answer does not read as more of his.
+        assertEquals(listOf(ChatLater(MAC_SENT_ELSEWHERE + "from the Mac itself")), tasks[1].later)
         // Taken before the answer to sending it was read: the entry still begins.
         assertEquals(TaskStatus.Running, macApply(listOf(handed(9, "now")), id, MacEvent.Message(1, 0, "now")).single().status)
     }
@@ -521,5 +526,68 @@ class MacThreadsTest {
         // Past the limit of threads at work in one folder, a new chat still gets its own, never a busy one's queue.
         assertTrue(macFresh(busy, listOf(busy, two, three)) is MacFresh.Queue)
         assertEquals(MacFresh.Make("FF4 better menu mod 4", "~/p/ff4"), macFresh(busy, listOf(busy, two, three), newChat = true))
+    }
+
+    // Background work (OPEN-BUGS #9)
+
+    @Test fun aNoteDuringATurnIsAStepAndAfterItALineUnderTheAnswer() {
+        var tasks = listOf(taken(5, "copy the games"))
+        fun hear(event: MacEvent) { tasks = macApply(tasks, id, event) }
+        hear(MacEvent.Note(1, 0, "Claude Code ended a turn of its own before this message; its answer is still to come."))
+        assertEquals(listOf("Claude Code ended a turn of its own before this message; its answer is still to come."), tasks[0].steps)
+        hear(MacEvent.Result(2, 0, "Copying in the background.", failed = false))
+        // The runner says what is left running after the answer, when the entry has ended.
+        hear(MacEvent.Note(3, 0, "Still running on the Mac: copy the games. Claude Code stays open for it and says when it ends."))
+        hear(MacEvent.Note(4, 0, "Still running on the Mac: copy the games. Claude Code stays open for it and says when it ends."))
+        assertEquals(TaskStatus.Done, tasks[0].status); assertEquals("Copying in the background.", tasks[0].result)
+        assertEquals(listOf(ChatLater("Still running on the Mac: copy the games. Claude Code stays open for it and says when it ends.")), tasks[0].later)
+    }
+
+    @Test fun claudeCodesReportBetweenHisMessagesAppearsUnderHisLastEntry() {
+        var tasks = listOf(macTaken(handed(4, "earlier")).copy(status = TaskStatus.Done, result = "Old."), taken(5, "copy the games").copy(status = TaskStatus.Done, result = "Started."))
+        fun hear(event: MacEvent) { tasks = macApply(tasks, id, event) }
+        hear(MacEvent.Note(1, 0, "Copied 12 games"))
+        hear(MacEvent.Text(2, 0, "The copy finished."))
+        hear(MacEvent.Step(3, 0, "Bash: ls /games", "Bash"))
+        hear(MacEvent.Text(4, 0, "All 12 games are there."))
+        hear(MacEvent.Text(5, 0, "Nothing else to do."))
+        hear(MacEvent.Note(6, 0, "Claude Code reported on its background work, between your messages."))
+        hear(MacEvent.Status(7, 0, MacThreadStatus.Idle))
+        assertEquals(listOf(
+            ChatLater("Copied 12 games"),
+            ChatLater("The copy finished.", words = true),
+            ChatLater("Bash: ls /games"),
+            ChatLater("All 12 games are there.\nNothing else to do.", words = true),
+            ChatLater("Claude Code reported on its background work, between your messages."),
+        ), tasks[1].later)
+        // His answer and his earlier entry are left as they were.
+        assertEquals("Started.", tasks[1].result); assertEquals(TaskStatus.Done, tasks[1].status)
+        assertEquals(emptyList<ChatLater>(), tasks[0].later)
+        // A card asked for in that turn is a line on the same entry, so it can be answered there; once only.
+        tasks = macApply(tasks, id, MacEvent.Approval(8, 0, write)); tasks = macApply(tasks, id, MacEvent.Approval(9, 0, write))
+        assertEquals(listOf(ApprovalAnswer.Waiting), tasks[1].approvals.map { it.answer }); assertEquals(write.approval, tasks[1].approvals.single().key)
+        tasks = macApply(tasks, id, MacEvent.ApprovalResult(10, 0, write.approval, MacDecision.Allow))
+        assertEquals(ApprovalAnswer.Approved, tasks[1].approvals.single().answer)
+        // Stopped with the work unfinished: said the same way.
+        tasks = macApply(tasks, id, MacEvent.Note(11, 0, "Stopped, unfinished: copy the games"))
+        assertEquals(ChatLater("Stopped, unfinished: copy the games"), tasks[1].later.last())
+    }
+
+    @Test fun whatAThreadSaysBetweenMessagesNeedsAnEntryOfHisThere() {
+        // Nothing sent from this phone, or only words still waiting for the Mac or for a new thread: nothing to put it under.
+        assertEquals(emptyList<ChatTask>(), macApply(emptyList(), id, MacEvent.Note(1, 0, "Still running on the Mac: x")))
+        val waiting = listOf(handed(5))
+        assertEquals(waiting, macApply(waiting, id, MacEvent.Text(1, 0, "report")))
+        val other = listOf(taken(5).copy(status = TaskStatus.Done))
+        assertEquals(other, macApply(other, "t99999999", MacEvent.Note(1, 0, "theirs")))
+        // A blank note is nothing to show.
+        assertEquals(other, macApply(other, id, MacEvent.Step(1, 0, "  ", "")))
+    }
+
+    @Test fun whatComesBetweenMessagesIsKeptWithinItsLimit() {
+        var task = taken(5).copy(status = TaskStatus.Done)
+        for (i in 1..100) task = macLater(task, ChatLater("note $i"))
+        assertEquals(ChatHistory.MAX_LATER, task.later.size); assertEquals("note 100", task.later.last().text)
+        assertEquals("a b", macLater(task.copy(later = emptyList()), ChatLater("  a\n  b ")).later.single().text)
     }
 }

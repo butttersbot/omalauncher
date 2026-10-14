@@ -7,6 +7,7 @@ import dev.omalauncher.App
 import dev.omalauncher.oma.ApprovalAnswer
 import dev.omalauncher.oma.ChatApproval
 import dev.omalauncher.oma.ChatHistory
+import dev.omalauncher.oma.ChatLater
 import dev.omalauncher.oma.ChatLog
 import dev.omalauncher.oma.ChatTask
 import dev.omalauncher.oma.QUICK_AGENT
@@ -70,6 +71,7 @@ const val MAC_NOT_TAKEN = "Mac unreachable: it did not take this."
 const val MAC_NO_ANSWER = "The Mac ended this without an answer."
 const val MAC_INTERRUPTED = "The runner on the Mac restarted while this ran. Nothing is started again until you say."
 const val MAC_STOPPED_UNTAKEN = "Stopped before the Mac took it."
+const val MAC_SENT_ELSEWHERE = "Sent from elsewhere: "
 const val MAC_EMPTY_TURN = "The Mac ended this turn without an answer."
 
 /** How long to wait before asking a Mac that did not answer again: 2 s, 5 s, 15 s, then every 30 s. [misses] counts from 1. */
@@ -234,9 +236,34 @@ fun macApprovalDetail(request: MacApproval): String {
     return input.optString("command").ifBlank { input.toString(2) }
 }
 
-/** The request [threadId] is working on gets a line for [request], waiting; once only, however often it is heard of. */
+/**
+ * The entry what [threadId] says goes to while no request of his is running there (Claude Code's own turn about
+ * background work, between his messages): its newest one the Mac has had. Null when the phone sent it nothing.
+ */
+fun macLatest(tasks: List<ChatTask>, threadId: String): ChatTask? = tasks.lastOrNull { it.thread == threadId && !it.fresh && it.status != TaskStatus.Queued }
+
+/**
+ * [task] with [said] added to what its thread said after it. The agent's words run on into the words before
+ * them, as a turn's do into its answer; a quiet line that only repeats the one before is left out.
+ */
+fun macLater(task: ChatTask, said: ChatLater): ChatTask {
+    val text = if (said.words) said.text.trimEnd() else said.text.trim().replace(Regex("\\s+"), " ")
+    if (text.isBlank()) return task
+    val last = task.later.lastOrNull()
+    val later = when {
+        said.words && last?.words == true -> task.later.dropLast(1) + last.copy(text = last.text + "\n" + text)
+        !said.words && last?.words == false && last.text == text -> return task
+        else -> task.later + ChatLater(text, said.words)
+    }
+    return task.copy(later = later.takeLast(ChatHistory.MAX_LATER))
+}
+
+/**
+ * The request [threadId] is working on gets a line for [request], waiting; once only, however often it is heard
+ * of. With none running, a card asked for in the agent's own turn between his messages goes to [macLatest].
+ */
 fun macAsked(tasks: List<ChatTask>, threadId: String, request: MacApproval): List<ChatTask> {
-    val current = tasks.firstOrNull { it.thread == threadId && it.status == TaskStatus.Running } ?: return tasks
+    val current = tasks.firstOrNull { it.thread == threadId && it.status == TaskStatus.Running } ?: macLatest(tasks, threadId) ?: return tasks
     if (current.approvals.any { it.key == request.approval }) return tasks
     val line = ChatApproval(request.tool.ifBlank { "a tool" }, macApprovalDetail(request), ApprovalAnswer.Waiting, request.approval)
     return tasks.map { if (it.time == current.time) it.copy(approvals = it.approvals + line) else it }
@@ -269,15 +296,25 @@ private fun approvalAnswer(decision: MacDecision) = when (decision) {
 fun macApply(tasks: List<ChatTask>, threadId: String, event: MacEvent, inFlight: Set<Long> = emptySet(), answeredBy: String = ""): List<ChatTask> {
     val current = tasks.firstOrNull { it.thread == threadId && it.status == TaskStatus.Running }
     fun running(change: (ChatTask) -> ChatTask) = if (current == null) tasks else tasks.map { if (it.time == current.time) change(it) else it }
+    // While none of his requests runs there, what the thread says is the agent's own (its report on background
+    // work, or the runner's notes on it) and goes under the newest entry, after its answer.
+    fun between(said: ChatLater): List<ChatTask> {
+        val latest = macLatest(tasks, threadId) ?: return tasks
+        return tasks.map { if (it.time == latest.time) macLater(it, said) else it }
+    }
     return when (event) {
         is MacEvent.Message -> {
             val words = handOverWords(event.text)
             // One waiting for a new thread is not this thread's, even while it stands under its id.
             val next = if (current != null) null else tasks.firstOrNull { it.thread == threadId && !it.fresh && it.status == TaskStatus.Queued && (it.prompt == event.text || it.prompt == words) }
-            if (next == null) tasks else tasks.map { if (it.time == next.time) it.copy(status = TaskStatus.Running) else it }
+            // Words no entry of his has, with none of his running, were sent from somewhere else: what the thread says
+            // next is their answer, and stands under this line rather than reading as more of his last answer.
+            if (next == null) if (current == null) between(ChatLater(MAC_SENT_ELSEWHERE + event.text.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty().trim())) else tasks
+            else tasks.map { if (it.time == next.time) it.copy(status = TaskStatus.Running) else it }
         }
-        is MacEvent.Text -> running { it.copy(result = it.result + event.text.trimEnd() + "\n", answeredBy = it.answeredBy.ifEmpty { answeredBy }) }
-        is MacEvent.Step -> running { ChatHistory.withStep(it, event.text) }
+        is MacEvent.Text -> if (current == null) between(ChatLater(event.text, words = true)) else running { it.copy(result = it.result + event.text.trimEnd() + "\n", answeredBy = it.answeredBy.ifEmpty { answeredBy }) }
+        is MacEvent.Step -> if (current == null) between(ChatLater(event.text)) else running { ChatHistory.withStep(it, event.text) }
+        is MacEvent.Note -> if (current == null) between(ChatLater(event.text)) else running { ChatHistory.withStep(it, event.text) }
         is MacEvent.Approval -> macAsked(tasks, threadId, event.request)
         is MacEvent.ApprovalResult -> macAnswered(tasks, threadId, event.approval, approvalAnswer(event.decision))
         // The result is the whole answer, as it is for the phone's builder; with no words, what was said so far stays.
@@ -1119,7 +1156,7 @@ object MacThreads {
                 if (ended != null) AgentNotices.answered(context, if (ended.status == TaskStatus.Done) ended.threadName else "${ended.threadName} needs attention", ended.result, AgentNotices.MAC)
             }
             is MacEvent.Status -> synchronized(this) { view = view.copy(threads = view.threads.map { if (it.id == threadId) it.copy(status = event.status) else it }) }
-            is MacEvent.Message, is MacEvent.Text, is MacEvent.Step, is MacEvent.Other -> Unit
+            is MacEvent.Message, is MacEvent.Text, is MacEvent.Step, is MacEvent.Note, is MacEvent.Other -> Unit
         }
         saveCursors(context)
     }

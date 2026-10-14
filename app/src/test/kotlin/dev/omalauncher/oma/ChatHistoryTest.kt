@@ -439,4 +439,12 @@ class ChatHistoryTest {
         val after = ChatHistory.afterRestart(listOf(waiting))
         assertEquals(TaskStatus.Dropped, after.single().status); assertEquals("c1", after.single().chat)
     }
+
+    @Test fun whatAMacThreadSaidBetweenMessagesIsSaved() {
+        val task = ChatTask(5, "→ FF4", "copy the games", thread = "t1", threadName = "FF4", result = "Started.", status = TaskStatus.Done,
+            later = listOf(ChatLater("Still running on the Mac: copy the games"), ChatLater("The copy **finished**.", words = true)))
+        assertEquals(listOf(task), ChatHistory.decode(ChatHistory.encode(listOf(task))))
+        // Every other task keeps the shape it has always had.
+        assertFalse(JSONObject(ChatHistory.encode(listOf(task(1)))).getJSONArray("tasks").getJSONObject(0).has("later"))
+    }
 }

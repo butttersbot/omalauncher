@@ -372,7 +372,7 @@ now plays the same sequence.
 - **New event `note {text}`**, for what the agent did that is not the owner's answer: each `task_notification`
   (its summary), a result Claude Code made for a turn of its own, and, when a turn's process ends while Claude Code
   still listed background work running (`background_tasks_changed`), "Stopped when the turn ended, unfinished: …"
-  with the descriptions. The phone shows nothing for `note` yet (it counts it, as any unknown event).
+  with the descriptions. The phone shows a `note` as a quiet line in the thread's tab (OPEN-BUGS #9).
 - **Not changed:** background work still ends with the turn, because each turn is its own process. Keeping a
   thread's process alive while its background work runs (and sending the next message into it) would let a long
   copy finish; that is a larger change, not made here.
@@ -395,7 +395,7 @@ with nothing running it exits, sometimes only after ~30 s.
 - Once no message is being answered and no background work is left, stdin is closed and Claude Code ends by
   itself; with no report pending it is ended after 5 s as before, and a message arriving meanwhile ends it at once.
 - **`/threads` and `/threads/ID` carry `background`**: the descriptions of the work still running, `[]` otherwise.
-  The phone does not show it yet.
+  The phone shows it on the thread's tile and tab (OPEN-BUGS #9).
 - **Stop** on an idle thread with background work ends it (note "Stopped, unfinished: …"); the next message then
   resumes and Claude Code's orphan turn is a note, as in "stale results". Restarting the runner ends it too.
 - stdin stays open through Claude Code's own report turn (it may ask for a card, which must be answerable); a report

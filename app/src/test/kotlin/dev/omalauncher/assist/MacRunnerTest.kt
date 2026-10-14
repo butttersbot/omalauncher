@@ -167,6 +167,11 @@ class MacRunnerTest {
         assertEquals(MacThread("t9", "FF4 mod", "/p", ThreadHome.Mac, "claude", "", MacThreadStatus.Idle, null, "", 0, 0, emptyList()), fresh)
         assertEquals(MacThread("t9", "", "", ThreadHome.Mac, "", "", MacThreadStatus.Unknown, null, "", 0, 0, emptyList()), value(parseMacThread(ok("""{"ok": true, "thread": {"id": "t9"}}"""))))
         assertEquals(MacThreadStatus.Unknown, value(parseMacThread(ok("""{"ok": true, "thread": {"id": "t9", "status": "napping", "summary": null, "pending": "none"}}"""))).status)
+        // The work the agent left running after its answer, as /threads and /threads/ID carry it; nothing from a runner that does not say.
+        assertEquals(listOf("copy the games", "npm run dev"), value(parseMacThread(ok("""{"ok": true, "thread": {"id": "t9", "background": ["copy the games", " ", 7, null, " npm run dev "]}}"""))).background)
+        assertEquals(emptyList<String>(), value(parseMacThread(ok("""{"ok": true, "thread": {"id": "t9", "background": []}}"""))).background)
+        assertEquals(emptyList<String>(), value(parseMacThread(ok("""{"ok": true, "thread": {"id": "t9", "background": "copying"}}"""))).background)
+        assertEquals(listOf("copy the games"), (parseMacThreads(ok("""{"ok": true, "threads": [{"id": "t9", "status": "idle", "background": ["copy the games"]}]}""")) as MacAnswer.Ok).value.single().background)
         assertEquals("", value(parseMacThread(ok("""{"ok": true, "thread": {"id": "t9", "summary": null}}"""))).summary)
         // A pending request that could not be answered is not drawn as a card.
         assertEquals(emptyList<MacApproval>(), value(parseMacThread(ok("""{"ok": true, "thread": {"id": "t9", "pending": [{"approval": "a1", "tool": "Write"}, 7]}}"""))).pending)
@@ -234,6 +239,10 @@ class MacRunnerTest {
         assertEquals(MacEvent.Result(4, 1760000000, "done", false), read(""""type": "result", "text": "done", "failed": false"""))
         assertEquals(MacEvent.Result(4, 1760000000, "OAuth session expired", true), read(""""type": "result", "text": "OAuth session expired", "failed": true"""))
         assertEquals(MacEvent.Stopped(4, 1760000000, 1), read(""""type": "stopped", "dropped": 1"""))
+        // What the agent did that is not his answer: background work running, ended or stopped, or a turn of its own.
+        assertEquals(MacEvent.Note(4, 1760000000, "Still running on the Mac: copy the games"), read(""""type": "note", "text": " Still running on the Mac: copy the games """"))
+        assertEquals(MacEvent.Other(4, 1760000000, "note"), read(""""type": "note", "text": "  """"))
+        assertEquals(MacEvent.Other(4, 1760000000, "note"), read(""""type": "note""""))
         assertEquals(MacEvent.Error(4, 1760000000, "The agent ended without an answer.", 1), read(""""type": "error", "code": 1, "text": "The agent ended without an answer.""""))
         assertEquals(MacEvent.Error(4, 1760000000, "The agent could not be started on the Mac: no such file", null), read(""""type": "error", "text": "The agent could not be started on the Mac: no such file""""))
         // A word in place of an exit code says why the turn ended: "limit" is an agent at its usage or concurrency limit.

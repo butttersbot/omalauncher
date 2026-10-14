@@ -87,6 +87,11 @@ data class ChatTask(
      * Oma stream and of a thread's own tab from before there were new chats.
      */
     val chat: String = "",
+    /**
+     * What its thread on the Mac said after this entry's turn, while it rested between his messages: notes on
+     * background work, steps, and Claude Code's own words about that work. Oldest first.
+     */
+    val later: List<ChatLater> = emptyList(),
 ) {
     /** Answered by the front agent itself, beside the build task: never by it or in its queue. */
     val quick get() = agent == QUICK_AGENT
@@ -106,6 +111,9 @@ data class ChatTask(
     /** A request of the build lane's: sent to it, or waiting for it. */
     val build get() = !quick && !undecided && !mac
 }
+
+/** One thing a thread said between his messages: a quiet line (a note or a step), or the agent's own [words], which are Markdown. */
+data class ChatLater(val text: String, val words: Boolean = false)
 
 /** What [ChatTask.agent] says for a request the front agent answered, where a build task has its agent's name. Saved: never rename. */
 const val QUICK_AGENT = "quick"
@@ -132,6 +140,8 @@ object ChatHistory {
     const val MAX_THREAD = 128
     const val MAX_BUILDER = 8
     const val MAX_CHAT = 32
+    const val MAX_LATER = 30
+    const val MAX_LATER_TEXT = 4_000
 
     /** Several times the largest file [encode] writes; anything bigger isn't ours and isn't read. */
     const val MAX_FILE_BYTES = 16L * 1024 * 1024
@@ -150,6 +160,7 @@ object ChatHistory {
         answeredBy = task.answeredBy.take(40),
         builder = task.builder.take(MAX_BUILDER),
         chat = task.chat.take(MAX_CHAT),
+        later = task.later.takeLast(MAX_LATER).map { it.copy(text = it.text.takeLast(MAX_LATER_TEXT)) },
     )
 
     /** The thread with [task] added, keeping the newest [MAX_TASKS]. */
@@ -213,6 +224,7 @@ object ChatHistory {
             .apply { if (task.builder.isNotEmpty()) put("builder", task.builder) }
             .apply { if (task.fresh) put("fresh", true) }
             .apply { if (task.chat.isNotEmpty()) put("chat", task.chat) }
+            .apply { if (task.later.isNotEmpty()) put("later", JSONArray(task.later.map { JSONObject().put("text", it.text).apply { if (it.words) put("words", true) } })) }
     })).toString()
 
     /** The saved thread; an unreadable file is an empty thread, and an unreadable task is left out. */
@@ -237,6 +249,8 @@ object ChatHistory {
                     builder = task.optString("builder"),
                     fresh = task.optBoolean("fresh"),
                     chat = task.optString("chat"),
+                    later = task.optJSONArray("later").let { later -> (0 until (later?.length() ?: 0)).mapNotNull { later?.optJSONObject(it) } }
+                        .map { ChatLater(it.optString("text"), it.optBoolean("words")) }.filter { it.text.isNotEmpty() },
                 ))
             }.getOrNull()
         }.takeLast(MAX_TASKS)

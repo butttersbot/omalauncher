@@ -196,6 +196,17 @@ fun phoneThreads(tasks: List<ChatTask>, builders: Map<BuilderId, BuilderNow>): L
 const val PHONE_THREAD_A_NAME = "Phone A"
 
 const val NEEDS_OK = "needs your OK"
+
+/** The label of a thread that answered and left work running on the Mac (its `background`). */
+const val MAC_BACKGROUND = "running on the Mac"
+
+/**
+ * What a resting thread's tile and tab say of the work it left running on the Mac, in the agent's own words
+ * ("running on the Mac: copy the games"); null when nothing is left running.
+ */
+fun macBackgroundLine(background: List<String>): String? =
+    background.map { it.trim().replace(Regex("\\s+"), " ") }.filter { it.isNotEmpty() }.takeIf { it.isNotEmpty() }
+        ?.let { (MAC_BACKGROUND + ": " + it.joinToString("; ")).take(TILE_DOING_CHARS) }
 const val NEEDS_ATTENTION = "needs attention"
 
 /**
@@ -230,14 +241,14 @@ fun macThreadNow(thread: MacThread?, id: String, tasks: List<ChatTask>, asks: Li
         ThreadState.Working -> step.take(TILE_DOING_CHARS)
         ThreadState.Queued -> queuedLine(step, waiting, waits)
         ThreadState.Attention -> endOf(last?.result?.takeIf { it.isNotBlank() } ?: if (thread?.status == MacThreadStatus.Interrupted) MAC_INTERRUPTED else "")
-        ThreadState.Idle -> endOf(thread?.tail?.takeIf { it.isNotBlank() } ?: last?.result.orEmpty())
+        ThreadState.Idle -> macBackgroundLine(thread?.background.orEmpty()) ?: endOf(thread?.tail?.takeIf { it.isNotBlank() } ?: last?.result.orEmpty())
     }
     val label = when (state) {
         ThreadState.NeedsOk -> NEEDS_OK
         ThreadState.Working -> "working"
         ThreadState.Queued -> "$waits queued"
         ThreadState.Attention -> NEEDS_ATTENTION
-        ThreadState.Idle -> restLabel(last, worked = thread?.lastWorked != null)
+        ThreadState.Idle -> if (thread?.background.orEmpty().isNotEmpty()) MAC_BACKGROUND else restLabel(last, worked = thread?.lastWorked != null)
     }
     val worked = listOfNotNull(thread?.lastWorked?.let { it * 1000 }, entries.maxOfOrNull { it.time }).maxOrNull()
     // The request the Mac is at was sent from here; one he typed on the Mac itself has no start the phone saw.
