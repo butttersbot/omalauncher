@@ -3,6 +3,8 @@ package dev.omalauncher.assist
 import dev.omalauncher.oma.ChatTask
 import dev.omalauncher.oma.QUICK_AGENT
 import dev.omalauncher.oma.TaskStatus
+import dev.omalauncher.oma.NewChat
+import dev.omalauncher.oma.NEW_CHAT_NAME
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -195,5 +197,37 @@ class AgentThreadsTest {
         // Not made, it needs attention in its own entry, not on the busy thread's tile.
         val failed = macThreadNow(thread(), id, listOf(mac(4, TaskStatus.Done, result = "Done."), waiting.copy(status = TaskStatus.Dropped, result = "Mac unreachable")), emptyList(), reachable = true)
         assertEquals(ThreadState.Idle, failed.state)
+    }
+
+    /** Boss 2026-10-13: a new chat is a thread of its own, and the builder or Mac thread it took is shown as it. */
+    @Test fun aNewChatIsAThreadOfTheSessionItTook() {
+        val onA = NewChat("c1", 1, builder = BuilderId.A)
+        val onMac = NewChat("c2", 2, mac = "t-new")
+        val fresh = NewChat("c3", 3)
+        val own = build(10, TaskStatus.Done, result = "old work done")
+        val inChat = build(20, TaskStatus.Running, steps = listOf("Edit: Dock.kt")).copy(chat = "c1")
+        val onNew = mac(30, TaskStatus.Running, threadId = "t-new").copy(chat = "c2")
+        val asked = ChatTask(40, QUICK_AGENT, "what is a worktree", result = "A second checkout.", status = TaskStatus.Done, chat = "c3")
+        val tasks = listOf(own, inChat, onNew, asked)
+        val busy = BuilderNow(working = true, label = "Using Edit", since = 20)
+        val view = MacView(listOf(thread(MacThreadStatus.Working, threadId = "t-new", name = "FF4 2"), thread()), reachable = true)
+        val all = agentThreads(tasks, busy, view, chats = listOf(onA, onMac, fresh), owners = mapOf(BuilderId.A to "c1"), names = mapOf("chat:c1" to "Dock icons"))
+        assertEquals(listOf(PHONE_THREAD, macThreadKey(id), "chat:c1", "chat:c2", "chat:c3"), all.map { it.key })
+        // Builder A went on to the chat: its own thread rests as ended, and the chat has A's work.
+        val phone = all[0]
+        assertEquals(ThreadState.Idle, phone.state); assertEquals(ENDED, phone.label); assertEquals("old work done", phone.doing)
+        val dock = all[2]
+        assertEquals("Dock icons", dock.name); assertEquals(ThreadState.Working, dock.state); assertEquals("Edit: Dock.kt", dock.doing); assertFalse(dock.mac)
+        // The Mac thread made for a chat is that chat, and not a tab of its own besides.
+        val menu = all[3]
+        assertEquals(NEW_CHAT_NAME, menu.name); assertEquals(ThreadState.Working, menu.state); assertTrue(menu.mac)
+        assertEquals("done", all[4].label); assertEquals("A second checkout.", all[4].doing)
+        // Once A has gone on to another chat, this one has ended.
+        val ended = agentThreads(tasks, busy, view, chats = listOf(onA), owners = mapOf(BuilderId.A to "c9")).first { it.key == "chat:c1" }
+        assertEquals(ThreadState.Idle, ended.state)
+        // A chat with nothing in it is new; one whose first words wait for a builder is at work.
+        assertEquals("new", agentThreads(emptyList(), BuilderNow(), MacView(), chats = listOf(fresh)).last().label)
+        val starting = ChatTask(50, "Claude Code", "go", status = TaskStatus.Queued, fresh = true, chat = "c3")
+        assertEquals(ThreadState.Working, agentThreads(listOf(starting), BuilderNow(), MacView(), chats = listOf(fresh)).last().state)
     }
 }

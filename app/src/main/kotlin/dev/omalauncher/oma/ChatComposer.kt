@@ -50,24 +50,82 @@ sealed interface SendTo {
     /** Builder B's tab: straight to builder B. */
     data object PhoneB : SendTo
 
-    /** A Mac thread's tab: straight to that thread. */
-    data class Mac(val thread: String, val name: String) : SendTo
+    /** A Mac thread's tab, or the tab of the new chat [chat] that thread was made for: straight to that thread. */
+    data class Mac(val thread: String, val name: String, val chat: String = "") : SendTo
+
+    /**
+     * A new chat called [name] whose first message has gone nowhere yet: the front agent hears it first, and
+     * what it hands on starts a fresh session, never one that has a conversation in it.
+     */
+    data class Chat(val chat: String, val name: String) : SendTo
+
+    /**
+     * A new chat whose first message is on its way to a fresh session. On the phone, more words wait with it
+     * for the same session; on the Mac ([mac]) the new thread is being made, which takes a moment.
+     */
+    data class ChatStarting(val chat: String, val name: String, val mac: Boolean) : SendTo
+
+    /** A new chat that [builder] serves: straight to that builder, in the session it began for the chat. */
+    data class ChatOn(val chat: String, val name: String, val builder: BuilderId) : SendTo
+
+    /**
+     * A tab whose conversation has ended: its builder began a fresh session for a newer chat. Its entries stay to
+     * be read and nothing is sent from it.
+     */
+    data class Ended(val name: String) : SendTo
 }
 
-/** The builder the field on a builder's tab sends to; null on every other tab. */
+/** The builder the field on a builder's tab, or on a chat a builder serves, sends to; null on every other tab. */
 val SendTo.builder: BuilderId? get() = when (this) {
     SendTo.Phone -> BuilderId.A
     SendTo.PhoneB -> BuilderId.B
+    is SendTo.ChatOn -> builder
     else -> null
 }
 
-/** Whom the field talks to on [tab], which is one of [threads] or the Oma tab. A tab that is no thread's talks to Oma. */
-fun sendTo(tab: String, threads: List<AgentThread>): SendTo {
+/** The new chat the field sends in; empty on every tab that is not one. */
+val SendTo.chat: String get() = when (this) {
+    is SendTo.Mac -> chat
+    is SendTo.Chat -> chat
+    is SendTo.ChatStarting -> chat
+    is SendTo.ChatOn -> chat
+    else -> ""
+}
+
+/**
+ * Whom the field talks to on [tab], which is one of [threads] or the Oma tab. A tab that is no thread's talks to
+ * Oma. [meta] knows the new chats and [owners] whose session each builder runs now, by chat id, empty for its
+ * own; [tasks] is the Oma thread, which says whether a chat's first message is still on its way.
+ */
+fun sendTo(
+    tab: String,
+    threads: List<AgentThread>,
+    meta: TabMeta = TabMeta(),
+    owners: Map<BuilderId, String> = emptyMap(),
+    tasks: List<ChatTask> = emptyList(),
+): SendTo {
     val thread = threads.firstOrNull { it.key == tab } ?: return SendTo.Oma
-    if (thread.key == PHONE_THREAD) return SendTo.Phone
-    if (thread.key == PHONE_THREAD_B) return SendTo.PhoneB
+    val chat = meta.chatOf(tab)
+    if (chat != null) {
+        val builder = chat.builder
+        return when {
+            builder != null -> if (owners[builder] == chat.id) SendTo.ChatOn(chat.id, thread.name, builder) else SendTo.Ended(thread.name)
+            chat.mac.isNotEmpty() -> SendTo.Mac(chat.mac, thread.name, chat.id)
+            else -> tasks.lastOrNull { it.chat == chat.id && it.fresh && it.status == TaskStatus.Queued }
+                ?.let { SendTo.ChatStarting(chat.id, thread.name, mac = it.mac) } ?: SendTo.Chat(chat.id, thread.name)
+        }
+    }
+    val own = when (thread.key) {
+        PHONE_THREAD -> BuilderId.A
+        PHONE_THREAD_B -> BuilderId.B
+        else -> null
+    }
+    if (own != null) return if (owners[own].isNullOrEmpty()) (if (own == BuilderId.A) SendTo.Phone else SendTo.PhoneB) else SendTo.Ended(thread.name)
     return macThreadId(thread.key)?.let { SendTo.Mac(it, thread.name) } ?: SendTo.Oma
 }
+
+/** Why nothing is sent on a new chat whose thread on the Mac is still being made. */
+const val CHAT_MAKING = "The new thread on the Mac is still being made. Send this in a moment."
 
 /** Why images are not sent from a Mac thread's tab. */
 fun noImagesTo(name: String) = "$name is on the Mac, which takes no images from here. Remove them, or send this from the Oma tab."
@@ -82,7 +140,8 @@ fun noImagesTo(name: String) = "$name is on the Mac, which takes no images from 
  *
  * [to] is the open tab. On a thread's own tab the front agent is skipped whatever [frontReady] says: the
  * phone builder's tab sends as the build lane always took it, and a Mac thread's tab sends to that thread,
- * which needs neither Linux nor an agent on the phone, and takes no images.
+ * which needs neither Linux nor an agent on the phone, and takes no images. A new chat with nowhere to go yet
+ * is heard by the front agent first, as the Oma tab is; an ended tab sends nothing.
  */
 fun outgoing(
     draft: String,
@@ -97,14 +156,15 @@ fun outgoing(
 ): Outgoing {
     val prompt = draft.trim().ifEmpty { if (images > 0) "Describe these images." else "" }
     return when {
-        busy || prompt.isEmpty() -> Outgoing.Nothing
+        busy || prompt.isEmpty() || to is SendTo.Ended -> Outgoing.Nothing
+        to is SendTo.ChatStarting && to.mac -> Outgoing.Refused(CHAT_MAKING)
         to is SendTo.Mac -> if (images > 0) Outgoing.Refused(noImagesTo(to.name)) else Outgoing.Mac(prompt, to.thread, to.name)
         !linux -> Outgoing.Refused("Open Omalauncher and finish Linux setup first.")
         agent == null -> Outgoing.Refused("Install and sign in to an agent in Omalauncher first.")
         images > 0 && agent !in BACKGROUND_AGENTS -> Outgoing.Refused("Choose Claude Code or Codex to send images.")
         imageMissing -> Outgoing.Refused("An attached image is no longer available. Remove it and attach it again.")
         agent in BACKGROUND_AGENTS -> when {
-            to == SendTo.Oma && frontFirst(prompt, images, frontReady) -> Outgoing.Front(prompt)
+            (to == SendTo.Oma || to is SendTo.Chat) && frontFirst(prompt, images, frontReady) -> Outgoing.Front(prompt)
             working -> Outgoing.Queued(prompt)
             else -> Outgoing.Background(prompt)
         }

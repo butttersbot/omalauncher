@@ -329,9 +329,10 @@ fun frontFirst(prompt: String, images: Int, ready: Boolean): Boolean = images ==
 /**
  * A request he sent while the front agent was still reading the one before. [time] is its entry in the thread,
  * where it already shows as his, waiting. [page] is the home page he was on and [away] whether he spoke it on
- * the listening screen. Nothing of the board is kept with it: it is read with the board as it stands then.
+ * the listening screen, [chat] the new chat he sent it in (empty for the Oma tab). Nothing of the board is kept
+ * with it: it is read with the board as it stands then.
  */
-data class FrontWaiting(val time: Long, val prompt: String, val page: String? = null, val away: Boolean = false)
+data class FrontWaiting(val time: Long, val prompt: String, val page: String? = null, val away: Boolean = false, val chat: String = "")
 
 /**
  * The requests waiting their turn for the front agent, oldest first. Each is read as a request of its own once
@@ -357,8 +358,8 @@ class FrontQueue(private val limit: Int = MAX_WAITING) {
     /** Takes out the one filed at [time]; null when it does not wait any more, and nothing changes then. */
     fun cancel(time: Long): FrontWaiting? = queue.firstOrNull { it.time == time }?.also { queue.remove(it) }
 
-    /** Empties the queue and returns what was waiting, for the thread to say so. */
-    fun drop(): List<FrontWaiting> = queue.toList().also { queue.clear() }
+    /** Takes out what [which] picks, all of it unless told otherwise, and returns it for the thread to say so. */
+    fun drop(which: (FrontWaiting) -> Boolean = { true }): List<FrontWaiting> = queue.filter(which).also { queue.removeAll(it.toSet()) }
 
     companion object {
         /** Past this the newest would wait minutes to be read at all, so he is told instead. */
@@ -382,13 +383,18 @@ data class WaitingLine(val text: String, val cancel: Boolean)
  * will be, [ahead] being how many wait before it. One handed to the phone's builder says so, and either can
  * still be taken back. One on the Mac says which thread has it once the Mac holds it, and before that what
  * [macLabel] says of its sending; the runner cannot take a single waiting request back, so no cancel is offered.
+ * A new chat's first words waiting for a free builder say that it will start afresh, and can be taken back.
  */
 fun waitingLine(task: ChatTask, ahead: Int = 0, macLabel: String = ""): WaitingLine? = when {
     task.status != TaskStatus.Queued -> null
     task.undecided -> WaitingLine(if (ahead <= 0) "Oma will read this next" else "Oma will read this after $ahead more", cancel = true)
     task.mac -> WaitingLine(if (macLabel == MAC_QUEUED) "queued → ${task.threadName} · queued on the Mac" else "$macLabel…", cancel = false)
+    task.fresh -> WaitingLine(FRESH_WAITING, cancel = true)
     else -> WaitingLine("queued → " + if (task.builderId == BuilderId.A) BUILDER else builderCalled(task.builderId), cancel = true)
 }
+
+/** What a new chat's first words say while both builders are busy: they wait for the first free one, which starts afresh. */
+const val FRESH_WAITING = "both builders are busy · starts a fresh session on the first one free"
 
 /**
  * What the front agent is told of the build lane before each request: whether it is [working], its [label]

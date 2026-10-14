@@ -70,10 +70,8 @@ class ChatTabsTest {
         assertEquals(SendTo.Mac("t-pond", "Pond"), sendTo("mac:t-pond", threads))
         // A tab that is not there talks to Oma, never to a thread guessed from its key.
         assertEquals(SendTo.Oma, sendTo("mac:t-gone", threads))
-        assertNull(straightLine(SendTo.Oma)); assertNull(fieldHint(SendTo.Oma))
-        assertEquals("straight to Pond · Oma is not asked", straightLine(SendTo.Mac("t-pond", "Pond")))
+        assertNull(fieldHint(SendTo.Oma))
         assertEquals("to Pond…", fieldHint(SendTo.Mac("t-pond", "Pond")))
-        assertEquals("straight to Phone · Oma is not asked", straightLine(SendTo.Phone))
         assertEquals("to Phone…", fieldHint(SendTo.Phone))
     }
 
@@ -99,8 +97,114 @@ class ChatTabsTest {
         assertEquals(SendTo.PhoneB, sendTo(PHONE_THREAD_B, both)); assertEquals(SendTo.Phone, sendTo(PHONE_THREAD, both))
         assertEquals(BuilderId.B, SendTo.PhoneB.builder); assertEquals(BuilderId.A, SendTo.Phone.builder)
         assertNull(SendTo.Oma.builder); assertNull(SendTo.Mac("t", "T").builder)
-        assertEquals("straight to Phone B · Oma is not asked", straightLine(SendTo.PhoneB)); assertEquals("to Phone B…", fieldHint(SendTo.PhoneB))
+        assertEquals("to Phone B…", fieldHint(SendTo.PhoneB))
         assertTrue(fieldStop(SendTo.PhoneB, working = true, deciding = false)); assertFalse(fieldStop(SendTo.PhoneB, working = false, deciding = true))
         assertEquals("Phone B", tabTitle(PHONE_THREAD_B, both))
+    }
+
+    // New chats, pins, archive and the long-press menu (Boss, 2026-10-13).
+    private val chatA = NewChat("c1", 10, builder = BuilderId.A)
+    private val chatMac = NewChat("c2", 11, mac = "t-new")
+    private val chatNew = NewChat("c3", 12)
+    private val book = TabMeta(chats = listOf(chatA, chatMac, chatNew))
+    private fun chatThread(chat: NewChat, name: String = NEW_CHAT_NAME, state: ThreadState = ThreadState.Idle) = AgentThread(chat.key, name, state, "", "")
+
+    @Test fun archivedTabsAreHiddenAndPinnedOnesComeFirstAfterOma() {
+        val shown = shownThreads(threads, pinned = listOf("mac:t-pond"), archived = setOf("mac:t-ff4"))
+        assertEquals(listOf(OMA_TAB, "mac:t-pond", PHONE_THREAD), chatTabs(shown))
+        assertEquals(threads, shownThreads(threads, emptyList(), emptySet()))
+        // A pin of a tab that is not shown changes nothing of the others' order.
+        assertEquals(listOf(phone, pond), shownThreads(threads, listOf("mac:t-ff4"), setOf("mac:t-ff4")))
+    }
+
+    @Test fun aNewChatsTabShowsWhatWasSaidInItAndNoOtherTabTakesItsEntries() {
+        val quickInChat = ChatTask(20, QUICK_AGENT, "what is a worktree?", result = "a second checkout", status = TaskStatus.Done, chat = "c1")
+        val builtInChat = ChatTask(21, "Claude Code", "make one", status = TaskStatus.Done, chat = "c1")
+        val onNewThread = ChatTask(22, "→ FF4 2", "go", thread = "t-new", threadName = "FF4 2", chat = "c2")
+        val fromOmaToNewThread = ChatTask(23, "→ FF4 2", "and this", thread = "t-new", threadName = "FF4 2")
+        val waitingForThread = ChatTask(24, "→ FF4 3", "other", thread = "t-ff4", threadName = "FF4 3", fresh = true, status = TaskStatus.Queued, chat = "c3")
+        val all = tasks + listOf(quickInChat, builtInChat, onNewThread, fromOmaToNewThread, waitingForThread)
+        assertEquals(listOf(quickInChat, builtInChat), tabEntries(all, chatA.key, book))
+        assertEquals(listOf(onNewThread, fromOmaToNewThread), tabEntries(all, chatMac.key, book))
+        assertEquals(listOf(waitingForThread), tabEntries(all, chatNew.key, book))
+        // Builder A's own tab keeps its own conversation, and the busy thread's tab does not take a new chat's words.
+        assertEquals(listOf(built, waiting), tabEntries(all, PHONE_THREAD, book))
+        assertEquals(listOf(toFf4), tabEntries(all, "mac:t-ff4", book))
+        assertEquals(all, tabEntries(all, OMA_TAB, book))
+        // Its receipt opens the chat, and so does one of the thread made for it sent from the Oma tab.
+        assertEquals(chatMac.key, receiptTab(onNewThread, book)); assertEquals(chatMac.key, receiptTab(fromOmaToNewThread, book))
+        assertEquals("mac:t-ff4", receiptTab(toFf4, book))
+        assertEquals("t-new", tabMacThread(chatMac.key, book)); assertEquals("t-ff4", tabMacThread("mac:t-ff4", book))
+        assertNull(tabMacThread(chatA.key, book)); assertNull(tabMacThread(chatNew.key, book)); assertNull(tabMacThread(OMA_TAB, book))
+    }
+
+    @Test fun aNewChatsFieldGoesFirstToOmaThenToTheSessionItIsBoundTo() {
+        val shown = threads + listOf(chatThread(chatA, "Worktrees"), chatThread(chatMac, "Menu fix"), chatThread(chatNew))
+        val serving = mapOf(BuilderId.A to "c1")
+        assertEquals(SendTo.Chat("c3", NEW_CHAT_NAME), sendTo(chatNew.key, shown, book, serving))
+        assertEquals(SendTo.ChatOn("c1", "Worktrees", BuilderId.A), sendTo(chatA.key, shown, book, serving))
+        assertEquals(SendTo.Mac("t-new", "Menu fix", "c2"), sendTo(chatMac.key, shown, book, serving))
+        // Builder A went on to the new chat: its own tab has ended, and so does the chat once A goes on again.
+        assertEquals(SendTo.Ended("Phone"), sendTo(PHONE_THREAD, shown, book, serving))
+        assertEquals(SendTo.Ended("Worktrees"), sendTo(chatA.key, shown, book, mapOf(BuilderId.A to "c9")))
+        assertEquals(SendTo.Phone, sendTo(PHONE_THREAD, shown, book))
+        // While its first words wait for a fresh session they say so, on the phone or on the Mac.
+        val waitsForBuilder = ChatTask(30, "Claude Code", "x", fresh = true, status = TaskStatus.Queued, chat = "c3")
+        val waitsForThread = ChatTask(31, "→ FF4 2", "x", thread = "t-ff4", threadName = "FF4 2", fresh = true, status = TaskStatus.Queued, chat = "c3")
+        assertEquals(SendTo.ChatStarting("c3", NEW_CHAT_NAME, mac = false), sendTo(chatNew.key, shown, book, tasks = listOf(waitsForBuilder)))
+        assertEquals(SendTo.ChatStarting("c3", NEW_CHAT_NAME, mac = true), sendTo(chatNew.key, shown, book, tasks = listOf(waitsForThread)))
+        assertEquals(SendTo.Chat("c3", NEW_CHAT_NAME), sendTo(chatNew.key, shown, book, tasks = listOf(waitsForThread.copy(status = TaskStatus.Dropped))))
+        // Who it goes to.
+        assertEquals(BuilderId.A, SendTo.ChatOn("c1", "W", BuilderId.A).builder); assertNull(SendTo.Chat("c3", "N").builder)
+        assertEquals("c2", SendTo.Mac("t-new", "M", "c2").chat); assertEquals("", SendTo.Phone.chat); assertEquals("c3", SendTo.ChatStarting("c3", "N", false).chat)
+    }
+
+    @Test fun theFieldsHintAndStopOnANewChat() {
+        assertEquals("start this chat…", fieldHint(SendTo.Chat("c", "N")))
+        assertEquals("to Worktrees…", fieldHint(SendTo.ChatOn("c", "Worktrees", BuilderId.B)))
+        assertEquals(ENDED_HINT, fieldHint(SendTo.Ended("Phone")))
+        assertEquals("starting a new thread on the Mac…", fieldHint(SendTo.ChatStarting("c", "N", mac = true)))
+        assertTrue(fieldStop(SendTo.Chat("c", "N"), working = false, deciding = true)); assertFalse(fieldStop(SendTo.Chat("c", "N"), working = true, deciding = false))
+        assertTrue(fieldStop(SendTo.ChatOn("c", "N", BuilderId.A), working = true, deciding = false))
+        for (working in listOf(true, false)) for (deciding in listOf(true, false)) assertFalse(fieldStop(SendTo.Ended("Phone"), working, deciding))
+    }
+
+    @Test fun theMenuOffersWhatMakesSenseAndArchivedIsAlwaysLast() {
+        assertEquals(
+            listOf(TabAction.Rename, TabAction.Pin, TabAction.Stop, TabAction.Copy, TabAction.Archive, TabAction.Archived),
+            tabMenu("mac:t-ff4", pinned = false, stoppable = true, answered = true, archived = 2),
+        )
+        assertEquals(listOf(TabAction.Rename, TabAction.Unpin, TabAction.Archive), tabMenu(PHONE_THREAD, pinned = true, stoppable = false, answered = false, archived = 0))
+        // The Oma tab: nothing that renames, pins or puts it away.
+        assertEquals(listOf(TabAction.Copy, TabAction.Archived), tabMenu(OMA_TAB, pinned = false, stoppable = true, answered = true, archived = 1))
+        assertEquals(emptyList<TabAction>(), tabMenu(OMA_TAB, pinned = false, stoppable = true, answered = false, archived = 0))
+        assertEquals("Archived (3)", archivedRow(3))
+        // No row of any menu deletes, and none answers an approval.
+        assertTrue(TabAction.entries.none { "delete" in it.label.lowercase() || "approve" in it.label.lowercase() || "deny" in it.label.lowercase() })
+    }
+
+    @Test fun stopInTheMenuIsTheTabsOwnTaskAndOnlyWhileItHasOne() {
+        val working = ThreadState.Working
+        val serving = mapOf(BuilderId.A to "c1")
+        assertEquals(TabStop.Mac("t-ff4"), tabStop("mac:t-ff4", ff4, TabMeta(), emptyMap()))
+        assertEquals(TabStop.Builder(BuilderId.A), tabStop(PHONE_THREAD, phone.copy(state = working), TabMeta(), emptyMap()))
+        assertEquals(TabStop.Builder(BuilderId.A), tabStop(chatA.key, chatThread(chatA, state = working), book, serving))
+        assertEquals(TabStop.Mac("t-new"), tabStop(chatMac.key, chatThread(chatMac, state = ThreadState.NeedsOk), book, serving))
+        // Resting, needing attention, ended, or a chat whose first words have gone nowhere: nothing to stop.
+        assertNull(tabStop(PHONE_THREAD, phone, TabMeta(), emptyMap()))
+        assertNull(tabStop("mac:t-ff4", ff4.copy(state = ThreadState.Attention), TabMeta(), emptyMap()))
+        assertNull(tabStop(PHONE_THREAD, phone.copy(state = working), book, serving))
+        assertNull(tabStop(chatA.key, chatThread(chatA, state = working), book, mapOf(BuilderId.A to "c9")))
+        assertNull(tabStop(chatNew.key, chatThread(chatNew, state = working), book, serving))
+        assertNull(tabStop("mac:t-gone", null, TabMeta(), emptyMap()))
+    }
+
+    @Test fun copyTakesTheNewestFinishedAnswer() {
+        val first = ChatTask(1, QUICK_AGENT, "a", result = " one ", status = TaskStatus.Done)
+        val failed = ChatTask(2, "Claude Code", "b", result = "error", status = TaskStatus.Failed)
+        val running = ChatTask(3, "Claude Code", "c", result = "half", status = TaskStatus.Running)
+        assertEquals("one", lastAnswer(listOf(first, failed, running)))
+        assertNull(lastAnswer(listOf(failed, running)))
+        assertNull(lastAnswer(emptyList()))
     }
 }

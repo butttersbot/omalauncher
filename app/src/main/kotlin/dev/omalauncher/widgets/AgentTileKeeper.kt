@@ -27,18 +27,21 @@ class AgentTileKeeper(
 
     /**
      * Looks at [threads] at [now] and makes the notebook's thread tiles match. [listed] is whether the Mac's
-     * own list has been heard this run. [scraps] gives the notes and stickers lying on a page, null while they
-     * are still being read: a tile waits for them, since it is placed clear of those too.
+     * own list has been heard this run. [pinned] and [archived] are the threads he pinned and archived in the
+     * chat, by key. [scraps] gives the notes and stickers lying on a page, null while they are still being read:
+     * a tile waits for them, since it is placed clear of those too.
      */
     fun keep(
         threads: List<AgentThread>,
         listed: Boolean,
         now: Long,
+        pinned: Set<String> = emptySet(),
+        archived: Set<String> = emptySet(),
         scraps: (String) -> List<Box>?,
     ) {
         if (!notebook.opened || !notebook.kept) return
         val placed = notebook.threadTiles()
-        val plan = agentTilePlan(threads, placed, agentsPage(notebook.pages), stamps, now, listed)
+        val plan = agentTilePlan(threads, placed, agentsPage(notebook.pages), stamps, now, listed, pinned, archived)
         var writes = agentWrites(notebook.pages, placed, plan)
         if (AgentWrite.MakePage in writes) {
             // The way a page is added and named everywhere else: after the last, then called by its name.

@@ -130,4 +130,18 @@ class ChatComposerTest {
         assertEquals(2 to null, imagesToTake(1, 2))
         assertEquals(0 to null, imagesToTake(4, 0))
     }
+
+    /** Boss 2026-10-13: a new chat is heard by Oma first, then goes to the session it started; an ended tab sends nothing. */
+    @Test fun aNewChatGoesToOmaFirstAndAnEndedTabSendsNothing() {
+        val chat = SendTo.Chat("c1", "New chat")
+        assertEquals(Outgoing.Front("hello"), out(frontReady = true, to = chat))
+        // With no front agent, or with images, it starts its fresh session straight away.
+        assertEquals(Outgoing.Background("hello"), out(frontReady = false, to = chat))
+        assertEquals(Outgoing.Background("hello"), out(images = 1, frontReady = true, to = chat))
+        assertEquals(Outgoing.Background("hello"), out(frontReady = true, to = SendTo.ChatStarting("c1", "N", mac = false)))
+        assertEquals(Outgoing.Refused(CHAT_MAKING), out(frontReady = true, to = SendTo.ChatStarting("c1", "N", mac = true)))
+        assertEquals(Outgoing.Queued("hello"), out(frontReady = true, working = true, to = SendTo.ChatOn("c1", "N", dev.omalauncher.assist.BuilderId.B)))
+        assertEquals(Outgoing.Mac("hello", "t-new", "Menu"), out(frontReady = true, to = SendTo.Mac("t-new", "Menu", "c1")))
+        assertEquals(Outgoing.Nothing, out(frontReady = true, to = SendTo.Ended("Phone")))
+    }
 }

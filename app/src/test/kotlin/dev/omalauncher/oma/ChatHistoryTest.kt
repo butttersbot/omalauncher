@@ -424,4 +424,19 @@ class ChatHistoryTest {
         val made = waiting.copy(thread = "t6f232cb3", fresh = false)
         assertEquals(listOf(made), ChatHistory.afterRestart(ChatHistory.decode(ChatHistory.encode(listOf(made)))))
     }
+
+    /** Boss 2026-10-13: a new chat's entries remember it, in a key only they have. */
+    @Test fun anEntryOfANewChatRemembersItInAKeyOnlyItHas() {
+        val always = setOf("time", "agent", "prompt", "images", "screen", "newThread", "steps", "result", "status", "approvals")
+        val inChat = ChatTask(1, QUICK_AGENT, "hi", result = "hello", status = TaskStatus.Done, chat = "c1")
+        val waiting = ChatTask(2, "Claude Code", "go", status = TaskStatus.Queued, fresh = true, chat = "c1")
+        val plain = ChatTask(3, QUICK_AGENT, "hi", status = TaskStatus.Done)
+        val fields = org.json.JSONObject(ChatHistory.encode(listOf(inChat, waiting, plain))).getJSONArray("tasks")
+        assertEquals(always + "chat", fields.getJSONObject(0).keys().asSequence().toSet())
+        assertEquals(always, fields.getJSONObject(2).keys().asSequence().toSet())
+        assertEquals(listOf(inChat, waiting, plain), ChatHistory.decode(ChatHistory.encode(listOf(inChat, waiting, plain))))
+        // The first words of a new chat that waited for a free builder are not sent after a restart.
+        val after = ChatHistory.afterRestart(listOf(waiting))
+        assertEquals(TaskStatus.Dropped, after.single().status); assertEquals("c1", after.single().chat)
+    }
 }

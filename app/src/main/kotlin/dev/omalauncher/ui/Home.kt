@@ -15,7 +15,11 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.snapshotFlow
 import dev.omalauncher.assist.AgentTasks
 import dev.omalauncher.assist.MacThreads
+import dev.omalauncher.assist.ChatTitles
 import dev.omalauncher.assist.agentThreadsNow
+import dev.omalauncher.oma.ChatLog
+import dev.omalauncher.oma.TabBook
+import dev.omalauncher.oma.revive
 import dev.omalauncher.widgets.Folder
 import dev.omalauncher.widgets.HomeItem
 import dev.omalauncher.widgets.Shortcut
@@ -222,14 +226,21 @@ fun HomeScreen(
                 MacThreads.glance(context, now)
             }
             // Not while he is arranging: a tile appearing under one he carries would change where it can land.
-            if (state.editing == null && arrange.carry == null) engine.agentTiles.keep(agentThreadsNow(context), MacThreads.view.listed, now) { page ->
-                // The page's notes and stickers, read if they never were: a tile is placed clear of them too.
-                marks.book?.let { book ->
-                    book.open(page)
-                    when (book.status(page)) {
-                        AnnotationBook.Status.Ready -> book.on(page).scraps()
-                        AnnotationBook.Status.Unreadable -> emptyList()
-                        else -> null
+            if (state.editing == null && arrange.carry == null) {
+                // What he did to the chat's tabs reaches the tiles too: a pinned one never leaves, an archived one goes
+                // until new work brings it back, and a new chat is named here even while the chat is closed.
+                val threads = agentThreadsNow(context)
+                val tabs = TabBook.change(context) { it.revive(threads, ChatLog.of(context).tasks) }
+                ChatTitles.check(context)
+                engine.agentTiles.keep(threads, MacThreads.view.listed, now, tabs.pinned.toSet(), tabs.archived.keys) { page ->
+                    // The page's notes and stickers, read if they never were: a tile is placed clear of them too.
+                    marks.book?.let { book ->
+                        book.open(page)
+                        when (book.status(page)) {
+                            AnnotationBook.Status.Ready -> book.on(page).scraps()
+                            AnnotationBook.Status.Unreadable -> emptyList()
+                            else -> null
+                        }
                     }
                 }
             }

@@ -9,6 +9,8 @@ import dev.omalauncher.oma.ChatHistory
 import dev.omalauncher.oma.ChatLog
 import dev.omalauncher.oma.ChatTask
 import dev.omalauncher.oma.QUICK_AGENT
+import dev.omalauncher.oma.TabBook
+import dev.omalauncher.oma.heard
 import dev.omalauncher.oma.TaskStatus
 import dev.omalauncher.oma.UNDECIDED_AGENT
 import dev.omalauncher.phone.HomeDoor
@@ -40,25 +42,12 @@ object QuickLane {
     @Volatile private var stopping = false
     /** Only touched under the lock. Each one is also a waiting entry in the thread, which is where the chat reads them. */
     private val queue = FrontQueue()
-    /** Counts [newThread]: a request made before one must not bring its conversation back when it ends. */
-    private var conversation = 0
     private var restored = false
-
-    /** Whether there is a front conversation that [newThread] would end. */
-    val continuing get() = thread != null
 
     @Synchronized fun restore(context: Context) {
         if (restored) return
         restored = true
         thread = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("thread", null)
-    }
-
-    /** The next request starts a conversation. One it has now still gets its answer. */
-    @Synchronized fun newThread(context: Context) {
-        restore(context)
-        conversation++
-        thread = null
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove("thread").apply()
     }
 
     /**
@@ -93,8 +82,10 @@ object QuickLane {
      * request before, files it as waiting to be read next. If it throws, nothing was asked: [FrontQueueFull]
      * when as many as fit already wait. [away] is a request spoken on the listening screen, which has closed
      * by the time there is an answer: that answer comes to him over whatever is in front, as a finished task's does.
+     * [chat] is the new chat he sent it in, empty for the Oma tab: its entry is that chat's, the front agent hears
+     * it in that chat's own conversation, and what it hands on starts the chat's fresh session.
      */
-    @Synchronized fun ask(context: Context, prompt: String, away: Boolean = false) {
+    @Synchronized fun ask(context: Context, prompt: String, away: Boolean = false, chat: String = "") {
         // A waiting request is read long after the screen that sent it may have gone, so nothing here keeps that screen.
         val app = context.applicationContext
         restore(app)
@@ -104,13 +95,13 @@ object QuickLane {
         check((app as App).runtime.bootstrap.state.value == LinuxState.Installed) { "Open Omalauncher and finish Linux setup first." }
         // If it is handed over, it is sent from the page he was on when he asked, not the one he has turned to since.
         val page = HomeDoor.home?.showing
-        if (!working) return read(app, prompt, page, away, waited = null)
+        if (!working) return read(app, prompt, page, away, waited = null, chat = chat)
         val log = ChatLog.of(app)
         // Filed under the build lane's lock for the same reason a request read at once is: no two tasks may take one time.
         synchronized(AgentTasks) {
             val filed = ChatHistory.stamp(log.tasks, System.currentTimeMillis())
-            if (!queue.add(FrontWaiting(filed, prompt, page, away))) throw FrontQueueFull()
-            log.begin(ChatTask(filed, UNDECIDED_AGENT, prompt, status = TaskStatus.Queued))
+            if (!queue.add(FrontWaiting(filed, prompt, page, away, chat))) throw FrontQueueFull()
+            log.begin(ChatTask(filed, UNDECIDED_AGENT, prompt, status = TaskStatus.Queued, chat = chat))
         }
     }
 
@@ -123,10 +114,13 @@ object QuickLane {
         ChatLog.of(context).update(gone.time, save = true) { ChatHistory.dropped(it, FrontQueue.CANCELLED) }
     }
 
-    /** Stop beside the field: what waited to be read is not read after it, as a follow-up behind a stopped task is not sent. */
-    @Synchronized fun dropWaiting(context: Context) {
+    /**
+     * Stop beside the field: what waited to be read is not read after it, as a follow-up behind a stopped task is
+     * not sent. On a new chat's tab ([chat]) only that chat's; on the Oma tab (null) everything.
+     */
+    @Synchronized fun dropWaiting(context: Context, chat: String? = null) {
         val log = ChatLog.of(context)
-        queue.drop().forEach { waiting -> log.update(waiting.time, save = true) { ChatHistory.dropped(it, FrontQueue.STOPPED) } }
+        queue.drop { chat == null || it.chat == chat }.forEach { waiting -> log.update(waiting.time, save = true) { ChatHistory.dropped(it, FrontQueue.STOPPED) } }
     }
 
     /**
@@ -137,7 +131,7 @@ object QuickLane {
         while (true) {
             val next = queue.next() ?: return
             try {
-                return read(context, next.prompt, next.page, next.away, waited = next.time)
+                return read(context, next.prompt, next.page, next.away, waited = next.time, chat = next.chat)
             } catch (e: Exception) {
                 ChatLog.of(context).update(next.time, save = true) { it.copy(result = e.message ?: FrontQueue.UNREAD, status = TaskStatus.Failed) }
             }
@@ -148,11 +142,12 @@ object QuickLane {
      * Under the lock, with nothing being read: starts the front agent on [prompt]. [waited] is the time of the
      * waiting entry this request already is in the thread; null for one sent just now, which is filed here.
      * The board is made here and not when he sent it, so a request that waited is read with the builder and
-     * the Mac as they stand now.
+     * the Mac as they stand now. A request of the new chat [chat] continues that chat's own conversation with the
+     * front agent, never the Oma tab's, so nothing said elsewhere colours where its first words go.
      */
-    private fun read(context: Context, prompt: String, page: String?, away: Boolean, waited: Long?) {
+    private fun read(context: Context, prompt: String, page: String?, away: Boolean, waited: Long?, chat: String = "") {
         val runtime = (context.applicationContext as App).runtime
-        val resumed = thread
+        val resumed = if (chat.isEmpty()) thread else TabBook.of(context).chat(chat)?.front?.ifEmpty { null }
         val log = ChatLog.of(context)
         val began = System.currentTimeMillis()
         // The Mac's threads as the phone last heard of them: asking the Mac here would hold his request up. Null
@@ -172,10 +167,9 @@ object QuickLane {
             val board = buildBoard(log.tasks, a.working, a.label, began).copy(health = healthA)
             val second = if (two) buildBoard(log.tasks, b.working, b.label, began, BuilderId.B).copy(health = healthB) else null
             val filed = waited?.also { time -> log.update(time, save = true) { it.copy(status = TaskStatus.Running) } }
-                ?: ChatHistory.stamp(log.tasks, began).also { log.begin(ChatTask(it, UNDECIDED_AGENT, prompt)) }
+                ?: ChatHistory.stamp(log.tasks, began).also { log.begin(ChatTask(it, UNDECIDED_AGENT, prompt, chat = chat)) }
             filed to quickCommand(frontPrompt(board, prompt, mac, second), resumed, mac = mac != null)
         }
-        val current = conversation
         time = asked; working = true; stopping = false; answer = ""; label = ANSWERING
         thread(name = "oma-quick", isDaemon = true) {
             val late = AtomicBoolean()
@@ -231,9 +225,9 @@ object QuickLane {
                         // Handed on the moment the mark is whole; the process is not waited for, and what it says after is not read.
                         is FrontRead.HandOver -> {
                             handed = when (val route = frontRoute(read.to, mac)) {
-                                FrontRoute.Build -> pass(context, asked, prompt, page, away)
-                                is FrontRoute.Builder -> pass(context, asked, prompt, page, away, route.builder)
-                                is FrontRoute.Mac -> passToMac(context, asked, prompt, route.thread, away, route.fresh)
+                                FrontRoute.Build -> pass(context, asked, prompt, page, away, chat = chat)
+                                is FrontRoute.Builder -> pass(context, asked, prompt, page, away, route.builder, chat)
+                                is FrontRoute.Mac -> passToMac(context, asked, prompt, route.thread, away, route.fresh, chat)
                                 is FrontRoute.Unknown -> unplaced(context, asked, prompt, away)
                             }
                             session?.let { next = it }
@@ -247,7 +241,7 @@ object QuickLane {
                         }
                         // Mending the builder is the launcher's to do, as stopping is, and his words go to nobody.
                         FrontRead.Restart, FrontRead.Clean, is FrontRead.RestartOne -> {
-                            handed = mend(context, asked, prompt, page, away, restart = read != FrontRead.Clean, named = (read as? FrontRead.RestartOne)?.builder)
+                            handed = mend(context, asked, prompt, page, away, restart = read != FrontRead.Clean, named = (read as? FrontRead.RestartOne)?.builder, chat = chat)
                             session?.let { next = it }
                             child.destroy()
                         }
@@ -261,7 +255,7 @@ object QuickLane {
             finally {
                 var outcome = frontOutcome(handed, stopping, failed, answer.isNotBlank())
                 // He may stop it in the moment it is being sent on: then it is not sent.
-                if (outcome == FrontOutcome.FellBack && !pass(context, asked, prompt, page, away)) outcome = FrontOutcome.Stopped
+                if (outcome == FrontOutcome.FellBack && !pass(context, asked, prompt, page, away, chat = chat)) outcome = FrontOutcome.Stopped
                 val status = when (outcome) {
                     FrontOutcome.Answered -> TaskStatus.Done
                     FrontOutcome.Stopped -> TaskStatus.Stopped
@@ -275,7 +269,8 @@ object QuickLane {
                     AgentNotices.answered(context, if (outcome == FrontOutcome.Answered) "Done" else INCOMPLETE, answer, AgentNotices.FRONT)
                 }
                 synchronized(this) {
-                    if (conversation == current) {
+                    if (chat.isNotEmpty()) TabBook.change(context) { it.heard(chat, next) }
+                    else {
                         thread = next
                         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString("thread", next).apply()
                     }
@@ -296,17 +291,17 @@ object QuickLane {
      * entry, the notification and the logs keep his words alone. The entry sent
      * at [asked] then goes, since the build lane has filed the request as its own; if the build lane refuses,
      * the entry stays and says why, which is the only time a failure here is mentioned. False if he stopped it
-     * first: nothing is sent then.
+     * first: nothing is sent then. Words of the new chat [chat] go to the session it is bound to, or start a fresh one
+     * ([chatHandOver]); what goes ahead of them is what was said in that chat alone.
      */
-    private fun pass(context: Context, asked: Long, prompt: String, page: String?, away: Boolean, builder: BuilderId? = null): Boolean = synchronized(this) {
+    private fun pass(context: Context, asked: Long, prompt: String, page: String?, away: Boolean, builder: BuilderId? = null, chat: String = ""): Boolean = synchronized(this) {
         if (stopping) false
         else {
             val log = ChatLog.of(context)
             try {
-                // Read under the build lane's lock, where the builder is chosen, so the note says how the others stand at that moment.
-                AgentTasks.handOver(context, prompt, page, builder) { to ->
+                chatHandOver(context, chat, prompt, page, builder) { to, tasks ->
                     val shared = builderShares(to, AgentTasks.builders.associate { it.id to it.working })
-                    sharedPreface(shared, PHONE_SHARED_NOTE, handOverPreface(handOverContext(log.tasks, asked, gotBy(to))))
+                    sharedPreface(shared, PHONE_SHARED_NOTE, handOverPreface(handOverContext(tasks, asked, gotBy(to))))
                 }
                 log.handedOver(asked)
             } catch (e: Exception) {
@@ -326,10 +321,17 @@ object QuickLane {
      * which [MacThreads] gives a new thread there. Nothing here can end with the phone's builder doing the work
      * instead. False if he stopped it first: nothing is sent then.
      */
-    private fun passToMac(context: Context, asked: Long, prompt: String, thread: MacThread, away: Boolean, fresh: Boolean): Boolean = synchronized(this) {
+    private fun passToMac(context: Context, asked: Long, prompt: String, thread: MacThread, away: Boolean, fresh: Boolean, chat: String = ""): Boolean = synchronized(this) {
         if (stopping) false
         else {
-            MacThreads.handOver(context, asked, prompt, thread, away, fresh)
+            // A new chat's words go to the thread made for it, or, before it has one, to a new thread on the project named.
+            val bound = TabBook.of(context).chat(chat)?.mac?.takeIf { it.isNotEmpty() }
+            val own = bound?.let { id -> MacThreads.view.threads.firstOrNull { it.id == id } }
+            when {
+                own != null -> MacThreads.handOver(context, asked, prompt, own, away)
+                chat.isNotEmpty() && bound == null -> MacThreads.handOver(context, asked, prompt, thread, away, fresh = true, newChat = true)
+                else -> MacThreads.handOver(context, asked, prompt, thread, away, fresh)
+            }
             true
         }
     }
@@ -401,10 +403,10 @@ object QuickLane {
      * builder owns. Either way the entry sent at [asked] says what was done. Nothing here answers an approval,
      * and a builder that waits for one is never restarted. False if he stopped this request first: nothing is done then.
      */
-    private fun mend(context: Context, asked: Long, prompt: String, page: String?, away: Boolean, restart: Boolean, named: BuilderId? = null): Boolean = synchronized(this) {
+    private fun mend(context: Context, asked: Long, prompt: String, page: String?, away: Boolean, restart: Boolean, named: BuilderId? = null, chat: String = ""): Boolean = synchronized(this) {
         if (stopping) return@synchronized false
         val pick = if (restart) restartPick(BuilderWatch.look(context).mapValues { builderVerdict(it.value) }, named) else null
-        if (pick == BareStop.Nothing) return@synchronized pass(context, asked, prompt, page, away, named)
+        if (pick == BareStop.Nothing) return@synchronized pass(context, asked, prompt, page, away, named, chat)
         val log = ChatLog.of(context)
         val told = { said: String ->
             log.update(asked, save = true) { it.copy(agent = QUICK_AGENT, result = said, status = TaskStatus.Done) }
@@ -434,6 +436,29 @@ object QuickLane {
     private const val NOT_SENT = "Not sent"
     /** Far past the few seconds an answer takes, a look at the phone or the web included. */
     private const val TIMEOUT_SECONDS = 120L
+}
+
+/**
+ * Hands [prompt] to the phone's builders for the new chat [chat], or as the Oma tab always did when [chat] is
+ * empty: to [builder] if named, else to whichever is free ([AgentTasks.handOver]). A chat a builder still serves
+ * goes to that builder; one with nowhere to go yet starts a fresh session ([AgentTasks.startChat]); one whose
+ * builder went on, or that lives on the Mac, goes as the Oma tab's words would. [earlier] makes what goes ahead
+ * of his words for the builder that takes them, from the requests it is given: the chat's own, or the Oma stream's.
+ * The front agent's hand-overs and the `[ send to build ]` under one of its answers come through here.
+ */
+fun chatHandOver(context: Context, chat: String, prompt: String, page: String?, builder: BuilderId? = null, earlier: (BuilderId, List<ChatTask>) -> String) {
+    // What was said in this chat, or in the Oma stream for the Oma tab's words: a chat's talk never leaks into another's.
+    val said = ChatLog.of(context).tasks.filter { it.chat == chat }
+    val bound = TabBook.of(context).chat(chat)
+    val serving = bound?.builder?.takeIf { AgentTasks.of(it).owner == chat }
+    when {
+        chat.isEmpty() || (bound != null && bound.bound && serving == null) -> AgentTasks.handOver(context, prompt, page, builder) { earlier(it, said) }
+        serving != null -> AgentTasks.handOver(context, prompt, page, serving) { earlier(it, said) }
+        else -> {
+            val free = AgentTasks.builders.firstOrNull { !it.working }?.id ?: BuilderId.A
+            AgentTasks.startChat(context, chat, prompt, page = page, earlier = earlier(free, said))
+        }
+    }
 }
 
 /** The alias of the fast model that is the front agent. */

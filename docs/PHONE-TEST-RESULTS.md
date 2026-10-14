@@ -1,5 +1,29 @@
 # Phone test results
 
+## Latest: chat header dots, ＋ new chat, tab menu (2026-10-13, late) — NOT promoted, NOT seen on a screen
+
+From Boss's look at the real launcher. Compile-checked and unit tested only (1091 tests green); no gradle build run.
+- Header: the dots sit together at the right, just left of "▾", 16 dp centre to centre (7 dp between the 9 dp dots);
+  shape, colours and pulse unchanged. "[ new thread ]" and the hint line under the log are gone; the field's
+  placeholder is italic (the pack's body face, `FontStyle.Italic`).
+- ＋ after the last tab (strip open with ▾): a new chat, "New chat" until named, field focused; an empty one is
+  reopened rather than a second made. Its first message: Oma (in a front conversation of the chat's own) answers,
+  or hands it to a FRESH session — a free builder started without `--resume` (both busy: waits for the first free
+  one, the entry says so), or a NEW Mac thread on the project named (`POST /threads`, always, never the busy
+  thread's queue). The tab is then bound: later words go straight there. A builder that takes a new chat serves
+  it from then on; its earlier tab (or older chat) stays readable and reads "ended", field read-only. Entries
+  carry `chat` (key written only when set). Hand-over context comes only from the same chat (or the Oma stream).
+- Auto-name: after the first answer (or 20 s into a long first task) `claude -p --model haiku --tools ''` from
+  /tmp/oma-title, once; fallback the first 4 words. Trials: "Dock icon size and spacing", "Seattle Tomorrow
+  Weather Forecast", "FF4 magic menu crash fix", "Calendar widget with countdown", "Git worktree commands".
+- Long press on a tab (haptic tick): Rename, Pin/Unpin, Stop (while it works), Copy last answer, Archive, and
+  "Archived (N)" as the last row of every menu, where an archived tab is restored. Oma's tab: Copy and Archived
+  only. Pinned tabs come first after Oma and their tiles never leave by themselves; archived ones leave the strip,
+  the dots and the Agents page (a tile he carried elsewhere stays), and come back when something is sent to them
+  or they need his OK. Kept in prefs "oma-tabs" (TabBook.kt).
+- To see on the phone: the dots' spacing, the ＋ square's size beside the tabs, the menu, a new chat's first
+  message on each route, the title appearing.
+
 ## Latest: the big bundle on the real launcher (2026-10-13, about 22:35 PDT, commit f132cbe)
 
 - `oma-install --status`: verified; phone control had to be healed by the installer (PHONE_CONTROL_HEALED), then connected.

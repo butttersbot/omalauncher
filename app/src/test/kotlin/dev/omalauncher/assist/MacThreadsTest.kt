@@ -493,4 +493,17 @@ class MacThreadsTest {
         val noted = on("t6f232cb3").copy(summary = MAC_SHARED_NOTE)
         assertEquals("add save anywhere", macOwnSummary(noted, listOf(macMade(entry, noted))).summary)
     }
+
+    /** Boss 2026-10-13: a new chat never goes into a conversation that has anything in it, on the Mac either. */
+    @Test fun aNewChatsFirstWordsAlwaysGetANewThread() {
+        val idle = MacThread("t5e121ba2", "FF4 better menu mod", "~/p/ff4", ThreadHome.Mac, "claude", "", MacThreadStatus.Idle, null, "", 0, 0, emptyList())
+        assertEquals(MacFresh.Make("FF4 better menu mod 2", "~/p/ff4"), macFresh(idle, listOf(idle), newChat = true))
+        assertEquals(MacFresh.Same(idle), macFresh(idle, listOf(idle)))
+        val two = idle.copy(id = "t2", name = "FF4 better menu mod 2", status = MacThreadStatus.Working)
+        val three = idle.copy(id = "t3", name = "FF4 better menu mod 3", status = MacThreadStatus.Working)
+        val busy = idle.copy(status = MacThreadStatus.Working)
+        // Past the limit of threads at work in one folder, a new chat still gets its own, never a busy one's queue.
+        assertTrue(macFresh(busy, listOf(busy, two, three)) is MacFresh.Queue)
+        assertEquals(MacFresh.Make("FF4 better menu mod 4", "~/p/ff4"), macFresh(busy, listOf(busy, two, three), newChat = true))
+    }
 }

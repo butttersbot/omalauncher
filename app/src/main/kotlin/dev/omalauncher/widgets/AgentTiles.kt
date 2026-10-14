@@ -135,6 +135,10 @@ fun hiddenNext(old: TileStamp?, there: Boolean, active: Boolean): TileHidden = w
  * stays until the Mac's list has been heard, since after a restart a thread is only not heard of yet; once
  * the list is heard and still lacks it, or [AGENT_TILE_IDLE_HOURS] have passed with nothing heard, the thread
  * is gone and its tile with it.
+ *
+ * In the chat he may pin a thread or archive it (Boss, 2026-10-13), by its key: a [pinned] thread's tile never
+ * leaves by itself, and an [archived] one's leaves the Agents page as a gone one does, to come back as any tile
+ * does once the thread is no longer archived.
  */
 fun agentTilePlan(
     threads: List<AgentThread>,
@@ -143,6 +147,8 @@ fun agentTilePlan(
     stamps: Map<String, TileStamp>,
     now: Long,
     listed: Boolean,
+    pinned: Set<String> = emptySet(),
+    archived: Set<String> = emptySet(),
 ): TilePlan {
     val show = LinkedHashMap<String, AgentTile>()
     val add = ArrayList<String>()
@@ -159,7 +165,11 @@ fun agentTilePlan(
         val fresh = now.takeIf { active && (old?.busy == null || now - old.busy >= STAMP_EVERY_MS) }
         val busy = listOfNotNull(thread.worked, old?.busy, fresh).maxOrNull()
         val hidden = hiddenNext(old, there, active)
-        val life = tileLife(thread.state, busy, now)
+        val life = when (thread.key) {
+            in archived -> TileLife.Gone
+            in pinned -> TileLife.Stays
+            else -> tileLife(thread.state, busy, now)
+        }
         when {
             there && his(tile) -> show[tile] = AgentTile(thread.name, thread)
             life == TileLife.Gone -> if (there) remove += tile

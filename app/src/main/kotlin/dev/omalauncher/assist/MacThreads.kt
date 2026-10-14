@@ -9,6 +9,8 @@ import dev.omalauncher.oma.ChatApproval
 import dev.omalauncher.oma.ChatHistory
 import dev.omalauncher.oma.ChatLog
 import dev.omalauncher.oma.ChatTask
+import dev.omalauncher.oma.TabBook
+import dev.omalauncher.oma.bound
 import dev.omalauncher.oma.TaskStatus
 import dev.omalauncher.upgrade.Managed
 import dev.omalauncher.upgrade.Policy
@@ -134,9 +136,11 @@ sealed interface MacFresh {
  * Where separate work for the project of [named] goes, from the Mac's [threads] and the ones [owed] a request of
  * his. A [named] that is not busy takes it. Otherwise a new thread is made in its folder, unless as many as
  * [MAC_THREADS_PER_PROJECT] work there already: then it waits on the one of them with the fewest turns waiting,
- * [named] on a tie, since that is the one he was talking about.
+ * [named] on a tie, since that is the one he was talking about. The first words of a new chat ([newChat]) always
+ * get a thread of their own (Boss, 2026-10-13: a new chat never goes into a conversation that has anything in it).
  */
-fun macFresh(named: MacThread, threads: List<MacThread>, owed: Set<String> = emptySet()): MacFresh {
+fun macFresh(named: MacThread, threads: List<MacThread>, owed: Set<String> = emptySet(), newChat: Boolean = false): MacFresh {
+    if (newChat) return MacFresh.Make(macFreshName(named.name, threads.map { it.name } + named.name), named.project)
     if (!macBusy(named, named.id in owed)) return MacFresh.Same(named)
     val folder = macProjectKey(named.project)
     val working = (listOf(named) + threads.filter { it.id != named.id && macProjectKey(it.project) == folder && macBusy(it, it.id in owed) })
@@ -681,12 +685,13 @@ object MacThreads {
      * Hands [prompt], his words exactly, to [thread]. The entry sent at [asked] becomes that thread's before
      * anything is sent; the Mac is then asked how it is and sent the words on a thread of its own. [away] is a
      * request spoken on the listening screen: if it cannot be sent he is told over whatever is in front.
-     * [fresh] is separate work on the project [thread] is busy with, which goes where [place] says.
+     * [fresh] is separate work on the project [thread] is busy with, which goes where [place] says; [newChat] is
+     * the first words of a new chat, which always get a new thread on that project.
      */
-    fun handOver(context: Context, asked: Long, prompt: String, thread: MacThread, away: Boolean, fresh: Boolean = false) {
+    fun handOver(context: Context, asked: Long, prompt: String, thread: MacThread, away: Boolean, fresh: Boolean = false, newChat: Boolean = false) {
         restore(context)
         val app = context.applicationContext
-        if (fresh) return place(app, asked, prompt, thread, away)
+        if (fresh || newChat) return place(app, asked, prompt, thread, away, newChat)
         ChatLog.of(app).update(asked, save = true) { macHandOver(it, thread) }
         send(app, asked, sentText(app, asked, prompt, thread.id), thread.id, away)
     }
@@ -696,11 +701,11 @@ object MacThreads {
      * with [busy] as the Mac last described it. A thread that is free takes it as a hand-over; past the limit it
      * waits on a working one and the entry says why; otherwise a new thread is made and the words go to that.
      */
-    private fun place(context: Context, time: Long, prompt: String, busy: MacThread, away: Boolean) {
+    private fun place(context: Context, time: Long, prompt: String, busy: MacThread, away: Boolean, newChat: Boolean = false) {
         val log = ChatLog.of(context)
         val threads = view.threads.let { known -> if (known.any { it.id == busy.id }) known else known + busy }
         val named = threads.first { it.id == busy.id }
-        when (val place = macFresh(named, threads, macOwed(log.tasks, except = time))) {
+        when (val place = macFresh(named, threads, macOwed(log.tasks, except = time), newChat)) {
             is MacFresh.Same -> {
                 log.update(time, save = true) { macHandOver(it, place.thread) }
                 send(context, time, sentText(context, time, prompt, place.thread.id), place.thread.id, away)
@@ -744,6 +749,8 @@ object MacThreads {
                 made?.let { thread ->
                     noted(thread)
                     log.update(time, save = true) { macMade(it, thread) }
+                    // Made for a new chat's first words: the chat lives on this thread from now on.
+                    log.tasks.firstOrNull { it.time == time }?.chat?.takeIf { it.isNotEmpty() }?.let { chat -> TabBook.change(context) { it.bound(chat, mac = thread.id) } }
                     // Ended meanwhile, as when the busy thread could no longer be followed: then nothing is sent.
                     sendOn = log.tasks.any { it.time == time && it.thread == thread.id && it.status == TaskStatus.Queued }
                 }
@@ -773,12 +780,12 @@ object MacThreads {
      * the build lane's lock as every entry's time is taken, and the words then go the way a hand-over's do:
      * the Mac is asked how it is, and one that does not answer leaves the entry saying so with `[ try again ]`.
      */
-    fun say(context: Context, prompt: String, threadId: String, name: String) {
+    fun say(context: Context, prompt: String, threadId: String, name: String, chat: String = "") {
         restore(context)
         val app = context.applicationContext
         val log = ChatLog.of(app)
         val time = synchronized(AgentTasks) {
-            ChatHistory.stamp(log.tasks, System.currentTimeMillis()).also { log.begin(macDirect(it, prompt, threadId, name)) }
+            ChatHistory.stamp(log.tasks, System.currentTimeMillis()).also { log.begin(macDirect(it, prompt, threadId, name).copy(chat = chat)) }
         }
         send(app, time, prompt, threadId, away = false)
     }
@@ -793,7 +800,10 @@ object MacThreads {
         val tasks = ChatLog.of(context).tasks
         if (tasks.any { it.time == asked && it.direct }) return prompt
         val shared = macShares(threadId, view.threads, macOwed(tasks, except = asked))
-        return handOverText(sharedPreface(shared, MAC_SHARED_NOTE, handOverPreface(handOverContext(tasks, asked) { threadGot(it, threadId) })), prompt)
+        // Only what was said where he asked: in his new chat, or in the Oma stream.
+        val chat = tasks.firstOrNull { it.time == asked }?.chat.orEmpty()
+        val said = tasks.filter { it.chat == chat }
+        return handOverText(sharedPreface(shared, MAC_SHARED_NOTE, handOverPreface(handOverContext(said, asked) { threadGot(it, threadId) })), prompt)
     }
 
     /**
@@ -809,7 +819,9 @@ object MacThreads {
         RoutingLog.corrected(app, task.prompt, MAC_TRIED_AGAIN)
         if (!task.fresh) return send(app, time, sentText(app, time, task.prompt, task.thread), task.thread, away = false)
         val busy = view.threads.firstOrNull { it.id == task.thread }
-        if (busy != null) return place(app, time, task.prompt, busy, away = false)
+        // A new chat's first words that never got their thread are given a new one again, never the busy one.
+        val newChat = task.chat.isNotEmpty() && TabBook.of(app).chat(task.chat)?.bound == false
+        if (busy != null) return place(app, time, task.prompt, busy, away = false, newChat)
         // Until the Mac has listed its threads in this run, a thread missing from the list is only not heard of yet.
         log.update(time, save = true) { macUnsent(it, if (view.listed) MAC_THREAD_GONE else MAC_UNREACHABLE) }
         refresh(app)

@@ -243,7 +243,7 @@ class AgentTilesTest {
 
         fun look(vararg threads: AgentThread, listed: Boolean = true, scraps: (String) -> List<Box>? = { emptyList() }) {
             clock += 2000
-            keeper.keep(threads.toList(), listed, clock, scraps)
+            keeper.keep(threads.toList(), listed, clock, scraps = scraps)
         }
 
         fun page(name: String) = notebook.snapshot().pages.first { it.name == name }
@@ -454,5 +454,21 @@ class AgentTilesTest {
         )
         assertTrue(keeper.contains("notebook.renamePage(made, AGENTS_PAGE)"))
         assertTrue(keeper.contains("if (isThreadTile(write.tile) && notebook.pageOf(write.tile) == write.page) notebook.forget(write.tile)"))
+    }
+
+    /** Boss 2026-10-13: a pinned thread's tile never leaves by itself; an archived one leaves the Agents page until it comes back. */
+    @Test fun aPinnedTileStaysAndAnArchivedOneLeavesOnlyTheAgentsPage() {
+        val old = thread(macThreadKey("t-old"), ThreadState.Idle, worked = now - 30 * hour, name = "Old")
+        val placed = mapOf(tile(ff4) to "agents", tile(pond) to "home")
+        val mine = mapOf(tile(old) to "agents")
+        assertEquals(listOf(tile(old)), agentTilePlan(listOf(old), mine, "agents", emptyMap(), now, true).remove)
+        val pinnedPlan = agentTilePlan(listOf(old), mine, "agents", emptyMap(), now, true, pinned = setOf(old.key))
+        assertTrue(pinnedPlan.remove.isEmpty()); assertTrue(tile(old) in pinnedPlan.show)
+        // Archived while working: off the Agents page; the one he carried home stays his.
+        val archived = agentTilePlan(listOf(ff4, pond), placed, "agents", emptyMap(), now, true, archived = setOf(ff4.key, pond.key))
+        assertEquals(listOf(tile(ff4)), archived.remove); assertTrue(tile(pond) in archived.show); assertFalse(tile(ff4) in archived.show)
+        // Brought back, it is placed again.
+        val back = agentTilePlan(listOf(ff4), placed - tile(ff4), "agents", archived.stamps, now, true)
+        assertEquals(listOf(tile(ff4)), back.add)
     }
 }

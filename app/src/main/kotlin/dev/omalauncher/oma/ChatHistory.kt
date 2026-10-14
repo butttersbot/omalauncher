@@ -79,8 +79,15 @@ data class ChatTask(
     /**
      * Separate work for the project of [thread], which was busy: a new thread is made there and his words go to it.
      * Until it is made the entry stands under the busy thread's id, and once made it is that new thread's and this is false.
+     * For a request of the build lane's it is the first word of a new chat waiting for a free builder, which starts
+     * a fresh session for it; once a builder has begun on it, this is false.
      */
     val fresh: Boolean = false,
+    /**
+     * The id of the new chat this request was sent in or belongs to ([NewChat]); empty for every request of the
+     * Oma stream and of a thread's own tab from before there were new chats.
+     */
+    val chat: String = "",
 ) {
     /** Answered by the front agent itself, beside the build task: never by it or in its queue. */
     val quick get() = agent == QUICK_AGENT
@@ -125,6 +132,7 @@ object ChatHistory {
     const val MAX_IMAGES = 4
     const val MAX_THREAD = 128
     const val MAX_BUILDER = 8
+    const val MAX_CHAT = 32
 
     /** Several times the largest file [encode] writes; anything bigger isn't ours and isn't read. */
     const val MAX_FILE_BYTES = 16L * 1024 * 1024
@@ -142,6 +150,7 @@ object ChatHistory {
         threadName = task.threadName.take(60),
         answeredBy = task.answeredBy.take(40),
         builder = task.builder.take(MAX_BUILDER),
+        chat = task.chat.take(MAX_CHAT),
     )
 
     /** The thread with [task] added, keeping the newest [MAX_TASKS]. */
@@ -204,6 +213,7 @@ object ChatHistory {
             .apply { if (task.answeredBy.isNotEmpty()) put("answeredBy", task.answeredBy) }
             .apply { if (task.builder.isNotEmpty()) put("builder", task.builder) }
             .apply { if (task.fresh) put("fresh", true) }
+            .apply { if (task.chat.isNotEmpty()) put("chat", task.chat) }
     })).toString()
 
     /** The saved thread; an unreadable file is an empty thread, and an unreadable task is left out. */
@@ -227,6 +237,7 @@ object ChatHistory {
                     answeredBy = task.optString("answeredBy"),
                     builder = task.optString("builder"),
                     fresh = task.optBoolean("fresh"),
+                    chat = task.optString("chat"),
                 ))
             }.getOrNull()
         }.takeLast(MAX_TASKS)
