@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Oma panel: mock-up</title>
+<style>
+  /* City Pop's tokens and fonts, from app/src/main/assets/packs/city-pop/pack.toml. */
+  @font-face { font-family: "Pop Display"; src: url(../app/src/main/assets/packs/city-pop/fonts/Montserrat-ExtraBoldItalic.ttf); }
+  @font-face { font-family: "Pop Body"; src: url(../app/src/main/assets/packs/city-pop/fonts/SchibstedGrotesk.ttf); }
+  @font-face { font-family: "Pop Hand"; src: url(../app/src/main/assets/packs/city-pop/fonts/Caveat.ttf); }
+  @font-face { font-family: "Pop Mono"; src: url(../app/src/main/assets/packs/city-pop/fonts/JetBrainsMono.ttf); }
+  :root {
+    --page: #0f4fc9; --bg: #ffffff; --surface: #dff7f7; --ink: #12296b; --muted: rgba(18,41,107,.68);
+    --accent: #bd3a72; --pink: #ff4f9a; --alt: #19c3c9; --on-alt: #0b2260; --yellow: #ffe14d;
+    --red: #c33d41; --green: #257b47; --shadow: rgba(10,40,140,.55);
+    --rail: 64px; --full: min(318px, 84vw);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: #0a0f24; overflow: hidden; }
+  body { color: var(--ink); font: 15px/1.35 "Pop Body", system-ui, sans-serif; user-select: none; -webkit-user-select: none; }
+  .display { font-family: "Pop Display", "Arial Black", sans-serif; font-weight: 800; font-style: italic; text-transform: uppercase; letter-spacing: -.02em; }
+  .mono { font-family: "Pop Mono", ui-monospace, monospace; text-transform: uppercase; letter-spacing: .09em; font-size: 10.5px; font-weight: 500; }
+  .hand { font-family: "Pop Hand", cursive; font-weight: 700; }
+
+  /* The phone is the whole browser window on the phone itself; on a desktop it stands framed. */
+  .phone { position: relative; width: 100vw; height: 100dvh; overflow: hidden; touch-action: none;
+    background: url(../app/src/main/assets/packs/city-pop/paper/cover.jpg) center/cover, linear-gradient(160deg, #1463e6, var(--page) 45%, #0a2f96); }
+  @media (min-aspect-ratio: 1/1) { .phone { background-image: url(../app/src/main/assets/packs/city-pop/paper/inner.jpg), linear-gradient(160deg, #1463e6, var(--page) 45%, #0a2f96); } }
+  @media (min-width: 900px) { .phone { width: 760px; height: min(600px, 92vh); margin: 4vh auto; border-radius: 22px; } }
+
+  /* Home underneath: a page name and a few tiles, to draw and stick on. */
+  .home { position: absolute; inset: 0; padding: 18px 16px; }
+  .pagename { color: #fff; font-size: 28px; text-shadow: 0 2px rgba(8,28,96,.75); }
+  .pagesub { color: rgba(255,255,255,.9); font-size: 19px; margin: -2px 0 14px 2px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; max-width: 640px; }
+  .tile { background: var(--bg); padding: 10px 12px; box-shadow: 7px 7px 0 var(--shadow); min-height: 104px; border-radius: 2px; display: flex; flex-direction: column; gap: 4px; }
+  .tile b { font-size: 17px; line-height: 1.05; }
+  .tile .mono { color: var(--muted); }
+  .ink { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .stuck { position: absolute; width: 74px; height: 74px; display: grid; place-items: center; font-size: 52px; touch-action: none; cursor: grab; filter: drop-shadow(2px 3px 0 rgba(8,28,96,.35)); }
+  .stuck img { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+  .stuck.sel { outline: 2px dashed var(--pink); outline-offset: 3px; }
+
+  /* The live handle on the right edge: the agents' state at a glance, and where the panel is pulled from. */
+  .handle { position: absolute; right: 0; top: 30%; width: 26px; height: 110px; display: grid; place-items: center end; touch-action: none; z-index: 5; cursor: pointer; }
+  .handle i { display: block; width: 7px; height: 92px; border-radius: 4px 0 0 4px; background: rgba(255,255,255,.92); box-shadow: -2px 2px 0 var(--shadow); position: relative; overflow: hidden; }
+  .handle i::after { content: ""; position: absolute; left: 0; right: 0; top: 34px; height: 24px; background: var(--state, var(--green)); }
+  .handle.working i::after { animation: breathe 1.6s ease-in-out infinite; }
+  .handle.needsok i { background: var(--pink); } .handle.needsok i::after { background: #fff; animation: blink .7s steps(2) infinite; }
+  @keyframes breathe { 50% { opacity: .35; } } @keyframes blink { 50% { opacity: 0; } }
+  .phone.open .handle { opacity: 0; pointer-events: none; }
+
+  /* The panel. Rail: the loadout's tools as keys. Full: the tools themselves, as scraps. */
+  .panel { position: absolute; top: 0; bottom: 0; right: 0; width: var(--full); background: var(--bg); box-shadow: -7px 0 0 var(--shadow);
+    transform: translateX(105%); transition: transform .28s cubic-bezier(.3,.8,.2,1), width .28s cubic-bezier(.3,.8,.2,1); z-index: 6; display: flex; flex-direction: column; touch-action: pan-y; }
+  .phone.open .panel { transform: none; }
+  .phone.railed .panel { width: var(--rail); }
+  .phone.dragging .panel { transition: none; }
+  .head { padding: 12px 12px 6px 14px; border-bottom: 2px solid var(--ink); }
+  .loadout { display: flex; align-items: center; gap: 8px; }
+  .loadout h2 { margin: 0; font-size: 24px; flex: 1; cursor: pointer; white-space: nowrap; }
+  .loadout .x { font-size: 20px; padding: 0 4px; cursor: pointer; }
+  .ldots { display: flex; gap: 6px; margin: 6px 0 2px; }
+  .ldots span { width: 18px; height: 5px; background: var(--surface); cursor: pointer; } .ldots span.on { background: var(--ink); }
+  .head .mono { color: var(--muted); }
+  .body { flex: 1; overflow-y: auto; padding: 14px 12px 20px; display: flex; flex-direction: column; gap: 18px; scrollbar-width: none; }
+  .tool { background: var(--surface); padding: 10px; position: relative; border-radius: 2px; }
+  .tool > .t { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+  .tool > .t b { font-size: 15px; flex: 1; }
+  .tape { position: absolute; top: -8px; left: 50%; width: 54px; height: 16px; margin-left: -27px; background: var(--pink); opacity: .9; transform: rotate(-3deg); }
+  .addtool { border: 2px dashed var(--muted); padding: 12px; text-align: center; color: var(--muted); cursor: pointer; }
+
+  /* Rail mode. */
+  .rail { display: none; flex-direction: column; align-items: center; gap: 10px; padding: 10px 0; overflow-y: auto; flex: 1; scrollbar-width: none; }
+  .phone.railed .rail { display: flex; } .phone.railed .body, .phone.railed .head { display: none; }
+  .rail .key { width: 46px; height: 46px; }
+  .rail .sep { width: 30px; height: 2px; background: var(--ink); opacity: .3; margin: 2px 0; }
+  .rail .lname { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 15px; cursor: pointer; }
+
+  /* Keys: the drawing tools' look, a glyph on the dock's surface, filled while it is the tool in hand. */
+  .keys { display: grid; grid-template-columns: repeat(auto-fill, 46px); gap: 8px; }
+  .key { width: 46px; height: 46px; background: var(--bg); border: 2px solid var(--ink); display: grid; place-items: center; font-size: 19px; cursor: pointer; box-shadow: 3px 3px 0 var(--pink); position: relative; }
+  .key.on { background: var(--ink); color: #fff; }
+  .key img { width: 100%; height: 100%; object-fit: contain; pointer-events: none; } .key { overflow: hidden; }
+  .key.dim { opacity: .4; }
+  .key small { position: absolute; bottom: -1px; right: 2px; font-size: 9px; }
+  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .lbl { color: var(--muted); width: 100%; margin-top: 8px; }
+  .sizes span { width: 34px; height: 34px; display: grid; place-items: center; cursor: pointer; border: 2px solid transparent; }
+  .sizes span.on { border-color: var(--ink); }
+  .sizes span i { display: block; background: var(--ink); border-radius: 50%; }
+  .swatch { width: 30px; height: 30px; border: 2px solid var(--ink); cursor: pointer; border-radius: 2px; }
+  .swatch.on { outline: 3px solid var(--pink); outline-offset: 2px; }
+  .history { display: flex; gap: 3px; margin-top: 8px; overflow-x: auto; scrollbar-width: none; }
+  .history span { flex: none; width: 22px; height: 22px; background: var(--bg); border: 1px solid var(--muted); display: grid; place-items: center; }
+  .history span i { display: block; border-radius: 50%; }
+  .history span.undone { opacity: .3; }
+
+  .packs { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin-bottom: 8px; }
+  .packs span { flex: none; padding: 5px 8px; background: var(--bg); cursor: pointer; }
+  .packs span.on { background: var(--ink); color: #fff; }
+  .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+  .grid div { aspect-ratio: 1; min-width: 0; overflow: hidden; background: var(--bg); display: grid; place-items: center; font-size: 30px; cursor: grab; touch-action: none; padding: 4px; }
+  .grid img { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+
+  .bench { background: var(--bg); height: 150px; position: relative; display: grid; place-items: center; overflow: hidden;
+    background-image: linear-gradient(rgba(18,41,107,.08) 1px, transparent 1px), linear-gradient(90deg, rgba(18,41,107,.08) 1px, transparent 1px); background-size: 14px 14px; }
+  .bench .piece { width: 92px; height: 92px; display: grid; place-items: center; font-size: 60px; transition: transform .2s; }
+  .bench .piece img { width: 100%; height: 100%; object-fit: contain; }
+  .bench .empty { color: var(--muted); font-size: 20px; text-align: center; padding: 0 14px; }
+
+  .caps { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .cap { background: var(--bg); padding: 10px 8px; text-align: center; cursor: pointer; box-shadow: 3px 3px 0 var(--pink); }
+  .cap.wide { grid-column: span 2; background: var(--ink); color: #fff; }
+  .cap .g { font-size: 22px; display: block; }
+  .rec { color: var(--red); }
+  .agent { display: flex; gap: 8px; padding: 7px 0; border-top: 1px solid rgba(18,41,107,.15); cursor: pointer; }
+  .agent:first-of-type { border-top: 0; }
+  .agent .dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 4px; flex: none; background: var(--muted); }
+  .agent.working .dot { background: var(--green); animation: breathe 1.2s infinite; }
+  .agent.needsok .dot { background: var(--pink); } .agent.queued .dot { background: var(--yellow); outline: 1px solid var(--ink); }
+  .agent .n { font-weight: 700; } .agent .w { color: var(--muted); font-size: 13px; }
+  .agent .acts { display: flex; gap: 12px; margin-top: 4px; } .agent .acts span { text-decoration: underline; cursor: pointer; }
+  .shelf div { background: var(--bg); padding: 7px 9px; margin-top: 6px; font-size: 13px; display: flex; gap: 8px; align-items: center; }
+  .shelf .drop { border: 2px dashed var(--muted); background: none; color: var(--muted); justify-content: center; }
+  .search { width: 100%; border: 1px solid var(--muted); border-radius: 18px; padding: 8px 12px; font: 14px "Pop Body", sans-serif; color: var(--ink); background: var(--bg); margin-bottom: 8px; }
+  .setname { color: var(--muted); margin: 10px 0 6px; }
+  .grid div.seat { outline: 2px dashed var(--muted); background: none; } .grid div.seat img { opacity: .25; }
+  .grid.washes { grid-template-columns: repeat(3, minmax(0, 1fr)); } .grid.washes div { cursor: pointer; align-content: end; padding-bottom: 4px; }
+  .stuck.lifting { z-index: 20; transform: scale(1.2) rotate(-4deg); filter: drop-shadow(6px 10px 4px rgba(8,28,96,.45)); pointer-events: none; }
+  .stuck[data-frame="polaroid"] { background: #fff; padding: 6px 6px 18px; box-shadow: 3px 3px 0 var(--shadow); }
+  .stuck[data-frame="stamp"] { background: #fff; outline: 4px dotted #fff; outline-offset: -2px; padding: 6px; }
+  .stuck[data-frame="tape"]::before { content: ""; position: absolute; top: -6px; left: 50%; width: 40px; height: 12px; margin-left: -20px; background: var(--pink); opacity: .85; transform: rotate(-4deg); }
+  .chip { padding: 5px 9px; border: 1px solid var(--ink); cursor: pointer; } .chip.on { background: var(--ink); color: #fff; }
+  .swatch.wheel { background: conic-gradient(#ff4f9a, #ffe14d, #19c3c9, #7a4fd1, #ff4f9a); }
+  .phone.aside .panel { transform: translateX(calc(100% - 64px)); }
+  .undostrip { position: absolute; left: 12px; bottom: 14px; background: var(--ink); color: #fff; padding: 8px 10px 8px 12px; display: flex; gap: 14px; align-items: center; z-index: 8; transform: translateY(80px); transition: transform .25s; }
+  .undostrip.on { transform: none; } .undostrip b { background: var(--pink); padding: 4px 10px; border-radius: 12px; cursor: pointer; font-size: 13px; }
+  .quick { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .quick div { background: var(--bg); padding: 10px 4px; text-align: center; cursor: pointer; font-size: 12px; }
+  .quick div.on { background: var(--yellow); }
+  .quick .g { font-size: 20px; display: block; }
+
+  /* Sheets: the loadouts list, and the tools that can be added. */
+  .sheet { position: absolute; left: 0; right: 0; bottom: 0; background: var(--bg); box-shadow: 0 -7px 0 var(--shadow); padding: 16px; z-index: 9; transform: translateY(110%); transition: transform .25s; max-height: 80%; overflow-y: auto; }
+  .sheet.on { transform: none; }
+  .sheet h3 { margin: 0 0 4px; font-size: 22px; }
+  .sheet .item { display: flex; gap: 10px; align-items: center; padding: 9px 0; border-top: 1px solid rgba(18,41,107,.15); cursor: pointer; }
+  .sheet .item .g { width: 34px; text-align: center; font-size: 20px; }
+  .sheet .item small { display: block; color: var(--muted); }
+  .sheet .ask { background: var(--ink); color: #fff; padding: 12px; margin-top: 10px; text-align: center; cursor: pointer; }
+  .toast { position: absolute; left: 50%; top: 14px; transform: translate(-50%, -80px); background: var(--ink); color: #fff; padding: 9px 14px; z-index: 10; transition: transform .25s; max-width: 86%; text-align: center; font-size: 13px; }
+  .toast.on { transform: translate(-50%, 0); }
+  .flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 11; transition: opacity .35s; }
+  .coach { position: absolute; left: 16px; bottom: 18px; right: 60px; color: #fff; font-size: 21px; text-shadow: 0 2px rgba(8,28,96,.8); pointer-events: none; z-index: 4; }
+  .phone.open .coach { display: none; }
+</style>
+</head>
+<body>
+<div class="phone" id="phone">
+  <div class="home" id="home">
+    <div class="pagename display">Studio</div>
+    <div class="pagesub hand">a page to scribble on</div>
+    <div class="tiles">
+      <div class="tile"><span class="mono">this phone · 2:14</span><b class="display">Phone A</b><span style="font-size:13px">Edit: ui/EdgePanel.kt</span></div>
+      <div class="tile"><span class="mono">mac · 3 hr</span><b class="display">Scratch</b><span style="font-size:13px">Done — phone-test.txt created.</span></div>
+      <div class="tile"><span class="mono">tuesday</span><b class="display" style="font-size:34px">13</b><span style="font-size:13px">67° light rain</span></div>
+    </div>
+  </div>
+  <canvas class="ink" id="ink"></canvas>
+  <div id="stuck"></div>
+  <div class="coach hand" id="coach">← the tab on the right edge breathes green while an agent works and blinks pink when one needs your OK.<br>tap it for the rail, drag it far for the whole panel</div>
+  <div class="handle working" id="handle"><i></i></div>
+
+  <aside class="panel" id="panel">
+    <div class="head">
+      <div class="loadout"><h2 class="display" id="lname" onclick="sheet('loadouts')">Create</h2><span class="x" title="Rail" onclick="setMode('rail')">›</span></div>
+      <div class="ldots" id="ldots"></div>
+      <div class="mono" id="lhint">swipe sideways for the next loadout</div>
+    </div>
+    <div class="body" id="body"></div>
+    <div class="rail" id="rail"></div>
+  </aside>
+
+  <div class="sheet" id="sheet"></div>
+  <div class="toast" id="toast"></div>
+  <div class="undostrip" id="undostrip"></div>
+  <div class="flash" id="flash"></div>
+</div>
+
+<script>
+/*
+ * Mock-up, not the launcher. The panel is a surface; a loadout is a set of tools on it; a tool is a small
+ * app with its own controls. The handle shows the agents' state. Tap it for the rail, drag it far for the
+ * whole panel. Drawing works on the page beside the rail, and stickers land on the page. The drawing tools
+ * follow Cove's draw belt, and the Art bench Cove's BenchDeck: one surface whose mode is the selection.
+ * Stickers come from ../stickers/<pack>/<file>.png when served beside the phone's library, else emoji stand in.
+ */
+const $ = (id) => document.getElementById(id);
+const phone = $('phone'), panel = $('panel');
+
+const PACKS = {
+  'cove': ['a-little-sky-postage-stamp', 'blue-gingham-tape', 'blue-paper-butterfly', 'blue-paper-heart', 'blush-journal-fairy-lights', 'blush-journal-hanging-plant', 'blush-journal-heart', 'blush-journal-ink-stars'],
+  'donut-frog': ['beach-lounge', 'blanket-munch', 'box-frog', 'butt-heart', 'cheer-wave', 'chef-spatula', 'donut-bite', 'donut-crown'],
+  'pepe-blanket': ['coffee', 'cozy-wrap', 'headphones', 'heart-hug', 'hiding', 'iced-drink', 'in-love', 'laptop'],
+  'rabbit-shark': ['anchor-badge', 'bottle-letter', 'bunny-island', 'fish-blue', 'fish-teal', 'fish-white', 'heart-bubble', 'jellyfish'],
+};
+const STAND_IN = { 'cove': '💙🦋💌🌿⭐🎀🌙☁️', 'donut-frog': '🐸🍩👑🏖️🍳💚🎉📦', 'pepe-blanket': '☕🎧💕🧋💻🛌🙈😍', 'rabbit-shark': '🐰🦈⚓🍾🐟🐠🪼🫧' };
+const stickerHtml = (pack, i) => `<img src="../stickers/${pack}/${PACKS[pack][i]}.png" onerror="this.replaceWith(document.createTextNode('${[...STAND_IN[pack]][i]}'))">`;
+
+const INKS = [['#12296b', 'ink'], ['#ff4f9a', 'pink'], ['#19c3c9', 'pool'], ['#ffe14d', 'sun'], ['#ffffff', 'white'], ['#c33d41', 'red'], ['#257b47', 'palm'], ['#ff9a3d', 'sunset'], ['#7a4fd1', 'dusk'], ['#000000', 'black']];
+const WASHES = [['#ffe14d', 'sun'], ['#dff7f7', 'pool'], ['#ffd1e4', 'blush'], ['#ffffff', 'card'], ['#cfe0ff', 'sky'], ['#d9f2c9', 'lime']];
+const state = { loadout: 0, mode: 'closed', tool: 'pen', size: 1, color: 0, wells: [0, 1, 2], wheel: false, q: '', tab: 'stickers', did: [], rec: false, toggles: { dnd: true }, strokes: [], undone: [], recents: [] };
+
+const AGENTS = [
+  { name: 'Phone A', where: 'this phone', cls: 'working', since: Date.now() - 134000, doing: 'Edit: ui/EdgePanel.kt' },
+  { name: 'FF4 menu mod', where: 'mac', cls: 'needsok', doing: 'Wants to run npm' },
+  { name: 'Phone B', where: 'this phone', cls: 'queued', since: Date.now() - 41000, doing: 'oma-build · then: "bigger clock"' },
+  { name: 'Scratch', where: 'mac', cls: 'idle', doing: 'Done — phone-test.txt created.' },
+];
+
+/* Tools: each draws its own body (full panel) and offers a few keys for the rail. */
+const TOOLS = {
+  draw: { name: 'Draw', g: '✎', about: 'pens, inks, sizes, undo history',
+    body: () => `
+      <div class="keys">${[['pen', '✎'], ['marker', '▬'], ['eraser', '⌫'], ['text', 'T'], ['note', '▤'], ['lasso', '◌']].map(([t, g]) =>
+        `<div class="key ${state.tool === t ? 'on' : ''}" onclick="pick('${t}')" title="${t}">${g}</div>`).join('')}</div>
+      <div class="mono lbl">size</div>
+      <div class="row sizes">${[3, 7, 13].map((s, i) => `<span class="${state.size === i ? 'on' : ''}" onclick="state.size=${i};render()"><i style="width:${s + 3}px;height:${s + 3}px"></i></span>`).join('')}</div>
+      <div class="mono lbl">ink · last three, and the wheel</div>
+      <div class="row">${state.wells.map((i) => `<div class="swatch ${state.color === i ? 'on' : ''}" style="background:${INKS[i][0]}" onclick="ink_(${i})"></div>`).join('')}<div class="swatch wheel ${state.wheel ? 'on' : ''}" onclick="state.wheel=!state.wheel;render()"></div></div>
+      ${state.wheel ? `<div class="row" style="margin-top:8px">${INKS.map(([c, n], i) => `<div class="swatch" style="background:${c}" title="${n}" onclick="ink_(${i});state.wheel=false;render()"></div>`).join('')}</div>` : ''}
+      <div class="row" style="margin-top:12px"><div class="key ${state.strokes.length ? '' : 'dim'}" onclick="undo()">↶</div><div class="key ${state.undone.length ? '' : 'dim'}" onclick="redo()">↷</div><div class="key" onclick="clearInk()" title="clear">✕</div></div>
+      <div class="mono lbl">history · ${state.strokes.length} strokes</div>
+      <div class="history">${state.strokes.map((s) => `<span><i style="width:${s.w / 2 + 3}px;height:${s.w / 2 + 3}px;background:${s.c}"></i></span>`).join('')}${state.undone.slice().reverse().map((s) => `<span class="undone"><i style="width:${s.w / 2 + 3}px;height:${s.w / 2 + 3}px;background:${s.c}"></i></span>`).join('')}</div>`,
+    keys: () => [['pen', '✎'], ['marker', '▬'], ['eraser', '⌫']].map(([t, g]) => `<div class="key ${state.tool === t ? 'on' : ''}" onclick="pick('${t}')">${g}</div>`).join('') +
+      `<div class="key" style="background:${INKS[state.color][0]}" onclick="state.color=(state.color+1)%${INKS.length};render()"></div><div class="key ${state.strokes.length ? '' : 'dim'}" onclick="undo()">↶</div>` },
+  // Cove's Art Bench (projects/pond, BenchDeck.tsx): one surface where selection is the mode. Nothing selected,
+  // it is the drawer; a sticker on the page selected, it dresses that sticker, with a mirror of it on top.
+  bench: { name: 'Art bench', g: '★', about: 'stickers and washes; select one on the page to dress it',
+    body: () => sel() ? dressBody() : `
+      <input class="search" placeholder="search the bench…" value="${state.q}" oninput="state.q=this.value;renderGrid()" onpointerdown="event.stopPropagation()">
+      <div class="packs">${['stickers', 'washes'].map((t) => `<span class="mono ${state.tab === t ? 'on' : ''}" onclick="state.tab='${t}';render()">${t}</span>`).join('')}</div>
+      <div id="benchgrid">${gridBody()}</div>`,
+    keys: () => (state.recents.length ? state.recents.slice(0, 3) : [['donut-frog', 7], ['pepe-blanket', 0], ['rabbit-shark', 7]]).map(([p, i]) =>
+      `<div class="key" style="padding:4px" onpointerdown="grab(event,'${p}',${i})">${stickerHtml(p, i)}</div>`).join('') + `<div class="key" onclick="setMode('full');scrollTool('bench')">★</div>` },
+  capture: { name: 'Capture', g: '◉', about: 'screenshot, record, ask about this screen',
+    body: () => `<div class="caps">
+      <div class="cap" onclick="shot()"><span class="g">⬚</span><span class="mono">screenshot</span></div>
+      <div class="cap ${state.rec ? 'rec' : ''}" onclick="record()"><span class="g">${state.rec ? '■' : '●'}</span><span class="mono">${state.rec ? 'stop · ' + recTime() : 'record'}</span></div>
+      <div class="cap wide" onclick="toast('Oma opens with this screen attached: “what is this?”')"><span class="mono">ask oma about this screen</span></div></div>`,
+    keys: () => `<div class="key" onclick="shot()">⬚</div><div class="key ${state.rec ? 'on' : ''}" onclick="record()" style="${state.rec ? 'background:var(--red)' : ''}">●</div>` },
+  agents: { name: 'Agents', g: '●', about: 'every thread: state, live timer, approve in place',
+    body: () => AGENTS.map((a, i) => `<div class="agent ${a.cls}" onclick="toast('Opens ${a.name} in the Oma chat')"><span class="dot"></span><div style="flex:1"><div><span class="n">${a.name}</span> <span class="mono">${a.where}${a.since ? ' · ' + clock(a.since) : ''}</span></div><div class="w">${a.doing}</div>
+      ${a.cls === 'needsok' ? `<div class="acts mono"><span onclick="event.stopPropagation();approve(${i},true)">approve</span><span onclick="event.stopPropagation();approve(${i},false)">deny</span></div>` : ''}</div></div>`).join(''),
+    keys: () => AGENTS.map((a) => `<div class="key" title="${a.name}" onclick="setMode('full');scrollTool('agents')"><span class="agent ${a.cls}" style="border:0;padding:0"><span class="dot" style="margin:0"></span></span><small class="mono">${a.name.split(' ').pop().slice(0, 2)}</small></div>`).join('') },
+  shelf: { name: 'Shelf', g: '⊟', about: 'things dropped here from any app, kept till used',
+    body: () => `<div class="shelf"><div>🔗 <span>youtube.com/watch?v=city-pop</span></div><div>✂️ <span>“the sticker bench should feel like a cutting mat”</span></div><div>⬚ <span>Screenshot · Maps · 10:52</span></div><div class="drop hand" style="font-size:18px">drop text, links or pictures here</div></div>`,
+    keys: () => `<div class="key" onclick="setMode('full');scrollTool('shelf')">⊟</div>` },
+  quick: { name: 'Phone', g: '⚡', about: 'switches and shortcuts',
+    body: () => `<div class="quick">${[['torch', '🔦', 'torch'], ['dnd', '☾', 'do not disturb'], ['rotate', '⟳', 'rotate lock'], ['hotspot', '⌬', 'hotspot'], ['cam', '◎', 'camera'], ['calc', '±', 'calculator']].map(([k, g, n]) =>
+      `<div class="${state.toggles[k] ? 'on' : ''}" onclick="flip('${k}')"><span class="g">${g}</span><span class="mono">${n}</span></div>`).join('')}</div>`,
+    keys: () => `<div class="key ${state.toggles.torch ? 'on' : ''}" onclick="flip('torch')">🔦</div><div class="key ${state.toggles.dnd ? 'on' : ''}" onclick="flip('dnd')">☾</div>` },
+};
+
+const LOADOUTS = [
+  { name: 'Create', tools: ['draw', 'bench'] },
+  { name: 'Work', tools: ['agents', 'capture', 'shelf'] },
+  { name: 'Phone', tools: ['quick', 'capture'] },
+];
+
+function render() {
+  const l = LOADOUTS[state.loadout];
+  $('lname').textContent = l.name;
+  $('ldots').innerHTML = LOADOUTS.map((_, i) => `<span class="${i === state.loadout ? 'on' : ''}" onclick="go(${i})"></span>`).join('');
+  $('body').innerHTML = l.tools.map((t) => `<section class="tool" id="tool-${t}"><span class="tape"></span><div class="t"><span>${TOOLS[t].g}</span><b class="display">${TOOLS[t].name}</b></div>${TOOLS[t].body()}</section>`).join('') +
+    `<div class="addtool hand" style="font-size:20px" onclick="sheet('tools')">+ add a tool to ${l.name}</div>`;
+  $('rail').innerHTML = `<div class="lname display" onclick="setMode('full')">${l.name}</div><div class="sep"></div>` + l.tools.map((t) => TOOLS[t].keys()).join('<div class="sep"></div>') +
+    `<div class="sep"></div><div class="key" onclick="setMode('full')" title="open">‹</div><div class="key" onclick="setMode('closed')" title="close">›</div>`;
+  const busy = AGENTS.find((a) => a.cls === 'needsok') ? 'needsok' : AGENTS.find((a) => a.cls === 'working') ? 'working' : '';
+  $('handle').className = 'handle ' + busy;
+}
+
+function setMode(m) {
+  state.mode = m;
+  phone.classList.toggle('open', m !== 'closed');
+  phone.classList.toggle('railed', m === 'rail');
+  render();
+}
+function go(i) { state.loadout = (i + LOADOUTS.length) % LOADOUTS.length; render(); $('body').scrollTop = 0; }
+function scrollTool(t) { const i = LOADOUTS[state.loadout].tools.indexOf(t); if (i < 0) return; setTimeout(() => $('tool-' + t)?.scrollIntoView({ behavior: 'smooth' }), 300); }
+// Picking a pen steps the panel aside to its rail on a narrow screen, so the page is there to draw on.
+function pick(t) { state.tool = t; if (['pen', 'marker', 'eraser'].includes(t) && phone.clientWidth < 600 && state.mode === 'full') setMode('rail'); else render(); if (['text', 'note', 'lasso'].includes(t)) toast(`${t}: works as it does on home today`); }
+function toast(s) { const t = $('toast'); t.textContent = s; t.classList.add('on'); clearTimeout(t.timer); t.timer = setTimeout(() => t.classList.remove('on'), 2200); }
+
+/* The handle: a tap opens the rail, a long drag opens the whole panel. A swipe on the panel's head changes loadout. */
+(() => {
+  let x0 = null, moved = 0;
+  $('handle').addEventListener('pointerdown', (e) => { x0 = e.clientX; moved = 0; phone.classList.add('dragging'); $('handle').setPointerCapture(e.pointerId); });
+  $('handle').addEventListener('pointermove', (e) => {
+    if (x0 === null) return; moved = x0 - e.clientX;
+    phone.classList.add('open'); panel.style.transform = `translateX(calc(100% - ${Math.max(0, moved)}px))`;
+  });
+  $('handle').addEventListener('pointerup', () => {
+    phone.classList.remove('dragging'); panel.style.transform = '';
+    setMode(moved > 140 ? 'full' : 'rail'); x0 = null;
+  });
+  let hx = null;
+  $('panel').addEventListener('pointerdown', (e) => { if (e.target.closest('.head')) hx = e.clientX; });
+  $('panel').addEventListener('pointerup', (e) => {
+    if (hx === null) return; const d = e.clientX - hx; hx = null;
+    if (d > 90) setMode('closed'); else if (d > 40) go(state.loadout - 1); else if (d < -40) go(state.loadout + 1);
+  });
+})();
+
+/* Ink on the page. */
+const ink = $('ink'), ctx = ink.getContext('2d');
+function fit() { const r = devicePixelRatio || 1; ink.width = phone.clientWidth * r; ink.height = phone.clientHeight * r; ctx.setTransform(r, 0, 0, r, 0, 0); redraw(); }
+function redraw() {
+  ctx.clearRect(0, 0, ink.width, ink.height);
+  for (const s of state.strokes) {
+    ctx.globalCompositeOperation = s.erase ? 'destination-out' : 'source-over';
+    ctx.globalAlpha = s.marker ? .45 : 1; ctx.strokeStyle = s.c; ctx.lineWidth = s.w; ctx.lineCap = ctx.lineJoin = 'round';
+    ctx.beginPath(); s.pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.stroke();
+  }
+  ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+}
+let live = null;
+ink.addEventListener('pointerdown', (e) => {
+  if (sel()) { sel().classList.remove('sel'); render(); return; }
+  if (state.mode === 'closed' || !['pen', 'marker', 'eraser'].includes(state.tool) || !LOADOUTS[state.loadout].tools.includes('draw')) return;
+  const w = [3, 7, 13][state.size] * (state.tool === 'marker' ? 3 : state.tool === 'eraser' ? 4 : 1);
+  live = { pts: [[e.offsetX, e.offsetY]], c: INKS[state.color][0], w, marker: state.tool === 'marker', erase: state.tool === 'eraser' };
+  state.strokes.push(live); state.undone = []; ink.setPointerCapture(e.pointerId);
+});
+ink.addEventListener('pointermove', (e) => { if (!live) return; live.pts.push([e.offsetX, e.offsetY]); redraw(); });
+ink.addEventListener('pointerup', () => { if (live) { live = null; render(); } });
+function undo() { if (state.strokes.length) { state.undone.push(state.strokes.pop()); redraw(); render(); } }
+function redo() { if (state.undone.length) { state.strokes.push(state.undone.pop()); redraw(); render(); } }
+function clearInk() { state.undone.push(...state.strokes.reverse()); state.strokes = []; redraw(); render(); }
+
+/* Stickers: a tap puts one mid-page; a hold of 350 ms or a drag lifts it and carries it there, as in Cove. */
+function place(p, i, x, y, r = 0, s = 1, f = 1) {
+  const el = document.createElement('div'); el.className = 'stuck'; el.innerHTML = stickerHtml(p, i); el.t = { r, s, f };
+  el.style.left = (x - 37) + 'px'; el.style.top = (y - 37) + 'px'; el.style.transform = `rotate(${r}deg) scale(${s}) scaleX(${f})`;
+  $('stuck').appendChild(el); drag(el);
+  state.recents = [[p, i], ...state.recents.filter(([q, j]) => q !== p || j !== i)].slice(0, 8);
+  did('Placed ' + PACKS[p][i]);
+}
+function drag(el) {
+  el.addEventListener('pointerdown', (e) => {
+    e.stopPropagation(); document.querySelectorAll('.stuck.sel').forEach((s) => s.classList.remove('sel')); el.classList.add('sel');
+    // Selection is the mode: the bench turns to dress this one.
+    if (state.mode !== 'closed' && LOADOUTS[state.loadout].tools.includes('bench')) { if (phone.clientWidth >= 600 || state.mode === 'full') { render(); scrollTool('bench'); } else render(); }
+    const dx = e.clientX - el.offsetLeft, dy = e.clientY - el.offsetTop; el.setPointerCapture(e.pointerId);
+    const mv = (m) => { el.style.left = (m.clientX - dx) + 'px'; el.style.top = (m.clientY - dy) + 'px'; };
+    el.addEventListener('pointermove', mv); el.addEventListener('pointerup', () => el.removeEventListener('pointermove', mv), { once: true });
+  });
+}
+function grab(e, p, i) {
+  e.preventDefault(); e.stopPropagation();
+  const x0 = e.clientX, y0 = e.clientY, box = phone.getBoundingClientRect(), seat = e.currentTarget;
+  let ghost = null, lifted = false, travel = 0;
+  const lift = () => {
+    lifted = true; seat.classList.add('seat');
+    ghost = document.createElement('div'); ghost.className = 'stuck lifting'; ghost.innerHTML = stickerHtml(p, i); phone.appendChild(ghost);
+    ghost.style.left = (x0 - box.left - 37) + 'px'; ghost.style.top = (y0 - box.top - 37) + 'px';
+    // The panel drops out of the way on a narrow screen, as Cove's sheet does.
+    if (phone.clientWidth < 600 && state.mode === 'full') { phone.classList.add('aside'); }
+  };
+  const hold = setTimeout(lift, 350);
+  const mv = (m) => {
+    travel = Math.hypot(m.clientX - x0, m.clientY - y0);
+    if (!lifted && travel > 10) { clearTimeout(hold); lift(); }
+    if (ghost) { ghost.style.left = (m.clientX - box.left - 37) + 'px'; ghost.style.top = (m.clientY - box.top - 37) + 'px'; }
+  };
+  const up = (u) => {
+    clearTimeout(hold); removeEventListener('pointermove', mv); removeEventListener('pointerup', up);
+    seat.classList.remove('seat'); phone.classList.remove('aside');
+    const overPanel = !phone.classList.contains('railed') && u.clientX - box.left > box.width - panel.offsetWidth && state.mode !== 'closed';
+    if (ghost) {
+      ghost.remove();
+      if (travel < 24 || overPanel) toast('Back in the drawer');
+      else place(p, i, u.clientX - box.left, u.clientY - box.top);
+    } else { place(p, i, (box.width - (state.mode === 'full' ? panel.offsetWidth : 64)) / 2, box.height * .45); }
+    render();
+  };
+  addEventListener('pointermove', mv); addEventListener('pointerup', up);
+}
+
+function ink_(i) { state.color = i; state.wells = [i, ...state.wells.filter((j) => j !== i)].slice(0, 3); render(); }
+const sel = () => document.querySelector('.stuck.sel');
+function gridBody() {
+  if (state.tab === 'washes') return `<div class="grid washes">${WASHES.map(([c, n]) => `<div style="background:${c};border:1px solid rgba(18,41,107,.2)" onclick="toast('A note on ${n} paper goes on the page')"><span class="mono">${n}</span></div>`).join('')}</div>`;
+  const q = state.q.trim().toLowerCase();
+  const sets = (state.recents.length && !q ? [['recent', state.recents]] : []).concat(Object.keys(PACKS).map((p) => [p, PACKS[p].map((_, i) => [p, i])]));
+  return sets.map(([name, items]) => {
+    const shown = items.filter(([p, i]) => !q || p.includes(q) || PACKS[p][i].includes(q));
+    return shown.length ? `<div class="mono setname">set · ${name}</div><div class="grid">${shown.map(([p, i]) => `<div onpointerdown="grab(event,'${p}',${i})">${stickerHtml(p, i)}</div>`).join('')}</div>` : '';
+  }).join('') || `<div class="hand" style="font-size:19px;color:var(--muted)">nothing on the bench called that 🌷</div>`;
+}
+function renderGrid() { $('benchgrid').innerHTML = gridBody(); }
+// Dress mode: the selected sticker in a mirror, and what can be done to it. Every change can be undone below.
+function dressBody() {
+  const el = sel(), t = el.t;
+  return `<div class="bench"><div class="piece" style="transform:rotate(${t.r}deg) scale(${t.s}) scaleX(${t.f})">${el.innerHTML}</div></div>
+    <div class="row" style="margin-top:8px"><div class="key" onclick="dress('r',-15)">⟲</div><div class="key" onclick="dress('r',15)">⟳</div><div class="key" onclick="dress('s',-.15)">−</div><div class="key" onclick="dress('s',.15)">+</div><div class="key" onclick="dress('f')">⇋</div><div class="key" onclick="dress('top')" title="to the front">⤒</div><div class="key" onclick="dress('x')">🗑</div></div>
+    <div class="mono lbl">frame</div>
+    <div class="row">${['none', 'tape', 'polaroid', 'stamp'].map((f) => `<span class="chip mono ${(t.frame || 'none') === f ? 'on' : ''}" onclick="dress('frame','${f}')">${f}</span>`).join('')}</div>
+    <div class="mono lbl" style="text-align:center;margin-top:12px">tap the page to put it down</div>`;
+}
+function dress(k, v) {
+  const el = sel(); if (!el) return; const t = el.t;
+  if (k === 'r') t.r += v; if (k === 's') t.s = Math.min(1.8, Math.max(.5, t.s + v)); if (k === 'f') t.f *= -1;
+  if (k === 'top') $('stuck').appendChild(el);
+  if (k === 'frame') t.frame = t.frame === v ? 'none' : v;
+  if (k === 'x') { el.remove(); did('Took a sticker off'); return render(); }
+  el.style.transform = `rotate(${t.r}deg) scale(${t.s}) scaleX(${t.f})`; el.dataset.frame = t.frame || 'none';
+  did({ r: 'Turned it', s: 'Sized it', f: 'Flipped it', top: 'Brought it to the front', frame: 'Framed it' }[k]); render();
+}
+function did(what) { state.did = [what, ...state.did].slice(0, 12); $('undostrip').innerHTML = `<span class="mono">${what}</span><b onclick="toast('Undone')">Undo</b>`; $('undostrip').classList.add('on'); clearTimeout(did.t); did.t = setTimeout(() => $('undostrip').classList.remove('on'), 3500); }
+
+/* Capture, agents, switches. */
+let recAt = 0;
+function shot() { $('flash').style.opacity = .9; setTimeout(() => $('flash').style.opacity = 0, 120); toast('Screenshot saved. It is on the shelf too'); }
+function record() {
+  if (!state.rec) toast('Android asks “Start recording?” first, every time'); else toast('Recording saved to the gallery');
+  state.rec = !state.rec; recAt = Date.now(); render();
+}
+const clock = (t) => { const s = Math.max(0, Math.floor((Date.now() - t) / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+const recTime = () => clock(recAt);
+function approve(i, yes) { AGENTS[i].cls = 'working'; AGENTS[i].since = Date.now(); AGENTS[i].doing = yes ? 'Bash: npm run build' : 'Denied. Looking for another way'; render(); toast(yes ? 'Approved' : 'Denied'); }
+function flip(k) { state.toggles[k] = !state.toggles[k]; render(); }
+setInterval(() => { if (state.mode !== 'closed' && (state.rec || LOADOUTS[state.loadout].tools.includes('agents'))) render(); }, 1000);
+
+/* Sheets. */
+function sheet(which) {
+  const s = $('sheet');
+  if (which === 'loadouts') s.innerHTML = `<h3 class="display">Loadouts</h3><div class="mono" style="color:var(--muted)">a loadout is a set of tools. pick one, or make another</div>` +
+    LOADOUTS.map((l, i) => `<div class="item" onclick="go(${i});closeSheet()"><span class="g">${TOOLS[l.tools[0]].g}</span><div><b>${l.name}</b><small>${l.tools.map((t) => TOOLS[t].name).join(' · ')}</small></div></div>`).join('') +
+    `<div class="item" onclick="newLoadout()"><span class="g">+</span><div><b>New loadout</b><small>start empty and add tools</small></div></div>`;
+  else s.innerHTML = `<h3 class="display">Add a tool</h3><div class="mono" style="color:var(--muted)">to ${LOADOUTS[state.loadout].name}. a tool can sit in many loadouts</div>` +
+    Object.entries(TOOLS).filter(([k]) => !LOADOUTS[state.loadout].tools.includes(k)).map(([k, t]) => `<div class="item" onclick="addTool('${k}')"><span class="g">${t.g}</span><div><b>${t.name}</b><small>${t.about}</small></div></div>`).join('') +
+    `<div class="ask hand" style="font-size:20px" onclick="toast('Oma: “what should it do?” An agent builds it as a tool file');closeSheet()">ask Oma to make a new tool…</div>`;
+  s.classList.add('on');
+}
+function closeSheet() { $('sheet').classList.remove('on'); }
+function addTool(k) { LOADOUTS[state.loadout].tools.push(k); closeSheet(); render(); scrollTool(k); }
+function newLoadout() { LOADOUTS.push({ name: 'Loadout ' + (LOADOUTS.length + 1), tools: [] }); go(LOADOUTS.length - 1); closeSheet(); sheet('tools'); }
+$('home').addEventListener('pointerdown', closeSheet);
+
+/* States to open at, for screenshots: #full, #rail, #work, #phone, #bench. */
+addEventListener('resize', fit); fit();
+const h = location.hash.slice(1);
+if (h === 'work') state.loadout = 1; if (h === 'phone') state.loadout = 2;
+setMode(h === 'rail' ? 'rail' : h ? 'full' : 'closed');
+if (h === 'dress') { place('donut-frog', 7, 110, 330, -10); $('stuck').lastChild.classList.add('sel'); render(); }
+if (h === 'rail') { state.strokes.push({ pts: [[40, 420], [90, 380], [150, 430], [210, 390]], c: '#ff4f9a', w: 7 }); redraw(); render(); }
+</script>
+</body>
+</html>
