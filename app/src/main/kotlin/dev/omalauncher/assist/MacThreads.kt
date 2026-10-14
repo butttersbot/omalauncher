@@ -1139,14 +1139,24 @@ object MacThreads {
      * The words of the new chat [chat], filed at [asked], are for the Mac and name no project there: the front
      * agent named none, or would have given them to the phone, which a new chat never is. The entry asks him in
      * the tab, in one line, which project folder on the Mac, and his next words there answer it ([choose]); his
-     * words wait meanwhile and nothing is sent. With no Mac set up, or no folder known, it says so and asks nothing.
+     * words wait meanwhile and nothing is sent. With no Mac set up, or no folder known, it says so and asks nothing;
+     * with the Mac out of reach his words are kept, unsent, with `[ try again ]` under them ([chatPlace]).
      */
     fun askProject(context: Context, asked: Long, chat: String) {
         restore(context)
         val app = context.applicationContext
         val log = ChatLog.of(app)
         val projects = macProjects(view.threads)
-        val none = if (config(app) == null) MAC_NOT_SET_UP else MAC_NO_PROJECTS.takeIf { projects.isEmpty() }
+        val none = when (chatPlace(config(app) != null, view.reachable, projects.size)) {
+            ChatPlace.Ask -> null
+            ChatPlace.NotSetUp -> MAC_NOT_SET_UP
+            ChatPlace.NoProjects -> MAC_NO_PROJECTS
+            ChatPlace.Unreachable -> {
+                log.update(asked, save = true) { it.copy(agent = QUICK_AGENT, result = MAC_CHAT_UNREACHABLE, status = TaskStatus.Dropped, answeredBy = OMA_NAME) }
+                refresh(app)
+                return
+            }
+        }
         if (none != null) {
             log.update(asked, save = true) { it.copy(agent = QUICK_AGENT, result = none, status = TaskStatus.Failed) }
             // The Mac may only not have been heard from yet in this run: its folders are asked for, for the next try.

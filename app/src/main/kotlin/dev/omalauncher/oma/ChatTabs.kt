@@ -31,13 +31,42 @@ const val OMA_TAB = "oma"
 fun chatTabs(threads: List<AgentThread>): List<String> = listOf(OMA_TAB) + threads.map { it.key }
 
 /**
- * The threads the header and the strip show, in their order: what he archived is left out, and what he pinned
- * comes first, in the order the threads stand in. [archived] are the keys archived now, revived ones left out.
+ * The threads the header and the strip show, in their order: the [live] ones, which are the threads home has
+ * tiles for ([dev.omalauncher.widgets.liveThreads]: at work, or within 12 hours of it, or pinned, and never
+ * archived), what he pinned first, in the order they stand in. The tab [wanted], by a tile he keeps on another
+ * page or a receipt in the Oma stream, is shown after them while it is open, though its thread has rested longer:
+ * it is one of [all], every thread there is, and not [archived], the keys archived now.
  */
-fun shownThreads(threads: List<AgentThread>, pinned: List<String>, archived: Set<String>): List<AgentThread> {
-    val kept = threads.filter { it.key !in archived }
+fun shownThreads(live: List<AgentThread>, pinned: List<String>, all: List<AgentThread> = emptyList(), archived: Set<String> = emptySet(), wanted: String? = null): List<AgentThread> {
+    val open = all.firstOrNull { it.key == wanted && it.key !in archived && live.none { shown -> shown.key == it.key } }
+    val kept = live + listOfNotNull(open)
     return kept.filter { it.key in pinned } + kept.filter { it.key !in pinned }
 }
+
+/**
+ * Where the tab strip scrolls to so the stretch from [start] to [end] of what it holds, in pixels, is wholly in
+ * view, [view] wide, from [now], where it stands: unchanged when it already is, as little as brings it in when it
+ * is not, and its start first when it is wider than the strip. The strip keeps the result inside what it can scroll.
+ */
+fun stripScroll(now: Int, view: Int, start: Int, end: Int): Int = when {
+    end - start >= view || start < now -> start
+    end > now + view -> end - view
+    else -> now
+}
+
+/**
+ * The stretch of the strip the open tab needs in view, from the stretch each tab and ＋ ([NEW_TAB]) take in
+ * [spans]: the open one's, and when it is the last tab, as a chat just started with ＋ is, the ＋ beside it too,
+ * so another can be started without scrolling. Null until the open tab has been laid out.
+ */
+fun stripSpan(open: String, tabs: List<String>, spans: Map<String, Pair<Int, Int>>): Pair<Int, Int>? {
+    val span = spans[open] ?: return null
+    val plus = spans[NEW_TAB]?.takeIf { tabs.lastOrNull() == open }
+    return span.first to maxOf(span.second, plus?.second ?: span.second)
+}
+
+/** What [stripSpan] calls ＋ among the tabs' keys. No thread has it, nor the Oma tab. */
+const val NEW_TAB = "+"
 
 /**
  * The tab that shows when [wanted] was asked for, by a tile's intent or a tap: that thread's while it is among
@@ -175,6 +204,19 @@ fun tabMend(tab: String, seen: Map<BuilderId, BuilderFacts>): TabMend {
 
 /** The row that lists the archived tabs, with how many there are. */
 fun archivedRow(count: Int) = "${TabAction.Archived.label} ($count)"
+
+/** What stands over the archived tabs' list: short, so it fits the menu's width on one line. */
+fun archivedCaption(count: Int) = archivedRow(count) + " · tap to restore"
+
+/** Where a tab's menu is: its rows, a field to rename the tab in, or the archived tabs. */
+enum class MenuPage { Rows, Rename, Archived }
+
+/**
+ * Where Back leaves a tab's menu that shows [page]: from Rename or the archived tabs back to the rows, and from
+ * the rows out of the menu, which is null. Never the whole chat while the menu is open. With the keyboard up,
+ * the first Back is the keyboard's own and only puts it away, so a name half typed is still there.
+ */
+fun menuBack(page: MenuPage): MenuPage? = if (page == MenuPage.Rows) null else MenuPage.Rows
 
 /** Whose task a tab's Stop ends: one of the phone's builders, or a thread on the Mac. */
 sealed interface TabStop {

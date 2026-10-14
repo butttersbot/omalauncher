@@ -10,6 +10,7 @@ import android.os.Bundle
 import android.view.HapticFeedbackConstants
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.PickVisualMediaRequest
@@ -48,6 +49,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -68,7 +70,11 @@ import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.contentDescription
@@ -95,6 +101,7 @@ import dev.omalauncher.assist.BuilderWatch
 import dev.omalauncher.assist.ChatTitles
 import dev.omalauncher.assist.builderApprovalTitle
 import dev.omalauncher.assist.builderId
+import dev.omalauncher.assist.chatRetried
 import dev.omalauncher.assist.gotBy
 import dev.omalauncher.assist.handOverContext
 import dev.omalauncher.assist.handOverPreface
@@ -112,6 +119,7 @@ import dev.omalauncher.ui.BracketAction
 import dev.omalauncher.ui.Menu
 import dev.omalauncher.ui.MenuItem
 import dev.omalauncher.ui.MicIcon
+import dev.omalauncher.ui.Motion
 import dev.omalauncher.ui.Pack
 import dev.omalauncher.ui.PageGap
 import dev.omalauncher.ui.ReadingWidth
@@ -119,12 +127,15 @@ import dev.omalauncher.ui.Speech
 import dev.omalauncher.ui.ThreadDot
 import dev.omalauncher.ui.applySystemBars
 import dev.omalauncher.ui.framed
+import dev.omalauncher.widgets.liveThreads
+import dev.omalauncher.widgets.savedTileStamps
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.DateFormat
 import java.util.Date
+import kotlin.math.roundToInt
 
 /**
  * The Oma app: one thread of requests to Oma, with a field for typed messages and image attachments. There is
@@ -235,8 +246,10 @@ private fun OmaChatScreen(
     val all = remember(tick) { agentThreadsNow(context) }
     val book = remember(tick) { TabBook.change(context) { it.revive(all, tasks) } }
     LaunchedEffect(tick) { ChatTitles.check(context) }
-    // The header's dots and the tabs: nothing archived, the pinned first. The tab that shows follows from what was asked for.
-    val threads = shownThreads(all, book.pinned, book.archived.keys)
+    // The header's dots and the tabs: the threads home has tiles for, from the same stamps, the pinned first. The tab that
+    // shows follows from what was asked for.
+    val live = remember(tick) { liveThreads(all, savedTileStamps(context), System.currentTimeMillis(), MacThreads.view.listed, book.pinned.toSet(), book.archived.keys) }
+    val threads = shownThreads(live, book.pinned, all, book.archived.keys, wanted)
     val tab = openTab(wanted, threads)
     val to = sendTo(tab, threads, book, tasks)
     // On a builder's tab the field and its stop are that builder's alone; on the Oma tab they are every builder's;
@@ -521,6 +534,11 @@ private fun OmaChatScreen(
                             },
                             // A new chat's answers have none: its work is the Mac's, never the phone's.
                             onBuild = if (task.chat.isEmpty()) ({ sendToBuild(task.time) }) else null,
+                            // Its words the Mac was out of reach for are Oma's to read again, never the phone's to do.
+                            onAgain = if (chatRetried(task) != null) ({
+                                QuickLane.again(context, task.time)
+                                tick++
+                            }) else null,
                         )
                         // A builder's entry reads that builder's state alone, and only its approvals are cards under it.
                         else -> {
@@ -656,7 +674,7 @@ private fun OmaChatScreen(
             }
             val archived = all.filter { it.key in book.archived }
             TabMenu(
-                title = tabTitle(key, all),
+                title = tabTitle(key, threads + all),
                 actions = tabMenu(key, key in book.pinned, stop != null, answer != null, archived.size, mend),
                 archived = archived,
                 onDismiss = { menuFor = null },
@@ -722,15 +740,35 @@ private fun TabStrip(
     onNew: () -> Unit,
 ) {
     val view = LocalView.current
+    val tabs = chatTabs(threads)
+    // Where each tab and the ＋ lie along the strip, as last laid out, and how wide the strip shows.
+    val spans = remember { mutableStateMapOf<String, Pair<Int, Int>>() }
+    var width by remember { mutableIntStateOf(0) }
+    val scroll = rememberScrollState()
+    val margin = with(LocalDensity.current) { STRIP_MARGIN.roundToPx() }
+    val want = stripSpan(open, tabs, spans)
+    // The open tab is brought wholly into view as it opens, after ＋ or Restore too, and again if it changes size.
+    LaunchedEffect(open, want, width) {
+        val (start, end) = want ?: return@LaunchedEffect
+        if (width <= 0) return@LaunchedEffect
+        val to = stripScroll(scroll.value, width, start - margin, end + margin).coerceIn(0, scroll.maxValue)
+        if (to == scroll.value) return@LaunchedEffect
+        if (Motion.reduced) scroll.scrollTo(to) else scroll.animateScrollTo(to, Motion.spatial)
+    }
+    fun Modifier.spans(key: String) = onPlaced { spot ->
+        val x = spot.positionInParent().x.roundToInt()
+        spans[key] = x to x + spot.size.width
+    }
     Row(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 6.dp, vertical = 4.dp).height(IntrinsicSize.Min),
+        Modifier.fillMaxWidth().onSizeChanged { width = it.width }.horizontalScroll(scroll).padding(horizontal = 6.dp, vertical = 4.dp).height(IntrinsicSize.Min),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        for (key in chatTabs(threads)) {
+        for (key in tabs) {
             val thread = threads.firstOrNull { it.key == key }
             val on = key == open
             Row(
                 Modifier
+                    .spans(key)
                     .padding(end = 6.dp)
                     .fillMaxHeight()
                     .framed(Pack.hair, if (on) Pack.foreground else Pack.border, if (on) Pack.foreground else Pack.surface, radius = 6.dp)
@@ -753,6 +791,7 @@ private fun TabStrip(
         // As tall as the tabs and as wide as it is tall.
         Box(
             Modifier
+                .spans(NEW_TAB)
                 .fillMaxHeight()
                 .aspectRatio(1f, matchHeightConstraintsFirst = true)
                 .framed(Pack.hair, Pack.border, Pack.surface, radius = 6.dp)
@@ -763,19 +802,20 @@ private fun TabStrip(
     }
 }
 
+/** The room left beside the open tab when it is scrolled into view: the strip's own padding, which its tabs are measured inside of. */
+private val STRIP_MARGIN = 6.dp
+
 /** How far apart the header's dots stand, centre to centre: the 9 dp dot with the mock-up's 7 dp between. */
 private val DOT_PITCH = 16.dp
 
 /** The most of the header the dots take before they scroll, so the tab's name always has room. */
 private val DOTS_WIDTH = DOT_PITCH * 12
 
-/** Where a menu is: its rows, a field to rename the tab in, or the archived tabs. */
-private enum class MenuPage { Rows, Rename, Archived }
-
 /**
  * The menu a long press on a tab opens (Boss, 2026-10-13: "long press on a tab, and then have some options
  * there"), in home's menu look: the tab's name as a caption over [actions] ([tabMenu]). Rename opens a field in
- * place, with done and cancel; the last row lists the [archived] tabs, and tapping one brings it back.
+ * place, with done and cancel; the last row lists the [archived] tabs, and tapping one brings it back. Back
+ * goes where [menuBack] says, as home's own menu closes on Back rather than leaving home.
  */
 @Composable
 private fun TabMenu(
@@ -788,6 +828,10 @@ private fun TabMenu(
     onAction: (TabAction) -> Unit,
 ) {
     var page by remember { mutableStateOf(MenuPage.Rows) }
+    // Kept over the whole menu, so a name half typed is still there if he steps back to the rows and in again.
+    var name by remember { mutableStateOf(title) }
+    // Back steps out of a page to the rows, and from the rows closes the menu, never the chat under it.
+    BackHandler { menuBack(page)?.let { page = it } ?: onDismiss() }
     val caption = Pack.mono(Pack.size.small, Pack.muted)
     Menu(onDismiss) {
         when (page) {
@@ -806,7 +850,6 @@ private fun TabMenu(
             }
             MenuPage.Rename -> {
                 BasicText(Pack.caption("Rename $title"), Modifier.padding(horizontal = 12.dp, vertical = 10.dp), style = caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                var name by remember { mutableStateOf(title) }
                 val focus = remember { FocusRequester() }
                 LaunchedEffect(Unit) { focus.requestFocus() }
                 BasicTextField(
@@ -826,7 +869,7 @@ private fun TabMenu(
                 }
             }
             MenuPage.Archived -> {
-                BasicText(Pack.caption(archivedRow(archived.size) + " · tap one to bring it back"), Modifier.padding(horizontal = 12.dp, vertical = 10.dp), style = caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                BasicText(Pack.caption(archivedCaption(archived.size)), Modifier.padding(horizontal = 12.dp, vertical = 10.dp), style = caption, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 for (thread in archived) {
                     MenuItem(thread.name) {
                         onRestore(thread.key)

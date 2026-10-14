@@ -26,6 +26,38 @@ fun macProjects(threads: List<MacThread>): List<MacProject> =
 /** What a new chat says when no project folder on the Mac is known: there is nothing to pick from, so nothing is asked. */
 const val MAC_NO_PROJECTS = "This chat is for work on the Mac, and no project on the Mac is known on this phone yet. Nothing was sent."
 
+/**
+ * What a new chat's words that name no thread there say while the Mac is out of reach. They are kept, nothing is
+ * sent and no phone builder takes them: `[ try again ]` under them asks Oma again once the Mac is back.
+ */
+const val MAC_CHAT_UNREACHABLE = "Mac unreachable — this chat is for the Mac."
+
+/** What becomes of a new chat's words that name no thread on the Mac ([chatPlace]). */
+enum class ChatPlace {
+    /** He is asked which project folder they are for. */
+    Ask,
+
+    /** No Mac is set up on this phone: said, and nothing asked. */
+    NotSetUp,
+
+    /** The Mac did not answer at the last try: his words wait with `[ try again ]` under them. */
+    Unreachable,
+
+    /** The Mac answers but no project folder of it is known: said, and nothing asked. */
+    NoProjects,
+}
+
+/**
+ * Where a new chat's words go when they name no thread: with a Mac [setUp] that is [reachable] and has [projects]
+ * folders known, to the question of which; otherwise they stay, saying why. Never to the phone.
+ */
+fun chatPlace(setUp: Boolean, reachable: Boolean, projects: Int): ChatPlace = when {
+    !setUp -> ChatPlace.NotSetUp
+    !reachable -> ChatPlace.Unreachable
+    projects == 0 -> ChatPlace.NoProjects
+    else -> ChatPlace.Ask
+}
+
 /** The one short line a new chat asks him with, naming every folder of [projects]. */
 fun macProjectQuestion(projects: List<MacProject>): String = "Which project on the Mac? " + projects.joinToString(", ") { it.folder }
 

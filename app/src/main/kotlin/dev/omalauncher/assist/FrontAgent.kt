@@ -4,6 +4,7 @@ import android.content.Context
 import dev.omalauncher.oma.ChatHistory
 import dev.omalauncher.oma.ChatTask
 import dev.omalauncher.oma.TaskStatus
+import dev.omalauncher.oma.UNDECIDED_AGENT
 import org.json.JSONObject
 import java.io.File
 
@@ -197,6 +198,57 @@ fun frontOutcome(handed: Boolean, stopped: Boolean, failed: Boolean, answered: B
     failed -> FrontOutcome.Broken
     else -> FrontOutcome.Answered
 }
+
+/** How a plain question opens: the words he starts one with, so "Is it raining in Seoul" is one even without its "?". */
+private val QUESTION_OPENERS = setOf(
+    "what", "whats", "who", "whos", "whom", "whose", "when", "where", "wheres", "why", "how", "hows", "which",
+    "is", "isnt", "are", "arent", "was", "were", "do", "does", "doesnt", "did", "can", "could", "would", "should", "will", "has", "have", "am",
+)
+
+/**
+ * Words that make a request work, whatever its form: the verbs the front agent is told to hand over for, more
+ * verbs of doing, and what work is done on. "Can you fix the build?" is a question in form and work in fact.
+ */
+private val WORK_WORDS = setOf(
+    "build", "make", "change", "fix", "install", "write", "edit", "run", "set", "setup", "continue", "create", "add", "remove",
+    "delete", "update", "refactor", "implement", "list", "commit", "push", "merge", "deploy", "debug", "rename", "move", "finish",
+    "start", "restart", "clean", "generate", "draft", "open", "send", "put", "review",
+    "project", "repo", "repository", "file", "folder", "directory", "code", "codebase", "branch", "thread", "script", "bug", "feature",
+)
+
+/** Whether [word] is [stem] or one of its plain endings: fixes, fixed, fixing; makes, making; runs, running. */
+private fun inflects(word: String, stem: String) =
+    word == stem || word == stem + "s" || word == stem + "es" || word == stem + "ed" || word == stem + "d" || word == stem + "ing" ||
+        (stem.endsWith("e") && word == stem.dropLast(1) + "ing") || word == stem + stem.last() + "ing" || word == stem + stem.last() + "ed"
+
+/**
+ * Whether [words] ask for work rather than ask a plain question (Boss, 2026-10-13: "The plus button should always
+ * open up a Mac session"). A plain question opens as one or ends in "?" and has no word of [WORK_WORDS] in it, so
+ * "What's the capital of Peru?" is a question and "In the Scratch project, list the files by name." is work, as
+ * are "Can you fix the build?" and "Hi". Anything that is not plainly a question is work: in doubt it goes to the Mac.
+ */
+fun asksForWork(words: String): Boolean {
+    val said = words.lowercase().replace("'", "").replace("’", "").split(Regex("[^\\p{L}\\p{N}?]+")).filter { it.isNotEmpty() }
+    val plain = said.map { it.trimEnd('?') }.filter { it.isNotEmpty() }
+    if (plain.isEmpty()) return true
+    val question = plain.first() in QUESTION_OPENERS || words.trimEnd().endsWith("?")
+    return !question || plain.any { word -> WORK_WORDS.any { inflects(word, it) } }
+}
+
+/**
+ * Whether the front agent's answer of its own is held back from him and his words go to the Mac instead: in a
+ * new chat ([chat] not empty) when [prompt] asks for work ([asksForWork]). Only a mark can send a new chat's
+ * work anywhere; prose in reply to it is never shown, whatever the model was told. On the Oma tab it answers as ever.
+ */
+fun frontHolds(chat: String, prompt: String): Boolean = chat.isNotEmpty() && asksForWork(prompt)
+
+/**
+ * [task] as `[ try again ]` leaves it: a new chat's words the Mac was out of reach for ([MAC_CHAT_UNREACHABLE]),
+ * with Oma again and waiting to be read, his words kept and what was said under them gone. Null for any other
+ * entry: one he cancelled before Oma read it is not Oma's, and the Oma tab's are never sent again from here.
+ */
+fun chatRetried(task: ChatTask): ChatTask? =
+    if (task.chat.isNotEmpty() && task.quick && task.status == TaskStatus.Dropped) task.copy(agent = UNDECIDED_AGENT, result = "", status = TaskStatus.Queued, answeredBy = "", steps = emptyList()) else null
 
 /**
  * The longest request the front agent is asked first. The thread keeps this much of a prompt, and the

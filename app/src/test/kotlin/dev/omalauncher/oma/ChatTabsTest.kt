@@ -110,12 +110,61 @@ class ChatTabsTest {
     private val book = TabMeta(chats = listOf(chatA, chatMac, chatNew))
     private fun chatThread(chat: NewChat, name: String = NEW_CHAT_NAME, state: ThreadState = ThreadState.Idle) = AgentThread(chat.key, name, state, "", "")
 
-    @Test fun archivedTabsAreHiddenAndPinnedOnesComeFirstAfterOma() {
-        val shown = shownThreads(threads, pinned = listOf("mac:t-pond"), archived = setOf("mac:t-ff4"))
-        assertEquals(listOf(OMA_TAB, "mac:t-pond", PHONE_THREAD), chatTabs(shown))
-        assertEquals(threads, shownThreads(threads, emptyList(), emptySet()))
+    @Test fun theLiveThreadsAreShownAndPinnedOnesComeFirstAfterOma() {
+        // The live set (liveThreads, AgentTilesTest) has the archived ones out already.
+        val live = listOf(phone, pond)
+        assertEquals(listOf(OMA_TAB, "mac:t-pond", PHONE_THREAD), chatTabs(shownThreads(live, pinned = listOf("mac:t-pond"))))
+        assertEquals(threads, shownThreads(threads, emptyList()))
         // A pin of a tab that is not shown changes nothing of the others' order.
-        assertEquals(listOf(phone, pond), shownThreads(threads, listOf("mac:t-ff4"), setOf("mac:t-ff4")))
+        assertEquals(live, shownThreads(live, listOf("mac:t-ff4")))
+    }
+
+    /** A thread past its 12 hours has no dot, but its tab still opens from a receipt or a tile he keeps on another page. */
+    @Test fun theTabAskedForIsShownWhileItIsOpenThoughItsThreadRested() {
+        val live = listOf(phone, pond)
+        assertEquals(listOf(phone, pond, ff4), shownThreads(live, emptyList(), threads, emptySet(), wanted = "mac:t-ff4"))
+        assertEquals("mac:t-ff4", openTab("mac:t-ff4", shownThreads(live, emptyList(), threads, emptySet(), wanted = "mac:t-ff4")))
+        // Not twice, not an archived one, and not one that is no thread's.
+        assertEquals(live, shownThreads(live, emptyList(), threads, emptySet(), wanted = "mac:t-pond"))
+        assertEquals(live, shownThreads(live, emptyList(), threads, setOf("mac:t-ff4"), wanted = "mac:t-ff4"))
+        assertEquals(live, shownThreads(live, emptyList(), threads, emptySet(), wanted = "mac:t-gone"))
+        assertEquals(live, shownThreads(live, emptyList(), threads, emptySet(), wanted = null))
+        // A new chat ＋ just opened has said nothing, so it is not live, and shows because it is open.
+        val fresh = chatThread(chatNew)
+        assertEquals(listOf(phone, fresh), shownThreads(listOf(phone), emptyList(), listOf(phone, fresh), emptySet(), wanted = chatNew.key))
+    }
+
+    /** The critic's case: after ＋ the new tab showed as "NEW C…" and the ＋ was off the strip. */
+    @Test fun theStripScrollsTheOpenTabWhollyIntoViewAndNoFurther() {
+        // In view already: it stays where it is.
+        assertEquals(40, stripScroll(now = 40, view = 300, start = 100, end = 200))
+        // Past the right edge: just enough to bring its end in.
+        assertEquals(150, stripScroll(now = 0, view = 300, start = 380, end = 450))
+        // Before the left edge: its start at the edge.
+        assertEquals(20, stripScroll(now = 200, view = 300, start = 20, end = 90))
+        // Wider than the strip: its start first.
+        assertEquals(500, stripScroll(now = 0, view = 300, start = 500, end = 900))
+        val tabs = listOf(OMA_TAB, PHONE_THREAD, chatNew.key)
+        val spans = mapOf(OMA_TAB to (0 to 60), PHONE_THREAD to (60 to 140), chatNew.key to (140 to 260), NEW_TAB to (260 to 300))
+        // The last tab, a chat just started, takes the ＋ beside it into view too; any other tab only itself.
+        assertEquals(140 to 300, stripSpan(chatNew.key, tabs, spans))
+        assertEquals(60 to 140, stripSpan(PHONE_THREAD, tabs, spans))
+        assertEquals(60, stripScroll(now = 0, view = 240, start = 140, end = 300))
+        // Not laid out yet: nothing to scroll to.
+        assertNull(stripSpan("mac:t-ff4", tabs, spans))
+        assertEquals(140 to 260, stripSpan(chatNew.key, tabs, spans - NEW_TAB))
+    }
+
+    @Test fun backStepsOutOfAMenuPageThenClosesTheMenu() {
+        assertEquals(MenuPage.Rows, menuBack(MenuPage.Rename))
+        assertEquals(MenuPage.Rows, menuBack(MenuPage.Archived))
+        assertNull(menuBack(MenuPage.Rows))
+    }
+
+    @Test fun theArchivedListsCaptionIsShort() {
+        assertEquals("Archived (1) · tap to restore", archivedCaption(1))
+        // What a menu's caption holds on one line at its narrowest.
+        assertTrue(archivedCaption(99).length <= 30)
     }
 
     @Test fun aNewChatsTabShowsWhatWasSaidInItAndNoOtherTabTakesItsEntries() {

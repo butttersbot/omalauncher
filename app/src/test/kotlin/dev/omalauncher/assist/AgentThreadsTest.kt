@@ -228,4 +228,24 @@ class AgentThreadsTest {
         val making = agentThreads(listOf(starting), BuilderNow(), MacView(), chats = listOf(fresh)).last()
         assertEquals(ThreadState.Working, making.state); assertEquals(MAC_MAKING, making.doing)
     }
+
+    /**
+     * The critic's case (2026-10-14): a ＋ chat's tile said THIS PHONE before it had a thread. A new chat is the
+     * Mac's from the start: unbound it is a Mac thread as reachable as the Mac was, waiting for a project, and
+     * words the Mac was out of reach for need him.
+     */
+    @Test fun aNewChatIsTheMacsBeforeItHasAThreadThere() {
+        val fresh = NewChat("c3", 3)
+        val answered = ChatTask(40, QUICK_AGENT, "what is a worktree", result = "A second checkout.", status = TaskStatus.Done, chat = "c3")
+        val waits = agentThreads(listOf(answered), BuilderNow(), MacView(reachable = true), chats = listOf(fresh)).last()
+        assertTrue(waits.mac); assertTrue(waits.unplaced); assertTrue(waits.reachable)
+        val empty = agentThreads(emptyList(), BuilderNow(), MacView(), chats = listOf(fresh)).last()
+        assertTrue(empty.mac); assertFalse(empty.reachable)
+        val unsent = ChatTask(41, QUICK_AGENT, "list the files", result = MAC_CHAT_UNREACHABLE, status = TaskStatus.Dropped, chat = "c3")
+        val away = agentThreads(listOf(unsent), BuilderNow(), MacView(), chats = listOf(fresh)).last()
+        assertEquals(ThreadState.Attention, away.state); assertEquals(NEEDS_ATTENTION, away.label)
+        // Bound, it is its thread, and has a place on the Mac.
+        val bound = agentThreads(emptyList(), BuilderNow(), MacView(reachable = true), chats = listOf(NewChat("c2", 2, mac = "t-new"))).last()
+        assertTrue(bound.mac); assertFalse(bound.unplaced)
+    }
 }

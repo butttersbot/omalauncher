@@ -44,4 +44,15 @@ class MacProjectsTest {
         assertNull(macPickProject("menu", two))
         assertEquals("menu-art", macPickProject("menu art", two)?.folder)
     }
+
+    /** A new chat's words that name no thread go to the question of which project, or stay saying why: never to the phone. */
+    @Test fun wordsThatNameNoThreadAreAskedAboutOrKeptWithTheReason() {
+        assertEquals(ChatPlace.Ask, chatPlace(setUp = true, reachable = true, projects = 2))
+        assertEquals(ChatPlace.NoProjects, chatPlace(setUp = true, reachable = true, projects = 0))
+        // The critic's case: the Mac out of reach and no thread listed. Kept with `[ try again ]`, not answered on the phone.
+        assertEquals(ChatPlace.Unreachable, chatPlace(setUp = true, reachable = false, projects = 0))
+        assertEquals(ChatPlace.Unreachable, chatPlace(setUp = true, reachable = false, projects = 3))
+        assertEquals(ChatPlace.NotSetUp, chatPlace(setUp = false, reachable = false, projects = 0))
+        assertEquals("Mac unreachable — this chat is for the Mac.", MAC_CHAT_UNREACHABLE)
+    }
 }

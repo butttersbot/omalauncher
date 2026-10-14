@@ -3,6 +3,7 @@ package dev.omalauncher.widgets
 import dev.omalauncher.assist.AgentThread
 import dev.omalauncher.assist.PHONE_THREAD
 import dev.omalauncher.assist.ThreadState
+import dev.omalauncher.oma.chatId
 import org.json.JSONObject
 
 /*
@@ -77,6 +78,54 @@ fun tileLife(state: ThreadState, busy: Long?, now: Long): TileLife {
         idle >= (AGENT_TILE_IDLE_HOURS - AGENT_TILE_FADE_HOURS) * HOUR_MS -> TileLife.Fading
         else -> TileLife.Stays
     }
+}
+
+/**
+ * Whether a thread is shown at all, by its dot and tab in the chat and its tile on home alike: [archived] never,
+ * [pinned] always, any other by [tileLife]. [busy] is when it was last busy ([lastBusy]).
+ */
+fun threadLife(state: ThreadState, busy: Long?, now: Long, pinned: Boolean, archived: Boolean): TileLife = when {
+    archived -> TileLife.Gone
+    pinned -> TileLife.Stays
+    else -> tileLife(state, busy, now)
+}
+
+/** When [thread] was last busy as far as the phone knows: when it last worked, or when it was last seen busy ([stamp]). */
+fun lastBusy(thread: AgentThread, stamp: TileStamp?): Long? = listOfNotNull(thread.worked, stamp?.busy).maxOrNull()
+
+/**
+ * Whether a thread remembered by its [stamp] but not heard of now is gone: the Mac's own list has been heard
+ * this run ([listed]) without it, or it has rested [AGENT_TILE_IDLE_HOURS] since it was last seen busy. Until
+ * then it is only not heard of yet, as after a restart before the Mac has answered.
+ */
+fun forgotten(stamp: TileStamp, now: Long, listed: Boolean): Boolean = listed || tileLife(ThreadState.Idle, stamp.busy, now) == TileLife.Gone
+
+/** What the chat's dot of a thread that is remembered but not heard of now says. */
+const val NOT_HEARD_FROM = "not heard from"
+
+/**
+ * The threads Boss is shown at [now]: one set for the chat's dots and tabs and for home's tiles (Boss,
+ * 2026-10-13: tiles "show up while they're active, and then they fall off after … a certain amount of time of
+ * inactivity", "12 hours is fine"). Of [threads], each [threadLife] keeps; then each thread of [stamps] that had
+ * a tile at the last look and is not heard of now, until it is [forgotten], by its name alone, at rest and out
+ * of reach. Those stand after the builders and the Mac's threads and before the new chats, so the newest chat
+ * stays beside ＋. Two tiles stay that this set leaves out: one he carried to another page, which is his, and
+ * none he took off home shows here either way, since the chat has no tile to take off.
+ */
+fun liveThreads(
+    threads: List<AgentThread>,
+    stamps: Map<String, TileStamp>,
+    now: Long,
+    listed: Boolean,
+    pinned: Set<String> = emptySet(),
+    archived: Set<String> = emptySet(),
+): List<AgentThread> {
+    val known = threads.map { it.key }.toSet()
+    val live = threads.filter { threadLife(it.state, lastBusy(it, stamps[it.key]), now, it.key in pinned, it.key in archived) != TileLife.Gone }
+    val remembered = stamps.filter { (key, stamp) -> key !in known && stamp.placed && key !in archived && !forgotten(stamp, now, listed) }
+        .map { (key, stamp) -> AgentThread(key, stamp.name, ThreadState.Idle, "", NOT_HEARD_FROM, stamp.busy, reachable = false) }
+    val (chats, others) = live.partition { chatId(it.key) != null }
+    return others + remembered + chats
 }
 
 /** Why a thread has no tile though it could: he took its tile off home, and it stays off until the thread next starts work. */
@@ -163,13 +212,9 @@ fun agentTilePlan(
         val active = thread.state.active
         // A busy thread is stamped again only once the stamp has grown old, so a long task does not rewrite it at every look.
         val fresh = now.takeIf { active && (old?.busy == null || now - old.busy >= STAMP_EVERY_MS) }
-        val busy = listOfNotNull(thread.worked, old?.busy, fresh).maxOrNull()
+        val busy = listOfNotNull(lastBusy(thread, old), fresh).maxOrNull()
         val hidden = hiddenNext(old, there, active)
-        val life = when (thread.key) {
-            in archived -> TileLife.Gone
-            in pinned -> TileLife.Stays
-            else -> tileLife(thread.state, busy, now)
-        }
+        val life = threadLife(thread.state, busy, now, thread.key in pinned, thread.key in archived)
         when {
             there && his(tile) -> show[tile] = AgentTile(thread.name, thread)
             life == TileLife.Gone -> if (there) remove += tile
@@ -186,13 +231,18 @@ fun agentTilePlan(
         if (key in known) continue
         val tile = threadTileKey(key)
         val there = tile in placed
-        val gone = listed || tileLife(ThreadState.Idle, old.busy, now) == TileLife.Gone
+        val gone = forgotten(old, now, listed)
+        // One archived in the chat leaves the Agents page as well, as [liveThreads] leaves it out, and is still remembered.
+        val off = gone || key in archived
         when {
-            there && (his(tile) || !gone) -> {
+            there && (his(tile) || !off) -> {
                 show[tile] = AgentTile(old.name, null)
                 next[key] = old.copy(placed = true, hidden = TileHidden.No)
             }
-            there -> remove += tile
+            there -> {
+                remove += tile
+                if (!gone) next[key] = old.copy(placed = false)
+            }
             // Forgotten with its thread.
             gone -> {}
             else -> next[key] = old.copy(placed = false, hidden = hiddenNext(old, there = false, active = false))
@@ -236,12 +286,14 @@ fun agentWrites(pages: List<PageLabel>, placed: Map<String, String>, plan: TileP
 /**
  * The small line over a tile's name: where the thread runs and, while it works, how long its turn has run,
  * counting up as a terminal agent's does ("THIS PHONE · 2:14"); at rest, how long ago it last worked
- * ("MAC · 2 MIN"). A busy thread whose turn the phone did not see begin says "NOW".
+ * ("MAC · 2 MIN"). A busy thread whose turn the phone did not see begin says "NOW". A new chat is the Mac's
+ * before it has a thread there too: at rest it says it waits for a project, never "THIS PHONE".
  */
 fun tileWhere(tile: AgentTile, now: Long): String {
     val thread = tile.thread ?: return "MAC · NOT HEARD FROM"
     val place = if (thread.mac) "MAC" else "THIS PHONE"
     if (thread.mac && !thread.reachable) return "$place · OUT OF REACH"
+    if (thread.unplaced && thread.state != ThreadState.Working && thread.state != ThreadState.Queued) return "$place · WAITING FOR A PROJECT"
     if (!thread.state.active) return "$place · " + agoWords(thread.worked, now)
     return "$place · " + (thread.since?.let { elapsedWords(it, now) } ?: "NOW")
 }

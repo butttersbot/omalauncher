@@ -105,6 +105,24 @@ object QuickLane {
     }
 
     /**
+     * `[ try again ]` under a new chat's words the Mac was out of reach for ([chatRetried]): the same entry is read
+     * again as if just sent, now or after what waits ahead of it, so the Mac is looked at as it stands now. Nothing
+     * happens to any other entry, nor when as many as fit already wait.
+     */
+    @Synchronized fun again(context: Context, time: Long) {
+        val app = context.applicationContext
+        restore(app)
+        AgentTasks.restore(app)
+        val log = ChatLog.of(app)
+        val task = log.tasks.firstOrNull { it.time == time } ?: return
+        val retried = chatRetried(task) ?: return
+        if (working && !queue.add(FrontWaiting(time, task.prompt, chat = task.chat))) return
+        log.update(time, save = true) { chatRetried(it) ?: it }
+        RoutingLog.corrected(app, task.prompt, MAC_TRIED_AGAIN)
+        if (!working) read(app, retried.prompt, page = null, away = false, waited = time, chat = retried.chat)
+    }
+
+    /**
      * `[ cancel ]` on a request that still waits to be read: it leaves the queue and its entry keeps his words
      * and says so. One the front agent has begun on is not in the queue any more, and nothing happens.
      */
@@ -173,10 +191,13 @@ object QuickLane {
             Triple(filed, quickCommand(frontPrompt(board, prompt, mac, second), resumed, mac = mac != null, newChat = chat.isNotEmpty()), asking)
         }
         time = asked; working = true; stopping = false; answer = ""; label = ANSWERING
+        // A new chat's work that it answers in prose is not shown, and goes to the Mac as if it had said nothing.
+        val holds = frontHolds(chat, prompt)
         thread(name = "oma-quick", isDaemon = true) {
             val late = AtomicBoolean()
             var next = resumed
             var handed = false
+            var held = false
             var failed = false
             try {
                 val child = runtime.proot.process(command).start()
@@ -197,11 +218,12 @@ object QuickLane {
                 }
                 child.inputStream.bufferedReader().forEachLine { line ->
                     val event = quickEvent(line) ?: return@forEachLine
-                    if (handed) return@forEachLine
+                    if (handed || held) return@forEachLine
                     when (event) {
                         is QuickEvent.Session -> session = event.id
                         is QuickEvent.Delta -> {}
-                        is QuickEvent.Message -> for (step in event.steps) {
+                        // What it looks up for an answer that may yet be held back is not shown either.
+                        is QuickEvent.Message -> if (!holds) for (step in event.steps) {
                             own()
                             log.update(asked) { ChatHistory.withStep(it, step) }
                             if (!stopping) label = "Looking"
@@ -219,7 +241,13 @@ object QuickLane {
                     said = said.after(event)
                     when (val read = frontRead(said.text, ended = event is QuickEvent.Result)) {
                         FrontRead.Undecided -> {}
-                        is FrontRead.Answer -> {
+                        // Prose can no longer turn into a mark, so the process is not waited for: with no answer
+                        // shown, the request ends as one the front agent said nothing to, which a new chat sends to the Mac.
+                        is FrontRead.Answer -> if (holds) {
+                            held = true
+                            session?.let { next = it }
+                            child.destroy()
+                        } else {
                             own()
                             answer = read.text
                             if (!stopping && event !is QuickEvent.Message) label = ANSWERING
@@ -379,6 +407,14 @@ const val QUICK_MODEL = "haiku"
 val QUICK_TOOLS = listOf("Read", "Bash", "WebSearch", "WebFetch")
 
 /**
+ * Every tool the front agent has in a new chat: the web and nothing else. A new chat is for the Mac (Boss,
+ * 2026-10-13: "If I need to do anything on the phone, I'm gonna be using the hold to talk"), so it neither runs
+ * nor reads anything on this phone; what it may still answer itself is a plain question ([frontHolds]), which
+ * needs at most a look on the web. No Bash at all, so no rule or prompt can run a command here.
+ */
+val QUICK_CHAT_TOOLS = listOf("WebSearch", "WebFetch")
+
+/**
  * What the front agent may run without asking, which is all it may run since nobody is asked: reading, the web,
  * the clock, the phone commands that only look, and how the builder and the Mac's threads stand. Every other
  * Bash command is denied.
@@ -460,13 +496,13 @@ private const val SYNTHETIC_MODEL = "<synthetic>"
  * anything else starts a new one. Nobody answers its permission prompts, so whatever [QUICK_ALLOWED] leaves
  * out is denied; the `--` keeps the list of tools from taking the prompt as one more. [mac] is whether the
  * board in [prompt] has the Mac's threads on it, which only changes what it is told about handing over, and
- * [newChat] whether the request is a new chat's ([quickNewChatRule]).
+ * [newChat] whether the request is a new chat's: it is told [quickNewChatRule] and has [QUICK_CHAT_TOOLS] alone.
  */
 fun quickCommand(prompt: String, resume: String? = null, mac: Boolean = false, newChat: Boolean = false): String =
     "claude -p --model $QUICK_MODEL " + (resume?.takeIf(QUICK_SESSION::matches)?.let { "--resume $it " } ?: "") +
         "--output-format stream-json --verbose --include-partial-messages --permission-mode manual --permission-prompts none " +
-        "--append-system-prompt ${shellQuote(quickSystemPrompt(mac, newChat))} --tools ${QUICK_TOOLS.joinToString(" ")} " +
-        "--allowedTools ${QUICK_ALLOWED.joinToString(" ", transform = ::shellQuote)} -- ${shellQuote(prompt)} < /dev/null"
+        "--append-system-prompt ${shellQuote(quickSystemPrompt(mac, newChat))} --tools ${(if (newChat) QUICK_CHAT_TOOLS else QUICK_TOOLS).joinToString(" ")} " +
+        "--allowedTools ${(if (newChat) QUICK_CHAT_TOOLS else QUICK_ALLOWED).joinToString(" ", transform = ::shellQuote)} -- ${shellQuote(prompt)} < /dev/null"
 
 /** What one line of the front agent's output says about the answer. */
 sealed interface QuickEvent {

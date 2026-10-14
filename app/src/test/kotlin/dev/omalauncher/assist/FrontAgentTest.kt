@@ -750,4 +750,47 @@ class FrontAgentTest {
         assertEquals(listOf(1L, 3L), queue.waiting.map { it.time })
         assertEquals(listOf(1L, 3L), queue.drop().map { it.time }); assertTrue(queue.waiting.isEmpty())
     }
+
+    /**
+     * Boss 2026-10-13: "The plus button should always open up a Mac session. If I need to do anything on the phone,
+     * I'm gonna be using the hold to talk." In a new chat the front agent may answer a plain question; anything that
+     * asks for work, or is not plainly a question, goes to the Mac however it answered.
+     */
+    @Test fun aPlainQuestionIsNotWorkAndAnythingElseIs() {
+        for (question in listOf(
+            "What's the capital of Peru?", "what is a worktree", "Who wrote Dune?", "How far is the moon?", "Is it raining in Seoul",
+            "Which is bigger, a lion or a tiger?", "When does daylight saving end?", "Why is the sky blue?", "Does a cat purr when it is hurt?",
+        )) assertFalse(question, asksForWork(question))
+        for (work in listOf(
+            // The critic's request, which was answered on the phone.
+            "In the Scratch project, list the files by name.",
+            "Can you fix the build?", "Could you install ripgrep?", "What files are in the repo?", "Is the Scratch project building?",
+            "Add a settings page", "fix it", "go on", "Hi", "yes", "Scratch", "", "   ", "?",
+            "What's in the menu-mod folder?", "How do I set up the branch?", "Make the tests pass.", "Update the README please",
+        )) assertTrue(work, asksForWork(work))
+        // Words of work are read in their plain forms too.
+        for (work in listOf("Who is fixing the bug?", "Are the tests running?", "Is it making progress?", "Has anyone committed?")) assertTrue(work, asksForWork(work))
+    }
+
+    @Test fun onlyANewChatsWorkIsHeldBackFromAnAnswer() {
+        assertTrue(frontHolds("c1", "In the Scratch project, list the files by name."))
+        assertFalse(frontHolds("c1", "What's the capital of Peru?"))
+        // On the Oma tab the front agent answers as it always has.
+        assertFalse(frontHolds("", "In the Scratch project, list the files by name."))
+        // Held back, nothing of an answer is shown, so the request goes on as one with nothing to show: in a new chat, to the Mac.
+        assertEquals(FrontOutcome.FellBack, frontOutcome(handed = false, stopped = false, failed = true, answered = false))
+        assertEquals(FrontOutcome.Stopped, frontOutcome(handed = false, stopped = true, failed = true, answered = false))
+    }
+
+    @Test fun tryAgainReadsANewChatsUnsentWordsAgainAndNothingElse() {
+        val unsent = ChatTask(5, QUICK_AGENT, "list the files", steps = listOf("WebSearch"), result = MAC_CHAT_UNREACHABLE, status = TaskStatus.Dropped, answeredBy = "Oma", chat = "c1")
+        val again = chatRetried(unsent)
+        assertEquals(ChatTask(5, UNDECIDED_AGENT, "list the files", status = TaskStatus.Queued, chat = "c1"), again)
+        assertTrue(again!!.undecided)
+        // Cancelled before Oma read it, on the Oma tab, or not unsent: none of these.
+        assertNull(chatRetried(unsent.copy(agent = UNDECIDED_AGENT)))
+        assertNull(chatRetried(unsent.copy(chat = "")))
+        assertNull(chatRetried(unsent.copy(status = TaskStatus.Failed)))
+        assertNull(chatRetried(unsent.copy(status = TaskStatus.Done)))
+    }
 }

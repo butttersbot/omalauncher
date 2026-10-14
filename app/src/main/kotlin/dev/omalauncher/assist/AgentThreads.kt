@@ -122,8 +122,10 @@ data class AgentThread(
     val reachable: Boolean = true,
     /** When the turn it is at began, in milliseconds, so a tile can count it up; null while it rests, or when the phone did not see it begin. */
     val since: Long? = null,
-    /** Whether it runs on the Mac: a Mac thread, or a new chat bound to one. */
+    /** Whether it runs on the Mac: a Mac thread, or a new chat, which is the Mac's even before it has a thread there. */
     val mac: Boolean = macThreadId(key) != null,
+    /** A new chat with no thread on the Mac yet: its words wait for a project, or for the Mac. */
+    val unplaced: Boolean = false,
 )
 
 /** One of the phone's builders as it stands: whether a task runs, its label, what waits for his approval, and when the task began ([since], 0 if none). */
@@ -246,7 +248,9 @@ fun macThreadNow(thread: MacThread?, id: String, tasks: List<ChatTask>, asks: Li
 /**
  * A new chat as a thread, called [name]. Bound to a thread on the Mac, it is that thread. Unbound, its own
  * entries say how it stands: the front agent reading it or a new thread being made for it is work, a first
- * message that failed needs him, and a chat with nothing in it is "new".
+ * message that failed or that the Mac was out of reach for needs him, and a chat with nothing in it is "new".
+ * Bound or not it is the Mac's (Boss, 2026-10-13: "The plus button should always open up a Mac session"), and
+ * unbound it is as reachable as the Mac was at the last try.
  */
 fun chatThread(
     chat: NewChat,
@@ -264,7 +268,7 @@ fun chatThread(
     val last = entries.lastOrNull { it.status != TaskStatus.Queued }
     val state = when {
         running != null || waiting != null -> ThreadState.Working
-        last?.status == TaskStatus.Failed -> ThreadState.Attention
+        last?.status == TaskStatus.Failed || last?.status == TaskStatus.Dropped -> ThreadState.Attention
         else -> ThreadState.Idle
     }
     val doing = when (state) {
@@ -276,7 +280,7 @@ fun chatThread(
         ThreadState.Attention -> NEEDS_ATTENTION
         else -> if (entries.isEmpty()) "new" else restLabel(last, worked = false)
     }
-    return AgentThread(chat.key, name, state, doing, label, entries.maxOfOrNull { it.time }, since = running?.time, mac = entries.any { it.mac })
+    return AgentThread(chat.key, name, state, doing, label, entries.maxOfOrNull { it.time }, mac.reachable, since = running?.time, mac = true, unplaced = true)
 }
 
 /**

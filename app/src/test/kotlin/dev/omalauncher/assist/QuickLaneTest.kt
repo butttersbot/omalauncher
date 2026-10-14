@@ -280,7 +280,30 @@ class QuickLaneTest {
         assertFalse(quickSystemPrompt(mac = true).contains(quickNewChatRule()))
         assertTrue(quickCommand("q", id, mac = true, newChat = true).contains("phone work is not taken here"))
         assertEquals(quickCommand("q", id, mac = true), quickCommand("q", id, mac = true, newChat = false))
-        assertEquals(quickCommand("q", id).substringAfter(" --tools "), quickCommand("q", id, mac = true, newChat = true).substringAfter(" --tools "))
         assertTrue(quickNewChatRule().length < 120)
+    }
+
+    /**
+     * The critic's case (2026-10-14): in a new chat the front agent ran `find /root /home …` on the phone. A new
+     * chat is for the Mac and the phone is hold-to-talk's, so there it has the web and nothing else: no Bash to
+     * run anything and no Read to look at the phone. What it may still answer is a plain question.
+     */
+    @Test fun aNewChatsFrontAgentHasTheWebAndNoBashOrRead() {
+        assertEquals(listOf("WebSearch", "WebFetch"), QUICK_CHAT_TOOLS)
+        val prompt = "In the Scratch project, list the files by name."
+        val expected = listOf(
+            "-p", "--model", "haiku", "--resume", id, "--output-format", "stream-json", "--verbose", "--include-partial-messages",
+            "--permission-mode", "manual", "--permission-prompts", "none", "--append-system-prompt", quickSystemPrompt(mac = true, newChat = true),
+            "--tools", "WebSearch", "WebFetch", "--allowedTools", "WebSearch", "WebFetch", "--", prompt,
+        )
+        assertEquals(expected.joinToString("\n") + "\n", arguments(quickCommand(prompt, id, mac = true, newChat = true)))
+        for (newChat in listOf(quickCommand("q", newChat = true), quickCommand("q", id, mac = true, newChat = true))) {
+            val tools = newChat.substringAfter(" --tools ").substringBefore(" -- ")
+            for (never in listOf("Bash", "Read", "Edit", "Write")) assertFalse("$never in $tools", tools.contains(never))
+            assertTrue(newChat.contains(" --permission-mode manual --permission-prompts none "))
+        }
+        // The Oma tab's front agent keeps every tool it had.
+        assertEquals(quickCommand("q", id, mac = true), quickCommand("q", id, mac = true, newChat = false))
+        assertTrue(quickCommand("q", id, mac = true).contains(" --tools Read Bash WebSearch WebFetch "))
     }
 }

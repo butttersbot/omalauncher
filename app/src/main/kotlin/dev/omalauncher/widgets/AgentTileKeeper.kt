@@ -1,9 +1,21 @@
 package dev.omalauncher.widgets
 
+import android.content.Context
 import androidx.compose.runtime.mutableStateMapOf
 import dev.omalauncher.assist.AgentThread
 import dev.omalauncher.widgets.annotations.Box
 import dev.omalauncher.widgets.layout.firstFit
+
+/** Where the thread tiles' stamps are kept. Saved: never rename. */
+const val AGENT_TILES_PREFS = "agent-tiles"
+const val AGENT_TILES_STAMPS = "stamps"
+
+/**
+ * The stamps as home's last look left them, so the chat shows the threads home has tiles for ([liveThreads])
+ * without a look of its own. Read only: [AgentTileKeeper] alone writes them.
+ */
+fun savedTileStamps(context: Context): Map<String, TileStamp> =
+    tileStampsFrom(context.getSharedPreferences(AGENT_TILES_PREFS, Context.MODE_PRIVATE).getString(AGENT_TILES_STAMPS, null))
 
 /**
  * Keeps the thread tiles in the [notebook] as AgentTiles.kt decides: this only carries out the three changes

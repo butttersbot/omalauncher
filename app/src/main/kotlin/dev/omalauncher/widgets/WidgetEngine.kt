@@ -109,8 +109,8 @@ class WidgetEngine(
     val agentTiles =
         AgentTileKeeper(
             notebook,
-            saved = context.getSharedPreferences(AGENT_TILES_PREFS, Context.MODE_PRIVATE).getString("stamps", null),
-            save = { context.getSharedPreferences(AGENT_TILES_PREFS, Context.MODE_PRIVATE).edit().putString("stamps", it).apply() },
+            saved = context.getSharedPreferences(AGENT_TILES_PREFS, Context.MODE_PRIVATE).getString(AGENT_TILES_STAMPS, null),
+            save = { context.getSharedPreferences(AGENT_TILES_PREFS, Context.MODE_PRIVATE).edit().putString(AGENT_TILES_STAMPS, it).apply() },
             log = { Log.i("agent-tiles", it) },
         )
 
@@ -853,5 +853,3 @@ class WidgetEngine(
     }
 }
 
-/** Where the thread tiles' stamps are kept. */
-private const val AGENT_TILES_PREFS = "agent-tiles"

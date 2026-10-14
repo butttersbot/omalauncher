@@ -471,4 +471,53 @@ class AgentTilesTest {
         val back = agentTilePlan(listOf(ff4), placed - tile(ff4), "agents", archived.stamps, now, true)
         assertEquals(listOf(tile(ff4)), back.add)
     }
+
+    /** The critic's case (2026-10-14): a ＋ chat's tile said THIS PHONE before the chat had a thread on the Mac. */
+    @Test fun aNewChatsTileSaysItIsTheMacsBeforeItHasAThread() {
+        val chat = AgentThread("chat:c1", "New chat", ThreadState.Idle, "", "done", now - 150_000, mac = true, unplaced = true)
+        assertEquals("MAC · WAITING FOR A PROJECT", tileWhere(AgentTile("New chat", chat), now))
+        assertEquals("MAC · WAITING FOR A PROJECT", tileWhere(AgentTile("New chat", chat.copy(state = ThreadState.Attention)), now))
+        assertEquals("MAC · OUT OF REACH", tileWhere(AgentTile("New chat", chat.copy(reachable = false)), now))
+        assertEquals("MAC · 0:07", tileWhere(AgentTile("New chat", chat.copy(state = ThreadState.Working, since = now - 7_400)), now))
+        for (state in ThreadState.entries) for (reachable in listOf(true, false)) {
+            assertFalse(tileWhere(AgentTile("New chat", chat.copy(state = state, reachable = reachable)), now).contains("THIS PHONE"))
+        }
+    }
+
+    /**
+     * The critic's case (2026-10-14): the Agents page had tiles (Phone proof, Codex smoke) the chat had no dot for.
+     * Boss 2026-10-13: tiles "show up while they're active, and then they fall off after … a certain amount of
+     * time of inactivity", "12 hours is fine". The chat's dots and tabs are that same set, from [liveThreads].
+     */
+    @Test fun theChatsDotsAreTheThreadsThatHaveTiles() {
+        val old = thread(macThreadKey("t-old"), ThreadState.Idle, worked = now - 13 * hour, name = "Old")
+        val resting = thread(macThreadKey("t-rest"), ThreadState.Idle, worked = now - 2 * hour, name = "Rest")
+        val never = thread(PHONE_THREAD, ThreadState.Idle, worked = null, name = "Phone")
+        val stamps = mapOf(
+            // Had a tile at the last look and is not heard of yet: the Mac has not answered since the restart.
+            macThreadKey("t-proof") to TileStamp("Phone proof", now - hour, placed = true),
+            // Remembered but its tile was taken off, or it never had one: no tile, so no dot.
+            macThreadKey("t-off") to TileStamp("Off", now - hour, placed = false, hidden = TileHidden.UntilWork),
+            // Rested twelve hours: gone.
+            macThreadKey("t-stale") to TileStamp("Stale", now - 13 * hour, placed = true),
+        )
+        val threads = listOf(never, ff4, resting, old, AgentThread("chat:c1", "Chat", ThreadState.Idle, "", "done", now - hour, mac = true, unplaced = true))
+        val live = liveThreads(threads, stamps, now, listed = false)
+        assertEquals(listOf(ff4.key, resting.key, macThreadKey("t-proof"), "chat:c1"), live.map { it.key })
+        val proof = live.first { it.key == macThreadKey("t-proof") }
+        assertEquals("Phone proof", proof.name); assertFalse(proof.reachable); assertEquals(ThreadState.Idle, proof.state); assertEquals(NOT_HEARD_FROM, proof.label)
+        // Once the Mac's list is heard without it, it is gone from both.
+        assertFalse(macThreadKey("t-proof") in liveThreads(threads, stamps, now, listed = true).map { it.key })
+        // Pinned always, archived never.
+        val chosen = liveThreads(threads, stamps, now, listed = false, pinned = setOf(old.key), archived = setOf(ff4.key, macThreadKey("t-proof")))
+        assertEquals(listOf(resting.key, old.key, "chat:c1"), chosen.map { it.key })
+
+        // And the tiles the plan keeps on the Agents page are those very threads.
+        val placed = mapOf(threadTileKey(macThreadKey("t-proof")) to "pa", threadTileKey(macThreadKey("t-stale")) to "pa", threadTileKey(old.key) to "pa")
+        for (listed in listOf(false, true)) for (pinned in listOf(emptySet(), setOf(old.key))) for (archived in listOf(emptySet(), setOf(ff4.key, macThreadKey("t-proof")))) {
+            val plan = agentTilePlan(threads, placed, "pa", stamps, now, listed, pinned, archived)
+            val tiled = plan.show.keys.mapNotNull(::tileThread).toSet() + plan.add.mapNotNull(::tileThread)
+            assertEquals("listed $listed, pinned $pinned, archived $archived", liveThreads(threads, stamps, now, listed, pinned, archived).map { it.key }.toSet(), tiled)
+        }
+    }
 }
