@@ -59,8 +59,8 @@
   .phone.dragging .panel { transition: none; }
   .head { padding: 12px 12px 6px 14px; border-bottom: 2px solid var(--ink); }
   .loadout { display: flex; align-items: center; gap: 8px; }
-  .loadout h2 { margin: 0; font-size: 24px; flex: 1; cursor: pointer; white-space: nowrap; }
-  .loadout .x { font-size: 22px; width: 40px; height: 40px; display: grid; place-items: center; cursor: pointer; border: 2px solid var(--ink); }
+  .loadout h2 { margin: 0; font-size: 24px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; cursor: pointer; white-space: nowrap; }
+  .loadout .x { flex: none; font-size: 22px; width: 40px; height: 40px; display: grid; place-items: center; cursor: pointer; border: 2px solid var(--ink); }
   /* The dots are a finger's size to hit, though each draws as a short bar. */
   .ldots { display: flex; gap: 2px; margin: 0 0 -6px -8px; }
   .ldots span { width: 36px; height: 36px; display: grid; place-items: center; cursor: pointer; }
@@ -76,7 +76,8 @@
   /* Rail mode. */
   .rail { display: none; flex-direction: column; align-items: center; gap: 10px; padding: 10px 0; overflow-y: auto; flex: 1; scrollbar-width: none; }
   .phone.railed .rail { display: flex; } .phone.railed .body, .phone.railed .head { display: none; }
-  .rail .key { width: 46px; height: 46px; flex: none; touch-action: none; }
+  .rail .key { width: 46px; height: 46px; flex: none; touch-action: pan-y; } .rail .key.skey { touch-action: none; }
+  .rail .ends { position: sticky; bottom: -10px; margin-top: auto; padding: 8px 0 10px; background: var(--bg); display: flex; flex-direction: column; gap: 10px; align-items: center; flex: none; }
   .rail .sep { width: 30px; height: 2px; background: var(--ink); opacity: .3; margin: 2px 0; flex: none; }
   .rail .lname { flex: none; }
   .rail .lname { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 15px; cursor: pointer; }
@@ -192,7 +193,7 @@
     <div class="rail" id="rail"></div>
   </aside>
 
-  <div class="scrim" id="scrim" onclick="closeSheet()"></div>
+  <div class="scrim" id="scrim" onclick="scrimTap()"></div>
   <div class="sheet" id="sheet"></div>
   <div class="toast" id="toast"></div>
   <div class="undostrip" id="undostrip"></div>
@@ -256,7 +257,7 @@ const TOOLS = {
     keys: () => sel() ? [['r', -15, '⟲'], ['r', 15, '⟳'], ['s', .15, '+'], ['s', -.15, '−'], ['x', 0, '🗑']].map(([k, v, g]) => `<div class="key" onclick="dress('${k}',${v})">${g}</div>`).join('') +
       `<div class="key" title="put it down" onclick="putDown()">✓</div>`
       : (state.recents.length ? state.recents.slice(0, 3) : [['donut-frog', 7], ['pepe-blanket', 0], ['rabbit-shark', 7]]).map(([p, i]) =>
-      `<div class="key" style="padding:4px" onpointerdown="grab(event,'${p}',${i},true)">${stickerHtml(p, i)}</div>`).join('') + `<div class="key" onclick="setMode('full');scrollTool('bench')">★</div>` },
+      `<div class="key skey" style="padding:4px" onpointerdown="grab(event,'${p}',${i},true)">${stickerHtml(p, i)}</div>`).join('') + `<div class="key" onclick="setMode('full');scrollTool('bench')">★</div>` },
   capture: { name: 'Capture', g: '◉', about: 'screenshot, record, ask about this screen',
     body: () => `<div class="caps">
       <div class="cap" onclick="shot()"><span class="g">⬚</span><span class="mono">screenshot</span></div>
@@ -270,7 +271,7 @@ const TOOLS = {
   shelf: { name: 'Shelf', g: '⊟', about: 'things dropped here from any app, kept till used',
     body: () => `<div class="shelf"><div>🔗 <span>youtube.com/watch?v=city-pop</span></div><div>✂️ <span>“the sticker bench should feel like a cutting mat”</span></div><div>⬚ <span>Screenshot · Maps · 10:52</span></div><div class="drop hand" style="font-size:18px" onclick="toast('In the launcher: drag text, a link or a picture here from any app')">drop text, links or pictures here</div></div>`,
     keys: () => `<div class="key" onclick="setMode('full');scrollTool('shelf')">⊟</div>` },
-  quick: { name: 'Phone', g: '⚡', about: 'switches and shortcuts',
+  quick: { name: 'Switches', g: '⚡', about: 'switches and shortcuts',
     body: () => `<div class="quick">${[['torch', '🔦', 'torch'], ['dnd', '☾', 'do not disturb'], ['rotate', '⟳', 'rotate lock'], ['hotspot', '⌬', 'hotspot']].map(([k, g, n]) =>
       `<div class="${state.toggles[k] ? 'on' : ''}" onclick="flip('${k}')"><span class="g">${g}</span><span class="mono">${n}</span></div>`).join('')}${[['◎', 'camera'], ['±', 'calculator']].map(([g, n]) =>
       `<div onclick="toast('Opens the ${n}')"><span class="g">${g}</span><span class="mono">${n} ↗</span></div>`).join('')}</div>`,
@@ -290,7 +291,7 @@ function render() {
   $('body').innerHTML = (l.tools.length ? '' : `<div class="empty hand">${l.name} has no tools yet</div>`) + l.tools.map((t) => `<section class="tool" id="tool-${t}"><span class="tape"></span><div class="t"><span>${TOOLS[t].g}</span><b class="display">${TOOLS[t].name}</b></div>${TOOLS[t].body()}</section>`).join('') +
     `<div class="addtool hand" style="font-size:20px" onclick="sheet('tools')">+ add a tool to ${l.name}</div>`;
   $('rail').innerHTML = `<div class="lname display" onclick="setMode('full')">${l.name}</div><div class="sep"></div>` + l.tools.map((t) => TOOLS[t].keys()).join('<div class="sep"></div>') +
-    `<div class="sep"></div><div class="key" onclick="setMode('full')" title="open">‹</div><div class="key" onclick="setMode('closed')" title="close">›</div>`;
+    `<div class="ends"><div class="sep"></div><div class="key" onclick="setMode('full')" title="open">‹</div><div class="key" onclick="setMode('closed')" title="close">›</div></div>`;
   const busy = AGENTS.find((a) => a.cls === 'needsok') ? 'needsok' : AGENTS.find((a) => a.cls === 'working') ? 'working' : '';
   $('handle').className = 'handle ' + busy;
 }
@@ -371,7 +372,10 @@ function drag(el) {
     if (state.mode !== 'closed' && LOADOUTS[state.loadout].tools.includes('bench')) { if (phone.clientWidth >= 600 || state.mode === 'full') { render(); scrollTool('bench'); } else render(); }
     const dx = e.clientX - el.offsetLeft, dy = e.clientY - el.offsetTop; el.setPointerCapture(e.pointerId);
     const mv = (m) => { el.style.left = (m.clientX - dx) + 'px'; el.style.top = (m.clientY - dy) + 'px'; };
-    const stop = () => { el.removeEventListener('pointermove', mv); el.removeEventListener('pointerup', stop); el.removeEventListener('pointercancel', stop); };
+    const stop = () => {
+      const edge = state.mode === 'closed' ? Infinity : panel.getBoundingClientRect().left - phone.getBoundingClientRect().left;
+      if (el.offsetLeft + 37 > edge - 10) el.style.left = (edge - 84) + 'px';
+      el.removeEventListener('pointermove', mv); el.removeEventListener('pointerup', stop); el.removeEventListener('pointercancel', stop); };
     el.addEventListener('pointermove', mv); el.addEventListener('pointerup', stop); el.addEventListener('pointercancel', stop);
   });
 }
@@ -490,9 +494,10 @@ function sheet(which) {
   else s.innerHTML = sheetTop('Add a tool') + `<div class="mono" style="color:var(--muted)">to ${LOADOUTS[state.loadout].name}. a tool can sit in many loadouts</div>` +
     (Object.entries(TOOLS).filter(([k]) => !LOADOUTS[state.loadout].tools.includes(k)).map(([k, t]) => `<div class="item" onclick="addTool('${k}')"><span class="g">${t.g}</span><div><b>${t.name}</b><small>${t.about}</small></div></div>`).join('') || `<div class="empty hand">every tool is here already</div>`) +
     `<div class="ask hand" style="font-size:20px" onclick="toast('Oma: “what should it do?” An agent builds it as a tool file');closeSheet()">ask Oma to make a new tool…</div>`;
-  s.classList.add('on'); $('scrim').classList.add('on');
+  s.classList.add('on'); $('scrim').classList.add('on'); sheet.at = Date.now();
 }
 function closeSheet() { $('sheet').classList.remove('on'); $('scrim').classList.remove('on'); }
+function scrimTap() { if (Date.now() - (sheet.at || 0) > 350) closeSheet(); }
 function addTool(k) { LOADOUTS[state.loadout].tools.push(k); closeSheet(); render(); scrollTool(k); }
 function newLoadout() { LOADOUTS.push({ name: 'Loadout ' + (LOADOUTS.length + 1), tools: [] }); go(LOADOUTS.length - 1); sheet('tools'); }
 function renameLoadout() { const l = LOADOUTS[state.loadout], name = prompt('Call this loadout', l.name); if (name && name.trim()) { l.name = name.trim().slice(0, 18); render(); sheet('loadouts'); } }
