@@ -207,3 +207,87 @@ The phone now has two builders of its own and routes project work to Mac threads
    match.
 4. **Model choice per thread** (optional): `POST /threads` may take `model` for Claude threads.
 Write what you build back into this file, as before, and push.
+
+## As built: Codex and Cursor threads (2026-10-13 night, by the Mac session)
+What changed in `tools/mac-runner/oma-runner`, answering "Asked next by Boss" above. Proof: `test-runner.py`, 74
+checks (the 35 before, plus Claude at a limit, models, and the same list again for a `codex` and a `cursor` thread
+against `fake-codex` and `fake-cursor` including stop during a card, stand-ins that speak each CLI's protocol). Also run against the real Codex
+and Cursor on the Mac; see "Seen with the real agents".
+
+### What the phone sends now
+- `GET /health` adds `kinds`: the agents installed on the Mac, e.g. `["claude", "codex", "cursor"]`.
+- `POST /threads {name, project, kind, model}`. `kind` is `claude` (the default), `codex` or `cursor`; another
+  word is 400, an agent not installed is 503. `model` is optional, for any kind, a model name (starting with a letter or
+  digit, then letters, digits and `_.:=,[]-`, up to 100); it is passed to the agent as asked. THREAD gains `model`: the model the agent last
+  reported, else the one asked for.
+- `text` (the first of a turn) and `result` carry `kind` and `model`, e.g. `{"kind": "codex", "model":
+  "gpt-6.1-sol"}`. Claude's comes from its `init` line, Codex's from its thread, Cursor's from its session
+  (`cursor-auto` when Cursor picks the model itself).
+- A turn that ends on a limit ends with `error {code: "limit", text}` and no `result`. Other errors are now
+  `error {code: "agent", text}` (the agent refused a request), `error {code: "runner", text}` (the runner itself
+  failed in the turn; the thread still goes back to idle) or the exit status as before (the agent died). When a
+  Codex or Cursor conversation cannot be continued, the turn ends with `agent` and says so, and the thread's next
+  message starts a new conversation.
+- When a turn ends while a card is waiting (stop, a crash), each waiting card gets `approval_result {decision:
+  "withdrawn"}`. An answer the agent did not take (the turn had ended, or Cursor offered only "always" choices,
+  which are never picked) is 409 and the card is withdrawn.
+- Approval cards have the same fields for every kind. `tool` is `Bash` (with `input.command`, `input.cwd`) or
+  `Edit` (Codex: `input.changes`, each `{path, kind, diff}`; diff cut at 4000 characters) for Codex; `Bash`,
+  `Edit`, `Read` or `WebFetch` for Cursor, with Cursor's own input for the call.
+- A busy thread is not waited on by the runner for a new, unrelated request: make another thread on the same
+  project (`POST /threads`), as the phone planned. Nothing else was needed on this side.
+
+### Limits: what is matched
+- Claude Code: a `result` with `is_error` whose text matches the pattern below, or any failed `result` after an
+  `assistant` line marked `error: "rate_limit"` or `"billing_error"`.
+- Codex: an `error` notice with `willRetry: false` whose `codexErrorInfo` is `usageLimitExceeded`,
+  `rateLimitExceeded`, `serverOverloaded` or `sessionBudgetExceeded` (or whose message matches the pattern), or a
+  failed turn with one of those.
+- Cursor: a refused `session/prompt` whose message matches the pattern.
+- Any agent that dies without answering, when what it left on stderr matches the pattern.
+- The pattern, case-insensitive: `usage limit`, `hit your … limit`, `limit reached`, `limit exceeded`,
+  `rate limit`/`rate-limit`/`ratelimit`, `out of usage`, `out of extra usage`, `too many concurrent`, `too many
+  requests`, `concurrency limit`, `concurrent session limit`, `overloaded`. Only errors are matched, never
+  ordinary text. Overloaded counts as a limit so a busy service falls over to the next agent too.
+
+### How each kind keeps the rules
+- **Codex** (`codex app-server` from the ChatGPT app, one per turn; `--resume` is `thread/resume` with the thread's
+  Codex id). Approval policy `untrusted` and sandbox `workspace-write`: everything Codex does not know to be
+  read-only asks first, every file change asks first, and the asking comes to the runner (`approvals_reviewer` is
+  set to `user`; Boss's Codex config has it on `guardian_subagent`, an auto-reviewer that would approve by itself,
+  and that is overridden for these threads only). Switched off in runner threads, Boss's config untouched: the
+  `notify` program, hooks, apps, plugins, computer use, the browser, the auto-reviewer, and every MCP server in
+  `~/.codex/config.toml` (higgsfield there is set to run its tools without asking). If a server there has a name
+  the runner cannot switch off from the command line, Codex is not started at all. Allow is `accept` for that
+  call only, deny is `decline`.
+  Known: Codex asks about more than Claude Code does. It asked before `rg --files` to list a folder, where Claude
+  Code ran `ls` with no card. Known-safe reads (`cat`, `ls` and the like) run without a card, inside the sandbox,
+  and the sandbox lets them read the runner's key file; Claude threads are denied that file by a rule, Codex
+  threads are not. The key only reaches the phone if Codex is asked to say it.
+- **Cursor** (`cursor-agent acp`, Cursor's CLI, installed 2026-10-13 at `~/.local/bin/cursor-agent` and signed
+  in through the browser). Cursor asks before shell commands not on its allow list, and the runner gives it an empty one, so every
+  command is a card (even `ls`). **It does not ask before editing files: it edits without telling anyone.** Telling
+  it the runner would write files for it changed nothing. So in runner threads Cursor's own edits are denied
+  (`Write(**)`), and the key and the runner's records are denied to its reads. Seen: asked to make a file, Cursor
+  said the write was blocked and did not try another way, so a Cursor thread today reads, answers and runs approved
+  commands but does not change files. To let it edit, Boss would have to accept edits with no card in Cursor
+  threads; his decision, not made. These rules sit in the runner's own config folder (`CURSOR_CONFIG_DIR`), so his
+  own Cursor settings are not touched. The sign-in is shared.
+- Allow and deny answer that one call only for every kind; "allow always" options are never chosen.
+
+### Seen with the real agents on the Mac (a second runner on loopback, scratch folder)
+- Codex (`gpt-6.1-sol`): "what files are here" asked to run `rg --files`, allowed, answered `notes.md`. Asked to
+  make `hello.txt`: an `Edit` card with the path and the diff; deny, no file and Codex said it was rejected; asked
+  again, allow, the file holds `hi`. The second and third turns continued the same Codex thread.
+- Cursor (`cursor-auto`): "what files are here" asked to run `ls -la`, allowed, answered. Asked to make the file:
+  refused by the edit rule, no card, no file.
+- Codex Stop: allowed `sleep 30`, then stopped; `stopped` came 7 s later and the thread was idle.
+- Reviewed by the critic agent before install. Fixed from it: macOS answers EPERM when a just-exited agent's group
+  is signalled, which could leave a thread "working" for good (now caught, and a turn that fails for any reason
+  leaves the thread idle with an `error`); a failed resume made every later turn fail; a model like `-x` was
+  accepted; an "always"-only Cursor card was reported as allowed. Its stress run (90 quick Codex-protocol turns
+  across three threads) froze a thread before the fix and passes after it. No Codex helper was left running after
+  the real turns.
+- Found and fixed on the way: Codex starts a helper (`codex-code-mode-host`) in a process group of its own that
+  holds the output pipe open, so a turn could look unfinished long after Codex answered. The runner now stops
+  reading at the turn's end, and when the agent itself has exited.

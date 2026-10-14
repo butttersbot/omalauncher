@@ -2,7 +2,7 @@
 """A stand-in for `claude -p --input-format stream-json ... --permission-prompt-tool stdio`, for test-runner.py.
 
 It speaks the same lines Claude Code does and decides what to do from words in the prompt: "write" asks for
-approval to write written.txt and writes it only when allowed; "slow" takes three seconds first. Every start is
+approval to write written.txt and writes it only when allowed; "slow" takes three seconds first; "limit" answers as Claude Code does at a usage limit. Every start is
 added to starts.log in the project, so a test can see a task was not started twice.
 """
 import json, pathlib, sys, time, uuid
@@ -21,7 +21,15 @@ session = arguments[arguments.index('--resume') + 1] if '--resume' in arguments 
 prompt = json.loads(sys.stdin.readline())['message']['content']
 with open('starts.log', 'a') as log:
     log.write(json.dumps({'prompt': prompt, 'resumed': '--resume' in arguments, 'manual': 'manual' in arguments}) + '\n')
-out({'type': 'system', 'subtype': 'init', 'session_id': session})
+if '--model' in arguments:
+    with open('models.log', 'a') as log:
+        log.write(arguments[arguments.index('--model') + 1] + '\n')
+out({'type': 'system', 'subtype': 'init', 'session_id': session, 'model': 'claude-fake'})
+if 'limit' in prompt:
+    out({'type': 'assistant', 'error': 'rate_limit', 'message': {'role': 'assistant', 'content': [{'type': 'text', 'text': "You've hit your limit · resets 5pm"}]}})
+    out({'type': 'result', 'subtype': 'success', 'is_error': True, 'result': "You've hit your limit · resets 5pm", 'session_id': session})
+    sys.stdin.read()
+    sys.exit(0)
 said('Heard: ' + prompt)
 if 'slow' in prompt:
     time.sleep(3)

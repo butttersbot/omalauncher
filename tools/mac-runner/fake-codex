@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+"""A stand-in for `codex app-server`, for test-runner.py. It speaks the JSON-RPC lines Codex's app-server does and
+acts on words in the prompt as fake-agent does: "write" asks to add written.txt, "files" lists the folder, "slow"
+waits, "limit" fails the turn on a usage limit. Every turn is added to starts.log, with the flags it was given."""
+import json, pathlib, sys, time, uuid
+
+arguments = sys.argv[1:]
+
+
+def out(message):
+    print(json.dumps(message), flush=True)
+
+
+def said(text, phase='commentary'):
+    out({'method': 'item/completed', 'params': {'item': {'type': 'agentMessage', 'id': uuid.uuid4().hex, 'text': text, 'phase': phase}}})
+
+
+def read():
+    line = sys.stdin.readline()
+    return json.loads(line) if line else None
+
+
+session, resumed = None, False
+while True:
+    message = read()
+    if message is None:
+        break
+    method, number, params = message.get('method'), message.get('id'), message.get('params') or {}
+    if method == 'initialize':
+        out({'id': number, 'result': {'userAgent': 'fake'}})
+    elif method in ('thread/start', 'thread/resume'):
+        resumed = method == 'thread/resume'
+        session = params.get('threadId') or str(uuid.uuid4())
+        rules = params
+        out({'id': number, 'result': {'thread': {'id': session}, 'model': params.get('model') or 'gpt-fake'}})
+    elif method == 'turn/start':
+        prompt = params['input'][0]['text']
+        with open('starts.log', 'a') as log:
+            log.write(json.dumps({'kind': 'codex', 'prompt': prompt, 'resumed': resumed, 'policy': rules.get('approvalPolicy'),
+                                  'reviewer': rules.get('approvalsReviewer'), 'arguments': arguments}) + '\n')
+        out({'id': number, 'result': {'turn': {'id': 'turn1', 'status': 'inProgress'}}})
+        said('Heard: ' + prompt)
+        if 'slow' in prompt:
+            time.sleep(3)
+        if 'limit' in prompt:
+            problem = {'message': "You've hit your usage limit. Try again later.", 'codexErrorInfo': 'usageLimitExceeded'}
+            out({'method': 'error', 'params': {'error': problem, 'willRetry': False, 'threadId': session, 'turnId': 'turn1'}})
+            out({'method': 'turn/completed', 'params': {'threadId': session, 'turn': {'id': 'turn1', 'status': 'failed', 'error': problem, 'items': []}}})
+            continue
+        if 'write' in prompt:
+            target = str(pathlib.Path.cwd() / 'written.txt')
+            out({'method': 'item/started', 'params': {'item': {'type': 'fileChange', 'id': 'edit1', 'changes': [{'path': target, 'kind': {'type': 'add'}, 'diff': 'hi\n'}], 'status': 'inProgress'}}})
+            out({'method': 'item/fileChange/requestApproval', 'id': 0, 'params': {'threadId': session, 'turnId': 'turn1', 'itemId': 'edit1', 'startedAtMs': 0, 'reason': None}})
+            reply = read()
+            out({'method': 'serverRequest/resolved', 'params': {'threadId': session, 'requestId': 0}})
+            if reply['result']['decision'] == 'accept':
+                pathlib.Path(target).write_text('hi')
+                said('Wrote it.', 'final_answer')
+            else:
+                said('Not allowed, so nothing was written.', 'final_answer')
+        elif 'files' in prompt:
+            out({'method': 'item/started', 'params': {'item': {'type': 'commandExecution', 'id': 'run1', 'command': "/bin/zsh -lc 'ls -a'"}}})
+            said('Files here: ' + ', '.join(sorted(path.name for path in pathlib.Path.cwd().iterdir())), 'final_answer')
+        else:
+            said('done', 'final_answer')
+        out({'method': 'turn/completed', 'params': {'threadId': session, 'turn': {'id': 'turn1', 'status': 'completed', 'items': []}}})

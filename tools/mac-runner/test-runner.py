@@ -19,7 +19,10 @@ port = free.getsockname()[1]
 free.close()
 base = 'http://127.0.0.1:%d' % port
 environment = {**os.environ, 'OMA_RUNNER_PORT': str(port), 'OMA_RUNNER_TOKEN': str(work / 'token'), 'OMA_RUNNER_STATE': str(work / 'state'),
-               'OMA_RUNNER_LOGS': str(work / 'logs'), 'OMA_RUNNER_ROOTS': str(root), 'OMA_RUNNER_AGENT': str(HERE / 'fake-agent'), 'OMA_RUNNER_BIND': '127.0.0.1'}
+               'OMA_RUNNER_LOGS': str(work / 'logs'), 'OMA_RUNNER_ROOTS': str(root), 'OMA_RUNNER_AGENT': str(HERE / 'fake-agent'), 'OMA_RUNNER_BIND': '127.0.0.1',
+               'OMA_RUNNER_CODEX': str(HERE / 'fake-codex'), 'OMA_RUNNER_CURSOR': str(HERE / 'fake-cursor'), 'CODEX_HOME': str(work / 'codex')}
+(work / 'codex').mkdir()
+(work / 'codex' / 'config.toml').write_text('[mcp_servers.paper]\nurl = "http://127.0.0.1:1/mcp"\n')
 passed = 0
 
 
@@ -79,7 +82,7 @@ runner = start()
 try:
     check('no key: 401', call('GET', '/health', token=None)[0] == 401)
     check('wrong key: 401 and nothing else', call('GET', '/health', token='x' * 40) == (401, {'ok': False, 'error': 'no'}))
-    check('/health answers', call('GET', '/health') == (200, {'ok': True, 'runner': 'oma-runner', 'threads': 0, 'working': 0, 'waiting': 0}))
+    check('/health answers, naming the agents the Mac has', call('GET', '/health') == (200, {'ok': True, 'runner': 'oma-runner', 'threads': 0, 'working': 0, 'waiting': 0, 'kinds': ['claude', 'codex', 'cursor']}))
     check('a project outside the roots is refused', call('POST', '/threads', {'name': 'x', 'project': str(outside)})[0] == 403)
     check('a path that climbs out of a root is refused', call('POST', '/threads', {'name': 'x', 'project': str(project / '..' / '..' / 'outside')})[0] == 403)
     (root / 'link').symlink_to(outside)
@@ -160,6 +163,79 @@ try:
     check('the task was not started again and nothing was written', len(starts()) == count and not (project / 'written.txt').exists())
     call('POST', '/threads/%s/messages' % thread, {'text': 'what files are here'})
     check('the interrupted thread takes the owner\'s next words', stream(thread, after=card['id'])[-1]['type'] == 'result' and starts()[-1]['resumed'])
+
+    # Claude Code at a limit, and who wrote what.
+    settle(thread, 'idle')
+    last = call('GET', '/threads/' + thread)[1]['thread']['last_event']
+    call('POST', '/threads/%s/messages' % thread, {'text': 'what files are here'})
+    events = stream(thread, after=last)
+    texts = [event for event in events if event['type'] == 'text']
+    check('the first text and the result name the model and the kind', texts[0].get('model') == 'claude-fake' and texts[0].get('kind') == 'claude'
+          and events[-1].get('model') == 'claude-fake' and all('model' not in event for event in texts[1:]))
+    check('/threads names the model', call('GET', '/threads/' + thread)[1]['thread']['model'] == 'claude-fake')
+    settle(thread, 'idle')
+    last = call('GET', '/threads/' + thread)[1]['thread']['last_event']
+    call('POST', '/threads/%s/messages' % thread, {'text': 'over the limit'})
+    events = stream(thread, after=last, until=('result', 'error'))
+    check('a Claude usage limit ends the turn with error code "limit", not a result', events[-1]['type'] == 'error' and events[-1]['code'] == 'limit' and 'limit' in events[-1]['text'])
+    check('an unknown kind is refused', call('POST', '/threads', {'name': 'x', 'project': str(project), 'kind': 'gemini'})[0] == 400)
+    check('a model that is not a name is refused', call('POST', '/threads', {'name': 'x', 'project': str(project), 'model': 'a b; rm'})[0] == 400)
+    check('a model that looks like a flag is refused', all(call('POST', '/threads', {'name': 'x', 'project': str(project), 'model': given})[0] == 400 for given in ('-x', '--dangerously-skip-permissions', '../x')))
+    code, made = call('POST', '/threads', {'name': 'Opus', 'project': str(project), 'model': 'claude-opus-5-5'})
+    call('POST', '/threads/%s/messages' % made['thread']['id'], {'text': 'hello'})
+    stream(made['thread']['id'])
+    check('a model asked for is passed to Claude Code', code == 200 and 'claude-opus-5-5' in (project / 'models.log').read_text())
+
+    for kind, tool in (('codex', 'Edit'), ('cursor', 'Bash')):
+        (project / 'written.txt').unlink(missing_ok=True)
+        code, made = call('POST', '/threads', {'name': kind.title(), 'project': str(project), 'kind': kind})
+        other = made['thread']['id']
+        check(kind + ': a thread of this kind is made', code == 200 and made['thread']['kind'] == kind)
+        call('POST', '/threads/%s/messages' % other, {'text': 'what files are here'})
+        events = stream(other)
+        check(kind + ': it answers what files are here', any(event['type'] == 'text' and 'notes.md' in event['text'] for event in events) and events[-1]['type'] == 'result')
+        check(kind + ': the result names its model and kind', events[-1].get('kind') == kind and events[-1].get('model') == {'codex': 'gpt-fake', 'cursor': 'cursor-auto'}[kind])
+        check(kind + ': the owner\'s words reach it unchanged', starts()[-1] == {**starts()[-1], 'kind': kind, 'prompt': 'what files are here'})
+        settle(other, 'idle')
+        last = call('GET', '/threads/' + other)[1]['thread']['last_event']
+        call('POST', '/threads/%s/messages' % other, {'text': 'write the file'})
+        card = stream(other, after=last, until=('approval',))[-1]
+        check(kind + ': a change shows a card and waits', card['tool'] == tool and card['nonce'] and status_of(other) == 'waiting' and not (project / 'written.txt').exists())
+        path = '/threads/%s/approvals/%s' % (other, card['approval'])
+        check(kind + ': a wrong nonce is refused', call('POST', path, {'decision': 'allow', 'nonce': 'guess'})[0] == 403)
+        call('POST', path, {'decision': 'deny', 'nonce': card['nonce']})
+        events = stream(other, after=card['id'])
+        check(kind + ': deny refuses it', not (project / 'written.txt').exists() and any('Not allowed' in event.get('text', '') for event in events))
+        check(kind + ': the conversation is continued', starts()[-1]['resumed'])
+        settle(other, 'idle')
+        last = call('GET', '/threads/' + other)[1]['thread']['last_event']
+        call('POST', '/threads/%s/messages' % other, {'text': 'write the file'})
+        card = stream(other, after=last, until=('approval',))[-1]
+        call('POST', '/threads/%s/approvals/%s' % (other, card['approval']), {'decision': 'allow', 'nonce': card['nonce']})
+        events = stream(other, after=card['id'])
+        check(kind + ': allow does it', (project / 'written.txt').read_text() == 'hi')
+        check(kind + ': nothing an earlier turn said is shown again', not any('REPLAYED' in event.get('text', '') for event in events))
+        settle(other, 'idle')
+        last = call('GET', '/threads/' + other)[1]['thread']['last_event']
+        call('POST', '/threads/%s/messages' % other, {'text': 'over the limit'})
+        events = stream(other, after=last, until=('result', 'error'))
+        check(kind + ': a usage limit ends the turn with error code "limit"', events[-1]['type'] == 'error' and events[-1]['code'] == 'limit')
+        check(kind + ': it goes back to idle', settle(other, 'idle'))
+        last = call('GET', '/threads/' + other)[1]['thread']['last_event']
+        call('POST', '/threads/%s/messages' % other, {'text': 'write the file'})
+        call('POST', '/threads/%s/messages' % other, {'text': 'never'})
+        card = stream(other, after=last, until=('approval',))[-1]
+        check(kind + ': stop during a card answers at once', call('POST', '/threads/%s/stop' % other) == (200, {'ok': True, 'stopped': True}))
+        events = stream(other, after=card['id'], until=('stopped',))
+        check(kind + ': the card is withdrawn, what waited is dropped, and it goes idle', any(event['type'] == 'approval_result' and event['decision'] == 'withdrawn' for event in events)
+              and events[-1]['dropped'] == 1 and settle(other, 'idle'))
+        check(kind + ': a late allow does nothing', call('POST', '/threads/%s/approvals/%s' % (other, card['approval']), {'decision': 'allow', 'nonce': card['nonce']})[0] == 404)
+    codex = [entry for entry in starts() if entry.get('kind') == 'codex'][-1]
+    check('codex: asks about everything not read-only, and asks us, not its own reviewer', codex['policy'] == 'untrusted' and codex['reviewer'] == 'user'
+          and 'approvals_reviewer="user"' in codex['arguments'] and 'notify=[]' in codex['arguments'] and 'mcp_servers.paper.enabled=false' in codex['arguments'])
+    cursor = [entry for entry in starts() if entry.get('kind') == 'cursor'][-1]['permissions']
+    check('cursor: its own edits are denied, nothing is allowed without asking, the key is out of reach', 'Write(**)' in cursor['deny'] and cursor['allow'] == []
+          and any(str(work / 'token') in rule for rule in cursor['deny']))
     log = (work / 'logs' / 'requests.log').read_text()
     check('each request is logged, and the key never is', 'POST /threads/%s/messages 200' % thread in log and 'k' * 40 not in log and ' 401' in log)
     print('\nall %d checks passed' % passed)

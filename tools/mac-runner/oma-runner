@@ -2,13 +2,13 @@
 """oma-runner: runs Oma's builders on the Mac Pro for the agent on the Fold. See docs/MAC-RUNNER-SPEC.md.
 
 It listens on the Mac's Tailscale address only and every request must carry the key in
-~/agents/claude-code/oma-runner.token. It does one thing: run Claude Code in a named project thread, under a
-folder Boss allowed, and stream what it says. It is not a shell: there is no endpoint that runs a command. It
+~/agents/claude-code/oma-runner.token. It does one thing: run a coding agent (Claude Code, Codex or Cursor) in a
+named project thread, under a folder Boss allowed, and stream what it says. It is not a shell: there is no endpoint that runs a command. It
 approves nothing itself: every request for approval waits for the phone's answer, however long that takes.
 
   GET  /health                           {ok, working, waiting}
   GET  /threads                          every thread: id, name, summary, status, last_worked, tail, pending
-  POST /threads   {name, project}        makes one; the project must be a folder under an allowed root
+  POST /threads   {name, project, kind, model}   makes one under an allowed root; kind claude (default), codex or cursor
   GET  /threads/ID                       one thread
   POST /threads/ID/messages   {text}     the owner's words; {taken: "now"} or {taken: "queued", position}
   GET  /threads/ID/stream[?after=N]      server-sent events from event N+1 on (or the Last-Event-ID header)
@@ -18,7 +18,7 @@ approves nothing itself: every request for approval waits for the phone's answer
 
   oma-runner serve | install | start | stop | status | uninstall
 """
-import hmac, json, os, pathlib, plistlib, secrets, shutil, signal, socket, subprocess, sys, threading, time, urllib.parse, urllib.request
+import hmac, json, os, pathlib, plistlib, re, secrets, select, shlex, shutil, signal, socket, subprocess, sys, threading, time, tomllib, urllib.parse, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HOME = pathlib.Path.home()
@@ -28,12 +28,23 @@ STATE = pathlib.Path(os.environ.get('OMA_RUNNER_STATE', HOME / 'Library/Applicat
 LOGS = pathlib.Path(os.environ.get('OMA_RUNNER_LOGS', HOME / 'Library/Logs/oma-runner'))
 ROOTS = [pathlib.Path(root) for root in os.environ['OMA_RUNNER_ROOTS'].split(':')] if os.environ.get('OMA_RUNNER_ROOTS') else [HOME / 'Projects', HOME / 'ClaudeSync/projects']
 AGENT = os.environ.get('OMA_RUNNER_AGENT', 'claude')
+CODEX = os.environ.get('OMA_RUNNER_CODEX') or shutil.which('codex') or '/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex'
+CURSOR = os.environ.get('OMA_RUNNER_CURSOR') or shutil.which('cursor-agent') or str(HOME / '.local/bin/cursor-agent')
+KINDS = ('claude', 'codex', 'cursor')
 LABEL = 'dev.omalauncher.runner'
 INSTALLED = HOME / '.local/bin/oma-runner'
 PLIST = HOME / 'Library/LaunchAgents' / (LABEL + '.plist')
 MAX_BODY = 1_000_000
 KEEPALIVE = 15
 DENIED = 'The user declined this action. Do not retry it through another tool.'
+# What an agent says when it cannot take more work right now: its plan's usage, a rate or concurrency limit, or an
+# overloaded service. Matched only on errors (a failed result, an error event, or what a dead agent left on stderr),
+# never on ordinary text, so a turn that merely talks about rate limits is not taken for one.
+LIMIT = re.compile(r'usage limit|hit your (\w+ )?limit|limit (reached|exceeded)|rate.?limit|out of (extra )?usage|'
+                   r'too many (concurrent|requests)|concurren\w* (session )?limit|overloaded', re.I)
+CODEX_LIMITS = {'usageLimitExceeded', 'rateLimitExceeded', 'serverOverloaded', 'sessionBudgetExceeded'}
+# Codex features that act outside the project or approve on their own; off in runner threads where this Codex has them.
+CODEX_OFF = ['apps', 'computer_use', 'browser_use', 'browser_use_external', 'in_app_browser', 'hooks', 'plugins', 'remote_plugin', 'guardian_approval']
 
 
 def tailscale_address():
@@ -50,18 +61,20 @@ def tailscale_address():
     return address if first == 100 and 64 <= second <= 127 else None
 
 
-def agent_command(session):
-    """Claude Code as the phone runs it, but asking about everything the phone would be asked about.
+def program(kind):
+    """The path of a kind's CLI on this Mac, or None when it is not installed."""
+    given = {'claude': AGENT, 'codex': CODEX, 'cursor': CURSOR}[kind]
+    found = shutil.which(given) or given
+    return found if os.path.isfile(found) and os.access(found, os.X_OK) else None
 
-    manual mode with the prompts sent to us: nothing is allowed by a classifier. Hooks are off because the Mac's
-    own PermissionRequest hook (the notch) can answer a request, and only the phone may. The key and the runner's
-    own records are out of the agent's reach.
-    """
-    settings = {'disableAllHooks': True, 'permissions': {'deny': [
-        'Read(/' + str(TOKEN_FILE) + ')', 'Read(/' + str(STATE) + '/**)', 'Edit(/' + str(STATE) + '/**)']}}
-    return [AGENT, '-p'] + (['--resume', session] if session else []) + [
-        '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
-        '--permission-mode', 'manual', '--permission-prompt-tool', 'stdio', '--settings', json.dumps(settings)]
+
+def unwrap(command):
+    """Codex runs every command as `zsh -lc "..."`; the phone is shown the command itself."""
+    try:
+        words = shlex.split(command or '')
+    except ValueError:
+        return command or ''
+    return words[2] if len(words) == 3 and words[1] in ('-lc', '-c') and words[0].rsplit('/', 1)[-1] in ('sh', 'bash', 'zsh') else (command or '')
 
 
 def step(block):
@@ -70,6 +83,328 @@ def step(block):
     target = next((str(given[key]) for key in ('command', 'file_path', 'path', 'pattern', 'url', 'description') if str(given.get(key) or '').strip()), None)
     name = (block.get('name') or 'a tool')[:60]
     return name if target is None else name + ': ' + target.strip().splitlines()[0][:120]
+
+
+def outside_reach():
+    """Paths no agent may read or write: the key and the runner's own records."""
+    return [str(TOKEN_FILE), str(STATE) + '/**']
+
+
+class Claude:
+    """Claude Code as the phone runs it, but asking about everything the phone would be asked about.
+
+    manual mode with the prompts sent to us: nothing is allowed by a classifier. Hooks are off because the Mac's
+    own PermissionRequest hook (the notch) can answer a request, and only the phone may. The key and the runner's
+    own records are out of the agent's reach.
+    """
+    def __init__(self, thread, text):
+        self.thread, self.text, self.limited = thread, text, None
+
+    def command(self):
+        meta = self.thread.meta
+        settings = {'disableAllHooks': True, 'permissions': {'deny': ['Read(/' + outside_reach()[0] + ')', 'Read(/' + outside_reach()[1] + ')', 'Edit(/' + outside_reach()[1] + ')']}}
+        return [AGENT, '-p'] + (['--resume', meta['session']] if meta.get('session') else []) + (['--model', meta['model']] if meta.get('model') else []) + [
+            '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
+            '--permission-mode', 'manual', '--permission-prompt-tool', 'stdio', '--settings', json.dumps(settings)]
+
+    def environment(self):
+        return clean_environment()
+
+    def begin(self):
+        self.thread.say({'type': 'user', 'session_id': '', 'message': {'role': 'user', 'content': self.text}})
+
+    def heard(self, event):
+        """One line from Claude Code, turned into what the phone is shown. True when the turn is over."""
+        thread, kind = self.thread, event.get('type')
+        if kind == 'system' and event.get('subtype') == 'init':
+            thread.model = event.get('model') or thread.model
+            if event.get('session_id') and thread.meta.get('session') != event['session_id']:
+                thread.meta['session'] = event['session_id']
+                thread.save()
+        elif kind == 'assistant':
+            if event.get('error') in ('rate_limit', 'billing_error'):
+                self.limited = event['error']
+            for block in (event.get('message') or {}).get('content') or []:
+                if block.get('type') == 'text' and block.get('text', '').strip():
+                    thread.emit('text', text=block['text'])
+                elif block.get('type') == 'tool_use':
+                    thread.emit('step', text=step(block), tool=block.get('name'))
+        elif kind == 'control_request':
+            request = event.get('request') or {}
+            if request.get('subtype') == 'can_use_tool' and event.get('request_id'):
+                thread.ask(event['request_id'], request.get('tool_name', ''), request.get('input') or {}, request.get('description') or request.get('decision_reason') or '')
+            elif event.get('request_id'):
+                thread.say({'type': 'control_response', 'response': {'subtype': 'error', 'request_id': event['request_id'], 'error': 'oma-runner does not answer this kind of request'}})
+        elif kind == 'control_cancel_request':
+            thread.withdraw(event.get('request_id'))
+        elif kind == 'result':
+            text = str(event.get('result') or '')
+            if event.get('is_error') and (self.limited or LIMIT.search(text)):
+                thread.emit('error', code='limit', text=text or self.limited)
+            else:
+                thread.emit('result', text=text, failed=bool(event.get('is_error')))
+            return True
+        return False
+
+    def answer(self, entry, allow):
+        decision = {'behavior': 'allow', 'updatedInput': entry['input']} if allow else {'behavior': 'deny', 'message': DENIED}
+        return self.thread.say({'type': 'control_response', 'response': {'subtype': 'success', 'request_id': entry['request'], 'response': decision}})
+
+
+class Talker:
+    """The shared half of the JSON-RPC agents (Codex's app-server, Cursor's ACP): numbered requests and replies."""
+    envelope = {}
+    stays = True  # a server that would wait for the next turn; ended as soon as this one is over
+
+    def __init__(self, thread, text):
+        self.thread, self.text, self.calls, self.count, self.limited = thread, text, {}, 0, None
+
+    def request(self, method, params):
+        self.count += 1
+        self.calls[self.count] = method
+        self.thread.say({**self.envelope, 'id': self.count, 'method': method, 'params': params})
+
+    def notify(self, method, params=None):
+        self.thread.say({**self.envelope, 'method': method, **({} if params is None else {'params': params})})
+
+    def reply(self, number, result=None, error=None):
+        return self.thread.say({**self.envelope, 'id': number, **({'error': {'code': -32000, 'message': error}} if error else {'result': result})})
+
+    def environment(self):
+        return clean_environment()
+
+    def heard(self, message):
+        if 'method' in message and 'id' in message:
+            return self.asked(message['method'], message['id'], message.get('params') or {})
+        if 'method' in message:
+            return self.told(message['method'], message.get('params') or {})
+        if 'id' in message:
+            method = self.calls.pop(message['id'], None)
+            if 'error' in message:
+                problem = str((message.get('error') or {}).get('message') or message['error'])
+                if method in ('thread/resume', 'session/load'):
+                    self.thread.meta['session'] = None
+                    self.thread.save()
+                    problem = 'The earlier conversation could not be continued (' + problem + '); the next message starts a new one.'
+                self.thread.emit('error', code='limit' if LIMIT.search(problem) and method not in ('thread/resume', 'session/load') else 'agent', text=problem)
+                return True
+            return self.answered(method, message.get('result') or {})
+        return False
+
+
+class Codex(Talker):
+    """Codex's app-server, one per turn. Every command it does not know to be read-only and every file change is
+    asked about (approval policy "untrusted"), and the asking goes to us, not to Codex's own auto-reviewer. Its
+    Mac-wide add-ons (computer use, browser, apps, plugins, MCP servers, hooks, notify) are off in these threads."""
+
+    def __init__(self, thread, text):
+        super().__init__(thread, text)
+        self.items, self.final, self.last = {}, '', ''
+
+    def command(self):
+        off = [feature for feature in CODEX_OFF if feature in codex_features()]
+        servers = codex_servers()
+        if any(not re.fullmatch(r'[\w-]+', name) for name in servers):
+            raise OSError('an MCP server in the Codex config has a name the runner cannot switch off, so Codex is not started')
+        return [CODEX, 'app-server', '-c', 'notify=[]', '-c', 'approvals_reviewer="user"'] + \
+            [part for feature in off for part in ('--disable', feature)] + \
+            [part for name in servers for part in ('-c', 'mcp_servers.%s.enabled=false' % name)]
+
+    def begin(self):
+        self.request('initialize', {'clientInfo': {'name': 'oma-runner', 'version': '1'}})
+
+    def rules(self):
+        meta = self.thread.meta
+        return {'cwd': meta['project'], 'approvalPolicy': 'untrusted', 'approvalsReviewer': 'user', 'sandbox': 'workspace-write', **({'model': meta['model']} if meta.get('model') else {})}
+
+    def answered(self, method, result):
+        thread = self.thread
+        if method == 'initialize':
+            self.notify('initialized')
+            session = thread.meta.get('session')
+            self.request('thread/resume', {'threadId': session, **self.rules()}) if session else self.request('thread/start', self.rules())
+        elif method in ('thread/start', 'thread/resume'):
+            session = (result.get('thread') or {}).get('id')
+            thread.model = result.get('model') or thread.model
+            if session and thread.meta.get('session') != session:
+                thread.meta['session'] = session
+                thread.save()
+            self.request('turn/start', {'threadId': session, 'input': [{'type': 'text', 'text': self.text, 'text_elements': []}]})
+        return False
+
+    def asked(self, method, number, params):
+        thread = self.thread
+        if method == 'item/commandExecution/requestApproval':
+            thread.ask(number, 'Bash', {'command': unwrap(params.get('command')), 'cwd': params.get('cwd')}, params.get('reason') or '')
+        elif method == 'item/fileChange/requestApproval':
+            changes = (self.items.get(params.get('itemId')) or {}).get('changes') or []
+            if not changes:
+                thread.ask(number, 'Edit', {'changes': [], 'note': 'Codex did not say which files it would change'}, params.get('reason') or '')
+                return False
+            thread.ask(number, 'Edit', {'changes': [{'path': change.get('path'), 'kind': (change.get('kind') or {}).get('type'), 'diff': str(change.get('diff') or '')[:4000]} for change in changes]}, params.get('reason') or '')
+        else:
+            self.reply(number, error='oma-runner does not answer this kind of request')
+        return False
+
+    def told(self, method, params):
+        thread = self.thread
+        item = params.get('item') or {}
+        if method == 'item/started':
+            self.items[item.get('id')] = item
+            kind = item.get('type')
+            if kind == 'commandExecution':
+                thread.emit('step', text=step({'name': 'Bash', 'input': {'command': unwrap(item.get('command'))}}), tool='Bash')
+            elif kind == 'fileChange':
+                paths = [change.get('path') or '' for change in item.get('changes') or []]
+                thread.emit('step', text='Edit: ' + ', '.join(paths)[:120], tool='Edit')
+            elif kind == 'mcpToolCall':
+                thread.emit('step', text=(str(item.get('server')) + '.' + str(item.get('tool')))[:120], tool='mcp')
+            elif kind == 'webSearch':
+                thread.emit('step', text=step({'name': 'WebSearch', 'input': {'description': item.get('query')}}), tool='WebSearch')
+        elif method == 'item/completed' and item.get('type') == 'agentMessage' and str(item.get('text') or '').strip():
+            thread.emit('text', text=item['text'])
+            self.last = item['text']
+            if item.get('phase') == 'final_answer':
+                self.final = item['text']
+        elif method == 'serverRequest/resolved':
+            thread.withdraw(params.get('requestId'))
+        elif method == 'error' and not params.get('willRetry'):
+            problem = params.get('error') or {}
+            info = problem.get('codexErrorInfo')
+            if info in CODEX_LIMITS or (info in (None, 'other') and LIMIT.search(str(problem.get('message') or ''))):
+                self.limited = str(problem.get('message') or problem.get('codexErrorInfo'))
+        elif method == 'turn/completed':
+            turn = params.get('turn') or {}
+            problem = turn.get('error') or {}
+            if turn.get('status') == 'completed':
+                thread.emit('result', text=self.final or self.last, failed=False)
+            elif self.limited or problem.get('codexErrorInfo') in CODEX_LIMITS:
+                thread.emit('error', code='limit', text=self.limited or str(problem.get('message') or ''))
+            elif not (turn.get('status') == 'interrupted' and thread.stopped):
+                thread.emit('error', code='agent', text=str(problem.get('message') or 'Codex ended the turn: ' + str(turn.get('status'))))
+            return True
+        return False
+
+    def answer(self, entry, allow):
+        return self.reply(entry['request'], {'decision': 'accept' if allow else 'decline'})
+
+
+class Cursor(Talker):
+    """Cursor's CLI over ACP, one per turn. Cursor asks before shell commands that are not allowed in its config
+    (here none are), but it edits files without asking anyone, so in runner threads its own file edits are denied:
+    it can change files only through a shell command, which is asked about. Its config lives in the runner's own
+    folder, so Boss's own Cursor settings are not touched; its sign-in is shared."""
+    envelope = {'jsonrpc': '2.0'}
+
+    def __init__(self, thread, text):
+        super().__init__(thread, text)
+        self.live, self.buffer, self.said, self.calls_seen = False, '', [], {}
+
+    def command(self):
+        return [CURSOR] + (['--model', self.thread.meta['model']] if self.thread.meta.get('model') else []) + ['acp']
+
+    def environment(self):
+        folder = STATE / 'cursor'
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / 'cli-config.json').write_text(json.dumps({'version': 1, 'approvalMode': 'allowlist', 'permissions': {
+            'allow': [], 'deny': ['Write(**)'] + ['Read(%s)' % path for path in outside_reach()]}}))
+        return {**clean_environment(), 'CURSOR_CONFIG_DIR': str(folder)}
+
+    def begin(self):
+        self.request('initialize', {'protocolVersion': 1, 'clientCapabilities': {'fs': {'readTextFile': False, 'writeTextFile': False}, 'terminal': False}})
+
+    def flush(self):
+        if self.buffer.strip():
+            self.thread.emit('text', text=self.buffer)
+            self.said.append(self.buffer)
+        self.buffer = ''
+
+    def answered(self, method, result):
+        thread = self.thread
+        if method == 'initialize':
+            given = {'cwd': thread.meta['project'], 'mcpServers': []}
+            session = thread.meta.get('session')
+            self.request('session/load', {'sessionId': session, **given}) if session else self.request('session/new', given)
+        elif method in ('session/new', 'session/load'):
+            session = result.get('sessionId') or thread.meta.get('session')
+            model = str((result.get('models') or {}).get('currentModelId') or '').replace('[]', '')
+            thread.model = ('cursor-auto' if model in ('default', 'auto') else model) or thread.model
+            if session and thread.meta.get('session') != session:
+                thread.meta['session'] = session
+                thread.save()
+            self.live = True  # what session/load replays of earlier turns came before this and is not shown again
+            self.request('session/prompt', {'sessionId': session, 'prompt': [{'type': 'text', 'text': self.text}]})
+        elif method == 'session/prompt':
+            self.flush()
+            reason = result.get('stopReason')
+            if not (reason == 'cancelled' and thread.stopped):
+                thread.emit('result', text=self.said[-1] if self.said else '', failed=reason not in ('end_turn', None))
+            return True
+        return False
+
+    def asked(self, method, number, params):
+        if method == 'session/request_permission':
+            self.flush()
+            call = params.get('toolCall') or {}
+            notes = ' '.join(str((part.get('content') or {}).get('text') or '') for part in call.get('content') or [] if isinstance(part, dict)).strip()
+            tool = {'execute': 'Bash', 'edit': 'Edit', 'delete': 'Edit', 'move': 'Edit', 'fetch': 'WebFetch', 'read': 'Read'}.get(call.get('kind'), call.get('kind') or 'tool')
+            given = call.get('rawInput') or self.calls_seen.get(call.get('toolCallId')) or {'title': call.get('title')}
+            self.thread.ask(number, tool, given, notes or str(call.get('title') or ''), options=params.get('options') or [])
+        else:
+            self.reply(number, error='oma-runner does not answer this kind of request')
+        return False
+
+    def told(self, method, params):
+        update = params.get('update') or {}
+        if method != 'session/update' or not self.live:
+            return False
+        if update.get('sessionUpdate') == 'agent_message_chunk':
+            self.buffer += str((update.get('content') or {}).get('text') or '')
+        elif update.get('sessionUpdate') in ('tool_call', 'tool_call_update') and update.get('rawInput'):
+            self.calls_seen[update.get('toolCallId')] = update['rawInput']
+        if update.get('sessionUpdate') == 'tool_call':
+            self.flush()
+            given = update.get('rawInput') or {}
+            self.thread.emit('step', text=step({'name': update.get('title') if not given else {'execute': 'Bash', 'edit': 'Edit', 'read': 'Read'}.get(update.get('kind'), update.get('title')), 'input': given}), tool=update.get('kind'))
+        return False
+
+    def answer(self, entry, allow):
+        wanted = 'allow_once' if allow else 'reject_once'
+        option = next((option.get('optionId') for option in entry.get('options') or [] if option.get('kind') == wanted), None)
+        if option is None:  # only "always" options: never chosen; the request is cancelled and the card withdrawn
+            self.reply(entry['request'], {'outcome': {'outcome': 'cancelled'}})
+            return False
+        return self.reply(entry['request'], {'outcome': {'outcome': 'selected', 'optionId': option}})
+
+
+DRIVERS = {'claude': Claude, 'codex': Codex, 'cursor': Cursor}
+
+
+def clean_environment():
+    return {key: value for key, value in os.environ.items() if not key.startswith(('CLAUDE', 'ANTHROPIC', 'OMA_RUNNER'))}
+
+
+known = {}
+
+
+def codex_features():
+    """The feature names this Codex knows, so one it has dropped is not passed (an unknown one stops it)."""
+    if 'features' not in known:
+        try:
+            listing = subprocess.run([CODEX, 'features', 'list'], capture_output=True, text=True, timeout=20).stdout
+            known['features'] = {line.split()[0] for line in listing.splitlines() if line.strip()}
+        except (OSError, subprocess.SubprocessError):
+            known['features'] = set()
+    return known['features']
+
+
+def codex_servers():
+    """The MCP servers in Boss's Codex config, each switched off for runner threads."""
+    try:
+        config = tomllib.loads((pathlib.Path(os.environ.get('CODEX_HOME') or HOME / '.codex') / 'config.toml').read_text())
+    except (OSError, ValueError):
+        return []
+    return list((config.get('mcp_servers') or {}).keys())
 
 
 changed = threading.Condition()  # guards every thread's state; told whenever an event is added
@@ -87,8 +422,12 @@ class Thread:
         self.process = None
         self.pending = {}  # approval id -> {'nonce', 'request', 'tool', 'input', 'explanation'}
         self.stopped = False
+        self.driver = None
+        self.model = meta.get('model_seen') or meta.get('model')  # as the agent reported it, else as asked
+        self.model_told = False
 
     def save(self):
+        self.meta['model_seen'] = self.model
         self.folder.mkdir(parents=True, exist_ok=True)
         fresh = self.folder / 'thread.json.new'
         fresh.write_text(json.dumps(self.meta, indent=1))
@@ -96,6 +435,10 @@ class Thread:
 
     def emit(self, kind, **data):
         """Adds one event to the thread's record. Call with `changed` held."""
+        if kind == 'result' or (kind == 'text' and not self.model_told):
+            # The phone labels replies by who wrote them: the model on a turn's first text and on its result.
+            data = {**data, 'kind': self.meta['kind'], **({'model': self.model} if self.model else {})}
+            self.model_told = True
         event = {'id': len(self.events) + 1, 'time': int(time.time()), 'type': kind, **data}
         self.events.append(event)
         with open(self.folder / 'events.jsonl', 'a') as record:
@@ -113,7 +456,7 @@ class Thread:
 
     def view(self):
         return {'id': self.meta['id'], 'name': self.meta['name'], 'project': self.meta['project'], 'home': 'mac',
-                'kind': self.meta['kind'], 'summary': self.meta.get('summary', ''), 'status': self.meta['status'],
+                'kind': self.meta['kind'], 'model': self.model, 'summary': self.meta.get('summary', ''), 'status': self.meta['status'],
                 'last_worked': self.meta.get('last_worked'), 'tail': self.meta.get('tail', ''), 'waiting_turns': len(self.queue),
                 'last_event': len(self.events),
                 'pending': [{'approval': key, 'nonce': entry['nonce'], 'tool': entry['tool'], 'input': entry['input'], 'explanation': entry['explanation']} for key, entry in self.pending.items()]}
@@ -121,11 +464,27 @@ class Thread:
     def say(self, message):
         """One line to the agent's stdin. Call with `changed` held."""
         try:
-            self.process.stdin.write(json.dumps(message) + '\n')
+            self.process.stdin.write((json.dumps(message) + '\n').encode())
             self.process.stdin.flush()
             return True
         except (OSError, ValueError, AttributeError):
             return False
+
+    def ask(self, request, tool, given, explanation, **extra):
+        """An agent asks to do something: a card for the phone, and the task waits for its answer. Call with `changed` held."""
+        approval, nonce = 'a' + secrets.token_hex(6), secrets.token_urlsafe(24)
+        self.pending[approval] = {'nonce': nonce, 'request': request, 'tool': tool, 'input': given, 'explanation': explanation, **extra}
+        self.status('waiting')
+        self.emit('approval', approval=approval, nonce=nonce, tool=tool, input=given, explanation=explanation)
+
+    def withdraw(self, request):
+        """The agent took a request back (or it was settled): its card goes. Call with `changed` held."""
+        for approval, entry in list(self.pending.items()):
+            if entry['request'] == request:
+                del self.pending[approval]
+                self.emit('approval_result', approval=approval, decision='withdrawn')
+                if not self.pending:
+                    self.status('working')
 
 
 def load():
@@ -158,10 +517,10 @@ def allowed_project(given):
     return None
 
 
-def make(name, project):
+def make(name, project, kind='claude', model=None):
     with changed:
         entry_id = 't' + secrets.token_hex(4)
-        thread = Thread({'id': entry_id, 'name': name, 'project': str(project), 'kind': 'claude', 'session': None,
+        thread = Thread({'id': entry_id, 'name': name, 'project': str(project), 'kind': kind, 'model': model, 'session': None,
                          'status': 'idle', 'created': int(time.time()), 'last_worked': None, 'summary': '', 'tail': ''})
         thread.save()
         threads[entry_id] = thread
@@ -194,7 +553,11 @@ def drain(thread):
             thread.stopped = False
             thread.status('working')
             thread.emit('message', text=text)
-        turn(thread, text)
+        try:
+            turn(thread, text)
+        except Exception as problem:  # the thread must never be left working with no one to finish it
+            with changed:
+                thread.emit('error', code='runner', text='The runner failed during this turn: ' + repr(problem)[:500])
         with changed:
             thread.meta['last_worked'] = int(time.time())
             if thread.stopped and not closing:
@@ -205,79 +568,84 @@ def drain(thread):
 
 
 def turn(thread, text):
-    environment = {key: value for key, value in os.environ.items() if not key.startswith(('CLAUDE', 'ANTHROPIC', 'OMA_RUNNER'))}
+    driver = DRIVERS[thread.meta['kind']](thread, text)
     try:
-        process = subprocess.Popen(agent_command(thread.meta.get('session')), cwd=thread.meta['project'], env=environment, text=True,
+        process = subprocess.Popen(driver.command(), cwd=thread.meta['project'], env=driver.environment(),
                                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
     except OSError as problem:
         with changed:
-            thread.emit('error', text='The agent could not be started on the Mac: ' + str(problem))
+            thread.emit('error', code='agent', text='The agent could not be started on the Mac: ' + str(problem))
         return
     with changed:
-        thread.process = process
-        thread.say({'type': 'user', 'session_id': '', 'message': {'role': 'user', 'content': text}})
+        thread.process, thread.driver, thread.model_told = process, driver, False
+        driver.begin()
     answered, stray = False, []
-    for line in process.stdout:
+    for line in lines(process):
         try:
             event = json.loads(line)
         except ValueError:
-            stray.append(line.strip())
+            stray = (stray + [line.strip()])[-40:]
             continue
         if not isinstance(event, dict):
             continue
         with changed:
             if closing:
                 break
-            answered = heard(thread, event) or answered
-    code = process.wait()
+            answered = driver.heard(event)
+        if answered:
+            # The turn is over; nothing after it is read. Codex starts a helper in a group of its own that keeps
+            # this pipe open, so waiting for the end of it could wait long after the agent has gone.
+            break
+    try:
+        process.stdin.close()
+    except OSError:
+        pass
+    if answered and getattr(driver, 'stays', False):
+        end(process)
+    try:
+        code = process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        end(process)
+        code = process.wait()
+    process.stdout.close()
     with changed:
         thread.process = None
+        for approval in list(thread.pending):
+            thread.emit('approval_result', approval=approval, decision='withdrawn')
         thread.pending.clear()
         if closing:
             return
         if not answered and not thread.stopped:
-            thread.emit('error', code=code, text=('\n'.join(stray)[-2000:] or 'The agent ended without an answer.'))
+            left = '\n'.join(stray)[-2000:]
+            thread.emit('error', code='limit' if LIMIT.search(left) else code, text=left or 'The agent ended without an answer.')
 
 
-def heard(thread, event):
-    """One line from the agent, turned into what the phone is shown. True when it is the turn's result."""
-    kind = event.get('type')
-    if kind == 'system' and event.get('subtype') == 'init' and event.get('session_id'):
-        if thread.meta.get('session') != event['session_id']:
-            thread.meta['session'] = event['session_id']
-            thread.save()
-    elif kind == 'assistant':
-        for block in (event.get('message') or {}).get('content') or []:
-            if block.get('type') == 'text' and block.get('text', '').strip():
-                thread.emit('text', text=block['text'])
-            elif block.get('type') == 'tool_use':
-                thread.emit('step', text=step(block), tool=block.get('name'))
-    elif kind == 'control_request':
-        request = event.get('request') or {}
-        if request.get('subtype') == 'can_use_tool' and event.get('request_id'):
-            approval, nonce = 'a' + secrets.token_hex(6), secrets.token_urlsafe(24)
-            entry = {'nonce': nonce, 'request': event['request_id'], 'tool': request.get('tool_name', ''), 'input': request.get('input') or {},
-                     'explanation': request.get('description') or request.get('decision_reason') or ''}
-            thread.pending[approval] = entry
-            thread.status('waiting')
-            thread.emit('approval', approval=approval, nonce=nonce, tool=entry['tool'], input=entry['input'], explanation=entry['explanation'])
-        elif event.get('request_id'):
-            thread.say({'type': 'control_response', 'response': {'subtype': 'error', 'request_id': event['request_id'], 'error': 'oma-runner does not answer this kind of request'}})
-    elif kind == 'control_cancel_request':
-        for approval, entry in list(thread.pending.items()):
-            if entry['request'] == event.get('request_id'):
-                del thread.pending[approval]
-                thread.emit('approval_result', approval=approval, decision='withdrawn')
-        if not thread.pending:
-            thread.status('working')
-    elif kind == 'result':
-        thread.emit('result', text=str(event.get('result') or ''), failed=bool(event.get('is_error')))
+def lines(process):
+    """The agent's output a line at a time, until it ends. Not until the pipe closes: Codex starts a helper in a
+    group of its own that holds the pipe open, and a stopped agent would otherwise be waited for as long as it lives."""
+    pipe, held = process.stdout.fileno(), b''
+    while True:
+        if not select.select([pipe], [], [], 1)[0]:
+            if process.poll() is not None:
+                break
+            continue
+        chunk = os.read(pipe, 65536)
+        if not chunk:
+            break
+        held += chunk
+        while b'\n' in held:
+            line, held = held.split(b'\n', 1)
+            yield line.decode('utf-8', 'replace')
+    if held:
+        yield held.decode('utf-8', 'replace')
+
+
+def end(process):
+    if process.poll() is None:
         try:
-            thread.process.stdin.close()
-        except OSError:
+            os.killpg(process.pid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):  # macOS says EPERM for a group that has exited
             pass
-        return True
-    return False
 
 
 def decide(thread, approval, body):
@@ -290,11 +658,12 @@ def decide(thread, approval, body):
             return 403, {'ok': False, 'error': 'wrong nonce'}
         if body.get('decision') not in ('allow', 'deny'):
             return 400, {'ok': False, 'error': 'decision must be "allow" or "deny"'}
-        allow = body['decision'] == 'allow'
-        decision = {'behavior': 'allow', 'updatedInput': entry['input']} if allow else {'behavior': 'deny', 'message': DENIED}
         del thread.pending[approval]
-        if not thread.say({'type': 'control_response', 'response': {'subtype': 'success', 'request_id': entry['request'], 'response': decision}}):
-            return 409, {'ok': False, 'error': 'the task is no longer running'}
+        if thread.driver is None or not thread.driver.answer(entry, body['decision'] == 'allow'):
+            thread.emit('approval_result', approval=approval, decision='withdrawn')
+            if not thread.pending:
+                thread.status('working')
+            return 409, {'ok': False, 'error': 'the agent did not take the answer (the task ended, or it offered no once-only choice)'}
         thread.emit('approval_result', approval=approval, decision=body['decision'])
         if not thread.pending:
             thread.status('working')
@@ -308,7 +677,7 @@ def stop(thread):
         thread.stopped = True
         try:
             os.killpg(thread.process.pid, signal.SIGTERM)
-        except ProcessLookupError:
+        except (ProcessLookupError, PermissionError):  # macOS says EPERM for a group that has exited
             pass
         return True
 
@@ -357,7 +726,8 @@ class Runner(BaseHTTPRequestHandler):
         if parts == ['health']:
             with changed:
                 states = [thread.meta['status'] for thread in threads.values()]
-            return self.answer(200, {'ok': True, 'runner': 'oma-runner', 'threads': len(states), 'working': states.count('working'), 'waiting': states.count('waiting')})
+            return self.answer(200, {'ok': True, 'runner': 'oma-runner', 'threads': len(states), 'working': states.count('working'), 'waiting': states.count('waiting'),
+                                     'kinds': [kind for kind in KINDS if program(kind)]})
         if parts == ['threads']:
             with changed:
                 return self.answer(200, {'ok': True, 'threads': [thread.view() for thread in threads.values()]})
@@ -415,7 +785,15 @@ class Runner(BaseHTTPRequestHandler):
                 return self.answer(400, {'ok': False, 'error': 'a name is needed'})
             if project is None:
                 return self.answer(403, {'ok': False, 'error': 'the project must be an existing folder under an allowed root', 'roots': [str(root) for root in ROOTS]})
-            return self.answer(200, {'ok': True, 'thread': make(name, project).view()})
+            kind = body.get('kind') or 'claude'
+            if kind not in KINDS:
+                return self.answer(400, {'ok': False, 'error': 'kind must be one of ' + ', '.join(KINDS)})
+            if not program(kind):
+                return self.answer(503, {'ok': False, 'error': kind + ' is not installed on the Mac'})
+            model = body.get('model')
+            if model is not None and not (isinstance(model, str) and re.fullmatch(r'[A-Za-z0-9][\w.:=,\[\]-]{0,99}', model)):
+                return self.answer(400, {'ok': False, 'error': 'model must be a model name'})
+            return self.answer(200, {'ok': True, 'thread': make(name, project, kind, model).view()})
         thread = threads.get(parts[1]) if len(parts) in (3, 4) and parts[0] == 'threads' else None
         if thread is None:
             return self.answer(404, {'ok': False, 'error': 'not found'})
@@ -465,7 +843,7 @@ def serve():
             if thread.process is not None and thread.process.poll() is None:
                 try:
                     os.killpg(thread.process.pid, signal.SIGTERM)
-                except ProcessLookupError:
+                except (ProcessLookupError, PermissionError):  # macOS says EPERM for a group that has exited
                     pass
         os._exit(0)
 
