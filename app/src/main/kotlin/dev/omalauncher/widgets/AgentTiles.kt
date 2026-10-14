@@ -64,11 +64,13 @@ const val STAMP_EVERY_MS = 60_000L
 
 /**
  * What becomes of the tile of a thread in [state] that was last busy at [busy] (null if it never was, as far
- * as the phone knows). It never leaves while the thread works, has requests queued, waits for his OK or needs
- * his attention. Idle, it stays [AGENT_TILE_IDLE_HOURS], faded for the last [AGENT_TILE_FADE_HOURS], then goes.
+ * as the phone knows). It never leaves while the thread works, has requests queued or waits for his OK. Idle, or
+ * ended in a failure that nothing is waiting on, it stays [AGENT_TILE_IDLE_HOURS], faded for the last
+ * [AGENT_TILE_FADE_HOURS], then goes: a red tile that stayed until he sent that thread something again would pile up.
  */
 fun tileLife(state: ThreadState, busy: Long?, now: Long): TileLife {
-    if (state.active) return TileLife.Stays
+    if (state.active && state != ThreadState.Attention) return TileLife.Stays
+    if (state == ThreadState.Attention && busy == null) return TileLife.Stays
     val idle = now - (busy ?: return TileLife.Gone)
     return when {
         idle >= AGENT_TILE_IDLE_HOURS * HOUR_MS -> TileLife.Gone

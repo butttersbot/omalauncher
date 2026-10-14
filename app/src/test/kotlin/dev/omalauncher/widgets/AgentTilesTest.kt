@@ -48,7 +48,7 @@ class AgentTilesTest {
     }
 
     @Test fun aTileNeverLeavesWhileItsThreadIsBusyAndLeavesTwelveHoursAfter() {
-        for (state in ThreadState.entries.filter { it.active }) {
+        for (state in ThreadState.entries.filter { it.active && it != ThreadState.Attention }) {
             assertEquals(state.name, TileLife.Stays, tileLife(state, now - 400 * hour, now))
             assertEquals(state.name, TileLife.Stays, tileLife(state, null, now))
         }
@@ -58,6 +58,10 @@ class AgentTilesTest {
         assertEquals(TileLife.Fading, tileLife(ThreadState.Idle, now - 11 * hour, now))
         assertEquals(TileLife.Fading, tileLife(ThreadState.Idle, now - 12 * hour + 1, now))
         assertEquals(TileLife.Gone, tileLife(ThreadState.Idle, now - 12 * hour, now))
+        // A failure nothing waits on leaves as an idle thread does (Boss, 2026-10-13: tiles fall off after inactivity).
+        assertEquals(TileLife.Stays, tileLife(ThreadState.Attention, now - 11 * hour + 1, now))
+        assertEquals(TileLife.Gone, tileLife(ThreadState.Attention, now - 12 * hour, now))
+        assertEquals(TileLife.Stays, tileLife(ThreadState.Attention, null, now))
         // An idle thread that never worked has nothing to show.
         assertEquals(TileLife.Gone, tileLife(ThreadState.Idle, null, now))
     }
