@@ -1,6 +1,23 @@
 # Phone test results
 
-## Latest: Agents page and chat tabs (2026-10-13, about 21:00 PDT, commit b450d76) — NOT promoted, NOT seen on a screen
+## Latest: four pieces in parallel, merged (2026-10-13, about 22:30 PDT, commit 69f3470 and after) — NOT promoted, NOT seen on a screen
+
+At Boss's word ("fan out a bunch of sub agents"), four agents in separate worktrees (/root/wt/*), merged by a fifth;
+`oma-build` green on the merge.
+- Ended at his word: the previous builder run (pid 29095, 48 min old, still alive after its turn) and its child.
+- Names on replies: `ChatTask.answeredBy` — "Haiku" for the front agent, the model Claude Code reports for the
+  builder ("Opus"), "Claude" for Mac threads until the runner sends the model (asked in MAC-RUNNER-SPEC.md).
+- `oma-keep run NAME -- CMD`, `list`, `log`, `stop`: a keeper daemon started with Linux (like oma-door) keeps
+  processes past an agent's turn. Unix socket only. Its line is in the guest CLAUDE.md template, which this phone's
+  edited /root/CLAUDE.md will not pick up by itself.
+- Two phone builders (A, B): new work goes to a free one; follow-ups to their own (`<<build A|B>>`, `<<stop A|B>>`).
+  Approval titles now name the builder ("Allow X for Builder A?"). Both share one home and repo.
+- Builder health: board line and `oma-agents status` for the front agent; `<<restart>>` (stalled or dead only,
+  never with an approval waiting) and `<<clean>>` (leftover builder processes), each only when his words ask.
+- Mac side of "never bottlenecked" (fresh threads, Codex/Cursor on limits, model on events): written for the Mac
+  session at the end of MAC-RUNNER-SPEC.md. Not built.
+
+## Earlier: Agents page and chat tabs (2026-10-13, about 21:00 PDT, commit b450d76) — NOT promoted, NOT seen on a screen
 
 Built from `design/oma-threads-mockup.html`, which Boss approved ("it looks good"; tabs folded behind "▾", state
 dots in the header). `oma-build` green.

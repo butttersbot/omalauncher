@@ -186,3 +186,24 @@ Build the caller to the list above. Ask `/health` with a two-second limit before
 event id per thread and ask the stream from it. Show `approval` events as the card you already have and answer
 with the nonce. The FF4 mod is at `~/ClaudeSync/projects/ffiv-ds-better-menu-mod` on the Mac, under a root, so
 its thread can be made there now.
+
+## Asked next by Boss (2026-10-13 evening, from the phone) — for the Mac session
+His words: "the idea is to never be bottlenecked by one agent that's working … that job should have been sent to a
+new session on the Mac Pro … I also have codex and cursor so if we hit our limit on claude code concurrent
+sessions on the mac pro, then we should have codex available … or cursor."
+The phone now has two builders of its own and routes project work to Mac threads. What the runner needs:
+1. **A thread kind per agent.** `kind` is already on every thread (`"claude"`). Add `"codex"` and `"cursor"` (the
+   CLIs installed on the Mac), each run in the thread's project with the same rules: the owner's words unchanged,
+   events in the same shapes (`text`, `step`, `result`, `error`), and every request that needs permission sent as an
+   `approval` event and waited on. If a CLI cannot ask for approval per call, say so here instead of running it with
+   blanket permission; Boss decides.
+2. **The model on the events.** Put the model (from Claude Code's `init`, or the CLI's equivalent) on `result` and
+   the first `text` of a turn, e.g. `"model": "claude-opus-5-5"`, so the phone can label replies "Opus", "Codex" and so
+   on (the phone already reads a `model` if it is there; today it shows "Claude").
+3. **Busy or limited.** When a thread is working, a new, unrelated request should not wait: the phone will ask for
+   a fresh thread on the same project (`POST /threads {name, project, kind}`) rather than queue. When Claude Code
+   answers with a usage or concurrency limit, end that turn with `error {code: "limit"}` so the phone can retry the
+   same words on a `codex` thread (then `cursor`), telling Boss which one took it. Say here which error texts you
+   match.
+4. **Model choice per thread** (optional): `POST /threads` may take `model` for Claude threads.
+Write what you build back into this file, as before, and push.
