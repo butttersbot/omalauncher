@@ -292,9 +292,11 @@ function render() {
   $('body').innerHTML = (l.tools.length ? '' : `<div class="empty hand">${l.name} has no tools yet</div>`) + l.tools.map((t) => `<section class="tool" id="tool-${t}"><span class="tape"></span><div class="t"><span>${TOOLS[t].g}</span><b class="display">${TOOLS[t].name}</b></div>${TOOLS[t].body()}</section>`).join('') +
     `<div class="addtool hand" style="font-size:20px" onclick="sheet('tools')">+ add a tool to ${l.name}</div>`;
   const railTop = $('rail').querySelector('.list')?.scrollTop || 0;
-  $('rail').innerHTML = `<div class="list"><div class="lname display" onclick="setMode('full')">${l.name}</div><div class="sep"></div>` + l.tools.map((t) => TOOLS[t].keys()).join('<div class="sep"></div>') +
+  // While a sticker is selected its dress keys come first, so ✓ is always in reach without scrolling.
+  const railTools = sel() && l.tools.includes('bench') ? ['bench', ...l.tools.filter((t) => t !== 'bench')] : l.tools;
+  $('rail').innerHTML = `<div class="list"><div class="lname display" onclick="setMode('full')">${l.name}</div><div class="sep"></div>` + railTools.map((t) => TOOLS[t].keys()).join('<div class="sep"></div>') +
     `</div><div class="ends"><div class="key" onclick="setMode('full')" title="open">‹</div><div class="key" onclick="setMode('closed')" title="close">›</div></div>`;
-  $('rail').querySelector('.list').scrollTop = railTop;
+  $('rail').querySelector('.list').scrollTop = sel() ? 0 : railTop;
   const busy = AGENTS.find((a) => a.cls === 'needsok') ? 'needsok' : AGENTS.find((a) => a.cls === 'working') ? 'working' : '';
   $('handle').className = 'handle ' + busy;
 }
@@ -501,10 +503,10 @@ function sheet(which) {
     (Object.entries(TOOLS).filter(([k]) => !LOADOUTS[state.loadout].tools.includes(k)).map(([k, t]) => `<div class="item" onclick="addTool('${k}')"><span class="g">${t.g}</span><div><b>${t.name}</b><small>${t.about}</small></div></div>`).join('') || `<div class="empty hand">every tool is here already</div>`) +
     `<div class="ask hand" style="font-size:20px" onclick="toast('Oma: “what should it do?” An agent builds it as a tool file');closeSheet()">ask Oma to make a new tool…</div>`;
   s.classList.add('on'); $('scrim').classList.add('on'); sheet.at = Date.now();
-  s.inert = true; clearTimeout(sheet.t); sheet.t = setTimeout(() => { s.inert = false; }, 350);
+  s.inert = true; clearTimeout(sheet.t); sheet.t = setTimeout(() => { s.inert = false; }, 500);
 }
 function closeSheet() { $('sheet').classList.remove('on'); $('scrim').classList.remove('on'); }
-function scrimTap() { if (Date.now() - (sheet.at || 0) > 350) closeSheet(); }
+function scrimTap() { if (Date.now() - (sheet.at || 0) > 500) closeSheet(); }
 function addTool(k) { LOADOUTS[state.loadout].tools.push(k); closeSheet(); render(); scrollTool(k); }
 function newLoadout() { LOADOUTS.push({ name: 'Loadout ' + (LOADOUTS.length + 1), tools: [] }); go(LOADOUTS.length - 1); sheet('tools'); }
 function renameLoadout() { const l = LOADOUTS[state.loadout], name = prompt('Call this loadout', l.name); if (name && name.trim()) { l.name = name.trim().slice(0, 18); render(); sheet('loadouts'); } }
