@@ -67,10 +67,14 @@ import dev.omalauncher.App
 import dev.omalauncher.Runtime
 import dev.omalauncher.assist.AgentTasks
 import dev.omalauncher.assist.ApprovalOutcome
+import dev.omalauncher.assist.MacPending
+import dev.omalauncher.assist.MacThreads
 import dev.omalauncher.assist.PendingApproval
 import dev.omalauncher.assist.QuickLane
 import dev.omalauncher.assist.RoutingLog
 import dev.omalauncher.assist.appendSpeech
+import dev.omalauncher.assist.macApprovalDetail
+import dev.omalauncher.assist.macApprovalNotice
 import dev.omalauncher.linux.LinuxState
 import dev.omalauncher.linux.MAX_PROMPT_IMAGES
 import dev.omalauncher.linux.PromptImage
@@ -95,8 +99,8 @@ import java.util.Date
 /**
  * The Oma app: one thread of requests to Oma, with a field for typed messages and image attachments. There is
  * one Oma to talk to and no lane to pick (Boss, 2026-10-13): [QuickLane], the front agent, hears a request
- * first and answers it or hands it to the background agent, and the thread shows which only by what comes
- * back. Opened by [ACTION] from the dock, Super+A, the agent's notifications and the tiles; text passed as
+ * first and answers it or hands it to the background agent or to a project thread on the Mac ([MacThreads]),
+ * and the thread shows which only by what comes back and, for the Mac, by a receipt naming the project. Opened by [ACTION] from the dock, Super+A, the agent's notifications and the tiles; text passed as
  * `Intent.EXTRA_TEXT` is put in the field and not sent. It never attaches the screen: only the assistant
  * gesture over another app does (see ScreenContext.kt).
  */
@@ -111,6 +115,8 @@ class OmaChatActivity : ComponentActivity() {
         runtime.start()
         AgentTasks.restore(this)
         QuickLane.restore(this)
+        // Asked on a thread of its own: the chat never waits for the Mac, and shows what was last known until it answers.
+        MacThreads.open(this)
         if (savedInstanceState == null) prefill = textOf(intent)
         applySystemBars(this, Pack.isLight)
         setContent {
@@ -164,6 +170,8 @@ private fun OmaChatScreen(
     val frontLabel = remember(tick) { QuickLane.label }
     val frontAnswer = remember(tick) { QuickLane.answer }
     val frontContinuing = remember(tick) { QuickLane.continuing }
+    // The Mac's waiting requests, read the same way. Its entries are in the thread itself, written as its events come.
+    val macPending = remember(tick) { MacThreads.pending }
     // A request the front agent has neither answered nor handed on reads as a task just begun, here and in its entry.
     val deciding = frontWorking && tasks.any { it.time == frontTime && it.undecided }
     val begun = "${runtime.agents.default?.name ?: "Oma"} is working"
@@ -257,6 +265,16 @@ private fun OmaChatScreen(
         tick++
     }
 
+    /** His tap on a request of a thread on the Mac. The answer travels on another thread; what there is to say comes back here. */
+    fun answerMac(entry: MacPending, allow: Boolean) {
+        MacThreads.answer(context, entry.ticket, allow) { outcome ->
+            notice = macApprovalNotice(outcome)
+            tick++
+        }
+    }
+
+    fun macCard(entry: MacPending) = ApprovalCard(entry.request.explanation) { allow -> answerMac(entry, allow) }
+
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(MAX_PROMPT_IMAGES)) { uris ->
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
         val (take, tooMany) = imagesToTake(images.size, uris.size)
@@ -329,14 +347,34 @@ private fun OmaChatScreen(
                 // Follow-ups wait below the task that is running, so it is the last one running, not the last one; and a
                 // request the front agent has beside it is not it.
                 val building = tasks.lastOrNull { it.status == TaskStatus.Running && it.build }?.time
+                // A request waiting on the Mac for work that has no entry here, such as a task begun at the Mac itself: still his to answer.
+                val loose = macPending.filter { waiting -> tasks.none { it.thread == waiting.threadId && it.approvals.any { line -> line.key == waiting.request.approval } } }
+                items(loose, key = { it.ticket }) { waiting ->
+                    ApprovalBox("Allow ${waiting.request.tool} on ${waiting.threadName}?", macApprovalDetail(waiting.request), macCard(waiting))
+                }
                 items(tasks.asReversed(), key = { it.time }) { task ->
                     val front = frontWorking && task.time == frontTime
                     when {
+                        // The Mac does this one: its answer is in the entry as it arrives, and only its own thread's requests show under it.
+                        task.mac -> TaskEntry(
+                            task, task.status == TaskStatus.Running, MacThreads.label(task), task.result,
+                            macPending.filter { it.threadId == task.thread }.associate { it.request.approval to macCard(it) },
+                            onStop = {
+                                MacThreads.stop(context, task.thread) { said ->
+                                    notice = said
+                                    tick++
+                                }
+                            },
+                            onAgain = {
+                                MacThreads.tryAgain(context, task.time)
+                                tick++
+                            },
+                        )
                         // No answer and no stop of its own yet: he can't tell it from a task the build lane has just begun.
-                        task.undecided -> TaskEntry(task, front, begun, task.result, emptyList(), ::answer)
+                        task.undecided -> TaskEntry(task, front, begun, task.result, emptyMap())
                         // Never the build task's answer or label, and never an approval: the front agent can't be asked for one.
                         task.quick -> TaskEntry(
-                            task, front, frontLabel, if (front) frontAnswer else task.result, emptyList(), ::answer,
+                            task, front, frontLabel, if (front) frontAnswer else task.result, emptyMap(),
                             onStop = {
                                 QuickLane.stop()
                                 tick++
@@ -345,7 +383,8 @@ private fun OmaChatScreen(
                         )
                         else -> {
                             val running = working && task.time == building
-                            TaskEntry(task, running, label, if (running) liveAnswer else task.result, if (running) pending else emptyList(), ::answer)
+                            val cards = if (running) pending.associate { it.nonce to ApprovalCard(it.approval.explanation) { allow -> answer(it, allow) } } else emptyMap()
+                            TaskEntry(task, running, label, if (running) liveAnswer else task.result, cards)
                         }
                     }
                 }
@@ -431,7 +470,8 @@ private fun OmaChatScreen(
                 ) { MicIcon(if (listening) Pack.background else Pack.foreground) }
                 // While a task runs Send still sends, and Stop stays beside it. Stop is the build task's, and a request
                 // still undecided goes with it, as one waiting behind the task would: stop means nothing more is sent.
-                // An answer the front agent is writing has its own stop, on its entry.
+                // An answer the front agent is writing has its own stop, on its entry, and so has each task on the Mac:
+                // this one never reaches a thread there.
                 if (!listening) BracketAction("send", if (draft.isBlank() && images.isEmpty()) Pack.muted else Pack.accent, ::send)
                 if (working || deciding) {
                     BracketAction("stop", Pack.red) {
@@ -445,10 +485,36 @@ private fun OmaChatScreen(
     }
 }
 
+/** A waiting approval as its card needs it: why the agent asks, and where his tap goes. */
+private class ApprovalCard(val explanation: String, val answer: (Boolean) -> Unit)
+
+/** The card of one waiting approval: what would be done, and the two answers. The same for the phone's builder and a thread on the Mac. */
+@Composable
+private fun ApprovalBox(
+    title: String,
+    detail: String,
+    card: ApprovalCard,
+) {
+    val small = Pack.mono(Pack.size.small, Pack.muted)
+    Column(Modifier.fillMaxWidth().padding(top = 8.dp).framed(Pack.mark, Pack.accent, Pack.surface, radius = 12.dp).padding(10.dp)) {
+        BasicText(title, style = Pack.body(color = Pack.accent))
+        if (card.explanation.isNotBlank()) BasicText(card.explanation.take(300), Modifier.padding(top = 4.dp), style = small)
+        BasicText(detail, Modifier.padding(top = 4.dp), style = Pack.body(), maxLines = 10, overflow = TextOverflow.Ellipsis)
+        BasicText("Approve once allows this action only.", Modifier.padding(top = 4.dp), style = small)
+        Row {
+            BracketAction("approve once", Pack.green) { card.answer(true) }
+            BracketAction("deny", Pack.red) { card.answer(false) }
+        }
+    }
+}
+
 /**
  * One request in the thread: the prompt, the steps the agent reported, its approvals and the result. Nothing
- * says who answered. An answer of the front agent's has [onStop] beside what it is doing while it runs, and
- * [onBuild] under it afterwards, once: `[ send to build ]`, for when he wanted the work done instead.
+ * says who answered, except that one handed to a thread on the Mac carries a receipt naming the project.
+ * [cards] are the approvals of this entry still waiting, by the key their lines carry. An answer of the front
+ * agent's has [onStop] beside what it is doing while it runs, and [onBuild] under it afterwards, once:
+ * `[ send to build ]`, for when he wanted the work done instead. A request the Mac never got has [onAgain]
+ * under it: `[ try again ]`.
  */
 @Composable
 private fun TaskEntry(
@@ -456,10 +522,10 @@ private fun TaskEntry(
     running: Boolean,
     label: String,
     result: String,
-    pending: List<PendingApproval>,
-    onAnswer: (PendingApproval, Boolean) -> Unit,
+    cards: Map<String, ApprovalCard>,
     onStop: (() -> Unit)? = null,
     onBuild: (() -> Unit)? = null,
+    onAgain: (() -> Unit)? = null,
 ) {
     val small = Pack.mono(Pack.size.small, Pack.muted)
     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
@@ -473,20 +539,13 @@ private fun TaskEntry(
             )
             if (attached.isNotEmpty()) BasicText("with " + attached.joinToString(" and "), Modifier.padding(top = 4.dp), style = small)
         }
+        // The receipt: where his words went.
+        if (task.mac) BasicText(task.agent, Modifier.padding(top = 4.dp), style = small, maxLines = 1, overflow = TextOverflow.Ellipsis)
         for (step in task.steps) BasicText("· $step", Modifier.padding(top = 4.dp), style = small, maxLines = 1, overflow = TextOverflow.Ellipsis)
         for (approval in task.approvals) {
-            val waiting = if (approval.answer == ApprovalAnswer.Waiting) pending.firstOrNull { it.nonce == approval.key } else null
+            val waiting = if (approval.answer == ApprovalAnswer.Waiting) cards[approval.key] else null
             if (waiting != null) {
-                Column(Modifier.fillMaxWidth().padding(top = 8.dp).framed(Pack.mark, Pack.accent, Pack.surface, radius = 12.dp).padding(10.dp)) {
-                    BasicText("Allow ${approval.tool}?", style = Pack.body(color = Pack.accent))
-                    if (waiting.approval.explanation.isNotBlank()) BasicText(waiting.approval.explanation.take(300), Modifier.padding(top = 4.dp), style = small)
-                    BasicText(approval.detail, Modifier.padding(top = 4.dp), style = Pack.body(), maxLines = 10, overflow = TextOverflow.Ellipsis)
-                    BasicText("Approve once allows this action only.", Modifier.padding(top = 4.dp), style = small)
-                    Row {
-                        BracketAction("approve once", Pack.green) { onAnswer(waiting, true) }
-                        BracketAction("deny", Pack.red) { onAnswer(waiting, false) }
-                    }
-                }
+                ApprovalBox(if (task.mac) "Allow ${approval.tool} on ${task.threadName}?" else "Allow ${approval.tool}?", approval.detail, waiting)
             } else {
                 // A waiting approval that can no longer be answered here reads as not answered.
                 val answer = if (approval.answer == ApprovalAnswer.Waiting && !running) ApprovalAnswer.Unanswered else approval.answer
@@ -505,7 +564,7 @@ private fun TaskEntry(
                 if (onStop != null) BracketAction("stop", Pack.red, onStop)
             }
         }
-        if (task.status == TaskStatus.Queued) BasicText("waiting for the agent to finish…", Modifier.padding(top = 6.dp), style = small.copy(color = Pack.accent))
+        if (task.status == TaskStatus.Queued) BasicText(if (task.mac) "$label…" else "waiting for the agent to finish…", Modifier.padding(top = 6.dp), style = small.copy(color = Pack.accent))
         if (result.isNotBlank()) {
             // What stands here for a task that failed or was never sent is an error or the launcher's own words, not the agent's Markdown.
             val answered = task.status != TaskStatus.Failed && task.status != TaskStatus.Dropped
@@ -517,7 +576,8 @@ private fun TaskEntry(
             TaskStatus.Stopped -> "stopped"
             TaskStatus.Failed -> "needs attention"
             TaskStatus.Interrupted -> "interrupted: the app was closed while this ran"
-            TaskStatus.Dropped -> "not sent"
+            // One the Mac never got is his to send again, so it asks for him as a failure does.
+            TaskStatus.Dropped -> if (task.mac) "needs attention" else "not sent"
             else -> null
         }
         if (ended != null && !running) BasicText(ended, Modifier.padding(top = 4.dp), style = small.copy(color = Pack.red))
@@ -526,6 +586,7 @@ private fun TaskEntry(
             if (task.sentToBuild) BasicText("sent to build", Modifier.padding(top = 4.dp), style = small)
             else BasicText("[ send to build ]", Modifier.clickable(onClick = onBuild).padding(vertical = 8.dp), style = small)
         }
+        if (onAgain != null && task.status == TaskStatus.Dropped) BasicText("[ try again ]", Modifier.clickable(onClick = onAgain).padding(vertical = 8.dp), style = small)
     }
 }
 

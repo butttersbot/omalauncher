@@ -266,7 +266,8 @@ class PhoneService : AccessibilityService() {
         try {
             val command = input.getString("command")
             // The checks and their order are PhoneRequests.admit's; nothing below runs for a request it didn't let through.
-            val route = PhoneRequests.admit(command, { PhoneAccess.requireAccess(this) }) { dev.omalauncher.assist.AgentTasks.pending.size }
+            // A request of a thread on the Mac waits for the owner as the phone builder's does, and its card is on this screen too.
+            val route = PhoneRequests.admit(command, { PhoneAccess.requireAccess(this) }) { dev.omalauncher.assist.AgentTasks.pending.size + dev.omalauncher.assist.MacThreads.pending.size }
             if (route == PhoneRequests.Route.Status) { reply(JSONObject().put("ok", true).put("active", PhoneAccess.active).put("connected", true)); return }
             if (route == PhoneRequests.Route.Stop) { PhoneAccess.stop(this); reply(JSONObject().put("ok", true)); return }
             // Home's pages: read and turned behind the same gates as everything else, and never while an approval waits.

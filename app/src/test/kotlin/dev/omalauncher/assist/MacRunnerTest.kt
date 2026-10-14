@@ -398,6 +398,17 @@ class MacRunnerTest {
         assertEquals(emptyList<MacEvent>(), cursors.catchUp("t2", emptyList())); assertEquals(0L, cursors.after("t2"))
     }
 
+    @Test fun aThreadWhoseRecordWasClearedStartsOverAndTheOthersStay() {
+        val cursors = MacCursors(mapOf("t1" to 40L, "t2" to 7L))
+        assertEquals(MacOffer.Repeat, cursors.offer("t1", MacEvent.Text(1, 0, "the new record's first")))
+        cursors.forget("t1")
+        assertEquals(0L, cursors.after("t1"))
+        assertEquals(MacOffer.Show, cursors.offer("t1", MacEvent.Text(1, 0, "the new record's first")))
+        assertEquals(mapOf("t1" to 1L, "t2" to 7L), cursors.snapshot())
+        cursors.forget("never seen")
+        assertEquals(mapOf("t1" to 1L, "t2" to 7L), cursors.snapshot())
+    }
+
     // When the Mac is not there
 
     @Test fun theFallbackTable() {

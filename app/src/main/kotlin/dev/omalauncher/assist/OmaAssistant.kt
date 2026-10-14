@@ -204,6 +204,8 @@ class ListeningHost(private val owner: Context, private val dismiss: () -> Unit)
         compose.resume()
         turn++
         AgentTasks.restore(owner)
+        // Asked beside the listening, so the front agent's board knows the Mac's threads by the time he has spoken.
+        MacThreads.open(owner)
         when {
             AgentTasks.pending.isNotEmpty() -> show(ListeningRequest(ListeningPhase.NeedsOk, detail = "Oma is waiting for your answer"))
             AgentTasks.working -> { show(ListeningRequest(ListeningPhase.Busy, detail = marginNote(AgentTasks.label))); follow(turn) }

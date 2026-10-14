@@ -163,4 +163,113 @@ class FrontAgentTest {
         assertEquals(51L, JSONObject(lines.first()).getLong("time")); assertEquals(250L, JSONObject(lines.last()).getLong("time"))
         assertEquals(listOf("a", "b"), routingLog(listOf("a", "", " "), "b"))
     }
+
+
+    // Project threads on the Mac
+
+    private val now = 1_760_000_600_000L
+    private fun onMac(id: String, name: String = "FF4 mod", status: MacThreadStatus = MacThreadStatus.Idle, worked: Long? = null, summary: String = "", tail: String = "", pending: List<MacApproval> = emptyList()) =
+        MacThread(id, name, "/Users/boss/Projects/x", ThreadHome.Mac, "claude", summary, status, worked, tail, 0, 0, pending)
+
+    @Test fun aMarkForAThreadIsNotDecidedUntilItCloses() {
+        assertEquals("<<mac t1a2b3c4d>>", handOverMark(Route.mac("t1a2b3c4d")))
+        assertEquals("t1a2b3c4d", Route.macThread("mac t1a2b3c4d")); assertNull(Route.macThread("build")); assertNull(Route.macThread("mac"))
+        for (partial in listOf("<<m", "<<mac", "<<mac ", "<<mac t1a2", "<<mac t1a2b3c4d>", " `<<mac t1")) assertEquals(partial, FrontRead.Undecided, frontRead(partial))
+        for (whole in listOf("<<mac t1a2b3c4d>>", " <<mac t1a2b3c4d>>\n", "`<<mac t1a2b3c4d>>`", "<<mac  t1a2b3c4d >> sure", "<<mac t1a2b3c4d>>\nOn it.")) {
+            assertEquals(whole, FrontRead.HandOver("mac t1a2b3c4d"), frontRead(whole))
+            assertEquals(whole, FrontRead.HandOver("mac t1a2b3c4d"), frontRead(whole, ended = true))
+        }
+        var said = QuickAnswer()
+        val reads = listOf("<<m", "ac t1", ">", ">").map { piece ->
+            said = said.after(QuickEvent.Delta(piece))
+            frontRead(said.text)
+        }
+        assertEquals(listOf(FrontRead.Undecided, FrontRead.Undecided, FrontRead.Undecided, FrontRead.HandOver("mac t1")), reads)
+    }
+
+    @Test fun aMarkGoesOnlyToAThreadOnTheBoardByItsExactId() {
+        // Two threads with one name and one project, as the real runner has: only the id tells them apart.
+        val board = macBoard(listOf(onMac("t1a2b3c4d", "Scratch"), onMac("t9z8y7x6w", "Scratch")), reachable = true, seen = now, now = now)
+        assertEquals(FrontRoute.Build, frontRoute(Route.BUILD, board)); assertEquals(FrontRoute.Build, frontRoute(Route.BUILD, null))
+        assertEquals("t9z8y7x6w", (frontRoute("mac t9z8y7x6w", board) as FrontRoute.Mac).thread.id)
+        // Anything else names no thread. Nothing is guessed: not a near id, not a name, not the only thread there is.
+        for (named in listOf("", "T1A2B3C4D", "t1a2b3c4", "t1a2b3c4d ", "Scratch", "t1a2b3c4d; rm -rf /", "../t1a2b3c4d", "t1a2b3c4d\nt9z8y7x6w")) {
+            assertEquals(named, FrontRoute.Unknown(named), frontRoute(Route.mac(named), board))
+        }
+        assertEquals(FrontRoute.Unknown("t1a2b3c4d"), frontRoute("mac t1a2b3c4d", null))
+        assertEquals(FrontRoute.Unknown("t1a2b3c4d"), frontRoute("mac t1a2b3c4d", macBoard(listOf(onMac("t9z8y7x6w")), true, now, now)))
+        assertTrue(WHICH_PROJECT.startsWith("Which project is this for?"))
+    }
+
+    @Test fun aMarkWithOddCharactersOrNoEndNamesNothingAndIsNeverShown() {
+        assertEquals(FrontRead.HandOver("mac t1; rm -rf /"), frontRead("<<mac t1; rm -rf />>"))
+        assertEquals(FrontRead.HandOver("mac a<b"), frontRead("<<mac a<b>>"))
+        // Never closed, broken over a line, or far too long: a hand-over to nowhere, not an answer with a mark in it.
+        for (broken in listOf("<<mac t1", "<<mac t1>", "<<mac")) assertEquals(broken, FrontRead.HandOver("mac "), frontRead(broken, ended = true))
+        assertEquals(FrontRead.HandOver("mac "), frontRead("<<mac t1\nand more"))
+        assertEquals(FrontRead.HandOver("mac "), frontRead("<<mac " + "x".repeat(200)))
+        assertEquals(FrontRead.HandOver("mac "), frontRead("<<mac " + "y".repeat(MAC_ID_CHARS + 1) + ">>"))
+        assertEquals(64, MAC_ID_CHARS)
+        assertTrue(macNameable("t1a2b3c4d")); for (bad in listOf("", "a b", "a>b", "a<b", "a`b", "x".repeat(65))) assertFalse(bad, macNameable(bad))
+    }
+
+    @Test fun anAnswerThatOnlyMentionsAThreadsMarkIsShownWithoutIt() {
+        assertEquals(FrontRead.Answer("Sent to  now."), frontRead("Sent to <<mac t1a2b3c4d>> now.", ended = true))
+        assertEquals(FrontRead.Answer("Sure!"), frontRead("Sure! <<mac t1a2b3c4d>>"))
+        assertEquals(FrontRead.Answer("Sure!"), frontRead("Sure! <<mac t1"))
+        assertEquals(FrontRead.Answer("Sure!"), frontRead("Sure! <<m"))
+        assertEquals(FrontRead.Answer("Sure! <<mac t1"), frontRead("Sure! <<mac t1", ended = true))
+    }
+
+    /** Pinned: a phone with no Mac set up sends the front agent exactly what it always did. */
+    @Test fun withNoMacTheBoardIsByteForByteWhatItWas() {
+        val idle = BuildBoard(working = false)
+        assertEquals("[Board, for you only; Boss does not see it]\nBuilder: idle. It has not been asked anything yet.\n[Boss says]", boardText(idle, null))
+        val working = BuildBoard(working = true, label = "Using Bash", request = "make the clock tile", spokeAgo = 3 * minute)
+        assertEquals("[Board, for you only; Boss does not see it]\nBuilder: working (Using Bash) on \"make the clock tile\".\nBoss last spoke to the builder 3 min ago.\n[Boss says]", boardText(working, null))
+        for (board in listOf(idle, working)) {
+            assertEquals(boardText(board), boardText(board, null))
+            assertEquals(frontPrompt(board, "hello"), frontPrompt(board, "hello", null))
+        }
+    }
+
+    @Test fun theBoardListsTheMacsThreadsAfterTheBuilder() {
+        val threads = listOf(
+            onMac("t9z8y7x6w", "Phone proof"),
+            onMac("t1a2b3c4d", "Scratch", MacThreadStatus.Working, worked = 1_760_000_420, summary = "what files\nare \"here\"", tail = "Files here: notes.md"),
+        )
+        assertEquals(
+            "[Board, for you only; Boss does not see it]\nBuilder: idle. It has not been asked anything yet.\nMac: reachable.\nProject threads on the Mac:\n" +
+                "- \"Scratch\" id t1a2b3c4d: working, last worked 3 min ago; Boss last asked it \"what files are 'here'\"; it last said \"Files here: notes.md\"\n" +
+                "- \"Phone proof\" id t9z8y7x6w: idle\n[Boss says]",
+            boardText(BuildBoard(working = false), macBoard(threads, reachable = true, seen = now, now = now)),
+        )
+        val away = boardText(BuildBoard(working = false), macBoard(threads, reachable = false, seen = now - 5 * minute, now = now))
+        assertTrue(away, away.contains("\nMac: not reachable, last seen 5 min ago.\nProject threads on the Mac:\n- \"Scratch\" id t1a2b3c4d: "))
+        assertTrue(boardText(BuildBoard(false), macBoard(emptyList(), false, null, now)).contains("\nMac: not reachable, not seen yet.\nProject threads on the Mac: none.\n[Boss says]"))
+        assertTrue(frontPrompt(BuildBoard(false), "  go on  ", macBoard(threads, true, now, now)).endsWith("\n[Boss says]\n  go on  "))
+    }
+
+    @Test fun theBoardIsCappedAndNeverCarriesAnApproval() {
+        val many = (1..12).map { onMac("t$it", "Project $it", worked = 1_760_000_000L + it) } + onMac("bad id", "Unnameable", worked = 1_760_000_500)
+        val board = macBoard(many, reachable = true, seen = now, now = now)
+        assertEquals(8, BOARD_THREADS); assertEquals((12 downTo 5).map { "t$it" }, board.threads.map { it.id })
+        val waiting = onMac(
+            "t1a2b3c4d", "n".repeat(500), MacThreadStatus.Waiting, worked = 1_760_000_000, summary = "s".repeat(500), tail = "start " + "e".repeat(500),
+            pending = listOf(MacApproval("approval-xyz", "n-secret", "Write", """{"content":"hush"}""", "because")),
+        )
+        val text = boardText(BuildBoard(false), macBoard(listOf(waiting), true, now, now))
+        val line = text.lines().single { it.startsWith("- ") }
+        assertTrue(line.length <= BOARD_THREAD_CHARS); assertEquals(320, BOARD_THREAD_CHARS)
+        assertTrue(line, line.contains("waiting for Boss to approve a step")); assertFalse(line.contains("start"))
+        for (never in listOf("n-secret", "approval-xyz", "hush", "because", "Write")) assertFalse(never, text.contains(never))
+    }
+
+    @Test fun theRoutingLogSaysWhichKindOfWrongTurnItWas() {
+        assertEquals("unknown-thread", UNKNOWN_THREAD); assertEquals("mac-tried-again", MAC_TRIED_AGAIN); assertEquals("front-answered", FRONT_ANSWERED)
+        for (was in listOf(UNKNOWN_THREAD, MAC_TRIED_AGAIN)) {
+            val read = JSONObject(routingCorrection(5, "fix the menu", was))
+            assertEquals(setOf("time", "request", "was"), read.keys().asSequence().toSet()); assertEquals(was, read.getString("was"))
+        }
+    }
 }

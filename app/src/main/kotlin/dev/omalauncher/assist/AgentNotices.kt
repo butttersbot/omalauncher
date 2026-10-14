@@ -18,6 +18,8 @@ internal object AgentNotices {
     private const val BRIEF = 42
     /** The front agent's answer to a spoken request, where no card can show it: apart from the task's, which may be running. */
     const val FRONT = 43
+    /** The answer of a project thread on the Mac, apart from the phone builder's task, which may be running beside it. */
+    const val MAC = 44
     private const val TASK_CHANNEL = "agent-task-updates"
     private const val APPROVAL_CHANNEL = "agent-approvals"
     private const val ANSWER_CHANNEL = "agent-answers"
@@ -126,6 +128,68 @@ internal object AgentNotices {
 
     fun expired(context: Context) = brief(context, "That request has expired")
 
+    /** A line about something he just tapped, gone again in a moment. */
+    fun say(context: Context, text: String) = brief(context, text)
+
+    /** Opens the approval screen on exactly this request of a thread on the Mac. */
+    fun macReviewIntent(context: Context, ticket: String, slot: Int): Intent =
+        Intent(context, AgentApprovalActivity::class.java).setData(Uri.parse(MacApprovalTicket(ApprovalVerb.Review, slot, ticket).encode())).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+    /**
+     * Shows a request of a thread on the Mac as the phone builder's are shown, naming the thread: its own
+     * notification, or the approval screen if notifications are blocked. The buttons carry the phone's ticket
+     * for it and never the Mac's nonce. One with no slot left is answered from the chat.
+     */
+    fun macRequest(context: Context, entry: MacPending) {
+        val slot = entry.slot ?: return
+        val review = macReviewIntent(context, entry.ticket, slot)
+        if (surface(context) == ApprovalSurface.Screen) {
+            runCatching { context.startActivity(review) }
+            return
+        }
+        val title = "Allow ${entry.request.tool.take(60)} on ${entry.threadName.take(40)}?"
+        val detail = macApprovalDetail(entry.request)
+        fun action(verb: ApprovalVerb, label: String): Notification.Action {
+            val code = MacApprovalIds.requestCode(slot, verb)
+            val pending = if (actionDecidesDirectly(Build.VERSION.SDK_INT)) {
+                val intent = Intent(context, MacApprovalReceiver::class.java).setData(Uri.parse(MacApprovalTicket(verb, slot, entry.ticket).encode()))
+                PendingIntent.getBroadcast(context, code, intent, FLAGS)
+            } else PendingIntent.getActivity(context, code, review, FLAGS)
+            val builder = Notification.Action.Builder(null, label, pending)
+            // A locked phone has to be unlocked before the button does anything.
+            if (Build.VERSION.SDK_INT >= 31) builder.setAuthenticationRequired(true)
+            return builder.build()
+        }
+        val locked = Notification.Builder(context, APPROVAL_CHANNEL).setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(title).setContentText("Unlock to review").build()
+        val expanded = listOf(entry.request.explanation.take(300), detail.take(1200), "Approve once allows this action only.")
+            .filter { it.isNotBlank() }.joinToString("\n\n")
+        manager(context).notify(MacApprovalIds.tag(entry.ticket), MacApprovalIds.notificationId(slot), Notification.Builder(context, APPROVAL_CHANNEL)
+            .setSmallIcon(R.drawable.ic_notification).setContentTitle(title).setContentText(detail.take(180))
+            .setStyle(Notification.BigTextStyle().bigText(expanded))
+            .setContentIntent(PendingIntent.getActivity(context, MacApprovalIds.requestCode(slot, ApprovalVerb.Review), review, FLAGS))
+            .setCategory(Notification.CATEGORY_STATUS).setOngoing(true).setAutoCancel(false)
+            .setVisibility(Notification.VISIBILITY_PRIVATE).setPublicVersion(locked)
+            .addAction(action(ApprovalVerb.Approve, "Approve once")).addAction(action(ApprovalVerb.Deny, "Deny")).build())
+    }
+
+    /** Takes down the notification of one request of the Mac's and no other. */
+    fun macWithdraw(context: Context, ticket: String, slot: Int) {
+        if (ApprovalIds.validSlot(slot)) manager(context).cancel(MacApprovalIds.tag(ticket), MacApprovalIds.notificationId(slot))
+    }
+
+    fun macWithdraw(context: Context, entry: MacPending) {
+        entry.slot?.let { macWithdraw(context, entry.ticket, it) }
+    }
+
+    /** After a restart no card of the Mac's from before can be answered: they are taken down, and drawn again from what the Mac says waits. */
+    fun clearStaleMac(context: Context) {
+        val nm = manager(context)
+        for (shown in runCatching { nm.activeNotifications }.getOrNull().orEmpty()) {
+            if (shown.tag?.startsWith(MacApprovalIds.TAG_PREFIX) == true) nm.cancel(shown.tag, shown.id)
+        }
+    }
+
     fun locked(context: Context) = brief(context, "Unlock your phone to answer that request")
 
     /** After a restart no earlier approval can be answered and no task is running: take down what the old process left. */
@@ -138,6 +202,22 @@ internal object AgentNotices {
     }
 
     fun deviceLocked(context: Context) = context.getSystemService(KeyguardManager::class.java).isDeviceLocked
+}
+
+/**
+ * Approve once / Deny on the notification of a request from a thread on the Mac. Not exported; the ticket in
+ * the intent names the one request it answers, and the answer goes the one way every answer to the Mac does.
+ */
+class MacApprovalReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        val ticket = MacApprovalTicket.parse(intent.dataString)?.takeIf { it.verb != ApprovalVerb.Review } ?: return AgentNotices.expired(context)
+        val app = context.applicationContext
+        MacThreads.answer(app, ticket.ticket, allow = ticket.verb == ApprovalVerb.Approve) { outcome ->
+            // The notification that was tapped goes when nothing waits behind it any more.
+            if (outcome == MacApprovalOutcome.Expired) AgentNotices.macWithdraw(app, ticket.ticket, ticket.slot)
+            macApprovalNotice(outcome)?.let { AgentNotices.say(app, it) }
+        }
+    }
 }
 
 /** Approve once / Deny on an approval notification. Not exported; the ticket in the intent names the one approval it answers. */

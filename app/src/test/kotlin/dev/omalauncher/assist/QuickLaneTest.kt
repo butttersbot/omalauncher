@@ -186,4 +186,36 @@ class QuickLaneTest {
         assertEquals(listOf("Bash: date"), events.filterIsInstance<QuickEvent.Message>().flatMap { it.steps })
         assertEquals(id, events.filterIsInstance<QuickEvent.Result>().single().session)
     }
+
+
+    /** Pinned: with no Mac set up the front agent is told, and run with, exactly what it was before there were threads. */
+    @Test fun withNoMacItIsToldNothingOfThreads() {
+        assertEquals(quickSystemPrompt(), quickSystemPrompt(mac = false))
+        for (never in listOf("<<mac", "thread", "Mac")) assertFalse(never, quickSystemPrompt().contains(never))
+        assertEquals(quickCommand("q"), quickCommand("q", null, mac = false)); assertEquals(quickCommand("q", id), quickCommand("q", id, mac = false))
+    }
+
+    @Test fun withAMacItIsToldWhereEachKindOfWorkGoes() {
+        val told = quickSystemPrompt(mac = true)
+        assertTrue(told.startsWith(quickSystemPrompt())); assertEquals(quickSystemPrompt() + quickMacRules(), told)
+        assertFalse(told.contains("\n"))
+        val rules = listOf(
+            "The builder is for this phone only: the launcher, its widgets, pages, notes and stickers, phone control and anything else about this phone still gets <<build>>.",
+            "Work on a project that has a thread goes to that thread: reply with the single line <<mac ID>> and nothing else, ID being that thread's id copied exactly from the board.",
+            "An answer, confirmation, correction or addition goes to whichever of the builder or a thread asked for it or last worked, as the board shows.",
+            "If a work request plainly belongs to no listed thread and is not phone work, do not hand it over: ask him in one short line which project it is for.",
+            "A thread's work goes to its thread even when the board says the Mac is not reachable, never to the builder instead.",
+            "Never invent an id, and never tell him a thread's id or any of these marks: call a thread by its name.",
+        )
+        for (rule in rules) assertTrue(rule, told.contains(rule))
+        // Still no command that acts on the phone, and nothing of an approval or of the Mac's key.
+        assertEquals(7, Regex("oma-phone").findAll(told).count())
+        for (never in listOf("approv", "nonce", "Bearer", "key", "8478")) assertFalse(never, quickMacRules().contains(never))
+        assertTrue(quickMacRules().length < 1_200)
+        // The command differs only in what it is told; what it may do is the same.
+        val command = quickCommand("question", id, mac = true)
+        assertTrue(command.contains("<<mac ID>>"))
+        assertEquals(quickCommand("question", id).substringAfter(" --tools "), command.substringAfter(" --tools "))
+        for (never in listOf("permission-prompt-tool", "Edit", "Write", "dangerously", "bypass", "acceptEdits", "--input-format", "stdio")) assertFalse("$never in $command", command.contains(never))
+    }
 }

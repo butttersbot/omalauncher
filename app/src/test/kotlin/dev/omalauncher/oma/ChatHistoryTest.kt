@@ -315,4 +315,51 @@ class ChatHistoryTest {
             assertEquals(listOf("oma-chat.json"), dir.list()!!.toList())
         } finally { dir.deleteRecursively() }
     }
+
+
+    private fun onMac(time: Long, status: TaskStatus = TaskStatus.Running) = ChatTask(time, "→ FF4 mod", "prompt $time", status = status, thread = "t1a2b3c4d", threadName = "FF4 mod")
+
+    @Test fun aRequestHandedToTheMacRemembersItsThreadInKeysOnlyItHas() {
+        val sent = onMac(5).copy(steps = listOf("Read: a.txt"), result = "so far")
+        assertEquals(listOf(sent), ChatHistory.decode(ChatHistory.encode(listOf(sent))))
+        assertTrue(sent.mac); assertFalse(sent.build); assertFalse(sent.quick); assertFalse(sent.undecided)
+        val fields = JSONObject(ChatHistory.encode(listOf(sent, task(6)))).getJSONArray("tasks")
+        val always = setOf("time", "agent", "prompt", "images", "screen", "newThread", "steps", "result", "status", "approvals")
+        assertEquals(always + setOf("thread", "threadName"), fields.getJSONObject(0).keys().asSequence().toSet())
+        assertEquals(always, fields.getJSONObject(1).keys().asSequence().toSet())
+        // A file from before there were threads loads as it always did.
+        val old = ChatHistory.decode("""{"version":1,"tasks":[{"time":5,"agent":"Claude Code","prompt":"ok","status":"done"}]}""").single()
+        assertFalse(old.mac); assertTrue(old.build); assertEquals("", old.thread); assertEquals("", old.threadName)
+        assertEquals(ChatHistory.MAX_THREAD, ChatHistory.bounded(sent.copy(thread = "t".repeat(900))).thread.length)
+    }
+
+    @Test fun aRestartLeavesWhatTheMacIsDoingAsItWas() {
+        val before = listOf(
+            task(1).copy(status = TaskStatus.Running),
+            onMac(2).copy(result = "half", approvals = listOf(ChatApproval("Bash", "ls", ApprovalAnswer.Approved, key = "a0"), ChatApproval("Write", "{}", ApprovalAnswer.Waiting, key = "a1"))),
+            onMac(3, TaskStatus.Queued),
+            onMac(4, TaskStatus.Dropped).copy(result = "Mac unreachable"),
+        )
+        val after = ChatHistory.afterRestart(ChatHistory.decode(ChatHistory.encode(before)))
+        // The phone's own task was interrupted; the Mac goes on with its, and is followed again.
+        assertEquals(listOf(TaskStatus.Interrupted, TaskStatus.Running, TaskStatus.Queued, TaskStatus.Dropped), after.map { it.status })
+        assertEquals(listOf("", "half", "", "Mac unreachable"), after.map { it.result })
+        // A card of before cannot be answered: it goes, to be drawn again from what the Mac says still waits.
+        assertEquals(listOf(ChatApproval("Bash", "ls", ApprovalAnswer.Approved)), after[1].approvals)
+        assertEquals(after, ChatHistory.afterRestart(ChatHistory.decode(ChatHistory.encode(after))))
+        // The front agent's hand-over to the build lane never takes an entry of the Mac's out.
+        for (time in 2L..4L) assertEquals(after, ChatHistory.handedOver(after, time))
+    }
+
+    @Test fun theThreadIsRevisedAsAWholeAndSaved() {
+        val dir = Files.createTempDirectory("oma-chat-test").toFile()
+        try {
+            val file = File(dir, "oma-chat.json")
+            val store = ChatStore(file).apply { load() }
+            store.begin(onMac(1)); store.begin(onMac(2, TaskStatus.Queued))
+            store.revise { tasks -> tasks.map { if (it.time == 1L) it.copy(result = "Done.", status = TaskStatus.Done) else it.copy(status = TaskStatus.Running) } }
+            assertEquals(listOf(TaskStatus.Done, TaskStatus.Running), ChatStore(file).apply { load() }.tasks.map { it.status })
+            assertEquals("Done.", store.tasks[0].result)
+        } finally { dir.deleteRecursively() }
+    }
 }

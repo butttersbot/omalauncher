@@ -194,6 +194,14 @@ class MacCursors(known: Map<String, Long> = emptyMap()) {
         return fresh
     }
 
+    /**
+     * The Mac's record of a thread was cleared and its ids count from 1 again: the thread starts over here too,
+     * or every event of the new record would look like one already shown.
+     */
+    @Synchronized fun forget(threadId: String) {
+        last.remove(threadId)
+    }
+
     @Synchronized fun snapshot(): Map<String, Long> = HashMap(last)
 }
 

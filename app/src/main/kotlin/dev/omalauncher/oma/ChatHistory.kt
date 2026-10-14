@@ -45,7 +45,8 @@ data class ChatApproval(val tool: String, val detail: String, val answer: Approv
  * One request in the Oma thread: what was asked, the steps the agent reported, the approvals and how they
  * were answered, and the result. [images] are the guest paths the app already keeps, never image bytes;
  * [screen] only records that the screen was attached. [agent] names who was asked: the build lane's agent,
- * [QUICK_AGENT] once the front agent has answered it itself, [UNDECIDED_AGENT] while that is still open.
+ * [QUICK_AGENT] once the front agent has answered it itself, [UNDECIDED_AGENT] while that is still open, and
+ * the receipt he is shown ("→ FF4 mod") for a request handed to a project thread on the Mac.
  */
 data class ChatTask(
     /** When it was sent; also what identifies it in the store. */
@@ -62,6 +63,10 @@ data class ChatTask(
     val status: TaskStatus = TaskStatus.Running,
     /** He sent this request, which the front agent had answered, to the build lane himself. Once only. */
     val sentToBuild: Boolean = false,
+    /** The id of the project thread on the Mac this request was handed to; empty for every other request. */
+    val thread: String = "",
+    /** That thread's name as it was when he asked, which is what the entry and its approval cards call it. */
+    val threadName: String = "",
 ) {
     /** Answered by the front agent itself, beside the build task: never by it or in its queue. */
     val quick get() = agent == QUICK_AGENT
@@ -69,8 +74,14 @@ data class ChatTask(
     /** With the front agent, which has neither answered it nor handed it to the build lane yet. */
     val undecided get() = agent == UNDECIDED_AGENT
 
+    /**
+     * Handed to a thread on the Mac. The Mac does the work, so [TaskStatus.Queued] here is a request it has not
+     * taken yet, and [TaskStatus.Dropped] one it never got, which he can send again.
+     */
+    val mac get() = thread.isNotEmpty()
+
     /** A request of the build lane's: sent to it, or waiting for it. */
-    val build get() = !quick && !undecided
+    val build get() = !quick && !undecided && !mac
 }
 
 /** What [ChatTask.agent] says for a request the front agent answered, where a build task has its agent's name. Saved: never rename. */
@@ -92,6 +103,7 @@ object ChatHistory {
     const val MAX_DETAIL = 600
     const val MAX_RESULT = 8_000
     const val MAX_IMAGES = 4
+    const val MAX_THREAD = 128
 
     /** Several times the largest file [encode] writes; anything bigger isn't ours and isn't read. */
     const val MAX_FILE_BYTES = 16L * 1024 * 1024
@@ -105,6 +117,8 @@ object ChatHistory {
         steps = task.steps.takeLast(MAX_STEPS).map { it.take(MAX_STEP) },
         approvals = task.approvals.takeLast(MAX_APPROVALS).map { it.copy(tool = it.tool.take(60), detail = it.detail.take(MAX_DETAIL)) },
         result = task.result.takeLast(MAX_RESULT),
+        thread = task.thread.take(MAX_THREAD),
+        threadName = task.threadName.take(60),
     )
 
     /** The thread with [task] added, keeping the newest [MAX_TASKS]. */
@@ -132,13 +146,17 @@ object ChatHistory {
      * The thread without the request sent at [time], while the front agent still has it: one it hands over
      * is filed by the build lane as its own task, and this is how the two stay one entry.
      */
-    fun handedOver(tasks: List<ChatTask>, time: Long) = tasks.filterNot { it.time == time && !it.build }
+    fun handedOver(tasks: List<ChatTask>, time: Long) = tasks.filterNot { it.time == time && (it.quick || it.undecided) }
 
     /**
      * What a restart leaves of a thread: nothing is running any more and nothing can still be answered. A
-     * follow-up that was waiting is not sent later behind his back; it says it was dropped.
+     * follow-up that was waiting is not sent later behind his back; it says it was dropped. A request handed to
+     * the Mac is the exception: the Mac goes on with it whatever becomes of this app, so it loads as it was
+     * saved and is followed again from its thread's last event. Only its waiting approvals go, to be drawn
+     * again from what the Mac says is still waiting.
      */
     fun afterRestart(tasks: List<ChatTask>) = tasks.map { saved ->
+        if (saved.mac) return@map saved.copy(approvals = saved.approvals.filter { it.answer != ApprovalAnswer.Waiting }.map { it.copy(key = "") })
         val task = dropped(saved, FollowUpQueue.RESTARTED)
         task.copy(
             status = if (task.status == TaskStatus.Running) TaskStatus.Interrupted else task.status,
@@ -153,6 +171,7 @@ object ChatHistory {
             .put("approvals", JSONArray(task.approvals.map { JSONObject().put("tool", it.tool).put("detail", it.detail).put("answer", it.answer.id) }))
             // Written only where it is set, so every other task keeps the shape it has always had.
             .apply { if (task.sentToBuild) put("sentToBuild", true) }
+            .apply { if (task.mac) put("thread", task.thread).put("threadName", task.threadName) }
     })).toString()
 
     /** The saved thread; an unreadable file is an empty thread, and an unreadable task is left out. */
@@ -171,6 +190,7 @@ object ChatHistory {
                         .map { ChatApproval(it.optString("tool"), it.optString("detail"), ApprovalAnswer.of(it.optString("answer"))) },
                     result = task.optString("result"), status = TaskStatus.of(task.optString("status")),
                     sentToBuild = task.optBoolean("sentToBuild"),
+                    thread = task.optString("thread"), threadName = task.optString("threadName"),
                 ))
             }.getOrNull()
         }.takeLast(MAX_TASKS)
@@ -197,6 +217,17 @@ class ChatStore(private val file: File, private val maxBytes: Long = ChatHistory
     @Synchronized fun update(time: Long, save: Boolean = false, change: (ChatTask) -> ChatTask) {
         tasks = tasks.map { if (it.time == time) ChatHistory.bounded(change(it)) else it }
         if (save) save()
+    }
+
+    /**
+     * Changes the thread as a whole and saves it: for what a project thread on the Mac says, which can end one
+     * request and begin the next in a single step.
+     */
+    @Synchronized fun revise(change: (List<ChatTask>) -> List<ChatTask>) {
+        val next = change(tasks).map(ChatHistory::bounded)
+        if (next == tasks) return
+        tasks = next
+        save()
     }
 
     /** Takes out the request sent at [time] that the front agent handed over; see [ChatHistory.handedOver]. */

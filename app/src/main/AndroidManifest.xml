@@ -270,6 +270,8 @@
         </receiver>
         <!-- Approve once / Deny on an approval notification; only this app's own PendingIntents reach it. -->
         <receiver android:name=".assist.ApprovalActionReceiver" android:exported="false" />
+        <!-- The same two buttons for a request of a project thread on the Mac; only this app's own PendingIntents reach it. -->
+        <receiver android:name=".assist.MacApprovalReceiver" android:exported="false" />
         <service android:name=".assist.OmaVoiceService" android:exported="true"
             android:label="Oma agent" android:permission="android.permission.BIND_VOICE_INTERACTION">
             <intent-filter><action android:name="android.service.voice.VoiceInteractionService" /></intent-filter>
