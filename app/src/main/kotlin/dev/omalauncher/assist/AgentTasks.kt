@@ -50,6 +50,17 @@ object AgentTasks {
     val headline: String get() = leading().let { led -> poolLabel(led.id, led.label, builders.count { it.working && it !== led }) }
     val answer: String get() = leading().answer
 
+    /** The leading builder's running task, as [Builder] records it for [BuilderWatch]; each builder's own is on it. */
+    val startedAt: Long get() = leading().startedAt
+    val heardAt: Long get() = leading().heardAt
+    val lastStep: String get() = leading().lastStep
+    val lastStepAt: Long get() = leading().lastStepAt
+    /** How many follow-ups wait behind the leading builder's task. */
+    val queued: Int get() = leading().waiting
+
+    /** The builder the notification follows now. */
+    val leadId: BuilderId get() = leading().id
+
     /**
      * Every builder's approvals waiting for the owner, each builder's oldest first. Each builder publishes its own
      * as one immutable list, so no reader (the phone control guard above all) can see "none waiting" for a
@@ -206,6 +217,14 @@ class Builder(val id: BuilderId) {
     @Volatile private var taskTime = 0L
     /** The home page the latest request was sent from, and how long its task ran: a widget made meanwhile lands there. */
     @Volatile var asked: PageAsk? = null; private set
+    /**
+     * When the running task began, when its agent last printed a line of any kind, and its last tool step and
+     * when: only recorded here, for [BuilderWatch] to tell a builder that works from one that is stuck.
+     */
+    @Volatile var startedAt = 0L; private set
+    @Volatile var heardAt = 0L; private set
+    @Volatile var lastStep = ""; private set
+    @Volatile var lastStepAt = 0L; private set
     /** Where this builder's answer and conversation are kept: builder A's are where the one builder's always were. */
     private val prefs = if (id == BuilderId.A) "assistant-result" else "assistant-result-" + id.letter.lowercase()
     fun restore(context: Context): Unit = synchronized(lock) {
@@ -290,6 +309,7 @@ class Builder(val id: BuilderId) {
         val began = System.currentTimeMillis()
         val time = queued ?: ChatHistory.stamp(log.tasks, began)
         taskTime = time
+        startedAt = began; heardAt = began; lastStep = ""; lastStepAt = 0L
         asked = page?.let { PageAsk(it, began) }
         if (queued == null) log.begin(ChatTask(time, agent.name, prompt, images, screen = screen != null, newThread = resumed == null, answeredBy = builderName(agent.bin), builder = id.saved))
         else log.update(time, save = true) { it.copy(agent = agent.name, newThread = resumed == null, status = TaskStatus.Running, answeredBy = builderName(agent.bin)) }
@@ -311,6 +331,7 @@ class Builder(val id: BuilderId) {
                     child.inputStream.bufferedReader().use { reader ->
                         while (true) {
                             val line = reader.readLine() ?: break
+                            heardAt = System.currentTimeMillis()
                             val event = runCatching { JSONObject(line) }.getOrNull()
                             if (event == null) {
                                 if (resumed != null && line.startsWith("No conversation found")) lost = true
@@ -343,7 +364,9 @@ class Builder(val id: BuilderId) {
                                         when (block.optString("type")) {
                                             "text" -> answer = (answer + block.optString("text") + "\n").takeLast(40_000)
                                             "tool_use" -> {
-                                                log.update(time) { ChatHistory.withStep(it, ClaudeProtocol.step(block)) }
+                                                val step = ClaudeProtocol.step(block)
+                                                lastStep = step; lastStepAt = System.currentTimeMillis()
+                                                log.update(time) { ChatHistory.withStep(it, step) }
                                                 if (approvals.isEmpty()) { label = "Using ${block.optString("name").take(60)}"; notify(context) }
                                             }
                                         }
@@ -369,7 +392,7 @@ class Builder(val id: BuilderId) {
                     } else if (stopping && session != null) thread = session // A stopped request can still be followed up.
                 } else {
                     child.outputStream.close()
-                    child.inputStream.bufferedReader().forEachLine { answer = (answer + it + "\n").takeLast(40_000) }
+                    child.inputStream.bufferedReader().forEachLine { heardAt = System.currentTimeMillis(); answer = (answer + it + "\n").takeLast(40_000) }
                 }
                 val code = child.waitFor()
                 label = if (stopping) "Stopped" else if (code == 0) "Done" else "Agent needs attention"
@@ -496,7 +519,10 @@ class Builder(val id: BuilderId) {
         dropped(context, unsent, FollowUpQueue.STOPPED)
         notify(context)
     }
-    private fun notify(context: Context) = AgentTasks.changed(context, this)
+    private fun notify(context: Context) {
+        AgentTasks.changed(context, this)
+        BuilderWatch.watch(context)
+    }
 }
 
 /**

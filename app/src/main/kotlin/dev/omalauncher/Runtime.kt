@@ -49,6 +49,7 @@ import dev.omalauncher.ui.WindowManager
 import dev.omalauncher.ui.bitmapMask
 import dev.omalauncher.ui.decodeIcon
 import dev.omalauncher.assist.MacThreads
+import dev.omalauncher.assist.agentsGuestTools
 import dev.omalauncher.assist.macGuestTools
 import dev.omalauncher.upgrade.Provisioner
 import dev.omalauncher.wayland.AndroidClipboard
@@ -136,6 +137,7 @@ class Runtime(
                 widgets::guestManaged,
                 { macGuestTools(context, proot.rootfs) },
                 { keepGuestTools(context, proot.rootfs) },
+                { agentsGuestTools(context, proot.rootfs) },
             ),
         )
     val bootstrap = Bootstrap(context, proot, agents, pacman, provisioner)

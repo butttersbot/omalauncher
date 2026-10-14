@@ -22,8 +22,8 @@ import kotlin.concurrent.thread
  * one task he has ordered to stop, or hands his words on unchanged, to [AgentTasks] on the phone or to
  * a project thread on the Mac through [MacThreads] (Boss, 2026-10-13; the rules are in FrontAgent.kt). A process, a
  * state and a Claude conversation of its own, one request at a time: what he sends meanwhile waits in
- * [queue] and is read next, in the order he sent it. It can look and change nothing (a stop is carried
- * out here, by the task's own stop, and only when his words bear it out), and it
+ * [queue] and is read next, in the order he sent it. It can look and change nothing (a stop, or mending a
+ * stuck builder, is carried out here, through the task's own stop and send, and only when his words bear it out), and it
  * is never asked for an approval or able to answer one: what its command does not allow is denied without
  * asking. It writes no status, and the tiles and the ring report the build task only. If it fails with
  * nothing to show, the request goes to the build lane as if it had never been here.
@@ -158,15 +158,19 @@ object QuickLane {
         // The Mac's threads as the phone last heard of them: asking the Mac here would hold his request up. Null
         // when no Mac is set up, and then nothing below differs from a phone with no Mac at all.
         val mac = MacThreads.board(context, began)
+        // How the builders are doing, looked at now from /proc, so "is it frozen?" is answered from what is so.
+        val health = BuilderWatch.look(context)
         // A task's time is what identifies it, and the build lane files its tasks under its own lock: held here
         // so the two can't take the same one, and so the board is the build lane as it stands at this moment.
         // Nothing of the build lane is changed.
         val (asked, command) = synchronized(AgentTasks) {
             val a = AgentTasks.of(BuilderId.A)
             val b = AgentTasks.of(BuilderId.B)
-            val board = buildBoard(log.tasks, a.working, a.label, began)
             // Builder B is on the board once it has worked; until then the board is the one builder's, as it always was.
-            val second = if (builderBShown(log.tasks, b.working)) buildBoard(log.tasks, b.working, b.label, began, BuilderId.B) else null
+            val two = builderBShown(log.tasks, b.working)
+            val (healthA, healthB) = BuilderWatch.lines(health, two)
+            val board = buildBoard(log.tasks, a.working, a.label, began).copy(health = healthA)
+            val second = if (two) buildBoard(log.tasks, b.working, b.label, began, BuilderId.B).copy(health = healthB) else null
             val filed = waited?.also { time -> log.update(time, save = true) { it.copy(status = TaskStatus.Running) } }
                 ?: ChatHistory.stamp(log.tasks, began).also { log.begin(ChatTask(it, UNDECIDED_AGENT, prompt)) }
             filed to quickCommand(frontPrompt(board, prompt, mac, second), resumed, mac = mac != null)
@@ -238,6 +242,12 @@ object QuickLane {
                         // An order to stop is carried out the moment its mark is whole, and his words go to nobody.
                         is FrontRead.Stop -> {
                             handed = halt(context, asked, prompt, frontRoute(read.of, mac), away)
+                            session?.let { next = it }
+                            child.destroy()
+                        }
+                        // Mending the builder is the launcher's to do, as stopping is, and his words go to nobody.
+                        FrontRead.Restart, FrontRead.Clean, is FrontRead.RestartOne -> {
+                            handed = mend(context, asked, prompt, page, away, restart = read != FrontRead.Clean, named = (read as? FrontRead.RestartOne)?.builder)
                             session?.let { next = it }
                             child.destroy()
                         }
@@ -378,6 +388,30 @@ object QuickLane {
     }
 
     /**
+     * The front agent read his words as asking for a builder to be mended. A [restart] is carried out only on a
+     * builder that, looked at now, is stalled or dead: the one that is ([restartPick]), or the one [named] if he
+     * said which. With none such his words are handed over as any request is, to [named] if he named one; with
+     * both he is asked which, and neither is restarted. A clean ends the builder processes no task of either
+     * builder owns. Either way the entry sent at [asked] says what was done. Nothing here answers an approval,
+     * and a builder that waits for one is never restarted. False if he stopped this request first: nothing is done then.
+     */
+    private fun mend(context: Context, asked: Long, prompt: String, page: String?, away: Boolean, restart: Boolean, named: BuilderId? = null): Boolean = synchronized(this) {
+        if (stopping) return@synchronized false
+        val pick = if (restart) restartPick(BuilderWatch.look(context).mapValues { builderVerdict(it.value) }, named) else null
+        if (pick == BareStop.Nothing) return@synchronized pass(context, asked, prompt, page, away, named)
+        val log = ChatLog.of(context)
+        val told = { said: String ->
+            log.update(asked, save = true) { it.copy(agent = QUICK_AGENT, result = said, status = TaskStatus.Done) }
+            if (away) AgentNotices.answered(context, "Done", said, AgentNotices.FRONT)
+        }
+        if (pick == BareStop.Which) return@synchronized true.also { told(WHICH_RESTART) }
+        // Until the launcher has done it, the entry says what is being done.
+        log.update(asked, save = true) { it.copy(agent = QUICK_AGENT, result = if (restart) "Restarting the builder." else "Looking for leftover builder processes.", status = TaskStatus.Done) }
+        if (pick is BareStop.One) BuilderWatch.restart(context, pick.builder, told) else BuilderWatch.clean(context, told)
+        true
+    }
+
+    /**
      * Ends the request it has now. One still undecided is not sent anywhere; what it had said so far stays in
      * the thread. What waits behind it is read next, as it would have been had this one ended by itself.
      */
@@ -407,17 +441,18 @@ val QUICK_TOOLS = listOf("Read", "Bash", "WebSearch", "WebFetch")
 
 /**
  * What the front agent may run without asking, which is all it may run since nobody is asked: reading, the web,
- * the clock, and the phone commands that only look. Every other Bash command is denied.
+ * the clock, the phone commands that only look, and how the builder and the Mac's threads stand. Every other
+ * Bash command is denied.
  */
 val QUICK_ALLOWED = listOf(
     "Read", "WebSearch", "WebFetch",
     "Bash(oma-phone status)", "Bash(oma-phone screen*)", "Bash(oma-phone read)", "Bash(oma-phone pages)",
-    "Bash(oma-phone board*)", "Bash(oma-phone looks)", "Bash(oma-phone stickers)", "Bash(date*)",
+    "Bash(oma-phone board*)", "Bash(oma-phone looks)", "Bash(oma-phone stickers)", "Bash(date*)", "Bash(oma-agents status)",
 )
 
 /**
  * What the front agent is told about itself: the three things it may do with a request, when to hand one over,
- * when his words are an order to stop, and that it can look and change nothing. Tuned on real requests; each rule here is pinned by QuickLaneTest.
+ * when his words are an order to stop or to mend a stuck builder, and that it can look and change nothing. Tuned on real requests; each rule here is pinned by QuickLaneTest.
  * With no Mac set up ([mac] false) it is what it was before there were threads, with [quickPoolRules] after it.
  */
 fun quickSystemPrompt(mac: Boolean = false): String =
@@ -432,7 +467,11 @@ fun quickSystemPrompt(mac: Boolean = false): String =
         "you can answer it correctly and briefly; (5) says to send it to build, to tell Claude, or names the builder. His words then go " +
         "to the builder exactly as he said them. STOP: only if his own words say to stop, cancel or abort the work under way " +
         "(\"stop\", \"cancel that\", \"never mind\"), reply with the single line $STOP and nothing else. Asking about stopping is a " +
-        "question; stopping one thing to do another is rule (3). ANSWER: otherwise answer it yourself, briefly and directly, in Markdown: general " +
+        "question; stopping one thing to do another is rule (3). MEND: the board's \"Builder health\" line says if the builder is stuck. Only if his " +
+        "words ask to restart or fix it and that line says stalled or dead, reply with the single line $RESTART; only if they ask to " +
+        "fix or clean it up and the line names leftover builder processes, reply with the single line $CLEAN. For one he names: " +
+        "${restartMark(BuilderId.A)} or ${restartMark(BuilderId.B)}. Asking whether it is frozen, " +
+        "slow or stuck is a question: answer it from that line, and `oma-agents status` gives the details. ANSWER: otherwise answer it yourself, briefly and directly, in Markdown: general " +
         "questions, quick facts, web lookups, the date and time, and what is on the phone. A question about the work itself is also yours " +
         "and is never handed over: what are you working on, how is it going, is it done, what did that change. Answer it from the board, " +
         "as your own work. You can look but not touch: read files, search the web, run `date`, and see the real Android phone with " +
