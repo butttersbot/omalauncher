@@ -10,7 +10,10 @@ import dev.omalauncher.oma.ChatHistory
 import dev.omalauncher.oma.ChatLog
 import dev.omalauncher.oma.ChatTask
 import dev.omalauncher.oma.TaskStatus
+import dev.omalauncher.upgrade.Managed
+import dev.omalauncher.upgrade.Policy
 import org.json.JSONObject
+import java.io.File
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -26,6 +29,23 @@ import kotlin.concurrent.thread
 
 /** What the phone last heard of the Mac: its [threads], whether it answered at the last try, and when it last did. */
 data class MacView(val threads: List<MacThread> = emptyList(), val reachable: Boolean = false, val seen: Long? = null)
+
+/**
+ * [thread] with the summary the board should carry. The runner's summary is the first line of what it was last
+ * sent, which for a request handed over with context is the context's heading: the first line of his own
+ * words, from the entry of that request, stands there instead. Any other summary is left as the Mac gave it.
+ */
+fun macOwnSummary(thread: MacThread, tasks: List<ChatTask>): MacThread =
+    if (!thread.summary.startsWith(CONTEXT_OPEN)) thread
+    else thread.copy(summary = tasks.lastOrNull { threadGot(it, thread.id) }?.prompt?.lineSequence()?.firstOrNull { it.isNotBlank() }?.trim().orEmpty())
+
+/**
+ * The guest's `oma-thread`, which lists the Mac's threads and makes one in a folder Boss names. A command and
+ * not a power of the front agent's: the phone's builder runs it under his approval rules, or he does in a
+ * terminal, and the runner alone decides which folders it takes. Installed with the other guest tools.
+ */
+fun macGuestTools(context: Context, rootfs: File): List<Managed> =
+    listOf(Managed(File(rootfs, "usr/local/bin/oma-thread"), Policy.Owned, executable = true) { context.assets.open("oma-thread.sh").use { it.readBytes() } })
 
 /** A thread's name as he is shown it; one without a name is still somewhere on the Mac. */
 fun macName(name: String) = name.trim().ifEmpty { "Mac" }
@@ -117,7 +137,7 @@ private fun approvalAnswer(decision: MacDecision) = when (decision) {
  * What one event of [threadId] makes of the Oma thread. A thread works on one request at a time, so what it
  * says belongs to the one entry of its that is running. A `message` event is the thread taking his words: the
  * oldest waiting entry with exactly those words begins, unless one is already running, which is then the one
- * meant. Events of a task that was not sent from this phone find no entry and change nothing. [inFlight] are
+ * meant. The thread says back all it was sent, so the words are looked for after the context too ([handOverWords]). Events of a task that was not sent from this phone find no entry and change nothing. [inFlight] are
  * the entries still on their way to the Mac, which a stop that came before them does not end.
  */
 fun macApply(tasks: List<ChatTask>, threadId: String, event: MacEvent, inFlight: Set<Long> = emptySet()): List<ChatTask> {
@@ -125,7 +145,8 @@ fun macApply(tasks: List<ChatTask>, threadId: String, event: MacEvent, inFlight:
     fun running(change: (ChatTask) -> ChatTask) = if (current == null) tasks else tasks.map { if (it.time == current.time) change(it) else it }
     return when (event) {
         is MacEvent.Message -> {
-            val next = if (current != null) null else tasks.firstOrNull { it.thread == threadId && it.status == TaskStatus.Queued && it.prompt == event.text }
+            val words = handOverWords(event.text)
+            val next = if (current != null) null else tasks.firstOrNull { it.thread == threadId && it.status == TaskStatus.Queued && (it.prompt == event.text || it.prompt == words) }
             if (next == null) tasks else tasks.map { if (it.time == next.time) it.copy(status = TaskStatus.Running) else it }
         }
         is MacEvent.Text -> running { it.copy(result = it.result + event.text.trimEnd() + "\n") }
@@ -449,7 +470,8 @@ object MacThreads {
         if (config(context) == null) return null
         if (now - checked > STALE_MS) refresh(context)
         val known = view
-        return macBoard(known.threads, known.reachable, known.seen, now)
+        val tasks = ChatLog.of(context).tasks
+        return macBoard(known.threads.map { macOwnSummary(it, tasks) }, known.reachable, known.seen, now)
     }
 
     /** What stands beside [task], an entry of the Mac's, while it is not over. */
@@ -527,8 +549,15 @@ object MacThreads {
         restore(context)
         val app = context.applicationContext
         ChatLog.of(app).update(asked, save = true) { macHandOver(it, thread) }
-        send(app, asked, prompt, thread.id, away)
+        send(app, asked, sentText(app, asked, prompt, thread.id), thread.id, away)
     }
+
+    /**
+     * What the thread is sent for the request filed at [asked]: his words, behind what he and the front agent
+     * said since that thread last got anything. The entry and the routing log are given [prompt] alone.
+     */
+    private fun sentText(context: Context, asked: Long, prompt: String, threadId: String): String =
+        handOverText(handOverPreface(handOverContext(ChatLog.of(context).tasks, asked) { threadGot(it, threadId) }), prompt)
 
     /** `[ try again ]` on a request the Mac never got: the same step once more, and a line in the routing log. */
     fun tryAgain(context: Context, time: Long) {
@@ -538,16 +567,16 @@ object MacThreads {
         val task = log.tasks.firstOrNull { it.time == time }?.takeIf { macRetried(it) != null } ?: return
         log.update(time, save = true) { macRetried(it) ?: it }
         RoutingLog.corrected(app, task.prompt, MAC_TRIED_AGAIN)
-        send(app, time, task.prompt, task.thread, away = false)
+        send(app, time, sentText(app, time, task.prompt, task.thread), task.thread, away = false)
     }
 
     /**
-     * Asks the Mac how it is, inside the two-second limit, and sends [prompt] if it answers. A Mac that does not
+     * Asks the Mac how it is, inside the two-second limit, and sends [text] if it answers. A Mac that does not
      * leaves the entry saying so with his words kept; nothing is given to the phone's builder instead. When the
      * words were sent and no answer came back, it is not known whether the Mac has them: the entry waits, and
      * the thread's follower finds out from the Mac itself.
      */
-    private fun send(context: Context, time: Long, prompt: String, threadId: String, away: Boolean) {
+    private fun send(context: Context, time: Long, text: String, threadId: String, away: Boolean) {
         synchronized(this) {
             sentAt[time] = IN_FLIGHT
             sending = sending + time
@@ -561,7 +590,7 @@ object MacThreads {
                 reached(context, health is MacHealthResult.Up)
                 problem = when (macRoute(ThreadHome.Mac, health, startedOnMac = false, phoneHasClone = false)) {
                     MacRoute.RunOnMac -> {
-                        val taken = client.sendMessage(threadId, prompt)
+                        val taken = client.sendMessage(threadId, text)
                         if (taken is MacAnswer.Ok && taken.value == MacTaken.Now) log.update(time, save = true, change = ::macTaken)
                         macUnsentReason(taken)
                     }

@@ -73,6 +73,9 @@ import dev.omalauncher.assist.PendingApproval
 import dev.omalauncher.assist.QuickLane
 import dev.omalauncher.assist.RoutingLog
 import dev.omalauncher.assist.appendSpeech
+import dev.omalauncher.assist.builderGot
+import dev.omalauncher.assist.handOverContext
+import dev.omalauncher.assist.handOverPreface
 import dev.omalauncher.assist.macApprovalDetail
 import dev.omalauncher.assist.macApprovalNotice
 import dev.omalauncher.linux.LinuxState
@@ -239,12 +242,14 @@ private fun OmaChatScreen(
 
     /**
      * The one-tap fix for an answer where he wanted work done: the entry's request goes to the build lane word
-     * for word, sent or queued as Send would, and the entry is marked so it can't be sent twice.
+     * for word, sent or queued as Send would, and the entry is marked so it can't be sent twice. The builder is
+     * also told, as context, what he and the front agent said since it last got anything, this answer included:
+     * "look into it" needs what "it" was. None of that is shown or logged.
      */
     fun sendToBuild(time: Long) {
         val marked = store.tasks.firstOrNull { it.time == time }?.let(ChatHistory::sentToBuild) ?: return
         try {
-            AgentTasks.followUp(context, marked.prompt)
+            AgentTasks.followUp(context, marked.prompt, earlier = handOverPreface(handOverContext(store.tasks, Long.MAX_VALUE, ::builderGot)))
         } catch (e: Exception) {
             notice = e.message
             return

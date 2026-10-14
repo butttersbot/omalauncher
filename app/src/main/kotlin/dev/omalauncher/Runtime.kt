@@ -45,6 +45,8 @@ import dev.omalauncher.ui.TerminalTiles
 import dev.omalauncher.ui.WindowManager
 import dev.omalauncher.ui.bitmapMask
 import dev.omalauncher.ui.decodeIcon
+import dev.omalauncher.assist.MacThreads
+import dev.omalauncher.assist.macGuestTools
 import dev.omalauncher.upgrade.Provisioner
 import dev.omalauncher.wayland.AndroidClipboard
 import dev.omalauncher.wayland.OutputInfo
@@ -129,6 +131,7 @@ class Runtime(
                 agents::managed,
                 themes::managed,
                 widgets::guestManaged,
+                { macGuestTools(context, proot.rootfs) },
             ),
         )
     val bootstrap = Bootstrap(context, proot, agents, pacman, provisioner)
@@ -204,6 +207,9 @@ class Runtime(
                 LauncherData.migrate(context)
                 launcherFiles.sync()
                 agents.load()
+                // A thread on the Mac may be working, or waiting for Boss to approve a step, since before this process
+                // began: it is picked up now and not when he next opens the chat. With no Mac set up nothing is asked.
+                MacThreads.open(context)
             }
             themes.load()
             widgets.start()

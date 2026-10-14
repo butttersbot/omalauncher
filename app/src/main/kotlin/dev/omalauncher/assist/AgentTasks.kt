@@ -84,21 +84,22 @@ object AgentTasks {
      * A message sent while a request runs. It is in the thread at once as his, waiting; the running agent is
      * not told, stopped or restarted, so it can't answer or skip an approval. It is sent as a request of its
      * own when the one ahead has finished, and dropped, with the thread saying why, if that one is stopped or
-     * fails or the app is closed first. With nothing running it is simply sent.
+     * fails or the app is closed first. With nothing running it is simply sent. [earlier] is what the agent is
+     * sent ahead of [prompt] and he is never shown: the context of a request the front agent hands over.
      */
-    @Synchronized fun followUp(context: Context, prompt: String, images: List<String> = emptyList(), page: String? = HomeDoor.home?.showing) {
+    @Synchronized fun followUp(context: Context, prompt: String, images: List<String> = emptyList(), page: String? = HomeDoor.home?.showing, earlier: String = "") {
         restore(context)
         check(prompt.isNotBlank()) { "Type or speak a request first." }
-        if (!working) return start(context, prompt, images, null, page, queued = null)
+        if (!working) return start(context, prompt, images, null, page, queued = null, earlier = earlier)
         check(!stopping) { "The agent is stopping. Send this again in a moment." }
         val agent = (context.applicationContext as App).runtime.agents.default ?: error("Install and sign in to an agent in Omalauncher first.")
         val log = ChatLog.of(context)
         val time = ChatHistory.stamp(log.tasks, System.currentTimeMillis())
-        check(followUps.add(FollowUp(time, prompt, images, page))) { FollowUpQueue.FULL }
+        check(followUps.add(FollowUp(time, prompt, images, page, earlier))) { FollowUpQueue.FULL }
         log.begin(ChatTask(time, agent.name, prompt, images, status = TaskStatus.Queued))
     }
     /** [queued] is the time of the waiting task this request already is in the thread; null for one sent just now. */
-    @Synchronized private fun start(context: Context, prompt: String, images: List<String>, screen: File?, page: String?, queued: Long?) {
+    @Synchronized private fun start(context: Context, prompt: String, images: List<String>, screen: File?, page: String?, queued: Long?, earlier: String = "") {
         restore(context)
         check(prompt.isNotBlank()) { "Type or speak a request first." }
         check(!working) { "An agent is already working. Stop it before starting another task." }
@@ -106,7 +107,7 @@ object AgentTasks {
         check(runtime.bootstrap.state.value == LinuxState.Installed) { "Open Omalauncher and finish Linux setup first." }
         val agent = runtime.agents.default ?: error("Install and sign in to an agent in Omalauncher first.")
         val seen = if (screen != null) "\n\nThe attached image is the screen I was looking at when I asked." else ""
-        val imagePrompt = (if (agent.bin == "claude" && images.isNotEmpty()) prompt + "\n\nRead these attached images before answering:\n" + images.joinToString("\n") else prompt) + seen
+        val imagePrompt = earlier + (if (agent.bin == "claude" && images.isNotEmpty()) prompt + "\n\nRead these attached images before answering:\n" + images.joinToString("\n") else prompt) + seen
         val fullPrompt = imagePrompt + "\n\n" + PhoneBridge.INSTRUCTIONS + "\nAndroid build tools, when installed, are in /opt/android-sdk. Run oma-build-check to check the toolchain. Use the approval UI for blocked tools; never ask for blanket permission bypass.\n"
         val resumed = thread.takeIf { agent.bin == "claude" }
         // Claude gets the screenshot inside the message, so its file goes now. Codex can only read a file, which lasts until its task ends.
@@ -240,7 +241,7 @@ object AgentTasks {
         dropped(context, handoff.dropped, FollowUpQueue.FAILED)
         val next = handoff.next ?: return false
         return try {
-            start(context, next.prompt, next.images, null, next.page, queued = next.time)
+            start(context, next.prompt, next.images, null, next.page, queued = next.time, earlier = next.earlier)
             true
         } catch (e: Exception) {
             // What stopped this one from starting would stop the ones behind it too.

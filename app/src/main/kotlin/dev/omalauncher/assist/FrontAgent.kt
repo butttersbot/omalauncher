@@ -246,6 +246,35 @@ private fun macLines(mac: MacBoard?): List<String> {
     return listOf(link) + threads
 }
 
+/** Someone who has told him something and now rests: [who] as the board calls them, how long [since], and whether they [asked]. */
+private data class Spoke(val who: String, val since: Long, val asked: Boolean)
+
+/** Whether [said] leaves him with a question: it ends in one, whatever Markdown or quote marks close it. */
+private fun asks(said: String) = said.trimEnd { it.isWhitespace() || it in "*_`\"')" }.endsWith("?")
+
+/** How many others with a question still open the line names besides the last to speak. */
+private const val BOARD_OPEN_QUESTIONS = 2
+
+/**
+ * One line that says who told him something most recently and whether it was a question, so that a bare "yes"
+ * is not left to be worked out from the times scattered over the board; then who else still waits for an
+ * answer of his. Made only from what the board already says: the builder's last answer and when he last spoke
+ * to it, and each idle thread's last words and when it last worked. One that is working, or waiting for an
+ * approval, has not finished speaking and is not named. Null when nobody has said anything.
+ */
+private fun lastToSpeak(board: BuildBoard, mac: MacBoard): String? {
+    val builder = if (!board.working && board.lastAnswer.isNotBlank() && board.spokeAgo != null) Spoke("the builder", board.spokeAgo, asks(board.lastAnswer)) else null
+    val threads = mac.threads.filter { it.status == MacThreadStatus.Idle && it.tail.isNotBlank() && it.lastWorked != null }.map {
+        Spoke("thread \"${oneLine(it.name).take(BOARD_NAME_CHARS)}\" (id ${it.id})", (mac.now - (it.lastWorked ?: 0L) * 1000).coerceAtLeast(0), asks(it.tail))
+    }
+    val spoke = (listOfNotNull(builder) + threads).sortedBy { it.since }
+    val last = spoke.firstOrNull() ?: return null
+    val open = spoke.drop(1).filter { it.asked }.take(BOARD_OPEN_QUESTIONS)
+    val others = if (last.asked) " An older question also waits: " else " A question still waits for an answer from Boss: "
+    return "Last to speak: ${last.who}, ${ago(last.since)}" + (if (last.asked) ", and it asked a question that Boss has not answered." else ", and it asked nothing.") +
+        (if (open.isEmpty()) "" else others + open.joinToString("; ") { "${it.who}, ${ago(it.since)}" } + ".")
+}
+
 /**
  * The board in the words the front agent reads, ending where his own words begin. He never sees it. With no
  * Mac set up ([mac] null) it is the builder's lines and nothing else, exactly as it was before there were threads.
@@ -265,11 +294,80 @@ fun boardText(board: BuildBoard, mac: MacBoard? = null): String {
         builder,
         board.spokeAgo?.let { "Boss last spoke to the builder ${ago(it)}." },
     )
-    return (lines + macLines(mac) + "[Boss says]").joinToString("\n")
+    return (lines + macLines(mac) + listOfNotNull(mac?.let { lastToSpeak(board, it) }) + "[Boss says]").joinToString("\n")
 }
 
 /** What the front agent is sent: the board, then [request] exactly as he said it. */
 fun frontPrompt(board: BuildBoard, request: String, mac: MacBoard? = null): String = boardText(board, mac) + "\n" + request
+
+/**
+ * One request the front agent answered itself: [said] is his words and [answered] what it told him. The
+ * receiver of a later hand-over was not there for it, and "put that on the list" means nothing without it.
+ */
+data class FrontExchange(val said: String, val answered: String)
+
+const val CONTEXT_EXCHANGES = 4
+const val CONTEXT_SIDE_CHARS = 400
+const val CONTEXT_CHARS = 2_000
+
+/** The line the context starts with. It says what follows is not his request, so a receiver never acts on it. */
+const val CONTEXT_OPEN = "[Earlier, between Boss and Oma's quick answers; context only, not a request]"
+
+/** The line the context ends with. Everything after it is his words, untouched. */
+const val CONTEXT_CLOSE = "[Boss now says]"
+
+/** Whether the phone's builder was sent [task]: a request of its own that was not dropped before it got there. */
+fun builderGot(task: ChatTask) = task.build && task.status != TaskStatus.Dropped
+
+/** Whether the thread [threadId] on the Mac was sent [task], or is being sent it. */
+fun threadGot(task: ChatTask, threadId: String) = task.thread == threadId && task.status != TaskStatus.Dropped
+
+/**
+ * What a receiver has missed when a request sent at [asked] is handed to it: the requests before that one which
+ * the front agent answered itself, since the last request the receiver [got], newest [CONTEXT_EXCHANGES]. Only
+ * his words and the front agent's answers are taken. A request handed to anyone is not an answer of the front
+ * agent's, so no mark, no approval and nothing another receiver said can be among them.
+ */
+fun handOverContext(tasks: List<ChatTask>, asked: Long, got: (ChatTask) -> Boolean): List<FrontExchange> {
+    val before = tasks.filter { it.time < asked }
+    val since = before.lastOrNull(got)?.time ?: Long.MIN_VALUE
+    return before.filter { it.time > since && it.quick && it.status != TaskStatus.Running && it.result.isNotBlank() }
+        .takeLast(CONTEXT_EXCHANGES).map { FrontExchange(it.prompt, it.result) }
+}
+
+/** One side of an exchange on one line, so nothing in it can stand as a line of its own and pass for a heading. */
+private fun contextSide(text: String): String {
+    val line = text.trim().replace(Regex("\\s+"), " ")
+    return if (line.length > CONTEXT_SIDE_CHARS) line.take(CONTEXT_SIDE_CHARS) + "..." else line
+}
+
+/**
+ * What stands before his words when a request is handed over: [exchanges] between the two headings, the oldest
+ * left out until it is no longer than [CONTEXT_CHARS]. Empty when there is nothing to tell, and the receiver
+ * then gets his words and nothing else.
+ */
+fun handOverPreface(exchanges: List<FrontExchange>): String {
+    fun text(kept: List<FrontExchange>) =
+        (listOf(CONTEXT_OPEN) + kept.flatMap { listOf("Boss: " + contextSide(it.said), "Oma: " + contextSide(it.answered)) } + CONTEXT_CLOSE).joinToString("\n", postfix = "\n")
+    var kept = exchanges.takeLast(CONTEXT_EXCHANGES)
+    while (kept.isNotEmpty() && text(kept).length > CONTEXT_CHARS) kept = kept.drop(1)
+    return if (kept.isEmpty()) "" else text(kept)
+}
+
+/** What a receiver is sent: [preface], then [words] exactly as he said them. Only ever sent, never shown or saved. */
+fun handOverText(preface: String, words: String) = preface + words
+
+/**
+ * His words out of [sent], which may be a [handOverText]. A thread on the Mac says back what it was sent, and
+ * this is how that is matched to the entry that holds his words alone. The sides of an exchange are one line
+ * each and start with a name, so the first closing heading on a line of its own is the real one.
+ */
+fun handOverWords(sent: String): String {
+    if (!sent.startsWith(CONTEXT_OPEN + "\n")) return sent
+    val close = "\n" + CONTEXT_CLOSE + "\n"
+    val at = sent.indexOf(close)
+    return if (at < 0) sent else sent.substring(at + close.length)
+}
 
 /** What the corrections log says an entry was before he sent it to build himself. */
 const val FRONT_ANSWERED = "front-answered"

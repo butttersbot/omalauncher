@@ -78,6 +78,28 @@ class MacThreadsTest {
         assertEquals(TaskStatus.Running, macApply(listOf(handed(9, "now")), id, MacEvent.Message(1, 0, "now")).single().status)
     }
 
+    /** The thread says back all it was sent; the entry holds his words alone and still begins, and still shows only them. */
+    @Test fun aRequestSentWithContextBeginsWhenTheThreadSaysItBack() {
+        val sent = handOverText(handOverPreface(listOf(FrontExchange("can we build apps here?", "Yes."))), "go on")
+        assertNotEquals("go on", sent)
+        val begun = macApply(listOf(handed(6, "go on"), handed(7, "and test it")), id, MacEvent.Message(1, 0, sent))
+        assertEquals(listOf(TaskStatus.Running, TaskStatus.Queued), begun.map { it.status })
+        assertEquals(listOf("go on", "and test it"), begun.map { it.prompt })
+        // Context ahead of other words is no entry's.
+        assertEquals(listOf(handed(6, "go on")), macApply(listOf(handed(6, "go on")), id, MacEvent.Message(1, 0, sent + " then")))
+    }
+
+    /** The runner's summary of a request sent with context is the context's heading: the board gets his words instead. */
+    @Test fun theBoardSaysHisWordsWhereTheMacOnlyKeptTheContextsHeading() {
+        val plain = thread().copy(summary = "fix the menu")
+        assertEquals(plain, macOwnSummary(plain, listOf(taken(5, "something else"))))
+        val headed = thread().copy(summary = CONTEXT_OPEN)
+        val tasks = listOf(taken(4, "older"), taken(5, "\n  yes do the magic menu too\nand test it"), macUnsent(handed(6, "never got there"), MAC_UNREACHABLE), macHandOver(ChatTask(7, UNDECIDED_AGENT, "theirs"), thread(threadId = "t99999999")))
+        assertEquals("yes do the magic menu too", macOwnSummary(headed, tasks).summary)
+        assertEquals("", macOwnSummary(headed, emptyList()).summary)
+        assertEquals(headed.copy(summary = ""), macOwnSummary(headed, emptyList()))
+    }
+
     @Test fun aTurnThatFailsStopsOrErrsEndsItsEntryThatWay() {
         val waiting = ChatApproval("Write", "{}", ApprovalAnswer.Waiting, "a1")
         val running = taken(5).copy(result = "half\n", approvals = listOf(waiting))

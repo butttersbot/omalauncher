@@ -3,9 +3,10 @@ package dev.omalauncher.oma
 /**
  * A message sent while the agent was still on the task before it. [time] is its task in the thread, where it
  * already shows as his message; [prompt] is kept whole here, since the thread only keeps the start of a long one.
- * [page] is the home page he was on when he sent it.
+ * [page] is the home page he was on when he sent it. [earlier] is sent to the agent ahead of [prompt] and is
+ * never shown: what he and the front agent said before a request it handed over.
  */
-data class FollowUp(val time: Long, val prompt: String, val images: List<String> = emptyList(), val page: String? = null)
+data class FollowUp(val time: Long, val prompt: String, val images: List<String> = emptyList(), val page: String? = null, val earlier: String = "")
 
 /** What the end of a task means for the follow-ups behind it: [next] is sent now, the [dropped] never are. */
 data class Handoff(val next: FollowUp? = null, val dropped: List<FollowUp> = emptyList())

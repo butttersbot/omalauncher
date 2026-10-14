@@ -208,6 +208,11 @@ class QuickLaneTest {
             "Never invent an id, and never tell him a thread's id or any of these marks: call a thread by its name.",
         )
         for (rule in rules) assertTrue(rule, told.contains(rule))
+        // Where a reply goes is read from the board's own line, which names who asked: tried on the real model, 2026-10-13.
+        assertTrue(told.contains(
+            "as the board shows. Its \"Last to speak\" line says who that is: a reply such as yes, no or go on is for the newest question it names, " +
+                "and a thread's question is answered with that thread's mark, never <<build>>. If a work request",
+        ))
         // Still no command that acts on the phone, and nothing of an approval or of the Mac's key.
         assertEquals(7, Regex("oma-phone").findAll(told).count())
         for (never in listOf("approv", "nonce", "Bearer", "key", "8478")) assertFalse(never, quickMacRules().contains(never))

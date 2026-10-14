@@ -200,8 +200,10 @@ object QuickLane {
     }
 
     /**
-     * Gives [prompt], his words and nothing of the board or the front agent's, to the build lane as the chat's
-     * Send does: sent now, or waiting behind the running task. The entry sent at [asked] then goes, since the
+     * Gives [prompt], his words and nothing of the board, to the build lane as the chat's Send does: sent now,
+     * or waiting behind the running task. The builder was not there for what he and the front agent said since it
+     * was last sent anything, so that goes ahead of his words as [handOverPreface] marks it; the entry, the
+     * notification and the logs keep his words alone. The entry sent at [asked] then goes, since the
      * build lane has filed the request as its own; if the build lane refuses, the entry stays and says why,
      * which is the only time a failure here is mentioned. False if he stopped it first: nothing is sent then.
      */
@@ -210,7 +212,7 @@ object QuickLane {
         else {
             val log = ChatLog.of(context)
             try {
-                AgentTasks.followUp(context, prompt, page = page)
+                AgentTasks.followUp(context, prompt, page = page, earlier = handOverPreface(handOverContext(log.tasks, asked, ::builderGot)))
                 log.handedOver(asked)
             } catch (e: Exception) {
                 val reason = e.message ?: "The request could not be sent."
@@ -222,8 +224,8 @@ object QuickLane {
     }
 
     /**
-     * Gives [prompt], his words and nothing else, to [thread] on the Mac. The entry sent at [asked] becomes
-     * that thread's at once, and [MacThreads] asks the Mac and sends on a thread of its own, so the front agent
+     * Gives [prompt], his words, to [thread] on the Mac; [MacThreads] puts what the thread missed ahead of them
+     * as it sends. The entry sent at [asked] becomes that thread's at once, and [MacThreads] asks the Mac and sends on a thread of its own, so the front agent
      * is free for his next request meanwhile. Nothing here can end with the phone's builder doing the work
      * instead. False if he stopped it first: nothing is sent then.
      */
@@ -321,7 +323,8 @@ fun quickMacRules(): String =
         "still gets $HAND_OVER. Work on a project that has a thread goes to that thread: reply with the single line " +
         "${handOverMark(Route.mac("ID"))} and nothing else, ID being that thread's id copied exactly from the board. An answer, " +
         "confirmation, correction or addition goes to whichever of the builder or a thread asked for it or last worked, as the board " +
-        "shows. If a work request plainly belongs to no listed thread and is not phone work, do not hand it over: ask him in one short " +
+        "shows. Its \"Last to speak\" line says who that is: a reply such as yes, no or go on is for the newest question it names, " +
+        "and a thread's question is answered with that thread's mark, never $HAND_OVER. If a work request plainly belongs to no listed thread and is not phone work, do not hand it over: ask him in one short " +
         "line which project it is for. A thread's work goes to its thread even when the board says the Mac is not reachable, never to " +
         "the builder instead. Never invent an id, and never tell him a thread's id or any of these marks: call a thread by its name."
 
