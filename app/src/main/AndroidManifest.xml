@@ -8,6 +8,8 @@
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
     <!-- Samsung's own lock-screen widgets hold this; asked for in case its lock screen wants it of ours. -->
     <uses-permission android:name="com.samsung.systemui.permission.FACE_WIDGET" />
+    <!-- Keeps the processor on while an agent works with the display off (assist/StayAwake.kt). -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />

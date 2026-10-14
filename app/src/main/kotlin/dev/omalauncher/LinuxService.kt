@@ -7,12 +7,15 @@ import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.IBinder
+import dev.omalauncher.assist.CHECK_MILLIS
+import dev.omalauncher.assist.StayAwake
 import dev.omalauncher.linux.LinuxState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -42,6 +45,8 @@ class LinuxService : Service() {
                 scope.launch {
                     state.map(::text).distinctUntilChanged().collect { nm.notify(1, build(it)) }
                 }
+            // The processor is kept on while an agent works with the display off (assist/StayAwake.kt).
+            scope.launch { while (true) { StayAwake.check(applicationContext); delay(CHECK_MILLIS) } }
         }
         // Not restarted after the process dies: Linux only comes back with the launcher (Runtime.start),
         // and Android 12+ may refuse startForeground() in a restart from the background.
@@ -50,6 +55,7 @@ class LinuxService : Service() {
 
     override fun onDestroy() {
         scope.cancel()
+        StayAwake.release()
         super.onDestroy()
     }
 

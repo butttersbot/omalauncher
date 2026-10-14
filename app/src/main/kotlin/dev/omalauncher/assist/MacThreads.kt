@@ -400,6 +400,9 @@ object MacThreads {
     @Volatile private var cursors = MacCursors()
     private val followers = HashMap<String, Follower>()
 
+    /** Whether a thread on the Mac is being followed now: its answer or its request to approve is still to come. */
+    val following: Boolean get() = synchronized(this) { followers.isNotEmpty() }
+
     /** Per entry, when its sending ended by [clock]; [IN_FLIGHT] until then. An entry not in here was sent by an earlier run. */
     private val sentAt = HashMap<Long, Long>()
     private val clock = AtomicLong()
