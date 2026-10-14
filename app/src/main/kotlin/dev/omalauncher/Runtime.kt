@@ -218,6 +218,7 @@ class Runtime(
                 agents.load()
                 // A thread on the Mac may be working, or waiting for Boss to approve a step, since before this process
                 // began: it is picked up now and not when he next opens the chat. With no Mac set up nothing is asked.
+                // Its health check is also the first look of TailscaleHeal, since a reboot is when Tailscale drops.
                 MacThreads.open(context)
             }
             themes.load()

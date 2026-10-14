@@ -20,6 +20,8 @@
 
     <!-- Uninstall from the app drawer's long-press menu (ACTION_DELETE). -->
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+    <!-- Whether a VPN is up, before Tailscale is asked to connect (assist/TailscaleHeal.kt). -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <uses-feature
         android:name="android.software.live_wallpaper"
@@ -28,6 +30,8 @@
     <queries>
         <!-- LockStar's share provider, for the lock-screen layout; see theme/LockStarShare.kt. -->
         <package android:name="com.samsung.systemui.lockstar" />
+        <!-- Tailscale, named so the heal can see it is installed and reach its receiver whatever its launcher entry. -->
+        <package android:name="com.tailscale.ipn" />
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />

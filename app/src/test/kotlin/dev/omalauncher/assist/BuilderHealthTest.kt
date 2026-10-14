@@ -297,6 +297,15 @@ class BuilderHealthTest {
         assertFalse(agentsStatus(facts, null, "x").has("mac"))
     }
 
+    @Test fun theStatusFileSaysWhenTailscaleIsWhyTheMacIsAway() {
+        val now = start + 60 * minute
+        val note = "Tailscale was off on this phone; reconnecting (tried 20 s ago)"
+        val facts = BuilderFacts(now, working = false)
+        assertEquals(note, agentsStatus(facts, MacView(reachable = false, seen = now - minute), "x", tailscale = note).getJSONObject("mac").getString("tailscale"))
+        assertFalse(agentsStatus(facts, MacView(reachable = true, seen = now), "x", tailscale = note).getJSONObject("mac").has("tailscale"))
+        assertFalse(agentsStatus(facts, MacView(reachable = false, seen = now - minute), "x").getJSONObject("mac").has("tailscale"))
+    }
+
     @Test fun theGuestCommandOnlyPrintsTheFile() {
         val script = moduleFile("src/main/assets/oma-agents.sh")
         val home = Files.createTempDirectory("oma-agents-test").toFile()

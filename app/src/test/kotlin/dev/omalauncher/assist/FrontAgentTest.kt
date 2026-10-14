@@ -414,6 +414,15 @@ class FrontAgentTest {
         assertTrue(frontPrompt(BuildBoard(false), "  go on  ", macBoard(threads, true, now, now)).endsWith("\n[Boss says]\n  go on  "))
     }
 
+    @Test fun theBoardSaysWhenTailscaleIsWhyTheMacIsAway() {
+        val note = "Tailscale was off on this phone; reconnecting (tried 20 s ago)"
+        val away = boardText(BuildBoard(false), macBoard(emptyList(), reachable = false, seen = now - 5 * minute, now = now, tailscale = note))
+        assertTrue(away, away.contains("\nMac: not reachable, last seen 5 min ago — $note.\n"))
+        assertTrue(boardText(BuildBoard(false), macBoard(emptyList(), false, null, now, note)).contains("\nMac: not reachable, not seen yet — $note.\n"))
+        // Once the Mac answers, the note explains nothing and is not said.
+        assertTrue(boardText(BuildBoard(false), macBoard(emptyList(), true, now, now, note)).contains("\nMac: reachable.\n"))
+    }
+
     @Test fun theBoardIsCappedAndNeverCarriesAnApproval() {
         val many = (1..12).map { onMac("t$it", "Project $it", worked = 1_760_000_000L + it) } + onMac("bad id", "Unnameable", worked = 1_760_000_500)
         val board = macBoard(many, reachable = true, seen = now, now = now)

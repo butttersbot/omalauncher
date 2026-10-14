@@ -616,7 +616,7 @@ object MacThreads {
         if (now - checked > STALE_MS) refresh(context)
         val known = view
         val tasks = ChatLog.of(context).tasks
-        return macBoard(known.threads.map { macOwnSummary(it, tasks) }, known.reachable, known.seen, now)
+        return macBoard(known.threads.map { macOwnSummary(it, tasks) }, known.reachable, known.seen, now, TailscaleHeal.note(now))
     }
 
     /**
@@ -635,6 +635,7 @@ object MacThreads {
     private fun heard(context: Context, health: MacHealthResult) {
         if (health is MacHealthResult.Up) kinds = health.health.kinds
         reached(context, health is MacHealthResult.Up)
+        TailscaleHeal.after(context, macLink(health))
     }
 
     /** The agents taken to be at their limit now. */
@@ -680,6 +681,8 @@ object MacThreads {
                     checked = System.currentTimeMillis()
                     val client = MacRunnerClient(config)
                     val health = client.health()
+                    // Also how the launcher's start turns Tailscale back on after a reboot: Runtime.start opens this.
+                    TailscaleHeal.after(app, macLink(health))
                     if (health is MacHealthResult.Up) kinds = health.health.kinds
                     val listed = if (health is MacHealthResult.Up) client.threads() else MacAnswer.Unreachable
                     val threads = if (listed is MacAnswer.Ok) listed.value else emptyList()
@@ -980,6 +983,7 @@ object MacThreads {
                 is MacAnswer.Ok -> {
                     val seen = known.value
                     reached(context, true)
+                    TailscaleHeal.after(context, MacLink.Answered)
                     noted(seen)
                     if (seen.lastEvent < cursors.after(threadId)) {
                         cursors.forget(threadId)
@@ -1035,6 +1039,8 @@ object MacThreads {
                 }
                 else -> {
                     reached(context, false)
+                    // A thread waiting out a dark link is often where a reboot's Tailscale shows: it is healed from here too.
+                    if (known is MacAnswer.Unreachable) TailscaleHeal.after(context, MacLink.NoAnswer)
                     // Out of reach with nothing of his there and no card of its to keep: nothing to wait for.
                     if (!unfinished(context, threadId) && pending.none { it.threadId == threadId } && leave(mine, threadId)) return
                     pause(macRetryDelay(++misses))

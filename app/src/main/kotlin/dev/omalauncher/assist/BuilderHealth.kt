@@ -328,14 +328,17 @@ private fun minutesAgo(now: Long, at: Long?) = at?.let { (now - it).coerceAtLeas
  * The status file: the builder's facts and verdict, and the Mac's threads as the phone last heard of them.
  * Times are minutes before [BuilderFacts.now], which [written] states. It never holds a key, a nonce or anything
  * of an approval but how many wait, and of a request or a thread's words only the first [HEALTH_TEXT_CHARS].
+ * [tailscale] is why an unreachable Mac is out of reach when Tailscale was found off ([healNote]); it is left
+ * out while the Mac answers, since then it no longer explains anything.
  */
-fun agentsStatus(facts: BuilderFacts, mac: MacView?, written: String, second: BuilderFacts? = null): JSONObject {
+fun agentsStatus(facts: BuilderFacts, mac: MacView?, written: String, second: BuilderFacts? = null, tailscale: String? = null): JSONObject {
     val now = facts.now
     val root = JSONObject().put("written", written).put("builder", builderStatus(facts))
     // Builder B, once it has worked; "builder" is then builder A, the one there always was.
     if (second != null) root.put("builderB", builderStatus(second))
     if (mac != null) root.put("mac", JSONObject()
         .put("reachable", mac.reachable).put("lastSeenMinAgo", minutesAgo(now, mac.seen))
+        .put("tailscale", tailscale?.takeIf { !mac.reachable })
         .put("threads", JSONArray(mac.threads.map { thread ->
             JSONObject().put("name", clip(thread.name)).put("id", thread.id).put("status", thread.status.word.ifEmpty { "unknown" })
                 .put("lastWorkedMinAgo", thread.lastWorked?.let { minutesAgo(now, it * 1000) })
@@ -470,7 +473,7 @@ object BuilderWatch {
             view.copy(threads = view.threads.map { macOwnSummary(it, tasks) })
         }
         val next = File(file.parentFile, file.name + ".new")
-        next.writeText(agentsStatus(first, mac, written, seen[BuilderId.B]?.takeIf { twoShown }).toString(2) + "\n")
+        next.writeText(agentsStatus(first, mac, written, seen[BuilderId.B]?.takeIf { twoShown }, TailscaleHeal.note(first.now)).toString(2) + "\n")
         next.renameTo(file)
     }
 
