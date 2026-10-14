@@ -3,7 +3,34 @@
 For the agent on the Fold (Oma), when Boss works with no Mac in the loop. Written 2026-10-12 by the Mac session.
 Boss talks to you through Oma (voice or the Oma chat). Be short: he is often reading on the move.
 
-## Where things stand (checkpoint 2026-10-12, about 23:20 PDT, written by the Mac session)
+## Where things stand (checkpoint 2026-10-14, about 03:20 PDT, written by the agent on the Fold)
+- Branch `phone/fold-development` at 6446e93 and after; promoted right after this checkpoint (the batch below).
+  The day's detail is at the top of `docs/PHONE-TEST-RESULTS.md`; the Mac side is `docs/MAC-RUNNER-SPEC.md`.
+- **How Boss talks to agents now.** One chat, Oma. A front agent (Haiku, `assist/QuickLane.kt`) answers or routes
+  with three marks only: `<<build>>` (phone builders A and B, `assist/Builders.kt`; launcher and phone work),
+  `<<mac ID>>` / `<<mac-new ID>>` (project threads on the Mac Pro through `tools/mac-runner/oma-runner`, reached over
+  Tailscale with the key in `~/.config/omalauncher/mac-runner.json`). Stop / Restart / Clean up are tab-menu rows,
+  not the model's. Hand-overs carry the recent front exchanges as context; a hidden note asks parallel agents to
+  use their own worktree.
+- **Chat:** header dots per thread at the right, "▾" folds a tab strip (Oma, Phone A/B, Mac threads, ＋). ＋ is
+  always a Mac session (web tools only for the front agent there; work waits for a project or says the Mac is
+  unreachable). Tabs auto-name, long-press: Rename, Pin, Stop, Restart, Copy last answer, Archive, Archived (N).
+- **Home:** page "Agents" holds live thread tiles (only that page is ever written); idle ones leave after 12 h.
+- **Mac runner:** Claude, Codex and Cursor threads; a Claude limit falls back to Codex then Cursor (15 min memory).
+- **Guest tools:** `oma threads | keep | status | help` (old names `oma-thread`, `oma-keep`, `oma-agents` alias it).
+  `oma keep run NAME -- CMD` is the only way a process outlives an agent's turn.
+- **Standing rules learned this week:** bundle promotions; no sticky notes unless asked; the Critic only for long
+  tasks, big batches or escalations (it is slow and takes over his screen); a background subagent dies when a new
+  message restarts the builder, so run long subagents in the foreground; Tailscale on the phone does not come back
+  by itself after a reboot (the Mac reads unreachable until he opens the Tailscale app — it was unreachable at this
+  checkpoint).
+- **Agreed next:** the Mac builds and tests Oma (request at the end of MAC-RUNNER-SPEC.md; the signing key stays on
+  the phone, so the install stays a phone step). Open question for Boss: should a named-but-empty ＋ chat let ＋
+  start a fresh one?
+- Not seen on the real launcher yet: the simplification pass, ＋ with the Mac reachable, the 12 h archive path.
+- Changed on the phone for Boss, still to put back when he says: screen timeout never (was 30000).
+
+## Earlier checkpoint (2026-10-12, about 23:20 PDT, written by the Mac session)
 - This checkout: `/root/Projects/omalauncher`, branch `phone/fold-development`. `git pull --ff-only` first.
 - Installed: the real launcher `dev.omalauncher.boss`, versionCode 45 (commit a4700de), and the throwaway
   `dev.omalauncher.dev` ("Oma Dev": every entry says Dev, magenta icon), older. You are running inside the real one.
