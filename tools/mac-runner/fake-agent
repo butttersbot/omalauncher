@@ -2,8 +2,10 @@
 """A stand-in for `claude -p --input-format stream-json ... --permission-prompt-tool stdio`, for test-runner.py.
 
 It speaks the same lines Claude Code does and decides what to do from words in the prompt: "write" asks for
-approval to write written.txt and writes it only when allowed; "slow" takes three seconds first; "limit" answers as Claude Code does at a usage limit. Every start is
-added to starts.log in the project, so a test can see a task was not started twice.
+approval to write written.txt and writes it only when allowed, in every mode (it stands for what auto mode's
+classifier sends to the prompt tool); "edit" writes edited.txt as a routine edit: at once in auto mode, after asking
+in any other; "slow" takes three seconds first; "limit" answers as Claude Code does at a usage limit. Every start is
+added to starts.log in the project, with its permission mode, so a test can see a task was not started twice.
 """
 import json, pathlib, sys, time, uuid
 
@@ -20,7 +22,8 @@ arguments = sys.argv[1:]
 session = arguments[arguments.index('--resume') + 1] if '--resume' in arguments else str(uuid.uuid4())
 prompt = json.loads(sys.stdin.readline())['message']['content']
 with open('starts.log', 'a') as log:
-    log.write(json.dumps({'prompt': prompt, 'resumed': '--resume' in arguments, 'manual': 'manual' in arguments}) + '\n')
+    log.write(json.dumps({'prompt': prompt, 'resumed': '--resume' in arguments, 'mode': arguments[arguments.index('--permission-mode') + 1],
+                         'prompt_tool': arguments[arguments.index('--permission-prompt-tool') + 1]}) + '\n')
 if '--model' in arguments:
     with open('models.log', 'a') as log:
         log.write(arguments[arguments.index('--model') + 1] + '\n')
@@ -33,11 +36,14 @@ if 'limit' in prompt:
 said('Heard: ' + prompt)
 if 'slow' in prompt:
     time.sleep(3)
-if 'write' in prompt:
-    given = {'file_path': str(pathlib.Path.cwd() / 'written.txt'), 'content': 'hi'}
+if 'write' in prompt or 'edit' in prompt:
+    given = {'file_path': str(pathlib.Path.cwd() / ('written.txt' if 'write' in prompt else 'edited.txt')), 'content': 'hi'}
     out({'type': 'assistant', 'message': {'role': 'assistant', 'content': [{'type': 'tool_use', 'id': 'tool1', 'name': 'Write', 'input': given}]}})
-    out({'type': 'control_request', 'request_id': 'r-' + uuid.uuid4().hex[:8], 'request': {'subtype': 'can_use_tool', 'tool_name': 'Write', 'input': given}})
-    reply = json.loads(sys.stdin.readline())['response']['response']
+    if 'edit' in prompt and arguments[arguments.index('--permission-mode') + 1] == 'auto':
+        reply = {'behavior': 'allow', 'updatedInput': given}
+    else:
+        out({'type': 'control_request', 'request_id': 'r-' + uuid.uuid4().hex[:8], 'request': {'subtype': 'can_use_tool', 'tool_name': 'Write', 'input': given}})
+        reply = json.loads(sys.stdin.readline())['response']['response']
     if reply['behavior'] == 'allow':
         pathlib.Path(reply['updatedInput']['file_path']).write_text(reply['updatedInput']['content'])
         said('Wrote it.')

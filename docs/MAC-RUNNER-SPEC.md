@@ -313,3 +313,37 @@ phone (`oma-phone`, the final install). For Oma's own code that means:
    step: the phone pulls, `oma-build`, `oma-try` (about two minutes). If Boss ever wants the Mac to install too, that
    is his decision about his key, not ours.
 4. Say here what you installed, the test count, and how long a clean build and a test run take on the Mac.
+
+## As built: auto mode (2026-10-14, by the agent on the Fold)
+Boss: "we need to default those sessions to start on auto mode. So I don't have to keep clicking approve a 100
+times." This replaces, for auto threads, the rule under "Approvals" that no classifier may allow anything: routine
+work in the project now runs without a card, and what the agent's own guard thinks risky still comes to the phone as
+an `approval` event and waits for his answer, as before. No blanket bypass is used for any kind. Changed in
+`tools/mac-runner/oma-runner`; proof: `test-runner.py`, now 82 checks (run on the Fold against the fakes).
+
+- **Mode per thread.** `POST /threads {…, mode: "auto"|"manual"}`; `auto` is the default, another word is 400.
+  THREAD gains `mode`, the mode in force. Threads saved before this have no mode and run in **auto from their next
+  turn** (and show `auto`): Boss asked for these sessions, and auto keeps the same guard (hooks off, the key and the
+  runner's records denied, risky actions carded). Make a `manual` thread for work where every step should ask.
+- **Claude Code:** `--permission-mode auto` (was `manual`), still with `--permission-prompt-tool stdio` and hooks
+  off, as the phone's own builder runs (`claudeStreamCommand`). The classifier allows routine actions; what it
+  sends on reaches the runner through stdio and becomes a card. `manual` threads run as before.
+- **Codex:** approval policy `on-request` with the `workspace-write` sandbox (was `untrusted`), which is Codex's own
+  "Auto" preset: edits and commands inside the project run in the sandbox; writing outside it, the network, or
+  leaving the sandbox is asked about, and the asking still comes to the runner (`approvals_reviewer="user"`, the
+  auto-reviewer and add-ons off as before). Not used: `never` or `danger-full-access`. Known, as before: the sandbox
+  lets Codex read the runner's key file; in auto mode a command that reads it runs with no card. `manual` threads
+  keep `untrusted`.
+- **Cursor:** unchanged and always `manual` (a Cursor thread asked for `auto` is made, and shows `manual`). Its only
+  run-everything setting (`--force` / an unrestricted approval mode) asks about nothing at all, and its own edits are
+  still unasked, so they stay denied; there is no mode that runs routine work and still asks about the rest.
+- Not seen yet with the real agents: which actions Claude Code's classifier and Codex's sandbox send on in practice.
+  The fakes stand in for both (a routine edit runs with no card in auto and asks in manual; a risky write asks in
+  every mode).
+
+### For the Mac session
+Nothing changes on the Mac until the runner there is replaced: pull this branch, then `oma-runner install` from the
+checkout (it copies itself to `~/.local/bin/oma-runner` and restarts), or copy it there and run `oma-runner stop &&
+oma-runner start`. Running tasks end with the restart and their threads come back `interrupted`. Then, on a scratch
+thread: a plain file edit should run with no card, and something risky (e.g. `rm` outside the project, a push)
+should still show one.

@@ -89,12 +89,13 @@ try:
     check('a link that leads out of a root is refused', call('POST', '/threads', {'name': 'x', 'project': str(root / 'link')})[0] == 403)
     code, made = call('POST', '/threads', {'name': 'Scratch', 'project': str(project)})
     thread = made['thread']['id']
-    check('a thread is made under a root, home mac', code == 200 and made['thread']['home'] == 'mac' and made['thread']['status'] == 'idle')
+    check('a thread is made under a root, home mac, in auto mode by default', code == 200 and made['thread']['home'] == 'mac' and made['thread']['status'] == 'idle'
+          and made['thread']['mode'] == 'auto')
 
     check('the owner\'s words are taken at once', call('POST', '/threads/%s/messages' % thread, {'text': 'what files are here'})[1]['taken'] == 'now')
     events = stream(thread)
     check('they reach the agent unchanged', starts()[-1]['prompt'] == 'what files are here' and events[1] == {**events[1], 'type': 'message', 'text': 'what files are here'})
-    check('the agent is run in manual mode', starts()[-1]['manual'])
+    check('the agent is run in auto mode, asking through the prompt tool', starts()[-1]['mode'] == 'auto' and starts()[-1]['prompt_tool'] == 'stdio')
     check('the thread answers what files are here', any(event['type'] == 'text' and 'notes.md' in event['text'] for event in events))
     check('it goes back to idle', settle(thread, 'idle'))
     listed = call('GET', '/threads')[1]['threads'][0]
@@ -103,7 +104,7 @@ try:
     call('POST', '/threads/%s/messages' % thread, {'text': 'write the file'})
     events = stream(thread, after=listed['last_event'], until=('approval',))
     card = events[-1]
-    check('a write shows a request naming the tool and the file', card['tool'] == 'Write' and card['input']['file_path'].endswith('written.txt') and card['nonce'])
+    check('in auto mode, what the classifier sends on still shows a request naming the tool and the file', card['tool'] == 'Write' and card['input']['file_path'].endswith('written.txt') and card['nonce'])
     check('the thread waits for approval', status_of(thread) == 'waiting')
     time.sleep(1.5)
     check('it is not allowed by waiting', status_of(thread) == 'waiting' and not (project / 'written.txt').exists())
@@ -122,6 +123,25 @@ try:
     stream(thread, after=card['id'])
     check('allow does it', (project / 'written.txt').read_text() == 'hi')
     check('the conversation is continued, not begun again', starts()[-1]['resumed'] and not starts()[0]['resumed'])
+
+    settle(thread, 'idle')
+    last = call('GET', '/threads/' + thread)[1]['thread']['last_event']
+    call('POST', '/threads/%s/messages' % thread, {'text': 'edit the file'})
+    events = stream(thread, after=last)
+    check('in auto mode a routine edit runs with no card', (project / 'edited.txt').read_text() == 'hi' and not any(event['type'] == 'approval' for event in events))
+    (project / 'edited.txt').unlink()
+    check('a mode that is not auto or manual is refused', call('POST', '/threads', {'name': 'x', 'project': str(project), 'mode': 'bypass'})[0] == 400)
+    code, made = call('POST', '/threads', {'name': 'Careful', 'project': str(project), 'mode': 'manual'})
+    careful = made['thread']['id']
+    check('manual mode is taken on request and shown on the thread', code == 200 and made['thread']['mode'] == 'manual'
+          and call('GET', '/threads/' + careful)[1]['thread']['mode'] == 'manual')
+    call('POST', '/threads/%s/messages' % careful, {'text': 'edit the file'})
+    card = stream(careful, until=('approval',))[-1]
+    check('in manual mode the agent is run in manual mode and the same edit asks first', starts()[-1]['mode'] == 'manual' and card['tool'] == 'Write'
+          and status_of(careful) == 'waiting' and not (project / 'edited.txt').exists())
+    call('POST', '/threads/%s/approvals/%s' % (careful, card['approval']), {'decision': 'deny', 'nonce': card['nonce']})
+    stream(careful, after=card['id'])
+    check('denied, the edit is not made', not (project / 'edited.txt').exists() and settle(careful, 'idle'))
 
     settle(thread, 'idle')
     last = call('GET', '/threads/' + thread)[1]['thread']['last_event']
@@ -156,13 +176,18 @@ try:
     count = len(starts())
     runner.send_signal(signal.SIGTERM)
     runner.wait()
+    # A thread saved before modes existed has none; it comes back in auto mode.
+    saved = work / 'state' / 'threads' / thread / 'thread.json'
+    saved.write_text(json.dumps({key: value for key, value in json.loads(saved.read_text()).items() if key != 'mode'}))
     runner = start()
+    check('a thread saved without a mode is shown in auto mode', call('GET', '/threads/' + thread)[1]['thread']['mode'] == 'auto')
     check('after the runner restarts the thread is interrupted, with its history', status_of(thread) == 'interrupted' and call('GET', '/threads/%s/events' % thread)[1]['events'][card['id'] - 1] == card)
     check('the waiting request is gone and cannot be allowed', call('POST', '/threads/%s/approvals/%s' % (thread, card['approval']), {'decision': 'allow', 'nonce': card['nonce']})[0] == 404)
     time.sleep(1)
     check('the task was not started again and nothing was written', len(starts()) == count and not (project / 'written.txt').exists())
     call('POST', '/threads/%s/messages' % thread, {'text': 'what files are here'})
-    check('the interrupted thread takes the owner\'s next words', stream(thread, after=card['id'])[-1]['type'] == 'result' and starts()[-1]['resumed'])
+    check('the interrupted thread takes the owner\'s next words, in auto mode', stream(thread, after=card['id'])[-1]['type'] == 'result' and starts()[-1]['resumed']
+          and starts()[-1]['mode'] == 'auto')
 
     # Claude Code at a limit, and who wrote what.
     settle(thread, 'idle')
@@ -231,8 +256,16 @@ try:
               and events[-1]['dropped'] == 1 and settle(other, 'idle'))
         check(kind + ': a late allow does nothing', call('POST', '/threads/%s/approvals/%s' % (other, card['approval']), {'decision': 'allow', 'nonce': card['nonce']})[0] == 404)
     codex = [entry for entry in starts() if entry.get('kind') == 'codex'][-1]
-    check('codex: asks about everything not read-only, and asks us, not its own reviewer', codex['policy'] == 'untrusted' and codex['reviewer'] == 'user'
+    check('codex: auto by default, in the workspace sandbox asking only for more, and asks us, not its own reviewer', codex['policy'] == 'on-request'
+          and codex['sandbox'] == 'workspace-write' and codex['reviewer'] == 'user'
           and 'approvals_reviewer="user"' in codex['arguments'] and 'notify=[]' in codex['arguments'] and 'mcp_servers.paper.enabled=false' in codex['arguments'])
+    code, made = call('POST', '/threads', {'name': 'Codex careful', 'project': str(project), 'kind': 'codex', 'mode': 'manual'})
+    call('POST', '/threads/%s/messages' % made['thread']['id'], {'text': 'what files are here'})
+    stream(made['thread']['id'])
+    check('codex: manual asks about everything not read-only', made['thread']['mode'] == 'manual' and starts()[-1]['policy'] == 'untrusted'
+          and starts()[-1]['sandbox'] == 'workspace-write')
+    code, made = call('POST', '/threads', {'name': 'Cursor auto', 'project': str(project), 'kind': 'cursor', 'mode': 'auto'})
+    check('cursor: has no auto mode, so its threads are manual even when auto is asked for', code == 200 and made['thread']['mode'] == 'manual')
     cursor = [entry for entry in starts() if entry.get('kind') == 'cursor'][-1]['permissions']
     check('cursor: its own edits are denied, nothing is allowed without asking, the key is out of reach', 'Write(**)' in cursor['deny'] and cursor['allow'] == []
           and any(str(work / 'token') in rule for rule in cursor['deny']))

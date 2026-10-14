@@ -8,7 +8,8 @@ approves nothing itself: every request for approval waits for the phone's answer
 
   GET  /health                           {ok, working, waiting}
   GET  /threads                          every thread: id, name, summary, status, last_worked, tail, pending
-  POST /threads   {name, project, kind, model}   makes one under an allowed root; kind claude (default), codex or cursor
+  POST /threads   {name, project, kind, model, mode}   makes one under an allowed root; kind claude (default), codex or cursor;
+                                         mode auto (default) or manual
   GET  /threads/ID                       one thread
   POST /threads/ID/messages   {text}     the owner's words; {taken: "now"} or {taken: "queued", position}
   GET  /threads/ID/stream[?after=N]      server-sent events from event N+1 on (or the Last-Event-ID header)
@@ -31,6 +32,7 @@ AGENT = os.environ.get('OMA_RUNNER_AGENT', 'claude')
 CODEX = os.environ.get('OMA_RUNNER_CODEX') or shutil.which('codex') or '/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex'
 CURSOR = os.environ.get('OMA_RUNNER_CURSOR') or shutil.which('cursor-agent') or str(HOME / '.local/bin/cursor-agent')
 KINDS = ('claude', 'codex', 'cursor')
+MODES = ('auto', 'manual')
 LABEL = 'dev.omalauncher.runner'
 INSTALLED = HOME / '.local/bin/oma-runner'
 PLIST = HOME / 'Library/LaunchAgents' / (LABEL + '.plist')
@@ -90,12 +92,22 @@ def outside_reach():
     return [str(TOKEN_FILE), str(STATE) + '/**']
 
 
-class Claude:
-    """Claude Code as the phone runs it, but asking about everything the phone would be asked about.
+def mode(meta):
+    """How much a thread's agent may do without a card. "auto" (the default, Boss 2026-10-14: fewer clicks, not no
+    guard): routine work in the project runs and anything risky still comes to the phone. "manual": everything the
+    agent would ask about is a card. Threads saved before modes existed have none and are auto. Cursor has no mode
+    that runs routine work and still asks about the rest (its only run-everything mode asks about nothing), so its
+    threads are always manual."""
+    return 'manual' if meta['kind'] == 'cursor' else meta.get('mode') or 'auto'
 
-    manual mode with the prompts sent to us: nothing is allowed by a classifier. Hooks are off because the Mac's
-    own PermissionRequest hook (the notch) can answer a request, and only the phone may. The key and the runner's
-    own records are out of the agent's reach.
+
+class Claude:
+    """Claude Code as the phone runs it.
+
+    In auto mode (as the phone's own builder runs) Claude Code's classifier lets routine actions run and sends the
+    rest to the permission prompt tool, which is us: a card on the phone. In manual mode every request is a card.
+    Hooks are off because the Mac's own PermissionRequest hook (the notch) can answer a request, and only the phone
+    may. The key and the runner's own records are out of the agent's reach in both modes.
     """
     def __init__(self, thread, text):
         self.thread, self.text, self.limited = thread, text, None
@@ -105,7 +117,7 @@ class Claude:
         settings = {'disableAllHooks': True, 'permissions': {'deny': ['Read(/' + outside_reach()[0] + ')', 'Read(/' + outside_reach()[1] + ')', 'Edit(/' + outside_reach()[1] + ')']}}
         return [AGENT, '-p'] + (['--resume', meta['session']] if meta.get('session') else []) + (['--model', meta['model']] if meta.get('model') else []) + [
             '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
-            '--permission-mode', 'manual', '--permission-prompt-tool', 'stdio', '--settings', json.dumps(settings)]
+            '--permission-mode', mode(meta), '--permission-prompt-tool', 'stdio', '--settings', json.dumps(settings)]
 
     def environment(self):
         return clean_environment()
@@ -193,9 +205,12 @@ class Talker:
 
 
 class Codex(Talker):
-    """Codex's app-server, one per turn. Every command it does not know to be read-only and every file change is
-    asked about (approval policy "untrusted"), and the asking goes to us, not to Codex's own auto-reviewer. Its
-    Mac-wide add-ons (computer use, browser, apps, plugins, MCP servers, hooks, notify) are off in these threads."""
+    """Codex's app-server, one per turn, in the workspace-write sandbox. Auto mode is Codex's own "Auto" preset
+    (approval policy "on-request"): edits and commands inside the project run in the sandbox, and anything that
+    needs more (writing outside the project, the network, leaving the sandbox) is asked about. Manual mode
+    ("untrusted") asks about every command Codex does not know to be read-only and every file change. Either way
+    the asking goes to us, not to Codex's own auto-reviewer. Its Mac-wide add-ons (computer use, browser, apps,
+    plugins, MCP servers, hooks, notify) are off in these threads."""
 
     def __init__(self, thread, text):
         super().__init__(thread, text)
@@ -215,7 +230,7 @@ class Codex(Talker):
 
     def rules(self):
         meta = self.thread.meta
-        return {'cwd': meta['project'], 'approvalPolicy': 'untrusted', 'approvalsReviewer': 'user', 'sandbox': 'workspace-write', **({'model': meta['model']} if meta.get('model') else {})}
+        return {'cwd': meta['project'], 'approvalPolicy': 'on-request' if mode(meta) == 'auto' else 'untrusted', 'approvalsReviewer': 'user', 'sandbox': 'workspace-write', **({'model': meta['model']} if meta.get('model') else {})}
 
     def answered(self, method, result):
         thread = self.thread
@@ -456,7 +471,7 @@ class Thread:
 
     def view(self):
         return {'id': self.meta['id'], 'name': self.meta['name'], 'project': self.meta['project'], 'home': 'mac',
-                'kind': self.meta['kind'], 'model': self.model, 'summary': self.meta.get('summary', ''), 'status': self.meta['status'],
+                'kind': self.meta['kind'], 'mode': mode(self.meta), 'model': self.model, 'summary': self.meta.get('summary', ''), 'status': self.meta['status'],
                 'last_worked': self.meta.get('last_worked'), 'tail': self.meta.get('tail', ''), 'waiting_turns': len(self.queue),
                 'last_event': len(self.events),
                 'pending': [{'approval': key, 'nonce': entry['nonce'], 'tool': entry['tool'], 'input': entry['input'], 'explanation': entry['explanation']} for key, entry in self.pending.items()]}
@@ -517,11 +532,12 @@ def allowed_project(given):
     return None
 
 
-def make(name, project, kind='claude', model=None):
+def make(name, project, kind='claude', model=None, chosen='auto'):
     with changed:
         entry_id = 't' + secrets.token_hex(4)
         thread = Thread({'id': entry_id, 'name': name, 'project': str(project), 'kind': kind, 'model': model, 'session': None,
-                         'status': 'idle', 'created': int(time.time()), 'last_worked': None, 'summary': '', 'tail': ''})
+                         'status': 'idle', 'created': int(time.time()), 'last_worked': None, 'summary': '', 'tail': '',
+                         'mode': mode({'kind': kind, 'mode': chosen})})
         thread.save()
         threads[entry_id] = thread
         return thread
@@ -793,7 +809,10 @@ class Runner(BaseHTTPRequestHandler):
             model = body.get('model')
             if model is not None and not (isinstance(model, str) and re.fullmatch(r'[A-Za-z0-9][\w.:=,\[\]-]{0,99}', model)):
                 return self.answer(400, {'ok': False, 'error': 'model must be a model name'})
-            return self.answer(200, {'ok': True, 'thread': make(name, project, kind, model).view()})
+            chosen = body.get('mode') or 'auto'
+            if chosen not in MODES:
+                return self.answer(400, {'ok': False, 'error': 'mode must be "auto" or "manual"'})
+            return self.answer(200, {'ok': True, 'thread': make(name, project, kind, model, chosen).view()})
         thread = threads.get(parts[1]) if len(parts) in (3, 4) and parts[0] == 'threads' else None
         if thread is None:
             return self.answer(404, {'ok': False, 'error': 'not found'})

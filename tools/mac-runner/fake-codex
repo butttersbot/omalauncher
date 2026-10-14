@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """A stand-in for `codex app-server`, for test-runner.py. It speaks the JSON-RPC lines Codex's app-server does and
-acts on words in the prompt as fake-agent does: "write" asks to add written.txt, "files" lists the folder, "slow"
-waits, "limit" fails the turn on a usage limit. Every turn is added to starts.log, with the flags it was given."""
+acts on words in the prompt as fake-agent does: "write" asks to add written.txt (under every approval policy: it
+stands for a change Codex asks about), "files" lists the folder, "slow" waits, "limit" fails the turn on a usage
+limit. Every turn is added to starts.log, with the flags and the approval policy and sandbox it was given."""
 import json, pathlib, sys, time, uuid
 
 arguments = sys.argv[1:]
@@ -36,7 +37,7 @@ while True:
     elif method == 'turn/start':
         prompt = params['input'][0]['text']
         with open('starts.log', 'a') as log:
-            log.write(json.dumps({'kind': 'codex', 'prompt': prompt, 'resumed': resumed, 'policy': rules.get('approvalPolicy'),
+            log.write(json.dumps({'kind': 'codex', 'prompt': prompt, 'resumed': resumed, 'policy': rules.get('approvalPolicy'), 'sandbox': rules.get('sandbox'),
                                   'reviewer': rules.get('approvalsReviewer'), 'arguments': arguments}) + '\n')
         out({'id': number, 'result': {'turn': {'id': 'turn1', 'status': 'inProgress'}}})
         said('Heard: ' + prompt)
