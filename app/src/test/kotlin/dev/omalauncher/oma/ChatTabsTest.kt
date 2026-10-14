@@ -261,4 +261,27 @@ class ChatTabsTest {
         // Sent or cleared, a tab keeps nothing, and the other tab's words are untouched.
         assertEquals(mapOf(OMA_TAB to "for oma"), withDraft(both, "chat:c1", ""))
     }
+
+    /** OPEN-BUGS #3, #17: `oma-phone fill` said ok and the field never kept the words; the draft drawn next overwrote them. */
+    @Test fun wordsSetFromOutsideBecomeTheOpenTabsDraft() {
+        val drafts = mapOf("chat:c1" to "half a thought")
+        assertEquals(mapOf("chat:c1" to "half a thought", "mac:t-ff4" to "say hi"), setDraft(drafts, "mac:t-ff4", "say hi", listening = false))
+        // Setting replaces what was there, as the field shows it; set empty, the tab keeps nothing.
+        assertEquals(mapOf("chat:c1" to "a whole thought"), setDraft(drafts, "chat:c1", "a whole thought", listening = false))
+        assertEquals(emptyMap<String, String>(), setDraft(drafts, "chat:c1", "", listening = false))
+        // While he speaks the field shows his speech and takes nothing else, and says so.
+        assertNull(setDraft(drafts, "chat:c1", "x", listening = true))
+    }
+
+    /** OPEN-BUGS #16: a thread named by an intent opens its tab, whether the chat starts or is already open. */
+    @Test fun anIntentOpensTheTabOfTheThreadItNames() {
+        assertEquals("mac:t-ff4", askedTab("mac:t-ff4", book))
+        assertEquals(PHONE_THREAD, askedTab(PHONE_THREAD, book))
+        // A Mac thread a new chat lives on is shown as that chat's tab.
+        assertEquals(chatMac.key, askedTab(macThreadKey("t-new"), book))
+        assertEquals(chatMac.key, openTab(askedTab(macThreadKey("t-new"), book), listOf(chatThread(chatMac))))
+        // Naming none, or nothing, opens Oma.
+        assertNull(askedTab(null, book)); assertNull(askedTab("  ", book))
+        assertEquals(OMA_TAB, openTab(askedTab(null, book), threads))
+    }
 }

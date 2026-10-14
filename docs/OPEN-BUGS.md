@@ -15,7 +15,7 @@ Boss moves to a new, higher-RAM phone tomorrow (2026-10-14/15). Everything below
    inside the field matched the label; the field already resolved to its editable parent, so the likelier cause is
    the per-tab draft overwriting a text set from outside). Since 41eeb49 fill reads the field back and answers
    `ok: false`. Still to do: make text set by accessibility stick in the composer (update the tab's draft from the
-   field's own value) and confirm on the phone.
+   field's own value) and confirm on the phone. **Fix built 2026-10-14 evening, not yet seen on a screen:** see #17.
 4. **`type`/`click` say "Screen changed" while the chat streams**: the target's bounds move between read and act.
    Needs a re-find of the same control by id+label at act time, without ever hitting a different control.
 5. **Phone control does not rebind by itself after most launcher updates**; `oma-install` heals it (BOUND / HEALED).
@@ -43,6 +43,23 @@ Boss moves to a new, higher-RAM phone tomorrow (2026-10-14/15). Everything below
    no report); the follower seems to stop at the turn's result, so events between turns are only picked up later or
    not at all. FAIL — his own first message, sent from this phone's tab, shows as "Sent from elsewhere: say hi …".
    Not seen: a separate "still running" line at the bottom of the tab. Screens: /root/.cache/bgcheck/*.png.
+   **Both FAILs fixed 2026-10-14 evening (unit tested with the events above; not yet seen on a screen):**
+   - *Report never reached the phone.* Cause: the follower left as soon as the thread rested with nothing of his
+     unfinished (after the turn's `result` and `status idle`), and `/threads` only re-followed threads at work or owed a
+     request, so the report at 16:31:37 was never read. Now a thread his requests went to is kept followed while it
+     lists `background` or its last turn was under 5 minutes ago (`macAwake`; listened to a minute at a time, then
+     asked again), and each `/threads` refresh also follows such threads and any whose `last_event` passed the saved
+     place (`macFollowed`), catching up what came while nobody listened. A note on that work other than "Still running…"
+     (completed, reported, stopped) takes the "Still running…" line off his entry.
+   - *His own message as "Sent from elsewhere".* Cause: the phone had never followed that thread, so its first
+     follower read the thread's whole past from event 1. The past's `message` ("say THREE", sent by curl earlier) came
+     while his entry was already Running (the Mac answered `taken: now`), so that turn's words and result were taken
+     as his ("THREE" under his entry), his entry ended, and his real `message` then matched nothing. The runner echoes
+     no id of the phone's on `message` (only the text; it keeps its own uuid for Claude Code), so matching stays by
+     exact text. Now (a) a thread never followed is followed from the newest event the phone knew of when it sends,
+     and (b) a `message` with other words while his running entry has heard nothing yet puts that entry back to
+     waiting for its own words, and the other turn goes under his previous entry as "Sent from elsewhere" (or
+     nowhere, if there is none).
 10. **Mac work is not on the oma tile, ring or lock widget** (they read the phone builders only).
 11. **A thread tab shows only what the phone sent**: "Earlier work on the Mac is not shown". Fetch the thread's events.
 12. **The Claude→Codex→Cursor limit memory (15 min) is lost on a launcher restart.**
@@ -53,11 +70,21 @@ Boss moves to a new, higher-RAM phone tomorrow (2026-10-14/15). Everything below
 ## Found 2026-10-14 afternoon (on the real launcher)
 16. **Opening the chat on a thread by intent does nothing when the chat is already open**
     (`OmaChatEntry` + `dev.omalauncher.extra.THREAD` is delivered to the running activity; onNewIntent ignores it).
+    Built 2026-10-14 evening, **not yet seen on a screen**: onNewIntent already set the asked-for tab (since 10-13), so
+    the cause is not certain. Now it also calls setIntent, and both onCreate and onNewIntent read the tab through
+    `askedTab`, which opens a ＋ chat's tab for the Mac thread it lives on (`mac:<id>` of such a thread was no tab, so
+    it opened Oma). Unit tested (ChatTabsTest). Check with the chat open on another tab.
 17. **The chat field shows no text to accessibility** (uiautomator: the field node's text is empty even with text in
     it). Likely the real cause of #3: `fill` sets text the field never reports back. Make the composer expose its
-    value (semantics editableText) and update the tab's draft from the field.
+    value (semantics editableText) and update the tab's draft from the field. Built 2026-10-14 evening, **not yet
+    seen on a screen**: the field states its words itself (`editableText`) and its own set-text action makes them the
+    open tab's draft (`setDraft`; refused while dictating), so the next drawing shows them instead of the old draft.
+    Why uiautomator showed nothing was not found from the code; check with `oma-phone fill` and a uiautomator dump.
 18. **Phone control stays off after an update** ("switched off in Accessibility settings; left off") — see #5.
 19. **`oma status` Mac threads go stale**: during the run above it still showed the previous request and "idle".
+    Built 2026-10-14 evening, **not yet seen on a screen**: the status file was written only at a builder look. Now
+    every change of what the phone knows of the Mac's threads (listing, a follower's look, a `status` event, reach)
+    writes it again (`BuilderWatch.macChanged`, one look at a time), and each thread there carries `background`.
 
 ## Built but never seen on a screen (check on the new phone)
 ＋ starting in `~/Projects` without a question; the Tailscale self-heal (after a reboot) and its respect for a

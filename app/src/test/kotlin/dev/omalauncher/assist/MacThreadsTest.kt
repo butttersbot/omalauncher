@@ -590,4 +590,112 @@ class MacThreadsTest {
         assertEquals(ChatHistory.MAX_LATER, task.later.size); assertEquals("note 100", task.later.last().text)
         assertEquals("a b", macLater(task.copy(later = emptyList()), ChatLater("  a\n  b ")).later.single().text)
     }
+
+    // Seen on the real launcher 2026-10-14 16:28-16:32, thread "Background keep-alive check" (OPEN-BUGS #9).
+
+    private val still = "Still running on the Mac: Wait 90 seconds then print done. Claude Code stays open for it and says when it ends."
+
+    /** The runner's events for the second message, as they came; the report after the turn lands under it and the "still running" line goes. */
+    @Test fun theReportAfterTheTurnComesUnderHisEntryAndEndsTheStillRunningLine() {
+        val asked = "in the background run sleep 90 then echo done, tell me it started, then report when it finishes"
+        var tasks = listOf(taken(5, asked))
+        fun hear(event: MacEvent) { tasks = macApply(tasks, id, event) }
+        hear(MacEvent.Status(20, 0, MacThreadStatus.Working)); hear(MacEvent.Message(21, 0, asked))
+        hear(MacEvent.Step(22, 0, "Bash: sleep 90; echo done", "Bash"))
+        hear(MacEvent.Text(23, 0, "The 90-second timer is running in the background."))
+        hear(MacEvent.Result(24, 0, "The 90-second timer is running in the background.", failed = false))
+        hear(MacEvent.Note(25, 0, still)); hear(MacEvent.Status(26, 0, MacThreadStatus.Idle))
+        assertEquals(listOf(ChatLater(still)), tasks.single().later)
+        hear(MacEvent.Note(27, 0, "Background command \"sleep 90; echo done\" completed (exit code 0)"))
+        hear(MacEvent.Step(28, 0, "Read: /tmp/out", "Read"))
+        hear(MacEvent.Text(29, 0, "The 90-second timer finished without errors and printed \"done\"."))
+        hear(MacEvent.Note(30, 0, "Claude Code reported on its background work, between your messages."))
+        val entry = tasks.single()
+        assertEquals(TaskStatus.Done, entry.status); assertEquals("The 90-second timer is running in the background.", entry.result)
+        assertEquals(listOf(
+            ChatLater("Background command \"sleep 90; echo done\" completed (exit code 0)"),
+            ChatLater("Read: /tmp/out"),
+            ChatLater("The 90-second timer finished without errors and printed \"done\".", words = true),
+            ChatLater("Claude Code reported on its background work, between your messages."),
+        ), entry.later)
+        // Work left running again by a later answer says so again; stopped unfinished, the line goes the same way.
+        hear(MacEvent.Note(31, 0, still)); assertEquals(ChatLater(still), tasks.single().later.last())
+        hear(MacEvent.Note(32, 0, "Stopped, unfinished: Wait 90 seconds then print done"))
+        assertFalse(tasks.single().later.any { it.text == still })
+    }
+
+    /**
+     * His first words to a thread this phone had not followed: the follower caught up on the thread's past first, and
+     * that past's message ("say THREE", sent by curl earlier) and answer were taken as his, his own message then read
+     * as "Sent from elsewhere".
+     */
+    @Test fun hisFirstWordsToAThreadAreHisThoughItsPastIsHeardFirst() {
+        val hi = "say hi and list the files in this folder"
+        var tasks = listOf(taken(5, hi))
+        fun hear(event: MacEvent) { tasks = macApply(tasks, id, event) }
+        hear(MacEvent.Status(1, 0, MacThreadStatus.Working)); hear(MacEvent.Message(2, 0, "say THREE"))
+        hear(MacEvent.Text(3, 0, "THREE.")); hear(MacEvent.Result(4, 0, "THREE", failed = false)); hear(MacEvent.Status(5, 0, MacThreadStatus.Idle))
+        // The past's turn is no entry of his and has none to stand under.
+        assertEquals(listOf(handed(5, hi)), tasks)
+        hear(MacEvent.Status(6, 0, MacThreadStatus.Working)); hear(MacEvent.Message(7, 0, hi))
+        hear(MacEvent.Step(8, 0, "Bash: ls -la", "Bash")); hear(MacEvent.Text(9, 0, "Hi Boss! There are 3 files."))
+        hear(MacEvent.Result(10, 0, "Hi Boss! There are 3 files.", failed = false))
+        val entry = tasks.single()
+        assertEquals(TaskStatus.Done, entry.status); assertEquals("Hi Boss! There are 3 files.", entry.result)
+        assertEquals(listOf("Bash: ls -la"), entry.steps); assertEquals(emptyList<ChatLater>(), entry.later)
+        // With an earlier entry of his there, the past's turn stands under it, marked as sent from elsewhere.
+        val earlier = taken(2, "earlier").copy(status = TaskStatus.Done, result = "Old.")
+        tasks = listOf(earlier, taken(5, hi))
+        hear(MacEvent.Message(11, 0, "say THREE")); hear(MacEvent.Text(12, 0, "THREE.")); hear(MacEvent.Result(13, 0, "THREE", failed = false))
+        assertEquals(listOf(ChatLater(MAC_SENT_ELSEWHERE + "say THREE"), ChatLater("THREE.", words = true)), tasks[0].later)
+        hear(MacEvent.Message(14, 0, hi))
+        assertEquals(TaskStatus.Running, tasks[1].status); assertEquals(emptyList<ChatLater>(), tasks[1].later)
+        // Other words while his turn has said something are not his past: nothing of his changes.
+        val speaking = listOf(taken(5, hi).copy(result = "Hi.\n"))
+        assertEquals(speaking, macApply(speaking, id, MacEvent.Message(1, 0, "other")))
+    }
+
+    /** His message heard before the answer to sending it, or after: either way his entry, never "Sent from elsewhere". */
+    @Test fun hisMessageIsHisWhicheverIsHeardFirst() {
+        val hi = "say hi"
+        // The follower already listening hears the message before the Mac's answer to the sending is read.
+        val early = macApply(listOf(handed(5, hi)), id, MacEvent.Message(1, 0, hi))
+        assertEquals(TaskStatus.Running, early.single().status)
+        assertEquals(early, early.map(::macTaken))
+        // The answer first, then the message.
+        val late = macApply(listOf(taken(5, hi)), id, MacEvent.Message(1, 0, hi))
+        assertEquals(listOf(taken(5, hi)), late)
+        // Sent with what went ahead of it, it is still his.
+        val sent = handOverText(handOverPreface(listOf(FrontExchange("q", "a"))), hi)
+        assertEquals(listOf(taken(5, hi)), macApply(listOf(taken(5, hi)), id, MacEvent.Message(1, 0, sent)))
+    }
+
+    @Test fun aThreadOfHisIsFollowedWhileItMayStillReport() {
+        val now = 1_000_000_000_000L
+        val idle = thread(MacThreadStatus.Idle, lastEvent = 30).copy(lastWorked = (now - 10 * 60_000) / 1000)
+        val his = setOf(id)
+        fun followed(vararg threads: MacThread, after: Long = 30, owed: List<String> = emptyList(), mine: Set<String> = his) = macFollowed(threads.toList(), owed, mine, { after }, now)
+        // Long at rest and all heard: nothing to follow.
+        assertEquals(emptyList<String>(), followed(idle))
+        // Work left running, or a turn a moment ago: Claude Code may report between his messages.
+        assertEquals(listOf(id), followed(idle.copy(background = listOf("copy the games"))))
+        assertEquals(listOf(id), followed(idle.copy(lastWorked = (now - 60_000) / 1000)))
+        assertTrue(macAwake(idle.copy(lastWorked = (now - MAC_AWAKE_MS + 1000) / 1000), now)); assertFalse(macAwake(idle, now))
+        // It said something since the event last shown: caught up. Never followed from here: its past is not caught up.
+        assertEquals(listOf(id), followed(idle.copy(lastEvent = 34)))
+        assertEquals(emptyList<String>(), followed(idle.copy(lastEvent = 34), after = 0))
+        // A thread no request of his went to is only followed while it works or waits.
+        assertEquals(emptyList<String>(), followed(idle.copy(background = listOf("x")), mine = emptySet()))
+        assertEquals(listOf("t2"), followed(idle.copy(id = "t2", status = MacThreadStatus.Working), mine = emptySet()))
+        assertEquals(listOf("t3"), followed(idle.copy(id = "t3", pending = listOf(write)), mine = emptySet()))
+        // Owed a request of his, it is followed; a new chat's thread still being made never is.
+        assertEquals(listOf("t4"), followed(idle, owed = listOf("t4", MAC_NEW_THREAD)))
+    }
+
+    @Test fun aThreadNeverFollowedIsFollowedFromWhereItStood() {
+        val cursors = MacCursors(mapOf("known" to 7L))
+        cursors.start("fresh", 41); cursors.start("known", 99); cursors.start("empty", 0)
+        assertEquals(41, cursors.after("fresh")); assertEquals(7, cursors.after("known")); assertEquals(0, cursors.after("empty"))
+        assertEquals(MacOffer.Show, cursors.offer("fresh", MacEvent.Text(42, 0, "his answer")))
+    }
 }

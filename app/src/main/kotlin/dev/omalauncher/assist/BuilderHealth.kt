@@ -344,6 +344,7 @@ fun agentsStatus(facts: BuilderFacts, mac: MacView?, written: String, second: Bu
                 .put("lastWorkedMinAgo", thread.lastWorked?.let { minutesAgo(now, it * 1000) })
                 .put("asked", clip(thread.summary)).put("lastSaid", thread.tail.trim().replace(Regex("\\s+"), " ").takeLast(HEALTH_TEXT_CHARS))
                 .put("approvalsWaiting", thread.pending.size)
+                .put("background", JSONArray(thread.background.map(::clip)))
         })))
     return root
 }
@@ -373,7 +374,8 @@ fun agentsGuestTools(context: Context, rootfs: File): List<Managed> =
 
 /**
  * Looks at the phone's builders: from /proc, cheaply, every [LOOK_EVERY_MS] while any works, whenever the front
- * agent is asked something and whenever a phone tab's menu opens, writing the status file each time. It changes nothing of the build lane except
+ * agent is asked something, whenever a phone tab's menu opens and whenever the Mac's threads change ([macChanged]),
+ * writing the status file each time. It changes nothing of the build lane except
  * through [restart], which is one builder's own stop and send, and ends no process except leftovers in [clean]:
  * a process either builder's task owns is never one.
  */
@@ -383,6 +385,10 @@ object BuilderWatch {
     private val watching = AtomicBoolean()
     /** The builders whose notification says they stalled; only touched under this object's lock. */
     private val noticed = HashSet<BuilderId>()
+
+    /** A change of the Mac's threads not written yet, and whether a look for such changes runs: a burst of them makes few looks. */
+    private val macDirty = AtomicBoolean()
+    private val macWriting = AtomicBoolean()
 
     /** Each builder's facts at the last look, for a tab's menu to show at once what it can mend; empty before the first. */
     @Volatile var last: Map<BuilderId, BuilderFacts> = emptyMap(); private set
@@ -406,6 +412,26 @@ object BuilderWatch {
             }
             // A task that began just as the last one left is looked at all the same.
             watch(app)
+        }
+    }
+
+    /**
+     * The phone's view of the Mac's threads changed: the status file is written again now, off the caller's thread,
+     * so `oma status` says what a thread does and not what it did at the builder's last look. One look at a time:
+     * a change that comes while one is written is written by another look after it.
+     */
+    fun macChanged(context: Context) {
+        macDirty.set(true)
+        if (!macWriting.compareAndSet(false, true)) return
+        val app = context.applicationContext
+        thread(name = "oma-mac-status", isDaemon = true) {
+            try {
+                while (macDirty.getAndSet(false)) look(app)
+            } finally {
+                macWriting.set(false)
+            }
+            // A change that came just as the last look ended is written all the same.
+            if (macDirty.get()) macChanged(app)
         }
     }
 

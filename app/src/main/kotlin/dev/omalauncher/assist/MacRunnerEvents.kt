@@ -216,6 +216,15 @@ class MacCursors(known: Map<String, Long> = emptyMap()) {
         last.remove(threadId)
     }
 
+    /**
+     * A thread this phone has never followed is followed from [at], the newest event it is known to have: what it
+     * said before then was not sent from here, and the tab says earlier work is not shown. A thread already
+     * followed keeps its place, so nothing it said since is skipped.
+     */
+    @Synchronized fun start(threadId: String, at: Long) {
+        if (threadId !in last && at > 0) last[threadId] = at
+    }
+
     @Synchronized fun snapshot(): Map<String, Long> = HashMap(last)
 }
 

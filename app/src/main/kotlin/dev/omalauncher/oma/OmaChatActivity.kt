@@ -79,7 +79,10 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.editableText
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setText
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -172,7 +175,7 @@ class OmaChatActivity : ComponentActivity() {
         // Asked on a thread of its own: the chat never waits for the Mac, and shows what was last known until it answers.
         MacThreads.open(this)
         if (savedInstanceState == null) prefill = textOf(intent)
-        wanted = if (savedInstanceState == null) threadOf(intent) else savedInstanceState.getString(STATE_TAB)
+        wanted = if (savedInstanceState == null) askedTab(threadOf(intent), TabBook.of(this)) else savedInstanceState.getString(STATE_TAB)
         applySystemBars(this, Pack.isLight)
         setContent {
             LaunchedEffect(Pack.isLight) { applySystemBars(this@OmaChatActivity, Pack.isLight) }
@@ -182,9 +185,12 @@ class OmaChatActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        // Kept as the intent the chat was opened by, as one that started it is.
+        setIntent(intent)
         textOf(intent)?.let { prefill = it }
-        // The dock, a notification and voice name no thread, and open Oma whatever tab was left showing.
-        wanted = threadOf(intent)
+        // A tile, or a thread named from outside while the chat is open, opens that thread's tab as a start would. The
+        // dock, a notification and voice name no thread, and open Oma whatever tab was left showing.
+        wanted = askedTab(threadOf(intent), TabBook.of(this))
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -192,7 +198,7 @@ class OmaChatActivity : ComponentActivity() {
         outState.putString(STATE_TAB, wanted)
     }
 
-    private fun threadOf(intent: Intent?) = intent?.getStringExtra(EXTRA_THREAD)?.take(ChatHistory.MAX_THREAD + 8)?.takeIf { it.isNotBlank() }
+    private fun threadOf(intent: Intent?) = intent?.getStringExtra(EXTRA_THREAD)
 
     private fun textOf(intent: Intent?) = intent?.getStringExtra(Intent.EXTRA_TEXT)?.take(ChatHistory.MAX_PROMPT)?.takeIf { it.isNotBlank() }
 
@@ -623,6 +629,17 @@ private fun OmaChatScreen(
                             .weight(1f)
                             .focusRequester(fieldFocus)
                             .onFocusChanged { focused = it.isFocused }
+                            // Its words are what accessibility reads and sets: words set from outside (`oma-phone fill`) become
+                            // the tab's draft, as typed ones do, so the next drawing shows them and Send sends them.
+                            .semantics {
+                                editableText = AnnotatedString(shown)
+                                setText { set ->
+                                    val next = setDraft(typed, tab, set.text, listening) ?: return@setText false
+                                    typed = next
+                                    notice = null
+                                    true
+                                }
+                            }
                             // A hardware Enter sends; Shift+Enter starts a new line.
                             .onPreviewKeyEvent { e ->
                                 if (e.type == KeyEventType.KeyDown && e.key == Key.Enter && !e.isShiftPressed) {

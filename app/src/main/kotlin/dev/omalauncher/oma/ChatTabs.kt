@@ -251,3 +251,22 @@ const val MAC_EARLIER = "Earlier work on the Mac is not shown"
  * empty field keeps nothing.
  */
 fun withDraft(drafts: Map<String, String>, tab: String, text: String): Map<String, String> = if (text.isEmpty()) drafts - tab else drafts + (tab to text)
+
+/**
+ * The drafts once text is set into the field from outside, by accessibility's set-text as `oma-phone fill` does:
+ * the open [tab]'s draft becomes [text], as typing it would, so the field keeps it rather than drawing the old draft
+ * over it. Null while [listening]: the field shows his speech then and takes nothing else, and the one setting the
+ * text is told so.
+ */
+fun setDraft(drafts: Map<String, String>, tab: String, text: String, listening: Boolean): Map<String, String>? =
+    if (listening) null else withDraft(drafts, tab, text)
+
+/**
+ * The tab an intent to open the chat asks for, by the thread key it carries ([OmaChatActivity.EXTRA_THREAD]); null
+ * for Oma, which the dock, a notification and voice open, naming none. A Mac thread a new chat lives on is shown as
+ * that chat's tab, so its key opens that tab.
+ */
+fun askedTab(extra: String?, meta: TabMeta = TabMeta()): String? {
+    val key = extra?.take(ChatHistory.MAX_THREAD + 8)?.takeIf { it.isNotBlank() } ?: return null
+    return macThreadId(key)?.let { meta.chatOnMac(it)?.key } ?: key
+}

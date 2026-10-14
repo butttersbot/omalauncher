@@ -1,7 +1,7 @@
 #!/bin/sh
 # Omalauncher: `oma status`, which prints how the phone's builder and the project threads on the Mac stand, as the launcher last
-# wrote it to ~/.cache/oma-agents/status.json (while the builder works, every minute; and whenever Oma is asked
-# something). It only reads that file: it asks nothing of the Mac and changes nothing, so the front agent may
+# wrote it to ~/.cache/oma-agents/status.json (while the builder works, every minute; whenever Oma is asked
+# something; and whenever what the phone knows of the Mac's threads changes). It only reads that file: it asks nothing of the Mac and changes nothing, so the front agent may
 # run it. The file holds no key, no nonce and nothing of an approval but how many wait.
 status="${HOME:?}/.cache/oma-agents/status.json"
 

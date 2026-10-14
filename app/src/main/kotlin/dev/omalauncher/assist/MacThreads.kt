@@ -85,6 +85,33 @@ fun macRetryDelay(misses: Int): Long = when {
 /** Whether a thread in this state has no task: nothing more will come from it until it is sent something. */
 fun macResting(status: MacThreadStatus) = status == MacThreadStatus.Idle || status == MacThreadStatus.Interrupted
 
+/** How the runner begins its note on work an answer left running ("Still running on the Mac: copy the games. …"). */
+const val MAC_STILL_RUNNING = "Still running on the Mac: "
+
+/** How long after its last turn a resting thread of his is still listened to: Claude Code may report on its own soon after. */
+const val MAC_AWAKE_MS = 5 * 60_000L
+
+/**
+ * Whether a resting [thread] may still say something between his messages at [now]: it lists work left running
+ * ([MacThread.background]), whose end Claude Code reports, or its last turn was within [MAC_AWAKE_MS]. Its
+ * [MacThread.lastWorked] is the Mac's clock; a minute either way changes only how long it is listened to.
+ */
+fun macAwake(thread: MacThread, now: Long): Boolean =
+    thread.background.isNotEmpty() || thread.lastWorked?.let { now - it * 1000 < MAC_AWAKE_MS } == true
+
+/**
+ * The threads to follow after the Mac listed [threads] at [now]: every one that works or waits, every one [owed]
+ * a request of his, and of those [his] requests went to, one that may still say something between his messages
+ * ([macAwake]) or said something since the event the phone last showed ([after]), so a report made while nobody
+ * listened is caught up. One with no place kept is not caught up: all it ever said would come under his newest
+ * entry. A new chat's thread still being made is nothing on the Mac yet, so it is never followed.
+ */
+fun macFollowed(threads: List<MacThread>, owed: Collection<String>, his: Set<String>, after: (String) -> Long, now: Long): List<String> {
+    val busy = threads.filter { !macResting(it.status) || it.pending.isNotEmpty() }
+    val since = threads.filter { it.id in his && (macAwake(it, now) || after(it.id) in 1 until it.lastEvent) }
+    return ((busy + since).map { it.id } + owed).distinct() - MAC_NEW_THREAD
+}
+
 /** Whether [event] can be the last of a turn, after which the thread may rest: the follower then asks the Mac how it stands. */
 fun macTurnsOver(event: MacEvent) = event is MacEvent.Result || event is MacEvent.Stopped || event is MacEvent.Error || (event is MacEvent.Status && macResting(event.status))
 
@@ -242,6 +269,9 @@ fun macApprovalDetail(request: MacApproval): String {
  */
 fun macLatest(tasks: List<ChatTask>, threadId: String): ChatTask? = tasks.lastOrNull { it.thread == threadId && !it.fresh && it.status != TaskStatus.Queued }
 
+/** Whether nothing of [task]'s turn has been heard: no words, step or card yet, as when it runs only because the Mac said it took it. */
+fun macUnheard(task: ChatTask) = task.result.isEmpty() && task.steps.isEmpty() && task.approvals.isEmpty()
+
 /**
  * [task] with [said] added to what its thread said after it. The agent's words run on into the words before
  * them, as a turn's do into its answer; a quiet line that only repeats the one before is left out.
@@ -289,7 +319,9 @@ private fun approvalAnswer(decision: MacDecision) = when (decision) {
  * What one event of [threadId] makes of the Oma thread. A thread works on one request at a time, so what it
  * says belongs to the one entry of its that is running. A `message` event is the thread taking his words: the
  * oldest waiting entry with exactly those words begins, unless one is already running, which is then the one
- * meant. The thread says back all it was sent, so the words are looked for after the context too ([handOverWords]). Events of a task that was not sent from this phone find no entry and change nothing. [inFlight] are
+ * meant. The runner gives a message no id of the phone's, so his words are known by their text alone; the thread
+ * says back all it was sent, so they are looked for after the context too ([handOverWords]). Events of a task
+ * that was not sent from this phone find no entry of their own and come under his newest one. [inFlight] are
  * the entries still on their way to the Mac, which a stop that came before them does not end. [answeredBy] is
  * what the reply is named, given to the entry with its first words unless it already has a name.
  */
@@ -298,23 +330,38 @@ fun macApply(tasks: List<ChatTask>, threadId: String, event: MacEvent, inFlight:
     fun running(change: (ChatTask) -> ChatTask) = if (current == null) tasks else tasks.map { if (it.time == current.time) change(it) else it }
     // While none of his requests runs there, what the thread says is the agent's own (its report on background
     // work, or the runner's notes on it) and goes under the newest entry, after its answer.
-    fun between(said: ChatLater): List<ChatTask> {
-        val latest = macLatest(tasks, threadId) ?: return tasks
-        return tasks.map { if (it.time == latest.time) macLater(it, said) else it }
+    fun between(said: ChatLater, from: List<ChatTask> = tasks, change: (ChatTask) -> ChatTask = { it }): List<ChatTask> {
+        val latest = macLatest(from, threadId) ?: return from
+        return from.map { if (it.time == latest.time) macLater(change(it), said) else it }
     }
     return when (event) {
         is MacEvent.Message -> {
             val words = handOverWords(event.text)
-            // One waiting for a new thread is not this thread's, even while it stands under its id.
-            val next = if (current != null) null else tasks.firstOrNull { it.thread == threadId && !it.fresh && it.status == TaskStatus.Queued && (it.prompt == event.text || it.prompt == words) }
-            // Words no entry of his has, with none of his running, were sent from somewhere else: what the thread says
-            // next is their answer, and stands under this line rather than reading as more of his last answer.
-            if (next == null) if (current == null) between(ChatLater(MAC_SENT_ELSEWHERE + event.text.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty().trim())) else tasks
-            else tasks.map { if (it.time == next.time) it.copy(status = TaskStatus.Running) else it }
+            fun said(task: ChatTask) = task.prompt == event.text || task.prompt == words
+            when {
+                // Its own words said back start nothing more.
+                current != null && said(current) -> tasks
+                // Other words while one of his has heard nothing yet: it runs only because the Mac said it took it at
+                // once, and this is an earlier turn the phone hears only now, as when his first words to a thread it
+                // had not followed bring that thread's past with them. It waits for its own words again.
+                current != null && !macUnheard(current) -> tasks
+                else -> {
+                    val waiting = if (current == null) tasks else tasks.map { if (it.time == current.time) it.copy(status = TaskStatus.Queued) else it }
+                    // One waiting for a new thread is not this thread's, even while it stands under its id.
+                    val next = waiting.firstOrNull { it.thread == threadId && !it.fresh && it.status == TaskStatus.Queued && said(it) }
+                    // Words no entry of his has were sent from somewhere else: what the thread says next is their answer,
+                    // and stands under this line rather than reading as more of his last answer.
+                    if (next == null) between(ChatLater(MAC_SENT_ELSEWHERE + event.text.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty().trim()), waiting)
+                    else waiting.map { if (it.time == next.time) it.copy(status = TaskStatus.Running) else it }
+                }
+            }
         }
         is MacEvent.Text -> if (current == null) between(ChatLater(event.text, words = true)) else running { it.copy(result = it.result + event.text.trimEnd() + "\n", answeredBy = it.answeredBy.ifEmpty { answeredBy }) }
         is MacEvent.Step -> if (current == null) between(ChatLater(event.text)) else running { ChatHistory.withStep(it, event.text) }
-        is MacEvent.Note -> if (current == null) between(ChatLater(event.text)) else running { ChatHistory.withStep(it, event.text) }
+        // Any other word on work left running (it ended, was reported or was stopped) means the line saying it still runs no longer holds.
+        is MacEvent.Note -> if (current != null) running { ChatHistory.withStep(it, event.text) }
+            else if (event.text.startsWith(MAC_STILL_RUNNING)) between(ChatLater(event.text))
+            else between(ChatLater(event.text)) { entry -> entry.copy(later = entry.later.filterNot { !it.words && it.text.startsWith(MAC_STILL_RUNNING) }) }
         is MacEvent.Approval -> macAsked(tasks, threadId, event.request)
         is MacEvent.ApprovalResult -> macAnswered(tasks, threadId, event.approval, approvalAnswer(event.decision))
         // The result is the whole answer, as it is for the phone's builder; with no words, what was said so far stays.
@@ -627,6 +674,7 @@ object MacThreads {
     private const val PREFS = "mac-threads"
     private const val IN_FLIGHT = Long.MAX_VALUE
     private const val STALE_MS = 60_000L
+    private const val RESTING_LISTEN_MS = 60_000L
     private const val NOT_SENT = "Not sent"
 
     /** Read fresh each time, so the Mac is there the moment Boss puts the file in place and gone when he takes it out. */
@@ -686,13 +734,26 @@ object MacThreads {
 
     private fun reached(context: Context, reachable: Boolean) {
         val now = System.currentTimeMillis()
-        synchronized(this) { view = if (reachable) view.copy(reachable = true, seen = now) else view.copy(reachable = false) }
+        see(context) { if (reachable) it.copy(reachable = true, seen = now) else it.copy(reachable = false) }
         if (reachable) context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putLong("seen", now).apply()
     }
 
+    /**
+     * Changes what the phone knows of the Mac. Anything more than when it last answered goes to the status file at
+     * once, so `oma status` says what a thread does now and not what it did at the builder's last look.
+     */
+    private fun see(context: Context, change: (MacView) -> MacView) {
+        val moved = synchronized(this) {
+            val before = view
+            view = change(before)
+            before.copy(seen = null) != view.copy(seen = null)
+        }
+        if (moved) BuilderWatch.macChanged(context)
+    }
+
     /** One thread as the Mac just described it, put into the list the board is made from. */
-    private fun noted(thread: MacThread) = synchronized(this) {
-        view = view.copy(threads = if (view.threads.any { it.id == thread.id }) view.threads.map { if (it.id == thread.id) thread else it } else view.threads + thread)
+    private fun noted(context: Context, thread: MacThread) = see(context) { known ->
+        known.copy(threads = if (known.threads.any { it.id == thread.id }) known.threads.map { if (it.id == thread.id) thread else it } else known.threads + thread)
     }
 
     private fun name(context: Context, threadId: String): String =
@@ -709,8 +770,9 @@ object MacThreads {
     private fun published() { pending = book.live }
 
     /**
-     * Asks the Mac for its threads, off the caller's thread and one asking at a time. A thread that works or
-     * waits, and one a request of his is not finished in, is then followed.
+     * Asks the Mac for its threads, off the caller's thread and one asking at a time. The threads [macFollowed]
+     * names are then followed: those at work, those owed a request of his, and those of his that may still say
+     * something between his messages or said something nobody heard.
      */
     fun refresh(context: Context) {
         restore(context)
@@ -729,12 +791,12 @@ object MacThreads {
                     if (health is MacHealthResult.Up) kinds = health.health.kinds
                     val listed = if (health is MacHealthResult.Up) client.threads() else MacAnswer.Unreachable
                     val threads = if (listed is MacAnswer.Ok) listed.value else emptyList()
-                    if (listed is MacAnswer.Ok) synchronized(this) { view = view.copy(threads = threads, listed = true) }
+                    if (listed is MacAnswer.Ok) see(app) { it.copy(threads = threads, listed = true) }
                     reached(app, listed is MacAnswer.Ok)
-                    val busy = threads.filter { !macResting(it.status) || it.pending.isNotEmpty() }.map { it.id }
-                    val owed = ChatLog.of(app).tasks.filter { it.mac && (it.status == TaskStatus.Running || it.status == TaskStatus.Queued) }.map { it.thread }
-                    // A new chat's thread still being made is nothing on the Mac yet, so there is nothing to follow.
-                    for (threadId in (busy + owed).distinct() - MAC_NEW_THREAD) follow(app, threadId)
+                    val tasks = ChatLog.of(app).tasks
+                    val owed = tasks.filter { it.mac && (it.status == TaskStatus.Running || it.status == TaskStatus.Queued) }.map { it.thread }
+                    val his = tasks.filter { it.mac && !it.fresh }.map { it.thread }.toSet()
+                    for (threadId in macFollowed(threads, owed, his, cursors::after, System.currentTimeMillis())) follow(app, threadId)
                 }
             } finally {
                 refreshing.set(false)
@@ -745,10 +807,8 @@ object MacThreads {
     /** The config is gone: there is no Mac to follow or answer, and what was unfinished there says so. */
     private fun noMac(context: Context) {
         ChatLog.of(context).revise { macAbandon(it, null, MAC_NOT_SET_UP) }
-        val gone = synchronized(this) {
-            view = MacView()
-            book.clear().also { published() }
-        }
+        val gone = synchronized(this) { book.clear().also { published() } }
+        see(context) { MacView() }
         gone.forEach { AgentNotices.macWithdraw(context, it) }
     }
 
@@ -844,7 +904,7 @@ object MacThreads {
                     problem = macMadeReason(answer) ?: problem
                 }
                 made?.let { thread ->
-                    noted(thread)
+                    noted(context, thread)
                     log.update(time, save = true) { macMade(it, thread) }
                     // Made for a new chat's words, its first or ones another agent's limit sent on: the chat lives here from now on.
                     log.tasks.firstOrNull { it.time == time }?.chat?.takeIf { it.isNotEmpty() }?.let { chat -> TabBook.change(context) { it.onMac(chat, thread.id) } }
@@ -935,6 +995,8 @@ object MacThreads {
      */
     private fun send(context: Context, time: Long, text: String, threadId: String, away: Boolean) {
         val kept = ChatLog.of(context).tasks.map { it.time }.toSet()
+        // A thread never followed from here is followed from where it stood: its past would otherwise be read as this turn's.
+        view.threads.firstOrNull { it.id == threadId }?.let { cursors.start(threadId, it.lastEvent) }
         synchronized(this) {
             sentAt[time] = IN_FLIGHT
             sending = sending + time
@@ -1008,11 +1070,12 @@ object MacThreads {
     }
 
     /**
-     * Follows one thread until it rests with nothing of his unfinished in it. Each round first asks the Mac how
-     * the thread stands, with no stream open, so what it says of its last event, its waiting requests and its
-     * waiting turns is one moment's truth: a record that was cleared resets the place, the cards are made to
-     * match, events missed are fetched, and a resting thread is settled. Only a thread with a task is then
-     * listened to, until its turn ends or the link drops. Nothing in here sends his words anywhere.
+     * Follows one thread until it rests with nothing of his unfinished in it and nothing more to say between his
+     * messages ([macAwake]). Each round first asks the Mac how the thread stands, with no stream open, so what it
+     * says of its last event, its waiting requests and its waiting turns is one moment's truth: a record that was
+     * cleared resets the place, the cards are made to match, events missed are fetched, and a resting thread is
+     * settled. A thread with a task is then listened to until its turn ends or the link drops; a resting one that
+     * may still report, for a minute at a time. Nothing in here sends his words anywhere.
      */
     private fun following(context: Context, threadId: String, mine: Follower) {
         val log = ChatLog.of(context)
@@ -1030,7 +1093,7 @@ object MacThreads {
                     val seen = known.value
                     reached(context, true)
                     TailscaleHeal.after(context, MacLink.Answered)
-                    noted(seen)
+                    noted(context, seen)
                     if (seen.lastEvent < cursors.after(threadId)) {
                         cursors.forget(threadId)
                         saveCursors(context)
@@ -1046,20 +1109,29 @@ object MacThreads {
                         }
                         continue
                     }
-                    if (macResting(seen.status)) {
+                    val resting = macResting(seen.status)
+                    if (resting) {
                         val late = synchronized(this) { sentAt.filterValues { it >= asked }.keys.toSet() }
                         log.revise { tasks -> macSettle(tasks, threadId, seen.status, seen.waitingTurns) { it.time !in late } }
-                        if (!unfinished(context, threadId)) {
+                        if (unfinished(context, threadId)) {
+                            pause(macRetryDelay(++misses))
+                            continue
+                        }
+                        // Nothing of his is left there, but the thread may still report on its own between his messages: it
+                        // is listened to until it lists no work left running and its last turn is a while ago.
+                        if (!macAwake(seen, System.currentTimeMillis()) || log.tasks.none { it.thread == threadId && !it.fresh }) {
                             if (leave(mine, threadId)) {
                                 refresh(context)
                                 return
                             }
-                        } else pause(macRetryDelay(++misses))
-                        continue
+                            continue
+                        }
                     }
                     var heard = false
                     val turned = AtomicBoolean()
-                    val end = client.stream(threadId, cursors.after(threadId), { turned.get() }) { event ->
+                    // A resting thread is listened to a while at a time, then asked again how it stands.
+                    val until = System.currentTimeMillis() + RESTING_LISTEN_MS
+                    val end = client.stream(threadId, cursors.after(threadId), { turned.get() || (resting && System.currentTimeMillis() > until) }) { event ->
                         if (cursors.offer(threadId, event) == MacOffer.Show) {
                             heard = true
                             shown(context, threadId, event)
@@ -1155,7 +1227,7 @@ object MacThreads {
                 }
                 if (ended != null) AgentNotices.answered(context, if (ended.status == TaskStatus.Done) ended.threadName else "${ended.threadName} needs attention", ended.result, AgentNotices.MAC)
             }
-            is MacEvent.Status -> synchronized(this) { view = view.copy(threads = view.threads.map { if (it.id == threadId) it.copy(status = event.status) else it }) }
+            is MacEvent.Status -> see(context) { known -> known.copy(threads = known.threads.map { if (it.id == threadId) it.copy(status = event.status) else it }) }
             is MacEvent.Message, is MacEvent.Text, is MacEvent.Step, is MacEvent.Note, is MacEvent.Other -> Unit
         }
         saveCursors(context)

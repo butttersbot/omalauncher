@@ -276,7 +276,7 @@ class BuilderHealthTest {
     @Test fun theStatusFileHasTheFactsAndNothingOfAnApprovalOrAKey() {
         val now = start + 60 * minute
         val approval = MacApproval("req-1", "nonce-77", "Bash", JSONObject().put("command", "curl -H 'Authorization: Bearer S3cret'").toString(), "to fetch")
-        val thread = MacThread("t5e121ba2", "FF4 better menu mod", "/Users/boss/ff4", ThreadHome.Mac, "claude", "y".repeat(400), MacThreadStatus.Waiting, (now - 2 * minute) / 1000, "it said " + "z".repeat(400), 1, 9, listOf(approval))
+        val thread = MacThread("t5e121ba2", "FF4 better menu mod", "/Users/boss/ff4", ThreadHome.Mac, "claude", "y".repeat(400), MacThreadStatus.Waiting, (now - 2 * minute) / 1000, "it said " + "z".repeat(400), 1, 9, listOf(approval), listOf("Wait 90 seconds then print done"))
         val facts = facts(quiet = 11 * minute, cpuMoved = 30 * minute, approval = false).copy(request = "make the agents page " + "x".repeat(500), leftovers = listOf(row(501, startedAt = now - 120 * minute, cpuMs = 9_000)))
         val status = agentsStatus(facts, MacView(listOf(thread), reachable = true, seen = now - minute), "2026-10-13 21:40:12")
         val builder = status.getJSONObject("builder")
@@ -291,6 +291,8 @@ class BuilderHealthTest {
         val listed = mac.getJSONArray("threads").getJSONObject(0)
         assertEquals("waiting", listed.getString("status")); assertEquals(1, listed.getInt("approvalsWaiting")); assertEquals(2, listed.getLong("lastWorkedMinAgo"))
         assertTrue(listed.getString("asked").length <= HEALTH_TEXT_CHARS + 3); assertEquals(HEALTH_TEXT_CHARS, listed.getString("lastSaid").length)
+        // OPEN-BUGS #19: what the thread left running on the Mac is there too.
+        assertEquals("Wait 90 seconds then print done", listed.getJSONArray("background").getString(0))
         val text = status.toString()
         for (never in listOf("S3cret", "Bearer", "nonce", "req-1", "curl")) assertFalse(never, text.contains(never))
         // No Mac set up: nothing of one.
