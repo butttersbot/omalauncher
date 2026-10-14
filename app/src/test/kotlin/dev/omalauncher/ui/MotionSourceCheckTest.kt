@@ -17,8 +17,9 @@ class MotionSourceCheckTest {
     private val moving =
         listOf(
             "ui/WidgetTile.kt",
-            // The working dot's pulse (Boss, 2026-10-13): on the shared timing like every other transition.
+            // A thread's tile, whose dot is drawn by oma/ThreadDots.kt: anything else on it that moves is on the shared timing.
             "ui/AgentTile.kt",
+            "oma/ThreadDots.kt",
             "ui/Home.kt",
             "ui/HomeGrid.kt",
             "ui/HomeMenu.kt",
@@ -51,6 +52,13 @@ class MotionSourceCheckTest {
             "updateTransition" to Regex("""\b(?:updateTransition|rememberInfiniteTransition)\b"""),
         )
 
+    /**
+     * The one file allowed specs of its own, and only these: the working dot's pulse, an infinite transition
+     * on the mock-up's own timing and easing.
+     */
+    // Boss 2026-10-13: the thread dots and tabs follow design/oma-threads-mockup.html exactly ("The pulse just use the HTML code").
+    private val exempt = mapOf("oma/ThreadDots.kt" to setOf("tween(", "repeatable(", "updateTransition"))
+
     /** `animateXAsState(` is allowed only on a line that hands it the shared spec. */
     private val asState = Regex("""\banimate\w+AsState\s*\(""")
 
@@ -73,7 +81,7 @@ class MotionSourceCheckTest {
             val file = File(root, name)
             assertTrue("$name is listed as having a transition but isn't a source file", file.isFile)
             for (line in code(file)) {
-                for ((what, pattern) in adHoc) if (pattern.containsMatchIn(line)) found += "$name: $what in `$line`"
+                for ((what, pattern) in adHoc) if (pattern.containsMatchIn(line) && what !in exempt[name].orEmpty()) found += "$name: $what in `$line`"
                 if (asState.containsMatchIn(line) && "Motion." !in line) found += "$name: an animate…AsState without the shared spec in `$line`"
             }
         }

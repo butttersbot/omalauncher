@@ -51,6 +51,9 @@ class PackSourceCheckTest {
             "ui/IconMask.kt",
             // The Oma chat and the listening screen.
             "oma/OmaChatActivity.kt",
+            // Boss 2026-10-13: the thread dots and tabs follow design/oma-threads-mockup.html exactly ("The pulse just use the HTML code").
+            // Their dots are round in every look, as the mock-up's are; their colours are still the pack's.
+            "oma/ThreadDots.kt",
             "oma/MarkdownText.kt",
             "assist/ListeningScreen.kt",
         )
@@ -131,7 +134,7 @@ class PackSourceCheckTest {
     @Test fun theConvertedListIsWhole() {
         val expected =
             listOf("Home", "HomeGrid", "WidgetTile", "ShortcutTile", "Folders", "HomeMenu", "HomeGestures", "Overview", "AppDrawer", "AppSearch", "Dock", "AgentButton", "SideRail", "Components", "Icons", "IconMask", "Ink", "Notes", "Stickers", "AgentTile")
-                .map { "ui/$it.kt" } + "oma/OmaChatActivity.kt" + "oma/MarkdownText.kt" + "assist/ListeningScreen.kt"
+                .map { "ui/$it.kt" } + "oma/OmaChatActivity.kt" + "oma/ThreadDots.kt" + "oma/MarkdownText.kt" + "assist/ListeningScreen.kt"
         assertEquals(expected.toSet(), converted)
     }
 

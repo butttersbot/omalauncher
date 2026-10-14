@@ -14,17 +14,16 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -47,7 +46,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
@@ -99,7 +101,6 @@ import dev.omalauncher.ui.Pack
 import dev.omalauncher.ui.PageGap
 import dev.omalauncher.ui.ReadingWidth
 import dev.omalauncher.ui.Speech
-import dev.omalauncher.ui.ThreadDot
 import dev.omalauncher.ui.applySystemBars
 import dev.omalauncher.ui.framed
 import kotlinx.coroutines.Dispatchers
@@ -367,36 +368,52 @@ private fun OmaChatScreen(
     val listening = speech.listening
     Box(Modifier.fillMaxSize().background(Pack.background).safeDrawingPadding().padding(PageGap), contentAlignment = Alignment.TopCenter) {
         Column(Modifier.fillMaxSize().widthIn(max = ReadingWidth)) {
-            // The open tab's name, a dot for each thread in its state's colour, and the arrow that drops the tabs down.
-            Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            // The open tab's name, a dot for each thread in its state's colour, and the arrow that drops the tabs down,
+            // laid out as the mock-up's `.bar`: 14 in from the screen's edge and the top, 8 above what follows, 10 between
+            // its parts; the name takes the room that is left, so the dots sit at the right beside the arrow.
+            Row(
+                Modifier.fillMaxWidth().padding(start = BAR_INSET - PageGap, top = BAR_INSET - PageGap, end = BAR_INSET - PageGap, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 BasicText(Pack.heading(tabTitle(tab, threads)), Modifier.weight(1f), style = Pack.display(color = Pack.accent), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (tab == OMA_TAB && (followUp || frontContinuing) && !working) {
-                    BracketAction("new thread", Pack.accent) {
-                        try {
-                            // Both agents start over together; with no build conversation there is nothing of the build lane to clear.
-                            if (followUp) AgentTasks.newThread(context)
-                            QuickLane.newThread(context)
-                            notice = null
-                        } catch (e: Exception) {
-                            notice = e.message
+                    Box(Modifier.padding(start = BAR_GAP)) {
+                        BracketAction("new thread", Pack.accent) {
+                            try {
+                                // Both agents start over together; with no build conversation there is nothing of the build lane to clear.
+                                if (followUp) AgentTasks.newThread(context)
+                                QuickLane.newThread(context)
+                                notice = null
+                            } catch (e: Exception) {
+                                notice = e.message
+                            }
+                            tick++
                         }
-                        tick++
                     }
                 }
-                Row(Modifier.weight(1f, fill = false).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
-                    for (thread in threads) {
-                        Box(
-                            Modifier
-                                .semantics { contentDescription = "${thread.name}: ${thread.label}" }
-                                .clickable { onTab(dotTap(tab, thread.key)) }
-                                .padding(horizontal = 6.dp, vertical = 12.dp),
-                        ) { ThreadDot(thread.state, Pack.muted, here = thread.key == tab) }
+                // `.dots`: 7 apart. They scroll sideways if there are more than fit, and the scrolling row keeps the open
+                // dot's ring and a pulsing dot's growth clear of its edges, out of the gap on either side of it.
+                if (threads.isNotEmpty()) {
+                    Row(
+                        Modifier.padding(start = BAR_GAP - HEADER_DOT_REACH).horizontalScroll(rememberScrollState()).padding(horizontal = HEADER_DOT_REACH),
+                        horizontalArrangement = Arrangement.spacedBy(7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        for (thread in threads) {
+                            Box(
+                                Modifier
+                                    .semantics { contentDescription = "${thread.name}: ${thread.label}" }
+                                    .clickable { onTab(dotTap(tab, thread.key)) },
+                            ) { ThreadDot(thread.state, Pack.muted, size = HEADER_DOT, here = thread.key == tab) }
+                        }
                     }
                 }
-                BasicText(
-                    if (tabsOpen) "▴" else "▾",
-                    Modifier.semantics { contentDescription = if (tabsOpen) "Hide the tabs" else "Show the tabs" }.clickable { tabsOpen = !tabsOpen }.padding(horizontal = 10.dp, vertical = 6.dp),
-                    style = Pack.body(Pack.size.large),
+                DropArrow(
+                    tabsOpen,
+                    Modifier
+                        .padding(start = if (threads.isEmpty()) BAR_GAP else BAR_GAP - HEADER_DOT_REACH)
+                        .semantics { contentDescription = if (tabsOpen) "Hide the tabs" else "Show the tabs" }
+                        .clickable { tabsOpen = !tabsOpen },
                 )
             }
             if (tabsOpen) TabStrip(threads, tab, onTab)
@@ -587,8 +604,9 @@ private fun OmaChatScreen(
 }
 
 /**
- * The tabs, dropped down under the header: Oma, then each thread with its dot, scrolling sideways when they
- * are more than fit. The open one is filled in.
+ * The tabs, dropped down under the header, as the mock-up's `.tabs`: Oma, then each thread with its dot, 6
+ * apart on a line in the ink, scrolling sideways when they are more than fit. The open one is the ink, and
+ * its dot is outlined in the paper's colour to show on it.
  */
 @Composable
 private fun TabStrip(
@@ -596,27 +614,43 @@ private fun TabStrip(
     open: String,
     onTab: (String) -> Unit,
 ) {
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 6.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .drawBehind { drawRect(Pack.foreground, Offset(0f, size.height - TABS_RULE.toPx()), Size(size.width, TABS_RULE.toPx())) }
+            .horizontalScroll(rememberScrollState())
+            .padding(start = TABS_INSET - PageGap, top = 4.dp, end = TABS_INSET - PageGap, bottom = 10.dp + TABS_RULE),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         for (key in chatTabs(threads)) {
             val thread = threads.firstOrNull { it.key == key }
             val on = key == open
             Row(
                 Modifier
-                    .padding(end = 6.dp)
-                    .framed(Pack.hair, if (on) Pack.foreground else Pack.border, if (on) Pack.foreground else Pack.surface, radius = 6.dp)
+                    .background(if (on) Pack.foreground else Pack.surface, Pack.shape(TAB_RADIUS))
                     .clickable { onTab(key) }
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (thread != null) {
-                    ThreadDot(thread.state, if (on) Pack.background else Pack.muted)
-                    Spacer(Modifier.width(6.dp))
-                }
+                if (thread != null) ThreadDot(thread.state, Pack.muted, outline = if (on) Pack.background else null)
                 BasicText(Pack.caption(tabTitle(key, threads)), style = Pack.mono(Pack.size.small, if (on) Pack.background else Pack.foreground), maxLines = 1)
             }
         }
     }
 }
+
+/** `.bar`'s padding of 14 and gap of 10, the padding from the screen's edge, which the page's own gap is part of. */
+private val BAR_INSET = 14.dp
+private val BAR_GAP = 10.dp
+
+/** `.tabs`: 12 in from the screen's edge, over a rule of 2 in the ink. */
+private val TABS_INSET = 12.dp
+private val TABS_RULE = 2.dp
+
+/** A tab's `border-radius: 2px`, given as frames give theirs, for Console's 16: so it is City Pop's 2 there and follows the look's corners. */
+private val TAB_RADIUS = 16.dp
 
 /** One builder as the chat reads it twice a second: whether it works, what waits for his OK, its label and its live answer. */
 private data class BuilderState(val working: Boolean = false, val pending: List<PendingApproval> = emptyList(), val label: String = "", val answer: String = "")
