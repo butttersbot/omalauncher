@@ -7,17 +7,24 @@ classifier sends to the prompt tool); "edit" writes edited.txt as a routine edit
 in any other; "slow" takes three seconds first; "limit" answers as Claude Code does at a usage limit. Every start is
 added to starts.log in the project, with its permission mode, so a test can see a task was not started twice.
 
-"background" starts a background command and answers at once; like Claude Code it then stays alive while that
-command runs, until it is ended, which leaves the command unfinished in the session. The next start that resumes
-finds it orphaned and, as Claude Code 2.1 does, first runs a turn of its own about it (a task_notification, then an
-empty result with no user_message_uuid) before the owner's message. Results of the owner's turns name the uuid he
-sent as Claude Code does, unless the prompt says "old" (a Claude Code from before those fields).
+"background" starts a background command ("copy the games", 60 s; "background quick": 2 s) and answers at once. As
+Claude Code does (probed 2026-10-14), it then stays alive while that command runs, takes more messages on stdin
+(answering each in its own turn), and when the command ends runs a turn of its own reporting it (a task_notification,
+then a result naming no message). When stdin closes it waits for the command, reports, and exits. Ended under a
+running command, it leaves the command unfinished in the session: the next start that resumes finds it orphaned
+and, as Claude Code 2.1 does, first runs a turn of its own about it (a task_notification, then an empty result with
+no user_message_uuid) before the owner's message. Results of the owner's turns name the uuid he sent as Claude Code
+does, unless the prompt says "old" (a Claude Code from before those fields).
 """
-import json, pathlib, sys, time, uuid
+import json, pathlib, queue, sys, threading, time, uuid
+
+
+speaking = threading.RLock()  # one turn at a time on stdout, as Claude Code runs them
 
 
 def out(event):
-    print(json.dumps(event), flush=True)
+    with speaking:
+        print(json.dumps(event), flush=True)
 
 
 def said(text):
@@ -42,36 +49,82 @@ if '--resume' in arguments and orphan.exists():
     out({'type': 'system', 'subtype': 'task_notification', 'task_id': 'b1', 'status': 'stopped', 'output_file': '/tmp/b1.output',
          'summary': "Background shell command didn't finish before the previous session ended", 'session_id': session})
     out({'type': 'result', 'subtype': 'success', 'is_error': False, 'result': '', 'num_turns': 0, 'session_id': session})
-if 'limit' in prompt:
-    out({'type': 'assistant', 'error': 'rate_limit', 'message': {'role': 'assistant', 'content': [{'type': 'text', 'text': "You've hit your limit · resets 5pm"}]}})
-    out({'type': 'result', 'subtype': 'success', 'is_error': True, 'result': "You've hit your limit · resets 5pm", 'session_id': session, **echo})
-    sys.stdin.read()
-    sys.exit(0)
-said('Heard: ' + prompt)
-if 'slow' in prompt:
-    time.sleep(3)
-if 'write' in prompt or 'edit' in prompt:
-    given = {'file_path': str(pathlib.Path.cwd() / ('written.txt' if 'write' in prompt else 'edited.txt')), 'content': 'hi'}
-    out({'type': 'assistant', 'message': {'role': 'assistant', 'content': [{'type': 'tool_use', 'id': 'tool1', 'name': 'Write', 'input': given}]}})
-    if 'edit' in prompt and arguments[arguments.index('--permission-mode') + 1] == 'auto':
-        reply = {'behavior': 'allow', 'updatedInput': given}
-    else:
-        out({'type': 'control_request', 'request_id': 'r-' + uuid.uuid4().hex[:8], 'request': {'subtype': 'can_use_tool', 'tool_name': 'Write', 'input': given}})
-        reply = json.loads(sys.stdin.readline())['response']['response']
-    if reply['behavior'] == 'allow':
-        pathlib.Path(reply['updatedInput']['file_path']).write_text(reply['updatedInput']['content'])
-        said('Wrote it.')
-    else:
-        said('Not allowed, so nothing was written.')
-elif 'files' in prompt:
-    said('Files here: ' + ', '.join(sorted(path.name for path in pathlib.Path.cwd().iterdir())))
-elif 'background' in prompt:
-    task = {'task_id': 'b1', 'task_type': 'local_bash', 'description': 'copy the games'}
-    out({'type': 'system', 'subtype': 'task_started', 'session_id': session, **task})
-    out({'type': 'system', 'subtype': 'background_tasks_changed', 'tasks': [task], 'session_id': session})
-    orphan.write_text('b1')
-    said('Started copying in the background.')
-out({'type': 'result', 'subtype': 'success', 'is_error': False, 'result': 'done', 'session_id': session, **echo})
-sys.stdin.read()
-if orphan.exists():
-    time.sleep(60)
+
+
+running = []
+
+
+replies = queue.Queue()  # control responses for a card asked in a turn of its own, from the stdin loop below
+
+
+def work(seconds, words):
+    """The background command: it ends after a while (said at once, even in the middle of a turn), and Claude Code
+    reports it in a turn of its own. "card" in the words that started it: the report asks to write report.txt;
+    "slowreport": the report takes 7 s."""
+    time.sleep(seconds)
+    orphan.unlink(missing_ok=True)
+    out({'type': 'system', 'subtype': 'task_notification', 'task_id': 'b1', 'status': 'completed', 'summary': 'Background command "copy the games" completed (exit code 0)', 'session_id': session})
+    out({'type': 'system', 'subtype': 'background_tasks_changed', 'tasks': [], 'session_id': session})
+    with speaking:
+        out({'type': 'system', 'subtype': 'init', 'session_id': session, 'model': 'claude-fake'})
+        if 'slowreport' in words:
+            time.sleep(7)
+        if 'card' in words:
+            given = {'file_path': str(pathlib.Path.cwd() / 'report.txt'), 'content': 'copied'}
+            out({'type': 'control_request', 'request_id': 'r-' + uuid.uuid4().hex[:8], 'request': {'subtype': 'can_use_tool', 'tool_name': 'Write', 'input': given}})
+            reply = replies.get()['response']['response']
+            if reply['behavior'] == 'allow':
+                pathlib.Path(reply['updatedInput']['file_path']).write_text(reply['updatedInput']['content'])
+        said('The copy finished.')
+        out({'type': 'result', 'subtype': 'success', 'is_error': False, 'result': 'The copy finished.', 'session_id': session})
+
+
+def handle(given):
+    prompt = given['message']['content']
+    echo = {'user_message_uuid': given['uuid'], 'user_message_uuids': [given['uuid']]} if given.get('uuid') and 'old' not in prompt else {}
+    with speaking:
+        if 'limit' in prompt:
+            out({'type': 'assistant', 'error': 'rate_limit', 'message': {'role': 'assistant', 'content': [{'type': 'text', 'text': "You've hit your limit · resets 5pm"}]}})
+            out({'type': 'result', 'subtype': 'success', 'is_error': True, 'result': "You've hit your limit · resets 5pm", 'session_id': session, **echo})
+            return
+        said('Heard: ' + prompt)
+        if 'malformed' in prompt:
+            out({'type': 'assistant', 'message': {'role': 'assistant', 'content': ['not a block']}})
+        if 'slow' in prompt:
+            time.sleep(3)
+        if 'write' in prompt or 'edit' in prompt:
+            given = {'file_path': str(pathlib.Path.cwd() / ('written.txt' if 'write' in prompt else 'edited.txt')), 'content': 'hi'}
+            out({'type': 'assistant', 'message': {'role': 'assistant', 'content': [{'type': 'tool_use', 'id': 'tool1', 'name': 'Write', 'input': given}]}})
+            if 'edit' in prompt and arguments[arguments.index('--permission-mode') + 1] == 'auto':
+                reply = {'behavior': 'allow', 'updatedInput': given}
+            else:
+                out({'type': 'control_request', 'request_id': 'r-' + uuid.uuid4().hex[:8], 'request': {'subtype': 'can_use_tool', 'tool_name': 'Write', 'input': given}})
+                reply = json.loads(sys.stdin.readline())['response']['response']
+            if reply['behavior'] == 'allow':
+                pathlib.Path(reply['updatedInput']['file_path']).write_text(reply['updatedInput']['content'])
+                said('Wrote it.')
+            else:
+                said('Not allowed, so nothing was written.')
+        elif 'files' in prompt:
+            said('Files here: ' + ', '.join(sorted(path.name for path in pathlib.Path.cwd().iterdir())))
+        elif 'background' in prompt:
+            task = {'task_id': 'b1', 'task_type': 'local_bash', 'description': 'copy the games'}
+            out({'type': 'system', 'subtype': 'task_started', 'session_id': session, **task})
+            out({'type': 'system', 'subtype': 'background_tasks_changed', 'tasks': [task], 'session_id': session})
+            orphan.write_text('b1')
+            running.append(threading.Thread(target=work, args=(2 if 'quick' in prompt else 60, prompt)))
+            running[-1].start()
+            said('Started copying in the background.')
+        out({'type': 'result', 'subtype': 'success', 'is_error': False, 'result': 'done', 'session_id': session, **echo})
+
+
+handle(given)
+for line in sys.stdin:
+    if line.strip():
+        message = json.loads(line)
+        if message.get('type') == 'control_response':
+            replies.put(message)
+        else:
+            handle(message)
+for job in running:
+    job.join()

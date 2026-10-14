@@ -379,3 +379,34 @@ now plays the same sequence.
 - **Phone:** a `result` with no words, not failed, ending a turn in which nothing happened (no text, step or card)
   no longer reads "Task completed.": the entry says "The Mac ended this turn without an answer.", needs attention,
   and has `[ try again ]`, which sends the same words to the thread again.
+
+## As built: background work outlives the turn (2026-10-14, by the Mac session)
+OPEN-BUGS #1 (the games copy, 04:05:44): the runner ended Claude Code 5 s after every answer, and background work
+it had started ended with it. Probed on the Mac with Claude Code 2.1.299: (1) a user message written to stdin while
+it is running is taken (mid-turn it joins that turn; the result names both uuids); (2) when background work ends it
+says so (`task_notification`, `background_tasks_changed` with no tasks) and runs a turn of its own reporting it,
+whose result names no message; (3) with stdin closed it waits for running background work, reports, and exits;
+with nothing running it exits, sometimes only after ~30 s.
+- **Claude threads keep their process while background work runs** (`Kept` in oma-runner). After an answer that
+  leaves background work, stdin stays open and the thread goes idle with a note "Still running on the Mac: …".
+  The owner's next message goes into the same process (no `--resume`, no orphan turn). What Claude Code says in
+  between (its report, any card it asks for) reaches the phone as `text`, `approval` and a note "Claude Code
+  reported on its background work, between your messages."; the thread is idle again after it.
+- Once no message is being answered and no background work is left, stdin is closed and Claude Code ends by
+  itself; with no report pending it is ended after 5 s as before, and a message arriving meanwhile ends it at once.
+- **`/threads` and `/threads/ID` carry `background`**: the descriptions of the work still running, `[]` otherwise.
+  The phone does not show it yet.
+- **Stop** on an idle thread with background work ends it (note "Stopped, unfinished: …"); the next message then
+  resumes and Claude Code's orphan turn is a note, as in "stale results". Restarting the runner ends it too.
+- stdin stays open through Claude Code's own report turn (it may ask for a card, which must be answerable); a report
+  expected but never begun is waited for 30 s of quiet. A card up from that turn keeps the thread `waiting`, also
+  when a new message arrives. A line the runner cannot read ends the turn with `error code=runner` (never a hang).
+  Found by an independent review and covered by tests. Not handled: a Claude Code too old to name uuids may take a
+  report that lands mid-turn as the answer.
+- `oma-runner install` retries starting the service: right after stopping it launchd can refuse (EIO), which left
+  the runner down once on 2026-10-14.
+- Codex and Cursor are unchanged (one process per turn).
+- Proved: `tools/mac-runner/test-runner.py` (fake-agent now behaves as probed: stays alive for background work,
+  takes more messages, reports, exits); and on the Mac with real Claude Code on a loopback runner: a 40 s
+  background command survived its turn and a second message, wrote its file, was reported, and the process was
+  gone ~1 s after the next answer.

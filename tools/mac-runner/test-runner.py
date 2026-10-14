@@ -211,25 +211,98 @@ try:
     stream(made['thread']['id'])
     check('a model asked for is passed to Claude Code', code == 200 and 'claude-opus-5-5' in (project / 'models.log').read_text())
 
-    # Thread t91462875, 2026-10-14: a turn left a background command running; the next message's turn ended 2 s
-    # after it began on an empty result Claude Code made for that command, and his words got no answer.
+    # 2026-10-14: background work died 5 s after the turn that started it (the games copy, 04:05:44), and the next
+    # message's turn ended at once on the empty result Claude Code made for the orphaned command (thread t91462875).
     for words in ('background copy', 'background copy, old'):
         code, made = call('POST', '/threads', {'name': 'Copy', 'project': str(project)})
         copy = made['thread']['id']
         call('POST', '/threads/%s/messages' % copy, {'text': words})
-        events = stream(copy)
-        check(words + ': background work the turn leaves running is told of when the turn ends', settle(copy, 'idle', 10)
-              and any(event['type'] == 'note' and 'copy the games' in event['text'] for event in call('GET', '/threads/%s/events' % copy)[1]['events']))
+        stream(copy)
+        count = len(starts())
+        check(words + ': the turn ends and the thread is idle, saying the background work runs on', settle(copy, 'idle', 10)
+              and any(event['type'] == 'note' and 'Still running' in event['text'] and 'copy the games' in event['text'] for event in call('GET', '/threads/%s/events' % copy)[1]['events'])
+              and call('GET', '/threads/' + copy)[1]['thread']['background'] == ['copy the games'])
+        time.sleep(6)
+        check(words + ': the background work is not ended when the turn is', (project / 'background.running').exists()
+              and call('GET', '/threads/' + copy)[1]['thread']['background'] == ['copy the games'])
         last = call('GET', '/threads/' + copy)[1]['thread']['last_event']
         asked = 'what files are here' + (', old' if 'old' in words else '')
         call('POST', '/threads/%s/messages' % copy, {'text': asked})
         events = stream(copy, after=last)
         results = [event for event in events if event['type'] == 'result']
+        check(words + ': the next message goes to the same Claude Code, which answers it', len(starts()) == count and len(results) == 1 and results[0]['text'] == 'done'
+              and any(event['type'] == 'text' and event['text'] == 'Heard: ' + asked for event in events) and not any(event['type'] == 'note' and "didn't finish" in event['text'] for event in events))
+        stopped = settle(copy, 'idle', 10) and call('POST', '/threads/%s/stop' % copy)[1]['stopped']
+        deadline = time.time() + 10
+        while time.time() < deadline and call('GET', '/threads/' + copy)[1]['thread']['background']:
+            time.sleep(0.05)
+        check(words + ': stop ends the background work too, and says so', stopped
+              and settle(copy, 'idle') and any(event['type'] == 'note' and 'Stopped, unfinished: copy the games' in event['text'] for event in call('GET', '/threads/%s/events' % copy)[1]['events'])
+              and call('GET', '/threads/' + copy)[1]['thread']['background'] == [])
+        last = call('GET', '/threads/' + copy)[1]['thread']['last_event']
+        call('POST', '/threads/%s/messages' % copy, {'text': asked})
+        events = stream(copy, after=last)
+        results = [event for event in events if event['type'] == 'result']
         check(words + ': the empty result Claude Code makes for the orphaned command does not end the next turn', len(results) == 1 and results[0]['text'] == 'done'
-              and any(event['type'] == 'text' and event['text'] == 'Heard: ' + asked for event in events))
+              and starts()[-1]['resumed'] and any(event['type'] == 'text' and event['text'] == 'Heard: ' + asked for event in events))
         said = [event for event in events if event['type'] != 'status']
         check(words + ': the stopped command and the turn Claude Code took for it are notes', [event['type'] for event in said[:4]] == ['message', 'note', 'note', 'text']
               and "didn't finish" in said[1]['text'])
+
+    code, made = call('POST', '/threads', {'name': 'Quick copy', 'project': str(project)})
+    quick = made['thread']['id']
+    call('POST', '/threads/%s/messages' % quick, {'text': 'background quick'})
+    stream(quick)
+    count = len(starts())
+    deadline = time.time() + 10
+    while time.time() < deadline and call('GET', '/threads/' + quick)[1]['thread']['background']:
+        time.sleep(0.1)
+    events = call('GET', '/threads/%s/events' % quick)[1]['events']
+    check('background work that ends is reported by Claude Code in a turn of its own, shown with a note, and the thread stays idle',
+          any(event['type'] == 'text' and event['text'] == 'The copy finished.' for event in events)
+          and any(event['type'] == 'note' and 'reported on its background work' in event['text'] for event in events) and settle(quick, 'idle')
+          and not any(event['type'] in ('result', 'error') and event['id'] > [e['id'] for e in events if e['type'] == 'result'][0] for event in events))
+    time.sleep(1)
+    check('then Claude Code ends by itself, the work done, nothing orphaned', not (project / 'background.running').exists()
+          and call('GET', '/threads/' + quick)[1]['thread']['background'] == [])
+    last = call('GET', '/threads/' + quick)[1]['thread']['last_event']
+    call('POST', '/threads/%s/messages' % quick, {'text': 'what files are here'})
+    events = stream(quick, after=last)
+    check('the next message starts Claude Code afresh, with no orphan to tell of', len(starts()) == count + 1 and starts()[-1]['resumed']
+          and events[-1]['type'] == 'result' and not any(event['type'] == 'note' for event in events))
+
+    # From the review of the change above: a card in Claude Code's own report turn, a report that comes after an
+    # answer when the work ended during it, and a line the runner cannot read.
+    code, made = call('POST', '/threads', {'name': 'Report card', 'project': str(project)})
+    reported = made['thread']['id']
+    call('POST', '/threads/%s/messages' % reported, {'text': 'background quick card'})
+    card = stream(reported, until=('approval',), limit=15)[-1]
+    check('a card asked by Claude Code\'s own report turn shows, and the idle thread waits on it', card['type'] == 'approval' and settle(reported, 'waiting'))
+    check('it can be allowed', call('POST', '/threads/%s/approvals/%s' % (reported, card['approval']), {'decision': 'allow', 'nonce': card['nonce']})[0] == 200)
+    deadline = time.time() + 10
+    while time.time() < deadline and not any(event['type'] == 'text' and event['text'] == 'The copy finished.' for event in call('GET', '/threads/%s/events' % reported)[1]['events']):
+        time.sleep(0.1)
+    check('then the report is done and the thread is idle', (project / 'report.txt').read_text() == 'copied' and settle(reported, 'idle', 10))
+    (project / 'report.txt').unlink()
+
+    code, made = call('POST', '/threads', {'name': 'Late report', 'project': str(project)})
+    late = made['thread']['id']
+    call('POST', '/threads/%s/messages' % late, {'text': 'background quick slowreport'})
+    stream(late)
+    last = call('GET', '/threads/' + late)[1]['thread']['last_event']
+    call('POST', '/threads/%s/messages' % late, {'text': 'slow one'})
+    stream(late, after=last)
+    deadline = time.time() + 15
+    while time.time() < deadline and not any(event['type'] == 'text' and event['text'] == 'The copy finished.' for event in call('GET', '/threads/%s/events' % late)[1]['events']):
+        time.sleep(0.1)
+    check('work that ends during an answer is still reported after it, however long the report takes',
+          any(event['type'] == 'text' and event['text'] == 'The copy finished.' for event in call('GET', '/threads/%s/events' % late)[1]['events']) and settle(late, 'idle', 10))
+
+    code, made = call('POST', '/threads', {'name': 'Garbled', 'project': str(project)})
+    garbled = made['thread']['id']
+    call('POST', '/threads/%s/messages' % garbled, {'text': 'malformed'})
+    events = stream(garbled, until=('error',), limit=15)
+    check('a line the runner cannot read ends the turn with an error instead of hanging', events[-1]['type'] == 'error' and events[-1]['code'] == 'runner' and settle(garbled, 'idle', 15))
 
     for kind, tool in (('codex', 'Edit'), ('cursor', 'Bash')):
         (project / 'written.txt').unlink(missing_ok=True)

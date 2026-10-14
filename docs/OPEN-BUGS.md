@@ -5,13 +5,12 @@ Boss moves to a new, higher-RAM phone tomorrow (2026-10-14/15). Everything below
 `docs/PHONE-TEST-RESULTS.md`. Fix these on the new phone. Highest first.
 
 ## Bugs not fixed
-1. **Mac background jobs die when their turn ends.** The runner starts one `claude -p --resume` process per turn and
-   kills its process group 5 s after the result, so a `run_in_background` command (the games copy, 04:05:44) dies.
-   Fix: keep a thread's process alive while Claude Code reports background tasks running (the runner already
-   tracks `background_tasks_changed`), or start such work through a Mac-side keeper. The backup thread worked round
-   it by launching its copies detached. (Runner; spec "As built: stale results".)
+1. ~~**Mac background jobs die when their turn ends.**~~ FIXED 2026-10-14 by the Mac session: a Claude thread keeps
+   its process while background work runs and the next message goes into it ("As built: background work outlives
+   the turn" in `docs/MAC-RUNNER-SPEC.md`). Installed on the Mac runner.
 2. **Codex in auto mode can read the runner key** (its sandbox allows reads), so it could make or message threads
-   without a card. Move the key out of its reach or keep Codex threads `manual`. (Mac session; FOR-MAC-SESSION #2.)
+   without a card. Interim, 2026-10-14 (2b4a4ae): Codex threads are manual unless auto is asked for by name. Moving
+   the file does not help (Codex reads anything this Mac user can); the fix is a place it cannot read (Keychain).
 3. **`oma-phone fill` on the Oma chat field: cause unknown.** It said ok and the text never landed (a placeholder child
    inside the field matched the label; the field already resolved to its editable parent, so the likelier cause is
    the per-tab draft overwriting a text set from outside). Since 41eeb49 fill reads the field back and answers

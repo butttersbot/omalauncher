@@ -118,11 +118,19 @@ class Claude:
     the model that command was orphaned, which ends in an empty result before his message is even read. So the
     message carries a uuid, which Claude Code names on the result that answers it (user_message_uuid(s)); any other
     result is a note, and the turn goes on.
+
+    One driver lives as long as its Claude Code process, which may outlive a turn (see [Kept]): each of the owner's
+    messages to it comes through [again].
     """
     def __init__(self, thread, text):
-        self.thread, self.text, self.limited = thread, text, None
-        self.uuid, self.spoke = str(uuid.uuid4()), False
+        self.thread, self.limited = thread, None
+        self.named = False  # this Claude Code has named the message a result answers, so a result naming none is its own
         self.background = {}  # task id -> description: the background work Claude Code last said is running
+        self.again(text)
+
+    def again(self, text):
+        """The owner's next message for this process."""
+        self.text, self.uuid, self.spoke, self.asked = text, str(uuid.uuid4()), False, True
 
     def command(self):
         meta = self.thread.meta
@@ -142,6 +150,8 @@ class Claude:
         named = event.get('user_message_uuids') or ([event['user_message_uuid']] if event.get('user_message_uuid') else [])
         if named:
             return self.uuid in named
+        if self.named:
+            return False
         # Named no message: a turn Claude Code began itself, or any turn of a Claude Code too old to name one. Taken
         # as the answer only with something in it, so the empty turn about an orphaned command is not.
         return self.spoke or bool(event.get('is_error')) or bool(str(event.get('result') or '').strip())
@@ -177,10 +187,14 @@ class Claude:
             thread.withdraw(event.get('request_id'))
         elif kind == 'result':
             text = str(event.get('result') or '')
-            if not self.answers(event):
-                thread.emit('note', text='Claude Code ended a turn of its own (such as one about background work) before this message; its answer is still to come.')
+            if event.get('user_message_uuids') or event.get('user_message_uuid'):
+                self.named = True
+            if not self.asked or not self.answers(event):
+                thread.emit('note', text='Claude Code ended a turn of its own (such as one about background work) before this message; its answer is still to come.'
+                            if self.asked else 'Claude Code reported on its background work, between your messages.')
                 self.spoke = False
                 return False
+            self.asked = False
             if event.get('is_error') and (self.limited or LIMIT.search(text)):
                 thread.emit('error', code='limit', text=text or self.limited)
             else:
@@ -468,6 +482,7 @@ class Thread:
         self.pending = {}  # approval id -> {'nonce', 'request', 'tool', 'input', 'explanation'}
         self.stopped = False
         self.driver = None
+        self.kept = None  # the Claude Code process of this thread, if one is running, turn or no turn (see Kept)
         self.model = meta.get('model_seen') or meta.get('model')  # as the agent reported it, else as asked
         self.model_told = False
 
@@ -504,6 +519,7 @@ class Thread:
                 'kind': self.meta['kind'], 'mode': mode(self.meta), 'model': self.model, 'summary': self.meta.get('summary', ''), 'status': self.meta['status'],
                 'last_worked': self.meta.get('last_worked'), 'tail': self.meta.get('tail', ''), 'waiting_turns': len(self.queue),
                 'last_event': len(self.events),
+                'background': list(self.kept.driver.background.values()) if self.kept and not self.kept.done else [],
                 'pending': [{'approval': key, 'nonce': entry['nonce'], 'tool': entry['tool'], 'input': entry['input'], 'explanation': entry['explanation']} for key, entry in self.pending.items()]}
 
     def say(self, message):
@@ -597,7 +613,7 @@ def drain(thread):
             thread.meta['summary'] = (text.strip().splitlines() or [''])[0][:120]
             thread.meta['last_worked'] = int(time.time())
             thread.stopped = False
-            thread.status('working')
+            thread.status('waiting' if thread.pending else 'working')  # a card from Claude Code's own turn may be up
             thread.emit('message', text=text)
         try:
             turn(thread, text)
@@ -613,7 +629,154 @@ def drain(thread):
             thread.save()
 
 
+class Kept:
+    """A thread's Claude Code process, and the one reader of what it says, for as long as it runs.
+
+    Claude Code may leave background work running when it answers (a copy, a build, a server). It keeps running only
+    while Claude Code does, and when it ends Claude Code reports it in a turn of its own. So after an answer that
+    leaves background work, the process is kept with its stdin open: the thread is idle, the owner's next message
+    goes into the same process, and what it says meanwhile (its report, a card) reaches the phone. Once nothing is
+    being answered and no background work is left, its stdin is closed and it ends by itself, after its report if one
+    is over: stdin stays open through Claude Code's own turn about it, which may ask for a card that needs an answer.
+    Then it is given 5 s, as before, since Claude Code can take half a minute to exit and a new message would wait
+    for it. Stop, or the runner going away, ends it and its background work.
+    """
+    QUIET = 30  # seconds after which a turn of its own that was expected, and never began, is no longer waited for
+
+    def __init__(self, thread, driver, process):
+        self.thread, self.driver, self.process = thread, driver, process
+        self.open, self.done, self.stray = True, False, []
+        self.own = False  # a turn of Claude Code's own (its report on background work) is under way or expected
+        self.heard = 0  # events read, so a wait for quiet can tell whether anything came since
+        self.ending = None
+        threading.Thread(target=self.read, daemon=True).start()
+
+    def settle(self):
+        """Closes stdin when nothing is left for the process to do, so it ends by itself, and gives it 5 s to. Call
+        with `changed` held."""
+        if self.driver.asked or self.driver.background or self.own or self.thread.pending:
+            return
+        if self.open:
+            self.open = False
+            try:
+                self.process.stdin.close()
+            except OSError:
+                pass
+        if self.ending is None:
+            self.ending = threading.Timer(5, end, (self.process,))
+            self.ending.daemon = True
+            self.ending.start()
+
+    def quiet(self, heard):
+        """Nothing came for a while after a turn of its own was expected: it is not waited for any more (Claude Code
+        may have said its piece inside the owner's turn instead)."""
+        with changed:
+            if self.heard == heard and self.own and not self.done and not self.thread.pending:
+                self.own = False
+                self.settle()
+                changed.notify_all()
+
+    def read(self):
+        thread = self.thread
+        try:
+            for line in lines(self.process):
+                try:
+                    event = json.loads(line)
+                except ValueError:
+                    self.stray = (self.stray + [line.strip()])[-40:]
+                    continue
+                if not isinstance(event, dict):
+                    continue
+                with changed:
+                    if closing:
+                        break
+                    self.heard += 1
+                    asked, kind = self.driver.asked, event.get('type')
+                    if kind == 'system' and (event.get('subtype') == 'task_notification' or (event.get('subtype') == 'init' and not asked)):
+                        self.own = True
+                    answered = self.driver.heard(event)
+                    if kind == 'result' and not answered:
+                        self.own = False
+                    if answered and self.driver.background:
+                        thread.emit('note', text='Still running on the Mac: ' + '; '.join(self.driver.background.values())[:500]
+                                    + '. Claude Code stays open for it and says when it ends.')
+                    if not asked and kind == 'result' and not thread.pending and thread.worker is None:
+                        thread.status('idle')  # a turn of its own between the owner's, which may have asked for a card
+                    if self.own and not self.driver.asked:
+                        timer = threading.Timer(self.QUIET, self.quiet, (self.heard,))
+                        timer.daemon = True
+                        timer.start()
+                    self.settle()
+                    changed.notify_all()
+        except Exception as problem:  # the thread must never be left waiting on a reader that has gone
+            with changed:
+                thread.emit('error', code='runner', text='The runner failed reading the agent: ' + repr(problem)[:500])
+        try:
+            self.process.stdin.close()
+        except OSError:
+            pass
+        try:
+            self.process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            end(self.process)
+            self.process.wait()
+        self.process.stdout.close()
+        with changed:
+            self.done = True
+            if self.ending is not None:
+                self.ending.cancel()
+            if thread.kept is self:
+                thread.kept, thread.process = None, None
+            for approval in list(thread.pending):
+                thread.emit('approval_result', approval=approval, decision='withdrawn')
+            thread.pending.clear()
+            if not closing and self.driver.background:
+                thread.emit('note', text='Stopped, unfinished: ' + '; '.join(self.driver.background.values())[:500])
+            if not closing and not self.driver.asked and thread.worker is None:
+                thread.status('idle')
+            changed.notify_all()
+
+
+def claude_turn(thread, text):
+    """One message of the owner's to Claude Code: into the process still running for the thread when there is one."""
+    with changed:
+        kept = thread.kept
+        while kept is not None and not kept.done and not kept.open:
+            # Ending, with nothing left to do (stdin is closed only then): ended now, and a fresh start.
+            end(kept.process)
+            changed.wait(1)
+        if kept is not None and not kept.done:
+            kept.driver.again(text)
+            thread.driver, thread.model_told = kept.driver, False
+            kept.driver.begin()
+        else:
+            kept = None
+    if kept is None:
+        driver = Claude(thread, text)
+        try:
+            process = subprocess.Popen(driver.command(), cwd=thread.meta['project'], env=driver.environment(),
+                                       stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
+        except OSError as problem:
+            with changed:
+                thread.emit('error', code='agent', text='The agent could not be started on the Mac: ' + str(problem))
+            return
+        with changed:
+            thread.process, thread.driver, thread.model_told = process, driver, False
+            kept = thread.kept = Kept(thread, driver, process)
+            driver.begin()
+    with changed:
+        while kept.driver.asked and not kept.done and not closing:
+            changed.wait(1)
+        if closing or not kept.driver.asked or thread.stopped:
+            return
+        left = '\n'.join(kept.stray)[-2000:]
+        code = kept.process.returncode
+        thread.emit('error', code='limit' if LIMIT.search(left) else code, text=left or 'The agent ended without an answer.')
+
+
 def turn(thread, text):
+    if thread.meta['kind'] == 'claude':
+        return claude_turn(thread, text)
     driver = DRIVERS[thread.meta['kind']](thread, text)
     try:
         process = subprocess.Popen(driver.command(), cwd=thread.meta['project'], env=driver.environment(),
@@ -661,9 +824,6 @@ def turn(thread, text):
         thread.pending.clear()
         if closing:
             return
-        if getattr(driver, 'background', None):
-            # The agent's process group ends with the turn, and background work it started ends with it.
-            thread.emit('note', text='Stopped when the turn ended, unfinished: ' + '; '.join(driver.background.values())[:500])
         if not answered and not thread.stopped:
             left = '\n'.join(stray)[-2000:]
             thread.emit('error', code='limit' if LIMIT.search(left) else code, text=left or 'The agent ended without an answer.')
@@ -711,7 +871,7 @@ def decide(thread, approval, body):
         if thread.driver is None or not thread.driver.answer(entry, body['decision'] == 'allow'):
             thread.emit('approval_result', approval=approval, decision='withdrawn')
             if not thread.pending:
-                thread.status('working')
+                thread.status('working' if thread.worker is not None else 'idle')
             return 409, {'ok': False, 'error': 'the agent did not take the answer (the task ended, or it offered no once-only choice)'}
         thread.emit('approval_result', approval=approval, decision=body['decision'])
         if not thread.pending:
@@ -891,6 +1051,13 @@ def serve():
         # Tasks end with the runner; their threads come back as interrupted and are not started again.
         global closing
         closing = True
+        if changed.acquire(timeout=1):
+            try:
+                for thread in threads.values():
+                    if thread.kept is not None and not thread.kept.done and thread.kept.driver.background:
+                        thread.emit('note', text='Stopped when the runner restarted, unfinished: ' + '; '.join(thread.kept.driver.background.values())[:500])
+            finally:
+                changed.release()
         for thread in threads.values():
             if thread.process is not None and thread.process.poll() is None:
                 try:
@@ -932,8 +1099,13 @@ def install():
 
 
 def start_service():
-    result = launchctl('bootstrap', 'gui/%d' % os.getuid(), str(PLIST))
-    print('started' if result.returncode == 0 else 'not started: ' + result.stderr.strip())
+    # Right after a bootout launchd can still be unloading the old one, and bootstrap then fails (EIO): try again.
+    for attempt in range(10):
+        result = launchctl('bootstrap', 'gui/%d' % os.getuid(), str(PLIST))
+        if result.returncode == 0:
+            return print('started')
+        time.sleep(1)
+    print('not started: ' + result.stderr.strip())
 
 
 def stop_service():
