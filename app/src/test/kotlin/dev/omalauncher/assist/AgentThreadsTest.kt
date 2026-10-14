@@ -180,4 +180,14 @@ class AgentThreadsTest {
         // Among every thread the builders come first, A before B.
         assertEquals(listOf(PHONE_THREAD, PHONE_THREAD_B), agentThreads(listOf(toA, toB), BuilderNow(), MacView(), second = BuilderNow(working = true)).map { it.key })
     }
+
+    @Test fun separateWorkWaitingForANewThreadIsNotQueuedOnTheBusyOne() {
+        val busy = thread(MacThreadStatus.Working)
+        val waiting = mac(5, TaskStatus.Queued, "add save anywhere").copy(fresh = true)
+        val now = macThreadNow(busy, id, listOf(mac(4, TaskStatus.Running, "magic menu"), waiting), emptyList(), reachable = true)
+        assertEquals(ThreadState.Working, now.state); assertEquals("working", now.label)
+        // Not made, it needs attention in its own entry, not on the busy thread's tile.
+        val failed = macThreadNow(thread(), id, listOf(mac(4, TaskStatus.Done, result = "Done."), waiting.copy(status = TaskStatus.Dropped, result = "Mac unreachable")), emptyList(), reachable = true)
+        assertEquals(ThreadState.Idle, failed.state)
+    }
 }

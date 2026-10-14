@@ -410,4 +410,18 @@ class ChatHistoryTest {
         assertEquals(TaskStatus.Dropped, waiting.status); assertEquals("B", waiting.builder)
         assertEquals(ChatHistory.MAX_BUILDER, ChatHistory.bounded(toB.copy(builder = "x".repeat(100))).builder.length)
     }
+
+    @Test fun aRequestWaitingForANewThreadOnTheMacIsSavedAndAfterARestartCanBeSentAgain() {
+        val waiting = ChatTask(5, "→ FF4 better menu mod 2", "add save anywhere", thread = "t5e121ba2", threadName = "FF4 better menu mod 2", status = TaskStatus.Queued, fresh = true)
+        val read = ChatHistory.decode(ChatHistory.encode(listOf(waiting)))
+        assertEquals(listOf(waiting), read)
+        // Saved only where it is set, so every other entry keeps the shape it has always had.
+        assertFalse(ChatHistory.encode(listOf(waiting.copy(fresh = false))).contains("fresh"))
+        // Making it ended with the process: it was sent nowhere, says so, and keeps what [ try again ] needs.
+        val after = ChatHistory.afterRestart(read).single()
+        assertEquals(waiting.copy(status = TaskStatus.Dropped, result = FRESH_UNMADE), after)
+        // Once made it is an ordinary entry of the Mac's, which loads as it was saved.
+        val made = waiting.copy(thread = "t6f232cb3", fresh = false)
+        assertEquals(listOf(made), ChatHistory.afterRestart(ChatHistory.decode(ChatHistory.encode(listOf(made)))))
+    }
 }

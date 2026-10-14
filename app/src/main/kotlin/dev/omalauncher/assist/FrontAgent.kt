@@ -24,6 +24,17 @@ object Route {
 
     fun mac(threadId: String) = "$MAC $threadId"
 
+    /**
+     * What a route to a fresh thread starts with: separate or urgent work on the project of the thread whose id
+     * follows a space, which is busy. The launcher makes the new thread there, or sends to that one if it is free.
+     */
+    const val MAC_NEW = "mac-new"
+
+    fun macNew(threadId: String) = "$MAC_NEW $threadId"
+
+    /** The id of the busy thread [route] names for a fresh thread on its project, or null for any other route. */
+    fun macNewThread(route: String): String? = if (route.startsWith("$MAC_NEW ")) route.removePrefix("$MAC_NEW ") else null
+
     /** The route to one of the phone's builders by name: a follow-up to what that builder asked or is doing. */
     fun builder(id: BuilderId) = "$BUILD ${id.letter}"
 
@@ -48,6 +59,12 @@ const val MAC_ID_CHARS = 64
 /** A whole mark for a thread, wherever it stands, and one still arriving at the end of what has been said. */
 private val MAC_MARK = Regex(Regex.escape(MAC_OPEN) + "[^<>\\n]{0,80}>>")
 private val MAC_ARRIVING = Regex(Regex.escape(MAC_OPEN) + "[^<>\\n]{0,80}>?")
+
+/**
+ * How a mark for a fresh thread begins. It starts as a thread's mark does, so while it arrives, and wherever it is
+ * only mentioned, it is held back and taken out by the same two readings; it is told apart only once it is read.
+ */
+private const val MAC_NEW_OPEN = "<<" + Route.MAC_NEW
 
 /**
  * How a mark for one of the phone's builders begins, and the same two readings of it as a thread's has:
@@ -176,6 +193,7 @@ fun frontRead(text: String, ended: Boolean = false): FrontRead {
         BuilderId.named(named.removePrefix(Route.BUILD + " "))?.let { return FrontRead.Stop(Route.builder(it)) }
         return FrontRead.Stop(Route.mac(named.removePrefix(Route.MAC + " ").trim()))
     }
+    if (lead.startsWith(MAC_NEW_OPEN)) return macNamed(lead, MAC_NEW_OPEN, MAC_ARRIVING, ended)?.let { FrontRead.HandOver(Route.macNew(it)) } ?: FrontRead.Undecided
     if (lead.startsWith(MAC_OPEN)) return macNamed(lead, MAC_OPEN, MAC_ARRIVING, ended)?.let { FrontRead.HandOver(Route.mac(it)) } ?: FrontRead.Undecided
     if (lead.isEmpty() || (!ended && (listOf(HAND_OVER, BUILD_NAMED_OPEN, MAC_OPEN, STOP, STOP_NAMED_OPEN) + MENDING_MARKS).any { it.startsWith(lead) })) return FrontRead.Undecided
     val said = MENDING_MARKS.fold(text.replace(HAND_OVER, "").replace(BUILD_NAMED_MARK, "").replace(STOP, "")) { left, mark -> left.replace(mark, "") }
@@ -228,7 +246,11 @@ sealed interface FrontRoute {
     /** One builder by name: his words follow up on what it asked or is doing, and wait behind its task if it has one. */
     data class Builder(val builder: BuilderId) : FrontRoute
 
-    data class Mac(val thread: MacThread) : FrontRoute
+    /**
+     * A thread on the Mac. [fresh] is the front agent's word that his request is separate work on that thread's
+     * project, which it is busy with: [macFresh] then says where it goes.
+     */
+    data class Mac(val thread: MacThread, val fresh: Boolean = false) : FrontRoute
 
     /**
      * A mark that names no thread on the board. Nothing is guessed from it: the request goes nowhere, and he
@@ -240,9 +262,10 @@ sealed interface FrontRoute {
 /** [to] is what [FrontRead.HandOver] or [FrontRead.Stop] carries; [mac] is the board the front agent read, null when no Mac is set up. */
 fun frontRoute(to: String, mac: MacBoard?): FrontRoute {
     Route.builderOf(to)?.let { return FrontRoute.Builder(it) }
-    val named = Route.macThread(to) ?: return FrontRoute.Build
+    val fresh = Route.macNewThread(to)
+    val named = fresh ?: Route.macThread(to) ?: return FrontRoute.Build
     val thread = mac?.threads?.firstOrNull { it.id == named } ?: return FrontRoute.Unknown(named)
-    return FrontRoute.Mac(thread)
+    return FrontRoute.Mac(thread, fresh = fresh != null)
 }
 
 /** What he reads in place of an answer when the front agent named a thread that is not there. */
@@ -426,6 +449,7 @@ const val BOARD_THREAD_CHARS = 320
 private const val BOARD_NAME_CHARS = 40
 private const val BOARD_SUMMARY_CHARS = 80
 private const val BOARD_TAIL_CHARS = 120
+private const val BOARD_FOLDER_CHARS = 40
 
 /** The board's part about the Mac: the newest worked [BOARD_THREADS] of the threads a mark can name. */
 fun macBoard(threads: List<MacThread>, reachable: Boolean, seen: Long?, now: Long) =
@@ -444,7 +468,9 @@ private fun macThreadLine(thread: MacThread, now: Long): String {
     val worked = thread.lastWorked?.let { ", last worked ${ago((now - it * 1000).coerceAtLeast(0))}" }.orEmpty()
     val asked = if (summary.isEmpty()) "" else "; Boss last asked it \"${summary.take(BOARD_SUMMARY_CHARS)}${if (summary.length > BOARD_SUMMARY_CHARS) "..." else ""}\""
     val said = if (tail.isEmpty()) "" else "; it last said \"${if (tail.length > BOARD_TAIL_CHARS) "..." else ""}${tail.takeLast(BOARD_TAIL_CHARS)}\""
-    return "- \"${oneLine(thread.name).take(BOARD_NAME_CHARS)}\" id ${thread.id}: $status$worked$asked$said".take(BOARD_THREAD_CHARS)
+    // The folder, so two threads at work on one project can be seen to be: that is when separate work gets a fresh thread.
+    val folder = macFolder(thread.project).takeIf { it.isNotEmpty() }?.let { " in folder ${oneLine(it).take(BOARD_FOLDER_CHARS)}" }.orEmpty()
+    return "- \"${oneLine(thread.name).take(BOARD_NAME_CHARS)}\" id ${thread.id}$folder: $status$worked$asked$said".take(BOARD_THREAD_CHARS)
 }
 
 private fun macLines(mac: MacBoard?): List<String> {
@@ -539,8 +565,8 @@ fun builderGot(task: ChatTask) = task.build && task.status != TaskStatus.Dropped
 /** Whether [builder] itself was sent a task, as [builderGot] has it: what another builder was sent, this one missed. */
 fun gotBy(builder: BuilderId): (ChatTask) -> Boolean = { builderGot(it) && it.builderId == builder }
 
-/** Whether the thread [threadId] on the Mac was sent [task], or is being sent it. */
-fun threadGot(task: ChatTask, threadId: String) = task.thread == threadId && task.status != TaskStatus.Dropped
+/** Whether the thread [threadId] on the Mac was sent [task], or is being sent it. One waiting for a new thread under its id is not. */
+fun threadGot(task: ChatTask, threadId: String) = task.thread == threadId && !task.fresh && task.status != TaskStatus.Dropped
 
 /**
  * What a receiver has missed when a request sent at [asked] is handed to it: the requests before that one which
@@ -577,16 +603,44 @@ fun handOverPreface(exchanges: List<FrontExchange>): String {
 /** What a receiver is sent: [preface], then [words] exactly as he said them. Only ever sent, never shown or saved. */
 fun handOverText(preface: String, words: String) = preface + words
 
+/** How both notes about work in the same project begin. */
+const val SHARED_NOTE_OPEN = "[Note from Oma: "
+
 /**
- * His words out of [sent], which may be a [handOverText]. A thread on the Mac says back what it was sent, and
- * this is how that is matched to the entry that holds his words alone. The sides of an exchange are one line
- * each and start with a name, so the first closing heading on a line of its own is the real one.
+ * What a thread on the Mac is sent first when another thread works in the same project folder right now, so the
+ * two never write over each other's files in one checkout. One line, never shown to him or saved.
+ */
+const val MAC_SHARED_NOTE = SHARED_NOTE_OPEN + "another agent is working in this same project right now. Do this work on a new git branch in its own " +
+    "worktree (git worktree add), not in the shared checkout, and merge it back when you are done. If the merge conflicts, stop and " +
+    "tell Boss which files clash instead of overwriting.]"
+
+/**
+ * The same for one of the phone's builders while the other works. They share one home and whichever repositories
+ * are in it, and which one the other is in is not known, so it says as much and asks for a worktree only in Git.
+ */
+const val PHONE_SHARED_NOTE = SHARED_NOTE_OPEN + "another agent is working on this phone right now and may be in the same project. If this work " +
+    "is in a git repository, do it on a new git branch in its own worktree (git worktree add), not in the shared checkout, and merge it " +
+    "back when you are done. If the merge conflicts, stop and tell Boss which files clash instead of overwriting.]"
+
+/**
+ * [preface] with [note] on its own line before it when [shared], which [builderShares] or [macShares] decides;
+ * otherwise [preface] alone, so a receiver that works by itself gets what it always did.
+ */
+fun sharedPreface(shared: Boolean, note: String, preface: String) = if (shared) note + "\n" + preface else preface
+
+/**
+ * His words out of [sent], which may be a [handOverText], with a note about shared work before it ([sharedPreface]).
+ * A thread on the Mac says back what it was sent, and this is how that is matched to the entry that holds his
+ * words alone. The sides of an exchange are one line each and start with a name, so the first closing heading
+ * on a line of its own is the real one.
  */
 fun handOverWords(sent: String): String {
-    if (!sent.startsWith(CONTEXT_OPEN + "\n")) return sent
+    val note = listOf(MAC_SHARED_NOTE, PHONE_SHARED_NOTE).firstOrNull { sent.startsWith(it + "\n") }
+    val after = if (note == null) sent else sent.removePrefix(note + "\n")
+    if (!after.startsWith(CONTEXT_OPEN + "\n")) return after
     val close = "\n" + CONTEXT_CLOSE + "\n"
-    val at = sent.indexOf(close)
-    return if (at < 0) sent else sent.substring(at + close.length)
+    val at = after.indexOf(close)
+    return if (at < 0) after else after.substring(at + close.length)
 }
 
 /** What the corrections log says an entry was before he sent it to build himself. */

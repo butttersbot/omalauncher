@@ -196,7 +196,8 @@ const val NEEDS_ATTENTION = "needs attention"
  * the Mac at all, the entries alone say how it stands.
  */
 fun macThreadNow(thread: MacThread?, id: String, tasks: List<ChatTask>, asks: List<ThreadAsk>, reachable: Boolean): AgentThread {
-    val entries = tasks.filter { it.thread == id }
+    // One waiting for a new thread only stands under this one's id: it is not queued here.
+    val entries = tasks.filter { it.thread == id && !it.fresh }
     val running = entries.lastOrNull { it.status == TaskStatus.Running }
     val waiting = entries.filter { it.status == TaskStatus.Queued }
     val last = entries.lastOrNull { it.status != TaskStatus.Queued }

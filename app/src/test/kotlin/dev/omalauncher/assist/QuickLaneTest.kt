@@ -280,8 +280,21 @@ class QuickLaneTest {
                 "A bare \"stop\" means whichever one is working; if several are, ask him which.",
         ))
         assertEquals("<<stop mac ID>>", stopMark(Route.mac("ID")))
+        // Separate work on a busy project gets a fresh thread; what continues the running work waits on its thread, and doubt waits.
+        // Tried on the real model, 2026-10-13: without "new work too, never <<build>>" it sent separate work to the builder, and
+        // without the words in brackets it sent it to the busy thread or a broken build to the builder.
+        assertTrue(told.contains(
+            "That holds for new work too, never <<build>>, and a project's broken build is that project's work. Following up on or " +
+                "continuing what a thread is doing (also, and, the same for, go on), even without naming its project, gets its <<mac ID>> " +
+                "even while it works, and waits its turn there. Separate work on a project whose thread is working (separately, a new " +
+                "feature, another thing, anything urgent or broken) must not wait behind it: it gets the single line <<mac-new ID>> with " +
+                "that thread's id, which starts a fresh thread on that project. When unsure whether it continues the running work, use <<mac ID>>: waiting is safe.",
+        ))
+        assertEquals("<<mac-new ID>>", handOverMark(Route.macNew("ID")))
+        assertEquals(1, Regex("<<mac-new").findAll(told).count())
         // Raised from 1,200 on purpose (2026-10-13): the rule for stopping a thread is some 210 characters and nothing pinned could give them up.
-        assertTrue(quickMacRules().length < 1_400)
+        // Raised again from 1,400 (2026-10-13): the rule for a fresh thread is some 600 characters, each part of it tried on the real model.
+        assertTrue(quickMacRules().length < 2_000)
         // The command differs only in what it is told; what it may do is the same.
         val command = quickCommand("question", id, mac = true)
         assertTrue(command.contains("<<mac ID>>"))

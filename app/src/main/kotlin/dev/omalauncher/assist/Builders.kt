@@ -70,6 +70,13 @@ fun pickBuilder(named: BuilderId?, loads: Map<BuilderId, BuilderLoad>): BuilderI
     return order.firstOrNull { !load(it).working } ?: order.minBy { load(it).waiting }
 }
 
+/**
+ * Whether [receiver], handed work now, gets [PHONE_SHARED_NOTE] ahead of it: the builders share one home and its
+ * repositories, so it does while another builder has a task. [working] is whether each builder has one; the
+ * receiver's own task does not count, since work that waits behind it never runs beside it.
+ */
+fun builderShares(receiver: BuilderId, working: Map<BuilderId, Boolean>): Boolean = working.any { (id, busy) -> id != receiver && busy }
+
 /** What a bare order to stop, which names no builder, comes to while [working] are the builders with a task. */
 sealed interface BareStop {
     /** Nothing runs: nothing is stopped, and he is told so. */

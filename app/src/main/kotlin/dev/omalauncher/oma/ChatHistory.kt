@@ -76,6 +76,11 @@ data class ChatTask(
     val answeredBy: String = "",
     /** Which of the phone's builders a request of the build lane's went to: empty for builder A, the letter of any other. */
     val builder: String = "",
+    /**
+     * Separate work for the project of [thread], which was busy: a new thread is made there and his words go to it.
+     * Until it is made the entry stands under the busy thread's id, and once made it is that new thread's and this is false.
+     */
+    val fresh: Boolean = false,
 ) {
     /** Answered by the front agent itself, beside the build task: never by it or in its queue. */
     val quick get() = agent == QUICK_AGENT
@@ -104,6 +109,9 @@ const val QUICK_AGENT = "quick"
  * thread as interrupted; nothing else remembers it, so it is not sent later behind his back. Never rename.
  */
 const val UNDECIDED_AGENT = "oma"
+
+/** What a request reads that was to go to a new thread on the Mac when the app closed before the thread was made. */
+const val FRESH_UNMADE = "Oma closed before the new thread was made. Nothing was sent."
 
 /** The limits of the saved thread and its JSON form. */
 object ChatHistory {
@@ -169,9 +177,12 @@ object ChatHistory {
      * the Mac is the exception: the Mac goes on with it whatever becomes of this app, so it loads as it was
      * saved and is followed again from its thread's last event. Only its waiting approvals go, to be drawn
      * again from what the Mac says is still waiting. A request that waited for the front agent to read it was
-     * never anyone's follow-up: it loads as interrupted with his words kept, as one it was reading does.
+     * never anyone's follow-up: it loads as interrupted with his words kept, as one it was reading does. One that
+     * waited for a new thread to be made on the Mac was sent nowhere: it says so and can be sent again.
      */
     fun afterRestart(tasks: List<ChatTask>) = tasks.map { saved ->
+        // Making a new thread for it ended with the process, before anything was sent: his to send again.
+        if (saved.mac && saved.fresh && saved.status == TaskStatus.Queued) return@map saved.copy(status = TaskStatus.Dropped, result = FRESH_UNMADE)
         if (saved.mac) return@map saved.copy(approvals = saved.approvals.filter { it.answer != ApprovalAnswer.Waiting }.map { it.copy(key = "") })
         if (saved.undecided && saved.status == TaskStatus.Queued) return@map saved.copy(status = TaskStatus.Interrupted)
         val task = dropped(saved, FollowUpQueue.RESTARTED)
@@ -192,6 +203,7 @@ object ChatHistory {
             .apply { if (task.direct) put("direct", true) }
             .apply { if (task.answeredBy.isNotEmpty()) put("answeredBy", task.answeredBy) }
             .apply { if (task.builder.isNotEmpty()) put("builder", task.builder) }
+            .apply { if (task.fresh) put("fresh", true) }
     })).toString()
 
     /** The saved thread; an unreadable file is an empty thread, and an unreadable task is left out. */
@@ -214,6 +226,7 @@ object ChatHistory {
                     direct = task.optBoolean("direct"),
                     answeredBy = task.optString("answeredBy"),
                     builder = task.optString("builder"),
+                    fresh = task.optBoolean("fresh"),
                 ))
             }.getOrNull()
         }.takeLast(MAX_TASKS)

@@ -486,12 +486,12 @@ class FrontAgentTest {
         )
         assertEquals(
             "[Board, for you only; Boss does not see it]\nBuilder: idle. It has not been asked anything yet.\nMac: reachable.\nProject threads on the Mac:\n" +
-                "- \"Scratch\" id t1a2b3c4d: working, last worked 3 min ago; Boss last asked it \"what files are 'here'\"; it last said \"Files here: notes.md\"\n" +
-                "- \"Phone proof\" id t9z8y7x6w: idle\n[Boss says]",
+                "- \"Scratch\" id t1a2b3c4d in folder x: working, last worked 3 min ago; Boss last asked it \"what files are 'here'\"; it last said \"Files here: notes.md\"\n" +
+                "- \"Phone proof\" id t9z8y7x6w in folder x: idle\n[Boss says]",
             boardText(BuildBoard(working = false), macBoard(threads, reachable = true, seen = now, now = now)),
         )
         val away = boardText(BuildBoard(working = false), macBoard(threads, reachable = false, seen = now - 5 * minute, now = now))
-        assertTrue(away, away.contains("\nMac: not reachable, last seen 5 min ago.\nProject threads on the Mac:\n- \"Scratch\" id t1a2b3c4d: "))
+        assertTrue(away, away.contains("\nMac: not reachable, last seen 5 min ago.\nProject threads on the Mac:\n- \"Scratch\" id t1a2b3c4d in folder x: "))
         assertTrue(boardText(BuildBoard(false), macBoard(emptyList(), false, null, now)).contains("\nMac: not reachable, not seen yet.\nProject threads on the Mac: none.\n[Boss says]"))
         assertTrue(frontPrompt(BuildBoard(false), "  go on  ", macBoard(threads, true, now, now)).endsWith("\n[Boss says]\n  go on  "))
     }
@@ -733,5 +733,107 @@ class FrontAgentTest {
         assertEquals(listOf("is it raining"), handOverContext(tasks, 5, gotBy(BuilderId.B)).map { it.said })
         // The builders together got the dock last, as they always did before there were two.
         assertEquals(handOverContext(tasks, 5, gotBy(BuilderId.B)), handOverContext(tasks, 5, ::builderGot))
+    }
+
+    // Separate work on a busy project (Boss 2026-10-13: "if I want to work on a separate thing ... spin up a fresh thread")
+
+    @Test fun aMarkForAFreshThreadIsNotDecidedUntilItClosesAndIsNeverReadAsTheThreadsOwn() {
+        assertEquals("<<mac-new t5e121ba2>>", handOverMark(Route.macNew("t5e121ba2")))
+        assertEquals("t5e121ba2", Route.macNewThread("mac-new t5e121ba2")); assertNull(Route.macNewThread("mac t5e121ba2")); assertNull(Route.macThread("mac-new t5e121ba2"))
+        for (partial in listOf("<<mac-", "<<mac-new", "<<mac-new ", "<<mac-new t5e1", "<<mac-new t5e121ba2>", " `<<mac-new t5")) assertEquals(partial, FrontRead.Undecided, frontRead(partial))
+        for (whole in listOf("<<mac-new t5e121ba2>>", " <<mac-new t5e121ba2>>\n", "`<<mac-new t5e121ba2>>`", "<<mac-new  t5e121ba2 >> on it", "<<mac-new t5e121ba2>>\nStarting.")) {
+            assertEquals(whole, FrontRead.HandOver("mac-new t5e121ba2"), frontRead(whole))
+            assertEquals(whole, FrontRead.HandOver("mac-new t5e121ba2"), frontRead(whole, ended = true))
+        }
+        // As it streams in, nothing is decided until the closing bracket, and it never passes for the thread's own mark.
+        var said = QuickAnswer()
+        val reads = listOf("<<m", "ac", "-new", " t5e", "121ba2", ">", ">").map { piece ->
+            said = said.after(QuickEvent.Delta(piece))
+            frontRead(said.text)
+        }
+        assertEquals(List(6) { FrontRead.Undecided } + FrontRead.HandOver("mac-new t5e121ba2"), reads)
+        // The thread's own mark is still read as it was.
+        assertEquals(FrontRead.HandOver("mac t5e121ba2"), frontRead("<<mac t5e121ba2>>"))
+    }
+
+    @Test fun aMarkForAFreshThreadThatIsOnlyMentionedOrOddIsNeverShownAndNeverGuessed() {
+        // A mention hands nothing over and is shown without it; half of one at the end is held back while more may come.
+        assertEquals(FrontRead.Answer("I'll use  for that."), frontRead("I'll use <<mac-new t5e121ba2>> for that.", ended = true))
+        assertEquals(FrontRead.Answer("Sure!"), frontRead("Sure! <<mac-new t5e121ba2>>"))
+        assertEquals(FrontRead.Answer("Sure!"), frontRead("Sure! <<mac-new t5"))
+        // Odd characters are carried as they stand, and only an exact id on the board is a thread.
+        assertEquals(FrontRead.HandOver("mac-new t1; rm -rf /"), frontRead("<<mac-new t1; rm -rf />>"))
+        // Never closed, broken over a line or too long: a hand-over to nowhere, never an answer with a mark in it.
+        for (broken in listOf("<<mac-new t1", "<<mac-new t1>", "<<mac-new")) assertEquals(broken, FrontRead.HandOver("mac-new "), frontRead(broken, ended = true))
+        assertEquals(FrontRead.HandOver("mac-new "), frontRead("<<mac-new t1\nand more"))
+        assertEquals(FrontRead.HandOver("mac-new "), frontRead("<<mac-new " + "y".repeat(MAC_ID_CHARS + 1) + ">>"))
+        // A stop that names it stops nothing on a guess.
+        assertTrue(frontRoute((frontRead("<<stop mac-new t5e121ba2>>") as FrontRead.Stop).of, macBoard(listOf(onMac("t5e121ba2")), true, now, now)) is FrontRoute.Unknown)
+    }
+
+    @Test fun aFreshThreadsMarkGoesOnlyToAThreadOnTheBoardAndSaysItIsSeparateWork() {
+        val board = macBoard(listOf(onMac("t5e121ba2", "FF4 better menu mod", MacThreadStatus.Working), onMac("t9z8y7x6w", "Scratch")), reachable = true, seen = now, now = now)
+        assertEquals(FrontRoute.Mac(board.threads.first { it.id == "t5e121ba2" }, fresh = true), frontRoute((frontRead("<<mac-new t5e121ba2>>") as FrontRead.HandOver).to, board))
+        assertEquals(FrontRoute.Mac(board.threads.first { it.id == "t5e121ba2" }, fresh = false), frontRoute("mac t5e121ba2", board))
+        // An id not on the board is what an unknown thread's mark always was: he is asked which project, and nothing is sent.
+        for (named in listOf("", "T5E121BA2", "t5e121ba", "FF4 better menu mod", "t1; rm -rf /")) assertEquals(named, FrontRoute.Unknown(named), frontRoute(Route.macNew(named), board))
+        assertEquals(FrontRoute.Unknown("t5e121ba2"), frontRoute(Route.macNew("t5e121ba2"), null))
+        // A mark that names a thread but is not borne out as a stop stays what it was.
+        assertEquals(FrontRead.HandOver("mac-new t5e121ba2"), borneOut(frontRead("<<mac-new t5e121ba2>>"), "separately, add save anywhere"))
+    }
+
+    @Test fun theBoardShowsEachThreadsFolderSoTwoOnOneProjectCanBeSeen() {
+        val threads = listOf(
+            onMac("t5e121ba2", "FF4 better menu mod", MacThreadStatus.Working, worked = 1_760_000_540).copy(project = "~/ClaudeSync/projects/ffiv-ds-better-menu-mod"),
+            onMac("t6f232cb3", "FF4 better menu mod 2", worked = 1_760_000_500).copy(project = "/Users/boss/ClaudeSync/projects/ffiv-ds-better-menu-mod/"),
+            onMac("t7a343dc4", "No folder", worked = 1_760_000_400).copy(project = ""),
+        )
+        val lines = boardText(BuildBoard(false), macBoard(threads, true, now, now)).lines().filter { it.startsWith("- ") }
+        assertEquals("- \"FF4 better menu mod\" id t5e121ba2 in folder ffiv-ds-better-menu-mod: working, last worked 1 min ago", lines[0])
+        assertEquals("- \"FF4 better menu mod 2\" id t6f232cb3 in folder ffiv-ds-better-menu-mod: idle, last worked 1 min ago", lines[1])
+        assertEquals("- \"No folder\" id t7a343dc4: idle, last worked 3 min ago", lines[2])
+    }
+
+    // Two agents in one project at once (Boss 2026-10-13: "we'll just have to make sure there's no conflicts")
+
+    /** Pinned: what a receiver is told when another agent works in the same project, word for word. */
+    @Test fun theNoteAboutSharedWorkSaysWorktreeAndStopOnAClash() {
+        assertEquals(
+            "[Note from Oma: another agent is working in this same project right now. Do this work on a new git branch in its own worktree " +
+                "(git worktree add), not in the shared checkout, and merge it back when you are done. If the merge conflicts, stop and tell " +
+                "Boss which files clash instead of overwriting.]",
+            MAC_SHARED_NOTE,
+        )
+        assertEquals(
+            "[Note from Oma: another agent is working on this phone right now and may be in the same project. If this work is in a git " +
+                "repository, do it on a new git branch in its own worktree (git worktree add), not in the shared checkout, and merge it back " +
+                "when you are done. If the merge conflicts, stop and tell Boss which files clash instead of overwriting.]",
+            PHONE_SHARED_NOTE,
+        )
+        for (note in listOf(MAC_SHARED_NOTE, PHONE_SHARED_NOTE)) {
+            assertFalse(note.contains("\n")); assertTrue(note.startsWith(SHARED_NOTE_OPEN))
+            for (never in listOf("<<", "approv", "--force", "reset --hard")) assertFalse(never, note.contains(never))
+        }
+    }
+
+    @Test fun theNoteGoesBeforeTheContextAndHisWordsAreStillFoundBehindBoth() {
+        val context = handOverPreface(listOf(FrontExchange("what time is it", "Noon.")))
+        val sent = handOverText(sharedPreface(true, MAC_SHARED_NOTE, context), "fix the title screen")
+        assertEquals(MAC_SHARED_NOTE + "\n" + CONTEXT_OPEN + "\nBoss: what time is it\nOma: Noon.\n" + CONTEXT_CLOSE + "\nfix the title screen", sent)
+        assertEquals("fix the title screen", handOverWords(sent))
+        // With nothing to tell besides, the note stands alone before his words; without it, nothing changes at all.
+        assertEquals("fix it\nnow", handOverWords(handOverText(sharedPreface(true, PHONE_SHARED_NOTE, ""), "fix it\nnow")))
+        assertEquals(context, sharedPreface(false, MAC_SHARED_NOTE, context)); assertEquals("", sharedPreface(false, PHONE_SHARED_NOTE, ""))
+        // His own words that only mention it, or a note not on its own line, are his words.
+        assertEquals("$MAC_SHARED_NOTE and more", handOverWords("$MAC_SHARED_NOTE and more"))
+    }
+
+    @Test fun aBuilderIsToldOfSharedWorkOnlyWhileTheOtherWorks() {
+        assertTrue(builderShares(BuilderId.A, mapOf(BuilderId.A to false, BuilderId.B to true)))
+        assertTrue(builderShares(BuilderId.B, mapOf(BuilderId.A to true, BuilderId.B to true)))
+        // Its own task is not another agent beside it, and two idle builders share nothing.
+        assertFalse(builderShares(BuilderId.A, mapOf(BuilderId.A to true, BuilderId.B to false)))
+        assertFalse(builderShares(BuilderId.B, mapOf(BuilderId.A to false, BuilderId.B to false)))
+        assertFalse(builderShares(BuilderId.A, emptyMap()))
     }
 }

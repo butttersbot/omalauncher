@@ -368,4 +368,129 @@ class MacThreadsTest {
         // With nothing known of who runs the thread, it stays unnamed.
         assertEquals("", macApply(listOf(taken(8)), id, MacEvent.Text(1, 0, "x")).single().answeredBy)
     }
+
+    // Separate work on a busy project (Boss 2026-10-13: "spin up a fresh thread" ... "make sure there's no conflicts")
+
+    private fun on(threadId: String, project: String = "~/ClaudeSync/projects/ffiv-ds-better-menu-mod", status: MacThreadStatus = MacThreadStatus.Working, name: String = "FF4 better menu mod", turns: Int = 0) =
+        MacThread(threadId, name, project, ThreadHome.Mac, "claude", "", status, null, "", turns, 0, emptyList())
+
+    @Test fun separateWorkForAFreeThreadGoesToItAndForABusyOneToANewThreadInItsFolder() {
+        val ff4 = on("t5e121ba2")
+        // Free after all: the thread named takes it, as its own mark would have sent it.
+        for (resting in listOf(MacThreadStatus.Idle, MacThreadStatus.Interrupted, MacThreadStatus.Unknown)) {
+            val free = ff4.copy(status = resting)
+            assertEquals(resting.toString(), MacFresh.Same(free), macFresh(free, listOf(free)))
+        }
+        // Busy in any way: a new thread beside it, in the same folder exactly as the Mac gave it.
+        for (busy in listOf(ff4, ff4.copy(status = MacThreadStatus.Waiting), ff4.copy(status = MacThreadStatus.Idle, waitingTurns = 1))) {
+            assertEquals(MacFresh.Make("FF4 better menu mod 2", "~/ClaudeSync/projects/ffiv-ds-better-menu-mod"), macFresh(busy, listOf(busy)))
+        }
+        // The Mac may not have said yet that it works on what the phone just sent it.
+        val idle = ff4.copy(status = MacThreadStatus.Idle)
+        assertTrue(macFresh(idle, listOf(idle), owed = setOf("t5e121ba2")) is MacFresh.Make)
+        assertTrue(macBusy(idle, owed = true)); assertFalse(macBusy(idle))
+    }
+
+    @Test fun aNewThreadIsNamedAfterTheBusyOneWithTheNextFreeNumber() {
+        assertEquals("FF4 better menu mod 2", macFreshName("FF4 better menu mod", listOf("FF4 better menu mod", "Scratch")))
+        assertEquals("FF4 better menu mod 3", macFreshName("FF4 better menu mod", listOf("FF4 better menu mod", "ff4 better menu mod 2")))
+        assertEquals("FF4 better menu mod 4", macFreshName("FF4 better menu mod 2", listOf("FF4 better menu mod", "FF4 better menu mod 2", "FF4 better menu mod 3")))
+        assertEquals("FF4 2", macFreshName("FF4", listOf("FF4")))
+        assertEquals("Mac 2", macFreshName("  ", emptyList()))
+        val long = macFreshName("n".repeat(80), emptyList())
+        assertEquals(60, long.length); assertTrue(long.endsWith(" 2"))
+        // The name goes from the board to the Mac and back to the chat's tabs: no line breaks, nothing else added.
+        assertEquals("Scratch 2", macFreshName(" Scratch ", listOf("Scratch")))
+    }
+
+    @Test fun noMoreThanThreeWorkInOneFolderThisWayAndTheRestWaitOnTheLeastLoaded() {
+        assertEquals(3, MAC_THREADS_PER_PROJECT)
+        val ff4 = on("t5e121ba2", turns = 2)
+        val two = on("t6f232cb3", "/Users/boss/ClaudeSync/projects/ffiv-ds-better-menu-mod/", name = "FF4 better menu mod 2", turns = 1)
+        val three = on("t7a343dc4", status = MacThreadStatus.Waiting, name = "FF4 better menu mod 3", turns = 1)
+        val elsewhere = on("t8b454ed5", "~/Projects/other", name = "Other")
+        // Two at work there: one more may be made, and the name passes the ones taken.
+        assertEquals(MacFresh.Make("FF4 better menu mod 3", ff4.project), macFresh(ff4, listOf(ff4, two, elsewhere, elsewhere.copy(id = "t9", name = "Other 2"))))
+        // Three: it waits on the one with the fewest turns waiting, the first of them on a tie, and says how many work there.
+        assertEquals(MacFresh.Queue(two, 3), macFresh(ff4, listOf(ff4, two, three, elsewhere)))
+        assertEquals(MacFresh.Queue(ff4.copy(waitingTurns = 0), 3), macFresh(ff4.copy(waitingTurns = 0), listOf(ff4, two, three)))
+        // A resting thread in the folder, or a busy one in another folder, does not count.
+        assertTrue(macFresh(ff4, listOf(ff4, two, three.copy(status = MacThreadStatus.Idle, waitingTurns = 0), elsewhere)) is MacFresh.Make)
+        assertEquals("3 threads already work in ffiv-ds-better-menu-mod, so this waits its turn", macCappedStep(3, macFolder(ff4.project)))
+        assertEquals("3 threads already work in this project, so this waits its turn", macCappedStep(3, macFolder("")))
+    }
+
+    @Test fun aFolderIsKnownWhetherTheHomeIsWrittenOutOrNot() {
+        assertEquals("~/Projects/x", macProjectKey("/Users/boss/Projects/x/")); assertEquals("~/Projects/x", macProjectKey(" ~/Projects/x "))
+        assertEquals("~/Projects/x", macProjectKey("/home/boss/Projects/x")); assertEquals("~", macProjectKey("/Users/boss"))
+        assertEquals("/opt/Users/boss/x", macProjectKey("/opt/Users/boss/x"))
+        assertEquals("ffiv-ds-better-menu-mod", macFolder("~/ClaudeSync/projects/ffiv-ds-better-menu-mod/")); assertEquals("", macFolder(""))
+    }
+
+    @Test fun theNoteAboutSharedWorkGoesOnlyToAThreadThatIsNotAloneInItsFolder() {
+        val ff4 = on("t5e121ba2")
+        val fresh = on("t6f232cb3", "/Users/boss/ClaudeSync/projects/ffiv-ds-better-menu-mod", status = MacThreadStatus.Idle, name = "FF4 better menu mod 2")
+        val other = on("t8b454ed5", "~/Projects/other", name = "Other")
+        // A new thread beside a busy one gets it; so does the busy one when the new one works.
+        assertTrue(macShares(fresh.id, listOf(ff4, fresh, other)))
+        assertTrue(macShares(ff4.id, listOf(ff4, fresh.copy(status = MacThreadStatus.Working))))
+        // Alone at work in its folder it does not, however busy it is itself, or others elsewhere are.
+        assertFalse(macShares(ff4.id, listOf(ff4, fresh, other)))
+        assertFalse(macShares(fresh.id, listOf(ff4.copy(status = MacThreadStatus.Idle), fresh, other)))
+        // A request the phone has not seen finished there counts as work, and one not on the list shares nothing.
+        assertTrue(macShares(fresh.id, listOf(ff4.copy(status = MacThreadStatus.Idle), fresh), owed = setOf(ff4.id)))
+        assertFalse(macShares("t0", listOf(ff4, fresh))); assertFalse(macShares("t1", listOf(on("t1", ""), on("t2", ""))))
+        // What is owed is read from the entries: unfinished ones only, never the one being sent, never one still waiting for a new thread.
+        val tasks = listOf(
+            macHandOver(ChatTask(1, UNDECIDED_AGENT, "a"), ff4),
+            macTaken(macHandOver(ChatTask(2, UNDECIDED_AGENT, "b"), other)),
+            macHandOver(ChatTask(3, UNDECIDED_AGENT, "c"), fresh).copy(status = TaskStatus.Done),
+            macFreshHandOver(ChatTask(4, UNDECIDED_AGENT, "d"), ff4.copy(id = "t9"), "x 2"),
+        )
+        assertEquals(setOf(ff4.id, other.id), macOwed(tasks)); assertEquals(setOf(other.id), macOwed(tasks, except = 1))
+    }
+
+    @Test fun anEntryWaitingForANewThreadCarriesItsReceiptAndBecomesThatThreadsOnceMade() {
+        val ff4 = on("t5e121ba2")
+        val entry = macFreshHandOver(ChatTask(5, UNDECIDED_AGENT, "add save anywhere"), ff4, "FF4 better menu mod 2")
+        assertEquals(ChatTask(5, "→ FF4 better menu mod 2", "add save anywhere", thread = ff4.id, threadName = "FF4 better menu mod 2", status = TaskStatus.Queued, fresh = true), entry)
+        assertTrue(entry.mac); assertFalse(entry.build)
+        assertEquals(MAC_MAKING, macEntryLabel(entry.status, sending = true, reachable = true, approvals = false, fresh = true))
+        assertEquals("Starting a new thread on the Mac…", waitingLine(entry, macLabel = MAC_MAKING)?.text)
+        // Nothing the busy thread says is about it: not its words taken, not a stop, not a context's receiver.
+        val tasks = listOf(entry)
+        assertEquals(tasks, macApply(tasks, ff4.id, MacEvent.Message(1, 0, "add save anywhere")))
+        assertEquals(tasks, macApply(tasks, ff4.id, MacEvent.Stopped(2, 0, 0), inFlight = setOf(5)))
+        assertFalse(threadGot(entry, ff4.id))
+        assertEquals(tasks, macAbandon(tasks, ff4.id, MAC_THREAD_GONE))
+        // With no Mac at all, it needs his attention like every other.
+        assertEquals(TaskStatus.Failed, macAbandon(tasks, null, MAC_NOT_SET_UP).single().status)
+        // Made: the entry is the new thread's, and its words are taken as that thread's.
+        val made = on("t6f232cb3", name = "FF4 better menu mod 2", status = MacThreadStatus.Idle)
+        val now = macMade(entry, made)
+        assertEquals(ChatTask(5, "→ FF4 better menu mod 2", "add save anywhere", thread = made.id, threadName = "FF4 better menu mod 2", status = TaskStatus.Queued), now)
+        assertEquals(TaskStatus.Running, macApply(listOf(now), made.id, MacEvent.Message(1, 0, MAC_SHARED_NOTE + "\nadd save anywhere")).single().status)
+        // One that ended meanwhile, or was never waiting for a thread, stays as it is.
+        assertEquals(entry.copy(status = TaskStatus.Failed), macMade(entry.copy(status = TaskStatus.Failed), made))
+        assertEquals(handed(6), macMade(handed(6), made))
+        // A hand-over to the busy thread after all, at a second try, is an ordinary entry.
+        assertFalse(macHandOver(entry, ff4).fresh)
+    }
+
+    @Test fun aNewThreadThatCouldNotBeMadeKeepsHisWordsSaysWhyAndCanBeTriedAgain() {
+        assertNull(macMadeReason(MacAnswer.Ok(on("t6f232cb3"))))
+        assertEquals(MAC_UNREACHABLE, macMadeReason(MacAnswer.Unreachable))
+        assertEquals(MAC_KEY_REFUSED, macMadeReason(MacAnswer.Unauthorized))
+        assertEquals("The Mac would not make a new thread in that folder: it takes only ~/Projects and ~/ClaudeSync/projects.", macMadeReason(MacAnswer.Refused("outside", listOf("~/Projects", "~/ClaudeSync/projects"))))
+        assertEquals("The Mac would not make a new thread in that folder.", macMadeReason(MacAnswer.Refused("outside", emptyList())))
+        assertEquals("The Mac could not make a new thread (HTTP 500).", macMadeReason(MacAnswer.Failed(500, "")))
+        val entry = macFreshHandOver(ChatTask(5, UNDECIDED_AGENT, "add save anywhere"), on("t5e121ba2"), "FF4 better menu mod 2")
+        val unsent = macUnsent(entry, macMadeReason(MacAnswer.Unauthorized)!!)
+        assertEquals(TaskStatus.Dropped, unsent.status); assertEquals("add save anywhere", unsent.prompt); assertEquals(MAC_KEY_REFUSED, unsent.result)
+        // Sent again, it waits for a new thread once more, under the same busy thread.
+        assertEquals(entry, macRetried(unsent))
+        // The Mac's own summary of a request sent with the note is his first line, as with context.
+        val noted = on("t6f232cb3").copy(summary = MAC_SHARED_NOTE)
+        assertEquals("add save anywhere", macOwnSummary(noted, listOf(macMade(entry, noted))).summary)
+    }
 }

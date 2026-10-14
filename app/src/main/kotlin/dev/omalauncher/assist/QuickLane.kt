@@ -233,7 +233,7 @@ object QuickLane {
                             handed = when (val route = frontRoute(read.to, mac)) {
                                 FrontRoute.Build -> pass(context, asked, prompt, page, away)
                                 is FrontRoute.Builder -> pass(context, asked, prompt, page, away, route.builder)
-                                is FrontRoute.Mac -> passToMac(context, asked, prompt, route.thread, away)
+                                is FrontRoute.Mac -> passToMac(context, asked, prompt, route.thread, away, route.fresh)
                                 is FrontRoute.Unknown -> unplaced(context, asked, prompt, away)
                             }
                             session?.let { next = it }
@@ -292,7 +292,8 @@ object QuickLane {
      * when the front agent named one, which follows up on what that one asked or is doing, and otherwise as new
      * work to whichever builder is free; sent now, or waiting behind the running task. The builder was not there
      * for what he and the front agent said since it was last sent anything, so that goes ahead of his words as
-     * [handOverPreface] marks it; the entry, the notification and the logs keep his words alone. The entry sent
+     * [handOverPreface] marks it, and while the other builder works, [PHONE_SHARED_NOTE] goes before that; the
+     * entry, the notification and the logs keep his words alone. The entry sent
      * at [asked] then goes, since the build lane has filed the request as its own; if the build lane refuses,
      * the entry stays and says why, which is the only time a failure here is mentioned. False if he stopped it
      * first: nothing is sent then.
@@ -302,7 +303,11 @@ object QuickLane {
         else {
             val log = ChatLog.of(context)
             try {
-                AgentTasks.handOver(context, prompt, page, builder) { to -> handOverPreface(handOverContext(log.tasks, asked, gotBy(to))) }
+                // Read under the build lane's lock, where the builder is chosen, so the note says how the others stand at that moment.
+                AgentTasks.handOver(context, prompt, page, builder) { to ->
+                    val shared = builderShares(to, AgentTasks.builders.associate { it.id to it.working })
+                    sharedPreface(shared, PHONE_SHARED_NOTE, handOverPreface(handOverContext(log.tasks, asked, gotBy(to))))
+                }
                 log.handedOver(asked)
             } catch (e: Exception) {
                 val reason = e.message ?: "The request could not be sent."
@@ -317,13 +322,14 @@ object QuickLane {
     /**
      * Gives [prompt], his words, to [thread] on the Mac; [MacThreads] puts what the thread missed ahead of them
      * as it sends. The entry sent at [asked] becomes that thread's at once, and [MacThreads] asks the Mac and sends on a thread of its own, so the front agent
-     * is free for his next request meanwhile. Nothing here can end with the phone's builder doing the work
+     * is free for his next request meanwhile. [fresh] is separate work on the project [thread] is busy with,
+     * which [MacThreads] gives a new thread there. Nothing here can end with the phone's builder doing the work
      * instead. False if he stopped it first: nothing is sent then.
      */
-    private fun passToMac(context: Context, asked: Long, prompt: String, thread: MacThread, away: Boolean): Boolean = synchronized(this) {
+    private fun passToMac(context: Context, asked: Long, prompt: String, thread: MacThread, away: Boolean, fresh: Boolean): Boolean = synchronized(this) {
         if (stopping) false
         else {
-            MacThreads.handOver(context, asked, prompt, thread, away)
+            MacThreads.handOver(context, asked, prompt, thread, away, fresh)
             true
         }
     }
@@ -494,14 +500,21 @@ fun quickPoolRules(): String =
 
 /**
  * What the front agent is told besides, on a phone that has a Mac set up: which work stays with the phone's
- * builder, how work is handed to a project thread, where a follow-up goes, what to do with work that has
- * no thread, and how a thread's work is stopped. Each rule is pinned by QuickLaneTest.
+ * builder, how work is handed to a project thread, where a follow-up goes, when separate work on a busy
+ * project gets a fresh thread, what to do with work that has no thread, and how a thread's work is stopped.
+ * Each rule is pinned by QuickLaneTest.
  */
 fun quickMacRules(): String =
     " The board also lists the project threads on the Mac, each with a name and an id, and they change where work goes. The builder is " +
         "for this phone only: the launcher, its widgets, pages, notes and stickers, phone control and anything else about this phone " +
         "still gets $HAND_OVER. Work on a project that has a thread goes to that thread: reply with the single line " +
-        "${handOverMark(Route.mac("ID"))} and nothing else, ID being that thread's id copied exactly from the board. An answer, " +
+        "${handOverMark(Route.mac("ID"))} and nothing else, ID being that thread's id copied exactly from the board. That holds for " +
+        "new work too, never $HAND_OVER, and a project's broken build is that project's work. Following up on or continuing what a " +
+        "thread is doing (also, and, the same for, go on), even without naming its project, gets its ${handOverMark(Route.mac("ID"))} " +
+        "even while it works, and waits its turn there. Separate work on a project whose thread is working (separately, a new feature, " +
+        "another thing, anything urgent or broken) must not wait behind it: it gets the single line ${handOverMark(Route.macNew("ID"))} " +
+        "with that thread's id, which starts a fresh thread on that project. When unsure whether it continues the running work, use " +
+        "${handOverMark(Route.mac("ID"))}: waiting is safe. An answer, " +
         "confirmation, correction or addition goes to whichever of the builder or a thread asked for it or last worked, as the board " +
         "shows. Its \"Last to speak\" line says who that is: a reply such as yes, no or go on is for the newest question it names, " +
         "and a thread's question is answered with that thread's mark, never $HAND_OVER. If a work request plainly belongs to no listed thread and is not phone work, do not hand it over: ask him in one short " +
