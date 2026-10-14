@@ -600,4 +600,87 @@ class FrontAgentTest {
         assertEquals(listOf(FrontExchange("a", "A.")), handOverContext(dropped, 4) { threadGot(it, "t1a2b3c4d") })
         assertEquals(emptyList<FrontExchange>(), handOverContext(listOf(built(1, "x", result = "X."), ChatTask(2, UNDECIDED_AGENT, "yes")), 2, ::builderGot))
     }
+
+    // The phone's two builders (Boss 2026-10-13: two builders)
+
+    @Test fun aMarkNamesOneBuilderAndIsNotDecidedUntilItCloses() {
+        assertEquals("<<build A>>", handOverMark(Route.builder(BuilderId.A))); assertEquals("<<build B>>", handOverMark(Route.builder(BuilderId.B)))
+        assertEquals("<<stop A>>", stopMark(Route.builder(BuilderId.A))); assertEquals("<<stop B>>", stopMark(Route.builder(BuilderId.B)))
+        assertEquals(BuilderId.B, Route.builderOf("build B")); assertNull(Route.builderOf(Route.BUILD)); assertNull(Route.builderOf("mac B")); assertNull(Route.builderOf("build C"))
+        for (partial in listOf("<<build ", "<<build B", "<<build B>", " `<<build A")) assertEquals(partial, FrontRead.Undecided, frontRead(partial))
+        for (whole in listOf("<<build B>>", " <<build B>>\n", "`<<build B>>`", "<<build b>> sure", "<<build 2>>", "<<build  B >>")) {
+            assertEquals(whole, FrontRead.HandOver("build B"), frontRead(whole))
+            assertEquals(whole, FrontRead.HandOver("build B"), frontRead(whole, ended = true))
+        }
+        assertEquals(FrontRead.HandOver("build A"), frontRead("<<build A>>"))
+        // One that names no builder, or never closes, is still work for the phone: new work, never nowhere and never shown.
+        for (odd in listOf("<<build C>>", "<<build the other one>>", "<<build >>")) assertEquals(odd, FrontRead.HandOver(Route.BUILD), frontRead(odd))
+        assertEquals(FrontRead.HandOver(Route.BUILD), frontRead("<<build B", ended = true))
+        // A mention is shown without it, and half of one at the end is held back while more may come.
+        assertEquals(FrontRead.Answer("Sure!"), frontRead("Sure! <<build B>>", ended = true))
+        assertEquals(FrontRead.Answer("Sure!"), frontRead("Sure! <<build B"))
+        // The stream of a real one is decided at the closing bracket.
+        var said = QuickAnswer()
+        val reads = listOf("<<bu", "ild", " B", ">", ">").map { piece ->
+            said = said.after(QuickEvent.Delta(piece))
+            frontRead(said.text)
+        }
+        assertEquals(listOf(FrontRead.Undecided, FrontRead.Undecided, FrontRead.Undecided, FrontRead.Undecided, FrontRead.HandOver("build B")), reads)
+    }
+
+    @Test fun aBuildersMarkGoesToThatBuilderAndABareOneToWhicheverIsFree() {
+        val board = macBoard(listOf(onMac("t1a2b3c4d", "FF4 mod")), reachable = true, seen = now, now = now)
+        for (mac in listOf(board, null)) {
+            assertEquals(FrontRoute.Build, frontRoute((frontRead("<<build>>") as FrontRead.HandOver).to, mac))
+            assertEquals(FrontRoute.Builder(BuilderId.B), frontRoute((frontRead("<<build B>>") as FrontRead.HandOver).to, mac))
+            assertEquals(FrontRoute.Builder(BuilderId.A), frontRoute((frontRead("<<build A>>") as FrontRead.HandOver).to, mac))
+        }
+        // Stopping one builder by its letter; a thread's id is never a letter, so the two are never mixed up.
+        assertEquals(FrontRead.Stop("build B"), frontRead("<<stop B>>"))
+        assertEquals(FrontRead.Stop("build A"), frontRead("<<stop a>>", ended = true))
+        assertEquals(FrontRoute.Builder(BuilderId.B), frontRoute((frontRead("<<stop B>>") as FrontRead.Stop).of, board))
+        assertEquals("t1a2b3c4d", (frontRoute((frontRead("<<stop mac t1a2b3c4d>>") as FrontRead.Stop).of, board) as FrontRoute.Mac).thread.id)
+        // A stop his words do not bear out is a hand-over to the same builder.
+        assertEquals(FrontRead.HandOver("build B"), borneOut(frontRead("<<stop B>>"), "thanks"))
+    }
+
+    @Test fun theBoardNamesEachBuilderOnceBHasWorked() {
+        val tasks = listOf(
+            built(1, "make the clock tile", result = "Done. Bigger?"),
+            built(2, "fix the dock", status = TaskStatus.Running).copy(builder = "B"),
+            built(3, "and the folder", status = TaskStatus.Queued).copy(builder = "B"),
+        )
+        val a = buildBoard(tasks, working = false, label = "", now = 3 * minute)
+        val b = buildBoard(tasks, working = true, label = "Using Bash", now = 3 * minute, builder = BuilderId.B)
+        // Each builder's board is its own requests alone.
+        assertEquals(BuildBoard(working = false, lastAnswer = "Done. Bigger?", spokeAgo = 3 * minute - 1), a)
+        assertEquals(BuildBoard(working = true, label = "Using Bash", request = "fix the dock", spokeAgo = 3 * minute - 3), b)
+        assertEquals(
+            "[Board, for you only; Boss does not see it]\nBuilder A: idle. Its last answer ended: \"Done. Bigger?\"\nBoss last spoke to builder A 2 min ago.\n" +
+                "Builder B: working (Using Bash) on \"fix the dock\".\nBoss last spoke to builder B 2 min ago.\n[Boss says]",
+            boardText(a, null, b),
+        )
+        // With B never at work the board is the one builder's, as it always was.
+        assertEquals(boardText(a), boardText(a, null, null))
+        assertFalse(boardText(a).contains("Builder A"))
+        // Who spoke last names the builder by its letter.
+        val mac = macBoard(emptyList(), reachable = true, seen = now, now = now)
+        val idleB = BuildBoard(working = false, lastAnswer = "Fixed. Want the folder too?", spokeAgo = minute)
+        assertTrue(boardText(a, mac, idleB).contains("Last to speak: builder B, 1 min ago, and it asked a question that Boss has not answered. An older question also waits: builder A, 2 min ago."))
+    }
+
+    @Test fun whatWaitsForBuilderBSaysSoAndWhatEachMissedIsItsOwn() {
+        assertEquals(WaitingLine("queued → builder B", cancel = true), waitingLine(built(5, "x", status = TaskStatus.Queued).copy(builder = "B")))
+        val tasks = listOf(
+            built(1, "tile"),
+            answered(2, "what time is it", "Noon."),
+            built(3, "dock").copy(builder = "B"),
+            answered(4, "is it raining", "No."),
+            ChatTask(5, UNDECIDED_AGENT, "go on"),
+        )
+        assertEquals(listOf("what time is it", "is it raining"), handOverContext(tasks, 5, gotBy(BuilderId.A)).map { it.said })
+        assertEquals(listOf("is it raining"), handOverContext(tasks, 5, gotBy(BuilderId.B)).map { it.said })
+        // The builders together got the dock last, as they always did before there were two.
+        assertEquals(handOverContext(tasks, 5, gotBy(BuilderId.B)), handOverContext(tasks, 5, ::builderGot))
+    }
 }

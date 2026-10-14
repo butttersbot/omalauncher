@@ -25,11 +25,162 @@ import org.json.JSONObject
 import kotlin.concurrent.thread
 
 /**
- * A single background request stays alive with the existing Linux foreground service.
- * Claude requests continue one conversation, resumed by session id, until [newThread].
- * What he sends while a request runs waits in [followUps] and is sent as the next request when it has finished.
+ * The phone's builders, as one object every caller has always reached (Boss, 2026-10-13: two of them, so one
+ * at work never holds up the next request). Each [Builder] runs one request at a time and has its own Claude
+ * conversation, follow-up queue and approvals; what is read here of them all is their sum or the one that
+ * leads, and what is sent here goes to the builder [pickBuilder] says. Every builder takes this object's lock,
+ * so the threads of the chat are filed one at a time and the approvals' notification slots are never shared.
  */
 object AgentTasks {
+    val builders: List<Builder> = BuilderId.entries.take(PHONE_BUILDERS).map(::Builder)
+
+    fun of(id: BuilderId): Builder = builders[id.ordinal]
+
+    /** Whether any builder has a task. */
+    val working: Boolean get() = builders.any { it.working }
+
+    /** The builder the notification, the tiles and the status file follow: the first that works, or the one that last changed. */
+    @Volatile private var lead = BuilderId.A
+    private fun leading(): Builder = builders.firstOrNull { it.working } ?: of(lead)
+
+    /** The leading builder's label as it says it, which is what the status file and the lock widget read a state from. */
+    val label: String get() = leading().label
+
+    /** The leading builder's state in words for the notification and the tile, naming builder B and how many others work besides it. */
+    val headline: String get() = leading().let { led -> poolLabel(led.id, led.label, builders.count { it.working && it !== led }) }
+    val answer: String get() = leading().answer
+
+    /**
+     * Every builder's approvals waiting for the owner, each builder's oldest first. Each builder publishes its own
+     * as one immutable list, so no reader (the phone control guard above all) can see "none waiting" for a
+     * builder while it still holds an entry.
+     */
+    val pending: List<PendingApproval> get() = builders.flatMap { it.pending }
+    val approvals: List<AgentApproval> get() = pending.map { it.approval }
+
+    /** Whether any builder has a conversation that [newThread] would end. */
+    val continuing: Boolean get() = builders.any { it.thread != null }
+
+    /** The home page of the request that began last, and how long its task ran: a widget made meanwhile lands there. */
+    val asked: PageAsk? get() = builders.mapNotNull { it.asked }.maxByOrNull { it.started }
+
+    private var restored = false
+    @Synchronized fun restore(context: Context) {
+        if (restored) return
+        restored = true
+        builders.forEach { it.restore(context) }
+        AgentNotices.clearStale(context)
+    }
+
+    /** Every builder starts its next request in a new conversation. Refused while any of them works. */
+    @Synchronized fun newThread(context: Context) {
+        restore(context)
+        check(!working) { "An agent is still working. Stop it before starting a new thread." }
+        builders.forEach { it.newThread(context) }
+    }
+
+    /** The builder that gets a request for [named], or new work when that is null: see [pickBuilder]. */
+    @Synchronized fun pick(named: BuilderId? = null): BuilderId = pickBuilder(named, builders.associate { it.id to BuilderLoad(it.working, it.waiting) })
+
+    /**
+     * Starts [prompt] now on [builder], or on a free one for new work; refused if that one is working. [screen]
+     * and [page] are as [Builder.send] has them.
+     */
+    @Synchronized fun send(context: Context, prompt: String, images: List<String> = emptyList(), screen: File? = null, page: String? = HomeDoor.home?.showing, builder: BuilderId? = null) {
+        restore(context)
+        of(pick(builder)).send(context, prompt, images, screen, page)
+    }
+
+    /**
+     * Sends [prompt] to [builder], or for new work to the builder [pick] chooses: now if it is free, or behind
+     * its task. [earlier] is as [Builder.followUp] has it, and [screen] is this object's to delete once this
+     * returns. Says which builder took it.
+     */
+    @Synchronized fun followUp(context: Context, prompt: String, images: List<String> = emptyList(), page: String? = HomeDoor.home?.showing, earlier: String = "", screen: File? = null, builder: BuilderId? = null): BuilderId {
+        restore(context)
+        val to = pick(builder)
+        of(to).followUp(context, prompt, images, page, earlier, screen)
+        return to
+    }
+
+    /**
+     * As [followUp], with what goes ahead of his words made for the builder that takes them: what it missed is
+     * what was said since that builder was last sent anything, which only the choice of builder can say.
+     */
+    @Synchronized fun handOver(context: Context, prompt: String, page: String?, builder: BuilderId?, earlier: (BuilderId) -> String): BuilderId {
+        restore(context)
+        val to = pick(builder)
+        of(to).followUp(context, prompt, page = page, earlier = earlier(to))
+        return to
+    }
+
+    /** `[ cancel ]` on a follow-up that still waits, whichever builder it waits for. */
+    @Synchronized fun cancelFollowUp(context: Context, time: Long) = builders.forEach { it.cancelFollowUp(context, time) }
+
+    /**
+     * Answers the one approval with this [id] and [nonce], through the builder that holds it and no other. The
+     * nonce is made on the phone for that one request, so no other builder can hold it; one that none holds is
+     * answered through builder A, which finds it expired as an approval that ended always was.
+     */
+    fun answerApproval(context: Context, id: String, nonce: String, allow: Boolean): ApprovalOutcome {
+        val holder = synchronized(this) { approvalHolder(waiting(), id, nonce) ?: BuilderId.A }
+        return of(holder).decide(context, id, nonce, allow)
+    }
+
+    /** The builder whose approval [entry] is; null once none holds it. */
+    fun holder(entry: PendingApproval): BuilderId? = approvalHolder(waiting(), entry.id, entry.nonce)
+
+    private fun waiting(): Map<BuilderId, List<PendingApproval>> = builders.associate { it.id to it.pending }
+
+    /** Stops [builder]'s task, or every builder's when it is null: stop beside the Oma tab's field means nothing more runs. */
+    fun stop(context: Context, builder: BuilderId? = null) {
+        if (builder == null) builders.forEach { it.stop(context) } else of(builder).stop(context)
+    }
+
+    /** The slots of every builder's waiting approvals but [builder]'s: under the lock, so no two notifications are given one. */
+    internal fun slotsBesides(builder: Builder): Set<Int> = builders.filter { it !== builder }.flatMap { it.pending }.map { it.slot }.toSet()
+
+    /** [from] changed: the ring, the tiles, the lock widget, the notification and the status file follow the leading builder. */
+    internal fun changed(context: Context, from: Builder) {
+        lead = from.id
+        val led = leading()
+        val all = pending.size
+        // The ring follows the task from here, the one place every change of it passes.
+        OmaRing.task(working, all, succeeded = led.label == "Done")
+        OmaTiles.refresh(context)
+        OmaLockWidget.refresh(context)
+        AgentNotices.task(context, led.working, headline, led.answer, all, led.id)
+        writeStatus(context)
+    }
+
+    /**
+     * The task as a widget can read it: a `file("~/.cache/oma/agent.json")` source sees every change the
+     * moment it is written. Home has no strip or note of its own for this; the widget is the place for it.
+     */
+    /** Phone control came, went or was found disconnected: the status file says so. Nothing about the task has changed. */
+    fun phoneChanged(context: Context) {
+        restore(context)
+        writeStatus(context)
+    }
+
+    private fun writeStatus(context: Context) {
+        runCatching {
+            val file = File((context.applicationContext as App).runtime.proot.home, AGENT_STATUS_FILE)
+            file.parentFile?.mkdirs()
+            file.writeText(agentStatus(working, label, answer, pending.size, System.currentTimeMillis() / 1000, PhoneAccess.link(context)).toString())
+        }
+    }
+}
+
+/**
+ * One of the phone's builders. A single background request stays alive with the existing Linux foreground service.
+ * Claude requests continue one conversation, resumed by session id, until [newThread].
+ * What he sends while a request runs waits in [followUps] and is sent as the next request when it has finished.
+ * Builder A keeps what was saved before there were two; every builder takes the lock of [AgentTasks].
+ */
+class Builder(val id: BuilderId) {
+    /** Read when taken, not kept: a builder is made while [AgentTasks] itself is still being made. */
+    private val lock: Any get() = AgentTasks
     @Volatile var working = false; private set
     @Volatile var answer = ""; private set
     @Volatile var label = "Ready"; private set
@@ -45,6 +196,8 @@ object AgentTasks {
     private val ledger = ApprovalLedger()
     /** Only touched under the lock. Each one is also a waiting task in the thread, which is where the chat reads them. */
     private val followUps = FollowUpQueue()
+    /** How many follow-ups wait behind the task, for choosing where new work waits. */
+    val waiting: Int get() = synchronized(lock) { followUps.waiting.size }
     /** The Claude session that the next request follows up on. */
     @Volatile var thread: String? = null; private set
     private var inputWriter: BufferedWriter? = null
@@ -53,22 +206,21 @@ object AgentTasks {
     @Volatile private var taskTime = 0L
     /** The home page the latest request was sent from, and how long its task ran: a widget made meanwhile lands there. */
     @Volatile var asked: PageAsk? = null; private set
-    /** Far above what a scaled-down screenshot weighs; anything bigger isn't one. */
-    private const val MAX_SCREENSHOT_BYTES = 8L * 1024 * 1024
-    @Synchronized fun restore(context: Context) {
+    /** Where this builder's answer and conversation are kept: builder A's are where the one builder's always were. */
+    private val prefs = if (id == BuilderId.A) "assistant-result" else "assistant-result-" + id.letter.lowercase()
+    fun restore(context: Context): Unit = synchronized(lock) {
         if (restored) return
         restored = true
-        val saved = context.getSharedPreferences("assistant-result", Context.MODE_PRIVATE)
+        val saved = context.getSharedPreferences(prefs, Context.MODE_PRIVATE)
         answer = saved.getString("answer", "") ?: ""
         label = saved.getString("label", "Ready") ?: "Ready"
         thread = saved.getString("thread", null)
-        AgentNotices.clearStale(context)
     }
-    @Synchronized fun newThread(context: Context) {
+    fun newThread(context: Context): Unit = synchronized(lock) {
         restore(context)
         check(!working) { "An agent is still working. Stop it before starting a new thread." }
         thread = null; answer = ""; label = "Ready"
-        context.getSharedPreferences("assistant-result", Context.MODE_PRIVATE).edit()
+        context.getSharedPreferences(prefs, Context.MODE_PRIVATE).edit()
             .remove("thread").putString("label", label).putString("answer", answer).apply()
         notify(context)
     }
@@ -77,7 +229,7 @@ object AgentTasks {
      * gone from where the chip kept it. If it throws, nothing was sent and the file is still the caller's.
      * [page] is the id of the home page he was on when he asked: the one home shows, unless the caller knows better.
      */
-    @Synchronized fun send(context: Context, prompt: String, images: List<String> = emptyList(), screen: File? = null, page: String? = HomeDoor.home?.showing) {
+    fun send(context: Context, prompt: String, images: List<String> = emptyList(), screen: File? = null, page: String? = HomeDoor.home?.showing): Unit = synchronized(lock) {
         start(context, prompt, images, screen, page, queued = null)
     }
     /**
@@ -89,7 +241,7 @@ object AgentTasks {
      * [screen] is as for [send]: the screenshot of a spoken request, which waits with it and is this object's
      * to delete once this returns.
      */
-    @Synchronized fun followUp(context: Context, prompt: String, images: List<String> = emptyList(), page: String? = HomeDoor.home?.showing, earlier: String = "", screen: File? = null) {
+    fun followUp(context: Context, prompt: String, images: List<String> = emptyList(), page: String? = HomeDoor.home?.showing, earlier: String = "", screen: File? = null): Unit = synchronized(lock) {
         restore(context)
         check(prompt.isNotBlank()) { "Type or speak a request first." }
         if (!working) return start(context, prompt, images, screen, page, queued = null, earlier = earlier)
@@ -98,17 +250,17 @@ object AgentTasks {
         val log = ChatLog.of(context)
         val time = ChatHistory.stamp(log.tasks, System.currentTimeMillis())
         check(followUps.add(FollowUp(time, prompt, images, page, earlier, screen))) { FollowUpQueue.FULL }
-        log.begin(ChatTask(time, agent.name, prompt, images, screen = screen != null, status = TaskStatus.Queued))
+        log.begin(ChatTask(time, agent.name, prompt, images, screen = screen != null, status = TaskStatus.Queued, builder = id.saved))
     }
     /**
      * `[ cancel ]` on a follow-up that still waits: it leaves the queue and the thread says so. One that has
      * begun is no longer in the queue and is not touched, and nothing of the running task changes.
      */
-    @Synchronized fun cancelFollowUp(context: Context, time: Long) {
+    fun cancelFollowUp(context: Context, time: Long): Unit = synchronized(lock) {
         followUps.cancel(time)?.let { dropped(context, listOf(it), FollowUpQueue.CANCELLED) }
     }
     /** [queued] is the time of the waiting task this request already is in the thread; null for one sent just now. */
-    @Synchronized private fun start(context: Context, prompt: String, images: List<String>, screen: File?, page: String?, queued: Long?, earlier: String = "") {
+    private fun start(context: Context, prompt: String, images: List<String>, screen: File?, page: String?, queued: Long?, earlier: String = ""): Unit = synchronized(lock) {
         restore(context)
         check(prompt.isNotBlank()) { "Type or speak a request first." }
         check(!working) { "An agent is already working. Stop it before starting another task." }
@@ -139,17 +291,17 @@ object AgentTasks {
         val time = queued ?: ChatHistory.stamp(log.tasks, began)
         taskTime = time
         asked = page?.let { PageAsk(it, began) }
-        if (queued == null) log.begin(ChatTask(time, agent.name, prompt, images, screen = screen != null, newThread = resumed == null, answeredBy = builderName(agent.bin)))
+        if (queued == null) log.begin(ChatTask(time, agent.name, prompt, images, screen = screen != null, newThread = resumed == null, answeredBy = builderName(agent.bin), builder = id.saved))
         else log.update(time, save = true) { it.copy(agent = agent.name, newThread = resumed == null, status = TaskStatus.Running, answeredBy = builderName(agent.bin)) }
         working = true; stopping = false; ledger.clear(); published(); answer = ""; label = "${agent.name} is working"
         notify(context)
-        thread(name = "assistant-agent", isDaemon = true) {
+        thread(name = "assistant-agent-" + id.letter.lowercase(), isDaemon = true) {
             try {
                 val child = runtime.proot.process(command).start()
                 process = child
                 if (stopping) child.destroy()
                 if (agent.bin == "claude") {
-                    synchronized(this) { inputWriter = child.outputStream.bufferedWriter() }
+                    synchronized(lock) { inputWriter = child.outputStream.bufferedWriter() }
                     writeEvent(JSONObject().put("type", "control_request").put("request_id", "oma-init")
                         .put("request", JSONObject().put("subtype", "initialize")))
                     var sent = false
@@ -176,7 +328,7 @@ object AgentTasks {
                             }
                             when (event.optString("type")) {
                                 "control_cancel_request" -> {
-                                    val gone = synchronized(this) {
+                                    val gone = synchronized(lock) {
                                         ledger.withdraw(event.optString("request_id"))?.also {
                                             published()
                                             if (approvals.isEmpty() && !stopping) label = "${agent.name} is working"
@@ -206,7 +358,7 @@ object AgentTasks {
                                     if (event.optBoolean("is_error")) {
                                         answer = answer.ifBlank { event.optJSONArray("errors")?.join("\n") ?: "The agent needs attention." }
                                     }
-                                    synchronized(this) { inputWriter?.close(); inputWriter = null }
+                                    synchronized(lock) { inputWriter?.close(); inputWriter = null }
                                 }
                             }
                         }
@@ -225,7 +377,7 @@ object AgentTasks {
             } catch (e: Exception) { label = "Could not run agent"; answer = e.message ?: "Please open Omalauncher and try again." }
             finally {
                 // Whatever was still unanswered goes with the task, notifications included.
-                val unanswered = synchronized(this) { inputWriter?.runCatching { close() }; inputWriter = null; ledger.clear().also { published() } }
+                val unanswered = synchronized(lock) { inputWriter?.runCatching { close() }; inputWriter = null; ledger.clear().also { published() } }
                 unanswered.forEach { AgentNotices.withdraw(context, it) }
                 shot = null; handed?.delete()
                 val status = when { stopping -> TaskStatus.Stopped; label == "Done" -> TaskStatus.Done; else -> TaskStatus.Failed }
@@ -233,16 +385,16 @@ object AgentTasks {
                     task.copy(result = answer, status = status, approvals = task.approvals.map { if (it.answer == ApprovalAnswer.Waiting) it.copy(answer = ApprovalAnswer.Unanswered) else it })
                 }
                 // One step under the lock, so a follow-up that waited starts before anything else can find the agent idle.
-                synchronized(this) {
+                synchronized(lock) {
                     process = null; working = false
                     asked = asked?.let { if (it.started == began && it.ended == null) it.copy(ended = System.currentTimeMillis()) else it }
-                    context.getSharedPreferences("assistant-result", Context.MODE_PRIVATE).edit()
+                    context.getSharedPreferences(prefs, Context.MODE_PRIVATE).edit()
                         .putString("label", label).putString("answer", answer).putString("thread", thread).apply()
                     File(context.filesDir, "assistant-last-result.txt").writeText(answer)
                     notify(context)
                     // A task the owner stopped says nothing more, and one with a follow-up now running has its answer in
                     // the thread, under a task notification that is ongoing again; any other ending brings its answer to him.
-                    if (!advance(context, status) && status != TaskStatus.Stopped) AgentNotices.answered(context, label, answer)
+                    if (!advance(context, status) && status != TaskStatus.Stopped) AgentNotices.answered(context, label, answer, AgentNotices.answerId(id))
                 }
             }
         }
@@ -272,7 +424,7 @@ object AgentTasks {
             log.update(followUp.time, save = true) { ChatHistory.dropped(it, reason) }
         }
     }
-    @Synchronized private fun writeEvent(event: JSONObject) {
+    private fun writeEvent(event: JSONObject): Unit = synchronized(lock) {
         val writer = inputWriter ?: error("The agent session has ended.")
         writer.write(event.toString()); writer.newLine(); writer.flush()
     }
@@ -283,9 +435,10 @@ object AgentTasks {
         fun logged(answer: ApprovalAnswer, key: String) = ChatLog.of(context).update(taskTime, save = true) {
             it.copy(approvals = it.approvals + ChatApproval(approval.tool, approval.detail, answer, key))
         }
-        val shown = synchronized(this) {
+        val shown = synchronized(lock) {
             if (stopping) return
-            when (val admission = ledger.admit(approval)) {
+            // No other builder's waiting approval has the slot this one is given, so neither notification replaces the other's.
+            when (val admission = ledger.admit(approval, AgentTasks.slotsBesides(this))) {
                 // In the thread as waiting before any reader can see it pending.
                 is Admission.Shown -> { logged(ApprovalAnswer.Waiting, admission.entry.nonce); published(); label = "Approval needed"; admission.entry }
                 Admission.Duplicate -> return
@@ -296,19 +449,20 @@ object AgentTasks {
                 }
             }
         }
-        AgentNotices.request(context, shown)
+        AgentNotices.request(context, shown, id)
         // Stop may have cleared the ledger between admitting and posting; its withdrawal then ran before there was anything to take down.
         if (pending.none { it.nonce == shown.nonce }) AgentNotices.withdraw(context, shown)
         notify(context)
     }
     /**
-     * Answers the one approval with this [id] and [nonce]; the notification buttons, the approval screen and
-     * the chat thread all come through here. Nothing is answered from a locked phone, and an approval that was
-     * already answered, withdrawn, stopped or lost to a restart is [ApprovalOutcome.Expired] and changes nothing.
+     * Answers this builder's one approval with this [id] and [nonce]; the notification buttons, the approval
+     * screen and the chat thread all come through [AgentTasks.answerApproval] to here. Nothing is answered from a
+     * locked phone, and an approval that was already answered, withdrawn, stopped or lost to a restart is
+     * [ApprovalOutcome.Expired] and changes nothing.
      */
-    fun answerApproval(context: Context, id: String, nonce: String, allow: Boolean): ApprovalOutcome {
+    internal fun decide(context: Context, id: String, nonce: String, allow: Boolean): ApprovalOutcome {
         val locked = AgentNotices.deviceLocked(context)
-        val (entry, told) = synchronized(this) {
+        val (entry, told) = synchronized(lock) {
             when (val claim = ledger.claim(id, nonce, locked, active = working && !stopping)) {
                 Claim.Locked -> return ApprovalOutcome.Locked
                 Claim.Expired -> return ApprovalOutcome.Expired
@@ -330,7 +484,7 @@ object AgentTasks {
         task.copy(approvals = task.approvals.map { if (it.key == entry.nonce) it.copy(answer = answer) else it })
     }
     fun stop(context: Context) {
-        val (unanswered, unsent) = synchronized(this) {
+        val (unanswered, unsent) = synchronized(lock) {
             if (!working) return
             stopping = true
             inputWriter?.runCatching { close() }; inputWriter = null
@@ -342,32 +496,7 @@ object AgentTasks {
         dropped(context, unsent, FollowUpQueue.STOPPED)
         notify(context)
     }
-    private fun notify(context: Context) {
-        // The ring follows the task from here, the one place every change of it passes.
-        OmaRing.task(working, pending.size, succeeded = label == "Done")
-        OmaTiles.refresh(context)
-        OmaLockWidget.refresh(context)
-        AgentNotices.task(context, working, label, answer, approvals.size)
-        writeStatus(context)
-    }
-
-    /**
-     * The task as a widget can read it: a `file("~/.cache/oma/agent.json")` source sees every change the
-     * moment it is written. Home has no strip or note of its own for this; the widget is the place for it.
-     */
-    /** Phone control came, went or was found disconnected: the status file says so. Nothing about the task has changed. */
-    fun phoneChanged(context: Context) {
-        restore(context)
-        writeStatus(context)
-    }
-
-    private fun writeStatus(context: Context) {
-        runCatching {
-            val file = File((context.applicationContext as App).runtime.proot.home, AGENT_STATUS_FILE)
-            file.parentFile?.mkdirs()
-            file.writeText(agentStatus(working, label, answer, approvals.size, System.currentTimeMillis() / 1000, PhoneAccess.link(context)).toString())
-        }
-    }
+    private fun notify(context: Context) = AgentTasks.changed(context, this)
 }
 
 /**
@@ -390,6 +519,9 @@ data class PageAsk(val page: String, val started: Long, val ended: Long? = null)
         const val SEEN_MILLIS = 30_000L
     }
 }
+
+/** Far above what a scaled-down screenshot weighs; anything bigger isn't one. */
+private const val MAX_SCREENSHOT_BYTES = 8L * 1024 * 1024
 
 private val SESSION_ID = Regex("[0-9a-fA-F-]{36}")
 
@@ -433,6 +565,11 @@ fun backgroundAgentCommand(agent: String, prompt: String, images: List<String> =
     else -> error("The assistant currently supports Claude Code and Codex. Choose one in Omalauncher.")
 }
 
+/** Stop on the task notification: it stops the builder the notification is about, and A for one posted before there were two. */
 class StopAgentTask : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) = AgentTasks.stop(context)
+    override fun onReceive(context: Context, intent: Intent) = AgentTasks.stop(context, BuilderId.of(intent.getStringExtra(EXTRA_BUILDER)))
+
+    companion object {
+        const val EXTRA_BUILDER = "builder"
+    }
 }

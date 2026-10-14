@@ -98,17 +98,21 @@ sealed interface Claim {
 
 enum class ApprovalOutcome { Decided, Expired, Locked }
 
-/** The approvals waiting for an answer. Not thread safe: AgentTasks guards it. */
+/** The approvals of one builder waiting for an answer. Not thread safe: AgentTasks's lock guards it. */
 class ApprovalLedger(private val newNonce: () -> String = { UUID.randomUUID().toString() }) {
     private val entries = LinkedHashMap<String, PendingApproval>()
 
     /** Oldest first. */
     val live: List<PendingApproval> get() = entries.values.toList()
 
-    fun admit(approval: AgentApproval): Admission {
+    /**
+     * [busy] are the slots another ledger's live approvals hold: each builder keeps a ledger of its own, and one
+     * slot is one notification, so no two of them may be given the same.
+     */
+    fun admit(approval: AgentApproval, busy: Set<Int> = emptySet()): Admission {
         if (!ApprovalIds.safe(approval.id)) return Admission.Refused
         if (approval.id in entries) return Admission.Duplicate
-        val taken = entries.values.map { it.slot }.toSet()
+        val taken = entries.values.map { it.slot }.toSet() + busy
         val slot = (0 until ApprovalIds.MAX_LIVE).firstOrNull { it !in taken } ?: return Admission.Refused
         return Admission.Shown(PendingApproval(approval, newNonce(), slot).also { entries[approval.id] = it })
     }

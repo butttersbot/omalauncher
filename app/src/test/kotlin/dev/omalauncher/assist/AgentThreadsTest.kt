@@ -159,4 +159,25 @@ class AgentThreadsTest {
         assertEquals("…eight nine ten", long)
         assertTrue(endOf("x".repeat(500)).length <= TILE_DOING_CHARS + 1)
     }
+
+    /** Boss 2026-10-13: two builders. B is a thread of its own once it has worked, and the two are then "Phone A" and "Phone B". */
+    @Test fun builderBIsAThreadOfItsOwnOnceItHasWorked() {
+        val toA = build(1, TaskStatus.Done, result = "Tile made.")
+        // Only A has ever worked: one builder, called "Phone", as before there were two.
+        assertEquals(listOf(AgentThread(PHONE_THREAD, "Phone", ThreadState.Idle, "Tile made.", "done", 1)), phoneThreads(listOf(toA), emptyMap()))
+        val toB = build(2, TaskStatus.Running, "fix the dock", steps = listOf("Edit: ui/Dock.kt")).copy(builder = "B")
+        val queuedB = build(3, TaskStatus.Queued, "and the folder").copy(builder = "B")
+        val threads = phoneThreads(listOf(toA, toB, queuedB), mapOf(BuilderId.B to BuilderNow(working = true, label = "Using Edit")))
+        assertEquals(listOf(PHONE_THREAD, PHONE_THREAD_B), threads.map { it.key })
+        assertEquals(listOf("Phone A", "Phone B"), threads.map { it.name })
+        // Each reads its own entries and its own state.
+        assertEquals(ThreadState.Idle, threads[0].state); assertEquals("Tile made.", threads[0].doing)
+        assertEquals(ThreadState.Queued, threads[1].state); assertEquals("1 queued", threads[1].label); assertEquals(3L, threads[1].worked)
+        assertFalse(threads[1].mac)
+        // B working with no entry yet is shown, and its approval is its own.
+        val asking = phoneThreads(listOf(toA), mapOf(BuilderId.B to BuilderNow(working = true, asks = listOf(ThreadAsk("Bash", "git")))))
+        assertEquals(ThreadState.Idle, asking[0].state); assertEquals(ThreadState.NeedsOk, asking[1].state)
+        // Among every thread the builders come first, A before B.
+        assertEquals(listOf(PHONE_THREAD, PHONE_THREAD_B), agentThreads(listOf(toA, toB), BuilderNow(), MacView(), second = BuilderNow(working = true)).map { it.key })
+    }
 }

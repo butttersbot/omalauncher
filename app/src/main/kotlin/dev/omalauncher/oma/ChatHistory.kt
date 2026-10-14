@@ -74,6 +74,8 @@ data class ChatTask(
     val direct: Boolean = false,
     /** Who wrote the reply, as the chat names it ("Opus", "Haiku", "Codex"); empty while that is not known. See AgentNames.kt. */
     val answeredBy: String = "",
+    /** Which of the phone's builders a request of the build lane's went to: empty for builder A, the letter of any other. */
+    val builder: String = "",
 ) {
     /** Answered by the front agent itself, beside the build task: never by it or in its queue. */
     val quick get() = agent == QUICK_AGENT
@@ -114,6 +116,7 @@ object ChatHistory {
     const val MAX_RESULT = 8_000
     const val MAX_IMAGES = 4
     const val MAX_THREAD = 128
+    const val MAX_BUILDER = 8
 
     /** Several times the largest file [encode] writes; anything bigger isn't ours and isn't read. */
     const val MAX_FILE_BYTES = 16L * 1024 * 1024
@@ -130,6 +133,7 @@ object ChatHistory {
         thread = task.thread.take(MAX_THREAD),
         threadName = task.threadName.take(60),
         answeredBy = task.answeredBy.take(40),
+        builder = task.builder.take(MAX_BUILDER),
     )
 
     /** The thread with [task] added, keeping the newest [MAX_TASKS]. */
@@ -187,6 +191,7 @@ object ChatHistory {
             .apply { if (task.mac) put("thread", task.thread).put("threadName", task.threadName) }
             .apply { if (task.direct) put("direct", true) }
             .apply { if (task.answeredBy.isNotEmpty()) put("answeredBy", task.answeredBy) }
+            .apply { if (task.builder.isNotEmpty()) put("builder", task.builder) }
     })).toString()
 
     /** The saved thread; an unreadable file is an empty thread, and an unreadable task is left out. */
@@ -208,6 +213,7 @@ object ChatHistory {
                     thread = task.optString("thread"), threadName = task.optString("threadName"),
                     direct = task.optBoolean("direct"),
                     answeredBy = task.optString("answeredBy"),
+                    builder = task.optString("builder"),
                 ))
             }.getOrNull()
         }.takeLast(MAX_TASKS)

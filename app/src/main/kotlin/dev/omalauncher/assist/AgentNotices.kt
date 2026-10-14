@@ -20,6 +20,8 @@ internal object AgentNotices {
     const val FRONT = 43
     /** The answer of a project thread on the Mac, apart from the phone builder's task, which may be running beside it. */
     const val MAC = 44
+    /** The answer of builder B, apart from builder A's task notification, which may be running beside it. */
+    private const val BUILDER_B = 45
     private const val TASK_CHANNEL = "agent-task-updates"
     private const val APPROVAL_CHANNEL = "agent-approvals"
     private const val ANSWER_CHANNEL = "agent-answers"
@@ -37,8 +39,11 @@ internal object AgentNotices {
     private fun open(context: Context): PendingIntent =
         PendingIntent.getActivity(context, 0, dev.omalauncher.oma.OmaChatActivity.intent(context), PendingIntent.FLAG_IMMUTABLE)
 
-    /** The ongoing step while a task runs, replaced by its result when it ends. */
-    fun task(context: Context, working: Boolean, label: String, answer: String, pending: Int) {
+    /** Which notification a finished task's answer comes up as: builder A's is the task's own, as it always was. */
+    fun answerId(builder: BuilderId) = if (builder == BuilderId.A) TASK else BUILDER_B
+
+    /** The ongoing step while a task runs, replaced by its result when it ends. Its stop stops [about], the builder it is about. */
+    fun task(context: Context, working: Boolean, label: String, answer: String, pending: Int, about: BuilderId = BuilderId.A) {
         val nm = manager(context)
         val notice = taskNotice(working, label, answer, pending) ?: return nm.cancel(TASK)
         val builder = Notification.Builder(context, TASK_CHANNEL).setSmallIcon(R.drawable.ic_notification)
@@ -46,7 +51,9 @@ internal object AgentNotices {
             .setContentIntent(open(context)).setOnlyAlertOnce(notice.ongoing).setOngoing(notice.ongoing).setAutoCancel(!notice.ongoing)
         notice.expanded?.let { builder.setStyle(Notification.BigTextStyle().bigText(it)) }
         if (notice.ongoing) {
-            val stop = PendingIntent.getBroadcast(context, 0, Intent(context, StopAgentTask::class.java), PendingIntent.FLAG_IMMUTABLE)
+            // One request code per builder, so the stop of one is never the other's; A's is the one there always was.
+            val intent = Intent(context, StopAgentTask::class.java).apply { if (about != BuilderId.A) putExtra(StopAgentTask.EXTRA_BUILDER, about.letter) }
+            val stop = PendingIntent.getBroadcast(context, about.ordinal, intent, PendingIntent.FLAG_IMMUTABLE)
             builder.addAction(Notification.Action.Builder(null, "Stop", stop).build())
             // Asks for a Live Update; whether One UI shows it as one is for the phone to say.
             if (requestsLiveUpdate(Build.VERSION.SDK_INT, Build.VERSION_CODES_FULL.BAKLAVA_1) { Build.VERSION.SDK_INT_FULL }) builder.setRequestPromotedOngoing(true)
@@ -81,15 +88,15 @@ internal object AgentNotices {
     fun reviewIntent(context: Context, entry: PendingApproval): Intent =
         Intent(context, AgentApprovalActivity::class.java).setData(Uri.parse(entry.ticket(ApprovalVerb.Review).encode())).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
-    /** Shows a new approval: its own notification, or the approval screen if notifications are blocked. */
-    fun request(context: Context, entry: PendingApproval) {
+    /** Shows a new approval of [builder]'s: its own notification, or the approval screen if notifications are blocked. */
+    fun request(context: Context, entry: PendingApproval, builder: BuilderId) {
         if (surface(context) == ApprovalSurface.Screen) {
             // Android may refuse an activity started from the background; the tile, the rail and the prompt still reach it.
             runCatching { context.startActivity(reviewIntent(context, entry)) }
             return
         }
         val approval = entry.approval
-        val title = "Allow ${approval.tool.take(60)}?"
+        val title = builderApprovalTitle(approval.tool, builder)
         val review = PendingIntent.getActivity(context, ApprovalIds.requestCode(entry.slot, ApprovalVerb.Review), reviewIntent(context, entry), FLAGS)
         fun action(verb: ApprovalVerb, label: String): Notification.Action {
             val code = ApprovalIds.requestCode(entry.slot, verb)
