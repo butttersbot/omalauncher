@@ -1,6 +1,25 @@
 # Phone test results
 
-## Latest: the front agent timed and its routing counted (2026-10-13, about 17:10 PDT) — no code changed
+## Latest: Mac threads wired into Oma (2026-10-13, about 17:45 PDT, commit 2390694 and the one after) — NOT promoted, NOT seen on a screen
+
+- New `assist/MacRunner.kt`, `MacRunnerEvents.kt` (the client) and `MacThreads.kt` (the phone's view of the Mac:
+  thread list, cursors, followers, approvals). With no `~/.config/omalauncher/mac-runner.json` nothing changes
+  (pinned). With one, the front agent's board lists the Mac's threads and it may reply `<<mac ID>>`; his words go to
+  that thread unchanged, the entry shows "→ NAME" and fills from the stream. `AgentTasks.kt` untouched.
+- Approvals from the Mac: a list of their own beside the phone builder's, the same card in the chat, a notification
+  with its own receiver (`MacApprovalReceiver`, not exported) and ticket scheme; the nonce stays in the process.
+  Only his tap answers. While one waits, `oma-phone` actions are held as they are for the phone builder's
+  (`phone/PhoneService.kt`, one expression). No existing assertion was changed.
+- `oma-build` green: 921 tests. One new test had a mistake of its own (an all-digit id "uppercased") and was fixed.
+- The key is on the phone (Boss, through the Mac session); `/health` and `/threads` answer from the guest in 0.04 s.
+  The Kotlin client has NOT spoken to the real runner: that needs the launcher itself, so a promotion.
+- Routing with three Mac threads on the board, real Haiku, 12 requests x 3: 33 of 36 as intended. Wrong: "yes do
+  the magic menu too" went to the phone builder once (the FF4 thread had asked); "write a script that renames my
+  photos" went to the phone builder twice instead of asking which project.
+- Not built: making a thread from the phone; picking Mac threads up at launcher start (after a restart nothing
+  follows the Mac until the chat or the listening screen opens); Mac work in the tiles, ring and lock widget.
+
+## Earlier: the front agent timed and its routing counted (2026-10-13, about 17:10 PDT) — no code changed
 
 Run in the guest with the real instructions from `quickSystemPrompt()`, a board, and the real flags (scripts in /tmp, not kept).
 - Model is `claude-haiku-5-5`. Time to a decision, fresh or resumed: 1.4 to 2.6 s, of which 0.8 to 1.4 s is Claude
