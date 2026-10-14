@@ -60,9 +60,11 @@
   .head { padding: 12px 12px 6px 14px; border-bottom: 2px solid var(--ink); }
   .loadout { display: flex; align-items: center; gap: 8px; }
   .loadout h2 { margin: 0; font-size: 24px; flex: 1; cursor: pointer; white-space: nowrap; }
-  .loadout .x { font-size: 20px; padding: 0 4px; cursor: pointer; }
-  .ldots { display: flex; gap: 6px; margin: 6px 0 2px; }
-  .ldots span { width: 18px; height: 5px; background: var(--surface); cursor: pointer; } .ldots span.on { background: var(--ink); }
+  .loadout .x { font-size: 22px; width: 40px; height: 40px; display: grid; place-items: center; cursor: pointer; border: 2px solid var(--ink); }
+  /* The dots are a finger's size to hit, though each draws as a short bar. */
+  .ldots { display: flex; gap: 2px; margin: 0 0 -6px -8px; }
+  .ldots span { width: 36px; height: 36px; display: grid; place-items: center; cursor: pointer; }
+  .ldots span::after { content: ""; width: 22px; height: 6px; background: var(--surface); } .ldots span.on::after { background: var(--ink); }
   .head .mono { color: var(--muted); }
   .body { flex: 1; overflow-y: auto; padding: 14px 12px 20px; display: flex; flex-direction: column; gap: 18px; scrollbar-width: none; }
   .tool { background: var(--surface); padding: 10px; position: relative; border-radius: 2px; }
@@ -74,8 +76,9 @@
   /* Rail mode. */
   .rail { display: none; flex-direction: column; align-items: center; gap: 10px; padding: 10px 0; overflow-y: auto; flex: 1; scrollbar-width: none; }
   .phone.railed .rail { display: flex; } .phone.railed .body, .phone.railed .head { display: none; }
-  .rail .key { width: 46px; height: 46px; }
-  .rail .sep { width: 30px; height: 2px; background: var(--ink); opacity: .3; margin: 2px 0; }
+  .rail .key { width: 46px; height: 46px; flex: none; touch-action: none; }
+  .rail .sep { width: 30px; height: 2px; background: var(--ink); opacity: .3; margin: 2px 0; flex: none; }
+  .rail .lname { flex: none; }
   .rail .lname { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 15px; cursor: pointer; }
 
   /* Keys: the drawing tools' look, a glyph on the dock's surface, filled while it is the tool in hand. */
@@ -101,7 +104,8 @@
   .packs span { flex: none; padding: 5px 8px; background: var(--bg); cursor: pointer; }
   .packs span.on { background: var(--ink); color: #fff; }
   .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
-  .grid div { aspect-ratio: 1; min-width: 0; overflow: hidden; background: var(--bg); display: grid; place-items: center; font-size: 30px; cursor: grab; touch-action: none; padding: 4px; }
+  /* A finger can scroll the drawer starting on a sticker: only a still hold of 350 ms lifts one, as in Cove. */
+  .grid div { aspect-ratio: 1; min-width: 0; overflow: hidden; background: var(--bg); display: grid; place-items: center; font-size: 30px; cursor: grab; touch-action: pan-y; padding: 4px; }
   .grid img { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
 
   .bench { background: var(--bg); height: 150px; position: relative; display: grid; place-items: center; overflow: hidden;
@@ -129,9 +133,9 @@
   .grid div.seat { outline: 2px dashed var(--muted); background: none; } .grid div.seat img { opacity: .25; }
   .grid.washes { grid-template-columns: repeat(3, minmax(0, 1fr)); } .grid.washes div { cursor: pointer; align-content: end; padding-bottom: 4px; }
   .stuck.lifting { z-index: 20; transform: scale(1.2) rotate(-4deg); filter: drop-shadow(6px 10px 4px rgba(8,28,96,.45)); pointer-events: none; }
-  .stuck[data-frame="polaroid"] { background: #fff; padding: 6px 6px 18px; box-shadow: 3px 3px 0 var(--shadow); }
-  .stuck[data-frame="stamp"] { background: #fff; outline: 4px dotted #fff; outline-offset: -2px; padding: 6px; }
-  .stuck[data-frame="tape"]::before { content: ""; position: absolute; top: -6px; left: 50%; width: 40px; height: 12px; margin-left: -20px; background: var(--pink); opacity: .85; transform: rotate(-4deg); }
+  [data-frame="polaroid"] { background: #fff; padding: 6px 6px 18px; box-shadow: 3px 3px 0 var(--shadow); }
+  [data-frame="stamp"] { background: #fff; outline: 4px dotted #fff; outline-offset: -2px; padding: 6px; }
+  [data-frame="tape"] { position: relative; } [data-frame="tape"]::before { content: ""; position: absolute; top: -6px; left: 50%; width: 40px; height: 12px; margin-left: -20px; background: var(--pink); opacity: .85; transform: rotate(-4deg); }
   .chip { padding: 5px 9px; border: 1px solid var(--ink); cursor: pointer; } .chip.on { background: var(--ink); color: #fff; }
   .swatch.wheel { background: conic-gradient(#ff4f9a, #ffe14d, #19c3c9, #7a4fd1, #ff4f9a); }
   .phone.aside .panel { transform: translateX(calc(100% - 64px)); }
@@ -145,6 +149,11 @@
   /* Sheets: the loadouts list, and the tools that can be added. */
   .sheet { position: absolute; left: 0; right: 0; bottom: 0; background: var(--bg); box-shadow: 0 -7px 0 var(--shadow); padding: 16px; z-index: 9; transform: translateY(110%); transition: transform .25s; max-height: 80%; overflow-y: auto; }
   .sheet.on { transform: none; }
+  .scrim { position: absolute; inset: 0; background: rgba(8,20,70,.35); z-index: 8; display: none; } .scrim.on { display: block; }
+  .sheet .top { display: flex; align-items: center; gap: 10px; } .sheet .top h3 { flex: 1; }
+  .sheet .close { width: 44px; height: 44px; display: grid; place-items: center; font-size: 22px; border: 2px solid var(--ink); cursor: pointer; }
+  .sheet .item .acts { margin-left: auto; display: flex; gap: 12px; } .sheet .item .acts span { text-decoration: underline; padding: 8px 0; }
+  .empty { color: var(--muted); font-size: 20px; text-align: center; padding: 20px 8px; }
   .sheet h3 { margin: 0 0 4px; font-size: 22px; }
   .sheet .item { display: flex; gap: 10px; align-items: center; padding: 9px 0; border-top: 1px solid rgba(18,41,107,.15); cursor: pointer; }
   .sheet .item .g { width: 34px; text-align: center; font-size: 20px; }
@@ -175,14 +184,15 @@
 
   <aside class="panel" id="panel">
     <div class="head">
-      <div class="loadout"><h2 class="display" id="lname" onclick="sheet('loadouts')">Create</h2><span class="x" title="Rail" onclick="setMode('rail')">›</span></div>
+      <div class="loadout"><h2 class="display" id="lname" onclick="sheet('loadouts')">Create ▾</h2><span class="x" title="narrow to the rail" onclick="setMode('rail')">›</span><span class="x" title="close" onclick="setMode('closed')">×</span></div>
       <div class="ldots" id="ldots"></div>
-      <div class="mono" id="lhint">swipe sideways for the next loadout</div>
+      <div class="mono" id="lhint">swipe here, or tap a dot, for another loadout</div>
     </div>
     <div class="body" id="body"></div>
     <div class="rail" id="rail"></div>
   </aside>
 
+  <div class="scrim" id="scrim" onclick="closeSheet()"></div>
   <div class="sheet" id="sheet"></div>
   <div class="toast" id="toast"></div>
   <div class="undostrip" id="undostrip"></div>
@@ -243,24 +253,27 @@ const TOOLS = {
       <input class="search" placeholder="search the bench…" value="${state.q}" oninput="state.q=this.value;renderGrid()" onpointerdown="event.stopPropagation()">
       <div class="packs">${['stickers', 'washes'].map((t) => `<span class="mono ${state.tab === t ? 'on' : ''}" onclick="state.tab='${t}';render()">${t}</span>`).join('')}</div>
       <div id="benchgrid">${gridBody()}</div>`,
-    keys: () => (state.recents.length ? state.recents.slice(0, 3) : [['donut-frog', 7], ['pepe-blanket', 0], ['rabbit-shark', 7]]).map(([p, i]) =>
-      `<div class="key" style="padding:4px" onpointerdown="grab(event,'${p}',${i})">${stickerHtml(p, i)}</div>`).join('') + `<div class="key" onclick="setMode('full');scrollTool('bench')">★</div>` },
+    keys: () => sel() ? [['r', -15, '⟲'], ['r', 15, '⟳'], ['s', .15, '+'], ['s', -.15, '−'], ['x', 0, '🗑']].map(([k, v, g]) => `<div class="key" onclick="dress('${k}',${v})">${g}</div>`).join('') +
+      `<div class="key" title="put it down" onclick="putDown()">✓</div>`
+      : (state.recents.length ? state.recents.slice(0, 3) : [['donut-frog', 7], ['pepe-blanket', 0], ['rabbit-shark', 7]]).map(([p, i]) =>
+      `<div class="key" style="padding:4px" onpointerdown="grab(event,'${p}',${i},true)">${stickerHtml(p, i)}</div>`).join('') + `<div class="key" onclick="setMode('full');scrollTool('bench')">★</div>` },
   capture: { name: 'Capture', g: '◉', about: 'screenshot, record, ask about this screen',
     body: () => `<div class="caps">
       <div class="cap" onclick="shot()"><span class="g">⬚</span><span class="mono">screenshot</span></div>
-      <div class="cap ${state.rec ? 'rec' : ''}" onclick="record()"><span class="g">${state.rec ? '■' : '●'}</span><span class="mono">${state.rec ? 'stop · ' + recTime() : 'record'}</span></div>
+      <div class="cap ${state.rec ? 'rec' : ''}" onclick="record()"><span class="g">${state.rec ? '■' : '●'}</span><span class="mono">${state.rec ? `stop · <span data-since="${recAt}">${recTime()}</span>` : 'record'}</span></div>
       <div class="cap wide" onclick="toast('Oma opens with this screen attached: “what is this?”')"><span class="mono">ask oma about this screen</span></div></div>`,
     keys: () => `<div class="key" onclick="shot()">⬚</div><div class="key ${state.rec ? 'on' : ''}" onclick="record()" style="${state.rec ? 'background:var(--red)' : ''}">●</div>` },
   agents: { name: 'Agents', g: '●', about: 'every thread: state, live timer, approve in place',
-    body: () => AGENTS.map((a, i) => `<div class="agent ${a.cls}" onclick="toast('Opens ${a.name} in the Oma chat')"><span class="dot"></span><div style="flex:1"><div><span class="n">${a.name}</span> <span class="mono">${a.where}${a.since ? ' · ' + clock(a.since) : ''}</span></div><div class="w">${a.doing}</div>
+    body: () => AGENTS.map((a, i) => `<div class="agent ${a.cls}" onclick="toast('Opens ${a.name} in the Oma chat')"><span class="dot"></span><div style="flex:1"><div><span class="n">${a.name}</span> <span class="mono">${a.where}${a.since ? ` · <span data-since="${a.since}">${clock(a.since)}</span>` : ''}</span></div><div class="w">${a.doing}</div>
       ${a.cls === 'needsok' ? `<div class="acts mono"><span onclick="event.stopPropagation();approve(${i},true)">approve</span><span onclick="event.stopPropagation();approve(${i},false)">deny</span></div>` : ''}</div></div>`).join(''),
     keys: () => AGENTS.map((a) => `<div class="key" title="${a.name}" onclick="setMode('full');scrollTool('agents')"><span class="agent ${a.cls}" style="border:0;padding:0"><span class="dot" style="margin:0"></span></span><small class="mono">${a.name.split(' ').pop().slice(0, 2)}</small></div>`).join('') },
   shelf: { name: 'Shelf', g: '⊟', about: 'things dropped here from any app, kept till used',
-    body: () => `<div class="shelf"><div>🔗 <span>youtube.com/watch?v=city-pop</span></div><div>✂️ <span>“the sticker bench should feel like a cutting mat”</span></div><div>⬚ <span>Screenshot · Maps · 10:52</span></div><div class="drop hand" style="font-size:18px">drop text, links or pictures here</div></div>`,
+    body: () => `<div class="shelf"><div>🔗 <span>youtube.com/watch?v=city-pop</span></div><div>✂️ <span>“the sticker bench should feel like a cutting mat”</span></div><div>⬚ <span>Screenshot · Maps · 10:52</span></div><div class="drop hand" style="font-size:18px" onclick="toast('In the launcher: drag text, a link or a picture here from any app')">drop text, links or pictures here</div></div>`,
     keys: () => `<div class="key" onclick="setMode('full');scrollTool('shelf')">⊟</div>` },
   quick: { name: 'Phone', g: '⚡', about: 'switches and shortcuts',
-    body: () => `<div class="quick">${[['torch', '🔦', 'torch'], ['dnd', '☾', 'do not disturb'], ['rotate', '⟳', 'rotate lock'], ['hotspot', '⌬', 'hotspot'], ['cam', '◎', 'camera'], ['calc', '±', 'calculator']].map(([k, g, n]) =>
-      `<div class="${state.toggles[k] ? 'on' : ''}" onclick="flip('${k}')"><span class="g">${g}</span><span class="mono">${n}</span></div>`).join('')}</div>`,
+    body: () => `<div class="quick">${[['torch', '🔦', 'torch'], ['dnd', '☾', 'do not disturb'], ['rotate', '⟳', 'rotate lock'], ['hotspot', '⌬', 'hotspot']].map(([k, g, n]) =>
+      `<div class="${state.toggles[k] ? 'on' : ''}" onclick="flip('${k}')"><span class="g">${g}</span><span class="mono">${n}</span></div>`).join('')}${[['◎', 'camera'], ['±', 'calculator']].map(([g, n]) =>
+      `<div onclick="toast('Opens the ${n}')"><span class="g">${g}</span><span class="mono">${n} ↗</span></div>`).join('')}</div>`,
     keys: () => `<div class="key ${state.toggles.torch ? 'on' : ''}" onclick="flip('torch')">🔦</div><div class="key ${state.toggles.dnd ? 'on' : ''}" onclick="flip('dnd')">☾</div>` },
 };
 
@@ -272,9 +285,9 @@ const LOADOUTS = [
 
 function render() {
   const l = LOADOUTS[state.loadout];
-  $('lname').textContent = l.name;
+  $('lname').textContent = l.name + ' ▾';
   $('ldots').innerHTML = LOADOUTS.map((_, i) => `<span class="${i === state.loadout ? 'on' : ''}" onclick="go(${i})"></span>`).join('');
-  $('body').innerHTML = l.tools.map((t) => `<section class="tool" id="tool-${t}"><span class="tape"></span><div class="t"><span>${TOOLS[t].g}</span><b class="display">${TOOLS[t].name}</b></div>${TOOLS[t].body()}</section>`).join('') +
+  $('body').innerHTML = (l.tools.length ? '' : `<div class="empty hand">${l.name} has no tools yet</div>`) + l.tools.map((t) => `<section class="tool" id="tool-${t}"><span class="tape"></span><div class="t"><span>${TOOLS[t].g}</span><b class="display">${TOOLS[t].name}</b></div>${TOOLS[t].body()}</section>`).join('') +
     `<div class="addtool hand" style="font-size:20px" onclick="sheet('tools')">+ add a tool to ${l.name}</div>`;
   $('rail').innerHTML = `<div class="lname display" onclick="setMode('full')">${l.name}</div><div class="sep"></div>` + l.tools.map((t) => TOOLS[t].keys()).join('<div class="sep"></div>') +
     `<div class="sep"></div><div class="key" onclick="setMode('full')" title="open">‹</div><div class="key" onclick="setMode('closed')" title="close">›</div>`;
@@ -283,7 +296,7 @@ function render() {
 }
 
 function setMode(m) {
-  state.mode = m;
+  state.mode = m; closeSheet(); phone.classList.remove('dragging', 'aside'); panel.style.transform = '';
   phone.classList.toggle('open', m !== 'closed');
   phone.classList.toggle('railed', m === 'rail');
   render();
@@ -302,15 +315,16 @@ function toast(s) { const t = $('toast'); t.textContent = s; t.classList.add('on
     if (x0 === null) return; moved = x0 - e.clientX;
     phone.classList.add('open'); panel.style.transform = `translateX(calc(100% - ${Math.max(0, moved)}px))`;
   });
-  $('handle').addEventListener('pointerup', () => {
-    phone.classList.remove('dragging'); panel.style.transform = '';
-    setMode(moved > 140 ? 'full' : 'rail'); x0 = null;
-  });
+  // Android may take the touch for its own back gesture mid-drag: a cancelled drag ends as a lifted one does.
+  const end = () => { if (x0 === null) return; x0 = null; setMode(moved > 140 ? 'full' : 'rail'); };
+  $('handle').addEventListener('pointerup', end);
+  $('handle').addEventListener('pointercancel', end);
   let hx = null;
-  $('panel').addEventListener('pointerdown', (e) => { if (e.target.closest('.head')) hx = e.clientX; });
+  $('panel').addEventListener('pointerdown', (e) => { hx = e.target.closest('.head') && !e.target.closest('.x, .ldots span') ? e.clientX : null; });
+  $('panel').addEventListener('pointercancel', () => { hx = null; });
   $('panel').addEventListener('pointerup', (e) => {
     if (hx === null) return; const d = e.clientX - hx; hx = null;
-    if (d > 90) setMode('closed'); else if (d > 40) go(state.loadout - 1); else if (d < -40) go(state.loadout + 1);
+    if (d > 40) go(state.loadout - 1); else if (d < -40) go(state.loadout + 1);
   });
 })();
 
@@ -335,7 +349,8 @@ ink.addEventListener('pointerdown', (e) => {
   state.strokes.push(live); state.undone = []; ink.setPointerCapture(e.pointerId);
 });
 ink.addEventListener('pointermove', (e) => { if (!live) return; live.pts.push([e.offsetX, e.offsetY]); redraw(); });
-ink.addEventListener('pointerup', () => { if (live) { live = null; render(); } });
+const endStroke = () => { if (live) { live = null; render(); } };
+ink.addEventListener('pointerup', endStroke); ink.addEventListener('pointercancel', endStroke);
 function undo() { if (state.strokes.length) { state.undone.push(state.strokes.pop()); redraw(); render(); } }
 function redo() { if (state.undone.length) { state.strokes.push(state.undone.pop()); redraw(); render(); } }
 function clearInk() { state.undone.push(...state.strokes.reverse()); state.strokes = []; redraw(); render(); }
@@ -346,8 +361,9 @@ function place(p, i, x, y, r = 0, s = 1, f = 1) {
   el.style.left = (x - 37) + 'px'; el.style.top = (y - 37) + 'px'; el.style.transform = `rotate(${r}deg) scale(${s}) scaleX(${f})`;
   $('stuck').appendChild(el); drag(el);
   state.recents = [[p, i], ...state.recents.filter(([q, j]) => q !== p || j !== i)].slice(0, 8);
-  did('Placed ' + PACKS[p][i]);
+  did('Placed ' + PACKS[p][i], () => el.remove());
 }
+function putDown() { sel()?.classList.remove('sel'); render(); }
 function drag(el) {
   el.addEventListener('pointerdown', (e) => {
     e.stopPropagation(); document.querySelectorAll('.stuck.sel').forEach((s) => s.classList.remove('sel')); el.classList.add('sel');
@@ -355,38 +371,54 @@ function drag(el) {
     if (state.mode !== 'closed' && LOADOUTS[state.loadout].tools.includes('bench')) { if (phone.clientWidth >= 600 || state.mode === 'full') { render(); scrollTool('bench'); } else render(); }
     const dx = e.clientX - el.offsetLeft, dy = e.clientY - el.offsetTop; el.setPointerCapture(e.pointerId);
     const mv = (m) => { el.style.left = (m.clientX - dx) + 'px'; el.style.top = (m.clientY - dy) + 'px'; };
-    el.addEventListener('pointermove', mv); el.addEventListener('pointerup', () => el.removeEventListener('pointermove', mv), { once: true });
+    const stop = () => { el.removeEventListener('pointermove', mv); el.removeEventListener('pointerup', stop); el.removeEventListener('pointercancel', stop); };
+    el.addEventListener('pointermove', mv); el.addEventListener('pointerup', stop); el.addEventListener('pointercancel', stop);
   });
 }
-function grab(e, p, i) {
-  e.preventDefault(); e.stopPropagation();
+/*
+ * A sticker from the drawer or the rail. A tap places it mid-page. A still hold of 350 ms lifts it (from a rail
+ * key, a drag lifts it at once: the rail doesn't scroll sideways); a lifted sticker follows the finger, and
+ * where it is let go it is placed, unless that is on the panel or it hardly moved, when it flies home. A finger
+ * that moves before the hold has scrolled the drawer and places nothing. A touch Android takes away places nothing.
+ */
+let carrying = false;
+addEventListener('touchmove', (e) => { if (carrying) e.preventDefault(); }, { passive: false });
+function grab(e, p, i, fromRail = false) {
+  if (e.button > 0) return;
+  e.stopPropagation(); if (fromRail) e.preventDefault();
   const x0 = e.clientX, y0 = e.clientY, box = phone.getBoundingClientRect(), seat = e.currentTarget;
-  let ghost = null, lifted = false, travel = 0;
+  let ghost = null, travel = 0, gaveUp = false;
   const lift = () => {
-    lifted = true; seat.classList.add('seat');
+    carrying = true; seat.classList.add('seat');
     ghost = document.createElement('div'); ghost.className = 'stuck lifting'; ghost.innerHTML = stickerHtml(p, i); phone.appendChild(ghost);
     ghost.style.left = (x0 - box.left - 37) + 'px'; ghost.style.top = (y0 - box.top - 37) + 'px';
     // The panel drops out of the way on a narrow screen, as Cove's sheet does.
-    if (phone.clientWidth < 600 && state.mode === 'full') { phone.classList.add('aside'); }
+    if (phone.clientWidth < 600 && state.mode === 'full') phone.classList.add('aside');
   };
   const hold = setTimeout(lift, 350);
   const mv = (m) => {
     travel = Math.hypot(m.clientX - x0, m.clientY - y0);
-    if (!lifted && travel > 10) { clearTimeout(hold); lift(); }
+    if (!ghost && travel > 10) { if (fromRail) { clearTimeout(hold); lift(); } else { gaveUp = true; finish(); return; } }
     if (ghost) { ghost.style.left = (m.clientX - box.left - 37) + 'px'; ghost.style.top = (m.clientY - box.top - 37) + 'px'; }
   };
-  const up = (u) => {
-    clearTimeout(hold); removeEventListener('pointermove', mv); removeEventListener('pointerup', up);
+  const finish = (u) => {
+    clearTimeout(hold); carrying = false;
+    removeEventListener('pointermove', mv); removeEventListener('pointerup', finish); removeEventListener('pointercancel', finish);
+    // Where the panel stands now, aside or not, decides what is "over the panel".
+    const panelLeft = state.mode === 'closed' ? Infinity : panel.getBoundingClientRect().left;
     seat.classList.remove('seat'); phone.classList.remove('aside');
-    const overPanel = !phone.classList.contains('railed') && u.clientX - box.left > box.width - panel.offsetWidth && state.mode !== 'closed';
     if (ghost) {
       ghost.remove();
-      if (travel < 24 || overPanel) toast('Back in the drawer');
+      if (!u || u.type === 'pointercancel') toast('Back in the drawer');
+      else if (travel < 24 || u.clientX >= panelLeft) toast('Back in the drawer');
       else place(p, i, u.clientX - box.left, u.clientY - box.top);
-    } else { place(p, i, (box.width - (state.mode === 'full' ? panel.offsetWidth : 64)) / 2, box.height * .45); }
+    } else if (!gaveUp && u && u.type === 'pointerup') {
+      place(p, i, (Math.min(box.width, panelLeft - box.left)) / 2, box.height * .45);
+      toast('Stuck on the page. Drag it to move it, tap it to dress it');
+    }
     render();
   };
-  addEventListener('pointermove', mv); addEventListener('pointerup', up);
+  addEventListener('pointermove', mv); addEventListener('pointerup', finish); addEventListener('pointercancel', finish);
 }
 
 function ink_(i) { state.color = i; state.wells = [i, ...state.wells.filter((j) => j !== i)].slice(0, 3); render(); }
@@ -404,22 +436,34 @@ function renderGrid() { $('benchgrid').innerHTML = gridBody(); }
 // Dress mode: the selected sticker in a mirror, and what can be done to it. Every change can be undone below.
 function dressBody() {
   const el = sel(), t = el.t;
-  return `<div class="bench"><div class="piece" style="transform:rotate(${t.r}deg) scale(${t.s}) scaleX(${t.f})">${el.innerHTML}</div></div>
+  return `<div class="bench"><div class="piece" data-frame="${t.frame || 'none'}" style="transform:rotate(${t.r}deg) scale(${t.s}) scaleX(${t.f})">${el.innerHTML}</div></div>
     <div class="row" style="margin-top:8px"><div class="key" onclick="dress('r',-15)">⟲</div><div class="key" onclick="dress('r',15)">⟳</div><div class="key" onclick="dress('s',-.15)">−</div><div class="key" onclick="dress('s',.15)">+</div><div class="key" onclick="dress('f')">⇋</div><div class="key" onclick="dress('top')" title="to the front">⤒</div><div class="key" onclick="dress('x')">🗑</div></div>
     <div class="mono lbl">frame</div>
     <div class="row">${['none', 'tape', 'polaroid', 'stamp'].map((f) => `<span class="chip mono ${(t.frame || 'none') === f ? 'on' : ''}" onclick="dress('frame','${f}')">${f}</span>`).join('')}</div>
-    <div class="mono lbl" style="text-align:center;margin-top:12px">tap the page to put it down</div>`;
+    <div class="cap wide" style="margin-top:12px" onclick="putDown()"><span class="mono">done · back to the drawer</span></div>`;
 }
 function dress(k, v) {
-  const el = sel(); if (!el) return; const t = el.t;
+  const el = sel(); if (!el) return; const t = el.t, was = { ...t }, parent = el.parentNode, next = el.nextSibling;
+  const show = () => { el.style.transform = `rotate(${el.t.r}deg) scale(${el.t.s}) scaleX(${el.t.f})`; el.dataset.frame = el.t.frame || 'none'; };
+  if (k === 'x') { el.remove(); did('Took a sticker off', () => parent.insertBefore(el, next)); return render(); }
   if (k === 'r') t.r += v; if (k === 's') t.s = Math.min(1.8, Math.max(.5, t.s + v)); if (k === 'f') t.f *= -1;
   if (k === 'top') $('stuck').appendChild(el);
   if (k === 'frame') t.frame = t.frame === v ? 'none' : v;
-  if (k === 'x') { el.remove(); did('Took a sticker off'); return render(); }
-  el.style.transform = `rotate(${t.r}deg) scale(${t.s}) scaleX(${t.f})`; el.dataset.frame = t.frame || 'none';
-  did({ r: 'Turned it', s: 'Sized it', f: 'Flipped it', top: 'Brought it to the front', frame: 'Framed it' }[k]); render();
+  show();
+  did({ r: 'Turned it', s: 'Sized it', f: 'Flipped it', top: 'Brought it to the front', frame: 'Framed it' }[k], () => { el.t = was; if (k === 'top') parent.insertBefore(el, next); show(); });
+  render();
 }
-function did(what) { state.did = [what, ...state.did].slice(0, 12); $('undostrip').innerHTML = `<span class="mono">${what}</span><b onclick="toast('Undone')">Undo</b>`; $('undostrip').classList.add('on'); clearTimeout(did.t); did.t = setTimeout(() => $('undostrip').classList.remove('on'), 3500); }
+// The undo strip: the last change, and a pill that really takes it back. Up to twelve are kept.
+function did(what, back) {
+  state.did = [{ what, back }, ...state.did].slice(0, 12); showUndo();
+}
+function showUndo() {
+  const last = state.did[0], strip = $('undostrip');
+  if (!last) return strip.classList.remove('on');
+  strip.innerHTML = `<span class="mono">${last.what}</span><b onclick="undoLast()">Undo</b>`; strip.classList.add('on');
+  clearTimeout(did.t); did.t = setTimeout(() => strip.classList.remove('on'), 4000);
+}
+function undoLast() { const last = state.did.shift(); if (!last) return; last.back(); toast('Undone: ' + last.what.toLowerCase()); render(); showUndo(); }
 
 /* Capture, agents, switches. */
 let recAt = 0;
@@ -432,25 +476,29 @@ const clock = (t) => { const s = Math.max(0, Math.floor((Date.now() - t) / 1000)
 const recTime = () => clock(recAt);
 function approve(i, yes) { AGENTS[i].cls = 'working'; AGENTS[i].since = Date.now(); AGENTS[i].doing = yes ? 'Bash: npm run build' : 'Denied. Looking for another way'; render(); toast(yes ? 'Approved' : 'Denied'); }
 function flip(k) { state.toggles[k] = !state.toggles[k]; render(); }
-setInterval(() => { if (state.mode !== 'closed' && (state.rec || LOADOUTS[state.loadout].tools.includes('agents'))) render(); }, 1000);
+// Only the clocks' own text changes each second: rebuilding the panel would take the focus out of the search box.
+setInterval(() => document.querySelectorAll('[data-since]').forEach((el) => { el.textContent = clock(+el.dataset.since); }), 1000);
 
-/* Sheets. */
+/* Sheets. Each has a close button; a tap beside it closes it too, and so does any change of the panel. */
+const sheetTop = (title) => `<div class="top"><h3 class="display">${title}</h3><span class="close" title="close" onclick="closeSheet()">×</span></div>`;
 function sheet(which) {
   const s = $('sheet');
-  if (which === 'loadouts') s.innerHTML = `<h3 class="display">Loadouts</h3><div class="mono" style="color:var(--muted)">a loadout is a set of tools. pick one, or make another</div>` +
-    LOADOUTS.map((l, i) => `<div class="item" onclick="go(${i});closeSheet()"><span class="g">${TOOLS[l.tools[0]].g}</span><div><b>${l.name}</b><small>${l.tools.map((t) => TOOLS[t].name).join(' · ')}</small></div></div>`).join('') +
+  if (which === 'loadouts') s.innerHTML = sheetTop('Loadouts') + `<div class="mono" style="color:var(--muted)">a loadout is a set of tools. pick one, or make another</div>` +
+    LOADOUTS.map((l, i) => `<div class="item" onclick="go(${i});closeSheet()"><span class="g">${TOOLS[l.tools[0]]?.g ?? '○'}</span><div><b>${l.name}</b><small>${l.tools.map((t) => TOOLS[t].name).join(' · ') || 'no tools yet'}</small></div>
+      ${i === state.loadout ? `<div class="acts mono"><span onclick="event.stopPropagation();renameLoadout()">rename</span>${LOADOUTS.length > 1 ? `<span onclick="event.stopPropagation();dropLoadout()">delete</span>` : ''}</div>` : ''}</div>`).join('') +
     `<div class="item" onclick="newLoadout()"><span class="g">+</span><div><b>New loadout</b><small>start empty and add tools</small></div></div>`;
-  else s.innerHTML = `<h3 class="display">Add a tool</h3><div class="mono" style="color:var(--muted)">to ${LOADOUTS[state.loadout].name}. a tool can sit in many loadouts</div>` +
-    Object.entries(TOOLS).filter(([k]) => !LOADOUTS[state.loadout].tools.includes(k)).map(([k, t]) => `<div class="item" onclick="addTool('${k}')"><span class="g">${t.g}</span><div><b>${t.name}</b><small>${t.about}</small></div></div>`).join('') +
+  else s.innerHTML = sheetTop('Add a tool') + `<div class="mono" style="color:var(--muted)">to ${LOADOUTS[state.loadout].name}. a tool can sit in many loadouts</div>` +
+    (Object.entries(TOOLS).filter(([k]) => !LOADOUTS[state.loadout].tools.includes(k)).map(([k, t]) => `<div class="item" onclick="addTool('${k}')"><span class="g">${t.g}</span><div><b>${t.name}</b><small>${t.about}</small></div></div>`).join('') || `<div class="empty hand">every tool is here already</div>`) +
     `<div class="ask hand" style="font-size:20px" onclick="toast('Oma: “what should it do?” An agent builds it as a tool file');closeSheet()">ask Oma to make a new tool…</div>`;
-  s.classList.add('on');
+  s.classList.add('on'); $('scrim').classList.add('on');
 }
-function closeSheet() { $('sheet').classList.remove('on'); }
+function closeSheet() { $('sheet').classList.remove('on'); $('scrim').classList.remove('on'); }
 function addTool(k) { LOADOUTS[state.loadout].tools.push(k); closeSheet(); render(); scrollTool(k); }
-function newLoadout() { LOADOUTS.push({ name: 'Loadout ' + (LOADOUTS.length + 1), tools: [] }); go(LOADOUTS.length - 1); closeSheet(); sheet('tools'); }
-$('home').addEventListener('pointerdown', closeSheet);
+function newLoadout() { LOADOUTS.push({ name: 'Loadout ' + (LOADOUTS.length + 1), tools: [] }); go(LOADOUTS.length - 1); sheet('tools'); }
+function renameLoadout() { const l = LOADOUTS[state.loadout], name = prompt('Call this loadout', l.name); if (name && name.trim()) { l.name = name.trim().slice(0, 18); render(); sheet('loadouts'); } }
+function dropLoadout() { const l = LOADOUTS[state.loadout]; if (LOADOUTS.length < 2 || !confirm(`Delete the ${l.name} loadout? Its tools stay in the others.`)) return; LOADOUTS.splice(state.loadout, 1); go(Math.min(state.loadout, LOADOUTS.length - 1)); sheet('loadouts'); }
 
-/* States to open at, for screenshots: #full, #rail, #work, #phone, #bench. */
+/* States to open at, for screenshots: #full, #rail, #work, #phone, #dress. */
 addEventListener('resize', fit); fit();
 const h = location.hash.slice(1);
 if (h === 'work') state.loadout = 1; if (h === 'phone') state.loadout = 2;
