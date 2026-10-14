@@ -846,7 +846,9 @@ class WidgetEngine(
                 "Saved files show up on the phone within seconds. After saving, run `owl-check <file>`: it prints the errors " +
                 "and the path of a PNG of the tile, drawn with live data; look at it to check the layout. " +
                 "examples/ holds more widgets to learn from or move up to use. Scripts, cron jobs and hooks can set a running " +
-                "widget's state or refresh it with `owl-send <file> set <state> <value>` and `owl-send <file> refresh`.\n"
+                "widget's state or refresh it with `owl-send <file> set <state> <value>` and `owl-send <file> refresh`.\n\n" +
+                "Anything you start ends when your turn does. For a server or other job that must keep running, use " +
+                "`oma-keep run NAME -- COMMAND ARGS`; `oma-keep list`, `oma-keep log NAME` and `oma-keep stop NAME` see and end it.\n"
     }
 }
 

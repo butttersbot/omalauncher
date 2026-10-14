@@ -25,6 +25,8 @@ import dev.omalauncher.linux.AudioBridge
 import dev.omalauncher.linux.Bootstrap
 import dev.omalauncher.linux.FILES_COMMAND
 import dev.omalauncher.linux.Gpu
+import dev.omalauncher.linux.KEEP_COMMAND
+import dev.omalauncher.linux.KEEP_PYTHON
 import dev.omalauncher.linux.LinuxApp
 import dev.omalauncher.linux.OpenBridge
 import dev.omalauncher.linux.Pacman
@@ -34,6 +36,7 @@ import dev.omalauncher.linux.SystemUpdates
 import dev.omalauncher.linux.TerminalFont
 import dev.omalauncher.linux.bundledIcons
 import dev.omalauncher.linux.defaultApps
+import dev.omalauncher.linux.keepGuestTools
 import dev.omalauncher.linux.loadLinuxApps
 import dev.omalauncher.linux.matches
 import dev.omalauncher.linux.resolveLinuxIcon
@@ -132,6 +135,7 @@ class Runtime(
                 themes::managed,
                 widgets::guestManaged,
                 { macGuestTools(context, proot.rootfs) },
+                { keepGuestTools(context, proot.rootfs) },
             ),
         )
     val bootstrap = Bootstrap(context, proot, agents, pacman, provisioner)
@@ -326,6 +330,7 @@ class Runtime(
         }
         widgets.linuxChanged(true)
         openDoor()
+        openKeeper()
         refreshApps()
         withContext(Dispatchers.IO) { updates.load() }
         scope.launch {
@@ -391,6 +396,8 @@ class Runtime(
 
     fun screenStarted() {
         if (screens++ == 0) proot.procShim.setActive(true)
+        // A keeper that ended (python3 installed only now, or it failed) is started again when he next looks.
+        if (linux) openKeeper()
         // Only checks when the last check is hours old; see SystemUpdates.
         if (linux) scope.launch { updates.check() }
     }
@@ -548,6 +555,16 @@ class Runtime(
     }
 
     @Volatile private var doorOpened = false
+
+    /** Starts oma-keep's keeper (see linux/Keeper.kt) in a proot of its own, which a builder turn ending leaves running. */
+    private fun openKeeper() {
+        if (keeperOpen) return
+        if (!File(proot.rootfs, KEEP_COMMAND).isFile || !File(proot.rootfs, KEEP_PYTHON).isFile) return
+        keeperOpen = true
+        launch("oma-keep serve") { keeperOpen = false }
+    }
+
+    @Volatile private var keeperOpen = false
 
     /** Starts a command inside the guest; its output goes to logcat. Returns at once; [onExit] runs on the launch thread. */
     fun launch(
