@@ -1,6 +1,29 @@
 # Phone test results
 
-## Latest: the routing bundle is on the real launcher (2026-10-13, about 18:30 PDT, versionCode 49, commit 75f0cf8)
+## Latest: context on hand-over, never-blocked input, stop marks (2026-10-13, about 19:45 PDT, commit b6a3ff4) — NOT promoted, NOT seen on a screen
+
+Two batches by subagents, each built green by `oma-build` afterwards. The real launcher is still versionCode 49 (75f0cf8).
+- A hand-over now carries the last front exchanges ahead of his words, marked "[Earlier, between Boss and Oma's
+  quick answers; context only, not a request] ... [Boss now says]". Entries, notifications and the log keep his words
+  only. `AgentTasks.followUp` gained `earlier` and `screen` (defaults keep old callers as they were) and
+  `cancelFollowUp`.
+- The board gained a "Last to speak" line when a Mac is set up; a "yes" after two questions went to the right thread
+  6 of 6 (was 3 of 9) in the subagent's trial.
+- `MacThreads.open` is called from `Runtime.start()`; `oma-thread list | new NAME PATH` is installed in the guest
+  from `assets/oma-thread.sh` (key only on curl's stdin). Not run against the real runner.
+- Input is never blocked: the front agent has a queue of its own (8), waiting entries say where they wait and carry
+  `[ cancel ]` (not for the Mac's queue), the listening screen no longer has a Busy phase (pinned tests for it were
+  changed on purpose; the approval phase is as it was).
+- `<<stop>>` and `<<stop mac ID>>`: carried out only when his own words hold a stopping word, because real Haiku
+  wrote `<<stop>>` for "thanks" with the builder working. Known weak case: a bare "stop" with the builder and a
+  thread both working stopped the builder 1 time in 3 instead of asking which.
+- Hello Phone (`/root/Projects/hello-phone`, `dev.boss.hello`): written, built in 36 s, installed over adb, its
+  text read off its screen, then removed at Boss's word. Building other apps here works.
+- Found: a background subagent dies whenever a new message is handed to this builder (the process restarts). Run
+  them in the foreground.
+- Not built: Mac work on the tiles, ring and lock widget.
+
+## Earlier: the routing bundle is on the real launcher (2026-10-13, about 18:30 PDT, versionCode 49, commit 75f0cf8)
 
 - Promoted at Boss's word: quick lane, automatic routing, Mac threads, keep-awake. `oma-install --status`: verified,
   phone control bound by itself.
