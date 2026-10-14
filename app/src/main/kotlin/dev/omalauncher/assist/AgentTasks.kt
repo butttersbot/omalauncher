@@ -53,6 +53,16 @@ object AgentTasks {
     @Volatile private var taskTime = 0L
     /** The home page the latest request was sent from, and how long its task ran: a widget made meanwhile lands there. */
     @Volatile var asked: PageAsk? = null; private set
+    /**
+     * When the running task began, when its agent last printed a line of any kind, and its last tool step and
+     * when: only recorded here, for [BuilderWatch] to tell a builder that works from one that is stuck.
+     */
+    @Volatile var startedAt = 0L; private set
+    @Volatile var heardAt = 0L; private set
+    @Volatile var lastStep = ""; private set
+    @Volatile var lastStepAt = 0L; private set
+    /** How many follow-ups wait behind the running task. */
+    val queued: Int get() = synchronized(this) { followUps.waiting.size }
     /** Far above what a scaled-down screenshot weighs; anything bigger isn't one. */
     private const val MAX_SCREENSHOT_BYTES = 8L * 1024 * 1024
     @Synchronized fun restore(context: Context) {
@@ -138,6 +148,7 @@ object AgentTasks {
         val began = System.currentTimeMillis()
         val time = queued ?: ChatHistory.stamp(log.tasks, began)
         taskTime = time
+        startedAt = began; heardAt = began; lastStep = ""; lastStepAt = 0L
         asked = page?.let { PageAsk(it, began) }
         if (queued == null) log.begin(ChatTask(time, agent.name, prompt, images, screen = screen != null, newThread = resumed == null))
         else log.update(time, save = true) { it.copy(agent = agent.name, newThread = resumed == null, status = TaskStatus.Running) }
@@ -158,6 +169,7 @@ object AgentTasks {
                     child.inputStream.bufferedReader().use { reader ->
                         while (true) {
                             val line = reader.readLine() ?: break
+                            heardAt = System.currentTimeMillis()
                             val event = runCatching { JSONObject(line) }.getOrNull()
                             if (event == null) {
                                 if (resumed != null && line.startsWith("No conversation found")) lost = true
@@ -185,7 +197,9 @@ object AgentTasks {
                                         when (block.optString("type")) {
                                             "text" -> answer = (answer + block.optString("text") + "\n").takeLast(40_000)
                                             "tool_use" -> {
-                                                log.update(time) { ChatHistory.withStep(it, ClaudeProtocol.step(block)) }
+                                                val step = ClaudeProtocol.step(block)
+                                                lastStep = step; lastStepAt = System.currentTimeMillis()
+                                                log.update(time) { ChatHistory.withStep(it, step) }
                                                 if (approvals.isEmpty()) { label = "Using ${block.optString("name").take(60)}"; notify(context) }
                                             }
                                         }
@@ -211,7 +225,7 @@ object AgentTasks {
                     } else if (stopping && session != null) thread = session // A stopped request can still be followed up.
                 } else {
                     child.outputStream.close()
-                    child.inputStream.bufferedReader().forEachLine { answer = (answer + it + "\n").takeLast(40_000) }
+                    child.inputStream.bufferedReader().forEachLine { heardAt = System.currentTimeMillis(); answer = (answer + it + "\n").takeLast(40_000) }
                 }
                 val code = child.waitFor()
                 label = if (stopping) "Stopped" else if (code == 0) "Done" else "Agent needs attention"
@@ -343,6 +357,7 @@ object AgentTasks {
         OmaLockWidget.refresh(context)
         AgentNotices.task(context, working, label, answer, approvals.size)
         writeStatus(context)
+        BuilderWatch.watch(context)
     }
 
     /**

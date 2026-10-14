@@ -60,6 +60,14 @@ private const val STOP_NAMED_OPEN = "<<stop "
 private val STOP_NAMED_MARK = Regex(Regex.escape(STOP_NAMED_OPEN) + "[^<>\\n]{0,80}>>")
 private val STOP_NAMED_ARRIVING = Regex(Regex.escape(STOP_NAMED_OPEN) + "[^<>\\n]{0,80}>?")
 
+/**
+ * The whole reply the front agent gives when his words ask for the phone's builder to be mended: [RESTART] stops
+ * its stuck task and sends the same request again, [CLEAN] ends builder processes no task owns. The launcher
+ * carries both out, never the front agent, and only as [BuilderWatch] finds things when the mark arrives.
+ */
+const val RESTART = "<<restart>>"
+const val CLEAN = "<<clean>>"
+
 /** Whether a thread with this id can be named by a mark at all: no spaces, no brackets, no backticks, not too long. */
 fun macNameable(threadId: String) = threadId.length in 1..MAC_ID_CHARS && threadId.none { it.isWhitespace() || it in "<>`" }
 
@@ -76,12 +84,19 @@ sealed interface FrontRead {
 
     /** His words were an order to stop: the task [of] is on is stopped, and his words go nowhere. */
     data class Stop(val of: String) : FrontRead
+
+    /** He asked for the stuck builder to be restarted. */
+    data object Restart : FrontRead
+
+    /** He asked for leftover builder processes to be ended. */
+    data object Clean : FrontRead
 }
 
 /** Whether [tail], the end of what has been said, could still grow into a mark. */
 private fun opensMark(tail: String) =
     (tail.length < HAND_OVER.length && HAND_OVER.startsWith(tail)) || MAC_OPEN.startsWith(tail) || MAC_ARRIVING.matches(tail) ||
-        (tail.length < STOP.length && STOP.startsWith(tail)) || STOP_NAMED_OPEN.startsWith(tail) || STOP_NAMED_ARRIVING.matches(tail)
+        (tail.length < STOP.length && STOP.startsWith(tail)) || STOP_NAMED_OPEN.startsWith(tail) || STOP_NAMED_ARRIVING.matches(tail) ||
+        (tail.length < RESTART.length && RESTART.startsWith(tail)) || (tail.length < CLEAN.length && CLEAN.startsWith(tail))
 
 /** How many characters at the end of [said] are the start of a mark that may still be arriving. */
 private fun arrivingMark(said: String): Int {
@@ -115,13 +130,15 @@ fun frontRead(text: String, ended: Boolean = false): FrontRead {
     val lead = text.trimStart { it.isWhitespace() || it == '`' }
     if (lead.startsWith(HAND_OVER)) return FrontRead.HandOver(Route.BUILD)
     if (lead.startsWith(STOP)) return FrontRead.Stop(Route.BUILD)
+    if (lead.startsWith(RESTART)) return FrontRead.Restart
+    if (lead.startsWith(CLEAN)) return FrontRead.Clean
     if (lead.startsWith(STOP_NAMED_OPEN)) {
         val named = macNamed(lead, STOP_NAMED_OPEN, STOP_NAMED_ARRIVING, ended) ?: return FrontRead.Undecided
         return FrontRead.Stop(Route.mac(named.removePrefix(Route.MAC + " ").trim()))
     }
     if (lead.startsWith(MAC_OPEN)) return macNamed(lead, MAC_OPEN, MAC_ARRIVING, ended)?.let { FrontRead.HandOver(Route.mac(it)) } ?: FrontRead.Undecided
-    if (lead.isEmpty() || (!ended && listOf(HAND_OVER, MAC_OPEN, STOP, STOP_NAMED_OPEN).any { it.startsWith(lead) })) return FrontRead.Undecided
-    val said = text.replace(HAND_OVER, "").replace(STOP, "").replace(STOP_NAMED_MARK, "").replace(MAC_MARK, "")
+    if (lead.isEmpty() || (!ended && listOf(HAND_OVER, MAC_OPEN, STOP, STOP_NAMED_OPEN, RESTART, CLEAN).any { it.startsWith(lead) })) return FrontRead.Undecided
+    val said = text.replace(HAND_OVER, "").replace(STOP, "").replace(RESTART, "").replace(CLEAN, "").replace(STOP_NAMED_MARK, "").replace(MAC_MARK, "")
     return FrontRead.Answer(said.dropLast(if (ended) 0 else arrivingMark(said)).trimEnd())
 }
 
@@ -136,11 +153,30 @@ private val STOP_WORDS = Regex("\\b(stop|cancel|abort|halt|kill|quit|pause|scrap
 fun wordsOfStopping(words: String) = STOP_WORDS.containsMatchIn(words)
 
 /**
+ * The words that can make his request one to mend the builder: about it being stuck, frozen, slow or broken, or
+ * asking to restart, fix or clean it up. As with stopping, the front agent decides; this is what the launcher
+ * asks for besides, because a restart throws the work under way away.
+ */
+private val MENDING_WORDS = Regex(
+    "\\b(stuck|frozen|freez\\w*|froze|hung|hang\\w*|slow\\w*|broke\\w*|dead|crash\\w*|unresponsive|wedged|restart\\w*|reboot|" +
+        "unstick|unfreeze|kick|fix\\w*|repair|reset|mend|clean\\w*|leftover\\w*|orphan\\w*|zombie\\w*)\\b",
+    RegexOption.IGNORE_CASE,
+)
+
+/** Whether [words], what he said, could ask for the builder to be mended at all. */
+fun wordsOfMending(words: String) = MENDING_WORDS.containsMatchIn(words)
+
+/**
  * [read] as the launcher acts on it for [words], his own. A mark that stops which his words do not bear out
  * stops nothing: it is read as a hand-over to the same place, which is where the front agent's mistaken marks
- * have always gone, and his words then wait there like any other request.
+ * have always gone, and his words then wait there like any other request. A mark that restarts or cleans which
+ * his words do not bear out is a hand-over to the builder the same way.
  */
-fun borneOut(read: FrontRead, words: String): FrontRead = if (read is FrontRead.Stop && !wordsOfStopping(words)) FrontRead.HandOver(read.of) else read
+fun borneOut(read: FrontRead, words: String): FrontRead = when {
+    read is FrontRead.Stop && !wordsOfStopping(words) -> FrontRead.HandOver(read.of)
+    (read == FrontRead.Restart || read == FrontRead.Clean) && !wordsOfMending(words) -> FrontRead.HandOver(Route.BUILD)
+    else -> read
+}
 
 /** Where a hand-over goes, once the mark is checked against the threads the front agent was shown. */
 sealed interface FrontRoute {
@@ -288,7 +324,8 @@ fun waitingLine(task: ChatTask, ahead: Int = 0, macLabel: String = ""): WaitingL
 /**
  * What the front agent is told of the build lane before each request: whether it is [working], its [label]
  * and the start of the [request] it is on; otherwise the end of its [lastAnswer], which may have asked him
- * something. [spokeAgo] is how many milliseconds ago he last sent it anything, null if he never has.
+ * something. [spokeAgo] is how many milliseconds ago he last sent it anything, null if he never has. [health]
+ * is [healthLine]: null when the builder is idle and nothing is wrong, and the board then is as it was before.
  */
 data class BuildBoard(
     val working: Boolean,
@@ -296,6 +333,7 @@ data class BuildBoard(
     val request: String = "",
     val lastAnswer: String = "",
     val spokeAgo: Long? = null,
+    val health: String? = null,
 )
 
 const val BOARD_REQUEST_CHARS = 200
@@ -417,6 +455,7 @@ fun boardText(board: BuildBoard, mac: MacBoard? = null): String {
     val lines = listOfNotNull(
         "[Board, for you only; Boss does not see it]",
         builder,
+        board.health,
         board.spokeAgo?.let { "Boss last spoke to the builder ${ago(it)}." },
     )
     return (lines + macLines(mac) + listOfNotNull(mac?.let { lastToSpeak(board, it) }) + "[Boss says]").joinToString("\n")

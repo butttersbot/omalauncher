@@ -281,6 +281,43 @@ class FrontAgentTest {
         assertEquals("Nothing was running.", NOTHING_RUNNING)
     }
 
+    // Mending a stuck builder
+
+    @Test fun aMarkThatMendsIsNotDecidedUntilItIsWholeAndAMentionMendsNothing() {
+        assertEquals("<<restart>>", RESTART); assertEquals("<<clean>>", CLEAN)
+        for (partial in listOf("<<r", "<<rest", "<<restart", "<<restart>", "<<c", "<<clea", "<<clean>", " `<<restart")) assertEquals(partial, FrontRead.Undecided, frontRead(partial))
+        for (whole in listOf("<<restart>>", " <<restart>>\n", "`<<restart>>`", "<<restart>> now")) {
+            assertEquals(whole, FrontRead.Restart, frontRead(whole)); assertEquals(whole, FrontRead.Restart, frontRead(whole, ended = true))
+        }
+        for (whole in listOf("<<clean>>", "```\n<<clean>>\n```", "<<clean>>\nDone.")) assertEquals(whole, FrontRead.Clean, frontRead(whole, ended = true))
+        // The stream of a real one is decided at the closing bracket.
+        var said = QuickAnswer()
+        val reads = listOf("<<re", "start", ">", ">").map { piece -> said = said.after(QuickEvent.Delta(piece)); frontRead(said.text) }
+        assertEquals(listOf(FrontRead.Undecided, FrontRead.Undecided, FrontRead.Undecided, FrontRead.Restart), reads)
+        // Only a reply that starts with one mends; a mention is shown without it, and half of one at the end is held back until it cannot be one.
+        assertEquals(FrontRead.Answer("I can  it if it is stuck."), frontRead("I can <<restart>> it if it is stuck.", ended = true))
+        assertEquals(FrontRead.Answer("Say so and I will ."), frontRead("Say so and I will <<clean>>.", ended = true))
+        assertEquals(FrontRead.Answer("Sure!"), frontRead("Sure! <<resta"))
+        assertEquals(FrontRead.Answer("Sure! <<resta"), frontRead("Sure! <<resta", ended = true))
+        for (near in listOf("<<Restart>>", "<< restart >>", "<restart>", "restart", "<<restarted>>", "<<cleanup>>")) assertTrue(near, frontRead(near, ended = true) is FrontRead.Answer)
+        assertEquals(FrontRead.HandOver(Route.BUILD), frontRead("<<build>><<restart>>"))
+    }
+
+    @Test fun aMendHisOwnWordsDoNotBearOutIsHandedOverInstead() {
+        for (asked in listOf("is the builder frozen?", "it's stuck", "restart it", "fix the builder", "he seems hung", "why is it so slow", "kick it", "clean up the leftover processes", "it froze", "Restart.", "is it broken")) {
+            assertTrue(asked, wordsOfMending(asked))
+            assertEquals(asked, FrontRead.Restart, borneOut(FrontRead.Restart, asked))
+            assertEquals(asked, FrontRead.Clean, borneOut(FrontRead.Clean, asked))
+        }
+        for (plain in listOf("thanks", "what's it doing", "check on the builder", "make it blue", "", "is it done yet", "stop")) {
+            assertFalse(plain, wordsOfMending(plain))
+            assertEquals(plain, FrontRead.HandOver(Route.BUILD), borneOut(FrontRead.Restart, plain))
+            assertEquals(plain, FrontRead.HandOver(Route.BUILD), borneOut(FrontRead.Clean, plain))
+        }
+        // Mending words do not make a stop of anything, nor bear one out.
+        assertEquals(FrontRead.HandOver(Route.BUILD), borneOut(FrontRead.Stop(Route.BUILD), "restart it"))
+    }
+
     private val minute = 60_000L
     private fun built(time: Long, prompt: String, result: String = "", status: TaskStatus = TaskStatus.Done) = ChatTask(time, "Claude Code", prompt, result = result, status = status)
 
