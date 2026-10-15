@@ -78,7 +78,7 @@
 <script>
 // ---- Settings, kept between visits. ----
 const saved = JSON.parse(localStorage.getItem('omaKbSettings') || '{}');
-const V = Object.assign({ keys: 'mech', ret: 'a', split: 'wide', look: 'citypop', sound: 'on', haptic: 'on' }, saved);
+const V = Object.assign({ keys: 'mech', ret: 'a', split: 'wide', look: 'citypop', sound: 'on', haptic: 'on', aim: 'on' }, saved);
 // ?split=split&ret=b and so on preset a setup (for links and checks).
 for (const [k, v] of new URLSearchParams(location.search)) if (k in V) V[k] = v;
 const saveV = () => localStorage.setItem('omaKbSettings', JSON.stringify(V));
@@ -167,7 +167,23 @@ function geom(W, layout, layer) {
 }
 
 // A touch goes to the key whose cell holds it; between cells or past the row's end, the nearest key in that row.
+// Aim fix: where Boss's thumbs actually land on each letter, in dp from the key's centre (+x right, +y down), learned
+// from his cover-screen practice taps on 2026-10-14 (design/kb-taps-report.py; 835 taps, slips 78 -> 48 on held-out
+// taps). With it on, a touch on the letter rows goes to the letter whose learned landing spot it is nearest to; the
+// keys look the same. The real keyboard would keep learning this from his typing.
+const AIM = {"a":[-7.8,-7.3],"b":[-14.5,4.6],"c":[-15.0,3.4],"d":[-5.0,9.9],"e":[0.0,1.5],"f":[-2.8,4.5],"g":[-7.0,9.0],"h":[-7.6,9.0],"i":[-6.6,11.5],"j":[-7.9,4.3],"k":[-16.3,7.6],"l":[-0.5,10.5],"m":[-3.3,1.4],"n":[-11.0,7.3],"o":[-5.2,12.8],"p":[-0.9,10.4],"q":[-3.9,3.0],"r":[-1.5,-0.6],"s":[1.7,7.6],"t":[-4.0,-2.3],"u":[-2.8,11.6],"v":[-8.0,4.7],"w":[-1.1,0.2],"x":[-7.6,4.5],"y":[-5.9,4.5],"z":[-4.0,6.3]};
 function hit(G, x, y) {
+  const plain = hitPlain(G, x, y);
+  if (V.aim !== 'on' || layoutName() !== 'cover' || !plain || plain.row === 3 || !plain.act.startsWith('k:')) return plain;
+  let best = plain, bd = 1e9;
+  for (const k of G.keys) if (k.row < 3 && k.act.startsWith('k:')) {
+    const o = (T.layer === 'abc' && AIM[k.act.slice(2)]) || [0, 0];
+    const d = ((x - k.x - k.w / 2 - o[0]) / k.w) ** 2 + ((y - k.y - k.h / 2 - o[1]) / k.h) ** 2;
+    if (d < bd) { bd = d; best = k; }
+  }
+  return best;
+}
+function hitPlain(G, x, y) {
   const row = Math.max(0, Math.min(3, Math.floor((y - G.TOP) / G.H)));
   if (G.dead.some(d => (d.row === -1 || d.row === row) && x >= d.x0 && x < d.x1)) return null;
   let best = null, bd = 1e9;
@@ -218,7 +234,7 @@ function logTap(p) {
   const w = keyFor(want), r = v => Math.round(v * 10) / 10;
   LOGQ.push({ t: Date.now(), layout: layoutName(), sw: innerWidth, sh: innerHeight, keys: V.keys, ret: V.ret, split: V.split, layer: T.layer,
     phrase: tgt, pos: typed.length, want, got, x: r(p.tx), y: r(p.ty), hx: r(p.k.x + p.k.w / 2), hy: r(p.k.y + p.k.h / 2),
-    wx: w ? r(w.x + w.w / 2) : null, wy: w ? r(w.y + w.h / 2) : null, held: Math.round(performance.now() - p.t0) });
+    wx: w ? r(w.x + w.w / 2) : null, wy: w ? r(w.y + w.h / 2) : null, held: Math.round(performance.now() - p.t0), aim: V.aim });
   if (LOGQ.length >= 20) flushLog();
 }
 function flushLog() {
@@ -279,6 +295,7 @@ function renderTop() {
     `<span class="lbl">return</span>${chip('ret', 'a', 'A')}${chip('ret', 'b', 'B')}` +
     (l === 'cover' ? '' : `<span class="lbl">board</span>${chip('split', 'wide', 'wide')}${chip('split', 'split', 'split')}`) +
     `<span class="lbl">look</span>${chip('look', 'citypop', 'city pop')}${chip('look', 'riso', 'riso')}${chip('look', 'console', 'console')}` +
+    (l === 'cover' ? `<span class="lbl">aim fix</span>${chip('aim', 'on', 'on')}${chip('aim', 'off', 'off')}` : '') +
     `<span class="lbl">feel</span>${chip('sound', V.sound === 'on' ? 'on' : 'off', V.sound === 'on' ? 'thock on' : 'thock off')}${chip('haptic', V.haptic === 'on' ? 'on' : 'off', V.haptic === 'on' ? 'buzz on' : 'buzz off')}` +
     `<button data-k="skip" style="margin-left:auto">new phrase</button>`;
   for (const b of document.querySelectorAll('#chips button')) { b.classList.toggle('on', V[b.dataset.k] === b.dataset.v && !['sound', 'haptic'].includes(b.dataset.k) || (['sound', 'haptic'].includes(b.dataset.k) && V[b.dataset.k] === 'on')); }
