@@ -4,6 +4,17 @@ Boss moves to a new, higher-RAM phone tomorrow (2026-10-14/15). Everything below
 (`phone/fold-development`); the newest state is in `docs/PHONE-HANDOFF.md` (checkpoint 2026-10-14) and the top of
 `docs/PHONE-TEST-RESULTS.md`. Fix these on the new phone. Highest first.
 
+## Banked plan (Boss, 2026-10-14 night: "bank your recommended steps")
+From the review of everything built so far, in order:
+1. Finish the simplification: launcher code work goes to the Mac `omalauncher` thread (tc57ef960); the phone builder
+   only for phone-only work (oma-phone, install); then retire the second phone builder and its worktree machinery.
+2. One real end-to-end pass on the new phone, by voice: hold-to-talk with tabs/Mac/＋, a long job on a locked phone,
+   the Tailscale and phone-control self-heals, two jobs at once, the Claude→Codex→Cursor fallback.
+3. Restore rehearsal on the new phone (app data: pages, notes, chats); decide where the signing key's copy lives.
+4. Fold the five overlapping docs into two (a current-state handoff and this bug list).
+5. Back to the launcher itself: the design prototypes and the right panel.
+Also known: nothing stops two runs of the same session (seen twice tonight); routing log never reviewed.
+
 ## Bugs not fixed
 1. ~~**Mac background jobs die when their turn ends.**~~ FIXED 2026-10-14 by the Mac session: a Claude thread keeps
    its process while background work runs and the next message goes into it ("As built: background work outlives
