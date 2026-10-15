@@ -47,6 +47,11 @@ Also known: nothing stops two runs of the same session (seen twice tonight); rou
    look was not proven from the code. Unit tested (BuilderHealthTest).
 7. **Front agent misroutes, rare:** a plain question handed to a builder (about 2 in 100); "thanks" while a builder
    works sometimes handed over. Harmless but slow.
+   **The other way too (2026-10-14 ~21:40):** in the middle of the builder's keyboard work, Boss asked "how do we go
+   from here? Do we need to tweak it more, more data, or build it so we review periodically…" and the front agent
+   answered it itself, from its short context, instead of handing it to the builder whose work it was about. Boss:
+   "that was supposed to go to the builder". A judgment question about the work a builder is doing belongs with
+   that builder, even when it reads like a plain question.
 8. **The Oma prompt still names `oma-agents status`** (works as an alias; should say `oma status`). Built 2026-10-14
    evening, **not yet seen on a screen**: the prompt says `oma status`; both stay allowed (QuickLaneTest's wording pin
    changed with it).
