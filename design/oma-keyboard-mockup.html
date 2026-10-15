@@ -40,17 +40,19 @@
   /* Mechanical, NuPhy-like keycaps: a case around the board, a darker skirt under each cap and a lighter, slightly
      dished top face; pressing sinks the top into the skirt. Colours still come from the look. */
   .mech .kb { background: linear-gradient(180deg, color-mix(in srgb, var(--board) 80%, #000) 0%, color-mix(in srgb, var(--board) 92%, #000) 100%);
-    padding: 12px 8px 14px; border-top: 3px solid color-mix(in srgb, var(--board) 60%, #fff); box-shadow: inset 0 2px 6px rgba(0,0,0,.35); gap: 7px; }
-  .mech .key { height: 50px; border-radius: 9px; background: color-mix(in srgb, var(--key) 72%, #000);
-    box-shadow: 0 3px 0 color-mix(in srgb, var(--key) 55%, #000), 0 5px 6px rgba(0,0,0,.35); padding: 3px 4px 7px; place-items: stretch; transition: transform .05s, box-shadow .05s; }
-  .mech .key > span { display: grid; place-items: center; border-radius: 7px; height: 100%;
+    padding: 12px 8px 14px; border-top: 3px solid color-mix(in srgb, var(--board) 60%, #fff); box-shadow: inset 0 2px 6px rgba(0,0,0,.35); gap: 5px; }
+  /* Mechanical caps sit nearly flush, like a real board: 2px between caps, the room going to wider keys (see unit()). */
+  .mech .row { gap: 2px; padding: 0; }
+  .mech .key { height: 50px; border-radius: 7px; background: color-mix(in srgb, var(--key) 72%, #000);
+    box-shadow: 0 3px 0 color-mix(in srgb, var(--key) 55%, #000), 0 4px 3px rgba(0,0,0,.3); padding: 3px 4px 7px; place-items: stretch; transition: transform .05s, box-shadow .05s; }
+  .mech .key > span { display: grid; place-items: center; border-radius: 5px; height: 100%;
     background: radial-gradient(ellipse at 50% 35%, color-mix(in srgb, var(--key) 100%, #fff 12%) 0%, var(--key) 70%, color-mix(in srgb, var(--key) 92%, #000) 100%);
     box-shadow: inset 0 1px 0 rgba(255,255,255,.35), inset 0 -2px 3px rgba(0,0,0,.12); }
-  .mech .key.mod { background: color-mix(in srgb, var(--mod) 70%, #000); box-shadow: 0 3px 0 color-mix(in srgb, var(--mod) 50%, #000), 0 5px 6px rgba(0,0,0,.35); }
+  .mech .key.mod { background: color-mix(in srgb, var(--mod) 70%, #000); box-shadow: 0 3px 0 color-mix(in srgb, var(--mod) 50%, #000), 0 4px 3px rgba(0,0,0,.3); }
   .mech .key.mod > span { background: radial-gradient(ellipse at 50% 35%, color-mix(in srgb, var(--mod) 100%, #fff 12%) 0%, var(--mod) 70%, color-mix(in srgb, var(--mod) 90%, #000) 100%); }
-  .mech .key.mic { background: color-mix(in srgb, var(--accent) 65%, #000); box-shadow: 0 3px 0 color-mix(in srgb, var(--accent) 45%, #000), 0 5px 6px rgba(0,0,0,.35); }
+  .mech .key.mic { background: color-mix(in srgb, var(--accent) 65%, #000); box-shadow: 0 3px 0 color-mix(in srgb, var(--accent) 45%, #000), 0 4px 3px rgba(0,0,0,.3); }
   .mech .key.mic > span { background: radial-gradient(ellipse at 50% 35%, color-mix(in srgb, var(--accent) 100%, #fff 18%) 0%, var(--accent) 75%); color: var(--bg); }
-  .mech .key.ret { background: color-mix(in srgb, var(--hot) 60%, #000); box-shadow: 0 3px 0 color-mix(in srgb, var(--hot) 40%, #000), 0 5px 6px rgba(0,0,0,.35); }
+  .mech .key.ret { background: color-mix(in srgb, var(--hot) 60%, #000); box-shadow: 0 3px 0 color-mix(in srgb, var(--hot) 40%, #000), 0 4px 3px rgba(0,0,0,.3); }
   .mech .key.ret > span { background: radial-gradient(ellipse at 50% 35%, color-mix(in srgb, var(--hot) 100%, #fff 15%) 0%, var(--hot) 75%); color: #fff; }
   .mech .key:active, .mech .key.down { transform: translateY(2px); filter: none; box-shadow: 0 1px 0 rgba(0,0,0,.4), 0 2px 3px rgba(0,0,0,.3); }
   .mech .key.space > span { color: var(--muted); }
@@ -108,7 +110,7 @@ const rows = {
   123: [['1','2','3','4','5','6','7','8','9','0'], ['-','/',':',';','(',')','$','&','@','"'], ['.',',','?','!',"'"]],
 };
 
-function unit() { return S.screen === 'cover' ? 34 : 56; }
+function unit() { const m = S.caps_style === 'mech' ? 1 : 0; return S.screen === 'cover' ? 34 + m * 3.5 : 56 + m * 3.5; }
 function key(label, cls, w, act) { return `<div class="key ${cls||''}" style="width:${w}px" data-act="${act}"><span>${label}</span></div>`; }
 
 function draw() {
