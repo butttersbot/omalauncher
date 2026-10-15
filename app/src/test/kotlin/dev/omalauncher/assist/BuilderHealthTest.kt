@@ -226,6 +226,31 @@ class BuilderHealthTest {
         assertEquals(listOf(3 * minute, 10 * minute, 15 * minute, minute, 1_000L), listOf(QUIET_MS, STALL_MS, NOTICE_STALL_MS, DEAD_GRACE_MS, CPU_BUSY_MS_PER_MIN))
     }
 
+    /**
+     * OPEN-BUGS #6: the first status after an update read "alive: false" for the builder that was running, and was
+     * right a minute later. A young task with no process yet, or a look that could not read the guest, is not known
+     * to be alive or dead, so neither the front agent nor the tab's Restart acts on it.
+     */
+    @Test fun aYoungTaskOrAnUnreadLookIsNeitherAliveNorDead() {
+        val status = { f: BuilderFacts -> agentsStatus(f, null, "2026-10-14 18:00:00").getJSONObject("builder") }
+        val young = facts(quiet = 0, cpuMoved = null, pid = null, now = start + ALIVE_GRACE_MS - 1)
+        assertNull(young.alive); assertFalse(young.dead); assertFalse(status(young).has("alive"))
+        assertEquals(TabMend(), tabMend(PHONE_THREAD, mapOf(BuilderId.A to young)))
+        val grown = facts(quiet = 0, cpuMoved = null, pid = null, now = start + ALIVE_GRACE_MS)
+        assertEquals(false, grown.alive); assertFalse(grown.dead); assertFalse(status(grown).getBoolean("alive"))
+        // Found at once, it is alive at once.
+        assertEquals(true, facts(quiet = 0, cpuMoved = null, now = start + 1_000).alive)
+        // Long after its start, a look that read none of the guest's processes says nothing of it.
+        val unread = facts(quiet = minute, cpuMoved = null, pid = null).copy(procRead = false)
+        assertNull(unread.alive); assertFalse(unread.dead); assertEquals(BuilderVerdict.Working, builderVerdict(unread))
+        assertFalse(status(unread).has("alive"))
+        assertEquals(TabMend(), tabMend(PHONE_THREAD, mapOf(BuilderId.A to unread)))
+        assertNull(healthLine(unread)?.takeIf { "dead" in it })
+        // The same look, read, is the dead builder it was before.
+        assertEquals(BuilderVerdict.Dead, builderVerdict(unread.copy(procRead = true)))
+        assertEquals(30_000L, ALIVE_GRACE_MS)
+    }
+
     @Test fun theBoardLineSaysWhatIsWrongInOneLineAndNothingWhenIdle() {
         assertNull(healthLine(BuilderFacts(start, working = false)))
         assertEquals(

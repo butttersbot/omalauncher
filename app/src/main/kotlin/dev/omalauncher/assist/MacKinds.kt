@@ -4,6 +4,7 @@ import dev.omalauncher.oma.ApprovalAnswer
 import dev.omalauncher.oma.ChatHistory
 import dev.omalauncher.oma.ChatTask
 import dev.omalauncher.oma.TaskStatus
+import org.json.JSONObject
 
 /*
  * Never held up by one agent (Boss, 2026-10-13: "if we hit our limit on claude code concurrent sessions on the
@@ -61,7 +62,11 @@ fun macLimited(event: MacEvent) = event is MacEvent.Error && event.cause == MAC_
 fun macInstead(kind: String, installed: List<String>, limited: Set<String>): String? =
     if (macKindOf(kind) !in limited) null else macKind(installed, limited)
 
-/** The limits heard, each until [MAC_LIMIT_MEMORY_MS] after it was. Kept in memory only; not thread safe: MacThreads guards it. */
+/**
+ * The limits heard, each until [MAC_LIMIT_MEMORY_MS] after it was by the wall clock. Kept in prefs too ([text],
+ * [restore]), so a launcher restart does not send the next request to an agent still at its limit (OPEN-BUGS #12).
+ * Not thread safe: MacThreads guards it.
+ */
 class MacLimits(private val memory: Long = MAC_LIMIT_MEMORY_MS) {
     private val until = HashMap<String, Long>()
 
@@ -72,6 +77,22 @@ class MacLimits(private val memory: Long = MAC_LIMIT_MEMORY_MS) {
 
     /** The agents taken to be at their limit at [now]. */
     fun at(now: Long): Set<String> = until.filterValues { it > now }.keys
+
+    /** What is kept: each agent still at its limit at [now] and until when. */
+    fun text(now: Long): String = JSONObject().apply { for ((kind, end) in until) if (end > now) put(kind, end) }.toString()
+
+    /**
+     * Takes back what [text] kept, at [now]: what is over is dropped, and nothing is kept longer than [memory]
+     * from [now], so a clock set back since it was saved cannot hold an agent off for longer than a limit lasts.
+     * Unreadable text is no limit at all. A limit heard since stands if it ends later.
+     */
+    fun restore(text: String?, now: Long) {
+        val saved = runCatching { JSONObject(text.orEmpty()) }.getOrNull() ?: return
+        for (kind in saved.keys()) {
+            val end = minOf(saved.optLong(kind, 0L), now + memory)
+            if (end > now && end > (until[kind] ?: 0L)) until[kind] = end
+        }
+    }
 }
 
 /** The step on an entry whose turn on [from] ended at its limit, and which was sent on to [to]. */

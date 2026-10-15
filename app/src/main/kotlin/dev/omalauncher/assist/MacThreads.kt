@@ -647,7 +647,7 @@ object MacThreads {
     @Volatile private var cursors = MacCursors()
     /** The agents the Mac has, as its `/health` last said; empty until it has. */
     @Volatile private var kinds: List<String> = emptyList()
-    /** The agents heard to be at their limit lately. Only touched under the lock. */
+    /** The agents heard to be at their limit lately, kept in prefs under "limits". Only touched under the lock. */
     private val limits = MacLimits()
     /**
      * What each entry was last sent, his words with whatever went ahead of them, so that a turn ending at a limit
@@ -687,6 +687,7 @@ object MacThreads {
         val saved = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         cursors = MacCursors(macCursorsFrom(saved.getString("cursors", null)))
         view = MacView(seen = saved.getLong("seen", 0L).takeIf { it > 0 })
+        limits.restore(saved.getString("limits", null), System.currentTimeMillis())
         // No card of an earlier run can be answered: its ticket died with that process. They are drawn again from the Mac.
         AgentNotices.clearStaleMac(context)
     }
@@ -748,7 +749,9 @@ object MacThreads {
             view = change(before)
             before.copy(seen = null) != view.copy(seen = null)
         }
-        if (moved) BuilderWatch.macChanged(context)
+        if (!moved) return
+        BuilderWatch.macChanged(context)
+        told(context)
     }
 
     /** One thread as the Mac just described it, put into the list the board is made from. */
@@ -766,8 +769,14 @@ object MacThreads {
     private fun saveCursors(context: Context) =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString("cursors", macCursorsText(cursors.snapshot())).apply()
 
-    /** Under the lock: republishes the book for readers on other threads. */
-    private fun published() { pending = book.live }
+    /** Under the lock: republishes the book for readers on other threads, and the tiles, ring and lock widget count its requests. */
+    private fun published(context: Context) {
+        pending = book.live
+        told(context)
+    }
+
+    /** The Mac's work may look different now: the tiles, the ring and the lock widget are told, off this thread and lock. */
+    private fun told(context: Context) = AgentTasks.macChanged(context)
 
     /**
      * Asks the Mac for its threads, off the caller's thread and one asking at a time. The threads [macFollowed]
@@ -807,7 +816,7 @@ object MacThreads {
     /** The config is gone: there is no Mac to follow or answer, and what was unfinished there says so. */
     private fun noMac(context: Context) {
         ChatLog.of(context).revise { macAbandon(it, null, MAC_NOT_SET_UP) }
-        val gone = synchronized(this) { book.clear().also { published() } }
+        val gone = synchronized(this) { book.clear().also { published(context) } }
         see(context) { MacView() }
         gone.forEach { AgentNotices.macWithdraw(context, it) }
     }
@@ -1170,13 +1179,13 @@ object MacThreads {
     /** The thread cannot be followed: its entries say why, and its cards go, since they could not be answered. */
     private fun abandon(context: Context, threadId: String, reason: String) {
         ChatLog.of(context).revise { macAbandon(it, threadId, reason) }
-        val gone = synchronized(this) { book.drop(threadId).also { published() } }
+        val gone = synchronized(this) { book.drop(threadId).also { published(context) } }
         gone.forEach { AgentNotices.macWithdraw(context, it) }
     }
 
     /** Makes the cards match the thread's own list of what waits, and the entries with them. */
     private fun synced(context: Context, seen: MacThread) {
-        val change = synchronized(this) { book.sync(seen).also { published() } }
+        val change = synchronized(this) { book.sync(seen).also { published(context) } }
         val log = ChatLog.of(context)
         for (gone in change.removed) {
             AgentNotices.macWithdraw(context, gone)
@@ -1210,15 +1219,15 @@ object MacThreads {
         when (event) {
             is MacEvent.Approval -> {
                 val threadName = name(context, threadId)
-                val added = synchronized(this) { book.offer(threadId, threadName, event.id, event.request).also { published() } }
+                val added = synchronized(this) { book.offer(threadId, threadName, event.id, event.request).also { published(context) } }
                 if (added != null) AgentNotices.macRequest(context, added)
             }
             is MacEvent.ApprovalResult -> {
-                val gone = synchronized(this) { book.resolve(threadId, event.id, event.approval).also { published() } }
+                val gone = synchronized(this) { book.resolve(threadId, event.id, event.approval).also { published(context) } }
                 if (gone != null) AgentNotices.macWithdraw(context, gone)
             }
             is MacEvent.Result, is MacEvent.Error, is MacEvent.Stopped -> {
-                val gone = synchronized(this) { book.ended(threadId, event.id).also { published() } }
+                val gone = synchronized(this) { book.ended(threadId, event.id).also { published(context) } }
                 gone.forEach { AgentNotices.macWithdraw(context, it) }
                 // A request of his that just ended comes to him as the phone builder's does; one he stopped says nothing more.
                 // Dropped here when every agent was at its limit or the turn ended empty, which needs him as a failure does.
@@ -1250,6 +1259,7 @@ object MacThreads {
         val now = System.currentTimeMillis()
         val (next, words) = synchronized(this) {
             limits.hit(from, now)
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString("limits", limits.text(now)).apply()
             macKind(kinds, limits.at(now)) to sentWords[task.time]
         }
         if (next == null) return log.update(task.time, save = true) { macAllLimitedEntry(it, kinds) }
@@ -1330,7 +1340,7 @@ object MacThreads {
             try {
                 outcome = macApprovalOutcome(MacRunnerClient(config(app)).answerApproval(entry.threadId, entry.request.approval, allow, entry.request.nonce))
                 if (outcome.over) {
-                    val gone = synchronized(this) { book.remove(entry.threadId, entry.request.approval).also { published() } }
+                    val gone = synchronized(this) { book.remove(entry.threadId, entry.request.approval).also { published(context) } }
                     if (gone != null) AgentNotices.macWithdraw(app, gone)
                     val answered = if (outcome != MacApprovalOutcome.Decided) ApprovalAnswer.Unanswered else if (allow) ApprovalAnswer.Approved else ApprovalAnswer.Denied
                     ChatLog.of(app).revise { macAnswered(it, entry.threadId, entry.request.approval, answered) }

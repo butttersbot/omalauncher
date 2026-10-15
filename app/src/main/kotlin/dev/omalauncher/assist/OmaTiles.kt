@@ -7,6 +7,7 @@ import android.content.Intent
 import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
+import org.json.JSONObject
 
 /** Native Samsung/Android tiles; the system owns authentication and the notification shade. */
 object OmaTiles {
@@ -49,13 +50,29 @@ abstract class OmaTile : TileService() {
 class OmaPromptTile : OmaTile() { override val title = "Oma prompt"; override fun subtitle() = "Speak or type" }
 class OmaActivityTile : OmaTile() {
     override val title = "Agent activity"
-    override fun active() = AgentTasks.working
-    override fun subtitle() = AgentTasks.headline
+    override fun active() = AgentTasks.working || AgentTasks.mac.working != null
+    override fun subtitle() = activityLine(AgentTasks.working, AgentTasks.pending.size, AgentTasks.headline, AgentTasks.mac)
 }
 class OmaApprovalsTile : OmaTile() {
     override val title = "Oma approvals"
-    override fun active() = AgentTasks.approvals.isNotEmpty()
-    override fun subtitle() = if (active()) "${AgentTasks.approvals.size} to review" else "No approvals"
-    /** The oldest approval, chosen when the tile is tapped; the screen then answers only that one. */
-    override fun destination(): Intent = AgentTasks.pending.firstOrNull()?.let { AgentNotices.reviewIntent(this, it) } ?: super.destination()
+    private val count get() = AgentTasks.pending.size + MacThreads.pending.size
+    override fun active() = count > 0
+    override fun subtitle() = if (active()) "$count to review" else "No approvals"
+    /**
+     * The oldest approval, the phone's before the Mac's, chosen when the tile is tapped; the screen then answers
+     * only that one. A Mac request with no notification slot is answered from the chat, which the tile then opens.
+     */
+    override fun destination(): Intent =
+        AgentTasks.pending.firstOrNull()?.let { AgentNotices.reviewIntent(this, it) }
+            ?: MacThreads.pending.firstNotNullOfOrNull { mac -> mac.slot?.let { AgentNotices.macReviewIntent(this, mac.ticket, it) } }
+            ?: super.destination()
+}
+
+/**
+ * The activity tile's line: the builders' [headline] while one works or waits for his OK (of which there are
+ * [approvals]) and no Mac thread waits for him, otherwise the Mac's work by name, as the oma tile says it.
+ */
+internal fun activityLine(working: Boolean, approvals: Int, headline: String, mac: MacGlance): String {
+    val status = omaStatus(JSONObject().put("working", working).put("approvals", approvals), mac)
+    return status.getString("mac").ifEmpty { headline }
 }

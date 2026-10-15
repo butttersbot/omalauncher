@@ -21,6 +21,7 @@ import dev.omalauncher.phone.PhoneBridge
 import dev.omalauncher.phone.PhoneLink
 import java.io.File
 import java.io.BufferedWriter
+import java.util.concurrent.atomic.AtomicBoolean
 import org.json.JSONObject
 import kotlin.concurrent.thread
 
@@ -144,17 +145,54 @@ object AgentTasks {
     /** The slots of every builder's waiting approvals but [builder]'s: under the lock, so no two notifications are given one. */
     internal fun slotsBesides(builder: Builder): Set<Int> = builders.filter { it !== builder }.flatMap { it.pending }.map { it.slot }.toSet()
 
+    /** The Mac's work as the tiles, the ring and the lock widget tell it beside the builders'. */
+    val mac: MacGlance get() = macGlance(MacThreads.view, MacThreads.pending)
+
+    /** The Mac's work as they last told it, so a change of the Mac's that changes none of it draws nothing again. */
+    @Volatile private var macShown = MacGlance()
+
     /** [from] changed: the ring, the tiles, the lock widget, the notification and the status file follow the leading builder. */
     internal fun changed(context: Context, from: Builder) {
         lead = from.id
         val led = leading()
-        val all = pending.size
-        // The ring follows the task from here, the one place every change of it passes.
-        OmaRing.task(working, all, succeeded = led.label == "Done")
+        shown(context, succeeded = led.label == "Done")
+        AgentNotices.task(context, led.working, headline, led.answer, pending.size, led.id)
+    }
+
+    /** A change of the Mac's not looked at yet, and whether a look runs: a burst of changes makes few looks. */
+    private val macDirty = AtomicBoolean()
+    private val macLooking = AtomicBoolean()
+
+    /**
+     * What the phone knows of the Mac's threads or their requests changed: the ring, the tiles, the lock widget and
+     * the status file follow, off the caller's thread, since [MacThreads] tells this under its own lock and drawing
+     * them must not hold it. The notification stays the builders' own; the Mac's requests have their own cards.
+     * A Mac thread's turn ending is no success the phone can vouch for, so it never lights done.
+     */
+    fun macChanged(context: Context) {
+        macDirty.set(true)
+        if (!macLooking.compareAndSet(false, true)) return
+        val app = context.applicationContext
+        thread(name = "oma-mac-shown", isDaemon = true) {
+            try {
+                while (macDirty.getAndSet(false)) if (mac != macShown) shown(app, succeeded = false)
+            } finally {
+                macLooking.set(false)
+            }
+            // A change that came just as the last look ended is looked at all the same.
+            if (macDirty.get()) macChanged(app)
+        }
+    }
+
+    private fun shown(context: Context, succeeded: Boolean) {
+        val mac = mac
+        macShown = mac
+        // The ring follows the task from here, the one place every change of it passes. Background work left running
+        // on the Mac is not work in hand: it may run for hours, and a ring lit that long would say nothing.
+        OmaRing.task(working || mac.working != null, pending.size + mac.approvals, succeeded)
         OmaTiles.refresh(context)
         OmaLockWidget.refresh(context)
-        AgentNotices.task(context, led.working, headline, led.answer, all, led.id)
-        writeStatus(context)
+        writeStatus(context, mac)
     }
 
     /**
@@ -164,14 +202,15 @@ object AgentTasks {
     /** Phone control came, went or was found disconnected: the status file says so. Nothing about the task has changed. */
     fun phoneChanged(context: Context) {
         restore(context)
-        writeStatus(context)
+        writeStatus(context, mac)
     }
 
-    private fun writeStatus(context: Context) {
+    private fun writeStatus(context: Context, mac: MacGlance) {
         runCatching {
             val file = File((context.applicationContext as App).runtime.proot.home, AGENT_STATUS_FILE)
             file.parentFile?.mkdirs()
-            file.writeText(agentStatus(working, label, answer, pending.size, System.currentTimeMillis() / 1000, PhoneAccess.link(context)).toString())
+            val builders = agentStatus(working, label, answer, pending.size, System.currentTimeMillis() / 1000, PhoneAccess.link(context))
+            file.writeText(omaStatus(builders, mac).toString())
         }
     }
 }
@@ -563,6 +602,53 @@ fun agentStatus(working: Boolean, label: String, answer: String, approvals: Int,
         .put("doing", if (working || approvals > 0) marginNote(label) else "")
         .put("answer", if (cut) PHONE_DISCONNECTED else Markdown.plain(answer.trim().take(4 * AGENT_STATUS_ANSWER)).take(AGENT_STATUS_ANSWER))
         .put("phone", phone.id).put("updated", now)
+}
+
+/**
+ * The Mac's work as the oma tile, the ring and the lock widget tell it beside the phone's builders (OPEN-BUGS
+ * #10: they read the builders only): the thread [waiting] for his OK and how many [approvals] wait, the one
+ * [working], and the one with [background] work left running after its answer; each null when there is none.
+ * A name stands for the first of several, with how many more.
+ */
+data class MacGlance(val waiting: String? = null, val approvals: Int = 0, val working: String? = null, val background: String? = null)
+
+/**
+ * The Mac's work in [view], with the Mac's requests [pending] his OK. A Mac out of reach says nothing: what was
+ * last heard of it may have ended long since, and its requests cannot be answered until it is back.
+ */
+fun macGlance(view: MacView, pending: List<MacPending>): MacGlance {
+    if (!view.reachable) return MacGlance()
+    fun named(names: List<String>): String? {
+        val distinct = names.distinct()
+        return distinct.firstOrNull()?.let { if (distinct.size > 1) "$it +${distinct.size - 1}" else it }
+    }
+    return MacGlance(
+        waiting = named(pending.map { macName(it.threadName) } + view.threads.filter { it.status == MacThreadStatus.Waiting }.map { macName(it.name) }),
+        approvals = pending.size,
+        working = named(view.threads.filter { it.status == MacThreadStatus.Working }.map { macName(it.name) }),
+        background = named(view.threads.filter { macResting(it.status) && it.background.isNotEmpty() }.map { macName(it.name) }),
+    )
+}
+
+/**
+ * The status file with the Mac's work in it. [builders] is [agentStatus]'s, unchanged, and stands whenever a
+ * phone builder waits for his OK, and while one works unless a Mac thread waits for his OK, which outranks work
+ * as it does on the ring. Otherwise a thread waiting, working or with work running says so by name in `doing`
+ * and `mac`, "Working on the Mac · FF4 better menu mod": the home tile is his to read. `approvals` counts the
+ * phone's and the Mac's; `mac` is empty while the builders' own say stands.
+ */
+fun omaStatus(builders: JSONObject, mac: MacGlance): JSONObject {
+    val own = builders.getInt("approvals")
+    val status = JSONObject(builders.toString()).put("approvals", own + mac.approvals).put("mac", "")
+    fun told(state: String, line: String) = status.put("state", state).put("doing", line).put("mac", line)
+    return when {
+        own > 0 -> status
+        mac.waiting != null -> told("waiting", "Needs your OK · ${mac.waiting}")
+        builders.getBoolean("working") -> status
+        mac.working != null -> told("working", "Working on the Mac · ${mac.working}")
+        mac.background != null -> told("working", "Running on the Mac · ${mac.background}")
+        else -> status
+    }
 }
 
 /** How much of an answer the status file carries: enough for a tile, not the whole thread. */

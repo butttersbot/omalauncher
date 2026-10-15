@@ -43,8 +43,27 @@ class OmaLockWidget : AppWidgetProvider() {
                 else -> "needs attention"
             }
 
+        /**
+         * [stateLine] with the Mac's work in it: its requests count as needing his OK, and with no builder at work a
+         * thread working or with work running says so. Never which thread: its name can say what he asked.
+         */
+        internal fun withMac(
+            working: Boolean,
+            label: String,
+            approvals: Int,
+            mac: MacGlance,
+        ): String =
+            when {
+                // A thread waiting for his OK may have no request on the phone yet: it still needs him.
+                approvals > 0 || mac.waiting != null -> stateLine(working, label, maxOf(1, approvals + mac.approvals))
+                working -> stateLine(working, label, 0)
+                mac.working != null -> "working on the Mac"
+                mac.background != null -> "running on the Mac"
+                else -> stateLine(working, label, approvals)
+            }
+
         /** The state now. */
-        fun state(): String = stateLine(AgentTasks.working, AgentTasks.label, AgentTasks.pending.size)
+        fun state(): String = withMac(AgentTasks.working, AgentTasks.label, AgentTasks.pending.size, AgentTasks.mac)
 
         fun tap(context: Context): PendingIntent = PendingIntent.getActivity(context, 0, OmaChatActivity.intent(context), PendingIntent.FLAG_IMMUTABLE)
 

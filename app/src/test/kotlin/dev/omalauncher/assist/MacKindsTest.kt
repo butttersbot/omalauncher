@@ -76,6 +76,28 @@ class MacKindsTest {
         assertEquals(setOf("claude"), blank.at(5))
     }
 
+    /** OPEN-BUGS #12: a launcher restart forgot the limits, and the next request went to the agent still at one. */
+    @Test fun aLimitOutlivesARestartUntilItsWallClockEnd() {
+        val before = MacLimits().apply { hit("claude", 1_000); hit("codex", 2_000) }
+        val kept = before.text(3_000)
+        // A restart five minutes on: both are still at their limit, each until the same moment as before.
+        val after = MacLimits().apply { restore(kept, 300_000) }
+        assertEquals(setOf("claude", "codex"), after.at(300_000))
+        assertEquals(setOf("codex"), after.at(1_000 + MAC_LIMIT_MEMORY_MS))
+        assertEquals(emptySet<String>(), after.at(2_000 + MAC_LIMIT_MEMORY_MS))
+        // Restarted after they ended, nothing is held off; what had ended is not kept.
+        assertEquals(emptySet<String>(), MacLimits().apply { restore(kept, 2_000 + MAC_LIMIT_MEMORY_MS) }.at(2_000 + MAC_LIMIT_MEMORY_MS))
+        assertEquals("{\"codex\":${2_000 + MAC_LIMIT_MEMORY_MS}}", before.text(1_000 + MAC_LIMIT_MEMORY_MS))
+        // A clock set back since never holds an agent off longer than a limit lasts.
+        val early = MacLimits().apply { restore(kept, -10 * MAC_LIMIT_MEMORY_MS) }
+        assertEquals(emptySet<String>(), early.at(-9 * MAC_LIMIT_MEMORY_MS))
+        // A limit heard since the restart stands when it ends later; nothing readable is no limit.
+        val heard = MacLimits().apply { hit("claude", 600_000); restore(kept, 600_000) }
+        assertEquals(setOf("claude", "codex"), heard.at(1_000 + MAC_LIMIT_MEMORY_MS))
+        assertEquals(setOf("claude"), heard.at(2_000 + MAC_LIMIT_MEMORY_MS))
+        for (bad in listOf(null, "", "nonsense", "{\"claude\":\"soon\"}")) assertEquals(emptySet<String>(), MacLimits().apply { restore(bad, 0) }.at(0))
+    }
+
     @Test fun theEntrySaysPlainlyWhatHappened() {
         assertEquals("Claude hit its limit · sent to Codex", macLimitStep("claude", "codex"))
         assertEquals("Codex hit its limit · sent to Cursor", macLimitStep("codex", "cursor"))
