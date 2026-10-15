@@ -207,7 +207,30 @@ function nextPhrase() {
   T.text = ''; T.caret = 0; T.layer = 'abc'; V._shift = true; V._caps = false;
 }
 
-function submit() { nextPhrase(); }
+// ---- Tap log, for finding patterns: where each tap landed, the key it hit and the letter the phrase wanted.
+// Sent to the preview server (design/preview-server.py), which keeps it outside Git. ----
+let LOGQ = [];
+const keyFor = c => G.keys.find(k => k.act === (c === ' ' ? 'space' : c === '⏎' ? 'ret' : c === '⌫' ? 'back' : 'k:' + c.toLowerCase()));
+function logTap(p) {
+  const typed = T.text, tgt = P.target, clean = tgt.toLowerCase().startsWith(typed.toLowerCase());
+  const want = clean ? (tgt[typed.length] || '⏎') : '⌫', a = p.k.act;
+  const got = a.startsWith('k:') ? a.slice(2) : { space: ' ', back: '⌫', ret: '⏎' }[a] || a;
+  const w = keyFor(want), r = v => Math.round(v * 10) / 10;
+  LOGQ.push({ t: Date.now(), layout: layoutName(), sw: innerWidth, sh: innerHeight, keys: V.keys, ret: V.ret, split: V.split, layer: T.layer,
+    phrase: tgt, pos: typed.length, want, got, x: r(p.tx), y: r(p.ty), hx: r(p.k.x + p.k.w / 2), hy: r(p.k.y + p.k.h / 2),
+    wx: w ? r(w.x + w.w / 2) : null, wy: w ? r(w.y + w.h / 2) : null, held: Math.round(performance.now() - p.t0) });
+  if (LOGQ.length >= 20) flushLog();
+}
+function flushLog() {
+  if (!LOGQ.length) return;
+  const body = JSON.stringify(LOGQ); LOGQ = [];
+  fetch('/kb-log', { method: 'POST', body, keepalive: true }).catch(() => {});
+}
+addEventListener('pagehide', flushLog);
+addEventListener('visibilitychange', () => { if (document.hidden) flushLog(); });
+function press(p) { logTap(p); act(p.k.act); }
+
+function submit() { flushLog(); nextPhrase(); }
 
 // ---- Keys acting. ----
 function type(s) {
@@ -266,7 +289,7 @@ function renderTop() {
   for (let i = 0; i < t.length; i++) h += i < typed.length ? `<span class="${typed[i].toLowerCase() === t[i].toLowerCase() ? 'ok' : 'bad'}">${esc(t[i])}</span>` : esc(t[i]);
   document.getElementById('target').innerHTML = h;
   document.getElementById('field').innerHTML = esc(T.text.slice(0, T.caret)) + '<span class="caret"></span>' + esc(T.text.slice(T.caret)) + (T.listening ? ' <i style="color:var(--muted)">listening… (practice only)</i>' : '');
-  document.getElementById('stats').textContent = 'Type the phrase, then press return for a fresh one.';
+  document.getElementById('stats').textContent = 'Type the phrase, then press return for a fresh one. Taps are saved for review.';
 }
 function renderKb() {
   const kb = document.getElementById('kb');
@@ -298,20 +321,20 @@ function release(id, commit) {
   presses.delete(id); clearTimeout(p.timer); clearInterval(p.rep);
   const el = capEl(p.k); if (el) el.classList.remove('down');
   document.getElementById('bubble').style.display = 'none';
-  if (commit && !p.done && !(p.k.act === 'space' && p.moved)) act(p.k.act);
+  if (commit && !p.done && !(p.k.act === 'space' && p.moved)) press(p);
 }
 const kbEl = document.getElementById('kb');
 kbEl.addEventListener('pointerdown', e => {
   e.preventDefault();
-  for (const [id, p] of presses) if (!p.done && p.k.act !== 'space') { p.done = true; act(p.k.act); }
+  for (const [id, p] of presses) if (!p.done && p.k.act !== 'space') { p.done = true; press(p); }
   const r = kbEl.getBoundingClientRect(), k = hit(G, e.clientX - r.left, e.clientY - r.top);
   if (!k) return;
-  kbEl.setPointerCapture(e.pointerId);
+  try { kbEl.setPointerCapture(e.pointerId); } catch (_) {}
   thock(k); buzz();
-  const p = { k, x: e.clientX, start: T.caret, moved: false, done: false };
+  const p = { k, x: e.clientX, tx: e.clientX - r.left, ty: e.clientY - r.top, t0: performance.now(), start: T.caret, moved: false, done: false };
   presses.set(e.pointerId, p);
   if (k.act === 'shift' || k.act === 'back') {
-    p.done = true; act(k.act);
+    p.done = true; press(p);
     if (k.act === 'back') p.timer = setTimeout(() => { p.rep = setInterval(() => { act('back'); buzz(); }, 60); }, 400);
   }
   const el = capEl(k); if (el) el.classList.add('down');
