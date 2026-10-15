@@ -94,6 +94,25 @@ class KeyboardView(
     val headroomDp get() = (layout?.rowHeight ?: 54f) * 1.3f
     val headroomPx get() = (headroomDp * density).toInt()
 
+    /**
+     * Room under the keys for Android's own strip (the gesture bar, and the keyboard switcher and hide buttons it
+     * draws over a keyboard), which sat on 123 and return on the Fold (2026-10-14). The board's colour fills it.
+     */
+    private var navPx = 0
+
+    init {
+        setOnApplyWindowInsetsListener { _, insets ->
+            val bottom =
+                if (android.os.Build.VERSION.SDK_INT >= 30) insets.getInsets(android.view.WindowInsets.Type.navigationBars() or android.view.WindowInsets.Type.tappableElement()).bottom
+                else @Suppress("DEPRECATION") insets.systemWindowInsetBottom
+            if (bottom != navPx) {
+                navPx = bottom
+                requestLayout()
+            }
+            insets
+        }
+    }
+
     private class Press(
         val key: Key,
         val x0: Float,
@@ -113,7 +132,7 @@ class KeyboardView(
         heightMeasureSpec: Int,
     ) {
         val w = MeasureSpec.getSize(widthMeasureSpec)
-        val h = ((layout?.height ?: 240f) * density).toInt() + headroomPx
+        val h = ((layout?.height ?: 240f) * density).toInt() + headroomPx + navPx
         setMeasuredDimension(w, h)
     }
 
