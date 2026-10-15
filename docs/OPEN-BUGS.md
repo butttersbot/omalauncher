@@ -21,10 +21,16 @@ Boss moves to a new, higher-RAM phone tomorrow (2026-10-14/15). Everything below
 5. **Phone control does not rebind by itself after most launcher updates**; `oma-install` heals it (BOUND / HEALED).
    Find why the accessibility service is not rebound on package replace.
 6. **Builder health read "alive: false" for the running builder** on the first status after an update; right a
-   minute later. A false "dead" must never invite a restart.
+   minute later. A false "dead" must never invite a restart. Built 2026-10-14 evening, **not yet seen on a screen**:
+   a task younger than 30 s with no builder process found yet, and any look that read none of the guest's processes,
+   is now alive-unknown (`alive` left out of `oma status`, never Dead, so the tab menu offers no Restart and the
+   front agent reads no "dead"); `BuilderFacts.alive`, `ALIVE_GRACE_MS`. Why the process was not found on that first
+   look was not proven from the code. Unit tested (BuilderHealthTest).
 7. **Front agent misroutes, rare:** a plain question handed to a builder (about 2 in 100); "thanks" while a builder
    works sometimes handed over. Harmless but slow.
-8. **The Oma prompt still names `oma-agents status`** (works as an alias; should say `oma status`).
+8. **The Oma prompt still names `oma-agents status`** (works as an alias; should say `oma status`). Built 2026-10-14
+   evening, **not yet seen on a screen**: the prompt says `oma status`; both stay allowed (QuickLaneTest's wording pin
+   changed with it).
 9. ~~**`note` events from the runner** (background-task notices) reach the phone and show nothing yet.~~ BUILT
    2026-10-14 by a Mac session, **not yet seen on a screen** (Boss was changing phones; nothing installed). A `note`
    during a turn is a step line of its entry; after the answer, or between his messages, it is a quiet `·` line under
@@ -60,9 +66,18 @@ Boss moves to a new, higher-RAM phone tomorrow (2026-10-14/15). Everything below
      and (b) a `message` with other words while his running entry has heard nothing yet puts that entry back to
      waiting for its own words, and the other turn goes under his previous entry as "Sent from elsewhere" (or
      nowhere, if there is none).
-10. **Mac work is not on the oma tile, ring or lock widget** (they read the phone builders only).
+10. **Mac work is not on the oma tile, ring or lock widget** (they read the phone builders only). Built 2026-10-14
+    evening, **not yet seen on a screen**: with no phone builder at work the oma tile reads "Working on the Mac ·
+    <thread>", "Running on the Mac · <thread>" (background work) or "Needs your OK · <thread>" (a Mac thread waiting
+    for his OK outranks a builder at work); the Mac's approvals count in `approvals`, the ring and the Oma approvals
+    tile; the ring spins for Mac work in hand but not for background work; the lock widget says "working on the
+    Mac" / "running on the Mac" / "needs your OK" without the thread's name; the Agent activity tile follows the
+    oma tile. A Mac out of reach shows nothing. `agentStatus` is unchanged and wrapped (`omaStatus`, `macGlance`).
+    Unit tested (AgentStatusTest, OmaLockWidgetTest).
 11. **A thread tab shows only what the phone sent**: "Earlier work on the Mac is not shown". Fetch the thread's events.
-12. **The Claude→Codex→Cursor limit memory (15 min) is lost on a launcher restart.**
+12. **The Claude→Codex→Cursor limit memory (15 min) is lost on a launcher restart.** Built 2026-10-14 evening, **not
+    yet seen on a screen**: kept in the `mac-threads` prefs ("limits") with wall-clock ends, read back on restore;
+    what is over is dropped, and a clock set back never holds an agent off longer than 15 min. Unit tested (MacKindsTest).
 13. **A ＋ chat needs the phone's Linux to send** (the front agent runs there) although its work is the Mac's.
 14. **Design question for Boss:** a ＋ chat he named but never wrote in blocks ＋ (＋ reopens it instead of a new one).
 15. **Two phone builders share one checkout**; the "use your own worktree" note is advice, not enforced.

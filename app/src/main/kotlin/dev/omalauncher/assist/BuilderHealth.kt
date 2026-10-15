@@ -41,6 +41,12 @@ const val NOTICE_STALL_MS = 15 * 60_000L
 const val DEAD_GRACE_MS = 60_000L
 
 /**
+ * A task this young that has no builder process yet is neither alive nor dead but not known: on the first status
+ * after an update the builder's process was still starting and read "alive: false" (OPEN-BUGS #6).
+ */
+const val ALIVE_GRACE_MS = 30_000L
+
+/**
  * CPU used per minute of looking, in milliseconds, that counts as computing: about 2% of one core. An agent
  * that only waits uses far less; a build, a test run or a sub-agent working uses far more.
  */
@@ -178,7 +184,8 @@ data class CpuTrack(val pid: Int? = null, val since: Long? = null, val samples: 
  * last printed a line ([heardAt]), its last tool step and when, whether its agent is Claude Code ([traced]: only
  * that one's process can be found), the process [pid] (null if none was found), its CPU, whether a step waits for
  * Boss's [approval], how many follow-ups are [queued] behind it, the start of his [request], and [leftovers].
- * Nothing of an approval but that one waits.
+ * [procRead] says whether the look at [now] could read the guest's processes at all; one that could not finds no
+ * process whether or not there is one. Nothing of an approval but that one waits.
  */
 data class BuilderFacts(
     val now: Long,
@@ -195,6 +202,7 @@ data class BuilderFacts(
     val queued: Int = 0,
     val request: String = "",
     val leftovers: List<ProcRow> = emptyList(),
+    val procRead: Boolean = true,
 ) {
     /** How long nothing has come from it: since its last line, or since it began if none has. */
     val quietFor get() = (now - (heardAt ?: startedAt ?: now)).coerceAtLeast(0)
@@ -203,7 +211,19 @@ data class BuilderFacts(
     val stillFor get() = cpu.stillSince?.let { (now - it).coerceAtLeast(0) }
 
     val computing get() = cpu.movedAt?.let { now - it < CPU_RECENT_MS } == true
-    val dead get() = working && traced && pid == null && startedAt != null && now - startedAt >= DEAD_GRACE_MS
+
+    /**
+     * Whether its process lives: null when that cannot be told, which is for a task not working or not traced,
+     * one younger than [ALIVE_GRACE_MS] with no process found yet, and any look that could not read the guest.
+     */
+    val alive: Boolean? get() = when {
+        !working || !traced -> null
+        pid != null -> true
+        !procRead || startedAt == null || now - startedAt < ALIVE_GRACE_MS -> null
+        else -> false
+    }
+
+    val dead get() = alive == false && startedAt != null && now - startedAt >= DEAD_GRACE_MS
 }
 
 enum class BuilderVerdict(val word: String) {
@@ -360,7 +380,7 @@ private fun builderStatus(facts: BuilderFacts): JSONObject {
         .put("lastOutputMinAgo", if (facts.working) minutesAgo(now, facts.heardAt) else null)
         .put("lastStep", if (facts.working) shownStep(facts) else "")
         .put("lastStepMinAgo", if (facts.working) minutesAgo(now, facts.lastStepAt) else null)
-        .put("pid", facts.pid).put("alive", if (facts.working && facts.traced) facts.pid != null else null)
+        .put("pid", facts.pid).put("alive", facts.alive)
         .put("cpuSeconds", facts.cpuMs?.div(1000))
         .put("cpuSecondsInWindow", facts.cpu.growthMs / 1000).put("cpuWindowMin", facts.cpu.windowMs / 60_000)
         .put("cpuLastRoseMinAgo", minutesAgo(now, facts.cpu.movedAt))
@@ -450,6 +470,8 @@ object BuilderWatch {
     fun look(context: Context): Map<BuilderId, BuilderFacts> {
         val app = context.applicationContext as App
         val rows = runCatching { rows() }.getOrDefault(emptyList())
+        // A builder only ever runs in the guest, so a look that found none of the guest's processes saw nothing of it.
+        val procRead = rows.any { it.guest }
         val now = System.currentTimeMillis()
         // Whether each works is read before when its task began, which it sets first, so a start is never a stale one.
         val working = AgentTasks.builders.associate { it.id to it.working }
@@ -472,7 +494,7 @@ object BuilderWatch {
                 builder.id to BuilderFacts(
                     now, on, start.takeIf { on }, builder.heardAt.takeIf { on && it > 0 }, builder.lastStep,
                     builder.lastStepAt.takeIf { on && it > 0 }, traced, own?.pid, track, cpuMs,
-                    approval.getValue(builder.id), queued.getValue(builder.id), request, if (builder.id == BuilderId.A) procs.leftovers else emptyList(),
+                    approval.getValue(builder.id), queued.getValue(builder.id), request, if (builder.id == BuilderId.A) procs.leftovers else emptyList(), procRead,
                 )
             }
         }

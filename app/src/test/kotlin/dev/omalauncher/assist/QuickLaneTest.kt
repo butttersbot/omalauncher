@@ -117,7 +117,7 @@ class QuickLaneTest {
             "Do exactly one of two things. HAND OVER:",
             "His words then go on exactly as he said them, and the launcher picks the builder. ANSWER:",
             "what are you working on, how is it going, is it done, is it frozen.",
-            "its health lines say if a builder is stuck, and `oma-agents status` gives the details.",
+            "its health lines say if a builder is stuck, and `oma status` gives the details.",
             "If he asks to stop, restart or clean up work, you cannot: say in one short line to long-press its tab (Phone, or the project's name) and choose Stop or Restart.",
         )
         for (rule in rules) assertTrue(rule, told.contains(rule))
