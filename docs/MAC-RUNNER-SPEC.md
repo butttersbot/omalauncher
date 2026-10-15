@@ -452,3 +452,21 @@ command." The phone's command is `oma drop` (`app/src/main/assets/oma-drop.sh`).
 - Not closed by this: copies of the old key itself may sit on the Mac outside that file (agent transcripts from the
   sessions that set the phone up, shell history). Until the key is replaced, Codex threads stay manual unless auto
   is asked for by name (2b4a4ae). After a replacement, Codex can default to auto like Claude.
+
+## As built: the Mac builds Oma (2026-10-14, by the Mac session)
+- Toolchain (already on the Mac from Homebrew, nothing new installed): Temurin JDK 26 runs Gradle 9.8 (17 is there
+  too); Android SDK at `/opt/homebrew/share/android-commandlinetools` with platform 37 and build-tools 36.0.0. Its NDKs
+  are 27/28, not 29: the app's own build does not pin one (only the phone's init script does) and builds without it.
+  `local.properties` (not in git) in `~/Projects/omalauncher-fold` points at that SDK.
+- Checkout: `~/Projects/omalauncher-fold` (branch `fold-sync`, tracking `fork/phone/fold-development`; push with
+  `git push fork HEAD:phone/fold-development`, never force). It is under `~/Projects`, so a runner thread may work there.
+- `./gradlew :app:testDebugUnitTest :app:assembleDebug` green: 1165 tests, 0 failed, 3 skipped. Clean build plus all
+  tests, no build cache: 48 s; with Gradle's cache: 28 s.
+- Two tests are skipped on the Mac on purpose: `OmaKeepTest.itsOwnTestsPass` and `OmaCommandTest.itsOwnTestsPass` run
+  the guest's own scripts' tests, which need Linux (GNU `stat -c`, `/proc`); they now assume Linux and still run on
+  the phone.
+- The Mac's APK is for checking only: it lacks the phone-only native pieces (proot and friends live in jniLibs, which
+  are not in git), and it is not signed with the launcher's key. Installing stays the phone's step: pull, `oma-build`,
+  `oma-try`.
+- Not done: the `omalauncher` thread itself. Making a thread needs the runner key, which only the phone holds now;
+  the front agent can make it (`kind claude`, project `~/Projects/omalauncher-fold`).

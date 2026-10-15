@@ -59,6 +59,8 @@ class OmaKeepTest {
     @Test fun itsOwnTestsPass() {
         val python = runCatching { ProcessBuilder("python3", "--version").start().waitFor() == 0 }.getOrDefault(false)
         assumeTrue("python3 is needed to run the script's tests", python)
+        // The script is the guest's (GNU stat, /proc): its tests run on Linux, not on the Mac.
+        assumeTrue("Linux is needed to run the script's tests", System.getProperty("os.name") == "Linux")
         val tests = moduleFile("src/test/python/test_oma_keep.py")
         val run = ProcessBuilder("python3", "-I", tests.path).redirectErrorStream(true).start()
         val out = run.inputStream.bufferedReader().readText()

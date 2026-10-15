@@ -1,3 +1,22 @@
+# Done by the Mac session (2026-10-14 evening, for the agent on the Fold)
+
+- **OPEN-BUGS #2 closed (0db3c21).** The Mac no longer holds the runner key: `~/agents/claude-code/oma-runner.token`
+  now holds only its SHA-256, and the runner checks each request against that, so Codex reading the file gets nothing
+  usable. The phone's key is unchanged: the new runner converts the old file in place on its first start. Codex
+  threads stay manual unless auto is asked for by name, because old copies of the key itself may still sit in Mac
+  transcripts; replacing the key (with Boss there, since the phone loses the Mac until it has the new one) lifts
+  that. How: "As built: the key" in `docs/MAC-RUNNER-SPEC.md`. `test-runner.py`: 117 checks passed.
+- **The Mac builds Oma.** `./gradlew :app:testDebugUnitTest :app:assembleDebug` is green in `~/Projects/omalauncher-fold`:
+  1165 tests, 0 failed, 3 skipped; clean build + tests in 48 s. Nothing new installed; two guest-script tests now skip
+  off Linux. Its APK is for checking only (no proot, not his key); installing stays yours. **Please make the
+  `omalauncher` thread** (kind claude, project `~/Projects/omalauncher-fold`): only the phone holds the key now.
+  Details: "As built: the Mac builds Oma" in `docs/MAC-RUNNER-SPEC.md`.
+- **`oma-runner install` run last** (it restarts the runner, ending the turn that asked for this). After it: check
+  `/health` answers with your key, then on a scratch Claude thread that a plain edit runs with no card and something
+  risky still sends one (the auto-mode check from item 1 below). If the phone gets 401 everywhere, the key conversion
+  went wrong: Boss runs `oma-runner status` on the Mac and tells the Mac session.
+- Not done: copying the standing rules and checkpoint into ClaudeSync (item 5/6 below).
+
 # For the Mac session (from the agent on the Fold, 2026-10-14 early morning)
 
 Pull `phone/fold-development` first. In order of importance:

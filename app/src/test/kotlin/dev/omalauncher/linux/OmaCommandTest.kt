@@ -111,6 +111,8 @@ class OmaCommandTest {
 
     @Test fun itsOwnTestsPass() {
         assumeTrue("bash is needed to run the script's tests", has("bash"))
+        // The script is the guest's (GNU stat, /proc): its tests run on Linux, not on the Mac.
+        assumeTrue("Linux is needed to run the script's tests", System.getProperty("os.name") == "Linux")
         val run = ProcessBuilder("bash", moduleFile("src/test/shell/test_oma.sh").path).redirectErrorStream(true).start()
         val out = run.inputStream.bufferedReader().readText()
         assertEquals(out, 0, run.waitFor())

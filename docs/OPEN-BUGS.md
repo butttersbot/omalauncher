@@ -8,9 +8,11 @@ Boss moves to a new, higher-RAM phone tomorrow (2026-10-14/15). Everything below
 1. ~~**Mac background jobs die when their turn ends.**~~ FIXED 2026-10-14 by the Mac session: a Claude thread keeps
    its process while background work runs and the next message goes into it ("As built: background work outlives
    the turn" in `docs/MAC-RUNNER-SPEC.md`). Installed on the Mac runner.
-2. **Codex in auto mode can read the runner key** (its sandbox allows reads), so it could make or message threads
-   without a card. Interim, 2026-10-14 (2b4a4ae): Codex threads are manual unless auto is asked for by name. Moving
-   the file does not help (Codex reads anything this Mac user can); the fix is a place it cannot read (Keychain).
+2. ~~**Codex in auto mode can read the runner key**~~ CLOSED 2026-10-14 by the Mac session (0db3c21): the Mac keeps
+   only the key's SHA-256 (converted in place on the runner's first start; the phone's key is unchanged), so the file
+   opens nothing. Keychain would not have helped: an item the runner's python3 may read is open to Codex's python3
+   too. Left: old copies of the key itself may sit in Mac transcripts until the key is replaced (with Boss there; how:
+   "As built: the key" in `docs/MAC-RUNNER-SPEC.md`), so Codex threads stay manual unless auto is asked for by name.
 3. **`oma-phone fill` on the Oma chat field: cause unknown.** It said ok and the text never landed (a placeholder child
    inside the field matched the label; the field already resolved to its editable parent, so the likelier cause is
    the per-tab draft overwriting a text set from outside). Since 41eeb49 fill reads the field back and answers
