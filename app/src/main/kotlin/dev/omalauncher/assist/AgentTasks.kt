@@ -314,6 +314,8 @@ class Builder(val id: BuilderId) {
         val imagePrompt = earlier + (if (agent.bin == "claude" && images.isNotEmpty()) prompt + "\n\nRead these attached images before answering:\n" + images.joinToString("\n") else prompt) + seen
         val fullPrompt = imagePrompt + "\n\n" + PhoneBridge.INSTRUCTIONS + "\nAndroid build tools, when installed, are in /opt/android-sdk. Run oma-build-check to check the toolchain. Use the approval UI for blocked tools; never ask for blanket permission bypass.\n"
         val resumed = thread.takeIf { agent.bin == "claude" }
+        // Decided as it starts, not as it was sent: work that waited may now run alone, or beside the other builder.
+        val worktree = builderWorktree(id).takeIf { builderWorktreeWanted(id, AgentTasks.builders.associate { it.id to it.working }, agent.bin == "claude") }
         // Claude gets the screenshot inside the message, so its file goes now. Codex can only read a file, which lasts until its task ends.
         var shot: String? = null
         var handed: File? = null
@@ -323,7 +325,7 @@ class Builder(val id: BuilderId) {
                 shot = java.util.Base64.getEncoder().encodeToString(screen.readBytes())
                 screen.delete()
             }
-            claudeStreamCommand(resumed)
+            (worktree?.let { it.script() + "\n" } ?: "") + claudeStreamCommand(resumed)
         } else {
             backgroundAgentCommand(agent.bin, fullPrompt, images) // Throws for an agent that can't run here, before the screenshot is touched.
             handed = screen?.let { ScreenShots.handOver(it, runtime.proot.promptAttachments) }
@@ -352,10 +354,14 @@ class Builder(val id: BuilderId) {
                     var session: String? = null
                     var lost = false
                     var named = ""
+                    // What it is sent: told of its own worktree once the step before it says one was had.
+                    var words = fullPrompt
                     child.inputStream.bufferedReader().use { reader ->
                         while (true) {
                             val line = reader.readLine() ?: break
                             heardAt = System.currentTimeMillis()
+                            val given = if (sent) null else worktree?.made(line)
+                            if (given != null) { words = withWorktreeNote(fullPrompt, given.note); continue }
                             val event = runCatching { JSONObject(line) }.getOrNull()
                             if (event == null) {
                                 if (resumed != null && line.startsWith("No conversation found")) lost = true
@@ -363,7 +369,7 @@ class Builder(val id: BuilderId) {
                             }
                             if (!sent && event.optString("type") == "control_response" && event.optJSONObject("response")?.optString("request_id") == "oma-init") {
                                 check(event.getJSONObject("response").optString("subtype") != "error") { "Agent initialization failed" }
-                                writeEvent(ClaudeProtocol.user(fullPrompt, shot)); shot = null; sent = true
+                                writeEvent(ClaudeProtocol.user(words, shot)); shot = null; sent = true
                             }
                             ClaudeProtocol.approval(event)?.let { admit(context, it) }
                             // The reply is named after the model Claude Code says answers it, whatever alias it was started with.

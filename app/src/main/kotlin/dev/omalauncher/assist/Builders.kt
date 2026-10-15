@@ -1,5 +1,6 @@
 package dev.omalauncher.assist
 
+import dev.omalauncher.linux.shellQuote
 import dev.omalauncher.oma.ChatTask
 
 /*
@@ -76,6 +77,86 @@ fun pickBuilder(named: BuilderId?, loads: Map<BuilderId, BuilderLoad>): BuilderI
  * receiver's own task does not count, since work that waits behind it never runs beside it.
  */
 fun builderShares(receiver: BuilderId, working: Map<BuilderId, Boolean>): Boolean = working.any { (id, busy) -> id != receiver && busy }
+
+/** The checkout a builder works in unless told otherwise, and the one a builder sharing the phone gets a worktree of. */
+const val PHONE_REPO = "/root/Projects/omalauncher"
+
+/**
+ * Whether [receiver], started now, gets a worktree of its own made before it runs: while another builder works
+ * ([builderShares]), and only for Claude, whose words are sent after its process starts and so can say whether
+ * the worktree was made. Any other agent is given its words on its command line and keeps [PHONE_SHARED_NOTE].
+ */
+fun builderWorktreeWanted(receiver: BuilderId, working: Map<BuilderId, Boolean>, claude: Boolean): Boolean =
+    claude && builderShares(receiver, working)
+
+/** Where [builder]'s own worktree of [main] goes, on a branch of its own, kept from one task to the next. */
+data class WorktreePlan(val main: String, val path: String, val branch: String) {
+    /**
+     * A shell step run before the builder's agent: makes or finds the worktree and says how it stands on one line
+     * of its own ([made] reads it), or says nothing when it can't be had. It never takes the shared branch, never
+     * moves a worktree that holds work of its own (only a clean one that the shared branch has passed is brought up
+     * to it, by fast-forward), and never touches a folder at [path] that is not a worktree of [main]. Its own
+     * output and stdin are kept from the agent's, and whatever it does, the agent then starts.
+     */
+    fun script(): String = """(
+exec 3>&1 >/dev/null 2>&1 </dev/null
+main=${shellQuote(main)}; wt=${shellQuote(path)}; branch=${shellQuote(branch)}
+[ "${'$'}(git -C "${'$'}main" rev-parse --show-toplevel)" = "${'$'}main" ] || exit 0
+shared=${'$'}(git -C "${'$'}main" symbolic-ref --quiet --short HEAD) || exit 0
+[ "${'$'}shared" != "${'$'}branch" ] || exit 0
+git -C "${'$'}main" worktree prune
+if [ ! -e "${'$'}wt" ]; then
+  mkdir -p "${'$'}(dirname "${'$'}wt")" || exit 0
+  if git -C "${'$'}main" show-ref --verify --quiet "refs/heads/${'$'}branch"; then git -C "${'$'}main" worktree add "${'$'}wt" "${'$'}branch" || exit 0
+  else git -C "${'$'}main" worktree add -b "${'$'}branch" "${'$'}wt" "${'$'}shared" || exit 0; fi
+fi
+[ "${'$'}(git -C "${'$'}wt" rev-parse --show-toplevel)" = "${'$'}wt" ] || exit 0
+[ "${'$'}(git -C "${'$'}wt" rev-parse --path-format=absolute --git-common-dir)" = "${'$'}(git -C "${'$'}main" rev-parse --path-format=absolute --git-common-dir)" ] || exit 0
+[ "${'$'}(git -C "${'$'}wt" symbolic-ref --quiet --short HEAD)" = "${'$'}branch" ] || exit 0
+clean=; [ -z "${'$'}(git -C "${'$'}wt" status --porcelain)" ] && clean=1 && git -C "${'$'}wt" merge --ff-only "${'$'}shared"
+state=kept; [ -n "${'$'}clean" ] && [ "${'$'}(git -C "${'$'}wt" rev-parse HEAD)" = "${'$'}(git -C "${'$'}main" rev-parse HEAD)" ] && state=current
+echo "$WORKTREE_LINE ${'$'}state ${'$'}shared" >&3
+)"""
+
+    /** The worktree as [script]'s [line] says it was left; null for any other line. */
+    fun made(line: String): BuilderWorktree? {
+        val parts = line.trim().split(' ')
+        if (parts.size != 3 || parts[0] != WORKTREE_LINE || parts[1] !in setOf("current", "kept") || parts[2].isEmpty()) return null
+        return BuilderWorktree(this, shared = parts[2], current = parts[1] == "current")
+    }
+}
+
+/** How [WorktreePlan.script] begins the one line it says. */
+const val WORKTREE_LINE = "OMA-WORKTREE"
+
+/** [builder]'s worktree of [main]: under [root], named and branched after the builder. */
+fun builderWorktree(builder: BuilderId, main: String = PHONE_REPO, root: String = "/root/wt"): WorktreePlan {
+    val name = "builder-" + builder.letter.lowercase()
+    return WorktreePlan(main, "$root/$name", name)
+}
+
+/** A worktree a builder was given: made from [shared], and [current] when it starts where [shared] is now. */
+data class BuilderWorktree(val plan: WorktreePlan, val shared: String, val current: Boolean) {
+    /**
+     * What the builder is told ahead of its request in place of [PHONE_SHARED_NOTE]. It still starts in the home
+     * folder, as every builder does, because Claude Code finds a conversation to continue by the folder it was
+     * started in: so it is told where its worktree is rather than started inside it.
+     */
+    val note: String get() {
+        val (main, path, branch) = plan
+        val left = if (current) "made from $shared as it is now"
+            else "left as it was, since it holds work that is not in $shared yet: look at it first and do not throw it away"
+        return SHARED_NOTE_OPEN + "another agent is working on this phone right now and may be in $main. Oma has given you a git " +
+            "worktree of that checkout of your own: $path, on branch $branch, $left. Do any work on $main there (cd $path), never " +
+            "in $main itself. When it is done, commit it there, then merge it back with git -C $main merge --ff-only $branch, or " +
+            "git -C $main merge $branch if $shared has moved on. If the merge is refused or conflicts, stop and tell Boss which " +
+            "files clash instead of overwriting. Work in another git repository goes on a new branch in its own worktree " +
+            "(git worktree add) the same way.]"
+    }
+}
+
+/** [prompt] with [note] on its own line before it, instead of the [PHONE_SHARED_NOTE] it began with if it did. */
+fun withWorktreeNote(prompt: String, note: String) = note + "\n" + prompt.removePrefix(PHONE_SHARED_NOTE + "\n")
 
 /**
  * Which builder holds the approval with this [id] and [nonce], from what each builder has [waiting]; null when
