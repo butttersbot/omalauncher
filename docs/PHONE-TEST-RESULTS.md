@@ -1,6 +1,13 @@
 # Phone test results
 
-## Latest: promoting for the Mac's background-work check (2026-10-14, 15:10 PDT) — Boss: "Yeah"
+## Latest: promoting e5f8d89 + 01eb8ed, then re-running the background check (2026-10-14, Boss: "Ok go")
+
+After the restart: check `oma-install --status` (expect phone control BOUND or the launcher healing it), then
+repeat the check in the "Background keep-alive check" tab (helpers in /root/.cache/bgcheck/ui.sh): the 90 s
+background job's report must now arrive in the tab and clear "Still running…"; his first words must not show as
+"Sent from elsewhere"; also try `oma-phone fill` on the chat field (#3/#17) and opening a thread by intent (#16).
+
+## Earlier: promoting for the Mac's background-work check (2026-10-14, 15:10 PDT) — Boss: "Yeah"
 
 The Mac session sent a check (Taildrop → `oma drop get` → ~/Inbox/fold-check-prompt.md): send "say hi and list the
 files in this folder" in a Mac thread tab, then "start `sleep 90 && echo done` in the background, tell me it started,
