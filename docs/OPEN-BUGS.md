@@ -62,9 +62,29 @@ Boss moves to a new, higher-RAM phone tomorrow (2026-10-14/15). Everything below
      nowhere, if there is none).
 10. **Mac work is not on the oma tile, ring or lock widget** (they read the phone builders only).
 11. **A thread tab shows only what the phone sent**: "Earlier work on the Mac is not shown". Fetch the thread's events.
+    Built 2026-10-14 evening, **not yet seen on a screen**: each time a Mac thread's tab opens it reads the thread's
+    newest 200 events (`/threads/ID`, then `events?after=N` a page at a time; `MacThreads.earlier`, MacEarlier.kt),
+    cuts them into turns and shows those the phone has no entry for above its own entries, read only: "on the Mac ·
+    time", his words (without Oma's context), the steps in one line ("12 steps, the last: …"), the answer; captioned
+    "Earlier on the Mac (its last 200 events), only shown here", or "Reading…" / "could not be read now". Nothing of
+    it is saved, sent, followed or answered, and the place the follower reads from is not moved. Dedupe: only turns
+    begun before the phone's first entry in that thread (later ones reached it by following), and none whose words
+    are one of its entries'. A ＋ chat's thread began on the phone and reads nothing. Unit tested (MacEarlierTest).
+    To check: open a thread begun at the Mac; open one the phone has sent to and see no turn twice.
 12. **The Claude→Codex→Cursor limit memory (15 min) is lost on a launcher restart.**
 13. **A ＋ chat needs the phone's Linux to send** (the front agent runs there) although its work is the Mac's.
-14. **Design question for Boss:** a ＋ chat he named but never wrote in blocks ＋ (＋ reopens it instead of a new one).
+    Built 2026-10-14 evening, **not yet seen on a screen**: a ＋ chat with no thread yet still goes to the front agent
+    when it can be asked; with no Linux, no Claude Code as the front agent, words longer than it takes, or a front agent
+    that fails to start, its words go straight to a new thread in `~/Projects` as they are (`Outgoing.ChatMac`,
+    `MacThreads.startChatDirect`; the entry is `direct`, so nothing is put ahead of them). The thread is named by the
+    tab's name or his first four words; the tab is named as before (ChatTitles falls back to the first words when
+    no model can be asked). No Mac set up: says so; Mac out of reach: his words stay with `[ try again ]`, which
+    makes the thread again. Images are still refused. Unit tested (ChatComposerTest, MacProjectsTest). To check:
+    with Linux stopped, ＋, type, send.
+14. ~~**Design question for Boss:** a ＋ chat he named but never wrote in blocks ＋ (＋ reopens it instead of a new
+    one).~~ Decided for Boss (he asked for something sensible), built 2026-10-14 evening, **not yet seen on a
+    screen**: a ＋ chat he renamed counts as his, as one he wrote in does, so ＋ makes a fresh chat beside it; an
+    untouched "New chat" (or one whose name he cleared) is still reused (`emptyChat`; TabBookTest).
 15. **Two phone builders share one checkout**; the "use your own worktree" note is advice, not enforced.
 
 ## Found 2026-10-14 afternoon (on the real launcher)

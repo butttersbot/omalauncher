@@ -66,4 +66,20 @@ class MacProjectsTest {
         assertFalse(Regex("t[0-9a-f]{8}").matches(MAC_NEW_THREAD))
         assertEquals("Oma", OMA_NAME); assertNotEquals(QUICK_AGENT, OMA_NAME)
     }
+
+    /** OPEN-BUGS #13: a new chat's first words with no front agent go to the Mac as they are, named by his first words. */
+    @Test fun aNewChatsWordsSentStraightAreHisAloneAndNameTheirThread() {
+        assertEquals("Menu colours", chatDirectName("Menu colours", "make the menu blue please"))
+        assertEquals("make the menu blue", chatDirectName(null, "make the menu blue please"))
+        assertEquals("make the menu blue", chatDirectName("  ", "**make** the menu blue please"))
+        assertEquals(NEW_CHAT_NAME, chatDirectName(null, "  "))
+        val waiting = macChatDirect(7, "make the menu blue please", "c1", "make the menu blue")
+        assertTrue(waiting.direct); assertEquals("c1", waiting.chat); assertEquals("make the menu blue please", waiting.prompt)
+        assertEquals(MAC_NEW_THREAD, waiting.thread); assertTrue(waiting.fresh); assertEquals(TaskStatus.Queued, waiting.status)
+        assertEquals("→ make the menu blue", waiting.agent)
+        // A Mac out of reach leaves it with [ try again ], which makes its thread again; once made it is that thread's.
+        assertNotNull(macRetried(macUnsent(waiting, MAC_UNREACHABLE)))
+        val made = macMade(waiting, thread("tab12cd34", "make the menu blue", MAC_DEFAULT_PROJECT))
+        assertEquals("tab12cd34", made.thread); assertTrue(made.direct)
+    }
 }

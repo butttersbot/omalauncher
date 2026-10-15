@@ -75,6 +75,19 @@ class TabBookTest {
         assertNull(emptyChat(meta.onMac("c1", "t9"), listOf(ChatTask(5, QUICK_AGENT, "hi", chat = "c2"))))
     }
 
+    /** OPEN-BUGS #14, decided for Boss: a chat he named but never wrote in is his, so ＋ starts a fresh one beside it. */
+    @Test fun plusMakesAFreshChatBesideOneHeNamedButNeverWroteIn() {
+        val named = TabMeta().started("c1", 1).renamed("chat:c1", "Harbour", 2)
+        assertNull(emptyChat(named, emptyList()))
+        // An untouched "New chat" beside it is still the one ＋ opens.
+        val both = named.started("c2", 3)
+        assertEquals("c2", emptyChat(both, emptyList()))
+        // Its name given back (renamed to nothing) makes it untouched again.
+        assertEquals("c1", emptyChat(named.renamed("chat:c1", " ", 4), emptyList()))
+        // A name on another tab says nothing about this one.
+        assertEquals("c1", emptyChat(TabMeta().started("c1", 1).renamed("mac:t9", "Pond", 2), emptyList()))
+    }
+
     @Test fun anArchivedTabComesBackWithNewWorkOrAnApprovalAndNotOtherwise() {
         assertFalse(revived(100, newest = 90, needsOk = false))
         assertFalse(revived(100, newest = null, needsOk = false))
@@ -127,6 +140,7 @@ class TabBookTest {
         assertTrue("chat:c1" in strip(harbour, emptyList(), t0 + 2 * 60_000, wanted = null))
         val newer = harbour.started("c2", t0 + 3 * 60_000)
         assertEquals("c2", emptyChat(newer, emptyList()))
+        assertNull(emptyChat(harbour, emptyList()))
         assertEquals(listOf("chat:c1", "chat:c2"), strip(newer, emptyList(), t0 + 4 * 60_000))
     }
 

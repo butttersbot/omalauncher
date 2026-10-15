@@ -218,7 +218,7 @@ class MacCursors(known: Map<String, Long> = emptyMap()) {
 
     /**
      * A thread this phone has never followed is followed from [at], the newest event it is known to have: what it
-     * said before then was not sent from here, and the tab says earlier work is not shown. A thread already
+     * said before then was not sent from here, and its tab shows it apart, only read (MacEarlier.kt). A thread already
      * followed keeps its place, so nothing it said since is skipped.
      */
     @Synchronized fun start(threadId: String, at: Long) {

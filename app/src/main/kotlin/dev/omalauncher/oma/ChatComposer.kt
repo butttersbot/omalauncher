@@ -37,6 +37,13 @@ sealed interface Outgoing {
      * are, with the front agent not asked.
      */
     data class Mac(val prompt: String, val thread: String, val name: String) : Outgoing
+
+    /**
+     * The first words of the new chat [chat] straight to a new thread on the Mac, as they are, when the front agent
+     * that would read them first can't be asked: Linux is not set up, it is not installed, or the words are more
+     * than it takes. A new chat's work is the Mac's, which needs nothing on the phone.
+     */
+    data class ChatMac(val prompt: String, val chat: String) : Outgoing
 }
 
 /** Whom the field talks to, which is the tab that is open. */
@@ -114,9 +121,6 @@ fun noImagesTo(name: String) = "$name is on the Mac, which takes no images from 
 /** Why images are not sent in a new chat, whose work is the Mac's. */
 const val NO_IMAGES_IN_CHAT = "A new chat is for the Mac, which takes no images from here. Remove them, or send this from the Oma tab."
 
-/** Why a new chat's words are not sent when Oma, which reads them first, can't be asked. */
-const val CHAT_UNREAD = "Oma can't read this now, and a new chat is only for the Mac. Send it from the Oma tab, or try again in a moment."
-
 /**
  * [agent] is the default agent's command, null when none is installed. Images alone ask for a description, as on home.
  * [working] is whether a background task is running: what would have been sent then waits as a follow-up.
@@ -128,8 +132,9 @@ const val CHAT_UNREAD = "Oma can't read this now, and a new chat is only for the
  * [to] is the open tab. On a thread's own tab the front agent is skipped whatever [frontReady] says: the
  * phone builder's tab sends as the build lane always took it, and a Mac thread's tab sends to that thread,
  * which needs neither Linux nor an agent on the phone, and takes no images. A new chat with nowhere to go yet
- * is heard by the front agent first, as the Oma tab is, and never goes to the phone's builders: with no front
- * agent to read it, or images, it is not sent.
+ * is heard by the front agent first, as the Oma tab is, and never goes to the phone's builders; with no front
+ * agent to read it (no Linux, no Claude Code, or words longer than it takes) its words go straight to a new
+ * thread on the Mac as they are ([Outgoing.ChatMac]). It takes no images.
  */
 fun outgoing(
     draft: String,
@@ -147,15 +152,15 @@ fun outgoing(
         busy || prompt.isEmpty() -> Outgoing.Nothing
         to is SendTo.ChatStarting -> Outgoing.Refused(CHAT_MAKING)
         to is SendTo.Mac -> if (images > 0) Outgoing.Refused(noImagesTo(to.name)) else Outgoing.Mac(prompt, to.thread, to.name)
+        to is SendTo.Chat -> when {
+            images > 0 -> Outgoing.Refused(NO_IMAGES_IN_CHAT)
+            linux && agent in BACKGROUND_AGENTS && frontFirst(prompt, images, frontReady) -> Outgoing.Front(prompt)
+            else -> Outgoing.ChatMac(prompt, to.chat)
+        }
         !linux -> Outgoing.Refused("Open Omalauncher and finish Linux setup first.")
         agent == null -> Outgoing.Refused("Install and sign in to an agent in Omalauncher first.")
         images > 0 && agent !in BACKGROUND_AGENTS -> Outgoing.Refused("Choose Claude Code or Codex to send images.")
         imageMissing -> Outgoing.Refused("An attached image is no longer available. Remove it and attach it again.")
-        to is SendTo.Chat -> when {
-            images > 0 -> Outgoing.Refused(NO_IMAGES_IN_CHAT)
-            agent in BACKGROUND_AGENTS && frontFirst(prompt, images, frontReady) -> Outgoing.Front(prompt)
-            else -> Outgoing.Refused(CHAT_UNREAD)
-        }
         agent in BACKGROUND_AGENTS -> when {
             to == SendTo.Oma && frontFirst(prompt, images, frontReady) -> Outgoing.Front(prompt)
             working -> Outgoing.Queued(prompt)

@@ -60,6 +60,20 @@ fun chatBeside(route: FrontRoute?): MacThread? = (route as? FrontRoute.Mac)?.thr
 fun chatThreadName(title: String?): String = title?.trim()?.takeIf { it.isNotEmpty() }?.take(FRESH_NAME_CHARS)?.trimEnd() ?: NEW_CHAT_NAME
 
 /**
+ * What the thread made for a new chat's first words sent straight to the Mac ([dev.omalauncher.oma.Outgoing.ChatMac])
+ * is called: the chat's [title] if it has one, else the first words of his [prompt] ([titleFallback]), since
+ * without the front agent no title is coming before the thread is made.
+ */
+fun chatDirectName(title: String?, prompt: String): String = chatThreadName(title?.takeIf { it.isNotBlank() } ?: titleFallback(prompt))
+
+/**
+ * The entry, filed at [time], of the new chat [chat]'s first words sent straight to the Mac: his words as they are
+ * ([ChatTask.direct], so nothing is put ahead of them), waiting while their thread called [name] is made.
+ */
+fun macChatDirect(time: Long, prompt: String, chat: String, name: String) =
+    macChatStart(ChatTask(time, "", prompt, direct = true, chat = chat), name)
+
+/**
  * The entry of a new chat's first words while their thread called [name] is made in the default folder: the
  * receipt of the new thread, waiting under [MAC_NEW_THREAD] and marked [ChatTask.fresh] until the thread is there.
  */

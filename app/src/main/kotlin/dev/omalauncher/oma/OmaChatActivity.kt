@@ -93,8 +93,10 @@ import dev.omalauncher.assist.AgentTasks
 import dev.omalauncher.assist.AgentThread
 import dev.omalauncher.assist.ApprovalOutcome
 import dev.omalauncher.assist.FrontQueueFull
+import dev.omalauncher.assist.MacEarlierRead
 import dev.omalauncher.assist.MacPending
 import dev.omalauncher.assist.MacThreads
+import dev.omalauncher.assist.MacTurn
 import dev.omalauncher.assist.PendingApproval
 import dev.omalauncher.assist.QuickLane
 import dev.omalauncher.assist.RoutingLog
@@ -112,6 +114,10 @@ import dev.omalauncher.assist.handOverPreface
 import dev.omalauncher.assist.macApprovalDetail
 import dev.omalauncher.assist.macApprovalNotice
 import dev.omalauncher.assist.macBackgroundLine
+import dev.omalauncher.assist.macEarlier
+import dev.omalauncher.assist.macEarlierCaption
+import dev.omalauncher.assist.macThreadId
+import dev.omalauncher.assist.macTurnSteps
 import dev.omalauncher.assist.replyName
 import dev.omalauncher.assist.waitingLine
 import dev.omalauncher.linux.LinuxState
@@ -356,13 +362,12 @@ private fun OmaChatScreen(
                 return
             } catch (e: Exception) {
                 // A front agent that can't even be asked is not his problem: the request goes on as it would have without one.
-                // A new chat's words never go to the phone's builders, so there he is told, and the draft stays.
-                if (to is SendTo.Chat) {
-                    notice = e.message ?: CHAT_UNREAD
-                    return
-                }
-                if (!build(out.prompt, queue = tabWorking)) return
+                // A new chat's words never go to the phone's builders: they go straight to the Mac, as with no front agent.
+                if (to is SendTo.Chat) MacThreads.startChatDirect(context, out.prompt, to.chat)
+                else if (!build(out.prompt, queue = tabWorking)) return
             }
+            // A new chat's first words with no front agent to read them: as they are, to a new thread on the Mac.
+            is Outgoing.ChatMac -> MacThreads.startChatDirect(context, out.prompt, out.chat)
             // From a Mac thread's own tab: the same sending a hand-over has, with nobody asked first and nothing added.
             is Outgoing.Mac -> MacThreads.say(context, out.prompt, out.thread, out.name, to.chat)
             is Outgoing.Terminal -> if (agent != null) runtime.terminal("${agentInvocation(agent.bin, out.prompt + "\n\n" + PhoneBridge.INSTRUCTIONS)}; exec bash", agent.name, agent)
@@ -484,6 +489,14 @@ private fun OmaChatScreen(
                     },
                 )
             }
+            // A Mac thread's tab reads the thread's own record once each time it is opened, to show above the phone's entries
+            // what was done there before this phone came in. Only shown: none of it is kept, sent or answered.
+            val earlierThread = macThreadId(tab)
+            var earlierRead by remember(tab) { mutableStateOf<MacEarlierRead>(MacEarlierRead.Asking) }
+            LaunchedEffect(tab) { if (earlierThread != null) earlierRead = withContext(Dispatchers.IO) { MacThreads.earlier(context, earlierThread) } }
+            val earlier = remember(earlierRead, tasks) {
+                (earlierRead as? MacEarlierRead.Read)?.takeIf { earlierThread != null }?.let { macEarlier(it.events, tasks, earlierThread.orEmpty()) }.orEmpty()
+            }
             // Newest at the bottom. A list keeps what is in view where it is when something is added, which would leave
             // a message just sent below the edge, under the field and the keyboard: so a new one is scrolled to.
             val thread = rememberLazyListState()
@@ -492,7 +505,7 @@ private fun OmaChatScreen(
             // A tab just opened shows its newest entry too.
             LaunchedEffect(newest, tab) { if (newest != null) thread.scrollToItem(0) }
             LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 6.dp), state = thread, reverseLayout = true) {
-                if (entries.isEmpty()) {
+                if (entries.isEmpty() && earlier.isEmpty()) {
                     item {
                         BasicText(
                             when {
@@ -582,11 +595,14 @@ private fun OmaChatScreen(
                         }
                     }
                 }
-                // Above the oldest entry of a Mac thread's tab: what was begun at the Mac itself never came through this phone.
-                // A thread made for a new chat began here.
-                if (to is SendTo.Mac && to.chat.isEmpty()) {
-                    item {
-                        BasicText(MAC_EARLIER, Modifier.fillMaxWidth().padding(vertical = 12.dp), style = Pack.mono(Pack.size.small, Pack.muted).copy(textAlign = TextAlign.Center))
+                // Above the oldest entry of a Mac thread's tab: what was done at the Mac itself, or before this phone came in,
+                // from the thread's own record. A thread made for a new chat began here and has its tab's key of its own.
+                items(earlier.asReversed(), key = { "earlier-${it.id}" }) { turn -> EarlierEntry(turn) }
+                if (earlierThread != null) {
+                    macEarlierCaption(earlierRead, earlier.size)?.let { caption ->
+                        item(key = "earlier") {
+                            BasicText(caption, Modifier.fillMaxWidth().padding(vertical = 12.dp), style = Pack.mono(Pack.size.small, Pack.muted).copy(textAlign = TextAlign.Center))
+                        }
                     }
                 }
             }
@@ -1052,6 +1068,37 @@ private fun TaskEntry(
             if (said.words) SelectionContainer { MarkdownText(said.text.trim(), Modifier.padding(top = 6.dp)) }
             else BasicText("· ${said.text}", Modifier.padding(top = 4.dp), style = small, maxLines = 3, overflow = TextOverflow.Ellipsis)
         }
+    }
+}
+
+/**
+ * One turn of a Mac thread from its own record, read only: the words it was sent, its steps in one quiet line and
+ * its answer. Framed in the muted border and dated as an entry is, but with no receipt, stop or try again: it
+ * was never sent from here and nothing on it can be done again.
+ */
+@Composable
+private fun EarlierEntry(turn: MacTurn) {
+    val small = Pack.mono(Pack.size.small, Pack.muted)
+    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+        val sent = remember(turn.time) { DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(turn.time * 1000)) }
+        BasicText("on the Mac · $sent", Modifier.fillMaxWidth().padding(bottom = 4.dp), style = small.copy(textAlign = TextAlign.Center))
+        if (turn.words.isNotEmpty()) {
+            Column(Modifier.fillMaxWidth().framed(Pack.hair, Pack.border, Pack.background, radius = 12.dp).padding(10.dp)) {
+                BasicText(turn.words, style = Pack.body(color = Pack.muted))
+            }
+        }
+        macTurnSteps(turn)?.let { BasicText("· $it", Modifier.padding(top = 4.dp), style = small, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+        if (turn.answer.isNotBlank()) {
+            SelectionContainer {
+                if (turn.failed) BasicText(turn.answer, Modifier.padding(top = 6.dp), style = Pack.body()) else MarkdownText(turn.answer, Modifier.padding(top = 6.dp))
+            }
+        }
+        val ended = when {
+            turn.stopped -> "stopped"
+            turn.failed -> "ended with an error"
+            else -> null
+        }
+        if (ended != null) BasicText(ended, Modifier.padding(top = 4.dp), style = small)
     }
 }
 
