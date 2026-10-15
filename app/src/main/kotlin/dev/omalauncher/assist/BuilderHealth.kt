@@ -456,7 +456,7 @@ object BuilderWatch {
     }
 
     /** The launcher reads /proc entries of its own processes only, which are the guest's and its own. */
-    private fun rows(): List<ProcRow> {
+    internal fun rows(): List<ProcRow> {
         val ticks = runCatching { Os.sysconf(OsConstants._SC_CLK_TCK) }.getOrDefault(100L)
         val bootedAt = System.currentTimeMillis() - SystemClock.elapsedRealtime()
         return procRows(File("/proc"), ticks, bootedAt) { dir -> runCatching { Os.readlink(File(dir, "exe").path) }.getOrDefault("").endsWith(LOADER) }

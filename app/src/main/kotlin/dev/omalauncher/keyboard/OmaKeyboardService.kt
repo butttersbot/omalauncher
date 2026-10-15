@@ -1,0 +1,377 @@
+package dev.omalauncher.keyboard
+
+import android.Manifest
+import android.content.Context
+import android.content.SharedPreferences
+import android.content.pm.PackageManager
+import android.graphics.Typeface
+import android.inputmethodservice.InputMethodService
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioTrack
+import android.os.SystemClock
+import android.text.InputType
+import android.view.KeyEvent
+import android.view.View
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
+import android.widget.Toast
+import dev.omalauncher.App
+import dev.omalauncher.keyboard.KeyboardView.Companion.blend
+import dev.omalauncher.ui.ActivePack
+import dev.omalauncher.ui.Speech
+import java.io.File
+import kotlin.math.PI
+import kotlin.math.exp
+import kotlin.math.sin
+
+/**
+ * The Oma keyboard (Boss, 2026-10-14): Apple's layout in the active look, mechanical or flat caps, the big
+ * mic, return at the right with the mic between it and space, and the aim learned from his practice.
+ * Edge swipes over the keys don't go back; a swipe down puts it away. It learns where he taps but only
+ * writes that down for a review to suggest from ([KeyboardLearning]); it never moves keys on its own.
+ * Nothing is learned in password fields or where the app asks for no learning, and the mic is off in them.
+ */
+class OmaKeyboardService : InputMethodService(), KeyboardView.Host {
+    private lateinit var view: KeyboardView
+    private val prefs: SharedPreferences by lazy { getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
+
+    private var layer = Layer.ABC
+    private var shift = false
+    private var capsLock = false
+    private var lastShift = 0L
+    private var lastSpace = 0L
+    private var secret = false
+    private var screen = Screen.COVER
+    private var aim: Aim? = null
+    private val learning = HashMap<Screen, KeyboardLearning>()
+    private var speech: Speech? = null
+
+    override val haptics get() = prefs.getBoolean(HAPTICS, true)
+
+    override fun onCreate() {
+        super.onCreate()
+        // The look comes from the launcher's own state, which this process holds once the launcher has run.
+        runCatching { (application as App).runtime }
+    }
+
+    override fun onEvaluateFullscreenMode() = false
+
+    override fun onCreateInputView(): View {
+        view = KeyboardView(this, this)
+        return view
+    }
+
+    override fun onStartInputView(
+        info: EditorInfo,
+        restarting: Boolean,
+    ) {
+        super.onStartInputView(info, restarting)
+        val cls = info.inputType and InputType.TYPE_MASK_CLASS
+        val variation = info.inputType and InputType.TYPE_MASK_VARIATION
+        secret =
+            (cls == InputType.TYPE_CLASS_TEXT && variation in setOf(InputType.TYPE_TEXT_VARIATION_PASSWORD, InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD, InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD)) ||
+            (cls == InputType.TYPE_CLASS_NUMBER && variation == InputType.TYPE_NUMBER_VARIATION_PASSWORD) ||
+            (info.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0
+        layer = if (cls == InputType.TYPE_CLASS_NUMBER || cls == InputType.TYPE_CLASS_PHONE) Layer.NUM else Layer.ABC
+        capsLock = false
+        autoShift()
+        view.look = look()
+        view.mech = prefs.getBoolean(MECH, true)
+        rebuild()
+    }
+
+    override fun onFinishInputView(finishingInput: Boolean) {
+        speech?.cancel()
+        speech = null
+        view.listening = false
+        learning.values.forEach { it.finish() }
+        saveLearning()
+        super.onFinishInputView(finishingInput)
+    }
+
+    /** Lays the keys out for the window's width, on the screen the window is on. */
+    private fun rebuild() {
+        val dm = resources.displayMetrics
+        val w = dm.widthPixels / dm.density
+        val h = dm.heightPixels / dm.density
+        val was = screen
+        screen = Screen.of(w, h)
+        if (was != screen || aim == null) aim = loadAim(screen)
+        view.layout = KeyGeometry.layout(w, screen, layer, view.mech, shift || capsLock, capsLock, returnLabel())
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        if (::view.isInitialized) rebuild()
+    }
+
+    // Only the keys take touches; the bubble's strip above them lets touches through to the app.
+    override fun onComputeInsets(outInsets: Insets) {
+        super.onComputeInsets(outInsets)
+        if (!::view.isInitialized || !view.isShown) return
+        val top = view.headroomPx
+        outInsets.contentTopInsets = top
+        outInsets.visibleTopInsets = top
+        outInsets.touchableInsets = Insets.TOUCHABLE_INSETS_REGION
+        outInsets.touchableRegion.set(0, top, view.width, view.height)
+    }
+
+    // ---- Keys ----
+    override fun hit(
+        x: Float,
+        y: Float,
+    ) = view.layout?.hit(x, y, if (layer == Layer.ABC && prefs.getBoolean(AIM, true)) aim else null)
+
+    override fun press(
+        key: Key,
+        x: Float,
+        y: Float,
+    ) {
+        val ic = currentInputConnection ?: return
+        val learn = if (secret || layer != Layer.ABC) null else learning.getOrPut(screen) { loadLearning(screen) }
+        when (val a = key.action) {
+            is KeyAction.Type -> {
+                val upper = layer == Layer.ABC && (shift || capsLock)
+                ic.commitText(if (upper) a.text.uppercase() else a.text, 1)
+                if (key.letter != null) learn?.letter(key, x, y, view.layout!!) else learn?.other()
+                if (shift && !capsLock) shift = false
+                if (a.text == "'" && layer != Layer.ABC) layer = Layer.ABC
+                if (a.text in setOf(".", "?", "!")) autoShift()
+            }
+            KeyAction.Space -> {
+                learn?.other()
+                val now = SystemClock.uptimeMillis()
+                val before = ic.getTextBeforeCursor(2, 0)?.toString().orEmpty()
+                // Two spaces quickly after a word: a full stop and a space, as on the iPhone.
+                if (now - lastSpace < 600 && before.length == 2 && before[1] == ' ' && before[0].isLetterOrDigit()) {
+                    ic.deleteSurroundingText(1, 0)
+                    ic.commitText(". ", 1)
+                    lastSpace = 0
+                } else {
+                    ic.commitText(" ", 1)
+                    lastSpace = now
+                }
+                if (layer != Layer.ABC && layer != Layer.EMOJI) layer = Layer.ABC
+                autoShift()
+            }
+            KeyAction.Back -> {
+                learn?.back()
+                val selected = ic.getSelectedText(0)
+                if (!selected.isNullOrEmpty()) ic.commitText("", 1) else sendDownUpKeyEvents(KeyEvent.KEYCODE_DEL)
+                autoShift()
+            }
+            KeyAction.Shift -> {
+                val now = SystemClock.uptimeMillis()
+                if (now - lastShift < 350) {
+                    capsLock = !capsLock
+                    shift = false
+                } else {
+                    capsLock = false
+                    shift = !shift
+                }
+                lastShift = now
+            }
+            KeyAction.Layer -> layer = if (layer == Layer.ABC) Layer.NUM else Layer.ABC
+            is KeyAction.Go -> layer = a.to
+            KeyAction.Emoji -> layer = if (layer == Layer.EMOJI) Layer.ABC else Layer.EMOJI
+            KeyAction.Mic -> mic()
+            KeyAction.Return -> {
+                learn?.other()
+                enter()
+            }
+        }
+        rebuild()
+    }
+
+    override fun slide(steps: Int) {
+        val code = if (steps < 0) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT
+        repeat(kotlin.math.abs(steps)) { sendDownUpKeyEvents(code) }
+    }
+
+    override fun swipeDown() {
+        requestHideSelf(0)
+    }
+
+    override fun longPressEmoji() {
+        (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showInputMethodPicker()
+    }
+
+    /** Shift on where a sentence starts, as the field asks. */
+    private fun autoShift() {
+        if (capsLock) return
+        val info = currentInputEditorInfo ?: return
+        shift = layer == Layer.ABC && info.inputType != InputType.TYPE_NULL && (currentInputConnection?.getCursorCapsMode(info.inputType) ?: 0) != 0
+    }
+
+    private fun action(): Int {
+        val info = currentInputEditorInfo ?: return EditorInfo.IME_ACTION_NONE
+        if ((info.imeOptions and EditorInfo.IME_FLAG_NO_ENTER_ACTION) != 0) return EditorInfo.IME_ACTION_NONE
+        return info.imeOptions and EditorInfo.IME_MASK_ACTION
+    }
+
+    private fun returnLabel() =
+        when (action()) {
+            EditorInfo.IME_ACTION_SEND -> "send"
+            EditorInfo.IME_ACTION_GO -> "go"
+            EditorInfo.IME_ACTION_SEARCH -> "search"
+            EditorInfo.IME_ACTION_NEXT -> "next"
+            EditorInfo.IME_ACTION_DONE -> "done"
+            else -> "return"
+        }
+
+    private fun enter() {
+        val a = action()
+        if (a in setOf(EditorInfo.IME_ACTION_SEND, EditorInfo.IME_ACTION_GO, EditorInfo.IME_ACTION_SEARCH, EditorInfo.IME_ACTION_NEXT, EditorInfo.IME_ACTION_DONE)) {
+            currentInputConnection?.performEditorAction(a)
+        } else {
+            sendDownUpKeyEvents(KeyEvent.KEYCODE_ENTER)
+        }
+        autoShift()
+    }
+
+    // ---- The mic: Oma's own speech for now (Android's recognizer); Whisper is the next step. ----
+    private fun mic() {
+        speech?.let {
+            it.stop()
+            return
+        }
+        if (secret) {
+            Toast.makeText(this, "The mic is off in password fields", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            Toast.makeText(this, "Oma needs the microphone permission for voice typing", Toast.LENGTH_LONG).show()
+            return
+        }
+        val s = Speech(this)
+        if (!s.available) {
+            Toast.makeText(this, "No speech recognition on this phone", Toast.LENGTH_SHORT).show()
+            return
+        }
+        speech = s
+        view.listening = true
+        s.start(hold = true) { said ->
+            speech = null
+            view.listening = false
+            val t = said.trim()
+            if (t.isNotEmpty()) {
+                val ic = currentInputConnection ?: return@start
+                val before = ic.getTextBeforeCursor(1, 0)?.toString().orEmpty()
+                ic.commitText((if (before.isNotEmpty() && !before.endsWith(" ") && !before.endsWith("\n")) " " else "") + t, 1)
+                autoShift()
+                rebuild()
+            }
+        }
+    }
+
+    // ---- Sound: a short low "thock", as in the practice page; off unless asked for. ----
+    private val thockTrack: AudioTrack? by lazy { runCatching { makeThock() }.getOrNull() }
+
+    override fun thock(big: Boolean) {
+        if (!prefs.getBoolean(SOUND, false)) return
+        val t = thockTrack ?: return
+        runCatching {
+            t.stop()
+            t.reloadStaticData()
+            t.play()
+        }
+    }
+
+    private fun makeThock(): AudioTrack {
+        val rate = 44100
+        val n = rate * 9 / 100
+        val pcm = ShortArray(n)
+        var phase = 0.0
+        val noise = java.util.Random(7)
+        for (i in 0 until n) {
+            val t = i.toDouble() / rate
+            val f = 170.0 * exp(-t / 0.06 * kotlin.math.ln(170.0 / 60.0))
+            phase += 2 * PI * f / rate
+            val tone = sin(phase) * 0.35 * exp(-t / 0.025)
+            val click = if (t < 0.02) (noise.nextDouble() * 2 - 1) * 0.12 * (1 - t / 0.02) else 0.0
+            pcm[i] = ((tone + click) * Short.MAX_VALUE).toInt().coerceIn(-32767, 32767).toShort()
+        }
+        val track =
+            AudioTrack.Builder()
+                .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
+                .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(rate).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
+                .setTransferMode(AudioTrack.MODE_STATIC)
+                .setBufferSizeInBytes(n * 2)
+                .build()
+        track.write(pcm, 0, n)
+        return track
+    }
+
+    // ---- The look ----
+    private fun look(): KeyboardLook {
+        val p = ActivePack.pack
+        val pal = p.palette
+        val bg = pal.background.argb or 0xff000000.toInt()
+        val surface = pal.surface.argb or 0xff000000.toInt()
+        val ink = pal.foreground.argb or 0xff000000.toInt()
+        val key = if (pal.isLight) bg else surface
+        val board = if (pal.isLight) blend(surface, ink, 0.08f) else blend(bg, 0xff000000.toInt(), 0.3f)
+        val mod = if (pal.isLight) blend(surface, ink, 0.18f) else blend(bg, surface, 0.5f)
+        val typeface =
+            runCatching {
+                val file = p.type.body.file
+                if (file.isEmpty()) null else Typeface.createFromAsset(assets, "packs/${p.id}/$file")
+            }.getOrNull() ?: Typeface.DEFAULT
+        return KeyboardLook(
+            board = board,
+            key = key,
+            mod = mod,
+            ink = ink,
+            muted = pal.muted.argb,
+            mic = pal.accent.argb or 0xff000000.toInt(),
+            onMic = bg,
+            ret = pal.alt.argb or 0xff000000.toInt(),
+            onRet = pal.onAlt.argb or 0xff000000.toInt(),
+            led = pal.accent.argb or 0xff000000.toInt(),
+            typeface = typeface,
+        )
+    }
+
+    // ---- Learning, kept where the agents (and Boss's reviews) can read it: the guest's ~/.local/share/oma-kb. ----
+    private val learnDir: File
+        get() {
+            val guest = File(filesDir, "arch/root")
+            return if (guest.isDirectory) File(guest, ".local/share/oma-kb") else File(filesDir, "keyboard")
+        }
+
+    private fun screenName(s: Screen) = s.name.lowercase()
+
+    /** A reviewed table Boss approved, else the one learned from his practice (cover only). */
+    private fun loadAim(s: Screen): Aim? =
+        runCatching { KeyboardLearning.parseAim(File(learnDir, "aim-${screenName(s)}.json").readText()) }.getOrNull()
+            ?: if (s == Screen.COVER) KeyGeometry.COVER_AIM else null
+
+    private fun loadLearning(s: Screen) =
+        KeyboardLearning().apply {
+            runCatching { load(File(learnDir, "learn-${screenName(s)}.json").readText()) }
+        }
+
+    private fun saveLearning() {
+        for ((s, l) in learning) {
+            if (!l.dirty) continue
+            runCatching {
+                learnDir.mkdirs()
+                val f = File(learnDir, "learn-${screenName(s)}.json")
+                val tmp = File(learnDir, "learn-${screenName(s)}.json.tmp")
+                tmp.writeText(l.toJson())
+                tmp.renameTo(f)
+            }
+        }
+        // Read back next time, so what was saved isn't counted twice.
+        learning.clear()
+    }
+
+    companion object {
+        const val PREFS = "oma_keyboard"
+        const val MECH = "mech"
+        const val AIM = "aim"
+        const val SOUND = "sound"
+        const val HAPTICS = "haptics"
+    }
+}

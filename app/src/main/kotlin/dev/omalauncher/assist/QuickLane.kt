@@ -204,10 +204,10 @@ object QuickLane {
             try {
                 val child = runtime.proot.process(command).start()
                 process = child
-                if (stopping) child.destroy()
+                if (stopping) RunEnd.end(child)
                 // The lines are read until the process ends, so one that hangs is ended from beside it.
                 thread(name = "oma-quick-timeout", isDaemon = true) {
-                    if (!child.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS)) { late.set(true); child.destroy() }
+                    if (!child.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS)) { late.set(true); RunEnd.end(child) }
                 }
                 var said = QuickAnswer()
                 var session: String? = null
@@ -248,7 +248,7 @@ object QuickLane {
                         is FrontRead.Answer -> if (holds) {
                             held = true
                             session?.let { next = it }
-                            child.destroy()
+                            RunEnd.end(child)
                         } else {
                             own()
                             answer = read.text
@@ -263,7 +263,7 @@ object QuickLane {
                                 is FrontRoute.Unknown -> unplaced(context, asked, prompt, away)
                             }
                             session?.let { next = it }
-                            child.destroy()
+                            RunEnd.end(child)
                         }
                     }
                 }
@@ -401,7 +401,7 @@ object QuickLane {
     @Synchronized fun stop() {
         if (!working) return
         stopping = true
-        process?.destroy(); label = "Stopping"
+        process?.let { RunEnd.end(it) }; label = "Stopping"
     }
 
     private const val PREFS = "quick-lane"
@@ -457,10 +457,11 @@ fun quickSystemPrompt(mac: Boolean = false, newChat: Boolean = false): String =
         "continue work on anything; (2) asks for something to be done on the phone or the launcher that changes it, such as stickers, " +
         "sticky notes, pages, looks, settings, opening an app or pressing something: you can only look; (3) answers, confirms, corrects " +
         "or adds to what a builder just asked or is doing, as the board shows; (4) needs long work or many files, or you are not sure " +
-        "you can answer it correctly and briefly; (5) says to send it to build, to tell Claude, or names a builder. His words then go " +
+        "you can answer it correctly and briefly; (5) says to send it to build, to tell Claude, or names a builder; (6) asks your view, a " +
+        "choice or what next about a builder's work: that builder knows it. His words then go " +
         "on exactly as he said them, and the launcher picks the builder. ANSWER: otherwise answer it yourself, briefly and directly, in " +
-        "Markdown: general questions, quick facts, web lookups, the date and time, and what is on the phone. A question about the work " +
-        "itself is also yours and is never handed over: what are you working on, how is it going, is it done, is it frozen. Answer it " +
+        "Markdown: general questions, quick facts, web lookups, the date and time, and what is on the phone. A question about how the " +
+        "work stands is also yours and is never handed over: what are you working on, how is it going, is it done, is it frozen. Answer it " +
         "from the board, as your own work; its health lines say if a builder is stuck, and `oma status` gives the details. If he " +
         "asks to stop, restart or clean up work, you cannot: say in one short line to long-press its tab (Phone, or the project's " +
         "name) and choose Stop or Restart. " +

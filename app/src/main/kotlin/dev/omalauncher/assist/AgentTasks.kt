@@ -345,7 +345,7 @@ class Builder(val id: BuilderId) {
             try {
                 val child = runtime.proot.process(command).start()
                 process = child
-                if (stopping) child.destroy()
+                if (stopping) RunEnd.end(child)
                 if (agent.bin == "claude") {
                     synchronized(lock) { inputWriter = child.outputStream.bufferedWriter() }
                     writeEvent(JSONObject().put("type", "control_request").put("request_id", "oma-init")
@@ -429,6 +429,8 @@ class Builder(val id: BuilderId) {
                 if (answer.isBlank()) answer = if (code == 0) "Task completed." else "The agent exited with status $code. Open its terminal to check sign-in or permissions."
             } catch (e: Exception) { label = "Could not run agent"; answer = e.message ?: "Please open Omalauncher and try again." }
             finally {
+                // A stopped run is idle only once it is gone, so the next request never runs beside it (RunEnd).
+                if (stopping) process?.runCatching { waitFor(8, java.util.concurrent.TimeUnit.SECONDS) }
                 // Whatever was still unanswered goes with the task, notifications included.
                 val unanswered = synchronized(lock) { inputWriter?.runCatching { close() }; inputWriter = null; ledger.clear().also { published() } }
                 unanswered.forEach { AgentNotices.withdraw(context, it) }
@@ -541,7 +543,7 @@ class Builder(val id: BuilderId) {
             if (!working) return
             stopping = true
             inputWriter?.runCatching { close() }; inputWriter = null
-            process?.destroy(); label = "Stopping…"
+            process?.let { RunEnd.end(it) }; label = "Stopping…"
             ledger.clear().also { published() } to followUps.drop()
         }
         unanswered.forEach { record(context, it, ApprovalAnswer.Unanswered); AgentNotices.withdraw(context, it) }

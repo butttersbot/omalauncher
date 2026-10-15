@@ -289,6 +289,14 @@
         </service>
         <service android:name=".assist.OmaSessionService" android:exported="true"
             android:permission="android.permission.BIND_VOICE_INTERACTION" />
+        <!-- The Oma keyboard: Apple's layout in Oma's look (keyboard/). Boss switches it on in Android's settings himself. -->
+        <service android:name=".keyboard.OmaKeyboardService" android:exported="true"
+            android:label="Oma keyboard${labelSuffix}" android:permission="android.permission.BIND_INPUT_METHOD">
+            <intent-filter><action android:name="android.view.InputMethod" /></intent-filter>
+            <meta-data android:name="android.view.im" android:resource="@xml/oma_keyboard" />
+        </service>
+        <activity android:name=".keyboard.KeyboardSettingsActivity" android:exported="true"
+            android:label="Oma keyboard${labelSuffix}" android:windowSoftInputMode="stateHidden" />
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.files"

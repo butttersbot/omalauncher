@@ -132,7 +132,7 @@ object ChatTitles {
         val output = StringBuilder()
         val reader = thread(name = "oma-title-read", isDaemon = true) { runCatching { child.inputStream.bufferedReader().forEachLine { output.appendLine(it) } } }
         if (!child.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-            child.destroy()
+            RunEnd.end(child)
             return null
         }
         reader.join(1_000)

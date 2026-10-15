@@ -52,6 +52,15 @@ Also known: nothing stops two runs of the same session (seen twice tonight); rou
    answered it itself, from its short context, instead of handing it to the builder whose work it was about. Boss:
    "that was supposed to go to the builder". A judgment question about the work a builder is doing belongs with
    that builder, even when it reads like a plain question.
+   **Fixed 2026-10-14 ~22:00, built, not yet promoted:** rule (6) hands over "your view, a choice or what next about
+   a builder's work", and the front agent's own questions are narrowed to how the work stands (is it done, how is it
+   going). QuickLaneTest pins both; the prompt stays under its 2,500 limit (2,485).
+   **Stop didn't stop (found the same night):** Stop called Process.destroy(), which only signals proot, and proot
+   ignores SIGTERM; the agent inside ran on unseen (it kept building the keyboard after "let's run it" was stopped),
+   and the next message started a second copy of the same conversation beside it, the two writing over each other's
+   files. assist/RunEnd.kt now ends the run's whole tree (TERM, 3 s, KILL, proot last) for the builders, the front
+   agent and chat titles, and a stopped builder reads as idle only once its process is gone. RunEndTest. Not yet
+   seen on the phone: stop a builder mid-task and check `ps` shows no `claude -p --resume` left.
 8. **The Oma prompt still names `oma-agents status`** (works as an alias; should say `oma status`). Built 2026-10-14
    evening, **not yet seen on a screen**: the prompt says `oma status`; both stay allowed (QuickLaneTest's wording pin
    changed with it).
