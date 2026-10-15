@@ -44,7 +44,7 @@ enum class ThreadState {
     /** A step waits for his approval. */
     NeedsOk,
 
-    /** Its last request failed, never arrived, or the runner restarted under it. */
+    /** Its last request failed, never arrived, or the runner restarted under it before it was answered. */
     Attention,
     Idle,
     ;
@@ -230,7 +230,7 @@ fun macThreadNow(thread: MacThread?, id: String, tasks: List<ChatTask>, asks: Li
         wants.isNotEmpty() || thread?.status == MacThreadStatus.Waiting -> ThreadState.NeedsOk
         waits > 0 -> ThreadState.Queued
         working -> ThreadState.Working
-        thread?.status == MacThreadStatus.Interrupted -> ThreadState.Attention
+        thread?.status == MacThreadStatus.Interrupted -> if (macLastAnswered(last, thread.tail)) ThreadState.Idle else ThreadState.Attention
         last?.status == TaskStatus.Failed || last?.status == TaskStatus.Dropped -> ThreadState.Attention
         else -> ThreadState.Idle
     }
@@ -241,7 +241,8 @@ fun macThreadNow(thread: MacThread?, id: String, tasks: List<ChatTask>, asks: Li
         ThreadState.Working -> step.take(TILE_DOING_CHARS)
         ThreadState.Queued -> queuedLine(step, waiting, waits)
         ThreadState.Attention -> endOf(last?.result?.takeIf { it.isNotBlank() } ?: if (thread?.status == MacThreadStatus.Interrupted) MAC_INTERRUPTED else "")
-        ThreadState.Idle -> macBackgroundLine(thread?.background.orEmpty()) ?: endOf(thread?.tail?.takeIf { it.isNotBlank() } ?: last?.result.orEmpty())
+        // An answered request the restart cut keeps the restart's line after its answer: a resting tile shows the answer.
+        ThreadState.Idle -> macBackgroundLine(thread?.background.orEmpty()) ?: endOf(thread?.tail?.takeIf { it.isNotBlank() } ?: last?.result.orEmpty().trim().removeSuffix(MAC_INTERRUPTED))
     }
     val label = when (state) {
         ThreadState.NeedsOk -> NEEDS_OK
@@ -254,6 +255,29 @@ fun macThreadNow(thread: MacThread?, id: String, tasks: List<ChatTask>, asks: Li
     // The request the Mac is at was sent from here; one he typed on the Mac itself has no start the phone saw.
     val since = if (working) running?.time else null
     return AgentThread(macThreadKey(id), name, state, doing, label, worked, reachable, since)
+}
+
+/**
+ * Whether his newest request to a Mac thread the runner calls interrupted was answered, so that nothing of his
+ * is left unfinished and the thread can rest like any other. A restart that ends a turn after its work is done,
+ * as when the turn's last step restarts the runner itself (Boss, 2026-10-14), is no reason to call him over.
+ * [last] is his newest entry there that is not waiting; [tail] is what the Mac says the agent said last.
+ * Words he sent from elsewhere are his newest request when the thread names them after [last]: only words of
+ * the agent after them answer them. Otherwise [last] is answered once it ended with words from the agent, or
+ * failed only because of the restart after some; one still running, dropped, cut by the phone's own restart or
+ * failed for any other reason is not. With no entry here, the Mac's [tail] is all there is to go by.
+ */
+fun macLastAnswered(last: ChatTask?, tail: String): Boolean {
+    if (last == null) return tail.isNotBlank()
+    val elsewhere = last.later.indexOfLast { !it.words && it.text.startsWith(MAC_SENT_ELSEWHERE) }
+    if (elsewhere >= 0) return last.later.drop(elsewhere + 1).any { it.words && it.text.isNotBlank() }
+    val result = last.result.trim()
+    val said = result.removeSuffix(MAC_INTERRUPTED).isNotBlank() || last.later.any { it.words && it.text.isNotBlank() }
+    return when (last.status) {
+        TaskStatus.Done, TaskStatus.Stopped -> said
+        TaskStatus.Failed -> result.endsWith(MAC_INTERRUPTED) && said
+        else -> false
+    }
 }
 
 /**

@@ -1,5 +1,6 @@
 package dev.omalauncher.assist
 
+import dev.omalauncher.oma.ChatLater
 import dev.omalauncher.oma.ChatTask
 import dev.omalauncher.oma.QUICK_AGENT
 import dev.omalauncher.oma.TaskStatus
@@ -134,6 +135,47 @@ class AgentThreadsTest {
         assertEquals(ThreadState.Attention, cut.state); assertEquals(MAC_INTERRUPTED, cut.doing)
         // Working again, an old failure is over.
         assertEquals(ThreadState.Working, macThreadNow(thread(MacThreadStatus.Working), id, listOf(mac(20, TaskStatus.Failed), mac(21, TaskStatus.Running)), emptyList(), true).state)
+    }
+
+    /** Boss, 2026-10-14: a thread whose last step restarted the runner had finished; only something of his unfinished needs him. */
+    @Test fun anInterruptedMacThreadNeedsHimOnlyWhenSomethingOfHisIsUnfinished() {
+        val restarted = MacThreadStatus.Interrupted
+        // Answered, then cut by the restart its own last step made: done, and it grows old as any resting thread.
+        val answered = mac(20, TaskStatus.Failed, "install the new runner", result = "Runner updated; installing it now.\n\n$MAC_INTERRUPTED")
+        val upkeep = macThreadNow(thread(restarted, lastWorked = 1), id, listOf(answered), emptyList(), true)
+        assertEquals(ThreadState.Idle, upkeep.state); assertEquals("done", upkeep.label); assertEquals("Runner updated; installing it now.", upkeep.doing)
+        assertEquals(ThreadState.Idle, macThreadNow(thread(restarted, tail = "All done."), id, listOf(mac(20, TaskStatus.Done, result = "All done.")), emptyList(), true).state)
+        assertEquals("All done.", macThreadNow(thread(restarted, tail = "All done."), id, listOf(answered), emptyList(), true).doing)
+        // Words said after the turn, between his messages, answer it too.
+        val laterWords = mac(20, TaskStatus.Failed, result = MAC_INTERRUPTED).copy(later = listOf(ChatLater("Installed.", words = true)))
+        assertEquals(ThreadState.Idle, macThreadNow(thread(restarted), id, listOf(laterWords), emptyList(), true).state)
+        // A thread he only wrote to on the Mac goes by what the Mac says it said.
+        assertEquals(ThreadState.Idle, macThreadNow(thread(restarted, tail = "Done."), id, emptyList(), emptyList(), true).state)
+
+        // Unanswered: no words before the restart, still running, dropped, cut by the phone's own restart, or failed otherwise.
+        for (left in listOf(
+            mac(20, TaskStatus.Failed, result = MAC_INTERRUPTED),
+            mac(20, TaskStatus.Running, result = "Looking at it"),
+            mac(20, TaskStatus.Dropped, result = MAC_NOT_TAKEN),
+            mac(20, TaskStatus.Interrupted, result = "Looking at it"),
+            mac(20, TaskStatus.Failed, result = "Partly done.\n\nFailed to authenticate"),
+            mac(20, TaskStatus.Stopped),
+        )) {
+            val cut = macThreadNow(thread(restarted, tail = "an older answer"), id, listOf(left), emptyList(), true)
+            assertEquals(left.status.id, ThreadState.Attention, cut.state); assertEquals(NEEDS_ATTENTION, cut.label)
+        }
+        assertEquals(MAC_INTERRUPTED, macThreadNow(thread(restarted, tail = "an older answer"), id, listOf(mac(20, TaskStatus.Failed, result = MAC_INTERRUPTED)), emptyList(), true).doing)
+        // Words sent from elsewhere after his last entry are his newest request: the earlier answer does not answer them.
+        val elsewhere = mac(20, TaskStatus.Done, result = "Done.").copy(later = listOf(ChatLater(MAC_SENT_ELSEWHERE + "and restart it")))
+        assertEquals(ThreadState.Attention, macThreadNow(thread(restarted, tail = "Done."), id, listOf(elsewhere), emptyList(), true).state)
+        val elsewhereAnswered = elsewhere.copy(later = elsewhere.later + ChatLater("Restarting.", words = true))
+        assertEquals(ThreadState.Idle, macThreadNow(thread(restarted, tail = "Restarting."), id, listOf(elsewhereAnswered), emptyList(), true).state)
+
+        // Turns waiting and approvals still come first, answered or not.
+        assertEquals(ThreadState.Queued, macThreadNow(thread(restarted, waitingTurns = 1), id, listOf(answered), emptyList(), true).state)
+        assertEquals(ThreadState.Queued, macThreadNow(thread(restarted), id, listOf(answered, mac(21, TaskStatus.Queued, "and then this")), emptyList(), true).state)
+        assertEquals(ThreadState.NeedsOk, macThreadNow(thread(restarted, pending = listOf(write)), id, listOf(answered), emptyList(), true).state)
+        assertEquals(ThreadState.NeedsOk, macThreadNow(thread(restarted), id, listOf(answered), listOf(ThreadAsk("Bash", "git")), true).state)
     }
 
     @Test fun aThreadTheMacHasNotListedIsReadFromItsEntriesAlone() {
