@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, interactive-widget=resizes-content">
+<title>Oma keyboard: practice</title>
+<style>
+  /* Fonts and colours come from the looks' own pack.toml files, as in oma-keyboard-mockup.html. */
+  @font-face { font-family: Schibsted; src: url(../app/src/main/assets/packs/city-pop/fonts/SchibstedGrotesk.ttf); }
+  @font-face { font-family: JetMono; src: url(../app/src/main/assets/packs/city-pop/fonts/JetBrainsMono.ttf); }
+  @font-face { font-family: Montserrat; src: url(../app/src/main/assets/packs/city-pop/fonts/Montserrat-ExtraBoldItalic.ttf); }
+  @font-face { font-family: Dela; src: url(../app/src/main/assets/packs/riso/fonts/DelaGothicOne-Regular.ttf); }
+
+  .look-citypop { --bg:#ffffff; --surface:#dff7f7; --ink:#12296b; --muted:rgba(18,41,107,.6); --accent:#bd3a72; --hot:#ff4f9a; --board:#cfe9ee; --key:#ffffff; --mod:#a9d3dc; --shadow:rgba(140,8,28,.35); --font:Schibsted, system-ui, sans-serif; --display:Montserrat, system-ui, sans-serif; --radius:4px; }
+  .look-riso    { --bg:#e7e5ee; --surface:#d9d6e6; --ink:#2337ff; --muted:rgba(35,55,255,.55); --accent:#ff3d8b; --hot:#ff3d8b; --board:#d9d6e6; --key:#efeef5; --mod:#c4c0dc; --shadow:rgba(35,55,255,.35); --font:Schibsted, system-ui, sans-serif; --display:Dela, system-ui, sans-serif; --radius:0px; }
+  .look-console { --bg:#1a1b26; --surface:#24283b; --ink:#c0caf5; --muted:rgba(192,202,245,.55); --accent:#7aa2f7; --hot:#7aa2f7; --board:#16161e; --key:#24283b; --mod:#1f2335; --shadow:rgba(0,0,0,.5); --font:JetMono, ui-monospace, monospace; --display:JetMono, ui-monospace, monospace; --radius:6px; }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; }
+  html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; }
+  body { display: flex; flex-direction: column; height: 100dvh; background: var(--bg); color: var(--ink); font-family: var(--font); }
+
+  .top { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; padding: 8px 12px 10px; overflow: hidden; }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; font: 12px/1 system-ui, sans-serif; }
+  .chips .lbl { color: var(--muted); margin-left: 4px; }
+  .chips button { font: inherit; padding: 6px 9px; border-radius: 14px; border: 1px solid var(--muted); background: transparent; color: var(--ink); }
+  .chips button.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .where { font: 700 13px/1.2 system-ui, sans-serif; color: var(--accent); }
+  .target { font-size: 20px; line-height: 1.3; font-weight: 600; }
+  .target .ok { color: var(--muted); }
+  .target .bad { color: #fff; background: #e0245e; border-radius: 3px; }
+  .field { background: var(--surface); padding: 10px 12px; min-height: 48px; border-radius: var(--radius); font-size: 20px; line-height: 1.3; white-space: pre-wrap; word-break: break-word; }
+  .field .caret { display: inline-block; width: 2px; height: 1.1em; background: var(--accent); vertical-align: -3px; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .stats { font: 13px/1.35 system-ui, sans-serif; color: var(--muted); }
+  .stats b { color: var(--ink); }
+  .flash { color: #e0245e; font-weight: 700; }
+
+  .results { position: fixed; inset: 0; background: var(--bg); z-index: 10; overflow: auto; padding: 14px; display: none; font: 14px/1.4 system-ui, sans-serif; }
+  .results.show { display: block; }
+  .results table { border-collapse: collapse; width: 100%; margin: 8px 0 16px; }
+  .results td, .results th { border-bottom: 1px solid var(--muted); padding: 6px 4px; text-align: right; }
+  .results td:first-child, .results th:first-child { text-align: left; }
+  .results tr.best td { font-weight: 700; color: var(--accent); }
+  .results button { font: inherit; padding: 8px 14px; border-radius: 16px; border: 1px solid var(--ink); background: var(--ink); color: var(--bg); margin-right: 6px; }
+
+  /* The keyboard. Every key is placed by geom() below in dp (Chrome's CSS px is Android's dp), which is the same
+     arithmetic the real Oma keyboard will use. A touch picks the key whose cell holds it, not only the visible cap. */
+  .kb { position: relative; flex: 0 0 auto; background: var(--board); touch-action: none; }
+  .cap { position: absolute; border-radius: max(var(--radius), 5px); background: var(--key); color: var(--ink);
+    display: grid; place-items: center; box-shadow: 0 1px 0 var(--shadow); pointer-events: none; }
+  .cap > span { display: grid; place-items: center; width: 100%; height: 100%; border-radius: inherit; }
+  .cap.mod { background: var(--mod); }
+  .cap.mic { background: var(--accent); color: var(--bg); }
+  .cap.ret { background: var(--hot); color: #fff; }
+  .cap.down { transform: translateY(1px); filter: brightness(.88); }
+  .cap.on { background: var(--key); }
+  .cap.listening { animation: pulse 1.1s ease-in-out infinite; }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--accent) 30%, transparent); } }
+  .bubble { position: absolute; z-index: 5; display: grid; place-items: center; background: var(--key); color: var(--ink);
+    border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,.3); pointer-events: none; font-weight: 500; }
+
+  .mech .kb { background: linear-gradient(180deg, color-mix(in srgb, var(--board) 80%, #000), color-mix(in srgb, var(--board) 92%, #000));
+    box-shadow: inset 0 2px 6px rgba(0,0,0,.35); border-top: 3px solid color-mix(in srgb, var(--board) 60%, #fff); }
+  .mech .led { position: absolute; left: 6px; right: 6px; top: 3px; height: 3px; border-radius: 2px; background: linear-gradient(90deg, var(--accent), var(--hot), var(--accent)); opacity: .8; }
+  .mech .cap { border-radius: 7px; background: color-mix(in srgb, var(--key) 72%, #000); padding: 2px 3px 6px;
+    box-shadow: 0 3px 0 color-mix(in srgb, var(--key) 55%, #000), 0 4px 3px rgba(0,0,0,.3); }
+  .mech .cap > span { border-radius: 5px; background: radial-gradient(ellipse at 50% 35%, color-mix(in srgb, var(--key) 100%, #fff 12%) 0%, var(--key) 70%, color-mix(in srgb, var(--key) 92%, #000) 100%);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.35), inset 0 -2px 3px rgba(0,0,0,.12); }
+  .mech .cap.mod { background: color-mix(in srgb, var(--mod) 70%, #000); box-shadow: 0 3px 0 color-mix(in srgb, var(--mod) 50%, #000), 0 4px 3px rgba(0,0,0,.3); }
+  .mech .cap.mod > span { background: radial-gradient(ellipse at 50% 35%, color-mix(in srgb, var(--mod) 100%, #fff 12%) 0%, var(--mod) 70%, color-mix(in srgb, var(--mod) 90%, #000) 100%); }
+  .mech .cap.mic { background: color-mix(in srgb, var(--accent) 65%, #000); box-shadow: 0 3px 0 color-mix(in srgb, var(--accent) 45%, #000), 0 4px 3px rgba(0,0,0,.3); }
+  .mech .cap.mic > span { background: radial-gradient(ellipse at 50% 35%, color-mix(in srgb, var(--accent) 100%, #fff 18%) 0%, var(--accent) 75%); }
+  .mech .cap.ret { background: color-mix(in srgb, var(--hot) 60%, #000); box-shadow: 0 3px 0 color-mix(in srgb, var(--hot) 40%, #000), 0 4px 3px rgba(0,0,0,.3); }
+  .mech .cap.ret > span { background: radial-gradient(ellipse at 50% 35%, color-mix(in srgb, var(--hot) 100%, #fff 15%) 0%, var(--hot) 75%); }
+  .mech .cap.down { transform: translateY(2px); filter: none; box-shadow: 0 1px 0 rgba(0,0,0,.4), 0 2px 3px rgba(0,0,0,.3); }
+</style>
+</head>
+<body class="look-citypop mech">
+<div class="top" id="top">
+  <div class="chips" id="chips"></div>
+  <div class="where" id="where"></div>
+  <div class="target" id="target"></div>
+  <div class="field" id="field"></div>
+  <div class="stats" id="stats"></div>
+</div>
+<div class="kb" id="kb"></div>
+<div class="results" id="results"></div>
+
+<script>
+// ---- Settings, kept between visits. ----
+const saved = JSON.parse(localStorage.getItem('omaKbSettings') || '{}');
+const V = Object.assign({ keys: 'mech', ret: 'a', split: 'wide', look: 'citypop', sound: 'on', haptic: 'on' }, saved);
+// ?split=split&ret=b and so on preset a setup (for links and checks).
+for (const [k, v] of new URLSearchParams(location.search)) if (k in V) V[k] = v;
+const saveV = () => localStorage.setItem('omaKbSettings', JSON.stringify(V));
+
+// ---- The three Fold layouts, told apart by the screen the page is on. ----
+function layoutName() {
+  const w = innerWidth, h = innerHeight;
+  if (w < 560) return 'cover';
+  return w > h ? 'landscape' : 'portrait';
+}
+const LAYOUT_LABEL = { cover: 'Cover screen', portrait: 'Inner screen, upright', landscape: 'Inner screen, sideways' };
+
+const ROWS = {
+  abc: [['q','w','e','r','t','y','u','i','o','p'], ['a','s','d','f','g','h','j','k','l'], ['z','x','c','v','b','n','m']],
+  123: [['1','2','3','4','5','6','7','8','9','0'], ['-','/',':',';','(',')','$','&','@','"'], ['.',',','?','!',"'"]],
+  sym: [['[',']','{','}','#','%','^','*','+','='], ['_','\\','|','~','<','>','€','£','¥','•'], ['.',',','?','!',"'"]],
+};
+
+// ---- Geometry: every key's cell and visible cap, in dp. The real keyboard copies this. ----
+// Cell = where a touch counts for the key. Cap = what is drawn (the cell less half the gap on each side).
+// Row band heights per layout; keys are 4 rows. Mechanical caps sit nearly flush (2 dp gaps), flat ones Apple-like.
+function geom(W, layout, layer) {
+  const mech = V.keys === 'mech';
+  const P = 4, TOP = mech ? 10 : 6, BOT = 8;
+  const H = { cover: 54, portrait: 58, landscape: 50 }[layout];
+  const gx = mech ? 2 : 6, gy = mech ? 4 : 10;
+  const split = layout !== 'cover' && V.split === 'split';
+  const keys = [], dead = [];
+  const add = (row, x, w, label, act, cls = '', vis = null) => {
+    const v = vis || { x, w };
+    keys.push({ row, x, w, label, act, cls, y: TOP + row * H, h: H,
+      cap: { x: v.x + gx / 2, w: v.w - gx, y: TOP + row * H + gy / 2, h: H - gy } });
+  };
+  const L = ROWS[layer];
+  const modA = layer === 'abc' ? { label: V._caps ? '⇪' : '⇧', act: 'shift', cls: 'mod shift' + (V._shift || V._caps ? ' on' : '') }
+    : layer === '123' ? { label: '#+=', act: 'sym', cls: 'mod' } : { label: '123', act: 'num', cls: 'mod' };
+  const layerKey = layer === 'abc' ? '123' : 'ABC';
+  const ch = c => ({ label: (layer === 'abc' && (V._shift || V._caps)) ? c.toUpperCase() : c, act: 'k:' + c });
+
+  if (!split) {
+    const u = (W - 2 * P) / 10, x0 = P;
+    L[0].forEach((c, i) => { const k = ch(c); add(0, x0 + i * u, u, k.label, k.act); });
+    const off = (10 - L[1].length) / 2 * u;
+    L[1].forEach((c, i) => { const k = ch(c); add(1, x0 + off + i * u, u, k.label, k.act); });
+    // Third row: shift and ⌫ take 1.5 units of touch but show 1.25, leaving the small gap Apple has.
+    add(2, x0, 1.5 * u, modA.label, modA.act, modA.cls, { x: x0, w: 1.25 * u });
+    const m = L[2].length, mw = 7 * u / m;
+    L[2].forEach((c, i) => { const k = ch(c); add(2, x0 + 1.5 * u + i * mw, mw, k.label, k.act); });
+    add(2, x0 + 8.5 * u, 1.5 * u, '⌫', 'back', 'mod', { x: x0 + 8.75 * u, w: 1.25 * u });
+    // Bottom row, the two return placements.
+    let x = x0;
+    const put = (w, label, act, cls) => { add(3, x, w * u, label, act, cls); x += w * u; };
+    put(1.25, layerKey, 'layer', 'mod'); put(1.1, '🙂', 'emoji', 'mod');
+    if (V.ret === 'a') { put(4.4, 'space', 'space', 'space'); put(1.5, '🎤', 'mic', 'mic'); put(1.75, 'return', 'ret', 'mod ret'); }
+    else { put(1.5, '🎤', 'mic', 'mic'); put(4.4, 'space', 'space', 'space'); dead.push({ row: 3, x0: x, x1: x + 0.5 * u }); x += 0.5 * u; put(1.25, '↵', 'ret', 'mod ret'); }
+    return { keys, dead, height: TOP + 4 * H + BOT, H, TOP, u };
+  }
+
+  // Split: two thumb-sized halves at the edges, the middle left open (touches there do nothing).
+  const Hw = Math.min(W * 0.4, 330), u = Hw / 5.5, xl = P, xr = W - P;
+  dead.push({ row: -1, x0: xl + Hw, x1: xr - Hw });
+  const halves = (arr) => [arr.slice(0, Math.ceil(arr.length / 2)), arr.slice(Math.ceil(arr.length / 2))];
+  const [r0l, r0r] = halves(L[0]);
+  r0l.forEach((c, i) => { const k = ch(c); add(0, xl + i * u, u, k.label, k.act); });
+  r0r.forEach((c, i) => { const k = ch(c); add(0, xr - (r0r.length - i) * u, u, k.label, k.act); });
+  const [r1l, r1r] = halves(L[1]);
+  r1l.forEach((c, i) => { const k = ch(c); add(1, xl + 0.5 * u + i * u, u, k.label, k.act); });
+  r1r.forEach((c, i) => { const k = ch(c); add(1, xr - 0.5 * u - (r1r.length - i) * u, u, k.label, k.act); });
+  add(2, xl, 1.5 * u, modA.label, modA.act, modA.cls, { x: xl, w: 1.25 * u });
+  const [r2l, r2r] = halves(L[2]);
+  r2l.forEach((c, i) => { const k = ch(c); add(2, xl + 1.5 * u + i * u, u, k.label, k.act); });
+  r2r.forEach((c, i) => { const k = ch(c); add(2, xr - 1.5 * u - (r2r.length - i) * u, u, k.label, k.act); });
+  add(2, xr - 1.5 * u, 1.5 * u, '⌫', 'back', 'mod', { x: xr - 1.25 * u, w: 1.25 * u });
+  add(3, xl, 1.25 * u, layerKey, 'layer', 'mod'); add(3, xl + 1.25 * u, 1.1 * u, '🙂', 'emoji', 'mod');
+  add(3, xl + 2.35 * u, Hw - 2.35 * u, 'space', 'space', 'space');
+  if (V.ret === 'a') {
+    add(3, xr - Hw, Hw - 3.15 * u, 'space', 'space', 'space');
+    add(3, xr - 3.15 * u, 1.4 * u, '🎤', 'mic', 'mic'); add(3, xr - 1.75 * u, 1.75 * u, 'return', 'ret', 'mod ret');
+  } else {
+    add(3, xr - Hw, 1.4 * u, '🎤', 'mic', 'mic');
+    add(3, xr - Hw + 1.4 * u, Hw - 2.9 * u, 'space', 'space', 'space');
+    dead.push({ row: 3, x0: xr - 1.5 * u, x1: xr - 1.1 * u });
+    add(3, xr - 1.1 * u, 1.1 * u, '↵', 'ret', 'mod ret');
+  }
+  return { keys, dead, height: TOP + 4 * H + BOT, H, TOP, u };
+}
+
+// A touch goes to the key whose cell holds it; between cells or past the row's end, the nearest key in that row.
+function hit(G, x, y) {
+  const row = Math.max(0, Math.min(3, Math.floor((y - G.TOP) / G.H)));
+  if (G.dead.some(d => (d.row === -1 || d.row === row) && x >= d.x0 && x < d.x1)) return null;
+  let best = null, bd = 1e9;
+  for (const k of G.keys) if (k.row === row) {
+    const d = x < k.x ? k.x - x : x >= k.x + k.w ? x - (k.x + k.w) + 1e-6 : 0;
+    if (d < bd) { bd = d; best = k; }
+  }
+  return best;
+}
+
+// ---- Typing state. ----
+const T = { text: '', caret: 0, layer: 'abc', listening: false };
+V._shift = true; V._caps = false;
+let G = null;
+
+const PHRASES = [
+  'the quick brown fox jumps over the lazy dog', 'promote the launcher after the build passes', 'check the mac runner and tell me what broke',
+  'my watch fell asleep on the long flight', 'meet me at the coffee shop at noon', 'send the backup to the macbook tonight',
+  'please call me back when you get this', 'the weather is lovely this time of year', 'we need to fix the keyboard placement',
+  'turn tailscale back on if it drops', 'what time does the samsung store open', 'that was the best pizza in town',
+  'can you push everything to github', 'i will be home in about twenty minutes', 'the new phone has a lot more memory',
+  'open the threads page and start a new chat', 'thanks for the help with the move', 'look at the screenshot and tell me',
+  'a picture is worth a thousand words', 'make the keys a little more flush', 'do not forget to buy milk and eggs',
+  'the meeting got moved to friday morning', 'restart the server and check the logs', 'my favorite color is a deep ocean blue',
+  'how much does the monthly plan cost', 'we should go hiking this weekend', 'the train was late again this morning',
+  'archive the old thread and keep the new one', 'quiet please the baby is sleeping', 'let me know when the build is green',
+  'he typed the whole message with one thumb', 'sixty six bright yellow balloons', 'just a quick question about the invoice',
+  'the voice button works much better now', 'drop the file into my downloads folder', 'every good boy deserves fudge',
+  'six zebras jumped over the fence', 'never stop learning new things', 'run the tests before you merge',
+  'jazz music fills the cozy kitchen',
+];
+let P = { target: '', t0: 0, tLast: 0, backs: 0, keys: 0 }, recent = [];
+function nextPhrase() {
+  let t; do { t = PHRASES[Math.floor(Math.random() * PHRASES.length)]; } while (recent.includes(t));
+  recent = [t, ...recent].slice(0, 12);
+  P = { target: t.charAt(0).toUpperCase() + t.slice(1), t0: 0, tLast: 0, backs: 0, keys: 0 };
+  T.text = ''; T.caret = 0; T.layer = 'abc'; V._shift = true; V._caps = false;
+}
+
+function lev(a, b) {
+  const d = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) { let prev = d[0]; d[0] = i;
+    for (let j = 1; j <= b.length; j++) { const t = d[j]; d[j] = Math.min(d[j] + 1, d[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = t; } }
+  return d[b.length];
+}
+
+// ---- Results, per layout and variant. ----
+const R = JSON.parse(localStorage.getItem('omaKbResults') || '{}');
+const variantKey = () => { const l = layoutName(); return [l, V.keys, 'return ' + V.ret.toUpperCase(), l === 'cover' ? '' : V.split].filter(Boolean).join(' · '); };
+function bucket() { return R[variantKey()] ||= { n: 0, chars: 0, ms: 0, errs: 0, len: 0, backs: 0, misfires: 0 }; }
+const saveR = () => localStorage.setItem('omaKbResults', JSON.stringify(R));
+
+let flash = '';
+function submit() {
+  const typed = T.text.trim();
+  if (typed.length < P.target.length * 0.5) { bucket().misfires++; saveR(); flash = typed ? 'Sent too early. Counted as a misfire.' : 'Return pressed with nothing typed. Counted as a misfire.'; return; }
+  const ms = Math.max(1, P.tLast - P.t0), errs = lev(typed.toLowerCase(), P.target.toLowerCase());
+  const b = bucket(); b.n++; b.chars += typed.length; b.ms += ms; b.errs += errs; b.len += P.target.length; b.backs += P.backs; saveR();
+  const wpm = (typed.length / 5) / (ms / 60000), acc = 100 * (1 - errs / P.target.length);
+  flash = `Last: <b>${wpm.toFixed(0)} wpm</b>, <b>${acc.toFixed(0)}%</b> accurate, ${P.backs} fixes.`;
+  nextPhrase();
+}
+
+// ---- Keys acting. ----
+function type(s) {
+  if (!P.t0) P.t0 = performance.now();
+  T.text = T.text.slice(0, T.caret) + s + T.text.slice(T.caret); T.caret += s.length; P.tLast = performance.now();
+  if (V._shift && !V._caps) V._shift = false;
+  if (/[.?!] $/.test(T.text.slice(0, T.caret))) V._shift = true;
+}
+let lastShift = 0;
+function act(a) {
+  flash = flash && a === 'ret' ? flash : '';
+  if (a.startsWith('k:')) { const c = a.slice(2); type(T.layer === 'abc' && (V._shift || V._caps) ? c.toUpperCase() : c); if (c === "'" && T.layer !== 'abc') T.layer = 'abc'; }
+  else if (a === 'space') { type(' '); if (T.layer !== 'abc') T.layer = 'abc'; }
+  else if (a === 'back') { if (T.caret > 0) { T.text = T.text.slice(0, T.caret - 1) + T.text.slice(T.caret); T.caret--; P.backs++; P.tLast = performance.now(); if (!T.text) V._shift = true; } }
+  else if (a === 'shift') { const now = Date.now(); if (now - lastShift < 350) { V._caps = !V._caps; V._shift = false; } else { V._caps = false; V._shift = !V._shift; } lastShift = now; }
+  else if (a === 'layer') { T.layer = T.layer === 'abc' ? '123' : 'abc'; }
+  else if (a === 'sym') { T.layer = 'sym'; } else if (a === 'num') { T.layer = '123'; }
+  else if (a === 'emoji') { type('🙂'); }
+  else if (a === 'mic') { T.listening = !T.listening; }
+  else if (a === 'ret') { submit(); }
+  render();
+}
+
+// ---- Feel: a short "thock" and a haptic tick on each press. ----
+let ac = null;
+function thock(k) {
+  if (V.sound !== 'on') return;
+  ac = ac || new (window.AudioContext || window.webkitAudioContext)();
+  const t = ac.currentTime, big = k.w > 1.4 * G.u;
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = 'triangle'; o.frequency.setValueAtTime(big ? 120 : 170, t); o.frequency.exponentialRampToValueAtTime(60, t + 0.06);
+  g.gain.setValueAtTime(0.35, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+  o.connect(g).connect(ac.destination); o.start(t); o.stop(t + 0.09);
+  const n = ac.createBuffer(1, ac.sampleRate * 0.02, ac.sampleRate), d = n.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+  const src = ac.createBufferSource(), ng = ac.createGain(); src.buffer = n; ng.gain.value = 0.12;
+  src.connect(ng).connect(ac.destination); src.start(t);
+}
+const buzz = () => { if (V.haptic === 'on' && navigator.vibrate) navigator.vibrate(8); };
+
+// ---- Drawing. ----
+const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+function renderTop() {
+  const l = layoutName();
+  const chip = (k, v, label) => `<button data-k="${k}" data-v="${v}" class="${V[k] === v ? 'on' : ''}">${label}</button>`;
+  document.getElementById('chips').innerHTML =
+    `<span class="lbl">keys</span>${chip('keys', 'mech', 'mechanical')}${chip('keys', 'flat', 'flat')}` +
+    `<span class="lbl">return</span>${chip('ret', 'a', 'A')}${chip('ret', 'b', 'B')}` +
+    (l === 'cover' ? '' : `<span class="lbl">board</span>${chip('split', 'wide', 'wide')}${chip('split', 'split', 'split')}`) +
+    `<span class="lbl">look</span>${chip('look', 'citypop', 'city pop')}${chip('look', 'riso', 'riso')}${chip('look', 'console', 'console')}` +
+    `<span class="lbl">feel</span>${chip('sound', V.sound === 'on' ? 'on' : 'off', V.sound === 'on' ? 'thock on' : 'thock off')}${chip('haptic', V.haptic === 'on' ? 'on' : 'off', V.haptic === 'on' ? 'buzz on' : 'buzz off')}` +
+    `<button data-k="results" style="margin-left:auto">results</button><button data-k="skip">skip</button>`;
+  for (const b of document.querySelectorAll('#chips button')) { b.classList.toggle('on', V[b.dataset.k] === b.dataset.v && !['sound', 'haptic'].includes(b.dataset.k) || (['sound', 'haptic'].includes(b.dataset.k) && V[b.dataset.k] === 'on')); }
+  const b = bucket(), wpm = b.ms ? (b.chars / 5) / (b.ms / 60000) : 0, acc = b.len ? 100 * (1 - b.errs / b.len) : 0;
+  document.getElementById('where').textContent = `${LAYOUT_LABEL[l]} · ${innerWidth}×${innerHeight} dp — testing: ${variantKey()}`;
+  // Show the target with the typed part checked letter by letter.
+  const t = P.target, typed = T.text;
+  let h = '';
+  for (let i = 0; i < t.length; i++) h += i < typed.length ? `<span class="${typed[i].toLowerCase() === t[i].toLowerCase() ? 'ok' : 'bad'}">${esc(t[i])}</span>` : esc(t[i]);
+  document.getElementById('target').innerHTML = h;
+  document.getElementById('field').innerHTML = esc(T.text.slice(0, T.caret)) + '<span class="caret"></span>' + esc(T.text.slice(T.caret)) + (T.listening ? ' <i style="color:var(--muted)">listening… (practice only)</i>' : '');
+  document.getElementById('stats').innerHTML = (flash ? `<div class="${flash.startsWith('Sent') || flash.startsWith('Return') ? 'flash' : ''}">${flash}</div>` : '') +
+    `This setup: <b>${b.n}</b> phrases, <b>${wpm.toFixed(0)}</b> wpm, <b>${acc.toFixed(0)}%</b> accurate, ${b.n ? (b.backs / b.n).toFixed(1) : 0} fixes per phrase, <b>${b.misfires}</b> misfired returns. Type the phrase, then press return.`;
+}
+function renderKb() {
+  const kb = document.getElementById('kb');
+  G = geom(innerWidth, layoutName(), T.layer);
+  kb.style.height = G.height + 'px';
+  let h = V.keys === 'mech' ? '<div class="led"></div>' : '';
+  const fs = Math.round(Math.min(G.H - (V.keys === 'mech' ? 14 : 10), 30) * 0.55);
+  G.keys.forEach((k, i) => {
+    const small = /mod|space/.test(k.cls) && k.label.length > 1;
+    h += `<div class="cap ${k.cls}${k.act === 'mic' && T.listening ? ' listening' : ''}" data-i="${i}" style="left:${k.cap.x}px;top:${k.cap.y}px;width:${k.cap.w}px;height:${k.cap.h}px;font-size:${small ? Math.round(fs * 0.7) : fs}px"><span>${esc(k.label)}</span></div>`;
+  });
+  kb.innerHTML = h + '<div class="bubble" id="bubble" style="display:none"></div>';
+}
+function render() { document.body.className = 'look-' + V.look + (V.keys === 'mech' ? ' mech' : ''); renderTop(); renderKb(); }
+
+// ---- Touch: letters land when the finger lifts, or as soon as the next finger comes down (rollover). Shift and ⌫
+// act on touch, and ⌫ repeats when held. A slide on the space bar moves the caret instead of typing a space. ----
+const presses = new Map();
+const capEl = k => document.querySelector(`.cap[data-i="${G.keys.indexOf(k)}"]`);
+function showBubble(k) {
+  const b = document.getElementById('bubble');
+  if (!k.act.startsWith('k:')) { b.style.display = 'none'; return; }
+  const w = k.cap.w + 14, hgt = k.cap.h * 1.15;
+  Object.assign(b.style, { display: 'grid', left: (k.cap.x + k.cap.w / 2 - w / 2) + 'px', top: (k.cap.y - hgt - 4) + 'px', width: w + 'px', height: hgt + 'px', fontSize: Math.round(hgt * 0.55) + 'px' });
+  b.textContent = k.label;
+}
+function release(id, commit) {
+  const p = presses.get(id); if (!p) return;
+  presses.delete(id); clearTimeout(p.timer); clearInterval(p.rep);
+  const el = capEl(p.k); if (el) el.classList.remove('down');
+  document.getElementById('bubble').style.display = 'none';
+  if (commit && !p.done && !(p.k.act === 'space' && p.moved)) act(p.k.act);
+}
+const kbEl = document.getElementById('kb');
+kbEl.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  for (const [id, p] of presses) if (!p.done && p.k.act !== 'space') { p.done = true; act(p.k.act); }
+  const r = kbEl.getBoundingClientRect(), k = hit(G, e.clientX - r.left, e.clientY - r.top);
+  if (!k) return;
+  kbEl.setPointerCapture(e.pointerId);
+  thock(k); buzz();
+  const p = { k, x: e.clientX, start: T.caret, moved: false, done: false };
+  presses.set(e.pointerId, p);
+  if (k.act === 'shift' || k.act === 'back') {
+    p.done = true; act(k.act);
+    if (k.act === 'back') p.timer = setTimeout(() => { p.rep = setInterval(() => { act('back'); buzz(); }, 60); }, 400);
+  }
+  const el = capEl(k); if (el) el.classList.add('down');
+  showBubble(k);
+});
+kbEl.addEventListener('pointermove', e => {
+  const p = presses.get(e.pointerId); if (!p || p.k.act !== 'space') return;
+  const steps = Math.trunc((e.clientX - p.x) / 12);
+  if (steps !== 0) p.moved = true;
+  if (p.moved) { const c = Math.max(0, Math.min(T.text.length, p.start + steps)); if (c !== T.caret) { T.caret = c; buzz(); renderTop(); } }
+});
+kbEl.addEventListener('pointerup', e => release(e.pointerId, true));
+kbEl.addEventListener('pointercancel', e => release(e.pointerId, false));
+kbEl.addEventListener('contextmenu', e => e.preventDefault());
+
+document.getElementById('chips').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const k = b.dataset.k;
+  if (k === 'results') return showResults();
+  if (k === 'skip') { flash = ''; nextPhrase(); return render(); }
+  if (k === 'sound' || k === 'haptic') V[k] = V[k] === 'on' ? 'off' : 'on'; else V[k] = b.dataset.v;
+  saveV(); render();
+});
+
+function showResults() {
+  const el = document.getElementById('results');
+  const rows = Object.entries(R).map(([k, b]) => ({ k, b, wpm: b.ms ? (b.chars / 5) / (b.ms / 60000) : 0, acc: b.len ? 100 * (1 - b.errs / b.len) : 0 }));
+  const byLayout = {};
+  for (const r of rows) (byLayout[r.k.split(' · ')[0]] ||= []).push(r);
+  let h = '<h2 style="margin:0 0 6px">Results</h2><p>Speed counts only the phrases you finished. "Fixes" are ⌫ presses per phrase; "misfires" are returns pressed before the phrase was half typed. The best setup on each screen is highlighted (accuracy first, then speed).</p>';
+  for (const l of ['cover', 'portrait', 'landscape']) {
+    const list = (byLayout[l] || []).sort((a, b) => (b.acc - a.acc) || (b.wpm - a.wpm));
+    h += `<h3>${LAYOUT_LABEL[l]}</h3>`;
+    if (!list.length) { h += '<p>Nothing yet.</p>'; continue; }
+    h += '<table><tr><th>setup</th><th>phrases</th><th>wpm</th><th>accuracy</th><th>fixes</th><th>misfires</th></tr>';
+    list.forEach((r, i) => { h += `<tr class="${i === 0 && r.b.n ? 'best' : ''}"><td>${esc(r.k.split(' · ').slice(1).join(' · '))}</td><td>${r.b.n}</td><td>${r.wpm.toFixed(0)}</td><td>${r.acc.toFixed(0)}%</td><td>${r.b.n ? (r.b.backs / r.b.n).toFixed(1) : '–'}</td><td>${r.b.misfires}</td></tr>`; });
+    h += '</table>';
+  }
+  h += '<button id="close">back to typing</button><button id="reset" style="background:transparent;color:var(--ink)">clear results</button>';
+  el.innerHTML = h; el.classList.add('show');
+  document.getElementById('close').onclick = () => el.classList.remove('show');
+  document.getElementById('reset').onclick = () => { if (confirm('Clear all practice results?')) { for (const k in R) delete R[k]; saveR(); showResults(); } };
+}
+
+let lastLayout = layoutName();
+addEventListener('resize', () => { if (layoutName() !== lastLayout) { lastLayout = layoutName(); flash = ''; } render(); });
+nextPhrase();
+render();
+</script>
+</body>
+</html>
