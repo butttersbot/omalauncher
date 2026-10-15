@@ -37,6 +37,24 @@
 
   .kb { background: var(--board); padding: 6px 4px 10px; display: flex; flex-direction: column; gap: 9px; }
   .row { display: flex; gap: 6px; justify-content: center; padding: 0 2px; }
+  /* Mechanical, NuPhy-like keycaps: a case around the board, a darker skirt under each cap and a lighter, slightly
+     dished top face; pressing sinks the top into the skirt. Colours still come from the look. */
+  .mech .kb { background: linear-gradient(180deg, color-mix(in srgb, var(--board) 80%, #000) 0%, color-mix(in srgb, var(--board) 92%, #000) 100%);
+    padding: 12px 8px 14px; border-top: 3px solid color-mix(in srgb, var(--board) 60%, #fff); box-shadow: inset 0 2px 6px rgba(0,0,0,.35); gap: 7px; }
+  .mech .key { height: 50px; border-radius: 9px; background: color-mix(in srgb, var(--key) 72%, #000);
+    box-shadow: 0 3px 0 color-mix(in srgb, var(--key) 55%, #000), 0 5px 6px rgba(0,0,0,.35); padding: 3px 4px 7px; place-items: stretch; transition: transform .05s, box-shadow .05s; }
+  .mech .key > span { display: grid; place-items: center; border-radius: 7px; height: 100%;
+    background: radial-gradient(ellipse at 50% 35%, color-mix(in srgb, var(--key) 100%, #fff 12%) 0%, var(--key) 70%, color-mix(in srgb, var(--key) 92%, #000) 100%);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.35), inset 0 -2px 3px rgba(0,0,0,.12); }
+  .mech .key.mod { background: color-mix(in srgb, var(--mod) 70%, #000); box-shadow: 0 3px 0 color-mix(in srgb, var(--mod) 50%, #000), 0 5px 6px rgba(0,0,0,.35); }
+  .mech .key.mod > span { background: radial-gradient(ellipse at 50% 35%, color-mix(in srgb, var(--mod) 100%, #fff 12%) 0%, var(--mod) 70%, color-mix(in srgb, var(--mod) 90%, #000) 100%); }
+  .mech .key.mic { background: color-mix(in srgb, var(--accent) 65%, #000); box-shadow: 0 3px 0 color-mix(in srgb, var(--accent) 45%, #000), 0 5px 6px rgba(0,0,0,.35); }
+  .mech .key.mic > span { background: radial-gradient(ellipse at 50% 35%, color-mix(in srgb, var(--accent) 100%, #fff 18%) 0%, var(--accent) 75%); color: var(--bg); }
+  .mech .key.ret { background: color-mix(in srgb, var(--hot) 60%, #000); box-shadow: 0 3px 0 color-mix(in srgb, var(--hot) 40%, #000), 0 5px 6px rgba(0,0,0,.35); }
+  .mech .key.ret > span { background: radial-gradient(ellipse at 50% 35%, color-mix(in srgb, var(--hot) 100%, #fff 15%) 0%, var(--hot) 75%); color: #fff; }
+  .mech .key:active, .mech .key.down { transform: translateY(2px); filter: none; box-shadow: 0 1px 0 rgba(0,0,0,.4), 0 2px 3px rgba(0,0,0,.3); }
+  .mech .key.space > span { color: var(--muted); }
+  .mech .led { height: 4px; margin: 0 6px 2px; border-radius: 2px; background: linear-gradient(90deg, var(--accent), var(--hot), var(--accent)); opacity: .8; }
   .key { flex: 0 0 auto; height: 46px; border-radius: max(var(--radius), 5px); background: var(--key); color: var(--ink);
     display: grid; place-items: center; font-size: 21px; box-shadow: 0 1px 0 var(--shadow); cursor: pointer; position: relative; }
   .key:active, .key.down { transform: translateY(1px); filter: brightness(.9); }
@@ -53,8 +71,14 @@
 </style>
 </head>
 <body>
-<p class="note"><b>Oma keyboard — mock-up, not the real thing.</b> Apple's layout (same rows, offsets, shift and ⌫ on the third row, 123 and emoji at the bottom left, wide space). Tap keys to type into the field. Hold the space bar and slide left/right to move the caret, as on iPhone. Tap 🎤 to see the listening state (no real recording here). Compare the two return placements and the two screen widths below.</p>
+<p class="note"><b>Oma keyboard — mock-up, not the real thing.</b> Apple's layout (same rows, offsets, shift and ⌫ on the third row, 123 and emoji at the bottom left, wide space). Tap keys to type into the field. Hold the space bar and slide left/right to move the caret, as on iPhone. Keys are styled as low-profile mechanical caps (NuPhy-like) with a soft "thock"; switch to flat to compare. Tap 🎤 to see the listening state (no real recording here). Compare the two return placements and the two screen widths below.</p>
 
+<div class="bar">
+  <span class="label">keys</span>
+  <button data-caps_style="mech" class="on">mechanical</button><button data-caps_style="flat">flat</button>
+  <span class="label">sound</span>
+  <button data-sound="on" class="on">thock</button><button data-sound="off">off</button>
+</div>
 <div class="bar">
   <span class="label">look</span>
   <button data-look="citypop" class="on">city pop</button><button data-look="riso">riso</button><button data-look="console">console</button>
@@ -68,7 +92,7 @@
   <button data-screen="cover" class="on">cover</button><button data-screen="inner">inner (wide)</button><button data-screen="split">inner (split)</button>
 </div>
 
-<div class="phone cover look-citypop" id="phone">
+<div class="phone cover look-citypop mech" id="phone">
   <div class="app">
     <h2>Oma</h2>
     <div class="field" id="field"><span class="caret"></span></div>
@@ -78,14 +102,14 @@
 </div>
 
 <script>
-const S = { look: 'citypop', ret: 'a', screen: 'cover', layer: 'abc', shift: true, caps: false, text: '', caret: 0, listening: false };
+const S = { caps_style: 'mech', sound: 'on', look: 'citypop', ret: 'a', screen: 'cover', layer: 'abc', shift: true, caps: false, text: '', caret: 0, listening: false };
 const rows = {
   abc: [['q','w','e','r','t','y','u','i','o','p'], ['a','s','d','f','g','h','j','k','l'], ['z','x','c','v','b','n','m']],
   123: [['1','2','3','4','5','6','7','8','9','0'], ['-','/',':',';','(',')','$','&','@','"'], ['.',',','?','!',"'"]],
 };
 
 function unit() { return S.screen === 'cover' ? 34 : 56; }
-function key(label, cls, w, act) { return `<div class="key ${cls||''}" style="width:${w}px" data-act="${act}">${label}</div>`; }
+function key(label, cls, w, act) { return `<div class="key ${cls||''}" style="width:${w}px" data-act="${act}"><span>${label}</span></div>`; }
 
 function draw() {
   const u = unit(), kb = document.getElementById('kb');
@@ -107,10 +131,11 @@ function draw() {
   const layerKey = key(S.layer === 'abc' ? '123' : 'ABC', 'mod', u * 1.25, 'layer');
   const emoji = key('🙂', 'mod', u * 1.1, 'k:🙂');
   const mic = key('🎤', 'mic' + (S.listening ? ' listening' : ''), u * 1.5, 'mic');
-  const space = `<div class="key space" data-act="space" id="space">space</div>`;
+  const space = `<div class="key space" data-act="space" id="space"><span>space</span></div>`;
   if (S.ret === 'a') h += `<div class="row">${layerKey}${emoji}${space}${mic}${key('return', 'mod ret', u * 1.6, 'ret')}</div>`;
   else h += `<div class="row">${layerKey}${emoji}${mic}${space}<span class="gap" style="width:${u*0.5}px"></span>${key('↵', 'mod ret', u * 1.05, 'ret')}</div>`;
   h += `<div class="listen">${S.listening ? 'listening… tap 🎤 again to stop (Whisper)' : ''}</div>`;
+  if (S.caps_style === 'mech') h = '<div class="led"></div>' + h;
   kb.innerHTML = h;
   const f = document.getElementById('field');
   f.innerHTML = esc(S.text.slice(0, S.caret)) + '<span class="caret"></span>' + esc(S.text.slice(S.caret));
@@ -133,11 +158,27 @@ function act(a) {
   draw();
 }
 
+// A short low "thock" made with the Web Audio API: a damped low tone and a click of noise, lower for big keys.
+let ac = null;
+function thock(k) {
+  if (S.sound !== 'on') return;
+  ac = ac || new (window.AudioContext || window.webkitAudioContext)();
+  const t = ac.currentTime, big = k.offsetWidth > 70;
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = 'triangle'; o.frequency.setValueAtTime(big ? 120 : 170, t); o.frequency.exponentialRampToValueAtTime(60, t + 0.06);
+  g.gain.setValueAtTime(0.35, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+  o.connect(g).connect(ac.destination); o.start(t); o.stop(t + 0.09);
+  const n = ac.createBuffer(1, ac.sampleRate * 0.02, ac.sampleRate), d = n.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+  const src = ac.createBufferSource(), ng = ac.createGain(); src.buffer = n; ng.gain.value = 0.12;
+  src.connect(ng).connect(ac.destination); src.start(t);
+}
+
 // Taps act on release so a slide on the space bar can move the caret instead of typing a space.
 let press = null;
 document.getElementById('kb').addEventListener('pointerdown', e => {
   const k = e.target.closest('.key'); if (!k) return;
-  k.classList.add('down');
+  k.classList.add('down'); thock(k);
   press = { k, a: k.dataset.act, x: e.clientX, moved: false, start: S.caret };
   if (press.a !== 'space') { act(press.a); press = null; }
 });
@@ -158,7 +199,7 @@ for (const b of document.querySelectorAll('.bar button')) b.onclick = () => {
   S[k] = v;
   b.parentElement.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
   const p = document.getElementById('phone');
-  p.className = 'phone ' + (S.screen === 'cover' ? 'cover' : 'inner') + ' look-' + S.look + (S.screen === 'split' ? ' split' : '');
+  p.className = 'phone ' + (S.screen === 'cover' ? 'cover' : 'inner') + ' look-' + S.look + (S.screen === 'split' ? ' split' : '') + (S.caps_style === 'mech' ? ' mech' : '');
   draw();
 };
 draw();
