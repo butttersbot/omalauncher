@@ -1290,15 +1290,52 @@ object MacThreads {
     }
 
     /**
+     * The first words of the new chat [chat] when no front agent can read them ([dev.omalauncher.oma.Outgoing.ChatMac]):
+     * filed as his, then sent as they are to a new thread in [MAC_DEFAULT_PROJECT] called by the chat's name or his
+     * first words ([chatDirectName]). Nothing on the phone is needed: no Linux and no agent. With no Mac set up it
+     * says so; a Mac out of reach leaves his words unsent with `[ try again ]`, which makes the thread again.
+     */
+    fun startChatDirect(context: Context, prompt: String, chat: String) {
+        restore(context)
+        val app = context.applicationContext
+        val log = ChatLog.of(app)
+        val name = chatDirectName(TabBook.of(app).names[chatKey(chat)], prompt)
+        val setUp = config(app) != null
+        val time = synchronized(AgentTasks) {
+            ChatHistory.stamp(log.tasks, System.currentTimeMillis()).also { time ->
+                log.begin(if (setUp) macChatDirect(time, prompt, chat, name) else ChatTask(time, QUICK_AGENT, prompt, result = MAC_NOT_SET_UP, status = TaskStatus.Failed, direct = true, chat = chat))
+            }
+        }
+        if (setUp) makeForChat(app, time, prompt, away = false, chat, name)
+    }
+
+    /**
      * Makes the thread for the new chat [chat] in [MAC_DEFAULT_PROJECT] and sends it the words filed at [time]. It
      * runs the first agent the Mac has that is not known to be at its limit, named after it when that is not Claude.
+     * It is called [given], or else by the chat's name as it stands.
      */
-    private fun makeForChat(context: Context, time: Long, prompt: String, away: Boolean, chat: String) {
-        val name = chatThreadName(TabBook.of(context).names[chatKey(chat)])
+    private fun makeForChat(context: Context, time: Long, prompt: String, away: Boolean, chat: String, given: String? = null) {
+        val name = given ?: chatThreadName(TabBook.of(context).names[chatKey(chat)])
         val kind = macKind(kinds, limited()) ?: macInstalled(kinds).first()
         val named = if (kind == MAC_CLAUDE) name else macKindThreadName(name, kind, view.threads.map { it.name })
         ChatLog.of(context).update(time, save = true) { macChatStart(it, named) }
         make(context, time, MacFresh.Make(named, MAC_DEFAULT_PROJECT), away, kind) { sentText(context, time, prompt, it) }
+    }
+
+    /**
+     * The record of [threadId] for its tab's earlier work ([macEarlier]): its newest [MAC_EARLIER_EVENTS] events,
+     * asked for on the caller's thread, which must not be the main one. Only read: nothing is applied to the chat, no
+     * place is moved and no card is made from it. [MacEarlierRead.Unread] with no Mac set up or none answering.
+     */
+    fun earlier(context: Context, threadId: String): MacEarlierRead {
+        restore(context)
+        val config = config(context.applicationContext) ?: return MacEarlierRead.Unread
+        val client = MacRunnerClient(config)
+        val known = client.thread(threadId) as? MacAnswer.Ok ?: return MacEarlierRead.Unread
+        val after = macEarlierAfter(known.value.lastEvent)
+        val events = macEarlierEvents(after, known.value.lastEvent) { from -> (client.events(threadId, from) as? MacAnswer.Ok)?.value?.events }
+            ?: return MacEarlierRead.Unread
+        return MacEarlierRead.Read(events, cut = after > 0)
     }
 
     /**

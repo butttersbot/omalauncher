@@ -242,9 +242,6 @@ fun tabStop(tab: String, thread: AgentThread?, meta: TabMeta): TabStop? {
 /** The newest finished answer among [entries], as it was written, for Copy last answer; null when none has one. */
 fun lastAnswer(entries: List<ChatTask>): String? = entries.lastOrNull { it.status == TaskStatus.Done && it.result.isNotBlank() }?.result?.trim()
 
-/** What a Mac thread's tab says above its entries: the phone shows what it sent, not what was begun at the Mac. */
-const val MAC_EARLIER = "Earlier work on the Mac is not shown"
-
 /**
  * The field's words, kept for each tab by its key, as [drafts] holds them, once [tab]'s are [text]: each tab has its
  * own, so what was typed on one is never left in the field of another and sent to the wrong thread. A tab with an

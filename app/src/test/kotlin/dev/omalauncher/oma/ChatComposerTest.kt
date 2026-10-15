@@ -133,15 +133,40 @@ class ChatComposerTest {
 
     /**
      * Boss 2026-10-13 ("The plus button should always open up a Mac session"): a new chat is heard by Oma first and
-     * never goes to the phone's builders, so with no front agent, or with images, nothing is sent from it.
+     * never goes to the phone's builders. With no front agent its words go straight to the Mac (OPEN-BUGS #13); with
+     * images nothing is sent from it.
      */
     @Test fun aNewChatGoesToOmaFirstAndNeverToTheBuilders() {
         val chat = SendTo.Chat("c1", "New chat")
         assertEquals(Outgoing.Front("hello"), out(frontReady = true, to = chat))
         assertEquals(Outgoing.Front("hello"), out(frontReady = true, working = true, to = chat))
-        assertEquals(Outgoing.Refused(CHAT_UNREAD), out(frontReady = false, to = chat))
         assertEquals(Outgoing.Refused(NO_IMAGES_IN_CHAT), out(images = 1, frontReady = true, to = chat))
+        assertEquals(Outgoing.Refused(NO_IMAGES_IN_CHAT), out(images = 1, linux = false, to = chat))
         assertEquals(Outgoing.Refused(CHAT_MAKING), out(frontReady = true, to = SendTo.ChatStarting("c1", "N")))
         assertEquals(Outgoing.Mac("hello", "t-new", "Menu"), out(frontReady = true, to = SendTo.Mac("t-new", "Menu", "c1")))
+    }
+
+    /** OPEN-BUGS #13: a new chat's work is the Mac's, so the phone's Linux and agents are not needed to start one. */
+    @Test fun aNewChatWithNoFrontAgentGoesStraightToTheMac() {
+        val chat = SendTo.Chat("c1", "New chat")
+        val straight = Outgoing.ChatMac("hello", "c1")
+        assertEquals(straight, out("  hello \n", linux = false, frontReady = true, to = chat))
+        assertEquals(straight, out(linux = false, agent = null, to = chat))
+        assertEquals(straight, out(agent = null, to = chat))
+        assertEquals(straight, out(agent = "grok", frontReady = true, to = chat))
+        assertEquals(straight, out(frontReady = false, to = chat))
+        assertEquals(straight, out(frontReady = false, working = true, to = chat))
+        // More than the front agent takes goes as it is too, rather than being refused.
+        val long = "x".repeat(dev.omalauncher.assist.FRONT_MAX_REQUEST + 1)
+        assertEquals(Outgoing.ChatMac(long, "c1"), out(long, frontReady = true, to = chat))
+        // Nothing in the field, or something still in the way, sends nothing; a chat whose thread is being made waits.
+        assertEquals(Outgoing.Nothing, out(draft = " ", linux = false, to = chat))
+        assertEquals(Outgoing.Nothing, out(busy = true, linux = false, to = chat))
+        assertEquals(Outgoing.Refused(CHAT_MAKING), out(linux = false, to = SendTo.ChatStarting("c1", "N")))
+        // Once it has its thread, as before: straight to it.
+        assertEquals(Outgoing.Mac("hello", "t-new", "Menu"), out(linux = false, agent = null, to = SendTo.Mac("t-new", "Menu", "c1")))
+        // The Oma tab and the builders' still need the phone.
+        assertTrue(out(linux = false, frontReady = true) is Outgoing.Refused)
+        assertTrue(out(linux = false, to = SendTo.Phone) is Outgoing.Refused)
     }
 }

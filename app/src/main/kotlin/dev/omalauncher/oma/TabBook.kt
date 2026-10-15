@@ -123,11 +123,13 @@ fun newChatId(now: Long, taken: Collection<String>): String {
 }
 
 /**
- * The chat ＋ opens rather than starting another: an unbound one he has not sent anything in yet and has not
- * archived, so tapping ＋ twice never leaves two empty "New chat" tabs. Null when there is none.
+ * The chat ＋ opens rather than starting another: an unbound one he has not sent anything in yet, not named and not
+ * archived, so tapping ＋ twice never leaves two empty "New chat" tabs. One he named is his, as one he wrote in is
+ * (decided for Boss, 2026-10-14, OPEN-BUGS #14): it was set up for something, so ＋ starts a fresh chat beside it.
+ * Only he names a chat that has nothing in it, since Oma names a chat from its first exchange. Null when there is none.
  */
 fun emptyChat(meta: TabMeta, tasks: List<ChatTask>): String? =
-    meta.chats.lastOrNull { chat -> !chat.bound && chat.key !in meta.archived && tasks.none { it.chat == chat.id } }?.id
+    meta.chats.lastOrNull { chat -> !chat.bound && chat.key !in meta.archived && chat.key !in meta.names && tasks.none { it.chat == chat.id } }?.id
 
 /**
  * [this] once the new chats with nowhere to go yet have had their time (the Critic, 2026-10-14): one that has rested
