@@ -1,6 +1,16 @@
 # Phone test results
 
-## Latest: promoting e5f8d89 + 01eb8ed, then re-running the background check (2026-10-14, Boss: "Ok go")
+## Latest: open-bugs batch merged and promoted (2026-10-14, about 18:45 PDT, commit 2f65ba5 and after)
+
+Merged: status/tiles/limits/alive grace (#6 #8 #10 #12), chat (#11 earlier Mac work in a tab, #13 ＋ without Linux,
+#14 a named ＋ chat is his), phone control (#4 re-find a moved control, #15 own worktree for the second builder).
+The Mac session (thread "Oma runner upkeep", t9f45b731) closed #2 (Mac keeps only the key's digest), made the Mac
+build Oma (clean build + 1165 tests, 48 s) and ran `oma-runner install` (health now says files: true).
+Seen: `oma drop send` delivered drop-test.txt to /Users/jackkim/Downloads/From Fold/ on the Mac Pro.
+After the restart, check: a Mac tab shows its earlier work; Mac work on the oma tile / lock widget; ＋ after renaming
+an empty chat makes a new one; `oma-phone type` while the chat streams.
+
+## Earlier: promoting e5f8d89 + 01eb8ed, then re-running the background check (2026-10-14, Boss: "Ok go")
 
 After the restart: check `oma-install --status` (expect phone control BOUND or the launcher healing it), then
 repeat the check in the "Background keep-alive check" tab (helpers in /root/.cache/bgcheck/ui.sh): the 90 s
