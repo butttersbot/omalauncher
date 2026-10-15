@@ -14,6 +14,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import dev.omalauncher.voice.WhisperModels
+import dev.omalauncher.voice.WhisperSession
 import java.util.Locale
 
 /**
@@ -49,7 +51,21 @@ class Speech(
 
     private val onDeviceAvailable get() = Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(context)
 
-    val available get() = onDeviceAvailable || SpeechRecognizer.isRecognitionAvailable(context)
+    val available get() = WhisperModels.ready(context) || onDeviceAvailable || SpeechRecognizer.isRecognitionAvailable(context)
+
+    /**
+     * Whisper on the phone, when its model is here (Boss, 2026-10-14: Samsung's recognizer is "just garbage"):
+     * the words show as he speaks and the whole is read again, more accurately, when he stops. Android's
+     * recognizer stays the fallback until the models have been fetched, which starts on the first use on Wi-Fi.
+     */
+    private var whisper: WhisperSession? = null
+
+    /** The words of the text that won't change any more; the rest of [text] may, while Whisper listens. */
+    var settled by mutableStateOf("")
+        private set
+
+    /** Told each time [text] changes while listening, for a caller outside Compose (the keyboard). */
+    var onText: ((String) -> Unit)? = null
 
     /**
      * Starts listening; [onDone] gets the full text (maybe empty) once recognition ends.
@@ -69,25 +85,64 @@ class Speech(
         this.onDone = onDone
         finished = ""
         text = ""
+        settled = ""
         listening = true
+        if (WhisperModels.ready(context) && listenWhisper(hold)) return
+        WhisperModels.prepare(context)
         listen()
+    }
+
+    private fun listenWhisper(hold: Boolean): Boolean {
+        lateinit var session: WhisperSession
+        session =
+            WhisperSession(
+                context,
+                hold,
+                onText = { live ->
+                    if (whisper === session) {
+                        text = live.text
+                        settled = live.settled
+                        onText?.invoke(text)
+                    }
+                },
+                onLevel = { if (whisper === session) level = it },
+                onDone = { heard, _ ->
+                    if (whisper === session) {
+                        whisper = null
+                        text = heard
+                        settled = heard
+                        finish()
+                    }
+                },
+            )
+        whisper = session
+        if (session.start()) return true
+        whisper = null
+        return false
     }
 
     /** Ends recognition now; the text so far goes to onDone. */
     fun stop() {
         held = false
+        whisper?.let {
+            it.stop()
+            return
+        }
         recognizer?.stopListening() ?: finish()
     }
 
     /** Keeps listening, but ends at the next pause instead of at [stop]. */
     fun letGo() {
         held = false
+        whisper?.letGo()
     }
 
     /** Ends recognition without calling onDone. */
     fun cancel() {
         held = false
         onDone = null
+        whisper?.cancel()
+        whisper = null
         recognizer?.destroy()
         recognizer = null
         listening = false
@@ -193,7 +248,10 @@ class Speech(
         private val current get() = r === recognizer
 
         override fun onPartialResults(partial: Bundle) {
-            if (current) text = join(finished, partial.best())
+            if (current) {
+                text = join(finished, partial.best())
+                onText?.invoke(text)
+            }
         }
 
         override fun onResults(results: Bundle) {

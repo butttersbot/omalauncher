@@ -251,17 +251,18 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host {
         }
         speech = s
         view.listening = true
+        // The words go into the field as he speaks, underlined as text still being written, and are set once he stops.
+        val before = currentInputConnection?.getTextBeforeCursor(1, 0)?.toString().orEmpty()
+        val gap = if (before.isNotEmpty() && !before.endsWith(" ") && !before.endsWith("\n")) " " else ""
+        s.onText = { heard -> if (heard.isNotBlank()) currentInputConnection?.setComposingText(gap + heard.trim(), 1) }
         s.start(hold = true) { said ->
             speech = null
             view.listening = false
+            val ic = currentInputConnection ?: return@start
             val t = said.trim()
-            if (t.isNotEmpty()) {
-                val ic = currentInputConnection ?: return@start
-                val before = ic.getTextBeforeCursor(1, 0)?.toString().orEmpty()
-                ic.commitText((if (before.isNotEmpty() && !before.endsWith(" ") && !before.endsWith("\n")) " " else "") + t, 1)
-                autoShift()
-                rebuild()
-            }
+            if (t.isNotEmpty()) ic.commitText(gap + t, 1) else ic.commitText("", 1)
+            autoShift()
+            rebuild()
         }
     }
 

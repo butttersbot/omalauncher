@@ -1,6 +1,25 @@
 cmake_minimum_required(VERSION 3.22)
-project(wlbridge C)
+project(wlbridge C CXX)
 add_library(wlbridge SHARED wlbridge.c)
 # Pixel copies and compositing run per frame; debug builds would otherwise use -O0.
 target_compile_options(wlbridge PRIVATE -O3 -Wall)
 target_link_libraries(wlbridge android log)
+
+# Whisper (whisper.cpp v1.9.5, MIT, vendored CPU-only in whisper.cpp/): Oma's voice input, on the phone. Built
+# optimized in every variant, since at -O0 it is many times too slow to show words as they are spoken.
+set(CMAKE_C_FLAGS_DEBUG "-O3 -DNDEBUG")
+set(CMAKE_CXX_FLAGS_DEBUG "-O3 -DNDEBUG")
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
+set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
+set(GGML_CCACHE OFF CACHE BOOL "" FORCE)
+set(GGML_ALL_WARNINGS OFF CACHE BOOL "" FORCE)
+set(GGML_CPU_ARM_ARCH "armv8.2-a+dotprod+fp16" CACHE STRING "" FORCE)
+add_subdirectory(whisper.cpp/ggml)
+add_library(whisper STATIC whisper.cpp/src/whisper.cpp whisper.cpp/src/aneforge/whisper-aneforge.cpp)
+target_include_directories(whisper PUBLIC whisper.cpp/include whisper.cpp/src)
+target_compile_features(whisper PUBLIC cxx_std_17)
+target_compile_definitions(whisper PRIVATE WHISPER_VERSION="1.9.5")
+target_link_libraries(whisper PUBLIC ggml)
+add_library(omawhisper SHARED omawhisper.cpp)
+target_link_libraries(omawhisper whisper android log)

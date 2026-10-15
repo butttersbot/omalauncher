@@ -84,6 +84,14 @@ private val COMPONENTS =
         ),
         Component("Nerd Fonts", "symbol font", "mit", "Copyright (c) 2014 Ryan L McIntyre", "https://www.nerdfonts.com"),
         Component(
+            "whisper.cpp",
+            "voice input on the phone (Whisper), with ggml",
+            "mit",
+            "Copyright (c) 2023-2026 The ggml authors. Version 1.9.5, CPU parts only; the models are OpenAI's Whisper (MIT), fetched once.",
+            "https://github.com/ggml-org/whisper.cpp",
+            source = "https://github.com/ggml-org/whisper.cpp/tree/v1.9.5",
+        ),
+        Component(
             "Weather Icons",
             "weather glyphs in the symbol font",
             "ofl-1.1",

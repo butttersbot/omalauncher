@@ -1,5 +1,14 @@
 # Open bugs and the new-phone plan (written 2026-10-14, 04:40 PDT, by the agent on the old Fold)
 
+**Whisper voice input (2026-10-14 ~23:40), built, not yet seen on the phone.** whisper.cpp 1.9.5 (CPU-only, vendored in
+app/src/main/cpp/whisper.cpp) runs inside Oma: the fast base.en model reads the audio twice a second while Boss
+speaks (words two readings agree on are settled), and small.en reads the whole once he stops. ui/Speech.kt uses it
+whenever files/whisper has the models (pinned SHA-256; fetched on Wi-Fi on first use, copied in by hand on the Fold)
+and falls back to Android's recognizer otherwise. The keyboard mic writes the words into the field as they come.
+To check on the phone: words appear while speaking (hold-to-talk overlay and keyboard), the end text is better than
+the live one, how long the end takes, and phone heat on a long dictation. Next: faded unsettled words in the overlay,
+the Mac's bigger model for long dictation.
+
 Boss moves to a new, higher-RAM phone tomorrow (2026-10-14/15). Everything below is on GitHub
 (`phone/fold-development`); the newest state is in `docs/PHONE-HANDOFF.md` (checkpoint 2026-10-14) and the top of
 `docs/PHONE-TEST-RESULTS.md`. Fix these on the new phone. Highest first.
