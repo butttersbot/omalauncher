@@ -150,6 +150,19 @@ Boss moves to a new, higher-RAM phone tomorrow (2026-10-14/15). Everything below
 - #19 fixed: `oma status` showed the new request, `background: []` and idle right after.
 - Not seen yet: the phone-control self-heal actually turning it back on (it never went off this time).
 
+## Seen on the real launcher 2026-10-14 18:40 (after promoting 2f65ba5 / 7a49226)
+- Phone control came back after the update by itself; the Mac accepts the phone's key after its key change (#2).
+- #11 PASS: the "Oma runner upkeep" tab showed the thread's whole earlier Mac work (its steps and answers), though
+  nothing in it was sent from the chat.
+- #14 PASS: ＋ → long-press → Rename "Rename test" → ＋ again opened a fresh "New chat" beside it. (Both test chats
+  archived afterwards.) `oma-phone fill` worked on the rename field too.
+- #10 not seen: the oma tile said "using Bash…" because the phone builder (this agent) was working, which by design
+  wins over Mac work; check it when no phone builder works. The lock widget was not looked at.
+- `oma drop send` delivered a file to the Mac Pro's Downloads/From Fold; `oma threads new` made the "omalauncher" thread
+  (tc57ef960) in ~/Projects/omalauncher-fold that the Mac session asked for.
+- Still open: #7 (rare misroutes), #13 not exercised (needs Linux to be off), #4/#15 not exercised on screen,
+  the phone-control self-heal not yet seen acting.
+
 ## Built but never seen on a screen (check on the new phone)
 ＋ starting in `~/Projects` without a question; the Tailscale self-heal (after a reboot) and its respect for a
 manual off; "The Mac ended this turn without an answer." + try again; Restart / Clean up rows in the tab menu; tile
