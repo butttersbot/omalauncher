@@ -341,7 +341,15 @@ function release(id, commit) {
   if (commit && !p.done && !(p.k.act === 'space' && p.moved)) press(p);
 }
 const kbEl = document.getElementById('kb');
+// Samsung's edge-swipe back fires when a thumb on Q, A or P slides a little from the screen edge, and back would close
+// this tab. Keep one spare history entry so a stray back lands here. Chrome only honours an entry added during a
+// touch, so it is re-armed on the next key press after each back. (The real keyboard excludes its rows from the
+// back gesture instead, with setSystemGestureExclusionRects.)
+let trapped = false;
+addEventListener('popstate', () => { trapped = false; });
+function armBackTrap() { if (!trapped) { history.pushState({ kbTrap: 1 }, ''); trapped = true; } }
 kbEl.addEventListener('pointerdown', e => {
+  armBackTrap();
   e.preventDefault();
   for (const [id, p] of presses) if (!p.done && p.k.act !== 'space') { p.done = true; press(p); }
   const r = kbEl.getBoundingClientRect(), k = hit(G, e.clientX - r.left, e.clientY - r.top);
