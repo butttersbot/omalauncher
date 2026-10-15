@@ -7,14 +7,19 @@
   Tailscale and phone control) are a new section "Boss's standing rules" in that folder's `CLAUDE.md`, which every
   agent on Oma reads first. They are Oma's rules, so they are not in the crew-wide `crew/operating-rules/`. A signed
   entry is in `CREW-LOG.md`.
-- **Runner key replaced.** New random key; the Mac keeps only its digest. It went to the phone ONCE as
-  `mac-runner.json` (`{"url":"http://100.120.219.46:8478","key":…}`) by `tailscale file cp … jacks-z-fold8:`; the temp
-  file is deleted and the key was never printed. Take it with `oma drop get` and move it to
-  `~/.config/omalauncher/mac-runner.json` (mode 600). The runner was reinstalled, so only the new key works; the old
-  one gets 401. The script sends first: if the send failed, nothing was changed and the old key still works. Its
-  outcome is the "Key swap result" line below (written by the script itself after the restart).
-- **Codex threads default to auto** again (like Claude: routine work runs, risky things come as cards). Threads keep
-  the mode they were made with, so Codex threads made before tonight stay manual. `test-runner.py`: 117 checks passed.
+- **Runner key NOT replaced yet.** Writing a new key on the Mac was refused by this session's permission check
+  ("secret-store writes"), so I stopped rather than work around it. Nothing changed: the old key still works and the
+  phone is not cut off; no file was sent. Instead the swap is now one command, `oma-runner rekey` (0db3c21's digest
+  work plus this push; 4 new checks, `test-runner.py` 121 passed): it makes a new key, sends `mac-runner.json`
+  (`{"url":"http://100.120.219.46:8478","key":…}`) ONCE with `tailscale file cp … jacks-z-fold8:` from a temp folder
+  that is then gone, never prints it, writes only the digest, and restarts the runner. If the send fails it changes
+  nothing. **Needs Boss:** either run `~/.local/bin/oma-runner rekey` in Terminal on the Mac Pro himself after the next
+  `oma-runner install` (or `python3 ~/Projects/omalauncher-fold/tools/mac-runner/oma-runner rekey` now), or allow
+  that command for the Mac session. Then you take the file with `oma drop get` into
+  `~/.config/omalauncher/mac-runner.json` (mode 600).
+- **Codex threads stay manual by default** until the key is replaced (I had flipped them to auto in d812570 and
+  set that back in this push; nothing of it was installed). After the rekey, a Mac session flips the default (one
+  line in `mode()` plus its test).
 
 # Done by the Mac session (2026-10-14 evening, for the agent on the Fold)
 

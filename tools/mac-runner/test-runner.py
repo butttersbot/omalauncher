@@ -374,13 +374,13 @@ try:
               and events[-1]['dropped'] == 1 and settle(other, 'idle'))
         check(kind + ': a late allow does nothing', call('POST', '/threads/%s/approvals/%s' % (other, card['approval']), {'decision': 'allow', 'nonce': card['nonce']})[0] == 404)
     codex = [entry for entry in starts() if entry.get('kind') == 'codex'][-1]
-    check('codex: auto by default (asking only for more than the sandbox gives), in the workspace sandbox, and asks us, not its own reviewer', codex['policy'] == 'on-request'
+    check('codex: manual by default, in the workspace sandbox, and asks us, not its own reviewer', codex['policy'] == 'untrusted'
           and codex['sandbox'] == 'workspace-write' and codex['reviewer'] == 'user'
           and 'approvals_reviewer="user"' in codex['arguments'] and 'notify=[]' in codex['arguments'] and 'mcp_servers.paper.enabled=false' in codex['arguments'])
-    code, made = call('POST', '/threads', {'name': 'Codex manual', 'project': str(project), 'kind': 'codex', 'mode': 'manual'})
+    code, made = call('POST', '/threads', {'name': 'Codex auto', 'project': str(project), 'kind': 'codex', 'mode': 'auto'})
     call('POST', '/threads/%s/messages' % made['thread']['id'], {'text': 'what files are here'})
     stream(made['thread']['id'])
-    check('codex: manual when asked for, every command a card', made['thread']['mode'] == 'manual' and starts()[-1]['policy'] == 'untrusted'
+    check('codex: auto when asked for by name, asking only for more than the sandbox gives', made['thread']['mode'] == 'auto' and starts()[-1]['policy'] == 'on-request'
           and starts()[-1]['sandbox'] == 'workspace-write')
     code, made = call('POST', '/threads', {'name': 'Cursor auto', 'project': str(project), 'kind': 'cursor', 'mode': 'auto'})
     check('cursor: has no auto mode, so its threads are manual even when auto is asked for', code == 200 and made['thread']['mode'] == 'manual')
@@ -411,6 +411,29 @@ try:
     log = (work / 'logs' / 'requests.log').read_text()
     check('each upload is logged by its line, never its name or bytes', 'POST /files 200' in log and 'photo' not in log)
     check('each request is logged, and the key never is', 'POST /threads/%s/messages 200' % thread in log and 'k' * 40 not in log and ' 401' in log)
+    runner.kill()
+    runner.wait()
+    sent = work / 'sent'
+    sent.mkdir()
+    fake = work / 'fake-tailscale'
+    fake.write_text('#!/bin/sh\n[ "$1 $2 $4" = "file cp phone:" ] || exit 3\ncp "$3" %s/\n' % sent)
+    fake.chmod(0o755)
+    failing = work / 'failing-tailscale'
+    failing.write_text('#!/bin/sh\necho phone is offline >&2\nexit 1\n')
+    failing.chmod(0o755)
+    before = (work / 'token').read_text()
+    tried = subprocess.run([sys.executable, str(HERE / 'oma-runner'), 'rekey'], env={**environment, 'OMA_RUNNER_PHONE': 'phone', 'OMA_RUNNER_TAILSCALE': str(failing)}, capture_output=True, text=True)
+    check('rekey: when the phone cannot be sent to, nothing changes', tried.returncode != 0 and 'nothing changed' in tried.stderr and (work / 'token').read_text() == before)
+    done = subprocess.run([sys.executable, str(HERE / 'oma-runner'), 'rekey'], env={**environment, 'OMA_RUNNER_PHONE': 'phone', 'OMA_RUNNER_TAILSCALE': str(fake)}, capture_output=True, text=True)
+    config = json.loads((sent / 'mac-runner.json').read_text())
+    check('rekey: the phone gets {url, key} once as mac-runner.json, the key is never printed', done.returncode == 0 and set(config) == {'url', 'key'}
+          and config['url'] == base and len(config['key']) >= 32 and config['key'] not in done.stdout + done.stderr)
+    kept = (work / 'token').read_text().strip()
+    check('rekey: the Mac keeps only the new key\'s digest, mode 600', kept != before.strip() and kept.startswith('sha256:') and config['key'] not in kept
+          and (work / 'token').stat().st_mode & 0o777 == 0o600 and not (work / 'token.new').exists())
+    runner = start()
+    check('rekey: after a restart the new key opens the runner and the old one does not', call('GET', '/health', token=config['key'])[0] == 200
+          and call('GET', '/health')[0] == 401)
     print('\nall %d checks passed' % passed)
 finally:
     runner.kill()

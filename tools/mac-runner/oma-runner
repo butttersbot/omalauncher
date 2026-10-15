@@ -18,9 +18,9 @@ approves nothing itself: every request for approval waits for the phone's answer
   POST /threads/ID/stop                  stops the task and drops what was waiting its turn; what was said stays
   POST /files?name=NAME   (the bytes)    a file from the phone, kept in ~/Downloads/From Fold; {path, bytes}
 
-  oma-runner serve | install | start | stop | status | uninstall
+  oma-runner serve | install | start | stop | status | rekey | uninstall
 """
-import hashlib, hmac, json, os, pathlib, plistlib, re, secrets, select, shlex, shutil, signal, socket, subprocess, sys, threading, time, tomllib, urllib.error, urllib.parse, urllib.request, uuid
+import hashlib, hmac, json, os, pathlib, plistlib, re, secrets, select, shlex, shutil, signal, socket, subprocess, sys, tempfile, threading, time, tomllib, urllib.error, urllib.parse, urllib.request, uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HOME = pathlib.Path.home()
@@ -36,6 +36,9 @@ KINDS = ('claude', 'codex', 'cursor')
 MODES = ('auto', 'manual')
 LABEL = 'dev.omalauncher.runner'
 INSTALLED = HOME / '.local/bin/oma-runner'
+# Where `oma-runner rekey` sends a new key, and the tailscale that sends it.
+PHONE = os.environ.get('OMA_RUNNER_PHONE', 'jacks-z-fold8')
+TAILSCALE = os.environ.get('OMA_RUNNER_TAILSCALE') or shutil.which('tailscale') or '/opt/homebrew/bin/tailscale'
 PLIST = HOME / 'Library/LaunchAgents' / (LABEL + '.plist')
 MAX_BODY = 1_000_000
 # Where `oma drop send` puts files from the phone, and the largest it takes. A folder of its own, so nothing the phone
@@ -102,13 +105,12 @@ def mode(meta):
     guard): routine work in the project runs and anything risky still comes to the phone. "manual": everything the
     agent would ask about is a card. Threads saved before modes existed have none and are auto. Cursor has no mode
     that runs routine work and still asks about the rest (its only run-everything mode asks about nothing), so its
-    threads are always manual. Codex threads are auto like Claude's: its sandbox can read any file this Mac user can,
-    but since 2026-10-14 the Mac holds only the runner key's digest and the key was replaced, so no copy on the Mac
-    opens the runner (OPEN-BUGS #2; "As built: the key" in docs/MAC-RUNNER-SPEC.md). A thread keeps the mode it was
-    made with: Codex threads made before then stay manual."""
+    threads are always manual. Codex threads are manual unless auto is asked for by name: its sandbox can read any
+    file this Mac user can. The key file holds only the key's digest (2026-10-14), but copies of the key itself may
+    still sit in old transcripts until it is replaced with `oma-runner rekey`; then Codex can default to auto."""
     if meta['kind'] == 'cursor':
         return 'manual'
-    return meta.get('mode') or 'auto'
+    return meta.get('mode') or ('manual' if meta['kind'] == 'codex' else 'auto')
 
 
 class Claude:
@@ -1205,6 +1207,38 @@ def stop_service():
     return launchctl('bootout', 'gui/%d/%s' % (os.getuid(), LABEL)).returncode == 0
 
 
+def rekey():
+    """Replaces the key without it ever being shown or kept on the Mac: the new key goes to the phone once, by Taildrop,
+    as mac-runner.json ({url, key}; the phone agent takes it with `oma drop get` and puts it in
+    ~/.config/omalauncher/mac-runner.json), and only then does the Mac keep its digest. If the phone cannot be sent to,
+    nothing changes and the old key still works. The runner is restarted so only the new key opens it; until the phone
+    has the file it is cut off from the runner. A test's own key file (OMA_RUNNER_TOKEN) leaves the service alone."""
+    address = tailscale_address() if os.environ.get('OMA_RUNNER_BIND') != '127.0.0.1' else '127.0.0.1'
+    if address is None:
+        sys.exit('oma-runner: no Tailscale address on this Mac right now; nothing changed.')
+    key = secrets.token_urlsafe(32)
+    with tempfile.TemporaryDirectory() as folder:
+        file = pathlib.Path(folder) / 'mac-runner.json'
+        with os.fdopen(os.open(file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w') as record:
+            json.dump({'url': 'http://%s:%d' % (address, PORT), 'key': key}, record)
+        sent = subprocess.run([TAILSCALE, 'file', 'cp', str(file), PHONE + ':'], capture_output=True, text=True, timeout=120)
+    if sent.returncode != 0:
+        sys.exit('oma-runner: could not send the new key to %s, so nothing changed and the old key still works: %s'
+                 % (PHONE, (sent.stderr or sent.stdout).strip()[:300]))
+    TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+    fresh = TOKEN_FILE.with_name(TOKEN_FILE.name + '.new')
+    fresh.unlink(missing_ok=True)
+    with os.fdopen(os.open(fresh, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w') as record:
+        record.write(digest(key) + '\n')
+    fresh.replace(TOKEN_FILE)
+    del key
+    print('sent a new key to %s as mac-runner.json; this Mac keeps only its digest.' % PHONE)
+    if 'OMA_RUNNER_TOKEN' not in os.environ:
+        stop_service()
+        start_service()
+        print('the runner restarted: only the new key opens it now.')
+
+
 def status():
     loaded = launchctl('print', 'gui/%d/%s' % (os.getuid(), LABEL)).returncode == 0
     print('launchd: ' + ('loaded (starts at login, restarts if it dies)' if loaded else 'not loaded'))
@@ -1232,6 +1266,8 @@ def main():
         print('stopped; threads are kept and come back when it starts' if stop_service() else 'it was not running')
     elif command == 'status':
         status()
+    elif command == 'rekey':
+        rekey()
     elif command == 'uninstall':
         stop_service()
         PLIST.unlink(missing_ok=True)
