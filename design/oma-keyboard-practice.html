@@ -33,16 +33,6 @@
   @keyframes blink { 50% { opacity: 0; } }
   .stats { font: 13px/1.35 system-ui, sans-serif; color: var(--muted); }
   .stats b { color: var(--ink); }
-  .flash { color: #e0245e; font-weight: 700; }
-
-  .results { position: fixed; inset: 0; background: var(--bg); z-index: 10; overflow: auto; padding: 14px; display: none; font: 14px/1.4 system-ui, sans-serif; }
-  .results.show { display: block; }
-  .results table { border-collapse: collapse; width: 100%; margin: 8px 0 16px; }
-  .results td, .results th { border-bottom: 1px solid var(--muted); padding: 6px 4px; text-align: right; }
-  .results td:first-child, .results th:first-child { text-align: left; }
-  .results tr.best td { font-weight: 700; color: var(--accent); }
-  .results button { font: inherit; padding: 8px 14px; border-radius: 16px; border: 1px solid var(--ink); background: var(--ink); color: var(--bg); margin-right: 6px; }
-
   /* The keyboard. Every key is placed by geom() below in dp (Chrome's CSS px is Android's dp), which is the same
      arithmetic the real Oma keyboard will use. A touch picks the key whose cell holds it, not only the visible cap. */
   .kb { position: relative; flex: 0 0 auto; background: var(--board); touch-action: none; }
@@ -84,7 +74,6 @@
   <div class="stats" id="stats"></div>
 </div>
 <div class="kb" id="kb"></div>
-<div class="results" id="results"></div>
 
 <script>
 // ---- Settings, kept between visits. ----
@@ -210,51 +199,27 @@ const PHRASES = [
   'six zebras jumped over the fence', 'never stop learning new things', 'run the tests before you merge',
   'jazz music fills the cozy kitchen',
 ];
-let P = { target: '', t0: 0, tLast: 0, backs: 0, keys: 0 }, recent = [];
+let P = { target: '' }, recent = [];
 function nextPhrase() {
   let t; do { t = PHRASES[Math.floor(Math.random() * PHRASES.length)]; } while (recent.includes(t));
   recent = [t, ...recent].slice(0, 12);
-  P = { target: t.charAt(0).toUpperCase() + t.slice(1), t0: 0, tLast: 0, backs: 0, keys: 0 };
+  P = { target: t.charAt(0).toUpperCase() + t.slice(1) };
   T.text = ''; T.caret = 0; T.layer = 'abc'; V._shift = true; V._caps = false;
 }
 
-function lev(a, b) {
-  const d = Array.from({ length: b.length + 1 }, (_, i) => i);
-  for (let i = 1; i <= a.length; i++) { let prev = d[0]; d[0] = i;
-    for (let j = 1; j <= b.length; j++) { const t = d[j]; d[j] = Math.min(d[j] + 1, d[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = t; } }
-  return d[b.length];
-}
-
-// ---- Results, per layout and variant. ----
-const R = JSON.parse(localStorage.getItem('omaKbResults') || '{}');
-const variantKey = () => { const l = layoutName(); return [l, V.keys, 'return ' + V.ret.toUpperCase(), l === 'cover' ? '' : V.split].filter(Boolean).join(' · '); };
-function bucket() { return R[variantKey()] ||= { n: 0, chars: 0, ms: 0, errs: 0, len: 0, backs: 0, misfires: 0 }; }
-const saveR = () => localStorage.setItem('omaKbResults', JSON.stringify(R));
-
-let flash = '';
-function submit() {
-  const typed = T.text.trim();
-  if (typed.length < P.target.length * 0.5) { bucket().misfires++; saveR(); flash = typed ? 'Sent too early. Counted as a misfire.' : 'Return pressed with nothing typed. Counted as a misfire.'; return; }
-  const ms = Math.max(1, P.tLast - P.t0), errs = lev(typed.toLowerCase(), P.target.toLowerCase());
-  const b = bucket(); b.n++; b.chars += typed.length; b.ms += ms; b.errs += errs; b.len += P.target.length; b.backs += P.backs; saveR();
-  const wpm = (typed.length / 5) / (ms / 60000), acc = 100 * (1 - errs / P.target.length);
-  flash = `Last: <b>${wpm.toFixed(0)} wpm</b>, <b>${acc.toFixed(0)}%</b> accurate, ${P.backs} fixes.`;
-  nextPhrase();
-}
+function submit() { nextPhrase(); }
 
 // ---- Keys acting. ----
 function type(s) {
-  if (!P.t0) P.t0 = performance.now();
-  T.text = T.text.slice(0, T.caret) + s + T.text.slice(T.caret); T.caret += s.length; P.tLast = performance.now();
+  T.text = T.text.slice(0, T.caret) + s + T.text.slice(T.caret); T.caret += s.length;
   if (V._shift && !V._caps) V._shift = false;
   if (/[.?!] $/.test(T.text.slice(0, T.caret))) V._shift = true;
 }
 let lastShift = 0;
 function act(a) {
-  flash = flash && a === 'ret' ? flash : '';
   if (a.startsWith('k:')) { const c = a.slice(2); type(T.layer === 'abc' && (V._shift || V._caps) ? c.toUpperCase() : c); if (c === "'" && T.layer !== 'abc') T.layer = 'abc'; }
   else if (a === 'space') { type(' '); if (T.layer !== 'abc') T.layer = 'abc'; }
-  else if (a === 'back') { if (T.caret > 0) { T.text = T.text.slice(0, T.caret - 1) + T.text.slice(T.caret); T.caret--; P.backs++; P.tLast = performance.now(); if (!T.text) V._shift = true; } }
+  else if (a === 'back') { if (T.caret > 0) { T.text = T.text.slice(0, T.caret - 1) + T.text.slice(T.caret); T.caret--; if (!T.text) V._shift = true; } }
   else if (a === 'shift') { const now = Date.now(); if (now - lastShift < 350) { V._caps = !V._caps; V._shift = false; } else { V._caps = false; V._shift = !V._shift; } lastShift = now; }
   else if (a === 'layer') { T.layer = T.layer === 'abc' ? '123' : 'abc'; }
   else if (a === 'sym') { T.layer = 'sym'; } else if (a === 'num') { T.layer = '123'; }
@@ -292,18 +257,16 @@ function renderTop() {
     (l === 'cover' ? '' : `<span class="lbl">board</span>${chip('split', 'wide', 'wide')}${chip('split', 'split', 'split')}`) +
     `<span class="lbl">look</span>${chip('look', 'citypop', 'city pop')}${chip('look', 'riso', 'riso')}${chip('look', 'console', 'console')}` +
     `<span class="lbl">feel</span>${chip('sound', V.sound === 'on' ? 'on' : 'off', V.sound === 'on' ? 'thock on' : 'thock off')}${chip('haptic', V.haptic === 'on' ? 'on' : 'off', V.haptic === 'on' ? 'buzz on' : 'buzz off')}` +
-    `<button data-k="results" style="margin-left:auto">results</button><button data-k="skip">skip</button>`;
+    `<button data-k="skip" style="margin-left:auto">new phrase</button>`;
   for (const b of document.querySelectorAll('#chips button')) { b.classList.toggle('on', V[b.dataset.k] === b.dataset.v && !['sound', 'haptic'].includes(b.dataset.k) || (['sound', 'haptic'].includes(b.dataset.k) && V[b.dataset.k] === 'on')); }
-  const b = bucket(), wpm = b.ms ? (b.chars / 5) / (b.ms / 60000) : 0, acc = b.len ? 100 * (1 - b.errs / b.len) : 0;
-  document.getElementById('where').textContent = `${LAYOUT_LABEL[l]} · ${innerWidth}×${innerHeight} dp — testing: ${variantKey()}`;
+  document.getElementById('where').textContent = `${LAYOUT_LABEL[l]} · ${innerWidth}×${innerHeight} dp`;
   // Show the target with the typed part checked letter by letter.
   const t = P.target, typed = T.text;
   let h = '';
   for (let i = 0; i < t.length; i++) h += i < typed.length ? `<span class="${typed[i].toLowerCase() === t[i].toLowerCase() ? 'ok' : 'bad'}">${esc(t[i])}</span>` : esc(t[i]);
   document.getElementById('target').innerHTML = h;
   document.getElementById('field').innerHTML = esc(T.text.slice(0, T.caret)) + '<span class="caret"></span>' + esc(T.text.slice(T.caret)) + (T.listening ? ' <i style="color:var(--muted)">listening… (practice only)</i>' : '');
-  document.getElementById('stats').innerHTML = (flash ? `<div class="${flash.startsWith('Sent') || flash.startsWith('Return') ? 'flash' : ''}">${flash}</div>` : '') +
-    `This setup: <b>${b.n}</b> phrases, <b>${wpm.toFixed(0)}</b> wpm, <b>${acc.toFixed(0)}%</b> accurate, ${b.n ? (b.backs / b.n).toFixed(1) : 0} fixes per phrase, <b>${b.misfires}</b> misfired returns. Type the phrase, then press return.`;
+  document.getElementById('stats').textContent = 'Type the phrase, then press return for a fresh one.';
 }
 function renderKb() {
   const kb = document.getElementById('kb');
@@ -367,34 +330,12 @@ kbEl.addEventListener('contextmenu', e => e.preventDefault());
 document.getElementById('chips').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   const k = b.dataset.k;
-  if (k === 'results') return showResults();
-  if (k === 'skip') { flash = ''; nextPhrase(); return render(); }
+  if (k === 'skip') { nextPhrase(); return render(); }
   if (k === 'sound' || k === 'haptic') V[k] = V[k] === 'on' ? 'off' : 'on'; else V[k] = b.dataset.v;
   saveV(); render();
 });
 
-function showResults() {
-  const el = document.getElementById('results');
-  const rows = Object.entries(R).map(([k, b]) => ({ k, b, wpm: b.ms ? (b.chars / 5) / (b.ms / 60000) : 0, acc: b.len ? 100 * (1 - b.errs / b.len) : 0 }));
-  const byLayout = {};
-  for (const r of rows) (byLayout[r.k.split(' · ')[0]] ||= []).push(r);
-  let h = '<h2 style="margin:0 0 6px">Results</h2><p>Speed counts only the phrases you finished. "Fixes" are ⌫ presses per phrase; "misfires" are returns pressed before the phrase was half typed. The best setup on each screen is highlighted (accuracy first, then speed).</p>';
-  for (const l of ['cover', 'portrait', 'landscape']) {
-    const list = (byLayout[l] || []).sort((a, b) => (b.acc - a.acc) || (b.wpm - a.wpm));
-    h += `<h3>${LAYOUT_LABEL[l]}</h3>`;
-    if (!list.length) { h += '<p>Nothing yet.</p>'; continue; }
-    h += '<table><tr><th>setup</th><th>phrases</th><th>wpm</th><th>accuracy</th><th>fixes</th><th>misfires</th></tr>';
-    list.forEach((r, i) => { h += `<tr class="${i === 0 && r.b.n ? 'best' : ''}"><td>${esc(r.k.split(' · ').slice(1).join(' · '))}</td><td>${r.b.n}</td><td>${r.wpm.toFixed(0)}</td><td>${r.acc.toFixed(0)}%</td><td>${r.b.n ? (r.b.backs / r.b.n).toFixed(1) : '–'}</td><td>${r.b.misfires}</td></tr>`; });
-    h += '</table>';
-  }
-  h += '<button id="close">back to typing</button><button id="reset" style="background:transparent;color:var(--ink)">clear results</button>';
-  el.innerHTML = h; el.classList.add('show');
-  document.getElementById('close').onclick = () => el.classList.remove('show');
-  document.getElementById('reset').onclick = () => { if (confirm('Clear all practice results?')) { for (const k in R) delete R[k]; saveR(); showResults(); } };
-}
-
-let lastLayout = layoutName();
-addEventListener('resize', () => { if (layoutName() !== lastLayout) { lastLayout = layoutName(); flash = ''; } render(); });
+addEventListener('resize', render);
 nextPhrase();
 render();
 </script>
