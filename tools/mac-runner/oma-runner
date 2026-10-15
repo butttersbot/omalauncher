@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """oma-runner: runs Oma's builders on the Mac Pro for the agent on the Fold. See docs/MAC-RUNNER-SPEC.md.
 
-It listens on the Mac's Tailscale address only and every request must carry the key in
-~/agents/claude-code/oma-runner.token. It does one thing: run a coding agent (Claude Code, Codex or Cursor) in a
+It listens on the Mac's Tailscale address only and every request must carry the key the phone holds. The Mac keeps
+only the key's SHA-256 in ~/agents/claude-code/oma-runner.token, so an agent that reads that file cannot use it. It does one thing: run a coding agent (Claude Code, Codex or Cursor) in a
 named project thread, under a folder Boss allowed, and stream what it says. It is not a shell: there is no endpoint that runs a command. It
 approves nothing itself: every request for approval waits for the phone's answer, however long that takes.
 
@@ -20,7 +20,7 @@ approves nothing itself: every request for approval waits for the phone's answer
 
   oma-runner serve | install | start | stop | status | uninstall
 """
-import hmac, json, os, pathlib, plistlib, re, secrets, select, shlex, shutil, signal, socket, subprocess, sys, threading, time, tomllib, urllib.parse, urllib.request, uuid
+import hashlib, hmac, json, os, pathlib, plistlib, re, secrets, select, shlex, shutil, signal, socket, subprocess, sys, threading, time, tomllib, urllib.error, urllib.parse, urllib.request, uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HOME = pathlib.Path.home()
@@ -103,8 +103,9 @@ def mode(meta):
     agent would ask about is a card. Threads saved before modes existed have none and are auto. Cursor has no mode
     that runs routine work and still asks about the rest (its only run-everything mode asks about nothing), so its
     threads are always manual. Codex threads are manual unless auto is asked for by name: its sandbox can read any
-    file this Mac user can, the runner key included, and only its blocked network keeps it from using the key
-    without a card (decided 2026-10-14, until the key lives somewhere Codex cannot read)."""
+    file this Mac user can. Since 2026-10-14 the key file holds only the key's digest, but copies of the key itself
+    may still sit in old transcripts or shell history until it is replaced (see "As built: the key" in
+    docs/MAC-RUNNER-SPEC.md); Codex stays manual by default until then."""
     if meta['kind'] == 'cursor':
         return 'manual'
     return meta.get('mode') or ('manual' if meta['kind'] == 'codex' else 'auto')
@@ -919,7 +920,7 @@ class Runner(BaseHTTPRequestHandler):
 
     def allowed(self):
         given = self.headers.get('Authorization', '')
-        if hmac.compare_digest(given.encode(), ('Bearer ' + self.token).encode()):
+        if given.startswith('Bearer ') and hmac.compare_digest(digest(given[len('Bearer '):].strip()), self.token):
             return True
         time.sleep(1)
         self.answer(401, {'ok': False, 'error': 'no'})
@@ -1097,13 +1098,27 @@ def file_name(given):
     return name or 'file'
 
 
+def digest(key):
+    return 'sha256:' + hashlib.sha256(key.encode()).hexdigest()
+
+
 def read_token():
+    """The key's digest, which is all the Mac keeps (OPEN-BUGS #2, 2026-10-14): Codex's sandbox can read any file this
+    Mac user can, so the file holds nothing that opens the runner. A file still holding the key itself (as before) is
+    turned into its digest in place; the phone's key keeps working."""
     if not TOKEN_FILE.exists():
         sys.exit('oma-runner: no key at ' + str(TOKEN_FILE) + '; run "oma-runner install" to make one.')
     token = TOKEN_FILE.read_text().strip()
+    if re.fullmatch(r'sha256:[0-9a-f]{64}', token):
+        return token
     if len(token) < 32:
         sys.exit('oma-runner: the key is too short; the runner stays shut.')
-    return token
+    fresh = TOKEN_FILE.with_name(TOKEN_FILE.name + '.new')
+    fresh.unlink(missing_ok=True)
+    fresh.touch(mode=0o600)
+    fresh.write_text(digest(token) + '\n')
+    fresh.replace(TOKEN_FILE)
+    return digest(token)
 
 
 def serve():
@@ -1155,9 +1170,12 @@ def install():
     if not TOKEN_FILE.exists():
         TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
         TOKEN_FILE.touch(mode=0o600)
-        TOKEN_FILE.write_text(secrets.token_urlsafe(32) + '\n')
-        print('made a new key at ' + str(TOKEN_FILE))
+        key = secrets.token_urlsafe(32)
+        TOKEN_FILE.write_text(digest(key) + '\n')
+        print('made a new key. Give it to the phone now (url and key in ~/.config/omalauncher/mac-runner.json there); '
+              'this Mac keeps only its digest and cannot show it again:\n  ' + key)
     TOKEN_FILE.chmod(0o600)
+    read_token()
     INSTALLED.parent.mkdir(parents=True, exist_ok=True)
     if pathlib.Path(__file__).resolve() != INSTALLED.resolve():
         shutil.copyfile(__file__, INSTALLED)
@@ -1194,8 +1212,10 @@ def status():
     if address is None:
         return print('no Tailscale address on this Mac right now')
     try:
-        request = urllib.request.Request('http://%s:%d/health' % (address, PORT), headers={'Authorization': 'Bearer ' + read_token()})
-        print('http://%s:%d ' % (address, PORT) + urllib.request.urlopen(request, timeout=3).read().decode())
+        # Only the phone holds the key, so the answer looked for is its refusal of a request without one.
+        urllib.request.urlopen('http://%s:%d/health' % (address, PORT), timeout=3)
+    except urllib.error.HTTPError as problem:
+        print('http://%s:%d ' % (address, PORT) + ('answers (and refuses a request without the key)' if problem.code == 401 else 'answers %d' % problem.code))
     except OSError as problem:
         print('http://%s:%d does not answer: %s' % (address, PORT, problem))
 

@@ -103,6 +103,10 @@ runner = start()
 try:
     check('no key: 401', call('GET', '/health', token=None)[0] == 401)
     check('wrong key: 401 and nothing else', call('GET', '/health', token='x' * 40) == (401, {'ok': False, 'error': 'no'}))
+    kept = (work / 'token').read_text().strip()
+    check('the Mac keeps only the key\'s digest: the key itself is gone from the file, mode 600', kept.startswith('sha256:') and 'k' * 40 not in kept
+          and (work / 'token').stat().st_mode & 0o777 == 0o600)
+    check('what the file holds does not open the runner', call('GET', '/health', token=kept)[0] == 401 and call('GET', '/health', token=kept[len('sha256:'):])[0] == 401)
     check('/health answers, naming the agents the Mac has', call('GET', '/health') == (200, {'ok': True, 'runner': 'oma-runner', 'threads': 0, 'working': 0, 'waiting': 0, 'kinds': ['claude', 'codex', 'cursor'], 'files': True}))
     check('a project outside the roots is refused', call('POST', '/threads', {'name': 'x', 'project': str(outside)})[0] == 403)
     check('a path that climbs out of a root is refused', call('POST', '/threads', {'name': 'x', 'project': str(project / '..' / '..' / 'outside')})[0] == 403)

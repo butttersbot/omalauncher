@@ -101,6 +101,7 @@ The runner is `tools/mac-runner/oma-runner` (Python, no dependencies), installed
 ### What Boss decided
 - Port 8478, on the Mac's Tailscale address only (8477 is taken on the Mac). The secret is in
   `~/agents/claude-code/oma-runner.token` on the Mac, readable by him only. He gives it to the phone himself.
+  (Since 2026-10-14 that file holds only the key's SHA-256: see "As built: the key".)
 - Allowed roots: `~/Projects` and `~/ClaudeSync/projects`. Not the rest of ClaudeSync.
 - No limit on how many threads work at once. He does not want a number until a real situation asks for one.
 - Starts at login and restarts if it dies (launchd, `dev.omalauncher.runner`). `oma-runner stop | start | status |
@@ -436,3 +437,18 @@ command." The phone's command is `oma drop` (`app/src/main/assets/oma-drop.sh`).
   standard input). Also `oma drop send` against a loopback runner in the phone's Linux: a 3 MB file arrived byte for
   byte and a second file of one name became "a (2).txt". Not yet seen: the real Taildrop folder through the phone's
   adb, and an upload to the Mac Pro over Tailscale.
+
+## As built: the key (2026-10-14, by the Mac session) — OPEN-BUGS #2
+- Codex's sandbox can read any file this Mac user can, so moving the key would not hide it, and a Keychain item
+  that the runner's `python3` may read is just as open to a `python3` Codex runs. Instead the Mac no longer holds the
+  key at all: `~/agents/claude-code/oma-runner.token` holds `sha256:<hex>` of it, and the runner checks each request's
+  key against that. Reading the file gets nothing that opens the runner (tested: the digest, with or without its
+  `sha256:`, is refused).
+- The phone's key is unchanged: on its first start the new runner turns a file still holding the key into its digest
+  in place (mode 600). `oma-runner status` now only looks for the runner's refusal of a request without the key.
+- A fresh install (no file) prints the new key once, for the phone; the Mac cannot show it again. To replace the key:
+  delete the file, run `oma-runner install`, and put the printed key into the phone's
+  `~/.config/omalauncher/mac-runner.json`. The phone loses the Mac until it has the new one, so do it with Boss there.
+- Not closed by this: copies of the old key itself may sit on the Mac outside that file (agent transcripts from the
+  sessions that set the phone up, shell history). Until the key is replaced, Codex threads stay manual unless auto
+  is asked for by name (2b4a4ae). After a replacement, Codex can default to auto like Claude.
