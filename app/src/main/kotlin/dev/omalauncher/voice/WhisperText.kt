@@ -117,7 +117,7 @@ val VOICE_WORDS =
 fun pauseEnded(
     levels: List<Float>,
     stepMs: Int,
-    quietMs: Int = 1_200,
+    quietMs: Int = 800,
     quiet: Float = SILENCE,
 ): Boolean {
     val need = (quietMs + stepMs - 1) / stepMs

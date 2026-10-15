@@ -52,8 +52,8 @@ class WhisperTextTest {
     @Test fun aPauseEndsOnlyWhatWasSpoken() {
         val quiet = List(20) { 0.01f }
         assertFalse("silence alone is no pause after speech", pauseEnded(quiet, 100))
-        val spoke = List(5) { 0.5f } + List(13) { 0.02f }
-        assertTrue(pauseEnded(spoke, 100))
+        // 0.8 s of quiet after speech ends it (1.2 s was a second too long, Boss 2026-10-15); 0.6 s does not.
+        assertTrue(pauseEnded(List(5) { 0.5f } + List(8) { 0.02f }, 100))
         assertFalse(pauseEnded(List(5) { 0.5f } + List(6) { 0.02f }, 100))
     }
 }

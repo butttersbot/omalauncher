@@ -39,7 +39,8 @@ Java_dev_omalauncher_voice_WhisperNative_transcribe(JNIEnv *env, jobject, jlong 
     std::vector<float> pcm(n);
     env->GetFloatArrayRegion(samples, 0, n, pcm.data());
 
-    whisper_full_params wp = whisper_full_default_params(live ? WHISPER_SAMPLING_GREEDY : WHISPER_SAMPLING_BEAM_SEARCH);
+    // Greedy for the final reading too: beam search was a second too slow after he stops (Boss, 2026-10-15).
+    whisper_full_params wp = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
     wp.n_threads = threads;
     wp.language = "en";
     wp.translate = false;
@@ -51,7 +52,6 @@ Java_dev_omalauncher_voice_WhisperNative_transcribe(JNIEnv *env, jobject, jlong 
     wp.suppress_blank = true;
     wp.suppress_nst = true;
     wp.temperature_inc = live ? 0.0f : 0.2f;
-    wp.beam_search.beam_size = 3;
     // Short audio needs no 30 s window: the encoder is told to look at what there is (as whisper.cpp's stream does).
     wp.audio_ctx = 0;
     const char *pr = prompt ? env->GetStringUTFChars(prompt, nullptr) : nullptr;
