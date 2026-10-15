@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Oma keyboard: mock-up</title>
+<style>
+  /* Fonts and colours come from the looks' own pack.toml files, so the mock-up looks as the real keyboard would. */
+  @font-face { font-family: Schibsted; src: url(../app/src/main/assets/packs/city-pop/fonts/SchibstedGrotesk.ttf); }
+  @font-face { font-family: JetMono; src: url(../app/src/main/assets/packs/city-pop/fonts/JetBrainsMono.ttf); }
+  @font-face { font-family: Montserrat; src: url(../app/src/main/assets/packs/city-pop/fonts/Montserrat-ExtraBoldItalic.ttf); }
+  @font-face { font-family: Dela; src: url(../app/src/main/assets/packs/riso/fonts/DelaGothicOne-Regular.ttf); }
+
+  .look-citypop { --page:#0f4fc9; --bg:#ffffff; --surface:#dff7f7; --ink:#12296b; --muted:rgba(18,41,107,.6); --accent:#bd3a72; --hot:#ff4f9a; --board:#cfe9ee; --key:#ffffff; --mod:#a9d3dc; --shadow:rgba(140,8,28,.35); --font:Schibsted, system-ui, sans-serif; --display:Montserrat, system-ui, sans-serif; --radius:4px; }
+  .look-riso    { --page:#e7e5ee; --bg:#e7e5ee; --surface:#d9d6e6; --ink:#2337ff; --muted:rgba(35,55,255,.55); --accent:#ff3d8b; --hot:#ff3d8b; --board:#d9d6e6; --key:#efeef5; --mod:#c4c0dc; --shadow:rgba(35,55,255,.35); --font:Schibsted, system-ui, sans-serif; --display:Dela, system-ui, sans-serif; --radius:0px; }
+  .look-console { --page:#1a1b26; --bg:#1a1b26; --surface:#24283b; --ink:#c0caf5; --muted:rgba(192,202,245,.55); --accent:#7aa2f7; --hot:#7aa2f7; --board:#16161e; --key:#24283b; --mod:#1f2335; --shadow:rgba(0,0,0,.5); --font:JetMono, ui-monospace, monospace; --display:JetMono, ui-monospace, monospace; --radius:6px; }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+  body { margin: 0; background: #0a0f24; color: #cfd6f5; font: 14px/1.4 system-ui, sans-serif; }
+  .note { max-width: 760px; margin: 12px auto 8px; padding: 0 14px; }
+  .note b { color: #fff; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 8px auto 12px; padding: 0 10px; }
+  .bar button { font: inherit; padding: 8px 12px; border-radius: 18px; border: 1px solid #47507a; background: #161c38; color: #cfd6f5; }
+  .bar button.on { background: #cfd6f5; color: #0a0f24; border-color: #cfd6f5; }
+  .bar .label { align-self: center; color: #8a93bf; font-size: 12px; }
+
+  .phone { margin: 0 auto 30px; border-radius: 22px; overflow: hidden; background: var(--page); color: var(--ink);
+    font-family: var(--font); display: flex; flex-direction: column; height: 760px; transition: width .2s; }
+  .phone.cover { width: min(400px, 100vw); }
+  .phone.inner { width: min(760px, 100vw); }
+  .app { flex: 1; padding: 18px 16px; display: flex; flex-direction: column; gap: 10px; background: var(--bg); }
+  .app h2 { margin: 0; font-family: var(--display); font-size: 22px; text-transform: uppercase; color: var(--accent); }
+  .field { background: var(--surface); padding: 12px; min-height: 90px; border-radius: var(--radius); font-size: 17px; white-space: pre-wrap; word-break: break-word; }
+  .field .caret { display: inline-block; width: 2px; height: 1.1em; background: var(--accent); vertical-align: -2px; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .sent { font-size: 13px; color: var(--muted); }
+
+  .kb { background: var(--board); padding: 6px 4px 10px; display: flex; flex-direction: column; gap: 9px; }
+  .row { display: flex; gap: 6px; justify-content: center; padding: 0 2px; }
+  .key { flex: 0 0 auto; height: 46px; border-radius: max(var(--radius), 5px); background: var(--key); color: var(--ink);
+    display: grid; place-items: center; font-size: 21px; box-shadow: 0 1px 0 var(--shadow); cursor: pointer; position: relative; }
+  .key:active, .key.down { transform: translateY(1px); filter: brightness(.9); }
+  .key.mod { background: var(--mod); font-size: 15px; }
+  .key.space { flex: 1 1 auto; font-size: 14px; color: var(--muted); }
+  .key.ret { font-size: 15px; }
+  .key.mic { background: var(--accent); color: var(--bg); font-size: 20px; }
+  .key.mic.listening { animation: pulse 1.1s ease-in-out infinite; }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent) 30%, transparent); } }
+  .key.shift.on { background: var(--key); }
+  .gap { flex: 0 0 auto; }
+  .listen { text-align: center; font-size: 13px; color: var(--muted); height: 16px; }
+  .split .row { justify-content: space-between; }
+</style>
+</head>
+<body>
+<p class="note"><b>Oma keyboard — mock-up, not the real thing.</b> Apple's layout (same rows, offsets, shift and ⌫ on the third row, 123 and emoji at the bottom left, wide space). Tap keys to type into the field. Hold the space bar and slide left/right to move the caret, as on iPhone. Tap 🎤 to see the listening state (no real recording here). Compare the two return placements and the two screen widths below.</p>
+
+<div class="bar">
+  <span class="label">look</span>
+  <button data-look="citypop" class="on">city pop</button><button data-look="riso">riso</button><button data-look="console">console</button>
+</div>
+<div class="bar">
+  <span class="label">return</span>
+  <button data-ret="a" class="on">A · mic between space and return</button><button data-ret="b">B · return small, set apart</button>
+</div>
+<div class="bar">
+  <span class="label">screen</span>
+  <button data-screen="cover" class="on">cover</button><button data-screen="inner">inner (wide)</button><button data-screen="split">inner (split)</button>
+</div>
+
+<div class="phone cover look-citypop" id="phone">
+  <div class="app">
+    <h2>Oma</h2>
+    <div class="field" id="field"><span class="caret"></span></div>
+    <div class="sent" id="sent"></div>
+  </div>
+  <div class="kb" id="kb"></div>
+</div>
+
+<script>
+const S = { look: 'citypop', ret: 'a', screen: 'cover', layer: 'abc', shift: true, caps: false, text: '', caret: 0, listening: false };
+const rows = {
+  abc: [['q','w','e','r','t','y','u','i','o','p'], ['a','s','d','f','g','h','j','k','l'], ['z','x','c','v','b','n','m']],
+  123: [['1','2','3','4','5','6','7','8','9','0'], ['-','/',':',';','(',')','$','&','@','"'], ['.',',','?','!',"'"]],
+};
+
+function unit() { return S.screen === 'cover' ? 34 : 56; }
+function key(label, cls, w, act) { return `<div class="key ${cls||''}" style="width:${w}px" data-act="${act}">${label}</div>`; }
+
+function draw() {
+  const u = unit(), kb = document.getElementById('kb');
+  const letters = rows[S.layer];
+  const show = c => S.layer === 'abc' && (S.shift || S.caps) ? c.toUpperCase() : c;
+  let h = '';
+  const row = (keys, pre = '', post = '') => `<div class="row">${pre}${keys.map(c => key(show(c), '', u, 'k:' + c)).join('')}${post}</div>`;
+  if (S.screen === 'split') {
+    // The wide inner screen split in two halves, each thumb-sized, with the middle left open.
+    const half = (r, i) => [r.slice(0, Math.ceil(r.length / 2)), r.slice(Math.ceil(r.length / 2))][i];
+    for (const r of letters) h += `<div class="row">${half(r,0).map(c => key(show(c), '', 40, 'k:'+c)).join('')}<span class="gap" style="width:120px"></span>${half(r,1).map(c => key(show(c), '', 40, 'k:'+c)).join('')}</div>`;
+  } else {
+    h += row(letters[0]);
+    h += row(letters[1]);
+    const shift = S.layer === 'abc' ? key(S.caps ? '⇪' : '⇧', 'mod shift' + (S.shift || S.caps ? ' on' : ''), u * 1.3, 'shift') : key('#+=', 'mod', u * 1.3, 'none');
+    h += row(letters[2], shift + `<span class="gap" style="width:${u*0.25}px"></span>`, `<span class="gap" style="width:${u*0.25}px"></span>` + key('⌫', 'mod', u * 1.3, 'back'));
+  }
+  // Bottom row: the two return placements under test.
+  const layerKey = key(S.layer === 'abc' ? '123' : 'ABC', 'mod', u * 1.25, 'layer');
+  const emoji = key('🙂', 'mod', u * 1.1, 'k:🙂');
+  const mic = key('🎤', 'mic' + (S.listening ? ' listening' : ''), u * 1.5, 'mic');
+  const space = `<div class="key space" data-act="space" id="space">space</div>`;
+  if (S.ret === 'a') h += `<div class="row">${layerKey}${emoji}${space}${mic}${key('return', 'mod ret', u * 1.6, 'ret')}</div>`;
+  else h += `<div class="row">${layerKey}${emoji}${mic}${space}<span class="gap" style="width:${u*0.5}px"></span>${key('↵', 'mod ret', u * 1.05, 'ret')}</div>`;
+  h += `<div class="listen">${S.listening ? 'listening… tap 🎤 again to stop (Whisper)' : ''}</div>`;
+  kb.innerHTML = h;
+  const f = document.getElementById('field');
+  f.innerHTML = esc(S.text.slice(0, S.caret)) + '<span class="caret"></span>' + esc(S.text.slice(S.caret));
+}
+const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;');
+
+function type(s) { S.text = S.text.slice(0, S.caret) + s + S.text.slice(S.caret); S.caret += s.length; if (S.shift && !S.caps) S.shift = false; }
+let lastShift = 0;
+function act(a) {
+  if (a.startsWith('k:')) type(S.layer === 'abc' && (S.shift || S.caps) ? a.slice(2).toUpperCase() : a.slice(2));
+  else if (a === 'space') { type(' '); }
+  else if (a === 'back') { if (S.caret > 0) { S.text = S.text.slice(0, S.caret - 1) + S.text.slice(S.caret); S.caret--; } }
+  else if (a === 'shift') { const now = Date.now(); if (now - lastShift < 350) { S.caps = !S.caps; S.shift = false; } else { S.caps = false; S.shift = !S.shift; } lastShift = now; }
+  else if (a === 'layer') { S.layer = S.layer === 'abc' ? '123' : 'abc'; }
+  else if (a === 'ret') { document.getElementById('sent').textContent = S.text ? 'return pressed — sent: "' + S.text + '"' : 'return pressed'; S.text = ''; S.caret = 0; S.shift = true; }
+  else if (a === 'mic') {
+    S.listening = !S.listening;
+    if (!S.listening) type((S.text && !S.text.endsWith(' ') ? ' ' : '') + 'this is what Whisper heard');
+  }
+  draw();
+}
+
+// Taps act on release so a slide on the space bar can move the caret instead of typing a space.
+let press = null;
+document.getElementById('kb').addEventListener('pointerdown', e => {
+  const k = e.target.closest('.key'); if (!k) return;
+  k.classList.add('down');
+  press = { k, a: k.dataset.act, x: e.clientX, moved: false, start: S.caret };
+  if (press.a !== 'space') { act(press.a); press = null; }
+});
+document.addEventListener('pointermove', e => {
+  if (!press || press.a !== 'space') return;
+  const steps = Math.trunc((e.clientX - press.x) / 14);
+  if (steps !== 0) press.moved = true;
+  if (press.moved) { S.caret = Math.max(0, Math.min(S.text.length, press.start + steps)); const f = document.getElementById('field'); f.innerHTML = esc(S.text.slice(0, S.caret)) + '<span class="caret"></span>' + esc(S.text.slice(S.caret)); }
+});
+document.addEventListener('pointerup', () => {
+  document.querySelectorAll('.key.down').forEach(k => k.classList.remove('down'));
+  if (press && press.a === 'space' && !press.moved) act('space');
+  press = null;
+});
+
+for (const b of document.querySelectorAll('.bar button')) b.onclick = () => {
+  const [k, v] = Object.entries(b.dataset)[0];
+  S[k] = v;
+  b.parentElement.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+  const p = document.getElementById('phone');
+  p.className = 'phone ' + (S.screen === 'cover' ? 'cover' : 'inner') + ' look-' + S.look + (S.screen === 'split' ? ' split' : '');
+  draw();
+};
+draw();
+</script>
+</body>
+</html>
