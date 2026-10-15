@@ -19,7 +19,24 @@ fun parseHeard(raw: String): List<Heard> =
         val start = parts.getOrNull(0)?.toLongOrNull() ?: return@mapNotNull null
         val end = parts.getOrNull(1)?.toLongOrNull() ?: return@mapNotNull null
         Heard(start, end, cleanHeard(parts.getOrElse(2) { "" }))
-    }.filter { it.text.isNotEmpty() }.toList()
+    }.filter { it.text.isNotEmpty() && !madeUp(it.text) }.toList()
+
+/**
+ * What Whisper makes up from silence or noise, learned from video captions (Boss, 2026-10-15: "it keeps saying
+ * thank you for watching when it first shows up"). Dropped only when it is all a segment says.
+ */
+fun madeUp(text: String): Boolean {
+    val t = text.lowercase().replace(Regex("[^a-z ]"), " ").replace(Regex("\\s+"), " ").trim()
+    return t in MADE_UP || MADE_UP_STARTS.any { t.startsWith(it) }
+}
+
+private val MADE_UP =
+    setOf(
+        "thank you for watching", "thanks for watching", "thank you so much for watching", "thank you very much for watching",
+        "thanks for watching and see you next time", "please subscribe", "like and subscribe", "you", "bye", "bye bye",
+        "see you next time", "see you in the next video", "i ll see you in the next video",
+    )
+private val MADE_UP_STARTS = listOf("subtitles by", "transcribed by", "captions by", "translated by", "thank you for watching")
 
 /**
  * Whisper's text without what it says for what isn't speech: "[BLANK_AUDIO]", "(music)", "*laughs*" and

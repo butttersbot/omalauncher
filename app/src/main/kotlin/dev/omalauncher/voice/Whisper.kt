@@ -170,6 +170,13 @@ class WhisperSession(
 
     /** Where the audio after the settled words begins, in samples. */
     private var anchor = 0
+
+    /**
+     * Where his voice was first and last heard, in samples; -1 before it was. Whisper is never given the quiet
+     * before or after it, from which it makes up words ("thank you for watching").
+     */
+    @Volatile private var voiceFrom = -1
+    @Volatile private var voiceTo = 0
     private var live = LiveText()
 
     private fun extraWords(): List<String> =
@@ -225,6 +232,10 @@ class WhisperSession(
                 for (i in 0 until n) sum += buf[i] * buf[i]
                 val level = (sqrt(sum / n).toFloat() * 8f).coerceIn(0f, 1f)
                 levels += level
+                if (level > SILENCE * 2) {
+                    if (voiceFrom < 0) voiceFrom = maxOf(0, count - n - RATE * PAD_MS / 1000)
+                    voiceTo = count
+                }
                 main.post { if (!cancelled) onLevel(level) }
                 if (!held && pauseEnded(levels, STEP_MS)) ending = true
                 // Nothing heard at all for a long while ends it too.
@@ -248,6 +259,11 @@ class WhisperSession(
         var readAt = 0
         while (!ending) {
             val end = count
+            if (voiceFrom < 0) {
+                Thread.sleep(50)
+                continue
+            }
+            if (anchor < voiceFrom) anchor = voiceFrom
             if (ctx == 0L || end - readAt < RATE * READ_EVERY_MS / 1000 || end - anchor < RATE / 2) {
                 Thread.sleep(50)
                 continue
@@ -268,13 +284,14 @@ class WhisperSession(
         }
         if (cancelled) return
         // The whole of it, read by the accurate model; the fast one's reading if that one isn't here.
-        val all = audio(0, count)
+        // From his first word to just after his last: none of the quiet around it.
+        val all = if (voiceFrom < 0) FloatArray(0) else audio(voiceFrom, minOf(count, voiceTo + RATE * PAD_MS / 1000))
         val finalCtx = WhisperModels.context(context, WhisperModels.FINAL)
         val text =
             when {
                 all.size < RATE / 4 -> ""
                 finalCtx != 0L -> parseHeard(WhisperNative.transcribe(finalCtx, all, prompt, threads, false)).joinToString(" ") { it.text }
-                ctx != 0L -> joinHeard(live.kept, parseHeard(WhisperNative.transcribe(ctx, audio(anchor, all.size), prompt, threads, true)).joinToString(" ") { it.text })
+                ctx != 0L -> joinHeard(live.kept, parseHeard(WhisperNative.transcribe(ctx, audio(anchor, maxOf(anchor, minOf(count, voiceTo + RATE * PAD_MS / 1000))), prompt, threads, true)).joinToString(" ") { it.text })
                 else -> live.text
             }
         main.post { if (!cancelled) onDone(text.trim(), null) }
@@ -287,5 +304,8 @@ class WhisperSession(
         const val READ_EVERY_MS = 500
         const val SETTLE_AFTER_S = 15
         const val RELEASE_AFTER_MS = 90_000L
+
+        /** Kept before his first word and after his last, so their edges aren't cut. */
+        const val PAD_MS = 300
     }
 }

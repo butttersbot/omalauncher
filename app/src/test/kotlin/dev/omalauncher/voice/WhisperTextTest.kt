@@ -16,6 +16,14 @@ class WhisperTextTest {
         assertEquals("ok go", cleanHeard(" *laughs* ok  (inaudible) go "))
     }
 
+    @Test fun whatWhisperMakesUpFromSilenceIsDropped() {
+        // Boss, 2026-10-15: "it keeps saying thank you for watching when it first shows up".
+        val raw = "0 100  Thank you for watching!\n100 200  Thanks for watching.\n200 300  Subtitles by the Amara.org community\n300 400  you\n400 600  Thank you, that works.\n"
+        assertEquals(listOf("Thank you, that works."), parseHeard(raw).map { it.text })
+        assertFalse(madeUp("thank you"))
+        assertTrue(madeUp("Thank you so much for watching!"))
+    }
+
     @Test fun onlyWordsTwoReadingsAgreeOnAreSettled() {
         var live = LiveText()
         live = live.read("Turn on")
