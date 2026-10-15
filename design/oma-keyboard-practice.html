@@ -19,7 +19,7 @@
   html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; }
   body { display: flex; flex-direction: column; height: 100dvh; background: var(--bg); color: var(--ink); font-family: var(--font); }
 
-  .top { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; padding: 8px 12px 10px; overflow: hidden; }
+  .top { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; padding: 8px 12px 10px; overflow: hidden; touch-action: none; }
   .chips { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; font: 12px/1 system-ui, sans-serif; }
   .chips .lbl { color: var(--muted); margin-left: 4px; }
   .chips button { font: inherit; padding: 6px 9px; border-radius: 14px; border: 1px solid var(--muted); background: transparent; color: var(--ink); }
@@ -35,7 +35,7 @@
   .stats b { color: var(--ink); }
   /* The keyboard. Every key is placed by geom() below in dp (Chrome's CSS px is Android's dp), which is the same
      arithmetic the real Oma keyboard will use. A touch picks the key whose cell holds it, not only the visible cap. */
-  .kb { position: relative; flex: 0 0 auto; background: var(--board); touch-action: none; }
+  .kb { position: relative; flex: 0 0 auto; background: var(--board); touch-action: none; transition: margin-bottom .22s ease-out; }
   .cap { position: absolute; border-radius: max(var(--radius), 5px); background: var(--key); color: var(--ink);
     display: grid; place-items: center; box-shadow: 0 1px 0 var(--shadow); pointer-events: none; }
   .cap > span { display: grid; place-items: center; width: 100%; height: 100%; border-radius: inherit; }
@@ -306,12 +306,13 @@ function renderTop() {
   for (let i = 0; i < t.length; i++) h += i < typed.length ? `<span class="${typed[i].toLowerCase() === t[i].toLowerCase() ? 'ok' : 'bad'}">${esc(t[i])}</span>` : esc(t[i]);
   document.getElementById('target').innerHTML = h;
   document.getElementById('field').innerHTML = esc(T.text.slice(0, T.caret)) + '<span class="caret"></span>' + esc(T.text.slice(T.caret)) + (T.listening ? ' <i style="color:var(--muted)">listening… (practice only)</i>' : '');
-  document.getElementById('stats').textContent = 'Type the phrase, then press return for a fresh one. Taps are saved for review.';
+  document.getElementById('stats').textContent = 'Type the phrase, then press return for a fresh one. Swipe down here to put the keyboard away, tap to bring it back. Taps are saved for review.';
 }
 function renderKb() {
   const kb = document.getElementById('kb');
   G = geom(innerWidth, layoutName(), T.layer);
   kb.style.height = G.height + 'px';
+  kb.style.marginBottom = kbHidden ? -G.height + 'px' : '0px';
   let h = V.keys === 'mech' ? '<div class="led"></div>' : '';
   const fs = Math.round(Math.min(G.H - (V.keys === 'mech' ? 14 : 10), 30) * 0.55);
   G.keys.forEach((k, i) => {
@@ -320,6 +321,22 @@ function renderKb() {
   });
   kb.innerHTML = h + '<div class="bubble" id="bubble" style="display:none"></div>';
 }
+// Swipe down on the page above the keyboard to put the keyboard away; tap the page to bring it back.
+let kbHidden = false, pageTouch = null;
+function setKb(show) { kbHidden = !show; document.getElementById('kb').style.marginBottom = show ? '0px' : -G.height + 'px'; }
+const topEl = document.getElementById('top');
+topEl.addEventListener('pointerdown', e => { if (!e.target.closest('button')) pageTouch = { x: e.clientX, y: e.clientY, swiped: false }; });
+topEl.addEventListener('pointermove', e => {
+  if (!pageTouch || pageTouch.swiped) return;
+  const dx = e.clientX - pageTouch.x, dy = e.clientY - pageTouch.y;
+  if (dy > 40 && dy > 2 * Math.abs(dx)) { pageTouch.swiped = true; if (!kbHidden) { setKb(false); buzz(); } }
+});
+topEl.addEventListener('pointerup', e => {
+  if (pageTouch && !pageTouch.swiped && kbHidden && Math.hypot(e.clientX - pageTouch.x, e.clientY - pageTouch.y) < 12) setKb(true);
+  pageTouch = null;
+});
+topEl.addEventListener('pointercancel', () => { pageTouch = null; });
+
 function render() { document.body.className = 'look-' + V.look + (V.keys === 'mech' ? ' mech' : ''); renderTop(); renderKb(); }
 
 // ---- Touch: letters land when the finger lifts, or as soon as the next finger comes down (rollover). Shift and ⌫
