@@ -86,6 +86,16 @@ Boss moves to a new, higher-RAM phone tomorrow (2026-10-14/15). Everything below
     every change of what the phone knows of the Mac's threads (listing, a follower's look, a `status` event, reach)
     writes it again (`BuilderWatch.macChanged`, one look at a time), and each thread there carries `background`.
 
+## Seen on the real launcher 2026-10-14 17:35 (after promoting e5f8d89 + 01eb8ed)
+- Phone control came back after the update by itself (oma-install: BOUND, "reconnected by itself").
+- #16 fixed: opening the chat by intent with `mac:t9f70c3fc` while the chat was open switched to that thread's tab.
+- #3/#17 fixed: `oma-phone fill` on "to Background keep-alive check…" answered ok and the text was in the field.
+- #9 fixed: a 60 s background job — "Still running on the Mac…" under the answer; at the end "Background command …
+  completed (exit code 0)", Claude Code's report "The 60-second timer finished without errors and printed "done"."
+  arrived in the tab, and the "Still running…" line was gone. His own words showed as his (no "Sent from elsewhere").
+- #19 fixed: `oma status` showed the new request, `background: []` and idle right after.
+- Not seen yet: the phone-control self-heal actually turning it back on (it never went off this time).
+
 ## Built but never seen on a screen (check on the new phone)
 ＋ starting in `~/Projects` without a question; the Tailscale self-heal (after a reboot) and its respect for a
 manual off; "The Mac ended this turn without an answer." + try again; Restart / Clean up rows in the tab menu; tile
