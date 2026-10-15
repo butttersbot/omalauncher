@@ -11,8 +11,8 @@ Boss moves to a new, higher-RAM phone tomorrow (2026-10-14/15). Everything below
 2. ~~**Codex in auto mode can read the runner key**~~ CLOSED 2026-10-14 by the Mac session (0db3c21): the Mac keeps
    only the key's SHA-256 (converted in place on the runner's first start; the phone's key is unchanged), so the file
    opens nothing. Keychain would not have helped: an item the runner's python3 may read is open to Codex's python3
-   too. Left: old copies of the key itself may sit in Mac transcripts until the key is replaced (with Boss there; how:
-   "As built: the key" in `docs/MAC-RUNNER-SPEC.md`), so Codex threads stay manual unless auto is asked for by name.
+   too. Follow-up done the same evening: the key was replaced (old copies in transcripts open nothing now) and Codex
+   threads default to auto again ("As built: the key" in `docs/MAC-RUNNER-SPEC.md`).
 3. **`oma-phone fill` on the Oma chat field: cause unknown.** It said ok and the text never landed (a placeholder child
    inside the field matched the label; the field already resolved to its editable parent, so the likelier cause is
    the per-tab draft overwriting a text set from outside). Since 41eeb49 fill reads the field back and answers

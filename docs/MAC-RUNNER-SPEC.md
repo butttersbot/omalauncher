@@ -449,9 +449,13 @@ command." The phone's command is `oma drop` (`app/src/main/assets/oma-drop.sh`).
 - A fresh install (no file) prints the new key once, for the phone; the Mac cannot show it again. To replace the key:
   delete the file, run `oma-runner install`, and put the printed key into the phone's
   `~/.config/omalauncher/mac-runner.json`. The phone loses the Mac until it has the new one, so do it with Boss there.
-- Not closed by this: copies of the old key itself may sit on the Mac outside that file (agent transcripts from the
-  sessions that set the phone up, shell history). Until the key is replaced, Codex threads stay manual unless auto
-  is asked for by name (2b4a4ae). After a replacement, Codex can default to auto like Claude.
+- Not closed by the digest alone: copies of the old key itself could sit on the Mac outside that file (transcripts of
+  the sessions that set the phone up, shell history). So the key was replaced (2026-10-14 evening, at the phone
+  agent's request with Boss's go-ahead): a new random key, only its digest kept, sent once to the phone as
+  `mac-runner.json` over Taildrop (`tailscale file cp … jacks-z-fold8:`), its temp file deleted, never printed; the
+  runner reinstalled so only the new key works. The phone agent moves the file into place with `oma drop get`.
+  With that, Codex threads default to auto like Claude's (a thread keeps the mode it was made with, so Codex threads
+  made before stay manual). The swap script sends first and changes nothing if the send fails.
 
 ## As built: the Mac builds Oma (2026-10-14, by the Mac session)
 - Toolchain (already on the Mac from Homebrew, nothing new installed): Temurin JDK 26 runs Gradle 9.8 (17 is there

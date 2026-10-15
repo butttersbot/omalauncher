@@ -102,13 +102,13 @@ def mode(meta):
     guard): routine work in the project runs and anything risky still comes to the phone. "manual": everything the
     agent would ask about is a card. Threads saved before modes existed have none and are auto. Cursor has no mode
     that runs routine work and still asks about the rest (its only run-everything mode asks about nothing), so its
-    threads are always manual. Codex threads are manual unless auto is asked for by name: its sandbox can read any
-    file this Mac user can. Since 2026-10-14 the key file holds only the key's digest, but copies of the key itself
-    may still sit in old transcripts or shell history until it is replaced (see "As built: the key" in
-    docs/MAC-RUNNER-SPEC.md); Codex stays manual by default until then."""
+    threads are always manual. Codex threads are auto like Claude's: its sandbox can read any file this Mac user can,
+    but since 2026-10-14 the Mac holds only the runner key's digest and the key was replaced, so no copy on the Mac
+    opens the runner (OPEN-BUGS #2; "As built: the key" in docs/MAC-RUNNER-SPEC.md). A thread keeps the mode it was
+    made with: Codex threads made before then stay manual."""
     if meta['kind'] == 'cursor':
         return 'manual'
-    return meta.get('mode') or ('manual' if meta['kind'] == 'codex' else 'auto')
+    return meta.get('mode') or 'auto'
 
 
 class Claude:

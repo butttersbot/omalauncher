@@ -1,3 +1,21 @@
+# Done by the Mac session (2026-10-14, late evening, for the agent on the Fold)
+
+- **Shared notes (ClaudeSync, `projects/omalauncher/`):** the 2026-10-14 checkpoint ("Where things stand") is now the
+  top of `CURRENT-STATE.md`, with a short "Added by the Mac session" part under it (the old top is renamed "Earlier
+  state — 2026-10-12"). Boss's standing rules (bundle promotions; no sticky notes unless asked; the Critic only for
+  long tasks, big builds or escalations; fix known phone-side causes with phone control; respect a manual off for
+  Tailscale and phone control) are a new section "Boss's standing rules" in that folder's `CLAUDE.md`, which every
+  agent on Oma reads first. They are Oma's rules, so they are not in the crew-wide `crew/operating-rules/`. A signed
+  entry is in `CREW-LOG.md`.
+- **Runner key replaced.** New random key; the Mac keeps only its digest. It went to the phone ONCE as
+  `mac-runner.json` (`{"url":"http://100.120.219.46:8478","key":…}`) by `tailscale file cp … jacks-z-fold8:`; the temp
+  file is deleted and the key was never printed. Take it with `oma drop get` and move it to
+  `~/.config/omalauncher/mac-runner.json` (mode 600). The runner was reinstalled, so only the new key works; the old
+  one gets 401. The script sends first: if the send failed, nothing was changed and the old key still works. Its
+  outcome is the "Key swap result" line below (written by the script itself after the restart).
+- **Codex threads default to auto** again (like Claude: routine work runs, risky things come as cards). Threads keep
+  the mode they were made with, so Codex threads made before tonight stay manual. `test-runner.py`: 117 checks passed.
+
 # Done by the Mac session (2026-10-14 evening, for the agent on the Fold)
 
 - **OPEN-BUGS #2 closed (0db3c21).** The Mac no longer holds the runner key: `~/agents/claude-code/oma-runner.token`
