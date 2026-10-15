@@ -47,6 +47,9 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host {
     private val learning = HashMap<Screen, KeyboardLearning>()
     private var speech: Speech? = null
 
+    /** The live words of the speech running now are in the field, as text still being written. */
+    private var composing = false
+
     override val haptics get() = prefs.getBoolean(HAPTICS, true)
 
     override fun onCreate() {
@@ -79,6 +82,32 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host {
         view.look = look()
         view.mech = prefs.getBoolean(MECH, true)
         rebuild()
+    }
+
+    /**
+     * The live words left the field while he was still speaking or the last reading ran: the app sent them (its
+     * send button, or return) or cleared the field. Then that speech is over, and its final text must not land in
+     * the empty field afterwards (Boss, 2026-10-15: "after I sent it, the message stayed in the composer").
+     */
+    override fun onUpdateSelection(
+        oldSelStart: Int,
+        oldSelEnd: Int,
+        newSelStart: Int,
+        newSelEnd: Int,
+        candidatesStart: Int,
+        candidatesEnd: Int,
+    ) {
+        super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
+        val s = speech ?: return
+        if (composing && candidatesStart < 0) {
+            speech = null
+            composing = false
+            s.onText = null
+            s.cancel()
+            view.listening = false
+            autoShift()
+            rebuild()
+        }
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
@@ -254,9 +283,17 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host {
         // The words go into the field as he speaks, underlined as text still being written, and are set once he stops.
         val before = currentInputConnection?.getTextBeforeCursor(1, 0)?.toString().orEmpty()
         val gap = if (before.isNotEmpty() && !before.endsWith(" ") && !before.endsWith("\n")) " " else ""
-        s.onText = { heard -> if (heard.isNotBlank()) currentInputConnection?.setComposingText(gap + heard.trim(), 1) }
+        composing = false
+        s.onText = { heard ->
+            if (speech === s && heard.isNotBlank()) {
+                currentInputConnection?.setComposingText(gap + heard.trim(), 1)
+                composing = true
+            }
+        }
         s.start(hold = true) { said ->
+            if (speech !== s) return@start
             speech = null
+            composing = false
             view.listening = false
             val ic = currentInputConnection ?: return@start
             val t = said.trim()
