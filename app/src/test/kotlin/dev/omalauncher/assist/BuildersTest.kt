@@ -116,4 +116,83 @@ class BuildersTest {
         assertTrue(tasks.contains("val pending: List<PendingApproval> get() = builders.flatMap { it.pending }"))
         assertTrue(AgentTasks.pending.isEmpty())
     }
+
+    @Test fun aBuilderGetsAWorktreeOnlyBesideTheOtherAndOnlyAsClaude() {
+        val bothBusy = mapOf(BuilderId.A to true, BuilderId.B to true)
+        assertTrue(builderWorktreeWanted(BuilderId.B, mapOf(BuilderId.A to true, BuilderId.B to false), claude = true))
+        assertTrue(builderWorktreeWanted(BuilderId.A, bothBusy, claude = true))
+        // Alone it works in the shared checkout as it always has; another agent keeps the note it always had.
+        assertFalse(builderWorktreeWanted(BuilderId.A, mapOf(BuilderId.A to true, BuilderId.B to false), claude = true))
+        assertFalse(builderWorktreeWanted(BuilderId.B, emptyMap(), claude = true))
+        assertFalse(builderWorktreeWanted(BuilderId.B, bothBusy, claude = false))
+        assertEquals(WorktreePlan(PHONE_REPO, "/root/wt/builder-b", "builder-b"), builderWorktree(BuilderId.B))
+        assertEquals(WorktreePlan(PHONE_REPO, "/root/wt/builder-a", "builder-a"), builderWorktree(BuilderId.A))
+    }
+
+    @Test fun theNoteNamesTheWorktreeAndHowToMergeBackAndTakesTheAdvicesPlace() {
+        val plan = builderWorktree(BuilderId.B)
+        assertEquals(BuilderWorktree(plan, "phone/fold-development", current = true), plan.made("OMA-WORKTREE current phone/fold-development"))
+        assertEquals(BuilderWorktree(plan, "main", current = false), plan.made("OMA-WORKTREE kept main\n"))
+        for (other in listOf("", "OMA-WORKTREE", "OMA-WORKTREE current", "OMA-WORKTREE made main", "{\"type\":\"system\"}", "say OMA-WORKTREE current main")) assertNull(other, plan.made(other))
+        val note = plan.made("OMA-WORKTREE current phone/fold-development")!!.note
+        assertTrue(note.startsWith(SHARED_NOTE_OPEN) && note.endsWith("]") && '\n' !in note)
+        for (said in listOf("/root/wt/builder-b", "branch builder-b", "cd /root/wt/builder-b", "git -C /root/Projects/omalauncher merge --ff-only builder-b", "stop and tell Boss")) assertTrue(said, said in note)
+        assertTrue("do not throw it away" in plan.made("OMA-WORKTREE kept main")!!.note)
+        assertFalse("do not throw it away" in note)
+        // The advice the front agent put ahead of the request gives way to it; anything else stays under it.
+        assertEquals("$note\nhello", withWorktreeNote(PHONE_SHARED_NOTE + "\nhello", note))
+        assertEquals("$note\nhello", withWorktreeNote("hello", note))
+    }
+
+    private fun sh(dir: java.io.File, script: String): String {
+        val run = ProcessBuilder("sh", "-c", script).directory(dir).redirectErrorStream(true).start()
+        val out = run.inputStream.bufferedReader().readText()
+        assertEquals(out, 0, run.waitFor())
+        return out
+    }
+
+    @Test fun theWorktreeIsMadeBroughtUpOnlyWhenCleanAndNeverMadeOfAStrangeFolder() {
+        org.junit.Assume.assumeTrue(runCatching { ProcessBuilder("git", "--version").start().waitFor() == 0 }.getOrDefault(false))
+        val top = kotlin.io.path.createTempDirectory("worktree").toFile().canonicalFile
+        try {
+            val main = java.io.File(top, "repo").apply { mkdirs() }
+            val git = "git -c user.name=t -c user.email=t@t -c init.defaultBranch=shared"
+            sh(main, "$git init -q . && echo one > a && git add a && $git commit -qm one")
+            val plan = builderWorktree(BuilderId.B, main.path, "${top.path}/wt")
+            val wt = java.io.File(plan.path)
+            // Made from the shared branch as it is now, on a branch of the builder's own.
+            assertEquals("OMA-WORKTREE current shared\n", sh(main, plan.script()))
+            assertEquals("one\n", java.io.File(wt, "a").readText())
+            assertEquals("builder-b\n", sh(wt, "git rev-parse --abbrev-ref HEAD"))
+            // The shared branch moved on: a clean worktree follows it there.
+            sh(main, "echo two > a && $git commit -qam two")
+            assertEquals("OMA-WORKTREE current shared\n", sh(main, plan.script()))
+            assertEquals("two\n", java.io.File(wt, "a").readText())
+            // Work left in it is left alone, uncommitted or committed and not merged.
+            java.io.File(wt, "a").writeText("mine\n")
+            assertEquals("OMA-WORKTREE kept shared\n", sh(main, plan.script()))
+            sh(main, "echo three > b && git add b && $git commit -qm three")
+            assertEquals("OMA-WORKTREE kept shared\n", sh(main, plan.script()))
+            assertEquals("mine\n", java.io.File(wt, "a").readText())
+            sh(wt, "$git commit -qam mine")
+            assertEquals("OMA-WORKTREE kept shared\n", sh(main, plan.script()))
+            assertEquals("mine\n", java.io.File(wt, "a").readText())
+            // Merged back, it is current again.
+            sh(main, "$git merge -q --no-edit builder-b")
+            assertEquals("OMA-WORKTREE current shared\n", sh(main, plan.script()))
+            // Its folder gone, it is made again on the branch it had.
+            sh(main, "git worktree remove --force ${wt.path}")
+            assertEquals("OMA-WORKTREE current shared\n", sh(main, plan.script()))
+            // A folder there that is not its worktree is never touched, and the shared branch is never taken.
+            val strange = builderWorktree(BuilderId.A, main.path, "${top.path}/wt")
+            java.io.File(strange.path).apply { mkdirs(); java.io.File(this, "keep").writeText("x") }
+            assertEquals("", sh(main, strange.script()))
+            assertEquals(listOf("keep"), java.io.File(strange.path).list()!!.toList())
+            assertEquals("", sh(main, WorktreePlan(main.path, "${top.path}/wt/shared", "shared").script()))
+            // No git checkout at all: nothing is said, and what follows still runs.
+            val plain = java.io.File(top, "plain").apply { mkdirs() }
+            assertEquals("after\n", sh(plain, builderWorktree(BuilderId.B, plain.path, "${top.path}/wt2").script() + "\necho after"))
+            assertFalse(java.io.File(top, "wt2").exists())
+        } finally { top.deleteRecursively() }
+    }
 }

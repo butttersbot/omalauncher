@@ -18,6 +18,12 @@ Boss moves to a new, higher-RAM phone tomorrow (2026-10-14/15). Everything below
    field's own value) and confirm on the phone. **Fix built 2026-10-14 evening, not yet seen on a screen:** see #17.
 4. **`type`/`click` say "Screen changed" while the chat streams**: the target's bounds move between read and act.
    Needs a re-find of the same control by id+label at act time, without ever hitting a different control.
+   Built 2026-10-14 evening, **not yet seen on a screen**: an act whose control no longer matches the read exactly
+   looks at the screen again and finds the same control by its app, view id, kind and words (one that says nothing
+   and has no view id only at the same place in the tree). Exactly one match is acted on, and the answer says
+   `moved: true` with its new `id` (a fill reads its words back there); none, or two (a second `[ copy ]` came in),
+   still answers "Screen changed". Bounds alone never pick between two. Unit tested (PhoneFindTest, `PhoneRefind`).
+   Check by clicking `[ stop ]` or typing into the composer from a read taken while an answer streams.
 5. **Phone control does not rebind by itself after most launcher updates**; `oma-install` heals it (BOUND / HEALED).
    Find why the accessibility service is not rebound on package replace.
 6. **Builder health read "alive: false" for the running builder** on the first status after an update; right a
@@ -66,6 +72,16 @@ Boss moves to a new, higher-RAM phone tomorrow (2026-10-14/15). Everything below
 13. **A ＋ chat needs the phone's Linux to send** (the front agent runs there) although its work is the Mac's.
 14. **Design question for Boss:** a ＋ chat he named but never wrote in blocks ＋ (＋ reopens it instead of a new one).
 15. **Two phone builders share one checkout**; the "use your own worktree" note is advice, not enforced.
+    Built 2026-10-14 evening, **not yet seen on a screen**: a Claude builder that starts while the other builder works
+    first runs a shell step that makes or finds its own worktree of `/root/Projects/omalauncher` (`/root/wt/builder-a`
+    or `-b`, branch `builder-a`/`-b`, from the shared checkout's current branch) and brings it up to that branch by
+    fast-forward only when it is clean and holds nothing unmerged; a folder there that is not its worktree is never
+    touched. The note it is sent then names that worktree and how to merge back (`git -C <main> merge --ff-only
+    builder-x`, or a normal merge; stop and tell Boss on a refused merge or conflict) in place of the advice. No git
+    checkout, a detached HEAD, or a failed step: the request goes as before, with whatever note it had. Still not
+    enforced: the builder starts in /root, not in the worktree, since Claude Code finds the conversation it resumes
+    by its starting folder (moving it would lose the builder's thread), so it is told to cd there; Codex builders
+    keep the advice; work in other repositories still gets advice only. Unit tested (BuildersTest, against real git).
 
 ## Found 2026-10-14 afternoon (on the real launcher)
 16. **Opening the chat on a thread by intent does nothing when the chat is already open**
@@ -100,7 +116,7 @@ Boss moves to a new, higher-RAM phone tomorrow (2026-10-14/15). Everything below
 ＋ starting in `~/Projects` without a question; the Tailscale self-heal (after a reboot) and its respect for a
 manual off; "The Mac ended this turn without an answer." + try again; Restart / Clean up rows in the tab menu; tile
 captions "MAC · NOT STARTED" / "OUT OF REACH"; the 12-hour archive of idle chats; Mac threads in auto mode (needs
-`oma-runner install` on the Mac first); two phone builders working at once with the worktree note.
+`oma-runner install` on the Mac first); two phone builders working at once, the second given its own worktree (`/root/wt/builder-b`).
 
 ## Setting up the new phone (what is NOT in git)
 - **Signing key**: `/root/.config/oma-development/working-debug.keystore` on the old phone (and `working-cert.sha256`).

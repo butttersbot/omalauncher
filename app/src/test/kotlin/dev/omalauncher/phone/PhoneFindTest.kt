@@ -4,6 +4,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -189,5 +190,45 @@ class PhoneFindTest {
         assertTrue(PhoneScreen.says(read(), "send"))
         assertFalse(PhoneScreen.says(read(), "settings"))
         assertFalse(PhoneScreen.says(read(), " "))
+    }
+
+    // The Oma chat while an answer streams in: the words above grow, so what is below them moves down the screen.
+    private fun seen(path: String, text: String? = null, description: String? = null, viewId: String? = null, className: String = "android.widget.Button", top: Int = 1000) =
+        SeenControl(path, "dev.omalauncher.boss", viewId, className, text, description, listOf(0, top, 200, top + 80))
+
+    private val stop = seen("root.0.4", text = "[ stop ]")
+
+    @Test fun aControlThatMovedIsFoundAgainByWhatItIs() {
+        // Only its bounds changed: the same control, at the same place in the tree.
+        assertEquals("root.0.4", PhoneRefind.refind(stop, listOf(seen("root.0.3", text = "Thinking…", className = "android.widget.TextView"), seen("root.0.4", text = "[ stop ]", top = 1240))))
+        // A step line came in above it, so it is a child further on as well as further down.
+        assertEquals("root.0.5", PhoneRefind.refind(stop, listOf(seen("root.0.4", text = "Reading PhoneService.kt", className = "android.widget.TextView"), seen("root.0.5", text = "[ stop ]", top = 1320))))
+        // A view id is part of what it is: one of the same words with another id is another control.
+        val send = seen("root.2", text = "Send", viewId = "app:id/send")
+        assertEquals("root.3", PhoneRefind.refind(send, listOf(seen("root.2", text = "Send", viewId = "app:id/share"), seen("root.3", text = "Send", viewId = "app:id/send", top = 1400))))
+    }
+
+    @Test fun aSecondControlWithTheSameWordsIsNeverGuessedBetween() {
+        // A new answer brought its own [ copy ]: the old one is still there, but which is which is not known.
+        val copy = seen("root.0.2.1", text = "[ copy ]", top = 600)
+        assertNull(PhoneRefind.refind(copy, listOf(seen("root.0.2.1", text = "[ copy ]", top = 500), seen("root.0.3.1", text = "[ copy ]", top = 900))))
+    }
+
+    @Test fun aControlThatIsGoneOrChangedIsNotFound() {
+        assertNull(PhoneRefind.refind(stop, emptyList()))
+        // The answer ended: where [ stop ] was is now [ send ], which is another control however near it is.
+        assertNull(PhoneRefind.refind(stop, listOf(seen("root.0.4", text = "[ send ]"))))
+        // Other words, or another kind of control or another app, are another control too.
+        assertNull(PhoneRefind.refind(stop, listOf(seen("root.0.4", text = "[ stop ]", className = "android.widget.TextView"))))
+        assertNull(PhoneRefind.refind(stop, listOf(stop.copy(packageName = "com.android.settings"))))
+    }
+
+    @Test fun aControlThatSaysNothingIsOnlyFoundWhereItStood() {
+        // The chat's composer says nothing of its own and has no view id: its place in the tree is all it has.
+        val field = seen("root.0.5.0", className = "android.widget.EditText", top = 1800)
+        assertEquals("root.0.5.0", PhoneRefind.refind(field, listOf(seen("root.0.5.0", className = "android.widget.EditText", top = 1700))))
+        assertNull(PhoneRefind.refind(field, listOf(seen("root.0.6.0", className = "android.widget.EditText", top = 1800))))
+        // A field elsewhere that says nothing either does not make the one where it stood any less its own.
+        assertEquals("root.0.5.0", PhoneRefind.refind(field, listOf(seen("root.0.2.0", className = "android.widget.EditText"), seen("root.0.5.0", className = "android.widget.EditText"))))
     }
 }

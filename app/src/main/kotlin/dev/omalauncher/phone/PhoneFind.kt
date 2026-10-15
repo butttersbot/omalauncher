@@ -181,3 +181,37 @@ object PhoneScreen {
         return asked.isNotEmpty() && nodes(read).any { asked in it.text.lowercase() || asked in it.description.lowercase() }
     }
 }
+
+/**
+ * One control as it stood when the screen was read, by what tells it apart: where it is in the window's tree, its
+ * app, view id, kind and words, and its bounds. Two of these are equal only if nothing about the control changed.
+ */
+data class SeenControl(
+    val path: String,
+    val packageName: String?,
+    val viewId: String?,
+    val className: String?,
+    val text: String?,
+    val description: String?,
+    val bounds: List<Int>,
+) {
+    /** The same control, wherever it now stands: everything but its place in the tree and on the screen. */
+    fun sameAs(other: SeenControl) =
+        packageName == other.packageName && viewId == other.viewId && className == other.className && text == other.text && description == other.description
+
+    /** It says nothing and has no view id, so where it stood in the tree is all that tells it from its neighbours. */
+    val anonymous get() = text.isNullOrEmpty() && description.isNullOrEmpty() && viewId.isNullOrEmpty()
+}
+
+/**
+ * Finding again, at the moment of acting, the control the agent picked from a read: while a chat streams, what is
+ * below the new words moves between the read and the act, and that alone used to refuse the act. A control is
+ * the same only by its app, view id, kind and words; one that says nothing is the same only at the same place in
+ * the tree. Exactly one such control on the screen is the one; none, or two after a second one with the same
+ * words appeared, is never guessed between, since acting on a different control is worse than asking for a read.
+ */
+object PhoneRefind {
+    /** The path of the one control on [now] that is [old], or null when there is none or more than one. */
+    fun refind(old: SeenControl, now: List<SeenControl>): String? =
+        now.filter { it.sameAs(old) && (!old.anonymous || it.path == old.path) }.singleOrNull()?.path
+}

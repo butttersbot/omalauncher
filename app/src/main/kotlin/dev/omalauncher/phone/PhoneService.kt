@@ -29,7 +29,8 @@ class PhoneService : AccessibilityService() {
         private const val TAP_MILLIS = 80L
     }
     private var snapshot = ""
-    private var signatures = emptyMap<String, String>()
+    /** Each control of the last read, by its id there: what an act checks it is still acting on. */
+    private var seen = emptyMap<String, SeenControl>()
     /** When this service last did something to the screen, by the clock that stops in sleep; null until it has. */
     private var acted: Long? = null
     private val main = Handler(Looper.getMainLooper())
@@ -111,9 +112,10 @@ class PhoneService : AccessibilityService() {
     /** Phone control was paused or resumed. From any thread. */
     fun ringChanged() { main.post(checkRing) }
 
-    private fun signature(node: AccessibilityNodeInfo): String {
+    private fun control(path: String, node: AccessibilityNodeInfo): SeenControl {
         val bounds = Rect(); node.getBoundsInScreen(bounds)
-        return listOf(node.packageName, node.viewIdResourceName, node.className, node.text, node.contentDescription, bounds).joinToString("|")
+        return SeenControl(path, node.packageName?.toString(), node.viewIdResourceName, node.className?.toString(), node.text?.toString(),
+            node.contentDescription?.toString(), listOf(bounds.left, bounds.top, bounds.right, bounds.bottom))
     }
     /**
      * The window in front as it is now. Android keeps the nodes it has handed out and only drops them when the
@@ -139,29 +141,53 @@ class PhoneService : AccessibilityService() {
         } catch (e: Exception) { node.recycle(); throw e }
     }
     /** Something was done to the screen: what was read of it no longer holds, and the next read gives it time to show. */
-    private fun changed() { snapshot = ""; signatures = emptyMap(); acted = SystemClock.uptimeMillis() }
-    /** The screen's controls, under a new snapshot id. */
-    private fun read(): JSONObject {
-        val nodes = JSONArray(); val next = mutableMapOf<String, String>()
-        fun visit(node: AccessibilityNodeInfo, path: String, depth: Int) {
+    private fun changed() { snapshot = ""; seen = emptyMap(); acted = SystemClock.uptimeMillis() }
+    /** Each control the user can see in the window in front, by its id, with its node for just that call. */
+    private fun walk(visit: (String, AccessibilityNodeInfo) -> Unit) {
+        var count = 0
+        fun go(node: AccessibilityNodeInfo, path: String, depth: Int) {
             try {
-                if (depth > 40 || nodes.length() >= 600 || !current(node)) return
-                val bounds = Rect(); node.getBoundsInScreen(bounds)
-                if (node.isVisibleToUser) {
-                    nodes.put(JSONObject().put("id", path).put("text", if (node.isPassword) "[password]" else node.text?.toString().orEmpty())
-                        .put("description", if (node.isPassword) "" else node.contentDescription?.toString().orEmpty())
-                        .put("package", node.packageName?.toString()).put("viewId", node.viewIdResourceName)
-                        .put("bounds", JSONArray(listOf(bounds.left, bounds.top, bounds.right, bounds.bottom)))
-                        .put("clickable", node.isClickable).put("editable", node.isEditable).put("scrollable", node.isScrollable)
-                        .put("checked", node.isChecked).put("enabled", node.isEnabled))
-                    next[path] = signature(node)
-                }
-                for (i in 0 until node.childCount) node.getChild(i)?.let { visit(it, "$path.$i", depth + 1) }
+                if (depth > 40 || count >= 600 || !current(node)) return
+                if (node.isVisibleToUser) { count++; visit(path, node) }
+                for (i in 0 until node.childCount) node.getChild(i)?.let { go(it, "$path.$i", depth + 1) }
             } finally { node.recycle() }
         }
-        visit(root(), "root", 0)
-        snapshot = UUID.randomUUID().toString(); signatures = next
+        go(root(), "root", 0)
+    }
+    /** The screen's controls, under a new snapshot id. */
+    private fun read(): JSONObject {
+        val nodes = JSONArray(); val next = mutableMapOf<String, SeenControl>()
+        walk { path, node ->
+            val seenNow = control(path, node)
+            nodes.put(JSONObject().put("id", path).put("text", if (node.isPassword) "[password]" else seenNow.text.orEmpty())
+                .put("description", if (node.isPassword) "" else seenNow.description.orEmpty())
+                .put("package", seenNow.packageName).put("viewId", seenNow.viewId)
+                .put("bounds", JSONArray(seenNow.bounds))
+                .put("clickable", node.isClickable).put("editable", node.isEditable).put("scrollable", node.isScrollable)
+                .put("checked", node.isChecked).put("enabled", node.isEnabled))
+            next[path] = seenNow
+        }
+        snapshot = UUID.randomUUID().toString(); seen = next
         return JSONObject().put("ok", true).put("snapshot", snapshot).put("nodes", nodes)
+    }
+    /**
+     * The node of the control the last read listed at [id], as it is now, and the id it is at now. Unchanged, it is
+     * taken where it stood; moved, it is found again by [PhoneRefind], and only if exactly one control is it.
+     */
+    private fun target(id: String): Pair<AccessibilityNodeInfo, String> {
+        val old = seen[id] ?: error("Screen changed. Read it again.")
+        fun usable(path: String, same: (SeenControl) -> Boolean): AccessibilityNodeInfo? {
+            val node = runCatching { resolve(path) }.getOrNull() ?: return null
+            if (node.isVisibleToUser && node.isEnabled && same(control(path, node))) return node
+            node.recycle(); return null
+        }
+        usable(id) { it == old }?.let { return it to id }
+        val now = mutableListOf<SeenControl>()
+        walk { path, node -> now.add(control(path, node)) }
+        val path = PhoneRefind.refind(old, now) ?: error("Screen changed. Read it again.")
+        // Between that look and this one it may have changed again: it is still taken only if it is still the same control.
+        val node = usable(path) { it.sameAs(old) } ?: error("Screen changed. Read it again.")
+        return node to path
     }
     /** One finger along [path] for [duration]; [reply] hears once it has lifted, or that Android cancelled it. */
     private fun stroke(path: Path, duration: Long, reply: (JSONObject) -> Unit) {
@@ -207,9 +233,10 @@ class PhoneService : AccessibilityService() {
     }
     /** Does [command] (click, type or scroll) to the control at [id] of the screen last read; [reply] hears how it went. */
     private fun act(command: String, id: String, input: JSONObject, reply: (JSONObject) -> Unit) {
-        val node = resolve(id)
+        val (node, at) = target(id)
+        // Where the control was acted on: a fill reads its words back there, and the agent is told it had moved.
+        fun said(answer: JSONObject) = if (at == id) answer else answer.put("moved", true).put("id", at)
         try {
-            check(node.isVisibleToUser && node.isEnabled && signatures[id] == signature(node)) { "Screen changed. Read it again." }
             val done = when (command) {
                 "click" -> node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
                 "type" -> {
@@ -225,13 +252,13 @@ class PhoneService : AccessibilityService() {
                 val metrics = resources.displayMetrics
                 val (x, y) = PhoneTouch.middle(bounds.left, bounds.top, bounds.right, bounds.bottom, metrics.widthPixels, metrics.heightPixels)
                     ?: error("Android rejected this click and the control is not on screen to tap. Read the screen again.")
-                stroke(Path().apply { moveTo(x, y) }, TAP_MILLIS) { reply(if (it.optBoolean("ok")) it.put("tapped", true) else it) }
+                stroke(Path().apply { moveTo(x, y) }, TAP_MILLIS) { reply(if (it.optBoolean("ok")) said(it.put("tapped", true)) else it) }
                 return
             }
             check(done) { "Android rejected this action. Read the screen again or use a gesture." }
             changed()
         } finally { node.recycle() }
-        reply(JSONObject().put("ok", true))
+        reply(said(JSONObject().put("ok", true)))
     }
     /** The owner's stickers for the sticker commands: his library, and the book the pages' stickers are kept in. */
     private fun stickerPad() = object : StickerPad {
@@ -389,7 +416,7 @@ class PhoneService : AccessibilityService() {
                     act(if (command == "press") "click" else "type", id, input) { done ->
                         if (!done.optBoolean("ok")) { reply(done); return@act }
                         main.postDelayed({
-                            try { PhoneAccess.requireAccess(this); reply(PhoneScreen.after(read(), command, id, if (command == "fill") input.getString("text") else null)) }
+                            try { PhoneAccess.requireAccess(this); reply(PhoneScreen.after(read(), command, done.optString("id", id), if (command == "fill") input.getString("text") else null)) }
                             catch (e: Exception) { reply(JSONObject().put("ok", false).put("error", e.message ?: "Phone control failed")) }
                         }, PhoneTouch.SETTLE_MILLIS)
                     }
