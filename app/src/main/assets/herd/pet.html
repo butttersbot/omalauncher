@@ -66,6 +66,28 @@ html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
   25% { transform: translateY(-12px) scale(.97, 1.04); } 45% { transform: translateY(0) scale(1.05, .94); } }
 @keyframes wobble { 0%, 100% { transform: rotate(0); } 20% { transform: rotate(-12deg); } 40% { transform: rotate(10deg); } 60% { transform: rotate(0); } }
 
+/* A skin: a pixel sprite sheet from pet/skins, frames side by side, drawn in place of the sheep. */
+#sprite { position: absolute; left: 12px; top: 8px; width: 96px; height: 96px; display: none;
+  background-repeat: no-repeat; background-size: auto 96px; image-rendering: pixelated; transform-origin: 48px 92px; }
+#pet.skinned #sprite { display: block; }
+#pet.skinned #sheep { display: none; }
+#pet.sleep #sprite { animation: breathe 4s ease-in-out infinite; filter: saturate(.75) brightness(.92); }
+#pet.work #sprite { animation: bob .9s ease-in-out infinite; }
+#pet.work #sprite.two { animation: bob .9s ease-in-out infinite, flip .9s steps(1) infinite; }
+#pet.alert #sprite { animation: hop 1.4s cubic-bezier(.3, 0, .3, 1) infinite; }
+#pet.alert #sprite.two { animation: hop 1.4s cubic-bezier(.3, 0, .3, 1) infinite, flip .35s steps(1) infinite; }
+#pet.happy #sprite { animation: hop .5s cubic-bezier(.3, 0, .3, 1) 2; }
+@keyframes flip { 0% { background-position: 0 0; } 50% { background-position: -96px 0; } }
+
+.looks { display: grid; grid-template-columns: repeat(auto-fill, minmax(82px, 1fr)); gap: 6px; padding: 8px; }
+.look { border: 1.5px solid transparent; background: var(--row-hover); border-radius: 12px; padding: 8px 4px 6px; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 4px; font: inherit; font-size: 11px; color: var(--ink-2); }
+.look:hover { border-color: var(--line); }
+.look.on { border-color: var(--ink); color: var(--ink); font-weight: 600; }
+.look i { width: 56px; height: 56px; background-repeat: no-repeat; background-size: auto 56px; image-rendering: pixelated; display: block; }
+.look svg { width: 56px; height: 56px; }
+.note { color: var(--ink-3); font-size: 11px; padding: 2px 12px 8px; }
+
 #badge { position: absolute; left: 8px; top: 22px; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px;
   background: var(--need); color: #fff; font-weight: 700; font-size: 12px; line-height: 22px; text-align: center;
   box-shadow: 0 2px 6px rgba(0, 0, 0, .2); transform: scale(0); transition: transform .25s cubic-bezier(.3, 1.6, .5, 1); }
@@ -210,6 +232,7 @@ main::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
       <rect x="96.4" y="20" width="3.2" height="10" rx="1.6" fill="#fff"/><circle cx="98" cy="34.2" r="1.8" fill="#fff"/>
     </g></g>
   </svg>
+  <div id="sprite"></div>
   <div id="badge"></div>
 </div>
 
@@ -245,6 +268,7 @@ const isUnseen = s => s.state === 'your-turn' && (seen[s.id] || 0) < s.updated;
 /* ---------------------------------------------------------------- jobs: each one is a tab in the panel */
 const jobs = [
   { id: 'agents', title: 'Agents', render: renderAgents },
+  { id: 'look', title: 'Look', render: renderLook },
   // Sending needs the computer's Tailscale CLI; on the phone it's the share sheet's job.
   ...(window.HerdAndroid ? [] : [{ id: 'send', title: 'Send a file', render: renderSend }]),
 ];
@@ -325,6 +349,46 @@ function renderDetail(view) {
   view.scrollTop = view.scrollHeight;
 }
 
+/* ---------------------------------------------------------------- looks: the sheep, or a skin a machine serves */
+let skin = store.get('skin', null);   // {name, url, frames} or null for the sheep
+
+function skins() {
+  // Each skin once, from the first machine that has it; its picture comes from that machine's reporter.
+  const seen = new Map();
+  for (const m of data?.machines || [])
+    for (const s of m.report?.machine?.skins || [])
+      if (!seen.has(s.name) && m.address) seen.set(s.name, { ...s, url: `http://${m.address}:8479/v1/skins/${encodeURIComponent(s.name)}/sheet.png` });
+  return [...seen.values()];
+}
+
+function wear() {
+  const pet = $('pet'), sprite = $('sprite');
+  pet.classList.toggle('skinned', !!skin);
+  if (!skin) return;
+  sprite.style.backgroundImage = `url("${skin.url}")`;
+  sprite.classList.toggle('two', skin.frames > 1);
+}
+
+function renderLook(view) {
+  const list = skins();
+  const sheep = `<svg viewBox="16 20 88 90">${document.querySelector('#sheep').outerHTML.replace('id="sheep"', '')}</svg>`;
+  let html = `<div class="looks"><button class="look ${skin ? '' : 'on'}" data-skin="">${sheep}Sheep</button>`;
+  for (const s of list)
+    html += `<button class="look ${skin?.name === s.name ? 'on' : ''}" data-skin="${esc(s.name)}"><i style="background-image:url('${esc(s.url)}')"></i>${esc(s.name.replace(/-/g, ' '))}</button>`;
+  html += `</div>`;
+  if (!list.length) html += `<div class="note">No skins yet. They live in pet/skins on a machine with ClaudeSync; the reporter there serves them.</div>`;
+  view.innerHTML = html;
+}
+
+$('view').addEventListener('click', e => {
+  const pick = e.target.closest('[data-skin]');
+  if (!pick) return;
+  const s = skins().find(x => x.name === pick.dataset.skin);
+  skin = s ? { name: s.name, url: s.url, frames: s.frames } : null;
+  store.set('skin', skin); wear(); render();
+  const pet = $('pet'); pet.classList.add('happy'); setTimeout(() => pet.classList.remove('happy'), 1100);
+});
+
 function renderSend(view) {
   const devices = [...(data?.machines || []).filter(m => !m.self).map(m => m.name), ...(data?.others || []).filter(h => h.online).map(h => h.name)];
   let html = dropped.length
@@ -352,6 +416,7 @@ function mood() {
   const happy = pet.classList.contains('happy');
   pet.className = !reached ? 'offline' : need.length ? 'alert' : working.length ? 'work' : 'sleep';
   if (happy) pet.classList.add('happy');
+  if (skin) pet.classList.add('skinned');
   const badge = $('badge'), count = need.length + fresh.length;
   badge.textContent = count; badge.className = count ? 'on' + (need.length ? '' : ' ready') : '';
   const parts = [];
@@ -388,6 +453,7 @@ window.herd = {
     const list = sessions();
     if (firstRun && !store.get('seen', null)) markSeen();
     announce(list);
+    if (skin) { const s = skins().find(x => x.name === skin.name); if (s && s.url !== skin.url) { skin = { name: s.name, url: s.url, frames: s.frames }; store.set('skin', skin); } wear(); }
     if (document.body.classList.contains('open')) markSeen();
     mood();
     if (document.body.classList.contains('open') && !(detail && job === 'agents')) render();
@@ -420,6 +486,7 @@ function toggle(force) {
   if (open) { markSeen(); mood(); render(); $('bubble').classList.remove('on'); }
 }
 $('close').addEventListener('click', () => toggle(false));
+wear();
 document.addEventListener('keydown', e => { if (e.key === 'Escape') toggle(false); });
 
 const pet = $('pet');
@@ -437,7 +504,8 @@ function mockDetail(id) {
 if (!native) {
   const now = Date.now() / 1000;
   herd.update({ machines: [
-    { name: 'macbook-pro', self: true, report: { machine: { load: 3.1, remote_control: [] }, sessions: [
+    { name: 'macbook-pro', self: true, address: '100.105.137.74', report: { machine: { load: 3.1, remote_control: [],
+      skins: ['pikachu', 'mudkip', 'gengar', 'eevee', 'torchic'].map(name => ({ name, frames: 2 })).concat([{ name: 'charmander-firered', frames: 1 }]) }, sessions: [
       { id: 'add7d44a', title: 'Agent/machine visibility tool', project: 'herd', app: 'desktop', kind: 'claude', state: 'working', updated: now - 5, cwd: '/Users/jackkim/ClaudeSync/projects/herd' },
       { id: 'b4ba7534', title: 'Trading view widget planning', project: 'omalauncher', app: 'desktop', kind: 'claude', state: 'your-turn', updated: now - 7200, cwd: '/Users/jackkim/ClaudeSync/projects/omalauncher' }] } },
     { name: 'jacks-mac-pro', report: { machine: { load: 2.5, remote_control: ['Mac Pro'] }, sessions: [
