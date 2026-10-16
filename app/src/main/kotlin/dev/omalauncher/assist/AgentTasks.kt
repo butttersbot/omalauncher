@@ -112,10 +112,10 @@ object AgentTasks {
      * As [followUp], with what goes ahead of his words made for the builder that takes them: what it missed is
      * what was said since that builder was last sent anything, which only the choice of builder can say.
      */
-    @Synchronized fun handOver(context: Context, prompt: String, page: String?, builder: BuilderId?, earlier: (BuilderId) -> String): BuilderId {
+    @Synchronized fun handOver(context: Context, prompt: String, page: String?, builder: BuilderId?, errand: Boolean = false, earlier: (BuilderId) -> String): BuilderId {
         restore(context)
         val to = pick(builder)
-        of(to).followUp(context, prompt, page = page, earlier = earlier(to))
+        of(to).followUp(context, prompt, page = page, earlier = earlier(to), errand = errand)
         return to
     }
 
@@ -311,15 +311,15 @@ class Builder(val id: BuilderId) {
      * [screen] is as for [send]: the screenshot of a spoken request, which waits with it and is this object's
      * to delete once this returns.
      */
-    fun followUp(context: Context, prompt: String, images: List<String> = emptyList(), page: String? = HomeDoor.home?.showing, earlier: String = "", screen: File? = null, mail: String = ""): Unit = synchronized(lock) {
+    fun followUp(context: Context, prompt: String, images: List<String> = emptyList(), page: String? = HomeDoor.home?.showing, earlier: String = "", screen: File? = null, mail: String = "", errand: Boolean = false): Unit = synchronized(lock) {
         restore(context)
         check(prompt.isNotBlank()) { "Type or speak a request first." }
-        if (!working) return start(context, prompt, images, screen, page, queued = null, earlier = earlier, mail = mail)
+        if (!working) return start(context, prompt, images, screen, page, queued = null, earlier = earlier, mail = mail, errand = errand)
         check(!stopping) { "The agent is stopping. Send this again in a moment." }
         val agent = (context.applicationContext as App).runtime.agents.default ?: error("Install and sign in to an agent in Omalauncher first.")
         val log = ChatLog.of(context)
         val time = ChatHistory.stamp(log.tasks, System.currentTimeMillis())
-        check(followUps.add(FollowUp(time, prompt, images, page, earlier, screen))) { FollowUpQueue.FULL }
+        check(followUps.add(FollowUp(time, prompt, images, page, earlier, screen, errand))) { FollowUpQueue.FULL }
         log.begin(ChatTask(time, agent.name, prompt, images, screen = screen != null, status = TaskStatus.Queued, builder = id.saved, mail = mail))
     }
     /**
@@ -329,8 +329,12 @@ class Builder(val id: BuilderId) {
     fun cancelFollowUp(context: Context, time: Long): Unit = synchronized(lock) {
         followUps.cancel(time)?.let { dropped(context, listOf(it), FollowUpQueue.CANCELLED) }
     }
-    /** [queued] is the time of the waiting task this request already is in the thread; null for one sent just now. */
-    private fun start(context: Context, prompt: String, images: List<String>, screen: File?, page: String?, queued: Long?, earlier: String = "", mail: String = ""): Unit = synchronized(lock) {
+    /**
+     * [queued] is the time of the waiting task this request already is in the thread; null for one sent just now.
+     * An [errand] runs on [ERRAND_MODEL] in a session of its own: the builder's own conversation is neither resumed,
+     * which would make every step read all of it, nor replaced, so its next real task goes on where it left off.
+     */
+    private fun start(context: Context, prompt: String, images: List<String>, screen: File?, page: String?, queued: Long?, earlier: String = "", mail: String = "", errand: Boolean = false): Unit = synchronized(lock) {
         restore(context)
         check(prompt.isNotBlank()) { "Type or speak a request first." }
         check(!working) { "An agent is already working. Stop it before starting another task." }
@@ -340,7 +344,7 @@ class Builder(val id: BuilderId) {
         val seen = if (screen != null) "\n\nThe attached image is the screen I was looking at when I asked." else ""
         val imagePrompt = earlier + (if (agent.bin == "claude" && images.isNotEmpty()) prompt + "\n\nRead these attached images before answering:\n" + images.joinToString("\n") else prompt) + seen
         val fullPrompt = imagePrompt + "\n\n" + PhoneBridge.INSTRUCTIONS + "\nAndroid build tools, when installed, are in /opt/android-sdk. Run oma-build-check to check the toolchain. Use the approval UI for blocked tools; never ask for blanket permission bypass.\n"
-        val resumed = thread.takeIf { agent.bin == "claude" }
+        val resumed = thread.takeIf { agent.bin == "claude" && !errand }
         // Decided as it starts, not as it was sent: work that waited may now run alone, or beside the other builder.
         val worktree = builderWorktree(id).takeIf { builderWorktreeWanted(id, AgentTasks.builders.associate { it.id to it.working }, agent.bin == "claude") }
         // Claude gets the screenshot inside the message, so its file goes now. Codex can only read a file, which lasts until its task ends.
@@ -352,7 +356,7 @@ class Builder(val id: BuilderId) {
                 shot = java.util.Base64.getEncoder().encodeToString(screen.readBytes())
                 screen.delete()
             }
-            (worktree?.let { it.script() + "\n" } ?: "") + claudeStreamCommand(resumed)
+            (worktree?.let { it.script() + "\n" } ?: "") + claudeStreamCommand(resumed, if (errand) ERRAND_MODEL else null)
         } else {
             backgroundAgentCommand(agent.bin, fullPrompt, images) // Throws for an agent that can't run here, before the screenshot is touched.
             handed = screen?.let { ScreenShots.handOver(it, runtime.proot.promptAttachments) }
@@ -432,7 +436,7 @@ class Builder(val id: BuilderId) {
                                 "system" -> if (event.optString("subtype") == "init") session = event.optString("session_id").ifBlank { null }
                                 "result" -> {
                                     // A failed first request may leave no conversation to return to.
-                                    if (!event.optBoolean("is_error") || resumed != null) thread = event.optString("session_id").ifBlank { thread }
+                                    if (!errand && (!event.optBoolean("is_error") || resumed != null)) thread = event.optString("session_id").ifBlank { thread }
                                     val result = event.optString("result")
                                     if (result.isNotBlank()) answer = result.takeLast(40_000)
                                     if (event.optBoolean("is_error")) {
@@ -446,7 +450,7 @@ class Builder(val id: BuilderId) {
                     if (lost) {
                         thread = null
                         answer = "The earlier thread is no longer available. Send your request again to start a new one."
-                    } else if (stopping && session != null) thread = session // A stopped request can still be followed up.
+                    } else if (stopping && session != null && !errand) thread = session // A stopped request can still be followed up.
                 } else {
                     child.outputStream.close()
                     child.inputStream.bufferedReader().forEachLine { heardAt = System.currentTimeMillis(); answer = (answer + it + "\n").takeLast(40_000) }
@@ -493,7 +497,7 @@ class Builder(val id: BuilderId) {
         dropped(context, handoff.dropped, FollowUpQueue.FAILED)
         val next = handoff.next ?: return false
         return try {
-            start(context, next.prompt, next.images, next.screen, next.page, queued = next.time, earlier = next.earlier)
+            start(context, next.prompt, next.images, next.screen, next.page, queued = next.time, earlier = next.earlier, errand = next.errand)
             true
         } catch (e: Exception) {
             // What stopped this one from starting would stop the ones behind it too.
@@ -692,7 +696,14 @@ fun omaStatus(builders: JSONObject, mac: MacGlance): JSONObject {
 /** How much of an answer the status file carries: enough for a tile, not the whole thread. */
 const val AGENT_STATUS_ANSWER = 400
 
-fun claudeStreamCommand(resume: String? = null): String = "claude -p " + (resume?.takeIf(SESSION_ID::matches)?.let { "--resume $it " } ?: "") + "--input-format stream-json --output-format stream-json --verbose --permission-mode auto --permission-prompt-tool stdio --allowedTools ${shellQuote("Bash(oma-phone *)")} Read"
+/**
+ * The model a plain errand on the phone runs on (Boss, 2026-10-16: phone control "quite slow"): a turn of the fast model
+ * takes a fraction of the builder's default one's, and an errand is many short turns. Work on code stays on the default.
+ */
+const val ERRAND_MODEL = "sonnet"
+
+fun claudeStreamCommand(resume: String? = null, model: String? = null): String = "claude -p " + (resume?.takeIf(SESSION_ID::matches)?.let { "--resume $it " } ?: "") +
+    (model?.let { "--model $it " } ?: "") + "--input-format stream-json --output-format stream-json --verbose --permission-mode auto --permission-prompt-tool stdio --allowedTools ${shellQuote("Bash(oma-phone *)")} Read"
 
 fun backgroundAgentCommand(agent: String, prompt: String, images: List<String> = emptyList()): String = when (agent) {
     "claude" -> "claude -p --permission-mode auto --allowedTools ${shellQuote("Bash(oma-phone *)")} Read -- ${shellQuote(prompt)} < /dev/null"

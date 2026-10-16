@@ -260,6 +260,7 @@ object QuickLane {
                             val route = frontRoute(read.to, mac)
                             handed = if (chat.isNotEmpty()) toChat(context, asked, prompt, away, chat, route) else when (route) {
                                 FrontRoute.Build -> pass(context, asked, prompt, page, away, asking)
+                                FrontRoute.Errand -> pass(context, asked, prompt, page, away, asking, errand = true)
                                 is FrontRoute.Mac -> passToMac(context, asked, prompt, route.thread, away, route.fresh)
                                 is FrontRoute.Unknown -> unplaced(context, asked, prompt, away)
                             }
@@ -316,14 +317,14 @@ object QuickLane {
      * the entry stays and says why, which is the only time a failure here is mentioned. False if he stopped it
      * first: nothing is sent then. Words of a new chat never come here: they go to the Mac ([toChat]).
      */
-    private fun pass(context: Context, asked: Long, prompt: String, page: String?, away: Boolean, builder: BuilderId? = null): Boolean = synchronized(this) {
+    private fun pass(context: Context, asked: Long, prompt: String, page: String?, away: Boolean, builder: BuilderId? = null, errand: Boolean = false): Boolean = synchronized(this) {
         if (stopping) false
         else {
             val log = ChatLog.of(context)
             // What went ahead of his words is from the Oma stream alone: a new chat's talk never reaches a builder.
             val said = log.tasks.filter { it.chat.isEmpty() }
             try {
-                AgentTasks.handOver(context, prompt, page, builder) { to ->
+                AgentTasks.handOver(context, prompt, page, builder, errand) { to ->
                     val shared = builderShares(to, AgentTasks.builders.associate { it.id to it.working })
                     sharedPreface(shared, PHONE_SHARED_NOTE, handOverPreface(handOverContext(said, asked, gotBy(to))))
                 }
@@ -459,7 +460,9 @@ fun quickSystemPrompt(mac: Boolean = false, newChat: Boolean = false): String =
         "sticky notes, pages, looks, settings, opening an app or pressing something: you can only look; (3) answers, confirms, corrects " +
         "or adds to what a builder just asked or is doing, as the board shows; (4) needs long work or many files, or you are not sure " +
         "you can answer it correctly and briefly; (5) says to send it to build, to tell Claude, or names a builder; (6) asks your view, a " +
-        "choice or what next about a builder's work: that builder knows it. His words then go " +
+        "choice or what next about a builder's work: that builder knows it. But a phone errand, case (2) " +
+        "without code or launcher changes (turn on wireless debugging or the flashlight, set an alarm, open or play something), and " +
+        "replies to one get ${handOverMark(Route.PHONE)} instead. His words then go " +
         "on exactly as he said them, and the launcher picks the builder. ANSWER: otherwise answer it yourself, briefly and directly, in " +
         "Markdown: general questions, quick facts, web lookups, the date and time, and what is on the phone. A question about how the " +
         "work stands is also yours and is never handed over: what are you working on, how is it going, is it done, is it frozen. Answer it " +

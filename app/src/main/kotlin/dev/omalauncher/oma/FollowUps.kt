@@ -7,7 +7,8 @@ import java.io.File
  * already shows as his message; [prompt] is kept whole here, since the thread only keeps the start of a long one.
  * [page] is the home page he was on when he sent it. [earlier] is sent to the agent ahead of [prompt] and is
  * never shown: what he and the front agent said before a request it handed over. [screen] is the screenshot
- * that came with a spoken request, kept until the request is sent or dropped.
+ * that came with a spoken request, kept until the request is sent or dropped. [errand] is a plain errand on the
+ * phone, run on the fast model in a session of its own (dev.omalauncher.assist.ERRAND_MODEL).
  */
 data class FollowUp(
     val time: Long,
@@ -16,6 +17,7 @@ data class FollowUp(
     val page: String? = null,
     val earlier: String = "",
     val screen: File? = null,
+    val errand: Boolean = false,
 )
 
 /** What the end of a task means for the follow-ups behind it: [next] is sent now, the [dropped] never are. */

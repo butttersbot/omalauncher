@@ -22,6 +22,9 @@ object Route {
     const val FRONT = "front"
     const val BUILD = "build"
 
+    /** A plain errand on the phone for a builder to run quickly: no code, no files, no work on the launcher itself. */
+    const val PHONE = "phone"
+
     /** What every route to a project thread on the Mac starts with; the thread's id follows a space. */
     const val MAC = "mac"
 
@@ -68,7 +71,7 @@ private const val MAC_NEW_OPEN = "<<" + Route.MAC_NEW
  * letter, stop, restart, clean). A front conversation begun before then may still say one of those, so each is
  * read as [HAND_OVER] is, and is a plain hand-over: never carried out, and never shown to him.
  */
-private val PHONE_WORDS = listOf(Route.BUILD, "stop", "restart", "clean")
+private val PHONE_WORDS = listOf(Route.BUILD, Route.PHONE, "stop", "restart", "clean")
 
 /** A whole phone mark, wherever it stands, and one still arriving at the end of what has been said. */
 private val PHONE_MARK = Regex("<<(?:${PHONE_WORDS.joinToString("|")})(?: [^<>\\n]{0,80})?>>")
@@ -128,7 +131,11 @@ private fun macNamed(lead: String, open: String, ended: Boolean): String? {
  */
 fun frontRead(text: String, ended: Boolean = false): FrontRead {
     val lead = text.trimStart { it.isWhitespace() || it == '`' }
-    if (phoneMark(lead)) return if (ended || lead.contains(">>") || !PHONE_ARRIVING.matches(lead)) FrontRead.HandOver(Route.BUILD) else FrontRead.Undecided
+    if (phoneMark(lead)) {
+        if (!ended && !lead.contains(">>") && PHONE_ARRIVING.matches(lead)) return FrontRead.Undecided
+        // An errand goes to the builders as any phone work does, only on the fast model; every other phone mark is build work.
+        return FrontRead.HandOver(if (lead.startsWith("<<${Route.PHONE}>") || lead.startsWith("<<${Route.PHONE} ")) Route.PHONE else Route.BUILD)
+    }
     if (lead.startsWith(MAC_NEW_OPEN)) return macNamed(lead, MAC_NEW_OPEN, ended)?.let { FrontRead.HandOver(Route.macNew(it)) } ?: FrontRead.Undecided
     if (lead.startsWith(MAC_OPEN)) return macNamed(lead, MAC_OPEN, ended)?.let { FrontRead.HandOver(Route.mac(it)) } ?: FrontRead.Undecided
     if (lead.isEmpty() || (!ended && OPENS.any { it.startsWith(lead) })) return FrontRead.Undecided
@@ -140,6 +147,9 @@ fun frontRead(text: String, ended: Boolean = false): FrontRead {
 sealed interface FrontRoute {
     /** Work for the phone's builders: the one that asked him, if [askingBuilder] finds one, else whichever is free ([pickBuilder]). */
     data object Build : FrontRoute
+
+    /** A plain errand on the phone: to a builder as [Build] is, run on the fast model in a session of its own. */
+    data object Errand : FrontRoute
 
     /**
      * A thread on the Mac. [fresh] is the front agent's word that his request is separate work on that thread's
@@ -156,6 +166,7 @@ sealed interface FrontRoute {
 
 /** [to] is what [FrontRead.HandOver] carries; [mac] is the board the front agent read, null when no Mac is set up. */
 fun frontRoute(to: String, mac: MacBoard?): FrontRoute {
+    if (to == Route.PHONE) return FrontRoute.Errand
     val fresh = Route.macNewThread(to)
     val named = fresh ?: Route.macThread(to) ?: return FrontRoute.Build
     val thread = mac?.threads?.firstOrNull { it.id == named } ?: return FrontRoute.Unknown(named)
