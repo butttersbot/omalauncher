@@ -1,0 +1,134 @@
+package dev.omalauncher.herd
+
+import android.content.Context
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import dev.omalauncher.httpGet
+import org.json.JSONObject
+import java.io.IOException
+
+// The herd: every coding agent on every computer of Boss's tailnet, as the reporters of ~/ClaudeSync/projects/herd
+// tell it. Each computer runs one on port 8479, and each answers for all of them at /v1/herd, so the phone (which
+// can't list the tailnet itself) only needs one that is up. The sheep on home shows it (ui/HerdPet.kt).
+
+/** The reporters to ask, in order: the Mac Pro is always on; the MacBook and the MG1 come and go. */
+val HERD_HOSTS = listOf("jacks-mac-pro", "macbook-pro", "omarchy-mg1")
+const val HERD_PORT = 8479
+
+fun herdUrl(
+    host: String,
+    path: String,
+) = "http://$host:$HERD_PORT$path"
+
+/**
+ * The first host whose [ask] answers, starting with [preferred] (the one that answered last) so a host that is down
+ * costs a timeout only once. A host that throws or answers null is passed over; null when none answers.
+ */
+fun <T : Any> firstAnswer(
+    hosts: List<String>,
+    preferred: String?,
+    ask: (String) -> T?,
+): Pair<String, T>? {
+    val order = listOfNotNull(preferred?.takeIf { it in hosts }) + hosts.filter { it != preferred }
+    for (host in order) {
+        val answer =
+            try {
+                ask(host)
+            } catch (_: IOException) {
+                null
+            }
+        if (answer != null) return host to answer
+    }
+    return null
+}
+
+/** What the sheep's page asks of the phone. */
+sealed interface PetCommand {
+    data object Expand : PetCommand
+
+    data object Collapse : PetCommand
+
+    data class Show(val id: String) : PetCommand
+
+    data class Copy(val text: String) : PetCommand
+
+    data object Unknown : PetCommand
+}
+
+fun petCommand(json: String): PetCommand {
+    val o =
+        try {
+            JSONObject(json)
+        } catch (_: Exception) {
+            return PetCommand.Unknown
+        }
+    return when (o.optString("cmd")) {
+        "expand" -> PetCommand.Expand
+        "collapse" -> PetCommand.Collapse
+        "show" -> safeSessionId(o.optString("id"))?.let { PetCommand.Show(it) } ?: PetCommand.Unknown
+        "copy" -> PetCommand.Copy(o.optString("text"))
+        else -> PetCommand.Unknown
+    }
+}
+
+/** Session ids are uuids or oma-runner's t-ids; anything else never goes into a URL. */
+fun safeSessionId(id: String): String? = id.takeIf { Regex("[0-9A-Za-z-]{4,64}").matches(it) }
+
+/**
+ * A reporter's answer, checked to be one JSON object before it reaches the page's script (it is handed over as
+ * code), or null when it isn't.
+ */
+fun herdJson(text: String?): String? =
+    try {
+        text?.let { JSONObject(it).toString() }
+    } catch (_: Exception) {
+        null
+    }
+
+/** What the page is given when no reporter answers: no machines, and why. */
+fun herdUnreachable(): String =
+    JSONObject()
+        .put("machines", org.json.JSONArray())
+        .put("others", org.json.JSONArray())
+        .put("error", "Can't reach the herd. Is Tailscale on? It doesn't come back by itself after a restart.")
+        .toString()
+
+/** The thin network side: blocking, so call it off the main thread. */
+object Herd {
+    @Volatile private var answered: String? = null
+
+    /** Every machine and its agents, from whichever reporter answers first; null when none does. */
+    fun status(): String? = ask("/v1/herd")
+
+    /** One session and its last few exchanges, found on whichever machine has it. */
+    fun session(id: String): String? = safeSessionId(id)?.let { ask("/v1/herd/sessions/$it") }
+
+    private fun ask(path: String): String? =
+        firstAnswer(HERD_HOSTS, answered) { host -> herdJson(String(httpGet(herdUrl(host, path), 3_000, 20_000))) }
+            ?.let { (host, json) ->
+                answered = host
+                json
+            }
+}
+
+/** Whether the sheep is on home; Boss turns it off and on in settings. */
+object HerdSheep {
+    private const val PREFS = "herd"
+    private const val KEY = "shown"
+
+    var shown by mutableStateOf(true)
+        private set
+
+    fun restore(context: Context) {
+        shown = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY, true)
+    }
+
+    fun set(
+        context: Context,
+        on: Boolean,
+    ) {
+        shown = on
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY, on).apply()
+    }
+}

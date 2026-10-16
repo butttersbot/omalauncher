@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Herd</title>
+<style>
+:root {
+  --wool: #f7f2e8; --wool-edge: #e3d9c6; --face: #3b3442; --cheek: #f2a7a0; --leg: #4a4250;
+  --panel: rgba(250, 248, 244, .94); --panel-edge: rgba(40, 32, 48, .12); --ink: #231d29; --ink-2: #6b6272; --ink-3: #9c94a2;
+  --row-hover: rgba(40, 32, 48, .06); --line: rgba(40, 32, 48, .08);
+  --need: #e8833a; --ready: #2f8f83; --work: #5a7fd6; --idle: #a39ba8;
+  --shadow: 0 18px 50px rgba(30, 20, 40, .22), 0 2px 8px rgba(30, 20, 40, .08);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --panel: rgba(32, 28, 38, .94); --panel-edge: rgba(255, 255, 255, .09); --ink: #f3eef6; --ink-2: #b4abbb; --ink-3: #7f7686;
+    --row-hover: rgba(255, 255, 255, .06); --line: rgba(255, 255, 255, .07);
+    --shadow: 0 18px 50px rgba(0, 0, 0, .5), 0 2px 8px rgba(0, 0, 0, .3);
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; -webkit-tap-highlight-color: transparent;
+  font: 13px/1.35 -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif; color: var(--ink);
+  -webkit-user-select: none; user-select: none; }
+
+/* ---------------------------------------------------------------- the sheep */
+#pet { position: fixed; right: 6px; bottom: 4px; width: 120px; height: 120px; cursor: grab; }
+#pet svg { width: 100%; height: 100%; overflow: visible; }
+#sheep { transform-origin: 60px 100px; }
+.eye-open { transform-box: fill-box; transform-origin: center; animation: blink 5.5s infinite; }
+.eye-shut { display: none; }
+.legs rect { transform-box: fill-box; transform-origin: top center; }
+.zzz, .dots, .bang { opacity: 0; }
+
+#pet.sleep .eye-open { display: none; }
+#pet.sleep .eye-shut { display: inline; }
+#pet.sleep #sheep { animation: breathe 4s ease-in-out infinite; }
+#pet.sleep .zzz { opacity: 1; }
+#pet.sleep .zzz text { animation: drift 3.6s ease-out infinite; }
+#pet.sleep .zzz text:nth-child(2) { animation-delay: 1.2s; }
+#pet.sleep .zzz text:nth-child(3) { animation-delay: 2.4s; }
+
+#pet.work #sheep { animation: bob .9s ease-in-out infinite; }
+#pet.work .legs rect:nth-child(odd) { animation: step .45s ease-in-out infinite alternate; }
+#pet.work .legs rect:nth-child(even) { animation: step .45s ease-in-out infinite alternate-reverse; }
+#pet.work .dots { opacity: 1; }
+#pet.work .dots circle { animation: dot 1.2s ease-in-out infinite; }
+#pet.work .dots circle:nth-child(2) { animation-delay: .2s; }
+#pet.work .dots circle:nth-child(3) { animation-delay: .4s; }
+
+#pet.alert #sheep { animation: hop 1.4s cubic-bezier(.3, 0, .3, 1) infinite; }
+#pet.alert .bang { opacity: 1; }
+#pet.alert .bang g { animation: wobble 1.4s ease-in-out infinite; transform-origin: 98px 30px; }
+
+#pet.offline { filter: grayscale(1) opacity(.6); }
+#pet.happy #sheep { animation: hop .5s cubic-bezier(.3, 0, .3, 1) 2; }
+
+@keyframes blink { 0%, 94%, 100% { transform: scaleY(1); } 96% { transform: scaleY(.1); } }
+@keyframes breathe { 0%, 100% { transform: scale(1, 1); } 50% { transform: scale(1.02, .97); } }
+@keyframes drift { 0% { opacity: 0; transform: translate(0, 0); } 20% { opacity: 1; } 100% { opacity: 0; transform: translate(10px, -22px); } }
+@keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2.5px); } }
+@keyframes step { from { transform: scaleY(1); } to { transform: scaleY(.7); } }
+@keyframes dot { 0%, 100% { opacity: .25; transform: translateY(0); } 50% { opacity: 1; transform: translateY(-2px); } }
+@keyframes hop { 0%, 60%, 100% { transform: translateY(0) scale(1, 1); } 10% { transform: translateY(0) scale(1.06, .92); }
+  25% { transform: translateY(-12px) scale(.97, 1.04); } 45% { transform: translateY(0) scale(1.05, .94); } }
+@keyframes wobble { 0%, 100% { transform: rotate(0); } 20% { transform: rotate(-12deg); } 40% { transform: rotate(10deg); } 60% { transform: rotate(0); } }
+
+#badge { position: absolute; left: 8px; top: 22px; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px;
+  background: var(--need); color: #fff; font-weight: 700; font-size: 12px; line-height: 22px; text-align: center;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .2); transform: scale(0); transition: transform .25s cubic-bezier(.3, 1.6, .5, 1); }
+#badge.on { transform: scale(1); }
+#badge.ready { background: var(--ready); }
+
+#bubble { position: fixed; right: 18px; bottom: 124px; max-width: 220px; padding: 7px 11px; border-radius: 14px 14px 4px 14px;
+  background: var(--panel); border: 1px solid var(--panel-edge); box-shadow: var(--shadow); font-size: 12px; font-weight: 500;
+  opacity: 0; transform: translateY(6px); transition: opacity .2s, transform .2s; pointer-events: none; }
+#bubble.on { opacity: 1; transform: none; }
+body.open #bubble { display: none; }
+
+/* ---------------------------------------------------------------- the panel */
+#panel { position: fixed; right: 8px; bottom: 128px; width: min(372px, calc(100vw - 16px)); max-height: calc(100vh - 140px); display: flex; flex-direction: column;
+  background: var(--panel); border: 1px solid var(--panel-edge); border-radius: 18px; box-shadow: var(--shadow);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4); backdrop-filter: blur(24px) saturate(1.4);
+  opacity: 0; transform: translateY(10px) scale(.98); transform-origin: bottom right; pointer-events: none;
+  transition: opacity .18s ease, transform .22s cubic-bezier(.2, .9, .3, 1); }
+body.open #panel { opacity: 1; transform: none; pointer-events: auto; }
+
+header { padding: 14px 16px 10px; display: flex; align-items: flex-start; gap: 10px; }
+header h1 { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
+header p { margin: 2px 0 0; color: var(--ink-2); font-size: 12px; }
+header .grow { flex: 1; min-width: 0; }
+.icon-btn { border: 0; background: transparent; color: var(--ink-3); width: 26px; height: 26px; border-radius: 8px; cursor: pointer;
+  display: grid; place-items: center; font-size: 15px; }
+.icon-btn:hover { background: var(--row-hover); color: var(--ink); }
+
+nav { display: flex; gap: 4px; padding: 0 12px 8px; border-bottom: 1px solid var(--line); }
+nav button { border: 0; background: transparent; color: var(--ink-2); font: inherit; font-weight: 600; font-size: 12px;
+  padding: 5px 10px; border-radius: 8px; cursor: pointer; }
+nav button:hover { background: var(--row-hover); }
+nav button.on { background: var(--ink); color: var(--panel); }
+
+main { overflow-y: auto; padding: 6px 6px 10px; flex: 1; min-height: 0; }
+main::-webkit-scrollbar { width: 6px; }
+main::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+
+.machine { padding: 8px 10px 4px; display: flex; align-items: baseline; gap: 8px; }
+.machine b { font-size: 12px; font-weight: 700; }
+.machine span { color: var(--ink-3); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chip { display: inline-block; font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 6px; margin-left: auto; flex: none; }
+.chip.rc-on { background: rgba(47, 143, 131, .14); color: var(--ready); }
+.chip.rc-off { background: var(--row-hover); color: var(--ink-3); }
+
+.row { display: flex; gap: 10px; align-items: flex-start; padding: 7px 10px; border-radius: 10px; cursor: pointer; }
+.row:hover { background: var(--row-hover); }
+.dot { width: 9px; height: 9px; border-radius: 50%; margin-top: 4px; flex: none; background: var(--idle); }
+.dot.needs-you { background: var(--need); box-shadow: 0 0 0 3px rgba(232, 131, 58, .2); }
+.dot.your-turn { background: var(--ready); }
+.dot.your-turn.seen { background: transparent; border: 1.5px solid var(--ready); }
+.dot.working { background: var(--work); animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+.row .txt { min-width: 0; flex: 1; }
+.row .title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .sub { color: var(--ink-3); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .sub em { font-style: normal; color: var(--ink-2); }
+.empty { color: var(--ink-3); font-size: 12px; padding: 4px 10px 8px 29px; }
+.foot { color: var(--ink-3); font-size: 11px; padding: 10px 10px 2px; border-top: 1px solid var(--line); margin-top: 6px; }
+
+.detail-head { padding: 6px 10px 10px; }
+.detail-head .back { border: 0; background: transparent; color: var(--ink-2); font: inherit; font-size: 12px; cursor: pointer; padding: 0; margin-bottom: 6px; }
+.detail-head .back:hover { color: var(--ink); }
+.detail-head h2 { margin: 0; font-size: 14px; line-height: 1.3; }
+.detail-head p { margin: 3px 0 0; color: var(--ink-3); font-size: 11px; word-break: break-all; }
+.turn { margin: 0 6px 8px; padding: 8px 10px; border-radius: 12px; background: var(--row-hover); white-space: pre-wrap; word-wrap: break-word;
+  font-size: 12px; max-height: 220px; overflow: hidden; -webkit-user-select: text; user-select: text; }
+.turn.you { background: transparent; border: 1px solid var(--line); }
+.turn .who { display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); margin-bottom: 3px; }
+.actions { display: flex; gap: 6px; padding: 4px 10px 8px; flex-wrap: wrap; }
+.btn { border: 1px solid var(--line); background: transparent; color: var(--ink); font: inherit; font-size: 12px; font-weight: 600;
+  padding: 5px 10px; border-radius: 8px; cursor: pointer; }
+.btn:hover { background: var(--row-hover); }
+.btn.primary { background: var(--ink); color: var(--panel); border-color: transparent; }
+
+.drop { margin: 8px; padding: 22px 14px; border: 1.5px dashed var(--line); border-radius: 14px; text-align: center; color: var(--ink-2); }
+.drop b { display: block; color: var(--ink); font-size: 13px; margin-bottom: 3px; }
+.drop.has { border-style: solid; text-align: left; }
+.files { margin: 6px 0 0; padding: 0; list-style: none; font-size: 12px; color: var(--ink); }
+.files li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.status { padding: 4px 18px; font-size: 12px; color: var(--ink-2); }
+
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+
+<div id="panel" role="dialog" aria-label="Herd">
+  <header>
+    <div class="grow"><h1>Herd</h1><p id="summary">Looking around…</p></div>
+    <button class="icon-btn" id="close" title="Close" aria-label="Close">✕</button>
+  </header>
+  <nav id="jobs"></nav>
+  <main id="view"></main>
+</div>
+
+<div id="bubble"></div>
+
+<div id="pet" class="sleep" aria-label="Herd">
+  <svg viewBox="0 0 120 120" aria-hidden="true">
+    <ellipse cx="60" cy="104" rx="34" ry="5" fill="rgba(30,20,40,.16)"/>
+    <g id="sheep">
+      <g class="legs" fill="var(--leg)">
+        <rect x="37" y="86" width="7" height="15" rx="3.5"/>
+        <rect x="48" y="88" width="7" height="14" rx="3.5"/>
+        <rect x="66" y="88" width="7" height="14" rx="3.5"/>
+        <rect x="77" y="86" width="7" height="15" rx="3.5"/>
+      </g>
+      <g fill="var(--wool)" stroke="var(--wool-edge)" stroke-width="1.5">
+        <circle cx="34" cy="66" r="15"/><circle cx="86" cy="66" r="15"/>
+        <circle cx="44" cy="50" r="17"/><circle cx="76" cy="50" r="17"/><circle cx="60" cy="44" r="18"/>
+        <circle cx="40" cy="80" r="13"/><circle cx="80" cy="80" r="13"/><circle cx="60" cy="84" r="14"/>
+      </g>
+      <ellipse cx="60" cy="66" rx="34" ry="22" fill="var(--wool)"/>
+      <g fill="var(--face)">
+        <ellipse cx="40" cy="62" rx="9" ry="4.5" transform="rotate(-24 40 62)"/>
+        <ellipse cx="80" cy="62" rx="9" ry="4.5" transform="rotate(24 80 62)"/>
+        <ellipse cx="60" cy="68" rx="18" ry="20"/>
+      </g>
+      <g fill="var(--wool)" stroke="var(--wool-edge)" stroke-width="1.2">
+        <circle cx="52" cy="50" r="7"/><circle cx="60" cy="47" r="8"/><circle cx="68" cy="50" r="7"/>
+      </g>
+      <g class="eye-open">
+        <circle cx="53" cy="66" r="4.2" fill="#fff"/><circle cx="67" cy="66" r="4.2" fill="#fff"/>
+        <circle cx="54" cy="67" r="2.2" fill="#1b1620"/><circle cx="68" cy="67" r="2.2" fill="#1b1620"/>
+        <circle cx="54.8" cy="65.8" r=".8" fill="#fff"/><circle cx="68.8" cy="65.8" r=".8" fill="#fff"/>
+      </g>
+      <g class="eye-shut" stroke="#fff" stroke-width="1.8" stroke-linecap="round" fill="none">
+        <path d="M49.5 67 q3.5 2.6 7 0"/><path d="M63.5 67 q3.5 2.6 7 0"/>
+      </g>
+      <ellipse cx="47" cy="75" rx="3.4" ry="2" fill="var(--cheek)" opacity=".7"/>
+      <ellipse cx="73" cy="75" rx="3.4" ry="2" fill="var(--cheek)" opacity=".7"/>
+      <path d="M56.5 78 q3.5 3 7 0" stroke="#fff" stroke-width="1.6" stroke-linecap="round" fill="none" opacity=".85"/>
+    </g>
+    <g class="zzz" fill="var(--ink-3)" font-weight="700" font-family="-apple-system, sans-serif">
+      <text x="88" y="34" font-size="10">z</text><text x="94" y="26" font-size="12">z</text><text x="100" y="18" font-size="14">Z</text>
+    </g>
+    <g class="dots" fill="var(--work)"><circle cx="92" cy="30" r="2.6"/><circle cx="100" cy="30" r="2.6"/><circle cx="108" cy="30" r="2.6"/></g>
+    <g class="bang"><g>
+      <circle cx="98" cy="28" r="11" fill="var(--need)"/>
+      <rect x="96.4" y="20" width="3.2" height="10" rx="1.6" fill="#fff"/><circle cx="98" cy="34.2" r="1.8" fill="#fff"/>
+    </g></g>
+  </svg>
+  <div id="badge"></div>
+</div>
+
+<script>
+/* Herd pet. The native shell (Mac: Swift, Fold: omalauncher) calls herd.update(json) with `herd --json` output,
+   herd.detail(json) with `herd show ID --json`, herd.drop(paths), herd.sent(text) and herd.tap().
+   It listens for {cmd: expand | collapse | show | send | copy}. */
+const native = window.webkit?.messageHandlers?.herd ? m => window.webkit.messageHandlers.herd.postMessage(m)
+             : window.HerdAndroid ? m => window.HerdAndroid.post(JSON.stringify(m))
+             : null;
+const say = m => native && native(m);
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+const store = {
+  get(key, fallback) { try { return JSON.parse(localStorage.getItem('herd.' + key)) ?? fallback; } catch { return fallback; } },
+  set(key, value) { try { localStorage.setItem('herd.' + key, JSON.stringify(value)); } catch {} },
+};
+
+let data = null, previous = {}, seen = store.get('seen', null), job = store.get('job', 'agents'), detail = null, dropped = [];
+const firstRun = seen === null;
+if (firstRun) seen = {};
+
+function ago(t) {
+  const s = Math.max(0, Date.now() / 1000 - t);
+  return s < 60 ? 'now' : s < 3600 ? Math.floor(s / 60) + 'm' : s < 86400 ? Math.floor(s / 3600) + 'h' : Math.floor(s / 86400) + 'd';
+}
+function sessions() {
+  return (data?.machines || []).flatMap(m => (m.report?.sessions || []).map(s => ({ ...s, machine: m.name })));
+}
+const isUnseen = s => s.state === 'your-turn' && (seen[s.id] || 0) < s.updated;
+
+/* ---------------------------------------------------------------- jobs: each one is a tab in the panel */
+const jobs = [
+  { id: 'agents', title: 'Agents', render: renderAgents },
+  // Sending needs the computer's Tailscale CLI; on the phone it's the share sheet's job.
+  ...(window.HerdAndroid ? [] : [{ id: 'send', title: 'Send a file', render: renderSend }]),
+];
+if (!jobs.some(j => j.id === job)) job = 'agents';
+
+function renderJobs() {
+  $('jobs').innerHTML = jobs.map(j => `<button data-job="${j.id}" class="${j.id === job ? 'on' : ''}">${esc(j.title)}</button>`).join('');
+}
+$('jobs').addEventListener('click', e => {
+  const id = e.target.dataset?.job; if (!id) return;
+  job = id; detail = null; store.set('job', job); render();
+});
+
+function render() {
+  renderJobs();
+  (jobs.find(j => j.id === job) || jobs[0]).render($('view'));
+}
+
+const ORDER = { 'needs-you': 0, 'your-turn': 1, working: 2, idle: 3, closed: 4 };
+const WORDS = { 'needs-you': 'needs you', 'your-turn': 'your turn', working: 'working', idle: 'idle', closed: 'closed' };
+
+function renderAgents(view) {
+  if (detail) return renderDetail(view);
+  if (!data) { view.innerHTML = '<div class="empty">Asking the machines…</div>'; return; }
+  if (data.error && !data.machines.length) { view.innerHTML = `<div class="empty">${esc(data.error)}</div>`; return; }
+  let html = '';
+  const machines = data.machines.slice().sort((a, b) => (b.self - a.self) || (!!a.error - !!b.error) || a.name.localeCompare(b.name));
+  for (const m of machines) {
+    const info = m.report?.machine || {};
+    const rc = info.remote_control;
+    const chip = !m.report ? '' : rc?.length ? `<span class="chip rc-on" title="Remote Control">RC on</span>` : `<span class="chip rc-off" title="Remote Control">RC off</span>`;
+    const meta = m.error ? m.error : [info.gpu ? `GPU ${Math.round(info.gpu.used_mb / 1024)}/${Math.round(info.gpu.total_mb / 1024)} GB` : '', info.load != null ? 'load ' + info.load.toFixed(1) : ''].filter(Boolean).join(' · ');
+    html += `<div class="machine"><b>${esc(m.name)}${m.self ? ' · this one' : ''}</b><span>${esc(meta)}</span>${chip}</div>`;
+    // Needs you, then just finished, then working, then the ones already seen waiting.
+    const rank = s => s.state === 'your-turn' ? (isUnseen(s) ? 1 : 3) : s.state === 'working' ? 2 : ORDER[s.state] + 2;
+    const rows = (m.report?.sessions || []).slice().sort((a, b) => (rank(a) - rank(b)) || (b.updated - a.updated));
+    if (m.report && !rows.length) html += `<div class="empty">Nothing running</div>`;
+    for (const s of rows) {
+      const unseen = isUnseen(s);
+      const word = s.state === 'your-turn' ? (unseen ? 'finished' : 'waiting for you') : WORDS[s.state] || s.state;
+      html += `<div class="row" data-id="${esc(s.id)}">
+        <span class="dot ${s.state} ${s.state === 'your-turn' && !unseen ? 'seen' : ''}"></span>
+        <div class="txt"><div class="title">${esc(s.title)}</div>
+        <div class="sub"><em>${esc(word)}</em> · ${esc(s.project || '—')} · ${esc(s.app || s.kind)} · ${ago(s.updated)}</div></div></div>`;
+    }
+  }
+  const off = (data.others || []).filter(h => !h.online).map(h => h.name);
+  const clients = (data.others || []).filter(h => h.online).map(h => h.name);
+  if (clients.length || off.length)
+    html += `<div class="foot">${clients.length ? 'Also online: ' + esc(clients.join(', ')) + '<br>' : ''}${off.length ? 'Offline: ' + esc(off.join(', ')) : ''}</div>`;
+  view.innerHTML = html;
+}
+
+$('view').addEventListener('click', e => {
+  const row = e.target.closest('.row');
+  if (row) { detail = { id: row.dataset.id, loading: true }; render(); say({ cmd: 'show', id: row.dataset.id }); if (!native) mockDetail(row.dataset.id); return; }
+  const act = e.target.closest('[data-act]');
+  if (!act) return;
+  const a = act.dataset.act;
+  if (a === 'back') { detail = null; render(); }
+  if (a === 'copy') { say({ cmd: 'copy', text: act.dataset.text }); flash('Copied'); }
+  if (a === 'clear') { dropped = []; render(); }
+  if (a === 'send') { say({ cmd: 'send', device: act.dataset.device, paths: dropped }); $('sendStatus').textContent = 'Sending to ' + act.dataset.device + '…'; }
+});
+
+function renderDetail(view) {
+  const s = sessions().find(x => x.id === detail.id) || detail.session || {};
+  let html = `<div class="detail-head"><button class="back" data-act="back">‹ All agents</button>
+    <h2>${esc(s.title || detail.id)}</h2><p>${esc(s.machine || detail.machine || '')} · ${esc(s.cwd || '')}</p></div>`;
+  html += `<div class="actions"><button class="btn" data-act="copy" data-text="${esc(s.id)}">Copy session id</button>`;
+  if (s.cwd && s.kind === 'claude') html += `<button class="btn" data-act="copy" data-text="${esc(`cd ${JSON.stringify(s.cwd)} && claude --resume ${s.id}`)}">Copy resume command</button>`;
+  html += `</div>`;
+  if (detail.loading) html += `<div class="empty">Reading…</div>`;
+  if (detail.note) html += `<div class="empty">${esc(detail.note)}</div>`;
+  for (const t of (detail.turns || []).slice(-8))
+    html += `<div class="turn ${t.who}"><span class="who">${t.who === 'you' ? 'You' : 'Agent'}</span>${esc(t.text.length > 1400 ? t.text.slice(0, 1400) + '…' : t.text)}</div>`;
+  view.innerHTML = html;
+  view.scrollTop = view.scrollHeight;
+}
+
+function renderSend(view) {
+  const devices = [...(data?.machines || []).filter(m => !m.self).map(m => m.name), ...(data?.others || []).filter(h => h.online).map(h => h.name)];
+  let html = dropped.length
+    ? `<div class="drop has"><b>${dropped.length} file${dropped.length > 1 ? 's' : ''} ready</b><ul class="files">${dropped.map(p => `<li>${esc(p.split('/').pop())}</li>`).join('')}</ul></div>
+       <div class="actions">${devices.map(d => `<button class="btn" data-act="send" data-device="${esc(d)}">${esc(d)}</button>`).join('')}<button class="btn" data-act="clear">Clear</button></div>`
+    : `<div class="drop"><b>Drop files on the sheep</b>Then pick a device here. It goes over Taildrop, so it works anywhere on the tailnet.</div>`;
+  html += `<div class="status" id="sendStatus"></div>`;
+  view.innerHTML = html;
+}
+
+/* ---------------------------------------------------------------- the sheep's mood */
+let bubbleTimer = null;
+function bubble(text, ms = 5000) {
+  const b = $('bubble'); b.textContent = text; b.classList.add('on');
+  clearTimeout(bubbleTimer); bubbleTimer = setTimeout(() => b.classList.remove('on'), ms);
+}
+function flash(text) { bubble(text, 1400); }
+
+function mood() {
+  const pet = $('pet'), list = sessions();
+  const need = list.filter(s => s.state === 'needs-you');
+  const fresh = list.filter(isUnseen);
+  const working = list.filter(s => s.state === 'working');
+  const reached = (data?.machines || []).some(m => m.report);
+  const happy = pet.classList.contains('happy');
+  pet.className = !reached ? 'offline' : need.length ? 'alert' : working.length ? 'work' : 'sleep';
+  if (happy) pet.classList.add('happy');
+  const badge = $('badge'), count = need.length + fresh.length;
+  badge.textContent = count; badge.className = count ? 'on' + (need.length ? '' : ' ready') : '';
+  const parts = [];
+  if (need.length) parts.push(need.length + ' need' + (need.length > 1 ? '' : 's') + ' you');
+  if (fresh.length) parts.push(fresh.length + ' finished');
+  if (working.length) parts.push(working.length + ' working');
+  const machines = (data?.machines || []).filter(m => m.report).length;
+  $('summary').textContent = data?.error && !machines ? 'Out of reach' : (parts.join(' · ') || 'All quiet') + ` · ${machines} machine${machines === 1 ? '' : 's'}`;
+}
+
+function announce(list) {
+  for (const s of list) {
+    const was = previous[s.id];
+    if (was && was !== s.state) {
+      if (s.state === 'needs-you') { bubble(`${s.title} needs you`); }
+      else if (s.state === 'your-turn' && was === 'working') {
+        bubble(`${s.title} is done`);
+        const pet = $('pet'); pet.classList.add('happy'); setTimeout(() => pet.classList.remove('happy'), 1100);
+      }
+    }
+  }
+  previous = Object.fromEntries(list.map(s => [s.id, s.state]));
+}
+
+function markSeen() {
+  for (const s of sessions()) if (s.state === 'your-turn') seen[s.id] = s.updated;
+  store.set('seen', seen);
+}
+
+/* ---------------------------------------------------------------- called by the native shell */
+window.herd = {
+  update(json) {
+    data = typeof json === 'string' ? JSON.parse(json) : json;
+    const list = sessions();
+    if (firstRun && !store.get('seen', null)) markSeen();
+    announce(list);
+    if (document.body.classList.contains('open')) markSeen();
+    mood();
+    if (document.body.classList.contains('open') && !(detail && job === 'agents')) render();
+  },
+  detail(json) {
+    const d = typeof json === 'string' ? JSON.parse(json) : json;
+    if (detail && d.session && d.session.id === detail.id) { detail = { id: d.session.id, turns: d.turns, note: d.note, session: { ...d.session, machine: d.machine }, machine: d.machine }; render(); }
+    if (d.error && detail) { detail.loading = false; detail.note = d.error; render(); }
+  },
+  drop(paths) {
+    dropped = paths; job = 'send'; detail = null;
+    if (!document.body.classList.contains('open')) toggle(true); else render();
+    bubble(paths.length + ' file' + (paths.length > 1 ? 's' : '') + ' — where to?', 2500);
+  },
+  sent(text) { const el = $('sendStatus'); if (el) el.textContent = text; if (/^Sent/.test(text)) { dropped = []; setTimeout(render, 1500); } bubble(text, 2500); },
+  tap() { toggle(); },
+};
+
+function toggle(force) {
+  const open = force ?? !document.body.classList.contains('open');
+  document.body.classList.toggle('open', open);
+  say({ cmd: open ? 'expand' : 'collapse' });
+  if (open) { markSeen(); mood(); render(); $('bubble').classList.remove('on'); }
+}
+$('close').addEventListener('click', () => toggle(false));
+document.addEventListener('keydown', e => { if (e.key === 'Escape') toggle(false); });
+
+const pet = $('pet');
+// On the Mac the shell owns presses on the sheep (tap, drag, menu) and calls herd.tap(); elsewhere a click is a tap.
+const shellOwnsSheep = !!window.webkit?.messageHandlers?.herd;
+pet.addEventListener('click', () => { if (!shellOwnsSheep) toggle(); });
+pet.addEventListener('contextmenu', e => e.preventDefault());
+
+/* ---------------------------------------------------------------- preview in a browser, with sample data */
+function mockDetail(id) {
+  setTimeout(() => herd.detail({ machine: 'jacks-mac-pro', session: sessions().find(s => s.id === id), turns: [
+    { who: 'you', text: 'Add the reactions row under each post.' },
+    { who: 'agent', text: 'Done. Reactions sit under each post and update live. Tests pass (42). Want me to ship it to the Fold build?' }] }), 300);
+}
+if (!native) {
+  const now = Date.now() / 1000;
+  herd.update({ machines: [
+    { name: 'macbook-pro', self: true, report: { machine: { load: 3.1, remote_control: [] }, sessions: [
+      { id: 'add7d44a', title: 'Agent/machine visibility tool', project: 'herd', app: 'desktop', kind: 'claude', state: 'working', updated: now - 5, cwd: '/Users/jackkim/ClaudeSync/projects/herd' },
+      { id: 'b4ba7534', title: 'Trading view widget planning', project: 'omalauncher', app: 'desktop', kind: 'claude', state: 'your-turn', updated: now - 7200, cwd: '/Users/jackkim/ClaudeSync/projects/omalauncher' }] } },
+    { name: 'jacks-mac-pro', report: { machine: { load: 2.5, remote_control: ['Mac Pro'] }, sessions: [
+      { id: 't9f45b7c', title: 'Pond reactions row', project: 'pond', app: 'oma', kind: 'claude', state: 'needs-you', updated: now - 90, cwd: '/Users/jackkim/Projects/pond' }] } },
+    { name: 'omarchy-mg1', report: { machine: { load: 0, remote_control: [], gpu: { used_mb: 28000, total_mb: 32600, busy: 97 } }, sessions: [] } },
+    { name: 'omarchy-mbp', error: 'no herd here' }],
+    others: [{ name: 'jacks-z-fold8', online: true }, { name: 'mg1', online: false }] });
+}
+</script>
+</body>
+</html>

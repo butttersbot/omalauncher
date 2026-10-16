@@ -14,6 +14,7 @@ import android.app.WallpaperManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.snapshotFlow
 import dev.omalauncher.assist.AgentTasks
+import dev.omalauncher.herd.HerdSheep
 import dev.omalauncher.assist.MacThreads
 import dev.omalauncher.assist.ChatTitles
 import dev.omalauncher.assist.agentThreadsNow
@@ -614,6 +615,13 @@ fun HomeScreen(
     Column(Modifier.align(Alignment.TopCenter).padding(start = PageGap, end = PageGap, top = PageNameHeight)) {
         engine.notice?.let { text -> Notice(text) { engine.notice = null } }
         marks.book?.let { book -> book.notice?.let { text -> Notice(text) { book.notice = null } } }
+    }
+
+    // The herd sheep: every coding agent on every machine of the tailnet, in home's corner above the bar. It steps
+    // aside while home is covered or being changed, so it never sits on what he is working on.
+    LaunchedEffect(Unit) { HerdSheep.restore(context) }
+    if (HerdSheep.shown && !state.homeCovered && engine.openScreen == null && state.editing == null && !state.drawing && !state.overviewOpen) {
+        HerdPet(Modifier.align(Alignment.BottomEnd).padding(bottom = barRoom))
     }
 
     if (extraKeys) {

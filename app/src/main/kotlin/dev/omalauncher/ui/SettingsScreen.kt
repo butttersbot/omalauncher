@@ -1,5 +1,6 @@
 package dev.omalauncher.ui
 
+import dev.omalauncher.herd.HerdSheep
 import android.content.Intent
 import android.provider.Settings
 import androidx.compose.foundation.background
@@ -71,6 +72,9 @@ fun SettingsScreen(
                 },
                 Triple("agent phone control", "automatic access · pause or resume") {
                     context.startActivity(Intent(context, dev.omalauncher.phone.PhoneControlActivity::class.java))
+                },
+                Triple("herd sheep", if (HerdSheep.shown) "on · every agent on every machine, in home's corner" else "off · show the sheep on home") {
+                    HerdSheep.set(context, !HerdSheep.shown)
                 },
                 Triple("android settings", "the phone's system settings") {
                     context.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
