@@ -208,10 +208,23 @@ main::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
 .drop { margin: 8px; padding: 22px 14px; border: 1.5px dashed var(--line); border-radius: 14px; text-align: center; color: var(--ink-2); }
 .drop b { display: block; color: var(--ink); font-size: 13px; margin-bottom: 3px; }
 .drop.has { border-style: solid; text-align: left; }
+.drop.zone { padding: 14px 12px; transition: background .12s, border-color .12s; }
+body.dropping .drop.zone { border-color: var(--ready); background: rgba(47, 143, 131, .1); color: var(--ink); }
 .files { margin: 6px 0 0; padding: 0; list-style: none; font-size: 12px; color: var(--ink); }
 .files li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .status { padding: 4px 18px; font-size: 12px; color: var(--ink-2); }
 .status:empty { display: none; }
+.section { padding: 14px 12px 2px; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); }
+.busy { margin: 4px 8px; padding: 7px 10px; border-radius: 10px; font-size: 12px; color: var(--ink-2); background: var(--row-hover); }
+.busy.failed { color: var(--need); }
+.item.pinned { box-shadow: inset 3px 0 0 #d9a520; }
+.item-head .icon-btn.pin { margin-left: auto; }
+.item-head .icon-btn.pin + .icon-btn { margin-left: 0; }
+.item.pinned .icon-btn.pin { color: #d9a520; }
+.thumb { position: relative; margin-bottom: 6px; cursor: pointer; }
+.thumb img { display: block; max-width: 100%; max-height: 180px; border-radius: 8px; background: var(--line); }
+.thumb.video::after { content: "▶"; position: absolute; left: 8px; bottom: 8px; width: 24px; height: 24px; border-radius: 12px;
+  background: rgba(0, 0, 0, .55); color: #fff; font-size: 11px; line-height: 24px; text-align: center; }
 
 /* Tailshare: what the other devices sent this computer (~/Inbox), newest first. */
 nav button .count { display: inline-block; min-width: 16px; height: 16px; padding: 0 4px; margin-left: 5px; border-radius: 8px;
@@ -303,7 +316,8 @@ nav button .count { display: inline-block; min-width: 16px; height: 16px; paddin
 
 <script>
 /* Herd pet. The native shell (Mac: Swift, Fold: omalauncher) calls herd.update(json) with `herd --json` output,
-   herd.detail(json) with `herd show ID --json`, herd.drop(paths), herd.sent(text) and herd.tap().
+   herd.detail(json) with `herd show ID --json`, herd.sent(text), herd.tap() and, for the pocket, herd.pocketDropped,
+   herd.pocketBusy and herd.pocketPulled.
    It listens for {cmd: expand | collapse | show | send | copy}. */
 const native = window.webkit?.messageHandlers?.herd ? m => window.webkit.messageHandlers.herd.postMessage(m)
              : window.HerdAndroid ? m => window.HerdAndroid.post(JSON.stringify(m))
@@ -317,7 +331,7 @@ const store = {
   set(key, value) { try { localStorage.setItem('herd.' + key, JSON.stringify(value)); } catch {} },
 };
 
-let data = null, previous = {}, seen = store.get('seen', null), job = store.get('job', 'agents'), detail = null, dropped = [];
+let data = null, previous = {}, seen = store.get('seen', null), job = store.get('job', 'agents'), detail = null;
 const firstRun = seen === null;
 if (firstRun) seen = {};
 
@@ -334,15 +348,17 @@ const isUnseen = s => s.state === 'your-turn' && (seen[s.id] || 0) < s.updated;
 const jobs = [
   { id: 'agents', title: 'Agents', render: renderAgents },
   { id: 'look', title: 'Look', render: renderLook },
-  // What tailshare brought this computer, and sending from it. It needs the computer's Tailscale CLI and its
-  // ~/Inbox; on the phone that's the share sheet's job.
-  ...(window.HerdAndroid ? [] : [{ id: 'tailshare', title: 'Tailshare', render: renderTailshare, count: () => unseenInbox().length }]),
+  // The shared pocket, plus what tailshare sent this computer. On the Mac always; elsewhere once the shell says it can
+  // upload and pull (herd.caps({pocket: true}); see omalauncher's CURRENT-STATE.md for the phone's hooks).
+  { id: 'tailshare', title: 'Tailshare', render: renderTailshare, count: () => unseenInbox().length + unseenPocket().length,
+    when: () => !window.HerdAndroid || caps.pocket },
 ];
+const shownJobs = () => jobs.filter(j => !j.when || j.when());
 if (job === 'send') job = 'tailshare';
-if (!jobs.some(j => j.id === job)) job = 'agents';
 
 function renderJobs() {
-  $('jobs').innerHTML = jobs.map(j => {
+  if (!shownJobs().some(j => j.id === job)) job = 'agents';
+  $('jobs').innerHTML = shownJobs().map(j => {
     const n = j.count?.() || 0;
     return `<button data-job="${j.id}" class="${j.id === job ? 'on' : ''}">${esc(j.title)}${n ? `<span class="count">${n}</span>` : ''}</button>`;
   }).join('');
@@ -354,7 +370,7 @@ $('jobs').addEventListener('click', e => {
 
 function render() {
   renderJobs();
-  (jobs.find(j => j.id === job) || jobs[0]).render($('view'));
+  (shownJobs().find(j => j.id === job) || jobs[0]).render($('view'));
 }
 
 const ORDER = { 'needs-you': 0, 'your-turn': 1, working: 2, idle: 3, closed: 4 };
@@ -400,8 +416,12 @@ $('view').addEventListener('click', e => {
   const a = act.dataset.act;
   if (a === 'back') { detail = null; render(); }
   if (a === 'copy') { shell({ cmd: 'copy', text: act.dataset.text }); flash('Copied'); }
-  if (a === 'clear') { dropped = []; render(); }
-  if (a === 'send') { shell({ cmd: 'send', device: act.dataset.device, paths: dropped }); $('sendStatus').textContent = 'Sending to ' + act.dataset.device + '…'; }
+  if (a === 'pocketget') {
+    shell({ cmd: 'pocketget', id: act.dataset.id, name: act.dataset.name, action: act.dataset.action });
+    pocketSay({ open: 'Opening ', save: 'Saving ', copy: 'Copying ' }[act.dataset.action] + act.dataset.name + '…');
+  }
+  if (a === 'pocketpin') pocketPin(act.dataset.id);
+  if (a === 'pocketremove') pocketRemove(act.dataset.id);
   if (a === 'sendclip') { shell({ cmd: 'sendclip', device: act.dataset.device }); $('sendStatus').textContent = 'Sending your clipboard to ' + act.dataset.device + '…'; }
   if (a === 'copyitem') {
     shell({ cmd: 'copyitem', name: act.dataset.name });
@@ -540,23 +560,110 @@ function markInboxSeen() {
   const newest = Math.max(0, ...(inbox || []).map(i => i.t));
   if (newest > (inboxSeen || 0)) { inboxSeen = newest; store.set('inboxSeen', inboxSeen); }
 }
+
+/* ---------------------------------------------------------------- the pocket: one shared folder on the Mac Pro */
+// Every device with the pet sees the same pocket (tailshare-serve on jacks-mac-pro). Dropping or pasting puts things
+// in; pulling (Open, Save, Copy) is where the actions are. The page reads the list and previews straight from the Mac
+// Pro; the shell does the uploading and pulling (it has the files and the Downloads folder).
+const POCKET = 'http://100.120.219.46:8480/v1/pocket';
+let pocket = null, pocketError = null, pocketNote = '', pocketNoteTimer = null;
+let pocketSeen = store.get('pocketSeen', null);   // the newest pocket item already looked at (its time)
+const pocketBusy = new Map();                     // name -> {state, error}: uploads in progress or just failed
+const myName = () => (data?.machines || []).find(m => m.self)?.name;
+const unseenPocket = () => (pocket?.items || []).filter(i => pocketSeen !== null && i.t > pocketSeen && i.device !== myName());
+function markPocketSeen() {
+  const newest = Math.max(0, ...(pocket?.items || []).map(i => i.t));
+  if (newest > (pocketSeen || 0)) { pocketSeen = newest; store.set('pocketSeen', pocketSeen); }
+}
+const showing = () => document.body.classList.contains('open') && job === 'tailshare';
+function pocketSay(text, ms = 4000) {
+  pocketNote = text; clearTimeout(pocketNoteTimer);
+  pocketNoteTimer = setTimeout(() => { pocketNote = ''; if (showing()) render(); }, ms);
+  if (showing()) render();
+}
+
+async function fetchPocket() {
+  const before = pocket;
+  try {
+    const reply = await fetch(POCKET, { cache: 'no-store' });
+    const list = await reply.json();
+    if (!reply.ok) throw new Error(list.error || reply.status);
+    pocket = list; pocketError = null;
+  } catch {
+    pocketError = "Can't reach the pocket on jacks-mac-pro right now.";
+  }
+  if (pocket && pocketSeen === null) { markPocketSeen(); if (pocketSeen === null) { pocketSeen = 0; store.set('pocketSeen', 0); } }
+  else if (pocket && before) {
+    // Quietly: what other devices put in since the last look. A badge, and at most one short bubble.
+    const had = new Set(before.items.map(i => i.id));
+    const fresh = pocket.items.filter(i => !had.has(i.id) && i.device !== myName() && i.t > (pocketSeen || 0));
+    if (fresh.length && !document.body.classList.contains('open'))
+      speak('Pocket', fresh.length === 1 ? `${fresh[0].device} put ${fresh[0].name} in the pocket.` : `${fresh.length} new things in the pocket.`, { ms: 6000, job: 'tailshare' });
+  }
+  if (showing()) render(); else renderJobs();
+}
+// Only where the tab is shown: the Mac, or a phone whose shell has said herd.caps({pocket: true}).
+setInterval(() => { if (!window.HerdAndroid || caps.pocket) fetchPocket(); }, 15000);
+if (!window.HerdAndroid) fetchPocket();
+
+async function pocketPin(id) {
+  const item = pocket?.items.find(i => i.id === id);
+  if (item) { item.pinned = !item.pinned; render(); }
+  try { await fetch(`${POCKET}/${encodeURIComponent(id)}/pin`, { method: 'POST', body: JSON.stringify({ pinned: item?.pinned }) }); }
+  catch { pocketSay("Couldn't reach the pocket"); }
+  fetchPocket();
+}
+async function pocketRemove(id) {
+  if (pocket) { pocket.items = pocket.items.filter(i => i.id !== id); render(); }
+  try { await fetch(`${POCKET}/${encodeURIComponent(id)}`, { method: 'DELETE' }); }
+  catch { pocketSay("Couldn't reach the pocket"); }
+  fetchPocket();
+}
+
 const devices = () => [...(data?.machines || []).filter(m => !m.self).map(m => m.name), ...(data?.others || []).filter(h => h.online).map(h => h.name)];
-const bytes = n => n < 1024 ? n + ' B' : n < 1048576 ? Math.round(n / 1024) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
+const bytes = n => n < 1024 ? n + ' B' : n < 1048576 ? Math.round(n / 1024) + ' KB' : n < 1073741824 ? (n / 1048576).toFixed(1) + ' MB' : (n / 1073741824).toFixed(1) + ' GB';
+const ICONS = { text: '📝', image: '🖼️', video: '🎞️', file: '📄' };
+
+function pocketItem(i, fresh) {
+  const id = esc(i.id), name = esc(i.name);
+  const left = Math.ceil(((pocket?.days || 7) * 86400 - (Date.now() / 1000 - i.t)) / 86400);
+  const keep = i.pinned ? 'pinned' : left <= 1 ? 'goes tomorrow' : `${left} days left`;
+  const get = (action, label, primary) => `<button class="btn ${primary ? 'primary' : ''}" data-act="pocketget" data-action="${action}" data-id="${id}" data-name="${name}">${label}</button>`;
+  let html = `<div class="item pocketed ${fresh ? 'new' : ''} ${i.pinned ? 'pinned' : ''}"><div class="item-head"><b>${esc(i.device || 'Someone')}</b>· ${ago(i.t)} · ${keep}
+    <button class="icon-btn pin" data-act="pocketpin" data-id="${id}" title="${i.pinned ? 'Unpin' : 'Pin: keep it past 7 days'}" aria-label="${i.pinned ? 'Unpin' : 'Pin'}">${i.pinned ? '★' : '☆'}</button>
+    <button class="icon-btn" data-act="pocketremove" data-id="${id}" title="Remove from the pocket" aria-label="Remove from the pocket">✕</button></div>`;
+  if (i.kind === 'text' && i.text != null) {
+    const long = i.text.length > 280 || i.text.split('\n').length > 5;
+    html += `<div class="clip ${long ? 'long' : ''} ${expanded.has(i.id) ? 'full' : ''}" data-act="expand" data-name="${id}">${esc(i.text)}</div>
+      <div class="actions">${get('copy', 'Copy', true)}${get('open', 'Open')}${get('save', 'Save')}</div>`;
+  } else {
+    if (i.thumb) html += `<div class="thumb ${i.kind}" data-act="pocketget" data-action="open" data-id="${id}" data-name="${name}"><img src="${POCKET}/${encodeURIComponent(i.id)}/thumb" alt="${name}" loading="lazy"></div>`;
+    html += `<div class="file">${ICONS[i.kind] || ICONS.file} <span title="${name}">${name}</span><em>${bytes(i.size)}</em></div>
+      <div class="actions">${get('open', 'Open', true)}${get('save', 'Save')}${get('copy', 'Copy')}</div>`;
+  }
+  return html + `</div>`;
+}
 
 function renderTailshare(view) {
-  const fresh = new Set(unseenInbox().map(i => i.name));
-  if (document.body.classList.contains('open')) markInboxSeen();
+  const fresh = new Set([...unseenInbox().map(i => i.name), ...unseenPocket().map(i => i.id)]);
+  if (document.body.classList.contains('open')) { markInboxSeen(); markPocketSeen(); }
   const to = devices();
-  let html = '';
-  if (dropped.length)
-    html += `<div class="drop has"><b>${dropped.length} file${dropped.length > 1 ? 's' : ''} ready to send</b><ul class="files">${dropped.map(p => `<li>${esc(p.split('/').pop())}</li>`).join('')}</ul></div>
-      <div class="actions">${to.map(d => `<button class="btn" data-act="send" data-device="${esc(d)}">${esc(d)}</button>`).join('')}<button class="btn" data-act="clear">Clear</button></div>`;
-  else if (to.length)
+  let html = `<div class="drop zone"><b>Drop or paste (⌘V) to put it in the pocket</b>Every device with the pet sees it. Kept 7 days unless pinned.</div>`;
+  for (const [name, b] of pocketBusy)
+    html += `<div class="busy ${b.state}">${b.state === 'failed' ? '⚠︎ ' + esc(name || 'Paste') + ': ' + esc(b.error || "didn't go in") : (b.state === 'zipping' ? 'Zipping ' : 'Putting in ') + esc(name) + '…'}</div>`;
+  if (pocketNote) html += `<div class="status">${esc(pocketNote)}</div>`;
+  if (pocketError && !pocket) html += `<div class="empty">${esc(pocketError)}</div>`;
+  else if (!pocket) html += `<div class="empty">Opening the pocket…</div>`;
+  else if (!pocket.items.length && !pocketBusy.size) html += `<div class="empty">The pocket is empty.</div>`;
+  for (const i of pocket?.items || []) html += pocketItem(i, fresh.has(i.id));
+  if (pocket?.items.length) html += `<div class="note">${bytes(pocket.used)} of ${bytes(pocket.cap)} · on ${esc(pocket.host)}${pocketError ? ' · ' + esc(pocketError) : ''}</div>`;
+
+  if (to.length && !window.HerdAndroid)   // the phone sends its clipboard with Tailshare's tile instead
     html += `<div class="sendrow"><span>Send clipboard to</span>${to.map(d => `<button class="btn small" data-act="sendclip" data-device="${esc(d)}">${esc(d)}</button>`).join('')}</div>`;
   html += `<div class="status" id="sendStatus"></div>`;
 
-  if (!inbox) html += `<div class="empty">Looking in the Inbox…</div>`;
-  else if (!inbox.length) html += `<div class="drop"><b>Nothing here yet</b>What your other devices send this computer shows up here. Drop files on the sheep to send them.</div>`;
+  // Sent straight to this Mac (clipboard sends and shares from the phone), as before.
+  if (inbox?.length) html += `<div class="section">Sent to this Mac</div>`;
   for (const i of inbox || []) {
     const name = esc(i.name);
     html += `<div class="item ${fresh.has(i.name) ? 'new' : ''}"><div class="item-head"><b>${esc(i.from || 'Received')}</b>· ${ago(i.t)}
@@ -908,12 +1015,32 @@ window.herd = {
     if (detail && d.session && d.session.id === detail.id) { detail = { id: d.session.id, turns: d.turns, note: d.note, session: { ...d.session, machine: d.machine }, machine: d.machine }; render(); }
     if (d.error && detail) { detail.loading = false; detail.note = d.error; render(); }
   },
-  drop(paths) {
-    dropped = paths; job = 'tailshare'; detail = null;
+  // Files dropped on the sheep or the panel are on their way into the pocket: show the tab.
+  pocketDropped(names) {
+    job = 'tailshare'; detail = null;
     if (!document.body.classList.contains('open')) toggle(true); else render();
     nudge();
   },
-  sent(text) { const el = $('sendStatus'); if (el) el.textContent = text; if (/^Sent/.test(text)) { dropped = []; setTimeout(render, 1500); } flash(text); },
+  // Files are being dragged over the open panel (true) or left it (false): show the drop zone, lit up.
+  dragging(on) {
+    document.body.classList.toggle('dropping', !!on);
+    if (on && document.body.classList.contains('open') && job !== 'tailshare') { job = 'tailshare'; detail = null; render(); }
+  },
+  sent(text) { const el = $('sendStatus'); if (el) el.textContent = text; flash(text); },
+  // An upload into the pocket: {name, state: zipping | uploading | done | failed, error}.
+  pocketBusy(b) {
+    b = typeof b === 'string' ? JSON.parse(b) : b;
+    if (b.state === 'done') { pocketBusy.delete(b.name); fetchPocket(); }
+    else pocketBusy.set(b.name, b);
+    if (b.state === 'failed') setTimeout(() => { pocketBusy.delete(b.name); if (showing()) render(); }, 8000);
+    if (showing()) render();
+  },
+  // A pull finished: {id, action, error?}.
+  pocketPulled(r) {
+    r = typeof r === 'string' ? JSON.parse(r) : r;
+    const item = pocket?.items.find(i => i.id === r.id);
+    pocketSay(r.error ? "Couldn't get it: " + r.error : { copy: 'Copied', save: 'Saved to Downloads/Pocket', open: 'Opened' }[r.action] + (item ? ': ' + item.name : ''), r.error ? 8000 : 2500);
+  },
   tap() { nudge(); toggle(); },
   // `herd say TEXT`: says it; an empty text says what's up.
   say(text) { if (text) { nudge(); face('down'); speak('', String(text), { ms: 8000 }); } else herd.chat(); },
@@ -929,7 +1056,7 @@ window.herd = {
     speak(top.title, (parts.join(', ') + '. ').replace(/^./, c => c.toUpperCase()) + (gist(top.last) || ''), { ms: 9000, id: top.id });
   },
   // The shell's abilities: {stroll: it can walk the window along the screen, room: it can grow for the bubble}.
-  caps(c) { Object.assign(caps, typeof c === 'string' ? JSON.parse(c) : c); },
+  caps(c) { Object.assign(caps, typeof c === 'string' ? JSON.parse(c) : c); if (caps.pocket && window.HerdAndroid) { fetchPocket(); renderJobs(); } },
   // A stroll the shell walked is over; moved is how far it got (less than asked at the screen's edge).
   arrived(r) { const moved = (typeof r === 'string' ? JSON.parse(r) : r)?.moved ?? 0; if (arrive) arrive(moved); },
   // Which side of the window the pet stands on: the shell grows the window away from the screen's edge.
@@ -953,11 +1080,20 @@ function toggle(force) {
   document.body.classList.toggle('open', open);
   shell({ cmd: open ? 'expand' : 'collapse' });
   for (const wait of [0, 50, 200, 500]) setTimeout(measure, wait);   // the view grows a moment after it's asked to
-  if (open) { markSeen(); mood(); render(); hush(); }
+  if (open) { markSeen(); mood(); render(); hush(); fetchPocket(); }
 }
 $('close').addEventListener('click', () => toggle(false));
 wear();
-document.addEventListener('keydown', e => { if (e.key === 'Escape') toggle(false); });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') toggle(false);
+  // ⌘V in the open panel puts what's on the clipboard into the pocket (the Mac shell reads the clipboard).
+  if (e.metaKey && e.key.toLowerCase() === 'v' && native && !window.HerdAndroid && document.body.classList.contains('open')
+      && !e.target.closest?.('input, textarea, [contenteditable]')) {
+    e.preventDefault();
+    if (job !== 'tailshare') { job = 'tailshare'; detail = null; store.set('job', job); render(); }
+    shell({ cmd: 'pocketpaste' });
+  }
+});
 
 const pet = $('pet');
 // On the Mac the shell owns presses on the sheep (tap, drag, menu) and calls herd.tap(); elsewhere a click is a tap.
