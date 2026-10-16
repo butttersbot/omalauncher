@@ -264,6 +264,37 @@ const val FRONT_MAX_REQUEST = ChatHistory.MAX_PROMPT
 fun frontFirst(prompt: String, images: Int, ready: Boolean): Boolean = images == 0 && ready && prompt.length <= FRONT_MAX_REQUEST
 
 /**
+ * Whether [words] ask for a view or a choice: what do you think, which is better, should we, how do we go from
+ * here. Told to hand these over (rule 6), the front agent still answered "which do you think's better?" about the
+ * keyboard itself (Boss, 2026-10-15), so they skip it while the builders have work going ([builderBusy]).
+ */
+fun asksAView(words: String): Boolean = VIEW.containsMatchIn(words.replace("’", "'"))
+
+private val VIEW =
+    Regex(
+        """\b(what do (you|u) think|what'?s better|which (one )?(do you|would you|should|is better|'?s better)|which is better|""" +
+            """should (we|i)\b|do you think|(your|ur) (take|opinion|view|thoughts|recommendation|call)|how do we go from here|""" +
+            """what would you (do|recommend|suggest|pick)|what('?s| is) (the )?(best|better) (way|option|choice)|thoughts\?)""",
+        RegexOption.IGNORE_CASE,
+    )
+
+/** Whether a builder works now, or [tasks] (the Oma stream's) have work it did in the last [withinMs]. */
+fun builderBusy(
+    tasks: List<ChatTask>,
+    now: Long,
+    working: Boolean,
+    withinMs: Long = 30 * 60_000L,
+): Boolean = working || tasks.any { it.build && it.chat.isEmpty() && now - it.time < withinMs }
+
+/** Whether [prompt] is the builders' rather than the front agent's to hear first: a view on work going on. */
+fun forTheBuilder(
+    prompt: String,
+    tasks: List<ChatTask>,
+    now: Long,
+    working: Boolean,
+): Boolean = asksAView(prompt) && builderBusy(tasks, now, working)
+
+/**
  * A request he sent while the front agent was still reading the one before. [time] is its entry in the thread,
  * where it already shows as his, waiting. [page] is the home page he was on and [away] whether he spoke it on
  * the listening screen, [chat] the new chat he sent it in (empty for the Oma tab). Nothing of the board is kept

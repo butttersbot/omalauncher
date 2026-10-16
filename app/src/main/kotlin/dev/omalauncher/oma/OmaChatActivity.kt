@@ -90,6 +90,7 @@ import androidx.compose.ui.unit.dp
 import dev.omalauncher.App
 import dev.omalauncher.Runtime
 import dev.omalauncher.assist.AgentTasks
+import dev.omalauncher.assist.forTheBuilder
 import dev.omalauncher.assist.AgentThread
 import dev.omalauncher.assist.ApprovalOutcome
 import dev.omalauncher.assist.FrontQueueFull
@@ -331,7 +332,9 @@ private fun OmaChatScreen(
     fun build(prompt: String, queue: Boolean): Boolean =
         try {
             val paths = images.map { it.guestPath }
-            if (queue) AgentTasks.followUp(context, prompt, paths, builder = to.builder)
+            // On the Oma tab with what the front agent said since: then "yeah, let's do it" says what "it" is.
+            if (to == SendTo.Oma) AgentTasks.direct(context, prompt, paths, builder = to.builder)
+            else if (queue) AgentTasks.followUp(context, prompt, paths, builder = to.builder)
             else AgentTasks.send(context, prompt, paths, builder = to.builder)
             true
         } catch (e: Exception) {
@@ -343,7 +346,8 @@ private fun OmaChatScreen(
         val agent = runtime.agents.default
         val out = outgoing(
             draft, images.size, images.any { !it.file.isFile }, importing || speech.listening, linuxState == LinuxState.Installed, agent?.bin, tabWorking,
-            frontReady = QuickLane.ready(context),
+            // A view on the work going on is the builder's to give, not the front agent's (Boss, 2026-10-15).
+            frontReady = QuickLane.ready(context) && !forTheBuilder(draft, store.tasks.filter { it.chat.isEmpty() }, System.currentTimeMillis(), AgentTasks.working),
             to = to,
         )
         when (out) {

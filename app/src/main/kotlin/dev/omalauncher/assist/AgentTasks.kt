@@ -119,6 +119,21 @@ object AgentTasks {
         return to
     }
 
+    /**
+     * His words straight to a builder, past the front agent (pictures with them, or a view on the work: see
+     * forTheBuilder), with what he and the front agent said since that builder last heard from him put before
+     * them, as a hand-over has. Without it, "yeah, let's do it" reached the builder with nothing to say what "it" was
+     * (Boss, 2026-10-15). Sent now if the builder is free, behind its task if not. Says which builder took it.
+     */
+    @Synchronized fun direct(context: Context, prompt: String, images: List<String> = emptyList(), page: String? = HomeDoor.home?.showing, screen: File? = null, builder: BuilderId? = null): BuilderId {
+        restore(context)
+        val to = pick(builder)
+        val said = ChatLog.of(context).tasks.filter { it.chat.isEmpty() }
+        val shared = builderShares(to, builders.associate { it.id to it.working })
+        of(to).followUp(context, prompt, images, page, sharedPreface(shared, PHONE_SHARED_NOTE, handOverPreface(handOverContext(said, Long.MAX_VALUE, gotBy(to)))), screen)
+        return to
+    }
+
     /** `[ cancel ]` on a follow-up that still waits, whichever builder it waits for. */
     @Synchronized fun cancelFollowUp(context: Context, time: Long) = builders.forEach { it.cancelFollowUp(context, time) }
 

@@ -805,4 +805,22 @@ class FrontAgentTest {
         assertNull(chatRetried(unsent.copy(status = TaskStatus.Failed)))
         assertNull(chatRetried(unsent.copy(status = TaskStatus.Done)))
     }
+
+    /** Boss, 2026-10-15: "which do you think's better?" about the keyboard was answered by the front agent itself. */
+    @Test fun aViewOnWorkGoingOnGoesToTheBuilder() {
+        for (asked in listOf(
+            "Actually, maybe we could do the rotating ring thing. What do you think? Which do you think's better?",
+            "So how do we go from here?",
+            "should we keep the mechanical keys",
+            "what's your take on the space bar",
+        )) assertTrue(asked, asksAView(asked))
+        for (plain in listOf("what time is it", "is the build done", "turn on tailscale")) assertFalse(plain, asksAView(plain))
+        val now = 10_000_000L
+        val built = ChatTask(now - 60_000, "Claude", "build the keyboard")
+        assertTrue(built.build)
+        assertTrue(forTheBuilder("what do you think?", listOf(built), now, working = false))
+        // No builder work going on or lately: it is just a question, the front agent's.
+        assertFalse(forTheBuilder("what do you think?", listOf(built.copy(time = now - 3 * 3_600_000L)), now, working = false))
+        assertTrue(forTheBuilder("what do you think?", emptyList(), now, working = true))
+    }
 }

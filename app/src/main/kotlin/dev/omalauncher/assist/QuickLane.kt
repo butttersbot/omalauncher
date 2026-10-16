@@ -66,6 +66,7 @@ object QuickLane {
      */
     fun offer(context: Context, prompt: String, away: Boolean = false): Boolean {
         if (!frontFirst(prompt, 0, ready(context))) return false
+        if (forTheBuilder(prompt, ChatLog.of(context).tasks.filter { it.chat.isEmpty() }, System.currentTimeMillis(), AgentTasks.working)) return false
         return try {
             ask(context, prompt, away)
             true

@@ -252,7 +252,7 @@ class ListeningHost(private val owner: Context, private val dismiss: () -> Unit)
             // him as a task's does. With the screen attached, or with no front agent to ask, the request goes
             // straight to the build lane as it always did, and waits behind the task that runs there if one does.
             // Only the screenshot the note is showing goes along, and it is AgentTasks's to delete from here.
-            if (screen != null || !QuickLane.offer(owner, text, away = true)) AgentTasks.followUp(owner, text, screen = screen)
+            if (screen != null || !QuickLane.offer(owner, text, away = true)) AgentTasks.direct(owner, text, screen = screen)
             screen = null; showScreen(ScreenContext.None, null); onScreenLetGo?.invoke()
             leave()
         } catch (e: Exception) { show(ListeningRequest(ListeningPhase.Failed, detail = e.message ?: "The request could not be sent")) }
