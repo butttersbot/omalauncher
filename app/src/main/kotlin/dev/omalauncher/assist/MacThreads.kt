@@ -35,9 +35,11 @@ import kotlin.concurrent.thread
 /**
  * What the phone last heard of the Mac: its [threads], whether it answered at the last try, and when it last did.
  * [listed] is whether [threads] is the Mac's own whole list, heard since this process began: until then a
- * thread missing from it is only not heard of yet, and nothing kept for it is taken for gone.
+ * thread missing from it is only not heard of yet, and nothing kept for it is taken for gone. With more than one
+ * Mac ([macs], MacMachines.kt) [threads] holds them all, each under the phone's id for it, and the rest is said of
+ * them all ([macWith]); what one Mac answers is in its own [MacSeen].
  */
-data class MacView(val threads: List<MacThread> = emptyList(), val reachable: Boolean = false, val seen: Long? = null, val listed: Boolean = false)
+data class MacView(val threads: List<MacThread> = emptyList(), val reachable: Boolean = false, val seen: Long? = null, val listed: Boolean = false, val macs: List<MacSeen> = emptyList())
 
 /**
  * [thread] with the summary the board should carry. The runner's summary is the first line of what it was last
@@ -645,8 +647,8 @@ object MacThreads {
 
     private val book = MacApprovalBook()
     @Volatile private var cursors = MacCursors()
-    /** The agents the Mac has, as its `/health` last said; empty until it has. */
-    @Volatile private var kinds: List<String> = emptyList()
+    /** The agents each Mac has, by its id, as its `/health` last said; none until it has. */
+    @Volatile private var kinds: Map<String, List<String>> = emptyMap()
     /** The agents heard to be at their limit lately, kept in prefs under "limits". Only touched under the lock. */
     private val limits = MacLimits()
     /**
@@ -677,16 +679,31 @@ object MacThreads {
     private const val RESTING_LISTEN_MS = 60_000L
     private const val NOT_SENT = "Not sent"
 
-    /** Read fresh each time, so the Mac is there the moment Boss puts the file in place and gone when he takes it out. */
-    private fun config(context: Context): MacRunnerConfig? =
-        runCatching { readMacRunnerConfig((context.applicationContext as App).runtime.proot.launcherConfig) }.getOrNull()
+    /** Read fresh each time, so a Mac is there the moment Boss puts its file in place and gone when he takes it out. */
+    private fun machines(context: Context): List<MacMachine> =
+        runCatching { readMacMachines((context.applicationContext as App).runtime.proot.launcherConfig) }.getOrNull().orEmpty()
+
+    /** The Mac the thread [threadId] is on, as set up now; null when its file is gone. */
+    private fun machine(context: Context, threadId: String): MacMachine? = machines(context).firstOrNull { it.id == macMachineOf(threadId) }
+
+    /** The runner the thread [threadId] is on. One whose Mac is no longer set up answers nothing ([MacAnswer.Unreachable]). */
+    private fun client(context: Context, threadId: String) = macClient(machine(context, threadId))
+
+    private fun kindsOf(machine: String) = kinds[machine].orEmpty()
+
+    /** The threads on the same Mac as [threadId]: work on one Mac is never placed with, beside or instead of another's. */
+    private fun sameMac(threadId: String, threads: List<MacThread> = view.threads) = threads.filter { macMachineOf(it.id) == macMachineOf(threadId) }
+
+    /** Where when each Mac was last seen is kept; the first Mac's under the name it always had. */
+    private fun seenKey(machine: String) = if (machine == MAC_FIRST) "seen" else "seen:$machine"
 
     @Synchronized fun restore(context: Context) {
         if (restored) return
         restored = true
         val saved = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         cursors = MacCursors(macCursorsFrom(saved.getString("cursors", null)))
-        view = MacView(seen = saved.getLong("seen", 0L).takeIf { it > 0 })
+        val macs = machines(context).map { MacSeen(it.id, it.name, seen = saved.getLong(seenKey(it.id), 0L).takeIf { seen -> seen > 0 }) }
+        view = macWith(MacView(seen = saved.getLong("seen", 0L).takeIf { it > 0 }), macs)
         limits.restore(saved.getString("limits", null), System.currentTimeMillis())
         // No card of an earlier run can be answered: its ticket died with that process. They are drawn again from the Mac.
         AgentNotices.clearStaleMac(context)
@@ -704,11 +721,12 @@ object MacThreads {
      */
     fun board(context: Context, now: Long): MacBoard? {
         restore(context)
-        if (config(context) == null) return null
+        val machines = machines(context)
+        if (machines.isEmpty()) return null
         if (now - checked > STALE_MS) refresh(context)
         val known = view
         val tasks = ChatLog.of(context).tasks
-        return macBoard(known.threads.map { macOwnSummary(it, tasks) }, known.reachable, known.seen, now, TailscaleHeal.note(now))
+        return macBoard(known.threads.map { macOwnSummary(it, tasks) }, known.reachable, known.seen, now, TailscaleHeal.note(now), macSeen(machines, known))
     }
 
     /**
@@ -717,26 +735,31 @@ object MacThreads {
      */
     fun glance(context: Context, now: Long) {
         restore(context)
-        if (now - checked > STALE_MS && config(context) != null) refresh(context)
+        if (now - checked > STALE_MS && machines(context).isNotEmpty()) refresh(context)
     }
 
     /** What stands beside [task], an entry of the Mac's, while it is not over. */
-    fun label(task: ChatTask): String = macEntryLabel(task.status, task.time in sending, view.reachable, pending.any { it.threadId == task.thread }, task.fresh)
+    fun label(task: ChatTask): String = macEntryLabel(task.status, task.time in sending, view.reachableFor(task.thread), pending.any { it.threadId == task.thread }, task.fresh)
 
-    /** What asking `/health` came to: whether the Mac answered, and which agents it has when it did. */
-    private fun heard(context: Context, health: MacHealthResult) {
-        if (health is MacHealthResult.Up) kinds = health.health.kinds
-        reached(context, health is MacHealthResult.Up)
-        TailscaleHeal.after(context, macLink(health))
+    /** What asking the Mac [machine]'s `/health` came to: whether it answered, and which agents it has when it did. */
+    private fun heard(context: Context, machine: String, health: MacHealthResult) {
+        if (health is MacHealthResult.Up) kinds = kinds + (machine to health.health.kinds)
+        reached(context, machine, health is MacHealthResult.Up)
+        // Only a Mac that does not answer while none other does says anything about this phone's Tailscale.
+        if (health is MacHealthResult.Up || view.macs.none { it.reachable && it.id != machine }) TailscaleHeal.after(context, macLink(health))
     }
 
     /** The agents taken to be at their limit now. */
     private fun limited(): Set<String> = synchronized(this) { limits.at(System.currentTimeMillis()) }
 
-    private fun reached(context: Context, reachable: Boolean) {
+    /** Whether the Mac [machine] answered just now. The others stand as they were: one out of reach hides no other. */
+    private fun reached(context: Context, machine: String, reachable: Boolean) {
         val now = System.currentTimeMillis()
-        see(context) { if (reachable) it.copy(reachable = true, seen = now) else it.copy(reachable = false) }
-        if (reachable) context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putLong("seen", now).apply()
+        val machines = machines(context)
+        see(context) { known ->
+            macWith(known, macSeen(machines, known).map { if (it.id != machine) it else if (reachable) it.copy(reachable = true, seen = now) else it.copy(reachable = false) })
+        }
+        if (reachable) context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putLong(seenKey(machine), now).apply()
     }
 
     /**
@@ -789,19 +812,31 @@ object MacThreads {
         if (!refreshing.compareAndSet(false, true)) return
         thread(name = "oma-mac-refresh", isDaemon = true) {
             try {
-                val config = config(app)
-                if (config == null) noMac(app)
+                val machines = machines(app)
+                if (machines.isEmpty()) noMac(app)
                 else {
                     checked = System.currentTimeMillis()
-                    val client = MacRunnerClient(config)
-                    val health = client.health()
+                    gone(app, machines.map { it.id }.toSet())
+                    // Each Mac on its own: one that does not answer leaves the others' threads as they are heard.
+                    val links = mutableListOf<MacLink>()
+                    val threads = mutableListOf<MacThread>()
+                    for (machine in machines) {
+                        val client = macClient(machine)
+                        val health = client.health()
+                        links += macLink(health)
+                        if (health is MacHealthResult.Up) kinds = kinds + (machine.id to health.health.kinds)
+                        val listed = if (health is MacHealthResult.Up) client.threads() else MacAnswer.Unreachable
+                        if (listed is MacAnswer.Ok) {
+                            threads += listed.value
+                            see(app) { known ->
+                                macWith(known.copy(threads = known.threads.filter { macMachineOf(it.id) != machine.id } + listed.value),
+                                    macSeen(machines, known).map { if (it.id == machine.id) it.copy(listed = true) else it })
+                            }
+                        }
+                        reached(app, machine.id, listed is MacAnswer.Ok)
+                    }
                     // Also how the launcher's start turns Tailscale back on after a reboot: Runtime.start opens this.
-                    TailscaleHeal.after(app, macLink(health))
-                    if (health is MacHealthResult.Up) kinds = health.health.kinds
-                    val listed = if (health is MacHealthResult.Up) client.threads() else MacAnswer.Unreachable
-                    val threads = if (listed is MacAnswer.Ok) listed.value else emptyList()
-                    if (listed is MacAnswer.Ok) see(app) { it.copy(threads = threads, listed = true) }
-                    reached(app, listed is MacAnswer.Ok)
+                    TailscaleHeal.after(app, links.firstOrNull { it == MacLink.Answered } ?: links.first())
                     val tasks = ChatLog.of(app).tasks
                     val owed = tasks.filter { it.mac && (it.status == TaskStatus.Running || it.status == TaskStatus.Queued) }.map { it.thread }
                     val his = tasks.filter { it.mac && !it.fresh }.map { it.thread }.toSet()
@@ -811,6 +846,20 @@ object MacThreads {
                 refreshing.set(false)
             }
         }
+    }
+
+    /**
+     * Macs whose files are gone while others stay, [kept] being the ids of those set up: their threads leave the
+     * list, and what was unfinished on them says so, as [noMac] says for all of them.
+     */
+    private fun gone(context: Context, kept: Set<String>) {
+        val lost = view.threads.map { macMachineOf(it.id) }.filter { it !in kept }.toSet() +
+            ChatLog.of(context).tasks.filter { it.mac && it.thread != MAC_NEW_THREAD && macUnfinished(it, it.thread) }.map { macMachineOf(it.thread) }.filter { it !in kept }
+        if (lost.isEmpty()) return
+        ChatLog.of(context).revise { tasks -> tasks.map { it.thread }.distinct().filter { macMachineOf(it) in lost && it != MAC_NEW_THREAD }.fold(tasks) { all, id -> macAbandon(all, id, MAC_NOT_SET_UP) } }
+        val dropped = synchronized(this) { book.live.filter { macMachineOf(it.threadId) in lost }.flatMap { book.drop(it.threadId) }.also { published(context) } }
+        dropped.forEach { AgentNotices.macWithdraw(context, it) }
+        see(context) { known -> known.copy(threads = known.threads.filter { macMachineOf(it.id) !in lost }) }
     }
 
     /** The config is gone: there is no Mac to follow or answer, and what was unfinished there says so. */
@@ -844,20 +893,21 @@ object MacThreads {
      */
     private fun deliver(context: Context, time: Long, prompt: String, thread: MacThread, away: Boolean, step: String? = null) {
         val log = ChatLog.of(context)
-        val instead = macInstead(thread.kind, kinds, limited())
+        val machine = macMachineOf(thread.id)
+        val instead = macInstead(thread.kind, kindsOf(machine), limited())
         if (instead == null) {
             log.update(time, save = true) { macHandOver(it, thread).let { entry -> if (step == null) entry else ChatHistory.withStep(entry, step) } }
             return send(context, time, sentText(context, time, prompt, thread.id), thread.id, away)
         }
         val why = macLimitedStep(thread.kind, instead)
-        val free = macKindThread(thread.project, instead, view.threads, macOwed(log.tasks, except = time))
+        val free = macKindThread(thread.project, instead, sameMac(thread.id), macOwed(log.tasks, except = time))
         if (free != null) {
             log.update(time, save = true) { ChatHistory.withStep(macHandOver(it, free), why) }
             return send(context, time, sentText(context, time, prompt, free.id), free.id, away)
         }
-        val name = macKindThreadName(thread.name, instead, view.threads.map { it.name })
+        val name = macKindThreadName(thread.name, instead, sameMac(thread.id).map { it.name })
         log.update(time, save = true) { ChatHistory.withStep(macFreshHandOver(it, thread, name), why) }
-        make(context, time, MacFresh.Make(name, thread.project), away, instead) { sentText(context, time, prompt, it) }
+        make(context, time, MacFresh.Make(name, thread.project), away, instead, machine) { sentText(context, time, prompt, it) }
     }
 
     /**
@@ -869,30 +919,31 @@ object MacThreads {
      */
     private fun place(context: Context, time: Long, prompt: String, busy: MacThread, away: Boolean, newChat: Boolean = false) {
         val log = ChatLog.of(context)
-        val threads = view.threads.let { known -> if (known.any { it.id == busy.id }) known else known + busy }
+        val threads = sameMac(busy.id).let { known -> if (known.any { it.id == busy.id }) known else known + busy }
         val named = threads.first { it.id == busy.id }
+        val machine = macMachineOf(busy.id)
         when (val place = macFresh(named, threads, macOwed(log.tasks, except = time), newChat)) {
             is MacFresh.Same -> deliver(context, time, prompt, place.thread, away)
             is MacFresh.Queue -> deliver(context, time, prompt, place.thread, away, macCappedStep(place.working, macFolder(named.project)))
             is MacFresh.Make -> {
                 val limited = limited()
-                val kind = macKind(kinds, limited) ?: macInstalled(kinds).first()
+                val kind = macKind(kindsOf(machine), limited) ?: macInstalled(kindsOf(machine)).first()
                 val name = if (kind == MAC_CLAUDE) place.name else macKindThreadName(named.name, kind, threads.map { it.name })
                 // Said only when a limit is why: a thread of another agent's is otherwise simply made as Claude's.
                 val why = macLimitedStep(named.kind, kind).takeIf { kind != macKindOf(named.kind) && macKindOf(named.kind) in limited }
                 log.update(time, save = true) { macFreshHandOver(it, named, name).let { entry -> if (why == null) entry else ChatHistory.withStep(entry, why) } }
-                make(context, time, place.copy(name = name), away, kind) { sentText(context, time, prompt, it) }
+                make(context, time, place.copy(name = name), away, kind, machine) { sentText(context, time, prompt, it) }
             }
         }
     }
 
     /**
-     * Makes the thread [place] names, running the agent [kind], off the caller's thread, and sends it what [words]
+     * Makes the thread [place] names, on the Mac [machine], running the agent [kind], off the caller's thread, and sends it what [words]
      * makes for its id as any hand-over is sent. The entry counts as on its way the whole time, so nothing the
      * thread it waited under says can end it. A Mac that does not answer, turns the key down or refuses the
      * folder leaves the entry saying so with `[ try again ]`.
      */
-    private fun make(context: Context, time: Long, place: MacFresh.Make, away: Boolean, kind: String, words: (String) -> String) {
+    private fun make(context: Context, time: Long, place: MacFresh.Make, away: Boolean, kind: String, machine: String, words: (String) -> String) {
         synchronized(this) {
             sentAt[time] = IN_FLIGHT
             sending = sending + time
@@ -903,9 +954,10 @@ object MacThreads {
             var problem = MAC_UNREACHABLE
             var sendOn = false
             try {
-                val client = MacRunnerClient(config(context))
+                val mac = machines(context).firstOrNull { it.id == machine }
+                val client = macClient(mac)
                 val health = client.health()
-                heard(context, health)
+                if (mac != null) heard(context, machine, health)
                 if (health !is MacHealthResult.Up) problem = macUnreachableReason(health)
                 else {
                     val answer = client.makeThread(place.name, place.project, kind)
@@ -965,7 +1017,7 @@ object MacThreads {
     private fun sentText(context: Context, asked: Long, prompt: String, threadId: String): String {
         val tasks = ChatLog.of(context).tasks
         if (tasks.any { it.time == asked && it.direct }) return prompt
-        val shared = macShares(threadId, view.threads, macOwed(tasks, except = asked))
+        val shared = macShares(threadId, sameMac(threadId), macOwed(tasks, except = asked))
         // Only what was said where he asked: in his new chat, or in the Oma stream.
         val chat = tasks.firstOrNull { it.time == asked }?.chat.orEmpty()
         val said = tasks.filter { it.chat == chat }
@@ -992,7 +1044,7 @@ object MacThreads {
         val newChat = task.chat.isNotEmpty() && TabBook.of(app).chat(task.chat)?.bound == false
         if (busy != null) return place(app, time, task.prompt, busy, away = false, newChat)
         // Until the Mac has listed its threads in this run, a thread missing from the list is only not heard of yet.
-        log.update(time, save = true) { macUnsent(it, if (view.listed) MAC_THREAD_GONE else MAC_UNREACHABLE) }
+        log.update(time, save = true) { macUnsent(it, if (view.listedFor(task.thread)) MAC_THREAD_GONE else MAC_UNREACHABLE) }
         refresh(app)
     }
 
@@ -1017,10 +1069,11 @@ object MacThreads {
             val log = ChatLog.of(context)
             var problem: String? = MAC_UNREACHABLE
             try {
-                val client = MacRunnerClient(config(context))
+                val mac = machine(context, threadId)
+                val client = macClient(mac)
                 val health = client.health()
-                heard(context, health)
-                problem = when (macRoute(ThreadHome.Mac, health, startedOnMac = false, phoneHasClone = false)) {
+                if (mac != null) heard(context, mac.id, health)
+                problem = if (mac == null) MAC_NOT_SET_UP else when (macRoute(ThreadHome.Mac, health, startedOnMac = false, phoneHasClone = false)) {
                     MacRoute.RunOnMac -> {
                         val taken = client.sendMessage(threadId, text)
                         if (taken is MacAnswer.Ok && taken.value == MacTaken.Now) log.update(time, save = true, change = ::macTaken)
@@ -1089,18 +1142,19 @@ object MacThreads {
     private fun following(context: Context, threadId: String, mine: Follower) {
         val log = ChatLog.of(context)
         var misses = 0
+        val machine = macMachineOf(threadId)
         while (true) {
-            val config = config(context)
-            if (config == null) {
-                noMac(context)
+            val mac = machine(context, threadId)
+            if (mac == null) {
+                if (machines(context).isEmpty()) noMac(context) else abandon(context, threadId, MAC_NOT_SET_UP)
                 return
             }
-            val client = MacRunnerClient(config)
+            val client = macClient(mac)
             val asked = clock.incrementAndGet()
             when (val known = client.thread(threadId)) {
                 is MacAnswer.Ok -> {
                     val seen = known.value
-                    reached(context, true)
+                    reached(context, machine, true)
                     TailscaleHeal.after(context, MacLink.Answered)
                     noted(context, seen)
                     if (seen.lastEvent < cursors.after(threadId)) {
@@ -1165,9 +1219,10 @@ object MacThreads {
                     return
                 }
                 else -> {
-                    reached(context, false)
-                    // A thread waiting out a dark link is often where a reboot's Tailscale shows: it is healed from here too.
-                    if (known is MacAnswer.Unreachable) TailscaleHeal.after(context, MacLink.NoAnswer)
+                    reached(context, machine, false)
+                    // A thread waiting out a dark link is often where a reboot's Tailscale shows: it is healed from here too,
+                    // unless another Mac answers, which says this phone's link is up.
+                    if (known is MacAnswer.Unreachable && view.macs.none { it.reachable }) TailscaleHeal.after(context, MacLink.NoAnswer)
                     // Out of reach with nothing of his there and no card of its to keep: nothing to wait for.
                     if (!unfinished(context, threadId) && pending.none { it.threadId == threadId } && leave(mine, threadId)) return
                     pause(macRetryDelay(++misses))
@@ -1255,18 +1310,19 @@ object MacThreads {
         val log = ChatLog.of(context)
         val task = log.tasks.firstOrNull { it.thread == threadId && it.status == TaskStatus.Running } ?: return
         val thread = view.threads.firstOrNull { it.id == threadId }?.takeIf { it.project.isNotBlank() } ?: return
+        val machine = macMachineOf(threadId)
         val from = macKindOf(thread.kind)
         val now = System.currentTimeMillis()
         val (next, words) = synchronized(this) {
             limits.hit(from, now)
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString("limits", limits.text(now)).apply()
-            macKind(kinds, limits.at(now)) to sentWords[task.time]
+            macKind(kindsOf(machine), limits.at(now)) to sentWords[task.time]
         }
-        if (next == null) return log.update(task.time, save = true) { macAllLimitedEntry(it, kinds) }
-        val name = macKindThreadName(thread.name, next, view.threads.map { it.name })
+        if (next == null) return log.update(task.time, save = true) { macAllLimitedEntry(it, kindsOf(machine)) }
+        val name = macKindThreadName(thread.name, next, sameMac(threadId).map { it.name })
         val text = words ?: sentText(context, task.time, task.prompt, threadId)
         log.update(task.time, save = true) { macLimitHandOver(it, name, macLimitStep(from, next)) }
-        make(context, task.time, MacFresh.Make(name, thread.project), away = false, next) { text }
+        make(context, task.time, MacFresh.Make(name, thread.project), away = false, next, machine) { text }
     }
 
     /**
@@ -1279,13 +1335,15 @@ object MacThreads {
         restore(context)
         val app = context.applicationContext
         val log = ChatLog.of(app)
-        when (chatPlace(config(app) != null, view.reachable)) {
+        val macs = macSeen(machines(app), view)
+        val on = macDefaultMachine(macs)
+        when (chatPlace(on != null, macs.any { it.id == on && it.reachable })) {
             ChatPlace.NotSetUp -> log.update(asked, save = true) { it.copy(agent = QUICK_AGENT, result = MAC_NOT_SET_UP, status = TaskStatus.Failed) }
             ChatPlace.Unreachable -> {
                 log.update(asked, save = true) { it.copy(agent = QUICK_AGENT, result = MAC_CHAT_UNREACHABLE, status = TaskStatus.Dropped, answeredBy = OMA_NAME) }
                 refresh(app)
             }
-            ChatPlace.Start -> makeForChat(app, asked, prompt, away, chat)
+            ChatPlace.Start -> makeForChat(app, asked, prompt, away, chat, machine = on ?: MAC_FIRST)
         }
     }
 
@@ -1300,7 +1358,7 @@ object MacThreads {
         val app = context.applicationContext
         val log = ChatLog.of(app)
         val name = chatDirectName(TabBook.of(app).names[chatKey(chat)], prompt)
-        val setUp = config(app) != null
+        val setUp = machines(app).isNotEmpty()
         val time = synchronized(AgentTasks) {
             ChatHistory.stamp(log.tasks, System.currentTimeMillis()).also { time ->
                 log.begin(if (setUp) macChatDirect(time, prompt, chat, name) else ChatTask(time, QUICK_AGENT, prompt, result = MAC_NOT_SET_UP, status = TaskStatus.Failed, direct = true, chat = chat))
@@ -1314,12 +1372,13 @@ object MacThreads {
      * runs the first agent the Mac has that is not known to be at its limit, named after it when that is not Claude.
      * It is called [given], or else by the chat's name as it stands.
      */
-    private fun makeForChat(context: Context, time: Long, prompt: String, away: Boolean, chat: String, given: String? = null) {
+    private fun makeForChat(context: Context, time: Long, prompt: String, away: Boolean, chat: String, given: String? = null, machine: String? = null) {
         val name = given ?: chatThreadName(TabBook.of(context).names[chatKey(chat)])
-        val kind = macKind(kinds, limited()) ?: macInstalled(kinds).first()
-        val named = if (kind == MAC_CLAUDE) name else macKindThreadName(name, kind, view.threads.map { it.name })
+        val on = machine ?: macDefaultMachine(macSeen(machines(context), view)) ?: MAC_FIRST
+        val kind = macKind(kindsOf(on), limited()) ?: macInstalled(kindsOf(on)).first()
+        val named = if (kind == MAC_CLAUDE) name else macKindThreadName(name, kind, view.threads.filter { macMachineOf(it.id) == on }.map { it.name })
         ChatLog.of(context).update(time, save = true) { macChatStart(it, named) }
-        make(context, time, MacFresh.Make(named, MAC_DEFAULT_PROJECT), away, kind) { sentText(context, time, prompt, it) }
+        make(context, time, MacFresh.Make(named, MAC_DEFAULT_PROJECT), away, kind, on) { sentText(context, time, prompt, it) }
     }
 
     /**
@@ -1329,8 +1388,8 @@ object MacThreads {
      */
     fun earlier(context: Context, threadId: String): MacEarlierRead {
         restore(context)
-        val config = config(context.applicationContext) ?: return MacEarlierRead.Unread
-        val client = MacRunnerClient(config)
+        val mac = machine(context.applicationContext, threadId) ?: return MacEarlierRead.Unread
+        val client = macClient(mac)
         val known = client.thread(threadId) as? MacAnswer.Ok ?: return MacEarlierRead.Unread
         val after = macEarlierAfter(known.value.lastEvent)
         val events = macEarlierEvents(after, known.value.lastEvent) { from -> (client.events(threadId, from) as? MacAnswer.Ok)?.value?.events }
@@ -1347,7 +1406,7 @@ object MacThreads {
         restore(context)
         val app = context.applicationContext
         thread(name = "oma-mac-stop", isDaemon = true) {
-            val said = when (val stopped = MacRunnerClient(config(app)).stop(threadId)) {
+            val said = when (val stopped = client(app, threadId).stop(threadId)) {
                 is MacAnswer.Ok -> if (stopped.value) null else "Nothing was running on the Mac for this."
                 MacAnswer.Unreachable -> "Mac unreachable. It is still working there."
                 else -> "The Mac did not stop it."
@@ -1375,7 +1434,7 @@ object MacThreads {
         thread(name = "oma-mac-answer", isDaemon = true) {
             var outcome = MacApprovalOutcome.Unreachable
             try {
-                outcome = macApprovalOutcome(MacRunnerClient(config(app)).answerApproval(entry.threadId, entry.request.approval, allow, entry.request.nonce))
+                outcome = macApprovalOutcome(client(app, entry.threadId).answerApproval(entry.threadId, entry.request.approval, allow, entry.request.nonce))
                 if (outcome.over) {
                     val gone = synchronized(this) { book.remove(entry.threadId, entry.request.approval).also { published(context) } }
                     if (gone != null) AgentNotices.macWithdraw(app, gone)

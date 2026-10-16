@@ -126,6 +126,8 @@ data class AgentThread(
     val mac: Boolean = macThreadId(key) != null,
     /** A new chat with no thread on the Mac yet: nothing sent, its thread being made, or its words waiting for the Mac. */
     val unplaced: Boolean = false,
+    /** Which Mac it is on, as he calls it ("MacBook Pro"), when he has more than one; empty otherwise and for the phone's. */
+    val machine: String = "",
 )
 
 /** One of the phone's builders as it stands: whether a task runs, its label, what waits for his approval, and when the task began ([since], 0 if none). */
@@ -295,7 +297,8 @@ fun chatThread(
     asks: Map<String, List<ThreadAsk>> = emptyMap(),
 ): AgentThread {
     if (chat.mac.isNotEmpty()) {
-        return macThreadNow(mac.threads.firstOrNull { it.id == chat.mac }, chat.mac, tasks, asks[chat.mac].orEmpty(), mac.reachable).copy(key = chat.key, name = name)
+        return macThreadNow(mac.threads.firstOrNull { it.id == chat.mac }, chat.mac, tasks, asks[chat.mac].orEmpty(), mac.reachableFor(chat.mac))
+            .copy(key = chat.key, name = name, machine = mac.machineFor(chat.mac))
     }
     val entries = tasks.filter { it.chat == chat.id }
     val running = entries.lastOrNull { it.status == TaskStatus.Running }
@@ -341,7 +344,8 @@ fun agentThreads(
     val listed = mac.threads.associateBy { it.id }
     val bound = chats.map { it.mac }.filter { it.isNotEmpty() }.toSet()
     val ids = (mac.threads.map { it.id } + tasks.filter { it.mac && it.chat.isEmpty() }.map { it.thread }).distinct() - bound
-    val threads = ids.map { id -> macThreadNow(listed[id], id, tasks.filter { it.chat.isEmpty() }, asks[id].orEmpty(), mac.reachable) }
+    // Each as reachable as its own Mac: one Mac out of reach leaves the other's threads as they are.
+    val threads = ids.map { id -> macThreadNow(listed[id], id, tasks.filter { it.chat.isEmpty() }, asks[id].orEmpty(), mac.reachableFor(id)).copy(machine = mac.machineFor(id)) }
     val builders = mapOf(BuilderId.A to builder, BuilderId.B to second)
     val chatThreads = chats.map { chatThread(it, names[it.key] ?: NEW_CHAT_NAME, tasks, mac, asks) }
     val all = phoneThreads(tasks, builders) + threads.sortedWith(compareByDescending<AgentThread> { it.worked ?: Long.MIN_VALUE }.thenBy { it.name }.thenBy { it.key }) + chatThreads

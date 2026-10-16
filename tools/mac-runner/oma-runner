@@ -1176,6 +1176,8 @@ def install():
         TOKEN_FILE.write_text(digest(key) + '\n')
         print('made a new key. Give it to the phone now (url and key in ~/.config/omalauncher/mac-runner.json there); '
               'this Mac keeps only its digest and cannot show it again:\n  ' + key)
+        print('A second Mac beside the Mac Pro: instead run  OMA_RUNNER_NAME="MacBook Pro" oma-runner rekey  which sends the '
+              'phone its own key by Taildrop without showing it; there, oma drop get and then oma threads add-mac FILE.')
     TOKEN_FILE.chmod(0o600)
     read_token()
     INSTALLED.parent.mkdir(parents=True, exist_ok=True)
@@ -1212,15 +1214,19 @@ def rekey():
     as mac-runner.json ({url, key}; the phone agent takes it with `oma drop get` and puts it in
     ~/.config/omalauncher/mac-runner.json), and only then does the Mac keep its digest. If the phone cannot be sent to,
     nothing changes and the old key still works. The runner is restarted so only the new key opens it; until the phone
-    has the file it is cut off from the runner. A test's own key file (OMA_RUNNER_TOKEN) leaves the service alone."""
+    has the file it is cut off from the runner. A test's own key file (OMA_RUNNER_TOKEN) leaves the service alone.
+    OMA_RUNNER_NAME names a Mac other than the first (the Mac Pro), such as "MacBook Pro": the file is then
+    mac-runner-macbook-pro.json with that name in it, which the phone sets up beside the first (oma threads add-mac)."""
     address = tailscale_address() if os.environ.get('OMA_RUNNER_BIND') != '127.0.0.1' else '127.0.0.1'
     if address is None:
         sys.exit('oma-runner: no Tailscale address on this Mac right now; nothing changed.')
     key = secrets.token_urlsafe(32)
+    name = (os.environ.get('OMA_RUNNER_NAME') or '').strip()[:32]
+    slug = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')[:32]
     with tempfile.TemporaryDirectory() as folder:
-        file = pathlib.Path(folder) / 'mac-runner.json'
+        file = pathlib.Path(folder) / (('mac-runner-%s.json' % slug) if slug else 'mac-runner.json')
         with os.fdopen(os.open(file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w') as record:
-            json.dump({'url': 'http://%s:%d' % (address, PORT), 'key': key}, record)
+            json.dump({'url': 'http://%s:%d' % (address, PORT), 'key': key, **({'name': name} if slug else {})}, record)
         sent = subprocess.run([TAILSCALE, 'file', 'cp', str(file), PHONE + ':'], capture_output=True, text=True, timeout=120)
     if sent.returncode != 0:
         sys.exit('oma-runner: could not send the new key to %s, so nothing changed and the old key still works: %s'
@@ -1232,7 +1238,7 @@ def rekey():
         record.write(digest(key) + '\n')
     fresh.replace(TOKEN_FILE)
     del key
-    print('sent a new key to %s as mac-runner.json; this Mac keeps only its digest.' % PHONE)
+    print('sent a new key to %s as %s; this Mac keeps only its digest.' % (PHONE, file.name))
     if 'OMA_RUNNER_TOKEN' not in os.environ:
         stop_service()
         start_service()

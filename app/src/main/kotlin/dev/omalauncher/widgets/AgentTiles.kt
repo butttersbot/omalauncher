@@ -291,7 +291,8 @@ fun agentWrites(pages: List<PageLabel>, placed: Map<String, String>, plan: TileP
  */
 fun tileWhere(tile: AgentTile, now: Long): String {
     val thread = tile.thread ?: return "MAC · NOT HEARD FROM"
-    val place = if (thread.mac) "MAC" else "THIS PHONE"
+    // With two Macs it names its own: "MACBOOK PRO · 2 MIN".
+    val place = if (!thread.mac) "THIS PHONE" else thread.machine.uppercase().ifEmpty { "MAC" }
     if (thread.mac && !thread.reachable) return "$place · OUT OF REACH"
     if (thread.unplaced && thread.state != ThreadState.Working && thread.state != ThreadState.Queued) return "$place · NOT STARTED"
     if (!thread.state.active) return "$place · " + agoWords(thread.worked, now)

@@ -24,7 +24,7 @@ class OmaThreadScriptTest {
     private fun has(program: String) = runCatching { ProcessBuilder("/bin/sh", "-c", "command -v $program").start().waitFor() == 0 }.getOrDefault(false)
 
     /** Runs the script with [config] as the Mac's file (null for none); curl answers [body] and [status], or fails when [exit] is not 0. */
-    private fun run(config: String?, body: String, status: Int, vararg arguments: String, exit: Int = 0, trace: Boolean = false): Ran {
+    private fun run(config: String?, body: String, status: Int, vararg arguments: String, exit: Int = 0, trace: Boolean = false, others: Map<String, String> = emptyMap(), files: Map<String, String> = emptyMap(), look: (File) -> Unit = {}): Ran {
         assumeTrue("bash and jq are needed to run the script", has("bash") && has("jq"))
         val dir = Files.createTempDirectory("oma-thread-test").toFile()
         try {
@@ -33,8 +33,11 @@ class OmaThreadScriptTest {
                 writeText("#!/bin/sh\nprintf '%s\\n' \"\$@\" > \"\$FAKE/arguments\"\ncat > \"\$FAKE/input\"\nprintf '%s\\n%s' \"\$FAKE_BODY\" \"\$FAKE_STATUS\"\nexit \"\$FAKE_EXIT\"\n")
                 setExecutable(true)
             }
-            if (config != null) File(dir, "home/.config/omalauncher").apply { mkdirs() }.resolve("mac-runner.json").writeText(config)
-            val process = ProcessBuilder(listOf("bash") + (if (trace) listOf("-x") else emptyList()) + script.path + arguments).apply {
+            val launcher = File(dir, "home/.config/omalauncher").apply { mkdirs() }
+            if (config != null) launcher.resolve("mac-runner.json").writeText(config)
+            for ((name, text) in others) launcher.resolve(name).writeText(text)
+            for ((name, text) in files) File(dir, name).writeText(text)
+            val process = ProcessBuilder(listOf("bash") + (if (trace) listOf("-x") else emptyList()) + script.absolutePath + arguments).directory(dir).apply {
                 environment()["PATH"] = bin.path + ":" + environment()["PATH"]
                 environment()["HOME"] = File(dir, "home").path
                 environment()["FAKE"] = dir.path
@@ -45,7 +48,9 @@ class OmaThreadScriptTest {
             val out = process.inputStream.bufferedReader().readText()
             val err = process.errorStream.bufferedReader().readText()
             fun recorded(name: String) = File(dir, name).takeIf { it.isFile }?.readText().orEmpty()
-            return Ran(process.waitFor(), out, err, recorded("arguments"), recorded("input"))
+            val code = process.waitFor()
+            look(dir)
+            return Ran(code, out, err, recorded("arguments"), recorded("input"))
         } finally { dir.deleteRecursively() }
     }
 
@@ -110,5 +115,39 @@ class OmaThreadScriptTest {
         for ((ran, why) in unasked) {
             assertNotEquals(0, ran.code); assertTrue(ran.err, ran.err.contains(why)); assertEquals("", ran.arguments); assertEquals("", ran.out)
         }
+    }
+
+    /**
+     * Two Macs (MacMachines.kt): each listed under the phone's id for its threads, with its name; a new thread goes
+     * to the one named; and add-mac sets the second up from the file its runner sent without ever printing the key.
+     */
+    @Test fun twoMacsAreListedAndChosenAndTheSecondIsSetUpWithoutItsKeyShowing() {
+        val second = mapOf("mac-runner-macbook-pro.json" to JSONObject().put("url", "http://192.0.2.2:8478").put("key", key).put("name", "MacBook Pro").toString())
+        val body = """{"ok":true,"threads":[{"id":"t1a2b3c4d","name":"Herd","project":"/p","status":"working"}],"thread":{"id":"t1a2b3c4d","name":"Herd","project":"/p"}}"""
+        val listed = run(config(), body, 200, "list", others = second)
+        assertEquals(0, listed.code)
+        assertEquals("t1a2b3c4d\tworking\tHerd\t/p\tMac Pro\nmacbook-pro/t1a2b3c4d\tworking\tHerd\t/p\tMacBook Pro\n", listed.out)
+        val made = run(config(), body, 200, "new", "Herd", "/p", "--mac", "MacBook Pro", others = second)
+        assertEquals("Made thread \"Herd\", id macbook-pro/t1a2b3c4d, in /p on the MacBook Pro.\n", made.out)
+        assertTrue(made.arguments, made.arguments.contains("http://192.0.2.2:8478/threads"))
+        val macs = run(config(), body, 200, "macs", others = second)
+        assertEquals("Mac Pro\tfirst\thttp://192.0.2.1:8478/\nMacBook Pro\tmacbook-pro\thttp://192.0.2.2:8478\n", macs.out)
+        for (ran in listOf(listed, made, macs)) assertFalse(ran.out + ran.err + ran.arguments, (ran.out + ran.err + ran.arguments).contains(key))
+        // The file its runner sent: set up beside the first under its own name, mode 600, and taken out of the inbox.
+        val sent = JSONObject().put("url", "http://192.0.2.2:8478").put("key", key).put("name", "MacBook Pro").toString()
+        var kept = ""
+        var mode = ""
+        var left = true
+        val added = run(config(), "", 200, "add-mac", "sent.json", files = mapOf("sent.json" to sent)) { dir ->
+            val file = File(dir, "home/.config/omalauncher/mac-runner-macbook-pro.json")
+            kept = file.takeIf { it.isFile }?.readText().orEmpty()
+            mode = Files.getPosixFilePermissions(file.toPath()).toString()
+            left = File(dir, "sent.json").exists()
+        }
+        assertEquals(added.err, 0, added.code)
+        assertEquals(key, JSONObject(kept).getString("key"))
+        assertEquals("[OWNER_READ, OWNER_WRITE]", mode)
+        assertFalse(left)
+        assertFalse(added.out + added.err, (added.out + added.err).contains(key))
     }
 }

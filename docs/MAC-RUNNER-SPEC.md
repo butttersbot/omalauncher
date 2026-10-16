@@ -474,3 +474,32 @@ command." The phone's command is `oma drop` (`app/src/main/assets/oma-drop.sh`).
   `oma-try`.
 - Not done: the `omalauncher` thread itself. Making a thread needs the runner key, which only the phone holds now;
   the front agent can make it (`kind claude`, project `~/Projects/omalauncher-fold`).
+
+## As built: a second Mac (2026-10-16, by the agent on the Fold)
+
+Boss asked for a second runner, on the MacBook Pro (tailnet `macbook-pro`), beside the Mac Pro's. The runner is the
+same; only the phone and how the key reaches it changed.
+
+- **One file per Mac** in the guest's `~/.config/omalauncher`: `mac-runner.json` is the first Mac, the Mac Pro,
+  exactly as before; `mac-runner-ID.json` is each other, such as `mac-runner-macbook-pro.json`
+  (`{"url","key","name"}`, mode 600). `name` is what he is shown; without it the id says it ("MacBook Pro").
+- **Thread ids.** A runner's ids are `t` and hex digits. The phone knows the first Mac's threads by those ids alone
+  (nothing kept from before changes) and another Mac's as `ID/` and the id, e.g. `macbook-pro/t1a2b3c4d`, in the
+  chat, tabs, tiles, approvals, cursors, the front agent's marks and `oma threads`. The id is split again only where
+  a request goes out (MacRunnerClient), so each runner is only ever asked about its own ids.
+- **Each Mac on its own.** `/health` and `/threads` are asked of each Mac in turn; one that does not answer keeps its
+  last-heard threads, marked out of reach, and hides nothing of the other's. Work stays on its thread's Mac: a fresh
+  thread, a limit fallback or separate work is always made on the same Mac. A new chat starts on the Mac Pro while
+  it answers, else on the other; a new chat beside a thread the front agent named starts on that thread's Mac.
+- **Where he sees which Mac.** With two or more Macs: the front agent's board has a "Macs:" line and "on the
+  MacBook Pro" on each thread; chat tabs carry the Mac's name after the thread's; tiles read "MACBOOK PRO · 2 MIN";
+  `oma status` has `mac.macs` and a `mac` on each thread; `oma threads list` adds a fifth column. With one Mac all
+  of these read exactly as before.
+- **Setting the MacBook up (Boss, on the MacBook):** `oma-runner install`, then
+  `OMA_RUNNER_NAME="MacBook Pro" oma-runner rekey`, which Taildrops `mac-runner-macbook-pro.json` (with its name) to
+  the phone without printing the key. On the phone: `oma drop get`, then `oma threads add-mac
+  ~/Inbox/mac-runner-macbook-pro.json`, which puts it in place (mode 600), never prints the key, and removes the
+  dropped file. A file whose address is already set up replaces that Mac's key instead, so the Mac Pro's own rekey
+  can go the same way. `oma threads macs` lists the Macs; `oma threads new NAME PATH --mac "MacBook Pro"` makes a
+  thread on the one named.
+- **Not changed:** `oma drop send` still sends to the first Mac only.

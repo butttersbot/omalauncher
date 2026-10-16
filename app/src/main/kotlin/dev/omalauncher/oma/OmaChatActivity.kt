@@ -464,7 +464,7 @@ private fun OmaChatScreen(
                     for (thread in threads) {
                         Box(
                             Modifier
-                                .semantics { contentDescription = "${thread.name}: ${thread.label}" }
+                                .semantics { contentDescription = "${thread.name}${if (thread.machine.isEmpty()) "" else " on the ${thread.machine}"}: ${thread.label}" }
                                 .clickable { pick(dotTap(tab, thread.key)) }
                                 .padding(vertical = 12.dp)
                                 .width(DOT_PITCH),
@@ -844,6 +844,15 @@ private fun TabStrip(
                     Spacer(Modifier.width(6.dp))
                 }
                 BasicText(Pack.caption(tabTitle(key, threads)), style = Pack.mono(Pack.size.small, if (on) Pack.background else Pack.foreground), maxLines = 1)
+                // With two Macs each Mac thread's tab says which it is on, quieter than its name.
+                if (!thread?.machine.isNullOrEmpty()) {
+                    BasicText(
+                        Pack.caption(thread!!.machine),
+                        Modifier.padding(start = 6.dp),
+                        style = Pack.mono(Pack.size.small, if (on) Pack.background else Pack.muted),
+                        maxLines = 1,
+                    )
+                }
             }
         }
         // As tall as the tabs and as wide as it is tall.
