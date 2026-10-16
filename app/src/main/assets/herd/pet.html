@@ -67,17 +67,23 @@ html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
 @keyframes wobble { 0%, 100% { transform: rotate(0); } 20% { transform: rotate(-12deg); } 40% { transform: rotate(10deg); } 60% { transform: rotate(0); } }
 
 /* A skin: a pixel sprite sheet from pet/skins, frames side by side, drawn in place of the sheep. */
-#sprite { position: absolute; left: 12px; top: 8px; width: 96px; height: 96px; display: none;
-  background-repeat: no-repeat; background-size: auto 96px; image-rendering: pixelated; transform-origin: 48px 92px; }
+#sprite { --fs: 96px; position: absolute; left: calc(60px - var(--fs) / 2); top: calc(104px - var(--fs));
+  width: var(--fs); height: var(--fs); display: none;
+  background-repeat: no-repeat; background-size: auto var(--fs); image-rendering: pixelated; transform-origin: 50% 96%; }
 #pet.skinned #sprite { display: block; }
 #pet.skinned #sheep { display: none; }
 #pet.sleep #sprite { animation: breathe 4s ease-in-out infinite; filter: saturate(.75) brightness(.92); }
 #pet.work #sprite { animation: bob .9s ease-in-out infinite; }
 #pet.work #sprite.two { animation: bob .9s ease-in-out infinite, flip .9s steps(1) infinite; }
+#pet.work #sprite.four { animation: walk .8s steps(1) infinite; }
 #pet.alert #sprite { animation: hop 1.4s cubic-bezier(.3, 0, .3, 1) infinite; }
 #pet.alert #sprite.two { animation: hop 1.4s cubic-bezier(.3, 0, .3, 1) infinite, flip .35s steps(1) infinite; }
+#pet.alert #sprite.four { animation: hop 1.4s cubic-bezier(.3, 0, .3, 1) infinite, walk .5s steps(1) infinite; }
 #pet.happy #sprite { animation: hop .5s cubic-bezier(.3, 0, .3, 1) 2; }
-@keyframes flip { 0% { background-position: 0 0; } 50% { background-position: -96px 0; } }
+@keyframes flip { 0% { background-position: 0 0; } 50% { background-position: calc(var(--fs) * -1) 0; } }
+/* A four-frame walk: stand, stride, pass, stride. */
+@keyframes walk { 0% { background-position: 0 0; } 25% { background-position: calc(var(--fs) * -1) 0; }
+  50% { background-position: calc(var(--fs) * -2) 0; } 75% { background-position: calc(var(--fs) * -3) 0; } }
 
 .looks { display: grid; grid-template-columns: repeat(auto-fill, minmax(82px, 1fr)); gap: 6px; padding: 8px; }
 .look { border: 1.5px solid transparent; background: var(--row-hover); border-radius: 12px; padding: 8px 4px 6px; cursor: pointer;
@@ -366,7 +372,10 @@ function wear() {
   pet.classList.toggle('skinned', !!skin);
   if (!skin) return;
   sprite.style.backgroundImage = `url("${skin.url}")`;
-  sprite.classList.toggle('two', skin.frames > 1);
+  // A skin whose figure is small in its frame (Crono) asks to be drawn bigger.
+  sprite.style.setProperty('--fs', (skin.display || 96) + 'px');
+  sprite.classList.toggle('two', skin.frames === 2 || skin.frames === 3);
+  sprite.classList.toggle('four', skin.frames >= 4);
 }
 
 function renderLook(view) {
@@ -374,7 +383,12 @@ function renderLook(view) {
   const sheep = `<svg viewBox="16 20 88 90">${document.querySelector('#sheep').outerHTML.replace('id="sheep"', '')}</svg>`;
   let html = `<div class="looks"><button class="look ${skin ? '' : 'on'}" data-skin="">${sheep}Sheep</button>`;
   for (const s of list)
-    html += `<button class="look ${skin?.name === s.name ? 'on' : ''}" data-skin="${esc(s.name)}"><i style="background-image:url('${esc(s.url)}')"></i>${esc(s.name.replace(/-/g, ' '))}</button>`;
+  {
+    // The thumbnail is scaled like the pet draws it, so a small figure (Crono) isn't lost in its frame.
+    const size = Math.round(56 * (s.display || 96) / 96), inset = Math.round((size - 56) / 2);
+    const art = `background-image:url('${esc(s.url)}');background-size:auto ${size}px;background-position:-${inset}px -${size - 56}px`;
+    html += `<button class="look ${skin?.name === s.name ? 'on' : ''}" data-skin="${esc(s.name)}"><i style="${art}"></i>${esc(s.name.replace(/-/g, ' '))}</button>`;
+  }
   html += `</div>`;
   if (!list.length) html += `<div class="note">No skins yet. They live in pet/skins on a machine with ClaudeSync; the reporter there serves them.</div>`;
   view.innerHTML = html;
@@ -384,7 +398,7 @@ $('view').addEventListener('click', e => {
   const pick = e.target.closest('[data-skin]');
   if (!pick) return;
   const s = skins().find(x => x.name === pick.dataset.skin);
-  skin = s ? { name: s.name, url: s.url, frames: s.frames } : null;
+  skin = s ? { name: s.name, url: s.url, frames: s.frames, display: s.display } : null;
   store.set('skin', skin); wear(); render();
   const pet = $('pet'); pet.classList.add('happy'); setTimeout(() => pet.classList.remove('happy'), 1100);
 });
@@ -453,7 +467,7 @@ window.herd = {
     const list = sessions();
     if (firstRun && !store.get('seen', null)) markSeen();
     announce(list);
-    if (skin) { const s = skins().find(x => x.name === skin.name); if (s && s.url !== skin.url) { skin = { name: s.name, url: s.url, frames: s.frames }; store.set('skin', skin); } wear(); }
+    if (skin) { const s = skins().find(x => x.name === skin.name); if (s && (s.url !== skin.url || s.display !== skin.display || s.frames !== skin.frames)) { skin = { name: s.name, url: s.url, frames: s.frames, display: s.display }; store.set('skin', skin); } wear(); }
     if (document.body.classList.contains('open')) markSeen();
     mood();
     if (document.body.classList.contains('open') && !(detail && job === 'agents')) render();
