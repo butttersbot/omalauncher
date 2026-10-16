@@ -482,7 +482,7 @@ class MacRunnerTest {
         "HTTP/1.1 $code Answer\r\nContent-Type: $type\r\nContent-Length: ${body.toByteArray().size}\r\nConnection: close\r\n\r\n$body"
 
     /** Runs [test] against a server that gives each request, whole, to [answer] and closes when it returns. */
-    private fun withServer(answer: (String, OutputStream) -> Unit, test: (MacRunnerClient, List<String>) -> Unit) {
+    private fun withServer(answer: (String, OutputStream) -> Unit, machine: String = MAC_FIRST, test: (MacRunnerClient, List<String>) -> Unit) {
         val server = ServerSocket(0, 8, InetAddress.getLoopbackAddress())
         val asked = Collections.synchronizedList(ArrayList<String>())
         Thread {
@@ -501,7 +501,7 @@ class MacRunnerTest {
             }
         }.apply { isDaemon = true }.start()
         try {
-            test(MacRunnerClient(MacRunnerConfig("http://127.0.0.1:${server.localPort}", key)), asked)
+            test(MacRunnerClient(MacRunnerConfig("http://127.0.0.1:${server.localPort}", key), machine), asked)
         } finally { server.close() }
     }
 
@@ -543,6 +543,38 @@ class MacRunnerTest {
             assertEquals(MacAnswer.NotFound, client.thread("gone"))
             assertEquals(MacStreamEnd(3, MacStreamWhy.Refused, 404), client.stream("gone", 3, { false }) { fail("no event") })
         }
+    }
+
+    /**
+     * Another Mac's runner (MacMachines.kt): the phone knows its threads as `macbook-pro/` and the runner's id, and
+     * the runner is only ever asked about its own id. What it answers comes back under the phone's id again.
+     */
+    @Test fun anotherMacsRunnerIsAskedByItsOwnIdsAndAnsweredWithThePhones() {
+        val answers = { request: String, out: OutputStream ->
+            val body = when {
+                request.startsWith("GET /threads ") -> """{"ok": true, "threads": [{"id": "t1", "name": "Herd", "project": "/p", "status": "idle"}]}"""
+                request.startsWith("POST /threads/t1/messages ") -> """{"ok": true, "taken": "now"}"""
+                request.startsWith("POST /threads/t1/stop ") -> """{"ok": true, "stopped": true}"""
+                else -> """{"ok": true, "thread": {"id": "t1", "name": "Herd", "project": "/p", "status": "idle"}}"""
+            }
+            out.write(http(200, body).toByteArray())
+        }
+        withServer(answers, "macbook-pro") { client, asked ->
+            assertEquals(listOf("macbook-pro/t1"), (client.threads() as MacAnswer.Ok).value.map { it.id })
+            assertEquals("macbook-pro/t1", (client.thread("macbook-pro/t1") as MacAnswer.Ok).value.id)
+            assertEquals("macbook-pro/t1", (client.makeThread("Herd", "/p") as MacAnswer.Ok).value.id)
+            assertEquals(MacAnswer.Ok(MacTaken.Now), client.sendMessage("macbook-pro/t1", "hello"))
+            assertEquals(MacAnswer.Ok(true), client.stop("macbook-pro/t1"))
+            client.events("macbook-pro/t1", 4)
+            client.stream("macbook-pro/t1", 4, { false }) { }
+            val lines = asked.map { it.substringBefore("\r\n") }
+            assertTrue(lines.toString(), lines.containsAll(listOf("GET /threads HTTP/1.1", "GET /threads/t1 HTTP/1.1", "POST /threads HTTP/1.1",
+                "POST /threads/t1/messages HTTP/1.1", "POST /threads/t1/stop HTTP/1.1", "GET /threads/t1/events?after=4 HTTP/1.1", "GET /threads/t1/stream?after=4 HTTP/1.1")))
+            assertTrue(lines.none { "macbook-pro" in it })
+        }
+        // The first Mac's threads keep the runner's own ids, as they always had.
+        withServer(answers) { client, _ -> assertEquals(listOf("t1"), (client.threads() as MacAnswer.Ok).value.map { it.id }) }
+        assertEquals(MacAnswer.Unreachable, macClient(null).threads())
     }
 
     @Test fun aMacThatIsNotThereIsUnreachableAndNothingThrows() {

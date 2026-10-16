@@ -411,9 +411,10 @@ private fun ago(millis: Long): String {
  * null if it never has). [tailscale] says, while the Mac is out of reach, that Tailscale was found off on this
  * phone and is being turned back on, or that he turned it off himself ([healNote]), so the front agent can tell
  * Boss the cause. Nothing of an approval is ever part of it: the threads' waiting requests are left out of the text, and
- * only their status says that one waits for Boss.
+ * only their status says that one waits for Boss. [macs] are the Macs set up, as last heard: with two or more the
+ * board says how each stands and which Mac each thread is on; with one it reads as it always did.
  */
-data class MacBoard(val threads: List<MacThread>, val reachable: Boolean, val seen: Long?, val now: Long, val tailscale: String? = null)
+data class MacBoard(val threads: List<MacThread>, val reachable: Boolean, val seen: Long?, val now: Long, val tailscale: String? = null, val macs: List<MacSeen> = emptyList())
 
 const val BOARD_THREADS = 8
 const val BOARD_THREAD_CHARS = 320
@@ -423,10 +424,10 @@ private const val BOARD_TAIL_CHARS = 120
 private const val BOARD_FOLDER_CHARS = 40
 
 /** The board's part about the Mac: the newest worked [BOARD_THREADS] of the threads a mark can name. */
-fun macBoard(threads: List<MacThread>, reachable: Boolean, seen: Long?, now: Long, tailscale: String? = null) =
-    MacBoard(threads.filter { macNameable(it.id) }.sortedByDescending { it.lastWorked ?: Long.MIN_VALUE }.take(BOARD_THREADS), reachable, seen, now, tailscale)
+fun macBoard(threads: List<MacThread>, reachable: Boolean, seen: Long?, now: Long, tailscale: String? = null, macs: List<MacSeen> = emptyList()) =
+    MacBoard(threads.filter { macNameable(it.id) }.sortedByDescending { it.lastWorked ?: Long.MIN_VALUE }.take(BOARD_THREADS), reachable, seen, now, tailscale, macs)
 
-private fun macThreadLine(thread: MacThread, now: Long): String {
+private fun macThreadLine(thread: MacThread, now: Long, macs: List<MacSeen> = emptyList()): String {
     val status = when (thread.status) {
         MacThreadStatus.Idle -> "idle"
         MacThreadStatus.Working -> "working"
@@ -441,11 +442,27 @@ private fun macThreadLine(thread: MacThread, now: Long): String {
     val said = if (tail.isEmpty()) "" else "; it last said \"${if (tail.length > BOARD_TAIL_CHARS) "..." else ""}${tail.takeLast(BOARD_TAIL_CHARS)}\""
     // The folder, so two threads at work on one project can be seen to be: that is when separate work gets a fresh thread.
     val folder = macFolder(thread.project).takeIf { it.isNotEmpty() }?.let { " in folder ${oneLine(it).take(BOARD_FOLDER_CHARS)}" }.orEmpty()
-    return "- \"${oneLine(thread.name).take(BOARD_NAME_CHARS)}\" id ${thread.id}$folder: $status$worked$asked$said".take(BOARD_THREAD_CHARS)
+    val on = if (macs.size < 2) "" else " on the ${macs.firstOrNull { it.id == macMachineOf(thread.id) }?.name ?: macMachineName(macMachineOf(thread.id))}"
+    return "- \"${oneLine(thread.name).take(BOARD_NAME_CHARS)}\" id ${thread.id}$on$folder: $status$worked$asked$said".take(BOARD_THREAD_CHARS)
+}
+
+/** How one Mac stands, for a board with more than one. */
+private fun macSeenLine(mac: MacSeen, now: Long): String = when {
+    mac.reachable -> "${mac.name}: reachable"
+    mac.seen == null -> "${mac.name}: not reachable, not seen yet"
+    else -> "${mac.name}: not reachable, last seen ${ago((now - mac.seen).coerceAtLeast(0))}"
 }
 
 private fun macLines(mac: MacBoard?): List<String> {
     if (mac == null) return emptyList()
+    if (mac.macs.size >= 2) {
+        // Each Mac's own line: one out of reach hides nothing of the other's threads, which keep their own Mac's name.
+        val link = "Macs: " + mac.macs.joinToString("; ") { macSeenLine(it, mac.now) } + "." +
+            (mac.tailscale?.takeIf { mac.macs.none { it.reachable } }?.let { " ${it.removeSuffix(".")}." }.orEmpty())
+        val threads = if (mac.threads.isEmpty()) listOf("Project threads on the Macs: none.")
+        else listOf("Project threads on the Macs, each on the Mac it names:") + mac.threads.map { macThreadLine(it, mac.now, mac.macs) }
+        return listOf(link) + threads
+    }
     val away = when {
         mac.reachable -> null
         mac.seen == null -> "Mac: not reachable, not seen yet"

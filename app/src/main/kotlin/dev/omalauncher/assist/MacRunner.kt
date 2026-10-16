@@ -296,12 +296,20 @@ fun macRoute(home: ThreadHome, health: MacHealthResult, startedOnMac: Boolean, p
     else -> MacRoute.TellOwnerUnreachable
 }
 
+/** The runner of [mac], or one that answers nothing when it is null (its file is gone). */
+fun macClient(mac: MacMachine?) = MacRunnerClient(mac?.config, mac?.id ?: MAC_FIRST)
+
 /**
  * The network under all of the above, and nothing more. Every call blocks, so none belongs on the main thread,
  * and none throws: a failure is [MacAnswer.Unreachable], with no message, because a failure's own words can
- * quote the request's headers and the key is in them.
+ * quote the request's headers and the key is in them. [machine] is which Mac [config] is (MacMachines.kt): the
+ * thread ids given and returned are the phone's, and are made the runner's own here, on the way out.
  */
-class MacRunnerClient(private val config: MacRunnerConfig?) {
+class MacRunnerClient(private val config: MacRunnerConfig?, private val machine: String = MAC_FIRST) {
+    private fun own(threadId: String) = macRunnerId(threadId)
+
+    private fun ours(answer: MacAnswer<MacThread>): MacAnswer<MacThread> = if (answer is MacAnswer.Ok) MacAnswer.Ok(macOnMachine(machine, answer.value)) else answer
+
     /**
      * Asked before every hand-over. The limit is on the whole call, not on each step of it, so the wait is on
      * another thread: that one gives up by its own timeouts soon after.
@@ -313,20 +321,23 @@ class MacRunnerClient(private val config: MacRunnerConfig?) {
         return macHealthResult(runCatching { asked.get(HEALTH_LIMIT_MS.toLong(), TimeUnit.MILLISECONDS) }.getOrNull())
     }
 
-    fun threads(): MacAnswer<List<MacThread>> = parseMacThreads(send(MacRequests.threads()))
+    fun threads(): MacAnswer<List<MacThread>> = when (val listed = parseMacThreads(send(MacRequests.threads()))) {
+        is MacAnswer.Ok -> MacAnswer.Ok(listed.value.map { macOnMachine(machine, it) })
+        else -> listed
+    }
 
-    fun thread(threadId: String): MacAnswer<MacThread> = parseMacThread(send(MacRequests.thread(threadId)))
+    fun thread(threadId: String): MacAnswer<MacThread> = ours(parseMacThread(send(MacRequests.thread(own(threadId)))))
 
-    fun makeThread(name: String, project: String, kind: String = ""): MacAnswer<MacThread> = parseMacThread(send(MacRequests.makeThread(name, project, kind)))
+    fun makeThread(name: String, project: String, kind: String = ""): MacAnswer<MacThread> = ours(parseMacThread(send(MacRequests.makeThread(name, project, kind))))
 
-    fun sendMessage(threadId: String, text: String): MacAnswer<MacTaken> = parseMacTaken(send(MacRequests.sendMessage(threadId, text)))
+    fun sendMessage(threadId: String, text: String): MacAnswer<MacTaken> = parseMacTaken(send(MacRequests.sendMessage(own(threadId), text)))
 
-    fun events(threadId: String, after: Long): MacAnswer<MacEventsPage> = parseMacEvents(send(MacRequests.events(threadId, after)))
+    fun events(threadId: String, after: Long): MacAnswer<MacEventsPage> = parseMacEvents(send(MacRequests.events(own(threadId), after)))
 
     fun answerApproval(threadId: String, approval: String, allow: Boolean, nonce: String): MacAnswer<MacDecision> =
-        parseMacDecision(send(MacRequests.answerApproval(threadId, approval, allow, nonce)))
+        parseMacDecision(send(MacRequests.answerApproval(own(threadId), approval, allow, nonce)))
 
-    fun stop(threadId: String): MacAnswer<Boolean> = parseMacStopped(send(MacRequests.stop(threadId)))
+    fun stop(threadId: String): MacAnswer<Boolean> = parseMacStopped(send(MacRequests.stop(own(threadId))))
 
     /**
      * Follows a thread from event [after] until the link drops or [shouldStop] says so; see [followMacStream].
@@ -334,7 +345,7 @@ class MacRunnerClient(private val config: MacRunnerConfig?) {
      */
     fun stream(threadId: String, after: Long, shouldStop: () -> Boolean, onEvent: (MacEvent) -> Unit): MacStreamEnd {
         val dropped = MacStreamEnd(after, MacStreamWhy.Dropped)
-        val connection = runCatching { prepare(MacRequests.stream(threadId, after), CONNECT_MS, STREAM_SILENCE_MS) }.getOrNull() ?: return dropped
+        val connection = runCatching { prepare(MacRequests.stream(own(threadId), after), CONNECT_MS, STREAM_SILENCE_MS) }.getOrNull() ?: return dropped
         try {
             val code = runCatching { connection.responseCode }.getOrNull() ?: return dropped
             if (code != 200) return MacStreamEnd(after, MacStreamWhy.Refused, code)

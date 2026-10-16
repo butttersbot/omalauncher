@@ -434,6 +434,16 @@ try:
     runner = start()
     check('rekey: after a restart the new key opens the runner and the old one does not', call('GET', '/health', token=config['key'])[0] == 200
           and call('GET', '/health')[0] == 401)
+    runner.kill()
+    runner.wait()
+    named = subprocess.run([sys.executable, str(HERE / 'oma-runner'), 'rekey'],
+                           env={**environment, 'OMA_RUNNER_PHONE': 'phone', 'OMA_RUNNER_TAILSCALE': str(fake), 'OMA_RUNNER_NAME': 'MacBook Pro'}, capture_output=True, text=True)
+    second = json.loads((sent / 'mac-runner-macbook-pro.json').read_text())
+    check('rekey: a second Mac named by OMA_RUNNER_NAME sends mac-runner-macbook-pro.json with its name, the key never printed',
+          named.returncode == 0 and set(second) == {'url', 'key', 'name'} and second['name'] == 'MacBook Pro' and second['url'] == base
+          and second['key'] not in named.stdout + named.stderr and 'mac-runner-macbook-pro.json' in named.stdout)
+    runner = start()
+    check('rekey: the named Mac\'s new key opens its runner after the restart', call('GET', '/health', token=second['key'])[0] == 200)
     print('\nall %d checks passed' % passed)
 finally:
     runner.kill()

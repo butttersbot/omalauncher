@@ -359,8 +359,13 @@ fun agentsStatus(facts: BuilderFacts, mac: MacView?, written: String, second: Bu
     if (mac != null) root.put("mac", JSONObject()
         .put("reachable", mac.reachable).put("lastSeenMinAgo", minutesAgo(now, mac.seen))
         .put("tailscale", tailscale?.takeIf { !mac.reachable })
+        // Each Mac set up, once there is more than one: one out of reach is said here and its threads stay listed.
+        .apply { if (mac.macs.size >= 2) put("macs", JSONArray(mac.macs.map { seen ->
+            JSONObject().put("name", seen.name).put("reachable", seen.reachable).put("lastSeenMinAgo", minutesAgo(now, seen.seen))
+        })) }
         .put("threads", JSONArray(mac.threads.map { thread ->
             JSONObject().put("name", clip(thread.name)).put("id", thread.id).put("status", thread.status.word.ifEmpty { "unknown" })
+                .apply { mac.machineFor(thread.id).takeIf { it.isNotEmpty() }?.let { put("mac", it) } }
                 .put("lastWorkedMinAgo", thread.lastWorked?.let { minutesAgo(now, it * 1000) })
                 .put("asked", clip(thread.summary)).put("lastSaid", thread.tail.trim().replace(Regex("\\s+"), " ").takeLast(HEALTH_TEXT_CHARS))
                 .put("approvalsWaiting", thread.pending.size)
