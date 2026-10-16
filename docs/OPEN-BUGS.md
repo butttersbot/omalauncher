@@ -1,5 +1,11 @@
 # Open bugs and the new-phone plan (written 2026-10-14, 04:40 PDT, by the agent on the old Fold)
 
+**Still misrouted (2026-10-15 19:51):** "maybe we could do the rotating ring … What do you think? … Which do you think's
+better?" about the keyboard work was answered by the front agent (Haiku), with rule (6) already installed; Boss's
+"Yeah, let's do it" then reached the builder without the front agent's answer it agreed to, so the ring was missed
+until he said so. Two gaps: rule (6) doesn't catch "what do you think / which is better" reliably, and a hand-over
+after a front-agent answer should carry that answer as context.
+
 **Whisper voice input (2026-10-14 ~23:40), built, not yet seen on the phone.** whisper.cpp 1.9.5 (CPU-only, vendored in
 app/src/main/cpp/whisper.cpp) runs inside Oma: the fast base.en model reads the audio twice a second while Boss
 speaks (words two readings agree on are settled), and small.en reads the whole once he stops. ui/Speech.kt uses it
