@@ -373,6 +373,7 @@ internal fun HomeGrid(
                         val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                         // Not on the herd sheep or its panel, whose lists scroll (Boss, 2026-10-16).
                         val at = gridAt[0]?.takeIf { it.isAttached }?.localToWindow(down.position)
+                        android.util.Log.w("OmaSheep", "grid down at=$at sheep=${HerdSheep.onHome}")
                         if (at != null && HerdSheep.onHome?.contains(at) == true) return@awaitEachGesture
                         val slop = viewConfiguration.touchSlop
                         var pair: Pair<PointerId, PointerId>? = null

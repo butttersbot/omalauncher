@@ -145,7 +145,7 @@ open class SheepFrame(
                 downX = screenX(e); downY = screenY(e); lastX = screenX(e); lastY = screenY(e)
                 dragging = false
                 onPet = onSheep(e.x, e.y)
-                android.util.Log.d("OmaSheep", "down x=${e.x} y=${e.y} w=$width h=$height onPet=$onPet")
+                android.util.Log.w("OmaSheep", "down x=${e.x} y=${e.y} w=$width h=$height onPet=$onPet")
             }
             MotionEvent.ACTION_MOVE -> if (onPet && !dragging && hypot(screenX(e) - downX, screenY(e) - downY) > slop) {
                 dragging = true
