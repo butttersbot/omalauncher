@@ -88,7 +88,8 @@ fun agentMail(json: String?): AgentMail? {
         fromTitle = oneLine(from.optString("title"), 80),
         toSession = to?.optString("session")?.takeIf(SESSION::matches) ?: "",
         text = text,
-        replyTo = o.optString("reply_to").takeIf(MAIL_ID::matches) ?: "",
+        // JSON's null reads as the word "null" through optString: only a string is an id.
+        replyTo = (o.opt("reply_to") as? String)?.takeIf(MAIL_ID::matches) ?: "",
     )
 }
 

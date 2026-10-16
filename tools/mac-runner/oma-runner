@@ -1243,6 +1243,20 @@ def launchctl(*arguments):
     return subprocess.run(['launchctl', *arguments], capture_output=True, text=True)
 
 
+def runner_python():
+    """A python3 the runner can run on: 3.11 or later, which has tomllib. The one running install first, then Homebrew's,
+    then whatever PATH has. Over ssh PATH can put macOS's own 3.9 first, which took the Mac Pro down (2026-10-16)."""
+    for candidate in (sys.executable, '/opt/homebrew/bin/python3', '/usr/local/bin/python3', shutil.which('python3')):
+        if not candidate:
+            continue
+        try:
+            if subprocess.run([candidate, '-c', 'import sys, tomllib; sys.exit(sys.version_info < (3, 11))'], capture_output=True, timeout=20).returncode == 0:
+                return candidate
+        except (OSError, subprocess.SubprocessError):
+            continue
+    sys.exit('oma-runner: no python3 of 3.11 or later here (it needs tomllib). Install one, e.g. brew install python, and run install again.')
+
+
 def install():
     if not TOKEN_FILE.exists():
         TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -1255,6 +1269,7 @@ def install():
               'phone its own key by Taildrop without showing it; there, oma drop get and then oma threads add-mac FILE.')
     TOKEN_FILE.chmod(0o600)
     read_token()
+    python = runner_python()  # before anything is replaced, so a Mac without one keeps the runner it has
     INSTALLED.parent.mkdir(parents=True, exist_ok=True)
     if pathlib.Path(__file__).resolve() != INSTALLED.resolve():
         shutil.copyfile(__file__, INSTALLED)
@@ -1263,7 +1278,7 @@ def install():
     path = ':'.join([str(HOME / '.local/bin'), str(HOME / '.bun/bin'), '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin'])
     PLIST.parent.mkdir(parents=True, exist_ok=True)
     PLIST.write_bytes(plistlib.dumps({
-        'Label': LABEL, 'ProgramArguments': [shutil.which('python3') or sys.executable, str(INSTALLED), 'serve'], 'RunAtLoad': True, 'KeepAlive': True,
+        'Label': LABEL, 'ProgramArguments': [python, str(INSTALLED), 'serve'], 'RunAtLoad': True, 'KeepAlive': True,
         'EnvironmentVariables': {'PATH': path, 'HOME': str(HOME)}, 'WorkingDirectory': str(HOME),
         'StandardOutPath': str(LOGS / 'runner.log'), 'StandardErrorPath': str(LOGS / 'runner.log')}))
     stop_service()

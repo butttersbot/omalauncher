@@ -22,6 +22,8 @@ class AgentMailTest {
         assertEquals("B", mail.toSession)
         assertEquals("Hello from the Mac.", mail.text)
         assertEquals("", mail.replyTo)
+        assertTrue("a null reply_to is no answer to anything", "answering" !in mail.wrapper(BuilderId.A))
+        assertEquals("x1", agentMail(sample.replace("\"reply_to\": null", "\"reply_to\": \"x1\""))!!.replyTo)
         assertEquals("macbook-pro:b53e204e-1111", mail.replyAddress)
     }
 
