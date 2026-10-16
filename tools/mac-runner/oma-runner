@@ -38,7 +38,17 @@ LABEL = 'dev.omalauncher.runner'
 INSTALLED = HOME / '.local/bin/oma-runner'
 # Where `oma-runner rekey` sends a new key, and the tailscale that sends it.
 PHONE = os.environ.get('OMA_RUNNER_PHONE', 'jacks-z-fold8')
-TAILSCALE = os.environ.get('OMA_RUNNER_TAILSCALE') or shutil.which('tailscale') or '/opt/homebrew/bin/tailscale'
+# The Mac app's own binary comes first: reached through Homebrew's symlink, as on the MacBook Pro, it dies ("The current
+# bundleIdentifier is unknown to the registry"), and it wants a TERM, which launchd gives none (tailscale_env). A Mac with
+# only the Homebrew CLI, like the Mac Pro, has no app there and goes on using the CLI.
+TAILSCALE_APP = os.environ.get('OMA_RUNNER_TAILSCALE_APP', '/Applications/Tailscale.app/Contents/MacOS/Tailscale')
+TAILSCALE = os.environ.get('OMA_RUNNER_TAILSCALE') or next(
+    (path for path in (TAILSCALE_APP, shutil.which('tailscale'), '/opt/homebrew/bin/tailscale') if path and os.path.exists(path)), '/opt/homebrew/bin/tailscale')
+
+
+def tailscale_env():
+    """The environment the Tailscale CLI is run in: this one, with a TERM, since the app's binary will not run without."""
+    return {**os.environ, 'TERM': os.environ.get('TERM') or 'dumb'}
 PLIST = HOME / 'Library/LaunchAgents' / (LABEL + '.plist')
 MAX_BODY = 1_000_000
 # Where `oma drop send` puts files from the phone, and the largest it takes. A folder of its own, so nothing the phone
@@ -1227,7 +1237,7 @@ def rekey():
         file = pathlib.Path(folder) / (('mac-runner-%s.json' % slug) if slug else 'mac-runner.json')
         with os.fdopen(os.open(file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w') as record:
             json.dump({'url': 'http://%s:%d' % (address, PORT), 'key': key, **({'name': name} if slug else {})}, record)
-        sent = subprocess.run([TAILSCALE, 'file', 'cp', str(file), PHONE + ':'], capture_output=True, text=True, timeout=120)
+        sent = subprocess.run([TAILSCALE, 'file', 'cp', str(file), PHONE + ':'], capture_output=True, text=True, timeout=120, env=tailscale_env())
     if sent.returncode != 0:
         sys.exit('oma-runner: could not send the new key to %s, so nothing changed and the old key still works: %s'
                  % (PHONE, (sent.stderr or sent.stdout).strip()[:300]))

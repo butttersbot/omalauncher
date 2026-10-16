@@ -444,6 +444,25 @@ try:
           and second['key'] not in named.stdout + named.stderr and 'mac-runner-macbook-pro.json' in named.stdout)
     runner = start()
     check('rekey: the named Mac\'s new key opens its runner after the restart', call('GET', '/health', token=second['key'])[0] == 200)
+    # The MacBook Pro's case: Homebrew's `tailscale` is a symlink to the app's binary, which dies when reached through
+    # one and runs only with a TERM. With no OMA_RUNNER_TAILSCALE the app's own path is used, and given a TERM.
+    runner.kill()
+    runner.wait()
+    app = work / 'Tailscale'
+    app.write_text('#!/bin/sh\n[ -L "$0" ] && { echo "Fatal error: The current bundleIdentifier is unknown to the registry" >&2; exit 9; }\n'
+                   '[ -n "$TERM" ] || { echo "no TERM" >&2; exit 8; }\n[ "$1 $2 $4" = "file cp phone:" ] || exit 3\ncp "$3" %s/app-\n' % sent)
+    app.chmod(0o755)
+    brew = work / 'brew-bin'
+    brew.mkdir()
+    (brew / 'tailscale').symlink_to(app)
+    bare = {name: value for name, value in environment.items() if name not in ('OMA_RUNNER_TAILSCALE', 'TERM')}
+    through = subprocess.run([sys.executable, str(HERE / 'oma-runner'), 'rekey'], capture_output=True, text=True,
+                             env={**bare, 'OMA_RUNNER_PHONE': 'phone', 'OMA_RUNNER_TAILSCALE_APP': str(app), 'PATH': str(brew) + os.pathsep + os.environ.get('PATH', '')})
+    third = json.loads((sent / 'app-').read_text()) if (sent / 'app-').exists() else {}
+    check('rekey: the Tailscale app\'s own binary is preferred over a symlink to it, and run with a TERM',
+          through.returncode == 0 and 'key' in third and third['key'] not in through.stdout + through.stderr)
+    runner = start()
+    check('rekey: that key opens the runner after the restart', call('GET', '/health', token=third.get('key', ''))[0] == 200)
     print('\nall %d checks passed' % passed)
 finally:
     runner.kill()
