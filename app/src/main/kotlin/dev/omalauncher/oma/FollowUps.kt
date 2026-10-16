@@ -46,6 +46,20 @@ class FollowUpQueue(private val limit: Int = MAX_WAITING) {
      */
     fun after(status: TaskStatus): Handoff = if (status == TaskStatus.Done) Handoff(next = queue.removeFirstOrNull()) else Handoff(dropped = drop())
 
+    /**
+     * Puts the one filed at [time] first, for "send now": the running task is stopped and this goes next, the rest
+     * still waiting behind it. False when it no longer waits.
+     */
+    fun first(time: Long): Boolean {
+        val it = queue.firstOrNull { f -> f.time == time } ?: return false
+        queue.remove(it)
+        queue.addFirst(it)
+        return true
+    }
+
+    /** After a task stopped for "send now": the one put first goes, and the rest keep waiting. */
+    fun afterSendNow(): Handoff = Handoff(next = queue.removeFirstOrNull())
+
     /** Takes out the one filed at [time], which he cancelled; null when it no longer waits, and nothing changes then. */
     fun cancel(time: Long): FollowUp? = queue.firstOrNull { it.time == time }?.also { queue.remove(it) }
 

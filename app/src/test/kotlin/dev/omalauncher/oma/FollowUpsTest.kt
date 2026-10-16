@@ -23,6 +23,18 @@ class FollowUpsTest {
         assertEquals(long, queue.after(TaskStatus.Done).next)
     }
 
+    @Test fun sendNowPutsOneFirstAndTheRestKeepWaiting() {
+        val queue = FollowUpQueue()
+        listOf(1L, 2L, 3L).forEach { queue.add(FollowUp(it, "m$it")) }
+        assertTrue(queue.first(3L))
+        assertFalse("one that no longer waits can't be sent now", queue.first(9L))
+        // The stopped turn hands over to the one sent now, not to the oldest, and drops nothing.
+        val handoff = queue.afterSendNow()
+        assertEquals(3L, handoff.next?.time)
+        assertTrue(handoff.dropped.isEmpty())
+        assertEquals(listOf(1L, 2L), queue.waiting.map { it.time })
+    }
+
     @Test fun stopDropsEveryFollowUpAndNoneIsSentAfterwards() {
         val queue = queue(1, 2, 3)
         assertEquals(listOf(1L, 2L, 3L), queue.drop().map { it.time })

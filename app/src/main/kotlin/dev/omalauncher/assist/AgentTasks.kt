@@ -149,6 +149,9 @@ object AgentTasks {
     /** `[ cancel ]` on a follow-up that still waits, whichever builder it waits for. */
     @Synchronized fun cancelFollowUp(context: Context, time: Long) = builders.forEach { it.cancelFollowUp(context, time) }
 
+    /** `[ send now ]` on a follow-up that still waits: its builder's turn is stopped and this goes at once. */
+    fun sendNow(context: Context, time: Long): Boolean = builders.any { it.sendNow(context, time) }
+
     /**
      * Answers the one approval with this [id] and [nonce], through the builder that holds it and no other. The
      * nonce is made on the phone for that one request, so no other builder can hold it; one that none holds is
@@ -493,7 +496,7 @@ class Builder(val id: BuilderId) {
      * thread why none will be. True when one is now running.
      */
     private fun advance(context: Context, status: TaskStatus): Boolean {
-        val handoff = followUps.after(status)
+        val handoff = if (sendingNow) followUps.afterSendNow().also { sendingNow = false } else followUps.after(status)
         dropped(context, handoff.dropped, FollowUpQueue.FAILED)
         val next = handoff.next ?: return false
         return try {
@@ -572,6 +575,29 @@ class Builder(val id: BuilderId) {
     private fun record(context: Context, entry: PendingApproval, answer: ApprovalAnswer) = ChatLog.of(context).update(taskTime, save = true) { task ->
         task.copy(approvals = task.approvals.map { if (it.key == entry.nonce) it.copy(answer = answer) else it })
     }
+    /**
+     * "Send now" (Boss, 2026-10-16: "like the Send Now button in the Claude app", for an agent that is stuck or must be
+     * told something at once): the follow-up filed at [time] jumps the queue, the running turn is ended as a stop
+     * would end it, and that follow-up starts as soon as it has, resuming the same session, so nothing the agent
+     * knew is lost. What else waited still waits. False when it is not this builder's, or no longer waits.
+     */
+    fun sendNow(context: Context, time: Long): Boolean {
+        val unanswered = synchronized(lock) {
+            if (!working || stopping || !followUps.first(time)) return false
+            sendingNow = true
+            stopping = true
+            inputWriter?.runCatching { close() }; inputWriter = null
+            process?.let { RunEnd.end(it) }; label = "Stopping for your message…"
+            ledger.clear().also { published() }
+        }
+        unanswered.forEach { record(context, it, ApprovalAnswer.Unanswered); AgentNotices.withdraw(context, it) }
+        notify(context)
+        return true
+    }
+
+    /** The running turn is being ended for a follow-up sent now, which starts after it instead of being dropped. */
+    @Volatile private var sendingNow = false
+
     fun stop(context: Context) {
         val (unanswered, unsent) = synchronized(lock) {
             if (!working) return

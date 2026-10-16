@@ -595,6 +595,10 @@ private fun OmaChatScreen(
                                     AgentTasks.cancelFollowUp(context, task.time)
                                     tick++
                                 },
+                                onSendNow = {
+                                    AgentTasks.sendNow(context, task.time)
+                                    tick++
+                                },
                             )
                         }
                     }
@@ -1003,6 +1007,8 @@ private fun TaskEntry(
     onAgain: (() -> Unit)? = null,
     ahead: Int = 0,
     onCancel: (() -> Unit)? = null,
+    /** A builder's follow-up only: stop the turn it waits behind and send it at once. */
+    onSendNow: (() -> Unit)? = null,
     onReceipt: (() -> Unit)? = null,
 ) {
     val small = Pack.mono(Pack.size.small, Pack.muted)
@@ -1049,6 +1055,8 @@ private fun TaskEntry(
             Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 BasicText(waiting.text, Modifier.weight(1f, fill = false), style = small.copy(color = Pack.accent), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 // Small and muted, as the other rare ways out under an entry are.
+                // Send now stops the turn ahead, so it reads in the accent, as what acts on the agent does.
+                if (waiting.cancel && onSendNow != null) BasicText("[ send now ]", Modifier.clickable(onClick = onSendNow).padding(horizontal = 8.dp, vertical = 8.dp), style = small.copy(color = Pack.accent))
                 if (waiting.cancel && onCancel != null) BasicText("[ cancel ]", Modifier.clickable(onClick = onCancel).padding(horizontal = 8.dp, vertical = 8.dp), style = small)
             }
         }
