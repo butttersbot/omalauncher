@@ -455,9 +455,16 @@ function renderLook(view) {
   let html = `<div class="looks"><button class="look ${skin ? '' : 'on'}" data-skin="">${sheep}Sheep</button>`;
   for (const s of list)
   {
-    // The thumbnail is scaled like the pet draws it, so a small figure (Crono) isn't lost in its frame.
-    const size = Math.round(56 * (s.display || 96) / 96), inset = Math.round((size - 56) / 2);
-    const art = `background-image:url('${esc(s.url)}');background-size:auto ${size}px;background-position:-${inset}px -${size - 56}px`;
+    // Just the character: its standing frame, facing you, scaled like the pet draws it so a small figure (Crono)
+    // isn't lost in its frame, and standing on the tile's floor.
+    const fw = s.frame?.[0] || 64, fh = s.frame?.[1] || fw;
+    // A whole-number zoom once it's past 1.5x keeps the pixels square (HeartGold's 32 px walkers draw at 2x).
+    const zoom = 56 * (s.display || 96) / 96 / fh;
+    const cell = Math.round(fh * (zoom >= 1.5 ? Math.round(zoom) : zoom)), inset = Math.round((cell - 56) / 2);
+    const cols = s.sheet ? Math.round(s.sheet[0] / fw) : (s.frames || 1), rows = s.sheet ? Math.round(s.sheet[1] / fh) : 1;
+    const row = Math.max(0, (s.rows || ['down']).indexOf('down')), col = s.stand ?? 0;
+    const art = `background-image:url('${esc(s.url)}');background-size:${cols * cell}px ${rows * cell}px;` +
+      `background-position:${-col * cell - inset}px ${-row * cell - (cell - 56)}px`;
     html += `<button class="look ${skin?.name === s.name ? 'on' : ''}" data-skin="${esc(s.name)}"><i style="${art}"></i>${esc(s.name.replace(/-/g, ' '))}</button>`;
   }
   html += `</div>`;
