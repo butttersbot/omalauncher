@@ -998,11 +998,9 @@ private fun TaskEntry(
         BasicText(listOfNotNull("new thread".takeIf { task.newThread }, sent).joinToString(" · "), Modifier.fillMaxWidth().padding(bottom = 4.dp), style = small.copy(textAlign = TextAlign.Center))
         Column(Modifier.fillMaxWidth().framed(Pack.hair, Pack.border, Pack.surface, radius = 12.dp).padding(10.dp)) {
             BasicText(task.prompt, style = Pack.body())
-            val attached = listOfNotNull(
-                task.images.size.takeIf { it > 0 }?.let { if (it == 1) "1 image" else "$it images" },
-                "this screen".takeIf { task.screen },
-            )
-            if (attached.isNotEmpty()) BasicText("with " + attached.joinToString(" and "), Modifier.padding(top = 4.dp), style = small)
+            // What he sent with it stays in the chat, as a small rail of pictures (Boss, 2026-10-15, as the Claude app does).
+            if (task.images.isNotEmpty()) SentImages(task.images)
+            if (task.screen) BasicText("with this screen", Modifier.padding(top = 4.dp), style = small)
         }
         // The receipt: where his words went. In the accent as what can be tapped is: it opens that thread's tab.
         if (task.mac && onReceipt != null) {
@@ -1099,6 +1097,31 @@ private fun EarlierEntry(turn: MacTurn) {
             else -> null
         }
         if (ended != null) BasicText(ended, Modifier.padding(top = 4.dp), style = small)
+    }
+}
+
+/** The pictures sent with a request, small and in a row; one that is gone from the phone says so. */
+@Composable
+private fun SentImages(paths: List<String>) {
+    val proot = (LocalContext.current.applicationContext as dev.omalauncher.App).runtime.proot
+    Row(Modifier.padding(top = 6.dp).horizontalScroll(rememberScrollState())) {
+        paths.forEachIndexed { i, path ->
+            val picture by produceState<ImageBitmap?>(null, path) {
+                value = withContext(Dispatchers.IO) {
+                    runCatching {
+                        ImageDecoder.decodeBitmap(ImageDecoder.createSource(proot.hostFile(path))) { decoder, info, _ ->
+                            val ratio = 144f / maxOf(info.size.width, info.size.height).coerceAtLeast(144)
+                            decoder.setTargetSize((info.size.width * ratio).toInt().coerceAtLeast(1), (info.size.height * ratio).toInt().coerceAtLeast(1))
+                        }.asImageBitmap()
+                    }.getOrNull()
+                }
+            }
+            val shown = picture
+            Box(Modifier.padding(end = 6.dp).size(48.dp).framed(Pack.hair, Pack.border, Pack.background, radius = 6.dp), contentAlignment = Alignment.Center) {
+                if (shown != null) Image(shown, "Sent image ${i + 1}", Modifier.size(48.dp), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                else BasicText("image", style = Pack.body(Pack.size.small, Pack.muted))
+            }
+        }
     }
 }
 

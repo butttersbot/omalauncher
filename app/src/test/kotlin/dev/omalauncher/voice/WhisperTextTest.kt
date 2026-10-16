@@ -24,6 +24,14 @@ class WhisperTextTest {
         assertTrue(madeUp("Thank you so much for watching!"))
     }
 
+    @Test fun aLoopOnSilenceIsSaidOnce() {
+        // Boss, 2026-10-15: the composer filled with "and, and, and, …" after he stopped.
+        assertEquals("So that's it and", cleanHeard("So that's it and, and, and, and, and, and"))
+        assertEquals("I mean the thing.", collapseRepeats("I mean the thing, the thing, the thing."))
+        // Twice is how people talk; it stays.
+        assertEquals("no, no, I meant that", collapseRepeats("no, no, I meant that"))
+    }
+
     @Test fun onlyWordsTwoReadingsAgreeOnAreSettled() {
         var live = LiveText()
         live = live.read("Turn on")

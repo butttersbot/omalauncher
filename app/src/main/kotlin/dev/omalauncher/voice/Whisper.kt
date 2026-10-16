@@ -258,7 +258,9 @@ class WhisperSession(
         thread(name = "oma-whisper-warm", isDaemon = true) { WhisperModels.context(context, WhisperModels.FINAL) }
         var readAt = 0
         while (!ending) {
-            val end = count
+            // Only up to just after his last word: from the quiet after it Whisper makes up words, or loops on
+            // one ("and, and, and…", Boss 2026-10-15).
+            val end = minOf(count, voiceTo + RATE * PAD_MS / 1000)
             if (voiceFrom < 0) {
                 Thread.sleep(50)
                 continue

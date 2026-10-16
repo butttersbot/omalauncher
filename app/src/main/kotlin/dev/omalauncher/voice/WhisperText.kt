@@ -43,10 +43,44 @@ private val MADE_UP_STARTS = listOf("subtitles by", "transcribed by", "captions 
  * the like, and the spaces they leave.
  */
 fun cleanHeard(text: String): String =
-    text
-        .replace(Regex("""\[[^\]]*]|\([^)]*\)|\*[^*]*\*"""), " ")
-        .replace(Regex("""\s+"""), " ")
-        .trim()
+    collapseRepeats(
+        text
+            .replace(Regex("""\[[^\]]*]|\([^)]*\)|\*[^*]*\*"""), " ")
+            .replace(Regex("""\s+"""), " ")
+            .trim(),
+    )
+
+/**
+ * A word or a run of up to four words said three or more times over, back to back, once: Whisper loops so on
+ * silence ("and, and, and, and…"), and nobody says a thing three times running when dictating.
+ */
+fun collapseRepeats(text: String): String {
+    val w = text.split(' ').filter { it.isNotEmpty() }.toMutableList()
+    fun bare(s: String) = s.lowercase().trim { !it.isLetterOrDigit() }
+    var changed = true
+    while (changed) {
+        changed = false
+        loop@ for (n in 1..4) {
+            var i = 0
+            while (i + 3 * n <= w.size) {
+                val unit = w.subList(i, i + n).map(::bare)
+                if (unit.all { it.isEmpty() }) { i++; continue }
+                var times = 1
+                while (i + (times + 1) * n <= w.size && w.subList(i + times * n, i + (times + 1) * n).map(::bare) == unit) times++
+                if (times >= 3) {
+                    // Keep the first, with the last one's ending (its full stop, not its comma).
+                    val last = w.subList(i + (times - 1) * n, i + times * n).toList()
+                    repeat((times - 1) * n) { w.removeAt(i + n) }
+                    w[i + n - 1] = last.last()
+                    changed = true
+                    break@loop
+                }
+                i++
+            }
+        }
+    }
+    return w.joinToString(" ")
+}
 
 /**
  * The words two readings in a row agree on from the start (LocalAgreement, as whisper_streaming does): what

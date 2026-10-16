@@ -51,7 +51,9 @@ Java_dev_omalauncher_voice_WhisperNative_transcribe(JNIEnv *env, jobject, jlong 
     wp.print_timestamps = false;
     wp.suppress_blank = true;
     wp.suppress_nst = true;
-    wp.temperature_inc = live ? 0.0f : 0.2f;
+    // A reading that loops on a word ("and, and, and…") is read again warmer, live too: whisper.cpp tells a loop by
+    // how little its text compresses (entropy_thold).
+    wp.temperature_inc = 0.2f;
     // Short audio needs no 30 s window: the encoder is told to look at what there is (as whisper.cpp's stream does).
     wp.audio_ctx = 0;
     const char *pr = prompt ? env->GetStringUTFChars(prompt, nullptr) : nullptr;
