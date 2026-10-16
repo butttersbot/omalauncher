@@ -52,15 +52,15 @@ object PhoneTouch {
     /** How long a swipe may take: at most long enough to hold at a screen edge, and well inside what the bridge waits for an answer. */
     val SWIPE_MILLIS = 100L..5000L
 
-    /** How long the screen is given to show what an action did before it is read: a screen sliding in is over by then. */
+    /**
+     * The most the screen is given to show what an action did before it is read: a screen sliding in is over by then.
+     * A screen that goes quiet sooner is read sooner ([phoneSettleWait]).
+     */
     const val SETTLE_MILLIS = 350L
 
     /** How long `screen --until` waits for words to show, and how often it looks: inside what the bridge waits for an answer. */
     const val UNTIL_MILLIS = 5000L
-    const val UNTIL_STEP_MILLIS = 250L
-
-    /** How much longer a read at [now] waits, when the screen was last acted on at [acted] (null: never); 0 is read at once. */
-    fun settleWait(now: Long, acted: Long?): Long = if (acted == null) 0L else (acted + SETTLE_MILLIS - now).coerceIn(0L, SETTLE_MILLIS)
+    const val UNTIL_STEP_MILLIS = 100L
 
     /**
      * Where a finger lands for a control with these bounds on a screen [width] by [height]: the middle of the

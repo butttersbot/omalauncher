@@ -8,19 +8,24 @@ import org.junit.Test
 
 /** How long a read waits after an action, where a click that Android refused is tapped instead, and how long a swipe may last. */
 class PhoneTouchTest {
-    @Test fun aReadWaitsOnlyForWhatIsLeftOfTheSettling() {
+    @Test fun aReadWaitsOnlyUntilTheScreenGoesQuiet() {
         // Nothing was ever done to the screen: there is nothing to wait for.
-        assertEquals(0L, PhoneTouch.settleWait(now = 5_000, acted = null))
-        assertEquals(PhoneTouch.SETTLE_MILLIS, PhoneTouch.settleWait(now = 5_000, acted = 5_000))
-        assertEquals(PhoneTouch.SETTLE_MILLIS - 100, PhoneTouch.settleWait(now = 5_100, acted = 5_000))
-        assertEquals(1L, PhoneTouch.settleWait(now = 5_000 + PhoneTouch.SETTLE_MILLIS - 1, acted = 5_000))
-        assertEquals(0L, PhoneTouch.settleWait(now = 5_000 + PhoneTouch.SETTLE_MILLIS, acted = 5_000))
-        assertEquals(0L, PhoneTouch.settleWait(now = 60_000, acted = 5_000))
+        assertEquals(0L, phoneSettleWait(now = 5_000, acted = null, changed = null))
+        // Right after a move, at least the least wait, even with the screen saying nothing yet.
+        assertEquals(PHONE_SETTLE_MIN_MILLIS, phoneSettleWait(now = 5_000, acted = 5_000, changed = null))
+        // A screen still changing is waited for until it has been quiet a while.
+        assertEquals(PHONE_QUIET_MILLIS, phoneSettleWait(now = 5_200, acted = 5_000, changed = 5_200))
+        // Quiet long enough and past the least wait: read at once, well before the old flat wait was over.
+        assertEquals(0L, phoneSettleWait(now = 5_160, acted = 5_000, changed = 5_030))
     }
 
     @Test fun aReadNeverWaitsLongerThanTheSettling() {
+        // A screen that never goes quiet, as a video, is read when the old flat wait would have been over: never later.
+        assertEquals(PhoneTouch.SETTLE_MILLIS - 300, phoneSettleWait(now = 5_300, acted = 5_000, changed = 5_300))
+        assertEquals(0L, phoneSettleWait(now = 5_000 + PhoneTouch.SETTLE_MILLIS, acted = 5_000, changed = 5_000 + PhoneTouch.SETTLE_MILLIS))
+        assertEquals(0L, phoneSettleWait(now = 60_000, acted = 5_000, changed = 59_990))
         // An action stamped after now is still only one settling away.
-        assertEquals(PhoneTouch.SETTLE_MILLIS, PhoneTouch.settleWait(now = 5_000, acted = 9_000))
+        assertTrue(phoneSettleWait(now = 5_000, acted = 9_000, changed = null) <= PhoneTouch.SETTLE_MILLIS)
         // Far inside what the bridge waits for an answer.
         assertTrue(PhoneTouch.SETTLE_MILLIS < 8_000)
     }
