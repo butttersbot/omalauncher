@@ -726,10 +726,16 @@ function mood() {
   $('summary').textContent = data?.error && !machines ? 'Out of reach' : (parts.join(' · ') || 'All quiet') + ` · ${machines} machine${machines === 1 ? '' : 's'}`;
 }
 
+// What it last said about each session, so one finish is announced once, however the state wobbles after.
+const told = {};
+
 function announce(list) {
   for (const s of list) {
     const was = previous[s.id];
     if (was && was !== s.state) {
+      const news = s.state + ':' + (s.last || '');
+      if (told[s.id] === news) continue;
+      told[s.id] = news;
       if (s.state === 'needs-you') {
         face('down');
         speak(s.title, 'Needs you! ' + (gist(s.last) || 'It\'s waiting on an answer.'), { ms: 9000, id: s.id });
