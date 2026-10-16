@@ -79,12 +79,13 @@ html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
 body.open #bubble { display: none; }
 
 /* ---------------------------------------------------------------- the panel */
-#panel { position: fixed; right: 8px; bottom: 128px; width: min(372px, calc(100vw - 16px)); max-height: calc(100vh - 140px); display: flex; flex-direction: column;
+#panel { position: fixed; right: 8px; bottom: 128px; width: min(372px, calc(100vw - 16px)); max-height: calc(var(--room, 100vh) - 140px); display: flex; flex-direction: column; overflow: hidden;
   background: var(--panel); border: 1px solid var(--panel-edge); border-radius: 18px; box-shadow: var(--shadow);
   -webkit-backdrop-filter: blur(24px) saturate(1.4); backdrop-filter: blur(24px) saturate(1.4);
-  opacity: 0; transform: translateY(10px) scale(.98); transform-origin: bottom right; pointer-events: none;
-  transition: opacity .18s ease, transform .22s cubic-bezier(.2, .9, .3, 1); }
-body.open #panel { opacity: 1; transform: none; pointer-events: auto; }
+  display: none; }
+/* Shown at once, not faded in: the window grows in the same moment, and a fade started while it was small can stay
+   stuck at its first frame in Android's WebView. */
+body.open #panel { display: flex; }
 
 header { padding: 14px 16px 10px; display: flex; align-items: flex-start; gap: 10px; }
 header h1 { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
@@ -405,10 +406,17 @@ window.herd = {
   tap() { toggle(); },
 };
 
+// The room the window gives, measured: Android's WebView keeps 100vh at the size it was when the page loaded, so a
+// panel sized by it would stay as small as the closed sheep after the view grows.
+function measure() { document.documentElement.style.setProperty('--room', window.innerHeight + 'px'); }
+window.addEventListener('resize', measure);
+measure();
+
 function toggle(force) {
   const open = force ?? !document.body.classList.contains('open');
   document.body.classList.toggle('open', open);
   say({ cmd: open ? 'expand' : 'collapse' });
+  for (const wait of [0, 50, 200, 500]) setTimeout(measure, wait);   // the view grows a moment after it's asked to
   if (open) { markSeen(); mood(); render(); $('bubble').classList.remove('on'); }
 }
 $('close').addEventListener('click', () => toggle(false));
