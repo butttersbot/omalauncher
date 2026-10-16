@@ -178,6 +178,12 @@ object HerdSheep {
     /** Told when [shown] changes, so the window over other apps follows at once. */
     @Volatile var changed: (() -> Unit)? = null
 
+    /**
+     * Where home's sheep and its open panel are, in window pixels, or null. Home's pages leave a touch that starts
+     * here to the sheep: they watch every finger first, and would take a swipe up in its lists for the app list.
+     */
+    var onHome: androidx.compose.ui.geometry.Rect? = null
+
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     fun restore(context: Context) {

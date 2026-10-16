@@ -6,6 +6,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -13,6 +14,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalWindowInfo
@@ -20,6 +23,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import dev.omalauncher.herd.Herd
+import dev.omalauncher.herd.HerdSheep
 import dev.omalauncher.herd.SheepFrame
 import dev.omalauncher.herd.giveHerd
 import dev.omalauncher.herd.herdPage
@@ -50,6 +54,7 @@ fun HerdPet(modifier: Modifier = Modifier) {
     var dx by remember { mutableFloatStateOf(prefs.getFloat("home_dx", 0f)) }
     var dy by remember { mutableFloatStateOf(prefs.getFloat("home_dy", 0f)) }
 
+    DisposableEffect(Unit) { onDispose { HerdSheep.onHome = null } }
     BackHandler(enabled = open) { page[0]?.evaluateJavascript("herd.tap()", null) }
 
     LaunchedEffect(focused, loaded, open) {
@@ -78,7 +83,11 @@ fun HerdPet(modifier: Modifier = Modifier) {
             page[0]?.destroy()
             page[0] = null
         },
-        modifier = modifier.offset { if (open) IntOffset.Zero else IntOffset(dx.toInt(), dy.toInt()) }.size(width, height),
+        modifier =
+            modifier
+                .offset { if (open) IntOffset.Zero else IntOffset(dx.toInt(), dy.toInt()) }
+                .size(width, height)
+                .onGloballyPositioned { HerdSheep.onHome = it.boundsInWindow() },
     )
 }
 

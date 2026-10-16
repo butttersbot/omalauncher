@@ -17,6 +17,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.PointerEventPass
+import dev.omalauncher.herd.HerdSheep
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.zIndex
 import dev.omalauncher.widgets.Cell
@@ -370,6 +371,9 @@ internal fun HomeGrid(
                 .pointerInput(Unit) {
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                        // Not on the herd sheep or its panel, whose lists scroll (Boss, 2026-10-16).
+                        val at = gridAt[0]?.takeIf { it.isAttached }?.localToWindow(down.position)
+                        if (at != null && HerdSheep.onHome?.contains(at) == true) return@awaitEachGesture
                         val slop = viewConfiguration.touchSlop
                         var pair: Pair<PointerId, PointerId>? = null
                         var span0 = 0f
