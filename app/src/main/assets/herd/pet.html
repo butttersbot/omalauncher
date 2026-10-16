@@ -211,6 +211,30 @@ main::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
 .files { margin: 6px 0 0; padding: 0; list-style: none; font-size: 12px; color: var(--ink); }
 .files li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .status { padding: 4px 18px; font-size: 12px; color: var(--ink-2); }
+.status:empty { display: none; }
+
+/* Tailshare: what the other devices sent this computer (~/Inbox), newest first. */
+nav button .count { display: inline-block; min-width: 16px; height: 16px; padding: 0 4px; margin-left: 5px; border-radius: 8px;
+  background: var(--ready); color: #fff; font-size: 10px; line-height: 16px; text-align: center; vertical-align: 1px; }
+.sendrow { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 8px 10px 6px; }
+.sendrow > span { color: var(--ink-3); font-size: 11px; margin-right: 2px; }
+.btn.small { padding: 3px 8px; font-size: 11px; }
+.item { margin: 6px 4px 8px; padding: 9px 10px 8px; border-radius: 12px; background: var(--row-hover); }
+.item.new { box-shadow: inset 3px 0 0 var(--ready); }
+.item-head { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ink-3); margin-bottom: 6px; }
+.item-head b { color: var(--ink-2); font-weight: 700; }
+.item-head .icon-btn { margin-left: auto; width: 20px; height: 20px; font-size: 11px; }
+.clip { white-space: pre-wrap; word-wrap: break-word; font-size: 12px; line-height: 1.4; max-height: 7.2em; overflow: hidden;
+  position: relative; cursor: pointer; -webkit-user-select: text; user-select: text; }
+.clip.long::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1.6em;
+  background: linear-gradient(transparent, var(--panel)); opacity: .9; pointer-events: none; }
+.clip.full { max-height: none; }
+.clip.full::after { display: none; }
+.item img { display: block; max-width: 100%; max-height: 180px; border-radius: 8px; background: var(--line); cursor: pointer; }
+.file { display: flex; gap: 8px; align-items: center; font-size: 12px; min-width: 0; }
+.file span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+.file em { font-style: normal; color: var(--ink-3); flex: none; }
+.item .actions { padding: 8px 0 0; }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>
@@ -310,13 +334,18 @@ const isUnseen = s => s.state === 'your-turn' && (seen[s.id] || 0) < s.updated;
 const jobs = [
   { id: 'agents', title: 'Agents', render: renderAgents },
   { id: 'look', title: 'Look', render: renderLook },
-  // Sending needs the computer's Tailscale CLI; on the phone it's the share sheet's job.
-  ...(window.HerdAndroid ? [] : [{ id: 'send', title: 'Send a file', render: renderSend }]),
+  // What tailshare brought this computer, and sending from it. It needs the computer's Tailscale CLI and its
+  // ~/Inbox; on the phone that's the share sheet's job.
+  ...(window.HerdAndroid ? [] : [{ id: 'tailshare', title: 'Tailshare', render: renderTailshare, count: () => unseenInbox().length }]),
 ];
+if (job === 'send') job = 'tailshare';
 if (!jobs.some(j => j.id === job)) job = 'agents';
 
 function renderJobs() {
-  $('jobs').innerHTML = jobs.map(j => `<button data-job="${j.id}" class="${j.id === job ? 'on' : ''}">${esc(j.title)}</button>`).join('');
+  $('jobs').innerHTML = jobs.map(j => {
+    const n = j.count?.() || 0;
+    return `<button data-job="${j.id}" class="${j.id === job ? 'on' : ''}">${esc(j.title)}${n ? `<span class="count">${n}</span>` : ''}</button>`;
+  }).join('');
 }
 $('jobs').addEventListener('click', e => {
   const id = e.target.dataset?.job; if (!id) return;
@@ -373,6 +402,16 @@ $('view').addEventListener('click', e => {
   if (a === 'copy') { shell({ cmd: 'copy', text: act.dataset.text }); flash('Copied'); }
   if (a === 'clear') { dropped = []; render(); }
   if (a === 'send') { shell({ cmd: 'send', device: act.dataset.device, paths: dropped }); $('sendStatus').textContent = 'Sending to ' + act.dataset.device + '…'; }
+  if (a === 'sendclip') { shell({ cmd: 'sendclip', device: act.dataset.device }); $('sendStatus').textContent = 'Sending your clipboard to ' + act.dataset.device + '…'; }
+  if (a === 'copyitem') {
+    shell({ cmd: 'copyitem', name: act.dataset.name });
+    act.textContent = 'Copied ✓';
+    setTimeout(() => { act.textContent = 'Copy'; }, 1600);
+  }
+  if (a === 'openitem') shell({ cmd: 'openitem', name: act.dataset.name });
+  if (a === 'reveal') shell({ cmd: 'reveal', name: act.dataset.name || '' });
+  if (a === 'trash') { inbox = (inbox || []).filter(i => i.name !== act.dataset.name); render(); shell({ cmd: 'trash', name: act.dataset.name }); }
+  if (a === 'expand') { act.classList.toggle('full'); expanded[act.classList.contains('full') ? 'add' : 'delete'](act.dataset.name); }
 });
 
 function renderDetail(view) {
@@ -455,9 +494,16 @@ function renderLook(view) {
   let html = `<div class="looks"><button class="look ${skin ? '' : 'on'}" data-skin="">${sheep}Sheep</button>`;
   for (const s of list)
   {
-    // The thumbnail is scaled like the pet draws it, so a small figure (Crono) isn't lost in its frame.
-    const size = Math.round(56 * (s.display || 96) / 96), inset = Math.round((size - 56) / 2);
-    const art = `background-image:url('${esc(s.url)}');background-size:auto ${size}px;background-position:-${inset}px -${size - 56}px`;
+    // Just the character: its standing frame, facing you, scaled like the pet draws it so a small figure (Crono)
+    // isn't lost in its frame, and standing on the tile's floor.
+    const fw = s.frame?.[0] || 64, fh = s.frame?.[1] || fw;
+    // A whole-number zoom once it's past 1.5x keeps the pixels square (HeartGold's 32 px walkers draw at 2x).
+    const zoom = 56 * (s.display || 96) / 96 / fh;
+    const cell = Math.round(fh * (zoom >= 1.5 ? Math.round(zoom) : zoom)), inset = Math.round((cell - 56) / 2);
+    const cols = s.sheet ? Math.round(s.sheet[0] / fw) : (s.frames || 1), rows = s.sheet ? Math.round(s.sheet[1] / fh) : 1;
+    const row = Math.max(0, (s.rows || ['down']).indexOf('down')), col = s.stand ?? 0;
+    const art = `background-image:url('${esc(s.url)}');background-size:${cols * cell}px ${rows * cell}px;` +
+      `background-position:${-col * cell - inset}px ${-row * cell - (cell - 56)}px`;
     html += `<button class="look ${skin?.name === s.name ? 'on' : ''}" data-skin="${esc(s.name)}"><i style="${art}"></i>${esc(s.name.replace(/-/g, ' '))}</button>`;
   }
   html += `</div>`;
@@ -476,26 +522,75 @@ function renderLook(view) {
 $('view').addEventListener('click', e => {
   const box = e.target.closest('[data-box]');
   if (box) { style = box.dataset.box; store.set('bubble', style); render(); return; }
-  const pick = e.target.closest('[data-skin]');
-  if (!pick) return;
-  const s = skins().find(x => x.name === pick.dataset.skin);
+  const tile = e.target.closest('[data-skin]');
+  if (!tile) return;
+  const s = skins().find(x => x.name === tile.dataset.skin);
   skin = s ? pick(s) : null;
   store.set('skin', skin); wear(); render();
   const pet = $('pet'); pet.classList.add('happy'); setTimeout(() => pet.classList.remove('happy'), 1100);
 });
 
-function renderSend(view) {
-  const devices = [...(data?.machines || []).filter(m => !m.self).map(m => m.name), ...(data?.others || []).filter(h => h.online).map(h => h.name)];
-  let html = dropped.length
-    ? `<div class="drop has"><b>${dropped.length} file${dropped.length > 1 ? 's' : ''} ready</b><ul class="files">${dropped.map(p => `<li>${esc(p.split('/').pop())}</li>`).join('')}</ul></div>
-       <div class="actions">${devices.map(d => `<button class="btn" data-act="send" data-device="${esc(d)}">${esc(d)}</button>`).join('')}<button class="btn" data-act="clear">Clear</button></div>`
-    : `<div class="drop"><b>Drop files on the sheep</b>Then pick a device here. It goes over Taildrop, so it works anywhere on the tailnet.</div>`;
+/* ---------------------------------------------------------------- tailshare: what came in, and sending */
+let inbox = null;                               // ~/Inbox as the shell lists it, newest first
+let inboxSeen = store.get('inboxSeen', null);   // the newest arrival already looked at (its time)
+const expanded = new Set();                     // long texts opened in full
+
+const unseenInbox = () => (inbox || []).filter(i => inboxSeen !== null && i.t > inboxSeen);
+function markInboxSeen() {
+  const newest = Math.max(0, ...(inbox || []).map(i => i.t));
+  if (newest > (inboxSeen || 0)) { inboxSeen = newest; store.set('inboxSeen', inboxSeen); }
+}
+const devices = () => [...(data?.machines || []).filter(m => !m.self).map(m => m.name), ...(data?.others || []).filter(h => h.online).map(h => h.name)];
+const bytes = n => n < 1024 ? n + ' B' : n < 1048576 ? Math.round(n / 1024) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
+
+function renderTailshare(view) {
+  const fresh = new Set(unseenInbox().map(i => i.name));
+  if (document.body.classList.contains('open')) markInboxSeen();
+  const to = devices();
+  let html = '';
+  if (dropped.length)
+    html += `<div class="drop has"><b>${dropped.length} file${dropped.length > 1 ? 's' : ''} ready to send</b><ul class="files">${dropped.map(p => `<li>${esc(p.split('/').pop())}</li>`).join('')}</ul></div>
+      <div class="actions">${to.map(d => `<button class="btn" data-act="send" data-device="${esc(d)}">${esc(d)}</button>`).join('')}<button class="btn" data-act="clear">Clear</button></div>`;
+  else if (to.length)
+    html += `<div class="sendrow"><span>Send clipboard to</span>${to.map(d => `<button class="btn small" data-act="sendclip" data-device="${esc(d)}">${esc(d)}</button>`).join('')}</div>`;
   html += `<div class="status" id="sendStatus"></div>`;
+
+  if (!inbox) html += `<div class="empty">Looking in the Inbox…</div>`;
+  else if (!inbox.length) html += `<div class="drop"><b>Nothing here yet</b>What your other devices send this computer shows up here. Drop files on the sheep to send them.</div>`;
+  for (const i of inbox || []) {
+    const name = esc(i.name);
+    html += `<div class="item ${fresh.has(i.name) ? 'new' : ''}"><div class="item-head"><b>${esc(i.from || 'Received')}</b>· ${ago(i.t)}
+      <button class="icon-btn" data-act="trash" data-name="${name}" title="Move to Trash" aria-label="Move to Trash">✕</button></div>`;
+    if (i.kind === 'text') {
+      const long = i.text.length > 280 || i.text.split('\n').length > 5;
+      html += `<div class="clip ${long ? 'long' : ''} ${expanded.has(i.name) ? 'full' : ''}" data-act="expand" data-name="${name}">${esc(i.text)}</div>
+        <div class="actions"><button class="btn primary" data-act="copyitem" data-name="${name}">Copy</button></div>`;
+    } else if (i.kind === 'image') {
+      html += `<img src="tailshare://inbox/${encodeURIComponent(i.name)}" alt="${name}" data-act="openitem" data-name="${name}">
+        <div class="actions"><button class="btn primary" data-act="copyitem" data-name="${name}">Copy</button>
+        <button class="btn" data-act="openitem" data-name="${name}">Open</button></div>`;
+    } else {
+      html += `<div class="file">📄 <span title="${name}">${name}</span><em>${bytes(i.size)}</em></div>
+        <div class="actions"><button class="btn primary" data-act="openitem" data-name="${name}">Open</button>
+        <button class="btn" data-act="reveal" data-name="${name}">Show in Finder</button>
+        <button class="btn" data-act="copyitem" data-name="${name}">Copy</button></div>`;
+    }
+    html += `</div>`;
+  }
+  if (inbox?.length) html += `<div class="foot"><button class="btn small" data-act="reveal">Open Inbox folder</button></div>`;
   view.innerHTML = html;
+  renderJobs();   // looking at it clears the tab's count
+}
+
+/* A new arrival: the sheep says who sent what. Tapping the bubble opens the Tailshare tab. */
+function announceArrival(i) {
+  const what = i.kind === 'text' ? gist(i.text) || 'Some text' : i.kind === 'image' ? 'Sent you a picture.' : 'Sent you ' + i.name;
+  nudge(); face('down'); fx('happy', 1100);
+  speak(i.from ? 'From ' + i.from : 'Tailshare', what, { ms: 9000, job: 'tailshare' });
 }
 
 /* ---------------------------------------------------------------- what it says */
-let bubbleTimer = null, typing = null, bubbleFor = null;
+let bubbleTimer = null, typing = null, bubbleFor = null, bubbleJob = null;
 
 let style = store.get('bubble', null);   // the chosen speech-bubble frame's name, '' for the drawn box
 
@@ -559,7 +654,7 @@ function dress() {
 
 /* Says something: who it's about, then the words typed out. Tapping it opens that session. It asks the shell for
    room first, so the box is never cut off by the window. */
-function speak(who, text, { ms = 7000, id = null } = {}) {
+function speak(who, text, { ms = 7000, id = null, job: about = null } = {}) {
   if (document.body.classList.contains('open')) return;
   if (native && !caps.room) return;   // a shell that can't make room would cut it off; the badge says enough
   const b = $('bubble');
@@ -567,7 +662,7 @@ function speak(who, text, { ms = 7000, id = null } = {}) {
   b.querySelector('.who').textContent = who || '';
   b.querySelector('.who').style.display = who ? '' : 'none';
   const say = b.querySelector('.say');
-  bubbleFor = id;
+  bubbleFor = id; bubbleJob = about;
   // Measured at full length, so the box doesn't grow while it types.
   say.textContent = text; b.classList.remove('typed');
   const height = b.querySelector('.box').offsetHeight + 12;
@@ -588,14 +683,15 @@ function speak(who, text, { ms = 7000, id = null } = {}) {
 function hush() {
   const b = $('bubble');
   if (!b.classList.contains('on')) return;
-  b.classList.remove('on', 'typed'); clearInterval(typing); bubbleFor = null;
+  b.classList.remove('on', 'typed'); clearInterval(typing); bubbleFor = null; bubbleJob = null;
   if (caps.room && !document.body.classList.contains('open')) setTimeout(() => { if (!b.classList.contains('on')) shell({ cmd: 'room' }); }, 180);
 }
 function flash(text) { speak('', text, { ms: 1400 }); }
 
 $('bubble').addEventListener('click', () => {
-  const id = bubbleFor;
+  const id = bubbleFor, about = bubbleJob;
   hush();
+  if (about) { job = about; detail = null; store.set('job', job); }
   toggle(true);
   if (id) { job = 'agents'; detail = { id, loading: true }; render(); shell({ cmd: 'show', id }); if (!native) mockDetail(id); }
 });
@@ -785,7 +881,21 @@ window.herd = {
     if (skin) { const s = skins().find(x => x.name === skin.name); if (s && JSON.stringify(pick(s)) !== JSON.stringify(skin)) { skin = pick(s); store.set('skin', skin); wear(); } }
     if (document.body.classList.contains('open')) markSeen();
     mood();
-    if (document.body.classList.contains('open') && !(detail && job === 'agents')) render();
+    // The Tailshare tab only changes when the Inbox does (herd.inbox); redrawing it would close opened texts.
+    if (document.body.classList.contains('open') && !(detail && job === 'agents') && job !== 'tailshare') render();
+  },
+  // ~/Inbox changed (the Mac shell sends it when it does). New arrivals make the sheep say so.
+  inbox(json) {
+    const list = typeof json === 'string' ? JSON.parse(json) : json;
+    const known = inbox;
+    inbox = list;
+    if (inboxSeen === null) { markInboxSeen(); if (inboxSeen === null) { inboxSeen = 0; store.set('inboxSeen', 0); } }
+    if (known) {
+      const had = new Set(known.map(i => i.name));
+      const arrived = list.filter(i => !had.has(i.name) && i.t > (inboxSeen || 0));
+      if (arrived.length) announceArrival(arrived[0]);
+    }
+    if (document.body.classList.contains('open') && job === 'tailshare') render(); else renderJobs();
   },
   detail(json) {
     const d = typeof json === 'string' ? JSON.parse(json) : json;
@@ -793,7 +903,7 @@ window.herd = {
     if (d.error && detail) { detail.loading = false; detail.note = d.error; render(); }
   },
   drop(paths) {
-    dropped = paths; job = 'send'; detail = null;
+    dropped = paths; job = 'tailshare'; detail = null;
     if (!document.body.classList.contains('open')) toggle(true); else render();
     nudge();
   },
@@ -869,6 +979,11 @@ if (!native) {
     { name: 'omarchy-mg1', report: { machine: { load: 0, remote_control: [], gpu: { used_mb: 28000, total_mb: 32600, busy: 97 } }, sessions: [] } },
     { name: 'omarchy-mbp', error: 'no herd here' }],
     others: [{ name: 'jacks-z-fold8', online: true }, { name: 'mg1', online: false }] });
+  herd.inbox([
+    { name: 'clip-20261016-004422-from-jacks-z-fold8.txt', kind: 'text', from: 'jacks-z-fold8', t: now - 120, size: 300,
+      text: 'Look at the herd pet README and tell me what the Fold still needs before the sheep can ship on the real phone.\n\nThen check the herd-pet branch builds.' },
+    { name: 'clip-20261016-001619-from-jacks-z-fold8.png', kind: 'image', from: 'jacks-z-fold8', t: now - 3600, size: 146129 },
+    { name: 'invoice.pdf', kind: 'file', t: now - 86400 * 2, size: 241000 }]);
 }
 </script>
 </body>
