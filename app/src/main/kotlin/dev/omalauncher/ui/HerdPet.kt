@@ -65,14 +65,24 @@ fun HerdPet(modifier: Modifier = Modifier) {
         }
     }
 
+    // How far from home's corner the sheep may be carried and still be all on the screen, in pixels.
+    val d = context.resources.displayMetrics.density
+    val roomX = maxOf(0f, (screen.screenWidthDp - 150) * d)
+    val roomY = maxOf(0f, (screen.screenHeightDp - 150 - 120) * d)
+    dx = dx.coerceIn(-roomX, 0f)
+    dy = dy.coerceIn(-roomY, 0f)
+
     // Closed it is just the sheep; open it is the panel above it, as wide as a phone's screen allows.
     val width = if (open) minOf(400, screen.screenWidthDp).dp else 150.dp
     val height = if (open) minOf(680, screen.screenHeightDp * 8 / 10).dp else 150.dp
     AndroidView(
         factory = { ctx ->
             SheepFrame(ctx, onDrag = { x, y ->
-                dx += x
-                dy += y
+                // Open, the panel stands in home's corner and isn't carried; closed, the sheep stays on the screen.
+                if (!open) {
+                    dx = (dx + x).coerceIn(-roomX, 0f)
+                    dy = (dy + y).coerceIn(-roomY, 0f)
+                }
             }, onDrop = { prefs.edit().putFloat("home_dx", dx).putFloat("home_dy", dy).apply() }).apply {
                 val web = herdPage(ctx, onOpen = { open = it }, onLoaded = { loaded = true })
                 addView(web, android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT)
