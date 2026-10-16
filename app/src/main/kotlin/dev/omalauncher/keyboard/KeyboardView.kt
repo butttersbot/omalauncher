@@ -39,6 +39,10 @@ class KeyboardLook(
     val micKey: KeyFace? = null,
     val returnKey: KeyFace? = null,
     val pageInk: Int = ink,
+    /** The look's ring while listening (the light that runs round the screen while an agent works): its two colours and one turn, ms. */
+    val ring1: Int = mic,
+    val ring2: Int = ret,
+    val ringPeriodMs: Int = 1600,
 )
 
 /**
@@ -194,7 +198,7 @@ class KeyboardView(
         for (key in l.keys) drawKey(canvas, key, key in down, k, top, pulse)
         // A pressed letter's bubble, above its cap.
         presses.values.lastOrNull { it.key.kind == KeyKind.LETTER && !it.done }?.let { drawBubble(canvas, it.key, k, top) }
-        if (listening) postInvalidateDelayed(40)
+        if (listening) postInvalidateOnAnimation()
     }
 
     private fun drawKey(
@@ -223,12 +227,6 @@ class KeyboardView(
             }
         val sink = if (pressed) (if (mech) 2f else 1f) * d else 0f
         box.set(c.x * d, top + c.y * d + sink, (c.x + c.w) * d, top + (c.y + c.h) * d + sink)
-        if (key.kind == KeyKind.MIC && pulse > 0f) {
-            // Plain to see while it listens (Boss, 2026-10-15: "a little less subtle"): a wide glow that breathes.
-            fill.color = (face and 0x00ffffff) or ((60 + 140 * pulse).toInt() shl 24)
-            val g = (4 + 8 * pulse) * d
-            canvas.drawRoundRect(RectF(box.left - g, box.top - g, box.right + g, box.bottom + g), 10 * d, 10 * d, fill)
-        }
         if (mech) {
             // A NuPhy-like cap: a darker skirt, and a lighter top face set into it. In the look's own style too
             // (Boss, 2026-10-15): the cap is the look's key, its corners the look's, its outline drawn round the
@@ -269,14 +267,40 @@ class KeyboardView(
                 drawScrapKey(canvas, key, look, pressed, k)
             }
         }
-        // And the key itself flashes lighter with it.
-        if (key.kind == KeyKind.MIC && pulse > 0f) {
-            fill.color = ((110 * pulse).toInt() shl 24) or 0x00ffffff
-            canvas.drawRoundRect(box, 6 * d, 6 * d, fill)
-        }
+        // While it listens, the ring runs round the mic key: the light that runs round the screen while an agent
+        // works, in the look's listening colours (Boss, 2026-10-15: "the rotating ring thing … on just the voice
+        // mode button").
+        if (key.kind == KeyKind.MIC && listening) drawRing(canvas, box, k)
     }
 
     private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    private val ringTurn = android.graphics.Matrix()
+
+    private fun drawRing(
+        canvas: Canvas,
+        cap: RectF,
+        k: KeyboardLook,
+    ) {
+        val d = density
+        val out = 3 * d
+        val r = RectF(cap.left - out, cap.top - out, cap.right + out, cap.bottom + out)
+        val (colors, positions) = dev.omalauncher.oma.ring.ringStops(k.ring1, k.ring2)
+        val sweep = android.graphics.SweepGradient(r.centerX(), r.centerY(), colors, positions)
+        val angle = (SystemClock.uptimeMillis() % k.ringPeriodMs) * 360f / k.ringPeriodMs
+        ringTurn.setRotate(angle, r.centerX(), r.centerY())
+        sweep.setLocalMatrix(ringTurn)
+        ringPaint.shader = sweep
+        val radius = (k.radius + 4f) * d
+        // A soft glow under a crisp line.
+        ringPaint.strokeWidth = 7 * d
+        ringPaint.alpha = 90
+        canvas.drawRoundRect(r, radius, radius, ringPaint)
+        ringPaint.strokeWidth = 3 * d
+        ringPaint.alpha = 255
+        canvas.drawRoundRect(r, radius, radius, ringPaint)
+        ringPaint.shader = null
+    }
 
     /** How [key] is drawn in the look's own style; null when the look gives none. */
     private fun scrapFace(

@@ -102,5 +102,8 @@ fun keyboardLook(
         micKey = if (apart(opaque(pal.accent.argb), page)) face(scrap, fill = opaque(pal.accent.argb), ink = bg) else face(scrap, fill = ink, ink = bg),
         returnKey = face(pack.scrap.alt),
         pageInk = opaque(pal.onPage.argb),
+        ring1 = opaque(pack.ring.listening.color1.argb),
+        ring2 = opaque(pack.ring.listening.color2.argb),
+        ringPeriodMs = pack.ring.listening.periodMs.takeIf { it > 0 } ?: 1600,
     )
 }
