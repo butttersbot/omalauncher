@@ -306,8 +306,11 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host {
 
     // ---- The mic: Oma's own speech for now (Android's recognizer); Whisper is the next step. ----
     private fun mic() {
+        // A plain toggle: the second tap ends voice mode at once, pulse and all; the last, better reading of
+        // what was said still lands in the field a moment later.
         speech?.let {
             it.stop()
+            view.listening = false
             return
         }
         if (secret) {
