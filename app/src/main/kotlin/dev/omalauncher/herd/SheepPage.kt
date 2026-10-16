@@ -81,6 +81,7 @@ open class SheepFrame(
     context: Context,
     private val onDrag: (dx: Float, dy: Float) -> Unit,
     private val onDrop: () -> Unit,
+    private val raw: Boolean = false,
 ) : FrameLayout(context) {
     private val slop = ViewConfiguration.get(context).scaledTouchSlop
     private var downX = 0f
@@ -90,14 +91,17 @@ open class SheepFrame(
     private var dragging = false
     private val at = IntArray(2)
 
-    // Where the finger is on the screen. Not rawX: home hands its views made-up events whose raw position is not
-    // the screen's, and the frame moves under the finger as it is dragged.
+    // Where the finger is on the screen. On home not rawX: home hands its views made-up events whose raw position
+    // is not the screen's. In a window of its own ([raw]) rawX it is: there the window moves a beat after each
+    // step, so its place on the screen lags the finger and the drag would feed on itself and run off the screen.
     private fun screenX(e: MotionEvent): Float {
+        if (raw) return e.rawX
         getLocationOnScreen(at)
         return at[0] + e.x
     }
 
     private fun screenY(e: MotionEvent): Float {
+        if (raw) return e.rawY
         getLocationOnScreen(at)
         return at[1] + e.y
     }

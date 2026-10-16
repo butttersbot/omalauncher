@@ -83,15 +83,22 @@ class SheepOverlay(private val service: AccessibilityService) {
         loaded = false
         place(p)
         lateinit var holder: SheepFrame
+        // Kept in fractions so slow drags don't lose their part-pixels, and on the screen.
+        var fx = p.x.toFloat()
+        var fy = p.y.toFloat()
         holder =
             object : SheepFrame(service, onDrag = { dx, dy ->
-                p.x = (p.x + dx).toInt()
-                p.y = (p.y + dy).toInt()
+                val (sw, sh) = screen()
+                if (fx.toInt() != p.x || fy.toInt() != p.y) { fx = p.x.toFloat(); fy = p.y.toFloat() }
+                fx = (fx + dx).coerceIn(0f, maxOf(0, sw - p.width).toFloat())
+                fy = (fy + dy).coerceIn(0f, maxOf(0, sh - p.height).toFloat())
+                p.x = fx.toInt()
+                p.y = fy.toInt()
                 runCatching { wm.updateViewLayout(holder, p) }
             }, onDrop = {
                 // The sheep's own corner is what is kept, open or closed.
                 if (!open) HerdSheep.keep(service, p.x, p.y)
-            }) {
+            }, raw = true) {
                 override fun dispatchTouchEvent(e: MotionEvent): Boolean {
                     if (e.actionMasked == MotionEvent.ACTION_OUTSIDE) {
                         if (open) page?.evaluateJavascript("herd.tap()", null)
