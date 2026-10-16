@@ -9,4 +9,6 @@
     <files-path name="widgets" path="widgets/" />
     <!-- QR codes of widgets, for sharing as an image. -->
     <cache-path name="share" path="share/" />
+    <!-- Pocket items pulled from the Mac Pro, to open or copy (herd/Pocket.kt). -->
+    <cache-path name="pocket" path="pocket/" />
 </paths>

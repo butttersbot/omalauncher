@@ -183,6 +183,21 @@
         <receiver android:name=".phone.StopPhoneControl" android:exported="false" />
         <!-- The debug door: does nothing in a release build, and in a debug one only for the key in the app's own files. -->
         <receiver android:name=".DebugExecReceiver" android:exported="true" />
+        <!-- "Add to pocket" in the share sheet: what is shared goes into the herd's pocket (herd/Pocket.kt). Shows nothing. -->
+        <activity android:name=".herd.PocketShareActivity" android:exported="true" android:label="Add to pocket"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true"
+            android:noHistory="true" android:taskAffinity="">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+        </activity>
         <!-- Agent mail that came by Taildrop, handed over by Tailshare: only Tailshare is heard (assist/AgentMail.kt). -->
         <receiver android:name=".assist.AgentMailReceiver" android:exported="true">
             <intent-filter><action android:name="dev.omalauncher.action.AGENT_MESSAGE" /></intent-filter>

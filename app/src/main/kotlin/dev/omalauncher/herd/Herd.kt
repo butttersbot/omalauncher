@@ -59,8 +59,17 @@ sealed interface PetCommand {
     /** Room of [w]×[h] dp around the sheep for its speech bubble, or back to just the sheep when null. */
     data class Room(val w: Float?, val h: Float?) : PetCommand
 
+    /** Pull pocket item [id] ([name]) from the Mac Pro and open it, save it to Download/Pocket or copy it. */
+    data class PocketGet(val id: String, val name: String, val action: PocketAction) : PetCommand
+
+    /** Put what is on the clipboard in the pocket (a keyboard's paste over the open panel). */
+    data object PocketPaste : PetCommand
+
     data object Unknown : PetCommand
 }
+
+/** What a pull from the pocket is for. */
+enum class PocketAction(val word: String) { Open("open"), Save("save"), Copy("copy") }
 
 fun petCommand(json: String): PetCommand {
     val o =
@@ -86,8 +95,27 @@ fun petCommand(json: String): PetCommand {
             if (w != null && h != null) PetCommand.Room(w.toFloat().coerceIn(0f, 1000f), h.toFloat().coerceIn(0f, 1000f))
             else PetCommand.Room(null, null)
         }
+        "pocketget" -> {
+            val id = o.optString("id").takeIf { POCKET_ID.matches(it) }
+            val action = PocketAction.entries.firstOrNull { it.word == o.optString("action") }
+            if (id != null && action != null) PetCommand.PocketGet(id, pocketName(o.optString("name"), id), action) else PetCommand.Unknown
+        }
+        "pocketpaste" -> PetCommand.PocketPaste
         else -> PetCommand.Unknown
     }
+}
+
+/** A pocket item's id: it goes into a URL, so nothing that could be a path or a query. */
+val POCKET_ID = Regex("[A-Za-z0-9._-]{1,128}")
+
+/** A file name for an item: its last path part, without control characters or leading dots, never empty. */
+fun pocketName(
+    name: String,
+    fallback: String = "pocket-item",
+): String {
+    val last = name.substringAfterLast('/').substringAfterLast('\\')
+    val clean = last.replace(Regex("[\\p{Cntrl}:*?\"<>|]"), "_").trim().trimStart('.').take(180)
+    return clean.ifEmpty { fallback }
 }
 
 /** Where the floating sheep's window goes, in pixels, and which side of it the sheep stands on. */

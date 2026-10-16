@@ -37,7 +37,12 @@ fun herdPage(
         settings.domStorageEnabled = true
         webViewClient =
             object : WebViewClient() {
-                override fun onPageFinished(view: WebView, url: String) = onLoaded()
+                override fun onPageFinished(view: WebView, url: String) {
+                    // The pocket's pulls, uploads and share target are the phone's (Pocket.kt): the page may show its tab.
+                    giveHerd(view, "caps", """{"pocket": true}""")
+                    Pocket.attach(view)
+                    onLoaded()
+                }
             }
         val main = Handler(Looper.getMainLooper())
         val page = this
@@ -61,6 +66,8 @@ fun herdPage(
                             }
                             is PetCommand.Stroll -> onStroll?.invoke(command.dx, command.speed)
                             is PetCommand.Room -> onRoom?.invoke(command.w, command.h)
+                            is PetCommand.PocketGet -> Pocket.pull(context, page, command.id, command.name, command.action)
+                            PetCommand.PocketPaste -> Pocket.paste(context)
                             PetCommand.Unknown -> {}
                         }
                     }

@@ -59,6 +59,25 @@ class HerdTest {
     }
 
     @Test
+    fun readsThePocketsCommands() {
+        assertEquals(PetCommand.PocketGet("a1b2", "cat.jpg", PocketAction.Save), petCommand("""{"cmd": "pocketget", "id": "a1b2", "name": "cat.jpg", "action": "save"}"""))
+        assertEquals(PetCommand.PocketGet("a1b2", "cat.jpg", PocketAction.Open), petCommand("""{"cmd": "pocketget", "id": "a1b2", "name": "../../cat.jpg", "action": "open"}"""))
+        assertEquals(PetCommand.PocketPaste, petCommand("""{"cmd": "pocketpaste"}"""))
+        assertEquals("an id never carries a path", PetCommand.Unknown, petCommand("""{"cmd": "pocketget", "id": "../v1", "name": "x", "action": "open"}"""))
+        assertEquals(PetCommand.Unknown, petCommand("""{"cmd": "pocketget", "id": "a1b2", "name": "x", "action": "delete"}"""))
+    }
+
+    @Test
+    fun aPocketNameIsOneSafeFileName() {
+        assertEquals("cat.jpg", pocketName("/sdcard/DCIM/cat.jpg"))
+        assertEquals("evil.sh", pocketName("..\\..\\.evil.sh"))
+        assertEquals("a_b.txt", pocketName("a\nb.txt"))
+        assertEquals("pocket-item", pocketName("..."))
+        assertEquals("x9", pocketName("", "x9"))
+        assertEquals("""{"name":"a.txt","state":"failed","error":"no"}""", pocketBusyJson("a.txt", "failed", "no"))
+    }
+
+    @Test
     fun theBubblesRoomLeavesTheSheepWhereItStands() {
         // Mid-screen: grows up and leftwards; the sheep's square stays at 500,1000.
         assertEquals(SheepWindow(370, 870, 280, 280, "right"), sheepWindow(500, 1000, 150, 280, 280, 1200, 1800))
