@@ -463,14 +463,19 @@ $('view').addEventListener('click', e => {
   if (a === 'pocketpin') pocketPin(act.dataset.id);
   if (a === 'pocketremove') pocketRemove(act.dataset.id);
   if (a === 'sendclip') { shell({ cmd: 'sendclip', device: act.dataset.device }); $('sendStatus').textContent = 'Sending your clipboard to ' + act.dataset.device + '…'; }
+  // On the phone, what it received is the shell's list: one command, inboxget, with the action.
+  const phone = !!window.HerdAndroid;
   if (a === 'copyitem') {
-    shell({ cmd: 'copyitem', name: act.dataset.name });
+    shell(phone ? { cmd: 'inboxget', name: act.dataset.name, action: 'copy' } : { cmd: 'copyitem', name: act.dataset.name });
     act.textContent = 'Copied ✓';
     setTimeout(() => { act.textContent = 'Copy'; }, 1600);
   }
-  if (a === 'openitem') shell({ cmd: 'openitem', name: act.dataset.name });
+  if (a === 'openitem') shell(phone ? { cmd: 'inboxget', name: act.dataset.name, action: 'open' } : { cmd: 'openitem', name: act.dataset.name });
   if (a === 'reveal') shell({ cmd: 'reveal', name: act.dataset.name || '' });
-  if (a === 'trash') { inbox = (inbox || []).filter(i => i.name !== act.dataset.name); render(); shell({ cmd: 'trash', name: act.dataset.name }); }
+  if (a === 'trash') {
+    inbox = (inbox || []).filter(i => i.name !== act.dataset.name); render();
+    shell(phone ? { cmd: 'inboxget', name: act.dataset.name, action: 'remove' } : { cmd: 'trash', name: act.dataset.name });
+  }
   if (a === 'expand') { act.classList.toggle('full'); expanded[act.classList.contains('full') ? 'add' : 'delete'](act.dataset.name); }
 });
 
@@ -761,12 +766,16 @@ function renderTailshare(view) {
   for (const i of texts) html += pocketTextRow(i, fresh.has(i.id));
   if (pocket && pocketError) html += `<div class="note">${esc(pocketError)}</div>`;
 
-  if (to.length && !window.HerdAndroid)   // the phone sends its clipboard with Tailshare's tile instead
-    html += `<div class="sendrow"><span>Send clipboard to</span>${to.map(d => `<button class="btn small" data-act="sendclip" data-device="${esc(d)}">${esc(d)}</button>`).join('')}</div>`;
+  // The phone shows it once its shell can send (caps.sendclip), and offers only the computers: they run tailshare-serve.
+  const targets = window.HerdAndroid ? (caps.sendclip ? (data?.machines || []).filter(m => !m.self).map(m => m.name) : []) : to;
+  if (targets.length)
+    html += `<div class="sendrow"><span>Send clipboard to</span>${targets.map(d => `<button class="btn small" data-act="sendclip" data-device="${esc(d)}">${esc(d)}</button>`).join('')}</div>`;
   html += `<div class="status" id="sendStatus"></div>`;
 
-  // Sent straight to this Mac (clipboard sends and shares from the phone), as before.
-  if (inbox?.length) html += `<div class="section">Sent to this Mac</div>`;
+  // Sent straight to this device: on the Mac, ~/Inbox (the shell lists it); on the phone, what Tailshare received
+  // (the shell passes it in herd.inbox the same way, with an optional src for a picture's preview).
+  const phone = !!window.HerdAndroid;
+  if (inbox?.length) html += `<div class="section">Sent to this ${phone ? 'phone' : 'Mac'}</div>`;
   for (const i of inbox || []) {
     const name = esc(i.name);
     html += `<div class="item ${fresh.has(i.name) ? 'new' : ''}"><div class="item-head"><b>${esc(i.from || 'Received')}</b>· ${ago(i.t)}
@@ -775,19 +784,19 @@ function renderTailshare(view) {
       const long = i.text.length > 280 || i.text.split('\n').length > 5;
       html += `<div class="clip ${long ? 'long' : ''} ${expanded.has(i.name) ? 'full' : ''}" data-act="expand" data-name="${name}">${esc(i.text)}</div>
         <div class="actions"><button class="btn primary" data-act="copyitem" data-name="${name}">Copy</button></div>`;
-    } else if (i.kind === 'image') {
-      html += `<img src="tailshare://inbox/${encodeURIComponent(i.name)}" alt="${name}" data-act="openitem" data-name="${name}">
+    } else if (i.kind === 'image' && (!phone || i.src)) {
+      html += `<img src="${phone ? esc(i.src) : 'tailshare://inbox/' + encodeURIComponent(i.name)}" alt="${name}" data-act="openitem" data-name="${name}">
         <div class="actions"><button class="btn primary" data-act="copyitem" data-name="${name}">Copy</button>
         <button class="btn" data-act="openitem" data-name="${name}">Open</button></div>`;
     } else {
       html += `<div class="file">📄 <span title="${name}">${name}</span><em>${bytes(i.size)}</em></div>
         <div class="actions"><button class="btn primary" data-act="openitem" data-name="${name}">Open</button>
-        <button class="btn" data-act="reveal" data-name="${name}">Show in Finder</button>
+        ${phone ? '' : `<button class="btn" data-act="reveal" data-name="${name}">Show in Finder</button>`}
         <button class="btn" data-act="copyitem" data-name="${name}">Copy</button></div>`;
     }
     html += `</div>`;
   }
-  if (inbox?.length) html += `<div class="foot"><button class="btn small" data-act="reveal">Open Inbox folder</button></div>`;
+  if (inbox?.length && !phone) html += `<div class="foot"><button class="btn small" data-act="reveal">Open Inbox folder</button></div>`;
   view.innerHTML = html;
   renderJobs();   // looking at it clears the tab's count
 }
@@ -1163,7 +1172,11 @@ window.herd = {
     speak(top.title, (parts.join(', ') + '. ').replace(/^./, c => c.toUpperCase()) + (gist(top.last) || ''), { ms: 9000, id: top.id });
   },
   // The shell's abilities: {stroll: it can walk the window along the screen, room: it can grow for the bubble}.
-  caps(c) { Object.assign(caps, typeof c === 'string' ? JSON.parse(c) : c); if (caps.pocket && window.HerdAndroid) { fetchPocket(); renderJobs(); } },
+  caps(c) {
+    Object.assign(caps, typeof c === 'string' ? JSON.parse(c) : c);
+    if (caps.pocket && window.HerdAndroid) { fetchPocket(); renderJobs(); }
+    if (showing()) render();   // a phone's sendclip shows the send row at once
+  },
   // A stroll the shell walked is over; moved is how far it got (less than asked at the screen's edge).
   arrived(r) { const moved = (typeof r === 'string' ? JSON.parse(r) : r)?.moved ?? 0; if (arrive) arrive(moved); },
   // Which side of the window the pet stands on: the shell grows the window away from the screen's edge.
