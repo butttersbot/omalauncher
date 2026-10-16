@@ -194,7 +194,9 @@ if [ "$command" = add-mac ]; then
   exit 0
 fi
 
-mapfile -t files < <(mac_files)
+# A loop, not mapfile: the Macs run bash 3.2, which has none.
+files=()
+while IFS= read -r file; do files+=("$file"); done < <(mac_files)
 count=${#files[@]}
 [ "$count" -gt 0 ] || die 'No Mac is set up on this phone: ~/.config/omalauncher/mac-runner.json is missing.'
 
