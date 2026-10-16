@@ -8,7 +8,7 @@ case "$command" in
 help)
   cat <<'HELP'
 oma-phone apps | open PACKAGE_OR_settings
-oma-phone status | read | screenshot | back | home | recents | notifications | stop
+oma-phone status | read | screenshot | back | home | recents | notifications | stay | stop
 oma-phone screen [--until TEXT]
 oma-phone expect TEXT
 oma-phone press [--in PACKAGE] LABEL
@@ -50,7 +50,8 @@ Read after each action. Use screenshot's path with your agent's image tool.
 screen is read cut down to what you act on: the app in front and each control that says something,
 with whether it takes a press, text or a scroll. --until TEXT waits up to 5 seconds for TEXT to show.
 press finds the one control that says LABEL (its whole label first, then part of it), presses it and
-answers with the screen that follows: one call per step, no numbers read off a picture. fill does the
+answers with the screen that follows: one call per step, no numbers read off a picture. A LABEL that is
+not on the screen is scrolled to first, a few pages down and then up; scrolled says how many. fill does the
 same for a text field, found by its hint or contents; LABEL "" is the screen's only text field.
 fill is not ok unless the field then shows TEXT.
 --in PACKAGE refuses unless that app is in front. Two controls that answer to
@@ -59,6 +60,9 @@ expect waits up to 5 seconds for TEXT to show and fails if it does not, so steps
 stop at the first screen that is not the one meant:
   oma-phone press --in PACKAGE "Search" && oma-phone fill "" "milk" && oma-phone expect "results"
 Prefer press, fill and screen. Use read, click, tap and screenshot when they are not enough.
+When your work ends, the screen the user was on before your first step comes back by itself, unless
+the user took the phone meanwhile. stay leaves the screen you end on up instead: use it only when the
+task was to open or show something for the user.
 Works automatically after Accessibility is enabled, on an unlocked phone.
 Stop pauses access until the user resumes it.
 HELP
@@ -148,7 +152,7 @@ where)
 tap|swipe)
   request=$(jq -cn --arg command "$command" --arg x "${1:?X required}" --arg y "${2:?Y required}" --arg ex "${3:-0}" --arg ey "${4:-0}" --arg ms "${5:-400}" \
     '{command:$command,x:($x|tonumber),y:($y|tonumber)} + (if $command=="swipe" then {endX:($ex|tonumber),endY:($ey|tonumber),duration:($ms|tonumber)} else {} end)');;
-status|pages|apps|read|screenshot|back|home|recents|notifications|stop)
+status|pages|apps|read|screenshot|back|home|recents|notifications|stay|stop)
   request=$(jq -cn --arg command "$command" '{command:$command}');;
 *) echo 'Unknown command. Run oma-phone help.' >&2; exit 2;;
 esac
@@ -156,7 +160,8 @@ response=$(curl --silent --show-error --max-time 12 --abstract-unix-socket '__SO
   --header 'Content-Type: application/json' --data-binary "$request" http://localhost/phone) || {
   echo 'Phone bridge unavailable or timed out. Open Omalauncher Boss. Read the screen before retrying actions.' >&2; exit 1;
 }
-printf '%s\n' "$response" | jq .
+# A screen's controls one to a line: the same JSON, about a quarter fewer characters to read after every step.
+printf '%s\n' "$response" | jq -r 'if (.controls | type) == "array" then (del(.controls) | tojson | .[:-1]) + (if (del(.controls) | length) > 0 then "," else "" end) + "\"controls\":[\n" + (.controls | map(tojson) | join(",\n")) + "\n]}" else . end'
 printf '%s\n' "$response" | jq -e '.ok == true' >/dev/null
 # expect fails when the words did not show, so a chain of steps stops there.
 if [ "$expect" = 1 ]; then printf '%s\n' "$response" | jq -e '.shows == true' >/dev/null || { echo 'Not on screen after waiting.' >&2; exit 1; }; fi

@@ -49,6 +49,18 @@ class PhoneService : AccessibilityService() {
     }
     /** The package of the last window to come to the front: an unbind with his settings there is him switching it off. */
     @Volatile private var front: String? = null
+    /** When the screen last said it changed, by the same clock as [acted]: a read waits for it to go quiet ([phoneSettleWait]). */
+    private var lastChange: Long? = null
+    /** The last place he could be brought back to that came to the front ([phoneOrigin]): what an agent's first move leaves. */
+    private var place: PhoneOrigin? = null
+    /** Where he was when this request came in, which is where he was before the agent's first move if this request is it. */
+    private var placeAsked: PhoneOrigin? = null
+    /** Where he was before the agent's first move since its work began; null until it moves the screen. */
+    private var origin: PhoneOrigin? = null
+    /** The agent said the screen it is on is for him (`oma-phone stay`): it is left up when the work ends. */
+    private var stay = false
+    /** He took the phone himself since the agent's first move: nothing is brought back over what he chose. */
+    private var took = false
     override fun onServiceConnected() {
         PhoneAccess.load(this); instance = this
         PhoneControlHeal.connected(this, paused = !PhoneAccess.active)
@@ -58,8 +70,15 @@ class PhoneService : AccessibilityService() {
     }
     /** A window changed, the lock screen's among them: an overlay that is up looks again at once. */
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) event.packageName?.let { front = it.toString() }
-        if (ring.shown || answer.shown || sheep.shown) syncRing()
+        if (event == null) return
+        lastChange = SystemClock.uptimeMillis()
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            val pkg = event.packageName?.toString()
+            pkg?.let { front = it }
+            phoneOrigin(pkg, event.className?.toString(), packageName) { HomeDoor.home?.showing }?.let { place = it }
+            if (origin != null && phoneTakenOver(pkg, packageName, SystemClock.uptimeMillis(), acted)) took = true
+        }
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && (ring.shown || answer.shown || sheep.shown)) syncRing()
     }
     override fun onInterrupt() = Unit
     /** Folded, unfolded or turned. */
@@ -156,7 +175,38 @@ class PhoneService : AccessibilityService() {
         } catch (e: Exception) { node.recycle(); throw e }
     }
     /** Something was done to the screen: what was read of it no longer holds, and the next read gives it time to show. */
-    private fun changed() { snapshot = ""; seen = emptyMap(); acted = SystemClock.uptimeMillis() }
+    private fun changed() {
+        snapshot = ""; seen = emptyMap(); acted = SystemClock.uptimeMillis()
+        // The agent's first move since its work began: where he was then is what comes back when it ends.
+        if (origin == null) { origin = placeAsked; stay = false; took = false }
+    }
+
+    /** Runs [then] once the screen has shown what the last move did ([phoneSettleWait]); at once when nothing was moved. */
+    private fun settled(then: () -> Unit) {
+        val wait = phoneSettleWait(SystemClock.uptimeMillis(), acted, lastChange)
+        if (wait == 0L) then() else main.postDelayed({ settled(then) }, minOf(wait, PHONE_SETTLE_STEP_MILLIS))
+    }
+
+    /**
+     * The agent's work ended (AgentTasks, once no builder works): what he had in front before its first move comes back
+     * ([phoneBack]), and the next work starts afresh. Safe from any thread.
+     */
+    fun workEnded() = main.post {
+        val keyguard = getSystemService(android.app.KeyguardManager::class.java)
+        val back = phoneBack(origin, place, stay, took, keyguard?.isKeyguardLocked == true)
+        origin = null; stay = false; took = false
+        if (back !is PhoneBack.Bring) return@post android.util.Log.i("PhoneService", "Not brought back: ${(back as PhoneBack.Leave).why}").let { }
+        runCatching {
+            when (val was = back.origin) {
+                PhoneOrigin.Chat -> startActivity(dev.omalauncher.oma.OmaChatActivity.intent(this))
+                is PhoneOrigin.Home -> {
+                    was.page?.let(HomeDoor::ask)
+                    startActivity(Intent(this, dev.omalauncher.MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                }
+                is PhoneOrigin.App -> packageManager.getLaunchIntentForPackage(was.pkg)?.let { startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            }
+        }.onFailure { android.util.Log.w("PhoneService", "Could not bring the screen back", it) }
+    }
     /** Each control the user can see in the window in front, by its id, with its node for just that call. */
     private fun walk(visit: (String, AccessibilityNodeInfo) -> Unit) {
         var count = 0
@@ -316,6 +366,8 @@ class PhoneService : AccessibilityService() {
     fun request(input: JSONObject, reply: (JSONObject) -> Unit) {
         try {
             val command = input.getString("command")
+            // Where he was as this request came in: if it is the agent's first move, that is where it comes back to.
+            placeAsked = place
             // The checks and their order are PhoneRequests.admit's; nothing below runs for a request it didn't let through.
             // A request of a thread on the Mac waits for the owner as the phone builder's does, and its card is on this screen too.
             val route = PhoneRequests.admit(command, { PhoneAccess.requireAccess(this) }) { dev.omalauncher.assist.AgentTasks.pending.size + dev.omalauncher.assist.MacThreads.pending.size }
@@ -389,14 +441,14 @@ class PhoneService : AccessibilityService() {
                 }
                 "read" -> {
                     // Right after one of this service's own actions the screen is still on its way to what the action did.
-                    val wait = PhoneTouch.settleWait(SystemClock.uptimeMillis(), acted)
-                    if (wait == 0L) { reply(read()); return }
-                    main.postDelayed({
+                    settled {
                         try { PhoneAccess.requireAccess(this); reply(read()) }
                         catch (e: Exception) { reply(JSONObject().put("ok", false).put("error", e.message ?: "Phone control failed")) }
-                    }, wait)
+                    }
                     return
                 }
+                // The screen the agent ends on is for him ("open Spotify"): it is not taken back when the work ends.
+                "stay" -> stay = true
                 "click", "type", "scroll" -> {
                     check(input.getString("snapshot") == snapshot && snapshot.isNotEmpty()) { "Read the screen first; snapshot is stale." }
                     act(command, input.getString("id"), input, reply)
@@ -415,27 +467,50 @@ class PhoneService : AccessibilityService() {
                             reply(PhoneScreen.brief(seen).also { if (until.isNotEmpty()) it.put("shows", shows) })
                         } catch (e: Exception) { reply(JSONObject().put("ok", false).put("error", e.message ?: "Phone control failed")) }
                     }
-                    main.postDelayed({ look() }, PhoneTouch.settleWait(SystemClock.uptimeMillis(), acted))
+                    settled { look() }
                     return
                 }
                 "press", "fill" -> {
                     val label = input.getString("label")
-                    val seen = read()
-                    PhoneScreen.requireFront(seen, input.optString("in"))
-                    val nodes = PhoneScreen.nodes(seen)
-                    val id = when (val found = if (command == "press") PhoneFind.press(nodes, label) else PhoneFind.field(nodes, label)) {
-                        is Found.One -> found.id
-                        is Found.Several -> error("Several controls answer to \"$label\": ${found.ids.joinToString(", ")}. Nothing was done. Use a longer label, or click/type with snapshot $snapshot and one of these ids.")
-                        Found.None -> error("Nothing on screen ${if (command == "press") "says" else "is a text field that says"} \"$label\". Nothing was done. Run oma-phone screen.")
-                    }
+                    PhoneScreen.requireFront(read(), input.optString("in"))
                     // One call does the step and gives back what it led to, so the next step starts from the real screen.
-                    act(if (command == "press") "click" else "type", id, input) { done ->
+                    fun step(id: String, scrolled: Int) = act(if (command == "press") "click" else "type", id, input) { done ->
                         if (!done.optBoolean("ok")) { reply(done); return@act }
-                        main.postDelayed({
-                            try { PhoneAccess.requireAccess(this); reply(PhoneScreen.after(read(), command, done.optString("id", id), if (command == "fill") input.getString("text") else null)) }
-                            catch (e: Exception) { reply(JSONObject().put("ok", false).put("error", e.message ?: "Phone control failed")) }
-                        }, PhoneTouch.SETTLE_MILLIS)
+                        settled {
+                            try {
+                                PhoneAccess.requireAccess(this)
+                                reply(PhoneScreen.after(read(), command, done.optString("id", id), if (command == "fill") input.getString("text") else null)
+                                    .also { if (scrolled > 0) it.put("scrolled", scrolled) })
+                            } catch (e: Exception) { reply(JSONObject().put("ok", false).put("error", e.message ?: "Phone control failed")) }
+                        }
                     }
+                    // A label below or above what shows is scrolled to, the way a finger would: on, then back, a few pages each way.
+                    fun look(forward: Boolean, tries: Int, scrolled: Int) {
+                        try {
+                            PhoneAccess.requireAccess(this)
+                            val seen = read()
+                            val nodes = PhoneScreen.nodes(seen)
+                            when (val found = if (command == "press") PhoneFind.press(nodes, label) else PhoneFind.field(nodes, label)) {
+                                is Found.One -> return step(found.id, scrolled)
+                                is Found.Several -> error("Several controls answer to \"$label\": ${found.ids.joinToString(", ")}. Nothing was done. Use a longer label, or click/type with snapshot $snapshot and one of these ids.")
+                                Found.None -> Unit
+                            }
+                            val list = PhoneScreen.scroller(seen)
+                            val more = if (forward) tries < PHONE_FIND_SCROLLS else tries < 2 * PHONE_FIND_SCROLLS
+                            if (list == null || !more) {
+                                error("Nothing on screen ${if (command == "press") "says" else "is a text field that says"} \"$label\"${if (scrolled > 0) ", even scrolled through" else ""}. Nothing was done. Run oma-phone screen.")
+                            }
+                            // At the end of the list Android scrolls it no further: the other way is tried from there.
+                            val turned = runCatching {
+                                act("scroll", list, JSONObject().put("direction", if (forward) "forward" else "backward")) { settled { look(forward, tries + 1, scrolled + 1) } }
+                            }
+                            if (turned.isFailure) {
+                                if (forward) return look(false, 0, scrolled)
+                                error("Nothing on screen ${if (command == "press") "says" else "is a text field that says"} \"$label\", even scrolled through. Nothing was done. Run oma-phone screen.")
+                            }
+                        } catch (e: Exception) { reply(JSONObject().put("ok", false).put("error", e.message ?: "Phone control failed")) }
+                    }
+                    look(forward = true, tries = 0, scrolled = 0)
                     return
                 }
                 "back", "home", "recents", "notifications" -> {

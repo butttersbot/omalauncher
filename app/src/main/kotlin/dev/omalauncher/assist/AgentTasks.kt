@@ -476,7 +476,10 @@ class Builder(val id: BuilderId) {
                     notify(context)
                     // A task the owner stopped says nothing more, and one with a follow-up now running has its answer in
                     // the thread, under a task notification that is ongoing again; any other ending brings its answer to him.
-                    if (!advance(context, status) && status != TaskStatus.Stopped) AgentNotices.answered(context, label, answer, AgentNotices.answerId(id))
+                    val next = advance(context, status)
+                    if (!next && status != TaskStatus.Stopped) AgentNotices.answered(context, label, answer, AgentNotices.answerId(id))
+                    // Once no builder works on it any more, the phone goes back to what he had in front (PhoneReturn.kt).
+                    if (!next && AgentTasks.builders.none { it.working }) dev.omalauncher.phone.PhoneService.instance?.workEnded()
                 }
             }
         }

@@ -175,6 +175,18 @@ object PhoneScreen {
         return answer
     }
 
+    /**
+     * What `press` and `fill` scroll to look for a label that is not on the screen: the biggest list that scrolls, which
+     * is the page's own, not a row of chips inside it. Null when nothing scrolls.
+     */
+    fun scroller(read: JSONObject): String? {
+        val list = read.optJSONArray("nodes") ?: return null
+        return (0 until list.length()).map { list.getJSONObject(it) }.filter { it.optBoolean("scrollable") }.maxByOrNull { node ->
+            val box = node.optJSONArray("bounds")
+            if (box == null || box.length() < 4) 0L else (box.getLong(2) - box.getLong(0)).coerceAtLeast(0) * (box.getLong(3) - box.getLong(1)).coerceAtLeast(0)
+        }?.getString("id")
+    }
+
     /** Whether any control on the screen says [text], in whole or in part. */
     fun says(read: JSONObject, text: String): Boolean {
         val asked = text.trim().lowercase()
