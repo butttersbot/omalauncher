@@ -194,8 +194,10 @@ class KeyboardView(
             canvas.drawRect(0f, top, width.toFloat(), height.toFloat(), fill)
         }
         val down = presses.values.map { it.key }.toSet()
-        val pulse = if (listening) (0.5f + 0.5f * sin(SystemClock.uptimeMillis() / 130.0).toFloat()) else 0f
-        for (key in l.keys) drawKey(canvas, key, key in down, k, top, pulse)
+        val pulse = if (listening) (0.5f + 0.5f * sin(SystemClock.uptimeMillis() / 180.0).toFloat()) else 0f
+        // The mic last, so its glow while listening lies over its neighbours, not under return.
+        for (key in l.keys) if (key.kind != KeyKind.MIC) drawKey(canvas, key, key in down, k, top, pulse)
+        for (key in l.keys) if (key.kind == KeyKind.MIC) drawKey(canvas, key, key in down, k, top, pulse)
         // A pressed letter's bubble, above its cap.
         presses.values.lastOrNull { it.key.kind == KeyKind.LETTER && !it.done }?.let { drawBubble(canvas, it.key, k, top) }
         if (listening) postInvalidateOnAnimation()
@@ -228,9 +230,10 @@ class KeyboardView(
         val sink = if (pressed) (if (mech) 2f else 1f) * d else 0f
         box.set(c.x * d, top + c.y * d + sink, (c.x + c.w) * d, top + (c.y + c.h) * d + sink)
         if (key.kind == KeyKind.MIC && pulse > 0f) {
-            // Plain to see while it listens (Boss, 2026-10-15: "a little less subtle"): a wide glow that breathes.
-            fill.color = (face and 0x00ffffff) or ((60 + 140 * pulse).toInt() shl 24)
-            val g = (4 + 8 * pulse) * d
+            // A soft glow that breathes while it listens. (Stronger ones and a ring running round it were tried and
+            // dropped, Boss 2026-10-15: this one looks best.)
+            fill.color = (face and 0x00ffffff) or ((90 * pulse).toInt() shl 24)
+            val g = 6 * d * pulse
             canvas.drawRoundRect(RectF(box.left - g, box.top - g, box.right + g, box.bottom + g), 10 * d, 10 * d, fill)
         }
         if (mech) {
@@ -273,12 +276,7 @@ class KeyboardView(
                 drawScrapKey(canvas, key, look, pressed, k)
             }
         }
-        // And the key itself flashes lighter with it. (A ring running round the key was tried and dropped, Boss
-        // 2026-10-15: "the pulse looks more polished".)
-        if (key.kind == KeyKind.MIC && pulse > 0f) {
-            fill.color = ((110 * pulse).toInt() shl 24) or 0x00ffffff
-            canvas.drawRoundRect(box, 6 * d, 6 * d, fill)
-        }
+
     }
 
     private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
