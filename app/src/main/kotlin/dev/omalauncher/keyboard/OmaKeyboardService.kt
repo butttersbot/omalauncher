@@ -50,6 +50,37 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host {
     /** The live words of the speech running now are in the field, as text still being written. */
     private var composing = false
 
+    /** The live words last written into the field, as they stand there. */
+    private var lastComposed = ""
+
+    /** Ends the speech running now without writing anything more into the field. */
+    private fun dropVoice() {
+        val s = speech ?: return
+        speech = null
+        composing = false
+        lastComposed = ""
+        s.onText = null
+        s.cancel()
+        if (::view.isInitialized) view.listening = false
+    }
+
+    /**
+     * The app gave the keyboard the field afresh (Oma's chat does on Send, clearing it). If the live words aren't
+     * in it any more they were sent or cleared, and that speech is over: kept going, it wrote the whole message
+     * back into the emptied field and went on listening (Boss, 2026-10-15: "I already sent this message, but it
+     * stayed in my composer").
+     */
+    override fun onStartInput(
+        attribute: EditorInfo,
+        restarting: Boolean,
+    ) {
+        super.onStartInput(attribute, restarting)
+        if (speech != null && composing) {
+            val before = currentInputConnection?.getTextBeforeCursor(lastComposed.length + 4, 0)?.toString()
+            if (before == null || lastComposed.isEmpty() || !before.endsWith(lastComposed)) dropVoice()
+        }
+    }
+
     override val haptics get() = prefs.getBoolean(HAPTICS, true)
 
     override fun onCreate() {
@@ -300,7 +331,8 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host {
         composing = false
         s.onText = { heard ->
             if (speech === s && heard.isNotBlank()) {
-                currentInputConnection?.setComposingText(gap + heard.trim(), 1)
+                lastComposed = gap + heard.trim()
+                currentInputConnection?.setComposingText(lastComposed, 1)
                 composing = true
             }
         }
