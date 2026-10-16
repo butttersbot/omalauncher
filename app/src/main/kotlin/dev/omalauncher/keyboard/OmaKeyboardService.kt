@@ -158,6 +158,20 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host {
         y: Float,
     ) {
         val ic = currentInputConnection ?: return
+        // Typing while spoken words are still being written in (listening, or the last reading not back yet): those
+        // words are kept as they show and that speech ends, then the key types after them. Before, the key's text
+        // replaced the words being written, and then nothing was left (Boss, 2026-10-15: "I hit space. It clears
+        // the entire... everything").
+        if (key.action != KeyAction.Mic) speech?.let { s ->
+            if (composing) {
+                ic.finishComposingText()
+                speech = null
+                composing = false
+                s.onText = null
+                s.cancel()
+                view.listening = false
+            }
+        }
         val learn = if (secret || layer != Layer.ABC) null else learning.getOrPut(screen) { loadLearning(screen) }
         when (val a = key.action) {
             is KeyAction.Type -> {

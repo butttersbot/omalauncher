@@ -176,10 +176,11 @@ class KeyboardView(
         val top = headroomPx.toFloat()
         // The board.
         if (mech) {
-            fill.shader = LinearGradient(0f, top, 0f, height.toFloat(), blend(k.board, BLACK, 0.2f), blend(k.board, BLACK, 0.08f), Shader.TileMode.CLAMP)
+            val base = if (k.letter != null) k.page else k.board
+            fill.shader = LinearGradient(0f, top, 0f, height.toFloat(), blend(base, BLACK, 0.2f), blend(base, BLACK, 0.08f), Shader.TileMode.CLAMP)
             canvas.drawRect(0f, top, width.toFloat(), height.toFloat(), fill)
             fill.shader = null
-            fill.color = blend(k.board, WHITE, 0.4f)
+            fill.color = blend(base, WHITE, 0.4f)
             canvas.drawRect(0f, top, width.toFloat(), top + 3 * d, fill)
             fill.color = k.led
             box.set(6 * d, top + 3 * d, width - 6 * d, top + 6 * d)
@@ -228,27 +229,34 @@ class KeyboardView(
             canvas.drawRoundRect(RectF(box.left - g, box.top - g, box.right + g, box.bottom + g), 10 * d, 10 * d, fill)
         }
         if (mech) {
-            // A NuPhy-like cap: a darker skirt, and a lighter top face set into it.
-            val r = 7 * d
+            // A NuPhy-like cap: a darker skirt, and a lighter top face set into it. In the look's own style too
+            // (Boss, 2026-10-15): the cap is the look's key, its corners the look's, its outline drawn round the
+            // face, and its skirt shaded toward the look's shadow colour (Riso's skirts are pink).
+            val look = scrapFace(key, k)
+            val capFace = look?.fill ?: face
+            val capInk = look?.let { if (key.kind == KeyKind.SPACE) blend(it.ink, it.fill, 0.4f) else it.ink } ?: ink
+            val shade = look?.shadows?.lastOrNull()?.color?.let { it or BLACK } ?: BLACK
+            val r = (if (look != null) k.radius.coerceAtLeast(1.5f) + 2f else 7f) * d
+            val rFace = (if (look != null) k.radius.coerceAtLeast(1f) else 5f) * d
             if (!pressed) {
-                fill.color = blend(face, BLACK, 0.45f)
+                fill.color = blend(capFace, shade, 0.45f)
                 canvas.drawRoundRect(RectF(box.left, box.top + 3 * d, box.right, box.bottom + 3 * d), r, r, fill)
             }
-            fill.color = blend(face, BLACK, 0.28f)
+            fill.color = blend(capFace, shade, 0.28f)
             canvas.drawRoundRect(box, r, r, fill)
             val faceBox = RectF(box.left + 3 * d, box.top + 2 * d, box.right - 3 * d, box.bottom - 6 * d)
-            fill.shader = LinearGradient(0f, faceBox.top, 0f, faceBox.bottom, blend(face, WHITE, 0.12f), face, Shader.TileMode.CLAMP)
-            canvas.drawRoundRect(faceBox, 5 * d, 5 * d, fill)
+            fill.shader = LinearGradient(0f, faceBox.top, 0f, faceBox.bottom, blend(capFace, WHITE, 0.12f), capFace, Shader.TileMode.CLAMP)
+            canvas.drawRoundRect(faceBox, rFace, rFace, fill)
             fill.shader = null
-            drawLabel(canvas, key, faceBox, ink, k)
+            if (look != null && look.border > 0f) {
+                stroke.strokeWidth = look.border * d
+                stroke.color = look.borderColor
+                val inset = look.border * d / 2
+                canvas.drawRoundRect(RectF(faceBox.left + inset, faceBox.top + inset, faceBox.right - inset, faceBox.bottom - inset), rFace, rFace, stroke)
+            }
+            drawLabel(canvas, key, faceBox, capInk, k)
         } else {
-            val look =
-                when (key.kind) {
-                    KeyKind.LETTER, KeyKind.SPACE -> k.letter
-                    KeyKind.MOD -> if (key.action == KeyAction.Shift && key.label == "⇪") k.letter else k.modKey
-                    KeyKind.MIC -> k.micKey
-                    KeyKind.RETURN -> k.returnKey
-                }
+            val look = scrapFace(key, k)
             if (look == null) {
                 val r = 5 * d
                 fill.color = blend(face, BLACK, 0.25f)
@@ -263,6 +271,18 @@ class KeyboardView(
     }
 
     private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+
+    /** How [key] is drawn in the look's own style; null when the look gives none. */
+    private fun scrapFace(
+        key: Key,
+        k: KeyboardLook,
+    ): KeyFace? =
+        when (key.kind) {
+            KeyKind.LETTER, KeyKind.SPACE -> k.letter
+            KeyKind.MOD -> if (key.action == KeyAction.Shift && key.label == "⇪") k.letter else k.modKey
+            KeyKind.MIC -> k.micKey
+            KeyKind.RETURN -> k.returnKey
+        }
     private val blurs = HashMap<Float, android.graphics.BlurMaskFilter>()
 
     /**
