@@ -59,10 +59,8 @@ case $1 in
   *) usage ;;
 esac
 
-[ $# -ge 2 ] || usage
-target=$1
-text=$2
-shift 2
+# Options may come before or after the address and the text (the wrapper agents are given puts them first).
+words=()
 reply_to=''
 title=''
 as='oma'
@@ -71,9 +69,14 @@ while [ $# -gt 0 ]; do
     --reply-to) [ $# -ge 2 ] || usage; reply_to=$2; shift 2 ;;
     --title) [ $# -ge 2 ] || usage; title=$2; shift 2 ;;
     --as) [ $# -ge 2 ] || usage; as=$2; shift 2 ;;
-    *) usage ;;
+    --) shift; words+=("$@"); break ;;
+    -*) usage ;;
+    *) words+=("$1"); shift ;;
   esac
 done
+[ ${#words[@]} -eq 2 ] || usage
+target=${words[0]}
+text=${words[1]}
 
 device=${target%%:*}
 session=''
