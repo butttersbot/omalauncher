@@ -40,6 +40,16 @@ class PhoneService : AccessibilityService() {
     private val answer = AnswerCard(this)
     /** The herd's sheep over other apps, while it is shown (Boss, 2026-10-15). */
     private val sheep = dev.omalauncher.herd.SheepOverlay(this)
+
+    /** "Add to pocket" over Samsung's screenshot toolbar, while that is up (ShotButton.kt). */
+    private val shot = ShotButton(this)
+
+    /** Puts the button over the screenshot toolbar while it is up and phone control may draw, and takes it away after. */
+    private fun syncShot() {
+        val f = facts(allowed = false)
+        val bar = if (f.connected && !f.paused && !f.locked && f.awake && !f.capturing && !sheepHeld) runCatching { shot.toolbar(windows) }.getOrNull() else null
+        if (bar != null) shot.show(bar) else shot.hide()
+    }
     /** True while a screenshot is taken for the agent: the sheep stays out of it. */
     private var sheepHeld = false
     private val checkRing = Runnable { syncRing() }
@@ -79,6 +89,8 @@ class PhoneService : AccessibilityService() {
             if (origin != null && phoneTakenOver(pkg, packageName, SystemClock.uptimeMillis(), acted)) took = true
         }
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && (ring.shown || answer.shown || sheep.shown)) syncRing()
+        // The screenshot toolbar comes as its own window and goes with a change of the windows.
+        if (event.packageName?.toString() == SMART_CAPTURE || (shot.shown && event.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED)) syncShot()
     }
     override fun onInterrupt() = Unit
     /** Folded, unfolded or turned. */
@@ -104,6 +116,7 @@ class PhoneService : AccessibilityService() {
         ring.close()
         answer.close()
         sheep.hide()
+        shot.hide()
     }
     /** What the overlay is decided from. While the setting is off, not allowed is the whole answer: nothing else is even looked at. */
     private fun ringFacts(): OverlayFacts {
@@ -398,7 +411,7 @@ class PhoneService : AccessibilityService() {
                 // The overlay is never in the agent's picture: it comes down first and goes back once the picture is taken.
                 // With no overlay up there is nothing to wait for, and the screenshot is taken at once, as before.
                 answer.close()
-                sheepHeld = true; sheep.hide()
+                sheepHeld = true; sheep.hide(); shot.hide()
                 val settle = ring.beforeCapture()
                 // It wouldn't come down: no picture is taken with it up.
                 if (settle == CAPTURE_REFUSED) { sheepHeld = false; syncRing(); error("Screenshot unavailable: the ring overlay could not be removed. Try again.") }

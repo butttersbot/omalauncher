@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Reading the newest screenshot for "Add to pocket" over the screenshot toolbar; asked for the first time it is used. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- The lock and home wallpapers in the look's paper, when the owner turns that on in Style. -->
     <uses-permission android:name="android.permission.SET_WALLPAPER" />
@@ -183,6 +186,10 @@
         <receiver android:name=".phone.StopPhoneControl" android:exported="false" />
         <!-- The debug door: does nothing in a release build, and in a debug one only for the key in the app's own files. -->
         <receiver android:name=".DebugExecReceiver" android:exported="true" />
+        <!-- The newest screenshot into the pocket, for the button over Samsung's screenshot toolbar (herd/Pocket.kt). -->
+        <activity android:name=".herd.PocketShotActivity" android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true"
+            android:noHistory="true" android:taskAffinity="" />
         <!-- "Add to pocket" in the share sheet: what is shared goes into the herd's pocket (herd/Pocket.kt). Shows nothing. -->
         <activity android:name=".herd.PocketShareActivity" android:exported="true" android:label="Add to pocket"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true"

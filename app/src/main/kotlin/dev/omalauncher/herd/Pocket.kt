@@ -304,3 +304,61 @@ class PocketShareActivity : Activity() {
     private fun intentUris(): List<Uri> =
         (if (Build.VERSION.SDK_INT >= 33) intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java) else intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM)).orEmpty()
 }
+
+/**
+ * The newest screenshot into the pocket, for the button over Samsung's screenshot toolbar (phone/ShotButton.kt).
+ * Reading it needs photo access, which Android asks him for here the first time; nothing is changed without him.
+ * Shows nothing of its own, and says how it went in the look's card.
+ */
+class PocketShotActivity : Activity() {
+    private val photos = if (Build.VERSION.SDK_INT >= 33) android.Manifest.permission.READ_MEDIA_IMAGES else android.Manifest.permission.READ_EXTERNAL_STORAGE
+
+    override fun onCreate(saved: Bundle?) {
+        super.onCreate(saved)
+        if (checkSelfPermission(photos) == android.content.pm.PackageManager.PERMISSION_GRANTED) send() else requestPermissions(arrayOf(photos), 1)
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        results: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, results)
+        if (results.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED) send() else say("Oma needs photo access to put screenshots in the pocket.")
+    }
+
+    /** The newest screenshot of the last five minutes, uploaded. */
+    private fun send() {
+        val app = applicationContext
+        thread(name = "oma-pocket-shot", isDaemon = true) {
+            val shot =
+                runCatching {
+                    val since = System.currentTimeMillis() / 1000 - 300
+                    contentResolver.query(
+                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                        arrayOf(MediaStore.Images.Media._ID, MediaStore.Images.Media.DISPLAY_NAME, MediaStore.Images.Media.SIZE),
+                        "${MediaStore.Images.Media.RELATIVE_PATH} LIKE ? AND ${MediaStore.Images.Media.DATE_ADDED} >= ?",
+                        arrayOf("%Screenshots%", since.toString()),
+                        "${MediaStore.Images.Media.DATE_ADDED} DESC",
+                    )?.use { c ->
+                        if (!c.moveToFirst()) null
+                        else Triple(android.content.ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, c.getLong(0)), c.getString(1), c.getLong(2))
+                    }
+                }.getOrNull()
+            if (shot == null) {
+                say("No new screenshot to add.")
+                return@thread
+            }
+            val (uri, name, size) = shot
+            Pocket.dropped(listOf(pocketName(name)))
+            val ok = Pocket.upload(app, name, size) { contentResolver.openInputStream(uri) ?: error("The screenshot could not be read.") }
+            say(if (ok) "Added ${pocketName(name)}" else "Couldn't add it. Is the Mac Pro on the tailnet?")
+        }
+    }
+
+    private fun say(text: String) =
+        Handler(Looper.getMainLooper()).post {
+            if (PhoneService.instance?.showToast("Pocket", text) != true) Toast.makeText(applicationContext, "Pocket: $text", Toast.LENGTH_SHORT).show()
+            finish()
+        }
+}
