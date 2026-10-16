@@ -53,6 +53,12 @@ sealed interface PetCommand {
 
     data class Copy(val text: String) : PetCommand
 
+    /** Walk [dx] dp sideways at [speed] dp a second. */
+    data class Stroll(val dx: Float, val speed: Float) : PetCommand
+
+    /** Room of [w]×[h] dp around the sheep for its speech bubble, or back to just the sheep when null. */
+    data class Room(val w: Float?, val h: Float?) : PetCommand
+
     data object Unknown : PetCommand
 }
 
@@ -68,8 +74,50 @@ fun petCommand(json: String): PetCommand {
         "collapse" -> PetCommand.Collapse
         "show" -> safeSessionId(o.optString("id"))?.let { PetCommand.Show(it) } ?: PetCommand.Unknown
         "copy" -> PetCommand.Copy(o.optString("text"))
+        // Held to sizes a phone screen has room for, whatever the page asks.
+        "stroll" ->
+            o.optDouble("dx").takeIf { it.isFinite() }?.let {
+                val speed = o.optDouble("speed", 40.0).takeIf { s -> s.isFinite() } ?: 40.0
+                PetCommand.Stroll(it.toFloat().coerceIn(-2000f, 2000f), speed.toFloat().coerceIn(10f, 400f))
+            } ?: PetCommand.Unknown
+        "room" -> {
+            val w = o.optDouble("w").takeIf { it.isFinite() }
+            val h = o.optDouble("h").takeIf { it.isFinite() }
+            if (w != null && h != null) PetCommand.Room(w.toFloat().coerceIn(0f, 1000f), h.toFloat().coerceIn(0f, 1000f))
+            else PetCommand.Room(null, null)
+        }
         else -> PetCommand.Unknown
     }
+}
+
+/** Where the floating sheep's window goes, in pixels, and which side of it the sheep stands on. */
+data class SheepWindow(
+    val x: Int,
+    val y: Int,
+    val w: Int,
+    val h: Int,
+    val side: String,
+)
+
+/**
+ * The window around the sheep whose own [sheep]-sized square is at [sx], [sy], grown to [w]×[h] for its speech
+ * bubble without moving it (the Mac app's layout()): the sheep keeps to the window's bottom corner, the right one
+ * unless the window would then run off the screen's left edge, when it grows rightwards from the bottom-left.
+ */
+fun sheepWindow(
+    sx: Int,
+    sy: Int,
+    sheep: Int,
+    w: Int,
+    h: Int,
+    screenW: Int,
+    screenH: Int,
+): SheepWindow {
+    val ww = maxOf(w, sheep).coerceAtMost(maxOf(screenW, sheep))
+    val wh = maxOf(h, sheep).coerceAtMost(maxOf(screenH, sheep))
+    val side = if (sx + sheep - ww >= 0) "right" else "left"
+    val x = if (side == "right") sx + sheep - ww else sx
+    return SheepWindow(x.coerceIn(0, maxOf(0, screenW - ww)), (sy + sheep - wh).coerceAtLeast(0), ww, wh, side)
 }
 
 /** Session ids are uuids or oma-runner's t-ids; anything else never goes into a URL. */

@@ -51,6 +51,21 @@ class HerdTest {
         assertEquals(PetCommand.Copy("claude --resume x"), petCommand("""{"cmd": "copy", "text": "claude --resume x"}"""))
         assertEquals(PetCommand.Unknown, petCommand("""{"cmd": "send", "device": "mg1"}"""))
         assertEquals(PetCommand.Unknown, petCommand("not json"))
+        assertEquals(PetCommand.Stroll(-120f, 38f), petCommand("""{"cmd": "stroll", "dx": -120, "speed": 38}"""))
+        assertEquals(PetCommand.Stroll(5000f.coerceAtMost(2000f), 40f), petCommand("""{"cmd": "stroll", "dx": 5000}"""))
+        assertEquals(PetCommand.Unknown, petCommand("""{"cmd": "stroll"}"""))
+        assertEquals(PetCommand.Room(280f, 260f), petCommand("""{"cmd": "room", "w": 280, "h": 260}"""))
+        assertEquals(PetCommand.Room(null, null), petCommand("""{"cmd": "room"}"""))
+    }
+
+    @Test
+    fun theBubblesRoomLeavesTheSheepWhereItStands() {
+        // Mid-screen: grows up and leftwards; the sheep's square stays at 500,1000.
+        assertEquals(SheepWindow(370, 870, 280, 280, "right"), sheepWindow(500, 1000, 150, 280, 280, 1200, 1800))
+        // At the left edge: grows rightwards instead.
+        assertEquals(SheepWindow(20, 870, 280, 280, "left"), sheepWindow(20, 1000, 150, 280, 280, 1200, 1800))
+        // Back to just the sheep.
+        assertEquals(SheepWindow(500, 1000, 150, 150, "right"), sheepWindow(500, 1000, 150, 0, 0, 1200, 1800))
     }
 
     @Test

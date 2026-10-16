@@ -19,13 +19,17 @@ import kotlin.math.hypot
 /**
  * The sheep's page (assets/herd/pet.html) in a WebView, wired to the phone: [onOpen] hears it ask to open its
  * panel or close it, [onLoaded] once it is ready for [giveHerd]. One page, used on home (ui/HerdPet.kt) and over
- * other apps (SheepOverlay).
+ * other apps (SheepOverlay). Where the view can walk and grow (the overlay), [onStroll] and [onRoom] take the
+ * page's "stroll" and "room" (CURRENT-STATE.md in ClaudeSync, "Native hooks the page can use"); without them
+ * the page walks on the spot and shows no bubble.
  */
 @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
 fun herdPage(
     context: Context,
     onOpen: (Boolean) -> Unit,
     onLoaded: () -> Unit,
+    onStroll: ((dx: Float, speed: Float) -> Unit)? = null,
+    onRoom: ((w: Float?, h: Float?) -> Unit)? = null,
 ): WebView =
     WebView(context).apply {
         setBackgroundColor(Color.TRANSPARENT)
@@ -55,6 +59,8 @@ fun herdPage(
                                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                 clipboard.setPrimaryClip(ClipData.newPlainText("herd", command.text))
                             }
+                            is PetCommand.Stroll -> onStroll?.invoke(command.dx, command.speed)
+                            is PetCommand.Room -> onRoom?.invoke(command.w, command.h)
                             PetCommand.Unknown -> {}
                         }
                     }
@@ -70,7 +76,7 @@ fun giveHerd(
     page: WebView,
     function: String,
     json: String,
-) = page.evaluateJavascript("window.herd && herd.$function($json)", null)
+) = page.evaluateJavascript("window.herd && herd.$function && herd.$function($json)", null)
 
 /**
  * Holds the sheep's page and lets a finger drag it (Boss, 2026-10-15: "I need to be able to drag that thing
@@ -82,6 +88,7 @@ open class SheepFrame(
     private val onDrag: (dx: Float, dy: Float) -> Unit,
     private val onDrop: () -> Unit,
     private val raw: Boolean = false,
+    private val onHeld: (Boolean) -> Unit = {},
 ) : FrameLayout(context) {
     private val slop = ViewConfiguration.get(context).scaledTouchSlop
     private var downX = 0f
@@ -125,6 +132,7 @@ open class SheepFrame(
                 // Home's page swipe doesn't take a drag of the sheep.
                 parent?.requestDisallowInterceptTouchEvent(true)
                 lastX = screenX(e); lastY = screenY(e)
+                onHeld(true)
             }
         }
         return dragging
@@ -139,6 +147,7 @@ open class SheepFrame(
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> if (dragging) {
                 dragging = false
+                onHeld(false)
                 onDrop()
             }
         }

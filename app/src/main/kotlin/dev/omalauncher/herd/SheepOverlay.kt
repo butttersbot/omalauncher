@@ -32,6 +32,15 @@ class SheepOverlay(private val service: AccessibilityService) {
     private val wm get() = service.getSystemService(WindowManager::class.java)
     private val density get() = service.resources.displayMetrics.density
 
+    // The sheep's own square, pixels from the screen's top left; the window is laid around it.
+    private var sx = 0f
+    private var sy = 0f
+
+    // Room the page asked for around the sheep for its speech bubble (pixels), or none.
+    private var room: Pair<Int, Int>? = null
+    private var side = "right"
+    private var walk: Runnable? = null
+
     val shown get() = frame != null
 
     private val ask =
@@ -52,17 +61,79 @@ class SheepOverlay(private val service: AccessibilityService) {
 
     private fun screen() = service.resources.displayMetrics.let { it.widthPixels to it.heightPixels }
 
-    /** The window at the sheep's size where he left it, or the panel's, kept on the screen. */
+    /** The sheep kept on the screen. */
+    private fun hold() {
+        val (sw, sh) = screen()
+        sx = sx.coerceIn(0f, maxOf(0, sw - sheepPx()).toFloat())
+        sy = sy.coerceIn(0f, maxOf(0, sh - sheepPx()).toFloat())
+    }
+
+    /** The window: the panel's size at the sheep's corner when open, else the sheep and any room it asked for. */
     private fun place(p: WindowManager.LayoutParams) {
         val (sw, sh) = screen()
-        val (w, h) =
-            if (open) minOf((400 * density).toInt(), sw) to minOf((680 * density).toInt(), sh * 8 / 10)
-            else sheepPx() to sheepPx()
-        val (x, y) = HerdSheep.spot(service) ?: ((sw - sheepPx() - (8 * density).toInt()) to (sh - sheepPx() - (120 * density).toInt()))
-        p.width = w
-        p.height = h
-        p.x = x.coerceIn(0, maxOf(0, sw - w))
-        p.y = y.coerceIn(0, maxOf(0, sh - h))
+        hold()
+        if (open) {
+            p.width = minOf((400 * density).toInt(), sw)
+            p.height = minOf((680 * density).toInt(), sh * 8 / 10)
+            p.x = sx.toInt().coerceIn(0, maxOf(0, sw - p.width))
+            p.y = sy.toInt().coerceIn(0, maxOf(0, sh - p.height))
+            return
+        }
+        val (w, h) = room ?: (0 to 0)
+        val win = sheepWindow(sx.toInt(), sy.toInt(), sheepPx(), w, h, sw, sh)
+        p.x = win.x
+        p.y = win.y
+        p.width = win.w
+        p.height = win.h
+        if (win.side != side) {
+            side = win.side
+            page?.let { giveHerd(it, "side", "\"$side\"") }
+        }
+    }
+
+    private fun update() {
+        val f = frame ?: return
+        val p = params ?: return
+        place(p)
+        runCatching { wm.updateViewLayout(f, p) }
+    }
+
+    /** Walks the sheep [dx] dp along the screen at [speed] dp a second, then tells the page how far it got. */
+    private fun stroll(
+        dx: Float,
+        speed: Float,
+    ) {
+        halt()
+        if (open) return
+        val (sw, _) = screen()
+        val start = sx
+        val target = (sx + dx * density).coerceIn(0f, maxOf(0, sw - sheepPx()).toFloat())
+        val step = speed * density / 60f * (if (target < sx) -1 else 1)
+        val tick =
+            object : Runnable {
+                override fun run() {
+                    sx = if (kotlin.math.abs(target - sx) <= kotlin.math.abs(step)) target else sx + step
+                    update()
+                    if (sx == target) {
+                        walk = null
+                        HerdSheep.keep(service, sx.toInt(), sy.toInt())
+                        page?.let { giveHerd(it, "arrived", """{"moved": ${(sx - start) / density}}""") }
+                    } else {
+                        main.postDelayed(this, 16)
+                    }
+                }
+            }
+        walk = tick
+        main.post(tick)
+    }
+
+    /** Stops a walk in progress, telling the page. */
+    private fun halt() {
+        val w = walk ?: return
+        main.removeCallbacks(w)
+        walk = null
+        HerdSheep.keep(service, sx.toInt(), sy.toInt())
+        page?.let { giveHerd(it, "arrived", """{"moved": 0}""") }
     }
 
     fun show() {
@@ -81,24 +152,25 @@ class SheepOverlay(private val service: AccessibilityService) {
             }
         open = false
         loaded = false
+        room = null
+        side = "right"
+        val (sw, sh) = screen()
+        val spot = HerdSheep.spot(service) ?: ((sw - sheepPx() - (8 * density).toInt()) to (sh - sheepPx() - (120 * density).toInt()))
+        sx = spot.first.toFloat()
+        sy = spot.second.toFloat()
         place(p)
         lateinit var holder: SheepFrame
-        // Kept in fractions so slow drags don't lose their part-pixels, and on the screen.
-        var fx = p.x.toFloat()
-        var fy = p.y.toFloat()
         holder =
             object : SheepFrame(service, onDrag = { dx, dy ->
-                val (sw, sh) = screen()
-                if (fx.toInt() != p.x || fy.toInt() != p.y) { fx = p.x.toFloat(); fy = p.y.toFloat() }
-                fx = (fx + dx).coerceIn(0f, maxOf(0, sw - p.width).toFloat())
-                fy = (fy + dy).coerceIn(0f, maxOf(0, sh - p.height).toFloat())
-                p.x = fx.toInt()
-                p.y = fy.toInt()
-                runCatching { wm.updateViewLayout(holder, p) }
+                sx += dx
+                sy += dy
+                update()
             }, onDrop = {
-                // The sheep's own corner is what is kept, open or closed.
-                if (!open) HerdSheep.keep(service, p.x, p.y)
-            }, raw = true) {
+                HerdSheep.keep(service, sx.toInt(), sy.toInt())
+            }, raw = true, onHeld = { held ->
+                if (held) halt()
+                page?.let { giveHerd(it, "held", if (held) "true" else "false") }
+            }) {
                 override fun dispatchTouchEvent(e: MotionEvent): Boolean {
                     if (e.actionMasked == MotionEvent.ACTION_OUTSIDE) {
                         if (open) page?.evaluateJavascript("herd.tap()", null)
@@ -109,15 +181,25 @@ class SheepOverlay(private val service: AccessibilityService) {
             }
         val web =
             herdPage(service, onOpen = { now ->
+                if (now) halt()
                 open = now
-                place(p)
-                runCatching { wm.updateViewLayout(holder, p) }
+                room = null
+                update()
                 main.removeCallbacks(ask)
                 main.post(ask)
             }, onLoaded = {
                 loaded = true
+                page?.let {
+                    giveHerd(it, "caps", """{"stroll": true, "room": true}""")
+                    giveHerd(it, "side", "\"$side\"")
+                }
                 main.removeCallbacks(ask)
                 main.post(ask)
+            }, onStroll = { dx, speed -> stroll(dx, speed) }, onRoom = { w, h ->
+                if (!open) {
+                    room = if (w != null && h != null) (w * density).toInt() to (h * density).toInt() else null
+                    update()
+                }
             })
         holder.addView(web, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         if (runCatching { wm.addView(holder, p) }.isFailure) {
@@ -133,20 +215,18 @@ class SheepOverlay(private val service: AccessibilityService) {
     fun hide() {
         val f = frame ?: return
         main.removeCallbacks(ask)
+        walk?.let { main.removeCallbacks(it) }
+        walk = null
         runCatching { if (f.isAttachedToWindow) wm.removeViewImmediate(f) }
         page?.destroy()
         frame = null
         page = null
         params = null
         open = false
+        room = null
         HerdSheep.floating = false
     }
 
     /** Folded, unfolded or turned: put back on the new screen. */
-    fun relayout() {
-        val f = frame ?: return
-        val p = params ?: return
-        place(p)
-        runCatching { wm.updateViewLayout(f, p) }
-    }
+    fun relayout() = update()
 }
