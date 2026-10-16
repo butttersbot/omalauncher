@@ -183,6 +183,10 @@
         <receiver android:name=".phone.StopPhoneControl" android:exported="false" />
         <!-- The debug door: does nothing in a release build, and in a debug one only for the key in the app's own files. -->
         <receiver android:name=".DebugExecReceiver" android:exported="true" />
+        <!-- Another app's "sent" note, drawn in the look: only the apps in phone/OmaToast.kt's list are heard. -->
+        <receiver android:name=".phone.OmaToastReceiver" android:exported="true">
+            <intent-filter><action android:name="dev.omalauncher.action.TOAST" /></intent-filter>
+        </receiver>
         <service android:name=".phone.PhoneService" android:exported="true"
             android:label="${appLabel} phone control"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">

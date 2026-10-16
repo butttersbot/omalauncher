@@ -116,6 +116,10 @@ class PhoneService : AccessibilityService() {
     }
     /** Shows the agent's answer over whatever is in front, if it may be shown now. False: say it another way. Main thread. */
     fun showAnswer(caption: String, text: String): Boolean = answerCardWanted(facts(allowed = false)) && answer.show(caption, text)
+
+    /** A short note from another app over whatever is in front, in the look's own card (see [OmaToastReceiver]). Main thread. */
+    fun showToast(caption: String, text: String): Boolean =
+        answerCardWanted(facts(allowed = false)) && answer.show(caption, text, TOAST_MILLIS, opensChat = false)
     private fun lookAgain(soon: Boolean) {
         main.removeCallbacks(checkRing)
         if (soon) main.postDelayed(checkRing, OVERLAY_CHECK_MILLIS)

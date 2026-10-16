@@ -100,8 +100,16 @@ class AnswerCard(private val service: AccessibilityService) {
     private var turn = 0
     val shown get() = view != null
 
-    /** Puts [text] up under [caption], replacing a card that is still showing. False if Android refused the window. */
-    fun show(caption: String, text: String): Boolean {
+    /**
+     * Puts [text] up under [caption], replacing a card that is still showing, for [millis]. A tap opens the Oma
+     * chat when [opensChat], else only puts it away (a toast's). False if Android refused the window.
+     */
+    fun show(
+        caption: String,
+        text: String,
+        millis: Long = ANSWER_CARD_MILLIS,
+        opensChat: Boolean = true,
+    ): Boolean {
         close()
         val mine = ++turn
         val up = mutableStateOf(true)
@@ -116,7 +124,7 @@ class AnswerCard(private val service: AccessibilityService) {
                 Markdown.plain(text.trim().take(4 * ANSWER_CARD_CHARS)).take(ANSWER_CARD_CHARS),
                 up,
                 onOpen = {
-                    runCatching { service.startActivity(OmaChatActivity.intent(service)) }
+                    if (opensChat) runCatching { service.startActivity(OmaChatActivity.intent(service)) }
                     leave(mine, up)
                 },
                 onDismiss = { leave(mine, up) },
@@ -130,7 +138,7 @@ class AnswerCard(private val service: AccessibilityService) {
         }
         view = compose
         host = owner
-        main.postDelayed({ leave(mine, up) }, ANSWER_CARD_MILLIS)
+        main.postDelayed({ leave(mine, up) }, millis)
         return true
     }
 
