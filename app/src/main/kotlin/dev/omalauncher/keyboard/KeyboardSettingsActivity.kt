@@ -64,12 +64,25 @@ class KeyboardSettingsActivity : Activity() {
         button("1. Turn on Oma keyboard") { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) }
         button("2. Switch to it") { (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showInputMethodPicker() }
         text("Hold 🙂 on the keyboard to switch back to another keyboard.", 14f)
-        check("Mechanical keys (off: flat)", OmaKeyboardService.MECH, true)
+        check("Mechanical keys (off: the look's own keys)", OmaKeyboardService.MECH, false)
         check("Aim fix: touches go where your thumb means", OmaKeyboardService.AIM, true)
         check("Buzz on each key", OmaKeyboardService.HAPTICS, true)
         check("Thock sound on each key", OmaKeyboardService.SOUND, false)
         text("Try it here:", 14f)
         column.addView(EditText(this).apply { hint = "Type something" })
+        text("In every look:", 14f)
+        for ((name, pack) in looks()) {
+            text(name, 14f)
+            column.addView(
+                KeyboardView(this, Still).apply {
+                    preview = true
+                    mech = prefs.getBoolean(OmaKeyboardService.MECH, false)
+                    look = keyboardLook(pack, assets)
+                    val w = resources.displayMetrics.widthPixels / d - 40
+                    layout = KeyGeometry.layout(w, Screen.of(w + 40, resources.displayMetrics.heightPixels / d), Layer.ABC, mech, false, false, "return")
+                },
+            )
+        }
         setContentView(ScrollView(this).apply { addView(column) })
     }
 
@@ -81,6 +94,34 @@ class KeyboardSettingsActivity : Activity() {
                 !chosen() -> "On, but another keyboard is in use: step 2."
                 else -> "Oma keyboard is in use."
             }
+    }
+
+    /** Every look the app ships, Console first, each resolved as the launcher would draw it. */
+    private fun looks(): List<Pair<String, dev.omalauncher.theme.pack.ThemePack>> {
+        val ids = runCatching { assets.list("packs").orEmpty().toList() }.getOrDefault(emptyList())
+        val packs =
+            ids.sorted().mapNotNull { id ->
+                dev.omalauncher.theme.pack.PackRegistry.load(id) { dev.omalauncher.theme.pack.AssetPackSource(assets, "packs/$it") }
+                    ?.takeIf { it.error == null }?.pack
+            }
+        return (listOf(dev.omalauncher.theme.pack.ConsolePack.pack) + packs).map { it.name to it }
+    }
+
+    /** A keyboard that is only looked at. */
+    private object Still : KeyboardView.Host {
+        override fun hit(x: Float, y: Float): Key? = null
+
+        override fun press(key: Key, x: Float, y: Float) {}
+
+        override fun slide(steps: Int) {}
+
+        override fun swipeDown() {}
+
+        override fun longPressEmoji() {}
+
+        override val haptics = false
+
+        override fun thock(big: Boolean) {}
     }
 
     private fun me() = ComponentName(this, OmaKeyboardService::class.java)

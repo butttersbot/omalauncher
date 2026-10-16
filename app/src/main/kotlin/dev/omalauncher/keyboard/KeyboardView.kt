@@ -31,6 +31,14 @@ class KeyboardLook(
     val onRet: Int,
     val led: Int,
     val typeface: Typeface,
+    /** The look's own style (see keyboardLook): the page under the keys, its corner radius (dp), and each kind of key as a scrap. */
+    val page: Int = board,
+    val radius: Float = 5f,
+    val letter: KeyFace? = null,
+    val modKey: KeyFace? = null,
+    val micKey: KeyFace? = null,
+    val returnKey: KeyFace? = null,
+    val pageInk: Int = ink,
 )
 
 /**
@@ -84,6 +92,9 @@ class KeyboardView(
             invalidate()
         }
     var mech = true
+
+    /** Drawn as a picture only (the settings' preview of every look): no room above or below, no touches. */
+    var preview = false
     var listening = false
         set(value) {
             field = value
@@ -91,7 +102,7 @@ class KeyboardView(
         }
 
     /** Room above the keys for a pressed key's bubble, dp. Touches there go to the app (see the service's insets). */
-    val headroomDp get() = (layout?.rowHeight ?: 54f) * 1.3f
+    val headroomDp get() = if (preview) 0f else (layout?.rowHeight ?: 54f) * 1.3f
     val headroomPx get() = (headroomDp * density).toInt()
 
     /**
@@ -105,7 +116,7 @@ class KeyboardView(
             val bottom =
                 if (android.os.Build.VERSION.SDK_INT >= 30) insets.getInsets(android.view.WindowInsets.Type.navigationBars() or android.view.WindowInsets.Type.tappableElement()).bottom
                 else @Suppress("DEPRECATION") insets.systemWindowInsetBottom
-            if (bottom != navPx) {
+            if (!preview && bottom != navPx) {
                 navPx = bottom
                 requestLayout()
             }
@@ -174,7 +185,7 @@ class KeyboardView(
             box.set(6 * d, top + 3 * d, width - 6 * d, top + 6 * d)
             canvas.drawRoundRect(box, 2 * d, 2 * d, fill)
         } else {
-            fill.color = k.board
+            fill.color = if (k.letter != null) k.page else k.board
             canvas.drawRect(0f, top, width.toFloat(), height.toFloat(), fill)
         }
         val down = presses.values.map { it.key }.toSet()
@@ -231,13 +242,62 @@ class KeyboardView(
             fill.shader = null
             drawLabel(canvas, key, faceBox, ink, k)
         } else {
-            val r = 5 * d
-            fill.color = blend(face, BLACK, 0.25f)
-            canvas.drawRoundRect(RectF(box.left, box.top + 1 * d, box.right, box.bottom + 1 * d), r, r, fill)
-            fill.color = if (pressed) blend(face, BLACK, 0.1f) else face
-            canvas.drawRoundRect(box, r, r, fill)
-            drawLabel(canvas, key, box, ink, k)
+            val look =
+                when (key.kind) {
+                    KeyKind.LETTER, KeyKind.SPACE -> k.letter
+                    KeyKind.MOD -> if (key.action == KeyAction.Shift && key.label == "⇪") k.letter else k.modKey
+                    KeyKind.MIC -> k.micKey
+                    KeyKind.RETURN -> k.returnKey
+                }
+            if (look == null) {
+                val r = 5 * d
+                fill.color = blend(face, BLACK, 0.25f)
+                canvas.drawRoundRect(RectF(box.left, box.top + 1 * d, box.right, box.bottom + 1 * d), r, r, fill)
+                fill.color = if (pressed) blend(face, BLACK, 0.1f) else face
+                canvas.drawRoundRect(box, r, r, fill)
+                drawLabel(canvas, key, box, ink, k)
+            } else {
+                drawScrapKey(canvas, key, look, pressed, k)
+            }
         }
+    }
+
+    private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    private val blurs = HashMap<Float, android.graphics.BlurMaskFilter>()
+
+    /**
+     * A key as one of the look's scraps: its shadows (hard or soft, as the look has them), its fill and its
+     * outline, with the look's corners. Pressed, it sinks into its shadow: it moves by the shadow's offset and
+     * the shadow is gone, as a card pressed onto the page; with no shadow it darkens a little.
+     */
+    private fun drawScrapKey(
+        canvas: Canvas,
+        key: Key,
+        face: KeyFace,
+        pressed: Boolean,
+        k: KeyboardLook,
+    ) {
+        val d = density
+        val r = k.radius * d
+        val main = face.shadows.lastOrNull()
+        if (pressed && main != null) box.offset((main.x - 0f) * d, (main.y - 0f) * d)
+        if (!pressed) {
+            for (sh in face.shadows) {
+                fill.color = sh.color
+                fill.maskFilter = if (sh.blur > 0f) blurs.getOrPut(sh.blur) { android.graphics.BlurMaskFilter(sh.blur * d, android.graphics.BlurMaskFilter.Blur.NORMAL) } else null
+                canvas.drawRoundRect(RectF(box.left + sh.x * d, box.top + sh.y * d, box.right + sh.x * d, box.bottom + sh.y * d), r, r, fill)
+                fill.maskFilter = null
+            }
+        }
+        fill.color = if (pressed && main == null) blend(face.fill, face.ink, 0.12f) else face.fill
+        canvas.drawRoundRect(box, r, r, fill)
+        if (face.border > 0f) {
+            stroke.strokeWidth = face.border * d
+            stroke.color = face.borderColor
+            val inset = face.border * d / 2
+            canvas.drawRoundRect(RectF(box.left + inset, box.top + inset, box.right - inset, box.bottom - inset), r, r, stroke)
+        }
+        drawLabel(canvas, key, box, if (key.kind == KeyKind.SPACE) blend(face.ink, face.fill, 0.4f) else face.ink, k)
     }
 
     private fun labelSize(key: Key): Float {
@@ -296,6 +356,7 @@ class KeyboardView(
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(e: MotionEvent): Boolean {
+        if (preview) return false
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                 val i = e.actionIndex

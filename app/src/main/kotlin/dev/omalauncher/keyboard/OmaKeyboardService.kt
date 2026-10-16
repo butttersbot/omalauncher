@@ -80,7 +80,7 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host {
         capsLock = false
         autoShift()
         view.look = look()
-        view.mech = prefs.getBoolean(MECH, true)
+        view.mech = prefs.getBoolean(MECH, false)
         rebuild()
     }
 
@@ -342,34 +342,7 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host {
     }
 
     // ---- The look ----
-    private fun look(): KeyboardLook {
-        val p = ActivePack.pack
-        val pal = p.palette
-        val bg = pal.background.argb or 0xff000000.toInt()
-        val surface = pal.surface.argb or 0xff000000.toInt()
-        val ink = pal.foreground.argb or 0xff000000.toInt()
-        val key = if (pal.isLight) bg else surface
-        val board = if (pal.isLight) blend(surface, ink, 0.08f) else blend(bg, 0xff000000.toInt(), 0.3f)
-        val mod = if (pal.isLight) blend(surface, ink, 0.18f) else blend(bg, surface, 0.5f)
-        val typeface =
-            runCatching {
-                val file = p.type.body.file
-                if (file.isEmpty()) null else Typeface.createFromAsset(assets, "packs/${p.id}/$file")
-            }.getOrNull() ?: Typeface.DEFAULT
-        return KeyboardLook(
-            board = board,
-            key = key,
-            mod = mod,
-            ink = ink,
-            muted = pal.muted.argb,
-            mic = pal.accent.argb or 0xff000000.toInt(),
-            onMic = bg,
-            ret = pal.alt.argb or 0xff000000.toInt(),
-            onRet = pal.onAlt.argb or 0xff000000.toInt(),
-            led = pal.accent.argb or 0xff000000.toInt(),
-            typeface = typeface,
-        )
-    }
+    private fun look(): KeyboardLook = keyboardLook(ActivePack.pack, assets)
 
     // ---- Learning, kept where the agents (and Boss's reviews) can read it: the guest's ~/.local/share/oma-kb. ----
     private val learnDir: File
@@ -407,7 +380,8 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host {
 
     companion object {
         const val PREFS = "oma_keyboard"
-        const val MECH = "mech"
+        /** Mechanical caps instead of the look's own keys. A new key (2026-10-15): the look's keys are the default now. */
+        const val MECH = "style_mech"
         const val AIM = "aim"
         const val SOUND = "sound"
         const val HAPTICS = "haptics"
