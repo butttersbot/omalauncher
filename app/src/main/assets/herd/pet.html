@@ -129,6 +129,7 @@ body.left #bubble { right: auto; left: 12px; }
   border: 3px solid #5d6f87; border-radius: 7px; box-shadow: inset 0 0 0 2px #c9d3df, 0 4px 14px rgba(20, 20, 40, .25);
   font: 600 12.5px/1.4 -apple-system, BlinkMacSystemFont, "Inter", sans-serif; text-shadow: 1px 1px 0 #d4d4cc; }
 #bubble.framed .box { border-style: solid; border-radius: 0; box-shadow: 0 4px 14px rgba(20, 20, 40, .25); background: none; image-rendering: pixelated; }
+#bubble.game-font .who { font: inherit; opacity: .6; }
 #bubble .who { display: block; font-size: 10.5px; letter-spacing: .02em; opacity: .7; margin-bottom: 1px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
 #bubble .more { position: absolute; right: 7px; bottom: 3px; font-size: 8px; font-style: normal; opacity: 0; }
@@ -514,17 +515,43 @@ function frameUI() {
   return list.find(u => u.name === style) || list.find(u => /-message$/.test(u.name)) || list[0] || null;
 }
 
+// The game's own font, when a reporter serves one (pet/ui/fonts): loaded once, used in the speech bubble at a
+// whole multiple of its pixel size so it stays crisp.
+let gameFont = null;
+function fontUI() {
+  for (const m of data?.machines || [])
+    for (const f of m.report?.machine?.fonts || [])
+      if (m.address) return { ...f, url: `http://${m.address}:8479/v1/fonts/${encodeURIComponent(f.name)}/font.ttf${f.v ? '?v=' + f.v : ''}` };
+  return null;
+}
+function loadFont() {
+  const f = fontUI();
+  if (!f || gameFont?.url === f.url || !window.FontFace) return;
+  gameFont = { ...f, ready: false };
+  const face = new FontFace(f.family || 'HerdGame', `url("${f.url}")`);
+  face.load().then(loaded => { document.fonts.add(loaded); if (gameFont.url === f.url) gameFont.ready = true; })
+    .catch(() => { gameFont = null; });
+}
+
 function dress() {
   const b = $('bubble'), box = b.querySelector('.box'), ui = frameUI();
+  loadFont();
+  // One font pixel per CSS px: crisp on any screen, about the size the game's own box reads at.
+  const px = gameFont?.px || 16, zoom = 1;
+  const font = gameFont?.ready ? `font:400 ${px * zoom}px/${(px + 1) * zoom}px "${gameFont.family || 'HerdGame'}";-webkit-font-smoothing:none;letter-spacing:0;` : '';
+  const shade = colour => gameFont?.ready && gameFont.text_shadow
+    ? `text-shadow:${gameFont.text_shadow.map(([x, y]) => `${x * zoom}px ${y * zoom}px 0 ${colour}`).join(',')};`
+    : `text-shadow:1px 1px 0 ${colour};`;
+  b.classList.toggle('game-font', !!font);
   b.classList.toggle('framed', !!ui);
-  if (!ui) { box.style.cssText = ''; b.style.removeProperty('--tail-edge'); b.style.removeProperty('--tail-fill'); return; }
+  if (!ui) { box.style.cssText = font; b.style.removeProperty('--tail-edge'); b.style.removeProperty('--tail-fill'); return; }
   // The frame's white text area is the inside; its edge is drawn as the border, the same width on both sides.
   const cut = ui.bubble?.slice || ui.slice, k = ui.scale || 2;
   const [t, r, bt, l] = cut;
   box.style.cssText = `border-width:${t * k}px ${r * k}px ${bt * k}px ${l * k}px;` +
     `border-image:url("${ui.url}") ${t} ${r} ${bt} ${l} / ${t * k}px ${r * k}px ${bt * k}px ${l * k}px stretch;` +
     `background:${ui.fill || '#fff'};background-clip:padding-box;padding:3px 6px 5px;` +
-    (ui.text ? `color:${ui.text};` : '') + (ui.shadow ? `text-shadow:1px 1px 0 ${ui.shadow};` : '');
+    (ui.text ? `color:${ui.text};` : '') + (ui.shadow ? shade(ui.shadow) : '') + font;
   if (ui.bubble?.edge) b.style.setProperty('--tail-edge', ui.bubble.edge);
   if (ui.fill) b.style.setProperty('--tail-fill', ui.fill);
   if (ui.edge) b.style.setProperty('--tail-edge', ui.edge);
@@ -754,6 +781,7 @@ window.herd = {
     const list = sessions();
     if (firstRun && !store.get('seen', null)) markSeen();
     announce(list);
+    loadFont();
     if (skin) { const s = skins().find(x => x.name === skin.name); if (s && JSON.stringify(pick(s)) !== JSON.stringify(skin)) { skin = pick(s); store.set('skin', skin); wear(); } }
     if (document.body.classList.contains('open')) markSeen();
     mood();
@@ -771,6 +799,8 @@ window.herd = {
   },
   sent(text) { const el = $('sendStatus'); if (el) el.textContent = text; if (/^Sent/.test(text)) { dropped = []; setTimeout(render, 1500); } flash(text); },
   tap() { nudge(); toggle(); },
+  // `herd say TEXT`: says it; an empty text says what's up.
+  say(text) { if (text) { nudge(); face('down'); speak('', String(text), { ms: 8000 }); } else herd.chat(); },
   // "What's up?": says what the agents are doing, most urgent first.
   chat() {
     nudge();
