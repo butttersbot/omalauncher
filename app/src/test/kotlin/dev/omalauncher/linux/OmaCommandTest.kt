@@ -26,10 +26,10 @@ class OmaCommandTest {
 
     @Test fun theDispatcherAndTheOldNamesAreExecutablesTheLauncherOwns() {
         val rootfs = File(tmp.root, "arch")
-        val tools = omaTools(rootfs, { asset(OMA_ASSET) }, { asset(DROP_ASSET) })
+        val tools = omaTools(rootfs, { asset(OMA_ASSET) }, { asset(DROP_ASSET) }, { asset(MSG_ASSET) })
         // `oma drop` was never a command of its own, so it has no old name; its script is installed with `oma`.
         assertEquals(
-            listOf("usr/local/bin/oma", "usr/local/bin/oma-thread", "usr/local/bin/oma-keep", "usr/local/bin/oma-agents", "usr/local/lib/oma/drop"),
+            listOf("usr/local/bin/oma", "usr/local/bin/oma-thread", "usr/local/bin/oma-keep", "usr/local/bin/oma-agents", "usr/local/lib/oma/drop", "usr/local/lib/oma/msg"),
             tools.map { it.file.relativeTo(rootfs).path },
         )
         assertTrue(tools.all { it.policy == Policy.Owned && it.executable })
@@ -55,8 +55,8 @@ class OmaCommandTest {
             val text = moduleFile("src/main/kotlin/dev/omalauncher/$source").readText()
             assertTrue(source, text.contains("Managed(File(rootfs, \"$OMA_LIB/$lib\"), Policy.Owned, executable = true) { context.assets.open(\"$script\")"))
         }
-        assertEquals(listOf("thread", "keep", "agents", "drop"), OMA_PARTS.map { it.lib })
-        assertEquals(listOf("oma-thread", "oma-keep", "oma-agents", null), OMA_PARTS.map { it.oldName })
+        assertEquals(listOf("thread", "keep", "agents", "drop", "msg"), OMA_PARTS.map { it.lib })
+        assertEquals(listOf("oma-thread", "oma-keep", "oma-agents", null, null), OMA_PARTS.map { it.oldName })
     }
 
     @Test fun theDispatchersSubcommandsAreTheTables() {
@@ -70,7 +70,7 @@ class OmaCommandTest {
             val branch = cases.substringAfter("\n  ${part.word})").substringBefore(";;")
             assertTrue(branch, branch.contains("exec \"\$lib/${part.lib}\""))
         }
-        assertEquals(listOf("threads", "keep", "status", "drop"), OMA_PARTS.map { it.word })
+        assertEquals(listOf("threads", "keep", "status", "drop", "msg"), OMA_PARTS.map { it.word })
     }
 
     @Test fun theLauncherInstallsItWithLinuxAndTellsTheAgents() {
@@ -85,12 +85,13 @@ class OmaCommandTest {
                 "\"`oma drop get` brings files the Macs Taildropped to the phone into ~/Inbox; `oma drop send FILE` puts a file in the Mac's Downloads/From Fold.\\n\"",
             ),
         )
+        assertTrue(pointer.contains("`oma msg send DEVICE[:SESSION] TEXT` writes to an agent on one of the computers"))
     }
 
     @Test fun theOldNamesRunOmaWithTheSameWords() {
         assumeTrue("sh is needed to run the aliases", has("sh"))
         val rootfs = File(tmp.root, "arch")
-        ManagedFiles(tmp.root, File(tmp.root, "managed.json")).sync(omaTools(rootfs, { asset(OMA_ASSET) }, { asset(DROP_ASSET) }))
+        ManagedFiles(tmp.root, File(tmp.root, "managed.json")).sync(omaTools(rootfs, { asset(OMA_ASSET) }, { asset(DROP_ASSET) }, { asset(MSG_ASSET) }))
         // Stand-ins for the tools, which print what they were given.
         for (part in OMA_PARTS) File(rootfs, "$OMA_LIB/${part.lib}").apply { parentFile.mkdirs(); writeText("#!/bin/sh\necho \"${part.lib} \$*\"\n"); setExecutable(true) }
         fun run(vararg words: String): Pair<Int, String> {
@@ -104,6 +105,7 @@ class OmaCommandTest {
         assertEquals(0 to "keep serve\n", run("oma-keep", "serve"))
         assertEquals(0 to "agents status\n", run("oma-agents", "status"))
         assertEquals(0 to "drop get --keep\n", run("oma", "drop", "get", "--keep"))
+        assertEquals(0 to "msg send macbook-pro:b53e20 hi\n", run("oma", "msg", "send", "macbook-pro:b53e20", "hi"))
         // oma-agents only ever took `status`; anything else is still its usage.
         assertEquals(2 to "usage: oma status\n", run("oma-agents"))
         assertEquals(2 to "usage: oma status\n", run("oma-agents", "clean"))

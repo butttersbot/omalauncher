@@ -134,6 +134,18 @@ object AgentTasks {
         return to
     }
 
+    /**
+     * Another agent's [mail] (AgentMail.kt): to the builder it names, else to the one [pick] chooses, now if that
+     * one is free or behind its task. The chat shows it as agent mail, never as his words, and the agent gets it
+     * inside the wrapper that says who wrote it. Says which builder took it.
+     */
+    @Synchronized fun mail(context: Context, mail: AgentMail): BuilderId {
+        restore(context)
+        val to = pick(mailBuilder(mail.toSession, builders.associate { it.id to it.thread }))
+        of(to).followUp(context, mail.text, page = null, earlier = mail.wrapper(to), mail = mail.label)
+        return to
+    }
+
     /** `[ cancel ]` on a follow-up that still waits, whichever builder it waits for. */
     @Synchronized fun cancelFollowUp(context: Context, time: Long) = builders.forEach { it.cancelFollowUp(context, time) }
 
@@ -299,16 +311,16 @@ class Builder(val id: BuilderId) {
      * [screen] is as for [send]: the screenshot of a spoken request, which waits with it and is this object's
      * to delete once this returns.
      */
-    fun followUp(context: Context, prompt: String, images: List<String> = emptyList(), page: String? = HomeDoor.home?.showing, earlier: String = "", screen: File? = null): Unit = synchronized(lock) {
+    fun followUp(context: Context, prompt: String, images: List<String> = emptyList(), page: String? = HomeDoor.home?.showing, earlier: String = "", screen: File? = null, mail: String = ""): Unit = synchronized(lock) {
         restore(context)
         check(prompt.isNotBlank()) { "Type or speak a request first." }
-        if (!working) return start(context, prompt, images, screen, page, queued = null, earlier = earlier)
+        if (!working) return start(context, prompt, images, screen, page, queued = null, earlier = earlier, mail = mail)
         check(!stopping) { "The agent is stopping. Send this again in a moment." }
         val agent = (context.applicationContext as App).runtime.agents.default ?: error("Install and sign in to an agent in Omalauncher first.")
         val log = ChatLog.of(context)
         val time = ChatHistory.stamp(log.tasks, System.currentTimeMillis())
         check(followUps.add(FollowUp(time, prompt, images, page, earlier, screen))) { FollowUpQueue.FULL }
-        log.begin(ChatTask(time, agent.name, prompt, images, screen = screen != null, status = TaskStatus.Queued, builder = id.saved))
+        log.begin(ChatTask(time, agent.name, prompt, images, screen = screen != null, status = TaskStatus.Queued, builder = id.saved, mail = mail))
     }
     /**
      * `[ cancel ]` on a follow-up that still waits: it leaves the queue and the thread says so. One that has
@@ -318,7 +330,7 @@ class Builder(val id: BuilderId) {
         followUps.cancel(time)?.let { dropped(context, listOf(it), FollowUpQueue.CANCELLED) }
     }
     /** [queued] is the time of the waiting task this request already is in the thread; null for one sent just now. */
-    private fun start(context: Context, prompt: String, images: List<String>, screen: File?, page: String?, queued: Long?, earlier: String = ""): Unit = synchronized(lock) {
+    private fun start(context: Context, prompt: String, images: List<String>, screen: File?, page: String?, queued: Long?, earlier: String = "", mail: String = ""): Unit = synchronized(lock) {
         restore(context)
         check(prompt.isNotBlank()) { "Type or speak a request first." }
         check(!working) { "An agent is already working. Stop it before starting another task." }
@@ -352,7 +364,7 @@ class Builder(val id: BuilderId) {
         taskTime = time
         startedAt = began; heardAt = began; lastStep = ""; lastStepAt = 0L
         asked = page?.let { PageAsk(it, began) }
-        if (queued == null) log.begin(ChatTask(time, agent.name, prompt, images, screen = screen != null, newThread = resumed == null, answeredBy = builderName(agent.bin), builder = id.saved))
+        if (queued == null) log.begin(ChatTask(time, agent.name, prompt, images, screen = screen != null, newThread = resumed == null, answeredBy = builderName(agent.bin), builder = id.saved, mail = mail))
         else log.update(time, save = true) { it.copy(agent = agent.name, newThread = resumed == null, status = TaskStatus.Running, answeredBy = builderName(agent.bin)) }
         working = true; stopping = false; ledger.clear(); published(); answer = ""; label = "${agent.name} is working"
         notify(context)

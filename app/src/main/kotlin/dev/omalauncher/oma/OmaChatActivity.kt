@@ -1009,7 +1009,10 @@ private fun TaskEntry(
     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         val sent = remember(task.time) { DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(task.time)) }
         BasicText(listOfNotNull("new thread".takeIf { task.newThread }, sent).joinToString(" · "), Modifier.fillMaxWidth().padding(bottom = 4.dp), style = small.copy(textAlign = TextAlign.Center))
-        Column(Modifier.fillMaxWidth().framed(Pack.hair, Pack.border, Pack.surface, radius = 12.dp).padding(10.dp)) {
+        // Another agent's words, not his: labeled over them, in a frame of the accent's, set in from his side.
+        val mail = task.mail.isNotEmpty()
+        if (mail) BasicText(task.mail, Modifier.padding(bottom = 4.dp, start = 24.dp), style = small.copy(color = Pack.accent), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Column(Modifier.fillMaxWidth().padding(start = if (mail) 24.dp else 0.dp).framed(Pack.hair, if (mail) Pack.accent else Pack.border, Pack.surface, radius = 12.dp).padding(10.dp)) {
             BasicText(task.prompt, style = Pack.body())
             // What he sent with it stays in the chat, as a small rail of pictures (Boss, 2026-10-15, as the Claude app does).
             if (task.images.isNotEmpty()) SentImages(task.images)

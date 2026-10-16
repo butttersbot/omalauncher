@@ -14,12 +14,14 @@ usage: oma threads [list]
        oma keep list | log NAME [LINES] | stop NAME
        oma status
        oma drop get [--to DIR] [--keep] | list | send FILE... [--to mac] | help
+       oma msg send DEVICE[:SESSION] TEXT [--reply-to ID] [--title NAME] [--as SESSION] | devices
        oma help
 
 threads  the project threads on the Mac: list them, or make one for a folder there
 keep     keeps a server or other job running after the turn or terminal that started it
 status   how the phone's builder and the Mac's threads stand, as the launcher last wrote it
 drop     files between the Macs and this phone: get what they Taildropped, send to the Mac
+msg      agent mail to an agent on one of the computers; theirs comes to the chat
 USAGE
 }
 
@@ -33,6 +35,7 @@ case $command in
   keep) exec "$lib/keep" "$@" ;;
   status) exec "$lib/agents" status "$@" ;;
   drop) exec "$lib/drop" "$@" ;;
+  msg) exec "$lib/msg" "$@" ;;
   help | -h | --help) usage ;;
   *)
     echo "oma: no subcommand \"$command\"." >&2

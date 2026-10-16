@@ -26,6 +26,9 @@ const val OMA_LIB = "usr/local/lib/oma"
 /** `oma drop`, files between the Macs and the phone (Taildrop in, the Mac runner out), in the app's assets. */
 const val DROP_ASSET = "oma-drop.sh"
 
+/** `oma msg`, agent mail to the computers' agents (assist/AgentMail.kt has the other way), in the app's assets. */
+const val MSG_ASSET = "oma-msg.sh"
+
 /**
  * One subcommand of `oma`: [word] as typed, the tool in [OMA_LIB] named [lib] that carries it out, and
  * [oldName], the command it was before, null for one that was never a command of its own. [oldWord] is the word
@@ -40,6 +43,7 @@ val OMA_PARTS = listOf(
     OmaPart("keep", "keep", "oma-keep"),
     OmaPart("status", "agents", "oma-agents", oldWord = "status"),
     OmaPart("drop", "drop", oldName = null),
+    OmaPart("msg", "msg", oldName = null),
 )
 
 /** The old command [part] was, as a script that runs `oma` with the same words. */
@@ -53,13 +57,19 @@ fun omaAlias(part: OmaPart): String {
  * `oma`, the old names' aliases and `oma drop`'s script as installed in [rootfs], their bytes from [dispatcher] and
  * [drop]: the launcher's own, rewritten with each version.
  */
-fun omaTools(rootfs: File, dispatcher: () -> ByteArray, drop: () -> ByteArray): List<Managed> =
+fun omaTools(rootfs: File, dispatcher: () -> ByteArray, drop: () -> ByteArray, msg: () -> ByteArray): List<Managed> =
     listOf(Managed(File(rootfs, OMA_COMMAND), Policy.Owned, executable = true, content = dispatcher)) +
         OMA_PARTS.mapNotNull { part ->
             part.oldName?.let { Managed.text(File(rootfs, "usr/local/bin/$it"), Policy.Owned, executable = true) { omaAlias(part) } }
         } +
-        Managed(File(rootfs, "$OMA_LIB/drop"), Policy.Owned, executable = true, content = drop)
+        Managed(File(rootfs, "$OMA_LIB/drop"), Policy.Owned, executable = true, content = drop) +
+        Managed(File(rootfs, "$OMA_LIB/msg"), Policy.Owned, executable = true, content = msg)
 
 /** [omaTools] for the provisioner, read from the assets. */
 fun omaGuestTools(context: Context, rootfs: File): List<Managed> =
-    omaTools(rootfs, { context.assets.open(OMA_ASSET).use { it.readBytes() } }, { context.assets.open(DROP_ASSET).use { it.readBytes() } })
+    omaTools(
+        rootfs,
+        { context.assets.open(OMA_ASSET).use { it.readBytes() } },
+        { context.assets.open(DROP_ASSET).use { it.readBytes() } },
+        { context.assets.open(MSG_ASSET).use { it.readBytes() } },
+    )

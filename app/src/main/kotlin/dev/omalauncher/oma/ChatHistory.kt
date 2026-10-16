@@ -92,6 +92,11 @@ data class ChatTask(
      * background work, steps, and Claude Code's own words about that work. Oldest first.
      */
     val later: List<ChatLater> = emptyList(),
+    /**
+     * Another agent wrote [prompt], not he: what the chat writes over it ("Agent mail · from macbook-pro · …").
+     * Empty for everything he sent. See assist/AgentMail.kt.
+     */
+    val mail: String = "",
 ) {
     /** Answered by the front agent itself, beside the build task: never by it or in its queue. */
     val quick get() = agent == QUICK_AGENT
@@ -224,6 +229,7 @@ object ChatHistory {
             .apply { if (task.builder.isNotEmpty()) put("builder", task.builder) }
             .apply { if (task.fresh) put("fresh", true) }
             .apply { if (task.chat.isNotEmpty()) put("chat", task.chat) }
+            .apply { if (task.mail.isNotEmpty()) put("mail", task.mail) }
             .apply { if (task.later.isNotEmpty()) put("later", JSONArray(task.later.map { JSONObject().put("text", it.text).apply { if (it.words) put("words", true) } })) }
     })).toString()
 
@@ -249,6 +255,7 @@ object ChatHistory {
                     builder = task.optString("builder"),
                     fresh = task.optBoolean("fresh"),
                     chat = task.optString("chat"),
+                    mail = task.optString("mail").take(MAX_THREAD),
                     later = task.optJSONArray("later").let { later -> (0 until (later?.length() ?: 0)).mapNotNull { later?.optJSONObject(it) } }
                         .map { ChatLater(it.optString("text"), it.optBoolean("words")) }.filter { it.text.isNotEmpty() },
                 ))
