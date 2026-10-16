@@ -620,7 +620,8 @@ fun HomeScreen(
     // The herd sheep: every coding agent on every machine of the tailnet, in home's corner above the bar. It steps
     // aside while home is covered or being changed, so it never sits on what he is working on.
     LaunchedEffect(Unit) { HerdSheep.restore(context) }
-    if (HerdSheep.shown && !state.homeCovered && engine.openScreen == null && state.editing == null && !state.drawing && !state.overviewOpen) {
+    // While it floats over everything (phone control on), that one is the sheep, home included.
+    if (HerdSheep.shown && !HerdSheep.floating && !state.homeCovered && engine.openScreen == null && state.editing == null && !state.drawing && !state.overviewOpen) {
         HerdPet(Modifier.align(Alignment.BottomEnd).padding(bottom = barRoom))
     }
 

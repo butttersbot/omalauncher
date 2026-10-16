@@ -38,6 +38,10 @@ class PhoneService : AccessibilityService() {
     private val ring = RingOverlay(ServiceRingWindow(this), ::ringFacts)
     /** The agent's answer over other apps. */
     private val answer = AnswerCard(this)
+    /** The herd's sheep over other apps, while it is shown (Boss, 2026-10-15). */
+    private val sheep = dev.omalauncher.herd.SheepOverlay(this)
+    /** True while a screenshot is taken for the agent: the sheep stays out of it. */
+    private var sheepHeld = false
     private val checkRing = Runnable { syncRing() }
     private var unwatchRing: (() -> Unit)? = null
     private val screenChanged = object : BroadcastReceiver() {
@@ -48,16 +52,18 @@ class PhoneService : AccessibilityService() {
     override fun onServiceConnected() {
         PhoneAccess.load(this); instance = this
         PhoneControlHeal.connected(this, paused = !PhoneAccess.active)
+        dev.omalauncher.herd.HerdSheep.restore(this)
+        dev.omalauncher.herd.HerdSheep.changed = { main.post(checkRing) }
         watchRing(); dev.omalauncher.assist.AgentTasks.phoneChanged(this)
     }
     /** A window changed, the lock screen's among them: an overlay that is up looks again at once. */
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) event.packageName?.let { front = it.toString() }
-        if (ring.shown || answer.shown) syncRing()
+        if (ring.shown || answer.shown || sheep.shown) syncRing()
     }
     override fun onInterrupt() = Unit
     /** Folded, unfolded or turned. */
-    override fun onConfigurationChanged(newConfig: Configuration) { super.onConfigurationChanged(newConfig); lookAgain(ring.relayout()) }
+    override fun onConfigurationChanged(newConfig: Configuration) { super.onConfigurationChanged(newConfig); sheep.relayout(); lookAgain(ring.relayout()) }
     override fun onUnbind(intent: Intent?): Boolean { PhoneControlHeal.unbound(this, front); closeRing(); return super.onUnbind(intent) }
     override fun onDestroy() { instance = null; closeRing(); PhoneAccess.clearIndicator(this); dev.omalauncher.assist.AgentTasks.phoneChanged(this); super.onDestroy() }
 
@@ -78,6 +84,7 @@ class PhoneService : AccessibilityService() {
         main.removeCallbacks(checkRing)
         ring.close()
         answer.close()
+        sheep.hide()
     }
     /** What the overlay is decided from. While the setting is off, not allowed is the whole answer: nothing else is even looked at. */
     private fun ringFacts(): OverlayFacts {
@@ -101,6 +108,10 @@ class PhoneService : AccessibilityService() {
     private fun syncRing() {
         // An answer doesn't outlast what it answered: a new task, the assistant or the lock screen takes it down.
         if (answer.shown && (!answerCardWanted(facts(allowed = false)) || OmaRing.signals.working)) answer.close()
+        // The sheep: up while it is shown and the phone is in use, over every app and home; down at the lock, with
+        // the screen off, while control is paused, under the assistant and in the agent's screenshots.
+        val f = facts(allowed = false)
+        if (dev.omalauncher.herd.HerdSheep.shown && !sheepHeld && f.connected && !f.paused && !f.locked && f.awake && !f.assistantUp) sheep.show() else sheep.hide()
         lookAgain(ring.sync())
     }
     /** Shows the agent's answer over whatever is in front, if it may be shown now. False: say it another way. Main thread. */
@@ -331,10 +342,11 @@ class PhoneService : AccessibilityService() {
                 // The overlay is never in the agent's picture: it comes down first and goes back once the picture is taken.
                 // With no overlay up there is nothing to wait for, and the screenshot is taken at once, as before.
                 answer.close()
+                sheepHeld = true; sheep.hide()
                 val settle = ring.beforeCapture()
                 // It wouldn't come down: no picture is taken with it up.
-                if (settle == CAPTURE_REFUSED) error("Screenshot unavailable: the ring overlay could not be removed. Try again.")
-                fun captured() = lookAgain(ring.afterCapture())
+                if (settle == CAPTURE_REFUSED) { sheepHeld = false; syncRing(); error("Screenshot unavailable: the ring overlay could not be removed. Try again.") }
+                fun captured() { sheepHeld = false; lookAgain(ring.afterCapture()); syncRing() }
                 val capture = Runnable { try { takeScreenshot(android.view.Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
                     override fun onFailure(code: Int) { captured(); reply(JSONObject().put("ok", false).put("error", "Screenshot unavailable: $code. Protected screens cannot be captured.")) }
                     override fun onSuccess(result: ScreenshotResult) {

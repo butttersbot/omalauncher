@@ -122,8 +122,10 @@ class RingOverlayTest {
         assertEquals(0, sources.values.sumOf { count(it, "allowed = true") } - count(sources.getValue("phone/PhoneService.kt"), "allowed = true"))
         assertEquals(1, count(sources.getValue("phone/PhoneService.kt"), "allowed = true"))
         assertTrue("if (!ringOverlayAllowed(ringPrefs(this))) return OverlayFacts()" in sources.getValue("phone/PhoneService.kt"))
-        // Two overlay windows in all, each added in one place: the ring's, and the answer card's, which the owner asked for.
-        assertEquals(setOf(home, "phone/AnswerCard.kt"), sources.filterValues { "TYPE_ACCESSIBILITY_OVERLAY" in it }.keys)
+        // Three overlay windows in all, each added in one place: the ring's, the answer card's, and the herd sheep's
+        // (Boss, 2026-10-15: "have the pet always on top … even when I'm in an app"), each asked for by the owner.
+        assertEquals(setOf(home, "phone/AnswerCard.kt", "herd/SheepOverlay.kt"), sources.filterValues { "TYPE_ACCESSIBILITY_OVERLAY" in it }.keys)
+        assertEquals(1, count(sources.getValue("herd/SheepOverlay.kt"), "TYPE_ACCESSIBILITY_OVERLAY"))
         assertEquals(1, count(sources.getValue("phone/AnswerCard.kt"), "TYPE_ACCESSIBILITY_OVERLAY"))
         assertEquals(setOf(home, "phone/PhoneService.kt"), sources.filterValues { "ServiceRingWindow(" in it }.keys)
         assertEquals(1, count(sources.getValue("phone/PhoneService.kt"), "ServiceRingWindow("))

@@ -112,7 +112,11 @@ object Herd {
             }
 }
 
-/** Whether the sheep is on home; Boss turns it off and on in settings. */
+/**
+ * Whether the sheep is shown, on home and over other apps (Boss, 2026-10-15: "a button to toggle it on and off",
+ * "always on top … even when I'm in an app"): turned off and on in settings and by its quick-settings tile. While
+ * it floats over everything ([floating]), home doesn't draw its own. Where it was left is kept here too.
+ */
 object HerdSheep {
     private const val PREFS = "herd"
     private const val KEY = "shown"
@@ -120,8 +124,16 @@ object HerdSheep {
     var shown by mutableStateOf(true)
         private set
 
+    /** The sheep is up over everything, home included, in the accessibility service's window. */
+    var floating by mutableStateOf(false)
+
+    /** Told when [shown] changes, so the window over other apps follows at once. */
+    @Volatile var changed: (() -> Unit)? = null
+
+    private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
     fun restore(context: Context) {
-        shown = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY, true)
+        shown = prefs(context).getBoolean(KEY, true)
     }
 
     fun set(
@@ -129,6 +141,19 @@ object HerdSheep {
         on: Boolean,
     ) {
         shown = on
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY, on).apply()
+        prefs(context).edit().putBoolean(KEY, on).apply()
+        changed?.invoke()
     }
+
+    /** Where he left the sheep over other apps: its top-left in screen pixels; null until he has moved it. */
+    fun spot(context: Context): Pair<Int, Int>? {
+        val p = prefs(context)
+        return if (p.contains("x")) p.getInt("x", 0) to p.getInt("y", 0) else null
+    }
+
+    fun keep(
+        context: Context,
+        x: Int,
+        y: Int,
+    ) = prefs(context).edit().putInt("x", x).putInt("y", y).apply()
 }

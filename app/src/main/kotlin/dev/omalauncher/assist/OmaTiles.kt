@@ -76,3 +76,30 @@ internal fun activityLine(working: Boolean, approvals: Int, headline: String, ma
     val status = omaStatus(JSONObject().put("working", working).put("approvals", approvals), mac)
     return status.getString("mac").ifEmpty { headline }
 }
+
+/**
+ * The herd sheep's switch in the quick settings (Boss, 2026-10-15: "we need a button to toggle it on and off"): a tap
+ * shows or hides it, over other apps and on home alike; nothing opens.
+ */
+class HerdSheepTile : android.service.quicksettings.TileService() {
+    override fun onStartListening() {
+        super.onStartListening()
+        dev.omalauncher.herd.HerdSheep.restore(this)
+        show()
+    }
+
+    override fun onClick() {
+        super.onClick()
+        dev.omalauncher.herd.HerdSheep.set(this, !dev.omalauncher.herd.HerdSheep.shown)
+        show()
+    }
+
+    private fun show() {
+        qsTile?.apply {
+            label = "Herd sheep"
+            subtitle = if (dev.omalauncher.herd.HerdSheep.shown) "On" else "Off"
+            state = if (dev.omalauncher.herd.HerdSheep.shown) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
+            updateTile()
+        }
+    }
+}
