@@ -96,7 +96,25 @@ open class SheepFrame(
     private var lastX = 0f
     private var lastY = 0f
     private var dragging = false
+    private var onPet = false
     private val at = IntArray(2)
+
+    /** The page stands the sheep in the bottom-left corner instead of the bottom-right (its `herd.side("left")`). */
+    var sheepLeft = false
+
+    /**
+     * Whether ([x], [y]) is on the sheep: the page draws it 120 dp square, 6 dp in from the bottom corner (#pet in
+     * pet.html). Only a touch that starts there drags; the panel's lists take the rest and scroll (Boss, 2026-10-16:
+     * "I can't scroll in the Look tab … keep moving the pet to just, you know, on the pet itself").
+     */
+    private fun onSheep(
+        x: Float,
+        y: Float,
+    ): Boolean {
+        val d = resources.displayMetrics.density
+        val reach = 132 * d
+        return y >= height - 128 * d && if (sheepLeft) x <= reach else x >= width - reach
+    }
 
     // Where the finger is on the screen. On home not rawX: home hands its views made-up events whose raw position
     // is not the screen's. In a window of its own ([raw]) rawX it is: there the window moves a beat after each
@@ -126,8 +144,9 @@ open class SheepFrame(
             MotionEvent.ACTION_DOWN -> {
                 downX = screenX(e); downY = screenY(e); lastX = screenX(e); lastY = screenY(e)
                 dragging = false
+                onPet = onSheep(e.x, e.y)
             }
-            MotionEvent.ACTION_MOVE -> if (!dragging && hypot(screenX(e) - downX, screenY(e) - downY) > slop) {
+            MotionEvent.ACTION_MOVE -> if (onPet && !dragging && hypot(screenX(e) - downX, screenY(e) - downY) > slop) {
                 dragging = true
                 // Home's page swipe doesn't take a drag of the sheep.
                 parent?.requestDisallowInterceptTouchEvent(true)

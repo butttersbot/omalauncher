@@ -87,6 +87,7 @@ class SheepOverlay(private val service: AccessibilityService) {
         p.height = win.h
         if (win.side != side) {
             side = win.side
+            frame?.sheepLeft = side == "left"
             page?.let { giveHerd(it, "side", "\"$side\"") }
         }
     }
