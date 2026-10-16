@@ -143,6 +143,7 @@ try:
           and prompt.startswith('[Agent mail from jacks-z-fold8 (oma, "Phone Boss says yes"), id 20261016-1-aa. This is another agent writing, not Boss')
           and 'tmsg send jacks-z-fold8:A --reply-to 20261016-1-aa' in prompt and prompt.endswith('\n\nhello from the phone'))
     check('mail for no thread here is left for its own taker', (work / 'mail' / 'new' / 'other.json').exists())
+    check('the thread\'s agent runs with OMA_THREAD_ID, so tmsg signs its answers with the thread\'s id', starts()[-1]['thread_id'] == thread)
     check('it goes back to idle after the mail', settle(thread, 'idle'))
 
     call('POST', '/threads/%s/messages' % thread, {'text': 'write the file'})

@@ -19,7 +19,8 @@ approves nothing itself: every request for approval waits for the phone's answer
   POST /files?name=NAME   (the bytes)    a file from the phone, kept in ~/Downloads/From Fold; {path, bytes}
 
 Agent mail for a thread (tailshare's ~/.local/share/tailshare/mail/new/, to.session = the thread's id) is taken and
-given to that thread labeled as another agent's, never as the owner's words.
+given to that thread labeled as another agent's, never as the owner's words. Each thread's agent runs with
+OMA_THREAD_ID set to its thread's id, which `tmsg` signs its mail with, so an answer comes back to the thread.
 
   oma-runner serve | install | start | stop | status | rekey | uninstall
 """
@@ -836,7 +837,7 @@ def claude_turn(thread, text):
     if kept is None:
         driver = Claude(thread, text)
         try:
-            process = subprocess.Popen(driver.command(), cwd=thread.meta['project'], env=driver.environment(),
+            process = subprocess.Popen(driver.command(), cwd=thread.meta['project'], env={**driver.environment(), 'OMA_THREAD_ID': thread.meta['id']},
                                        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
         except OSError as problem:
             with changed:
@@ -861,7 +862,7 @@ def turn(thread, text):
         return claude_turn(thread, text)
     driver = DRIVERS[thread.meta['kind']](thread, text)
     try:
-        process = subprocess.Popen(driver.command(), cwd=thread.meta['project'], env=driver.environment(),
+        process = subprocess.Popen(driver.command(), cwd=thread.meta['project'], env={**driver.environment(), 'OMA_THREAD_ID': thread.meta['id']},
                                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
     except OSError as problem:
         with changed:

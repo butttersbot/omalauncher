@@ -16,7 +16,7 @@ and, as Claude Code 2.1 does, first runs a turn of its own about it (a task_noti
 no user_message_uuid) before the owner's message. Results of the owner's turns name the uuid he sent as Claude Code
 does, unless the prompt says "old" (a Claude Code from before those fields).
 """
-import json, pathlib, queue, sys, threading, time, uuid
+import json, os, pathlib, queue, sys, threading, time, uuid
 
 
 speaking = threading.RLock()  # one turn at a time on stdout, as Claude Code runs them
@@ -39,7 +39,8 @@ echo = {'user_message_uuid': given['uuid'], 'user_message_uuids': [given['uuid']
 orphan = pathlib.Path('background.running')
 with open('starts.log', 'a') as log:
     log.write(json.dumps({'prompt': prompt, 'resumed': '--resume' in arguments, 'mode': arguments[arguments.index('--permission-mode') + 1],
-                         'prompt_tool': arguments[arguments.index('--permission-prompt-tool') + 1]}) + '\n')
+                         'prompt_tool': arguments[arguments.index('--permission-prompt-tool') + 1],
+                         'thread_id': os.environ.get('OMA_THREAD_ID')}) + '\n')
 if '--model' in arguments:
     with open('models.log', 'a') as log:
         log.write(arguments[arguments.index('--model') + 1] + '\n')
