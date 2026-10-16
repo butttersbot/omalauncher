@@ -7,16 +7,18 @@
 <style>
 :root {
   --wool: #f7f2e8; --wool-edge: #e3d9c6; --face: #3b3442; --cheek: #f2a7a0; --leg: #4a4250;
-  --panel: rgba(250, 248, 244, .94); --panel-edge: rgba(40, 32, 48, .12); --ink: #231d29; --ink-2: #6b6272; --ink-3: #9c94a2;
+  --panel: #faf8f4; --panel-edge: rgba(40, 32, 48, .12); --ink: #231d29; --ink-2: #6b6272; --ink-3: #9c94a2;
   --row-hover: rgba(40, 32, 48, .06); --line: rgba(40, 32, 48, .08);
   --need: #e8833a; --ready: #2f8f83; --work: #5a7fd6; --idle: #a39ba8;
   --shadow: 0 18px 50px rgba(30, 20, 40, .22), 0 2px 8px rgba(30, 20, 40, .08);
+  --drop-veil: rgba(226, 244, 240, .86);
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --panel: rgba(32, 28, 38, .94); --panel-edge: rgba(255, 255, 255, .09); --ink: #f3eef6; --ink-2: #b4abbb; --ink-3: #7f7686;
+    --panel: #201c26; --panel-edge: rgba(255, 255, 255, .09); --ink: #f3eef6; --ink-2: #b4abbb; --ink-3: #7f7686;
     --row-hover: rgba(255, 255, 255, .06); --line: rgba(255, 255, 255, .07);
     --shadow: 0 18px 50px rgba(0, 0, 0, .5), 0 2px 8px rgba(0, 0, 0, .3);
+    --drop-veil: rgba(18, 44, 41, .84);
   }
 }
 * { box-sizing: border-box; }
@@ -144,8 +146,9 @@ body.left #bubble .tail { right: auto; left: 34px; transform: scaleX(-1); }
 /* ---------------------------------------------------------------- the panel */
 #panel { position: fixed; right: 8px; bottom: 128px; width: min(372px, calc(100vw - 16px)); max-height: calc(var(--room, 100vh) - 140px); display: flex; flex-direction: column; overflow: hidden;
   background: var(--panel); border: 1px solid var(--panel-edge); border-radius: 18px; box-shadow: var(--shadow);
-  -webkit-backdrop-filter: blur(24px) saturate(1.4); backdrop-filter: blur(24px) saturate(1.4);
   display: none; }
+/* No backdrop-filter here, or on the menu or the drop veil: in the Mac's transparent window there's nothing behind
+   the page to blur, and each such layer appearing or redrawing made WebKit flash the whole window opaque, then clear. */
 /* Shown at once, not faded in: the window grows in the same moment, and a fade started while it was small can stay
    stuck at its first frame in Android's WebView. */
 body.open #panel { display: flex; }
@@ -208,8 +211,10 @@ main::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
 .drop { margin: 8px; padding: 22px 14px; border: 1.5px dashed var(--line); border-radius: 14px; text-align: center; color: var(--ink-2); }
 .drop b { display: block; color: var(--ink); font-size: 13px; margin-bottom: 3px; }
 .drop.has { border-style: solid; text-align: left; }
-.drop.zone { padding: 14px 12px; transition: background .12s, border-color .12s; }
-body.dropping .drop.zone { border-color: var(--ready); background: rgba(47, 143, 131, .1); color: var(--ink); }
+/* While files are dragged over the open panel, the whole panel is the drop target. */
+body.dropping #panel { box-shadow: 0 0 0 2px var(--ready), var(--shadow); }
+body.dropping #panel::after { content: "Drop to put it in the pocket"; position: absolute; inset: 0; display: grid; place-items: center;
+  border-radius: 18px; background: var(--drop-veil); color: var(--ink); font-size: 14px; font-weight: 700; pointer-events: none; }
 .files { margin: 6px 0 0; padding: 0; list-style: none; font-size: 12px; color: var(--ink); }
 .files li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .status { padding: 4px 18px; font-size: 12px; color: var(--ink-2); }
@@ -217,14 +222,46 @@ body.dropping .drop.zone { border-color: var(--ready); background: rgba(47, 143,
 .section { padding: 14px 12px 2px; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); }
 .busy { margin: 4px 8px; padding: 7px 10px; border-radius: 10px; font-size: 12px; color: var(--ink-2); background: var(--row-hover); }
 .busy.failed { color: var(--need); }
-.item.pinned { box-shadow: inset 3px 0 0 #d9a520; }
-.item-head .icon-btn.pin { margin-left: auto; }
-.item-head .icon-btn.pin + .icon-btn { margin-left: 0; }
-.item.pinned .icon-btn.pin { color: #d9a520; }
-.thumb { position: relative; margin-bottom: 6px; cursor: pointer; }
-.thumb img { display: block; max-width: 100%; max-height: 180px; border-radius: 8px; background: var(--line); }
-.thumb.video::after { content: "▶"; position: absolute; left: 8px; bottom: 8px; width: 24px; height: 24px; border-radius: 12px;
-  background: rgba(0, 0, 0, .55); color: #fff; font-size: 11px; line-height: 24px; text-align: center; }
+/* The pocket: one rail of square tiles (pictures, videos, files), which can open into a 4-column grid, then text rows. */
+.phead { display: flex; align-items: center; gap: 6px; padding: 14px 12px 4px; }
+/* The same look as the tab's other section headers (.section: "Sent to this Mac"). */
+.phead b { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); }
+.phead .info { color: var(--ink-3); cursor: help; font-size: 13px; line-height: 1; }
+.linkbtn { margin-left: auto; border: 0; background: transparent; color: var(--ink-2); font: inherit; font-size: 11px; font-weight: 600;
+  padding: 2px 6px; border-radius: 6px; cursor: pointer; }
+.linkbtn:hover { background: var(--row-hover); color: var(--ink); }
+.rail { display: flex; gap: 8px; overflow-x: auto; padding: 4px 12px 8px; scroll-snap-type: x proximity; scroll-padding: 0 12px; }
+.rail::-webkit-scrollbar { height: 5px; }
+.rail::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+.rail.grid { display: grid; grid-template-columns: repeat(4, 64px); justify-content: space-between; row-gap: 10px; overflow: visible; }
+.tile { flex: none; width: 64px; position: relative; scroll-snap-align: start; cursor: pointer; -webkit-touch-callout: none; }
+.tile .sq { position: relative; width: 64px; height: 64px; border-radius: 10px; overflow: hidden; background: var(--row-hover);
+  display: grid; place-items: center; }
+.tile .sq img { width: 100%; height: 100%; object-fit: cover; display: block; -webkit-user-drag: none; }
+.tile .glyph { font-size: 26px; }
+.tile.kind-video .sq::after { content: "▶"; position: absolute; left: 4px; bottom: 4px; width: 18px; height: 18px; border-radius: 9px;
+  background: rgba(0, 0, 0, .55); color: #fff; font-size: 8px; line-height: 18px; text-align: center; }
+.tile .cap { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-top: 3px;
+  font-size: 10px; line-height: 1.25; color: var(--ink-2); word-break: break-word; }
+.tile.pinned::before { content: "★"; position: absolute; top: 3px; right: 4px; z-index: 1; font-size: 11px; color: #f2c14e;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .6); }
+.tile.new .sq { box-shadow: 0 0 0 2px var(--ready); }
+.tile:hover .sq { filter: brightness(1.06); }
+.trow { display: flex; gap: 8px; align-items: flex-start; margin: 2px 8px 4px; padding: 6px 8px; border-radius: 10px; background: var(--row-hover); }
+.trow.new { box-shadow: inset 3px 0 0 var(--ready); }
+.trow .star { color: #f2c14e; font-size: 11px; }
+.trow .ttext { flex: 1; min-width: 0; font-size: 12px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; white-space: pre-wrap; word-break: break-word; cursor: pointer; -webkit-user-select: text; user-select: text; }
+.trow .ttext.full { display: block; }
+#pmenu { position: fixed; z-index: 50; min-width: 180px; max-width: 260px; padding: 5px; display: none; background: var(--panel);
+  border: 1px solid var(--panel-edge); border-radius: 11px; box-shadow: var(--shadow); }
+#pmenu.on { display: block; }
+#pmenu .meta { padding: 5px 9px 7px; margin-bottom: 4px; border-bottom: 1px solid var(--line); font-size: 11px; color: var(--ink-3); }
+#pmenu .meta b { display: block; color: var(--ink); font-size: 12px; word-break: break-all; margin-bottom: 2px; }
+#pmenu button { display: block; width: 100%; text-align: left; border: 0; background: transparent; color: var(--ink); font: inherit;
+  font-size: 12.5px; padding: 6px 9px; border-radius: 7px; cursor: pointer; }
+#pmenu button:hover { background: var(--row-hover); }
+#pmenu button.danger { color: var(--need); }
 
 /* Tailshare: what the other devices sent this computer (~/Inbox), newest first. */
 nav button .count { display: inline-block; min-width: 16px; height: 16px; padding: 0 4px; margin-left: 5px; border-radius: 8px;
@@ -262,6 +299,8 @@ nav button .count { display: inline-block; min-width: 16px; height: 16px; paddin
   <nav id="jobs"></nav>
   <main id="view"></main>
 </div>
+
+<div id="pmenu" role="menu"></div>
 
 <div id="bubble" role="status"><div class="box"><b class="who"></b><span class="say"></span><i class="more">▼</i></div><div class="tail"></div></div>
 
@@ -420,6 +459,7 @@ $('view').addEventListener('click', e => {
     shell({ cmd: 'pocketget', id: act.dataset.id, name: act.dataset.name, action: act.dataset.action });
     pocketSay({ open: 'Opening ', save: 'Saving ', copy: 'Copying ' }[act.dataset.action] + act.dataset.name + '…');
   }
+  if (a === 'pocketgrid') { pocketGrid = !pocketGrid; store.set('pocketGrid', pocketGrid); render(); }
   if (a === 'pocketpin') pocketPin(act.dataset.id);
   if (a === 'pocketremove') pocketRemove(act.dataset.id);
   if (a === 'sendclip') { shell({ cmd: 'sendclip', device: act.dataset.device }); $('sendStatus').textContent = 'Sending your clipboard to ' + act.dataset.device + '…'; }
@@ -582,6 +622,8 @@ function pocketSay(text, ms = 4000) {
   if (showing()) render();
 }
 
+let pocketDrawn = '';   // what the tab last drew from, so a poll that brings nothing new redraws nothing
+
 async function fetchPocket() {
   const before = pocket;
   try {
@@ -600,6 +642,10 @@ async function fetchPocket() {
     if (fresh.length && !document.body.classList.contains('open'))
       speak('Pocket', fresh.length === 1 ? `${fresh[0].device} put ${fresh[0].name} in the pocket.` : `${fresh.length} new things in the pocket.`, { ms: 6000, job: 'tailshare' });
   }
+  // Redrawing rebuilds every tile (thumbnails reload, the pointer's hover resets), so only when something changed.
+  const now = JSON.stringify([pocket?.items, pocketError]);
+  if (now === pocketDrawn) return;
+  pocketDrawn = now;
   if (showing()) render(); else renderJobs();
 }
 // Only where the tab is shown: the Mac, or a phone whose shell has said herd.caps({pocket: true}).
@@ -624,39 +670,96 @@ const devices = () => [...(data?.machines || []).filter(m => !m.self).map(m => m
 const bytes = n => n < 1024 ? n + ' B' : n < 1048576 ? Math.round(n / 1024) + ' KB' : n < 1073741824 ? (n / 1048576).toFixed(1) + ' MB' : (n / 1073741824).toFixed(1) + ' GB';
 const ICONS = { text: '📝', image: '🖼️', video: '🎞️', file: '📄' };
 
-function pocketItem(i, fresh) {
-  const id = esc(i.id), name = esc(i.name);
+let pocketGrid = store.get('pocketGrid', false);   // this device's choice: the rail opened into a grid
+
+function keepWords(i) {
   const left = Math.ceil(((pocket?.days || 7) * 86400 - (Date.now() / 1000 - i.t)) / 86400);
-  const keep = i.pinned ? 'pinned' : left <= 1 ? 'goes tomorrow' : `${left} days left`;
-  const get = (action, label, primary) => `<button class="btn ${primary ? 'primary' : ''}" data-act="pocketget" data-action="${action}" data-id="${id}" data-name="${name}">${label}</button>`;
-  let html = `<div class="item pocketed ${fresh ? 'new' : ''} ${i.pinned ? 'pinned' : ''}"><div class="item-head"><b>${esc(i.device || 'Someone')}</b>· ${ago(i.t)} · ${keep}
-    <button class="icon-btn pin" data-act="pocketpin" data-id="${id}" title="${i.pinned ? 'Unpin' : 'Pin: keep it past 7 days'}" aria-label="${i.pinned ? 'Unpin' : 'Pin'}">${i.pinned ? '★' : '☆'}</button>
-    <button class="icon-btn" data-act="pocketremove" data-id="${id}" title="Remove from the pocket" aria-label="Remove from the pocket">✕</button></div>`;
-  if (i.kind === 'text' && i.text != null) {
-    const long = i.text.length > 280 || i.text.split('\n').length > 5;
-    html += `<div class="clip ${long ? 'long' : ''} ${expanded.has(i.id) ? 'full' : ''}" data-act="expand" data-name="${id}">${esc(i.text)}</div>
-      <div class="actions">${get('copy', 'Copy', true)}${get('open', 'Open')}${get('save', 'Save')}</div>`;
-  } else {
-    if (i.thumb) html += `<div class="thumb ${i.kind}" data-act="pocketget" data-action="open" data-id="${id}" data-name="${name}"><img src="${POCKET}/${encodeURIComponent(i.id)}/thumb" alt="${name}" loading="lazy"></div>`;
-    html += `<div class="file">${ICONS[i.kind] || ICONS.file} <span title="${name}">${name}</span><em>${bytes(i.size)}</em></div>
-      <div class="actions">${get('open', 'Open', true)}${get('save', 'Save')}${get('copy', 'Copy')}</div>`;
-  }
-  return html + `</div>`;
+  return i.pinned ? 'pinned' : left <= 1 ? 'goes tomorrow' : `${left} days left`;
 }
+// What a tile's tooltip (and the menu) says: the whole name, its size, who put it there.
+const tileInfo = i => `${i.name}\n${bytes(i.size)} · from ${i.device || 'another device'} · ${keepWords(i)}`;
+const isTextRow = i => i.kind === 'text' && i.text != null;
+
+// A square tile: a picture is just its preview; a video its preview with ▶ and its name; a file an icon and its name.
+// Click opens it; right-click (long-press on the phone) has the rest.
+function pocketTile(i, fresh) {
+  const id = esc(i.id), name = esc(i.name);
+  const face = i.thumb ? `<img src="${POCKET}/${encodeURIComponent(i.id)}/thumb" alt="" loading="lazy" draggable="false">`
+                       : `<span class="glyph">${ICONS[i.kind] || ICONS.file}</span>`;
+  return `<div class="tile kind-${i.kind} ${fresh ? 'new' : ''} ${i.pinned ? 'pinned' : ''}" data-act="pocketget" data-action="open"
+    data-id="${id}" data-name="${name}" data-menu="${id}" title="${esc(tileInfo(i))}"><div class="sq">${face}</div>${i.kind === 'image' ? '' : `<span class="cap">${name}</span>`}</div>`;
+}
+
+// Text: a compact row, two lines (click for all of it), with Copy.
+function pocketTextRow(i, fresh) {
+  const id = esc(i.id);
+  return `<div class="trow ${fresh ? 'new' : ''}" data-menu="${id}" title="${esc(tileInfo(i))}">${i.pinned ? '<span class="star">★</span>' : ''}
+    <div class="ttext ${expanded.has(i.id) ? 'full' : ''}" data-act="expand" data-name="${id}">${esc(i.text)}</div>
+    <button class="btn small" data-act="pocketget" data-action="copy" data-id="${id}" data-name="${esc(i.name)}">Copy</button></div>`;
+}
+
+/* The menu for one item: right-click on the Mac, long-press on the phone. */
+let pressTimer = null, pressed = false;
+function pocketMenu(id, x, y) {
+  const i = pocket?.items.find(it => it.id === id), menu = $('pmenu');
+  if (!i) return;
+  const [first, ...rest] = tileInfo(i).split('\n');
+  menu.innerHTML = `<div class="meta"><b>${esc(first)}</b>${esc(rest.join(' '))}</div>
+    <button data-do="save">Save</button><button data-do="copy">Copy</button>
+    <button data-do="pin">${i.pinned ? 'Unpin' : 'Pin (keep past 7 days)'}</button><button class="danger" data-do="remove">Remove</button>`;
+  menu.dataset.id = id;
+  menu.classList.add('on');
+  const w = menu.offsetWidth, h = menu.offsetHeight;
+  menu.style.left = Math.max(6, Math.min(x, innerWidth - w - 6)) + 'px';
+  menu.style.top = Math.max(6, Math.min(y, innerHeight - h - 6)) + 'px';
+}
+const hideMenu = () => $('pmenu').classList.remove('on');
+$('pmenu').addEventListener('click', e => {
+  const b = e.target.closest('[data-do]'), id = $('pmenu').dataset.id, i = pocket?.items.find(it => it.id === id);
+  if (!b || !i) return;
+  hideMenu();
+  const d = b.dataset.do;
+  if (d === 'save' || d === 'copy') { shell({ cmd: 'pocketget', id: i.id, name: i.name, action: d }); pocketSay((d === 'save' ? 'Saving ' : 'Copying ') + i.name + '…'); }
+  if (d === 'pin') pocketPin(i.id);
+  if (d === 'remove') pocketRemove(i.id);
+});
+document.addEventListener('contextmenu', e => {
+  const t = e.target.closest?.('[data-menu]');
+  if (!t) return;
+  e.preventDefault();
+  pocketMenu(t.dataset.menu, e.clientX, e.clientY);
+});
+document.addEventListener('pointerdown', e => {
+  if (!e.target.closest?.('#pmenu')) hideMenu();
+  const t = e.target.closest?.('[data-menu]');
+  if (!t || e.pointerType === 'mouse') return;
+  clearTimeout(pressTimer);
+  pressTimer = setTimeout(() => { pressed = true; pocketMenu(t.dataset.menu, e.clientX, e.clientY); }, 500);
+});
+for (const end of ['pointerup', 'pointercancel', 'pointermove']) document.addEventListener(end, () => clearTimeout(pressTimer));
+// A long-press opened the menu: the click that follows it isn't an Open.
+$('view').addEventListener('click', e => { if (pressed) { pressed = false; e.stopImmediatePropagation(); e.preventDefault(); } }, true);
+$('view').addEventListener('scroll', hideMenu, true);
 
 function renderTailshare(view) {
   const fresh = new Set([...unseenInbox().map(i => i.name), ...unseenPocket().map(i => i.id)]);
   if (document.body.classList.contains('open')) { markInboxSeen(); markPocketSeen(); }
   const to = devices();
-  let html = `<div class="drop zone"><b>Drop or paste (⌘V) to put it in the pocket</b>Every device with the pet sees it. Kept 7 days unless pinned.</div>`;
+  const items = pocket?.items || [], tiles = items.filter(i => !isTextRow(i)), texts = items.filter(isTextRow);
+  const info = 'Drop files on the sheep or this panel, or paste with ⌘V. Everything here shows up on all your devices for '
+    + (pocket?.days || 7) + ' days; pin ★ to keep it. Click to open, right-click for Save, Copy, Pin and Remove.'
+    + (pocket ? `\n${bytes(pocket.used)} of ${bytes(pocket.cap)} used, on ${pocket.host}.` : '');
+  let html = `<div class="phead"><b>Pocket</b><span class="info" title="${esc(info)}" aria-label="${esc(info)}">ⓘ</span>`
+    + (tiles.length > 4 ? `<button class="linkbtn" data-act="pocketgrid">${pocketGrid ? 'Collapse ▴' : `All ${tiles.length} ▾`}</button>` : '') + `</div>`;
   for (const [name, b] of pocketBusy)
     html += `<div class="busy ${b.state}">${b.state === 'failed' ? '⚠︎ ' + esc(name || 'Paste') + ': ' + esc(b.error || "didn't go in") : (b.state === 'zipping' ? 'Zipping ' : 'Putting in ') + esc(name) + '…'}</div>`;
   if (pocketNote) html += `<div class="status">${esc(pocketNote)}</div>`;
   if (pocketError && !pocket) html += `<div class="empty">${esc(pocketError)}</div>`;
   else if (!pocket) html += `<div class="empty">Opening the pocket…</div>`;
-  else if (!pocket.items.length && !pocketBusy.size) html += `<div class="empty">The pocket is empty.</div>`;
-  for (const i of pocket?.items || []) html += pocketItem(i, fresh.has(i.id));
-  if (pocket?.items.length) html += `<div class="note">${bytes(pocket.used)} of ${bytes(pocket.cap)} · on ${esc(pocket.host)}${pocketError ? ' · ' + esc(pocketError) : ''}</div>`;
+  else if (!items.length && !pocketBusy.size) html += `<div class="empty">Nothing in the pocket yet. Drop something on the sheep.</div>`;
+  if (tiles.length) html += `<div class="rail ${pocketGrid ? 'grid' : ''}">${tiles.map(i => pocketTile(i, fresh.has(i.id))).join('')}</div>`;
+  for (const i of texts) html += pocketTextRow(i, fresh.has(i.id));
+  if (pocket && pocketError) html += `<div class="note">${esc(pocketError)}</div>`;
 
   if (to.length && !window.HerdAndroid)   // the phone sends its clipboard with Tailshare's tile instead
     html += `<div class="sendrow"><span>Send clipboard to</span>${to.map(d => `<button class="btn small" data-act="sendclip" data-device="${esc(d)}">${esc(d)}</button>`).join('')}</div>`;
@@ -845,7 +948,7 @@ function announce(list) {
       told[s.id] = news;
       if (s.state === 'needs-you') {
         face('down');
-        speak(s.title, 'Needs you! ' + (gist(s.last) || 'It\'s waiting on an answer.'), { ms: 9000, id: s.id });
+        speak(s.title, s.ask || ('Needs you! ' + (gist(s.last) || 'It\'s waiting on an answer.')), { ms: 9000, id: s.id });
       } else if (s.state === 'your-turn' && was === 'working') {
         face('down'); fx('happy', 1100);
         speak(s.title, gist(s.last) || 'All done!', { ms: 8000, id: s.id });
@@ -1021,7 +1124,7 @@ window.herd = {
     if (!document.body.classList.contains('open')) toggle(true); else render();
     nudge();
   },
-  // Files are being dragged over the open panel (true) or left it (false): show the drop zone, lit up.
+  // Files are being dragged over the open panel (true) or left it (false): the whole panel lights up as the target.
   dragging(on) {
     document.body.classList.toggle('dropping', !!on);
     if (on && document.body.classList.contains('open') && job !== 'tailshare') { job = 'tailshare'; detail = null; render(); }
@@ -1039,9 +1142,13 @@ window.herd = {
   pocketPulled(r) {
     r = typeof r === 'string' ? JSON.parse(r) : r;
     const item = pocket?.items.find(i => i.id === r.id);
-    pocketSay(r.error ? "Couldn't get it: " + r.error : { copy: 'Copied', save: 'Saved to Downloads/Pocket', open: 'Opened' }[r.action] + (item ? ': ' + item.name : ''), r.error ? 8000 : 2500);
+    // Opening shows itself; only a copy, a save or a failure needs saying.
+    if (r.error || r.action !== 'open')
+      pocketSay(r.error ? "Couldn't get it: " + r.error : { copy: 'Copied', save: 'Saved to Downloads/Pocket' }[r.action] + (item ? ': ' + item.name : ''), r.error ? 8000 : 2500);
   },
   tap() { nudge(); toggle(); },
+  // `herd pet tab NAME`: shows that tab (agents, look, tailshare), opening the panel if it's closed.
+  tab(name) { if (!jobs.some(j => j.id === name)) return; job = name; detail = null; store.set('job', job); if (!document.body.classList.contains('open')) toggle(true); else render(); },
   // `herd say TEXT`: says it; an empty text says what's up.
   say(text) { if (text) { nudge(); face('down'); speak('', String(text), { ms: 8000 }); } else herd.chat(); },
   // "What's up?": says what the agents are doing, most urgent first.
@@ -1080,15 +1187,21 @@ function toggle(force) {
   document.body.classList.toggle('open', open);
   shell({ cmd: open ? 'expand' : 'collapse' });
   for (const wait of [0, 50, 200, 500]) setTimeout(measure, wait);   // the view grows a moment after it's asked to
+  if (!open) hideMenu();
   if (open) { markSeen(); mood(); render(); hush(); fetchPocket(); }
 }
 $('close').addEventListener('click', () => toggle(false));
 wear();
+// Whether the pointer is over the open panel: ⌘V only puts things in the pocket then. Dictation apps (Wispr Flow)
+// type by pasting into whatever has the keyboard, which once put a sentence meant for another app in the pocket.
+let pointerOnPanel = false;
+$('panel').addEventListener('mouseenter', () => { pointerOnPanel = true; });
+$('panel').addEventListener('mouseleave', () => { pointerOnPanel = false; });
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') toggle(false);
-  // ⌘V in the open panel puts what's on the clipboard into the pocket (the Mac shell reads the clipboard).
+  // ⌘V over the open panel puts what's on the clipboard into the pocket (the Mac shell reads the clipboard).
   if (e.metaKey && e.key.toLowerCase() === 'v' && native && !window.HerdAndroid && document.body.classList.contains('open')
-      && !e.target.closest?.('input, textarea, [contenteditable]')) {
+      && pointerOnPanel && !e.target.closest?.('input, textarea, [contenteditable]')) {
     e.preventDefault();
     if (job !== 'tailshare') { job = 'tailshare'; detail = null; store.set('job', job); render(); }
     shell({ cmd: 'pocketpaste' });
