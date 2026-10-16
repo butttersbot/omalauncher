@@ -88,16 +88,39 @@ open class SheepFrame(
     private var lastX = 0f
     private var lastY = 0f
     private var dragging = false
+    private val at = IntArray(2)
+
+    // Where the finger is on the screen. Not rawX: home hands its views made-up events whose raw position is not
+    // the screen's, and the frame moves under the finger as it is dragged.
+    private fun screenX(e: MotionEvent): Float {
+        getLocationOnScreen(at)
+        return at[0] + e.x
+    }
+
+    private fun screenY(e: MotionEvent): Float {
+        getLocationOnScreen(at)
+        return at[1] + e.y
+    }
+
+    /**
+     * The page asks for its touches as soon as a finger lands, which would hide every move from
+     * [onInterceptTouchEvent]; the ask is passed up to home's own gestures, but this frame still watches for a drag.
+     */
+    override fun requestDisallowInterceptTouchEvent(disallow: Boolean) {
+        parent?.requestDisallowInterceptTouchEvent(disallow)
+    }
 
     override fun onInterceptTouchEvent(e: MotionEvent): Boolean {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                downX = e.rawX; downY = e.rawY; lastX = e.rawX; lastY = e.rawY
+                downX = screenX(e); downY = screenY(e); lastX = screenX(e); lastY = screenY(e)
                 dragging = false
             }
-            MotionEvent.ACTION_MOVE -> if (!dragging && hypot(e.rawX - downX, e.rawY - downY) > slop) {
+            MotionEvent.ACTION_MOVE -> if (!dragging && hypot(screenX(e) - downX, screenY(e) - downY) > slop) {
                 dragging = true
-                lastX = e.rawX; lastY = e.rawY
+                // Home's page swipe doesn't take a drag of the sheep.
+                parent?.requestDisallowInterceptTouchEvent(true)
+                lastX = screenX(e); lastY = screenY(e)
             }
         }
         return dragging
@@ -107,8 +130,8 @@ open class SheepFrame(
     override fun onTouchEvent(e: MotionEvent): Boolean {
         when (e.actionMasked) {
             MotionEvent.ACTION_MOVE -> if (dragging) {
-                onDrag(e.rawX - lastX, e.rawY - lastY)
-                lastX = e.rawX; lastY = e.rawY
+                onDrag(screenX(e) - lastX, screenY(e) - lastY)
+                lastX = screenX(e); lastY = screenY(e)
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> if (dragging) {
                 dragging = false
