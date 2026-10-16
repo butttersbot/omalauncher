@@ -39,8 +39,10 @@ fun herdPage(
             object : WebViewClient() {
                 override fun onPageFinished(view: WebView, url: String) {
                     // The pocket's pulls, uploads and share target are the phone's (Pocket.kt): the page may show its tab.
-                    giveHerd(view, "caps", """{"pocket": true}""")
+                    // ClipInbox.kt sends the clipboard and keeps "Sent to this phone".
+                    giveHerd(view, "caps", """{"pocket": true, "sendclip": true}""")
                     Pocket.attach(view)
+                    ClipInbox.show(context, view)
                     onLoaded()
                 }
             }
@@ -68,6 +70,8 @@ fun herdPage(
                             is PetCommand.Room -> onRoom?.invoke(command.w, command.h)
                             is PetCommand.PocketGet -> Pocket.pull(context, page, command.id, command.name, command.action)
                             PetCommand.PocketPaste -> Pocket.paste(context)
+                            is PetCommand.SendClip -> ClipInbox.sendClipboard(context, page, command.device)
+                            is PetCommand.InboxGet -> ClipInbox.act(context, page, command.name, command.action)
                             PetCommand.Unknown -> {}
                         }
                     }

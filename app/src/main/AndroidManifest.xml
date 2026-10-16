@@ -198,6 +198,10 @@
                 <data android:mimeType="*/*" />
             </intent-filter>
         </activity>
+        <!-- What Tailshare received, for the sheep's "Sent to this phone": only Tailshare is heard (herd/ClipInbox.kt). -->
+        <receiver android:name=".herd.ClipReceivedReceiver" android:exported="true">
+            <intent-filter><action android:name="dev.omalauncher.action.CLIP_RECEIVED" /></intent-filter>
+        </receiver>
         <!-- Agent mail that came by Taildrop, handed over by Tailshare: only Tailshare is heard (assist/AgentMail.kt). -->
         <receiver android:name=".assist.AgentMailReceiver" android:exported="true">
             <intent-filter><action android:name="dev.omalauncher.action.AGENT_MESSAGE" /></intent-filter>

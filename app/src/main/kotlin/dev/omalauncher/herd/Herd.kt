@@ -65,6 +65,12 @@ sealed interface PetCommand {
     /** Put what is on the clipboard in the pocket (a keyboard's paste over the open panel). */
     data object PocketPaste : PetCommand
 
+    /** Send the clipboard to the computer [device] ("Send clipboard to"). */
+    data class SendClip(val device: String) : PetCommand
+
+    /** Copy, open or remove [name] of "Sent to this phone". */
+    data class InboxGet(val name: String, val action: String) : PetCommand
+
     data object Unknown : PetCommand
 }
 
@@ -101,6 +107,12 @@ fun petCommand(json: String): PetCommand {
             if (id != null && action != null) PetCommand.PocketGet(id, pocketName(o.optString("name"), id), action) else PetCommand.Unknown
         }
         "pocketpaste" -> PetCommand.PocketPaste
+        "sendclip" -> o.optString("device").takeIf { Regex("[A-Za-z0-9][A-Za-z0-9.-]{0,62}").matches(it) }?.let { PetCommand.SendClip(it) } ?: PetCommand.Unknown
+        "inboxget" -> {
+            val name = o.optString("name").takeIf { it.isNotEmpty() && it == pocketName(it, "") }
+            val action = o.optString("action").takeIf { it in setOf("copy", "open", "remove") }
+            if (name != null && action != null) PetCommand.InboxGet(name, action) else PetCommand.Unknown
+        }
         else -> PetCommand.Unknown
     }
 }

@@ -68,6 +68,34 @@ class HerdTest {
     }
 
     @Test
+    fun readsTheTailshareTabsCommands() {
+        assertEquals(PetCommand.SendClip("macbook-pro"), petCommand("""{"cmd": "sendclip", "device": "macbook-pro"}"""))
+        assertEquals(PetCommand.Unknown, petCommand("""{"cmd": "sendclip", "device": "x/../y"}"""))
+        assertEquals(PetCommand.InboxGet("clip-1.png", "copy"), petCommand("""{"cmd": "inboxget", "name": "clip-1.png", "action": "copy"}"""))
+        assertEquals("a name with a path is no item", PetCommand.Unknown, petCommand("""{"cmd": "inboxget", "name": "../index.json", "action": "remove"}"""))
+        assertEquals(PetCommand.Unknown, petCommand("""{"cmd": "inboxget", "name": "a.txt", "action": "share"}"""))
+    }
+
+    @Test
+    fun aClipIsNamedForTheReceiver() {
+        val at = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).parse("20261016-061500")!!
+        assertEquals("clip-20261016-061500-from-jacks-z-fold8.txt", clipName(at, picture = false))
+        assertEquals("clip-20261016-061500-from-jacks-z-fold8.png", clipName(at, picture = true))
+    }
+
+    @Test
+    fun readsWhatTailshareReceived() {
+        val item = inboxItem("""{"name": "clip-1.txt", "from": "macbook-pro", "t": 1792150000.5, "kind": "text", "size": 5, "text": "hello"}""")!!
+        assertEquals(InboxItem("clip-1.txt", "macbook-pro", 1792150000.5, "text", 5, "hello", null), item)
+        assertEquals("a null sender is no name", null, inboxItem("""{"name": "a.png", "from": null, "kind": "image", "size": 9}""")!!.from)
+        assertEquals("an unknown kind is a file", "file", inboxItem("""{"name": "a.bin", "kind": "exe"}""")!!.kind)
+        assertNull(inboxItem("""{"kind": "text"}"""))
+        val json = org.json.JSONArray(inboxJson(listOf(item)) { "content://x/clip-1.txt" }).getJSONObject(0)
+        assertEquals("hello", json.getString("text"))
+        assertEquals("content://x/clip-1.txt", json.getString("src"))
+    }
+
+    @Test
     fun aPocketNameIsOneSafeFileName() {
         assertEquals("cat.jpg", pocketName("/sdcard/DCIM/cat.jpg"))
         assertEquals("evil.sh", pocketName("..\\..\\.evil.sh"))

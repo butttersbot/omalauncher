@@ -77,7 +77,7 @@ object Pocket {
     fun dropped(names: List<String>) = tell("pocketDropped", JSONArray(names).toString())
 
     /** Tells every sheep that is up, through its `herd.FUNCTION(json)`. Any thread. */
-    private fun tell(
+    internal fun tell(
         function: String,
         json: String,
     ) = main.post { pages.toList().forEach { giveHerd(it, function, json) } }
