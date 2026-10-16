@@ -66,18 +66,40 @@ html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
   25% { transform: translateY(-12px) scale(.97, 1.04); } 45% { transform: translateY(0) scale(1.05, .94); } }
 @keyframes wobble { 0%, 100% { transform: rotate(0); } 20% { transform: rotate(-12deg); } 40% { transform: rotate(10deg); } 60% { transform: rotate(0); } }
 
-/* A skin: a pixel sprite sheet from pet/skins, frames side by side, drawn in place of the sheep. */
-#sprite { position: absolute; left: 12px; top: 8px; width: 96px; height: 96px; display: none;
-  background-repeat: no-repeat; background-size: auto 96px; image-rendering: pixelated; transform-origin: 48px 92px; }
+/* A skin: a pixel sprite sheet from pet/skins, drawn in place of the sheep. The script picks the frame (its facing row
+   and walk step); the outer box carries the mood's motion, the inner one the frame and its mirroring. */
+#sprite { --fs: 96px; position: absolute; left: calc(60px - var(--fs) / 2); top: calc(104px - var(--fs));
+  width: var(--fs); height: var(--fs); display: none; transform-origin: 50% 96%; }
+#frame { width: 100%; height: 100%; background-repeat: no-repeat; image-rendering: pixelated; transform: scaleX(var(--mirror, 1)); }
 #pet.skinned #sprite { display: block; }
 #pet.skinned #sheep { display: none; }
 #pet.sleep #sprite { animation: breathe 4s ease-in-out infinite; filter: saturate(.75) brightness(.92); }
 #pet.work #sprite { animation: bob .9s ease-in-out infinite; }
-#pet.work #sprite.two { animation: bob .9s ease-in-out infinite, flip .9s steps(1) infinite; }
 #pet.alert #sprite { animation: hop 1.4s cubic-bezier(.3, 0, .3, 1) infinite; }
-#pet.alert #sprite.two { animation: hop 1.4s cubic-bezier(.3, 0, .3, 1) infinite, flip .35s steps(1) infinite; }
-#pet.happy #sprite { animation: hop .5s cubic-bezier(.3, 0, .3, 1) 2; }
-@keyframes flip { 0% { background-position: 0 0; } 50% { background-position: -96px 0; } }
+#pet.happy #sprite, #pet.happy #sheep { animation: hop .5s cubic-bezier(.3, 0, .3, 1) 2; }
+#pet.walking #sprite { animation: none; }
+
+/* Walking, and the little things it does while standing about. */
+#pet.walking #sheep { animation: bob .45s ease-in-out infinite; }
+#pet.walking .legs rect:nth-child(odd) { animation: step .3s ease-in-out infinite alternate; }
+#pet.walking .legs rect:nth-child(even) { animation: step .3s ease-in-out infinite alternate-reverse; }
+#turn { transform-origin: 60px 100px; transition: transform .25s ease; }
+#pet[data-face=left] #turn { transform: rotate(-4deg); }
+#pet[data-face=right] #turn { transform: rotate(4deg); }
+.pupils { transition: transform .2s ease; }
+#pet[data-face=left] .pupils { transform: translateX(-1.6px); }
+#pet[data-face=right] .pupils { transform: translateX(1.6px); }
+#pet[data-face=up] .pupils { transform: translateY(-1.8px); }
+#pet.stretch #sprite, #pet.stretch #sheep { animation: stretch .9s ease-in-out 1; }
+#pet.held #sprite, #pet.held #sheep { animation: dangle .5s ease-in-out infinite; }
+#pet.landed #sprite, #pet.landed #sheep { animation: land .35s cubic-bezier(.3, 0, .3, 1) 1; }
+@keyframes stretch { 0%, 100% { transform: scale(1, 1); } 40% { transform: scale(.94, 1.09); } 70% { transform: scale(1.03, .97); } }
+@keyframes dangle { 0%, 100% { transform: rotate(-7deg); } 50% { transform: rotate(7deg); } }
+@keyframes land { 0% { transform: scale(1.12, .86); } 100% { transform: scale(1, 1); } }
+
+/* The shell says which side of the window the pet stands on (the Mac moves it to the left near the screen's edge). */
+body.left #pet { right: auto; left: 6px; }
+body.left #panel { right: auto; left: 8px; }
 
 .looks { display: grid; grid-template-columns: repeat(auto-fill, minmax(82px, 1fr)); gap: 6px; padding: 8px; }
 .look { border: 1.5px solid transparent; background: var(--row-hover); border-radius: 12px; padding: 8px 4px 6px; cursor: pointer;
@@ -87,6 +109,8 @@ html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
 .look i { width: 56px; height: 56px; background-repeat: no-repeat; background-size: auto 56px; image-rendering: pixelated; display: block; }
 .look svg { width: 56px; height: 56px; }
 .note { color: var(--ink-3); font-size: 11px; padding: 2px 12px 8px; }
+.boxes .look b { width: 72px; height: 36px; display: block; background-size: 100% 100%; image-rendering: pixelated; }
+.boxes .look b.plain { background: #f8f8f8; border: 3px solid #5d6f87; border-radius: 6px; box-shadow: inset 0 0 0 2px #c9d3df; }
 
 #badge { position: absolute; left: 8px; top: 22px; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px;
   background: var(--need); color: #fff; font-weight: 700; font-size: 12px; line-height: 22px; text-align: center;
@@ -94,11 +118,28 @@ html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
 #badge.on { transform: scale(1); }
 #badge.ready { background: var(--ready); }
 
-#bubble { position: fixed; right: 18px; bottom: 124px; max-width: 220px; padding: 7px 11px; border-radius: 14px 14px 4px 14px;
-  background: var(--panel); border: 1px solid var(--panel-edge); box-shadow: var(--shadow); font-size: 12px; font-weight: 500;
-  opacity: 0; transform: translateY(6px); transition: opacity .2s, transform .2s; pointer-events: none; }
-#bubble.on { opacity: 1; transform: none; }
+/* The speech bubble: a game-style text box, typed out a letter at a time. A frame from pet/ui (served by a
+   reporter, 9-sliced) replaces the drawn one when there is one. */
+#bubble { position: fixed; right: 12px; bottom: 108px; width: max-content; max-width: min(250px, calc(100vw - 24px));
+  opacity: 0; transform: translateY(6px); transition: opacity .15s, transform .15s; pointer-events: none; cursor: pointer; }
+#bubble.on { opacity: 1; transform: none; pointer-events: auto; }
 body.open #bubble { display: none; }
+body.left #bubble { right: auto; left: 12px; }
+#bubble .box { position: relative; padding: 8px 12px 10px; background: #f8f8f8; color: #404850;
+  border: 3px solid #5d6f87; border-radius: 7px; box-shadow: inset 0 0 0 2px #c9d3df, 0 4px 14px rgba(20, 20, 40, .25);
+  font: 600 12.5px/1.4 -apple-system, BlinkMacSystemFont, "Inter", sans-serif; text-shadow: 1px 1px 0 #d4d4cc; }
+#bubble.framed .box { border-style: solid; border-radius: 0; box-shadow: 0 4px 14px rgba(20, 20, 40, .25); background: none; image-rendering: pixelated; }
+#bubble.game-font .who { font: inherit; opacity: .6; }
+#bubble .who { display: block; font-size: 10.5px; letter-spacing: .02em; opacity: .7; margin-bottom: 1px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+#bubble .more { position: absolute; right: 7px; bottom: 3px; font-size: 8px; font-style: normal; opacity: 0; }
+#bubble.typed .more { opacity: 1; animation: nudge .8s steps(2) infinite; }
+@keyframes nudge { 50% { transform: translateY(2px); } }
+#bubble .tail { position: absolute; right: 34px; bottom: -9px; width: 14px; height: 10px; background: var(--tail-edge, #5d6f87);
+  clip-path: polygon(0 0, 100% 0, 30% 100%); }
+#bubble .tail::after { content: ""; position: absolute; left: 3px; top: 0; width: 8px; height: 6px; background: var(--tail-fill, #f8f8f8);
+  clip-path: polygon(0 0, 100% 0, 25% 100%); }
+body.left #bubble .tail { right: auto; left: 34px; transform: scaleX(-1); }
 
 /* ---------------------------------------------------------------- the panel */
 #panel { position: fixed; right: 8px; bottom: 128px; width: min(372px, calc(100vw - 16px)); max-height: calc(var(--room, 100vh) - 140px); display: flex; flex-direction: column; overflow: hidden;
@@ -185,12 +226,12 @@ main::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
   <main id="view"></main>
 </div>
 
-<div id="bubble"></div>
+<div id="bubble" role="status"><div class="box"><b class="who"></b><span class="say"></span><i class="more">▼</i></div><div class="tail"></div></div>
 
 <div id="pet" class="sleep" aria-label="Herd">
   <svg viewBox="0 0 120 120" aria-hidden="true">
     <ellipse cx="60" cy="104" rx="34" ry="5" fill="rgba(30,20,40,.16)"/>
-    <g id="sheep">
+    <g id="turn"><g id="sheep">
       <g class="legs" fill="var(--leg)">
         <rect x="37" y="86" width="7" height="15" rx="3.5"/>
         <rect x="48" y="88" width="7" height="14" rx="3.5"/>
@@ -213,8 +254,8 @@ main::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
       </g>
       <g class="eye-open">
         <circle cx="53" cy="66" r="4.2" fill="#fff"/><circle cx="67" cy="66" r="4.2" fill="#fff"/>
-        <circle cx="54" cy="67" r="2.2" fill="#1b1620"/><circle cx="68" cy="67" r="2.2" fill="#1b1620"/>
-        <circle cx="54.8" cy="65.8" r=".8" fill="#fff"/><circle cx="68.8" cy="65.8" r=".8" fill="#fff"/>
+        <g class="pupils"><circle cx="54" cy="67" r="2.2" fill="#1b1620"/><circle cx="68" cy="67" r="2.2" fill="#1b1620"/>
+        <circle cx="54.8" cy="65.8" r=".8" fill="#fff"/><circle cx="68.8" cy="65.8" r=".8" fill="#fff"/></g>
       </g>
       <g class="eye-shut" stroke="#fff" stroke-width="1.8" stroke-linecap="round" fill="none">
         <path d="M49.5 67 q3.5 2.6 7 0"/><path d="M63.5 67 q3.5 2.6 7 0"/>
@@ -222,7 +263,7 @@ main::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
       <ellipse cx="47" cy="75" rx="3.4" ry="2" fill="var(--cheek)" opacity=".7"/>
       <ellipse cx="73" cy="75" rx="3.4" ry="2" fill="var(--cheek)" opacity=".7"/>
       <path d="M56.5 78 q3.5 3 7 0" stroke="#fff" stroke-width="1.6" stroke-linecap="round" fill="none" opacity=".85"/>
-    </g>
+    </g></g>
     <g class="zzz" fill="var(--ink-3)" font-weight="700" font-family="-apple-system, sans-serif">
       <text x="88" y="34" font-size="10">z</text><text x="94" y="26" font-size="12">z</text><text x="100" y="18" font-size="14">Z</text>
     </g>
@@ -232,7 +273,7 @@ main::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
       <rect x="96.4" y="20" width="3.2" height="10" rx="1.6" fill="#fff"/><circle cx="98" cy="34.2" r="1.8" fill="#fff"/>
     </g></g>
   </svg>
-  <div id="sprite"></div>
+  <div id="sprite"><div id="frame"></div></div>
   <div id="badge"></div>
 </div>
 
@@ -243,7 +284,7 @@ main::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
 const native = window.webkit?.messageHandlers?.herd ? m => window.webkit.messageHandlers.herd.postMessage(m)
              : window.HerdAndroid ? m => window.HerdAndroid.post(JSON.stringify(m))
              : null;
-const say = m => native && native(m);
+const shell = m => native && native(m);
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -324,14 +365,14 @@ function renderAgents(view) {
 
 $('view').addEventListener('click', e => {
   const row = e.target.closest('.row');
-  if (row) { detail = { id: row.dataset.id, loading: true }; render(); say({ cmd: 'show', id: row.dataset.id }); if (!native) mockDetail(row.dataset.id); return; }
+  if (row) { detail = { id: row.dataset.id, loading: true }; render(); shell({ cmd: 'show', id: row.dataset.id }); if (!native) mockDetail(row.dataset.id); return; }
   const act = e.target.closest('[data-act]');
   if (!act) return;
   const a = act.dataset.act;
   if (a === 'back') { detail = null; render(); }
-  if (a === 'copy') { say({ cmd: 'copy', text: act.dataset.text }); flash('Copied'); }
+  if (a === 'copy') { shell({ cmd: 'copy', text: act.dataset.text }); flash('Copied'); }
   if (a === 'clear') { dropped = []; render(); }
-  if (a === 'send') { say({ cmd: 'send', device: act.dataset.device, paths: dropped }); $('sendStatus').textContent = 'Sending to ' + act.dataset.device + '…'; }
+  if (a === 'send') { shell({ cmd: 'send', device: act.dataset.device, paths: dropped }); $('sendStatus').textContent = 'Sending to ' + act.dataset.device + '…'; }
 });
 
 function renderDetail(view) {
@@ -357,34 +398,88 @@ function skins() {
   const seen = new Map();
   for (const m of data?.machines || [])
     for (const s of m.report?.machine?.skins || [])
-      if (!seen.has(s.name) && m.address) seen.set(s.name, { ...s, url: `http://${m.address}:8479/v1/skins/${encodeURIComponent(s.name)}/sheet.png` });
+      if (!seen.has(s.name) && m.address) seen.set(s.name, { ...s, url: `http://${m.address}:8479/v1/skins/${encodeURIComponent(s.name)}/sheet.png${s.v ? '?v=' + s.v : ''}` });
   return [...seen.values()];
 }
 
+// The worn skin's sheet: one row per facing (walker skins) or a single row of frames side by side (older ones).
+let look = null;
+
 function wear() {
-  const pet = $('pet'), sprite = $('sprite');
+  const pet = $('pet'), sprite = $('sprite'), frame = $('frame');
   pet.classList.toggle('skinned', !!skin);
-  if (!skin) return;
-  sprite.style.backgroundImage = `url("${skin.url}")`;
-  sprite.classList.toggle('two', skin.frames > 1);
+  if (!skin) { look = null; return; }
+  const fs = skin.display || 96;
+  const frames = skin.frames || 1;
+  const next = { url: skin.url, fs, rows: skin.rows || ['down'], stand: skin.stand ?? 0,
+                 walk: skin.walk || (frames > 1 ? [...Array(frames).keys()] : [0]),
+                 // Columns in the sheet: from its size when the reporter sends it, else the image's own once loaded.
+                 cols: skin.sheet ? Math.round(skin.sheet[0] / (skin.frame?.[0] || 64)) : look?.url === skin.url ? look.cols : null };
+  look = next;
+  sprite.style.setProperty('--fs', fs + 'px');
+  frame.style.backgroundImage = `url("${skin.url}")`;
+  if (!next.cols) {
+    // How many columns the sheet has decides how far apart frames are once it's scaled.
+    const img = new Image();
+    img.onload = () => { if (look === next) { next.cols = Math.max(1, Math.round(img.naturalWidth / (skin.frame?.[0] || 64))); paint(); } };
+    img.src = skin.url;
+  }
+  paint();
 }
+
+/* Draws the frame for where it faces and how far through its step it is. A missing left or right row is the
+   other one mirrored. */
+function paint() {
+  if (!look) return;
+  const frame = $('frame');
+  let row = look.rows.indexOf(facing), mirror = 1;
+  if (row < 0) {
+    const other = { left: 'right', right: 'left' }[facing];
+    row = other ? look.rows.indexOf(other) : -1;
+    mirror = row >= 0 ? -1 : 1;
+    if (row < 0) row = 0;
+  }
+  const col = walking ? look.walk[step % look.walk.length] : look.stand;
+  const cols = look.cols || 1;
+  frame.style.backgroundSize = `${cols * look.fs}px ${look.rows.length * look.fs}px`;
+  frame.style.backgroundPosition = `${-col * look.fs}px ${-row * look.fs}px`;
+  frame.style.setProperty('--mirror', mirror);
+}
+
+// What is kept of a skin: enough to draw it before the first update arrives.
+const pick = s => ({ name: s.name, url: s.url, frames: s.frames, display: s.display, rows: s.rows, stand: s.stand, walk: s.walk, frame: s.frame, sheet: s.sheet });
 
 function renderLook(view) {
   const list = skins();
-  const sheep = `<svg viewBox="16 20 88 90">${document.querySelector('#sheep').outerHTML.replace('id="sheep"', '')}</svg>`;
+  const sheep = `<svg viewBox="16 20 88 90">${document.querySelector('#sheep').outerHTML.replace('id="sheep"', '')}</svg>`;  // a still copy
   let html = `<div class="looks"><button class="look ${skin ? '' : 'on'}" data-skin="">${sheep}Sheep</button>`;
   for (const s of list)
-    html += `<button class="look ${skin?.name === s.name ? 'on' : ''}" data-skin="${esc(s.name)}"><i style="background-image:url('${esc(s.url)}')"></i>${esc(s.name.replace(/-/g, ' '))}</button>`;
+  {
+    // The thumbnail is scaled like the pet draws it, so a small figure (Crono) isn't lost in its frame.
+    const size = Math.round(56 * (s.display || 96) / 96), inset = Math.round((size - 56) / 2);
+    const art = `background-image:url('${esc(s.url)}');background-size:auto ${size}px;background-position:-${inset}px -${size - 56}px`;
+    html += `<button class="look ${skin?.name === s.name ? 'on' : ''}" data-skin="${esc(s.name)}"><i style="${art}"></i>${esc(s.name.replace(/-/g, ' '))}</button>`;
+  }
   html += `</div>`;
+  const boxes = frames();
+  if (boxes.length) {
+    const now = frameUI()?.name ?? '';
+    html += `<div class="note">Speech bubble</div><div class="looks boxes"><button class="look ${now ? '' : 'on'}" data-box=""><b class="plain"></b>Plain</button>`;
+    for (const u of boxes)
+      html += `<button class="look ${now === u.name ? 'on' : ''}" data-box="${esc(u.name)}"><b style="background-image:url('${esc(u.url)}')"></b>${esc(u.name.replace(/^hgss-message-?/, 'HeartGold ').trim())}</button>`;
+    html += `</div>`;
+  }
   if (!list.length) html += `<div class="note">No skins yet. They live in pet/skins on a machine with ClaudeSync; the reporter there serves them.</div>`;
   view.innerHTML = html;
 }
 
 $('view').addEventListener('click', e => {
+  const box = e.target.closest('[data-box]');
+  if (box) { style = box.dataset.box; store.set('bubble', style); render(); return; }
   const pick = e.target.closest('[data-skin]');
   if (!pick) return;
   const s = skins().find(x => x.name === pick.dataset.skin);
-  skin = s ? { name: s.name, url: s.url, frames: s.frames } : null;
+  skin = s ? pick(s) : null;
   store.set('skin', skin); wear(); render();
   const pet = $('pet'); pet.classList.add('happy'); setTimeout(() => pet.classList.remove('happy'), 1100);
 });
@@ -399,24 +494,132 @@ function renderSend(view) {
   view.innerHTML = html;
 }
 
-/* ---------------------------------------------------------------- the sheep's mood */
-let bubbleTimer = null;
-function bubble(text, ms = 5000) {
-  const b = $('bubble'); b.textContent = text; b.classList.add('on');
-  clearTimeout(bubbleTimer); bubbleTimer = setTimeout(() => b.classList.remove('on'), ms);
+/* ---------------------------------------------------------------- what it says */
+let bubbleTimer = null, typing = null, bubbleFor = null;
+
+let style = store.get('bubble', null);   // the chosen speech-bubble frame's name, '' for the drawn box
+
+function frames() {
+  // Every speech-bubble frame the machines serve (pet/ui), each once.
+  const seen = new Map();
+  for (const m of data?.machines || [])
+    for (const u of m.report?.machine?.ui || [])
+      if (!seen.has(u.name) && m.address) seen.set(u.name, { ...u, url: `http://${m.address}:8479/v1/ui/${encodeURIComponent(u.name)}/frame.png${u.v ? '?v=' + u.v : ''}` });
+  return [...seen.values()];
 }
-function flash(text) { bubble(text, 1400); }
+
+function frameUI() {
+  // The chosen frame; with no choice yet, the game's default box ('…-message') when there is one.
+  const list = frames();
+  if (style === '') return null;
+  return list.find(u => u.name === style) || list.find(u => /-message$/.test(u.name)) || list[0] || null;
+}
+
+// The game's own font, when a reporter serves one (pet/ui/fonts): loaded once, used in the speech bubble at a
+// whole multiple of its pixel size so it stays crisp.
+let gameFont = null;
+function fontUI() {
+  for (const m of data?.machines || [])
+    for (const f of m.report?.machine?.fonts || [])
+      if (m.address) return { ...f, url: `http://${m.address}:8479/v1/fonts/${encodeURIComponent(f.name)}/font.ttf${f.v ? '?v=' + f.v : ''}` };
+  return null;
+}
+function loadFont() {
+  const f = fontUI();
+  if (!f || gameFont?.url === f.url || !window.FontFace) return;
+  gameFont = { ...f, ready: false };
+  const face = new FontFace(f.family || 'HerdGame', `url("${f.url}")`);
+  face.load().then(loaded => { document.fonts.add(loaded); if (gameFont.url === f.url) gameFont.ready = true; })
+    .catch(() => { gameFont = null; });
+}
+
+function dress() {
+  const b = $('bubble'), box = b.querySelector('.box'), ui = frameUI();
+  loadFont();
+  // One font pixel per CSS px: crisp on any screen, about the size the game's own box reads at.
+  const px = gameFont?.px || 16, zoom = 1;
+  const font = gameFont?.ready ? `font:400 ${px * zoom}px/${(px + 1) * zoom}px "${gameFont.family || 'HerdGame'}";-webkit-font-smoothing:none;letter-spacing:0;` : '';
+  const shade = colour => gameFont?.ready && gameFont.text_shadow
+    ? `text-shadow:${gameFont.text_shadow.map(([x, y]) => `${x * zoom}px ${y * zoom}px 0 ${colour}`).join(',')};`
+    : `text-shadow:1px 1px 0 ${colour};`;
+  b.classList.toggle('game-font', !!font);
+  b.classList.toggle('framed', !!ui);
+  if (!ui) { box.style.cssText = font; b.style.removeProperty('--tail-edge'); b.style.removeProperty('--tail-fill'); return; }
+  // The frame's white text area is the inside; its edge is drawn as the border, the same width on both sides.
+  const cut = ui.bubble?.slice || ui.slice, k = ui.scale || 2;
+  const [t, r, bt, l] = cut;
+  box.style.cssText = `border-width:${t * k}px ${r * k}px ${bt * k}px ${l * k}px;` +
+    `border-image:url("${ui.url}") ${t} ${r} ${bt} ${l} / ${t * k}px ${r * k}px ${bt * k}px ${l * k}px stretch;` +
+    `background:${ui.fill || '#fff'};background-clip:padding-box;padding:3px 6px 5px;` +
+    (ui.text ? `color:${ui.text};` : '') + (ui.shadow ? shade(ui.shadow) : '') + font;
+  if (ui.bubble?.edge) b.style.setProperty('--tail-edge', ui.bubble.edge);
+  if (ui.fill) b.style.setProperty('--tail-fill', ui.fill);
+  if (ui.edge) b.style.setProperty('--tail-edge', ui.edge);
+}
+
+/* Says something: who it's about, then the words typed out. Tapping it opens that session. It asks the shell for
+   room first, so the box is never cut off by the window. */
+function speak(who, text, { ms = 7000, id = null } = {}) {
+  if (document.body.classList.contains('open')) return;
+  if (native && !caps.room) return;   // a shell that can't make room would cut it off; the badge says enough
+  const b = $('bubble');
+  dress();
+  b.querySelector('.who').textContent = who || '';
+  b.querySelector('.who').style.display = who ? '' : 'none';
+  const say = b.querySelector('.say');
+  bubbleFor = id;
+  // Measured at full length, so the box doesn't grow while it types.
+  say.textContent = text; b.classList.remove('typed');
+  const height = b.querySelector('.box').offsetHeight + 12;
+  if (caps.room) shell({ cmd: 'room', w: 280, h: 132 + height });
+  say.textContent = '';
+  b.classList.add('on');
+  clearInterval(typing);
+  let i = 0;
+  typing = setInterval(() => {
+    i += 2;
+    say.textContent = text.slice(0, i);
+    if (i >= text.length) { clearInterval(typing); b.classList.add('typed'); }
+  }, 32);
+  clearTimeout(bubbleTimer);
+  bubbleTimer = setTimeout(hush, ms);
+}
+
+function hush() {
+  const b = $('bubble');
+  if (!b.classList.contains('on')) return;
+  b.classList.remove('on', 'typed'); clearInterval(typing); bubbleFor = null;
+  if (caps.room && !document.body.classList.contains('open')) setTimeout(() => { if (!b.classList.contains('on')) shell({ cmd: 'room' }); }, 180);
+}
+function flash(text) { speak('', text, { ms: 1400 }); }
+
+$('bubble').addEventListener('click', () => {
+  const id = bubbleFor;
+  hush();
+  toggle(true);
+  if (id) { job = 'agents'; detail = { id, loading: true }; render(); shell({ cmd: 'show', id }); if (!native) mockDetail(id); }
+});
+
+/* The first sentence of an agent's last words, short enough for the box. */
+function gist(text) {
+  const t = String(text || '').replace(/[*_`#>]/g, '').replace(/\s+/g, ' ').trim();
+  const first = (t.match(/^.{12,}?[.!?](\s|$)/) || [t])[0].trim();
+  return first.length > 120 ? first.slice(0, 117) + '…' : first;
+}
+
+/* ---------------------------------------------------------------- its mood, from the agents */
+let moodNow = 'idle';   // offline | alert | work | idle
 
 function mood() {
-  const pet = $('pet'), list = sessions();
+  const list = sessions();
   const need = list.filter(s => s.state === 'needs-you');
   const fresh = list.filter(isUnseen);
   const working = list.filter(s => s.state === 'working');
   const reached = (data?.machines || []).some(m => m.report);
-  const happy = pet.classList.contains('happy');
-  pet.className = !reached ? 'offline' : need.length ? 'alert' : working.length ? 'work' : 'sleep';
-  if (happy) pet.classList.add('happy');
-  if (skin) pet.classList.add('skinned');
+  const was = moodNow;
+  moodNow = !reached ? 'offline' : need.length ? 'alert' : working.length ? 'work' : 'idle';
+  if (was !== moodNow) nudge();
+  dressUp();
   const badge = $('badge'), count = need.length + fresh.length;
   badge.textContent = count; badge.className = count ? 'on' + (need.length ? '' : ' ready') : '';
   const parts = [];
@@ -431,14 +634,139 @@ function announce(list) {
   for (const s of list) {
     const was = previous[s.id];
     if (was && was !== s.state) {
-      if (s.state === 'needs-you') { bubble(`${s.title} needs you`); }
-      else if (s.state === 'your-turn' && was === 'working') {
-        bubble(`${s.title} is done`);
-        const pet = $('pet'); pet.classList.add('happy'); setTimeout(() => pet.classList.remove('happy'), 1100);
+      if (s.state === 'needs-you') {
+        face('down');
+        speak(s.title, 'Needs you! ' + (gist(s.last) || 'It\'s waiting on an answer.'), { ms: 9000, id: s.id });
+      } else if (s.state === 'your-turn' && was === 'working') {
+        face('down'); fx('happy', 1100);
+        speak(s.title, gist(s.last) || 'All done!', { ms: 8000, id: s.id });
       }
     }
   }
   previous = Object.fromEntries(list.map(s => [s.id, s.state]));
+}
+
+/* ---------------------------------------------------------------- its life: walking about, fidgets, naps */
+const caps = { stroll: false, room: false };   // what the shell can do for it; the Mac says so with herd.caps()
+const NAP_AFTER = 2 * 60 * 1000;              // this long with nothing happening, and it naps
+const ROAM = 220;                             // how far from where it was put down it wanders, in px
+let facing = 'down', walking = false, step = 0, stepper = null;
+let activity = 'stand';                       // stand | walk | fidget | nap | held
+let lastNudge = Date.now(), plan = null, life = 0;
+let roamed = 0;                               // px from where it was last put down (+ is right)
+let arrive = null;                            // resolves the stroll the shell is walking
+let blocked = 0;                              // the side it last bumped into (an edge of the screen): -1, 0 or 1
+const effects = new Set();
+
+const wait = ms => new Promise(go => setTimeout(go, ms));
+const chance = p => Math.random() < p;
+const between = (a, b) => a + Math.random() * (b - a);
+
+function dressUp() {
+  const pet = $('pet');
+  const visual = moodNow === 'offline' ? 'offline' : moodNow === 'alert' ? 'alert' : activity === 'nap' ? 'sleep' : moodNow === 'work' ? 'work' : '';
+  pet.className = [visual, skin ? 'skinned' : '', walking ? 'walking' : '', activity === 'held' ? 'held' : '', ...effects].filter(Boolean).join(' ');
+  pet.dataset.face = facing;
+}
+
+function fx(name, ms) { effects.add(name); dressUp(); setTimeout(() => { effects.delete(name); dressUp(); }, ms); }
+function face(where) { facing = where; paint(); dressUp(); }
+
+function startSteps() {
+  clearInterval(stepper);
+  const fps = look && look.walk.length >= 6 ? 11 : 7;
+  stepper = setInterval(() => { step++; paint(); }, 1000 / fps);
+}
+function stopSteps() { clearInterval(stepper); stepper = null; step = 0; }
+
+/* Something happened (an agent changed, a tap, a drop): wake up, and think again soon. */
+function nudge() {
+  lastNudge = Date.now();
+  life++;   // whatever it was in the middle of stops at its next beat
+  if (activity === 'nap') { activity = 'stand'; fx('stretch', 900); }
+  think(400);
+}
+
+/* Walks dx px sideways at speed px/s. The Mac moves its window along the screen; a page in a browser moves itself;
+   a shell that can't move it walks on the spot for a moment. Resolves with how far it really went. */
+function stroll(dx, speed) {
+  return new Promise(done => {
+    face(dx < 0 ? 'left' : 'right');
+    walking = true; activity = 'walk'; startSteps(); dressUp();
+    const finish = moved => {
+      if (!walking) return;
+      walking = false; stopSteps(); arrive = null; roamed += moved;
+      blocked = Math.abs(moved) < Math.abs(dx) * .3 ? Math.sign(dx) : 0;
+      if (activity === 'walk') activity = 'stand';
+      paint(); dressUp(); done(moved);
+    };
+    const takes = Math.abs(dx) / speed * 1000;
+    if (caps.stroll) {
+      arrive = finish;
+      shell({ cmd: 'stroll', dx: Math.round(dx), speed });
+      setTimeout(() => finish(dx), takes + 2500);   // in case the shell never answers
+    } else if (!native) {
+      const pet = $('pet'), room = Math.max(0, innerWidth - 140);
+      const to = Math.max(-room, Math.min(0, roamed + dx));
+      if (Math.abs(to - roamed) < 8) return finish(0);
+      pet.style.transition = `transform ${takes}ms linear`;
+      pet.style.transform = `translateX(${to}px)`;
+      setTimeout(() => finish(to - roamed), takes);
+    } else {
+      setTimeout(() => finish(0), Math.min(1400, takes));
+    }
+  });
+}
+
+/* The small things it does while standing about. */
+const fidgets = {
+  async lookAround(beat) {
+    for (const where of chance(.5) ? ['left', 'right'] : ['right', 'left']) {
+      face(where); await wait(between(500, 900)); if (beat !== life) return;
+    }
+    face('down');
+  },
+  async peek(beat) { face('up'); await wait(between(900, 1600)); if (beat === life) face('down'); },
+  async hop() { face('down'); fx('happy', 1100); await wait(1100); },
+  async stretch() { fx('stretch', 900); await wait(900); },
+};
+
+function pickFidget() {
+  const r = Math.random();
+  return r < .45 ? fidgets.lookAround : r < .7 ? fidgets.peek : r < .85 ? fidgets.stretch : fidgets.hop;
+}
+
+/* Its next beat: stand still, take a few steps, fidget, or nod off. One beat at a time; anything that happens in
+   between (nudge) starts a new one. */
+function think(ms) {
+  clearTimeout(plan);
+  plan = setTimeout(beat, ms);
+}
+
+async function beat() {
+  const mine = ++life;
+  const open = document.body.classList.contains('open'), talking = $('bubble').classList.contains('on');
+  if (activity === 'held' || walking) return think(1500);
+  if (open || talking || moodNow === 'offline') { if (facing !== 'down') face('down'); return think(2500); }
+  if (moodNow === 'alert') { face('down'); return think(3000); }
+  if (activity === 'nap') return think(20000);
+  if (moodNow === 'idle' && Date.now() - lastNudge > NAP_AFTER) {
+    face('down'); activity = 'nap'; dressUp(); return think(20000);
+  }
+  // Heads back toward where it was put down when it has strayed too far.
+  let homeward = Math.abs(roamed) > ROAM * .7 ? -Math.sign(roamed) : (chance(.5) ? 1 : -1);
+  if (homeward === blocked) homeward = -homeward;   // not into the edge it just bumped
+  if (moodNow === 'work') {
+    const r = Math.random();
+    if (r < .5) await stroll(homeward * between(30, 90), 70);
+    else if (r < .75) await fidgets.peek(mine);   // looking at its own screen
+    else { activity = 'fidget'; await pickFidget()(mine); activity = 'stand'; }
+    return mine === life && think(between(1200, 3500));
+  }
+  const r = Math.random();
+  if (r < .4) await stroll(homeward * between(60, ROAM), 38);
+  else if (r < .85) { activity = 'fidget'; await pickFidget()(mine); if (activity === 'fidget') activity = 'stand'; }
+  if (mine === life) think(between(3500, 9000));
 }
 
 function markSeen() {
@@ -453,7 +781,8 @@ window.herd = {
     const list = sessions();
     if (firstRun && !store.get('seen', null)) markSeen();
     announce(list);
-    if (skin) { const s = skins().find(x => x.name === skin.name); if (s && s.url !== skin.url) { skin = { name: s.name, url: s.url, frames: s.frames }; store.set('skin', skin); } wear(); }
+    loadFont();
+    if (skin) { const s = skins().find(x => x.name === skin.name); if (s && JSON.stringify(pick(s)) !== JSON.stringify(skin)) { skin = pick(s); store.set('skin', skin); wear(); } }
     if (document.body.classList.contains('open')) markSeen();
     mood();
     if (document.body.classList.contains('open') && !(detail && job === 'agents')) render();
@@ -466,10 +795,35 @@ window.herd = {
   drop(paths) {
     dropped = paths; job = 'send'; detail = null;
     if (!document.body.classList.contains('open')) toggle(true); else render();
-    bubble(paths.length + ' file' + (paths.length > 1 ? 's' : '') + ' — where to?', 2500);
+    nudge();
   },
-  sent(text) { const el = $('sendStatus'); if (el) el.textContent = text; if (/^Sent/.test(text)) { dropped = []; setTimeout(render, 1500); } bubble(text, 2500); },
-  tap() { toggle(); },
+  sent(text) { const el = $('sendStatus'); if (el) el.textContent = text; if (/^Sent/.test(text)) { dropped = []; setTimeout(render, 1500); } flash(text); },
+  tap() { nudge(); toggle(); },
+  // `herd say TEXT`: says it; an empty text says what's up.
+  say(text) { if (text) { nudge(); face('down'); speak('', String(text), { ms: 8000 }); } else herd.chat(); },
+  // "What's up?": says what the agents are doing, most urgent first.
+  chat() {
+    nudge();
+    const list = sessions(), need = list.filter(s => s.state === 'needs-you'), busy = list.filter(s => s.state === 'working');
+    const fresh = list.filter(isUnseen);
+    const top = need[0] || fresh[0] || busy[0];
+    const parts = [need.length && `${need.length} need${need.length > 1 ? '' : 's'} you`, fresh.length && `${fresh.length} just finished`,
+                   busy.length && `${busy.length} working`].filter(Boolean);
+    if (!top) return speak('', moodNow === 'offline' ? "I can't reach the herd. Is Tailscale on?" : 'All quiet. Nobody is working right now.');
+    speak(top.title, (parts.join(', ') + '. ').replace(/^./, c => c.toUpperCase()) + (gist(top.last) || ''), { ms: 9000, id: top.id });
+  },
+  // The shell's abilities: {stroll: it can walk the window along the screen, room: it can grow for the bubble}.
+  caps(c) { Object.assign(caps, typeof c === 'string' ? JSON.parse(c) : c); },
+  // A stroll the shell walked is over; moved is how far it got (less than asked at the screen's edge).
+  arrived(r) { const moved = (typeof r === 'string' ? JSON.parse(r) : r)?.moved ?? 0; if (arrive) arrive(moved); },
+  // Which side of the window the pet stands on: the shell grows the window away from the screen's edge.
+  side(s) { document.body.classList.toggle('left', s === 'left'); },
+  // Being carried (true) and put down (false). Where it's put down becomes its new home ground.
+  held(on) {
+    if (on) { if (walking && arrive) arrive(0); activity = 'held'; face('down'); }
+    else { activity = 'stand'; roamed = 0; fx('landed', 400); nudge(); setTimeout(() => fidgets.lookAround(life), 500); }
+    dressUp();
+  },
 };
 
 // The room the window gives, measured: Android's WebView keeps 100vh at the size it was when the page loaded, so a
@@ -481,9 +835,9 @@ measure();
 function toggle(force) {
   const open = force ?? !document.body.classList.contains('open');
   document.body.classList.toggle('open', open);
-  say({ cmd: open ? 'expand' : 'collapse' });
+  shell({ cmd: open ? 'expand' : 'collapse' });
   for (const wait of [0, 50, 200, 500]) setTimeout(measure, wait);   // the view grows a moment after it's asked to
-  if (open) { markSeen(); mood(); render(); $('bubble').classList.remove('on'); }
+  if (open) { markSeen(); mood(); render(); hush(); }
 }
 $('close').addEventListener('click', () => toggle(false));
 wear();
@@ -492,7 +846,8 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') toggle(false
 const pet = $('pet');
 // On the Mac the shell owns presses on the sheep (tap, drag, menu) and calls herd.tap(); elsewhere a click is a tap.
 const shellOwnsSheep = !!window.webkit?.messageHandlers?.herd;
-pet.addEventListener('click', () => { if (!shellOwnsSheep) toggle(); });
+pet.addEventListener('click', () => { if (!shellOwnsSheep) { nudge(); toggle(); } });
+think(1500);
 pet.addEventListener('contextmenu', e => e.preventDefault());
 
 /* ---------------------------------------------------------------- preview in a browser, with sample data */
@@ -505,7 +860,8 @@ if (!native) {
   const now = Date.now() / 1000;
   herd.update({ machines: [
     { name: 'macbook-pro', self: true, address: '100.105.137.74', report: { machine: { load: 3.1, remote_control: [],
-      skins: ['pikachu', 'mudkip', 'gengar', 'eevee', 'torchic'].map(name => ({ name, frames: 2 })).concat([{ name: 'charmander-firered', frames: 1 }]) }, sessions: [
+      skins: [{ name: 'crono', frames: 7, frame: [64, 64], display: 160, rows: ['down', 'up', 'left', 'right'], stand: 0, walk: [1, 2, 3, 4, 5, 6] }]
+        .concat(['pikachu', 'mudkip', 'gengar', 'eevee', 'torchic'].map(name => ({ name, frames: 2 }))) }, sessions: [
       { id: 'add7d44a', title: 'Agent/machine visibility tool', project: 'herd', app: 'desktop', kind: 'claude', state: 'working', updated: now - 5, cwd: '/Users/jackkim/ClaudeSync/projects/herd' },
       { id: 'b4ba7534', title: 'Trading view widget planning', project: 'omalauncher', app: 'desktop', kind: 'claude', state: 'your-turn', updated: now - 7200, cwd: '/Users/jackkim/ClaudeSync/projects/omalauncher' }] } },
     { name: 'jacks-mac-pro', report: { machine: { load: 2.5, remote_control: ['Mac Pro'] }, sessions: [
