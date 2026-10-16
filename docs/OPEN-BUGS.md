@@ -5,6 +5,10 @@ better?" about the keyboard work was answered by the front agent (Haiku), with r
 "Yeah, let's do it" then reached the builder without the front agent's answer it agreed to, so the ring was missed
 until he said so. Two gaps: rule (6) doesn't catch "what do you think / which is better" reliably, and a hand-over
 after a front-agent answer should carry that answer as context.
+   **Fixed 2026-10-15 ~20:20, promoted:** forTheBuilder (FrontAgent.kt) sends a view/choice question past the front
+   agent while a builder works or worked in the last 30 min, on the chat and the voice path; AgentTasks.direct puts the
+   front agent's exchanges since that builder last heard from him before anything sent to it directly (pictures, a
+   screenshot, those questions). FrontAgentTest pins both. Not yet seen on the phone.
 
 **Whisper voice input (2026-10-14 ~23:40), built, not yet seen on the phone.** whisper.cpp 1.9.5 (CPU-only, vendored in
 app/src/main/cpp/whisper.cpp) runs inside Oma: the fast base.en model reads the audio twice a second while Boss
