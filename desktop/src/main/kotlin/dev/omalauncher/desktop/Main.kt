@@ -93,7 +93,9 @@ fun main(args: Array<String>) {
     val front = DesktopFrontAgent(engine, platform, notices, door = door, shim = CanvasDoor.shim(SomaHome.bin))
     val host = DesktopChatHost(platform, engine, front, notices)
     canvas.setAside?.let { notices.say("Soma", "The canvas's saved layout couldn't be read, so it was set aside as ${it.name} and the starting page was laid out.") }
-    val source = chatHostModules(host, cockpitFeeds(), handoffs = engine::handoffs, registry = engine::projects)
+    // What widgets wait for his OK on here (slice 7b) is in Needs you beside the threads' asks.
+    val gate = dev.omalauncher.widgets.runtime.CommandGate(SomaHome.approved, SomaHome.machine)
+    val source = dev.omalauncher.canvas.withWidgetAsks(chatHostModules(host, cockpitFeeds(), handoffs = engine::handoffs, registry = engine::projects), gate)
     val tick = mutableStateOf(0L)
     // Two loops: the look, which only reads what the app holds, never waits on the slower feeds, whose reads can take a while.
     thread(name = "soma-modules", isDaemon = true) {

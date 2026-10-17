@@ -42,7 +42,14 @@ fun moduleSize(w: Int, h: Int, columns: Int): ModuleSize = when {
  * Something that waits for Boss, from any thread: a thread's tool on a computer, or a phone builder's. [title] and [detail]
  * are what the chat's own card says; [threadKey] is the tab the thread has; [ref] is what answering needs, kept opaque.
  */
-data class ModuleAsk(val id: String, val title: String, val detail: String, val threadKey: String, val where: String, internal val ref: Any)
+data class ModuleAsk(
+    val id: String, val title: String, val detail: String, val threadKey: String, val where: String, internal val ref: Any,
+    /**
+     * What is approved is [detail] itself (a command a widget would run): approve and deny are offered only where it is
+     * shown whole, never beside a line cut short.
+     */
+    val wholeDetail: Boolean = false,
+)
 
 /**
  * What the modules read and the one thing they do: answer an ask, on his tap. Needs you lists approvals, the things he can

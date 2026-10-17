@@ -60,7 +60,7 @@ class WatchlistHostsTest {
 
     private fun watchlist(asked: MutableList<String> = ArrayList()): WidgetInstance {
         val program = Compiler.compile(File(widgets, "examples/86-watchlist.owl").readText())
-        val services = DesktopWidgetServices { url, _, _ -> asked += url; ShellResult(quotes.getValue(url.substringAfter("/chart/").substringBefore("?")), "", 200) }
+        val services = testServices { url, _, _ -> asked += url; ShellResult(quotes.getValue(url.substringAfter("/chart/").substringBefore("?")), "", 200) }
         return WidgetInstance(program, services, onError = { errors += it })
     }
 
@@ -135,4 +135,8 @@ class WatchlistHostsTest {
             for (y in 0 until img.height) for (x in 0 until img.width) setRGB(x, y, px[x, y].toArgb())
         }
     }
+
+    /** HTTP from [get]; every command waits for an OK that never comes in these tests, so none runs. */
+    private fun testServices(get: (String, Map<String, String>, Int) -> ShellResult) =
+        DesktopWidgetServices.gated(dev.omalauncher.widgets.runtime.CommandGate(java.nio.file.Files.createTempDirectory("gate").toFile().resolve("approved.json"), "test"), "test.owl", get = get)
 }

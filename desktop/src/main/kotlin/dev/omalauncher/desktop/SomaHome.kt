@@ -21,6 +21,12 @@ object SomaHome {
     val canvas get() = File(dir, "canvas.json")
     val socket get() = File(dir, "soma.port")
 
+    /** This machine's run-time approvals for widget commands (CommandGate): written only by his tap here or his signed OK. */
+    val approved get() = File(dir, "approved.json")
+
+    /** Widget files from elsewhere, each in quarantine until he approves it here (WidgetLibrary). */
+    val library get() = File(dir, "widgets")
+
     /** Where the `soma` the front agent runs is put (CanvasDoor.shim): first on its PATH. */
     val bin get() = File(dir, "bin")
     val lock get() = File(dir, "soma.lock")
@@ -30,6 +36,15 @@ object SomaHome {
      * where he moves one Taildropped from another runner. Never ~/Downloads or ~/Inbox, where any download could land.
      */
     val delivered: List<File> get() = listOf(File(dir, "runners"))
+
+    /**
+     * This machine's name, as a signed approval names it and the runner knows it (OMA_RUNNER_SELF when set): the host name,
+     * lower case, without the ".local" a network may or may not add, so it doesn't change with the network.
+     */
+    val machine: String by lazy {
+        System.getenv("OMA_RUNNER_SELF")?.ifBlank { null }
+            ?: runCatching { java.net.InetAddress.getLocalHost().hostName }.getOrDefault("desktop").lowercase().removeSuffix(".local").removeSuffix(".lan")
+    }
 
     /** A small JSON file's object, or an empty one. */
     fun read(file: File): JSONObject = runCatching { JSONObject(file.readText()) }.getOrDefault(JSONObject())

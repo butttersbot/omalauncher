@@ -56,7 +56,7 @@ class WidgetHostsTest {
 
     private fun watchlist(asked: MutableList<String> = ArrayList()): WidgetInstance {
         val program = Compiler.compile(File(widgets, "examples/86-watchlist.owl").readText())
-        val services = DesktopWidgetServices { url, _, _ -> asked += url; ShellResult(quotes, "", 200) }
+        val services = testServices { url, _, _ -> asked += url; ShellResult(quotes, "", 200) }
         return WidgetInstance(program, services, onError = { errors += it })
     }
 
@@ -64,14 +64,14 @@ class WidgetHostsTest {
         val web = Compiler.compile("widget \"chart\" {\n  size: 3x2\n  meta { owl: 6 }\n  Web { src: \"https://s.tradingview.com/widgetembed/\" }\n}")
         assertTrue(hostRefusals(web, OwlHost.Desktop).isNotEmpty())
         assertTrue(hostRefusals(web, OwlHost.Service).isNotEmpty())
-        val inst = WidgetInstance(web, DesktopWidgetServices { _, _, _ -> error("no request") }, onError = {})
+        val inst = WidgetInstance(web, testServices { _, _, _ -> error("no request") }, onError = {})
         setContent { Box(Modifier.size(300.dp, 200.dp)) { WidgetContent(inst, Modifier.fillMaxSize()) } }
         onNodeWithText("Web doesn't draw on desktop").assertExists()
     }
 
     @Test fun noGuestPathReachesThisComputersFiles() {
         val real = java.nio.file.Files.createTempFile("host", ".png").toFile()
-        val services = DesktopWidgetServices { _, _, _ -> error("no request") }
+        val services = testServices { _, _, _ -> error("no request") }
         // Round-1 review: a rooted path ("//…") once resolved to the host's own file.
         for (path in listOf(real.path, "/" + real.path, "//" + real.path, "~/x.png", "../../" + real.path, "")) assertFalse(path, services.guestFile(path).exists())
     }
@@ -84,7 +84,7 @@ class WidgetHostsTest {
         assertTrue(drawable.size > 15)
         val errors = ArrayList<String>()
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-        val insts = drawable.map { (f, p) -> WidgetInstance(p, DesktopWidgetServices { _, _, _ -> ShellResult("", "offline in the test", -1) }, onError = { errors += "${f.name}: $it" }).also { it.start(scope) { true } } }
+        val insts = drawable.map { (f, p) -> WidgetInstance(p, testServices { _, _, _ -> ShellResult("", "offline in the test", -1) }, onError = { errors += "${f.name}: $it" }).also { it.start(scope) { true } } }
         setContent {
             androidx.compose.foundation.layout.Column {
                 for (inst in insts) Box(Modifier.size(240.dp, 120.dp)) { WidgetContent(inst, Modifier.fillMaxSize(), cells = 3 to 2) }
@@ -97,6 +97,10 @@ class WidgetHostsTest {
         }
         scope.cancel()
         // What a widget says when its data can't be had is its own; a crash, or an error from drawing, is not.
-        assertEquals(emptyList<String>(), errors.filter { "offline in the test" !in it && "commands run here once approved" !in it && "request failed" !in it })
+        assertEquals(emptyList<String>(), errors.filter { "offline in the test" !in it && "waiting for your OK" !in it && "request failed" !in it })
     }
+
+    /** HTTP from [get]; every command waits for an OK that never comes in these tests, so none runs. */
+    private fun testServices(get: (String, Map<String, String>, Int) -> ShellResult) =
+        DesktopWidgetServices.gated(dev.omalauncher.widgets.runtime.CommandGate(java.nio.file.Files.createTempDirectory("gate").toFile().resolve("approved.json"), "test"), "test.owl", get = get)
 }

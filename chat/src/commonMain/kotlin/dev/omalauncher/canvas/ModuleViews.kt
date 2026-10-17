@@ -253,6 +253,8 @@ fun NeedsYouModule(asks: List<ModuleAsk>, size: ModuleSize, modifier: Modifier =
                         Spacer(Modifier.width(6.dp))
                         BasicText("${asks.size} waiting · open", style = Pack.body(), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
+                    // A command can't be read on one line: it is approved where it shows whole.
+                    first.wholeDetail -> BasicText("${first.title} · make Needs you bigger to read it", style = Pack.body(), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     else -> Row(verticalAlignment = Alignment.CenterVertically) {
                         BasicText(first.title, Modifier.weight(1f), style = Pack.body(), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Answers(first, { allow -> answer(first, allow) }) { onOpen(first.threadKey) }
@@ -268,8 +270,16 @@ fun NeedsYouModule(asks: List<ModuleAsk>, size: ModuleSize, modifier: Modifier =
                         val ask = asks[i]
                         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             BasicText(ask.title, Modifier.clickable { onOpen(ask.threadKey) }, style = Pack.body(), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            if (size == ModuleSize.Full) BasicText(ask.detail, style = Pack.mono(Pack.size.small, Pack.muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Answers(ask, { allow -> answer(ask, allow) }) { onOpen(ask.threadKey) }
+                            if (ask.wholeDetail) {
+                                // The command whole, or no approve: one cut short by the room here is never approved unread.
+                                var cut by remember(ask.id) { mutableStateOf(false) }
+                                BasicText(ask.detail, style = Pack.mono(Pack.size.small, Pack.foreground), maxLines = 8, overflow = TextOverflow.Ellipsis, onTextLayout = { cut = it.hasVisualOverflow })
+                                if (cut) BasicText("too long to read here: make Needs you bigger", style = Pack.body(Pack.size.small, Pack.muted), maxLines = 1)
+                                else Answers(ask, { allow -> answer(ask, allow) }) { onOpen(ask.threadKey) }
+                            } else {
+                                if (size == ModuleSize.Full) BasicText(ask.detail, style = Pack.mono(Pack.size.small, Pack.muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Answers(ask, { allow -> answer(ask, allow) }) { onOpen(ask.threadKey) }
+                            }
                         }
                     }
                 }
