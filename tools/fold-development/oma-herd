@@ -86,8 +86,13 @@ def sessions():
 
 def machine():
     info = {'host': HOST_NAME, 'os': 'android', 'herd': VERSION}
+    # proot's /proc/uptime stands still; the boot time in /proc/stat is the phone's own.
     try:
-        info['up'] = int(float(open('/proc/uptime').read().split()[0]))
+        boot = next(int(line.split()[1]) for line in open('/proc/stat') if line.startswith('btime '))
+        info['up'] = int(time.time()) - boot
+    except (OSError, StopIteration, ValueError):
+        pass
+    try:
         info['load'] = round(os.getloadavg()[0], 2)
     except OSError:
         pass
