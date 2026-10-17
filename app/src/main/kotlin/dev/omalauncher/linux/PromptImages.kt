@@ -6,7 +6,6 @@ import java.io.File
 import java.io.InputStream
 import java.util.UUID
 
-const val MAX_PROMPT_IMAGES = 4
 const val MAX_PROMPT_IMAGE_BYTES = 20L * 1024 * 1024
 
 data class PromptImage(val file: File, val guestPath: String)

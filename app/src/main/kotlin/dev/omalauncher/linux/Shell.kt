@@ -1,8 +1,5 @@
 package dev.omalauncher.linux
 
-/** [s] as one single-quoted shell word. */
-fun shellQuote(s: String) = "'" + s.replace("'", "'\\''") + "'"
-
 /**
  * Installs [packages] with a full sync, never a partial upgrade, then drops
  * the downloaded packages: storage on phones is tight. [refresh] re-downloads

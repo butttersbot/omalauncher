@@ -88,8 +88,7 @@ class MotionSourceCheckTest {
         // And the one decision about "remove animations" is asked from the one place that reads the system's setting.
         assertEquals(1, motion.count { "areAnimatorsEnabled" in it })
         assertTrue(motion.any { "reducedMotion(" in it && "areAnimatorsEnabled" in it })
-        val root = moduleFile("src/main/kotlin/dev/omalauncher")
-        val asks = listOf("ui", "oma").flatMap { File(root, it).walkTopDown().filter { f -> f.extension == "kt" } }.filter { file -> code(file).any { "areAnimatorsEnabled" in it || "ANIMATOR_DURATION_SCALE" in it } }
+        val asks = dev.omalauncher.theme.pack.mainSources("ui", "oma").filter { file -> code(file).any { "areAnimatorsEnabled" in it || "ANIMATOR_DURATION_SCALE" in it } }
         assertEquals(listOf("Motion.kt"), asks.map { it.name })
     }
 

@@ -93,8 +93,8 @@ class PackSourceCheckTest {
         val root = moduleFile("src/main/kotlin/dev/omalauncher")
         assertTrue("the launcher's sources aren't at $root", File(root, "ui").isDirectory)
         // oma/ arrives with a later slice.
-        val files = listOf("ui", "oma").map { File(root, it) }.filter { it.isDirectory }.flatMap { dir -> dir.walkTopDown().filter { it.extension == "kt" } }
-        val found = files.associate { it.relativeTo(root).invariantSeparatorsPath to uses(it) }.filterValues { it.isNotEmpty() }.toSortedMap()
+        val files = mainSources("ui", "oma")
+        val found = files.associate { mainSourcePath(it) to uses(it) }.filterValues { it.isNotEmpty() }.toSortedMap()
 
         val total = found.values.sumOf { it.values.sum() }
         val own = found[definitions]?.values?.sum() ?: 0
@@ -120,7 +120,7 @@ class PackSourceCheckTest {
         // Where home lays out by a gap, it is the fixed one.
         val gap = Regex("""shape\s*\.\s*gap""")
         val reads =
-            listOf("ui", "oma").flatMap { File(root, it).walkTopDown().filter { f -> f.extension == "kt" } }.filter { file ->
+            mainSources("ui", "oma").filter { file ->
                 file.readLines().map { it.trim() }.any { !it.startsWith("*") && !it.startsWith("//") && !it.startsWith("/*") && gap.containsMatchIn(it) }
             }
         assertEquals(emptyList<String>(), reads.map { it.name })

@@ -22,12 +22,6 @@ import org.json.JSONObject
 /** What the page the launcher keeps for thread tiles is called. A page he renames is no longer it. */
 const val AGENTS_PAGE = "Agents"
 
-/** How long a thread's tile stays once the thread is idle. */
-const val AGENT_TILE_IDLE_HOURS = 12
-
-/** How long before it leaves a tile is drawn faded, so its going is not a surprise. */
-const val AGENT_TILE_FADE_HOURS = 1
-
 /** A new thread tile's cells across and down: two side by side on the six columns, with room for its five lines. */
 val AGENT_TILE_SIZE = 3 to 3
 
@@ -55,40 +49,8 @@ fun tileThread(key: String): String? = key.takeIf(::isThreadTile)?.removePrefix(
 /** The id of the page thread tiles are kept on: the first one called [AGENTS_PAGE], whatever its capitals; null when there is none. */
 fun agentsPage(pages: List<PageLabel>): String? = pages.firstOrNull { it.name.equals(AGENTS_PAGE, ignoreCase = true) }?.id
 
-/** Whether a tile shows, and how. */
-enum class TileLife { Stays, Fading, Gone }
-
-private const val HOUR_MS = 3_600_000L
-
 /** How old a busy thread's stamp gets before it is written again: far less than the hour a tile fades over. */
 const val STAMP_EVERY_MS = 60_000L
-
-/**
- * What becomes of the tile of a thread in [state] that was last busy at [busy] (null if it never was, as far
- * as the phone knows). It never leaves while the thread works, has requests queued or waits for his OK. Idle, or
- * ended in a failure that nothing is waiting on, it stays [AGENT_TILE_IDLE_HOURS], faded for the last
- * [AGENT_TILE_FADE_HOURS], then goes: a red tile that stayed until he sent that thread something again would pile up.
- */
-fun tileLife(state: ThreadState, busy: Long?, now: Long): TileLife {
-    if (state.active && state != ThreadState.Attention) return TileLife.Stays
-    if (state == ThreadState.Attention && busy == null) return TileLife.Stays
-    val idle = now - (busy ?: return TileLife.Gone)
-    return when {
-        idle >= AGENT_TILE_IDLE_HOURS * HOUR_MS -> TileLife.Gone
-        idle >= (AGENT_TILE_IDLE_HOURS - AGENT_TILE_FADE_HOURS) * HOUR_MS -> TileLife.Fading
-        else -> TileLife.Stays
-    }
-}
-
-/**
- * Whether a thread is shown at all, by its dot and tab in the chat and its tile on home alike: [archived] never,
- * [pinned] always, any other by [tileLife]. [busy] is when it was last busy ([lastBusy]).
- */
-fun threadLife(state: ThreadState, busy: Long?, now: Long, pinned: Boolean, archived: Boolean): TileLife = when {
-    archived -> TileLife.Gone
-    pinned -> TileLife.Stays
-    else -> tileLife(state, busy, now)
-}
 
 /** When [thread] was last busy as far as the phone knows: when it last worked, or when it was last seen busy ([stamp]). */
 fun lastBusy(thread: AgentThread, stamp: TileStamp?): Long? = listOfNotNull(thread.worked, stamp?.busy).maxOrNull()

@@ -34,6 +34,24 @@ fun loadPack(
     vararg files: String,
 ) = PackLoader.load(packOf(manifest, *files), "test")
 
+/**
+ * The launcher's main source roots: the app's, and the shared chat module's (Soma's chat, which the Mac app shares;
+ * cockpit/DESIGN.md). A test that reads the sources to pin a rule reads both, or a file moved to the module drops
+ * out of its sight without the test failing.
+ */
+fun mainSourceRoots(): List<File> = listOf(moduleFile("src/main/kotlin/dev/omalauncher"), moduleFile("../chat/src/commonMain/kotlin/dev/omalauncher"))
+
+/** Every Kotlin source under [dirs] of each main root ([mainSourceRoots]), or under the whole roots when none is named. */
+fun mainSources(vararg dirs: String): List<File> = mainSourceRoots().flatMap { root ->
+    (if (dirs.isEmpty()) listOf(root) else dirs.map { File(root, it) }).flatMap { it.walkTopDown().filter { f -> f.extension == "kt" }.toList() }
+}
+
+/** The main source at [path] (as "assist/MacThreads.kt"), in whichever root has it. */
+fun mainSource(path: String): File = mainSourceRoots().map { File(it, path) }.firstOrNull { it.isFile } ?: File(mainSourceRoots().first(), path)
+
+/** [file]'s path under the main root it is in, as "assist/MacThreads.kt". */
+fun mainSourcePath(file: File): String = mainSourceRoots().first { file.canonicalPath.startsWith(it.canonicalPath + File.separator) }.let { file.relativeTo(it).invariantSeparatorsPath }
+
 /** A file of the app module, whichever directory Gradle runs the tests from. */
 fun moduleFile(path: String): File = listOf(File(path), File("app", path)).firstOrNull { it.exists() } ?: File(path)
 

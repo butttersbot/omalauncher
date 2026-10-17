@@ -332,7 +332,7 @@ class NotePlacementTest {
 
     @Test fun nothingPlacesANoteButThePlacing() {
         // The cascade that knew nothing of the tiles is gone, and every maker of a note or sticker asks the board.
-        val sources = java.io.File("src/main/kotlin/dev/omalauncher").walkTopDown().filter { it.extension == "kt" }.toList()
+        val sources = dev.omalauncher.theme.pack.mainSources()
         assertTrue(sources.none { it.readText().contains("cascade(") })
         val book = java.io.File("src/main/kotlin/dev/omalauncher/widgets/annotations/AnnotationBook.kt").readText()
         assertTrue(book.substringAfter("fun addNote(").substringBefore("fun changeNote(").contains("board(page).noteSpot("))

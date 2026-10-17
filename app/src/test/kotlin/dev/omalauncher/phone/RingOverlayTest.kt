@@ -99,7 +99,7 @@ class RingOverlayTest {
     @Test fun nothingInTheAppWritesTheSettingOrReadsItElsewhere() {
         val root = moduleFile("src/main/kotlin/dev/omalauncher")
         assertTrue("the launcher's sources aren't at $root", File(root, "phone/RingOverlay.kt").isFile)
-        val sources = root.walkTopDown().filter { it.extension == "kt" }.associate { it.relativeTo(root).invariantSeparatorsPath to it.readText() }
+        val sources = dev.omalauncher.theme.pack.mainSources().associate { dev.omalauncher.theme.pack.mainSourcePath(it) to it.readText() }
         fun count(text: String, what: String) = text.windowed(what.length).count { it == what }
 
         val home = "phone/RingOverlay.kt"

@@ -350,17 +350,9 @@ class ChatDrafts(private val list: File, private val attachments: File) {
 
         @Volatile private var shared: ChatDrafts? = null
 
-        fun of(context: android.content.Context): ChatDrafts = shared ?: synchronized(this) {
-            shared ?: ChatDrafts(File(context.filesDir, "oma-chat-drafts.txt"), File(context.filesDir, "attachments")).also { shared = it }
+        /** The one list, in the app's private files ([filesDir]); the phone app reaches it with `ChatDrafts.of(context)`. */
+        fun of(filesDir: File): ChatDrafts = shared ?: synchronized(this) {
+            shared ?: ChatDrafts(File(filesDir, "oma-chat-drafts.txt"), File(filesDir, "attachments")).also { shared = it }
         }
-    }
-}
-
-/** The one thread of the Oma app. */
-object ChatLog {
-    @Volatile private var store: ChatStore? = null
-
-    fun of(context: android.content.Context): ChatStore = store ?: synchronized(this) {
-        store ?: ChatStore(File(context.filesDir, "oma-chat.json")).also { it.load(); store = it }
     }
 }

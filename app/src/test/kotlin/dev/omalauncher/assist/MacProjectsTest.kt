@@ -43,7 +43,7 @@ class MacProjectsTest {
         assertEquals(listOf("Start", "NotSetUp", "Unreachable"), ChatPlace.entries.map { it.name })
         assertEquals("Mac unreachable — this chat is for the Mac.", MAC_CHAT_UNREACHABLE)
         // Nothing in the launcher writes the question any more, nor reads an answer to it.
-        val sources = moduleFile("src/main/kotlin").walkTopDown().filter { it.extension == "kt" }.map { it.readText() }.toList()
+        val sources = dev.omalauncher.theme.pack.mainSources().map { it.readText() }
         for (gone in listOf("Which project on the Mac", "askProject", "ChatProject", "macPickProject")) assertTrue(gone, sources.none { it.contains(gone) })
     }
 

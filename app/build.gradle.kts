@@ -83,6 +83,8 @@ dependencies {
     implementation(libs.androidsvg)
     implementation(libs.zxing.core)
     implementation(project(":owl"))
+    // Soma's chat, shared with the Mac app (cockpit/DESIGN.md).
+    implementation(project(":chat"))
     testImplementation(libs.junit)
     // android.jar only has stubs of org.json.
     testImplementation(libs.org.json)

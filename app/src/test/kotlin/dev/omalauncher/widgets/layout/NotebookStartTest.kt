@@ -772,9 +772,8 @@ class NotebookStartTest {
      * source check, since no JVM test can open a phone's preferences. Other files open what preferences they like.
      */
     @Test fun onlyTheNotebookPrefsOpenTheLayoutStoresAndTheOldOnesOnlyToRead() {
-        val root = File("src/main/kotlin/dev/omalauncher")
         val layout = setOf("widget_grid", "shortcuts", "widget_pages", "dock", "notebook")
-        val sources = root.walkTopDown().filter { it.extension == "kt" }.associate { it.name to it.readText() }
+        val sources = dev.omalauncher.theme.pack.mainSources().associate { it.name to it.readText() }
         val constants = sources.values.flatMap { constantsOf(it).entries }.groupBy({ it.key }, { it.value }).mapValues { it.value.flatten().toSet() }
         val opened = sources.flatMap { (file, text) -> opens(text, constants).map { file to it } }
         assertTrue(opened.size > 5)

@@ -1,12 +1,10 @@
 package dev.omalauncher.assist
 
-import android.content.Context
 import dev.omalauncher.oma.ChatHistory
 import dev.omalauncher.oma.ChatTask
 import dev.omalauncher.oma.TaskStatus
 import dev.omalauncher.oma.UNDECIDED_AGENT
 import org.json.JSONObject
-import java.io.File
 
 // Boss talks to one Oma (Boss, 2026-10-13). The front agent, which is the fast model of [QuickLane], hears a
 // request first and does one of two things (Boss, 2026-10-14: "Shrink the front agent to two jobs: answer, or
@@ -675,19 +673,3 @@ fun routingCorrection(time: Long, request: String, was: String = FRONT_ANSWERED)
 
 /** The log with [line] added, keeping the newest [ROUTING_LOG_LINES]. */
 fun routingLog(lines: List<String>, line: String): List<String> = (lines.filter { it.isNotBlank() } + line).takeLast(ROUTING_LOG_LINES)
-
-/**
- * The requests that did not go where he wanted at the first try: ones the front agent answered that he then
- * sent to build, ones it handed to a thread that is not there, and ones he had to send to the Mac a second
- * time. [was] says which. Kept in the app's private files so they can be counted and fed back as examples.
- * Nothing reads it yet.
- */
-object RoutingLog {
-    @Synchronized fun corrected(context: Context, request: String, was: String = FRONT_ANSWERED) {
-        runCatching {
-            val file = File(context.filesDir, "oma-routing.jsonl")
-            val kept = if (file.isFile) file.readLines() else emptyList()
-            file.writeText(routingLog(kept, routingCorrection(System.currentTimeMillis(), request, was)).joinToString("\n", postfix = "\n"))
-        }
-    }
-}

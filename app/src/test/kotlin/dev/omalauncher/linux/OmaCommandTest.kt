@@ -50,7 +50,7 @@ class OmaCommandTest {
         assertEquals(File(rootfs, "usr/local/lib/oma/keep"), keep.file); assertEquals(Policy.Owned, keep.policy); assertTrue(keep.executable)
         for ((source, lib, script) in listOf(
             Triple("assist/MacThreads.kt", "thread", "oma-thread.sh"),
-            Triple("assist/BuilderHealth.kt", "agents", "oma-agents.sh"),
+            Triple("assist/BuilderWatch.kt", "agents", "oma-agents.sh"),
         )) {
             val text = moduleFile("src/main/kotlin/dev/omalauncher/$source").readText()
             assertTrue(source, text.contains("Managed(File(rootfs, \"$OMA_LIB/$lib\"), Policy.Owned, executable = true) { context.assets.open(\"$script\")"))
