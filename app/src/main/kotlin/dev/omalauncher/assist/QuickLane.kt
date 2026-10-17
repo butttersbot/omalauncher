@@ -260,7 +260,7 @@ object QuickLane {
                                 FrontRoute.Build -> pass(context, asked, prompt, page, away, asking)
                                 FrontRoute.Errand -> pass(context, asked, prompt, page, away, asking, errand = true)
                                 is FrontRoute.Mac -> passToMac(context, asked, prompt, route.thread, away, route.fresh)
-                                is FrontRoute.Unknown -> unplaced(context, asked, prompt, away)
+                                is FrontRoute.Unknown -> unplaced(context, asked, prompt, away, route.named, mac?.threads?.map { it.id }.orEmpty())
                             }
                             session?.let { next = it }
                             RunEnd.end(child)
@@ -386,9 +386,11 @@ object QuickLane {
      * phone work after all. A new chat's words never come here: they go to the Mac ([toChat]). Noted in the
      * routing log. False if he stopped it first.
      */
-    private fun unplaced(context: Context, asked: Long, prompt: String, away: Boolean): Boolean = synchronized(this) {
+    private fun unplaced(context: Context, asked: Long, prompt: String, away: Boolean, named: String, board: List<String>): Boolean = synchronized(this) {
         if (stopping) false
         else {
+            // What it named and what was there: the routing log keeps only that it missed (Boss, 2026-10-17, FF4 asked twice).
+            android.util.Log.w("QuickLane", "Front agent named thread \"${named.take(MAC_ID_CHARS)}\"; the board had ${board.joinToString(", ")}")
             ChatLog.of(context).update(asked, save = true) { it.copy(agent = QUICK_AGENT, result = WHICH_PROJECT, status = TaskStatus.Failed) }
             RoutingLog.corrected(context, prompt, UNKNOWN_THREAD)
             if (away) AgentNotices.answered(context, INCOMPLETE, WHICH_PROJECT, AgentNotices.FRONT)
