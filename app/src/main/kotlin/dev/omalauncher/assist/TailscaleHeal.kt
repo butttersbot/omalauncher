@@ -12,8 +12,10 @@ import android.util.Log
  * Turns Tailscale back on when it is why the Mac cannot be reached (Boss, 2026-10-14: after every reboot Tailscale
  * on this phone stays off, the runner's Tailscale address goes dark, and he had to open the Tailscale app himself).
  * Tailscale's own receiver takes CONNECT_VPN with no screen, which was seen to bring the Mac back in three seconds.
- * Only that case is healed: once Tailscale has been seen up since the phone booted, its being off later is his
- * choice (Boss, 2026-10-14: "yes, respect the manual off"), and nothing is sent until the next boot.
+ * At first only a Tailscale that never came up after a reboot was healed, a later off being taken as his choice
+ * (Boss, 2026-10-14); since Boss, 2026-10-17 ("I don't really think I'll ever turn it off manually, so we can just
+ * disregard what I said") any Tailscale that is off while the Mac is silent is turned back on: overnight Android had
+ * stopped it after it had been up, and the Mac stayed out of reach until morning.
  * When to ask is pure and at the top; TailscaleHeal at the end only reads the facts it needs and sends.
  */
 
@@ -76,14 +78,12 @@ fun healWait(tries: Int): Long = when {
 /**
  * One look at [now]. Only a Mac that gave no answer, with Tailscale [installed] and no VPN of any kind up
  * ([vpnUp]), is put down to Tailscale being off. Another VPN being up rules it out as well: Android runs one VPN
- * at a time, and connecting Tailscale would push that one aside. When Tailscale has been [upThisBoot], he turned it
- * off himself and nothing is sent; only one that never came up after a reboot is turned on. A Mac that answers
- * starts the count again.
+ * at a time, and connecting Tailscale would push that one aside. Whether Tailscale was up earlier no longer matters:
+ * he never turns it off himself (Boss, 2026-10-17). A Mac that answers starts the count again.
  */
-fun healStep(link: MacLink, vpnUp: Boolean, installed: Boolean, upThisBoot: Boolean, now: Long, state: HealState): HealStep = when {
+fun healStep(link: MacLink, vpnUp: Boolean, installed: Boolean, now: Long, state: HealState): HealStep = when {
     link == MacLink.Answered -> HealStep(false, HealState())
     link == MacLink.NotSetUp || !installed || vpnUp -> HealStep(false, state.copy(off = false, chosen = false))
-    upThisBoot -> HealStep(false, state.copy(off = false, chosen = true))
     else -> {
         val last = state.tried
         // A clock set back is taken as time enough: otherwise the heal would wait out however far it went back.
@@ -135,8 +135,7 @@ object TailscaleHeal {
         val vpn = if (installed) vpnLook(app) else VpnLook(up = false, tailscale = false)
         val upNow = installed && tailscaleSeenUp(link, vpn.up, vpn.tailscale)
         if (upNow) remember(app, TailscaleSeen(elapsed, boot))
-        val (was, step) = synchronized(this) { state to healStep(link, vpn.up, installed, before || upNow, now, state).also { state = it.state } }
-        if (step.state.chosen && !was.chosen) Log.i(TAG, "Mac gave no answer and Tailscale is off after being up since boot: taken as turned off on purpose, not reconnecting")
+        val step = synchronized(this) { healStep(link, vpn.up, installed, now, state).also { state = it.state } }
         if (!step.send) return
         val sent = runCatching { app.sendBroadcast(Intent(TAILSCALE_CONNECT.action).setClassName(TAILSCALE_CONNECT.packageName, TAILSCALE_CONNECT.className)) }
         val next = (healNext(step.state) ?: now) - now

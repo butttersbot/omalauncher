@@ -14,8 +14,8 @@ class TailscaleHealTest {
     private val minute = 60_000L
     private val up = MacHealthResult.Up(MacHealth(1, 0, 0))
 
-    private fun step(link: MacLink, vpnUp: Boolean = false, installed: Boolean = true, upThisBoot: Boolean = false, at: Long = now, state: HealState = HealState()) =
-        healStep(link, vpnUp, installed, upThisBoot, at, state)
+    private fun step(link: MacLink, vpnUp: Boolean = false, installed: Boolean = true, at: Long = now, state: HealState = HealState()) =
+        healStep(link, vpnUp, installed, at, state)
 
     @Test fun healthResultsMapToWhatTheHealCaresAbout() {
         assertEquals(MacLink.Answered, macLink(up))
@@ -50,33 +50,20 @@ class TailscaleHealTest {
             listOf(MacLink.Answered, true, true, HealState(now - minute, 4, true)) to (false to HealState()),
         )
         for ((given, want) in table) {
-            val got = healStep(given[0] as MacLink, given[1] as Boolean, given[2] as Boolean, false, now, given[3] as HealState)
+            val got = healStep(given[0] as MacLink, given[1] as Boolean, given[2] as Boolean, now, given[3] as HealState)
             assertEquals(given.toString(), want.first, got.send)
             assertEquals(given.toString(), want.second, got.state)
         }
     }
 
-    /** Boss, 2026-10-14: "yes, respect the manual off". */
-    @Test fun aTailscaleSeenUpSinceBootAndOffNowIsHisChoice() {
-        val tried = HealState(now - 61 * second, 1, off = true)
-        val chosen = HealState(off = false, chosen = true)
-        // link, VPN up, up this boot, state before -> send, state after
-        val table = listOf(
-            listOf(MacLink.NoAnswer, false, false, HealState()) to (true to HealState(now, 1, off = true)),
-            listOf(MacLink.NoAnswer, false, true, HealState()) to (false to chosen),
-            // Healing after a reboot, then he turns it off once it was up: the back-off is kept but nothing is sent.
-            listOf(MacLink.NoAnswer, false, true, tried) to (false to tried.copy(off = false, chosen = true)),
-            listOf(MacLink.NoAnswer, false, false, chosen) to (true to HealState(now, 1, off = true)),
-            listOf(MacLink.NoAnswer, true, true, chosen) to (false to HealState()),
-            listOf(MacLink.Answered, false, true, chosen) to (false to HealState()),
-            listOf(MacLink.NotSetUp, false, true, chosen) to (false to HealState()),
-        )
-        for ((given, want) in table) {
-            val got = healStep(given[0] as MacLink, given[1] as Boolean, true, given[2] as Boolean, now, given[3] as HealState)
-            assertEquals(given.toString(), want.first, got.send)
-            assertEquals(given.toString(), want.second, got.state)
-        }
-        assertFalse(step(MacLink.NoAnswer, installed = false, upThisBoot = true).state.chosen)
+    /** Boss, 2026-10-17: he never turns Tailscale off himself, so an off after it was up is healed too. */
+    @Test fun aTailscaleThatDroppedAfterBeingUpIsTurnedBackOn() {
+        // Overnight Android stopped it after it had been up since boot: the next silent Mac asks it to connect.
+        val first = step(MacLink.NoAnswer)
+        assertTrue(first.send)
+        assertFalse(first.state.chosen)
+        // An old state that still says "his choice" is no reason to wait either.
+        assertTrue(step(MacLink.NoAnswer, state = HealState(off = false, chosen = true)).send)
     }
 
     @Test fun seenUpCountsOnlyUntilThePhoneReboots() {
@@ -143,7 +130,6 @@ class TailscaleHealTest {
         assertNull(healNote(HealState(), now))
         // Off by his choice it says so, so the front agent tells him rather than promising a reconnect.
         assertEquals("Tailscale is off on this phone (turned off by you); the Mac can't be reached until it is on.", healNote(HealState(off = false, chosen = true), now))
-        assertEquals(TAILSCALE_OFF_BY_HIM, healNote(step(MacLink.NoAnswer, upThisBoot = true).state, now))
         // Waiting out the back-off it is still the cause, and still said.
         val waiting = step(MacLink.NoAnswer, at = now + 30 * second, state = HealState(now, 1, off = true))
         assertFalse(waiting.send)

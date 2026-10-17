@@ -51,7 +51,11 @@ class SheepOverlay(private val service: AccessibilityService) {
                 val p = page ?: return
                 if (loaded) {
                     thread(name = "oma-herd-float", isDaemon = true) {
-                        val json = Herd.status() ?: herdUnreachable()
+                        val answer = Herd.status()
+                        // The sheep asks the Macs every few seconds anyway: a silence is also the Tailscale heal's
+                        // cue, so a Tailscale that Android stopped overnight comes back without waiting for a chat.
+                        dev.omalauncher.assist.TailscaleHeal.after(service, if (answer == null) dev.omalauncher.assist.MacLink.NoAnswer else dev.omalauncher.assist.MacLink.Answered)
+                        val json = answer ?: herdUnreachable()
                         main.post { if (page === p) giveHerd(p, "update", json) }
                     }
                 }
