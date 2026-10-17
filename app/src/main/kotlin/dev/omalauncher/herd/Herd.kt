@@ -160,6 +160,30 @@ fun sheepWindow(
     return SheepWindow(x.coerceIn(0, maxOf(0, screenW - ww)), (sy + sheep - wh).coerceAtLeast(0), ww, wh, side)
 }
 
+/**
+ * Where the window goes while the sheep's panel is open (Boss, 2026-10-17: with the menu open the sheep was cut off at
+ * the screen's bottom edge). The page draws the sheep in the window's bottom corner and the panel above it, so the
+ * window has one zone per side: the bottom corner on the sheep's [side], clear of the status bar ([top]) and of the
+ * gesture or navigation bar ([bottom]) by [margin]. It is as wide as the panel wants ([panelW]) or the screen allows,
+ * and as tall as it wants ([panelH]) or the room between the bars allows. Where the sheep stood is kept for when it
+ * closes; only the open window moves.
+ */
+fun sheepOpenWindow(
+    side: String,
+    panelW: Int,
+    panelH: Int,
+    screenW: Int,
+    screenH: Int,
+    top: Int,
+    bottom: Int,
+    margin: Int,
+): SheepWindow {
+    val w = panelW.coerceIn(0, screenW)
+    val h = panelH.coerceIn(0, maxOf(0, screenH - top - bottom - 2 * margin))
+    val x = if (side == "left") 0 else screenW - w
+    return SheepWindow(x, maxOf(top + margin, screenH - bottom - margin - h), w, h, side)
+}
+
 /** Session ids are uuids or oma-runner's t-ids; anything else never goes into a URL. */
 fun safeSessionId(id: String): String? = id.takeIf { Regex("[0-9A-Za-z-]{4,64}").matches(it) }
 

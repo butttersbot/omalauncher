@@ -2,6 +2,7 @@ package dev.omalauncher.herd
 
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNull
 import org.junit.Test
 import java.io.IOException
@@ -141,5 +142,25 @@ class HerdTest {
     @Test
     fun asksThePortTheReportersListenOn() {
         assertEquals("http://jacks-mac-pro:8479/v1/herd", herdUrl("jacks-mac-pro", "/v1/herd"))
+    }
+
+    /**
+     * Boss, 2026-10-17: with the menu open the sheep was cut off at the bottom edge. The open window keeps to one zone a
+     * side, the bottom corner, above the gesture bar and below the status bar, wherever the sheep stood (Fold cover).
+     */
+    @Test fun theOpenPanelKeepsToABottomCornerClearOfTheBars() {
+        // The sheep stood low on the right: the window ends above the gesture bar, so the sheep in its corner is whole.
+        val right = sheepOpenWindow("right", 1040, 1577, 1248, 1972, top = 110, bottom = 63, margin = 21)
+        assertEquals(SheepWindow(208, 1972 - 63 - 21 - 1577, 1040, 1577, "right"), right)
+        assertTrue(right.y + right.h <= 1972 - 63)
+        // On the left side it is the bottom-left corner.
+        assertEquals(0, sheepOpenWindow("left", 1040, 1577, 1248, 1972, 110, 63, 21).x)
+        // A short screen (folded flat, landscape): the panel shrinks to the room between the bars, never under them.
+        val short = sheepOpenWindow("right", 1040, 1577, 2200, 1000, top = 80, bottom = 60, margin = 20)
+        assertEquals(1000 - 80 - 60 - 40, short.h)
+        assertEquals(80 + 20, short.y)
+        assertTrue(short.y + short.h <= 1000 - 60)
+        // A screen narrower than the panel: as wide as the screen.
+        assertEquals(SheepWindow(0, 1972 - 63 - 21 - 1577, 900, 1577, "right"), sheepOpenWindow("right", 1040, 1577, 900, 1972, 110, 63, 21))
     }
 }

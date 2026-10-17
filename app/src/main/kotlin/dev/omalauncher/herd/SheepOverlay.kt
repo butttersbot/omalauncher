@@ -8,6 +8,7 @@ import android.os.Looper
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.ViewGroup
+import android.view.WindowInsets
 import android.view.WindowManager
 import android.webkit.WebView
 import kotlin.concurrent.thread
@@ -61,6 +62,21 @@ class SheepOverlay(private val service: AccessibilityService) {
 
     private fun screen() = service.resources.displayMetrics.let { it.widthPixels to it.heightPixels }
 
+    /**
+     * The status bar's and the gesture or navigation bar's heights, which the open panel keeps clear of: from the
+     * window's own insets where Android gives them, else from the system's dimensions for the two bars.
+     */
+    private fun bars(): Pair<Int, Int> {
+        if (Build.VERSION.SDK_INT >= 30) {
+            runCatching {
+                val insets = wm.currentWindowMetrics.windowInsets.getInsetsIgnoringVisibility(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+                return insets.top to insets.bottom
+            }
+        }
+        fun dimen(name: String) = service.resources.getIdentifier(name, "dimen", "android").takeIf { it != 0 }?.let(service.resources::getDimensionPixelSize) ?: 0
+        return dimen("status_bar_height") to dimen("navigation_bar_height")
+    }
+
     /** The sheep kept on the screen. */
     private fun hold() {
         val (sw, sh) = screen()
@@ -73,10 +89,12 @@ class SheepOverlay(private val service: AccessibilityService) {
         val (sw, sh) = screen()
         hold()
         if (open) {
-            p.width = minOf((400 * density).toInt(), sw)
-            p.height = minOf((680 * density).toInt(), sh * 8 / 10)
-            p.x = sx.toInt().coerceIn(0, maxOf(0, sw - p.width))
-            p.y = sy.toInt().coerceIn(0, maxOf(0, sh - p.height))
+            val (top, bottom) = bars()
+            val win = sheepOpenWindow(side, (400 * density).toInt(), minOf((680 * density).toInt(), sh * 8 / 10), sw, sh, top, bottom, (8 * density).toInt())
+            p.x = win.x
+            p.y = win.y
+            p.width = win.w
+            p.height = win.h
             return
         }
         val (w, h) = room ?: (0 to 0)
