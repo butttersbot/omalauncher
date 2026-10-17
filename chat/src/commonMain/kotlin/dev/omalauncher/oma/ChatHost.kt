@@ -49,6 +49,8 @@ data class HostChoice(
     val models: Map<String, List<String>> = emptyMap(),
     /** What a new chat's thread here uses when he picks nothing: the default new chats remember ([dev.omalauncher.assist.MacThreadsEngine.defaultPick]). */
     val default: dev.omalauncher.assist.MacPick? = null,
+    /** The host its runner is reached at (a tailnet name or address), which is how herd's machines are matched to it. */
+    val address: String = "",
 )
 
 /** A picture he picked, still on the device's side; [ChatHost.importImage] makes it a [PromptImage]. */

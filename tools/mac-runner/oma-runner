@@ -20,7 +20,7 @@ approves nothing itself: every request for approval waits for the phone's answer
   POST /threads/ID/stop                  stops the task and drops what was waiting its turn; what was said stays
   POST /files?name=NAME   (the bytes)    a file from the phone, kept in ~/Downloads/From Fold; {path, bytes}
   GET  /projects                         the project registry (~/ClaudeSync/projects/_projects.json): {name, folders, handoff}
-  GET  /projects/NAME/handoff            that project's HANDOFF.md or CURRENT-STATE.md, top section: {file, updated, text}
+  GET  /projects/NAME/handoff            that project's HANDOFF.md or CURRENT-STATE.md, top section and Next section: {file, updated, text}
 
 Agent mail for a thread (tailshare's ~/.local/share/tailshare/mail/new/, to.session = the thread's id) is taken and
 given to that thread labeled as another agent's, never as the owner's words. Each thread's agent runs with
@@ -764,16 +764,44 @@ def own_files():
     return found
 
 
+# A heading that says what is next ("Next", "Next actions", "3. Next steps", "What's next?"), never one that just has the word.
+NEXT_HEADING = re.compile(r"^##\s+\W*(\d+[.)]\s*)?(what['\u2019]?s\s+)?next\b(?![.-]\w)", re.IGNORECASE)
+
+
+def clip(text, most):
+    """[text] cut to [most] characters at a line's end, never inside a code block: a cut that leaves a fence open is
+    moved back to before that fence."""
+    if len(text) <= most:
+        return text
+    cut = text[:most]
+    if '\n' in cut:
+        cut = cut[:cut.rindex('\n')]
+    lines = cut.split('\n')
+    fences = [i for i, line in enumerate(lines) if line.lstrip().startswith('```')]
+    if len(fences) % 2 and fences[-1] > 0:
+        lines = lines[:fences[-1]]
+    return '\n'.join(lines).rstrip()
+
+
 def top_section(text):
-    """A handoff's top: everything before its second level-two heading (the first section, with the title above it)."""
-    lines, seen = [], 0
+    """What a handoff card is given: its top (everything before the second level-two heading: the first section, with the
+    title above it), then its first later level-two section whose heading says next, if it has one. Headings inside a
+    code block are not headings."""
+    sections, fenced, headed = [[]], False, False
     for line in text.splitlines():
-        if line.startswith('## '):
-            seen += 1
-            if seen == 2:
-                break
-        lines.append(line)
-    return '\n'.join(lines).strip()[:8000]
+        if line.lstrip().startswith('```'):
+            fenced = not fenced
+        elif not fenced and line.startswith('## '):
+            # The first level-two heading belongs to the top; each later one starts a section.
+            if headed:
+                sections.append([])
+            headed = True
+        sections[-1].append(line)
+    top = clip('\n'.join(sections[0]).strip(), 6000)
+    nxt = next((s for s in sections[1:] if NEXT_HEADING.search(s[0])), None)
+    if nxt is None:
+        return top
+    return top + '\n\n' + clip('\n'.join(nxt).strip(), 8000 - len(top) - 2)
 
 
 def make(name, project, kind='claude', model=None, chosen=None):

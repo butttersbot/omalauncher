@@ -259,4 +259,26 @@ class ChatScreenTapTest : ChatScreenTestBase() {
         assertEquals(1, asked!!.slot)
         onNodeWithText("Unlock your phone to answer that request").assertExists()
     }
+
+    /** Nudge, from the Desktop sessions module: his tap sends agent mail to that session on its machine, and says it went. */
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+    @Test fun nudgeSendsAgentMailToThatSession() = androidx.compose.ui.test.runComposeUiTest {
+        val posted = java.util.concurrent.CopyOnWriteArrayList<Pair<String, String>>()
+        val herd = """{"machines": [{"name": "macbook-pro", "online": true, "report": {"machine": {}, "sessions": [{"id": "f8890b84-1019-47cd-be97-458e18f11f75", "kind": "claude", "app": "", "title": "Cockpit build", "project": "omalauncher", "state": "your-turn", "live": true, "updated": 1792220000}]}}]}"""
+        val feeds = dev.omalauncher.canvas.CockpitFeeds(get = { url -> if ("8479" in url) herd else null }, post = { url, json -> posted += url to json; true })
+        val source = dev.omalauncher.canvas.chatHostModules(SampleHost(), feeds)
+        source.refresh()
+        val sessions = source.sessions()
+        assertEquals(listOf("Cockpit build"), sessions.map { it.title })
+        mainClock.autoAdvance = false
+        setContent { dev.omalauncher.canvas.SessionsModule(sessions, dev.omalauncher.canvas.ModuleSize.Card, onNudge = { s, done -> source.nudge(s) { ok -> done(ok) } }) }
+        mainClock.advanceTimeBy(500)
+        onNodeWithText("[ nudge ]").performClick()
+        val deadline = System.currentTimeMillis() + 5_000
+        while (posted.isEmpty() && System.currentTimeMillis() < deadline) Thread.sleep(20)
+        mainClock.advanceTimeBy(500)
+        assertEquals("http://macbook-pro:8480/v1/msg", posted.single().first)
+        assertEquals("f8890b84-1019-47cd-be97-458e18f11f75", org.json.JSONObject(posted.single().second).getJSONObject("to").getString("session"))
+        onNodeWithText("Nudged Cockpit build").assertExists()
+    }
 }

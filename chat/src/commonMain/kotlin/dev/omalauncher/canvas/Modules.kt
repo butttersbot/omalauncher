@@ -11,6 +11,7 @@ import dev.omalauncher.assist.builderApprovalTitle
 import dev.omalauncher.assist.macApprovalDetail
 import dev.omalauncher.assist.macApprovalNotice
 import dev.omalauncher.assist.macThreadKey
+import dev.omalauncher.assist.MacHandoff
 import dev.omalauncher.oma.ChatHost
 
 /*
@@ -50,6 +51,23 @@ interface ModuleSource {
 
     /** His tap on approve or deny; [said] gets what there is to tell him, or null when there is nothing. */
     fun answer(ask: ModuleAsk, allow: Boolean, said: (String?) -> Unit)
+
+    /** Reads what the slower modules show (herd, the pocket, handoffs) once; blocking, so off the screen's thread. */
+    fun refresh(projects: Collection<String> = emptyList()) {}
+
+    /** The computers, as of the last [refresh]. */
+    fun computers(): List<ModuleComputer> = emptyList()
+
+    /** Project [project]'s handoff, as of the last [refresh] that named it. */
+    fun handoff(project: String): MacHandoff? = null
+
+    /** Desktop sessions (in [project], or every project), as of the last [refresh]. */
+    fun sessions(project: String? = null): List<HerdSession> = emptyList()
+
+    fun pocket(): List<PocketItem> = emptyList()
+
+    /** His tap on nudge: agent mail to that session; [done] says whether it was taken. Blocking work runs off the caller's thread. */
+    fun nudge(session: HerdSession, done: (Boolean) -> Unit) = done(false)
 }
 
 /**
@@ -57,8 +75,34 @@ interface ModuleSource {
  * paths the chat's own approval cards use ([ChatHost.answerMac], [ChatHost.answerBuilder]), so the guards, the one-time
  * nonces and the expiry are the same wherever he taps.
  */
-fun chatHostModules(host: ChatHost): ModuleSource = object : ModuleSource {
+fun chatHostModules(host: ChatHost, feeds: CockpitFeeds? = null, handoffs: (Collection<String>) -> Map<String, MacHandoff?> = { emptyMap() }): ModuleSource = object : ModuleSource {
+    @Volatile private var herd: HerdSnapshot? = null
+    @Volatile private var items: List<PocketItem> = emptyList()
+    @Volatile private var read: Map<String, MacHandoff?> = emptyMap()
+
     override fun threads(): List<AgentThread> = host.threads()
+
+    override fun refresh(projects: Collection<String>) {
+        if (feeds != null) {
+            // What herd says now, or nothing: an old snapshot is never shown as if it were current.
+            herd = feeds.herd()
+            items = feeds.pocket()
+        }
+        read = if (projects.isEmpty()) emptyMap() else runCatching { handoffs(projects) }.getOrDefault(emptyMap())
+    }
+
+    override fun computers(): List<ModuleComputer> = moduleComputers(host.hosts().map { ComputerHost(it.id, it.name, it.reachable, it.address) }, herd?.machines.orEmpty())
+
+    override fun handoff(project: String): MacHandoff? = read[project]
+
+    override fun sessions(project: String?): List<HerdSession> = desktopSessions(herd, project)
+
+    override fun pocket(): List<PocketItem> = items
+
+    override fun nudge(session: HerdSession, done: (Boolean) -> Unit) {
+        val sender = feeds ?: return done(false)
+        kotlin.concurrent.thread(name = "soma-nudge", isDaemon = true) { done(sender.nudge(session.machine, session.id)) }
+    }
 
     override fun asks(): List<ModuleAsk> {
         val mac = host.macPending().map { p ->

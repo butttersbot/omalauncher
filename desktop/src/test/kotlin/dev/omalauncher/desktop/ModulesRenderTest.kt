@@ -34,6 +34,11 @@ class ModulesRenderTest {
     )
 
     /** Console's wider type at 2×2: approve and deny stay whole or give way to "open"; never a clipped button. */
+    private val computers = listOf(dev.omalauncher.canvas.ModuleComputer("Mac Pro", true, "load 6.8"), dev.omalauncher.canvas.ModuleComputer("MacBook Pro", true, "load 6.1"), dev.omalauncher.canvas.ModuleComputer("omarchy-mg1", true, "GPU 25/31 GB"), dev.omalauncher.canvas.ModuleComputer("omarchy-mbp", false))
+    private val handoff = dev.omalauncher.assist.MacHandoff("omalauncher", "CURRENT-STATE.md", 1792211033488, "# Soma cockpit design\n\nThe app's official name is now **Soma**.\n\n## Where things stand\n\n- Slices 0 to 3a of the canvas are committed.\n- The modules draw at the Fold's real cell size.\n\n## Next\n\n- The rest of the modules.")
+    private val sessions = listOf(dev.omalauncher.canvas.HerdSession("f8890b84-1019-47cd-be97-458e18f11f75", "macbook-pro", "claude", "", "Cockpit build", "omalauncher", "working", true, 0), dev.omalauncher.canvas.HerdSession("b2c3d4e5-0000-0000-0000-000000000000", "jacks-mac-pro", "claude", "", "Cove card pass review", "pond", "your-turn", true, 0))
+    private val pocket = listOf(dev.omalauncher.canvas.PocketItem("20261016201553-16c69c", "Screenshot_20261016_201550_X.jpg", 510057, 1792206953000, "jacks-z-fold8", false, "image"), dev.omalauncher.canvas.PocketItem("20261016092235-8fa2f5", "desktop-e2e-switch.png", 968030, 1792167755000, "jacks-mac-pro", true, "image"))
+
     @Test fun aTightCardInConsoleNeverClipsAnAnswer() {
         Looks.fonts()
         Looks.use("console")
@@ -55,14 +60,26 @@ class ModulesRenderTest {
         for ((name, w, h) in listOf(Triple("dot", 1, 1), Triple("line", 6, 1), Triple("line", 2, 1), Triple("line", 4, 1), Triple("card", 3, 2), Triple("card", 2, 2), Triple("full", 6, 3), Triple("full", 6, 4))) {
             val size = moduleSize(w, h, 6)
             assertEquals("$w×$h", name, size.name.lowercase())
-            for (which in listOf("threads", "needs")) {
+            for (which in listOf("threads", "needs", "computers", "handoff", "sessions", "pocket")) {
                 val png = ImageComposeScene(width = w * cell * 2, height = h * cell * 2, density = Density(2f)) {
                     Box(Modifier.size((w * cell).dp, (h * cell).dp)) {
-                        if (which == "threads") ThreadsModule(threads, size, onOpen = {}) else NeedsYouModule(asks, size, onAnswer = { _, _, _ -> }, onOpen = {})
+                        when (which) {
+                            "threads" -> ThreadsModule(threads, size, onOpen = {})
+                            "needs" -> NeedsYouModule(asks, size, onAnswer = { _, _, _ -> }, onOpen = {})
+                            "computers" -> dev.omalauncher.canvas.ComputersModule(computers, size)
+                            "handoff" -> dev.omalauncher.canvas.HandoffModule("omalauncher", handoff, size)
+                            "sessions" -> dev.omalauncher.canvas.SessionsModule(sessions, size, onNudge = { _, _ -> })
+                            else -> dev.omalauncher.canvas.PocketModule(pocket, size, now = 1792220000000)
+                        }
                     }
                 }.use { it.render(); it.render(500_000_000L).encodeToData(EncodedImageFormat.PNG)!!.bytes }
                 File(out, "module-$which-$name-${w}x$h.png").writeBytes(png)
-                assertTrue(png.size > 1000)
+                // Drawn, not blank: a tile, its ink and a mark make several colours.
+                val image = org.jetbrains.skia.Image.makeFromEncoded(png)
+                val pixels = org.jetbrains.skia.Bitmap.makeFromImage(image)
+                val seen = HashSet<Int>()
+                for (y in 0 until image.height step 3) for (x in 0 until image.width step 3) seen += pixels.getColor(x, y)
+                assertTrue("$which $name ${w}x$h drew only ${seen.size} colours", seen.size >= 3)
             }
         }
     }

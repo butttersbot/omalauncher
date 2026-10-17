@@ -82,7 +82,7 @@ class AndroidChatHost(
 
     override fun hosts(): List<HostChoice> = MacThreads.hosts(context).map { seen ->
         val agents = MacThreads.kindsOn(seen.id)
-        HostChoice(seen.id, seen.name, seen.reachable, agents, macInstalled(agents).associateWith { macModels(it, MacThreads.view.threads) }, MacThreads.defaultPick(seen.id))
+        HostChoice(seen.id, seen.name, seen.reachable, agents, macInstalled(agents).associateWith { macModels(it, MacThreads.view.threads) }, MacThreads.defaultPick(seen.id), MacThreads.hostAddress(seen.id))
     }
 
     override fun agentName(): String? = runtime.agents.default?.name

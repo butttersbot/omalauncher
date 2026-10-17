@@ -3,7 +3,7 @@
 
 The spec's "First proof" list, as far as it goes without the phone and without a signed-in Claude Code.
 """
-import json, os, pathlib, signal, socket, subprocess, sys, tempfile, time, urllib.error, urllib.parse, urllib.request
+import json, os, pathlib, re, signal, socket, subprocess, sys, tempfile, time, urllib.error, urllib.parse, urllib.request
 
 HERE = pathlib.Path(__file__).resolve().parent
 work = pathlib.Path(tempfile.mkdtemp(prefix='oma-runner-test-')).resolve()
@@ -564,7 +564,7 @@ try:
     now = third.get('key', '')   # the key the runner holds after the rekey checks above
     # The project registry and handoff reads (Soma Canvas slice 2): the registry is agent-writable, so nothing in it is a path
     # the runner trusts. Only HANDOFF.md or CURRENT-STATE.md, a plain file inside a registered folder under the allowed roots.
-    (project / 'HANDOFF.md').write_text('# Scratch\n\nIntro.\n\n## Where things stand\n\nAll good.\n\n## Next\n\nShip it.\n')
+    (project / 'HANDOFF.md').write_text('# Scratch\n\nIntro.\n\n## Where things stand\n\nAll good.\n\n```\n## Next in a code block\n```\n\n## Notes\n\nskip me\n\n## Next\n\nShip it.\n\n## Later\n\nnot this\n')
     (outside / 'HANDOFF.md').write_text('# Outside\n\n## Secret\n\nnope\n')
     linked = root / 'linked'
     linked.mkdir()
@@ -584,8 +584,20 @@ try:
           code == 200 and [p['name'] for p in listed['projects']] == ['scratch', 'outside', 'linked', 'redirect', 'dots']
           and [p['handoff'] for p in listed['projects']] == ['HANDOFF.md', 'HANDOFF.md', 'HANDOFF.md', None, None])
     code, got = call('GET', '/projects/scratch/handoff', token=now)
-    check('handoff: a registered project\'s top section, up to its second level-two heading',
-          code == 200 and got['file'] == 'HANDOFF.md' and got['text'] == '# Scratch\n\nIntro.\n\n## Where things stand\n\nAll good.' and got['updated'] > 0)
+    check('handoff: a registered project\'s top section, then its Next section (a heading in a code block is not one)',
+          code == 200 and got['file'] == 'HANDOFF.md' and got['text'] == '# Scratch\n\nIntro.\n\n## Where things stand\n\nAll good.\n\n```\n## Next in a code block\n```\n\n## Next\n\nShip it.' and got['updated'] > 0)
+    # The heading must say next, not merely hold the word; the caps cut at a line's end and never inside a code block.
+    funcs = {'re': re}
+    source = (HERE / 'oma-runner').read_text()
+    exec(source[source.index('# A heading that says what is next'):source.index('def make(')], funcs)
+    served = funcs['top_section']('# P\n\n## READ THIS FIRST (35)\n\nnow\n\n## READ THIS FIRST (27) - V9 IS THE NEXT MOVE\n\nold\n\n## 3. Next steps\n\ngo\n')
+    check('handoff: a heading that only mentions next is not the Next section', served.endswith('## 3. Next steps\n\ngo') and 'old' not in served)
+    check('handoff: "What\'s next?" is a Next heading', funcs['top_section']('# P\n\n## A\n\na\n\n## What\'s next?\n\nb\n').endswith('b'))
+    long = '# P\n\n## A\n\n' + ('word ' * 15 + '\n') * 70 + '```\n' + 'code\n' * 400 + '```\n'
+    cut = funcs['top_section'](long)
+    check('handoff: Next.js is not Next, and a curly apostrophe still says what is next', funcs['top_section']('# P\n\n## A\n\na\n\n## Next.js\n\nx\n\n## What\u2019s next?\n\nb\n').endswith('b'))
+    check('handoff: a top that is all one code block still serves something', funcs['top_section']('# P\n\n## A\n```\n' + 'code\n' * 2000 + '```\n') != '')
+    check('handoff: the cap cuts at a line end and never leaves a code block open', len(cut) <= 6000 and cut.count('```') % 2 == 0 and cut.endswith('word'))
     check('handoff: a folder outside the allowed roots is never read', call('GET', '/projects/outside/handoff', token=now)[0] == 404)
     code, got = call('GET', '/projects/linked/handoff', token=now)
     check('handoff: a symlink out of its folder is refused', code == 404 and 'nope' not in json.dumps(got))
