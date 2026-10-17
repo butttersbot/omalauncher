@@ -1,0 +1,59 @@
+#!/bin/bash
+# soma-macbuild COMMIT VERSION_CODE [PHONE]: on the Mac Pro, build and test one commit of the phone's branch
+# (phone/fold-development) as the working launcher, and Taildrop it to the phone, which signs it with its own key
+# and installs it (oma-macbuild --take, then oma-install). Builds run here and not on the Fold (Boss, 2026-10-17:
+# the phone's RAM is for Soma). It builds in a worktree of its own beside the mirror at ~/Projects/omalauncher-fold,
+# so the mirror stays clean for mac-sync.py. Nothing is sent when a test fails.
+set -euo pipefail
+[ $# -ge 2 ] || { sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+commit=$1
+code=$2
+phone=${3:-jacks-z-fold8}
+[[ $commit =~ ^[0-9a-f]{7,40}$ ]] || { echo "\"$commit\" is not a commit." >&2; exit 2; }
+[[ $code =~ ^[0-9]{1,9}$ ]] || { echo "\"$code\" is not a version code." >&2; exit 2; }
+[[ $phone =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,62}$ ]] || { echo "\"$phone\" is not a device name." >&2; exit 2; }
+mirror=$HOME/Projects/omalauncher-fold
+work=$HOME/Projects/omalauncher-fold-build
+
+# Only what the phone pushed is built.
+git -C "$mirror" fetch --quiet --no-tags fork refs/heads/phone/fold-development:refs/remotes/fork/phone/fold-development
+commit=$(git -C "$mirror" rev-parse --verify --quiet "$commit^{commit}") || { echo "No commit $1 here: has the phone pushed it?" >&2; exit 1; }
+git -C "$mirror" merge-base --is-ancestor "$commit" fork/phone/fold-development || { echo "$1 is not on phone/fold-development." >&2; exit 1; }
+if [ -d "$work" ]; then
+  git -C "$work" checkout --quiet --detach --force "$commit"
+else
+  git -C "$mirror" worktree add --quiet --detach "$work" "$commit"
+fi
+cd "$work"
+
+# The proot that runs his Linux is not in Git: the pinned, checksummed copies (the phone checks them again).
+[ -f app/src/main/jniLibs/arm64-v8a/libproot.so ] || scripts/fetch-proot.sh
+if [ ! -f local.properties ] && [ -z "${ANDROID_HOME:-}" ] && [ -d "$HOME/Library/Android/sdk" ]; then
+  export ANDROID_HOME=$HOME/Library/Android/sdk
+fi
+
+rm -rf app/build/test-results/testDebugUnitTest
+SOMA_VERSION_CODE=$code ./gradlew -I "$work/tools/fold-development/mac.init.gradle" --console=plain \
+  :app:testDebugUnitTest :app:assembleDebug
+
+# Counted from the test reports, so the phone sees what passed.
+read -r tests failures skipped < <(cat app/build/test-results/testDebugUnitTest/*.xml |
+  sed -n 's/.*<testsuite [^>]*tests="\([0-9]*\)"[^>]*skipped="\([0-9]*\)"[^>]*failures="\([0-9]*\)"[^>]*errors="\([0-9]*\)".*/\1 \3 \4 \2/p' |
+  awk '{t+=$1; f+=$2+$3; s+=$4} END {print t+0, f+0, s+0}')
+[ "$failures" -eq 0 ] || { echo "$failures tests failed; nothing sent." >&2; exit 1; }
+
+apk=app/build/outputs/apk/debug/app-debug.apk
+short=${commit:0:9}
+name=soma-$short-$code
+out=$(mktemp -d)
+trap 'rm -rf "$out"' EXIT
+cp "$apk" "$out/$name.apk"
+sha=$(shasum -a 256 "$out/$name.apk" | cut -d' ' -f1)
+printf '{"commit":"%s","versionCode":%s,"sha256":"%s","tests":%s,"failures":%s,"skipped":%s,"builtAt":"%s"}\n' \
+  "$commit" "$code" "$sha" "$tests" "$failures" "$skipped" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$out/$name.json"
+
+ts=$(command -v tailscale || true)
+[ -n "$ts" ] || ts=/Applications/Tailscale.app/Contents/MacOS/Tailscale
+"$ts" file cp "$out/$name.apk" "$out/$name.json" "$phone:"
+echo "Built and tested $short (version $code: $tests tests, 0 failed, $skipped skipped); sent $name.apk to $phone."
+echo "On the phone: oma-macbuild --take, then oma-install."

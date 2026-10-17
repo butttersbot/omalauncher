@@ -1,0 +1,73 @@
+#!/bin/bash
+# oma-macbuild: the working launcher, built and tested on the Mac Pro instead of the Fold (Boss, 2026-10-17: the
+# phone's RAM is for Soma, so heavy work goes to another machine).
+#
+#   oma-macbuild          push this checkout's HEAD (oma-sync) and ask the Mac Pro's runner thread to build and
+#                         test it with soma-macbuild, which Taildrops the result here
+#   oma-macbuild --take   take what came back, check it, sign it with the phone's key and put it where oma-install
+#                         looks; then run oma-install as before
+#
+# The signing key never leaves the phone: the Mac signs with its own debug key and this signs again. What is
+# taken must be HEAD's build, at the next version code, with no test failed, and carry the very proot libraries
+# this checkout has, byte for byte, since those run his Linux.
+set -euo pipefail
+repo=/root/Projects/omalauncher
+cfg=/root/.config/oma-development
+mac=${SOMA_MAC:-jacks-mac-pro}
+thread=${SOMA_MAC_THREAD:-t9f45b731}
+tools=/opt/android-sdk/build-tools/36.0.0
+die() { echo "$1" >&2; exit 1; }
+
+commit=$(git -C "$repo" rev-parse HEAD)
+short=${commit:0:9}
+code=$(tr -d '[:space:]' < "$cfg/next-version-code")
+
+case ${1:-} in
+'')
+  oma-sync
+  commit=$(git -C "$repo" rev-parse HEAD)
+  short=${commit:0:9}
+  oma msg send "$mac:$thread" --as A --title "Soma build $short" \
+    "Please build Soma for the phone: in /Users/jackkim/Projects/omalauncher-fold run tools/fold-development/soma-macbuild $commit $code (if the script isn't there yet, the mirror syncs within a minute: wait and try again). It builds and tests that commit in its own worktree and Taildrops the app to the phone. Then answer with its last lines, or what stopped it."
+  echo "Asked the Mac Pro to build $short as version $code. When it answers, run: oma-macbuild --take"
+  ;;
+--take)
+  oma drop get >/dev/null 2>&1 || true
+  json=$(ls -t /root/Inbox/soma-"$short"-*.json 2>/dev/null | head -n 1 || true)
+  [ -n "$json" ] || die "Nothing from the Mac for $short yet (looked in ~/Inbox after oma drop get)."
+  apk=${json%.json}.apk
+  [ -f "$apk" ] || die "$(basename "$json") came without its app."
+  python3 -I - "$json" "$apk" "$commit" "$code" "$repo/app/src/main/jniLibs/arm64-v8a" <<'PY'
+import hashlib, json, pathlib, sys, zipfile
+meta, apk, commit, code, libs = sys.argv[1:]
+m = json.loads(pathlib.Path(meta).read_text())
+def stop(why): sys.exit('Not taken: ' + why)
+if m.get('commit') != commit: stop('built from ' + str(m.get('commit')) + ', not HEAD ' + commit + '.')
+if m.get('versionCode') != int(code): stop('version ' + str(m.get('versionCode')) + ', the next is ' + code + '.')
+if m.get('failures') != 0 or not m.get('tests'): stop('its tests did not all pass.')
+if hashlib.sha256(pathlib.Path(apk).read_bytes()).hexdigest() != m.get('sha256'): stop('the app is not the one the Mac described.')
+local = sorted(pathlib.Path(libs).glob('*.so'))
+if not local: stop('this checkout has no proot libraries to compare with.')
+with zipfile.ZipFile(apk) as z:
+    for f in local:
+        try: inside = z.read('lib/arm64-v8a/' + f.name)
+        except KeyError: stop(f.name + ' is missing from it.')
+        if inside != f.read_bytes(): stop(f.name + ' differs from this checkout\'s.')
+print('Mac build of %s: %s tests, %s skipped; proot libraries match.' % (commit[:9], m['tests'], m.get('skipped', 0)))
+PY
+  badging=$("$tools/aapt2" dump badging "$apk" | head -n 1)
+  [[ $badging == *"name='dev.omalauncher.boss'"* && $badging == *"versionCode='$code'"* ]] ||
+    die "Not taken: it is not dev.omalauncher.boss version $code."
+  out=$repo/app/build/outputs/apk/debug
+  mkdir -p "$out"
+  "$tools/apksigner" -J-Xmx256m sign --ks "$cfg/working-debug.keystore" --ks-pass pass:android \
+    --ks-key-alias androiddebugkey --key-pass pass:android --out "$out/app-debug.apk" "$apk"
+  cert=$("$tools/apksigner" -J-Xmx256m verify --print-certs "$out/app-debug.apk" | sed -n 's/.*certificate SHA-256 digest: //p' | head -n 1)
+  [ "$cert" = "$(tr -d '[:space:]' < "$cfg/working-cert.sha256")" ] || { rm -f "$out/app-debug.apk"; die "Not taken: signed with the wrong key."; }
+  printf '{"version":3,"artifactType":{"type":"APK","kind":"Directory"},"applicationId":"dev.omalauncher.boss","variantName":"debug","elements":[{"type":"SINGLE","filters":[],"attributes":[],"versionCode":%s,"outputFile":"app-debug.apk"}],"elementType":"File"}\n' "$code" > "$out/output-metadata.json"
+  rm -f "$out/app-debug.apk.idsig"
+  echo "Signed with the phone's key and ready: run oma-install."
+  ;;
+*)
+  sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
+esac
