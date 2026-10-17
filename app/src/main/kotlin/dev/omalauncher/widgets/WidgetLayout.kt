@@ -6,22 +6,6 @@ import dev.omalauncher.widgets.layout.estimatedGeometry
 import dev.omalauncher.widgets.layout.firstFit
 import dev.omalauncher.widgets.layout.shown
 
-/** A widget's place on its page's grid, in cells. */
-data class Cell(
-    val x: Int,
-    val y: Int,
-    val w: Int,
-    val h: Int,
-) {
-    val right get() = x + w
-    val bottom get() = y + h
-
-    fun overlaps(o: Cell) = x < o.right && o.x < right && y < o.bottom && o.y < bottom
-}
-
-/** Columns of the home grid. Saved with the layout, so changing it rescales saved cells rather than scrambling them. */
-const val GRID_COLUMNS = 6
-
 /**
  * Where a tile of [w] by [h] cells goes on from a page with no room for it (PRD UP-1): the first of [pages]
  * after the one at position [from] with a free spot at that size, [takenOn] giving the cells taken on a page.

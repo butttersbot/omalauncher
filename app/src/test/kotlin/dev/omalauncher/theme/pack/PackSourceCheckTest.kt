@@ -117,7 +117,8 @@ class PackSourceCheckTest {
      * fixed 6dp, not the pack's.
      */
     @Test fun theGridNeverAsksThePack() {
-        val root = moduleFile("src/main/kotlin/dev/omalauncher")
+        // The grid lives in the shared module since Soma Canvas slice 1; found in whichever main root has it.
+        val root = mainSourceRoots().first { File(it, "widgets/layout/Placement.kt").isFile }
         val layout = File(root, "widgets/layout").walkTopDown().filter { it.extension == "kt" }.toList()
         assertTrue("the grid's sources aren't under $root", layout.isNotEmpty())
         val asks = Regex("""\b(?:ActivePack|PackLook|ThemePack|Pack\s*\.)|theme\.pack""")
