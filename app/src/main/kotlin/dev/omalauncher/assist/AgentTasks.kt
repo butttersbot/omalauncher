@@ -294,6 +294,14 @@ class Builder(val id: BuilderId) {
     @Volatile var startedAt = 0L; private set
     @Volatile var heardAt = 0L; private set
     @Volatile var lastStep = ""; private set
+    /** Its latest tool call works the phone ([phoneToolCall]): what lights the ring's working, with any other builder's. */
+    @Volatile var phone = false; private set
+
+    private fun onPhone(now: Boolean) {
+        if (phone == now) return
+        phone = now
+        OmaRing.phone(AgentTasks.builders.any { it.phone })
+    }
     @Volatile var lastStepAt = 0L; private set
     /** Where this builder's answer and conversation are kept: builder A's are where the one builder's always were. */
     private val prefs = if (id == BuilderId.A) "assistant-result" else "assistant-result-" + id.letter.lowercase()
@@ -438,6 +446,9 @@ class Builder(val id: BuilderId) {
                                             "tool_use" -> {
                                                 val step = ClaudeProtocol.step(block)
                                                 lastStep = step; lastStepAt = System.currentTimeMillis()
+                                                // On the phone from a phone command until its next tool of any other kind: a pause to think between
+                                                // two phone steps is still phone use, and the ring goes out the moment it turns to anything else.
+                                                onPhone(phoneToolCall(block.optString("name"), block.optJSONObject("input")?.optString("command").orEmpty()))
                                                 log.update(time) { ChatHistory.withStep(it, step) }
                                                 if (approvals.isEmpty()) { label = "Using ${block.optString("name").take(60)}"; notify(context) }
                                             }
@@ -481,6 +492,8 @@ class Builder(val id: BuilderId) {
                 log.update(time, save = true) { task ->
                     task.copy(result = answer, status = status, approvals = task.approvals.map { if (it.answer == ApprovalAnswer.Waiting) it.copy(answer = ApprovalAnswer.Unanswered) else it })
                 }
+                // Its work is over, so is its use of the phone: the ring goes out at once.
+                onPhone(false)
                 // One step under the lock, so a follow-up that waited starts before anything else can find the agent idle.
                 synchronized(lock) {
                     process = null; working = false
@@ -729,6 +742,14 @@ fun omaStatus(builders: JSONObject, mac: MacGlance): JSONObject {
 
 /** How much of an answer the status file carries: enough for a tile, not the whole thread. */
 const val AGENT_STATUS_ANSWER = 400
+
+/**
+ * Whether a tool call works the phone: a Bash command that runs `oma-phone` for anything but asking whether phone
+ * control is on or how it is used (Boss, 2026-10-17: the ring should stop "as soon as the agent stopped using" the
+ * phone, not a while after).
+ */
+fun phoneToolCall(tool: String, command: String): Boolean =
+    tool == "Bash" && Regex("(^|[\\s;&|(])oma-phone\\s+(\\S+)").findAll(command).any { it.groupValues[2] !in setOf("status", "help") }
 
 /**
  * The model a plain errand on the phone runs on (Boss, 2026-10-16: phone control "quite slow"): a turn of the fast model

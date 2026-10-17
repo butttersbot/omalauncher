@@ -29,3 +29,19 @@ class ErrandTest {
         assertTrue(work.contains("--resume 4b9c2a8e-1f3d-4e5a-9b7c-0d1e2f3a4b5c "))
     }
 }
+
+/** Boss, 2026-10-17: the ring stops "as soon as the agent stopped using" the phone. What counts as using it is a tool call. */
+class PhoneToolCallTest {
+    @Test fun aPhoneCommandIsPhoneUseAndAnythingElseIsNot() {
+        for (yes in listOf("oma-phone screen", "oma-phone press \"Wi-Fi\"", "oma-phone press Connect && oma-phone expect Connected",
+            "sleep 1; oma-phone screenshot | grep path", "cd /root && oma-phone tap 10 20", "(oma-phone read)")) {
+            assertTrue(yes, phoneToolCall("Bash", yes))
+        }
+        // Asking whether phone control is on, or how it works, is not using the phone; nor is any other tool or command.
+        for (no in listOf("oma-phone status", "oma-phone help", "git status", "grep oma-phone-thing x", "echo 'see foma-phone tap'", "")) {
+            assertFalse(no, phoneToolCall("Bash", no))
+        }
+        assertFalse(phoneToolCall("Read", "oma-phone screen"))
+        assertFalse(phoneToolCall("Edit", ""))
+    }
+}

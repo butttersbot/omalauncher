@@ -85,12 +85,6 @@ fun phoneSettleWait(now: Long, acted: Long?, changed: Long?): Long {
     return (minOf(quietAt, latest) - now).coerceIn(0L, PhoneTouch.SETTLE_MILLIS)
 }
 
-/**
- * How long after the agent's last move the phone still counts as in use, which lights the ring: an agent thinks a
- * while between steps, and a ring that blinked off at each would say nothing. Its work ending puts it out at once.
- */
-const val PHONE_IN_USE_MILLIS = 20_000L
-
 /** How long the screen has to say nothing about a change before it is taken to have shown what a move did. */
 const val PHONE_QUIET_MILLIS = 120L
 

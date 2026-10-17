@@ -11,7 +11,7 @@ data class RingSignals(
     val working: Boolean = false,
     /**
      * An agent is using the phone right now (Boss, 2026-10-17: the ring is "only supposed to be active when there's
-     * active phone use"): it moved the screen a moment ago, and its work has not ended. This is what lights working.
+     * active phone use"): its latest tool call works the phone, and its work has not ended. This is what lights working.
      */
     val phone: Boolean = false,
     /** The phone was used during the task now running or just ended: only then does its ending show done. */

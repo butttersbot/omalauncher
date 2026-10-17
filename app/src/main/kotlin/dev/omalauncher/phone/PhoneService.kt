@@ -96,7 +96,7 @@ class PhoneService : AccessibilityService() {
     /** Folded, unfolded or turned. */
     override fun onConfigurationChanged(newConfig: Configuration) { super.onConfigurationChanged(newConfig); sheep.relayout(); lookAgain(ring.relayout()) }
     override fun onUnbind(intent: Intent?): Boolean { PhoneControlHeal.unbound(this, front); closeRing(); return super.onUnbind(intent) }
-    override fun onDestroy() { instance = null; main.removeCallbacks(idle); dev.omalauncher.oma.ring.OmaRing.phone(false); closeRing(); PhoneAccess.clearIndicator(this); dev.omalauncher.assist.AgentTasks.phoneChanged(this); super.onDestroy() }
+    override fun onDestroy() { instance = null; closeRing(); PhoneAccess.clearIndicator(this); dev.omalauncher.assist.AgentTasks.phoneChanged(this); super.onDestroy() }
 
     private fun watchRing() {
         closeRing()
@@ -190,15 +190,9 @@ class PhoneService : AccessibilityService() {
     /** Something was done to the screen: what was read of it no longer holds, and the next read gives it time to show. */
     private fun changed() {
         snapshot = ""; seen = emptyMap(); acted = SystemClock.uptimeMillis()
-        // The phone is in use: the ring lights until no move has come for a while, or the work ends.
-        dev.omalauncher.oma.ring.OmaRing.phone(true)
-        main.removeCallbacks(idle); main.postDelayed(idle, PHONE_IN_USE_MILLIS)
         // The agent's first move since its work began: where he was then is what comes back when it ends.
         if (origin == null) { origin = placeAsked; stay = false; took = false }
     }
-
-    /** No move for a while: the phone is no longer in use, and the ring goes out. */
-    private val idle = Runnable { dev.omalauncher.oma.ring.OmaRing.phone(false) }
 
     /** Runs [then] once the screen has shown what the last move did ([phoneSettleWait]); at once when nothing was moved. */
     private fun settled(then: () -> Unit) {
@@ -212,7 +206,6 @@ class PhoneService : AccessibilityService() {
      */
     fun workEnded() = main.post {
         val keyguard = getSystemService(android.app.KeyguardManager::class.java)
-        main.removeCallbacks(idle); dev.omalauncher.oma.ring.OmaRing.phone(false)
         val back = phoneBack(origin, place, stay, took, keyguard?.isKeyguardLocked == true)
         origin = null; stay = false; took = false
         if (back !is PhoneBack.Bring) return@post android.util.Log.i("PhoneService", "Not brought back: ${(back as PhoneBack.Leave).why}").let { }
