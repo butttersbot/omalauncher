@@ -604,7 +604,7 @@ private fun ChatScreen(
                         Box(Modifier.padding(horizontal = 12.dp, vertical = 12.dp)) {
                             if (shown.isEmpty()) {
                                 // Never a word about waiting for the task that runs: he can say more at any time.
-                                val oma = if (working) "ask, or add to this, any time…" else if (followUp) "follow up on this thread…" else "ask oma…"
+                                val oma = if (working) "ask, or add to this, any time…" else if (followUp) "follow up on this thread…" else "ask soma…"
                                 val hint = if (listening) "listening…" else fieldHint(to, chatOn) ?: oma
                                 // In the pack's own face, sloped: what stands in for his words is not his words (Boss, 2026-10-13).
                                 BasicText(hint, style = Pack.body(Pack.size.item, Pack.muted).copy(fontStyle = FontStyle.Italic), maxLines = 1, overflow = TextOverflow.Ellipsis)
