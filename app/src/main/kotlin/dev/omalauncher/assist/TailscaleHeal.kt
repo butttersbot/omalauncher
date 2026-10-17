@@ -22,24 +22,6 @@ data class TailscaleTarget(val action: String, val packageName: String, val clas
 
 val TAILSCALE_CONNECT = TailscaleTarget("com.tailscale.ipn.CONNECT_VPN", "com.tailscale.ipn", "com.tailscale.ipn.IPNReceiver")
 
-/** What the last contact with the Mac came to, as far as the heal cares. */
-enum class MacLink {
-    /** It answered, even with a refusal: the network to it works. */
-    Answered,
-
-    /** No answer at all: the one case Tailscale being off can explain. */
-    NoAnswer,
-
-    /** No Mac is set up, so there is nothing to reach. */
-    NotSetUp,
-}
-
-fun macLink(health: MacHealthResult): MacLink = when (health) {
-    is MacHealthResult.Up, is MacHealthResult.Refused -> MacLink.Answered
-    MacHealthResult.Unreachable -> MacLink.NoAnswer
-    MacHealthResult.NotConfigured -> MacLink.NotSetUp
-}
-
 /**
  * [tried] is when Tailscale was last asked to connect, [tries] how often since the Mac last answered, and [off]
  * whether the last look found the Mac silent with no VPN up and Tailscale being turned back on; [chosen] whether

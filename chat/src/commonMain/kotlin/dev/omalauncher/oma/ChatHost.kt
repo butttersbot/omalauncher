@@ -64,6 +64,12 @@ interface Voice {
 }
 
 interface ChatHost {
+    /** Whether pictures can be attached here: the field's + shows only where they can go somewhere. */
+    val attaches: Boolean get() = true
+
+    /** Whether the field's microphone works here. Where it doesn't (the desktop, whose own dictation types into any field), it isn't shown. */
+    val dictates: Boolean get() = true
+
     // What the screen reads, each time it looks (twice a second).
 
     /** The Soma thread: every entry, oldest first. */

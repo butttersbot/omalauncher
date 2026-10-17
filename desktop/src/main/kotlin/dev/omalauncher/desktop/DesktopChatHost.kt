@@ -1,0 +1,183 @@
+package dev.omalauncher.desktop
+
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.ImageBitmap
+import dev.omalauncher.assist.AgentThread
+import dev.omalauncher.assist.ApprovalOutcome
+import dev.omalauncher.assist.BuilderFacts
+import dev.omalauncher.assist.BuilderId
+import dev.omalauncher.assist.BuilderNow
+import dev.omalauncher.assist.MacApprovalOutcome
+import dev.omalauncher.assist.MacEarlierRead
+import dev.omalauncher.assist.MacPending
+import dev.omalauncher.assist.MacThreadsEngine
+import dev.omalauncher.assist.MacView
+import dev.omalauncher.assist.PHONE_THREAD
+import dev.omalauncher.assist.PHONE_THREAD_B
+import dev.omalauncher.assist.PendingApproval
+import dev.omalauncher.assist.ThreadAsk
+import dev.omalauncher.assist.agentThreads
+import dev.omalauncher.assist.askTarget
+import dev.omalauncher.linux.PromptImage
+import dev.omalauncher.oma.BuildWay
+import dev.omalauncher.oma.BuilderState
+import dev.omalauncher.oma.ChatDrafts
+import dev.omalauncher.oma.ChatHost
+import dev.omalauncher.oma.ChatTask
+import dev.omalauncher.oma.FrontState
+import dev.omalauncher.oma.HostChoice
+import dev.omalauncher.oma.PickedImage
+import dev.omalauncher.oma.TabMeta
+import dev.omalauncher.oma.Voice
+import dev.omalauncher.widgets.TileLife
+import dev.omalauncher.widgets.threadLife
+import java.awt.Toolkit
+import java.awt.datatransfer.StringSelection
+import java.io.File
+
+/**
+ * The desktop's answers to [ChatHost] (cockpit slice 6). There are no phone builders here: the Soma tab's words go to
+ * the desktop front agent, which hands work to the computers' threads, and work for no thread starts a new one. Threads
+ * on the computers are the shared engine's ([MacThreadsEngine]), exactly as on the phone. No pictures and no microphone:
+ * the desktop's own dictation types into the field.
+ */
+class DesktopChatHost(
+    private val platform: DesktopThreadsPlatform,
+    private val engine: MacThreadsEngine,
+    private val front: DesktopFrontAgent,
+    private val notices: Notices,
+) : ChatHost {
+    override val attaches: Boolean get() = false
+    override val dictates: Boolean get() = false
+
+    override fun tasks(): List<ChatTask> = platform.chatLog().tasks
+
+    override fun updateTask(time: Long, save: Boolean, change: (ChatTask) -> ChatTask) = platform.chatLog().update(time, save, change)
+
+    override fun working(): Boolean = false
+
+    override fun builders(): Map<BuilderId, BuilderState> = emptyMap()
+
+    override fun continuing(): Boolean = false
+
+    override fun front(): FrontState = FrontState(front.working, front.time, front.label, front.answer)
+
+    override fun macPending(): List<MacPending> = engine.pending
+
+    override fun macView(): MacView = engine.view
+
+    override fun macLabel(task: ChatTask): String = engine.label(task)
+
+    override fun macEarlier(threadId: String): MacEarlierRead = engine.earlier(threadId)
+
+    override fun hosts(): List<HostChoice> = engine.hosts().map { HostChoice(it.id, it.name, it.reachable, engine.kindsOn(it.id)) }
+
+    override fun agentName(): String? = null
+
+    // Always a background agent, so the send rules never refuse the Soma tab (ChatComposer.kt): with Claude Code here
+    // they ask the front agent first ([frontReady]); without it his words start a new thread directly (build → startChatDirect).
+    override fun agentBin(): String? = "claude"
+
+    @Composable
+    override fun linuxInstalled(): Boolean = true
+
+    override fun frontReady(): Boolean = front.ready
+
+    override fun threads(): List<AgentThread> {
+        val book = platform.book()
+        val asks = engine.pending.groupBy({ it.threadId }) { ThreadAsk(it.request.tool, askTarget(it.request.input)) }
+        // The phone's own threads (its builders) are the phone's: not here.
+        return agentThreads(tasks(), BuilderNow(), engine.view, asks, BuilderNow(), book.chats, book.names).filter { it.key != PHONE_THREAD && it.key != PHONE_THREAD_B }
+    }
+
+    override fun liveThreads(all: List<AgentThread>, pinned: Set<String>, archived: Set<String>): List<AgentThread> {
+        val now = System.currentTimeMillis()
+        return all.filter { threadLife(it.state, it.worked, now, it.key in pinned, it.key in archived) != TileLife.Gone }
+            .sortedBy { if (it.key in pinned) pinned.indexOf(it.key) else Int.MAX_VALUE }
+    }
+
+    override fun changeBook(change: (TabMeta) -> TabMeta): TabMeta = platform.changeBook(change)
+
+    override fun checkTitles() {}
+
+    override fun builderFacts(): Map<BuilderId, BuilderFacts> = emptyMap()
+
+    override fun lookAtBuilders() {}
+
+    /** No builders here: work sent straight to "build" goes to a new thread, as a new chat's first words do. */
+    override fun build(prompt: String, images: List<String>, way: BuildWay, builder: BuilderId?) = engine.startChatDirect(prompt, "")
+
+    override fun askFront(prompt: String, chat: String) = front.ask(prompt, chat)
+
+    override fun startMacChat(prompt: String, chat: String) = engine.startChatDirect(prompt, chat)
+
+    override fun sayToMac(prompt: String, thread: String, name: String, chat: String) = engine.say(prompt, thread, name, chat)
+
+    override fun stopMac(thread: String, said: (String?) -> Unit) = engine.stop(thread, said)
+
+    override fun tryMacAgain(time: Long) = engine.tryAgain(time)
+
+    override fun answerMac(ticket: String, allow: Boolean, done: (MacApprovalOutcome) -> Unit) = engine.answer(ticket, allow, done)
+
+    override fun runInTerminal(prompt: String): Boolean = false
+
+    override fun handOverToBuild(prompt: String, said: List<ChatTask>) = engine.startChatDirect(prompt, "")
+
+    override fun routingCorrected(request: String) {}
+
+    override fun answerBuilder(entry: PendingApproval, allow: Boolean): ApprovalOutcome = ApprovalOutcome.Expired
+
+    override fun cancelFollowUp(time: Long) {}
+
+    override fun sendNow(time: Long) {}
+
+    override fun stopBuilder(builder: BuilderId?) {}
+
+    override fun cancelFront(time: Long) = front.cancel(time)
+
+    override fun stopFront() = front.stop()
+
+    override fun askFrontAgain(time: Long) = front.again(time)
+
+    override fun dropFrontWaiting(chat: String?) = front.dropWaiting(chat)
+
+    override fun restartBuilder(builder: BuilderId, said: (String) -> Unit) {}
+
+    override fun cleanBuilders(said: (String) -> Unit) {}
+
+    override fun copy(text: String) {
+        Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(text), null)
+        notices.toast("Copied")
+    }
+
+    override fun drafts(): ChatDrafts = ChatDrafts.of(SomaHome.dir)
+
+    @Composable
+    override fun rememberImagePicker(max: Int, onPicked: (List<PickedImage>) -> Unit): () -> Unit = {}
+
+    override fun importImage(picked: PickedImage): PromptImage = error("Pictures aren't attached on the desktop.")
+
+    override fun thumbnail(file: File, longest: Int): ImageBitmap? = null
+
+    override fun sentImage(path: String): File = File(path)
+
+    @Composable
+    override fun rememberVoice(): Voice = remember { Silent() }
+
+    @Composable
+    override fun rememberMicrophone(onGranted: () -> Unit): () -> Unit = {}
+
+    /** The microphone that isn't shown ([dictates] is false): it never listens. */
+    private class Silent : Voice {
+        override val listening = false
+        override val text = ""
+        override var error: String? by mutableStateOf(null)
+        override fun start(hold: Boolean, onDone: (String) -> Unit) {}
+        override fun stop() {}
+        override fun cancel() {}
+    }
+}

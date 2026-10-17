@@ -1,0 +1,186 @@
+package dev.omalauncher.desktop
+
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Window
+import androidx.compose.ui.window.application
+import androidx.compose.ui.window.rememberWindowState
+import dev.omalauncher.assist.MacThreadsEngine
+import dev.omalauncher.oma.OMA_TAB
+import dev.omalauncher.oma.OmaChatScreen
+import dev.omalauncher.ui.DesktopBack
+import java.awt.MenuItem
+import java.awt.PopupMenu
+import java.awt.SystemTray
+import java.awt.Toolkit
+import java.awt.TrayIcon
+import java.awt.image.BufferedImage
+import java.net.InetAddress
+import java.net.ServerSocket
+import java.net.Socket
+import kotlin.concurrent.thread
+import kotlin.system.exitProcess
+
+/**
+ * Soma desktop: the phone's chat in a window, on the Macs and the Omarchy boxes (cockpit/DESIGN.md §6). One runs at a
+ * time: starting it again, or `soma --toggle` (a Hyprland bind or a macOS shortcut), shows or hides the window that
+ * runs. Closing the window hides it; the tray's Quit ends it. Escape is Back: it closes a menu first, then hides.
+ */
+fun main(args: Array<String>) {
+    if ("--keychain-check" in args) return println(RunnerKeys.check())
+    if ("--start-at-login" in args) return println(Login.install())
+    if ("--no-start-at-login" in args) return println(Login.remove())
+    // Another Soma holds the lock while it runs (the system lets it go however it ends): that one is told, and this one ends.
+    val claimed = runCatching { Single.claim() }.getOrElse { fail("Soma can't write to ${SomaHome.dir}: ${it.message ?: it.javaClass.simpleName}") }
+    if (!claimed) {
+        if (!Single.handOff(if ("--toggle" in args) "toggle" else "show")) fail("Another Soma is running but not answering. Quit it from its tray icon (or end it), then open Soma again.", code = 0)
+        exitProcess(0)
+    }
+    val shown = mutableStateOf(true)
+    Single.listen { said -> shown.value = if (said == "toggle") !shown.value else true }
+    Looks.fonts()
+    Looks.use(SomaHome.read(SomaHome.settings).optString("pack").ifEmpty { null })
+    val notices = Notices()
+    val platform = DesktopThreadsPlatform(notices)
+    val engine = MacThreadsEngine(platform)
+    val front = DesktopFrontAgent(engine, platform, notices)
+    val host = DesktopChatHost(platform, engine, front, notices)
+    // Keys delivered by `oma-runner pair` go into the Keychain at once, and whenever another arrives. Each import is
+    // said, and a file that can't be taken is said once, not at every look.
+    thread(name = "soma-keys", isDaemon = true) {
+        val told = HashSet<String>()
+        while (true) {
+            val before = RunnerKeys.machines().map { it.id }
+            val taken = RunnerKeys.take()
+            taken.added.forEach { notices.say("Soma", it) }
+            taken.problems.filter { told.add(it.key) }.forEach { notices.say("Soma", it.text) }
+            if (RunnerKeys.machines().map { it.id } != before) engine.refresh()
+            Thread.sleep(10_000)
+        }
+    }
+    engine.open()
+    application {
+        var shown by shown
+        var wanted by remember { mutableStateOf<String?>(null) }
+        remember {
+            notices.tray = Tray.make(onOpen = { shown = true }, onQuit = { Single.release(); exitApplication() }, onLook = { id -> Looks.use(id); SomaHome.write(SomaHome.settings, SomaHome.read(SomaHome.settings).put("pack", id)) })
+        }
+        Window(
+            onCloseRequest = { shown = false },
+            visible = shown,
+            title = "Soma",
+            state = rememberWindowState(size = DpSize(520.dp, 820.dp)),
+            onPreviewKeyEvent = { e ->
+                if (e.type == KeyEventType.KeyDown && e.key == Key.Escape) {
+                    if (!DesktopBack.press()) shown = false
+                    true
+                } else {
+                    false
+                }
+            },
+        ) {
+            OmaChatScreen(host, prefill = null, onPrefilled = {}, wanted = wanted, onTab = { wanted = it.takeIf { tab -> tab != OMA_TAB } })
+        }
+    }
+}
+
+/**
+ * Says why Soma can't start where he will see it (opened from Finder there is no terminal), and ends with [code].
+ * Headless, as in a test, it is said on stderr alone.
+ */
+private fun fail(why: String, code: Int = 1): Nothing {
+    System.err.println(why)
+    if (!java.awt.GraphicsEnvironment.isHeadless()) runCatching { javax.swing.JOptionPane.showMessageDialog(null, why, "Soma", javax.swing.JOptionPane.WARNING_MESSAGE) }
+    exitProcess(code)
+}
+
+/**
+ * One Soma at a time. The one running holds a lock on [SomaHome.lock], which the system lets go however it ends, and
+ * listens on the loopback on a port it writes to [SomaHome.socket]. A Soma started while the lock is held tells that
+ * one what it was asked and ends; the port is only trusted when what answers on it says it is Soma.
+ */
+private object Single {
+    private const val HELLO = "soma"
+    private var held: java.nio.channels.FileLock? = null
+
+    /** True when this is the only Soma: the lock is now this one's until it ends. Throws when the lock file can't be made. */
+    fun claim(): Boolean {
+        if (held != null) return true
+        val channel = java.io.RandomAccessFile(SomaHome.lock, "rw").channel
+        held = runCatching { channel.tryLock() }.getOrNull()
+        if (held == null) channel.close()
+        return held != null
+    }
+
+    /** Tells the Soma that holds the lock to [word] ("show" or "toggle"); true when it answered. One still starting is waited on briefly. */
+    fun handOff(word: String): Boolean {
+        repeat(20) {
+            if (tell(word)) return true
+            Thread.sleep(150)
+        }
+        return false
+    }
+
+    private fun tell(word: String): Boolean {
+        val port = runCatching { SomaHome.socket.readText().trim().toInt() }.getOrNull() ?: return false
+        return runCatching {
+            Socket().use { socket ->
+                socket.connect(java.net.InetSocketAddress(InetAddress.getLoopbackAddress(), port), 500)
+                socket.soTimeout = 1000
+                socket.getOutputStream().write((word + "\n").toByteArray())
+                socket.getInputStream().bufferedReader().readLine() == HELLO
+            }
+        }.getOrDefault(false)
+    }
+
+    fun listen(onWord: (String) -> Unit) {
+        val server = ServerSocket(0, 4, InetAddress.getLoopbackAddress())
+        SomaHome.socket.writeText(server.localPort.toString())
+        thread(name = "soma-single", isDaemon = true) {
+            while (true) {
+                val word = runCatching {
+                    server.accept().use { client ->
+                        // One that connects and says nothing can't hold the door: it is let go after a second.
+                        client.soTimeout = 1000
+                        val said = client.getInputStream().bufferedReader().readLine()
+                        client.getOutputStream().write((HELLO + "\n").toByteArray())
+                        said
+                    }
+                }.getOrNull()?.trim()?.takeIf { it == "show" || it == "toggle" } ?: continue
+                javax.swing.SwingUtilities.invokeLater { onWord(word) }
+            }
+        }
+    }
+
+    /** At Quit: the port file goes, so no later program on that port is taken for Soma. */
+    fun release() {
+        SomaHome.socket.delete()
+        runCatching { held?.release() }
+    }
+}
+
+/** The tray icon: Open, the looks, Quit. Its notifications are Soma's ([Notices]). */
+private object Tray {
+    fun make(onOpen: () -> Unit, onQuit: () -> Unit, onLook: (String) -> Unit): TrayIcon? {
+        if (!SystemTray.isSupported()) return null
+        val menu = PopupMenu()
+        menu.add(MenuItem("Open Soma").apply { addActionListener { onOpen() } })
+        val looks = java.awt.Menu("Look")
+        for (id in Looks.ids) looks.add(MenuItem(id).apply { addActionListener { onLook(id) } })
+        menu.add(looks)
+        menu.addSeparator()
+        menu.add(MenuItem("Quit Soma").apply { addActionListener { onQuit() } })
+        val image = (Tray::class.java.classLoader.getResource("soma-tray.png")?.let { Toolkit.getDefaultToolkit().getImage(it) }
+            ?: BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB).apply { createGraphics().apply { color = java.awt.Color(0x7aa2f7); fillOval(3, 3, 10, 10); dispose() } })
+        val icon = TrayIcon(image, "Soma", menu).apply { isImageAutoSize = true; addActionListener { onOpen() } }
+        return runCatching { SystemTray.getSystemTray().add(icon); icon }.getOrNull()
+    }
+}

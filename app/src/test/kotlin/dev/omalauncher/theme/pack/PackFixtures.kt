@@ -35,13 +35,14 @@ fun loadPack(
 ) = PackLoader.load(packOf(manifest, *files), "test")
 
 /**
- * The launcher's main source roots: the app's, and the shared chat module's (common, phone and desktop) (Soma's chat, which the Mac app shares;
+ * The launcher's main source roots: the app's, and the shared chat module's (common, phone and desktop), and Soma desktop's (Soma's chat, which the Mac app shares;
  * cockpit/DESIGN.md). A test that reads the sources to pin a rule reads both, or a file moved to the module drops
  * out of its sight without the test failing.
  */
 fun mainSourceRoots(): List<File> =
     listOf(moduleFile("src/main/kotlin/dev/omalauncher")) +
-        listOf("commonMain", "androidMain", "desktopMain").map { moduleFile("../chat/src/$it/kotlin/dev/omalauncher") }.filter { it.isDirectory }
+        listOf("commonMain", "androidMain", "desktopMain").map { moduleFile("../chat/src/$it/kotlin/dev/omalauncher") }.filter { it.isDirectory } +
+        listOf(moduleFile("../desktop/src/main/kotlin/dev/omalauncher")).filter { it.isDirectory }
 
 /** Every Kotlin source under [dirs] of each main root ([mainSourceRoots]), or under the whole roots when none is named. */
 fun mainSources(vararg dirs: String): List<File> = mainSourceRoots().flatMap { root ->
