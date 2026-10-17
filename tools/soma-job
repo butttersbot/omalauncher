@@ -1,0 +1,92 @@
+#!/usr/bin/env python3
+"""soma-job: hands the phone agent a phone-only job, as agent mail (cockpit/DESIGN.md §5, docs/PHONE-JOBS.md).
+
+  soma-job install --project NAME --branch BRANCH [--commit SHA] [--note TEXT]
+  soma-job screenshot [--note TEXT]
+  soma-job device-test --project NAME --branch BRANCH [--tests PATTERN] [--note TEXT]
+  soma-job ping
+
+Any agent on a computer can send one; only the phone agent does it, on the phone, and an install still waits for Boss's
+OK in Soma there. The job is the mail's whole text, one JSON object, so the phone can tell it from words: {"job": …, "v": 1,
+…}. Answers come back as mail to the sender (`tmsg wait` picks them up), each with {"job", "state"} as its first line:
+an install answers "waiting" while it asks Boss in Soma, "scheduled" just before Soma restarts, then "done" or "failed"
+(with the version code) once it is back; the other kinds answer "done" or "failed" once; "declined" is a job the phone
+won't do. --to names another phone agent (default jacks-z-fold8:A).
+
+--project is a folder's bare name ("omalauncher"), the folder under /root/Projects on the phone; a path is refused. The
+phone holds each value to the patterns below and declines a job whose field fails one (naming the field); this refuses
+the same before sending, so a job never goes out other than as written.
+Only omalauncher is installed: any other project is declined there.
+"""
+import json, os, re, shutil, subprocess, sys
+
+KINDS = ('install', 'screenshot', 'device-test', 'ping')
+
+# Exactly what the phone's job parser accepts for each value (the phone agent, 2026-10-16); anything else it declines.
+PATTERNS = {
+    'project': (re.compile(r'[A-Za-z0-9][A-Za-z0-9._/-]{0,120}'), 'a letter or digit, then letters, digits, . _ / - (up to 121), no ".."'),
+    'branch': (re.compile(r'[A-Za-z0-9][A-Za-z0-9._/-]{0,120}'), 'a letter or digit, then letters, digits, . _ / - (up to 121), no ".."'),
+    'commit': (re.compile(r'[0-9a-f]{7,40}'), '7 to 40 lowercase hex digits'),
+    'tests': (re.compile(r'[A-Za-z0-9.*_$ -]{1,300}'), 'letters, digits, . * _ $ space - (up to 300)'),
+}
+NOTE_CHARS = 500
+
+
+def safe(name, value):
+    pattern, says = PATTERNS[name]
+    if not pattern.fullmatch(value) or (name in ('project', 'branch') and '..' in value):
+        sys.exit('soma-job: --%s %r is not what the phone takes: %s' % (name, value, says))
+    if name == 'tests' and value.lstrip().startswith('-'):
+        sys.exit('soma-job: --tests can\'t start with "-": it names test classes, never Gradle options')
+    if name == 'project' and '/' in value:
+        sys.exit('soma-job: --project is a folder name on the phone ("omalauncher"), not a path')
+    return value
+
+
+def note(value):
+    # As the phone reads it: control characters (C0, DEL and C1, as Kotlin's isISOControl) become spaces, and it stops at
+    # 500 UTF-16 units, never inside a pair. Bytes that aren't UTF-8 become U+FFFD, so the JSON stays strict.
+    value = value.encode('utf-8', 'surrogateescape').decode('utf-8', 'replace')
+    kept, units = [], 0
+    for c in value:
+        c = ' ' if ord(c) < 32 or 127 <= ord(c) <= 159 else c
+        width = 2 if ord(c) > 0xFFFF else 1
+        if units + width > NOTE_CHARS:
+            break
+        kept.append(c)
+        units += width
+    return ''.join(kept)
+
+
+def main(argv):
+    if not argv or argv[0] not in KINDS:
+        sys.exit(__doc__)
+    kind, rest = argv[0], argv[1:]
+    job = {'job': kind, 'v': 1}
+    to = 'jacks-z-fold8:A'
+    while rest:
+        flag = rest.pop(0)
+        if not rest or not flag.startswith('--'):
+            sys.exit(__doc__)
+        value = rest.pop(0)
+        if flag == '--to':
+            to = value
+        elif flag in ('--project', '--branch', '--commit', '--note', '--tests'):
+            job[flag[2:]] = note(value) if flag == '--note' else safe(flag[2:], value)
+        else:
+            sys.exit(__doc__)
+    if kind in ('install', 'device-test') and not (job.get('project') and job.get('branch')):
+        sys.exit('soma-job: %s needs --project and --branch' % kind)
+    if kind == 'install' and job['project'] != 'omalauncher':
+        sys.exit('soma-job: the phone installs omalauncher only; %s would be declined' % job['project'])
+    tmsg = shutil.which('tmsg') or os.path.expanduser('~/.local/bin/tmsg')
+    text = json.dumps(job)
+    # What goes out, exactly, so the sending agent's record shows it.
+    print('job: ' + text)
+    sent = subprocess.run([tmsg, 'send', to, '--title', 'Soma job', text], capture_output=True, text=True)
+    sys.stdout.write(sent.stdout)
+    sys.stderr.write(sent.stderr)
+    sys.exit(sent.returncode)
+
+
+main(sys.argv[1:])
