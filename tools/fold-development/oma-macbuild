@@ -8,7 +8,7 @@
 #                         looks; then run oma-install as before
 #
 # The signing key never leaves the phone: the Mac signs with its own debug key and this signs again. What is
-# taken must be HEAD's build, at the next version code, with no test failed, and carry the very proot libraries
+# taken must be HEAD's build (or an earlier one, when nothing since goes into the app), at the next version code, with no test failed, and carry the very proot libraries
 # this checkout has, byte for byte, since those run his Linux.
 set -euo pipefail
 repo=/root/Projects/omalauncher
@@ -34,6 +34,17 @@ case ${1:-} in
 --take)
   oma drop get >/dev/null 2>&1 || true
   json=$(ls -t /root/Inbox/soma-"$short"-*.json 2>/dev/null | head -n 1 || true)
+  if [ -z "$json" ]; then
+    # An earlier commit's build still serves when nothing since then goes into the app (notes, these tools).
+    newest=$(ls -t /root/Inbox/soma-*-"$code".json 2>/dev/null | head -n 1 || true)
+    built=$(sed -n 's/.*"commit":"\([0-9a-f]\{40\}\)".*/\1/p' "${newest:-/dev/null}")
+    if [ -n "$built" ] && git -C "$repo" merge-base --is-ancestor "$built" HEAD &&
+      git -C "$repo" diff --quiet "$built" HEAD -- . ':(exclude)tools/fold-development' ':(exclude)docs' ':(exclude)*.md'; then
+      json=$newest
+      commit=$built
+      echo "Taking the build of ${built:0:9}: nothing since then goes into the app."
+    fi
+  fi
   [ -n "$json" ] || die "Nothing from the Mac for $short yet (looked in ~/Inbox after oma drop get)."
   apk=${json%.json}.apk
   [ -f "$apk" ] || die "$(basename "$json") came without its app."
