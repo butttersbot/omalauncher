@@ -131,15 +131,37 @@ object WhisperModels {
         return ctx
     }
 
+    /**
+     * Held while a model reads or is freed. A whisper context is for one thread at a time, and must not be freed
+     * while one reads with it: a session that began while the last was still reading, or a release timed from an
+     * earlier session, crashed Soma in ggml (Boss, 2026-10-16 and 17). Taken before this object's own lock.
+     */
+    private val reading = Any()
+
     /** Frees the models not used for [idleMs]: the accurate one takes some 300 MB while loaded. */
-    @Synchronized fun release(idleMs: Long) {
-        val now = System.currentTimeMillis()
-        for ((name, ctx) in loadedModels.entries.toList()) {
-            if (now - (lastUse[name] ?: 0) >= idleMs) {
-                WhisperNative.free(ctx)
-                loadedModels.remove(name)
+    fun release(idleMs: Long) = synchronized(reading) {
+        synchronized(this) {
+            val now = System.currentTimeMillis()
+            for ((name, ctx) in loadedModels.entries.toList()) {
+                if (now - (lastUse[name] ?: 0) >= idleMs) {
+                    WhisperNative.free(ctx)
+                    loadedModels.remove(name)
+                }
             }
         }
+    }
+
+    /** What [ctx] hears in [samples], one reading at a time; nothing if the model was freed since it was handed out. */
+    fun transcribe(
+        ctx: Long,
+        samples: FloatArray,
+        prompt: String?,
+        threads: Int,
+        live: Boolean,
+    ): String = synchronized(reading) {
+        val name = synchronized(this) { loadedModels.entries.firstOrNull { it.value == ctx }?.key?.also { lastUse[it] = System.currentTimeMillis() } }
+        if (name == null) return ""
+        WhisperNative.transcribe(ctx, samples, prompt, threads, live)
     }
 
     const val TAG = "whisper"
@@ -271,7 +293,7 @@ class WhisperSession(
                 continue
             }
             readAt = end
-            val heard = parseHeard(WhisperNative.transcribe(ctx, audio(anchor, end), prompt, threads, true))
+            val heard = parseHeard(WhisperModels.transcribe(ctx, audio(anchor, end), prompt, threads, true))
             if (cancelled) break
             val now = heard.joinToString(" ") { it.text }
             live = live.read(now)
@@ -292,8 +314,8 @@ class WhisperSession(
         val text =
             when {
                 all.size < RATE / 4 -> ""
-                finalCtx != 0L -> parseHeard(WhisperNative.transcribe(finalCtx, all, prompt, threads, false)).joinToString(" ") { it.text }
-                ctx != 0L -> joinHeard(live.kept, parseHeard(WhisperNative.transcribe(ctx, audio(anchor, maxOf(anchor, minOf(count, voiceTo + RATE * PAD_MS / 1000))), prompt, threads, true)).joinToString(" ") { it.text })
+                finalCtx != 0L -> parseHeard(WhisperModels.transcribe(finalCtx, all, prompt, threads, false)).joinToString(" ") { it.text }
+                ctx != 0L -> joinHeard(live.kept, parseHeard(WhisperModels.transcribe(ctx, audio(anchor, maxOf(anchor, minOf(count, voiceTo + RATE * PAD_MS / 1000))), prompt, threads, true)).joinToString(" ") { it.text })
                 else -> live.text
             }
         main.post { if (!cancelled) onDone(text.trim(), null) }
