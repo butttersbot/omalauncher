@@ -1,0 +1,20 @@
+#!/bin/sh
+# Gradle on the Fold, for oma-build and for any builder's worktree (`oma-gradle :app:testDebugUnitTest` in it).
+# Android kills Soma, and the whole Linux inside it, when the phone runs short of memory (Boss, 2026-10-17: a build
+# took everything down mid-work). So one build runs at a time, whoever starts it, and each is kept small: a 2 GB
+# heap instead of 4, the Kotlin compiler inside Gradle instead of a second JVM, and two workers at most.
+set -eu
+export ANDROID_HOME=/opt/android-sdk
+export ANDROID_SDK_ROOT=/opt/android-sdk
+export TMPDIR=/tmp
+export JAVA_HOME=/usr/lib/jvm/default
+export PATH=/opt/gradle-9.8.0/bin:$PATH
+lock=/root/.config/oma-development/build.lock
+exec 9>"$lock"
+if ! flock -n 9; then
+  echo "oma-gradle: another builder's build is running; waiting for it to finish." >&2
+  flock 9
+fi
+gradle -I /root/.config/oma-development/fold.init.gradle --no-daemon --console=plain \
+  -Dorg.gradle.jvmargs='-Xmx2g -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC -Dfile.encoding=UTF-8' \
+  -Dorg.gradle.parallel=false --max-workers=2 -Pkotlin.compiler.execution.strategy=in-process "$@"
