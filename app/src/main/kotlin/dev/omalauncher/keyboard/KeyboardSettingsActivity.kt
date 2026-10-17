@@ -65,6 +65,7 @@ class KeyboardSettingsActivity : Activity() {
         button("2. Switch to it") { (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showInputMethodPicker() }
         text("Hold 🙂 on the keyboard to switch back to another keyboard.", 14f)
         check("Mechanical keys (off: the look's own keys)", OmaKeyboardService.MECH, false)
+        check("Split keys on the inner screen, one half for each thumb", OmaKeyboardService.SPLIT, true)
         check("Aim fix: touches go where your thumb means", OmaKeyboardService.AIM, true)
         check("Buzz on each key", OmaKeyboardService.HAPTICS, true)
         check("Thock sound on each key", OmaKeyboardService.SOUND, false)
@@ -79,7 +80,7 @@ class KeyboardSettingsActivity : Activity() {
                     mech = prefs.getBoolean(OmaKeyboardService.MECH, false)
                     look = keyboardLook(pack, assets)
                     val w = resources.displayMetrics.widthPixels / d - 40
-                    layout = KeyGeometry.layout(w, Screen.of(w + 40, resources.displayMetrics.heightPixels / d), Layer.ABC, mech, false, false, "return")
+                    layout = KeyGeometry.layout(w, Screen.of(w + 40, resources.displayMetrics.heightPixels / d), Layer.ABC, mech, false, false, "return", prefs.getBoolean(OmaKeyboardService.SPLIT, true))
                 },
             )
         }

@@ -159,7 +159,7 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host {
         val was = screen
         screen = Screen.of(w, h)
         if (was != screen || aim == null) aim = loadAim(screen)
-        view.layout = KeyGeometry.layout(w, screen, layer, view.mech, shift || capsLock, capsLock, returnLabel())
+        view.layout = KeyGeometry.layout(w, screen, layer, view.mech, shift || capsLock, capsLock, returnLabel(), split = prefs.getBoolean(SPLIT, true))
     }
 
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
@@ -432,6 +432,9 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host {
         const val PREFS = "oma_keyboard"
         /** Mechanical caps instead of the look's own keys. A new key (2026-10-15): the look's keys are the default now. */
         const val MECH = "style_mech"
+
+        /** The inner screen's keys split into two thumb halves ([KeyGeometry.layout]); on unless he turns it off. */
+        const val SPLIT = "split_inner"
         const val AIM = "aim"
         const val SOUND = "sound"
         const val HAPTICS = "haptics"

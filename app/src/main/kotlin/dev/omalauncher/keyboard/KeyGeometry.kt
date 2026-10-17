@@ -153,6 +153,18 @@ object KeyGeometry {
             Screen.LANDSCAPE -> 50f
         }
 
+    /**
+     * One key's width when the inner screen's keys are split ([layout]'s split): the cover keyboard's, the size his
+     * thumbs practised on (475 dp across ten keys), so each half is that keyboard's half.
+     */
+    const val SPLIT_UNIT = 46.7f
+
+    /**
+     * The keys for a board [widthDp] wide on [screen]. With [split], on the inner screen only (Boss, 2026-10-17: "the
+     * split screen keyboard"), each row is cut in two and its halves pushed to the two edges, one for each thumb: the
+     * left half of each row at the left, the rest at the right, a gap between, ⇧ and ⌫ at the outer ends, and the
+     * space bar in two, one under each thumb. On the cover screen it is always one piece.
+     */
     fun layout(
         widthDp: Float,
         screen: Screen,
@@ -161,6 +173,7 @@ object KeyGeometry {
         upper: Boolean,
         capsLock: Boolean,
         returnLabel: String,
+        split: Boolean = false,
     ): KeyLayout {
         val top = if (mech) 10f else 6f
         val bottom = 8f
@@ -192,13 +205,6 @@ object KeyGeometry {
                 Layer.EMOJI -> EMOJI
             }
         val shown = { s: String -> if (layer == Layer.ABC && upper) s.uppercase() else s }
-        val u = (widthDp - 2 * PAD) / 10
-        val x0 = PAD
-
-        rows[0].forEachIndexed { i, c -> add(0, x0 + i * u, u, shown(c), KeyAction.Type(c), KeyKind.LETTER) }
-        val off = (10 - rows[1].size) / 2f * u
-        rows[1].forEachIndexed { i, c -> add(1, x0 + off + i * u, u, shown(c), KeyAction.Type(c), KeyKind.LETTER) }
-        // Third row: shift and ⌫ take 1.5 units of touch but show 1.25, leaving the small gap Apple has.
         val (modLabel, modAction) =
             when (layer) {
                 Layer.ABC -> (if (capsLock) "⇪" else "⇧") to KeyAction.Shift
@@ -206,6 +212,53 @@ object KeyGeometry {
                 Layer.SYM -> "123" to KeyAction.Go(Layer.NUM)
                 Layer.EMOJI -> "ABC" to KeyAction.Go(Layer.ABC)
             }
+        val x0 = PAD
+
+        if (split && screen != Screen.COVER) {
+            val u = minOf(SPLIT_UNIT, (widthDp - 2 * PAD) / 10)
+            // Where the right half's five units begin: its keys end at the right edge as the left half's begin at the left.
+            val r = widthDp - PAD - 5 * u
+
+            fun halves(row: List<String>) = row.take((row.size + 1) / 2) to row.drop((row.size + 1) / 2)
+            fun letters(row: Int, chars: List<String>, from: Float) =
+                chars.forEachIndexed { i, c -> add(row, from + i * u, u, shown(c), KeyAction.Type(c), KeyKind.LETTER) }
+            val (l0, r0) = halves(rows[0])
+            letters(0, l0, x0)
+            letters(0, r0, r + (5 - r0.size) * u)
+            // Apple's half-key step on the second row of letters, in both halves.
+            val step = if (rows[1].size < 10) u / 2 else 0f
+            val (l1, r1) = halves(rows[1])
+            letters(1, l1, x0 + step)
+            letters(1, r1, r + step)
+            // Third row: ⇧ at the left end and ⌫ at the right one, each 1.5 units of touch showing 1.25, as in one piece.
+            val (l2, r2) = halves(rows[2])
+            add(2, x0, 1.5f * u, modLabel, modAction, KeyKind.MOD, visW = 1.25f * u)
+            letters(2, l2, x0 + 1.5f * u)
+            letters(2, r2, r + 3.5f * u - r2.size * u)
+            add(2, r + 3.5f * u, 1.5f * u, "⌫", KeyAction.Back, KeyKind.MOD, visX = r + 3.75f * u, visW = 1.25f * u)
+            // Bottom row: 123, 🙂 and a space for the left thumb; a space, the mic and return for the right one.
+            var x = x0
+
+            fun put(w: Float, label: String, action: KeyAction, kind: KeyKind) {
+                add(3, x, w * u, label, action, kind)
+                x += w * u
+            }
+            put(1.25f, if (layer == Layer.ABC) "123" else "ABC", KeyAction.Layer, KeyKind.MOD)
+            put(1.1f, "🙂", KeyAction.Emoji, KeyKind.MOD)
+            put(2.65f, "space", KeyAction.Space, KeyKind.SPACE)
+            x = r
+            put(1.75f, "space", KeyAction.Space, KeyKind.SPACE)
+            put(1.5f, "🎤", KeyAction.Mic, KeyKind.MIC)
+            put(1.75f, returnLabel, KeyAction.Return, KeyKind.RETURN)
+            return KeyLayout(keys, top + 4 * h + bottom, h, top, u)
+        }
+
+        val u = (widthDp - 2 * PAD) / 10
+
+        rows[0].forEachIndexed { i, c -> add(0, x0 + i * u, u, shown(c), KeyAction.Type(c), KeyKind.LETTER) }
+        val off = (10 - rows[1].size) / 2f * u
+        rows[1].forEachIndexed { i, c -> add(1, x0 + off + i * u, u, shown(c), KeyAction.Type(c), KeyKind.LETTER) }
+        // Third row: shift and ⌫ take 1.5 units of touch but show 1.25, leaving the small gap Apple has.
         add(2, x0, 1.5f * u, modLabel, modAction, KeyKind.MOD, visW = 1.25f * u)
         val mw = 7 * u / rows[2].size
         rows[2].forEachIndexed { i, c -> add(2, x0 + 1.5f * u + i * mw, mw, shown(c), KeyAction.Type(c), KeyKind.LETTER) }
