@@ -20,8 +20,8 @@ private const val FLOAT_OPEN_EVERY_MS = 4_000L
 /**
  * The sheep over everything (Boss, 2026-10-15: "have the pet always on top … even when I'm in an app, outside of
  * Oma"): a small window of the accessibility service's own, which needs no permission, as the ring's does. Unlike
- * the ring's it takes touches, but only on itself: a tap opens its panel, a drag moves it, and a touch outside an
- * open panel closes it. [PhoneService] puts it up and takes it down; main thread only.
+ * the ring's it takes touches, but only on itself: a tap opens its panel, a drag moves it, holding it still talks to
+ * the phone's builder ([SheepTalk]), and a touch outside an open panel closes it. [PhoneService] puts it up and takes it down; main thread only.
  */
 class SheepOverlay(private val service: AccessibilityService) {
     private var frame: SheepFrame? = null
@@ -41,6 +41,7 @@ class SheepOverlay(private val service: AccessibilityService) {
     private var room: Pair<Int, Int>? = null
     private var side = "right"
     private var walk: Runnable? = null
+    private val talk = SheepTalk(service)
 
     val shown get() = frame != null
 
@@ -189,6 +190,13 @@ class SheepOverlay(private val service: AccessibilityService) {
             }, raw = true, onHeld = { held ->
                 if (held) halt()
                 page?.let { giveHerd(it, "held", if (held) "true" else "false") }
+            }, onTalk = { on ->
+                if (on) {
+                    halt()
+                    talk.start()
+                } else {
+                    talk.finish()
+                }
             }) {
                 override fun dispatchTouchEvent(e: MotionEvent): Boolean {
                     if (e.actionMasked == MotionEvent.ACTION_OUTSIDE) {

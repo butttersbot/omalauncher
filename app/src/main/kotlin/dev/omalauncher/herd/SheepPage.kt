@@ -82,6 +82,9 @@ fun herdPage(
         loadUrl("file:///android_asset/herd/pet.html")
     }
 
+/** How long a finger rests on the sheep, without moving, before it listens. Shorter than the page's own long press. */
+const val TALK_HOLD_MS = 350L
+
 /** Hands the page [json] through its `herd.<function>`. Main thread. */
 fun giveHerd(
     page: WebView,
@@ -100,6 +103,7 @@ open class SheepFrame(
     private val onDrop: () -> Unit,
     private val raw: Boolean = false,
     private val onHeld: (Boolean) -> Unit = {},
+    private val onTalk: ((Boolean) -> Unit)? = null,
 ) : FrameLayout(context) {
     private val slop = ViewConfiguration.get(context).scaledTouchSlop
     private var downX = 0f
@@ -108,6 +112,25 @@ open class SheepFrame(
     private var lastY = 0f
     private var dragging = false
     private var onPet = false
+
+    /**
+     * Held still on the sheep for [TALK_HOLD_MS]: [onTalk] hears true, and false when the finger lifts (Boss, 2026-10-17:
+     * talk to the agent while playing, without leaving the game). A move before then is still a drag.
+     */
+    private var talking = false
+    private val talkTimer = Handler(Looper.getMainLooper())
+    private val startTalk = Runnable {
+        if (dragging || !onPet) return@Runnable
+        talking = true
+        performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+        // The page had the touch until now: it is told the touch is over, so a hold isn't also its tap or long press.
+        val now = android.os.SystemClock.uptimeMillis()
+        MotionEvent.obtain(now, now, MotionEvent.ACTION_CANCEL, 0f, 0f, 0).also { cancel ->
+            for (i in 0 until childCount) getChildAt(i).dispatchTouchEvent(cancel)
+            cancel.recycle()
+        }
+        onTalk?.invoke(true)
+    }
     private val at = IntArray(2)
 
     /** The page stands the sheep in the bottom-left corner instead of the bottom-right (its `herd.side("left")`). */
@@ -155,9 +178,21 @@ open class SheepFrame(
             MotionEvent.ACTION_DOWN -> {
                 downX = screenX(e); downY = screenY(e); lastX = screenX(e); lastY = screenY(e)
                 dragging = false
+                talking = false
                 onPet = onSheep(e.x, e.y)
+                if (onPet && onTalk != null) talkTimer.postDelayed(startTalk, TALK_HOLD_MS)
             }
-            MotionEvent.ACTION_MOVE -> if (onPet && !dragging && hypot(screenX(e) - downX, screenY(e) - downY) > slop) {
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                talkTimer.removeCallbacks(startTalk)
+                // A finger lifted without moving since it began to talk comes here and never reaches onTouchEvent.
+                if (talking) {
+                    talking = false
+                    onTalk?.invoke(false)
+                    return true
+                }
+            }
+            MotionEvent.ACTION_MOVE -> if (onPet && !dragging && !talking && hypot(screenX(e) - downX, screenY(e) - downY) > slop) {
+                talkTimer.removeCallbacks(startTalk)
                 dragging = true
                 // Home's page swipe doesn't take a drag of the sheep.
                 parent?.requestDisallowInterceptTouchEvent(true)
@@ -165,11 +200,18 @@ open class SheepFrame(
                 onHeld(true)
             }
         }
-        return dragging
+        return dragging || talking
     }
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(e: MotionEvent): Boolean {
+        if (talking) {
+            if (e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL) {
+                talking = false
+                onTalk?.invoke(false)
+            }
+            return true
+        }
         when (e.actionMasked) {
             MotionEvent.ACTION_MOVE -> if (dragging) {
                 onDrag(screenX(e) - lastX, screenY(e) - lastY)
