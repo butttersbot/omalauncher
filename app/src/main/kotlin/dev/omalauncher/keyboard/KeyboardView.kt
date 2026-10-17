@@ -115,11 +115,22 @@ class KeyboardView(
      */
     private var navPx = 0
 
+    /** Asks Android for the strip's height again: each time the keyboard comes up, not only when it is made. */
+    fun recheckInsets() {
+        if (!preview) requestApplyInsets()
+    }
+
     init {
         setOnApplyWindowInsetsListener { _, insets ->
+            // The strip's height even while Android has it hidden for a moment: a keyboard brought back after a while
+            // was given 0 then, and its bottom row went under the strip (Boss, 2026-10-16).
             val bottom =
-                if (android.os.Build.VERSION.SDK_INT >= 30) insets.getInsets(android.view.WindowInsets.Type.navigationBars() or android.view.WindowInsets.Type.tappableElement()).bottom
-                else @Suppress("DEPRECATION") insets.systemWindowInsetBottom
+                if (android.os.Build.VERSION.SDK_INT >= 30) {
+                    val nav = android.view.WindowInsets.Type.navigationBars() or android.view.WindowInsets.Type.tappableElement()
+                    maxOf(insets.getInsets(nav).bottom, insets.getInsetsIgnoringVisibility(android.view.WindowInsets.Type.navigationBars()).bottom)
+                } else {
+                    @Suppress("DEPRECATION") insets.systemWindowInsetBottom
+                }
             if (!preview && bottom != navPx) {
                 navPx = bottom
                 requestLayout()

@@ -112,6 +112,7 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host {
         autoShift()
         view.look = look()
         view.mech = prefs.getBoolean(MECH, false)
+        view.recheckInsets()
         rebuild()
     }
 
