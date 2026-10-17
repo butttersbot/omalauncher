@@ -14,17 +14,17 @@ class RingStateTest {
 
     @Test fun eachSignalAloneGivesItsState() {
         assertEquals(RingState.Listening, ringState(idle.copy(listening = true), 0))
-        assertEquals(RingState.Working, ringState(idle.copy(working = true), 0))
-        assertEquals(RingState.NeedsYou, ringState(idle.copy(working = true, pending = 1), 0))
+        assertEquals(RingState.Working, ringState(idle.copy(phone = true), 0))
+        assertEquals(RingState.NeedsYou, ringState(idle.copy(phone = true, pending = 1), 0))
         assertEquals(RingState.Done, ringState(idle.copy(doneAt = 0), 10))
     }
 
     @Test fun needsYouBeatsWorkingBeatsListeningBeatsDone() {
-        val everything = RingSignals(listening = true, working = true, pending = 2, doneAt = 0)
+        val everything = RingSignals(listening = true, working = true, phone = true, pending = 2, doneAt = 0)
         assertEquals(RingState.NeedsYou, ringState(everything, 1))
         assertEquals(RingState.Working, ringState(everything.copy(pending = 0), 1))
-        assertEquals(RingState.Listening, ringState(everything.copy(pending = 0, working = false), 1))
-        assertEquals(RingState.Done, ringState(everything.copy(pending = 0, working = false, listening = false), 1))
+        assertEquals(RingState.Listening, ringState(everything.copy(pending = 0, phone = false), 1))
+        assertEquals(RingState.Done, ringState(everything.copy(pending = 0, phone = false, listening = false), 1))
     }
 
     @Test fun doneShowsForItsTimeAndThenGoesOff() {
@@ -37,9 +37,10 @@ class RingStateTest {
     }
 
     @Test fun aTaskThatEndsWellIsDoneFromThatMoment() {
-        val running = idle.afterTask(working = true, pending = 0, succeeded = false, now = 10)
+        val running = idle.afterTask(working = true, pending = 0, succeeded = false, now = 10).afterPhone(true)
         assertEquals(RingState.Working, ringState(running, 20))
-        val ended = running.afterTask(working = false, pending = 0, succeeded = true, now = 500)
+        // The agent let go of the phone as its work ended.
+        val ended = running.afterPhone(false).afterTask(working = false, pending = 0, succeeded = true, now = 500)
         assertEquals(500L, ended.doneAt)
         assertEquals(RingState.Done, ringState(ended, 600))
     }
@@ -67,13 +68,13 @@ class RingStateTest {
     }
 
     @Test fun approvalsComeAndGoWithinATask() {
-        val running = idle.afterTask(working = true, pending = 0, succeeded = false, now = 0)
+        val running = idle.afterTask(working = true, pending = 0, succeeded = false, now = 0).afterPhone(true)
         val asked = running.afterTask(working = true, pending = 1, succeeded = false, now = 5)
         assertEquals(RingState.NeedsYou, ringState(asked, 6))
         val answered = asked.afterTask(working = true, pending = 0, succeeded = false, now = 9)
         assertEquals(RingState.Working, ringState(answered, 10))
         // An approval still waiting when the task ends goes with it.
-        assertEquals(RingState.Off, ringState(asked.afterTask(working = false, pending = 0, succeeded = false, now = 11), 12))
+        assertEquals(RingState.Off, ringState(asked.afterPhone(false).afterTask(working = false, pending = 0, succeeded = false, now = 11), 12))
         assertEquals(0, running.afterTask(working = true, pending = -3, succeeded = false, now = 5).pending)
     }
 
@@ -83,6 +84,8 @@ class RingStateTest {
         val unwatch = OmaRing.watch { seen++ }
         try {
             OmaRing.task(working = true, pending = 0, succeeded = false, now = 10)
+            assertEquals(RingState.Off, ringState(OmaRing.signals, 11))
+            OmaRing.phone(true)
             assertEquals(RingState.Working, ringState(OmaRing.signals, 11))
             OmaRing.task(working = true, pending = 1, succeeded = false, now = 12)
             assertEquals(RingState.NeedsYou, ringState(OmaRing.signals, 13))
@@ -90,6 +93,7 @@ class RingStateTest {
             val before = seen
             OmaRing.task(working = true, pending = 1, succeeded = false, now = 14)
             assertEquals(before, seen)
+            OmaRing.phone(false)
             OmaRing.task(working = false, pending = 0, succeeded = true, now = 20)
             assertEquals(RingState.Done, ringState(OmaRing.signals, 21))
             val a = Any()
@@ -108,5 +112,26 @@ class RingStateTest {
         OmaRing.assistant(true)
         OmaRing.assistant(false)
         assertEquals(after, seen)
+    }
+
+    /**
+     * Boss, 2026-10-17: the ring is "only supposed to be active when there's active phone use". A task alone, on code
+     * here or on a Mac, leaves it dark; an agent using the phone lights it, and only such a task's ending shows done.
+     */
+    @Test fun onlyUsingThePhoneLightsWorking() {
+        val coding = idle.afterTask(working = true, pending = 0, succeeded = false, now = 10)
+        assertEquals(RingState.Off, ringState(coding, 20))
+        val tapping = coding.afterPhone(true)
+        assertEquals(RingState.Working, ringState(tapping, 30))
+        // The agent stopped moving the screen and went back to thinking or coding: dark again.
+        assertEquals(RingState.Off, ringState(tapping.afterPhone(false), 40))
+        // That task used the phone, so its good ending shows done; a task that never touched it ends dark.
+        assertEquals(RingState.Done, ringState(tapping.afterPhone(false).afterTask(false, 0, succeeded = true, now = 50), 60))
+        assertEquals(RingState.Off, ringState(coding.afterTask(false, 0, succeeded = true, now = 50), 60))
+        // The next task starts afresh: the last one's phone use doesn't make its ending done.
+        val next = tapping.afterPhone(false).afterTask(false, 0, true, 50).afterTask(true, 0, false, 100)
+        assertEquals(RingState.Off, ringState(next.afterTask(false, 0, succeeded = true, now = 200), 210))
+        // Approvals waiting for him still show, phone or not.
+        assertEquals(RingState.NeedsYou, ringState(coding.copy(pending = 1), 20))
     }
 }

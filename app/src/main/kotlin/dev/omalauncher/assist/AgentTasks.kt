@@ -224,8 +224,9 @@ object AgentTasks {
     private fun shown(context: Context, succeeded: Boolean) {
         val mac = mac
         macShown = mac
-        // The ring follows the task from here, the one place every change of it passes. Background work left running
-        // on the Mac is not work in hand: it may run for hours, and a ring lit that long would say nothing.
+        // The ring follows the task from here, the one place every change of it passes: its approvals, and whether a task
+        // that used the phone ended well. Working itself is lit only by the phone in use (PhoneService). Background work
+        // left running on the Mac is not work in hand: it may run for hours, and a ring lit that long would say nothing.
         OmaRing.task(working || mac.working != null, pending.size + mac.approvals, succeeded)
         OmaTiles.refresh(context)
         OmaLockWidget.refresh(context)

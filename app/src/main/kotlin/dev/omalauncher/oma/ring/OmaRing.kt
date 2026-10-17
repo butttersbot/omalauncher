@@ -24,6 +24,9 @@ object OmaRing {
     @Synchronized fun task(working: Boolean, pending: Int, succeeded: Boolean, now: Long = now()) =
         publish(signals.afterTask(working, pending, succeeded, now))
 
+    /** An agent started or stopped using the phone (PhoneService): the one thing that lights working. */
+    @Synchronized fun phone(inUse: Boolean) = publish(signals.afterPhone(inUse))
+
     /** [source] started or stopped taking a request; the ring listens while anyone does. */
     @Synchronized fun hearing(source: Any, on: Boolean) {
         if (on) hearing += source else hearing -= source
