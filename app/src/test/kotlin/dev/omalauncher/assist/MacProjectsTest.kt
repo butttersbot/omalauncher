@@ -64,7 +64,7 @@ class MacProjectsTest {
         assertFalse(macMade(waiting, made).fresh)
         // The runner's ids are "t" and hex digits, so none is ever the placeholder.
         assertFalse(Regex("t[0-9a-f]{8}").matches(MAC_NEW_THREAD))
-        assertEquals("Oma", OMA_NAME); assertNotEquals(QUICK_AGENT, OMA_NAME)
+        assertEquals("Soma", OMA_NAME); assertNotEquals(QUICK_AGENT, OMA_NAME)
     }
 
     /** OPEN-BUGS #13: a new chat's first words with no front agent go to the Mac as they are, named by his first words. */

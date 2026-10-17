@@ -273,7 +273,7 @@ object LookWidgets {
         val room = box.width() - pad * 2f
         val caption = paint(context, pack, pack.type.mono, box.height() * 0.17f, pack.scrap.muted.argb)
         val line = paint(context, pack, pack.type.display, box.height() * 0.36f, pack.scrap.surface.ink.argb)
-        val name = spelled("oma", pack.type.mono)
+        val name = spelled("soma", pack.type.mono)
         fitted(caption, name, room)
         fitted(line, state, room)
         val top = box.top + pad - caption.fontMetrics.ascent

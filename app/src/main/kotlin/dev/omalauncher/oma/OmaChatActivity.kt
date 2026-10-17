@@ -255,7 +255,7 @@ private fun OmaChatScreen(
     val frontAnswer = remember(tick) { QuickLane.answer }
     // The Mac's waiting requests, read the same way. Its entries are in the thread itself, written as its events come.
     val macPending = remember(tick) { MacThreads.pending }
-    val begun = "${runtime.agents.default?.name ?: "Oma"} is working"
+    val begun = "${runtime.agents.default?.name ?: "Soma"} is working"
     val linuxState by runtime.bootstrap.state.collectAsState()
     // Every thread as it stands, and what he made of the tabs: an archived one that has new work comes back here, and
     // a new chat that has rested its hours goes.
@@ -513,7 +513,7 @@ private fun OmaChatScreen(
                     item {
                         BasicText(
                             when {
-                                tab == OMA_TAB -> "Ask Oma for something. For a fresh conversation, start a new chat with ＋ at the end of the tabs (▾)."
+                                tab == OMA_TAB -> "Ask Soma for something. For a fresh conversation, start a new chat with ＋ at the end of the tabs (▾)."
                                 to is SendTo.Chat -> "A new chat, for work on the Mac. Its first message starts a new thread there and names the tab. For the phone, hold to talk."
                                 else -> "Nothing has been sent to ${tabTitle(tab, threads)} from this phone yet."
                             },
@@ -954,7 +954,7 @@ private fun TabMenu(
 
 /** Puts [text] on the clipboard and says so. */
 private fun copied(context: android.content.Context, text: String) {
-    context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("Oma", text))
+    context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("Soma", text))
     Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
 }
 

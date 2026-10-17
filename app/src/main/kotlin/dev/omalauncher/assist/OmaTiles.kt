@@ -47,14 +47,14 @@ abstract class OmaTile : TileService() {
         }
     }
 }
-class OmaPromptTile : OmaTile() { override val title = "Oma prompt"; override fun subtitle() = "Speak or type" }
+class OmaPromptTile : OmaTile() { override val title = "Soma prompt"; override fun subtitle() = "Speak or type" }
 class OmaActivityTile : OmaTile() {
     override val title = "Agent activity"
     override fun active() = AgentTasks.working || AgentTasks.mac.working != null
     override fun subtitle() = activityLine(AgentTasks.working, AgentTasks.pending.size, AgentTasks.headline, AgentTasks.mac)
 }
 class OmaApprovalsTile : OmaTile() {
-    override val title = "Oma approvals"
+    override val title = "Soma approvals"
     private val count get() = AgentTasks.pending.size + MacThreads.pending.size
     override fun active() = count > 0
     override fun subtitle() = if (active()) "$count to review" else "No approvals"

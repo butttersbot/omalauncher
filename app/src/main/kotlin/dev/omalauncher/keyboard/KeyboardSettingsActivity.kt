@@ -58,10 +58,10 @@ class KeyboardSettingsActivity : Activity() {
             },
         )
 
-        text("Oma keyboard", 22f)
-        text("Apple's layout in Oma's look, with the big mic. It learns where your thumbs land, but only writes that down for a review to suggest changes from; keys never move by themselves. Nothing is learned in password fields, and nothing you type is kept.")
+        text("Soma keyboard", 22f)
+        text("Apple's layout in Soma's look, with the big mic. It learns where your thumbs land, but only writes that down for a review to suggest changes from; keys never move by themselves. Nothing is learned in password fields, and nothing you type is kept.")
         status = text("")
-        button("1. Turn on Oma keyboard") { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) }
+        button("1. Turn on Soma keyboard") { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) }
         button("2. Switch to it") { (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showInputMethodPicker() }
         text("Hold 🙂 on the keyboard to switch back to another keyboard.", 14f)
         check("Mechanical keys (off: the look's own keys)", OmaKeyboardService.MECH, false)
@@ -92,7 +92,7 @@ class KeyboardSettingsActivity : Activity() {
             when {
                 !enabled() -> "Not on yet: step 1, then step 2."
                 !chosen() -> "On, but another keyboard is in use: step 2."
-                else -> "Oma keyboard is in use."
+                else -> "Soma keyboard is in use."
             }
     }
 

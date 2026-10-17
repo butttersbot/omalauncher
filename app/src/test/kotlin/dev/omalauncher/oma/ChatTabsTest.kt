@@ -27,7 +27,7 @@ class ChatTabsTest {
     @Test fun omaComesFirstThenTheThreadsInTheirOrder() {
         assertEquals(listOf(OMA_TAB, PHONE_THREAD, "mac:t-ff4", "mac:t-pond"), chatTabs(threads))
         assertEquals(listOf(OMA_TAB), chatTabs(emptyList()))
-        assertEquals("Oma", tabTitle(OMA_TAB, threads)); assertEquals("Pond", tabTitle("mac:t-pond", threads)); assertEquals("Phone", tabTitle(PHONE_THREAD, threads))
+        assertEquals("Soma", tabTitle(OMA_TAB, threads)); assertEquals("Pond", tabTitle("mac:t-pond", threads)); assertEquals("Phone", tabTitle(PHONE_THREAD, threads))
     }
 
     @Test fun anIntentOpensItsThreadsTabAndAnythingElseOpensOma() {

@@ -113,7 +113,7 @@ fun listeningLook(
         ListeningPhase.Heard -> ListeningLook("Send this?", heard, listOf(ListeningAct.Send, ListeningAct.Add, ListeningAct.Cancel), note, editable = true)
         ListeningPhase.Missed -> ListeningLook("Didn't catch that", "", listOf(ListeningAct.Retry, ListeningAct.Cancel), note)
         ListeningPhase.Failed -> ListeningLook("That didn't work", detail, listOf(ListeningAct.Retry, ListeningAct.Cancel), note)
-        ListeningPhase.NoMic -> ListeningLook("Microphone is off", "Allow the microphone to talk to Oma", listOf(ListeningAct.Allow, ListeningAct.Cancel))
+        ListeningPhase.NoMic -> ListeningLook("Microphone is off", "Allow the microphone to talk to Soma", listOf(ListeningAct.Allow, ListeningAct.Cancel))
         ListeningPhase.NeedsOk -> ListeningLook("Needs your OK", detail, listOf(ListeningAct.Review, ListeningAct.Close))
     }
 

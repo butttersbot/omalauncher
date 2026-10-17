@@ -105,8 +105,8 @@ fun receiptTab(task: ChatTask, meta: TabMeta = TabMeta()): String? = when {
 /** The Mac thread whose waiting requests [tab] shows: a Mac thread's own, or the one made for a new chat; null for any other tab. */
 fun tabMacThread(tab: String, meta: TabMeta = TabMeta()): String? = macThreadId(tab) ?: meta.chatOf(tab)?.mac?.takeIf { it.isNotEmpty() }
 
-/** What the header calls the open tab: the thread's name, or "Oma". */
-fun tabTitle(tab: String, threads: List<AgentThread>): String = threads.firstOrNull { it.key == tab }?.name ?: "Oma"
+/** What the header calls the open tab: the thread's name, or "Soma". */
+fun tabTitle(tab: String, threads: List<AgentThread>): String = threads.firstOrNull { it.key == tab }?.name ?: "Soma"
 
 /** What the empty field says on a thread's tab; null on the Oma tab, which keeps its own hints. */
 fun fieldHint(to: SendTo): String? = when (to) {

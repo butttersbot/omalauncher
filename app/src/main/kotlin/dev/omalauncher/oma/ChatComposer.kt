@@ -116,10 +116,10 @@ fun sendTo(
 const val CHAT_MAKING = "The new thread on the Mac is still being made. Send this in a moment."
 
 /** Why images are not sent from a Mac thread's tab. */
-fun noImagesTo(name: String) = "$name is on the Mac, which takes no images from here. Remove them, or send this from the Oma tab."
+fun noImagesTo(name: String) = "$name is on the Mac, which takes no images from here. Remove them, or send this from the Soma tab."
 
 /** Why images are not sent in a new chat, whose work is the Mac's. */
-const val NO_IMAGES_IN_CHAT = "A new chat is for the Mac, which takes no images from here. Remove them, or send this from the Oma tab."
+const val NO_IMAGES_IN_CHAT = "A new chat is for the Mac, which takes no images from here. Remove them, or send this from the Soma tab."
 
 /**
  * [agent] is the default agent's command, null when none is installed. Images alone ask for a description, as on home.
@@ -157,8 +157,8 @@ fun outgoing(
             linux && agent in BACKGROUND_AGENTS && frontFirst(prompt, images, frontReady) -> Outgoing.Front(prompt)
             else -> Outgoing.ChatMac(prompt, to.chat)
         }
-        !linux -> Outgoing.Refused("Open Omalauncher and finish Linux setup first.")
-        agent == null -> Outgoing.Refused("Install and sign in to an agent in Omalauncher first.")
+        !linux -> Outgoing.Refused("Open Soma and finish Linux setup first.")
+        agent == null -> Outgoing.Refused("Install and sign in to an agent in Soma first.")
         images > 0 && agent !in BACKGROUND_AGENTS -> Outgoing.Refused("Choose Claude Code or Codex to send images.")
         imageMissing -> Outgoing.Refused("An attached image is no longer available. Remove it and attach it again.")
         agent in BACKGROUND_AGENTS -> when {

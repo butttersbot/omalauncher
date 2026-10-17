@@ -8,7 +8,7 @@ allprojects { p ->
             android.buildToolsVersion = '36.0.0'
             android.buildTypes.debug.applicationIdSuffix = '.dev'
             // Every entry it puts in the app list says Dev, and its icon is magenta, so it is never taken for the working launcher.
-            android.buildTypes.debug.manifestPlaceholders['appLabel'] = 'Omalauncher Dev'
+            android.buildTypes.debug.manifestPlaceholders['appLabel'] = 'Soma Dev'
             android.buildTypes.debug.manifestPlaceholders['labelSuffix'] = ' Dev'
             android.sourceSets.debug.res.srcDir(new File(p.rootDir, 'tools/fold-development/dev-res'))
             android.signingConfigs.debug.storeFile = new File('/root/.config/oma-development/working-debug.keystore')

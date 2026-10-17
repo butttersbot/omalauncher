@@ -324,7 +324,7 @@ class PocketShotActivity : Activity() {
         results: IntArray,
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, results)
-        if (results.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED) send() else say("Oma needs photo access to put screenshots in the pocket.")
+        if (results.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED) send() else say("Soma needs photo access to put screenshots in the pocket.")
     }
 
     /** The newest screenshot of the last five minutes, uploaded. */

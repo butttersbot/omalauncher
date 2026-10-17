@@ -231,7 +231,7 @@
             <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>
         </service>
         <service android:name=".assist.OmaPromptTile" android:exported="true"
-            android:label="Oma prompt" android:icon="@drawable/ic_oma_prompt_tile"
+            android:label="Soma prompt" android:icon="@drawable/ic_oma_prompt_tile"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>
             <meta-data android:name="android.service.quicksettings.ACTIVE_TILE" android:value="true" />
@@ -243,7 +243,7 @@
             <meta-data android:name="android.service.quicksettings.ACTIVE_TILE" android:value="true" />
         </service>
         <service android:name=".assist.OmaApprovalsTile" android:exported="true"
-            android:label="Oma approvals" android:icon="@drawable/ic_oma_approval_tile"
+            android:label="Soma approvals" android:icon="@drawable/ic_oma_approval_tile"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>
             <meta-data android:name="android.service.quicksettings.ACTIVE_TILE" android:value="true" />
@@ -254,7 +254,7 @@
             android:name=".oma.OmaChatActivity"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|density|uiMode"
             android:exported="false"
-            android:label="Oma"
+            android:label="Soma"
             android:launchMode="singleTask"
             android:resizeableActivity="true"
             android:taskAffinity="${applicationId}.oma"
@@ -275,7 +275,7 @@
         <activity-alias
             android:name=".oma.OmaChatEntry"
             android:exported="true"
-            android:label="Oma${labelSuffix}"
+            android:label="Soma${labelSuffix}"
             android:targetActivity=".oma.OmaChatActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -286,14 +286,14 @@
         <activity android:name=".assist.AgentApprovalActivity" android:exported="false"
             android:theme="@android:style/Theme.Material.Dialog.NoActionBar" />
         <activity android:name=".assist.AssistantPromptActivity" android:exported="true"
-            android:label="Oma agent" android:theme="@android:style/Theme.Material.Dialog.NoActionBar"
+            android:label="Soma agent" android:theme="@android:style/Theme.Material.Dialog.NoActionBar"
             android:excludeFromRecents="true" android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.ASSIST" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
-        <activity android:name=".assist.AssistantSetupActivity" android:exported="true" android:label="Oma assistant${labelSuffix}">
+        <activity android:name=".assist.AssistantSetupActivity" android:exported="true" android:label="Soma assistant${labelSuffix}">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -301,16 +301,16 @@
         </activity>
         <receiver android:name=".assist.StopAgentTask" android:exported="false" />
         <!-- Oma's state as a widget: the standard declaration, and the one Samsung's lock screen reads from its own apps. -->
-        <receiver android:name=".assist.OmaLockWidget" android:exported="true" android:label="Oma status${labelSuffix}">
+        <receiver android:name=".assist.OmaLockWidget" android:exported="true" android:label="Soma status${labelSuffix}">
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/oma_lock_widget" />
             <meta-data android:name="samsung.appwidget.monotone.info" android:resource="@xml/oma_lock_widget_monotone" />
         </receiver>
-        <receiver android:name=".assist.OmaClockWidget" android:exported="true" android:label="Oma clock${labelSuffix}">
+        <receiver android:name=".assist.OmaClockWidget" android:exported="true" android:label="Soma clock${labelSuffix}">
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/oma_clock_widget" />
         </receiver>
-        <receiver android:name=".assist.OmaWatchWidget" android:exported="true" android:label="Oma watchlist${labelSuffix}">
+        <receiver android:name=".assist.OmaWatchWidget" android:exported="true" android:label="Soma watchlist${labelSuffix}">
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/oma_watch_widget" />
         </receiver>
@@ -319,7 +319,7 @@
         <!-- The same two buttons for a request of a project thread on the Mac; only this app's own PendingIntents reach it. -->
         <receiver android:name=".assist.MacApprovalReceiver" android:exported="false" />
         <service android:name=".assist.OmaVoiceService" android:exported="true"
-            android:label="Oma agent" android:permission="android.permission.BIND_VOICE_INTERACTION">
+            android:label="Soma agent" android:permission="android.permission.BIND_VOICE_INTERACTION">
             <intent-filter><action android:name="android.service.voice.VoiceInteractionService" /></intent-filter>
             <meta-data android:name="android.voice_interaction" android:resource="@xml/oma_voice_interaction" />
         </service>
@@ -331,12 +331,12 @@
             android:permission="android.permission.BIND_VOICE_INTERACTION" />
         <!-- The Oma keyboard: Apple's layout in Oma's look (keyboard/). Boss switches it on in Android's settings himself. -->
         <service android:name=".keyboard.OmaKeyboardService" android:exported="true"
-            android:label="Oma keyboard${labelSuffix}" android:permission="android.permission.BIND_INPUT_METHOD">
+            android:label="Soma keyboard${labelSuffix}" android:permission="android.permission.BIND_INPUT_METHOD">
             <intent-filter><action android:name="android.view.InputMethod" /></intent-filter>
             <meta-data android:name="android.view.im" android:resource="@xml/oma_keyboard" />
         </service>
         <activity android:name=".keyboard.KeyboardSettingsActivity" android:exported="true"
-            android:label="Oma keyboard${labelSuffix}" android:windowSoftInputMode="stateHidden" />
+            android:label="Soma keyboard${labelSuffix}" android:windowSoftInputMode="stateHidden" />
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.files"
@@ -364,7 +364,7 @@
         <service
             android:name=".widgets.runtime.MediaListener"
             android:exported="true"
-            android:label="Omalauncher widgets"
+            android:label="Soma widgets"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
             <intent-filter>
                 <action android:name="android.service.notification.NotificationListenerService" />

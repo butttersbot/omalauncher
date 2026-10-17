@@ -76,7 +76,7 @@ fun answerCardWanted(facts: OverlayFacts): Boolean =
     facts.connected && !facts.paused && !facts.locked && facts.awake && !facts.capturing && !facts.assistantUp
 
 /** What the card's small line says over the answer: Oma's name, or what went wrong. */
-fun answerCardCaption(label: String): String = if (label == "Done") "Oma" else label
+fun answerCardCaption(label: String): String = if (label == "Done") "Soma" else label
 
 /** The card's window: a strip at the top as tall as the card, touchable but never focused, so keys and every touch outside it go to the app underneath. */
 private fun cardWindow(top: Int) =

@@ -451,7 +451,7 @@ class AnnotationBook(
         const val SAVE_AFTER_MILLIS = 400L
 
         const val UNREADABLE = "This page's ink and notes couldn't be read, so they are hidden and their file is left as it is."
-        const val NEWER = "This page's ink and notes were saved by a newer Omalauncher, so they are hidden and their file is left as it is."
+        const val NEWER = "This page's ink and notes were saved by a newer Soma, so they are hidden and their file is left as it is."
         const val NOT_KEPT = "Home's layout isn't being saved this session, so ink and notes can't be changed."
         const val FULL = "This page is full of ink (2,000 strokes). Nothing more is added; erase some to draw again."
         const val NO_ROOM_NOTE = "This page has all the notes it takes. Delete one to add another."

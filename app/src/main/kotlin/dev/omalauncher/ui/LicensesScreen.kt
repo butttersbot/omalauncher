@@ -147,7 +147,7 @@ fun LicensesScreen(onDismiss: () -> Unit) {
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             item {
                 BasicText(
-                    "Omalauncher ${BuildConfig.VERSION_NAME} · © 2026 Simon Schubert\n\nIt includes the open source software below.",
+                    "Soma ${BuildConfig.VERSION_NAME}, based on Omalauncher · © 2026 Simon Schubert\n\nIt includes the open source software below.",
                     style = Mono.copy(color = Palette.muted, fontSize = TextSize.Small),
                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
                 )

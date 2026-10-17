@@ -726,7 +726,7 @@ private fun RenamePage(
         val note =
             when {
                 name == null -> "a page needs a name"
-                taken(name) -> "another page is called this: asked for by name, Oma can't tell them apart"
+                taken(name) -> "another page is called this: asked for by name, Soma can't tell them apart"
                 else -> null
             }
         if (note != null) {

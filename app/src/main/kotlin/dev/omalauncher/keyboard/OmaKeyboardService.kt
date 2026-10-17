@@ -318,7 +318,7 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host {
             return
         }
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            Toast.makeText(this, "Oma needs the microphone permission for voice typing", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Soma needs the microphone permission for voice typing", Toast.LENGTH_LONG).show()
             return
         }
         val s = Speech(this)

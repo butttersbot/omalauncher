@@ -81,4 +81,4 @@ fun macChatStart(task: ChatTask, name: String) =
     task.copy(agent = macReceipt(name), thread = MAC_NEW_THREAD, threadName = macName(name), status = TaskStatus.Queued, result = "", fresh = true)
 
 /** Who the launcher's own words in the chat are from: Oma, never a model. */
-const val OMA_NAME = "Oma"
+const val OMA_NAME = "Soma"

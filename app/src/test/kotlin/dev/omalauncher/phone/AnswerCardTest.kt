@@ -34,7 +34,7 @@ class AnswerCardTest {
     }
 
     @Test fun theCaptionIsOmasNameOrWhatWentWrong() {
-        assertEquals("Oma", answerCardCaption("Done"))
+        assertEquals("Soma", answerCardCaption("Done"))
         assertEquals("Agent needs attention", answerCardCaption("Agent needs attention"))
     }
 

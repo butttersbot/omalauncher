@@ -130,7 +130,7 @@ const val QUICK_AGENT = "quick"
 const val UNDECIDED_AGENT = "oma"
 
 /** What a request reads that was to go to a new thread on the Mac when the app closed before the thread was made. */
-const val FRESH_UNMADE = "Oma closed before the new thread was made. Nothing was sent."
+const val FRESH_UNMADE = "Soma closed before the new thread was made. Nothing was sent."
 
 /** The limits of the saved thread and its JSON form. */
 object ChatHistory {

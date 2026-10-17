@@ -210,7 +210,7 @@ class ListeningHost(private val owner: Context, private val dismiss: () -> Unit)
         // Asked beside the listening, so the front agent's board knows the Mac's threads by the time he has spoken.
         MacThreads.open(owner)
         when {
-            AgentTasks.pending.isNotEmpty() -> show(ListeningRequest(ListeningPhase.NeedsOk, detail = "Oma is waiting for your answer"))
+            AgentTasks.pending.isNotEmpty() -> show(ListeningRequest(ListeningPhase.NeedsOk, detail = "Soma is waiting for your answer"))
             owner.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED -> show(ListeningRequest(ListeningPhase.NoMic))
             else -> listen(ListeningRequest(ListeningPhase.Listening))
         }
@@ -319,9 +319,9 @@ class AssistantSetupActivity : Activity() {
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         val view = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(32, 48, 32, 32) }
-        view.addView(TextView(this).apply { text = "Oma assistant\n\nChoose Oma as your default assistant to open a compact prompt over any app. Speak or type, then send; Claude/Codex works in the background. Your existing Google assistant shortcut will use Oma instead.\n\nFor the power button, check Android Settings → System → Gestures → Press and hold power button → Digital assistant. Availability depends on the phone.\n"; textSize = 18f })
+        view.addView(TextView(this).apply { text = "Soma assistant\n\nChoose Soma as your default assistant to open a compact prompt over any app. Speak or type, then send; Claude/Codex works in the background. Your existing Google assistant shortcut will use Oma instead.\n\nFor the power button, check Android Settings → System → Gestures → Press and hold power button → Digital assistant. Availability depends on the phone.\n"; textSize = 18f })
         fun button(text: String, action: () -> Unit) { view.addView(Button(this).apply { this.text = text; setOnClickListener { action() } }) }
-        button("Use Oma as my assistant") {
+        button("Use Soma as my assistant") {
             // ASSISTANT is not requestable via RoleManager on some Pixels.
             try { startActivity(Intent(android.provider.Settings.ACTION_VOICE_INPUT_SETTINGS)) }
             catch (e: android.content.ActivityNotFoundException) { startActivity(Intent(android.provider.Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)) }

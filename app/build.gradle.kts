@@ -15,7 +15,7 @@ android {
 
     defaultConfig {
         applicationId = "dev.omalauncher"
-        manifestPlaceholders["appLabel"] = "Omalauncher"
+        manifestPlaceholders["appLabel"] = "Soma"
         // Added to the names of the app's other entries in the app list, so a second copy can be told apart.
         manifestPlaceholders["labelSuffix"] = ""
         minSdk = 29
@@ -56,7 +56,7 @@ android {
     buildTypes {
         debug {
             applicationIdSuffix = ".boss"
-            manifestPlaceholders["appLabel"] = "Omalauncher Boss"
+            manifestPlaceholders["appLabel"] = "Soma"
             versionNameSuffix = "-boss-preview.19"
         }
         release {

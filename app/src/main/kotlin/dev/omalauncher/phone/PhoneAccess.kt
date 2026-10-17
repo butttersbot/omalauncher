@@ -79,7 +79,7 @@ class PhoneControlActivity : Activity() {
         }
         fun text(value: String) { layout.addView(android.widget.TextView(this).apply { text = value; textSize = 18f; setPadding(0, 12, 0, 18) }) }
         text("Agent phone control")
-        text("Once Accessibility access is enabled, agents running in Omalauncher can read your screen, take screenshots, tap, swipe and enter text when you ask them to use your phone. No Start button or timer is needed. Screen content may reach your chosen AI provider. Keep the phone unlocked. Protected screens may be unavailable.")
+        text("Once Accessibility access is enabled, agents running in Soma can read your screen, take screenshots, tap, swipe and enter text when you ask them to use your phone. No Start button or timer is needed. Screen content may reach your chosen AI provider. Keep the phone unlocked. Protected screens may be unavailable.")
         status = android.widget.TextView(this).apply { textSize = 20f }
         layout.addView(status)
         fun button(label: String, action: () -> Unit) { layout.addView(android.widget.Button(this).apply { text = label; setOnClickListener { action() } }) }

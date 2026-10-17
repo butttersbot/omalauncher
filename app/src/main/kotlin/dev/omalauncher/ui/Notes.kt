@@ -563,7 +563,7 @@ private fun NoteScrap(
             .padding(with(density) { (pageWidth * NOTE_PAD_SHARE).toDp() }),
     ) {
         // Who left it, when it wasn't him.
-        if (note.author == Author.Agent) BasicText("oma", style = Pack.mono(size * 0.7f, look.ink.copy(alpha = 0.6f)), maxLines = 1)
+        if (note.author == Author.Agent) BasicText("soma", style = Pack.mono(size * 0.7f, look.ink.copy(alpha = 0.6f)), maxLines = 1)
         BasicText(
             note.text.ifEmpty { "tap to write" },
             style = Pack.hand(size, if (note.text.isEmpty()) look.ink.copy(alpha = 0.5f) else look.ink),
