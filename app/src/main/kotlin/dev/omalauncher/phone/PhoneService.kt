@@ -431,6 +431,17 @@ class PhoneService : AccessibilityService() {
                 }
                 reply(PhoneCanvas.reply(input, canvasPad(), request, actor)); changed(); return
             }
+            // A widget a phone agent wrote, into the shared library on the Mac Pro (Soma Canvas slice 8a): off the main thread,
+            // with this phone's own key for each Mac until one answers as the service.
+            if (route == PhoneRequests.Route.WidgetInstall) {
+                val machines = dev.omalauncher.assist.readMacMachines((application as dev.omalauncher.App).runtime.proot.launcherConfig)
+                val name = input.getString("name"); val text = input.getString("text")
+                kotlin.concurrent.thread(name = "widget-install") {
+                    val answer = runCatching { dev.omalauncher.canvas.installOnSomaService(machines, name, text) }.getOrElse { JSONObject().put("ok", false).put("error", it.message ?: "couldn't reach the Macs") }
+                    main.post { reply(answer) }
+                }
+                return
+            }
             // LockStar's layout, kept or handed back: its provider is slow and may refuse, so off the main thread.
             if (route == PhoneRequests.Route.LockStar) {
                 kotlin.concurrent.thread(name = "lockstar") {

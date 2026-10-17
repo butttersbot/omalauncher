@@ -99,6 +99,75 @@ CODEX_LIMITS = {'usageLimitExceeded', 'rateLimitExceeded', 'serverOverloaded', '
 CODEX_OFF = ['apps', 'computer_use', 'browser_use', 'browser_use_external', 'in_app_browser', 'hooks', 'plugins', 'remote_plugin', 'guardian_approval']
 
 
+# Soma Canvas (slice 8a, PRD §6): the canvas service a thread's agent may arrange screens through, and which of its screens.
+# With no service named, threads get no canvas token and nothing else changes.
+SOMA_SERVICE = os.environ.get('OMA_RUNNER_SOMA_SERVICE', '').rstrip('/')
+SOMA_SCREENS = [screen for screen in os.environ.get('OMA_RUNNER_SOMA_SCREENS', 'car').split(',') if re.fullmatch(r'[a-z0-9-]{1,40}', screen)]
+canvas_tokens = {}
+canvas_given = []
+canvas_lock = threading.Lock()
+canvas_key_missing = [0.0]
+
+
+def soma_service_key():
+    """This runner's own device key for the canvas service: in the Keychain (on Linux the Secret Service), never in a file.
+    A loopback test names it in the environment instead."""
+    if os.environ.get('OMA_RUNNER_BIND') == '127.0.0.1' and os.environ.get('OMA_RUNNER_SOMA_KEY'):
+        return os.environ['OMA_RUNNER_SOMA_KEY']
+    # Missing a few minutes ago: not asked again on every turn (each ask can take seconds).
+    if time.time() - canvas_key_missing[0] < 300:
+        return None
+    command = ['secret-tool', 'lookup', 'service', 'oma-soma-service'] if LINUX else ['security', 'find-generic-password', '-s', 'oma-soma-service', '-w']
+    try:
+        found = subprocess.run(command, capture_output=True, text=True, timeout=5).stdout.strip() or None
+    except (OSError, subprocess.SubprocessError):
+        found = None
+    if found is None:
+        canvas_key_missing[0] = time.time()
+    return found
+
+
+def canvas_env(thread):
+    """What a thread's agent is given to arrange the canvas with: a token of its own, minted here and registered with the
+    service (its digest only), for this thread and the screens named, good for a day and minted again before that ends.
+    Never a device key. Nothing when there is no service, no key for it, or the service says no: the thread runs as before."""
+    if not SOMA_SERVICE or not SOMA_SCREENS:
+        return {}
+    with canvas_lock:
+        have = canvas_tokens.get(thread.meta['id'])
+        if have and time.time() - have[1] < 20 * 3600:
+            return {'SOMA_CANVAS_TOKEN': have[0], 'SOMA_SERVICE': SOMA_SERVICE}
+    key = soma_service_key()
+    if not key:
+        return {}
+    token = 'soma-thread-' + secrets.token_hex(24)
+    body = json.dumps({'digest': digest(token), 'thread': thread.meta['id'], 'screens': SOMA_SCREENS, 'expires': int((time.time() + 24 * 3600) * 1000)}).encode()
+    request = urllib.request.Request(SOMA_SERVICE + '/tokens', data=body, method='POST', headers={'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json'})
+    try:
+        with urllib.request.urlopen(request, timeout=3) as reply:
+            if reply.status != 200:
+                return {}
+    except (OSError, ValueError, urllib.error.URLError):
+        return {}
+    # A thread's older token is left to expire on its own (an agent still running may hold it); all are revoked as the
+    # runner ends.
+    with canvas_lock:
+        canvas_tokens[thread.meta['id']] = (token, time.time())
+        canvas_given.append(token)
+    return {'SOMA_CANVAS_TOKEN': token, 'SOMA_SERVICE': SOMA_SERVICE}
+
+
+def revoke_canvas_token(token, key=None):
+    """The service forgets [token]: a thread's old one when it gets a new one, and every one as the runner ends."""
+    key = key or soma_service_key()
+    if not SOMA_SERVICE or not key:
+        return
+    try:
+        urllib.request.urlopen(urllib.request.Request(SOMA_SERVICE + '/tokens/' + digest(token), method='DELETE', headers={'Authorization': 'Bearer ' + key}), timeout=5).close()
+    except (OSError, ValueError, urllib.error.URLError):
+        pass
+
+
 def tailscale_address():
     """The Mac's own address on the tailnet (100.64.0.0/10), found without running anything."""
     probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -1037,7 +1106,7 @@ def claude_turn(thread, text):
     if kept is None:
         driver = Claude(thread, text)
         try:
-            process = subprocess.Popen(driver.command(), cwd=thread.meta['project'], env={**driver.environment(), 'OMA_THREAD_ID': thread.meta['id']},
+            process = subprocess.Popen(driver.command(), cwd=thread.meta['project'], env={**driver.environment(), 'OMA_THREAD_ID': thread.meta['id'], **canvas_env(thread)},
                                        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
         except OSError as problem:
             with changed:
@@ -1062,7 +1131,7 @@ def turn(thread, text):
         return claude_turn(thread, text)
     driver = DRIVERS[thread.meta['kind']](thread, text)
     try:
-        process = subprocess.Popen(driver.command(), cwd=thread.meta['project'], env={**driver.environment(), 'OMA_THREAD_ID': thread.meta['id']},
+        process = subprocess.Popen(driver.command(), cwd=thread.meta['project'], env={**driver.environment(), 'OMA_THREAD_ID': thread.meta['id'], **canvas_env(thread)},
                                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
     except OSError as problem:
         with changed:
@@ -1222,7 +1291,8 @@ class Runner(BaseHTTPRequestHandler):
         if parts == ['health']:
             with changed:
                 states = [thread.meta['status'] for thread in threads.values()]
-            return self.answer(200, {'ok': True, 'runner': 'oma-runner', 'threads': len(states), 'working': states.count('working'), 'waiting': states.count('waiting'),
+            # Where this Mac's canvas service is, when it has one: a device asks here rather than guessing a port.
+            return self.answer(200, {'ok': True, 'runner': 'oma-runner', **({'soma': SOMA_SERVICE} if SOMA_SERVICE else {}), 'threads': len(states), 'working': states.count('working'), 'waiting': states.count('waiting'),
                                      'kinds': [kind for kind in KINDS if program(kind)], 'files': True})
         if parts == ['threads']:
             with changed:
@@ -1539,6 +1609,9 @@ def serve():
         # Tasks end with the runner; their threads come back as interrupted and are not started again.
         global closing
         closing = True
+        # Their canvas tokens end with them.
+        for token in list(canvas_given):
+            revoke_canvas_token(token)
         if changed.acquire(timeout=1):
             try:
                 for thread in threads.values():

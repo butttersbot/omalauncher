@@ -68,12 +68,14 @@ class WatchlistHostsTest {
         Looks.use("city-pop")
         val asked = ArrayList<String>()
         val inst = watchlist(asked)
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-        inst.start(scope) { true }
         // Soma desktop's window: the widget in a 300x200 block.
         setContent {
             CompositionLocalProvider(LocalDensity provides Density(1f)) {
-                Box(Modifier.size(300.dp, 200.dp).testTag("tile")) { WidgetContent(inst, Modifier.fillMaxSize(), cells = 3 to 2) }
+                Box(Modifier.size(300.dp, 200.dp).testTag("tile")) {
+                    // Run where it is drawn, as the phone runs widgets on its main thread.
+                    androidx.compose.runtime.LaunchedEffect(inst) { inst.start(this) { true } }
+                    WidgetContent(inst, Modifier.fillMaxSize(), cells = 3 to 2)
+                }
             }
         }
         // The source answers off the main thread; the frame after it shows what it said.
@@ -95,7 +97,6 @@ class WatchlistHostsTest {
         scene.render(0)
         val service = scene.render(1_000_000_000L).toComposeImageBitmap()
         scene.close()
-        scope.cancel()
         assertEquals(listOf("AAPL", "NVDA", "TSLA", "BTC-USD").map { "https://query1.finance.yahoo.com/v8/finance/chart/$it?range=1d&interval=1d" }.toSet(), asked.toSet())
         assertSamePixels(window, service)
         // And it is City Pop's: its green (a rise) and its red (a fall) are in the picture, not a default look's.

@@ -323,8 +323,15 @@ private fun Answers(ask: ModuleAsk, answer: (Boolean) -> Unit, open: () -> Unit)
 
 /** [command] with every control or format character (other than a newline or tab) shown as its code: ⟨U+202E⟩. */
 internal fun visibleCommand(command: String): String = buildString {
-    for (c in command) {
-        if ((Character.isISOControl(c) && c != '\n' && c != '\t') || Character.getType(c) == Character.FORMAT.toInt()) append("⟨U+%04X⟩".format(c.code)) else append(c)
+    // By code point, so a format character beyond the first plane (tag characters, U+E0020 on) is seen too (round-2 review).
+    var i = 0
+    while (i < command.length) {
+        val cp = command.codePointAt(i)
+        val type = Character.getType(cp)
+        val hidden = (Character.isISOControl(cp) && cp != '\n'.code && cp != '\t'.code) || type == Character.FORMAT.toInt() ||
+            type == Character.UNASSIGNED.toInt() || type == Character.PRIVATE_USE.toInt() || type == Character.SURROGATE.toInt()
+        if (hidden) append("⟨U+%04X⟩".format(cp)) else appendCodePoint(cp)
+        i += Character.charCount(cp)
     }
 }
 

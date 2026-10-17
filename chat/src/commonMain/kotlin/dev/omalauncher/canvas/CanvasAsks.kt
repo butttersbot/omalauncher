@@ -94,7 +94,14 @@ class ScreenRules(
     val keptPages: Set<String> = emptySet(),
     val sizeOf: (ModuleRef, Notebook) -> Pair<Int, Int> = { ref, n -> ref.kind.size.first.coerceAtMost(n.columns) to ref.kind.size.second.coerceAtMost(n.rows) },
     val pageId: (Notebook) -> String = { n -> generateSequence(1) { it + 1 }.map { "p$it" }.first { id -> n.pages.none { it.id == id } } },
+    /** Whether agents may put the shared library's widgets here by their file name ("watchlist.owl"), as modules are. */
+    val widgets: Boolean = false,
+    /** Whether the library has the widget a place names. */
+    val widgetKnown: (String) -> Boolean = { true },
 )
+
+/** A widget from the shared library, as an agent names it: its file name. */
+private val WIDGET_FILE = Regex("[a-z0-9][a-z0-9._-]{0,63}\\.owl")
 
 /**
  * Words that say what the module [word] is: its key, or its kind's id or title ("needs", "Needs you", "handoff:soma"). Null when
@@ -120,7 +127,9 @@ private fun copies(n: Notebook, base: String): List<Pair<String, NotebookPage>> 
  * one. Several and no page: refused, naming them. None: the first copy's key, not on the canvas yet.
  */
 private fun copyOf(n: Notebook, word: String, key: String, page: String?): String {
-    if (moduleRef(key)!!.copy > 1 || '#' in word) return key
+    // A widget is on the canvas once: there are no copies to choose between.
+    val ref = moduleRef(key) ?: return key
+    if (ref.copy > 1 || '#' in word) return key
     val all = copies(n, key)
     page?.let { p -> all.firstOrNull { it.second.id == p }?.let { return it.first } }
     return when (all.size) {
@@ -259,6 +268,10 @@ private fun land(n: Notebook, page: String, size: Pair<Int, Int>, where: Where, 
 
 /** The module [word] names on this canvas, as a key, refused when it is no module agents may arrange. */
 private fun module(word: String, rules: ScreenRules): String {
+    if (rules.widgets && WIDGET_FILE.matches(word.trim())) {
+        if (!rules.widgetKnown(word.trim())) refuse("${word.trim()} isn't in the widget library. Nothing was changed.")
+        return word.trim()
+    }
     moduleKeyOf(word, chat = true)?.takeIf { it in rules.kept }?.let { refuse("${moduleTitle(it)} stays where it is. Nothing was changed.") }
     val key = moduleKeyOf(word) ?: refuse("\"$word\" is not a module. Modules: ${ModuleKind.entries.filter { !it.chatScreen }.joinToString(", ") { it.id + if (it.perProject) ":PROJECT" else "" }}. Nothing was changed.")
     if (key in rules.kept) refuse("${moduleTitle(key)} stays where it is. Nothing was changed.")
@@ -294,7 +307,7 @@ fun resolveAsk(n: Notebook, ask: CanvasAsk, rules: ScreenRules): Resolved = when
     }
     is CanvasAsk.Place -> {
         val named = module(ask.module, rules)
-        val ref = moduleRef(named)!!
+        val ref = moduleRef(named)
         val asked = ask.page?.let { pageNamed(n, it).id }
         val besideKey = ask.where.of?.let { w -> (moduleKeyOf(w, chat = true) ?: refuse("\"$w\" is not a module. Nothing was changed.")).let { copyOf(n, w, it, asked) } }
         if (ask.where.spot.beside && besideKey == null) refuse("${ask.where.spot.word} needs a module to be beside. Nothing was changed.")
@@ -305,16 +318,16 @@ fun resolveAsk(n: Notebook, ask: CanvasAsk, rules: ScreenRules): Resolved = when
         }
         // The copy there already, or the module itself when it is nowhere, or a new copy for this page: putting it on a
         // page never takes it off another.
-        val all = copies(n, named)
+        val all = if (ref == null) emptyList() else copies(n, named)
         val key = when {
-            ref.copy > 1 || '#' in ask.module -> named
+            ref == null || ref.copy > 1 || '#' in ask.module -> named
             else -> all.firstOrNull { it.second.id == page }?.first ?: if (all.isEmpty()) named
                 else (2..99).map { ref.copy(copy = it).key }.firstOrNull { k -> all.none { it.first == k } } ?: refuse("${moduleTitle(named)} is on too many pages already. Nothing was changed.")
         }
         if (besideKey != null && pageOf(n, besideKey)?.id != page) refuse("${moduleTitle(besideKey)} is not on that page. Nothing was changed.")
-        val size = ask.size?.cells(rules.span(n), n.rows) ?: cellOf(n, key)?.let { it.w to it.h } ?: rules.sizeOf(ref, n)
+        val size = ask.size?.cells(rules.span(n), n.rows) ?: cellOf(n, key)?.let { it.w to it.h } ?: (if (ref != null) rules.sizeOf(ref, n) else SizeWord.Card.cells(rules.span(n), n.rows))
         val at = land(n, page, size, Where(ask.where.spot, besideKey), moving = key, rules)
-        val verbs = listOfNotNull(at.made) + CanvasVerb.Place(key, ItemKind.Module, at.page, at.cell)
+        val verbs = listOfNotNull(at.made) + CanvasVerb.Place(key, if (ref == null) ItemKind.Widget else ItemKind.Module, at.page, at.cell)
         val pageName = at.made?.name ?: n.pages.first { it.id == at.page }.name
         if (at.made == null && cellOf(n, key) == at.cell && pageOf(n, key)?.id == at.page) Resolved(emptyList(), "${moduleTitle(key)} stays where it is: it is already as near there as this page has room")
         else Resolved(verbs, (if (pageOf(n, key) != null) "moved " else "put ") + "${moduleTitle(key)} (${shortName(key)}) on \"$pageName\" at ${cellWords(at.cell)}" + (at.made?.let { " (a new page: the one asked for had no room)" } ?: ""))

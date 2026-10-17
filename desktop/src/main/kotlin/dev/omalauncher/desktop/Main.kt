@@ -41,6 +41,9 @@ import kotlin.system.exitProcess
 fun main(args: Array<String>) {
     // `soma canvas …`: Soma's front agent arranging the running Soma's canvas (slice 6). Says its answer and ends; no window.
     if (args.firstOrNull() == "canvas") exitProcess(CanvasDoor.client(args.drop(1)))
+    // The canvas service (slice 8a): headless, its own lock, no window. Its LaunchAgent is printed for him to install.
+    if ("--serve" in args) return SomaService.run()
+    if ("--print-launch-agent" in args) return println(SomaService.launchAgent(ProcessHandle.current().info().command().orElse("soma")))
     if ("--keychain-check" in args) return println(RunnerKeys.check())
     if ("--start-at-login" in args) return println(Login.install())
     if ("--no-start-at-login" in args) return println(Login.remove())

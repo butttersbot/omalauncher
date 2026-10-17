@@ -31,7 +31,7 @@ import kotlin.math.roundToInt
  */
 object PhoneRequests {
     /** Who handles an admitted request. */
-    enum class Route { Status, Stop, Pages, Board, Note, Stickers, PageEdits, Looks, LockStar, Canvas, Screenshot, Control }
+    enum class Route { Status, Stop, Pages, Board, Note, Stickers, PageEdits, Looks, LockStar, Canvas, WidgetInstall, Screenshot, Control }
 
     /**
      * Runs the checks for [command] in order and says who handles it; throws what the first failing check
@@ -58,6 +58,7 @@ object PhoneRequests {
             PhoneLooks.COMMAND -> Route.Looks
             PhoneLockStar.COMMAND -> Route.LockStar
             PhoneCanvas.COMMAND -> Route.Canvas
+            "widgetinstall" -> Route.WidgetInstall
             "screenshot" -> Route.Screenshot
             else -> Route.Control
         }

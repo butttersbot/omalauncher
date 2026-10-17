@@ -83,11 +83,13 @@ class WidgetHostsTest {
         val drawable = files.map { it to Compiler.compile(it.readText()) }.filter { (_, p) -> hostRefusals(p, OwlHost.Desktop).isEmpty() }
         assertTrue(drawable.size > 15)
         val errors = ArrayList<String>()
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-        val insts = drawable.map { (f, p) -> WidgetInstance(p, testServices { _, _, _ -> ShellResult("", "offline in the test", -1) }, onError = { errors += "${f.name}: $it" }).also { it.start(scope) { true } } }
+        val insts = drawable.map { (f, p) -> WidgetInstance(p, testServices { _, _, _ -> ShellResult("", "offline in the test", -1) }, onError = { errors += "${f.name}: $it" }) }
         setContent {
             androidx.compose.foundation.layout.Column {
-                for (inst in insts) Box(Modifier.size(240.dp, 120.dp)) { WidgetContent(inst, Modifier.fillMaxSize(), cells = 3 to 2) }
+                for (inst in insts) Box(Modifier.size(240.dp, 120.dp)) {
+                    androidx.compose.runtime.LaunchedEffect(inst) { inst.start(this) { true } }
+                    WidgetContent(inst, Modifier.fillMaxSize(), cells = 3 to 2)
+                }
             }
         }
         repeat(20) {
@@ -95,7 +97,6 @@ class WidgetHostsTest {
             androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications()
             mainClock.advanceTimeBy(100)
         }
-        scope.cancel()
         // What a widget says when its data can't be had is its own; a crash, or an error from drawing, is not.
         assertEquals(emptyList<String>(), errors.filter { "offline in the test" !in it && "waiting for your OK" !in it && "request failed" !in it })
     }

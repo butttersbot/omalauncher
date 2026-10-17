@@ -27,6 +27,29 @@ environment = {**os.environ, 'OMA_RUNNER_PORT': str(port), 'OMA_RUNNER_TOKEN': s
                'OMA_RUNNER_KEYS': str(work / 'keys.json'), 'OMA_RUNNER_WHOIS_FILE': str(work / 'whois.json'), 'OMA_RUNNER_PHONE': 'phone',
                'OMA_RUNNER_SELF': 'testhost', 'OMA_RUNNER_SOMA_DIR': str(work / 'soma-runners'), 'OMA_RUNNER_PAIR_COMPUTERS': '1',
                'OMA_RUNNER_PROJECTS': str(work / 'projects.json')}
+# Soma Canvas 8a: a stand-in canvas service on the loopback that writes down every token registration and revocation.
+import http.server, threading
+service_calls = []
+
+
+class Service(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *_):
+        pass
+
+    def answer(self):
+        length = int(self.headers.get('Content-Length') or 0)
+        service_calls.append((self.command, self.path, self.headers.get('Authorization'), json.loads(self.rfile.read(length)) if length else None))
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.end_headers()
+        self.wfile.write(b'{"ok": true}')
+
+    do_POST = do_DELETE = answer
+
+
+service = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Service)
+threading.Thread(target=service.serve_forever, daemon=True).start()
+environment.update({'OMA_RUNNER_SOMA_SERVICE': 'http://127.0.0.1:%d' % service.server_address[1], 'OMA_RUNNER_SOMA_KEY': 'service-key-' + 's' * 30})
 received = work / 'From Fold'
 (work / 'codex').mkdir()
 (work / 'codex' / 'config.toml').write_text('[mcp_servers.paper]\nurl = "http://127.0.0.1:1/mcp"\n')
@@ -163,7 +186,7 @@ try:
     check('unpair: that device is shut out at once, with no restart', gone.returncode == 0 and call('GET', '/health', token=own['key'])[0] == 401)
     calling_as('phone')
     check('unpair leaves every other device in', call('GET', '/health')[0] == 200)
-    check('/health answers, naming the agents the Mac has', call('GET', '/health') == (200, {'ok': True, 'runner': 'oma-runner', 'threads': 0, 'working': 0, 'waiting': 0, 'kinds': ['claude', 'codex', 'cursor', 'grok'], 'files': True}))
+    check('/health answers, naming the agents the Mac has', call('GET', '/health') == (200, {'ok': True, 'runner': 'oma-runner', 'soma': environment['OMA_RUNNER_SOMA_SERVICE'], 'threads': 0, 'working': 0, 'waiting': 0, 'kinds': ['claude', 'codex', 'cursor', 'grok'], 'files': True}))
     check('a project outside the roots is refused', call('POST', '/threads', {'name': 'x', 'project': str(outside)})[0] == 403)
     check('a path that climbs out of a root is refused', call('POST', '/threads', {'name': 'x', 'project': str(project / '..' / '..' / 'outside')})[0] == 403)
     (root / 'link').symlink_to(outside)
@@ -199,6 +222,17 @@ try:
           and 'tmsg send jacks-z-fold8:A --reply-to 20261016-1-aa' in prompt and prompt.endswith('\n\nhello from the phone'))
     check('mail for no thread here is left for its own taker', (work / 'mail' / 'new' / 'other.json').exists())
     check('the thread\'s agent runs with OMA_THREAD_ID, so tmsg signs its answers with the thread\'s id', starts()[-1]['thread_id'] == thread)
+    given = starts()[-1]
+    registered = [c for c in service_calls if c[0] == 'POST' and c[1] == '/tokens']
+    check('its agent gets a canvas token of its own (and the service), never a device key', (given['canvas_token'] or '').startswith('soma-thread-')
+          and given['soma_service'] == environment['OMA_RUNNER_SOMA_SERVICE'] and not given['device_key'])
+    check('the token is registered with the service by its digest only, for this thread and the car, with the runner\'s own key',
+          registered and registered[0][2] == 'Bearer ' + environment['OMA_RUNNER_SOMA_KEY'] and registered[0][3]['thread'] == thread
+          and registered[0][3]['screens'] == ['car'] and registered[0][3]['digest'] == 'sha256:' + __import__('hashlib').sha256(given['canvas_token'].encode()).hexdigest()
+          and given['canvas_token'] not in json.dumps(service_calls))
+    check('the runner says where its canvas service is, so a device asks it rather than guessing a port',
+          call('GET', '/health')[1].get('soma') == environment['OMA_RUNNER_SOMA_SERVICE'])
+    check('the next turn of the same thread keeps its token, registered once', len([c for c in service_calls if c[1] == '/tokens' and c[3]['thread'] == thread]) == 1)
     check('it goes back to idle after the mail', settle(thread, 'idle'))
 
     call('POST', '/threads/%s/messages' % thread, {'text': 'write the file'})
@@ -623,6 +657,19 @@ try:
     (project / 'HANDOFF.md').unlink()
     (project / 'handoff.md').write_text('# lower case\n')
     check('handoff: only the exact registered name, not another case of it', call('GET', '/projects/scratch/handoff', token=now)[0] == 404)
+    # As the runner ends, every canvas token it gave out is revoked at the service: one minted by this runner for a new turn.
+    calling_as('phone')
+    before = len(service_calls)
+    call('POST', '/threads/%s/messages' % thread, {'text': 'one more turn'}, token=now)
+    for _ in range(100):
+        if any(c[1] == '/tokens' for c in service_calls[before:]):
+            break
+        time.sleep(0.05)
+    tokens_given = {c[3]['digest'] for c in service_calls[before:] if c[0] == 'POST' and c[1] == '/tokens'}
+    runner.send_signal(signal.SIGTERM)
+    runner.wait(10)
+    check('as the runner ends, the service is told to forget every canvas token it gave out',
+          tokens_given and tokens_given <= {c[1].rsplit('/', 1)[-1] for c in service_calls if c[0] == 'DELETE'})
     print('\nall %d checks passed' % passed)
 finally:
     runner.kill()

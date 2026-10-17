@@ -40,6 +40,9 @@ class WidgetGateTest {
 
     @Test fun aCommandIsShownWithItsInvisibleCharactersVisible() {
         assertEquals("echo ⟨U+202E⟩txt.exe", dev.omalauncher.canvas.visibleCommandForTest("echo \u202Etxt.exe"))
+        // Beyond the first plane too: tag characters, which can hide words in text that reads plainly.
+        val tagged = "echo hi" + String(Character.toChars(0xE0020)) + String(Character.toChars(0xE0072)) + " && ls"
+        assertEquals("echo hi⟨U+E0020⟩⟨U+E0072⟩ && ls", dev.omalauncher.canvas.visibleCommandForTest(tagged))
     }
 
     @Test fun aTapsRunAndTerminalAreGatedLikeEverythingElse() {

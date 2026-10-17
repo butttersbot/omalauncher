@@ -17,6 +17,7 @@ oma-phone pages | page NAME | where WIDGET_FILE
 oma-phone page-add [NAME] | page-rename NAME --to NEW NAME | page-delete NAME
 oma-phone board [PAGE NAME]
 oma-phone looks | look NAME
+oma-phone widget-install FILE.owl
 oma-phone canvas help | board [PAGE] | modules | place MODULE [SIZE] [WHERE] [--page NAME] | move | resize | remove | page-make | undo
 oma-phone lockstar [capture NAME | apply NAME]
 oma-phone note [--near COL,ROW] TEXT
@@ -33,6 +34,8 @@ page-add makes a new empty page after the last, page-rename gives one another na
 page-delete deletes a page only while nothing is on it. Each answers with the pages there then are.
 lockstar lists the lock-screen layouts kept; capture NAME keeps LockStar's layout as it now is, and
 apply NAME hands one back to LockStar, which changes the lock screen: only when the user asked for it.
+widget-install sends a widget file you wrote to the shared widget library on the Mac Pro, where it is checked and
+waits for the user's OK on each screen before it loads or runs anything there; the answer says which screens can draw it.
 canvas arranges home's cockpit modules (Needs you, Threads and the rest) only as the user asked: run
 oma-phone canvas help for its words. Each request of his is one change that undo takes back whole.
 looks lists the looks home can be drawn in and which is picked; look NAME picks one.
@@ -173,6 +176,11 @@ CANVAS
   for word in "$@"; do words=$(jq -cn --argjson words "$words" --arg word "$word" '$words + [$word]'); done
   # Who asks: the quick lane says so; a builder doesn't. Each request of his is one restore point, whoever made it.
   request=$(jq -cn --argjson words "$words" --arg actor "${OMA_CANVAS_ACTOR:-}" '{command:"canvas",words:$words} + (if $actor=="" then {} else {actor:$actor} end)');;
+widget-install)
+  file=${1:?Widget file required: oma-phone widget-install FILE.owl}
+  [ -f "$file" ] || { echo "No such file: $file" >&2; exit 2; }
+  [ "$(wc -c < "$file")" -le 262144 ] || { echo 'A widget file is at most 256 KB.' >&2; exit 2; }
+  request=$(jq -cn --rawfile text "$file" --arg name "$(basename "$file")" '{command:"widgetinstall",name:$name,text:$text}');;
 where)
   request=$(jq -cn --arg widget "${1:?Widget file name required}" '{command:"where",widget:$widget}');;
 tap|swipe)

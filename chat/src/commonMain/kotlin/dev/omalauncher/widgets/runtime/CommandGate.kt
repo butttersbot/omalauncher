@@ -128,6 +128,9 @@ class CommandGate(
      * machine, the widget, its file's hash, the hashes of the commands it may run, a nonce and the time, with an HMAC-SHA256
      * over all of them in the device's key ([keyOf]). Applied once: a nonce seen before, a time more than ten minutes off,
      * another machine's name, an unknown device or a bad signature is refused. Null when applied; otherwise why not.
+     * The signature only binds these fields together: where the key is a digest the service also keeps, it proves nothing
+     * by itself. What makes an approval his is how it arrived (the service's door: the paired device's own key, from that
+     * device, naming itself as the signer); call this only behind such a door.
      */
     @Synchronized fun applySigned(message: String, keyOf: (String) -> ByteArray?): String? {
         val o = runCatching { JSONObject(message) }.getOrNull() ?: return "not an approval"
