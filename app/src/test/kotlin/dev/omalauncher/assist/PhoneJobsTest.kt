@@ -32,6 +32,10 @@ class PhoneJobsTest {
         assertEquals("", job.commit)
         assertEquals("", job.tests)
         assertEquals("", job.project)
+        assertEquals("what was sent unsafe is refused, never quietly emptied", listOf("project", "branch", "commit", "tests"), job.refused)
+        assertTrue("declined" in jobPlaybook(job, mail, BuilderId.B))
+        assertEquals("a Mac path is refused", listOf("project"), phoneJob("""{"job":"device-test","v":1,"project":"/Users/jackkim/Projects/omalauncher"}""")!!.refused)
+        assertEquals(emptyList<String>(), phoneJob("""{"job":"device-test","v":1,"project":"omalauncher","branch":"cockpit/s9"}""")!!.refused)
     }
 
     @Test
