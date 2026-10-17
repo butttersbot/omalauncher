@@ -551,6 +551,17 @@ fun boardText(board: BuildBoard, mac: MacBoard? = null, second: BuildBoard? = nu
     return (lines + macLines(mac) + listOfNotNull(mac?.let { lastToSpeak(board, it, second) }) + "[Boss says]").joinToString("\n")
 }
 
+/**
+ * What the front agent on a computer is sent (Soma desktop): a board of the computers' threads alone, with no builders,
+ * and its "Last to speak" line, then [request] exactly as he said it. With no computer set up the board says so.
+ */
+fun desktopFrontPrompt(mac: MacBoard?, request: String): String {
+    val nobody = buildBoard(emptyList(), false, "", mac?.now ?: 0L)
+    val lines = listOf("[Board, for you only; Boss does not see it]") +
+        (if (mac == null) listOf("No computer is set up for threads yet.") else macLines(mac) + listOfNotNull(lastToSpeak(nobody, mac, null)))
+    return (lines + "[Boss says]").joinToString("\n") + "\n" + request
+}
+
 /** What the front agent is sent: the board, then [request] exactly as he said it. */
 fun frontPrompt(board: BuildBoard, request: String, mac: MacBoard? = null, second: BuildBoard? = null, phone: String? = null): String =
     boardText(board, mac, second, phone) + "\n" + request

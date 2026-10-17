@@ -608,7 +608,7 @@ private fun ChatScreen(
                         }
                     },
                 )
-                if (!listening) {
+                if (!listening && host.attaches) {
                     Box(
                         Modifier
                             .semantics { contentDescription = "Attach images" }
@@ -618,7 +618,7 @@ private fun ChatScreen(
                     ) { BasicText("+", style = Pack.body(color = Pack.accent)) }
                 }
                 // Tap to dictate into the field; it stops at the next pause, or at another tap.
-                Box(
+                if (host.dictates) Box(
                     Modifier
                         .size(48.dp)
                         .background(if (listening) Pack.red else Pack.surface)
