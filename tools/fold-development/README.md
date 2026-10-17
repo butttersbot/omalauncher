@@ -18,6 +18,12 @@ scripts, not code bundled into the Android app.
   doing the same by hand in settings did (2026-10-12). The job's off-and-on was seen unbinding and rebinding a
   working service that day (18:47), when its first check misread two bound services as none.
 - oma-try builds, syncs and schedules the update.
+- oma-macbuild builds on the Mac Pro instead (Boss, 2026-10-17: heavy work off the phone): it pushes HEAD and
+  asks the Mac Pro's "Oma runner upkeep" thread to run soma-macbuild COMMIT VERSION, which builds and tests that
+  commit in ~/Projects/omalauncher-fold-build with mac.init.gradle (no key) and Taildrops the app back.
+  `oma-macbuild --take` checks it (HEAD's commit, the next version code, no test failed, its checksum, and proot
+  libraries byte for byte the same as this checkout's), signs it with the phone's key, and leaves it where
+  oma-install looks. Then oma-install as before.
 - oma-door is a small private door for the Mac session to reach the agent here when adb can't: it listens on the
   phone's Tailscale address only (port 8477), needs the token in /root/.config/oma-door/token with every request,
   and hands a prompt to the same agent the launcher runs, one job at a time. It runs no command of its own. The
