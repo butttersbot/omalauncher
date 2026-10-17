@@ -241,7 +241,7 @@ object ClipInbox {
     }
 
     /** [device]'s tailnet address, from tailshare-serve's own list on the Mac Pro, or the MacBook's when that is away. */
-    private fun address(device: String): String? {
+    internal fun address(device: String): String? {
         for (host in listOf("100.120.219.46", "100.105.137.74")) {
             val list =
                 runCatching {

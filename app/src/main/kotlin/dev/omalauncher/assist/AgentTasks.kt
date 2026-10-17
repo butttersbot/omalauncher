@@ -139,10 +139,17 @@ object AgentTasks {
      * one is free or behind its task. The chat shows it as agent mail, never as his words, and the agent gets it
      * inside the wrapper that says who wrote it. Says which builder took it.
      */
-    @Synchronized fun mail(context: Context, mail: AgentMail): BuilderId {
+    @Synchronized fun mail(context: Context, mail: AgentMail): BuilderId? {
         restore(context)
+        // A phone job (PhoneJobs.kt): a ping is Soma's own to answer at once; the rest go to a builder with their steps.
+        val job = phoneJob(mail.text)
+        if (job?.kind == JobKind.Ping) {
+            PhoneJobs.ping(context, mail, builders.associate { it.id to !it.working })
+            return null
+        }
         val to = pick(mailBuilder(mail.toSession, builders.associate { it.id to it.thread }))
-        of(to).followUp(context, mail.text, page = null, earlier = mail.wrapper(to), mail = mail.label)
+        if (job != null) of(to).followUp(context, mail.text, page = null, earlier = jobPlaybook(job, mail, to), mail = jobLabel(job, mail))
+        else of(to).followUp(context, mail.text, page = null, earlier = mail.wrapper(to), mail = mail.label)
         return to
     }
 
