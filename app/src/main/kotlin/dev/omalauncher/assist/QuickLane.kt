@@ -367,7 +367,9 @@ object QuickLane {
             if (route is FrontRoute.Unknown) RoutingLog.corrected(context, prompt, UNKNOWN_THREAD)
             val bound = TabBook.of(context).chat(chat)?.mac?.takeIf { it.isNotEmpty() }
             val own = bound?.let { id -> MacThreads.view.threads.firstOrNull { it.id == id } }
-            val beside = chatBeside(route)
+            // Beside a named thread only on the computer he picked for this chat; elsewhere it starts where he picked.
+            val picked = TabBook.of(context).chat(chat)?.host
+            val beside = chatBeside(route)?.takeIf { picked == null || macMachineOf(it.id) == picked }
             when {
                 own != null -> MacThreads.handOver(context, asked, prompt, own, away)
                 bound != null && route is FrontRoute.Mac -> MacThreads.handOver(context, asked, prompt, route.thread, away, route.fresh)

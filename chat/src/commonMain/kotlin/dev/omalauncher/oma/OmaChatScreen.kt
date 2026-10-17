@@ -5,6 +5,11 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import dev.omalauncher.ui.BackHandler
+import dev.omalauncher.assist.MAC_CLAUDE
+import dev.omalauncher.assist.MAC_KINDS
+import dev.omalauncher.assist.macKindName
+import dev.omalauncher.assist.macKindOf
+import dev.omalauncher.ui.MenuTitle
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -184,6 +189,16 @@ private fun ChatScreen(
     // A request the front agent has neither answered nor handed on reads as a task just begun, here and in its entry.
     // On a new chat's tab only that chat's counts.
     val deciding = frontWorking && tasks.any { it.time == frontTime && it.undecided && (tab == OMA_TAB || it.chat == to.chat) }
+    // The computers a new chat's thread can be made on, read with everything else, and the one this tab's would be.
+    val hosts = remember(tick) { host.hosts() }
+    val chatOn = (to as? SendTo.Chat)?.let { chatHostShown(hosts, book.chat(it.chat))?.name } ?: "the Mac"
+    // The pick menu open, if any, drawn over everything with the tab menu.
+    var picking by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(wanted) { picking = null }
+    fun hostPicked(chat: String, on: String, agent: String) {
+        host.changeBook { it.chose(chat, on, agent) }
+        tick++
+    }
     // The tab strip is folded away each time the chat opens: the dots say how the threads stand without it.
     var tabsOpen by remember { mutableStateOf(false) }
     // The tab whose long-press menu is open, if any.
@@ -414,11 +429,14 @@ private fun ChatScreen(
             LaunchedEffect(newest, tab) { if (newest != null) thread.scrollToItem(0) }
             LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 6.dp), state = thread, reverseLayout = true) {
                 if (entries.isEmpty() && earlier.isEmpty()) {
+                    // Where its thread will be made and who runs it, picked before the first words (cockpit slice 5). First,
+                    // so it sits under the line in this list that grows upwards.
+                    if (to is SendTo.Chat && hosts.isNotEmpty()) item { ChatPicks(hosts, book.chat(to.chat)) { picking = it } }
                     item {
                         BasicText(
                             when {
                                 tab == OMA_TAB -> "Ask Soma for something. For a fresh conversation, start a new chat with ＋ at the end of the tabs (▾)."
-                                to is SendTo.Chat -> "A new chat, for work on the Mac. Its first message starts a new thread there and names the tab. For the phone, hold to talk."
+                                to is SendTo.Chat -> "A new chat, for work on $chatOn. Its first message starts a new thread there and names the tab. For the phone, hold to talk."
                                 else -> "Nothing has been sent to ${tabTitle(tab, threads)} from this phone yet."
                             },
                             Modifier.fillMaxWidth().padding(vertical = 24.dp),
@@ -582,7 +600,7 @@ private fun ChatScreen(
                             if (shown.isEmpty()) {
                                 // Never a word about waiting for the task that runs: he can say more at any time.
                                 val oma = if (working) "ask, or add to this, any time…" else if (followUp) "follow up on this thread…" else "ask oma…"
-                                val hint = if (listening) "listening…" else fieldHint(to) ?: oma
+                                val hint = if (listening) "listening…" else fieldHint(to, chatOn) ?: oma
                                 // In the pack's own face, sloped: what stands in for his words is not his words (Boss, 2026-10-13).
                                 BasicText(hint, style = Pack.body(Pack.size.item, Pack.muted).copy(fontStyle = FontStyle.Italic), maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
@@ -625,6 +643,8 @@ private fun ChatScreen(
             }
         }
         // Over everything, as home's menu is.
+        val pickChat = (to as? SendTo.Chat)?.chat
+        if (picking != null && pickChat != null) PickMenu(picking!!, hosts, book.chat(pickChat), { on, agent -> hostPicked(pickChat, on, agent) }) { picking = null }
         menuFor?.let { key ->
             val thread = all.firstOrNull { it.key == key }
             val shown = tabEntries(tasks, key, book)
@@ -850,6 +870,79 @@ private fun TabMenu(
                         onRestore(thread.key)
                         onDismiss()
                     }
+                }
+            }
+        }
+    }
+}
+
+/** The computer a new [chat]'s thread is shown as going to: his pick, else the first that answers, else the first. */
+fun chatHostShown(hosts: List<HostChoice>, chat: NewChat?): HostChoice? =
+    chat?.host?.let { pick -> hosts.firstOrNull { it.id == pick } } ?: hosts.firstOrNull { it.reachable } ?: hosts.firstOrNull()
+
+/**
+ * Two short lines under a new chat's first line: "on [Mac Pro]" and "with [Claude]", the computer its thread will be made
+ * on and the agent that runs it. Each bracket opens a menu ([PickMenu], drawn over everything by the screen). Until he
+ * picks, it shows what would be used anyway: the first computer that answers and the first agent it runs. A computer
+ * out of reach is marked beside it, and his words wait there until it answers ([macChatMachine]).
+ */
+@Composable
+private fun ChatPicks(hosts: List<HostChoice>, chat: NewChat?, onMenu: (String) -> Unit) {
+    val on = chatHostShown(hosts, chat) ?: return
+    val small = Pack.mono(Pack.size.small, Pack.muted)
+    Column(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            BasicText("on", style = small)
+            BracketAction(pickName(on.name), Pack.accent) { onMenu(PICK_HOST) }
+            if (!on.reachable) BasicText("offline", style = small)
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            BasicText("with", style = small)
+            BracketAction(macKindName(chatAgentShown(on, chat)), Pack.accent) { onMenu(PICK_AGENT) }
+        }
+    }
+}
+
+/** A computer's name as a pick shows it: short enough for the phone's cover screen. */
+private fun pickName(name: String) = if (name.length <= PICK_NAME_CHARS) name else name.take(PICK_NAME_CHARS - 1).trimEnd() + "…"
+
+private const val PICK_NAME_CHARS = 18
+private const val PICK_HOST = "host"
+private const val PICK_AGENT = "agent"
+
+/** The agents [on] runs, in the order work goes from one to the next; every agent the runner knows while it hasn't said. */
+fun chatAgents(on: HostChoice): List<String> {
+    val said = on.agents.map(::macKindOf)
+    return if (said.isEmpty()) MAC_KINDS else MAC_KINDS.filter { it in said } + said.filter { it !in MAC_KINDS }
+}
+
+/** The agent a new [chat]'s thread on [on] is shown as running: his pick when [on] runs it, else the first it does. */
+fun chatAgentShown(on: HostChoice, chat: NewChat?): String {
+    val agents = chatAgents(on)
+    return chat?.agent?.let(::macKindOf)?.takeIf { it in agents } ?: agents.firstOrNull() ?: MAC_CLAUDE
+}
+
+/** The menu a pick opened, over everything as the tab menu is; Back closes it and never the chat. */
+@Composable
+private fun PickMenu(which: String, hosts: List<HostChoice>, chat: NewChat?, onPick: (String, String) -> Unit, onDismiss: () -> Unit) {
+    val on = chatHostShown(hosts, chat) ?: return onDismiss()
+    BackHandler { onDismiss() }
+    Menu(onDismiss) {
+        if (which == PICK_HOST) {
+            MenuTitle("make its thread on")
+            for (choice in hosts) {
+                MenuItem(choice.name + if (choice.reachable) "" else " · offline", if (choice.reachable) Pack.foreground else Pack.muted) {
+                    // Another computer may not run the agent picked: then its first is used.
+                    onPick(choice.id, chat?.agent?.takeIf { macKindOf(it) in chatAgents(choice) }.orEmpty())
+                    onDismiss()
+                }
+            }
+        } else {
+            MenuTitle(if (on.agents.isEmpty()) "with · ${on.name} hasn't said which it runs yet" else "with")
+            for (kind in chatAgents(on)) {
+                MenuItem(macKindName(kind)) {
+                    onPick(on.id, kind)
+                    onDismiss()
                 }
             }
         }

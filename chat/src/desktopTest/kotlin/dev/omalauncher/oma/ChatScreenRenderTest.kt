@@ -8,6 +8,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.use
 import dev.omalauncher.assist.AgentThread
 import dev.omalauncher.assist.ApprovalOutcome
@@ -33,7 +35,7 @@ class ChatScreenRenderTest {
     @get:Rule val tmp = TemporaryFolder()
 
     /** A host with a short thread on it and no phone behind it. */
-    private inner class SampleHost : ChatHost {
+    private open inner class SampleHost : ChatHost {
         val now = System.currentTimeMillis()
         val thread =
             listOf(
@@ -51,13 +53,16 @@ class ChatScreenRenderTest {
         override fun macView() = MacView()
         override fun macLabel(task: ChatTask) = ""
         override fun macEarlier(threadId: String): MacEarlierRead = MacEarlierRead.Unread
+        override fun hosts() = listOf(HostChoice("mac", "Mac Pro", true, listOf("claude", "codex", "grok")), HostChoice("omarchy-mg1", "MG1", false, listOf("claude", "grok")))
         override fun agentName() = "Claude Code"
         override fun agentBin() = "claude"
         @Composable override fun linuxInstalled() = true
         override fun frontReady() = true
-        override fun threads() = listOf(AgentThread(PHONE_THREAD, "Phone", ThreadState.Working, "running the tests", "working", worked = now))
+        override fun threads() = listOf(AgentThread(PHONE_THREAD, "Phone", ThreadState.Working, "running the tests", "working", worked = now)) +
+            book.chats.map { dev.omalauncher.assist.chatThread(it, NEW_CHAT_NAME, thread, MacView()) }
         override fun liveThreads(all: List<AgentThread>, pinned: Set<String>, archived: Set<String>) = all
-        override fun changeBook(change: (TabMeta) -> TabMeta) = change(TabMeta())
+        var book = TabMeta()
+        override fun changeBook(change: (TabMeta) -> TabMeta) = change(book).also { book = it }
         override fun checkTitles() {}
         override fun builderFacts() = emptyMap<BuilderId, BuilderFacts>()
         override fun lookAtBuilders() {}
@@ -104,18 +109,92 @@ class ChatScreenRenderTest {
         @Composable override fun rememberMicrophone(onGranted: () -> Unit): () -> Unit = onGranted
     }
 
-    @Test fun theChatDrawsOnTheDesktop() {
-        val host = SampleHost()
+    /** The chat drawn off-screen at [wanted]'s tab, kept as [name] in build/render. */
+    private fun render(host: ChatHost, wanted: String?, name: String, width: Int = 900): ByteArray {
         val png =
-            ImageComposeScene(width = 900, height = 1400, density = Density(2f)) {
-                OmaChatScreen(host, prefill = null, onPrefilled = {}, wanted = null, onTab = {})
+            ImageComposeScene(width = width, height = 1400, density = Density(2f)) {
+                OmaChatScreen(host, prefill = null, onPrefilled = {}, wanted = wanted, onTab = {})
             }.use { scene ->
                 scene.render()
                 // Twice: the screen's first look settles the tab book and the thread before it draws them.
                 scene.render(1_000_000_000L).encodeToData(EncodedImageFormat.PNG)!!.bytes
             }
         val out = File(System.getProperty("render.dir") ?: "build/render").apply { mkdirs() }
-        File(out, "chat-desktop.png").writeBytes(png)
+        File(out, name).writeBytes(png)
+        return png
+    }
+
+    /** The phone's cover screen (344 dp across): the picks still sit whole on their two lines with a long name, out of reach. */
+    @Test fun thePicksFitTheCoverScreen() {
+        val host = object : SampleHost() {
+            override fun hosts() = listOf(HostChoice("macbook-pro", "Jack's MacBook Pro Max", false, listOf("claude", "codex")))
+        }
+        host.book = TabMeta().started("c1", host.now).chose("c1", "macbook-pro", "codex")
+        render(host, chatKey("c1"), "chat-newchat-cover.png", width = 688)
+    }
+
+    @Test fun aNewChatShowsWhereItsThreadWillBeMadeAndWithWhom() {
+        val host = SampleHost()
+        host.book = TabMeta().started("c1", host.now).chose("c1", "omarchy-mg1", "grok")
+        render(host, chatKey("c1"), "chat-newchat.png")
+        // A pick is kept on the chat until its thread is made, and a bound chat takes no other.
+        val chat = host.book.chat("c1")!!
+        assertTrue(chat.host == "omarchy-mg1" && chat.agent == "grok")
+        assertTrue(host.book.onMac("c1", "t1").chose("c1", "mac", "claude").chat("c1")!!.host == "omarchy-mg1")
+        assertTrue(tabMetaFrom(tabMetaText(host.book)).chat("c1") == chat)
+    }
+
+    /** He taps the choices and they are kept on the chat: another computer, then another agent it runs. */
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+    @Test fun tappingThePicksChangesWhereTheThreadGoes() = androidx.compose.ui.test.runComposeUiTest {
+        val host = SampleHost()
+        host.book = TabMeta().started("c1", host.now).chose("c1", "omarchy-mg1", "grok")
+        // The screen looks again twice a second for ever, so the clock is moved by hand, never left to run to idle.
+        mainClock.autoAdvance = false
+        setContent { OmaChatScreen(host, prefill = null, onPrefilled = {}, wanted = chatKey("c1"), onTab = {}) }
+        fun settle() = mainClock.advanceTimeBy(1_200)
+        settle()
+        onNodeWithText("offline").assertExists()
+        onNodeWithText("[ MG1 ]").performClick()
+        settle()
+        onNodeWithText("make its thread on").assertExists()
+        onNodeWithText("Mac Pro").performClick()
+        settle()
+        // Mac Pro runs Grok too, so the agent he picked stays.
+        assertTrue(host.book.chat("c1")!!.host == "mac" && host.book.chat("c1")!!.agent == "grok")
+        onNodeWithText("[ Mac Pro ]").assertExists()
+        onNodeWithText("[ Grok ]").performClick()
+        settle()
+        onNodeWithText("Codex").performClick()
+        settle()
+        assertTrue(host.book.chat("c1")!!.agent == "codex")
+        onNodeWithText("[ Codex ]").assertExists()
+        onNodeWithText("start this chat on Mac Pro…").assertExists()
+    }
+
+    /** Before a computer has said which agents it runs, every agent the runner knows is offered, and the menu says why. */
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+    @Test fun aComputerNotHeardFromYetOffersEveryAgent() = androidx.compose.ui.test.runComposeUiTest {
+        val state = object : SampleHost() {
+            override fun hosts() = listOf(HostChoice("macbook-pro", "Jack's MacBook Pro Max", false, emptyList()))
+        }
+        state.book = TabMeta().started("c1", state.now)
+        mainClock.autoAdvance = false
+        setContent { OmaChatScreen(state, prefill = null, onPrefilled = {}, wanted = chatKey("c1"), onTab = {}) }
+        mainClock.advanceTimeBy(1_200)
+        // A long name is cut to fit the cover screen.
+        onNodeWithText("[ Jack's MacBook Pr… ]").assertExists()
+        onNodeWithText("[ Claude ]").performClick()
+        mainClock.advanceTimeBy(1_200)
+        onNodeWithText("with · Jack's MacBook Pro Max hasn't said which it runs yet").assertExists()
+        onNodeWithText("Codex").performClick()
+        mainClock.advanceTimeBy(1_200)
+        assertTrue(state.book.chat("c1")!!.agent == "codex")
+    }
+
+    @Test fun theChatDrawsOnTheDesktop() {
+        val host = SampleHost()
+        val png = render(host, null, "chat-desktop.png")
         val image = org.jetbrains.skia.Image.makeFromEncoded(png)
         val pixels = org.jetbrains.skia.Bitmap.makeFromImage(image)
         val seen = HashSet<Int>()

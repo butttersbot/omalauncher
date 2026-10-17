@@ -186,7 +186,7 @@ fun macMadeReason(answer: MacAnswer<MacThread>): String? = when (answer) {
     MacAnswer.Unauthorized -> MAC_KEY_REFUSED
     is MacAnswer.Refused -> "The Mac would not make a new thread in that folder" + (if (answer.roots.isEmpty()) "." else ": it takes only " + answer.roots.joinToString(" and ") + ".")
     MacAnswer.NotFound -> "The Mac could not make a new thread (HTTP 404)."
-    is MacAnswer.Failed -> "The Mac could not make a new thread (HTTP ${answer.code})."
+    is MacAnswer.Failed -> "The Mac could not make a new thread (HTTP ${answer.code})." + answer.error.trim().takeIf { it.isNotEmpty() }?.let { " It said: ${it.take(200)}" }.orEmpty()
 }
 
 /**

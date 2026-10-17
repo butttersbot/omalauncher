@@ -39,6 +39,9 @@ enum class BuildWay {
     Send,
 }
 
+/** A computer a new chat's thread can be made on: its id ([dev.omalauncher.assist.MacMachine.id]), what he calls it, whether it answers, and the agents it runs. */
+data class HostChoice(val id: String, val name: String, val reachable: Boolean, val agents: List<String>)
+
 /** A picture he picked, still on the device's side; [ChatHost.importImage] makes it a [PromptImage]. */
 interface PickedImage
 
@@ -91,6 +94,9 @@ interface ChatHost {
 
     /** The record of what was done in the Mac thread [threadId] before this device came in. Blocks: call off the main thread. */
     fun macEarlier(threadId: String): MacEarlierRead
+
+    /** The computers set up for threads, in their order, each as it last answered. */
+    fun hosts(): List<HostChoice>
 
     /** The default coding agent's name ("Claude Code"), or null with none. */
     fun agentName(): String?

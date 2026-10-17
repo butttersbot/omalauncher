@@ -99,6 +99,12 @@ object MacThreads {
 
     private fun kindsOf(machine: String) = kinds[machine].orEmpty()
 
+    /** The agents the computer [machine] said it has at its last answer (`/health`'s kinds); none before it answered. */
+    fun kindsOn(machine: String): List<String> = kindsOf(machine)
+
+    /** Every computer set up on this phone, as it last answered; nothing is read from disk, so it can be asked as often as the chat draws. */
+    fun hosts(context: Context): List<MacSeen> = view.macs.ifEmpty { macSeen(machines(context), view) }
+
     /** The threads on the same Mac as [threadId]: work on one Mac is never placed with, beside or instead of another's. */
     private fun sameMac(threadId: String, threads: List<MacThread> = view.threads) = threads.filter { macMachineOf(it.id) == macMachineOf(threadId) }
 
@@ -335,10 +341,12 @@ object MacThreads {
             is MacFresh.Queue -> deliver(context, time, prompt, place.thread, away, macCappedStep(place.working, macFolder(named.project)))
             is MacFresh.Make -> {
                 val limited = limited()
-                val kind = macKind(kindsOf(machine), limited) ?: macInstalled(kindsOf(machine)).first()
+                // A new chat's own pick of agent still holds beside a named thread; the computer is that thread's.
+                val picked = if (!newChat) "" else TabBook.of(context).chat(log.tasks.firstOrNull { it.time == time }?.chat.orEmpty())?.agent.orEmpty()
+                val kind = macChatKind(picked, kindsOf(machine), limited) ?: macInstalled(kindsOf(machine)).first()
                 val name = if (kind == MAC_CLAUDE) place.name else macKindThreadName(named.name, kind, threads.map { it.name })
                 // Said only when a limit is why: a thread of another agent's is otherwise simply made as Claude's.
-                val why = macLimitedStep(named.kind, kind).takeIf { kind != macKindOf(named.kind) && macKindOf(named.kind) in limited }
+                val why = macLimitedStep(named.kind, kind).takeIf { picked.isBlank() && kind != macKindOf(named.kind) && macKindOf(named.kind) in limited }
                 log.update(time, save = true) { macFreshHandOver(it, named, name).let { entry -> if (why == null) entry else ChatHistory.withStep(entry, why) } }
                 make(context, time, place.copy(name = name), away, kind, machine) { sentText(context, time, prompt, it) }
             }
@@ -744,11 +752,12 @@ object MacThreads {
         val app = context.applicationContext
         val log = ChatLog.of(app)
         val macs = macSeen(machines(app), view)
-        val on = macDefaultMachine(macs)
+        val on = macChatMachine(TabBook.of(app).chat(chat)?.host, macs)
         when (chatPlace(on != null, macs.any { it.id == on && it.reachable })) {
             ChatPlace.NotSetUp -> log.update(asked, save = true) { it.copy(agent = QUICK_AGENT, result = MAC_NOT_SET_UP, status = TaskStatus.Failed) }
             ChatPlace.Unreachable -> {
-                log.update(asked, save = true) { it.copy(agent = QUICK_AGENT, result = MAC_CHAT_UNREACHABLE, status = TaskStatus.Dropped, answeredBy = OMA_NAME) }
+                val name = macs.firstOrNull { it.id == on }?.name.orEmpty().takeIf { macs.size > 1 }.orEmpty()
+                log.update(asked, save = true) { it.copy(agent = QUICK_AGENT, result = macChatUnreachable(name), status = TaskStatus.Dropped, answeredBy = OMA_NAME) }
                 refresh(app)
             }
             ChatPlace.Start -> makeForChat(app, asked, prompt, away, chat, machine = on ?: MAC_FIRST)
@@ -782,8 +791,9 @@ object MacThreads {
      */
     private fun makeForChat(context: Context, time: Long, prompt: String, away: Boolean, chat: String, given: String? = null, machine: String? = null) {
         val name = given ?: chatThreadName(TabBook.of(context).names[chatKey(chat)])
-        val on = machine ?: macDefaultMachine(macSeen(machines(context), view)) ?: MAC_FIRST
-        val kind = macKind(kindsOf(on), limited()) ?: macInstalled(kindsOf(on)).first()
+        val picked = TabBook.of(context).chat(chat)
+        val on = machine ?: macChatMachine(picked?.host, macSeen(machines(context), view)) ?: MAC_FIRST
+        val kind = macChatKind(picked?.agent.orEmpty(), kindsOf(on), limited()) ?: macInstalled(kindsOf(on)).first()
         val named = if (kind == MAC_CLAUDE) name else macKindThreadName(name, kind, view.threads.filter { macMachineOf(it.id) == on }.map { it.name })
         ChatLog.of(context).update(time, save = true) { macChatStart(it, named) }
         make(context, time, MacFresh.Make(named, MAC_DEFAULT_PROJECT), away, kind, on) { sentText(context, time, prompt, it) }

@@ -121,6 +121,14 @@ fun MacView.listedFor(threadId: String): Boolean = macs.firstOrNull { it.id == m
 fun MacView.machineFor(threadId: String): String = if (macs.size < 2) "" else macs.firstOrNull { it.id == macMachineOf(threadId) }?.name ?: macMachineName(macMachineOf(threadId))
 
 /**
+ * The computer a new chat's thread is made on: the one he picked ([chosen], null for none) while it is set up, else the
+ * one it would have been anyway ([macDefaultMachine]). A pick out of reach is kept, never passed over: his words then wait unsent with
+ * `[ try again ]`, as with one Mac out of reach, and the thread is never made somewhere he did not say.
+ */
+fun macChatMachine(chosen: String?, macs: List<MacSeen>): String? =
+    chosen?.let { pick -> macs.firstOrNull { it.id == pick }?.id } ?: macDefaultMachine(macs)
+
+/**
  * The Mac a new chat starts on when nothing names one: the first Mac while it answers, else the first other that
  * answers, else the first Mac all the same (its words then wait, unsent, with `[ try again ]`). Null with none set up.
  */

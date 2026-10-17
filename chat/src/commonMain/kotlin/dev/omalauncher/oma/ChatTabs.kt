@@ -109,13 +109,13 @@ fun tabMacThread(tab: String, meta: TabMeta = TabMeta()): String? = macThreadId(
 fun tabTitle(tab: String, threads: List<AgentThread>): String = threads.firstOrNull { it.key == tab }?.name ?: "Soma"
 
 /** What the empty field says on a thread's tab; null on the Oma tab, which keeps its own hints. */
-fun fieldHint(to: SendTo): String? = when (to) {
+fun fieldHint(to: SendTo, on: String = "the Mac"): String? = when (to) {
     SendTo.Oma -> null
     SendTo.Phone -> "to $PHONE_THREAD_NAME…"
     SendTo.PhoneB -> "to $PHONE_THREAD_B_NAME…"
     is SendTo.Mac -> "to ${to.name}…"
-    is SendTo.Chat -> "start this chat on the Mac…"
-    is SendTo.ChatStarting -> "starting a new thread on the Mac…"
+    is SendTo.Chat -> "start this chat on $on…"
+    is SendTo.ChatStarting -> "starting a new thread on $on…"
 }
 
 /**
