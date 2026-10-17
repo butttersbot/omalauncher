@@ -55,6 +55,9 @@ object MacThreads {
 
     fun kindsOn(machine: String): List<String> = made?.kindsOn(machine).orEmpty()
 
+    /** What a new chat's thread on [machine] uses when he picks nothing ([MacThreadsEngine.defaultPick]); null before the engine is made. */
+    fun defaultPick(machine: String): MacPick? = made?.defaultPick(machine)
+
     fun hosts(context: Context): List<MacSeen> = engine(context).hosts()
 
     fun restore(context: Context) = engine(context).restore()
@@ -83,6 +86,8 @@ object MacThreads {
     fun earlier(context: Context, threadId: String): MacEarlierRead = engine(context).earlier(threadId)
 
     fun stop(context: Context, threadId: String, told: (String?) -> Unit) = engine(context).stop(threadId, told)
+
+    fun switchTo(context: Context, threadId: String, to: MacPick) = engine(context).switchTo(threadId, to)
 
     fun answer(context: Context, ticket: String, allow: Boolean, told: (MacApprovalOutcome) -> Unit) = engine(context).answer(ticket, allow, told)
 }

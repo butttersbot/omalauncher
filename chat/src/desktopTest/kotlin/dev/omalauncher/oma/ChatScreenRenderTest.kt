@@ -9,6 +9,13 @@ import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.longClick
+import org.junit.Assert.assertEquals
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.use
 import dev.omalauncher.assist.AgentThread
@@ -71,6 +78,8 @@ class ChatScreenRenderTest {
         override fun startMacChat(prompt: String, chat: String) {}
         override fun sayToMac(prompt: String, thread: String, name: String, chat: String) {}
         override fun stopMac(thread: String, said: (String?) -> Unit) {}
+        var switched: Pair<String, dev.omalauncher.assist.MacPick>? = null
+        override fun switchMac(thread: String, to: dev.omalauncher.assist.MacPick) { switched = thread to to }
         override fun tryMacAgain(time: Long) {}
         override fun answerMac(ticket: String, allow: Boolean, done: (MacApprovalOutcome) -> Unit) {}
         override fun runInTerminal(prompt: String) = false
@@ -190,6 +199,87 @@ class ChatScreenRenderTest {
         onNodeWithText("Codex").performClick()
         mainClock.advanceTimeBy(1_200)
         assertTrue(state.book.chat("c1")!!.agent == "codex")
+    }
+
+    /** The model is a pick too, where the agent has more than its own default; another agent starts on its own default. */
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+    @Test fun tappingTheModelPickKeepsItOnTheChat() = androidx.compose.ui.test.runComposeUiTest {
+        val host = object : SampleHost() {
+            override fun hosts() = listOf(HostChoice("mac", "Mac Pro", true, listOf("claude", "codex", "grok"), mapOf("claude" to dev.omalauncher.assist.MAC_CLAUDE_MODELS, "codex" to listOf("", "gpt-6.1-sol"), "grok" to listOf(""))))
+        }
+        host.book = TabMeta().started("c1", host.now).chose("c1", "mac", "codex")
+        mainClock.autoAdvance = false
+        setContent { OmaChatScreen(host, prefill = null, onPrefilled = {}, wanted = chatKey("c1"), onTab = {}) }
+        fun settle() = mainClock.advanceTimeBy(1_200)
+        settle()
+        onNodeWithText("[ default ]").performClick()
+        settle()
+        onNodeWithText("Codex on").assertExists()
+        onNodeWithText("gpt-6.1-sol").performClick()
+        settle()
+        assertTrue(host.book.chat("c1")!!.agent == "codex" && host.book.chat("c1")!!.model == "gpt-6.1-sol")
+        onNodeWithText("[ gpt-6.1-sol ]").assertExists()
+        // Grok has only its own default here: its model isn't offered, and none is kept.
+        onNodeWithText("[ Codex ]").performClick()
+        settle()
+        onNodeWithText("Grok").performClick()
+        settle()
+        assertTrue(host.book.chat("c1")!!.agent == "grok" && host.book.chat("c1")!!.model == "")
+        onNodeWithText("[ default ]").assertDoesNotExist()
+        onNodeWithText("[ gpt-6.1-sol ]").assertDoesNotExist()
+        // Claude's are its aliases and Fable.
+        onNodeWithText("[ Grok ]").performClick()
+        settle()
+        onNodeWithText("Claude").performClick()
+        settle()
+        onNodeWithText("[ default ]").performClick()
+        settle()
+        onNodeWithText("Fable").assertExists()
+        onNodeWithText("Opus").performClick()
+        settle()
+        assertTrue(host.book.chat("c1")!!.agent == "claude" && host.book.chat("c1")!!.model == "opus")
+        onNodeWithText("[ Opus ]").assertExists()
+    }
+
+    /** Before he picks, a new chat shows the default new chats remember, model and all. */
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+    @Test fun aNewChatShowsTheRememberedDefault() = androidx.compose.ui.test.runComposeUiTest {
+        val host = object : SampleHost() {
+            override fun hosts() = listOf(HostChoice("mac", "Mac Pro", true, listOf("claude", "codex"), mapOf("claude" to dev.omalauncher.assist.MAC_CLAUDE_MODELS, "codex" to listOf("", "gpt-6.1-sol")), dev.omalauncher.assist.MacPick("codex", "gpt-6.1-sol")))
+        }
+        host.book = TabMeta().started("c1", host.now)
+        mainClock.autoAdvance = false
+        setContent { OmaChatScreen(host, prefill = null, onPrefilled = {}, wanted = chatKey("c1"), onTab = {}) }
+        mainClock.advanceTimeBy(1_200)
+        onNodeWithText("[ Codex ]").assertExists()
+        onNodeWithText("[ gpt-6.1-sol ]").assertExists()
+    }
+
+    /** Switch agent, from a long press on a thread's tab: every agent and model the computer runs but the one it runs now. */
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+    @Test fun switchAgentFromTheTabMenuMovesTheThread() = androidx.compose.ui.test.runComposeUiTest {
+        val thread = dev.omalauncher.assist.MacThread("mac/t1", "Projects view", "~/Projects/soma", dev.omalauncher.assist.ThreadHome.Mac, "claude", "", dev.omalauncher.assist.MacThreadStatus.Idle, null, "", 0, 0, emptyList(), model = "opus")
+        val host = object : SampleHost() {
+            override fun macView() = MacView(threads = listOf(thread), reachable = true)
+        }
+        host.book = TabMeta().started("c1", host.now).onMac("c1", "mac/t1")
+        mainClock.autoAdvance = false
+        setContent { OmaChatScreen(host, prefill = null, onPrefilled = {}, wanted = chatKey("c1"), onTab = {}) }
+        fun settle() = mainClock.advanceTimeBy(1_200)
+        settle()
+        onNodeWithContentDescription("Show the tabs").performClick()
+        settle()
+        onAllNodes(hasText("New chat") and hasClickAction()).onFirst().performTouchInput { longClick() }
+        settle()
+        onNodeWithText("Switch agent").performClick()
+        settle()
+        onNodeWithText("move New chat to").assertExists()
+        onNodeWithText("Claude · Opus").assertDoesNotExist()
+        onNodeWithText("Claude · Sonnet").assertExists()
+        onNodeWithText("Grok").assertExists()
+        onNodeWithText("Codex").performClick()
+        settle()
+        assertEquals("mac/t1" to dev.omalauncher.assist.MacPick("codex"), host.switched)
     }
 
     @Test fun theChatDrawsOnTheDesktop() {

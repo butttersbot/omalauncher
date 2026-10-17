@@ -20,13 +20,24 @@ free.close()
 base = 'http://127.0.0.1:%d' % port
 environment = {**os.environ, 'OMA_RUNNER_PORT': str(port), 'OMA_RUNNER_TOKEN': str(work / 'token'), 'OMA_RUNNER_STATE': str(work / 'state'),
                'OMA_RUNNER_LOGS': str(work / 'logs'), 'OMA_RUNNER_ROOTS': str(root), 'OMA_RUNNER_AGENT': str(HERE / 'fake-agent'), 'OMA_RUNNER_BIND': '127.0.0.1',
-               'OMA_RUNNER_CODEX': str(HERE / 'fake-codex'), 'OMA_RUNNER_CURSOR': str(HERE / 'fake-cursor'), 'CODEX_HOME': str(work / 'codex'),
+               'OMA_RUNNER_CODEX': str(HERE / 'fake-codex'), 'OMA_RUNNER_CURSOR': str(HERE / 'fake-cursor'), 'OMA_RUNNER_GROK': str(HERE / 'fake-grok'), 'CODEX_HOME': str(work / 'codex'),
                'OMA_RUNNER_FILES': str(work / 'From Fold'), 'OMA_RUNNER_MAX_FILE': str(3 * 1024 * 1024),
-               'OMA_RUNNER_MAIL': str(work / 'mail'), 'OMA_RUNNER_MAIL_EVERY': '0.2'}
+               'OMA_RUNNER_MAIL': str(work / 'mail'), 'OMA_RUNNER_MAIL_EVERY': '0.2',
+               # Per-device keys: the table, who whois says is calling (read only by a loopback runner), this machine's name.
+               'OMA_RUNNER_KEYS': str(work / 'keys.json'), 'OMA_RUNNER_WHOIS_FILE': str(work / 'whois.json'), 'OMA_RUNNER_PHONE': 'phone',
+               'OMA_RUNNER_SELF': 'testhost', 'OMA_RUNNER_SOMA_DIR': str(work / 'soma-runners'), 'OMA_RUNNER_PAIR_COMPUTERS': '1'}
 received = work / 'From Fold'
 (work / 'codex').mkdir()
 (work / 'codex' / 'config.toml').write_text('[mcp_servers.paper]\nurl = "http://127.0.0.1:1/mcp"\n')
 passed = 0
+
+
+def calling_as(device):
+    """What whois will say of the loopback caller from now on: the device the next requests come from."""
+    (work / 'whois.json').write_text(json.dumps({'127.0.0.1': device}))
+
+
+calling_as('phone')
 
 
 def start():
@@ -108,7 +119,50 @@ try:
     check('the Mac keeps only the key\'s digest: the key itself is gone from the file, mode 600', kept.startswith('sha256:') and 'k' * 40 not in kept
           and (work / 'token').stat().st_mode & 0o777 == 0o600)
     check('what the file holds does not open the runner', call('GET', '/health', token=kept)[0] == 401 and call('GET', '/health', token=kept[len('sha256:'):])[0] == 401)
-    check('/health answers, naming the agents the Mac has', call('GET', '/health') == (200, {'ok': True, 'runner': 'oma-runner', 'threads': 0, 'working': 0, 'waiting': 0, 'kinds': ['claude', 'codex', 'cursor'], 'files': True}))
+    table = json.loads((work / 'keys.json').read_text())
+    check('the one key from before becomes the phone\'s own, in a table of digests, mode 600',
+          table['devices'] == [{'name': 'phone', 'digest': kept, 'added': table['devices'][0]['added']}] and 'k' * 40 not in (work / 'keys.json').read_text()
+          and (work / 'keys.json').stat().st_mode & 0o777 == 0o600)
+    calling_as('macbook-pro')
+    check('the phone\'s key from another device is refused', call('GET', '/health')[0] == 401)
+    calling_as(None)
+    check('a caller whois cannot name is refused', call('GET', '/health')[0] == 401)
+    calling_as('phone')
+    held = subprocess.run([sys.executable, str(HERE / 'oma-runner'), 'pair', 'testhost'], env={k: v for k, v in environment.items() if k != 'OMA_RUNNER_PAIR_COMPUTERS'}, capture_output=True, text=True)
+    check('pair: a computer is refused until Soma desktop keeps keys in the Keychain, and nothing changes',
+          held.returncode != 0 and 'Keychain' in held.stderr and not (work / 'soma-runners').exists() and len(json.loads((work / 'keys.json').read_text())['devices']) == 1)
+    paired = subprocess.run([sys.executable, str(HERE / 'oma-runner'), 'pair', 'testhost'], env=environment, capture_output=True, text=True)
+    own = json.loads((work / 'soma-runners' / 'soma-runner-testhost.json').read_text())
+    check('pair: this machine\'s own Soma gets {url, key, name, runner} in its folder, mode 600, the key never printed',
+          paired.returncode == 0 and set(own) == {'url', 'key', 'name', 'runner'} and own['runner'] == 'testhost' and own['url'] == base
+          and own['key'] not in paired.stdout + paired.stderr and (work / 'soma-runners' / 'soma-runner-testhost.json').stat().st_mode & 0o777 == 0o600)
+    check('pair: the table keeps the new device\'s digest only, beside the phone\'s', [d['name'] for d in json.loads((work / 'keys.json').read_text())['devices']] == ['phone', 'testhost']
+          and own['key'] not in (work / 'keys.json').read_text())
+    calling_as('testhost')
+    check('pair: the new key opens the runner from its device, with no restart', call('GET', '/health', token=own['key'])[0] == 200)
+    check('a key opens nothing from another device: the phone\'s from testhost', call('GET', '/health')[0] == 401)
+    calling_as('phone')
+    check('...nor testhost\'s from the phone, while the phone\'s own still opens', call('GET', '/health', token=own['key'])[0] == 401 and call('GET', '/health')[0] == 200)
+    listed = subprocess.run([sys.executable, str(HERE / 'oma-runner'), 'devices'], env=environment, capture_output=True, text=True).stdout
+    check('devices lists who is paired, and no key', 'phone' in listed and 'testhost' in listed and own['key'] not in listed and 'sha256' not in listed)
+    bad = subprocess.run([sys.executable, str(HERE / 'oma-runner'), 'pair', 'Not A Machine'], env=environment, capture_output=True, text=True)
+    check('pair refuses a name that is no Tailscale machine, and nothing changes', bad.returncode != 0 and len(json.loads((work / 'keys.json').read_text())['devices']) == 2)
+    racing = [subprocess.Popen([sys.executable, str(HERE / 'oma-runner'), 'pair', 'testhost'], env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) for _ in range(6)]
+    raced = [process.communicate() + (process.returncode,) for process in racing]
+    table = json.loads((work / 'keys.json').read_text())['devices']
+    check('six pairs at once each finish cleanly, and the table holds each device once, with no file left half-written',
+          all(code == 0 and 'Traceback' not in err for _, err, code in raced) and [d['name'] for d in table] == ['phone', 'testhost']
+          and not [f for f in work.iterdir() if f.name.endswith('.new')] and not [f for f in (work / 'soma-runners').iterdir() if f.name.startswith('.')])
+    own = json.loads((work / 'soma-runners' / 'soma-runner-testhost.json').read_text())
+    calling_as('testhost')
+    check('...and the key in this machine\'s Soma folder is the one that opens the runner', call('GET', '/health', token=own['key'])[0] == 200)
+    calling_as('phone')
+    gone = subprocess.run([sys.executable, str(HERE / 'oma-runner'), 'unpair', 'testhost'], env=environment, capture_output=True, text=True)
+    calling_as('testhost')
+    check('unpair: that device is shut out at once, with no restart', gone.returncode == 0 and call('GET', '/health', token=own['key'])[0] == 401)
+    calling_as('phone')
+    check('unpair leaves every other device in', call('GET', '/health')[0] == 200)
+    check('/health answers, naming the agents the Mac has', call('GET', '/health') == (200, {'ok': True, 'runner': 'oma-runner', 'threads': 0, 'working': 0, 'waiting': 0, 'kinds': ['claude', 'codex', 'cursor', 'grok'], 'files': True}))
     check('a project outside the roots is refused', call('POST', '/threads', {'name': 'x', 'project': str(outside)})[0] == 403)
     check('a path that climbs out of a root is refused', call('POST', '/threads', {'name': 'x', 'project': str(project / '..' / '..' / 'outside')})[0] == 403)
     (root / 'link').symlink_to(outside)
@@ -349,7 +403,7 @@ try:
     events = stream(garbled, until=('error',), limit=15)
     check('a line the runner cannot read ends the turn with an error instead of hanging', events[-1]['type'] == 'error' and events[-1]['code'] == 'runner' and settle(garbled, 'idle', 15))
 
-    for kind, tool in (('codex', 'Edit'), ('cursor', 'Bash')):
+    for kind, tool in (('codex', 'Edit'), ('cursor', 'Bash'), ('grok', 'Edit')):
         (project / 'written.txt').unlink(missing_ok=True)
         code, made = call('POST', '/threads', {'name': kind.title(), 'project': str(project), 'kind': kind})
         other = made['thread']['id']
@@ -357,7 +411,7 @@ try:
         call('POST', '/threads/%s/messages' % other, {'text': 'what files are here'})
         events = stream(other)
         check(kind + ': it answers what files are here', any(event['type'] == 'text' and 'notes.md' in event['text'] for event in events) and events[-1]['type'] == 'result')
-        check(kind + ': the result names its model and kind', events[-1].get('kind') == kind and events[-1].get('model') == {'codex': 'gpt-fake', 'cursor': 'cursor-auto'}[kind])
+        check(kind + ': the result names its model and kind', events[-1].get('kind') == kind and events[-1].get('model') == {'codex': 'gpt-fake', 'cursor': 'cursor-auto', 'grok': 'grok-4.7'}[kind])
         check(kind + ': the owner\'s words reach it unchanged', starts()[-1] == {**starts()[-1], 'kind': kind, 'prompt': 'what files are here'})
         settle(other, 'idle')
         last = call('GET', '/threads/' + other)[1]['thread']['last_event']
@@ -369,6 +423,10 @@ try:
         call('POST', path, {'decision': 'deny', 'nonce': card['nonce']})
         events = stream(other, after=card['id'])
         check(kind + ': deny refuses it', not (project / 'written.txt').exists() and any('Not allowed' in event.get('text', '') for event in events))
+        if kind == 'grok':
+            check('grok: a turn it ends because he said no is not a failure', any(e['type'] == 'result' and not e['failed'] and 'Not allowed' in e['text'] for e in events))
+            whole = call('GET', '/threads/%s/events' % other)[1]['events']
+            check('grok: its tools are named as the others\' are, though its calls carry no ACP kind', any(e['type'] == 'step' and e.get('tool') == 'edit' and e['text'].startswith('Edit') for e in whole))
         check(kind + ': the conversation is continued', starts()[-1]['resumed'])
         settle(other, 'idle')
         last = call('GET', '/threads/' + other)[1]['thread']['last_event']
@@ -402,11 +460,30 @@ try:
     stream(made['thread']['id'])
     check('codex: auto when asked for by name, asking only for more than the sandbox gives', made['thread']['mode'] == 'auto' and starts()[-1]['policy'] == 'on-request'
           and starts()[-1]['sandbox'] == 'workspace-write')
+    code, made = call('POST', '/threads', {'name': 'Grok plain', 'project': str(project), 'kind': 'grok'})
+    check('grok: a thread is manual', code == 200 and made['thread']['mode'] == 'manual')
+    plain = made['thread']['id']
+    call('POST', '/threads/%s/messages' % plain, {'text': 'what files are here'})
+    stream(plain)
+    grok = [entry for entry in starts() if entry.get('kind') == 'grok'][-1]
+    check('grok: it runs as `grok agent --no-leader stdio`, never in Grok\'s auto mode', grok['argv'] == ['agent', '--no-leader', 'stdio'] and grok['auto'] is False)
+    code, made = call('POST', '/threads', {'name': 'Grok auto', 'project': str(project), 'kind': 'grok', 'mode': 'auto', 'model': 'grok-4.7-build-fast'})
+    auto = made['thread']['id']
+    call('POST', '/threads/%s/messages' % auto, {'text': 'what files are here'})
+    stream(auto)
+    grok = [entry for entry in starts() if entry.get('kind') == 'grok'][-1]
+    check('grok: auto asked for is still manual, its session never asks Grok\'s auto mode, and its model is passed', code == 200 and made['thread']['mode'] == 'manual'
+          and grok['auto'] is False and grok['argv'] == ['agent', '--no-leader', '--model', 'grok-4.7-build-fast', 'stdio'])
     code, made = call('POST', '/threads', {'name': 'Cursor auto', 'project': str(project), 'kind': 'cursor', 'mode': 'auto'})
     check('cursor: has no auto mode, so its threads are manual even when auto is asked for', code == 200 and made['thread']['mode'] == 'manual')
     cursor = [entry for entry in starts() if entry.get('kind') == 'cursor'][-1]['permissions']
     check('cursor: its own edits are denied, nothing is allowed without asking, the key is out of reach', 'Write(**)' in cursor['deny'] and cursor['allow'] == []
           and any(str(work / 'token') in rule for rule in cursor['deny']))
+    claude = [entry for entry in starts() if 'deny' in entry][-1]['deny']
+    check('claude: every path out of reach is denied to read and to edit: the key, the table, this machine\'s Soma keys, the runner\'s records',
+          all('%s(/%s)' % (verb, path) in claude for verb in ('Read', 'Edit') for path in (str(work / 'token'), str(work / 'keys.json'), str(work / 'soma-runners') + '/**', str(work / 'state') + '/**')))
+    check('cursor: the devices\' table and this machine\'s own Soma keys are out of reach too', any(str(work / 'keys.json') in rule for rule in cursor['deny'])
+          and any(str(work / 'soma-runners') in rule for rule in cursor['deny']))
     data = os.urandom(2 * 1024 * 1024 + 7)
     code, kept = upload('photo one.jpg', data)
     check('a file from the phone is kept in From Fold, made for it, and its path and size answered', code == 200 and kept == {'ok': True, 'path': str(received / 'photo one.jpg'), 'bytes': len(data)}

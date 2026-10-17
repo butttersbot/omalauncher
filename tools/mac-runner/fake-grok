@@ -1,0 +1,69 @@
+#!/usr/bin/env python3
+"""A stand-in for `grok agent stdio`, for test-runner.py. It speaks ACP (JSON-RPC 2.0) as Grok Build's CLI does, and acts
+on words in the prompt as fake-cursor does: "write" asks to run `touch written.txt` and runs it only when allowed,
+"files" lists the folder, "limit" refuses the prompt on a usage limit. session/load replays an earlier turn first.
+Every turn is added to starts.log with how it was started and whether its session asked for Grok's auto mode."""
+import json, os, pathlib, sys, uuid
+
+
+def out(message):
+    print(json.dumps({'jsonrpc': '2.0', **message}), flush=True)
+
+
+def update(session, change):
+    out({'method': 'session/update', 'params': {'sessionId': session, 'update': change}})
+
+
+def chunk(session, text):
+    update(session, {'sessionUpdate': 'agent_message_chunk', 'content': {'type': 'text', 'text': text}})
+
+
+def read():
+    line = sys.stdin.readline()
+    return json.loads(line) if line else None
+
+
+resumed = False
+auto = False
+while True:
+    message = read()
+    if message is None:
+        break
+    method, number, params = message.get('method'), message.get('id'), message.get('params') or {}
+    if method == 'initialize':
+        out({'id': number, 'result': {'protocolVersion': 1, 'agentCapabilities': {'loadSession': True}}})
+    elif method == 'session/new':
+        auto = bool((params.get('_meta') or {}).get('autoMode'))
+        out({'id': number, 'result': {'sessionId': str(uuid.uuid4()), 'models': {'currentModelId': 'grok-4.7'}}})
+    elif method == 'session/load':
+        resumed = True
+        auto = bool((params.get('_meta') or {}).get('autoMode'))
+        chunk(params['sessionId'], 'REPLAYED FROM AN EARLIER TURN')
+        out({'id': number, 'result': {'models': {'currentModelId': 'grok-4.7'}}})
+    elif method == 'session/prompt':
+        session, prompt = params['sessionId'], params['prompt'][0]['text']
+        with open('starts.log', 'a') as log:
+            log.write(json.dumps({'kind': 'grok', 'prompt': prompt, 'resumed': resumed, 'argv': sys.argv[1:], 'auto': auto}) + '\n')
+        if 'limit' in prompt:
+            out({'id': number, 'error': {'code': -32000, 'message': "You've hit your usage limit for this plan."}})
+            continue
+        chunk(session, 'Heard: ')
+        chunk(session, prompt)
+        if 'write' in prompt:
+            # As real Grok: no ACP kind on the call, its tool's name in the title; and an edit is what it asks about.
+            call = {'toolCallId': 'call1', 'title': 'search_replace: written.txt', 'status': 'pending', 'rawInput': {'file_path': 'written.txt', 'old_string': '', 'new_string': 'hi'}}
+            update(session, {'sessionUpdate': 'tool_call', **call})
+            out({'id': 0, 'method': 'session/request_permission', 'params': {'sessionId': session, 'toolCall': {**call, 'kind': 'edit', 'content': [{'type': 'content', 'content': {'type': 'text', 'text': 'Edit written.txt'}}]},
+                 'options': [{'optionId': 'allow-once', 'kind': 'allow_once'}, {'optionId': 'allow-always', 'kind': 'allow_always'}, {'optionId': 'reject-once', 'kind': 'reject_once'}]}})
+            reply = read()['result']['outcome']
+            if reply.get('optionId') == 'allow-once':
+                pathlib.Path('written.txt').write_text('hi')
+                chunk(session, 'Wrote it.')
+            else:
+                # As Grok does: a request turned down ends the turn, "cancelled", after what it said before asking.
+                chunk(session, 'Not allowed, so nothing was written.')
+                out({'id': number, 'result': {'stopReason': 'cancelled'}})
+                continue
+        elif 'files' in prompt:
+            chunk(session, ' Files here: ' + ', '.join(sorted(path.name for path in pathlib.Path.cwd().iterdir())))
+        out({'id': number, 'result': {'stopReason': 'end_turn'}})

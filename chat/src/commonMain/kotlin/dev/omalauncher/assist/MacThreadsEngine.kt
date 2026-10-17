@@ -38,6 +38,12 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
      * is sent on exactly as it went. In memory only: after a restart the same is made again from the thread.
      */
     private val sentWords = HashMap<Long, String>()
+    /** Each project's default agent and model ([macDefaultsFrom]), kept in prefs under [MAC_DEFAULTS_PREF]. Only touched under the lock. */
+    private var defaults: Map<String, MacPick> = emptyMap()
+    /** The switches under way, by the time of the entry whose thread writes the handoff; kept under [MAC_SWITCHES_PREF]. Under the lock. */
+    private var switches: Map<Long, MacPick> = emptyMap()
+    /** The new threads' first entries a switch made, by time, with the pick, so `[ try again ]` makes the same again. Kept under "seeds". */
+    private var seeds: Map<Long, MacPick> = emptyMap()
     private val followers = HashMap<String, Follower>()
 
     /** Whether a thread on the Mac is being followed now: its answer or its request to approve is still to come. */
@@ -89,6 +95,9 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
         val macs = machines().map { MacSeen(it.id, it.name, seen = platform.prefLong(seenKey(it.id)).takeIf { seen -> seen > 0 }) }
         view = macWith(MacView(seen = platform.prefLong("seen").takeIf { it > 0 }), macs)
         limits.restore(platform.prefString("limits"), System.currentTimeMillis())
+        defaults = macDefaultsFrom(platform.prefString(MAC_DEFAULTS_PREF))
+        switches = macSwitchesFrom(platform.prefString(MAC_SWITCHES_PREF))
+        seeds = macSwitchesFrom(platform.prefString(MAC_SEEDS_PREF))
         // No card of an earlier run can be answered: its ticket died with that process. They are drawn again from the Mac.
         platform.clearStaleCards()
     }
@@ -309,32 +318,37 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
             is MacFresh.Queue -> deliver(time, prompt, place.thread, away, macCappedStep(place.working, macFolder(named.project)))
             is MacFresh.Make -> {
                 val limited = limited()
-                // A new chat's own pick of agent still holds beside a named thread; the computer is that thread's.
-                val picked = if (!newChat) "" else platform.book().chat(log.tasks.firstOrNull { it.time == time }?.chat.orEmpty())?.agent.orEmpty()
-                val kind = macChatKind(picked, kindsOf(machine), limited) ?: macInstalled(kindsOf(machine)).first()
+                // A new chat's own pick of agent and model still holds beside a named thread; the computer is that thread's.
+                // With none, the project's default while the computer can run it (DESIGN §4), else the first agent as ever.
+                val chosen = if (!newChat) null else platform.book().chat(log.tasks.firstOrNull { it.time == time }?.chat.orEmpty())
+                val picked = chosen?.agent.orEmpty()
+                val fallback = if (picked.isNotBlank()) null else defaultFor(named.project, machine, limited)
+                val kind = fallback?.kind ?: macChatKind(picked, kindsOf(machine), limited) ?: macInstalled(kindsOf(machine)).first()
+                val model = if (picked.isNotBlank()) chosen?.model.orEmpty() else fallback?.model.orEmpty()
+                if (picked.isNotBlank()) remember(named.project, MacPick(picked, model))
                 val name = if (kind == MAC_CLAUDE) place.name else macKindThreadName(named.name, kind, threads.map { it.name })
                 // Said only when a limit is why: a thread of another agent's is otherwise simply made as Claude's.
-                val why = macLimitedStep(named.kind, kind).takeIf { picked.isBlank() && kind != macKindOf(named.kind) && macKindOf(named.kind) in limited }
+                val why = macLimitedStep(named.kind, kind).takeIf { picked.isBlank() && fallback == null && kind != macKindOf(named.kind) && macKindOf(named.kind) in limited }
                 log.update(time, save = true) { macFreshHandOver(it, named, name).let { entry -> if (why == null) entry else ChatHistory.withStep(entry, why) } }
-                make(time, place.copy(name = name), away, kind, machine) { sentText(time, prompt, it) }
+                make(time, place.copy(name = name), away, kind, machine, model) { sentText(time, prompt, it) }
             }
         }
     }
 
     /**
-     * Makes the thread [place] names, on the Mac [machine], running the agent [kind], off the caller's thread, and sends it what [words]
+     * Makes the thread [place] names, on the Mac [machine], running the agent [kind] on [model], off the caller's thread, and sends it what [words]
      * makes for its id as any hand-over is sent. The entry counts as on its way the whole time, so nothing the
      * thread it waited under says can end it. A Mac that does not answer, turns the key down or refuses the
      * folder leaves the entry saying so with `[ try again ]`.
      */
-    private fun make(time: Long, place: MacFresh.Make, away: Boolean, kind: String, machine: String, words: (String) -> String) {
+    private fun make(time: Long, place: MacFresh.Make, away: Boolean, kind: String, machine: String, model: String = "", made: (MacThread) -> Unit = {}, failed: (String) -> Unit = {}, words: (String) -> String) {
         synchronized(this) {
             sentAt[time] = IN_FLIGHT
             sending = sending + time
         }
         thread(name = "oma-mac-make", isDaemon = true) {
             val log = platform.chatLog()
-            var made: MacThread? = null
+            var madeThread: MacThread? = null
             var problem = MAC_UNREACHABLE
             var sendOn = false
             try {
@@ -344,12 +358,13 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
                 if (mac != null) heard(machine, health)
                 if (health !is MacHealthResult.Up) problem = macUnreachableReason(health)
                 else {
-                    val answer = client.makeThread(place.name, place.project, kind)
-                    made = (answer as? MacAnswer.Ok)?.value
+                    val answer = client.makeThread(place.name, place.project, kind, model)
+                    madeThread = (answer as? MacAnswer.Ok)?.value
                     problem = macMadeReason(answer) ?: problem
                 }
-                made?.let { thread ->
+                madeThread?.let { thread ->
                     noted(thread)
+                    made(thread)
                     log.update(time, save = true) { macMade(it, thread) }
                     // Made for a new chat's words, its first or ones another agent's limit sent on: the chat lives here from now on.
                     log.tasks.firstOrNull { it.time == time }?.chat?.takeIf { it.isNotEmpty() }?.let { chat -> platform.changeBook { it.onMac(chat, thread.id) } }
@@ -363,11 +378,12 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
                     sending = sending - time
                 }
             }
-            val thread = made
+            val thread = madeThread
             when {
                 thread != null && sendOn -> send(time, words(thread.id), thread.id, away)
                 thread == null -> {
                     log.update(time, save = true) { macUnsent(it, problem) }
+                    failed(problem)
                     if (away) platform.answeredNotice(NOT_SENT, problem, front = true)
                     refresh()
                 }
@@ -384,6 +400,8 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
      */
     fun say(prompt: String, threadId: String, name: String, chat: String = "") {
         restore()
+        // "switch to codex" typed on a thread's tab, the whole message, is a switch (DESIGN §4), never words for the agent.
+        macSwitchAsked(prompt)?.let { return switchTo(threadId, it, prompt, name, chat) }
         val log = platform.chatLog()
         val time = synchronized(platform.stampLock) {
             ChatHistory.stamp(log.tasks, System.currentTimeMillis()).also { log.begin(macDirect(it, prompt, threadId, name).copy(chat = chat)) }
@@ -417,6 +435,10 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
         val task = log.tasks.firstOrNull { it.time == time }?.takeIf { macRetried(it) != null } ?: return
         log.update(time, save = true) { macRetried(it) ?: it }
         platform.routingCorrected(task.prompt, MAC_TRIED_AGAIN)
+        // A switch's first words to its new thread, never made: the same thread of the same agent is made again.
+        synchronized(this) { seeds[time] }?.let { pick -> if (task.fresh) return seed(time, task, pick) }
+        // A switch whose handoff never reached the thread asks for it again, never sends his "switch to …" as words.
+        synchronized(this) { switches[time] }?.let { pick -> return send(time, macHandoffAsk(pick), task.thread, away = false) }
         val busy = view.threads.firstOrNull { it.id == task.thread }
         // Sent again as it was, unless its agent is known to be at its limit, as when every agent was.
         if (!task.fresh) return if (busy != null) deliver(time, task.prompt, busy, away = false) else send(time, sentText(time, task.prompt, task.thread), task.thread, away = false)
@@ -643,7 +665,10 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
         val log = platform.chatLog()
         val before = log.tasks
         // A turn that ended at its agent's limit goes on elsewhere before anything else is made of its end.
-        if (macLimited(event)) fallBack(threadId)
+        // A handoff asked for is never sent on to another agent: the switch goes on from the thread's record instead.
+        if (macLimited(event) && !askingHandoff(threadId)) fallBack(threadId)
+        // Its limit is still remembered, so the switch's new thread doesn't start on an agent at one.
+        else if (macLimited(event)) hitLimit(view.threads.firstOrNull { it.id == threadId }?.kind.orEmpty())
         val flying = synchronized(this) { sentAt.filterValues { it == IN_FLIGHT }.keys.toSet() }
         // The reply is named after the agent and model the event says answered, the thread's agent when it says neither.
         val kind = view.threads.firstOrNull { it.id == threadId }?.kind.orEmpty()
@@ -671,7 +696,14 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
                 val ended = log.tasks.firstOrNull { now ->
                     now.thread == threadId && now.status in ENDINGS && before.any { it.time == now.time && it.status == TaskStatus.Running }
                 }
-                if (ended != null) platform.answeredNotice(if (ended.status == TaskStatus.Done) ended.threadName else "${ended.threadName} needs attention", ended.result, front = false)
+                // A handoff he stopped calls the switch off: the thread stays where it is.
+                log.tasks.filter { it.thread == threadId && it.status == TaskStatus.Stopped }.forEach { stopped ->
+                    val off = synchronized(this) { (stopped.time in switches).also { if (it) { switches = switches - stopped.time; saveSwitches() } } }
+                    if (off) log.update(stopped.time, save = true) { ChatHistory.withStep(it, MAC_SWITCH_OFF) }
+                }
+                val switching = ended?.let { synchronized(this) { switches[it.time] } }
+                if (ended != null && switching != null) finishSwitch(ended.time, switching)
+                else if (ended != null) platform.answeredNotice(if (ended.status == TaskStatus.Done) ended.threadName else "${ended.threadName} needs attention", ended.result, front = false)
             }
             is MacEvent.Status -> see() { known -> known.copy(threads = known.threads.map { if (it.id == threadId) it.copy(status = event.status) else it }) }
             is MacEvent.Message, is MacEvent.Text, is MacEvent.Step, is MacEvent.Note, is MacEvent.Other -> Unit
@@ -705,6 +737,133 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
         val text = words ?: sentText(task.time, task.prompt, threadId)
         log.update(task.time, save = true) { macLimitHandOver(it, name, macLimitStep(from, next)) }
         make(task.time, MacFresh.Make(name, thread.project), away = false, next, machine) { text }
+    }
+
+    /** The default for a new thread in [project] on [machine] that nothing else picked ([macDefaultFor]); null leaves it as ever. */
+    private fun defaultFor(project: String, machine: String, limited: Set<String>): MacPick? =
+        synchronized(this) { macDefaultFor(defaults, project, kindsOf(machine), limited) }
+
+    /** The default a new chat's picks show before he picks: the one new chats' threads would use now, or null for the first agent. */
+    fun defaultPick(machine: String): MacPick? {
+        restore()
+        return defaultFor(MAC_DEFAULT_PROJECT, machine, limited())
+    }
+
+    /** [pick] is [project]'s default from now on: the last one he picked for it, by a new chat or a switch. */
+    private fun remember(project: String, pick: MacPick) = synchronized(this) {
+        defaults = macDefaultsWith(defaults, project, pick)
+        platform.putPref(MAC_DEFAULTS_PREF, macDefaultsText(defaults))
+    }
+
+    private fun hitLimit(kind: String) = synchronized(this) {
+        val now = System.currentTimeMillis()
+        limits.hit(macKindOf(kind), now)
+        platform.putPref("limits", limits.text(now))
+    }
+
+    private fun saveSwitches() {
+        platform.putPref(MAC_SWITCHES_PREF, macSwitchesText(switches))
+        platform.putPref(MAC_SEEDS_PREF, macSwitchesText(seeds))
+    }
+
+    /** Whether the turn [threadId] is on is a handoff a switch asked for. */
+    private fun askingHandoff(threadId: String): Boolean {
+        val running = platform.chatLog().tasks.firstOrNull { it.thread == threadId && it.status == TaskStatus.Running } ?: return false
+        return synchronized(this) { running.time in switches }
+    }
+
+    /**
+     * Moves the thread [threadId] to [to] (DESIGN §4, "switch to X"): his request is filed on its tab as [words], and
+     * the thread is asked for a handoff when it can write one ([macCanWriteHandoff]); once that turn ends, however it
+     * ends, [finishSwitch] makes the new thread. When it can't, the new thread is made at once from the thread's record.
+     * The pick becomes the project's default. Agents can't resume each other's sessions; this is the honest version.
+     */
+    fun switchTo(threadId: String, to: MacPick, words: String = "Switch to ${macPickName(to)}", name: String = "", chat: String = "") {
+        restore()
+        val pick = macPickClean(to)
+        // Filed in the chat that lives on the thread, where he asked, as his words there are.
+        val chat = chat.ifEmpty { platform.book().chatOnMac(threadId)?.id.orEmpty() }
+        val log = platform.chatLog()
+        val thread = view.threads.firstOrNull { it.id == threadId }?.takeIf { it.project.isNotBlank() }
+        val shownName = thread?.name ?: name.ifEmpty { name(threadId) }
+        val time = synchronized(platform.stampLock) {
+            ChatHistory.stamp(log.tasks, System.currentTimeMillis()).also { log.begin(ChatHistory.withStep(macDirect(it, words, threadId, shownName).copy(chat = chat), macSwitchingStep(pick))) }
+        }
+        if (thread == null) {
+            log.update(time, save = true) { it.copy(status = TaskStatus.Failed, result = MAC_SWITCH_UNKNOWN, answeredBy = OMA_NAME) }
+            return
+        }
+        // One switch of a thread at a time: a second while the first's handoff or new thread is on its way would make two.
+        // A seed whose thread couldn't be made is no longer on its way, and never holds the thread.
+        val under = synchronized(this) {
+            val tasks = log.tasks
+            (switches.entries.firstOrNull { (at, _) -> at != time && tasks.any { it.time == at && it.thread == threadId && !macHandoffEnded(it) } }
+                ?: seeds.entries.firstOrNull { (at, _) -> at in sending && tasks.any { it.time == at && it.thread == threadId && it.fresh } })?.value
+        }
+        if (under != null) {
+            log.update(time, save = true) { it.copy(status = TaskStatus.Failed, result = macSwitchBusy(under), answeredBy = OMA_NAME) }
+            return
+        }
+        val busy = macBusy(thread, thread.id in macOwed(log.tasks, except = time))
+        val writes = macCanWriteHandoff(thread, view.reachableFor(threadId), limited(), busy)
+        synchronized(this) {
+            switches = switches + (time to pick)
+            saveSwitches()
+        }
+        if (writes) send(time, macHandoffAsk(pick), threadId, away = false)
+        else finishSwitch(time, pick)
+    }
+
+    /**
+     * The switch asked for at [time] goes on: the entry's answer is the handoff when the thread wrote one, else the end of
+     * its record ([macHandoffFromRecord]). A new thread of [pick] is made on the same computer and project and sent it
+     * ([seed]); the entry says where the thread moved, and a chat bound to the old thread lives on the new one.
+     */
+    private fun finishSwitch(time: Long, pick: MacPick) {
+        val log = platform.chatLog()
+        val asked = log.tasks.firstOrNull { it.time == time }
+        synchronized(this) {
+            switches = switches - time
+            saveSwitches()
+        }
+        asked ?: return
+        val old = view.threads.firstOrNull { it.id == asked.thread }
+        if (old == null) return log.update(time, save = true) { it.copy(status = TaskStatus.Failed, result = MAC_SWITCH_UNKNOWN) }
+        // A request still waiting is ended: it was only ever the handoff, and the new thread takes over from here.
+        if (!macHandoffEnded(asked)) log.update(time, save = true) { it.copy(status = TaskStatus.Done, result = "Moved without a handoff: the thread couldn't write one.", answeredBy = OMA_NAME) }
+        val written = log.tasks.firstOrNull { it.time == time }?.let(::macHandoffWritten)
+        val handoff = written ?: macHandoffFromRecord(log.tasks.filter { it.time != time }, old.id)
+        val name = macKindThreadName(old.name, pick.kind, sameMac(old.id).map { it.name })
+        val chat = platform.book().chatOnMac(old.id)?.id ?: asked.chat
+        val words = macHandoffSeed(macReplyName(old.kind, old.model) ?: macKindName(old.kind), handoff, written != null)
+        val first = synchronized(platform.stampLock) {
+            ChatHistory.stamp(log.tasks, System.currentTimeMillis()).also { log.begin(macFreshHandOver(ChatTask(it, "", words, direct = true, chat = chat), old, name)) }
+        }
+        seed(first, log.tasks.first { it.time == first }, pick, asked = time)
+    }
+
+    /**
+     * Makes the new thread a switch asked for, of [pick], for the entry [task] filed at [time], and sends it the entry's
+     * words. Only once it is made does the request's entry ([asked]) say where the thread moved, and the pick become the
+     * project's default; a thread that can't be made leaves the entry saying why, and the old thread where it was.
+     */
+    private fun seed(time: Long, task: ChatTask, pick: MacPick, asked: Long? = null) {
+        val old = view.threads.firstOrNull { it.id == task.thread }
+        val machine = macMachineOf(task.thread)
+        val project = old?.project ?: return platform.chatLog().update(time, save = true) { macUnsent(it, MAC_SWITCH_UNKNOWN) }
+        synchronized(this) {
+            seeds = seeds.filterKeys { key -> platform.chatLog().tasks.any { it.time == key && it.fresh } } + (time to pick)
+            saveSwitches()
+        }
+        val request = asked ?: platform.chatLog().tasks.lastOrNull { it.thread == task.thread && it.steps.any { step -> step.startsWith("handing off to ") } && it.time < time }?.time
+        make(
+            time, MacFresh.Make(task.threadName, project), away = false, pick.kind, machine, pick.model,
+            made = { thread ->
+                remember(project, pick)
+                request?.let { at -> platform.chatLog().update(at, save = true) { entry -> ChatHistory.withStep(entry, macSwitchedStep(thread.name)) } }
+            },
+            failed = { why -> request?.let { at -> platform.chatLog().update(at, save = true) { entry -> ChatHistory.withStep(entry, macSwitchFailedStep(why)) } } },
+        ) { task.prompt }
     }
 
     /**
@@ -757,10 +916,15 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
         val name = given ?: chatThreadName(platform.book().names[chatKey(chat)])
         val picked = platform.book().chat(chat)
         val on = machine ?: macChatMachine(picked?.host, macSeen(machines(), view)) ?: MAC_FIRST
-        val kind = macChatKind(picked?.agent.orEmpty(), kindsOf(on), limited()) ?: macInstalled(kindsOf(on)).first()
+        val agent = picked?.agent.orEmpty()
+        // His pick is always used, and becomes the default for new chats; with none, that default while it can be used.
+        val fallback = if (agent.isNotBlank()) null else defaultFor(MAC_DEFAULT_PROJECT, on, limited())
+        val kind = fallback?.kind ?: macChatKind(agent, kindsOf(on), limited()) ?: macInstalled(kindsOf(on)).first()
+        val model = if (agent.isNotBlank()) picked?.model.orEmpty() else fallback?.model.orEmpty()
+        if (agent.isNotBlank()) remember(MAC_DEFAULT_PROJECT, MacPick(agent, model))
         val named = if (kind == MAC_CLAUDE) name else macKindThreadName(name, kind, view.threads.filter { macMachineOf(it.id) == on }.map { it.name })
         platform.chatLog().update(time, save = true) { macChatStart(it, named) }
-        make(time, MacFresh.Make(named, MAC_DEFAULT_PROJECT), away, kind, on) { sentText(time, prompt, it) }
+        make(time, MacFresh.Make(named, MAC_DEFAULT_PROJECT), away, kind, on, model) { sentText(time, prompt, it) }
     }
 
     /**

@@ -8,6 +8,11 @@ import dev.omalauncher.ui.BackHandler
 import dev.omalauncher.assist.MAC_CLAUDE
 import dev.omalauncher.assist.MAC_KINDS
 import dev.omalauncher.assist.macKindName
+import dev.omalauncher.assist.MacPick
+import dev.omalauncher.assist.macModelName
+import dev.omalauncher.assist.macPickName
+import dev.omalauncher.assist.macSwitchTargets
+import dev.omalauncher.assist.macMachineOf
 import dev.omalauncher.assist.macKindOf
 import dev.omalauncher.ui.MenuTitle
 import androidx.compose.foundation.Image
@@ -195,8 +200,8 @@ private fun ChatScreen(
     // The pick menu open, if any, drawn over everything with the tab menu.
     var picking by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(wanted) { picking = null }
-    fun hostPicked(chat: String, on: String, agent: String) {
-        host.changeBook { it.chose(chat, on, agent) }
+    fun hostPicked(chat: String, on: String, agent: String, model: String) {
+        host.changeBook { it.chose(chat, on, agent, model) }
         tick++
     }
     // The tab strip is folded away each time the chat opens: the dots say how the threads stand without it.
@@ -644,7 +649,7 @@ private fun ChatScreen(
         }
         // Over everything, as home's menu is.
         val pickChat = (to as? SendTo.Chat)?.chat
-        if (picking != null && pickChat != null) PickMenu(picking!!, hosts, book.chat(pickChat), { on, agent -> hostPicked(pickChat, on, agent) }) { picking = null }
+        if (picking != null && pickChat != null) PickMenu(picking!!, hosts, book.chat(pickChat), { on, agent, model -> hostPicked(pickChat, on, agent, model) }) { picking = null }
         menuFor?.let { key ->
             val thread = all.firstOrNull { it.key == key }
             val shown = tabEntries(tasks, key, book)
@@ -659,10 +664,22 @@ private fun ChatScreen(
                 }
             }
             val archived = all.filter { it.key in book.archived }
+            // What its thread on a computer can move to: every agent and model that computer runs but the one it runs now.
+            val moving = switchThread(key, book)
+            val switches = moving?.let { id ->
+                val known = host.macView().threads
+                val now = known.firstOrNull { it.id == id } ?: return@let emptyList()
+                macSwitchTargets(MacPick(now.kind, now.model), hosts.firstOrNull { it.id == macMachineOf(id) }?.agents.orEmpty(), known)
+            }.orEmpty()
             TabMenu(
                 title = tabTitle(key, threads + all),
-                actions = tabMenu(key, key in book.pinned, stop != null, answer != null, archived.size, mend),
+                actions = tabMenu(key, key in book.pinned, stop != null, answer != null, archived.size, mend, switchable = switches.isNotEmpty()),
                 archived = archived,
+                switches = switches,
+                onSwitch = { to ->
+                    moving?.let { host.switchMac(it, to) }
+                    tick++
+                },
                 onDismiss = { menuFor = null },
                 onRename = { name ->
                     host.changeBook { it.renamed(key, name, System.currentTimeMillis()) }
@@ -702,7 +719,7 @@ private fun ChatScreen(
                             host.changeBook { it.archivedAs(key, at) }
                             if (key == tab) pick(OMA_TAB)
                         }
-                        TabAction.Rename, TabAction.Archived -> {}
+                        TabAction.Rename, TabAction.Archived, TabAction.Switch -> {}
                     }
                     menuFor = null
                     tick++
@@ -817,6 +834,8 @@ private fun TabMenu(
     title: String,
     actions: List<TabAction>,
     archived: List<AgentThread>,
+    switches: List<MacPick> = emptyList(),
+    onSwitch: (MacPick) -> Unit = {},
     onDismiss: () -> Unit,
     onRename: (String) -> Unit,
     onRestore: (String) -> Unit,
@@ -838,6 +857,7 @@ private fun TabMenu(
                         when (action) {
                             TabAction.Rename -> page = MenuPage.Rename
                             TabAction.Archived -> page = MenuPage.Archived
+                            TabAction.Switch -> page = MenuPage.Switch
                             else -> onAction(action)
                         }
                     }
@@ -861,6 +881,21 @@ private fun TabMenu(
                         onDismiss()
                     }
                     BracketAction("cancel", Pack.muted, onDismiss)
+                }
+            }
+            MenuPage.Switch -> {
+                // A new thread of the pick takes over, with a handoff from this one; this one stays, and says where it went.
+                BasicText(Pack.caption("move $title to"), Modifier.padding(horizontal = 12.dp, vertical = 10.dp), style = caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                // Taken once: a second tap before the menu has closed never asks for a second switch.
+                var taken by remember { mutableStateOf(false) }
+                for (pick in switches) {
+                    MenuItem(macPickName(pick)) {
+                        if (!taken) {
+                            taken = true
+                            onSwitch(pick)
+                        }
+                        onDismiss()
+                    }
                 }
             }
             MenuPage.Archived -> {
@@ -897,8 +932,11 @@ private fun ChatPicks(hosts: List<HostChoice>, chat: NewChat?, onMenu: (String) 
             if (!on.reachable) BasicText("offline", style = small)
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
+            val agent = chatAgentShown(on, chat)
             BasicText("with", style = small)
-            BracketAction(macKindName(chatAgentShown(on, chat)), Pack.accent) { onMenu(PICK_AGENT) }
+            BracketAction(macKindName(agent), Pack.accent) { onMenu(PICK_AGENT) }
+            // The model, where the agent has more than its own default to pick from.
+            if (chatModels(on, agent).size > 1) BracketAction(pickName(macModelName(chatModelShown(on, chat))), Pack.accent) { onMenu(PICK_MODEL) }
         }
     }
 }
@@ -909,6 +947,20 @@ private fun pickName(name: String) = if (name.length <= PICK_NAME_CHARS) name el
 private const val PICK_NAME_CHARS = 18
 private const val PICK_HOST = "host"
 private const val PICK_AGENT = "agent"
+private const val PICK_MODEL = "model"
+
+/** The models [agent]'s threads on [on] can be made with, its own default first. */
+fun chatModels(on: HostChoice, agent: String): List<String> = on.models[macKindOf(agent)].orEmpty().ifEmpty { listOf("") }
+
+/**
+ * The model a new [chat]'s thread on [on] is shown as running: his pick with the agent he picked, else the default new
+ * chats remember when it is for the agent shown, else the agent's own ("").
+ */
+fun chatModelShown(on: HostChoice, chat: NewChat?): String {
+    val agent = chatAgentShown(on, chat)
+    val model = if (!chat?.agent.isNullOrBlank()) chat?.model.orEmpty() else on.default?.takeIf { it.kind == agent }?.model.orEmpty()
+    return model.takeIf { it in chatModels(on, agent) } ?: ""
+}
 
 /** The agents [on] runs, in the order work goes from one to the next; every agent the runner knows while it hasn't said. */
 fun chatAgents(on: HostChoice): List<String> {
@@ -916,15 +968,15 @@ fun chatAgents(on: HostChoice): List<String> {
     return if (said.isEmpty()) MAC_KINDS else MAC_KINDS.filter { it in said } + said.filter { it !in MAC_KINDS }
 }
 
-/** The agent a new [chat]'s thread on [on] is shown as running: his pick when [on] runs it, else the first it does. */
+/** The agent a new [chat]'s thread on [on] is shown as running: his pick when [on] runs it, else the default new chats remember, else the first it runs. */
 fun chatAgentShown(on: HostChoice, chat: NewChat?): String {
     val agents = chatAgents(on)
-    return chat?.agent?.let(::macKindOf)?.takeIf { it in agents } ?: agents.firstOrNull() ?: MAC_CLAUDE
+    return chat?.agent?.takeIf { it.isNotBlank() }?.let(::macKindOf)?.takeIf { it in agents } ?: on.default?.kind?.takeIf { it in agents } ?: agents.firstOrNull() ?: MAC_CLAUDE
 }
 
 /** The menu a pick opened, over everything as the tab menu is; Back closes it and never the chat. */
 @Composable
-private fun PickMenu(which: String, hosts: List<HostChoice>, chat: NewChat?, onPick: (String, String) -> Unit, onDismiss: () -> Unit) {
+private fun PickMenu(which: String, hosts: List<HostChoice>, chat: NewChat?, onPick: (String, String, String) -> Unit, onDismiss: () -> Unit) {
     val on = chatHostShown(hosts, chat) ?: return onDismiss()
     BackHandler { onDismiss() }
     Menu(onDismiss) {
@@ -932,8 +984,18 @@ private fun PickMenu(which: String, hosts: List<HostChoice>, chat: NewChat?, onP
             MenuTitle("make its thread on")
             for (choice in hosts) {
                 MenuItem(choice.name + if (choice.reachable) "" else " · offline", if (choice.reachable) Pack.foreground else Pack.muted) {
-                    // Another computer may not run the agent picked: then its first is used.
-                    onPick(choice.id, chat?.agent?.takeIf { macKindOf(it) in chatAgents(choice) }.orEmpty())
+                    // Another computer may not run the agent picked: then its first is used, on its own default model.
+                    val agent = chat?.agent?.takeIf { macKindOf(it) in chatAgents(choice) }.orEmpty()
+                    onPick(choice.id, agent, if (agent.isEmpty()) "" else chat?.model.orEmpty())
+                    onDismiss()
+                }
+            }
+        } else if (which == PICK_MODEL) {
+            val agent = chatAgentShown(on, chat)
+            MenuTitle("${macKindName(agent)} on")
+            for (model in chatModels(on, agent)) {
+                MenuItem(macModelName(model)) {
+                    onPick(on.id, agent, model)
                     onDismiss()
                 }
             }
@@ -941,7 +1003,7 @@ private fun PickMenu(which: String, hosts: List<HostChoice>, chat: NewChat?, onP
             MenuTitle(if (on.agents.isEmpty()) "with · ${on.name} hasn't said which it runs yet" else "with")
             for (kind in chatAgents(on)) {
                 MenuItem(macKindName(kind)) {
-                    onPick(on.id, kind)
+                    onPick(on.id, kind, "")
                     onDismiss()
                 }
             }

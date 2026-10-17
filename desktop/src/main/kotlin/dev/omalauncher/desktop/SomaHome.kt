@@ -8,7 +8,8 @@ import java.io.File
  * thread, the tab book, the engine's notes and the settings are files there; the runner keys are not (RunnerKeys).
  */
 object SomaHome {
-    val dir: File = File(System.getProperty("soma.home") ?: (System.getProperty("user.home") + "/.config/soma")).apply { mkdirs() }
+    /** Read each time, so a test that points `soma.home` elsewhere is followed; made when missing. */
+    val dir: File get() = File(System.getProperty("soma.home") ?: (System.getProperty("user.home") + "/.config/soma")).apply { mkdirs() }
 
     val chat get() = File(dir, "chat.json")
     val book get() = File(dir, "tabs.json")

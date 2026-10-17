@@ -76,9 +76,12 @@ object MacRequests {
 
     fun thread(threadId: String) = MacRequest("GET", "/threads/${part(threadId)}")
 
-    /** A new thread called [name] in [project], running the agent [kind] (`claude`, `codex` or `cursor`); none named is the runner's default, Claude. */
-    fun makeThread(name: String, project: String, kind: String = "") =
-        MacRequest("POST", "/threads", JSONObject().put("name", name).put("project", project).apply { if (kind.isNotEmpty()) put("kind", kind) }.toString())
+    /**
+     * A new thread called [name] in [project], running the agent [kind] (`claude`, `codex`, `grok` or `cursor`) on [model];
+     * none named is the runner's default, Claude, and no model the agent's own default.
+     */
+    fun makeThread(name: String, project: String, kind: String = "", model: String = "") =
+        MacRequest("POST", "/threads", JSONObject().put("name", name).put("project", project).apply { if (kind.isNotEmpty()) put("kind", kind) }.apply { if (model.isNotEmpty()) put("model", model) }.toString())
 
     /** The owner's words exactly as he said them: nothing is trimmed or added here. */
     fun sendMessage(threadId: String, text: String) = MacRequest("POST", "/threads/${part(threadId)}/messages", JSONObject().put("text", text).toString())
@@ -148,6 +151,8 @@ data class MacThread(
     val lastEvent: Long,
     val pending: List<MacApproval>,
     val background: List<String> = emptyList(),
+    /** The model it runs, as the runner last heard the agent say (or as it was asked for); empty while not known. */
+    val model: String = "",
 )
 
 /** What became of the owner's words: taken at once, or waiting behind [Queued.position] - 1 others. */
@@ -181,6 +186,7 @@ internal fun macThread(json: JSONObject): MacThread? {
         lastEvent = json.macWhole("last_event") ?: 0L,
         pending = json.optJSONArray("pending").macObjects().mapNotNull { macApproval(it) },
         background = json.optJSONArray("background").let { list -> (0 until (list?.length() ?: 0)).mapNotNull { (list?.opt(it) as? String)?.trim()?.takeIf(String::isNotEmpty) } },
+        model = json.macText("model"),
     )
 }
 
@@ -328,7 +334,7 @@ class MacRunnerClient(private val config: MacRunnerConfig?, private val machine:
 
     fun thread(threadId: String): MacAnswer<MacThread> = ours(parseMacThread(send(MacRequests.thread(own(threadId)))))
 
-    fun makeThread(name: String, project: String, kind: String = ""): MacAnswer<MacThread> = ours(parseMacThread(send(MacRequests.makeThread(name, project, kind))))
+    fun makeThread(name: String, project: String, kind: String = "", model: String = ""): MacAnswer<MacThread> = ours(parseMacThread(send(MacRequests.makeThread(name, project, kind, model))))
 
     fun sendMessage(threadId: String, text: String): MacAnswer<MacTaken> = parseMacTaken(send(MacRequests.sendMessage(own(threadId), text)))
 

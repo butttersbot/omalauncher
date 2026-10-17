@@ -40,7 +40,16 @@ enum class BuildWay {
 }
 
 /** A computer a new chat's thread can be made on: its id ([dev.omalauncher.assist.MacMachine.id]), what he calls it, whether it answers, and the agents it runs. */
-data class HostChoice(val id: String, val name: String, val reachable: Boolean, val agents: List<String>)
+data class HostChoice(
+    val id: String,
+    val name: String,
+    val reachable: Boolean,
+    val agents: List<String>,
+    /** The models each agent's threads can be made with, by agent, the agent's own default ("") first ([dev.omalauncher.assist.macModels]). */
+    val models: Map<String, List<String>> = emptyMap(),
+    /** What a new chat's thread here uses when he picks nothing: the default new chats remember ([dev.omalauncher.assist.MacThreadsEngine.defaultPick]). */
+    val default: dev.omalauncher.assist.MacPick? = null,
+)
 
 /** A picture he picked, still on the device's side; [ChatHost.importImage] makes it a [PromptImage]. */
 interface PickedImage
@@ -151,6 +160,9 @@ interface ChatHost {
 
     /** Stops the Mac thread [thread]; [said] gets what there is to tell him. */
     fun stopMac(thread: String, said: (String?) -> Unit)
+
+    /** Moves the Mac thread [thread] to another agent or model, with a handoff (cockpit/DESIGN.md §4). */
+    fun switchMac(thread: String, to: dev.omalauncher.assist.MacPick)
 
     /** Sends the entry at [time] that the Mac never got again. */
     fun tryMacAgain(time: Long)
