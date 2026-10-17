@@ -71,9 +71,9 @@ PY
     die "Not taken: it is not dev.omalauncher.boss version $code."
   out=$repo/app/build/outputs/apk/debug
   mkdir -p "$out"
-  "$tools/apksigner" -J-Xmx256m sign --ks "$cfg/working-debug.keystore" --ks-pass pass:android \
+  "$tools/apksigner" -JXmx256m sign --ks "$cfg/working-debug.keystore" --ks-pass pass:android \
     --ks-key-alias androiddebugkey --key-pass pass:android --out "$out/app-debug.apk" "$apk"
-  cert=$("$tools/apksigner" -J-Xmx256m verify --print-certs "$out/app-debug.apk" | sed -n 's/.*certificate SHA-256 digest: //p' | head -n 1)
+  cert=$("$tools/apksigner" -JXmx256m verify --print-certs "$out/app-debug.apk" | sed -n 's/.*certificate SHA-256 digest: //p' | head -n 1)
   [ "$cert" = "$(tr -d '[:space:]' < "$cfg/working-cert.sha256")" ] || { rm -f "$out/app-debug.apk"; die "Not taken: signed with the wrong key."; }
   printf '{"version":3,"artifactType":{"type":"APK","kind":"Directory"},"applicationId":"dev.omalauncher.boss","variantName":"debug","elements":[{"type":"SINGLE","filters":[],"attributes":[],"versionCode":%s,"outputFile":"app-debug.apk"}],"elementType":"File"}\n' "$code" > "$out/output-metadata.json"
   rm -f "$out/app-debug.apk.idsig"
