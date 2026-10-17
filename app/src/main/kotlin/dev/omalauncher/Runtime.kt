@@ -339,6 +339,7 @@ class Runtime(
         widgets.linuxChanged(true)
         openDoor()
         openKeeper()
+        openHerd()
         refreshApps()
         withContext(Dispatchers.IO) { updates.load() }
         scope.launch {
@@ -406,6 +407,8 @@ class Runtime(
         if (screens++ == 0) proot.procShim.setActive(true)
         // A keeper that ended (python3 installed only now, or it failed) is started again when he next looks.
         if (linux) openKeeper()
+        // The herd reporter too, so the Fold comes back to the pets' Agents tab without anyone asking.
+        if (linux) openHerd()
         // Only checks when the last check is hours old; see SystemUpdates.
         if (linux) scope.launch { updates.check() }
     }
@@ -564,6 +567,20 @@ class Runtime(
 
     @Volatile private var doorOpened = false
 
+    /**
+     * Starts the Fold's herd reporter (tools/fold-development/oma-herd) with Linux, once, if it is installed (Boss,
+     * 2026-10-17: the Fold in every pet's Agents tab, and staying there). Like the door it ends with the launcher's
+     * Linux, which is why it is started again here; the launcher doesn't ship it.
+     */
+    private fun openHerd() {
+        if (herdOpen) return
+        if (!File(proot.rootfs, HERD_COMMAND).isFile) return
+        herdOpen = true
+        launch("oma-herd") { herdOpen = false }
+    }
+
+    @Volatile private var herdOpen = false
+
     /** Starts `oma keep`'s keeper (see linux/Keeper.kt) in a proot of its own, which a builder turn ending leaves running. */
     private fun openKeeper() {
         if (keeperOpen) return
@@ -595,6 +612,7 @@ class Runtime(
     companion object {
         private const val DOOR_TOKEN = ".config/oma-door/token"
         private const val DOOR_COMMAND = "usr/local/bin/oma-door"
+        private const val HERD_COMMAND = "usr/local/bin/oma-herd"
         private const val TAG = "runtime"
         private const val SETUP_DONE = "setup_done"
     }
