@@ -65,23 +65,87 @@ def status():
         return {}, time.time()
 
 
-def sessions():
-    data, written = status()
-    out = []
-    for key, sid, name in BUILDERS:
-        b = data.get(key) or {}
-        request = (b.get('request') or '').strip()
-        if not request and not b.get('working'):
+CLAUDE_PROJECTS = pathlib.Path.home() / '.claude/projects'
+RECENT_DAYS = 3
+TAIL_BYTES = 1024 * 1024
+_cache = {}
+
+
+def text_of(content):
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return ' '.join(part.get('text', '') for part in content if isinstance(part, dict) and part.get('type') == 'text')
+    return ''
+
+
+def turns_of(path):
+    """A session's words, from the end of its transcript: (who, text, at) for each prompt and answer. Cached by mtime."""
+    stat = path.stat()
+    hit = _cache.get(path)
+    if hit and hit[0] == stat.st_mtime:
+        return hit[1]
+    with open(path, 'rb') as f:
+        f.seek(max(0, stat.st_size - TAIL_BYTES))
+        lines = f.read().decode('utf-8', 'replace').splitlines()[1:]
+    turns = []
+    for line in lines:
+        try:
+            entry = json.loads(line)
+        except ValueError:
             continue
-        state = 'needs-you' if b.get('waitingForApproval') else 'working' if b.get('working') else 'idle'
-        ago = b.get('lastOutputMinAgo')
-        out.append({
-            'id': sid, 'kind': 'claude', 'app': 'fold', 'live': True, 'state': state,
-            'updated': written - (ago * 60 if isinstance(ago, (int, float)) else 0),
-            'title': request[:80] or name, 'cwd': '/root', 'project': name,
-            'last': (b.get('lastStep') or b.get('health') or '').strip(),
-        })
-    return out
+        if entry.get('isSidechain') or entry.get('isMeta'):
+            continue
+        message = entry.get('message') or {}
+        words = text_of(message.get('content')).strip()
+        if not words or words.startswith('<'):
+            continue
+        if entry.get('type') == 'user':
+            turns.append(('you', words, entry.get('timestamp')))
+        elif entry.get('type') == 'assistant':
+            turns.append(('agent', words, entry.get('timestamp')))
+    _cache[path] = (stat.st_mtime, turns)
+    return turns
+
+
+def plain(words):
+    """What Boss said, on one line: the quick lane's board note before "[Boss says]", or the [bracketed] note a prompt
+    arrives with (agent mail, the sheep), is left off."""
+    if '[Boss says]' in words:
+        words = words.rsplit('[Boss says]', 1)[1]
+    elif words.startswith('[') and ']' in words:
+        words = words.split(']', 1)[1] or words
+    return re.sub(r'\s+', ' ', words).strip()
+
+
+def sessions():
+    """The phone's Claude sessions from the last few days (the builders work in /root), as `herd node` lists a
+    computer's: newest first, working while its transcript is still being written and a builder is busy."""
+    data, _ = status()
+    busy = any((data.get(key) or {}).get('working') for key, _, _ in BUILDERS)
+    waiting = any((data.get(key) or {}).get('waitingForApproval') for key, _, _ in BUILDERS)
+    now = time.time()
+    out = []
+    for folder in sorted(CLAUDE_PROJECTS.glob('-root*')):
+        for path in folder.glob('*.jsonl'):
+            mtime = path.stat().st_mtime
+            if now - mtime > RECENT_DAYS * 86400:
+                continue
+            turns = turns_of(path)
+            asked = [t for t in turns if t[0] == 'you']
+            if not asked:
+                continue
+            live = now - mtime < 90
+            state = ('needs-you' if waiting else 'working') if live and busy else 'your-turn' if turns[-1][0] == 'agent' else 'idle'
+            said = next((t[1] for t in reversed(turns) if t[0] == 'agent'), '')
+            out.append({
+                'id': path.stem, 'kind': 'claude', 'app': 'fold', 'live': live, 'state': state, 'updated': mtime,
+                'title': plain(asked[-1][1])[:80], 'cwd': '/' + folder.name.lstrip('-').replace('-', '/'),
+                'project': 'Soma quick answers' if '[Boss says]' in asked[-1][1] else 'Soma on the Fold',
+                'last': plain(said)[-200:],
+            })
+    out.sort(key=lambda s: -s['updated'])
+    return out[:8]
 
 
 def machine():
@@ -100,14 +164,11 @@ def machine():
 
 
 def detail(sid):
-    for session in sessions():
-        if session['id'] == sid:
-            data, _ = status()
-            b = data.get('builder' if sid.endswith('-a') else 'builderB') or {}
-            turns = [{'who': 'you', 'text': b.get('request', ''), 'at': None}]
-            if session['last']:
-                turns.append({'who': 'agent', 'text': session['last'], 'at': None})
-            return {'id': sid, 'turns': turns, 'note': 'Phone builder: the full chat is in Soma on the Fold.'}
+    if not re.fullmatch(r'[0-9a-f-]{8,64}', sid):
+        return None
+    for path in CLAUDE_PROJECTS.glob('-root*/%s.jsonl' % sid):
+        turns = [{'who': who, 'text': text, 'at': at} for who, text, at in turns_of(path)[-12:]]
+        return {'id': sid, 'turns': turns, 'note': 'A session on the Fold: the full chat is in Soma there.'}
     return None
 
 
