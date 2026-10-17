@@ -36,7 +36,7 @@ data class PackTokens internal constructor(
 }
 
 /** Builds a [ThemePack] from tokens, reading each token once and resolving its colors. */
-internal class PackBuilder(
+class PackBuilder(
     private val tokens: PackTokens,
     colors: Map<String, String>?,
     /** Takes what goes wrong while resolving; null when nothing can (Console's own tokens). */

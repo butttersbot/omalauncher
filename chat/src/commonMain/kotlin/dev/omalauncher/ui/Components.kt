@@ -27,7 +27,6 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
-import dev.omalauncher.linux.JobState
 
 /**
  * A full-screen framed panel with a title, optional [actions] and a close button: themes, agents, the store.
@@ -112,25 +111,6 @@ fun BracketAction(
     Box(Modifier.clickable(onClick = onClick).padding(horizontal = 8.dp, vertical = 6.dp)) {
         BasicText("[ $label ]", style = Pack.body(color = color))
     }
-}
-
-/** The last lines a guest job printed, red once it failed; nothing while idle. */
-@Composable
-fun JobLog(
-    state: JobState,
-    lines: Int = 4,
-) {
-    val log =
-        when (state) {
-            is JobState.Working -> state.log
-            is JobState.Failed -> listOf("failed:") + state.log
-            JobState.Idle -> return
-        }
-    if (log.isEmpty()) return
-    Spacer(Modifier.height(6.dp))
-    val style = Pack.body(Pack.size.small, if (state is JobState.Failed) Pack.red else Pack.muted)
-    // A failure's reason is usually at the end of the line: let it wrap.
-    for (line in log.takeLast(lines)) BasicText(line, style = style, maxLines = if (state is JobState.Failed) 3 else 1)
 }
 
 /** The items of a popup menu; picking one closes the menu first. */

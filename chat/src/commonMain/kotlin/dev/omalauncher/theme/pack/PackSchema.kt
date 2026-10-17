@@ -338,7 +338,7 @@ enum class PaletteMode(
 }
 
 /** What became of one manifest value. */
-internal sealed interface TokenRead {
+sealed interface TokenRead {
     class Ok(
         val value: Any,
         val clamped: Boolean = false,
@@ -354,7 +354,7 @@ internal sealed interface TokenRead {
  * [raw] from a manifest as this token's value: a [PackPaint], Float, Int, String or Boolean.
  * A value of the wrong type is bad; one out of range is kept and pulled in.
  */
-internal fun PackToken.read(
+fun PackToken.read(
     raw: Any,
     extras: Set<String> = emptySet(),
 ): TokenRead =

@@ -26,12 +26,12 @@ import java.util.Locale
  */
 class Speech(
     private val context: Context,
-) {
-    var listening by mutableStateOf(false)
+) : dev.omalauncher.oma.Voice {
+    override var listening by mutableStateOf(false)
         private set
 
     /** What's been recognized so far: finished segments plus the current partial result. */
-    var text by mutableStateOf("")
+    override var text by mutableStateOf("")
         private set
 
     /** Input loudness, 0..1. */
@@ -39,7 +39,7 @@ class Speech(
         private set
 
     /** Why recognition failed; the UI clears it once shown. */
-    var error by mutableStateOf<String?>(null)
+    override var error by mutableStateOf<String?>(null)
 
     private var recognizer: SpeechRecognizer? = null
     private var onDevice = true
@@ -71,7 +71,7 @@ class Speech(
      * Starts listening; [onDone] gets the full text (maybe empty) once recognition ends.
      * With [hold], it keeps listening across pauses until [stop] or [letGo].
      */
-    fun start(
+    override fun start(
         hold: Boolean,
         onDone: (String) -> Unit,
     ) {
@@ -122,7 +122,7 @@ class Speech(
     }
 
     /** Ends recognition now; the text so far goes to onDone. */
-    fun stop() {
+    override fun stop() {
         held = false
         whisper?.let {
             it.stop()
@@ -138,7 +138,7 @@ class Speech(
     }
 
     /** Ends recognition without calling onDone. */
-    fun cancel() {
+    override fun cancel() {
         held = false
         onDone = null
         whisper?.cancel()

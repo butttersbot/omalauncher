@@ -30,8 +30,10 @@ class PackSourceCheckTest {
             "ui/ShortcutTile.kt",
             "ui/Folders.kt",
             "ui/HomeMenu.kt",
+            "ui/Menu.kt",
             // A thread's tile and the dot of its state (Boss, 2026-10-13), drawn from the pack from the start.
             "ui/AgentTile.kt",
+            "ui/ThreadDot.kt",
             // Home's gestures and the overview of all pages.
             "ui/HomeGestures.kt",
             "ui/Overview.kt",
@@ -44,13 +46,16 @@ class PackSourceCheckTest {
             "ui/AppSearch.kt",
             "ui/Dock.kt",
             "ui/AgentButton.kt",
+            "ui/MicIcon.kt",
             "ui/SideRail.kt",
             // What those share with every other screen.
             "ui/Components.kt",
+            "ui/JobLog.kt",
             "ui/Icons.kt",
             "ui/IconMask.kt",
             // The Oma chat and the listening screen.
             "oma/OmaChatActivity.kt",
+            "oma/OmaChatScreen.kt",
             "oma/MarkdownText.kt",
             "assist/ListeningScreen.kt",
         )
@@ -102,7 +107,7 @@ class PackSourceCheckTest {
         for (name in patterns.keys) println("  %-20s %d".format(name, found.values.sumOf { it[name] ?: 0 }))
         for ((file, counts) in found) println("  %-28s %4d  %s".format(file, counts.values.sum(), counts.entries.joinToString(", ") { "${it.key} ${it.value}" }))
 
-        for (file in converted) assertTrue("$file is listed as converted but isn't a source file", File(root, file).isFile)
+        for (file in converted) assertTrue("$file is listed as converted but isn't a source file", mainSource(file).isFile)
         assertEquals("converted files that still read a font, shape, border or color directly", emptyMap<String, Map<String, Int>>(), found.filterKeys { it in converted })
     }
 
@@ -130,8 +135,8 @@ class PackSourceCheckTest {
     /** Every file the slice set out to convert is on the list, so none can be dropped from it quietly. */
     @Test fun theConvertedListIsWhole() {
         val expected =
-            listOf("Home", "HomeGrid", "WidgetTile", "ShortcutTile", "Folders", "HomeMenu", "HomeGestures", "Overview", "AppDrawer", "AppSearch", "Dock", "AgentButton", "SideRail", "Components", "Icons", "IconMask", "Ink", "Notes", "Stickers", "AgentTile")
-                .map { "ui/$it.kt" } + "oma/OmaChatActivity.kt" + "oma/MarkdownText.kt" + "assist/ListeningScreen.kt"
+            listOf("Home", "HomeGrid", "WidgetTile", "ShortcutTile", "Folders", "HomeMenu", "HomeGestures", "Overview", "AppDrawer", "AppSearch", "Dock", "AgentButton", "SideRail", "Components", "Icons", "IconMask", "Ink", "Notes", "Stickers", "AgentTile", "Menu", "ThreadDot", "MicIcon", "JobLog")
+                .map { "ui/$it.kt" } + "oma/OmaChatActivity.kt" + "oma/OmaChatScreen.kt" + "oma/MarkdownText.kt" + "assist/ListeningScreen.kt"
         assertEquals(expected.toSet(), converted)
     }
 

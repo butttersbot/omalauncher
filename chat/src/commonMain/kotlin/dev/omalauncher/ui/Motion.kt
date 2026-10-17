@@ -1,6 +1,5 @@
 package dev.omalauncher.ui
 
-import android.animation.ValueAnimator
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.AnimationVector
@@ -72,17 +71,17 @@ object Motion {
     ): FiniteAnimationSpec<T> = if (reduced) snap() else tween(millis, easing = easing)
 
     /** The system's "remove animations" is on: every transition here is an immediate change instead. */
-    val reduced: Boolean get() = reducedMotion(if (ValueAnimator.areAnimatorsEnabled()) 1f else 0f)
+    val reduced: Boolean get() = reducedMotion(if (systemAnimationsOn()) 1f else 0f)
 }
 
 /**
  * Whether motion is left out, from the system's animator duration scale: at zero ("remove animations") it
  * is, and nothing here moves or fades. Any other scale is Compose's to apply, as it does to every animation.
  */
-internal fun reducedMotion(durationScale: Float): Boolean = durationScale <= 0f
+fun reducedMotion(durationScale: Float): Boolean = durationScale <= 0f
 
 /** Takes this to [target] along [spec], or at once with the system's animations off. A newer call takes over from this one. */
-internal suspend fun <T, V : AnimationVector> Animatable<T, V>.moveTo(
+suspend fun <T, V : AnimationVector> Animatable<T, V>.moveTo(
     target: T,
     spec: AnimationSpec<T>,
     reduced: Boolean = Motion.reduced,
@@ -91,10 +90,10 @@ internal suspend fun <T, V : AnimationVector> Animatable<T, V>.moveTo(
 }
 
 /** [moveTo] along the shared spring. */
-internal suspend fun Animatable<Float, *>.moveTo(target: Float) = moveTo(target, Motion.spatial)
+suspend fun Animatable<Float, *>.moveTo(target: Float) = moveTo(target, Motion.spatial)
 
 /** How far along a fraction [from] to [to] is at [t], which is held to 0..1. */
-internal fun between(
+fun between(
     from: Float,
     to: Float,
     t: Float,
@@ -104,7 +103,7 @@ internal fun between(
  * The rectangle of something growing out of [tile] to fill [window], at [t] from 0 (the tile's own
  * rectangle) to 1 (the window's): each edge goes straight from one to the other.
  */
-internal fun growRect(
+fun growRect(
     tile: Rect,
     window: Rect,
     t: Float,
@@ -122,14 +121,14 @@ internal fun growRect(
     }
 
 /** The least of a tile that has to be showing in the window for something to grow out of it or shrink into it. */
-internal const val GROWS_FROM_SHOWING = 0.5f
+const val GROWS_FROM_SHOWING = 0.5f
 
 /**
  * Whether a full-screen thing grows out of [tile] and shrinks back into it, or fades instead: it fades
  * when there is no tile (it was removed, or its page isn't composed), the tile has no size, or less than
  * [GROWS_FROM_SHOWING] of it is inside [window] (the page turned, or the phone was folded onto another page).
  */
-internal fun growsFromTile(
+fun growsFromTile(
     tile: Rect?,
     window: Rect,
 ): Boolean {
@@ -141,20 +140,20 @@ internal fun growsFromTile(
 }
 
 /** How much of the way a grow is, by which the growing thing is fully there: it is brought in over its tile, not cut in. */
-internal const val GROW_IN_BY = 0.12f
+const val GROW_IN_BY = 0.12f
 
 /** How much of the way a grow is, by which the tile's own paper has faded off what grew out of it. */
-internal const val GROW_PAPER_OFF_BY = 0.6f
+const val GROW_PAPER_OFF_BY = 0.6f
 
 /** The growing thing's opacity at [t]: nothing at the tile, all there by [GROW_IN_BY], and so the same way back. */
-internal fun growAlpha(t: Float): Float = (t / GROW_IN_BY).coerceIn(0f, 1f)
+fun growAlpha(t: Float): Float = (t / GROW_IN_BY).coerceIn(0f, 1f)
 
 /**
  * How much of the tile's own paper lies over the growing thing at [t]: none on the tile itself (the real
  * tile is under it), all of it by [GROW_IN_BY], then easing off until [GROW_PAPER_OFF_BY]. The tile's
  * tilt and outline are on the paper, so they ease out with it.
  */
-internal fun growPaper(t: Float): Float =
+fun growPaper(t: Float): Float =
     when {
         t <= 0f || t >= GROW_PAPER_OFF_BY -> 0f
         t < GROW_IN_BY -> t / GROW_IN_BY
@@ -165,17 +164,17 @@ internal fun growPaper(t: Float): Float =
  * How far back a screen that is shrinking away is, by which it is no longer there itself: from here down to
  * the tile only the tile's paper is drawn, and nothing of the screen is drawn or can be touched.
  */
-internal const val GROW_LEAVES_BY = 0.5f
+const val GROW_LEAVES_BY = 0.5f
 
 /** A leaving screen's opacity at [t]: all there as it closes (1), gone by [GROW_LEAVES_BY]. */
-internal fun leaveAlpha(t: Float): Float = ((t - GROW_LEAVES_BY) / (1f - GROW_LEAVES_BY)).coerceIn(0f, 1f)
+fun leaveAlpha(t: Float): Float = ((t - GROW_LEAVES_BY) / (1f - GROW_LEAVES_BY)).coerceIn(0f, 1f)
 
 /**
  * How much of the tile's paper lies over a leaving screen at [t]: none as it closes, all of it by
  * [GROW_LEAVES_BY], where it takes over from the screen, and so down to the tile, where it fades off over
  * the last [GROW_IN_BY] to leave the real tile.
  */
-internal fun leavePaper(t: Float): Float =
+fun leavePaper(t: Float): Float =
     when {
         t <= 0f || t >= 1f -> 0f
         t < GROW_IN_BY -> t / GROW_IN_BY
@@ -183,7 +182,7 @@ internal fun leavePaper(t: Float): Float =
     }
 
 /** The part of a tilt, in degrees, that is left at [t] of a grow: all of it at the tile, none at full screen. */
-internal fun growTilt(
+fun growTilt(
     tilt: Float,
     t: Float,
 ): Float = between(tilt, 0f, t)
@@ -192,10 +191,10 @@ internal fun growTilt(
  * A clip that shows nothing and takes no touch: a rectangle with a size, since an outline with none is no
  * clip at all, outside whatever it is on.
  */
-internal val NowhereShape: Shape = RectShape(Rect(-2f, -2f, -1f, -1f), 0f)
+val NowhereShape: Shape = RectShape(Rect(-2f, -2f, -1f, -1f), 0f)
 
 /** The rectangle a picture [width] by [height] is drawn in when it is fitted whole into [box], in the middle of it. */
-internal fun fitIn(
+fun fitIn(
     box: Rect,
     width: Int,
     height: Int,
@@ -210,30 +209,30 @@ internal fun fitIn(
 }
 
 /** How small something starts that eases in where it stands: a menu, a bar, a page. */
-internal const val APPEAR_SCALE = 0.85f
+const val APPEAR_SCALE = 0.85f
 
 /** How much of the way in something is, by which it is fully opaque; the rest of the way it only grows. */
-internal const val APPEAR_IN_BY = 0.5f
+const val APPEAR_IN_BY = 0.5f
 
 /** The opacity of something easing in at [t] of the way, or easing out at [t] left of it. */
-internal fun appearAlpha(t: Float): Float = (t / APPEAR_IN_BY).coerceIn(0f, 1f)
+fun appearAlpha(t: Float): Float = (t / APPEAR_IN_BY).coerceIn(0f, 1f)
 
 /** The longest something takes to ease out, in milliseconds, whatever becomes of its animation: then it is gone. */
-internal const val LEAVE_LIMIT_MS = 600L
+const val LEAVE_LIMIT_MS = 600L
 
 /**
  * Where [point] is along something that starts at [start] and is [length] long, as the fraction a layer is
  * scaled about: 0 at its start, 1 at its end, and beyond either for a point outside it. The middle for
  * something with no length.
  */
-internal fun pivotFraction(
+fun pivotFraction(
     point: Float,
     start: Float,
     length: Float,
 ): Float = if (length <= 0f) 0.5f else (point - start) / length
 
 /** The point a layer of [size] at [topLeft] is scaled about for it to grow out of [point], which is in the space [topLeft] is in. */
-internal fun pivotAt(
+fun pivotAt(
     point: Offset,
     topLeft: Offset,
     size: Size,
@@ -244,7 +243,7 @@ internal fun pivotAt(
  * With the system's animations off it is at rest from the start. A new [key] eases in again.
  */
 @Composable
-internal fun rememberAppearing(key: Any? = Unit): Animatable<Float, AnimationVector1D> {
+fun rememberAppearing(key: Any? = Unit): Animatable<Float, AnimationVector1D> {
     val shown = remember(key) { Animatable(if (Motion.reduced) 1f else 0f) }
     LaunchedEffect(shown) { shown.moveTo(1f) }
     return shown
@@ -255,7 +254,7 @@ internal fun rememberAppearing(key: Any? = Unit): Animatable<Float, AnimationVec
  * called within [LEAVE_LIMIT_MS] by the clock, whether or not frames were drawn meanwhile.
  */
 @Composable
-internal fun rememberLeaving(onGone: () -> Unit): Animatable<Float, AnimationVector1D> {
+fun rememberLeaving(onGone: () -> Unit): Animatable<Float, AnimationVector1D> {
     val left = remember { Animatable(1f) }
     val gone by rememberUpdatedState(onGone)
     LaunchedEffect(left) {
@@ -270,7 +269,7 @@ internal fun rememberLeaving(onGone: () -> Unit): Animatable<Float, AnimationVec
  * [fade]. It is one layer's scale and opacity: what it is on is measured and placed as it is at rest, and is
  * touched where it is drawn. At rest nothing is set.
  */
-internal fun Modifier.appears(
+fun Modifier.appears(
     shown: () -> Float,
     from: Float = APPEAR_SCALE,
     fade: Boolean = true,
@@ -287,7 +286,7 @@ internal fun Modifier.appears(
     }
 
 /** Fades with [shown], from nothing at 0 to all there by [APPEAR_IN_BY]; at rest nothing is set. */
-internal fun Modifier.fades(shown: () -> Float): Modifier =
+fun Modifier.fades(shown: () -> Float): Modifier =
     graphicsLayer {
         val t = shown()
         if (t < 1f) alpha = appearAlpha(t)
@@ -297,7 +296,7 @@ internal fun Modifier.fades(shown: () -> Float): Modifier =
  * A rounded rectangle anywhere inside what it clips, not only around all of it: a layer clipped to this
  * shows, and takes touches, only inside [rect].
  */
-internal class RectShape(
+class RectShape(
     private val rect: Rect,
     private val radius: Float,
 ) : Shape {

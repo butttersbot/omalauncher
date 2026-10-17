@@ -19,9 +19,11 @@ class MotionSourceCheckTest {
             "ui/WidgetTile.kt",
             // The working dot's pulse (Boss, 2026-10-13): on the shared timing like every other transition.
             "ui/AgentTile.kt",
+            "ui/ThreadDot.kt",
             "ui/Home.kt",
             "ui/HomeGrid.kt",
             "ui/HomeMenu.kt",
+            "ui/Menu.kt",
             "ui/Folders.kt",
             "ui/Overview.kt",
             "ui/Notes.kt",
@@ -67,10 +69,9 @@ class MotionSourceCheckTest {
         }
 
     @Test fun theTransitionsUseOnlyTheSharedSpecs() {
-        val root = moduleFile("src/main/kotlin/dev/omalauncher")
         val found = ArrayList<String>()
         for (name in moving) {
-            val file = File(root, name)
+            val file = dev.omalauncher.theme.pack.mainSource(name)
             assertTrue("$name is listed as having a transition but isn't a source file", file.isFile)
             for (line in code(file)) {
                 for ((what, pattern) in adHoc) if (pattern.containsMatchIn(line)) found += "$name: $what in `$line`"
@@ -81,26 +82,27 @@ class MotionSourceCheckTest {
     }
 
     @Test fun theSpecsAreMadeInOnePlace() {
-        val motion = code(moduleFile("src/main/kotlin/dev/omalauncher/ui/Motion.kt"))
+        val motion = code(dev.omalauncher.theme.pack.mainSource("ui/Motion.kt"))
         assertEquals("one spring", 1, motion.count { adHoc.getValue("spring(").containsMatchIn(it) })
         // The fade, and Motion.timed: the one door for a transition the prototype times itself.
         assertEquals("one fade and one prototype timing", 2, motion.count { adHoc.getValue("tween(").containsMatchIn(it) })
-        // And the one decision about "remove animations" is asked from the one place that reads the system's setting.
-        assertEquals(1, motion.count { "areAnimatorsEnabled" in it })
-        assertTrue(motion.any { "reducedMotion(" in it && "areAnimatorsEnabled" in it })
+        // And the one decision about "remove animations" is made here, from the platform's one answer: on the phone,
+        // its platform file is the only place that reads the system's setting (the desktop has none to read).
+        assertEquals(1, motion.count { "systemAnimationsOn()" in it })
+        assertTrue(motion.any { "reducedMotion(" in it && "systemAnimationsOn()" in it })
         val asks = dev.omalauncher.theme.pack.mainSources("ui", "oma").filter { file -> code(file).any { "areAnimatorsEnabled" in it || "ANIMATOR_DURATION_SCALE" in it } }
-        assertEquals(listOf("Motion.kt"), asks.map { it.name })
+        assertEquals(listOf("Platform.android.kt"), asks.map { it.name })
     }
 
     /** ScrapFrame's rule stands in what was added: a tilt is turned on the canvas while drawing, never by a layer, which would turn where a tile is touched. */
     @Test fun noTransitionTurnsALayerForATilt() {
-        val root = moduleFile("src/main/kotlin/dev/omalauncher")
-        for (name in listOf("ui/Motion.kt", "ui/WidgetTile.kt", "ui/HomeGrid.kt", "ui/Folders.kt", "ui/HomeMenu.kt", "ui/Notes.kt", "ui/Overview.kt")) {
-            assertTrue("$name turns a layer", code(File(root, name)).none { "rotationZ" in it || "rotationX" in it || "rotationY" in it })
+        fun source(name: String) = dev.omalauncher.theme.pack.mainSource(name)
+        for (name in listOf("ui/Motion.kt", "ui/WidgetTile.kt", "ui/HomeGrid.kt", "ui/Folders.kt", "ui/HomeMenu.kt", "ui/Menu.kt", "ui/Notes.kt", "ui/Overview.kt")) {
+            assertTrue("$name turns a layer", code(source(name)).none { "rotationZ" in it || "rotationX" in it || "rotationY" in it })
         }
         // The one layer that turns is a sticker's own picture, inside its upright box, as before this slice.
-        assertEquals(1, code(File(root, "ui/Stickers.kt")).count { "rotationZ" in it })
-        val tile = code(File(root, "ui/WidgetTile.kt"))
+        assertEquals(1, code(source("ui/Stickers.kt")).count { "rotationZ" in it })
+        val tile = code(source("ui/WidgetTile.kt"))
         assertTrue(tile.any { "rotate(growTilt(tilt, t)" in it })
     }
 
@@ -109,7 +111,7 @@ class MotionSourceCheckTest {
      * scale, opacity and clip, and Motion.kt has no layout or size modifier in it at all.
      */
     @Test fun motionIsOnlyEverALayer() {
-        val motion = code(moduleFile("src/main/kotlin/dev/omalauncher/ui/Motion.kt"))
+        val motion = code(dev.omalauncher.theme.pack.mainSource("ui/Motion.kt"))
         val lays = Regex("""\b(?:layout|size|width|height|padding|offset|requiredSize|animateContentSize)\s*[({]""")
         assertEquals(emptyList<String>(), motion.filter { lays.containsMatchIn(it) && "Modifier" in it })
         assertTrue(motion.none { "animateContentSize" in it })
