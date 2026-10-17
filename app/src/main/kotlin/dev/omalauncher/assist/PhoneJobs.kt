@@ -39,7 +39,8 @@ private val JOB_TESTS = Regex("$JOB_FILTER(,$JOB_FILTER){0,9}")
 
 /** The unit-test command a device-test runs: each filter its own single-quoted --tests argument. */
 fun jobTestCommand(tests: String): String =
-    "ANDROID_HOME=/opt/android-sdk /opt/gradle-9.8.0/bin/gradle -I /root/.config/oma-development/fold.init.gradle --no-daemon --console=plain :app:testDebugUnitTest" +
+    // Through oma-gradle, which builds one at a time with a small heap: plain gradle got Soma killed for memory.
+    "oma-gradle :app:testDebugUnitTest" +
         tests.split(',').filter { it.isNotEmpty() }.joinToString("") { " --tests '$it'" }
 
 /** The job in [text] when its whole text is one: a JSON object with a known "job" and v 1. Null for ordinary mail. */
