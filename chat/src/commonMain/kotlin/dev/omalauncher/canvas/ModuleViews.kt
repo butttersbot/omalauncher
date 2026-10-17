@@ -273,7 +273,9 @@ fun NeedsYouModule(asks: List<ModuleAsk>, size: ModuleSize, modifier: Modifier =
                             if (ask.wholeDetail) {
                                 // The command whole, or no approve: one cut short by the room here is never approved unread.
                                 var cut by remember(ask.id) { mutableStateOf(false) }
-                                BasicText(ask.detail, style = Pack.mono(Pack.size.small, Pack.foreground), maxLines = 8, overflow = TextOverflow.Ellipsis, onTextLayout = { cut = it.hasVisualOverflow })
+                                // Shown as it runs: a character that changes how text reads but is invisible (a direction
+                                // override, a zero-width space) is shown as its code, never acted on.
+                                BasicText(visibleCommand(ask.detail), style = Pack.mono(Pack.size.small, Pack.foreground), maxLines = 8, overflow = TextOverflow.Ellipsis, onTextLayout = { cut = it.hasVisualOverflow })
                                 if (cut) BasicText("too long to read here: make Needs you bigger", style = Pack.body(Pack.size.small, Pack.muted), maxLines = 1)
                                 else Answers(ask, { allow -> answer(ask, allow) }) { onOpen(ask.threadKey) }
                             } else {
@@ -318,3 +320,13 @@ private fun Answers(ask: ModuleAsk, answer: (Boolean) -> Unit, open: () -> Unit)
         }
     }
 }
+
+/** [command] with every control or format character (other than a newline or tab) shown as its code: ⟨U+202E⟩. */
+internal fun visibleCommand(command: String): String = buildString {
+    for (c in command) {
+        if ((Character.isISOControl(c) && c != '\n' && c != '\t') || Character.getType(c) == Character.FORMAT.toInt()) append("⟨U+%04X⟩".format(c.code)) else append(c)
+    }
+}
+
+/** [visibleCommand], for a test outside this module. */
+fun visibleCommandForTest(command: String) = visibleCommand(command)

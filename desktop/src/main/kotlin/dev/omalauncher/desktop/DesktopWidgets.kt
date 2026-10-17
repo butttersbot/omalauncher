@@ -89,7 +89,14 @@ class DesktopWidgetServices private constructor(
     /** The phone's own data (battery, media, the device): there is none here. */
     override fun android(name: String): Value = Null
 
-    override fun act(name: String, args: List<Value>, done: () -> Unit) = done()
+    /** A tap's `run(…)` runs in this machine's shell (it reaches here only once approved); nothing else of a phone's happens here. */
+    override fun act(name: String, args: List<Value>, done: () -> Unit) {
+        val command = args.firstOrNull()?.takeIf { it != Null }?.toString()
+        if (name == "run" && command != null) run(command) { done() } else done()
+    }
+
+    /** No phone terminal and no Android or Linux app to start here: those taps are never asked about. */
+    override fun canAct(name: String) = name != "terminal" && name != "app"
 
     /** No guest here: every guest path is the same file that never exists, so an Image from one shows nothing, whatever it says. */
     override fun guestFile(path: String) = NO_GUEST_FILE

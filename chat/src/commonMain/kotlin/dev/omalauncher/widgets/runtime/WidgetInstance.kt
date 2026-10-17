@@ -84,6 +84,9 @@ interface Services {
     /** An image Android holds, like album art: `Image { src: m.art }`. The same image for the same art, so nothing redraws. */
     fun androidImage(src: String): ImageBitmap? = null
 
+    /** Whether this screen can do the action [name] at all (a computer has no terminal of the phone's, no Android app). */
+    fun canAct(name: String): Boolean = true
+
     /** Runs an action; [done] is called once its effects should be visible, to refresh the widget that ran it. */
     fun act(
         name: String,

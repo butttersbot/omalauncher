@@ -38,6 +38,10 @@ class WidgetGateTest {
 
     private fun approveAll() = gate.commandAsks().forEach { gate.answer(it, true) }
 
+    @Test fun aCommandIsShownWithItsInvisibleCharactersVisible() {
+        assertEquals("echo ⟨U+202E⟩txt.exe", dev.omalauncher.canvas.visibleCommandForTest("echo \u202Etxt.exe"))
+    }
+
     @Test fun aTapsRunAndTerminalAreGatedLikeEverythingElse() {
         val marker = File(home, "tapped.txt")
         var done = 0
@@ -45,8 +49,37 @@ class WidgetGateTest {
         services.act("terminal", listOf(dev.omalauncher.widgets.lang.Str("touch '${marker.path}' && echo opened"))) { done++ }
         Thread.sleep(500)
         assertFalse(marker.exists())
-        assertEquals(2, gate.commandAsks().size)
+        // The run waits for his OK; a terminal, which no computer has, is never asked about (an OK would do nothing).
+        assertEquals(listOf("touch '${marker.path}'"), gate.commandAsks().map { it.command })
         assertEquals(2, done)
+        // Through a screen that has a terminal (the phone), it is gated like the run.
+        val phoneLike = dev.omalauncher.widgets.runtime.GatedServices(object : dev.omalauncher.widgets.runtime.Services by DesktopWidgetServices.gated(gate, "x.owl") {
+            override fun canAct(name: String) = true
+            override fun act(name: String, args: List<dev.omalauncher.widgets.lang.Value>, done: () -> Unit) { marker.writeText("ran"); done() }
+        }, gate, "p.owl")
+        phoneLike.act("terminal", listOf(dev.omalauncher.widgets.lang.Str("btop"))) {}
+        phoneLike.act("app", listOf(dev.omalauncher.widgets.lang.Str("firefox"))) {}
+        assertFalse(marker.exists())
+        assertEquals(setOf("btop", "app firefox"), gate.commandAsks().filter { it.widget == "p.owl" }.map { it.command }.toSet())
+    }
+
+    @Test fun anApprovedTapRunsAndOneThisScreenCantDoIsNeverAsked() {
+        val marker = File(home, "tap.txt")
+        val run = listOf<dev.omalauncher.widgets.lang.Value>(dev.omalauncher.widgets.lang.Str("touch '${marker.path}'"))
+        services.act("run", run) {}
+        approveAll()
+        val latch = java.util.concurrent.CountDownLatch(1)
+        services.act("run", run) { latch.countDown() }
+        latch.await(5, java.util.concurrent.TimeUnit.SECONDS)
+        assertTrue("an approved tap ran nothing", marker.exists())
+        services.act("app", listOf(dev.omalauncher.widgets.lang.Str("btop"))) {}
+        assertTrue(gate.commandAsks().isEmpty())
+    }
+
+    @Test fun aDeniedCommandSaysSo() = kotlinx.coroutines.runBlocking {
+        services.cmd("rm -rf ~/nothing", 5)
+        gate.answer(gate.commandAsks().single(), allow = false)
+        assertEquals("you denied this on this machine", services.cmd("rm -rf ~/nothing", 5).err)
     }
 
     @Test fun aRunIntoAValueRunsOnlyOnceApproved() {

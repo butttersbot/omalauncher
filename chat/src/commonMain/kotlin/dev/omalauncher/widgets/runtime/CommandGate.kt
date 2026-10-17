@@ -175,6 +175,9 @@ class CommandGate(
 /** What a widget's command says while it waits for his OK here: it didn't run. */
 val WAITING_FOR_OK = ShellResult("", "waiting for your OK to run this on this machine", -1)
 
+/** What a widget's command says once he denied it here: it doesn't run, and isn't asked again until the file changes. */
+val DENIED_HERE = ShellResult("", "you denied this on this machine", -1)
+
 /**
  * [inner], with every command [widget] runs checked by [gate] first: one he hasn't approved here doesn't run (no process is
  * started) and waits for him instead. HTTP, Android's data and files are not commands and pass through.
@@ -182,9 +185,12 @@ val WAITING_FOR_OK = ShellResult("", "waiting for your OK to run this on this ma
 class GatedServices(private val inner: Services, private val gate: CommandGate, private val widget: String) : Services by inner {
     private fun allowed(command: String) = gate.allowed(widget, command).also { if (!it) gate.ask(widget, command) }
 
-    override suspend fun cmd(command: String, timeoutSeconds: Int): ShellResult = if (allowed(command)) inner.cmd(command, timeoutSeconds) else WAITING_FOR_OK
+    /** What a command that may not run says: denied here, or waiting for his OK. */
+    private fun refused(command: String) = if (gate.denied(widget, command)) DENIED_HERE else WAITING_FOR_OK
 
-    override fun run(command: String, done: (ShellResult?) -> Unit) = if (allowed(command)) inner.run(command, done) else done(WAITING_FOR_OK)
+    override suspend fun cmd(command: String, timeoutSeconds: Int): ShellResult = if (allowed(command)) inner.cmd(command, timeoutSeconds) else refused(command)
+
+    override fun run(command: String, done: (ShellResult?) -> Unit) = if (allowed(command)) inner.run(command, done) else done(refused(command))
 
     override suspend fun stream(command: String, onLine: (String) -> Unit) { if (allowed(command)) inner.stream(command, onLine) }
 
@@ -193,9 +199,13 @@ class GatedServices(private val inner: Services, private val gate: CommandGate, 
      * went around the gate); every other action (a URL, an app, a copy, media) runs nothing here and passes through.
      */
     override fun act(name: String, args: List<dev.omalauncher.widgets.lang.Value>, done: () -> Unit) {
+        // What this screen can't do at all is never asked about: an OK for it would do nothing.
+        if (name in COMMANDS && !inner.canAct(name)) return done()
         val command = when (name) {
             "run" -> args.firstOrNull()?.takeIf { it != dev.omalauncher.widgets.lang.Null }?.toString() ?: return done()
             "terminal" -> args.firstOrNull()?.takeIf { it != dev.omalauncher.widgets.lang.Null }?.toString() ?: LOGIN_SHELL
+            // On the phone `app(...)` starts a Linux program: a command like any other.
+            "app" -> "app " + (args.firstOrNull()?.takeIf { it != dev.omalauncher.widgets.lang.Null }?.toString() ?: return done())
             else -> return inner.act(name, args, done)
         }
         if (allowed(command)) inner.act(name, args, done) else done()
@@ -211,6 +221,9 @@ class GatedServices(private val inner: Services, private val gate: CommandGate, 
     companion object {
         /** What a Terminal node with no command is approved as. */
         const val LOGIN_SHELL = "(the login shell)"
+
+        /** The actions that run a program: gated, as the language itself counts them (Compiler's command set). */
+        val COMMANDS = setOf("run", "terminal", "app")
     }
 }
 
