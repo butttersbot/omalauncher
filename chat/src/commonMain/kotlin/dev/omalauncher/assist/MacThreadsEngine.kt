@@ -85,6 +85,15 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
      */
     fun handoff(project: String): MacHandoff? = handoffs(listOf(project))[project]
 
+    /** The project registry, from the first computer whose runner gives it; null when none does. Blocking. */
+    fun projects(): List<RegisteredProject>? {
+        for (machine in machines()) {
+            val answer = runCatching { macClient(machine).projects() }.getOrNull()
+            if (answer is MacAnswer.Ok) return answer.value
+        }
+        return null
+    }
+
     /** The host the runner set up as [machine] is reached at (its URL's host: a tailnet name or address); empty when unknown. */
     fun hostAddress(machine: String): String =
         machines().firstOrNull { it.id == machine }?.config?.url?.let { runCatching { java.net.URI(it).host }.getOrNull() }.orEmpty()

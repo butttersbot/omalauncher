@@ -1,5 +1,7 @@
 package dev.omalauncher.oma
 
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -22,6 +24,7 @@ import dev.omalauncher.assist.AgentThread
 import dev.omalauncher.assist.ApprovalOutcome
 import dev.omalauncher.assist.BuilderFacts
 import dev.omalauncher.assist.BuilderId
+import dev.omalauncher.assist.MacApproval
 import dev.omalauncher.assist.MacApprovalOutcome
 import dev.omalauncher.assist.MacEarlierRead
 import dev.omalauncher.assist.MacPending
@@ -280,5 +283,89 @@ class ChatScreenTapTest : ChatScreenTestBase() {
         assertEquals("http://macbook-pro:8480/v1/msg", posted.single().first)
         assertEquals("f8890b84-1019-47cd-be97-458e18f11f75", org.json.JSONObject(posted.single().second).getJSONObject("to").getString("session"))
         onNodeWithText("Nudged Cockpit build").assertExists()
+    }
+
+    /** Timeline, Project and New thread (slice 3c): each tap opens the right tab, and nothing else happens. */
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+    @Test fun timelineProjectAndNewThreadOpenTheRightTab() = androidx.compose.ui.test.runComposeUiTest {
+        val host = object : SampleHost() {
+            override fun tasks() = listOf(
+                ChatTask(2_000, "→ notch trading", "run swift build", thread = "mac/t2", threadName = "notch trading", status = TaskStatus.Running),
+                ChatTask(1_000, "Haiku", "what's left?", status = TaskStatus.Done),
+            )
+            override fun macView() = MacView(listOf(
+                dev.omalauncher.assist.MacThread("mac/t1", "a", "/Users/jackkim/Projects/omalauncher-c3", dev.omalauncher.assist.ThreadHome.Mac, "claude", "", dev.omalauncher.assist.MacThreadStatus.Idle, null, "", 0, 0, emptyList()),
+                dev.omalauncher.assist.MacThread("mac/t2", "b", "/Users/jackkim/Projects/omalauncher", dev.omalauncher.assist.ThreadHome.Mac, "claude", "", dev.omalauncher.assist.MacThreadStatus.Idle, null, "", 0, 0, emptyList()),
+            ), reachable = true)
+            override fun threads() = listOf(AgentThread("mac:mac/t1", "a", ThreadState.Working, "", "working"), AgentThread("mac:mac/t2", "b", ThreadState.Attention, "", "needs attention"))
+        }
+        val registry = listOf(dev.omalauncher.assist.RegisteredProject("omalauncher", listOf("~/Projects/omalauncher", "~/Projects/omalauncher-*")))
+        val source = dev.omalauncher.canvas.chatHostModules(host, registry = { registry })
+        source.refresh(listOf("omalauncher"))
+        val opened = mutableListOf<String>()
+        var news = 0
+        mainClock.autoAdvance = false
+        setContent {
+            androidx.compose.foundation.layout.Column {
+                androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.size(456.dp, 228.dp)) { dev.omalauncher.canvas.TimelineModule(source.events(), dev.omalauncher.canvas.ModuleSize.Card, onOpen = { opened += it }) }
+                androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.size(228.dp, 152.dp)) { dev.omalauncher.canvas.ProjectModule(source.project("omalauncher"), dev.omalauncher.canvas.ModuleSize.Card, onOpen = { opened += it }) }
+                androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.size(228.dp, 152.dp)) { dev.omalauncher.canvas.NewThreadModule(source.newThread(), dev.omalauncher.canvas.ModuleSize.Card, onNew = { news++ }) }
+            }
+        }
+        mainClock.advanceTimeBy(500)
+        assertEquals("nothing opens without a tap", 0, opened.size + news)
+        onNodeWithText("notch trading · run swift build").performClick()
+        // A request the phone answered itself has no thread: its row opens nothing.
+        onNodeWithText("Haiku · what's left?").performClick()
+        onNodeWithText("2 threads").performClick()
+        onNodeWithText("[ claude ]").performClick()
+        mainClock.advanceTimeBy(500)
+        // The project opens t2, the one that needs attention, over t1, which only works.
+        assertEquals(listOf("mac:mac/t2", "mac:mac/t2"), opened)
+        assertEquals(1, news)
+    }
+
+    /** A thread made for a new chat is shown as that chat: every module opens the chat's tab for it, as its receipt does. */
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+    @Test fun aChatBoundThreadOpensItsChat() = androidx.compose.ui.test.runComposeUiTest {
+        val book = TabMeta(chats = listOf(NewChat("c1", 1, mac = "mac/t2"), NewChat("c2", 2)))
+        val asked = MacApproval("a1", "n1", "Bash", """{"command":"swift build"}""", "build")
+        val host = object : SampleHost() {
+            override fun changeBook(change: (TabMeta) -> TabMeta) = change(book)
+            override fun tasks() = listOf(
+                ChatTask(3_000, "→ notch trading", "run swift build", thread = "mac/t2", threadName = "notch trading", chat = "c1", status = TaskStatus.Running),
+                ChatTask(2_000, "→ new chat", "start the herd fix", thread = dev.omalauncher.assist.MAC_NEW_THREAD, chat = "c2", status = TaskStatus.Running),
+                ChatTask(1_000, "→ old", "a chat since closed", thread = dev.omalauncher.assist.MAC_NEW_THREAD, chat = "gone", status = TaskStatus.Done),
+            )
+            override fun macView() = MacView(listOf(
+                dev.omalauncher.assist.MacThread("mac/t1", "a", "/Users/jackkim/Projects/omalauncher-c3", dev.omalauncher.assist.ThreadHome.Mac, "claude", "", dev.omalauncher.assist.MacThreadStatus.Idle, null, "", 0, 0, emptyList()),
+                dev.omalauncher.assist.MacThread("mac/t2", "b", "/Users/jackkim/Projects/omalauncher", dev.omalauncher.assist.ThreadHome.Mac, "claude", "", dev.omalauncher.assist.MacThreadStatus.Idle, null, "", 0, 0, listOf(asked)),
+            ), reachable = true)
+            override fun threads() = listOf(AgentThread("mac:mac/t1", "a", ThreadState.Working, "", "working"), AgentThread("chat:c1", "notch trading", ThreadState.NeedsOk, "", "needs your OK"), AgentThread("chat:c2", "herd fix", ThreadState.Working, "", "working"))
+            override fun macPending() = listOf(MacPending("mac/t2", "notch trading", asked, "ticket-1", 0))
+        }
+        val source = dev.omalauncher.canvas.chatHostModules(host, registry = { listOf(dev.omalauncher.assist.RegisteredProject("omalauncher", listOf("~/Projects/omalauncher", "~/Projects/omalauncher-*"))) })
+        source.refresh(listOf("omalauncher"))
+        // Every key a module hands over is a tab the chat has.
+        assertEquals(listOf("chat:c1", "chat:c2", ""), source.events().map { it.threadKey })
+        assertEquals(listOf("chat:c1"), source.asks().map { it.threadKey })
+        val project = source.project("omalauncher")
+        assertEquals(listOf(ThreadState.Working, ThreadState.NeedsOk), project.states)
+        val opened = mutableListOf<String>()
+        mainClock.autoAdvance = false
+        setContent {
+            androidx.compose.foundation.layout.Column {
+                androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.size(456.dp, 228.dp)) { dev.omalauncher.canvas.TimelineModule(source.events(), dev.omalauncher.canvas.ModuleSize.Card, onOpen = { opened += it }) }
+                androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.size(228.dp, 152.dp)) { dev.omalauncher.canvas.ProjectModule(project, dev.omalauncher.canvas.ModuleSize.Card, onOpen = { opened += it }) }
+            }
+        }
+        mainClock.advanceTimeBy(500)
+        onNodeWithText("notch trading · run swift build").performClick()
+        onNodeWithText("new chat · start the herd fix").performClick()
+        onNodeWithText("old · a chat since closed").performClick()
+        onNodeWithText("2 threads").performClick()
+        mainClock.advanceTimeBy(500)
+        assertEquals(listOf("chat:c1", "chat:c2", "chat:c1"), opened)
+        assertEquals(opened, opened.map { openTab(it, host.threads()) })
     }
 }

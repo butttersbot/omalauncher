@@ -39,6 +39,14 @@ class ModulesRenderTest {
     private val sessions = listOf(dev.omalauncher.canvas.HerdSession("f8890b84-1019-47cd-be97-458e18f11f75", "macbook-pro", "claude", "", "Cockpit build", "omalauncher", "working", true, 0), dev.omalauncher.canvas.HerdSession("b2c3d4e5-0000-0000-0000-000000000000", "jacks-mac-pro", "claude", "", "Cove card pass review", "pond", "your-turn", true, 0))
     private val pocket = listOf(dev.omalauncher.canvas.PocketItem("20261016201553-16c69c", "Screenshot_20261016_201550_X.jpg", 510057, 1792206953000, "jacks-z-fold8", false, "image"), dev.omalauncher.canvas.PocketItem("20261016092235-8fa2f5", "desktop-e2e-switch.png", 968030, 1792167755000, "jacks-mac-pro", true, "image"))
 
+    private val events = dev.omalauncher.canvas.moduleTimeline(listOf(
+        dev.omalauncher.oma.ChatTask(1792220000000, "→ notch trading", "run swift build", thread = "mac/t2", threadName = "notch trading", status = dev.omalauncher.oma.TaskStatus.Running),
+        dev.omalauncher.oma.ChatTask(1792219000000, "Opus", "what's left on the canvas?", status = dev.omalauncher.oma.TaskStatus.Done),
+        dev.omalauncher.oma.ChatTask(1792218000000, "→ card pass", "seed the forms", thread = "mac/t4", threadName = "card pass", status = dev.omalauncher.oma.TaskStatus.Failed),
+    ))
+    private val project = dev.omalauncher.canvas.ModuleProject("omalauncher", "~/ClaudeSync/projects/omalauncher", listOf(ThreadState.Working, ThreadState.NeedsOk, ThreadState.Idle), "The rest of the modules.", "mac:mac/t1")
+    private val pick = dev.omalauncher.canvas.NewThreadPick("Mac Pro", "claude", "default")
+
     @Test fun aTightCardInConsoleNeverClipsAnAnswer() {
         Looks.fonts()
         Looks.use("console")
@@ -60,7 +68,7 @@ class ModulesRenderTest {
         for ((name, w, h) in listOf(Triple("dot", 1, 1), Triple("line", 6, 1), Triple("line", 2, 1), Triple("line", 4, 1), Triple("card", 3, 2), Triple("card", 2, 2), Triple("full", 6, 3), Triple("full", 6, 4))) {
             val size = moduleSize(w, h, 6)
             assertEquals("$w×$h", name, size.name.lowercase())
-            for (which in listOf("threads", "needs", "computers", "handoff", "sessions", "pocket")) {
+            for (which in listOf("threads", "needs", "computers", "handoff", "sessions", "pocket", "timeline", "project", "newthread")) {
                 val png = ImageComposeScene(width = w * cell * 2, height = h * cell * 2, density = Density(2f)) {
                     Box(Modifier.size((w * cell).dp, (h * cell).dp)) {
                         when (which) {
@@ -69,6 +77,9 @@ class ModulesRenderTest {
                             "computers" -> dev.omalauncher.canvas.ComputersModule(computers, size)
                             "handoff" -> dev.omalauncher.canvas.HandoffModule("omalauncher", handoff, size)
                             "sessions" -> dev.omalauncher.canvas.SessionsModule(sessions, size, onNudge = { _, _ -> })
+                            "timeline" -> dev.omalauncher.canvas.TimelineModule(events, size, onOpen = {})
+                            "project" -> dev.omalauncher.canvas.ProjectModule(project, size, onOpen = {})
+                            "newthread" -> dev.omalauncher.canvas.NewThreadModule(pick, size, onNew = {})
                             else -> dev.omalauncher.canvas.PocketModule(pocket, size, now = 1792220000000)
                         }
                     }

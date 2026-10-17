@@ -12,7 +12,9 @@ import dev.omalauncher.assist.macApprovalDetail
 import dev.omalauncher.assist.macApprovalNotice
 import dev.omalauncher.assist.macThreadKey
 import dev.omalauncher.assist.MacHandoff
+import dev.omalauncher.assist.RegisteredProject
 import dev.omalauncher.oma.ChatHost
+import dev.omalauncher.oma.TabMeta
 
 /*
  * Cockpit modules (Soma Canvas, cockpit/canvas/PRD.md §4): live views over shared state that can sit anywhere on any
@@ -66,19 +68,41 @@ interface ModuleSource {
 
     fun pocket(): List<PocketItem> = emptyList()
 
+    /** The chat's own entries as a timeline, newest first. */
+    fun events(): List<ModuleEvent> = emptyList()
+
+    /** What a new chat would start on; null with no computer set up. */
+    fun newThread(): NewThreadPick? = null
+
+    /** Project [name]: its folder, its threads' states and its handoff's next line, as of the last [refresh] that named it. */
+    fun project(name: String): ModuleProject = ModuleProject(name, "", emptyList(), "", null)
+
     /** His tap on nudge: agent mail to that session; [done] says whether it was taken. Blocking work runs off the caller's thread. */
     fun nudge(session: HerdSession, done: (Boolean) -> Unit) = done(false)
 }
+
+/** How many reads of the modules pass between asks for the project registry. */
+private const val REGISTRY_EVERY = 10
+
+/** The tab a Mac thread is shown as: the new chat it was made for, else its own. */
+fun macTabKey(threadId: String, meta: TabMeta): String = meta.chatOnMac(threadId)?.key ?: macThreadKey(threadId)
 
 /**
  * The modules' source on a device that has the chat: its threads and its waiting approvals, answered through the very
  * paths the chat's own approval cards use ([ChatHost.answerMac], [ChatHost.answerBuilder]), so the guards, the one-time
  * nonces and the expiry are the same wherever he taps.
  */
-fun chatHostModules(host: ChatHost, feeds: CockpitFeeds? = null, handoffs: (Collection<String>) -> Map<String, MacHandoff?> = { emptyMap() }): ModuleSource = object : ModuleSource {
+fun chatHostModules(
+    host: ChatHost,
+    feeds: CockpitFeeds? = null,
+    handoffs: (Collection<String>) -> Map<String, MacHandoff?> = { emptyMap() },
+    registry: () -> List<RegisteredProject>? = { null },
+): ModuleSource = object : ModuleSource {
     @Volatile private var herd: HerdSnapshot? = null
     @Volatile private var items: List<PocketItem> = emptyList()
     @Volatile private var read: Map<String, MacHandoff?> = emptyMap()
+    @Volatile private var registered: List<RegisteredProject> = emptyList()
+    @Volatile private var reads = 0
 
     override fun threads(): List<AgentThread> = host.threads()
 
@@ -89,7 +113,16 @@ fun chatHostModules(host: ChatHost, feeds: CockpitFeeds? = null, handoffs: (Coll
             items = feeds.pocket()
         }
         read = if (projects.isEmpty()) emptyMap() else runCatching { handoffs(projects) }.getOrDefault(emptyMap())
+        // The registry as a computer last gave it: kept when none answers, since it changes rarely and is not live state, and
+        // asked again only every few reads, so a computer that is down doesn't cost a timeout on every one.
+        if (reads++ % REGISTRY_EVERY == 0 || registered.isEmpty()) runCatching { registry() }.getOrNull()?.let { registered = it }
     }
+
+    override fun events(): List<ModuleEvent> = moduleTimeline(host.tasks(), host.changeBook { it })
+
+    override fun newThread(): NewThreadPick? = moduleNewThread(host.hosts())
+
+    override fun project(name: String): ModuleProject = moduleProject(name, registered, host.macView().threads, host.threads(), read[name], host.changeBook { it })
 
     override fun computers(): List<ModuleComputer> = moduleComputers(host.hosts().map { ComputerHost(it.id, it.name, it.reachable, it.address) }, herd?.machines.orEmpty())
 
@@ -105,8 +138,9 @@ fun chatHostModules(host: ChatHost, feeds: CockpitFeeds? = null, handoffs: (Coll
     }
 
     override fun asks(): List<ModuleAsk> {
+        val book = host.changeBook { it }
         val mac = host.macPending().map { p ->
-            ModuleAsk("mac:${p.ticket}", "Allow ${p.request.tool} on ${p.threadName}?", macApprovalDetail(p.request), macThreadKey(p.threadId), p.threadName, p)
+            ModuleAsk("mac:${p.ticket}", "Allow ${p.request.tool} on ${p.threadName}?", macApprovalDetail(p.request), macTabKey(p.threadId, book), p.threadName, p)
         }
         val phone = host.builders().flatMap { (builder, state) ->
             state.pending.map { p ->

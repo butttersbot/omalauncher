@@ -62,16 +62,31 @@ fun ModuleFrame(title: String, caption: String, size: ModuleSize, key: String, m
                 }
             }
             else -> Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                BoxWithConstraints(Modifier.fillMaxWidth()) {
-                    // A narrow card keeps its name whole and lets the caption go.
-                    val captioned = maxWidth >= 200.dp
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        BasicText(Pack.heading(title), Modifier.weight(1f), style = Pack.display(Pack.size.large), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (captioned) BasicText(Pack.caption(caption), Modifier.padding(start = 8.dp), style = Pack.mono(Pack.size.small, Pack.muted), maxLines = 1, softWrap = false)
-                    }
-                }
+                TitleRow(title, caption)
                 Box(Modifier.weight(1f).fillMaxWidth()) { content() }
             }
+        }
+    }
+}
+
+/** A card's name, and its caption only when both fit: the name is never cut to make room for the caption. */
+@Composable
+private fun TitleRow(title: String, caption: String) {
+    Layout(content = {
+        BasicText(Pack.heading(title), style = Pack.display(Pack.size.large), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        BasicText(Pack.caption(caption), style = Pack.mono(Pack.size.small, Pack.muted), maxLines = 1, softWrap = false)
+    }) { measurables, constraints ->
+        val gap = 8.dp.roundToPx()
+        // Their natural widths decide whether the caption shows; each is then measured once, the name bounded so a long one ends in an ellipsis.
+        val nameWidth = measurables[0].maxIntrinsicWidth(constraints.maxHeight)
+        val noteWidth = measurables[1].maxIntrinsicWidth(constraints.maxHeight)
+        val both = caption.isNotEmpty() && nameWidth + gap + noteWidth <= constraints.maxWidth
+        val name = measurables[0].measure(Constraints(maxWidth = constraints.maxWidth))
+        val note = if (both) measurables[1].measure(Constraints(maxWidth = noteWidth)) else null
+        val height = maxOf(name.height, note?.height ?: 0)
+        layout(constraints.maxWidth, height) {
+            name.placeRelative(0, (height - name.height) / 2)
+            note?.placeRelative(constraints.maxWidth - note.width, (height - note.height) / 2)
         }
     }
 }
