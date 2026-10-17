@@ -119,7 +119,7 @@ class CanvasScreenTest {
         val block = onNodeWithContentDescription("arrange module:needs")
         val before = block.getBoundsInRoot()
         mainClock.autoAdvance = true
-        // Slowly, as a finger drags (the test's mouse doesn't drag here): 50 small moves, 150 dp down in all. The block is where the pointer is at every step.
+        // Slowly, by touch (the round-4 review drove the same drag with the mouse: 147-150 dp, the same landing): 50 small moves, 150 dp down in all. The block is where the pointer is at every step.
         block.performTouchInput {
             down(center)
             repeat(50) { moveBy(Offset(0f, 3f), delayMillis = 16) }
