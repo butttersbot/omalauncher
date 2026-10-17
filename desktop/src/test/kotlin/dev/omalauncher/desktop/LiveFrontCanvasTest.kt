@@ -21,6 +21,8 @@ import kotlin.concurrent.thread
  * when SOMA_LIVE names Claude Code; it spends a few cents of the fast model and touches no Soma of his.
  */
 class LiveFrontCanvasTest {
+    @Volatile private var lines: MutableList<String>? = null
+
     @Test fun makeMeAPageForAProjectThenUndo() {
         val claude = System.getenv("SOMA_LIVE")
         assumeTrue("set SOMA_LIVE to Claude Code's path to run this", claude != null && File(claude).canExecute())
@@ -35,6 +37,7 @@ class LiveFrontCanvasTest {
                 server.accept().use { c ->
                     val line = c.getInputStream().bufferedReader().readLine()
                     System.err.println("door <- " + line.replace(Regex("canvas [0-9a-f]{64}"), "canvas TOKEN"))
+                    lines?.add(line)
                     c.getOutputStream().write((door.handle(line) + "\n").toByteArray())
                 }
             }
@@ -61,7 +64,11 @@ class LiveFrontCanvasTest {
         assertTrue("no new page: ${canvas.page.pages.map { it.name }}\n" + made.takeLast(3000), page != null)
         assertTrue(page!!.items.any { dev.omalauncher.canvas.moduleRef(it.key)?.base == moduleKey(ModuleKind.Needs) })
         System.err.println("page " + page.name + ": " + page.items.map { it.key to it.cell })
+        val heard = java.util.Collections.synchronizedList(ArrayList<String>())
+        lines = heard
         val undone = ask("undo that", "front-2")
+        // Undone with the undo word, not by taking things away by hand.
+        assertTrue(heard.toString(), heard.any { it.endsWith("[\"undo\"]") })
         File(home, "undone.jsonl").writeText(undone)
         assertEquals(listOf(DESKTOP_PAGE), canvas.page.pages.map { it.id })
         assertTrue(canvas.has(moduleKey(ModuleKind.Needs)!!))

@@ -376,6 +376,12 @@ class PhoneService : AccessibilityService() {
             // Only a page of modules comes here: they go with it, and its still too, as when it is deleted in the overview.
             removePage = { page -> runtime.widgets.deletePage(page, move = false)?.also { runtime.pageStills.drop(page) } != null },
             points = dev.omalauncher.widgets.foldRestorePoints(this),
+            // Not read yet counts as marked: asked again in a moment, the page will have been read.
+            marked = { page ->
+                val book = dev.omalauncher.widgets.annotations.HomeAnnotations.of(this)
+                book.whenRead(page) {}
+                book.status(page) != dev.omalauncher.widgets.annotations.AnnotationBook.Status.Ready || !book.on(page).isEmpty
+            },
         )
     }
     private fun lockStarPad() = object : LockStarPad {

@@ -186,6 +186,19 @@ class CanvasVerbsDesktopTest {
         assertTrue(canvas.apply(CanvasVerb.Move(moduleKey(ModuleKind.Threads)!!, canvas.shown, threads.copy(h = 2))).applied)
     }
 
+    @Test fun theBoardShowsTheChatOnEveryPageAndAMoveIntoItSaysWhy() {
+        val canvas = canvas()
+        val door = CanvasDoor { work -> work(canvas) }
+        val token = door.mint("front-1")
+        call(door, token, "page-make Two")
+        call(door, token, "place pocket card top-left --page Two")
+        val two = call(door, token, "board Two").getJSONArray("pages").getJSONObject(0).getJSONArray("items")
+        assertEquals("chat", two.getJSONObject(0).getString("kind"))
+        assertEquals(5, two.getJSONObject(0).getJSONObject("cells").getInt("w"))
+        val stay = call(door, token, "move pocket top-left --page Two")
+        assertTrue(stay.getString("did"), stay.getString("did").contains("as near there as this page has room"))
+    }
+
     @Test fun theShimRunsThisSomaAgainAndOnlyItsOwnerCanRunIt() {
         val dir = Files.createTempDirectory("soma-bin").toFile()
         val shim = CanvasDoor.shim(dir)!!

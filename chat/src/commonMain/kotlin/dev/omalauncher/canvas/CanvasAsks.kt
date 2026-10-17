@@ -316,18 +316,19 @@ fun resolveAsk(n: Notebook, ask: CanvasAsk, rules: ScreenRules): Resolved = when
         val at = land(n, page, size, Where(ask.where.spot, besideKey), moving = key, rules)
         val verbs = listOfNotNull(at.made) + CanvasVerb.Place(key, ItemKind.Module, at.page, at.cell)
         val pageName = at.made?.name ?: n.pages.first { it.id == at.page }.name
-        if (at.made == null && cellOf(n, key) == at.cell && pageOf(n, key)?.id == at.page) Resolved(emptyList(), "${moduleTitle(key)} stays where it is: there is no room for it to move")
+        if (at.made == null && cellOf(n, key) == at.cell && pageOf(n, key)?.id == at.page) Resolved(emptyList(), "${moduleTitle(key)} stays where it is: it is already as near there as this page has room")
         else Resolved(verbs, (if (pageOf(n, key) != null) "moved " else "put ") + "${moduleTitle(key)} (${shortName(key)}) on \"$pageName\" at ${cellWords(at.cell)}" + (at.made?.let { " (a new page: the one asked for had no room)" } ?: ""))
     }
     is CanvasAsk.Move -> {
-        val key = copyOf(n, ask.module, module(ask.module, rules), null)
+        // With copies on several pages, the one on the page it goes to is the one meant.
+        val key = copyOf(n, ask.module, module(ask.module, rules), ask.page?.let { pageNamed(n, it).id })
         val (from, cell) = onCanvas(n, key)
         val besideKey = ask.where.of?.let { w -> (moduleKeyOf(w, chat = true) ?: refuse("\"$w\" is not a module. Nothing was changed.")).let { copyOf(n, w, it, ask.page?.let { p -> pageNamed(n, p).id } ?: from.id) } }
         if (ask.where.spot.beside && besideKey == null) refuse("${ask.where.spot.word} needs a module to be beside. Nothing was changed.")
         val page = ask.page?.let { pageNamed(n, it).id } ?: besideKey?.let { onCanvas(n, it).first.id } ?: from.id
         val at = land(n, page, cell.w to cell.h, Where(ask.where.spot, besideKey), moving = key, rules)
         val verbs = listOfNotNull(at.made) + CanvasVerb.Move(key, at.page, at.cell)
-        if (at.made == null && at.page == from.id && at.cell == cell) return Resolved(emptyList(), "${moduleTitle(key)} stays where it is: there is no room for it to move")
+        if (at.made == null && at.page == from.id && at.cell == cell) return Resolved(emptyList(), "${moduleTitle(key)} stays where it is: it is already as near there as this page has room")
         Resolved(verbs, "moved ${moduleTitle(key)} to \"${at.made?.name ?: n.pages.first { it.id == at.page }.name}\" at ${cellWords(at.cell)}")
     }
     is CanvasAsk.Resize -> {
@@ -425,7 +426,11 @@ fun boardJson(n: Notebook, rules: ScreenRules, only: String? = null): JSONObject
     val pages = if (only == null) n.pages else listOf(pageNamed(n, only))
     return JSONObject().put("ok", true).put("columns", n.columns).put("rows", n.rows).put("pages", JSONArray(pages.map { p ->
         val busy = taken(n, p.id, null, rules)
-        JSONObject().put("page", p.name).put("items", JSONArray(p.items.mapNotNull { item ->
+        // What is pinned on every page (the desktop's chat) is on this page too, so an agent never looks for room under it.
+        val pinned = rules.pinned(n).filter { c -> p.items.none { it.cell == c } }.map { c ->
+            JSONObject().put("kind", "chat").put("name", "chat").put("size", "pinned").put("cells", JSONObject().put("x", c.x).put("y", c.y).put("w", c.w).put("h", c.h))
+        }
+        JSONObject().put("page", p.name).put("items", JSONArray(pinned + p.items.mapNotNull { item ->
             val c = item.cell ?: return@mapNotNull null
             val ref = moduleRef(item.key)
             JSONObject().put("kind", if (ref != null) MODULE_TILE_KIND else item.kind.name.lowercase())

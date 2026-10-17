@@ -114,6 +114,27 @@ class FoldCanvasTest {
         assertEquals(listOf("Today", "Agents"), home.notebook.pages.map { it.name })
     }
 
+    @Test fun aPageWithHisNotesOrStickersIsNeverTakenAway() {
+        val home = Home(saved)
+        home.run("page-make Soma")
+        home.run("place needs card --page Soma")
+        val soma = home.notebook.pages.last().id
+        // A sticker he put there since: the agent's removal and its undo both leave the page.
+        val marked = FoldCanvasPad(home.notebook, { home.notebook.addPage() }, { home.notebook.deletePage(it, emptySet(), move = false) != null }, RestorePoints({ home.undo }, { home.undo = it }), marked = { it == soma })
+        val removed = CanvasCommands.run(listOf("page-remove", "Soma"), marked, "q2", "agent:quick")
+        assertFalse(removed.toString(), removed.getBoolean("ok"))
+        assertTrue(removed.getString("error").contains("notes, stickers or ink"))
+        val undo = CanvasCommands.run(listOf("undo"), marked, "q3", "agent:quick")
+        assertTrue(home.notebook.pages.any { it.id == soma })
+        assertTrue(undo.toString(), !undo.getBoolean("ok") || undo.getString("did").contains("left"))
+    }
+
+    @Test fun theBuilderIsToldHowToArrangeAndUndoModules() {
+        val told = dev.omalauncher.phone.PhoneBridge.INSTRUCTIONS
+        for (words in listOf("`oma-phone canvas help`", "`oma-phone canvas page-make NAME`", "`oma-phone canvas place needs card top-left --page NAME`", "`oma-phone canvas undo`", "never by tapping"))
+            assertTrue(words, told.contains(words))
+    }
+
     @Test fun nothingIsDoneBeforeHomeIsRead() {
         val notebook = LiveNotebook()
         val pad = FoldCanvasPad(notebook, { notebook.addPage() }, { false }, RestorePoints({ null }, {}))

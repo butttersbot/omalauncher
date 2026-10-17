@@ -25,6 +25,11 @@ class FoldCanvasPad(
     /** Takes away a page of modules with what is on it; false when it can't be. */
     private val removePage: (String) -> Boolean,
     private val points: RestorePoints,
+    /**
+     * Whether a page has his notes, stickers or ink on it, or they aren't read yet: an agent never takes such a page away,
+     * since they go with it for good (removing one is his, in the overview, where he is asked).
+     */
+    private val marked: (String) -> Boolean = { false },
 ) : CanvasPad {
     override val rules = ScreenRules(
         // Ids as the notebook gives them, so a resolved page's id is the one it then gets (each is mapped anyway).
@@ -88,7 +93,10 @@ class FoldCanvasPad(
                     continue
                 }
                 is CanvasVerb.PageRename -> if (!notebook.renamePage(v.id, v.name)) return "that is not a name a page can have"
-                is CanvasVerb.PageRemove -> if (!removePage(v.id)) return "home can't take that page away now"
+                is CanvasVerb.PageRemove -> {
+                    if (marked(v.id)) return "the page \"${notebook.name(v.id)}\" has notes, stickers or ink on it, so it stays; he removes it himself in the overview"
+                    if (!removePage(v.id)) return "home can't take that page away now"
+                }
                 is CanvasVerb.Place -> { notebook.move(v.key, v.page); notebook.setCell(v.key, v.cell); notebook.save() }
                 is CanvasVerb.Move -> { notebook.move(v.key, v.page); notebook.setCell(v.key, v.cell); notebook.save() }
                 is CanvasVerb.Remove -> notebook.forget(v.key)
