@@ -3,7 +3,11 @@ package dev.omalauncher.desktop
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import dev.omalauncher.canvas.CanvasPad
 import dev.omalauncher.canvas.ModuleKind
+import dev.omalauncher.canvas.RestorePoint
+import dev.omalauncher.canvas.ScreenRules
+import dev.omalauncher.canvas.restorePoint
 import dev.omalauncher.canvas.moduleKey
 import dev.omalauncher.canvas.moduleRef
 import dev.omalauncher.widgets.Cell
@@ -30,8 +34,11 @@ import java.io.File
 const val DESKTOP_COLUMNS = 12
 const val DESKTOP_ROWS = 8
 
-/** The one page the window shows. */
+/** The first page, the chat's: the one the window starts on, never removed. */
 const val DESKTOP_PAGE = "soma"
+
+/** Ahead of an undo's request id: the request it undid follows. */
+private const val UNDO = "undo:"
 
 /** The chat's own block: always on the page, never removed (a link to a thread opens its tab there). */
 val CHAT_BLOCK: String = moduleKey(ModuleKind.Chat)!!
@@ -63,7 +70,7 @@ fun replay(log: VerbLog): Notebook = log.entries.fold(emptyCanvas()) { notebook,
  * The canvas as the window shows it and its log as kept in [file]. [device] names this machine in each verb's origin.
  * Every change goes through [apply]: applied to the page, appended to the log, and the log written, or none of it.
  */
-class DesktopCanvas(private val file: File, private val device: String) {
+class DesktopCanvas(private val file: File, private val device: String) : CanvasPad {
     var log: VerbLog by mutableStateOf(VerbLog(DESKTOP_PAGE))
         private set
 
@@ -114,12 +121,26 @@ class DesktopCanvas(private val file: File, private val device: String) {
         }
     }
 
-    /** What is on the page, the chat included. */
-    fun items(): List<NotebookItem> = page.pages.firstOrNull { it.id == DESKTOP_PAGE }?.items.orEmpty()
+    /**
+     * The page the window shows (slice 6: an agent can make more, on his word). The chat is on the first page and drawn on
+     * every page at its cells, which no page's blocks may take.
+     */
+    var shown: String by mutableStateOf(DESKTOP_PAGE)
 
-    fun has(key: String) = items().any { it.key == key }
+    /** What is on the page the window shows: the chat, and that page's blocks. */
+    fun items(): List<NotebookItem> = itemsOn(shown()).let { on -> if (shown() == DESKTOP_PAGE) on else chatItem()?.let { listOf(it) + on } ?: on }
 
-    /** The first cells of [size] nothing has, shrinking to fit when the page has no room at that size; null on a full page. */
+    private fun itemsOn(id: String) = page.pages.firstOrNull { it.id == id }?.items.orEmpty()
+
+    private fun chatItem() = itemsOn(DESKTOP_PAGE).firstOrNull { it.key == CHAT_BLOCK }
+
+    /** The page shown, or the first when the one shown has gone. */
+    private fun shown(): String = shown.takeIf { id -> page.pages.any { it.id == id } } ?: DESKTOP_PAGE
+
+    /** Whether [key] is anywhere on the canvas. */
+    fun has(key: String) = page.pages.any { p -> p.items.any { it.key == key } }
+
+    /** The first cells of [size] nothing has on the page shown, shrinking to fit when there's no room at that size; null on a full page. */
     fun spot(size: Pair<Int, Int>): Cell? {
         val taken = items().mapNotNull { it.cell }
         for (h in size.second downTo 1) for (w in size.first downTo 1) firstFit(w, h, taken, DESKTOP_COLUMNS, DESKTOP_ROWS)?.let { return it }
@@ -132,6 +153,16 @@ class DesktopCanvas(private val file: File, private val device: String) {
      */
     fun apply(verb: CanvasVerb, actor: String = "hand", request: String = newRequest()): Applied {
         if (verb is CanvasVerb.Remove && verb.key == CHAT_BLOCK) return Applied(page, false, "the chat stays")
+        if (verb is CanvasVerb.PageRemove && verb.id == DESKTOP_PAGE) return Applied(page, false, "the chat's page stays")
+        // The chat is drawn on every page: nothing on another page goes under it, and it goes over nothing on any page.
+        val chat = chatItem()?.cell
+        val clash = when (verb) {
+            is CanvasVerb.Place -> verb.page != DESKTOP_PAGE && chat != null && verb.cell.overlaps(chat)
+            is CanvasVerb.Move -> if (verb.key == CHAT_BLOCK) page.pages.any { p -> p.items.any { it.key != CHAT_BLOCK && it.cell?.overlaps(verb.cell) == true } }
+                else verb.page != DESKTOP_PAGE && chat != null && verb.cell.overlaps(chat)
+            else -> false
+        }
+        if (clash) return Applied(page, false, "that spot is under the chat")
         val done = applyVerb(page, verb)
         if (!done.applied) return done
         val next = log.append(request, VerbOrigin(device, actor), verb)
@@ -144,17 +175,69 @@ class DesktopCanvas(private val file: File, private val device: String) {
         }
         log = next
         page = done.notebook
+        // The page shown gone (an agent removed it): the window shows the chat's page, so a hand drag lands somewhere real.
+        if (page.pages.none { it.id == shown }) shown = DESKTOP_PAGE
         return done
     }
 
     @Synchronized private fun newRequest() = "r" + System.currentTimeMillis().toString(36) + "-" + (++requests).toString(36)
 
-    /** Adds the module [key] in the first room on the page at its size here (smaller if that is all there is). */
+    /** Adds the module [key] in the first room on the page shown at its size here (smaller if that is all there is). */
     fun add(key: String): Applied {
         val ref = moduleRef(key) ?: return Applied(page, false, "no such module")
         if (has(key)) return Applied(page, false, "already here")
         val cell = spot(desktopSize(ref.kind)) ?: return Applied(page, false, "no room")
-        return apply(CanvasVerb.Place(key, ItemKind.Module, DESKTOP_PAGE, cell))
+        return apply(CanvasVerb.Place(key, ItemKind.Module, shown(), cell))
+    }
+
+    // The agents' verbs (slice 6): `soma canvas`, from Soma's own front agent with the token it is given for one request.
+
+    override val rules = ScreenRules(
+        pinned = { n -> n.pages.firstOrNull { it.id == DESKTOP_PAGE }?.items?.firstOrNull { it.key == CHAT_BLOCK }?.cell?.let { listOf(it) }.orEmpty() },
+        // Beside the chat: a full module is as wide as the page is beside it.
+        span = { n -> DESKTOP_COLUMNS - (n.pages.firstOrNull { it.id == DESKTOP_PAGE }?.items?.firstOrNull { it.key == CHAT_BLOCK }?.cell?.w ?: 0) },
+        kept = setOf(CHAT_BLOCK),
+        keptPages = setOf(DESKTOP_PAGE),
+        sizeOf = { ref, _ -> desktopSize(ref.kind) },
+        pageId = { n -> generateSequence(2) { it + 1 }.map { "page$it" }.first { id -> n.pages.none { it.id == id } } },
+    )
+
+    override fun notebook(): Notebook = page
+
+    /** Each verb applied and kept in turn; the window then shows the page the last one changed, so he sees what was done. */
+    override fun apply(verbs: List<CanvasVerb>, request: String, actor: String): String? {
+        for (v in verbs) {
+            val done = apply(v, actor, request)
+            if (!done.applied) return done.why
+            when (v) {
+                is CanvasVerb.PageMake -> shown = v.id
+                is CanvasVerb.Place -> shown = v.page
+                is CanvasVerb.Move -> shown = v.page
+                else -> {}
+            }
+        }
+        return null
+    }
+
+    /**
+     * The newest agent request not undone yet, and what undoes it: worked out from the log itself, the page as it was just
+     * before the request's first verb replayed, so nothing besides the log is kept.
+     */
+    override fun lastRestorePoint(): RestorePoint? {
+        // How far each request has been undone: its verbs after its last undo are still to undo (one request can arrange,
+        // undo and arrange again).
+        val undoneTo = log.entries.filter { it.request.startsWith(UNDO) }.groupBy { it.request.removePrefix(UNDO) }.mapValues { (_, e) -> e.maxOf { it.version } }
+        fun left(e: dev.omalauncher.widgets.layout.LoggedVerb) = e.version > (undoneTo[e.request] ?: 0L)
+        val request = log.entries.lastOrNull { it.origin.actor.startsWith("agent") && !it.request.startsWith(UNDO) && left(it) }?.request ?: return null
+        val verbs = log.request(request).filter(::left)
+        val before = replay(log.copy(entries = log.entries.filter { it.version < verbs.first().version }))
+        return RestorePoint(request, restorePoint(before, verbs.map { it.verb }))
+    }
+
+    override fun undone(restored: RestorePoint, verbs: List<CanvasVerb>, actor: String): String? {
+        val why = apply(verbs, UNDO + restored.request, actor)
+        if (page.pages.none { it.id == shown }) shown = DESKTOP_PAGE
+        return why
     }
 
     private fun write(next: VerbLog) {

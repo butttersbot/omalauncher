@@ -44,10 +44,20 @@ enum class ModuleKind(val id: String, val title: String, val blurb: String, val 
 /** A project's name as it may stand in a key: the registry's names (`herd projects`), never a path. */
 private val PROJECT_NAME = Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,79}")
 
-/** What a module's key says: its [kind], and the [project] it shows for one that shows a project. */
-data class ModuleRef(val kind: ModuleKind, val project: String? = null) {
-    val key: String get() = MODULE_PREFIX + kind.id + (project?.let { ":$it" } ?: "")
+/**
+ * What a module's key says: its [kind], the [project] it shows for one that shows a project, and which [copy] it is. A
+ * module can be on more than one page (a page for a project has its own Needs you): the first is plain, the others end
+ * "#2", "#3"; every copy shows the same thing.
+ */
+data class ModuleRef(val kind: ModuleKind, val project: String? = null, val copy: Int = 1) {
+    val key: String get() = MODULE_PREFIX + kind.id + (project?.let { ":$it" } ?: "") + (if (copy > 1) "#$copy" else "")
+
+    /** The first copy's key: what a module is, whichever copy this is. */
+    val base: String get() = copy(copy = 1).key
 }
+
+/** The copies a key may name: "#2" to "#99". */
+private val COPY = Regex("#([2-9]|[1-9][0-9])$")
 
 /** The key of [kind]'s module, for [project] when it shows one. A project's module with no good project name has none. */
 fun moduleKey(kind: ModuleKind, project: String? = null): String? = when {
@@ -62,11 +72,12 @@ fun isModuleTile(key: String) = key.startsWith(MODULE_PREFIX)
 /** The module [key] names; null for any other item, and for a module this build doesn't know, which keeps its place and shows nothing. */
 fun moduleRef(key: String): ModuleRef? {
     if (!isModuleTile(key)) return null
-    val parts = key.removePrefix(MODULE_PREFIX).split(':')
+    val copy = COPY.find(key)?.groupValues?.get(1)?.toInt() ?: 1
+    val parts = key.removePrefix(MODULE_PREFIX).removeSuffix(if (copy > 1) "#$copy" else "").split(':')
     val kind = ModuleKind.of(parts[0]) ?: return null
     return when {
-        kind.perProject -> parts.getOrNull(1)?.takeIf { parts.size == 2 && PROJECT_NAME.matches(it) }?.let { ModuleRef(kind, it) }
-        parts.size == 1 -> ModuleRef(kind)
+        kind.perProject -> parts.getOrNull(1)?.takeIf { parts.size == 2 && PROJECT_NAME.matches(it) }?.let { ModuleRef(kind, it, copy) }
+        parts.size == 1 -> ModuleRef(kind, copy = copy)
         else -> null
     }
 }

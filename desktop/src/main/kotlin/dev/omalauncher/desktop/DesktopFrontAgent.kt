@@ -49,6 +49,12 @@ class DesktopFrontAgent(
     private val notices: Notices,
     /** Where Claude Code is looked for; a test can say there is none. */
     private val places: List<String> = listOf("~/.local/bin/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude", "~/.local/share/mise/shims/claude", "/usr/bin/claude"),
+    /** The canvas's door (slice 6): each request gets a token of its own to arrange the canvas with, gone when it ends. */
+    private val door: CanvasDoor? = null,
+    /** The empty folder the front agent runs in while it can arrange the canvas. */
+    private val emptyFolder: () -> java.io.File = { java.io.File(SomaHome.dir, "front").apply { mkdirs(); listFiles()?.forEach { it.deleteRecursively() } } },
+    /** The `soma` it runs that with, put first on its PATH; with none, it isn't told it can arrange anything. */
+    private val shim: File? = null,
 ) {
     @Volatile var working = false; private set
     @Volatile var answer = ""; private set
@@ -123,7 +129,10 @@ class DesktopFrontAgent(
             waited?.also { t -> log.update(t, save = true) { it.copy(status = TaskStatus.Running) } }
                 ?: ChatHistory.stamp(log.tasks, began).also { log.begin(ChatTask(it, UNDECIDED_AGENT, prompt, chat = chat)) }
         }
-        val command = quickDesktopCommand(desktopFrontPrompt(mac, prompt), resumed, newChat = chat.isNotEmpty())
+        val canvas = door != null && shim != null
+        val command = quickDesktopCommand(desktopFrontPrompt(mac, prompt), resumed, newChat = chat.isNotEmpty(), canvas = canvas)
+        // One request, one restore point: every `soma canvas` it runs for this request carries the request's own token.
+        val token = if (canvas) door!!.mint("front-$asked") else null
         time = asked; working = true; stopping = false; answer = ""; label = ANSWERING
         val holds = frontHolds(chat, prompt)
         thread(name = "soma-front", isDaemon = true) {
@@ -134,7 +143,12 @@ class DesktopFrontAgent(
             var failed = false
             try {
                 val child = ProcessBuilder("/bin/sh", "-c", command).redirectErrorStream(false).apply {
-                    environment()["PATH"] = listOf(File(claude!!).parent, "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin").joinToString(":")
+                    // In a folder of its own with nothing in it: what the agent may run reads only where it runs (s6 Critic:
+                    // read-only commands chained after `soma canvas` read the folder Soma was started in, `/` from launchd).
+                    if (token != null) directory(emptyFolder())
+                    environment()["PATH"] = (listOfNotNull(shim?.parent?.takeIf { token != null }, File(claude!!).parent) + listOf("/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin")).joinToString(":")
+                    environment().remove(CanvasDoor.TOKEN)
+                    token?.let { environment()[CanvasDoor.TOKEN] = it }
                 }.start()
                 process = child
                 if (stopping) end(child)
@@ -191,6 +205,7 @@ class DesktopFrontAgent(
                 if (late.get() || lost || code != 0) failed = true
             } catch (e: Exception) { failed = true }
             finally {
+                token?.let { door?.revoke(it) }
                 var outcome = frontOutcome(handed, stopping, failed, answer.isNotBlank())
                 // With nothing it can be read by, his words go on as a new thread's, as a new chat's do with no front agent.
                 if (outcome == FrontOutcome.FellBack && !place(asked, prompt, chat, route = null)) outcome = FrontOutcome.Stopped

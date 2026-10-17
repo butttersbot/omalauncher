@@ -18,6 +18,9 @@ import org.json.JSONObject
 /** The verbs' schema. A verb from a newer schema, or of a kind this build doesn't know, is kept and never applied. */
 const val VERB_SCHEMA = 1
 
+/** In a page.make's `after`: the new page goes first, before every other (an undone removal of the first page). */
+const val PAGE_START = "^start"
+
 /** Who a verb is from: the [device] it was made on and the [actor] there ("hand", "launcher", "agent:<thread>", "grok"). */
 data class VerbOrigin(val device: String, val actor: String)
 
@@ -68,7 +71,7 @@ fun applyVerb(notebook: Notebook, verb: CanvasVerb): Applied {
     return when (verb) {
         is CanvasVerb.PageMake -> {
             if (page(verb.id) != null) return no("a page with that id is already there")
-            val at = verb.after?.let { after -> notebook.pages.indexOfFirst { it.id == after }.takeIf { it >= 0 }?.plus(1) ?: return no("the page it goes after is gone") } ?: notebook.pages.size
+            val at = if (verb.after == PAGE_START) 0 else verb.after?.let { after -> notebook.pages.indexOfFirst { it.id == after }.takeIf { it >= 0 }?.plus(1) ?: return no("the page it goes after is gone") } ?: notebook.pages.size
             Applied(notebook.copy(pages = notebook.pages.toMutableList().apply { add(at, NotebookPage(verb.id, verb.name)) }), true)
         }
         is CanvasVerb.PageRename -> page(verb.id)?.let { Applied(notebook.copy(pages = notebook.pages.map { p -> if (p.id == verb.id) p.copy(name = verb.name) else p }), true) } ?: no("the page is gone")

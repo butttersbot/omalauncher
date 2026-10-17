@@ -367,6 +367,17 @@ class PhoneService : AccessibilityService() {
         // An empty page has nothing to move: its still goes with it, as when it is deleted in the overview.
         override fun delete(page: String) = runtime.widgets.deletePage(page, move = true)?.also { runtime.pageStills.drop(page) } != null
     }
+    /** Home's modules for the canvas command, changed through the notebook as the overview and a drag change them. */
+    private fun canvasPad(): dev.omalauncher.canvas.CanvasPad {
+        val runtime = (application as dev.omalauncher.App).runtime
+        return dev.omalauncher.widgets.FoldCanvasPad(
+            runtime.widgets.notebook,
+            addPage = { runtime.widgets.addPage() },
+            // Only a page of modules comes here: they go with it, and its still too, as when it is deleted in the overview.
+            removePage = { page -> runtime.widgets.deletePage(page, move = false)?.also { runtime.pageStills.drop(page) } != null },
+            points = dev.omalauncher.widgets.foldRestorePoints(this),
+        )
+    }
     private fun lockStarPad() = object : LockStarPad {
         override val names get() = dev.omalauncher.theme.LockStarShare.names(this@PhoneService)
         override fun capture(name: String) = dev.omalauncher.theme.LockStarShare.capture(this@PhoneService, name)
@@ -401,6 +412,19 @@ class PhoneService : AccessibilityService() {
             if (route == PhoneRequests.Route.PageEdits) { PhonePageEdits.reply(input, notePad(), pagePad(), reply); return }
             // The look home is drawn in, told or picked, behind the same gates.
             if (route == PhoneRequests.Route.Looks) { reply(PhoneLooks.reply(input, lookPad())); return }
+            // Home's modules arranged as he asked, behind the same gates; one request of his is one restore point.
+            if (route == PhoneRequests.Route.Canvas) {
+                // The quick lane says it is the quick lane; anyone else working is a builder, so a builder's calls made while
+                // the quick lane answers a question stay its own request.
+                val quick = input.optString("actor") == "quick"
+                val (request, actor) = when {
+                    quick && dev.omalauncher.assist.QuickLane.working -> "quick-${dev.omalauncher.assist.QuickLane.time}" to "agent:quick"
+                    dev.omalauncher.assist.AgentTasks.working -> "task-${dev.omalauncher.assist.AgentTasks.startedAt}" to "agent:builder"
+                    dev.omalauncher.assist.QuickLane.working -> "quick-${dev.omalauncher.assist.QuickLane.time}" to "agent:quick"
+                    else -> "phone-${System.currentTimeMillis()}" to "agent:phone"
+                }
+                reply(PhoneCanvas.reply(input, canvasPad(), request, actor)); changed(); return
+            }
             // LockStar's layout, kept or handed back: its provider is slow and may refuse, so off the main thread.
             if (route == PhoneRequests.Route.LockStar) {
                 kotlin.concurrent.thread(name = "lockstar") {

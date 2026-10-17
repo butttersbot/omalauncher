@@ -39,6 +39,8 @@ import kotlin.system.exitProcess
  * runs. Closing the window hides it; the tray's Quit ends it. Escape is Back: it closes a menu first, then hides.
  */
 fun main(args: Array<String>) {
+    // `soma canvas …`: Soma's front agent arranging the running Soma's canvas (slice 6). Says its answer and ends; no window.
+    if (args.firstOrNull() == "canvas") exitProcess(CanvasDoor.client(args.drop(1)))
     if ("--keychain-check" in args) return println(RunnerKeys.check())
     if ("--start-at-login" in args) return println(Login.install())
     if ("--no-start-at-login" in args) return println(Login.remove())
@@ -59,7 +61,9 @@ fun main(args: Array<String>) {
     var opener: ((String) -> Unit)? = null
     var early: String? = link
     fun open(url: String) = opener?.invoke(url) ?: run { early = url }
-    Single.listen { said ->
+    // The front agent's door to the canvas: set once the canvas is read; a call before then is refused.
+    var door: CanvasDoor? = null
+    Single.listen(onCanvas = { line -> door?.handle(line) ?: """{"ok":false,"error":"Soma is still starting. Try again in a moment."}""" }) { said ->
         when {
             said == "toggle" -> shown.value = !shown.value
             said.startsWith("open ") -> open(said.removePrefix("open "))
@@ -77,10 +81,17 @@ fun main(args: Array<String>) {
     val notices = Notices()
     val platform = DesktopThreadsPlatform(notices)
     val engine = MacThreadsEngine(platform)
-    val front = DesktopFrontAgent(engine, platform, notices)
-    val host = DesktopChatHost(platform, engine, front, notices)
     // The window's canvas (slice 5), and its modules' one source: the chat's own host, and the slower feeds on a timer.
     val canvas = DesktopCanvas(SomaHome.canvas, runCatching { InetAddress.getLocalHost().hostName }.getOrDefault("desktop")).also { it.load() }
+    // Its verbs from the front agent (slice 6), done on the event thread, where the canvas's state lives.
+    // Waited on for a while, never for ever: the port's one listener isn't held by a window that has stopped answering.
+    door = CanvasDoor { work ->
+        val answer = java.util.concurrent.CompletableFuture<org.json.JSONObject>()
+        javax.swing.SwingUtilities.invokeLater { answer.complete(runCatching { work(canvas) }.getOrElse { org.json.JSONObject().put("ok", false).put("error", "Soma couldn't do that.") }) }
+        runCatching { answer.get(10, java.util.concurrent.TimeUnit.SECONDS) }.getOrElse { org.json.JSONObject().put("ok", false).put("error", "Soma didn't answer in time; nothing may have changed, or it may yet.") }
+    }
+    val front = DesktopFrontAgent(engine, platform, notices, door = door, shim = CanvasDoor.shim(SomaHome.bin))
+    val host = DesktopChatHost(platform, engine, front, notices)
     canvas.setAside?.let { notices.say("Soma", "The canvas's saved layout couldn't be read, so it was set aside as ${it.name} and the starting page was laid out.") }
     val source = chatHostModules(host, cockpitFeeds(), handoffs = engine::handoffs, registry = engine::projects)
     val tick = mutableStateOf(0L)
@@ -93,7 +104,7 @@ fun main(args: Array<String>) {
     }
     thread(name = "soma-feeds", isDaemon = true) {
         while (true) {
-            runCatching { source.refresh(moduleProjects(canvas.items().map { it.key })) }
+            runCatching { source.refresh(moduleProjects(canvas.page.pages.flatMap { p -> p.items.map { it.key } })) }
             javax.swing.SwingUtilities.invokeLater { tick.value = System.currentTimeMillis() }
             Thread.sleep(MODULE_FEEDS_MS)
         }
@@ -201,7 +212,7 @@ private object Single {
         }.getOrDefault(false)
     }
 
-    fun listen(onWord: (String) -> Unit) {
+    fun listen(onCanvas: (String) -> String, onWord: (String) -> Unit) {
         val server = ServerSocket(0, 4, InetAddress.getLoopbackAddress())
         SomaHome.socket.writeText(server.localPort.toString())
         thread(name = "soma-single", isDaemon = true) {
@@ -211,6 +222,11 @@ private object Single {
                         // One that connects and says nothing can't hold the door: it is let go after a second.
                         client.soTimeout = 1000
                         val said = client.getInputStream().bufferedReader().readLine()
+                        // A canvas call is answered with what it did, and goes no further.
+                        if (said?.startsWith(CanvasDoor.WORD) == true) {
+                            client.getOutputStream().write((runCatching { onCanvas(said) }.getOrElse { """{"ok":false,"error":"Soma couldn't do that."}""" } + "\n").toByteArray())
+                            return@use null
+                        }
                         client.getOutputStream().write((HELLO + "\n").toByteArray())
                         said
                     }

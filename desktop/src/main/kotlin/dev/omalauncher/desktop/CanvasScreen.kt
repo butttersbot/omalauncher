@@ -10,7 +10,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -105,8 +108,10 @@ fun CanvasScreen(
             canvas.unkept?.let { why -> Unkept(why, Modifier.align(Alignment.TopEnd)) }
             return@BoxWithConstraints
         }
-        // While arranging, the bar has a strip of its own below the blocks: it never lies over the chat's send or a grip.
-        val strip = if (arranging) BAR else 0.dp
+        // While arranging, and while there is more than one page, the bar has a strip of its own below the blocks: it never
+        // lies over the chat's send or a grip.
+        val pages = canvas.page.pages
+        val strip = if (arranging || pages.size > 1) BAR else 0.dp
         val cellW = (maxWidth - GAP * (DESKTOP_COLUMNS + 1)) / DESKTOP_COLUMNS
         val cellH = (maxHeight - strip - GAP * (DESKTOP_ROWS + 1)) / DESKTOP_ROWS
         fun x(c: Int) = GAP + (cellW + GAP) * c
@@ -130,25 +135,38 @@ fun CanvasScreen(
                     // chat's block still takes a right-click, doing nothing, so one on its header or margins never falls through
                     // to the page beneath it (round-2 Critic).
                     onRightClick = if (ref.kind == ModuleKind.Chat) ({}) else ({ menuOver = item.key; menuOpen = true }),
-                    onMove = { to -> canvas.apply(CanvasVerb.Move(item.key, DESKTOP_PAGE, to)) },
+                    // On the page it is on: the chat's own, or the one shown.
+                    onMove = { to -> canvas.apply(CanvasVerb.Move(item.key, if (ref.kind == ModuleKind.Chat) DESKTOP_PAGE else canvas.shown, to)) },
                     onRemove = { canvas.apply(CanvasVerb.Remove(item.key)) },
                 ) {
                     if (ref.kind == ModuleKind.Chat) {
                         Box(Modifier.fillMaxSize().semantics { contentDescription = "Chat block" }) { chat() }
                     } else {
                         CompositionLocalProvider(LocalModuleFocus provides arranging) {
-                            ModuleView(ref, moduleSize(cell.w, cell.h, DESKTOP_COLUMNS), source, now, Modifier.fillMaxSize(), onOpen = { onTab(it) }, onNew = { onTab(newChatTab(host)) })
+                            // Measured on the columns beside the chat, as a size word is: a block as wide as that is full.
+                            ModuleView(ref, moduleSize(cell.w, cell.h, canvas.rules.span(canvas.page)), source, now, Modifier.fillMaxSize(), onOpen = { onTab(it) }, onNew = { onTab(newChatTab(host)) })
                         }
                     }
                 }
             }
         }
         canvas.unkept?.let { why -> Unkept(why, Modifier.align(Alignment.TopEnd)) }
-        if (arranging) {
+        if (strip > 0.dp) {
             Row(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(BAR).background(Pack.overlay).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                BasicText("arranging · drag a block, its corner resizes it  ", style = Pack.mono(Pack.size.small, Pack.foreground), maxLines = 1)
-                BasicText("[ add ]", Modifier.clickable { menuOver = null; menuOpen = true }, style = Pack.body(Pack.size.small, Pack.accent))
-                BasicText("  [ done ]", Modifier.clickable { arranging = false }, style = Pack.body(Pack.size.small, Pack.accent))
+                // The pages, when there is more than one: the one shown in the accent, a click shows another. However
+                // many there are, they scroll in their own part of the strip and never push the arranging controls off it.
+                if (pages.size > 1) Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) { for (p in pages) {
+                    val on = p.id == canvas.shown || (pages.none { it.id == canvas.shown } && p.id == DESKTOP_PAGE)
+                    BasicText(
+                        p.name, Modifier.clickable { canvas.shown = p.id }.padding(end = 14.dp).semantics { contentDescription = "page ${p.name}" },
+                        style = (if (on) Pack.body(Pack.size.small, Pack.accent) else Pack.body(Pack.size.small, Pack.muted)), maxLines = 1,
+                    )
+                } } else Spacer(Modifier.weight(1f))
+                if (arranging) {
+                    BasicText(if (pages.size > 1) "· arranging  " else "arranging · drag a block, its corner resizes it  ", style = Pack.mono(Pack.size.small, Pack.foreground), maxLines = 1)
+                    BasicText("[ add ]", Modifier.clickable { menuOver = null; menuOpen = true }, style = Pack.body(Pack.size.small, Pack.accent))
+                    BasicText("  [ done ]", Modifier.clickable { arranging = false }, style = Pack.body(Pack.size.small, Pack.accent))
+                }
             }
         }
     }

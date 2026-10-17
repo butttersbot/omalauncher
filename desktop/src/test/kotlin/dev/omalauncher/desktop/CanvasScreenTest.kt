@@ -13,6 +13,8 @@ import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.swipeLeft
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -132,6 +134,66 @@ class CanvasScreenTest {
         // Let go, it lands on the whole cells nearest where it was dragged: 150 dp at this grid's pitch.
         val pitch = (760f - 36f - 8f * (DESKTOP_ROWS + 1)) / DESKTOP_ROWS + 8f
         assertEquals(Math.round(150f / pitch), canvas.items().first { it.key == "module:needs" }.cell!!.y)
+    }
+
+    @Test fun anAgentsPageIsShownBesideTheSameChatAndItsNameSwitchesBack() = runComposeUiTest {
+        val notices = Notices()
+        val platform = DesktopThreadsPlatform(notices) { emptyList() }
+        val engine = MacThreadsEngine(platform)
+        val host = DesktopChatHost(platform, engine, DesktopFrontAgent(engine, platform, notices, places = emptyList()), notices)
+        val canvas = DesktopCanvas(SomaHome.canvas, "test").also { it.load() }
+        val door = CanvasDoor { work -> work(canvas) }
+        mainClock.autoAdvance = false
+        setContent { Box(Modifier.size(1000.dp, 760.dp)) { CanvasScreen(canvas, host, chatHostModules(host), 0L, null, onTab = {}) } }
+        mainClock.advanceTimeBy(600)
+        // One page: no strip.
+        onNodeWithContentDescription("page Soma").assertDoesNotExist()
+        onNode(hasSetTextAction()).performTextInput("typed before the page came")
+        val token = door.mint("front-1")
+        door.handle(CanvasDoor.WORD + token + " " + org.json.JSONArray(listOf("page-make", "Watch")))
+        door.handle(CanvasDoor.WORD + token + " " + org.json.JSONArray(listOf("place", "pocket", "card", "--page", "Watch")))
+        mainClock.advanceTimeBy(600)
+        // The new page is shown, with its block and the same chat, draft and all; the first page's modules aren't.
+        onNodeWithContentDescription("Pocket module").assertExists()
+        onNodeWithContentDescription("Threads module").assertDoesNotExist()
+        onNode(hasText("typed before the page came", substring = true)).assertExists()
+        onNodeWithContentDescription("page Soma").performClick()
+        mainClock.advanceTimeBy(600)
+        onNodeWithContentDescription("Threads module").assertExists()
+        onNodeWithContentDescription("Pocket module").assertDoesNotExist()
+        onNode(hasText("typed before the page came", substring = true)).assertExists()
+    }
+
+    @Test fun manyLongPagesScrollInTheStripAndTheArrangingControlsStay() = runComposeUiTest {
+        val notices = Notices()
+        val platform = DesktopThreadsPlatform(notices) { emptyList() }
+        val engine = MacThreadsEngine(platform)
+        val host = DesktopChatHost(platform, engine, DesktopFrontAgent(engine, platform, notices, places = emptyList()), notices)
+        val canvas = DesktopCanvas(SomaHome.canvas, "test").also { it.load() }
+        val door = CanvasDoor { work -> work(canvas) }
+        val token = door.mint("front-1")
+        for (i in 1..5) door.handle(CanvasDoor.WORD + token + " " + org.json.JSONArray(listOf("page-make", "A page with a very long name, number $i")))
+        mainClock.autoAdvance = false
+        setContent { Box(Modifier.size(800.dp, 600.dp)) { CanvasScreen(canvas, host, chatHostModules(host), 0L, null, onTab = {}) } }
+        mainClock.advanceTimeBy(600)
+        onNodeWithContentDescription("Threads module").assertDoesNotExist()
+        onNodeWithContentDescription("page Soma").performClick()
+        mainClock.advanceTimeBy(600)
+        onNodeWithContentDescription("Threads module").performMouseInput { rightClick() }
+        mainClock.advanceTimeBy(300)
+        onNodeWithText("arrange").performClick()
+        mainClock.advanceTimeBy(600)
+        // The last page is reached by scrolling the strip; [ done ] is on screen however many pages there are.
+        onNodeWithText("[ done ]", substring = true).assertIsDisplayed()
+        // Swiped along, as a trackpad would: the last page comes into the strip and takes a click.
+        repeat(3) {
+            onNodeWithContentDescription("page Soma", useUnmergedTree = true).performTouchInput { swipeLeft(startX = right - 2f, endX = left - 600f, durationMillis = 200) }
+            mainClock.advanceTimeBy(400)
+        }
+        onNodeWithContentDescription("page A page with a very long name, number 5").performClick()
+        mainClock.advanceTimeBy(600)
+        assertEquals(canvas.page.pages.last().id, canvas.shown)
+        onNodeWithText("[ done ]", substring = true).assertIsDisplayed()
     }
 
     @Test fun aCanvasThatCantBeKeptStillShowsItsChatAndSaysSo() {

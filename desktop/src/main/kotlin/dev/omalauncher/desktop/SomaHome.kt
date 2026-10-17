@@ -20,6 +20,9 @@ object SomaHome {
     /** The window's canvas: its verb log (DesktopCanvas). */
     val canvas get() = File(dir, "canvas.json")
     val socket get() = File(dir, "soma.port")
+
+    /** Where the `soma` the front agent runs is put (CanvasDoor.shim): first on its PATH. */
+    val bin get() = File(dir, "bin")
     val lock get() = File(dir, "soma.lock")
 
     /**
