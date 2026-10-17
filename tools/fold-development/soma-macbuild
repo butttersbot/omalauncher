@@ -28,8 +28,11 @@ cd "$work"
 
 # The proot that runs his Linux is not in Git: the pinned, checksummed copies (the phone checks them again).
 [ -f app/src/main/jniLibs/arm64-v8a/libproot.so ] || scripts/fetch-proot.sh
-if [ ! -f local.properties ] && [ -z "${ANDROID_HOME:-}" ] && [ -d "$HOME/Library/Android/sdk" ]; then
-  export ANDROID_HOME=$HOME/Library/Android/sdk
+# Android Studio's place, or Homebrew's command-line tools (the Mac Pro's).
+if [ ! -f local.properties ] && [ -z "${ANDROID_HOME:-}" ]; then
+  for sdk in "$HOME/Library/Android/sdk" /opt/homebrew/share/android-commandlinetools; do
+    if [ -d "$sdk" ]; then export ANDROID_HOME=$sdk; break; fi
+  done
 fi
 
 rm -rf app/build/test-results/testDebugUnitTest
