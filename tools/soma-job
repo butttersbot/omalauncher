@@ -27,7 +27,8 @@ PATTERNS = {
     'project': (re.compile(r'[A-Za-z0-9][A-Za-z0-9._/-]{0,120}'), 'a letter or digit, then letters, digits, . _ / - (up to 121), no ".."'),
     'branch': (re.compile(r'[A-Za-z0-9][A-Za-z0-9._/-]{0,120}'), 'a letter or digit, then letters, digits, . _ / - (up to 121), no ".."'),
     'commit': (re.compile(r'[0-9a-f]{7,40}'), '7 to 40 lowercase hex digits'),
-    'tests': (re.compile(r'[A-Za-z0-9.*_$ -]{1,300}'), 'letters, digits, . * _ $ space - (up to 300)'),
+    # Up to ten Gradle test filters, comma-separated; the phone gives each its own quoted --tests (e93d778).
+    'tests': (re.compile(r'[A-Za-z0-9_*][A-Za-z0-9._*]{0,199}(,[A-Za-z0-9_*][A-Za-z0-9._*]{0,199}){0,9}'), 'up to ten filters joined by commas, each a letter, digit, _ or *, then letters, digits, . _ * (up to 200)'),
 }
 NOTE_CHARS = 500
 
@@ -36,8 +37,6 @@ def safe(name, value):
     pattern, says = PATTERNS[name]
     if not pattern.fullmatch(value) or (name in ('project', 'branch') and '..' in value):
         sys.exit('soma-job: --%s %r is not what the phone takes: %s' % (name, value, says))
-    if name == 'tests' and value.lstrip().startswith('-'):
-        sys.exit('soma-job: --tests can\'t start with "-": it names test classes, never Gradle options')
     if name == 'project' and '/' in value:
         sys.exit('soma-job: --project is a folder name on the phone ("omalauncher"), not a path')
     return value

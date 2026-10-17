@@ -13,7 +13,7 @@ object, sent with `tools/soma-job` (or by hand):
 ```json
 {"job": "install" | "screenshot" | "device-test" | "ping", "v": 1,
  "project": "omalauncher", "branch": "cockpit/s6-desktop", "commit": "abc1234",
- "tests": "dev.omalauncher.oma.*", "note": "why, in a line"}
+ "tests": "dev.omalauncher.oma.*,dev.omalauncher.assist.MacSwitchTest", "note": "why, in a line"}
 ```
 
 - `install`: omalauncher only (any other project is declined). The phone trial-merges `branch` (at `commit` if given)
@@ -30,7 +30,7 @@ object, sent with `tools/soma-job` (or by hand):
 `project` is a folder's bare name under `/root/Projects` on the phone (a device-test for one that isn't there is
 declined). The phone holds each value to a pattern and declines a job whose field fails it, naming the field (since 9b0822e;
 before that it emptied the field, and an empty project meant omalauncher). `soma-job` refuses the same before sending: `project` and `branch` `[A-Za-z0-9][A-Za-z0-9._/-]{0,120}` with
-no `..` (and no `/` in a project), `commit` `[0-9a-f]{7,40}`, `tests` `[A-Za-z0-9.*_$ -]{1,300}`; `note` is free text whose
+no `..` (and no `/` in a project), `commit` `[0-9a-f]{7,40}`, `tests` up to ten filters joined by commas, each `[A-Za-z0-9_*][A-Za-z0-9._*]{0,199}`; `note` is free text whose
 control characters become spaces, cut at 500. A missing `v` counts as 1. Mail whose whole
 trimmed text is not such an object is ordinary mail.
 
@@ -51,6 +51,6 @@ Mail back to the sender (`--reply-to` the job's id), with `{"job": …, "state":
 Agent mail is a peer's request and never carries Boss's permission. A job is no different: the install waits for his
 OK in Soma, and the other kinds do only what they name.
 
-In Soma's chat a job shows as "Phone job · KIND · from DEVICE · TITLE". `tests` must reach Gradle as one argument
-(`--tests <value>`), never through a shell, since its pattern allows spaces and `$`; `soma-job` also refuses one that
-starts with `-`.
+In Soma's chat a job shows as "Phone job · KIND · from DEVICE · TITLE". For a device-test the phone renders the
+Gradle command itself (`jobTestCommand`, e93d778), each filter its own single-quoted `--tests`, and the builder runs
+exactly that.
