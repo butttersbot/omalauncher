@@ -1,0 +1,41 @@
+widget "watchlist" {
+  page: 2
+  order: 3
+  size: 3x2
+  minSize: 3x2
+  meta { description: "A few tickers and how they moved since the last close, straight from the web: no Linux, no key, nothing run. Draws the same on the Fold, on Soma desktop and on the car"; version: "1.0"; license: "MIT"; category: "money"; owl: 5 }
+
+  // Straight over HTTP, so it runs on every screen: no shell, no command to approve. One answer per ticker.
+  source aapl = http("https://query1.finance.yahoo.com/v8/finance/chart/AAPL?range=1d&interval=1d") every 5m timeout 8s json
+  source nvda = http("https://query1.finance.yahoo.com/v8/finance/chart/NVDA?range=1d&interval=1d") every 5m timeout 8s json
+  source tsla = http("https://query1.finance.yahoo.com/v8/finance/chart/TSLA?range=1d&interval=1d") every 5m timeout 8s json
+  source btc = http("https://query1.finance.yahoo.com/v8/finance/chart/BTC-USD?range=1d&interval=1d") every 5m timeout 8s json
+
+  // The ticker's own name, so a row says which one it is even while its answer is missing.
+  component Ticker(q, name) {
+    let m = q.chart.result[0].meta
+    let change = m.chartPreviousClose ? (m.regularMarketPrice - m.chartPreviousClose) / m.chartPreviousClose * 100 : null
+    Row {
+      gap: 6
+      align: center
+      Text { text: name; font: mono; bold: true; width: 64; maxLines: 1 }
+      Text { text: m.regularMarketPrice == null ? "…" : fixed(m.regularMarketPrice, 2); font: mono; weight: 1; maxLines: 1 }
+      Text {
+        text: change == null ? "" : "${change >= 0 ? "+" : ""}${fixed(change, 2)}%"
+        font: mono
+        width: 64
+        maxLines: 1
+        color: (change ?? 0) >= 0 ? green : red
+      }
+    }
+  }
+
+  Column {
+    gap: 4
+    Text { text: "watchlist"; style: muted }
+    Ticker { q: aapl; name: "AAPL" }
+    Ticker { q: nvda; name: "NVDA" }
+    Ticker { q: tsla; name: "TSLA" }
+    Ticker { q: btc; name: "BTC-USD" }
+  }
+}

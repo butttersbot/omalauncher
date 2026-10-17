@@ -302,5 +302,7 @@ class Program(
     val animated: Boolean,
     /** Has a Terminal node. */
     val terminal: Boolean = false,
+    /** Every kind of node it draws, its screen's included. */
+    val nodeTypes: Set<String> = emptySet(),
     val nodeCount: Int,
 )

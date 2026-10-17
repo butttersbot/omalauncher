@@ -174,9 +174,9 @@ class TerminalTiles(
 class EmbeddedTerminal internal constructor(
     internal val tiles: TerminalTiles,
     val appId: String,
-    val command: String?,
-    val fontSize: Double?,
-) {
+    override val command: String?,
+    override val fontSize: Double?,
+) : dev.omalauncher.widgets.runtime.WidgetTerminal {
     private val main = Handler(Looper.getMainLooper())
 
     var window by mutableStateOf<XdgToplevel?>(null)
@@ -203,7 +203,7 @@ class EmbeddedTerminal internal constructor(
     }
 
     /** Ends the terminal (the widget was removed or changed); foot closes its shell. */
-    fun close() {
+    override fun close() {
         closed = true
         tiles.forget(this)
         window?.let(tiles::close)

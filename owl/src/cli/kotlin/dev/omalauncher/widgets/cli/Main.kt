@@ -2,6 +2,8 @@ package dev.omalauncher.widgets.cli
 
 import dev.omalauncher.widgets.lang.CompileError
 import dev.omalauncher.widgets.lang.Compiler
+import dev.omalauncher.widgets.lang.OwlHost
+import dev.omalauncher.widgets.lang.hostRefusals
 import dev.omalauncher.widgets.lang.Source
 import dev.omalauncher.widgets.market.Catalog
 import dev.omalauncher.widgets.market.Review
@@ -11,7 +13,8 @@ import kotlin.system.exitProcess
 
 private const val USAGE = """owl: the widget language checker
 
-  owl check <file.owl>...              compile; exit 1 on errors
+  owl check [--host fold|desktop|service] <file.owl>...
+                                       compile; exit 1 on errors, or on a node the host can't draw
   owl review <repo> <path>... [--base <dir>]
                                        marketplace rules for widgets/<author>/<name>/widget.owl,
                                        Markdown on stdout; --base holds the main-branch copies
@@ -38,14 +41,27 @@ private fun usage(): Nothing {
     exitProcess(2)
 }
 
-private fun check(files: List<String>): Int {
+private fun check(args: List<String>): Int {
+    val at = args.indexOf("--host")
+    val host = if (at < 0) null else OwlHost.of(args.getOrNull(at + 1) ?: usage()) ?: usage()
+    val files = if (at < 0) args else args.filterIndexed { i, _ -> i != at && i != at + 1 }
     if (files.isEmpty()) usage()
     var failed = 0
     for (f in files) {
-        val text = File(f).readText()
+        val text = runCatching { File(f).readText() }.getOrElse {
+            failed++
+            println("ERR $f: can't be read (${it.message ?: it.javaClass.simpleName})")
+            continue
+        }
         try {
             val p = Compiler.compile(text)
-            println("ok  $f  (${p.name}, ${p.nodeCount} nodes)")
+            val refused = host?.let { hostRefusals(p, it) }.orEmpty()
+            if (refused.isNotEmpty()) {
+                failed++
+                refused.forEach { println("REFUSED $f: $it") }
+                continue
+            }
+            println("ok  $f  (${p.name}, ${p.nodeCount} nodes)" + (host?.let { " on ${it.id}" } ?: ""))
         } catch (e: CompileError) {
             failed++
             println("ERR $f:" + Source(text).format(e))

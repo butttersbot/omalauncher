@@ -1,14 +1,9 @@
 package dev.omalauncher.widgets.runtime
 
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.util.Log
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.util.concurrent.ConcurrentHashMap
-import dev.omalauncher.ui.decodeSampled
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.MutableState
@@ -21,7 +16,6 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.graphics.toArgb
 import dev.omalauncher.linux.ShellResult
-import dev.omalauncher.ui.EmbeddedTerminal
 import dev.omalauncher.ui.Palette
 import dev.omalauncher.widgets.lang.Budget
 import dev.omalauncher.widgets.lang.Env
@@ -87,8 +81,8 @@ interface Services {
     /** Updates for Android data that changes on its own (battery, media); null means poll [android]. */
     fun androidUpdates(name: String): Flow<Value>? = null
 
-    /** An image Android holds, like album art: `Image { src: m.art }`. */
-    fun androidImage(src: String): Bitmap? = null
+    /** An image Android holds, like album art: `Image { src: m.art }`. The same image for the same art, so nothing redraws. */
+    fun androidImage(src: String): ImageBitmap? = null
 
     /** Runs an action; [done] is called once its effects should be visible, to refresh the widget that ran it. */
     fun act(
@@ -107,7 +101,15 @@ interface Services {
     fun terminal(
         command: String?,
         fontSize: Double?,
-    ): EmbeddedTerminal
+    ): WidgetTerminal
+}
+
+/** A Terminal node's session, as the screen that runs it holds it (the phone's launcher; no other screen has one). */
+interface WidgetTerminal {
+    val command: String?
+    val fontSize: Double?
+
+    fun close()
 }
 
 /**
@@ -368,7 +370,7 @@ class WidgetInstance(
 
     override fun report(message: String) {
         if (reported.add(message) && reported.size < 50) {
-            Log.w("widgets", "${program.name}: $message")
+            widgetLog("${program.name}: $message")
             onError(message)
         }
     }
@@ -384,9 +386,7 @@ class WidgetInstance(
         // Album art changes with every track: Android holds the current one. Only its wrapper is
         // kept, so asking again for the same art gives the same image and redraws nothing.
         if (src.startsWith("media:")) {
-            val art = services.androidImage(src) ?: return null
-            mediaArt?.takeIf { it.first === art }?.let { return it.second }
-            return art.asImageBitmap().also { mediaArt = art to it }
+            return services.androidImage(src)
         }
         if (src !in imageRequests) {
             // Not from inside a draw: that would write state while drawing.
@@ -403,9 +403,6 @@ class WidgetInstance(
         return images[src]
     }
 
-    /** The album art last asked for, and its ImageBitmap; main thread only. */
-    private var mediaArt: Pair<Bitmap, ImageBitmap>? = null
-
     /** When guest image files were last checked for changes, in elapsed milliseconds. */
     private var imagesChecked = 0L
 
@@ -421,16 +418,16 @@ class WidgetInstance(
                     runCatching {
                         if (file == null) {
                             val bytes = (program.globals.firstOrNull { it.name == src.removePrefix("asset:") } as? Global.Asset)?.bytes
-                            bytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
+                            bytes?.let { decodeWidgetImage(it) }
                         } else {
-                            file.takeIf { it.length() < 8 shl 20 }?.let { decodeSampled(it, MAX_IMAGE_SIDE / 2) }
+                            file.takeIf { it.length() < 8 shl 20 }?.let { decodeWidgetImageFile(it, MAX_IMAGE_SIDE / 2) }
                         }
                         // A small PNG can hold a huge flat image; drawing one over Android's limit throws on every frame.
-                    }.getOrNull()?.takeIf { it.byteCount <= MAX_IMAGE_BYTES }.let { Result.success(it) }
+                    }.getOrNull()?.takeIf { it.width.toLong() * it.height * 4 <= MAX_IMAGE_BYTES }.let { Result.success(it) }
                 } ?: return@launch
             val bitmap = decoded.getOrNull()
             if (bitmap == null) report("image '$src' couldn't be loaded")
-            images[src] = bitmap?.asImageBitmap()
+            images[src] = bitmap
         }
     }
 
@@ -665,19 +662,19 @@ class WidgetInstance(
      * Terminal nodes' sessions, by node. They keep running while the tile is
      * off screen, and end with the widget or when their command changes.
      */
-    private val terminals = HashMap<Any, EmbeddedTerminal>()
+    private val terminals = HashMap<Any, WidgetTerminal>()
 
     fun terminal(
         node: Any,
         command: String?,
         fontSize: Double?,
-    ): EmbeddedTerminal {
+    ): WidgetTerminal {
         terminals[node]?.let { if (it.command == command && it.fontSize == fontSize) return it else it.close() }
         return services.terminal(command, fontSize).also { terminals[node] = it }
     }
 
     /** [term] is one of this widget's terminals. */
-    fun owns(term: EmbeddedTerminal?) = term != null && term in terminals.values
+    fun owns(term: WidgetTerminal?) = term != null && term in terminals.values
 
     fun stop() {
         jobs.forEach { it.cancel() }
@@ -764,7 +761,7 @@ class WidgetInstance(
         updates.intValue++
         // Guest image files are checked again (a stat each) after guest commands, which may have
         // rewritten them; after a clock tick or Android data, only every few seconds.
-        val now = android.os.SystemClock.elapsedRealtime()
+        val now = System.nanoTime() / 1_000_000
         if (g.kind == "cmd" || g.kind == "stream" || g.kind == "file" || now - imagesChecked >= IMAGE_RECHECK_MS) {
             imagesChecked = now
             for (src in imageRequests) if (!src.startsWith("asset:")) loadImage(src)
