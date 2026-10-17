@@ -39,6 +39,7 @@ echo = {'user_message_uuid': given['uuid'], 'user_message_uuids': [given['uuid']
 orphan = pathlib.Path('background.running')
 with open('starts.log', 'a') as log:
     log.write(json.dumps({'prompt': prompt, 'resumed': '--resume' in arguments, 'mode': arguments[arguments.index('--permission-mode') + 1],
+                         'deny': json.loads(arguments[arguments.index('--settings') + 1])['permissions']['deny'],
                          'prompt_tool': arguments[arguments.index('--permission-prompt-tool') + 1],
                          'thread_id': os.environ.get('OMA_THREAD_ID')}) + '\n')
 if '--model' in arguments:

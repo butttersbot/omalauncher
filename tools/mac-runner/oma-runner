@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """oma-runner: runs Oma's builders on the Mac Pro for the agent on the Fold. See docs/MAC-RUNNER-SPEC.md.
 
-It listens on the Mac's Tailscale address only and every request must carry the key the phone holds. The Mac keeps
-only the key's SHA-256 in ~/agents/claude-code/oma-runner.token, so an agent that reads that file cannot use it. It does one thing: run a coding agent (Claude Code, Codex or Cursor) in a
+It listens on the Mac's Tailscale address only, and every request must carry a key this runner gave to the very device
+asking: each device Boss pairs has a key of its own, and `tailscale whois` must name that device as the caller, so a key
+copied anywhere else opens nothing. The Mac keeps only each key's SHA-256, in ~/agents/claude-code/oma-runner.keys.json,
+so an agent that reads that file cannot use it. It does one thing: run a coding agent (Claude Code, Codex or Cursor) in a
 named project thread, under a folder Boss allowed, and stream what it says. It is not a shell: there is no endpoint that runs a command. It
 approves nothing itself: every request for approval waits for the phone's answer, however long that takes.
 
@@ -22,14 +24,24 @@ Agent mail for a thread (tailshare's ~/.local/share/tailshare/mail/new/, to.sess
 given to that thread labeled as another agent's, never as the owner's words. Each thread's agent runs with
 OMA_THREAD_ID set to its thread's id, which `tmsg` signs its mail with, so an answer comes back to the thread.
 
-  oma-runner serve | install | start | stop | status | rekey | uninstall
+  oma-runner serve | install | start | stop | status | devices | pair DEVICE | unpair DEVICE | rekey | uninstall
+
+pair gives DEVICE (its Tailscale machine name) a key of its own, sent to it by Taildrop: the phone as mac-runner.json, as
+before, and a computer running Soma as soma-runner-<this machine>.json. unpair takes it away at once. rekey is pair
+for the phone.
 """
-import hashlib, hmac, json, os, pathlib, plistlib, re, secrets, select, shlex, shutil, signal, socket, subprocess, sys, tempfile, threading, time, tomllib, urllib.error, urllib.parse, urllib.request, uuid
+import contextlib, fcntl, hashlib, hmac, json, os, pathlib, plistlib, re, secrets, select, shlex, shutil, signal, socket, subprocess, sys, tempfile, threading, time, tomllib, urllib.error, urllib.parse, urllib.request, uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HOME = pathlib.Path.home()
 PORT = int(os.environ.get('OMA_RUNNER_PORT', 8478))
 TOKEN_FILE = pathlib.Path(os.environ.get('OMA_RUNNER_TOKEN', HOME / 'agents/claude-code/oma-runner.token'))
+# The devices allowed in, each with its key's digest (Devices). The phone's from before is moved in from TOKEN_FILE.
+KEYS_FILE = pathlib.Path(os.environ.get('OMA_RUNNER_KEYS', TOKEN_FILE.with_name('oma-runner.keys.json')))
+# Where a key for this machine's own Soma goes, when the device paired is this machine.
+SOMA_RUNNERS = pathlib.Path(os.environ.get('OMA_RUNNER_SOMA_DIR', HOME / '.config/soma/runners'))
+# A Tailscale machine name, as pair and whois know it.
+DEVICE_NAME = re.compile(r'[a-z0-9][a-z0-9-]{0,62}')
 STATE = pathlib.Path(os.environ.get('OMA_RUNNER_STATE', HOME / 'Library/Application Support/oma-runner'))
 LOGS = pathlib.Path(os.environ.get('OMA_RUNNER_LOGS', HOME / 'Library/Logs/oma-runner'))
 ROOTS = [pathlib.Path(root) for root in os.environ['OMA_RUNNER_ROOTS'].split(':')] if os.environ.get('OMA_RUNNER_ROOTS') else [HOME / 'Projects', HOME / 'ClaudeSync/projects']
@@ -114,8 +126,9 @@ def step(block):
 
 
 def outside_reach():
-    """Paths no agent may read or write: the key and the runner's own records."""
-    return [str(TOKEN_FILE), str(STATE) + '/**']
+    """Paths no agent may read or write: the keys' digests, the keys this machine's own Soma holds, and the runner's own
+    records."""
+    return [str(TOKEN_FILE), str(KEYS_FILE), str(SOMA_RUNNERS) + '/**', str(STATE) + '/**']
 
 
 def mode(meta):
@@ -160,7 +173,7 @@ class Claude:
 
     def command(self):
         meta = self.thread.meta
-        settings = {'disableAllHooks': True, 'permissions': {'deny': ['Read(/' + outside_reach()[0] + ')', 'Read(/' + outside_reach()[1] + ')', 'Edit(/' + outside_reach()[1] + ')']}}
+        settings = {'disableAllHooks': True, 'permissions': {'deny': ['%s(/%s)' % (verb, path) for path in outside_reach() for verb in ('Read', 'Edit')]}}
         return [AGENT, '-p'] + (['--resume', meta['session']] if meta.get('session') else []) + (['--model', meta['model']] if meta.get('model') else []) + [
             '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
             '--permission-mode', mode(meta), '--permission-prompt-tool', 'stdio', '--settings', json.dumps(settings)]
@@ -976,7 +989,6 @@ def stop(thread):
 
 class Runner(BaseHTTPRequestHandler):
     server_version = 'oma-runner'
-    token = ''
 
     def log_message(self, form, *args):
         pass
@@ -984,7 +996,8 @@ class Runner(BaseHTTPRequestHandler):
     def note(self, code):
         """One line per request: when, who, what, and how it was answered. Never the key, never a body."""
         with open(LOGS / 'requests.log', 'a') as record:
-            record.write('%s %s %s %s %d\n' % (time.strftime('%Y-%m-%d %H:%M:%S'), self.client_address[0], self.command, self.path.split('?')[0], code))
+            record.write('%s %s %s %s %d %s\n' % (time.strftime('%Y-%m-%d %H:%M:%S'), self.client_address[0], self.command, self.path.split('?')[0], code,
+                                                   getattr(self, 'device', '') or '-'))
 
     def answer(self, code, body):
         data = json.dumps(body).encode()
@@ -997,7 +1010,11 @@ class Runner(BaseHTTPRequestHandler):
 
     def allowed(self):
         given = self.headers.get('Authorization', '')
-        if given.startswith('Bearer ') and hmac.compare_digest(digest(given[len('Bearer '):].strip()), self.token):
+        key = given[len('Bearer '):].strip() if given.startswith('Bearer ') else ''
+        device = DEVICES.owner_of(key) if key else None
+        # The key must be this very caller's: whois names the device it came from.
+        if device and DEVICES.caller(self.client_address[0]) == device:
+            self.device = device
             return True
         time.sleep(1)
         self.answer(401, {'ok': False, 'error': 'no'})
@@ -1198,9 +1215,116 @@ def read_token():
     return digest(token)
 
 
+class Devices:
+    """Who may use this runner (cockpit/DESIGN.md §2, Boss 2026-10-16): a key per device, kept only as its digest
+    (KEYS_FILE), and a key opens the runner only from the device it was given to, as `tailscale whois` names the
+    caller under Boss's own login. The table is read again whenever it changes, so pair and unpair need no restart.
+    Before there was a table the phone's key was the one key (TOKEN_FILE); it is moved in as the phone's."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.stamp = None
+        self.devices = []
+        self.known = {}
+        self.login = None
+
+    def table(self):
+        with self.lock:
+            if not KEYS_FILE.exists() and TOKEN_FILE.exists():
+                write_devices([{'name': PHONE, 'digest': read_token(), 'added': int(time.time())}])
+            try:
+                found = KEYS_FILE.stat()
+                stamp = (found.st_mtime_ns, found.st_size, found.st_ino)
+            except OSError:
+                return []
+            if stamp != self.stamp:
+                self.devices = read_devices()
+                self.stamp = stamp
+            return list(self.devices)
+
+    def owner_of(self, key):
+        """The device [key] was given to, or None. Every digest is compared in full, so timing says nothing."""
+        given = digest(key)
+        found = None
+        for device in self.table():
+            if hmac.compare_digest(given, device['digest']):
+                found = device['name']
+        return found
+
+    def caller(self, address):
+        """The device at [address] as whois names it, when it is signed in as Boss; None otherwise. Kept a minute."""
+        test = os.environ.get('OMA_RUNNER_WHOIS_FILE') if os.environ.get('OMA_RUNNER_BIND') == '127.0.0.1' else None
+        if test:
+            # A test on the loopback says who is calling; nothing but a loopback runner ever reads it.
+            try:
+                return json.loads(pathlib.Path(test).read_text()).get(address)
+            except (OSError, ValueError):
+                return None
+        with self.lock:
+            hit = self.known.get(address)
+            if hit and time.time() - hit[1] < 60:
+                return hit[0]
+        name = None
+        try:
+            who = json.loads(subprocess.run([TAILSCALE, 'whois', '--json', address], capture_output=True, text=True, timeout=10, env=tailscale_env()).stdout)
+            if (who.get('UserProfile') or {}).get('LoginName') == self.mine():
+                node = who.get('Node') or {}
+                name = (node.get('ComputedName') or (node.get('Name') or '').split('.')[0]).lower() or None
+        except Exception:
+            # Whatever whois or status answers that can't be read (signed out, a peer it doesn't know): nobody.
+            name = None
+        with self.lock:
+            self.known[address] = (name, time.time())
+        return name
+
+    def mine(self):
+        if not self.login:
+            status = json.loads(subprocess.run([TAILSCALE, 'status', '--json'], capture_output=True, text=True, timeout=10, env=tailscale_env()).stdout)
+            self.login = status['User'][str(status['Self']['UserID'])]['LoginName']
+        return self.login
+
+
+DEVICES = Devices()
+
+
+def read_devices():
+    try:
+        devices = json.loads(KEYS_FILE.read_text()).get('devices') or []
+    except (OSError, ValueError):
+        return []
+    return [d for d in devices if isinstance(d, dict) and DEVICE_NAME.fullmatch(str(d.get('name', ''))) and re.fullmatch(r'sha256:[0-9a-f]{64}', str(d.get('digest', '')))]
+
+
+def write_devices(devices):
+    """The table, replaced whole: written beside it under a name of its own and moved over it, mode 600, digests only."""
+    KEYS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    handle, name = tempfile.mkstemp(dir=KEYS_FILE.parent, prefix=KEYS_FILE.name + '.', suffix='.new')
+    try:
+        with os.fdopen(handle, 'w') as record:
+            json.dump({'devices': devices}, record, indent=1)
+        os.chmod(name, 0o600)
+        os.replace(name, KEYS_FILE)
+    except BaseException:
+        pathlib.Path(name).unlink(missing_ok=True)
+        raise
+
+
+@contextlib.contextmanager
+def table_lock():
+    """One pair or unpair at a time on this machine, from reading the table to writing it, so none is lost."""
+    KEYS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(KEYS_FILE.with_name(KEYS_FILE.name + '.lock'), 'a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
+
+
 def serve():
     global closing
-    Runner.token = read_token()
+    if not DEVICES.table():
+        sys.exit('oma-runner: no device is paired (%s); run "oma-runner pair DEVICE" (the phone: "oma-runner install").' % KEYS_FILE)
     LOGS.mkdir(parents=True, exist_ok=True)
     (STATE / 'threads').mkdir(parents=True, exist_ok=True)
     load()
@@ -1259,17 +1383,17 @@ def runner_python():
 
 
 def install():
-    if not TOKEN_FILE.exists():
-        TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
-        TOKEN_FILE.touch(mode=0o600)
+    if not TOKEN_FILE.exists() and not DEVICES.table():
         key = secrets.token_urlsafe(32)
-        TOKEN_FILE.write_text(digest(key) + '\n')
+        write_devices([{'name': PHONE, 'digest': digest(key), 'added': int(time.time())}])
         print('made a new key. Give it to the phone now (url and key in ~/.config/omalauncher/mac-runner.json there); '
               'this Mac keeps only its digest and cannot show it again:\n  ' + key)
         print('A second Mac beside the Mac Pro: instead run  OMA_RUNNER_NAME="MacBook Pro" oma-runner rekey  which sends the '
               'phone its own key by Taildrop without showing it; there, oma drop get and then oma threads add-mac FILE.')
-    TOKEN_FILE.chmod(0o600)
-    read_token()
+    if TOKEN_FILE.exists():
+        TOKEN_FILE.chmod(0o600)
+    if not DEVICES.table():
+        sys.exit('oma-runner: no device is paired; nothing was installed.')
     python = runner_python()  # before anything is replaced, so a Mac without one keeps the runner it has
     INSTALLED.parent.mkdir(parents=True, exist_ok=True)
     if pathlib.Path(__file__).resolve() != INSTALLED.resolve():
@@ -1300,40 +1424,102 @@ def stop_service():
     return launchctl('bootout', 'gui/%d/%s' % (os.getuid(), LABEL)).returncode == 0
 
 
-def rekey():
-    """Replaces the key without it ever being shown or kept on the Mac: the new key goes to the phone once, by Taildrop,
-    as mac-runner.json ({url, key}; the phone agent takes it with `oma drop get` and puts it in
-    ~/.config/omalauncher/mac-runner.json), and only then does the Mac keep its digest. If the phone cannot be sent to,
-    nothing changes and the old key still works. The runner is restarted so only the new key opens it; until the phone
-    has the file it is cut off from the runner. A test's own key file (OMA_RUNNER_TOKEN) leaves the service alone.
-    OMA_RUNNER_NAME names a Mac other than the first (the Mac Pro), such as "MacBook Pro": the file is then
-    mac-runner-macbook-pro.json with that name in it, which the phone sets up beside the first (oma threads add-mac)."""
+def own_name():
+    """This machine's Tailscale name, as other devices know it."""
+    if os.environ.get('OMA_RUNNER_BIND') == '127.0.0.1':
+        return os.environ.get('OMA_RUNNER_SELF', 'this-machine')
+    status = json.loads(subprocess.run([TAILSCALE, 'status', '--json'], capture_output=True, text=True, timeout=10, env=tailscale_env()).stdout)
+    me = status['Self']
+    return (me.get('HostName') if not me.get('DNSName') else me['DNSName'].split('.')[0]).lower()
+
+
+def pair(device):
+    with table_lock():
+        pair_locked(device)
+
+
+def pair_locked(device):
+    """Gives [device] a key of its own, without the key ever being shown or kept here: it goes to the device once, and
+    only then does this machine keep its digest. The phone gets mac-runner.json ({url, key}, or mac-runner-<slug>.json
+    with OMA_RUNNER_NAME, as `oma-runner rekey` always sent it); a computer gets soma-runner-<this machine>.json ({url,
+    key, name, runner}) for its Soma, by Taildrop, or straight into SOMA_RUNNERS when it is this machine. If it cannot be
+    sent, nothing changes and any key the device had still works. Its old key stops working the moment the new one is
+    kept; every other device's goes on."""
+    device = device.strip().lower()
+    if not DEVICE_NAME.fullmatch(device):
+        sys.exit('oma-runner: %r is not a Tailscale machine name.' % device)
+    if device != PHONE and os.environ.get('OMA_RUNNER_PAIR_COMPUTERS') != '1':
+        # A computer would keep the key in a file any agent there can read, until Soma desktop keeps it in the Keychain
+        # (cockpit slice 6). Until then only the phone is paired; tests and that slice say so with OMA_RUNNER_PAIR_COMPUTERS=1.
+        sys.exit('oma-runner: only the phone (%s) can be paired until Soma desktop keeps its keys in the Keychain; nothing changed.' % PHONE)
     address = tailscale_address() if os.environ.get('OMA_RUNNER_BIND') != '127.0.0.1' else '127.0.0.1'
     if address is None:
-        sys.exit('oma-runner: no Tailscale address on this Mac right now; nothing changed.')
+        sys.exit('oma-runner: no Tailscale address on this machine right now; nothing changed.')
     key = secrets.token_urlsafe(32)
-    name = (os.environ.get('OMA_RUNNER_NAME') or '').strip()[:32]
-    slug = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')[:32]
-    with tempfile.TemporaryDirectory() as folder:
-        file = pathlib.Path(folder) / (('mac-runner-%s.json' % slug) if slug else 'mac-runner.json')
-        with os.fdopen(os.open(file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w') as record:
-            json.dump({'url': 'http://%s:%d' % (address, PORT), 'key': key, **({'name': name} if slug else {})}, record)
-        sent = subprocess.run([TAILSCALE, 'file', 'cp', str(file), PHONE + ':'], capture_output=True, text=True, timeout=120, env=tailscale_env())
-    if sent.returncode != 0:
-        sys.exit('oma-runner: could not send the new key to %s, so nothing changed and the old key still works: %s'
-                 % (PHONE, (sent.stderr or sent.stdout).strip()[:300]))
-    TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
-    fresh = TOKEN_FILE.with_name(TOKEN_FILE.name + '.new')
-    fresh.unlink(missing_ok=True)
-    with os.fdopen(os.open(fresh, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w') as record:
-        record.write(digest(key) + '\n')
-    fresh.replace(TOKEN_FILE)
+    url = 'http://%s:%d' % (address, PORT)
+    me = own_name()
+    if device == PHONE:
+        name = (os.environ.get('OMA_RUNNER_NAME') or '').strip()[:32]
+        slug = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')[:32]
+        file_name = ('mac-runner-%s.json' % slug) if slug else 'mac-runner.json'
+        record = {'url': url, 'key': key, **({'name': name} if slug else {})}
+    else:
+        file_name = 'soma-runner-%s.json' % me
+        record = {'url': url, 'key': key, 'name': (os.environ.get('OMA_RUNNER_NAME') or me).strip()[:32], 'runner': me}
+    if device == me:
+        SOMA_RUNNERS.mkdir(parents=True, exist_ok=True)
+        kept = SOMA_RUNNERS / file_name
+        handle, name = tempfile.mkstemp(dir=SOMA_RUNNERS, prefix='.' + file_name + '.')
+        with os.fdopen(handle, 'w') as out:
+            json.dump(record, out)
+        os.chmod(name, 0o600)
+        os.replace(name, kept)
+        where = str(kept)
+    else:
+        with tempfile.TemporaryDirectory() as folder:
+            file = pathlib.Path(folder) / file_name
+            with os.fdopen(os.open(file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w') as out:
+                json.dump(record, out)
+            sent = subprocess.run([TAILSCALE, 'file', 'cp', str(file), device + ':'], capture_output=True, text=True, timeout=120, env=tailscale_env())
+        if sent.returncode != 0:
+            sys.exit('oma-runner: could not send %s a key, so nothing changed: %s' % (device, (sent.stderr or sent.stdout).strip()[:300]))
+        where = '%s as %s' % (device, file_name)
+    devices = [d for d in DEVICES.table() if d['name'] != device] + [{'name': device, 'digest': digest(key), 'added': int(time.time())}]
+    write_devices(devices)
+    if device == PHONE and TOKEN_FILE.exists():
+        # The one key from before stays the phone's, so a runner put back to an older version still opens for it.
+        TOKEN_FILE.write_text(digest(key) + '\n')
     del key
-    print('sent a new key to %s as %s; this Mac keeps only its digest.' % (PHONE, file.name))
-    if 'OMA_RUNNER_TOKEN' not in os.environ:
-        stop_service()
-        start_service()
-        print('the runner restarted: only the new key opens it now.')
+    print('sent a key to %s; this machine keeps only its digest. Other devices keep theirs.' % where)
+
+
+def unpair(device):
+    with table_lock():
+        unpair_locked(device)
+
+
+def unpair_locked(device):
+    device = device.strip().lower()
+    devices = DEVICES.table()
+    if device not in [d['name'] for d in devices]:
+        sys.exit('oma-runner: %s is not paired; nothing changed.' % device)
+    write_devices([d for d in devices if d['name'] != device])
+    if device == PHONE:
+        TOKEN_FILE.unlink(missing_ok=True)
+    print('%s can no longer use this runner.' % device)
+
+
+def list_devices():
+    devices = DEVICES.table()
+    if not devices:
+        return print('no device is paired')
+    for d in devices:
+        print('%-24s paired %s' % (d['name'], time.strftime('%Y-%m-%d %H:%M', time.localtime(d.get('added') or 0))))
+
+
+def rekey():
+    """The phone's key, replaced: pair for the phone (see pair)."""
+    pair(PHONE)
 
 
 def status():
@@ -1365,6 +1551,12 @@ def main():
         status()
     elif command == 'rekey':
         rekey()
+    elif command == 'pair' and len(sys.argv) > 2:
+        pair(sys.argv[2])
+    elif command == 'unpair' and len(sys.argv) > 2:
+        unpair(sys.argv[2])
+    elif command == 'devices':
+        list_devices()
     elif command == 'uninstall':
         stop_service()
         PLIST.unlink(missing_ok=True)
