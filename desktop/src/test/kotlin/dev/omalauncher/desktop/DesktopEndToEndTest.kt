@@ -4,6 +4,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -102,5 +106,81 @@ class DesktopEndToEndTest {
         val shot = onRoot().captureToImage()
         File("build/render").mkdirs()
         javax.imageio.ImageIO.write(shot.toAwtImage(), "png", File("build/render/desktop-e2e.png"))
+    }
+
+    /**
+     * Switch agent, end to end (cockpit/DESIGN.md §4): a chat's Claude thread is moved to Codex from its tab's menu. The
+     * Claude thread is asked for a handoff (the fake agent's "done" is too short to be one, so the record is used), a
+     * Codex thread is made on the same runner and project with it, answers, and the chat lives on the Codex thread.
+     */
+    @Test fun switchAgentMovesAChatsThreadToCodexOnTheSameRunner() = runComposeUiTest {
+        val notices = Notices()
+        val machine = MacMachine("testhost", "Test box", MacRunnerConfig("http://127.0.0.1:$port", key))
+        val platform = DesktopThreadsPlatform(notices) { listOf(machine) }
+        val engine = MacThreadsEngine(platform)
+        val front = DesktopFrontAgent(engine, platform, notices, places = emptyList())
+        val host = DesktopChatHost(platform, engine, front, notices)
+        engine.open()
+        var wanted: String? by androidx.compose.runtime.mutableStateOf<String?>(null)
+        mainClock.autoAdvance = false
+        setContent { OmaChatScreen(host, prefill = null, onPrefilled = {}, wanted = wanted, onTab = { wanted = it.takeIf { tab -> tab != OMA_TAB } }) }
+        fun settle(ms: Long = 1_200) = mainClock.advanceTimeBy(ms)
+        fun waitFor(what: String, done: () -> Boolean) {
+            val deadline = System.currentTimeMillis() + 40_000
+            while (System.currentTimeMillis() < deadline && !done()) { Thread.sleep(250); settle(500) }
+            assertTrue("$what: ${platform.chatLog().tasks.map { "${it.time} ${it.thread} ${it.status} ${it.steps} ${it.result.take(60)}" }}", done())
+        }
+        settle()
+        onNodeWithContentDescription("Show the tabs").performClick(); settle()
+        onNodeWithContentDescription("New chat").performClick(); settle()
+        onNode(androidx.compose.ui.test.hasSetTextAction()).performTextInput("what files are here")
+        settle()
+        onNodeWithText("[ send ]").performClick()
+        waitFor("the Claude thread answered") { platform.chatLog().tasks.any { it.mac && it.status == dev.omalauncher.oma.TaskStatus.Done } }
+        val claude = platform.chatLog().tasks.first { it.mac && it.status == dev.omalauncher.oma.TaskStatus.Done }.thread
+        val chat = platform.book().chats.single()
+        assertEquals(claude, chat.mac)
+        waitFor("the runner said it runs Codex") { "codex" in engine.kindsOn("testhost") && engine.view.threads.any { it.id == claude } }
+        settle()
+        // His long press on the chat's tab, then Switch agent, then Codex.
+        onAllNodes(hasText("New chat") and hasClickAction()).onFirst().performTouchInput { longClick() }
+        settle()
+        onNodeWithText("Switch agent").performClick(); settle()
+        onNodeWithText("Codex").performClick(); settle()
+        // A second switch while the first is on its way is refused, so one switch never makes two threads.
+        engine.switchTo(claude, dev.omalauncher.assist.MacPick("codex"))
+        val second = platform.chatLog().tasks.last()
+        assertEquals(dev.omalauncher.oma.TaskStatus.Failed, second.status)
+        assertTrue(second.result, second.result.startsWith("This thread is already moving to Codex"))
+        // Taken by the Codex thread: the fake Codex then asks to write a file (it does whenever its words say "write"), and waits on him.
+        waitFor("a Codex thread was made and took the handoff") {
+            platform.chatLog().tasks.any { task -> task.status != dev.omalauncher.oma.TaskStatus.Queued && !task.fresh && engine.view.threads.any { it.id == task.thread && it.kind == "codex" } }
+        }
+        settle(2_000)
+        assertEquals("exactly one Codex thread", 1, engine.view.threads.count { it.kind == "codex" })
+        val codex = engine.view.threads.first { it.kind == "codex" }
+        val seed = platform.chatLog().tasks.first { it.thread == codex.id }
+        assertTrue("same runner and project", codex.id.startsWith("testhost/") && codex.project == engine.view.threads.first { it.id == claude }.project)
+        assertTrue("the seed says whom it takes over from: ${seed.prompt.take(200)}", seed.prompt.startsWith("You're taking over this thread from Claude"))
+        assertTrue("the record went with it", seed.prompt.contains("what files are here"))
+        // The chat lives on the Codex thread now; the Claude thread's entry says where it went; Codex is the default for ~/Projects.
+        assertEquals(codex.id, platform.book().chat(chat.id)!!.mac)
+        val asked = platform.chatLog().tasks.single { it.thread == claude && it.steps.any { step -> step.startsWith("moved to ") } }
+        assertEquals("his switch is in the chat where he asked", chat.id, asked.chat)
+        assertEquals("Switch to Codex", asked.prompt)
+        // Kept under the thread's project (this runner's home is a temp folder, so it doesn't fold to ~/Projects as a real one does).
+        assertEquals("codex", dev.omalauncher.assist.macDefaultsFrom(platform.prefString(dev.omalauncher.assist.MAC_DEFAULTS_PREF))[dev.omalauncher.assist.macProjectKey(codex.project)]?.kind)
+        // A switch whose new thread can't be made (this runner has no Grok) says so, moves nothing and changes no default.
+        engine.switchTo(codex.id, dev.omalauncher.assist.MacPick("grok"))
+        val toGrok = platform.chatLog().tasks.last { it.prompt == "Switch to Grok" }
+        waitFor("the Grok switch said why it couldn't move") { platform.chatLog().tasks.first { it.time == toGrok.time }.steps.any { it.startsWith("couldn't move: ") } }
+        assertTrue("never said it moved", platform.chatLog().tasks.first { it.time == toGrok.time }.steps.none { it.startsWith("moved to ") })
+        assertEquals(codex.id, platform.book().chat(chat.id)!!.mac)
+        assertEquals("codex", dev.omalauncher.assist.macDefaultsFrom(platform.prefString(dev.omalauncher.assist.MAC_DEFAULTS_PREF))[dev.omalauncher.assist.macProjectKey(codex.project)]?.kind)
+        settle()
+        println("E2E switch: $claude -> ${codex.id} (${codex.kind}), seed ${seed.status}: ${seed.result.trim().take(80)}")
+        val shot = onRoot().captureToImage()
+        File("build/render").mkdirs()
+        javax.imageio.ImageIO.write(shot.toAwtImage(), "png", File("build/render/desktop-e2e-switch.png"))
     }
 }

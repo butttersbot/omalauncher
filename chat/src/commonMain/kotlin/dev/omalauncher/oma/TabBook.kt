@@ -50,6 +50,8 @@ data class NewChat(
     val host: String? = null,
     /** The agent he picked for its thread ("claude", "codex", "grok"…); empty leaves it to [macChatKind]. */
     val agent: String = "",
+    /** The model he picked for that agent, as the runner takes it; empty is the agent's own default ([dev.omalauncher.assist.macModels]). */
+    val model: String = "",
 ) {
     val key get() = chatKey(id)
     val bound get() = mac.isNotEmpty()
@@ -119,8 +121,9 @@ private fun TabMeta.changed(id: String, change: (NewChat) -> NewChat) = copy(cha
  */
 fun TabMeta.onMac(id: String, mac: String): TabMeta = changed(id) { it.copy(mac = mac) }
 
-/** The computer and agent he picked for chat [id]'s thread; only a chat with no thread yet takes them. */
-fun TabMeta.chose(id: String, host: String, agent: String): TabMeta = changed(id) { if (it.bound) it else it.copy(host = host, agent = agent) }
+/** The computer, agent and model he picked for chat [id]'s thread; only a chat with no thread yet takes them. */
+fun TabMeta.chose(id: String, host: String, agent: String, model: String = ""): TabMeta =
+    changed(id) { if (it.bound) it else it.copy(host = host, agent = agent, model = model.takeIf { m -> dev.omalauncher.assist.macModelOk(m) }.orEmpty()) }
 
 /** The front agent's session for chat [id], which its next message there continues. */
 fun TabMeta.heard(id: String, session: String?): TabMeta = changed(id) { it.copy(front = session.orEmpty()) }
@@ -177,6 +180,7 @@ fun tabMetaText(meta: TabMeta): String = JSONObject().apply {
                 .apply { if (chat.used != 0L) put("used", chat.used) }
                 .apply { chat.host?.let { put("host", it) } }
                 .apply { if (chat.agent.isNotEmpty()) put("agent", chat.agent) }
+                .apply { if (chat.model.isNotEmpty()) put("model", chat.model) }
         }))
     }
 }.toString()
@@ -195,7 +199,7 @@ fun tabMetaFrom(text: String?): TabMeta {
     val chats = saved.optJSONArray("chats")?.let { a ->
         (0 until a.length()).mapNotNull { a.optJSONObject(it) }.mapNotNull { o ->
             val id = o.optString("id").takeIf { it.isNotEmpty() && it.length <= ChatHistory.MAX_CHAT } ?: return@mapNotNull null
-            NewChat(id, o.optLong("made"), o.optString("mac"), o.optString("front"), used = o.optLong("used"), host = if (o.has("host")) o.optString("host") else null, agent = o.optString("agent"))
+            NewChat(id, o.optLong("made"), o.optString("mac"), o.optString("front"), used = o.optLong("used"), host = if (o.has("host")) o.optString("host") else null, agent = o.optString("agent"), model = o.optString("model").takeIf { dev.omalauncher.assist.macModelOk(it) }.orEmpty())
         }
     }.orEmpty().distinctBy { it.id }
     return TabMeta(names, pinned, archived, chats)

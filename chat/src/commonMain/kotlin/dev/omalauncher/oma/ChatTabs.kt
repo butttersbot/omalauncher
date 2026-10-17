@@ -145,6 +145,9 @@ enum class TabAction(val label: String) {
     /** Builder processes no task owns ended ([tabMend]). */
     Clean("Clean up leftovers"),
     Copy("Copy last answer"),
+
+    /** Moves a thread on a computer to another agent or model ([switchThread]), from a page of picks. */
+    Switch("Switch agent"),
     Archive("Archive"),
 
     /** Lists the archived tabs, from which one is brought back. Always the last row. */
@@ -158,7 +161,7 @@ enum class TabAction(val label: String) {
  * tab can be neither renamed, pinned nor archived: it is the stream everything else hangs from. No row deletes a
  * word of history or a thread on the Mac, and none answers an approval.
  */
-fun tabMenu(tab: String, pinned: Boolean, stoppable: Boolean, answered: Boolean, archived: Int, mend: TabMend = TabMend()): List<TabAction> =
+fun tabMenu(tab: String, pinned: Boolean, stoppable: Boolean, answered: Boolean, archived: Int, mend: TabMend = TabMend(), switchable: Boolean = false): List<TabAction> =
     if (tab == OMA_TAB) {
         listOfNotNull(TabAction.Copy.takeIf { answered }, TabAction.Archived.takeIf { archived > 0 })
     } else {
@@ -169,6 +172,7 @@ fun tabMenu(tab: String, pinned: Boolean, stoppable: Boolean, answered: Boolean,
             TabAction.Restart.takeIf { mend.restart != null },
             TabAction.Clean.takeIf { mend.clean },
             TabAction.Copy.takeIf { answered },
+            TabAction.Switch.takeIf { switchable },
             TabAction.Archive,
             TabAction.Archived.takeIf { archived > 0 },
         )
@@ -207,8 +211,11 @@ fun archivedRow(count: Int) = "${TabAction.Archived.label} ($count)"
 /** What stands over the archived tabs' list: short, so it fits the menu's width on one line. */
 fun archivedCaption(count: Int) = archivedRow(count) + " · tap to restore"
 
-/** Where a tab's menu is: its rows, a field to rename the tab in, or the archived tabs. */
-enum class MenuPage { Rows, Rename, Archived }
+/** Where a tab's menu is: its rows, a field to rename the tab in, the archived tabs, or the picks a thread can switch to. */
+enum class MenuPage { Rows, Rename, Archived, Switch }
+
+/** The thread on a computer whose tab [tab] is: its own, or the one a new chat lives on. Null for the Oma tab, a builder's, or a chat with no thread yet. */
+fun switchThread(tab: String, meta: TabMeta): String? = meta.chatOf(tab)?.mac?.takeIf { it.isNotEmpty() } ?: macThreadId(tab)
 
 /**
  * Where Back leaves a tab's menu that shows [page]: from Rename or the archived tabs back to the rows, and from

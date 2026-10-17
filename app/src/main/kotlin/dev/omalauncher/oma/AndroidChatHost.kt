@@ -1,5 +1,8 @@
 package dev.omalauncher.oma
 
+import dev.omalauncher.assist.MacPick
+import dev.omalauncher.assist.macInstalled
+import dev.omalauncher.assist.macModels
 import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -77,7 +80,10 @@ class AndroidChatHost(
 
     override fun macEarlier(threadId: String): MacEarlierRead = MacThreads.earlier(context, threadId)
 
-    override fun hosts(): List<HostChoice> = MacThreads.hosts(context).map { HostChoice(it.id, it.name, it.reachable, MacThreads.kindsOn(it.id)) }
+    override fun hosts(): List<HostChoice> = MacThreads.hosts(context).map { seen ->
+        val agents = MacThreads.kindsOn(seen.id)
+        HostChoice(seen.id, seen.name, seen.reachable, agents, macInstalled(agents).associateWith { macModels(it, MacThreads.view.threads) }, MacThreads.defaultPick(seen.id))
+    }
 
     override fun agentName(): String? = runtime.agents.default?.name
 
@@ -121,6 +127,8 @@ class AndroidChatHost(
     override fun sayToMac(prompt: String, thread: String, name: String, chat: String) = MacThreads.say(context, prompt, thread, name, chat)
 
     override fun stopMac(thread: String, said: (String?) -> Unit) = MacThreads.stop(context, thread, said)
+
+    override fun switchMac(thread: String, to: MacPick) = MacThreads.switchTo(context, thread, to)
 
     override fun tryMacAgain(time: Long) = MacThreads.tryAgain(context, time)
 

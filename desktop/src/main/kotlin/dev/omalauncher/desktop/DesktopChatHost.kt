@@ -1,5 +1,8 @@
 package dev.omalauncher.desktop
 
+import dev.omalauncher.assist.MacPick
+import dev.omalauncher.assist.macInstalled
+import dev.omalauncher.assist.macModels
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -74,7 +77,10 @@ class DesktopChatHost(
 
     override fun macEarlier(threadId: String): MacEarlierRead = engine.earlier(threadId)
 
-    override fun hosts(): List<HostChoice> = engine.hosts().map { HostChoice(it.id, it.name, it.reachable, engine.kindsOn(it.id)) }
+    override fun hosts(): List<HostChoice> = engine.hosts().map { seen ->
+        val agents = engine.kindsOn(seen.id)
+        HostChoice(seen.id, seen.name, seen.reachable, agents, macInstalled(agents).associateWith { macModels(it, engine.view.threads) }, engine.defaultPick(seen.id))
+    }
 
     override fun agentName(): String? = null
 
@@ -118,6 +124,8 @@ class DesktopChatHost(
     override fun sayToMac(prompt: String, thread: String, name: String, chat: String) = engine.say(prompt, thread, name, chat)
 
     override fun stopMac(thread: String, said: (String?) -> Unit) = engine.stop(thread, said)
+
+    override fun switchMac(thread: String, to: MacPick) = engine.switchTo(thread, to)
 
     override fun tryMacAgain(time: Long) = engine.tryAgain(time)
 
