@@ -77,6 +77,8 @@ class AndroidChatHost(
 
     override fun macEarlier(threadId: String): MacEarlierRead = MacThreads.earlier(context, threadId)
 
+    override fun hosts(): List<HostChoice> = MacThreads.hosts(context).map { HostChoice(it.id, it.name, it.reachable, MacThreads.kindsOn(it.id)) }
+
     override fun agentName(): String? = runtime.agents.default?.name
 
     override fun agentBin(): String? = runtime.agents.default?.bin

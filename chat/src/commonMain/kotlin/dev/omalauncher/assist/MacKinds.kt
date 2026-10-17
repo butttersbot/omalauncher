@@ -51,6 +51,15 @@ fun macInstalled(kinds: List<String>): List<String> {
 /** The first agent the Mac has ([installed], as `/health` gave it) that is not known to be at its limit ([limited]); null when every one is. */
 fun macKind(installed: List<String>, limited: Set<String>): String? = macInstalled(installed).firstOrNull { it !in limited }
 
+/**
+ * The agent a new chat's thread runs: the one he picked ([chosen]), always, never another in its place. A computer that
+ * lacks it refuses, and the entry says so with `[ try again ]`; one at its limit hands the turn on with a step saying
+ * why, as any thread's does. With no pick, the first [installed] agent not at its limit ([limited]), as for any new
+ * thread ([macKind]).
+ */
+fun macChatKind(chosen: String, installed: List<String>, limited: Set<String>): String? =
+    if (chosen.isNotBlank()) macKindOf(chosen) else macKind(installed, limited)
+
 /** Whether [event] ends a turn at the agent's limit: the only ending after which the same words are sent anywhere again. */
 fun macLimited(event: MacEvent) = event is MacEvent.Error && event.cause == MAC_LIMIT
 

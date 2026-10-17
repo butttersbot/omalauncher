@@ -14,6 +14,9 @@ val desktopOs: String = run {
     }
 }
 
+// Each desktop test class in a JVM of its own: an off-screen scene and a UI test in one process trip over each other.
+tasks.matching { it.name == "desktopTest" }.configureEach { (this as Test).forkEvery = 1 }
+
 // Soma's chat: the parts the phone app and the Mac app share. Both targets are JVMs, so common code may use the JDK
 // and org.json (Android ships it; the desktop target gets the library).
 kotlin {
@@ -45,6 +48,8 @@ kotlin {
                 implementation(libs.junit)
                 // Skia for this computer, so a test can draw the screens off-screen.
                 implementation("org.jetbrains.compose.desktop:desktop-jvm-$desktopOs:${libs.versions.compose.multiplatform.get()}")
+                // Finding and tapping what a screen shows, in a test.
+                implementation("org.jetbrains.compose.ui:ui-test:${libs.versions.compose.multiplatform.get()}")
             }
         }
     }

@@ -29,6 +29,9 @@ const val MAC_NEW_THREAD = "new-chat"
  */
 const val MAC_CHAT_UNREACHABLE = "Mac unreachable — this chat is for the Mac."
 
+/** What a new chat's first words say when the computer it is for ([name], as he calls it) is out of reach. */
+fun macChatUnreachable(name: String): String = if (name.isBlank() || name == "Mac") MAC_CHAT_UNREACHABLE else "$name is out of reach — this chat is for $name."
+
 /** What becomes of a new chat's first words ([chatPlace]). */
 enum class ChatPlace {
     /** A new thread is made for them on the Mac. */
