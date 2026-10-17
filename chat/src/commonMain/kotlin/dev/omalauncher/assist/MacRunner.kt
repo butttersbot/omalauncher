@@ -74,6 +74,12 @@ object MacRequests {
 
     fun threads() = MacRequest("GET", "/threads")
 
+    /** The project registry the runner serves. */
+    fun projects() = MacRequest("GET", "/projects")
+
+    /** A project's handoff file, top section; [name] is a registry name, never a path. */
+    fun handoff(name: String) = MacRequest("GET", "/projects/${part(name)}/handoff")
+
     fun thread(threadId: String) = MacRequest("GET", "/threads/${part(threadId)}")
 
     /**
@@ -220,6 +226,15 @@ fun parseMacHealth(reply: MacReply?): MacAnswer<MacHealth> = macAnswer(reply) { 
 }
 
 /** `GET /threads`. */
+/** `GET /projects`. */
+fun parseMacProjects(reply: MacReply?): MacAnswer<List<RegisteredProject>> = macAnswer(reply) { json -> if (json.has("projects")) registryFrom(json) else null }
+
+/** `GET /projects/NAME/handoff`. */
+fun parseMacHandoff(reply: MacReply?): MacAnswer<MacHandoff> = macAnswer(reply) { json ->
+    val file = json.macText("file").takeIf { it in HANDOFF_FILES } ?: return@macAnswer null
+    MacHandoff(json.macText("project"), file, json.macWhole("updated") ?: 0L, json.optString("text").take(8000))
+}
+
 fun parseMacThreads(reply: MacReply?): MacAnswer<List<MacThread>> = macAnswer(reply) { json ->
     json.optJSONArray("threads")?.macObjects()?.mapNotNull { macThread(it) }
 }
@@ -333,6 +348,10 @@ class MacRunnerClient(private val config: MacRunnerConfig?, private val machine:
     }
 
     fun thread(threadId: String): MacAnswer<MacThread> = ours(parseMacThread(send(MacRequests.thread(own(threadId)))))
+
+    fun projects(): MacAnswer<List<RegisteredProject>> = parseMacProjects(send(MacRequests.projects()))
+
+    fun handoff(name: String): MacAnswer<MacHandoff> = parseMacHandoff(send(MacRequests.handoff(name)))
 
     fun makeThread(name: String, project: String, kind: String = "", model: String = ""): MacAnswer<MacThread> = ours(parseMacThread(send(MacRequests.makeThread(name, project, kind, model))))
 

@@ -19,6 +19,8 @@ approves nothing itself: every request for approval waits for the phone's answer
   POST /threads/ID/approvals/APPROVAL    {decision: "allow"|"deny", nonce}   answers that one request, once
   POST /threads/ID/stop                  stops the task and drops what was waiting its turn; what was said stays
   POST /files?name=NAME   (the bytes)    a file from the phone, kept in ~/Downloads/From Fold; {path, bytes}
+  GET  /projects                         the project registry (~/ClaudeSync/projects/_projects.json): {name, folders, handoff}
+  GET  /projects/NAME/handoff            that project's HANDOFF.md or CURRENT-STATE.md, top section: {file, updated, text}
 
 Agent mail for a thread (tailshare's ~/.local/share/tailshare/mail/new/, to.session = the thread's id) is taken and
 given to that thread labeled as another agent's, never as the owner's words. Each thread's agent runs with
@@ -30,7 +32,7 @@ pair gives DEVICE (its Tailscale machine name) a key of its own, sent to it by T
 before, and a computer running Soma as soma-runner-<this machine>.json. unpair takes it away at once. rekey is pair
 for the phone.
 """
-import contextlib, fcntl, hashlib, hmac, json, os, pathlib, plistlib, re, secrets, select, shlex, shutil, signal, socket, subprocess, sys, tempfile, threading, time, tomllib, urllib.error, urllib.parse, urllib.request, uuid
+import contextlib, fcntl, hashlib, hmac, json, os, pathlib, plistlib, re, secrets, select, shlex, shutil, signal, socket, stat, subprocess, sys, tempfile, threading, time, tomllib, urllib.error, urllib.parse, urllib.request, uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HOME = pathlib.Path.home()
@@ -46,6 +48,11 @@ SOMA_RUNNERS = pathlib.Path(os.environ.get('OMA_RUNNER_SOMA_DIR', HOME / '.confi
 DEVICE_NAME = re.compile(r'[a-z0-9][a-z0-9-]{0,62}')
 STATE = pathlib.Path(os.environ.get('OMA_RUNNER_STATE', HOME / ('.local/state/oma-runner' if LINUX else 'Library/Application Support/oma-runner')))
 LOGS = pathlib.Path(os.environ.get('OMA_RUNNER_LOGS', HOME / ('.local/state/oma-runner/logs' if LINUX else 'Library/Logs/oma-runner')))
+# The project registry Soma, herd and this runner share (Soma Canvas slice 2). Agents can write it, so nothing here
+# trusts a path from it: a handoff is only ever HANDOFF.md or CURRENT-STATE.md, inside a registered folder under ROOTS.
+PROJECTS_FILE = pathlib.Path(os.environ.get('OMA_RUNNER_PROJECTS') or HOME / 'ClaudeSync/projects/_projects.json')
+HANDOFF_FILES = ('HANDOFF.md', 'CURRENT-STATE.md')
+HANDOFF_BYTES = 64 * 1024
 ROOTS = [pathlib.Path(root) for root in os.environ['OMA_RUNNER_ROOTS'].split(':')] if os.environ.get('OMA_RUNNER_ROOTS') else [HOME / 'Projects', HOME / 'ClaudeSync/projects']
 AGENT = os.environ.get('OMA_RUNNER_AGENT', 'claude')
 CODEX = os.environ.get('OMA_RUNNER_CODEX') or shutil.which('codex') or '/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex'
@@ -667,6 +674,108 @@ def allowed_project(given):
     return None
 
 
+_logged = set()
+
+
+def log(text, once=False):
+    """A line in runner.log (the runner's own output), stamped. [once]: said the first time only, so a phone polling a
+    broken handoff doesn't flood the log."""
+    if once:
+        if text in _logged:
+            return
+        _logged.add(text)
+    print('%s %s' % (time.strftime('%Y-%m-%d %H:%M:%S'), text), flush=True)
+
+
+def registry():
+    """The project registry's entries that can be read: name, folders (as written, ~ allowed, a trailing * a pattern), handoff."""
+    try:
+        data = json.loads(PROJECTS_FILE.read_text())
+    except (OSError, ValueError):
+        return []
+    # The file is agent-writable: any shape that isn't the registry's is an empty registry, never an error.
+    if not isinstance(data, dict) or not isinstance(data.get('projects'), list):
+        return []
+    found, names = [], set()
+    for entry in data['projects']:
+        if isinstance(entry, dict) and isinstance(entry.get('name'), str) and re.fullmatch(r'[a-z0-9][a-z0-9._-]{0,62}', entry['name']) and entry['name'] not in names:
+            names.add(entry['name'])   # one entry per name, the first, as Soma reads it
+            given = entry.get('folders')
+            folders = [f for f in given if isinstance(f, str) and f.strip() and len(f) < 512] if isinstance(given, list) else []
+            handoff = entry.get('handoff')
+            if handoff is not None and handoff not in HANDOFF_FILES:
+                log('registry: %s names handoff %r, which is not HANDOFF.md or CURRENT-STATE.md; refused' % (entry['name'], handoff), once=True)
+                handoff = None
+            found.append({'name': entry['name'], 'folders': folders, 'handoff': handoff})
+    return found
+
+
+def handoff_of(name):
+    """The top section of project NAME's handoff file as (file, updated, text), or an error string. Only the registered
+    file name, only in one of its registered folders that exists here and resolves under an allowed root."""
+    entry = next((e for e in registry() if e['name'] == name), None)
+    if entry is None:
+        return 'no such project'
+    if not entry['handoff']:
+        return 'that project has no handoff file'
+    for folder in entry['folders']:
+        if '*' in folder:
+            continue
+        base = allowed_project(folder)
+        if base is None:
+            continue
+        # Exactly the registered name in that folder (APFS would also answer to handoff.md).
+        try:
+            if entry['handoff'] not in os.listdir(base):
+                continue
+        except OSError:
+            continue
+        path = base / entry['handoff']
+        # One open, one stat, no window between them: never follow a link, never wait on a FIFO, only a plain file
+        # with one name (a hard link could be a private file's second name), never one of the runner's own.
+        try:
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        except OSError:
+            log('handoff: %s for %s could not be opened as a plain file; refused' % (path, name), once=True)
+            continue
+        try:
+            st = os.fstat(fd)
+            if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1 or (st.st_dev, st.st_ino) in own_files():
+                log('handoff: %s for %s is not a plain file of its own; refused' % (path, name), once=True)
+                continue
+            raw = os.read(fd, HANDOFF_BYTES).decode('utf-8', 'replace')
+        except OSError:
+            continue
+        finally:
+            os.close(fd)
+        return entry['handoff'], int(st.st_mtime * 1000), top_section(raw)
+    return 'no handoff file in that project\'s folders on this machine'
+
+
+def own_files():
+    """(device, inode) of the runner's key files, so no name in a project folder can be one of them."""
+    found = set()
+    for path in (TOKEN_FILE, KEYS_FILE):
+        try:
+            st = os.stat(path)
+            found.add((st.st_dev, st.st_ino))
+        except OSError:
+            pass
+    return found
+
+
+def top_section(text):
+    """A handoff's top: everything before its second level-two heading (the first section, with the title above it)."""
+    lines, seen = [], 0
+    for line in text.splitlines():
+        if line.startswith('## '):
+            seen += 1
+            if seen == 2:
+                break
+        lines.append(line)
+    return '\n'.join(lines).strip()[:8000]
+
+
 def make(name, project, kind='claude', model=None, chosen=None):
     with changed:
         entry_id = 't' + secrets.token_hex(4)
@@ -1090,6 +1199,16 @@ class Runner(BaseHTTPRequestHandler):
         if parts == ['threads']:
             with changed:
                 return self.answer(200, {'ok': True, 'threads': [thread.view() for thread in threads.values()]})
+        if parts == ['projects']:
+            return self.answer(200, {'ok': True, 'projects': registry()})
+        if len(parts) == 3 and parts[0] == 'projects' and parts[2] == 'handoff':
+            if not re.fullmatch(r'[a-z0-9][a-z0-9._-]{0,62}', parts[1]):
+                return self.answer(404, {'ok': False, 'error': 'not found'})
+            found = handoff_of(parts[1])
+            if isinstance(found, str):
+                return self.answer(404, {'ok': False, 'error': found})
+            name, updated, text = found
+            return self.answer(200, {'ok': True, 'project': parts[1], 'file': name, 'updated': updated, 'text': text})
         thread = threads.get(parts[1]) if len(parts) in (2, 3) and parts[0] == 'threads' else None
         if thread is None:
             return self.answer(404, {'ok': False, 'error': 'not found'})

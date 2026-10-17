@@ -25,7 +25,8 @@ environment = {**os.environ, 'OMA_RUNNER_PORT': str(port), 'OMA_RUNNER_TOKEN': s
                'OMA_RUNNER_MAIL': str(work / 'mail'), 'OMA_RUNNER_MAIL_EVERY': '0.2',
                # Per-device keys: the table, who whois says is calling (read only by a loopback runner), this machine's name.
                'OMA_RUNNER_KEYS': str(work / 'keys.json'), 'OMA_RUNNER_WHOIS_FILE': str(work / 'whois.json'), 'OMA_RUNNER_PHONE': 'phone',
-               'OMA_RUNNER_SELF': 'testhost', 'OMA_RUNNER_SOMA_DIR': str(work / 'soma-runners'), 'OMA_RUNNER_PAIR_COMPUTERS': '1'}
+               'OMA_RUNNER_SELF': 'testhost', 'OMA_RUNNER_SOMA_DIR': str(work / 'soma-runners'), 'OMA_RUNNER_PAIR_COMPUTERS': '1',
+               'OMA_RUNNER_PROJECTS': str(work / 'projects.json')}
 received = work / 'From Fold'
 (work / 'codex').mkdir()
 (work / 'codex' / 'config.toml').write_text('[mcp_servers.paper]\nurl = "http://127.0.0.1:1/mcp"\n')
@@ -560,6 +561,56 @@ try:
           through.returncode == 0 and 'key' in third and third['key'] not in through.stdout + through.stderr)
     runner = start()
     check('rekey: that key opens the runner after the restart', call('GET', '/health', token=third.get('key', ''))[0] == 200)
+    now = third.get('key', '')   # the key the runner holds after the rekey checks above
+    # The project registry and handoff reads (Soma Canvas slice 2): the registry is agent-writable, so nothing in it is a path
+    # the runner trusts. Only HANDOFF.md or CURRENT-STATE.md, a plain file inside a registered folder under the allowed roots.
+    (project / 'HANDOFF.md').write_text('# Scratch\n\nIntro.\n\n## Where things stand\n\nAll good.\n\n## Next\n\nShip it.\n')
+    (outside / 'HANDOFF.md').write_text('# Outside\n\n## Secret\n\nnope\n')
+    linked = root / 'linked'
+    linked.mkdir()
+    (linked / 'HANDOFF.md').symlink_to(outside / 'HANDOFF.md')
+    (root / 'other').mkdir()
+    (root / 'other' / 'notes.txt').write_text('private')
+    (work / 'projects.json').write_text(json.dumps({'version': 1, 'projects': [
+        {'name': 'scratch', 'folders': [str(project), str(root / 'scratch-*')], 'handoff': 'HANDOFF.md'},
+        {'name': 'outside', 'folders': [str(outside)], 'handoff': 'HANDOFF.md'},
+        {'name': 'linked', 'folders': [str(linked)], 'handoff': 'HANDOFF.md'},
+        {'name': 'redirect', 'folders': [str(root / 'other')], 'handoff': 'notes.txt'},
+        {'name': 'dots', 'folders': [str(root / 'other')], 'handoff': '../scratch/HANDOFF.md'},
+        {'name': 'Bad Name', 'folders': [str(project)], 'handoff': 'HANDOFF.md'},
+    ]}))
+    code, listed = call('GET', '/projects', token=now)
+    check('projects: the registry is listed, a bad name and a handoff that is not HANDOFF.md/CURRENT-STATE.md dropped',
+          code == 200 and [p['name'] for p in listed['projects']] == ['scratch', 'outside', 'linked', 'redirect', 'dots']
+          and [p['handoff'] for p in listed['projects']] == ['HANDOFF.md', 'HANDOFF.md', 'HANDOFF.md', None, None])
+    code, got = call('GET', '/projects/scratch/handoff', token=now)
+    check('handoff: a registered project\'s top section, up to its second level-two heading',
+          code == 200 and got['file'] == 'HANDOFF.md' and got['text'] == '# Scratch\n\nIntro.\n\n## Where things stand\n\nAll good.' and got['updated'] > 0)
+    check('handoff: a folder outside the allowed roots is never read', call('GET', '/projects/outside/handoff', token=now)[0] == 404)
+    code, got = call('GET', '/projects/linked/handoff', token=now)
+    check('handoff: a symlink out of its folder is refused', code == 404 and 'nope' not in json.dumps(got))
+    check('handoff: a registry entry naming another file reads nothing', call('GET', '/projects/redirect/handoff', token=now)[0] == 404 and call('GET', '/projects/dots/handoff', token=now)[0] == 404)
+    check('handoff: unknown or malformed names are 404', all(call('GET', path, token=now)[0] == 404 for path in ('/projects/nope/handoff', '/projects/..%2Fetc/handoff', '/projects/Bad%20Name/handoff')))
+    check('projects: still behind the key', call('GET', '/projects', token='x' * 40)[0] == 401 and call('GET', '/projects/scratch/handoff', token='x' * 40)[0] == 401)
+    (work / 'projects.json').write_text('not json')
+    check('projects: an unreadable registry is an empty one, not an error', call('GET', '/projects', token=now) == (200, {'ok': True, 'projects': []}))
+    for shape in ('[]', 'null', '"x"', '1', '{"projects": 7}', '{"projects": [{"name": "scratch", "folders": 7, "handoff": "HANDOFF.md"}]}'):
+        (work / 'projects.json').write_text(shape)
+        code, got = call('GET', '/projects', token=now)
+        check('projects: a registry shaped %s answers, never drops the connection' % shape, code == 200 and isinstance(got.get('projects'), list) and call('GET', '/projects/scratch/handoff', token=now)[0] == 404)
+    # A FIFO, a hard link and a second registration of one name: refused, and nothing waits.
+    (work / 'projects.json').write_text(json.dumps({'projects': [{'name': 'scratch', 'folders': [str(project)], 'handoff': 'HANDOFF.md'}, {'name': 'scratch', 'folders': [str(outside)], 'handoff': 'HANDOFF.md'}]}))
+    check('projects: one entry per name, the first', [p['folders'] for p in call('GET', '/projects', token=now)[1]['projects']] == [[str(project)]])
+    (project / 'HANDOFF.md').unlink()
+    os.mkfifo(project / 'HANDOFF.md')
+    started = time.time()
+    check('handoff: a FIFO is refused at once', call('GET', '/projects/scratch/handoff', token=now)[0] == 404 and time.time() - started < 2)
+    (project / 'HANDOFF.md').unlink()
+    os.link(outside / 'HANDOFF.md', project / 'HANDOFF.md')
+    check('handoff: a hard link to a file elsewhere is refused', call('GET', '/projects/scratch/handoff', token=now)[0] == 404)
+    (project / 'HANDOFF.md').unlink()
+    (project / 'handoff.md').write_text('# lower case\n')
+    check('handoff: only the exact registered name, not another case of it', call('GET', '/projects/scratch/handoff', token=now)[0] == 404)
     print('\nall %d checks passed' % passed)
 finally:
     runner.kill()
