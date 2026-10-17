@@ -15,6 +15,7 @@ if ! flock -n 9; then
   echo "oma-gradle: another builder's build is running; waiting for it to finish." >&2
   flock 9
 fi
-gradle -I /root/.config/oma-development/fold.init.gradle --no-daemon --console=plain \
+# Oma's own build settings, unless another project names its own (OMA_GRADLE_INIT, e.g. the melonDS mod's).
+gradle -I "${OMA_GRADLE_INIT:-/root/.config/oma-development/fold.init.gradle}" --no-daemon --console=plain \
   -Dorg.gradle.jvmargs='-Xmx2g -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC -Dfile.encoding=UTF-8' \
   -Dorg.gradle.parallel=false --max-workers=2 -Pkotlin.compiler.execution.strategy=in-process "$@"
