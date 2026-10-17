@@ -39,6 +39,18 @@ class PhoneJobsTest {
     }
 
     @Test
+    fun eachTestFilterIsItsOwnQuotedArgument() {
+        val job = phoneJob("""{"job":"device-test","v":1,"project":"omalauncher","tests":"dev.omalauncher.assist.*,PhoneJobsTest.aJob*"}""")!!
+        assertEquals(emptyList<String>(), job.refused)
+        assertTrue(jobTestCommand(job.tests).endsWith(":app:testDebugUnitTest --tests 'dev.omalauncher.assist.*' --tests 'PhoneJobsTest.aJob*'"))
+        assertTrue(jobTestCommand(job.tests) in jobPlaybook(job, mail, BuilderId.A))
+        for (bad in listOf("dev.x.* installDebug", "A\$B", "-x", "a;b", "a'b", "a,,b")) {
+            assertEquals(bad, listOf("tests"), phoneJob("""{"job":"device-test","v":1,"tests":"$bad"}""")!!.refused)
+        }
+        assertTrue(jobTestCommand("").endsWith(":app:testDebugUnitTest"))
+    }
+
+    @Test
     fun anInstallWaitsForBossAndIsLabeledAsAJob() {
         val job = phoneJob("""{"job":"install","v":1,"branch":"b","commit":"abcdef1"}""")!!
         assertEquals("Phone job · install · from macbook-pro · Cockpit", jobLabel(job, mail))

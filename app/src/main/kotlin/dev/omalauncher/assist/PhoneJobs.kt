@@ -32,7 +32,15 @@ data class PhoneJob(
 
 private val JOB_NAME = Regex("[A-Za-z0-9][A-Za-z0-9._/-]{0,120}")
 private val JOB_COMMIT = Regex("[0-9a-f]{7,40}")
-private val JOB_TESTS = Regex("[A-Za-z0-9.*_$ -]{1,300}")
+// Test filters: up to ten Gradle filters joined by commas, each a plain class or method name with dots and *. No
+// spaces, $ or a leading -, so no filter can be taken by the shell or by Gradle as anything but one --tests argument.
+private val JOB_FILTER = "[A-Za-z0-9_*][A-Za-z0-9._*]{0,199}"
+private val JOB_TESTS = Regex("$JOB_FILTER(,$JOB_FILTER){0,9}")
+
+/** The unit-test command a device-test runs: each filter its own single-quoted --tests argument. */
+fun jobTestCommand(tests: String): String =
+    "ANDROID_HOME=/opt/android-sdk /opt/gradle-9.8.0/bin/gradle -I /root/.config/oma-development/fold.init.gradle --no-daemon --console=plain :app:testDebugUnitTest" +
+        tests.split(',').filter { it.isNotEmpty() }.joinToString("") { " --tests '$it'" }
 
 /** The job in [text] when its whole text is one: a JSON object with a known "job" and v 1. Null for ordinary mail. */
 fun phoneJob(text: String): PhoneJob? {
@@ -52,7 +60,7 @@ fun phoneJob(text: String): PhoneJob? {
         branch = field("branch", JOB_NAME),
         commit = field("commit", JOB_COMMIT),
         tests = field("tests", JOB_TESTS),
-        note = (o.opt("note") as? String)?.replace(Regex("[\\p{Cntrl}]+"), " ")?.trim()?.take(500) ?: "",
+        note = (o.opt("note") as? String)?.replace(Regex("[\\p{Cntrl}\\u0080-\\u009F]+"), " ")?.trim()?.take(500) ?: "",
         refused = refused,
     )
 }
@@ -117,7 +125,7 @@ fun jobPlaybook(
                 """
                 Steps (device-test):
                 1. Project ${job.project.ifEmpty { "omalauncher" }}, branch ${job.branch.ifEmpty { "BRANCH" }}${if (job.commit.isNotEmpty()) " at ${job.commit}" else ""}: fetch it into a scratch worktree of its own (git worktree add), never the main checkout.
-                2. Run ${if (job.tests.isNotEmpty()) "the tests named \"${job.tests}\"" else "its full unit suite"} there (gradle :app:testDebugUnitTest${if (job.tests.isNotEmpty()) " --tests '…'" else ""}, with ANDROID_HOME=/opt/android-sdk). Nothing is installed for this job.
+                2. Run exactly this there, as written, adding nothing to it: ${jobTestCommand(job.tests)}${if (job.tests.isEmpty()) " (the full unit suite)" else ""}. Nothing is installed for this job.
                 3. Answer state "done" (or "failed") with the counts and the failures' names, then remove the worktree.
                 """.trimIndent()
             JobKind.Ping -> ""
