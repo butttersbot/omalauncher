@@ -560,3 +560,51 @@ works **only from the device it was given to**.
   and for slice 6).
 - **Not done here:** reinstalling the runners on the Macs, and pairing each Mac's Soma. Both are Boss's call, and the
   second waits for slice 6, as above.
+
+## As built: Grok threads, and runners on Linux (2026-10-16, by the Mac session; Soma cockpit slice 4)
+
+**Grok** (Boss's three agents are Claude Code, Codex and Grok; `kind: "grok"`): Grok Build's CLI over ACP,
+`grok agent --no-leader [--model M] stdio`, driven by the same code as Cursor (session/new or session/load, then
+session/prompt, session/request_permission and session/update). Found by probing the real CLI on MG1 (1.0.60): its
+`initialize` and `session/new` replies have the same shape as Cursor's (`models.currentModelId`, e.g. `grok-4.7`).
+- **Always manual** (Critic, 2026-10-16). Grok's auto mode has no sandbox under it, and in a runner thread it let
+  `rm -f` and an outbound `curl -X POST` run with no card; its own docs say a call its classifier won't allow is
+  *blocked* in a session like this one, never asked about. So `mode()` makes every Grok thread manual, as Cursor's
+  are, and no session asks for `autoMode`. Manual is Grok's default mode: it asks here before edits and shell
+  commands, **except what Grok runs without asking anyone**: its built-in read-only commands (`ls`, `cat`,
+  `git status`…), a bare `mkdir` or `touch`, and what Boss already allowed on that machine. That covers Grok's
+  `[permission] allow` rules and remembered "Always allow" grants (per project), and Claude Code's `permissions.allow`
+  from `~/.claude/settings*.json` and the project's own `.claude/settings*.json`, which Grok reads. Even so, `rm`,
+  `chmod`, `kill` and `git push` ask again under a remembered grant (Grok's dangerous list). Claude threads here inherit those
+  same Claude rules already, so a Grok thread can do no more without a card than a Claude thread can. Grok, like
+  Codex, can read any file this user can.
+- **Its tool calls carry no ACP kind;** the runner names them from the tool in the title (`run_terminal_command` →
+  Bash, `read_file` → Read, `search_replace`/`edit_file` → Edit…), so the phone shows its steps as it shows the others'.
+- **A request turned down ends Grok's turn** with stopReason `cancelled` (seen on the real CLI); the others go on
+  and say so. That's his word, not a failure, so the turn ends as any other does.
+- `--no-leader`: a process of its own each turn, so no other Grok client's shared leader sees a thread's work.
+  The sign-in is Boss's own (`~/.grok`).
+- The CLI is found by `OMA_RUNNER_GROK`, then PATH, then `~/.local/share/mise/shims/grok`, `~/.local/bin/grok` and
+  `/opt/homebrew/bin/grok`. `/health`'s `kinds` lists it when it's there. The phone's fallback order at a limit is
+  now Claude, Codex, Grok, Cursor (`MAC_KINDS`).
+- **On MG1, for real** (a temporary runner on port 18478, a test key for the MacBook): a Grok thread read `notes.md`
+  and answered "The note says hello from MG1." (model `grok-4.7`). Asked to write a file in a manual thread, it
+  stopped at an approval card (Edit, with the path); denied, nothing was written. The Critic's re-check (Grok 1.0.62):
+  a thread asked for in auto came back manual, and `rm -f` stopped at a Bash card. No `grok` process outlives a
+  turn: the runner ends it when the turn is over. The phone's `oma threads new … --kind grok` takes it too.
+
+**Linux.** The runner now runs on the Omarchy boxes too (the Grok CLI is found through mise's shims, since it isn't on a
+non-interactive PATH): `install` there writes a systemd user unit,
+`~/.config/systemd/user/oma-runner.service` (Restart=always, PATH with mise's shims), and enables it. Its
+records and logs go under `~/.local/state/oma-runner`. `start`, `stop`, `status` and `uninstall` use
+`systemctl --user`. Like herd's unit on MG1, it runs while Boss's session is up (no lingering is set). Checked
+on MG1 in a throwaway home with systemctl stubbed: the unit, the calls (stop, daemon-reload, enable --now),
+the table with the phone's digest, and `status`.
+
+**Tests:** fake-grok speaks ACP as Grok does, and turns a refused request into a `cancelled` end. Grok gets the
+same checks as Codex and Cursor (a card, a wrong nonce, deny, allow, resume, a usage limit, stop), plus: always manual
+(auto asked for included), the exact command line, no auto mode on the session, its model passed, its tools named, and
+a refusal not being a failure. 166 checks in all.
+
+**Not done here:** installing the runner on MG1 and the Grok CLI on the Macs (signing in is Boss's click). Both
+are part of the rollout, which is Boss's call.

@@ -9,7 +9,7 @@ lib="$(dirname "$0")/../lib/oma"
 usage() {
   cat <<USAGE
 usage: oma threads [list]
-       oma threads new NAME PROJECT_PATH [--kind claude|codex|cursor]
+       oma threads new NAME PROJECT_PATH [--kind claude|codex|grok|cursor]
        oma keep run NAME [--] COMMAND [ARG...]
        oma keep list | log NAME [LINES] | stop NAME
        oma status

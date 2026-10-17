@@ -18,9 +18,13 @@ import org.json.JSONObject
 const val MAC_CLAUDE = "claude"
 const val MAC_CODEX = "codex"
 const val MAC_CURSOR = "cursor"
+const val MAC_GROK = "grok"
 
-/** The agents a thread on the Mac can run, in the order a request goes from one at its limit to the next. */
-val MAC_KINDS = listOf(MAC_CLAUDE, MAC_CODEX, MAC_CURSOR)
+/**
+ * The agents a thread on the Mac can run, in the order a request goes from one at its limit to the next: Boss's own
+ * three (Claude, Codex, Grok; 2026-10-16), then Cursor.
+ */
+val MAC_KINDS = listOf(MAC_CLAUDE, MAC_CODEX, MAC_GROK, MAC_CURSOR)
 
 /** What the runner's `error` gives as its code when a turn ended at the agent's limit. */
 const val MAC_LIMIT = "limit"
@@ -36,6 +40,7 @@ fun macKindName(kind: String): String = when (val agent = macKindOf(kind)) {
     MAC_CLAUDE -> "Claude"
     MAC_CODEX -> "Codex"
     MAC_CURSOR -> "Cursor"
+    MAC_GROK -> "Grok"
     else -> agent.replaceFirstChar { it.uppercaseChar() }
 }
 

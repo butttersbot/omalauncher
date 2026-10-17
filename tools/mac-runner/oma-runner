@@ -10,7 +10,7 @@ approves nothing itself: every request for approval waits for the phone's answer
 
   GET  /health                           {ok, working, waiting}
   GET  /threads                          every thread: id, name, summary, status, last_worked, tail, pending
-  POST /threads   {name, project, kind, model, mode}   makes one under an allowed root; kind claude (default), codex or cursor;
+  POST /threads   {name, project, kind, model, mode}   makes one under an allowed root; kind claude (default), codex, cursor or grok;
                                          mode auto (default) or manual
   GET  /threads/ID                       one thread
   POST /threads/ID/messages   {text}     the owner's words; {taken: "now"} or {taken: "queued", position}
@@ -34,6 +34,8 @@ import contextlib, fcntl, hashlib, hmac, json, os, pathlib, plistlib, re, secret
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HOME = pathlib.Path.home()
+# The Macs run it under launchd; the Omarchy boxes (Linux, MG1 first) under a systemd user unit.
+LINUX = sys.platform.startswith('linux')
 PORT = int(os.environ.get('OMA_RUNNER_PORT', 8478))
 TOKEN_FILE = pathlib.Path(os.environ.get('OMA_RUNNER_TOKEN', HOME / 'agents/claude-code/oma-runner.token'))
 # The devices allowed in, each with its key's digest (Devices). The phone's from before is moved in from TOKEN_FILE.
@@ -42,13 +44,15 @@ KEYS_FILE = pathlib.Path(os.environ.get('OMA_RUNNER_KEYS', TOKEN_FILE.with_name(
 SOMA_RUNNERS = pathlib.Path(os.environ.get('OMA_RUNNER_SOMA_DIR', HOME / '.config/soma/runners'))
 # A Tailscale machine name, as pair and whois know it.
 DEVICE_NAME = re.compile(r'[a-z0-9][a-z0-9-]{0,62}')
-STATE = pathlib.Path(os.environ.get('OMA_RUNNER_STATE', HOME / 'Library/Application Support/oma-runner'))
-LOGS = pathlib.Path(os.environ.get('OMA_RUNNER_LOGS', HOME / 'Library/Logs/oma-runner'))
+STATE = pathlib.Path(os.environ.get('OMA_RUNNER_STATE', HOME / ('.local/state/oma-runner' if LINUX else 'Library/Application Support/oma-runner')))
+LOGS = pathlib.Path(os.environ.get('OMA_RUNNER_LOGS', HOME / ('.local/state/oma-runner/logs' if LINUX else 'Library/Logs/oma-runner')))
 ROOTS = [pathlib.Path(root) for root in os.environ['OMA_RUNNER_ROOTS'].split(':')] if os.environ.get('OMA_RUNNER_ROOTS') else [HOME / 'Projects', HOME / 'ClaudeSync/projects']
 AGENT = os.environ.get('OMA_RUNNER_AGENT', 'claude')
 CODEX = os.environ.get('OMA_RUNNER_CODEX') or shutil.which('codex') or '/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex'
 CURSOR = os.environ.get('OMA_RUNNER_CURSOR') or shutil.which('cursor-agent') or str(HOME / '.local/bin/cursor-agent')
-KINDS = ('claude', 'codex', 'cursor')
+GROK = os.environ.get('OMA_RUNNER_GROK') or shutil.which('grok') or next(
+    (str(path) for path in (HOME / '.local/share/mise/shims/grok', HOME / '.local/bin/grok', pathlib.Path('/opt/homebrew/bin/grok')) if path.exists()), 'grok')
+KINDS = ('claude', 'codex', 'cursor', 'grok')
 MODES = ('auto', 'manual')
 LABEL = 'dev.omalauncher.runner'
 INSTALLED = HOME / '.local/bin/oma-runner'
@@ -66,6 +70,7 @@ def tailscale_env():
     """The environment the Tailscale CLI is run in: this one, with a TERM, since the app's binary will not run without."""
     return {**os.environ, 'TERM': os.environ.get('TERM') or 'dumb'}
 PLIST = HOME / 'Library/LaunchAgents' / (LABEL + '.plist')
+UNIT = HOME / '.config/systemd/user/oma-runner.service'
 MAX_BODY = 1_000_000
 # Where `oma drop send` puts files from the phone, and the largest it takes. A folder of its own, so nothing the phone
 # sends can land beside or over anything else of Boss's.
@@ -103,7 +108,7 @@ def tailscale_address():
 
 def program(kind):
     """The path of a kind's CLI on this Mac, or None when it is not installed."""
-    given = {'claude': AGENT, 'codex': CODEX, 'cursor': CURSOR}[kind]
+    given = {'claude': AGENT, 'codex': CODEX, 'cursor': CURSOR, 'grok': GROK}[kind]
     found = shutil.which(given) or given
     return found if os.path.isfile(found) and os.access(found, os.X_OK) else None
 
@@ -138,8 +143,10 @@ def mode(meta):
     that runs routine work and still asks about the rest (its only run-everything mode asks about nothing), so its
     threads are always manual. Codex threads are manual unless auto is asked for by name: its sandbox can read any
     file this Mac user can. The key file holds only the key's digest (2026-10-14), but copies of the key itself may
-    still sit in old transcripts until it is replaced with `oma-runner rekey`; then Codex can default to auto."""
-    if meta['kind'] == 'cursor':
+    still sit in old transcripts until it is replaced with `oma-runner rekey`; then Codex can default to auto. Grok
+    threads are always manual: its auto mode has no sandbox under it and, run here, let `rm` and a network POST through
+    with no card (2026-10-16, on MG1), where its own docs say a call it won't allow is blocked rather than asked."""
+    if meta['kind'] in ('cursor', 'grok'):
         return 'manual'
     return meta.get('mode') or ('manual' if meta['kind'] == 'codex' else 'auto')
 
@@ -411,6 +418,10 @@ class Cursor(Talker):
     def begin(self):
         self.request('initialize', {'protocolVersion': 1, 'clientCapabilities': {'fs': {'readTextFile': False, 'writeTextFile': False}, 'terminal': False}})
 
+    def session_params(self):
+        """What session/new and session/load are given beside the session's id."""
+        return {'cwd': self.thread.meta['project'], 'mcpServers': []}
+
     def flush(self):
         if self.buffer.strip():
             self.thread.emit('text', text=self.buffer)
@@ -420,7 +431,7 @@ class Cursor(Talker):
     def answered(self, method, result):
         thread = self.thread
         if method == 'initialize':
-            given = {'cwd': thread.meta['project'], 'mcpServers': []}
+            given = self.session_params()
             session = thread.meta.get('session')
             self.request('session/load', {'sessionId': session, **given}) if session else self.request('session/new', given)
         elif method in ('session/new', 'session/load'):
@@ -475,7 +486,46 @@ class Cursor(Talker):
         return self.reply(entry['request'], {'outcome': {'outcome': 'selected', 'optionId': option}})
 
 
-DRIVERS = {'claude': Claude, 'codex': Codex, 'cursor': Cursor}
+class Grok(Cursor):
+    """Grok Build's CLI over ACP (`grok agent stdio`), one per turn, as Cursor is: the same session, prompt, permission
+    and update messages. Its sign-in is Boss's own (~/.grok). A new process of its own each turn (--no-leader), so no
+    other Grok client's leader sees a thread's work. Always in Grok's default mode ([mode]): it asks here before edits
+    and before shell commands, except what Grok itself runs without asking anyone: its read-only commands, a bare mkdir
+    or touch, and what Boss allowed on this machine (Grok's own config and grants, and Claude Code's allow rules, which
+    Grok reads, as Claude threads here already do)."""
+    # Grok's tool calls carry no ACP kind; their names say which tool they are.
+    TOOLS = {'run_terminal_command': ('execute', 'Bash'), 'read_file': ('read', 'Read'), 'list_dir': ('read', 'Read'), 'grep_search': ('read', 'Read'),
+             'edit_file': ('edit', 'Edit'), 'search_replace': ('edit', 'Edit'), 'write_file': ('edit', 'Edit'), 'web_search': ('fetch', 'WebSearch'), 'web_fetch': ('fetch', 'WebFetch')}
+
+    def command(self):
+        return [GROK, 'agent', '--no-leader'] + (['--model', self.thread.meta['model']] if self.thread.meta.get('model') else []) + ['stdio']
+
+    def environment(self):
+        return clean_environment()
+
+    def told(self, method, params):
+        update = (params or {}).get('update') or {}
+        if update.get('sessionUpdate') in ('tool_call', 'tool_call_update') and not update.get('kind'):
+            name = str(update.get('title') or '').split(':')[0].strip()
+            if name in self.TOOLS:
+                params = {**params, 'update': {**update, 'kind': self.TOOLS[name][0]}}
+        return super().told(method, params)
+
+    def answer(self, entry, allow):
+        if not allow:
+            self.refused = True
+        return super().answer(entry, allow)
+
+    def answered(self, method, result):
+        # Grok ends its turn ("cancelled") when he turns a request down, where the others go on and say so: that is his
+        # word, not a failure, so the turn ends as any other does, with what Grok said before it asked. (Real Grok ends
+        # on the refusal itself; a turn that went on after one and was cancelled for another reason would read the same.)
+        if method == 'session/prompt' and result.get('stopReason') == 'cancelled' and getattr(self, 'refused', False) and not self.thread.stopped:
+            result = {**result, 'stopReason': 'end_turn'}
+        return super().answered(method, result)
+
+
+DRIVERS = {'claude': Claude, 'codex': Codex, 'cursor': Cursor, 'grok': Grok}
 
 
 def clean_environment():
@@ -1387,7 +1437,7 @@ def install():
         key = secrets.token_urlsafe(32)
         write_devices([{'name': PHONE, 'digest': digest(key), 'added': int(time.time())}])
         print('made a new key. Give it to the phone now (url and key in ~/.config/omalauncher/mac-runner.json there); '
-              'this Mac keeps only its digest and cannot show it again:\n  ' + key)
+              'this machine keeps only its digest and cannot show it again:\n  ' + key)
         print('A second Mac beside the Mac Pro: instead run  OMA_RUNNER_NAME="MacBook Pro" oma-runner rekey  which sends the '
               'phone its own key by Taildrop without showing it; there, oma drop get and then oma threads add-mac FILE.')
     if TOKEN_FILE.exists():
@@ -1400,7 +1450,15 @@ def install():
         shutil.copyfile(__file__, INSTALLED)
     INSTALLED.chmod(0o755)
     LOGS.mkdir(parents=True, exist_ok=True)
-    path = ':'.join([str(HOME / '.local/bin'), str(HOME / '.bun/bin'), '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin'])
+    path = ':'.join([str(HOME / '.local/bin'), str(HOME / '.local/share/mise/shims'), str(HOME / '.bun/bin'), '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin'])
+    if LINUX:
+        UNIT.parent.mkdir(parents=True, exist_ok=True)
+        UNIT.write_text('[Unit]\nDescription=oma-runner: coding agents for Soma\n\n[Service]\n'
+                        'ExecStart=%s %s serve\nRestart=always\nRestartSec=5\nWorkingDirectory=%s\nEnvironment=PATH=%s\nEnvironment=HOME=%s\n'
+                        'StandardOutput=append:%s\nStandardError=append:%s\n\n[Install]\nWantedBy=default.target\n'
+                        % (python, INSTALLED, HOME, path, HOME, LOGS / 'runner.log', LOGS / 'runner.log'))
+        stop_service()
+        return start_service()
     PLIST.parent.mkdir(parents=True, exist_ok=True)
     PLIST.write_bytes(plistlib.dumps({
         'Label': LABEL, 'ProgramArguments': [python, str(INSTALLED), 'serve'], 'RunAtLoad': True, 'KeepAlive': True,
@@ -1410,7 +1468,15 @@ def install():
     start_service()
 
 
+def systemctl(*arguments):
+    return subprocess.run(['systemctl', '--user', *arguments], capture_output=True, text=True)
+
+
 def start_service():
+    if LINUX:
+        systemctl('daemon-reload')
+        result = systemctl('enable', '--now', UNIT.name)
+        return print('started' if result.returncode == 0 else 'not started: ' + result.stderr.strip())
     # Right after a bootout launchd can still be unloading the old one, and bootstrap then fails (EIO): try again.
     for attempt in range(10):
         result = launchctl('bootstrap', 'gui/%d' % os.getuid(), str(PLIST))
@@ -1421,6 +1487,10 @@ def start_service():
 
 
 def stop_service():
+    if LINUX:
+        # Stopping a unit that isn't running succeeds too; only one that was running was stopped.
+        running = systemctl('is-active', UNIT.name).stdout.strip() == 'active'
+        return running and systemctl('stop', UNIT.name).returncode == 0
     return launchctl('bootout', 'gui/%d/%s' % (os.getuid(), LABEL)).returncode == 0
 
 
@@ -1523,11 +1593,15 @@ def rekey():
 
 
 def status():
-    loaded = launchctl('print', 'gui/%d/%s' % (os.getuid(), LABEL)).returncode == 0
-    print('launchd: ' + ('loaded (starts at login, restarts if it dies)' if loaded else 'not loaded'))
+    if LINUX:
+        active = systemctl('is-active', UNIT.name).stdout.strip()
+        print('systemd --user: ' + (active or 'not installed') + (' (starts at login, restarts if it dies)' if active == 'active' else ''))
+    else:
+        loaded = launchctl('print', 'gui/%d/%s' % (os.getuid(), LABEL)).returncode == 0
+        print('launchd: ' + ('loaded (starts at login, restarts if it dies)' if loaded else 'not loaded'))
     address = tailscale_address()
     if address is None:
-        return print('no Tailscale address on this Mac right now')
+        return print('no Tailscale address on this machine right now')
     try:
         # Only the phone holds the key, so the answer looked for is its refusal of a request without one.
         urllib.request.urlopen('http://%s:%d/health' % (address, PORT), timeout=3)
@@ -1559,6 +1633,9 @@ def main():
         list_devices()
     elif command == 'uninstall':
         stop_service()
+        if LINUX:
+            systemctl('disable', UNIT.name)
+            UNIT.unlink(missing_ok=True)
         PLIST.unlink(missing_ok=True)
         print('removed from login. The key, the threads and the logs are left where they are.')
     else:

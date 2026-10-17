@@ -20,7 +20,7 @@ free.close()
 base = 'http://127.0.0.1:%d' % port
 environment = {**os.environ, 'OMA_RUNNER_PORT': str(port), 'OMA_RUNNER_TOKEN': str(work / 'token'), 'OMA_RUNNER_STATE': str(work / 'state'),
                'OMA_RUNNER_LOGS': str(work / 'logs'), 'OMA_RUNNER_ROOTS': str(root), 'OMA_RUNNER_AGENT': str(HERE / 'fake-agent'), 'OMA_RUNNER_BIND': '127.0.0.1',
-               'OMA_RUNNER_CODEX': str(HERE / 'fake-codex'), 'OMA_RUNNER_CURSOR': str(HERE / 'fake-cursor'), 'CODEX_HOME': str(work / 'codex'),
+               'OMA_RUNNER_CODEX': str(HERE / 'fake-codex'), 'OMA_RUNNER_CURSOR': str(HERE / 'fake-cursor'), 'OMA_RUNNER_GROK': str(HERE / 'fake-grok'), 'CODEX_HOME': str(work / 'codex'),
                'OMA_RUNNER_FILES': str(work / 'From Fold'), 'OMA_RUNNER_MAX_FILE': str(3 * 1024 * 1024),
                'OMA_RUNNER_MAIL': str(work / 'mail'), 'OMA_RUNNER_MAIL_EVERY': '0.2',
                # Per-device keys: the table, who whois says is calling (read only by a loopback runner), this machine's name.
@@ -162,7 +162,7 @@ try:
     check('unpair: that device is shut out at once, with no restart', gone.returncode == 0 and call('GET', '/health', token=own['key'])[0] == 401)
     calling_as('phone')
     check('unpair leaves every other device in', call('GET', '/health')[0] == 200)
-    check('/health answers, naming the agents the Mac has', call('GET', '/health') == (200, {'ok': True, 'runner': 'oma-runner', 'threads': 0, 'working': 0, 'waiting': 0, 'kinds': ['claude', 'codex', 'cursor'], 'files': True}))
+    check('/health answers, naming the agents the Mac has', call('GET', '/health') == (200, {'ok': True, 'runner': 'oma-runner', 'threads': 0, 'working': 0, 'waiting': 0, 'kinds': ['claude', 'codex', 'cursor', 'grok'], 'files': True}))
     check('a project outside the roots is refused', call('POST', '/threads', {'name': 'x', 'project': str(outside)})[0] == 403)
     check('a path that climbs out of a root is refused', call('POST', '/threads', {'name': 'x', 'project': str(project / '..' / '..' / 'outside')})[0] == 403)
     (root / 'link').symlink_to(outside)
@@ -403,7 +403,7 @@ try:
     events = stream(garbled, until=('error',), limit=15)
     check('a line the runner cannot read ends the turn with an error instead of hanging', events[-1]['type'] == 'error' and events[-1]['code'] == 'runner' and settle(garbled, 'idle', 15))
 
-    for kind, tool in (('codex', 'Edit'), ('cursor', 'Bash')):
+    for kind, tool in (('codex', 'Edit'), ('cursor', 'Bash'), ('grok', 'Edit')):
         (project / 'written.txt').unlink(missing_ok=True)
         code, made = call('POST', '/threads', {'name': kind.title(), 'project': str(project), 'kind': kind})
         other = made['thread']['id']
@@ -411,7 +411,7 @@ try:
         call('POST', '/threads/%s/messages' % other, {'text': 'what files are here'})
         events = stream(other)
         check(kind + ': it answers what files are here', any(event['type'] == 'text' and 'notes.md' in event['text'] for event in events) and events[-1]['type'] == 'result')
-        check(kind + ': the result names its model and kind', events[-1].get('kind') == kind and events[-1].get('model') == {'codex': 'gpt-fake', 'cursor': 'cursor-auto'}[kind])
+        check(kind + ': the result names its model and kind', events[-1].get('kind') == kind and events[-1].get('model') == {'codex': 'gpt-fake', 'cursor': 'cursor-auto', 'grok': 'grok-4.7'}[kind])
         check(kind + ': the owner\'s words reach it unchanged', starts()[-1] == {**starts()[-1], 'kind': kind, 'prompt': 'what files are here'})
         settle(other, 'idle')
         last = call('GET', '/threads/' + other)[1]['thread']['last_event']
@@ -423,6 +423,10 @@ try:
         call('POST', path, {'decision': 'deny', 'nonce': card['nonce']})
         events = stream(other, after=card['id'])
         check(kind + ': deny refuses it', not (project / 'written.txt').exists() and any('Not allowed' in event.get('text', '') for event in events))
+        if kind == 'grok':
+            check('grok: a turn it ends because he said no is not a failure', any(e['type'] == 'result' and not e['failed'] and 'Not allowed' in e['text'] for e in events))
+            whole = call('GET', '/threads/%s/events' % other)[1]['events']
+            check('grok: its tools are named as the others\' are, though its calls carry no ACP kind', any(e['type'] == 'step' and e.get('tool') == 'edit' and e['text'].startswith('Edit') for e in whole))
         check(kind + ': the conversation is continued', starts()[-1]['resumed'])
         settle(other, 'idle')
         last = call('GET', '/threads/' + other)[1]['thread']['last_event']
@@ -456,6 +460,20 @@ try:
     stream(made['thread']['id'])
     check('codex: auto when asked for by name, asking only for more than the sandbox gives', made['thread']['mode'] == 'auto' and starts()[-1]['policy'] == 'on-request'
           and starts()[-1]['sandbox'] == 'workspace-write')
+    code, made = call('POST', '/threads', {'name': 'Grok plain', 'project': str(project), 'kind': 'grok'})
+    check('grok: a thread is manual', code == 200 and made['thread']['mode'] == 'manual')
+    plain = made['thread']['id']
+    call('POST', '/threads/%s/messages' % plain, {'text': 'what files are here'})
+    stream(plain)
+    grok = [entry for entry in starts() if entry.get('kind') == 'grok'][-1]
+    check('grok: it runs as `grok agent --no-leader stdio`, never in Grok\'s auto mode', grok['argv'] == ['agent', '--no-leader', 'stdio'] and grok['auto'] is False)
+    code, made = call('POST', '/threads', {'name': 'Grok auto', 'project': str(project), 'kind': 'grok', 'mode': 'auto', 'model': 'grok-4.7-build-fast'})
+    auto = made['thread']['id']
+    call('POST', '/threads/%s/messages' % auto, {'text': 'what files are here'})
+    stream(auto)
+    grok = [entry for entry in starts() if entry.get('kind') == 'grok'][-1]
+    check('grok: auto asked for is still manual, its session never asks Grok\'s auto mode, and its model is passed', code == 200 and made['thread']['mode'] == 'manual'
+          and grok['auto'] is False and grok['argv'] == ['agent', '--no-leader', '--model', 'grok-4.7-build-fast', 'stdio'])
     code, made = call('POST', '/threads', {'name': 'Cursor auto', 'project': str(project), 'kind': 'cursor', 'mode': 'auto'})
     check('cursor: has no auto mode, so its threads are manual even when auto is asked for', code == 200 and made['thread']['mode'] == 'manual')
     cursor = [entry for entry in starts() if entry.get('kind') == 'cursor'][-1]['permissions']
