@@ -47,7 +47,19 @@ compose.desktop {
             packageName = "Soma"
             packageVersion = "1.0.0"
             description = "Soma: one chat with your agents on every machine"
-            macOS { bundleID = "dev.omalauncher.soma" }
+            macOS {
+                bundleID = "dev.omalauncher.soma"
+                // soma:// links (slice 10) open this app; macOS hands them over as an Apple event (Main.kt).
+                infoPlist {
+                    extraKeysRawXml = """
+                        <key>CFBundleURLTypes</key>
+                        <array><dict>
+                            <key>CFBundleURLName</key><string>dev.omalauncher.soma.link</string>
+                            <key>CFBundleURLSchemes</key><array><string>soma</string></array>
+                        </dict></array>
+                    """
+                }
+            }
         }
     }
 }
