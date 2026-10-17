@@ -171,7 +171,10 @@ class PhoneService : AccessibilityService() {
      */
     private fun root(): AccessibilityNodeInfo {
         if (Build.VERSION.SDK_INT >= 33) clearCache()
-        return rootInActiveWindow ?: error("No readable window. Try again after the screen settles.")
+        // Android keeps some Settings pages from services that aren't accessibility tools (Keyboard, Developer options'
+        // debugging): no window to read and no taps taken, while everywhere else works. Seen on the Fold, 2026-10-16.
+        return rootInActiveWindow ?: error("No readable window. Android hides some Settings pages from phone control and ignores taps " +
+            "there (Keyboard, Developer options' debugging): if one is in front, ask Boss to do that step. Otherwise try again after the screen settles.")
     }
     /** Before Android 13 what is kept can't be thrown away, so each node is asked for again. False: it has gone. */
     private fun current(node: AccessibilityNodeInfo) = Build.VERSION.SDK_INT >= 33 || node.refresh()
