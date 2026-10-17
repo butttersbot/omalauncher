@@ -140,7 +140,7 @@ fun voicePrompt(extra: List<String> = emptyList()): String {
 
 val VOICE_WORDS =
     listOf(
-        "Oma", "Claude", "Codex", "Cursor", "Tailscale", "Taildrop", "Fold", "Mac Pro", "MacBook", "launcher",
+        "Oma", "Claude", "Codex", "Grok", "Cursor", "Tailscale", "Taildrop", "Fold", "Mac Pro", "MacBook", "launcher",
         "widget", "builder", "Whisper", "Arch", "Linux", "GitHub", "repo", "commit", "promote", "Opus", "Haiku",
     )
 

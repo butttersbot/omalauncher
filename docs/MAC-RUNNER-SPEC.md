@@ -503,3 +503,108 @@ same; only the phone and how the key reaches it changed.
   can go the same way. `oma threads macs` lists the Macs; `oma threads new NAME PATH --mac "MacBook Pro"` makes a
   thread on the one named.
 - **Not changed:** `oma drop send` still sends to the first Mac only.
+
+## As built: a key per device (2026-10-16, by the Mac session; Soma cockpit slice 3)
+
+Boss's decision for the cockpit (ClaudeSync `projects/omalauncher/cockpit/DESIGN.md` §2): every device he uses (the
+Fold, each Mac, and the Omarchy boxes only if he adds them) talks to every runner, each with **its own key**. And a key
+works **only from the device it was given to**.
+
+- **The table.** `~/agents/claude-code/oma-runner.keys.json` (`OMA_RUNNER_KEYS`), mode 600:
+  `{devices: [{name, digest: "sha256:…", added}]}`, where `name` is the device's Tailscale machine name. Digests only,
+  as before (OPEN-BUGS #2): an agent that reads the file still can't use it. It's read again whenever it changes, so
+  pair and unpair need no restart.
+- **The check.** A request is let in when its key's digest matches a device in the table **and** `tailscale whois` of
+  the caller's address names that same machine (`Node.ComputedName`), signed in as the runner machine's own Tailscale
+  user (the owner check herd and tailshare-serve use). Each digest is compared in full. whois answers are kept a
+  minute. Anything else gets the same 401 `{"ok": false, "error": "no"}` after a second. The request log now ends with
+  the device's name (or `-`), never a key.
+- **Moving in.** With no table yet, the one key from before (`oma-runner.token`) becomes the phone's
+  (`OMA_RUNNER_PHONE`, `jacks-z-fold8`), so the Fold's keys go on working with nothing changed on the phone. Pairing
+  the phone again keeps `oma-runner.token` in step, so a runner put back to an older version still opens for it.
+- **Commands.**
+  - `oma-runner devices` lists who is paired (never a key).
+  - `oma-runner pair DEVICE` makes DEVICE a new key, sends it there once, and only then keeps its digest; DEVICE's
+    old key stops at that moment, everyone else's goes on. The phone gets `mac-runner.json` (or
+    `mac-runner-<slug>.json` with `OMA_RUNNER_NAME`) exactly as `rekey` always sent it. A computer gets
+    `soma-runner-<runner machine>.json` = `{url, key, name, runner}` for its Soma, by Taildrop, or written straight
+    into `~/.config/soma/runners/` (`OMA_RUNNER_SOMA_DIR`) when DEVICE is the runner's own machine. If it can't be sent,
+    nothing changes.
+  - `oma-runner unpair DEVICE` shuts DEVICE out at once.
+  - `oma-runner rekey` is `pair` for the phone.
+- **Tests** (`test-runner.py`, 146 checks on the loopback): a loopback runner can be told who is calling
+  (`OMA_RUNNER_WHOIS_FILE`, read only when bound to 127.0.0.1) and this machine's name (`OMA_RUNNER_SELF`). Checked:
+  the old key moves in as the phone's, digests only, mode 600; the phone's key from another device, or from a caller
+  whois can't name, is refused; pair gives this machine's Soma its file, and that key opens the runner from its device
+  with no restart but from no other; devices lists names only; a bad name is refused; unpair shuts out at once and
+  leaves the rest.
+- **On the tailnet** (2026-10-16): a runner on the MacBook (port 18478, a test table with one device, `jacks-mac-pro`)
+  answered that key from the Mac Pro (200, logged `jacks-mac-pro`) and refused the same key from the MacBook itself
+  (401) and no key from the Mac Pro (401).
+- **Out of the agents' file tools:** the key file, the table, this machine's own Soma keys
+  (`~/.config/soma/runners/`) and the runner's records are denied to Claude threads' Read and Edit tools (by name,
+  from `outside_reach()`) and to Cursor's reads. That's the tools, not the shell: a command an auto thread runs can
+  still read them. Codex and Grok can read what this user can (their threads are manual unless auto is named).
+- **Locking.** One pair or unpair at a time (a lock beside the table), and every file is written under a temp name of
+  its own and moved into place. Six pairs at once finish cleanly.
+- **whois answers are kept a minute**, a "no" as well as a "yes": a whois hiccup can keep a good device out for up to a
+  minute, and a device that changes owners keeps its "yes" for that minute. On a tailnet of Boss's own machines,
+  that's acceptable. Unpairing is immediate, because the key is checked before whois.
+- **No computer is paired before Soma desktop keeps its keys in the Keychain** (Critic, 2026-10-16). `pair` for a
+  computer leaves the raw key in a file on it (`soma-runner-*.json`), and whois can't tell Soma from any other program
+  on that machine: an agent there (a Codex or Grok thread can read any of this user's files) could take the key, and
+  with it every runner that computer is paired with. Soma desktop (cockpit slice 6) takes a delivered file into the
+  macOS Keychain (on Omarchy, the Secret Service), with access for Soma alone, and deletes the file. Only then do the
+  Macs get paired, after a probe in which a Codex thread tries to read the key. Pairing the phone, as today, is
+  unaffected. `pair` itself refuses any device but the phone until then (`OMA_RUNNER_PAIR_COMPUTERS=1` is for the tests
+  and for slice 6).
+- **Not done here:** reinstalling the runners on the Macs, and pairing each Mac's Soma. Both are Boss's call, and the
+  second waits for slice 6, as above.
+
+## As built: Grok threads, and runners on Linux (2026-10-16, by the Mac session; Soma cockpit slice 4)
+
+**Grok** (Boss's three agents are Claude Code, Codex and Grok; `kind: "grok"`): Grok Build's CLI over ACP,
+`grok agent --no-leader [--model M] stdio`, driven by the same code as Cursor (session/new or session/load, then
+session/prompt, session/request_permission and session/update). Found by probing the real CLI on MG1 (1.0.60): its
+`initialize` and `session/new` replies have the same shape as Cursor's (`models.currentModelId`, e.g. `grok-4.7`).
+- **Always manual** (Critic, 2026-10-16). Grok's auto mode has no sandbox under it, and in a runner thread it let
+  `rm -f` and an outbound `curl -X POST` run with no card; its own docs say a call its classifier won't allow is
+  *blocked* in a session like this one, never asked about. So `mode()` makes every Grok thread manual, as Cursor's
+  are, and no session asks for `autoMode`. Manual is Grok's default mode: it asks here before edits and shell
+  commands, **except what Grok runs without asking anyone**: its built-in read-only commands (`ls`, `cat`,
+  `git status`…), a bare `mkdir` or `touch`, and what Boss already allowed on that machine. That covers Grok's
+  `[permission] allow` rules and remembered "Always allow" grants (per project), and Claude Code's `permissions.allow`
+  from `~/.claude/settings*.json` and the project's own `.claude/settings*.json`, which Grok reads. Even so, `rm`,
+  `chmod`, `kill` and `git push` ask again under a remembered grant (Grok's dangerous list). Claude threads here inherit those
+  same Claude rules already, so a Grok thread can do no more without a card than a Claude thread can. Grok, like
+  Codex, can read any file this user can.
+- **Its tool calls carry no ACP kind;** the runner names them from the tool in the title (`run_terminal_command` →
+  Bash, `read_file` → Read, `search_replace`/`edit_file` → Edit…), so the phone shows its steps as it shows the others'.
+- **A request turned down ends Grok's turn** with stopReason `cancelled` (seen on the real CLI); the others go on
+  and say so. That's his word, not a failure, so the turn ends as any other does.
+- `--no-leader`: a process of its own each turn, so no other Grok client's shared leader sees a thread's work.
+  The sign-in is Boss's own (`~/.grok`).
+- The CLI is found by `OMA_RUNNER_GROK`, then PATH, then `~/.local/share/mise/shims/grok`, `~/.local/bin/grok` and
+  `/opt/homebrew/bin/grok`. `/health`'s `kinds` lists it when it's there. The phone's fallback order at a limit is
+  now Claude, Codex, Grok, Cursor (`MAC_KINDS`).
+- **On MG1, for real** (a temporary runner on port 18478, a test key for the MacBook): a Grok thread read `notes.md`
+  and answered "The note says hello from MG1." (model `grok-4.7`). Asked to write a file in a manual thread, it
+  stopped at an approval card (Edit, with the path); denied, nothing was written. The Critic's re-check (Grok 1.0.62):
+  a thread asked for in auto came back manual, and `rm -f` stopped at a Bash card. No `grok` process outlives a
+  turn: the runner ends it when the turn is over. The phone's `oma threads new … --kind grok` takes it too.
+
+**Linux.** The runner now runs on the Omarchy boxes too (the Grok CLI is found through mise's shims, since it isn't on a
+non-interactive PATH): `install` there writes a systemd user unit,
+`~/.config/systemd/user/oma-runner.service` (Restart=always, PATH with mise's shims), and enables it. Its
+records and logs go under `~/.local/state/oma-runner`. `start`, `stop`, `status` and `uninstall` use
+`systemctl --user`. Like herd's unit on MG1, it runs while Boss's session is up (no lingering is set). Checked
+on MG1 in a throwaway home with systemctl stubbed: the unit, the calls (stop, daemon-reload, enable --now),
+the table with the phone's digest, and `status`.
+
+**Tests:** fake-grok speaks ACP as Grok does, and turns a refused request into a `cancelled` end. Grok gets the
+same checks as Codex and Cursor (a card, a wrong nonce, deny, allow, resume, a usage limit, stop), plus: always manual
+(auto asked for included), the exact command line, no auto mode on the session, its model passed, its tools named, and
+a refusal not being a failure. 166 checks in all.
+
+**Not done here:** installing the runner on MG1 and the Grok CLI on the Macs (signing in is Boss's click). Both
+are part of the rollout, which is Boss's call.

@@ -18,14 +18,15 @@ class MacKindsTest {
     private fun thread(id: String, kind: String, status: MacThreadStatus = MacThreadStatus.Idle, project: String = "~/ClaudeSync/projects/ff4", name: String = "FF4 better menu mod", worked: Long? = 100) =
         MacThread(id, name, project, ThreadHome.Mac, kind, "", status, worked, "", 0, 0, emptyList())
 
-    @Test fun theAgentsAreClaudeCodexAndCursorInThatOrder() {
-        assertEquals(listOf("claude", "codex", "cursor"), MAC_KINDS)
+    @Test fun theAgentsAreClaudeCodexGrokAndCursorInThatOrder() {
+        assertEquals(listOf("claude", "codex", "grok", "cursor"), MAC_KINDS)
         assertEquals("claude", macKindOf("")); assertEquals("codex", macKindOf(" Codex "))
-        assertEquals(listOf("Claude", "Codex", "Cursor"), MAC_KINDS.map(::macKindName)); assertEquals("Claude", macKindName(""))
+        assertEquals(listOf("Claude", "Codex", "Grok", "Cursor"), MAC_KINDS.map(::macKindName)); assertEquals("Claude", macKindName(""))
         // What the Mac has, in the order requests go from one to the next, whatever order /health lists them in.
         assertEquals(listOf("claude", "cursor"), macInstalled(listOf("cursor", "claude")))
+        assertEquals(listOf("claude", "grok"), macInstalled(listOf("grok", "claude")))
         // A runner that has not said, or not been asked yet, has Claude, which every runner runs.
-        assertEquals(listOf("claude"), macInstalled(emptyList())); assertEquals(listOf("claude"), macInstalled(listOf("grok")))
+        assertEquals(listOf("claude"), macInstalled(emptyList())); assertEquals(listOf("claude"), macInstalled(listOf("opencode")))
     }
 
     @Test fun theNextAgentIsTheFirstInstalledThatIsNotAtItsLimit() {
