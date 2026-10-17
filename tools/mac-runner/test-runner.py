@@ -39,12 +39,22 @@ class Service(http.server.BaseHTTPRequestHandler):
     def answer(self):
         length = int(self.headers.get('Content-Length') or 0)
         service_calls.append((self.command, self.path, self.headers.get('Authorization'), json.loads(self.rfile.read(length)) if length else None))
+        # Slice 8c: a refusal that echoes the caller's token back, so the helper is seen to keep it out of what it prints.
+        if self.path == '/screens/desk-macbook/canvas':
+            self.send_response(403)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({'ok': False, 'error': 'not for ' + (self.headers.get('Authorization') or '')}).encode())
+            return
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
         self.end_headers()
         self.wfile.write(b'{"ok": true}')
 
     do_POST = do_DELETE = answer
+
+    def do_GET(self):
+        self.answer()
 
 
 service = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Service)
@@ -232,6 +242,31 @@ try:
           and given['canvas_token'] not in json.dumps(service_calls))
     check('the runner says where its canvas service is, so a device asks it rather than guessing a port',
           call('GET', '/health')[1].get('soma') == environment['OMA_RUNNER_SOMA_SERVICE'])
+    # Slice 8c: the thread's own `soma canvas`, first on its PATH, reaches its screens with its token and nothing more.
+    helper = pathlib.Path(given['path'].split(os.pathsep)[0]) / 'soma'
+    check('a thread finds `soma` first on its PATH, the runner\'s own helper, runnable by this user alone',
+          helper.is_file() and oct(helper.stat().st_mode)[-3:] == '700' and given['screens'] == 'car')
+    agent_env = {'PATH': given['path'], 'SOMA_CANVAS_TOKEN': given['canvas_token'], 'SOMA_SERVICE': given['soma_service'], 'SOMA_CANVAS_SCREENS': given['screens'], 'HOME': os.environ['HOME']}
+    before_canvas = len(service_calls)
+    placed = subprocess.run(['soma', 'canvas', 'place', 'needs', 'card', 'top-left'], env=agent_env, capture_output=True, text=True, timeout=30)
+    sent = [c for c in service_calls[before_canvas:] if c[1].endswith('/canvas')]
+    check('`soma canvas place needs card top-left` from the thread reaches the car\'s screen with the thread\'s token and its words',
+          placed.returncode == 0 and sent and sent[0][1] == '/screens/car/canvas' and sent[0][2] == 'Bearer ' + given['canvas_token']
+          and sent[0][3] == {'words': ['place', 'needs', 'card', 'top-left']})
+    other = subprocess.run(['soma', 'canvas', '--screen', 'desk-macbook', 'board'], env=agent_env, capture_output=True, text=True, timeout=30)
+    check('`--screen` names another screen, which the service decides about (the token is for the car alone)',
+          [c for c in service_calls if c[1] == '/screens/desk-macbook/canvas'] and given['canvas_token'] not in other.stdout + other.stderr
+          and '[token]' in other.stdout and other.returncode != 0)
+    before_first = len(service_calls)
+    first = subprocess.run(['soma', 'canvas', 'board'], env={**agent_env, 'SOMA_CANVAS_SCREENS': 'desk-macbook,car'}, capture_output=True, text=True, timeout=30)
+    check('with no `--screen` it arranges the first screen the thread was given',
+          [c[1] for c in service_calls[before_first:] if c[1].endswith('/canvas')] == ['/screens/desk-macbook/canvas'] and first.returncode != 0)
+    bare = subprocess.run(['soma', 'canvas', 'board'], env={**agent_env, 'SOMA_CANVAS_TOKEN': ''}, capture_output=True, text=True, timeout=30)
+    check('with no token it says so and sends nothing', bare.returncode != 0 and 'no canvas token' in bare.stderr)
+    check('the helper has no way to approve, pair or read a key: it only posts canvas words',
+          helper.read_text().count('urllib.request.Request(') == 1 and "+ '/canvas'" in helper.read_text() and 'security' not in helper.read_text() and 'subprocess' not in helper.read_text())
+    check('the thread\'s token is in none of the runner\'s logs or state',
+          all(given['canvas_token'] not in f.read_text(errors='replace') for d in ('logs', 'state') for f in (work / d).rglob('*') if f.is_file()))
     check('the next turn of the same thread keeps its token, registered once', len([c for c in service_calls if c[1] == '/tokens' and c[3]['thread'] == thread]) == 1)
     check('it goes back to idle after the mail', settle(thread, 'idle'))
 

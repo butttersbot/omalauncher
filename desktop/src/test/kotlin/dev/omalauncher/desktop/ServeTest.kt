@@ -268,7 +268,43 @@ class ServeTest {
         server.stop(0)
     }
 
-    @Test fun theLaunchAgentIsPrintedForHimNeverInstalled() {
+    /**
+     * Slice 8c's proof: an agent in a runner thread runs `soma canvas` (the runner's own helper, as it writes it) with only
+     * what its thread's environment holds, places a module on a named screen, and can neither approve nor reach a key.
+     */
+    @Test fun anAgentInARunnerThreadArrangesItsScreenAndNothingElse() {
+        val runner = generateSequence(File("").absoluteFile) { it.parentFile }.map { File(it, "tools/mac-runner/oma-runner") }.first { it.isFile }.readText()
+        val helper = File(home, "bin/soma").apply {
+            parentFile.mkdirs()
+            writeText(runner.substringAfter("SOMA_HELPER = r\'\'\'").substringBefore("\'\'\'"))
+            setExecutable(true, true)
+        }
+        val token = ThreadTokens.PREFIX + "a".repeat(48)
+        assertEquals(200, call("POST", "/tokens", foldKey, JSONObject().put("digest", keyDigest(token)).put("thread", "t7").put("screens", JSONArray(listOf("car")))).first)
+        // The thread's environment, as the runner gives it: the token, the service, its screens; never a device key.
+        fun soma(vararg words: String): Pair<Int, String> {
+            val p = ProcessBuilder(listOf("/opt/homebrew/bin/python3", helper.path) + words).apply {
+                environment().clear()
+                environment().putAll(mapOf("PATH" to "/usr/bin:/bin", "HOME" to home.path, "SOMA_CANVAS_TOKEN" to token, "SOMA_SERVICE" to base, "SOMA_CANVAS_SCREENS" to "car"))
+            }.redirectErrorStream(true).start()
+            val out = p.inputStream.bufferedReader().readText()
+            p.waitFor()
+            return p.exitValue() to out
+        }
+        val (code, out) = soma("canvas", "place", "needs", "card", "top-left")
+        assertEquals(out, 0, code)
+        assertTrue(service.screen("car")!!.log.entries.any { it.origin.actor == "agent:t7" && (it.verb as? CanvasVerb.Place)?.key == "module:needs" })
+        // Another screen: refused by the service. And the token itself never shows in what it prints.
+        File(home, "screens").mkdirs(); File(home, "screens/desk.json").writeText(JSONObject().put("screen", "desk").put("entries", JSONArray()).toString())
+        val (other, said) = soma("canvas", "--screen", "desk", "board")
+        assertEquals(1, other)
+        assertFalse(said.contains(token))
+        // The helper has no words for approving or for keys, and the token reaches no route that does.
+        for ((m, path) in listOf("POST" to "/approvals", "GET" to "/approvals", "POST" to "/tokens", "POST" to "/widgets")) assertEquals("$m $path", 403, call(m, path, token, JSONObject()).first)
+        server.stop(0)
+    }
+
+        @Test fun theLaunchAgentIsPrintedForHimNeverInstalled() {
         val plist = SomaService.launchAgent("/Applications/Soma.app/Contents/MacOS/Soma")
         assertTrue(plist.contains("<string>--serve</string>"))
         assertTrue(plist.contains("dev.omalauncher.soma.serve"))

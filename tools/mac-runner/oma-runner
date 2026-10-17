@@ -109,6 +109,76 @@ canvas_lock = threading.Lock()
 canvas_key_missing = [0.0]
 
 
+# Slice 8c: the `soma` a thread's agent runs to arrange screens, written next to the runner's state and put first on the
+# thread's PATH. It holds nothing secret: the token is in the thread's environment alone, and the helper never prints it.
+SOMA_HELPER = r'''#!/usr/bin/env python3
+"""soma canvas [--screen NAME] WORDS...: arrange a screen of Soma's canvas from this thread, with this thread's own
+token. Run `soma canvas help` for the words. Only the screens this thread was given; never approvals or keys."""
+import http.client, json, os, sys, urllib.error, urllib.request
+
+USAGE = 'soma canvas [--screen NAME] board [PAGE] | modules | page-make NAME | place MODULE [SIZE] [WHERE] [--page NAME] | move | resize | remove | undo'
+args = sys.argv[1:]
+if not args or args[0] != 'canvas':
+    sys.exit('usage: ' + USAGE)
+words = args[1:]
+token, service = os.environ.get('SOMA_CANVAS_TOKEN'), os.environ.get('SOMA_SERVICE')
+screens = [s for s in os.environ.get('SOMA_CANVAS_SCREENS', '').split(',') if s]
+if not words or words[0] in ('help', '--help', '-h'):
+    print(USAGE + '\nScreens this thread may arrange: ' + (', '.join(screens) or 'none'))
+    sys.exit(0)
+if not token or not service:
+    sys.exit('soma canvas: this thread has no canvas token (the runner gives one when a canvas service is set up).')
+screen = screens[0] if screens else 'car'
+if words[0] == '--screen':
+    if len(words) < 3:
+        sys.exit('usage: ' + USAGE)
+    screen, words = words[1], words[2:]
+request = urllib.request.Request(service.rstrip('/') + '/screens/' + urllib.request.quote(screen, safe='') + '/canvas', method='POST',
+                                 data=json.dumps({'words': words}).encode(), headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'})
+
+
+class Stay(urllib.request.HTTPRedirectHandler):
+    """A redirect is not followed: the token goes to the canvas service and nowhere else."""
+    def redirect_request(self, *_):
+        return None
+
+
+try:
+    with urllib.request.build_opener(Stay).open(request, timeout=20) as reply:
+        text = reply.read()
+    try:
+        answer = json.loads(text)
+    except ValueError:
+        answer = {'ok': False, 'error': 'the canvas service answered with something that is not JSON'}
+except urllib.error.HTTPError as problem:
+    try:
+        answer = json.loads(problem.read())
+    except ValueError:
+        answer = {'ok': False, 'error': 'the canvas service said %d' % problem.code}
+except (OSError, ValueError, http.client.HTTPException) as problem:
+    answer = {'ok': False, 'error': 'the canvas service could not be reached: %s' % problem}
+if not isinstance(answer, dict):
+    answer = {'ok': False, 'error': 'the canvas service answered with something other than an object'}
+# Whatever came back, never the token.
+print(json.dumps(answer).replace(token, '[token]'))
+sys.exit(0 if answer.get('ok') else 1)
+'''
+SOMA_BIN = STATE / 'bin'
+
+
+def write_soma_helper():
+    """The helper, written each start (an older one is replaced), readable and runnable by this user alone."""
+    try:
+        SOMA_BIN.mkdir(parents=True, exist_ok=True)
+        helper = SOMA_BIN / 'soma'
+        fresh = SOMA_BIN / '.soma.new'
+        fresh.write_text(SOMA_HELPER)
+        fresh.chmod(0o700)
+        fresh.replace(helper)
+    except OSError as problem:
+        log('the `soma` helper for threads could not be written to %s: %s' % (SOMA_BIN, problem))
+
+
 def soma_service_key():
     """This runner's own device key for the canvas service: in the Keychain (on Linux the Secret Service), never in a file.
     A loopback test names it in the environment instead."""
@@ -136,7 +206,8 @@ def canvas_env(thread):
     with canvas_lock:
         have = canvas_tokens.get(thread.meta['id'])
         if have and time.time() - have[1] < 20 * 3600:
-            return {'SOMA_CANVAS_TOKEN': have[0], 'SOMA_SERVICE': SOMA_SERVICE}
+            return {'SOMA_CANVAS_TOKEN': have[0], 'SOMA_SERVICE': SOMA_SERVICE, 'SOMA_CANVAS_SCREENS': ','.join(SOMA_SCREENS),
+                    'PATH': str(SOMA_BIN) + os.pathsep + os.environ.get('PATH', '')}
     key = soma_service_key()
     if not key:
         return {}
@@ -154,7 +225,8 @@ def canvas_env(thread):
     with canvas_lock:
         canvas_tokens[thread.meta['id']] = (token, time.time())
         canvas_given.append(token)
-    return {'SOMA_CANVAS_TOKEN': token, 'SOMA_SERVICE': SOMA_SERVICE}
+    return {'SOMA_CANVAS_TOKEN': token, 'SOMA_SERVICE': SOMA_SERVICE, 'SOMA_CANVAS_SCREENS': ','.join(SOMA_SCREENS),
+            'PATH': str(SOMA_BIN) + os.pathsep + os.environ.get('PATH', '')}
 
 
 def revoke_canvas_token(token, key=None):
@@ -1595,6 +1667,8 @@ def serve():
     LOGS.mkdir(parents=True, exist_ok=True)
     (STATE / 'threads').mkdir(parents=True, exist_ok=True)
     load()
+    if SOMA_SERVICE:
+        write_soma_helper()
     # A test may ask for this machine's own loopback; anything else is the tailnet address or nothing.
     address = '127.0.0.1' if os.environ.get('OMA_RUNNER_BIND') == '127.0.0.1' else None
     while address is None:
