@@ -1,0 +1,15 @@
+// Soma's working-launcher build on the Mac Pro, for the phone to sign (soma-macbuild, oma-macbuild). The same as
+// fold.init.gradle.template but for its signing key, which never leaves the phone: what is built here is signed
+// with this Mac's own debug key and signed again on the phone. The version code comes from the phone's
+// next-version-code, by way of SOMA_VERSION_CODE.
+allprojects { p ->
+    p.plugins.withId('com.android.application') {
+        p.androidComponents.finalizeDsl { android ->
+            def code = System.getenv('SOMA_VERSION_CODE')
+            if (code == null || !code.isInteger()) throw new GradleException('SOMA_VERSION_CODE must be the phone\'s next version code')
+            android.defaultConfig.versionCode = code.toInteger()
+            android.buildTypes.debug.applicationIdSuffix = '.boss'
+            android.buildTypes.debug.manifestPlaceholders['appLabel'] = 'Omalauncher Boss'
+        }
+    }
+}
