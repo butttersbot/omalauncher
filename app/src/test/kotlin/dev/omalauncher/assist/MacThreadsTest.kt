@@ -353,7 +353,8 @@ class MacThreadsTest {
         val calls = dev.omalauncher.theme.pack.mainSources().associate { file -> file.name to Regex("""\.answerApproval\(""").findAll(file.readText()).count() }.filterValues { it > 0 }
         // MacThreads.answer, over the client's one request, for the Mac; the phone builder's own three callers for the phone's, as before.
         assertEquals(1, calls["MacThreads.kt"]); assertEquals(1, calls["MacRunner.kt"])
-        assertEquals(setOf("MacThreads.kt", "MacRunner.kt", "AgentApprovalActivity.kt", "AgentNotices.kt", "OmaChatActivity.kt"), calls.keys)
+        // The chat's own answer to the phone builder is the phone's chat host's (the shared screen asks it).
+        assertEquals(setOf("MacThreads.kt", "MacRunner.kt", "AgentApprovalActivity.kt", "AgentNotices.kt", "AndroidChatHost.kt"), calls.keys)
         for (front in listOf("FrontAgent.kt", "QuickLane.kt", "QuickLaneRules.kt")) {
             val code = dev.omalauncher.theme.pack.mainSource("assist/$front").readLines().map { it.trim() }.filterNot { it.startsWith("*") || it.startsWith("/*") || it.startsWith("//") }.joinToString("\n")
             for (never in listOf("answerApproval", "MacPending", "MacApprovalBook", ".nonce", ".pending", "MacThreads.answer")) assertFalse("$never in $front", code.contains(never))

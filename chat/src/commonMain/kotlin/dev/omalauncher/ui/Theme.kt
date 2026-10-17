@@ -13,12 +13,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import dev.omalauncher.R
 
 /** `#rrggbb` or `#aarrggbb` as a color; null if it isn't one. */
 fun hexColor(hex: String?): Color? {
@@ -90,7 +88,7 @@ object Palette {
      * theme: a theme pack's own colors, so they can be read on its scraps. Null goes back to the theme's.
      * The theme stays applied underneath, and the cover follows it when another is applied.
      */
-    internal fun cover(cover: ((ThemePalette) -> ThemePalette)?) {
+    fun cover(cover: ((ThemePalette) -> ThemePalette)?) {
         covering = cover
         packed = cover?.invoke(theme)
     }
@@ -240,7 +238,15 @@ object TextSize {
  * weatherIcon()) plus the launcher's own [Glyph]s. A subset of Symbols Nerd Font 3.5.1, made
  * with pyftsubset; Weather Icons by Erik Flowers, SIL OFL 1.1; Material Design Icons, Apache 2.0.
  */
-val NerdSymbols = FontFamily(Font(R.font.nerd_symbols))
+val NerdSymbols: FontFamily get() = PlatformFonts.nerdSymbols
+
+/**
+ * The fonts each app bundles its own way, given to the shared code before anything draws: the phone app from its
+ * resources (App.onCreate), the desktop app from its jar. Until then, and in unit tests, the default family.
+ */
+object PlatformFonts {
+    @Volatile var nerdSymbols: FontFamily = FontFamily.Default
+}
 
 /** The Material Design Icons in [NerdSymbols] the launcher draws with [Symbol]. */
 object Glyph {
@@ -258,36 +264,4 @@ object Glyph {
 
     /** nf-md-chevron_up 󰅃 */
     const val ChevronUp = "\uDB80\uDD43"
-}
-
-/**
- * Lays [activity] out behind clear system bars, their clock and icons dark when [light] says what is behind
- * them is light. Set on the window itself: androidx's enableEdgeToEdge keeps the style of its first call and
- * puts it back at every configuration change, so after a fold or a turn the bars were drawn for whatever
- * showed when the activity started, not for the look picked since.
- */
-@Suppress("DEPRECATION")
-fun applySystemBars(
-    activity: androidx.activity.ComponentActivity,
-    light: Boolean,
-) {
-    val window = activity.window
-    val transparent = android.graphics.Color.TRANSPARENT
-    androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
-    // Before Android 15 the bars are filled unless told otherwise; from then on they are clear and these two say nothing.
-    window.statusBarColor = transparent
-    window.navigationBarColor = transparent
-    // No scrim of the system's own behind either bar.
-    window.isStatusBarContrastEnforced = false
-    window.isNavigationBarContrastEnforced = false
-    window.attributes.layoutInDisplayCutoutMode =
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-            android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
-        } else {
-            android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-        }
-    androidx.core.view.WindowInsetsControllerCompat(window, window.decorView).run {
-        isAppearanceLightStatusBars = light
-        isAppearanceLightNavigationBars = light
-    }
 }

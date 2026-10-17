@@ -8,8 +8,6 @@ import java.util.UUID
 
 const val MAX_PROMPT_IMAGE_BYTES = 20L * 1024 * 1024
 
-data class PromptImage(val file: File, val guestPath: String)
-
 /** Copies only the selected images into the guest, never giving agents access to the photo library. */
 fun importPromptImage(resolver: ContentResolver, uri: Uri, proot: Proot): PromptImage {
     val extension = when (resolver.getType(uri)) {

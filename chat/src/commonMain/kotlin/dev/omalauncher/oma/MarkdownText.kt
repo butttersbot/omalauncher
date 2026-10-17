@@ -1,8 +1,5 @@
 package dev.omalauncher.oma
 
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
@@ -22,7 +19,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.Layout
-import androidx.compose.ui.platform.LocalContext
+import dev.omalauncher.ui.rememberWebOpener
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
@@ -81,13 +78,12 @@ private class MarkdownLook(
         }
 }
 
-/** Opens a tapped link where Android opens web pages. */
-private fun webLinks(context: Context) =
+/** Opens a tapped link where the platform opens web pages ([rememberWebOpener]). */
+private fun webLinks(open: (String) -> Unit) =
     object : LinkInteractionListener {
         override fun onClick(link: LinkAnnotation) {
             val url = (link as? LinkAnnotation.Clickable)?.tag?.takeIf(Markdown::isWebLink) ?: return
-            // A phone with no browser has nowhere to open it, and the address is still there to read and copy.
-            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            open(url)
         }
     }
 
@@ -96,14 +92,14 @@ private fun webLinks(context: Context) =
  * into blocks once for each change to it, not each time the thread is drawn again.
  */
 @Composable
-internal fun MarkdownText(
+fun MarkdownText(
     text: String,
     modifier: Modifier = Modifier,
 ) {
     val blocks = remember(text) { Markdown.parse(text) }
-    val context = LocalContext.current
+    val open = rememberWebOpener()
     val pack = Pack.look
-    val look = remember(pack, context) { MarkdownLook(Pack.body(), Pack.mono().toSpanStyle().copy(background = Pack.surface), Pack.accent, webLinks(context)) }
+    val look = remember(pack, open) { MarkdownLook(Pack.body(), Pack.mono().toSpanStyle().copy(background = Pack.surface), Pack.accent, webLinks(open)) }
     Blocks(blocks, look, modifier)
 }
 
@@ -128,7 +124,7 @@ private fun Blocks(
  * with nothing else between them; 0 for every other block. The numbers of one list are set in a column that
  * wide, so "9." and "10." end in line and the words after them start in line.
  */
-internal fun numberDigits(blocks: List<MdBlock>): IntArray {
+fun numberDigits(blocks: List<MdBlock>): IntArray {
     val digits = IntArray(blocks.size)
     var start = 0
     while (start < blocks.size) {

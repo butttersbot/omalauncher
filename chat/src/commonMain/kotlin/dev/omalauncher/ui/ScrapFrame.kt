@@ -1,6 +1,5 @@
 package dev.omalauncher.ui
 
-import android.graphics.BlurMaskFilter
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.padding
@@ -22,8 +21,6 @@ import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.translate
-import androidx.compose.ui.graphics.nativeCanvas
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -69,19 +66,19 @@ fun Modifier.scrapFocus(): Modifier {
 }
 
 /** How wide [surface]'s focus line is in all: the pack's focus width, or the surface's own outline where that is wider. */
-internal fun focusWidth(surface: PackSurface) = maxOf(surface.border, surface.focusWidth)
+fun focusWidth(surface: PackSurface) = maxOf(surface.border, surface.focusWidth)
 
 /**
  * How much of that is inside the surface's edge, over its fill: the outline's own width, and the
  * launcher's mark at least. Nothing the surface holds is covered further than that.
  */
-internal fun focusInside(surface: PackSurface) = maxOf(surface.border, PackLook.MIN_MARK)
+fun focusInside(surface: PackSurface) = maxOf(surface.border, PackLook.MIN_MARK)
 
 /**
  * The rest, which is drawn outside the edge, on the page, in the page's focus color: a line a pack
  * makes heavier grows outward, and shows on the page whatever color the part on the fill has to be.
  */
-internal fun focusOutside(surface: PackSurface) = (focusWidth(surface) - focusInside(surface)).coerceAtLeast(0f)
+fun focusOutside(surface: PackSurface) = (focusWidth(surface) - focusInside(surface)).coerceAtLeast(0f)
 
 /** The dock's bar, the recent apps strip and the side rail: the pack's `[dock]` surface, outlined in its focus color while [focused]. */
 fun Modifier.dockBar(focused: Boolean = false): Modifier = surface(Pack.look.pack.dock.surface, focused)
@@ -104,7 +101,7 @@ fun Modifier.dockButton(index: Int): Modifier {
  * [surface] around the content. With nothing but a fill and an outline, which is all Console has, this
  * is exactly the frame the launcher drew before packs: clipped, filled, then outlined with one shape.
  */
-internal fun Modifier.surface(
+fun Modifier.surface(
     surface: PackSurface,
     focused: Boolean,
     tilt: Float = 0f,
@@ -180,7 +177,7 @@ private fun Density.shadowPaint(
 ) = Paint().apply {
     color = shadow.color.toColor()
     val blur = shadow.blur.dp.toPx()
-    if (blur > 0f) asFrameworkPaint().maskFilter = BlurMaskFilter(blur, BlurMaskFilter.Blur.NORMAL)
+    if (blur > 0f) blurPaint(this, blur)
     if (inset) {
         style = PaintingStyle.Stroke
         strokeWidth = blur + 2f * maxOf(kotlin.math.abs(shadow.x.dp.toPx()), kotlin.math.abs(shadow.y.dp.toPx()))
@@ -216,13 +213,7 @@ private fun DrawScope.titleBar(
         drawRect(fill, size = Size(size.width, height))
     }
     if (bar.glyph.isNotEmpty()) {
-        val paint =
-            android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-                color = ink.toArgb()
-                textSize = height * 0.7f
-                textAlign = android.graphics.Paint.Align.RIGHT
-            }
-        drawIntoCanvas { it.nativeCanvas.drawText(bar.glyph, size.width - height * 0.35f, height * 0.75f, paint) }
+        drawTextRightAligned(bar.glyph, size.width - height * 0.35f, height * 0.75f, height * 0.7f, ink)
     }
     if (bar.border > 0f) drawRect(edge, Offset(0f, height - bar.border.dp.toPx()), Size(size.width, bar.border.dp.toPx()))
 }

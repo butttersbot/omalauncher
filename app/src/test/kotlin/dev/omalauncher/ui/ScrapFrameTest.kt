@@ -119,7 +119,7 @@ class ScrapFrameTest {
 
     /** The source says the same: the tilt is a canvas rotation while drawing, never a layer's. */
     @Test fun tiltNeverTurnsALayer() {
-        val source = moduleFile("src/main/kotlin/dev/omalauncher/ui/ScrapFrame.kt").readText()
+        val source = dev.omalauncher.theme.pack.mainSource("ui/ScrapFrame.kt").readText()
         assertFalse("graphicsLayer" in source)
         assertFalse("rotationZ" in source)
         assertTrue("rotate(tilt)" in source)
@@ -144,14 +144,14 @@ class ScrapFrameTest {
         use("dial-up")
         assertEquals(Modifier.padding(top = 20.dp), Modifier.scrapContent())
         for (key in widgets) assertFalse(Modifier.scrap(false, key, dressed = true).elements().any { it is LayoutModifier })
-        val tile = moduleFile("src/main/kotlin/dev/omalauncher/ui/WidgetTile.kt").readText()
+        val tile = dev.omalauncher.theme.pack.mainSource("ui/WidgetTile.kt").readText()
         val frame = tile.indexOf(".scrap(focused")
         val tap = tile.indexOf(".pointerInput(spec)")
         val inset = tile.indexOf(".scrapContent()")
         assertTrue("scrap $frame, tap $tap, inset $inset", frame in 0 until tap && tap < inset)
         assertEquals("the widget tile insets its content once", inset, tile.lastIndexOf(".scrapContent()"))
         // Nothing else on home pads for a title bar: only widget tiles are dressed with one.
-        val others = moduleFile("src/main/kotlin/dev/omalauncher/ui").listFiles().orEmpty().filter { it.name !in setOf("WidgetTile.kt", "ScrapFrame.kt") && ".scrapContent()" in it.readText() }
+        val others = dev.omalauncher.theme.pack.mainSources("ui").filter { it.name !in setOf("WidgetTile.kt", "ScrapFrame.kt") && ".scrapContent()" in it.readText() }
         assertEquals(emptyList<String>(), others.map { it.name })
     }
 }
