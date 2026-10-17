@@ -147,11 +147,15 @@ class PhoneService : AccessibilityService() {
         lookAgain(ring.sync())
     }
     /** Shows the agent's answer over whatever is in front, if it may be shown now. False: say it another way. Main thread. */
-    fun showAnswer(caption: String, text: String): Boolean = answerCardWanted(facts(allowed = false)) && answer.show(caption, text)
+    fun showAnswer(caption: String, text: String): Boolean =
+        answerCardWanted(facts(allowed = false)) && (sheepSays(caption, text, SHEEP_ANSWER_MILLIS) || answer.show(caption, text))
 
     /** A short note from another app over whatever is in front, in the look's own card (see [OmaToastReceiver]). Main thread. */
     fun showToast(caption: String, text: String): Boolean =
-        answerCardWanted(facts(allowed = false)) && answer.show(caption, text, TOAST_MILLIS, opensChat = false)
+        answerCardWanted(facts(allowed = false)) && (sheepSays(caption, text, SHEEP_TOAST_MILLIS) || answer.show(caption, text, TOAST_MILLIS, opensChat = false))
+
+    /** With the floating sheep up, cards come through its bubble instead (Boss, 2026-10-17); false shows the card. */
+    private fun sheepSays(caption: String, text: String, ms: Long): Boolean = sheep.shown && sheep.say(caption, text, ms)
     private fun lookAgain(soon: Boolean) {
         main.removeCallbacks(checkRing)
         if (soon) main.postDelayed(checkRing, OVERLAY_CHECK_MILLIS)

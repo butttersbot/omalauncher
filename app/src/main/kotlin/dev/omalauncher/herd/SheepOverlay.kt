@@ -239,6 +239,19 @@ class SheepOverlay(private val service: AccessibilityService) {
         HerdSheep.floating = true
     }
 
+    /**
+     * Says [text] in the sheep's speech bubble, under [who], for [ms], in place of Soma's card (Boss, 2026-10-17: "those
+     * cards are way too big … when the pet is on my screen, the notifications show up through the pet"). False while
+     * it can't: not up, its page not loaded yet, or its panel open (the bubble hides then); the caller shows its card.
+     */
+    fun say(who: String, text: String, ms: Long): Boolean {
+        val p = page ?: return false
+        if (!loaded || open) return false
+        val note = org.json.JSONObject().put("who", who).put("text", sheepNoteText(text)).put("ms", ms)
+        giveHerd(p, "note", note.toString())
+        return true
+    }
+
     fun hide() {
         val f = frame ?: return
         main.removeCallbacks(ask)
@@ -256,4 +269,15 @@ class SheepOverlay(private val service: AccessibilityService) {
 
     /** Folded, unfolded or turned: put back on the new screen. */
     fun relayout() = update()
+}
+
+/** The most of a note the bubble holds; the whole of it stays in the chat. */
+const val SHEEP_NOTE_CHARS = 180
+
+/** [text] as the bubble shows it: Markdown's marks off, on one line, cut at a word to [SHEEP_NOTE_CHARS] with "…". */
+fun sheepNoteText(text: String): String {
+    val plain = text.replace(Regex("[*_`#>]+"), "").replace(Regex("\\[([^\\]]*)\\]\\([^)]*\\)"), "$1").replace(Regex("\\s+"), " ").trim()
+    if (plain.length <= SHEEP_NOTE_CHARS) return plain
+    val cut = plain.take(SHEEP_NOTE_CHARS).substringBeforeLast(' ').ifEmpty { plain.take(SHEEP_NOTE_CHARS) }
+    return cut.trimEnd(',', ';', ':', '.', ' ') + "…"
 }

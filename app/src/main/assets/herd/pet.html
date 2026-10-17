@@ -1158,6 +1158,14 @@ window.herd = {
   tap() { nudge(); toggle(); },
   // `herd pet tab NAME`: shows that tab (agents, look, tailshare), opening the panel if it's closed.
   tab(name) { if (!jobs.some(j => j.id === name)) return; job = name; detail = null; store.set('job', job); if (!document.body.classList.contains('open')) toggle(true); else render(); },
+  // A note from the Fold's shell in place of its own card (Boss, 2026-10-17: the cards are too big while playing; with the
+  // sheep on screen they come through it): {who, text, ms}.
+  note(n) {
+    n = typeof n === 'string' ? JSON.parse(n) : n;
+    if (!n || !n.text) return;
+    nudge(); face('down');
+    speak(n.who || '', String(n.text), { ms: n.ms || 9000 });
+  },
   // `herd say TEXT`: says it; an empty text says what's up.
   say(text) { if (text) { nudge(); face('down'); speak('', String(text), { ms: 8000 }); } else herd.chat(); },
   // "What's up?": says what the agents are doing, most urgent first.

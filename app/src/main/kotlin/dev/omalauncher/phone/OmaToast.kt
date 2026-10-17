@@ -11,6 +11,10 @@ import android.widget.Toast
 /** How long a toast stays up. */
 const val TOAST_MILLIS = 2_800L
 
+/** How long the sheep says an answer, and a short note, when it carries them instead of the card: it types them out. */
+const val SHEEP_ANSWER_MILLIS = 12_000L
+const val SHEEP_TOAST_MILLIS = 4_000L
+
 /** What another app asks Oma to say: [ACTION_TOAST] with [EXTRA_TO] (the machine it sent to) or [EXTRA_TEXT]. */
 const val ACTION_TOAST = "dev.omalauncher.action.TOAST"
 const val EXTRA_TO = "to"
