@@ -15,3 +15,10 @@ if [ ! -s "$status" ]; then
 fi
 echo "Written $(( $(date +%s) - $(date -r "$status" +%s) )) s ago; times in it are minutes before then."
 cat "$status"
+# Why the app (and with it Linux) last ended, in Android's words, newest first (assist/AppExits.kt).
+exits="${HOME:?}/.cache/oma-agents/app-exits.txt"
+if [ -s "$exits" ]; then
+  echo
+  echo "Soma's last exits, newest first:"
+  cat "$exits"
+fi

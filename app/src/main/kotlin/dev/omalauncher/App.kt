@@ -11,5 +11,7 @@ class App : Application() {
         dev.omalauncher.theme.LookWidgets.start(this)
         // An install a phone job scheduled: its sender hears whether it went in (assist/PhoneJobs.kt).
         dev.omalauncher.assist.PhoneJobs.afterInstall(this)
+        // Why the process last ended, for `oma status`: the next restart's cause is read, not guessed (assist/AppExits.kt).
+        dev.omalauncher.assist.AppExits.record(this)
     }
 }

@@ -45,3 +45,14 @@ class PhoneToolCallTest {
         assertFalse(phoneToolCall("Edit", ""))
     }
 }
+
+/** Why Soma last ended, for `oma status` (AppExits.kt): Android's reasons in words. */
+class AppExitsTest {
+    @Test fun anExitReadsAsWhenWhyHowBigAndAndroidsNote() {
+        val utc = java.util.TimeZone.getTimeZone("UTC")
+        assertEquals("1970-01-01 00:00:01  killed for low memory, 3100 MB in use (lmkd)", exitLine(1_000, 3, 3_100L * 1024, " lmkd ", utc))
+        assertEquals("1970-01-01 00:00:01  its package was updated", exitLine(1_000, 16, 0, null, utc))
+        assertEquals("1970-01-01 00:00:01  crashed (boom)", exitLine(1_000, 4, 0, "boom", utc))
+        assertEquals("unknown", exitReason(99))
+    }
+}
