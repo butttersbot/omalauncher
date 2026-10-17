@@ -33,6 +33,11 @@ most of what it does is shared with the phone from `:chat`.
 - **Notices:** a thread's request for his OK, and a request that ended while the window wasn't in front, come as the
   tray's notifications.
 - `soma --start-at-login` / `--no-start-at-login`: a LaunchAgent on the Mac, an autostart entry on Linux.
+- **Links** (slice 10): `soma://thread/<computer>/<thread>` opens that thread's tab (or the chat that lives on it),
+  `soma://chat/<id>` a new chat's, `soma://soma` the Soma tab. A link only picks a tab; it sends nothing. Soma.app
+  registers the scheme in its Info.plist and takes links as Apple events; on Linux `soma --register-links` writes an
+  application entry and makes it the default with xdg-mime (Boss runs it; it is persistent desktop config). A running
+  Soma is handed the link the same way `--toggle` is. Anything that is not a well-formed link opens nothing.
 
 ## Runner keys
 

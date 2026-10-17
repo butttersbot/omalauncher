@@ -16,6 +16,8 @@ import androidx.compose.ui.window.rememberWindowState
 import dev.omalauncher.assist.MacThreadsEngine
 import dev.omalauncher.oma.OMA_TAB
 import dev.omalauncher.oma.OmaChatScreen
+import dev.omalauncher.oma.somaLinkKey
+import dev.omalauncher.oma.somaLinkTab
 import dev.omalauncher.ui.DesktopBack
 import java.awt.MenuItem
 import java.awt.PopupMenu
@@ -38,14 +40,35 @@ fun main(args: Array<String>) {
     if ("--keychain-check" in args) return println(RunnerKeys.check())
     if ("--start-at-login" in args) return println(Login.install())
     if ("--no-start-at-login" in args) return println(Login.remove())
+    if ("--register-links" in args) return println(Login.registerLinks())
+    // A soma:// link on the command line (Linux's xdg-open passes it so, and so can a terminal) opens its tab.
+    val link = args.firstOrNull { somaLinkKey(it) != null }
     // Another Soma holds the lock while it runs (the system lets it go however it ends): that one is told, and this one ends.
     val claimed = runCatching { Single.claim() }.getOrElse { fail("Soma can't write to ${SomaHome.dir}: ${it.message ?: it.javaClass.simpleName}") }
     if (!claimed) {
-        if (!Single.handOff(if ("--toggle" in args) "toggle" else "show")) fail("Another Soma is running but not answering. Quit it from its tray icon (or end it), then open Soma again.", code = 0)
+        if (!Single.handOff(link?.let { "open $it" } ?: if ("--toggle" in args) "toggle" else "show")) fail("Another Soma is running but not answering. Quit it from its tray icon (or end it), then open Soma again.", code = 0)
         exitProcess(0)
     }
     val shown = mutableStateOf(true)
-    Single.listen { said -> shown.value = if (said == "toggle") !shown.value else true }
+    val wantedTab = mutableStateOf<String?>(null)
+    // Set once the engine is up; a link heard before then waits in [early]. Both are only ever touched on the event
+    // thread (the listener and the Apple-event handler post there, and so does the code that sets them), so a link that
+    // arrives while the engine is being built can't fall between the two. Of links heard before then, the last one wins.
+    var opener: ((String) -> Unit)? = null
+    var early: String? = link
+    fun open(url: String) = opener?.invoke(url) ?: run { early = url }
+    Single.listen { said ->
+        when {
+            said == "toggle" -> shown.value = !shown.value
+            said.startsWith("open ") -> open(said.removePrefix("open "))
+            else -> shown.value = true
+        }
+    }
+    // On the Mac a link reaches the running app as an Apple event, never on the command line.
+    runCatching {
+        val desktop = java.awt.Desktop.getDesktop()
+        if (desktop.isSupported(java.awt.Desktop.Action.APP_OPEN_URI)) desktop.setOpenURIHandler { event -> javax.swing.SwingUtilities.invokeLater { open(event.uri.toString()) } }
+    }
     Looks.fonts()
     Looks.use(SomaHome.read(SomaHome.settings).optString("pack").ifEmpty { null })
     val notices = Notices()
@@ -53,6 +76,17 @@ fun main(args: Array<String>) {
     val engine = MacThreadsEngine(platform)
     val front = DesktopFrontAgent(engine, platform, notices)
     val host = DesktopChatHost(platform, engine, front, notices)
+    // A link shows the window on its tab: a thread's own, or the chat that lives on it. One for no tab known opens nothing.
+    javax.swing.SwingUtilities.invokeLater {
+        opener = { url ->
+            somaLinkTab(url, platform.book())?.let { tab ->
+                wantedTab.value = tab.takeIf { it != OMA_TAB }
+                shown.value = true
+            }
+        }
+        early?.let { url -> opener?.invoke(url) }
+        early = null
+    }
     // Keys delivered by `oma-runner pair` go into the Keychain at once, and whenever another arrives. Each import is
     // said, and a file that can't be taken is said once, not at every look.
     thread(name = "soma-keys", isDaemon = true) {
@@ -69,7 +103,7 @@ fun main(args: Array<String>) {
     engine.open()
     application {
         var shown by shown
-        var wanted by remember { mutableStateOf<String?>(null) }
+        var wanted by wantedTab
         remember {
             notices.tray = Tray.make(onOpen = { shown = true }, onQuit = { Single.release(); exitApplication() }, onLook = { id -> Looks.use(id); SomaHome.write(SomaHome.settings, SomaHome.read(SomaHome.settings).put("pack", id)) })
         }
@@ -120,7 +154,7 @@ private object Single {
         return held != null
     }
 
-    /** Tells the Soma that holds the lock to [word] ("show" or "toggle"); true when it answered. One still starting is waited on briefly. */
+    /** Tells the Soma that holds the lock to [word] ("show", "toggle" or "open <link>"); true when it answered. One still starting is waited on briefly. */
     fun handOff(word: String): Boolean {
         repeat(20) {
             if (tell(word)) return true
@@ -154,7 +188,7 @@ private object Single {
                         client.getOutputStream().write((HELLO + "\n").toByteArray())
                         said
                     }
-                }.getOrNull()?.trim()?.takeIf { it == "show" || it == "toggle" } ?: continue
+                }.getOrNull()?.trim()?.takeIf { it == "show" || it == "toggle" || (it.startsWith("open ") && somaLinkKey(it.removePrefix("open ")) != null) } ?: continue
                 javax.swing.SwingUtilities.invokeLater { onWord(word) }
             }
         }
