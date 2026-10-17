@@ -1,0 +1,136 @@
+#!/usr/bin/env python3
+"""oma-herd: the Fold's herd reporter (Boss, 2026-10-17: "add the Z Fold 8 to the list of devices in the Agent tab").
+
+The herd (ClaudeSync projects/herd) has each computer run a reporter on port 8479 and every reporter gathers the
+others, so the pet everywhere lists their sessions. This is the Fold's: it answers GET /v1/status like `herd node`,
+with the phone and its two builders, read from the launcher's own status file (~/.cache/oma-agents/status.json,
+`oma status`), and GET /v1/sessions/ID with what that builder was asked and last did. Run it under `oma keep`.
+
+Only Boss's computers are answered: the addresses tailshare-serve lists at GET /v1/devices (as `oma msg devices`),
+refreshed every few minutes; the phone can't ask `tailscale whois` as the Macs' reporters do.
+"""
+import json
+import os
+import pathlib
+import re
+import threading
+import time
+import urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+PORT = int(os.environ.get('HERD_PORT', 8479))
+STATUS = pathlib.Path.home() / '.cache/oma-agents/status.json'
+RUNNERS = pathlib.Path.home() / '.config/omalauncher'
+HOST_NAME = os.environ.get('HERD_NAME', 'jacks-z-fold8')
+VERSION = 1
+BUILDERS = (('builder', 'fold-builder-a', 'Phone builder A'), ('builderB', 'fold-builder-b', 'Phone builder B'))
+
+allowed = set()
+
+
+def mac_hosts():
+    """The tailnet addresses of the Macs set up on this phone, from the runner files (no key is read)."""
+    hosts = []
+    for file in sorted(RUNNERS.glob('mac-runner*.json')):
+        try:
+            url = json.loads(file.read_text()).get('url', '')
+        except (OSError, ValueError):
+            continue
+        host = re.sub(r'^[a-z]+://', '', url).split(':')[0].split('/')[0]
+        if host and host not in hosts:
+            hosts.append(host)
+    return hosts
+
+
+def refresh_allowed():
+    while True:
+        for host in mac_hosts():
+            try:
+                with urllib.request.urlopen('http://%s:8480/v1/devices' % host, timeout=8) as answer:
+                    devices = json.load(answer).get('devices', [])
+                found = {d.get('address') for d in devices if d.get('address')}
+                if found:
+                    allowed.clear()
+                    allowed.update(found)
+                    break
+            except Exception:
+                continue
+        time.sleep(300)
+
+
+def status():
+    try:
+        return json.loads(STATUS.read_text()), STATUS.stat().st_mtime
+    except (OSError, ValueError):
+        return {}, time.time()
+
+
+def sessions():
+    data, written = status()
+    out = []
+    for key, sid, name in BUILDERS:
+        b = data.get(key) or {}
+        request = (b.get('request') or '').strip()
+        if not request and not b.get('working'):
+            continue
+        state = 'needs-you' if b.get('waitingForApproval') else 'working' if b.get('working') else 'idle'
+        ago = b.get('lastOutputMinAgo')
+        out.append({
+            'id': sid, 'kind': 'claude', 'app': 'fold', 'live': True, 'state': state,
+            'updated': written - (ago * 60 if isinstance(ago, (int, float)) else 0),
+            'title': request[:80] or name, 'cwd': '/root', 'project': name,
+            'last': (b.get('lastStep') or b.get('health') or '').strip(),
+        })
+    return out
+
+
+def machine():
+    info = {'host': HOST_NAME, 'os': 'android', 'herd': VERSION}
+    try:
+        info['up'] = int(float(open('/proc/uptime').read().split()[0]))
+        info['load'] = round(os.getloadavg()[0], 2)
+    except OSError:
+        pass
+    return info
+
+
+def detail(sid):
+    for session in sessions():
+        if session['id'] == sid:
+            data, _ = status()
+            b = data.get('builder' if sid.endswith('-a') else 'builderB') or {}
+            turns = [{'who': 'you', 'text': b.get('request', ''), 'at': None}]
+            if session['last']:
+                turns.append({'who': 'agent', 'text': session['last'], 'at': None})
+            return {'id': sid, 'turns': turns, 'note': 'Phone builder: the full chat is in Soma on the Fold.'}
+    return None
+
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, fmt, *args):
+        pass
+
+    def answer(self, code, body):
+        data = json.dumps(body).encode()
+        self.send_response(code)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_GET(self):
+        if self.client_address[0] not in allowed:
+            return self.answer(403, {'error': 'not your device'})
+        path = self.path.partition('?')[0]
+        parts = [p for p in path.split('/') if p]
+        if parts == ['v1', 'status']:
+            return self.answer(200, {'machine': machine(), 'sessions': sessions()})
+        if len(parts) == 3 and parts[:2] == ['v1', 'sessions']:
+            found = detail(parts[2])
+            return self.answer(200, found) if found else self.answer(404, {'error': 'no such session here'})
+        return self.answer(404, {'error': 'unknown path'})
+
+
+if __name__ == '__main__':
+    threading.Thread(target=refresh_allowed, daemon=True).start()
+    ThreadingHTTPServer(('0.0.0.0', PORT), Handler).serve_forever()

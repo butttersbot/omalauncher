@@ -18,6 +18,9 @@ scripts, not code bundled into the Android app.
   doing the same by hand in settings did (2026-10-12). The job's off-and-on was seen unbinding and rebinding a
   working service that day (18:47), when its first check misread two bound services as none.
 - oma-try builds, syncs and schedules the update.
+- oma-herd is the Fold's herd reporter (port 8479, like `herd node` on the computers): the phone and its builders, read
+  from ~/.cache/oma-agents/status.json, answered only to the addresses tailshare-serve lists as Boss's devices. Run it
+  with `oma keep run oma-herd -- /usr/local/bin/oma-herd`; the herd's gather() has to ask Android hosts for it to show.
 - oma-macbuild builds on the Mac Pro instead (Boss, 2026-10-17: heavy work off the phone): it pushes HEAD and
   asks the Mac Pro's "Oma runner upkeep" thread to run soma-macbuild COMMIT VERSION, which builds and tests that
   commit in ~/Projects/omalauncher-fold-build with mac.init.gradle (no key) and Taildrops the app back.
