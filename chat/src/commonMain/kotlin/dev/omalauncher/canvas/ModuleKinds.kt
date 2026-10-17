@@ -20,8 +20,12 @@ const val MODULE_PREFIX = "module:"
 /** What `oma-phone board` calls a module, beside "widget", "app", "folder" and "agent". */
 const val MODULE_TILE_KIND = "module"
 
-/** A module, with the cells it starts at: [size] across and down on the six columns. [perProject] ones show one project. Ids are saved: never rename. */
-enum class ModuleKind(val id: String, val title: String, val blurb: String, val size: Pair<Int, Int>, val perProject: Boolean = false) {
+/**
+ * A module, with the cells it starts at: [size] across and down on the six columns. [perProject] ones show one project;
+ * a [chatScreen] one is the chat itself, a block on a screen whose window is its chat (Soma desktop), never on the Fold,
+ * whose chat is an app of its own. Ids are saved: never rename.
+ */
+enum class ModuleKind(val id: String, val title: String, val blurb: String, val size: Pair<Int, Int>, val perProject: Boolean = false, val chatScreen: Boolean = false) {
     Needs("needs", "Needs you", "What waits for your OK, from every thread: approve or deny from the tile.", 3 to 2),
     Threads("threads", "Threads", "Every thread and how it stands; tap one to open it in the chat.", 3 to 2),
     Computers("computers", "Computers", "Each computer, whether it answers, and how busy it is.", 3 to 2),
@@ -31,6 +35,7 @@ enum class ModuleKind(val id: String, val title: String, val blurb: String, val 
     Pocket("pocket", "Pocket", "Files in your pocket, from every machine.", 3 to 2),
     Handoff("handoff", "Handoff", "A project's handoff: where things stand, and next.", 3 to 3, perProject = true),
     Project("project", "Project", "A project's threads and its next step.", 3 to 2, perProject = true),
+    Chat("chat", "Chat", "The chat itself.", 3 to 4, chatScreen = true),
     ;
 
     companion object { fun of(id: String) = entries.firstOrNull { it.id == id } }
@@ -86,6 +91,8 @@ fun ModuleView(ref: ModuleRef, size: ModuleSize, source: ModuleSource, now: Long
         ModuleKind.Pocket -> PocketModule(source.pocket(), size, now, modifier)
         ModuleKind.Handoff -> HandoffModule(ref.project.orEmpty(), source.handoff(ref.project.orEmpty()), size, modifier)
         ModuleKind.Project -> ProjectModule(source.project(ref.project.orEmpty()), size, modifier, onOpen = onOpen)
+        // The chat is drawn by the screen it is on, which has the chat's host; here it is only its place.
+        ModuleKind.Chat -> androidx.compose.foundation.layout.Box(modifier)
     }
 }
 

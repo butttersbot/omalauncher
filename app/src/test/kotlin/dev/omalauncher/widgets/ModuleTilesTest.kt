@@ -45,7 +45,9 @@ class ModuleTilesTest {
 
     @Test fun theStoreOffersEachModuleOnceAndProjectsForTheirThreads() {
         val offered = storeModules(listOf("omalauncher", "pond", "../bad"))
-        assertEquals(ModuleKind.entries.count { !it.perProject } + 4, offered.size)
+        assertEquals(ModuleKind.entries.count { !it.perProject && !it.chatScreen } + 4, offered.size)
+        // The chat is an app of its own on the phone: never offered for home.
+        assertTrue(offered.none { it.kind == ModuleKind.Chat })
         assertEquals(offered.map { it.key }.distinct(), offered.map { it.key })
         assertTrue(offered.any { it.key == "module:project:pond" && it.name == "project · pond" })
         assertTrue(offered.none { "bad" in it.key })
@@ -113,6 +115,7 @@ class ModuleTilesTest {
         assertEquals(Cell(0, 0, 3, 3), live.cell("module:handoff:pond"))
         // No module, no page: nothing.
         assertNull(landModule(live, layout, "module:clock", "p1", itemsOn))
+        assertNull(landModule(live, layout, "module:chat", "p1", itemsOn))
         assertNull(landModule(live, layout, "module:pocket", "nope", itemsOn))
         assertEquals(ModuleKind.Timeline.size, ModuleItem("module:timeline").size)
         assertEquals(1 to 1, ModuleItem("module:timeline").minSize)

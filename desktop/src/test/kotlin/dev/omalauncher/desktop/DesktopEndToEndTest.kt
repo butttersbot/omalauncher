@@ -13,6 +13,11 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.runComposeUiTest
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.test.swipe
+import androidx.compose.ui.test.rightClick
+import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.graphics.toAwtImage
@@ -182,5 +187,93 @@ class DesktopEndToEndTest {
         val shot = onRoot().captureToImage()
         File("build/render").mkdirs()
         javax.imageio.ImageIO.write(shot.toAwtImage(), "png", File("build/render/desktop-e2e-switch.png"))
+    }
+
+    /**
+     * The window as a canvas, end to end (slice 5): against the real runner, a new chat's thread asks to write a file, the
+     * ask shows in the Needs you module beside the chat, and approving it there lets the agent write it. While arranging,
+     * Threads is resized by its corner, a verb in the log that a restart replays, and a drag onto another block is refused. A
+     * soma:// link to the chat's thread opens its tab in the chat block. Narrowed, the window is the chat alone.
+     */
+    @Test fun theCanvasApprovesFromAModuleResizesAndOpensALink() = runComposeUiTest {
+        val notices = Notices()
+        val machine = MacMachine("testhost", "Test box", MacRunnerConfig("http://127.0.0.1:$port", key))
+        val platform = DesktopThreadsPlatform(notices) { listOf(machine) }
+        val engine = MacThreadsEngine(platform)
+        val front = DesktopFrontAgent(engine, platform, notices, places = emptyList())
+        val host = DesktopChatHost(platform, engine, front, notices)
+        engine.open()
+        val canvas = DesktopCanvas(SomaHome.canvas, "testhost").also { it.load() }
+        val source = dev.omalauncher.canvas.chatHostModules(host, handoffs = engine::handoffs, registry = engine::projects)
+        var wanted: String? by androidx.compose.runtime.mutableStateOf<String?>(null)
+        var now by androidx.compose.runtime.mutableStateOf(0L)
+        var width by androidx.compose.runtime.mutableStateOf(1000.dp)
+        mainClock.autoAdvance = false
+        setContent {
+            androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.size(width, 760.dp)) {
+                CanvasScreen(canvas, host, source, now, wanted, onTab = { wanted = it })
+            }
+        }
+        fun settle(ms: Long = 1_200) { now = System.currentTimeMillis(); mainClock.advanceTimeBy(ms) }
+        fun waitFor(what: String, done: () -> Boolean) {
+            val deadline = System.currentTimeMillis() + 40_000
+            while (System.currentTimeMillis() < deadline && !done()) { Thread.sleep(250); settle(500) }
+            assertTrue("$what: ${platform.chatLog().tasks.map { "${it.thread} ${it.status} ${it.steps} ${it.result.take(60)}" }}", done())
+        }
+        settle()
+        onNodeWithContentDescription("Chat block").assertExists()
+        onNodeWithContentDescription("Needs you module").assertExists()
+        onNodeWithText("Nothing waits on you.", substring = true).assertExists()
+        // A new chat in the chat block; its thread on the runner asks to write a file.
+        onNodeWithContentDescription("Show the tabs").performClick(); settle()
+        onNodeWithContentDescription("New chat").performClick(); settle()
+        onNode(androidx.compose.ui.test.hasSetTextAction()).performTextInput("write the notes file")
+        settle()
+        onNodeWithText("[ send ]").performClick()
+        waitFor("the thread's ask reached the modules") { source.asks().isNotEmpty() }
+        settle()
+        // Approved from the module, not the chat's card: the agent writes it.
+        onAllNodes(hasText("[ approve ]")).onFirst().performClick()
+        val thread = platform.chatLog().tasks.last { it.mac }.thread
+        val project = File(engine.view.threads.first { it.id == thread }.project)
+        waitFor("approved from the module, the file was written") { File(project, "written.txt").isFile }
+        // Arranging: Threads is made a row shorter by its corner; a drag onto Needs you is refused.
+        onRoot().performMouseInput { rightClick(androidx.compose.ui.geometry.Offset(990f, 745f)) }
+        settle(300)
+        onNodeWithText("arrange").performClick(); settle(300)
+        val logBefore = canvas.log.entries.size
+        val threads = canvas.items().first { it.key == "module:threads" }.cell!!
+        // While arranging, the bar's 36 dp strip comes off the grid's height.
+        val pitchY = (760f - 36f - 8f * (DESKTOP_ROWS + 1)) / DESKTOP_ROWS + 8f
+        onNodeWithContentDescription("resize module:threads").performTouchInput { swipe(center, center - androidx.compose.ui.geometry.Offset(0f, pitchY * 1.1f), 400) }
+        settle(300)
+        assertEquals(threads.copy(h = threads.h - 1), canvas.items().first { it.key == "module:threads" }.cell)
+        val grown = canvas.items().first { it.key == "module:threads" }.cell!!
+        assertEquals("hand", canvas.log.entries.last().origin.actor)
+        assertEquals(logBefore + 1, canvas.log.entries.size)
+        // A drag onto Needs you is refused: it goes back where it was and nothing is kept.
+        onNodeWithContentDescription("arrange module:threads").performTouchInput { swipe(center, center + androidx.compose.ui.geometry.Offset(-200f, 0f), 400) }
+        settle(300)
+        assertEquals(grown, canvas.items().first { it.key == "module:threads" }.cell)
+        assertEquals(logBefore + 1, canvas.log.entries.size)
+        // Replayed after a restart, as it was left.
+        assertEquals(canvas.page, DesktopCanvas(SomaHome.canvas, "testhost").also { it.load() }.page)
+        onNodeWithText("  [ done ]").performClick(); settle(300)
+        // A link to the chat's thread opens the chat's tab in the chat block, as Main's opener does.
+        wanted = null; settle()
+        val tab = dev.omalauncher.oma.somaLinkTab("soma://thread/$thread", platform.book())
+        assertEquals(dev.omalauncher.oma.chatKey(platform.book().chats.single().id), tab)
+        wanted = tab; settle()
+        onNode(hasText("write the notes file", substring = true) and androidx.compose.ui.test.hasAnyAncestor(androidx.compose.ui.test.hasContentDescription("Chat block"))).assertExists()
+        // The Timeline module says it once, though the chat is named by its words.
+        onNode(hasText("write the notes file · write the notes file", substring = true)).assertDoesNotExist()
+        // Narrowed under the canvas's room, the window is the chat alone; widened, the canvas is back as it was.
+        width = 600.dp; settle()
+        onNodeWithContentDescription("Needs you module").assertDoesNotExist()
+        width = 1000.dp; settle()
+        onNodeWithContentDescription("Needs you module").assertExists()
+        val shot = onRoot().captureToImage()
+        File("build/render").mkdirs()
+        javax.imageio.ImageIO.write(shot.toAwtImage(), "png", File("build/render/desktop-canvas-e2e.png"))
     }
 }

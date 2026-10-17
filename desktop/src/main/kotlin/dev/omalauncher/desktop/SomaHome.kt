@@ -16,6 +16,9 @@ object SomaHome {
     val notes get() = File(dir, "threads.json")
     val runners get() = File(dir, "runners.json")
     val settings get() = File(dir, "settings.json")
+
+    /** The window's canvas: its verb log (DesktopCanvas). */
+    val canvas get() = File(dir, "canvas.json")
     val socket get() = File(dir, "soma.port")
     val lock get() = File(dir, "soma.lock")
 

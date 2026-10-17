@@ -88,7 +88,8 @@ fun landModule(
     page: String,
     itemsOn: (String) -> List<HomeItem>,
 ): String? {
-    if (moduleRef(key) == null || notebook.pageOf(key) != null || notebook.position(page) < 0) return null
+    // The chat is an app of its own on the phone: it is never a block on home.
+    if (moduleRef(key)?.kind?.chatScreen != false || notebook.pageOf(key) != null || notebook.position(page) < 0) return null
     notebook.move(key, page)
     return layout.land(ModuleItem(key), itemsOn) ?: page
 }

@@ -269,7 +269,7 @@ internal data class StoreModule(val key: String, val name: String, val kind: Mod
 
 /** The modules the store offers: each kind once, then a Project and a Handoff module for each of [projects]. */
 internal fun storeModules(projects: List<String>): List<StoreModule> =
-    ModuleKind.entries.filter { !it.perProject }.mapNotNull { k -> moduleKey(k)?.let { StoreModule(it, k.title, k) } } +
+    ModuleKind.entries.filter { !it.perProject && !it.chatScreen }.mapNotNull { k -> moduleKey(k)?.let { StoreModule(it, k.title, k) } } +
         projects.flatMap { p -> ModuleKind.entries.filter { it.perProject }.mapNotNull { k -> moduleKey(k, p)?.let { StoreModule(it, "${k.title.lowercase()} · $p", k) } } }
 
 private const val ALL = "all"

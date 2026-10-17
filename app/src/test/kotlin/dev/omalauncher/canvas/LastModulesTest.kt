@@ -38,6 +38,7 @@ class LastModulesTest {
         )
         // An image-only request and a stored receipt with no thread name read cleanly.
         assertEquals("notch trading", moduleTimeline(listOf(ChatTask(1, "→ notch trading", "", thread = "mac/t2"))).single().text)
+        assertEquals("fix the herd", moduleTimeline(listOf(ChatTask(1, "→ fix the herd", "fix the herd", thread = "mac/t2", threadName = "fix the herd"))).single().text)
         assertEquals("only this", moduleTimeline(listOf(ChatTask(1, "", "\n\n  only this  \nnot this"))).single().text)
     }
 

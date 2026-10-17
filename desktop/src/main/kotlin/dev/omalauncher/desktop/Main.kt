@@ -15,7 +15,9 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import dev.omalauncher.assist.MacThreadsEngine
 import dev.omalauncher.oma.OMA_TAB
-import dev.omalauncher.oma.OmaChatScreen
+import dev.omalauncher.canvas.chatHostModules
+import dev.omalauncher.canvas.cockpitFeeds
+import dev.omalauncher.canvas.moduleProjects
 import dev.omalauncher.oma.somaLinkKey
 import dev.omalauncher.oma.somaLinkTab
 import dev.omalauncher.ui.DesktopBack
@@ -70,12 +72,32 @@ fun main(args: Array<String>) {
         if (desktop.isSupported(java.awt.Desktop.Action.APP_OPEN_URI)) desktop.setOpenURIHandler { event -> javax.swing.SwingUtilities.invokeLater { open(event.uri.toString()) } }
     }
     Looks.fonts()
-    Looks.use(SomaHome.read(SomaHome.settings).optString("pack").ifEmpty { null })
+    // City Pop unless he picked another look from the tray (Boss, 2026-10-16: "start with city pop for desktop too").
+    Looks.use(SomaHome.read(SomaHome.settings).optString("pack").ifEmpty { "city-pop" })
     val notices = Notices()
     val platform = DesktopThreadsPlatform(notices)
     val engine = MacThreadsEngine(platform)
     val front = DesktopFrontAgent(engine, platform, notices)
     val host = DesktopChatHost(platform, engine, front, notices)
+    // The window's canvas (slice 5), and its modules' one source: the chat's own host, and the slower feeds on a timer.
+    val canvas = DesktopCanvas(SomaHome.canvas, runCatching { InetAddress.getLocalHost().hostName }.getOrDefault("desktop")).also { it.load() }
+    canvas.setAside?.let { notices.say("Soma", "The canvas's saved layout couldn't be read, so it was set aside as ${it.name} and the starting page was laid out.") }
+    val source = chatHostModules(host, cockpitFeeds(), handoffs = engine::handoffs, registry = engine::projects)
+    val tick = mutableStateOf(0L)
+    // Two loops: the look, which only reads what the app holds, never waits on the slower feeds, whose reads can take a while.
+    thread(name = "soma-modules", isDaemon = true) {
+        while (true) {
+            javax.swing.SwingUtilities.invokeLater { tick.value = System.currentTimeMillis() }
+            Thread.sleep(MODULES_LOOK_MS)
+        }
+    }
+    thread(name = "soma-feeds", isDaemon = true) {
+        while (true) {
+            runCatching { source.refresh(moduleProjects(canvas.items().map { it.key })) }
+            javax.swing.SwingUtilities.invokeLater { tick.value = System.currentTimeMillis() }
+            Thread.sleep(MODULE_FEEDS_MS)
+        }
+    }
     // A link shows the window on its tab: a thread's own, or the chat that lives on it. One for no tab known opens nothing.
     javax.swing.SwingUtilities.invokeLater {
         opener = { url ->
@@ -111,7 +133,7 @@ fun main(args: Array<String>) {
             onCloseRequest = { shown = false },
             visible = shown,
             title = "Soma",
-            state = rememberWindowState(size = DpSize(520.dp, 820.dp)),
+            state = rememberWindowState(size = DpSize(1240.dp, 820.dp)),
             onPreviewKeyEvent = { e ->
                 if (e.type == KeyEventType.KeyDown && e.key == Key.Escape) {
                     if (!DesktopBack.press()) shown = false
@@ -121,10 +143,14 @@ fun main(args: Array<String>) {
                 }
             },
         ) {
-            OmaChatScreen(host, prefill = null, onPrefilled = {}, wanted = wanted, onTab = { wanted = it.takeIf { tab -> tab != OMA_TAB } })
+            CanvasScreen(canvas, host, source, tick.value, wanted, onTab = { wanted = it })
         }
     }
 }
+
+/** How often the modules look again at what the app holds, and how often the slower feeds (herd, pocket, handoffs) are read. */
+private const val MODULES_LOOK_MS = 2_000L
+private const val MODULE_FEEDS_MS = 30_000L
 
 /**
  * Says why Soma can't start where he will see it (opened from Finder there is no terminal), and ends with [code].

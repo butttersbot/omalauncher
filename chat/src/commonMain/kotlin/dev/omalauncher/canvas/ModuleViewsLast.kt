@@ -52,7 +52,9 @@ fun moduleTimeline(tasks: List<ChatTask>, meta: TabMeta = TabMeta(), limit: Int 
     }
     val where = t.threadName.ifEmpty { t.agent.removePrefix("→").trim() }.take(40)
     val said = t.prompt.lineSequence().firstOrNull { it.isNotBlank() }?.trim()?.take(120).orEmpty()
-    ModuleEvent(t.time, state, listOf(where, said).filter { it.isNotEmpty() }.joinToString(" · "), eventTab(t, meta))
+    // A new chat is named by its first words: its name isn't said twice.
+    val text = if (where.isNotEmpty() && said.startsWith(where)) said else listOf(where, said).filter { it.isNotEmpty() }.joinToString(" · ")
+    ModuleEvent(t.time, state, text, eventTab(t, meta))
 }
 
 /**
