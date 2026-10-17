@@ -14,7 +14,7 @@ config="$dir/mac-runner.json"
 usage() {
   cat >&2 <<USAGE
 usage: oma threads list
-       oma threads new NAME PROJECT_PATH [--kind claude|codex|grok|cursor] [--mac MAC]
+       oma threads new NAME PROJECT_PATH [--kind claude|codex|grok|cursor] [--mode auto|manual] [--mac MAC]
        oma threads macs
        oma threads add-mac FILE [--name NAME]
 
@@ -25,6 +25,8 @@ new makes a thread called NAME for the folder PROJECT_PATH on the Mac (~ is the
 Mac's home there) and prints its id. The folder must already exist under one of
 the roots the Mac allows; otherwise the Mac refuses and its roots are printed.
 --kind chooses the agent that works in it; without it the Mac starts Claude.
+--mode auto lets its agent run its steps without asking; manual sends each step to
+Boss to approve. Without it the Mac decides: auto, but manual for Codex.
 --mac chooses the Mac, by its name or id; without it the first, the Mac Pro.
 macs prints each Mac set up here: name, id and address, never its key.
 add-mac sets up a Mac from the {"url","key"} file its runner sent (oma drop get
@@ -140,6 +142,7 @@ list_one() {
 command=$1
 shift
 kind=
+mode=
 choose=
 case $command in
   list | macs) [ $# -eq 0 ] || usage ;;
@@ -151,6 +154,7 @@ case $command in
     while [ $# -gt 0 ]; do
       case $#:$1:${2-} in
         *:--kind:claude | *:--kind:codex | *:--kind:grok | *:--kind:cursor) [ -z "$kind" ] || usage; kind=$2; shift 2 ;;
+        *:--mode:auto | *:--mode:manual) [ -z "$mode" ] || usage; mode=$2; shift 2 ;;
         *:--mac:?*) [ -z "$choose" ] || usage; choose=$2; shift 2 ;;
         *) usage ;;
       esac
@@ -231,7 +235,8 @@ case $command in
       [ -n "$target" ] || die "No Mac called \"$choose\" is set up; oma threads macs lists them."
     fi
     use_mac "$target"
-    request=$(jq -cn --arg name "$thread_name" --arg project "$project" --arg kind "$kind" '{name: $name, project: $project} + if $kind == "" then {} else {kind: $kind} end')
+    request=$(jq -cn --arg name "$thread_name" --arg project "$project" --arg kind "$kind" --arg mode "$mode" \
+      '{name: $name, project: $project} + (if $kind == "" then {} else {kind: $kind} end) + (if $mode == "" then {} else {mode: $mode} end)')
     reply=$(call POST /threads "$request") || die "$(away) Nothing was made."
     code=${reply##*$'\n'}
     answer=${reply%$'\n'*}
