@@ -140,6 +140,16 @@ fun newChatId(now: Long, taken: Collection<String>): String {
  * (decided for Boss, 2026-10-14, OPEN-BUGS #14): it was set up for something, so ＋ starts a fresh chat beside it.
  * Only he names a chat that has nothing in it, since Oma names a chat from its first exchange. Null when there is none.
  */
+/**
+ * The tab of a new chat to start, as ＋ starts one: an empty new chat is opened again rather than a second one made, and
+ * a new one is entered in the book. Wherever it is asked from (the chat's ＋, a New thread module), it is this.
+ */
+fun newChatTab(host: ChatHost, now: Long = System.currentTimeMillis()): String {
+    val book = host.changeBook { it }
+    val id = emptyChat(book, host.tasks()) ?: newChatId(now, book.chats.map { it.id }).also { id -> host.changeBook { it.started(id, now) } }
+    return chatKey(id)
+}
+
 fun emptyChat(meta: TabMeta, tasks: List<ChatTask>): String? =
     meta.chats.lastOrNull { chat -> !chat.bound && chat.key !in meta.archived && chat.key !in meta.names && tasks.none { it.chat == chat.id } }?.id
 

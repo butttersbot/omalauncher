@@ -345,7 +345,10 @@ class ChatScreenTapTest : ChatScreenTestBase() {
             override fun macPending() = listOf(MacPending("mac/t2", "notch trading", asked, "ticket-1", 0))
         }
         val source = dev.omalauncher.canvas.chatHostModules(host, registry = { listOf(dev.omalauncher.assist.RegisteredProject("omalauncher", listOf("~/Projects/omalauncher", "~/Projects/omalauncher-*"))) })
+        // Before the registry is read no project is offered: a folder's own name ("omalauncher-c3") would stand for nothing after.
+        assertEquals(emptyList<String>(), source.projects())
         source.refresh(listOf("omalauncher"))
+        assertEquals(listOf("omalauncher"), source.projects())
         // Every key a module hands over is a tab the chat has.
         assertEquals(listOf("chat:c1", "chat:c2", ""), source.events().map { it.threadKey })
         assertEquals(listOf("chat:c1"), source.asks().map { it.threadKey })
@@ -367,5 +370,49 @@ class ChatScreenTapTest : ChatScreenTestBase() {
         mainClock.advanceTimeBy(500)
         assertEquals(listOf("chat:c1", "chat:c2", "chat:c1"), opened)
         assertEquals(opened, opened.map { openTab(it, host.threads()) })
+    }
+
+    /**
+     * Every module as a screen draws it from its key (slice 4): each kind shows, a tap opens its thread's tab, an approval
+     * goes through the source, and New thread starts a chat as ＋ does, the empty one again rather than a second.
+     */
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+    @Test fun modulesDrawnFromTheirKeysOpenAndAnswer() = androidx.compose.ui.test.runComposeUiTest {
+        var book = TabMeta()
+        val asked = MacApproval("a1", "n1", "Bash", """{"command":"swift build"}""", "build")
+        val answered = mutableListOf<Pair<String, Boolean>>()
+        val host = object : SampleHost() {
+            override fun changeBook(change: (TabMeta) -> TabMeta): TabMeta = change(book).also { book = it }
+            override fun tasks() = emptyList<ChatTask>()
+            override fun macPending() = listOf(MacPending("mac/t2", "notch trading", asked, "ticket-1", 0))
+            override fun answerMac(ticket: String, allow: Boolean, done: (MacApprovalOutcome) -> Unit) { answered += ticket to allow; done(MacApprovalOutcome.Decided) }
+        }
+        val source = dev.omalauncher.canvas.chatHostModules(host)
+        val opened = mutableListOf<String>()
+        val keys = dev.omalauncher.canvas.ModuleKind.entries.map { dev.omalauncher.canvas.moduleKey(it, if (it.perProject) "omalauncher" else null)!! }
+        mainClock.autoAdvance = false
+        setContent {
+            androidx.compose.foundation.layout.Column {
+                for (key in keys) {
+                    androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.size(456.dp, 152.dp)) {
+                        androidx.compose.runtime.CompositionLocalProvider(dev.omalauncher.canvas.LocalModuleFocus provides (key == "module:needs")) {
+                            dev.omalauncher.canvas.ModuleView(dev.omalauncher.canvas.moduleRef(key)!!, dev.omalauncher.canvas.ModuleSize.Card, source, 0L, onOpen = { opened += it }, onNew = { opened += newChatTab(host, now = 5_000) })
+                        }
+                    }
+                }
+            }
+        }
+        mainClock.advanceTimeBy(500)
+        // Each kind draws under its own name.
+        for (name in listOf("Needs you", "Threads", "Computers", "Timeline", "New thread", "Sessions", "Pocket", "Handoff", "omalauncher")) onNodeWithContentDescription("$name module").assertExists()
+        onNodeWithText("[ approve ]").performClick()
+        mainClock.advanceTimeBy(500)
+        assertEquals(listOf("ticket-1" to true), answered)
+        onNodeWithContentDescription("New thread module").performClick()
+        onNodeWithContentDescription("New thread module").performClick()
+        mainClock.advanceTimeBy(500)
+        // The second tap opens the same, still empty, new chat.
+        assertEquals(1, book.chats.size)
+        assertEquals(listOf(chatKey(book.chats.single().id), chatKey(book.chats.single().id)), opened.takeLast(2))
     }
 }

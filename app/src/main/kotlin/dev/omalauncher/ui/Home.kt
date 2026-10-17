@@ -2,8 +2,10 @@ package dev.omalauncher.ui
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalConfiguration
@@ -13,6 +15,15 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import android.app.WallpaperManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.snapshotFlow
+import dev.omalauncher.widgets.GRID_COLUMNS
+import dev.omalauncher.widgets.ModuleItem
+import dev.omalauncher.widgets.CockpitModules
+import dev.omalauncher.oma.newChatTab
+import dev.omalauncher.canvas.moduleSize
+import dev.omalauncher.canvas.moduleRef
+import dev.omalauncher.canvas.moduleProjects
+import dev.omalauncher.canvas.ModuleView
+import dev.omalauncher.canvas.LocalModuleFocus
 import dev.omalauncher.assist.AgentTasks
 import dev.omalauncher.herd.HerdSheep
 import dev.omalauncher.assist.MacThreads
@@ -51,6 +62,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.drawscope.clipRect
@@ -246,6 +258,15 @@ fun HomeScreen(
                     }
                 }
             }
+            // The modules look again at every turn (what they read is in memory); the slower feeds only once rested, and only
+            // with a module on home, off the main thread.
+            CockpitModules.look(now)
+            val modules = engine.notebook.modules().keys
+            if (modules.isNotEmpty() && CockpitModules.due(now)) {
+                scope.launch(Dispatchers.IO) {
+                    if (CockpitModules.feed(context, runtime, moduleProjects(modules), now)) withContext(Dispatchers.Main) { CockpitModules.look(System.currentTimeMillis()) }
+                }
+            }
             delay(AGENT_TILES_EVERY_MS)
         }
     }
@@ -352,6 +373,8 @@ fun HomeScreen(
             is Shortcut, is Folder -> engine.shortcuts.remove(item.key)
             // Nothing of a thread's tile is kept but its place, which goes below; it stays off until its thread next starts work.
             is ThreadItem -> {}
+            // A module is its place alone: it is back from the widget store whenever he wants it.
+            is ModuleItem -> {}
         }
         engine.layout.remove(item.key)
     }
@@ -553,6 +576,30 @@ fun HomeScreen(
                             modifier = tile,
                             onTap = { arrange.folder = item.key },
                         )
+                    is ModuleItem -> {
+                        val cell = engine.layout.cell(item.key)
+                        val ref = moduleRef(item.key)
+                        // Read here so the tile draws again at each look; one this build doesn't know keeps its place, blank.
+                        val now = CockpitModules.tick
+                        if (ref == null || cell == null) {
+                            androidx.compose.foundation.layout.Box(tile)
+                        } else {
+                            // A tap the module has no thread for (nothing waits, nothing runs) still opens the chat, on Soma's own tab.
+                            androidx.compose.foundation.layout.Box(tile.pointerInput(item.key) { detectTapGestures(onTap = { openOmaChat(context) }) }) {
+                                CompositionLocalProvider(LocalModuleFocus provides highlighted) {
+                                    ModuleView(
+                                        ref,
+                                        moduleSize(cell.w, cell.h, GRID_COLUMNS),
+                                        CockpitModules.source(context, runtime),
+                                        now,
+                                        Modifier.fillMaxSize(),
+                                        onOpen = { key -> openOmaChat(context, thread = key) },
+                                        onNew = { openOmaChat(context, thread = newChatTab(CockpitModules.host(context, runtime))) },
+                                    )
+                                }
+                            }
+                        }
+                    }
                     is ThreadItem ->
                         AgentTileView(
                             tile = engine.agentTiles.tiles[item.key],

@@ -1,5 +1,7 @@
 package dev.omalauncher.canvas
 
+import dev.omalauncher.assist.projectOf
+import dev.omalauncher.assist.NO_PROJECT
 import dev.omalauncher.assist.AgentThread
 import dev.omalauncher.assist.ApprovalOutcome
 import dev.omalauncher.assist.BuilderId
@@ -77,6 +79,9 @@ interface ModuleSource {
     /** Project [name]: its folder, its threads' states and its handoff's next line, as of the last [refresh] that named it. */
     fun project(name: String): ModuleProject = ModuleProject(name, "", emptyList(), "", null)
 
+    /** The projects that have threads on the computers now, by their registry names, sorted: what a project's module can be added for. Empty before the registry is read. */
+    fun projects(): List<String> = emptyList()
+
     /** His tap on nudge: agent mail to that session; [done] says whether it was taken. Blocking work runs off the caller's thread. */
     fun nudge(session: HerdSession, done: (Boolean) -> Unit) = done(false)
 }
@@ -121,6 +126,10 @@ fun chatHostModules(
     override fun events(): List<ModuleEvent> = moduleTimeline(host.tasks(), host.changeBook { it })
 
     override fun newThread(): NewThreadPick? = moduleNewThread(host.hosts())
+
+    // Only by the registry's names: before a computer has given the registry, a folder's own name could be offered and
+    // then stand for nothing once it is read.
+    override fun projects(): List<String> = if (registered.isEmpty()) emptyList() else host.macView().threads.map { projectOf(it.project, registered) }.filter { it != NO_PROJECT }.distinct().sorted()
 
     override fun project(name: String): ModuleProject = moduleProject(name, registered, host.macView().threads, host.threads(), read[name], host.changeBook { it })
 

@@ -3,6 +3,7 @@ package dev.omalauncher.widgets
 import android.content.ComponentName
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import dev.omalauncher.canvas.moduleRef
 import dev.omalauncher.AndroidApp
 import dev.omalauncher.linux.LinuxApp
 import dev.omalauncher.widgets.layout.LinuxEntry
@@ -61,6 +62,35 @@ data class ThreadItem(
 ) : HomeItem {
     override val size get() = AGENT_TILE_SIZE
     override val minSize get() = AGENT_TILE_MIN
+}
+
+/**
+ * A cockpit module ([moduleRef]): drawn by the launcher from shared state, like a thread's tile, at any size from one
+ * cell; what it shows changes with its size. It has no file and no app. A key this build doesn't know keeps its place.
+ */
+data class ModuleItem(
+    override val key: String,
+) : HomeItem {
+    override val size get() = moduleRef(key)?.kind?.size ?: (1 to 1)
+    override val minSize get() = 1 to 1
+}
+
+/**
+ * Puts the module [key] on [page] at its starting size: the first free cells there, else the next page with room, else a
+ * new page, as any new tile lands ([WidgetLayout.land]). Returns the page it is on; null, and nothing changed, for a key
+ * that is no module's, one already on home, or a page that isn't there. Before home has a grid it waits on [page] with no
+ * cells and is placed when that page is laid out.
+ */
+fun landModule(
+    notebook: LiveNotebook,
+    layout: WidgetLayout,
+    key: String,
+    page: String,
+    itemsOn: (String) -> List<HomeItem>,
+): String? {
+    if (moduleRef(key) == null || notebook.pageOf(key) != null || notebook.position(page) < 0) return null
+    notebook.move(key, page)
+    return layout.land(ModuleItem(key), itemsOn) ?: page
 }
 
 /** A desktop entry as the notebook keeps it, and back: a snapshot for when the entry is gone. */

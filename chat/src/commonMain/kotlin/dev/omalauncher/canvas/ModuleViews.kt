@@ -50,7 +50,7 @@ private val LINE_ANSWER_ROOM = 300.dp
 @Composable
 fun ModuleFrame(title: String, caption: String, size: ModuleSize, key: String, modifier: Modifier = Modifier, onOpen: (() -> Unit)? = null, content: @Composable () -> Unit) {
     val open = if (onOpen != null) Modifier.clickable(onClick = onOpen) else Modifier
-    Box(modifier.fillMaxSize().scrap(key = key, dressed = size != ModuleSize.Dot).then(open).semantics { contentDescription = "$title module" }.padding(if (size == ModuleSize.Dot) 6.dp else 12.dp)) {
+    Box(modifier.fillMaxSize().scrap(focused = LocalModuleFocus.current, key = key, dressed = size != ModuleSize.Dot).then(open).semantics { contentDescription = "$title module" }.padding(if (size == ModuleSize.Dot) 6.dp else 12.dp)) {
         when (size) {
             ModuleSize.Dot -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { content() }
             ModuleSize.Line -> BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterStart) {

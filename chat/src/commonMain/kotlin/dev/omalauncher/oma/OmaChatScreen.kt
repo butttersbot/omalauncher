@@ -408,9 +408,7 @@ private fun ChatScreen(
                     onMenu = { menuFor = it },
                     onNew = {
                         // An empty new chat is opened again rather than a second one made.
-                        val now = System.currentTimeMillis()
-                        val id = emptyChat(book, tasks) ?: newChatId(now, book.chats.map { it.id }).also { id -> host.changeBook { it.started(id, now) } }
-                        onTab(chatKey(id))
+                        onTab(newChatTab(host))
                         notice = null
                         focusAsked++
                         tick++
