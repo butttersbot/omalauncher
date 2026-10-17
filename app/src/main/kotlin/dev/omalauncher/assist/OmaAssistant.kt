@@ -40,6 +40,9 @@ import dev.omalauncher.oma.Summon
 import dev.omalauncher.oma.screenChipText
 import java.io.File
 
+/** How long a show may take to bring its window up before the ring and the sheep stop making way for it. */
+const val ASSISTANT_SHOW_WAIT_MILLIS = 2_000L
+
 class OmaVoiceService : VoiceInteractionService()
 class OmaSessionService : VoiceInteractionSessionService() {
     override fun onNewSession(args: Bundle?): VoiceInteractionSession = OmaSession(this)
@@ -51,6 +54,8 @@ class OmaSession(context: Context) : VoiceInteractionSession(context) {
     /** Counts showings, so a timeout or a saved file from an earlier one is recognised and dropped. */
     private var showingNo = 0
     private val main = Handler(Looper.getMainLooper())
+    /** Whether the window is up: between onShow and onHide. */
+    private var shown = false
     override fun onCreateContentView(): View {
         (context.applicationContext as App).runtime.start()
         return ListeningHost(context) { hide() }.also {
@@ -62,10 +67,14 @@ class OmaSession(context: Context) : VoiceInteractionSession(context) {
     /** The earliest word that the assistant is coming up: the ring over other apps gets out of the way of Android's screenshot. */
     override fun onPrepareShow(args: Bundle?, showFlags: Int) {
         OmaRing.assistant(true)
+        // A show called off before the window comes up gets no onHide (Android calls it only for a visible window):
+        // without this the ring and the sheep stayed down until the assistant next came and went (Boss, 2026-10-16).
+        main.postDelayed({ if (!shown) OmaRing.assistant(false) }, ASSISTANT_SHOW_WAIT_MILLIS)
         super.onPrepareShow(args, showFlags)
     }
     override fun onShow(args: Bundle?, showFlags: Int) {
         super.onShow(args, showFlags)
+        shown = true
         OmaRing.assistant(true)
         // The whole screen: the words sit on the paper over the app, with the ring at the screen's edge.
         window.window?.let {
@@ -112,7 +121,7 @@ class OmaSession(context: Context) : VoiceInteractionSession(context) {
         }
     }
     override fun onHide() {
-        showingNo++; offer = null
+        showingNo++; offer = null; shown = false
         panel?.end()
         OmaRing.assistant(false)
         super.onHide()
