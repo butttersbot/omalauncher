@@ -5,9 +5,12 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import dev.omalauncher.canvas.moduleRef
 import dev.omalauncher.AndroidApp
+import dev.omalauncher.AndroidShortcut
+import dev.omalauncher.ShortcutRef
 import dev.omalauncher.linux.LinuxApp
 import dev.omalauncher.widgets.layout.LinuxEntry
 import dev.omalauncher.widgets.layout.PinnedApp
+import dev.omalauncher.widgets.layout.ShortcutEntry
 
 /** Anything on the home grid. [key] identifies it in the notebook: its page and its cell. */
 sealed interface HomeItem {
@@ -28,14 +31,20 @@ data class WidgetItem(
     override val minSize get() = spec.minSize
 }
 
-/** An app pinned from the drawer: an Android activity or a Linux .desktop entry. In [folder], it has no cell of its own. */
+/**
+ * An app pinned from the drawer: an Android activity, a Linux .desktop entry, an owl app, or a shortcut an Android
+ * app made (see [AndroidShortcut]). In [folder], it has no cell of its own.
+ */
 data class Shortcut(
     override val key: String,
     val label: String,
     val component: ComponentName? = null,
-    /** [component]'s profile, as in [AndroidApp.profile]. */
+    /** [component]'s or [androidShortcut]'s profile, as in [AndroidApp.profile]. */
     val profile: Long? = null,
     val linux: LinuxApp? = null,
+    val androidShortcut: ShortcutRef? = null,
+    /** An owl app's file name. */
+    val owl: String? = null,
     val folder: String? = null,
 ) : HomeItem {
     override val size get() = 1 to 1
@@ -106,6 +115,8 @@ private fun Pinned.shortcut() =
         component = app.component?.let(ComponentName::unflattenFromString),
         profile = app.profile,
         linux = app.linux?.app(),
+        androidShortcut = app.shortcut?.let { ShortcutRef(it.packageName, it.id) },
+        owl = app.owl,
         folder = folder,
     )
 
@@ -150,6 +161,35 @@ class Shortcuts(
         app: LinuxApp,
         page: String,
     ) = notebook.pin(PinnedApp("linux:" + app.id, app.name, linux = app.entry()), page)
+
+    /** A shortcut an Android app made, from its long-press menu or when it asked to pin one. */
+    fun addAndroidShortcut(
+        shortcut: AndroidShortcut,
+        page: String,
+    ) = notebook.pin(
+        PinnedApp(keyOf(shortcut), shortcut.label, profile = shortcut.profile, shortcut = ShortcutEntry(shortcut.ref.packageName, shortcut.ref.id)),
+        page,
+    )
+
+    /** Takes [shortcut] off the home screen, out of its folder too, once it's removed from the phone. */
+    fun removeAndroidShortcut(shortcut: AndroidShortcut) = removeIfPinned(keyOf(shortcut))
+
+    /** An owl app, which opens in its own task. */
+    fun addOwl(
+        spec: WidgetSpec,
+        page: String,
+    ) = notebook.pin(PinnedApp(owlKey(spec.file.name), spec.name, owl = spec.file.name), page)
+
+    /** Takes an owl app off the home screen once its file is removed. */
+    fun removeOwl(fileName: String) = removeIfPinned(owlKey(fileName))
+
+    private fun removeIfPinned(key: String) {
+        if (notebook.apps.any { it.app.key == key }) notebook.unpin(key)
+    }
+
+    private fun keyOf(shortcut: AndroidShortcut) = "shortcut:" + shortcut.key
+
+    private fun owlKey(fileName: String) = "owl:$fileName"
 
     /** Puts an app or folder on [page]; an app moved out of its folder lands on the grid on its own. */
     fun move(

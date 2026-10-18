@@ -42,6 +42,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
@@ -64,7 +65,12 @@ class WidgetSpec(
     val minSize: Pair<Int, Int> = 1 to 1,
     /** The file's modification time when it was compiled; unchanged files aren't recompiled. */
     val stamp: Long = 0,
-)
+    /** A home tile or an app in the drawer; known from the first word even when it doesn't compile. */
+    val kind: OwlKind = OwlKind.Widget,
+) {
+    /** On a home page: a widget's tile; an app is in the drawer instead. */
+    val onHome get() = kind != OwlKind.App
+}
 
 /**
  * Loads widgets (`*.owl`) from [dir], ~/.config/omalauncher/widgets in the guest,
@@ -219,6 +225,43 @@ class WidgetEngine(
         val name = openScreen ?: return null
         val spec = specs.firstOrNull { it.file.name == name } ?: return null
         return instance(spec)?.takeIf { it.program.screen != null }?.let { spec to it }
+    }
+
+    /** [name] is a running app, which opens in its own task (OwlAppActivity). */
+    fun isApp(name: String) = instances[name]?.program?.kind == OwlKind.App
+
+    /** A running app with its spec, for its activity; null once it's removed or stops compiling. */
+    fun appInstance(name: String): Pair<WidgetSpec, WidgetInstance>? {
+        val spec = specs.firstOrNull { it.file.name == name && it.kind == OwlKind.App } ?: return null
+        return instances[name]?.takeIf { it.program.kind == OwlKind.App && it.program === spec.program }?.let { spec to it }
+    }
+
+    /** Apps whose activity is started, by file name: a count, as one app's task can briefly start twice. They stay live while home isn't showing. */
+    private val shownApps = mutableStateMapOf<String, Int>()
+
+    fun appStarted(name: String) {
+        shownApps[name] = (shownApps[name] ?: 0) + 1
+    }
+
+    fun appStopped(name: String) {
+        val n = (shownApps[name] ?: 0) - 1
+        if (n > 0) shownApps[name] = n else shownApps.remove(name)
+    }
+
+    /** An app's close(): its task closes. By file name. */
+    val appCloses = MutableSharedFlow<String>(extraBufferCapacity = 4)
+
+    /** App files that compile and can run here, for the app drawer. */
+    fun apps(): List<WidgetSpec> = specs.filter { it.kind == OwlKind.App && it.program != null && !waitsForLinux(it) }
+
+    /**
+     * Takes an app out of the drawer and its icon off home. Its file moves to .removed/, as a widget's does: it may be
+     * an agent's work, and this is easy to undo by hand.
+     */
+    fun removeApp(spec: WidgetSpec) {
+        setAside(spec)
+        clean(spec.file.name)
+        shortcuts.removeOwl(spec.file.name)
     }
 
     /** The id of the page on screen (the left one of two); widgets on those and their neighbours stay live, the rest pause. */
@@ -385,7 +428,7 @@ class WidgetEngine(
 
     /** Widgets, pinned apps, folders and thread tiles on the page with the id [page]. Wrappers compare by spec, so unchanged pages skip recomposition. */
     fun itemsOn(page: String): List<HomeItem> =
-        specs.filter { notebook.pageOf(it.file.name) == page }.map(::WidgetItem) + shortcuts.onGrid().filter { notebook.pageOf(it.key) == page } +
+        specs.filter { it.onHome && notebook.pageOf(it.file.name) == page }.map(::WidgetItem) + shortcuts.onGrid().filter { notebook.pageOf(it.key) == page } +
             notebook.threadTiles().filterValues { it == page }.keys.sorted().map(::ThreadItem) +
             notebook.modules().filterValues { it == page }.keys.sorted().map(::ModuleItem)
 
@@ -493,7 +536,7 @@ class WidgetEngine(
         // The first listing is what the migration waited for: it needs to know which widgets exist. Its one write
         // is a synchronous commit, so off the main thread; home shows nothing of the layout until it is back.
         if (!notebook.opened || (widgetsMissing && files.isNotEmpty())) {
-            val widgets = listed?.let { parsed.map { OldWidget(it.file.name, it.startPage, it.size) } }
+            val widgets = listed?.let { parsed.filter { it.onHome }.map { OldWidget(it.file.name, it.startPage, it.size) } }
             open(withContext(Dispatchers.IO) { opening.migrate(widgets) })
         }
         specs.clear()
@@ -502,8 +545,13 @@ class WidgetEngine(
         // One an agent wrote while working on a request goes to the page that request was sent from instead.
         val ask = AgentTasks.asked
         val now = System.currentTimeMillis()
-        val made = parsed.filter { ask != null && isOwnWidget(it) && ask.covers(it.stamp, now) }.associateBy { it.file.name }
-        val landed = notebook.adopt(parsed.map { it.file.name to it.startPage }) { name -> ask?.page?.takeIf { name in made } }
+        val made = parsed.filter { ask != null && it.onHome && isOwnWidget(it) && ask.covers(it.stamp, now) }.associateBy { it.file.name }
+        // Apps are in the drawer, not on a page; one that was a widget before (or held a place before apps were
+        // shown) gives its place up.
+        for (app in parsed) if (!app.onHome && notebook.pageOf(app.file.name) != null) layout.remove(app.file.name)
+        // And the other way: a file that was an app and is now a widget takes its app icon off home, which would open nothing.
+        for (widget in parsed) if (widget.onHome) shortcuts.removeOwl(widget.file.name)
+        val landed = notebook.adopt(parsed.filter { it.onHome }.map { it.file.name to it.startPage }) { name -> ask?.page?.takeIf { name in made } }
         // Its cells are given now where home has a grid, so the agent can say at once which page it is on.
         landed.mapNotNull(made::get).forEach { layout.land(WidgetItem(it), ::itemsOn) }
         // Unchanged files keep their running instance; changed ones start fresh but keep their values.
@@ -526,10 +574,17 @@ class WidgetEngine(
                     services,
                     { message -> writeError(spec.file, message, append = true) },
                     File(stateDir, "$name.json"),
-                    onScreen = { open -> if (open) openScreen = name else if (openScreen == name) openScreen = null },
+                    onScreen = { open ->
+                        when {
+                            // An app's screen is its task: close() closes it, and it has no screen { } to open.
+                            program.kind == OwlKind.App -> if (!open) appCloses.tryEmit(name)
+                            open -> openScreen = name
+                            openScreen == name -> openScreen = null
+                        }
+                    },
                     linux = { linux },
-                    // ask(), open() and sound() from a trigger work only while its screen is showing.
-                    foreground = { openScreen == name },
+                    // ask(), open() and sound() from a trigger work only while its app or screen is showing.
+                    foreground = { (shownApps[name] ?: 0) > 0 || openScreen == name },
                 )
             prev?.let(inst::adopt)
             instances[spec.file.name] = inst
@@ -542,7 +597,11 @@ class WidgetEngine(
         // A file deleted outside the launcher (an agent, rm) frees its spot, so it doesn't come back on top of
         // whatever moved in. Only while running: an empty listing at startup must not wipe the layout.
         if (old.isNotEmpty() && files.isNotEmpty()) {
-            for (name in old.keys - parsed.map { it.file.name }.toSet()) forget(name)
+            for (name in old.keys - parsed.map { it.file.name }.toSet()) {
+                forget(name)
+                // An app's icon on home would open nothing, whatever the file was when it went.
+                shortcuts.removeOwl(name)
+            }
         }
         checkDependencies(parsed)
         // Not at startup, when every file compiles: only what changed while the launcher runs, which is an agent at work.
@@ -580,8 +639,9 @@ class WidgetEngine(
         }
     }
 
-    /** The first load is done; see [reload]. */
-    private var loaded = false
+    /** The first load is done; see [reload]. Snapshot state, for an app's task opened before it (a Recents card in a new process). */
+    var loaded by mutableStateOf(false)
+        private set
 
     private val previews = Previews(context)
     private val previewQueue = Channel<String>(Channel.UNLIMITED)
@@ -614,6 +674,7 @@ class WidgetEngine(
             }
         if (skip != null) return writeCheck(spec.file, hash, "ok", "preview-skipped $hash $skip")
         val inst = instance(spec)!!
+        if (!spec.onHome) return previewApp(spec, inst, hash)
         val cells = layout.cell(name)?.let { it.w to it.h } ?: spec.size?.let { (w, h) -> w.coerceIn(1, GRID_COLUMNS) to h.coerceAtLeast(1) } ?: (3 to 3)
         val (w, h) = layout.tilePx(cells, context.resources.displayMetrics)
         previewing += name
@@ -637,6 +698,26 @@ class WidgetEngine(
         if (hashes[name] != hash) return
         val line = if (ok) "preview $hash ${cells.first}x${cells.second} ${w}x$h" else "preview-skipped $hash rendering failed"
         writeCheck(spec.file, hash, "ok", listOfNotNull(line, screen).joinToString("\n"))
+    }
+
+    /** An app has no tile: its view is drawn at the phone's size, as it opens, and noted as its screen. */
+    private suspend fun previewApp(
+        spec: WidgetSpec,
+        inst: WidgetInstance,
+        hash: String,
+    ) {
+        val name = spec.file.name
+        val dm = context.resources.displayMetrics
+        previewing += name
+        val ok =
+            try {
+                previews.renderScreen(spec, inst, dm.widthPixels, dm.heightPixels, File(previewDir, "$name.screen.png")) { snapshotFlow { inst.loaded() }.first { it } }
+            } finally {
+                previewing.remove(name)
+            }
+        if (hashes[name] != hash) return
+        val tile = "preview-skipped $hash an app has no tile"
+        writeCheck(spec.file, hash, "ok", if (ok) "$tile\nscreen $hash ${dm.widthPixels}x${dm.heightPixels}" else tile)
     }
 
     /**
@@ -673,9 +754,13 @@ class WidgetEngine(
         if (!missing[spec.file.name].isNullOrEmpty()) return false
         // A preview needs real values, even while the home screen is hidden behind the agent's terminal.
         if (spec.file.name in previewing) return true
+        // An app in its own task: live while that's showing, whatever home does.
+        if ((shownApps[spec.file.name] ?: 0) > 0) return true
         if (!visible) return false
         // Its screen is open: it's on screen wherever the pages are.
         if (spec.file.name == openScreen) return true
+        // An app not showing has nothing on a page to keep live.
+        if (!spec.onHome) return false
         val here = notebook.position(activePage)
         val there = notebook.position(notebook.pageOf(spec.file.name))
         return here < 0 || there < 0 || there in here - 1..here + activeSpan
@@ -692,23 +777,32 @@ class WidgetEngine(
         hashes[file.name] = hash
         return try {
             val p = Compiler.compile(text)
-            // Faces and owl apps compile, but this launcher's home is the notebook: it has no place to show them yet.
-            if (p.kind != OwlKind.Widget) {
-                return broken(file, previous, stamp, "${p.kind.word} files aren't shown on Soma's home yet; only widget \"…\" { } files are", hash)
+            // Faces compile, but this launcher's home is the notebook: it has no place for a whole-page face.
+            if (p.kind == OwlKind.Face) {
+                return broken(file, previous, stamp, "face files aren't shown on Soma's home; widget \"…\" { } and app \"…\" { } files are", hash)
             }
             writeError(file, null)
             // Advice, after the clear and before the check result, so owl-check prints it with the rest.
             for (w in p.warnings) writeError(file, "warning: $w", append = true)
             writeCheck(file, hash, "ok")
-            WidgetSpec(file, p.name, p.page, p.order, p, null, p.size, p.minSize, stamp)
+            WidgetSpec(file, p.name, p.page, p.order, p, null, p.size, p.minSize, stamp, p.kind)
         } catch (e: CompileError) {
-            broken(file, previous, stamp, Source(text).format(e), hash)
+            broken(file, previous, stamp, Source(text).format(e), hash, kindOf(text, previous))
         } catch (e: RuntimeException) {
-            broken(file, previous, stamp, e.toString(), hash)
+            broken(file, previous, stamp, e.toString(), hash, kindOf(text, previous))
         } catch (e: StackOverflowError) {
-            broken(file, previous, stamp, "too deeply nested", hash)
+            broken(file, previous, stamp, "too deeply nested", hash, kindOf(text, previous))
         }
     }
+
+    /**
+     * What a file that doesn't compile is, by its first word; an empty one (caught before its content was written)
+     * stays what it was, so an app doesn't pass for a widget for a reload and lose its icon on home.
+     */
+    private fun kindOf(
+        text: String,
+        previous: WidgetSpec?,
+    ): OwlKind = if (text.isBlank()) previous?.kind ?: OwlKind.Widget else OwlKind.of(text)
 
     /** A widget that doesn't compile stays where it was, so fixing it doesn't reshuffle the page. */
     private fun broken(
@@ -717,10 +811,13 @@ class WidgetEngine(
         stamp: Long,
         error: String,
         hash: String,
+        // A broken app stays out of home rather than showing up there as a broken tile; a face is shown as one, saying why.
+        kind: OwlKind = previous?.kind?.takeIf { it == OwlKind.App } ?: OwlKind.Widget,
     ): WidgetSpec {
         writeError(file, error)
         writeCheck(file, hash, "error")
-        return WidgetSpec(file, file.nameWithoutExtension, previous?.startPage ?: 1, previous?.order ?: 999, null, error, previous?.size, previous?.minSize ?: (1 to 1), stamp)
+        val shown = if (kind == OwlKind.App) OwlKind.App else OwlKind.Widget
+        return WidgetSpec(file, file.nameWithoutExtension, previous?.startPage ?: 1, previous?.order ?: 999, null, error, previous?.size, previous?.minSize ?: (1 to 1), stamp, shown)
     }
 
     /** Error files are written in order: a clear must never land after the error that follows it. */

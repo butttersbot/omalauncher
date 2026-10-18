@@ -7,6 +7,7 @@ import dev.omalauncher.widgets.layout.NotebookItem
 import dev.omalauncher.widgets.layout.NotebookPage
 import dev.omalauncher.widgets.layout.NotebookStore
 import dev.omalauncher.widgets.layout.PinnedApp
+import dev.omalauncher.widgets.layout.ShortcutEntry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -216,6 +217,36 @@ class LiveNotebookTest {
         assertEquals(listOf(chrome.key), again.apps.map { it.app.key })
         assertNull(again.pageOf("folder:a"))
         assertEquals(again.snapshot(), reopened().snapshot())
+    }
+
+    @Test fun pinnedShortcutsAndOwlAppsLiveInTheNotebookAndSurviveARestart() {
+        val live = live()
+        val site = PinnedApp("shortcut:org.chromium/#10#site-1", "Docs", profile = 10, shortcut = ShortcutEntry("org.chromium", "site-1"))
+        val notes = PinnedApp("owl:notes.owl", "Notes", owl = "notes.owl")
+        live.pin(site, "p2")
+        live.pin(notes, "p3")
+        // In a folder too, as any pinned app can be.
+        assertEquals("folder:rs", live.group(notes.key, chrome.key))
+        val again = reopened()
+        assertEquals(live.snapshot(), again.snapshot())
+        assertEquals("p2", again.pageOf(site.key))
+        val shortcuts = Shortcuts(again)
+        val tile = shortcuts.items.single { it.key == site.key }
+        assertEquals(dev.omalauncher.ShortcutRef("org.chromium", "site-1"), tile.androidShortcut)
+        assertEquals(10L, tile.profile)
+        assertNull(tile.component)
+        val owl = shortcuts.items.single { it.key == notes.key }
+        assertEquals("notes.owl", owl.owl)
+        assertEquals("folder:rs", owl.folder)
+        // Taken off home once the app is gone: its folder of two dissolves, the other app keeps the cell.
+        shortcuts.removeOwl("notes.owl")
+        assertNull(again.pageOf(notes.key))
+        assertFalse("folder:rs" in again.folders)
+        assertEquals("p1", again.pageOf(chrome.key))
+        // One that isn't pinned changes nothing.
+        val before = writes.size
+        shortcuts.removeOwl("other.owl")
+        assertEquals(before, writes.size)
     }
 
     @Test fun theDockIsSavedWithThePages() {

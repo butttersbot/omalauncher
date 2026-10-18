@@ -50,6 +50,7 @@ import dev.omalauncher.Runtime
 import dev.omalauncher.linux.LinuxState
 import dev.omalauncher.oma.ring.HomeRing
 import dev.omalauncher.widgets.checkSecretsCommand
+import dev.omalauncher.widgets.editWidgetCommand
 import dev.omalauncher.widgets.publishWidgetCommand
 import dev.omalauncher.widgets.render.LocalHomeCovered
 import dev.omalauncher.widgets.reviewSharedWidgetCommand
@@ -144,6 +145,8 @@ private fun DesktopScreen(
         when (hit) {
             is AppHit.Linux -> runtime.launch(hit.app)
             is AppHit.Android -> runtime.androidApps.open(hit.app)
+            is AppHit.Shortcut -> runtime.androidApps.open(hit.shortcut)
+            is AppHit.Owl -> runtime.openOwlApp(hit.spec.file.name)
         }
     }
 
@@ -157,6 +160,8 @@ private fun DesktopScreen(
                     when (hit) {
                         is AppHit.Linux -> runtime.widgets.shortcuts.addLinux(hit.app, state.currentPage)
                         is AppHit.Android -> runtime.widgets.shortcuts.addAndroid(hit.app, state.currentPage)
+                        is AppHit.Shortcut -> runtime.widgets.shortcuts.addAndroidShortcut(hit.shortcut, state.currentPage)
+                        is AppHit.Owl -> runtime.widgets.shortcuts.addOwl(hit.spec, state.currentPage)
                     }
                     state.close()
                 },
@@ -171,6 +176,23 @@ private fun DesktopScreen(
                     runtime.androidApps.openInfo(app)
                 },
                 uninstall = { app -> runtime.androidApps.uninstall(app) },
+                // Off home too: its tile would only be a name that opens nothing.
+                remove = { shortcut ->
+                    runtime.androidApps.remove(shortcut)
+                    runtime.widgets.shortcuts.removeAndroidShortcut(shortcut)
+                },
+                // Opening one leaves the drawer at once, as opening an app does; pinning one closes it to show the new tile, as pin does.
+                shortcuts = { app -> shortcutMenu(runtime, app, page = { state.currentPage }, onOpen = state::closeNow, onPinned = state::close) },
+                edit = { spec ->
+                    val agent = runtime.agents.default
+                    if (agent == null) {
+                        state.agentsOpen = true
+                    } else {
+                        state.closeNow()
+                        runtime.terminal(editWidgetCommand(agent.bin, spec), "Edit ${spec.name}", agent)
+                    }
+                },
+                removeOwl = { spec -> runtime.widgets.removeApp(spec) },
             )
         }
 

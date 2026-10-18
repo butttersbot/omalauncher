@@ -78,6 +78,8 @@ import androidx.compose.ui.graphics.ColorFilter
 import dev.omalauncher.AndroidApp
 import androidx.compose.runtime.collectAsState
 import dev.omalauncher.Runtime
+import dev.omalauncher.AndroidShortcut
+import dev.omalauncher.widgets.WidgetSpec
 import dev.omalauncher.linux.LinuxState
 import androidx.compose.ui.graphics.vector.ImageVector
 import dev.omalauncher.linux.FILES_COMMAND
@@ -115,6 +117,26 @@ internal sealed interface AppHit {
 
         override fun paused(runtime: Runtime) = runtime.androidApps.paused(app.profile)
     }
+
+    /** An owl file that's an app: it opens full screen in its own task. */
+    data class Owl(
+        val spec: WidgetSpec,
+    ) : AppHit {
+        override val key get() = "o:" + spec.file.name
+        override val label get() = spec.name
+    }
+
+    /** A shortcut an app put on the home screen, such as a website installed from a browser. */
+    data class Shortcut(
+        val shortcut: AndroidShortcut,
+    ) : AppHit {
+        override val key get() = "s:" + shortcut.key
+        override val label get() = shortcut.label
+        override val spoken get() = shortcut.spoken
+        override val alias get() = if (shortcut.profile != null) "${shortcut.label} ${if (shortcut.clone) "clone" else "work"}" else null
+
+        override fun paused(runtime: Runtime) = runtime.androidApps.paused(shortcut.profile)
+    }
 }
 
 /** What the search field's query matched: apps best first, and whether Enter opens the first rather than asking the agent. */
@@ -126,7 +148,9 @@ internal class BarSearch(
     fun highlighted(picked: Int?) = picked?.coerceIn(-1, hits.lastIndex) ?: if (opensApp) 0 else -1
 }
 
-internal fun allApps(runtime: Runtime): List<AppHit> = runtime.linuxApps.map { AppHit.Linux(it) } + runtime.androidApps.apps.map { AppHit.Android(it) }
+internal fun allApps(runtime: Runtime): List<AppHit> =
+    runtime.widgets.apps().map { AppHit.Owl(it) } + runtime.linuxApps.map { AppHit.Linux(it) } + runtime.androidApps.apps.map { AppHit.Android(it) } +
+        runtime.androidApps.shortcuts.map { AppHit.Shortcut(it) }
 
 internal fun searchApps(
     runtime: Runtime,
@@ -138,7 +162,10 @@ internal fun searchApps(
     return BarSearch(ranked.map { it.first }, ranked.firstOrNull()?.let { isStrongMatch(it.second, query) } == true)
 }
 
-/** What the app cells do: open, pin to home, pin to the dock or unpin, and the Android app's info and uninstall. */
+/**
+ * What the app cells do: open, pin to home, pin to the dock or unpin, the Android app's info, uninstall and shortcuts,
+ * removing a shortcut, and an owl app's edit and remove.
+ */
 internal class AppHandlers(
     val launch: (AppHit) -> Unit,
     val pin: (AppHit) -> Unit,
@@ -148,12 +175,26 @@ internal class AppHandlers(
     val dock: (AppHit) -> Unit,
     val info: (AndroidApp) -> Unit,
     val uninstall: (AndroidApp) -> Unit,
+    /** Takes a shortcut an app made off the phone, and off home. */
+    val remove: (AndroidShortcut) -> Unit,
+    /** An Android app's shortcuts, for its long-press menu. */
+    val shortcuts: (AndroidApp) -> ShortcutMenu,
+    /** Opens the default agent on an owl app's file. */
+    val edit: (WidgetSpec) -> Unit,
+    /** Takes an owl app out of the drawer, and its icon off home. */
+    val removeOwl: (WidgetSpec) -> Unit,
 )
 
 /** What the long-press menu calls [AppHandlers.dock] for an app that is or isn't [docked]. */
 internal fun dockActionLabel(docked: Boolean) = if (docked) "unpin from dock" else "pin to dock"
 
-/** The long-press menu of an app cell: pin to home, pin to the dock or unpin, and for Android apps their info and uninstall. */
+/** The shortcuts an Android app offers above its menu's actions; null for anything else. */
+private fun AppHit.shortcutMenu(handlers: AppHandlers): ShortcutMenu? = (this as? AppHit.Android)?.let { handlers.shortcuts(it.app) }
+
+/**
+ * The long-press menu of an app cell: pin to home, pin to the dock or unpin, for Android apps their info and uninstall,
+ * for owl apps editing and removing, and for shortcuts removing them.
+ */
 private fun AppHit.actions(handlers: AppHandlers): List<Pair<String, () -> Unit>> {
     val dock = dockActionLabel(handlers.docked(this)) to { handlers.dock(this) }
     return when (this) {
@@ -165,6 +206,19 @@ private fun AppHit.actions(handlers: AppHandlers): List<Pair<String, () -> Unit>
                 "app info" to { handlers.info(app) },
                 if (app.system) null else "uninstall" to { handlers.uninstall(app) },
             )
+        is AppHit.Owl ->
+            listOf(
+                "add to home" to { handlers.pin(this) },
+                dock,
+                "edit" to { handlers.edit(spec) },
+                "remove" to { handlers.removeOwl(spec) },
+            )
+        is AppHit.Shortcut ->
+            listOf(
+                "add to home" to { handlers.pin(this) },
+                dock,
+                "remove" to { handlers.remove(shortcut) },
+            )
     }
 }
 
@@ -174,6 +228,8 @@ internal fun AppHit.open(runtime: Runtime) {
     when (this) {
         is AppHit.Linux -> runtime.launch(app)
         is AppHit.Android -> runtime.androidApps.open(app)
+        is AppHit.Shortcut -> runtime.androidApps.open(shortcut)
+        is AppHit.Owl -> runtime.openOwlApp(spec.file.name)
     }
 }
 
@@ -185,8 +241,9 @@ internal fun appIconOf(
 ): ImageBitmap? {
     val id = key.substringAfter(':')
     return when (key.substringBefore(':')) {
-        "a" -> (if (mono) runtime.androidApps.masks else runtime.androidApps.icons)[id]
+        "a", "s" -> (if (mono) runtime.androidApps.masks else runtime.androidApps.icons)[id]
         "l" -> (if (mono) runtime.linuxMasks else runtime.linuxIcons)[id]
+        "o" -> runtime.widgets.apps().firstOrNull { it.file.name == id }?.let { runtime.owlIcon(it, mono) }
         else -> null
     }
 }
@@ -196,6 +253,8 @@ private fun AppHit.icons(runtime: Runtime): Triple<ImageBitmap?, ImageBitmap?, I
     when (this) {
         is AppHit.Linux -> Triple(runtime.linuxIcons[app.id], runtime.linuxMasks[app.id], if (app.exec == FILES_COMMAND) Icons.Folder else null)
         is AppHit.Android -> Triple(runtime.androidApps.icons[app.key], runtime.androidApps.masks[app.key], null)
+        is AppHit.Shortcut -> Triple(runtime.androidApps.icons[shortcut.key], runtime.androidApps.masks[shortcut.key], null)
+        is AppHit.Owl -> Triple(runtime.owlIcon(spec, mono = false), runtime.owlIcon(spec, mono = true), null)
     }
 
 @Composable
@@ -206,7 +265,18 @@ private fun HitCell(
     selected: Boolean = false,
 ) {
     val (icon, mask, glyph) = hit.icons(runtime)
-    AppCell(hit.label, icon, mask, onClick = { handlers.launch(hit) }, actions = { hit.actions(handlers) }, glyph = glyph, selected = selected, spoken = hit.spoken, paused = hit.paused(runtime))
+    AppCell(
+        hit.label,
+        icon,
+        mask,
+        onClick = { handlers.launch(hit) },
+        actions = { hit.actions(handlers) },
+        shortcuts = { hit.shortcutMenu(handlers) },
+        glyph = glyph,
+        selected = selected,
+        spoken = hit.spoken,
+        paused = hit.paused(runtime),
+    )
 }
 
 /** Height of the recent apps strip; home keeps this much room for it above the dock, even while it's empty. */
@@ -243,7 +313,17 @@ internal fun RecentStrip(
         val cells: LazyListScope.() -> Unit = {
             items(apps, key = { it.key }) { hit ->
                 val (icon, mask, glyph) = hit.icons(runtime)
-                StripCell(hit.label, icon, mask, onClick = { handlers.launch(hit) }, actions = { hit.actions(handlers) }, glyph = glyph, spoken = hit.spoken, paused = hit.paused(runtime))
+                StripCell(
+                    hit.label,
+                    icon,
+                    mask,
+                    onClick = { handlers.launch(hit) },
+                    actions = { hit.actions(handlers) },
+                    shortcuts = { hit.shortcutMenu(handlers) },
+                    glyph = glyph,
+                    spoken = hit.spoken,
+                    paused = hit.paused(runtime),
+                )
             }
         }
         if (vertical) {
@@ -263,6 +343,8 @@ internal fun StripCell(
     onClick: () -> Unit,
     /** Built when the menu opens: a fresh list of lambdas would keep the cell from skipping recomposition. */
     actions: () -> List<Pair<String, () -> Unit>>,
+    /** An Android app's shortcuts, above its actions; also built when the menu opens. */
+    shortcuts: () -> ShortcutMenu? = { null },
     glyph: ImageVector? = null,
     /** As in [AppHit.spoken]. */
     spoken: String = label,
@@ -315,7 +397,7 @@ internal fun StripCell(
             bmp != null -> AppIcon(bmp, spoken, Modifier.size(size * if (mono) 0.85f else 1f), mono)
             else -> BasicText(Pack.placeholderText(label), style = Pack.placeholder(Pack.size.large))
         }
-        if (menuOpen) AppActions(actions(), onDismiss = { menuOpen = false })
+        if (menuOpen) AppActions(actions(), shortcuts, onDismiss = { menuOpen = false })
     }
 }
 
@@ -526,6 +608,7 @@ internal fun AppPanel(
                     if (query.isNotBlank()) {
                         search.hits.chunked(columns).forEachIndexed { r, cells -> row("q:$r", cells, highlighted - r * columns) }
                     } else {
+                        section("apps", runtime.widgets.apps().map { AppHit.Owl(it) })
                         if (linuxState == LinuxState.Installed) {
                             section("linux", runtime.linuxApps.map { AppHit.Linux(it) })
                         } else {
@@ -540,6 +623,8 @@ internal fun AppPanel(
                                 }
                             }
                         }
+                        // Usually few and just added: between the Linux and the Android apps, not past all the Android ones.
+                        section("shortcuts", runtime.androidApps.shortcuts.map { AppHit.Shortcut(it) })
                         section("android", runtime.androidApps.apps.map { AppHit.Android(it) })
                     }
                 }
@@ -631,6 +716,8 @@ private fun AppCell(
     onClick: () -> Unit,
     /** Built when the menu opens, as in [StripCell]. */
     actions: () -> List<Pair<String, () -> Unit>>,
+    /** As in [StripCell]. */
+    shortcuts: () -> ShortcutMenu? = { null },
     /** Built-in apps (Files) draw a theme-colored glyph instead of a bitmap. */
     glyph: ImageVector? = null,
     /** What Enter in the search field would open: outlined in the accent color. */
@@ -688,7 +775,7 @@ private fun AppCell(
             overflow = TextOverflow.Ellipsis,
         )
         if (menuOpen) {
-            AppActions(actions(), onDismiss = { menuOpen = false })
+            AppActions(actions(), shortcuts, onDismiss = { menuOpen = false })
         }
     }
 }
@@ -697,8 +784,12 @@ private fun AppCell(
 @Composable
 internal fun AppActions(
     actions: List<Pair<String, () -> Unit>>,
+    /** An Android app's shortcuts, listed above [actions]; the menu waits the few milliseconds they take to load. */
+    shortcuts: () -> ShortcutMenu? = { null },
     onDismiss: () -> Unit,
 ) {
+    val (menu, offered) = offeredShortcuts(Unit, shortcuts)
+    if (offered == null) return
     val gap = with(LocalDensity.current) { 8.dp.roundToPx() }
     val position =
         remember(gap) {
@@ -717,6 +808,8 @@ internal fun AppActions(
             }
         }
     Popup(popupPositionProvider = position, onDismissRequest = onDismiss, properties = PopupProperties(focusable = true)) {
-        MenuItems(actions, onDismiss, minWidth = 160.dp, itemPadding = 12.dp, fontSize = Pack.size.item)
+        MenuItems(actions, onDismiss, minWidth = 160.dp, itemPadding = 12.dp, fontSize = Pack.size.item) {
+            if (menu != null) ShortcutRows(offered, menu, onDismiss, Pack.size.item)
+        }
     }
 }

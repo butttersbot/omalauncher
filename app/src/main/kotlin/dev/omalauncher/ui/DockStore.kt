@@ -6,6 +6,7 @@ import dev.omalauncher.widgets.LiveNotebook
 import dev.omalauncher.widgets.app
 import dev.omalauncher.widgets.entry
 import dev.omalauncher.widgets.layout.PinnedApp
+import dev.omalauncher.widgets.layout.ShortcutEntry
 import dev.omalauncher.upgrade.Versioned
 import dev.omalauncher.upgrade.mapObjects
 import org.json.JSONArray
@@ -16,7 +17,8 @@ const val OMA_CHAT_KEY = "oma:chat"
 
 /**
  * One thing pinned to the dock. An app is keyed and saved the way a home shortcut is
- * ([dev.omalauncher.widgets.Shortcuts]): `app:` and the Android app's key, or `linux:` and the desktop id.
+ * ([dev.omalauncher.widgets.Shortcuts]): `app:` and the Android app's key, `linux:` and the desktop id, `shortcut:` and
+ * an Android shortcut's key, or `owl:` and an owl app's file name.
  */
 data class DockEntry(
     val key: String,
@@ -27,6 +29,10 @@ data class DockEntry(
     val profile: Long? = null,
     /** A snapshot of the desktop entry, as home shortcuts keep one. */
     val linux: LinuxApp? = null,
+    /** A shortcut an Android app made, in [profile]. */
+    val shortcut: ShortcutEntry? = null,
+    /** An owl app's file name. */
+    val owl: String? = null,
 )
 
 /** The dock of a launcher that never saved one: nothing pinned yet, as the prototype's dock has no button of Oma's. */
@@ -110,6 +116,8 @@ internal fun writeDock(entries: List<DockEntry>): String {
                     .putOpt("icon", it.icon),
             )
         }
+        e.shortcut?.let { o.put("shortcut", JSONObject().put("package", it.packageName).put("id", it.id)) }
+        e.owl?.let { o.put("owl", it) }
         array.put(o)
     }
     return Versioned.write(DOCK_VERSION, array)
@@ -145,13 +153,15 @@ private fun readEntries(array: JSONArray): List<DockEntry> =
                 component = o.optString("component").ifEmpty { null },
                 profile = if (o.has("profile")) o.getLong("profile") else null,
                 linux = linux,
-            ).takeIf { it.component != null || it.linux != null }
+                shortcut = o.optJSONObject("shortcut")?.let { ShortcutEntry(it.getString("package"), it.getString("id")) },
+                owl = o.optString("owl").ifEmpty { null },
+            ).takeIf { it.component != null || it.linux != null || it.shortcut != null || it.owl != null }
         }.distinctBy { it.key }
 
 /** A dock entry as the notebook keeps it, and back. */
-internal fun DockEntry.pinned() = PinnedApp(key, label, component, profile, linux?.entry())
+internal fun DockEntry.pinned() = PinnedApp(key, label, component, profile, linux?.entry(), shortcut, owl)
 
-internal fun PinnedApp.dockEntry() = DockEntry(key, label, component, profile, linux?.app())
+internal fun PinnedApp.dockEntry() = DockEntry(key, label, component, profile, linux?.app(), shortcut, owl)
 
 /**
  * The dock's pinned apps in order. They are saved with the notebook, the one store of the home layout;

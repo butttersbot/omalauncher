@@ -121,6 +121,8 @@ fun MenuItems(
     minWidth: Dp,
     itemPadding: Dp,
     fontSize: TextUnit,
+    /** Above the items, inside the frame: an Android app's shortcuts. */
+    top: @Composable ColumnScope.() -> Unit = {},
 ) {
     Column(
         Modifier
@@ -129,6 +131,7 @@ fun MenuItems(
             .framed(Pack.hair, Pack.border, Pack.surface)
             .padding(vertical = 6.dp),
     ) {
+        top()
         for ((label, action) in items) {
             BasicText(
                 label,

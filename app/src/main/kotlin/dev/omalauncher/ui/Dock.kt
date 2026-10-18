@@ -45,6 +45,8 @@ import dev.omalauncher.linux.FILES_COMMAND
 import dev.omalauncher.spokenLabel
 import dev.omalauncher.theme.pack.DockStyle
 import dev.omalauncher.widgets.Shortcut
+import dev.omalauncher.ShortcutRef
+import dev.omalauncher.widgets.layout.ShortcutEntry
 
 /**
  * Height of the dock's row of icons, as of the prompt bar it replaced; the home grid leaves this much
@@ -107,16 +109,29 @@ internal fun AppHit.dockKey() =
     when (this) {
         is AppHit.Linux -> "linux:" + app.id
         is AppHit.Android -> "app:" + app.key
+        is AppHit.Shortcut -> "shortcut:" + shortcut.key
+        is AppHit.Owl -> "owl:" + spec.file.name
     }
 
 internal fun AppHit.dockEntry() =
     when (this) {
         is AppHit.Linux -> DockEntry(dockKey(), app.name, linux = app)
         is AppHit.Android -> DockEntry(dockKey(), app.label, component = app.component.flattenToString(), profile = app.profile)
+        is AppHit.Shortcut -> DockEntry(dockKey(), shortcut.label, profile = shortcut.profile, shortcut = ShortcutEntry(shortcut.ref.packageName, shortcut.ref.id))
+        is AppHit.Owl -> DockEntry(dockKey(), spec.name, owl = spec.file.name)
     }
 
 /** The entry as a home shortcut, which the runtime knows how to draw and open. */
-private fun DockEntry.shortcut() = Shortcut(key, label, component = component?.let(ComponentName::unflattenFromString), profile = profile, linux = linux)
+private fun DockEntry.shortcut() =
+    Shortcut(
+        key,
+        label,
+        component = component?.let(ComponentName::unflattenFromString),
+        profile = profile,
+        linux = linux,
+        androidShortcut = shortcut?.let { ShortcutRef(it.packageName, it.id) },
+        owl = owl,
+    )
 
 /**
  * The band at the bottom of home, as design/oma-scrapbook-prototype.html draws its `.dock`: one row from

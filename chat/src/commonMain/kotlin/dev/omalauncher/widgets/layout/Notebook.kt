@@ -18,13 +18,24 @@ data class LinuxEntry(
     val icon: String? = null,
 )
 
-/** A pinned app as saved: an Android activity ([component], flattened, in [profile]) or a Linux entry. */
+/** A shortcut an Android app made, as a pinned app remembers it: the app's package, and the shortcut's id there. */
+data class ShortcutEntry(
+    val packageName: String,
+    val id: String,
+)
+
+/**
+ * A pinned app as saved: an Android activity ([component], flattened, in [profile]), a Linux entry, a [shortcut] an
+ * Android app made (in [profile] too), or an [owl] app, by its file's name.
+ */
 data class PinnedApp(
     val key: String,
     val label: String,
     val component: String? = null,
     val profile: Long? = null,
     val linux: LinuxEntry? = null,
+    val shortcut: ShortcutEntry? = null,
+    val owl: String? = null,
 )
 
 enum class ItemKind {
@@ -189,6 +200,8 @@ object NotebookStore {
                     .putOpt("icon", it.icon),
             )
         }
+        a.shortcut?.let { o.put("shortcut", JSONObject().put("package", it.packageName).put("id", it.id)) }
+        a.owl?.let { o.put("owl", it) }
         return o
     }
 
@@ -211,6 +224,8 @@ object NotebookStore {
             component = o.optString("component").ifEmpty { null },
             profile = if (o.has("profile")) o.getLong("profile") else null,
             linux = linux,
+            shortcut = o.optJSONObject("shortcut")?.let { ShortcutEntry(it.getString("package"), it.getString("id")) },
+            owl = o.optString("owl").ifEmpty { null },
         )
     }
 }

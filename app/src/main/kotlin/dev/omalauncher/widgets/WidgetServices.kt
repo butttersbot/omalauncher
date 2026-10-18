@@ -374,6 +374,8 @@ class WidgetServices(
                     when (hit) {
                         is AppHit.Android -> "android"
                         is AppHit.Linux -> "linux"
+                        is AppHit.Owl -> "owl"
+                        is AppHit.Shortcut -> "shortcut"
                     }
                 Obj(
                     mapOf(

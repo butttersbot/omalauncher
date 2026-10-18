@@ -45,6 +45,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.text.BasicText
@@ -511,17 +512,34 @@ fun HomeScreen(
                 if (it != null) marks.selected = null
             },
             actions = { item ->
-                EditBar {
-                    if (item is WidgetItem) EditAction("edit") { edit(item) }
-                    // As a QR code or link, or (your own) to the store. An agent's tile is a terminal, not a widget to pass on.
-                    if (item is WidgetItem && !item.spec.file.name.startsWith("agent-")) {
-                        EditAction("share") {
-                            state.editing = null
-                            state.sharing = item.spec
+                // A pinned Android app offers its shortcuts above the bar, as its long-press menu in the drawer does.
+                val app = (item as? Shortcut)?.component?.let { c -> runtime.androidApps.apps.firstOrNull { it.component == c && it.profile == item.profile } }
+                val (menu, offered) =
+                    offeredShortcuts(item.key) {
+                        app?.let { shortcutMenu(runtime, it, page = { engine.notebook.pageOf(item.key) ?: state.currentPage }, onOpen = { arrange.folder = null }) }
+                    }
+                // Nothing until they're loaded, so the bar doesn't jump down as they arrive.
+                if (offered != null) {
+                    Column {
+                        if (menu != null && offered.isNotEmpty()) {
+                            MenuItems(emptyList(), { state.editing = null }, minWidth = 160.dp, itemPadding = 12.dp, fontSize = Pack.size.item) {
+                                ShortcutRows(offered, menu, { state.editing = null }, Pack.size.item, rule = false)
+                            }
+                            Spacer(Modifier.height(6.dp))
+                        }
+                        EditBar {
+                            if (item is WidgetItem) EditAction("edit") { edit(item) }
+                            // As a QR code or link, or (your own) to the store. An agent's tile is a terminal, not a widget to pass on.
+                            if (item is WidgetItem && !item.spec.file.name.startsWith("agent-")) {
+                                EditAction("share") {
+                                    state.editing = null
+                                    state.sharing = item.spec
+                                }
+                            }
+                            // Not in a session that isn't being saved: the widget's file would be gone and the store still list it.
+                            if (engine.notebook.kept) EditAction("remove", Pack.red) { remove(item) } else EditAction("can't remove: not saved", Pack.muted) {}
                         }
                     }
-                    // Not in a session that isn't being saved: the widget's file would be gone and the store still list it.
-                    if (engine.notebook.kept) EditAction("remove", Pack.red) { remove(item) } else EditAction("can't remove: not saved", Pack.muted) {}
                 }
             },
             render = { item, tile, highlighted ->
