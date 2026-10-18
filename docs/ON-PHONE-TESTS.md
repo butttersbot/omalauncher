@@ -50,16 +50,9 @@ whether things look right to him.
 - `oma-build :app:testDebugUnitTest` runs the unit tests on the phone's own toolchain and syncs. Report the
   totals and any failure in the results file. This does not install anything.
 
-## Oma Dev: the second launcher to test on
-`oma-dev` builds this checkout as "Oma Dev" (package `dev.omalauncher.dev`) and installs it beside the working
-launcher. It has its own data (no Linux, no agent, an empty notebook), so it may be broken, replaced and removed.
-You, the agent in the working launcher, are the one who tests it.
-- Once: `install -m755 tools/fold-development/oma-dev /usr/local/bin/oma-dev`.
-- `oma-dev --no-open` builds and installs or replaces it; `oma-dev --status` says which build is there;
-  `oma-dev --open` brings it up; `oma-dev --remove` uninstalls it. None of these touch the working launcher.
-- It is not the home app: open it with `oma-dev --open` (or `oma-phone open dev.omalauncher.dev`), test with
-  `oma-phone read` / `screenshot` / `click`, then `oma-phone home` to go back to the working launcher.
-- What it can show: that the build starts and doesn't crash, first-run setup, home, the looks, the app list, the
-  overview, settings and the drawing tools on an empty notebook. What it can't: Oma's voice, the answer card and
-  ring over other apps, anything that needs Linux, and Boss's own pages.
+## Testing a build: the Mac's Fold 8 emulator, not Oma Dev
+Oma Dev (`dev.omalauncher.dev`) is retired as of 2026-10-17, Boss's call: nothing extra runs on his phone.
+Do not run `oma-dev` to build or install it; `oma-dev --remove` takes it off if it is ever found installed.
+Builds are tried on the Mac Pro's Fold 8 emulator instead (`docs/EMULATOR.md`). Push, then write in
+`docs/PHONE-TEST-RESULTS.md` what needs looking at; the Mac session tests it there.
 - The working launcher is still updated only with `oma-try`, only when Boss says so.

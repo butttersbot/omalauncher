@@ -75,19 +75,21 @@ Boss talks to you through Oma (voice or the Oma chat). Be short: he is often rea
 - Changed on the phone for Boss, to put back when he says: screen timeout is set to never (`settings put system
   screen_off_timeout 2147483647`; it was 30000).
 - Tailscale on the phone does not come back by itself after a restart; opening the Tailscale app reconnects it.
-- `oma-dev` moves the built APK away, so `oma-install --status` says "No working-launcher APK found" until the next `oma-build`.
 - The Mac session reaches you by typing into the Oma chat over adb and reading `files/oma-chat.json`, and runs
-  commands itself through the debug door when it has opened it. It has no
-  Android SDK: what it pushes is unbuilt until you run `oma-build`, and it says so in each commit.
+  commands itself through the debug door when it has opened it. Since 2026-10-17 it
+  has the Android SDK and the Fold 8 emulator, so it can build and test what it pushes before you run `oma-build`.
 
 ## How a change reaches the phone
 1. Edit and commit here. `oma-sync` commits and pushes to the shared branch (the Mac pulls from it).
 2. `oma-build` runs the unit tests and builds; it must be green before anything else. Under a minute once Gradle is warm; about 2.5 minutes the first time.
-3. `oma-dev --no-open` builds the same source as Oma Dev and installs it beside the real launcher (under a minute).
-   Then `oma-dev --open` and look at it; `oma-phone home` to come back. Oma Dev has no Linux and no agent, and
-   `oma-phone` talks only to the real launcher, so it shows that the build starts and how home, the looks, the app
-   list, the overview, settings and the drawing tools look. It cannot show voice, follow-ups, the answer card, the
-   phone-control or sticker commands, or Boss's own pages. It has test notes, stickers and a sample chat in it.
+3. Test it on the Mac Pro's Fold 8 emulator, not on this phone (see `docs/EMULATOR.md`). Oma Dev is retired
+   (2026-10-17, Boss): never build or install it here, and remove it with `oma-dev --remove` if you find it. Boss wants
+   nothing extra running on his phone. From the phone, push and write in `docs/PHONE-TEST-RESULTS.md`
+   what the Mac should check; the Mac session installs the build on the emulator, drives it over adb and writes back
+   what it saw. The emulator is plain Android 17 with both Fold screens and the fold, so it shows layouts on both
+   screens, the looks, the app list, settings and the drawing tools; `docs/EMULATOR.md` keeps the list of what has
+   been seen working there. It cannot show Samsung's own screens, the real phone's memory and battery behaviour, or
+   Boss's own pages.
 4. Promote to the real launcher ONLY when Boss says so in that conversation: `oma-try` (it builds, syncs and
    schedules the update). The update restarts the launcher and ENDS YOUR OWN RUN, so make it the last thing you do,
    and tell Boss first what to check afterwards. Never uninstall or clear the real launcher.
@@ -135,8 +137,8 @@ Decided 2026-10-12, from the phone:
   idea carry over, not the code.
 - Text sizes: leave as they are; come back only if it proves a problem.
 - First-run setup offering looks: not now. To do later.
-- Promotion: he does not want the real launcher updated after every small change. Bundle fixes and features, test in
-  Oma Dev what it can show, and ask once when a batch is ready.
+- Promotion: he does not want the real launcher updated after every small change. Bundle fixes and features, test on the
+  Mac's emulator what it can show, and ask once when a batch is ready. (Was Oma Dev until 2026-10-17.)
 
 ## When you finish a piece of work
 Write what you did, what you saw, and what is next at the top of `docs/PHONE-TEST-RESULTS.md`, then `oma-sync`.
