@@ -147,6 +147,11 @@ class DesktopEndToEndTest {
         assertEquals(claude, chat.mac)
         waitFor("the runner said it runs Codex") { "codex" in engine.kindsOn("testhost") && engine.view.threads.any { it.id == claude } }
         settle()
+        // The fake Claude holds its handoff turn while "hold" is in the project, so the first switch is still on its way
+        // when the second is asked: on its own the whole switch can be over in a few milliseconds.
+        val hold = File(work, "Projects/hold")
+        assertTrue("the Claude thread runs in ~/Projects", File(work, "Projects/starts.log").isFile)
+        hold.writeText("")
         // His long press on the chat's tab, then Switch agent, then Codex.
         onAllNodes(hasText("New chat") and hasClickAction()).onFirst().performTouchInput { longClick() }
         settle()
@@ -157,6 +162,7 @@ class DesktopEndToEndTest {
         val second = platform.chatLog().tasks.last()
         assertEquals(dev.omalauncher.oma.TaskStatus.Failed, second.status)
         assertTrue(second.result, second.result.startsWith("This thread is already moving to Codex"))
+        hold.delete()
         // Taken by the Codex thread: the fake Codex then asks to write a file (it does whenever its words say "write"), and waits on him.
         waitFor("a Codex thread was made and took the handoff") {
             platform.chatLog().tasks.any { task -> task.status != dev.omalauncher.oma.TaskStatus.Queued && !task.fresh && engine.view.threads.any { it.id == task.thread && it.kind == "codex" } }
