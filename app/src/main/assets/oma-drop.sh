@@ -1,7 +1,7 @@
 #!/bin/bash
 # Omalauncher: `oma drop`, files between the Macs and this phone without Boss's hands (Boss, 2026-10-14: "so that I
 # could just tell you or the other agents to send something, and then you guys can just do it with the command").
-# Mac to phone is Taildrop: a Mac agent runs `tailscale file cp FILE jacks-z-fold8:` and the phone's Tailscale saves
+# Mac to phone is Taildrop: a Mac agent runs `tailscale file cp FILE galaxy-z-fold8:` and the phone's Tailscale saves
 # it in Download/Taildrop, which this Linux cannot see; `get` and `list` reach it through the phone's own adb over
 # loopback, the port oma-dev keeps in ~/.config/oma-development/install-port. Phone to Mac goes to the runner on the
 # Mac (docs/MAC-RUNNER-SPEC.md, POST /files), because the phone's Tailscale app has no command line to Taildrop
@@ -25,7 +25,7 @@ get   moves every file the Macs Taildropped to this phone (Download/Taildrop) in
       DIR, ~/Inbox if none is given; --keep copies them and leaves them on the phone.
 list  shows what waits in Download/Taildrop.
 send  puts each FILE in the Mac's Downloads/From Fold, through the runner there.
-A Mac sends to this phone with: tailscale file cp FILE jacks-z-fold8:
+A Mac sends to this phone with: tailscale file cp FILE galaxy-z-fold8:
 USAGE
 }
 

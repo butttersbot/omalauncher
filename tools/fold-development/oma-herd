@@ -21,7 +21,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 PORT = int(os.environ.get('HERD_PORT', 8479))
 STATUS = pathlib.Path.home() / '.cache/oma-agents/status.json'
 RUNNERS = pathlib.Path.home() / '.config/omalauncher'
-HOST_NAME = os.environ.get('HERD_NAME', 'jacks-z-fold8')
+HOST_NAME = os.environ.get('HERD_NAME', 'galaxy-z-fold8')
 VERSION = 1
 BUILDERS = (('builder', 'fold-builder-a', 'Phone builder A'), ('builderB', 'fold-builder-b', 'Phone builder B'))
 

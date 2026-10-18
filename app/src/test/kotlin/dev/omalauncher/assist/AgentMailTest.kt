@@ -11,7 +11,7 @@ class AgentMailTest {
     private val sample =
         """{"v": 1, "id": "20261016-023512-c14cf2", "t": 1792143312.4,
            "from": {"device": "macbook-pro", "agent": "claude-code", "session": "b53e204e-1111", "title": "Tailnet device file sharing"},
-           "to": {"device": "jacks-z-fold8", "session": "B"}, "text": "  Hello from the Mac.  ", "reply_to": null}"""
+           "to": {"device": "galaxy-z-fold8", "session": "B"}, "text": "  Hello from the Mac.  ", "reply_to": null}"""
 
     @Test
     fun readsTheSpecsMessage() {

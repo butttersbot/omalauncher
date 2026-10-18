@@ -11,7 +11,7 @@ OK in Soma there. The job is the mail's whole text, one JSON object, so the phon
 …}. Answers come back as mail to the sender (`tmsg wait` picks them up), each with {"job", "state"} as its first line:
 an install answers "waiting" while it asks Boss in Soma, "scheduled" just before Soma restarts, then "done" or "failed"
 (with the version code) once it is back; the other kinds answer "done" or "failed" once; "declined" is a job the phone
-won't do. --to names another phone agent (default jacks-z-fold8:A).
+won't do. --to names another phone agent (default galaxy-z-fold8:A).
 
 --project is a folder's bare name ("omalauncher"), the folder under /root/Projects on the phone; a path is refused. The
 phone holds each value to the patterns below and declines a job whose field fails one (naming the field); this refuses
@@ -62,7 +62,7 @@ def main(argv):
         sys.exit(__doc__)
     kind, rest = argv[0], argv[1:]
     job = {'job': kind, 'v': 1}
-    to = 'jacks-z-fold8:A'
+    to = 'galaxy-z-fold8:A'
     while rest:
         flag = rest.pop(0)
         if not rest or not flag.startswith('--'):

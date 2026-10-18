@@ -8,7 +8,7 @@ set -euo pipefail
 [ $# -ge 2 ] || { sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 commit=$1
 code=$2
-phone=${3:-jacks-z-fold8}
+phone=${3:-galaxy-z-fold8}
 [[ $commit =~ ^[0-9a-f]{7,40}$ ]] || { echo "\"$commit\" is not a commit." >&2; exit 2; }
 [[ $code =~ ^[0-9]{1,9}$ ]] || { echo "\"$code\" is not a version code." >&2; exit 2; }
 [[ $phone =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,62}$ ]] || { echo "\"$phone\" is not a device name." >&2; exit 2; }

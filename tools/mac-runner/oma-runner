@@ -57,7 +57,7 @@ MODES = ('auto', 'manual')
 LABEL = 'dev.omalauncher.runner'
 INSTALLED = HOME / '.local/bin/oma-runner'
 # Where `oma-runner rekey` sends a new key, and the tailscale that sends it.
-PHONE = os.environ.get('OMA_RUNNER_PHONE', 'jacks-z-fold8')
+PHONE = os.environ.get('OMA_RUNNER_PHONE', 'galaxy-z-fold8')
 # The Mac app's own binary comes first: reached through Homebrew's symlink, as on the MacBook Pro, it dies ("The current
 # bundleIdentifier is unknown to the registry"), and it wants a TERM, which launchd gives none (tailscale_env). A Mac with
 # only the Homebrew CLI, like the Mac Pro, has no app there and goes on using the CLI.

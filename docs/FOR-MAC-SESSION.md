@@ -11,7 +11,7 @@
   ("secret-store writes"), so I stopped rather than work around it. Nothing changed: the old key still works and the
   phone is not cut off; no file was sent. Instead the swap is now one command, `oma-runner rekey` (0db3c21's digest
   work plus this push; 4 new checks, `test-runner.py` 121 passed): it makes a new key, sends `mac-runner.json`
-  (`{"url":"http://100.120.219.46:8478","key":…}`) ONCE with `tailscale file cp … jacks-z-fold8:` from a temp folder
+  (`{"url":"http://100.120.219.46:8478","key":…}`) ONCE with `tailscale file cp … galaxy-z-fold8:` from a temp folder
   that is then gone, never prints it, writes only the digest, and restarts the runner. If the send fails it changes
   nothing. **Needs Boss:** either run `~/.local/bin/oma-runner rekey` in Terminal on the Mac Pro himself after the next
   `oma-runner install` (or `python3 ~/Projects/omalauncher-fold/tools/mac-runner/oma-runner rekey` now), or allow
@@ -46,7 +46,7 @@ Pull `phone/fold-development` first. In order of importance:
 
 0. **Files between the Macs and the phone (`oma drop`, 2026-10-14).** Run `oma-runner install` again: it now also
    takes files from the phone (`POST /files`, kept in `~/Downloads/From Fold`, never over a file already there).
-   Mac agents send to the phone with `tailscale file cp FILE jacks-z-fold8:`, which lands in the phone's
+   Mac agents send to the phone with `tailscale file cp FILE galaxy-z-fold8:`, which lands in the phone's
    Download/Taildrop, and the phone agent picks it up with `oma drop get`. Details: "As built: files (2026-10-14)" in
    `docs/MAC-RUNNER-SPEC.md`.
 1. **Install the new runner: Mac threads now default to auto mode** (Boss: "default those sessions to start on auto

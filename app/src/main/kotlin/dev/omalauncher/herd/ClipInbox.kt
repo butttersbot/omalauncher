@@ -33,7 +33,7 @@ import kotlin.concurrent.thread
  */
 
 /** The phone's name on the tailnet, which a clip's file name carries so the receiver says who sent it. */
-const val PHONE_TAILNET_NAME = "jacks-z-fold8"
+const val PHONE_TAILNET_NAME = "galaxy-z-fold8"
 
 /** What Tailshare sends for each thing it receives, with the item's JSON in [EXTRA_CLIP_ITEM]. */
 const val ACTION_CLIP_RECEIVED = "dev.omalauncher.action.CLIP_RECEIVED"

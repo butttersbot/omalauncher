@@ -80,8 +80,8 @@ class HerdTest {
     @Test
     fun aClipIsNamedForTheReceiver() {
         val at = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).parse("20261016-061500")!!
-        assertEquals("clip-20261016-061500-from-jacks-z-fold8.txt", clipName(at, picture = false))
-        assertEquals("clip-20261016-061500-from-jacks-z-fold8.png", clipName(at, picture = true))
+        assertEquals("clip-20261016-061500-from-galaxy-z-fold8.txt", clipName(at, picture = false))
+        assertEquals("clip-20261016-061500-from-galaxy-z-fold8.png", clipName(at, picture = true))
     }
 
     @Test

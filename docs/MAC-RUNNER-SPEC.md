@@ -416,7 +416,7 @@ with nothing running it exits, sometimes only after ~30 s.
 Boss: "It was really just the mac to phone that we needed. but yeah, if we can make a 2 way command that would be
 nice. so that I could just tell you or the other agents to send something, and then you guys can just do it with the
 command." The phone's command is `oma drop` (`app/src/main/assets/oma-drop.sh`).
-- **Mac to phone:** Mac agents send to the phone with `tailscale file cp FILE jacks-z-fold8:`, which lands in the
+- **Mac to phone:** Mac agents send to the phone with `tailscale file cp FILE galaxy-z-fold8:`, which lands in the
   phone's Download/Taildrop, and the phone agent picks it up with `oma drop get` (into `~/Inbox` in its Linux; moved
   off the phone once the copy is whole, `--keep` leaves it). It reaches Download/Taildrop through the phone's own adb
   over loopback; with Wireless debugging off it says to turn it on.
@@ -451,7 +451,7 @@ command." The phone's command is `oma drop` (`app/src/main/assets/oma-drop.sh`).
   `~/.config/omalauncher/mac-runner.json`. The phone loses the Mac until it has the new one, so do it with Boss there.
 - Not closed by the digest alone: copies of the old key itself could sit on the Mac outside that file (transcripts of
   the sessions that set the phone up, shell history). `oma-runner rekey` replaces it: a new random key, sent once to
-  the phone as `mac-runner.json` ({url, key}) by `tailscale file cp … jacks-z-fold8:` from a temp folder, never
+  the phone as `mac-runner.json` ({url, key}) by `tailscale file cp … galaxy-z-fold8:` from a temp folder, never
   printed; only then is its digest written and the runner restarted. A failed send changes nothing. The phone agent
   takes the file with `oma drop get`. Not run yet (2026-10-14): the Mac session's permission check refused to write
   a key, so it is Boss's to run or allow. Until then Codex threads stay manual unless auto is asked for by name;
@@ -520,7 +520,7 @@ works **only from the device it was given to**.
   minute. Anything else gets the same 401 `{"ok": false, "error": "no"}` after a second. The request log now ends with
   the device's name (or `-`), never a key.
 - **Moving in.** With no table yet, the one key from before (`oma-runner.token`) becomes the phone's
-  (`OMA_RUNNER_PHONE`, `jacks-z-fold8`), so the Fold's keys go on working with nothing changed on the phone. Pairing
+  (`OMA_RUNNER_PHONE`, `galaxy-z-fold8`), so the Fold's keys go on working with nothing changed on the phone. Pairing
   the phone again keeps `oma-runner.token` in step, so a runner put back to an older version still opens for it.
 - **Commands.**
   - `oma-runner devices` lists who is paired (never a key).
