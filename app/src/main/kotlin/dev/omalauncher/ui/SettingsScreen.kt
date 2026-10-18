@@ -1,7 +1,15 @@
 package dev.omalauncher.ui
 
 import dev.omalauncher.herd.HerdSheep
+import android.app.Activity
 import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import dev.omalauncher.LocalNetwork
 import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -44,6 +52,19 @@ fun SettingsScreen(
     val context = LocalContext.current
     val linux by runtime.bootstrap.state.collectAsState()
     val installed = linux == LinuxState.Installed
+    // Android 17 keeps widgets and Linux off the local network until this is granted; the row shows only while it isn't.
+    var localNetworkMissing by remember { mutableStateOf(LocalNetwork.missing(context)) }
+    val askLocalNetwork =
+        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            localNetworkMissing = !granted
+            // After two refusals Android stops showing the dialog; the switch is then in the app's own settings.
+            if (!granted && (context as? Activity)?.shouldShowRequestPermissionRationale(LocalNetwork.PERMISSION) == false) {
+                context.startActivity(
+                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+            }
+        }
     OverlayPanel("settings", onDismiss, contentWidth = ReadingWidth) {
         val linuxStatus =
             when (val l = linux) {
@@ -57,7 +78,14 @@ fun SettingsScreen(
         val look = ActivePack.pack
         val theme = runtime.themes.current?.title?.takeIf { look.id == ConsolePack.ID }
         val rows =
-            listOf(
+            listOfNotNull(
+                if (localNetworkMissing) {
+                    Triple("local network", "let widgets and linux reach devices at home: printers, home assistant, …") {
+                        askLocalNetwork.launch(LocalNetwork.PERMISSION)
+                    }
+                } else {
+                    null
+                },
                 Triple("look", listOfNotNull(look.name, theme).joinToString(" · ").lowercase(), onStyle),
                 Triple("linux", linuxStatus, onLinux),
                 if (installed) {

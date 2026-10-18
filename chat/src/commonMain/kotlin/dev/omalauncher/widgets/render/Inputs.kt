@@ -23,6 +23,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -130,7 +132,7 @@ internal fun SliderNode(
                 val cy = size.height / 2
                 drawRect(track(), Offset(0f, cy - line / 2), Size(size.width, line))
                 drawRect(color(), Offset(0f, cy - line / 2), Size(size.width * f, line))
-                val r = CornerRadius(3.dp.toPx() * LauncherStyle.corners.scale)
+                val r = CornerRadius(3.dp.toPx() * LauncherStyle.cornerScale)
                 drawRoundRect(color(), Offset((size.width - thumbW) * f, cy - thumbH / 2), Size(thumbW, thumbH), r)
             },
     )
@@ -140,7 +142,9 @@ internal fun SliderNode(
  * A one-line text field. `text` sets what it shows, and replaces what's
  * typed whenever it changes; `onChange` gets the text as it's typed and
  * `onSubmit` when the keyboard's done key is pressed, both as `value`.
- * `clear: true` empties it after a submit.
+ * `clear: true` empties it after a submit. `underline: false` leaves out its line, for a field framed by what's around it. `focus: true` focuses it, raising
+ * the keyboard, when the screen opens or when `focus` turns true; only on a
+ * screen, see [LocalInputFocus].
  */
 @Composable
 internal fun InputNode(
@@ -151,11 +155,15 @@ internal fun InputNode(
     val given = p.observe("text")?.takeIf { it != Null }?.toString()
     val placeholder = p.observe("placeholder")?.toString().orEmpty()
     val clear = p.observe("clear")?.truthy == true
+    val underline = p.observe("underline")?.truthy != false
     val color = p.color("color") { Palette.foreground }
     val style = WidgetMono.copy(fontSize = p.observe("fontSize")?.num()?.sp ?: WidgetMono.fontSize)
     val onChange = p.el.handlers["onChange"]
     val onSubmit = p.el.handlers["onSubmit"]
     val focus = LocalFocusManager.current
+    val want = LocalInputFocus.current && p.observe("focus")?.truthy == true
+    val requester = remember { FocusRequester() }
+    LaunchedEffect(want) { if (want) requester.requestFocus() }
 
     var field by remember(p.el, p.env) { mutableStateOf(TextFieldValue(given.orEmpty())) }
     var focused by remember { mutableStateOf(false) }
@@ -177,11 +185,13 @@ internal fun InputNode(
         modifier =
             (if (sized) mod else mod.fillMaxWidth())
                 .onGloballyPositioned { placed = it }
+                .focusRequester(requester)
                 .onFocusChanged {
                     focused = it.isFocused
                     typingAt(if (it.isFocused) placed?.takeIf { c -> c.isAttached }?.boundsInWindow() else null)
                 }
                 .drawBehind {
+                    if (!underline) return@drawBehind
                     val w = 1.dp.toPx()
                     drawRect(if (focused) Palette.accent else Palette.border, Offset(0f, size.height - w), Size(size.width, w))
                 },

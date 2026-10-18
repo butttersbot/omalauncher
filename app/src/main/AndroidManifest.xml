@@ -13,6 +13,9 @@
     <uses-permission android:name="com.samsung.systemui.permission.FACE_WIDGET" />
     <!-- Keeps the processor on while an agent works with the display off (assist/StayAwake.kt). -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Android 17+: widgets and Linux reaching 192.168.x and other local addresses. Asked for
+         from a row in settings (LocalNetwork.kt). -->
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -166,10 +169,39 @@
             android:label="Pi"
             android:targetActivity=".LinuxWindowActivity" />
 
+        <activity-alias
+            android:name=".OmpWindow"
+            android:exported="false"
+            android:icon="@drawable/agent_omp"
+            android:label="Oh My Pi"
+            android:targetActivity=".LinuxWindowActivity" />
+
+        <activity-alias
+            android:name=".OriWindow"
+            android:exported="false"
+            android:icon="@drawable/agent_ori"
+            android:label="Ori"
+            android:targetActivity=".LinuxWindowActivity" />
+
+        <activity-alias
+            android:name=".MuseWindow"
+            android:exported="false"
+            android:icon="@drawable/agent_muse"
+            android:label="Muse Code"
+            android:targetActivity=".LinuxWindowActivity" />
+
+        <activity-alias
+            android:name=".KimiWindow"
+            android:exported="false"
+            android:icon="@drawable/agent_kimi"
+            android:label="Kimi"
+            android:targetActivity=".LinuxWindowActivity" />
+
         <activity
             android:name=".FilesActivity"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|density|uiMode"
             android:exported="false"
+            android:icon="@drawable/files"
             android:label="Files"
             android:launchMode="singleTask"
             android:resizeableActivity="true"
@@ -337,6 +369,7 @@
         </service>
         <activity android:name=".keyboard.KeyboardSettingsActivity" android:exported="true"
             android:label="Soma keyboard${labelSuffix}" android:windowSoftInputMode="stateHidden" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.files"

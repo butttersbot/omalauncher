@@ -1,5 +1,10 @@
 package dev.omalauncher.widgets.render
 
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -48,19 +53,27 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorProducer
+import androidx.compose.ui.graphics.ImageBitmapConfig
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import dev.omalauncher.widgets.runtime.VectorPainter
+import dev.omalauncher.widgets.runtime.WidgetImage
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -70,6 +83,12 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import dev.omalauncher.ui.Mono
 import dev.omalauncher.ui.NerdSymbols
 import dev.omalauncher.ui.LauncherStyle
@@ -78,9 +97,11 @@ import dev.omalauncher.ui.Palette
 import dev.omalauncher.theme.pack.TypeRole
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.em
+import dev.omalauncher.ui.frame
 import dev.omalauncher.widgets.lang.Action
 import dev.omalauncher.widgets.lang.Builtins
 import dev.omalauncher.widgets.lang.Env
+import dev.omalauncher.widgets.lang.Gradient
 import dev.omalauncher.widgets.lang.Lst
 import dev.omalauncher.widgets.lang.Null
 import dev.omalauncher.widgets.lang.Num
@@ -92,6 +113,7 @@ import dev.omalauncher.widgets.lang.num
 import dev.omalauncher.widgets.lang.text
 import dev.omalauncher.widgets.runtime.WidgetInstance
 import kotlinx.coroutines.flow.first
+import kotlin.math.max
 import kotlin.math.min
 
 /**
@@ -111,6 +133,8 @@ val LocalHomeCovered = staticCompositionLocalOf<() -> Boolean> { { false } }
  * slides its page up from under the keyboard. Nothing listens on a widget's own screen, which resizes instead.
  */
 val LocalTypingAt = staticCompositionLocalOf<(Rect?) -> Unit> { {} }
+/** Whether an Input's `focus` may take focus: only on a screen the user opened, never on a tile or in a preview. */
+val LocalInputFocus = staticCompositionLocalOf { false }
 
 /** The widget's content inside its tile: padding, optional background, and the node tree. */
 @Composable
@@ -119,6 +143,8 @@ fun WidgetContent(
     modifier: Modifier = Modifier,
     /** The tile's size in grid cells, for `cols` and `rows`. */
     cells: Pair<Int, Int>? = null,
+    /** What the nodes keep clear of, inside the background: a face's, the camera cutout. */
+    insets: WindowInsets? = null,
 ) {
     val program = inst.program
     SideEffect { inst.setTile(cells?.first, cells?.second, null, null) }
@@ -128,12 +154,45 @@ fun WidgetContent(
     Column(
         modifier
             .onSizeChanged { inst.setTile(null, null, (it.width / density).toDouble(), (it.height / density).toDouble()) }
-            .then(if (bg != null) Modifier.drawBehind { Builtins.argb(inst.eval(bg, inst.root, "background"), inst)?.let { drawRect(Color(it)) } } else Modifier)
+            .then(
+                if (bg != null) {
+                    Modifier.drawBehind {
+                        when (val v = inst.eval(bg, inst.root, "background")) {
+                            is Gradient -> if (program.level >= 10) drawRect(backgroundBrush(v, size, inst))
+                            else -> Builtins.argb(v, inst)?.let { drawRect(Color(it)) }
+                        }
+                    }
+                } else {
+                    Modifier
+                },
+            )
+            .then(if (insets != null) Modifier.windowInsetsPadding(insets) else Modifier)
             .padding(inset(program.padding)),
     ) {
-        Nodes(program.root, inst.root, inst, this)
+        CompositionLocalProvider(LocalLongPress provides program.isFace) {
+            Nodes(program.root, inst.root, inst, this)
+        }
     }
 }
+
+/** Whether nodes here take long presses: in screens, apps and faces, not on a tile, where the home screen has them. */
+val LocalLongPress = staticCompositionLocalOf { false }
+
+/**
+ * Where a node's onLongPress says it took a long press, so the home screen around a face knows not to open its menu
+ * for the same one; see [dev.omalauncher.ui.HomeGrid].
+ */
+class LongPressClaim {
+    /** When the last long press was taken, in uptime milliseconds. */
+    @Volatile var at = 0L
+        private set
+
+    fun claim() {
+        at = System.nanoTime() / 1_000_000
+    }
+}
+
+val LocalLongPressClaim = staticCompositionLocalOf<LongPressClaim?> { null }
 
 /** Widget text, 13sp as widgets were made for, whatever size the launcher's own text is. */
 internal val WidgetMono get() = Mono.copy(fontSize = 13.sp)
@@ -149,7 +208,7 @@ fun WidgetScreen(
     BoxWithConstraints(modifier) {
         // Set before the nodes compose, so the first frame already has the size instead of null.
         inst.setScreen(maxWidth.value.toDouble(), maxHeight.value.toDouble())
-        CompositionLocalProvider(LocalWidgetScreen provides true) {
+        CompositionLocalProvider(LocalWidgetScreen provides true, LocalLongPress provides true) {
             Column(Modifier.fillMaxSize()) {
                 Nodes(nodes, inst.root, inst, this)
             }
@@ -157,7 +216,11 @@ fun WidgetScreen(
     }
 }
 
-/** A frame clock for widgets that read `time`, only while they're on screen ([covered] is false). */
+/**
+ * A frame clock for widgets that read `time`, only while they're on screen ([covered] is false)
+ * and something still reads it: a `time` under an `if` that's false, like a backdrop drawn only
+ * while music plays, stops it after a few frames, and the next read starts it again.
+ */
 @Composable
 private fun FrameClock(
     inst: WidgetInstance,
@@ -166,11 +229,19 @@ private fun FrameClock(
     LaunchedEffect(inst, covered) {
         val start = withFrameNanos { it }
         var frame = 0L
+        var unread = 0
         while (true) {
             if (covered()) snapshotFlow { covered() }.first { !it }
+            if (unread >= 3) {
+                inst.awaitTimeRead(start)
+                unread = 0
+            }
             withFrameNanos { now ->
                 // Widgets that draw slowly get half the frame rate instead of stalling the home screen.
-                if (!inst.slow || frame++ % 2 == 0L) inst.time = (now - start) / 1e9
+                if (inst.slow && frame++ % 2 != 0L) return@withFrameNanos
+                unread = if (inst.timeRead) 0 else unread + 1
+                inst.timeRead = false
+                inst.time = (now - start) / 1e9
             }
         }
     }
@@ -201,7 +272,7 @@ private fun Node(
         }
         is WNode.For -> {
             val list by remember(node, env) { derivedStateOf(structuralEqualityPolicy()) { inst.eval(node.list, env, "for") } }
-            val items = items(list)
+            val items = Builtins.iterable(list)
             items.forEachIndexed { i, v ->
                 val k: Any = node.key?.let { inst.eval(it, env.child(v, Num(i.toDouble())), "for key") } ?: i
                 key(k) {
@@ -243,13 +314,6 @@ private fun Node(
     }
 }
 
-internal fun items(v: Value): List<Value> =
-    when (v) {
-        is Lst -> v.items
-        is Obj -> v.fields.map { (k, x) -> Obj(mapOf("key" to Str(k), "value" to x)) }
-        else -> emptyList()
-    }.let { if (it.size > Builtins.MAX_LIST) it.subList(0, Builtins.MAX_LIST) else it } // take() would copy every list, every frame
-
 private val SIZING = setOf("width", "height", "size", "fill", "weight")
 
 /** Lengths past this, in dp, are clamped: in a scrolling Column a bigger one can't be represented and fails the layout. */
@@ -268,7 +332,8 @@ private fun Element(
 ) {
     val p = remember(el, env) { Props(el, env, inst) }
     if (p.has("visible") && p.observe("visible")?.truthy == false) return
-    val mod = common(p, parent)
+    // A Popup's size and weight are its menu's, in a window of its own: the layout it's in doesn't hold it.
+    val mod = common(p, if (el.kind == "Popup") null else parent)
     val sized = SIZING.any { p.has(it) }
     when (el.kind) {
         "Column" -> {
@@ -303,11 +368,13 @@ private fun Element(
             }
         }
         "Box" -> Box(mod, contentAlignment = boxAlign(p.observe("align")?.toString())) { Nodes(el.children, env, inst, this) }
+        "Popup" -> PopupNode(el, p, mod, env, inst)
         "Grid" -> Grid(mod, (p.observe("columns")?.num() ?: 2.0).toInt().coerceIn(1, 12), (p.observe("gap")?.num() ?: 6.0).dp) { Nodes(el.children, env, inst, null) }
-        "Text" -> TextNode(p, mod)
+        // Since owl 10 a Text in a Row or Flow is as wide as its text; before, it took the whole width unless sized.
+        "Text" -> TextNode(p, mod, parent is RowScope && inst.program.level >= 10)
         "Button" -> {
             val color = p.color("color") { Palette.accent }
-            val radius = p.float("radius", 8f * LauncherStyle.corners.scale)
+            val radius = p.float("radius", 8f * LauncherStyle.cornerScale)
             Box(
                 mod
                     .drawBehind {
@@ -358,7 +425,7 @@ private fun Element(
             val thickness = p.float("thickness", 2f)
             Spacer(
                 mod.then(if (sized) Modifier else Modifier.fillMaxWidth().height(48.dp)).drawBehind {
-                    val points = items(p.now("values") ?: return@drawBehind).mapNotNull { it.num()?.toFloat() }
+                    val points = Builtins.iterable(p.now("values") ?: return@drawBehind).mapNotNull { it.num()?.toFloat() }
                     if (points.size < 2) return@drawBehind
                     val lo = p.now("min")?.num()?.toFloat() ?: 0f
                     // Auto-scaled lines get headroom so the peak isn't glued to the top edge.
@@ -386,7 +453,7 @@ private fun Element(
         }
         "Image" -> {
             val src = p.observe("src")?.toString().orEmpty()
-            val bitmap =
+            val image =
                 if (src.startsWith("media:")) {
                     // Album art isn't a file to watch: look again whenever a source (the media one) updates,
                     // but recompose only when the art itself changed, not on every tick of every source.
@@ -399,20 +466,24 @@ private fun Element(
                 } else {
                     inst.image(src)
                 }
-            val tint = p.observe("tint")?.let { p.color(it) }
-            if (bitmap != null) {
-                Image(
-                    bitmap,
-                    null,
-                    mod,
-                    contentScale =
-                        when (p.observe("fit")?.toString()) {
-                            "cover" -> ContentScale.Crop
-                            "fill" -> ContentScale.FillBounds
-                            else -> ContentScale.Fit
-                        },
-                    colorFilter = tint?.let { ColorFilter.tint(it) },
-                )
+            val scale =
+                when (p.observe("fit")?.toString()) {
+                    "cover" -> ContentScale.Crop
+                    "fill" -> ContentScale.FillBounds
+                    else -> ContentScale.Fit
+                }
+            when (image) {
+                is WidgetImage.Raster -> {
+                    val bitmap = image.bitmap
+                    // An alpha-only image (an app icon's silhouette, with monochrome icons) needs a color to show.
+                    val tint = p.observe("tint")?.let { p.color(it) } ?: Palette.foreground.takeIf { bitmap.config == ImageBitmapConfig.Alpha8 }
+                    Image(bitmap, null, mod, contentScale = scale, colorFilter = tint?.let { ColorFilter.tint(it) })
+                }
+                is WidgetImage.Vector -> {
+                    val tint = p.observe("tint")?.let { p.color(it) }
+                    Image(remember(image) { VectorPainter(image.vector) }, null, mod, contentScale = scale, colorFilter = tint?.let { ColorFilter.tint(it) })
+                }
+                null -> {}
             }
         }
         "Canvas" -> CanvasNode(p, mod.then(if (sized) Modifier else Modifier.fillMaxSize()))
@@ -552,16 +623,28 @@ private fun common(
                 }
             }
     }
+    // Under the background, which tints it.
+    if (p.has("frost")) m = m.frost(p, p.float("radius", if (p.has("border")) 8f * LauncherStyle.cornerScale else 0f))
     if (p.has("background") || p.has("border")) {
         val bg = p.color("background") { Color.Transparent }
         val borderColor = p.color("borderColor") { Palette.border }
         val border = p.float("border", 0f)
         // Bordered elements (buttons, frames) follow the launcher's corner style unless they set a radius.
-        val radius = p.float("radius", if (p.has("border")) 8f * LauncherStyle.corners.scale else 0f)
+        val radius = p.float("radius", if (p.has("border")) 8f * LauncherStyle.cornerScale else 0f)
+        // Since owl 10 a background can be a gradient. Read at draw time in place of the color, once; an
+        // animated background stays a color, which is what animates.
+        val gradients = p.inst.program.level >= 10 && p.has("background") && "background" !in p.el.animations
         m =
             m.drawBehind {
                 val r = CornerRadius(radius().dp.toPx())
-                drawRoundRect(bg(), cornerRadius = r)
+                if (gradients) {
+                    when (val v = p.now("background")) {
+                        is Gradient -> drawRoundRect(backgroundBrush(v, size, p.inst), cornerRadius = r)
+                        else -> p.color(v)?.let { drawRoundRect(it, cornerRadius = r) }
+                    }
+                } else {
+                    drawRoundRect(bg(), cornerRadius = r)
+                }
                 val w = border().dp.toPx()
                 if (w > 0f) drawRoundRect(borderColor(), Offset(w / 2, w / 2), Size(size.width - w, size.height - w), r, style = Stroke(w))
             }
@@ -581,8 +664,26 @@ private fun handlers(p: Props): Modifier {
         a: Action,
         vararg v: Float,
     ) = a.run(p.env, v.map { Num((it / density).toDouble()) })
-    el.handlers["onTap"]?.let { a ->
-        m = m.pointerInput(el, p.env) { detectTapGestures { o -> fire(a, o.x, o.y) } }
+    // One detector for both, so a long press isn't also a tap. Not on a tile, where long-press is the home screen's.
+    val tap = el.handlers["onTap"]
+    val long = el.handlers["onLongPress"]?.takeIf { LocalLongPress.current }
+    val haptics = LocalHapticFeedback.current
+    val claim = LocalLongPressClaim.current
+    if (tap != null || long != null) {
+        m =
+            m.pointerInput(el, p.env, long != null) {
+                detectTapGestures(
+                    onLongPress =
+                        long?.let { a ->
+                            { o ->
+                                claim?.claim()
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                fire(a, o.x, o.y)
+                            }
+                        },
+                    onTap = tap?.let { a -> { o -> fire(a, o.x, o.y) } },
+                )
+            }
     }
     el.handlers["onDrag"]?.let { a ->
         m = m.pointerInput(el, p.env) { detectDragGestures { change, drag -> change.consume(); fire(a, drag.x, drag.y, change.position.x, change.position.y) } }
@@ -652,15 +753,88 @@ internal fun widgetVoice(
     return if (spaced) set else set.copy(letterSpacing = TextUnit.Unspecified)
 }
 
+/**
+ * A gradient behind a node or a face. Its points are fractions of the size, 0 to 1 across and down, and a
+ * radial one's radius a fraction of the longer side, so it fits whatever size the node turns out to be.
+ */
+internal fun backgroundBrush(
+    g: Gradient,
+    size: Size,
+    inst: WidgetInstance,
+): Brush {
+    val colors = g.colors.map { Color(Builtins.argb(it, inst) ?: 0) }
+    val c = g.coords
+    return if (g.radial) {
+        Brush.radialGradient(colors, Offset(c[0] * size.width, c[1] * size.height), (c[2] * max(size.width, size.height)).coerceAtLeast(0.01f))
+    } else {
+        Brush.linearGradient(colors, Offset(c[0] * size.width, c[1] * size.height), Offset(c[2] * size.width, c[3] * size.height))
+    }
+}
+
+/** A Text's `spans`: each piece text, or a map of its text and how it differs from the rest (owl 10). Canvas text takes them too. */
+internal fun spans(
+    v: Value,
+    inst: WidgetInstance,
+): AnnotatedString =
+    buildAnnotatedString {
+        for (piece in Builtins.iterable(v)) {
+            val f = (piece as? Obj)?.fields
+            if (f == null) {
+                append(piece.spanText())
+                continue
+            }
+            val style =
+                SpanStyle(
+                    color = f["color"]?.let { c -> Builtins.argb(c, inst)?.let(::Color) } ?: Color.Unspecified,
+                    fontFamily = f["font"]?.let { fontFamily(it, inst) },
+                    fontSize = textUnit(f["fontSize"]) ?: androidx.compose.ui.unit.TextUnit.Unspecified,
+                    fontWeight = weight(f["fontWeight"]) ?: if (f["bold"]?.truthy == true) FontWeight.Bold else null,
+                    fontStyle = if (f["italic"]?.truthy == true) FontStyle.Italic else null,
+                    letterSpacing = textUnit(f["letterSpacing"]) ?: androidx.compose.ui.unit.TextUnit.Unspecified,
+                )
+            withStyle(style) { append(f["text"]?.spanText().orEmpty()) }
+        }
+    }
+
+/** A span's text as written: the spaces at its ends are what part it from the next, unlike a command's trailing newline. */
+private fun Value.spanText() = if (this is Str) v else text()
+
+/**
+ * A `font`: one of the words, or a font file of the widget's own (an asset, a file or a URL, owl 10), which
+ * shows the launcher's font until it has loaded. Null is the launcher's font.
+ */
+/** The launcher's monospace, which widget text is set in unless it picks another. */
+internal val launcherMono: FontFamily get() = Mono.fontFamily ?: FontFamily.Monospace
+
+internal fun fontFamily(
+    v: Value?,
+    inst: WidgetInstance,
+): FontFamily =
+    when (val name = v?.takeIf { it != Null }?.toString()) {
+        null, "mono" -> launcherMono
+        "sans" -> FontFamily.SansSerif
+        "serif" -> FontFamily.Serif
+        "icon" -> NerdSymbols
+        else -> if (inst.program.level >= 10) inst.font(name) ?: launcherMono else launcherMono
+    }
+
+/** A font weight, 100 (thin) to 900 (black); the font shows the nearest one it has. */
+internal fun weight(v: Value?) = v?.num()?.takeIf { it.isFinite() }?.let { FontWeight(it.toInt().coerceIn(1, 1000)) }
+
+/** A size or spacing in sp, within bounds: a NaN one (sqrt of a negative, "NaN" from a command) throws as text is laid out. */
+internal fun textUnit(v: Value?) = v?.num()?.takeIf { it.isFinite() }?.coerceIn(-1000.0, 1000.0)?.sp
+
 @Composable
 private fun TextNode(
     p: Props,
     mod: Modifier,
+    /** As wide as its text, in a Row or Flow, unless it's sized. */
+    hug: Boolean,
 ) {
     val style = p.observe("style")?.toString()
     val font = p.observe("font")?.toString()
     val size =
-        p.observe("fontSize")?.num()?.sp ?: when (style) {
+        textUnit(p.observe("fontSize")) ?: when (style) {
             "huge" -> 44.sp
             "title" -> 20.sp
             "small", "label" -> 11.sp
@@ -680,10 +854,13 @@ private fun TextNode(
                     "sans" -> FontFamily.SansSerif
                     "serif" -> FontFamily.Serif
                     "icon" -> NerdSymbols
-                    else -> voice.fontFamily ?: FontFamily.Monospace
+                    null, "mono", "display", "body", "hand" -> voice.fontFamily ?: FontFamily.Monospace
+                    // A font file of the widget's own (owl 10): the voice's until it has loaded.
+                    else -> (if (p.inst.program.level >= 10) p.inst.font(font) else null) ?: voice.fontFamily ?: FontFamily.Monospace
                 },
             fontSize = if (p.has("fontSize")) size else voice.fontSize,
-            fontWeight = if (p.observe("bold")?.truthy == true) FontWeight.Bold else voice.fontWeight,
+            fontWeight = weight(p.observe("fontWeight")) ?: if (p.observe("bold")?.truthy == true) FontWeight.Bold else voice.fontWeight,
+            letterSpacing = textUnit(p.observe("letterSpacing")) ?: voice.letterSpacing,
             fontStyle = if (p.observe("italic")?.truthy == true) FontStyle.Italic else voice.fontStyle,
             textAlign =
                 when (p.observe("align")?.toString()) {
@@ -692,17 +869,75 @@ private fun TextNode(
                     else -> TextAlign.Start
                 },
         )
+    val pieces = p.observe("spans")
     val text = p.observe("text")?.text().orEmpty()
     BasicText(
         // A caption is spelled as the look spells one: in capitals where its caption voice says so.
-        if (label && Pack.ownsPage) Pack.caption(text) else text,
-        if (p.has("width") || p.has("weight") || p.has("fill")) mod else mod.fillMaxWidth(),
+        if (pieces != null) spans(pieces, p.inst) else AnnotatedString(if (label && Pack.ownsPage) Pack.caption(text) else text),
+        if (p.has("width") || p.has("weight") || p.has("fill") || hug) mod else mod.fillMaxWidth(),
         style = textStyle,
         // Big text stays on one line in narrow tiles instead of breaking mid-word.
         maxLines = p.observe("maxLines")?.num()?.toInt()?.coerceAtLeast(1) ?: if (style == "huge" || style == "title") 1 else Int.MAX_VALUE,
         overflow = TextOverflow.Ellipsis,
         color = ColorProducer { color() },
     )
+}
+
+/**
+ * A Popup (owl 10): its children in a window over everything, the tile, the bar and other tiles, below the
+ * node that holds it or above with `position: above`, kept on screen. Framed like the launcher's own menus
+ * unless it has a background or border. A tap outside or Back runs onDismiss, which the compiler requires.
+ */
+@Composable
+private fun PopupNode(
+    el: WNode.Element,
+    p: Props,
+    mod: Modifier,
+    env: Env,
+    inst: WidgetInstance,
+) {
+    val above = p.observe("position")?.toString() == "above"
+    val position = remember(above) { NextToAnchor(above) }
+    val framed = p.has("background") || p.has("border")
+    Popup(
+        popupPositionProvider = position,
+        onDismissRequest = { el.handlers["onDismiss"]?.run(env, emptyList()) },
+        properties = PopupProperties(focusable = true),
+    ) {
+        val gap = (p.observe("gap")?.num() ?: 4.0).dp
+        val align =
+            when (p.observe("align")?.toString()) {
+                "center" -> Alignment.CenterHorizontally
+                "end" -> Alignment.End
+                else -> Alignment.Start
+            }
+        Column(
+            (if (framed) mod else Modifier.frame(2.dp, Palette.accent, Palette.background).then(mod).then(if (p.has("padding")) Modifier else Modifier.padding(4.dp))),
+            verticalArrangement = Arrangement.spacedBy(gap),
+            horizontalAlignment = align,
+        ) { Nodes(el.children, env, inst, this) }
+    }
+}
+
+/** Below its anchor, or [above] it, at its start; on the other side when there's no room, and never off screen. */
+private class NextToAnchor(
+    val above: Boolean,
+) : PopupPositionProvider {
+    override fun calculatePosition(
+        anchorBounds: IntRect,
+        windowSize: IntSize,
+        layoutDirection: LayoutDirection,
+        popupContentSize: IntSize,
+    ): IntOffset {
+        val h = popupContentSize.height
+        val up = anchorBounds.top - h
+        val down = anchorBounds.bottom
+        val y = if (above) (if (up >= 0 || down + h > windowSize.height) up else down) else (if (down + h <= windowSize.height || up < 0) down else up)
+        return IntOffset(
+            anchorBounds.left.coerceAtMost(windowSize.width - popupContentSize.width).coerceAtLeast(0),
+            y.coerceAtMost(windowSize.height - h).coerceAtLeast(0),
+        )
+    }
 }
 
 /** Fixed-column grid: children fill cells left to right. */

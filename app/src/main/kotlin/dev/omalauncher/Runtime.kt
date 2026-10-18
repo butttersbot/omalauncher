@@ -217,7 +217,6 @@ class Runtime(
         dev.omalauncher.phone.AdbWifiHeal.atStart(context)
         scope.launch {
             withContext(Dispatchers.IO) {
-                LauncherData.migrate(context)
                 launcherFiles.sync()
                 agents.load()
                 // A thread on the Mac may be working, or waiting for Boss to approve a step, since before this process

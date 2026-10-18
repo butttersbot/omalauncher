@@ -27,6 +27,7 @@ import dev.omalauncher.upgrade.Managed
 import dev.omalauncher.upgrade.Policy
 import dev.omalauncher.widgets.lang.CompileError
 import dev.omalauncher.widgets.lang.Compiler
+import dev.omalauncher.widgets.lang.OwlKind
 import dev.omalauncher.widgets.lang.Json
 import dev.omalauncher.widgets.lang.Program
 import dev.omalauncher.widgets.lang.Source
@@ -686,7 +687,13 @@ class WidgetEngine(
         hashes[file.name] = hash
         return try {
             val p = Compiler.compile(text)
+            // Faces and owl apps compile, but this launcher's home is the notebook: it has no place to show them yet.
+            if (p.kind != OwlKind.Widget) {
+                return broken(file, previous, stamp, "${p.kind.word} files aren't shown on Soma's home yet; only widget \"…\" { } files are", hash)
+            }
             writeError(file, null)
+            // Advice, after the clear and before the check result, so owl-check prints it with the rest.
+            for (w in p.warnings) writeError(file, "warning: $w", append = true)
             writeCheck(file, hash, "ok")
             WidgetSpec(file, p.name, p.page, p.order, p, null, p.size, p.minSize, stamp)
         } catch (e: CompileError) {

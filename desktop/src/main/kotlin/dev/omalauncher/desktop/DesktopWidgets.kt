@@ -33,7 +33,9 @@ class DesktopWidgetServices private constructor(
 ) : Services {
     override suspend fun cmd(command: String, timeoutSeconds: Int) = withContext(Dispatchers.IO) { shell(command, timeoutSeconds) }
 
-    override suspend fun http(url: String, headers: Map<String, String>, timeoutSeconds: Int) = withContext(Dispatchers.IO) { get(url, headers, timeoutSeconds) }
+    /** GETs only: a widget's post(...) sends nothing from here, as Soma desktop takes no widget side effects of that kind yet. */
+    override suspend fun http(url: String, headers: Map<String, String>, timeoutSeconds: Int, body: ByteArray?) =
+        if (body != null) ShellResult("", "post(...) isn't supported on Soma desktop", 1) else withContext(Dispatchers.IO) { get(url, headers, timeoutSeconds) }
 
     /** Never retried: a side effect runs once. */
     override fun run(command: String, done: (ShellResult?) -> Unit) {

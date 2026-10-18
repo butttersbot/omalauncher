@@ -39,6 +39,7 @@ kotlin {
             implementation(libs.compose.ui)
         }
         androidMain.dependencies {
+            implementation(libs.androidsvg)
             // BackHandler, for the phone's Back gesture.
             implementation(libs.androidx.activity.compose)
         }

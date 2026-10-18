@@ -164,6 +164,9 @@ object LauncherStyle {
     /** How frames (tiles, panels, menus, fields) round their corners. */
     var corners by mutableStateOf(Corners.Edge)
 
+    /** What frames multiply their corner radius by; 0 is square. Widgets read it as `corners` (owl 6). */
+    val cornerScale get() = corners.scale
+
     /** The shape frames use: square, or [radius] scaled by the corner style. */
     fun shape(radius: Dp = 16.dp): Shape = if (corners == Corners.Edge) RectangleShape else RoundedCornerShape(radius * corners.scale)
 }

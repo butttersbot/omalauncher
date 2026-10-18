@@ -126,7 +126,7 @@ internal class BarSearch(
     fun highlighted(picked: Int?) = picked?.coerceIn(-1, hits.lastIndex) ?: if (opensApp) 0 else -1
 }
 
-private fun allApps(runtime: Runtime): List<AppHit> = runtime.linuxApps.map { AppHit.Linux(it) } + runtime.androidApps.apps.map { AppHit.Android(it) }
+internal fun allApps(runtime: Runtime): List<AppHit> = runtime.linuxApps.map { AppHit.Linux(it) } + runtime.androidApps.apps.map { AppHit.Android(it) }
 
 internal fun searchApps(
     runtime: Runtime,
@@ -165,6 +165,29 @@ private fun AppHit.actions(handlers: AppHandlers): List<Pair<String, () -> Unit>
                 "app info" to { handlers.info(app) },
                 if (app.system) null else "uninstall" to { handlers.uninstall(app) },
             )
+    }
+}
+
+/** Opens [this] as the drawer does, for a widget's open(...); counted as used, so the recent strip follows. */
+internal fun AppHit.open(runtime: Runtime) {
+    runtime.usage.record(key)
+    when (this) {
+        is AppHit.Linux -> runtime.launch(app)
+        is AppHit.Android -> runtime.androidApps.open(app)
+    }
+}
+
+/** An app's icon by its [AppHit.key], or its silhouette with [mono]; null until loaded, or for no such app. */
+internal fun appIconOf(
+    runtime: Runtime,
+    key: String,
+    mono: Boolean,
+): ImageBitmap? {
+    val id = key.substringAfter(':')
+    return when (key.substringBefore(':')) {
+        "a" -> (if (mono) runtime.androidApps.masks else runtime.androidApps.icons)[id]
+        "l" -> (if (mono) runtime.linuxMasks else runtime.linuxIcons)[id]
+        else -> null
     }
 }
 

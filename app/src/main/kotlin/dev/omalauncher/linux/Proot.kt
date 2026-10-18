@@ -47,6 +47,7 @@ class Proot(
             "$GUEST_HOME/.local/share/omarchy" to LauncherData.omarchyDir(context),
             "$GUEST_HOME/.config/omalauncher/widgets" to LauncherData.widgetsDir(context),
             "$GUEST_HOME/.config/omalauncher/stickers" to LauncherData.stickersDir(context),
+            "$GUEST_HOME/.config/omalauncher/style" to LauncherData.styleDir(context),
             "$GUEST_HOME/.config/omarchy/themes" to LauncherData.userThemesDir(context),
             "$GUEST_HOME/.config/omarchy/backgrounds" to LauncherData.userBackgroundsDir(context),
         )
@@ -152,7 +153,6 @@ class Proot(
                 "OPENCODE_DISABLE_AUTOUPDATE=1",
                 "GROK_DISABLE_AUTOUPDATER=1",
                 "BROWSER=xdg-open",
-                // micro takes taps and scrolling; yazi and git open files with it.
                 "EDITOR=micro",
                 "XDG_RUNTIME_DIR=$GUEST_RUNTIME_DIR",
                 "WAYLAND_DISPLAY=${waylandSocket.name}",

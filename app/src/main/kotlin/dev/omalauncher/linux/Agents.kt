@@ -14,10 +14,26 @@ import java.nio.file.Files
 import java.nio.file.LinkOption
 
 /**
- * Starts [agentBin] with a first prompt; OpenCode takes it as --prompt, the others as an argument.
- * [readOnly], for reading something untrusted: Claude Code starts in plan mode, where it can read but not
- * run commands or change files whatever the user's settings say; otherwise it starts in auto mode. The others have no flag for that we can
- * rely on inside proot, and only have the prompt.
+ * Brings mise itself up to date. Which backend a tool installs from is built into mise, and an old mise
+ * breaks when a tool moves: OpenCode 2 left GitHub releases for npm, and mise 2026.10.8 still looked for
+ * it on GitHub (404). Best effort, since the old mise may still manage.
+ */
+const val MISE_SELF_UPDATE = "{ mise self-update -y || true; }"
+
+/** Adds node to the global config when an installed agent needs it but was installed before it did (OpenCode 1). */
+val MISE_NODE_FOR_AGENTS =
+    AGENTS.filter { it.node }.joinToString(" ", prefix = "if [ -z \"\$(mise ls -g node)\" ] && [ -n \"\$(mise ls -g ", postfix = ")\" ]; then mise use -g node@lts; fi") {
+        shellQuote(it.pkg)
+    }
+
+/**
+ * Starts [agentBin] with a first prompt; OpenCode takes it as --prompt, Antigravity and Copilot as -i (they
+ * refuse a bare argument), the others as an argument.
+ * Ori's agent is `ori code`, which stays open only with --interactive. Kimi takes a prompt only in
+ * print mode, so the session it ran in is continued after the answer.
+ * [readOnly], for reading something untrusted: Claude Code and Antigravity start in plan mode, where they
+ * can read but not run commands or change files whatever the user's settings say; otherwise Claude Code
+ * starts in auto mode. The others have no flag for that we can rely on inside proot, and only have the prompt.
  */
 fun agentInvocation(
     agentBin: String,
@@ -31,13 +47,20 @@ fun agentInvocation(
     val withImages = if (agentBin == "claude" && images.isNotEmpty()) {
         prompt + "\n\nRead these attached images before answering:\n" + images.joinToString("\n")
     } else prompt
-    val quoted = shellQuote(withImages)
+    // A prompt starting with a dash would be read as an option (claude --settings=... runs hooks); a space in front isn't.
+    val quoted = shellQuote(if (withImages.startsWith("-")) " $withImages" else withImages)
     return when {
         agentBin == "codex" && images.isNotEmpty() ->
-            "codex " + images.joinToString(" ") { "--image ${shellQuote(it)}" } + " -- $quoted"
+            // After --, nothing is read as an option: the prompt goes as it is.
+            "codex " + images.joinToString(" ") { "--image ${shellQuote(it)}" } + " -- ${shellQuote(withImages)}"
         agentBin == "opencode" -> "$agentBin --prompt $quoted"
+        agentBin == "copilot" -> "$agentBin -i $quoted"
         agentBin == "claude" && readOnly -> "$agentBin --permission-mode plan $quoted"
         agentBin == "claude" -> "$agentBin --permission-mode auto $quoted"
+        agentBin == "ori" -> "ori code --interactive --prompt $quoted"
+        agentBin == "kimi" -> "kimi --prompt $quoted && kimi --continue"
+        agentBin == "agy" && readOnly -> "$agentBin --mode plan -i $quoted"
+        agentBin == "agy" -> "$agentBin -i $quoted"
         else -> "$agentBin $quoted"
     }
 }
@@ -100,8 +123,8 @@ class AgentStore(
     /** Installs [agent] with mise, bootstrapping mise itself if needed. */
     fun installScript(agent: Agent) =
         buildString {
-            if (!mise.exists()) append("curl -fsSL https://mise.run | sh && ")
-            if (agent.pkg.startsWith("npm:")) append("mise use -g node@lts && ")
+            append(if (mise.exists()) "$MISE_SELF_UPDATE && " else "curl -fsSL https://mise.run | sh && ")
+            if (agent.node) append("mise use -g node@lts && ")
             append("mise use -g ${shellQuote(agent.pkg)}")
             // Downloads are only needed during install; storage on phones is tight.
             append(" && mise cache clear && rm -rf ~/.local/share/mise/downloads")
@@ -124,7 +147,7 @@ class AgentStore(
     fun managed(): List<Managed> =
         installed.map { agent ->
             Managed.text(File(proot.applications, "agent-${agent.bin}.desktop"), Policy.Owned) {
-                "[Desktop Entry]\nType=Application\nName=${agent.name}\nTerminal=true\nExec=${agent.bin}\nIcon=${bundledIcon("agent-${agent.bin}")}\n"
+                "[Desktop Entry]\nType=Application\nName=${agent.name}\nTerminal=true\nExec=${agent.command}\nIcon=${bundledIcon("agent-${agent.bin}")}\n"
             }
         } + codexConfig()
 
@@ -149,12 +172,9 @@ class AgentStore(
         agent: Agent,
         action: String,
         script: () -> String,
-    ): Boolean =
-        withContext(Dispatchers.IO) {
-            states[agent.bin] = JobState.Working(action, emptyList())
-            val (ok, tail) = proot.runJob(script()) { states[agent.bin] = JobState.Working(action, it) }
-            Log.i("agents", "$action ${agent.bin}: ${if (ok) "ok" else "failed"}")
-            states[agent.bin] = if (ok) JobState.Idle else JobState.Failed(tail.toList())
-            ok
-        }
+    ): Boolean {
+        val (ok, _) = proot.trackedJob(action, withContext(Dispatchers.IO) { script() }) { states[agent.bin] = it }
+        Log.i("agents", "$action ${agent.bin}: ${if (ok) "ok" else "failed"}")
+        return ok
+    }
 }
