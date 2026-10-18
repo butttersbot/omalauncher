@@ -52,6 +52,7 @@ class DockBandTest {
         assertEquals(AgentRoute.ChooseAgent, agentRoute(linux = true, bin = null))
         assertEquals(AgentRoute.Background, agentRoute(linux = true, bin = "claude"))
         assertEquals(AgentRoute.Background, agentRoute(linux = true, bin = "codex"))
+        assertEquals(AgentRoute.Background, agentRoute(linux = true, bin = "grok"))
         assertEquals(AgentRoute.Terminal, agentRoute(linux = true, bin = "gemini"))
     }
 

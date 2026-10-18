@@ -10,20 +10,24 @@ class AssistantCommandTest {
     @Test fun preservesPromptAsOneArgumentWithoutExecutingIt() {
         val dir = Files.createTempDirectory("oma-assist-test").toFile()
         try {
-            for (agent in listOf("claude", "codex")) {
+            for (agent in listOf("claude", "codex", "grok")) {
                 val program = java.io.File(dir, agent)
                 program.writeText("#!/bin/sh\nprintf '%s\\n' \"\$@\"\n")
                 program.setExecutable(true)
             }
             val prompt = "Phone request; \$(echo injection); `echo bad`; 'quotes'\nnext line"
-            for (agent in listOf("claude", "codex")) {
+            for (agent in listOf("claude", "codex", "grok")) {
                 val process = ProcessBuilder("/bin/sh", "-c", backgroundAgentCommand(agent, prompt)).apply {
                     environment()["PATH"] = dir.path + ":" + environment()["PATH"]
                 }.start()
                 val output = process.inputStream.bufferedReader().readText()
                 assertEquals(0, process.waitFor())
                 assertTrue(output.endsWith(prompt + "\n"))
-                assertTrue(output.startsWith(if (agent == "claude") "-p\n--permission-mode\nauto\n--allowedTools\nBash(oma-phone *)\nRead\n--\n" else "exec\n--skip-git-repo-check\n--\n"))
+                assertTrue(output.startsWith(when (agent) {
+                    "claude" -> "-p\n--permission-mode\nauto\n--allowedTools\nBash(oma-phone *)\nRead\n--\n"
+                    "grok" -> "--permission-mode\nauto\n--allow\nBash(oma-phone *)\n--allow\nRead\n--single=Phone request"
+                    else -> "exec\n--skip-git-repo-check\n--\n"
+                }))
                 assertFalse(output.contains("dangerously"))
             }
         } finally { dir.deleteRecursively() }
@@ -36,6 +40,11 @@ class AssistantCommandTest {
         assertEquals(claudeStreamCommand(), claudeStreamCommand("x; touch unsafe"))
     }
     @Test fun unsupportedAgentsDoNotSilentlyLaunchInteractiveTerminal() {
-        assertThrows(IllegalStateException::class.java) { backgroundAgentCommand("grok", "test") }
+        assertThrows(IllegalStateException::class.java) { backgroundAgentCommand("gemini", "test") }
+    }
+    @Test fun grokIsGivenItsImagesAsPathsInItsWords() {
+        val command = backgroundAgentCommand("grok", "what is this?", listOf("/root/.cache/a.png"))
+        assertTrue(command.contains("Read these attached images before answering:\n/root/.cache/a.png"))
+        assertTrue(command.endsWith(" < /dev/null"))
     }
 }

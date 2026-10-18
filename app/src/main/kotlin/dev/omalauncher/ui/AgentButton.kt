@@ -8,7 +8,7 @@ internal enum class AgentRoute {
     /** No agent is installed yet. */
     ChooseAgent,
 
-    /** Claude Code and Codex work in the background, with approvals. */
+    /** Claude Code, Codex and Grok work in the background; Claude Code with approvals. */
     Background,
 
     /** Any other agent opens in a terminal. */
@@ -22,6 +22,6 @@ internal fun agentRoute(
 ) = when {
     !linux -> AgentRoute.InstallLinux
     bin == null -> AgentRoute.ChooseAgent
-    bin == "claude" || bin == "codex" -> AgentRoute.Background
+    bin == "claude" || bin == "codex" || bin == "grok" -> AgentRoute.Background
     else -> AgentRoute.Terminal
 }

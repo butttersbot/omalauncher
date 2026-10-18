@@ -29,7 +29,7 @@ class OmaCommandTest {
         val tools = omaTools(rootfs, { asset(OMA_ASSET) }, { asset(DROP_ASSET) }, { asset(MSG_ASSET) })
         // `oma drop` was never a command of its own, so it has no old name; its script is installed with `oma`.
         assertEquals(
-            listOf("usr/local/bin/oma", "usr/local/bin/oma-thread", "usr/local/bin/oma-keep", "usr/local/bin/oma-agents", "usr/local/lib/oma/drop", "usr/local/lib/oma/msg"),
+            listOf("usr/local/bin/oma", "usr/local/bin/oma-thread", "usr/local/bin/oma-keep", "usr/local/bin/oma-agents", "usr/local/lib/oma/drop", "usr/local/lib/oma/msg", "usr/local/lib/oma/front"),
             tools.map { it.file.relativeTo(rootfs).path },
         )
         assertTrue(tools.all { it.policy == Policy.Owned && it.executable })
@@ -55,8 +55,8 @@ class OmaCommandTest {
             val text = moduleFile("src/main/kotlin/dev/omalauncher/$source").readText()
             assertTrue(source, text.contains("Managed(File(rootfs, \"$OMA_LIB/$lib\"), Policy.Owned, executable = true) { context.assets.open(\"$script\")"))
         }
-        assertEquals(listOf("thread", "keep", "agents", "drop", "msg"), OMA_PARTS.map { it.lib })
-        assertEquals(listOf("oma-thread", "oma-keep", "oma-agents", null, null), OMA_PARTS.map { it.oldName })
+        assertEquals(listOf("thread", "keep", "agents", "drop", "msg", "front"), OMA_PARTS.map { it.lib })
+        assertEquals(listOf("oma-thread", "oma-keep", "oma-agents", null, null, null), OMA_PARTS.map { it.oldName })
     }
 
     @Test fun theDispatchersSubcommandsAreTheTables() {
@@ -70,7 +70,7 @@ class OmaCommandTest {
             val branch = cases.substringAfter("\n  ${part.word})").substringBefore(";;")
             assertTrue(branch, branch.contains("exec \"\$lib/${part.lib}\""))
         }
-        assertEquals(listOf("threads", "keep", "status", "drop", "msg"), OMA_PARTS.map { it.word })
+        assertEquals(listOf("threads", "keep", "status", "drop", "msg", "front"), OMA_PARTS.map { it.word })
     }
 
     @Test fun theLauncherInstallsItWithLinuxAndTellsTheAgents() {
@@ -118,5 +118,31 @@ class OmaCommandTest {
         val run = ProcessBuilder("bash", moduleFile("src/test/shell/test_oma.sh").path).redirectErrorStream(true).start()
         val out = run.inputStream.bufferedReader().readText()
         assertEquals(out, 0, run.waitFor())
+    }
+
+    @Test fun omaFrontKeepsTheChoiceAndSaysWhoAnswers() {
+        val home = tmp.newFolder("home")
+        val script = File(tmp.root, "front").apply { writeText(OMA_FRONT_SCRIPT); setExecutable(true) }
+        val bin = tmp.newFolder("bin")
+        fun run(vararg words: String, path: String = "/usr/bin:/bin"): Pair<Int, String> {
+            val process = ProcessBuilder(listOf(script.path) + words).redirectErrorStream(true)
+                .apply { environment()["HOME"] = home.path; environment()["PATH"] = path }.start()
+            val out = process.inputStream.bufferedReader().readText()
+            return process.waitFor() to out
+        }
+        // Nothing chosen and no Grok here: Grok is what is chosen, and Haiku answers until it is installed.
+        assertTrue(run().second, run().second.contains("not installed"))
+        assertEquals(0, run("haiku").first)
+        assertEquals("haiku\n", File(home, ".config/oma/front-agent").readText())
+        assertTrue(run().second.contains("The front agent is Haiku"))
+        File(bin, "grok").apply { writeText("#!/bin/sh\n"); setExecutable(true) }
+        run("grok", path = "${bin.path}:/usr/bin:/bin")
+        assertEquals("grok\n", File(home, ".config/oma/front-agent").readText())
+        assertTrue(run(path = "${bin.path}:/usr/bin:/bin").second.contains("grok login --device-auth"))
+        File(home, ".grok").mkdirs(); File(home, ".grok/auth.json").writeText("{}")
+        assertTrue(run(path = "${bin.path}:/usr/bin:/bin").second.contains("The front agent is Grok"))
+        // Anything else is refused and changes nothing.
+        assertEquals(2, run("opus").first)
+        assertEquals("grok\n", File(home, ".config/oma/front-agent").readText())
     }
 }

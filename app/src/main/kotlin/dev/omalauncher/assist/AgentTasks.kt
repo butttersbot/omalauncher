@@ -763,7 +763,12 @@ fun claudeStreamCommand(resume: String? = null, model: String? = null): String =
 fun backgroundAgentCommand(agent: String, prompt: String, images: List<String> = emptyList()): String = when (agent) {
     "claude" -> "claude -p --permission-mode auto --allowedTools ${shellQuote("Bash(oma-phone *)")} Read -- ${shellQuote(prompt)} < /dev/null"
     "codex" -> "codex exec --skip-git-repo-check " + images.joinToString(" ") { "--image ${shellQuote(it)}" }.let { if (it.isBlank()) "" else "$it " } + "-- ${shellQuote(prompt)} < /dev/null"
-    else -> error("The assistant currently supports Claude Code and Codex. Choose one in Omalauncher.")
+    // Grok as Claude Code is run here, in auto mode with phone commands and reading allowed; nobody answers its prompts in
+    // -p, so what auto mode won't allow is refused. It reads an image from its path, so the paths go in its words. The
+    // prompt is given as --single= so one starting with a dash is still his words.
+    "grok" -> "grok --permission-mode auto --allow ${shellQuote("Bash(oma-phone *)")} --allow Read --single=" +
+        shellQuote(if (images.isEmpty()) prompt else prompt + "\n\nRead these attached images before answering:\n" + images.joinToString("\n")) + " < /dev/null"
+    else -> error("The assistant currently supports Claude Code, Codex and Grok. Choose one in Omalauncher.")
 }
 
 /** Stop on the task notification: it stops the builder the notification is about, and A for one posted before there were two. */

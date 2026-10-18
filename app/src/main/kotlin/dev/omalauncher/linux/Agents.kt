@@ -46,10 +46,10 @@ fun agentInvocation(
      */
     auto: Boolean = true,
 ): String {
-    require(images.isEmpty() || agentBin == "codex" || agentBin == "claude") {
-        "Image attachments are supported by Claude Code and Codex."
+    require(images.isEmpty() || agentBin == "codex" || agentBin == "claude" || agentBin == "grok") {
+        "Image attachments are supported by Claude Code, Codex and Grok."
     }
-    val withImages = if (agentBin == "claude" && images.isNotEmpty()) {
+    val withImages = if ((agentBin == "claude" || agentBin == "grok") && images.isNotEmpty()) {
         prompt + "\n\nRead these attached images before answering:\n" + images.joinToString("\n")
     } else prompt
     // A prompt starting with a dash would be read as an option (claude --settings=... runs hooks); a space in front isn't.
@@ -62,6 +62,8 @@ fun agentInvocation(
         agentBin == "copilot" -> "$agentBin -i $quoted"
         agentBin == "claude" && readOnly -> "$agentBin --permission-mode plan $quoted"
         agentBin == "claude" && auto -> "$agentBin --permission-mode auto $quoted"
+        // Grok's plan mode is its own; its auto mode is Claude Code's, and it reads the same settings.
+        agentBin == "grok" && auto && !readOnly -> "$agentBin --permission-mode auto $quoted"
         agentBin == "ori" -> "ori code --interactive --prompt $quoted"
         agentBin == "kimi" -> "kimi --prompt $quoted && kimi --continue"
         agentBin == "agy" && readOnly -> "$agentBin --mode plan -i $quoted"

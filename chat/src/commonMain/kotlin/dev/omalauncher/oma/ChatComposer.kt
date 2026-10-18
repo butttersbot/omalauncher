@@ -9,7 +9,7 @@ import dev.omalauncher.assist.macThreadId
 import dev.omalauncher.linux.MAX_PROMPT_IMAGES
 
 /** The agents Oma runs in the background under its approvals; the others still open in a terminal. */
-val BACKGROUND_AGENTS = setOf("claude", "codex")
+val BACKGROUND_AGENTS = setOf("claude", "codex", "grok")
 
 /** What Send does with what's in the composer. */
 sealed interface Outgoing {
@@ -159,7 +159,7 @@ fun outgoing(
         }
         !linux -> Outgoing.Refused("Open Soma and finish Linux setup first.")
         agent == null -> Outgoing.Refused("Install and sign in to an agent in Soma first.")
-        images > 0 && agent !in BACKGROUND_AGENTS -> Outgoing.Refused("Choose Claude Code or Codex to send images.")
+        images > 0 && agent !in BACKGROUND_AGENTS -> Outgoing.Refused("Choose Claude Code, Codex or Grok to send images.")
         imageMissing -> Outgoing.Refused("An attached image is no longer available. Remove it and attach it again.")
         agent in BACKGROUND_AGENTS -> when {
             to == SendTo.Oma && frontFirst(prompt, images, frontReady) -> Outgoing.Front(prompt)

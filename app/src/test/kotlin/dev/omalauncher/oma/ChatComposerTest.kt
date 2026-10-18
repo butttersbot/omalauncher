@@ -58,7 +58,7 @@ class ChatComposerTest {
         assertTrue(out(images = 1, missing = true, working = true) is Outgoing.Refused)
     }
     @Test fun noTerminalOpensBesideARunningTask() {
-        assertEquals(Outgoing.Refused("Wait for the running task or stop it first."), out(agent = "grok", working = true))
+        assertEquals(Outgoing.Refused("Wait for the running task or stop it first."), out(agent = "gemini", working = true))
     }
     @Test fun imagesAloneAskForADescription() {
         assertEquals(Outgoing.Background("Describe these images."), out(draft = "", images = 2))
@@ -67,10 +67,10 @@ class ChatComposerTest {
         assertTrue(out(linux = false) is Outgoing.Refused)
         assertTrue(out(agent = null) is Outgoing.Refused)
         assertTrue(out(images = 1, missing = true) is Outgoing.Refused)
-        assertEquals(Outgoing.Refused("Choose Claude Code or Codex to send images."), out(agent = "grok", images = 1))
+        assertEquals(Outgoing.Refused("Choose Claude Code, Codex or Grok to send images."), out(agent = "gemini", images = 1))
     }
     @Test fun otherAgentsStillOpenInATerminal() {
-        assertEquals(Outgoing.Terminal("hello"), out(agent = "grok"))
+        assertEquals(Outgoing.Terminal("hello"), out(agent = "gemini"))
     }
     /** The lane choice is gone on purpose (Boss, 2026-10-13): these replace the tests of the quick and build lanes. */
     @Test fun wordsAloneAreHeardByTheFrontAgentFirstWhetherOrNotATaskRuns() {
@@ -109,8 +109,8 @@ class ChatComposerTest {
     }
     @Test fun aTerminalAgentIsNeverRoutedThroughTheFrontAgent() {
         for (frontReady in listOf(false, true)) {
-            assertEquals(Outgoing.Terminal("hello"), out(agent = "grok", frontReady = frontReady))
-            assertEquals(Outgoing.Refused("Wait for the running task or stop it first."), out(agent = "grok", working = true, frontReady = frontReady))
+            assertEquals(Outgoing.Terminal("hello"), out(agent = "gemini", frontReady = frontReady))
+            assertEquals(Outgoing.Refused("Wait for the running task or stop it first."), out(agent = "gemini", working = true, frontReady = frontReady))
         }
     }
     @Test fun theFrontAgentDoesNotGetWhatCouldNotBeSentAnyway() {
@@ -153,7 +153,7 @@ class ChatComposerTest {
         assertEquals(straight, out("  hello \n", linux = false, frontReady = true, to = chat))
         assertEquals(straight, out(linux = false, agent = null, to = chat))
         assertEquals(straight, out(agent = null, to = chat))
-        assertEquals(straight, out(agent = "grok", frontReady = true, to = chat))
+        assertEquals(straight, out(agent = "gemini", frontReady = true, to = chat))
         assertEquals(straight, out(frontReady = false, to = chat))
         assertEquals(straight, out(frontReady = false, working = true, to = chat))
         // More than the front agent takes goes as it is too, rather than being refused.

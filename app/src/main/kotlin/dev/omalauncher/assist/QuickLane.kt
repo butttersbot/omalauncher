@@ -48,12 +48,22 @@ object QuickLane {
     }
 
     /**
-     * Whether there is a front agent to ask: Claude Code is it, and what it hands over needs a default agent
-     * that works in the background. One that opens in a terminal is sent to as it always was.
+     * Whether there is a front agent to ask: Grok or Claude Code is it ([agent]), and what it hands over needs a
+     * default agent that works in the background. One that opens in a terminal is sent to as it always was.
      */
-    fun ready(context: Context): Boolean {
-        val agents = (context.applicationContext as App).runtime.agents
-        return agents.installed.any { it.bin == "claude" } && agents.default?.bin in BACKGROUND_AGENTS
+    fun ready(context: Context): Boolean =
+        agent(context) != null && (context.applicationContext as App).runtime.agents.default?.bin in BACKGROUND_AGENTS
+
+    /**
+     * Who answers the next request (Boss, 2026-10-18: Grok, with Haiku kept to switch back): Grok once it is installed
+     * and signed in in the guest, unless `oma front haiku` chose Haiku; Haiku on Claude Code otherwise. Looked at for
+     * each request, so a sign-in or a switch counts from the next one.
+     */
+    fun agent(context: Context): FrontAgent? {
+        val runtime = (context.applicationContext as App).runtime
+        val installed = runtime.agents.installed
+        val chosen = runCatching { java.io.File(runtime.proot.home, FRONT_CHOICE).takeIf { it.isFile }?.readText() }.getOrNull()
+        return FrontAgent.pick(chosen, installed.any { it.bin == "grok" }, java.io.File(runtime.proot.home, GROK_AUTH).isFile, installed.any { it.bin == "claude" })
     }
 
     /**
@@ -163,7 +173,10 @@ object QuickLane {
      */
     private fun read(context: Context, prompt: String, page: String?, away: Boolean, waited: Long?, chat: String = "") {
         val runtime = (context.applicationContext as App).runtime
-        val resumed = if (chat.isEmpty()) thread else TabBook.of(context).chat(chat)?.front?.ifEmpty { null }
+        // Checked as it is read, so a request that waited goes to whoever answers now; ready() was true when it was sent.
+        val agent = agent(context) ?: error("Install and sign in to Grok or Claude Code in Omalauncher first.")
+        // Only that agent's own conversation is followed up on: a Claude session means nothing to Grok.
+        val resumed = frontSession(agent, if (chat.isEmpty()) thread else TabBook.of(context).chat(chat)?.front?.ifEmpty { null })
         val log = ChatLog.of(context)
         val began = System.currentTimeMillis()
         // The Mac's threads as the phone last heard of them: asking the Mac here would hold his request up. Null
@@ -190,7 +203,7 @@ object QuickLane {
             val filed = waited?.also { time -> log.update(time, save = true) { it.copy(status = TaskStatus.Running) } }
                 ?: ChatHistory.stamp(log.tasks, began).also { log.begin(ChatTask(it, UNDECIDED_AGENT, prompt, chat = chat)) }
             // Its home changes are told apart from a builder's working at the same time (Soma Canvas slice 6).
-            Triple(filed, "OMA_CANVAS_ACTOR=quick " + quickCommand(frontPrompt(board, prompt, mac, second, phone), resumed, mac = mac != null, newChat = chat.isNotEmpty()), asking)
+            Triple(filed, "OMA_CANVAS_ACTOR=quick " + frontCommand(agent, frontPrompt(board, prompt, mac, second, phone), resumed, mac = mac != null, newChat = chat.isNotEmpty()), asking)
         }
         time = asked; working = true; stopping = false; answer = ""; label = ANSWERING
         // A new chat's work that it answers in prose is not shown, and goes to the Mac as if it had said nothing.
@@ -215,7 +228,7 @@ object QuickLane {
                 var its = false
                 // The entry reads as a task just begun until the front agent shows it is answering this one itself.
                 fun own() {
-                    if (!its) log.update(asked, save = true) { it.copy(agent = QUICK_AGENT, answeredBy = agentName(QUICK_MODEL).orEmpty()) }
+                    if (!its) log.update(asked, save = true) { it.copy(agent = QUICK_AGENT, answeredBy = agentName(agent.model).orEmpty()) }
                     its = true
                 }
                 child.inputStream.bufferedReader().forEachLine { line ->
@@ -270,6 +283,8 @@ object QuickLane {
                 }
                 val code = child.waitFor()
                 if (lost) next = null
+                // Grok says nothing JSON of a conversation it can't find; failing before it named one is that.
+                if (agent == FrontAgent.Grok && resumed != null && session == null && (failed || code != 0)) next = null
                 if (stopping && session != null) next = session // A stopped request can still be followed up.
                 if (late.get() || lost || code != 0) failed = true
             } catch (e: Exception) { failed = true }
@@ -292,10 +307,11 @@ object QuickLane {
                     AgentNotices.answered(context, if (outcome == FrontOutcome.Answered) "Done" else INCOMPLETE, answer, AgentNotices.FRONT)
                 }
                 synchronized(this) {
-                    if (chat.isNotEmpty()) TabBook.change(context) { it.heard(chat, next) }
+                    val kept = frontThread(agent, next)
+                    if (chat.isNotEmpty()) TabBook.change(context) { it.heard(chat, kept) }
                     else {
-                        thread = next
-                        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString("thread", next).apply()
+                        thread = kept
+                        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString("thread", kept).apply()
                     }
                     process = null; working = false
                     // The last thing this request does: the next one takes over every field above.
