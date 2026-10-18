@@ -30,7 +30,7 @@ case "${1:-}" in
     wake; echo "ready" ;;
   install)
     apk="${2:-app/build/outputs/apk/debug/app-debug.apk}"
-    unzip -l "$apk" | grep -q "lib/arm64-v8a/libproot.so" || { echo "no libproot.so in $apk: copy app/src/main/jniLibs in first" >&2; exit 1; }
+    unzip -l "$apk" | grep "lib/arm64-v8a/libproot.so" >/dev/null || { echo "no libproot.so in $apk: copy app/src/main/jniLibs in first" >&2; exit 1; }
     A install -r "$apk"
     A shell cmd package set-home-activity dev.omalauncher.boss/dev.omalauncher.MainActivity
     wake; A shell input keyevent HOME ;;
