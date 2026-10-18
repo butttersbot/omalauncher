@@ -220,19 +220,12 @@ class DesktopCanvas(private val file: File, private val device: String) : Canvas
     }
 
     /**
-     * The newest agent request not undone yet, and what undoes it: worked out from the log itself, the page as it was just
+     * The newest agent or Grok request not undone yet, and what undoes it: worked out from the log itself, the page as it was just
      * before the request's first verb replayed, so nothing besides the log is kept.
      */
-    override fun lastRestorePoint(): RestorePoint? {
-        // How far each request has been undone: its verbs after its last undo are still to undo (one request can arrange,
-        // undo and arrange again).
-        val undoneTo = log.entries.filter { it.request.startsWith(UNDO) }.groupBy { it.request.removePrefix(UNDO) }.mapValues { (_, e) -> e.maxOf { it.version } }
-        fun left(e: dev.omalauncher.widgets.layout.LoggedVerb) = e.version > (undoneTo[e.request] ?: 0L)
-        val request = log.entries.lastOrNull { it.origin.actor.startsWith("agent") && !it.request.startsWith(UNDO) && left(it) }?.request ?: return null
-        val verbs = log.request(request).filter(::left)
-        val before = replay(log.copy(entries = log.entries.filter { it.version < verbs.first().version }))
-        return RestorePoint(request, restorePoint(before, verbs.map { it.verb }))
-    }
+    override fun lastRestorePoint(): RestorePoint? = restorePoints().firstOrNull()
+
+    override fun restorePoints(): List<RestorePoint> = dev.omalauncher.canvas.logRestorePoints(log) { replay(it) }
 
     override fun undone(restored: RestorePoint, verbs: List<CanvasVerb>, actor: String): String? {
         val why = apply(verbs, UNDO + restored.request, actor)

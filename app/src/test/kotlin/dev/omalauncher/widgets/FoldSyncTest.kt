@@ -56,8 +56,22 @@ class FoldSyncTest {
             return SyncWire.tail(log, if (whole) 0 else since).put("notes", org.json.JSONArray(took.mapNotNull { it.why }))
         }
 
+        /** The service's copy as a pad whose restore points come from its log, as ScreenCanvas's do. */
+        fun screenPad() = object : dev.omalauncher.canvas.CanvasPad {
+            override val rules = ScreenRules(pageId = { n -> "p" + ((n.pages.mapNotNull { it.id.removePrefix("p").toIntOrNull() }.maxOrNull() ?: 0) + 1) })
+            override fun notebook() = replayLog(log, 6, 8)
+            override fun apply(verbs: List<CanvasVerb>, request: String, actor: String): String? {
+                val (next, took) = appendSent(log, verbs.map { SentVerb(log.version, request, VerbOrigin("macpro", actor), it) }, 6, 8)
+                log = next
+                return took.firstOrNull { it.version == null }?.why
+            }
+            override fun restorePoints() = dev.omalauncher.canvas.logRestorePoints(log) { replayLog(it, 6, 8) }
+            override fun lastRestorePoint(): RestorePoint? = restorePoints().firstOrNull()
+            override fun undone(restored: RestorePoint, verbs: List<CanvasVerb>, actor: String): String? = apply(verbs, "undo:" + restored.request, actor)
+        }
+
         /** An agent on the service arranging the Fold's page, as `soma canvas` would through the door. */
-        fun agent(words: String): JSONObject {
+        fun agent(words: String, actor: String = "agent:t9", request: String = "agent-1"): JSONObject {
             val pad = object : dev.omalauncher.canvas.CanvasPad {
                 override val rules = ScreenRules(pageId = { n -> "p" + ((n.pages.mapNotNull { it.id.removePrefix("p").toIntOrNull() }.maxOrNull() ?: 0) + 1) })
                 override fun notebook() = replayLog(log, 6, 8)
@@ -69,14 +83,110 @@ class FoldSyncTest {
                 override fun lastRestorePoint(): RestorePoint? = null
                 override fun undone(restored: RestorePoint, verbs: List<CanvasVerb>, actor: String): String? = null
             }
-            return CanvasCommands.run(words.split(' '), pad, "agent-1", "agent:t9")
+            return CanvasCommands.run(words.split(' '), pad, request, actor)
         }
     }
 
     private class Fold(saved: Notebook, marked: (String) -> Boolean = { false }) {
         var kept: String? = null
+        var undo: String? = null
+        var undoOut: String? = null
         val notebook = LiveNotebook().apply { open(saved, kept = true) }
-        val sync = FoldSync(notebook, "fold-test", { kept }, { kept = it }, marked = marked)
+        val points = dev.omalauncher.canvas.RestorePoints({ undo }, { undo = it })
+        val undos = UndonePending({ undoOut }, { undoOut = it })
+        val sync = FoldSync(notebook, "fold-test", { kept }, { kept = it }, marked = marked, points = points, undos = undos)
+        /** "undo" on the Fold, as the quick lane runs it. */
+        val pad = FoldCanvasPad(notebook, addPage = { notebook.addPage() }, removePage = { notebook.deletePage(it, emptySet(), move = false) != null }, points = points,
+            undoneHere = { r, v -> undos.add(r, v) })
+    }
+
+    /** Boss, 2026-10-17: undo takes back Grok's changes too. On the Fold they come in by sync, and its undo goes back up as one. */
+    @Test fun grokChangeThatComesInBySyncIsUndoneOnTheFoldAndTheServiceKnows() {
+        val service = Service()
+        val fold = Fold(saved)
+        fold.sync.round(service::exchange)
+        assertTrue(service.agent("place needs card bottom-left --page Today", "grok, approved by him", "grok-ok-a1").getBoolean("ok"))
+        fold.sync.round(service::exchange)
+        assertTrue(fold.notebook.pageOf(needs) != null)
+        // His hand meanwhile, which undo never touches.
+        fold.notebook.setCell("clock.owl", Cell(3, 0, 3, 2)); fold.notebook.save()
+        val undo = CanvasCommands.run(listOf("undo"), fold.pad, "q-1", "agent:quick")
+        assertTrue(undo.toString(), undo.getBoolean("ok"))
+        assertNull(fold.notebook.pageOf(needs))
+        assertEquals(Cell(3, 0, 3, 2), fold.notebook.cell("clock.owl"))
+        fold.sync.round(service::exchange)
+        // The service's copy has the removal as the undo of Grok's request; the clock went up as his hand's.
+        val last = service.log.entries.filter { it.verb is CanvasVerb.Remove && (it.verb as CanvasVerb.Remove).key == needs }
+        assertEquals(listOf("undo:grok-ok-a1"), last.map { it.request })
+        assertEquals("fold-", service.log.entries.last { it.verb is CanvasVerb.Move }.request.take(5))
+        assertNull(fold.undoOut?.takeIf { it != "[]" })
+        assertFalse(CanvasCommands.run(listOf("undo"), fold.pad, "q-2", "agent:quick").getBoolean("ok"))
+    }
+
+    /** Round-1 review: two undos of one module inside a round went up as one; the service's undo then stuck on the other. */
+    @Test fun twoUndosOfOneModuleInARoundNeverStickTheServicesUndo() {
+        val service = Service()
+        val fold = Fold(saved)
+        fold.sync.round(service::exchange)
+        // An agent's arrangement first, then Grok's two.
+        assertTrue(service.agent("place pocket line top-left --page Today", "agent:t9", "agent-early").getBoolean("ok"))
+        assertTrue(service.agent("place needs card bottom-left --page Today", "grok", "grok-1").getBoolean("ok"))
+        fold.sync.round(service::exchange)
+        assertTrue(service.agent("move needs top-right --page Today", "grok, approved by him", "grok-ok-2").getBoolean("ok"))
+        fold.sync.round(service::exchange)
+        assertEquals(listOf("agent-early", "grok-1", "grok-ok-2"), fold.points.all().map { it.request })
+        // Both of Grok's undone on the Fold inside one round: only one goes up as an undo.
+        assertTrue(CanvasCommands.run(listOf("undo"), fold.pad, "q-1", "agent:quick").getBoolean("ok"))
+        assertTrue(CanvasCommands.run(listOf("undo"), fold.pad, "q-2", "agent:quick").getBoolean("ok"))
+        assertNull(fold.notebook.pageOf(needs))
+        fold.sync.round(service::exchange)
+        // On the service, an agent's undo finds nothing of Grok's left, and goes on to the agent's Pocket rather than stick.
+        val pad = service.screenPad()
+        val undo = CanvasCommands.run(listOf("undo"), pad, "s-1", "agent:t9")
+        assertTrue(undo.toString(), undo.getBoolean("ok"))
+        assertNull(replayLog(service.log, 6, 8).pages.flatMap { it.items }.firstOrNull { it.key == moduleKey(ModuleKind.Pocket)!! })
+    }
+
+    /** Round-1 review: a Grok change that never landed on the Fold left a restore point that stuck its undo for good. */
+    @Test fun aGrokChangeThatNeverLandedOnTheFoldDoesntStickItsUndo() {
+        val service = Service()
+        val fold = Fold(saved)
+        fold.sync.round(service::exchange)
+        assertTrue(service.agent("place needs card bottom-left --page Today", "agent:t9", "agent-a").getBoolean("ok"))
+        fold.sync.round(service::exchange)
+        val at = replayLog(service.log, 6, 8).pages[0].items.first { it.key == needs }.cell!!
+        assertTrue(service.agent("place pocket line top-left --page Today", "grok", "grok-6").getBoolean("ok"))
+        val pocketAt = replayLog(service.log, 6, 8).pages[0].items.first { it.key == moduleKey(ModuleKind.Pocket)!! }.cell!!
+        // While the round is out he drags the clock onto the pocket's cells: it never lands here.
+        fold.sync.round { since, sent -> fold.notebook.setCell("clock.owl", pocketAt); fold.notebook.save(); service.exchange(since, sent) }
+        assertNull(fold.notebook.pageOf(moduleKey(ModuleKind.Pocket)!!))
+        assertEquals(listOf("agent-a", "grok-6"), fold.points.all().map { it.request })
+        // Undo walks past it to the agent's Needs you.
+        val undo = CanvasCommands.run(listOf("undo"), fold.pad, "q-1", "agent:quick")
+        assertTrue(undo.toString(), undo.getBoolean("ok"))
+        assertNull(fold.notebook.pageOf(needs))
+        assertTrue(at.h > 0)
+    }
+
+    @Test fun aChangeUndoneOnTheServiceLeavesNothingToUndoOnTheFoldAndAFirstSyncMakesNoRestorePoints() {
+        val service = Service()
+        // Grok's change made before the Fold ever synced (or after its data was cleared): history, not a change to undo here.
+        service.log = VerbLog("fold-test")
+        val first = Fold(saved)
+        first.sync.round(service::exchange)
+        assertTrue(service.agent("place needs card bottom-left --page Today", "grok", "grok-1").getBoolean("ok"))
+        val fresh = Fold(saved)
+        fresh.sync.round(service::exchange)
+        assertTrue(fresh.points.all().isEmpty())
+        // A change that arrives gets a point, and loses it when an undo of it comes from elsewhere.
+        assertTrue(service.agent("place pocket line top-right --page Today", "grok", "grok-2").getBoolean("ok"))
+        fresh.sync.round(service::exchange)
+        assertEquals(listOf("grok-2"), fresh.points.all().map { it.request })
+        val pocket = moduleKey(ModuleKind.Pocket)!!
+        service.log = service.log.append("undo:grok-2", VerbOrigin("macbook", "agent:front"), CanvasVerb.Remove(pocket))
+        fresh.sync.round(service::exchange)
+        assertTrue(fresh.points.all().isEmpty())
+        assertNull(fresh.notebook.pageOf(pocket))
     }
 
     @Test fun aRefusedRoundNeverUndoesHisChangesAndTheyGoUpOnceTaken() {

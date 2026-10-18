@@ -33,8 +33,21 @@ class FoldSync(
      * by the canvas command (round-2 review: an agent could erase his handwriting on a page with no tiles).
      */
     private val marked: (String) -> Boolean = { false },
+    /**
+     * Home's restore points: an agent's or Grok's change that comes in from the service's copy gets one, so "undo" on the
+     * Fold takes it back as it takes back an agent's change made here (s12, Boss: undo takes back Grok's changes too).
+     */
+    private val points: dev.omalauncher.canvas.RestorePoints? = null,
+    /** Undos done on home that sync hasn't sent yet: their verbs go up as the undo they are. */
+    private val undos: UndonePending? = null,
 ) {
     private val screenName = screen
+
+    /** The service's version [pending] was worked out on: what a round brings after it is new to this screen. */
+    private var from = 0L
+
+    /** The undos whose verbs [pending] sent, to clear once the round is taken. */
+    private var sendingUndos: Set<String> = emptySet()
 
     /** Made the first time home is open, so its grid has home's real rows (round-1 review: read before open, it had the default). */
     val sync: ScreenSync by lazy {
@@ -67,10 +80,34 @@ class FoldSync(
         val request = "fold-" + now().toString(36)
         val here = home()
         sentFrom = here
+        from = sync.synced.version
+        // A change an undo here made goes up as that undo's, the newest undo that touched the same item or page.
+        val undone = undos?.all().orEmpty()
+        sendingUndos = undone.map { it.request }.toSet()
         return diffToVerbs(sync.syncedPage, here).map { v ->
             val key = (v as? CanvasVerb.Place)?.key ?: (v as? CanvasVerb.Move)?.key ?: (v as? CanvasVerb.Remove)?.key
             val tile = key != null && here.pages.flatMap { it.items }.plus(sync.syncedPage.pages.flatMap { it.items }).any { it.key == key && it.kind == ItemKind.Thread }
-            SentVerb(sync.synced.version, request, VerbOrigin("fold", if (tile) "launcher" else "hand"), v)
+            val undo = touchedBy(v)?.let { t -> undone.lastOrNull { t in it.touched } }
+            SentVerb(sync.synced.version, undo?.let { "undo:" + it.request } ?: request, VerbOrigin("fold", if (tile) "launcher" else "hand"), v)
+        }
+    }
+
+    /**
+     * What the round brought after [from]: an agent's or Grok's request gets a restore point here, worked out from the copy as
+     * it was just before it; one undone elsewhere (`undo:<request>`) loses its point. A first sync (nothing synced before,
+     * or the service's copy gone) brings the copy's whole history, not changes, so it makes none.
+     */
+    private fun noteArrivals() {
+        val points = points ?: return
+        if (from <= 0L) return
+        val log = sync.synced
+        val fresh = log.entries.filter { it.version > from }
+        for (e in fresh) if (e.request.startsWith("undo:")) points.drop(e.request.removePrefix("undo:"))
+        val theirs = fresh.filter { dev.omalauncher.canvas.undoable(it.origin.actor) && !it.request.startsWith("undo:") && it.schema <= dev.omalauncher.widgets.layout.VERB_SCHEMA }
+        for ((request, entries) in theirs.groupBy { it.request }) {
+            val before = dev.omalauncher.canvas.replayLog(log.copy(entries = log.entries.filter { it.version < entries.first().version }), sync.columns, sync.rows)
+            val inverses = dev.omalauncher.canvas.restorePoint(before, entries.map { it.verb })
+            if (inverses.isNotEmpty()) points.add(request, inverses)
         }
     }
 
@@ -175,10 +212,13 @@ class FoldSync(
      * refused round (no target) changes nothing on home: what was to be sent is worked out again next round.
      */
     fun finish(target: Notebook?): List<String> {
-        if (target == null) { sentFrom = null; return emptyList() }
+        if (target == null) { sentFrom = null; sendingUndos = emptySet(); return emptyList() }
         val left = bringTo(target)
         sentFrom = null
         keep(dev.omalauncher.widgets.layout.VerbJson.log(sync.synced))
+        noteArrivals()
+        undos?.sent(sendingUndos)
+        sendingUndos = emptySet()
         return left
     }
 }
@@ -221,7 +261,8 @@ object FoldSyncJob {
                                 val book = dev.omalauncher.widgets.annotations.HomeAnnotations.of(app)
                                 book.whenRead(page) {}
                                 book.status(page) != dev.omalauncher.widgets.annotations.AnnotationBook.Status.Ready || !book.on(page).isEmpty
-                            }).also { made = it }
+                            },
+                            points = foldRestorePoints(app), undos = foldUndonePending(app)).also { made = it }
                     } ?: return@runCatching
                     if (onMain { fold.active() } != true) return@runCatching
                     val pending = onMain { fold.pending() } ?: return@runCatching

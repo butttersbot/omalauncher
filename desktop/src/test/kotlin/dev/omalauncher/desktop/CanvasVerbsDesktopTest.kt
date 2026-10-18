@@ -65,6 +65,38 @@ class CanvasVerbsDesktopTest {
         assertEquals(Cell(9, 0, 3, 3), canvas.items().first { it.key == moduleKey(ModuleKind.Threads) }.cell)
     }
 
+    /** Boss, 2026-10-17: undo takes back Grok's changes too, his own approved ones included; still never his hand's. */
+    @Test fun undoTakesBackGroksChangesAsAnAgents() {
+        for (actor in listOf("grok", "grok, approved by him")) {
+            val canvas = canvas()
+            val door = CanvasDoor { work -> work(canvas) }
+            val pocket = moduleKey(ModuleKind.Pocket)!!
+            // As a Grok change reaches the window: the service's log adopted, with Grok's origin on it.
+            assertTrue(dev.omalauncher.canvas.CanvasCommands.run("place pocket card bottom-right".split(' '), canvas, "grok-1", actor).getBoolean("ok"))
+            assertTrue(canvas.has(pocket))
+            canvas.apply(CanvasVerb.Remove(moduleKey(ModuleKind.Computers)!!))
+            val undo = call(door, door.mint("front-2"), "undo")
+            assertTrue("$actor: $undo", undo.getBoolean("ok"))
+            assertFalse(actor, canvas.has(pocket))
+            assertFalse(actor, canvas.has(moduleKey(ModuleKind.Computers)!!))
+            assertFalse(call(door, door.mint("front-3"), "undo").getBoolean("ok"))
+        }
+    }
+
+    @Test fun theServicesUndoTakesBackGroksChangeOnAScreen() {
+        val home = Files.createTempDirectory("soma-grok-undo").toFile()
+        val car = ScreenCanvas(java.io.File(home, "screens/car.json"), CAR_SCREEN, CAR_COLUMNS, CAR_ROWS, "macpro").also { it.load() }
+        assertTrue(dev.omalauncher.canvas.CanvasCommands.run("page-make Drive".split(' '), car, "hand-0", "hand").getBoolean("ok"))
+        val before = car.page
+        assertTrue(dev.omalauncher.canvas.CanvasCommands.run("place needs card top-left --page Drive".split(' '), car, "grok-ok-a1", "grok, approved by him").getBoolean("ok"))
+        // Grok's own "undo" runs once he OKs it, as "grok, approved by him".
+        val undo = dev.omalauncher.canvas.CanvasCommands.run(listOf("undo"), car, "grok-ok-a2", "grok, approved by him")
+        assertTrue(undo.toString(), undo.getBoolean("ok"))
+        assertEquals(before.pages.map { p -> p.id to p.items.map { it.key } }, car.page.pages.map { p -> p.id to p.items.map { it.key } })
+        // His page by hand is never undone.
+        assertFalse(dev.omalauncher.canvas.CanvasCommands.run(listOf("undo"), car, "r", "agent:t").getBoolean("ok"))
+    }
+
     @Test fun theChatsPageAndTheChatStayAndNothingGoesUnderIt() {
         val canvas = canvas()
         val door = CanvasDoor { work -> work(canvas) }

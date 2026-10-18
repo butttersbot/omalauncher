@@ -107,7 +107,15 @@ class GrokConnector(
 
     /** [given] with Grok's waiting asks in its Needs you; his tap on one runs it (approve) or drops it (deny). */
     fun withAsks(given: ModuleSource): ModuleSource = object : ModuleSource by given {
-        override fun asks() = waiting.map { ModuleAsk("grok:" + it.id, "Grok asks: " + it.text.take(200), it.words.joinToString(" ") + " · " + it.screen, "", "Grok", it, wholeDetail = true) } + given.asks()
+        override fun asks() = waiting.map { ModuleAsk("grok:" + it.id, "Grok asks: " + it.text.take(200), it.words.joinToString(" ") + " · " + it.screen + undoes(it), "", "Grok", it, wholeDetail = true) } + given.asks()
+
+        /** For an undo, what it would take back now (round-1 review: "undo" alone didn't say whose change would go). */
+        private fun undoes(ask: GrokAsk): String {
+            if (ask.words.firstOrNull() != "undo") return ""
+            val screen = service.screen(ask.screen) ?: return ""
+            val point = screen.restorePoints().firstOrNull { !dev.omalauncher.canvas.nothingLeftOf(screen.notebook(), it.inverses) } ?: return " · nothing to take back"
+            return " · takes back " + dev.omalauncher.canvas.describeRestorePoint(point)
+        }
 
         override fun answer(ask: ModuleAsk, allow: Boolean, said: (String?) -> Unit) {
             // Grok's asks are this wrapper's own, by their id: everything else is the feeds'.

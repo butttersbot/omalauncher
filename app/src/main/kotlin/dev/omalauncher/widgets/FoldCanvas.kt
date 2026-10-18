@@ -30,6 +30,8 @@ class FoldCanvasPad(
      * since they go with it for good (removing one is his, in the overview, where he is asked).
      */
     private val marked: (String) -> Boolean = { false },
+    /** An undo done here, told to sync with the verbs it applied, so the service's copy knows that request is undone (s12). */
+    private val undoneHere: (String, List<CanvasVerb>) -> Unit = { _, _ -> },
 ) : CanvasPad {
     override val rules = ScreenRules(
         // Ids as the notebook gives them, so a resolved page's id is the one it then gets (each is mapped anyway).
@@ -54,9 +56,13 @@ class FoldCanvasPad(
 
     override fun lastRestorePoint(): RestorePoint? = points.last()
 
+    override fun restorePoints(): List<RestorePoint> = points.all().reversed()
+
     /** Kept until it all applies: an undo that stops partway (home not written now) can be asked again. */
     override fun undone(restored: RestorePoint, verbs: List<CanvasVerb>, actor: String): String? {
-        val why = run(verbs, ArrayList())
+        val done = ArrayList<CanvasVerb>()
+        val why = run(verbs, done)
+        if (done.isNotEmpty()) undoneHere(restored.request, done)
         if (why == null) points.drop(restored.request)
         return why
     }
@@ -112,4 +118,53 @@ class FoldCanvasPad(
 fun foldRestorePoints(context: Context): RestorePoints {
     val prefs = context.getSharedPreferences("canvas", Context.MODE_PRIVATE)
     return RestorePoints({ prefs.getString("undo", null) }, { prefs.edit().putString("undo", it).apply() })
+}
+
+/** The undos done on home that sync hasn't sent yet, kept beside the restore points. */
+fun foldUndonePending(context: Context): UndonePending {
+    val prefs = context.getSharedPreferences("canvas", Context.MODE_PRIVATE)
+    return UndonePending({ prefs.getString("undo-out", null) }, { prefs.edit().putString("undo-out", it).apply() })
+}
+
+/**
+ * Undos done on home, each with what it touched (item keys and page ids), oldest first, until sync has sent them (s12, Boss:
+ * undo takes back Grok's changes too). Sync tags the verbs it sends for those things as that undo's (`undo:<request>`), so the
+ * service's copy of home knows the request is undone and no later undo there takes it back a second time.
+ */
+class UndonePending(private val read: () -> String?, private val write: (String) -> Unit) {
+    data class Undo(val request: String, val touched: Set<String>)
+
+    fun all(): List<Undo> = runCatching {
+        org.json.JSONArray(read() ?: "[]").let { a ->
+            (0 until a.length()).map { i ->
+                val o = a.getJSONObject(i)
+                val t = o.getJSONArray("touched")
+                Undo(o.getString("request"), (0 until t.length()).map { t.getString(it) }.toSet())
+            }
+        }
+    }.getOrDefault(emptyList())
+
+    private fun save(undos: List<Undo>) = write(org.json.JSONArray(undos.map { u ->
+        org.json.JSONObject().put("request", u.request).put("touched", org.json.JSONArray(u.touched.toList()))
+    }).toString())
+
+    fun add(request: String, verbs: List<CanvasVerb>) {
+        val was = all()
+        val touched = verbs.mapNotNull(::touchedBy).toSet() + was.firstOrNull { it.request == request }?.touched.orEmpty()
+        save(was.filter { it.request != request } + Undo(request, touched))
+    }
+
+    /** The undos sent in a round: gone from the list (one done since stays for the next round). */
+    fun sent(requests: Set<String>) { if (requests.isNotEmpty()) save(all().filter { it.request !in requests }) }
+}
+
+/** The item or page a verb is about: an item's key, or a page's id. */
+fun touchedBy(v: CanvasVerb): String? = when (v) {
+    is CanvasVerb.Place -> v.key
+    is CanvasVerb.Move -> v.key
+    is CanvasVerb.Remove -> v.key
+    is CanvasVerb.PageMake -> "page:" + v.id
+    is CanvasVerb.PageRename -> "page:" + v.id
+    is CanvasVerb.PageRemove -> "page:" + v.id
+    is CanvasVerb.Unknown -> null
 }

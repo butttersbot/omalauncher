@@ -474,8 +474,64 @@ fun modulesJson(): JSONObject = JSONObject().put("ok", true).put("modules", JSON
     JSONObject().put("id", it.id + if (it.perProject) ":PROJECT" else "").put("title", it.title).put("shows", it.blurb)
 })).put("sizes", JSONArray(SizeWord.entries.map { it.word })).put("where", JSONArray(Spot.entries.map { it.word + if (it.beside) " MODULE" else "" }))
 
+/**
+ * Whether undo takes back a change from [actor]: an agent's ("agent:…") or Grok's ("grok", and "grok, approved by him" for
+ * one he OK'd in Needs you; Boss, 2026-10-17). His own changes by hand, and the launcher's, are never undone.
+ */
+fun undoable(actor: String) = actor.startsWith("agent") || actor.startsWith("grok")
+
 /** A restore point: the request it undoes and the verbs that undo it, in the order to apply them. */
-data class RestorePoint(val request: String, val inverses: List<CanvasVerb>)
+data class RestorePoint(val request: String, val inverses: List<CanvasVerb>, val by: String = "")
+
+/** The prefix of an undo's request: the request it undid follows. */
+const val UNDO_PREFIX = "undo:"
+
+/**
+ * The restore points of a screen whose canvas is its verb [log] (the desktop window, the service's screens), newest first:
+ * each agent or Grok request ([undoable]) with verbs not undone yet, and what undoes those verbs, worked out from [replay]
+ * of the log just before the first of them. One request can arrange, be undone and arrange again.
+ */
+fun logRestorePoints(log: dev.omalauncher.widgets.layout.VerbLog, replay: (dev.omalauncher.widgets.layout.VerbLog) -> Notebook): List<RestorePoint> {
+    val undoneTo = log.entries.filter { it.request.startsWith(UNDO_PREFIX) }.groupBy { it.request.removePrefix(UNDO_PREFIX) }.mapValues { (_, e) -> e.maxOf { it.version } }
+    val left = log.entries.filter { undoable(it.origin.actor) && !it.request.startsWith(UNDO_PREFIX) && it.version > (undoneTo[it.request] ?: 0L) }
+    return left.groupBy { it.request }.values.sortedByDescending { e -> e.maxOf { it.version } }.map { verbs ->
+        val before = replay(log.copy(entries = log.entries.filter { it.version < verbs.first().version }))
+        RestorePoint(verbs.first().request, restorePoint(before, verbs.map { it.verb }), verbs.last().origin.actor)
+    }
+}
+
+/**
+ * Whether nothing of what [inverses] would put back is left to put back on [now]: everything they touch is gone already
+ * (round-1 review: a request undone on the Fold but not reported, or a Grok change that never landed there, stood in front
+ * of every older one for good). Such a point is set aside, and undo goes on to the one before it.
+ */
+fun nothingLeftOf(now: Notebook, inverses: List<CanvasVerb>): Boolean {
+    fun has(key: String) = now.pages.any { p -> p.items.any { it.key == key } }
+    fun page(id: String) = now.pages.any { it.id == id }
+    return inverses.isNotEmpty() && inverses.all { v ->
+        when (v) {
+            is CanvasVerb.Remove -> !has(v.key)
+            is CanvasVerb.Move -> !has(v.key)
+            is CanvasVerb.Place -> !page(v.page)
+            is CanvasVerb.PageRemove -> !page(v.id)
+            is CanvasVerb.PageRename -> !page(v.id)
+            is CanvasVerb.PageMake -> page(v.id)
+            is CanvasVerb.Unknown -> true
+        }
+    }
+}
+
+/** What undo would take back, in a few words: whose it was and the modules it touched ("Grok's: Needs you, Pocket"). */
+fun describeRestorePoint(p: RestorePoint): String {
+    val who = when {
+        p.by.startsWith("grok") -> "Grok's"
+        p.by.startsWith("agent") -> "an agent's"
+        else -> "the last"
+    }
+    val things = p.inverses.mapNotNull { v -> (v as? CanvasVerb.Remove)?.key ?: (v as? CanvasVerb.Move)?.key ?: (v as? CanvasVerb.Place)?.key }.distinct().map(::moduleTitle)
+    val pages = p.inverses.count { it is CanvasVerb.PageRemove || it is CanvasVerb.PageMake }
+    return "$who arrangement: " + (things + if (pages > 0) listOf(if (pages == 1) "a page" else "$pages pages") else emptyList()).ifEmpty { listOf("its changes") }.joinToString(", ")
+}
 
 /**
  * A screen's canvas as the agents' verbs reach it. Its owner keeps the canvas, the log and the restore points; everything
@@ -489,8 +545,11 @@ interface CanvasPad {
     /** Applies [verbs], as part of [request] from [actor], in order; why the first that didn't apply didn't, or null when all did. */
     fun apply(verbs: List<CanvasVerb>, request: String, actor: String): String?
 
-    /** The newest agent request not yet undone, or null when there is none. */
+    /** The newest agent or Grok request ([undoable]) not yet undone, or null when there is none. */
     fun lastRestorePoint(): RestorePoint?
+
+    /** Every agent or Grok request not yet undone, newest first: what undo walks past a request with nothing of it left. */
+    fun restorePoints(): List<RestorePoint> = listOfNotNull(lastRestorePoint())
 
     /** Applies an undo's [verbs] for [restored], so it is not undone again; why it stopped partway, or null when all applied. */
     fun undone(restored: RestorePoint, verbs: List<CanvasVerb>, actor: String): String?
@@ -558,7 +617,10 @@ object CanvasCommands {
             "board" -> boardJson(pad.notebook(), pad.rules, words.drop(1).joinToString(" ").ifBlank { null })
             "modules" -> modulesJson()
             "undo" -> {
-                val point = pad.lastRestorePoint() ?: refuse("Nothing an agent did here is left to undo.")
+                // A request with nothing of it left here is set aside (the Fold forgets it), and the one before it is undone.
+                val point = pad.restorePoints().firstOrNull { p ->
+                    if (!nothingLeftOf(pad.notebook(), p.inverses)) true else { pad.undone(p, emptyList(), actor); false }
+                } ?: refuse("Nothing an agent or Grok did here is left to undo.")
                 val done = undoOn(pad.notebook(), point.inverses)
                 if (done.applied.isEmpty()) refuse(if (done.left.isEmpty()) "Nothing of it can be undone here. Nothing was changed." else "None of it could be undone: " + done.left.joinToString("; ") + ". Nothing was changed.")
                 pad.undone(point, done.applied, actor)?.let { refuse("The undo stopped partway: $it. What it had put back stays; ask for undo again to try the rest.") }

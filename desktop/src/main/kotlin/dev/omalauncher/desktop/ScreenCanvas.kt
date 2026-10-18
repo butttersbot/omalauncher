@@ -143,14 +143,9 @@ class ScreenCanvas(
         return null
     }
 
-    @Synchronized override fun lastRestorePoint(): RestorePoint? {
-        val undoneTo = log.entries.filter { it.request.startsWith(UNDO) }.groupBy { it.request.removePrefix(UNDO) }.mapValues { (_, e) -> e.maxOf { it.version } }
-        fun left(e: LoggedVerb) = e.version > (undoneTo[e.request] ?: 0L)
-        val request = log.entries.lastOrNull { it.origin.actor.startsWith("agent") && !it.request.startsWith(UNDO) && left(it) }?.request ?: return null
-        val verbs = log.request(request).filter(::left)
-        val before = replayOn(log.copy(entries = log.entries.filter { it.version < verbs.first().version }))
-        return RestorePoint(request, restorePoint(before, verbs.map { it.verb }))
-    }
+    @Synchronized override fun lastRestorePoint(): RestorePoint? = restorePoints().firstOrNull()
+
+    @Synchronized override fun restorePoints(): List<RestorePoint> = dev.omalauncher.canvas.logRestorePoints(log) { replayOn(it) }
 
     @Synchronized override fun undone(restored: RestorePoint, verbs: List<CanvasVerb>, actor: String): String? =
         // An undo that puts back a size from before the car's rule is grown again at once (round-1 review: it stayed one row).
