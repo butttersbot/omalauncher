@@ -19,5 +19,7 @@ class App : Application() {
         dev.omalauncher.assist.PhoneJobs.afterInstall(this)
         // Why the process last ended, for `oma status`: the next restart's cause is read, not guessed (assist/AppExits.kt).
         dev.omalauncher.assist.AppExits.record(this)
+        // Home's layout with the canvas service's copy of it, when a Mac says it runs one (Soma Canvas slice 8b).
+        dev.omalauncher.widgets.FoldSyncJob.start(this)
     }
 }

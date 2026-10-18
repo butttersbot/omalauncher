@@ -304,6 +304,136 @@ class ServeTest {
         server.stop(0)
     }
 
+    @Test fun theDesktopsOwnLayoutSyncsWithItsCopyOnTheServiceAndAnAgentWorksOnIt() {
+        // Soma desktop's window on this machine, its own screen on the service.
+        val canvas = DesktopCanvas(File(home, "window.json"), "desk").also { it.load() }
+        val desk = DesktopSync(canvas, File(home, "window-synced.json"), "macbook")
+        val exchange = { screen: String, since: Long, sent: List<dev.omalauncher.canvas.SentVerb> ->
+            dev.omalauncher.canvas.syncExchange(base, foldKey, screen, DESKTOP_COLUMNS, DESKTOP_ROWS, since, sent)
+        }
+        // First round: the window's layout goes up as its own screen.
+        assertEquals(emptyList<String>(), desk.round(exchange))
+        val screen = service.screen("desk-macbook")!!
+        // Its pages are the window's own, and only those: no page of the service's own comes back (round-1 review).
+        assertEquals(listOf(DESKTOP_PAGE), canvas.page.pages.map { it.id })
+        // Only the device whose screen it is syncs it.
+        caller = "macbook"
+        assertEquals(403, call("POST", "/screens/desk-macbook/sync", macbookKey, JSONObject().put("since", 0).put("columns", DESKTOP_COLUMNS).put("rows", DESKTOP_ROWS)).first)
+        caller = "fold"
+        assertEquals(canvas.page.pages.map { p -> p.id to p.items.map { it.key to it.cell } }, screen.page.pages.map { p -> p.id to p.items.map { it.key to it.cell } })
+        // An agent, through the door, moves Threads on the desk; by hand, he removes Computers meanwhile.
+        assertTrue(json(call("POST", "/screens/desk-macbook/canvas", foldKey, JSONObject().put("words", JSONArray(listOf("resize", "threads", "line"))))).getBoolean("ok"))
+        canvas.apply(CanvasVerb.Remove("module:computers"))
+        desk.round(exchange)
+        // Both, on both.
+        assertFalse(canvas.has("module:computers"))
+        assertFalse(service.screen("desk-macbook")!!.page.pages.any { p -> p.items.any { it.key == "module:computers" } })
+        val threads = canvas.items().first { it.key == "module:threads" }.cell!!
+        assertEquals(1, threads.h)
+        assertEquals(service.screen("desk-macbook")!!.page.pages.flatMap { it.items }.first { it.key == "module:threads" }.cell, threads)
+        // On the desk's copy the chat is held as on the desk: nothing goes under it, and it stays.
+        assertFalse(json(call("POST", "/screens/desk-macbook/canvas", foldKey, JSONObject().put("words", JSONArray(listOf("remove", "chat"))))).getBoolean("ok"))
+        assertFalse(json(call("POST", "/screens/desk-macbook/canvas", foldKey, JSONObject().put("words", JSONArray(listOf("page-make", "Two"))))).let { call("POST", "/screens/desk-macbook/canvas", foldKey, JSONObject().put("words", JSONArray(listOf("page-remove", "Soma")))) }.let { JSONObject(String(it.second)) }.getBoolean("ok"))
+        val placed = json(call("POST", "/screens/desk-macbook/canvas", foldKey, JSONObject().put("words", JSONArray(listOf("place", "pocket", "card", "top-left")))))
+        assertTrue(placed.toString(), placed.getBoolean("ok"))
+        val chat = service.screen("desk-macbook")!!.page.pages.flatMap { it.items }.first { it.key == CHAT_BLOCK }.cell!!
+        assertFalse(service.screen("desk-macbook")!!.page.pages.flatMap { it.items }.first { it.key == "module:pocket" }.cell!!.overlaps(chat))
+        // The car's screen is untouched by any of it: nothing is mirrored.
+        assertTrue(service.screen("car")!!.page.pages.all { it.items.isEmpty() })
+        // A screen's grid is fixed by its first sync.
+        assertEquals(409, call("POST", "/screens/desk-macbook/sync", foldKey, JSONObject().put("since", 0).put("columns", 6).put("rows", 8)).first)
+        server.stop(0)
+    }
+
+    @Test fun aRefusalKeepsTheDesksChangeAndARestartSendsOnlyWhatIsNew() {
+        val canvas = DesktopCanvas(File(home, "window.json"), "desk").also { it.load() }
+        val synced = File(home, "window-synced.json")
+        val desk = DesktopSync(canvas, synced, "macbook")
+        var rows = DESKTOP_ROWS
+        val exchange = { screen: String, since: Long, sent: List<dev.omalauncher.canvas.SentVerb> ->
+            dev.omalauncher.canvas.syncExchange(base, foldKey, screen, DESKTOP_COLUMNS, rows, since, sent)
+        }
+        desk.round(exchange)
+        // Refused (a grid that isn't this screen's, as a real 409 from the door): his change stays, and is said once.
+        canvas.apply(CanvasVerb.Remove("module:computers"))
+        rows = DESKTOP_ROWS + 1
+        val said = desk.round(exchange)!!
+        assertTrue(said.toString(), said.single().startsWith("the canvas service refused"))
+        assertFalse(canvas.has("module:computers"))
+        assertTrue(canvas.log.entries.any { (it.verb as? CanvasVerb.Remove)?.key == "module:computers" })
+        assertEquals(emptyList<String>(), desk.round(exchange))
+        // Taken next time.
+        rows = DESKTOP_ROWS
+        desk.round(exchange)
+        assertFalse(service.screen("desk-macbook")!!.page.pages.any { p -> p.items.any { it.key == "module:computers" } })
+        // An agent resizes Threads; then Soma restarts and syncs: only what is new comes back, nothing old goes over it.
+        assertTrue(json(call("POST", "/screens/desk-macbook/canvas", foldKey, JSONObject().put("words", JSONArray(listOf("resize", "threads", "line"))))).getBoolean("ok"))
+        val version = service.screen("desk-macbook")!!.log.version
+        val again = DesktopCanvas(File(home, "window.json"), "desk").also { it.load() }
+        assertEquals(emptyList<String>(), DesktopSync(again, synced, "macbook").round(exchange))
+        assertEquals(version, service.screen("desk-macbook")!!.log.version)
+        assertEquals(1, again.items().first { it.key == "module:threads" }.cell!!.h)
+        assertFalse(again.has("module:computers"))
+        // No device syncs the car's screen, and nothing on it is an app with nothing to open.
+        assertEquals(403, call("POST", "/screens/car/sync", foldKey, JSONObject().put("since", 0).put("columns", 6).put("rows", 4)).first)
+        assertFalse(service.screen("car")!!.apply(CanvasVerb.Place("app:x#0", dev.omalauncher.widgets.layout.ItemKind.App, "main", dev.omalauncher.widgets.Cell(0, 0, 1, 1))) == null)
+        // The service loses the desk's copy: the window sends itself whole and the copy becomes it.
+        val desks = File(home, "screens/desk-macbook.json")
+        val windowItems = again.items().map { it.key to it.cell }.toSet()
+        desks.writeText(dev.omalauncher.widgets.layout.VerbJson.log(dev.omalauncher.widgets.layout.VerbLog("desk-macbook")))
+        service.screen("desk-macbook")!!.load()
+        val desk2 = DesktopSync(again, synced, "macbook")
+        assertEquals(null, desk2.round(exchange)?.takeIf { false })
+        desk2.round(exchange)
+        assertEquals(windowItems, service.screen("desk-macbook")!!.page.pages.flatMap { it.items }.map { it.key to it.cell }.toSet())
+        assertEquals(windowItems, again.items().map { it.key to it.cell }.toSet())
+        // His window's saved layout can't be read: the window starts from the default page and takes the service's copy,
+        // never sending the default over it.
+        val kept = service.screen("desk-macbook")!!.log.version
+        File(home, "window.json").writeText("{ not a layout")
+        val fresh = DesktopCanvas(File(home, "window.json"), "desk").also { it.load() }
+        assertTrue(fresh.setAside != null)
+        DesktopSync(fresh, synced, "macbook").round(exchange)
+        assertEquals(kept, service.screen("desk-macbook")!!.log.version)
+        assertEquals(windowItems, fresh.items().map { it.key to it.cell }.toSet())
+        // What the service gave is lost (cut short mid-write): an agent changes the desk, Soma restarts, and nothing old goes
+        // up over it (round-4 review).
+        assertTrue(json(call("POST", "/screens/desk-macbook/canvas", foldKey, JSONObject().put("words", JSONArray(listOf("resize", "threads", "card"))))).getBoolean("ok"))
+        DesktopSync(fresh, synced, "macbook").round(exchange)
+        val agentHas = service.screen("desk-macbook")!!.page.pages.flatMap { it.items }.map { it.key to it.cell }.toSet()
+        val before = service.screen("desk-macbook")!!.log.version
+        synced.writeText(synced.readText().take(40))
+        val restarted = DesktopCanvas(File(home, "window.json"), "desk").also { it.load() }
+        repeat(2) { DesktopSync(restarted, synced, "macbook").round(exchange) }
+        assertEquals(before, service.screen("desk-macbook")!!.log.version)
+        assertEquals(agentHas, service.screen("desk-macbook")!!.page.pages.flatMap { it.items }.map { it.key to it.cell }.toSet())
+        assertEquals(agentHas, restarted.items().map { it.key to it.cell }.toSet())
+        // Both lost: the window starts from the default page and takes the service's copy; the default never goes up.
+        File(home, "window.json").writeText("{ not a layout")
+        synced.delete()
+        val both = DesktopCanvas(File(home, "window.json"), "desk").also { it.load() }
+        DesktopSync(both, synced, "macbook").round(exchange)
+        assertEquals(before, service.screen("desk-macbook")!!.log.version)
+        assertEquals(agentHas, both.items().map { it.key to it.cell }.toSet())
+        // The file is written whole: no half-written copy is ever left beside it.
+        assertFalse(File(home, ".window-synced.json.new").exists())
+        assertTrue(dev.omalauncher.widgets.layout.VerbJson.logOf(synced.readText()) != null)
+        server.stop(0)
+    }
+
+    @Test fun aWindowSetAsideOnANewServiceIsNeverBlanked() {
+        val canvas = DesktopCanvas(File(home, "window.json").apply { writeText("{ not a layout") }, "desk").also { it.load() }
+        assertTrue(canvas.setAside != null)
+        val items = canvas.items().map { it.key to it.cell }.toSet()
+        val exchange = { screen: String, since: Long, sent: List<dev.omalauncher.canvas.SentVerb> ->
+            dev.omalauncher.canvas.syncExchange(base, foldKey, screen, DESKTOP_COLUMNS, DESKTOP_ROWS, since, sent)
+        }
+        DesktopSync(canvas, File(home, "window-synced.json"), "macbook").round(exchange)
+        assertEquals(items, canvas.items().map { it.key to it.cell }.toSet())
+        assertEquals(items, service.screen("desk-macbook")!!.page.pages.flatMap { it.items }.map { it.key to it.cell }.toSet())
+        server.stop(0)
+    }
+
         @Test fun theLaunchAgentIsPrintedForHimNeverInstalled() {
         val plist = SomaService.launchAgent("/Applications/Soma.app/Contents/MacOS/Soma")
         assertTrue(plist.contains("<string>--serve</string>"))

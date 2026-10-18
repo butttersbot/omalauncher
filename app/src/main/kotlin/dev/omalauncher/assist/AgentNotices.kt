@@ -22,6 +22,8 @@ internal object AgentNotices {
     const val MAC = 44
     /** The answer of builder B, apart from builder A's task notification, which may be running beside it. */
     private const val BUILDER_B = 45
+    /** What canvas sync couldn't do or was told (slice 8b): quiet, replaced each time it changes, gone when there's nothing. */
+    private const val CANVAS_SYNC = 46
     private const val TASK_CHANNEL = "agent-task-updates"
     private const val APPROVAL_CHANNEL = "agent-approvals"
     private const val ANSWER_CHANNEL = "agent-answers"
@@ -33,6 +35,15 @@ internal object AgentNotices {
         nm.createNotificationChannel(NotificationChannel(APPROVAL_CHANNEL, "Agent approvals", NotificationManager.IMPORTANCE_HIGH))
         nm.createNotificationChannel(NotificationChannel(ANSWER_CHANNEL, "Agent answers that pop up", NotificationManager.IMPORTANCE_HIGH))
         return nm
+    }
+
+    /** Canvas sync's [notes] in the shade, or none when the last round had nothing to say. */
+    fun canvasSync(context: Context, notes: List<String>) {
+        val nm = manager(context)
+        if (notes.isEmpty()) return nm.cancel(CANVAS_SYNC)
+        nm.notify(CANVAS_SYNC, Notification.Builder(context, TASK_CHANNEL).setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("Home's canvas sync").setContentText(notes.first())
+            .setStyle(Notification.BigTextStyle().bigText(notes.joinToString("\n"))).setOnlyAlertOnce(true).setAutoCancel(true).build())
     }
 
     /** Tapping the task notification opens the Oma app, where the thread is. */

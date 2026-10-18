@@ -23,6 +23,8 @@ class ScreenCanvas(
     private val file: File, val screen: String, val columns: Int, val rows: Int, private val device: String,
     /** Whether the library has the widget file a `place NAME.owl` names: one it hasn't is refused, not placed empty. */
     private val widgetKnown: (String) -> Boolean = { true },
+    /** Whether an empty screen starts with a page of its own: the car's does; a screen made by its own sync brings its own pages. */
+    private val startPage: Boolean = true,
 ) : CanvasPad {
     @Volatile var log: VerbLog = VerbLog(screen)
         private set
@@ -32,6 +34,12 @@ class ScreenCanvas(
 
     private var requests = 0
 
+    /**
+     * Whether this is a copy of a screen kept elsewhere, where an app or a folder is only the cells it takes. The car's own
+     * screen is not (round-2 review: an app could be placed there with nothing to open).
+     */
+    private val bare = !startPage
+
     @Synchronized fun load() {
         val text = runCatching { file.readText() }.getOrNull()
         val read = text?.let { VerbJson.logOf(it) }
@@ -39,14 +47,14 @@ class ScreenCanvas(
         log = read ?: VerbLog(screen)
         page = replayOn(log)
         // A screen starts with one page, so there is somewhere to put the first thing.
-        if (page.pages.isEmpty()) apply(CanvasVerb.PageMake("main", screen.replaceFirstChar { it.uppercase() }), "soma", "start")
+        if (startPage && page.pages.isEmpty()) apply(CanvasVerb.PageMake("main", screen.replaceFirstChar { it.uppercase() }), "soma", "start")
     }
 
-    private fun replayOn(log: VerbLog) = log.entries.fold(Notebook(rows = rows, pages = emptyList(), columns = columns)) { n, e -> applyVerb(n, e.verb).notebook }
+    private fun replayOn(log: VerbLog) = log.entries.fold(Notebook(rows = rows, pages = emptyList(), columns = columns)) { n, e -> applyVerb(n, e.verb, bare = bare).notebook }
 
     /** [verb] from [actor] as part of [request], applied and kept, or nothing changed and why. */
     @Synchronized fun apply(verb: CanvasVerb, actor: String = "hand", request: String = newRequest()): String? {
-        val done = applyVerb(page, verb)
+        val done = applyVerb(page, verb, bare = bare)
         if (!done.applied) return done.why
         val next = log.append(request, VerbOrigin(device, actor), verb)
         file.parentFile?.mkdirs()
@@ -58,9 +66,45 @@ class ScreenCanvas(
         return null
     }
 
+    /**
+     * What a screen sent in a sync round (slice 8b), appended in the canonical order after everything here, late ones
+     * re-resolved, and kept; what came of each.
+     */
+    @Synchronized fun take(sent: List<dev.omalauncher.canvas.SentVerb>): List<dev.omalauncher.canvas.Took> {
+        if (sent.isEmpty()) return emptyList()
+        val (next, took) = dev.omalauncher.canvas.appendSent(log, sent, columns, rows)
+        keep(next)
+        return took
+    }
+
+    /** What a screen whose copy here was lost sent: the screen whole, which this copy becomes (slice 8b). */
+    @Synchronized fun takeWhole(sent: List<dev.omalauncher.canvas.SentVerb>, origin: VerbOrigin): List<dev.omalauncher.canvas.Took> {
+        val (next, took) = dev.omalauncher.canvas.takeWhole(log, sent, columns, rows, origin)
+        if (next.version != log.version) keep(next)
+        return took
+    }
+
+    private fun keep(next: VerbLog) {
+        file.parentFile?.mkdirs()
+        val fresh = File(file.parentFile, "." + file.name + ".new")
+        fresh.writeText(VerbJson.log(next))
+        if (!fresh.renameTo(file)) { file.delete(); check(fresh.renameTo(file)) { "couldn't keep ${file.name}" } }
+        log = next
+        page = replayOn(next)
+    }
+
     @Synchronized private fun newRequest() = "r" + System.currentTimeMillis().toString(36) + "-" + (++requests).toString(36)
 
-    override val rules = ScreenRules(
+    /** The chat's block on a desktop's copy: drawn on every page there, so pinned on every page here too, and never moved. */
+    private fun chatCell(n: Notebook) = n.pages.flatMap { it.items }.firstOrNull { it.key == CHAT_BLOCK }?.cell
+    private fun chatPage(n: Notebook) = n.pages.firstOrNull { p -> p.items.any { it.key == CHAT_BLOCK } }?.id
+
+    /** Read each time: the chat's page is whatever page holds it now. */
+    override val rules: ScreenRules get() = ScreenRules(
+        pinned = { n -> listOfNotNull(chatCell(n)) },
+        span = { n -> n.columns - (chatCell(n)?.w ?: 0) },
+        kept = setOf(CHAT_BLOCK),
+        keptPages = setOfNotNull(chatPage(page)),
         // A module's six-column size, a third bigger on a wider grid, as the desktop's.
         sizeOf = { ref, n -> if (n.columns <= 6) ref.kind.size.first.coerceAtMost(n.columns) to ref.kind.size.second.coerceAtMost(n.rows)
             else minOf(n.columns, (ref.kind.size.first * 4 + 2) / 3) to minOf(n.rows, ref.kind.size.second + 1) },

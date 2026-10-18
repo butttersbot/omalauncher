@@ -240,6 +240,45 @@ class DesktopCanvas(private val file: File, private val device: String) : Canvas
         return why
     }
 
+    // Sync (slice 8b): this window's layout kept on the service as its own screen, never mirrored anywhere else.
+
+    /** How far this log is the service's own: entries after it were made here and not yet sent. */
+    @Volatile var syncedTo: Long = 0L
+        private set
+
+    /**
+     * Where this window's log and the service's [synced] copy part, at start: the entries they share are the service's,
+     * everything after is this window's own and still to send.
+     */
+    fun resumeSync(synced: VerbLog) {
+        val shared = log.entries.zip(synced.entries).takeWhile { (mine, theirs) -> mine.version == theirs.version && mine.request == theirs.request && mine.verb == theirs.verb }
+        syncedTo = shared.lastOrNull()?.first?.version ?: 0L
+    }
+
+    /** What changed here since the last round, as verbs to send, made on [base] (the service's version this window has). */
+    fun pendingSync(base: Long): List<dev.omalauncher.canvas.SentVerb> =
+        log.entries.filter { it.version > syncedTo }.map { dev.omalauncher.canvas.SentVerb(base, it.request, it.origin, it.verb, it.schema) }
+
+    /**
+     * The service's [canonical] log becomes this window's, with anything made here since [sentUpTo] (while the round was
+     * on its way) applied again on top, to go in the next round. Kept like any change.
+     */
+    fun adopt(canonical: VerbLog, sentUpTo: Long) {
+        val since = log.entries.filter { it.version > sentUpTo }
+        var next = canonical.copy(screen = DESKTOP_PAGE)
+        var shownPage = replay(next)
+        val adopted = next.version
+        for (e in since) {
+            val done = applyVerb(shownPage, e.verb)
+            if (done.applied) { next = next.append(e.request, e.origin, e.verb); shownPage = done.notebook }
+        }
+        if (!readOnly) runCatching { write(next) }.onFailure { unkept = "Changes to the canvas aren't being kept: ${it.message ?: it.javaClass.simpleName}" }
+        log = next
+        page = shownPage
+        syncedTo = adopted
+        if (page.pages.none { it.id == shown }) shown = DESKTOP_PAGE
+    }
+
     private fun write(next: VerbLog) {
         val fresh = File(file.parentFile, "." + file.name + ".new")
         fresh.writeText(VerbJson.log(next))

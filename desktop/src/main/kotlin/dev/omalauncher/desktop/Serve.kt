@@ -118,12 +118,24 @@ class SomaService(
     private val widgetScope = CoroutineScope(SupervisorJob() + frames.asCoroutineDispatcher())
     private val widgets = HashMap<String, Pair<String, WidgetInstance>>()
 
-    /** The screen [name], read from its log the first time it is asked for; the car's exists from the start. */
-    @Synchronized fun screen(name: String): ScreenCanvas? {
+    /**
+     * The screen [name], read from its log the first time it is asked for; the car's exists from the start. Another is made
+     * by its own first sync, which says its grid ([size]); its grid is kept beside its log.
+     */
+    @Synchronized fun screen(name: String, size: Pair<Int, Int>? = null, owner: String? = null): ScreenCanvas? {
         screens[name]?.let { return it }
+        if (!SCREEN_NAME.matches(name)) return null
         val file = File(home, "screens/$name.json")
-        if (name != CAR_SCREEN && !file.exists()) return null
-        return ScreenCanvas(file, name, CAR_COLUMNS, CAR_ROWS, machine, widgetKnown = { File(home, "widgets/$it").isFile }).also { it.load(); screens[name] = it }
+        val meta = File(home, "screens/$name.grid.json")
+        val grid = when {
+            name == CAR_SCREEN -> CAR_COLUMNS to CAR_ROWS
+            meta.isFile -> runCatching { JSONObject(meta.readText()).let { it.getInt("columns") to it.getInt("rows") } }.getOrNull() ?: return null
+            size != null && size.first in 1..24 && size.second in 1..24 && owner != null ->
+                size.also { meta.parentFile.mkdirs(); meta.writeText(JSONObject().put("columns", it.first).put("rows", it.second).put("owner", owner).toString()) }
+            else -> return null
+        }
+        if (name != CAR_SCREEN && !file.exists() && size == null) return null
+        return ScreenCanvas(file, name, grid.first, grid.second, machine, widgetKnown = { File(home, "widgets/$it").isFile }, startPage = name == CAR_SCREEN).also { it.load(); screens[name] = it }
     }
 
     /** The running widget for the library file [name], when he has approved that file here; started the first time. */
@@ -200,8 +212,9 @@ class SomaService(
 
     private fun body(ex: HttpExchange): JSONObject? = runCatching {
         val length = ex.requestHeaders.getFirst("Content-Length")?.toLongOrNull() ?: -1
-        if (length > MAX_BODY) return null
-        JSONObject(String(ex.requestBody.readNBytes(MAX_BODY.toInt()), Charsets.UTF_8))
+        val cap = if (ex.requestURI.path.endsWith("/sync")) MAX_SYNC_BODY else MAX_BODY
+        if (length > cap) return null
+        JSONObject(String(ex.requestBody.readNBytes(cap.toInt()), Charsets.UTF_8))
     }.getOrNull()
 
     /** Recent refusals by address: one that keeps guessing is answered at once with 429, never with a thread held asleep. */
@@ -289,6 +302,29 @@ class SomaService(
                 if (shelf.layout().lines().none { it == "- $line" }) { shelf.remember(line); shelfLog(device!!, "shelf", listOf("remember", line)) }
                 answer(ex, 200, JSONObject().put("ok", true))
             }
+            // Sync (slice 8b): a screen sends what changed on it since the version it has, and gets back the log's tail after
+            // that version, in the canonical order, with what was re-resolved or dropped said.
+            ex.requestMethod == "POST" && parts.size == 3 && parts[0] == "screens" && parts[2] == "sync" -> {
+                // The car's screen is the service's own, arranged with canvas words; no device syncs it (round-2 review).
+                if (parts[1] == CAR_SCREEN) return no(403, "the car's screen is arranged with canvas words, never synced")
+                val b = body(ex) ?: return no(400, "a JSON body")
+                val size = if (b.has("columns") && b.has("rows")) b.optInt("columns") to b.optInt("rows") else null
+                val screen = screen(parts[1], size, device) ?: return no(404, "no screen \"${parts[1]}\" (a first sync says its columns and rows)")
+                // A screen is synced by the device it is (its first sync's); others reach it through the canvas words only.
+                val owner = runCatching { JSONObject(File(home, "screens/${parts[1]}.grid.json").readText()).optString("owner") }.getOrNull().orEmpty()
+                if (owner.isNotEmpty() && owner != device) return no(403, "\"${parts[1]}\" is ${owner}'s own screen")
+                if (size != null && size != (screen.columns to screen.rows)) return no(409, "that screen's grid is ${screen.columns}x${screen.rows}")
+                // A screen whose copy here was lost sends itself whole, and the copy becomes it.
+                val whole = b.optLong("since", 0) == dev.omalauncher.canvas.SYNC_WHOLE
+                val since = if (whole) 0L else b.optLong("since", 0)
+                if (since < 0 || since > screen.log.version) return no(409, "the service has no version $since of \"${parts[1]}\"")
+                // Each verb's device is the one the door knows is calling, whatever the verb says.
+                val sent = b.optJSONArray("verbs")?.let { a -> (0 until a.length()).mapNotNull { dev.omalauncher.canvas.SyncWire.sentOf(a.getJSONObject(it)) } }.orEmpty()
+                    .map { it.copy(origin = it.origin.copy(device = device!!)) }
+                val took = if (whole) screen.takeWhole(sent, dev.omalauncher.widgets.layout.VerbOrigin(device!!, "hand")) else screen.take(sent)
+                answer(ex, 200, dev.omalauncher.canvas.SyncWire.tail(screen.log, since).put("ok", true)
+                    .put("notes", JSONArray(took.mapNotNull { it.why })))
+            }
             // A runner registers the token it minted for a thread, and revokes it when the thread ends.
             ex.requestMethod == "POST" && parts == listOf("tokens") -> {
                 val b = body(ex) ?: return no(400, "a JSON body")
@@ -325,6 +361,9 @@ class SomaService(
 
         /** A request's body, at most. */
         private const val MAX_BODY = 512L * 1024
+
+        /** A sync's body, at most: a screen's first round sends its whole layout. */
+        private const val MAX_SYNC_BODY = 8L * 1024 * 1024
 
         /** A screen's name, as kept in screens/. */
         private val SCREEN_NAME = Regex("[a-z0-9][a-z0-9-]{0,39}")

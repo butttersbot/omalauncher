@@ -62,7 +62,16 @@ data class Applied(val notebook: Notebook, val applied: Boolean, val why: String
  * another item, or that this build can't read, doesn't apply and says why; nothing is guessed. (Re-resolving a late verb
  * whose spot was taken in the meantime is slice 8's; picking a spot from intent is slice 6's.)
  */
-fun applyVerb(notebook: Notebook, verb: CanvasVerb): Applied {
+fun applyVerb(
+    notebook: Notebook,
+    verb: CanvasVerb,
+    /**
+     * A copy of a screen kept elsewhere (the service's copy of the Fold's home, slice 8b): an app or a folder there is only
+     * the cells it takes, so it may be placed with no entry. Never on the screen itself, where it would be an app with
+     * nothing to open.
+     */
+    bare: Boolean = false,
+): Applied {
     fun no(why: String) = Applied(notebook, false, why)
     fun page(id: String) = notebook.pages.firstOrNull { it.id == id }
     fun fits(cell: Cell, page: NotebookPage, except: String?): Boolean =
@@ -81,7 +90,7 @@ fun applyVerb(notebook: Notebook, verb: CanvasVerb): Applied {
             if (!fits(verb.cell, to, verb.key)) return no("that spot is taken or off the grid")
             val was = notebook.pages.flatMap { it.items }.firstOrNull { it.key == verb.key }
             // An app or a folder carries its entries, which a verb doesn't: only one already on the canvas can be placed.
-            if (was == null && (verb.kind == ItemKind.App || verb.kind == ItemKind.Folder)) return no("an app or folder needs its entry; only one already here can be placed")
+            if (!bare && was == null && (verb.kind == ItemKind.App || verb.kind == ItemKind.Folder)) return no("an app or folder needs its entry; only one already here can be placed")
             if (was != null && was.kind != verb.kind) return no("that key is already a ${was.kind.name.lowercase()} here")
             val item = was?.copy(cell = verb.cell) ?: NotebookItem(verb.key, verb.kind, verb.cell)
             Applied(notebook.copy(pages = notebook.pages.map { p -> if (p.id == verb.page) p.copy(items = p.items.filter { it.key != verb.key } + item) else p.copy(items = p.items.filter { it.key != verb.key }) }), true)

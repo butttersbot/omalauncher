@@ -278,6 +278,26 @@ class LiveNotebook(
         if (opened && cells[key] != cell) cells[key] = cell
     }
 
+    /**
+     * The page [id] called [name], made as another screen's copy of home says it was (Soma Canvas sync): after the page
+     * [after] (first for [PAGE_START], last when null). False, and nothing changed, when that id is taken or home isn't open.
+     */
+    fun addPageWithId(
+        id: String,
+        name: String,
+        after: String?,
+    ): Boolean {
+        if (!opened || pages.any { it.id == id } || id.isBlank()) return false
+        val at = when (after) {
+            null -> pages.size
+            dev.omalauncher.widgets.layout.PAGE_START -> 0
+            else -> position(after).takeIf { it >= 0 }?.plus(1) ?: pages.size
+        }
+        pages.add(at, PageLabel(id, pageName(name) ?: freeName()))
+        save()
+        return true
+    }
+
     /** A new, empty page after the last one; returns its id, or null before the notebook is opened. */
     fun addPage(): String? = if (opened) newPage() else null
 

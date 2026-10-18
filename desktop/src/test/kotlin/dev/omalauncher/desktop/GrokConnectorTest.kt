@@ -315,6 +315,8 @@ class GrokConnectorTest {
         // The Fold's home copy on the service, made by its own sync.
         File(home, "screens").mkdirs()
         File(home, "screens/fold-q5.json").writeText(dev.omalauncher.widgets.layout.VerbJson.log(dev.omalauncher.widgets.layout.VerbLog("fold-q5")))
+        // As its own first sync leaves it: the screen's grid and owner beside it (slice 8b).
+        File(home, "screens/fold-q5.grid.json").writeText(JSONObject().put("columns", 6).put("rows", 8).put("owner", "fold").toString())
         // Reading the Fold's copy is reading: it runs, and waits for nothing.
         assertFalse(tool(token, "soma_arrange", JSONObject().put("text", "board").put("screen", "fold-q5")).getBoolean("isError"))
         assertTrue(service.grok.asks().isEmpty())

@@ -27,6 +27,7 @@ import java.awt.SystemTray
 import java.awt.Toolkit
 import java.awt.TrayIcon
 import java.awt.image.BufferedImage
+import java.io.File
 import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
@@ -100,6 +101,7 @@ fun main(args: Array<String>) {
     val gate = dev.omalauncher.widgets.runtime.CommandGate(SomaHome.approved, SomaHome.machine)
     val source = dev.omalauncher.canvas.withWidgetAsks(chatHostModules(host, cockpitFeeds(), handoffs = engine::handoffs, registry = engine::projects), gate)
     val tick = mutableStateOf(0L)
+    val desk = DesktopSync(canvas, File(SomaHome.dir, "canvas-synced.json"), SomaHome.machine)
     // Two loops: the look, which only reads what the app holds, never waits on the slower feeds, whose reads can take a while.
     thread(name = "soma-modules", isDaemon = true) {
         while (true) {
@@ -110,6 +112,9 @@ fun main(args: Array<String>) {
     thread(name = "soma-feeds", isDaemon = true) {
         while (true) {
             runCatching { source.refresh(moduleProjects(canvas.page.pages.flatMap { p -> p.items.map { it.key } })) }
+            // Sync (slice 8b): this window's layout with the service's copy of it, when a runner says where the service is.
+            // What the service had to drop or move (a late change to a page gone, cells taken by then) is said, once each.
+            runCatching { DesktopSync.overTheTailnet(platform.machines())?.let { exchange -> desk.round(exchange) { work -> javax.swing.SwingUtilities.invokeAndWait(work) } }?.forEach { notices.say("Soma", "The canvas: $it") } }
             javax.swing.SwingUtilities.invokeLater { tick.value = System.currentTimeMillis() }
             Thread.sleep(MODULE_FEEDS_MS)
         }

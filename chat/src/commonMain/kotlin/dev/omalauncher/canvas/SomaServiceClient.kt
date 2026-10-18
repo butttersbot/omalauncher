@@ -62,3 +62,22 @@ fun installOnSomaService(
     }
     return JSONObject().put("ok", false).put("error", "No Mac answered as the canvas service. It runs on the Mac Pro once its service is installed (soma --serve).")
 }
+
+/**
+ * One sync round's exchange with the service at [service] for [screen] ([columns] by [rows]), with [key]: what was sent
+ * since [since], and the log's tail back; null when the service can't be reached or says no.
+ */
+fun syncExchange(service: String, key: String, screen: String, columns: Int, rows: Int, since: Long, sent: List<SentVerb>): JSONObject? {
+    val body = JSONObject().put("since", since).put("columns", columns).put("rows", rows).put("verbs", org.json.JSONArray(sent.map { SyncWire.sent(it) }))
+    val (code, answer) = somaPost(service.trimEnd('/') + "/screens/" + screen + "/sync", key, body.toString())
+    // Not reachable: null, and the next round tries again. Refused: said, so it isn't taken for being offline.
+    return when (code) {
+        200 -> runCatching { JSONObject(answer) }.getOrNull()
+        -1 -> null
+        else -> JSONObject().put("refused", code).put("error", runCatching { JSONObject(answer).optString("error") }.getOrNull()?.ifEmpty { null } ?: "HTTP $code")
+    }
+}
+
+/** The first of [machines] whose runner says where a canvas service is: that address and the key for it; null when none does. */
+fun findSomaService(machines: List<MacMachine>, advertised: (String, String) -> String? = ::advertisedService): Pair<String, String>? =
+    machines.firstNotNullOfOrNull { m -> advertised(m.config.url, m.config.key)?.let { it to m.config.key } }
