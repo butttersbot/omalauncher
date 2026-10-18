@@ -81,3 +81,44 @@ fun syncExchange(service: String, key: String, screen: String, columns: Int, row
 /** The first of [machines] whose runner says where a canvas service is: that address and the key for it; null when none does. */
 fun findSomaService(machines: List<MacMachine>, advertised: (String, String) -> String? = ::advertisedService): Pair<String, String>? =
     machines.firstNotNullOfOrNull { m -> advertised(m.config.url, m.config.key)?.let { it to m.config.key } }
+
+/**
+ * How the service's public door (Funnel: the car and Grok come in there) stood when last asked: [up] or not, [since] when
+ * (the service's clock, milliseconds). Only from a service that has a public address; one with none says nothing.
+ */
+data class PublicDoor(val up: Boolean, val since: Long)
+
+/** [health], the service's /health answer, as its public door stands; null when it has no public address or hasn't looked yet. */
+fun publicDoorOf(health: JSONObject?): PublicDoor? {
+    val p = health?.optJSONObject("public") ?: return null
+    if (p.isNull("url") || p.isNull("up")) return null
+    return PublicDoor(p.getBoolean("up"), p.optLong("since"))
+}
+
+/** The service's /health at [service], asked with this device's [key]; null when it doesn't answer as the service. */
+fun somaHealth(service: String, key: String): JSONObject? = runCatching {
+    val c = URI(service.trimEnd('/') + "/health").toURL().openConnection() as HttpURLConnection
+    c.connectTimeout = 4000; c.readTimeout = 6000
+    c.setRequestProperty("Authorization", "Bearer $key")
+    if (c.responseCode != 200) null else JSONObject(c.inputStream.use { String(it.readBytes()) }).takeIf { it.optString("service") == "soma-serve" }
+}.getOrNull()
+
+/**
+ * How the phone reads the public door each refresh: the service's address is remembered once a runner has said it, and asked
+ * for again only when the service stops answering there (round-1 review: asking every runner each 30 s cost a timeout per Mac
+ * that was off the net).
+ */
+class PublicDoorReader(
+    private val machines: () -> List<MacMachine>,
+    private val advertised: (String, String) -> String? = ::advertisedService,
+    private val health: (String, String) -> JSONObject? = ::somaHealth,
+) {
+    @Volatile private var at: Pair<String, String>? = null
+
+    fun read(): PublicDoor? {
+        at?.let { (service, key) -> health(service, key)?.let { return publicDoorOf(it) } }
+        val found = findSomaService(machines(), advertised)
+        at = found
+        return found?.let { (service, key) -> publicDoorOf(health(service, key)) }
+    }
+}

@@ -95,7 +95,7 @@ fun ModuleView(ref: ModuleRef, size: ModuleSize, source: ModuleSource, now: Long
     when (ref.kind) {
         ModuleKind.Needs -> NeedsYouModule(source.asks(), size, modifier, onAnswer = { ask, allow, said -> source.answer(ask, allow, said) }, onOpen = onOpen)
         ModuleKind.Threads -> ThreadsModule(source.threads(), size, modifier, onOpen = onOpen)
-        ModuleKind.Computers -> ComputersModule(source.computers(), size, modifier)
+        ModuleKind.Computers -> ComputersModule(source.computers(), size, modifier, door = source.publicDoor(), now = now)
         ModuleKind.Timeline -> TimelineModule(source.events(), size, modifier, onOpen = onOpen)
         ModuleKind.NewThread -> NewThreadModule(source.newThread(), size, modifier, onNew = onNew)
         ModuleKind.Sessions -> SessionsModule(source.sessions(), size, modifier, onNudge = { s, done -> source.nudge(s, done) })

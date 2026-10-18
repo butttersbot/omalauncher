@@ -68,26 +68,62 @@ fun moduleComputers(hosts: List<ComputerHost>, herd: List<HerdMachine>): List<Mo
 @Composable
 private fun OnlineMark(online: Boolean) = Box(Modifier.size(8.dp).background(if (online) Pack.green else Pack.muted))
 
+/** How long the public door has been down, in a word or two ("3 min", "2 h"); empty when [since] is unknown or ahead of [now]. */
+fun downFor(since: Long, now: Long): String {
+    if (since <= 0 || now < since) return ""
+    val min = (now - since) / 60_000
+    return when {
+        min < 1 -> "just now"
+        min < 60 -> "$min min"
+        min < 48 * 60 -> "${min / 60} h"
+        else -> "${min / (24 * 60)} days"
+    }
+}
+
+/**
+ * Computers: each computer, online or not, and how it is. When the canvas service's public door ([door], Funnel) has stopped
+ * answering, that comes first at every size, in red: the car and Grok can't reach Soma until it's back (Boss, 2026-10-17).
+ */
 @Composable
-fun ComputersModule(computers: List<ModuleComputer>, size: ModuleSize, modifier: Modifier = Modifier) {
+fun ComputersModule(computers: List<ModuleComputer>, size: ModuleSize, modifier: Modifier = Modifier, door: PublicDoor? = null, now: Long = 0L) {
     val up = computers.count { it.online }
-    ModuleFrame("Computers", if (up == computers.size) "all online" else "$up of ${computers.size} online", size, "module:computers", modifier) {
+    val down = door?.up == false
+    val caption = if (down) "funnel down" else if (up == computers.size) "all online" else "$up of ${computers.size} online"
+    ModuleFrame("Computers", caption, size, "module:computers", modifier) {
+        val extra = if (down) 1 else 0
         when (size) {
-            ModuleSize.Dot -> FitAcross(computers.size, gap = 4.dp) { i -> OnlineMark(computers[i].online) }
-            ModuleSize.Line -> FitAcross(computers.size, gap = 12.dp) { i -> Row(verticalAlignment = Alignment.CenterVertically) { OnlineMark(computers[i].online); Spacer(Modifier.width(4.dp)); BasicText(computers[i].name, style = Pack.body(), maxLines = 1, softWrap = false) } }
-            else -> if (computers.isEmpty()) {
+            ModuleSize.Dot -> FitAcross(computers.size + extra, gap = 4.dp) { i -> if (down && i == 0) DownMark() else OnlineMark(computers[i - extra].online) }
+            ModuleSize.Line -> FitAcross(computers.size + extra, gap = 12.dp) { i ->
+                if (down && i == 0) Row(verticalAlignment = Alignment.CenterVertically) { DownMark(); Spacer(Modifier.width(4.dp)); BasicText("Funnel down", style = Pack.body(color = Pack.red), maxLines = 1, softWrap = false) }
+                else Row(verticalAlignment = Alignment.CenterVertically) { OnlineMark(computers[i - extra].online); Spacer(Modifier.width(4.dp)); BasicText(computers[i - extra].name, style = Pack.body(), maxLines = 1, softWrap = false) }
+            }
+            else -> if (computers.isEmpty() && !down) {
                 BasicText("No computers set up yet.", style = Pack.body(color = Pack.muted))
             } else {
-                FitRows(computers.size) { i ->
-                    val c = computers[i]
+                FitRows(computers.size + extra) { i ->
                     // The name keeps the width; how it is only where there is room for both.
                     BoxWithConstraints(Modifier.fillMaxWidth()) {
                         val roomy = maxWidth >= 240.dp
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            OnlineMark(c.online)
-                            Spacer(Modifier.width(8.dp))
-                            BasicText(c.name, Modifier.weight(1f), style = Pack.body(color = if (c.online) Pack.foreground else Pack.muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            if (roomy) BasicText(Pack.caption(if (c.online) c.detail else "offline"), Modifier.padding(start = 6.dp), style = Pack.mono(Pack.size.small, Pack.muted), maxLines = 1, softWrap = false)
+                        if (down && i == 0) {
+                            val long = door?.let { downFor(it.since, now) }.orEmpty()
+                            Column(Modifier.fillMaxWidth()) {
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                    DownMark()
+                                    Spacer(Modifier.width(8.dp))
+                                    BasicText("Funnel down", Modifier.weight(1f), style = Pack.body(color = Pack.red), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    if (roomy && long.isNotEmpty()) BasicText(Pack.caption(long), Modifier.padding(start = 6.dp), style = Pack.mono(Pack.size.small, Pack.red), maxLines = 1, softWrap = false)
+                                }
+                                // What it means, where there is room: wrapped, never cut.
+                                if (roomy) BasicText("The car and Grok can't reach Soma until it's back.", Modifier.padding(start = 16.dp), style = Pack.mono(Pack.size.small, Pack.muted))
+                            }
+                        } else {
+                            val c = computers[i - extra]
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                OnlineMark(c.online)
+                                Spacer(Modifier.width(8.dp))
+                                BasicText(c.name, Modifier.weight(1f), style = Pack.body(color = if (c.online) Pack.foreground else Pack.muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                if (roomy) BasicText(Pack.caption(if (c.online) c.detail else "offline"), Modifier.padding(start = 6.dp), style = Pack.mono(Pack.size.small, Pack.muted), maxLines = 1, softWrap = false)
+                            }
                         }
                     }
                 }
@@ -95,6 +131,10 @@ fun ComputersModule(computers: List<ModuleComputer>, size: ModuleSize, modifier:
         }
     }
 }
+
+/** The public door's mark: red and square like a computer's, so it reads as one more thing that is down. */
+@Composable
+private fun DownMark() = Box(Modifier.size(8.dp).background(Pack.red))
 
 /**
  * [line] without Markdown's inline marks (bold, italics, links, code ticks), as a module shows prose. What is inside a code

@@ -75,6 +75,9 @@ interface ModuleSource {
     /** The computers, as of the last [refresh]. */
     fun computers(): List<ModuleComputer> = emptyList()
 
+    /** The canvas service's public door (Funnel), as of the last [refresh]; null when not known or not set up. */
+    fun publicDoor(): PublicDoor? = null
+
     /** Project [project]'s handoff, as of the last [refresh] that named it. */
     fun handoff(project: String): MacHandoff? = null
 
@@ -115,7 +118,10 @@ fun chatHostModules(
     feeds: CockpitFeeds? = null,
     handoffs: (Collection<String>) -> Map<String, MacHandoff?> = { emptyMap() },
     registry: () -> List<RegisteredProject>? = { null },
+    /** How the canvas service's public door stands (blocking); the phone's Computers module says when it's down (Boss, 2026-10-17). */
+    publicDoor: () -> PublicDoor? = { null },
 ): ModuleSource = object : ModuleSource {
+    @Volatile private var door: PublicDoor? = null
     @Volatile private var herd: HerdSnapshot? = null
     @Volatile private var items: List<PocketItem> = emptyList()
     @Volatile private var read: Map<String, MacHandoff?> = emptyMap()
@@ -131,6 +137,8 @@ fun chatHostModules(
             items = feeds.pocket()
         }
         read = if (projects.isEmpty()) emptyMap() else runCatching { handoffs(projects) }.getOrDefault(emptyMap())
+        // What the service says now, or nothing: a door last seen down is never shown down after the service stops answering.
+        door = runCatching { publicDoor() }.getOrNull()
         // The registry as a computer last gave it: kept when none answers, since it changes rarely and is not live state, and
         // asked again only every few reads, so a computer that is down doesn't cost a timeout on every one.
         if (reads++ % REGISTRY_EVERY == 0 || registered.isEmpty()) runCatching { registry() }.getOrNull()?.let { registered = it }
@@ -147,6 +155,8 @@ fun chatHostModules(
     override fun project(name: String): ModuleProject = moduleProject(name, registered, host.macView().threads, host.threads(), read[name], host.changeBook { it })
 
     override fun computers(): List<ModuleComputer> = moduleComputers(host.hosts().map { ComputerHost(it.id, it.name, it.reachable, it.address) }, herd?.machines.orEmpty())
+
+    override fun publicDoor(): PublicDoor? = door
 
     override fun handoff(project: String): MacHandoff? = read[project]
 

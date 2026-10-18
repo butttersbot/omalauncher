@@ -44,7 +44,9 @@ object CockpitModules {
             made ?: run {
                 val app = context.applicationContext
                 val host = AndroidChatHost(app, runtime)
-                host to chatHostModules(host, cockpitFeeds(), handoffs = { MacThreads.handoffs(app, it) }, registry = { MacThreads.projects(app) })
+                host to chatHostModules(host, cockpitFeeds(), handoffs = { MacThreads.handoffs(app, it) }, registry = { MacThreads.projects(app) },
+                    // The service a runner advertises, asked with the phone's key for that runner, as sync finds it.
+                    publicDoor = dev.omalauncher.canvas.PublicDoorReader({ dev.omalauncher.assist.readMacMachines(runtime.proot.launcherConfig) })::read)
             }.also { made = it }
         }
 
