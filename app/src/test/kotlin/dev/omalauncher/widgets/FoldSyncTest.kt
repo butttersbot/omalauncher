@@ -189,6 +189,84 @@ class FoldSyncTest {
         assertNull(fresh.notebook.pageOf(pocket))
     }
 
+    /**
+     * Boss, 2026-10-17: after the app's data is cleared, the Fold's first sync reads the Mac Pro's copy first. Before, home
+     * as it was went up over an agent's change the Fold never saw: a module the agent removed came back, one it moved went back.
+     */
+    private val pocket = moduleKey(ModuleKind.Pocket)!!
+    /** Home with a module on it, which an agent may take away. */
+    private val withPocket = saved.copy(pages = saved.pages.map { p -> if (p.id == "p1") p.copy(items = p.items + NotebookItem(pocket, ItemKind.Module, Cell(0, 5, 3, 2))) else p })
+
+    @Test fun afterADataClearTheFirstSyncReadsTheServicesCopyFirst() {
+        val service = Service()
+        val fold = Fold(withPocket)
+        fold.sync.round(service::exchange)
+        // While the Fold is away, an agent arranges its copy: Needs you put on, the pocket taken off.
+        assertTrue(service.agent("place needs card bottom-left --page Today").getBoolean("ok"))
+        assertTrue(service.agent("remove pocket").getBoolean("ok"))
+        val before = service.log.version
+        // The app's data cleared: nothing kept from sync, and home as it was before (the same notebook read back).
+        val cleared = Fold(withPocket)
+        val notes = cleared.sync.round(service::exchange)!!
+        assertTrue(notes.toString(), notes.isEmpty())
+        // Home is the service's copy; nothing of the old home went up over it.
+        assertEquals(before, service.log.version)
+        assertNull(cleared.notebook.pageOf(pocket))
+        assertTrue(cleared.notebook.pageOf("clock.owl") != null)
+        assertTrue(cleared.notebook.pageOf(needs) != null)
+        assertEquals(items(cleared.sync.home()), items(replayLog(service.log, 6, 8)))
+        // From then on, his hand goes up as always.
+        cleared.notebook.setCell(needs, Cell(3, 5, 3, 2)); cleared.notebook.save()
+        cleared.sync.round(service::exchange)
+        assertEquals(Cell(3, 5, 3, 2), replayLog(service.log, 6, 8).pages[0].items.first { it.key == needs }.cell)
+    }
+
+    /** Round-1 review: a kept copy that can't be read is no copy: the first round reads, and what he drags meanwhile stays. */
+    @Test fun aCopyThatCantBeReadIsReadFirstAndHisDragDuringTheReadStays() {
+        val service = Service()
+        val fold = Fold(withPocket)
+        fold.sync.round(service::exchange)
+        assertTrue(service.agent("remove pocket").getBoolean("ok"))
+        // The agent moved the clock too, so the read would put it at the agent's cell over his drag (round-2 review).
+        service.log = appendSent(service.log, listOf(SentVerb(service.log.version, "m", VerbOrigin("macpro", "agent:t9"), CanvasVerb.Move("clock.owl", "p1", Cell(3, 0, 3, 2)))), 6, 8).first
+        val before = service.log.version
+        val corrupt = Fold(withPocket).apply { kept = "{not json" }
+        corrupt.sync.round { since, sent ->
+            assertTrue(sent.isEmpty())
+            // He drags the clock while the read is out.
+            corrupt.notebook.setCell("clock.owl", Cell(3, 6, 3, 2)); corrupt.notebook.save()
+            service.exchange(since, sent)
+        }
+        assertEquals(before, service.log.version)
+        assertNull(corrupt.notebook.pageOf(pocket))
+        assertEquals(Cell(3, 6, 3, 2), corrupt.notebook.cell("clock.owl"))
+        // His drag goes up the next round.
+        corrupt.sync.round(service::exchange)
+        assertEquals(Cell(3, 6, 3, 2), replayLog(service.log, 6, 8).pages[0].items.first { it.key == "clock.owl" }.cell)
+        assertNull(replayLog(service.log, 6, 8).pages.flatMap { it.items }.firstOrNull { it.key == pocket })
+    }
+
+    @Test fun aFirstReadThatCantReachTheServiceReadsAgainAndAnEmptyServiceIsSeededAtOnce() {
+        val service = Service()
+        service.online = false
+        val fold = Fold(withPocket)
+        assertNull(fold.sync.round(service::exchange))
+        assertNull(fold.sync.round(service::exchange))
+        service.online = true
+        // A service with a copy made meanwhile is read, not written over.
+        val other = Fold(withPocket)
+        other.sync.round(service::exchange)
+        assertTrue(service.agent("remove pocket").getBoolean("ok"))
+        fold.sync.round(service::exchange)
+        assertNull(fold.notebook.pageOf(pocket))
+        // A fresh Fold with an empty service: home goes up in that first round, as before.
+        val empty = Service()
+        val fresh = Fold(saved)
+        fresh.sync.round(empty::exchange)
+        assertEquals(items(fresh.sync.home()), items(replayLog(empty.log, 6, 8)))
+        assertTrue(empty.log.version > 0)
+    }
+
     @Test fun aRefusedRoundNeverUndoesHisChangesAndTheyGoUpOnceTaken() {
         val service = Service()
         val fold = Fold(saved)

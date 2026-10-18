@@ -74,13 +74,34 @@ class FoldSync(
     /** Home as it was when the last [pending] was worked out: what the answer is the change from. */
     private var sentFrom: Notebook? = null
 
+    /**
+     * Whether this round only reads: the first with nothing kept from an earlier one (a new install, or the app's data
+     * cleared). It sends nothing and takes the service's copy first, so home never goes up over an agent's change it didn't
+     * see (Boss, 2026-10-17); with no copy there, home goes up the next round, as it always did. Null until first asked.
+     */
+    private var reading: Boolean? = null
+
+    /** Whether the round [pending] worked out is that read. */
+    private var readRound = false
+
+    /** Whether the read found no copy on the service, so home goes up at once, in the same round, as a first sync always did. */
+    var seedNow = false
+        private set
+
     /** What changed here since the last round, as verbs to send: a thread tile's as the launcher's, everything else as his. */
     fun pending(): List<SentVerb> {
         if (!notebook.opened || !notebook.kept) return emptyList()
+        seedNow = false
         val request = "fold-" + now().toString(36)
         val here = home()
         sentFrom = here
         from = sync.synced.version
+        // Decided on the copy as read, not on whether one is kept: one that can't be read is none (round-1 review: a corrupt
+        // copy sent home up over the agent's change, the very thing this prevents).
+        if (reading == null) reading = sync.synced.version == 0L
+        readRound = reading == true && !sync.whole
+        // A read sends nothing, so no undo done here is sent by it either: they wait for the next round.
+        if (readRound) { sendingUndos = emptySet(); return emptyList() }
         // A change an undo here made goes up as that undo's, the newest undo that touched the same item or page.
         val undone = undos?.all().orEmpty()
         sendingUndos = undone.map { it.request }.toSet()
@@ -116,13 +137,13 @@ class FoldSync(
      * only moved (sync never pins or unpins one); a page with anything of his still on it isn't taken away. What couldn't be
      * done is said.
      */
-    fun bringTo(target: Notebook): List<String> {
+    fun bringTo(target: Notebook, his: Set<String> = emptySet()): List<String> {
         if (!notebook.opened || !notebook.kept) return listOf("home isn't being kept this start, so nothing came in")
         val left = ArrayList<String>()
         // The change from home as it was sent to what came back, done to home as it is now: anything he changed while the
         // round was on its way stays, and goes in the next round.
         // Passes until nothing more applies: a place into cells something else is about to leave waits for it to go.
-        var todo = diffToVerbs(sentFrom ?: home(), target)
+        var todo = diffToVerbs(sentFrom ?: home(), target).filter { v -> touchedBy(v)?.let { it !in his } ?: true }
         while (todo.isNotEmpty()) {
             val waiting = ArrayList<CanvasVerb>()
             for (v in todo) if (!doOne(v)) waiting += v
@@ -157,6 +178,12 @@ class FoldSync(
             todo = waiting
         }
         return left
+    }
+
+    /** The items and pages that differ between [before] and home now: what he changed since. */
+    private fun changedSince(before: Notebook?): Set<String> {
+        before ?: return emptySet()
+        return diffToVerbs(before, home()).mapNotNull(::touchedBy).toSet()
     }
 
     private fun keyOf(v: CanvasVerb) = (v as? CanvasVerb.Move)?.key ?: (v as? CanvasVerb.Place)?.key
@@ -204,7 +231,11 @@ class FoldSync(
     fun round(exchange: (Long, List<SentVerb>) -> JSONObject?): List<String>? {
         if (!notebook.opened || !notebook.kept) return null
         val (target, notes) = sync.round(pending(), exchange) ?: return null
-        return notes + finish(target)
+        val said = notes + finish(target)
+        if (!seedNow) return said
+        seedNow = false
+        // A seed that couldn't reach the service is said as such: null, as any round that couldn't (round-1 review).
+        return round(exchange)?.let { said + it }
     }
 
     /**
@@ -213,7 +244,17 @@ class FoldSync(
      */
     fun finish(target: Notebook?): List<String> {
         if (target == null) { sentFrom = null; sendingUndos = emptySet(); return emptyList() }
-        val left = bringTo(target)
+        var his = emptySet<String>()
+        if (readRound) {
+            readRound = false
+            reading = false
+            // The service has no copy of this screen: nothing to bring, and home goes up whole the next round.
+            if (sync.synced.version == 0L) { sentFrom = null; seedNow = true; return emptyList() }
+            // What he changed while the read was out stays as he left it, and goes up next round (round-1 review: a drag
+            // made then was put back). In any other round the change is from home as sent, so it never touches such a thing.
+            his = changedSince(sentFrom)
+        }
+        val left = bringTo(target, his)
         sentFrom = null
         keep(dev.omalauncher.widgets.layout.VerbJson.log(sync.synced))
         noteArrivals()
@@ -268,7 +309,13 @@ object FoldSyncJob {
                     val pending = onMain { fold.pending() } ?: return@runCatching
                     val sync = onMain { fold.sync } ?: return@runCatching
                     val (target, notes) = sync.round(pending) { since, sent -> dev.omalauncher.canvas.syncExchange(service, key, screen, GRID_COLUMNS, sync.rows, since, sent) } ?: return@runCatching
-                    val left = onMain { fold.finish(target) }.orEmpty()
+                    var left = onMain { fold.finish(target) }.orEmpty()
+                    // The read found nothing on the service: home goes up now, not a round later.
+                    if (onMain { fold.seedNow } == true) {
+                        val seeding = onMain { fold.pending() }
+                        val again = seeding?.let { sent -> sync.round(sent) { since, s -> dev.omalauncher.canvas.syncExchange(service, key, screen, GRID_COLUMNS, sync.rows, since, s) } }
+                        left = left + (again?.let { (t, n) -> n + onMain { fold.finish(t) }.orEmpty() } ?: emptyList())
+                    }
                     // Said in the shade, once for as long as it stays the same (home itself has no place for it).
                     val said = notes + left
                     if (said != lastSaid) {
