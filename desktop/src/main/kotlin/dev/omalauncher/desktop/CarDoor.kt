@@ -8,6 +8,7 @@ import androidx.compose.ui.unit.Density
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import org.jetbrains.skia.EncodedImageFormat
+import dev.omalauncher.canvas.ticketed
 import org.json.JSONObject
 import java.io.File
 import java.net.InetSocketAddress
@@ -85,6 +86,9 @@ class CarDoor(
         if (!fresh.renameTo(keysFile)) { keysFile.delete(); fresh.renameTo(keysFile) }
     }
 
+    /** The paired car's id, as the approval log names it: the start of its key's digest, never the key. */
+    fun carId(): String? = runCatching { "car-" + JSONObject(keysFile.readText()).getJSONObject("car").getString("digest").removePrefix("sha256:").take(12) }.getOrNull()
+
     /** Whether [key] is the paired car's. */
     fun isCar(key: String?): Boolean {
         if (key.isNullOrEmpty()) return false
@@ -101,13 +105,38 @@ class CarDoor(
     @Volatile private var png: ByteArray = ByteArray(0)
     private val listeners = CopyOnWriteArrayList<(Long) -> Unit>()
     private val shownVersion = androidx.compose.runtime.mutableLongStateOf(0L)
-    /**
-     * When the scene was last drawn, read by the modules: what they show (threads, asks, computers) is read again at each
-     * drawing, so a thread that starts or needs him shows on the car without anything being moved (round-1 review).
-     */
+    /** When the scene was last drawn: read by the modules, so what they show (asks, threads) is read again each time. */
     private val shownAt = androidx.compose.runtime.mutableLongStateOf(0L)
 
-    /** Draws the car's screen again; a picture that changed is a new frame, and whoever listens is told. On the car's thread. */
+    // Approvals from the car (slice 9b): a module's approve or deny reaches the ticket path only from a tap the car made on
+    // the frame it was shown, and each one is logged with the car's id.
+
+    /** The car whose tap is being played into the scene, on the car's thread, for as long as that tap lasts. */
+    private var tapping: String? = null
+    /** The frame that tap was made on. */
+    private var tappedOn = 0L
+    private val approvals = File(home, "car-approvals.log")
+
+    internal val carSource = object : dev.omalauncher.canvas.ModuleSource by service.source {
+        override fun answer(ask: dev.omalauncher.canvas.ModuleAsk, allow: Boolean, said: (String?) -> Unit) {
+            // Only the car's own tap answers, never anything else playing into the scene.
+            val car = tapping ?: return said(null)
+            // The frame the tap was made on, kept now: the outcome may come later, after another tap.
+            val frame = tappedOn
+            // Through an approval ticket only: a widget's file or command is approved on a paired device, never the car.
+            if (!ask.ticketed) return said("Approve this from your phone or desktop")
+            fun line(extra: JSONObject.() -> Unit) = approvals.appendText(JSONObject().put("at", now()).put("car", car).put("frame", frame).put("ask", ask.id)
+                .put("title", ask.title).put("where", ask.where).put("allow", allow).apply(extra).toString() + "\n")
+            // Every answer from the car is on record first; one that can't be is not made.
+            if (runCatching { line {} }.isFailure) return said("Soma couldn't record this from the car; answer it from your phone or desktop")
+            service.source.answer(ask, allow) { what ->
+                runCatching { line { put("said", what ?: "done") } }
+                said(what)
+            }
+        }
+    }
+
+    /** Draws the car's screen again; a picture that changed is a new frame, and whoever listens is told. */
     fun refresh(): Long = thread.submit<Long> { draw() }.get(30, TimeUnit.SECONDS)
 
     /** The drawing itself, on the car's thread; [anew] makes it a new frame even when the picture is the same. */
@@ -118,7 +147,7 @@ class CarDoor(
         shownAt.longValue = System.currentTimeMillis()
         androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications()
         val s = scene ?: ImageComposeScene(FRAME_WIDTH, FRAME_HEIGHT, Density(1f)) {
-            androidx.compose.runtime.key(shownVersion.longValue) { ScreenView(service, screen, null, shownAt.longValue) }
+            androidx.compose.runtime.key(shownVersion.longValue) { ScreenView(service, screen, null, carSource, shownAt.longValue, widgetsAct = false) }
         }.also { scene = it }
         val bytes = s.render(System.nanoTime()).encodeToData(EncodedImageFormat.PNG)!!.bytes
         if (anew || !bytes.contentEquals(png)) {
@@ -137,19 +166,31 @@ class CarDoor(
      */
     fun tap(made: Long, x: Float, y: Float): Pair<Boolean, Long> {
         if (x !in 0f..FRAME_WIDTH.toFloat() || y !in 0f..FRAME_HEIGHT.toFloat()) return false to frameId
-        // Checked, played and drawn in one step on the car's thread, where frames are made: no new frame can come between
-        // the check and the tap, and the frame after a tap is always a new one, so taps made together on one frame land
-        // once (round-1 review: six landed).
+        // Checked on the car's thread, where frames are made: no new frame can come between the check and the tap, so the
+        // tap lands on what the car saw (an approve can never move onto another item).
+        // The frame after a tap is always a new one, made in the same step: a second tap made on the same frame (a double
+        // tap) is dropped, never a second approve (round-1 review).
         return thread.submit<Pair<Boolean, Long>> {
             val s = scene ?: return@submit false to frameId
             if (made != frameId) return@submit false to frameId
-            s.sendPointerEvent(PointerEventType.Press, Offset(x, y))
-            s.sendPointerEvent(PointerEventType.Release, Offset(x, y))
+            tapping = carId() ?: return@submit false to frameId
+            tappedOn = made
+            try {
+                s.sendPointerEvent(PointerEventType.Press, Offset(x, y))
+                s.sendPointerEvent(PointerEventType.Release, Offset(x, y))
+            } finally { tapping = null }
             // The finger lifts away: nothing stays looking pressed or hovered (round-2 review).
             s.sendPointerEvent(PointerEventType.Exit, Offset(-1f, -1f))
             true to draw(anew = true)
         }.get(30, TimeUnit.SECONDS)
     }
+
+    /** [work] run on the car's thread as a tap of the paired car's would be (for tests of what a tap may do). */
+    internal fun tapAs(work: () -> Unit): Boolean = thread.submit<Boolean> {
+        tapping = carId() ?: return@submit false
+        try { work() } finally { tapping = null }
+        true
+    }.get(10, TimeUnit.SECONDS)
 
     /** Looks again every half second while a car is watching, so a change shows on the car within about a second. */
     private val watching = ConcurrentHashMap.newKeySet<Any>()

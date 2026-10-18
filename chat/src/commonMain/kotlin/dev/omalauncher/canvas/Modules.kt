@@ -42,6 +42,12 @@ fun moduleSize(w: Int, h: Int, columns: Int): ModuleSize = when {
  * Something that waits for Boss, from any thread: a thread's tool on a computer, or a phone builder's. [title] and [detail]
  * are what the chat's own card says; [threadKey] is the tab the thread has; [ref] is what answering needs, kept opaque.
  */
+/**
+ * Whether [this] is answered through an approval ticket (a Mac thread's, or the phone builder's, one-time), not a widget
+ * file's or command's gate: the only asks the car answers (slice 9b review).
+ */
+val ModuleAsk.ticketed: Boolean get() = ref is dev.omalauncher.assist.MacPending || ref is PendingApproval
+
 data class ModuleAsk(
     val id: String, val title: String, val detail: String, val threadKey: String, val where: String, internal val ref: Any,
     /**

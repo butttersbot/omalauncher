@@ -238,8 +238,19 @@ private fun ThreadRow(t: AgentThread, onOpen: (String) -> Unit) {
 @Composable
 fun NeedsYouModule(asks: List<ModuleAsk>, size: ModuleSize, modifier: Modifier = Modifier, onAnswer: (ModuleAsk, Boolean, (String?) -> Unit) -> Unit, onOpen: (String) -> Unit) {
     var said by remember { mutableStateOf<String?>(null) }
+    // A note is about the asks it came from: at the next change it goes (a screen kept for ever, the car's, kept it for
+    // ever). Not at the change that is the answered ask itself leaving, which comes with the note (round-2 review: an
+    // expired answer looked like a done one).
+    val ids = asks.map { it.id }.toSet()
+    val answered = remember { arrayOfNulls<Any>(2) }
+    androidx.compose.runtime.LaunchedEffect(ids) {
+        @Suppress("UNCHECKED_CAST") val from = answered[0] as Set<String>?
+        if (from != null && (ids == from || ids == from - (answered[1] as String))) { answered[0] = ids; answered[1] = ""; return@LaunchedEffect }
+        answered[0] = null
+        said = null
+    }
     val first = asks.firstOrNull()
-    val answer = { ask: ModuleAsk, allow: Boolean -> onAnswer(ask, allow) { said = it } }
+    val answer = { ask: ModuleAsk, allow: Boolean -> answered[0] = ids; answered[1] = ask.id; onAnswer(ask, allow) { said = it } }
     ModuleFrame("Needs you", if (asks.isEmpty()) "all clear" else "${asks.size} waiting", size, "module:needs", modifier, onOpen = first?.let { { onOpen(it.threadKey) } }) {
         when (size) {
             ModuleSize.Dot -> Dotted(asks.size, "waiting", if (asks.isEmpty()) ThreadState.Idle else ThreadState.NeedsOk)

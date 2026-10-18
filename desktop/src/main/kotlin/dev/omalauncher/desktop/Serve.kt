@@ -2,6 +2,7 @@ package dev.omalauncher.desktop
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
@@ -363,7 +364,11 @@ class SomaService(
 
 /** A screen's page as the service draws it: its modules and widgets on the screen's own grid, City Pop, nothing else. */
 @Composable
-fun ScreenView(service: SomaService, screen: ScreenCanvas, pageId: String?, now: Long = System.currentTimeMillis()) {
+fun ScreenView(
+    service: SomaService, screen: ScreenCanvas, pageId: String?, source: ModuleSource = service.source, now: Long = System.currentTimeMillis(),
+    /** Whether a widget's own taps act (its commands): never on the car, whose taps reach approvals and nothing else. */
+    widgetsAct: Boolean = true,
+) {
     val page = screen.page.pages.firstOrNull { it.id == pageId } ?: screen.page.pages.firstOrNull()
     BoxWithConstraints(Modifier.fillMaxSize().background(Pack.background)) {
         val gap = 8.dp
@@ -374,12 +379,16 @@ fun ScreenView(service: SomaService, screen: ScreenCanvas, pageId: String?, now:
             val m = Modifier.offset(gap + (cellW + gap) * c.x, gap + (cellH + gap) * c.y).size(cellW * c.w + gap * (c.w - 1), cellH * c.h + gap * (c.h - 1))
             when {
                 item.kind == ItemKind.Module -> moduleRef(item.key)?.let { ref ->
-                    ModuleView(ref, moduleSize(c.w, c.h, screen.columns), service.source, now, m, onOpen = {}, onNew = {})
+                    ModuleView(ref, moduleSize(c.w, c.h, screen.columns), source, now, m, onOpen = {}, onNew = {})
                 }
                 item.kind == ItemKind.Widget -> {
                     val inst = service.widget(item.key)
                     val why = if (inst == null) service.whyNot(item.key) else null
-                    if (inst != null) Box(m) { WidgetContent(inst, Modifier.fillMaxSize(), cells = c.w to c.h) }
+                    if (inst != null) Box(m) {
+                        WidgetContent(inst, Modifier.fillMaxSize(), cells = c.w to c.h)
+                        // Above it, something that takes every pointer and does nothing: the widget never sees the tap.
+                        if (!widgetsAct) Box(Modifier.matchParentSize().pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } } })
+                    }
                     else Box(m, contentAlignment = Alignment.Center) { BasicText(why!!, style = Pack.mono(Pack.size.small, Pack.muted)) }
                 }
             }
