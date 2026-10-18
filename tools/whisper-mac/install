@@ -5,5 +5,10 @@ here="$(cd "$(dirname "$0")" && pwd)"
 plist=~/Library/LaunchAgents/dev.omalauncher.whisper-server.plist
 cp "$here/dev.omalauncher.whisper-server.plist" "$plist"
 launchctl bootout "gui/$(id -u)/dev.omalauncher.whisper-server" 2>/dev/null || true
+# A bootstrap right after a bootout fails with "5: Input/output error" until the old one is gone.
+for _ in $(seq 1 20); do
+  launchctl print "gui/$(id -u)/dev.omalauncher.whisper-server" >/dev/null 2>&1 || break
+  sleep 0.5
+done
 launchctl bootstrap "gui/$(id -u)" "$plist"
 echo "started; log: ~/Library/Logs/whisper-server.log"
