@@ -79,6 +79,12 @@ class SomaService(
     private val machine: String,
 ) {
     val tokens = ThreadTokens(File(home, "thread-tokens.json"))
+
+    /** The car's public door (slice 9a): opened by [run] on the loopback for Funnel; its pairing is asked for here. */
+    val car = CarDoor(this, home)
+
+    /** Whether the public door answers from outside (SOMA_PUBLIC_URL, the Funnel address), said in /health. */
+    var liveness = PublicLiveness(null)
     val library = WidgetLibrary(File(home, "widgets").apply { mkdirs() }, gate)
     private val screens = HashMap<String, ScreenCanvas>()
 
@@ -212,7 +218,11 @@ class SomaService(
                 }
                 else -> no(403, "a thread's token is for arranging its screens, nothing else")
             }
-            ex.requestMethod == "GET" && parts == listOf("health") -> answer(ex, 200, JSONObject().put("ok", true).put("service", "soma-serve").put("machine", machine))
+            ex.requestMethod == "GET" && parts == listOf("health") -> answer(ex, 200, JSONObject().put("ok", true).put("service", "soma-serve").put("machine", machine).put("public", liveness.json()))
+            // The car's pairing (slice 9a): a code to show on this device, the car forgotten, or how it stands.
+            ex.requestMethod == "POST" && parts == listOf("car", "pairing") -> car.startPairing(device!!).let { (code, until) -> answer(ex, 200, JSONObject().put("ok", true).put("code", code).put("until", until)) }
+            ex.requestMethod == "DELETE" && parts == listOf("car", "pairing") -> { car.revoke(); answer(ex, 200, JSONObject().put("ok", true)) }
+            ex.requestMethod == "GET" && parts == listOf("car") -> answer(ex, 200, JSONObject().put("ok", true).put("paired", car.paired()).put("frame", car.frameId).put("public", liveness.json()))
             ex.requestMethod == "GET" && parts == listOf("screens") -> answer(ex, 200, JSONObject().put("ok", true).put("screens", JSONArray(listOf(CAR_SCREEN) + (File(home, "screens").list().orEmpty()
                 .filter { it.endsWith(".json") }.map { it.removeSuffix(".json") }.filter { it != CAR_SCREEN && SCREEN_NAME.matches(it) }.sorted()))))
             ex.requestMethod == "GET" && parts.size == 3 && parts[0] == "screens" && parts[2] == "frame.png" -> {
@@ -319,7 +329,18 @@ class SomaService(
             }
             val port = System.getenv("SOMA_SERVE_PORT")?.toIntOrNull() ?: SERVE_PORT
             service.open(address, port)
-            println("soma --serve: on $address:$port, lock held: ${lock.isValid}")
+            // The car's door, on the loopback only: Funnel publishes it (Boss turns Funnel on), nothing else reaches it.
+            val carPort = System.getenv("SOMA_CAR_PORT")?.toIntOrNull() ?: CarDoor.CAR_PORT
+            service.car.open("127.0.0.1", carPort)
+            service.liveness = PublicLiveness(System.getenv("SOMA_PUBLIC_URL"))
+            kotlin.concurrent.thread(name = "soma-public-liveness", isDaemon = true) {
+                while (true) {
+                    service.liveness.check()
+                    if (service.liveness.up == false) System.err.println("soma --serve: the public door (${System.getenv("SOMA_PUBLIC_URL")}) isn't answering; is Funnel on?")
+                    Thread.sleep(60_000)
+                }
+            }
+            println("soma --serve: on $address:$port, the car's door on 127.0.0.1:$carPort, lock held: ${lock.isValid}")
             Thread.currentThread().join()
         }
 
@@ -342,7 +363,7 @@ class SomaService(
 
 /** A screen's page as the service draws it: its modules and widgets on the screen's own grid, City Pop, nothing else. */
 @Composable
-fun ScreenView(service: SomaService, screen: ScreenCanvas, pageId: String?) {
+fun ScreenView(service: SomaService, screen: ScreenCanvas, pageId: String?, now: Long = System.currentTimeMillis()) {
     val page = screen.page.pages.firstOrNull { it.id == pageId } ?: screen.page.pages.firstOrNull()
     BoxWithConstraints(Modifier.fillMaxSize().background(Pack.background)) {
         val gap = 8.dp
@@ -353,7 +374,7 @@ fun ScreenView(service: SomaService, screen: ScreenCanvas, pageId: String?) {
             val m = Modifier.offset(gap + (cellW + gap) * c.x, gap + (cellH + gap) * c.y).size(cellW * c.w + gap * (c.w - 1), cellH * c.h + gap * (c.h - 1))
             when {
                 item.kind == ItemKind.Module -> moduleRef(item.key)?.let { ref ->
-                    ModuleView(ref, moduleSize(c.w, c.h, screen.columns), service.source, System.currentTimeMillis(), m, onOpen = {}, onNew = {})
+                    ModuleView(ref, moduleSize(c.w, c.h, screen.columns), service.source, now, m, onOpen = {}, onNew = {})
                 }
                 item.kind == ItemKind.Widget -> {
                     val inst = service.widget(item.key)

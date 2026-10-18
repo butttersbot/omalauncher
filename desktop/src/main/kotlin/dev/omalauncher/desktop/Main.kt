@@ -143,7 +143,11 @@ fun main(args: Array<String>) {
         var shown by shown
         var wanted by wantedTab
         remember {
-            notices.tray = Tray.make(onOpen = { shown = true }, onQuit = { Single.release(); exitApplication() }, onLook = { id -> Looks.use(id); SomaHome.write(SomaHome.settings, SomaHome.read(SomaHome.settings).put("pack", id)) })
+            notices.tray = Tray.make(onOpen = { shown = true }, onQuit = { Single.release(); exitApplication() }, onLook = { id -> Looks.use(id); SomaHome.write(SomaHome.settings, SomaHome.read(SomaHome.settings).put("pack", id)) },
+                // The service is asked off the tray's thread; the code or what went wrong comes back as a notice.
+                onCar = { pair -> kotlin.concurrent.thread(name = "soma-car-pairing", isDaemon = true) {
+                    notices.say("Soma", if (pair) CarPairing.start(platform.machines()) else CarPairing.end(platform.machines()))
+                } })
         }
         Window(
             onCloseRequest = { shown = false },
@@ -248,15 +252,19 @@ private object Single {
     }
 }
 
-/** The tray icon: Open, the looks, Quit. Its notifications are Soma's ([Notices]). */
+/** The tray icon: Open, the looks, the car's pairing, Quit. Its notifications are Soma's ([Notices]). */
 private object Tray {
-    fun make(onOpen: () -> Unit, onQuit: () -> Unit, onLook: (String) -> Unit): TrayIcon? {
+    fun make(onOpen: () -> Unit, onQuit: () -> Unit, onLook: (String) -> Unit, onCar: (pair: Boolean) -> Unit = {}): TrayIcon? {
         if (!SystemTray.isSupported()) return null
         val menu = PopupMenu()
         menu.add(MenuItem("Open Soma").apply { addActionListener { onOpen() } })
         val looks = java.awt.Menu("Look")
         for (id in Looks.ids) looks.add(MenuItem(id).apply { addActionListener { onLook(id) } })
         menu.add(looks)
+        val car = java.awt.Menu("Car")
+        car.add(MenuItem("Pair the car").apply { addActionListener { onCar(true) } })
+        car.add(MenuItem("Unpair the car").apply { addActionListener { onCar(false) } })
+        menu.add(car)
         menu.addSeparator()
         menu.add(MenuItem("Quit Soma").apply { addActionListener { onQuit() } })
         val image = (Tray::class.java.classLoader.getResource("soma-tray.png")?.let { Toolkit.getDefaultToolkit().getImage(it) }
