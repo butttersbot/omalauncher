@@ -362,7 +362,7 @@ class Builder(val id: BuilderId) {
         val agent = runtime.agents.default ?: error("Install and sign in to an agent in Omalauncher first.")
         val seen = if (screen != null) "\n\nThe attached image is the screen I was looking at when I asked." else ""
         val imagePrompt = earlier + (if (agent.bin == "claude" && images.isNotEmpty()) prompt + "\n\nRead these attached images before answering:\n" + images.joinToString("\n") else prompt) + seen
-        val fullPrompt = imagePrompt + "\n\n" + PhoneBridge.INSTRUCTIONS + "\nAndroid build tools, when installed, are in /opt/android-sdk. Run oma-build-check to check the toolchain. Run Gradle as `oma-gradle TASKS` (oma-build does): one build at a time and small, so Android does not kill the app for memory. Use the approval UI for blocked tools; never ask for blanket permission bypass.\n"
+        val fullPrompt = imagePrompt + "\n\n" + PhoneBridge.INSTRUCTIONS + "\n" + GROKBOT_RULE + "\nAndroid build tools, when installed, are in /opt/android-sdk. Run oma-build-check to check the toolchain. Run Gradle as `oma-gradle TASKS` (oma-build does): one build at a time and small, so Android does not kill the app for memory. Use the approval UI for blocked tools; never ask for blanket permission bypass.\n"
         val resumed = thread.takeIf { agent.bin == "claude" && !errand }
         // Decided as it starts, not as it was sent: work that waited may now run alone, or beside the other builder.
         val worktree = builderWorktree(id).takeIf { builderWorktreeWanted(id, AgentTasks.builders.associate { it.id to it.working }, agent.bin == "claude") }

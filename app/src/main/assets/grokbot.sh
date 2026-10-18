@@ -1,0 +1,66 @@
+#!/bin/bash
+# grokbot: Soma's two Grok helpers, for Boss and for any agent on any of his computers (Boss, 2026-10-18).
+#
+#   grokbot x "REQUEST"                     the X helper: finds posts, accounts and threads on X and reads their
+#                                           engagement, with Grok's own X search. The answer goes to stdout.
+#   grokbot make "REQUEST" [--out DIR]      the content helper: images and video, with Grok Imagine, and Higgsfield
+#                                           when it is connected here. Files are saved in DIR (default
+#                                           ~/Soma/made/DATE) and their paths printed last, one to a line.
+#   grokbot help
+#
+# Each call is one headless run of this computer's Grok CLI, signed in as Boss (`grok login`). What it can't do here it
+# says rather than guesses. Nothing here keeps a key: Grok keeps its own sign-in in ~/.grok.
+set -u -o pipefail
+
+usage() {
+  sed -n '4,9p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+grok_bin=${GROKBOT_GROK:-grok}
+command -v "$grok_bin" >/dev/null 2>&1 || { echo "grokbot: Grok CLI is not installed here (npm i -g @xai-official/grok)." >&2; exit 3; }
+
+X_RULES="You are Soma's X helper, the one agent Boss and his other agents ask about anything on X (Twitter). Use your X \
+search for every claim: find posts, accounts, threads and replies, and read their engagement (likes, reposts, replies, \
+views). Give links to the posts you cite (x.com/i/status/ID) and their dates. Say plainly when X search returns nothing \
+or too little to answer; never invent a post, a number or an account. You only read: never post, like, follow or \
+message. Answer in Markdown, short and scannable, most relevant first."
+
+MAKE_RULES="You are Soma's content helper, the one agent Boss and his other agents ask for images and video. Make what \
+is asked with Grok Imagine (image_gen, image_edit, image_to_video, reference_to_video); use Higgsfield's tools when they \
+are connected and the request names Higgsfield or needs what Imagine can't do. Save every finished file in the current \
+folder with a short descriptive file name, never elsewhere. End your answer with the absolute path of each file you \
+saved, one per line, each line starting with 'FILE: '. If something asked for can't be made here (Midjourney, Suno, or \
+a tool that isn't connected), say so in one line instead of substituting something else."
+
+case "${1:-}" in
+  x)
+    shift
+    [ "$#" -ge 1 ] && [ -n "$*" ] || { usage >&2; exit 2; }
+    # Reading only: the web and X, nothing that changes a file or calls a connected service.
+    exec "$grok_bin" --permission-mode dontAsk --no-subagents --no-plan --rules "$X_RULES" \
+      --deny MCPTool --deny Edit --deny Write --deny 'Bash(mkdir*)' --deny 'Bash(touch*)' \
+      --single="$*" < /dev/null ;;
+  make)
+    shift
+    out=""
+    words=()
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --out) [ "$#" -ge 2 ] || { usage >&2; exit 2; }; out=$2; shift 2 ;;
+        --out=*) out=${1#--out=}; shift ;;
+        *) words+=("$1"); shift ;;
+      esac
+    done
+    [ "${#words[@]}" -ge 1 ] && [ -n "${words[*]}" ] || { usage >&2; exit 2; }
+    out=${out:-$HOME/Soma/made/$(date +%Y-%m-%d)}
+    mkdir -p "$out" || exit 1
+    cd "$out" || exit 1
+    # Files only in its own folder; the image tools it needs to finish a file (resize, convert, trim); Higgsfield as
+    # the one connected service it may call. Anything else it asks for in -p is refused, as nobody answers.
+    exec "$grok_bin" --permission-mode acceptEdits --no-plan --rules "$MAKE_RULES" \
+      --allow 'Bash(sips *)' --allow 'Bash(ffmpeg *)' --allow 'Bash(ffprobe *)' --allow 'Bash(cp *)' --allow 'Bash(mv *)' \
+      --allow 'MCPTool(higgsfield*)' --deny 'Bash(rm *)' --deny 'Bash(sudo *)' \
+      --single="${words[*]}" < /dev/null ;;
+  help | -h | --help) usage ;;
+  *) usage >&2; exit 2 ;;
+esac

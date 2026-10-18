@@ -26,10 +26,10 @@ class OmaCommandTest {
 
     @Test fun theDispatcherAndTheOldNamesAreExecutablesTheLauncherOwns() {
         val rootfs = File(tmp.root, "arch")
-        val tools = omaTools(rootfs, { asset(OMA_ASSET) }, { asset(DROP_ASSET) }, { asset(MSG_ASSET) })
+        val tools = omaTools(rootfs, { asset(OMA_ASSET) }, { asset(DROP_ASSET) }, { asset(MSG_ASSET) }, { asset(GROKBOT_ASSET) })
         // `oma drop` was never a command of its own, so it has no old name; its script is installed with `oma`.
         assertEquals(
-            listOf("usr/local/bin/oma", "usr/local/bin/oma-thread", "usr/local/bin/oma-keep", "usr/local/bin/oma-agents", "usr/local/lib/oma/drop", "usr/local/lib/oma/msg", "usr/local/lib/oma/front"),
+            listOf("usr/local/bin/oma", "usr/local/bin/oma-thread", "usr/local/bin/oma-keep", "usr/local/bin/oma-agents", "usr/local/lib/oma/drop", "usr/local/lib/oma/msg", "usr/local/lib/oma/front", "usr/local/bin/grokbot"),
             tools.map { it.file.relativeTo(rootfs).path },
         )
         assertTrue(tools.all { it.policy == Policy.Owned && it.executable })
@@ -91,7 +91,7 @@ class OmaCommandTest {
     @Test fun theOldNamesRunOmaWithTheSameWords() {
         assumeTrue("sh is needed to run the aliases", has("sh"))
         val rootfs = File(tmp.root, "arch")
-        ManagedFiles(tmp.root, File(tmp.root, "managed.json")).sync(omaTools(rootfs, { asset(OMA_ASSET) }, { asset(DROP_ASSET) }, { asset(MSG_ASSET) }))
+        ManagedFiles(tmp.root, File(tmp.root, "managed.json")).sync(omaTools(rootfs, { asset(OMA_ASSET) }, { asset(DROP_ASSET) }, { asset(MSG_ASSET) }, { asset(GROKBOT_ASSET) }))
         // Stand-ins for the tools, which print what they were given.
         for (part in OMA_PARTS) File(rootfs, "$OMA_LIB/${part.lib}").apply { parentFile.mkdirs(); writeText("#!/bin/sh\necho \"${part.lib} \$*\"\n"); setExecutable(true) }
         fun run(vararg words: String): Pair<Int, String> {

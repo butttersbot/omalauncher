@@ -29,6 +29,12 @@ const val DROP_ASSET = "oma-drop.sh"
 /** `oma msg`, agent mail to the computers' agents (assist/AgentMail.kt has the other way), in the app's assets. */
 const val MSG_ASSET = "oma-msg.sh"
 
+/** `grokbot`, Soma's X and content helpers on Grok (Boss, 2026-10-18), the same script as on his computers, in the app's assets. */
+const val GROKBOT_ASSET = "grokbot.sh"
+
+/** Where `grokbot` is installed in the rootfs: a command of its own, as on his computers. */
+const val GROKBOT_COMMAND = "usr/local/bin/grokbot"
+
 /**
  * One subcommand of `oma`: [word] as typed, the tool in [OMA_LIB] named [lib] that carries it out, and
  * [oldName], the command it was before, null for one that was never a command of its own. [oldWord] is the word
@@ -90,14 +96,15 @@ fun omaAlias(part: OmaPart): String {
  * `oma`, the old names' aliases and `oma drop`'s script as installed in [rootfs], their bytes from [dispatcher] and
  * [drop]: the launcher's own, rewritten with each version.
  */
-fun omaTools(rootfs: File, dispatcher: () -> ByteArray, drop: () -> ByteArray, msg: () -> ByteArray): List<Managed> =
+fun omaTools(rootfs: File, dispatcher: () -> ByteArray, drop: () -> ByteArray, msg: () -> ByteArray, grokbot: () -> ByteArray): List<Managed> =
     listOf(Managed(File(rootfs, OMA_COMMAND), Policy.Owned, executable = true, content = dispatcher)) +
         OMA_PARTS.mapNotNull { part ->
             part.oldName?.let { Managed.text(File(rootfs, "usr/local/bin/$it"), Policy.Owned, executable = true) { omaAlias(part) } }
         } +
         Managed(File(rootfs, "$OMA_LIB/drop"), Policy.Owned, executable = true, content = drop) +
         Managed(File(rootfs, "$OMA_LIB/msg"), Policy.Owned, executable = true, content = msg) +
-        Managed.text(File(rootfs, "$OMA_LIB/front"), Policy.Owned, executable = true) { OMA_FRONT_SCRIPT }
+        Managed.text(File(rootfs, "$OMA_LIB/front"), Policy.Owned, executable = true) { OMA_FRONT_SCRIPT } +
+        Managed(File(rootfs, GROKBOT_COMMAND), Policy.Owned, executable = true, content = grokbot)
 
 /** [omaTools] for the provisioner, read from the assets. */
 fun omaGuestTools(context: Context, rootfs: File): List<Managed> =
@@ -106,4 +113,5 @@ fun omaGuestTools(context: Context, rootfs: File): List<Managed> =
         { context.assets.open(OMA_ASSET).use { it.readBytes() } },
         { context.assets.open(DROP_ASSET).use { it.readBytes() } },
         { context.assets.open(MSG_ASSET).use { it.readBytes() } },
+        { context.assets.open(GROKBOT_ASSET).use { it.readBytes() } },
     )

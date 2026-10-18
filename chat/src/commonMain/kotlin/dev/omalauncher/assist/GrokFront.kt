@@ -182,3 +182,15 @@ fun desktopFrontCommand(agent: FrontAgent, prompt: String, resume: String? = nul
         FrontAgent.Grok -> grokDesktopCommand(prompt, resume, newChat, canvas)
         FrontAgent.Haiku -> quickDesktopCommand(prompt, resume, newChat, canvas)
     }
+
+/**
+ * What every agent that works for Boss is told of the Grok helpers (Boss, 2026-10-18: "anytime we need to do anything
+ * on X, we'll use the X helper, and anytime we need some sort of content, like an image or video, we'll use the
+ * content helper"). Sent to the phone's builders with each request; the same words go in the instruction files on
+ * his computers.
+ */
+const val GROKBOT_RULE =
+    "Anything on X (finding posts, accounts or threads, reading engagement) goes to the X helper: run `grokbot x \"REQUEST\"`. " +
+        "Any image or video to make goes to the content helper: run `grokbot make \"REQUEST\" --out DIR` and use the files it " +
+        "lists after FILE:. Both run on Grok, signed in as Boss; if `grokbot` is missing or Grok isn't signed in, say so " +
+        "rather than doing the job another way."
