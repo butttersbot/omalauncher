@@ -213,6 +213,8 @@ class Runtime(
         started = true
         // Phone control switched off by a force-stop or an update, while he wanted it on, is put back: off this thread.
         dev.omalauncher.phone.PhoneControlHeal.atStart(context)
+        // Wireless debugging, which Android turns off at every restart and Wi-Fi drop, is put back on.
+        dev.omalauncher.phone.AdbWifiHeal.atStart(context)
         scope.launch {
             withContext(Dispatchers.IO) {
                 LauncherData.migrate(context)

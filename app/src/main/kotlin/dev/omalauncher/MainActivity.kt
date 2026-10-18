@@ -154,6 +154,7 @@ class MainActivity : ComponentActivity() {
         runtime.themes.syncLockPaper()
         // Coming home is when phone control is next wanted: put back if something other than him switched it off.
         dev.omalauncher.phone.PhoneControlHeal.look(this)
+        dev.omalauncher.phone.AdbWifiHeal.look(this)
     }
 
     /** Drops Recents cards whose Linux window no longer exists (app exited or process restarted). */
