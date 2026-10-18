@@ -3,7 +3,7 @@
 
 The spec's "First proof" list, as far as it goes without the phone and without a signed-in Claude Code.
 """
-import json, os, pathlib, re, signal, socket, subprocess, sys, tempfile, time, urllib.error, urllib.parse, urllib.request
+import plistlib, json, os, pathlib, re, signal, socket, subprocess, sys, tempfile, time, urllib.error, urllib.parse, urllib.request
 
 HERE = pathlib.Path(__file__).resolve().parent
 work = pathlib.Path(tempfile.mkdtemp(prefix='oma-runner-test-')).resolve()
@@ -666,6 +666,26 @@ try:
     cut = funcs['top_section'](long)
     check('handoff: Next.js is not Next, and a curly apostrophe still says what is next', funcs['top_section']('# P\n\n## A\n\na\n\n## Next.js\n\nx\n\n## What\u2019s next?\n\nb\n').endswith('b'))
     check('handoff: a top that is all one code block still serves something', funcs['top_section']('# P\n\n## A\n```\n' + 'code\n' * 2000 + '```\n') != '')
+    # Slice 11: a reinstall keeps the canvas service the runner was given, from install's own environment or else from the
+    # installed runner's login item, so it never comes back without it.
+    plist = work / 'service-env.plist'
+    senv = {'plistlib': plistlib, 'os': os, 'PLIST': plist}
+    exec(source[source.index('def service_environment():'):source.index('def install():')], senv)
+    saved = dict(os.environ)
+    try:
+        for k in ('OMA_RUNNER_SOMA_SERVICE', 'OMA_RUNNER_SOMA_SCREENS'):
+            os.environ.pop(k, None)
+        nothing = senv['service_environment']()
+        plist.write_bytes(plistlib.dumps({'EnvironmentVariables': {'PATH': '/bin', 'OMA_RUNNER_SOMA_SERVICE': 'http://100.1.2.3:8481', 'OTHER': 'x'}}))
+        from_plist = senv['service_environment']()
+        os.environ['OMA_RUNNER_SOMA_SERVICE'] = 'http://100.9.9.9:8481'
+        os.environ['OMA_RUNNER_SOMA_SCREENS'] = 'car,desk-macpro'
+        from_env = senv['service_environment']()
+    finally:
+        os.environ.clear(); os.environ.update(saved)
+    check('install keeps the canvas service: none when never given, the login item\'s when reinstalled, what install is given first',
+          nothing == {} and from_plist == {'OMA_RUNNER_SOMA_SERVICE': 'http://100.1.2.3:8481'}
+          and from_env == {'OMA_RUNNER_SOMA_SERVICE': 'http://100.9.9.9:8481', 'OMA_RUNNER_SOMA_SCREENS': 'car,desk-macpro'})
     check('handoff: the cap cuts at a line end and never leaves a code block open', len(cut) <= 6000 and cut.count('```') % 2 == 0 and cut.endswith('word'))
     check('handoff: a folder outside the allowed roots is never read', call('GET', '/projects/outside/handoff', token=now)[0] == 404)
     code, got = call('GET', '/projects/linked/handoff', token=now)

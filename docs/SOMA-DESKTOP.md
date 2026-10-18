@@ -52,6 +52,23 @@ Before the Macs are paired, the gate set in the runner's spec: a Codex thread on
 must not get it. On the Mac, a Keychain item Soma made is Soma's: another program asking for it gets a prompt, not the
 key. On Linux the Secret Service has no such per-program lock, so pairing an Omarchy box is Boss's call with that known.
 
+## The canvas service on the Mac Pro
+
+`soma --serve` (the packaged `Soma.app/Contents/MacOS/Soma --serve`) runs headless as a LaunchAgent in Boss's session.
+Set it up in this order:
+
+1. `Soma --mint-runner-key` gives this Mac's runner its own key for the service: it goes straight into the Keychain item
+   `oma-soma-service` (account `oma-runner`) and is never shown; only its digest is kept, in `~/.config/soma/runner-keys.json`
+   under this Mac's tailnet name. A runner's key registers its threads' canvas tokens and nothing else. Run it again to
+   replace the key. With the Keychain locked it gives up after 20 s and changes nothing.
+2. `SOMA_PUBLIC_URL=https://<this Mac's Funnel address> Soma --print-launch-agent > ~/Library/LaunchAgents/dev.omalauncher.soma.serve.plist`,
+   then `launchctl bootstrap gui/$(id -u)` it. Without `SOMA_PUBLIC_URL` in the environment the plist has no public address
+   and the service doesn't watch Funnel.
+3. `OMA_RUNNER_SOMA_SERVICE=http://<this Mac's tailnet address>:8481 oma-runner install`: the runner keeps the service's
+   address (and `OMA_RUNNER_SOMA_SCREENS`, default `car`) in its LaunchAgent, through later reinstalls too.
+
+The service finds Tailscale as the runner does: `OMA_RUNNER_TAILSCALE`, the App Store app, then Homebrew's.
+
 ## Building
 
 - On the Mac Pro: `./gradlew :desktop:createDistributable` gives `desktop/build/compose/binaries/main/app/Soma.app` (with

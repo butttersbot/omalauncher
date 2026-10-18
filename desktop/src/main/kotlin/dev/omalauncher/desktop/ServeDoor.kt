@@ -23,9 +23,40 @@ fun keyDigest(key: String): String = "sha256:" + MessageDigest.getInstance("SHA-
 /** The runner's table of paired devices and who is calling, by tailnet address. */
 class PairedDevices(
     private val keysFile: File,
+    /**
+     * The runners' own keys for this service (slice 11), apart from the devices': a runner's key registers its threads'
+     * tokens and nothing else, and lives in a file of the service's own, so no change to the runner's device table ever
+     * turns it into a device's key.
+     */
+    private val runnerKeys: File? = null,
     /** The device at a caller's address, as `tailscale whois` names it under Boss's own login; null for anyone else. */
     private val whois: (String) -> String?,
 ) {
+    private var runnerStamp: Pair<Long, Long>? = null
+    private var runners: List<Pair<String, String>> = emptyList()
+
+    @Synchronized private fun runnerTable(): List<Pair<String, String>> {
+        val f = runnerKeys ?: return emptyList()
+        val now = f.lastModified() to f.length()
+        if (now != runnerStamp) {
+            runners = runCatching {
+                val a = JSONObject(f.readText()).optJSONArray("runners") ?: JSONArray()
+                (0 until a.length()).mapNotNull { i -> a.optJSONObject(i)?.let { d -> d.optString("name") to d.optString("digest") } }
+                    .filter { (name, digest) -> DEVICE.matches(name) && DIGEST.matches(digest) }
+            }.getOrDefault(emptyList())
+            runnerStamp = now
+        }
+        return runners
+    }
+
+    /** The runner calling from [address] with [key]: only when the key is a runner's and that runner's machine is calling. */
+    fun runnerCaller(key: String, address: String): String? {
+        val given = keyDigest(key).toByteArray()
+        var found: String? = null
+        for ((name, digest) in runnerTable()) if (MessageDigest.isEqual(given, digest.toByteArray())) found = name
+        return found?.takeIf { it == whois(address) }
+    }
+
     private var stamp: Pair<Long, Long>? = null
     private var devices: List<Pair<String, String>> = emptyList()
 
@@ -63,12 +94,13 @@ class PairedDevices(
 }
 
 /** `tailscale whois`, as the runner asks it: the caller's machine name when it is signed in as Boss; kept a minute. */
-class TailscaleWhois(private val tailscale: String = System.getenv("OMA_RUNNER_TAILSCALE_APP") ?: "/Applications/Tailscale.app/Contents/MacOS/Tailscale") {
+class TailscaleWhois(private val tailscale: String = find()) {
     private val known = ConcurrentHashMap<String, Pair<String?, Long>>()
     @Volatile private var mine: String? = null
 
     private fun run(vararg args: String): JSONObject? = runCatching {
-        val p = ProcessBuilder(listOf(tailscale) + args).redirectErrorStream(false).start()
+        // The app's binary won't run without a TERM (the runner sets one too).
+        val p = ProcessBuilder(listOf(tailscale) + args).redirectErrorStream(false).apply { environment().putIfAbsent("TERM", "dumb") }.start()
         val out = p.inputStream.bufferedReader().readText()
         if (!p.waitFor(10, java.util.concurrent.TimeUnit.SECONDS)) { p.destroyForcibly(); null } else JSONObject(out)
     }.getOrNull()
@@ -86,6 +118,14 @@ class TailscaleWhois(private val tailscale: String = System.getenv("OMA_RUNNER_T
     }
 
     companion object {
+        /**
+         * Where the Tailscale command is, looked for as the runner looks: named outright, the App Store app, then Homebrew's
+         * (round: this Mac has only Homebrew's, and every caller was refused).
+         */
+        fun find(env: (String) -> String? = System::getenv, exists: (String) -> Boolean = { File(it).canExecute() }): String =
+            listOfNotNull(env("OMA_RUNNER_TAILSCALE"), env("OMA_RUNNER_TAILSCALE_APP"), "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+                "/opt/homebrew/bin/tailscale", "/usr/local/bin/tailscale").firstOrNull(exists) ?: "tailscale"
+
         /** This Mac's own tailnet address (100.64.0.0/10), found without running anything; null off the tailnet. */
         fun address(): String? = runCatching {
             DatagramSocket().use { probe ->

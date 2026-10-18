@@ -201,6 +201,16 @@ class SomaService(
         start()
     }
 
+    /** A thread's token registered by [by] (a device, or "runner:<machine>"), who alone may revoke it. */
+    private fun registerToken(ex: HttpExchange, by: String) {
+        fun no(code: Int, why: String) = answer(ex, code, JSONObject().put("ok", false).put("error", why))
+        val b = body(ex) ?: return no(400, "a JSON body")
+        val screens = b.optJSONArray("screens")?.let { a -> (0 until a.length()).mapNotNull { a.opt(it) as? String }.toSet() }
+            ?.takeIf { it.isNotEmpty() } ?: return no(400, "the screens the token is for, as a list")
+        runCatching { tokens.register(b.getString("digest"), ThreadGrant(b.getString("thread"), screens, b.optLong("expires", System.currentTimeMillis() + ThreadTokens.DAY), by)) }
+            .onSuccess { answer(ex, 200, JSONObject().put("ok", true)) }.onFailure { no(400, it.message ?: "a digest, a thread and its screens") }
+    }
+
     private fun answer(ex: HttpExchange, code: Int, body: JSONObject) = bytes(ex, code, "application/json", body.toString().toByteArray())
 
     private fun bytes(ex: HttpExchange, code: Int, type: String, data: ByteArray) {
@@ -234,7 +244,8 @@ class SomaService(
         val caller = ex.remoteAddress.address.hostAddress
         val device = if (bearer.isNotEmpty() && !bearer.startsWith(ThreadTokens.PREFIX)) devices.caller(bearer, caller) else null
         val thread = if (bearer.startsWith(ThreadTokens.PREFIX)) tokens.grant(bearer) else null
-        if (device == null && thread == null) {
+        val runner = if (device == null && thread == null && bearer.isNotEmpty() && !bearer.startsWith(ThreadTokens.PREFIX)) devices.runnerCaller(bearer, caller) else null
+        if (device == null && thread == null && runner == null) {
             return if (refused(caller)) answer(ex, 429, JSONObject().put("ok", false).put("error", "too many tries; wait a minute"))
             else answer(ex, 401, JSONObject().put("ok", false).put("error", "no"))
         }
@@ -242,6 +253,14 @@ class SomaService(
         val query = ex.requestURI.rawQuery.orEmpty().split('&').mapNotNull { q -> q.split('=', limit = 2).takeIf { it.size == 2 }?.let { it[0] to java.net.URLDecoder.decode(it[1], "UTF-8") } }.toMap()
         fun no(code: Int, why: String) = answer(ex, code, JSONObject().put("ok", false).put("error", why))
         when {
+            // A runner's key registers and revokes its threads' tokens, and says the service is there; nothing else.
+            runner != null -> when {
+                ex.requestMethod == "GET" && parts == listOf("health") -> answer(ex, 200, JSONObject().put("ok", true).put("service", "soma-serve").put("machine", machine))
+                ex.requestMethod == "POST" && parts == listOf("tokens") -> registerToken(ex, "runner:$runner")
+                ex.requestMethod == "DELETE" && parts.size == 2 && parts[0] == "tokens" ->
+                    if (tokens.revoke(parts[1], "runner:$runner")) answer(ex, 200, JSONObject().put("ok", true)) else no(404, "no token of yours by that digest")
+                else -> no(403, "a runner's key registers its threads' tokens, nothing else")
+            }
             // A thread's token reaches verbs on its screens, and nothing else (not even /health).
             thread != null -> when {
                 ex.requestMethod == "POST" && parts.size == 3 && parts[0] == "screens" && parts[2] == "canvas" -> {
@@ -326,13 +345,7 @@ class SomaService(
                     .put("notes", JSONArray(took.mapNotNull { it.why })))
             }
             // A runner registers the token it minted for a thread, and revokes it when the thread ends.
-            ex.requestMethod == "POST" && parts == listOf("tokens") -> {
-                val b = body(ex) ?: return no(400, "a JSON body")
-                val screens = b.optJSONArray("screens")?.let { a -> (0 until a.length()).mapNotNull { a.opt(it) as? String }.toSet() }
-                    ?.takeIf { it.isNotEmpty() } ?: return no(400, "the screens the token is for, as a list")
-                runCatching { tokens.register(b.getString("digest"), ThreadGrant(b.getString("thread"), screens, b.optLong("expires", System.currentTimeMillis() + ThreadTokens.DAY), device!!)) }
-                    .onSuccess { answer(ex, 200, JSONObject().put("ok", true)) }.onFailure { no(400, it.message ?: "a digest, a thread and its screens") }
-            }
+            ex.requestMethod == "POST" && parts == listOf("tokens") -> registerToken(ex, device!!)
             // Only the device that registered a token revokes it.
             ex.requestMethod == "DELETE" && parts.size == 2 && parts[0] == "tokens" ->
                 if (tokens.revoke(parts[1], device!!)) answer(ex, 200, JSONObject().put("ok", true)) else no(404, "no token of yours by that digest")
@@ -385,6 +398,38 @@ class SomaService(
          * Runs the service until it is ended: headless, under its own lock, on this Mac's tailnet address (the loopback when
          * SOMA_SERVE_BIND is 127.0.0.1, for a test, where SOMA_SERVE_WHOIS_FILE says who calls).
          */
+        /**
+         * A new key for this Mac's runner (slice 11): its digest kept in the service's runner-keys.json under this
+         * machine's tailnet name (replacing an older one), the key itself put in the Keychain item the runner reads,
+         * oma-soma-service, through `security`'s own input so it never sits in a command line, and never shown. What to say.
+         */
+        @Synchronized fun mintRunnerKey(home: File = SomaHome.dir, name: String? = TailscaleWhois.address()?.let { TailscaleWhois().name(it) },
+                          keep: (String) -> Boolean = ::keepInKeychain): String {
+            val machine = name ?: return "This Mac isn't on the tailnet as you, so its runner can't be given a key."
+            val key = "soma-runner-" + ByteArray(32).also(java.security.SecureRandom()::nextBytes).joinToString("") { "%02x".format(it) }
+            if (!keep(key)) return "The key couldn't be put in the Keychain, so nothing was changed."
+            val file = File(home, "runner-keys.json")
+            val was = runCatching { JSONObject(file.readText()).optJSONArray("runners") }.getOrNull() ?: JSONArray()
+            val kept = (0 until was.length()).mapNotNull { was.optJSONObject(it) }.filter { it.optString("name") != machine }
+            home.mkdirs()
+            val fresh = File(home, ".runner-keys.json." + java.util.UUID.randomUUID() + ".new")
+            fresh.writeText(JSONObject().put("runners", JSONArray(kept + JSONObject().put("name", machine).put("digest", keyDigest(key)).put("added", System.currentTimeMillis()))).toString())
+            fresh.setReadable(false, false); fresh.setReadable(true, true)
+            if (!fresh.renameTo(file)) { file.delete(); fresh.renameTo(file) }
+            return "This Mac's runner (\"$machine\") has a new key for the canvas service: in the Keychain item oma-soma-service, its digest in ${file.path}. It registers its threads' tokens and nothing else."
+        }
+
+        private fun keepInKeychain(key: String): Boolean = runCatching {
+            // Its output is let go, never read: a read would wait behind an unlock dialog and the time limit below never come.
+            val p = ProcessBuilder("security", "-i").redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.DISCARD).start()
+            p.outputStream.bufferedWriter().use { it.write("add-generic-password -U -s oma-soma-service -a oma-runner -w $key\n") }
+            // Not done in time (a locked keychain asking to be unlocked): stopped, so no key nobody recorded lands later.
+            if (!p.waitFor(20, java.util.concurrent.TimeUnit.SECONDS)) { p.destroyForcibly(); return@runCatching false }
+            // The item is looked for by its account (without its secret) to know it is there.
+            p.exitValue() == 0 &&
+                ProcessBuilder("security", "find-generic-password", "-s", "oma-soma-service", "-a", "oma-runner").redirectErrorStream(true).start().let { f -> f.inputStream.readAllBytes(); f.waitFor() == 0 }
+        }.getOrDefault(false)
+
         fun run() {
             System.setProperty("java.awt.headless", "true")
             OwlScreen.host = OwlHost.Service
@@ -403,7 +448,7 @@ class SomaService(
             val host = DesktopChatHost(platform, engine, DesktopFrontAgent(engine, platform, notices), notices)
             val gate = CommandGate(SomaHome.approved, machine)
             val source = dev.omalauncher.canvas.withWidgetAsks(dev.omalauncher.canvas.chatHostModules(host, dev.omalauncher.canvas.cockpitFeeds(), handoffs = engine::handoffs, registry = engine::projects), gate)
-            val service = SomaService(home, PairedDevices(keys, whois), source, gate, machine)
+            val service = SomaService(home, PairedDevices(keys, File(home, "runner-keys.json"), whois), source, gate, machine)
             // A trial on the loopback can leave his runners alone.
             if (System.getenv("SOMA_SERVE_NO_RUNNERS") != "1") engine.open()
             kotlin.concurrent.thread(name = "soma-feeds", isDaemon = true) {
@@ -435,21 +480,25 @@ class SomaService(
         }
 
         /** The LaunchAgent that runs the service in his session: printed for him to install, never installed from here. */
-        fun launchAgent(command: String): String = """
+        /** The service's LaunchAgent for [command], with [env] (its public address, SOMA_PUBLIC_URL, when Funnel is on). */
+        fun launchAgent(command: String, env: Map<String, String> = emptyMap()): String = """
             <?xml version="1.0" encoding="UTF-8"?>
             <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
             <plist version="1.0"><dict>
               <key>Label</key><string>dev.omalauncher.soma.serve</string>
-              <key>ProgramArguments</key><array><string>$command</string><string>--serve</string></array>
+              <key>ProgramArguments</key><array><string>${xml(command)}</string><string>--serve</string></array>
               <key>RunAtLoad</key><true/>
               <key>KeepAlive</key><true/>
               <key>ProcessType</key><string>Interactive</string>
+              <key>EnvironmentVariables</key><dict>${(mapOf("PATH" to "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin") + env).entries.joinToString("") { (k, v) -> "<key>${xml(k)}</key><string>${xml(v)}</string>" }}</dict>
               <key>StandardOutPath</key><string>${System.getProperty("user.home")}/Library/Logs/soma-serve.log</string>
               <key>StandardErrorPath</key><string>${System.getProperty("user.home")}/Library/Logs/soma-serve.log</string>
             </dict></plist>
         """.trimIndent()
     }
 }
+
+private fun xml(s: String) = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 /** A screen's page as the service draws it: its modules and widgets on the screen's own grid, City Pop, nothing else. */
 @Composable

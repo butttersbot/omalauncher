@@ -187,7 +187,9 @@ def soma_service_key():
     # Missing a few minutes ago: not asked again on every turn (each ask can take seconds).
     if time.time() - canvas_key_missing[0] < 300:
         return None
-    command = ['secret-tool', 'lookup', 'service', 'oma-soma-service'] if LINUX else ['security', 'find-generic-password', '-s', 'oma-soma-service', '-w']
+    # The item `Soma --mint-runner-key` makes, by its account too: an older one by hand under another account is not it.
+    command = (['secret-tool', 'lookup', 'service', 'oma-soma-service', 'account', 'oma-runner'] if LINUX
+               else ['security', 'find-generic-password', '-s', 'oma-soma-service', '-a', 'oma-runner', '-w'])
     try:
         found = subprocess.run(command, capture_output=True, text=True, timeout=5).stdout.strip() or None
     except (OSError, subprocess.SubprocessError):
@@ -1726,6 +1728,20 @@ def runner_python():
     sys.exit('oma-runner: no python3 of 3.11 or later here (it needs tomllib). Install one, e.g. brew install python, and run install again.')
 
 
+def service_environment():
+    """The canvas service's settings the installed runner keeps (slice 11): what install was run with, else what the
+    running runner was started with, so a reinstall never drops the service it was given."""
+    names = ('OMA_RUNNER_SOMA_SERVICE', 'OMA_RUNNER_SOMA_SCREENS')
+    kept = {}
+    try:
+        installed = plistlib.loads(PLIST.read_bytes()) if PLIST.exists() else {}
+        env = installed.get('EnvironmentVariables', {}) if isinstance(installed, dict) else {}
+        kept = {k: v for k, v in env.items() if k in names and isinstance(v, str)} if isinstance(env, dict) else {}
+    except (OSError, ValueError, plistlib.InvalidFileException):
+        kept = {}
+    return {**kept, **{k: os.environ[k] for k in names if os.environ.get(k)}}
+
+
 def install():
     if not TOKEN_FILE.exists() and not DEVICES.table():
         key = secrets.token_urlsafe(32)
@@ -1745,18 +1761,19 @@ def install():
     INSTALLED.chmod(0o755)
     LOGS.mkdir(parents=True, exist_ok=True)
     path = ':'.join([str(HOME / '.local/bin'), str(HOME / '.local/share/mise/shims'), str(HOME / '.bun/bin'), '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin'])
+    service_env = service_environment()
     if LINUX:
         UNIT.parent.mkdir(parents=True, exist_ok=True)
         UNIT.write_text('[Unit]\nDescription=oma-runner: coding agents for Soma\n\n[Service]\n'
-                        'ExecStart=%s %s serve\nRestart=always\nRestartSec=5\nWorkingDirectory=%s\nEnvironment=PATH=%s\nEnvironment=HOME=%s\n'
+                        'ExecStart=%s %s serve\nRestart=always\nRestartSec=5\nWorkingDirectory=%s\nEnvironment=PATH=%s\nEnvironment=HOME=%s\n%s'
                         'StandardOutput=append:%s\nStandardError=append:%s\n\n[Install]\nWantedBy=default.target\n'
-                        % (python, INSTALLED, HOME, path, HOME, LOGS / 'runner.log', LOGS / 'runner.log'))
+                        % (python, INSTALLED, HOME, path, HOME, ''.join('Environment=%s=%s\n' % kv for kv in service_env.items()), LOGS / 'runner.log', LOGS / 'runner.log'))
         stop_service()
         return start_service()
     PLIST.parent.mkdir(parents=True, exist_ok=True)
     PLIST.write_bytes(plistlib.dumps({
         'Label': LABEL, 'ProgramArguments': [python, str(INSTALLED), 'serve'], 'RunAtLoad': True, 'KeepAlive': True,
-        'EnvironmentVariables': {'PATH': path, 'HOME': str(HOME)}, 'WorkingDirectory': str(HOME),
+        'EnvironmentVariables': {'PATH': path, 'HOME': str(HOME), **service_env}, 'WorkingDirectory': str(HOME),
         'StandardOutPath': str(LOGS / 'runner.log'), 'StandardErrorPath': str(LOGS / 'runner.log')}))
     stop_service()
     start_service()
