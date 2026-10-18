@@ -174,7 +174,11 @@ object QuickLane {
     private fun read(context: Context, prompt: String, page: String?, away: Boolean, waited: Long?, chat: String = "") {
         val runtime = (context.applicationContext as App).runtime
         // Checked as it is read, so a request that waited goes to whoever answers now; ready() was true when it was sent.
-        val agent = agent(context) ?: error("Install and sign in to Grok or Claude Code in Omalauncher first.")
+        // Grok runs only behind its command guard; if that can't be put in place, Haiku answers instead, or nobody.
+        val agent = agent(context)?.let { chosen ->
+            if (chosen != FrontAgent.Grok || writeGrokGuard(java.io.File(runtime.proot.home, GROK_FRONT_FOLDER))) chosen
+            else FrontAgent.Haiku.takeIf { runtime.agents.installed.any { it.bin == "claude" } }
+        } ?: error("Install and sign in to Grok or Claude Code in Omalauncher first.")
         // Only that agent's own conversation is followed up on: a Claude session means nothing to Grok.
         val resumed = frontSession(agent, if (chat.isEmpty()) thread else TabBook.of(context).chat(chat)?.front?.ifEmpty { null })
         val log = ChatLog.of(context)

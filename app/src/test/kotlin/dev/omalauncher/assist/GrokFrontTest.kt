@@ -42,7 +42,8 @@ class GrokFrontTest {
         val args = arguments(grokQuickCommand(prompt))
         assertEquals("--single=$prompt", args.last())
         assertEquals(1, args.count { it.startsWith("--single") })
-        assertEquals(listOf("--output-format", "streaming-messages-json", "--include-partial-messages", "--model", QUICK_GROK_MODEL), args.take(5))
+        assertEquals(listOf("--cwd", System.getenv("HOME") + "/" + GROK_FRONT_FOLDER, "--output-format", "streaming-messages-json", "--include-partial-messages", "--model", QUICK_GROK_MODEL), args.take(7))
+        assertTrue(grokQuickCommand(prompt).startsWith("GROK_FOLDER_TRUST=0 OMA_FRONT_GUARD=1 OMA_FRONT_ALLOW='"))
         assertEquals(quickSystemPrompt(), args[args.indexOf("--rules") + 1])
         assertEquals("dontAsk", args[args.indexOf("--permission-mode") + 1])
         assertTrue(args.containsAll(listOf("--no-subagents", "--no-plan")))
@@ -111,5 +112,46 @@ class GrokFrontTest {
         assertEquals(QuickEvent.Result("It is noon.", false, id), quickEvent(result))
         assertEquals(QuickEvent.Result("Not signed in", true, id), quickEvent(failed))
         assertEquals("It is noon.", listOf(init, delta, message, result).mapNotNull(::quickEvent).fold(QuickAnswer()) { a, e -> a.after(e) }.text)
+    }
+
+    /** [GROK_FRONT_GUARD] as Grok runs it: the event on stdin, a deny printed and exit 2, or exit 0 to let it through. */
+    private fun guard(command: String, allow: String?, on: Boolean = true): Int {
+        val dir = Files.createTempDirectory("oma-guard-test").toFile()
+        try {
+            assertTrue(writeGrokGuard(dir))
+            val process = ProcessBuilder(java.io.File(dir, ".grok/hooks/oma-front.sh").path).apply {
+                environment().remove("OMA_FRONT_GUARD"); environment().remove("OMA_FRONT_ALLOW")
+                if (on) environment()["OMA_FRONT_GUARD"] = "1"
+                allow?.let { environment()["OMA_FRONT_ALLOW"] = it }
+            }.start()
+            process.outputStream.bufferedWriter().use { it.write(org.json.JSONObject().put("toolInput", org.json.JSONObject().put("command", command)).toString() + "\n") }
+            process.inputStream.readBytes()
+            return process.waitFor()
+        } finally { dir.deleteRecursively() }
+    }
+
+    @Test fun theGuardLetsThroughOnlyOnePlainListedCommand() {
+        val allow = GROK_QUICK_ALLOWED.filter { it.startsWith("Bash(") }.joinToString("\n") { it.removePrefix("Bash(").removeSuffix(")") }
+        for (ok in listOf("oma-phone status", "oma-phone screen --until Settings", "date +%H", "oma status", "oma-phone canvas place needs card top-left --page 'Soma'")) assertEquals(ok, 0, guard(ok, allow))
+        for (no in listOf("python3 -c 'print(1)'", "ls", "oma-phone press OK", "date; rm -rf /", "date && id", "date \$(id)", "date `id`", "oma-phone status | sh", "oma status > /root/x", "date\nid", "oma-agents stop", "")) assertEquals(no, 2, guard(no, allow))
+        // With nothing listed, nothing runs; and outside the front agent's runs it lets everything through, for Grok to decide.
+        assertEquals(2, guard("date", ""))
+        assertEquals(2, guard("date", null))
+        assertEquals(0, guard("python3 -c 'print(1)'", null, on = false))
+    }
+
+    @Test fun theGuardIsPutBackWhenChangedAndTheRunTurnsItOn() {
+        val dir = Files.createTempDirectory("oma-guard-test").toFile()
+        try {
+            assertTrue(writeGrokGuard(dir))
+            val script = java.io.File(dir, ".grok/hooks/oma-front.sh")
+            script.writeText("#!/bin/sh\nexit 0\n")
+            assertTrue(writeGrokGuard(dir))
+            assertEquals(GROK_FRONT_GUARD, script.readText())
+            assertEquals(GROK_FRONT_HOOK, java.io.File(dir, ".grok/hooks/oma-front.json").readText())
+            org.json.JSONObject(GROK_FRONT_HOOK)
+        } finally { dir.deleteRecursively() }
+        assertEquals("GROK_FOLDER_TRUST=0 OMA_FRONT_GUARD=1 OMA_FRONT_ALLOW='date*\nsoma canvas *' ", grokGuardEnv(listOf("Read", "Bash(date*)", "WebFetch", "Bash(soma canvas *)")))
+        assertTrue(grokQuickCommand("q", newChat = true).startsWith("GROK_FOLDER_TRUST=0 OMA_FRONT_GUARD=1 OMA_FRONT_ALLOW='' grok "))
     }
 }

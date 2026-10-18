@@ -1,6 +1,7 @@
 package dev.omalauncher.assist
 
 import dev.omalauncher.linux.shellQuote
+import java.io.File
 
 /*
  * Grok as the front agent (Boss, 2026-10-18: the front agent goes from Haiku to Grok, with Haiku kept to switch back).
@@ -65,6 +66,64 @@ val GROK_QUICK_CHAT_ALLOWED = listOf("WebFetch")
 val GROK_QUICK_DENIED = listOf("MCPTool", "Edit", "Write", "Bash(mkdir*)", "Bash(touch*)")
 
 /**
+ * Where the front agent's Grok runs, in the guest's home on the phone (Soma's folder holds its own on a computer): a
+ * folder of its own holding only [GROK_FRONT_HOOK] and [GROK_FRONT_GUARD], given to Grok with `--cwd`.
+ */
+const val GROK_FRONT_FOLDER = ".cache/oma-front"
+
+/**
+ * The front agent's command guard, a `PreToolUse` hook (Grok's own way to allow only some commands; 2026-10-18, seen
+ * on the Mac: Claude Code's `"defaultMode": "auto"` in ~/.claude/settings.json outranks `--permission-mode dontAsk`,
+ * and Grok then ran `python3 -c`). Only in a run that sets OMA_FRONT_GUARD=1, so no other Grok run is touched: a shell
+ * command runs only when it is one plain command that matches a line of OMA_FRONT_ALLOW, and anything it can't read is
+ * refused. Grok runs a hook that crashes as if it allowed the call, so nothing here may fail on its own.
+ */
+const val GROK_FRONT_GUARD = """#!/bin/sh
+# Soma: the front agent's command guard. Written by Soma; changes here are replaced.
+[ "${'$'}{OMA_FRONT_GUARD:-}" = 1 ] || exit 0
+deny() { printf '{"decision":"deny","reason":"%s"}\n' "${'$'}1"; exit 2; }
+command -v jq >/dev/null 2>&1 || deny "Only listed commands run here, and they can't be checked without jq."
+input=${'$'}(cat) || deny "Unreadable request."
+cmd=${'$'}(printf '%s' "${'$'}input" | jq -r '.toolInput.command // .tool_input.command // empty' 2>/dev/null) || deny "Unreadable command."
+[ -n "${'$'}cmd" ] || deny "Nothing to run."
+case ${'$'}cmd in
+  *'
+'*|*';'*|*'&'*|*'|'*|*'<'*|*'>'*|*'${'$'}'*|*'`'*|*'('*|*')'*|*'\'*) deny "Only one plain command runs here." ;;
+esac
+cmd=${'$'}(printf '%s' "${'$'}cmd" | sed 's/^ *//; s/ *${'$'}//')
+IFS='
+'
+for pattern in ${'$'}{OMA_FRONT_ALLOW:-}; do
+  case ${'$'}cmd in ${'$'}pattern) exit 0 ;; esac
+done
+deny "Not a command the front agent may run."
+"""
+
+/** The hook file that runs [GROK_FRONT_GUARD] before every shell command, in `.grok/hooks/` of [GROK_FRONT_FOLDER]. */
+const val GROK_FRONT_HOOK = """{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"oma-front.sh","timeout":5}]}]}}
+"""
+
+/** Puts the guard in [folder] (made when missing), rewriting what differs; true when it is there as it should be. */
+fun writeGrokGuard(folder: File): Boolean = runCatching {
+    val hooks = File(folder, ".grok/hooks").apply { mkdirs() }
+    for ((name, text) in listOf("oma-front.json" to GROK_FRONT_HOOK, "oma-front.sh" to GROK_FRONT_GUARD)) {
+        val file = File(hooks, name)
+        if (!file.isFile || file.readText() != text) file.writeText(text)
+        if (name.endsWith(".sh") && !file.canExecute()) file.setExecutable(true)
+    }
+    File(hooks, "oma-front.sh").canExecute()
+}.getOrDefault(false)
+
+/**
+ * What the run is told to let the guard check: on, the commands its `Bash(...)` rules in [allowed] name as patterns
+ * (one to a line), and Grok's folder trust off so the guard folder's hook loads without asking. Nothing else of the
+ * folder is there to load.
+ */
+fun grokGuardEnv(allowed: List<String>): String =
+    "GROK_FOLDER_TRUST=0 OMA_FRONT_GUARD=1 OMA_FRONT_ALLOW=" +
+        shellQuote(allowed.filter { it.startsWith("Bash(") && it.endsWith(")") }.joinToString("\n") { it.removePrefix("Bash(").removeSuffix(")") }) + " "
+
+/**
  * The guest command that answers [prompt] with Grok, as [quickCommand] does with Claude: the same prompt, told the same
  * rules ([quickSystemPrompt]) through `--rules`. `dontAsk` runs only what [GROK_QUICK_ALLOWED] allows and refuses the
  * rest without asking, which is what nobody answering its prompts means for Claude. No subagents and no plan mode: the
@@ -72,7 +131,7 @@ val GROK_QUICK_DENIED = listOf("MCPTool", "Edit", "Write", "Bash(mkdir*)", "Bash
  * his words, never an option.
  */
 fun grokQuickCommand(prompt: String, resume: String? = null, mac: Boolean = false, newChat: Boolean = false): String =
-    "grok --output-format streaming-messages-json --include-partial-messages --model $QUICK_GROK_MODEL " +
+    grokGuardEnv(if (newChat) GROK_QUICK_CHAT_ALLOWED else GROK_QUICK_ALLOWED) + "grok --cwd \"\$HOME/$GROK_FRONT_FOLDER\" --output-format streaming-messages-json --include-partial-messages --model $QUICK_GROK_MODEL " +
         (resume?.takeIf(GROK_SESSION::matches)?.let { "--resume $it " } ?: "") +
         "--permission-mode dontAsk --no-subagents --no-plan --rules ${shellQuote(quickSystemPrompt(mac, newChat))} " +
         "--tools ${(if (newChat) GROK_QUICK_CHAT_TOOLS else GROK_QUICK_TOOLS).joinToString(",")} " +
@@ -109,7 +168,7 @@ private val GROK_SESSION = Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[
  * [quickDesktopPrompt], with the web, and the shell for `soma canvas` alone when it may arrange the canvas ([canvas]).
  */
 fun grokDesktopCommand(prompt: String, resume: String? = null, newChat: Boolean = false, canvas: Boolean = false): String =
-    "grok --output-format streaming-messages-json --include-partial-messages --model $QUICK_GROK_MODEL " +
+    grokGuardEnv(GROK_QUICK_CHAT_ALLOWED + if (canvas) DESKTOP_CANVAS_ALLOWED else emptyList()) + "grok --output-format streaming-messages-json --include-partial-messages --model $QUICK_GROK_MODEL " +
         (resume?.takeIf(GROK_SESSION::matches)?.let { "--resume $it " } ?: "") +
         "--permission-mode dontAsk --no-subagents --no-plan --rules ${shellQuote(quickDesktopPrompt(newChat, canvas))} " +
         "--tools ${(GROK_QUICK_CHAT_TOOLS + if (canvas) listOf("run_terminal_cmd") else emptyList()).joinToString(",")} " +

@@ -64,7 +64,8 @@ class DesktopGrokFrontTest {
 
     @Test fun grokOnAComputerHasTheWebAndSomaCanvasAlone() {
         val plain = grokDesktopCommand("q")
-        assertTrue(plain.startsWith("grok --output-format streaming-messages-json --include-partial-messages --model $QUICK_GROK_MODEL "))
+        assertTrue(plain.startsWith("GROK_FOLDER_TRUST=0 OMA_FRONT_GUARD=1 OMA_FRONT_ALLOW='' grok --output-format streaming-messages-json --include-partial-messages --model $QUICK_GROK_MODEL "))
+        assertTrue(grokDesktopCommand("q", canvas = true).startsWith("GROK_FOLDER_TRUST=0 OMA_FRONT_GUARD=1 OMA_FRONT_ALLOW='soma canvas *' grok "))
         assertTrue(plain.contains(" --tools web_search,web_fetch --allow 'WebFetch' --deny "))
         assertTrue(plain.contains(" --permission-mode dontAsk "))
         val canvas = grokDesktopCommand("q", canvas = true)

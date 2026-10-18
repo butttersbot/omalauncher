@@ -26,6 +26,7 @@ import dev.omalauncher.assist.frontRoute
 import dev.omalauncher.assist.desktopFrontCommand
 import dev.omalauncher.assist.frontSession
 import dev.omalauncher.assist.frontThread
+import dev.omalauncher.assist.writeGrokGuard
 import dev.omalauncher.assist.quickEvent
 import dev.omalauncher.oma.ChatHistory
 import dev.omalauncher.oma.ChatTask
@@ -164,7 +165,10 @@ class DesktopFrontAgent(
                 val child = ProcessBuilder("/bin/sh", "-c", command).redirectErrorStream(false).apply {
                     // In a folder of its own with nothing in it: what the agent may run reads only where it runs (s6 Critic:
                     // read-only commands chained after `soma canvas` read the folder Soma was started in, `/` from launchd).
-                    if (token != null) directory(emptyFolder())
+                    val folder = if (token != null) emptyFolder() else if (agent == FrontAgent.Grok) File(SomaHome.dir, "front-grok") else null
+                    // Grok runs only behind its command guard (GrokFront.kt), which lives in the folder it runs in.
+                    if (agent == FrontAgent.Grok) check(writeGrokGuard(folder!!)) { "Soma could not put Grok's command guard in place." }
+                    folder?.let(::directory)
                     environment()["PATH"] = (listOfNotNull(shim?.parent?.takeIf { token != null }, File(bin).parent) + listOf("/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin")).joinToString(":")
                     environment().remove(CanvasDoor.TOKEN)
                     token?.let { environment()[CanvasDoor.TOKEN] = it }
