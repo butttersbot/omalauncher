@@ -352,6 +352,26 @@ class GrokConnectorTest {
         stop()
     }
 
+    @Test fun grokMayKeepATemplateButLayingOneOutOrSayingWhatHePrefersWaitsForHim() {
+        val token = signedIn().getString("access_token")
+        fun said(r: JSONObject) = r.getJSONArray("content").getJSONObject(0).getString("text")
+        assertFalse(tool(token, "soma_arrange", JSONObject().put("text", "place needs card top-left")).getBoolean("isError"))
+        val kept = tool(token, "soma_arrange", JSONObject().put("text", "template-save Drive"))
+        assertFalse(said(kept), kept.getBoolean("isError"))
+        assertTrue(File(home, "templates/drive.json").isFile)
+        for (words in listOf("template-apply Drive", "remember Needs you goes top left", "template-save Drive --replace")) assertTrue(said(tool(token, "soma_arrange", JSONObject().put("text", words))).contains("waits for Boss's tap"))
+        // Keeping one by a name he already has is refused, never a silent replace.
+        assertTrue(tool(token, "soma_arrange", JSONObject().put("text", "template-save Drive")).getBoolean("isError"))
+        assertEquals("", service.shelf.layout())
+        assertEquals(3, service.source.asks().count { it.title.startsWith("Grok asks:") })
+        // What Grok kept is logged as Grok's; what he approved, as his approval of Grok's.
+        val ask = service.source.asks().first { it.title.contains("remember") }
+        service.source.answer(ask, true) {}
+        val log = File(home, "shelf.log").readLines().map { JSONObject(it).getString("actor") to JSONObject(it).getJSONArray("words").getString(0) }
+        assertEquals(listOf("grok" to "template-save", "grok, approved by him" to "remember"), log)
+        stop()
+    }
+
     @Test fun aGrokTokenOpensNothingElse() {
         val token = signedIn().getString("access_token")
         // Not the agents' API on the tailnet door.

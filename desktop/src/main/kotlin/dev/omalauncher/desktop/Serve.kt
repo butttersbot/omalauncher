@@ -81,6 +81,20 @@ class SomaService(
 ) {
     val tokens = ThreadTokens(File(home, "thread-tokens.json"))
 
+    /** Templates and LAYOUT.md (slice 10), shared by every screen this service keeps. */
+    val shelf = FileShelf(home)
+
+    /**
+     * Who changed the shelf, and how: LAYOUT.md and templates have no verb log of their own, so a line someone added is
+     * traceable here (round-2 review). Only the words that write.
+     */
+    internal fun shelfLog(actor: String, screen: String, words: List<String>, done: JSONObject? = null) {
+        if (words.firstOrNull() !in setOf("remember", "template-save")) return
+        // A preference already there changed nothing.
+        if (done?.optString("did")?.startsWith("LAYOUT.md already says") == true) return
+        runCatching { File(home, "shelf.log").appendText(JSONObject().put("at", System.currentTimeMillis()).put("actor", actor).put("screen", screen).put("words", JSONArray(words.map { it.take(200) })).toString() + "\n") }
+    }
+
     /** The Soma connector for Grok (slice 9c), on the public door; what it asks of him waits in Needs you here. */
     val grok = GrokConnector(this, home)
 
@@ -221,7 +235,7 @@ class SomaService(
                     if (parts[1] !in thread.screens) return no(403, "this thread's token isn't for the screen \"${parts[1]}\"")
                     val screen = screen(parts[1]) ?: return no(404, "no screen \"${parts[1]}\"")
                     val words = words(body(ex)) ?: return no(400, "words, as a list of strings")
-                    answer(ex, 200, CanvasCommands.run(words, screen, "thread-${thread.thread}", "agent:${thread.thread}"))
+                    answer(ex, 200, CanvasCommands.run(words, screen, "thread-${thread.thread}", "agent:${thread.thread}", shelf).also { if (it.optBoolean("ok")) shelfLog("thread-${thread.thread}", parts[1], words, it) })
                 }
                 else -> no(403, "a thread's token is for arranging its screens, nothing else")
             }
@@ -249,11 +263,31 @@ class SomaService(
                 val screen = screen(parts[1]) ?: return no(404, "no screen \"${parts[1]}\"")
                 val b = body(ex) ?: return no(400, "a JSON body")
                 val words = words(b) ?: return no(400, "words, as a list of strings")
-                answer(ex, 200, CanvasCommands.run(words, screen, b.optString("request").ifEmpty { "device-$device-${System.currentTimeMillis()}" }, "agent:$device"))
+                answer(ex, 200, CanvasCommands.run(words, screen, b.optString("request").ifEmpty { "device-$device-${System.currentTimeMillis()}" }, "agent:$device", shelf).also { if (it.optBoolean("ok")) shelfLog("agent:$device", parts[1], words, it) })
             }
             ex.requestMethod == "POST" && parts == listOf("widgets") -> {
                 val b = body(ex) ?: return no(400, "a JSON body")
                 answer(ex, 200, install(b.optString("name"), b.optString("text")))
+            }
+            // The shelf (slice 10) for his other desktops' Soma: templates and LAYOUT.md, by a paired device's key only.
+            ex.requestMethod == "GET" && parts == listOf("shelf") -> answer(ex, 200, JSONObject().put("ok", true).put("templates", JSONArray(shelf.templates())).put("layout", shelf.layout()))
+            ex.requestMethod == "GET" && parts.size == 3 && parts[0] == "shelf" && parts[1] == "templates" -> {
+                val name = runCatching { dev.omalauncher.canvas.templateNameOf(java.net.URLDecoder.decode(parts[2], "UTF-8")) }.getOrNull() ?: return no(400, "not a template's name")
+                shelf.template(name)?.let { answer(ex, 200, JSONObject().put("ok", true).put("text", it)) } ?: no(404, "no template \"$name\"")
+            }
+            ex.requestMethod == "PUT" && parts.size == 3 && parts[0] == "shelf" && parts[1] == "templates" -> {
+                val name = runCatching { dev.omalauncher.canvas.templateNameOf(java.net.URLDecoder.decode(parts[2], "UTF-8")) }.getOrNull() ?: return no(400, "not a template's name")
+                val text = body(ex)?.optString("text").orEmpty()
+                if (!templateTextOk(name, text)) return no(400, "not a template")
+                shelf.keepTemplate(name, text)
+                shelfLog(device!!, "shelf", listOf("template-save", name))
+                answer(ex, 200, JSONObject().put("ok", true))
+            }
+            ex.requestMethod == "POST" && parts == listOf("shelf", "layout") -> {
+                val line = body(ex)?.optString("line").orEmpty().trim()
+                if (line.isEmpty() || line.length > 200 || dev.omalauncher.canvas.hasInvisible(line)) return no(400, "one line he stated, at most 200 characters")
+                if (shelf.layout().lines().none { it == "- $line" }) { shelf.remember(line); shelfLog(device!!, "shelf", listOf("remember", line)) }
+                answer(ex, 200, JSONObject().put("ok", true))
             }
             // A runner registers the token it minted for a thread, and revokes it when the thread ends.
             ex.requestMethod == "POST" && parts == listOf("tokens") -> {

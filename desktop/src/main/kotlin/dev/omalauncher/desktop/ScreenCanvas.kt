@@ -68,6 +68,8 @@ class ScreenCanvas(
         // The shared library's widgets go on the service's screens by file name; each waits for his OK here before it runs.
         widgets = true,
         widgetKnown = widgetKnown,
+        // The car shows its first page and nothing else.
+        shownPage = if (screen == CAR_SCREEN) { n -> n.pages.firstOrNull()?.name } else null,
     )
 
     override fun notebook(): Notebook = page

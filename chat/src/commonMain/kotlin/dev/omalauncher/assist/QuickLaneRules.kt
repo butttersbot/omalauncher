@@ -138,7 +138,7 @@ fun quickDesktopPrompt(newChat: Boolean = false, canvas: Boolean = false): Strin
 const val DESKTOP_CANVAS_RULE =
     " First, one thing is always yours and never handed over: Soma's window is a canvas of modules beside the chat, and when he " +
         "asks to arrange it (a page for a project or anything else, putting, moving, resizing or removing a module, undoing that), " +
-        "even though it makes or changes something, do it yourself: run `soma canvas board` " +
+        "even though it makes or changes something, do it yourself: run `soma canvas layout` (the preferences he has stated), `soma canvas board` " +
         "and `soma canvas modules` first, then `soma canvas ...` for each change, and answer in one short line what you did; to undo an arrangement, run `soma canvas undo`, never remove things by hand. A page " +
         "for a project gets Needs you top left and that project's own modules (project:NAME, handoff:NAME, NAME as the board's " +
         "projects say). Arrange only what he asked, never on your own."

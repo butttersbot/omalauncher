@@ -88,7 +88,7 @@ fun main(args: Array<String>) {
     val canvas = DesktopCanvas(SomaHome.canvas, runCatching { InetAddress.getLocalHost().hostName }.getOrDefault("desktop")).also { it.load() }
     // Its verbs from the front agent (slice 6), done on the event thread, where the canvas's state lives.
     // Waited on for a while, never for ever: the port's one listener isn't held by a window that has stopped answering.
-    door = CanvasDoor { work ->
+    door = CanvasDoor(shelf = { RemoteShelf.of(platform.machines()) ?: FileShelf(SomaHome.dir) }) { work ->
         val answer = java.util.concurrent.CompletableFuture<org.json.JSONObject>()
         javax.swing.SwingUtilities.invokeLater { answer.complete(runCatching { work(canvas) }.getOrElse { org.json.JSONObject().put("ok", false).put("error", "Soma couldn't do that.") }) }
         runCatching { answer.get(10, java.util.concurrent.TimeUnit.SECONDS) }.getOrElse { org.json.JSONObject().put("ok", false).put("error", "Soma didn't answer in time; nothing may have changed, or it may yet.") }

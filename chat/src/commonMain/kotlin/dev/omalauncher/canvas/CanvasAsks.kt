@@ -98,6 +98,11 @@ class ScreenRules(
     val widgets: Boolean = false,
     /** Whether the library has the widget a place names. */
     val widgetKnown: (String) -> Boolean = { true },
+    /**
+     * The one page this screen shows, when it shows only one (the car): a template is laid onto it, never on a page
+     * nobody would see (round-2 review).
+     */
+    val shownPage: ((Notebook) -> String?)? = null,
 )
 
 /** A widget from the shared library, as an agent names it: its file name. */
@@ -148,7 +153,7 @@ data class Resolved(val verbs: List<CanvasVerb>, val said: String)
 /** Why an ask can't be done, in words for the agent to pass on. Nothing changed. */
 class AskRefused(message: String) : Exception(message)
 
-private fun refuse(why: String): Nothing = throw AskRefused(why)
+internal fun refuse(why: String): Nothing = throw AskRefused(why)
 
 /**
  * [typed] as a page's name: its spaces made single, and refused when it is empty, longer than 40 characters, or holds a
@@ -488,7 +493,9 @@ interface CanvasPad {
 object CanvasCommands {
     const val USAGE = "canvas board [PAGE] | modules | page-make NAME | page-rename NAME --to NEW | page-remove NAME | " +
         "place MODULE [SIZE] [WHERE [MODULE]] [--page NAME] | move MODULE WHERE [MODULE] [--page NAME] | resize MODULE SIZE [--page NAME] | " +
-        "remove MODULE [--page NAME] | undo. A module can be on several pages: placing it on another page adds a copy there (needs#2)."
+        "remove MODULE [--page NAME] | undo | templates | template-save NAME [--page PAGE] [--replace] | template-apply NAME [--page NEW | --onto PAGE] | " +
+        "layout | remember PREFERENCE. On the car, which shows only its own page, a template goes onto that page. A module can be on several pages: placing it on another page adds a copy there (needs#2). " +
+        "Read `layout` (LAYOUT.md, his stated preferences) before arranging; `remember` only what he says he prefers."
 
     /** [words] as an ask; throws [AskRefused] with the usage when they say none. */
     fun ask(words: List<String>): CanvasAsk {
@@ -536,8 +543,8 @@ object CanvasCommands {
     }
 
     /** Runs [words] against [pad] as part of [request] from [actor] ("agent:front", "agent:<thread>"). */
-    fun run(words: List<String>, pad: CanvasPad, request: String, actor: String): JSONObject = try {
-        when (words.firstOrNull()) {
+    fun run(words: List<String>, pad: CanvasPad, request: String, actor: String, shelf: CanvasShelf? = null): JSONObject = try {
+        templateWords(words, pad, shelf, request, actor) ?: when (words.firstOrNull()) {
             "board" -> boardJson(pad.notebook(), pad.rules, words.drop(1).joinToString(" ").ifBlank { null })
             "modules" -> modulesJson()
             "undo" -> {

@@ -123,7 +123,8 @@ class GrokConnector(
         log(JSONObject().put("answered", ask.id).put("allow", allow))
         if (!allow) return null
         val screen = service.screen(ask.screen) ?: return "The screen \"${ask.screen}\" is gone"
-        val done = CanvasCommands.run(ask.words, screen, "grok-ok-" + ask.id, "grok, approved by him")
+        val done = CanvasCommands.run(ask.words, screen, "grok-ok-" + ask.id, "grok, approved by him", service.shelf)
+        if (done.optBoolean("ok")) service.shelfLog("grok, approved by him", ask.screen, ask.words, done)
         return if (done.optBoolean("ok")) null else done.optString("error").ifEmpty { "It couldn't be done" }
     }
 
@@ -303,7 +304,9 @@ class GrokConnector(
         JSONObject().put("name", "soma_arrange").put("title", "Arrange a Soma screen")
             .put("description", "Arrange a screen of Soma's canvas with canvas words, e.g. \"place needs card top-left\", \"move threads bottom-right\", " +
                 "\"resize pocket line\", \"page-make Trip\". Modules: needs, threads, computers, handoff, sessions, pocket, timeline, new-thread. " +
-                "Sizes: dot, line, card, full. Adding and moving run now; removing anything, and anything on the Fold, waits for Boss's tap. " +
+                "Sizes: dot, line, card, full. Also: \"layout\" (the preferences Boss stated), \"templates\", \"template-save NAME\". " +
+                "On the car a template goes onto its own page (the one the car shows). Adding, moving and keeping a new template run now; removing anything, laying out a template, remembering a preference, " +
+                "and anything on the Fold wait for Boss's tap. " +
                 "The screen is the car's unless named. At most 5 calls in 10 minutes.")
             .put("inputSchema", JSONObject().put("type", "object").put("properties", JSONObject()
                 .put("text", JSONObject().put("type", "string").put("description", "The canvas words, e.g. \"place needs card top-left\"").put("maxLength", 300))
@@ -341,13 +344,16 @@ class GrokConnector(
         // Logged as said, up to the longest a call may be (round-2 review: a long fumble grew the log by its whole length).
         fun done(outcome: String, answer: JSONObject): JSONObject { log(JSONObject().put("tool", "soma_arrange").put("text", text.take(300)).put("screen", screenName).put("outcome", outcome)); return answer }
         // Reading never counts toward the cap, so it isn't stopped by it either.
-        val readOnly = words.firstOrNull() == "board" || words.firstOrNull() == "modules"
+        val readOnly = words.firstOrNull() in setOf("board", "modules", "templates", "layout")
         if (arranges.size >= 5 && !readOnly) return done("over the cap", said("Soma takes at most 5 arrangements in 10 minutes; ask again later.", true))
         if (text.length > 300 || words.isEmpty()) return done("refused", said("Say it in canvas words, at most 300 characters: ${CanvasCommands.USAGE}", true))
         if (!SCREEN.matches(screenName) || screenName.startsWith("..")) return done("refused", said("No screen \"$screenName\".", true))
         val screen = service.screen(screenName) ?: return done("refused", said("No screen \"$screenName\".", true))
-        val ask = if (readOnly || words[0] == "undo") null else runCatching { CanvasCommands.ask(words) }.getOrElse { return done("refused", said(it.message ?: CanvasCommands.USAGE, true)) }
-        val adds = readOnly || ask is CanvasAsk.Place || ask is CanvasAsk.Move || ask is CanvasAsk.Resize || ask is CanvasAsk.PageMake
+        // Keeping a page as a template adds; laying one out, or saying what he prefers, is his to OK.
+        // Replacing one he has is his to OK too (round-1 review: Grok replaced his template).
+        val keeps = words[0] == "template-save" && "--replace" !in words
+        val ask = if (readOnly || keeps || words[0] in setOf("undo", "template-apply", "remember", "template-save")) null else runCatching { CanvasCommands.ask(words) }.getOrElse { return done("refused", said(it.message ?: CanvasCommands.USAGE, true)) }
+        val adds = readOnly || keeps || ask is CanvasAsk.Place || ask is CanvasAsk.Move || ask is CanvasAsk.Resize || ask is CanvasAsk.PageMake
         // Anything on the Fold's home but reading it waits for him.
         if (!adds || (screenName.startsWith("fold-") && !readOnly)) {
             val waits = GrokAsk(secret("").take(10), text, screenName, words, t)
@@ -355,7 +361,8 @@ class GrokConnector(
             arranges.addLast(t)
             return done("waits for his tap", said("That waits for Boss's tap in Needs you (\"Grok asks: $text\"); nothing was changed yet.", false))
         }
-        val answer = CanvasCommands.run(words, screen, "grok-" + t.toString(36), "grok")
+        val answer = CanvasCommands.run(words, screen, "grok-" + t.toString(36), "grok", service.shelf)
+        if (answer.optBoolean("ok")) service.shelfLog("grok", screenName, words, answer)
         // Only what changes something (or waits for him) counts toward the cap: a fumbled phrasing doesn't.
         if (answer.optBoolean("ok") && !readOnly) arranges.addLast(t)
         return done(if (answer.optBoolean("ok")) "done" else "refused", said(answer.toString(), !answer.optBoolean("ok")))
@@ -388,7 +395,7 @@ class GrokConnector(
         val hidden = q.filterKeys { it != "consent" }.entries.joinToString("") { (k, v) -> "<input type=hidden name=\"${esc(k)}\" value=\"${esc(v)}\">" }
         send(ex, 200, "text/html; charset=utf-8", PAGE.replace("{{body}}", """
             <h1>Connect Grok to Soma</h1>
-            <p>Grok will see a summary of Soma (counts, never titles or commands) and may add or move modules; anything else waits for your tap.</p>
+            <p>Grok will see a summary of Soma (counts, never titles or commands), the names of your templates and the layout preferences you stated, and may add or move modules and keep new templates; anything else waits for your tap.</p>
             ${if (wrong) "<p class=wrong>That code isn't right, or it has expired. Open \"Connect Grok\" on your desktop for a new one.</p>" else ""}
             <form method=post action="/oauth/authorize">$hidden<input name=consent autocomplete=off autocapitalize=characters maxlength=8 placeholder="code from your desktop" required>
             <button>Connect</button></form>

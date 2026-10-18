@@ -25,6 +25,11 @@ import java.util.concurrent.ConcurrentHashMap
 private data class Grant(val request: String, val actor: String)
 
 class CanvasDoor(
+    /**
+     * Where templates and LAYOUT.md are (slice 10): the canvas service's shelf when a runner advertises one, so every desktop
+     * shares his; this Soma's own folder when none does.
+     */
+    private val shelf: () -> dev.omalauncher.canvas.CanvasShelf = { FileShelf(SomaHome.dir) },
     /** Runs a call against the canvas where its state lives (the window's event thread), and answers. */
     private val onCanvas: ((CanvasPad) -> JSONObject) -> JSONObject,
 ) {
@@ -58,7 +63,14 @@ class CanvasDoor(
             ?: return no("soma canvas is for Soma's own agent while it answers a request; this token isn't one.")
         val words = runCatching { JSONArray(parts[1]).let { a -> (0 until a.length()).map { a.getString(it) } } }.getOrNull()
             ?: return no("Usage: soma ${CanvasCommands.USAGE}")
-        return onCanvas { pad -> CanvasCommands.run(words, pad, grant.request, grant.actor) }.toString()
+        // The shelf is read here, off the window's thread, and written after: the window never waits on the network.
+        val prepared = try { PreparedShelf.of(shelf, words) } catch (e: dev.omalauncher.canvas.AskRefused) { return no(e.message ?: "the shelf can't be reached") }
+        val answer = onCanvas { pad -> CanvasCommands.run(words, pad, grant.request, grant.actor, prepared) }
+        prepared?.flush()?.let { why ->
+            val what = if (words.firstOrNull() == "remember") "LAYOUT.md wasn't changed" else "the template wasn't kept"
+            return JSONObject().put("ok", false).put("error", "Soma's canvas service couldn't keep it, so $what: $why").toString()
+        }
+        return answer.toString()
     }
 
     companion object {
