@@ -44,6 +44,11 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
     private var switches: Map<Long, MacPick> = emptyMap()
     /** The new threads' first entries a switch made, by time, with the pick, so `[ try again ]` makes the same again. Kept under "seeds". */
     private var seeds: Map<Long, MacPick> = emptyMap()
+    /**
+     * The switches between their handoff turn's end and their new thread's being made, by the time of the entry, with
+     * the thread they move and the pick: no longer in [switches], not yet in [seeds]. Only in this run. Under the lock.
+     */
+    private val finishing = HashMap<Long, Pair<String, MacPick>>()
     private val followers = HashMap<String, Follower>()
 
     /** Whether a thread on the Mac is being followed now: its answer or its request to approve is still to come. */
@@ -708,6 +713,17 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
         if (macLimited(event) && !askingHandoff(threadId)) fallBack(threadId)
         // Its limit is still remembered, so the switch's new thread doesn't start on an agent at one.
         else if (macLimited(event)) hitLimit(view.threads.firstOrNull { it.id == threadId }?.kind.orEmpty())
+        // A handoff turn about to end keeps its switch on its way until [finishSwitch] has the new thread being made.
+        val handing = if (event is MacEvent.Result || event is MacEvent.Error || event is MacEvent.Stopped) handingOff(threadId) else null
+        try {
+            shownOn(threadId, event, before)
+        } finally {
+            if (handing != null) synchronized(this) { finishing.remove(handing) }
+        }
+    }
+
+    private fun shownOn(threadId: String, event: MacEvent, before: List<ChatTask>) {
+        val log = platform.chatLog()
         val flying = synchronized(this) { sentAt.filterValues { it == IN_FLIGHT }.keys.toSet() }
         // The reply is named after the agent and model the event says answered, the thread's agent when it says neither.
         val kind = view.threads.firstOrNull { it.id == threadId }?.kind.orEmpty()
@@ -805,6 +821,12 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
         platform.putPref(MAC_SEEDS_PREF, macSwitchesText(seeds))
     }
 
+    /** The time of the handoff a switch asked for that [threadId]'s turn is on, now counted as [finishing]; null when it is on none. */
+    private fun handingOff(threadId: String): Long? {
+        val running = platform.chatLog().tasks.firstOrNull { it.thread == threadId && it.status == TaskStatus.Running } ?: return null
+        return synchronized(this) { switches[running.time]?.let { pick -> finishing[running.time] = threadId to pick; running.time } }
+    }
+
     /** Whether the turn [threadId] is on is a handoff a switch asked for. */
     private fun askingHandoff(threadId: String): Boolean {
         val running = platform.chatLog().tasks.firstOrNull { it.thread == threadId && it.status == TaskStatus.Running } ?: return false
@@ -832,12 +854,14 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
             log.update(time, save = true) { it.copy(status = TaskStatus.Failed, result = MAC_SWITCH_UNKNOWN, answeredBy = OMA_NAME) }
             return
         }
-        // One switch of a thread at a time: a second while the first's handoff or new thread is on its way would make two.
+        // One switch of a thread at a time: a second while the first's handoff or new thread is on its way would make two,
+        // as would one between the two, when the handoff has ended and the new thread is not yet being made ([finishing]).
         // A seed whose thread couldn't be made is no longer on its way, and never holds the thread.
         val under = synchronized(this) {
             val tasks = log.tasks
-            (switches.entries.firstOrNull { (at, _) -> at != time && tasks.any { it.time == at && it.thread == threadId && !macHandoffEnded(it) } }
-                ?: seeds.entries.firstOrNull { (at, _) -> at in sending && tasks.any { it.time == at && it.thread == threadId && it.fresh } })?.value
+            switches.entries.firstOrNull { (at, _) -> at != time && tasks.any { it.time == at && it.thread == threadId && !macHandoffEnded(it) } }?.value
+                ?: finishing.entries.firstOrNull { (at, on) -> at != time && on.first == threadId }?.value?.second
+                ?: seeds.entries.firstOrNull { (at, _) -> at in sending && tasks.any { it.time == at && it.thread == threadId && it.fresh } }?.value
         }
         if (under != null) {
             log.update(time, save = true) { it.copy(status = TaskStatus.Failed, result = macSwitchBusy(under), answeredBy = OMA_NAME) }
@@ -861,11 +885,22 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
     private fun finishSwitch(time: Long, pick: MacPick) {
         val log = platform.chatLog()
         val asked = log.tasks.firstOrNull { it.time == time }
+        // Out of the switches under way and into [finishing] at once, so it is on its way throughout.
         synchronized(this) {
             switches = switches - time
+            asked?.let { finishing[time] = it.thread to pick }
             saveSwitches()
         }
         asked ?: return
+        try {
+            finishOn(time, pick, asked)
+        } finally {
+            synchronized(this) { finishing.remove(time) }
+        }
+    }
+
+    private fun finishOn(time: Long, pick: MacPick, asked: ChatTask) {
+        val log = platform.chatLog()
         val old = view.threads.firstOrNull { it.id == asked.thread }
         if (old == null) return log.update(time, save = true) { it.copy(status = TaskStatus.Failed, result = MAC_SWITCH_UNKNOWN) }
         // A request still waiting is ended: it was only ever the handoff, and the new thread takes over from here.
