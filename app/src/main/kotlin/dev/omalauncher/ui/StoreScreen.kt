@@ -49,6 +49,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.omalauncher.canvas.moduleKey
+import dev.omalauncher.canvas.ModuleKind
 import dev.omalauncher.linux.Agent
 import dev.omalauncher.widgets.Market
 import dev.omalauncher.widgets.WidgetEngine
@@ -69,6 +71,8 @@ fun StoreScreen(
     page: String,
     /** The Omarchy theme in use, so previews show widgets in its colors. */
     theme: String?,
+    /** The projects with threads on the computers now, each of which can have a Project and a Handoff module; null while they are read. */
+    projects: List<String>? = emptyList(),
     onDismiss: () -> Unit,
 ) {
     val market = engine.market
@@ -117,7 +121,7 @@ fun StoreScreen(
                 )
             }
             val list = @Composable { modifier: Modifier ->
-                StoreList(engine, agents, page, theme, filter, if (wide) open else null, modifier, select, onDismiss)
+                StoreList(engine, agents, projects, page, theme, filter, if (wide) open else null, modifier, select, onDismiss)
             }
             when {
                 // Side by side: the grid, and the picked widget's page beside it.
@@ -156,6 +160,7 @@ private class StoreFilter {
 private fun StoreList(
     engine: WidgetEngine,
     agents: List<Agent>,
+    projects: List<String>?,
     page: String,
     theme: String?,
     filter: StoreFilter,
@@ -232,6 +237,17 @@ private fun StoreList(
                     }
                 }
             }
+            if (filter.tab == ALL && q.isEmpty()) {
+                // The cockpit's modules, drawn by the launcher itself: each once, at any size from one cell.
+                item(key = "modules", span = { GridItemSpan(maxLineSpan) }) { Caption(if (projects == null) "cockpit modules · reading your projects…" else "cockpit modules") }
+                val modules = storeModules(projects.orEmpty())
+                items(modules, key = { it.key }, span = { GridItemSpan(maxLineSpan) }) { m ->
+                    BuiltInEntry(m.name, "${m.kind.size.first}x${m.kind.size.second} · any size", m.kind.blurb, added = engine.hasModule(m.key), page = engine.notebook.name(page) ?: "this page") {
+                        engine.addModule(m.key, page)
+                        onDismiss()
+                    }
+                }
+            }
             item(key = "catalog", span = { GridItemSpan(maxLineSpan) }) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Caption("reviewed widgets from github.com/${Market.REPO}")
@@ -247,6 +263,14 @@ private fun StoreList(
         }
     }
 }
+
+/** A module the store offers: its [key], what it is called there, and its [kind]. */
+internal data class StoreModule(val key: String, val name: String, val kind: ModuleKind)
+
+/** The modules the store offers: each kind once, then a Project and a Handoff module for each of [projects]. */
+internal fun storeModules(projects: List<String>): List<StoreModule> =
+    ModuleKind.entries.filter { !it.perProject && !it.chatScreen }.mapNotNull { k -> moduleKey(k)?.let { StoreModule(it, k.title, k) } } +
+        projects.flatMap { p -> ModuleKind.entries.filter { it.perProject }.mapNotNull { k -> moduleKey(k, p)?.let { StoreModule(it, "${k.title.lowercase()} · $p", k) } } }
 
 private const val ALL = "all"
 private const val OTHER = "other"

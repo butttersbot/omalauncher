@@ -37,7 +37,7 @@ const val PAGE_ASPECT = 5f / 6f
 const val GAP_SHARE = 1f / 78f
 
 /**
- * Pixel geometry of a home page: a grid of [GRID_COLUMNS] by [rows] cells, scaled uniformly into the room a
+ * Pixel geometry of a canvas page: a grid of [columns] (the Fold's home: [GRID_COLUMNS]) by [rows] cells, scaled uniformly into the room a
  * page has ([width] by [height]) and centred there. The page keeps one shape ([PAGE_ASPECT]), so for a
  * given [rows] every cell has one shape too, and a tile takes the same share of the page wherever the page is
  * shown. Nothing is ever laid on its side, and the grid never re-flows: a smaller room is a smaller page.
@@ -50,14 +50,18 @@ class GridGeometry(
     val height: Int,
     rows: Int,
     val per: Int = 1,
+    /** The screen's columns: the Fold's home is [GRID_COLUMNS]; a desktop's or the car's canvas passes its own. */
+    columns: Int = GRID_COLUMNS,
+    /** The page's width over its height: the Fold's home pages are [PAGE_ASPECT]; a landscape canvas passes its own. */
+    val aspect: Float = PAGE_ASPECT,
 ) {
-    val cols = GRID_COLUMNS
+    val cols = columns.coerceAtLeast(1)
     val rows = rows.coerceAtLeast(1)
 
     /** The page's size, and where it starts in its room. */
-    private val wide = width > height * PAGE_ASPECT
-    val pageWidth = (if (wide) height * PAGE_ASPECT else width.toFloat()).coerceAtLeast(1f)
-    val pageHeight = if (wide) height.toFloat().coerceAtLeast(1f / PAGE_ASPECT) else pageWidth / PAGE_ASPECT
+    private val wide = width > height * aspect
+    val pageWidth = (if (wide) height * aspect else width.toFloat()).coerceAtLeast(1f)
+    val pageHeight = if (wide) height.toFloat().coerceAtLeast(1f / aspect) else pageWidth / aspect
     val pageLeft = (width - pageWidth) / 2f
     val pageTop = (height - pageHeight) / 2f
 

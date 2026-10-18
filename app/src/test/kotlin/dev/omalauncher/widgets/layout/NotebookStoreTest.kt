@@ -106,7 +106,8 @@ class NotebookStoreTest {
 
     /** The layout core is plain Kotlin: nothing from Android or Compose, so JVM tests can run all of it. */
     @Test fun theCoreImportsNothingFromAndroid() {
-        val files = File("src/main/kotlin/dev/omalauncher/widgets/layout").listFiles { f -> f.extension == "kt" }.orEmpty()
+        // In the shared module since Soma Canvas slice 1, where nothing may import Android at all.
+        val files = File(dev.omalauncher.theme.pack.mainSourceRoots().first { File(it, "widgets/layout/Placement.kt").isFile }, "widgets/layout").listFiles { f -> f.extension == "kt" }.orEmpty()
         assertTrue(files.size >= 4)
         for (file in files) {
             val imports = file.readLines().filter { it.startsWith("import ") }
@@ -114,6 +115,17 @@ class NotebookStoreTest {
             // Reading and writing JSON is only for the stores, not for placing or geometry.
             if (file.name in setOf("Placement.kt", "GridGeometry.kt")) assertTrue(file.name, imports.none { "org.json" in it || "upgrade" in it })
         }
+    }
+
+    /** The shared module's common code runs on the desktop and the car's renderer too: none of it may import Android. */
+    @Test fun sharedCommonCodeImportsNothingFromAndroid() {
+        val common = dev.omalauncher.theme.pack.moduleFile("../chat/src/commonMain/kotlin")
+        val files = common.walkTopDown().filter { it.extension == "kt" }.toList()
+        assertTrue("the shared common code was found at $common", files.size > 20)
+        // androidx.compose is Compose Multiplatform and fine; android.* and the Android-only androidx libraries are not.
+        val androidOnly = Regex("""^import (android\.|androidx\.(activity|core|appcompat|lifecycle\.Process|work)\b)""")
+        val bad = files.filter { f -> f.readLines().any { androidOnly.containsMatchIn(it) } }.map { it.name }
+        assertEquals(emptyList<String>(), bad)
     }
 
     /** A thread's tile (Boss, 2026-10-13) is kept by its key, page and cell, under a kind of its own. */

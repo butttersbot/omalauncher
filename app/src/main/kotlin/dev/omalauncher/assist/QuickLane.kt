@@ -189,7 +189,8 @@ object QuickLane {
             val asking = askingBuilder(mapOf(BuilderId.A to board, BuilderId.B to (second ?: buildBoard(log.tasks, b.working, b.label, began, BuilderId.B))))
             val filed = waited?.also { time -> log.update(time, save = true) { it.copy(status = TaskStatus.Running) } }
                 ?: ChatHistory.stamp(log.tasks, began).also { log.begin(ChatTask(it, UNDECIDED_AGENT, prompt, chat = chat)) }
-            Triple(filed, quickCommand(frontPrompt(board, prompt, mac, second, phone), resumed, mac = mac != null, newChat = chat.isNotEmpty()), asking)
+            // Its home changes are told apart from a builder's working at the same time (Soma Canvas slice 6).
+            Triple(filed, "OMA_CANVAS_ACTOR=quick " + quickCommand(frontPrompt(board, prompt, mac, second, phone), resumed, mac = mac != null, newChat = chat.isNotEmpty()), asking)
         }
         time = asked; working = true; stopping = false; answer = ""; label = ANSWERING
         // A new chat's work that it answers in prose is not shown, and goes to the Mac as if it had said nothing.

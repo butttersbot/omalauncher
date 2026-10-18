@@ -31,7 +31,7 @@ import kotlin.math.roundToInt
  */
 object PhoneRequests {
     /** Who handles an admitted request. */
-    enum class Route { Status, Stop, Pages, Board, Note, Stickers, PageEdits, Looks, LockStar, Screenshot, Control }
+    enum class Route { Status, Stop, Pages, Board, Note, Stickers, PageEdits, Looks, LockStar, Canvas, WidgetInstall, Screenshot, Control }
 
     /**
      * Runs the checks for [command] in order and says who handles it; throws what the first failing check
@@ -57,6 +57,8 @@ object PhoneRequests {
             PhonePageEdits.COMMAND -> Route.PageEdits
             PhoneLooks.COMMAND -> Route.Looks
             PhoneLockStar.COMMAND -> Route.LockStar
+            PhoneCanvas.COMMAND -> Route.Canvas
+            "widgetinstall" -> Route.WidgetInstall
             "screenshot" -> Route.Screenshot
             else -> Route.Control
         }
@@ -782,5 +784,24 @@ object HomeDoor {
         val (page, at) = wanted ?: return null
         wanted = null
         return page.takeIf { now - at in 0..ASK_MILLIS }
+    }
+}
+
+/**
+ * The bridge's `canvas` command (Soma Canvas slice 6): an agent arranging home's modules, on Boss's word, with the words
+ * every screen takes (`oma-phone canvas place needs card top-left --page Soma`, `undo`). Every call of one request of his
+ * ([request]) is one restore point. Answers what was done, or why nothing was.
+ */
+object PhoneCanvas {
+    const val COMMAND = "canvas"
+
+    fun reply(
+        input: JSONObject,
+        pad: dev.omalauncher.canvas.CanvasPad,
+        request: String,
+        actor: String,
+    ): JSONObject {
+        val words = input.optJSONArray("words")?.let { a -> (0 until a.length()).map { a.getString(it) } }.orEmpty()
+        return dev.omalauncher.canvas.CanvasCommands.run(words, pad, request, actor)
     }
 }

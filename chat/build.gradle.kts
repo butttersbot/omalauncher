@@ -32,6 +32,8 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
+            // The widget language: widgets render from shared code on every screen (Soma Canvas slice 7a).
+            api(project(":owl"))
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
             implementation(libs.compose.ui)

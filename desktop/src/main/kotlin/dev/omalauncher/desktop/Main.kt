@@ -15,7 +15,9 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import dev.omalauncher.assist.MacThreadsEngine
 import dev.omalauncher.oma.OMA_TAB
-import dev.omalauncher.oma.OmaChatScreen
+import dev.omalauncher.canvas.chatHostModules
+import dev.omalauncher.canvas.cockpitFeeds
+import dev.omalauncher.canvas.moduleProjects
 import dev.omalauncher.oma.somaLinkKey
 import dev.omalauncher.oma.somaLinkTab
 import dev.omalauncher.ui.DesktopBack
@@ -25,6 +27,7 @@ import java.awt.SystemTray
 import java.awt.Toolkit
 import java.awt.TrayIcon
 import java.awt.image.BufferedImage
+import java.io.File
 import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
@@ -37,6 +40,13 @@ import kotlin.system.exitProcess
  * runs. Closing the window hides it; the tray's Quit ends it. Escape is Back: it closes a menu first, then hides.
  */
 fun main(args: Array<String>) {
+    // `soma canvas …`: Soma's front agent arranging the running Soma's canvas (slice 6). Says its answer and ends; no window.
+    if (args.firstOrNull() == "canvas") exitProcess(CanvasDoor.client(args.drop(1)))
+    // The canvas service (slice 8a): headless, its own lock, no window. Its LaunchAgent is printed for him to install.
+    if ("--serve" in args) return SomaService.run()
+    if ("--print-launch-agent" in args) return println(SomaService.launchAgent(ProcessHandle.current().info().command().orElse("soma"),
+        listOfNotNull(System.getenv("SOMA_PUBLIC_URL")?.let { "SOMA_PUBLIC_URL" to it }).toMap()))
+    if ("--mint-runner-key" in args) return println(SomaService.mintRunnerKey())
     if ("--keychain-check" in args) return println(RunnerKeys.check())
     if ("--start-at-login" in args) return println(Login.install())
     if ("--no-start-at-login" in args) return println(Login.remove())
@@ -57,7 +67,9 @@ fun main(args: Array<String>) {
     var opener: ((String) -> Unit)? = null
     var early: String? = link
     fun open(url: String) = opener?.invoke(url) ?: run { early = url }
-    Single.listen { said ->
+    // The front agent's door to the canvas: set once the canvas is read; a call before then is refused.
+    var door: CanvasDoor? = null
+    Single.listen(onCanvas = { line -> door?.handle(line) ?: """{"ok":false,"error":"Soma is still starting. Try again in a moment."}""" }) { said ->
         when {
             said == "toggle" -> shown.value = !shown.value
             said.startsWith("open ") -> open(said.removePrefix("open "))
@@ -70,12 +82,45 @@ fun main(args: Array<String>) {
         if (desktop.isSupported(java.awt.Desktop.Action.APP_OPEN_URI)) desktop.setOpenURIHandler { event -> javax.swing.SwingUtilities.invokeLater { open(event.uri.toString()) } }
     }
     Looks.fonts()
-    Looks.use(SomaHome.read(SomaHome.settings).optString("pack").ifEmpty { null })
+    // City Pop unless he picked another look from the tray (Boss, 2026-10-16: "start with city pop for desktop too").
+    Looks.use(SomaHome.read(SomaHome.settings).optString("pack").ifEmpty { "city-pop" })
     val notices = Notices()
     val platform = DesktopThreadsPlatform(notices)
     val engine = MacThreadsEngine(platform)
-    val front = DesktopFrontAgent(engine, platform, notices)
+    // The window's canvas (slice 5), and its modules' one source: the chat's own host, and the slower feeds on a timer.
+    val canvas = DesktopCanvas(SomaHome.canvas, runCatching { InetAddress.getLocalHost().hostName }.getOrDefault("desktop")).also { it.load() }
+    // Its verbs from the front agent (slice 6), done on the event thread, where the canvas's state lives.
+    // Waited on for a while, never for ever: the port's one listener isn't held by a window that has stopped answering.
+    door = CanvasDoor(shelf = { RemoteShelf.of(platform.machines()) ?: FileShelf(SomaHome.dir) }) { work ->
+        val answer = java.util.concurrent.CompletableFuture<org.json.JSONObject>()
+        javax.swing.SwingUtilities.invokeLater { answer.complete(runCatching { work(canvas) }.getOrElse { org.json.JSONObject().put("ok", false).put("error", "Soma couldn't do that.") }) }
+        runCatching { answer.get(10, java.util.concurrent.TimeUnit.SECONDS) }.getOrElse { org.json.JSONObject().put("ok", false).put("error", "Soma didn't answer in time; nothing may have changed, or it may yet.") }
+    }
+    val front = DesktopFrontAgent(engine, platform, notices, door = door, shim = CanvasDoor.shim(SomaHome.bin))
     val host = DesktopChatHost(platform, engine, front, notices)
+    canvas.setAside?.let { notices.say("Soma", "The canvas's saved layout couldn't be read, so it was set aside as ${it.name} and the starting page was laid out.") }
+    // What widgets wait for his OK on here (slice 7b) is in Needs you beside the threads' asks.
+    val gate = dev.omalauncher.widgets.runtime.CommandGate(SomaHome.approved, SomaHome.machine)
+    val source = dev.omalauncher.canvas.withWidgetAsks(chatHostModules(host, cockpitFeeds(), handoffs = engine::handoffs, registry = engine::projects), gate)
+    val tick = mutableStateOf(0L)
+    val desk = DesktopSync(canvas, File(SomaHome.dir, "canvas-synced.json"), SomaHome.machine)
+    // Two loops: the look, which only reads what the app holds, never waits on the slower feeds, whose reads can take a while.
+    thread(name = "soma-modules", isDaemon = true) {
+        while (true) {
+            javax.swing.SwingUtilities.invokeLater { tick.value = System.currentTimeMillis() }
+            Thread.sleep(MODULES_LOOK_MS)
+        }
+    }
+    thread(name = "soma-feeds", isDaemon = true) {
+        while (true) {
+            runCatching { source.refresh(moduleProjects(canvas.page.pages.flatMap { p -> p.items.map { it.key } })) }
+            // Sync (slice 8b): this window's layout with the service's copy of it, when a runner says where the service is.
+            // What the service had to drop or move (a late change to a page gone, cells taken by then) is said, once each.
+            runCatching { DesktopSync.overTheTailnet(platform.machines())?.let { exchange -> desk.round(exchange) { work -> javax.swing.SwingUtilities.invokeAndWait(work) } }?.forEach { notices.say("Soma", "The canvas: $it") } }
+            javax.swing.SwingUtilities.invokeLater { tick.value = System.currentTimeMillis() }
+            Thread.sleep(MODULE_FEEDS_MS)
+        }
+    }
     // A link shows the window on its tab: a thread's own, or the chat that lives on it. One for no tab known opens nothing.
     javax.swing.SwingUtilities.invokeLater {
         opener = { url ->
@@ -105,13 +150,24 @@ fun main(args: Array<String>) {
         var shown by shown
         var wanted by wantedTab
         remember {
-            notices.tray = Tray.make(onOpen = { shown = true }, onQuit = { Single.release(); exitApplication() }, onLook = { id -> Looks.use(id); SomaHome.write(SomaHome.settings, SomaHome.read(SomaHome.settings).put("pack", id)) })
+            notices.tray = Tray.make(onOpen = { shown = true }, onQuit = { Single.release(); exitApplication() }, onLook = { id -> Looks.use(id); SomaHome.write(SomaHome.settings, SomaHome.read(SomaHome.settings).put("pack", id)) },
+                // The service is asked off the tray's thread; the code or what went wrong comes back as a notice.
+                onCar = { pair -> kotlin.concurrent.thread(name = "soma-car-pairing", isDaemon = true) {
+                    notices.say("Soma", if (pair) CarPairing.start(platform.machines()) else CarPairing.end(platform.machines()))
+                } },
+                onGrok = { connect -> kotlin.concurrent.thread(name = "soma-grok-connect", isDaemon = true) {
+                    if (!connect) return@thread notices.say("Soma", GrokConnecting.end(platform.machines()))
+                    val (said, details) = GrokConnecting.start(platform.machines())
+                    val copied = details?.let { runCatching { Toolkit.getDefaultToolkit().systemClipboard.setContents(java.awt.datatransfer.StringSelection(it), null) }.isSuccess }
+                    // Said as it is: when the clipboard couldn't take them, the details go in the notice, cut as it may be.
+                    notices.say("Soma", if (copied == false) said.substringBefore(" Grok's connector details") + " " + details else said)
+                } })
         }
         Window(
             onCloseRequest = { shown = false },
             visible = shown,
             title = "Soma",
-            state = rememberWindowState(size = DpSize(520.dp, 820.dp)),
+            state = rememberWindowState(size = DpSize(1240.dp, 820.dp)),
             onPreviewKeyEvent = { e ->
                 if (e.type == KeyEventType.KeyDown && e.key == Key.Escape) {
                     if (!DesktopBack.press()) shown = false
@@ -121,10 +177,14 @@ fun main(args: Array<String>) {
                 }
             },
         ) {
-            OmaChatScreen(host, prefill = null, onPrefilled = {}, wanted = wanted, onTab = { wanted = it.takeIf { tab -> tab != OMA_TAB } })
+            CanvasScreen(canvas, host, source, tick.value, wanted, onTab = { wanted = it })
         }
     }
 }
+
+/** How often the modules look again at what the app holds, and how often the slower feeds (herd, pocket, handoffs) are read. */
+private const val MODULES_LOOK_MS = 2_000L
+private const val MODULE_FEEDS_MS = 30_000L
 
 /**
  * Says why Soma can't start where he will see it (opened from Finder there is no terminal), and ends with [code].
@@ -175,7 +235,7 @@ private object Single {
         }.getOrDefault(false)
     }
 
-    fun listen(onWord: (String) -> Unit) {
+    fun listen(onCanvas: (String) -> String, onWord: (String) -> Unit) {
         val server = ServerSocket(0, 4, InetAddress.getLoopbackAddress())
         SomaHome.socket.writeText(server.localPort.toString())
         thread(name = "soma-single", isDaemon = true) {
@@ -185,6 +245,11 @@ private object Single {
                         // One that connects and says nothing can't hold the door: it is let go after a second.
                         client.soTimeout = 1000
                         val said = client.getInputStream().bufferedReader().readLine()
+                        // A canvas call is answered with what it did, and goes no further.
+                        if (said?.startsWith(CanvasDoor.WORD) == true) {
+                            client.getOutputStream().write((runCatching { onCanvas(said) }.getOrElse { """{"ok":false,"error":"Soma couldn't do that."}""" } + "\n").toByteArray())
+                            return@use null
+                        }
                         client.getOutputStream().write((HELLO + "\n").toByteArray())
                         said
                     }
@@ -201,15 +266,23 @@ private object Single {
     }
 }
 
-/** The tray icon: Open, the looks, Quit. Its notifications are Soma's ([Notices]). */
+/** The tray icon: Open, the looks, the car's pairing, Grok's connector, Quit. Its notifications are Soma's ([Notices]). */
 private object Tray {
-    fun make(onOpen: () -> Unit, onQuit: () -> Unit, onLook: (String) -> Unit): TrayIcon? {
+    fun make(onOpen: () -> Unit, onQuit: () -> Unit, onLook: (String) -> Unit, onCar: (pair: Boolean) -> Unit = {}, onGrok: (connect: Boolean) -> Unit = {}): TrayIcon? {
         if (!SystemTray.isSupported()) return null
         val menu = PopupMenu()
         menu.add(MenuItem("Open Soma").apply { addActionListener { onOpen() } })
         val looks = java.awt.Menu("Look")
         for (id in Looks.ids) looks.add(MenuItem(id).apply { addActionListener { onLook(id) } })
         menu.add(looks)
+        val car = java.awt.Menu("Car")
+        car.add(MenuItem("Pair the car").apply { addActionListener { onCar(true) } })
+        car.add(MenuItem("Unpair the car").apply { addActionListener { onCar(false) } })
+        menu.add(car)
+        val grok = java.awt.Menu("Grok")
+        grok.add(MenuItem("Connect Grok").apply { addActionListener { onGrok(true) } })
+        grok.add(MenuItem("Disconnect Grok").apply { addActionListener { onGrok(false) } })
+        menu.add(grok)
         menu.addSeparator()
         menu.add(MenuItem("Quit Soma").apply { addActionListener { onQuit() } })
         val image = (Tray::class.java.classLoader.getResource("soma-tray.png")?.let { Toolkit.getDefaultToolkit().getImage(it) }

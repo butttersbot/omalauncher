@@ -1,5 +1,10 @@
 package dev.omalauncher.ui
 
+import kotlinx.coroutines.delay
+import dev.omalauncher.canvas.moduleProjects
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.draw.alpha
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
@@ -40,6 +45,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import dev.omalauncher.widgets.CockpitModules
 import dev.omalauncher.Runtime
 import dev.omalauncher.linux.LinuxState
 import dev.omalauncher.oma.ring.HomeRing
@@ -307,7 +313,24 @@ private fun ThemesOverlay(
     if (state.packagesOpen) PackagesScreen(runtime, onDismiss = { state.packagesOpen = false })
     if (state.styleOpen) StyleScreen(runtime, onDismiss = { state.styleOpen = false }, onBrowse = { state.themeBrowserOpen = true })
     if (state.themeBrowserOpen) ThemeCatalogScreen(runtime.themes, onDismiss = { state.themeBrowserOpen = false })
-    if (state.storeOpen) StoreScreen(runtime.widgets, runtime.agents.installed, state.currentPage, runtime.themes.picked, onDismiss = { state.storeOpen = false })
+    if (state.storeOpen) {
+        // A project's modules are offered by its registry name, so the registry is read (off the main thread) as the store
+        // opens; until it has been, no project's module is offered under a name that would change once it is.
+        val context = LocalContext.current
+        val projects by produceState<List<String>?>(null) {
+            value = withContext(Dispatchers.IO) {
+                runCatching {
+                    // A read already under way is waited for (as long as a read can take) rather than offering none.
+                    if (!CockpitModules.feed(context, runtime, moduleProjects(runtime.widgets.notebook.modules().keys), System.currentTimeMillis(), force = true)) {
+                        val until = System.currentTimeMillis() + 30_000L
+                        while (CockpitModules.feedingNow && System.currentTimeMillis() < until) delay(100)
+                    }
+                    CockpitModules.source(context, runtime).projects()
+                }.getOrDefault(emptyList())
+            }
+        }
+        StoreScreen(runtime.widgets, runtime.agents.installed, state.currentPage, runtime.themes.picked, projects = projects, onDismiss = { state.storeOpen = false })
+    }
     if (state.licensesOpen) LicensesScreen(onDismiss = { state.licensesOpen = false })
     if (state.linuxOpen) LinuxScreen(runtime, onDismiss = { state.linuxOpen = false })
     state.shared?.let { link ->

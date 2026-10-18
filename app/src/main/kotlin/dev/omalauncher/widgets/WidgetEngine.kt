@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import dev.omalauncher.canvas.moduleRef
 import dev.omalauncher.BuildConfig
 import dev.omalauncher.LauncherData
 import dev.omalauncher.Runtime
@@ -261,6 +262,19 @@ class WidgetEngine(
     /** [agent]'s terminal tile is on the home screen. */
     fun hasAgentWidget(agent: Agent) = specs.any { it.file.name == agentWidgetFile(agent) }
 
+    /** Whether the module [key] is on home already: each module is there once. */
+    fun hasModule(key: String) = notebook.pageOf(key) != null
+
+    /**
+     * Puts the module [key] on [page] at its starting size, in the first free cells there, else on the next page with
+     * room, else on a new page: the way any new tile lands. Returns the page it is on; null, and nothing changed, for a key
+     * that is no module's or one that is on home already. Before home has laid a page out it lands when its page is.
+     */
+    fun addModule(
+        key: String,
+        page: String,
+    ): String? = landModule(notebook, layout, key, page, ::itemsOn)
+
     /** Adds a terminal tile running [agent] to [page]; see [agentWidget]. */
     suspend fun addAgentWidget(
         agent: Agent,
@@ -368,7 +382,8 @@ class WidgetEngine(
     /** Widgets, pinned apps, folders and thread tiles on the page with the id [page]. Wrappers compare by spec, so unchanged pages skip recomposition. */
     fun itemsOn(page: String): List<HomeItem> =
         specs.filter { notebook.pageOf(it.file.name) == page }.map(::WidgetItem) + shortcuts.onGrid().filter { notebook.pageOf(it.key) == page } +
-            notebook.threadTiles().filterValues { it == page }.keys.sorted().map(::ThreadItem)
+            notebook.threadTiles().filterValues { it == page }.keys.sorted().map(::ThreadItem) +
+            notebook.modules().filterValues { it == page }.keys.sorted().map(::ModuleItem)
 
     private val pageList by derivedStateOf { notebook.pages.map { it.id } }
 

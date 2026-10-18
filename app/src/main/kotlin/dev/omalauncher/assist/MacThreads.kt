@@ -58,7 +58,16 @@ object MacThreads {
     /** What a new chat's thread on [machine] uses when he picks nothing ([MacThreadsEngine.defaultPick]); null before the engine is made. */
     fun defaultPick(machine: String): MacPick? = made?.defaultPick(machine)
 
+    /** Where the runner [machine] is reached ([MacThreadsEngine.hostAddress]); empty before the engine is made. */
+    fun hostAddress(machine: String): String = made?.hostAddress(machine).orEmpty()
+
     fun hosts(context: Context): List<MacSeen> = engine(context).hosts()
+
+    /** Projects' handoffs, each from the first computer that has it ([MacThreadsEngine.handoffs]). Blocking. */
+    fun handoffs(context: Context, projects: Collection<String>): Map<String, MacHandoff?> = engine(context).handoffs(projects)
+
+    /** The project registry from the first computer that gives it; null when none does. Blocking. */
+    fun projects(context: Context): List<RegisteredProject>? = engine(context).projects()
 
     fun restore(context: Context) = engine(context).restore()
 

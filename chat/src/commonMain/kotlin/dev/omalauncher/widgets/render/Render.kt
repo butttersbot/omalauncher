@@ -1,6 +1,5 @@
 package dev.omalauncher.widgets.render
 
-import android.os.Build
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -79,7 +78,6 @@ import dev.omalauncher.ui.Palette
 import dev.omalauncher.theme.pack.TypeRole
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.em
-import dev.omalauncher.ui.TerminalView
 import dev.omalauncher.widgets.lang.Action
 import dev.omalauncher.widgets.lang.Builtins
 import dev.omalauncher.widgets.lang.Env
@@ -420,8 +418,9 @@ private fun Element(
         "Canvas" -> CanvasNode(p, mod.then(if (sized) Modifier else Modifier.fillMaxSize()))
         "Shader" -> {
             val m = mod.then(if (sized) Modifier else Modifier.fillMaxSize())
-            if (Build.VERSION.SDK_INT >= 33) {
-                ShaderNode(p, m)
+            val shader = shaderNode
+            if (shader != null) {
+                shader(p, m)
             } else {
                 val fallback = p.color("fallback") { Palette.surface }
                 Spacer(m.drawBehind { drawRect(fallback()) })
@@ -430,14 +429,19 @@ private fun Element(
         "Spacer" -> Spacer(mod)
         "Slider" -> SliderNode(p, mod, sized)
         "Input" -> InputNode(p, mod, sized)
-        "Web" -> WebNode(p, mod.then(if (sized) Modifier else Modifier.fillMaxSize()))
+        "Web" -> webNode?.invoke(p, mod.then(if (sized) Modifier else Modifier.fillMaxSize())) ?: NotOnThisScreen("Web", mod)
         "Terminal" -> {
             val command = p.observe("command")
             val fontSize = p.observe("fontSize")?.num()
             // A command built from a value still loading waits for it, rather than starting a shell and restarting.
             if (command != Null) {
-                val term = remember(el, command, fontSize) { inst.terminal(el, command?.toString(), fontSize) }
-                TerminalView(term, mod.then(if (sized) Modifier else Modifier.fillMaxSize()))
+                val view = OwlScreen.terminal
+                if (view == null) {
+                    NotOnThisScreen("Terminal", mod)
+                } else {
+                    val term = remember(el, command, fontSize) { inst.terminal(el, command?.toString(), fontSize) }
+                    view(term, mod.then(if (sized) Modifier else Modifier.fillMaxSize()))
+                }
             }
         }
     }
@@ -608,7 +612,8 @@ private fun handlers(p: Props): Modifier {
  * prototype's scraps are: big text in the display voice, captions in the small spaced capitals, the rest in
  * the body voice, and `font:` picks another. In Console everything is the launcher's monospace, as it always was.
  */
-internal fun widgetRole(
+/** Public only so the app's tests can pin it (WidgetVoiceTest); nothing outside the renderer calls it. */
+fun widgetRole(
     style: String?,
     font: String?,
 ): TypeRole? =

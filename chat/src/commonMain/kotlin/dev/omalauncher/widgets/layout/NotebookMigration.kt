@@ -167,6 +167,7 @@ private class Migrator(
     fun run(): Migration {
         readLayout()
         val items = items()
+        // Migration is the Fold's alone (its stores from before the notebook): always its six columns.
         val cols = GRID_COLUMNS
         val tallest = usedRows(items.map { cells[it.key] to it.resizable })
         val rows = maxOf(NOTEBOOK_MIN_ROWS, tallest).coerceAtMost(NOTEBOOK_MAX_ROWS)

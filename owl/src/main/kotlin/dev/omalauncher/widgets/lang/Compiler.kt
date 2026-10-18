@@ -212,6 +212,9 @@ class Compiler private constructor(
     private var guest = false
     private var animated = false
     private var terminal = false
+
+    /** Every kind of node the widget draws, its screen's included: what a host is checked against (OwlHost). */
+    private val nodeTypes = sortedSetOf<String>()
     private var nodes = 0
     private var maxNodes = MAX_NODES
 
@@ -310,6 +313,7 @@ class Compiler private constructor(
             programs = scripts.flatMap(ShellWords::programs).toSortedSet(),
             animated = animated,
             terminal = terminal,
+            nodeTypes = nodeTypes.toSet(),
             nodeCount = tileNodes,
         )
     }
@@ -574,6 +578,7 @@ class Compiler private constructor(
                 a.name to ex(a.value, scope)
             }
         since(n.type, n.pos)
+        nodeTypes += n.type
         if (n.type == "Terminal") {
             terminal = true
             val command = props["command"]

@@ -3,7 +3,7 @@
 
 The spec's "First proof" list, as far as it goes without the phone and without a signed-in Claude Code.
 """
-import json, os, pathlib, signal, socket, subprocess, sys, tempfile, time, urllib.error, urllib.parse, urllib.request
+import plistlib, json, os, pathlib, re, signal, socket, subprocess, sys, tempfile, time, urllib.error, urllib.parse, urllib.request
 
 HERE = pathlib.Path(__file__).resolve().parent
 work = pathlib.Path(tempfile.mkdtemp(prefix='oma-runner-test-')).resolve()
@@ -25,7 +25,41 @@ environment = {**os.environ, 'OMA_RUNNER_PORT': str(port), 'OMA_RUNNER_TOKEN': s
                'OMA_RUNNER_MAIL': str(work / 'mail'), 'OMA_RUNNER_MAIL_EVERY': '0.2',
                # Per-device keys: the table, who whois says is calling (read only by a loopback runner), this machine's name.
                'OMA_RUNNER_KEYS': str(work / 'keys.json'), 'OMA_RUNNER_WHOIS_FILE': str(work / 'whois.json'), 'OMA_RUNNER_PHONE': 'phone',
-               'OMA_RUNNER_SELF': 'testhost', 'OMA_RUNNER_SOMA_DIR': str(work / 'soma-runners'), 'OMA_RUNNER_PAIR_COMPUTERS': '1'}
+               'OMA_RUNNER_SELF': 'testhost', 'OMA_RUNNER_SOMA_DIR': str(work / 'soma-runners'), 'OMA_RUNNER_PAIR_COMPUTERS': '1',
+               'OMA_RUNNER_PROJECTS': str(work / 'projects.json')}
+# Soma Canvas 8a: a stand-in canvas service on the loopback that writes down every token registration and revocation.
+import http.server, threading
+service_calls = []
+
+
+class Service(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *_):
+        pass
+
+    def answer(self):
+        length = int(self.headers.get('Content-Length') or 0)
+        service_calls.append((self.command, self.path, self.headers.get('Authorization'), json.loads(self.rfile.read(length)) if length else None))
+        # Slice 8c: a refusal that echoes the caller's token back, so the helper is seen to keep it out of what it prints.
+        if self.path == '/screens/desk-macbook/canvas':
+            self.send_response(403)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({'ok': False, 'error': 'not for ' + (self.headers.get('Authorization') or '')}).encode())
+            return
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.end_headers()
+        self.wfile.write(b'{"ok": true}')
+
+    do_POST = do_DELETE = answer
+
+    def do_GET(self):
+        self.answer()
+
+
+service = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Service)
+threading.Thread(target=service.serve_forever, daemon=True).start()
+environment.update({'OMA_RUNNER_SOMA_SERVICE': 'http://127.0.0.1:%d' % service.server_address[1], 'OMA_RUNNER_SOMA_KEY': 'service-key-' + 's' * 30})
 received = work / 'From Fold'
 (work / 'codex').mkdir()
 (work / 'codex' / 'config.toml').write_text('[mcp_servers.paper]\nurl = "http://127.0.0.1:1/mcp"\n')
@@ -162,7 +196,7 @@ try:
     check('unpair: that device is shut out at once, with no restart', gone.returncode == 0 and call('GET', '/health', token=own['key'])[0] == 401)
     calling_as('phone')
     check('unpair leaves every other device in', call('GET', '/health')[0] == 200)
-    check('/health answers, naming the agents the Mac has', call('GET', '/health') == (200, {'ok': True, 'runner': 'oma-runner', 'threads': 0, 'working': 0, 'waiting': 0, 'kinds': ['claude', 'codex', 'cursor', 'grok'], 'files': True}))
+    check('/health answers, naming the agents the Mac has', call('GET', '/health') == (200, {'ok': True, 'runner': 'oma-runner', 'soma': environment['OMA_RUNNER_SOMA_SERVICE'], 'threads': 0, 'working': 0, 'waiting': 0, 'kinds': ['claude', 'codex', 'cursor', 'grok'], 'files': True}))
     check('a project outside the roots is refused', call('POST', '/threads', {'name': 'x', 'project': str(outside)})[0] == 403)
     check('a path that climbs out of a root is refused', call('POST', '/threads', {'name': 'x', 'project': str(project / '..' / '..' / 'outside')})[0] == 403)
     (root / 'link').symlink_to(outside)
@@ -198,6 +232,42 @@ try:
           and 'tmsg send galaxy-z-fold8:A --reply-to 20261016-1-aa' in prompt and prompt.endswith('\n\nhello from the phone'))
     check('mail for no thread here is left for its own taker', (work / 'mail' / 'new' / 'other.json').exists())
     check('the thread\'s agent runs with OMA_THREAD_ID, so tmsg signs its answers with the thread\'s id', starts()[-1]['thread_id'] == thread)
+    given = starts()[-1]
+    registered = [c for c in service_calls if c[0] == 'POST' and c[1] == '/tokens']
+    check('its agent gets a canvas token of its own (and the service), never a device key', (given['canvas_token'] or '').startswith('soma-thread-')
+          and given['soma_service'] == environment['OMA_RUNNER_SOMA_SERVICE'] and not given['device_key'])
+    check('the token is registered with the service by its digest only, for this thread and the car, with the runner\'s own key',
+          registered and registered[0][2] == 'Bearer ' + environment['OMA_RUNNER_SOMA_KEY'] and registered[0][3]['thread'] == thread
+          and registered[0][3]['screens'] == ['car'] and registered[0][3]['digest'] == 'sha256:' + __import__('hashlib').sha256(given['canvas_token'].encode()).hexdigest()
+          and given['canvas_token'] not in json.dumps(service_calls))
+    check('the runner says where its canvas service is, so a device asks it rather than guessing a port',
+          call('GET', '/health')[1].get('soma') == environment['OMA_RUNNER_SOMA_SERVICE'])
+    # Slice 8c: the thread's own `soma canvas`, first on its PATH, reaches its screens with its token and nothing more.
+    helper = pathlib.Path(given['path'].split(os.pathsep)[0]) / 'soma'
+    check('a thread finds `soma` first on its PATH, the runner\'s own helper, runnable by this user alone',
+          helper.is_file() and oct(helper.stat().st_mode)[-3:] == '700' and given['screens'] == 'car')
+    agent_env = {'PATH': given['path'], 'SOMA_CANVAS_TOKEN': given['canvas_token'], 'SOMA_SERVICE': given['soma_service'], 'SOMA_CANVAS_SCREENS': given['screens'], 'HOME': os.environ['HOME']}
+    before_canvas = len(service_calls)
+    placed = subprocess.run(['soma', 'canvas', 'place', 'needs', 'card', 'top-left'], env=agent_env, capture_output=True, text=True, timeout=30)
+    sent = [c for c in service_calls[before_canvas:] if c[1].endswith('/canvas')]
+    check('`soma canvas place needs card top-left` from the thread reaches the car\'s screen with the thread\'s token and its words',
+          placed.returncode == 0 and sent and sent[0][1] == '/screens/car/canvas' and sent[0][2] == 'Bearer ' + given['canvas_token']
+          and sent[0][3] == {'words': ['place', 'needs', 'card', 'top-left']})
+    other = subprocess.run(['soma', 'canvas', '--screen', 'desk-macbook', 'board'], env=agent_env, capture_output=True, text=True, timeout=30)
+    check('`--screen` names another screen, which the service decides about (the token is for the car alone)',
+          [c for c in service_calls if c[1] == '/screens/desk-macbook/canvas'] and given['canvas_token'] not in other.stdout + other.stderr
+          and '[token]' in other.stdout and other.returncode != 0)
+    before_first = len(service_calls)
+    first = subprocess.run(['soma', 'canvas', 'board'], env={**agent_env, 'SOMA_CANVAS_SCREENS': 'desk-macbook,car'}, capture_output=True, text=True, timeout=30)
+    check('with no `--screen` it arranges the first screen the thread was given',
+          [c[1] for c in service_calls[before_first:] if c[1].endswith('/canvas')] == ['/screens/desk-macbook/canvas'] and first.returncode != 0)
+    bare = subprocess.run(['soma', 'canvas', 'board'], env={**agent_env, 'SOMA_CANVAS_TOKEN': ''}, capture_output=True, text=True, timeout=30)
+    check('with no token it says so and sends nothing', bare.returncode != 0 and 'no canvas token' in bare.stderr)
+    check('the helper has no way to approve, pair or read a key: it only posts canvas words',
+          helper.read_text().count('urllib.request.Request(') == 1 and "+ '/canvas'" in helper.read_text() and 'security' not in helper.read_text() and 'subprocess' not in helper.read_text())
+    check('the thread\'s token is in none of the runner\'s logs or state',
+          all(given['canvas_token'] not in f.read_text(errors='replace') for d in ('logs', 'state') for f in (work / d).rglob('*') if f.is_file()))
+    check('the next turn of the same thread keeps its token, registered once', len([c for c in service_calls if c[1] == '/tokens' and c[3]['thread'] == thread]) == 1)
     check('it goes back to idle after the mail', settle(thread, 'idle'))
 
     call('POST', '/threads/%s/messages' % thread, {'text': 'write the file'})
@@ -560,6 +630,101 @@ try:
           through.returncode == 0 and 'key' in third and third['key'] not in through.stdout + through.stderr)
     runner = start()
     check('rekey: that key opens the runner after the restart', call('GET', '/health', token=third.get('key', ''))[0] == 200)
+    now = third.get('key', '')   # the key the runner holds after the rekey checks above
+    # The project registry and handoff reads (Soma Canvas slice 2): the registry is agent-writable, so nothing in it is a path
+    # the runner trusts. Only HANDOFF.md or CURRENT-STATE.md, a plain file inside a registered folder under the allowed roots.
+    (project / 'HANDOFF.md').write_text('# Scratch\n\nIntro.\n\n## Where things stand\n\nAll good.\n\n```\n## Next in a code block\n```\n\n## Notes\n\nskip me\n\n## Next\n\nShip it.\n\n## Later\n\nnot this\n')
+    (outside / 'HANDOFF.md').write_text('# Outside\n\n## Secret\n\nnope\n')
+    linked = root / 'linked'
+    linked.mkdir()
+    (linked / 'HANDOFF.md').symlink_to(outside / 'HANDOFF.md')
+    (root / 'other').mkdir()
+    (root / 'other' / 'notes.txt').write_text('private')
+    (work / 'projects.json').write_text(json.dumps({'version': 1, 'projects': [
+        {'name': 'scratch', 'folders': [str(project), str(root / 'scratch-*')], 'handoff': 'HANDOFF.md'},
+        {'name': 'outside', 'folders': [str(outside)], 'handoff': 'HANDOFF.md'},
+        {'name': 'linked', 'folders': [str(linked)], 'handoff': 'HANDOFF.md'},
+        {'name': 'redirect', 'folders': [str(root / 'other')], 'handoff': 'notes.txt'},
+        {'name': 'dots', 'folders': [str(root / 'other')], 'handoff': '../scratch/HANDOFF.md'},
+        {'name': 'Bad Name', 'folders': [str(project)], 'handoff': 'HANDOFF.md'},
+    ]}))
+    code, listed = call('GET', '/projects', token=now)
+    check('projects: the registry is listed, a bad name and a handoff that is not HANDOFF.md/CURRENT-STATE.md dropped',
+          code == 200 and [p['name'] for p in listed['projects']] == ['scratch', 'outside', 'linked', 'redirect', 'dots']
+          and [p['handoff'] for p in listed['projects']] == ['HANDOFF.md', 'HANDOFF.md', 'HANDOFF.md', None, None])
+    code, got = call('GET', '/projects/scratch/handoff', token=now)
+    check('handoff: a registered project\'s top section, then its Next section (a heading in a code block is not one)',
+          code == 200 and got['file'] == 'HANDOFF.md' and got['text'] == '# Scratch\n\nIntro.\n\n## Where things stand\n\nAll good.\n\n```\n## Next in a code block\n```\n\n## Next\n\nShip it.' and got['updated'] > 0)
+    # The heading must say next, not merely hold the word; the caps cut at a line's end and never inside a code block.
+    funcs = {'re': re}
+    source = (HERE / 'oma-runner').read_text()
+    exec(source[source.index('# A heading that says what is next'):source.index('def make(')], funcs)
+    served = funcs['top_section']('# P\n\n## READ THIS FIRST (35)\n\nnow\n\n## READ THIS FIRST (27) - V9 IS THE NEXT MOVE\n\nold\n\n## 3. Next steps\n\ngo\n')
+    check('handoff: a heading that only mentions next is not the Next section', served.endswith('## 3. Next steps\n\ngo') and 'old' not in served)
+    check('handoff: "What\'s next?" is a Next heading', funcs['top_section']('# P\n\n## A\n\na\n\n## What\'s next?\n\nb\n').endswith('b'))
+    long = '# P\n\n## A\n\n' + ('word ' * 15 + '\n') * 70 + '```\n' + 'code\n' * 400 + '```\n'
+    cut = funcs['top_section'](long)
+    check('handoff: Next.js is not Next, and a curly apostrophe still says what is next', funcs['top_section']('# P\n\n## A\n\na\n\n## Next.js\n\nx\n\n## What\u2019s next?\n\nb\n').endswith('b'))
+    check('handoff: a top that is all one code block still serves something', funcs['top_section']('# P\n\n## A\n```\n' + 'code\n' * 2000 + '```\n') != '')
+    # Slice 11: a reinstall keeps the canvas service the runner was given, from install's own environment or else from the
+    # installed runner's login item, so it never comes back without it.
+    plist = work / 'service-env.plist'
+    senv = {'plistlib': plistlib, 'os': os, 'PLIST': plist}
+    exec(source[source.index('def service_environment():'):source.index('def install():')], senv)
+    saved = dict(os.environ)
+    try:
+        for k in ('OMA_RUNNER_SOMA_SERVICE', 'OMA_RUNNER_SOMA_SCREENS'):
+            os.environ.pop(k, None)
+        nothing = senv['service_environment']()
+        plist.write_bytes(plistlib.dumps({'EnvironmentVariables': {'PATH': '/bin', 'OMA_RUNNER_SOMA_SERVICE': 'http://100.1.2.3:8481', 'OTHER': 'x'}}))
+        from_plist = senv['service_environment']()
+        os.environ['OMA_RUNNER_SOMA_SERVICE'] = 'http://100.9.9.9:8481'
+        os.environ['OMA_RUNNER_SOMA_SCREENS'] = 'car,desk-macpro'
+        from_env = senv['service_environment']()
+    finally:
+        os.environ.clear(); os.environ.update(saved)
+    check('install keeps the canvas service: none when never given, the login item\'s when reinstalled, what install is given first',
+          nothing == {} and from_plist == {'OMA_RUNNER_SOMA_SERVICE': 'http://100.1.2.3:8481'}
+          and from_env == {'OMA_RUNNER_SOMA_SERVICE': 'http://100.9.9.9:8481', 'OMA_RUNNER_SOMA_SCREENS': 'car,desk-macpro'})
+    check('handoff: the cap cuts at a line end and never leaves a code block open', len(cut) <= 6000 and cut.count('```') % 2 == 0 and cut.endswith('word'))
+    check('handoff: a folder outside the allowed roots is never read', call('GET', '/projects/outside/handoff', token=now)[0] == 404)
+    code, got = call('GET', '/projects/linked/handoff', token=now)
+    check('handoff: a symlink out of its folder is refused', code == 404 and 'nope' not in json.dumps(got))
+    check('handoff: a registry entry naming another file reads nothing', call('GET', '/projects/redirect/handoff', token=now)[0] == 404 and call('GET', '/projects/dots/handoff', token=now)[0] == 404)
+    check('handoff: unknown or malformed names are 404', all(call('GET', path, token=now)[0] == 404 for path in ('/projects/nope/handoff', '/projects/..%2Fetc/handoff', '/projects/Bad%20Name/handoff')))
+    check('projects: still behind the key', call('GET', '/projects', token='x' * 40)[0] == 401 and call('GET', '/projects/scratch/handoff', token='x' * 40)[0] == 401)
+    (work / 'projects.json').write_text('not json')
+    check('projects: an unreadable registry is an empty one, not an error', call('GET', '/projects', token=now) == (200, {'ok': True, 'projects': []}))
+    for shape in ('[]', 'null', '"x"', '1', '{"projects": 7}', '{"projects": [{"name": "scratch", "folders": 7, "handoff": "HANDOFF.md"}]}'):
+        (work / 'projects.json').write_text(shape)
+        code, got = call('GET', '/projects', token=now)
+        check('projects: a registry shaped %s answers, never drops the connection' % shape, code == 200 and isinstance(got.get('projects'), list) and call('GET', '/projects/scratch/handoff', token=now)[0] == 404)
+    # A FIFO, a hard link and a second registration of one name: refused, and nothing waits.
+    (work / 'projects.json').write_text(json.dumps({'projects': [{'name': 'scratch', 'folders': [str(project)], 'handoff': 'HANDOFF.md'}, {'name': 'scratch', 'folders': [str(outside)], 'handoff': 'HANDOFF.md'}]}))
+    check('projects: one entry per name, the first', [p['folders'] for p in call('GET', '/projects', token=now)[1]['projects']] == [[str(project)]])
+    (project / 'HANDOFF.md').unlink()
+    os.mkfifo(project / 'HANDOFF.md')
+    started = time.time()
+    check('handoff: a FIFO is refused at once', call('GET', '/projects/scratch/handoff', token=now)[0] == 404 and time.time() - started < 2)
+    (project / 'HANDOFF.md').unlink()
+    os.link(outside / 'HANDOFF.md', project / 'HANDOFF.md')
+    check('handoff: a hard link to a file elsewhere is refused', call('GET', '/projects/scratch/handoff', token=now)[0] == 404)
+    (project / 'HANDOFF.md').unlink()
+    (project / 'handoff.md').write_text('# lower case\n')
+    check('handoff: only the exact registered name, not another case of it', call('GET', '/projects/scratch/handoff', token=now)[0] == 404)
+    # As the runner ends, every canvas token it gave out is revoked at the service: one minted by this runner for a new turn.
+    calling_as('phone')
+    before = len(service_calls)
+    call('POST', '/threads/%s/messages' % thread, {'text': 'one more turn'}, token=now)
+    for _ in range(100):
+        if any(c[1] == '/tokens' for c in service_calls[before:]):
+            break
+        time.sleep(0.05)
+    tokens_given = {c[3]['digest'] for c in service_calls[before:] if c[0] == 'POST' and c[1] == '/tokens'}
+    runner.send_signal(signal.SIGTERM)
+    runner.wait(10)
+    check('as the runner ends, the service is told to forget every canvas token it gave out',
+          tokens_given and tokens_given <= {c[1].rsplit('/', 1)[-1] for c in service_calls if c[0] == 'DELETE'})
     print('\nall %d checks passed' % passed)
 finally:
     runner.kill()

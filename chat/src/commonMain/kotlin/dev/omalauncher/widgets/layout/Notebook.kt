@@ -32,6 +32,9 @@ enum class ItemKind {
 
     /** A thread's tile, which the launcher draws itself: no file and no app, only its key, which names the thread. */
     Thread,
+
+    /** A cockpit module, drawn by the launcher itself like a thread's tile: its key alone says which (`module:…`). */
+    Module,
 }
 
 /**
@@ -65,6 +68,12 @@ data class Notebook(
  * The `notebook` store's document, in the [Versioned] wrapper:
  * `{"columns": 6, "rows": R, "pages": [{"id", "name", "items": [{"key", "kind", "cell": {x, y, w, h}, "app", "apps"}]}], "dock": [app]}`.
  */
+/** Ahead of a module's key ([dev.omalauncher.canvas.MODULE_PREFIX]): the store knows a module by its key alone. */
+private const val MODULE_KEY = "module:"
+
+/** The kind an item is read as: a widget whose key is a module's is that module, as it is saved ([NotebookStore.write]). */
+private fun savedKind(key: String, saved: ItemKind): ItemKind = if (saved == ItemKind.Widget && key.startsWith(MODULE_KEY)) ItemKind.Module else saved
+
 object NotebookStore {
     const val VERSION = 1
 
@@ -73,7 +82,11 @@ object NotebookStore {
         for (page in notebook.pages) {
             val items = JSONArray()
             for (item in page.items) {
-                val o = JSONObject().put("key", item.key).put("kind", item.kind.name.lowercase())
+                // A module is saved as a widget, which is what a launcher from before modules takes it for: a widget whose file
+                // isn't there holds its place and shows nothing, where an unknown kind would be dropped and the pages set
+                // aside without it. Its key says it is a module ([savedKind]).
+                val kind = if (item.kind == ItemKind.Module) ItemKind.Widget else item.kind
+                val o = JSONObject().put("key", item.key).put("kind", kind.name.lowercase())
                 item.cell?.let { o.put("cell", JSONObject().put("x", it.x).put("y", it.y).put("w", it.w).put("h", it.h)) }
                 item.app?.let { o.put("app", app(it)) }
                 if (item.kind == ItemKind.Folder) o.put("apps", JSONArray().also { a -> item.apps.forEach { a.put(app(it)) } })
@@ -138,7 +151,7 @@ object NotebookStore {
                         (p.optJSONArray("items") ?: JSONArray()).all { o ->
                             NotebookItem(
                                 key = o.getString("key"),
-                                kind = ItemKind.entries.first { it.name.lowercase() == o.getString("kind") },
+                                kind = savedKind(o.getString("key"), ItemKind.entries.first { it.name.lowercase() == o.getString("kind") }),
                                 cell = o.optJSONObject("cell")?.let { Cell(it.getInt("x"), it.getInt("y"), it.getInt("w"), it.getInt("h")) },
                                 app = o.optJSONObject("app")?.let(::app),
                                 apps = o.optJSONArray("apps")?.all(::app).orEmpty(),

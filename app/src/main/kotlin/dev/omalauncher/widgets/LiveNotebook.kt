@@ -6,6 +6,8 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import dev.omalauncher.canvas.MODULE_TILE_KIND
+import dev.omalauncher.canvas.isModuleTile
 import dev.omalauncher.widgets.annotations.PageBoard
 import dev.omalauncher.widgets.annotations.PageTile
 import dev.omalauncher.widgets.layout.ItemKind
@@ -139,7 +141,7 @@ class LiveNotebook(
                 if (item.key in home) continue
                 when (item.kind) {
                     // Known by their keys alone: a page and a cell is all the notebook keeps of either.
-                    ItemKind.Widget, ItemKind.Thread -> {}
+                    ItemKind.Widget, ItemKind.Thread, ItemKind.Module -> {}
                     ItemKind.App -> if (!load(item.app ?: continue, null)) continue
                     ItemKind.Folder -> {
                         folders += item.key
@@ -170,7 +172,8 @@ class LiveNotebook(
         val grid = apps.filter { it.folder == null }
         val appKeys = apps.map { it.app.key }.toSet()
         val keyed = home.keys.filter { it !in appKeys && it !in folders }.sorted()
-        val (threads, widgets) = keyed.partition(::isThreadTile)
+        val (threads, rest) = keyed.partition(::isThreadTile)
+        val (modules, widgets) = rest.partition(::isModuleTile)
         return Notebook(
             rows = rows,
             pages =
@@ -180,6 +183,7 @@ class LiveNotebook(
                         page.name,
                         widgets.filter { home[it] == page.id }.map { NotebookItem(it, ItemKind.Widget, cells[it]) } +
                             threads.filter { home[it] == page.id }.map { NotebookItem(it, ItemKind.Thread, cells[it]) } +
+                            modules.filter { home[it] == page.id }.map { NotebookItem(it, ItemKind.Module, cells[it]) } +
                             grid.filter { home[it.app.key] == page.id }.map { NotebookItem(it.app.key, ItemKind.App, cells[it.app.key], app = it.app) } +
                             folders.filter { home[it] == page.id }.map { f -> NotebookItem(f, ItemKind.Folder, cells[f], apps = apps.filter { it.folder == f }.map { it.app }) },
                     )
@@ -219,11 +223,15 @@ class LiveNotebook(
                     app != null -> PageTile(app.app.label, cell.shown(resizable = false), "app")
                     key in folders -> PageTile(apps.filter { it.folder == key }.joinToString(", ") { it.app.label }, cell.shown(resizable = false), "folder")
                     isThreadTile(key) -> PageTile(key, cell, AGENT_TILE_KIND)
+                    isModuleTile(key) -> PageTile(key, cell, MODULE_TILE_KIND)
                     else -> PageTile(key, cell, "widget")
                 }
             }
         return PageBoard(rows, tiles.sortedWith(compareBy({ it.cell.y }, { it.cell.x })))
     }
+
+    /** The modules there are, by key, with the id of the page each is on. */
+    fun modules(): Map<String, String> = home.filterKeys(::isModuleTile)
 
     /** The thread tiles there are, by key, with the id of the page each is on. */
     fun threadTiles(): Map<String, String> = home.filterKeys(::isThreadTile)
@@ -268,6 +276,26 @@ class LiveNotebook(
         cell: Cell,
     ) {
         if (opened && cells[key] != cell) cells[key] = cell
+    }
+
+    /**
+     * The page [id] called [name], made as another screen's copy of home says it was (Soma Canvas sync): after the page
+     * [after] (first for [PAGE_START], last when null). False, and nothing changed, when that id is taken or home isn't open.
+     */
+    fun addPageWithId(
+        id: String,
+        name: String,
+        after: String?,
+    ): Boolean {
+        if (!opened || pages.any { it.id == id } || id.isBlank()) return false
+        val at = when (after) {
+            null -> pages.size
+            dev.omalauncher.widgets.layout.PAGE_START -> 0
+            else -> position(after).takeIf { it >= 0 }?.plus(1) ?: pages.size
+        }
+        pages.add(at, PageLabel(id, pageName(name) ?: freeName()))
+        save()
+        return true
     }
 
     /** A new, empty page after the last one; returns its id, or null before the notebook is opened. */
@@ -355,8 +383,8 @@ class LiveNotebook(
         if (!canDelete(page) || (!move && !kept)) return null
         val at = position(page)
         val here = home.filterValues { it == page }.keys.sorted()
-        // A thread's tile has no file to be missing: it shows, and moves or goes as he chooses for the page's other tiles.
-        val (shown, held) = here.partition { isThreadTile(it) || it in widgets || !isWidget(it) }
+        // A thread's tile or a module has no file to be missing: it shows, and moves or goes as he chooses for the page's other tiles.
+        val (shown, held) = here.partition { isThreadTile(it) || isModuleTile(it) || it in widgets || !isWidget(it) }
         held.forEach {
             home.remove(it)
             cells.remove(it)
@@ -450,7 +478,7 @@ class LiveNotebook(
         save()
     }
 
-    /** Puts a widget, an app or a folder on [page]; an app taken out of its folder lands on the grid on its own. */
+    /** Puts a widget, an app, a folder or a module on [page]; an app taken out of its folder lands on the grid on its own. */
     fun move(
         key: String,
         page: String,

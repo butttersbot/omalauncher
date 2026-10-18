@@ -43,6 +43,8 @@ compose.desktop {
         // The Keychain library loads its native half.
         jvmArgs += "--enable-native-access=ALL-UNNAMED"
         nativeDistributions {
+            // `soma --serve` runs on the JDK's own HTTP server, which a trimmed runtime leaves out unless named.
+            modules("jdk.httpserver")
             targetFormats(TargetFormat.Dmg, TargetFormat.Deb)
             packageName = "Soma"
             packageVersion = "1.0.0"

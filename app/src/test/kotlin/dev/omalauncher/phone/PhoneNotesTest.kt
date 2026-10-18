@@ -103,7 +103,9 @@ class PhoneNotesTest {
         // Two pads reach the pages' annotations from the service. The note pad writes through leaveNote alone, and the
         // board only reads. The sticker pad (Boss, 2026-10-12) writes stickers and nothing else: it sticks one, changes
         // one or takes one off (after looking that it is a sticker), and has no way to a note, to ink or to a tile.
-        assertEquals(2, service.split("HomeAnnotations.of(").size - 1)
+        // The canvas pad (Soma Canvas slice 6) only asks whether a page has marks, so an agent never takes such a page away.
+        assertEquals(3, service.split("HomeAnnotations.of(").size - 1)
+        assertTrue(service.substringAfter("marked = { page ->").substringBefore("},").let { "whenRead(page) {}" in it && ".on(page).isEmpty" in it && "leave" !in it && "stick" !in it && "remove" !in it })
         assertEquals(1, service.split("leaveNote(").size - 1)
         val stickers = service.substringAfter("private fun stickerPad()").substringBefore("private fun pagePad()")
         assertEquals(listOf("book.stick(", "book.changeSticker(", "book.on(", "book.remove("), Regex("""\bbook\.\w+\(""").findAll(stickers).map { it.value }.toList())

@@ -79,6 +79,45 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
     /** The agents the computer [machine] said it has at its last answer (`/health`'s kinds); none before it answered. */
     fun kindsOn(machine: String): List<String> = kindsOf(machine)
 
+    /**
+     * Project [project]'s handoff top section (Soma Canvas), from the first computer whose runner has it; null when none does.
+     * Blocking: call it off the screen's thread.
+     */
+    fun handoff(project: String): MacHandoff? = handoffs(listOf(project))[project]
+
+    /** The project registry, from the first computer whose runner gives it; null when none does. Blocking. */
+    fun projects(): List<RegisteredProject>? {
+        for (machine in machines()) {
+            val answer = runCatching { macClient(machine).projects() }.getOrNull()
+            if (answer is MacAnswer.Ok) return answer.value
+        }
+        return null
+    }
+
+    /** The host the runner set up as [machine] is reached at (its URL's host: a tailnet name or address); empty when unknown. */
+    fun hostAddress(machine: String): String =
+        machines().firstOrNull { it.id == machine }?.config?.url?.let { runCatching { java.net.URI(it).host }.getOrNull() }.orEmpty()
+
+    /**
+     * The handoffs of [projects] in one pass: each from the first computer whose runner has it. A computer that doesn't
+     * answer at all is not asked again in this pass, so one that is down costs one timeout, not one per project.
+     */
+    fun handoffs(projects: Collection<String>): Map<String, MacHandoff?> {
+        val down = HashSet<String>()
+        return projects.associateWith { project ->
+            var found: MacHandoff? = null
+            for (machine in machines()) {
+                if (machine.id in down) continue
+                when (val answer = runCatching { macClient(machine).handoff(project) }.getOrNull()) {
+                    is MacAnswer.Ok -> { found = answer.value; break }
+                    MacAnswer.Unreachable, null -> down += machine.id
+                    else -> Unit
+                }
+            }
+            found
+        }
+    }
+
     /** Every computer set up on this device, as it last answered; nothing is read from disk, so it can be asked as often as the chat draws. */
     fun hosts(): List<MacSeen> = view.macs.ifEmpty { macSeen(machines(), view) }
 

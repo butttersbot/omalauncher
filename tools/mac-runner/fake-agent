@@ -41,7 +41,9 @@ with open('starts.log', 'a') as log:
     log.write(json.dumps({'prompt': prompt, 'resumed': '--resume' in arguments, 'mode': arguments[arguments.index('--permission-mode') + 1],
                          'deny': json.loads(arguments[arguments.index('--settings') + 1])['permissions']['deny'],
                          'prompt_tool': arguments[arguments.index('--permission-prompt-tool') + 1],
-                         'thread_id': os.environ.get('OMA_THREAD_ID')}) + '\n')
+                         'thread_id': os.environ.get('OMA_THREAD_ID'), 'canvas_token': os.environ.get('SOMA_CANVAS_TOKEN'),
+                         'soma_service': os.environ.get('SOMA_SERVICE'), 'device_key': 'k' * 40 in json.dumps(dict(os.environ)),
+                         'path': os.environ.get('PATH', ''), 'screens': os.environ.get('SOMA_CANVAS_SCREENS')}) + '\n')
 if '--model' in arguments:
     with open('models.log', 'a') as log:
         log.write(arguments[arguments.index('--model') + 1] + '\n')

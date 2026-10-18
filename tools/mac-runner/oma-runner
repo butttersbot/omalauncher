@@ -19,6 +19,8 @@ approves nothing itself: every request for approval waits for the phone's answer
   POST /threads/ID/approvals/APPROVAL    {decision: "allow"|"deny", nonce}   answers that one request, once
   POST /threads/ID/stop                  stops the task and drops what was waiting its turn; what was said stays
   POST /files?name=NAME   (the bytes)    a file from the phone, kept in ~/Downloads/From Fold; {path, bytes}
+  GET  /projects                         the project registry (~/ClaudeSync/projects/_projects.json): {name, folders, handoff}
+  GET  /projects/NAME/handoff            that project's HANDOFF.md or CURRENT-STATE.md, top section and Next section: {file, updated, text}
 
 Agent mail for a thread (tailshare's ~/.local/share/tailshare/mail/new/, to.session = the thread's id) is taken and
 given to that thread labeled as another agent's, never as the owner's words. Each thread's agent runs with
@@ -30,7 +32,7 @@ pair gives DEVICE (its Tailscale machine name) a key of its own, sent to it by T
 before, and a computer running Soma as soma-runner-<this machine>.json. unpair takes it away at once. rekey is pair
 for the phone.
 """
-import contextlib, fcntl, hashlib, hmac, json, os, pathlib, plistlib, re, secrets, select, shlex, shutil, signal, socket, subprocess, sys, tempfile, threading, time, tomllib, urllib.error, urllib.parse, urllib.request, uuid
+import contextlib, fcntl, hashlib, hmac, json, os, pathlib, plistlib, re, secrets, select, shlex, shutil, signal, socket, stat, subprocess, sys, tempfile, threading, time, tomllib, urllib.error, urllib.parse, urllib.request, uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HOME = pathlib.Path.home()
@@ -46,6 +48,11 @@ SOMA_RUNNERS = pathlib.Path(os.environ.get('OMA_RUNNER_SOMA_DIR', HOME / '.confi
 DEVICE_NAME = re.compile(r'[a-z0-9][a-z0-9-]{0,62}')
 STATE = pathlib.Path(os.environ.get('OMA_RUNNER_STATE', HOME / ('.local/state/oma-runner' if LINUX else 'Library/Application Support/oma-runner')))
 LOGS = pathlib.Path(os.environ.get('OMA_RUNNER_LOGS', HOME / ('.local/state/oma-runner/logs' if LINUX else 'Library/Logs/oma-runner')))
+# The project registry Soma, herd and this runner share (Soma Canvas slice 2). Agents can write it, so nothing here
+# trusts a path from it: a handoff is only ever HANDOFF.md or CURRENT-STATE.md, inside a registered folder under ROOTS.
+PROJECTS_FILE = pathlib.Path(os.environ.get('OMA_RUNNER_PROJECTS') or HOME / 'ClaudeSync/projects/_projects.json')
+HANDOFF_FILES = ('HANDOFF.md', 'CURRENT-STATE.md')
+HANDOFF_BYTES = 64 * 1024
 ROOTS = [pathlib.Path(root) for root in os.environ['OMA_RUNNER_ROOTS'].split(':')] if os.environ.get('OMA_RUNNER_ROOTS') else [HOME / 'Projects', HOME / 'ClaudeSync/projects']
 AGENT = os.environ.get('OMA_RUNNER_AGENT', 'claude')
 CODEX = os.environ.get('OMA_RUNNER_CODEX') or shutil.which('codex') or '/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex'
@@ -90,6 +97,149 @@ LIMIT = re.compile(r'usage limit|hit your (\w+ )?limit|limit (reached|exceeded)|
 CODEX_LIMITS = {'usageLimitExceeded', 'rateLimitExceeded', 'serverOverloaded', 'sessionBudgetExceeded'}
 # Codex features that act outside the project or approve on their own; off in runner threads where this Codex has them.
 CODEX_OFF = ['apps', 'computer_use', 'browser_use', 'browser_use_external', 'in_app_browser', 'hooks', 'plugins', 'remote_plugin', 'guardian_approval']
+
+
+# Soma Canvas (slice 8a, PRD §6): the canvas service a thread's agent may arrange screens through, and which of its screens.
+# With no service named, threads get no canvas token and nothing else changes.
+SOMA_SERVICE = os.environ.get('OMA_RUNNER_SOMA_SERVICE', '').rstrip('/')
+SOMA_SCREENS = [screen for screen in os.environ.get('OMA_RUNNER_SOMA_SCREENS', 'car').split(',') if re.fullmatch(r'[a-z0-9-]{1,40}', screen)]
+canvas_tokens = {}
+canvas_given = []
+canvas_lock = threading.Lock()
+canvas_key_missing = [0.0]
+
+
+# Slice 8c: the `soma` a thread's agent runs to arrange screens, written next to the runner's state and put first on the
+# thread's PATH. It holds nothing secret: the token is in the thread's environment alone, and the helper never prints it.
+SOMA_HELPER = r'''#!/usr/bin/env python3
+"""soma canvas [--screen NAME] WORDS...: arrange a screen of Soma's canvas from this thread, with this thread's own
+token. Run `soma canvas help` for the words. Only the screens this thread was given; never approvals or keys."""
+import http.client, json, os, sys, urllib.error, urllib.request
+
+USAGE = 'soma canvas [--screen NAME] board [PAGE] | modules | page-make NAME | place MODULE [SIZE] [WHERE] [--page NAME] | move | resize | remove | undo'
+args = sys.argv[1:]
+if not args or args[0] != 'canvas':
+    sys.exit('usage: ' + USAGE)
+words = args[1:]
+token, service = os.environ.get('SOMA_CANVAS_TOKEN'), os.environ.get('SOMA_SERVICE')
+screens = [s for s in os.environ.get('SOMA_CANVAS_SCREENS', '').split(',') if s]
+if not words or words[0] in ('help', '--help', '-h'):
+    print(USAGE + '\nScreens this thread may arrange: ' + (', '.join(screens) or 'none'))
+    sys.exit(0)
+if not token or not service:
+    sys.exit('soma canvas: this thread has no canvas token (the runner gives one when a canvas service is set up).')
+screen = screens[0] if screens else 'car'
+if words[0] == '--screen':
+    if len(words) < 3:
+        sys.exit('usage: ' + USAGE)
+    screen, words = words[1], words[2:]
+request = urllib.request.Request(service.rstrip('/') + '/screens/' + urllib.request.quote(screen, safe='') + '/canvas', method='POST',
+                                 data=json.dumps({'words': words}).encode(), headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'})
+
+
+class Stay(urllib.request.HTTPRedirectHandler):
+    """A redirect is not followed: the token goes to the canvas service and nowhere else."""
+    def redirect_request(self, *_):
+        return None
+
+
+try:
+    with urllib.request.build_opener(Stay).open(request, timeout=20) as reply:
+        text = reply.read()
+    try:
+        answer = json.loads(text)
+    except ValueError:
+        answer = {'ok': False, 'error': 'the canvas service answered with something that is not JSON'}
+except urllib.error.HTTPError as problem:
+    try:
+        answer = json.loads(problem.read())
+    except ValueError:
+        answer = {'ok': False, 'error': 'the canvas service said %d' % problem.code}
+except (OSError, ValueError, http.client.HTTPException) as problem:
+    answer = {'ok': False, 'error': 'the canvas service could not be reached: %s' % problem}
+if not isinstance(answer, dict):
+    answer = {'ok': False, 'error': 'the canvas service answered with something other than an object'}
+# Whatever came back, never the token.
+print(json.dumps(answer).replace(token, '[token]'))
+sys.exit(0 if answer.get('ok') else 1)
+'''
+SOMA_BIN = STATE / 'bin'
+
+
+def write_soma_helper():
+    """The helper, written each start (an older one is replaced), readable and runnable by this user alone."""
+    try:
+        SOMA_BIN.mkdir(parents=True, exist_ok=True)
+        helper = SOMA_BIN / 'soma'
+        fresh = SOMA_BIN / '.soma.new'
+        fresh.write_text(SOMA_HELPER)
+        fresh.chmod(0o700)
+        fresh.replace(helper)
+    except OSError as problem:
+        log('the `soma` helper for threads could not be written to %s: %s' % (SOMA_BIN, problem))
+
+
+def soma_service_key():
+    """This runner's own device key for the canvas service: in the Keychain (on Linux the Secret Service), never in a file.
+    A loopback test names it in the environment instead."""
+    if os.environ.get('OMA_RUNNER_BIND') == '127.0.0.1' and os.environ.get('OMA_RUNNER_SOMA_KEY'):
+        return os.environ['OMA_RUNNER_SOMA_KEY']
+    # Missing a few minutes ago: not asked again on every turn (each ask can take seconds).
+    if time.time() - canvas_key_missing[0] < 300:
+        return None
+    # The item `Soma --mint-runner-key` makes, by its account too: an older one by hand under another account is not it.
+    command = (['secret-tool', 'lookup', 'service', 'oma-soma-service', 'account', 'oma-runner'] if LINUX
+               else ['security', 'find-generic-password', '-s', 'oma-soma-service', '-a', 'oma-runner', '-w'])
+    try:
+        found = subprocess.run(command, capture_output=True, text=True, timeout=5).stdout.strip() or None
+    except (OSError, subprocess.SubprocessError):
+        found = None
+    if found is None:
+        canvas_key_missing[0] = time.time()
+    return found
+
+
+def canvas_env(thread):
+    """What a thread's agent is given to arrange the canvas with: a token of its own, minted here and registered with the
+    service (its digest only), for this thread and the screens named, good for a day and minted again before that ends.
+    Never a device key. Nothing when there is no service, no key for it, or the service says no: the thread runs as before."""
+    if not SOMA_SERVICE or not SOMA_SCREENS:
+        return {}
+    with canvas_lock:
+        have = canvas_tokens.get(thread.meta['id'])
+        if have and time.time() - have[1] < 20 * 3600:
+            return {'SOMA_CANVAS_TOKEN': have[0], 'SOMA_SERVICE': SOMA_SERVICE, 'SOMA_CANVAS_SCREENS': ','.join(SOMA_SCREENS),
+                    'PATH': str(SOMA_BIN) + os.pathsep + os.environ.get('PATH', '')}
+    key = soma_service_key()
+    if not key:
+        return {}
+    token = 'soma-thread-' + secrets.token_hex(24)
+    body = json.dumps({'digest': digest(token), 'thread': thread.meta['id'], 'screens': SOMA_SCREENS, 'expires': int((time.time() + 24 * 3600) * 1000)}).encode()
+    request = urllib.request.Request(SOMA_SERVICE + '/tokens', data=body, method='POST', headers={'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json'})
+    try:
+        with urllib.request.urlopen(request, timeout=3) as reply:
+            if reply.status != 200:
+                return {}
+    except (OSError, ValueError, urllib.error.URLError):
+        return {}
+    # A thread's older token is left to expire on its own (an agent still running may hold it); all are revoked as the
+    # runner ends.
+    with canvas_lock:
+        canvas_tokens[thread.meta['id']] = (token, time.time())
+        canvas_given.append(token)
+    return {'SOMA_CANVAS_TOKEN': token, 'SOMA_SERVICE': SOMA_SERVICE, 'SOMA_CANVAS_SCREENS': ','.join(SOMA_SCREENS),
+            'PATH': str(SOMA_BIN) + os.pathsep + os.environ.get('PATH', '')}
+
+
+def revoke_canvas_token(token, key=None):
+    """The service forgets [token]: a thread's old one when it gets a new one, and every one as the runner ends."""
+    key = key or soma_service_key()
+    if not SOMA_SERVICE or not key:
+        return
+    try:
+        urllib.request.urlopen(urllib.request.Request(SOMA_SERVICE + '/tokens/' + digest(token), method='DELETE', headers={'Authorization': 'Bearer ' + key}), timeout=5).close()
+    except (OSError, ValueError, urllib.error.URLError):
+        pass
 
 
 def tailscale_address():
@@ -667,6 +817,136 @@ def allowed_project(given):
     return None
 
 
+_logged = set()
+
+
+def log(text, once=False):
+    """A line in runner.log (the runner's own output), stamped. [once]: said the first time only, so a phone polling a
+    broken handoff doesn't flood the log."""
+    if once:
+        if text in _logged:
+            return
+        _logged.add(text)
+    print('%s %s' % (time.strftime('%Y-%m-%d %H:%M:%S'), text), flush=True)
+
+
+def registry():
+    """The project registry's entries that can be read: name, folders (as written, ~ allowed, a trailing * a pattern), handoff."""
+    try:
+        data = json.loads(PROJECTS_FILE.read_text())
+    except (OSError, ValueError):
+        return []
+    # The file is agent-writable: any shape that isn't the registry's is an empty registry, never an error.
+    if not isinstance(data, dict) or not isinstance(data.get('projects'), list):
+        return []
+    found, names = [], set()
+    for entry in data['projects']:
+        if isinstance(entry, dict) and isinstance(entry.get('name'), str) and re.fullmatch(r'[a-z0-9][a-z0-9._-]{0,62}', entry['name']) and entry['name'] not in names:
+            names.add(entry['name'])   # one entry per name, the first, as Soma reads it
+            given = entry.get('folders')
+            folders = [f for f in given if isinstance(f, str) and f.strip() and len(f) < 512] if isinstance(given, list) else []
+            handoff = entry.get('handoff')
+            if handoff is not None and handoff not in HANDOFF_FILES:
+                log('registry: %s names handoff %r, which is not HANDOFF.md or CURRENT-STATE.md; refused' % (entry['name'], handoff), once=True)
+                handoff = None
+            found.append({'name': entry['name'], 'folders': folders, 'handoff': handoff})
+    return found
+
+
+def handoff_of(name):
+    """The top section of project NAME's handoff file as (file, updated, text), or an error string. Only the registered
+    file name, only in one of its registered folders that exists here and resolves under an allowed root."""
+    entry = next((e for e in registry() if e['name'] == name), None)
+    if entry is None:
+        return 'no such project'
+    if not entry['handoff']:
+        return 'that project has no handoff file'
+    for folder in entry['folders']:
+        if '*' in folder:
+            continue
+        base = allowed_project(folder)
+        if base is None:
+            continue
+        # Exactly the registered name in that folder (APFS would also answer to handoff.md).
+        try:
+            if entry['handoff'] not in os.listdir(base):
+                continue
+        except OSError:
+            continue
+        path = base / entry['handoff']
+        # One open, one stat, no window between them: never follow a link, never wait on a FIFO, only a plain file
+        # with one name (a hard link could be a private file's second name), never one of the runner's own.
+        try:
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        except OSError:
+            log('handoff: %s for %s could not be opened as a plain file; refused' % (path, name), once=True)
+            continue
+        try:
+            st = os.fstat(fd)
+            if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1 or (st.st_dev, st.st_ino) in own_files():
+                log('handoff: %s for %s is not a plain file of its own; refused' % (path, name), once=True)
+                continue
+            raw = os.read(fd, HANDOFF_BYTES).decode('utf-8', 'replace')
+        except OSError:
+            continue
+        finally:
+            os.close(fd)
+        return entry['handoff'], int(st.st_mtime * 1000), top_section(raw)
+    return 'no handoff file in that project\'s folders on this machine'
+
+
+def own_files():
+    """(device, inode) of the runner's key files, so no name in a project folder can be one of them."""
+    found = set()
+    for path in (TOKEN_FILE, KEYS_FILE):
+        try:
+            st = os.stat(path)
+            found.add((st.st_dev, st.st_ino))
+        except OSError:
+            pass
+    return found
+
+
+# A heading that says what is next ("Next", "Next actions", "3. Next steps", "What's next?"), never one that just has the word.
+NEXT_HEADING = re.compile(r"^##\s+\W*(\d+[.)]\s*)?(what['\u2019]?s\s+)?next\b(?![.-]\w)", re.IGNORECASE)
+
+
+def clip(text, most):
+    """[text] cut to [most] characters at a line's end, never inside a code block: a cut that leaves a fence open is
+    moved back to before that fence."""
+    if len(text) <= most:
+        return text
+    cut = text[:most]
+    if '\n' in cut:
+        cut = cut[:cut.rindex('\n')]
+    lines = cut.split('\n')
+    fences = [i for i, line in enumerate(lines) if line.lstrip().startswith('```')]
+    if len(fences) % 2 and fences[-1] > 0:
+        lines = lines[:fences[-1]]
+    return '\n'.join(lines).rstrip()
+
+
+def top_section(text):
+    """What a handoff card is given: its top (everything before the second level-two heading: the first section, with the
+    title above it), then its first later level-two section whose heading says next, if it has one. Headings inside a
+    code block are not headings."""
+    sections, fenced, headed = [[]], False, False
+    for line in text.splitlines():
+        if line.lstrip().startswith('```'):
+            fenced = not fenced
+        elif not fenced and line.startswith('## '):
+            # The first level-two heading belongs to the top; each later one starts a section.
+            if headed:
+                sections.append([])
+            headed = True
+        sections[-1].append(line)
+    top = clip('\n'.join(sections[0]).strip(), 6000)
+    nxt = next((s for s in sections[1:] if NEXT_HEADING.search(s[0])), None)
+    if nxt is None:
+        return top
+    return top + '\n\n' + clip('\n'.join(nxt).strip(), 8000 - len(top) - 2)
+
+
 def make(name, project, kind='claude', model=None, chosen=None):
     with changed:
         entry_id = 't' + secrets.token_hex(4)
@@ -900,7 +1180,7 @@ def claude_turn(thread, text):
     if kept is None:
         driver = Claude(thread, text)
         try:
-            process = subprocess.Popen(driver.command(), cwd=thread.meta['project'], env={**driver.environment(), 'OMA_THREAD_ID': thread.meta['id']},
+            process = subprocess.Popen(driver.command(), cwd=thread.meta['project'], env={**driver.environment(), 'OMA_THREAD_ID': thread.meta['id'], **canvas_env(thread)},
                                        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
         except OSError as problem:
             with changed:
@@ -925,7 +1205,7 @@ def turn(thread, text):
         return claude_turn(thread, text)
     driver = DRIVERS[thread.meta['kind']](thread, text)
     try:
-        process = subprocess.Popen(driver.command(), cwd=thread.meta['project'], env={**driver.environment(), 'OMA_THREAD_ID': thread.meta['id']},
+        process = subprocess.Popen(driver.command(), cwd=thread.meta['project'], env={**driver.environment(), 'OMA_THREAD_ID': thread.meta['id'], **canvas_env(thread)},
                                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
     except OSError as problem:
         with changed:
@@ -1085,11 +1365,22 @@ class Runner(BaseHTTPRequestHandler):
         if parts == ['health']:
             with changed:
                 states = [thread.meta['status'] for thread in threads.values()]
-            return self.answer(200, {'ok': True, 'runner': 'oma-runner', 'threads': len(states), 'working': states.count('working'), 'waiting': states.count('waiting'),
+            # Where this Mac's canvas service is, when it has one: a device asks here rather than guessing a port.
+            return self.answer(200, {'ok': True, 'runner': 'oma-runner', **({'soma': SOMA_SERVICE} if SOMA_SERVICE else {}), 'threads': len(states), 'working': states.count('working'), 'waiting': states.count('waiting'),
                                      'kinds': [kind for kind in KINDS if program(kind)], 'files': True})
         if parts == ['threads']:
             with changed:
                 return self.answer(200, {'ok': True, 'threads': [thread.view() for thread in threads.values()]})
+        if parts == ['projects']:
+            return self.answer(200, {'ok': True, 'projects': registry()})
+        if len(parts) == 3 and parts[0] == 'projects' and parts[2] == 'handoff':
+            if not re.fullmatch(r'[a-z0-9][a-z0-9._-]{0,62}', parts[1]):
+                return self.answer(404, {'ok': False, 'error': 'not found'})
+            found = handoff_of(parts[1])
+            if isinstance(found, str):
+                return self.answer(404, {'ok': False, 'error': found})
+            name, updated, text = found
+            return self.answer(200, {'ok': True, 'project': parts[1], 'file': name, 'updated': updated, 'text': text})
         thread = threads.get(parts[1]) if len(parts) in (2, 3) and parts[0] == 'threads' else None
         if thread is None:
             return self.answer(404, {'ok': False, 'error': 'not found'})
@@ -1378,6 +1669,8 @@ def serve():
     LOGS.mkdir(parents=True, exist_ok=True)
     (STATE / 'threads').mkdir(parents=True, exist_ok=True)
     load()
+    if SOMA_SERVICE:
+        write_soma_helper()
     # A test may ask for this machine's own loopback; anything else is the tailnet address or nothing.
     address = '127.0.0.1' if os.environ.get('OMA_RUNNER_BIND') == '127.0.0.1' else None
     while address is None:
@@ -1392,6 +1685,9 @@ def serve():
         # Tasks end with the runner; their threads come back as interrupted and are not started again.
         global closing
         closing = True
+        # Their canvas tokens end with them.
+        for token in list(canvas_given):
+            revoke_canvas_token(token)
         if changed.acquire(timeout=1):
             try:
                 for thread in threads.values():
@@ -1432,6 +1728,20 @@ def runner_python():
     sys.exit('oma-runner: no python3 of 3.11 or later here (it needs tomllib). Install one, e.g. brew install python, and run install again.')
 
 
+def service_environment():
+    """The canvas service's settings the installed runner keeps (slice 11): what install was run with, else what the
+    running runner was started with, so a reinstall never drops the service it was given."""
+    names = ('OMA_RUNNER_SOMA_SERVICE', 'OMA_RUNNER_SOMA_SCREENS')
+    kept = {}
+    try:
+        installed = plistlib.loads(PLIST.read_bytes()) if PLIST.exists() else {}
+        env = installed.get('EnvironmentVariables', {}) if isinstance(installed, dict) else {}
+        kept = {k: v for k, v in env.items() if k in names and isinstance(v, str)} if isinstance(env, dict) else {}
+    except (OSError, ValueError, plistlib.InvalidFileException):
+        kept = {}
+    return {**kept, **{k: os.environ[k] for k in names if os.environ.get(k)}}
+
+
 def install():
     if not TOKEN_FILE.exists() and not DEVICES.table():
         key = secrets.token_urlsafe(32)
@@ -1451,18 +1761,19 @@ def install():
     INSTALLED.chmod(0o755)
     LOGS.mkdir(parents=True, exist_ok=True)
     path = ':'.join([str(HOME / '.local/bin'), str(HOME / '.local/share/mise/shims'), str(HOME / '.bun/bin'), '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin'])
+    service_env = service_environment()
     if LINUX:
         UNIT.parent.mkdir(parents=True, exist_ok=True)
         UNIT.write_text('[Unit]\nDescription=oma-runner: coding agents for Soma\n\n[Service]\n'
-                        'ExecStart=%s %s serve\nRestart=always\nRestartSec=5\nWorkingDirectory=%s\nEnvironment=PATH=%s\nEnvironment=HOME=%s\n'
+                        'ExecStart=%s %s serve\nRestart=always\nRestartSec=5\nWorkingDirectory=%s\nEnvironment=PATH=%s\nEnvironment=HOME=%s\n%s'
                         'StandardOutput=append:%s\nStandardError=append:%s\n\n[Install]\nWantedBy=default.target\n'
-                        % (python, INSTALLED, HOME, path, HOME, LOGS / 'runner.log', LOGS / 'runner.log'))
+                        % (python, INSTALLED, HOME, path, HOME, ''.join('Environment=%s=%s\n' % kv for kv in service_env.items()), LOGS / 'runner.log', LOGS / 'runner.log'))
         stop_service()
         return start_service()
     PLIST.parent.mkdir(parents=True, exist_ok=True)
     PLIST.write_bytes(plistlib.dumps({
         'Label': LABEL, 'ProgramArguments': [python, str(INSTALLED), 'serve'], 'RunAtLoad': True, 'KeepAlive': True,
-        'EnvironmentVariables': {'PATH': path, 'HOME': str(HOME)}, 'WorkingDirectory': str(HOME),
+        'EnvironmentVariables': {'PATH': path, 'HOME': str(HOME), **service_env}, 'WorkingDirectory': str(HOME),
         'StandardOutPath': str(LOGS / 'runner.log'), 'StandardErrorPath': str(LOGS / 'runner.log')}))
     stop_service()
     start_service()

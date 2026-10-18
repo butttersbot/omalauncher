@@ -1,5 +1,6 @@
 package dev.omalauncher.widgets
 
+import androidx.compose.ui.graphics.asImageBitmap
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -143,7 +144,14 @@ class WidgetServices(
             else -> null
         }
 
-    override fun androidImage(src: String) = media.art(src)
+    /** The album art, wrapped once per bitmap: asking again for the same art gives the same image and redraws nothing. */
+    override fun androidImage(src: String): androidx.compose.ui.graphics.ImageBitmap? {
+        val art = media.art(src) ?: return null
+        artShown?.takeIf { it.first === art }?.let { return it.second }
+        return art.asImageBitmap().also { artShown = art to it }
+    }
+
+    private var artShown: Pair<android.graphics.Bitmap, androidx.compose.ui.graphics.ImageBitmap>? = null
 
     override fun terminal(
         command: String?,

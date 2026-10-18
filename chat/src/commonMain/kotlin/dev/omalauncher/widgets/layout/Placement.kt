@@ -136,13 +136,17 @@ class Placement<T>(
  */
 fun usedRows(tiles: List<Pair<Cell?, Boolean>>) = tiles.maxOfOrNull { (cell, resizable) -> cell?.let { if (resizable) it.bottom else it.y + 1 } ?: 0 } ?: 0
 
-/** The grid's cell width and height and its gap, guessed from a screen [widthPixels] wide before the home grid was laid out. */
+/**
+ * The grid's cell width and height and its gap, guessed from a screen [widthPixels] wide before the grid was laid out.
+ * [columns] is the screen's grid: the Fold's home is [GRID_COLUMNS]; a desktop's or the car's canvas has its own.
+ */
 fun estimatedGeometry(
     widthPixels: Int,
     density: Float,
+    columns: Int = GRID_COLUMNS,
 ): Triple<Float, Float, Int> {
     val gap = Math.round(6 * density)
-    val cell = (widthPixels - gap) / GRID_COLUMNS.toFloat()
+    val cell = (widthPixels - gap) / columns.toFloat()
     return Triple(cell, cell, gap)
 }
 

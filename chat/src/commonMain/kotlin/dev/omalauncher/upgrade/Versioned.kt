@@ -1,6 +1,5 @@
 package dev.omalauncher.upgrade
 
-import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
@@ -11,6 +10,9 @@ import org.json.JSONTokener
  * format change in a new APK never discards what users saved.
  */
 object Versioned {
+    /** Where an unreadable document is reported: the phone sets Android's log (App), the desktop leaves it quiet. */
+    @Volatile var log: (message: String, error: Throwable) -> Unit = { _, _ -> }
+
     fun write(
         version: Int,
         data: Any,
@@ -36,7 +38,7 @@ object Versioned {
             while (version < current) data = migrate(version++, data)
             data
         } catch (e: Exception) {
-            Log.w("versioned", "unreadable document", e)
+            log("unreadable document", e)
             null
         }
     }

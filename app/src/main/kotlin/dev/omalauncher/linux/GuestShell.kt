@@ -8,14 +8,6 @@ import kotlinx.coroutines.withContext
 import java.io.BufferedReader
 import java.io.Writer
 
-/** What a guest command printed, kept apart, and how it exited (124: timed out). */
-data class ShellResult(
-    val out: String,
-    val err: String,
-    val code: Int,
-) {
-    val timedOut get() = code == 124
-}
 
 /**
  * One long-lived bash inside the guest for running many short commands
