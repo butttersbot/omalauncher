@@ -92,8 +92,10 @@ class KeyLayout(
     val top: Float,
     /** One key's width, dp. */
     val unit: Float,
+    /** How far below its cap each key's cell lies, dp (the split keys: [KeyGeometry.SPLIT_TOUCH_DOWN]). */
+    val touchDown: Float = 0f,
 ) {
-    fun rowOf(y: Float) = ((y - top) / rowHeight).toInt().coerceIn(0, 3)
+    fun rowOf(y: Float) = ((y - top - touchDown) / rowHeight).toInt().coerceIn(0, 3)
 
     /** The key whose cell holds ([x], [y]); between cells or past a row's end, the nearest one in that row. */
     fun hitPlain(
@@ -145,19 +147,32 @@ object KeyGeometry {
     /** Side padding, dp. */
     const val PAD = 4f
 
-    /** Row heights per screen, dp: what Boss practised on. */
-    fun rowHeight(screen: Screen) =
-        when (screen) {
-            Screen.COVER -> 54f
-            Screen.PORTRAIT -> 58f
-            Screen.LANDSCAPE -> 50f
-        }
+    /** Row heights per screen, dp: what Boss practised on; the split keys' are taller ([SPLIT_UNIT]). */
+    fun rowHeight(
+        screen: Screen,
+        split: Boolean = false,
+    ) = when (screen) {
+        Screen.COVER -> 54f
+        Screen.PORTRAIT -> if (split) 64f else 58f
+        Screen.LANDSCAPE -> if (split) 56f else 50f
+    }
 
     /**
-     * One key's width when the inner screen's keys are split ([layout]'s split): the cover keyboard's, the size his
-     * thumbs practised on (475 dp across ten keys), so each half is that keyboard's half.
+     * One key's width when the inner screen's keys are split ([layout]'s split). It was the cover keyboard's 46.7 dp,
+     * and Boss made "tons of mistakes" on it (2026-10-17): his 190 taps on the split keys in two days scattered
+     * 11-12 dp each way round where they landed, a quarter of a key, so the keys are bigger now, 52 dp by 64 (56 lying
+     * down), about 9 mm by 11 on the Fold, the size thumb keyboards are made at.
      */
-    const val SPLIT_UNIT = 46.7f
+    const val SPLIT_UNIT = 52f
+
+    /**
+     * Where his thumbs land on the split keys, from the same taps: 9 dp below a key's middle on average (8 to 10 on
+     * every row, either way up), and on the right half 4 dp toward the middle as well. So each split key takes the
+     * touches that far from where it is drawn: its cell lies [SPLIT_TOUCH_DOWN] below its cap, and on the right half
+     * [SPLIT_RIGHT_IN] toward the middle. Before, a tap low on a key went to the row below.
+     */
+    const val SPLIT_TOUCH_DOWN = 9f
+    const val SPLIT_RIGHT_IN = 4f
 
     /**
      * The keys for a board [widthDp] wide on [screen]. With [split], on the inner screen only (Boss, 2026-10-17: "the
@@ -175,9 +190,12 @@ object KeyGeometry {
         returnLabel: String,
         split: Boolean = false,
     ): KeyLayout {
+        val splitting = split && screen != Screen.COVER
         val top = if (mech) 10f else 6f
-        val bottom = 8f
-        val h = rowHeight(screen)
+        // The bottom row's cells lie [SPLIT_TOUCH_DOWN] below their caps, still on the board.
+        val bottom = if (splitting) 8f + SPLIT_TOUCH_DOWN else 8f
+        val h = rowHeight(screen, splitting)
+        val down = if (splitting) SPLIT_TOUCH_DOWN else 0f
         // Mechanical caps sit nearly flush (2 dp apart, as Boss asked); flat ones keep Apple's gaps.
         val gx = if (mech) 2f else 6f
         val gy = if (mech) 4f else 10f
@@ -192,9 +210,10 @@ object KeyGeometry {
             kind: KeyKind,
             visX: Float = x,
             visW: Float = w,
+            inward: Float = 0f,
         ) {
             val y = top + row * h
-            keys += Key(row, Box(x, y, w, h), Box(visX + gx / 2, y + gy / 2, visW - gx, h - gy), label, action, kind)
+            keys += Key(row, Box(x + inward, y + down, w, h), Box(visX + gx / 2, y + gy / 2, visW - gx, h - gy), label, action, kind)
         }
 
         val rows: List<List<String>> =
@@ -214,43 +233,46 @@ object KeyGeometry {
             }
         val x0 = PAD
 
-        if (split && screen != Screen.COVER) {
+        if (splitting) {
             val u = minOf(SPLIT_UNIT, (widthDp - 2 * PAD) / 10)
             // Where the right half's five units begin: its keys end at the right edge as the left half's begin at the left.
             val r = widthDp - PAD - 5 * u
+            val inR = -SPLIT_RIGHT_IN
 
             fun halves(row: List<String>) = row.take((row.size + 1) / 2) to row.drop((row.size + 1) / 2)
-            fun letters(row: Int, chars: List<String>, from: Float) =
-                chars.forEachIndexed { i, c -> add(row, from + i * u, u, shown(c), KeyAction.Type(c), KeyKind.LETTER) }
+            fun letters(row: Int, chars: List<String>, from: Float, inward: Float = 0f) =
+                chars.forEachIndexed { i, c -> add(row, from + i * u, u, shown(c), KeyAction.Type(c), KeyKind.LETTER, inward = inward) }
             val (l0, r0) = halves(rows[0])
             letters(0, l0, x0)
-            letters(0, r0, r + (5 - r0.size) * u)
+            letters(0, r0, r + (5 - r0.size) * u, inR)
             // Apple's half-key step on the second row of letters, in both halves.
             val step = if (rows[1].size < 10) u / 2 else 0f
             val (l1, r1) = halves(rows[1])
             letters(1, l1, x0 + step)
-            letters(1, r1, r + step)
+            letters(1, r1, r + step, inR)
             // Third row: ⇧ at the left end and ⌫ at the right one, each 1.5 units of touch showing 1.25, as in one piece.
             val (l2, r2) = halves(rows[2])
             add(2, x0, 1.5f * u, modLabel, modAction, KeyKind.MOD, visW = 1.25f * u)
             letters(2, l2, x0 + 1.5f * u)
-            letters(2, r2, r + 3.5f * u - r2.size * u)
-            add(2, r + 3.5f * u, 1.5f * u, "⌫", KeyAction.Back, KeyKind.MOD, visX = r + 3.75f * u, visW = 1.25f * u)
+            letters(2, r2, r + 3.5f * u - r2.size * u, inR)
+            add(2, r + 3.5f * u, 1.5f * u, "⌫", KeyAction.Back, KeyKind.MOD, visX = r + 3.75f * u, visW = 1.25f * u, inward = inR)
             // Bottom row: 123, 🙂 and a space for the left thumb; a space, the mic and return for the right one.
             var x = x0
+            var shift = 0f
 
             fun put(w: Float, label: String, action: KeyAction, kind: KeyKind) {
-                add(3, x, w * u, label, action, kind)
+                add(3, x, w * u, label, action, kind, inward = shift)
                 x += w * u
             }
             put(1.25f, if (layer == Layer.ABC) "123" else "ABC", KeyAction.Layer, KeyKind.MOD)
             put(1.1f, "🙂", KeyAction.Emoji, KeyKind.MOD)
             put(2.65f, "space", KeyAction.Space, KeyKind.SPACE)
             x = r
+            shift = inR
             put(1.75f, "space", KeyAction.Space, KeyKind.SPACE)
             put(1.5f, "🎤", KeyAction.Mic, KeyKind.MIC)
             put(1.75f, returnLabel, KeyAction.Return, KeyKind.RETURN)
-            return KeyLayout(keys, top + 4 * h + bottom, h, top, u)
+            return KeyLayout(keys, top + 4 * h + bottom, h, top, u, SPLIT_TOUCH_DOWN)
         }
 
         val u = (widthDp - 2 * PAD) / 10

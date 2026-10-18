@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.math.abs
 
 class KeyGeometryTest {
     private fun cover(
@@ -102,19 +103,20 @@ class KeyGeometryTest {
         val l = inner()
         val u = KeyGeometry.SPLIT_UNIT
         assertEquals(u, l.unit, 1e-4f)
-        val right = 704f - 4f - 5 * u
+        // The right half's cells lie a little toward the middle of where its keys are drawn.
+        val right = 704f - 4f - 5 * u - KeyGeometry.SPLIT_RIGHT_IN
         // The left half starts at the left edge and the right one ends at the right edge, with a wide gap between.
         assertEquals(4f, l.key("q").cell.x, 1e-4f)
         assertEquals(4f + 4 * u, l.key("t").cell.x, 1e-4f)
         assertEquals(right, l.key("y").cell.x, 1e-4f)
-        assertEquals(704f - 4f, l.key("p").cell.x + l.key("p").cell.w, 1e-4f)
-        assertTrue(l.key("y").cell.x - (l.key("t").cell.x + u) > 150f)
+        assertEquals(704f - 4f, l.key("p").cap.x + l.key("p").cap.w + 1f, 1e-4f)
+        assertTrue(l.key("y").cell.x - (l.key("t").cell.x + u) > 100f)
         // Apple's half-key step on the second row, in both halves; g left, h right.
         assertEquals(4f + u / 2, l.key("a").cell.x, 1e-4f)
         assertEquals(right + u / 2, l.key("h").cell.x, 1e-4f)
         // ⇧ and ⌫ at the outer ends; z..v on the left, b..m on the right.
         assertEquals(4f, l.key("⇧").cell.x, 1e-4f)
-        assertEquals(704f - 4f, l.key("⌫").cell.x + l.key("⌫").cell.w, 1e-4f)
+        assertEquals(704f - 4f - KeyGeometry.SPLIT_RIGHT_IN, l.key("⌫").cell.x + l.key("⌫").cell.w, 1e-4f)
         assertTrue(l.key("v").cell.x < 352f && l.key("b").cell.x > 352f)
         // A space under each thumb, the mic and return on the right as in one piece.
         val bottom = l.keys.filter { it.row == 3 }.map { it.label }
@@ -145,5 +147,31 @@ class KeyGeometryTest {
         val y = l.key("t").cell.cy
         assertEquals("t", l.hitPlain(l.key("t").cell.x + l.key("t").cell.w + 20f, y)?.label)
         assertEquals("y", l.hitPlain(l.key("y").cell.x - 20f, y)?.label)
+    }
+
+    /** Boss, 2026-10-17: "tons of mistakes" on the split keys; his taps landed 9 dp low, and 4 dp inward on the right. */
+    @Test fun theSplitKeysAreBiggerAndTakeTouchesWhereHisThumbsLand() {
+        val l = inner()
+        assertEquals(52f, l.unit, 1e-4f)
+        assertEquals(64f, l.rowHeight, 1e-4f)
+        assertEquals(56f, inner(w = 932f, screen = Screen.LANDSCAPE).rowHeight, 1e-4f)
+        // Each cell lies below its cap, so a tap 9 dp under the middle of a drawn key is that key's middle.
+        for (c in listOf("e", "g", "v", "space")) {
+            val k = l.key(c)
+            assertEquals(c, k.cap.cy + KeyGeometry.SPLIT_TOUCH_DOWN, k.cell.cy, 1e-4f)
+        }
+        // A tap low on a drawn e, where it went to d before, is e; one low on the drawn d is still d, not x.
+        val e = l.key("e").cap
+        assertEquals("e", l.hitPlain(e.cx, e.y + e.h + 6f)?.label)
+        val d = l.key("d").cap
+        assertEquals("d", l.hitPlain(d.cx, d.y + d.h + 6f)?.label)
+        // On the right, a tap a little left of a drawn y is still y, not the gap's nearest left key.
+        val y = l.key("y").cap
+        assertEquals("y", l.hitPlain(y.x - 2f, y.cy + 9f)?.label)
+        // The bottom row's cells, under their caps, are still on the board.
+        assertTrue(l.keys.filter { it.row == 3 }.all { it.cell.y + it.cell.h <= l.height + 1e-3f })
+        // On the cover nothing moved.
+        assertEquals(0f, cover().touchDown, 0f)
+        assertTrue(cover().keys.all { abs(it.cap.cy - it.cell.cy) < 1e-3f })
     }
 }

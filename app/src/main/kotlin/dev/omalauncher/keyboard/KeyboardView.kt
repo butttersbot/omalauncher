@@ -75,8 +75,15 @@ class KeyboardView(
 
         fun swipeDown()
 
-        /** 🙂 held: the system's keyboard switcher. */
+        /** 🙂 held: on the inner screen the split switch, on the cover the system's keyboard switcher. */
         fun longPressEmoji()
+
+        /** Whether the keys can be split here (the inner screen), and whether they are. */
+        val canSplit: Boolean
+        val split: Boolean
+
+        /** The switch at the bottom left: split keys or one piece. */
+        fun toggleSplit()
 
         val haptics: Boolean
 
@@ -115,6 +122,14 @@ class KeyboardView(
      */
     private var navPx = 0
 
+    /**
+     * The strip under the keys is the keyboard's own: Android's bar with its keyboard switcher and hide arrow was taken
+     * away (the service hides it, as Android 16 lets a keyboard do), so the switch between split keys and one piece
+     * sits where the switcher was, bottom left (Boss, 2026-10-17: the Samsung keyboard is off for good), and the hide
+     * arrow stays at the right.
+     */
+    private var ownStrip = false
+
     /** Asks Android for the strip's height again: each time the keyboard comes up, not only when it is made. */
     fun recheckInsets() {
         if (!preview) requestApplyInsets()
@@ -134,6 +149,11 @@ class KeyboardView(
             if (!preview && bottom != navPx) {
                 navPx = bottom
                 requestLayout()
+            }
+            val own = !preview && android.os.Build.VERSION.SDK_INT >= 36 && !insets.isVisible(android.view.WindowInsets.Type.captionBar())
+            if (own != ownStrip) {
+                ownStrip = own
+                invalidate()
             }
             insets
         }
@@ -211,6 +231,7 @@ class KeyboardView(
         for (key in l.keys) if (key.kind == KeyKind.MIC) drawKey(canvas, key, key in down, k, top, pulse)
         // A pressed letter's bubble, above its cap.
         presses.values.lastOrNull { it.key.kind == KeyKind.LETTER && !it.done }?.let { drawBubble(canvas, it.key, k, top) }
+        if (ownStrip && navPx > 0) drawStrip(canvas, k, top + l.height * d)
         if (listening) postInvalidateOnAnimation()
     }
 
@@ -340,6 +361,35 @@ class KeyboardView(
         drawLabel(canvas, key, box, if (key.kind == KeyKind.SPACE) blend(face.ink, face.fill, 0.4f) else face.ink, k)
     }
 
+    /** The strip's two buttons: the split switch at the left (inner screen only) and the hide arrow at the right. */
+    private fun drawStrip(
+        canvas: Canvas,
+        k: KeyboardLook,
+        top: Float,
+    ) {
+        val d = density
+        val cy = top + navPx / 2f
+        fill.color = if (k.letter != null) k.pageInk else k.muted
+        if (host.canSplit) {
+            // What a tap gives: one board when the keys are split, two halves when they are one piece.
+            val cx = STRIP_BUTTON_DP / 2 * d
+            val w = 26 * d
+            val h = 14 * d
+            if (host.split) {
+                canvas.drawRoundRect(RectF(cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2), 3 * d, 3 * d, fill)
+            } else {
+                canvas.drawRoundRect(RectF(cx - w / 2, cy - h / 2, cx - 2 * d, cy + h / 2), 3 * d, 3 * d, fill)
+                canvas.drawRoundRect(RectF(cx + 2 * d, cy - h / 2, cx + w / 2, cy + h / 2), 3 * d, 3 * d, fill)
+            }
+        }
+        stroke.color = fill.color
+        stroke.strokeWidth = 2 * d
+        stroke.strokeCap = Paint.Cap.ROUND
+        val ax = width - STRIP_BUTTON_DP / 2 * d
+        canvas.drawLine(ax - 7 * d, cy - 3 * d, ax, cy + 4 * d, stroke)
+        canvas.drawLine(ax, cy + 4 * d, ax + 7 * d, cy - 3 * d, stroke)
+    }
+
     private fun labelSize(key: Key): Float {
         val l = layout ?: return 20f
         val base = minOf(l.rowHeight - (if (mech) 14f else 10f), 30f) * 0.55f
@@ -422,6 +472,19 @@ class KeyboardView(
             }
         }
         if (y < 0) return
+        val board = layout?.height ?: return
+        if (y >= board) {
+            // The strip under the keys, when it is ours: the split switch and the hide arrow; the rest of it does nothing.
+            if (!ownStrip) return
+            if (x < STRIP_BUTTON_DP && host.canSplit) {
+                tick()
+                host.toggleSplit()
+            } else if (x > width / density - STRIP_BUTTON_DP) {
+                tick()
+                host.swipeDown()
+            }
+            return
+        }
         val key = host.hit(x, y) ?: return
         val p = Press(key, x, y)
         presses[id] = p
@@ -513,6 +576,8 @@ class KeyboardView(
     }
 
     companion object {
+        /** How wide each of the strip's buttons takes touches, dp. */
+        private const val STRIP_BUTTON_DP = 64f
         private const val BLACK = 0xff000000.toInt()
         private const val WHITE = 0xffffffff.toInt()
 

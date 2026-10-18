@@ -112,6 +112,8 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host {
         autoShift()
         view.look = look()
         view.mech = prefs.getBoolean(MECH, false)
+        // Android's own bar under the keys (its keyboard switcher and hide arrow) is put away; the keyboard draws its own.
+        if (android.os.Build.VERSION.SDK_INT >= 36) runCatching { window.window?.insetsController?.hide(android.view.WindowInsets.Type.captionBar()) }
         view.recheckInsets()
         rebuild()
     }
@@ -269,7 +271,15 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host {
     }
 
     override fun longPressEmoji() {
-        (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showInputMethodPicker()
+        if (canSplit) toggleSplit() else (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showInputMethodPicker()
+    }
+
+    override val canSplit get() = screen != Screen.COVER
+    override val split get() = prefs.getBoolean(SPLIT, true)
+
+    override fun toggleSplit() {
+        prefs.edit().putBoolean(SPLIT, !split).apply()
+        rebuild()
     }
 
     /** Shift on where a sentence starts, as the field asks. */

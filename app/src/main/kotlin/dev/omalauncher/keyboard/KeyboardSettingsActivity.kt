@@ -120,6 +120,11 @@ class KeyboardSettingsActivity : Activity() {
 
         override fun longPressEmoji() {}
 
+        override val canSplit = false
+        override val split = false
+
+        override fun toggleSplit() {}
+
         override val haptics = false
 
         override fun thock(big: Boolean) {}
