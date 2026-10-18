@@ -253,6 +253,8 @@ class CarDoor(
                 val key = pair(typed) ?: return text(ex, 303, "text/plain", "", mapOf("Location" to "/?wrong=1"))
                 text(ex, 303, "text/plain", "", mapOf("Location" to "/", "Set-Cookie" to "soma_car=$key; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=31536000"))
             }
+            // The Soma connector for Grok (slice 9c): its own sign-in and tokens, nothing of the car's.
+            service.grok.handles(path) -> service.grok.handle(ex, who, ::limited)
             // Everything below is the paired car's alone.
             !isCar(cookie(ex)) -> text(ex, 401, "text/plain", "")
             ex.requestMethod == "GET" && path == "/car/frame" -> {

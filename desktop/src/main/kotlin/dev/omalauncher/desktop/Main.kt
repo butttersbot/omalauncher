@@ -147,6 +147,13 @@ fun main(args: Array<String>) {
                 // The service is asked off the tray's thread; the code or what went wrong comes back as a notice.
                 onCar = { pair -> kotlin.concurrent.thread(name = "soma-car-pairing", isDaemon = true) {
                     notices.say("Soma", if (pair) CarPairing.start(platform.machines()) else CarPairing.end(platform.machines()))
+                } },
+                onGrok = { connect -> kotlin.concurrent.thread(name = "soma-grok-connect", isDaemon = true) {
+                    if (!connect) return@thread notices.say("Soma", GrokConnecting.end(platform.machines()))
+                    val (said, details) = GrokConnecting.start(platform.machines())
+                    val copied = details?.let { runCatching { Toolkit.getDefaultToolkit().systemClipboard.setContents(java.awt.datatransfer.StringSelection(it), null) }.isSuccess }
+                    // Said as it is: when the clipboard couldn't take them, the details go in the notice, cut as it may be.
+                    notices.say("Soma", if (copied == false) said.substringBefore(" Grok's connector details") + " " + details else said)
                 } })
         }
         Window(
@@ -252,9 +259,9 @@ private object Single {
     }
 }
 
-/** The tray icon: Open, the looks, the car's pairing, Quit. Its notifications are Soma's ([Notices]). */
+/** The tray icon: Open, the looks, the car's pairing, Grok's connector, Quit. Its notifications are Soma's ([Notices]). */
 private object Tray {
-    fun make(onOpen: () -> Unit, onQuit: () -> Unit, onLook: (String) -> Unit, onCar: (pair: Boolean) -> Unit = {}): TrayIcon? {
+    fun make(onOpen: () -> Unit, onQuit: () -> Unit, onLook: (String) -> Unit, onCar: (pair: Boolean) -> Unit = {}, onGrok: (connect: Boolean) -> Unit = {}): TrayIcon? {
         if (!SystemTray.isSupported()) return null
         val menu = PopupMenu()
         menu.add(MenuItem("Open Soma").apply { addActionListener { onOpen() } })
@@ -265,6 +272,10 @@ private object Tray {
         car.add(MenuItem("Pair the car").apply { addActionListener { onCar(true) } })
         car.add(MenuItem("Unpair the car").apply { addActionListener { onCar(false) } })
         menu.add(car)
+        val grok = java.awt.Menu("Grok")
+        grok.add(MenuItem("Connect Grok").apply { addActionListener { onGrok(true) } })
+        grok.add(MenuItem("Disconnect Grok").apply { addActionListener { onGrok(false) } })
+        menu.add(grok)
         menu.addSeparator()
         menu.add(MenuItem("Quit Soma").apply { addActionListener { onQuit() } })
         val image = (Tray::class.java.classLoader.getResource("soma-tray.png")?.let { Toolkit.getDefaultToolkit().getImage(it) }

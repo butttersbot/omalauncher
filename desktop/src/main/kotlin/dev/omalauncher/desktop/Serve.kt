@@ -75,11 +75,17 @@ private val WIDGET_NAME = Regex("[a-z0-9][a-z0-9._-]{0,63}\\.owl")
 class SomaService(
     private val home: File,
     private val devices: PairedDevices,
-    val source: ModuleSource,
+    given: ModuleSource,
     val gate: CommandGate,
     private val machine: String,
 ) {
     val tokens = ThreadTokens(File(home, "thread-tokens.json"))
+
+    /** The Soma connector for Grok (slice 9c), on the public door; what it asks of him waits in Needs you here. */
+    val grok = GrokConnector(this, home)
+
+    /** What the modules read: his runners' feeds, with Grok's asks in Needs you. */
+    val source: ModuleSource = grok.withAsks(given)
 
     /** The car's public door (slice 9a): opened by [run] on the loopback for Funnel; its pairing is asked for here. */
     val car = CarDoor(this, home)
@@ -223,6 +229,15 @@ class SomaService(
             // The car's pairing (slice 9a): a code to show on this device, the car forgotten, or how it stands.
             ex.requestMethod == "POST" && parts == listOf("car", "pairing") -> car.startPairing(device!!).let { (code, until) -> answer(ex, 200, JSONObject().put("ok", true).put("code", code).put("until", until)) }
             ex.requestMethod == "DELETE" && parts == listOf("car", "pairing") -> { car.revoke(); answer(ex, 200, JSONObject().put("ok", true)) }
+            // Connecting Grok: the client id and a one-time consent code, for him to use at grok.com and on Soma's sign-in page.
+            ex.requestMethod == "POST" && parts == listOf("grok", "consent") -> answer(ex, 200, grok.openConsent(device!!))
+            ex.requestMethod == "DELETE" && parts == listOf("grok") -> { grok.disconnect(); answer(ex, 200, JSONObject().put("ok", true)) }
+            // Grok's asks, answered from any of his devices.
+            ex.requestMethod == "POST" && parts.size == 3 && parts[0] == "grok" && parts[1] == "asks" -> {
+                val allow = body(ex)?.opt("allow") as? Boolean ?: return no(400, "a JSON body with allow, true or false")
+                val said = grok.answer(parts[2], allow)
+                answer(ex, 200, JSONObject().put("ok", said == null).put("said", said))
+            }
             ex.requestMethod == "GET" && parts == listOf("car") -> answer(ex, 200, JSONObject().put("ok", true).put("paired", car.paired()).put("frame", car.frameId).put("public", liveness.json()))
             ex.requestMethod == "GET" && parts == listOf("screens") -> answer(ex, 200, JSONObject().put("ok", true).put("screens", JSONArray(listOf(CAR_SCREEN) + (File(home, "screens").list().orEmpty()
                 .filter { it.endsWith(".json") }.map { it.removeSuffix(".json") }.filter { it != CAR_SCREEN && SCREEN_NAME.matches(it) }.sorted()))))
@@ -264,7 +279,8 @@ class SomaService(
             // What waits for his OK here, for a paired device to show and sign.
             ex.requestMethod == "GET" && parts == listOf("approvals") -> answer(ex, 200, JSONObject().put("ok", true)
                 .put("files", JSONArray(gate.fileAsks().map { JSONObject().put("widget", it.widget).put("file", it.fileHash) }))
-                .put("commands", JSONArray(gate.commandAsks().map { JSONObject().put("widget", it.widget).put("command", it.command).put("hash", it.hash) })))
+                .put("commands", JSONArray(gate.commandAsks().map { JSONObject().put("widget", it.widget).put("command", it.command).put("hash", it.hash) }))
+                .put("grok", JSONArray(grok.asks().map { JSONObject().put("id", it.id).put("text", it.text).put("screen", it.screen).put("at", it.at) })))
             else -> no(404, "nothing here")
         }
     }
