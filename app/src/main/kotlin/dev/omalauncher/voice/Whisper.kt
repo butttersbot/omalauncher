@@ -38,9 +38,10 @@ object WhisperNative {
 }
 
 /**
- * The two Whisper models Oma uses, kept in the app's files: a fast one that reads the audio over and over while
- * Boss speaks, and a more accurate one for the whole of it once he stops. Fetched once, on Wi-Fi, from
- * whisper.cpp's own model page, and used only if they are exactly the files pinned here.
+ * The two Whisper models Oma keeps on the phone for when the Mac Pro can't be reached (see [WhisperMac]): a fast
+ * one that reads the audio over and over while Boss speaks, and a more accurate one for the whole of it once he
+ * stops. Fetched once, on Wi-Fi, from whisper.cpp's own model page, and used only if they are exactly the files
+ * pinned here. Loaded only for a dictation that needs them, and freed as soon as no dictation is running.
  */
 object WhisperModels {
     class Model(
@@ -60,14 +61,18 @@ object WhisperModels {
         model: Model,
     ) = File(dir(context), model.file)
 
-    /** Whether Whisper can listen now: the library loaded and the live model is here (the final one is optional). */
-    fun ready(context: Context) = WhisperNative.loaded && file(context, LIVE).isFile
+    /**
+     * Whether Whisper can listen now: the Mac answered when last asked, or the library loaded and the live model
+     * is here (the final one is optional).
+     */
+    fun ready(context: Context) = WhisperMac.seen || (WhisperNative.loaded && file(context, LIVE).isFile)
 
     private val fetching = AtomicBoolean()
 
     /** Fetches the models that aren't here yet, in the background, on an unmetered network only. */
     fun prepare(context: Context) {
         val app = context.applicationContext
+        WhisperMac.check(app)
         if (listOf(LIVE, FINAL).all { file(app, it).isFile }) return
         val cm = app.getSystemService(ConnectivityManager::class.java)
         val caps = cm?.getNetworkCapabilities(cm.activeNetwork)
@@ -114,15 +119,38 @@ object WhisperModels {
         }
     }
 
-    /** A loaded model, kept while it is used and a while after. */
+    /** A loaded model, kept while a dictation is running. */
     private val loadedModels = HashMap<String, Long>()
-    private val lastUse = HashMap<String, Long>()
+
+    /** Dictations running now; the models are freed when the last one ends. */
+    private var sessions = 0
+
+    @Synchronized fun begin() {
+        sessions++
+    }
+
+    /** One dictation is over, however it ended; with none left, the models go (Boss, 2026-10-17). */
+    fun end() =
+        synchronized(reading) {
+            synchronized(this) {
+                sessions--
+                if (sessions <= 0) freeAll()
+            }
+        }
+
+    /** Frees the models when no dictation runs: for a load that finished after its dictation was over. */
+    fun releaseIfIdle() = synchronized(reading) { synchronized(this) { if (sessions <= 0) freeAll() } }
+
+    private fun freeAll() {
+        sessions = 0
+        for (ctx in loadedModels.values) WhisperNative.free(ctx)
+        loadedModels.clear()
+    }
 
     @Synchronized fun context(
         context: Context,
         model: Model,
     ): Long {
-        lastUse[model.file] = System.currentTimeMillis()
         loadedModels[model.file]?.let { return it }
         val f = file(context, model)
         if (!f.isFile || !WhisperNative.loaded) return 0
@@ -135,21 +163,9 @@ object WhisperModels {
      * Held while a model reads or is freed. A whisper context is for one thread at a time, and must not be freed
      * while one reads with it: a session that began while the last was still reading, or a release timed from an
      * earlier session, crashed Soma in ggml (Boss, 2026-10-16 and 17). Taken before this object's own lock.
+     * Freeing waits for it: the two together take some 500 MB while loaded.
      */
     private val reading = Any()
-
-    /** Frees the models not used for [idleMs]: the accurate one takes some 300 MB while loaded. */
-    fun release(idleMs: Long) = synchronized(reading) {
-        synchronized(this) {
-            val now = System.currentTimeMillis()
-            for ((name, ctx) in loadedModels.entries.toList()) {
-                if (now - (lastUse[name] ?: 0) >= idleMs) {
-                    WhisperNative.free(ctx)
-                    loadedModels.remove(name)
-                }
-            }
-        }
-    }
 
     /** What [ctx] hears in [samples], one reading at a time; nothing if the model was freed since it was handed out. */
     fun transcribe(
@@ -159,8 +175,7 @@ object WhisperModels {
         threads: Int,
         live: Boolean,
     ): String = synchronized(reading) {
-        val name = synchronized(this) { loadedModels.entries.firstOrNull { it.value == ctx }?.key?.also { lastUse[it] = System.currentTimeMillis() } }
-        if (name == null) return ""
+        if (synchronized(this) { ctx !in loadedModels.values }) return ""
         WhisperNative.transcribe(ctx, samples, prompt, threads, live)
     }
 
@@ -168,10 +183,12 @@ object WhisperModels {
 }
 
 /**
- * One time Boss speaks, heard by Whisper on the phone. The microphone is read in steps of [STEP_MS]; while he
- * speaks, the fast model reads the audio after the settled words again and again, and [onText] gets the words
- * so far (the settled ones never change again). It ends at [stop], or with [hold] false at the first long pause;
- * then the accurate model reads the whole of it once, and [onDone] gets that text. Callbacks come on the main thread.
+ * One time Boss speaks, heard by Whisper. The phone only records: the readings are made on the Mac Pro
+ * ([WhisperMac]), and by the phone's own models only when the Mac can't be reached. The microphone is read in
+ * steps of [STEP_MS]; while he speaks, the audio after the settled words is read again and again, and [onText]
+ * gets the words so far (the settled ones never change again). It ends at [stop], or with [hold] false at the
+ * first long pause; then the whole of it is read once more, by the accurate model, and [onDone] gets that text.
+ * Callbacks come on the main thread.
  */
 class WhisperSession(
     private val context: Context,
@@ -217,8 +234,16 @@ class WhisperSession(
             return false
         }
         rec.startRecording()
+        WhisperModels.begin()
         thread(name = "oma-whisper-mic", isDaemon = true) { record(rec) }
-        thread(name = "oma-whisper-live", isDaemon = true) { readLive() }
+        thread(name = "oma-whisper-live", isDaemon = true) {
+            // However it ends, cancelled too: a cancelled dictation used to leave both models loaded for good.
+            try {
+                readLive()
+            } finally {
+                WhisperModels.end()
+            }
+        }
         return true
     }
 
@@ -274,10 +299,45 @@ class WhisperSession(
         to: Int,
     ): FloatArray = synchronized(this) { samples.copyOfRange(from, to) }
 
+    /** The Mac's address while it answers in this dictation; null once it hasn't, and the phone reads instead. */
+    private var mac: String? = null
+
+    /** The phone's fast model, loaded on first need; the accurate one is loaded alongside it. */
+    private var liveCtx = 0L
+
+    private fun localLive(): Long {
+        if (liveCtx == 0L) {
+            liveCtx = WhisperModels.context(context, WhisperModels.LIVE)
+            // Load the accurate model while he speaks, so the end comes sooner.
+            thread(name = "oma-whisper-warm", isDaemon = true) {
+                WhisperModels.context(context, WhisperModels.FINAL)
+                WhisperModels.releaseIfIdle()
+            }
+        }
+        return liveCtx
+    }
+
+    /** [clip] read on the Mac, or on the phone once the Mac hasn't answered; null with neither. */
+    private fun read(
+        clip: FloatArray,
+        final: Boolean,
+    ): String? {
+        mac?.let { base ->
+            val timeout = if (final) 15_000 + clip.size / RATE * 1_000 else LIVE_TIMEOUT_MS
+            WhisperMac.transcribe(base, clip, prompt, timeout)?.let { return it }
+            mac = null
+        }
+        if (final) {
+            val ctx = WhisperModels.context(context, WhisperModels.FINAL)
+            if (ctx != 0L) return WhisperModels.transcribe(ctx, clip, prompt, threads, false)
+        }
+        val ctx = localLive()
+        return if (ctx == 0L) null else WhisperModels.transcribe(ctx, clip, prompt, threads, true)
+    }
+
     private fun readLive() {
-        val ctx = WhisperModels.context(context, WhisperModels.LIVE)
-        // Load the accurate model while he speaks, so the end comes sooner.
-        thread(name = "oma-whisper-warm", isDaemon = true) { WhisperModels.context(context, WhisperModels.FINAL) }
+        mac = WhisperMac.base(context).takeIf { WhisperMac.reachable(it) }
+        if (mac == null) localLive()
         var readAt = 0
         while (!ending) {
             // Only up to just after his last word: from the quiet after it Whisper makes up words, or loops on
@@ -288,12 +348,12 @@ class WhisperSession(
                 continue
             }
             if (anchor < voiceFrom) anchor = voiceFrom
-            if (ctx == 0L || end - readAt < RATE * READ_EVERY_MS / 1000 || end - anchor < RATE / 2) {
+            if (end - readAt < RATE * READ_EVERY_MS / 1000 || end - anchor < RATE / 2) {
                 Thread.sleep(50)
                 continue
             }
             readAt = end
-            val heard = parseHeard(WhisperModels.transcribe(ctx, audio(anchor, end), prompt, threads, true))
+            val heard = parseHeard(read(audio(anchor, end), final = false) ?: continue)
             if (cancelled) break
             val now = heard.joinToString(" ") { it.text }
             live = live.read(now)
@@ -307,19 +367,16 @@ class WhisperSession(
             main.post { if (!cancelled) onText(shown) }
         }
         if (cancelled) return
-        // The whole of it, read by the accurate model; the fast one's reading if that one isn't here.
-        // From his first word to just after his last: none of the quiet around it.
+        // The whole of it, read once more by the accurate model (the Mac's, or the phone's); the phone's fast one's
+        // reading after the settled words if the accurate one isn't here. From his first word to just after his
+        // last: none of the quiet around it.
         val all = if (voiceFrom < 0) FloatArray(0) else audio(voiceFrom, minOf(count, voiceTo + RATE * PAD_MS / 1000))
-        val finalCtx = WhisperModels.context(context, WhisperModels.FINAL)
         val text =
             when {
                 all.size < RATE / 4 -> ""
-                finalCtx != 0L -> parseHeard(WhisperModels.transcribe(finalCtx, all, prompt, threads, false)).joinToString(" ") { it.text }
-                ctx != 0L -> joinHeard(live.kept, parseHeard(WhisperModels.transcribe(ctx, audio(anchor, maxOf(anchor, minOf(count, voiceTo + RATE * PAD_MS / 1000))), prompt, threads, true)).joinToString(" ") { it.text })
-                else -> live.text
+                else -> read(all, final = true)?.let { raw -> parseHeard(raw).joinToString(" ") { it.text } } ?: live.text
             }
         main.post { if (!cancelled) onDone(text.trim(), null) }
-        main.postDelayed({ thread(isDaemon = true) { WhisperModels.release(RELEASE_AFTER_MS) } }, RELEASE_AFTER_MS + 1_000)
     }
 
     companion object {
@@ -327,7 +384,9 @@ class WhisperSession(
         const val STEP_MS = 100
         const val READ_EVERY_MS = 500
         const val SETTLE_AFTER_S = 15
-        const val RELEASE_AFTER_MS = 90_000L
+
+        /** How long a live reading may take on the Mac before the phone reads instead. */
+        const val LIVE_TIMEOUT_MS = 6_000
 
         /** Kept before his first word and after his last, so their edges aren't cut. */
         const val PAD_MS = 300

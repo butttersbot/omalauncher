@@ -54,9 +54,10 @@ class Speech(
     val available get() = WhisperModels.ready(context) || onDeviceAvailable || SpeechRecognizer.isRecognitionAvailable(context)
 
     /**
-     * Whisper on the phone, when its model is here (Boss, 2026-10-14: Samsung's recognizer is "just garbage"):
-     * the words show as he speaks and the whole is read again, more accurately, when he stops. Android's
-     * recognizer stays the fallback until the models have been fetched, which starts on the first use on Wi-Fi.
+     * Whisper, on the Mac Pro or on the phone when the Mac can't be reached (Boss, 2026-10-14: Samsung's
+     * recognizer is "just garbage"): the words show as he speaks and the whole is read again, more accurately,
+     * when he stops. Android's recognizer stays the fallback until the Mac has answered or the phone's models
+     * have been fetched, which starts on the first use on Wi-Fi.
      */
     private var whisper: WhisperSession? = null
 

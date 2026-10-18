@@ -1,0 +1,9 @@
+#!/bin/bash
+# Installs and starts Oma's whisper-server on the Mac Pro as a login service. See docs/WHISPER-MAC.md.
+set -euo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
+plist=~/Library/LaunchAgents/dev.omalauncher.whisper-server.plist
+cp "$here/dev.omalauncher.whisper-server.plist" "$plist"
+launchctl bootout "gui/$(id -u)/dev.omalauncher.whisper-server" 2>/dev/null || true
+launchctl bootstrap "gui/$(id -u)" "$plist"
+echo "started; log: ~/Library/Logs/whisper-server.log"
