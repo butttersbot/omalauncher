@@ -246,6 +246,29 @@ class FoldSyncTest {
         assertNull(replayLog(service.log, 6, 8).pages.flatMap { it.items }.firstOrNull { it.key == pocket })
     }
 
+    /** s12 review: an undo done before a read is read over; a later drag of his is never sent as that undo. */
+    @Test fun anUndoReadOverIsDroppedAndNeverTagsALaterDrag() {
+        val service = Service()
+        val fold = Fold(saved)
+        fold.sync.round(service::exchange)
+        assertTrue(service.agent("place needs card bottom-left --page Today", "grok", "grok-1").getBoolean("ok"))
+        fold.sync.round(service::exchange)
+        assertTrue(CanvasCommands.run(listOf("undo"), fold.pad, "q-1", "agent:quick").getBoolean("ok"))
+        // The kept copy goes bad before the undo is sent: the next round is a read, which brings Grok's Needs you back.
+        fold.kept = "{not json"
+        val again = Fold(saved).also { it.kept = fold.kept; it.undoOut = fold.undoOut; it.undo = fold.undo }
+        again.notebook.forget(needs)
+        again.sync.round(service::exchange)
+        assertTrue(again.notebook.pageOf(needs) != null)
+        assertTrue(again.undos.all().isEmpty())
+        // His drag of it then goes up as his, and the service can still undo Grok's request.
+        again.notebook.setCell(needs, Cell(3, 5, 3, 2)); again.notebook.save()
+        again.sync.round(service::exchange)
+        assertTrue(service.log.entries.none { it.request.startsWith("undo:") })
+        val undo = CanvasCommands.run(listOf("undo"), service.screenPad(), "s-1", "agent:t9")
+        assertTrue(undo.toString(), undo.getBoolean("ok"))
+    }
+
     @Test fun aFirstReadThatCantReachTheServiceReadsAgainAndAnEmptyServiceIsSeededAtOnce() {
         val service = Service()
         service.online = false

@@ -49,6 +49,12 @@ class FoldSync(
     /** The undos whose verbs [pending] sent, to clear once the round is taken. */
     private var sendingUndos: Set<String> = emptySet()
 
+    /**
+     * The undos done here before a read went out: the read brings home to the copy over what they did, so once it is taken they
+     * are dropped unsent (s12 review: one left behind tagged a later drag of his as the undo of a request still on the screen).
+     */
+    private var readOver: Set<String> = emptySet()
+
     /** Made the first time home is open, so its grid has home's real rows (round-1 review: read before open, it had the default). */
     val sync: ScreenSync by lazy {
         check(notebook.opened) { "home isn't open yet" }
@@ -101,7 +107,7 @@ class FoldSync(
         if (reading == null) reading = sync.synced.version == 0L
         readRound = reading == true && !sync.whole
         // A read sends nothing, so no undo done here is sent by it either: they wait for the next round.
-        if (readRound) { sendingUndos = emptySet(); return emptyList() }
+        if (readRound) { sendingUndos = emptySet(); readOver = undos?.all().orEmpty().map { it.request }.toSet(); return emptyList() }
         // A change an undo here made goes up as that undo's, the newest undo that touched the same item or page.
         val undone = undos?.all().orEmpty()
         sendingUndos = undone.map { it.request }.toSet()
@@ -248,6 +254,8 @@ class FoldSync(
         if (readRound) {
             readRound = false
             reading = false
+            undos?.sent(readOver)
+            readOver = emptySet()
             // The service has no copy of this screen: nothing to bring, and home goes up whole the next round.
             if (sync.synced.version == 0L) { sentFrom = null; seedNow = true; return emptyList() }
             // What he changed while the read was out stays as he left it, and goes up next round (round-1 review: a drag
