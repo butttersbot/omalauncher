@@ -321,6 +321,11 @@ fun HomeScreen(
     LaunchedEffect(per, window) { marks.finish() }
     // The background slides with the pages, like stock launchers. Our live wallpaper gets it through Android.
     val view = LocalView.current
+    // A widget's haptic() taps through home's view, while home shows.
+    androidx.compose.runtime.DisposableEffect(view) {
+        engine.view = view
+        onDispose { if (engine.view === view) engine.view = null }
+    }
     LaunchedEffect(pager, view) {
         val wallpapers = WallpaperManager.getInstance(view.context)
         snapshotFlow {

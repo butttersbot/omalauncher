@@ -145,6 +145,9 @@ class WidgetEngine(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val services = WidgetServices(context, proot, runtime, scope)
 
+    /** Home's view, for a widget's haptic(); set while home shows. */
+    var view by services::view
+
     /** Opens launcher screens ("style" or "themes", "agents", "drawer"); set by the UI. */
     var launcherAction by services::launcherAction
 
@@ -525,6 +528,8 @@ class WidgetEngine(
                     File(stateDir, "$name.json"),
                     onScreen = { open -> if (open) openScreen = name else if (openScreen == name) openScreen = null },
                     linux = { linux },
+                    // ask(), open() and sound() from a trigger work only while its screen is showing.
+                    foreground = { openScreen == name },
                 )
             prev?.let(inst::adopt)
             instances[spec.file.name] = inst

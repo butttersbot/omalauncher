@@ -239,6 +239,7 @@ class WidgetInstance(
         if (values == lastSaved) return
         val text = PersistedValues.encode(program, values, System.currentTimeMillis() / 1000)
         runCatching {
+            file.parentFile?.mkdirs()
             val tmp = File(file.parentFile, file.name + ".tmp")
             tmp.writeBytes(text.toByteArray())
             if (!tmp.renameTo(file)) tmp.delete()

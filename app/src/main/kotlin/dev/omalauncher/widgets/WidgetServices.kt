@@ -648,7 +648,8 @@ class WidgetServices(
         val agents = runtime.agents
         val agent = bin?.let { b -> agents.installed.firstOrNull { it.bin == b } } ?: agents.default
         if (agent == null) return launcherAction?.invoke("agents") ?: Unit
-        runtime.terminal("${agentInvocation(agent.bin, p)}; exec bash", agent.name, agent)
+        // A widget's prompt can come from a store author, an agent or a fetched value, never only from Boss: no auto mode.
+        runtime.terminal("${agentInvocation(agent.bin, p, auto = false)}; exec bash", agent.name, agent)
     }
 
     private fun copy(text: String) {

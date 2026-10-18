@@ -36,6 +36,12 @@ class AgentsTest {
     }
 
     /** A prompt from a widget can't pass the agent an option: claude --settings=... would run its hooks. */
+    /** A widget's ask(...) isn't Boss's own words: Claude Code starts asking before it acts, not in auto mode. */
+    @Test fun aPromptThatIsNotBossesStartsClaudeWithoutAutoMode() {
+        assertEquals("claude 'tidy my home'", agentInvocation("claude", "tidy my home", auto = false))
+        assertEquals("claude --permission-mode auto 'tidy my home'", agentInvocation("claude", "tidy my home"))
+    }
+
     @Test fun aPromptStartingWithADashIsNoOption() {
         val script = """
             set -- ${agentInvocation("claude", "--settings={}")}

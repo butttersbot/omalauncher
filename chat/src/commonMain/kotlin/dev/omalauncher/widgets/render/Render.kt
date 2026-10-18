@@ -208,7 +208,7 @@ fun WidgetScreen(
     BoxWithConstraints(modifier) {
         // Set before the nodes compose, so the first frame already has the size instead of null.
         inst.setScreen(maxWidth.value.toDouble(), maxHeight.value.toDouble())
-        CompositionLocalProvider(LocalWidgetScreen provides true, LocalLongPress provides true) {
+        CompositionLocalProvider(LocalWidgetScreen provides true, LocalLongPress provides true, LocalInputFocus provides !LocalWidgetPreview.current) {
             Column(Modifier.fillMaxSize()) {
                 Nodes(nodes, inst.root, inst, this)
             }

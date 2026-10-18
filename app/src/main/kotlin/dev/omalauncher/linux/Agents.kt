@@ -40,6 +40,11 @@ fun agentInvocation(
     prompt: String,
     readOnly: Boolean = false,
     images: List<String> = emptyList(),
+    /**
+     * Whether Claude Code may start in auto mode. False for a prompt that isn't Boss's own words, like a widget's
+     * ask(...): it starts as Claude Code does by default, asking before it runs commands or changes files.
+     */
+    auto: Boolean = true,
 ): String {
     require(images.isEmpty() || agentBin == "codex" || agentBin == "claude") {
         "Image attachments are supported by Claude Code and Codex."
@@ -56,7 +61,7 @@ fun agentInvocation(
         agentBin == "opencode" -> "$agentBin --prompt $quoted"
         agentBin == "copilot" -> "$agentBin -i $quoted"
         agentBin == "claude" && readOnly -> "$agentBin --permission-mode plan $quoted"
-        agentBin == "claude" -> "$agentBin --permission-mode auto $quoted"
+        agentBin == "claude" && auto -> "$agentBin --permission-mode auto $quoted"
         agentBin == "ori" -> "ori code --interactive --prompt $quoted"
         agentBin == "kimi" -> "kimi --prompt $quoted && kimi --continue"
         agentBin == "agy" && readOnly -> "$agentBin --mode plan -i $quoted"
