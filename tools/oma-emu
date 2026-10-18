@@ -1,0 +1,45 @@
+#!/bin/bash
+# oma-emu: the Mac's virtual Fold 8 (Android emulator) for testing Oma builds. See docs/EMULATOR.md.
+#   oma-emu start [--headless]  boot it and wait until it is ready
+#   oma-emu install [APK]       install a build (default: app/build/outputs/apk/debug/app-debug.apk) and make it home
+#   oma-emu fold | unfold       switch to the cover screen or the inner screen
+#   oma-emu shot inner|cover FILE.png
+#   oma-emu adb ARGS...         adb aimed at the emulator only, never the phone
+#   oma-emu stop
+set -euo pipefail
+export ANDROID_HOME="${ANDROID_HOME:-/opt/homebrew/share/android-commandlinetools}"
+export ANDROID_SDK_ROOT="$ANDROID_HOME"
+AVD=Fold8
+SERIAL=emulator-5554
+A() { adb -s "$SERIAL" "$@"; }
+display_id() { # inner is the first SurfaceFlinger display, cover the second
+  A shell dumpsys SurfaceFlinger --display-id | awk '{print $2}' | sed -n "$1p"
+}
+wake() { A shell input keyevent WAKEUP >/dev/null; A shell wm dismiss-keyguard >/dev/null 2>&1 || true; }
+
+case "${1:-}" in
+  start)
+    if A get-state >/dev/null 2>&1; then echo "already running"; exit 0; fi
+    extra=(); [ "${2:-}" = --headless ] && extra=(-no-window)
+    nohup "$ANDROID_HOME/emulator/emulator" -avd "$AVD" -no-snapshot-save -no-boot-anim ${extra[@]+"${extra[@]}"} \
+      > "$HOME/.android/avd/$AVD-emulator.log" 2>&1 &
+    A wait-for-device
+    until [ "$(A shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]; do sleep 2; done
+    A shell locksettings set-disabled true >/dev/null
+    A shell svc power stayon true
+    wake; echo "ready" ;;
+  install)
+    apk="${2:-app/build/outputs/apk/debug/app-debug.apk}"
+    unzip -l "$apk" | grep -q "lib/arm64-v8a/libproot.so" || { echo "no libproot.so in $apk: copy app/src/main/jniLibs in first" >&2; exit 1; }
+    A install -r "$apk"
+    A shell cmd package set-home-activity dev.omalauncher.boss/dev.omalauncher.MainActivity
+    wake; A shell input keyevent HOME ;;
+  fold)   A shell cmd device_state state 0; sleep 2; wake ;;
+  unfold) A shell cmd device_state state 2; sleep 2; wake ;;
+  shot)
+    case "${2:-}" in inner) n=1 ;; cover) n=2 ;; *) echo "shot inner|cover FILE" >&2; exit 2 ;; esac
+    wake; A exec-out screencap -p -d "$(display_id $n)" > "$3"; echo "$3" ;;
+  adb) shift; A "$@" ;;
+  stop) A emu kill ;;
+  *) sed -n '2,9p' "$0"; exit 2 ;;
+esac

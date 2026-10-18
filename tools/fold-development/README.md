@@ -37,11 +37,10 @@ scripts, not code bundled into the Android app.
   An empty file no longer opens it: any app on the phone can send that intent. `oma-mac` (run on the Mac, over adb)
   opens and closes the door with a fresh key and runs commands through it: `oma-mac open`, `oma-mac phone board`,
   `oma-mac run CMD`, `oma-mac close`. Leave it closed when not working.
-- oma-dev builds this checkout as a second, throwaway launcher, "Oma Dev" (dev.omalauncher.dev), and installs it
-  beside the working one: its own data, no Linux, an empty notebook. Break it freely; the working launcher and its
-  agent are untouched. `oma-dev --status`, `--open`, `--no-open`, `--remove`. Test a change there first, then
-  oma-try the same commit onto the working launcher. Install it once with
-  `install -m755 tools/fold-development/oma-dev /usr/local/bin/oma-dev`; it reads tools/fold-development/dev.init.gradle.
+- oma-dev (retired 2026-10-17): it built a second launcher, "Oma Dev" (dev.omalauncher.dev), on the phone. Boss wants
+  nothing extra running on his phone, so do not build or install it; only `oma-dev --remove` is still for use. Test
+  changes on the Mac's Fold 8 emulator instead (docs/EMULATOR.md), then oma-try onto the working launcher when
+  Boss says so.
 
 Updating the app stops its current agent run. Install LAST; do not uninstall or
 clear data. Persistent Linux, logins and settings survive. Android signing key must
