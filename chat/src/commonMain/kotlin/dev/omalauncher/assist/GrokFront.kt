@@ -86,6 +86,22 @@ command -v jq >/dev/null 2>&1 || deny "Only listed commands run here, and they c
 input=${'$'}(cat) || deny "Unreadable request."
 cmd=${'$'}(printf '%s' "${'$'}input" | jq -r '.toolInput.command // .tool_input.command // empty' 2>/dev/null) || deny "Unreadable command."
 [ -n "${'$'}cmd" ] || deny "Nothing to run."
+# A command too long for the event is cut, and what was cut can't be checked.
+printf '%s' "${'$'}input" | jq -e '(.toolInputTruncated // .tool_input_truncated // false) == false' >/dev/null 2>&1 || deny "Too long to check."
+# The X helper's question, in double quotes and holding nothing the shell reads inside them, may hold any other text.
+case ${'$'}cmd in
+  'grokbot x "'*'"')
+    question=${'$'}{cmd#grokbot x \"}; question=${'$'}{question%\"}
+    case ${'$'}question in
+      *'"'*|*'${'$'}'*|*'`'*|*'\'*|*'
+'*|'') deny "Ask the X helper in plain words: no quotes, dollar signs, backquotes or backslashes inside." ;;
+    esac
+    case "
+${'$'}{OMA_FRONT_ALLOW:-}
+" in *'
+grokbot x *
+'*) exit 0 ;; esac ;;
+esac
 case ${'$'}cmd in
   *'
 '*|*';'*|*'&'*|*'|'*|*'<'*|*'>'*|*'${'$'}'*|*'`'*|*'('*|*')'*|*'\'*) deny "Only one plain command runs here." ;;

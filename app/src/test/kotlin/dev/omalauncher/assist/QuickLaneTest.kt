@@ -303,8 +303,11 @@ class QuickLaneTest {
      */
     @Test fun aNewChatIsToldItIsForTheMac() {
         assertEquals(" This is a new chat, for work on the Mac: phone work is not taken here.", quickNewChatRule())
-        assertEquals(quickSystemPrompt(mac = true) + quickNewChatRule(), quickSystemPrompt(mac = true, newChat = true))
-        assertEquals(quickSystemPrompt() + quickNewChatRule(), quickSystemPrompt(newChat = true))
+        // But for the X helper's sentence (Boss, 2026-10-18), which a new chat can't act on: it has no shell.
+        val x = "What is on X is yours too: run `grokbot x \"question\"` alone and answer from it. "
+        assertEquals(quickSystemPrompt(mac = true).replace(x, "") + quickNewChatRule(), quickSystemPrompt(mac = true, newChat = true))
+        assertEquals(quickSystemPrompt().replace(x, "") + quickNewChatRule(), quickSystemPrompt(newChat = true))
+        assertTrue(quickSystemPrompt().contains(x))
         assertFalse(quickSystemPrompt(mac = true).contains(quickNewChatRule()))
         assertTrue(quickCommand("q", id, mac = true, newChat = true).contains("phone work is not taken here"))
         assertEquals(quickCommand("q", id, mac = true), quickCommand("q", id, mac = true, newChat = false))

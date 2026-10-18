@@ -60,6 +60,8 @@ class DesktopGrokFrontTest {
         assertTrue(said.last().contains("The front agent is Grok"))
         assertEquals(2, DesktopFrontAgent.choose(listOf("opus"), home, grok = true, signedIn = true) { said += it })
         assertEquals("grok\n", File(home, DesktopFrontAgent.FRONT_CHOICE_FILE).readText())
+        DesktopFrontAgent.choose(listOf("haiku"), home, grok = true, signedIn = true, claude = false) { said += it }
+        assertTrue(said.last().contains("Claude Code is not installed"))
     }
 
     @Test fun grokOnAComputerHasTheWebAndSomaCanvasAlone() {

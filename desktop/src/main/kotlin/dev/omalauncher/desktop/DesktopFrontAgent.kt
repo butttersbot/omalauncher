@@ -139,7 +139,12 @@ class DesktopFrontAgent(
 
     /** Under the lock, with nothing being read: starts the front agent on [prompt], as QuickLane.read does. */
     private fun read(prompt: String, waited: Long?, chat: String) {
-        val agent = agent ?: error("Install Grok or Claude Code on this computer to talk to Soma here.")
+        // Grok runs only behind its command guard, in the folder it runs in; if that can't be put there, Haiku answers instead.
+        val canvasFolder = if (door != null && shim != null) emptyFolder() else null
+        val agent = agent?.let { chosen ->
+            if (chosen != FrontAgent.Grok || writeGrokGuard(canvasFolder ?: File(SomaHome.dir, "front-grok"))) chosen
+            else FrontAgent.Haiku.takeIf { claude != null }
+        } ?: error("Install Grok or Claude Code on this computer to talk to Soma here.")
         // Only that agent's own conversation is followed up on: a Claude session means nothing to Grok.
         val resumed = frontSession(agent, if (chat.isEmpty()) platform.prefString(SESSION) else platform.book().chat(chat)?.front?.ifEmpty { null })
         val bin = if (agent == FrontAgent.Grok) grok!! else claude!!
@@ -165,10 +170,8 @@ class DesktopFrontAgent(
                 val child = ProcessBuilder("/bin/sh", "-c", command).redirectErrorStream(false).apply {
                     // In a folder of its own with nothing in it: what the agent may run reads only where it runs (s6 Critic:
                     // read-only commands chained after `soma canvas` read the folder Soma was started in, `/` from launchd).
-                    val folder = if (token != null) emptyFolder() else if (agent == FrontAgent.Grok) File(SomaHome.dir, "front-grok") else null
-                    // Grok runs only behind its command guard (GrokFront.kt), which lives in the folder it runs in.
-                    if (agent == FrontAgent.Grok) check(writeGrokGuard(folder!!)) { "Soma could not put Grok's command guard in place." }
-                    folder?.let(::directory)
+                    // The guard (GrokFront.kt) was put in this folder as the agent was picked.
+                    (if (token != null) canvasFolder else if (agent == FrontAgent.Grok) File(SomaHome.dir, "front-grok") else null)?.let(::directory)
                     environment()["PATH"] = (listOfNotNull(shim?.parent?.takeIf { token != null }, File(bin).parent) + listOf("/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin")).joinToString(":")
                     environment().remove(CanvasDoor.TOKEN)
                     token?.let { environment()[CanvasDoor.TOKEN] = it }
@@ -291,10 +294,11 @@ class DesktopFrontAgent(
         val PLACES = listOf("~/.local/bin/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude", "~/.local/share/mise/shims/claude", "/usr/bin/claude")
 
         /** For `soma front`: whether Grok is found here, and whether it is signed in, as the front agent looks. */
-        fun found(): Pair<Boolean, Boolean> {
+        fun found(): Triple<Boolean, Boolean, Boolean> {
             val home = System.getProperty("user.home")
-            val grok = PLACES.map { it.removeSuffix("claude").replaceFirst("~", home) + "grok" }.any { File(it).canExecute() }
-            return grok to File(home, ".grok/auth.json").isFile
+            val places = PLACES.map { it.replaceFirst("~", home) }
+            val grok = places.map { it.removeSuffix("claude") + "grok" }.any { File(it).canExecute() }
+            return Triple(grok, File(home, ".grok/auth.json").isFile, places.any { File(it).canExecute() })
         }
 
         /** Where `soma front` keeps his choice of front agent, in Soma's folder. */
@@ -304,7 +308,7 @@ class DesktopFrontAgent(
          * `soma front [grok|haiku]`: writes his choice, then says who answers here and why. Exit 2 for any other word.
          * [home] is Soma's folder, [grok] and [signedIn] whether Grok is found and signed in here.
          */
-        fun choose(words: List<String>, home: File, grok: Boolean, signedIn: Boolean, out: (String) -> Unit): Int {
+        fun choose(words: List<String>, home: File, grok: Boolean, signedIn: Boolean, claude: Boolean = true, out: (String) -> Unit): Int {
             val word = words.firstOrNull()?.lowercase()
             when (word) {
                 null -> {}
@@ -313,9 +317,10 @@ class DesktopFrontAgent(
             }
             val chosen = runCatching { File(home, FRONT_CHOICE_FILE).readText().trim() }.getOrNull()
             out(when {
+                chosen == "haiku" && !claude -> "Haiku is chosen but Claude Code is not installed here, so nobody answers first. Switch with: soma front grok"
                 chosen == "haiku" -> "The front agent is Haiku (Claude Code). Switch with: soma front grok"
-                !grok -> "Grok is chosen but not installed here, so Haiku answers. Install it with: npm i -g @xai-official/grok"
-                !signedIn -> "Grok is chosen but not signed in here, so Haiku answers. Sign in with: grok login"
+                !grok -> "Grok is chosen but not installed here, so Haiku answers if Claude Code is. Install it with: npm i -g @xai-official/grok"
+                !signedIn -> "Grok is chosen but not signed in here, so Haiku answers if Claude Code is. Sign in with: grok login"
                 else -> "The front agent is Grok. Switch back with: soma front haiku"
             })
             return 0

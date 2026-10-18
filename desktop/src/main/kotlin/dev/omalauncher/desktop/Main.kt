@@ -44,7 +44,7 @@ fun main(args: Array<String>) {
     if (args.firstOrNull() == "canvas") exitProcess(CanvasDoor.client(args.drop(1)))
     if (args.firstOrNull() == "front") {
         val front = DesktopFrontAgent.found()
-        exitProcess(DesktopFrontAgent.choose(args.drop(1), SomaHome.dir, front.first, front.second, ::println))
+        exitProcess(DesktopFrontAgent.choose(args.drop(1), SomaHome.dir, front.first, front.second, front.third, ::println))
     }
     // The canvas service (slice 8a): headless, its own lock, no window. Its LaunchAgent is printed for him to install.
     if ("--serve" in args) return SomaService.run()
