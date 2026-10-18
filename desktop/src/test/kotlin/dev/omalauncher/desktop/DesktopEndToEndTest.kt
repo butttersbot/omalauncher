@@ -62,7 +62,8 @@ class DesktopEndToEndTest {
                 "OMA_RUNNER_STATE" to File(work, "state").path, "OMA_RUNNER_LOGS" to File(work, "logs").path, "OMA_RUNNER_ROOTS" to root.path,
                 "OMA_RUNNER_AGENT" to File(mac, "fake-agent").path, "OMA_RUNNER_BIND" to "127.0.0.1", "OMA_RUNNER_PHONE" to "testhost",
                 "OMA_RUNNER_WHOIS_FILE" to File(work, "whois.json").path, "OMA_RUNNER_MAIL" to File(work, "mail").path,
-                "HOME" to work.path, "OMA_RUNNER_CODEX" to File(mac, "fake-codex").path, "OMA_RUNNER_CURSOR" to File(mac, "fake-cursor").path, "CODEX_HOME" to File(work, "codex").path,
+                "HOME" to work.path, "OMA_RUNNER_CODEX" to File(mac, "fake-codex").path, "OMA_RUNNER_CURSOR" to File(mac, "fake-cursor").path, // No Grok on this runner, whatever this computer has installed: the Grok switch below must fail.
+                "OMA_RUNNER_GROK" to File(work, "no-grok").path, "CODEX_HOME" to File(work, "codex").path,
             ))
             redirectErrorStream(true)
         }.start()
