@@ -58,6 +58,13 @@ val GROK_QUICK_ALLOWED = QUICK_ALLOWED.filter { it.startsWith("Bash(") } + listO
 val GROK_QUICK_CHAT_ALLOWED = listOf("WebFetch")
 
 /**
+ * What the front agent is refused whatever else allows it, since Haiku never had it: an MCP tool (Grok keeps those
+ * whatever `--tools` says, and takes servers and allow rules from the guest's Claude settings), changing a file, and
+ * the `mkdir` and `touch` its read-only handling would otherwise run without asking. A deny always wins.
+ */
+val GROK_QUICK_DENIED = listOf("MCPTool", "Edit", "Write", "Bash(mkdir*)", "Bash(touch*)")
+
+/**
  * The guest command that answers [prompt] with Grok, as [quickCommand] does with Claude: the same prompt, told the same
  * rules ([quickSystemPrompt]) through `--rules`. `dontAsk` runs only what [GROK_QUICK_ALLOWED] allows and refuses the
  * rest without asking, which is what nobody answering its prompts means for Claude. No subagents and no plan mode: the
@@ -69,7 +76,8 @@ fun grokQuickCommand(prompt: String, resume: String? = null, mac: Boolean = fals
         (resume?.takeIf(GROK_SESSION::matches)?.let { "--resume $it " } ?: "") +
         "--permission-mode dontAsk --no-subagents --no-plan --rules ${shellQuote(quickSystemPrompt(mac, newChat))} " +
         "--tools ${(if (newChat) GROK_QUICK_CHAT_TOOLS else GROK_QUICK_TOOLS).joinToString(",")} " +
-        (if (newChat) GROK_QUICK_CHAT_ALLOWED else GROK_QUICK_ALLOWED).joinToString(" ") { "--allow ${shellQuote(it)}" } +
+        (if (newChat) GROK_QUICK_CHAT_ALLOWED else GROK_QUICK_ALLOWED).joinToString(" ") { "--allow ${shellQuote(it)}" } + " " +
+        GROK_QUICK_DENIED.joinToString(" ") { "--deny ${shellQuote(it)}" } +
         " --single=${shellQuote(prompt)} < /dev/null"
 
 /** The front agent's command for [agent]: [grokQuickCommand] for Grok, [quickCommand] for Haiku. */
@@ -93,4 +101,25 @@ fun frontSession(agent: FrontAgent, kept: String?): String? {
     return id.takeIf { who == agent.name && it.isNotEmpty() }
 }
 
-private val GROK_SESSION = Regex("[0-9a-fA-F-]{36}")
+/** A conversation id as Grok gives it, a UUID: anything else after `--resume` would be searched for as a title. */
+private val GROK_SESSION = Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+
+/**
+ * The command that answers [prompt] with Grok on a computer, as [quickDesktopCommand] does with Claude: told
+ * [quickDesktopPrompt], with the web, and the shell for `soma canvas` alone when it may arrange the canvas ([canvas]).
+ */
+fun grokDesktopCommand(prompt: String, resume: String? = null, newChat: Boolean = false, canvas: Boolean = false): String =
+    "grok --output-format streaming-messages-json --include-partial-messages --model $QUICK_GROK_MODEL " +
+        (resume?.takeIf(GROK_SESSION::matches)?.let { "--resume $it " } ?: "") +
+        "--permission-mode dontAsk --no-subagents --no-plan --rules ${shellQuote(quickDesktopPrompt(newChat, canvas))} " +
+        "--tools ${(GROK_QUICK_CHAT_TOOLS + if (canvas) listOf("run_terminal_cmd") else emptyList()).joinToString(",")} " +
+        (GROK_QUICK_CHAT_ALLOWED + if (canvas) DESKTOP_CANVAS_ALLOWED else emptyList()).joinToString(" ") { "--allow ${shellQuote(it)}" } + " " +
+        GROK_QUICK_DENIED.joinToString(" ") { "--deny ${shellQuote(it)}" } +
+        " --single=${shellQuote(prompt)} < /dev/null"
+
+/** The front agent's command on a computer for [agent]: [grokDesktopCommand] for Grok, [quickDesktopCommand] for Haiku. */
+fun desktopFrontCommand(agent: FrontAgent, prompt: String, resume: String? = null, newChat: Boolean = false, canvas: Boolean = false): String =
+    when (agent) {
+        FrontAgent.Grok -> grokDesktopCommand(prompt, resume, newChat, canvas)
+        FrontAgent.Haiku -> quickDesktopCommand(prompt, resume, newChat, canvas)
+    }

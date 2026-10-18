@@ -134,7 +134,9 @@ class OmaCommandTest {
         assertTrue(run().second, run().second.contains("not installed"))
         assertEquals(0, run("haiku").first)
         assertEquals("haiku\n", File(home, ".config/oma/front-agent").readText())
-        assertTrue(run().second.contains("The front agent is Haiku"))
+        assertTrue(run().second.contains("Claude Code is not installed"))
+        File(bin, "claude").apply { writeText("#!/bin/sh\n"); setExecutable(true) }
+        assertTrue(run(path = "${bin.path}:/usr/bin:/bin").second.contains("The front agent is Haiku"))
         File(bin, "grok").apply { writeText("#!/bin/sh\n"); setExecutable(true) }
         run("grok", path = "${bin.path}:/usr/bin:/bin")
         assertEquals("grok\n", File(home, ".config/oma/front-agent").readText())

@@ -58,6 +58,11 @@ class GrokFrontTest {
         assertEquals(QUICK_ALLOWED.filter { it.startsWith("Bash(") }, allowed.filter { it.startsWith("Bash(") })
         assertTrue(allowed.none { it == "Bash" || it == "Bash(*)" || it.startsWith("Edit") || it.startsWith("Write") })
         assertFalse(GROK_QUICK_TOOLS.any { it in setOf("write", "search_replace", "Delete", "task") })
+        // Refused whatever the guest's settings allow: MCP tools, edits, and the mkdir and touch Grok counts as read-only.
+        assertEquals(GROK_QUICK_DENIED, args.withIndex().filter { it.value == "--deny" }.map { args[it.index + 1] })
+        assertEquals(listOf("MCPTool", "Edit", "Write", "Bash(mkdir*)", "Bash(touch*)"), GROK_QUICK_DENIED)
+        val chat = arguments(grokQuickCommand("q", newChat = true))
+        assertEquals(GROK_QUICK_DENIED, chat.withIndex().filter { it.value == "--deny" }.map { chat[it.index + 1] })
     }
 
     @Test fun aNewChatHasTheWebAloneAndItsRule() {
@@ -69,7 +74,7 @@ class GrokFrontTest {
 
     @Test fun onlyAConversationIdIsResumed() {
         assertEquals(id, arguments(grokQuickCommand("q", id)).let { it[it.indexOf("--resume") + 1] })
-        for (bad in listOf("x; touch unsafe", "", "$id; rm -rf /", "\$(reboot)")) assertEquals(grokQuickCommand("q"), grokQuickCommand("q", bad))
+        for (bad in listOf("x; touch unsafe", "", "$id; rm -rf /", "\$(reboot)", "------------------------------------")) assertEquals(grokQuickCommand("q"), grokQuickCommand("q", bad))
     }
 
     @Test fun eachAgentFollowsUpOnlyOnItsOwnConversation() {

@@ -66,12 +66,14 @@ case "${'$'}{1-}" in
 esac
 chosen=${'$'}(cat "${'$'}choice" 2>/dev/null)
 [ "${'$'}chosen" = haiku ] || chosen=grok
-if [ "${'$'}chosen" = haiku ]; then
+if [ "${'$'}chosen" = haiku ] && ! command -v claude >/dev/null 2>&1; then
+  echo "Haiku is chosen but Claude Code is not installed here, so nobody answers first. Switch with: oma front grok"
+elif [ "${'$'}chosen" = haiku ]; then
   echo "The front agent is Haiku (Claude Code). Switch with: oma front grok"
 elif ! command -v grok >/dev/null 2>&1; then
-  echo "Grok is chosen but not installed here, so Haiku answers. Install Grok in Omalauncher's agents."
+  echo "Grok is chosen but not installed here, so Haiku answers if Claude Code is. Install Grok in Omalauncher's agents."
 elif [ ! -f "${'$'}HOME/.grok/auth.json" ]; then
-  echo "Grok is chosen but not signed in here, so Haiku answers. Sign in with: grok login --device-auth"
+  echo "Grok is chosen but not signed in here, so Haiku answers if Claude Code is. Sign in with: grok login --device-auth"
 else
   echo "The front agent is Grok. Switch back with: oma front haiku"
 fi

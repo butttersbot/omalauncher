@@ -10,6 +10,7 @@ import dev.omalauncher.assist.FrontWaiting
 import dev.omalauncher.assist.MacThread
 import dev.omalauncher.assist.MacThreadsEngine
 import dev.omalauncher.assist.macMachineOf
+import dev.omalauncher.assist.FrontAgent
 import dev.omalauncher.assist.QUICK_MODEL
 import dev.omalauncher.assist.QuickAnswer
 import dev.omalauncher.assist.QuickEvent
@@ -22,7 +23,9 @@ import dev.omalauncher.assist.frontHolds
 import dev.omalauncher.assist.frontOutcome
 import dev.omalauncher.assist.frontRead
 import dev.omalauncher.assist.frontRoute
-import dev.omalauncher.assist.quickDesktopCommand
+import dev.omalauncher.assist.desktopFrontCommand
+import dev.omalauncher.assist.frontSession
+import dev.omalauncher.assist.frontThread
 import dev.omalauncher.assist.quickEvent
 import dev.omalauncher.oma.ChatHistory
 import dev.omalauncher.oma.ChatTask
@@ -37,7 +40,8 @@ import kotlin.concurrent.thread
 
 /**
  * The front agent on a computer: the phone's QuickLane with no builders behind it (cockpit slice 6). A fast model
- * ([QUICK_MODEL], through this machine's own `claude`) hears a request first and answers it, or hands his words on
+ * (Grok through this machine's own `grok` once it is signed in here, else [QUICK_MODEL] through its `claude`; Boss,
+ * 2026-10-18; `soma front haiku|grok` chooses) hears a request first and answers it, or hands his words on
  * unchanged to a project thread on a computer through [threads]. Work for no listed thread ([FrontRoute.Build]) starts a
  * new thread, as a new chat's first words do. One request at a time; what he sends meanwhile waits in [queue]. Its
  * rules are the phone's own (FrontAgent.kt, QuickLaneRules.kt); only its prompt ([desktopFrontPrompt]) and its tools
@@ -48,9 +52,15 @@ class DesktopFrontAgent(
     private val platform: DesktopThreadsPlatform,
     private val notices: Notices,
     /** Where Claude Code is looked for; a test can say there is none. */
-    private val places: List<String> = listOf("~/.local/bin/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude", "~/.local/share/mise/shims/claude", "/usr/bin/claude"),
+    private val places: List<String> = PLACES,
     /** The canvas's door (slice 6): each request gets a token of its own to arrange the canvas with, gone when it ends. */
     private val door: CanvasDoor? = null,
+    /** Where Grok is looked for: beside each place Claude Code is, so a test that says there is no Claude says there is no Grok. */
+    private val grokPlaces: List<String> = places.map { it.removeSuffix("claude") + "grok" },
+    /** Whether Grok is signed in on this computer: only that its sign-in file is there. */
+    private val grokSignedIn: () -> Boolean = { File(System.getProperty("user.home"), ".grok/auth.json").isFile },
+    /** What `soma front` wrote, null when he never chose. */
+    private val choice: () -> String? = { runCatching { File(SomaHome.dir, FRONT_CHOICE_FILE).takeIf { it.isFile }?.readText() }.getOrNull() },
     /** The empty folder the front agent runs in while it can arrange the canvas. */
     private val emptyFolder: () -> java.io.File = { java.io.File(SomaHome.dir, "front").apply { mkdirs(); listFiles()?.forEach { it.deleteRecursively() } } },
     /** The `soma` it runs that with, put first on its PATH; with none, it isn't told it can arrange anything. */
@@ -67,8 +77,14 @@ class DesktopFrontAgent(
     /** Claude Code, found where a login shell would find it. */
     val claude: String? by lazy { places.map { it.replaceFirst("~", System.getProperty("user.home")) }.firstOrNull { File(it).canExecute() } }
 
+    /** Grok, found the same way. */
+    val grok: String? by lazy { grokPlaces.map { it.replaceFirst("~", System.getProperty("user.home")) }.firstOrNull { File(it).canExecute() } }
+
+    /** Who answers the next request: Grok when found and signed in here unless he chose Haiku, else Haiku; null for neither. */
+    val agent: FrontAgent? get() = FrontAgent.pick(choice(), grok != null, grokSignedIn(), claude != null)
+
     /** Whether there is a front agent to ask here. */
-    val ready: Boolean get() = claude != null
+    val ready: Boolean get() = agent != null
 
     private val log get() = platform.chatLog()
 
@@ -76,7 +92,7 @@ class DesktopFrontAgent(
     @Synchronized fun ask(prompt: String, chat: String = "") {
         check(prompt.isNotBlank()) { "Type a request first." }
         check(prompt.length <= FRONT_MAX_REQUEST) { "That request is too long to ask first." }
-        check(ready) { "Install Claude Code on this computer to talk to Soma here." }
+        check(ready) { "Install Grok or Claude Code on this computer to talk to Soma here." }
         if (!working) return read(prompt, waited = null, chat = chat)
         synchronized(platform.stampLock) {
             val filed = ChatHistory.stamp(log.tasks, System.currentTimeMillis())
@@ -122,7 +138,10 @@ class DesktopFrontAgent(
 
     /** Under the lock, with nothing being read: starts the front agent on [prompt], as QuickLane.read does. */
     private fun read(prompt: String, waited: Long?, chat: String) {
-        val resumed = if (chat.isEmpty()) platform.prefString(SESSION) else platform.book().chat(chat)?.front?.ifEmpty { null }
+        val agent = agent ?: error("Install Grok or Claude Code on this computer to talk to Soma here.")
+        // Only that agent's own conversation is followed up on: a Claude session means nothing to Grok.
+        val resumed = frontSession(agent, if (chat.isEmpty()) platform.prefString(SESSION) else platform.book().chat(chat)?.front?.ifEmpty { null })
+        val bin = if (agent == FrontAgent.Grok) grok!! else claude!!
         val began = System.currentTimeMillis()
         val mac = threads.board(began)
         val asked = synchronized(platform.stampLock) {
@@ -130,7 +149,7 @@ class DesktopFrontAgent(
                 ?: ChatHistory.stamp(log.tasks, began).also { log.begin(ChatTask(it, UNDECIDED_AGENT, prompt, chat = chat)) }
         }
         val canvas = door != null && shim != null
-        val command = quickDesktopCommand(desktopFrontPrompt(mac, prompt), resumed, newChat = chat.isNotEmpty(), canvas = canvas)
+        val command = desktopFrontCommand(agent, desktopFrontPrompt(mac, prompt), resumed, newChat = chat.isNotEmpty(), canvas = canvas)
         // One request, one restore point: every `soma canvas` it runs for this request carries the request's own token.
         val token = if (canvas) door!!.mint("front-$asked") else null
         time = asked; working = true; stopping = false; answer = ""; label = ANSWERING
@@ -146,7 +165,7 @@ class DesktopFrontAgent(
                     // In a folder of its own with nothing in it: what the agent may run reads only where it runs (s6 Critic:
                     // read-only commands chained after `soma canvas` read the folder Soma was started in, `/` from launchd).
                     if (token != null) directory(emptyFolder())
-                    environment()["PATH"] = (listOfNotNull(shim?.parent?.takeIf { token != null }, File(claude!!).parent) + listOf("/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin")).joinToString(":")
+                    environment()["PATH"] = (listOfNotNull(shim?.parent?.takeIf { token != null }, File(bin).parent) + listOf("/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin")).joinToString(":")
                     environment().remove(CanvasDoor.TOKEN)
                     token?.let { environment()[CanvasDoor.TOKEN] = it }
                 }.start()
@@ -158,7 +177,7 @@ class DesktopFrontAgent(
                 var lost = false
                 var its = false
                 fun own() {
-                    if (!its) log.update(asked, save = true) { it.copy(agent = QUICK_AGENT, answeredBy = agentName(QUICK_MODEL).orEmpty()) }
+                    if (!its) log.update(asked, save = true) { it.copy(agent = QUICK_AGENT, answeredBy = agentName(agent.model).orEmpty()) }
                     its = true
                 }
                 child.inputStream.bufferedReader().forEachLine { line ->
@@ -201,6 +220,8 @@ class DesktopFrontAgent(
                 }
                 val code = child.waitFor()
                 if (lost) next = null
+                // Grok says nothing JSON of a conversation it can't find; failing before it named one is that.
+                if (agent == FrontAgent.Grok && resumed != null && session == null && (failed || code != 0)) next = null
                 if (stopping && session != null) next = session
                 if (late.get() || lost || code != 0) failed = true
             } catch (e: Exception) { failed = true }
@@ -217,7 +238,8 @@ class DesktopFrontAgent(
                 }
                 if (status != null) log.update(asked, save = true) { it.copy(result = answer, status = status) }
                 synchronized(this) {
-                    if (chat.isNotEmpty()) platform.changeBook { it.heard(chat, next) } else next?.let { platform.putPref(SESSION, it) }
+                    val kept = frontThread(agent, next)
+                    if (chat.isNotEmpty()) platform.changeBook { it.heard(chat, kept) } else kept?.let { platform.putPref(SESSION, it) }
                     process = null; working = false
                     advance()
                 }
@@ -260,9 +282,43 @@ class DesktopFrontAgent(
         thread(isDaemon = true) { if (!child.waitFor(3, TimeUnit.SECONDS)) { child.descendants().forEach { it.destroyForcibly() }; child.destroyForcibly() } }
     }
 
-    private companion object {
-        const val SESSION = "front-session"
-        const val ANSWERING = "Answering"
-        const val TIMEOUT_SECONDS = 120L
+    companion object {
+        /** Where Claude Code is looked for on a computer. */
+        val PLACES = listOf("~/.local/bin/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude", "~/.local/share/mise/shims/claude", "/usr/bin/claude")
+
+        /** For `soma front`: whether Grok is found here, and whether it is signed in, as the front agent looks. */
+        fun found(): Pair<Boolean, Boolean> {
+            val home = System.getProperty("user.home")
+            val grok = PLACES.map { it.removeSuffix("claude").replaceFirst("~", home) + "grok" }.any { File(it).canExecute() }
+            return grok to File(home, ".grok/auth.json").isFile
+        }
+
+        /** Where `soma front` keeps his choice of front agent, in Soma's folder. */
+        const val FRONT_CHOICE_FILE = "front-agent"
+
+        /**
+         * `soma front [grok|haiku]`: writes his choice, then says who answers here and why. Exit 2 for any other word.
+         * [home] is Soma's folder, [grok] and [signedIn] whether Grok is found and signed in here.
+         */
+        fun choose(words: List<String>, home: File, grok: Boolean, signedIn: Boolean, out: (String) -> Unit): Int {
+            val word = words.firstOrNull()?.lowercase()
+            when (word) {
+                null -> {}
+                "grok", "haiku" -> { File(home, FRONT_CHOICE_FILE).writeText("$word\n"); out("Chosen: $word, from the next request.") }
+                else -> { out("usage: soma front [grok|haiku]"); return 2 }
+            }
+            val chosen = runCatching { File(home, FRONT_CHOICE_FILE).readText().trim() }.getOrNull()
+            out(when {
+                chosen == "haiku" -> "The front agent is Haiku (Claude Code). Switch with: soma front grok"
+                !grok -> "Grok is chosen but not installed here, so Haiku answers. Install it with: npm i -g @xai-official/grok"
+                !signedIn -> "Grok is chosen but not signed in here, so Haiku answers. Sign in with: grok login"
+                else -> "The front agent is Grok. Switch back with: soma front haiku"
+            })
+            return 0
+        }
+
+        private const val SESSION = "front-session"
+        private const val ANSWERING = "Answering"
+        private const val TIMEOUT_SECONDS = 120L
     }
 }
