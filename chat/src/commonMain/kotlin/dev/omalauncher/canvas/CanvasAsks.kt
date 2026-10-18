@@ -103,6 +103,11 @@ class ScreenRules(
      * nobody would see (round-2 review).
      */
     val shownPage: ((Notebook) -> String?)? = null,
+    /**
+     * The fewest rows a module may have here, whatever size is asked: the car's Needs you takes two, so an answer's note
+     * ("That request has expired") never takes its only row (Boss, 2026-10-17).
+     */
+    val minRows: (ModuleRef) -> Int = { 1 },
 )
 
 /** A widget from the shared library, as an agent names it: its file name. */
@@ -191,7 +196,7 @@ private fun taken(n: Notebook, page: String, except: String?, rules: ScreenRules
     n.pages.firstOrNull { it.id == page }?.items.orEmpty().filter { it.key != except }.mapNotNull { it.cell } + rules.pinned(n)
 
 /** [w] by [h], and a little smaller: one cell less across, down, or both, never below one. */
-private fun aLittleSmaller(w: Int, h: Int) = listOf(w to h, w - 1 to h, w to h - 1, w - 1 to h - 1).filter { it.first >= 1 && it.second >= 1 }.distinct()
+private fun aLittleSmaller(w: Int, h: Int, minH: Int = 1) = listOf(w to h, w - 1 to h, w to h - 1, w - 1 to h - 1).filter { it.first >= 1 && it.second >= minH.coerceAtLeast(1) }.distinct()
 
 /**
  * The free cell of [w] by [h] nearest what [where] asks on a page with [busy] taken, or null when the asked-for part of the
@@ -248,11 +253,11 @@ private data class Landing(val page: String, val cell: Cell, val made: CanvasVer
  * page; then the next page with room; then a new page after the last, at the size that fits there. [moving] is the
  * module's own key, whose old cells don't count as taken.
  */
-private fun land(n: Notebook, page: String, size: Pair<Int, Int>, where: Where, moving: String?, rules: ScreenRules): Landing {
+private fun land(n: Notebook, page: String, size: Pair<Int, Int>, where: Where, moving: String?, rules: ScreenRules, minH: Int = 1): Landing {
     val anchor = where.of?.let { cellOf(n, it) }
     fun try_(on: String, w: Where, strict: Boolean = true): Cell? {
         val busy = taken(n, on, moving, rules)
-        for ((sw, sh) in aLittleSmaller(size.first, size.second)) spotOn(busy, n.columns, n.rows, sw, sh, w, anchor, strict)?.let { return it }
+        for ((sw, sh) in aLittleSmaller(size.first, size.second, minH)) spotOn(busy, n.columns, n.rows, sw, sh, w, anchor, strict)?.let { return it }
         return null
     }
     try_(page, where)?.let { return Landing(page, it) }
@@ -265,7 +270,7 @@ private fun land(n: Notebook, page: String, size: Pair<Int, Int>, where: Where, 
     val base = n.pages.firstOrNull { it.id == page }?.name ?: "Page"
     val name = generateSequence(2) { it + 1 }.map { "$base $it" }.first { nm -> n.pages.none { it.name.equals(nm, ignoreCase = true) } }
     val busy = rules.pinned(n)
-    for (sh in size.second downTo 1) for (sw in size.first downTo 1) {
+    for (sh in size.second downTo minH.coerceIn(1, size.second)) for (sw in size.first downTo 1) {
         spotOn(busy, n.columns, n.rows, sw, sh, Where(), null)?.let { return Landing(id, it, CanvasVerb.PageMake(id, name, n.pages.lastOrNull()?.id)) }
     }
     refuse("No page here has room for it, not even a new one. Nothing was changed.")
@@ -330,8 +335,10 @@ fun resolveAsk(n: Notebook, ask: CanvasAsk, rules: ScreenRules): Resolved = when
                 else (2..99).map { ref.copy(copy = it).key }.firstOrNull { k -> all.none { it.first == k } } ?: refuse("${moduleTitle(named)} is on too many pages already. Nothing was changed.")
         }
         if (besideKey != null && pageOf(n, besideKey)?.id != page) refuse("${moduleTitle(besideKey)} is not on that page. Nothing was changed.")
-        val size = ask.size?.cells(rules.span(n), n.rows) ?: cellOf(n, key)?.let { it.w to it.h } ?: (if (ref != null) rules.sizeOf(ref, n) else SizeWord.Card.cells(rules.span(n), n.rows))
-        val at = land(n, page, size, Where(ask.where.spot, besideKey), moving = key, rules)
+        val minH = ref?.let { rules.minRows(it).coerceIn(1, n.rows) } ?: 1
+        val size = (ask.size?.cells(rules.span(n), n.rows) ?: cellOf(n, key)?.let { it.w to it.h } ?: (if (ref != null) rules.sizeOf(ref, n) else SizeWord.Card.cells(rules.span(n), n.rows)))
+            .let { (w, h) -> w to maxOf(h, minH) }
+        val at = land(n, page, size, Where(ask.where.spot, besideKey), moving = key, rules, minH)
         val verbs = listOfNotNull(at.made) + CanvasVerb.Place(key, if (ref == null) ItemKind.Widget else ItemKind.Module, at.page, at.cell)
         val pageName = at.made?.name ?: n.pages.first { it.id == at.page }.name
         if (at.made == null && cellOf(n, key) == at.cell && pageOf(n, key)?.id == at.page) Resolved(emptyList(), "${moduleTitle(key)} stays where it is: it is already as near there as this page has room")
@@ -344,7 +351,8 @@ fun resolveAsk(n: Notebook, ask: CanvasAsk, rules: ScreenRules): Resolved = when
         val besideKey = ask.where.of?.let { w -> (moduleKeyOf(w, chat = true) ?: refuse("\"$w\" is not a module. Nothing was changed.")).let { copyOf(n, w, it, ask.page?.let { p -> pageNamed(n, p).id } ?: from.id) } }
         if (ask.where.spot.beside && besideKey == null) refuse("${ask.where.spot.word} needs a module to be beside. Nothing was changed.")
         val page = ask.page?.let { pageNamed(n, it).id } ?: besideKey?.let { onCanvas(n, it).first.id } ?: from.id
-        val at = land(n, page, cell.w to cell.h, Where(ask.where.spot, besideKey), moving = key, rules)
+        val minH = moduleRef(key)?.let { rules.minRows(it).coerceIn(1, n.rows) } ?: 1
+        val at = land(n, page, cell.w to maxOf(cell.h, minH), Where(ask.where.spot, besideKey), moving = key, rules, minH)
         val verbs = listOfNotNull(at.made) + CanvasVerb.Move(key, at.page, at.cell)
         if (at.made == null && at.page == from.id && at.cell == cell) return Resolved(emptyList(), "${moduleTitle(key)} stays where it is: it is already as near there as this page has room")
         Resolved(verbs, "moved ${moduleTitle(key)} to \"${at.made?.name ?: n.pages.first { it.id == at.page }.name}\" at ${cellWords(at.cell)}")
@@ -352,16 +360,18 @@ fun resolveAsk(n: Notebook, ask: CanvasAsk, rules: ScreenRules): Resolved = when
     is CanvasAsk.Resize -> {
         val key = copyOf(n, ask.module, module(ask.module, rules), ask.page?.let { pageNamed(n, it).id })
         val (page, cell) = onCanvas(n, key)
-        val (w, h) = ask.size.cells(rules.span(n), n.rows)
+        val minH = moduleRef(key)?.let { rules.minRows(it).coerceIn(1, n.rows) } ?: 1
+        val (w, asked) = ask.size.cells(rules.span(n), n.rows)
+        val h = maxOf(asked, minH)
         val busy = taken(n, page.id, key, rules)
         val inPlace = Cell(cell.x, cell.y, w, h).takeIf { it.right <= n.columns && it.bottom <= n.rows && busy.none { b -> b.overlaps(it) } }
         // Not where it is: as near there as there is room on its page, a little smaller if need be; never onto another page.
-        val near = inPlace ?: aLittleSmaller(w, h).firstNotNullOfOrNull { (sw, sh) ->
+        val near = inPlace ?: aLittleSmaller(w, h, minH).firstNotNullOfOrNull { (sw, sh) ->
             (0..n.rows - sh).flatMap { y -> (0..n.columns - sw).map { x -> Cell(x, y, sw, sh) } }
                 .filter { c -> busy.none { it.overlaps(c) } }
                 .minByOrNull { abs(it.x - cell.x) + abs(it.y - cell.y) }
         } ?: refuse("\"${page.name}\" has no room for ${moduleTitle(key)} as a ${ask.size.word}. Nothing was changed.")
-        Resolved(listOf(CanvasVerb.Move(key, page.id, near)), "made ${moduleTitle(key)} a ${ask.size.word} at ${cellWords(near)}")
+        Resolved(listOf(CanvasVerb.Move(key, page.id, near)), "made ${moduleTitle(key)} a ${ask.size.word} at ${cellWords(near)}" + if (h > asked) " ($minH rows tall: here it never has fewer)" else "")
     }
     is CanvasAsk.Remove -> {
         val key = copyOf(n, ask.module, module(ask.module, rules), ask.page?.let { pageNamed(n, it).id })

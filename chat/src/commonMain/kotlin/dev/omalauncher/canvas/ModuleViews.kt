@@ -96,11 +96,12 @@ private fun TitleRow(title: String, caption: String) {
  * are left out, if it fits too. Nothing is drawn cut off.
  */
 @Composable
-fun FitRows(count: Int, gap: Dp = 6.dp, row: @Composable (Int) -> Unit) {
+fun FitRows(count: Int, gap: Dp = 6.dp, keyOf: ((Int) -> Any)? = null, row: @Composable (Int) -> Unit) {
     // The "+N more" row is composed for every N it could say, and only the one that matches is placed: a Layout can't
     // compose during measure, and N is only known there.
     Layout(content = {
-        for (i in 0 until count) Box { row(i) }
+        // Keyed rows keep their own state: a row that moves up when the one above goes doesn't take that one's pressed look.
+        for (i in 0 until count) if (keyOf == null) Box { row(i) } else androidx.compose.runtime.key(keyOf(i)) { Box { row(i) } }
         for (n in 1..count) Box { BasicText("+$n more", style = Pack.mono(Pack.size.small, Pack.muted), maxLines = 1, softWrap = false) }
     }) { measurables, constraints ->
         val loose = Constraints(maxWidth = constraints.maxWidth)
@@ -286,7 +287,7 @@ fun NeedsYouModule(asks: List<ModuleAsk>, size: ModuleSize, modifier: Modifier =
                 if (asks.isEmpty()) {
                     BasicText("Nothing waits on you.", style = Pack.body(color = Pack.muted))
                 } else {
-                    FitRows(asks.size, gap = 8.dp) { i ->
+                    FitRows(asks.size, gap = 8.dp, keyOf = { asks[it].id }) { i ->
                         val ask = asks[i]
                         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             BasicText(ask.title, Modifier.clickable { onOpen(ask.threadKey) }, style = Pack.body(), maxLines = 1, overflow = TextOverflow.Ellipsis)

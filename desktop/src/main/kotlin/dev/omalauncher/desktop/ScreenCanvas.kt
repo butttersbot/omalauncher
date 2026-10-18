@@ -48,6 +48,25 @@ class ScreenCanvas(
         page = replayOn(log)
         // A screen starts with one page, so there is somewhere to put the first thing.
         if (startPage && page.pages.isEmpty()) apply(CanvasVerb.PageMake("main", screen.replaceFirstChar { it.uppercase() }), "soma", "start")
+        growShortModules()
+    }
+
+    /**
+     * A module laid out shorter than this screen allows (the car's one-row Needs you, from before the rule) is grown once, down
+     * where there is room, else up; one with no room either way stays as it is. Kept as Soma's own change.
+     */
+    private fun growShortModules() {
+        for (p in page.pages) for (item in p.items) {
+            val ref = dev.omalauncher.canvas.moduleRef(item.key) ?: continue
+            val cell = item.cell ?: continue
+            val need = carMinRows(screen, ref.kind).coerceAtMost(rows)
+            if (cell.h >= need) continue
+            val more = need - cell.h
+            val grown = listOf(cell.copy(h = need), cell.copy(y = cell.y - more, h = need)).firstOrNull { c ->
+                c.y >= 0 && c.bottom <= rows && p.items.none { it.key != item.key && it.cell?.overlaps(c) == true }
+            } ?: continue
+            apply(CanvasVerb.Move(item.key, p.id, grown), "soma", "grow-${item.key}")
+        }
     }
 
     private fun replayOn(log: VerbLog) = log.entries.fold(Notebook(rows = rows, pages = emptyList(), columns = columns)) { n, e -> applyVerb(n, e.verb, bare = bare).notebook }
@@ -114,6 +133,7 @@ class ScreenCanvas(
         widgetKnown = widgetKnown,
         // The car shows its first page and nothing else.
         shownPage = if (screen == CAR_SCREEN) { n -> n.pages.firstOrNull()?.name } else null,
+        minRows = { ref -> carMinRows(screen, ref.kind) },
     )
 
     override fun notebook(): Notebook = page
@@ -132,9 +152,15 @@ class ScreenCanvas(
         return RestorePoint(request, restorePoint(before, verbs.map { it.verb }))
     }
 
-    @Synchronized override fun undone(restored: RestorePoint, verbs: List<CanvasVerb>, actor: String): String? = apply(verbs, UNDO + restored.request, actor)
+    @Synchronized override fun undone(restored: RestorePoint, verbs: List<CanvasVerb>, actor: String): String? =
+        // An undo that puts back a size from before the car's rule is grown again at once (round-1 review: it stayed one row).
+        apply(verbs, UNDO + restored.request, actor).also { growShortModules() }
 
     companion object {
         private const val UNDO = "undo:"
     }
 }
+
+/** The fewest rows a module of [kind] has on [screen]: two for the car's Needs you, one for anything else anywhere. */
+fun carMinRows(screen: String, kind: dev.omalauncher.canvas.ModuleKind): Int =
+    if (screen == CAR_SCREEN && kind == dev.omalauncher.canvas.ModuleKind.Needs) 2 else 1
