@@ -80,6 +80,35 @@ class CanvasScreenTest {
         onNodeWithContentDescription("Threads module").assertExists()
     }
 
+    /** s12: in City Pop the cards' shadows and tape stay inside the window, at Boss's window and a small one. */
+    @Test fun theCardsShadowsAndTapeStayInsideTheWindow() {
+        for ((w, h) in listOf(1512 to 867, 900 to 600)) runComposeUiTest {
+            Looks.fonts(); Looks.use("city-pop")
+            val notices = Notices()
+            val platform = DesktopThreadsPlatform(notices) { emptyList() }
+            val engine = MacThreadsEngine(platform)
+            val host = DesktopChatHost(platform, engine, DesktopFrontAgent(engine, platform, notices, places = emptyList()), notices)
+            val canvas = DesktopCanvas(SomaHome.canvas, "test").also { it.load() }
+            // A taped card (Computers is one) in the top row too, where its tape meets the window's top.
+            canvas.apply(dev.omalauncher.widgets.layout.CanvasVerb.Remove(dev.omalauncher.canvas.moduleKey(dev.omalauncher.canvas.ModuleKind.Needs)!!))
+            canvas.apply(dev.omalauncher.widgets.layout.CanvasVerb.Move(dev.omalauncher.canvas.moduleKey(dev.omalauncher.canvas.ModuleKind.Computers)!!, DESKTOP_PAGE, dev.omalauncher.widgets.Cell(5, 0, 4, 2)))
+            mainClock.autoAdvance = false
+            setContent { Box(Modifier.size(w.dp, h.dp)) { CanvasScreen(canvas, host, chatHostModules(host), 0L, null, onTab = {}) } }
+            mainClock.advanceTimeBy(600)
+            val reach = runOnIdle { shadowReach() }
+            // City Pop's tape lifts 10.5 + 33·sin 3° ≈ 12.2 dp above a card's top; its shadow reaches 7 right and down.
+            assertTrue("$reach", reach.right.value >= 7f && reach.bottom.value >= 7f && reach.top.value >= 12f)
+            val cards = listOf("Threads", "Timeline", "Computers", "New thread").map { onNodeWithContentDescription("$it module").getBoundsInRoot() }
+            for (b in cards) {
+                assertTrue("$w×$h right ${b.right} + ${reach.right}", (b.right + reach.right).value <= w + 0.5f)
+                assertTrue("$w×$h bottom ${b.bottom} + ${reach.bottom}", (b.bottom + reach.bottom).value <= h + 0.5f)
+                // The tape's highest corner keeps the gap's air above it, as the shadows do at the other edges.
+                assertTrue("$w×$h top ${b.top} - ${reach.top}", b.top.value - reach.top.value - 8f >= -0.5f)
+            }
+            Looks.use("console")
+        }
+    }
+
     @Test fun theArrangingBarCoversNeitherTheChatsSendNorAGrip() = runComposeUiTest {
         val notices = Notices()
         val platform = DesktopThreadsPlatform(notices) { emptyList() }

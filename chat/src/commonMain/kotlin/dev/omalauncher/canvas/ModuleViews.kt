@@ -188,7 +188,9 @@ fun ThreadsModule(threads: List<AgentThread>, size: ModuleSize, modifier: Modifi
             ModuleSize.Card -> if (threads.isEmpty()) {
                 BasicText("No threads at work.", style = Pack.body(color = Pack.muted))
             } else {
-                FitRows(threads.size) { i -> ThreadRow(threads[i], onOpen) }
+                // The computer's column only when some thread names one: with one Mac none does, and an empty column cut the others short.
+                val machines = threads.any { it.machine.isNotEmpty() }
+                FitRows(threads.size) { i -> ThreadRow(threads[i], machines, onOpen) }
             }
             ModuleSize.Full -> Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 for ((state, label) in MODULE_STATES.filter { (s, _) -> s != ThreadState.Queued }) {
@@ -211,20 +213,27 @@ fun ThreadsModule(threads: List<AgentThread>, size: ModuleSize, modifier: Modifi
     }
 }
 
-/** One thread in a list: its name first; what it is doing and its computer only where there is room for them. */
+/** A thread's computer, in a list row: shown only on a card at least [MACHINE_ROOM] wide, in a column [MACHINE_WIDTH] wide. */
+private val MACHINE_ROOM = 440.dp
+private val MACHINE_WIDTH = 120.dp
+
+/** One thread in a list: its name first; what it is doing and its computer (when [machines]) only where there is room for them. */
 @Composable
-private fun ThreadRow(t: AgentThread, onOpen: (String) -> Unit) {
+private fun ThreadRow(t: AgentThread, machines: Boolean, onOpen: (String) -> Unit) {
     BoxWithConstraints(Modifier.fillMaxWidth().clickable { onOpen(t.key) }) {
         val roomy = maxWidth >= 320.dp
+        // The computer's column only on a card wide enough for it, at a width that holds "MacBook Pro"; a narrower card gives
+        // its room to the name and what it is doing (round-1 review: a share of a 3-column card cut "Mac Pro" and the names).
+        val machine = machines && maxWidth >= MACHINE_ROOM
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             ThreadDot(t.state, Pack.muted)
             Spacer(Modifier.width(8.dp))
             // Fixed shares, so the columns line up row under row.
-            BasicText(t.name, Modifier.weight(if (roomy) 0.42f else 1f), style = Pack.body(), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            BasicText(t.name, Modifier.weight(if (roomy) 0.5f else 1f), style = Pack.body(), maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (roomy) {
                 Spacer(Modifier.width(8.dp))
-                BasicText(t.doing.ifEmpty { t.label }, Modifier.weight(0.4f), style = Pack.mono(Pack.size.small, Pack.muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                BasicText(Pack.caption(t.machine), Modifier.weight(0.18f).padding(start = 6.dp), style = Pack.mono(Pack.size.small, Pack.muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                BasicText(t.doing.ifEmpty { t.label }, Modifier.weight(0.5f), style = Pack.mono(Pack.size.small, Pack.muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (machine) BasicText(Pack.caption(t.machine), Modifier.width(MACHINE_WIDTH).padding(start = 6.dp), style = Pack.mono(Pack.size.small, Pack.muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }

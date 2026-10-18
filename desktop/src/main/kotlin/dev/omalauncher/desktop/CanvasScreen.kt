@@ -41,6 +41,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.omalauncher.canvas.LocalModuleFocus
 import dev.omalauncher.canvas.ModuleKind
@@ -67,6 +68,25 @@ val CANVAS_ROOM = 760.dp
 
 /** The space between blocks and around the page. */
 private val GAP = 8.dp
+
+/** How far the pack's cards draw past their own edges, each side: what the grid leaves room for at the window's edges. */
+internal data class Reach(val left: Dp, val top: Dp, val right: Dp, val bottom: Dp)
+
+/**
+ * The pack's [Reach]: each cast shadow's offset plus its blur as far as it shows (a blur reaches about 1.75 times its radius,
+ * plus a pixel or two of fade; round-1 review: x + blur alone left custard's tail at the edge), and the tape on a card's top,
+ * half above the card and lifted at one end by its angle (round-1 review: a taped card in the top row had its tape sliced).
+ */
+internal fun shadowReach(): Reach {
+    val scrap = Pack.look.pack.scrap
+    val cast = listOf(scrap.surface.shadow, scrap.surface.shadow2).filter { it.visible && !it.inset }
+    fun bleed(offset: (dev.omalauncher.theme.pack.PackShadow) -> Float) = (cast.maxOfOrNull { if (it.blur > 0f) offset(it) + it.blur * 1.75f + 2f else offset(it) } ?: 0f).coerceAtLeast(0f)
+    val tape = scrap.tape.takeIf { it.style != dev.omalauncher.theme.pack.Dressing.None }
+        ?.let { it.height / 2f + it.width / 2f * kotlin.math.abs(kotlin.math.sin(Math.toRadians(it.angle.toDouble()))).toFloat() } ?: 0f
+    // A shadow's left and top bleed only past the gap that is already there; the tape gets the whole gap above it too, as the
+    // shadows do at the right and bottom (round-2 review: netting the gap off put the tape's corner flush with the top).
+    return Reach((bleed { -it.x } - GAP.value).coerceAtLeast(0f).dp, maxOf(bleed { -it.y } - GAP.value, tape).coerceAtLeast(0f).dp, bleed { it.x }.dp, bleed { it.y }.dp)
+}
 
 /** The arranging bar's strip, below the blocks. */
 private val BAR = 36.dp
@@ -112,10 +132,13 @@ fun CanvasScreen(
         // lies over the chat's send or a grip.
         val pages = canvas.page.pages
         val strip = if (arranging || pages.size > 1) BAR else 0.dp
-        val cellW = (maxWidth - GAP * (DESKTOP_COLUMNS + 1)) / DESKTOP_COLUMNS
-        val cellH = (maxHeight - strip - GAP * (DESKTOP_ROWS + 1)) / DESKTOP_ROWS
-        fun x(c: Int) = GAP + (cellW + GAP) * c
-        fun y(r: Int) = GAP + (cellH + GAP) * r
+        // The pack's cards cast a shadow past their edge (City Pop: 7 down and right): the grid leaves room for it, so the
+        // shadow of the last column and the last row is never cut by the window's edge.
+        val reach = shadowReach()
+        val cellW = (maxWidth - GAP * (DESKTOP_COLUMNS + 1) - reach.left - reach.right) / DESKTOP_COLUMNS
+        val cellH = (maxHeight - strip - GAP * (DESKTOP_ROWS + 1) - reach.top - reach.bottom) / DESKTOP_ROWS
+        fun x(c: Int) = GAP + reach.left + (cellW + GAP) * c
+        fun y(r: Int) = GAP + reach.top + (cellH + GAP) * r
         fun w(n: Int) = cellW * n + GAP * (n - 1)
         fun h(n: Int) = cellH * n + GAP * (n - 1)
         val density = LocalDensity.current
