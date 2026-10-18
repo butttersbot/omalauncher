@@ -10,7 +10,9 @@
 set -u -o pipefail
 config="${HOME:?}/.config/omalauncher/mac-runner.json"
 port_file="$HOME/.config/oma-development/install-port"
-taildrop=/sdcard/Download/Taildrop
+# Where Tailscale saves what it receives: Download/Taildrop, or Taildrop at the storage's top, as it was set on the
+# new Fold (2026-10-17, when Android's folder picker there would not let it move). Both are read.
+taildrops='/sdcard/Download/Taildrop /sdcard/Taildrop'
 
 usage() {
   cat <<USAGE
@@ -71,7 +73,8 @@ connect() {
 
 # What waits, one "SIZE<tab>NAME" line per file. A name still ending in .partial is a file Tailscale is receiving.
 waiting() {
-  adb -s "$at" shell "cd $taildrop 2>/dev/null || exit 0; for f in *; do [ -f \"\$f\" ] && stat -c '%s	%n' -- \"\$f\"; done; exit 0" </dev/null |
+  # Each file as its size and its full path on the phone, from every Taildrop folder there is.
+  adb -s "$at" shell "for d in $taildrops; do [ -d \"\$d\" ] || continue; for f in \"\$d\"/*; do [ -f \"\$f\" ] && stat -c '%s	%n' -- \"\$f\"; done; done; exit 0" </dev/null |
     tr -d '\r' | awk '!/\.partial$/'
 }
 
@@ -108,13 +111,15 @@ get() {
   dir=$(cd -- "$dir" && pwd)
   connect
   local files
-  files=$(waiting) || die 'Could not read Download/Taildrop on the phone.'
+  files=$(waiting) || die 'Could not read the Taildrop folders on the phone.'
   [ -n "$files" ] || { echo 'Nothing waiting.'; return; }
   local failed=0 bytes name path got
   while IFS=$'\t' read -r bytes name; do
+    local from=$name
+    name=${from##*/}
     path=$(free_name "$dir" "$name")
     # adb would read the list this loop reads, so it is given nothing to read.
-    if ! adb -s "$at" pull "$taildrop/$name" "$path" </dev/null >/dev/null 2>&1; then
+    if ! adb -s "$at" pull "$from" "$path" </dev/null >/dev/null 2>&1; then
       rm -f -- "$path"
       echo "Could not copy $name; it is still on the phone." >&2
       failed=1
@@ -127,7 +132,7 @@ get() {
       failed=1
     elif [ -n "$keep" ]; then
       echo "Copied $name ($(size "$bytes")) to $path; it stays on the phone."
-    elif adb -s "$at" shell "rm -f -- $(quoted "$taildrop/$name")" </dev/null >/dev/null 2>&1; then
+    elif adb -s "$at" shell "rm -f -- $(quoted "$from")" </dev/null >/dev/null 2>&1; then
       echo "Moved $name ($(size "$bytes")) to $path."
     else
       echo "Copied $name ($(size "$bytes")) to $path, but could not remove it from the phone." >&2
@@ -141,10 +146,10 @@ list() {
   [ $# -eq 0 ] || bad
   connect
   local files bytes name
-  files=$(waiting) || die 'Could not read Download/Taildrop on the phone.'
+  files=$(waiting) || die 'Could not read the Taildrop folders on the phone.'
   [ -n "$files" ] || { echo 'Nothing waiting.'; return; }
   while IFS=$'\t' read -r bytes name; do
-    printf '%s\t%s\n' "$name" "$(size "$bytes")"
+    printf '%s\t%s\n' "${name##*/}" "$(size "$bytes")"
   done <<<"$files"
 }
 
