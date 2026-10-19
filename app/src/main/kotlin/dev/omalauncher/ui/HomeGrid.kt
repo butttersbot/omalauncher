@@ -59,6 +59,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -1114,25 +1116,29 @@ private fun TiledPage(
                     )
                 }
             }
-            // Action bar above the tile, or below it when the tile is at the top.
-            val barAbove = r.top > with(density) { 56.dp.roundToPx() }
             if (!arrange.holding) {
-                val at =
-                    with(density) {
-                        IntOffset(
-                            r.left.coerceAtMost(pageWidth - 220.dp.roundToPx()).coerceAtLeast(0),
-                            if (barAbove) r.top - 48.dp.roundToPx() else r.bottom + 8.dp.roundToPx(),
-                        )
-                    }
+                // Above the tile, or below it when there's no room for it there: as tall as it turned out, since a
+                // pinned app's shortcuts stack above its bar. Lined up with the tile's left edge, pulled in by however
+                // wide the bar turned out when that would run off the page.
+                val barGap = with(density) { 8.dp.roundToPx() }
+                fun at(size: IntSize): IntOffset {
+                    val above = r.top - size.height - barGap
+                    return IntOffset(r.left.coerceAtMost(pageWidth - size.width).coerceAtLeast(0), if (above >= 0) above else r.bottom + barGap)
+                }
                 DisposableEffect(Unit) { onDispose { arrange.bar = null } }
                 // The bar eases in from the edge of the tile it stands at. Its place and size, which its taps are found by, are as at rest.
                 val barShown = rememberAppearing(sel.key)
+                val barAbove = remember { booleanArrayOf(true) }
                 Box(
                     Modifier
                         .zIndex(3f)
-                        .offset { at }
-                        .onSizeChanged { arrange.bar = IntRect(at, it) }
-                        .appears({ barShown.value }) { TransformOrigin(0f, if (barAbove) 1f else 0f) },
+                        .layout { measurable, constraints ->
+                            val bar = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0))
+                            val place = at(IntSize(bar.width, bar.height))
+                            barAbove[0] = place.y < r.top
+                            layout(bar.width, bar.height) { bar.place(place) }
+                        }.onSizeChanged { arrange.bar = IntRect(at(it), it) }
+                        .appears({ barShown.value }) { TransformOrigin(0f, if (barAbove[0]) 1f else 0f) },
                 ) { actions(sel) }
             }
         }

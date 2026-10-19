@@ -2,6 +2,7 @@ package dev.omalauncher.widgets
 
 import dev.omalauncher.linux.Agent
 import dev.omalauncher.linux.agentInvocation
+import dev.omalauncher.widgets.lang.OwlKind
 
 /** What agents are told about dependencies when they write or change a widget. */
 private const val DEPENDENCIES =
@@ -28,12 +29,14 @@ fun editWidgetCommand(
     problem: String? = null,
 ): String {
     val file = spec.file.name
+    // An app is in the drawer and opens full screen; the docs call it that.
+    val what = if (spec.kind == OwlKind.App) "owl app" else "home-screen widget"
     val prompt =
         if (problem != null) {
-            "The home-screen widget \"${spec.name}\" in $file has a problem: $problem Read README.md for the widget language " +
+            "The $what \"${spec.name}\" in $file has a problem: $problem Read README.md for the widget language " +
                 "and $file, find out what's wrong, and fix it; ask me before changing the system beyond installing packages. $CHECK"
         } else {
-            "I want to change the home-screen widget \"${spec.name}\" in $file. Read README.md for the widget language " +
+            "I want to change the $what \"${spec.name}\" in $file. Read README.md for the widget language " +
                 "and $file, and run owl-check $file to see it and its problems. $DEPENDENCIES $CHECK Saved changes show up on my " +
                 "phone within seconds. Ask me what to change."
         }

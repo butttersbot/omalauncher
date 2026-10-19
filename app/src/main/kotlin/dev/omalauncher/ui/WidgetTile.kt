@@ -54,6 +54,15 @@ import dev.omalauncher.widgets.lang.text
 import dev.omalauncher.widgets.render.WidgetContent
 import dev.omalauncher.widgets.render.WidgetScreen
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.rotate
 import dev.omalauncher.widgets.runtime.WidgetInstance
 
 @Composable
@@ -383,5 +392,44 @@ internal fun WidgetScreenPanel(
     val title = instance.program.screenTitle?.let { instance.eval(it, instance.root, "title").text() } ?: spec.name
     OverlayPanel(title, onDismiss) {
         WidgetScreen(instance, Modifier.weight(1f).fillMaxWidth())
+    }
+}
+
+/** An owl app's window: its title, with a back chevron while its `back` holds, over its view, on the look's background. */
+@Composable
+internal fun OwlAppWindow(
+    spec: WidgetSpec,
+    instance: WidgetInstance,
+) {
+    val title = instance.program.screenTitle?.let { instance.eval(it, instance.root, "title").text() } ?: spec.name
+    val up: (() -> Unit)? = if (instance.canGoUp()) { { instance.goUp() } } else null
+    // Full screen like any Android app: no window border or side gap, and no ✕ (Back leaves the app and
+    // Recents closes it; close() still does). With `edge` the view runs on under the navigation bar too:
+    // only the keyboard pushes its bottom up.
+    val insets =
+        if (instance.program.edge) {
+            WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal).union(WindowInsets.ime)
+        } else {
+            WindowInsets.safeDrawing
+        }
+    Column(Modifier.fillMaxSize().background(Pack.background).windowInsetsPadding(insets)) {
+        Row(
+            Modifier
+                .padding(horizontal = PanelPadding, vertical = 8.dp)
+                .then(if (up != null) Modifier.clickable(onClick = up) else Modifier),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // The font has no left chevron; the right one turned around is the same shape.
+            if (up != null) Symbol(Glyph.ChevronRight, Pack.accent, Modifier.padding(end = 6.dp).rotate(180f), Pack.size.title)
+            BasicText(Pack.heading(title), style = Pack.display(Pack.size.title, Pack.accent), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        WidgetScreen(instance, Modifier.weight(1f).fillMaxWidth())
+    }
+    if (instance.program.edge) {
+        // How much of an `edge` app's bottom the navigation bar covers, for its `screenInset`; none while the keyboard is up.
+        val density = LocalDensity.current
+        val covered = (WindowInsets.safeDrawing.getBottom(density) - WindowInsets.ime.getBottom(density)).coerceAtLeast(0)
+        val dp = with(density) { covered.toDp().value.toDouble() }
+        SideEffect { instance.setScreenInset(dp) }
     }
 }

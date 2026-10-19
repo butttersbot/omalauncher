@@ -44,6 +44,32 @@ class NotebookStoreTest {
         assertEquals(empty, NotebookStore.read(NotebookStore.write(empty)))
     }
 
+    @Test fun roundTripsPinnedShortcutsAndOwlApps() {
+        val site = PinnedApp("shortcut:org.chromium/#10#site-1", "Docs", profile = 10, shortcut = ShortcutEntry("org.chromium", "site-1"))
+        val notes = PinnedApp("owl:notes.owl", "Notes", owl = "notes.owl")
+        val withThem =
+            Notebook(
+                9,
+                listOf(
+                    NotebookPage(
+                        "p1",
+                        "Page 1",
+                        listOf(
+                            NotebookItem(site.key, ItemKind.App, Cell(0, 0, 1, 1), app = site),
+                            NotebookItem("folder:a", ItemKind.Folder, Cell(1, 0, 1, 1), apps = listOf(notes, chrome)),
+                        ),
+                    ),
+                ),
+                dock = listOf(notes, site),
+            )
+        val written = NotebookStore.write(withThem)
+        assertEquals(withThem, NotebookStore.read(written))
+        val saved = JSONObject(written).getJSONObject("data").getJSONArray("dock")
+        assertEquals("notes.owl", saved.getJSONObject(0).getString("owl"))
+        assertEquals("site-1", saved.getJSONObject(1).getJSONObject("shortcut").getString("id"))
+        assertEquals("org.chromium", saved.getJSONObject(1).getJSONObject("shortcut").getString("package"))
+    }
+
     @Test fun isAVersionedDocument() {
         val root = JSONObject(NotebookStore.write(notebook))
         assertEquals(1, root.getInt("v"))

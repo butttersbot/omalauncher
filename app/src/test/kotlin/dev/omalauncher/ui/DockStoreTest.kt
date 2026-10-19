@@ -37,6 +37,15 @@ class DockStoreTest {
         assertEquals(saved, readDock(writeDock(saved)))
     }
 
+    @Test fun roundTripsShortcutsAndOwlApps() {
+        val site = DockEntry("shortcut:org.chromium/##site-1", "Docs", shortcut = dev.omalauncher.widgets.layout.ShortcutEntry("org.chromium", "site-1"))
+        val notes = DockEntry("owl:notes.owl", "Notes", owl = "notes.owl")
+        val saved = listOf(site, mail, notes)
+        assertEquals(saved, readDock(writeDock(saved)))
+        // And through the notebook, where the dock is kept.
+        assertEquals(saved, saved.map { it.pinned().dockEntry() })
+    }
+
     @Test fun aDockSavedEmptyStaysEmptyAndNothingIsAddedToIt() {
         assertEquals(emptyList<DockEntry>(), readDock(writeDock(emptyList())))
         assertEquals(listOf(mail, foot), readDock(writeDock(listOf(mail, foot))))

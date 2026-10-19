@@ -22,7 +22,9 @@ import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import dev.omalauncher.ui.OwlAppWindow
 import dev.omalauncher.ui.WidgetScreenPanel
+import dev.omalauncher.widgets.lang.OwlKind
 import dev.omalauncher.ui.WidgetTile
 import dev.omalauncher.widgets.render.LocalWidgetPreview
 import androidx.compose.runtime.Composable
@@ -77,7 +79,11 @@ internal class Previews(
         heightPx: Int,
         out: File,
         ready: suspend () -> Unit,
-    ): Boolean = draw(spec, widthPx, heightPx, out, ready) { WidgetScreenPanel(spec, instance, onDismiss = {}) }
+    ): Boolean =
+        draw(spec, widthPx, heightPx, out, ready) {
+            // An app's view is its own window, as OwlAppActivity shows it.
+            if (instance.program.kind == OwlKind.App) OwlAppWindow(spec, instance) else WidgetScreenPanel(spec, instance, onDismiss = {})
+        }
 
     private suspend fun draw(
         spec: WidgetSpec,
