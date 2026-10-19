@@ -221,11 +221,15 @@ class IconLookTest {
         assertEquals(3, PlaceholderStyle.entries.size)
     }
 
-    /** The treatment each shipped look has, as the prototype has it: it draws a drop shadow under a real icon in every look. */
+    /** The treatment each shipped look has, as the prototype has it: it draws a drop shadow under a real icon in every look but Manga. */
     @Test fun theShippedPacksTreatIconsAsThePrototypeDoes() {
         assertEquals(IconLook(false, null, true, PlaceholderStyle.Letter), iconLook(shipped("riso").icons))
         assertEquals(iconLook(icons(IconTreatment.Original, saturation = 0.75f, shadow = true)), iconLook(shipped("instrument").icons))
         assertEquals(iconLook(icons(IconTreatment.Grayscale, contrast = 1.5f, shadow = true)), iconLook(shipped("one-bit").icons))
+        // Manga prints them in the ink, gray and harder as its mockup prints art, and nothing on a manga page casts a shadow.
+        assertEquals(iconLook(icons(IconTreatment.Grayscale, contrast = 1.45f)), iconLook(shipped("manga").icons))
+        assertNotNull(PackLook(shipped("manga")).iconFilter)
+        assertEquals(1.15f, PackLook(shipped("manga")).badgeLine.value, 0f)
         for (id in listOf("city-pop", "custard", "tiny-magazine", "bujo", "dial-up")) {
             val pack = shipped(id)
             assertEquals(id, IconLook(mono = false, matrix = null, shadow = true, placeholder = PlaceholderStyle.Letter), iconLook(pack.icons))

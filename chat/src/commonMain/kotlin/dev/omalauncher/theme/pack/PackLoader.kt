@@ -12,7 +12,7 @@ data class PackIssue(
     val detail: String,
 ) {
     enum class Kind(
-        /** True when the token ended up with Console's value instead of the pack's. */
+        /** True when the token ended up with Console's value instead of the pack's (in `[panels]`, the default panels' value). */
         val fellBack: Boolean,
     ) {
         /** The pack doesn't set it. */
@@ -57,6 +57,9 @@ class PackLoad(
      * sets only a few tokens isn't broken; one with a bad value, a lost file or a clamped number is.
      */
     val broken get() = error != null || issues.any { it.kind !in QUIET }
+
+    /** True when the pack is [broken] only in its `[panels]`, where what stands in is the default panels', not Console's. */
+    val brokenOnlyInPanels get() = error == null && broken && issues.filter { it.kind !in QUIET }.all { it.token.startsWith(PackPanels.SECTION + ".") }
 
     private companion object {
         val QUIET = setOf(PackIssue.Kind.Missing, PackIssue.Kind.Ignored, PackIssue.Kind.Newer)
@@ -176,23 +179,86 @@ object PackLoader {
                 }
             }
         }
+        val panels = panels(parsed, issues)
         for (key in raw.keys) {
-            if (key !in PackSchema.byKey && key !in META && !key.startsWith(EXTRA_PREFIX)) {
+            if (key !in PackSchema.byKey && key !in META && !key.startsWith(EXTRA_PREFIX) && !key.startsWith(PANELS_PREFIX)) {
                 issues += PackIssue(key, PackIssue.Kind.Ignored, "not a key this build knows")
             }
         }
         for ((key, slip) in unreadable) {
-            if (key !in PackSchema.byKey && key !in META) issues += PackIssue(key, PackIssue.Kind.Ignored, slip)
+            if (key !in PackSchema.byKey && key !in META && !key.startsWith(PANELS_PREFIX)) issues += PackIssue(key, PackIssue.Kind.Ignored, slip)
         }
 
-        val tokens = PackTokens(id, name, format, values, extra)
+        val tokens = PackTokens(id, name, format, values, extra, panels)
         val resolving = ArrayList<PackIssue>()
         val pack = PackBuilder(tokens, null, resolving).build()
         return PackLoad(pack, tokens, issues + resolving.distinct(), null)
     }
 
     private const val EXTRA_PREFIX = "palette.extra."
+    private const val PANELS_PREFIX = PackPanels.SECTION + "."
     private val META = setOf("pack.format", "pack.name")
+
+    /**
+     * The pack's `[panels]`, or null when it has no such section, not even an empty header. Each key
+     * is checked as a token is and says so the same way, but what it falls back to is the mockup's
+     * panels ([PackPanels.defaults]), not Console's: Console has none.
+     */
+    private fun panels(
+        parsed: PackManifest.Parsed,
+        issues: MutableList<PackIssue>,
+    ): PackPanels? {
+        val raw = parsed.values
+        val unreadable = parsed.unreadable.filterKeys { it !in raw }
+        val present =
+            parsed.sections.any { it == PackPanels.SECTION || it.startsWith(PANELS_PREFIX) } ||
+                raw.keys.any { it.startsWith(PANELS_PREFIX) } ||
+                unreadable.keys.any { it.startsWith(PANELS_PREFIX) }
+        if (!present) return null
+        val defaults = PackPanels.defaults.manifest()
+        val values = LinkedHashMap<String, Any>()
+        // Said in the section's own key order, after the tokens'.
+        val said = ArrayList<PackIssue>()
+        for (token in PackPanels.tokens) {
+            val key = token.key
+            val given = raw[key]
+            if (given == null) {
+                val slip = unreadable[key]
+                said += if (slip != null) PackIssue(key, PackIssue.Kind.Invalid, slip) else PackIssue(key, PackIssue.Kind.Missing, "not set")
+                values[key] = defaults.getValue(key)
+                continue
+            }
+            when (val read = token.read(given)) {
+                is TokenRead.Bad -> {
+                    said += PackIssue(key, read.kind, read.why)
+                    values[key] = defaults.getValue(key)
+                }
+                is TokenRead.Ok -> {
+                    if (read.clamped) said += PackIssue(key, PackIssue.Kind.Clamped, "out of range; ${read.value} is used")
+                    values[key] = read.value
+                }
+            }
+        }
+        // Dots wider than half their spacing would run into a flat gray, which is no screentone. The dot
+        // then has one issue, where its own would be, saying what is used, whatever else was wrong with it.
+        val dot = "panels.screentone.dot"
+        val half = values.getValue("panels.screentone.spacing") as Float / 2f
+        if (values.getValue(dot) as Float > half) {
+            val order = PackPanels.tokens.map { it.key }
+            val at = said.indexOfFirst { it.token == dot }.takeIf { it >= 0 } ?: said.indexOfFirst { order.indexOf(it.token) > order.indexOf(dot) }.takeIf { it >= 0 } ?: said.size
+            said.removeAll { it.token == dot }
+            said.add(minOf(at, said.size), PackIssue(dot, PackIssue.Kind.Clamped, "more than half the spacing, so the dots would run together; $half is used"))
+            values[dot] = half
+        }
+        issues += said
+        for (key in raw.keys) {
+            if (key.startsWith(PANELS_PREFIX) && key !in PackPanels.byKey) issues += PackIssue(key, PackIssue.Kind.Ignored, "not a key this build knows")
+        }
+        for ((key, slip) in unreadable) {
+            if (key.startsWith(PANELS_PREFIX) && key !in PackPanels.byKey) issues += PackIssue(key, PackIssue.Kind.Ignored, slip)
+        }
+        return PackPanels.from(values)
+    }
 
     /** Why the file a token names can't be used, or null when it can. */
     private fun file(

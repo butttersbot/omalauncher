@@ -31,7 +31,10 @@ class ConsolePackTest {
         assertEquals(emptySet<String>(), keys.toSet() - builder.read)
     }
 
-    /** Walks the resolved pack, so a field added to the schema later with no value fails here. */
+    /**
+     * Walks the resolved pack, so a field added to the schema later with no value fails here. The one
+     * field left null is `panels`, which only a look drawn in panels has; Manga's is walked whole.
+     */
     @Test fun everyFieldOfThePackIsSet() {
         var leaves = 0
 
@@ -39,6 +42,7 @@ class ConsolePackTest {
             value: Any?,
             path: String,
         ) {
+            if (path == "pack.panels" && value == null) return
             assertNotNull("$path is null", value)
             val type = value!!.javaClass
             if (type.isEnum || type.`package`?.name != ThemePack::class.java.`package`!!.name) {
@@ -54,6 +58,12 @@ class ConsolePackTest {
         walk(ConsolePack.pack, "pack")
         // One field for each token, and three no token sets: id, name and the named colors.
         assertEquals(keys.size + 3, leaves)
+
+        assertNull(ConsolePack.pack.panels)
+        leaves = 0
+        walk(PackLoader.load(DirectoryPackSource(moduleFile("src/main/assets/packs/manga")), "manga").pack.panels, "panels")
+        // And one for each key of [panels].
+        assertEquals(PackPanels.tokens.size, leaves)
     }
 
     /** The manifest in the app's assets is Console as a pack author reads it; it must say what the code says. */

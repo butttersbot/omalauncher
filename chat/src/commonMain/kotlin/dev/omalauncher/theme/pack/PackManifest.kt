@@ -19,6 +19,8 @@ object PackManifest {
          * [values] was set again, readably.
          */
         val unreadable: Map<String, String> = emptyMap(),
+        /** Every section header that could be read, so a section with no keys under it is still there: `[panels]` alone turns panels on. */
+        val sections: Set<String> = emptySet(),
     )
 
     /** No token needs a longer line, and a short one keeps the patterns below cheap whatever a pack holds. */
@@ -34,6 +36,7 @@ object PackManifest {
         val values = LinkedHashMap<String, Any>()
         val problems = ArrayList<String>()
         val unreadable = LinkedHashMap<String, String>()
+        val sections = LinkedHashSet<String>()
         var section = ""
         // A section header we couldn't read hides its keys, rather than filing them under the one before.
         var lost = false
@@ -49,7 +52,12 @@ object PackManifest {
             if (line.startsWith("[")) {
                 val name = SECTION.find(line)?.groupValues?.get(1)
                 lost = name == null
-                if (name == null) problems += "$at: not a section this build reads" else section = name
+                if (name == null) {
+                    problems += "$at: not a section this build reads"
+                } else {
+                    section = name
+                    sections += name
+                }
                 return@forEachIndexed
             }
             if (lost) return@forEachIndexed
@@ -66,7 +74,7 @@ object PackManifest {
                 else -> values[key] = value
             }
         }
-        return Parsed(values, problems, unreadable)
+        return Parsed(values, problems, unreadable, sections)
     }
 
     /** One value with what follows it on the line, which may only be a comment. Null if it isn't one we read. */

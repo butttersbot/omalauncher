@@ -4,7 +4,8 @@ package dev.omalauncher.theme.pack
  * A theme pack with every token resolved: how the launcher looks beyond its colors. Lengths are
  * in dp, text sizes in sp, angles in degrees and colors ARGB, all as plain numbers, so a pack is
  * built and tested without Android. Nothing here is ever missing: what a pack leaves out is
- * Console's (see [ConsolePack]).
+ * Console's (see [ConsolePack]). The one exception is [panels], a section only a look drawn in
+ * panels has.
  */
 data class ThemePack(
     /** The pack's folder name: lowercase letters, digits and dashes. */
@@ -20,6 +21,8 @@ data class ThemePack(
     val ring: PackRing,
     val ink: PackInk,
     val dock: PackDock,
+    /** Set only for a look whose home pages are manga panels (`[panels]`); null for every other. */
+    val panels: PackPanels? = null,
 )
 
 /** A color as ARGB, like `android.graphics.Color`'s ints and `Color.toArgb()`. */
