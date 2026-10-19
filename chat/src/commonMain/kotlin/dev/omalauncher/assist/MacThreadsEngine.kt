@@ -478,8 +478,10 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
     fun tryAgain(time: Long) {
         restore()
         val log = platform.chatLog()
-        val task = log.tasks.firstOrNull { it.time == time }?.takeIf { macRetried(it) != null } ?: return
-        log.update(time, save = true) { macRetried(it) ?: it }
+        // Under the lock, so a switch of its thread starting now either sees it on its way again or calls it off first ([switchTo]).
+        val task = synchronized(this) {
+            log.tasks.firstOrNull { it.time == time }?.takeIf { macRetried(it) != null }?.also { log.update(time, save = true) { macRetried(it) ?: it } }
+        } ?: return
         platform.routingCorrected(task.prompt, MAC_TRIED_AGAIN)
         // A switch's first words to its new thread, never made: the same thread of the same agent is made again.
         synchronized(this) { seeds[time] }?.let { pick -> if (task.fresh) return seed(time, task, pick) }
@@ -880,9 +882,11 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
         // A seed whose thread couldn't be made is no longer on its way, and never holds the thread.
         val under = synchronized(this) {
             val tasks = log.tasks
-            switches.entries.firstOrNull { (at, _) -> at != time && tasks.any { it.time == at && it.thread == threadId && !macHandoffEnded(it) } }?.value
+            (switches.entries.firstOrNull { (at, _) -> at != time && tasks.any { it.time == at && it.thread == threadId && !macHandoffEnded(it) } }?.value
                 ?: finishing.entries.firstOrNull { (at, on) -> at != time && on.first == threadId }?.value?.second
-                ?: seeds.entries.firstOrNull { (at, _) -> at in sending && tasks.any { it.time == at && it.thread == threadId && it.fresh } }?.value
+                // Or one tried again whose making hasn't begun yet: it waits as Queued until [make] has it on its way.
+                ?: seeds.entries.firstOrNull { (at, _) -> tasks.any { it.time == at && it.thread == threadId && it.fresh && (at in sending || it.status == TaskStatus.Queued) } }?.value)
+                .also { if (it == null) calledOff(threadId, time) }
         }
         if (under != null) {
             log.update(time, save = true) { it.copy(status = TaskStatus.Failed, result = macSwitchBusy(under), answeredBy = OMA_NAME) }
@@ -896,6 +900,22 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
         }
         if (writes) send(time, macHandoffAsk(pick), threadId, away = false)
         else finishSwitch(time, pick)
+    }
+
+    /**
+     * Under the lock, as the switch filed at [except] starts on [threadId]: an earlier switch of the thread that never got
+     * there (its handoff or its new thread's first words left with `[ try again ]`) is called off, so trying it again
+     * can't make a second thread beside this one's.
+     */
+    private fun calledOff(threadId: String, except: Long) {
+        val log = platform.chatLog()
+        fun waiting(at: Long, fresh: Boolean) = at != except && log.tasks.any { it.time == at && it.thread == threadId && it.fresh == fresh && it.status == TaskStatus.Dropped }
+        val off = switches.keys.filter { waiting(it, fresh = false) } + seeds.keys.filter { waiting(it, fresh = true) }
+        if (off.isEmpty()) return
+        switches = switches - off.toSet()
+        seeds = seeds - off.toSet()
+        saveSwitches()
+        off.forEach { at -> log.update(at, save = true) { ChatHistory.withStep(it.copy(status = TaskStatus.Stopped), MAC_SWITCH_REPLACED) } }
     }
 
     /**

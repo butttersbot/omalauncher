@@ -167,6 +167,9 @@ fun macSwitchedStep(name: String) = "moved to $name"
 /** The step on a handoff he stopped: the switch is off and the thread stays. */
 const val MAC_SWITCH_OFF = "switch called off"
 
+/** What a switch that never got there says once a later switch of its thread has taken its place. */
+const val MAC_SWITCH_REPLACED = "$MAC_SWITCH_OFF: a later switch took its place"
+
 /** The step on a switch whose new thread couldn't be made: the thread stays where it is, and why. */
 fun macSwitchFailedStep(why: String) = "couldn't move: $why"
 
