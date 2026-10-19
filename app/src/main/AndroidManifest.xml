@@ -276,6 +276,19 @@
                 <data android:mimeType="*/*" />
             </intent-filter>
         </activity>
+        <!-- "Add to a panel" in the share sheet: one picture or GIF into a manga panel (art/ArtActivities.kt). Shows nothing. -->
+        <activity android:name=".art.ArtShareActivity" android:exported="true" android:label="Add to a panel"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true"
+            android:noHistory="true" android:taskAffinity="">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+        </activity>
+        <!-- The photo picker for an empty manga panel, opened by home (art/ArtActivities.kt). Only the picker shows. -->
+        <activity android:name=".art.ArtPickActivity" android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true" />
         <!-- What Tailshare received, for the sheep's "Sent to this phone": only Tailshare is heard (herd/ClipInbox.kt). -->
         <receiver android:name=".herd.ClipReceivedReceiver" android:exported="true">
             <intent-filter><action android:name="dev.omalauncher.action.CLIP_RECEIVED" /></intent-filter>
