@@ -29,7 +29,7 @@ class QuickLaneTest {
         val expected = listOf(
             "-p", "--model", "haiku", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
             "--permission-mode", "manual", "--permission-prompts", "none", "--append-system-prompt", quickSystemPrompt(),
-            "--tools", "Read", "Bash", "WebSearch", "WebFetch", "--allowedTools",
+            "--tools", "Bash", "WebSearch", "WebFetch", "--allowedTools",
         ) + QUICK_ALLOWED + listOf("--", prompt)
         assertEquals(expected.joinToString("\n") + "\n", arguments(quickCommand(prompt)))
         assertTrue(quickCommand(prompt).endsWith(" < /dev/null"))
@@ -50,10 +50,10 @@ class QuickLaneTest {
             }
             assertTrue(command.contains(" --permission-mode manual --permission-prompts none "))
         }
-        assertEquals(listOf("Read", "Bash", "WebSearch", "WebFetch"), QUICK_TOOLS)
+        assertEquals(listOf("Bash", "WebSearch", "WebFetch"), QUICK_TOOLS)
         assertEquals(
             listOf(
-                "Read", "WebSearch", "WebFetch",
+                "WebSearch", "WebFetch",
                 "Bash(oma-phone status)", "Bash(oma-phone screen*)", "Bash(oma-phone read)", "Bash(oma-phone pages)",
                 "Bash(oma-phone board*)", "Bash(oma-phone looks)", "Bash(oma-phone stickers)", "Bash(date*)",
                 // Added on purpose (Boss, 2026-10-13): it only prints the status file the launcher writes.
@@ -353,8 +353,8 @@ class QuickLaneTest {
             for (never in listOf("Bash", "Read", "Edit", "Write")) assertFalse("$never in $tools", tools.contains(never))
             assertTrue(newChat.contains(" --permission-mode manual --permission-prompts none "))
         }
-        // The Oma tab's front agent keeps every tool it had.
+        // The Oma tab's front agent keeps its tools, all but reading files (2026-10-19: it could show a key).
         assertEquals(quickCommand("q", id, mac = true), quickCommand("q", id, mac = true, newChat = false))
-        assertTrue(quickCommand("q", id, mac = true).contains(" --tools Read Bash WebSearch WebFetch "))
+        assertTrue(quickCommand("q", id, mac = true).contains(" --tools Bash WebSearch WebFetch "))
     }
 }
