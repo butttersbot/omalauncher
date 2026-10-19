@@ -92,9 +92,12 @@ address=$(printf '%s' "$list" | jq -r --arg name "$device" '.devices[] | select(
 [ -n "$address" ] || die "No computer called $device takes mail. These do: $(printf '%s' "$list" | jq -r '[.devices[].name] | join(", ")')."
 [[ $address =~ ^[0-9a-fA-F.:]+$ ]] || die "$device's address is not one this sends to."
 
-body=$(jq -n --arg session "$session" --arg as "$as" --arg title "$title" --arg text "$text" --arg reply "$reply_to" \
+# The front agent signs as grok (AgentMail.kt's FRONT_MAIL_SESSION) and is labeled as Grok; the builders as oma.
+agent=oma
+[ "$as" = grok ] && agent=grok
+body=$(jq -n --arg session "$session" --arg as "$as" --arg agent "$agent" --arg title "$title" --arg text "$text" --arg reply "$reply_to" \
   '{to: {session: (if $session == "" then null else $session end)},
-    from: {agent: "oma", session: $as, title: (if $title == "" then null else $title end)},
+    from: {agent: $agent, session: $as, title: (if $title == "" then null else $title end)},
     text: $text, reply_to: (if $reply == "" then null else $reply end)}')
 host=$address
 [[ $address == *:* ]] && host="[$address]"
