@@ -5,6 +5,10 @@
 #                                           engagement, with Grok's own X search. The answer goes to stdout.
 #   grokbot make "REQUEST" [--out DIR]      the content helper: images and video with Grok Imagine. Files are put
 #                                           in DIR (default ~/Soma/made/DATE) and listed last, as FILE: PATH.
+#   grokbot make --mj [--video] "REQUEST"   Midjourney (an image, or a video), made by Grok's cloud computer
+#   grokbot make --suno "REQUEST"           a Suno song, the same way. Both print a job id at once; the file comes
+#                                           later (minutes), to ~/Soma/made on the Mac Pro, the Pocket and agent mail.
+#   grokbot job [ID]                        a cloud job's status (or the latest ones)
 #   grokbot help
 #
 # Each call is one headless run of this computer's Grok CLI, signed in as Boss (`grok login`). Neither helper has a
@@ -14,7 +18,7 @@
 set -u -o pipefail
 
 usage() {
-  sed -n '4,8p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '4,12p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 grok_bin=${GROKBOT_GROK:-grok}
@@ -42,7 +46,29 @@ files yourself and needn't: everything you make is handed over by Soma. Say in o
 something asked for can't be made here (Midjourney, Suno, Higgsfield, or anything but images and video), say so in one \
 line instead of making something else."
 
+# Midjourney and Suno go through grok-cloud on the Mac Pro (tools/grok-cloud), which holds the webhook's key.
+cloud_host=${GROKBOT_CLOUD:-jacks-mac-pro}
+cloud() {
+  command -v jq >/dev/null 2>&1 || { echo "grokbot: jq is needed for cloud jobs." >&2; exit 3; }
+  local body answer
+  body=$(jq -n --arg t "$1" --arg k "$2" --arg p "$3" --arg s "${CLAUDE_CODE_SESSION_ID:-${OMA_THREAD_ID:-}}" \
+    '{tool: $t, kind: $k, prompt: $p, session: $s}')
+  answer=$(curl -sS -m 60 -X POST -H 'Content-Type: application/json' --data-binary "$body" "http://$cloud_host:8493/v1/jobs") ||
+    { echo "grokbot: can't reach grok-cloud on $cloud_host." >&2; exit 1; }
+  if [ "$(printf '%s' "$answer" | jq -r '.status // empty')" = sent ]; then
+    printf 'JOB: %s\n' "$(printf '%s' "$answer" | jq -r .job)"
+    echo "Grok's cloud computer is making it; it takes minutes. The file arrives in ~/Soma/made on the Mac Pro and the Pocket, and you get agent mail. Check with: grokbot job ID"
+  else
+    printf 'grokbot: %s\n' "$(printf '%s' "$answer" | jq -r '.error // .message // .')" >&2
+    exit 1
+  fi
+}
+
 case "${1:-}" in
+  job)
+    shift
+    command -v jq >/dev/null 2>&1 || { echo "grokbot: jq is needed." >&2; exit 3; }
+    curl -sS -m 30 "http://$cloud_host:8493/v1/jobs${1:+/$1}" | jq . ;;
   x)
     shift
     [ "$#" -ge 1 ] && [ -n "$*" ] || { usage >&2; exit 2; }
@@ -51,6 +77,18 @@ case "${1:-}" in
       --deny Read --single="$*" < /dev/null ;;
   make)
     shift
+    case "${1:-}" in
+      --mj)
+        shift
+        kind=image
+        [ "${1:-}" = --video ] && { kind=video; shift; }
+        [ "$#" -ge 1 ] && [ -n "$*" ] || { usage >&2; exit 2; }
+        cloud midjourney "$kind" "$*"; exit ;;
+      --suno)
+        shift
+        [ "$#" -ge 1 ] && [ -n "$*" ] || { usage >&2; exit 2; }
+        cloud suno song "$*"; exit ;;
+    esac
     out=""
     words=()
     while [ "$#" -gt 0 ]; do
