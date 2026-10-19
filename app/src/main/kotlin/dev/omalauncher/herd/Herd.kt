@@ -142,7 +142,10 @@ data class SheepWindow(
 /**
  * The window around the sheep whose own [sheep]-sized square is at [sx], [sy], grown to [w]×[h] for its speech
  * bubble without moving it (the Mac app's layout()): the sheep keeps to the window's bottom corner, the right one
- * unless the window would then run off the screen's left edge, when it grows rightwards from the bottom-left.
+ * unless the window would then run off the screen's left edge, when it grows rightwards from the bottom-left. It never
+ * grows past the screen's top: near the top it is only as tall as the room above the sheep allows. Pinned to the top
+ * instead, the sheep stopped following a drag up or down while a message showed (Boss, 2026-10-19: "it gets fixed to
+ * the same row").
  */
 fun sheepWindow(
     sx: Int,
@@ -154,10 +157,10 @@ fun sheepWindow(
     screenH: Int,
 ): SheepWindow {
     val ww = maxOf(w, sheep).coerceAtMost(maxOf(screenW, sheep))
-    val wh = maxOf(h, sheep).coerceAtMost(maxOf(screenH, sheep))
+    val wh = maxOf(h, sheep).coerceAtMost(maxOf(screenH, sheep)).coerceAtMost(maxOf(sy + sheep, sheep))
     val side = if (sx + sheep - ww >= 0) "right" else "left"
     val x = if (side == "right") sx + sheep - ww else sx
-    return SheepWindow(x.coerceIn(0, maxOf(0, screenW - ww)), (sy + sheep - wh).coerceAtLeast(0), ww, wh, side)
+    return SheepWindow(x.coerceIn(0, maxOf(0, screenW - ww)), sy + sheep - wh, ww, wh, side)
 }
 
 /**
