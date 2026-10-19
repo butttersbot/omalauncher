@@ -142,12 +142,66 @@ class GrokCloud(unittest.TestCase):
 
     def test_too_large_a_body_is_refused(self):
         job_id, token = self.job()
-        old = gc.MAX_BODY_BYTES
-        gc.MAX_BODY_BYTES = 100
+        old = gc.MAX_JSON_BYTES
+        gc.MAX_JSON_BYTES = 100
         try:
             self.assertEqual(413, call('%s/grok/cb/%s/%s' % (RESULTS, job_id, token), b'x' * 200)[0])
         finally:
-            gc.MAX_BODY_BYTES = old
+            gc.MAX_JSON_BYTES = old
+        # Refused before it's claimed: the token still works for a proper answer.
+        self.assertEqual('sent', gc.load(job_id)['status'])
+
+    def test_a_second_answer_while_the_first_is_kept_is_refused(self):
+        job_id, token = self.job()
+        url = '%s/grok/cb/%s/%s' % (RESULTS, job_id, token)
+        self.assertEqual(200, call(url, {'status': 'failed', 'message': 'first'})[0])
+        self.assertEqual(404, call(url, {'status': 'done', 'files': ['https://example.com/a.png']})[0])
+        self.assertEqual('first', wait_status(job_id, ('failed',))['message'])
+
+    def test_only_listed_media_types_are_kept_whatever_the_name(self):
+        for ctype, name, data in [('image/x-whatever', 'evil.html', b'<script>alert(1)</script>'),
+                                  ('image/svg+xml', 'x.svg', b'<svg onload="alert(1)"/>'),
+                                  ('application/octet-stream', 'x.png', b'not a png at all')]:
+            job_id, token = self.job()
+            body, ct = multipart({'status': 'done'}, [(name, ctype, data)])
+            call('%s/grok/cb/%s/%s' % (RESULTS, job_id, token), body, ct)
+            job = wait_status(job_id, ('done', 'failed'))
+            self.assertEqual('failed', job['status'], name)
+            self.assertEqual([], job['files'], name)
+
+    def test_an_untyped_png_is_known_by_its_bytes_and_saved_as_png(self):
+        job_id, token = self.job()
+        body, ct = multipart({'status': 'done'}, [('whatever.html', 'application/octet-stream', PNG)])
+        call('%s/grok/cb/%s/%s' % (RESULTS, job_id, token), body, ct)
+        job = wait_status(job_id, ('done', 'failed'))
+        self.assertEqual('done', job['status'], job)
+        self.assertTrue(job['files'][0].endswith('.png'))
+
+    def test_links_to_private_hosts_are_refused(self):
+        for url in ('https://127.0.0.1/a.png', 'https://100.120.219.46/a.png', 'https://192.168.1.1/a.png',
+                    'https://localhost/a.png'):
+            self.assertFalse(gc.public_host(url), url)
+
+    def test_redirects_are_not_followed(self):
+        self.assertTrue(any(isinstance(h, gc.NoRedirect) for h in gc.opener.handlers))
+
+    def test_a_failure_while_keeping_ends_failed_not_working(self):
+        job_id, token = self.job()
+        old = gc.MADE
+        gc.MADE = Path(TMP, 'a-file-not-a-folder')
+        gc.MADE.write_text('x')
+        try:
+            body, ct = multipart({'status': 'done'}, [('a.png', 'image/png', PNG)])
+            self.assertEqual(200, call('%s/grok/cb/%s/%s' % (RESULTS, job_id, token), body, ct)[0])
+            job = wait_status(job_id, ('done', 'failed'))
+            self.assertEqual('failed', job['status'])
+            self.assertIsNone(job['token'])
+        finally:
+            gc.MADE.unlink()
+            gc.MADE = old
+
+    def test_idle_connections_time_out(self):
+        self.assertEqual(30, gc.Results.timeout)
 
     def test_the_hourly_cap_holds(self):
         for _ in range(gc.JOBS_PER_HOUR):

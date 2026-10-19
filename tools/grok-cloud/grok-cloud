@@ -22,6 +22,7 @@ JOBS_PER_HOUR and JOBS_PER_DAY jobs are sent, so a runaway agent can't spend his
 import email.parser
 import email.policy
 import hmac
+import ipaddress
 import http.server
 import json
 import mimetypes
@@ -29,9 +30,11 @@ import os
 import re
 import secrets
 import shutil
+import socket
 import socketserver
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.error
@@ -55,10 +58,23 @@ JOBS_PER_HOUR = 10
 JOBS_PER_DAY = 30
 MAX_PROMPT = 2000
 MAX_FILES = 8
-MAX_FILE_BYTES = 300 << 20          # a short video
-MAX_BODY_BYTES = 600 << 20
+MAX_FILE_BYTES = 300 << 20          # a short video, downloaded to disk in pieces
+MAX_UPLOAD_BYTES = 40 << 20         # an uploaded result is read into memory to be parsed: kept small
+MAX_JSON_BYTES = 64 << 10           # a result with links
 JOB_LIFETIME = 6 * 3600             # no answer by then: expired, its token dead
-KINDS = ('image/', 'video/', 'audio/')
+# The only file types kept, each with the one extension it's saved under: never the sender's file name.
+MEDIA = {
+    'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp', 'image/gif': '.gif',
+    'video/mp4': '.mp4', 'video/webm': '.webm', 'video/quicktime': '.mov',
+    'audio/mpeg': '.mp3', 'audio/mp4': '.m4a', 'audio/x-m4a': '.m4a', 'audio/wav': '.wav', 'audio/x-wav': '.wav',
+    'audio/wave': '.wav', 'audio/ogg': '.ogg', 'audio/flac': '.flac',
+}
+# What a file's first bytes say it is, for one sent without a type or as application/octet-stream.
+MAGIC = [
+    (b'\x89PNG\r\n\x1a\n', 'image/png'), (b'\xff\xd8\xff', 'image/jpeg'), (b'GIF8', 'image/gif'),
+    (b'ID3', 'audio/mpeg'), (b'\xff\xfb', 'audio/mpeg'), (b'\xff\xf3', 'audio/mpeg'), (b'OggS', 'audio/ogg'),
+    (b'fLaC', 'audio/flac'), (b'\x1aE\xdf\xa3', 'video/webm'),
+]
 ID = re.compile(r'^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$')
 
 lock = threading.Lock()
@@ -108,13 +124,21 @@ def public(job):
 
 
 def expire_old(now=None):
+    """Marks jobs with no answer in time as expired; returns them, for [notify] after the lock is let go."""
     now = now or time.time()
+    gone = []
     for job in all_jobs():
         if job.get('status') in ('sent', 'working') and now - job.get('created', now) > JOB_LIFETIME:
-            job['status'] = 'expired'
+            job['status'], job['token'] = 'expired', None
             job['message'] = 'no answer from Grok within %d hours' % (JOB_LIFETIME // 3600)
             save(job)
-            notify(job)
+            gone.append(job)
+    return gone
+
+
+def notify_all(jobs):
+    for job in jobs:
+        notify(job)
 
 
 def under_caps(now=None):
@@ -178,6 +202,33 @@ def config():
         return {}
 
 
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Redirects aren't followed: a link or the webhook could otherwise send a request, or the key, elsewhere."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise urllib.error.HTTPError(req.full_url, code, 'redirects are not followed', headers, fp)
+
+
+opener = urllib.request.build_opener(NoRedirect)
+
+
+def public_host(url):
+    """Whether [url]'s host resolves only to public internet addresses: not this Mac, the LAN or the tailnet."""
+    host = urllib.parse.urlparse(url).hostname
+    if not host:
+        return False
+    try:
+        addresses = {info[4][0] for info in socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP)}
+    except OSError:
+        return False
+    tailnet = [ipaddress.ip_network('100.64.0.0/10'), ipaddress.ip_network('fd7a:115c:a1e0::/48')]
+    for a in addresses:
+        ip = ipaddress.ip_address(a.split('%')[0])
+        if not ip.is_global or any(ip in net for net in tailnet):
+            return False
+    return bool(addresses)
+
+
 def send_to_grok(job):
     url, key = keychain('url'), keychain('key')
     cfg = config()
@@ -193,7 +244,7 @@ def send_to_grok(job):
     request = urllib.request.Request(url, data=body, method='POST', headers={
         'Content-Type': 'application/json', header: cfg.get('key_prefix', '') + key})
     try:
-        with urllib.request.urlopen(request, timeout=30) as answer:
+        with opener.open(request, timeout=30) as answer:
             if not 200 <= answer.status < 300:
                 return 'Grok\'s webhook answered %d' % answer.status
     except urllib.error.HTTPError as e:
@@ -216,77 +267,108 @@ def new_job(tool, kind, prompt, device, session):
 
 # ---------- results from Grok ----------
 
-def safe_name(job, n, ctype, fallback):
-    ext = mimetypes.guess_extension((ctype or '').split(';')[0].strip()) or Path(fallback or '').suffix or '.bin'
-    ext = re.sub(r'[^.a-z0-9]', '', ext.lower())[:8] or '.bin'
-    return '%s-%s-%d%s' % (job['job'], job['tool'], n, ext)
-
-
-def media(ctype, name):
+def media_type(ctype, head):
+    """The file's type if it's one we keep, from its declared type or else its first bytes; never its name."""
     kind = (ctype or '').split(';')[0].strip().lower()
-    if kind == 'application/octet-stream' or not kind:
-        kind = (mimetypes.guess_type(name or '')[0] or '').lower()
-    return any(kind.startswith(k) for k in KINDS), kind
+    if kind in MEDIA:
+        return kind
+    if kind in ('', 'application/octet-stream', 'binary/octet-stream'):
+        for magic, sniffed in MAGIC:
+            if head.startswith(magic):
+                return sniffed
+        if head[4:8] == b'ftyp':
+            return 'video/mp4'
+        if head[:4] == b'RIFF' and head[8:12] == b'WAVE':
+            return 'audio/wav'
+        if head[:4] == b'RIFF' and head[8:12] == b'WEBP':
+            return 'image/webp'
+    return None
 
 
-def download(link):
-    """A file Grok links to: https only, capped in size and time. Returns (bytes, content type, name)."""
+def download(link, dest):
+    """A file Grok links to, into [dest] in pieces: https to a public host only, no redirects, capped in size and
+    time. Returns its declared content type."""
     if not isinstance(link, str) or not link.startswith('https://'):
         raise ValueError('not an https link')
+    if not public_host(link):
+        raise ValueError('not a public internet host')
     request = urllib.request.Request(link, headers={'User-Agent': 'soma-grok-cloud'})
-    with urllib.request.urlopen(request, timeout=120) as answer:
-        if not answer.geturl().startswith('https://'):
-            raise ValueError('redirected off https')
-        size = int(answer.headers.get('Content-Length') or 0)
-        if size > MAX_FILE_BYTES:
+    with opener.open(request, timeout=120) as answer, open(dest, 'wb') as out:
+        if int(answer.headers.get('Content-Length') or 0) > MAX_FILE_BYTES:
             raise ValueError('larger than %d MB' % (MAX_FILE_BYTES >> 20))
-        data = answer.read(MAX_FILE_BYTES + 1)
-        if len(data) > MAX_FILE_BYTES:
-            raise ValueError('larger than %d MB' % (MAX_FILE_BYTES >> 20))
-        name = Path(urllib.parse.urlparse(answer.geturl()).path).name
-        return data, answer.headers.get('Content-Type', ''), name
+        total = 0
+        while True:
+            piece = answer.read(1 << 20)
+            if not piece:
+                break
+            total += len(piece)
+            if total > MAX_FILE_BYTES:
+                raise ValueError('larger than %d MB' % (MAX_FILE_BYTES >> 20))
+            out.write(piece)
+        return answer.headers.get('Content-Type', '')
 
 
-def keep(job, data, ctype, name):
-    ok, kind = media(ctype, name)
-    if not ok:
-        raise ValueError('not an image, video or audio file (%s)' % (kind or 'unknown'))
+def keep(job, src, ctype):
+    """Keeps the file at [src] (a temporary file) for [job] if it's media: moved into MADE, then sent to the Pocket."""
+    with open(src, 'rb') as f:
+        head = f.read(16)
+    kind = media_type(ctype, head)
+    if not kind:
+        raise ValueError('not an image, video or audio file we keep (%s)' % ((ctype or 'no type').split(';')[0][:40]))
     day = MADE / time.strftime('%Y-%m-%d')
     day.mkdir(parents=True, exist_ok=True)
-    path = day / safe_name(job, len(job['files']) + 1, kind, name)
-    path.write_bytes(data)
+    path = day / ('%s-%s-%d%s' % (job['job'], job['tool'], len(job['files']) + 1, MEDIA[kind]))
+    shutil.move(src, path)
+    os.chmod(path, 0o644)
     job['files'].append(str(path))
     try:
-        request = urllib.request.Request(POCKET + '?name=' + urllib.parse.quote(path.name), data=data, method='POST',
-                                         headers={'Content-Type': kind or 'application/octet-stream'})
-        urllib.request.urlopen(request, timeout=60).read()
+        with open(path, 'rb') as f:
+            request = urllib.request.Request(POCKET + '?name=' + urllib.parse.quote(path.name), data=f, method='POST',
+                                             headers={'Content-Type': kind, 'Content-Length': str(path.stat().st_size)})
+            urllib.request.urlopen(request, timeout=120).read()
     except Exception as e:  # noqa: BLE001 - the file is kept either way
         log('pocket upload failed for', path.name, e)
 
 
+def scratch():
+    STATE.mkdir(parents=True, exist_ok=True)
+    fd, name = tempfile.mkstemp(dir=STATE, prefix='incoming-')
+    os.close(fd)
+    return name
+
+
 def finish(job, payload, parts):
-    """Takes Grok's answer for [job]: its files, downloaded or uploaded, then says so to whoever asked."""
+    """Takes Grok's answer for [job]: its files, uploaded or downloaded, then says so to whoever asked."""
     status = payload.get('status') if payload.get('status') in ('done', 'failed', 'blocked') else 'failed'
     message = str(payload.get('message') or '')[:500]
     problems = []
-    for data, ctype, name in parts[:MAX_FILES]:
+    for data, ctype, _name in parts[:MAX_FILES]:
+        tmp = scratch()
         try:
-            keep(job, data, ctype, name)
-        except ValueError as e:
-            problems.append(str(e))
+            with open(tmp, 'wb') as f:
+                f.write(data)
+            keep(job, tmp, ctype)
+        except Exception as e:  # noqa: BLE001 - one bad file doesn't stop the rest
+            problems.append(str(e)[:200])
+        finally:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
     links = payload.get('files') or []
-    for link in (links if isinstance(links, list) else [])[:MAX_FILES - len(job['files'])]:
+    for link in (links if isinstance(links, list) else [])[:max(0, MAX_FILES - len(job['files']))]:
+        tmp = scratch()
         try:
-            keep(job, *download(link))
+            keep(job, tmp, download(link, tmp))
         except Exception as e:  # noqa: BLE001
-            problems.append('%s: %s' % (str(link)[:80], e))
+            problems.append('%s: %s' % (str(link)[:80], str(e)[:200]))
+        finally:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
     if status == 'done' and not job['files']:
         status = 'failed'
         problems.insert(0, 'Grok said done but no file came')
     job['status'] = status
     job['message'] = '; '.join(filter(None, [message] + problems))[:800]
     job['finished'] = time.time()
-    job['token'] = None   # works once
     save(job)
     notify(job)
 
@@ -327,6 +409,7 @@ def parse_multipart(ctype, body):
 class Quiet(http.server.BaseHTTPRequestHandler):
     server_version = 'soma'
     sys_version = ''
+    timeout = 30   # a connection that sends nothing for this long is closed: no thread held by a slow client
 
     def log_message(self, *args):
         pass
@@ -361,13 +444,15 @@ class Jobs(Quiet):
             return
         parts = self.path.split('?')[0].strip('/').split('/')
         with lock:
-            expire_old()
-            if parts == ['v1', 'jobs']:
-                return self.reply(200, {'jobs': [public(j) for j in all_jobs()[-20:]]})
-            if len(parts) == 3 and parts[:2] == ['v1', 'jobs']:
-                job = load(parts[2])
-                return self.reply(200, public(job)) if job else self.reply(404, {'error': 'no such job'})
-        self.reply(404, {'error': 'not here'})
+            gone = expire_old()
+            jobs = all_jobs()[-20:] if parts == ['v1', 'jobs'] else None
+            job = load(parts[2]) if len(parts) == 3 and parts[:2] == ['v1', 'jobs'] else None
+        notify_all(gone)
+        if jobs is not None:
+            return self.reply(200, {'jobs': [public(j) for j in jobs]})
+        if job:
+            return self.reply(200, public(job))
+        self.reply(404, {'error': 'no such job' if len(parts) == 3 else 'not here'})
 
     def do_POST(self):
         ok, device = self.allowed()
@@ -391,15 +476,17 @@ class Jobs(Quiet):
         if not prompt or len(prompt) > MAX_PROMPT:
             return self.reply(400, {'error': 'a prompt of 1 to %d characters' % MAX_PROMPT})
         with lock:
-            expire_old()
+            gone = expire_old()
             full = under_caps()
-            if full:
-                return self.reply(429, {'error': full})
-            job = new_job(tool, kind, prompt, device, session)
-            problem = send_to_grok(job)
-            if problem:
-                job['status'], job['message'], job['token'] = 'failed', problem, None
-            save(job)
+            if not full:
+                job = new_job(tool, kind, prompt, device, session)
+                problem = send_to_grok(job)
+                if problem:
+                    job['status'], job['message'], job['token'] = 'failed', problem, None
+                save(job)
+        notify_all(gone)
+        if full:
+            return self.reply(429, {'error': full})
         log('job', job['job'], tool, kind, 'from', device, job['status'])
         self.reply(200 if not problem else 502, public(job))
 
@@ -408,27 +495,27 @@ class Results(Quiet):
     def do_GET(self):
         self.reply(404, {})
 
+    def valid(self, job_id, token):
+        job = load(job_id)
+        return job if (job and job.get('token') and job.get('status') == 'sent'
+                       and time.time() - job.get('created', 0) <= JOB_LIFETIME
+                       and hmac.compare_digest(job['token'], token)) else None
+
     def do_POST(self):
         m = re.search(r'/cb/([0-9]{8}-[0-9]{6}-[0-9a-f]{6})/([A-Za-z0-9_-]{20,})/?$', self.path.split('?')[0])
         if not m:
             return self.reply(404, {})
         job_id, token = m.groups()
         with lock:
-            job = load(job_id)
-            good = bool(job and job.get('token') and job.get('status') in ('sent', 'working')
-                        and hmac.compare_digest(job['token'], token))
-            if good and time.time() - job.get('created', 0) > JOB_LIFETIME:
-                good = False
-            if not good:
+            if not self.valid(job_id, token):
                 return self.reply(404, {})
-            job['status'] = 'working'
-            save(job)
-        raw = self.body(MAX_BODY_BYTES)
-        if raw is None:
-            return self.reply(413, {'error': 'too large'})
         ctype = self.headers.get('Content-Type', '')
+        multipart = ctype.startswith('multipart/form-data')
+        raw = self.body(MAX_UPLOAD_BYTES if multipart else MAX_JSON_BYTES)
+        if raw is None:
+            return self.reply(413, {'error': 'too large: send links for files over %d MB' % (MAX_UPLOAD_BYTES >> 20)})
         try:
-            if ctype.startswith('multipart/form-data'):
+            if multipart:
                 fields, parts = parse_multipart(ctype, raw)
                 files = fields.get('files')
                 payload = {'status': fields.get('status'), 'message': fields.get('message'),
@@ -439,15 +526,31 @@ class Results(Quiet):
                     raise ValueError
         except ValueError:
             return self.reply(400, {'error': 'JSON or multipart, please'})
+        del raw
+        # Claimed once, under the lock: the token stops working here, so a second answer (a retry, a copy) is refused.
+        with lock:
+            job = self.valid(job_id, token)
+            if not job:
+                return self.reply(404, {})
+            job['status'], job['token'] = 'working', None
+            save(job)
         self.reply(200, {'ok': True})
-        threading.Thread(target=lambda: self.settle(job_id, payload, parts), daemon=True).start()
+        threading.Thread(target=settle, args=(job_id, payload, parts), daemon=True).start()
 
-    @staticmethod
-    def settle(job_id, payload, parts):
-        job = load(job_id)
-        if job:
-            finish(job, payload, parts)
-            log('job', job_id, 'finished', job['status'], len(job['files']), 'files')
+
+def settle(job_id, payload, parts):
+    """Finishes a claimed job; whatever goes wrong, it ends failed and the asker hears, never left working."""
+    job = load(job_id)
+    if not job:
+        return
+    try:
+        finish(job, payload, parts)
+        log('job', job_id, 'finished', job['status'], len(job['files']), 'files')
+    except Exception as e:  # noqa: BLE001
+        job['status'], job['message'], job['finished'] = 'failed', 'couldn\'t keep the result: %s' % str(e)[:200], time.time()
+        save(job)
+        notify(job)
+        log('job', job_id, 'failed while keeping its result:', e)
 
 
 class Threaded(socketserver.ThreadingMixIn, http.server.HTTPServer):
