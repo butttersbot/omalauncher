@@ -7,6 +7,9 @@ import java.io.File
 /** Exec of the Files entry; the launcher opens its own Files app for it (see OpenBridge's shim). */
 const val FILES_COMMAND = "omarchy-files"
 
+/** Exec of the Editor entry and Linux's $EDITOR; the launcher's own editor (see OpenBridge's shim). */
+const val EDIT_COMMAND = "omarchy-edit"
+
 private fun entry(
     name: String,
     exec: String,
@@ -27,7 +30,7 @@ private val CURATED =
         "foot" to entry("Terminal", "foot", terminal = false, icon = "foot"),
         "btop" to entry("btop", "btop", icon = "btop"),
         "omarchy-files" to entry("Files", FILES_COMMAND, terminal = false),
-        "micro" to entry("Editor", "micro", icon = "micro"),
+        "micro" to entry("Editor", EDIT_COMMAND, terminal = false, icon = bundledIcon("editor")),
         "lazygit" to entry("Lazygit", "lazygit"),
         "cliamp" to entry("Cliamp", "cliamp", icon = bundledIcon("cliamp")),
         "fastfetch" to entry("Fastfetch", "bash -c \"fastfetch; exec bash\"", icon = bundledIcon("fastfetch")),

@@ -211,7 +211,7 @@ internal fun SelectionBar(
                     listOfNotNull(
                         "select all" to onSelectAll,
                         onRename?.let { "rename" to it },
-                        onEdit?.let { "edit in micro" to it },
+                        onEdit?.let { "edit" to it },
                         onOpenWith?.let { "open with…" to it },
                         onShare?.let { "share" to it },
                     ),

@@ -1,6 +1,7 @@
 package dev.omalauncher.theme
 
 import android.system.Os
+import dev.omalauncher.linux.EDIT_COMMAND
 import dev.omalauncher.linux.Proot
 import dev.omalauncher.linux.TerminalFont
 import dev.omalauncher.linux.run
@@ -189,7 +190,7 @@ class GuestThemeConfig(
         val BASHRC =
             """
             export OMARCHY_PATH=/root/.local/share/omarchy
-            export EDITOR=micro
+            export EDITOR=$EDIT_COMMAND VISUAL=$EDIT_COMMAND
             [[ $- != *i* ]] && return
             [[ -f ${'$'}OMARCHY_PATH/default/bash/rc ]] && source "${'$'}OMARCHY_PATH/default/bash/rc"
             """.trimIndent() + "\n"

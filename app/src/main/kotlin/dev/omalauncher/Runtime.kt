@@ -24,6 +24,7 @@ import dev.omalauncher.linux.Agent
 import dev.omalauncher.linux.AgentStore
 import dev.omalauncher.linux.AudioBridge
 import dev.omalauncher.linux.Bootstrap
+import dev.omalauncher.linux.EDIT_COMMAND
 import dev.omalauncher.linux.FILES_COMMAND
 import dev.omalauncher.linux.Gpu
 import dev.omalauncher.linux.KEEP_COMMAND
@@ -95,11 +96,14 @@ class Runtime(
 
     /** Silhouettes of [linuxIcons] for the monochrome icon style. */
     val linuxMasks = mutableStateMapOf<String, ImageBitmap>()
+
+    /** The Icon= each of [linuxIcons] was loaded from, to notice an entry changing it. */
+    private val linuxIconNames = HashMap<String, String>()
     val androidApps = AndroidAppCatalog(context)
     val usage = AppUsage(context)
     val themes = ThemeStore(context, proot, isLinux = { linux }, onConfigChanged = ::syncGuest)
     private val audio = AudioBridge(proot)
-    private val openBridge = OpenBridge(context, proot, onOpenFiles = ::openFiles)
+    private val openBridge = OpenBridge(context, proot, onOpenFiles = ::openFiles, onEdit = ::edit)
     val phoneBridge = dev.omalauncher.phone.PhoneBridge(context, proot)
     val agents = AgentStore(proot, onChanged = ::syncGuest)
     val pacman = Pacman(context, proot)
@@ -288,6 +292,7 @@ class Runtime(
                 linuxApps.clear()
                 linuxIcons.clear()
                 linuxMasks.clear()
+                linuxIconNames.clear()
                 setService(false)
             }
     }
@@ -434,8 +439,18 @@ class Runtime(
             linuxApps += apps
         }
         val ids = apps.mapTo(HashSet()) { it.id }
+        // An entry can change its Icon= under the same id: on a fresh install, pacman's micro.desktop
+        // shows up before the launcher's Editor entry replaces it.
+        for (app in apps) {
+            if (linuxIconNames[app.id].let { it != null && it != app.icon }) {
+                linuxIcons -= app.id
+                linuxMasks -= app.id
+                linuxIconNames -= app.id
+            }
+        }
         linuxIcons.keys.retainAll(ids)
         linuxMasks.keys.retainAll(ids)
+        linuxIconNames.keys.retainAll(ids)
         val missing = apps.filter { it.icon != null && it.id !in linuxIcons }
         if (missing.isEmpty()) return
         val size = (52 * context.resources.displayMetrics.density).toInt()
@@ -443,12 +458,13 @@ class Runtime(
             withContext(Dispatchers.IO) {
                 missing.mapNotNull { app ->
                     val file = resolveLinuxIcon(proot.rootfs, app.icon!!) ?: return@mapNotNull null
-                    decodeIcon(file, size)?.let { Triple(app.id, it.asImageBitmap(), bitmapMask(it).asImageBitmap()) }
+                    decodeIcon(file, size)?.let { Triple(app, it.asImageBitmap(), bitmapMask(it).asImageBitmap()) }
                 }
             }
-        for ((id, icon, mask) in loaded) {
-            linuxIcons[id] = icon
-            linuxMasks[id] = mask
+        for ((app, icon, mask) in loaded) {
+            linuxIcons[app.id] = icon
+            linuxMasks[app.id] = mask
+            linuxIconNames[app.id] = app.icon!!
         }
     }
 
@@ -543,6 +559,7 @@ class Runtime(
     fun launch(app: LinuxApp) {
         // Our own Files app: open it directly rather than round-tripping through the guest.
         if (app.exec == FILES_COMMAND) return openFiles()
+        if (app.exec == EDIT_COMMAND) return edit()
         if (app.terminal) return terminal(app.exec, app.name)
         // Like an Android icon: an app that already has a window comes back to it. Single-instance
         // apps would otherwise just exit on a second launch, showing nothing. Quickshell apps (App Finder)
@@ -584,6 +601,17 @@ class Runtime(
     fun iconNamed(name: String): ImageBitmap? = linuxApps.firstOrNull { it.name == name }?.let { linuxIcons[it.id] }
 
     /** Opens the Files app, at [path] (a guest path) if given. */
+    /**
+     * Opens [path] (a guest path) in the editor, or its start page without one.
+     * [done] is the host path of a FIFO that gets a reply once the file is closed (see OpenBridge's shim).
+     */
+    fun edit(
+        path: String? = null,
+        done: String? = null,
+    ) {
+        InstantActivity.startInstantly(context, EditorActivity.intent(context, path, done))
+    }
+
     fun openFiles(path: String? = null) {
         context.startActivity(
             Intent(context, FilesActivity::class.java)
