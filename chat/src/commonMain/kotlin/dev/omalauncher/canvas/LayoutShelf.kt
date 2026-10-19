@@ -327,10 +327,11 @@ fun loadPlan(now: Notebook, want: Notebook): LoadPlan {
     // A verb can't change the order of pages already there: said, never forced (a page's ink goes by its id).
     val order = n.pages.map { it.id }.filter { it in wantPages }
     if (order != want.pages.map { it.id }.filter { it in order }) left += "the pages stay in the order they are in now"
-    // A page's panel layout needs piece A's page.panels verb to be laid back: until then it is said, never forced.
+    // Each page cut as it was saved, once everything is in its cells: the panels alone, nothing refit (piece A's page.panels).
     for (p in want.pages) {
         val here = n.pages.firstOrNull { it.id == p.id } ?: continue
-        if (here.panels != p.panels) left += "the page \"${p.name}\" stays cut as it is now (saved as ${p.panels?.let { PanelLayouts.name(it) } ?: "the free grid"})"
+        if (here.panels != p.panels && !take(CanvasVerb.PagePanels(p.id, p.panels)))
+            left += "the page \"${p.name}\" stays cut as it is now (${p.panels?.let { PanelLayouts.name(it) } ?: "the free grid"} can't be cut on this grid)"
     }
     // Nor the dock, which is no page: it is his to change.
     if (now.dock.map { it.key } != want.dock.map { it.key }) left += "the dock stays as it is now"

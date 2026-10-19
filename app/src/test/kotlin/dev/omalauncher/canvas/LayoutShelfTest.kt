@@ -377,15 +377,18 @@ class LayoutShelfTest {
         assertEquals(manga, saved.notebook())
         assertEquals("opening", saved.notebook()!!.pages[2].panels)
         assertEquals(setOf("0123456789abcdef"), s.referencedArt())
-        // Back to the home before Manga: the art comes off (its file is the art store's), and the page's panels, which only
-        // page.panels lays back, are said.
+        // Back to the home before Manga: the art comes off (its file is the art store's) and the page is the free grid again.
         val pad = Pad(manga).withLayouts(s)
         val did = run(pad, "layout.load Before Manga").getString("did")
-        assertTrue(did, did.contains("the page \"Notes\" stays cut as it is now (saved as the free grid)"))
+        assertFalse(did, did.contains("left"))
         assertTrue(pad.notebook().pages[2].items.isEmpty())
-        // And into Manga again: the art is put back in its panel.
+        assertEquals(null, pad.notebook().pages[2].panels)
+        assertEquals(home, pad.notebook())
+        // And into Manga again: the page cut as Opening, the art back in its panel; undo takes both back at once.
         assertTrue(run(pad, "layout.load Manga").getBoolean("ok"))
-        assertEquals(listOf(Triple(art, ItemKind.Art, Cell(0, 0, 6, 3))), pad.notebook().pages[2].items.map { Triple(it.key, it.kind, it.cell) })
+        assertEquals(manga, pad.notebook())
+        assertTrue(run(pad, "undo").getBoolean("ok"))
+        assertEquals(home, pad.notebook())
     }
 
     @Test fun aThingHomeHasntPlacedYetIsLeftAloneAndSaid() {

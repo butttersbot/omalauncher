@@ -141,4 +141,32 @@ class FoldLayoutsTest {
         assertEquals(shape(start), home.shape())
         assertEquals(listOf("p1", "p2", "p3"), home.notebook.pages.map { it.id })
     }
+
+    @Test fun aMangaLayoutComesBackCutIntoItsPanelsOnHomeAndUndoUncutsIt() {
+        val home = Home(saved)
+        val manga = saved.copy(pages = saved.pages.map { if (it.id == "p2") it.copy(panels = "beats") else it })
+        // The Soma page in Three beats: Needs you and Threads each in a panel's cells.
+        val beats = dev.omalauncher.widgets.layout.PanelLayouts.panels("beats", 6, 8).map { it.cell }
+        val cut = manga.copy(pages = manga.pages.map { p -> if (p.id == "p2") p.copy(items = p.items.mapIndexed { i, it -> it.copy(cell = beats[i]) }) else p })
+        home.shelf.save("Manga", cut)
+        assertTrue(home.run("layout.load Manga").getBoolean("ok"))
+        assertEquals("beats", home.notebook.snapshot().pages[1].panels)
+        assertEquals(shape(cut), home.shape())
+        assertEquals("beats", NotebookStore.read(home.written.last())!!.pages[1].panels)
+        assertTrue(home.run("undo").getBoolean("ok"))
+        assertEquals(null, home.notebook.snapshot().pages[1].panels)
+        assertEquals(shape(saved), home.shape())
+    }
+
+    @Test fun theTilesThumbnailCutsItsPageThroughPagePanelsAndUndoTakesItBack() {
+        val home = Home(saved)
+        val tile = LayoutsSource(home.shelf, pad = { home.pad }, now = { 5L })
+        val said = tile.panels("p2", "beats")
+        assertTrue(said.text, said.ok)
+        assertEquals("beats", home.notebook.snapshot().pages[1].panels)
+        assertTrue(home.run("undo").getBoolean("ok"))
+        assertEquals(null, home.notebook.snapshot().pages[1].panels)
+        assertEquals(shape(saved), home.shape())
+        assertFalse(tile.panels("p2", "nonsense").ok)
+    }
 }
