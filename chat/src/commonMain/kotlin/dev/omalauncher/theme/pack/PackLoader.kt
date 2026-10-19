@@ -58,6 +58,9 @@ class PackLoad(
      */
     val broken get() = error != null || issues.any { it.kind !in QUIET }
 
+    /** True when the pack is [broken] only in its `[panels]`, where what stands in is the default panels', not Console's. */
+    val brokenOnlyInPanels get() = error == null && broken && issues.filter { it.kind !in QUIET }.all { it.token.startsWith(PackPanels.SECTION + ".") }
+
     private companion object {
         val QUIET = setOf(PackIssue.Kind.Missing, PackIssue.Kind.Ignored, PackIssue.Kind.Newer)
     }
@@ -214,34 +217,40 @@ object PackLoader {
         if (!present) return null
         val defaults = PackPanels.defaults.manifest()
         val values = LinkedHashMap<String, Any>()
+        // Said in the section's own key order, after the tokens'.
+        val said = ArrayList<PackIssue>()
         for (token in PackPanels.tokens) {
             val key = token.key
             val given = raw[key]
             if (given == null) {
                 val slip = unreadable[key]
-                issues += if (slip != null) PackIssue(key, PackIssue.Kind.Invalid, slip) else PackIssue(key, PackIssue.Kind.Missing, "not set")
+                said += if (slip != null) PackIssue(key, PackIssue.Kind.Invalid, slip) else PackIssue(key, PackIssue.Kind.Missing, "not set")
                 values[key] = defaults.getValue(key)
                 continue
             }
             when (val read = token.read(given)) {
                 is TokenRead.Bad -> {
-                    issues += PackIssue(key, read.kind, read.why)
+                    said += PackIssue(key, read.kind, read.why)
                     values[key] = defaults.getValue(key)
                 }
                 is TokenRead.Ok -> {
-                    if (read.clamped) issues += PackIssue(key, PackIssue.Kind.Clamped, "out of range; ${read.value} is used")
+                    if (read.clamped) said += PackIssue(key, PackIssue.Kind.Clamped, "out of range; ${read.value} is used")
                     values[key] = read.value
                 }
             }
         }
-        // Dots wider than half their spacing would run into a flat gray, which is no screentone.
+        // Dots wider than half their spacing would run into a flat gray, which is no screentone. The dot
+        // then has one issue, where its own would be, saying what is used, whatever else was wrong with it.
         val dot = "panels.screentone.dot"
         val half = values.getValue("panels.screentone.spacing") as Float / 2f
         if (values.getValue(dot) as Float > half) {
-            issues.removeAll { it.token == dot && it.kind == PackIssue.Kind.Clamped }
-            issues += PackIssue(dot, PackIssue.Kind.Clamped, "more than half the spacing, so the dots would run together; $half is used")
+            val order = PackPanels.tokens.map { it.key }
+            val at = said.indexOfFirst { it.token == dot }.takeIf { it >= 0 } ?: said.indexOfFirst { order.indexOf(it.token) > order.indexOf(dot) }.takeIf { it >= 0 } ?: said.size
+            said.removeAll { it.token == dot }
+            said.add(minOf(at, said.size), PackIssue(dot, PackIssue.Kind.Clamped, "more than half the spacing, so the dots would run together; $half is used"))
             values[dot] = half
         }
+        issues += said
         for (key in raw.keys) {
             if (key.startsWith(PANELS_PREFIX) && key !in PackPanels.byKey) issues += PackIssue(key, PackIssue.Kind.Ignored, "not a key this build knows")
         }

@@ -215,8 +215,8 @@ right = 2.4
 bottom = 4.4
 
 # The mockup's empty-panel tone: a dot solid to 0.7 and gone by 1 (0.85 is its half-ink edge)
-# every 4.5, darkest at the top left (0.42) and fading to almost nothing (0.04) at the bottom
-# right, so an empty panel reads as quiet sky and not as a hole in the page.
+# every 4.5, darkest at the top left (0.42) and faded to almost nothing (0.04) 70% of the way
+# toward the bottom right, so an empty panel reads as quiet sky and not as a hole in the page.
 [panels.screentone]
 dot = 0.85
 spacing = 4.5

@@ -367,7 +367,9 @@ fun PackToken.read(
             if (n == null || !n.isFinite()) {
                 TokenRead.Bad("not a number")
             } else {
-                TokenRead.Ok(n.toFloat().coerceIn(kind.min, kind.max), clamped = n < kind.min || n > kind.max)
+                // Compared as the Float it is kept as, so a bound like 0.2 written as 0.2 is in range.
+                val f = n.toFloat()
+                TokenRead.Ok(f.coerceIn(kind.min, kind.max), clamped = f < kind.min || f > kind.max)
             }
         }
         is TokenKind.Whole -> {

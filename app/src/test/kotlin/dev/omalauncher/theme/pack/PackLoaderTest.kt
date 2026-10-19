@@ -749,6 +749,27 @@ class PackLoaderTest {
         }
     }
 
+    /** A value at a bound is in range however the bound is spelled: 0.2 is not under the Float 0.2f it is kept as. */
+    @Test fun aValueAtItsBoundIsNotClamped() {
+        val load = loadPack(consoleManifest(mapOf("type.display.tracking" to -0.1, "type.body.tracking" to 0.5)) + "\n[panels]\n[panels.screentone]\ndot = 0.2\nspacing = 24\n")
+        assertEquals(emptyList<PackIssue>(), load.issues.filter { it.kind != PackIssue.Kind.Missing })
+        assertFalse(load.broken)
+        assertEquals(0.2f, load.pack.panels!!.screentone.dot, 0f)
+        assertEquals(-0.1f, load.pack.type.display.tracking, 0f)
+    }
+
+    /** A dot the spacing pulls in has one issue, in its own place, whatever else was said of it. */
+    @Test fun aDotPulledInBySpacingSaysSoOnce() {
+        for (dot in listOf("", "dot = \"x\"\n", "dot = 9\n")) {
+            val load = loadPack(consoleManifest() + "\n[panels.screentone]\n${dot}spacing = 1\n")
+            val panels = load.issues.filter { it.token.startsWith("panels.") }.map { it.token }
+            // Every key but the spacing, which is fine, in the section's order.
+            assertEquals(dot, PackPanels.tokens.map { it.key } - "panels.screentone.spacing", panels)
+            assertEquals(dot, listOf(PackIssue.Kind.Clamped), load.issues.filter { it.token == "panels.screentone.dot" }.map { it.kind })
+            assertEquals(0.5f, load.pack.panels!!.screentone.dot, 0f)
+        }
+    }
+
     /** Whatever a [panels] section holds, there are panels, and every number is inside its key's range. */
     @Test fun panelsNeverThrowOnNoise() {
         val random = java.util.Random(19)
@@ -771,6 +792,10 @@ class PackLoaderTest {
             }
             assertTrue(panels.screentone.dot <= panels.screentone.spacing / 2f)
             assertTrue(load.fallbacks.all { it.token in PackSchema.byKey || it.token in PackPanels.byKey })
+            // Written back, it loads the same and has nothing more to say about its panels.
+            val again = loadPack(PackManifest.write(load.tokens.manifest()))
+            assertEquals(load.tokens, again.tokens)
+            assertEquals(emptyList<PackIssue>(), again.issues.filter { it.token.startsWith("panels") })
         }
     }
 }

@@ -95,6 +95,11 @@ class LookPickerTest {
         val odd = PackOption("odd", "Odd", loadPack(consoleManifest(mapOf("shape.radius" to 400))))
         assertEquals("some of it is wrong; Console's values stand in", lookProblem(odd, PackPick.Console))
         assertEquals("some of it is wrong; Console's values stand in", lookProblem(odd, PackPick(odd.id, odd.load)))
+        // Console has no panels, so a look wrong only in its [panels] says what stands in there.
+        val panels = PackOption("odd", "Odd", loadPack(consoleManifest() + "\n[panels]\nink_width = 40\n"))
+        assertEquals("some of its panels are wrong; the default panels' values stand in", lookProblem(panels, PackPick.Console))
+        val both = PackOption("odd", "Odd", loadPack(consoleManifest(mapOf("shape.radius" to 400)) + "\n[panels]\nink_width = 40\n"))
+        assertEquals("some of it is wrong; Console's values stand in", lookProblem(both, PackPick.Console))
     }
 
     /** A look that can't be used says why wherever it stands, and what is drawn instead once it is the picked one. */

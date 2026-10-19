@@ -143,7 +143,10 @@ data class PackScreentone(
     val spacing: Float,
     /** How dark the tone is where it is darkest, at the panel's top left; 1 is the ink itself. */
     val opacity: Float,
-    /** How dark it is where it has faded to, at the panel's bottom right. Equal to [opacity] for an even tone. */
+    /**
+     * How dark it has faded to 70% of the way across the panel, from its top left toward its bottom right
+     * (the mockup's 165° sweep), and stays beyond. Equal to [opacity] for an even tone.
+     */
     val fade: Float,
 )
 
