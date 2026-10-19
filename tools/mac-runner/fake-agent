@@ -4,7 +4,8 @@
 It speaks the same lines Claude Code does and decides what to do from words in the prompt: "write" asks for
 approval to write written.txt and writes it only when allowed, in every mode (it stands for what auto mode's
 classifier sends to the prompt tool); "edit" writes edited.txt as a routine edit: at once in auto mode, after asking
-in any other; "slow" takes three seconds first; "limit" answers as Claude Code does at a usage limit. Every start is
+in any other; "slow" takes three seconds first; "limit" answers as Claude Code does at a usage limit. While a file
+named "hold" is in the project, a turn waits for it to go before answering, so a test can keep a turn running. Every start is
 added to starts.log in the project, with its permission mode, so a test can see a task was not started twice.
 
 "background" starts a background command ("copy the games", 60 s; "background quick": 2 s) and answers at once. As
@@ -85,6 +86,8 @@ def work(seconds, words):
 
 def handle(given):
     prompt = given['message']['content']
+    while pathlib.Path('hold').exists():
+        time.sleep(0.05)
     echo = {'user_message_uuid': given['uuid'], 'user_message_uuids': [given['uuid']]} if given.get('uuid') and 'old' not in prompt else {}
     with speaking:
         if 'limit' in prompt:

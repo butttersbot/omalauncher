@@ -63,6 +63,8 @@ class DesktopEndToEndTest {
                 "OMA_RUNNER_AGENT" to File(mac, "fake-agent").path, "OMA_RUNNER_BIND" to "127.0.0.1", "OMA_RUNNER_PHONE" to "testhost",
                 "OMA_RUNNER_WHOIS_FILE" to File(work, "whois.json").path, "OMA_RUNNER_MAIL" to File(work, "mail").path,
                 "HOME" to work.path, "OMA_RUNNER_CODEX" to File(mac, "fake-codex").path, "OMA_RUNNER_CURSOR" to File(mac, "fake-cursor").path, "CODEX_HOME" to File(work, "codex").path,
+                // No Grok on this runner, whatever this computer has installed: a switch to it can't make its thread.
+                "OMA_RUNNER_GROK" to File(work, "no-grok").path,
             ))
             redirectErrorStream(true)
         }.start()
@@ -147,6 +149,11 @@ class DesktopEndToEndTest {
         assertEquals(claude, chat.mac)
         waitFor("the runner said it runs Codex") { "codex" in engine.kindsOn("testhost") && engine.view.threads.any { it.id == claude } }
         settle()
+        // The fake Claude holds its handoff turn while "hold" is in the project, so the first switch is still on its way
+        // when the second is asked: on its own the whole switch can be over in a few milliseconds.
+        val hold = File(work, "Projects/hold")
+        assertTrue("the Claude thread runs in ~/Projects", File(work, "Projects/starts.log").isFile)
+        hold.writeText("")
         // His long press on the chat's tab, then Switch agent, then Codex.
         onAllNodes(hasText("New chat") and hasClickAction()).onFirst().performTouchInput { longClick() }
         settle()
@@ -157,6 +164,7 @@ class DesktopEndToEndTest {
         val second = platform.chatLog().tasks.last()
         assertEquals(dev.omalauncher.oma.TaskStatus.Failed, second.status)
         assertTrue(second.result, second.result.startsWith("This thread is already moving to Codex"))
+        hold.delete()
         // Taken by the Codex thread: the fake Codex then asks to write a file (it does whenever its words say "write"), and waits on him.
         waitFor("a Codex thread was made and took the handoff") {
             platform.chatLog().tasks.any { task -> task.status != dev.omalauncher.oma.TaskStatus.Queued && !task.fresh && engine.view.threads.any { it.id == task.thread && it.kind == "codex" } }
@@ -187,6 +195,64 @@ class DesktopEndToEndTest {
         val shot = onRoot().captureToImage()
         File("build/render").mkdirs()
         javax.imageio.ImageIO.write(shot.toAwtImage(), "png", File("build/render/desktop-e2e-switch.png"))
+    }
+
+    /**
+     * A switch is on its way until its new thread is being made, even across the moment its handoff turn has ended and
+     * the new thread's first words are not yet filed. A second switch of the same thread asked right then, here from
+     * inside the engine's own save of its switches as the first one leaves them, is refused, so it never makes two.
+     * This reaches finishSwitch's part of the gap only: the moment between the handoff's entry turning Done and
+     * finishSwitch, which the engine's handingOff holds, can't be reached from here (the chat store is final).
+     */
+    @Test fun aSecondSwitchAskedAsTheFirstsHandoffEndsIsRefused() = runComposeUiTest {
+        val notices = Notices()
+        val machine = MacMachine("testhost", "Test box", MacRunnerConfig("http://127.0.0.1:$port", key))
+        val inner = DesktopThreadsPlatform(notices) { listOf(machine) }
+        var asked: String? = null
+        var second: dev.omalauncher.oma.ChatTask? = null
+        lateinit var engine: MacThreadsEngine
+        val platform = object : dev.omalauncher.assist.ThreadsPlatform by inner {
+            override fun putPref(key: String, value: String) {
+                inner.putPref(key, value)
+                // The first switch has just left the switches under way; its handoff has ended and its new thread isn't asked for yet.
+                val claude = asked ?: return
+                if (key != dev.omalauncher.assist.MAC_SWITCHES_PREF || second != null || dev.omalauncher.assist.macSwitchesFrom(value).isNotEmpty()) return
+                if (inner.chatLog().tasks.none { it.thread == claude && it.prompt == "Switch to Codex" && dev.omalauncher.assist.macHandoffEnded(it) }) return
+                second = dev.omalauncher.oma.ChatTask(0, "", "")
+                engine.switchTo(claude, dev.omalauncher.assist.MacPick("codex"), words = "Switch to Codex again")
+                second = inner.chatLog().tasks.last { it.prompt == "Switch to Codex again" }
+            }
+        }
+        engine = MacThreadsEngine(platform)
+        val front = DesktopFrontAgent(engine, inner, notices, places = emptyList())
+        val host = DesktopChatHost(inner, engine, front, notices)
+        engine.open()
+        mainClock.autoAdvance = false
+        setContent { OmaChatScreen(host, prefill = null, onPrefilled = {}, wanted = null, onTab = {}) }
+        fun settle(ms: Long = 1_200) = mainClock.advanceTimeBy(ms)
+        fun waitFor(what: String, done: () -> Boolean) {
+            val deadline = System.currentTimeMillis() + 40_000
+            while (System.currentTimeMillis() < deadline && !done()) { Thread.sleep(250); settle(500) }
+            assertTrue("$what: ${inner.chatLog().tasks.map { "${it.time} ${it.thread} ${it.status} ${it.steps} ${it.result.take(60)}" }}", done())
+        }
+        settle()
+        onNodeWithContentDescription("Show the tabs").performClick(); settle()
+        onNodeWithContentDescription("New chat").performClick(); settle()
+        onNode(androidx.compose.ui.test.hasSetTextAction()).performTextInput("what files are here")
+        settle()
+        onNodeWithText("[ send ]").performClick()
+        waitFor("the Claude thread answered") { inner.chatLog().tasks.any { it.mac && it.status == dev.omalauncher.oma.TaskStatus.Done } }
+        val claude = inner.chatLog().tasks.first { it.mac && it.status == dev.omalauncher.oma.TaskStatus.Done }.thread
+        waitFor("the runner said it runs Codex") { "codex" in engine.kindsOn("testhost") && engine.view.threads.any { it.id == claude } }
+        asked = claude
+        engine.switchTo(claude, dev.omalauncher.assist.MacPick("codex"))
+        waitFor("a Codex thread was made") { engine.view.threads.any { it.kind == "codex" } }
+        val refused = second
+        assertTrue("the second switch was asked in the gap", refused != null && refused.prompt == "Switch to Codex again")
+        assertEquals(dev.omalauncher.oma.TaskStatus.Failed, refused!!.status)
+        assertTrue(refused.result, refused.result.startsWith("This thread is already moving to Codex"))
+        settle(2_000)
+        assertEquals("exactly one Codex thread", 1, engine.view.threads.count { it.kind == "codex" })
     }
 
     /**
