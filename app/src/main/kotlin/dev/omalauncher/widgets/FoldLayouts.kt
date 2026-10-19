@@ -38,12 +38,14 @@ object FoldLayouts {
      */
     fun pad(context: Context): LayoutPad = dev.omalauncher.phone.homeCanvasPad(context).withLayouts(shelf(context))
 
-    /** Home kept as [name] by home itself (B: "Before Manga" when the look changes to Manga); false while home isn't open. */
+    /**
+     * Home kept as [name] by home itself (B: "Before Manga" when the look changes to Manga). False, and nothing kept, while home
+     * isn't open, or when the shelf can't take it (full of his own, a layout of his by that name, written by a newer Soma).
+     */
     fun autoSave(context: Context, name: String): Boolean {
-        val pad = pad(context)
         if (!(context.applicationContext as App).runtime.widgets.notebook.opened) return false
-        pad.layouts.autoSave(name, pad.notebook())
-        return true
+        val pad = pad(context)
+        return runCatching { pad.layouts.autoSave(name, pad.notebook()) }.isSuccess
     }
 
     /** At the app's start: the art preference read back, and the Layouts module given the shelf and home's pad. */

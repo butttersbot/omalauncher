@@ -117,6 +117,9 @@ class LayoutShelfTest {
         assertTrue(refused?.message, refused?.message.orEmpty().contains("--replace"))
         assertEquals(1, s.save("work", home.copy(pages = home.pages.take(1)), replace = true).pages)
         assertEquals(3, s.list().size)
+        // Home never replaces one he saved himself under the name it uses.
+        assertTrue(runCatching { s.autoSave("Work", home) }.exceptionOrNull()?.message.orEmpty().contains("he saved himself"))
+        assertEquals(1, s.get("Work")!!.pages)
     }
 
     @Test fun namesAreTheTemplatesRule() {
@@ -360,5 +363,27 @@ class LayoutShelfTest {
         assertTrue(run(pad, "undo").getBoolean("ok"))
         assertEquals(listOf("Today"), pad.notebook().pages.map { it.name })
         if (kept.text == null) fail("the shelf was written")
+    }
+
+    @Test fun aMangaHomeKeepsItsPanelsAndArtAndTheArtIsReferenced() {
+        val art = dev.omalauncher.widgets.layout.artKey("0123456789abcdef")
+        val manga = home.copy(pages = home.pages.map { p ->
+            if (p.id == "p3") p.copy(panels = "opening", items = listOf(NotebookItem(art, ItemKind.Art, Cell(0, 0, 6, 3)))) else p
+        })
+        val s = shelf()
+        s.autoSave("Before Manga", home)
+        val saved = s.save("Manga", manga)
+        assertEquals(manga, saved.notebook())
+        assertEquals("opening", saved.notebook()!!.pages[2].panels)
+        assertEquals(setOf("0123456789abcdef"), s.referencedArt())
+        // Back to the home before Manga: the art comes off (its file is the art store's), and the page's panels, which only
+        // page.panels lays back, are said.
+        val pad = Pad(manga).withLayouts(s)
+        val did = run(pad, "layout.load Before Manga").getString("did")
+        assertTrue(did, did.contains("the page \"Notes\" stays cut as it is now (saved as the free grid)"))
+        assertTrue(pad.notebook().pages[2].items.isEmpty())
+        // And into Manga again: the art is put back in its panel.
+        assertTrue(run(pad, "layout.load Manga").getBoolean("ok"))
+        assertEquals(listOf(Triple(art, ItemKind.Art, Cell(0, 0, 6, 3))), pad.notebook().pages[2].items.map { Triple(it.key, it.kind, it.cell) })
     }
 }

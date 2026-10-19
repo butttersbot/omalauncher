@@ -105,7 +105,7 @@ fun ModuleView(ref: ModuleRef, size: ModuleSize, source: ModuleSource, now: Long
         ModuleKind.Project -> ProjectModule(source.project(ref.project.orEmpty()), size, modifier, onOpen = onOpen)
         // The chat is drawn by the screen it is on, which has the chat's host; here it is only its place.
         ModuleKind.Chat -> androidx.compose.foundation.layout.Box(modifier)
-        ModuleKind.Layouts -> LayoutsModule(Layouts.here, size, now, modifier)
+        ModuleKind.Layouts -> LayoutsModule(Layouts.here, size, now, modifier, key = ref.key)
     }
 }
 

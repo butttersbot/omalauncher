@@ -9,7 +9,9 @@ import dev.omalauncher.widgets.layout.Notebook
 import dev.omalauncher.widgets.layout.NotebookItem
 import dev.omalauncher.widgets.layout.NotebookStore
 import dev.omalauncher.widgets.layout.PAGE_START
+import dev.omalauncher.widgets.layout.PanelLayouts
 import dev.omalauncher.widgets.layout.applyVerb
+import dev.omalauncher.widgets.layout.artIdOf
 import dev.omalauncher.widgets.layout.firstFit
 import org.json.JSONArray
 import org.json.JSONObject
@@ -40,9 +42,6 @@ fun layoutNameOf(typed: String): String {
     if (!TEMPLATE_NAME.matches(name) || ".." in name) refuse("\"$typed\" can't be a layout's name: letters, digits, spaces, dots, dashes, at most 40. Nothing was changed.")
     return name
 }
-
-/** An art item's key: `art:` and its 16 lowercase hex id (piece A's `ART_PREFIX` and `artIdOf`). */
-private val ART_KEY = Regex("art:([0-9a-f]{16})")
 
 /**
  * A screen's saved layouts, kept as JSON text by [read] and [write] (the Fold: a preference file of its own beside the
@@ -83,8 +82,15 @@ class LayoutShelf(
         return keep(name, home, auto = false)
     }
 
-    /** [home] kept as [typed] by home itself ("Before Manga" when the look changes to Manga): one by that name is replaced. */
-    fun autoSave(typed: String, home: Notebook): SavedLayout = keep(layoutNameOf(typed), home, auto = true)
+    /**
+     * [home] kept as [typed] by home itself ("Before Manga" when the look changes to Manga): the one it kept by that name before
+     * is replaced, never one he saved under that name himself.
+     */
+    fun autoSave(typed: String, home: Notebook): SavedLayout {
+        val name = layoutNameOf(typed)
+        get(name)?.takeIf { !it.auto }?.let { refuse("\"${it.name}\" is a layout he saved himself; home doesn't replace it. Nothing was changed.") }
+        return keep(name, home, auto = true)
+    }
 
     private fun keep(name: String, home: Notebook, auto: Boolean): SavedLayout {
         writable()
@@ -177,13 +183,13 @@ class LayoutShelf(
             JSONObject(text ?: return false).let { it.has("v") && it.has("data") && it.getInt("v") > LAYOUTS_VERSION }
         }.getOrDefault(false)
 
-        /** The art ids the notebook text [text] puts on its pages, read from its keys alone: no build's item kinds needed. */
+        /** The art ids the notebook text [text] puts on its pages, read from its keys alone, whatever kinds this build reads. */
         fun artIn(text: String): Set<String> = runCatching {
             val data = Versioned.read(text, NotebookStore.VERSION) as? JSONObject ?: return emptySet()
             val pages = data.optJSONArray("pages") ?: return emptySet()
             (0 until pages.length()).flatMap { p ->
                 val items = pages.optJSONObject(p)?.optJSONArray("items") ?: JSONArray()
-                (0 until items.length()).mapNotNull { i -> ART_KEY.matchEntire(items.optJSONObject(i)?.optString("key").orEmpty())?.groupValues?.get(1) }
+                (0 until items.length()).mapNotNull { i -> artIdOf(items.optJSONObject(i)?.optString("key").orEmpty()) }
             }.toSet()
         }.getOrDefault(emptySet())
     }
@@ -307,6 +313,11 @@ fun loadPlan(now: Notebook, want: Notebook): LoadPlan {
     // A verb can't change the order of pages already there: said, never forced (a page's ink goes by its id).
     val order = n.pages.map { it.id }.filter { it in wantPages }
     if (order != want.pages.map { it.id }.filter { it in order }) left += "the pages stay in the order they are in now"
+    // A page's panel layout needs piece A's page.panels verb to be laid back: until then it is said, never forced.
+    for (p in want.pages) {
+        val here = n.pages.firstOrNull { it.id == p.id } ?: continue
+        if (here.panels != p.panels) left += "the page \"${p.name}\" stays cut as it is now (saved as ${p.panels?.let { PanelLayouts.name(it) } ?: "the free grid"})"
+    }
     // Nor the dock, which is no page: it is his to change.
     if (now.dock.map { it.key } != want.dock.map { it.key }) left += "the dock stays as it is now"
     return LoadPlan(verbs, removals, left, names)

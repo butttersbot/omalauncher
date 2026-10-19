@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
@@ -135,5 +136,31 @@ class LayoutsModuleTest {
         onNodeWithText("Load \"Work\"?").assertExists()
         onNodeWithText("[ no ]").performClick()
         onNodeWithText("[ Work ]").assertExists()
+    }
+
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+    @Test fun onAPageCutIntoPanelsTheTileOffersItsLayoutsAndATapCutsThePage() = androidx.compose.ui.test.runComposeUiTest {
+        val tile = moduleKey(ModuleKind.Layouts)!!
+        val cut = Notebook(rows = 8, pages = listOf(
+            NotebookPage("p1", "Free", listOf(NotebookItem(needs, ItemKind.Module, Cell(0, 0, 3, 2)))),
+            NotebookPage("p2", "Manga", listOf(NotebookItem(tile, ItemKind.Module, Cell(0, 0, 3, 2))), panels = "opening"),
+        ))
+        val pad = Pad(cut)
+        val sent = ArrayList<Pair<List<String>, String>>()
+        val source = LayoutsSource(LayoutShelf({ null }, {}), pad = { pad }, now = { 9L }, words = { w, _, request, actor ->
+            sent += w to "$request/$actor"
+            org.json.JSONObject().put("ok", true).put("did", "\"Manga\" is now Beats")
+        })
+        var key by androidx.compose.runtime.mutableStateOf(tile)
+        setContent { LayoutsModule(source, ModuleSize.Card, 0L, Modifier.size(420.dp, 300.dp), key = key) }
+        onNodeWithContentDescription("panels Opening, this page").assertExists()
+        onNodeWithContentDescription("panels Three beats").performClick()
+        // Through the canvas words, by the page's id, as his own change.
+        assertEquals(listOf(listOf("page.panels", "p2", "beats") to "tile-9/hand"), sent)
+        onNodeWithText("\"Manga\" is now Beats").assertExists()
+        // On a free page (here, its first copy's page has no panels) there is no row.
+        key = needs
+        waitForIdle()
+        onNodeWithContentDescription("panels Three beats").assertDoesNotExist()
     }
 }
