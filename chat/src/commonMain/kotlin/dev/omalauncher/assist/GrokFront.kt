@@ -43,17 +43,21 @@ const val FRONT_CHOICE = ".config/oma/front-agent"
 /** Grok's sign-in, in the guest's home: the front agent is Grok only once it exists. Only its presence is looked at. */
 const val GROK_AUTH = ".grok/auth.json"
 
-/** Grok's tools that are [QUICK_TOOLS]: reading files, the shell, the web. Grok names its tools by their ids. */
-val GROK_QUICK_TOOLS = listOf("read_file", "run_terminal_cmd", "web_search", "web_fetch")
+/**
+ * Grok's tools as the front agent: the shell (behind the guard) and the web, but no reading files. Its read_file isn't
+ * covered by the guard, which sees only commands, and on the Fold it printed ~/.grok/auth.json, tokens and all, into the
+ * chat when asked (2026-10-19). It looks with `ls` and oma-phone instead. Grok names its tools by their ids.
+ */
+val GROK_QUICK_TOOLS = listOf("run_terminal_cmd", "web_search", "web_fetch")
 
 /** Grok's tools in a new chat, as [QUICK_CHAT_TOOLS]: the web and nothing else. */
 val GROK_QUICK_CHAT_TOOLS = listOf("web_search", "web_fetch")
 
 /**
- * What Grok may run without asking, as [QUICK_ALLOWED]: the same Bash commands; reading as its `Read`; and the web as
+ * What Grok may run without asking, as [QUICK_ALLOWED]: the same Bash commands (no reading files: see [GROK_QUICK_TOOLS]); and the web as
  * its `WebFetch`. Grok's web search is one of its read-only tools, which run without a rule.
  */
-val GROK_QUICK_ALLOWED = QUICK_ALLOWED.filter { it.startsWith("Bash(") } + listOf("Read", "WebFetch")
+val GROK_QUICK_ALLOWED = QUICK_ALLOWED.filter { it.startsWith("Bash(") } + listOf("WebFetch")
 
 /** What Grok may run in a new chat: the web alone, as [QUICK_CHAT_TOOLS]. */
 val GROK_QUICK_CHAT_ALLOWED = listOf("WebFetch")

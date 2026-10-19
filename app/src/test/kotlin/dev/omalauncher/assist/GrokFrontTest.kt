@@ -59,6 +59,9 @@ class GrokFrontTest {
         assertEquals(QUICK_ALLOWED.filter { it.startsWith("Bash(") }, allowed.filter { it.startsWith("Bash(") })
         assertTrue(allowed.none { it == "Bash" || it == "Bash(*)" || it.startsWith("Edit") || it.startsWith("Write") })
         assertFalse(GROK_QUICK_TOOLS.any { it in setOf("write", "search_replace", "Delete", "task") })
+        // No reading files: the guard only sees commands, and a read printed Grok's own tokens (2026-10-19).
+        assertFalse("read_file" in GROK_QUICK_TOOLS)
+        assertFalse("Read" in GROK_QUICK_ALLOWED)
         // Refused whatever the guest's settings allow: MCP tools, edits, and the mkdir and touch Grok counts as read-only.
         assertEquals(GROK_QUICK_DENIED, args.withIndex().filter { it.value == "--deny" }.map { args[it.index + 1] })
         assertEquals(listOf("MCPTool", "Edit", "Write", "Bash(mkdir*)", "Bash(touch*)"), GROK_QUICK_DENIED)
