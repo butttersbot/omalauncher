@@ -277,9 +277,10 @@
             </intent-filter>
         </activity>
         <!-- "Add to a panel" in the share sheet: one picture or GIF into a manga panel (art/ArtActivities.kt). Shows nothing. -->
+        <!-- Not noHistory: it finishes itself once the copy is done, and finishing early would take back the grant to read it. -->
         <activity android:name=".art.ArtShareActivity" android:exported="true" android:label="Add to a panel"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true"
-            android:noHistory="true" android:taskAffinity="">
+            android:taskAffinity="">
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />

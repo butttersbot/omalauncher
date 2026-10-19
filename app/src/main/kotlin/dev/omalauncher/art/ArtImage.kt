@@ -169,7 +169,8 @@ private fun decode(
             }
         (drawable as? AnimatedImageDrawable)?.repeatCount = AnimatedImageDrawable.REPEAT_INFINITE
         Decoded(drawable, w.toFloat(), h.toFloat())
-    } catch (e: Exception) {
+    } catch (e: Throwable) {
+        // An out-of-memory error included: a picture that can't be drawn must not take home down with it.
         null
     }
 

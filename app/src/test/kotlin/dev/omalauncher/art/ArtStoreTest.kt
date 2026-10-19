@@ -18,7 +18,7 @@ class ArtStoreTest {
     private var clock = 10L * ArtStore.GRACE_MILLIS
     private val dir get() = File(tmp.root, "art")
 
-    private fun store(decodes: (File) -> Boolean = { true }) = ArtStore(dir, null, null, decodes) { clock }
+    private fun store(bounds: (File, String) -> Pair<Int, Int>? = { _, _ -> 800 to 600 }) = ArtStore(dir, null, { false }, bounds) { clock }
 
     private fun bytes(vararg b: Int) = ByteArray(b.size) { b[it].toByte() }
 
@@ -87,9 +87,30 @@ class ArtStoreTest {
     }
 
     @Test fun refusesWhatThePlatformCannotDecode() {
-        val store = store(decodes = { false })
+        val store = store(bounds = { _, _ -> null })
         assertTrue(refused(store) { png.inputStream() }.contains("can't be opened"))
         assertEquals(emptyList<String>(), leftovers())
+    }
+
+    @Test fun refusesAnAnimationWhoseFramesWouldNotFitInMemory() {
+        // A small file can say it is 20000 pixels square; every frame of an animation is decoded at that size.
+        val store = store(bounds = { _, ext -> if (ext == "gif" || ext == "webp") 20000 to 20000 else 9000 to 9000 })
+        assertTrue(refused(store) { gif.inputStream() }.contains("too big"))
+        assertTrue(refused(store) { webp.inputStream() }.contains("too big"))
+        // A big still photo is decoded scaled down, so it is taken.
+        assertTrue(ArtStore.isId(store.take(jpg)))
+        assertEquals(1, leftovers().size)
+    }
+
+    @Test fun fitsBoundsStillsAndFramesSeparately() {
+        assertTrue(ArtStore.fits("gif", 4000, 4000))
+        assertFalse(ArtStore.fits("gif", 4001, 4000))
+        assertFalse(ArtStore.fits("webp", 8000, 8000))
+        assertTrue(ArtStore.fits("jpg", 8160, 6120))
+        assertTrue(ArtStore.fits("heic", 12000, 9000))
+        assertFalse(ArtStore.fits("png", 20000, 20000))
+        assertFalse(ArtStore.fits("png", 0, 10))
+        assertFalse(ArtStore.fits("png", 10, -1))
     }
 
     @Test fun refusesOverTwentyMegabytesWithoutReadingItAll() {

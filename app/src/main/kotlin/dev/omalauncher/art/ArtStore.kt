@@ -17,16 +17,20 @@ import java.security.SecureRandom
 class ArtStore internal constructor(
     private val dir: File,
     private val resolver: ContentResolver?,
-    private val ownAuthority: String?,
-    /** A second look at a copied file: whether the platform can read it as an image. Tests accept the magic alone. */
-    private val decodes: (File) -> Boolean = { true },
+    /** Whether a content uri is served by Soma itself, which a sharing app must not get it to read. */
+    private val ours: (Uri) -> Boolean,
+    /**
+     * A second look at a copied file of type [String] (its extension): the platform's width and height of it, or null
+     * if it can't read it as an image. Tests have no platform: they give a size or none.
+     */
+    private val bounds: (File, String) -> Pair<Int, Int>? = { _, _ -> 1 to 1 },
     private val now: () -> Long = System::currentTimeMillis,
 ) {
     constructor(context: Context) : this(
         File(context.filesDir, "art"),
         context.contentResolver,
-        context.packageName,
-        decodes = ::boundsDecode,
+        ours = { uri -> isOurs(context, uri) },
+        bounds = { file, _ -> boundsDecode(file) },
     )
 
     /** Why something wasn't taken in, said so Boss can read it. */
@@ -41,7 +45,7 @@ class ArtStore internal constructor(
      */
     fun import(uri: Uri): String {
         if (uri.scheme != ContentResolver.SCHEME_CONTENT) throw Refused("That can't be read.")
-        if (ownAuthority != null && uri.authority?.startsWith(ownAuthority) == true) throw Refused("That can't be read.")
+        if (ours(uri)) throw Refused("That can't be read.")
         val r = resolver ?: throw Refused("That can't be read.")
         return import { r.openInputStream(uri) }
     }
@@ -68,7 +72,8 @@ class ArtStore internal constructor(
                 }
             if (size == 0L) throw Refused("That's empty.")
             val ext = sniff(head(temp)) ?: throw Refused("That isn't a picture or a GIF.")
-            if (!decodes(temp)) throw Refused("That picture can't be opened.")
+            val (w, h) = bounds(temp, ext) ?: throw Refused("That picture can't be opened.")
+            if (!fits(ext, w, h)) throw Refused("That picture is too big to hang.")
             while (true) {
                 val id = hex(ID_LENGTH / 2)
                 if (file(id) != null) continue
@@ -189,11 +194,43 @@ class ArtStore internal constructor(
 
         private fun hex(bytes: Int): String = ByteArray(bytes).also(random::nextBytes).joinToString("") { "%02x".format(it) }
 
-        /** Whether Android reads the file's size as an image's, without decoding its pixels. */
-        private fun boundsDecode(file: File): Boolean {
+        /** The most pixels a still may have: it is decoded scaled down, so only absurd sizes are refused. */
+        const val MAX_STILL_PIXELS = 200L * 1000 * 1000
+
+        /** The most pixels a frame of a GIF or WebP may have: an animation's frames are decoded at full size. */
+        const val MAX_FRAME_PIXELS = 16L * 1000 * 1000
+
+        /** Whether a [w]×[h] picture of type [ext] can be drawn without running the launcher out of memory. */
+        fun fits(
+            ext: String,
+            w: Int,
+            h: Int,
+        ): Boolean {
+            if (w <= 0 || h <= 0) return false
+            val pixels = w.toLong() * h
+            return pixels <= if (ext == "gif" || ext == "webp") MAX_FRAME_PIXELS else MAX_STILL_PIXELS
+        }
+
+        /** Android's width and height of the file as an image, without decoding its pixels; null if it can't read it. */
+        private fun boundsDecode(file: File): Pair<Int, Int>? {
             val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeFile(file.path, options)
-            return options.outWidth > 0 && options.outHeight > 0
+            return if (options.outWidth > 0 && options.outHeight > 0) options.outWidth to options.outHeight else null
+        }
+
+        /**
+         * Whether [uri] is served by this app: its own authorities (after a `user@` prefix, which Android ignores), or
+         * any authority Android says belongs to this package.
+         */
+        @Suppress("DEPRECATION")
+        private fun isOurs(
+            context: Context,
+            uri: Uri,
+        ): Boolean {
+            val authority = uri.authority?.substringAfterLast('@') ?: return true
+            val own = context.packageName
+            if (authority.startsWith(own)) return true
+            return runCatching { context.packageManager.resolveContentProvider(authority, 0)?.packageName == own }.getOrDefault(true)
         }
     }
 }
