@@ -132,8 +132,8 @@ class GrokFrontTest {
 
     @Test fun theGuardLetsThroughOnlyOnePlainListedCommand() {
         val allow = GROK_QUICK_ALLOWED.filter { it.startsWith("Bash(") }.joinToString("\n") { it.removePrefix("Bash(").removeSuffix(")") }
-        for (ok in listOf("oma-phone status", "oma-phone screen --until Settings", "date +%H", "oma status", "oma-phone canvas place needs card top-left --page 'Soma'")) assertEquals(ok, 0, guard(ok, allow))
-        for (no in listOf("python3 -c 'print(1)'", "ls", "oma-phone press OK", "date; rm -rf /", "date && id", "date \$(id)", "date `id`", "oma-phone status | sh", "oma status > /root/x", "date\nid", "oma-agents stop", "")) assertEquals(no, 2, guard(no, allow))
+        for (ok in listOf("oma-phone status", "oma-phone screen --until Settings", "date +%H", "oma status", "oma-phone canvas place needs card top-left --page 'Soma'", "ls", "ls -la /root", "pwd")) assertEquals(ok, 0, guard(ok, allow))
+        for (no in listOf("python3 -c 'print(1)'", "ls; id", "pwd -P && id", "oma-phone press OK", "date; rm -rf /", "date && id", "date \$(id)", "date `id`", "oma-phone status | sh", "oma status > /root/x", "date\nid", "oma-agents stop", "")) assertEquals(no, 2, guard(no, allow))
         // The X helper's question may hold any text the shell doesn't read inside double quotes (critic: "Q&A", "(Anthropic)").
         for (ok in listOf("grokbot x \"Q&A on SpaceX & Tesla (Claude) today; top 3 | links\"", "grokbot x \"what's new from @xai\"")) assertEquals(ok, 0, guard(ok, allow))
         for (no in listOf("grokbot x \"\$TSLA\"", "grokbot x \"a\" ; rm -rf ~ ; \"b\"", "grokbot x \"`id`\"", "grokbot x \"a\\\"\"", "grokbot x \"\"", "grokbot x 'single'; id")) assertEquals(no, 2, guard(no, allow))

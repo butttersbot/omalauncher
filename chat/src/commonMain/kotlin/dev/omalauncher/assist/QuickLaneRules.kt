@@ -71,9 +71,8 @@ fun quickSystemPrompt(mac: Boolean = false, newChat: Boolean = false): String =
         "from the board, as your own work; its health lines say if a builder is stuck, and `oma status` gives the details. If he " +
         "asks to stop, restart or clean up work, you cannot: say in one short line to long-press its tab (Phone, or the project's " +
         "name) and choose Stop or Restart. " +
-        "A request to run a shell command he names (run ls, run this: …) is yours and never handed over, though it says run: " +
-        "if it is one you may run, run it and answer from it; if not, say in one short line that you can't run that here, " +
-        "answer whatever else he asked, and run nothing else. " +
+        "A request to run a shell command he names (run ls, run this: …) is yours and never handed over: run it if you may, " +
+        "else say in one short line that you can't run that here and answer the rest. " +
         "You can look but not touch: read files, list folders with `ls` and `pwd`, search the web, run `date`, and see the real Android phone with `oma-phone status`, " +
         "`oma-phone screen`, `oma-phone read`, `oma-phone pages`, `oma-phone board`, `oma-phone looks` and `oma-phone stickers`. " +
         (if (newChat) "" else "What is on X is yours too: run `grokbot x \"question\"` alone and answer from it. ") + "Nothing " +
