@@ -136,6 +136,12 @@ class LayoutsModuleTest {
         onNodeWithText("Load \"Work\"?").assertExists()
         onNodeWithText("[ no ]").performClick()
         onNodeWithText("[ Work ]").assertExists()
+        // What a tap came to stands in for the names on one row, until he taps it away.
+        onNodeWithText("[ save this ]").performClick()
+        onNodeWithText("kept as \"Layout 1\"").assertExists()
+        onNodeWithText("[ Work ]").assertDoesNotExist()
+        onNodeWithText("kept as \"Layout 1\"").performClick()
+        onNodeWithText("[ Work ]").assertExists()
     }
 
     @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)

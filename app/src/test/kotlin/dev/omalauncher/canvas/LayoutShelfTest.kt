@@ -241,8 +241,9 @@ class LayoutShelfTest {
             NotebookItem("a.owl", ItemKind.Widget, Cell(0, 2, 6, 2)),
         ))))
         val plan = loadPlan(turned, s.get("Ring")!!.notebook()!!)
-        assertTrue(plan.verbs.any { it is CanvasVerb.PageMake && it.id == PARK_PAGE })
-        assertEquals(CanvasVerb.PageRemove(PARK_PAGE), plan.verbs.last())
+        val park = plan.verbs.filterIsInstance<CanvasVerb.PageMake>().single { it.name == PARK_PAGE_NAME }
+        assertEquals("p2", park.id)
+        assertEquals(CanvasVerb.PageRemove(park.id), plan.verbs.last())
         val pad = Pad(turned).withLayouts(s)
         assertTrue(run(pad, "layout.load Ring").getBoolean("ok"))
         assertEquals(shape(three), shape(pad.notebook()))
@@ -385,5 +386,15 @@ class LayoutShelfTest {
         // And into Manga again: the art is put back in its panel.
         assertTrue(run(pad, "layout.load Manga").getBoolean("ok"))
         assertEquals(listOf(Triple(art, ItemKind.Art, Cell(0, 0, 6, 3))), pad.notebook().pages[2].items.map { Triple(it.key, it.kind, it.cell) })
+    }
+
+    @Test fun aThingHomeHasntPlacedYetIsLeftAloneAndSaid() {
+        val s = shelf()
+        s.save("Work", home)
+        // The clock is on home but waits for its cells (a widget file adopted for a page not drawn yet).
+        val waiting = home.copy(pages = home.pages.map { p -> p.copy(items = p.items.map { if (it.key == "clock.owl") it.copy(cell = null) else it }) })
+        val plan = loadPlan(waiting, s.get("Work")!!.notebook()!!)
+        assertTrue(plan.left.toString(), plan.left.contains("clock.owl (it waits for its place on home)"))
+        assertTrue(plan.verbs.none { (it as? CanvasVerb.Move)?.key == "clock.owl" || (it as? CanvasVerb.Remove)?.key == "clock.owl" })
     }
 }

@@ -78,7 +78,7 @@ class FoldLayoutsTest {
         ink = home.notebook.pages.last().id
         assertTrue(home.run("place pocket card --page Sketch").getBoolean("ok"))
         val did = home.run("layout.load Work").getString("did")
-        assertTrue(did, did.contains("the page \"Sketch\" stays"))
+        assertTrue(did, did.contains("left: the page \"Sketch\" has notes, stickers or ink on it, so it stays;"))
         assertEquals(shape(saved) + ("Sketch" to emptySet<Pair<String, Cell?>>()), home.shape())
     }
 
@@ -98,5 +98,47 @@ class FoldLayoutsTest {
         val closed = LayoutsSource(home.shelf, pad = { null }).load("Work")
         assertFalse(closed.ok)
         assertTrue(closed.text, closed.text.contains("still loading"))
+    }
+
+    /** Critic round 1: a page made again took a fresh number that a later page of the layout had, and the load stopped partway. */
+    @Test fun pagesMadeAgainKeepTheirIdsSoNoneMeetsAnother() {
+        val three = Notebook(rows = 8, pages = listOf(
+            NotebookPage("p1", "One", listOf(NotebookItem("a.owl", ItemKind.Widget, Cell(0, 0, 2, 2)))),
+            NotebookPage("p2", "Two", listOf(NotebookItem(needs, ItemKind.Module, Cell(0, 0, 3, 2)))),
+            NotebookPage("p3", "Three", listOf(NotebookItem(threads, ItemKind.Module, Cell(0, 0, 3, 2)))),
+        ))
+        for (kept in listOf(listOf("p2"), listOf("p3"), listOf("p1"))) {
+            val home = Home(three.copy(pages = three.pages.filter { it.id in kept }))
+            home.shelf.save("Three", three)
+            val loaded = home.run("layout.load Three")
+            assertTrue("$kept: $loaded", loaded.getBoolean("ok"))
+            assertEquals(shape(three), home.shape())
+            assertEquals(listOf("p1", "p2", "p3"), home.notebook.pages.map { it.id })
+            assertTrue(home.run("undo").getBoolean("ok"))
+            assertEquals(kept, home.notebook.pages.map { it.id })
+        }
+        // Saved in another order than home's numbers: still laid whole.
+        val home = Home(three.copy(pages = three.pages.take(1)))
+        home.shelf.save("Odd", three.copy(pages = listOf(three.pages[0], three.pages[2], three.pages[1])))
+        assertTrue(home.run("layout.load Odd").getBoolean("ok"))
+        assertEquals(listOf("One", "Three", "Two"), home.notebook.pages.map { it.name })
+    }
+
+    /** Critic round 1: undoing a load that took two pages away stopped partway, and asked again it lost a module. */
+    @Test fun undoingALoadThatTookPagesAwayBringsEachBackWithWhatWasOnIt() {
+        val pocket = moduleKey(ModuleKind.Pocket)!!
+        val start = Notebook(rows = 8, pages = listOf(
+            NotebookPage("p1", "A", listOf(NotebookItem("a.owl", ItemKind.Widget, Cell(0, 0, 2, 2)))),
+            NotebookPage("p2", "B", listOf(NotebookItem(threads, ItemKind.Module, Cell(0, 0, 3, 2)))),
+            NotebookPage("p3", "C", listOf(NotebookItem(pocket, ItemKind.Module, Cell(0, 0, 3, 2)))),
+        ))
+        val home = Home(start)
+        home.shelf.save("Only A", start.copy(pages = start.pages.take(1)))
+        assertTrue(home.run("layout.load Only A").getBoolean("ok"))
+        assertEquals(listOf("A"), home.notebook.pages.map { it.name })
+        val undo = home.run("undo")
+        assertTrue(undo.toString(), undo.getBoolean("ok") && !undo.getString("did").contains("left"))
+        assertEquals(shape(start), home.shape())
+        assertEquals(listOf("p1", "p2", "p3"), home.notebook.pages.map { it.id })
     }
 }

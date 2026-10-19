@@ -144,7 +144,10 @@ class LayoutShelf(
         if (plan.verbs.isNotEmpty()) pad.apply(plan.verbs, request, actor)?.let { refuse("It stopped partway: $it. What came before that stays, and undo takes it back.") }
         val left = plan.left.toMutableList()
         // One by one, so a page that stays (his ink is on it) never stops the rest; all in the same restore point.
-        for (r in plan.removals) pad.apply(listOf(r), request, actor)?.let { left += "the page \"${pageName(plan, r.id)}\" stays: $it" }
+        for (r in plan.removals) pad.apply(listOf(r), request, actor)?.let { why ->
+            val page = "the page \"${pageName(plan, r.id)}\""
+            left += if (page in why) why else "$page stays: $why"
+        }
         val look = saved.look?.let { " (saved in the look \"$it\")" }.orEmpty()
         return "laid out the layout \"${saved.name}\"$look" + if (left.isEmpty()) "" else "; left: " + left.joinToString("; ")
     }
@@ -201,11 +204,17 @@ class LayoutShelf(
  */
 data class LoadPlan(val verbs: List<CanvasVerb>, val removals: List<CanvasVerb.PageRemove>, val left: List<String>, val names: Map<String, String> = emptyMap())
 
-/** The id asked for a page that holds what is moved out of the way while the rest is laid (taken away again at the end). */
-const val PARK_PAGE = "layout-moving"
+/** The name of the page that holds what is moved out of the way while the rest is laid (taken away again at the end). */
+const val PARK_PAGE_NAME = "Moving"
 
-/** The id asked for a page made for apps and folders the layout doesn't have and home has no room for. */
-const val KEPT_PAGE = "layout-kept"
+/** The name of the page made for apps and folders the layout doesn't have and home has no room for. */
+const val KEPT_PAGE_NAME = "Kept"
+
+/** A page id ("pN") that neither [now] nor [want] has: a page the load makes for itself never takes one the layout needs. */
+private fun freePageId(now: Notebook, want: Notebook): String {
+    val taken = (now.pages + want.pages).map { it.id }.toSet()
+    return generateSequence(1) { it + 1 }.map { "p$it" }.first { it !in taken }
+}
 
 /**
  * The exact verbs that make [now] the layout [want]: its pages made or renamed, each thing put back in its cell on its page,
@@ -226,6 +235,9 @@ fun loadPlan(now: Notebook, want: Notebook): LoadPlan {
     }
     fun items(of: Notebook) = of.pages.flatMap { p -> p.items.map { it.key to (p.id to it) } }.toMap()
     val had = items(now)
+    // Asked for once, so the page it names is the same throughout; made only when needed.
+    val parkPage = freePageId(now, want)
+    val keptPage = freePageId(now.copy(pages = now.pages + dev.omalauncher.widgets.layout.NotebookPage(parkPage, "")), want)
 
     // The pages, in the layout's order: one it has that home doesn't is made after the one before it.
     want.pages.forEachIndexed { i, p ->
@@ -242,6 +254,8 @@ fun loadPlan(now: Notebook, want: Notebook): LoadPlan {
         val here = had[item.key]?.second
         when {
             here != null && here.kind != item.kind -> left += "${label(item)} (it is a ${here.kind.name.lowercase()} here now)"
+            // One home hasn't placed yet is home's own business until it lands: moved by a load, an undo would forget it.
+            here != null && here.cell == null -> left += "${label(item)} (it waits for its place on home)"
             here == null && (item.kind == ItemKind.App || item.kind == ItemKind.Folder) -> left += "${label(item)} (no longer on home)"
             cell.x < 0 || cell.y < 0 || cell.right > n.columns || cell.bottom > n.rows -> left += "${label(item)} (its cells are off this grid)"
             taken[p.id].orEmpty().any { it.overlaps(cell) } -> left += "${label(item)} (its cells overlap another's)"
@@ -263,8 +277,8 @@ fun loadPlan(now: Notebook, want: Notebook): LoadPlan {
         val spot = (listOf(page).filter { it in wantPages } + want.pages.map { it.id }).distinct().firstNotNullOfOrNull { p ->
             firstFit(cell.w, cell.h, taken[p].orEmpty(), n.columns, n.rows)?.let { p to it }
         } ?: run {
-            if (n.pages.none { it.id == KEPT_PAGE }) { take(CanvasVerb.PageMake(KEPT_PAGE, "Kept", want.pages.lastOrNull()?.id)); names[KEPT_PAGE] = "Kept" }
-            firstFit(cell.w, cell.h, taken[KEPT_PAGE].orEmpty(), n.columns, n.rows)?.let { KEPT_PAGE to it }
+            if (n.pages.none { it.id == keptPage }) { take(CanvasVerb.PageMake(keptPage, KEPT_PAGE_NAME, want.pages.lastOrNull()?.id)); names[keptPage] = KEPT_PAGE_NAME }
+            firstFit(cell.w, cell.h, taken[keptPage].orEmpty(), n.columns, n.rows)?.let { keptPage to it }
         }
         if (spot == null) { left += "${label(item)} (no room for it)"; continue }
         target[key] = spot
@@ -292,22 +306,22 @@ fun loadPlan(now: Notebook, want: Notebook): LoadPlan {
             pending.firstOrNull { other -> other != key && now2[other]?.let { (p, i) -> p == page && i.cell?.overlaps(cell) == true } == true }
         }
         val moved = blocker?.let { b ->
-            if (n.pages.none { it.id == PARK_PAGE }) take(CanvasVerb.PageMake(PARK_PAGE, "Moving", null))
+            if (n.pages.none { it.id == parkPage }) take(CanvasVerb.PageMake(parkPage, PARK_PAGE_NAME, null))
             val c = now2.getValue(b).second.cell!!
-            val spot = firstFit(c.w, c.h, n.pages.first { it.id == PARK_PAGE }.items.mapNotNull { it.cell }, n.columns, n.rows)
-            spot != null && take(CanvasVerb.Move(b, PARK_PAGE, spot))
+            val spot = firstFit(c.w, c.h, n.pages.first { it.id == parkPage }.items.mapNotNull { it.cell }, n.columns, n.rows)
+            spot != null && take(CanvasVerb.Move(b, parkPage, spot))
         } ?: false
         if (!moved) {
             pending.forEach { key -> left += "${label(had[key]?.second ?: NotebookItem(key, ItemKind.Widget, null))} (its cells stay taken)" }
             break
         }
     }
-    if (n.pages.any { it.id == PARK_PAGE }) {
-        if (n.pages.first { it.id == PARK_PAGE }.items.isEmpty()) take(CanvasVerb.PageRemove(PARK_PAGE)) else names[PARK_PAGE] = "Moving"
+    if (n.pages.any { it.id == parkPage }) {
+        if (n.pages.first { it.id == parkPage }.items.isEmpty()) take(CanvasVerb.PageRemove(parkPage)) else names[parkPage] = PARK_PAGE_NAME
     }
 
     // The pages the layout doesn't have, emptied above; one that isn't empty stays, and is said.
-    val removals = n.pages.filter { it.id !in wantPages && it.id != PARK_PAGE && it.id != KEPT_PAGE }.mapNotNull { p ->
+    val removals = n.pages.filter { it.id !in wantPages && it.id != parkPage && it.id != keptPage }.mapNotNull { p ->
         if (p.items.isEmpty()) CanvasVerb.PageRemove(p.id) else { left += "the page \"${p.name}\" stays: things are still on it"; null }
     }
     // A verb can't change the order of pages already there: said, never forced (a page's ink goes by its id).

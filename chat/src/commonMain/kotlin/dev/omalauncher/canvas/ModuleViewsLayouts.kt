@@ -115,12 +115,13 @@ fun LayoutsModule(source: LayoutsSource?, size: ModuleSize, now: Long, modifier:
             armed != null -> Confirm(armed!!, inline = size == ModuleSize.Line, onYes = { name -> tap { source.load(name) } }, onNo = { armed = null })
             size == ModuleSize.Line -> Row(verticalAlignment = Alignment.CenterVertically) {
                 ModuleButton("save this", Pack.accent) { tap { source.save() } }
-                said?.let { Note(it, Modifier.weight(1f)) } ?: Box(Modifier.weight(1f)) {
+                // What a tap came to stands in for the names until he taps it away (critic: the line had no way back).
+                said?.let { Note(it, Modifier.weight(1f)) { said = null } } ?: Box(Modifier.weight(1f)) {
                     FitAcross(layouts.size, gap = 4.dp) { i -> ModuleButton(layouts[i].name, Pack.foreground) { ask(layouts[i].name) } }
                 }
             }
             else -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                said?.let { Note(it) }
+                said?.let { Note(it) { said = null } }
                 Box(Modifier.weight(1f).fillMaxWidth()) {
                     if (layouts.isEmpty()) BasicText("Nothing saved yet: save this home to come back to it.", style = Pack.body(color = Pack.muted))
                     else FitRows(layouts.size, keyOf = { layouts[it].name }) { i -> LayoutRow(layouts[i]) { ask(layouts[i].name) } }
@@ -191,7 +192,8 @@ private fun Confirm(name: String, inline: Boolean, onYes: (String) -> Unit, onNo
     }
 }
 
+/** What a tap came to; tapping it puts it away. */
 @Composable
-private fun Note(said: LayoutsSource.Said, modifier: Modifier = Modifier) {
-    BasicText(said.text, modifier, style = Pack.mono(Pack.size.small, if (said.ok) Pack.muted else Pack.red), maxLines = 2, overflow = TextOverflow.Ellipsis)
+private fun Note(said: LayoutsSource.Said, modifier: Modifier = Modifier, onDismiss: () -> Unit) {
+    BasicText(said.text, modifier.clickable(onClick = onDismiss), style = Pack.mono(Pack.size.small, if (said.ok) Pack.muted else Pack.red), maxLines = 2, overflow = TextOverflow.Ellipsis)
 }

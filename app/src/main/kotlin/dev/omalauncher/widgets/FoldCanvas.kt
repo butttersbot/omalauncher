@@ -90,6 +90,10 @@ class FoldCanvasPad(
             if (!check.applied) return check.why
             when (v) {
                 is CanvasVerb.PageMake -> {
+                    // By the id asked for, free on home (checked just above): a page an undo or a saved layout brings back is the
+                    // page it was, and a later verb naming another's old id never meets one home numbered meanwhile (layouts review).
+                    if (pageName(v.name) == null) return "that is not a name a page can have"
+                    if (notebook.addPageWithId(v.id, v.name, v.after)) { done += v; continue }
                     val id = addPage() ?: return "home can't take a new page now"
                     ids[v.id] = id
                     if (!notebook.renamePage(id, v.name)) { notebook.withdrawPage(id); return "that is not a name a page can have" }
