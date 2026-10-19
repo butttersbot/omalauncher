@@ -21,5 +21,7 @@ class App : Application() {
         dev.omalauncher.assist.AppExits.record(this)
         // Home's layout with the canvas service's copy of it, when a Mac says it runs one (Soma Canvas slice 8b).
         dev.omalauncher.widgets.FoldSyncJob.start(this)
+        // Home's saved layouts for the Layouts module, and how art is printed in the Manga look (piece D).
+        dev.omalauncher.widgets.FoldLayouts.install(this)
     }
 }

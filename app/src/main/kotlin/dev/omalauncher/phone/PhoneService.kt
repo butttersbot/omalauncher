@@ -371,24 +371,8 @@ class PhoneService : AccessibilityService() {
         // An empty page has nothing to move: its still goes with it, as when it is deleted in the overview.
         override fun delete(page: String) = runtime.widgets.deletePage(page, move = true)?.also { runtime.pageStills.drop(page) } != null
     }
-    /** Home's modules for the canvas command, changed through the notebook as the overview and a drag change them. */
-    private fun canvasPad(): dev.omalauncher.canvas.CanvasPad {
-        val runtime = (application as dev.omalauncher.App).runtime
-        return dev.omalauncher.widgets.FoldCanvasPad(
-            runtime.widgets.notebook,
-            addPage = { runtime.widgets.addPage() },
-            // Only a page of modules comes here: they go with it, and its still too, as when it is deleted in the overview.
-            removePage = { page -> runtime.widgets.deletePage(page, move = false)?.also { runtime.pageStills.drop(page) } != null },
-            points = dev.omalauncher.widgets.foldRestorePoints(this),
-            undoneHere = { request, verbs -> dev.omalauncher.widgets.foldUndonePending(this).add(request, verbs) },
-            // Not read yet counts as marked: asked again in a moment, the page will have been read.
-            marked = { page ->
-                val book = dev.omalauncher.widgets.annotations.HomeAnnotations.of(this)
-                book.whenRead(page) {}
-                book.status(page) != dev.omalauncher.widgets.annotations.AnnotationBook.Status.Ready || !book.on(page).isEmpty
-            },
-        )
-    }
+    /** Home's modules for the canvas command, with its saved layouts: the pad the Layouts module loads through too. */
+    private fun canvasPad(): dev.omalauncher.canvas.CanvasPad = dev.omalauncher.widgets.FoldLayouts.pad(this)
     private fun lockStarPad() = object : LockStarPad {
         override val names get() = dev.omalauncher.theme.LockStarShare.names(this@PhoneService)
         override fun capture(name: String) = dev.omalauncher.theme.LockStarShare.capture(this@PhoneService, name)
@@ -594,4 +578,27 @@ class PhoneService : AccessibilityService() {
             reply(output)
         } catch (e: Exception) { reply(JSONObject().put("ok", false).put("error", e.message ?: "Phone control failed")) }
     }
+}
+
+/**
+ * Home's modules for the canvas command, changed through the notebook as the overview and a drag change them: the service's
+ * pad, and the Layouts module's ([dev.omalauncher.widgets.FoldLayouts.pad], with the saved layouts beside it).
+ */
+internal fun homeCanvasPad(context: Context): dev.omalauncher.widgets.FoldCanvasPad {
+    val app = context.applicationContext
+    val runtime = (app as dev.omalauncher.App).runtime
+    return dev.omalauncher.widgets.FoldCanvasPad(
+        runtime.widgets.notebook,
+        addPage = { runtime.widgets.addPage() },
+        // Only a page of modules comes here: they go with it, and its still too, as when it is deleted in the overview.
+        removePage = { page -> runtime.widgets.deletePage(page, move = false)?.also { runtime.pageStills.drop(page) } != null },
+        points = dev.omalauncher.widgets.foldRestorePoints(app),
+        undoneHere = { request, verbs -> dev.omalauncher.widgets.foldUndonePending(app).add(request, verbs) },
+        // Not read yet counts as marked: asked again in a moment, the page will have been read.
+        marked = { page ->
+            val book = dev.omalauncher.widgets.annotations.HomeAnnotations.of(app)
+            book.whenRead(page) {}
+            book.status(page) != dev.omalauncher.widgets.annotations.AnnotationBook.Status.Ready || !book.on(page).isEmpty
+        },
+    )
 }

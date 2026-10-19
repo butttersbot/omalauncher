@@ -36,6 +36,7 @@ enum class ModuleKind(val id: String, val title: String, val blurb: String, val 
     Handoff("handoff", "Handoff", "A project's handoff: where things stand, and next.", 3 to 3, perProject = true),
     Project("project", "Project", "A project's threads and its next step.", 3 to 2, perProject = true),
     Chat("chat", "Chat", "The chat itself.", 3 to 4, chatScreen = true),
+    Layouts("layouts", "Layouts", "Saved layouts of home: tap one to load it, or save this one; how art is printed.", 3 to 2),
     ;
 
     companion object { fun of(id: String) = entries.firstOrNull { it.id == id } }
@@ -104,6 +105,7 @@ fun ModuleView(ref: ModuleRef, size: ModuleSize, source: ModuleSource, now: Long
         ModuleKind.Project -> ProjectModule(source.project(ref.project.orEmpty()), size, modifier, onOpen = onOpen)
         // The chat is drawn by the screen it is on, which has the chat's host; here it is only its place.
         ModuleKind.Chat -> androidx.compose.foundation.layout.Box(modifier)
+        ModuleKind.Layouts -> LayoutsModule(Layouts.here, size, now, modifier)
     }
 }
 

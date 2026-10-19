@@ -616,6 +616,7 @@ object CanvasCommands {
 
     /** Runs [words] against [pad] as part of [request] from [actor] ("agent:front", "agent:<thread>"). */
     fun run(words: List<String>, pad: CanvasPad, request: String, actor: String, shelf: CanvasShelf? = null): JSONObject = try {
+        layoutWords(words, pad, request, actor) ?:
         templateWords(words, pad, shelf, request, actor) ?: when (words.firstOrNull()) {
             "board" -> boardJson(pad.notebook(), pad.rules, words.drop(1).joinToString(" ").ifBlank { null })
             "modules" -> modulesJson()

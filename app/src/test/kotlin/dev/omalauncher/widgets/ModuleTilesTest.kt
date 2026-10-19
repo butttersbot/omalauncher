@@ -51,7 +51,7 @@ class ModuleTilesTest {
         assertEquals(offered.map { it.key }.distinct(), offered.map { it.key })
         assertTrue(offered.any { it.key == "module:project:pond" && it.name == "project · pond" })
         assertTrue(offered.none { "bad" in it.key })
-        assertEquals(listOf("Needs you", "Threads", "Computers", "Timeline", "New thread", "Sessions", "Pocket"), storeModules(emptyList()).map { it.name })
+        assertEquals(listOf("Needs you", "Threads", "Computers", "Timeline", "New thread", "Sessions", "Pocket", "Layouts"), storeModules(emptyList()).map { it.name })
     }
 
     @Test fun aModuleIsKeptInTheSavedNotebookAsAModule() {

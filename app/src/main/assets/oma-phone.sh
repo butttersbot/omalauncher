@@ -18,7 +18,7 @@ oma-phone page-add [NAME] | page-rename NAME --to NEW NAME | page-delete NAME
 oma-phone board [PAGE NAME]
 oma-phone looks | look NAME
 oma-phone widget-install FILE.owl
-oma-phone canvas help | board [PAGE] | modules | place MODULE [SIZE] [WHERE] [--page NAME] | move | resize | remove | page-make | undo
+oma-phone canvas help | board [PAGE] | modules | place MODULE [SIZE] [WHERE] [--page NAME] | move | resize | remove | page-make | undo | layout.*
 oma-phone lockstar [capture NAME | apply NAME]
 oma-phone note [--near COL,ROW] TEXT
 oma-phone stickers
@@ -161,12 +161,14 @@ oma-phone canvas modules            the modules there are, the sizes and the pla
 oma-phone canvas page-make NAME     a new page after the last
 oma-phone canvas page-rename NAME --to NEW | page-remove NAME (a page of modules only)
 oma-phone canvas place MODULE [SIZE] [WHERE] [--page NAME]
-    MODULE: needs, threads, computers, timeline, newthread, sessions, pocket, project:NAME, handoff:NAME
+    MODULE: needs, threads, computers, timeline, newthread, sessions, pocket, layouts, project:NAME, handoff:NAME
     SIZE: dot, line, card, card-wide, card-big, full. WHERE: top-left, top-right, bottom-left, bottom-right,
     top, bottom, any, or right-of/left-of/below/above MODULE. Home finds the cells: the spot asked for, a
     little smaller if need be, then anywhere on that page, then the next page with room, then a new page.
 oma-phone canvas move MODULE WHERE [--page NAME] | resize MODULE SIZE | remove MODULE
 oma-phone canvas undo               takes back the last arrangement an agent made, whole
+oma-phone canvas layout.list | layout.save NAME [--replace] | layout.load NAME | layout.delete NAME | layout.rename NAME --to NEW
+    saved layouts of the whole home; loading one is one change that undo takes back. Only when he asks.
 Run board first. Arrange only what the user asked; the answer says what was done.
 CANVAS
     exit 0
