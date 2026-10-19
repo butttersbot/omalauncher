@@ -91,6 +91,16 @@ class QuickLaneTest {
         for (acting in listOf("click", "fill", "tap", "swipe", "type", "scroll", "page-add", "stick ", "look NAME", "oma-phone press", "oma-phone note", "oma-phone open")) assertFalse(acting, told.contains(acting))
     }
 
+    /** Boss, 2026-10-19: "run ls for me" went to a phone builder, which ran it; it was supposed to be the front agent's. */
+    @Test fun aCommandHeNamesIsTheFrontAgentsToRunOrRefuse() {
+        val told = quickSystemPrompt()
+        assertTrue(told.contains("A request to run a shell command he names (run ls, run this: …) is yours and never handed over"))
+        assertTrue(told.contains("say in one short line that you can't run that here"))
+        assertTrue(told.contains("list folders with `ls` and `pwd`"))
+        for (look in listOf("Bash(ls)", "Bash(ls *)", "Bash(pwd)")) assertTrue(look, look in QUICK_ALLOWED)
+        assertTrue(QUICK_ALLOWED.none { it == "Bash(ls*)" || it == "Bash(pwd*)" })
+    }
+
     @Test fun itIsToldEachReasonToHandOverAndHow() {
         val told = quickSystemPrompt()
         assertTrue(told.contains("reply with the single line <<build>> and nothing else"))
