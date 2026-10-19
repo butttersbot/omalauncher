@@ -122,7 +122,7 @@ fun FilesScreen(
         }
     }
 
-    fun edit(entry: GuestEntry) = runtime.terminal("micro ${shellQuote(entry.path)}", entry.name)
+    fun edit(entry: GuestEntry) = runtime.edit(entry.path)
 
     fun open(entry: GuestEntry) {
         if (entry.isDir) return navigate(fs.resolve(entry.path))
@@ -223,6 +223,7 @@ fun FilesScreen(
                         if (menuOpen) {
                             MenuPopup(
                                 listOf(
+                                    "new file" to { dialog = FileDialog.NewFile },
                                     "new folder" to { dialog = FileDialog.NewFolder },
                                     (if (showHidden) "hide hidden files" else "show hidden files") to { showHidden = !showHidden },
                                     "open terminal here" to { runtime.terminal("cd ${shellQuote(path)} && exec bash", "Terminal") },
@@ -290,6 +291,16 @@ fun FilesScreen(
 
     when (val d = dialog) {
         null -> {}
+        FileDialog.NewFile ->
+            TextDialog("new file", "", "create", onDismiss = { dialog = null }) { name ->
+                dialog = null
+                scope.launch {
+                    val created = withContext(Dispatchers.IO) { runCatching { fs.createFile(path, name) } }
+                    created.exceptionOrNull()?.let { toast(it.message ?: "failed") }
+                    reload++
+                    created.getOrNull()?.let { runtime.edit(it) }
+                }
+            }
         FileDialog.NewFolder ->
             TextDialog("new folder", "", "create", onDismiss = { dialog = null }) { name ->
                 dialog = null
@@ -311,6 +322,8 @@ fun FilesScreen(
 }
 
 private sealed interface FileDialog {
+    data object NewFile : FileDialog
+
     data object NewFolder : FileDialog
 
     data class Rename(
