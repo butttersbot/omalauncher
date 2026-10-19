@@ -149,7 +149,7 @@ internal fun prototypeUnit(widthDp: Float, heightDp: Float): Float {
 /**
  * The listening screen: the paper laid over whatever is underneath, the words handwritten bottom left as
  * they are heard, and an underlined way out. [look] null is the screen going away; it fades as it came.
- * A tap on the paper is [ListeningAct.Cancel]. With [onDim] the host lays the paper itself (a window does,
+ * A tap on the paper is [onAway], [ListeningAct.Cancel] unless the host says otherwise. With [onDim] the host lays the paper itself (a window does,
  * so it reaches under the system bars) and is told how much of it to show. [onEdit] is told the words as he
  * changes them by hand, while they wait for his go.
  */
@@ -161,6 +161,7 @@ internal fun ListeningLayer(
     onNote: () -> Unit = {},
     onDim: ((Float) -> Unit)? = null,
     onEdit: (String) -> Unit = {},
+    onAway: () -> Unit = { onAct(ListeningAct.Cancel) },
 ) {
     var last by remember { mutableStateOf(look) }
     if (look != null) last = look
@@ -177,7 +178,7 @@ internal fun ListeningLayer(
             .then(if (onDim == null) Modifier.background(Pack.paper.copy(alpha = dim)) else Modifier)
             .then(
                 // Gone, it takes no touch: what is underneath is back in reach while the paper is still lifting.
-                if (shown) Modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClickLabel = "Cancel") { onAct(ListeningAct.Cancel) } else Modifier,
+                if (shown) Modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClickLabel = if (showing.acts == listOf(ListeningAct.Cancel)) "Stop" else "Cancel") { onAway() } else Modifier,
             ),
     ) {
         val u = prototypeUnit(maxWidth.value, maxHeight.value)

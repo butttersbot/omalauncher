@@ -185,7 +185,7 @@ class ListeningHost(private val owner: Context, private val dismiss: () -> Unit)
                 // The recognizer can fail without a word: that is a problem to show, not a silence.
                 val failed = speech.error
                 LaunchedEffect(failed) { if (failed != null) spoke("") }
-                ListeningLayer(look, ::act, onNote = { showScreen(ScreenContext.None, null); onScreenLetGo?.invoke() }, onDim = { paper.color = Pack.paper.copy(alpha = it).toArgb() }, onEdit = { text -> request = request?.edited(text) })
+                ListeningLayer(look, ::act, onNote = { showScreen(ScreenContext.None, null); onScreenLetGo?.invoke() }, onDim = { paper.color = Pack.paper.copy(alpha = it).toArgb() }, onEdit = { text -> request = request?.edited(text) }, onAway = ::away)
             }
         }, LayoutParams(-1, -1))
     }
@@ -284,6 +284,15 @@ class ListeningHost(private val owner: Context, private val dismiss: () -> Unit)
                 dismiss() // VoiceInteractionSession otherwise stays above the activity's modal.
             }
         }
+    }
+
+    /**
+     * A tap on the paper. While it listens, it stops the recording and keeps what was heard, which then waits for his
+     * go as at a pause (Boss, 2026-10-19: "click away to stop the recording manually"); the Cancel link still drops it.
+     * Anywhere else it cancels, as before.
+     */
+    private fun away() {
+        if (request?.phase == ListeningPhase.Listening) speech.stop() else act(ListeningAct.Cancel)
     }
 
     /** Lifts the paper, then closes the window under it. */
