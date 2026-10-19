@@ -684,3 +684,17 @@ fun routingCorrection(time: Long, request: String, was: String = FRONT_ANSWERED)
 
 /** The log with [line] added, keeping the newest [ROUTING_LOG_LINES]. */
 fun routingLog(lines: List<String>, line: String): List<String> = (lines.filter { it.isNotBlank() } + line).takeLast(ROUTING_LOG_LINES)
+
+/** Words of a request for a secret: a sign-in file, a key, a token, a password. */
+private val SECRETS = Regex(
+    "auth\\.json|\\.ssh\\b|id_(rsa|ed25519|ecdsa)|\\.netrc|\\b(tokens?|passwords?|passwd|credentials?|secrets?|api[ _-]?keys?|private[ _-]?keys?)\\b",
+    RegexOption.IGNORE_CASE,
+)
+
+/**
+ * Whether `[ send to build ]` is offered under the front agent's answer to [task] (Mac main session, 2026-10-19): not for
+ * a request for a secret, which the front agent refuses and a builder, which can read files, must not be handed; and not
+ * for agent mail, whose words are a peer's and would reach a builder as his.
+ */
+fun sendToBuildOffered(task: dev.omalauncher.oma.ChatTask) =
+    task.chat.isEmpty() && task.mail.isEmpty() && !SECRETS.containsMatchIn(task.prompt)

@@ -96,6 +96,7 @@ import dev.omalauncher.assist.BuilderId
 import dev.omalauncher.assist.builderApprovalTitle
 import dev.omalauncher.assist.builderId
 import dev.omalauncher.assist.chatRetried
+import dev.omalauncher.assist.sendToBuildOffered
 import dev.omalauncher.assist.macApprovalDetail
 import dev.omalauncher.assist.macApprovalNotice
 import dev.omalauncher.assist.macBackgroundLine
@@ -319,7 +320,7 @@ private fun ChatScreen(
      * Only the Oma stream's answers have it: a new chat's work is never the phone's.
      */
     fun sendToBuild(time: Long) {
-        val marked = host.tasks().firstOrNull { it.time == time }?.takeIf { it.chat.isEmpty() }?.let(ChatHistory::sentToBuild) ?: return
+        val marked = host.tasks().firstOrNull { it.time == time }?.takeIf(::sendToBuildOffered)?.let(ChatHistory::sentToBuild) ?: return
         val said = host.tasks().filter { it.chat.isEmpty() }
         try {
             host.handOverToBuild(marked.prompt, said)
@@ -501,8 +502,9 @@ private fun ChatScreen(
                                 host.stopFront()
                                 tick++
                             },
-                            // A new chat's answers have none: its work is the Mac's, never the phone's.
-                            onBuild = if (task.chat.isEmpty()) ({ sendToBuild(task.time) }) else null,
+                            // A new chat's answers have none: its work is the Mac's, never the phone's. Nor have
+                            // agent mail's or a refused request for a secret's ([sendToBuildOffered]).
+                            onBuild = if (sendToBuildOffered(task)) ({ sendToBuild(task.time) }) else null,
                             // Its words the Mac was out of reach for are Oma's to read again, never the phone's to do.
                             onAgain = if (chatRetried(task) != null) ({
                                 host.askFrontAgain(task.time)
