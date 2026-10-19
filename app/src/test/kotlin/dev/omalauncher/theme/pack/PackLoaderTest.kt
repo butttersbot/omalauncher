@@ -1,6 +1,7 @@
 package dev.omalauncher.theme.pack
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -605,6 +606,171 @@ class PackLoaderTest {
             val load = loadPack(consoleManifest(mapOf("pack.name" to bad)))
             assertEquals("test", load.pack.name)
             assertEquals(mapOf("pack.name" to PackIssue.Kind.Invalid), kinds(load))
+        }
+    }
+    private fun panelKinds(load: PackLoad) = kinds(load).filterKeys { it.startsWith("panels.") }
+
+    /** The Manga look's manifest sets every key of its [panels], each to the mockup's value. */
+    @Test fun readsTheMangaPacksPanels() {
+        val load = PackLoader.load(DirectoryPackSource(moduleFile("src/main/assets/packs/manga")), "manga")
+        assertNull(load.error)
+        assertFalse(load.broken)
+        assertEquals(emptyMap<String, PackIssue.Kind>(), panelKinds(load))
+        val panels = load.pack.panels!!
+        assertEquals("opening", panels.defaultLayout)
+        assertEquals(1.15f, panels.inkWidth, 0f)
+        assertEquals(2.3f, panels.gutterRows, 0f)
+        assertEquals(1.1f, panels.gutterCols, 0f)
+        assertEquals(PanelMargins(left = 2.4f, top = 3f, right = 2.4f, bottom = 4.4f), panels.margins)
+        assertEquals(1.1f, panels.pad, 0f)
+        assertEquals(PackScreentone(dot = 0.85f, spacing = 4.5f, opacity = 0.42f, fade = 0.04f), panels.screentone)
+        assertEquals(ArtPrint.Ink, panels.artPrint)
+        assertEquals(PanelEmpty.Screentone, panels.empty)
+        assertEquals(panels, load.tokens.panels)
+        // Its default layout is one the notebook model has (CONTRACT.md).
+        assertTrue(panels.defaultLayout in PackPanels.LAYOUTS)
+    }
+
+    /** A pack with no [panels] has none, and says nothing about them. */
+    @Test fun noSectionIsNoPanels() {
+        val load = loadPack(consoleManifest())
+        assertNull(load.pack.panels)
+        assertNull(load.tokens.panels)
+        assertTrue(load.issues.none { it.token.startsWith("panels") })
+        assertNull(PackLoader.load(DirectoryPackSource(moduleFile("src/test/resources/packs/dial-up")), "dial-up").pack.panels)
+        // A header the parser can't read hides what is under it, as any section's does.
+        val lost = loadPack(consoleManifest() + "\n[panels\nink_width = 2\n")
+        assertNull(lost.pack.panels)
+        assertTrue(lost.issues.none { it.token.startsWith("panels") })
+    }
+
+    /** A bare [panels] header turns panels on, every key at the mockup's value, each said to be unset as a token would be. */
+    @Test fun anEmptySectionIsTheMockupsPanels() {
+        val load = loadPack(consoleManifest() + "\n[panels]\n")
+        assertNull(load.error)
+        assertEquals(PackPanels.defaults, load.pack.panels)
+        assertEquals(PackPanels.tokens.associate { it.key to PackIssue.Kind.Missing }, panelKinds(load))
+        assertFalse(load.broken)
+        // A subsection alone is the section too, and the keys it doesn't name are the defaults.
+        val margins = loadPack(consoleManifest() + "\n[panels.margins]\nleft = 1\n").pack.panels
+        assertEquals(PackPanels.defaults.copy(margins = PackPanels.defaults.margins.copy(left = 1f)), margins)
+        // The defaults are the mockup's.
+        assertEquals(
+            PackPanels(
+                defaultLayout = "opening",
+                inkWidth = 1.15f,
+                gutterRows = 2.3f,
+                gutterCols = 1.1f,
+                margins = PanelMargins(left = 2.4f, top = 3f, right = 2.4f, bottom = 4.4f),
+                pad = 1.1f,
+                screentone = PackScreentone(dot = 0.85f, spacing = 4.5f, opacity = 0.42f, fade = 0.04f),
+                artPrint = ArtPrint.Ink,
+                empty = PanelEmpty.Screentone,
+            ),
+            PackPanels.defaults,
+        )
+    }
+
+    /** Every key read, and written back by the tokens' manifest so it loads the same again. */
+    @Test fun roundTripsAFullPanelsSection() {
+        val section =
+            "\n[panels]\ndefault_layout = \"Grid6\"\nink_width = 2\ngutter_rows = 3.5\ngutter_cols = 0\npad = 0.5\nart_print = \"color\"\nempty = \"paper\"\n" +
+                "[panels.margins]\nleft = 1\ntop = 2\nright = 3\nbottom = 12\n[panels.screentone]\ndot = 1\nspacing = 6\nopacity = 0.3\nfade = 0.3\n"
+        val first = loadPack(consoleManifest() + section)
+        assertEquals(emptyList<PackIssue>(), first.issues)
+        val expected = PackPanels("grid6", 2f, 3.5f, 0f, PanelMargins(1f, 2f, 3f, 12f), 0.5f, PackScreentone(1f, 6f, 0.3f, 0.3f), ArtPrint.Color, PanelEmpty.Paper)
+        assertEquals(expected, first.pack.panels)
+        val second = loadPack(PackManifest.write(first.tokens.manifest()))
+        assertEquals(emptyList<PackIssue>(), second.issues)
+        assertEquals(first.tokens, second.tokens)
+        assertEquals(first.pack, second.pack)
+        // And a look with no panels writes none.
+        assertTrue(ConsolePack.tokens.manifest().keys.none { it.startsWith("panels") })
+    }
+
+    /** A bad value is the default for that key alone, and said the way a bad token is; unknown keys are skipped. */
+    @Test fun aBadPanelValueFallsBackAlone() {
+        val section =
+            "\n[panels]\ndefault_layout = \"zigzag\"\nink_width = \"thin\"\ngutter_rows = 99\ngutter_cols = 1.5\nart_print = \"sepia\"\nempty = 3\nwobble = 1\n" +
+                "[panels.margins]\nleft = -3\ntop = true\n[panels.screentone]\nspacing = nan\nopacity = 2\n[panels.speedlines]\ncount = 3\nangle = [1]\n"
+        val load = loadPack(consoleManifest() + section)
+        assertNull(load.error)
+        assertEquals(
+            mapOf(
+                "panels.default_layout" to PackIssue.Kind.Invalid,
+                "panels.ink_width" to PackIssue.Kind.Invalid,
+                "panels.gutter_rows" to PackIssue.Kind.Clamped,
+                "panels.art_print" to PackIssue.Kind.Invalid,
+                "panels.empty" to PackIssue.Kind.Invalid,
+                "panels.margins.left" to PackIssue.Kind.Clamped,
+                "panels.margins.top" to PackIssue.Kind.Invalid,
+                "panels.margins.right" to PackIssue.Kind.Missing,
+                "panels.margins.bottom" to PackIssue.Kind.Missing,
+                "panels.pad" to PackIssue.Kind.Missing,
+                "panels.screentone.dot" to PackIssue.Kind.Missing,
+                "panels.screentone.spacing" to PackIssue.Kind.Invalid,
+                "panels.screentone.opacity" to PackIssue.Kind.Clamped,
+                "panels.screentone.fade" to PackIssue.Kind.Missing,
+                "panels.wobble" to PackIssue.Kind.Ignored,
+                "panels.speedlines.count" to PackIssue.Kind.Ignored,
+                "panels.speedlines.angle" to PackIssue.Kind.Ignored,
+            ),
+            panelKinds(load),
+        )
+        val slip = load.issues.first { it.token == "panels.screentone.spacing" }.detail
+        assertTrue(slip, slip.startsWith("line ") && slip.endsWith(": not a value this build can read"))
+        assertTrue(load.broken)
+        val d = PackPanels.defaults
+        assertEquals(
+            d.copy(gutterRows = 8f, gutterCols = 1.5f, margins = d.margins.copy(left = 0f), screentone = d.screentone.copy(opacity = 1f)),
+            load.pack.panels,
+        )
+        // The rest of the pack is untouched by it.
+        assertEquals(ConsolePack.pack.copy(id = "test", panels = load.pack.panels), load.pack)
+        // A choice is read whatever its case, as a token's is.
+        assertEquals(ArtPrint.Color, loadPack(consoleManifest() + "\n[panels]\nart_print = \"COLOR\"\n").pack.panels!!.artPrint)
+    }
+
+    /** Dots wider than half their spacing would run into flat gray, so a dot is never more than that. */
+    @Test fun screentoneDotsNeverRunTogether() {
+        for ((dot, spacing, expected) in listOf(Triple(3.0, 4.0, 2f), Triple(9.0, 4.5, 2.25f), Triple(2.0, 4.0, 2f), Triple(0.85, 4.5, 0.85f))) {
+            val load = loadPack(consoleManifest() + "\n[panels.screentone]\ndot = $dot\nspacing = $spacing\nopacity = 0.4\nfade = 0.1\n")
+            val tone = load.pack.panels!!.screentone
+            assertEquals("$dot every $spacing", expected, tone.dot, 0f)
+            assertEquals(spacing.toFloat(), tone.spacing, 0f)
+            val said = load.issues.filter { it.token == "panels.screentone.dot" }
+            if (dot > spacing / 2) {
+                // One issue, naming the value used, even where the dot was out of range as well.
+                assertEquals("$dot every $spacing", listOf(PackIssue.Kind.Clamped), said.map { it.kind })
+                assertTrue(said.single().detail, said.single().detail.contains("$expected"))
+            } else {
+                assertEquals("$dot every $spacing", emptyList<PackIssue>(), said)
+            }
+        }
+    }
+
+    /** Whatever a [panels] section holds, there are panels, and every number is inside its key's range. */
+    @Test fun panelsNeverThrowOnNoise() {
+        val random = java.util.Random(19)
+        val keys = PackPanels.tokens.map { it.key } + listOf("panels.extra", "panels.margins.middle")
+        val scraps = listOf("1e99", "-0", "true", "\"\"", "[1]", "nan", "99999999999999999999", "'opening'", "\"splash\"", "\"ink\"", "0.5", "-7", "\"paper\"")
+        repeat(300) {
+            val text = StringBuilder(consoleManifest()).append("\n[panels]\n")
+            repeat(random.nextInt(30)) {
+                val key = keys[random.nextInt(keys.size)]
+                text.append('[').append(key.substringBeforeLast('.')).append("]\n")
+                text.append(key.substringAfterLast('.')).append(" = ").append(scraps[random.nextInt(scraps.size)]).append('\n')
+            }
+            val load = loadPack(text.toString())
+            assertNull(load.error)
+            val panels = load.pack.panels!!
+            assertTrue(panels.defaultLayout in PackPanels.LAYOUTS)
+            for ((key, value) in panels.manifest()) {
+                val kind = PackPanels.byKey.getValue(key).kind
+                if (kind is TokenKind.Number) assertTrue("$key = $value", (value as Float) in kind.min..kind.max)
+            }
+            assertTrue(panels.screentone.dot <= panels.screentone.spacing / 2f)
+            assertTrue(load.fallbacks.all { it.token in PackSchema.byKey || it.token in PackPanels.byKey })
         }
     }
 }

@@ -21,7 +21,7 @@ class SystemBarsTest {
     private fun bars(look: PackLook) = listOf(look.barsOnLight(drawer = false, panel = false), look.barsOnLight(drawer = true, panel = false), look.barsOnLight(drawer = false, panel = true))
 
     @Test fun lightPaperHasDarkIconsEverywhere() {
-        for (id in listOf("bujo", "custard", "dial-up", "one-bit", "riso")) assertEquals(id, listOf(true, true, true), bars(look(id)))
+        for (id in listOf("bujo", "custard", "dial-up", "manga", "one-bit", "riso")) assertEquals(id, listOf(true, true, true), bars(look(id)))
     }
 
     /** White page ink on blue: light icons over the page and the app list, dark ones over the white panels. */

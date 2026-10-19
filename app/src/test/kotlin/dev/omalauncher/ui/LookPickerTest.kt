@@ -21,7 +21,7 @@ import org.junit.Test
  */
 class LookPickerTest {
     /** The looks shipped beside Console, by their folder. */
-    private val shipped = listOf("riso", "custard", "tiny-magazine", "bujo", "dial-up", "city-pop", "instrument", "one-bit")
+    private val shipped = listOf("riso", "custard", "tiny-magazine", "bujo", "dial-up", "city-pop", "instrument", "one-bit", "manga")
 
     private fun shippedPack(id: String) = PackLoader.load(DirectoryPackSource(moduleFile("src/main/assets/packs/$id")), id).also { assertNull("$id: ${it.error}", it.error) }.pack
 

@@ -1,0 +1,224 @@
+# Manga, after features/manga-look/manga-mockup.html: every home page is a manga page, fixed
+# panels in hairline ink on white paper, one spot red, and screentone where City Pop would use
+# a color. Dragging one panel onto another trades what is in them; the lines never move.
+#
+# Read from real pages (Kimagure Orange Road, 1984; Inio Asano): borders are hairlines, the gaps
+# between rows are wider than those between panels side by side, and the page keeps a deeper
+# margin at the foot than at the head, as a printed volume does. Nothing casts a shadow; depth
+# is the ink's and the tone's.
+#
+# What it leaves out is Console's (assets/packs/console/pack.toml).
+# Its fonts are copied from the other looks, in fonts/ (SIL Open Font License): Dela Gothic One
+# from Riso, Patrick Hand from Bujo, Schibsted Grotesk and JetBrains Mono; each voice also names
+# the nearest system family as a fallback.
+[pack]
+format = 1
+name = "Manga"
+
+# The mockup's paper and ink, and its spot red, are the look. The page is the background too:
+# a panel is told from the page by its line, not by a fill.
+#
+# Measured so text can be read (4.5 to 1 on the background and the surface):
+#   accent  the spot red #d7262d is 4.9 to 1 on the paper and 4.5 on the surface, so it is the
+#           accent as it is; the surface is as light as it can be for that (#efeff1, the
+#           mockup's code chips, would leave the red at 4.35).
+#   muted   the mockup's caption gray #77777e is 4.4 to 1 on the paper; the ink at 0.62 is 5.2.
+#   red     a shade under the spot (#c8222a, the mockup's own red) so a warning is told from a
+#           mere accent, 5.1 to 1 on the surface.
+# Not in the mockup at all: green, picked to read on both. The emphasised scrap is a black
+# panel, white lettering on solid ink, as a manga sets a flashback or a shout.
+[palette]
+mode = "light"
+background = "#fdfdfb"
+surface = "#f4f4f5"
+foreground = "#111113"
+muted = "foreground@0.62"
+accent = "#d7262d"
+border = "foreground"
+red = "#c8222a"
+green = "#247a46"
+on_page = "foreground"
+# A light tone gray: what the highlighter lays down, and a sticky note.
+highlight = "#e4e4e7"
+alt = "foreground"
+on_alt = "background"
+overlay = "background@0.94"
+glass = "background"
+
+# The spot red by name, for what the home draws in it outside the palette: the panel a drag is
+# over, sound effects.
+[palette.extra]
+spot = "#d7262d"
+
+# Big numbers and sound effects: Dela Gothic One, the mockup's display.
+[type.display]
+family = "sans-serif"
+file = "fonts/DelaGothicOne-Regular.ttf"
+weight = 400
+tracking = -0.01
+
+# The mockup reads in Zen Kaku Gothic New; Schibsted Grotesk is the nearest the looks already
+# carry, and nothing is downloaded for this one.
+[type.body]
+family = "sans-serif"
+file = "fonts/SchibstedGrotesk.ttf"
+
+# Hand lettering, as in a narration box or a balloon.
+[type.hand]
+family = "cursive"
+file = "fonts/PatrickHand-Regular.ttf"
+weight = 400
+
+# Captions in bold capitals, the mockup's caption boxes.
+[type.mono]
+family = "monospace"
+file = "fonts/JetBrainsMono.ttf"
+weight = 700
+uppercase = true
+tracking = 0.1
+
+# Panels have square corners (the mockup rounds them by 1px, which is no corner at all).
+[shape]
+radius = 0
+corners = "edge"
+
+# A scrap is paper in a hairline of ink, the panel's own 1.15, and nothing leans: a manga page
+# is ruled. The focus line is the spot red three wide, the mockup's drop target, 3.8 to 1 off
+# the ink it replaces and 4.9 off the paper.
+[scrap]
+fill = "background"
+ink = "foreground"
+border = 1.15
+border_color = "foreground"
+focus_color = "#d7262d"
+focus_width = 3
+muted = "muted"
+tilt_min = 0
+tilt_max = 0
+
+# The black panel needs no outline of its own; a panel still gets its hairline in the ink, as
+# every look's does. The red stands 3.8 to 1 off the black.
+[scrap.alt]
+fill = "alt"
+ink = "on_alt"
+border = 0
+border_color = "foreground"
+focus_color = "#d7262d"
+focus_width = 3
+
+# Nothing is taped to a manga page, and nothing has a title bar.
+[scrap.tape]
+style = "none"
+
+[scrap.title_bar]
+style = "none"
+
+# A sticky note is a patch of tone gray, ruled like a panel.
+[scrap.sticky]
+fill = "highlight"
+ink = "foreground"
+border = 1.15
+border_color = "foreground"
+dashed = false
+
+# White paper with no pattern: the screentone is the empty panels' ([panels.screentone]), not
+# the page's. The crease down the middle of the open spread is the mockup's, a soft shadow on
+# the gutter. A focused bare icon is outlined in the spot red.
+[page]
+kind = "paper"
+color = "#fdfdfb"
+pattern = "none"
+gutter = true
+drawer_fill = "background"
+focus_color = "#d7262d"
+plate = "none"
+
+# Icons printed in the ink, as the mockup prints art: gray and harder (its contrast(1.45)).
+# A missing one is its letter in the display face on paper, outlined like the mockup's cast.
+[icons]
+treatment = "grayscale"
+tint = "foreground"
+contrast = 1.45
+shadow = false
+
+[icons.placeholder]
+style = "letter"
+font = "display"
+fill = "background"
+ink = "foreground"
+border = 1.15
+border_color = "foreground"
+
+# A bare line with no glow, ink running into the spot red; done is the ink alone, pulsing.
+[ring]
+width = 2
+glow = 0
+
+[ring.listening]
+color1 = "foreground"
+color2 = "#d7262d"
+
+[ring.working]
+color1 = "foreground"
+color2 = "muted"
+
+[ring.needs_you]
+color1 = "#d7262d"
+color2 = "foreground"
+
+[ring.done]
+color1 = "foreground"
+color2 = "foreground"
+
+# A pen in the ink, a second in the spot red, and ink darkens what it crosses, like a second
+# print run.
+[ink]
+pen = "foreground"
+second = "#d7262d"
+highlighter = "highlight@0.5"
+width = 2
+blend = "multiply"
+
+# The dock stays one bar, as it is in every look; here a paper strip in the panels' hairline.
+[dock]
+style = "bar"
+tilt = 0
+fill = "background"
+ink = "foreground"
+border = 1.15
+border_color = "foreground"
+focus_color = "#d7262d"
+focus_width = 3
+
+# The panels, as the mockup draws them. The page is 60 units wide and 96 tall (a unit across is
+# a sixtieth of its width, a unit down a ninety-sixth of its height); ink and dots are in dp.
+[panels]
+# The first page of a chapter: a wide establishing panel over two rows of two.
+default_layout = "opening"
+# The mockup's stroke, the same width at every size: a hairline that still survives the Fold's
+# density.
+ink_width = 1.15
+# Rows sit further apart than panels side by side, as on a printed page.
+gutter_rows = 2.3
+gutter_cols = 1.1
+# What is in a panel keeps this far from its ink.
+pad = 1.1
+# Pictures print in ink, gray and toned with dots like a printed photo, until the user picks color.
+art_print = "ink"
+empty = "screentone"
+
+# Deeper at the foot than at the head, as a printed volume's.
+[panels.margins]
+left = 2.4
+top = 3
+right = 2.4
+bottom = 4.4
+
+# The mockup's empty-panel tone: a dot solid to 0.7 and gone by 1 (0.85 is its half-ink edge)
+# every 4.5, darkest at the top left (0.42) and fading to almost nothing (0.04) at the bottom
+# right, so an empty panel reads as quiet sky and not as a hole in the page.
+[panels.screentone]
+dot = 0.85
+spacing = 4.5
+opacity = 0.42
+fade = 0.04

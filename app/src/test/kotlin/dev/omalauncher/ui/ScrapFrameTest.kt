@@ -1,5 +1,8 @@
 package dev.omalauncher.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -117,6 +120,32 @@ class ScrapFrameTest {
         assertTrue("$tilted tilted", tilted >= 8)
     }
 
+    /**
+     * Manga's scraps are a fill and a hairline and nothing else, so unfocused they are the frame Console
+     * draws (clipped, filled and outlined with one shape, the chain pinned above), in the ink on paper: no
+     * tilt, padding, offset or size, so the hit rectangle is still the cell. Focused, the red line reaches
+     * outside the edge, which is one drawing element as in the looks above. Its dock is one bar, so no buttons.
+     */
+    @Test fun mangasScrapIsConsolesFrameInInk() {
+        use("manga")
+        val surface = ActivePack.pack.scrap.surface
+        val shape = Pack.shape()
+        val frame = Modifier.clip(shape).background(surface.fill.toColor(), shape).border(surface.border.dp, surface.borderColor.toColor(), shape)
+        for (key in widgets + listOf("app:com.example/.Main", "folder:1")) {
+            assertEquals(0f, scrapTilt(key, ActivePack.pack.scrap.tiltMin, ActivePack.pack.scrap.tiltMax), 0f)
+            for (dressed in listOf(true, false)) {
+                assertEquals(key, frame, Modifier.scrap(false, key, dressed))
+                val focused = Modifier.scrap(true, key, dressed).elements()
+                assertEquals(key, 1, focused.size)
+                assertTrue(key, "Draw" in focused.single()::class.simpleName.orEmpty())
+            }
+        }
+        for (element in frame.elements()) assertFalse("${element::class.simpleName}", listOf("Padding", "Offset", "Size").any { it in element::class.simpleName.orEmpty() })
+        assertSame(Modifier, Modifier.scrapContent())
+        assertSame(Modifier, Modifier.dockButton(0))
+        assertSame(Modifier, Modifier.dockButton(1))
+    }
+
     /** The source says the same: the tilt is a canvas rotation while drawing, never a layer's. */
     @Test fun tiltNeverTurnsALayer() {
         val source = dev.omalauncher.theme.pack.mainSource("ui/ScrapFrame.kt").readText()
@@ -136,7 +165,7 @@ class ScrapFrameTest {
         assertEquals(18f, bar.height, 0f)
         assertEquals(Modifier.padding(top = 18.dp), Modifier.scrapContent())
         for (key in widgets) assertFalse(Modifier.scrap(false, key, dressed = true).elements().any { it is LayoutModifier })
-        for (id in listOf("riso", "instrument", "city-pop", "custard", "tiny-magazine", "bujo")) {
+        for (id in listOf("riso", "instrument", "city-pop", "custard", "tiny-magazine", "bujo", "manga")) {
             use(id)
             assertSame(id, Modifier, Modifier.scrapContent())
         }

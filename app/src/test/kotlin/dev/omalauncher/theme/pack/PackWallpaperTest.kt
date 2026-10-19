@@ -133,7 +133,7 @@ class PackWallpaperTest {
      */
     @Test fun onlyCityPopShipsAndNamesWallpapers() {
         val packs = moduleFile("src/main/assets/packs").listFiles().orEmpty().filter { it.isDirectory }
-        assertEquals(9, packs.size)
+        assertEquals(10, packs.size)
         for (dir in packs) {
             val others = dir.walkTopDown().filter { it.isFile }.map { it.relativeTo(dir).path.replace(File.separatorChar, '/') }.filter { it != PackLoader.MANIFEST }.toList()
             val fonts = others.filter { it.startsWith("fonts/") && it.endsWith(".ttf") }

@@ -14,6 +14,8 @@ data class PackTokens internal constructor(
     val values: Map<String, Any>,
     /** The pack's `[palette.extra]` colors by name. */
     val extra: Map<String, PackColor>,
+    /** The pack's `[panels]`, or null for a look that isn't drawn in panels. */
+    val panels: PackPanels? = null,
 ) {
     /** The pack.toml that loads back as these tokens: see [PackManifest.write]. */
     fun manifest(): Map<String, Any> =
@@ -25,6 +27,7 @@ data class PackTokens internal constructor(
                 put(token.key, if (value is PackPaint) value.toString() else value)
             }
             for ((key, color) in extra) put("palette.extra.$key", color.toString())
+            panels?.let { putAll(it.manifest()) }
         }
 
     /**
@@ -258,6 +261,7 @@ class PackBuilder(
                     blend = choice("ink.blend"),
                 ),
             dock = PackDock(style = choice("dock.style"), tilt = number("dock.tilt"), surface = surface("dock")),
+            panels = tokens.panels,
         )
     }
 
