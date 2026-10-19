@@ -146,6 +146,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        // Whether the Mac's Whisper answers, known before the next dictation rather than learned during it.
+        dev.omalauncher.voice.WhisperMac.check(this)
         runtime.wm.focus(null)
         removeStaleWindowTasks()
         // Made the default home app (or no longer it) while away: only then does Android show us pinned shortcuts.
