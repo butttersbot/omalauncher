@@ -17,14 +17,19 @@ import dev.omalauncher.widgets.layout.NotebookItem
 import dev.omalauncher.widgets.layout.NotebookPage
 import dev.omalauncher.widgets.layout.NotebookStore
 import dev.omalauncher.widgets.layout.PinnedApp
+import dev.omalauncher.widgets.layout.artIdOf
 import dev.omalauncher.widgets.layout.firstFit
 import dev.omalauncher.widgets.layout.rescale
 import dev.omalauncher.widgets.layout.shown
 
-/** A page as home lists it: what it's called, and the [id] its items go by, which never changes. */
+/**
+ * A page as home lists it: what it's called, and the [id] its items go by, which never changes. [panels] is its panel
+ * layout in the Manga look ([dev.omalauncher.widgets.layout.PanelLayouts]), null for the free grid.
+ */
 data class PageLabel(
     val id: String,
     val name: String,
+    val panels: String? = null,
 )
 
 /** The longest name a page takes. Asking Oma for a page by name matches names up to twice this. */
@@ -136,12 +141,12 @@ class LiveNotebook(
         rows = notebook.rows.coerceAtLeast(1)
         for (page in notebook.pages) {
             if (pages.any { it.id == page.id }) continue
-            pages += PageLabel(page.id, page.name)
+            pages += PageLabel(page.id, page.name, page.panels)
             for (item in page.items) {
                 if (item.key in home) continue
                 when (item.kind) {
                     // Known by their keys alone: a page and a cell is all the notebook keeps of either.
-                    ItemKind.Widget, ItemKind.Thread, ItemKind.Module -> {}
+                    ItemKind.Widget, ItemKind.Thread, ItemKind.Module, ItemKind.Art -> {}
                     ItemKind.App -> if (!load(item.app ?: continue, null)) continue
                     ItemKind.Folder -> {
                         folders += item.key
@@ -173,7 +178,8 @@ class LiveNotebook(
         val appKeys = apps.map { it.app.key }.toSet()
         val keyed = home.keys.filter { it !in appKeys && it !in folders }.sorted()
         val (threads, rest) = keyed.partition(::isThreadTile)
-        val (modules, widgets) = rest.partition(::isModuleTile)
+        val (modules, others) = rest.partition(::isModuleTile)
+        val (art, widgets) = others.partition { artIdOf(it) != null }
         return Notebook(
             rows = rows,
             pages =
@@ -181,9 +187,11 @@ class LiveNotebook(
                     NotebookPage(
                         page.id,
                         page.name,
-                        widgets.filter { home[it] == page.id }.map { NotebookItem(it, ItemKind.Widget, cells[it]) } +
+                        panels = page.panels,
+                        items = widgets.filter { home[it] == page.id }.map { NotebookItem(it, ItemKind.Widget, cells[it]) } +
                             threads.filter { home[it] == page.id }.map { NotebookItem(it, ItemKind.Thread, cells[it]) } +
                             modules.filter { home[it] == page.id }.map { NotebookItem(it, ItemKind.Module, cells[it]) } +
+                            art.filter { home[it] == page.id }.map { NotebookItem(it, ItemKind.Art, cells[it]) } +
                             grid.filter { home[it.app.key] == page.id }.map { NotebookItem(it.app.key, ItemKind.App, cells[it.app.key], app = it.app) } +
                             folders.filter { home[it] == page.id }.map { f -> NotebookItem(f, ItemKind.Folder, cells[f], apps = apps.filter { it.folder == f }.map { it.app }) },
                     )
@@ -294,6 +302,24 @@ class LiveNotebook(
             else -> position(after).takeIf { it >= 0 }?.plus(1) ?: pages.size
         }
         pages.add(at, PageLabel(id, pageName(name) ?: freeName()))
+        save()
+        return true
+    }
+
+    /**
+     * Gives [page] the panel layout [panels] (null: the free grid) and its items on it the [cells] given, all at once, as the
+     * verb `page.panels` says ([dev.omalauncher.widgets.layout.CanvasVerb.PagePanels], checked before it gets here). False,
+     * and nothing changed, when home isn't open or there is no such page.
+     */
+    fun setPanels(
+        page: String,
+        panels: String?,
+        cells: Map<String, Cell> = emptyMap(),
+    ): Boolean {
+        val at = position(page)
+        if (!opened || at < 0) return false
+        pages[at] = pages[at].copy(panels = panels)
+        for ((key, cell) in cells) if (home[key] == page) this.cells[key] = cell
         save()
         return true
     }
