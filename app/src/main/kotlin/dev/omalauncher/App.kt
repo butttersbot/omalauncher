@@ -23,5 +23,7 @@ class App : Application() {
         dev.omalauncher.widgets.FoldSyncJob.start(this)
         // Home's saved layouts for the Layouts module, and how art is printed in the Manga look (piece D).
         dev.omalauncher.widgets.FoldLayouts.install(this)
+        // Art from the share sheet and the panel picker hangs in home's panels (piece B).
+        dev.omalauncher.ui.MangaHome.install(this)
     }
 }

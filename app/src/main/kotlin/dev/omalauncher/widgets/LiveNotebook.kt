@@ -242,6 +242,9 @@ class LiveNotebook(
     /** The modules there are, by key, with the id of the page each is on. */
     fun modules(): Map<String, String> = home.filterKeys(::isModuleTile)
 
+    /** The art hung on home ([artIdOf]), by key, with the id of the page each is on. */
+    fun art(): Map<String, String> = home.filterKeys { artIdOf(it) != null }
+
     /** The thread tiles there are, by key, with the id of the page each is on. */
     fun threadTiles(): Map<String, String> = home.filterKeys(::isThreadTile)
 

@@ -28,6 +28,16 @@ import dev.omalauncher.widgets.WidgetItem
 import dev.omalauncher.widgets.WidgetLayout
 import dev.omalauncher.widgets.annotations.PageArea
 import dev.omalauncher.widgets.layout.GridGeometry
+import dev.omalauncher.widgets.layout.Panel
+import dev.omalauncher.widgets.dropInPanel
+import dev.omalauncher.widgets.panelAim
+import dev.omalauncher.widgets.panelAt
+import dev.omalauncher.widgets.panelsOf
+import dev.omalauncher.widgets.settleIntoPanels
+import dev.omalauncher.widgets.style
+import dev.omalauncher.theme.pack.PackPanels
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawscope.rotate
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.Box
@@ -128,6 +138,9 @@ private class Grid(
         r: IntRect,
         side: Int,
     ) = r.translate(geometry.left(side), 0)
+
+    /** A point in a page's room as fractions of the page across and down, as panels are given in. */
+    fun fraction(p: Offset) = ((p.x - page.left) / page.width).toDouble() to ((p.y - page.top) / page.height).toDouble()
 
     /** The page at [side] as what is free on it is placed by: its rectangle on screen, which fractions of the page are taken of. */
     fun area(side: Int) = screen(page, side).let { PageArea(it.left.toFloat(), it.top.toFloat(), it.width.toFloat(), it.height.toFloat()) }
@@ -305,6 +318,17 @@ internal fun HomeGrid(
     arrivals: Arrivals? = null,
     /** Told how to find the room each page showing has, for what is drawn onto a page from elsewhere. */
     rooms: PageRooms? = null,
+    /**
+     * The look's `[panels]` while it is drawn in them (the Manga look); then a page with a panel layout ([panelLayout]) is a
+     * manga page: what is on it sits one to a panel, a long press lifts it, and a drop on another panel swaps the two (on an
+     * empty one, moves it). The panel lines never move: nothing is resized or dropped between panels there, and no page is
+     * offered past the last. Every other page, and every page in every other look, is the free grid as it always was.
+     */
+    panelLook: PackPanels? = null,
+    /** A page's panel layout, null for the free grid. */
+    panelLayout: (String) -> String? = { null },
+    /** A tap on an empty panel: its page, and its place in the page's layout. */
+    onPanelTap: (String, Int) -> Unit = { _, _ -> },
 ) {
     val haptics = LocalHapticFeedback.current
     // Where the grid is in the window, for what grows out of a touch on it. Only listened to.
@@ -316,6 +340,7 @@ internal fun HomeGrid(
     val marked by rememberUpdatedState(marks)
     val pinched by rememberUpdatedState(onPinch to onPinchEnd)
     val drawer by rememberUpdatedState(onDrawerDrag to onDrawerEnd)
+    val panelled by rememberUpdatedState(panelLayout to panelLook?.style())
 
     BoxWithConstraints(modifier) {
         val density = LocalDensity.current
@@ -345,10 +370,43 @@ internal fun HomeGrid(
             }
         }
 
+        /** The panels of [page] on [g], while it is a manga page; null for the free grid. */
+        fun cutsOf(
+            page: String,
+            g: Grid,
+        ): List<Panel>? {
+            val (layoutOf, style) = panelled
+            return panelsOf(layoutOf(page), g.cols, g.rows, style ?: return null)
+        }
+
+        // A manga page shows each thing in its panel's cells as saved: an app there fills its panel, not one cell.
         fun placedOn(
             page: String,
             g: Grid,
-        ) = itemsOn(page).mapNotNull { item -> layout.cell(item.key)?.let { item to g.fit(it, item) } }
+        ) = cutsOf(page, g).let { cut -> itemsOn(page).mapNotNull { item -> layout.cell(item.key)?.let { item to if (cut != null) it else g.fit(it, item) } } }
+
+        /** What a press at [at] on [page] is on: the tile there, or on a manga page what is in the panel there. */
+        fun hitOn(
+            page: String,
+            placed: List<Pair<HomeItem, Cell>>,
+            g: Grid,
+            at: Offset,
+        ): Pair<HomeItem, Cell>? {
+            val panels = cutsOf(page, g) ?: return placed.lastOrNull { (_, c) -> g.rect(c).has(at) }
+            val (x, y) = g.fraction(at)
+            val cell = panels.getOrNull(panelAt(panels, g.cols, g.rows, x, y))?.cell ?: return null
+            return placed.firstOrNull { it.second == cell } ?: placed.firstOrNull { it.second.overlaps(cell) }
+        }
+
+        /** Whether [page] is a manga page with a panel that holds nothing. */
+        fun hasEmptyPanel(
+            page: String,
+            g: Grid,
+        ): Boolean {
+            val panels = cutsOf(page, g) ?: return false
+            val taken = placedOn(page, g).map { it.second } + layout.heldOn(page, itemsOn(page))
+            return panels.any { p -> taken.none { it.overlaps(p.cell) } }
+        }
 
         /** The pages a pager slot shows, left to right; null where the last slot has no second page. */
         fun pagesAt(
@@ -525,6 +583,14 @@ internal fun HomeGrid(
                                     if (next in 0 until pager.pageCount) {
                                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         scope.launch { pager.animateScrollToPage(next) }
+                                    } else if (edgeSide > 0 && panelled.second != null) {
+                                        // In panels no page is offered: past the last page, the first page with an empty panel is turned to.
+                                        val (all, room) = current
+                                        val slot = all.indexOfFirst { hasEmptyPanel(it, room) }.takeIf { it >= 0 }?.let { it / room.per }
+                                        if (slot != null && slot != pager.currentPage) {
+                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            scope.launch { pager.animateScrollToPage(slot) }
+                                        }
                                     } else if (edgeSide > 0 && arrange.offered == null) {
                                         // Past the last page: a new one to drop on, like the empty page that used to wait there.
                                         arrange.offered = onOfferPage()
@@ -547,6 +613,18 @@ internal fun HomeGrid(
                                 arrange.preview = null
                                 arrange.full = false
                                 fullSince = 0L
+                                continue
+                            }
+                            // A manga page: the panel under the finger, and what is in it to swap with. Never between panels.
+                            val panels = cutsOf(page, g)
+                            if (panels != null) {
+                                arrange.full = false
+                                fullSince = 0L
+                                arrange.grouping = false
+                                val (x, y) = g.fraction(at)
+                                val aim = panelAim(panels, placedOn(page, g).map { it.first.key to it.second }, item.key, g.cols, g.rows, x, y, inFolder)
+                                arrange.swapWith = aim?.occupant
+                                arrange.preview = aim?.cell
                                 continue
                             }
                             val others = placedOn(page, g).filter { it.first.key != item.key }
@@ -590,9 +668,13 @@ internal fun HomeGrid(
                         val drop = arrange.preview
                         val grouping = arrange.grouping
                         arrange.drop()
+                        val inPanels = page != null && cutsOf(page, current.second) != null
                         when {
                             page == null -> {}
                             target != null && grouping && moved -> onGroup(item as Shortcut, target)
+                            // A manga page: a swap with what is in the panel, or a move into an empty one; never between panels.
+                            inPanels && drop != null && moved ->
+                                dropInPanel(item.key, from, cell, page, drop, target?.key, layout::cell, layout::set, { key, to -> onMove(if (key == item.key) item else target!!, to) }, inFolder)
                             // Swapping trades places and sizes, like swapping windows in Hyprland; across pages it trades pages too.
                             target != null ->
                                 layout.cell(target.key)?.let { other ->
@@ -609,6 +691,13 @@ internal fun HomeGrid(
                             }
                         }
                         layout.save()
+                        // Inked again where it landed (with its sound), and where what it swapped with went.
+                        if (page != null && moved && (target != null || drop != null) && !grouping) {
+                            val g = current.second
+                            fun panelOf(p: String, c: Cell?) = c?.let { at -> cutsOf(p, g)?.indexOfFirst { it.cell == at } }?.takeIf { it >= 0 }
+                            panelOf(page, drop)?.let { PanelFx.ink(page, it, "シュッ") }
+                            if (target != null) panelOf(from, cell)?.let { PanelFx.ink(from, it) }
+                        }
                         arrange.offered?.let { offered ->
                             arrange.offered = null
                             if (itemsOn(offered).isEmpty()) onWithdrawPage(offered)
@@ -754,7 +843,8 @@ internal fun HomeGrid(
                             down.consume()
                             val (item, cell) = selectedItem
                             val rect = g.rect(cell)
-                            val edges = if (item.resizable) edgesAt(rect, selAt, grab, sideGrab) else Edges(false, false, false, false)
+                            // A manga page's panels are fixed: nothing in one is resized.
+                            val edges = if (item.resizable && shown[selSide]?.let { cutsOf(it, g) } == null) edgesAt(rect, selAt, grab, sideGrab) else Edges(false, false, false, false)
                             val owner =
                                 arbiter.down(
                                     when {
@@ -818,7 +908,7 @@ internal fun HomeGrid(
                                 }
                             if (lifted) return@awaitEachGesture
                         }
-                        val hit = placed.lastOrNull { (_, c) -> g.rect(c).has(at) }
+                        val hit = hitOn(page, placed, g, at)
                         arbiter.down(
                             when (hit?.first) {
                                 null -> TouchStart.Page
@@ -851,7 +941,11 @@ internal fun HomeGrid(
                 Row(Modifier.fillMaxSize()) {
                     for (page in pagesAt(slot, pages, grid)) {
                         Box(Modifier.width(with(density) { grid.width.toDp() }).fillMaxHeight()) {
-                            if (page == null) PlusPage(grid, onAddPage) else TiledPage(page, itemsOn(page), layout, grid, arrange, selected, render, actions, onNoRoom, ready, captures, marks, arrivals)
+                            if (page == null) {
+                                PlusPage(grid, onAddPage)
+                            } else {
+                                TiledPage(page, itemsOn(page), layout, grid, arrange, selected, render, actions, onNoRoom, ready, captures, marks, arrivals, cutsOf(page, grid), panelLook) { onPanelTap(page, it) }
+                            }
                         }
                     }
                 }
@@ -895,6 +989,10 @@ internal fun HomeGrid(
             // The carried tile floats above the pager, so it stays put while pages turn, and above an open folder it's sorting.
             arrange.carry?.let { carry ->
                 val r = grid.rect(carry.cell)
+                // Lifted off a manga page, it is the mockup's ghost: tilted a little, on a hard ink shadow.
+                val panel = cutsOf(carry.from, grid) != null
+                val ink = Pack.foreground
+                val shadow = with(density) { 5.dp.toPx() }
                 androidx.compose.runtime.key(carry.item.key) {
                     render(
                         carry.item,
@@ -907,11 +1005,25 @@ internal fun HomeGrid(
                             .size(with(density) { r.width.toDp() }, with(density) { r.height.toDp() })
                             .zIndex(5f)
                             .graphicsLayer {
-                                scaleX = 0.96f
-                                scaleY = 0.96f
-                                alpha = 0.85f
-                            },
-                        true,
+                                scaleX = if (panel) 0.92f else 0.96f
+                                scaleY = if (panel) 0.92f else 0.96f
+                                alpha = if (panel) 1f else 0.85f
+                            }
+                            // Turned on the canvas as it is drawn, as a tile's tilt is, never by a layer.
+                            .then(
+                                if (panel) {
+                                    Modifier.drawWithContent {
+                                        rotate(GHOST_TILT) {
+                                            drawRect(ink, topLeft = Offset(shadow, shadow), size = size)
+                                            this@drawWithContent.drawContent()
+                                        }
+                                    }
+                                } else {
+                                    Modifier
+                                },
+                            ),
+                        // Off a manga page it stays in its ink, as the mockup's ghost does.
+                        !panel,
                     )
                 }
             }
@@ -993,6 +1105,9 @@ private const val PAGE_APPEAR_SCALE = 0.94f
 /** How small the selected tile's frame and handles start as they ease in around it. */
 private const val FRAME_APPEAR_SCALE = 0.94f
 
+/** How far a tile lifted off a manga page is turned, in degrees: the mockup's ghost. */
+private const val GHOST_TILT = -2.5f
+
 /** How long a carried tile rests against a side edge before the page turns. */
 private const val PAGE_TURN_MS = 600L
 
@@ -1018,6 +1133,10 @@ private fun TiledPage(
     captures: PageCaptures?,
     marks: Marks?,
     arrivals: Arrivals?,
+    /** The page's panels while it is a manga page; null for the free grid. */
+    panels: List<Panel>? = null,
+    panelLook: PackPanels? = null,
+    onEmptyPanel: (Int) -> Unit = {},
 ) {
     val density = LocalDensity.current
     val carried = arrange.carry?.item?.key
@@ -1027,12 +1146,43 @@ private fun TiledPage(
     // What is free on the page: read from its file the first time the page shows.
     val book = marks?.book
     LaunchedEffect(book, page) { book?.open(page) }
-    LaunchedEffect(items.map { it.key }, grid.cols, grid.rows) {
-        layout.place(items, grid.cols, grid.rows, page).forEach(onNoRoom)
+    LaunchedEffect(items.map { it.key }, grid.cols, grid.rows, panels == null) {
+        if (panels == null) layout.place(items, grid.cols, grid.rows, page).forEach(onNoRoom)
+    }
+    // A manga page is put back in order whenever what is on it changes (a pinned app, a widget installed, an agent's place):
+    // one thing to a panel, each in its panel's cells; what finds no empty panel goes on as a tile with no room does.
+    if (panels != null && ready) {
+        val cells = items.map { layout.cell(it.key) }
+        val carrying = carried != null
+        LaunchedEffect(items.map { it.key }, cells, panels, carrying) {
+            if (carrying) return@LaunchedEffect
+            val settled = settleIntoPanels(panels, items.map { it.key to layout.cell(it.key) }, layout.heldOn(page, items))
+            settled.cells.forEach { (key, cell) -> layout.set(key, cell) }
+            if (settled.cells.isNotEmpty()) layout.save()
+            settled.noRoom.mapNotNull { key -> items.firstOrNull { it.key == key } }.forEach(onNoRoom)
+        }
     }
     BoxWithConstraints(Modifier.fillMaxSize().then(if (pageShown != null) Modifier.appears({ pageShown.value }, PAGE_APPEAR_SCALE) else Modifier).captured(page, captures)) {
         val pageWidth = constraints.maxWidth
-        if (selected != null || (carried != null && arrange.folder == null)) {
+        if (panels != null && panelLook != null) {
+            PanelPageView(
+                page = page,
+                items = items,
+                cellOf = layout::cell,
+                panels = panels,
+                look = panelLook,
+                area = grid.page,
+                room = IntSize(pageWidth, constraints.maxHeight),
+                carried = carried,
+                aim = { if (arrange.page == page) arrange.preview else null },
+                selected = selected,
+                ready = ready,
+                ink = Pack.foreground,
+                spot = Pack.accent,
+                render = render,
+                onEmptyTap = onEmptyPanel,
+            )
+        } else if (selected != null || (carried != null && arrange.folder == null)) {
             // Grid guides while arranging; not while sorting an open folder, which covers the grid.
             Canvas(Modifier.fillMaxSize()) {
                 for (x in 0 until grid.cols) {
@@ -1048,7 +1198,7 @@ private fun TiledPage(
                 }
             }
         }
-        if (ready && carried != null && items.none { it.key != carried }) {
+        if (panels == null && ready && carried != null && items.none { it.key != carried }) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 BasicText(
                     "drop here",
@@ -1057,8 +1207,8 @@ private fun TiledPage(
                 )
             }
         }
-        if (carried != null) DropPreview(page, grid, arrange)
-        for (item in items) {
+        if (panels == null && carried != null) DropPreview(page, grid, arrange)
+        if (panels == null) for (item in items) {
             // The carried tile is drawn above the pager instead.
             if (item.key == carried) continue
             val cell = layout.cell(item.key)?.let { grid.fit(it, item) } ?: continue
@@ -1079,11 +1229,11 @@ private fun TiledPage(
         if (book != null) PageInk(book, page, grid.page)
         // Selection frame: handles on each edge for widgets, plus the action bar.
         val sel = items.firstOrNull { it.key == selected }
-        val selCell = sel?.let { layout.cell(it.key)?.let { c -> grid.fit(c, it) } }
+        val selCell = sel?.let { layout.cell(it.key)?.let { c -> if (panels != null) c else grid.fit(c, it) } }
         if (sel != null && selCell != null && carried == null) {
             val r = grid.rect(selCell)
             val handle = with(density) { 14.dp.roundToPx() }
-            if (sel.resizable) {
+            if (sel.resizable && panels == null) {
                 // The frame and its handles ease in from the tile; they are only drawn, and are grabbed by the cell's rectangle.
                 val frameShown = rememberAppearing(sel.key)
                 Canvas(Modifier.fillMaxSize().zIndex(2f).appears({ frameShown.value }, FRAME_APPEAR_SCALE) { pivotAt(r.center.toOffset(), Offset.Zero, size) }) {

@@ -426,11 +426,12 @@ class WidgetEngine(
         File(previewDir, "$fileName.screen.png").delete()
     }
 
-    /** Widgets, pinned apps, folders and thread tiles on the page with the id [page]. Wrappers compare by spec, so unchanged pages skip recomposition. */
+    /** Widgets, pinned apps, folders, thread tiles, modules and art on the page with the id [page]. Wrappers compare by spec, so unchanged pages skip recomposition. */
     fun itemsOn(page: String): List<HomeItem> =
         specs.filter { it.onHome && notebook.pageOf(it.file.name) == page }.map(::WidgetItem) + shortcuts.onGrid().filter { notebook.pageOf(it.key) == page } +
             notebook.threadTiles().filterValues { it == page }.keys.sorted().map(::ThreadItem) +
-            notebook.modules().filterValues { it == page }.keys.sorted().map(::ModuleItem)
+            notebook.modules().filterValues { it == page }.keys.sorted().map(::ModuleItem) +
+            notebook.art().filterValues { it == page }.keys.sorted().map(::ArtItem)
 
     private val pageList by derivedStateOf { notebook.pages.map { it.id } }
 

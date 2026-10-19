@@ -32,6 +32,7 @@ import dev.omalauncher.assist.agentThreadsNow
 import dev.omalauncher.oma.ChatLog
 import dev.omalauncher.oma.TabBook
 import dev.omalauncher.oma.settled
+import dev.omalauncher.widgets.ArtItem
 import dev.omalauncher.widgets.Folder
 import dev.omalauncher.widgets.HomeItem
 import dev.omalauncher.widgets.Shortcut
@@ -100,6 +101,13 @@ import dev.omalauncher.widgets.render.LocalTypingAt
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.geometry.Rect
 import dev.omalauncher.widgets.layout.wallpaperOffset
+import dev.omalauncher.widgets.layout.artIdOf
+import dev.omalauncher.widgets.overflowIntoPanels
+import dev.omalauncher.widgets.pickedPanels
+import dev.omalauncher.art.ArtImage
+import dev.omalauncher.art.ArtPickActivity
+import dev.omalauncher.canvas.MangaPrefs
+import dev.omalauncher.theme.pack.ArtPrint
 
 /**
  * A one-finger drag upwards that starts here opens the app list under the finger (PRD AC-1): for the bands
@@ -223,6 +231,23 @@ fun HomeScreen(
     // What is free on the pages: their ink, notes and stickers. It takes changes once the notebook is read and kept.
     val marks = state.marks
     val context = LocalContext.current
+    // The Manga look: its pages are manga pages of panels. Switched into, home is kept as it was and fitted into panels.
+    val manga = pickedPanels()
+    SideEffect { MangaPrefs.lookDefault = manga?.let { it.artPrint == ArtPrint.Ink } }
+    LaunchedEffect(manga, engine.notebook.opened) {
+        // Not before the look picked is the one drawn: at the start Console stands in until the pick is read.
+        // Nor while the look picked can't be read, and Console stands in for it.
+        val pick = ActivePack.pick
+        if (pick.id != runtime.themes.pickedPack || pick.error != null) return@LaunchedEffect
+        MangaHome.lookChanged(context, engine, manga)?.let { engine.notice = it }
+    }
+
+    /** A page just added: in the Manga look, cut into its default panels. */
+    fun cut(page: String?): String? {
+        if (page != null && manga != null) engine.notebook.setPanels(page, manga.defaultLayout)
+        return page
+    }
+
     LaunchedEffect(engine.notebook.opened, engine.notebook.kept) { marks.book = HomeAnnotations.of(context) }
     // Written a moment after each change; at once when home loses the window, or the pen is put down.
     val focused = LocalWindowInfo.current.isWindowFocused
@@ -381,6 +406,8 @@ fun HomeScreen(
             is ThreadItem -> {}
             // A module is its place alone: it is back from the widget store whenever he wants it.
             is ModuleItem -> {}
+            // Its picture stays in the art store, for an undo or a saved layout that has it.
+            is ArtItem -> {}
         }
         engine.layout.remove(item.key)
     }
@@ -591,8 +618,17 @@ fun HomeScreen(
                             },
                             paused = runtime.androidApps.paused(item.profile),
                         )
+                    // In a manga page's panel, a folder is the page's cast: its apps side by side, each a tap away.
                     is Folder ->
-                        FolderTile(
+                        if (LocalInPanel.current) {
+                            CastTile(
+                                folder = item,
+                                icons = item.apps.map { runtime.shortcutIcon(it, Pack.monoIcons) },
+                                modifier = tile,
+                                onOpen = { app -> runtime.open(app) },
+                                onMore = { arrange.folder = item.key },
+                            )
+                        } else FolderTile(
                             folder = item,
                             icons = item.apps.take(4).map { runtime.shortcutIcon(it, Pack.monoIcons) },
                             focused = highlighted,
@@ -623,6 +659,8 @@ fun HomeScreen(
                             }
                         }
                     }
+                    // Printed in ink in the Manga look unless he picked color; in its own colors in every other look.
+                    is ArtItem -> artIdOf(item.key)?.let { ArtImage(it, tile, ink = manga != null && MangaPrefs.artInk) } ?: Box(tile)
                     is ThreadItem ->
                         AgentTileView(
                             tile = engine.agentTiles.tiles[item.key],
@@ -664,18 +702,31 @@ fun HomeScreen(
             rooms = state.pageRooms,
             // A thread's tile is placed with its cells and has no page to be moved on to: the launcher puts one on the
             // Agents page or nowhere. One that has lost its place is taken off, not sent to a page of his.
-            onNoRoom = { item -> if (item is ThreadItem) engine.layout.remove(item.key) else showPage = engine.moveToFreePage(item) },
+            onNoRoom = { item ->
+                val panels = manga != null && engine.notebook.pages.firstOrNull { it.id == engine.notebook.pageOf(item.key) }?.panels != null
+                when {
+                    item is ThreadItem -> engine.layout.remove(item.key)
+                    // Off a manga page with no empty panel: to the next page with one, or a strip page made for it.
+                    panels ->
+                        showPage = engine.notebook.overflowIntoPanels(item.key, manga!!.defaultLayout, { p -> engine.layout.claim(item, engine.itemsOn(p), p) })
+                    else -> showPage = engine.moveToFreePage(item)
+                }
+            },
             onMove = { item, page ->
                 engine.moveToPage(item, page)
                 showPage = page
             },
             onTouch = { state.currentPage = it },
             // Only while the pages are odd, which is when the empty half shows: a second tap on its heels adds nothing.
-            onAddPage = { if (engine.pages.size % 2 == 1) showPage = engine.addPage() },
-            onOfferPage = { engine.addPage()?.also { showPage = it } },
+            onAddPage = { if (engine.pages.size % 2 == 1) showPage = cut(engine.addPage()) },
+            onOfferPage = { cut(engine.addPage())?.also { showPage = it } },
             onWithdrawPage = { engine.notebook.withdrawPage(it) },
             onGroup = { app, target -> engine.shortcuts.group(app, target) },
             onReorder = { app, before -> engine.shortcuts.moveBefore(app.key, before) },
+            panelLook = manga,
+            panelLayout = { page -> engine.notebook.pages.firstOrNull { it.id == page }?.panels },
+            // An empty panel opens the photo picker for itself: what is picked hangs there.
+            onPanelTap = { page, panel -> ArtPickActivity.open(context, page, panel) },
         )
       }
     }
