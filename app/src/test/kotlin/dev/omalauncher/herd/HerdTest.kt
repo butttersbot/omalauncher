@@ -114,6 +114,14 @@ class HerdTest {
         assertEquals(SheepWindow(20, 870, 280, 280, "left"), sheepWindow(20, 1000, 150, 280, 280, 1200, 1800))
         // Back to just the sheep.
         assertEquals(SheepWindow(500, 1000, 150, 150, "right"), sheepWindow(500, 1000, 150, 0, 0, 1200, 1800))
+        // Near the top a message's window is cut to the room above, so the sheep stays at the window's bottom and still
+        // follows a drag (Boss, 2026-10-19); it used to be pinned to the top, leaving the sheep stuck on one row.
+        for (sy in listOf(0, 40, 100)) {
+            val win = sheepWindow(500, sy, 150, 280, 400, 1200, 1800)
+            assertEquals(sy + 150, win.y + win.h)
+            assertEquals(0, win.y)
+        }
+        assertEquals(SheepWindow(370, 0, 280, 400, "right"), sheepWindow(500, 250, 150, 280, 400, 1200, 1800))
     }
 
     @Test

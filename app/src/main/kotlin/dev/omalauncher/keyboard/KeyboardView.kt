@@ -130,6 +130,13 @@ class KeyboardView(
      */
     private var ownStrip = false
 
+    /**
+     * The strip's height: Android's own while the strip is Android's; while it is ours and has its buttons, never less
+     * than [STRIP_MIN_DP]. With Android's bar gone, Android's inset shrinks to its gesture handle and the row with the
+     * split switch and the hide arrow went thin (Boss, 2026-10-18: "make that row always max height").
+     */
+    private val stripPx get() = if (ownStrip) maxOf(navPx, (STRIP_MIN_DP * density).toInt()) else navPx
+
     /** Asks Android for the strip's height again: each time the keyboard comes up, not only when it is made. */
     fun recheckInsets() {
         if (!preview) requestApplyInsets()
@@ -153,6 +160,7 @@ class KeyboardView(
             val own = !preview && android.os.Build.VERSION.SDK_INT >= 36 && !insets.isVisible(android.view.WindowInsets.Type.captionBar())
             if (own != ownStrip) {
                 ownStrip = own
+                requestLayout()
                 invalidate()
             }
             insets
@@ -178,7 +186,7 @@ class KeyboardView(
         heightMeasureSpec: Int,
     ) {
         val w = MeasureSpec.getSize(widthMeasureSpec)
-        val h = ((layout?.height ?: 240f) * density).toInt() + headroomPx + navPx
+        val h = ((layout?.height ?: 240f) * density).toInt() + headroomPx + stripPx
         setMeasuredDimension(w, h)
     }
 
@@ -231,7 +239,7 @@ class KeyboardView(
         for (key in l.keys) if (key.kind == KeyKind.MIC) drawKey(canvas, key, key in down, k, top, pulse)
         // A pressed letter's bubble, above its cap.
         presses.values.lastOrNull { it.key.kind == KeyKind.LETTER && !it.done }?.let { drawBubble(canvas, it.key, k, top) }
-        if (ownStrip && navPx > 0) drawStrip(canvas, k, top + l.height * d)
+        if (ownStrip) drawStrip(canvas, k, top + l.height * d)
         if (listening) postInvalidateOnAnimation()
     }
 
@@ -368,7 +376,7 @@ class KeyboardView(
         top: Float,
     ) {
         val d = density
-        val cy = top + navPx / 2f
+        val cy = top + stripPx / 2f
         fill.color = if (k.letter != null) k.pageInk else k.muted
         if (host.canSplit) {
             // What a tap gives: one board when the keys are split, two halves when they are one piece.
@@ -578,6 +586,9 @@ class KeyboardView(
     companion object {
         /** How wide each of the strip's buttons takes touches, dp. */
         private const val STRIP_BUTTON_DP = 64f
+
+        /** The strip's least height while it holds its buttons, dp: Android's own keyboard bar's. */
+        private const val STRIP_MIN_DP = 48f
         private const val BLACK = 0xff000000.toInt()
         private const val WHITE = 0xffffffff.toInt()
 
