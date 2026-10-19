@@ -12,6 +12,57 @@ import org.json.JSONObject
 const val QUICK_MODEL = "haiku"
 
 /**
+ * The front agent can be Grok instead (Boss, 2026-10-19: "make the front agent Grok"), on its fast model, with the
+ * same prompt, the same tools and the same allowed commands as Claude's, and the same stream to read: what Boss
+ * sees is the same whichever answers.
+ */
+const val GROK_QUICK_MODEL = "grok-4.7-build-fast"
+
+/** Claude Code's command, the front agent unless Grok is picked. */
+const val FRONT_CLAUDE = "claude"
+
+/** Grok's command. */
+const val FRONT_GROK = "grok"
+
+/**
+ * Which agent is the front agent, from what ~/.config/omalauncher/front-agent says ([word]): Grok for "grok", when
+ * it is [installed]; Claude Code for anything else, a missing file, or Grok not installed.
+ */
+fun frontAgentOf(word: String?, installed: Collection<String>): String =
+    if (word?.trim()?.lowercase() == FRONT_GROK && FRONT_GROK in installed) FRONT_GROK else FRONT_CLAUDE
+
+/** The model of the front agent [agent], which names its answers. */
+fun frontModel(agent: String): String = if (agent == FRONT_GROK) GROK_QUICK_MODEL else QUICK_MODEL
+
+/**
+ * The front conversation [session] of [agent] as it is kept: Grok's marked, so after a change of front agent
+ * neither is asked to continue the other's conversation, which it would not find.
+ */
+fun frontKept(agent: String, session: String?): String? = session?.let { if (agent == FRONT_GROK) "$FRONT_GROK:$it" else it }
+
+/** The conversation [agent] continues from what was kept, [kept]: its own, or none when it is the other agent's. */
+fun frontResumed(agent: String, kept: String?): String? = when {
+    kept.isNullOrEmpty() -> null
+    agent == FRONT_GROK -> kept.takeIf { it.startsWith("$FRONT_GROK:") }?.removePrefix("$FRONT_GROK:")
+    else -> kept.takeUnless { it.startsWith("$FRONT_GROK:") }
+}
+
+/** Claude Code's tools by the names Grok's `--tools` knows them by. A tool with no counterpart is left out. */
+private val GROK_TOOLS = mapOf("Read" to "read_file", "Bash" to "run_terminal_cmd", "WebSearch" to "web_search", "WebFetch" to "web_fetch")
+
+/**
+ * The same request as Claude Code's command would make, for Grok: [system] added to its prompt, only [tools], and
+ * only what [allowed] lets through run, everything else refused without asking (`dontAsk`; a headless run has nobody
+ * to ask, and ends there). No subagents and no update check. Its stream is Claude Code's stream-json, which
+ * [quickEvent] reads.
+ */
+private fun grokFrontCommand(prompt: String, resume: String?, system: String, tools: List<String>, allowed: List<String>): String =
+    "grok --single=${shellQuote(prompt)} -m $GROK_QUICK_MODEL " + (resume?.takeIf(QUICK_SESSION::matches)?.let { "--resume $it " } ?: "") +
+        "--output-format streaming-messages-json --include-partial-messages --permission-mode dontAsk --no-auto-update " +
+        "--disallowed-tools Agent --rules ${shellQuote(system)} --tools ${tools.mapNotNull(GROK_TOOLS::get).joinToString(",")} " +
+        allowed.filter { it.startsWith("Bash(") || it == "WebFetch" }.joinToString("") { "--allow ${shellQuote(it)} " } + "< /dev/null"
+
+/**
  * Every tool the front agent has at all. The ones that change files are not among them, so no rule or setting
  * can hand one back.
  */
@@ -144,7 +195,8 @@ const val DESKTOP_CANVAS_RULE =
         "projects say). Arrange only what he asked, never on your own."
 
 /** The command that answers [prompt] on a computer: as [quickCommand], with [quickDesktopPrompt], the web, and `soma canvas` when it may [canvas]. */
-fun quickDesktopCommand(prompt: String, resume: String? = null, newChat: Boolean = false, canvas: Boolean = false): String =
+fun quickDesktopCommand(prompt: String, resume: String? = null, newChat: Boolean = false, canvas: Boolean = false, agent: String = FRONT_CLAUDE): String =
+    if (agent == FRONT_GROK) grokFrontCommand(prompt, resume, quickDesktopPrompt(newChat, canvas), QUICK_CHAT_TOOLS + if (canvas) listOf("Bash") else emptyList(), QUICK_CHAT_TOOLS + if (canvas) DESKTOP_CANVAS_ALLOWED else emptyList()) else
     "claude -p --model $QUICK_MODEL " + (resume?.takeIf(QUICK_SESSION::matches)?.let { "--resume $it " } ?: "") +
         "--output-format stream-json --verbose --include-partial-messages --permission-mode manual --permission-prompts none " +
         "--append-system-prompt ${shellQuote(quickDesktopPrompt(newChat, canvas))} --tools ${(QUICK_CHAT_TOOLS + if (canvas) listOf("Bash") else emptyList()).joinToString(" ")} " +
@@ -164,8 +216,10 @@ private const val SYNTHETIC_MODEL = "<synthetic>"
  * out is denied; the `--` keeps the list of tools from taking the prompt as one more. [mac] is whether the
  * board in [prompt] has the Mac's threads on it, which only changes what it is told about handing over, and
  * [newChat] whether the request is a new chat's: it is told [quickNewChatRule] and has [QUICK_CHAT_TOOLS] alone.
+ * [agent] is the front agent's command, [FRONT_CLAUDE] or [FRONT_GROK].
  */
-fun quickCommand(prompt: String, resume: String? = null, mac: Boolean = false, newChat: Boolean = false): String =
+fun quickCommand(prompt: String, resume: String? = null, mac: Boolean = false, newChat: Boolean = false, agent: String = FRONT_CLAUDE): String =
+    if (agent == FRONT_GROK) grokFrontCommand(prompt, resume, quickSystemPrompt(mac, newChat), if (newChat) QUICK_CHAT_TOOLS else QUICK_TOOLS, if (newChat) QUICK_CHAT_TOOLS else QUICK_ALLOWED) else
     "claude -p --model $QUICK_MODEL " + (resume?.takeIf(QUICK_SESSION::matches)?.let { "--resume $it " } ?: "") +
         "--output-format stream-json --verbose --include-partial-messages --permission-mode manual --permission-prompts none " +
         "--append-system-prompt ${shellQuote(quickSystemPrompt(mac, newChat))} --tools ${(if (newChat) QUICK_CHAT_TOOLS else QUICK_TOOLS).joinToString(" ")} " +
@@ -192,9 +246,11 @@ sealed interface QuickEvent {
     data object Fault : QuickEvent
 }
 
-/** Reads one line of `claude -p --output-format stream-json`; null for one that says nothing about the answer, or isn't JSON. */
+/** Reads one line of `claude -p --output-format stream-json`, or of Grok's `streaming-messages-json`, which is the same; null for one that says nothing about the answer, or isn't JSON. */
 fun quickEvent(line: String): QuickEvent? {
-    val event = runCatching { JSONObject(line) }.getOrNull() ?: return QuickEvent.Lost.takeIf { line.startsWith("No conversation found") }
+    // Claude Code's words for a conversation that is gone, and Grok's.
+    val event = runCatching { JSONObject(line) }.getOrNull()
+        ?: return QuickEvent.Lost.takeIf { line.startsWith("No conversation found") || line.startsWith("Error: Failed to restore session") }
     fun session() = event.optString("session_id").takeIf(QUICK_SESSION::matches)
     return when (event.optString("type")) {
         "system" -> if (event.optString("subtype") == "init") session()?.let(QuickEvent::Session) else null

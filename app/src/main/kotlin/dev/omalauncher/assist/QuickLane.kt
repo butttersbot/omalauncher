@@ -13,6 +13,7 @@ import dev.omalauncher.oma.heard
 import dev.omalauncher.oma.TaskStatus
 import dev.omalauncher.oma.UNDECIDED_AGENT
 import dev.omalauncher.phone.HomeDoor
+import java.io.File
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
@@ -33,7 +34,7 @@ object QuickLane {
     @Volatile var label = "Ready"; private set
     /** Which task of the Oma thread the request it has now is. */
     @Volatile var time = 0L; private set
-    /** The Claude session the next request follows up on. */
+    /** The front conversation the next request follows up on, as [frontKept] keeps it. */
     @Volatile private var thread: String? = null
     @Volatile private var process: Process? = null
     @Volatile private var stopping = false
@@ -48,12 +49,22 @@ object QuickLane {
     }
 
     /**
-     * Whether there is a front agent to ask: Claude Code is it, and what it hands over needs a default agent
-     * that works in the background. One that opens in a terminal is sent to as it always was.
+     * Whether there is a front agent to ask: Claude Code or Grok ([agent]) is installed, and what it hands over
+     * needs a default agent that works in the background. One that opens in a terminal is sent to as it always was.
      */
     fun ready(context: Context): Boolean {
         val agents = (context.applicationContext as App).runtime.agents
-        return agents.installed.any { it.bin == "claude" } && agents.default?.bin in BACKGROUND_AGENTS
+        return agents.installed.any { it.bin == agent(context) } && agents.default?.bin in BACKGROUND_AGENTS
+    }
+
+    /**
+     * Which agent answers as the front agent: Grok when ~/.config/omalauncher/front-agent says "grok" and Grok is
+     * installed, else Claude Code ([frontAgentOf]). Read for each request, so a change takes effect on the next one.
+     */
+    private fun agent(context: Context): String {
+        val runtime = (context.applicationContext as App).runtime
+        val word = runCatching { File(runtime.proot.launcherConfig, FRONT_AGENT_FILE).readText() }.getOrNull()
+        return frontAgentOf(word, runtime.agents.installed.map { it.bin })
     }
 
     /**
@@ -163,7 +174,8 @@ object QuickLane {
      */
     private fun read(context: Context, prompt: String, page: String?, away: Boolean, waited: Long?, chat: String = "") {
         val runtime = (context.applicationContext as App).runtime
-        val resumed = if (chat.isEmpty()) thread else TabBook.of(context).chat(chat)?.front?.ifEmpty { null }
+        val front = agent(context)
+        val resumed = frontResumed(front, if (chat.isEmpty()) thread else TabBook.of(context).chat(chat)?.front)
         val log = ChatLog.of(context)
         val began = System.currentTimeMillis()
         // The Mac's threads as the phone last heard of them: asking the Mac here would hold his request up. Null
@@ -190,7 +202,7 @@ object QuickLane {
             val filed = waited?.also { time -> log.update(time, save = true) { it.copy(status = TaskStatus.Running) } }
                 ?: ChatHistory.stamp(log.tasks, began).also { log.begin(ChatTask(it, UNDECIDED_AGENT, prompt, chat = chat)) }
             // Its home changes are told apart from a builder's working at the same time (Soma Canvas slice 6).
-            Triple(filed, "OMA_CANVAS_ACTOR=quick " + quickCommand(frontPrompt(board, prompt, mac, second, phone), resumed, mac = mac != null, newChat = chat.isNotEmpty()), asking)
+            Triple(filed, "OMA_CANVAS_ACTOR=quick " + quickCommand(frontPrompt(board, prompt, mac, second, phone), resumed, mac = mac != null, newChat = chat.isNotEmpty(), agent = front), asking)
         }
         time = asked; working = true; stopping = false; answer = ""; label = ANSWERING
         // A new chat's work that it answers in prose is not shown, and goes to the Mac as if it had said nothing.
@@ -215,7 +227,7 @@ object QuickLane {
                 var its = false
                 // The entry reads as a task just begun until the front agent shows it is answering this one itself.
                 fun own() {
-                    if (!its) log.update(asked, save = true) { it.copy(agent = QUICK_AGENT, answeredBy = agentName(QUICK_MODEL).orEmpty()) }
+                    if (!its) log.update(asked, save = true) { it.copy(agent = QUICK_AGENT, answeredBy = agentName(frontModel(front)).orEmpty()) }
                     its = true
                 }
                 child.inputStream.bufferedReader().forEachLine { line ->
@@ -292,10 +304,11 @@ object QuickLane {
                     AgentNotices.answered(context, if (outcome == FrontOutcome.Answered) "Done" else INCOMPLETE, answer, AgentNotices.FRONT)
                 }
                 synchronized(this) {
-                    if (chat.isNotEmpty()) TabBook.change(context) { it.heard(chat, next) }
+                    val kept = frontKept(front, next)
+                    if (chat.isNotEmpty()) TabBook.change(context) { it.heard(chat, kept) }
                     else {
-                        thread = next
-                        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString("thread", next).apply()
+                        thread = kept
+                        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString("thread", kept).apply()
                     }
                     process = null; working = false
                     // The last thing this request does: the next one takes over every field above.
@@ -410,6 +423,9 @@ object QuickLane {
     }
 
     private const val PREFS = "quick-lane"
+
+    /** The file in ~/.config/omalauncher that names the front agent, where scripts and agents can set it too. */
+    private const val FRONT_AGENT_FILE = "front-agent"
     private const val ANSWERING = "Answering"
     /** What the card over a spoken request's answer says in place of Oma's name when it isn't a whole answer. */
     private const val INCOMPLETE = "Oma needs attention"
