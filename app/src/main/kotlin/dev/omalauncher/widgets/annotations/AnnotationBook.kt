@@ -211,6 +211,17 @@ class AnnotationBook(
         places: Collection<Int>,
     ): Boolean = change(page) { it.with(from.erased(places)) }
 
+    /**
+     * Wipes every stroke off [page] as one step, which undo brings back (Boss, 2026-10-19: pen marks taken off at once,
+     * not after an update): how many went, 0 when there were none, or null if the page takes no change now.
+     */
+    fun wipe(page: String): Int? {
+        val there = editable(page) ?: return null
+        val count = there.ink.strokes.size
+        if (count == 0) return 0
+        return if (change(page) { it.with(it.ink.erased(it.ink.strokes.indices.toList())) }) count else null
+    }
+
     fun undo(page: String): Boolean = change(page) { was -> was.ink.takeIf { it.canUndo }?.let { was.with(it.undo()) } }
 
     fun redo(page: String): Boolean = change(page) { was -> was.ink.takeIf { it.canRedo }?.let { was.with(it.redo()) } }

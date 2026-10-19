@@ -24,6 +24,7 @@ oma-phone note [--near COL,ROW] TEXT
 oma-phone stickers
 oma-phone stick [--page NAME] [--near COL,ROW] STICKER
 oma-phone sticker [--page NAME] ID turn DEGREES | size HUNDREDTHS | move COL,ROW | remove
+oma-phone ink clear [--page NAME]
 oma-phone click SNAPSHOT NODE_ID
 oma-phone type SNAPSHOT NODE_ID TEXT
 oma-phone scroll SNAPSHOT NODE_ID [forward|backward]
@@ -52,6 +53,7 @@ stick puts one on a home page (the one the request came from, or --page NAME), c
 there, near the cell given; the answer has its id and the cells it lies on. sticker changes one
 that is there, by its id from board: turn to DEGREES, size as hundredths of the page's width (4 to
 50), move its middle to a cell, or remove. clear is false when it then lies on a tile or another one. Only stickers are touched, and only when the user asked.
+ink clear wipes the pen marks off the page showing, or the one named, at once and as one step its undo brings back; the answer says how many went. Only pen marks are touched, and only when the user asked.
 Read after each action. Use screenshot's path with your agent's image tool.
 screen is read cut down to what you act on: the app in front and each control that says something,
 with whether it takes a press, text or a scroll. --until TEXT waits up to 5 seconds for TEXT to show.
@@ -153,6 +155,14 @@ stick|sticker)
     request=$(jq -cn --arg id "$1" --arg action "$2" --arg value "${3:-}" --arg page "$page" \
       '{command:"sticker",action:$action,id:$id} + (if $action=="remove" then {} else {value:$value} end) + (if $page=="" then {} else {page:$page} end)')
   fi;;
+ink)
+  [ "${1:-}" = clear ] || { echo 'Usage: oma-phone ink clear [--page NAME]' >&2; exit 2; }
+  shift; page=''
+  if [ "${1:-}" = '--page' ]; then
+    [ "$#" -ge 2 ] || { echo 'Page name required after --page' >&2; exit 2; }
+    page=$2
+  fi
+  request=$(jq -cn --arg page "$page" '{command:"ink",action:"clear"} + (if $page=="" then {} else {page:$page} end)');;
 canvas)
   if [ "${1:-help}" = help ] || [ "${1:-}" = --help ] || [ "${1:-}" = -h ]; then
     cat <<'CANVAS'

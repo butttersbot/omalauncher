@@ -83,6 +83,7 @@ class PhoneBridge(private val context: Context, private val proot: Proot) {
             When the user asks for another look: `oma-phone looks` lists them and says which is picked, `oma-phone look NAME` picks one.
             Run `oma-phone board` to see what is where on a home page before placing anything on it: its grid, every tile's cells, every note and sticker, and `free`, the empty rectangles of cells.
             When the user asks for a sticker on a home page, or for one to be turned, resized, moved or taken off: `oma-phone stickers` lists them, `oma-phone stick NAME` puts one on the page clear of what is there, and `oma-phone sticker ID turn|size|move|remove` changes one by its id from `oma-phone board`. Each answers with what came of it. Do not do these by tapping, and never to a sticker the user did not ask about.
+            When the user asks for the pen marks on a home page gone, run `oma-phone ink clear` for the page showing or `oma-phone ink clear --page NAME` for another, once for each page he means: it wipes them at once, as one step he can undo, and says how many went. Never by tapping, and never on a page he did not mean.
             Only when the user asks for a sticky note on their home page, run `oma-phone note "TEXT"`: plain text, at most 280 characters. Do not leave one to say what you did. Notes go in free space by themselves, never on a widget; the reply says which cells the note lies on. If it says `clear` is false, the page is full: tell the user.
         """.trimIndent()
     }

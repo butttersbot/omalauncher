@@ -87,6 +87,15 @@ class PhoneStickersTest {
             stickers = stickers.filter { it.id != id }
             return true
         }
+
+        /** Every page whose pen marks were wiped, and how many strokes each had. */
+        val wiped = ArrayList<String>()
+        var strokes = mapOf("p1" to 3, "p2" to 0)
+
+        override fun wipeInk(page: String): Int? {
+            wiped += page
+            return strokes[page].also { strokes = strokes + (page to 0) }
+        }
     }
 
     private fun ask(
@@ -202,5 +211,22 @@ class PhoneStickersTest {
         assertEquals(PhoneRequests.Route.Stickers, PhoneRequests.admit(PhoneStickers.COMMAND, {}) { 0 })
         assertFalse(PhoneStickers.COMMAND in PhoneControlPolicy.whilePending)
         assertThrows(IllegalStateException::class.java) { PhoneRequests.admit(PhoneStickers.COMMAND, {}) { 1 } }
+    }
+
+    /** Boss, 2026-10-19: pen marks taken off at once, without an update. */
+    @Test
+    fun inkClearWipesThePageShowingOrTheOneNamedAndNothingElse() {
+        val home = Home(stickers = listOf(Sticker("s1", StickerKind.Star, 0.5f, 0.5f, 0.14f)))
+        val here = ask(home, "command" to "ink", "action" to "clear")
+        assertTrue(here.toString(), here.getBoolean("ok"))
+        assertEquals("Today", here.getString("page"))
+        assertEquals(3, here.getInt("wiped"))
+        val there = ask(home, "command" to "ink", "action" to "clear", "page" to "Trips")
+        assertEquals(0, there.getInt("wiped"))
+        assertEquals(listOf("p1", "p2"), home.wiped)
+        // Stickers stay.
+        assertEquals(listOf("s1"), home.stickers.map { it.id })
+        assertTrue(home.removed.isEmpty())
+        assertEquals(PhoneRequests.Route.Stickers, PhoneRequests.admit("ink", {}) { 0 })
     }
 }

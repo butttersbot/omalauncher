@@ -53,7 +53,7 @@ object PhoneRequests {
             in PhonePages.commands -> Route.Pages
             PhoneBoard.COMMAND -> Route.Board
             PhoneNotes.COMMAND -> Route.Note
-            PhoneStickers.COMMAND -> Route.Stickers
+            PhoneStickers.COMMAND, PhoneStickers.INK -> Route.Stickers
             PhonePageEdits.COMMAND -> Route.PageEdits
             PhoneLooks.COMMAND -> Route.Looks
             PhoneLockStar.COMMAND -> Route.LockStar
@@ -398,6 +398,9 @@ interface StickerPad {
         page: String,
         id: String,
     ): Boolean
+
+    /** Wipes the pen marks off [page] as one undoable step: how many went, or null if the page can't be changed. */
+    fun wipeInk(page: String): Int?
 }
 
 /**
@@ -408,6 +411,9 @@ interface StickerPad {
  */
 object PhoneStickers {
     const val COMMAND = "sticker"
+
+    /** The bridge's pen-mark command, which the sticker commands answer too: `ink clear` wipes a page's pen marks. */
+    const val INK = "ink"
 
     /** A sticker's size as it is asked for: its longer side in hundredths of the page's width. */
     val SIZES = 4.0..50.0
@@ -523,6 +529,16 @@ object PhoneStickers {
             }
         }
         val page = page(input, pad)
+        if (input.optString("command") == INK) {
+            if (action != "clear") error("Unknown ink action: $action. Use clear.")
+            // Looked at first, so a page not yet read is read before it is wiped.
+            return pad.look(page) { _, _ ->
+                answering(reply) {
+                    val wiped = stickers.wipeInk(page) ?: error("That page can't be changed now. Nothing was wiped.")
+                    reply(JSONObject().put("ok", true).put("page", pad.name(page) ?: "").put("wiped", wiped))
+                }
+            }
+        }
         when (action) {
             "add" -> {
                 val name = input.getString("name")
