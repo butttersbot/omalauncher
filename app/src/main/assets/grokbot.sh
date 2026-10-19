@@ -8,7 +8,7 @@
 #   grokbot help
 #
 # Each call is one headless run of this computer's Grok CLI, signed in as Boss (`grok login`). Neither helper has a
-# shell, a file writer or a connected service (MCP): on a computer whose Claude Code settings say "auto", Grok's own
+# shell, a file reader or writer, or a connected service (MCP); only the X helper has the web: on a computer whose Claude Code settings say "auto", Grok's own
 # "ask nobody" mode is overridden (seen 2026-10-18: it ran python3 and rm), so what it must not do is taken away, not
 # merely refused. The content helper's files are copied out of Grok's session by this script. Nothing here keeps a key.
 set -u -o pipefail
@@ -24,6 +24,10 @@ command -v "$grok_bin" >/dev/null 2>&1 || { echo "grokbot: Grok CLI is not insta
 # tools by id; a name it doesn't know removes nothing (it only warns), so this list can only take away.
 NO_TOOLS="run_terminal_cmd,write,search_replace,spawn_subagent,task,workflow,monitor,scheduler_create,scheduler_delete,scheduler_list,kill_command_or_subagent,ask_user_question"
 NO_MEDIA="image_gen,image_edit,image_to_video,reference_to_video"
+# And what each helper may have at all, so a tool not named above (reading files, grep) isn't there either: with file
+# reading and the web together, a post planting instructions could have it read a secret and fetch it out (review, 2026-10-19).
+X_TOOLS="web_search,web_fetch"
+MAKE_TOOLS="$NO_MEDIA"
 
 X_RULES="You are Soma's X helper, the one agent Boss and his other agents ask about anything on X (Twitter). Use your X \
 search for every claim: find posts, accounts, threads and replies, and read their engagement (likes, reposts, replies, \
@@ -43,8 +47,8 @@ case "${1:-}" in
     shift
     [ "$#" -ge 1 ] && [ -n "$*" ] || { usage >&2; exit 2; }
     exec "$grok_bin" --permission-mode dontAsk --no-subagents --no-plan --rules "$X_RULES" \
-      --disallowed-tools "$NO_TOOLS,$NO_MEDIA" --deny MCPTool --deny Edit --deny Write \
-      --single="$*" < /dev/null ;;
+      --tools "$X_TOOLS" --disallowed-tools "$NO_TOOLS,$NO_MEDIA,read_file,grep" --deny MCPTool --deny Edit --deny Write \
+      --deny Read --single="$*" < /dev/null ;;
   make)
     shift
     out=""
@@ -66,7 +70,8 @@ case "${1:-}" in
     # Always-approve, since the Imagine tools save into Grok's session and "ask nobody" refuses them; safe only because
     # every tool that could do harm is gone above, and connected services are denied (a deny holds in every mode).
     result=$(cd "$work" && "$grok_bin" --output-format json --permission-mode bypassPermissions --no-subagents --no-plan \
-      --rules "$MAKE_RULES" --disallowed-tools "$NO_TOOLS" --deny MCPTool \
+      --rules "$MAKE_RULES" --tools "$MAKE_TOOLS" --disallowed-tools "$NO_TOOLS,read_file,grep,web_search,web_fetch" \
+      --deny MCPTool --deny Read --deny WebFetch \
       --single="${words[*]}" < /dev/null)
     status=$?
     text=$(printf '%s' "$result" | jq -r '.text // .error // empty' 2>/dev/null)
