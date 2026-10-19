@@ -43,6 +43,12 @@ sealed interface CanvasVerb {
     data class Remove(val key: String) : CanvasVerb
 
     /**
+     * The page [id] given the panel layout [panels] (null: the free grid), and the items [cells] names, all on that page,
+     * moved to those cells at once: a refit or a swap of panels never passes through cells two items hold (PanelVerbs.kt).
+     */
+    data class PagePanels(val id: String, val panels: String?, val cells: Map<String, Cell> = emptyMap()) : CanvasVerb
+
+    /**
      * A verb this build can't read or apply: kept as it came ([raw], its JSON text), so a newer phone's or service's change
      * is never lost or misread, and two logs holding it compare equal.
      */
@@ -109,6 +115,7 @@ fun applyVerb(
             }), true)
         }
         is CanvasVerb.Remove -> if (notebook.pages.none { p -> p.items.any { it.key == verb.key } }) no("the item is gone") else Applied(notebook.copy(pages = notebook.pages.map { p -> p.copy(items = p.items.filter { it.key != verb.key }) }), true)
+        is CanvasVerb.PagePanels -> applyPagePanels(notebook, verb)
         is CanvasVerb.Unknown -> no("a newer build's verb: kept, not applied")
     }
 }
@@ -137,6 +144,7 @@ object VerbJson {
         is CanvasVerb.Place -> JSONObject().put("verb", "module.place").put("key", v.key).put("kind", v.kind.name).put("page", v.page).put("cell", cell(v.cell))
         is CanvasVerb.Move -> JSONObject().put("verb", "module.move").put("key", v.key).put("page", v.page).put("cell", cell(v.cell))
         is CanvasVerb.Remove -> JSONObject().put("verb", "module.remove").put("key", v.key)
+        is CanvasVerb.PagePanels -> pagePanelsJson(v)
         is CanvasVerb.Unknown -> runCatching { JSONObject(v.raw) }.getOrElse { JSONObject() }
     }
 
@@ -150,6 +158,7 @@ object VerbJson {
             "module.place" -> CanvasVerb.Place(o.getString("key"), ItemKind.valueOf(o.getString("kind")), o.getString("page"), cellOf(o.getJSONObject("cell"))!!)
             "module.move" -> CanvasVerb.Move(o.getString("key"), o.getString("page"), cellOf(o.getJSONObject("cell"))!!)
             "module.remove" -> CanvasVerb.Remove(o.getString("key"))
+            "page.panels" -> pagePanelsOf(o)
             else -> CanvasVerb.Unknown(o)
         }
     }.getOrElse { CanvasVerb.Unknown(o) }

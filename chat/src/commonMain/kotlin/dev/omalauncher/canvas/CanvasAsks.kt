@@ -403,6 +403,7 @@ fun inverseOf(before: Notebook, verb: CanvasVerb): List<CanvasVerb> = when (verb
         val item = page?.items?.first { it.key == verb.key }
         if (page == null || item?.cell == null) emptyList() else listOf(CanvasVerb.Place(item.key, item.kind, page.id, item.cell))
     }
+    is CanvasVerb.PagePanels -> dev.omalauncher.widgets.layout.inverseOfPagePanels(before, verb)
     is CanvasVerb.Unknown -> emptyList()
 }
 
@@ -446,6 +447,7 @@ private fun what(v: CanvasVerb): String = when (v) {
     is CanvasVerb.Place -> moduleTitle(v.key)
     is CanvasVerb.Move -> moduleTitle(v.key)
     is CanvasVerb.Remove -> "taking ${moduleTitle(v.key)} off"
+    is CanvasVerb.PagePanels -> "the page's panels"
     is CanvasVerb.Unknown -> "a newer build's change"
 }
 
@@ -516,6 +518,7 @@ fun nothingLeftOf(now: Notebook, inverses: List<CanvasVerb>): Boolean {
             is CanvasVerb.PageRemove -> !page(v.id)
             is CanvasVerb.PageRename -> !page(v.id)
             is CanvasVerb.PageMake -> page(v.id)
+            is CanvasVerb.PagePanels -> !page(v.id)
             is CanvasVerb.Unknown -> true
         }
     }
@@ -616,6 +619,7 @@ object CanvasCommands {
         templateWords(words, pad, shelf, request, actor) ?: when (words.firstOrNull()) {
             "board" -> boardJson(pad.notebook(), pad.rules, words.drop(1).joinToString(" ").ifBlank { null })
             "modules" -> modulesJson()
+            "page.panels", "page-panels" -> dev.omalauncher.widgets.layout.panelWords(words, pad, request, actor)
             "undo" -> {
                 // A request with nothing of it left here is set aside (the Fold forgets it), and the one before it is undone.
                 val point = pad.restorePoints().firstOrNull { p ->

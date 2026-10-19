@@ -108,15 +108,35 @@ fun diffToVerbs(before: Notebook, after: Notebook): List<CanvasVerb> {
     val new = where(after)
     // Removals first, so a place into cells something left is never refused for them.
     for ((key, _) in old) if (key !in new) verbs += CanvasVerb.Remove(key)
+    // A panel page's own items change cells together, in one verb with its layout (PanelVerbs.kt): a refit or a swap of
+    // panels, done one move at a time, would pass through cells two items hold, and the service would put one elsewhere.
+    val panels = after.pages.associate { p -> p.id to LinkedHashMap<String, Cell>() }
+        .filterKeys { id -> after.pages.first { it.id == id }.panels.let { it != null || it != beforePages[id]?.panels } }
+    val moves = ArrayList<CanvasVerb>()
     for ((key, at) in new) {
         val (pageId, item) = at
         val cell = item.cell ?: continue
         val prev = old[key]
         when {
             // An app or a folder goes as the cells it takes: the service's copy holds it bare, for room, never to open.
-            prev == null -> verbs += CanvasVerb.Place(key, item.kind, pageId, cell)
-            prev.first != pageId || prev.second.cell != cell -> verbs += CanvasVerb.Move(key, pageId, cell)
+            prev == null -> moves += CanvasVerb.Place(key, item.kind, pageId, cell)
+            prev.first == pageId && prev.second.cell != null && prev.second.cell != cell && pageId in panels -> panels.getValue(pageId)[key] = cell
+            prev.first != pageId || prev.second.cell != cell -> moves += CanvasVerb.Move(key, pageId, cell)
         }
+    }
+    val recut = panels.filter { (id, cells) -> cells.isNotEmpty() || after.pages.first { it.id == id }.panels != beforePages[id]?.panels }
+    // A page is re-cut once what leaves it for another page has gone, and what comes onto it comes after the cut: in passes,
+    // each doing what waits on nothing left. A ring that waits on itself goes as it is, and sync settles it as before.
+    fun into(v: CanvasVerb) = (v as? CanvasVerb.Move)?.page ?: (v as? CanvasVerb.Place)?.page
+    fun from(v: CanvasVerb) = (v as? CanvasVerb.Move)?.let { m -> old[m.key]?.first?.takeIf { it != m.page } }
+    val cuts = recut.keys.toMutableList()
+    val waiting = moves.toMutableList()
+    while (cuts.isNotEmpty() || waiting.isNotEmpty()) {
+        val ready = cuts.filter { id -> waiting.none { from(it) == id } }
+        val going = waiting.filter { into(it) !in cuts }
+        val stuck = ready.isEmpty() && going.isEmpty()
+        for (id in if (stuck) cuts.toList() else ready) { verbs += CanvasVerb.PagePanels(id, after.pages.first { it.id == id }.panels, recut.getValue(id)); cuts -= id }
+        if (stuck) { verbs += waiting; waiting.clear() } else { verbs += going; waiting -= going.toSet() }
     }
     for (id in beforePages.keys) if (after.pages.none { it.id == id }) verbs += CanvasVerb.PageRemove(id)
     return verbs
@@ -147,6 +167,8 @@ fun takeWhole(log: VerbLog, sent: List<SentVerb>, columns: Int, rows: Int, origi
         else if (was.name != p.name) verbs += CanvasVerb.PageRename(p.id, p.name)
     }
     for ((key, at) in wanted) if (had[key]?.let { same(it, at) } != true) at.second.cell?.let { verbs += CanvasVerb.Place(key, at.second.kind, at.first, it) }
+    // A page's panel layout as the screen has it (a page made here has none yet).
+    for (p in want.pages) if (p.panels != page.pages.firstOrNull { it.id == p.id }?.panels) verbs += CanvasVerb.PagePanels(p.id, p.panels)
     var next = log
     val request = sent.firstOrNull()?.request ?: "whole"
     for (v in verbs) {

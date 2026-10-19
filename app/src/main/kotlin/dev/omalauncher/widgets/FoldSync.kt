@@ -218,6 +218,7 @@ class FoldSync(
                 if (kind != ItemKind.App && kind != ItemKind.Folder) notebook.forget(v.key)
                 true
             }
+            is CanvasVerb.PagePanels -> check.applied && notebook.setPanels(v.id, v.panels, v.cells)
             is CanvasVerb.Unknown -> true
         }
     }
