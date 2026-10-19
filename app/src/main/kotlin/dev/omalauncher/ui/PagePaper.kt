@@ -17,6 +17,8 @@ import androidx.compose.ui.graphics.ImageShader
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import dev.omalauncher.widgets.render.BackdropPicture
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -42,33 +44,59 @@ fun PagePaper(modifier: Modifier = Modifier) {
     if (page.kind == PageKind.System) return
     val wallpapers = ActivePack.wallpapers
     val density = LocalDensity.current
-    val pattern = remember(page, density.density) { if (page.pattern == PaperPattern.None) null else patternTile(page, density.density) }
-    val brush = remember(pattern) { pattern?.let { ShaderBrush(ImageShader(it, TileMode.Repeated, TileMode.Repeated)) } }
-    val color = page.color.toColor()
-    Canvas(modifier.fillMaxSize()) {
-        drawRect(color)
-        val image =
-            if (page.kind != PageKind.Wallpaper) {
-                null
-            } else {
-                when (wallpaperSide(size.width / density.density, size.height / density.density, wallpapers.cover != null, wallpapers.inner != null)) {
-                    "cover" -> wallpapers.cover
-                    "inner" -> wallpapers.inner
-                    else -> null
-                }
+    val brush = remember(page, density.density) { patternBrush(page, density.density) }
+    Canvas(modifier.fillMaxSize()) { drawPagePaper(page, wallpapers, brush) }
+}
+
+/** [page]'s pattern as a repeating brush, [density] pixels to the dp; null for a page without one. */
+private fun patternBrush(
+    page: PackPage,
+    density: Float,
+): ShaderBrush? = if (page.pattern == PaperPattern.None) null else ShaderBrush(ImageShader(patternTile(page, density), TileMode.Repeated, TileMode.Repeated))
+
+/** What [PagePaper] draws, for the screen this scope covers. */
+private fun DrawScope.drawPagePaper(
+    page: PackPage,
+    wallpapers: PackWallpapers,
+    brush: ShaderBrush?,
+) {
+    drawRect(page.color.toColor())
+    val image =
+        if (page.kind != PageKind.Wallpaper) {
+            null
+        } else {
+            when (wallpaperSide(size.width / density, size.height / density, wallpapers.cover != null, wallpapers.inner != null)) {
+                "cover" -> wallpapers.cover
+                "inner" -> wallpapers.inner
+                else -> null
             }
-        val crop = image?.let { coverCrop(it.width, it.height, size.width.roundToInt(), size.height.roundToInt()) }
-        if (image != null && crop != null) {
-            drawImage(
-                image,
-                srcOffset = IntOffset(crop[0], crop[1]),
-                srcSize = IntSize(crop[2], crop[3]),
-                dstSize = IntSize(size.width.roundToInt(), size.height.roundToInt()),
-                filterQuality = FilterQuality.Medium,
-            )
-        } else if (brush != null) {
-            drawRect(brush)
         }
+    val crop = image?.let { coverCrop(it.width, it.height, size.width.roundToInt(), size.height.roundToInt()) }
+    if (image != null && crop != null) {
+        drawImage(
+            image,
+            srcOffset = IntOffset(crop[0], crop[1]),
+            srcSize = IntSize(crop[2], crop[3]),
+            dstSize = IntSize(size.width.roundToInt(), size.height.roundToInt()),
+            filterQuality = FilterQuality.Medium,
+        )
+    } else if (brush != null) {
+        drawRect(brush)
+    }
+}
+
+/**
+ * The look's page and its gutters, [across] pages side by side, as frosted widgets see it behind them; null for a
+ * look that leaves the page to the system. Read while composing, so a frosted node makes its blur again when the
+ * look, its wallpapers or the pages across change.
+ */
+fun pageBackdrop(across: Int): BackdropPicture? {
+    val page = Pack.look.pack.page
+    if (page.kind == PageKind.System) return null
+    val wallpapers = ActivePack.wallpapers
+    return BackdropPicture(listOf(page, wallpapers.cover, wallpapers.inner, across)) {
+        drawPagePaper(page, wallpapers, patternBrush(page, density))
+        if (page.gutter && across >= 1) drawPageGutters(across)
     }
 }
 
@@ -109,16 +137,18 @@ internal fun patternTile(
 @Composable
 fun PageGutters(across: Int) {
     if (!Pack.look.pack.page.gutter || across < 1) return
-    Canvas(Modifier.fillMaxSize()) {
-        val u = prototypeUnit(size.width / density, size.height / density)
-        val wide = 9f * u * density
-        for (page in 0 until across) {
-            val x = size.width * page / across
-            drawRect(
-                Brush.horizontalGradient(listOf(Color.Black.copy(alpha = 0.16f), Color.Transparent), startX = x, endX = x + wide),
-                topLeft = Offset(x, 0f),
-                size = Size(wide, size.height),
-            )
-        }
+    Canvas(Modifier.fillMaxSize()) { drawPageGutters(across) }
+}
+
+private fun DrawScope.drawPageGutters(across: Int) {
+    val u = prototypeUnit(size.width / density, size.height / density)
+    val wide = 9f * u * density
+    for (page in 0 until across) {
+        val x = size.width * page / across
+        drawRect(
+            Brush.horizontalGradient(listOf(Color.Black.copy(alpha = 0.16f), Color.Transparent), startX = x, endX = x + wide),
+            topLeft = Offset(x, 0f),
+            size = Size(wide, size.height),
+        )
     }
 }

@@ -15,6 +15,14 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.net.URI
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
@@ -30,6 +38,10 @@ class DesktopWidgetServices private constructor(
     private val get: (url: String, headers: Map<String, String>, timeoutSeconds: Int) -> ShellResult,
     /** The folder commands run in: one of their own, never Soma's or his home. */
     private val workDir: File,
+    /** A web file's bytes, or null when it couldn't be had; a test gives canned ones. */
+    private val download: (url: String) -> ByteArray?,
+    /** Web images, sounds and fonts on disk, by the SHA-256 of their URL. */
+    private val fileCache: File,
 ) : Services {
     override suspend fun cmd(command: String, timeoutSeconds: Int) = withContext(Dispatchers.IO) { shell(command, timeoutSeconds) }
 
@@ -88,6 +100,58 @@ class DesktopWidgetServices private constructor(
         return ShellResult(out.toString(), err.toString(), p.exitValue())
     }
 
+    /** One download per URL at a time: 48 thumbnails from one file ask for each image once. */
+    private val fileLocks = ConcurrentHashMap<String, Mutex>()
+
+    /** When a URL last failed, in nanoseconds, so a widget offline doesn't ask again on every update. */
+    private val fileFailed = ConcurrentHashMap<String, Long>()
+
+    /**
+     * A web image, sound or font as the phone keeps one (WidgetServices.remoteFile): https only, a day before it's asked
+     * for again, a minute before a failed one is tried again, and an old copy when a new one can't be had.
+     */
+    override suspend fun remoteFile(url: String): File? {
+        if (!url.startsWith("https://")) return null
+        return fileLocks.getOrPut(url) { Mutex() }.withLock {
+            withContext(Dispatchers.IO) {
+                val file = File(fileCache, sha256(url))
+                val kept = file.takeIf { it.isFile }
+                if (kept != null && System.currentTimeMillis() - kept.lastModified() < FILE_FRESH_MS) return@withContext kept
+                val failed = fileFailed[url]
+                if (failed != null && System.nanoTime() - failed < FILE_RETRY_NS) return@withContext kept
+                val bytes = runCatching { download(url) }.getOrNull()
+                if (bytes == null) {
+                    fileFailed[url] = System.nanoTime()
+                    return@withContext kept
+                }
+                fileFailed.remove(url)
+                runCatching {
+                    fileCache.mkdirs()
+                    val tmp = File.createTempFile("download", ".part", fileCache)
+                    try {
+                        tmp.writeBytes(bytes)
+                        Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+                    } finally {
+                        tmp.delete()
+                    }
+                    pruneFiles()
+                    file
+                }.getOrElse { kept }
+            }
+        }
+    }
+
+    /** Deletes the longest-kept files until the cache is under [FILE_CACHE_BYTES]. */
+    private fun pruneFiles() {
+        val files = fileCache.listFiles()?.filter { it.isFile && !it.name.endsWith(".part") }?.sortedBy { it.lastModified() } ?: return
+        var total = files.sumOf { it.length() }
+        for (f in files) {
+            if (total <= FILE_CACHE_BYTES) break
+            total -= f.length()
+            f.delete()
+        }
+    }
+
     /** The phone's own data (battery, media, the device): there is none here. */
     override fun android(name: String): Value = Null
 
@@ -113,13 +177,46 @@ class DesktopWidgetServices private constructor(
         /** As much of a response as a widget gets: the phone's cap, so one answer can't fill memory here either. */
         private const val MAX_HTTP_BYTES = 1 shl 20
 
-        /** What [widget] runs with on this machine: HTTP, and this machine's shell behind [gate]. */
+        /** The most of one web file kept, as on the phone. */
+        private const val MAX_FILE_BYTES = 8 shl 20
+        private const val FILE_FRESH_MS = 24 * 3600_000L
+        private const val FILE_RETRY_NS = 60_000_000_000L
+        private const val FILE_CACHE_BYTES = 64L shl 20
+
+        /** What [widget] runs with on this machine: HTTP, web files kept in [files], and this machine's shell behind [gate]. */
         fun gated(
             gate: dev.omalauncher.widgets.runtime.CommandGate,
             widget: String,
             workDir: File = File(SomaHome.dir, "widget-run"),
             get: (url: String, headers: Map<String, String>, timeoutSeconds: Int) -> ShellResult = ::httpGet,
-        ): Services = dev.omalauncher.widgets.runtime.GatedServices(DesktopWidgetServices(get, workDir), gate, widget)
+            files: File = File(SomaHome.dir, "widget-files"),
+            download: (url: String) -> ByteArray? = ::downloadFile,
+        ): Services = dev.omalauncher.widgets.runtime.GatedServices(DesktopWidgetServices(get, workDir, download, files), gate, widget)
+
+        /**
+         * A web file's bytes as the phone downloads one: https only, redirects followed but never to plain http, 8 seconds
+         * to connect and 20 for the answer, and null for anything but a 2xx or a body over [MAX_FILE_BYTES].
+         */
+        fun downloadFile(url: String): ByteArray? {
+            val uri = URI(url)
+            if (uri.scheme != "https") return null
+            val request = HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(20)).GET().setHeader("User-Agent", "omalauncher-widgets").build()
+            val response = client.send(request, HttpResponse.BodyHandlers.ofInputStream())
+            return response.body().use { body ->
+                if (response.statusCode() !in 200..299 || response.uri().scheme != "https") return null
+                // The timeout above ends at the headers: a body that stalls is closed at the same 20 seconds, as the phone's read times out.
+                val stop = closer.schedule({ body.close() }, 20, TimeUnit.SECONDS)
+                try {
+                    body.readNBytes(MAX_FILE_BYTES + 1).takeIf { it.size <= MAX_FILE_BYTES }
+                } finally {
+                    stop.cancel(false)
+                }
+            }
+        }
+
+        private val closer = Executors.newSingleThreadScheduledExecutor { Thread(it, "widget-download-timeout").apply { isDaemon = true } }
+
+        private fun sha256(s: String) = MessageDigest.getInstance("SHA-256").digest(s.toByteArray()).joinToString("") { "%02x".format(it) }
 
         private val client: HttpClient by lazy { HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).connectTimeout(Duration.ofSeconds(8)).build() }
 

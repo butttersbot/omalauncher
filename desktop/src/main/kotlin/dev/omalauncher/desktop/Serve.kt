@@ -147,7 +147,7 @@ class SomaService(
         if (text == null) return null
         val program = runCatching { Compiler.compile(text) }.getOrNull() ?: return null
         if (hostRefusals(program, OwlHost.Service).isNotEmpty()) return null
-        val inst = WidgetInstance(program, DesktopWidgetServices.gated(gate, name, workDir = File(home, "widget-run")), onError = {})
+        val inst = WidgetInstance(program, DesktopWidgetServices.gated(gate, name, workDir = File(home, "widget-run"), files = File(home, "widget-files")), onError = {})
         inst.start(widgetScope) { true }
         widgets[name] = text to inst
         return inst
