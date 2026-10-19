@@ -52,6 +52,8 @@ import dev.omalauncher.oma.ring.HomeRing
 import dev.omalauncher.widgets.checkSecretsCommand
 import dev.omalauncher.widgets.editWidgetCommand
 import dev.omalauncher.widgets.publishWidgetCommand
+import dev.omalauncher.widgets.render.Backdrop
+import dev.omalauncher.widgets.render.LocalBackdrop
 import dev.omalauncher.widgets.render.LocalHomeCovered
 import dev.omalauncher.widgets.reviewSharedWidgetCommand
 import kotlinx.coroutines.launch
@@ -126,7 +128,17 @@ private fun DesktopScreen(
         }
     }
     val covered = remember(state) { { state.homeCovered || runtime.widgets.openScreen != null } }
-    CompositionLocalProvider(LocalHomeCovered provides covered) {
+    // What frosted nodes blur: the look's own page where it draws one, else the background drawn above or by our
+    // live wallpaper, slid as far as the pages.
+    val backdrop =
+        remember(runtime, state) {
+            Backdrop(
+                file = { runtime.themes.background },
+                offset = { state.wallpaperOffset },
+                picture = { if (Pack.ownsPage) pageBackdrop(state.pagesAcross) else null },
+            )
+        }
+    CompositionLocalProvider(LocalHomeCovered provides covered, LocalBackdrop provides backdrop) {
         Column(Modifier.fillMaxSize().safePadding()) {
             HomeScreen(runtime, state, Modifier.weight(1f))
         }
