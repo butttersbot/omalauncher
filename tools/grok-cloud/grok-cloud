@@ -237,6 +237,8 @@ def send_to_grok(job):
         return 'the Grok webhook isn\'t set up yet (Keychain soma-grok-webhook url/key, and key_header in %s)' % CONFIG
     if not url.startswith('https://'):
         return 'the Grok webhook URL must be https'
+    if not public_host(url):
+        return 'the Grok webhook URL must be a public internet host'
     body = json.dumps({
         'job': job['job'], 'tool': job['tool'], 'kind': job['kind'], 'prompt': job['prompt'],
         'callback_url': '%s/grok/cb/%s/%s' % (PUBLIC, job['job'], job['token']),
