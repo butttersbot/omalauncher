@@ -59,6 +59,13 @@ val GROK_QUICK_CHAT_TOOLS = listOf("web_search", "web_fetch")
  */
 val GROK_QUICK_ALLOWED = QUICK_ALLOWED.filter { it.startsWith("Bash(") } + listOf("WebFetch")
 
+/**
+ * What Grok may run as well when it is given agent mail to answer (Boss, 2026-10-19: "both", Grok answers agent mail on
+ * the Mac and on the Fold): sending its answer, and nothing else of `oma msg`. The guard lets it through only as one
+ * answer to one mail: plain options with `--reply-to`, then the answer in double quotes.
+ */
+const val GROK_MAIL_ALLOWED = "Bash(oma msg send *)"
+
 /** What Grok may run in a new chat: the web alone, as [QUICK_CHAT_TOOLS]. */
 val GROK_QUICK_CHAT_ALLOWED = listOf("WebFetch")
 
@@ -106,6 +113,24 @@ ${'$'}{OMA_FRONT_ALLOW:-}
 grokbot x *
 '*) exit 0 ;; esac ;;
 esac
+# An answer to agent mail, in a run that answers one (OMA_FRONT_ALLOW lists the send then): plain options, then the
+# answer in double quotes holding nothing the shell reads inside them, and always the mail it answers.
+case ${'$'}cmd in
+  'oma msg send '*' "'*'"')
+    head=${'$'}{cmd%%\"*}; answer=${'$'}{cmd#*\"}; answer=${'$'}{answer%\"}
+    case ${'$'}head in *[!A-Za-z0-9\ ._:-]*) deny "Only the address, --reply-to and --as go before the answer." ;; esac
+    case ${'$'}head in *' --reply-to '*) ;; *) deny "An answer names the mail it answers with --reply-to." ;; esac
+    case ${'$'}answer in
+      *'"'*|*'${'$'}'*|*'`'*|*'\'*|*'
+'*|'') deny "Answer in plain words on one line: no double quotes, dollar signs, backquotes or backslashes." ;;
+    esac
+    case "
+${'$'}{OMA_FRONT_ALLOW:-}
+" in *'
+oma msg send *
+'*) exit 0 ;; esac
+    deny "Not a command the front agent may run." ;;
+esac
 case ${'$'}cmd in
   *'
 '*|*';'*|*'&'*|*'|'*|*'<'*|*'>'*|*'${'$'}'*|*'`'*|*'('*|*')'*|*'\'*) deny "Only one plain command runs here." ;;
@@ -150,19 +175,24 @@ fun grokGuardEnv(allowed: List<String>): String =
  * front agent answers in seconds or hands over. The prompt is given as `--single=` so one starting with a dash is still
  * his words, never an option.
  */
-fun grokQuickCommand(prompt: String, resume: String? = null, mac: Boolean = false, newChat: Boolean = false): String =
-    grokGuardEnv(if (newChat) GROK_QUICK_CHAT_ALLOWED else GROK_QUICK_ALLOWED) + "grok --cwd \"\$HOME/$GROK_FRONT_FOLDER\" --output-format streaming-messages-json --include-partial-messages --model $QUICK_GROK_MODEL " +
+fun grokQuickCommand(prompt: String, resume: String? = null, mac: Boolean = false, newChat: Boolean = false, mail: Boolean = false): String {
+    val allowed = (if (newChat) GROK_QUICK_CHAT_ALLOWED else GROK_QUICK_ALLOWED) + if (mail && !newChat) listOf(GROK_MAIL_ALLOWED) else emptyList()
+    return grokGuardEnv(allowed) + "grok --cwd \"\$HOME/$GROK_FRONT_FOLDER\" --output-format streaming-messages-json --include-partial-messages --model $QUICK_GROK_MODEL " +
         (resume?.takeIf(GROK_SESSION::matches)?.let { "--resume $it " } ?: "") +
         "--permission-mode dontAsk --no-subagents --no-plan --rules ${shellQuote(quickSystemPrompt(mac, newChat))} " +
         "--tools ${(if (newChat) GROK_QUICK_CHAT_TOOLS else GROK_QUICK_TOOLS).joinToString(",")} " +
-        (if (newChat) GROK_QUICK_CHAT_ALLOWED else GROK_QUICK_ALLOWED).joinToString(" ") { "--allow ${shellQuote(it)}" } + " " +
+        allowed.joinToString(" ") { "--allow ${shellQuote(it)}" } + " " +
         GROK_QUICK_DENIED.joinToString(" ") { "--deny ${shellQuote(it)}" } +
         " --single=${shellQuote(prompt)} < /dev/null"
+}
 
-/** The front agent's command for [agent]: [grokQuickCommand] for Grok, [quickCommand] for Haiku. */
-fun frontCommand(agent: FrontAgent, prompt: String, resume: String? = null, mac: Boolean = false, newChat: Boolean = false): String =
+/**
+ * The front agent's command for [agent]: [grokQuickCommand] for Grok, [quickCommand] for Haiku. [mail] is a run that
+ * answers agent mail, which only Grok is given; it may send its answer.
+ */
+fun frontCommand(agent: FrontAgent, prompt: String, resume: String? = null, mac: Boolean = false, newChat: Boolean = false, mail: Boolean = false): String =
     when (agent) {
-        FrontAgent.Grok -> grokQuickCommand(prompt, resume, mac, newChat)
+        FrontAgent.Grok -> grokQuickCommand(prompt, resume, mac, newChat, mail)
         FrontAgent.Haiku -> quickCommand(prompt, resume, mac, newChat)
     }
 

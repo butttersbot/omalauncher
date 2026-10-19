@@ -147,10 +147,16 @@ object AgentTasks {
             PhoneJobs.ping(context, mail, builders.associate { it.id to !it.working })
             return null
         }
-        val to = pick(mailBuilder(mail.toSession, builders.associate { it.id to it.thread }))
+        val to = pick(addressed(context, mail))
         if (job != null) of(to).followUp(context, mail.text, page = null, earlier = jobPlaybook(job, mail, to), mail = jobLabel(job, mail))
         else of(to).followUp(context, mail.text, page = null, earlier = mail.wrapper(to), mail = mail.label)
         return to
+    }
+
+    /** The builder [mail] names, if it names one ([mailBuilder]). */
+    @Synchronized fun addressed(context: Context, mail: AgentMail): BuilderId? {
+        restore(context)
+        return mailBuilder(mail.toSession, builders.associate { it.id to it.thread })
     }
 
     /** `[ cancel ]` on a follow-up that still waits, whichever builder it waits for. */

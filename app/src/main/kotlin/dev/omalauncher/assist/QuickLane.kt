@@ -39,6 +39,8 @@ object QuickLane {
     @Volatile private var stopping = false
     /** Only touched under the lock. Each one is also a waiting entry in the thread, which is where the chat reads them. */
     private val queue = FrontQueue()
+    /** The agent mail a waiting entry is, by its time; only touched under the lock. */
+    private val mails = HashMap<Long, AgentMail>()
     private var restored = false
 
     @Synchronized fun restore(context: Context) {
@@ -93,7 +95,16 @@ object QuickLane {
      * [chat] is the new chat he sent it in, empty for the Oma tab: its entry is that chat's, the front agent hears
      * it in that chat's own conversation, and what it hands on goes to a new thread on the Mac, never the phone.
      */
-    @Synchronized fun ask(context: Context, prompt: String, away: Boolean = false, chat: String = "") {
+    @Synchronized fun ask(context: Context, prompt: String, away: Boolean = false, chat: String = "") = ask(context, prompt, away, chat, mail = null)
+
+    /**
+     * Another agent's [mail] for the front agent to answer or hand over, as [mailToFront] decides (Boss, 2026-10-19):
+     * shown as agent mail, and read inside [AgentMail.frontWrapper]. One it hands over goes to a builder as mail always
+     * did ([AgentTasks.mail]). If it throws, nothing was asked.
+     */
+    @Synchronized fun mail(context: Context, mail: AgentMail) = ask(context, mail.text, away = false, chat = "", mail = mail)
+
+    private fun ask(context: Context, prompt: String, away: Boolean, chat: String, mail: AgentMail?) {
         // A waiting request is read long after the screen that sent it may have gone, so nothing here keeps that screen.
         val app = context.applicationContext
         restore(app)
@@ -103,13 +114,14 @@ object QuickLane {
         check((app as App).runtime.bootstrap.state.value == LinuxState.Installed) { "Open Omalauncher and finish Linux setup first." }
         // If it is handed over, it is sent from the page he was on when he asked, not the one he has turned to since.
         val page = HomeDoor.home?.showing
-        if (!working) return read(app, prompt, page, away, waited = null, chat = chat)
+        if (!working) return read(app, prompt, page, away, waited = null, chat = chat, mail = mail)
         val log = ChatLog.of(app)
         // Filed under the build lane's lock for the same reason a request read at once is: no two tasks may take one time.
         synchronized(AgentTasks) {
             val filed = ChatHistory.stamp(log.tasks, System.currentTimeMillis())
             if (!queue.add(FrontWaiting(filed, prompt, page, away, chat))) throw FrontQueueFull()
-            log.begin(ChatTask(filed, UNDECIDED_AGENT, prompt, status = TaskStatus.Queued, chat = chat))
+            mail?.let { mails[filed] = it }
+            log.begin(ChatTask(filed, UNDECIDED_AGENT, prompt, status = TaskStatus.Queued, chat = chat, mail = mail?.label.orEmpty()))
         }
     }
 
@@ -137,6 +149,7 @@ object QuickLane {
      */
     @Synchronized fun cancel(context: Context, time: Long) {
         val gone = queue.cancel(time) ?: return
+        mails.remove(gone.time)
         ChatLog.of(context).update(gone.time, save = true) { ChatHistory.dropped(it, FrontQueue.CANCELLED) }
     }
 
@@ -146,7 +159,7 @@ object QuickLane {
      */
     @Synchronized fun dropWaiting(context: Context, chat: String? = null) {
         val log = ChatLog.of(context)
-        queue.drop { chat == null || it.chat == chat }.forEach { waiting -> log.update(waiting.time, save = true) { ChatHistory.dropped(it, FrontQueue.STOPPED) } }
+        queue.drop { chat == null || it.chat == chat }.forEach { waiting -> mails.remove(waiting.time); log.update(waiting.time, save = true) { ChatHistory.dropped(it, FrontQueue.STOPPED) } }
     }
 
     /**
@@ -157,7 +170,7 @@ object QuickLane {
         while (true) {
             val next = queue.next() ?: return
             try {
-                return read(context, next.prompt, next.page, next.away, waited = next.time, chat = next.chat)
+                return read(context, next.prompt, next.page, next.away, waited = next.time, chat = next.chat, mail = mails.remove(next.time))
             } catch (e: Exception) {
                 ChatLog.of(context).update(next.time, save = true) { it.copy(result = e.message ?: FrontQueue.UNREAD, status = TaskStatus.Failed) }
             }
@@ -171,7 +184,7 @@ object QuickLane {
      * the Mac as they stand now. A request of the new chat [chat] continues that chat's own conversation with the
      * front agent, never the Oma tab's, so nothing said elsewhere colours where its first words go.
      */
-    private fun read(context: Context, prompt: String, page: String?, away: Boolean, waited: Long?, chat: String = "") {
+    private fun read(context: Context, prompt: String, page: String?, away: Boolean, waited: Long?, chat: String = "", mail: AgentMail? = null) {
         val runtime = (context.applicationContext as App).runtime
         // Checked as it is read, so a request that waited goes to whoever answers now; ready() was true when it was sent.
         // Grok runs only behind its command guard; if that can't be put in place, Haiku answers instead, or nobody.
@@ -205,9 +218,9 @@ object QuickLane {
             // agent saw and where his words go agree.
             val asking = askingBuilder(mapOf(BuilderId.A to board, BuilderId.B to (second ?: buildBoard(log.tasks, b.working, b.label, began, BuilderId.B))))
             val filed = waited?.also { time -> log.update(time, save = true) { it.copy(status = TaskStatus.Running) } }
-                ?: ChatHistory.stamp(log.tasks, began).also { log.begin(ChatTask(it, UNDECIDED_AGENT, prompt, chat = chat)) }
+                ?: ChatHistory.stamp(log.tasks, began).also { log.begin(ChatTask(it, UNDECIDED_AGENT, prompt, chat = chat, mail = mail?.label.orEmpty())) }
             // Its home changes are told apart from a builder's working at the same time (Soma Canvas slice 6).
-            Triple(filed, "OMA_CANVAS_ACTOR=quick " + frontCommand(agent, frontPrompt(board, prompt, mac, second, phone), resumed, mac = mac != null, newChat = chat.isNotEmpty()), asking)
+            Triple(filed, "OMA_CANVAS_ACTOR=quick " + frontCommand(agent, frontPrompt(board, mail?.let { it.frontWrapper() + it.text } ?: prompt, mac, second, phone), resumed, mac = mac != null, newChat = chat.isNotEmpty(), mail = mail != null), asking)
         }
         time = asked; working = true; stopping = false; answer = ""; label = ANSWERING
         // A new chat's work that it answers in prose is not shown, and goes to the Mac as if it had said nothing.
@@ -274,7 +287,7 @@ object QuickLane {
                         // Handed on the moment the mark is whole; the process is not waited for, and what it says after is not read.
                         is FrontRead.HandOver -> {
                             val route = frontRoute(read.to, mac)
-                            handed = if (chat.isNotEmpty()) toChat(context, asked, prompt, away, chat, route) else when (route) {
+                            handed = if (mail != null) mailOver(context, asked, mail) else if (chat.isNotEmpty()) toChat(context, asked, prompt, away, chat, route) else when (route) {
                                 FrontRoute.Build -> pass(context, asked, prompt, page, away, asking)
                                 FrontRoute.Errand -> pass(context, asked, prompt, page, away, asking, errand = true)
                                 is FrontRoute.Mac -> passToMac(context, asked, prompt, route.thread, away, route.fresh)
@@ -295,7 +308,7 @@ object QuickLane {
             finally {
                 var outcome = frontOutcome(handed, stopping, failed, answer.isNotBlank())
                 // He may stop it in the moment it is being sent on: then it is not sent.
-                if (outcome == FrontOutcome.FellBack && !(if (chat.isNotEmpty()) toChat(context, asked, prompt, away, chat, route = null) else pass(context, asked, prompt, page, away))) {
+                if (outcome == FrontOutcome.FellBack && !(if (mail != null) mailOver(context, asked, mail) else if (chat.isNotEmpty()) toChat(context, asked, prompt, away, chat, route = null) else pass(context, asked, prompt, page, away))) {
                     outcome = FrontOutcome.Stopped
                 }
                 val status = when (outcome) {
@@ -353,6 +366,25 @@ object QuickLane {
                 // As an entry of the front agent's it has `[ send to build ]` under it, for when the builder has room again.
                 log.update(asked, save = true) { it.copy(agent = QUICK_AGENT, result = reason, status = TaskStatus.Failed) }
                 if (away) AgentNotices.answered(context, NOT_SENT, reason, AgentNotices.FRONT)
+            }
+            true
+        }
+    }
+
+    /**
+     * Gives agent [mail] the front agent handed over, or could not answer, to a builder as mail always went
+     * ([AgentTasks.mail]): the builder files it as its own entry, so the one sent at [asked] goes. Wherever the front
+     * agent said to send it, mail goes to the phone's builders. False if he stopped it first: nothing is sent then.
+     */
+    private fun mailOver(context: Context, asked: Long, mail: AgentMail): Boolean = synchronized(this) {
+        if (stopping) false
+        else {
+            val log = ChatLog.of(context)
+            try {
+                AgentTasks.mail(context, mail)
+                log.handedOver(asked)
+            } catch (e: Exception) {
+                log.update(asked, save = true) { it.copy(agent = QUICK_AGENT, result = e.message ?: "The mail could not be given to a builder.", status = TaskStatus.Failed) }
             }
             true
         }

@@ -73,4 +73,25 @@ class AgentMailTest {
         assertEquals("Agent mail · from macbook-pro", ChatHistory.decode(ChatHistory.encode(listOf(task))).single().mail)
         assertEquals("", ChatHistory.decode(ChatHistory.encode(listOf(task.copy(mail = "")))).single().mail)
     }
+
+    /** Boss, 2026-10-19 ("both"): Grok in front answers mail that names no builder; Haiku in front changes nothing. */
+    @Test
+    fun mailNamingNoBuilderGoesToGrokInFrontAndAllElseToTheBuilders() {
+        assertTrue(mailToFront(null, job = false, front = FrontAgent.Grok, ready = true))
+        assertTrue(!mailToFront(BuilderId.B, job = false, front = FrontAgent.Grok, ready = true))
+        assertTrue(!mailToFront(null, job = true, front = FrontAgent.Grok, ready = true))
+        assertTrue(!mailToFront(null, job = false, front = FrontAgent.Haiku, ready = true))
+        assertTrue(!mailToFront(null, job = false, front = FrontAgent.Grok, ready = false))
+        assertTrue(!mailToFront(null, job = false, front = null, ready = false))
+        // Grok signs its answers so a reply comes back to it, not to a builder.
+        assertNull(mailBuilder(FRONT_MAIL_SESSION, mapOf(BuilderId.A to "b53e204e-aaaa", BuilderId.B to null)))
+    }
+
+    @Test
+    fun grokIsToldItIsAPeerAndHowToAnswer() {
+        val wrapper = agentMail(sample)!!.frontWrapper()
+        assertTrue(wrapper.contains("not Boss"))
+        assertTrue(wrapper.contains("oma msg send macbook-pro:b53e204e-1111 --reply-to 20261016-023512-c14cf2 --as grok \"ANSWER\""))
+        assertTrue(wrapper.endsWith("]\n\n"))
+    }
 }

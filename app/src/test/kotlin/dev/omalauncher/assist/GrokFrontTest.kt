@@ -163,4 +163,28 @@ class GrokFrontTest {
         assertEquals("GROK_FOLDER_TRUST=0 OMA_FRONT_GUARD=1 OMA_FRONT_ALLOW='date*\nsoma canvas *' ", grokGuardEnv(listOf("Read", "Bash(date*)", "WebFetch", "Bash(soma canvas *)")))
         assertTrue(grokQuickCommand("q", newChat = true).startsWith("GROK_FOLDER_TRUST=0 OMA_FRONT_GUARD=1 OMA_FRONT_ALLOW='' grok "))
     }
+
+    /** Boss, 2026-10-19: Grok answers agent mail. Only a mail run may send, and only one answer to one mail. */
+    @Test fun onlyAMailRunMaySendAndOnlyAnAnswer() {
+        val allowed = { command: String -> arguments(command).let { a -> a.withIndex().filter { it.value == "--allow" }.map { a[it.index + 1] } } }
+        assertFalse(GROK_MAIL_ALLOWED in allowed(grokQuickCommand("q")))
+        assertEquals(GROK_QUICK_ALLOWED + GROK_MAIL_ALLOWED, allowed(grokQuickCommand("q", mail = true)))
+        assertFalse(GROK_MAIL_ALLOWED in allowed(grokQuickCommand("q", newChat = true, mail = true)))
+        assertEquals(quickCommand("q"), frontCommand(FrontAgent.Haiku, "q", mail = true))
+        val plain = GROK_QUICK_ALLOWED.filter { it.startsWith("Bash(") }.joinToString("\n") { it.removePrefix("Bash(").removeSuffix(")") }
+        val mail = plain + "\noma msg send *"
+        val ok = "oma msg send jacks-mac-pro:t9f45b731 --reply-to 20261019-013350-e081b9 --as grok \"Done (it is 3 PM); A & B are free | ok\""
+        assertEquals(0, guard(ok, mail))
+        assertEquals(2, guard(ok, plain))
+        for (no in listOf(
+            "oma msg send jacks-mac-pro --as grok \"no reply-to\"",
+            "oma msg send jacks-mac-pro --reply-to x \"\$(id)\"",
+            "oma msg send jacks-mac-pro --reply-to x \"a\" ; id ; \"b\"",
+            "oma msg send jacks-mac-pro --reply-to x \"`id`\"",
+            "oma msg send \$(id) --reply-to x \"hi\"",
+            "oma msg send jacks-mac-pro --reply-to x \"a\nb\"",
+            "oma msg send jacks-mac-pro --reply-to x \"\"",
+            "oma msg list",
+        )) assertEquals(no, 2, guard(no, mail))
+    }
 }
