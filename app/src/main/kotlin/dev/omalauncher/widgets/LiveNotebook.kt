@@ -232,6 +232,7 @@ class LiveNotebook(
                     key in folders -> PageTile(apps.filter { it.folder == key }.joinToString(", ") { it.app.label }, cell.shown(resizable = false), "folder")
                     isThreadTile(key) -> PageTile(key, cell, AGENT_TILE_KIND)
                     isModuleTile(key) -> PageTile(key, cell, MODULE_TILE_KIND)
+                    artIdOf(key) != null -> PageTile(key, cell, "art")
                     else -> PageTile(key, cell, "widget")
                 }
             }
@@ -409,8 +410,8 @@ class LiveNotebook(
         if (!canDelete(page) || (!move && !kept)) return null
         val at = position(page)
         val here = home.filterValues { it == page }.keys.sorted()
-        // A thread's tile or a module has no file to be missing: it shows, and moves or goes as he chooses for the page's other tiles.
-        val (shown, held) = here.partition { isThreadTile(it) || isModuleTile(it) || it in widgets || !isWidget(it) }
+        // A thread's tile, a module or art has no widget file to be missing: it shows, and moves or goes as he chooses for the page's other tiles.
+        val (shown, held) = here.partition { isThreadTile(it) || isModuleTile(it) || artIdOf(it) != null || it in widgets || !isWidget(it) }
         held.forEach {
             home.remove(it)
             cells.remove(it)

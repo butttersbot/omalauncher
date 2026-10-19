@@ -228,6 +228,7 @@ class FoldSync(
         is CanvasVerb.PageRemove -> "a page stays: it has things, notes or ink on it here"
         is CanvasVerb.Place -> v.key
         is CanvasVerb.Move -> v.key
+        is CanvasVerb.PagePanels -> "the panels of a page"
         else -> v.toString()
     }
 

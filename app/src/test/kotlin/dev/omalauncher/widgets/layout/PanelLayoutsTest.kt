@@ -125,5 +125,8 @@ class PanelLayoutsTest {
         assertEquals(listOf(Cell(0, 0, 1, 1)), PanelLayouts.panels("splash", 1, 1).map { it.cell })
         assertEquals(emptyList<Panel>(), PanelLayouts.panels("collage", 6, 10))
         assertEquals(emptyList<Panel>(), PanelLayouts.panels("splash", 6, 0))
+        // A style whose gutters leave a panel nothing doesn't fit either.
+        assertTrue(PanelLayouts.fits("grid6", 6, 10))
+        assertFalse(PanelLayouts.fits("grid6", 6, 10, PanelStyle(gutterRows = 40.0)))
     }
 }

@@ -126,7 +126,10 @@ fun diffToVerbs(before: Notebook, after: Notebook): List<CanvasVerb> {
     }
     val recut = panels.filter { (id, cells) -> cells.isNotEmpty() || after.pages.first { it.id == id }.panels != beforePages[id]?.panels }
     // A page is re-cut once what leaves it for another page has gone, and what comes onto it comes after the cut: in passes,
-    // each doing what waits on nothing left. A ring that waits on itself goes as it is, and sync settles it as before.
+    // each doing what waits on nothing left. A ring that waits on itself (things trading pages both ways) can't be one verb
+    // per page (critic, 2026-10-19: a cut dropped whole undid all of his drags): its cells go as moves, each when it can
+    // land exactly, then the pages' layouts. Only a straight swap between pages is left to the service to settle, as near
+    // as there is room, as it always was.
     fun into(v: CanvasVerb) = (v as? CanvasVerb.Move)?.page ?: (v as? CanvasVerb.Place)?.page
     fun from(v: CanvasVerb) = (v as? CanvasVerb.Move)?.let { m -> old[m.key]?.first?.takeIf { it != m.page } }
     val cuts = recut.keys.toMutableList()
@@ -135,8 +138,22 @@ fun diffToVerbs(before: Notebook, after: Notebook): List<CanvasVerb> {
         val ready = cuts.filter { id -> waiting.none { from(it) == id } }
         val going = waiting.filter { into(it) !in cuts }
         val stuck = ready.isEmpty() && going.isEmpty()
-        for (id in if (stuck) cuts.toList() else ready) { verbs += CanvasVerb.PagePanels(id, after.pages.first { it.id == id }.panels, recut.getValue(id)); cuts -= id }
-        if (stuck) { verbs += waiting; waiting.clear() } else { verbs += going; waiting -= going.toSet() }
+        if (stuck) {
+            val rest = (waiting + cuts.flatMap { id -> recut.getValue(id).map { (key, cell) -> CanvasVerb.Move(key, id, cell) } }).toMutableList()
+            var now = verbs.fold(before) { n, v -> applyVerb(n, v, bare = true).notebook }
+            while (true) {
+                val next = rest.firstOrNull { applyVerb(now, it, bare = true).applied } ?: break
+                verbs += next
+                now = applyVerb(now, next, bare = true).notebook
+                rest -= next
+            }
+            verbs += rest
+            verbs += cuts.map { id -> CanvasVerb.PagePanels(id, after.pages.first { it.id == id }.panels) }
+            break
+        }
+        for (id in ready) { verbs += CanvasVerb.PagePanels(id, after.pages.first { it.id == id }.panels, recut.getValue(id)); cuts -= id }
+        verbs += going
+        waiting -= going.toSet()
     }
     for (id in beforePages.keys) if (after.pages.none { it.id == id }) verbs += CanvasVerb.PageRemove(id)
     return verbs

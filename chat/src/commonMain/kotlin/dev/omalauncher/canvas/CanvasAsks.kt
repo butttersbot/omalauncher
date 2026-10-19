@@ -460,7 +460,7 @@ fun boardJson(n: Notebook, rules: ScreenRules, only: String? = null): JSONObject
         val pinned = rules.pinned(n).filter { c -> p.items.none { it.cell == c } }.map { c ->
             JSONObject().put("kind", "chat").put("name", "chat").put("size", "pinned").put("cells", JSONObject().put("x", c.x).put("y", c.y).put("w", c.w).put("h", c.h))
         }
-        JSONObject().put("page", p.name).put("items", JSONArray(pinned + p.items.mapNotNull { item ->
+        JSONObject().put("page", p.name).putOpt("panels", p.panels).put("items", JSONArray(pinned + p.items.mapNotNull { item ->
             val c = item.cell ?: return@mapNotNull null
             val ref = moduleRef(item.key)
             JSONObject().put("kind", if (ref != null) MODULE_TILE_KIND else item.kind.name.lowercase())
@@ -531,7 +531,7 @@ fun describeRestorePoint(p: RestorePoint): String {
         p.by.startsWith("agent") -> "an agent's"
         else -> "the last"
     }
-    val things = p.inverses.mapNotNull { v -> (v as? CanvasVerb.Remove)?.key ?: (v as? CanvasVerb.Move)?.key ?: (v as? CanvasVerb.Place)?.key }.distinct().map(::moduleTitle)
+    val things = p.inverses.flatMap { v -> listOfNotNull((v as? CanvasVerb.Remove)?.key ?: (v as? CanvasVerb.Move)?.key ?: (v as? CanvasVerb.Place)?.key) + (v as? CanvasVerb.PagePanels)?.cells?.keys.orEmpty() }.distinct().map(::moduleTitle)
     val pages = p.inverses.count { it is CanvasVerb.PageRemove || it is CanvasVerb.PageMake }
     return "$who arrangement: " + (things + if (pages > 0) listOf(if (pages == 1) "a page" else "$pages pages") else emptyList()).ifEmpty { listOf("its changes") }.joinToString(", ")
 }

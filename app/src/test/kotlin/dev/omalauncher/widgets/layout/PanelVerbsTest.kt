@@ -5,6 +5,9 @@ import dev.omalauncher.canvas.CanvasPad
 import dev.omalauncher.canvas.RestorePoint
 import dev.omalauncher.canvas.RestorePoints
 import dev.omalauncher.canvas.ScreenRules
+import dev.omalauncher.canvas.SentVerb
+import dev.omalauncher.canvas.appendSent
+import dev.omalauncher.canvas.boardJson
 import dev.omalauncher.canvas.diffToVerbs
 import dev.omalauncher.canvas.replayLog
 import dev.omalauncher.canvas.restorePoint
@@ -180,6 +183,33 @@ class PanelVerbsTest {
         // The service's copy of the screen takes the layout with the rest.
         val log = verbsLog(diffToVerbs(Notebook(rows = 10, pages = emptyList()), panelled))
         assertEquals(shape(panelled), shape(replayLog(log, 6, 10)))
+    }
+
+    @Test fun aRingAcrossTwoRecutPagesGoesAsMovesInAnOrderThatLandsExactly() {
+        // Two panel pages trading things both ways in one round (critic, 2026-10-19): no page can be cut first.
+        val c = panelCells("beats")
+        val before = book(
+            NotebookPage("x", "X", listOf(NotebookItem("a", ItemKind.Widget, c[0]), NotebookItem("b", ItemKind.Widget, c[1])), panels = "beats"),
+            NotebookPage("y", "Y", listOf(NotebookItem("c", ItemKind.Widget, c[0]), NotebookItem("d", ItemKind.Widget, c[1])), panels = "beats"),
+        )
+        val after = book(
+            NotebookPage("x", "X", listOf(NotebookItem("b", ItemKind.Widget, c[0]), NotebookItem("c", ItemKind.Widget, c[1])), panels = "beats"),
+            NotebookPage("y", "Y", listOf(NotebookItem("d", ItemKind.Widget, c[0]), NotebookItem("a", ItemKind.Widget, c[2])), panels = "beats"),
+        )
+        val verbs = diffToVerbs(before, after)
+        assertTrue(verbs.toString(), verbs.all { it is CanvasVerb.Move || (it is CanvasVerb.PagePanels && it.cells.isEmpty()) })
+        assertEquals(setOf("a", "b", "c", "d"), verbs.mapNotNull { (it as? CanvasVerb.Move)?.key }.toSet())
+        // Each lands exactly, in an order that frees its cells first.
+        assertEquals(shape(after), shape(verbs.fold(before) { n, v -> applyVerb(n, v).also { assertTrue("$v: ${it.why}", it.applied) }.notebook }))
+        val (_, took) = appendSent(verbsLog(diffToVerbs(Notebook(rows = 10, pages = emptyList()), before)), verbs.map { SentVerb(0, "fold-1", VerbOrigin("fold", "hand"), it) }, 6, 10)
+        assertTrue(took.toString(), took.none { it.version == null })
+    }
+
+    @Test fun theBoardSaysAPagesPanels() {
+        val panelled = fitIntoPanels(book(today, later), "p1", "beats").notebook
+        val pages = boardJson(panelled, ScreenRules()).getJSONArray("pages")
+        assertEquals("beats", pages.getJSONObject(0).getString("panels"))
+        assertFalse(pages.getJSONObject(1).has("panels"))
     }
 
     private fun verbsLog(verbs: List<CanvasVerb>) = verbs.fold(VerbLog("fold")) { l, v -> l.append("r", VerbOrigin("fold", "hand"), v) }

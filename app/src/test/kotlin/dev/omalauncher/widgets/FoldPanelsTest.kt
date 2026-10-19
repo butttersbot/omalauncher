@@ -62,6 +62,15 @@ class FoldPanelsTest {
         assertEquals("opening", home.notebook.pages.first { it.id == "p1" }.panels)
     }
 
+    @Test fun deletingAPageMovesItsArtLikeAnyTile() {
+        val home = Home(saved)
+        val gone = home.notebook.deletePage("p1", widgets = setOf("clock.owl"), move = true)!!
+        assertTrue(gone.toString(), art in gone.moved)
+        assertTrue(gone.dropped.isEmpty())
+        assertEquals("p2", home.notebook.pageOf(art))
+        assertEquals("art", home.notebook.board("p2").tiles.first { it.name == art }.kind)
+    }
+
     @Test fun setPanelsChangesTheLayoutAndCellsAtOnce() {
         val home = Home(saved)
         val written = home.written.size

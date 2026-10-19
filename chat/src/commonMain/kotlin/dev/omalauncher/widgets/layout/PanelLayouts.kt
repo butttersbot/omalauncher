@@ -100,8 +100,8 @@ object PanelLayouts {
         return cut(tree, columns, rows, style) ?: emptyList()
     }
 
-    /** Whether [id] can be cut on a page of [columns] by [rows]. */
-    fun fits(id: String, columns: Int, rows: Int): Boolean = panels(id, columns, rows).isNotEmpty()
+    /** Whether [id] can be cut on a page of [columns] by [rows], in [style]. */
+    fun fits(id: String, columns: Int, rows: Int, style: PanelStyle = PanelStyle()): Boolean = panels(id, columns, rows, style).isNotEmpty()
 
     private class Cells(val c0: Int, val r0: Int, val c1: Int, val r1: Int)
 
