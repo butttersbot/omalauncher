@@ -39,6 +39,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.math.max
@@ -65,10 +66,22 @@ fun ArtImage(
     var frame by remember { mutableIntStateOf(0) }
     val started = LocalLifecycleOwner.current.lifecycle.currentStateAsState().value.isAtLeast(Lifecycle.State.STARTED)
 
-    LaunchedEffect(id, size) {
-        if (size.width <= 0 || size.height <= 0) return@LaunchedEffect
+    var decodedFor by remember(id) { mutableStateOf(IntSize.Zero) }
+    // Only art on the screen is held decoded (Boss, 2026-10-20: GIFs only where they're seen): off it, the frames are let
+    // go after a moment, so a quick swipe back doesn't decode again, and decoded anew when it shows.
+    LaunchedEffect(id, size, shown) {
+        if (!shown) {
+            if (art != null) {
+                delay(RELEASE_MS)
+                (art?.drawable as? AnimatedImageDrawable)?.stop()
+                art = null
+                decodedFor = IntSize.Zero
+            }
+            return@LaunchedEffect
+        }
+        if (size.width <= 0 || size.height <= 0 || (art != null && decodedFor == size)) return@LaunchedEffect
         val file = withContext(Dispatchers.IO) { store.file(id) } ?: return@LaunchedEffect
-        withContext(Dispatchers.IO) { decode(file, size) }?.let { art = it }
+        withContext(Dispatchers.IO) { decode(file, size) }?.let { art = it; decodedFor = size }
     }
 
     // A frame of an animation asks to be drawn again through the callback; the drawable only holds it weakly.
@@ -222,3 +235,6 @@ object ArtInk {
         return max(1, (width * scale).roundToInt()) to max(1, (height * scale).roundToInt())
     }
 }
+
+/** How long art off the screen stays decoded before its frames are let go. */
+private const val RELEASE_MS = 4_000L
