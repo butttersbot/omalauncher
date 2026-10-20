@@ -146,7 +146,7 @@ class QuickLaneTest {
             assertTrue(kept, told.contains(kept))
         // 2026-10-20: "Can you open it for me so I can take a quick look?" right after a builder's answer was marked an
         // errand and ran on the fast model with nothing to say what "it" was. Pointing back is case (3), a hand-over.
-        assertTrue(told.contains("Words pointing back at a builder's or thread's last answer (open it, show me that) are case (3), never an errand."))
+        assertTrue(told.contains("Words pointing back at a builder's last answer (open it, show me that) are case (3), never an errand."))
         // A plain errand on the phone gets its own mark, which runs it on the fast model.
         assertTrue(told.contains("But a phone errand, case (2) without code or launcher changes (turn on wireless debugging or the flashlight, set an alarm, open or play something), and replies to one get <<phone>> instead."))
     }
