@@ -829,6 +829,22 @@ MAIL_TO = re.compile(r'[A-Za-z0-9][A-Za-z0-9.-]{0,62}(:[A-Za-z0-9._-]{1,80})?')
 TMSG = os.environ.get('OMA_RUNNER_TMSG') or shutil.which('tmsg', path=os.pathsep.join([str(HOME / '.local/bin'), '/usr/local/bin', '/opt/homebrew/bin', '/usr/bin'])) or ''
 
 
+def boss_devices():
+    """The devices mail from a bot may go to: Boss's own, those on his tailnet signed in as he is (not shared nodes or
+    other people's). OMA_RUNNER_MAIL_DEVICES (comma-separated) stands in for tailscale where it isn't asked (tests)."""
+    given = os.environ.get('OMA_RUNNER_MAIL_DEVICES')
+    if given is not None:
+        return {name.strip().lower() for name in given.split(',') if name.strip()}
+    try:
+        status = json.loads(subprocess.run([TAILSCALE, 'status', '--json'], capture_output=True, text=True, timeout=10, env=tailscale_env()).stdout)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return set()
+    me = (status.get('Self') or {}).get('UserID')
+    name = lambda node: ((node.get('DNSName') or '').split('.')[0] or node.get('HostName') or '').lower()
+    nodes = [status.get('Self') or {}] + list((status.get('Peer') or {}).values())
+    return {name(node) for node in nodes if me is not None and node.get('UserID') == me and name(node)}
+
+
 def send_mail(to, text, title):
     """Agent mail from a bot (Boss, 2026-10-19: part of every bot), through tmsg, signed with this thread's id
     (OMA_THREAD_ID) so the answer comes back to it."""
@@ -836,6 +852,9 @@ def send_mail(to, text, title):
         return 'Not sent: agent mail (tmsg) isn\'t installed on this machine.'
     if not isinstance(to, str) or not MAIL_TO.fullmatch(to.strip()):
         return 'Not sent: to must be DEVICE or DEVICE:SESSION.'
+    mine = boss_devices()
+    if to.strip().split(':')[0].lower() not in mine:
+        return 'Not sent: %s isn\'t one of Boss\'s devices (%s).' % (to.strip().split(':')[0], ', '.join(sorted(mine)) or 'none found')
     if not isinstance(text, str) or not text.strip() or len(text) > 20000:
         return 'Not sent: text must be 1 to 20000 characters.'
     env = {**command_env(), 'PATH': os.path.dirname(TMSG) + ':' + COMMAND_PATH, 'OMA_THREAD_ID': os.environ.get('OMA_THREAD_ID', '')}
@@ -952,7 +971,9 @@ def risky_command(command):
                 index += 1
                 continue
             return True  # any option not listed as plain for this program
-        if head in ('curl', 'wget') and re.fullmatch(r'https?://\S+', word):
+        if head in ('curl', 'wget'):
+            if not re.fullmatch(r'https?://[^\s@]+', word):
+                return True  # only web addresses: file://, gopher://, scp:// and the rest read or send anything
             index += 1
             continue
         operand = rule.get('operands')
@@ -1489,6 +1510,7 @@ class Venice:
         # The only agent given Venice's settings (clean_environment keeps them from the others).
         return {**clean_environment(), 'OMA_RUNNER_VENICE_CONFIG': str(VENICE_CONFIG), **({'OMA_RUNNER_MINUTE': os.environ['OMA_RUNNER_MINUTE']} if os.environ.get('OMA_RUNNER_MINUTE') else {}),
                 **({'OMA_RUNNER_TMSG': TMSG} if TMSG else {}),
+                **({'OMA_RUNNER_MAIL_DEVICES': os.environ['OMA_RUNNER_MAIL_DEVICES']} if 'OMA_RUNNER_MAIL_DEVICES' in os.environ else {}),
                 **{key: value for key, value in os.environ.items() if key.startswith('VENICE')}}
 
     def memory(self):

