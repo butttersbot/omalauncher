@@ -24,6 +24,7 @@ import androidx.compose.runtime.snapshotFlow
 import dev.omalauncher.phone.HomeDoor
 import dev.omalauncher.ui.Pack
 import dev.omalauncher.ui.applySystemBars
+import dev.omalauncher.ui.statusBarOnLight
 import dev.omalauncher.ui.LauncherRoot
 import dev.omalauncher.ui.LauncherState
 import dev.omalauncher.ui.openOmaChat
@@ -63,7 +64,13 @@ class MainActivity : ComponentActivity() {
                     Pack.look.barsOnLight(drawer = state.drawer.value > 0.5f, panel = state.panelOpen || runtime.widgets.openScreen != null)
                 }
             }
-            LaunchedEffect(barsOnLight) { applySystemBars(this@MainActivity, barsOnLight) }
+            // Over a manga page's hero the status bar's are light, until the app list or a panel covers it.
+            val statusOnLight by remember {
+                derivedStateOf {
+                    statusBarOnLight(barsOnLight, state.heroUnderBar, drawer = state.drawer.value > 0.5f, panel = state.panelOpen || runtime.widgets.openScreen != null)
+                }
+            }
+            LaunchedEffect(barsOnLight, statusOnLight) { applySystemBars(this@MainActivity, barsOnLight, statusOnLight) }
         }
         handleDebugExec(intent)
         handleSharedWidget(intent)
