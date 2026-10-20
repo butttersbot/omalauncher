@@ -44,6 +44,7 @@ import dev.omalauncher.assist.prototypeUnit
 import dev.omalauncher.linux.FILES_COMMAND
 import dev.omalauncher.spokenLabel
 import dev.omalauncher.theme.pack.DockStyle
+import dev.omalauncher.theme.pack.PackPanels
 import dev.omalauncher.widgets.Shortcut
 import dev.omalauncher.ShortcutRef
 import dev.omalauncher.widgets.layout.ShortcutEntry
@@ -74,6 +75,18 @@ internal fun bandHeight(
     frame: Int,
     gap: Int,
 ) = frame + 2 * gap
+
+/**
+ * Whether home has its dock and the recent apps strip at its foot: not in a look drawn in panels ([panels], the Manga look),
+ * whose manga pages run down to the foot of the screen. What the dock held is reachable without it: a swipe up opens the app
+ * list (every app, the docked ones too, which it can still unpin), home's long-press menu has "draw on this page", and
+ * Android's own recents has the apps opened lately. A phone's landscape keeps its rail beside the page ([side]), which takes
+ * none of the page's height.
+ */
+internal fun homeDockShown(
+    panels: PackPanels?,
+    side: HomeSide?,
+) = panels == null || side != null
 
 /** The action that opens the Oma chat, inside this app only. */
 const val OMA_CHAT_ACTION = "dev.omalauncher.action.OMA_CHAT"

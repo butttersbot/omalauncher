@@ -29,6 +29,8 @@ import dev.omalauncher.widgets.WidgetLayout
 import dev.omalauncher.widgets.annotations.PageArea
 import dev.omalauncher.widgets.layout.GridGeometry
 import dev.omalauncher.widgets.layout.Panel
+import dev.omalauncher.widgets.layout.PanelStyle
+import dev.omalauncher.widgets.layout.panelStyle
 import dev.omalauncher.widgets.dropInPanel
 import dev.omalauncher.widgets.panelAim
 import dev.omalauncher.widgets.inside
@@ -87,7 +89,7 @@ import androidx.compose.ui.layout.positionInRoot
  * The home grid's pixel geometry on screen: [GridGeometry], which has the arithmetic, in Compose's
  * points and rects. The page is scaled as a whole into the room it has and centred there; [per] pages
  * stand side by side, each in a room [width] wide, a page's cells in its own room's coordinates, [local]
- * and [screen] convert.
+ * and [screen] convert. A manga page is the same room's [filled] grid: the page is the whole room, top to bottom.
  */
 @Immutable
 private class Grid(
@@ -95,8 +97,15 @@ private class Grid(
     height: Int,
     rows: Int,
     per: Int = 1,
+    fill: Boolean = false,
 ) {
-    private val geometry = GridGeometry(width, height, rows, per)
+    private val geometry = GridGeometry(width, height, rows, per, fill = fill)
+
+    /** The same room with the page filling it, as a manga page does: the same cells, laid over the whole room. */
+    val filled: Grid by lazy { if (fill) this else Grid(width, height, rows, per, fill = true) }
+
+    /** The look's panel [style] as this grid's page draws it: margins and gutters as wide on screen as on the unfilled page. */
+    fun panelStyle(style: PanelStyle) = geometry.panelStyle(style)
     val width get() = geometry.width
     val height get() = geometry.height
     val gap get() = geometry.gap
@@ -382,8 +391,14 @@ internal fun HomeGrid(
             g: Grid,
         ): List<Panel>? {
             val (layoutOf, style) = panelled
-            return panelsOf(layoutOf(page), g.cols, g.rows, style ?: return null)
+            return panelsOf(layoutOf(page), g.cols, g.rows, g.filled.panelStyle(style ?: return null))
         }
+
+        /** The grid [page] is laid on in [g]'s room: a manga page fills it top to bottom, every other page is [g]. */
+        fun gridOf(
+            page: String?,
+            g: Grid,
+        ) = if (page != null && cutsOf(page, g) != null) g.filled else g
 
         // A manga page shows each thing in its panel's cells as saved: an app there fills its panel, not one cell.
         fun placedOn(
@@ -399,7 +414,7 @@ internal fun HomeGrid(
             at: Offset,
         ): Pair<HomeItem, Cell>? {
             val panels = cutsOf(page, g) ?: return placed.lastOrNull { (_, c) -> g.rect(c).has(at) }
-            val (x, y) = g.fraction(at)
+            val (x, y) = g.filled.fraction(at)
             // Inside a panel's ink only: a press on a margin or a gutter is on the page, whose long press is home's menu.
             val cell = panels.firstOrNull { inside(it.outline, x, y) }?.cell ?: return null
             return placed.firstOrNull { it.second == cell } ?: placed.firstOrNull { it.second.overlaps(cell) }
@@ -628,7 +643,7 @@ internal fun HomeGrid(
                                 arrange.full = false
                                 fullSince = 0L
                                 arrange.grouping = false
-                                val (x, y) = g.fraction(at)
+                                val (x, y) = g.filled.fraction(at)
                                 val aim = panelAim(panels, placedOn(page, g).map { it.first.key to it.second }, item.key, g.cols, g.rows, x, y, inFolder)
                                 arrange.swapWith = aim?.occupant
                                 arrange.preview = aim?.cell
@@ -742,7 +757,7 @@ internal fun HomeGrid(
                             arbiter.down(TouchStart.Page, HomeModes(drawing = true))
                             // On the page it came down on, to the end of the stroke. The empty half of the last pair keeps its tap.
                             val pen = marked
-                            if (pen != null && page != null) draw(down, pen, page, g.area(side), Pack.look.pack.ink.width.dp.toPx(), arbiter)
+                            if (pen != null && page != null) draw(down, pen, page, gridOf(page, g).area(side), Pack.look.pack.ink.width.dp.toPx(), arbiter)
                             return@awaitEachGesture
                         }
 
@@ -789,7 +804,7 @@ internal fun HomeGrid(
                                     val showing = pagesAt(pager.targetPage, all, room)
                                     val over = room.side(finger)
                                     // The empty half of the last pair is no page: over it, the page beside it is the nearest.
-                                    (0 until room.per).sortedBy { abs(it - over) }.mapNotNull { side -> showing[side]?.let { it to room.area(side) } }
+                                    (0 until room.per).sortedBy { abs(it - over) }.mapNotNull { side -> showing[side]?.let { it to gridOf(it, room).area(side) } }
                                 },
                                 rest = { finger ->
                                     val time = SystemClock.uptimeMillis()
@@ -831,7 +846,7 @@ internal fun HomeGrid(
                             val chosenSide = shown.indexOf(chosen.page)
                             if (chosenSide < 0 || notes == null) {
                                 pad.selected = null
-                            } else if (editScrap(down, g.local(start, chosenSide), chosen, g.area(0), pad, notes, arbiter, crossing, grab.toFloat())) {
+                            } else if (editScrap(down, g.local(start, chosenSide), chosen, gridOf(chosen.page, g).area(0), pad, notes, arbiter, crossing, grab.toFloat())) {
                                 return@awaitEachGesture
                             }
                         }
@@ -849,7 +864,7 @@ internal fun HomeGrid(
                         if (selectedItem != null) {
                             down.consume()
                             val (item, cell) = selectedItem
-                            val rect = g.rect(cell)
+                            val rect = gridOf(shown[selSide], g).rect(cell)
                             // A manga page's panels are fixed: nothing in one is resized.
                             val edges = if (item.resizable && shown[selSide]?.let { cutsOf(it, g) } == null) edgesAt(rect, selAt, grab, sideGrab) else Edges(false, false, false, false)
                             val owner =
@@ -909,7 +924,7 @@ internal fun HomeGrid(
                         // On a page with neither, nothing here is any different.
                         if (pad != null && notes != null) {
                             val lifted =
-                                liftScrap(down, at, page, g.area(0), pad, notes, arbiter, crossing, { awaitLongPress(down.id, start) }) {
+                                liftScrap(down, at, page, gridOf(page, g).area(0), pad, notes, arbiter, crossing, { awaitLongPress(down.id, start) }) {
                                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                     onSelect(null)
                                 }
@@ -927,7 +942,7 @@ internal fun HomeGrid(
                         if (!awaitLongPress(down.id, start)) return@awaitEachGesture
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         if (hit == null) {
-                            onLongPressEmpty(gridAt[0]?.takeIf { it.isAttached }?.localToWindow(start), g.area(0).let { it.across(at.x) to it.down(at.y) })
+                            onLongPressEmpty(gridAt[0]?.takeIf { it.isAttached }?.localToWindow(start), gridOf(page, g).area(0).let { it.across(at.x) to it.down(at.y) })
                             return@awaitEachGesture
                         }
                         // Lifted: select it, and let the same finger drag it without letting go.
@@ -935,7 +950,7 @@ internal fun HomeGrid(
                         arrange.holding = true
                         val moved =
                             try {
-                                moveDrag(down.id, start, hit.first, hit.second, page, g.screen(g.rect(hit.second), side))
+                                moveDrag(down.id, start, hit.first, hit.second, page, gridOf(page, g).let { pg -> pg.screen(pg.rect(hit.second), side) })
                             } finally {
                                 arrange.holding = false
                             }
@@ -950,9 +965,10 @@ internal fun HomeGrid(
                     for (page in pagesAt(slot, pages, grid)) {
                         Box(Modifier.width(with(density) { grid.width.toDp() }).fillMaxHeight()) {
                             if (page == null) {
-                                PlusPage(grid, onAddPage)
+                                // Beside a manga page, as tall as it is.
+                                PlusPage(if (panelled.second != null) grid.filled else grid, onAddPage)
                             } else {
-                                TiledPage(page, itemsOn(page), layout, grid, arrange, selected, render, actions, onNoRoom, ready, captures, marks, arrivals, cutsOf(page, grid), panelLook, heroRoom) { onPanelTap(page, it) }
+                                TiledPage(page, itemsOn(page), layout, gridOf(page, grid), arrange, selected, render, actions, onNoRoom, ready, captures, marks, arrivals, cutsOf(page, grid), panelLook, heroRoom) { onPanelTap(page, it) }
                             }
                         }
                     }
@@ -980,7 +996,7 @@ internal fun HomeGrid(
                 // Its tile, on whichever of the pages showing it is on.
                 val shown = pagesAt(pager.currentPage, pages, grid)
                 val side = sideOf(openFolder.key, shown)
-                val tile = shown.getOrNull(side)?.let { p -> placedOn(p, grid).firstOrNull { it.first.key == openFolder.key } }?.let { grid.screen(grid.rect(it.second), side) }
+                val tile = shown.getOrNull(side)?.let { p -> placedOn(p, grid).firstOrNull { it.first.key == openFolder.key }?.let { gridOf(p, grid).run { screen(rect(it.second), side) } } }
                 SideEffect {
                     folderLeft.panel = fg.panel
                     folderLeft.tile = tile
@@ -996,7 +1012,7 @@ internal fun HomeGrid(
 
             // The carried tile floats above the pager, so it stays put while pages turn, and above an open folder it's sorting.
             arrange.carry?.let { carry ->
-                val r = grid.rect(carry.cell)
+                val r = gridOf(carry.from, grid).rect(carry.cell)
                 // Lifted off a manga page, it is the mockup's ghost: tilted a little, on a hard ink shadow.
                 val panel = cutsOf(carry.from, grid) != null
                 val ink = Pack.foreground

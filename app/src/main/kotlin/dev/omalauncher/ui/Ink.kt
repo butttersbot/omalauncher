@@ -1,5 +1,6 @@
 package dev.omalauncher.ui
 
+import dev.omalauncher.widgets.pickedPanels
 import dev.omalauncher.widgets.annotations.NoteRole
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
@@ -506,11 +507,15 @@ fun DrawTools(
             marks.editing = Chosen(page, it)
         }
     }
+    // The band takes every touch that lands on it, where it stands over the dock. In a look drawn in panels there is no dock
+    // and the pages run under it: only its keys take touches, so the page around them can still be drawn on.
+    val panels = pickedPanels() != null
+    val takes = Modifier.pointerInput(Unit) {}
     Box(
         modifier
             .fillMaxWidth()
             .heightIn(min = with(density) { state.barHeight.toDp() }.coerceAtLeast(60.dp))
-            .pointerInput(Unit) {}
+            .then(if (panels) Modifier else takes)
             .padding(PageGap),
         contentAlignment = Alignment.Center,
     ) {
@@ -521,6 +526,7 @@ fun DrawTools(
                 // Nine keys are more than the prototype's seven: on a narrow screen they shrink together to fit the row.
                 val u = wide.coerceAtMost(maxWidth.value / toolsWidth(TOOL_KEYS))
                 Row(
+                    if (panels) takes else Modifier,
                     // In the middle of the row, as Boss asked (2026-10-12); the prototype starts them from the left.
                     horizontalArrangement = Arrangement.spacedBy((TOOL_GAP * u).dp, Alignment.CenterHorizontally),
                     verticalAlignment = Alignment.CenterVertically,
@@ -543,7 +549,7 @@ fun DrawTools(
         } else {
             Row(
                 // More tools than a narrow screen holds in words: the row slides.
-                Modifier.fillMaxWidth().panel().horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp),
+                Modifier.fillMaxWidth().then(if (panels) takes else Modifier).panel().horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
