@@ -183,6 +183,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        stoppedSinceResume = false
         // Whether the Mac's Whisper answers, known before the next dictation rather than learned during it.
         dev.omalauncher.voice.WhisperMac.check(this)
         runtime.wm.focus(null)
@@ -209,14 +210,18 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** Home went out of sight since it last had the front: coming back from an app, not swiped while showing. */
+    private var stoppedSinceResume = false
+
     /** Pressing Home while already home closes the menu, like other launchers. */
     override fun onNewIntent(intent: Intent) {
         // Home asked for again while home already showed with nothing over it, as the gesture handle's swipe up asks for
         // it: the app list opens (Boss, 2026-10-20: the handle's swipe opens the drawer, only on home). Android pauses a
-        // shown activity before it hands it a new intent, so one that was showing is STARTED here; one coming back from
-        // an app was stopped, and comes home as before.
+        // shown activity before it hands it a new intent, so one that was showing is STARTED here. One coming back from
+        // an app is STARTED too, as the gesture's animation draws home before the intent comes (Boss, 2026-10-20, from
+        // Discord), but it was stopped since it last resumed, and comes home as before.
         val swipedOnHome = intent.hasCategory(Intent.CATEGORY_HOME) && lifecycle.currentState == Lifecycle.State.STARTED &&
-            ownScreens.isEmpty() && state.bareHome && runtime.widgets.openScreen == null
+            !stoppedSinceResume && ownScreens.isEmpty() && state.bareHome && runtime.widgets.openScreen == null
         super.onNewIntent(intent)
         if (swipedOnHome) {
             state.open()
@@ -248,6 +253,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
+        stoppedSinceResume = true
         state.closeNow()
         // An app was just opened from home: it moves to the front of the strip now, out of sight.
         runtime.usage.settle()
