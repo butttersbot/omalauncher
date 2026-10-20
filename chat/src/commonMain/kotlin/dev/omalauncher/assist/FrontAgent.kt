@@ -364,7 +364,7 @@ data class WaitingLine(val text: String, val cancel: Boolean)
 fun waitingLine(task: ChatTask, ahead: Int = 0, macLabel: String = ""): WaitingLine? = when {
     task.status != TaskStatus.Queued -> null
     task.undecided -> WaitingLine(if (ahead <= 0) "Oma will read this next" else "Oma will read this after $ahead more", cancel = true)
-    task.mac -> WaitingLine(if (macLabel == MAC_QUEUED) "queued → ${task.threadName} · queued on the Mac" else "$macLabel…", cancel = false)
+    task.mac -> WaitingLine(if (macQueuedLabel(macLabel)) "queued → ${task.threadName} · ${macLabel.replaceFirstChar { it.lowercaseChar() }}" else "$macLabel…", cancel = false)
     else -> WaitingLine("queued → " + if (task.builderId == BuilderId.A) BUILDER else builderCalled(task.builderId), cancel = true)
 }
 

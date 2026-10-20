@@ -184,7 +184,11 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
     }
 
     /** What stands beside [task], an entry of the Mac's, while it is not over. */
-    fun label(task: ChatTask): String = macEntryLabel(task.status, task.time in sending, view.reachableFor(task.thread), pending.any { it.threadId == task.thread }, task.fresh)
+    fun label(task: ChatTask): String =
+        macEntryLabel(task.status, task.time in sending, view.reachableFor(task.thread), pending.any { it.threadId == task.thread }, task.fresh, computerOf(task.thread))
+
+    /** The computer [threadId] runs on, as he named it when it was set up ("MG1"); "the Mac" while that isn't known. */
+    fun computerOf(threadId: String): String = machine(threadId)?.name?.takeIf { it.isNotBlank() } ?: "the Mac"
 
     /** What asking the Mac [machine]'s `/health` came to: whether it answered, and which agents it has when it did. */
     private fun heard(machine: String, health: MacHealthResult) {

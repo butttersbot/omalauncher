@@ -691,3 +691,27 @@ says a request is too long anyway, it goes again with only the newest words, and
 size that failed from then on. One message larger than the whole budget is refused before it is sent. memory.json
 beside venice.json keeps the summary, how many turns it holds, the count and the ratio; the whole conversation stays
 in venice.json. Plain Venice sessions get the same, without notes or tools.
+
+**Bot tab commands and auto mode (2026-10-19, Boss).** A bot's tab takes slash commands the runner answers itself, with
+no model asked: `/model`, `/model NAME`, `/model default` (the choice is kept with the session, never written into
+bot.json), `/mode`, `/mode auto`, `/mode manual`, `/help`. A turn has no cap on commands any more (the 45-minute limit
+of model and command time stays). In **auto** mode (Boss's pick: "only risky steps"), a command runs without a card
+unless `risky_command` says it asks: anything as administrator (soma-pacman), any shell, interpreter or script
+(`bash`, `python3`, `./x`, `eval`, a pipe into `sh`), and anything destructive (`rm -r`/`-f`, `dd`, `mkfs`, disk tools,
+`chmod`/`chown` with `-R` or outside home, `find -delete/-exec`, shutdown/reboot, writing to a disk device). Refusals
+(AUR helpers, other sudo, long or multi-line commands) stand in every mode. bot.json may also say `"mode": "auto"`.
+Revised after the Critic (auto mode FAIL, 2026-10-19): `risky_command` is now an allowlist, not a blocklist. A command
+runs without a card only when it is one plain command (no pipe, redirect, substitution, glob or escape), its program is
+one of AUTO_PROGRAMS named bare (files and folders, downloads, archives, wine/Proton/Steam/Lutris/flatpak tools), it
+touches no SENSITIVE place (shell startup files, autostart, systemd user units, Hyprland and Omarchy config,
+~/.local/bin, ~/bin, ~/.ssh, ~/.gnupg, ~/.venice, bot folders) and nothing outside his home, and it passes its
+program's rule (rm without flags, chmod MODE FILES without -R, find without -exec/-delete, tar without --to-command).
+Revised again after the Critic's second FAIL (2026-10-19): auto mode decides by where and how, never by listing
+dangers. A command runs without a card only when it is one plain command of a program in AUTO_TOOLS (reading, making
+folders, copying, moving, single-file rm, chmod without special bits, tar/unzip/7z/xz/gzip/zstd, wget/curl downloads,
+flatpak install/list/info/search/update) with only that program's plain options, touching only AUTO_ROOTS (~/Games,
+~/Downloads, the Steam and Lutris compatibility/runner folders) or its own work folder; reading may also see
+/etc/os-release, /etc/pacman.conf, /proc/cpuinfo and /usr/share. Anything that runs a program asks: wine, steam,
+protontricks, lutris, flatpak run, gamescope, mangohud, opening an app on the screen, scripts, shells, interpreters.
+Uploads (curl -T/-d/-F, wget --post-file/--method) ask. Bots also get agent mail (`mail(to, text)` through tmsg, signed
+with the thread's id) and, on Linux, Boss's desktop session (Wayland, Hyprland, X) for what they run.

@@ -63,4 +63,13 @@ class BotTabsTest {
         val quiet = macApply(listOf(running), "t1", MacEvent.ApprovalResult(5, 0, "a1", MacDecision.Withdrawn, "galaxy-z-fold8"))
         assertTrue(quiet.single().steps.isEmpty())
     }
+
+    @Test fun aThreadOnAnotherComputerSaysThatComputer() {
+        assertEquals("Working on MG1", macEntryLabel(dev.omalauncher.oma.TaskStatus.Running, sending = false, reachable = true, approvals = false, on = "MG1"))
+        assertEquals("Queued on MG1", macEntryLabel(dev.omalauncher.oma.TaskStatus.Queued, sending = false, reachable = true, approvals = false, on = "MG1"))
+        assertTrue(macQueuedLabel("Queued on MG1") && macQueuedLabel(MAC_QUEUED))
+        assertEquals("MG1 out of reach; still working there", macEntryLabel(dev.omalauncher.oma.TaskStatus.Running, sending = false, reachable = false, approvals = false, on = "MG1"))
+        assertEquals("Earlier on MG1, only shown here", macEarlierCaption(MacEarlierRead.Read(emptyList(), cut = false), 2, "MG1"))
+        assertEquals("Working on the Mac", macEntryLabel(dev.omalauncher.oma.TaskStatus.Running, sending = false, reachable = true, approvals = false))
+    }
 }

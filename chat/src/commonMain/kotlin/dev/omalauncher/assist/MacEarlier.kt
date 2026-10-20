@@ -145,12 +145,12 @@ sealed interface MacEarlierRead {
  * only read, and how far back; or that it is being read or could not be. Null when it was read and held nothing
  * the phone does not already show.
  */
-fun macEarlierCaption(read: MacEarlierRead, shown: Int): String? = when (read) {
-    MacEarlierRead.Asking -> "Reading earlier work on the Mac…"
-    MacEarlierRead.Unread -> "Earlier work on the Mac could not be read now"
+fun macEarlierCaption(read: MacEarlierRead, shown: Int, on: String = "the Mac"): String? = when (read) {
+    MacEarlierRead.Asking -> "Reading earlier work on $on…"
+    MacEarlierRead.Unread -> "Earlier work on $on could not be read now"
     is MacEarlierRead.Read -> when {
         shown == 0 -> null
-        read.cut -> "Earlier on the Mac (its last $MAC_EARLIER_EVENTS events), only shown here"
-        else -> "Earlier on the Mac, only shown here"
+        read.cut -> "Earlier on $on (its last $MAC_EARLIER_EVENTS events), only shown here"
+        else -> "Earlier on $on, only shown here"
     }
 }
