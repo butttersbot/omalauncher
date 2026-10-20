@@ -652,21 +652,42 @@ runs a command only as a tool call from a bot's own turn, never from an endpoint
 shapes is the one thing it runs without a card.**
 - The tool is `run(command, why, minutes)`, taken only from Venice's structured `tool_calls`. The tool loop runs inside
   the turn's own process (`oma-runner venice-turn`), and Stop ends a running command's whole group.
-- Look-only, run at once (60 s): `pacman -Q*` (not `-Qp`) and `pacman|yay -Ss|-Si|-Sii` with package names only;
-  `systemctl status UNIT --no-pager`; `uname -a`, `df -h`, `free -h`, `lsblk`, `lspci`, `lsmod`, `nproc`; `cat` of
-  `/etc/pacman.conf`, `/etc/os-release`, `/proc/cpuinfo`. No shell signs at all; run as words, with no shell.
-- Never run, no card: `yay|paru -S…` installs (Boss runs AUR installs himself) and `sudo` for anything but
-  `sudo soma-pacman`. The bot is told why.
-- Everything else is a card (tool `Bash`, input `{command, minutes, root, outside}`), run in bash after Boss allows it,
-  for the minutes the bot asked (1 to 60, default 10). A declined command stays declined for the turn.
-- Commands run in `work/` with no stdin, no pagers, and none of Venice's, Soma's, the runner's or the agents'
-  variables. Each result is cut to its last 20 kB; past 80 kB in a turn, older results become a marker. A turn ends
-  at 40 commands or 45 minutes of model and command time.
+- Look-only, run at once (60 s): `pacman -Q[ikleqsdmntugc]*` and `pacman|yay -Ss|-Si|-Sii` with package names only;
+  `systemctl status NAME.service --no-pager` (not `user@` or `session-`, which would list every command line in his
+  session); `uname -a`, `df -h`, `free -h`, `lsblk`, `lspci`, `lsmod`, `nproc`; `cat` of `/etc/pacman.conf`,
+  `/etc/os-release`, `/proc/cpuinfo`. No shell signs at all; run as words with no shell, and the program only from
+  `/usr/bin` or `/bin` when root owns it (never one a command could have put on a PATH).
+- Never run, no card: anything naming an AUR helper or makepkg anywhere in it (Boss runs AUR installs himself), any
+  `sudo`/`su`/`doas`/`pkexec`/`run0` except exactly `sudo soma-pacman …` alone, and any command of more than one line
+  or 200 characters (a card must show all of it on his phone). The bot is told why.
+- Everything else is a card (tool `Bash`, input `{command, minutes, root, outside}`; the text says "Runs as
+  administrator." for soma-pacman, "Builds or runs code from outside Arch's own repos." for a pipe, a download or a
+  script, then the time limit, then the bot's reason), run in bash after Boss allows it, for the minutes the bot asked
+  (1 to 60, default 10). A declined command stays declined for the turn.
+- Commands run in `work/` with no stdin, no pagers, `PATH=/usr/local/bin:/usr/bin:/bin`, and only HOME, USER, LOGNAME,
+  SHELL, LANG, LC_*, XDG_RUNTIME_DIR and DBUS_SESSION_BUS_ADDRESS from the runner's environment. On Linux each command
+  runs in a systemd user scope of its own, so even what it leaves behind ends with it. Each result is cut to its last
+  20 kB; past 80 kB in a turn, older results become a marker. A turn ends at 40 commands or 45 minutes of model and
+  command time.
 - Everything a command prints is sent to Venice (Boss accepted this, 2026-10-19).
-- **soma-pacman** (`tools/mac-runner/soma-pacman`) is the only thing sudo runs for a bot: `-S|-Sy|-Syu|-R|-Rs` with
-  `--needed`, `--noconfirm` and lower-case package names. It refuses `-U`, every other option, paths and URLs.
+- **soma-pacman** (`tools/mac-runner/soma-pacman`) is the only thing sudo runs for a bot: `-S|-Syu|-R|-Rs` with
+  `--needed`, `--noconfirm` and lower-case package names. It refuses `-U`, `-Sy` (a partial upgrade), every other option,
+  paths, URLs, and removing what the machine needs (the kernel, base, systemd, sudo, pacman, the network, Hyprland,
+  Omarchy, Tailscale, graphics drivers).
   Passwordless sudo for raw pacman would be root for anything running as Boss; each soma-pacman card is still a root
   decision, and says "Runs as administrator."
 - Tested: `test-runner.py` against a fake Venice that calls the tool: the look-only shapes and their refusals one by
   one, cards, allow, deny, refusals, the environment, a time limit, Stop ending a running command, the 40-call cap, a
   tool call written as text running nothing, and soma-pacman's checks.
+
+**Memory** (slice 3). Every message is built to fit the model: the instructions and notes (notes cut at a tenth of the
+budget), a rolling summary of older turns (about, facts, decisions, still open), then the recent turns word for word.
+The budget is Venice's `availableContextTokens` minus `maxCompletionTokens`, times 0.8 (32k when Venice hasn't said),
+counted from characters at a ratio calibrated per conversation from Venice's own `usage.prompt_tokens`. Past 60% of
+the budget, at the end of a turn (the reply already shown, the next message waiting), the oldest turns are folded into
+the summary by the same model (`oma-runner venice-ask`, a process Stop can end), and lasting facts are added to a
+bot's notes.md; a line that reads as an instruction never is. Summaries and notes changes show as steps. When Venice
+says a request is too long anyway, it goes again with only the newest words, and that conversation stays under the
+size that failed from then on. One message larger than the whole budget is refused before it is sent. memory.json
+beside venice.json keeps the summary, how many turns it holds, the count and the ratio; the whole conversation stays
+in venice.json. Plain Venice sessions get the same, without notes or tools.

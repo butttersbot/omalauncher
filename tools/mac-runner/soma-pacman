@@ -5,10 +5,12 @@ Passwordless `sudo pacman` would be root for anything running as Boss: pacman -U
 --hookdir, --dbpath or --root point it anywhere. So sudoers names only this script, which takes official packages and
 nothing else:
 
-  soma-pacman -S|-Sy|-Syu|-R|-Rs [--needed] [--noconfirm] [NAME ...]
+  soma-pacman -S|-Syu|-R|-Rs [--needed] [--noconfirm] [NAME ...]
   soma-pacman --check ARGS...      says whether ARGS would be taken, and runs nothing
 
 Every other option, a path, a URL or a name with anything but [a-z0-9@._+-] in it is refused and nothing is run.
+-Sy alone is refused (a partial upgrade breaks Arch: -Syu NAMES does it whole), and so is removing anything the
+machine needs to boot, log in, reach the network or be managed (PROTECTED).
 Installed root-owned: sudo install -o root -g root -m 755 soma-pacman /usr/local/bin/soma-pacman
 with /etc/sudoers.d/soma-pacman holding: USER ALL=(root) NOPASSWD: /usr/local/bin/soma-pacman
 """
@@ -17,7 +19,10 @@ import re
 import sys
 
 PACMAN = '/usr/bin/pacman'
-OPERATIONS = {'-S': True, '-Sy': True, '-Syu': False, '-R': True, '-Rs': True}  # whether it needs at least one name
+OPERATIONS = {'-S': True, '-Syu': False, '-R': True, '-Rs': True}  # whether it needs at least one name
+PROTECTED = re.compile(r'(linux(-.*)?|base|base-devel|systemd.*|sudo|pacman.*|glibc|bash|coreutils|util-linux|filesystem|networkmanager|iwd|'
+                       r'openssh|hyprland.*|omarchy.*|soma.*|tailscale|python|python3|grub|limine|efibootmgr|mkinitcpio|dracut|linux-firmware.*|'
+                       r'archlinux-keyring|shadow|pam|dbus.*|polkit|wayland|mesa|nvidia.*)')
 FLAGS = ('--needed', '--noconfirm')
 NAME = re.compile(r'[a-z0-9@_+][a-z0-9@._+-]{0,99}')
 
@@ -39,8 +44,10 @@ def refusal(args):
         names.append(word)
     if OPERATIONS[args[0]] and not names:
         return '%s needs at least one package name' % args[0]
-    if args[0] == '-Syu' and names:
-        return '-Syu takes no package names; install them with -S'
+    if args[0].startswith('-R'):
+        held = [name for name in names if PROTECTED.fullmatch(name)]
+        if held:
+            return 'removing %s could leave the machine unable to boot, log in or reach the network' % ', '.join(held[:5])
     return None
 
 
