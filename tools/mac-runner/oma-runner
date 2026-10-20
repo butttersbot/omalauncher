@@ -994,11 +994,15 @@ def risky_part(command):
     head, rest = words[0], words[1:]
     if head in LOOK_ANYWHERE:
         # Names, sizes and states, never contents: anywhere, with any option but the few that act.
-        return any(word in ('-exec', '-execdir', '-ok', '-okdir', '-delete', '-fprint', '-fprint0', '-fprintf', '-fls') or word.startswith('-fprint') for word in rest) \
-            or (head == 'env' and rest != [])
+        return any(word in ('-exec', '-execdir', '-ok', '-okdir', '-delete', '-fprint', '-fprint0', '-fprintf', '-fls') or word.startswith('-fprint')
+                   or word.partition('=')[0] in LOOK_FROM_FILE.get(head, ()) for word in rest) \
+            or (head == 'env' and rest != []) \
+            or (head == 'pgrep' and any(word in ('-a', '-l', '--list-full', '--list-name') or (re.fullmatch(r'-[a-zA-Z]+', word) and set(word[1:]) & set('al')) for word in rest))
     if head == 'pacman' and rest and (re.fullmatch(r'-Q[ikleqsdmntugc]*', rest[0]) or rest[0] in ('-Ss', '-Si', '-Sii')) and not any(word.startswith('-') for word in rest[1:]):
         return False  # what is installed, or what the official repos have: names and patterns only
     if head == 'systemctl' and rest[:1] == ['--user'] and len(rest) >= 2 and rest[1] in ('list-units', 'status', 'is-active', 'is-enabled') \
+            and (rest[1] == 'list-units' or any(re.fullmatch(r'[\w@.-]+\.service', word) and not word.startswith(('session-', 'user@')) for word in rest[2:])) \
+            and not any(re.search(r'session-|user@|\.scope$|\.slice$', word) for word in rest[2:]) \
             and all(re.fullmatch(r'--no-pager|--type=\w+|--state=\w+|--all', word) or (re.fullmatch(r'[\w@.-]+', word) and not word.startswith('-')) for word in rest[2:]):
         return False
     if len(rest) == 1 and rest[0] in ('--version', '-V', 'version') and head in VERSION_ASKED and system_program(head):
@@ -1022,6 +1026,9 @@ def risky_part(command):
                 continue
             name, _, given = word.partition('=')
             if name in rule.get('values', ()):
+                value = given or (rest[index + 1] if index + 1 < len(rest) else '')
+                if value.startswith('@'):
+                    return True  # curl reads a format (or anything) from @FILE: that would print the file
                 index += 1 if given else 2  # an option's value that is no path: a format, an agent, a time
                 continue
             if name in takes:
@@ -1064,8 +1071,11 @@ def risky_part(command):
 # Tools that only tell names, sizes and states: they may look anywhere (contents are read only by AUTO_TOOLS, inside AUTO_ROOTS).
 LOOK_ANYWHERE = {'ls', 'stat', 'file', 'du', 'df', 'realpath', 'readlink', 'which', 'whereis', 'pgrep', 'find', 'wc', 'uname', 'nproc', 'free', 'env',
                  'lspci', 'lsusb', 'lscpu', 'lsblk', 'lsmod', 'id', 'whoami', 'hostname', 'date', 'uptime'}
-# Tools whose --version alone may run in auto mode.
-VERSION_ASKED = {'wine', 'wine64', 'winetricks', 'protontricks', 'mangohud', 'gamescope', 'gamemoded', 'steam', 'lutris', 'umu-run', 'vkd3d-compiler',
+# The options of those tools that read a file named by Boss's bot and echo its lines (as dates, names or errors).
+LOOK_FROM_FILE = {'date': ('-f', '--file'), 'wc': ('--files0-from',), 'du': ('--files0-from',), 'find': ('-files0-from',),
+                  'file': ('-f', '--files-from', '-m', '--magic-file', '-C', '--compile'), 'lspci': ('-F', '-i', '-p'), 'lsusb': ('-D',)}
+# Tools whose --version alone may run in auto mode (not Steam or Lutris: their launchers start, set up and may show windows).
+VERSION_ASKED = {'wine', 'wine64', 'winetricks', 'protontricks', 'mangohud', 'gamescope', 'gamemoded', 'umu-run', 'vkd3d-compiler',
                  'vulkaninfo', 'curl', 'wget', 'pacman', 'flatpak', 'python3', 'hyprctl'}
 # Auto mode's tools and the plain options each may take. 'takes' options are followed by a path, which is checked like
 # any other; 'writes' tools may only write inside AUTO_ROOTS (or the bot's work folder).

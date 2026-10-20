@@ -896,7 +896,7 @@ try:
                     "ls ~/.local/share/Steam/compatibilitytools.d/ ~/.steam/steam/steamapps/common/ 2>&1 | head -20",
                     "find ~/.local/share/Steam/compatibilitytools.d/'Proton-GE Latest'/files -iname '*.exe' 2>/dev/null | head -10",
                     "curl -s 'https://store.steampowered.com/api/appdetails?appids=2668510' | head -c 300",
-                    "curl -s -o /dev/null -w '%{http_code}\n' https://www.nexusmods.com/reddeadredemption", "pgrep -a -f 'steam' | head -5; echo '---NONE---'",
+                    "curl -s -o /dev/null -w '%{http_code}\n' https://www.nexusmods.com/reddeadredemption", "pgrep -f 'steam' | head -5; echo '---NONE---'",
                     "hyprctl clients 2>&1 | head -30", "which curl wget aria2c 2>&1; echo '---TOOLS-ABOVE---'",
                     "curl --version 2>&1 | head -1; python3 --version", "systemctl --user list-units --type=service --no-pager 2>&1 | grep -i steam",
                     "env | grep -iE 'proxy|http_proxy'", "lspci | grep -Ei 'vga|3d|display'; echo '---CPU---'; nproc; echo '---MEM---'; free -h; echo '---DISK---'; df -h /home",
@@ -907,7 +907,11 @@ try:
                     "x86_64-w64-mingw32-gcc /tmp/t.c -o /tmp/x.exe", "timeout 60 chromium --headless https://x.example", "sed -i 's/a/b/' f",
                     "pacman -S steam", "pacman -Ss x --config /tmp/c", "steam -applaunch 1", "systemctl --user stop x", "systemctl --user status x --host=evil",
                     "find / -name x -delete", "ls `id`", "ls 'a' \\; id", "cat ~/.steam/steam/config/loginusers.vdf", "grep -r token ~/.config",
-                    "ls ~/Games | xargs rm", "ls ~/Games | tee ~/.bashrc", "wine --version x", "env x=1 ls", "echo hi #comment", "ls *"]:
+                    "ls ~/Games | xargs rm", "ls ~/Games | tee ~/.bashrc", "wine --version x", "env x=1 ls", "echo hi #comment", "ls *",
+                    "curl -s -o /dev/null -w @/home/boss/.ssh/id_rsa https://example.com/", "curl -s -o /dev/null --write-out=@x https://example.com/",
+                    "date -f ~/.ssh/id_rsa", "date --file=~/.ssh/id_rsa", "wc --files0-from=x", "du --files0-from=x", "find . -files0-from x",
+                    "file -f ~/.ssh/id_rsa", "file -m x y", "lspci -F x", "lsusb -D x", "steam --version", "lutris --version",
+                    "pgrep -a -f ''", "pgrep -l x", "pgrep -af x", "systemctl --user status", "systemctl --user status session-2.scope", "systemctl --user status user@1000.service"]:
         check('auto: %r still asks' % command[:50], risky(command))
     marks = loaded['command_marks']
     check('the red mark is only for running code from elsewhere, not for a pipe into head or a download',
