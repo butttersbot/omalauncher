@@ -32,6 +32,8 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
     /** The agents each Mac has, by its id, as its `/health` last said; none until it has. */
     @Volatile private var kinds: Map<String, List<String>> = emptyMap()
     @Volatile private var offered: Map<String, Map<String, List<String>>> = emptyMap()
+    /** How many threads each computer said it has at its last `/health`: a change (a thread or bot made elsewhere) is listed at once. */
+    @Volatile private var counts: Map<String, Int> = emptyMap()
     /** The agents heard to be at their limit lately, kept in prefs under "limits". Only touched under the lock. */
     private val limits = MacLimits()
     /**
@@ -186,11 +188,16 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
 
     /** What asking the Mac [machine]'s `/health` came to: whether it answered, and which agents it has when it did. */
     private fun heard(machine: String, health: MacHealthResult) {
+        var changed = false
         if (health is MacHealthResult.Up) {
             kinds = kinds + (machine to health.health.kinds)
             offered = offered + (machine to health.health.models)
+            changed = counts[machine].let { it != null && it != health.health.threads }
+            counts = counts + (machine to health.health.threads)
         }
         reached(machine, health is MacHealthResult.Up)
+        // A session made on another device, or a bot added on its machine, shows here without waiting for the next look.
+        if (changed) refresh()
         // Only a Mac that does not answer while none other does says anything about this phone's Tailscale.
         if (health is MacHealthResult.Up || view.macs.none { it.reachable && it.id != machine }) platform.linkAfter(macLink(health))
     }

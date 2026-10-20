@@ -97,6 +97,8 @@ class DesktopChatHost(
     override fun frontReady(): Boolean = false
 
     override fun threads(): List<AgentThread> {
+        // The list is asked for again once it is a minute old, as home's tiles do on the phone: the desktop has no tiles.
+        engine.glance(System.currentTimeMillis())
         val book = platform.book()
         val asks = engine.pending.groupBy({ it.threadId }) { ThreadAsk(it.request.tool, askTarget(it.request.input)) }
         // The phone's own threads (its builders) are the phone's: not here.
