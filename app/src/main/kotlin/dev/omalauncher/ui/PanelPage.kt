@@ -424,7 +424,7 @@ private val CAST_CELL = 66.dp
 private val CAST_TALL = 70.dp
 
 /** The room the cast's caption takes above its apps. */
-private val CAST_CAPTION = 34.dp
+private val CAST_CAPTION = 24.dp
 
 /** Inside a manga page's panel: a folder there is drawn as its cast of apps ([CastTile]) rather than one folder badge. */
 internal val LocalInPanel = androidx.compose.runtime.staticCompositionLocalOf { false }
@@ -456,7 +456,7 @@ internal fun CastTile(
         val room = columns * rows
         val shown = if (folder.apps.size > room) folder.apps.take(room - 1) else folder.apps
         androidx.compose.foundation.layout.Column {
-            BasicText("CAST", Modifier.padding(bottom = 6.dp), style = Pack.mono(Pack.size.small, Pack.muted))
+            BasicText("CAST", Modifier.padding(bottom = 2.dp), style = Pack.mono(Pack.size.small, Pack.muted))
             for (r in 0 until rows) {
                 androidx.compose.foundation.layout.Row {
                     for (c in 0 until columns) {

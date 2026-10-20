@@ -411,8 +411,8 @@ class WidgetEngine(
         val gone = notebook.deletePage(page, files, move)
         // In the Manga look, what went to a manga page goes into its panels now, not where the free grid had room.
         val panels = pickedPanels()
-        if (gone?.to != null && panels != null) {
-            notebook.settlePanelPage(gone.to, panels.defaultLayout, { key, p ->
+        if (gone != null && panels != null) {
+            notebook.settleAfterDelete(gone, panels.defaultLayout, { key, p ->
                 val item = notebook.pageOf(key)?.let { from -> itemsOn(from).firstOrNull { it.key == key } }
                 item != null && layout.claim(item, itemsOn(p), p)
             })

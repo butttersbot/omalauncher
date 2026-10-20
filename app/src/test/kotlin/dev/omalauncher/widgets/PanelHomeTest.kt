@@ -204,6 +204,37 @@ class PanelHomeTest {
         assertEquals(listOf("beats", OVERFLOW_PANELS), n.pages.map { it.panels })
     }
 
+    @Test fun aPageDeletedOntoAFullMangaPageSpillsOntoAMangaPageAndNothingEndsOnAFreeGrid() {
+        val apps = (1..3).map { app("c$it") }
+        val home = Home(
+            listOf(
+                cut("p1", "beats", "a.owl", "b.owl", "c.owl"),
+                NotebookPage(
+                    "p2", "Spare",
+                    listOf(NotebookItem("koi.owl", ItemKind.Widget, Cell(0, 0, 6, 4))) +
+                        apps.mapIndexed { i, a -> NotebookItem(a.key, ItemKind.App, Cell(i, 5, 1, 1), app = a) },
+                    panels = "opening",
+                ),
+            ),
+        )
+        val gone = home.notebook.deletePage("p2", widgets = setOf("a.owl", "b.owl", "c.owl", "koi.owl"), move = true)!!
+        assertEquals("p1", gone.to)
+        home.notebook.settleAfterDelete(gone, "opening", claimFree = { _, _ -> true })
+        val n = home.notebook.snapshot()
+        // Nothing is on a free page, and every manga page holds one thing to a panel.
+        assertTrue(n.toString(), n.pages.all { it.panels != null && inPanels(n, it) })
+        assertEquals(setOf("a.owl", "b.owl", "c.owl", "koi.owl") + apps.map { it.key }, n.pages.flatMap { p -> p.items.map { it.key } }.toSet())
+    }
+
+    @Test fun aPageDeletedOntoAFreePageIsLeftAsTheFreeGridPlacedIt() {
+        val maps = app("maps")
+        val home = Home(listOf(NotebookPage("p1", "Free"), NotebookPage("p2", "Spare", listOf(NotebookItem(maps.key, ItemKind.App, Cell(4, 5, 1, 1), app = maps)))))
+        val gone = home.notebook.deletePage("p2", widgets = emptySet(), move = true)!!
+        val was = home.notebook.snapshot()
+        home.notebook.settleAfterDelete(gone, "opening", claimFree = { _, _ -> true })
+        assertEquals(was, home.notebook.snapshot())
+    }
+
     // The look switched to.
 
     @Test fun theLookStepsOncePerSwitch() {

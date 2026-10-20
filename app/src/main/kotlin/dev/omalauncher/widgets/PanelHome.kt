@@ -329,6 +329,23 @@ fun LiveNotebook.settlePanelPage(
 }
 
 /**
+ * A page deleted in the Manga look with its things moved ([gone]): the page made for what the page they went to had no room
+ * for is cut into [layout] too, and both are put in order at once ([settlePanelPage]), the new page first, so nothing is left
+ * two to a panel or on a free grid. Pages that aren't manga pages are left as the free grid placed them.
+ */
+fun LiveNotebook.settleAfterDelete(
+    gone: PageGone,
+    layout: String,
+    claimFree: (String, String) -> Boolean,
+    columns: Int = GRID_COLUMNS,
+) {
+    val to = gone.to ?: return
+    if (pages.firstOrNull { it.id == to }?.panels == null) return
+    gone.spill?.let { spill -> setPanels(spill, layout) }
+    for (page in listOfNotNull(gone.spill, to)) settlePanelPage(page, layout, claimFree, columns)
+}
+
+/**
  * Home's panel pages for the art placer (piece C's [PanelHome]): while the look is drawn in panels ([on]), each panel page
  * with which of its panels are empty, and art hung by putting `art:<id>` into a panel's cell. [onHung] is told where, for
  * the "パッ" home shows there.
