@@ -48,8 +48,38 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+    /**
+     * Soma's own screens other than home that are showing (the Oma chat, an approval, ...). The chat's window lets
+     * home show behind it, so home stays started under it; while any of these shows, the handle's swipe is "go home",
+     * as from an app (Boss, 2026-10-20: "if I have an Oma widget up in full screen, it should be like I have an app up").
+     */
+    private val ownScreens = mutableSetOf<android.app.Activity>()
+    private val screensWatch =
+        object : android.app.Application.ActivityLifecycleCallbacks {
+            override fun onActivityStarted(activity: android.app.Activity) {
+                if (activity !== this@MainActivity) ownScreens += activity
+            }
+
+            override fun onActivityStopped(activity: android.app.Activity) {
+                ownScreens -= activity
+            }
+
+            override fun onActivityDestroyed(activity: android.app.Activity) {
+                ownScreens -= activity
+            }
+
+            override fun onActivityCreated(activity: android.app.Activity, savedInstanceState: Bundle?) {}
+
+            override fun onActivityResumed(activity: android.app.Activity) {}
+
+            override fun onActivityPaused(activity: android.app.Activity) {}
+
+            override fun onActivitySaveInstanceState(activity: android.app.Activity, outState: Bundle) {}
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        application.registerActivityLifecycleCallbacks(screensWatch)
         applySystemBars(this, Pack.look.barsOnLight(drawer = false, panel = false))
         runtime.start()
         HomeDoor.enter(door)
@@ -186,7 +216,7 @@ class MainActivity : ComponentActivity() {
         // shown activity before it hands it a new intent, so one that was showing is STARTED here; one coming back from
         // an app was stopped, and comes home as before.
         val swipedOnHome = intent.hasCategory(Intent.CATEGORY_HOME) && lifecycle.currentState == Lifecycle.State.STARTED &&
-            state.bareHome && runtime.widgets.openScreen == null
+            ownScreens.isEmpty() && state.bareHome && runtime.widgets.openScreen == null
         super.onNewIntent(intent)
         if (swipedOnHome) {
             state.open()
@@ -226,6 +256,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        application.unregisterActivityLifecycleCallbacks(screensWatch)
         HomeDoor.leave(door)
         super.onDestroy()
     }

@@ -254,7 +254,9 @@ object AgentTasks {
             val file = File((context.applicationContext as App).runtime.proot.home, AGENT_STATUS_FILE)
             file.parentFile?.mkdirs()
             val builders = agentStatus(working, label, answer, pending.size, System.currentTimeMillis() / 1000, PhoneAccess.link(context))
-            file.writeText(omaStatus(builders, mac).toString())
+            // The builders' line is about the last turn's builder; its tab is where a tap goes.
+            val tab = runCatching { dev.omalauncher.oma.lastTurnTab(ChatLog.of(context).tasks, dev.omalauncher.oma.TabBook.of(context)) }.getOrNull()
+            file.writeText(omaStatus(builders, mac, tab.orEmpty()).toString())
         }
     }
 }
@@ -705,7 +707,16 @@ fun agentStatus(working: Boolean, label: String, answer: String, approvals: Int,
  * [working], and the one with [background] work left running after its answer; each null when there is none.
  * A name stands for the first of several, with how many more.
  */
-data class MacGlance(val waiting: String? = null, val approvals: Int = 0, val working: String? = null, val background: String? = null)
+data class MacGlance(
+    val waiting: String? = null,
+    val approvals: Int = 0,
+    val working: String? = null,
+    val background: String? = null,
+    /** The thread the [waiting], [working] and [background] lines name first, by id: the chat tab a tap on the tile opens. */
+    val waitingThread: String? = null,
+    val workingThread: String? = null,
+    val backgroundThread: String? = null,
+)
 
 /**
  * The Mac's work in [view], with the Mac's requests [pending] his OK. A Mac out of reach says nothing: what was
@@ -717,11 +728,17 @@ fun macGlance(view: MacView, pending: List<MacPending>): MacGlance {
         val distinct = names.distinct()
         return distinct.firstOrNull()?.let { if (distinct.size > 1) "$it +${distinct.size - 1}" else it }
     }
+    val waiting = view.threads.filter { it.status == MacThreadStatus.Waiting }
+    val working = view.threads.filter { it.status == MacThreadStatus.Working }
+    val background = view.threads.filter { macResting(it.status) && it.background.isNotEmpty() }
     return MacGlance(
-        waiting = named(pending.map { macName(it.threadName) } + view.threads.filter { it.status == MacThreadStatus.Waiting }.map { macName(it.name) }),
+        waiting = named(pending.map { macName(it.threadName) } + waiting.map { macName(it.name) }),
         approvals = pending.size,
-        working = named(view.threads.filter { it.status == MacThreadStatus.Working }.map { macName(it.name) }),
-        background = named(view.threads.filter { macResting(it.status) && it.background.isNotEmpty() }.map { macName(it.name) }),
+        working = named(working.map { macName(it.name) }),
+        background = named(background.map { macName(it.name) }),
+        waitingThread = pending.firstOrNull()?.threadId ?: waiting.firstOrNull()?.id,
+        workingThread = working.firstOrNull()?.id,
+        backgroundThread = background.firstOrNull()?.id,
     )
 }
 
@@ -732,16 +749,18 @@ fun macGlance(view: MacView, pending: List<MacPending>): MacGlance {
  * and `mac`, "Working on the Mac · FF4 better menu mod": the home tile is his to read. `approvals` counts the
  * phone's and the Mac's; `mac` is empty while the builders' own say stands.
  */
-fun omaStatus(builders: JSONObject, mac: MacGlance): JSONObject {
+fun omaStatus(builders: JSONObject, mac: MacGlance, builderTab: String = ""): JSONObject {
     val own = builders.getInt("approvals")
-    val status = JSONObject(builders.toString()).put("approvals", own + mac.approvals).put("mac", "")
-    fun told(state: String, line: String) = status.put("state", state).put("doing", line).put("mac", line)
+    // `thread` is the chat tab of what the tile shows, so a tap opens it (Boss, 2026-10-20): the builders' tab, or the Mac thread's.
+    val status = JSONObject(builders.toString()).put("approvals", own + mac.approvals).put("mac", "").put("thread", builderTab)
+    fun told(state: String, line: String, thread: String?) =
+        status.put("state", state).put("doing", line).put("mac", line).put("thread", thread?.let(::macThreadKey) ?: "")
     return when {
         own > 0 -> status
-        mac.waiting != null -> told("waiting", "Needs your OK · ${mac.waiting}")
+        mac.waiting != null -> told("waiting", "Needs your OK · ${mac.waiting}", mac.waitingThread)
         builders.getBoolean("working") -> status
-        mac.working != null -> told("working", "Working on the Mac · ${mac.working}")
-        mac.background != null -> told("working", "Running on the Mac · ${mac.background}")
+        mac.working != null -> told("working", "Working on the Mac · ${mac.working}", mac.workingThread)
+        mac.background != null -> told("working", "Running on the Mac · ${mac.background}", mac.backgroundThread)
         else -> status
     }
 }

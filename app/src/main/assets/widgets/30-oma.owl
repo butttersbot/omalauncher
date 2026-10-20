@@ -21,7 +21,9 @@ widget "oma" {
   let tint = state == "waiting" || state == "failed" ? red : busy ? accent : foreground
   let answer = agent == null ? "" : trim(agent.answer ?? "")
 
-  onTap: launcher("oma")
+  // The chat opens on the tab of what the tile shows (Boss, 2026-10-20).
+  let thread = agent == null ? "" : (agent.thread ?? "")
+  onTap: launcher(thread != "" ? "oma:" + thread : "oma")
 
   Column {
     gap: 4

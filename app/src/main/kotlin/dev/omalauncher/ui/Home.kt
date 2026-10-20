@@ -324,6 +324,8 @@ fun HomeScreen(
                 "store" -> state.storeOpen = true
                 "linux" -> state.linuxOpen = true
                 "drawer" -> state.open()
+                // The oma tile names the tab of what it shows ("oma:KEY"), and a tap opens it.
+                else -> if (action.startsWith("oma:")) openOmaChat(context, thread = action.removePrefix("oma:"))
             }
         }
     }
