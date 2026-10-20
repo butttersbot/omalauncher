@@ -46,7 +46,21 @@ enum class ItemKind {
 
     /** A cockpit module, drawn by the launcher itself like a thread's tile: its key alone says which (`module:…`). */
     Module,
+
+    /** A picture or GIF in a panel of the Manga look: its key alone says which (`art:<id>`, [artKey]); its file is the art store's. */
+    Art,
 }
+
+/** Ahead of an art item's id in its key. */
+const val ART_PREFIX = "art:"
+
+private val ART_ID = Regex("[0-9a-f]{16}")
+
+/** The key of the art [id] (16 lowercase hex characters, as the art store makes them). */
+fun artKey(id: String): String = ART_PREFIX + id
+
+/** The art id in [key], or null when it is not an art item's key. */
+fun artIdOf(key: String): String? = key.removePrefix(ART_PREFIX).takeIf { key.startsWith(ART_PREFIX) && ART_ID.matches(it) }
 
 /**
  * One thing on a notebook page. A widget is its file, named by [key]; an app carries itself in [app];
@@ -60,11 +74,15 @@ data class NotebookItem(
     val apps: List<PinnedApp> = emptyList(),
 )
 
-/** A page of the notebook. Pages are ordered as listed, and stay when empty. */
+/**
+ * A page of the notebook. Pages are ordered as listed, and stay when empty. [panels] is the page's panel layout in the Manga
+ * look ([PanelLayouts]), or null for the free grid; in a panel page every item's cell is exactly one panel's cell.
+ */
 data class NotebookPage(
     val id: String,
     val name: String,
     val items: List<NotebookItem> = emptyList(),
+    val panels: String? = null,
 )
 
 /** The whole home layout: named pages on one fixed grid of [columns] by [rows], and the dock. */
@@ -77,7 +95,7 @@ data class Notebook(
 
 /**
  * The `notebook` store's document, in the [Versioned] wrapper:
- * `{"columns": 6, "rows": R, "pages": [{"id", "name", "items": [{"key", "kind", "cell": {x, y, w, h}, "app", "apps"}]}], "dock": [app]}`.
+ * `{"columns": 6, "rows": R, "pages": [{"id", "name", "panels"?, "items": [{"key", "kind", "cell": {x, y, w, h}, "app", "apps"}]}], "dock": [app]}`.
  */
 /** Ahead of a module's key ([dev.omalauncher.canvas.MODULE_PREFIX]): the store knows a module by its key alone. */
 private const val MODULE_KEY = "module:"
@@ -103,7 +121,8 @@ object NotebookStore {
                 if (item.kind == ItemKind.Folder) o.put("apps", JSONArray().also { a -> item.apps.forEach { a.put(app(it)) } })
                 items.put(o)
             }
-            pages.put(JSONObject().put("id", page.id).put("name", page.name).put("items", items))
+            // A page's panel layout is written only when it has one, so a free page reads as it always did.
+            pages.put(JSONObject().put("id", page.id).put("name", page.name).putOpt("panels", page.panels).put("items", items))
         }
         val data =
             JSONObject()
@@ -168,8 +187,11 @@ object NotebookStore {
                                 apps = o.optJSONArray("apps")?.all(::app).orEmpty(),
                                 // An app without what it opens is no entry at all.
                             ).also { require(it.kind != ItemKind.App || it.app != null) }
+                                // Art is its key alone: one that names no art id is no entry.
+                                .also { require(it.kind != ItemKind.Art || artIdOf(it.key) != null) }
                         }
-                    NotebookPage(p.getString("id"), p.getString("name"), items)
+                    // A layout this build doesn't know is the free grid: the cells are kept as they are.
+                    NotebookPage(p.getString("id"), p.getString("name"), items, p.optString("panels").takeIf(PanelLayouts::known))
                 }.once { it.id }
                 .map { page -> page.copy(items = page.items.filter { seen.add(it.key) }.also { skipped += page.items.size - it.size }) }
         val rows = data.getInt("rows")

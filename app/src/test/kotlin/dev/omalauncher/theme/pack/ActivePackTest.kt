@@ -97,6 +97,7 @@ class ActivePackTest {
             "tiny-magazine" to "Tiny Magazine",
             "bujo" to "Bujo",
             "dial-up" to "Dial-Up",
+            "manga" to "Manga",
         )
 
     private fun shippedPack(id: String) = PackLoader.load(DirectoryPackSource(moduleFile("src/main/assets/packs/$id")), id)
@@ -296,6 +297,59 @@ class ActivePackTest {
             assertTrue(pack.id, pack.icons.shadow)
             assertEquals(pack.id, PlaceholderStyle.Letter, pack.icons.placeholder.style)
             assertEquals(pack.id, FontGeneric.Cursive, pack.type.hand.family)
+        }
+
+        // Manga is the mockup's paper, ink and spot red (features/manga-look/manga-mockup.html), ruled in hairlines with no shadow anywhere.
+        val manga = shippedPack("manga").pack
+        assertEquals(color("#fdfdfb"), manga.page.color)
+        assertEquals(color("#fdfdfb"), manga.palette.background)
+        assertEquals(color("#111113"), manga.palette.foreground)
+        assertEquals(color("#d7262d"), manga.palette.accent)
+        assertEquals(color("#d7262d"), manga.palette.named["spot"])
+        assertEquals(PaperPattern.None, manga.page.pattern)
+        for (surface in listOf(manga.scrap.surface, manga.dock.surface, manga.icons.placeholder.surface)) {
+            assertEquals(1.15f, surface.border, 0f)
+            assertEquals(color("#111113"), surface.borderColor)
+            assertEquals(color("#fdfdfb"), surface.fill)
+        }
+        // The emphasised scrap is a black panel lettered in the paper.
+        assertEquals(color("#111113"), manga.scrap.alt.fill)
+        assertEquals(color("#fdfdfb"), manga.scrap.alt.ink)
+        for (surface in listOf(manga.scrap.surface, manga.scrap.alt, manga.dock.surface, manga.icons.placeholder.surface)) {
+            assertFalse(surface.shadow.visible || surface.shadow2.visible)
+            assertEquals(color("#d7262d"), surface.focusColor)
+        }
+        assertFalse(manga.page.textShadow.visible || manga.icons.shadow)
+        assertEquals(0f, manga.ring.glow, 0f)
+        assertEquals(0f, manga.scrap.tiltMax - manga.scrap.tiltMin, 0f)
+        assertEquals(Dressing.None, manga.scrap.tape.style)
+        assertEquals(Dressing.None, manga.scrap.titleBar.style)
+        assertEquals(CornerStyle.Edge, manga.shape.corners)
+        assertEquals(DockStyle.Bar, manga.dock.style)
+        assertEquals(IconTreatment.Grayscale, manga.icons.treatment)
+        assertEquals("fonts/DelaGothicOne-Regular.ttf", manga.type.display.file)
+        assertEquals("fonts/SchibstedGrotesk.ttf", manga.type.body.file)
+        assertEquals("fonts/PatrickHand-Regular.ttf", manga.type.hand.file)
+        assertEquals("fonts/JetBrainsMono.ttf", manga.type.mono.file)
+        // Its panels are the mockup's.
+        assertEquals(PackPanels.defaults, manga.panels)
+    }
+
+    /** Only Manga is drawn in panels; every other look, Console included, has none. */
+    @Test fun onlyMangaHasPanels() {
+        for ((id, _) in shipped) assertEquals(id, id == "manga", shippedPack(id).pack.panels != null)
+        assertNull(ConsolePack.pack.panels)
+        assertNull(ConsolePack.tokens.panels)
+    }
+
+    /** The fonts Manga carries are the other looks' own files, byte for byte: nothing new was downloaded for it. */
+    @Test fun mangasFontsAreTheOtherLooks() {
+        val from = mapOf("DelaGothicOne-Regular.ttf" to "riso", "PatrickHand-Regular.ttf" to "bujo", "SchibstedGrotesk.ttf" to "riso", "JetBrainsMono.ttf" to "riso")
+        val carried = moduleFile("src/main/assets/packs/manga/fonts").listFiles().orEmpty().map { it.name }.sorted()
+        assertEquals(from.keys.sorted(), carried)
+        for ((file, look) in from) {
+            val bytes = moduleFile("src/main/assets/packs/manga/fonts/$file").readBytes()
+            assertTrue(file, bytes.contentEquals(moduleFile("src/main/assets/packs/$look/fonts/$file").readBytes()))
         }
     }
 

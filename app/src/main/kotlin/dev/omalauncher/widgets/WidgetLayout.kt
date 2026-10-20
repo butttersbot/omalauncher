@@ -56,6 +56,12 @@ class WidgetLayout(
         page: String? = null,
     ): List<HomeItem> = placement.place(items, cols, rows, held(page, items))
 
+    /** The places kept on [page], which shows [items], for what isn't shown there now (a widget whose file is missing). */
+    fun heldOn(
+        page: String,
+        items: List<HomeItem>,
+    ) = held(page, items)
+
     private fun held(
         page: String?,
         items: List<HomeItem>,

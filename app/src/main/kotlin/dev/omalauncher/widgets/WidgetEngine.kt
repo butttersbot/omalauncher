@@ -408,7 +408,16 @@ class WidgetEngine(
                 clean(spec.file.name)
             }
         }
-        return notebook.deletePage(page, files, move)
+        val gone = notebook.deletePage(page, files, move)
+        // In the Manga look, what went to a manga page goes into its panels now, not where the free grid had room.
+        val panels = pickedPanels()
+        if (gone != null && panels != null) {
+            notebook.settleAfterDelete(gone, panels.defaultLayout, { key, p ->
+                val item = notebook.pageOf(key)?.let { from -> itemsOn(from).firstOrNull { it.key == key } }
+                item != null && layout.claim(item, itemsOn(p), p)
+            })
+        }
+        return gone
     }
 
     /** A widget file that's gone takes its place, page and saved values along, so a new file of that name starts fresh. */
@@ -426,11 +435,12 @@ class WidgetEngine(
         File(previewDir, "$fileName.screen.png").delete()
     }
 
-    /** Widgets, pinned apps, folders and thread tiles on the page with the id [page]. Wrappers compare by spec, so unchanged pages skip recomposition. */
+    /** Widgets, pinned apps, folders, thread tiles, modules and art on the page with the id [page]. Wrappers compare by spec, so unchanged pages skip recomposition. */
     fun itemsOn(page: String): List<HomeItem> =
         specs.filter { it.onHome && notebook.pageOf(it.file.name) == page }.map(::WidgetItem) + shortcuts.onGrid().filter { notebook.pageOf(it.key) == page } +
             notebook.threadTiles().filterValues { it == page }.keys.sorted().map(::ThreadItem) +
-            notebook.modules().filterValues { it == page }.keys.sorted().map(::ModuleItem)
+            notebook.modules().filterValues { it == page }.keys.sorted().map(::ModuleItem) +
+            notebook.art().filterValues { it == page }.keys.sorted().map(::ArtItem)
 
     private val pageList by derivedStateOf { notebook.pages.map { it.id } }
 

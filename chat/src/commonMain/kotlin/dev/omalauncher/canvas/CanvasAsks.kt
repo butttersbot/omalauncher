@@ -245,8 +245,11 @@ private fun spotOn(busy: List<Cell>, columns: Int, rows: Int, w: Int, h: Int, wh
     return best
 }
 
-/** Where a module of [size] goes: the page it lands on, its cell, and the page made for it when none had room. */
-private data class Landing(val page: String, val cell: Cell, val made: CanvasVerb.PageMake? = null)
+/**
+ * Where a module of [size] goes: the page it lands on, its cell, and the page made for it when none had room ([cut] into panels
+ * when the page asked for is a manga page).
+ */
+private data class Landing(val page: String, val cell: Cell, val made: CanvasVerb.PageMake? = null, val cut: CanvasVerb.PagePanels? = null)
 
 /**
  * Semantic placement (PRD §5): on [page], the spot [where] asks for at [size], shrinking a little; then anywhere on that
@@ -256,6 +259,8 @@ private data class Landing(val page: String, val cell: Cell, val made: CanvasVer
 private fun land(n: Notebook, page: String, size: Pair<Int, Int>, where: Where, moving: String?, rules: ScreenRules, minH: Int = 1): Landing {
     val anchor = where.of?.let { cellOf(n, it) }
     fun try_(on: String, w: Where, strict: Boolean = true): Cell? {
+        // A manga page: its empty panel nearest the size asked for, never cells between its lines (PanelLanding.kt).
+        n.pages.firstOrNull { it.id == on }?.takeIf { it.panels != null }?.let { return panelSpot(n, it, size.first, size.second, moving, rules) }
         val busy = taken(n, on, moving, rules)
         for ((sw, sh) in aLittleSmaller(size.first, size.second, minH)) spotOn(busy, n.columns, n.rows, sw, sh, w, anchor, strict)?.let { return it }
         return null
@@ -269,6 +274,11 @@ private fun land(n: Notebook, page: String, size: Pair<Int, Int>, where: Where, 
     val id = rules.pageId(n)
     val base = n.pages.firstOrNull { it.id == page }?.name ?: "Page"
     val name = generateSequence(2) { it + 1 }.map { "$base $it" }.first { nm -> n.pages.none { it.name.equals(nm, ignoreCase = true) } }
+    overflowCut(n, page)?.let { cut ->
+        val made = n.copy(pages = n.pages + NotebookPage(id, name, panels = cut))
+        val cell = panelSpot(made, made.pages.last(), size.first, size.second, moving, rules) ?: refuse("No page here has room for it, not even a new one. Nothing was changed.")
+        return Landing(id, cell, CanvasVerb.PageMake(id, name, n.pages.lastOrNull()?.id), CanvasVerb.PagePanels(id, cut))
+    }
     val busy = rules.pinned(n)
     for (sh in size.second downTo minH.coerceIn(1, size.second)) for (sw in size.first downTo 1) {
         spotOn(busy, n.columns, n.rows, sw, sh, Where(), null)?.let { return Landing(id, it, CanvasVerb.PageMake(id, name, n.pages.lastOrNull()?.id)) }
@@ -339,7 +349,7 @@ fun resolveAsk(n: Notebook, ask: CanvasAsk, rules: ScreenRules): Resolved = when
         val size = (ask.size?.cells(rules.span(n), n.rows) ?: cellOf(n, key)?.let { it.w to it.h } ?: (if (ref != null) rules.sizeOf(ref, n) else SizeWord.Card.cells(rules.span(n), n.rows)))
             .let { (w, h) -> w to maxOf(h, minH) }
         val at = land(n, page, size, Where(ask.where.spot, besideKey), moving = key, rules, minH)
-        val verbs = listOfNotNull(at.made) + CanvasVerb.Place(key, if (ref == null) ItemKind.Widget else ItemKind.Module, at.page, at.cell)
+        val verbs = listOfNotNull(at.made, at.cut) + CanvasVerb.Place(key, if (ref == null) ItemKind.Widget else ItemKind.Module, at.page, at.cell)
         val pageName = at.made?.name ?: n.pages.first { it.id == at.page }.name
         if (at.made == null && cellOf(n, key) == at.cell && pageOf(n, key)?.id == at.page) Resolved(emptyList(), "${moduleTitle(key)} stays where it is: it is already as near there as this page has room")
         else Resolved(verbs, (if (pageOf(n, key) != null) "moved " else "put ") + "${moduleTitle(key)} (${shortName(key)}) on \"$pageName\" at ${cellWords(at.cell)}" + (at.made?.let { " (a new page: the one asked for had no room)" } ?: ""))
@@ -353,13 +363,14 @@ fun resolveAsk(n: Notebook, ask: CanvasAsk, rules: ScreenRules): Resolved = when
         val page = ask.page?.let { pageNamed(n, it).id } ?: besideKey?.let { onCanvas(n, it).first.id } ?: from.id
         val minH = moduleRef(key)?.let { rules.minRows(it).coerceIn(1, n.rows) } ?: 1
         val at = land(n, page, cell.w to maxOf(cell.h, minH), Where(ask.where.spot, besideKey), moving = key, rules, minH)
-        val verbs = listOfNotNull(at.made) + CanvasVerb.Move(key, at.page, at.cell)
+        val verbs = listOfNotNull(at.made, at.cut) + CanvasVerb.Move(key, at.page, at.cell)
         if (at.made == null && at.page == from.id && at.cell == cell) return Resolved(emptyList(), "${moduleTitle(key)} stays where it is: it is already as near there as this page has room")
         Resolved(verbs, "moved ${moduleTitle(key)} to \"${at.made?.name ?: n.pages.first { it.id == at.page }.name}\" at ${cellWords(at.cell)}")
     }
     is CanvasAsk.Resize -> {
         val key = copyOf(n, ask.module, module(ask.module, rules), ask.page?.let { pageNamed(n, it).id })
         val (page, cell) = onCanvas(n, key)
+        if (page.panels != null) refuse("\"${page.name}\" is cut into panels: what is in a panel is the panel's size, and the panel lines don't move. Nothing was changed.")
         val minH = moduleRef(key)?.let { rules.minRows(it).coerceIn(1, n.rows) } ?: 1
         val (w, asked) = ask.size.cells(rules.span(n), n.rows)
         val h = maxOf(asked, minH)
@@ -403,6 +414,7 @@ fun inverseOf(before: Notebook, verb: CanvasVerb): List<CanvasVerb> = when (verb
         val item = page?.items?.first { it.key == verb.key }
         if (page == null || item?.cell == null) emptyList() else listOf(CanvasVerb.Place(item.key, item.kind, page.id, item.cell))
     }
+    is CanvasVerb.PagePanels -> dev.omalauncher.widgets.layout.inverseOfPagePanels(before, verb)
     is CanvasVerb.Unknown -> emptyList()
 }
 
@@ -446,6 +458,7 @@ private fun what(v: CanvasVerb): String = when (v) {
     is CanvasVerb.Place -> moduleTitle(v.key)
     is CanvasVerb.Move -> moduleTitle(v.key)
     is CanvasVerb.Remove -> "taking ${moduleTitle(v.key)} off"
+    is CanvasVerb.PagePanels -> "the page's panels"
     is CanvasVerb.Unknown -> "a newer build's change"
 }
 
@@ -458,7 +471,7 @@ fun boardJson(n: Notebook, rules: ScreenRules, only: String? = null): JSONObject
         val pinned = rules.pinned(n).filter { c -> p.items.none { it.cell == c } }.map { c ->
             JSONObject().put("kind", "chat").put("name", "chat").put("size", "pinned").put("cells", JSONObject().put("x", c.x).put("y", c.y).put("w", c.w).put("h", c.h))
         }
-        JSONObject().put("page", p.name).put("items", JSONArray(pinned + p.items.mapNotNull { item ->
+        JSONObject().put("page", p.name).putOpt("panels", p.panels).put("items", JSONArray(pinned + p.items.mapNotNull { item ->
             val c = item.cell ?: return@mapNotNull null
             val ref = moduleRef(item.key)
             JSONObject().put("kind", if (ref != null) MODULE_TILE_KIND else item.kind.name.lowercase())
@@ -516,6 +529,7 @@ fun nothingLeftOf(now: Notebook, inverses: List<CanvasVerb>): Boolean {
             is CanvasVerb.PageRemove -> !page(v.id)
             is CanvasVerb.PageRename -> !page(v.id)
             is CanvasVerb.PageMake -> page(v.id)
+            is CanvasVerb.PagePanels -> !page(v.id)
             is CanvasVerb.Unknown -> true
         }
     }
@@ -528,7 +542,7 @@ fun describeRestorePoint(p: RestorePoint): String {
         p.by.startsWith("agent") -> "an agent's"
         else -> "the last"
     }
-    val things = p.inverses.mapNotNull { v -> (v as? CanvasVerb.Remove)?.key ?: (v as? CanvasVerb.Move)?.key ?: (v as? CanvasVerb.Place)?.key }.distinct().map(::moduleTitle)
+    val things = p.inverses.flatMap { v -> listOfNotNull((v as? CanvasVerb.Remove)?.key ?: (v as? CanvasVerb.Move)?.key ?: (v as? CanvasVerb.Place)?.key) + (v as? CanvasVerb.PagePanels)?.cells?.keys.orEmpty() }.distinct().map(::moduleTitle)
     val pages = p.inverses.count { it is CanvasVerb.PageRemove || it is CanvasVerb.PageMake }
     return "$who arrangement: " + (things + if (pages > 0) listOf(if (pages == 1) "a page" else "$pages pages") else emptyList()).ifEmpty { listOf("its changes") }.joinToString(", ")
 }
@@ -613,9 +627,11 @@ object CanvasCommands {
 
     /** Runs [words] against [pad] as part of [request] from [actor] ("agent:front", "agent:<thread>"). */
     fun run(words: List<String>, pad: CanvasPad, request: String, actor: String, shelf: CanvasShelf? = null): JSONObject = try {
+        layoutWords(words, pad, request, actor) ?:
         templateWords(words, pad, shelf, request, actor) ?: when (words.firstOrNull()) {
             "board" -> boardJson(pad.notebook(), pad.rules, words.drop(1).joinToString(" ").ifBlank { null })
             "modules" -> modulesJson()
+            "page.panels", "page-panels" -> dev.omalauncher.widgets.layout.panelWords(words, pad, request, actor)
             "undo" -> {
                 // A request with nothing of it left here is set aside (the Fold forgets it), and the one before it is undone.
                 val point = pad.restorePoints().firstOrNull { p ->

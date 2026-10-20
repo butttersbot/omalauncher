@@ -85,6 +85,17 @@ data class ModuleItem(
 }
 
 /**
+ * A picture or GIF hung in a panel of the Manga look ([dev.omalauncher.widgets.layout.artKey]): its file is the art store's,
+ * its key alone says which. Like a module it has no file of its own on home and no app; it takes any size.
+ */
+data class ArtItem(
+    override val key: String,
+) : HomeItem {
+    override val size get() = 3 to 2
+    override val minSize get() = 1 to 1
+}
+
+/**
  * Puts the module [key] on [page] at its starting size: the first free cells there, else the next page with room, else a
  * new page, as any new tile lands ([WidgetLayout.land]). Returns the page it is on; null, and nothing changed, for a key
  * that is no module's, one already on home, or a page that isn't there. Before home has a grid it waits on [page] with no

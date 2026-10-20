@@ -82,6 +82,7 @@ class FoldCanvasPad(
                 is CanvasVerb.PageRemove -> asked.copy(id = real(asked.id))
                 is CanvasVerb.Place -> asked.copy(page = real(asked.page))
                 is CanvasVerb.Move -> asked.copy(page = real(asked.page))
+                is CanvasVerb.PagePanels -> asked.copy(id = real(asked.id))
                 is CanvasVerb.PageMake -> asked.copy(after = asked.after?.let { if (it == PAGE_START) it else real(it) })
                 else -> asked
             }
@@ -89,6 +90,10 @@ class FoldCanvasPad(
             if (!check.applied) return check.why
             when (v) {
                 is CanvasVerb.PageMake -> {
+                    // By the id asked for, free on home (checked just above): a page an undo or a saved layout brings back is the
+                    // page it was, and a later verb naming another's old id never meets one home numbered meanwhile (layouts review).
+                    if (pageName(v.name) == null) return "that is not a name a page can have"
+                    if (notebook.addPageWithId(v.id, v.name, v.after)) { done += v; continue }
                     val id = addPage() ?: return "home can't take a new page now"
                     ids[v.id] = id
                     if (!notebook.renamePage(id, v.name)) { notebook.withdrawPage(id); return "that is not a name a page can have" }
@@ -106,6 +111,7 @@ class FoldCanvasPad(
                 is CanvasVerb.Place -> { notebook.move(v.key, v.page); notebook.setCell(v.key, v.cell); notebook.save() }
                 is CanvasVerb.Move -> { notebook.move(v.key, v.page); notebook.setCell(v.key, v.cell); notebook.save() }
                 is CanvasVerb.Remove -> notebook.forget(v.key)
+                is CanvasVerb.PagePanels -> if (!notebook.setPanels(v.id, v.panels, v.cells)) return "home can't change that page's panels now"
                 is CanvasVerb.Unknown -> return "a newer build's change"
             }
             done += v
@@ -166,5 +172,6 @@ fun touchedBy(v: CanvasVerb): String? = when (v) {
     is CanvasVerb.PageMake -> "page:" + v.id
     is CanvasVerb.PageRename -> "page:" + v.id
     is CanvasVerb.PageRemove -> "page:" + v.id
+    is CanvasVerb.PagePanels -> "page:" + v.id
     is CanvasVerb.Unknown -> null
 }

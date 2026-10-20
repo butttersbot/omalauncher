@@ -35,6 +35,9 @@ class PackOption(
             when {
                 load == null -> null
                 load.error != null -> load.error
+                // Console has no panels: a look whose only slips are in [panels] gets the default panels' values.
+                load.brokenOnlyInPanels ->
+                    "some of its panels are wrong; the default panels' values stand in"
                 load.broken -> "some of it is wrong; Console's values stand in"
                 else -> null
             }

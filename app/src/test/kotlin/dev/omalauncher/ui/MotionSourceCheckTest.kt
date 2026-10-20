@@ -22,6 +22,8 @@ class MotionSourceCheckTest {
             "ui/ThreadDot.kt",
             "ui/Home.kt",
             "ui/HomeGrid.kt",
+            // The Manga look's ink wipe and lettering on a panel (piece B).
+            "ui/PanelPage.kt",
             "ui/HomeMenu.kt",
             "ui/Menu.kt",
             "ui/Folders.kt",
@@ -97,7 +99,7 @@ class MotionSourceCheckTest {
     /** ScrapFrame's rule stands in what was added: a tilt is turned on the canvas while drawing, never by a layer, which would turn where a tile is touched. */
     @Test fun noTransitionTurnsALayerForATilt() {
         fun source(name: String) = dev.omalauncher.theme.pack.mainSource(name)
-        for (name in listOf("ui/Motion.kt", "ui/WidgetTile.kt", "ui/HomeGrid.kt", "ui/Folders.kt", "ui/HomeMenu.kt", "ui/Menu.kt", "ui/Notes.kt", "ui/Overview.kt")) {
+        for (name in listOf("ui/Motion.kt", "ui/WidgetTile.kt", "ui/HomeGrid.kt", "ui/PanelPage.kt", "ui/Folders.kt", "ui/HomeMenu.kt", "ui/Menu.kt", "ui/Notes.kt", "ui/Overview.kt")) {
             assertTrue("$name turns a layer", code(source(name)).none { "rotationZ" in it || "rotationX" in it || "rotationY" in it })
         }
         // The one layer that turns is a sticker's own picture, inside its upright box, as before this slice.

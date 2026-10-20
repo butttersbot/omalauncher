@@ -218,6 +218,7 @@ class FoldSync(
                 if (kind != ItemKind.App && kind != ItemKind.Folder) notebook.forget(v.key)
                 true
             }
+            is CanvasVerb.PagePanels -> check.applied && notebook.setPanels(v.id, v.panels, v.cells)
             is CanvasVerb.Unknown -> true
         }
     }
@@ -227,6 +228,7 @@ class FoldSync(
         is CanvasVerb.PageRemove -> "a page stays: it has things, notes or ink on it here"
         is CanvasVerb.Place -> v.key
         is CanvasVerb.Move -> v.key
+        is CanvasVerb.PagePanels -> "the panels of a page"
         else -> v.toString()
     }
 

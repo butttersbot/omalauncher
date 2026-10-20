@@ -20,8 +20,8 @@ import kotlin.math.pow
  * "foreground@0.65" is measured as it looks, not as it is written.
  */
 class PackContrastTest {
-    /** The five looks added after Riso, Instrument and 1-bit: each has to pass whole. */
-    private val checked = listOf("city-pop", "custard", "tiny-magazine", "bujo", "dial-up")
+    /** The looks added after Riso, Instrument and 1-bit: each has to pass whole. */
+    private val checked = listOf("city-pop", "custard", "tiny-magazine", "bujo", "dial-up", "manga")
 
     /** The three before them, measured the same way and printed, but not held to it here: their manifests are another slice's. */
     private val earlier = listOf("riso", "instrument", "one-bit")
