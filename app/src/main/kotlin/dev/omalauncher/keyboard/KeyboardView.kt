@@ -112,9 +112,36 @@ class KeyboardView(
             invalidate()
         }
 
-    /** Room above the keys for a pressed key's bubble, dp. Touches there go to the app (see the service's insets). */
-    val headroomDp get() = if (preview) 0f else (layout?.rowHeight ?: 54f) * 1.3f
+    /** The emoji picker, drawn in the keys' place while [mode] is [Mode.EMOJI], and its search band over them in [Mode.SEARCH]. */
+    var emoji: EmojiPicker? = null
+
+    enum class Mode { KEYS, EMOJI, SEARCH }
+
+    var mode = Mode.KEYS
+        set(value) {
+            if (field == value) return
+            field = value
+            requestLayout()
+            invalidate()
+        }
+
+    /**
+     * Room above the keys for a pressed key's bubble, dp. Touches there go to the app (see the service's insets). The
+     * emoji picker has no bubbles and takes that room as its own, so it stands taller than the letters, as Apple's.
+     */
+    val headroomDp get() = if (preview || mode == Mode.EMOJI) 0f else bubbleRoomDp
+    private val bubbleRoomDp get() = (layout?.rowHeight ?: 54f) * 1.3f
     val headroomPx get() = (headroomDp * density).toInt()
+
+    /** The search band over the letters while searching, px. */
+    private val bandPx get() = if (mode == Mode.SEARCH && emoji != null) (EmojiPicker.BAND_DP * density).toInt() else 0
+
+    /** The board's own height under the headroom, px: the keys (and the band), or the picker. */
+    private val boardPx: Int
+        get() {
+            val keys = layout?.height ?: 240f
+            return if (mode == Mode.EMOJI && emoji != null) ((keys + bubbleRoomDp) * density).toInt() else (keys * density).toInt() + bandPx
+        }
 
     /**
      * Room under the keys for Android's own strip (the gesture bar, and the keyboard switcher and hide buttons it
@@ -186,7 +213,7 @@ class KeyboardView(
         heightMeasureSpec: Int,
     ) {
         val w = MeasureSpec.getSize(widthMeasureSpec)
-        val h = ((layout?.height ?: 240f) * density).toInt() + headroomPx + stripPx
+        val h = boardPx + headroomPx + stripPx
         setMeasuredDimension(w, h)
     }
 
@@ -232,6 +259,23 @@ class KeyboardView(
             fill.color = if (k.letter != null) k.page else k.board
             canvas.drawRect(0f, top, width.toFloat(), height.toFloat(), fill)
         }
+        val picker = emoji
+        if (mode == Mode.EMOJI && picker != null) {
+            picker.draw(canvas, top, width.toFloat(), boardPx.toFloat(), k)
+            if (ownStrip) drawStrip(canvas, k, top + boardPx)
+            return
+        }
+        if (mode == Mode.SEARCH && picker != null) picker.drawBand(canvas, top, width.toFloat(), k)
+        drawKeys(canvas, l, k, top + bandPx)
+    }
+
+    private fun drawKeys(
+        canvas: Canvas,
+        l: KeyLayout,
+        k: KeyboardLook,
+        top: Float,
+    ) {
+        val d = density
         val down = presses.values.map { it.key }.toSet()
         val pulse = if (listening) (0.5f + 0.5f * sin(SystemClock.uptimeMillis() / 180.0).toFloat()) else 0f
         // The mic last, so its glow while listening lies over its neighbours, not under return.
@@ -446,7 +490,7 @@ class KeyboardView(
     // ---- Touch ----
     private fun dpX(px: Float) = px / density
 
-    private fun dpY(px: Float) = (px - headroomPx) / density
+    private fun dpY(px: Float) = (px - headroomPx - bandPx) / density
 
     private fun tick() {
         if (host.haptics) performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
@@ -455,6 +499,26 @@ class KeyboardView(
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(e: MotionEvent): Boolean {
         if (preview) return false
+        // The picker, or the search band, takes a touch that came down on it, from down to up.
+        val picker = emoji
+        if (e.actionMasked == MotionEvent.ACTION_DOWN) {
+            pickerTouch =
+                when {
+                    picker == null -> null
+                    mode == Mode.EMOJI && e.y < headroomPx + boardPx -> Mode.EMOJI
+                    mode == Mode.SEARCH && e.y >= headroomPx && e.y < headroomPx + bandPx -> Mode.SEARCH
+                    else -> null
+                }
+            if (mode == Mode.EMOJI && pickerTouch == null) {
+                stripTap(dpX(e.x))
+                return true
+            }
+        }
+        when (pickerTouch) {
+            Mode.EMOJI -> return picker?.touch(e) ?: true
+            Mode.SEARCH -> return picker?.touchBand(e) ?: true
+            else -> if (mode == Mode.EMOJI) return true
+        }
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                 val i = e.actionIndex
@@ -482,15 +546,7 @@ class KeyboardView(
         if (y < 0) return
         val board = layout?.height ?: return
         if (y >= board) {
-            // The strip under the keys, when it is ours: the split switch and the hide arrow; the rest of it does nothing.
-            if (!ownStrip) return
-            if (x < STRIP_BUTTON_DP && host.canSplit) {
-                tick()
-                host.toggleSplit()
-            } else if (x > width / density - STRIP_BUTTON_DP) {
-                tick()
-                host.swipeDown()
-            }
+            stripTap(x)
             return
         }
         val key = host.hit(x, y) ?: return
@@ -529,6 +585,21 @@ class KeyboardView(
             else -> {}
         }
         invalidate()
+    }
+
+    /** Which of the picker's parts has the touch now going on, if one has. */
+    private var pickerTouch: Mode? = null
+
+    /** A touch on the strip under the keys, when it is ours: the split switch and the hide arrow; the rest of it does nothing. */
+    private fun stripTap(x: Float) {
+        if (!ownStrip) return
+        if (x < STRIP_BUTTON_DP && host.canSplit) {
+            tick()
+            host.toggleSplit()
+        } else if (x > width / density - STRIP_BUTTON_DP) {
+            tick()
+            host.swipeDown()
+        }
     }
 
     private fun move(
@@ -578,6 +649,7 @@ class KeyboardView(
     }
 
     override fun onDetachedFromWindow() {
+        emoji?.detached()
         cancelTimers()
         presses.clear()
         super.onDetachedFromWindow()

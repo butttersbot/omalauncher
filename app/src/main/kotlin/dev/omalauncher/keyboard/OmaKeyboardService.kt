@@ -32,7 +32,7 @@ import kotlin.math.sin
  * writes that down for a review to suggest from ([KeyboardLearning]); it never moves keys on its own.
  * Nothing is learned in password fields or where the app asks for no learning, and the mic is off in them.
  */
-class OmaKeyboardService : InputMethodService(), KeyboardView.Host {
+class OmaKeyboardService : InputMethodService(), KeyboardView.Host, EmojiPicker.Host {
     private lateinit var view: KeyboardView
     private val prefs: SharedPreferences by lazy { getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
 
@@ -46,6 +46,11 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host {
     private var aim: Aim? = null
     private val learning = HashMap<Screen, KeyboardLearning>()
     private var speech: Speech? = null
+    private var picker: EmojiPicker? = null
+
+    /** Searching the emoji: the letter keys type into the picker's search field, not the app's. */
+    private var searching = false
+    private val search = StringBuilder()
 
     /** The live words of the speech running now are in the field, as text still being written. */
     private var composing = false
@@ -87,12 +92,108 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host {
         super.onCreate()
         // The look comes from the launcher's own state, which this process holds once the launcher has run.
         runCatching { (application as App).runtime }
+        loadEmoji()
+    }
+
+    // ---- The emoji picker ----
+    override val catalog get() = emojiCatalog
+
+    /** Read once per process, off the main thread, keeping only what the phone's font draws whole. */
+    private fun loadEmoji() {
+        if (emojiCatalog != null) return
+        Thread {
+            val c =
+                runCatching {
+                    val paint = android.graphics.Paint()
+                    EmojiCatalog.parse(assets.open("emoji/emoji.txt").bufferedReader().readText()).filter { paint.hasGlyph(it) }
+                }.getOrNull() ?: return@Thread
+            emojiCatalog = c
+            android.os.Handler(mainLooper).post { if (::view.isInitialized) view.invalidate() }
+        }.start()
+    }
+
+    override val usage: EmojiUsage by lazy { EmojiUsage.parse(prefs.getString(EMOJI_USAGE, null)) }
+
+    override fun typeEmoji(emoji: String) {
+        currentInputConnection?.commitText(emoji, 1) ?: return
+        usage.used(emoji)
+        prefs.edit().putString(EMOJI_USAGE, usage.toText()).apply()
+    }
+
+    override fun pickedTone(
+        item: EmojiItem,
+        form: String,
+    ) {
+        usage.pickTone(item, form)
+        prefs.edit().putString(EMOJI_USAGE, usage.toText()).apply()
+    }
+
+    override fun deleteBack() {
+        val ic = currentInputConnection ?: return
+        val selected = ic.getSelectedText(0)
+        if (!selected.isNullOrEmpty()) ic.commitText("", 1) else sendDownUpKeyEvents(KeyEvent.KEYCODE_DEL)
+    }
+
+    override fun showLetters() {
+        layer = Layer.ABC
+        autoShift()
+        rebuild()
+    }
+
+    override val query get() = search.toString()
+
+    override fun startSearch() {
+        searching = true
+        search.clear()
+        layer = Layer.ABC
+        shift = false
+        capsLock = false
+        rebuild()
+    }
+
+    override fun clearQuery() {
+        search.clear()
+        rebuild()
+    }
+
+    /** Out of the search, back to the picker. */
+    override fun endSearch() {
+        searching = false
+        search.clear()
+        layer = Layer.EMOJI
+        picker?.opened()
+        rebuild()
+    }
+
+    /** A key pressed while searching: it edits the search, never the app's field. */
+    private fun searchKey(key: Key) {
+        when (val a = key.action) {
+            is KeyAction.Type -> {
+                search.append(if (shift || capsLock) a.text.uppercase() else a.text)
+                if (shift && !capsLock) shift = false
+            }
+            KeyAction.Space -> if (search.isNotEmpty() && !search.endsWith(" ")) search.append(' ')
+            KeyAction.Back -> if (search.isNotEmpty()) search.setLength(search.length - 1)
+            KeyAction.Shift -> {
+                capsLock = false
+                shift = !shift
+            }
+            KeyAction.Layer -> layer = if (layer == Layer.ABC) Layer.NUM else Layer.ABC
+            is KeyAction.Go -> layer = if (a.to == Layer.EMOJI) Layer.ABC else a.to
+            KeyAction.Emoji, KeyAction.Return -> {
+                endSearch()
+                return
+            }
+            KeyAction.Mic -> {}
+        }
+        rebuild()
     }
 
     override fun onEvaluateFullscreenMode() = false
 
     override fun onCreateInputView(): View {
         view = KeyboardView(this, this)
+        picker = EmojiPicker(view, this).also { view.emoji = it }
         return view
     }
 
@@ -109,6 +210,8 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host {
             (info.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0
         layer = if (cls == InputType.TYPE_CLASS_NUMBER || cls == InputType.TYPE_CLASS_PHONE) Layer.NUM else Layer.ABC
         capsLock = false
+        searching = false
+        search.clear()
         autoShift()
         view.look = look()
         view.mech = prefs.getBoolean(MECH, false)
@@ -161,7 +264,14 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host {
         val was = screen
         screen = Screen.of(w, h)
         if (was != screen || aim == null) aim = loadAim(screen)
-        view.layout = KeyGeometry.layout(w, screen, layer, view.mech, shift || capsLock, capsLock, returnLabel(), split = prefs.getBoolean(SPLIT, true))
+        view.layout = KeyGeometry.layout(w, screen, layer, view.mech, shift || capsLock, capsLock, if (searching) "done" else returnLabel(), split = prefs.getBoolean(SPLIT, true))
+        view.mode =
+            when {
+                searching -> KeyboardView.Mode.SEARCH
+                layer == Layer.EMOJI -> KeyboardView.Mode.EMOJI
+                else -> KeyboardView.Mode.KEYS
+            }
+        view.invalidate()
     }
 
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
@@ -191,6 +301,10 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host {
         x: Float,
         y: Float,
     ) {
+        if (searching) {
+            searchKey(key)
+            return
+        }
         val ic = currentInputConnection ?: return
         // Typing while spoken words are still being written in (listening, or the last reading not back yet): those
         // words are kept as they show and that speech ends, then the key types after them. Before, the key's text
@@ -251,7 +365,10 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host {
             }
             KeyAction.Layer -> layer = if (layer == Layer.ABC) Layer.NUM else Layer.ABC
             is KeyAction.Go -> layer = a.to
-            KeyAction.Emoji -> layer = if (layer == Layer.EMOJI) Layer.ABC else Layer.EMOJI
+            KeyAction.Emoji -> {
+                layer = if (layer == Layer.EMOJI) Layer.ABC else Layer.EMOJI
+                if (layer == Layer.EMOJI) picker?.opened()
+            }
             KeyAction.Mic -> mic()
             KeyAction.Return -> {
                 learn?.other()
@@ -284,7 +401,7 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host {
 
     /** Shift on where a sentence starts, as the field asks. */
     private fun autoShift() {
-        if (capsLock) return
+        if (capsLock || searching) return
         val info = currentInputEditorInfo ?: return
         shift = layer == Layer.ABC && info.inputType != InputType.TYPE_NULL && (currentInputConnection?.getCursorCapsMode(info.inputType) ?: 0) != 0
     }
@@ -448,5 +565,10 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host {
         const val AIM = "aim"
         const val SOUND = "sound"
         const val HAPTICS = "haptics"
+
+        /** Frequently used emoji and the skin tones picked ([EmojiUsage]). */
+        const val EMOJI_USAGE = "emoji_usage"
+
+        @Volatile private var emojiCatalog: EmojiCatalog? = null
     }
 }
