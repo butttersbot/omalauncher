@@ -60,6 +60,10 @@ class LauncherState {
     val panelOpen: Boolean
         get() = settingsOpen || styleOpen || themeBrowserOpen || agentsOpen || storeOpen || packagesOpen || linuxOpen || licensesOpen || shared != null || sharing != null
 
+    /** Home as it is with nothing over it or being changed: no list, panel, overview, menu, pen or tile being edited. */
+    val bareHome: Boolean
+        get() = drawer.targetValue < 0.5f && !panelOpen && !overviewOpen && !homeMenuOpen && !drawing && editing == null
+
     /** Closes every overlay screen (settings and what it opens). */
     fun closeScreens() {
         styleOpen = false

@@ -181,7 +181,19 @@ class MainActivity : ComponentActivity() {
 
     /** Pressing Home while already home closes the menu, like other launchers. */
     override fun onNewIntent(intent: Intent) {
+        // Home asked for again while home already showed with nothing over it, as the gesture handle's swipe up asks for
+        // it: the app list opens (Boss, 2026-10-20: the handle's swipe opens the drawer, only on home). Android pauses a
+        // shown activity before it hands it a new intent, so one that was showing is STARTED here; one coming back from
+        // an app was stopped, and comes home as before.
+        val swipedOnHome = intent.hasCategory(Intent.CATEGORY_HOME) && lifecycle.currentState == Lifecycle.State.STARTED &&
+            state.bareHome && runtime.widgets.openScreen == null
         super.onNewIntent(intent)
+        if (swipedOnHome) {
+            state.open()
+            handleDebugExec(intent)
+            handleSharedWidget(intent)
+            return
+        }
         state.close()
         state.closeScreens()
         runtime.widgets.openScreen = null
