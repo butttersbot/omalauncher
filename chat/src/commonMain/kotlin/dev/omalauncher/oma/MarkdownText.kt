@@ -1,6 +1,7 @@
 package dev.omalauncher.oma
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,6 +13,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -20,6 +25,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.Layout
 import dev.omalauncher.ui.rememberWebOpener
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
@@ -35,6 +41,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import dev.omalauncher.ui.Pack
+import kotlinx.coroutines.delay
 
 /** How far each level of a nested list steps in, and the deepest that still does: a cover screen has no room for more. */
 private val ListIndent = 14.dp
@@ -214,17 +221,33 @@ private fun Item(
     }
 }
 
-/** Code keeps its lines: a long one is scrolled sideways to, not wrapped. */
+/**
+ * Code keeps its lines: a long one is scrolled sideways to, not wrapped. A tap anywhere on it copies it, exactly as
+ * written (Boss, 2026-10-19: "I need to be able to click it, copy to clipboard"); its corner says so for a moment.
+ */
 @Composable
 private fun CodeBlock(
     block: MdBlock.Code,
     modifier: Modifier,
 ) {
-    Column(modifier.fillMaxWidth().clip(Pack.shape(8.dp)).background(Pack.surface).padding(10.dp)) {
-        if (block.language.isNotEmpty()) BasicText(Pack.caption(block.language), Modifier.padding(bottom = 4.dp), style = Pack.mono(Pack.size.small, Pack.muted))
+    val clipboard = LocalClipboardManager.current
+    var copied by remember(block.code) { mutableStateOf(false) }
+    LaunchedEffect(copied) { if (copied) { delay(COPIED_MILLIS); copied = false } }
+    Column(
+        modifier.fillMaxWidth().clip(Pack.shape(8.dp)).background(Pack.surface)
+            .clickable(onClickLabel = "copy") { clipboard.setText(AnnotatedString(block.code)); copied = true }
+            .padding(10.dp),
+    ) {
+        Row(Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
+            BasicText(if (block.language.isNotEmpty()) Pack.caption(block.language) else "", Modifier.weight(1f), style = Pack.mono(Pack.size.small, Pack.muted))
+            BasicText(if (copied) "copied" else "[ copy ]", style = Pack.mono(Pack.size.small, if (copied) Pack.accent else Pack.muted))
+        }
         BasicText(block.code, Modifier.horizontalScroll(rememberScrollState()), style = Pack.mono(Pack.size.small), softWrap = false)
     }
 }
+
+/** How long a code block says "copied" after a tap. */
+private const val COPIED_MILLIS = 1_500L
 
 /**
  * A table as a grid: each column as wide as its widest cell, a line under the header. One too wide for the
