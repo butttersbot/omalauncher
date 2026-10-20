@@ -1151,9 +1151,10 @@ AUTO_SIGNS = set(';|&><`$\n\r\\(){}*?[]!#')
 AUTO_ROOTS = ('Games', 'Downloads', '.steam/root/compatibilitytools.d', '.steam/steam/compatibilitytools.d',
               '.local/share/Steam/compatibilitytools.d', '.local/share/lutris/runners')
 AUTO_READS = ('/etc/os-release', '/etc/pacman.conf', '/proc/cpuinfo', '/usr/share/')
-# Read only, never written: Steam's library (manifests, libraryfolders.vdf) and logs, and Lutris's files. Not Steam's
-# config, userdata or login files, which hold tokens.
-AUTO_READ_ROOTS = ('.local/share/Steam/steamapps', '.local/share/Steam/logs', '.local/share/lutris')
+# Read only, never written: Steam's library (manifests, libraryfolders.vdf) and logs. Not Steam's config, userdata or
+# login files, which hold tokens, nor the rest of Lutris's data, where versions keep service logins (its runners are
+# in AUTO_ROOTS already).
+AUTO_READ_ROOTS = ('.local/share/Steam/steamapps', '.local/share/Steam/logs')
 
 
 def auto_place(given, write):
