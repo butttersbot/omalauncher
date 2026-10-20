@@ -258,20 +258,30 @@ class Storyboard(
     fun tapSaved(name: String) {
         if (confirm != name) {
             confirm = name
+            // Asked here, not on the button: a longer label would move the button from under his finger (critic, round 2).
+            say("Tap $name again to load it: home becomes that layout, and Undo takes it back.")
             return
         }
         confirm = null
         trial = null
         armed = null
         val request = request()
+        // Said to him, not to an agent.
+        fun toHim(text: String) = text.replace("he removes it himself in the overview", "you can delete it in the overview")
         act(undo = request) { pad ->
             val shelf = shelf ?: refuse("Saved layouts are kept on the Fold.")
-            // Said to him, not to an agent.
-            val did = shelf.load(name, pad, request, ACTOR).replace("he removes it himself in the overview", "you can delete it in the overview")
-            val n = pad.notebook()
-            if (n.pages.none { it.id == page }) page = n.pages.firstOrNull()?.id
-            did.replaceFirstChar { it.uppercase() } + "."
+            val did = try {
+                shelf.load(name, pad, request, ACTOR)
+            } catch (e: AskRefused) {
+                refuse(toHim(e.message.orEmpty()))
+            } finally {
+                val n = pad.notebook()
+                if (n.pages.none { it.id == page }) page = n.pages.firstOrNull()?.id
+            }
+            toHim(did).replaceFirstChar { it.uppercase() } + "."
         }
+        // A load that stopped partway changed home too: its Undo is offered, as the refusal says.
+        if (pad()?.restorePoints()?.any { it.request == request } == true) undoable = request
     }
 
     /** The load last said undone: what it changed put back, as far as it still applies. */

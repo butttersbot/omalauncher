@@ -643,7 +643,7 @@ private fun ToolsColumn(
     }
     BoardLabel("Saved layouts")
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        for (l in board.saved()) InkButton(if (board.confirm == l.name) "Load ${l.name}?" else l.name, on = board.confirm == l.name) { board.tapSaved(l.name) }
+        for (l in board.saved()) InkButton(l.name, on = board.confirm == l.name) { board.tapSaved(l.name) }
         InkButton("Save this", solid = true) { board.save() }
     }
 }

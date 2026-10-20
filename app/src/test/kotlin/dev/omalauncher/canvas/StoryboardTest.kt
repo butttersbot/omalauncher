@@ -34,7 +34,7 @@ class StoryboardTest {
     private val cassette = artKey("0123456789abcdef")
 
     /** A canvas in memory: each verb checked as it applies, each request one restore point, as the Fold's pad keeps them. */
-    private class Pad(var n: Notebook) : CanvasPad {
+    private class Pad(var n: Notebook, val keeps: (String) -> Boolean = { false }) : CanvasPad {
         override val rules = ScreenRules()
         var text: String? = null
         val points = RestorePoints({ text }, { text = it })
@@ -47,6 +47,7 @@ class StoryboardTest {
             val done = ArrayList<CanvasVerb>()
             var why: String? = null
             for (v in verbs) {
+                if (v is CanvasVerb.PageRemove && keeps(v.id)) { why = "the page \"${n.pages.first { it.id == v.id }.name}\" has notes, stickers or ink on it, so it stays; he removes it himself in the overview"; break }
                 val r = applyVerb(n, v)
                 if (!r.applied) { why = r.why; break }
                 n = r.notebook
@@ -355,6 +356,27 @@ class StoryboardTest {
         assertTrue("saving changes nothing on home, so the Undo stays", b.undoable != null)
         b.place(needs, "p1", 0)
         assertNull(b.undoable)
+    }
+
+    @Test
+    fun aLoadThatStopsPartwaySaysSoToHimAndOffersItsUndo() {
+        // A screen that won't take a page away (his notes on it): a load whose moves trade places stops at its page for the moment.
+        val pad = Pad(home(), keeps = { true })
+        val b = board(pad)
+        b.save()
+        b.place(needs, "p1", 0)
+        val traded = pad.n
+        b.tapSaved("Layout 1")
+        assertTrue(b.said!!.text, b.said!!.text.startsWith("Tap Layout 1 again"))
+        b.tapSaved("Layout 1")
+        val said = b.said!!
+        assertFalse(said.ok)
+        assertTrue(said.text, "you can delete it in the overview" in said.text)
+        assertFalse(said.text, "he removes" in said.text)
+        val undo = b.undoable!!
+        assertTrue(pad.restorePoints().any { it.request == undo })
+        b.undo()
+        assertEquals(shape(traded), shape(pad.n))
     }
 
     @Test

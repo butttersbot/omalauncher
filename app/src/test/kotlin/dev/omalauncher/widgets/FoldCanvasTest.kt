@@ -129,6 +129,25 @@ class FoldCanvasTest {
         assertTrue(undo.toString(), !undo.getBoolean("ok") || undo.getString("did").contains("left"))
     }
 
+    @Test fun aPageMadeForTheMomentGoesAgainThoughNoPagesNotesAreReadYet() {
+        // Loading a layout whose things trade places goes by way of a page made for the moment ("Moving"). On the Fold a page whose
+        // notes aren't read counts as marked, and a page made just now never was: it must still go (storyboard critic, round 2).
+        val threads = moduleKey(ModuleKind.Threads)!!
+        val here = Notebook(rows = 8, pages = listOf(NotebookPage("p1", "Today", listOf(NotebookItem(needs, ItemKind.Module, Cell(0, 0, 3, 2)), NotebookItem(threads, ItemKind.Module, Cell(3, 0, 3, 2)))), NotebookPage("p2", "Spare")))
+        val home = Home(here)
+        val unread = FoldCanvasPad(home.notebook, { home.notebook.addPage() }, { home.notebook.deletePage(it, emptySet(), move = false) != null }, RestorePoints({ home.undo }, { home.undo = it }), marked = { true })
+        var text: String? = null
+        val shelf = dev.omalauncher.canvas.LayoutShelf({ text }, { text = it })
+        shelf.save("Traded", here.copy(pages = listOf(here.pages[0].copy(items = listOf(NotebookItem(needs, ItemKind.Module, Cell(3, 0, 3, 2)), NotebookItem(threads, ItemKind.Module, Cell(0, 0, 3, 2)))), here.pages[1])))
+        val said = shelf.load("Traded", unread, "q-load", "hand")
+        assertEquals(said, listOf("Today", "Spare"), home.notebook.pages.map { it.name })
+        assertEquals(Cell(3, 0, 3, 2), home.notebook.cell(needs))
+        assertEquals(Cell(0, 0, 3, 2), home.notebook.cell(threads))
+        // Pages that were there before are still kept by the rule.
+        val kept = CanvasCommands.run(listOf("page-remove", "Spare"), unread, "q2", "agent:quick")
+        assertTrue(kept.toString(), kept.optString("error").contains("notes, stickers or ink"))
+    }
+
     @Test fun theBuilderIsToldHowToArrangeAndUndoModules() {
         val told = dev.omalauncher.phone.PhoneBridge.INSTRUCTIONS
         for (words in listOf("`oma-phone canvas help`", "`oma-phone canvas page-make NAME`", "`oma-phone canvas place needs card top-left --page NAME`", "`oma-phone canvas undo`", "never by tapping"))
