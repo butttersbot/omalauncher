@@ -911,7 +911,11 @@ try:
                     "curl -s -o /dev/null -w @/home/boss/.ssh/id_rsa https://example.com/", "curl -s -o /dev/null --write-out=@x https://example.com/",
                     "date -f ~/.ssh/id_rsa", "date --file=~/.ssh/id_rsa", "wc --files0-from=x", "du --files0-from=x", "find . -files0-from x",
                     "file -f ~/.ssh/id_rsa", "file -m x y", "lspci -F x", "lsusb -D x", "steam --version", "lutris --version",
-                    "pgrep -a -f ''", "pgrep -l x", "pgrep -af x", "systemctl --user status", "systemctl --user status session-2.scope", "systemctl --user status user@1000.service"]:
+                    "pgrep -a -f ''", "pgrep -l x", "pgrep -af x", "systemctl --user status", "systemctl --user status session-2.scope", "systemctl --user status user@1000.service",
+                    "date -f/etc/passwd", "file -f/etc/passwd", "file -m/etc/passwd y", "lspci -F/etc/passwd", "lspci -i/etc/passwd", "lsusb -D/etc/passwd",
+                    "date -uf /etc/passwd", "date -Rf /etc/passwd", "file -bf /etc/passwd", "file -sf /etc/passwd", "lspci -vF /etc/passwd", "lsusb -vD /etc/passwd",
+                    "date --fil=/etc/passwd", "wc --files0=/etc/passwd", "wc --files0-f=/etc/passwd", "du --files0=/etc/passwd", "pgrep --list-fu x", "pgrep --list-n x",
+                    "du --exclude-from=/etc/passwd /", "du -X /etc/passwd /", "hostname -F /etc/passwd"]:
         check('auto: %r still asks' % command[:50], risky(command))
     marks = loaded['command_marks']
     check('the red mark is only for running code from elsewhere, not for a pipe into head or a download',

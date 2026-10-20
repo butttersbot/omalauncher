@@ -994,10 +994,12 @@ def risky_part(command):
     head, rest = words[0], words[1:]
     if head in LOOK_ANYWHERE:
         # Names, sizes and states, never contents: anywhere, with any option but the few that act.
-        return any(word in ('-exec', '-execdir', '-ok', '-okdir', '-delete', '-fprint', '-fprint0', '-fprintf', '-fls') or word.startswith('-fprint')
-                   or word.partition('=')[0] in LOOK_FROM_FILE.get(head, ()) for word in rest) \
-            or (head == 'env' and rest != []) \
-            or (head == 'pgrep' and any(word in ('-a', '-l', '--list-full', '--list-name') or (re.fullmatch(r'-[a-zA-Z]+', word) and set(word[1:]) & set('al')) for word in rest))
+        if head == 'find':
+            return any(word in ('-exec', '-execdir', '-ok', '-okdir', '-delete', '-fls', '-files0-from') or word.startswith('-fprint') for word in rest)
+        if head == 'env':
+            return rest != []
+        shorts, longs = LOOK_FROM_FILE.get(head, ('', ()))
+        return any(option_hits(word, shorts, longs) for word in rest)
     if head == 'pacman' and rest and (re.fullmatch(r'-Q[ikleqsdmntugc]*', rest[0]) or rest[0] in ('-Ss', '-Si', '-Sii')) and not any(word.startswith('-') for word in rest[1:]):
         return False  # what is installed, or what the official repos have: names and patterns only
     if head == 'systemctl' and rest[:1] == ['--user'] and len(rest) >= 2 and rest[1] in ('list-units', 'status', 'is-active', 'is-enabled') \
@@ -1071,9 +1073,27 @@ def risky_part(command):
 # Tools that only tell names, sizes and states: they may look anywhere (contents are read only by AUTO_TOOLS, inside AUTO_ROOTS).
 LOOK_ANYWHERE = {'ls', 'stat', 'file', 'du', 'df', 'realpath', 'readlink', 'which', 'whereis', 'pgrep', 'find', 'wc', 'uname', 'nproc', 'free', 'env',
                  'lspci', 'lsusb', 'lscpu', 'lsblk', 'lsmod', 'id', 'whoami', 'hostname', 'date', 'uptime'}
-# The options of those tools that read a file named by Boss's bot and echo its lines (as dates, names or errors).
-LOOK_FROM_FILE = {'date': ('-f', '--file'), 'wc': ('--files0-from',), 'du': ('--files0-from',), 'find': ('-files0-from',),
-                  'file': ('-f', '--files-from', '-m', '--magic-file', '-C', '--compile'), 'lspci': ('-F', '-i', '-p'), 'lsusb': ('-D',)}
+# The options of those tools that read a file named by Boss's bot (and echo its lines as dates, names or errors), or that
+# show other processes' whole command lines: (short option letters, long option names).
+LOOK_FROM_FILE = {'date': ('f', ('file',)), 'wc': ('', ('files0-from',)), 'du': ('X', ('files0-from', 'exclude-from')),
+                  'file': ('fmC', ('files-from', 'magic-file', 'compile')), 'lspci': ('Fip', ()), 'lsusb': ('D', ()),
+                  'hostname': ('F', ('file',)), 'pgrep': ('al', ('list-full', 'list-name'))}
+
+
+def option_hits(word, shorts, longs):
+    """Whether [word] gives one of these options, however it is spelled, as GNU tools read options: a short letter alone,
+    clustered with others or with its value attached (-f, -uf, -f/etc/x), or a long name given in full or as any prefix
+    getopt would take for it (--file, --fil=x)."""
+    if word.startswith('--'):
+        name = word[2:].split('=', 1)[0]
+        return bool(name) and any(long.startswith(name) for long in longs)
+    if word.startswith('-') and len(word) > 1:
+        for char in word[1:]:
+            if not char.isalnum():
+                return False  # an attached value begins: whatever came before was checked
+            if char in shorts:
+                return True
+    return False
 # Tools whose --version alone may run in auto mode (not Steam or Lutris: their launchers start, set up and may show windows).
 VERSION_ASKED = {'wine', 'wine64', 'winetricks', 'protontricks', 'mangohud', 'gamescope', 'gamemoded', 'umu-run', 'vkd3d-compiler',
                  'vulkaninfo', 'curl', 'wget', 'pacman', 'flatpak', 'python3', 'hyprctl'}
