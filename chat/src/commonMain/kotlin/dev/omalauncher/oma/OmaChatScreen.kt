@@ -241,6 +241,8 @@ private fun ChatScreen(
     var images by remember { mutableStateOf(listOf<PromptImage>()) }
     var importing by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
+    // A notice that says something went as asked (Start fresh) isn't drawn as a failure.
+    var noticeFine by remember { mutableStateOf(false) }
     var focused by remember { mutableStateOf(false) }
     val speech = host.rememberVoice()
     /** What was in the field when listening began; speech is added after it. */
@@ -486,6 +488,7 @@ private fun ChatScreen(
                             onStop = {
                                 host.stopMac(task.thread) { said ->
                                     notice = said
+                                    noticeFine = false
                                     tick++
                                 }
                             },
@@ -553,7 +556,7 @@ private fun ChatScreen(
                 }
             }
             notice?.let {
-                BasicText(it, Modifier.clickable { notice = null }.padding(8.dp), style = Pack.body(Pack.size.small, Pack.red))
+                BasicText(it, Modifier.clickable { notice = null }.padding(8.dp), style = Pack.body(Pack.size.small, if (noticeFine) Pack.muted else Pack.red))
             }
             speech.error?.takeIf { !listening }?.let {
                 BasicText(it, Modifier.clickable { speech.error = null }.padding(8.dp), style = Pack.body(Pack.size.small, Pack.red))
@@ -674,7 +677,8 @@ private fun ChatScreen(
                     tick++
                 }
             }
-            val archived = all.filter { it.key in book.archived }
+            // A bot is never archived: a bot key archived before bots existed is not offered back.
+            val archived = all.filter { it.key in book.archived && it.bot == null }
             // What its thread on a computer can move to: every agent and model that computer runs but the one it runs now.
             val moving = switchThread(key, book)
             val switches = moving?.let { id ->
@@ -710,6 +714,7 @@ private fun ChatScreen(
                             is TabStop.Builder -> host.stopBuilder(stop.builder)
                             is TabStop.Mac -> host.stopMac(stop.thread) { said ->
                                 notice = said
+                                noticeFine = false
                                 tick++
                             }
                             null -> {}
@@ -718,11 +723,13 @@ private fun ChatScreen(
                         TabAction.Restart -> mend.restart?.let { builder ->
                             host.restartBuilder(builder) { said ->
                                 notice = said
+                                noticeFine = false
                                 tick++
                             }
                         }
                         TabAction.Clean -> host.cleanBuilders { said ->
                             notice = said
+                            noticeFine = false
                             tick++
                         }
                         TabAction.Copy -> answer?.let { host.copy(it) }
@@ -735,6 +742,7 @@ private fun ChatScreen(
                         TabAction.Fresh -> macThreadId(key)?.let { id ->
                             host.freshBot(id) { said ->
                                 notice = said
+                                noticeFine = said.startsWith("Started fresh")
                                 tick++
                             }
                         }
@@ -794,7 +802,8 @@ private fun TabStrip(
                     .spans(key)
                     .padding(end = 6.dp)
                     .fillMaxHeight()
-                    .framed(Pack.hair, if (on) Pack.foreground else Pack.border, if (on) Pack.foreground else Pack.surface, radius = 6.dp)
+                    // A bot's tab has round ends, so bots read apart from sessions at a glance.
+                    .framed(Pack.hair, if (on) Pack.foreground else Pack.border, if (on) Pack.foreground else Pack.surface, radius = if (thread?.bot != null) 50.dp else 6.dp)
                     .combinedClickable(
                         onClick = { onTab(key) },
                         onLongClick = {

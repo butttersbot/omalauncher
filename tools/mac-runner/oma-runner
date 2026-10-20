@@ -761,6 +761,26 @@ def venice_models():
     return held[1]
 
 
+def venice_specs_now():
+    """Venice's model limits, asked for now (briefly) when they haven't been yet, so a first message is budgeted for its
+    real model rather than a guess. Called outside the lock; a failure leaves the background fetch to try again."""
+    if known.get('venice_specs') or not venice_key():
+        return
+    try:
+        listing = venice_call('/models?type=text', timeout=15).get('data')
+    except (VeniceError, AttributeError):
+        return
+    if isinstance(listing, list):
+        venice_models()  # starts the hourly cycle too
+        specs = {}
+        for model in listing:
+            if isinstance(model, dict) and model.get('id'):
+                spec = model.get('model_spec') if isinstance(model.get('model_spec'), dict) else {}
+                able = spec.get('capabilities') if isinstance(spec.get('capabilities'), dict) else {}
+                specs[str(model['id'])] = {'context': spec.get('availableContextTokens'), 'reply': spec.get('maxCompletionTokens'), 'tools': able.get('supportsFunctionCalling')}
+        known.setdefault('venice_specs', specs)
+
+
 def venice_spec(model):
     """What Venice said of [model]: {context, reply, tools}, each None when not known (the list not read yet)."""
     return (known.get('venice_specs') or {}).get(model) or {'context': None, 'reply': None, 'tools': None}
@@ -828,14 +848,21 @@ CARD_CHARS = 200
 
 def program_words(command):
     """Every word of [command] that could name a program, wherever it stands (also inside quotes, -c strings and $( )),
-    by its base name: what the refusals and marks look at, so a different spelling can't slip past them."""
-    return {os.path.basename(word) for word in re.split(r'[\s;|&()`$"\'=<>{}]+', command) if word}
+    by its base name and in lower case, read both as written and with quotes, backslashes and empty $() taken out
+    ("sud"o, \\sudo, y\\ay, sud$()o): what the refusals and marks look at, so a different spelling can't slip past them."""
+    joined = re.sub(r'\$\(\s*\)|\$\{\s*\}|["\'\\]', '', command)
+    found = set()
+    for text in (command, joined):
+        found |= {os.path.basename(word).lower() for word in re.split(r'[\s;|&()`$"\'=<>{}\\]+', text) if word}
+    return found
 
 
 def refused_command(command):
     """Why a command is never run, even with his allow; None when it may go to a card."""
     if not command:
         return 'The command was empty.'
+    if '${' in command:
+        return 'Shell parameter expansion (${...}) isn\'t allowed in a command for Boss to allow: write the value out.'
     if '\n' in command or '\r' in command or len(command) > CARD_CHARS:
         return ('A command Boss must allow has to be one line of at most %d characters, so he can read all of it on his phone. '
                 'Split it into steps.' % CARD_CHARS)
@@ -895,7 +922,7 @@ def run_command(argv_or_line, seconds, folder):
         argv = ['/bin/bash', '-c', argv_or_line]
     # On Linux each command runs in a systemd scope of its own, so even a child that leaves the group (a daemon, setsid)
     # is ended with it when it is stopped.
-    scope = 'soma-bot-%s' % secrets.token_hex(6) if LINUX and shutil.which('systemd-run', path='/usr/bin:/bin') else None
+    scope = 'soma-bot-%s' % secrets.token_hex(6) if LINUX and not known.get('no_scope') and shutil.which('systemd-run', path='/usr/bin:/bin') else None
     if scope:
         argv = ['/usr/bin/systemd-run', '--user', '--scope', '--quiet', '--collect', '--unit', scope, '-p', 'KillMode=control-group', '--'] + argv
     try:
@@ -918,6 +945,10 @@ def run_command(argv_or_line, seconds, folder):
         note = 'stopped at its %d-minute limit' % max(1, round(seconds / MINUTE))
     known.pop('command_group', None)
     known.pop('command_scope', None)
+    if scope and process.returncode not in (None, 0) and b'Failed to connect to bus' in output:
+        # No systemd user session here (the runner started outside one): run it as before, without a scope.
+        known['no_scope'] = True
+        return run_command(argv_or_line, seconds, folder)
     text = output.decode('utf-8', 'replace')
     if len(text.encode()) > RESULT_BYTES:
         text = '(first part cut; the last 20 kB:)\n' + text.encode()[-RESULT_BYTES:].decode('utf-8', 'ignore')
@@ -1171,6 +1202,28 @@ def turns_text(turns):
     return '\n'.join(lines)
 
 
+def append_notes(path, lines):
+    """Adds [lines] to a bot's notes.md, only when it is a plain file of its own in the bot's folder (or isn't there yet):
+    never through a link to somewhere else. False when it wasn't written."""
+    try:
+        handle = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, 'O_NOFOLLOW', 0), 0o644)
+    except OSError:
+        return False
+    try:
+        info = os.fstat(handle)
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or path.resolve().parent != path.parent.resolve():
+            return False
+        ends = info.st_size == 0
+        if not ends:
+            with open(path, 'rb') as notes:
+                notes.seek(-1, os.SEEK_END)
+                ends = notes.read(1) == b'\n'
+        os.write(handle, (('' if ends else '\n') + '\n'.join('- ' + line for line in lines) + '\n').encode())
+        return True
+    finally:
+        os.close(handle)
+
+
 def venice_ask():
     """`oma-runner venice-ask`: one plain question to Venice (the summarizer), reading {model, messages} on stdin and
     writing {type: answer, text} or {type: error, text}."""
@@ -1196,10 +1249,10 @@ def parse_summary(text):
         return None
     if not isinstance(given, dict):
         return None
-    lines = lambda key, most: [one_line(line, 300) for line in (given.get(key) or []) if isinstance(line, str) and line.strip()][:most]
+    lines = lambda key, most: [one_line(line, 300) for line in (given.get(key) if isinstance(given.get(key), list) else []) if isinstance(line, str) and line.strip()][:most]
     return {'about': one_line(given.get('about'), 300) if isinstance(given.get('about'), str) else '', 'facts': lines('facts', 60),
             'decisions': lines('decisions', 40), 'open': lines('open', 30),
-            'notes_add': [line for line in lines('notes_add', 8) if not IMPERATIVE.match(line) and len(line) <= 200]}
+            'notes_add': [line for line in lines('notes_add', 40) if not IMPERATIVE.match(line) and len(line) <= 200][:8]}
 
 
 class Venice:
@@ -1216,6 +1269,7 @@ class Venice:
         self.model = thread.meta.get('model') or str(venice_config().get('default_model') or '') or VENICE_DEFAULT_MODEL
         self.system, self.params, self.tools = None, {}, False
         self.system_head, self.notes, self.tools_note, self.refused = '', '', '', None
+        venice_specs_now()
         if thread.meta.get('bot'):
             # A bot: Boss's instructions, then the bot's notes framed as data; Venice's own prompt off; search as it says.
             folder = BOTS / thread.meta['bot']
@@ -1408,11 +1462,10 @@ class Venice:
         added = [line for line in made.pop('notes_add') if line.lower() not in (self.notes or '').lower()] if thread.meta.get('bot') else []
         memory.update(summary=made, folded=memory['folded'] + sum(len(turn) for turn in folding), summaries=memory['summaries'] + 1)
         self.keep(memory)
-        if added:
-            path = BOTS / thread.meta['bot'] / 'notes.md'
-            if not path.is_symlink():
-                with open(path, 'a') as notes:
-                    notes.write(('' if not self.notes or self.notes.endswith('\n') else '\n') + '\n'.join('- ' + line for line in added) + '\n')
+        if added and not append_notes(BOTS / thread.meta['bot'] / 'notes.md', added):
+            added = []
+            with changed:
+                thread.emit('note', text='notes.md is a link, so the bot\'s new notes weren\'t written. Ask an agent to make it a plain file.')
         with changed:
             if added:
                 thread.emit('step', text='notes +%d: %s' % (len(added), ' · '.join(added))[:300], tool='Notes')

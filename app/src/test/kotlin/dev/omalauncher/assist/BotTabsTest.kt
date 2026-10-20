@@ -52,4 +52,15 @@ class BotTabsTest {
         assertEquals(listOf("Runs as administrator.") to "Up to 10 min. Installs steam.", cardMarks("Runs as administrator. Up to 10 min. Installs steam."))
         assertEquals(emptyList<String>() to "Up to 5 min.", cardMarks("Up to 5 min."))
     }
+
+    @Test fun anApprovalAnsweredElsewhereSaysWhere() {
+        assertEquals("the Fold", deviceName("galaxy-z-fold8"))
+        assertEquals("the Mac Pro", deviceName("jacks-mac-pro"))
+        assertEquals("omarchy-mg1", deviceName("omarchy-mg1"))
+        val running = dev.omalauncher.oma.ChatTask(1000L, "mac", "install steam", status = dev.omalauncher.oma.TaskStatus.Running, thread = "t1")
+        val after = macApply(listOf(running), "t1", MacEvent.ApprovalResult(5, 0, "a1", MacDecision.Allow, "galaxy-z-fold8"))
+        assertTrue(after.single().steps.contains("allowed on the Fold"))
+        val quiet = macApply(listOf(running), "t1", MacEvent.ApprovalResult(5, 0, "a1", MacDecision.Withdrawn, "galaxy-z-fold8"))
+        assertTrue(quiet.single().steps.isEmpty())
+    }
 }

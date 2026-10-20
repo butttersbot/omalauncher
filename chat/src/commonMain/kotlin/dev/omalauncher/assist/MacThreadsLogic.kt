@@ -320,7 +320,17 @@ fun macApply(tasks: List<ChatTask>, threadId: String, event: MacEvent, inFlight:
             else if (event.text.startsWith(MAC_STILL_RUNNING)) between(ChatLater(event.text))
             else between(ChatLater(event.text)) { entry -> entry.copy(later = entry.later.filterNot { !it.words && it.text.startsWith(MAC_STILL_RUNNING) }) }
         is MacEvent.Approval -> macAsked(tasks, threadId, event.request)
-        is MacEvent.ApprovalResult -> macAnswered(tasks, threadId, event.approval, approvalAnswer(event.decision))
+        is MacEvent.ApprovalResult -> macAnswered(tasks, threadId, event.approval, approvalAnswer(event.decision)).let { answered ->
+            // Who answered, on every device, so one that sees the card go knows it was the Fold (or a desktop), not an error.
+            val by = deviceName(event.device)
+            val said = when (event.decision) {
+                MacDecision.Allow -> "allowed on $by"
+                MacDecision.Deny -> "denied on $by"
+                else -> null
+            }
+            if (said == null || event.device.isBlank() || current == null) answered
+            else answered.map { if (it.time == current.time) ChatHistory.withStep(it, said) else it }
+        }
         // The result is the whole answer, as it is for the phone's builder; with no words, what was said so far stays.
         // An empty one ending a turn in which nothing at all happened answered nothing (a runner before 2026-10-14
         // ended his turn on Claude Code's own turn about background work): his to send again, never "Task completed.".
@@ -602,3 +612,11 @@ data class MacView(val threads: List<MacThread> = emptyList(), val reachable: Bo
 fun macOwnSummary(thread: MacThread, tasks: List<ChatTask>): MacThread =
     if (!thread.summary.startsWith(CONTEXT_OPEN) && !thread.summary.startsWith(SHARED_NOTE_OPEN)) thread
     else thread.copy(summary = tasks.lastOrNull { threadGot(it, thread.id) }?.prompt?.lineSequence()?.firstOrNull { it.isNotBlank() }?.trim().orEmpty())
+
+/** A device as Boss calls it, from its tailnet name: "the Fold", "the Mac Pro", "the MacBook", else the name itself. */
+fun deviceName(device: String): String = when {
+    "fold" in device.lowercase() -> "the Fold"
+    "mac-pro" in device.lowercase() || "macpro" in device.lowercase() -> "the Mac Pro"
+    "macbook" in device.lowercase() -> "the MacBook"
+    else -> device
+}
