@@ -878,37 +878,69 @@ def refused_command(command):
     return None
 
 
-INTERPRETERS = {'bash', 'sh', 'zsh', 'dash', 'fish', 'source', 'eval', 'exec', 'python', 'python2', 'python3', 'perl', 'ruby', 'node', 'lua', 'php'}
-DESTRUCTIVE = {'dd', 'shred', 'wipefs', 'fdisk', 'sfdisk', 'cfdisk', 'parted', 'gdisk', 'sgdisk', 'mkswap', 'cryptsetup', 'losetup', 'truncate',
-               'shutdown', 'reboot', 'poweroff', 'halt', 'systemctl reboot'}
-
-
 def risky_command(command):
-    """Whether a command still needs Boss's OK in auto mode (his pick, 2026-10-19: "only risky steps"): anything as
-    administrator, anything that runs a script or pipes code into an interpreter, and anything destructive."""
-    found = program_words(command)
-    marks = command_marks(command)
-    if marks['root']:
+    """Whether a command still needs Boss's OK in auto mode (his pick, 2026-10-19: "only risky steps"). Decided by what
+    may run, not by what may not: a command runs without a card only when it is one plain command (no pipe, redirect,
+    substitution, glob or escape), its program is one of AUTO_PROGRAMS named bare, it touches none of the places that
+    run code later or hold keys (SENSITIVE), and it passes that program's own rule. Everything else asks."""
+    if any(sign in AUTO_SIGNS for sign in command):
         return True
-    if found & INTERPRETERS or re.search(r'(^|[\s;&|(])\.{1,2}/', command):
-        return True  # a shell, an interpreter or a script: what it runs isn't on the card
-    if found & DESTRUCTIVE or any(word.startswith('mkfs') for word in found):
+    try:
+        words = shlex.split(command)
+    except ValueError:
         return True
-    words = command.split()
-    for index, word in enumerate(words):
-        base = os.path.basename(word)
-        if base == 'rm' and any(flag.startswith('-') and re.search(r'[rRf]|recursive|force', flag) for flag in words[index + 1:]):
-            return True
-        if base in ('chmod', 'chown', 'chgrp') and any(arg.startswith('-R') or (arg.startswith('/') and not arg.startswith(str(HOME))) for arg in words[index + 1:]):
-            return True
-        if base == 'find' and any(arg in ('-delete', '-exec', '-execdir', '-ok') for arg in words[index + 1:]):
-            return True
-        if base == 'systemctl' and any(arg in ('reboot', 'poweroff', 'halt', 'isolate', 'kexec') for arg in words[index + 1:]):
-            return True
-    if re.search(r'>\s*/dev/(sd|nvme|mmcblk|disk)', command):
+    if not words or words[0] not in AUTO_PROGRAMS:
+        return True
+    head, rest = words[0], words[1:]
+    for word in rest:
+        target = word.split('=', 1)[-1]  # --target-directory=PATH and the like
+        if '://' in target:
+            continue  # an address to download from, not a path here
+        if target.startswith(('/', '~', '.')) or '/' in target:
+            if sensitive_path(target):
+                return True
+    if head == 'find' and any(arg in ('-exec', '-execdir', '-ok', '-okdir', '-delete', '-fprint', '-fprintf', '-fls') for arg in rest):
+        return True
+    if head == 'rm' and any(arg.startswith('-') for arg in rest):
+        return True  # one file at a time, no -r or -f
+    if head == 'chmod' and (len(rest) < 2 or not re.fullmatch(r'[ugoa]*[+=-][rwx]+|[0-7]{3,4}', rest[0]) or any(arg.startswith('-') for arg in rest[1:])):
+        return True  # a mode, then files: no -R
+    if head == 'tar' and any(arg.startswith('--to-command') or arg.startswith('--use-compress-program') or arg in ('-I', '--checkpoint-action') or arg.startswith('--checkpoint-action') for arg in rest):
+        return True
+    if head in ('curl', 'wget') and any(arg in ('-K', '--config', '-e', '--execute') or arg.startswith(('--config=', '--execute=')) for arg in rest):
+        return True
+    if head == 'flatpak' and rest[:1] not in (['install'], ['list'], ['info'], ['search'], ['run'], ['update']):
         return True
     return False
 
+
+# Auto mode's everyday tools: files and folders in his home, downloads, archives, and the gaming tools his bot sets up.
+# Running Windows programs under wine or Proton is the point of that bot (Boss's prompt), so those are here too.
+AUTO_PROGRAMS = {'mkdir', 'ls', 'cat', 'head', 'tail', 'wc', 'grep', 'find', 'stat', 'file', 'du', 'df', 'which', 'echo', 'printf', 'touch',
+                 'cp', 'mv', 'ln', 'rm', 'chmod', 'realpath', 'readlink', 'sha256sum', 'md5sum', 'tar', 'unzip', '7z', 'unrar', 'xz', 'gzip', 'zstd',
+                 'wget', 'curl', 'flatpak', 'protontricks', 'winetricks', 'wine', 'wine64', 'wineboot', 'steam', 'lutris', 'portproton',
+                 'protonup-qt', 'gamemoded', 'mangohud', 'gamescope', 'vulkaninfo', 'glxinfo', 'nvidia-smi', 'xdg-user-dir', 'lscpu', 'lsusb'}
+AUTO_SIGNS = set(';|&><`$\n\r\\(){}*?[]!#')
+# Places where something written runs later as Boss, or that hold keys: never touched without a card.
+SENSITIVE = ('.bashrc', '.bash_profile', '.bash_login', '.bash_logout', '.profile', '.zshrc', '.zshenv', '.zprofile', '.zlogin', '.xinitrc',
+             '.xprofile', '.xsession', '.pam_environment', '.config/fish', '.config/autostart', '.config/systemd', '.config/environment.d',
+             '.config/hypr', '.config/uwsm', '.config/omarchy', '.local/bin', 'bin/', '.ssh', '.gnupg', '.venice', '.config/soma', '.local/share/applications',
+             '.local/share/systemd', '.config/git', '.gitconfig', '.npmrc', '.pypirc', '.netrc', '.config/gh', '.local/state/oma-runner', 'Soma/bots')
+
+
+def sensitive_path(given):
+    """Whether a path is, or is inside, one of SENSITIVE, or anywhere outside his home and the bot's own folders."""
+    try:
+        path = pathlib.Path(os.path.expanduser(given)).resolve()
+    except (OSError, RuntimeError, ValueError):
+        return True
+    if path == HOME:
+        return True
+    try:
+        inside = path.relative_to(HOME).as_posix()
+    except ValueError:
+        return not str(path).startswith(('/tmp/', '/proc/cpuinfo', '/etc/os-release', '/etc/pacman.conf'))
+    return any(inside == mark.rstrip('/') or inside.startswith(mark.rstrip('/') + '/') or inside.startswith(mark) for mark in SENSITIVE)
 
 def command_marks(command):
     """What the card says of a command beyond itself: root (through soma-pacman), and anything that isn't one plain

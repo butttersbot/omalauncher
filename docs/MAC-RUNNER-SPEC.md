@@ -700,3 +700,9 @@ unless `risky_command` says it asks: anything as administrator (soma-pacman), an
 (`bash`, `python3`, `./x`, `eval`, a pipe into `sh`), and anything destructive (`rm -r`/`-f`, `dd`, `mkfs`, disk tools,
 `chmod`/`chown` with `-R` or outside home, `find -delete/-exec`, shutdown/reboot, writing to a disk device). Refusals
 (AUR helpers, other sudo, long or multi-line commands) stand in every mode. bot.json may also say `"mode": "auto"`.
+Revised after the Critic (auto mode FAIL, 2026-10-19): `risky_command` is now an allowlist, not a blocklist. A command
+runs without a card only when it is one plain command (no pipe, redirect, substitution, glob or escape), its program is
+one of AUTO_PROGRAMS named bare (files and folders, downloads, archives, wine/Proton/Steam/Lutris/flatpak tools), it
+touches no SENSITIVE place (shell startup files, autostart, systemd user units, Hyprland and Omarchy config,
+~/.local/bin, ~/bin, ~/.ssh, ~/.gnupg, ~/.venice, bot folders) and nothing outside his home, and it passes its
+program's rule (rm without flags, chmod MODE FILES without -R, find without -exec/-delete, tar without --to-command).
