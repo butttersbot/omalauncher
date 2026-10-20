@@ -12,6 +12,7 @@ approves nothing itself: every request for approval waits for the phone's answer
   GET  /threads                          every thread: id, name, summary, status, last_worked, tail, pending, bot
   GET  /bots/ID                          one bot this machine hosts: its settings, instructions and notes (read only)
   POST /threads/ID/fresh                 a bot's session starts over: its conversation is archived, its notes stay
+  POST /threads/ID/model   {model}       the Venice model a bot's session runs from its next message ("" for bot.json's)
   POST /threads   {name, project, kind, model, mode}   makes one under an allowed root; kind claude (default), codex, cursor, grok or venice;
                                          mode auto (default) or manual
   GET  /threads/ID                       one thread
@@ -1589,8 +1590,8 @@ def sync_bots():
             thread = Thread({'id': entry_id, 'name': bot['name'], 'project': str(work), 'kind': 'venice', 'model': bot['model'] or None, 'session': None,
                              'status': 'idle', 'created': int(time.time()), 'last_worked': None, 'summary': '', 'tail': '', 'mode': 'manual', 'bot': bot_id})
             threads[entry_id] = thread
-        elif thread.meta['name'] != bot['name'] or thread.meta.get('model') != (bot['model'] or None):
-            thread.meta['name'], thread.meta['model'] = bot['name'], bot['model'] or None
+        elif thread.meta['name'] != bot['name'] or thread.meta.get('model') != (thread.meta.get('model_choice') or bot['model'] or None):
+            thread.meta['name'], thread.meta['model'] = bot['name'], thread.meta.get('model_choice') or bot['model'] or None
         else:
             thread.bot = bot
             continue
@@ -1611,7 +1612,38 @@ def bot_view(bot_id):
     folder = BOTS / bot_id
     if not folder.is_dir() or folder.is_symlink():
         return None
-    return {'bot': read_bot(folder), 'instructions': bot_text(folder / 'instructions.md') or '', 'notes': bot_text(folder / 'notes.md') or ''}
+    bot = read_bot(folder)
+    session = next((thread for thread in threads.values() if thread.meta.get('bot') == bot_id), None)
+    chosen = (session.meta.get('model_choice') if session else None) or ''
+    return {'bot': bot, 'instructions': bot_text(folder / 'instructions.md') or '', 'notes': bot_text(folder / 'notes.md') or '',
+            'model': chosen or bot['model'], 'default_model': bot['model'], 'models': bot_models(bot)}
+
+
+def bot_models(bot):
+    """The Venice models a bot can be switched to: every text model, or only those that can use tools for a bot with
+    the shell. Empty while Venice's list hasn't been read."""
+    venice_specs_now()
+    specs = known.get('venice_specs') or {}
+    return [model for model, spec in specs.items() if not bot['tools'] or spec.get('tools')]
+
+
+def choose_model(thread, model):
+    """POST /threads/ID/model: the model a bot's session runs from its next message; "" goes back to bot.json's. Call
+    with `changed` held."""
+    if not thread.meta.get('bot'):
+        return 400, {'ok': False, 'error': 'only a bot\'s model is chosen here'}
+    if not isinstance(model, str) or (model and not re.fullmatch(r'[A-Za-z0-9][\w.:=,\[\]-]{0,99}', model)):
+        return 400, {'ok': False, 'error': 'model must be a model name'}
+    bot = thread.bot or read_bot(BOTS / thread.meta['bot'])
+    if model:
+        usable = bot_models(bot)
+        if usable and model not in usable:
+            return 400, {'ok': False, 'error': ('%s can\'t use tools, and this bot runs commands' if model in (known.get('venice_specs') or {}) else '%s isn\'t one of Venice\'s models') % model}
+    thread.meta['model_choice'] = model or None
+    thread.meta['model'] = model or bot['model'] or None
+    thread.model = thread.meta['model']
+    thread.save()
+    return 200, {'ok': True, 'model': thread.meta['model']}
 
 
 def fresh(thread):
@@ -2177,7 +2209,44 @@ def claude_turn(thread, text):
         thread.emit('error', code='limit' if LIMIT.search(left) else code, text=left or 'The agent ended without an answer.')
 
 
+BOT_HELP = ('Commands in a bot\'s tab:\n'
+            '/model — the model it runs now, and the ones it can use\n'
+            '/model NAME — run on NAME from the next message\n'
+            '/model default — back to the model in its bot.json\n'
+            '/help — this list')
+
+
+def bot_command(thread, text):
+    """A slash command typed in a bot's tab, answered by the runner itself (no model is asked): what to say back, or
+    None when [text] isn't one of them and goes to the bot as words."""
+    words = text.strip().split()
+    if not words or words[0].lower() not in ('/model', '/models', '/help'):
+        return None
+    if words[0].lower() == '/help':
+        return BOT_HELP
+    bot = thread.bot or read_bot(BOTS / thread.meta['bot'])
+    if len(words) == 1 or words[0].lower() == '/models':
+        venice_specs_now()
+        usable = bot_models(bot)
+        now = thread.meta.get('model_choice') or bot['model']
+        return ('Running on %s%s.\n' % (now, '' if not thread.meta.get('model_choice') else ' (its bot.json says %s)' % bot['model'])
+                + ('Models it can use%s: %s.' % (' (tools)' if bot['tools'] else '', ', '.join(usable)) if usable else 'Venice\'s model list can\'t be read right now.')
+                + '\nType /model NAME to switch, /model default to go back.')
+    wanted = '' if words[1].lower() == 'default' else words[1]
+    venice_specs_now()
+    with changed:
+        code, result = choose_model(thread, wanted)
+    return ('Done: from the next message this bot runs on %s.' % result['model']) if code == 200 else ('Not switched: %s.' % result['error'])
+
+
 def turn(thread, text):
+    if thread.meta.get('bot') and text.strip().startswith('/'):
+        said = bot_command(thread, text)
+        if said is not None:
+            with changed:
+                thread.emit('text', text=said)
+                thread.emit('result', text=said, failed=False)
+            return
     if thread.meta.get('bot_gone'):
         with changed:
             thread.emit('error', code='bot', text='This bot\'s folder is gone, so it can\'t answer. Its conversation is kept, and comes back if the folder does.')
@@ -2187,12 +2256,13 @@ def turn(thread, text):
         bot = read_bot(BOTS / thread.meta['bot'])
         with changed:
             thread.bot = bot
-            if not bot['problem'] and bot['tools'] and venice_spec(bot['model'])['tools'] is False:
-                bot['problem'] = '%s can\'t use tools, and this bot runs commands. Ask an agent to pick another model in bot.json.' % bot['model']
+            running = thread.meta.get('model_choice') or bot['model']
+            if not bot['problem'] and bot['tools'] and venice_spec(running)['tools'] is False:
+                bot['problem'] = '%s can\'t use tools, and this bot runs commands. Pick another model from its tab\'s menu.' % running
             if bot['problem']:
                 thread.emit('error', code='bot', text='This bot can\'t start: ' + bot['problem'])
                 return
-            thread.meta['model'] = bot['model']
+            thread.meta['model'] = thread.meta.get('model_choice') or bot['model']
     if thread.meta['kind'] == 'claude':
         return claude_turn(thread, text)
     driver = DRIVERS[thread.meta['kind']](thread, text)
@@ -2464,6 +2534,11 @@ class Runner(BaseHTTPRequestHandler):
         if parts[2:] == ['fresh']:
             with changed:
                 code, result = fresh(thread)
+            return self.answer(code, result)
+        if parts[2:] == ['model']:
+            venice_specs_now()  # outside the lock: it may ask Venice
+            with changed:
+                code, result = choose_model(thread, body.get('model', ''))
             return self.answer(code, result)
         if len(parts) == 4 and parts[2] == 'approvals':
             code, result = decide(thread, parts[3], body, getattr(self, 'device', None))

@@ -79,7 +79,8 @@ class VeniceAPI(http.server.BaseHTTPRequestHandler):
         venice_calls.append(('GET', self.path, self.headers.get('Authorization'), None))
         self.reply(200, {'data': [{'id': 'kimi-k2-5', 'type': 'text'}, {'id': 'venice-uncensored', 'type': 'text'},
                                   {'id': 'tiny-model', 'type': 'text', 'model_spec': {'availableContextTokens': 2000, 'maxCompletionTokens': 200, 'capabilities': {'supportsFunctionCalling': False}}},
-                                  {'id': 'strict-model', 'type': 'text', 'model_spec': {'availableContextTokens': 100000, 'maxCompletionTokens': 1000}}]})
+                                  {'id': 'strict-model', 'type': 'text', 'model_spec': {'availableContextTokens': 100000, 'maxCompletionTokens': 1000}},
+                                  {'id': 'tool-model', 'type': 'text', 'model_spec': {'availableContextTokens': 100000, 'maxCompletionTokens': 1000, 'capabilities': {'supportsFunctionCalling': True}}}]})
 
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers.get('Content-Length') or 0)))
@@ -640,7 +641,7 @@ try:
         if listed:
             break
         time.sleep(0.05)
-    check('venice: /health lists Venice\'s text models, asked for with the key', listed == ['kimi-k2-5', 'venice-uncensored', 'tiny-model', 'strict-model']
+    check('venice: /health lists Venice\'s text models, asked for with the key', listed == ['kimi-k2-5', 'venice-uncensored', 'tiny-model', 'strict-model', 'tool-model']
           and venice_calls[0][:3] == ('GET', '/api/v1/models?type=text', 'Bearer venice-test-key'))
     code, made = call('POST', '/threads', {'name': 'Venice', 'project': str(project), 'kind': 'venice', 'model': 'venice-uncensored'})
     chat = made['thread']['id']
@@ -888,6 +889,54 @@ try:
     events = stream(tooly['id'], after=last, until=('result', 'error'))
     check('bots: a tool bot on a model that can\'t use tools runs nothing and says so', events[-1]['type'] == 'error' and 'can\'t use tools' in events[-1]['text'])
     settle(tooly['id'], 'idle')
+    def command(thread, text):
+        last = call('GET', '/threads/' + thread)[1]['thread']['last_event']
+        before = len(venice_calls)
+        call('POST', '/threads/%s/messages' % thread, {'text': text})
+        events = stream(thread, after=last, until=('result', 'error'))
+        settle(thread, 'idle')
+        return events[-1], len(venice_calls) == before
+    answer, quiet = command(tooly['id'], '/model')
+    check('/model: says what it runs and lists only the models it can use (tools, for this bot), asking Venice nothing',
+          quiet and answer['type'] == 'result' and 'Running on tiny-model' in answer['text'] and 'tool-model' in answer['text'] and 'kimi-k2-5' not in answer['text'])
+    answer, _ = command(tooly['id'], '/model tiny-model')
+    check('/model NAME: one that can\'t use tools is refused for a bot that runs commands', 'Not switched' in answer['text'] and 'can\'t use tools' in answer['text'])
+    answer, _ = command(tooly['id'], '/model tool-model')
+    last = call('GET', '/threads/' + tooly['id'])[1]['thread']['last_event']
+    call('POST', '/threads/%s/messages' % tooly['id'], {'text': 'TOOL:uname -a'})
+    events = stream(tooly['id'], after=last, until=('result', 'error'))
+    check('/model NAME: it runs on it from the next message, its bot.json untouched', 'Done' in answer['text'] and events[-1]['type'] == 'result'
+          and [c for c in venice_calls if c[3] and c[3].get('tools')][-1][3]['model'] == 'tool-model' and json.loads((bots / 'tooly' / 'bot.json').read_text())['model'] == 'tiny-model')
+    settle(tooly['id'], 'idle')
+    answer, _ = command(tooly['id'], '/model default')
+    check('/model default: back to the model in bot.json', 'tiny-model' in answer['text'] and call('GET', '/bots/tooly')[1]['model'] == 'tiny-model')
+    command(tooly['id'], '/model tool-model')
+    answer, _ = command(linux['id'], '/model no-such-model')
+    check('/model NAME: a model Venice doesn\'t have is refused', 'Not switched' in answer['text'])
+    answer, quiet = command(linux['id'], '/help')
+    check('/help: lists the commands', quiet and '/model NAME' in answer['text'])
+    answer, quiet = command(linux['id'], '/etc/pacman.conf is what?')
+    check('a message that only starts with a slash still goes to the bot', not quiet and answer['text'].startswith('echo'))
+    check('an ordinary thread\'s model isn\'t chosen this way', call('POST', '/threads/%s/model' % chat, {'model': 'kimi-k2-5'})[0] == 400)
+    call('POST', '/threads/%s/model' % tooly['id'], {'model': ''})
+    shown = call('GET', '/bots/tooly')[1]
+    check('model: a bot lists the models it can switch to (only those that can use tools, for a bot with the shell)', shown['models'] == ['tool-model']
+          and shown['default_model'] == 'tiny-model' and shown['model'] == 'tiny-model')
+    code, said = call('POST', '/threads/%s/model' % tooly['id'], {'model': 'tiny-model'})
+    check('model: one that can\'t use tools is refused for a bot that runs commands', code == 400 and 'can\'t use tools' in said['error'])
+    code, said = call('POST', '/threads/%s/model' % tooly['id'], {'model': 'tool-model'})
+    last = call('GET', '/threads/' + tooly['id'])[1]['thread']['last_event']
+    call('POST', '/threads/%s/messages' % tooly['id'], {'text': 'TOOL:uname -a'})
+    events = stream(tooly['id'], after=last, until=('result', 'error'))
+    check('model: chosen from the tab, it runs from the next message, its file untouched', code == 200 and events[-1]['type'] == 'result'
+          and [c for c in venice_calls if c[3] and c[3].get('tools')][-1][3]['model'] == 'tool-model' and json.loads((bots / 'tooly' / 'bot.json').read_text())['model'] == 'tiny-model'
+          and call('GET', '/bots/tooly')[1]['model'] == 'tool-model' and bot_thread('tooly')['model'] == 'tool-model')
+    settle(tooly['id'], 'idle')
+    code, said = call('POST', '/threads/%s/model' % tooly['id'], {'model': ''})
+    check('model: an empty choice goes back to bot.json\'s', code == 200 and said['model'] == 'tiny-model' and call('GET', '/bots/tooly')[1]['model'] == 'tiny-model')
+    call('POST', '/threads/%s/model' % tooly['id'], {'model': 'tool-model'})
+    check('model: a model Venice doesn\'t have is refused', call('POST', '/threads/%s/model' % linux['id'], {'model': 'no-such-model'})[0] == 400
+          and call('POST', '/threads/%s/model' % chat, {'model': 'kimi-k2-5'})[0] == 400)
     code, made = call('POST', '/threads', {'name': 'Strict', 'project': str(project), 'kind': 'venice', 'model': 'strict-model'})
     strict, outcome = made['thread']['id'], []
     for number in range(6):
