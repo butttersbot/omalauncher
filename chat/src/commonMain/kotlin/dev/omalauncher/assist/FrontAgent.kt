@@ -604,6 +604,16 @@ fun handOverContext(tasks: List<ChatTask>, asked: Long, got: (ChatTask) -> Boole
         .takeLast(CONTEXT_EXCHANGES).map { FrontExchange(it.prompt, it.result) }
 }
 
+/**
+ * What an errand is told it missed: the last exchanges of the Oma stream before [asked], the builders' answers among
+ * them. An errand runs in a session of its own (AgentTasks.ERRAND_MODEL) with no builder's conversation behind it, so
+ * what [handOverContext] leaves out as the builder's own is just what "open it" points at (2026-10-20: a builder had
+ * just made a lock screen, and the errand answered "I'm not sure what it refers to").
+ */
+fun errandContext(tasks: List<ChatTask>, asked: Long): List<FrontExchange> =
+    tasks.filter { it.time < asked && it.chat.isEmpty() && it.status != TaskStatus.Running && it.result.isNotBlank() && it.mail.isEmpty() }
+        .takeLast(CONTEXT_EXCHANGES).map { FrontExchange(it.prompt, it.result) }
+
 /** One side of an exchange on one line, so nothing in it can stand as a line of its own and pass for a heading. */
 private fun contextSide(text: String): String {
     val line = text.trim().replace(Regex("\\s+"), " ")

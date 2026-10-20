@@ -358,7 +358,8 @@ object QuickLane {
             try {
                 AgentTasks.handOver(context, prompt, page, builder, errand) { to ->
                     val shared = builderShares(to, AgentTasks.builders.associate { it.id to it.working })
-                    sharedPreface(shared, PHONE_SHARED_NOTE, handOverPreface(handOverContext(said, asked, gotBy(to))))
+                    // An errand starts with no builder's conversation, so it is told the builders' last answers too.
+                    sharedPreface(shared, PHONE_SHARED_NOTE, handOverPreface(if (errand) errandContext(said, asked) else handOverContext(said, asked, gotBy(to))))
                 }
                 log.handedOver(asked)
             } catch (e: Exception) {

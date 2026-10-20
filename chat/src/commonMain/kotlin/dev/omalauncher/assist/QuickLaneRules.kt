@@ -65,7 +65,8 @@ fun quickSystemPrompt(mac: Boolean = false, newChat: Boolean = false): String =
         "you can answer it correctly and briefly; (5) says to send it to build, to tell Claude, or names a builder; (6) asks your view, a " +
         "choice or what next about a builder's work: that builder knows it. But a phone errand, case (2) " +
         "without code or launcher changes (turn on wireless debugging or the flashlight, set an alarm, open or play something), and " +
-        "replies to one get ${handOverMark(Route.PHONE)} instead. His words then go " +
+        "replies to one get ${handOverMark(Route.PHONE)} instead. Words pointing back at a builder's or thread's last answer (open it, " +
+        "show me that) are case (3), never an errand. His words then go " +
         "on exactly as he said them, and the launcher picks the builder. ANSWER: otherwise answer it yourself, briefly, in " +
         "Markdown: general questions, quick facts, web lookups, the date and time, and what is on the phone. A question about how the " +
         "work stands is also yours and is never handed over: what are you working on, how is it going, is it done, is it frozen. Answer it " +

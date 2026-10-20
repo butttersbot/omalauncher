@@ -823,4 +823,20 @@ class FrontAgentTest {
         assertFalse(forTheBuilder("what do you think?", listOf(built.copy(time = now - 3 * 3_600_000L)), now, working = false))
         assertTrue(forTheBuilder("what do you think?", emptyList(), now, working = true))
     }
+
+    /** 2026-10-20: an errand runs in a fresh session, so it is told the builder's last answer, which "open it" means. */
+    @Test fun anErrandIsToldTheBuildersLastAnswerToo() {
+        val tasks = listOf(
+            answered(1, "what time is it", "2 AM."),
+            built(2, "make me a manga lock screen", result = "Done: lock-cover-manga-v2.png is in Gallery."),
+            ChatTask(3, UNDECIDED_AGENT, "Can you open it for me so I can take a quick look?"),
+        )
+        // A hand-over leaves the builder's own answer out: the builder has it in its conversation.
+        assertEquals(emptyList<FrontExchange>(), handOverContext(tasks, 3, ::builderGot))
+        // An errand gets it, so "it" is the lock screen.
+        val told = errandContext(tasks, 3)
+        assertEquals(FrontExchange("make me a manga lock screen", "Done: lock-cover-manga-v2.png is in Gallery."), told.last())
+        assertTrue(handOverPreface(told).contains("lock-cover-manga-v2.png"))
+        assertFalse(told.any { it.said.startsWith("Can you open it") })
+    }
 }
