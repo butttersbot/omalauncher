@@ -929,25 +929,85 @@ def refused_command(command):
     return None
 
 
+def split_command(command):
+    """[command] as its parts, cut at unquoted |, ;, && and ||, with 2>&1, 2>/dev/null and >/dev/null taken out; None
+    when it holds anything else a shell would act on: $ or ` (outside single quotes), \\, a lone &, any other redirect,
+    a subshell, braces, a glob, a comment or a newline."""
+    parts, now, index, quote = [], '', 0, None
+    while index < len(command):
+        char = command[index]
+        if quote == "'":
+            now += char
+            quote = None if char == "'" else quote
+        elif quote == '"':
+            if char in '$`\\':
+                return None
+            now += char
+            quote = None if char == '"' else quote
+        elif char in '\'"':
+            now += char
+            quote = char
+        elif re.match(r'(2>&1|2>/dev/null|>/dev/null)(?=\s|$|[|;&])', command[index:]) and (not now or now[-1].isspace()):
+            index += len(re.match(r'2>&1|2>/dev/null|>/dev/null', command[index:]).group(0))
+            continue
+        elif command.startswith(('&&', '||'), index):
+            parts.append(now)
+            now, index = '', index + 2
+            continue
+        elif char in '|;':
+            parts.append(now)
+            now = ''
+        elif char in '$`\\(){}<>&*?[]!#\n\r':
+            return None
+        else:
+            now += char
+        index += 1
+    if quote:
+        return None
+    parts.append(now)
+    parts = [part.strip() for part in parts]
+    return parts if parts and all(parts) else None
+
+
 def risky_command(command):
-    """Whether a command still needs Boss's OK in auto mode (his pick, 2026-10-19: "only risky steps"; reviewed twice,
+    """Whether a command still needs Boss's OK in auto mode: it doesn't when [split_command] can read it and every part
+    is look-only ([look_only]) or passes [risky_part] (Boss, 2026-10-19: his bot chains and pipes almost everything)."""
+    parts = split_command(command)
+    if parts is None:
+        return True
+    return any(look_only(part) is None and risky_part(part) for part in parts)
+
+
+def risky_part(command):
+    """Whether one part of a command still needs Boss's OK in auto mode (his pick, 2026-10-19: "only risky steps"; reviewed twice,
     then decided this way). A command runs without a card only when it is one plain command (no pipe, redirect,
     substitution, glob or escape) of a program in AUTO_TOOLS, given only that program's plain options, touching only
     the folders a setup bot works in (AUTO_ROOTS and its own work folder; reading may also see a few system files),
     downloading only from http(s). Anything that runs a program (wine, steam, protontricks, a script, a shell, an
     interpreter, a wrapper), uploads, works as administrator or touches anything else asks."""
-    if any(sign in AUTO_SIGNS for sign in command):
-        return True
     try:
         words = shlex.split(command)
     except ValueError:
         return True
-    if words[:3] == ['hyprctl', 'dispatch', 'exec']:
+    if not words or words[:3] == ['hyprctl', 'dispatch', 'exec']:
         return True  # opening an app runs a program: it asks, as running it here would
-    if not words or words[0] not in AUTO_TOOLS:
-        return True
     head, rest = words[0], words[1:]
+    if head in LOOK_ANYWHERE:
+        # Names, sizes and states, never contents: anywhere, with any option but the few that act.
+        return any(word in ('-exec', '-execdir', '-ok', '-okdir', '-delete', '-fprint', '-fprint0', '-fprintf', '-fls') or word.startswith('-fprint') for word in rest) \
+            or (head == 'env' and rest != [])
+    if head == 'pacman' and rest and (re.fullmatch(r'-Q[ikleqsdmntugc]*', rest[0]) or rest[0] in ('-Ss', '-Si', '-Sii')) and not any(word.startswith('-') for word in rest[1:]):
+        return False  # what is installed, or what the official repos have: names and patterns only
+    if head == 'systemctl' and rest[:1] == ['--user'] and len(rest) >= 2 and rest[1] in ('list-units', 'status', 'is-active', 'is-enabled') \
+            and all(re.fullmatch(r'--no-pager|--type=\w+|--state=\w+|--all', word) or (re.fullmatch(r'[\w@.-]+', word) and not word.startswith('-')) for word in rest[2:]):
+        return False
+    if len(rest) == 1 and rest[0] in ('--version', '-V', 'version') and head in VERSION_ASKED and system_program(head):
+        return False  # a system tool saying its version
+    if head not in AUTO_TOOLS:
+        return True
     rule = AUTO_TOOLS[head]
+    if rule.get('text'):
+        return False  # echo and printf say what they're given; with no redirect it goes nowhere but the output
     writes = rule.get('writes', False)
     takes, plain = rule.get('takes', ()), rule.get('plain', ())
     position = 0
@@ -961,6 +1021,9 @@ def risky_command(command):
                 index += 1
                 continue
             name, _, given = word.partition('=')
+            if name in rule.get('values', ()):
+                index += 1 if given else 2  # an option's value that is no path: a format, an agent, a time
+                continue
             if name in takes:
                 value = given or (rest[index + 1] if index + 1 < len(rest) else None)
                 if value is None or not auto_place(value, writes or rule.get('takes_writes', False)):
@@ -998,12 +1061,21 @@ def risky_command(command):
     return False
 
 
+# Tools that only tell names, sizes and states: they may look anywhere (contents are read only by AUTO_TOOLS, inside AUTO_ROOTS).
+LOOK_ANYWHERE = {'ls', 'stat', 'file', 'du', 'df', 'realpath', 'readlink', 'which', 'whereis', 'pgrep', 'find', 'wc', 'uname', 'nproc', 'free', 'env',
+                 'lspci', 'lsusb', 'lscpu', 'lsblk', 'lsmod', 'id', 'whoami', 'hostname', 'date', 'uptime'}
+# Tools whose --version alone may run in auto mode.
+VERSION_ASKED = {'wine', 'wine64', 'winetricks', 'protontricks', 'mangohud', 'gamescope', 'gamemoded', 'steam', 'lutris', 'umu-run', 'vkd3d-compiler',
+                 'vulkaninfo', 'curl', 'wget', 'pacman', 'flatpak', 'python3', 'hyprctl'}
 # Auto mode's tools and the plain options each may take. 'takes' options are followed by a path, which is checked like
 # any other; 'writes' tools may only write inside AUTO_ROOTS (or the bot's work folder).
 AUTO_TOOLS = {
     **{name: {'short': 'aAbcdfhHiklLnrRsStuvwxz1', 'plain': ('--color=never', '--human-readable', '--all', '--recursive', '--count')}
-       for name in ('ls', 'cat', 'head', 'tail', 'wc', 'grep', 'stat', 'file', 'du', 'df', 'realpath', 'readlink', 'sha256sum', 'md5sum')},
-    **{name: {} for name in ('echo', 'printf', 'which', 'lscpu', 'lsusb', 'vulkaninfo', 'glxinfo', 'nvidia-smi', 'xdg-user-dir')},
+       for name in ('cat', 'sha256sum', 'md5sum')},
+    **{name: {'short': 'cnqvz0123456789', 'plain': ('--bytes', '--lines')} for name in ('head', 'tail')},
+    'grep': {'short': 'EFGiovnmhHclLqrRswxA0123456789BC', 'plain': ('--color=never', '--recursive')},
+    **{name: {'text': True} for name in ('echo', 'printf')},
+    **{name: {} for name in ('vulkaninfo', 'glxinfo', 'nvidia-smi', 'xdg-user-dir')},
     'mkdir': {'writes': True, 'short': 'pv'},
     'touch': {'writes': True},
     'cp': {'writes': True, 'short': 'rRavnp'},
@@ -1017,7 +1089,8 @@ AUTO_TOOLS = {
     'gzip': {'writes': True, 'short': 'dkv'},
     'zstd': {'writes': True, 'short': 'dkv'},
     'wget': {'writes': True, 'short': 'qcN', 'takes': ('-O', '--output-document', '-P', '--directory-prefix'), 'plain': ('--continue', '--show-progress', '--progress', '-nv')},
-    'curl': {'writes': True, 'short': 'LsSfO#', 'takes': ('-o', '--output'), 'plain': ('--fail', '--location', '--silent', '--show-error', '--progress-bar', '--remote-name', '--create-dirs')},
+    'curl': {'writes': True, 'short': 'LsSfOI#', 'takes': ('-o', '--output'), 'plain': ('--fail', '--location', '--silent', '--show-error', '--progress-bar', '--remote-name', '--create-dirs', '--head', '--http1.1', '--compressed'),
+             'values': ('-w', '--write-out', '-A', '--user-agent', '-m', '--max-time', '--connect-timeout', '--retry')},
     'flatpak': {'operands': 'verb', 'verbs': ('install', 'list', 'info', 'search', 'update'), 'short': 'y', 'plain': ('--user', '--noninteractive', '--assumeyes')},
 }
 AUTO_SIGNS = set(';|&><`$\n\r\\(){}*?[]!#')
@@ -1030,6 +1103,8 @@ AUTO_READS = ('/etc/os-release', '/etc/pacman.conf', '/proc/cpuinfo', '/usr/shar
 def auto_place(given, write):
     """Whether a path a command names is inside where a setup bot works (AUTO_ROOTS under his home, or its work folder,
     which is the command's own folder); a few public system files may also be read. 7z's -oDIR comes here as 'DIR'."""
+    if given == '/dev/null':
+        return True  # output thrown away
     try:
         path = pathlib.Path(os.path.expanduser(given))
         path = (path if path.is_absolute() else pathlib.Path.cwd() / path).resolve()
@@ -1045,8 +1120,11 @@ def auto_place(given, write):
 def command_marks(command):
     """What the card says of a command beyond itself: root (through soma-pacman), and anything that isn't one plain
     command, or that fetches, builds or installs code from outside Arch's own repos."""
-    outside = bool(any(sign in ';|&><`$\n\r\\(){}' for sign in command) or re.search(r'https?://|\.pkg\.tar|(^|\s)-U\b', command)
-                   or program_words(command) & {'curl', 'wget', 'git', 'pip', 'pip3', 'npm', 'cargo', 'python', 'python3', 'bash', 'sh', 'eval', 'source'})
+    # Only what does run or install code from elsewhere: a shell or interpreter, a build or package tool, a package file,
+    # or a script run by path. A pipe into head, a download or a read is none of these.
+    outside = bool(program_words(command) & {'sh', 'bash', 'zsh', 'dash', 'python', 'python3', 'perl', 'ruby', 'node', 'eval', 'source', 'exec',
+                                             'git', 'pip', 'pip3', 'npm', 'cargo', 'make', 'makepkg', 'gcc', 'cc', 'clang'}
+                   or re.search(r'\.pkg\.tar|(^|\s)-U\b|(^|[\s;&|])\.{1,2}/', command))
     return {'root': bool(program_words(command) & PRIVILEGE), 'outside': outside}
 
 
