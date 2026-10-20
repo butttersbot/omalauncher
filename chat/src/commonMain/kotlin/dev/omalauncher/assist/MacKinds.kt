@@ -20,11 +20,17 @@ const val MAC_CODEX = "codex"
 const val MAC_CURSOR = "cursor"
 const val MAC_GROK = "grok"
 
+/** Venice (venice.ai): a chat with Venice's models, not a coding agent. Its thread answers and touches nothing on the computer. */
+const val MAC_VENICE = "venice"
+
+/** The agents that only talk: never where a request goes on its own (a new thread nothing picked, or one at its limit), only when picked. */
+val MAC_CHAT_ONLY = setOf(MAC_VENICE)
+
 /**
  * The agents a thread on the Mac can run, in the order a request goes from one at its limit to the next: Boss's own
- * three (Claude, Codex, Grok; 2026-10-16), then Cursor.
+ * three (Claude, Codex, Grok; 2026-10-16), then Cursor. Venice last, and only ever when picked ([MAC_CHAT_ONLY]).
  */
-val MAC_KINDS = listOf(MAC_CLAUDE, MAC_CODEX, MAC_GROK, MAC_CURSOR)
+val MAC_KINDS = listOf(MAC_CLAUDE, MAC_CODEX, MAC_GROK, MAC_CURSOR, MAC_VENICE)
 
 /** What the runner's `error` gives as its code when a turn ended at the agent's limit. */
 const val MAC_LIMIT = "limit"
@@ -41,6 +47,7 @@ fun macKindName(kind: String): String = when (val agent = macKindOf(kind)) {
     MAC_CODEX -> "Codex"
     MAC_CURSOR -> "Cursor"
     MAC_GROK -> "Grok"
+    MAC_VENICE -> "Venice"
     else -> agent.replaceFirstChar { it.uppercaseChar() }
 }
 
@@ -53,8 +60,11 @@ fun macInstalled(kinds: List<String>): List<String> {
     return MAC_KINDS.filter { it in have }.ifEmpty { listOf(MAC_CLAUDE) }
 }
 
-/** The first agent the Mac has ([installed], as `/health` gave it) that is not known to be at its limit ([limited]); null when every one is. */
-fun macKind(installed: List<String>, limited: Set<String>): String? = macInstalled(installed).firstOrNull { it !in limited }
+/**
+ * The first agent the Mac has ([installed], as `/health` gave it) that is not known to be at its limit ([limited]); null when
+ * every one is. Never one that only talks ([MAC_CHAT_ONLY]): work sent on its own goes to an agent that can do it.
+ */
+fun macKind(installed: List<String>, limited: Set<String>): String? = macInstalled(installed).firstOrNull { it !in limited && it !in MAC_CHAT_ONLY }
 
 /**
  * The agent a new chat's thread runs: the one he picked ([chosen]), always, never another in its place. A computer that

@@ -81,6 +81,13 @@ interface ChatHost {
     /** Whether the field's microphone works here. Where it doesn't (the desktop, whose own dictation types into any field), it isn't shown. */
     val dictates: Boolean get() = true
 
+    /**
+     * Whether there is a Soma tab, where the front agent answers or hands his words on. The phone's ([OMA_TAB]). The
+     * desktop has none (Boss, 2026-10-19: the front agent only makes sense on the phone): it opens to a new chat, whose
+     * picker says the computer, agent and model, and every request is a chat of its own.
+     */
+    val somaTab: Boolean get() = true
+
     // What the screen reads, each time it looks (twice a second).
 
     /** The Soma thread: every entry, oldest first. */

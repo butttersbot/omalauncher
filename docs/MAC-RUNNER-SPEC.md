@@ -608,3 +608,30 @@ a refusal not being a failure. 166 checks in all.
 
 **Not done here:** installing the runner on MG1 and the Grok CLI on the Macs (signing in is Boss's click). Both
 are part of the rollout, which is Boss's call.
+
+## As built: Venice threads (2026-10-19, by the Mac session)
+
+**Venice** (venice.ai; `kind: "venice"`): a chat with Venice's models, not a coding agent. Its thread answers and
+runs, reads and changes nothing on the computer, so it never asks for anything and has no mode worth choosing.
+- **No CLI in the loop.** The `venice` CLI (`npm install -g veniceai-cli`) is how Boss sets the key up (`venice
+  config init`, kept in `~/.venice/config.json`; or `VENICE_API_KEY`), but its `--continue` is one conversation for
+  the whole computer, so two threads would talk over each other. The runner talks to Venice's API itself
+  (`/chat/completions`, stdlib only) and each thread keeps its own conversation in `venice.json` beside its events,
+  sent whole each turn. A turn is a process of its own (`oma-runner venice-turn`, reading `{model, messages}` on
+  stdin), so stopping one is stopping any agent. Only an answered turn joins the conversation.
+- **Listed when there is a key.** `/health`'s `kinds` names `venice` once a key is there, and `models.venice` lists
+  Venice's text models (`/models?type=text`), asked in the background at most once an hour, so `/health` never waits
+  on Venice. The chat's picker offers them after the default. No model picked is the CLI's own default
+  (`default_model` in its config, else `kimi-k2-5`).
+- **Never chosen on its own.** On the devices `MAC_CHAT_ONLY` keeps Venice out of `macKind`: a new thread nothing
+  picked, or a turn handed on at a limit, goes to a coding agent. Venice runs only when picked, or switched to
+  ("switch to venice kimi-k2-5"). Out of credit (402) or too many requests (429) is an ordinary error in Venice's
+  words, never a `limit`: what he said to Venice is not handed on to a coding agent he didn't pick. An answer with
+  nothing in it is an error too, and never joins the conversation.
+- **The key stays out of reach:** the CLI's config file is in `outside_reach()`, denied to Claude, Cursor and Grok
+  threads as the runner's own keys are, and `VENICE*` variables are kept from every agent but Venice's turn
+  (`clean_environment`). It is never written to a thread's records (checked).
+- Tested: `test-runner.py` against a stand-in for Venice's API on the loopback (models listed with the key, an
+  answer named by kind and model, the whole conversation sent again, a 402 as a limit and left out of the
+  conversation, the CLI's default model, the key in no record): all 213 checks pass. Not yet run against Venice
+  itself: that needs Boss's key on the Mac Pro.

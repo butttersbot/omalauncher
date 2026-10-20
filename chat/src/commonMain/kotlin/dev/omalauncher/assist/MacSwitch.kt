@@ -29,14 +29,14 @@ fun macModelOk(model: String) = model.isEmpty() || MODEL_NAME.matches(model)
 val MAC_CLAUDE_MODELS = listOf("", "claude-fable-5-1", "opus", "sonnet", "haiku")
 
 /**
- * The models a thread of [kind] can be made with, the agent's own default first. Claude's are [MAC_CLAUDE_MODELS]; the
- * runner lists no others, so for Codex, Grok and Cursor they are the default and the models their threads were seen
- * running ([seen]), as the runner reported them.
+ * The models a thread of [kind] can be made with, the agent's own default first. Claude's are [MAC_CLAUDE_MODELS]. For
+ * the others, the models the computer's runner lists for the agent ([offered], `/health`'s `models`: Venice's), then the
+ * models their threads were seen running ([seen]), as the runner reported them.
  */
-fun macModels(kind: String, seen: List<MacThread>): List<String> {
+fun macModels(kind: String, seen: List<MacThread>, offered: List<String> = emptyList()): List<String> {
     val agent = macKindOf(kind)
     val known = seen.filter { macKindOf(it.kind) == agent }.map { it.model.trim() }.filter { it.isNotEmpty() && macModelOk(it) && it != "cursor-auto" }
-    return if (agent == MAC_CLAUDE) MAC_CLAUDE_MODELS else (listOf("") + known).distinct()
+    return if (agent == MAC_CLAUDE) MAC_CLAUDE_MODELS else (listOf("") + offered.map(String::trim).filter { it.isNotEmpty() && macModelOk(it) } + known).distinct()
 }
 
 /** A model as a pick shows it: "Fable", "Opus", "gpt-6.1-sol", or "default" for the agent's own. */
@@ -85,8 +85,8 @@ fun macDefaultFor(defaults: Map<String, MacPick>, project: String, installed: Li
  * Every pick a thread running [current] on a computer that runs [installed] can switch to: each agent the computer has,
  * with each of its models ([macModels]), but the one it runs now.
  */
-fun macSwitchTargets(current: MacPick, installed: List<String>, seen: List<MacThread>): List<MacPick> =
-    macInstalled(installed).flatMap { kind -> macModels(kind, seen).map { MacPick(kind, it) } }
+fun macSwitchTargets(current: MacPick, installed: List<String>, seen: List<MacThread>, offered: Map<String, List<String>> = emptyMap()): List<MacPick> =
+    macInstalled(installed).flatMap { kind -> macModels(kind, seen, offered[kind].orEmpty()).map { MacPick(kind, it) } }
         .filterNot { it.kind == current.kind && it.model == current.model }
 
 /** The model words he may type for Claude alone: "switch to sonnet" is Claude on Sonnet. */

@@ -122,6 +122,45 @@ class DesktopEndToEndTest {
     }
 
     /**
+     * Every Soma sees every session (Boss, 2026-10-19): two devices, each with its own Soma home (its own chat log and
+     * tabs) and its own engine, follow one runner. A chat started on one is a thread the other lists and shows a tab
+     * for, and the other way round. What does not cross: the chat's own entries (each device's log is its own).
+     */
+    @Test fun aSessionStartedOnOneDeviceIsSeenOnTheOther() {
+        val machine = MacMachine("testhost", "Test box", MacRunnerConfig("http://127.0.0.1:$port", key))
+        fun device(name: String): Triple<DesktopThreadsPlatform, MacThreadsEngine, DesktopChatHost> {
+            System.setProperty("soma.home", File(work, name).path)
+            val notices = Notices()
+            val platform = DesktopThreadsPlatform(notices) { listOf(machine) }
+            val engine = MacThreadsEngine(platform)
+            return Triple(platform, engine, DesktopChatHost(platform, engine, DesktopFrontAgent(engine, platform, notices, places = emptyList()), notices))
+        }
+        fun until(what: String, check: () -> Boolean) {
+            val deadline = System.currentTimeMillis() + 30_000
+            while (System.currentTimeMillis() < deadline && !check()) Thread.sleep(250)
+            assertTrue(what, check())
+        }
+        val (deskA, engineA, hostA) = device("desk-a")
+        engineA.open()
+        until("desk A reaches the runner") { engineA.kindsOn("testhost").isNotEmpty() }
+        engineA.startChatDirect("what files are here", "")
+        until("desk A's chat is answered") { deskA.chatLog().tasks.any { it.mac && it.status == dev.omalauncher.oma.TaskStatus.Done } }
+        val made = deskA.chatLog().tasks.last { it.mac }.thread
+
+        val (deskB, engineB, hostB) = device("desk-b")
+        engineB.open()
+        until("desk B lists desk A's thread") { engineB.refresh(); engineB.view.threads.any { it.id == made } }
+        assertTrue("desk B has a tab for it", hostB.threads().any { it.key == dev.omalauncher.assist.macThreadKey(made) })
+        assertTrue("desk B's own log has none of desk A's entries", deskB.chatLog().tasks.none { it.thread == made })
+
+        engineB.startChatDirect("what files are here", "")
+        until("desk B's chat is answered") { deskB.chatLog().tasks.any { it.mac && it.status == dev.omalauncher.oma.TaskStatus.Done } }
+        val madeB = deskB.chatLog().tasks.last { it.mac }.thread
+        until("desk A lists desk B's thread") { engineA.refresh(); engineA.view.threads.any { it.id == madeB } }
+        assertTrue("desk A has a tab for it", hostA.threads().any { it.key == dev.omalauncher.assist.macThreadKey(madeB) })
+    }
+
+    /**
      * Switch agent, end to end (cockpit/DESIGN.md §4): a chat's Claude thread is moved to Codex from its tab's menu. The
      * Claude thread is asked for a handoff (the fake agent's "done" is too short to be one, so the record is used), a
      * Codex thread is made on the same runner and project with it, answers, and the chat lives on the Codex thread.
@@ -449,10 +488,12 @@ class DesktopEndToEndTest {
         // Replayed after a restart, as it was left.
         assertEquals(canvas.page, DesktopCanvas(SomaHome.canvas, "testhost").also { it.load() }.page)
         onNodeWithText("  [ done ]").performClick(); settle(300)
-        // A link to the chat's thread opens the chat's tab in the chat block, as Main's opener does.
+        // A link to the chat's thread opens the chat's tab in the chat block, as Main's opener does. Let go of first, the
+        // chat block opens a new chat (no Soma tab here), beside the one the thread is on.
         wanted = null; settle()
+        assertEquals(2, platform.book().chats.size)
         val tab = dev.omalauncher.oma.somaLinkTab("soma://thread/$thread", platform.book())
-        assertEquals(dev.omalauncher.oma.chatKey(platform.book().chats.single().id), tab)
+        assertEquals(dev.omalauncher.oma.chatKey(platform.book().chats.single { it.mac == thread }.id), tab)
         wanted = tab; settle()
         onNode(hasText("write the notes file", substring = true) and androidx.compose.ui.test.hasAnyAncestor(androidx.compose.ui.test.hasContentDescription("Chat block"))).assertExists()
         // The Timeline module says it once, though the chat is named by its words.

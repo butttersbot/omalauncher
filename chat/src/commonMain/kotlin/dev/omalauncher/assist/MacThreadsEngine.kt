@@ -31,6 +31,7 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
     @Volatile private var cursors = MacCursors()
     /** The agents each Mac has, by its id, as its `/health` last said; none until it has. */
     @Volatile private var kinds: Map<String, List<String>> = emptyMap()
+    @Volatile private var offered: Map<String, Map<String, List<String>>> = emptyMap()
     /** The agents heard to be at their limit lately, kept in prefs under "limits". Only touched under the lock. */
     private val limits = MacLimits()
     /**
@@ -83,6 +84,9 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
 
     /** The agents the computer [machine] said it has at its last answer (`/health`'s kinds); none before it answered. */
     fun kindsOn(machine: String): List<String> = kindsOf(machine)
+
+    /** The models the computer [machine]'s runner listed at its last answer, by agent (`/health`'s models: Venice's); none before. */
+    fun modelsOn(machine: String): Map<String, List<String>> = offered[machine].orEmpty()
 
     /**
      * Project [project]'s handoff top section (Soma Canvas), from the first computer whose runner has it; null when none does.
@@ -182,7 +186,10 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
 
     /** What asking the Mac [machine]'s `/health` came to: whether it answered, and which agents it has when it did. */
     private fun heard(machine: String, health: MacHealthResult) {
-        if (health is MacHealthResult.Up) kinds = kinds + (machine to health.health.kinds)
+        if (health is MacHealthResult.Up) {
+            kinds = kinds + (machine to health.health.kinds)
+            offered = offered + (machine to health.health.models)
+        }
         reached(machine, health is MacHealthResult.Up)
         // Only a Mac that does not answer while none other does says anything about this phone's Tailscale.
         if (health is MacHealthResult.Up || view.macs.none { it.reachable && it.id != machine }) platform.linkAfter(macLink(health))
@@ -262,7 +269,10 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
                         val client = macClient(machine)
                         val health = client.health()
                         links += macLink(health)
-                        if (health is MacHealthResult.Up) kinds = kinds + (machine.id to health.health.kinds)
+                        if (health is MacHealthResult.Up) {
+                            kinds = kinds + (machine.id to health.health.kinds)
+                            offered = offered + (machine.id to health.health.models)
+                        }
                         val listed = if (health is MacHealthResult.Up) client.threads() else MacAnswer.Unreachable
                         if (listed is MacAnswer.Ok) {
                             threads += listed.value

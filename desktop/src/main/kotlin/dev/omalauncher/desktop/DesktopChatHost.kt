@@ -57,6 +57,9 @@ class DesktopChatHost(
     override val attaches: Boolean get() = false
     override val dictates: Boolean get() = false
 
+    // No Soma tab and no front agent here (Boss, 2026-10-19): it opens to a new chat, and he starts each one himself.
+    override val somaTab: Boolean get() = false
+
     override fun tasks(): List<ChatTask> = platform.chatLog().tasks
 
     override fun updateTask(time: Long, save: Boolean, change: (ChatTask) -> ChatTask) = platform.chatLog().update(time, save, change)
@@ -79,19 +82,19 @@ class DesktopChatHost(
 
     override fun hosts(): List<HostChoice> = engine.hosts().map { seen ->
         val agents = engine.kindsOn(seen.id)
-        HostChoice(seen.id, seen.name, seen.reachable, agents, macInstalled(agents).associateWith { macModels(it, engine.view.threads) }, engine.defaultPick(seen.id), engine.hostAddress(seen.id))
+        HostChoice(seen.id, seen.name, seen.reachable, agents, macInstalled(agents).associateWith { macModels(it, engine.view.threads, engine.modelsOn(seen.id)[it].orEmpty()) }, engine.defaultPick(seen.id), engine.hostAddress(seen.id))
     }
 
     override fun agentName(): String? = null
 
-    // Always a background agent, so the send rules never refuse the Soma tab (ChatComposer.kt): with Claude Code here
-    // they ask the front agent first ([frontReady]); without it his words start a new thread directly (build → startChatDirect).
+    // Always a background agent, so the send rules never refuse (ChatComposer.kt): a new chat's words start its thread
+    // directly, on the computer, agent and model picked (startMacChat → startChatDirect), never through a front agent.
     override fun agentBin(): String? = "claude"
 
     @Composable
     override fun linuxInstalled(): Boolean = true
 
-    override fun frontReady(): Boolean = front.ready
+    override fun frontReady(): Boolean = false
 
     override fun threads(): List<AgentThread> {
         val book = platform.book()

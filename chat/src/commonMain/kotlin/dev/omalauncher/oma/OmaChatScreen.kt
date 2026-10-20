@@ -188,6 +188,9 @@ private fun ChatScreen(
     val live = remember(tick) { host.liveThreads(all, book.pinned.toSet(), book.archived.keys) }
     val threads = shownThreads(live, book.pinned, all, book.archived.keys, wanted)
     val tab = openTab(wanted, threads)
+    // Where there is no Soma tab (the desktop), nothing asked for opens a new chat instead: an empty one again, or a new one.
+    // A thread asked for that isn't listed yet (a link to one just made elsewhere) is waited for, never replaced.
+    LaunchedEffect(tab, wanted) { if (!host.somaTab && tab == OMA_TAB && (wanted == null || wanted == OMA_TAB)) onTab(newChatTab(host)) }
     val to = sendTo(tab, threads, book, tasks)
     // On a builder's tab the field and its stop are that builder's alone; on the Oma tab they are every builder's;
     // on any other tab no builder's.
@@ -390,7 +393,7 @@ private fun ChatScreen(
                         Box(
                             Modifier
                                 .semantics { contentDescription = "${thread.name}${if (thread.machine.isEmpty()) "" else " on the ${thread.machine}"}: ${thread.label}" }
-                                .clickable { pick(dotTap(tab, thread.key)) }
+                                .clickable { pick(dotTap(tab, thread.key, host.somaTab)) }
                                 .padding(vertical = 12.dp)
                                 .width(DOT_PITCH),
                             contentAlignment = Alignment.Center,
@@ -406,6 +409,7 @@ private fun ChatScreen(
             if (tabsOpen) {
                 TabStrip(
                     threads, tab, ::pick,
+                    soma = host.somaTab,
                     onMenu = { menuFor = it },
                     onNew = {
                         // An empty new chat is opened again rather than a second one made.
@@ -669,7 +673,8 @@ private fun ChatScreen(
             val switches = moving?.let { id ->
                 val known = host.macView().threads
                 val now = known.firstOrNull { it.id == id } ?: return@let emptyList()
-                macSwitchTargets(MacPick(now.kind, now.model), hosts.firstOrNull { it.id == macMachineOf(id) }?.agents.orEmpty(), known)
+                val on = hosts.firstOrNull { it.id == macMachineOf(id) }
+                macSwitchTargets(MacPick(now.kind, now.model), on?.agents.orEmpty(), known, on?.models.orEmpty())
             }.orEmpty()
             TabMenu(
                 title = tabTitle(key, threads + all),
@@ -741,9 +746,10 @@ private fun TabStrip(
     onTab: (String) -> Unit,
     onMenu: (String) -> Unit,
     onNew: () -> Unit,
+    soma: Boolean = true,
 ) {
     val haptics = LocalHapticFeedback.current
-    val tabs = chatTabs(threads)
+    val tabs = chatTabs(threads, soma)
     // Where each tab and the ＋ lie along the strip, as last laid out, and how wide the strip shows.
     val spans = remember { mutableStateMapOf<String, Pair<Int, Int>>() }
     var width by remember { mutableIntStateOf(0) }

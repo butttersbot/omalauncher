@@ -27,8 +27,11 @@ import dev.omalauncher.assist.restartable
 /** The Oma tab's key. No thread has it: the builders' are "phone" and "phone-b", and a Mac thread's begins "mac:". */
 const val OMA_TAB = "oma"
 
-/** The tabs in the order the strip shows them: Oma, then [threads] as they come, the builder first and the Mac's newest worked after it. */
-fun chatTabs(threads: List<AgentThread>): List<String> = listOf(OMA_TAB) + threads.map { it.key }
+/**
+ * The tabs in the order the strip shows them: Oma, then [threads] as they come, the builder first and the Mac's newest
+ * worked after it. No Oma tab where there is no front agent to talk to ([soma] false: the desktop, [ChatHost.somaTab]).
+ */
+fun chatTabs(threads: List<AgentThread>, soma: Boolean = true): List<String> = (if (soma) listOf(OMA_TAB) else emptyList()) + threads.map { it.key }
 
 /**
  * The threads the header and the strip show, in their order: the [live] ones, which are the threads home has
@@ -75,8 +78,11 @@ const val NEW_TAB = "+"
  */
 fun openTab(wanted: String?, threads: List<AgentThread>): String = wanted?.takeIf { key -> threads.any { it.key == key } } ?: OMA_TAB
 
-/** The tab a tap on the dot of [tapped] leaves open while [open] shows: that thread's, or back to Oma from the dot that is already open. */
-fun dotTap(open: String, tapped: String): String = if (tapped == open) OMA_TAB else tapped
+/**
+ * The tab a tap on the dot of [tapped] leaves open while [open] shows: that thread's, or back to Oma from the dot that is
+ * already open. With no Oma tab ([soma] false), the open one's dot leaves it open.
+ */
+fun dotTap(open: String, tapped: String, soma: Boolean = true): String = if (tapped == open && soma) OMA_TAB else tapped
 
 /**
  * The entries [tab] shows, oldest first as [tasks] are: all of them on the Oma tab, on a builder's tab the
