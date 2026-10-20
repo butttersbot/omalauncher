@@ -380,6 +380,31 @@ class StoryboardTest {
     }
 
     @Test
+    fun undoingALoadThatTookAPageAwayBringsItBackCutAsItWas() {
+        val pad = Pad(home())
+        val b = board(pad)
+        b.save()
+        b.addPage()
+        val added = pad.n.pages.last()
+        assertEquals("yonkoma", added.panels)
+        b.tapSaved("Layout 1")
+        b.tapSaved("Layout 1")
+        assertTrue(pad.n.pages.none { it.id == added.id })
+        b.undo()
+        assertEquals("yonkoma", pad.n.pages.first { it.id == added.id }.panels)
+    }
+
+    @Test
+    fun everyPanelFullWithAnAppInTheWaySaysWhyInOneSentence() {
+        val maps = PinnedApp("app:maps#0", "Maps", "com.google.android.apps.maps/.Main", 0)
+        val splash = PanelLayouts.panels("splash", 6, rows)[0].cell
+        val pad = Pad(Notebook(rows = rows, pages = listOf(NotebookPage("p1", "Page 1", listOf(NotebookItem(maps.key, ItemKind.App, splash, app = maps)), panels = "splash"))))
+        val b = board(pad)
+        assertFalse(b.place(pocket, "p1", 0))
+        assertEquals("Every panel is full, and Maps can't go back to the tray (it is an app). Empty a panel first, or try another layout.", b.said!!.text)
+    }
+
+    @Test
     fun nothingHappensWhileHomeIsntOpen() {
         val b = Storyboard({ null }, shelf)
         b.open(null)

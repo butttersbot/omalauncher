@@ -391,7 +391,7 @@ fun resolveAsk(n: Notebook, ask: CanvasAsk, rules: ScreenRules): Resolved = when
     }
 }
 
-/** What undoes [verb], from the canvas [before] it: a page made goes, a module put back where it was, a removed page comes back with its modules. */
+/** What undoes [verb], from the canvas [before] it: a page made goes, a module put back where it was, a removed page comes back with its panels and modules. */
 fun inverseOf(before: Notebook, verb: CanvasVerb): List<CanvasVerb> = when (verb) {
     is CanvasVerb.PageMake -> listOf(CanvasVerb.PageRemove(verb.id))
     is CanvasVerb.PageRename -> before.pages.firstOrNull { it.id == verb.id }?.let { listOf(CanvasVerb.PageRename(verb.id, it.name)) }.orEmpty()
@@ -399,7 +399,9 @@ fun inverseOf(before: Notebook, verb: CanvasVerb): List<CanvasVerb> = when (verb
         val at = before.pages.indexOfFirst { it.id == verb.id }
         if (at < 0) emptyList() else {
             val page = before.pages[at]
+            // Cut into its panels again too, when it was a manga page (storyboard critic: undoing a load gave back a free grid).
             listOf(CanvasVerb.PageMake(page.id, page.name, before.pages.getOrNull(at - 1)?.id ?: PAGE_START)) +
+                listOfNotNull(page.panels?.let { CanvasVerb.PagePanels(page.id, it) }) +
                 page.items.mapNotNull { item -> item.cell?.let { CanvasVerb.Place(item.key, item.kind, page.id, it) } }
         }
     }

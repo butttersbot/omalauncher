@@ -406,7 +406,7 @@ class Storyboard(
                     val dest = (n.pages.drop(at) + n.pages.take(at)).firstNotNullOfOrNull { p ->
                         val ps = panelsOf(n, p) ?: return@firstNotNullOfOrNull null
                         emptyPanels(n, p).firstOrNull { !(p.id == pageId && it == panel) }?.let { p to ps[it].cell }
-                    } ?: refuse("Every panel is full and ${title(occ)} can't go back to the tray: ${staysWhy(occ).replaceFirstChar { it.lowercase() }}")
+                    } ?: refuse("Every panel is full, and ${title(occ)} can't go back to the tray (${whyItStays(occ)}). Empty a panel first, or try another layout.")
                     verbs += CanvasVerb.Move(occ.key, dest.first.id, dest.second)
                     out = "; ${title(occ)} moved to " + if (dest.first.id == pageId) "an empty panel" else "\"${dest.first.name}\""
                 }
@@ -458,6 +458,14 @@ class Storyboard(
         ItemKind.App, ItemKind.Folder -> "drop it on another panel, or unpin it from home."
         ItemKind.Widget -> "it is a widget's file; drop it on another panel, or remove it from home's menu."
         else -> "drop it on another panel instead."
+    }
+
+    /** Why [item] can't be taken off to the tray, in a few words. */
+    private fun whyItStays(item: NotebookItem): String = when (item.kind) {
+        ItemKind.App -> "it is an app"
+        ItemKind.Folder -> "it is a folder"
+        ItemKind.Widget -> "it is a widget's file"
+        else -> "it stays on home"
     }
 
     /** "Page N" for the first N no page is called, from the count of pages on. */
