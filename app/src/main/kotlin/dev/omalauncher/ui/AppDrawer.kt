@@ -608,6 +608,9 @@ internal fun AppPanel(
                     if (query.isNotBlank()) {
                         search.hits.chunked(columns).forEachIndexed { r, cells -> row("q:$r", cells, highlighted - r * columns) }
                     } else {
+                        // The apps opened last, one row of them, above everything (Boss, 2026-10-20: "put recents up at
+                        // the top"), now that a panels look has no recent strip on home.
+                        section("recent", recentApps(runtime, columns))
                         section("apps", runtime.widgets.apps().map { AppHit.Owl(it) })
                         if (linuxState == LinuxState.Installed) {
                             section("linux", runtime.linuxApps.map { AppHit.Linux(it) })
