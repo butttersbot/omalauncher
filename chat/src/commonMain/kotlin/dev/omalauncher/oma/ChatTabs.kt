@@ -296,6 +296,22 @@ fun askedTab(extra: String?, meta: TabMeta = TabMeta()): String? {
     return macThreadId(key)?.let { meta.chatOnMac(it)?.key } ?: key
 }
 
+/**
+ * The tab of the last turn among [tasks], where the chat opens when nothing names a thread (Boss, 2026-10-20: the chat
+ * widget "should open to the specific chat that the last turn came from"; opened on Soma, his next words went to
+ * whichever builder the front agent picked): a new chat's, a phone builder's, or a Mac thread's (its chat's, when a
+ * chat lives on it). Null, and so the Soma tab, when the last turn was the front agent's own or is still undecided.
+ */
+fun lastTurnTab(tasks: List<ChatTask>, meta: TabMeta = TabMeta()): String? {
+    val last = tasks.lastOrNull { !it.undecided } ?: return null
+    return when {
+        last.chat.isNotEmpty() -> meta.chat(last.chat)?.let { chatKey(last.chat) }
+        last.mac -> meta.chatOnMac(last.thread)?.key ?: macThreadKey(last.thread)
+        last.build -> if (last.builderId == dev.omalauncher.assist.BuilderId.B) PHONE_THREAD_B else PHONE_THREAD
+        else -> null
+    }
+}
+
 /** The line under a bot's name: "Venice · venice-uncensored-1-2 · on omarchy-mg1 · memory 41% · 2 summaries". */
 fun botInfoLine(bot: dev.omalauncher.assist.MacBot, model: String): String = listOfNotNull(
     "Venice",

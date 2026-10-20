@@ -284,4 +284,21 @@ class ChatTabsTest {
         assertNull(askedTab(null, book)); assertNull(askedTab("  ", book))
         assertEquals(OMA_TAB, openTab(askedTab(null, book), threads))
     }
+
+    /** Boss, 2026-10-20: the chat widget opens where the last turn was, not always on Soma. */
+    @Test fun withNoThreadNamedTheChatOpensWhereTheLastTurnWas() {
+        val builderA = ChatTask(1, "Claude Code", "make a lock screen", result = "Done.", status = TaskStatus.Done)
+        val builderB = ChatTask(2, "Claude Code", "look at this", result = "Done.", status = TaskStatus.Done, builder = "B")
+        val front = ChatTask(3, QUICK_AGENT, "what time is it", result = "2 AM.", status = TaskStatus.Done)
+        val onMac = ChatTask(4, "→ FF4", "build it", thread = "t-ff4", threadName = "FF4")
+        val waiting = ChatTask(5, UNDECIDED_AGENT, "and then?")
+        assertEquals(PHONE_THREAD, lastTurnTab(listOf(builderA), book))
+        assertEquals(PHONE_THREAD_B, lastTurnTab(listOf(builderA, builderB), book))
+        assertEquals("mac:t-ff4", lastTurnTab(listOf(builderA, onMac), book))
+        // A request still being read doesn't count: the turn before it does.
+        assertEquals(PHONE_THREAD, lastTurnTab(listOf(builderA, waiting), book))
+        // The front agent's own answer, or nothing at all, opens Soma.
+        assertNull(lastTurnTab(listOf(builderA, front), book))
+        assertNull(lastTurnTab(emptyList(), book))
+    }
 }

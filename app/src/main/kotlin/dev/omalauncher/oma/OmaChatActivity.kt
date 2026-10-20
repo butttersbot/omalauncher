@@ -51,7 +51,7 @@ class OmaChatActivity : ComponentActivity() {
         // Asked on a thread of its own: the chat never waits for the Mac, and shows what was last known until it answers.
         MacThreads.open(this)
         if (savedInstanceState == null) prefill = textOf(intent)
-        wanted = if (savedInstanceState == null) askedTab(threadOf(intent), TabBook.of(this)) else savedInstanceState.getString(STATE_TAB)
+        wanted = if (savedInstanceState == null) opened(intent) else savedInstanceState.getString(STATE_TAB)
         applySystemBars(this, Pack.isLight)
         val host = AndroidChatHost(this, runtime)
         setContent {
@@ -65,10 +65,16 @@ class OmaChatActivity : ComponentActivity() {
         // Kept as the intent the chat was opened by, as one that started it is.
         setIntent(intent)
         textOf(intent)?.let { prefill = it }
-        // A tile, or a thread named from outside while the chat is open, opens that thread's tab as a start would. The
-        // dock, a notification and voice name no thread, and open Oma whatever tab was left showing.
-        wanted = askedTab(threadOf(intent), TabBook.of(this))
+        // A tile, or a thread named from outside while the chat is open, opens that thread's tab as a start would.
+        wanted = opened(intent)
     }
+
+    /**
+     * The tab [intent] opens: the thread it names, else the one the last turn was in ([lastTurnTab]), so his next words
+     * go on where the work is (Boss, 2026-10-20), else Soma.
+     */
+    private fun opened(intent: Intent?): String? =
+        askedTab(threadOf(intent), TabBook.of(this)) ?: lastTurnTab(ChatLog.of(this).tasks, TabBook.of(this))
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
