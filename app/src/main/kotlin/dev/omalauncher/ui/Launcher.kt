@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import dev.omalauncher.widgets.CockpitModules
+import dev.omalauncher.widgets.pickedPanels
 import dev.omalauncher.Runtime
 import dev.omalauncher.linux.LinuxState
 import dev.omalauncher.oma.ring.HomeRing
@@ -258,7 +259,8 @@ private fun DesktopScreen(
                 .then(if (side != null) Modifier.wrapContentWidth().widthIn(max = ReadingWidth) else Modifier),
         ) {
             // Hidden while a terminal tile types: it would sit on the keyboard, over the tile.
-            if (side == null && (runtime.terminals.active == null || runtime.terminals.keyboardLeaving)) {
+            // Not in a look drawn in panels: its pages run to the foot of the screen (homeDockShown says how what it held is reached).
+            if (side == null && homeDockShown(pickedPanels(), side) && (runtime.terminals.active == null || runtime.terminals.keyboardLeaving)) {
                 Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Bottom) {
                     // Home only: the open app list has everything.
                     if (Pack.recentApps && !panelShown) RecentStrip(runtime, handlers)

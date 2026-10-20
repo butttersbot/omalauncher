@@ -44,6 +44,9 @@ const val GAP_SHARE = 1f / 78f
  *
  * [per] pages stand side by side, each in a room [width] wide (two on a foldable's inner screen); a page's
  * rectangles are in its own room's coordinates.
+ *
+ * With [fill] the page is the whole room instead, whatever its shape: a manga page's (the Manga look), whose panels are
+ * fractions of the page and so run to the room's foot. Its cells are the same cells, only taller or wider on screen.
  */
 class GridGeometry(
     val width: Int,
@@ -54,14 +57,20 @@ class GridGeometry(
     columns: Int = GRID_COLUMNS,
     /** The page's width over its height: the Fold's home pages are [PAGE_ASPECT]; a landscape canvas passes its own. */
     val aspect: Float = PAGE_ASPECT,
+    /** The page fills the room rather than keeping [aspect]. */
+    val fill: Boolean = false,
 ) {
     val cols = columns.coerceAtLeast(1)
     val rows = rows.coerceAtLeast(1)
 
-    /** The page's size, and where it starts in its room. */
+    /** The page of [aspect] the room fits, filled or not: what a filled page keeps its margins' size by. */
     private val wide = width > height * aspect
-    val pageWidth = (if (wide) height * aspect else width.toFloat()).coerceAtLeast(1f)
-    val pageHeight = if (wide) height.toFloat().coerceAtLeast(1f / aspect) else pageWidth / aspect
+    val fitWidth = (if (wide) height * aspect else width.toFloat()).coerceAtLeast(1f)
+    val fitHeight = if (wide) height.toFloat().coerceAtLeast(1f / aspect) else fitWidth / aspect
+
+    /** The page's size, and where it starts in its room. */
+    val pageWidth = if (fill) width.toFloat().coerceAtLeast(1f) else fitWidth
+    val pageHeight = if (fill) height.toFloat().coerceAtLeast(1f) else fitHeight
     val pageLeft = (width - pageWidth) / 2f
     val pageTop = (height - pageHeight) / 2f
 
@@ -110,6 +119,25 @@ class GridGeometry(
 
     /** Where the room of the page at [side] starts across the screen. */
     fun left(side: Int) = side * width
+}
+
+/**
+ * [style] for the panels of this page: unchanged on a page of [GridGeometry.aspect]; on a page that fills its room, its
+ * margins and gutters (given as shares of the page) shrunk by as much as the page grew across and down, so on screen they
+ * stay as wide as on the page the room fits. The cuts' places are shares of the page and stretch with it; the cells don't change.
+ */
+fun GridGeometry.panelStyle(style: PanelStyle): PanelStyle {
+    if (!fill) return style
+    val across = (fitWidth / pageWidth).toDouble()
+    val down = (fitHeight / pageHeight).toDouble()
+    return style.copy(
+        marginLeft = style.marginLeft * across,
+        marginRight = style.marginRight * across,
+        gutterCols = style.gutterCols * across,
+        marginTop = style.marginTop * down,
+        marginBottom = style.marginBottom * down,
+        gutterRows = style.gutterRows * down,
+    )
 }
 
 /** The pages a pager slot shows, left to right; null where there is no page: the right half of the last pair when the pages are odd. */

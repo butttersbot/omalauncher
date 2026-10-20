@@ -485,6 +485,9 @@ fun HomeScreen(
     val side = homeSide()
     val sideRoom = sideWidth()
     val barRoom = with(density) { state.barHeight.takeIf { it > 0 }?.toDp() ?: (PromptBarHeight + 12.dp) }
+    // In a look drawn in panels there is no dock: the pages run to the foot of the screen, and nothing below them is kept.
+    val dockShown = homeDockShown(manga, side)
+    val dockRoom = if (dockShown) barRoom else 0.dp
     LaunchedEffect(extraKeys) { if (!extraKeys) terminals.extraKeys = null }
     Box(
         modifier
@@ -518,7 +521,7 @@ fun HomeScreen(
                         minHeight = 64.dp.toPx(),
                     )
                 // An input in a widget: the same slide, clear of the dock too, which the keyboard lifts with it.
-                val forInput = typingAt?.let { slideUp(it.top, it.bottom, ime.getBottom(density), view.height, 8.dp.toPx() + barRoom.toPx(), ceiling) } ?: 0f
+                val forInput = typingAt?.let { slideUp(it.top, it.bottom, ime.getBottom(density), view.height, 8.dp.toPx() + dockRoom.toPx(), ceiling) } ?: 0f
                 slid[0] = forInput
                 translationY = -(if (terminals.active != null) forTerminal else forInput)
             }
@@ -543,7 +546,7 @@ fun HomeScreen(
             .padding(
                 start = if (side == HomeSide.Left) sideRoom else 0.dp,
                 end = if (side == HomeSide.Right) sideRoom else 0.dp,
-                bottom = if (side != null) 0.dp else barRoom,
+                bottom = if (side != null) 0.dp else dockRoom,
             ),
     ) {
       CompositionLocalProvider(LocalTypingAt provides reportTyping) {
@@ -713,7 +716,7 @@ fun HomeScreen(
             },
             // The recent apps strip's room: kept while it's empty, so tiles don't reflow when it fills, and still
             // home's to swipe and long-press there until it does.
-            room = if (Pack.recentApps && side == null) RecentStripHeight else 0.dp,
+            room = if (Pack.recentApps && side == null && dockShown) RecentStripHeight else 0.dp,
             per = per,
             ready = engine.notebook.opened,
             drawing = state.drawing,
@@ -784,6 +787,7 @@ fun HomeScreen(
     LaunchedEffect(Unit) { HerdSheep.restore(context) }
     // While it floats over everything (phone control on), that one is the sheep, home included.
     if (HerdSheep.shown && !HerdSheep.floating && !state.homeCovered && engine.openScreen == null && state.editing == null && !state.drawing && !state.overviewOpen) {
+        // Where it stands over the bar, also in a look without one (over the page's last panels there).
         HerdPet(Modifier.align(Alignment.BottomEnd).padding(bottom = barRoom))
     }
 
