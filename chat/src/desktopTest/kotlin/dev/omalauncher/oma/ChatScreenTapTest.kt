@@ -16,9 +16,12 @@ import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipe
 import androidx.compose.ui.test.longClick
 import org.junit.Assert.assertEquals
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.use
 import dev.omalauncher.assist.AgentThread
 import dev.omalauncher.assist.ApprovalOutcome
@@ -151,6 +154,31 @@ class ChatScreenTapTest : ChatScreenTestBase() {
         settle()
         assertTrue(host.book.chat("c1")!!.agent == "venice" && host.book.chat("c1")!!.model == "venice-uncensored")
         onNodeWithText("[ venice-uncensored ]").assertExists()
+    }
+
+    /** A model list longer than the window (Venice lists dozens) scrolls, so its last model can be picked. */
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+    @Test fun aLongModelListScrollsToItsLast() = androidx.compose.ui.test.runComposeUiTest {
+        val many = (1..60).map { "venice-model-$it" }
+        val host = object : SampleHost() {
+            override fun hosts() = listOf(HostChoice("mac", "Mac Pro", true, listOf("venice"), mapOf("venice" to dev.omalauncher.assist.macModels("venice", emptyList(), many))))
+        }
+        host.book = TabMeta().started("c1", host.now).chose("c1", "mac", "venice")
+        mainClock.autoAdvance = false
+        setContent { androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.size(800.dp, 600.dp)) { OmaChatScreen(host, prefill = null, onPrefilled = {}, wanted = chatKey("c1"), onTab = {}) } }
+        fun settle() = mainClock.advanceTimeBy(1_200)
+        settle()
+        onNodeWithText("[ default ]").performClick()
+        settle()
+        onNodeWithText("venice-model-60").assertIsNotDisplayed()
+        // Dragged up as a hand would (the screen's clock is held, so an animated scroll-to would never end).
+        repeat(3) {
+            onNodeWithText("Venice on").performTouchInput { swipe(center, center - androidx.compose.ui.geometry.Offset(0f, 1500f), 300) }
+            settle()
+        }
+        onNodeWithText("venice-model-60").assertIsDisplayed().performClick()
+        settle()
+        assertTrue(host.book.chat("c1")!!.model == "venice-model-60")
     }
 
     /** With no Soma tab (the desktop), nothing asked for opens a new chat, and its strip has no Soma tab. */
