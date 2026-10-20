@@ -419,6 +419,13 @@ internal fun Screentone(
     }
 }
 
+/** A cast app's place across and down, name included, at full size. */
+private val CAST_CELL = 66.dp
+private val CAST_TALL = 70.dp
+
+/** The room the cast's caption takes above its apps. */
+private val CAST_CAPTION = 34.dp
+
 /** Inside a manga page's panel: a folder there is drawn as its cast of apps ([CastTile]) rather than one folder badge. */
 internal val LocalInPanel = androidx.compose.runtime.staticCompositionLocalOf { false }
 
@@ -435,10 +442,17 @@ internal fun CastTile(
     onMore: () -> Unit,
 ) {
     androidx.compose.foundation.layout.BoxWithConstraints(modifier.pointerInput(folder.key) { detectTapGestures(onTap = { onMore() }) }.padding(10.dp)) {
-        val cell = 66.dp
-        val tall = 74.dp
+        // As big as lets every app in, down to half size; names go when they'd be cramped. Past that, a "+N" for the rest.
+        val fit =
+            generateSequence(1f) { it - 0.1f }.takeWhile { it >= 0.49f }.firstOrNull { k ->
+                ((maxWidth / (CAST_CELL * k)).toInt() * ((maxHeight - CAST_CAPTION) / (CAST_TALL * k)).toInt()) >= folder.apps.size
+            } ?: 0.5f
+        val named = fit >= 0.8f
+        val cell = CAST_CELL * fit
+        val tall = if (named) CAST_TALL * fit else CAST_CELL * fit
+        val icon = 40.dp * fit
         val columns = (maxWidth / cell).toInt().coerceAtLeast(1)
-        val rows = ((maxHeight - 22.dp) / tall).toInt().coerceAtLeast(1)
+        val rows = ((maxHeight - CAST_CAPTION) / tall).toInt().coerceAtLeast(1)
         val room = columns * rows
         val shown = if (folder.apps.size > room) folder.apps.take(room - 1) else folder.apps
         androidx.compose.foundation.layout.Column {
@@ -455,15 +469,15 @@ internal fun CastTile(
                                         Modifier.pointerInput(app.key) { detectTapGestures(onTap = { onOpen(app) }) },
                                         horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
                                     ) {
-                                        val icon = icons.getOrNull(folder.apps.indexOf(app))
-                                        if (icon != null) {
-                                            AppIcon(icon, app.label, Modifier.size(40.dp), Pack.monoIcons, framed = true)
+                                        val bitmap = icons.getOrNull(folder.apps.indexOf(app))
+                                        if (bitmap != null) {
+                                            AppIcon(bitmap, app.label, Modifier.size(icon), Pack.monoIcons, framed = true)
                                         } else {
-                                            androidx.compose.foundation.layout.Box(Modifier.size(40.dp), contentAlignment = androidx.compose.ui.Alignment.Center) {
-                                                BasicText(Pack.placeholderText(app.label), style = Pack.placeholder(18.sp))
+                                            androidx.compose.foundation.layout.Box(Modifier.size(icon), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                                                BasicText(Pack.placeholderText(app.label), style = Pack.placeholder((18 * fit).sp))
                                             }
                                         }
-                                        BasicText(app.label, Modifier.padding(top = 3.dp), style = Pack.body(Pack.size.small), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                        if (named) BasicText(app.label, Modifier.padding(top = 3.dp), style = Pack.body(Pack.size.small), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                                     }
                                 i == shown.size && folder.apps.size > shown.size ->
                                     BasicText("+${folder.apps.size - shown.size}", Modifier.padding(top = 10.dp), style = Pack.display(18.sp))

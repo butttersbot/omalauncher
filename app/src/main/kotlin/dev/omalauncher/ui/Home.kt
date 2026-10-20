@@ -723,7 +723,8 @@ fun HomeScreen(
             onWithdrawPage = { engine.notebook.withdrawPage(it) },
             onGroup = { app, target -> engine.shortcuts.group(app, target) },
             onReorder = { app, before -> engine.shortcuts.moveBefore(app.key, before) },
-            panelLook = manga,
+            // Not before the switch into the look is handled: the fit gathers and places everything first.
+            panelLook = manga?.takeIf { MangaHome.ready },
             panelLayout = { page -> engine.notebook.pages.firstOrNull { it.id == page }?.panels },
             // An empty panel opens the photo picker for itself: what is picked hangs there.
             onPanelTap = { page, panel -> ArtPickActivity.open(context, page, panel) },

@@ -31,7 +31,7 @@ import dev.omalauncher.widgets.layout.GridGeometry
 import dev.omalauncher.widgets.layout.Panel
 import dev.omalauncher.widgets.dropInPanel
 import dev.omalauncher.widgets.panelAim
-import dev.omalauncher.widgets.panelAt
+import dev.omalauncher.widgets.inside
 import dev.omalauncher.widgets.panelsOf
 import dev.omalauncher.widgets.settleIntoPanels
 import dev.omalauncher.widgets.style
@@ -394,7 +394,8 @@ internal fun HomeGrid(
         ): Pair<HomeItem, Cell>? {
             val panels = cutsOf(page, g) ?: return placed.lastOrNull { (_, c) -> g.rect(c).has(at) }
             val (x, y) = g.fraction(at)
-            val cell = panels.getOrNull(panelAt(panels, g.cols, g.rows, x, y))?.cell ?: return null
+            // Inside a panel's ink only: a press on a margin or a gutter is on the page, whose long press is home's menu.
+            val cell = panels.firstOrNull { inside(it.outline, x, y) }?.cell ?: return null
             return placed.firstOrNull { it.second == cell } ?: placed.firstOrNull { it.second.overlaps(cell) }
         }
 

@@ -178,6 +178,32 @@ class PanelHomeTest {
         assertTrue(n.pages.all { inPanels(n, it) })
     }
 
+    @Test fun overflowGoesRoundToTheStartBeforeMakingAPage() {
+        val home = Home(listOf(cut("p1", "beats", "a.owl", null, "c.owl"), cut("p2", "beats", "d.owl", "e.owl", "f.owl")))
+        home.notebook.move("x.owl", "p2")
+        assertEquals("p1", home.notebook.overflowIntoPanels("x.owl", "opening", claimFree = { false }))
+        assertEquals(beats[1].cell, home.notebook.cell("x.owl"))
+        assertEquals(2, home.notebook.pages.size)
+    }
+
+    @Test fun whatAPageDeletedOntoAMangaPageLeavesGoesIntoItsPanelsAtOnce() {
+        val maps = app("maps")
+        val home = Home(
+            listOf(
+                cut("p1", "beats", "a.owl", null, "c.owl"),
+                NotebookPage("p2", "Spare", listOf(NotebookItem(maps.key, ItemKind.App, Cell(0, 0, 1, 1), app = maps), NotebookItem("w.owl", ItemKind.Widget, Cell(2, 0, 2, 2)))),
+            ),
+        )
+        val gone = home.notebook.deletePage("p2", widgets = setOf("a.owl", "c.owl", "w.owl"), move = true)!!
+        assertEquals("p1", gone.to)
+        home.notebook.settlePanelPage("p1", "opening", claimFree = { _, _ -> false })
+        val n = home.notebook.snapshot()
+        assertTrue(n.pages.all { it.panels == null || inPanels(n, it) })
+        // One went into the empty panel; the other had none left and went on to a strip page made for it.
+        assertEquals(setOf(maps.key, "w.owl"), n.pages.flatMap { p -> p.items.map { it.key } }.toSet() - setOf("a.owl", "c.owl"))
+        assertEquals(listOf("beats", OVERFLOW_PANELS), n.pages.map { it.panels })
+    }
+
     // The look switched to.
 
     @Test fun theLookStepsOncePerSwitch() {

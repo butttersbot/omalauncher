@@ -1,6 +1,9 @@
 package dev.omalauncher.ui
 
 import android.content.Context
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import dev.omalauncher.App
 import dev.omalauncher.art.ArtPlacers
 import dev.omalauncher.theme.pack.PackPanels
@@ -28,8 +31,16 @@ object MangaHome {
     /** Whether home was last fitted into panels for a look drawn in them, and hasn't been in another look since. */
     private const val FITTED = "fitted"
 
+    /**
+     * Whether home is in panels for the look: the switch into it has been handled (kept and fitted). Until then home draws
+     * every page as the free grid, so nothing settles a page into panels before the fit has gathered and placed it all.
+     */
+    var ready by mutableStateOf(false)
+        private set
+
     /** At the app's start: art from the share sheet and the panel picker is hung in home's panels, with a "パッ". */
     fun install(app: App) {
+        ready = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(FITTED, false)
         ArtPlacers.home = HomePanels({ app.runtime.widgets.notebook }, onHung = { page, panel -> PanelFx.ink(page, panel, "パッ") })
     }
 
@@ -69,9 +80,14 @@ object MangaHome {
         panels: PackPanels?,
     ): String? {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        when (step(prefs.getBoolean(FITTED, false), panels != null, engine.notebook.opened)) {
-            Step.None -> return null
+        val fitted = prefs.getBoolean(FITTED, false)
+        when (step(fitted, panels != null, engine.notebook.opened)) {
+            Step.None -> {
+                ready = fitted && panels != null
+                return null
+            }
             Step.Forget -> {
+                ready = false
                 prefs.edit().putBoolean(FITTED, false).apply()
                 return null
             }
@@ -79,9 +95,13 @@ object MangaHome {
         }
         // Only what is fitted is kept first: back in the look with every page still in panels, the arrangement from before
         // the first switch stays on the shelf rather than being replaced by the panels themselves.
-        if (!needsFit(engine.notebook)) return null
+        if (!needsFit(engine.notebook)) {
+            ready = true
+            return null
+        }
         val kept = FoldLayouts.autoSave(context, BEFORE)
         val changed = fitInto(engine.notebook, FoldLayouts.pad(context), panels!!.defaultLayout)
+        ready = true
         return if (!kept && changed) "Home is in panels now. Its old arrangement couldn't be kept on the Layouts shelf." else null
     }
 

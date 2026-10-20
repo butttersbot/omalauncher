@@ -270,8 +270,8 @@ fun LiveNotebook.emptyPanelsOn(
 }
 
 /**
- * Puts [key], which has no place on its panel page, where there is one: the first empty panel of a panel page after it,
- * else a free page after it with room ([claimFree]), else a new page cut as the overflow strip (or [layout] where that can't
+ * Puts [key], which has no place on its panel page, where there is one: the first empty panel of a panel page after it
+ * (round to the start), else a free page there with room ([claimFree]), else a new page cut as the overflow strip (or [layout] where that can't
  * be cut) in its first panel. The page it went to; null, and nothing changed, before home is open.
  */
 fun LiveNotebook.overflowIntoPanels(
@@ -282,7 +282,9 @@ fun LiveNotebook.overflowIntoPanels(
 ): String? {
     if (!opened) return null
     val from = position(pageOf(key))
-    for (page in pages.drop(from + 1).map { it.id }) {
+    // After it, then round to the start, as a refit's overflow goes (fitIntoPanels).
+    val order = pages.map { it.id }.let { ids -> ids.drop(from + 1) + ids.take(from.coerceAtLeast(0)) }
+    for (page in order) {
         val cut = pages.first { it.id == page }.panels
         if (cut == null) {
             if (claimFree(page)) {
@@ -304,6 +306,26 @@ fun LiveNotebook.overflowIntoPanels(
     setCell(key, panelsOf(strip, columns, rows)!!.first().cell)
     save()
     return made
+}
+
+/**
+ * The manga page [page] put back in order at once ([settleIntoPanels]), not waiting for it to be shown: what is on it as
+ * saved, each in a panel of its own, and what finds none sent on ([overflowIntoPanels]). For what puts things on a page
+ * without knowing panels (a page deleted with its things moved here). What was sent on.
+ */
+fun LiveNotebook.settlePanelPage(
+    page: String,
+    layout: String,
+    claimFree: (String, String) -> Boolean,
+    columns: Int = GRID_COLUMNS,
+): List<String> {
+    val panels = panelsOf(pages.firstOrNull { it.id == page }?.panels, columns, rows) ?: return emptyList()
+    val items = snapshot().pages.firstOrNull { it.id == page }?.items.orEmpty().map { it.key to it.cell }
+    val settled = settleIntoPanels(panels, items)
+    settled.cells.forEach { (key, cell) -> setCell(key, cell) }
+    if (settled.cells.isNotEmpty()) save()
+    for (key in settled.noRoom) overflowIntoPanels(key, layout, { p -> claimFree(key, p) }, columns)
+    return settled.noRoom
 }
 
 /**
