@@ -1,0 +1,60 @@
+#!/usr/bin/python3 -I
+"""soma-pacman: the one thing a Soma bot may run with sudo, on an Omarchy box (docs/MAC-RUNNER-SPEC.md, "As built: bots").
+
+Passwordless `sudo pacman` would be root for anything running as Boss: pacman -U installs any file, and --config,
+--hookdir, --dbpath or --root point it anywhere. So sudoers names only this script, which takes official packages and
+nothing else:
+
+  soma-pacman -S|-Sy|-Syu|-R|-Rs [--needed] [--noconfirm] [NAME ...]
+  soma-pacman --check ARGS...      says whether ARGS would be taken, and runs nothing
+
+Every other option, a path, a URL or a name with anything but [a-z0-9@._+-] in it is refused and nothing is run.
+Installed root-owned: sudo install -o root -g root -m 755 soma-pacman /usr/local/bin/soma-pacman
+with /etc/sudoers.d/soma-pacman holding: USER ALL=(root) NOPASSWD: /usr/local/bin/soma-pacman
+"""
+import os
+import re
+import sys
+
+PACMAN = '/usr/bin/pacman'
+OPERATIONS = {'-S': True, '-Sy': True, '-Syu': False, '-R': True, '-Rs': True}  # whether it needs at least one name
+FLAGS = ('--needed', '--noconfirm')
+NAME = re.compile(r'[a-z0-9@_+][a-z0-9@._+-]{0,99}')
+
+
+def refusal(args):
+    """Why ARGS are refused, or None when they are taken."""
+    if not args or args[0] not in OPERATIONS:
+        return 'the first word must be one of ' + ', '.join(OPERATIONS)
+    names = []
+    for word in args[1:]:
+        if word in FLAGS:
+            if args[0].startswith('-R') and word == '--needed':
+                return '--needed is for installs'
+            continue
+        if word.startswith('-'):
+            return 'option %s is not allowed' % word[:40]
+        if not NAME.fullmatch(word):
+            return '%r is not a package name (lower-case letters, digits and @._+- only; no paths or URLs)' % word[:60]
+        names.append(word)
+    if OPERATIONS[args[0]] and not names:
+        return '%s needs at least one package name' % args[0]
+    if args[0] == '-Syu' and names:
+        return '-Syu takes no package names; install them with -S'
+    return None
+
+
+def main(argv):
+    if argv[:1] == ['--check']:
+        why = refusal(argv[1:])
+        print('refused: ' + why if why else 'ok')
+        return 1 if why else 0
+    why = refusal(argv)
+    if why:
+        print('soma-pacman: refused: ' + why, file=sys.stderr)
+        return 2
+    os.execve(PACMAN, [PACMAN] + argv, {'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8'})
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))

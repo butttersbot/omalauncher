@@ -635,3 +635,38 @@ runs, reads and changes nothing on the computer, so it never asks for anything a
   answer named by kind and model, the whole conversation sent again, a 402 as a limit and left out of the
   conversation, the CLI's default model, the key in no record): all 213 checks pass. Not yet run against Venice
   itself: that needs Boss's key on the Mac Pro.
+
+## As built: bots (2026-10-19, by the Mac Pro session; plan: ClaudeSync features/soma-bots/PRD.md)
+
+A **bot** is a folder in `~/Soma/bots/<id>/` (`OMA_RUNNER_BOTS`) on the machine whose runner hosts it: `bot.json`
+(`name`, `emoji`, `brain: "venice"`, `model`, `web_search`, `machine`, `tools`), `instructions.md` (Boss's), `notes.md`
+(the bot's own), `work/` (where its commands run). `~/Soma` is an allowed root. The runner gives each bot one permanent
+session (`sync_bots`, on every `/health` and `/threads`), marked `bot` in `/threads`; `/health` lists `bots` with any
+problem; `GET /bots/ID` reads one; `POST /threads/ID/fresh` archives its conversation into the bot's folder. The bot is
+read again for every message. A folder with something wrong (bad JSON, another machine's name, tools with web search,
+a tool bot on a model without function calling) runs nothing and its tab says why. Approval results now name the
+device that answered.
+
+**A change of principle, decided with Boss (2026-10-19).** Until now the runner ran no command itself. Now: **the runner
+runs a command only as a tool call from a bot's own turn, never from an endpoint, and a fixed list of look-only command
+shapes is the one thing it runs without a card.**
+- The tool is `run(command, why, minutes)`, taken only from Venice's structured `tool_calls`. The tool loop runs inside
+  the turn's own process (`oma-runner venice-turn`), and Stop ends a running command's whole group.
+- Look-only, run at once (60 s): `pacman -Q*` (not `-Qp`) and `pacman|yay -Ss|-Si|-Sii` with package names only;
+  `systemctl status UNIT --no-pager`; `uname -a`, `df -h`, `free -h`, `lsblk`, `lspci`, `lsmod`, `nproc`; `cat` of
+  `/etc/pacman.conf`, `/etc/os-release`, `/proc/cpuinfo`. No shell signs at all; run as words, with no shell.
+- Never run, no card: `yay|paru -S…` installs (Boss runs AUR installs himself) and `sudo` for anything but
+  `sudo soma-pacman`. The bot is told why.
+- Everything else is a card (tool `Bash`, input `{command, minutes, root, outside}`), run in bash after Boss allows it,
+  for the minutes the bot asked (1 to 60, default 10). A declined command stays declined for the turn.
+- Commands run in `work/` with no stdin, no pagers, and none of Venice's, Soma's, the runner's or the agents'
+  variables. Each result is cut to its last 20 kB; past 80 kB in a turn, older results become a marker. A turn ends
+  at 40 commands or 45 minutes of model and command time.
+- Everything a command prints is sent to Venice (Boss accepted this, 2026-10-19).
+- **soma-pacman** (`tools/mac-runner/soma-pacman`) is the only thing sudo runs for a bot: `-S|-Sy|-Syu|-R|-Rs` with
+  `--needed`, `--noconfirm` and lower-case package names. It refuses `-U`, every other option, paths and URLs.
+  Passwordless sudo for raw pacman would be root for anything running as Boss; each soma-pacman card is still a root
+  decision, and says "Runs as administrator."
+- Tested: `test-runner.py` against a fake Venice that calls the tool: the look-only shapes and their refusals one by
+  one, cards, allow, deny, refusals, the environment, a time limit, Stop ending a running command, the 40-call cap, a
+  tool call written as text running nothing, and soma-pacman's checks.

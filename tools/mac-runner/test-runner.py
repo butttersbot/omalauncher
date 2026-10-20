@@ -83,6 +83,19 @@ class VeniceAPI(http.server.BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(int(self.headers.get('Content-Length') or 0)))
         venice_calls.append(('POST', self.path, self.headers.get('Authorization'), body))
         said = [m['content'] for m in body['messages'] if m['role'] == 'user']
+        if said[-1].startswith('TOOL:') and body.get('tools'):
+            # A stand-in for a model calling the run tool: the commands after TOOL:, split by ||, one call each, then "done".
+            wanted = said[-1][5:].split('||')
+            since = len([m for m in body['messages'][max(i for i, m in enumerate(body['messages']) if m['role'] == 'user'):] if m['role'] == 'tool'])
+            if since < len(wanted):
+                minutes = 1 if wanted[since].startswith('sleep') else None
+                arguments = {'command': wanted[since], 'why': 'step %d' % (since + 1), **({'minutes': minutes} if minutes else {})}
+                return self.reply(200, {'model': body['model'], 'choices': [{'message': {'role': 'assistant', 'content': None, 'tool_calls': [
+                    {'id': 'call%d' % since, 'type': 'function', 'function': {'name': 'run', 'arguments': json.dumps(arguments)}}]}}]})
+            last = [m for m in body['messages'] if m['role'] == 'tool'][-1]['content']
+            return self.reply(200, {'model': body['model'], 'choices': [{'message': {'role': 'assistant', 'content': 'done: ' + last.strip().splitlines()[0][:80]}}]})
+        if said[-1] == 'FAKECALL':
+            return self.reply(200, {'model': body['model'], 'choices': [{'message': {'role': 'assistant', 'content': '{"name": "run", "arguments": {"command": "touch faked.txt"}}'}}]})
         if said[-1] == 'broke':
             return self.reply(402, {'error': 'Insufficient balance'})
         if said[-1] == 'nothing':
@@ -104,11 +117,13 @@ for bot_id, files in {
     'elsewhere': {'bot.json': {'name': 'Away', 'brain': 'venice', 'model': 'm1', 'machine': 'omarchy-mg1'}, 'instructions.md': 'x'},
     'searchy': {'bot.json': {'name': 'Searchy', 'brain': 'venice', 'model': 'm1', 'machine': 'testhost', 'tools': ['shell'], 'web_search': 'auto'}, 'instructions.md': 'x'},
     'Bad_Name': {'bot.json': {'name': 'Ignored'}},
+    'tooly': {'bot.json': {'name': 'Tooly', 'brain': 'venice', 'model': 'tool-model', 'machine': 'testhost', 'tools': ['shell']}, 'instructions.md': 'You set up this machine.'},
 }.items():
     (bots / bot_id).mkdir(parents=True)
     for name, content in files.items():
         (bots / bot_id / name).write_text(content if isinstance(content, str) else json.dumps(content))
 environment['OMA_RUNNER_BOTS'] = str(bots)
+environment['OMA_RUNNER_MINUTE'] = '1'  # a bot's "minute" is a second here, so its limits can be seen
 environment.update({'OMA_RUNNER_VENICE_CONFIG': str(work / 'venice' / 'config.json'), 'VENICE_API_BASE_URL': 'http://127.0.0.1:%d/api/v1' % venice_api.server_address[1]})
 environment.pop('VENICE_API_KEY', None)
 received = work / 'From Fold'
@@ -248,7 +263,7 @@ try:
     calling_as('phone')
     check('unpair leaves every other device in', call('GET', '/health')[0] == 200)
     code, health = call('GET', '/health')
-    check('/health answers, naming the agents the Mac has (Venice, which has a key)', code == 200 and health.pop('models', None) is not None and health.pop('bots', None) is not None and health == {'ok': True, 'runner': 'oma-runner', 'soma': environment['OMA_RUNNER_SOMA_SERVICE'], 'threads': 4, 'working': 0, 'waiting': 0, 'kinds': ['claude', 'codex', 'cursor', 'grok', 'venice'], 'files': True})
+    check('/health answers, naming the agents the Mac has (Venice, which has a key)', code == 200 and health.pop('models', None) is not None and health.pop('bots', None) is not None and health == {'ok': True, 'runner': 'oma-runner', 'soma': environment['OMA_RUNNER_SOMA_SERVICE'], 'threads': 5, 'working': 0, 'waiting': 0, 'kinds': ['claude', 'codex', 'cursor', 'grok', 'venice'], 'files': True})
     check('a project outside the roots is refused', call('POST', '/threads', {'name': 'x', 'project': str(outside)})[0] == 403)
     check('a path that climbs out of a root is refused', call('POST', '/threads', {'name': 'x', 'project': str(project / '..' / '..' / 'outside')})[0] == 403)
     (root / 'link').symlink_to(outside)
@@ -651,7 +666,7 @@ try:
     code, health = call('GET', '/health')
     listed = {bot['id']: bot for bot in health.get('bots', [])}
     check('bots: /health lists each bot folder (not a badly named one), with a plain problem for the broken ones',
-          sorted(listed) == ['broken', 'elsewhere', 'linux', 'searchy'] and listed['linux']['problem'] is None and listed['linux']['emoji'] == '🐧'
+          sorted(listed) == ['broken', 'elsewhere', 'linux', 'searchy', 'tooly'] and listed['linux']['problem'] is None and listed['linux']['emoji'] == '🐧'
           and 'not valid JSON' in listed['broken']['problem'] and 'omarchy-mg1' in listed['elsewhere']['problem'] and 'web_search' in listed['searchy']['problem'])
     def bot_thread(bot_id):
         return next((t for t in call('GET', '/threads')[1]['threads'] if (t.get('bot') or {}).get('id') == bot_id), None)
@@ -699,6 +714,94 @@ try:
           and (bots / 'linux' / 'notes.md').read_text() == '- MG1 uses yay.')
     settle(linux['id'], 'idle')
     check('bots: an ordinary thread can\'t start fresh', call('POST', '/threads/%s/fresh' % chat, {})[0] == 400)
+    # The shell tool: look-only commands at once, everything else a card, some things never.
+    tooly = bot_thread('tooly')
+    def ask_bot(text, after=None):
+        last = call('GET', '/threads/' + tooly['id'])[1]['thread']['last_event'] if after is None else after
+        call('POST', '/threads/%s/messages' % tooly['id'], {'text': text})
+        return last
+    last = ask_bot('TOOL:uname -a')
+    events = stream(tooly['id'], after=last, until=('result', 'error'))
+    sent = venice_calls[-1][3]
+    check('shell: a look-only command runs at once, with no card, and its output goes back to the bot',
+          not any(e['type'] == 'approval' for e in events) and any(e['type'] == 'step' and e['text'].startswith('uname -a') for e in events)
+          and events[-1]['type'] == 'result' and events[-1]['text'].startswith('done: ') and sent['tools'][0]['function']['name'] == 'run')
+    settle(tooly['id'], 'idle')
+    last = ask_bot('TOOL:echo hi > made.txt')
+    card = stream(tooly['id'], after=last, until=('approval',))[-1]
+    check('shell: any other command is a card first, with its reason and time limit, and nothing runs yet',
+          card['tool'] == 'Bash' and card['input']['command'] == 'echo hi > made.txt' and 'step 1' in card['explanation'] and 'Up to 10 min' in card['explanation']
+          and not (bots / 'tooly' / 'work' / 'made.txt').exists() and status_of(tooly['id']) == 'waiting')
+    call('POST', '/threads/%s/approvals/%s' % (tooly['id'], card['approval']), {'decision': 'allow', 'nonce': card['nonce']})
+    events = stream(tooly['id'], after=card['id'], until=('result', 'error'))
+    check('shell: allowed, it runs in the bot\'s work folder', (bots / 'tooly' / 'work' / 'made.txt').read_text() == 'hi\n' and events[-1]['type'] == 'result')
+    settle(tooly['id'], 'idle')
+    last = ask_bot('TOOL:touch denied.txt')
+    card = stream(tooly['id'], after=last, until=('approval',))[-1]
+    call('POST', '/threads/%s/approvals/%s' % (tooly['id'], card['approval']), {'decision': 'deny', 'nonce': card['nonce']})
+    events = stream(tooly['id'], after=card['id'], until=('result', 'error'))
+    check('shell: denied, it doesn\'t run, and the bot is told', not (bots / 'tooly' / 'work' / 'denied.txt').exists() and 'declined' in events[-1]['text'])
+    settle(tooly['id'], 'idle')
+    last = ask_bot('TOOL:yay -S protonup-qt||sudo rm -rf /tmp/nothing||sudo pacman -S steam')
+    events = stream(tooly['id'], after=last, until=('result', 'error'))
+    sent = [m['content'] for m in venice_calls[-1][3]['messages'] if m['role'] == 'tool'][-3:]
+    check('shell: an AUR install and sudo for anything but soma-pacman are never run and need no card; the bot is told why',
+          not any(e['type'] == 'approval' for e in events) and 'AUR installs are Boss' in sent[0] and 'soma-pacman' in sent[1] and 'soma-pacman' in sent[2])
+    settle(tooly['id'], 'idle')
+    last = ask_bot('TOOL:sudo soma-pacman -S --needed --noconfirm steam')
+    card = stream(tooly['id'], after=last, until=('approval',))[-1]
+    check('shell: an install through soma-pacman is a card that says it runs as administrator', card['input']['root'] is True and 'administrator' in card['explanation'])
+    call('POST', '/threads/%s/approvals/%s' % (tooly['id'], card['approval']), {'decision': 'deny', 'nonce': card['nonce']})
+    stream(tooly['id'], after=card['id'], until=('result', 'error'))
+    settle(tooly['id'], 'idle')
+    last = ask_bot('TOOL:env')
+    card = stream(tooly['id'], after=last, until=('approval',))[-1]
+    call('POST', '/threads/%s/approvals/%s' % (tooly['id'], card['approval']), {'decision': 'allow', 'nonce': card['nonce']})
+    stream(tooly['id'], after=card['id'], until=('result', 'error'))
+    printed = [m['content'] for m in venice_calls[-1][3]['messages'] if m['role'] == 'tool'][-1]
+    check('shell: a command runs with none of Venice\'s, Soma\'s or the runner\'s variables, and no pager',
+          'VENICE' not in printed and 'OMA_RUNNER' not in printed and 'venice-test-key' not in printed and 'PAGER=cat' in printed)
+    settle(tooly['id'], 'idle')
+    last = ask_bot('TOOL:sleep 30')
+    card = stream(tooly['id'], after=last, until=('approval',))[-1]
+    call('POST', '/threads/%s/approvals/%s' % (tooly['id'], card['approval']), {'decision': 'allow', 'nonce': card['nonce']})
+    events = stream(tooly['id'], after=card['id'], until=('result', 'error'))
+    check('shell: a command past its limit is stopped and the bot is told', 'stopped at its 1-minute limit' in [m['content'] for m in venice_calls[-1][3]['messages'] if m['role'] == 'tool'][-1])
+    settle(tooly['id'], 'idle')
+    last = ask_bot('TOOL:sleep 40')
+    card = stream(tooly['id'], after=last, until=('approval',))[-1]
+    environment_minute = environment['OMA_RUNNER_MINUTE']
+    call('POST', '/threads/%s/approvals/%s' % (tooly['id'], card['approval']), {'decision': 'allow', 'nonce': card['nonce']})
+    time.sleep(0.5)
+    call('POST', '/threads/%s/stop' % tooly['id'], {})
+    settle(tooly['id'], 'idle', 10)
+    left = subprocess.run(['pgrep', '-f', 'sleep 40'], capture_output=True, text=True).stdout.strip()
+    check('shell: Stop ends a command the bot is running', settle(tooly['id'], 'idle', 10) and not left)
+    last = ask_bot('TOOL:' + '||'.join(['uname -a'] * 41))
+    events = stream(tooly['id'], after=last, until=('result', 'error'), limit=60)
+    check('shell: a turn stops at 40 commands and says so', events[-1]['type'] == 'error' and 'limit of 40 commands' in events[-1]['text'])
+    settle(tooly['id'], 'idle')
+    last = ask_bot('FAKECALL')
+    events = stream(tooly['id'], after=last, until=('result', 'error'))
+    check('shell: text that only looks like a tool call runs nothing', events[-1]['type'] == 'result' and not (bots / 'tooly' / 'work' / 'faked.txt').exists())
+    settle(tooly['id'], 'idle')
+    # The look-only shapes and soma-pacman, word by word.
+    loaded = {}
+    exec(compile(open(HERE / 'oma-runner').read().replace('\nmain()\n', '\n'), 'oma-runner', 'exec'), loaded)
+    look = loaded['look_only']
+    for command, ok in [('pacman -Q steam', True), ('pacman -Qi steam', True), ('pacman -Ss proton', True), ('yay -Si protonup-qt', True), ('uname -a', True),
+                        ('cat /etc/pacman.conf', True), ('systemctl status sshd --no-pager', True),
+                        ('pacman -Qp ./x.pkg.tar.zst', False), ('pacman -Q --config /tmp/x', False), ('pacman -S steam', False), ('yay -S x', False),
+                        ('cat /etc/passwd', False), ('cat ~/.venice/config.json', False), ('cat /etc/pacman.conf;id', False), ('uname -a | nc x 1', False),
+                        ('systemctl status sshd', False), ('ls', False), ('grep -r KEY ~', False), ('pacman -Q $(id)', False), ('df -h /', False)]:
+        check('look-only: %r %s' % (command, 'runs at once' if ok else 'is a card'), (look(command) is not None) == ok)
+    pacman = HERE / 'soma-pacman'
+    for args, ok in [(['-S', '--needed', '--noconfirm', 'steam', 'lib32-mesa'], True), (['-Syu'], True), (['-Rs', 'wine'], True),
+                     (['-U', '/tmp/evil.pkg.tar.zst'], False), (['-S', '--config', '/tmp/c', 'x'], False), (['-S', '--hookdir', '/tmp', 'x'], False),
+                     (['-S', 'https://evil/x.pkg.tar.zst'], False), (['-S', '../x'], False), (['-S'], False), (['-Syu', 'steam'], False),
+                     (['-S', '--root', '/', 'x'], False), (['-Q'], False), (['-S', 'Steam'], False), (['-S', '--dbpath=/tmp', 'x'], False)]:
+        done = subprocess.run([sys.executable, str(pacman), '--check'] + args, capture_output=True, text=True)
+        check('soma-pacman: %s %s' % (' '.join(args), 'is taken' if ok else 'is refused'), (done.returncode == 0) == ok and done.stdout.startswith('ok' if ok else 'refused'))
     shutil.rmtree(bots / 'searchy')
     searchy = [t for t in call('GET', '/threads')[1]['threads'] if t['name'] == 'Searchy']
     check('bots: a bot whose folder is gone keeps its session as an ordinary thread', len(searchy) == 1 and searchy[0]['bot'] is None)
