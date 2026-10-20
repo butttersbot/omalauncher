@@ -70,8 +70,12 @@ class AgentStatusTest {
         val ff4 = thread("t1", "FF4 better menu mod", MacThreadStatus.Working)
         val games = thread("t2", "Copy the games", MacThreadStatus.Idle, listOf("copy the games"))
         val view = MacView(listOf(ff4, games, thread("t3", "Resting", MacThreadStatus.Idle)), reachable = true)
-        assertEquals(MacGlance(working = "FF4 better menu mod", background = "Copy the games"), macGlance(view, emptyList()))
-        assertEquals(MacGlance(waiting = "Site fix +1", approvals = 3, working = "FF4 better menu mod", background = "Copy the games"), macGlance(view, asks("Site fix", "Site fix", "Other")))
+        assertEquals(MacGlance(working = "FF4 better menu mod", background = "Copy the games", workingThread = "t1", backgroundThread = "t2"), macGlance(view, emptyList()))
+        // Each line names the thread it tells of first, so a tap on the tile opens that thread's tab (2026-10-20).
+        assertEquals(
+            MacGlance(waiting = "Site fix +1", approvals = 3, working = "FF4 better menu mod", background = "Copy the games", waitingThread = "t0", workingThread = "t1", backgroundThread = "t2"),
+            macGlance(view, asks("Site fix", "Site fix", "Other")),
+        )
         // A thread the Mac lists as waiting needs him even before its request has reached the phone.
         assertEquals("Waits", macGlance(MacView(listOf(thread("t4", "Waits", MacThreadStatus.Waiting)), reachable = true), emptyList()).waiting)
         // A Mac out of reach says nothing: what it last said may be long over.
@@ -86,7 +90,10 @@ class AgentStatusTest {
         val working = MacGlance(working = "FF4 better menu mod")
         // Nothing on the Mac: the builders' own say, unchanged but for an empty `mac`.
         val alone = omaStatus(idle, MacGlance())
-        assertEquals(idle.put("mac", "").toString(), alone.toString())
+        assertEquals(idle.put("mac", "").put("thread", "").toString(), alone.toString())
+        // A tap opens the tab of what the tile shows: the builders' when theirs, a Mac thread's when it tells of one.
+        assertEquals("phone", omaStatus(idle, MacGlance(), builderTab = "phone").getString("thread"))
+        assertEquals("mac:t1", omaStatus(idle, MacGlance(working = "FF4", workingThread = "t1"), builderTab = "phone").getString("thread"))
         // No builder at work: the Mac's thread at work, waiting, or with work running, by name.
         val onMac = omaStatus(idle, working)
         assertEquals("working", onMac.getString("state")); assertEquals("Working on the Mac · FF4 better menu mod", onMac.getString("doing"))
@@ -103,7 +110,7 @@ class AgentStatusTest {
         val both = omaStatus(asking, MacGlance(waiting = "Site fix", approvals = 2))
         assertEquals("waiting", both.getString("state")); assertEquals("", both.getString("mac")); assertEquals(3, both.getInt("approvals"))
         // The builders' status is not changed under it.
-        assertEquals(1, asking.getInt("approvals")); assertFalse(asking.has("mac"))
+        assertEquals(1, asking.getInt("approvals")); assertFalse(asking.has("mac")); assertFalse(asking.has("thread"))
     }
 
     @Test fun theActivityTileFollowsTheSameOrder() {
