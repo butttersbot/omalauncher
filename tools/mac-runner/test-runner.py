@@ -800,6 +800,9 @@ try:
     loaded = {}
     exec(compile(open(HERE / 'oma-runner').read().replace('\nmain()\n', '\n'), 'oma-runner', 'exec'), loaded)
     look = loaded['look_only']
+    check('the Linux service file is still a path (a later name must never take it over)', isinstance(loaded['UNIT'], pathlib.Path))
+    top = re.findall(r'^([A-Z_][A-Z0-9_]*) = ', open(HERE / 'oma-runner').read(), re.M)
+    check('no name is set twice at the top of the runner', len(top) == len(set(top)))
     for command, ok in [('pacman -Q steam', True), ('pacman -Qi steam', True), ('pacman -Ss proton', True), ('yay -Si protonup-qt', True), ('uname -a', True),
                         ('cat /etc/pacman.conf', True), ('systemctl status sshd.service --no-pager', True), ('systemctl status sshd --no-pager', False),
                         ('systemctl status user@1000.service --no-pager', False), ('systemctl status session-2.scope --no-pager', False), ('pacman -Qr work', False), ('pacman -Qb x', False),

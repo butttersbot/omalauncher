@@ -790,7 +790,7 @@ def venice_spec(model):
 # a bot's own turn, never from an endpoint; a short list of look-only command shapes is all it runs without a card.
 
 PACKAGE = re.compile(r'[A-Za-z0-9@._+-]+')
-UNIT = re.compile(r'[A-Za-z0-9@._:-]+')
+SERVICE_NAME = re.compile(r'[A-Za-z0-9@._:-]+')
 LOOK_FILES = ('/etc/pacman.conf', '/etc/os-release', '/proc/cpuinfo')
 LOOK_EXACT = (['uname', '-a'], ['df', '-h'], ['free', '-h'], ['lsblk'], ['lspci'], ['lsmod'], ['nproc'])
 SHELL_SIGNS = set(';|&><`$\n\r\\(){}*?[]~!#\'"')
@@ -831,7 +831,7 @@ def look_only(command):
         return words
     if head in ('pacman', 'yay') and len(rest) >= 2 and rest[0] in ('-Ss', '-Si', '-Sii') and names(rest[1:]):
         return words
-    if (head == 'systemctl' and len(rest) == 3 and rest[0] == 'status' and rest[2] == '--no-pager' and UNIT.fullmatch(rest[1])
+    if (head == 'systemctl' and len(rest) == 3 and rest[0] == 'status' and rest[2] == '--no-pager' and SERVICE_NAME.fullmatch(rest[1])
             and rest[1].endswith('.service') and not rest[1].startswith(('-', 'user@', 'session-'))):
         return words  # a service only: a slice, scope or user@ unit would list every command line in Boss's session
     if words in [list(exact) for exact in LOOK_EXACT]:
