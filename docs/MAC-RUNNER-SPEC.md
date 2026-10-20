@@ -706,3 +706,12 @@ one of AUTO_PROGRAMS named bare (files and folders, downloads, archives, wine/Pr
 touches no SENSITIVE place (shell startup files, autostart, systemd user units, Hyprland and Omarchy config,
 ~/.local/bin, ~/bin, ~/.ssh, ~/.gnupg, ~/.venice, bot folders) and nothing outside his home, and it passes its
 program's rule (rm without flags, chmod MODE FILES without -R, find without -exec/-delete, tar without --to-command).
+Revised again after the Critic's second FAIL (2026-10-19): auto mode decides by where and how, never by listing
+dangers. A command runs without a card only when it is one plain command of a program in AUTO_TOOLS (reading, making
+folders, copying, moving, single-file rm, chmod without special bits, tar/unzip/7z/xz/gzip/zstd, wget/curl downloads,
+flatpak install/list/info/search/update) with only that program's plain options, touching only AUTO_ROOTS (~/Games,
+~/Downloads, the Steam and Lutris compatibility/runner folders) or its own work folder; reading may also see
+/etc/os-release, /etc/pacman.conf, /proc/cpuinfo and /usr/share. Anything that runs a program asks: wine, steam,
+protontricks, lutris, flatpak run, gamescope, mangohud, opening an app on the screen, scripts, shells, interpreters.
+Uploads (curl -T/-d/-F, wget --post-file/--method) ask. Bots also get agent mail (`mail(to, text)` through tmsg, signed
+with the thread's id) and, on Linux, Boss's desktop session (Wayland, Hyprland, X) for what they run.

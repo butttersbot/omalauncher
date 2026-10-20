@@ -546,9 +546,11 @@ private fun ChatScreen(
                 }
                 // Above the oldest entry of a Mac thread's tab: what was done at the Mac itself, or before this phone came in,
                 // from the thread's own record. A thread made for a new chat began here and has its tab's key of its own.
-                items(earlier.asReversed(), key = { "earlier-${it.id}" }) { turn -> EarlierEntry(turn) }
+                // The computer this tab's thread runs on, by the name he gave it ("MG1"), so nothing says "the Mac" when it isn't.
+                val on = threads.firstOrNull { it.key == tab }?.machine?.takeIf { it.isNotBlank() } ?: "the Mac"
+                items(earlier.asReversed(), key = { "earlier-${it.id}" }) { turn -> EarlierEntry(turn, on) }
                 if (earlierThread != null) {
-                    macEarlierCaption(earlierRead, earlier.size)?.let { caption ->
+                    macEarlierCaption(earlierRead, earlier.size, on)?.let { caption ->
                         item(key = "earlier") {
                             BasicText(caption, Modifier.fillMaxWidth().padding(vertical = 12.dp), style = Pack.mono(Pack.size.small, Pack.muted).copy(textAlign = TextAlign.Center))
                         }
@@ -1207,11 +1209,11 @@ private fun TaskEntry(
  * was never sent from here and nothing on it can be done again.
  */
 @Composable
-private fun EarlierEntry(turn: MacTurn) {
+private fun EarlierEntry(turn: MacTurn, on: String = "the Mac") {
     val small = Pack.mono(Pack.size.small, Pack.muted)
     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         val sent = remember(turn.time) { DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(turn.time * 1000)) }
-        BasicText("on the Mac · $sent", Modifier.fillMaxWidth().padding(bottom = 4.dp), style = small.copy(textAlign = TextAlign.Center))
+        BasicText("on $on · $sent", Modifier.fillMaxWidth().padding(bottom = 4.dp), style = small.copy(textAlign = TextAlign.Center))
         if (turn.words.isNotEmpty()) {
             Column(Modifier.fillMaxWidth().framed(Pack.hair, Pack.border, Pack.background, radius = 12.dp).padding(10.dp)) {
                 BasicText(turn.words, style = Pack.body(color = Pack.muted))
