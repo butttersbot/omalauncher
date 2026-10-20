@@ -795,7 +795,6 @@ SERVICE_NAME = re.compile(r'[A-Za-z0-9@._:-]+')
 LOOK_FILES = ('/etc/pacman.conf', '/etc/os-release', '/proc/cpuinfo')
 LOOK_EXACT = (['uname', '-a'], ['df', '-h'], ['free', '-h'], ['lsblk'], ['lspci'], ['lsmod'], ['nproc'])
 SHELL_SIGNS = set(';|&><`$\n\r\\(){}*?[]~!#\'"')
-TOOL_CALLS_MOST = 40
 MINUTE = float(os.environ.get('OMA_RUNNER_MINUTE') or 60)  # seconds in a minute of a bot's limits; the tests make it short
 TURN_SECONDS = 45 * MINUTE
 LOOK_SECONDS = int(MINUTE)
@@ -805,7 +804,7 @@ RUN_TOOL = {'type': 'function', 'function': {
     'name': 'run',
     'description': 'Run one shell command on this machine, in your work folder. Reading commands (pacman -Q, pacman -Ss/-Si, yay -Ss/-Si, '
                    'systemctl status UNIT --no-pager, uname -a, df -h, free -h, lsblk, lspci, lsmod, nproc, cat /etc/pacman.conf, '
-                   'cat /etc/os-release, cat /proc/cpuinfo) run at once. Any other command is shown to Boss to allow or deny first; '
+                   'cat /etc/os-release, cat /proc/cpuinfo) run at once. Other commands may be shown to Boss to allow or deny first; '
                    'that is how you ask him, so just call run. Install official packages with `sudo soma-pacman -S --needed --noconfirm NAMES` '
                    '(soma-pacman is the only thing sudo works with). AUR installs (yay -S, paru -S) are Boss\'s to run: tell him the exact command. '
                    'A command for Boss to allow must be one line of at most 200 characters. stdin is closed: use non-interactive flags.',
@@ -877,6 +876,38 @@ def refused_command(command):
             return ('Administrator commands work here only as `sudo soma-pacman ...` alone (official packages: -S, -Syu, -R, -Rs). '
                     'For anything else, tell Boss the command to run.')
     return None
+
+
+INTERPRETERS = {'bash', 'sh', 'zsh', 'dash', 'fish', 'source', 'eval', 'exec', 'python', 'python2', 'python3', 'perl', 'ruby', 'node', 'lua', 'php'}
+DESTRUCTIVE = {'dd', 'shred', 'wipefs', 'fdisk', 'sfdisk', 'cfdisk', 'parted', 'gdisk', 'sgdisk', 'mkswap', 'cryptsetup', 'losetup', 'truncate',
+               'shutdown', 'reboot', 'poweroff', 'halt', 'systemctl reboot'}
+
+
+def risky_command(command):
+    """Whether a command still needs Boss's OK in auto mode (his pick, 2026-10-19: "only risky steps"): anything as
+    administrator, anything that runs a script or pipes code into an interpreter, and anything destructive."""
+    found = program_words(command)
+    marks = command_marks(command)
+    if marks['root']:
+        return True
+    if found & INTERPRETERS or re.search(r'(^|[\s;&|(])\.{1,2}/', command):
+        return True  # a shell, an interpreter or a script: what it runs isn't on the card
+    if found & DESTRUCTIVE or any(word.startswith('mkfs') for word in found):
+        return True
+    words = command.split()
+    for index, word in enumerate(words):
+        base = os.path.basename(word)
+        if base == 'rm' and any(flag.startswith('-') and re.search(r'[rRf]|recursive|force', flag) for flag in words[index + 1:]):
+            return True
+        if base in ('chmod', 'chown', 'chgrp') and any(arg.startswith('-R') or (arg.startswith('/') and not arg.startswith(str(HOME))) for arg in words[index + 1:]):
+            return True
+        if base == 'find' and any(arg in ('-delete', '-exec', '-execdir', '-ok') for arg in words[index + 1:]):
+            return True
+        if base == 'systemctl' and any(arg in ('reboot', 'poweroff', 'halt', 'isolate', 'kexec') for arg in words[index + 1:]):
+            return True
+    if re.search(r'>\s*/dev/(sd|nvme|mmcblk|disk)', command):
+        return True
+    return False
 
 
 def command_marks(command):
@@ -1053,11 +1084,9 @@ def venice_turn():
                 for index, call in enumerate(wanted)]})
             for call in messages[-1]['tool_calls']:
                 calls += 1
-                result = tool_result(call, folder, declined, calls)
+                result = tool_result(call, folder, declined, calls, bool(asked.get('auto')))
                 messages.append({'role': 'tool', 'tool_call_id': call['id'], 'content': result})
                 trim_turn(messages, start)
-            if calls >= TOOL_CALLS_MOST:
-                raise VeniceError(0, 'this turn reached its limit of %d commands. Send a message to go on.' % TOOL_CALLS_MOST)
             spent += sum(known.pop('command_seconds', [0.0]))
     except VeniceError as problem:
         # Out of credit (402) or too many requests (429) is said as it is, never a limit: his words to Venice are not
@@ -1067,7 +1096,7 @@ def venice_turn():
         say_out({'type': 'error', 'code': 'agent', 'text': 'Venice turn: ' + str(problem)})
 
 
-def tool_result(call, folder, declined, number):
+def tool_result(call, folder, declined, number, auto=False):
     """Runs (or refuses, or asks about) one tool call from Venice; what goes back to it as the call's result."""
     if call['function']['name'] != 'run':
         return 'There is no tool called %s. The only tool is run.' % call['function']['name'][:60]
@@ -1077,8 +1106,6 @@ def tool_result(call, folder, declined, number):
         given = None
     if not isinstance(given, dict) or not isinstance(given.get('command'), str) or not given['command'].strip():
         return 'run needs {"command": "...", "why": "..."}.'
-    if number > TOOL_CALLS_MOST:
-        return 'Not run: this turn has reached its limit of commands.'
     command, why = given['command'].strip(), one_line(given.get('why'), 200)
     minutes = given.get('minutes') if isinstance(given.get('minutes'), int) and not isinstance(given.get('minutes'), bool) else 10
     minutes = min(60, max(1, minutes))
@@ -1095,6 +1122,13 @@ def tool_result(call, folder, declined, number):
         return 'Not run. ' + refusal
     if command in declined:
         return 'Not run: Boss already declined this command in this turn. Don\'t run it another way.'
+    if auto and not risky_command(command):
+        # Auto mode (Boss, 2026-10-19): everyday commands run without a card; risky_command decides what still asks.
+        began = time.monotonic()
+        output, note = run_command(command, int(minutes * MINUTE), folder)
+        known.setdefault('command_seconds', []).append(time.monotonic() - began)
+        say_out({'type': 'step', 'text': command, 'result': first_line(output) or note})
+        return '%s\n(%s)' % (output, note)
     say_out({'type': 'ask', 'id': call['id'], 'command': command, 'why': why, 'minutes': minutes, **command_marks(command)})
     while True:
         line = sys.stdin.readline()
@@ -1365,7 +1399,8 @@ class Venice:
             thread.emit('note', text='The notes are longer than a tenth of what %s can take; only their beginning is sent. Ask an agent to tighten notes.md.' % self.model)
         thread.meta['memory'] = {'fill': min(100, round(100 * used / budget)), 'summaries': memory['summaries']}
         self.budget, self.sent_chars = budget, sum(message_chars(m) for m in sent)
-        thread.say({'model': self.model, 'messages': sent, 'params': self.params, 'tools': self.tools, 'folder': thread.meta['project']})
+        auto = self.tools and (thread.meta.get('mode_choice') or (thread.bot or {}).get('mode') or 'manual') == 'auto'
+        thread.say({'model': self.model, 'messages': sent, 'params': self.params, 'tools': self.tools, 'folder': thread.meta['project'], 'auto': auto})
 
     def heard(self, event):
         thread, kind = self.thread, event.get('type')
@@ -1502,7 +1537,7 @@ def bot_text(path):
 def read_bot(folder):
     """A bot as its folder says: {id, name, emoji, brain, model, web_search, machine, tools, problem}. A bot whose files
     are wrong has a problem, said plainly, and runs nothing."""
-    bot = {'id': folder.name, 'name': folder.name, 'emoji': '', 'brain': 'venice', 'model': '', 'web_search': 'off', 'machine': '', 'tools': [], 'problem': None}
+    bot = {'id': folder.name, 'name': folder.name, 'emoji': '', 'brain': 'venice', 'model': '', 'web_search': 'off', 'machine': '', 'tools': [], 'mode': 'manual', 'problem': None}
     text = bot_text(folder / 'bot.json')
     if text is None:
         bot['problem'] = 'bot.json is missing.'
@@ -1520,6 +1555,7 @@ def read_bot(folder):
     emoji = given.get('emoji')
     bot['emoji'] = one_line(emoji, 8) if isinstance(emoji, str) else ''
     model, brain, search = given.get('model'), given.get('brain', 'venice'), given.get('web_search', 'off')
+    bot['mode'] = given.get('mode') if given.get('mode') in ('auto', 'manual') else 'manual'
     machine, tools = given.get('machine'), given.get('tools', [])
     bot.update(model=model if isinstance(model, str) else '', brain=brain, web_search=search, machine=machine if isinstance(machine, str) else '',
                tools=tools if isinstance(tools, list) else [])
@@ -2213,6 +2249,9 @@ BOT_HELP = ('Commands in a bot\'s tab:\n'
             '/model — the model it runs now, and the ones it can use\n'
             '/model NAME — run on NAME from the next message\n'
             '/model default — back to the model in its bot.json\n'
+            '/mode — whether its commands ask you first\n'
+            '/mode auto — everyday commands run on their own; only administrator steps, scripts and destructive commands ask\n'
+            '/mode manual — every command that changes anything asks\n'
             '/help — this list')
 
 
@@ -2220,11 +2259,26 @@ def bot_command(thread, text):
     """A slash command typed in a bot's tab, answered by the runner itself (no model is asked): what to say back, or
     None when [text] isn't one of them and goes to the bot as words."""
     words = text.strip().split()
-    if not words or words[0].lower() not in ('/model', '/models', '/help'):
+    if not words or words[0].lower() not in ('/model', '/models', '/mode', '/help'):
         return None
     if words[0].lower() == '/help':
         return BOT_HELP
     bot = thread.bot or read_bot(BOTS / thread.meta['bot'])
+    if words[0].lower() == '/mode':
+        now = thread.meta.get('mode_choice') or bot.get('mode') or 'manual'
+        if not bot['tools']:
+            return 'This bot runs no commands, so it has no mode.'
+        if len(words) == 1:
+            return ('Mode: %s. ' % now) + ('Everyday commands run on their own; administrator steps, scripts and destructive commands still ask you.'
+                                           if now == 'auto' else 'Every command that changes anything asks you first.') + ' /mode auto or /mode manual to change it.'
+        wanted = words[1].lower()
+        if wanted not in ('auto', 'manual'):
+            return 'Not changed: the mode is auto or manual.'
+        with changed:
+            thread.meta['mode_choice'] = wanted
+            thread.save()
+        return ('Auto from the next message: everyday commands run on their own; administrator steps, scripts and destructive commands still ask you.'
+                if wanted == 'auto' else 'Manual from the next message: every command that changes anything asks you first.')
     if len(words) == 1 or words[0].lower() == '/models':
         venice_specs_now()
         usable = bot_models(bot)

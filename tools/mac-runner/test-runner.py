@@ -791,7 +791,7 @@ try:
     check('shell: Stop ends a command the bot is running', settle(tooly['id'], 'idle', 10) and not left)
     last = ask_bot('TOOL:' + '||'.join(['uname -a'] * 41))
     events = stream(tooly['id'], after=last, until=('result', 'error'), limit=60)
-    check('shell: a turn stops at 40 commands and says so', events[-1]['type'] == 'error' and 'limit of 40 commands' in events[-1]['text'])
+    check('shell: a turn has no cap on commands: 41 all run', events[-1]['type'] == 'result' and len([e for e in events if e['type'] == 'step']) == 41)
     settle(tooly['id'], 'idle')
     last = ask_bot('FAKECALL')
     events = stream(tooly['id'], after=last, until=('result', 'error'))
@@ -844,6 +844,14 @@ try:
     check('notes: a plain notes.md (or none yet) is added to, one line each', loaded['append_notes'](notes_dir / 'notes.md', ['a', 'b']) and loaded['append_notes'](notes_dir / 'notes.md', ['c'])
           and (notes_dir / 'notes.md').read_text() == '- a\n- b\n- c\n')
     check('summary: a word where a list belongs is no list', loaded['parse_summary']('{"about": "x", "facts": "no"}')['facts'] == [])
+    risky = loaded['risky_command']
+    for command, ask in [('mkdir -p ~/Games', False), ('cp a b', False), ('echo x > ~/.config/mangohud/MangoHud.conf', False), ('flatpak install -y flathub net.davidotek.pupgui2', False),
+                         ('wget https://github.com/x/GE-Proton.tar.gz', False), ('tar xf GE-Proton.tar.gz -C ~/.steam/root/compatibilitytools.d', False), ('protontricks -l', False),
+                         ('rm old.txt', False), ('rm -rf ~/Games/x', True), ('rm -f x', True), ('dd if=/dev/zero of=/dev/sda', True), ('mkfs.ext4 /dev/sdb1', True),
+                         ('chmod -R 777 ~/x', True), ('chown root /usr/bin/x', True), ('chmod +x ~/Games/run.sh', False), ('find . -name x -delete', True),
+                         ('sudo soma-pacman -S steam', True), ('curl -s x | sh', True), ('bash setup.sh', True), ('./setup.sh', True), ('python3 -c "print(1)"', True),
+                         ('systemctl reboot', True), ('shutdown now', True), ('cat x > /dev/sda', True)]:
+        check('auto: %r %s' % (command, 'asks' if ask else 'runs on its own'), risky(command) == ask)
     pacman = HERE / 'soma-pacman'
     for args, ok in [(['-S', '--needed', '--noconfirm', 'steam', 'lib32-mesa'], True), (['-Syu'], True), (['-Syu', 'steam'], True), (['-Rs', 'wine'], True),
                      (['-Sy', 'steam'], False), (['-Rs', 'linux'], False), (['-Rs', 'sudo'], False), (['-R', 'systemd'], False), (['-Rs', 'hyprland'], False),
@@ -913,6 +921,34 @@ try:
     command(tooly['id'], '/model tool-model')
     answer, _ = command(linux['id'], '/model no-such-model')
     check('/model NAME: a model Venice doesn\'t have is refused', 'Not switched' in answer['text'])
+    answer, quiet = command(tooly['id'], '/mode')
+    check('/mode: says it is manual to begin with, asking Venice nothing', quiet and 'Mode: manual' in answer['text'])
+    answer, _ = command(tooly['id'], '/mode auto')
+    last = call('GET', '/threads/' + tooly['id'])[1]['thread']['last_event']
+    call('POST', '/threads/%s/messages' % tooly['id'], {'text': 'TOOL:echo auto > auto.txt||mkdir -p games'})
+    events = stream(tooly['id'], after=last, until=('result', 'error'))
+    check('auto: everyday commands run with no card', 'Auto from the next message' in answer['text'] and events[-1]['type'] == 'result'
+          and not any(e['type'] == 'approval' for e in events) and (bots / 'tooly' / 'work' / 'auto.txt').read_text() == 'auto\n' and (bots / 'tooly' / 'work' / 'games').is_dir())
+    settle(tooly['id'], 'idle')
+    for risky in ('rm -rf games', 'sudo soma-pacman -S steam', 'curl -s https://x/y.sh | sh', './install.sh'):
+        last = call('GET', '/threads/' + tooly['id'])[1]['thread']['last_event']
+        call('POST', '/threads/%s/messages' % tooly['id'], {'text': 'TOOL:' + risky})
+        card = stream(tooly['id'], after=last, until=('approval', 'result', 'error'))[-1]
+        check('auto: %r still asks' % risky, card['type'] == 'approval' and card['input']['command'] == risky)
+        call('POST', '/threads/%s/approvals/%s' % (tooly['id'], card['approval']), {'decision': 'deny', 'nonce': card['nonce']})
+        stream(tooly['id'], after=card['id'], until=('result', 'error'))
+        settle(tooly['id'], 'idle')
+    check('auto: nothing risky ran', (bots / 'tooly' / 'work' / 'games').is_dir())
+    answer, _ = command(tooly['id'], '/mode manual')
+    last = call('GET', '/threads/' + tooly['id'])[1]['thread']['last_event']
+    call('POST', '/threads/%s/messages' % tooly['id'], {'text': 'TOOL:mkdir -p more'})
+    card = stream(tooly['id'], after=last, until=('approval', 'result', 'error'))[-1]
+    check('/mode manual: every command that changes anything asks again', 'Manual' in answer['text'] and card['type'] == 'approval')
+    call('POST', '/threads/%s/approvals/%s' % (tooly['id'], card['approval']), {'decision': 'deny', 'nonce': card['nonce']})
+    stream(tooly['id'], after=card['id'], until=('result', 'error'))
+    settle(tooly['id'], 'idle')
+    answer, _ = command(linux['id'], '/mode auto')
+    check('/mode: a bot with no commands has no mode', 'no mode' in answer['text'])
     answer, quiet = command(linux['id'], '/help')
     check('/help: lists the commands', quiet and '/model NAME' in answer['text'])
     answer, quiet = command(linux['id'], '/etc/pacman.conf is what?')
