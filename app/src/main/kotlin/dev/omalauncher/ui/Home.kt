@@ -53,6 +53,7 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.zIndex
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.foundation.layout.systemBars
@@ -78,6 +79,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.union
@@ -179,8 +181,11 @@ private const val AGENT_TILES_GLANCE_MS = 60_000L
 /** How long home rests on a page before it takes a still of it for the overview. */
 private const val STILL_AFTER_MS = 700L
 
-/** The band above the pages that names the page showing; the page's room starts below it. */
+/** The band that names the page showing: above the pages, whose room starts below it, or at the screen's foot. */
 val PageNameHeight = 28.dp
+
+/** How far above the screen's foot the page names stand when they are there. */
+private val NameFootGap = 6.dp
 
 /** Home: the notebook's pages of widgets and pinned apps on a snap grid, bordered and gapped like Omarchy windows. */
 @Composable
@@ -409,7 +414,8 @@ fun HomeScreen(
 
     // What a hero runs up into: the page names' band and, above home, the status bar, to the top of the screen. Only while a
     // page with one is showing or a turn away, so every other page's pager is as it always was.
-    val heroRoom = with(density) { PageNameHeight.roundToPx() + WindowInsets.systemBars.union(WindowInsets.displayCutout).getTop(density) }
+    // (The names' band only while the names are above the pages: see namesBelow.)
+    val heroRoom = WindowInsets.systemBars.union(WindowInsets.displayCutout).getTop(density)
     val heroNear = (pager.currentPage - 1..pager.currentPage + 1).any { slot -> (0 until per).any { heroAt(slot, it) } }
     // Where across the screen each page name starts, as a fraction of its width: a hero under it letters it light.
     val nameAt = with(density) { (PageGap + 12.dp).toPx() } / window.width.coerceAtLeast(1)
@@ -490,6 +496,29 @@ fun HomeScreen(
     // In a look drawn in panels there is no dock: the pages run to the foot of the screen, and nothing below them is kept.
     val dockShown = homeDockShown(manga, side)
     val dockRoom = if (dockShown) barRoom else 0.dp
+    // The page names: above the pages while home has a bar at its foot, else in the strip at the screen's foot, beside the
+    // gesture handle, which is empty, so the pages run up to the status bar (Boss, 2026-10-20: "move it to the bottom...
+    // so that frees up that row").
+    val namesBelow = !dockShown
+    val pageNames: @Composable (Modifier, List<Boolean>) -> Unit = { at, overHero ->
+        PageNames(
+            // Not before the notebook is read: the page shown until then is a stand-in.
+            names = pagesAt(pager.currentPage, pages, per).map { page -> page?.takeIf { engine.notebook.opened }?.let(engine.notebook::name) },
+            first = pager.currentPage * per,
+            total = pages.size,
+            hidden = { state.homeCovered || engine.openScreen != null },
+            // Gone as the pages shrink under a pinch: the overview names every page itself.
+            faded = { maxOf(state.drawer.value, (1f - pinch.value) / (1f - OVERVIEW_AT)) },
+            // The pages showing are caught as they are on the way in.
+            onOpen = {
+                runtime.pageStills.request()
+                state.openOverview()
+            },
+            overHero = overHero,
+            // 5. Not under a terminal tile's keyboard, as on the pages.
+            modifier = at.opensDrawer(state, windowHeight) { terminals.active == null },
+        )
+    }
     LaunchedEffect(extraKeys) { if (!extraKeys) terminals.extraKeys = null }
     Box(
         modifier
@@ -552,23 +581,7 @@ fun HomeScreen(
             ),
     ) {
       CompositionLocalProvider(LocalTypingAt provides reportTyping) {
-        PageNames(
-            // Not before the notebook is read: the page shown until then is a stand-in.
-            names = pagesAt(pager.currentPage, pages, per).map { page -> page?.takeIf { engine.notebook.opened }?.let(engine.notebook::name) },
-            first = pager.currentPage * per,
-            total = pages.size,
-            hidden = { state.homeCovered || engine.openScreen != null },
-            // Gone as the pages shrink under a pinch: the overview names every page itself.
-            faded = { maxOf(state.drawer.value, (1f - pinch.value) / (1f - OVERVIEW_AT)) },
-            // The pages showing are caught as they are on the way in.
-            onOpen = {
-                runtime.pageStills.request()
-                state.openOverview()
-            },
-            overHero = namesOverHero,
-            // 5. Not under a terminal tile's keyboard, as on the pages. Over the pages while a hero runs up under it from them.
-            modifier = Modifier.zIndex(if (heroNear) 1f else 0f).opensDrawer(state, windowHeight) { terminals.active == null },
-        )
+        if (!namesBelow) pageNames(Modifier.zIndex(if (heroNear) 1f else 0f), namesOverHero)
         HomeGrid(
             pager = pager,
             pages = pages,
@@ -772,14 +785,20 @@ fun HomeScreen(
             panelLayout = { page -> engine.notebook.pages.firstOrNull { it.id == page }?.panels },
             // An empty panel opens the photo picker for itself: what is picked hangs there.
             onPanelTap = { page, panel -> ArtPickActivity.open(context, page, panel) },
-            above = if (heroNear) heroRoom else 0,
+            above = if (heroNear) heroRoom + (if (namesBelow) 0 else with(density) { PageNameHeight.roundToPx() }) else 0,
         )
       }
     }
 
+    if (namesBelow) {
+        // Into the strip under the pages, its foot a little above the screen's.
+        val foot = WindowInsets.systemBars.getBottom(density)
+        pageNames(Modifier.align(Alignment.BottomStart).offset { IntOffset(0, foot - NameFootGap.roundToPx()) }, emptyList())
+    }
+
     // What the start had to say about the layout (a migration that moved tiles, or couldn't be saved), and what
     // the pages have to say about their ink and notes (a file that can't be read, a page full of ink), until tapped away.
-    Column(Modifier.align(Alignment.TopCenter).padding(start = PageGap, end = PageGap, top = PageNameHeight)) {
+    Column(Modifier.align(Alignment.TopCenter).padding(start = PageGap, end = PageGap, top = if (namesBelow) 4.dp else PageNameHeight)) {
         engine.notice?.let { text -> Notice(text) { engine.notice = null } }
         marks.book?.let { book -> book.notice?.let { text -> Notice(text) { book.notice = null } } }
     }
