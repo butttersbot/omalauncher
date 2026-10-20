@@ -81,6 +81,13 @@ The service finds Tailscale as the runner does: `OMA_RUNNER_TAILSCALE`, the App 
 
 - On the Mac Pro: `./gradlew :desktop:createDistributable` gives `desktop/build/compose/binaries/main/app/Soma.app` (with
   its own Java runtime, 139 MB); `:desktop:packageDmg` a disk image.
+- **Signing (2026-10-19).** A Mac that names a certificate as `somaSignIdentity` in `~/.gradle/gradle.properties` (the Mac
+  Pro: `Apple Development: Created via API (FUKNMCL2G2)`, team 8Z4A34Q652) gets Soma.app signed with it after
+  `createDistributable`, libraries and runtime first, with the entitlements an ad hoc build has (JIT, unsigned executable
+  memory, no library validation). Its identity is then its bundle id and certificate, not each build's hash, so the
+  Keychain's "Always Allow" for the runner keys holds across updates. Seen on the Mac Pro: a build re-signed with
+  different contents started with no Keychain prompt. Without the property a build stays ad hoc, and every update asks
+  again. The name lives in that per-machine file, not in Git.
 - For Linux, built on the Mac Pro: `./gradlew -PsomaOs=linux-x64 :desktop:packageUberJarForCurrentOS` gives one jar with
   Linux's Skia (the file is named after the machine that built it). It runs with `java -jar` on a Java 17+ runtime, which
   the Omarchy boxes don't have yet.
