@@ -104,6 +104,12 @@ object MacRequests {
 
     /** The runner wants nothing in the body; an empty object is sent because a POST with none is not sent alike everywhere. */
     fun stop(threadId: String) = MacRequest("POST", "/threads/${part(threadId)}/stop", "{}")
+
+    /** A bot's settings, instructions and notes, read only. */
+    fun bot(botId: String) = MacRequest("GET", "/bots/${part(botId)}")
+
+    /** A bot's session starts over: its conversation is archived on its machine, its instructions and notes stay. */
+    fun fresh(threadId: String) = MacRequest("POST", "/threads/${part(threadId)}/fresh", "{}")
 }
 
 /** What came back: the HTTP status and the body as text. */
@@ -159,7 +165,44 @@ data class MacThread(
     val background: List<String> = emptyList(),
     /** The model it runs, as the runner last heard the agent say (or as it was asked for); empty while not known. */
     val model: String = "",
+    /** The bot this is the one session of, when it is one (docs/MAC-RUNNER-SPEC.md, "As built: bots"); null for any other thread. */
+    val bot: MacBot? = null,
 )
+
+/**
+ * A bot as its runner says: its folder's [id], [name] and [emoji], what is wrong with it in plain words ([problem], empty when
+ * nothing), the [machine] it works on, its [tools], how full its memory is ([memory], percent) and how many [summaries] it holds.
+ */
+data class MacBot(
+    val id: String,
+    val name: String,
+    val emoji: String = "",
+    val problem: String = "",
+    val machine: String = "",
+    val tools: List<String> = emptyList(),
+    val memory: Int = 0,
+    val summaries: Int = 0,
+)
+
+/** A bot's own files, read only: Boss's instructions and the bot's notes. */
+data class MacBotFiles(val instructions: String, val notes: String)
+
+internal fun macBot(json: JSONObject?): MacBot? {
+    json ?: return null
+    val id = json.macText("id")
+    if (id.isBlank()) return null
+    val tools = json.optJSONArray("tools")
+    return MacBot(
+        id = id,
+        name = json.macText("name").ifBlank { id },
+        emoji = json.macText("emoji").take(8),
+        problem = if (json.isNull("problem")) "" else json.macText("problem"),
+        machine = json.macText("machine"),
+        tools = (0 until (tools?.length() ?: 0)).mapNotNull { (tools?.opt(it) as? String)?.takeIf(String::isNotBlank) },
+        memory = json.optInt("memory", 0).coerceIn(0, 100),
+        summaries = json.optInt("summaries", 0).coerceAtLeast(0),
+    )
+}
 
 /** What became of the owner's words: taken at once, or waiting behind [Queued.position] - 1 others. */
 sealed interface MacTaken {
@@ -193,6 +236,7 @@ internal fun macThread(json: JSONObject): MacThread? {
         pending = json.optJSONArray("pending").macObjects().mapNotNull { macApproval(it) },
         background = json.optJSONArray("background").let { list -> (0 until (list?.length() ?: 0)).mapNotNull { (list?.opt(it) as? String)?.trim()?.takeIf(String::isNotEmpty) } },
         model = json.macText("model"),
+        bot = macBot(json.optJSONObject("bot")),
     )
 }
 
@@ -273,6 +317,12 @@ fun parseMacDecision(reply: MacReply?): MacAnswer<MacDecision> = macAnswer(reply
 fun parseMacStopped(reply: MacReply?): MacAnswer<Boolean> = macAnswer(reply) { json ->
     if (json.has("stopped")) json.optBoolean("stopped") else null
 }
+
+/** `GET /bots/ID`. */
+fun parseMacBotFiles(reply: MacReply?): MacAnswer<MacBotFiles> = macAnswer(reply) { json -> MacBotFiles(json.macText("instructions"), json.macText("notes")) }
+
+/** `POST /threads/ID/fresh`: Ok, or the runner's reason in [MacAnswer.Failed] (409 while it works). */
+fun parseMacFresh(reply: MacReply?): MacAnswer<Unit> = macAnswer(reply) { Unit }
 
 /** What asking `/health` came to. */
 sealed interface MacHealthResult {
@@ -369,6 +419,10 @@ class MacRunnerClient(private val config: MacRunnerConfig?, private val machine:
         parseMacDecision(send(MacRequests.answerApproval(own(threadId), approval, allow, nonce)))
 
     fun stop(threadId: String): MacAnswer<Boolean> = parseMacStopped(send(MacRequests.stop(own(threadId))))
+
+    fun bot(botId: String): MacAnswer<MacBotFiles> = parseMacBotFiles(send(MacRequests.bot(botId)))
+
+    fun fresh(threadId: String): MacAnswer<Unit> = parseMacFresh(send(MacRequests.fresh(own(threadId))))
 
     /**
      * Follows a thread from event [after] until the link drops or [shouldStop] says so; see [followMacStream].

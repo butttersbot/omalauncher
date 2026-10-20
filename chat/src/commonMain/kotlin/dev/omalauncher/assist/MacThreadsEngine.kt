@@ -1076,6 +1076,31 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
      * there. The entries end when the thread says it stopped. [told] gets what there is to tell him, null when
      * the Mac simply did it.
      */
+    /** A bot's instructions and notes, read from the computer it lives on; null when they can't be read now. */
+    fun botFiles(threadId: String, told: (MacBotFiles?) -> Unit) {
+        restore()
+        val botId = view.threads.firstOrNull { it.id == threadId }?.bot?.id ?: return platform.post { told(null) }
+        thread(name = "oma-mac-bot", isDaemon = true) {
+            val read = (client(threadId).bot(botId) as? MacAnswer.Ok)?.value
+            platform.post { told(read) }
+        }
+    }
+
+    /** Start fresh on a bot's tab: [told] gets what to tell him. */
+    fun freshBot(threadId: String, told: (String) -> Unit) {
+        restore()
+        thread(name = "oma-mac-fresh", isDaemon = true) {
+            val said = when (val done = client(threadId).fresh(threadId)) {
+                is MacAnswer.Ok -> "Started fresh. Its instructions and notes are kept."
+                is MacAnswer.Failed -> done.error.ifBlank { "It didn't start fresh." }.replaceFirstChar { it.uppercaseChar() }
+                MacAnswer.Unreachable -> "The computer it lives on is unreachable."
+                else -> "It didn't start fresh."
+            }
+            refresh()
+            platform.post { told(said) }
+        }
+    }
+
     fun stop(threadId: String, told: (String?) -> Unit) {
         restore()
         thread(name = "oma-mac-stop", isDaemon = true) {

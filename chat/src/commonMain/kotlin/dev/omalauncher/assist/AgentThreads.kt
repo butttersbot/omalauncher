@@ -125,6 +125,8 @@ data class AgentThread(
     val unplaced: Boolean = false,
     /** Which Mac it is on, as he calls it ("MacBook Pro"), when he has more than one; empty otherwise and for the phone's. */
     val machine: String = "",
+    /** The bot this thread is the session of: its tab is always shown, first, and has a bot's menu. Null for any other. */
+    val bot: MacBot? = null,
 )
 
 /** One of the phone's builders as it stands: whether a task runs, its label, what waits for his approval, and when the task began ([since], 0 if none). */
@@ -345,6 +347,13 @@ fun agentThreads(
     val threads = ids.map { id -> macThreadNow(listed[id], id, tasks.filter { it.chat.isEmpty() }, asks[id].orEmpty(), mac.reachableFor(id)).copy(machine = mac.machineFor(id)) }
     val builders = mapOf(BuilderId.A to builder, BuilderId.B to second)
     val chatThreads = chats.map { chatThread(it, names[it.key] ?: NEW_CHAT_NAME, tasks, mac, asks) }
-    val all = phoneThreads(tasks, builders) + threads.sortedWith(compareByDescending<AgentThread> { it.worked ?: Long.MIN_VALUE }.thenBy { it.name }.thenBy { it.key }) + chatThreads
-    return all.map { thread -> names[thread.key]?.let { thread.copy(name = it) } ?: thread }
+    // A bot's session is named by the bot, with its emoji, and stands first: bots, then the threads by when they worked.
+    val withBots = threads.map { thread ->
+        val bot = listed[macThreadId(thread.key)]?.bot ?: return@map thread
+        thread.copy(bot = bot, name = listOf(bot.emoji, bot.name).filter(String::isNotBlank).joinToString(" "))
+    }
+    val (bots, others) = withBots.partition { it.bot != null }
+    val all = phoneThreads(tasks, builders) + bots.sortedBy { it.bot!!.name.lowercase() } +
+        others.sortedWith(compareByDescending<AgentThread> { it.worked ?: Long.MIN_VALUE }.thenBy { it.name }.thenBy { it.key }) + chatThreads
+    return all.map { thread -> names[thread.key]?.takeIf { thread.bot == null }?.let { thread.copy(name = it) } ?: thread }
 }

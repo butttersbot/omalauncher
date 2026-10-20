@@ -81,6 +81,12 @@ interface ChatHost {
     /** Whether the field's microphone works here. Where it doesn't (the desktop, whose own dictation types into any field), it isn't shown. */
     val dictates: Boolean get() = true
 
+    /** A bot's instructions and notes ([MacBotFiles]), read from its computer; null when they can't be read now. */
+    fun botFiles(thread: String, told: (dev.omalauncher.assist.MacBotFiles?) -> Unit) = told(null)
+
+    /** Start fresh on a bot's tab; [said] gets what to tell him. */
+    fun freshBot(thread: String, said: (String) -> Unit) = said("Bots aren't reachable from here.")
+
     /**
      * Whether there is a Soma tab, where the front agent answers or hands his words on. The phone's ([OMA_TAB]). The
      * desktop has none (Boss, 2026-10-19: the front agent only makes sense on the phone): it opens to a new chat, whose

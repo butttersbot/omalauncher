@@ -99,6 +99,10 @@ object MacThreads {
 
     fun stop(context: Context, threadId: String, told: (String?) -> Unit) = engine(context).stop(threadId, told)
 
+    fun botFiles(context: Context, threadId: String, told: (MacBotFiles?) -> Unit) = engine(context).botFiles(threadId, told)
+
+    fun freshBot(context: Context, threadId: String, said: (String) -> Unit) = engine(context).freshBot(threadId, said)
+
     fun switchTo(context: Context, threadId: String, to: MacPick) = engine(context).switchTo(threadId, to)
 
     fun answer(context: Context, ticket: String, allow: Boolean, told: (MacApprovalOutcome) -> Unit) = engine(context).answer(ticket, allow, told)

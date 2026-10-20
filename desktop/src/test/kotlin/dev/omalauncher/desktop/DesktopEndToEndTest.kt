@@ -72,6 +72,8 @@ class DesktopEndToEndTest {
                 "HOME" to work.path, "OMA_RUNNER_CODEX" to File(mac, "fake-codex").path, "OMA_RUNNER_CURSOR" to File(mac, "fake-cursor").path, "CODEX_HOME" to File(work, "codex").path,
                 // No Grok on this runner, whatever this computer has installed: a switch to it can't make its thread.
                 "OMA_RUNNER_GROK" to File(work, "no-grok").path,
+                // Bots: this runner hosts the folders in the test's own ~/Soma/bots, as the machine "testhost".
+                "OMA_RUNNER_BOTS" to File(work, "Soma/bots").path, "OMA_RUNNER_SELF" to "testhost",
             ))
             redirectErrorStream(true)
         }.start()
@@ -119,6 +121,46 @@ class DesktopEndToEndTest {
         val shot = onRoot().captureToImage()
         File("build/render").mkdirs()
         javax.imageio.ImageIO.write(shot.toAwtImage(), "png", File("build/render/desktop-e2e.png"))
+    }
+
+    /**
+     * A bot end to end (soma-bots PRD): a folder in the runner's ~/Soma/bots is a tab on the desktop, first and named with
+     * its emoji, saying what it is under its name; its instructions read from the runner; Start fresh reaches it.
+     */
+    @Test fun aBotFolderOnTheRunnerIsATabOnTheDesktop() = runComposeUiTest {
+        val folder = File(work, "Soma/bots/linux").apply { mkdirs() }
+        File(folder, "bot.json").writeText("""{"name": "Linux setup", "emoji": "🐧", "brain": "venice", "model": "venice-uncensored", "machine": "testhost", "tools": ["shell"]}""")
+        File(folder, "instructions.md").writeText("You are my Linux setup agent.")
+        File(folder, "notes.md").writeText("- yay is the AUR helper")
+        val notices = Notices()
+        val machine = MacMachine("testhost", "Test box", MacRunnerConfig("http://127.0.0.1:$port", key))
+        val platform = DesktopThreadsPlatform(notices) { listOf(machine) }
+        val engine = MacThreadsEngine(platform)
+        val host = DesktopChatHost(platform, engine, DesktopFrontAgent(engine, platform, notices, places = emptyList()), notices)
+        engine.open()
+        val deadline = System.currentTimeMillis() + 20_000
+        while (System.currentTimeMillis() < deadline && host.threads().none { it.bot != null }) { Thread.sleep(250); engine.refresh() }
+        val bot = host.threads().first { it.bot != null }
+        assertEquals("🐧 Linux setup", bot.name)
+        val id = dev.omalauncher.assist.macThreadId(bot.key)!!
+        var wanted: String? by androidx.compose.runtime.mutableStateOf(bot.key)
+        mainClock.autoAdvance = false
+        setContent { OmaChatScreen(host, prefill = null, onPrefilled = {}, wanted = wanted, onTab = { wanted = it }) }
+        fun settle(ms: Long = 1_200) = mainClock.advanceTimeBy(ms)
+        settle()
+        onAllNodes(hasText("🐧 Linux setup", substring = true)).onFirst().assertExists()
+        onNode(hasText("on testhost · memory 0%", substring = true)).assertExists()
+        var files: dev.omalauncher.assist.MacBotFiles? = null
+        var asked = false
+        host.botFiles(id) { files = it; asked = true }
+        val readBy = System.currentTimeMillis() + 10_000
+        while (!asked && System.currentTimeMillis() < readBy) { Thread.sleep(100); settle(100) }
+        assertEquals(dev.omalauncher.assist.MacBotFiles("You are my Linux setup agent.", "- yay is the AUR helper"), files)
+        var said: String? = null
+        host.freshBot(id) { said = it }
+        val freshBy = System.currentTimeMillis() + 10_000
+        while (said == null && System.currentTimeMillis() < freshBy) { Thread.sleep(100); settle(100) }
+        assertEquals("Started fresh. Its instructions and notes are kept.", said)
     }
 
     /**

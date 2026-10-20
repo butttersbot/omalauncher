@@ -40,6 +40,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -406,6 +407,12 @@ private fun ChatScreen(
                     style = Pack.body(Pack.size.large),
                 )
             }
+            // A bot's tab says what it is under its name: its brain and model, its machine, how full its memory is, and what's wrong.
+            threads.firstOrNull { it.key == tab }?.bot?.let { bot ->
+                val model = host.macView().threads.firstOrNull { it.id == macThreadId(tab) }?.model.orEmpty()
+                BasicText(botInfoLine(bot, model), Modifier.padding(horizontal = 6.dp, vertical = 2.dp), style = Pack.mono(Pack.size.small, Pack.muted), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                if (bot.problem.isNotBlank()) BasicText(bot.problem, Modifier.padding(horizontal = 6.dp, vertical = 2.dp), style = Pack.body(Pack.size.small, Pack.red))
+            }
             if (tabsOpen) {
                 TabStrip(
                     threads, tab, ::pick,
@@ -678,7 +685,8 @@ private fun ChatScreen(
             }.orEmpty()
             TabMenu(
                 title = tabTitle(key, threads + all),
-                actions = tabMenu(key, key in book.pinned, stop != null, answer != null, archived.size, mend, switchable = switches.isNotEmpty()),
+                actions = tabMenu(key, key in book.pinned, stop != null, answer != null, archived.size, mend, switchable = switches.isNotEmpty(), bot = thread?.bot != null),
+                readBot = { told -> macThreadId(key)?.let { host.botFiles(it, told) } ?: told(null) },
                 archived = archived,
                 switches = switches,
                 onSwitch = { to ->
@@ -724,7 +732,13 @@ private fun ChatScreen(
                             host.changeBook { it.archivedAs(key, at) }
                             if (key == tab) pick(OMA_TAB)
                         }
-                        TabAction.Rename, TabAction.Archived, TabAction.Switch -> {}
+                        TabAction.Fresh -> macThreadId(key)?.let { id ->
+                            host.freshBot(id) { said ->
+                                notice = said
+                                tick++
+                            }
+                        }
+                        TabAction.Rename, TabAction.Archived, TabAction.Switch, TabAction.Instructions, TabAction.Notes -> {}
                     }
                     menuFor = null
                     tick++
@@ -846,6 +860,7 @@ private fun TabMenu(
     onRename: (String) -> Unit,
     onRestore: (String) -> Unit,
     onAction: (TabAction) -> Unit,
+    readBot: ((dev.omalauncher.assist.MacBotFiles?) -> Unit) -> Unit = { it(null) },
 ) {
     var page by remember { mutableStateOf(MenuPage.Rows) }
     // Kept over the whole menu, so a name half typed is still there if he steps back to the rows and in again.
@@ -864,6 +879,8 @@ private fun TabMenu(
                             TabAction.Rename -> page = MenuPage.Rename
                             TabAction.Archived -> page = MenuPage.Archived
                             TabAction.Switch -> page = MenuPage.Switch
+                            TabAction.Instructions -> page = MenuPage.Instructions
+                            TabAction.Notes -> page = MenuPage.Notes
                             else -> onAction(action)
                         }
                     }
@@ -903,6 +920,26 @@ private fun TabMenu(
                         onDismiss()
                     }
                 }
+            }
+            MenuPage.Instructions, MenuPage.Notes -> {
+                // Read from the bot's computer each time the page opens; to change either, he asks an agent there.
+                var read by remember(page) { mutableStateOf<dev.omalauncher.assist.MacBotFiles?>(null) }
+                var asked by remember(page) { mutableStateOf(false) }
+                LaunchedEffect(page) { readBot { read = it; asked = true } }
+                val instructions = page == MenuPage.Instructions
+                BasicText(Pack.caption(if (instructions) "$title · instructions" else "$title · notes"), Modifier.padding(horizontal = 12.dp, vertical = 10.dp), style = caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                val text = read?.let { if (instructions) it.instructions else it.notes }
+                BasicText(
+                    when {
+                        !asked -> "reading…"
+                        text == null -> "Its computer can't be reached right now."
+                        text.isBlank() -> if (instructions) "No instructions." else "No notes yet."
+                        else -> text
+                    },
+                    Modifier.padding(horizontal = 12.dp).heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
+                    style = Pack.body(Pack.size.small, Pack.foreground),
+                )
+                BasicText("To change this, ask an agent on its computer.", Modifier.padding(horizontal = 12.dp, vertical = 8.dp), style = caption)
             }
             MenuPage.Archived -> {
                 BasicText(Pack.caption(archivedCaption(archived.size)), Modifier.padding(horizontal = 12.dp, vertical = 10.dp), style = caption, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -1033,7 +1070,10 @@ private fun ApprovalBox(
     val small = Pack.mono(Pack.size.small, Pack.muted)
     Column(Modifier.fillMaxWidth().padding(top = 8.dp).framed(Pack.mark, Pack.accent, Pack.surface, radius = 12.dp).padding(10.dp)) {
         BasicText(title, style = Pack.body(color = Pack.accent))
-        if (card.explanation.isNotBlank()) BasicText(card.explanation.take(300), Modifier.padding(top = 4.dp), style = small)
+        // What a bot's command does beyond itself (runs as administrator, code from outside Arch's repos) stands out in red.
+        val (marks, rest) = cardMarks(card.explanation)
+        for (mark in marks) BasicText(mark, Modifier.padding(top = 4.dp), style = Pack.body(Pack.size.small, Pack.red))
+        if (rest.isNotBlank()) BasicText(rest.take(300), Modifier.padding(top = 4.dp), style = small)
         BasicText(detail, Modifier.padding(top = 4.dp), style = Pack.body(), maxLines = 10, overflow = TextOverflow.Ellipsis)
         BasicText("Approve once allows this action only.", Modifier.padding(top = 4.dp), style = small)
         Row {

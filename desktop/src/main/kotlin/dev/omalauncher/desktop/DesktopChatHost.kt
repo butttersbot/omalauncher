@@ -128,6 +128,10 @@ class DesktopChatHost(
 
     override fun stopMac(thread: String, said: (String?) -> Unit) = engine.stop(thread, said)
 
+    override fun botFiles(thread: String, told: (dev.omalauncher.assist.MacBotFiles?) -> Unit) = engine.botFiles(thread, told)
+
+    override fun freshBot(thread: String, said: (String) -> Unit) = engine.freshBot(thread, said)
+
     override fun switchMac(thread: String, to: MacPick) = engine.switchTo(thread, to)
 
     override fun tryMacAgain(time: Long) = engine.tryAgain(time)

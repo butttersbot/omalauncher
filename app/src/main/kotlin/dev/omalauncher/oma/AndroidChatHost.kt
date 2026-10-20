@@ -128,6 +128,10 @@ class AndroidChatHost(
 
     override fun stopMac(thread: String, said: (String?) -> Unit) = MacThreads.stop(context, thread, said)
 
+    override fun botFiles(thread: String, told: (dev.omalauncher.assist.MacBotFiles?) -> Unit) = MacThreads.botFiles(context, thread, told)
+
+    override fun freshBot(thread: String, said: (String) -> Unit) = MacThreads.freshBot(context, thread, said)
+
     override fun switchMac(thread: String, to: MacPick) = MacThreads.switchTo(context, thread, to)
 
     override fun tryMacAgain(time: Long) = MacThreads.tryAgain(context, time)

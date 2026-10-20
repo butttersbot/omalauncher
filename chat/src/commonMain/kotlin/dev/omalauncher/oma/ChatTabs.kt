@@ -41,9 +41,12 @@ fun chatTabs(threads: List<AgentThread>, soma: Boolean = true): List<String> = (
  * it is one of [all], every thread there is, and not [archived], the keys archived now.
  */
 fun shownThreads(live: List<AgentThread>, pinned: List<String>, all: List<AgentThread> = emptyList(), archived: Set<String> = emptySet(), wanted: String? = null): List<AgentThread> {
-    val open = all.firstOrNull { it.key == wanted && it.key !in archived && live.none { shown -> shown.key == it.key } }
-    val kept = live + listOfNotNull(open)
-    return kept.filter { it.key in pinned } + kept.filter { it.key !in pinned }
+    // Bots are always shown, first, however long they have rested (soma-bots PRD §6); then the rest as before.
+    val bots = (all + live).filter { it.bot != null }.distinctBy { it.key }
+    val rest = live.filter { it.bot == null }
+    val open = all.firstOrNull { it.key == wanted && it.bot == null && it.key !in archived && rest.none { shown -> shown.key == it.key } }
+    val kept = rest + listOfNotNull(open)
+    return bots + kept.filter { it.key in pinned } + kept.filter { it.key !in pinned }
 }
 
 /**
@@ -154,6 +157,15 @@ enum class TabAction(val label: String) {
 
     /** Moves a thread on a computer to another agent or model ([switchThread]), from a page of picks. */
     Switch("Switch agent"),
+
+    /** A bot's instructions, read only: to change them he asks an agent. */
+    Instructions("Instructions"),
+
+    /** A bot's own notes, read only. */
+    Notes("Notes"),
+
+    /** A bot's conversation archived on its machine; its instructions and notes stay. */
+    Fresh("Start fresh"),
     Archive("Archive"),
 
     /** Lists the archived tabs, from which one is brought back. Always the last row. */
@@ -167,8 +179,11 @@ enum class TabAction(val label: String) {
  * tab can be neither renamed, pinned nor archived: it is the stream everything else hangs from. No row deletes a
  * word of history or a thread on the Mac, and none answers an approval.
  */
-fun tabMenu(tab: String, pinned: Boolean, stoppable: Boolean, answered: Boolean, archived: Int, mend: TabMend = TabMend(), switchable: Boolean = false): List<TabAction> =
-    if (tab == OMA_TAB) {
+fun tabMenu(tab: String, pinned: Boolean, stoppable: Boolean, answered: Boolean, archived: Int, mend: TabMend = TabMend(), switchable: Boolean = false, bot: Boolean = false): List<TabAction> =
+    if (bot) {
+        // A bot's tab is always there and named by its folder: no rename, pin, switch or archive.
+        listOfNotNull(TabAction.Instructions, TabAction.Notes, TabAction.Stop.takeIf { stoppable }, TabAction.Copy.takeIf { answered }, TabAction.Fresh)
+    } else if (tab == OMA_TAB) {
         listOfNotNull(TabAction.Copy.takeIf { answered }, TabAction.Archived.takeIf { archived > 0 })
     } else {
         listOfNotNull(
@@ -218,7 +233,7 @@ fun archivedRow(count: Int) = "${TabAction.Archived.label} ($count)"
 fun archivedCaption(count: Int) = archivedRow(count) + " · tap to restore"
 
 /** Where a tab's menu is: its rows, a field to rename the tab in, the archived tabs, or the picks a thread can switch to. */
-enum class MenuPage { Rows, Rename, Archived, Switch }
+enum class MenuPage { Rows, Rename, Archived, Switch, Instructions, Notes }
 
 /** The thread on a computer whose tab [tab] is: its own, or the one a new chat lives on. Null for the Oma tab, a builder's, or a chat with no thread yet. */
 fun switchThread(tab: String, meta: TabMeta): String? = meta.chatOf(tab)?.mac?.takeIf { it.isNotEmpty() } ?: macThreadId(tab)
@@ -279,4 +294,28 @@ fun setDraft(drafts: Map<String, String>, tab: String, text: String, listening: 
 fun askedTab(extra: String?, meta: TabMeta = TabMeta()): String? {
     val key = extra?.take(ChatHistory.MAX_THREAD + 8)?.takeIf { it.isNotBlank() } ?: return null
     return macThreadId(key)?.let { meta.chatOnMac(it)?.key } ?: key
+}
+
+/** The line under a bot's name: "Venice · venice-uncensored-1-2 · on omarchy-mg1 · memory 41% · 2 summaries". */
+fun botInfoLine(bot: dev.omalauncher.assist.MacBot, model: String): String = listOfNotNull(
+    "Venice",
+    model.takeIf { it.isNotBlank() },
+    bot.machine.takeIf { it.isNotBlank() }?.let { "on $it" },
+    "memory ${bot.memory}%",
+    bot.summaries.takeIf { it > 0 }?.let { if (it == 1) "1 summary" else "$it summaries" },
+).joinToString(" · ")
+
+/** The marks a bot's card leads with, to show in red, and the rest of its explanation. */
+private val CARD_MARKS = listOf("Runs as administrator.", "Builds or runs code from outside Arch's own repos.")
+
+fun cardMarks(explanation: String): Pair<List<String>, String> {
+    var rest = explanation.trim()
+    val found = mutableListOf<String>()
+    for (mark in CARD_MARKS) {
+        if (rest.startsWith(mark)) {
+            found += mark
+            rest = rest.removePrefix(mark).trim()
+        }
+    }
+    return found to rest
 }
