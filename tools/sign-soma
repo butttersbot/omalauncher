@@ -1,0 +1,23 @@
+#!/bin/bash
+# sign-soma [APP]: signs Soma.app (default ~/Applications/Soma.app) with this Mac's Apple Development certificate, so
+# the Keychain knows it as the same app across rebuilds. An ad-hoc signed build is a new app to the Keychain every
+# time: its "Always Allow" for the runner key was lost with each one (2026-10-19). Run it after installing any build.
+# The previous copy is kept as Soma.app.before-signing next to it until the next run. Restarts Soma's LaunchAgent.
+set -euo pipefail
+app=${1:-$HOME/Applications/Soma.app}
+[ -d "$app" ] || { echo "sign-soma: no app at $app" >&2; exit 2; }
+identity=${SOMA_SIGN_IDENTITY:-$(security find-identity -v -p codesigning | sed -n 's/.*"\(Apple Development:[^"]*\)".*/\1/p' | head -n 1)}
+[ -n "$identity" ] || { echo "sign-soma: no Apple Development certificate in the Keychain" >&2; exit 3; }
+
+rm -rf "$app.before-signing"
+cp -R "$app" "$app.before-signing"
+# No hardened runtime: the JVM inside needs to write code at run time.
+codesign --force --deep --timestamp=none --sign "$identity" "$app"
+codesign --verify --deep --strict "$app"
+codesign -dv "$app" 2>&1 | grep -E '^(Identifier|Authority)=' | head -n 2
+
+plist=$HOME/Library/LaunchAgents/dev.omalauncher.soma.serve.plist
+if [ "$app" = "$HOME/Applications/Soma.app" ] && [ -f "$plist" ]; then
+  launchctl kickstart -k "gui/$(id -u)/dev.omalauncher.soma.serve" && echo "restarted Soma's service (soma --serve)"
+fi
+echo "Signed. The Keychain asks once more for this signature; choose Always Allow and it sticks across rebuilds."
