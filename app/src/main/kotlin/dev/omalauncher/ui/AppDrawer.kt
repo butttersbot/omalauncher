@@ -402,6 +402,9 @@ internal fun StripCell(
 }
 
 /** The apps opened lately, last opened first; ones not installed (or not loaded yet) are skipped. */
+/** How many apps the app list's recent section holds (Boss, 2026-10-20: "go up to 8 apps"). */
+internal const val RECENT_IN_DRAWER = 8
+
 internal fun recentApps(
     runtime: Runtime,
     limit: Int,
@@ -608,9 +611,9 @@ internal fun AppPanel(
                     if (query.isNotBlank()) {
                         search.hits.chunked(columns).forEachIndexed { r, cells -> row("q:$r", cells, highlighted - r * columns) }
                     } else {
-                        // The apps opened last, one row of them, above everything (Boss, 2026-10-20: "put recents up at
-                        // the top"), now that a panels look has no recent strip on home.
-                        section("recent", recentApps(runtime, columns))
+                        // The apps opened last, above everything (Boss, 2026-10-20: "put recents up at the top"), now that
+                        // a panels look has no recent strip on home: eight of them, in as many rows as that takes.
+                        section("recent", recentApps(runtime, RECENT_IN_DRAWER))
                         section("apps", runtime.widgets.apps().map { AppHit.Owl(it) })
                         if (linuxState == LinuxState.Installed) {
                             section("linux", runtime.linuxApps.map { AppHit.Linux(it) })
