@@ -974,6 +974,9 @@ def risky_command(command):
         if head in ('curl', 'wget'):
             if not re.fullmatch(r'https?://[^\s@]+', word):
                 return True  # only web addresses: file://, gopher://, scp:// and the rest read or send anything
+            host = re.match(r'https?://([^/:]+)', word).group(1).lower()
+            if '.' not in host or host.endswith(('.ts.net', '.local', '.internal', '.lan')) or re.fullmatch(r'[0-9.]+|0x[0-9a-f]+|\d+', host):
+                return True  # this machine, his tailnet or his LAN: services there may trust anyone who reaches them
             index += 1
             continue
         operand = rule.get('operands')
