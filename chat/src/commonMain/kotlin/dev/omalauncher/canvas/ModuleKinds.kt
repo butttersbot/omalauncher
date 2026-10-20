@@ -23,9 +23,10 @@ const val MODULE_TILE_KIND = "module"
 /**
  * A module, with the cells it starts at: [size] across and down on the six columns. [perProject] ones show one project;
  * a [chatScreen] one is the chat itself, a block on a screen whose window is its chat (Soma desktop), never on the Fold,
- * whose chat is an app of its own. Ids are saved: never rename.
+ * whose chat is an app of its own; a [foldHome] one shows what only the Fold's home keeps (its saved layouts), so Soma
+ * desktop doesn't offer it. Ids are saved: never rename.
  */
-enum class ModuleKind(val id: String, val title: String, val blurb: String, val size: Pair<Int, Int>, val perProject: Boolean = false, val chatScreen: Boolean = false) {
+enum class ModuleKind(val id: String, val title: String, val blurb: String, val size: Pair<Int, Int>, val perProject: Boolean = false, val chatScreen: Boolean = false, val foldHome: Boolean = false) {
     Needs("needs", "Needs you", "What waits for your OK, from every thread: approve or deny from the tile.", 3 to 2),
     Threads("threads", "Threads", "Every thread and how it stands; tap one to open it in the chat.", 3 to 2),
     Computers("computers", "Computers", "Each computer, whether it answers, and how busy it is.", 3 to 2),
@@ -36,7 +37,7 @@ enum class ModuleKind(val id: String, val title: String, val blurb: String, val 
     Handoff("handoff", "Handoff", "A project's handoff: where things stand, and next.", 3 to 3, perProject = true),
     Project("project", "Project", "A project's threads and its next step.", 3 to 2, perProject = true),
     Chat("chat", "Chat", "The chat itself.", 3 to 4, chatScreen = true),
-    Layouts("layouts", "Layouts", "Saved layouts of home: tap one to load it, or save this one; how art is printed.", 3 to 2),
+    Layouts("layouts", "Layouts", "Saved layouts of home: tap one to load it, or save this one; how art is printed.", 3 to 2, foldHome = true),
     ;
 
     companion object { fun of(id: String) = entries.firstOrNull { it.id == id } }

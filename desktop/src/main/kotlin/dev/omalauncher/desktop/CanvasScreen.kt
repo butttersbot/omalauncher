@@ -224,9 +224,12 @@ private fun Unkept(why: String, modifier: Modifier) {
     BasicText(why, modifier.padding(14.dp).background(Pack.overlay).padding(horizontal = 12.dp, vertical = 6.dp), style = Pack.mono(Pack.size.small, Pack.red))
 }
 
-/** The modules that can be added: each kind not on the page yet, then a Project and a Handoff module for each of [projects]. */
+/**
+ * The modules that can be added: each kind not on the page yet (not the Fold's home's own, whose saved layouts aren't kept
+ * here), then a Project and a Handoff module for each of [projects].
+ */
 fun addable(canvas: DesktopCanvas, projects: List<String>): List<Pair<String, String>> =
-    (ModuleKind.entries.filter { !it.perProject && !it.chatScreen }.mapNotNull { k -> moduleKey(k)?.let { it to k.title } } +
+    (ModuleKind.entries.filter { !it.perProject && !it.chatScreen && !it.foldHome }.mapNotNull { k -> moduleKey(k)?.let { it to k.title } } +
         projects.flatMap { p -> ModuleKind.entries.filter { it.perProject }.mapNotNull { k -> moduleKey(k, p)?.let { it to "${k.title.lowercase()} · $p" } } })
         .filter { (key, _) -> !canvas.has(key) }
 
