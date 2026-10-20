@@ -3,7 +3,7 @@
 
 The spec's "First proof" list, as far as it goes without the phone and without a signed-in Claude Code.
 """
-import plistlib, json, os, pathlib, re, signal, socket, subprocess, sys, tempfile, time, urllib.error, urllib.parse, urllib.request
+import plistlib, json, os, shutil, pathlib, re, signal, socket, subprocess, sys, tempfile, time, urllib.error, urllib.parse, urllib.request
 
 HERE = pathlib.Path(__file__).resolve().parent
 work = pathlib.Path(tempfile.mkdtemp(prefix='oma-runner-test-')).resolve()
@@ -96,6 +96,19 @@ venice_api = http.server.ThreadingHTTPServer(('127.0.0.1', 0), VeniceAPI)
 threading.Thread(target=venice_api.serve_forever, daemon=True).start()
 (work / 'venice').mkdir()
 (work / 'venice' / 'config.json').write_text(json.dumps({'api_key': 'venice-test-key'}))
+bots = root / 'Soma' / 'bots'
+for bot_id, files in {
+    'linux': {'bot.json': {'name': 'Linux setup', 'emoji': '🐧', 'brain': 'venice', 'model': 'venice-uncensored', 'web_search': 'off', 'machine': 'testhost', 'tools': []},
+              'instructions.md': 'You are the Linux setup bot.', 'notes.md': '- MG1 uses yay.'},
+    'broken': {'bot.json': '{not json', 'instructions.md': 'x'},
+    'elsewhere': {'bot.json': {'name': 'Away', 'brain': 'venice', 'model': 'm1', 'machine': 'omarchy-mg1'}, 'instructions.md': 'x'},
+    'searchy': {'bot.json': {'name': 'Searchy', 'brain': 'venice', 'model': 'm1', 'machine': 'testhost', 'tools': ['shell'], 'web_search': 'auto'}, 'instructions.md': 'x'},
+    'Bad_Name': {'bot.json': {'name': 'Ignored'}},
+}.items():
+    (bots / bot_id).mkdir(parents=True)
+    for name, content in files.items():
+        (bots / bot_id / name).write_text(content if isinstance(content, str) else json.dumps(content))
+environment['OMA_RUNNER_BOTS'] = str(bots)
 environment.update({'OMA_RUNNER_VENICE_CONFIG': str(work / 'venice' / 'config.json'), 'VENICE_API_BASE_URL': 'http://127.0.0.1:%d/api/v1' % venice_api.server_address[1]})
 environment.pop('VENICE_API_KEY', None)
 received = work / 'From Fold'
@@ -235,7 +248,7 @@ try:
     calling_as('phone')
     check('unpair leaves every other device in', call('GET', '/health')[0] == 200)
     code, health = call('GET', '/health')
-    check('/health answers, naming the agents the Mac has (Venice, which has a key)', code == 200 and health.pop('models', None) is not None and health == {'ok': True, 'runner': 'oma-runner', 'soma': environment['OMA_RUNNER_SOMA_SERVICE'], 'threads': 0, 'working': 0, 'waiting': 0, 'kinds': ['claude', 'codex', 'cursor', 'grok', 'venice'], 'files': True})
+    check('/health answers, naming the agents the Mac has (Venice, which has a key)', code == 200 and health.pop('models', None) is not None and health.pop('bots', None) is not None and health == {'ok': True, 'runner': 'oma-runner', 'soma': environment['OMA_RUNNER_SOMA_SERVICE'], 'threads': 4, 'working': 0, 'waiting': 0, 'kinds': ['claude', 'codex', 'cursor', 'grok', 'venice'], 'files': True})
     check('a project outside the roots is refused', call('POST', '/threads', {'name': 'x', 'project': str(outside)})[0] == 403)
     check('a path that climbs out of a root is refused', call('POST', '/threads', {'name': 'x', 'project': str(project / '..' / '..' / 'outside')})[0] == 403)
     (root / 'link').symlink_to(outside)
@@ -251,7 +264,7 @@ try:
     check('the agent is run in auto mode, asking through the prompt tool', starts()[-1]['mode'] == 'auto' and starts()[-1]['prompt_tool'] == 'stdio')
     check('the thread answers what files are here', any(event['type'] == 'text' and 'notes.md' in event['text'] for event in events))
     check('it goes back to idle', settle(thread, 'idle'))
-    listed = call('GET', '/threads')[1]['threads'][0]
+    listed = next(t for t in call('GET', '/threads')[1]['threads'] if t['id'] == thread)
     check('/threads gives summary, tail and when it last worked', listed['summary'] == 'what files are here' and 'notes.md' in listed['tail'] and listed['last_worked'])
 
     # Agent mail: tailshare-serve keeps it in new/; the runner takes what is for its threads and gives it, labeled.
@@ -532,6 +545,7 @@ try:
         call('POST', path, {'decision': 'deny', 'nonce': card['nonce']})
         events = stream(other, after=card['id'])
         check(kind + ': deny refuses it', not (project / 'written.txt').exists() and any('Not allowed' in event.get('text', '') for event in events))
+        check(kind + ': the answer names the device that gave it', any(e['type'] == 'approval_result' and e.get('device') == 'phone' for e in events))
         if kind == 'grok':
             check('grok: a turn it ends because he said no is not a failure', any(e['type'] == 'result' and not e['failed'] and 'Not allowed' in e['text'] for e in events))
             whole = call('GET', '/threads/%s/events' % other)[1]['events']
@@ -633,6 +647,61 @@ try:
     events = stream(made['thread']['id'], until=('result', 'error'))
     check('venice: with no model asked for, the venice CLI\'s default is used', venice_calls[-1][3]['model'] == 'kimi-k2-5' and events[-1].get('model') == 'kimi-k2-5')
     check('venice: the key is in none of a thread\'s records', not any('venice-test-key' in f.read_text() for f in (work / 'state').rglob('*') if f.is_file()))
+    # Bots: each folder in ~/Soma/bots is one bot with one session, read again for every message.
+    code, health = call('GET', '/health')
+    listed = {bot['id']: bot for bot in health.get('bots', [])}
+    check('bots: /health lists each bot folder (not a badly named one), with a plain problem for the broken ones',
+          sorted(listed) == ['broken', 'elsewhere', 'linux', 'searchy'] and listed['linux']['problem'] is None and listed['linux']['emoji'] == '🐧'
+          and 'not valid JSON' in listed['broken']['problem'] and 'omarchy-mg1' in listed['elsewhere']['problem'] and 'web_search' in listed['searchy']['problem'])
+    def bot_thread(bot_id):
+        return next((t for t in call('GET', '/threads')[1]['threads'] if (t.get('bot') or {}).get('id') == bot_id), None)
+    linux = bot_thread('linux')
+    check('bots: each bot has one session, named as the bot, idle, kind venice', linux and linux['name'] == 'Linux setup' and linux['kind'] == 'venice'
+          and linux['status'] == 'idle' and linux['bot']['memory'] == 0 and all(bot_thread(b) for b in ('broken', 'elsewhere', 'searchy')))
+    check('bots: listing again makes no second session', len([t for t in call('GET', '/threads')[1]['threads'] if (t.get('bot') or {}).get('id') == 'linux']) == 1)
+    call('POST', '/threads/%s/messages' % linux['id'], {'text': 'hello bot'})
+    events = stream(linux['id'], until=('result', 'error'))
+    sent = venice_calls[-1][3]
+    check('bots: a message sends the instructions, then the notes framed as data, with Venice\'s own prompt off and search as the bot says',
+          events[-1]['type'] == 'result' and sent['model'] == 'venice-uncensored' and sent['messages'][0]['role'] == 'system'
+          and sent['messages'][0]['content'].startswith('You are the Linux setup bot.') and '<<NOTES' in sent['messages'][0]['content'] and 'MG1 uses yay.' in sent['messages'][0]['content']
+          and sent['venice_parameters'] == {'include_venice_system_prompt': False, 'enable_web_search': 'off'} and sent['messages'][-1]['content'] == 'hello bot')
+    settle(linux['id'], 'idle')
+    (bots / 'linux' / 'instructions.md').write_text('You are the NEW Linux setup bot.')
+    bot_json = json.loads((bots / 'linux' / 'bot.json').read_text())
+    (bots / 'linux' / 'bot.json').write_text(json.dumps({**bot_json, 'name': 'Linux box', 'model': 'kimi-k2-5'}))
+    last = call('GET', '/threads/' + linux['id'])[1]['thread']['last_event']
+    call('POST', '/threads/%s/messages' % linux['id'], {'text': 'again'})
+    events = stream(linux['id'], after=last, until=('result', 'error'))
+    sent = venice_calls[-1][3]
+    check('bots: an edit to its files counts from the next message: new instructions, new model, the conversation kept',
+          sent['messages'][0]['content'].startswith('You are the NEW') and sent['model'] == 'kimi-k2-5' and [m['content'] for m in sent['messages'][1:]] == ['hello bot', 'echo 1: hello bot', 'again']
+          and bot_thread('linux')['name'] == 'Linux box')
+    settle(linux['id'], 'idle')
+    broken = bot_thread('broken')
+    call('POST', '/threads/%s/messages' % broken['id'], {'text': 'hi'})
+    events = stream(broken['id'], until=('result', 'error'))
+    check('bots: a broken bot runs nothing and says why', events[-1]['type'] == 'error' and events[-1]['code'] == 'bot' and 'not valid JSON' in events[-1]['text'])
+    code, shown = call('GET', '/bots/linux')
+    check('bots: GET /bots/ID gives its settings, instructions and notes, read only', code == 200 and shown['instructions'] == 'You are the NEW Linux setup bot.'
+          and shown['notes'] == '- MG1 uses yay.' and shown['bot']['name'] == 'Linux box')
+    check('bots: an unknown or malformed bot is 404', call('GET', '/bots/nope')[0] == 404 and call('GET', '/bots/Bad_Name')[0] == 404 and call('GET', '/bots/..')[0] == 404)
+    (bots / 'searchy' / 'notes.md').symlink_to(work / 'token')
+    check('bots: a symlinked file is never read', call('GET', '/bots/searchy')[1]['notes'] == '')
+    code, done = call('POST', '/threads/%s/fresh' % linux['id'], {})
+    archived = list((bots / 'linux' / 'archive').glob('*-venice.json'))
+    last = call('GET', '/threads/' + linux['id'])[1]['thread']['last_event']
+    call('POST', '/threads/%s/messages' % linux['id'], {'text': 'after fresh'})
+    stream(linux['id'], after=last, until=('result', 'error'))
+    sent = venice_calls[-1][3]
+    check('bots: Start fresh archives the conversation in the bot\'s folder, keeps instructions and notes, and the next message starts over',
+          code == 200 and len(archived) == 1 and 'hello bot' in archived[0].read_text() and [m['role'] for m in sent['messages']] == ['system', 'user']
+          and (bots / 'linux' / 'notes.md').read_text() == '- MG1 uses yay.')
+    settle(linux['id'], 'idle')
+    check('bots: an ordinary thread can\'t start fresh', call('POST', '/threads/%s/fresh' % chat, {})[0] == 400)
+    shutil.rmtree(bots / 'searchy')
+    searchy = [t for t in call('GET', '/threads')[1]['threads'] if t['name'] == 'Searchy']
+    check('bots: a bot whose folder is gone keeps its session as an ordinary thread', len(searchy) == 1 and searchy[0]['bot'] is None)
     data = os.urandom(2 * 1024 * 1024 + 7)
     code, kept = upload('photo one.jpg', data)
     check('a file from the phone is kept in From Fold, made for it, and its path and size answered', code == 200 and kept == {'ok': True, 'path': str(received / 'photo one.jpg'), 'bytes': len(data)}
