@@ -76,6 +76,9 @@ class FoldCanvasPad(
         if (!notebook.opened) return "Home is still loading. Try again in a moment"
         val ids = HashMap<String, String>()
         fun real(id: String) = ids[id] ?: id
+        // Pages made by these same verbs: nothing can be written or stuck on one yet, though its notes were never read, so
+        // taking it away again (a saved layout's page for the moment) is never stopped by the marks rule (storyboard critic).
+        val made = HashSet<String>()
         for (asked in verbs) {
             val v = when (asked) {
                 is CanvasVerb.PageRename -> asked.copy(id = real(asked.id))
@@ -93,19 +96,20 @@ class FoldCanvasPad(
                     // By the id asked for, free on home (checked just above): a page an undo or a saved layout brings back is the
                     // page it was, and a later verb naming another's old id never meets one home numbered meanwhile (layouts review).
                     if (pageName(v.name) == null) return "that is not a name a page can have"
-                    if (notebook.addPageWithId(v.id, v.name, v.after)) { done += v; continue }
+                    if (notebook.addPageWithId(v.id, v.name, v.after)) { made += v.id; done += v; continue }
                     val id = addPage() ?: return "home can't take a new page now"
                     ids[v.id] = id
                     if (!notebook.renamePage(id, v.name)) { notebook.withdrawPage(id); return "that is not a name a page can have" }
                     // Back in its place, for an undo that brings a page back: after the one it followed, or first.
                     val at = when (v.after) { null -> notebook.pages.size - 1; PAGE_START -> 0; else -> notebook.position(v.after) + 1 }
                     if (at in 0 until notebook.pages.size - 1) notebook.movePage(id, at - (notebook.pages.size - 1))
+                    made += id
                     done += v.copy(id = id)
                     continue
                 }
                 is CanvasVerb.PageRename -> if (!notebook.renamePage(v.id, v.name)) return "that is not a name a page can have"
                 is CanvasVerb.PageRemove -> {
-                    if (marked(v.id)) return "the page \"${notebook.name(v.id)}\" has notes, stickers or ink on it, so it stays; he removes it himself in the overview"
+                    if (v.id !in made && marked(v.id)) return "the page \"${notebook.name(v.id)}\" has notes, stickers or ink on it, so it stays; he removes it himself in the overview"
                     if (!removePage(v.id)) return "home can't take that page away now"
                 }
                 is CanvasVerb.Place -> { notebook.move(v.key, v.page); notebook.setCell(v.key, v.cell); notebook.save() }

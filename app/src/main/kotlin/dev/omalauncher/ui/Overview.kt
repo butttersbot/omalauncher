@@ -95,6 +95,15 @@ import dev.omalauncher.widgets.PageGone
 import dev.omalauncher.widgets.PageLabel
 import dev.omalauncher.widgets.clipped
 import dev.omalauncher.widgets.pageName
+import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.platform.LocalContext
+import dev.omalauncher.art.ArtStore
+import dev.omalauncher.canvas.Storyboard
+import dev.omalauncher.widgets.FoldLayouts
+import dev.omalauncher.widgets.layout.ItemKind
+import dev.omalauncher.widgets.layout.Notebook
+import dev.omalauncher.widgets.pickedPanels
+import dev.omalauncher.widgets.annotations.HomeAnnotations
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -287,13 +296,19 @@ fun Overview(
             foldView(width, height, posture(width, height, state.hinge), 0, pages.size).per
         }
 
-    fun open(page: String) {
+    // The Storyboard (ネーム), opened from the upper-right corner in a look drawn in panels; home as it was when it opened.
+    val manga = pickedPanels()
+    val context = LocalContext.current
+    var board by remember { mutableStateOf<Storyboard?>(null) }
+    var boardFrom by remember { mutableStateOf<Notebook?>(null) }
+
+    fun open(page: String, grow: Boolean = true) {
         val at = notebook.position(page)
         if (at >= 0) state.requestedPage = at
         // Its still grows from where it is drawn in its tile to the room the page has on home, which is what the
         // still is a picture of; if either isn't there to be seen, home is simply back.
         val image = runtime.pageStills[page]
-        val picture = pictures[page]?.takeIf { grid.layoutInfo.visibleItemsInfo.any { item -> item.key == page } }
+        val picture = pictures[page]?.takeIf { grow && grid.layoutInfo.visibleItemsInfo.any { item -> item.key == page } }
         val place = if (at < 0) null else state.pageRooms.of(at % per.coerceAtLeast(1))
         opening.page =
             if (image == null || picture == null || place == null || Motion.reduced) {
@@ -302,6 +317,27 @@ fun Overview(
                 PageOpened(image, fitIn(picture, image.width, image.height).translate(-origin), place.translate(-origin))
             }
         state.closeOverview()
+    }
+
+    fun openBoard() {
+        val pad = FoldLayouts.pad(context)
+        val store = ArtStore(context)
+        boardFrom = notebook.snapshot()
+        board =
+            Storyboard(
+                pad = { if (notebook.opened) pad else null },
+                shelf = pad.layouts,
+                artIds = store::ids,
+                titleOf = { item -> if (item.kind == ItemKind.Widget) engine.specs.firstOrNull { it.file.name == item.key }?.name?.replaceFirstChar { it.uppercase() } else null },
+            ).also { it.open(state.currentPage) }
+    }
+
+    /** The Storyboard put away: the stills of the pages it changed no longer show them, so they go. */
+    fun closeBoard() {
+        val before = boardFrom?.pages.orEmpty().associateBy { it.id }
+        for (page in notebook.snapshot().pages) if (before[page.id] != page) runtime.pageStills.drop(page.id)
+        board = null
+        boardFrom = null
     }
 
     // Back goes to the page he came from, wherever the pages were moved meanwhile.
@@ -324,6 +360,8 @@ fun Overview(
             .pointerInput(Unit) {
                 awaitEachGesture {
                     awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    // The Storyboard over the pages has its own gestures.
+                    if (board != null) return@awaitEachGesture
                     var span0 = 0f
                     var ratio = 1f
                     var over: String? = null
@@ -363,19 +401,23 @@ fun Overview(
         Column(Modifier.fillMaxSize().safeDrawingPadding().padding(PageGap)) {
             val owns = Pack.ownsPage
             val u = LocalConfiguration.current.run { prototypeUnit(screenWidthDp.toFloat(), screenHeightDp.toFloat()) }
-            if (owns) {
-                // The prototype's folio, where home has its page names; what just happened is said in its place.
-                BasicText(
-                    told ?: "all pages",
-                    Modifier.padding(start = (16 * u).dp, top = 2.dp, bottom = (14 * u).dp),
-                    style = if (told != null) Pack.body(Pack.size.small, Pack.accent) else Pack.folio,
-                )
-            } else {
-                BasicText(
-                    told ?: "tap a page to open it · hold one to rename, move or delete it",
-                    Modifier.padding(horizontal = 6.dp, vertical = 8.dp),
-                    style = Pack.body(Pack.size.small, if (told != null) Pack.accent else Pack.muted),
-                )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (owns) {
+                    // The prototype's folio, where home has its page names; what just happened is said in its place.
+                    BasicText(
+                        told ?: "all pages",
+                        Modifier.weight(1f).padding(start = (16 * u).dp, top = 2.dp, bottom = (14 * u).dp),
+                        style = if (told != null) Pack.body(Pack.size.small, Pack.accent) else Pack.folio,
+                    )
+                } else {
+                    BasicText(
+                        told ?: "tap a page to open it · hold one to rename, move or delete it",
+                        Modifier.weight(1f).padding(horizontal = 6.dp, vertical = 8.dp),
+                        style = Pack.body(Pack.size.small, if (told != null) Pack.accent else Pack.muted),
+                    )
+                }
+                // Setting up every page for the look: only in a look drawn in panels, once home is open (Boss, 2026-10-19).
+                if (manga != null && notebook.opened) StoryboardButton(Modifier.padding(start = 8.dp, end = 6.dp)) { openBoard() }
             }
             // In the prototype a page is 106 of its units across here, with 36 between it and the next.
             val cell = if (owns) GridCells.Adaptive((142 * u).dp) else GridCells.Adaptive(132.dp)
@@ -417,6 +459,28 @@ fun Overview(
                         onHold = {},
                     )
                 }
+            }
+        }
+        board?.let { b ->
+            // Every page's notes read now and after each change: home won't take a page away before its notes are read, and a
+            // load leaving fewer pages (a page added here, say) would say it has notes when it has none (critic).
+            LaunchedEffect(b, b.changes) {
+                val book = HomeAnnotations.of(context)
+                for (page in notebook.pages.toList()) book.whenRead(page.id) {}
+            }
+            if (manga == null) {
+                // The look changed under it (an agent, the look strip): the panels it sets up are gone.
+                LaunchedEffect(b) { closeBoard() }
+            } else {
+                StoryboardView(
+                    b,
+                    manga,
+                    onDone = { page ->
+                        closeBoard()
+                        open(page ?: state.currentPage, grow = false)
+                    },
+                    onBack = ::closeBoard,
+                )
             }
         }
     }
