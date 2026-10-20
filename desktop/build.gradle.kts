@@ -65,3 +65,41 @@ compose.desktop {
         }
     }
 }
+
+// Signed with a certificate this Mac names (somaSignIdentity in ~/.gradle/gradle.properties: per-machine, so out of Git),
+// Soma keeps one identity from build to build (its bundle id and team, not each build's hash), and the Keychain's
+// "Always Allow" for its runner keys holds across updates. Without one it stays signed ad hoc, and each build is a new app
+// to the Keychain. Done here rather than by Compose's own signing, which finds only Developer ID certificates. The
+// entitlements are the ones Compose gives an ad hoc build: the JVM's JIT and its native libraries.
+val somaSignIdentity = providers.gradleProperty("somaSignIdentity").orNull
+if (somaSignIdentity != null) {
+    // Taken as plain values here, so the step holds nothing of the build script (the configuration cache keeps it).
+    val appDir = layout.buildDirectory.dir("compose/binaries/main/app/Soma.app").get().asFile
+    val entitlementsFile = layout.buildDirectory.file("soma-entitlements.plist").get().asFile
+    val identity: String = somaSignIdentity
+    tasks.matching { it.name == "createDistributable" }.configureEach {
+        doLast {
+            val app = appDir
+            val entitlements = entitlementsFile
+            entitlements.writeText(
+                """<?xml version="1.0" encoding="UTF-8"?>
+                <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+                <plist version="1.0"><dict>
+                <key>com.apple.security.cs.allow-jit</key><true/>
+                <key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>
+                <key>com.apple.security.cs.disable-library-validation</key><true/>
+                </dict></plist>""".trimIndent(),
+            )
+            fun sign(file: File) {
+                val done = ProcessBuilder("codesign", "--force", "--timestamp=none", "--options", "runtime", "--entitlements", entitlements.path, "--sign", identity, file.path)
+                    .redirectErrorStream(true).start()
+                val said = done.inputStream.bufferedReader().readText()
+                check(done.waitFor() == 0) { "codesign ${file.name}: $said" }
+            }
+            // Inside out: every library and helper, then the runtime bundle, then the app.
+            app.walkBottomUp().filter { it.isFile && (it.name.endsWith(".dylib") || it.name.endsWith(".jnilib") || it.name == "jspawnhelper") }.forEach(::sign)
+            sign(File(app, "Contents/runtime"))
+            sign(app)
+        }
+    }
+}

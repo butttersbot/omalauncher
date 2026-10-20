@@ -16,12 +16,20 @@ most of what it does is shared with the phone from `:chat`.
 
 ## How it behaves
 
-- **The Soma tab** talks to the desktop front agent (Haiku through `claude -p`), which answers or hands his words to a
-  thread on a computer. With no builders here, work for no listed thread starts a new thread, as a new chat's first
-  words do. Without Claude Code on this computer, the Soma tab's words start a new thread directly (the desktop host
-  always names a background agent, so the send rules never refuse; `frontReady` false sends them straight on).
-- **New chats and threads' tabs** are exactly the phone's: the thread is made on the computer and agent picked
-  (slice 5), followed, approved and stopped through the shared engine.
+- **No Soma tab and no front agent** (Boss, 2026-10-19: the front agent only makes sense on the phone).
+  `DesktopChatHost.somaTab` is false: the strip has no Soma tab, and when nothing is asked for (at start, a
+  `soma://soma` link, the last tab archived) the window opens an empty new chat, the one there is or a new one. A
+  link to a thread not listed yet is waited for, not replaced.
+  `frontReady` is false, so a new chat's first words start its thread directly (`startChatDirect`). `DesktopFrontAgent`
+  is still built, for `soma front` and the canvas verbs, but the chat never asks it.
+- **New chats and threads' tabs** are exactly the phone's: the thread is made on the computer, agent and model picked
+  in the new chat ("on [computer] with [agent] [model]"; slice 5), followed, approved and stopped through the shared
+  engine. Venice is one of the agents where the computer's runner has a key, with the models the runner lists.
+- **Every device sees every session.** Each Soma (phone, every desktop) asks every runner it is paired with for all
+  of its threads, whoever made them (`DesktopEndToEndTest.aSessionStartedOnOneDeviceIsSeenOnTheOther`). What doesn't
+  cross devices: a chat's own entries and name (each device's log and tab book are its own; another device shows the
+  thread by the runner's name for it, with its record read from the runner), and a new chat nothing was sent in yet.
+  Like the phone, the strip shows a thread worked within 12 hours, pinned or open; older ones are not in it.
 - **No pictures and no microphone** (`ChatHost.attaches`, `dictates`): a computer's own dictation (Wispr Flow, macOS
   dictation) types into the field, and pictures can't reach a thread on another computer from here, so neither button
   shows.
@@ -73,6 +81,13 @@ The service finds Tailscale as the runner does: `OMA_RUNNER_TAILSCALE`, the App 
 
 - On the Mac Pro: `./gradlew :desktop:createDistributable` gives `desktop/build/compose/binaries/main/app/Soma.app` (with
   its own Java runtime, 139 MB); `:desktop:packageDmg` a disk image.
+- **Signing (2026-10-19).** A Mac that names a certificate as `somaSignIdentity` in `~/.gradle/gradle.properties` (the Mac
+  Pro: `Apple Development: Created via API (FUKNMCL2G2)`, team 8Z4A34Q652) gets Soma.app signed with it after
+  `createDistributable`, libraries and runtime first, with the entitlements an ad hoc build has (JIT, unsigned executable
+  memory, no library validation). Its identity is then its bundle id and certificate, not each build's hash, so the
+  Keychain's "Always Allow" for the runner keys holds across updates. Seen on the Mac Pro: a build re-signed with
+  different contents started with no Keychain prompt. Without the property a build stays ad hoc, and every update asks
+  again. The name lives in that per-machine file, not in Git.
 - For Linux, built on the Mac Pro: `./gradlew -PsomaOs=linux-x64 :desktop:packageUberJarForCurrentOS` gives one jar with
   Linux's Skia (the file is named after the machine that built it). It runs with `java -jar` on a Java 17+ runtime, which
   the Omarchy boxes don't have yet.

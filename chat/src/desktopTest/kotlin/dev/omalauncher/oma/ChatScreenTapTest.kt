@@ -16,9 +16,12 @@ import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipe
 import androidx.compose.ui.test.longClick
 import org.junit.Assert.assertEquals
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.use
 import dev.omalauncher.assist.AgentThread
 import dev.omalauncher.assist.ApprovalOutcome
@@ -128,6 +131,87 @@ class ChatScreenTapTest : ChatScreenTestBase() {
         settle()
         assertTrue(host.book.chat("c1")!!.agent == "claude" && host.book.chat("c1")!!.model == "opus")
         onNodeWithText("[ Opus ]").assertExists()
+    }
+
+    /** Venice is an agent like the others in a new chat's pick, its models the ones the computer's runner listed. */
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+    @Test fun veniceAndItsModelsArePicked() = androidx.compose.ui.test.runComposeUiTest {
+        val host = object : SampleHost() {
+            override fun hosts() = listOf(HostChoice("mac", "Mac Pro", true, listOf("claude", "venice"), mapOf("claude" to dev.omalauncher.assist.MAC_CLAUDE_MODELS, "venice" to dev.omalauncher.assist.macModels("venice", emptyList(), listOf("kimi-k2-5", "venice-uncensored")))))
+        }
+        host.book = TabMeta().started("c1", host.now)
+        mainClock.autoAdvance = false
+        setContent { OmaChatScreen(host, prefill = null, onPrefilled = {}, wanted = chatKey("c1"), onTab = {}) }
+        fun settle() = mainClock.advanceTimeBy(1_200)
+        settle()
+        onNodeWithText("[ Claude ]").performClick()
+        settle()
+        onNodeWithText("Venice").performClick()
+        settle()
+        onNodeWithText("[ default ]").performClick()
+        settle()
+        onNodeWithText("venice-uncensored").performClick()
+        settle()
+        assertTrue(host.book.chat("c1")!!.agent == "venice" && host.book.chat("c1")!!.model == "venice-uncensored")
+        onNodeWithText("[ venice-uncensored ]").assertExists()
+    }
+
+    /** A model list longer than the window (Venice lists dozens) scrolls, so its last model can be picked. */
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+    @Test fun aLongModelListScrollsToItsLast() = androidx.compose.ui.test.runComposeUiTest {
+        val many = (1..60).map { "venice-model-$it" }
+        val host = object : SampleHost() {
+            override fun hosts() = listOf(HostChoice("mac", "Mac Pro", true, listOf("venice"), mapOf("venice" to dev.omalauncher.assist.macModels("venice", emptyList(), many))))
+        }
+        host.book = TabMeta().started("c1", host.now).chose("c1", "mac", "venice")
+        mainClock.autoAdvance = false
+        setContent { androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.size(800.dp, 600.dp)) { OmaChatScreen(host, prefill = null, onPrefilled = {}, wanted = chatKey("c1"), onTab = {}) } }
+        fun settle() = mainClock.advanceTimeBy(1_200)
+        settle()
+        onNodeWithText("[ default ]").performClick()
+        settle()
+        onNodeWithText("venice-model-60").assertIsNotDisplayed()
+        // Dragged up as a hand would (the screen's clock is held, so an animated scroll-to would never end).
+        repeat(3) {
+            onNodeWithText("Venice on").performTouchInput { swipe(center, center - androidx.compose.ui.geometry.Offset(0f, 1500f), 300) }
+            settle()
+        }
+        onNodeWithText("venice-model-60").assertIsDisplayed().performClick()
+        settle()
+        assertTrue(host.book.chat("c1")!!.model == "venice-model-60")
+    }
+
+    /** With no Soma tab (the desktop), nothing asked for opens a new chat, and its strip has no Soma tab. */
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+    @Test fun withNoSomaTabItOpensToANewChat() = androidx.compose.ui.test.runComposeUiTest {
+        val host = object : SampleHost() {
+            override val somaTab get() = false
+            override fun frontReady() = false
+        }
+        var wanted by mutableStateOf<String?>(null)
+        mainClock.autoAdvance = false
+        setContent { OmaChatScreen(host, prefill = null, onPrefilled = {}, wanted = wanted, onTab = { wanted = it }) }
+        fun settle() = mainClock.advanceTimeBy(1_200)
+        settle()
+        val made = host.book.chats.single()
+        assertEquals(chatKey(made.id), wanted)
+        settle()
+        onNodeWithText("on").assertExists()
+        onNodeWithContentDescription("Show the tabs").performClick()
+        settle()
+        onNodeWithText("Soma").assertDoesNotExist()
+        // Asked for nothing again (a soma://soma link, the canvas letting go of a tab), the empty chat opens again: no second one.
+        wanted = null
+        settle()
+        settle()
+        assertEquals(1, host.book.chats.size)
+        assertEquals(chatKey(made.id), wanted)
+        // A thread asked for that isn't listed yet (a link to one just made on the phone) is waited for, not replaced.
+        wanted = "mac:elsewhere/t9"
+        settle()
+        settle()
+        assertEquals("mac:elsewhere/t9", wanted)
+        assertEquals(1, host.book.chats.size)
     }
 
     /** Before he picks, a new chat shows the default new chats remember, model and all. */

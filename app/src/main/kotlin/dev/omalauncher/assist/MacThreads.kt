@@ -55,6 +55,9 @@ object MacThreads {
 
     fun kindsOn(machine: String): List<String> = made?.kindsOn(machine).orEmpty()
 
+    /** The models the computer [machine]'s runner listed, by agent (Venice's). */
+    fun modelsOn(machine: String): Map<String, List<String>> = made?.modelsOn(machine).orEmpty()
+
     /** What a new chat's thread on [machine] uses when he picks nothing ([MacThreadsEngine.defaultPick]); null before the engine is made. */
     fun defaultPick(machine: String): MacPick? = made?.defaultPick(machine)
 

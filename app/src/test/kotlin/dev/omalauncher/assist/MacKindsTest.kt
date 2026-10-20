@@ -18,10 +18,10 @@ class MacKindsTest {
     private fun thread(id: String, kind: String, status: MacThreadStatus = MacThreadStatus.Idle, project: String = "~/ClaudeSync/projects/ff4", name: String = "FF4 better menu mod", worked: Long? = 100) =
         MacThread(id, name, project, ThreadHome.Mac, kind, "", status, worked, "", 0, 0, emptyList())
 
-    @Test fun theAgentsAreClaudeCodexGrokAndCursorInThatOrder() {
-        assertEquals(listOf("claude", "codex", "grok", "cursor"), MAC_KINDS)
+    @Test fun theAgentsAreClaudeCodexGrokCursorAndVeniceInThatOrder() {
+        assertEquals(listOf("claude", "codex", "grok", "cursor", "venice"), MAC_KINDS)
         assertEquals("claude", macKindOf("")); assertEquals("codex", macKindOf(" Codex "))
-        assertEquals(listOf("Claude", "Codex", "Grok", "Cursor"), MAC_KINDS.map(::macKindName)); assertEquals("Claude", macKindName(""))
+        assertEquals(listOf("Claude", "Codex", "Grok", "Cursor", "Venice"), MAC_KINDS.map(::macKindName)); assertEquals("Claude", macKindName(""))
         // What the Mac has, in the order requests go from one to the next, whatever order /health lists them in.
         assertEquals(listOf("claude", "cursor"), macInstalled(listOf("cursor", "claude")))
         assertEquals(listOf("claude", "grok"), macInstalled(listOf("grok", "claude")))

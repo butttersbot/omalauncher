@@ -181,10 +181,34 @@ fun main(args: Array<String>) {
                 }
             },
         ) {
+            // Each time it is shown, it comes to the screen he is on (Boss, 2026-10-19: after a restart macOS put it on
+            // the other monitor's Space, and show only made it visible there).
+            androidx.compose.runtime.LaunchedEffect(shown) { if (shown) toPointerScreen(window) }
             CanvasScreen(canvas, host, source, tick.value, wanted, onTab = { wanted = it })
         }
     }
 }
+
+/**
+ * Brings [window] to the screen under the pointer, centered there, unless most of it is on that screen already, and to the
+ * front. A window moved onto a monitor goes to that monitor's Space in front.
+ */
+internal fun toPointerScreen(window: java.awt.Window) {
+    val pointer = runCatching { java.awt.MouseInfo.getPointerInfo()?.location }.getOrNull()
+    val screens = java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().screenDevices.map { it.defaultConfiguration.bounds }
+    val screen = screens.firstOrNull { pointer != null && it.contains(pointer) } ?: screens.firstOrNull()
+    if (screen != null) {
+        val at = placeOn(window.bounds, screen)
+        if (at != window.location) window.location = at
+    }
+    window.toFront()
+    window.requestFocus()
+}
+
+/** Where a window at [bounds] goes on [screen]: where it is when its center is on that screen already, else centered on it. */
+internal fun placeOn(bounds: java.awt.Rectangle, screen: java.awt.Rectangle): java.awt.Point =
+    if (screen.contains(bounds.centerX, bounds.centerY)) bounds.location
+    else java.awt.Point(screen.x + maxOf(0, (screen.width - bounds.width) / 2), screen.y + maxOf(0, (screen.height - bounds.height) / 2))
 
 /** How often the modules look again at what the app holds, and how often the slower feeds (herd, pocket, handoffs) are read. */
 private const val MODULES_LOOK_MS = 2_000L

@@ -14,7 +14,7 @@ config="$dir/mac-runner.json"
 usage() {
   cat >&2 <<USAGE
 usage: oma threads list
-       oma threads new NAME PROJECT_PATH [--kind claude|codex|grok|cursor] [--mode auto|manual] [--mac MAC]
+       oma threads new NAME PROJECT_PATH [--kind claude|codex|grok|cursor|venice] [--mode auto|manual] [--mac MAC]
        oma threads macs
        oma threads add-mac FILE [--name NAME]
 
@@ -153,7 +153,7 @@ case $command in
     # The runner's own kinds; anything else would only come back as its 400.
     while [ $# -gt 0 ]; do
       case $#:$1:${2-} in
-        *:--kind:claude | *:--kind:codex | *:--kind:grok | *:--kind:cursor) [ -z "$kind" ] || usage; kind=$2; shift 2 ;;
+        *:--kind:claude | *:--kind:codex | *:--kind:grok | *:--kind:cursor | *:--kind:venice) [ -z "$kind" ] || usage; kind=$2; shift 2 ;;
         *:--mode:auto | *:--mode:manual) [ -z "$mode" ] || usage; mode=$2; shift 2 ;;
         *:--mac:?*) [ -z "$choose" ] || usage; choose=$2; shift 2 ;;
         *) usage ;;

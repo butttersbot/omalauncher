@@ -132,7 +132,7 @@ sealed interface MacAnswer<out T> {
 const val MAC_RUNNER_NAME = "oma-runner"
 
 /** What `/health` says. [kinds] are the agents installed on the Mac, as the runner names them; empty from a runner that does not say. */
-data class MacHealth(val threads: Int, val working: Int, val waiting: Int, val kinds: List<String> = emptyList())
+data class MacHealth(val threads: Int, val working: Int, val waiting: Int, val kinds: List<String> = emptyList(), val models: Map<String, List<String>> = emptyMap())
 
 /** Where a thread's builder runs, set when the thread is made. [word] is the runner's. */
 enum class ThreadHome(val word: String) { Mac("mac"), Phone("phone") }
@@ -221,7 +221,13 @@ fun parseMacHealth(reply: MacReply?): MacAnswer<MacHealth> = macAnswer(reply) { 
     if (json.macText("runner") != MAC_RUNNER_NAME) null
     else {
         val kinds = json.optJSONArray("kinds")
-        MacHealth(json.macCount("threads"), json.macCount("working"), json.macCount("waiting"), (0 until (kinds?.length() ?: 0)).mapNotNull { (kinds?.opt(it) as? String)?.takeIf(String::isNotBlank) })
+        // The models the runner lists for an agent (Venice's, from Venice itself), by the agent.
+        val listed = json.optJSONObject("models")
+        val models = listed?.keys()?.asSequence()?.associate { agent ->
+            val names = listed.optJSONArray(agent)
+            macKindOf(agent) to (0 until (names?.length() ?: 0)).mapNotNull { (names?.opt(it) as? String)?.takeIf(String::isNotBlank) }
+        }.orEmpty()
+        MacHealth(json.macCount("threads"), json.macCount("working"), json.macCount("waiting"), (0 until (kinds?.length() ?: 0)).mapNotNull { (kinds?.opt(it) as? String)?.takeIf(String::isNotBlank) }, models)
     }
 }
 

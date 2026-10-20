@@ -60,6 +60,44 @@ class Service(http.server.BaseHTTPRequestHandler):
 service = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Service)
 threading.Thread(target=service.serve_forever, daemon=True).start()
 environment.update({'OMA_RUNNER_SOMA_SERVICE': 'http://127.0.0.1:%d' % service.server_address[1], 'OMA_RUNNER_SOMA_KEY': 'service-key-' + 's' * 30})
+# Venice: a stand-in for its API on the loopback, which answers "echo N: <his last words>" and is out of credit when
+# told "broke", and the venice CLI's config holding the key.
+venice_calls = []
+
+
+class VeniceAPI(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *_):
+        pass
+
+    def reply(self, code, body):
+        self.send_response(code)
+        self.send_header('Content-Type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps(body).encode())
+
+    def do_GET(self):
+        venice_calls.append(('GET', self.path, self.headers.get('Authorization'), None))
+        self.reply(200, {'data': [{'id': 'kimi-k2-5', 'type': 'text'}, {'id': 'venice-uncensored', 'type': 'text'}]})
+
+    def do_POST(self):
+        body = json.loads(self.rfile.read(int(self.headers.get('Content-Length') or 0)))
+        venice_calls.append(('POST', self.path, self.headers.get('Authorization'), body))
+        said = [m['content'] for m in body['messages'] if m['role'] == 'user']
+        if said[-1] == 'broke':
+            return self.reply(402, {'error': 'Insufficient balance'})
+        if said[-1] == 'nothing':
+            return self.reply(200, {'choices': []})
+        if said[-1] == 'garbled':
+            return self.reply(200, None)
+        self.reply(200, {'model': body['model'], 'choices': [{'message': {'role': 'assistant', 'content': 'echo %d: %s' % (len(said), said[-1])}}]})
+
+
+venice_api = http.server.ThreadingHTTPServer(('127.0.0.1', 0), VeniceAPI)
+threading.Thread(target=venice_api.serve_forever, daemon=True).start()
+(work / 'venice').mkdir()
+(work / 'venice' / 'config.json').write_text(json.dumps({'api_key': 'venice-test-key'}))
+environment.update({'OMA_RUNNER_VENICE_CONFIG': str(work / 'venice' / 'config.json'), 'VENICE_API_BASE_URL': 'http://127.0.0.1:%d/api/v1' % venice_api.server_address[1]})
+environment.pop('VENICE_API_KEY', None)
 received = work / 'From Fold'
 (work / 'codex').mkdir()
 (work / 'codex' / 'config.toml').write_text('[mcp_servers.paper]\nurl = "http://127.0.0.1:1/mcp"\n')
@@ -196,7 +234,8 @@ try:
     check('unpair: that device is shut out at once, with no restart', gone.returncode == 0 and call('GET', '/health', token=own['key'])[0] == 401)
     calling_as('phone')
     check('unpair leaves every other device in', call('GET', '/health')[0] == 200)
-    check('/health answers, naming the agents the Mac has', call('GET', '/health') == (200, {'ok': True, 'runner': 'oma-runner', 'soma': environment['OMA_RUNNER_SOMA_SERVICE'], 'threads': 0, 'working': 0, 'waiting': 0, 'kinds': ['claude', 'codex', 'cursor', 'grok'], 'files': True}))
+    code, health = call('GET', '/health')
+    check('/health answers, naming the agents the Mac has (Venice, which has a key)', code == 200 and health.pop('models', None) is not None and health == {'ok': True, 'runner': 'oma-runner', 'soma': environment['OMA_RUNNER_SOMA_SERVICE'], 'threads': 0, 'working': 0, 'waiting': 0, 'kinds': ['claude', 'codex', 'cursor', 'grok', 'venice'], 'files': True})
     check('a project outside the roots is refused', call('POST', '/threads', {'name': 'x', 'project': str(outside)})[0] == 403)
     check('a path that climbs out of a root is refused', call('POST', '/threads', {'name': 'x', 'project': str(project / '..' / '..' / 'outside')})[0] == 403)
     (root / 'link').symlink_to(outside)
@@ -554,6 +593,46 @@ try:
           all('%s(/%s)' % (verb, path) in claude for verb in ('Read', 'Edit') for path in (str(work / 'token'), str(work / 'keys.json'), str(work / 'soma-runners') + '/**', str(work / 'state') + '/**')))
     check('cursor: the devices\' table and this machine\'s own Soma keys are out of reach too', any(str(work / 'keys.json') in rule for rule in cursor['deny'])
           and any(str(work / 'soma-runners') in rule for rule in cursor['deny']))
+    check('claude: the venice CLI\'s config, where its key is, is out of reach', all('%s(/%s)' % (verb, str(work / 'venice' / 'config.json')) in claude for verb in ('Read', 'Edit')))
+
+    for _ in range(100):
+        listed = call('GET', '/health')[1].get('models', {}).get('venice')
+        if listed:
+            break
+        time.sleep(0.05)
+    check('venice: /health lists Venice\'s text models, asked for with the key', listed == ['kimi-k2-5', 'venice-uncensored']
+          and venice_calls[0][:3] == ('GET', '/api/v1/models?type=text', 'Bearer venice-test-key'))
+    code, made = call('POST', '/threads', {'name': 'Venice', 'project': str(project), 'kind': 'venice', 'model': 'venice-uncensored'})
+    chat = made['thread']['id']
+    check('venice: a thread is made with the model asked for', code == 200 and made['thread']['kind'] == 'venice' and made['thread']['model'] == 'venice-uncensored')
+    call('POST', '/threads/%s/messages' % chat, {'text': 'hello'})
+    events = stream(chat, until=('result', 'error'))
+    check('venice: it answers, and the result names its kind and model', any(e['type'] == 'text' and e['text'] == 'echo 1: hello' for e in events)
+          and events[-1]['type'] == 'result' and events[-1]['text'] == 'echo 1: hello' and events[-1]['kind'] == 'venice' and events[-1]['model'] == 'venice-uncensored')
+    check('venice: asked with the key, as a chat', venice_calls[-1][:3] == ('POST', '/api/v1/chat/completions', 'Bearer venice-test-key'))
+    settle(chat, 'idle')
+    last = call('GET', '/threads/' + chat)[1]['thread']['last_event']
+    call('POST', '/threads/%s/messages' % chat, {'text': 'broke'})
+    events = stream(chat, after=last, until=('result', 'error'))
+    check('venice: out of credit ends the turn in Venice\'s words, and is no limit: nothing is handed to another agent', events[-1]['type'] == 'error' and events[-1]['code'] == 'agent' and 'Insufficient balance' in events[-1]['text'])
+    settle(chat, 'idle')
+    for word in ('nothing', 'garbled'):
+        last = call('GET', '/threads/' + chat)[1]['thread']['last_event']
+        call('POST', '/threads/%s/messages' % chat, {'text': word})
+        events = stream(chat, after=last, until=('result', 'error'))
+        check('venice: an answer with nothing in it (%s) is an error, said plainly' % word, events[-1]['type'] == 'error' and events[-1]['code'] == 'agent' and 'Traceback' not in events[-1]['text'] and 'nothing' in events[-1]['text'])
+        settle(chat, 'idle')
+    last = call('GET', '/threads/' + chat)[1]['thread']['last_event']
+    call('POST', '/threads/%s/messages' % chat, {'text': 'and again'})
+    events = stream(chat, after=last, until=('result', 'error'))
+    sent = venice_calls[-1][3]
+    check('venice: the next turn sends the whole conversation, without the turn that failed', events[-1]['type'] == 'result' and events[-1]['text'] == 'echo 2: and again'
+          and sent['model'] == 'venice-uncensored' and [(m['role'], m['content']) for m in sent['messages']] == [('user', 'hello'), ('assistant', 'echo 1: hello'), ('user', 'and again')])
+    code, made = call('POST', '/threads', {'name': 'Venice plain', 'project': str(project), 'kind': 'venice'})
+    call('POST', '/threads/%s/messages' % made['thread']['id'], {'text': 'hi'})
+    events = stream(made['thread']['id'], until=('result', 'error'))
+    check('venice: with no model asked for, the venice CLI\'s default is used', venice_calls[-1][3]['model'] == 'kimi-k2-5' and events[-1].get('model') == 'kimi-k2-5')
+    check('venice: the key is in none of a thread\'s records', not any('venice-test-key' in f.read_text() for f in (work / 'state').rglob('*') if f.is_file()))
     data = os.urandom(2 * 1024 * 1024 + 7)
     code, kept = upload('photo one.jpg', data)
     check('a file from the phone is kept in From Fold, made for it, and its path and size answered', code == 200 and kept == {'ok': True, 'path': str(received / 'photo one.jpg'), 'bytes': len(data)}

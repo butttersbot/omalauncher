@@ -4,13 +4,13 @@
 It listens on the Mac's Tailscale address only, and every request must carry a key this runner gave to the very device
 asking: each device Boss pairs has a key of its own, and `tailscale whois` must name that device as the caller, so a key
 copied anywhere else opens nothing. The Mac keeps only each key's SHA-256, in ~/agents/claude-code/oma-runner.keys.json,
-so an agent that reads that file cannot use it. It does one thing: run a coding agent (Claude Code, Codex or Cursor) in a
-named project thread, under a folder Boss allowed, and stream what it says. It is not a shell: there is no endpoint that runs a command. It
+so an agent that reads that file cannot use it. It does one thing: run a coding agent (Claude Code, Codex, Cursor or Grok) in a
+named project thread, or talk with a Venice model,, under a folder Boss allowed, and stream what it says. It is not a shell: there is no endpoint that runs a command. It
 approves nothing itself: every request for approval waits for the phone's answer, however long that takes.
 
-  GET  /health                           {ok, working, waiting}
+  GET  /health                           {ok, working, waiting, kinds, models: {venice: [...]}}
   GET  /threads                          every thread: id, name, summary, status, last_worked, tail, pending
-  POST /threads   {name, project, kind, model, mode}   makes one under an allowed root; kind claude (default), codex, cursor or grok;
+  POST /threads   {name, project, kind, model, mode}   makes one under an allowed root; kind claude (default), codex, cursor, grok or venice;
                                          mode auto (default) or manual
   GET  /threads/ID                       one thread
   POST /threads/ID/messages   {text}     the owner's words; {taken: "now"} or {taken: "queued", position}
@@ -59,7 +59,12 @@ CODEX = os.environ.get('OMA_RUNNER_CODEX') or shutil.which('codex') or '/Applica
 CURSOR = os.environ.get('OMA_RUNNER_CURSOR') or shutil.which('cursor-agent') or str(HOME / '.local/bin/cursor-agent')
 GROK = os.environ.get('OMA_RUNNER_GROK') or shutil.which('grok') or next(
     (str(path) for path in (HOME / '.local/share/mise/shims/grok', HOME / '.local/bin/grok', pathlib.Path('/opt/homebrew/bin/grok')) if path.exists()), 'grok')
-KINDS = ('claude', 'codex', 'cursor', 'grok')
+# Venice (venice.ai) is a chat, not a coding agent: its models answer and touch nothing on this Mac. Its key is the one
+# the `venice` CLI keeps (`venice config init`, in ~/.venice/config.json) or VENICE_API_KEY.
+VENICE_CONFIG = pathlib.Path(os.environ.get('OMA_RUNNER_VENICE_CONFIG') or HOME / '.venice/config.json')
+VENICE_API = (os.environ.get('VENICE_API_BASE_URL') or 'https://api.venice.ai/api/v1').rstrip('/')
+VENICE_DEFAULT_MODEL = 'kimi-k2-5'  # the venice CLI's own default, when its config names none
+KINDS = ('claude', 'codex', 'cursor', 'grok', 'venice')
 MODES = ('auto', 'manual')
 LABEL = 'dev.omalauncher.runner'
 INSTALLED = HOME / '.local/bin/oma-runner'
@@ -257,7 +262,10 @@ def tailscale_address():
 
 
 def program(kind):
-    """The path of a kind's CLI on this Mac, or None when it is not installed."""
+    """The path of a kind's CLI on this Mac, or None when it is not installed. Venice needs no CLI of its own: this
+    script talks to it, once it has a key."""
+    if kind == 'venice':
+        return os.path.abspath(__file__) if venice_key() else None
     given = {'claude': AGENT, 'codex': CODEX, 'cursor': CURSOR, 'grok': GROK}[kind]
     found = shutil.which(given) or given
     return found if os.path.isfile(found) and os.access(found, os.X_OK) else None
@@ -283,7 +291,7 @@ def step(block):
 def outside_reach():
     """Paths no agent may read or write: the keys' digests, the keys this machine's own Soma holds, and the runner's own
     records."""
-    return [str(TOKEN_FILE), str(KEYS_FILE), str(SOMA_RUNNERS) + '/**', str(STATE) + '/**']
+    return [str(TOKEN_FILE), str(KEYS_FILE), str(SOMA_RUNNERS) + '/**', str(STATE) + '/**', str(VENICE_CONFIG)]
 
 
 def mode(meta):
@@ -675,11 +683,156 @@ class Grok(Cursor):
         return super().answered(method, result)
 
 
-DRIVERS = {'claude': Claude, 'codex': Codex, 'cursor': Cursor, 'grok': Grok}
+def venice_config():
+    try:
+        config = json.loads(VENICE_CONFIG.read_text())
+    except (OSError, ValueError):
+        return {}
+    return config if isinstance(config, dict) else {}
+
+
+def venice_key():
+    return os.environ.get('VENICE_API_KEY') or str(venice_config().get('api_key') or '') or None
+
+
+def venice_call(path, body=None, timeout=30):
+    """One request to Venice's API with the key; the answer's JSON. Raises VeniceError with Venice's own words."""
+    request = urllib.request.Request(VENICE_API + path, data=None if body is None else json.dumps(body).encode(),
+                                     headers={'Authorization': 'Bearer ' + (venice_key() or ''), 'Content-Type': 'application/json'})
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as answer:
+            return json.loads(answer.read())
+    except urllib.error.HTTPError as problem:
+        try:
+            said = json.loads(problem.read()).get('error')
+            said = said.get('message') if isinstance(said, dict) else said
+        except (ValueError, AttributeError, OSError):
+            said = None
+        raise VeniceError(problem.code, str(said or problem.reason))
+    except (urllib.error.URLError, OSError, ValueError) as problem:
+        raise VeniceError(0, 'Venice could not be reached: ' + str(getattr(problem, 'reason', problem)))
+
+
+venice_lock = threading.Lock()
+
+
+class VeniceError(Exception):
+    def __init__(self, code, text):
+        super().__init__(text)
+        self.code, self.text = code, text
+
+
+def venice_models():
+    """Venice's text models, newest list at most an hour old. Asked in the background, so /health never waits on it;
+    an empty list until the first answer."""
+    held = known.get('venice_models') or (0, [])
+    with venice_lock:
+        asking = venice_key() and time.time() - held[0] > 3600 and not known.get('venice_asking')
+        if asking:
+            known['venice_asking'] = True
+    if asking:
+
+        def ask():
+            try:
+                listing = venice_call('/models?type=text')
+                listing = listing.get('data') if isinstance(listing, dict) else None
+                if not isinstance(listing, list):
+                    raise VeniceError(0, 'no model list')
+                known['venice_models'] = (time.time(), [str(model['id']) for model in listing if isinstance(model, dict) and model.get('id')])
+            except Exception:
+                known['venice_models'] = (time.time() - 3300, held[1])  # tried again in five minutes
+            finally:
+                known['venice_asking'] = False
+        threading.Thread(target=ask, daemon=True).start()
+    return held[1]
+
+
+def venice_turn():
+    """`oma-runner venice-turn`: one turn with Venice, run as a thread's agent process. Reads {model, messages} as one
+    line on stdin, writes {type: reply, text, model} or {type: error, code, text} as one line on stdout."""
+    try:
+        asked = json.loads(sys.stdin.readline())
+        answer = venice_call('/chat/completions', {'model': asked['model'], 'messages': asked['messages'], 'stream': False}, timeout=600)
+        choices = answer.get('choices') if isinstance(answer, dict) else None
+        message = choices[0].get('message') if isinstance(choices, list) and choices and isinstance(choices[0], dict) else None
+        content = message.get('content') if isinstance(message, dict) else None
+        if isinstance(content, list):  # an answer in parts, as OpenAI's API may give it
+            content = ''.join(str(part.get('text') or '') for part in content if isinstance(part, dict))
+        if not isinstance(content, str) or not content.strip():
+            raise VeniceError(0, 'it answered nothing')
+        print(json.dumps({'type': 'reply', 'text': content, 'model': str(answer.get('model') or asked['model'])}), flush=True)
+    except VeniceError as problem:
+        # Out of credit (402) or too many requests (429) is said as it is, never a limit: his words to Venice are not
+        # handed on to a coding agent he did not pick.
+        print(json.dumps({'type': 'error', 'code': 'agent', 'text': 'Venice: ' + problem.text}), flush=True)
+    except (ValueError, KeyError, TypeError, AttributeError, IndexError) as problem:
+        print(json.dumps({'type': 'error', 'code': 'agent', 'text': 'Venice turn: ' + str(problem)}), flush=True)
+
+
+class Venice:
+    """A Venice model, as a chat. It has no tools: it answers, and runs and changes nothing on this Mac, so it never
+    asks for anything. Venice keeps no conversation for a caller (the venice CLI's --continue is one conversation for
+    the whole computer), so the thread keeps its own, in venice.json beside its events, and sends it whole each turn.
+    A turn is a process of its own (`oma-runner venice-turn`), so stopping it is stopping any other agent."""
+    stays = False
+
+    def __init__(self, thread, text):
+        self.thread, self.text = thread, text
+        self.history = self.read()
+        self.model = thread.meta.get('model') or str(venice_config().get('default_model') or '') or VENICE_DEFAULT_MODEL
+
+    def read(self):
+        try:
+            history = json.loads((self.thread.folder / 'venice.json').read_text())
+        except (OSError, ValueError):
+            return []
+        return [entry for entry in history if isinstance(entry, dict) and entry.get('role') in ('user', 'assistant') and isinstance(entry.get('content'), str)] if isinstance(history, list) else []
+
+    def write(self):
+        self.thread.folder.mkdir(parents=True, exist_ok=True)
+        fresh = self.thread.folder / 'venice.json.new'
+        fresh.write_text(json.dumps(self.history, indent=1))
+        fresh.replace(self.thread.folder / 'venice.json')
+
+    def command(self):
+        return [sys.executable, os.path.abspath(__file__), 'venice-turn']
+
+    def environment(self):
+        # The only agent given Venice's settings (clean_environment keeps them from the others).
+        return {**clean_environment(), 'OMA_RUNNER_VENICE_CONFIG': str(VENICE_CONFIG), **{key: value for key, value in os.environ.items() if key.startswith('VENICE')}}
+
+    def begin(self):
+        self.thread.model = self.model
+        self.thread.say({'model': self.model, 'messages': self.history + [{'role': 'user', 'content': self.text}]})
+
+    def heard(self, event):
+        thread = self.thread
+        if event.get('type') == 'reply':
+            text = str(event.get('text') or '')
+            if not text.strip():
+                thread.emit('error', code='agent', text='Venice answered nothing.')
+                return True
+            # Only a turn that was answered joins the conversation, so a failed one can be asked again as it was.
+            self.history += [{'role': 'user', 'content': self.text}, {'role': 'assistant', 'content': text}]
+            self.write()
+            thread.model = str(event.get('model') or self.model)
+            thread.emit('text', text=text)
+            thread.emit('result', text=text, failed=False)
+            return True
+        if event.get('type') == 'error':
+            thread.emit('error', code=event.get('code') or 'agent', text=str(event.get('text') or 'Venice did not answer.'))
+            return True
+        return False
+
+    def answer(self, entry, allow):
+        return False
+
+
+DRIVERS = {'claude': Claude, 'codex': Codex, 'cursor': Cursor, 'grok': Grok, 'venice': Venice}
 
 
 def clean_environment():
-    return {key: value for key, value in os.environ.items() if not key.startswith(('CLAUDE', 'ANTHROPIC', 'OMA_RUNNER'))}
+    return {key: value for key, value in os.environ.items() if not key.startswith(('CLAUDE', 'ANTHROPIC', 'OMA_RUNNER', 'VENICE'))}
 
 
 known = {}
@@ -1367,7 +1520,7 @@ class Runner(BaseHTTPRequestHandler):
                 states = [thread.meta['status'] for thread in threads.values()]
             # Where this Mac's canvas service is, when it has one: a device asks here rather than guessing a port.
             return self.answer(200, {'ok': True, 'runner': 'oma-runner', **({'soma': SOMA_SERVICE} if SOMA_SERVICE else {}), 'threads': len(states), 'working': states.count('working'), 'waiting': states.count('waiting'),
-                                     'kinds': [kind for kind in KINDS if program(kind)], 'files': True})
+                                     'kinds': [kind for kind in KINDS if program(kind)], 'models': {'venice': venice_models()} if program('venice') else {}, 'files': True})
         if parts == ['threads']:
             with changed:
                 return self.answer(200, {'ok': True, 'threads': [thread.view() for thread in threads.values()]})
@@ -1926,6 +2079,8 @@ def main():
     command = sys.argv[1] if len(sys.argv) > 1 else ''
     if command == 'serve':
         serve()
+    elif command == 'venice-turn':
+        venice_turn()
     elif command == 'install':
         install()
     elif command == 'start':

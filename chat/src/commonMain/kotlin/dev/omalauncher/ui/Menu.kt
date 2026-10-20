@@ -4,6 +4,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -70,6 +72,9 @@ fun Menu(
                     },
                 ).panel(20.dp)
                 .clickable(enabled = false) {}
+                // A menu longer than the window (a computer's Venice models) scrolls inside its panel, rather than its
+                // rows past the window's edge being out of reach.
+                .verticalScroll(rememberScrollState())
                 .padding(8.dp),
         ) { content() }
     }
