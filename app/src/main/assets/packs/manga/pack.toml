@@ -133,12 +133,11 @@ drawer_fill = "background"
 focus_color = "#d7262d"
 plate = "none"
 
-# Icons printed in the ink, as the mockup prints art: gray and harder (its contrast(1.45)).
+# Icons in their own colors: the ink is for art, not apps (Boss, 2026-10-20: "bring the color back for the app icons").
 # A missing one is its letter in the display face on paper, outlined like the mockup's cast.
 [icons]
-treatment = "grayscale"
+treatment = "original"
 tint = "foreground"
-contrast = 1.45
 shadow = false
 
 [icons.placeholder]

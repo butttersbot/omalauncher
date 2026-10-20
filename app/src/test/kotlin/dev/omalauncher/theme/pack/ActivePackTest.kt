@@ -326,7 +326,7 @@ class ActivePackTest {
         assertEquals(Dressing.None, manga.scrap.titleBar.style)
         assertEquals(CornerStyle.Edge, manga.shape.corners)
         assertEquals(DockStyle.Bar, manga.dock.style)
-        assertEquals(IconTreatment.Grayscale, manga.icons.treatment)
+        assertEquals(IconTreatment.Original, manga.icons.treatment)
         assertEquals("fonts/DelaGothicOne-Regular.ttf", manga.type.display.file)
         assertEquals("fonts/SchibstedGrotesk.ttf", manga.type.body.file)
         assertEquals("fonts/PatrickHand-Regular.ttf", manga.type.hand.file)
