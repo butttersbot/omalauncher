@@ -329,6 +329,12 @@ internal fun HomeGrid(
     panelLayout: (String) -> String? = { null },
     /** A tap on an empty panel: its page, and its place in the page's layout. */
     onPanelTap: (String, Int) -> Unit = { _, _ -> },
+    /**
+     * Room above the grid, in px, that a manga page's hero ([heroPanel]) runs up into: past the page's name to the top of
+     * the screen. The pages are laid out where they always are; only the pager that holds them reaches this much higher,
+     * so what is drawn above them isn't cut off. 0 (the default) leaves the pager as it always was.
+     */
+    above: Int = 0,
 ) {
     val haptics = LocalHapticFeedback.current
     // Where the grid is in the window, for what grows out of a touch on it. Only listened to.
@@ -938,14 +944,15 @@ internal fun HomeGrid(
                     }
                 },
         ) {
-            HorizontalPager(pager, Modifier.fillMaxSize(), userScrollEnabled = !drawing, key ={ pages.getOrNull(it * grid.per) ?: "slot $it" }) { slot ->
-                Row(Modifier.fillMaxSize()) {
+            val heroRoom = if (panelLook != null) above.coerceAtLeast(0) else 0
+            HorizontalPager(pager, Modifier.fillMaxSize().reachingUp(heroRoom), userScrollEnabled = !drawing, key ={ pages.getOrNull(it * grid.per) ?: "slot $it" }) { slot ->
+                Row(Modifier.reachingUp(-heroRoom).fillMaxSize()) {
                     for (page in pagesAt(slot, pages, grid)) {
                         Box(Modifier.width(with(density) { grid.width.toDp() }).fillMaxHeight()) {
                             if (page == null) {
                                 PlusPage(grid, onAddPage)
                             } else {
-                                TiledPage(page, itemsOn(page), layout, grid, arrange, selected, render, actions, onNoRoom, ready, captures, marks, arrivals, cutsOf(page, grid), panelLook) { onPanelTap(page, it) }
+                                TiledPage(page, itemsOn(page), layout, grid, arrange, selected, render, actions, onNoRoom, ready, captures, marks, arrivals, cutsOf(page, grid), panelLook, heroRoom) { onPanelTap(page, it) }
                             }
                         }
                     }
@@ -1118,6 +1125,22 @@ private const val REORDER_MS = 250L
 /** How long it rests outside the folder's panel before the folder closes; Launcher3's ON_EXIT_CLOSE_DELAY. */
 private const val FOLDER_EXIT_MS = 400L
 
+/**
+ * Lays out what it modifies [by] px taller, reaching up above where it stands by that much; a negative [by] gives that back,
+ * laying it out that much shorter and that much lower. A pager reaching up holds its pages the other way, so they stand
+ * where they always did with the pager's clip that much higher.
+ */
+private fun Modifier.reachingUp(by: Int): Modifier =
+    if (by == 0) {
+        this
+    } else {
+        layout { measurable, constraints ->
+            val height = (constraints.maxHeight + by).coerceAtLeast(0)
+            val placeable = measurable.measure(constraints.copy(minHeight = height, maxHeight = height))
+            layout(placeable.width, constraints.maxHeight) { placeable.place(0, -by) }
+        }
+    }
+
 /** One home page: its tiles, and while arranging the grid guides, drop preview and selection frame. */
 @Composable
 private fun TiledPage(
@@ -1137,6 +1160,8 @@ private fun TiledPage(
     /** The page's panels while it is a manga page; null for the free grid. */
     panels: List<Panel>? = null,
     panelLook: PackPanels? = null,
+    /** How far above the page its hero may run, in px. */
+    above: Int = 0,
     onEmptyPanel: (Int) -> Unit = {},
 ) {
     val density = LocalDensity.current
@@ -1174,6 +1199,7 @@ private fun TiledPage(
                 look = panelLook,
                 area = grid.page,
                 room = IntSize(pageWidth, constraints.maxHeight),
+                above = above,
                 carried = carried,
                 aim = { if (arrange.page == page) arrange.preview else null },
                 selected = selected,

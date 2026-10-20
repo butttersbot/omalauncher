@@ -51,6 +51,11 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.zIndex
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -386,6 +391,40 @@ fun HomeScreen(
         }
     }
 
+    // The Manga look's panels, once the switch into it is handled: the fit gathers and places everything first.
+    val panelLook = manga?.takeIf { MangaHome.ready }
+
+    /** Whether [page] is a manga page with a hero: art in its top panel, as wide as the page, running up to the screen's top. */
+    fun heroOn(page: String?): Boolean =
+        page != null && panelLook != null &&
+            hasHero(engine.notebook.pages.firstOrNull { it.id == page }?.panels, engine.notebook.rows, panelLook, engine.itemsOn(page), engine.layout::cell, arrange.carry?.item?.key)
+
+    /** Whether the page at [side] of pager slot [slot] has a hero. */
+    fun heroAt(
+        slot: Int,
+        side: Int,
+    ) = heroOn(pagesAt(slot, pages, per).getOrNull(side))
+
+    // What a hero runs up into: the page names' band and, above home, the status bar, to the top of the screen. Only while a
+    // page with one is showing or a turn away, so every other page's pager is as it always was.
+    val heroRoom = with(density) { PageNameHeight.roundToPx() + WindowInsets.systemBars.union(WindowInsets.displayCutout).getTop(density) }
+    val heroNear = (pager.currentPage - 1..pager.currentPage + 1).any { slot -> (0 until per).any { heroAt(slot, it) } }
+    // Where across the screen each page name starts, as a fraction of its width: a hero under it letters it light.
+    val nameAt = with(density) { (PageGap + 12.dp).toPx() } / window.width.coerceAtLeast(1)
+    val namesOverHero by remember(pages, per, panelLook, nameAt) {
+        derivedStateOf {
+            val position = pager.currentPage + pager.currentPageOffsetFraction
+            (0 until if (Pack.ownsPage) 1 else per).map { i -> heroUnder(i.toFloat() / per + nameAt, position, per, ::heroAt) }
+        }
+    }
+    // The status bar's icons are light while heroes run under all of it; once a turn is half way off them, as they always were,
+    // and while home's menu or the overview covers the hero.
+    val heroUnderBar by remember(pages, per, panelLook) {
+        derivedStateOf { !state.overviewOpen && !state.homeMenuOpen && pinch.value > 0.99f && heroAcross(pager.currentPage, per, ::heroAt) }
+    }
+    SideEffect { state.heroUnderBar = heroUnderBar }
+    androidx.compose.runtime.DisposableEffect(state) { onDispose { state.heroUnderBar = false } }
+
     fun openMenu(
         item: HomeItem?,
         from: Offset? = null,
@@ -521,8 +560,9 @@ fun HomeScreen(
                 runtime.pageStills.request()
                 state.openOverview()
             },
-            // 5. Not under a terminal tile's keyboard, as on the pages.
-            modifier = Modifier.opensDrawer(state, windowHeight) { terminals.active == null },
+            overHero = namesOverHero,
+            // 5. Not under a terminal tile's keyboard, as on the pages. Over the pages while a hero runs up under it from them.
+            modifier = Modifier.zIndex(if (heroNear) 1f else 0f).opensDrawer(state, windowHeight) { terminals.active == null },
         )
         HomeGrid(
             pager = pager,
@@ -723,11 +763,11 @@ fun HomeScreen(
             onWithdrawPage = { engine.notebook.withdrawPage(it) },
             onGroup = { app, target -> engine.shortcuts.group(app, target) },
             onReorder = { app, before -> engine.shortcuts.moveBefore(app.key, before) },
-            // Not before the switch into the look is handled: the fit gathers and places everything first.
-            panelLook = manga?.takeIf { MangaHome.ready },
+            panelLook = panelLook,
             panelLayout = { page -> engine.notebook.pages.firstOrNull { it.id == page }?.panels },
             // An empty panel opens the photo picker for itself: what is picked hangs there.
             onPanelTap = { page, panel -> ArtPickActivity.open(context, page, panel) },
+            above = if (heroNear) heroRoom else 0,
         )
       }
     }
@@ -773,6 +813,13 @@ private fun Notice(
 }
 
 /**
+ * A page name over a hero's art: the look's paper for letters, on no plate, over a soft shadow of its ink, so it reads over
+ * halftone and color alike. Only the Manga look has heroes: its paper is light and its ink dark.
+ */
+internal fun heroLettering(density: androidx.compose.ui.unit.Density) =
+    with(density) { TextStyle(color = Pack.paper, shadow = Shadow(Pack.foreground.copy(alpha = 0.85f), Offset(0f, 1.dp.toPx()), 6.dp.toPx())) }
+
+/**
  * The prototype's folio: the names of the pages showing joined with a plus, then the first one's number out of
  * all, as in "Today + Week  1/5". Null when no page showing has a name yet.
  */
@@ -801,8 +848,11 @@ private fun PageNames(
     hidden: () -> Boolean,
     faded: () -> Float,
     onOpen: () -> Unit,
+    /** For each name shown, whether a hero's art is under it: then it is lettered light on no plate, over a soft shadow. */
+    overHero: List<Boolean> = emptyList(),
     modifier: Modifier = Modifier,
 ) {
+    val density = LocalDensity.current
     Row(
         modifier
             .fillMaxWidth()
@@ -811,17 +861,18 @@ private fun PageNames(
     ) {
         // A look with its own page has the prototype's one folio: the names showing and where they are in the notebook.
         val shown = if (Pack.ownsPage) listOf(folio(names, first, total)) else names
-        for (name in shown) {
+        for ((i, name) in shown.withIndex()) {
             Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.CenterStart) {
                 if (name != null) {
+                    val hero = overHero.getOrElse(i) { false }
                     BasicText(
                         name,
                         Modifier
                             .padding(start = PageGap)
                             .clickable(onClick = onOpen)
-                            .background(Pack.folioPlate)
+                            .then(if (hero) Modifier else Modifier.background(Pack.folioPlate))
                             .padding(horizontal = 8.dp, vertical = 2.dp),
-                        style = Pack.folio,
+                        style = if (hero) Pack.folio.merge(heroLettering(density)) else Pack.folio,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )

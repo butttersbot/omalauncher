@@ -106,6 +106,9 @@ class LauncherState {
     /** What the hinge reports while the window lies across it; null on a closed foldable, and on what doesn't fold. */
     var hinge by mutableStateOf<dev.omalauncher.widgets.layout.Hinge?>(null)
 
+    /** A manga page's hero runs under the status bar on a page showing (the Manga look): its icons are light over it. */
+    var heroUnderBar by mutableStateOf(false)
+
     /** The overview of all pages is over home; see [Overview]. */
     var overviewOpen by mutableStateOf(false)
         private set

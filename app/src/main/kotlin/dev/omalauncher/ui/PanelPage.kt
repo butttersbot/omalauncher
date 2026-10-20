@@ -184,6 +184,8 @@ internal fun PanelPageView(
     area: IntRect,
     /** The page's whole room: a picture that bleeds runs off the page to its edges, as a printed bleed runs off the paper. */
     room: IntSize,
+    /** How far above the room's top the page's hero runs ([heroPanel]): up past the page's name to the top of the screen. */
+    above: Int,
     carried: String?,
     aim: () -> Cell?,
     selected: String?,
@@ -195,17 +197,23 @@ internal fun PanelPageView(
 ) {
     val density = LocalDensity.current
     val held = occupants(panels, items, cellOf)
+    val hero = heroPanel(panels, held, carried)
 
     fun px(p: PanelPoint) = Offset(area.left + p.x.toFloat() * area.width, area.top + p.y.toFloat() * area.height)
 
-    // A bled picture's corners on the page's edge go on to the room's edge.
-    fun bled(p: PanelPoint) =
-        px(p).let { o ->
-            val e = 1e-6
-            Offset(
-                when { abs(p.x) < e -> 0f; abs(p.x - 1) < e -> room.width.toFloat(); else -> o.x },
-                when { abs(p.y) < e -> 0f; abs(p.y - 1) < e -> room.height.toFloat(); else -> o.y },
-            )
+    // A bled picture's corners on the page's edge go on to the room's edge; the hero's top ones on up to the screen's top.
+    fun bledIn(
+        panel: Int,
+    ): (PanelPoint) -> Offset =
+        { p ->
+            px(p).let { o ->
+                val e = 1e-6
+                val top = if (panel == hero) -above.toFloat() else 0f
+                Offset(
+                    when { abs(p.x) < e -> 0f; abs(p.x - 1) < e -> room.width.toFloat(); else -> o.x },
+                    when { abs(p.y) < e -> top; abs(p.y - 1) < e -> room.height.toFloat(); else -> o.y },
+                )
+            }
         }
 
     // A tile's own outline would draw a second line inside the panel's ink: it is drawn this much larger and cut back.
@@ -215,7 +223,7 @@ internal fun PanelPageView(
         val lifted = item != null && item.key == carried
         val art = (item as? ArtItem)?.takeIf { !lifted }
         val shape = if (art != null) panel.bleed ?: panel.outline else panel.outline
-        val pts = if (art != null && panel.bleed != null) shape.map(::bled) else shape.map(::px)
+        val pts = if (art != null && panel.bleed != null) shape.map(bledIn(i)) else shape.map(::px)
         val box = Rect(pts.minOf { it.x }, pts.minOf { it.y }, pts.maxOf { it.x }, pts.maxOf { it.y })
         val mark = PanelFx.on(page, i)
         val wipe = remember(mark) { Animatable(if (mark == null) 1f else 0f) }
@@ -284,7 +292,7 @@ internal fun PanelPageView(
             val lifted = item != null && item.key == carried
             val bleeds = item is ArtItem && !lifted && panel.bleed != null
             val shape = if (bleeds) panel.bleed!! else panel.outline
-            val at: (PanelPoint) -> Offset = if (bleeds) ::bled else ::px
+            val at: (PanelPoint) -> Offset = if (bleeds) bledIn(i) else ::px
             val path = Path()
             for (j in shape.indices) {
                 val a = shape[j]
