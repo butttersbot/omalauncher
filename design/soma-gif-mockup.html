@@ -35,7 +35,12 @@
   .b { max-width: 75%; padding: 8px 12px; border-radius: 16px; background: #ececee; align-self: flex-start; }
   .b.me { align-self: flex-end; background: var(--ink); color: var(--paper); }
   .b.gif { padding: 0; overflow: hidden; width: 200px; background: none; }
-  .field { margin: 6px 10px 8px; border: 2px solid var(--ink); border-radius: 20px; padding: 9px 14px; color: var(--muted); }
+  .field { margin: 6px 10px 8px; border: 2px solid var(--ink); border-radius: 20px; padding: 7px 8px 7px 14px; color: var(--muted); display: flex; align-items: center; gap: 10px; }
+  .field .att { width: 64px; height: 64px; border-radius: 8px; border: 1.3px solid var(--ink); display: grid; place-items: center; font-size: 32px; position: relative; animation: bob 1.1s ease-in-out infinite alternate; }
+  .field .att i { position: absolute; bottom: 2px; right: 3px; font: 700 8px "M Mono"; font-style: normal; color: #111; background: #fff; padding: 0 2px; }
+  .field span:not(.att) { flex: 1; }
+  .appsend { width: 34px; height: 34px; border-radius: 50%; background: #ccc; color: #fff; font-size: 15px; }
+  .appsend.on { background: #5865f2; }
 
   /* The keyboard. */
   .kb { background: var(--board); border-top: 3px solid var(--red); }
@@ -141,13 +146,9 @@ function shown() {
 function tile(g, i) {
   const [e, cap, , ratio, bg, mine] = g;
   const heart = mine ? `<span class="mine">SAVED</span>` : `<button class="heart ${hearted.has(g) ? 'on' : ''}" onclick="event.stopPropagation();heart(${i})">${hearted.has(g) ? '♥' : '♡'}</button>`;
-  // A tap opens the quick preview right there in the grid (Boss, 2026-10-21: "quick preview inline"): the tile grows
-  // and plays bigger, with Send under it; a second tap on Send sends, a tap anywhere else moves on.
-  if (i === S.pick) {
-    return `<div class="g picked" style="background:${bg}"><div class="art" style="height:${Math.round(150 * ratio)}px;font-size:58px">${e}</div>${heart}${mine ? '' : `<div class="cap" style="bottom:44px">${cap}</div>`}
-      <div class="acts"><button class="sendbtn" onclick="event.stopPropagation();send(${i})">Send ➤</button><button class="x" onclick="event.stopPropagation();set({pick:-1})">✕</button></div></div>`;
-  }
-  return `<div class="g" onclick="set({pick:${i}})" style="background:${bg}"><div class="art" style="height:${Math.round(110 * ratio)}px">${e}</div>${heart}${mine ? '' : `<div class="cap">${cap}</div>`}</div>`;
+  // A tap places it in the app's message box, inline (Boss, 2026-10-21: "tapping on the gif should just place it
+  // inline", no Send or ✕ step); the app's own send button sends it.
+  return `<div class="g" onclick="place(${i})" style="background:${bg}"><div class="art" style="height:${Math.round(110 * ratio)}px">${e}</div>${heart}${mine ? '' : `<div class="cap">${cap}</div>`}</div>`;
 }
 function heart(i) { const g = shown()[i]; hearted.has(g) ? hearted.delete(g) : hearted.add(g); draw(); }
 // Tiles into [n] columns, each next one onto the shortest, so the stacks stay even as they scroll down.
@@ -156,9 +157,17 @@ function columns(list, n) {
   list.forEach((g, i) => { const c = cols.reduce((a, b) => (b.h < a.h ? b : a)); c.html += tile(g, i); c.h += g[3] + 0.1; });
   return cols.map(c => `<div class="col">${c.html}</div>`).join('');
 }
+function place(i) {
+  S.attached = shown()[i]; S.state = 'strip'; S.q = '';
+  draw();
+}
+function sendAttached() {
+  if (!S.attached) return;
+  S.sent.push(S.attached); S.attached = null; draw();
+}
 function send(i) {
   const g = shown()[i];
-  S.sent.push(g); S.state = 'strip'; S.q = ''; S.pick = -1; S.toast = 'Sent as a GIF (the app took it straight from the keyboard)';
+  S.sent.push(g); S.state = 'strip'; S.q = ''; S.pick = -1; 
   draw(); setTimeout(() => set({ toast: '' }), 2200);
 }
 function key(c) { if (S.state !== 'search') return; set({ pick: -1, q: c === '⌫' ? S.q.slice(0, -1) : S.q + c }); }
@@ -203,7 +212,7 @@ function draw() {
     </div>`;
   }
   p.innerHTML = `<div class="app"><div class="apphead"><span class="av">B</span><b>#oma-builds</b><span class="mono" style="margin-left:auto;color:var(--muted)">any app</span></div>
-    <div class="msgs">${msgs}</div><div class="field">Message #oma-builds</div></div>
+    <div class="msgs">${msgs}</div><div class="field">${S.attached ? `<span class="att" style="background:${S.attached[4]}">${S.attached[0]}<i>GIF</i></span>` : ''}<span>Message #oma-builds</span><button class="appsend ${S.attached ? 'on' : ''}" onclick="sendAttached()">➤</button></div></div>
     <div class="kb">${board}${strip()}</div>${S.toast ? `<div class="sent">${S.toast}</div>` : ''}`;
   const m = p.querySelector('.msgs'); m.scrollTop = m.scrollHeight;
 }
