@@ -456,33 +456,42 @@ class KeyboardView(
         val ax = width - STRIP_BUTTON_DP / 2 * d
         canvas.drawLine(ax - 7 * d, cy - 3 * d, ax, cy + 4 * d, stroke)
         canvas.drawLine(ax, cy + 4 * d, ax + 7 * d, cy - 3 * d, stroke)
-        drawClipPill(canvas, k, cy)
+        drawClipPill(canvas, k, cy, toolsStartPx())
     }
+
+    /**
+     * The strip is the keyboard's utility strip (Boss, 2026-10-21: "use that bottom strip as a utility strip... add
+     * more buttons in there as I see fit"): its tools sit left-justified, one after another, after the split switch
+     * (inner screen) or from the left edge (cover); the hide arrow keeps the right end. The clipboard is the first.
+     * A new tool goes after the last one, starting where that one's box ends.
+     */
+    private fun toolsStartPx(): Float = (if (host.canSplit) STRIP_BUTTON_DP else STRIP_PAD_DP) * density
 
     /** Where the strip's clipboard pill is, px, and where its clipboard icon ends (the rest of it pastes). */
     private val pill = RectF()
     private var pillIconRight = 0f
 
     /**
-     * The clipboard pill in the strip's middle: its icon opens the clipboard; with something copied in the last
+     * The clipboard pill, the utility strip's first tool: its icon opens the clipboard; with something copied in the last
      * minutes, the pill also shows the start of it, and a tap there types it, as the iPhone's keyboard offers.
      */
     private fun drawClipPill(
         canvas: Canvas,
         k: KeyboardLook,
         cy: Float,
+        left: Float,
     ) {
         val d = density
         val ink = if (k.letter != null) k.pageInk else k.muted
         val fresh = if (mode == Mode.CLIPS) null else host.freshClip
         text.typeface = k.typeface
         text.textSize = 13 * d
-        val room = width - 2 * STRIP_BUTTON_DP * d - 16 * d
+        val room = width - STRIP_BUTTON_DP * d - left - 8 * d
         val icon = 34 * d
         val label = fresh?.let { android.text.TextUtils.ellipsize("Paste “" + ClipHistory.oneLine(it), android.text.TextPaint(text), minOf(room - icon - 20 * d, 260 * d), android.text.TextUtils.TruncateAt.END).toString() + "”" }
         val w = icon + (label?.let { text.measureText(it) + 16 * d } ?: 0f)
         val h = 30 * d
-        pill.set(width / 2f - w / 2, cy - h / 2, width / 2f + w / 2, cy + h / 2)
+        pill.set(left, cy - h / 2, left + w, cy + h / 2)
         pillIconRight = pill.left + icon
         stroke.color = ink
         stroke.strokeWidth = 1.5f * d
@@ -654,7 +663,7 @@ class KeyboardView(
     private fun stripTap(x: Float) {
         if (!ownStrip) return
         val px = x * density
-        if (px >= pill.left - 8 * density && px <= pill.right + 8 * density) {
+        if (px >= pill.left && px <= pill.right + 8 * density) {
             tick()
             host.clipboard(paste = px > pillIconRight && mode != Mode.CLIPS && host.freshClip != null)
         } else if (x < STRIP_BUTTON_DP && host.canSplit) {
@@ -722,6 +731,9 @@ class KeyboardView(
     companion object {
         /** How wide each of the strip's buttons takes touches, dp. */
         private const val STRIP_BUTTON_DP = 64f
+
+        /** On the cover, with no split switch, the strip's tools start this far in from the left. */
+        private const val STRIP_PAD_DP = 12f
 
         /** The strip's least height while it holds its buttons, dp: Android's own keyboard bar's. */
         private const val STRIP_MIN_DP = 48f
