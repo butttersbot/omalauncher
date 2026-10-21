@@ -8,7 +8,7 @@ each photo search's words; it keeps what comes back. See docs/SEARCH-PHOTOS-MAC.
   POST /images  {"images": [{"id": "...", "jpeg": "<base64>"}]} -> {"items": [{"id", "vector", "text", "tags"}]}
   POST /rerank  {"query": "...", "docs": ["...", ...]}  -> {"scores": [...]}: how near each doc is to the query
   GET  /spotlight?q=WORDS&n=12  -> {"items": [{"path", "name", "kind", "modified", "size"}]}: Spotlight, in his folders
-  GET  /file?path=PATH          -> the file itself, for the phone to keep (only under ~, at most 500 MB)
+  GET  /file?path=PATH          -> the file itself, for the phone to keep (only his own files: see offered(); 500 MB at most)
 
 /spotlight and /file answer only devices signed in as this Mac's own Tailscale user (`tailscale whois`, as
 tailshare-serve does); the rest give out nothing but numbers.
@@ -190,6 +190,18 @@ DOCUMENTS = {"pdf", "doc", "docx", "pages", "key", "numbers", "xls", "xlsx", "pp
              "jpg", "jpeg", "png", "heic", "gif", "mov", "mp4", "m4a", "mp3", "wav", "zip", "epub", "html"}
 
 
+def offered(path):
+    """Whether [path] (a real path) is one of his own files, for /spotlight and /file alike: inside one of [ROOTS],
+    with nothing hidden anywhere on the way (.ssh, .env, secrets folders), and not in a cache, package or build tree,
+    an app or a photo library. The Mac Pro's photo thread found /file reading any path in ~ (2026-10-21)."""
+    roots = [os.path.join(HOME, r) + "/" for r in ROOTS]
+    inside = next((r for r in roots if path.startswith(r)), None)
+    if inside is None:
+        return False
+    rel = "/" + path[len(inside):] + "/"
+    return not (any(x in rel for x in SKIPPED) or "/." in rel or ".app/" in rel or ".photoslibrary/" in rel)
+
+
 def spotlight(q, n):
     """His files (in [ROOTS]) whose name or text has every word of [q], by Spotlight's own index (mdfind): names
     first, documents before code, then the newest. A second at most: past that what has come is what there is."""
@@ -208,13 +220,14 @@ def spotlight(q, n):
     deadline = time.time() + 1.0
     try:
         for line in proc.stdout:
-            p = line.rstrip("\n")
-            rel = p[len(HOME):] + "/"
-            if any(x in rel for x in SKIPPED) or "/." in rel or ".app/" in rel or ".photoslibrary/" in rel:
-                continue
-            paths.append(p)
-            if len(paths) >= 400 or time.time() > deadline:
+            # The deadline counts on every line: a word with thousands of skipped hits took 2.5 s otherwise.
+            if time.time() > deadline:
                 break
+            p = line.rstrip("\n")
+            if offered(os.path.realpath(p)):
+                paths.append(p)
+                if len(paths) >= 400:
+                    break
     finally:
         proc.kill()
     lower = [w.lower() for w in words]
@@ -259,8 +272,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, {"items": spotlight(q, n)})
         if url.path == "/file":
             path = os.path.realpath((args.get("path") or [""])[0])
-            if not path.startswith(HOME + "/") or not os.path.isfile(path):
-                return self.reply(404, {"error": "no such file in ~"})
+            if not offered(path) or not os.path.isfile(path):
+                return self.reply(404, {"error": "no such file among his own"})
             size = os.path.getsize(path)
             if size > MAX_FILE:
                 return self.reply(413, {"error": "too large"})

@@ -27,6 +27,8 @@ loaded for that search and freed after.
   `title: none | text:`), for ordering files when typing pauses. Document vectors are cached.
 - `GET /spotlight?q=&n=` (Spotlight over his own folders — Desktop, Documents, Downloads, iCloud Drive, Inbox, Pocket, ClaudeSync…; names first, documents before code) and `GET /file?path=` (a file under `~`, 500 MB at
   most) answer only devices of this Mac's own Tailscale user, checked with `tailscale whois`.
+  Both offer only his own files: inside those folders, nothing hidden on the way (`.ssh`, `.env`...), no caches,
+  package or build trees (an allow-list, after the photo thread found `/file` reading any path in `~`).
 
 ## The phone side (`search/PhotoIndex.kt`)
 - Photos, videos and GIFs from the phone's media store, as 384-pixel copies, sent in batches while the phone is on
