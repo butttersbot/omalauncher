@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Soma search: mock-up</title>
+<!--
+  Soma's search, swiped down from home (Boss, 2026-10-20: "a search bar that truly can search anything", after
+  typecraft's oma-cast). A mock-up only: every result here is sample data, the photos are his own home-page art.
+  Drag down on home (or tap "swipe down"), type, long-press a row for its actions.
+-->
+<style>
+  /* The Manga look's tokens and fonts, from app/src/main/assets/packs/manga/pack.toml. */
+  @font-face { font-family: "M Display"; src: url(../app/src/main/assets/packs/manga/fonts/DelaGothicOne-Regular.ttf); }
+  @font-face { font-family: "M Body"; src: url(../app/src/main/assets/packs/manga/fonts/SchibstedGrotesk.ttf); }
+  @font-face { font-family: "M Hand"; src: url(../app/src/main/assets/packs/manga/fonts/PatrickHand-Regular.ttf); }
+  @font-face { font-family: "M Mono"; src: url(../app/src/main/assets/packs/manga/fonts/JetBrainsMono.ttf); }
+  :root { --paper: #fdfdfb; --ink: #111113; --muted: #77777e; --red: #d7262d; --tone: #e9e9ea; --line: 1.15px; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: #222; overflow: hidden; }
+  body { color: var(--ink); font: 15px/1.3 "M Body", system-ui, sans-serif; user-select: none; -webkit-user-select: none; }
+  .display { font-family: "M Display", sans-serif; }
+  .mono { font-family: "M Mono", monospace; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; }
+  .hand { font-family: "M Hand", cursive; }
+
+  .phone { position: relative; width: 100vw; height: 100dvh; overflow: hidden; background: var(--paper); touch-action: none; }
+  @media (min-width: 700px) { .phone { width: 420px; height: min(880px, 96vh); margin: 2vh auto; border-radius: 26px; } }
+  .home { position: absolute; inset: 0; background: url(search-mock/home.png) top center/cover; transition: filter .25s; }
+  .hint { position: absolute; left: 50%; top: 46%; transform: translateX(-50%); background: var(--ink); color: var(--paper); padding: 10px 16px; border-radius: 22px; cursor: pointer; z-index: 3; box-shadow: 0 4px 18px rgba(0,0,0,.3); }
+  .phone.open .hint { display: none; }
+
+  /* The sheet: down from the top as the finger pulls, the page dimmed under it. */
+  .sheet { position: absolute; inset: 0; background: var(--paper); transform: translateY(-100%); transition: transform .3s cubic-bezier(.25,.8,.25,1); z-index: 4; display: flex; flex-direction: column; }
+  .phone.open .sheet { transform: none; }
+  .phone.drag .sheet { transition: none; }
+  .bar { padding: 46px 12px 8px; display: flex; gap: 8px; align-items: center; border-bottom: var(--line) solid var(--ink); }
+  .field { flex: 1; display: flex; align-items: center; gap: 8px; border: 2px solid var(--ink); border-radius: 2px; padding: 0 10px; height: 46px; background: var(--paper); }
+  .field input { flex: 1; border: 0; outline: 0; font: 17px "M Body", sans-serif; background: transparent; color: var(--ink); min-width: 0; }
+  .field input::placeholder { color: var(--muted); }
+  .field .x { font-size: 18px; color: var(--muted); cursor: pointer; padding: 6px; }
+  .cancel { font-size: 15px; cursor: pointer; padding: 8px 2px; }
+  .scopes { display: flex; gap: 6px; padding: 8px 12px; overflow-x: auto; scrollbar-width: none; border-bottom: var(--line) solid var(--ink); }
+  .scopes span { flex: none; padding: 5px 10px; border: var(--line) solid var(--ink); font-size: 13px; cursor: pointer; }
+  .scopes span.on { background: var(--ink); color: var(--paper); }
+  .list { flex: 1; overflow-y: auto; padding: 4px 0 calc(var(--kb) + 16px); scrollbar-width: none; touch-action: pan-y; }
+  .sec { padding: 14px 14px 4px; display: flex; justify-content: space-between; align-items: baseline; }
+  .sec .mono { color: var(--muted); }
+  .sec a { color: var(--red); font-size: 12px; cursor: pointer; }
+  .row { display: flex; align-items: center; gap: 12px; padding: 8px 14px; min-height: 52px; cursor: pointer; position: relative; }
+  .row.sel { background: var(--tone); }
+  .row .ic { width: 36px; height: 36px; flex: none; display: grid; place-items: center; font-size: 22px; border: var(--line) solid var(--ink); background: var(--paper); overflow: hidden; }
+  .row .ic.app { border: 0; border-radius: 9px; font-size: 20px; color: #fff; }
+  .row .ic img { width: 100%; height: 100%; object-fit: cover; }
+  .row .t { flex: 1; min-width: 0; }
+  .row .t b { font-weight: 600; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .t small { color: var(--muted); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12.5px; }
+  .row .t small em { color: var(--ink); font-style: normal; background: #ffe680; }
+  .row .k { color: var(--muted); font-size: 11.5px; flex: none; }
+  .row .tog { width: 40px; height: 22px; border: 2px solid var(--ink); border-radius: 12px; position: relative; flex: none; }
+  .row .tog::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--ink); transition: left .15s; }
+  .row .tog.on { background: var(--red); border-color: var(--red); } .row .tog.on::after { left: 20px; background: #fff; }
+
+  /* Top hit and the inline answers: a panel of their own, as Raycast's calculator. */
+  .answer { margin: 10px 12px 2px; border: 2px solid var(--ink); padding: 12px; display: flex; align-items: center; gap: 10px; }
+  .answer .q { flex: 1; font-size: 15px; color: var(--muted); }
+  .answer .a { font-size: 30px; }
+  .answer .arrow { color: var(--muted); }
+  .answer small { display: block; color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+
+  /* Photos found by what is in them. */
+  .shots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 6px 12px 2px; }
+  .shot { position: relative; aspect-ratio: 1; overflow: hidden; border: var(--line) solid var(--ink); cursor: pointer; background: var(--tone); }
+  .shot img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .shot .why { position: absolute; left: 0; right: 0; bottom: 0; background: rgba(17,17,19,.78); color: #fff; font-size: 10.5px; padding: 3px 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .shot .kind { position: absolute; top: 4px; right: 4px; background: var(--paper); border: var(--line) solid var(--ink); font-size: 9px; padding: 1px 4px; }
+
+  /* Favorites when nothing is typed: a row of icons. */
+  .favs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; padding: 6px 12px 4px; }
+  .fav { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 11.5px; cursor: pointer; }
+  .fav .ic { width: 52px; height: 52px; border-radius: 13px; display: grid; place-items: center; font-size: 26px; color: #fff; }
+  .recent { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 12px; }
+  .recent span { border: var(--line) dashed var(--muted); padding: 4px 9px; font-size: 13px; cursor: pointer; }
+
+  /* The keyboard's room (the Soma keyboard comes up with the sheet), drawn as a plain block. */
+  .kb { position: absolute; left: 0; right: 0; bottom: 0; height: var(--kb); background: #d4d4d8; display: grid; place-items: center; color: #555; z-index: 5; transition: transform .25s; }
+  .kb.away { transform: translateY(100%); }
+  :root { --kb: 270px; }
+
+  /* Long press: the actions, as Raycast's Ctrl+K panel. */
+  .scrim { position: absolute; inset: 0; background: rgba(0,0,0,.35); z-index: 8; display: none; }
+  .actions { position: absolute; left: 10px; right: 10px; bottom: 10px; background: var(--paper); border: 2px solid var(--ink); z-index: 9; display: none; }
+  .phone.acting .scrim, .phone.acting .actions { display: block; }
+  .actions .h { padding: 12px 14px; border-bottom: var(--line) solid var(--ink); display: flex; gap: 10px; align-items: center; }
+  .actions .h b { flex: 1; }
+  .actions .a { padding: 13px 14px; display: flex; gap: 12px; cursor: pointer; }
+  .actions .a:active { background: var(--tone); }
+  .actions .a.red { color: var(--red); }
+  .note { position: absolute; left: 12px; right: 12px; bottom: calc(var(--kb) + 10px); z-index: 6; background: var(--ink); color: var(--paper); padding: 9px 12px; font-size: 13px; display: none; }
+  .note.show { display: block; }
+</style>
+</head>
+<body>
+<div class="phone" id="phone">
+  <div class="home" id="home"></div>
+  <div class="hint" id="hint">⇣ swipe down on home</div>
+
+  <div class="sheet" id="sheet">
+    <div class="bar">
+      <div class="field">
+        <span>⌕</span>
+        <input id="q" placeholder="Search anything" autocomplete="off" autocapitalize="off" spellcheck="false">
+        <span class="x" id="clear" hidden>✕</span>
+      </div>
+      <span class="cancel" id="cancel">Cancel</span>
+    </div>
+    <div class="scopes" id="scopes"></div>
+    <div class="list" id="list"></div>
+  </div>
+  <div class="kb" id="kb">Soma keyboard</div>
+  <div class="note" id="note"></div>
+  <div class="scrim" id="scrim"></div>
+  <div class="actions" id="actions"></div>
+</div>
+
+<script>
+const M = 'search-mock/';
+// Sample data. Real Soma reads each of these from where it lives (see the plan in the chat).
+const APPS = [
+  { id: 'discord', t: 'Discord', c: '#5865f2', g: '◉', kw: 'chat dms' },
+  { id: 'brave', t: 'Brave', c: '#fb542b', g: '🦁', kw: 'browser web' },
+  { id: 'spotify', t: 'Spotify', c: '#1db954', g: '♫', kw: 'music' },
+  { id: 'camera', t: 'Camera', c: '#333', g: '◎', kw: 'photo' },
+  { id: 'gallery', t: 'Gallery', c: '#e64a6f', g: '✿', kw: 'photos pictures' },
+  { id: 'x', t: 'X', c: '#000', g: '𝕏', kw: 'twitter' },
+  { id: 'youtube', t: 'YouTube', c: '#f00', g: '▶', kw: 'video' },
+  { id: 'tailscale', t: 'Tailscale', c: '#222', g: '⁂', kw: 'vpn' },
+  { id: 'ghostty', t: 'Ghostty', c: '#2b2f6e', g: '▣', kw: 'terminal linux', sub: 'Linux app' },
+  { id: 'gimp', t: 'GIMP', c: '#6b5b45', g: '✎', kw: 'image editor linux', sub: 'Linux app' },
+];
+const COMMANDS = [
+  { t: 'Page 2', sub: 'Go to home page', g: '▤', kw: 'page home' },
+  { t: 'Page 5', sub: 'Go to home page · the lock screen page', g: '▤', kw: 'page lock' },
+  { t: 'New chat', sub: 'Soma · start a new agent chat', g: '✦', kw: 'agent claude grok ask' },
+  { t: 'omalauncher-fold', sub: 'Mac Pro thread · open in Soma chat', g: '⌘', kw: 'mac thread project' },
+  { t: 'Clear pen marks', sub: 'This page', g: '⌫', kw: 'ink draw erase' },
+  { t: 'Split keyboard', sub: 'Soma keyboard', g: '⌨', kw: 'keyboard split', toggle: true, on: true },
+  { t: 'Install update', sub: 'Soma 104 is current', g: '⟳', kw: 'promote update build' },
+];
+const LOOKS = [
+  { t: 'Manga', sub: 'Look · in use', g: '◐', kw: 'theme look style' },
+  { t: 'City Pop', sub: 'Look', g: '◑', kw: 'theme look style' },
+  { t: 'One Bit', sub: 'Look', g: '◒', kw: 'theme look style' },
+  { t: 'Riso', sub: 'Look', g: '◓', kw: 'theme look style' },
+];
+const SETTINGS = [
+  { t: 'Wi-Fi', sub: 'PrinceGuest', g: '⌔', kw: 'wifi internet network', toggle: true, on: true },
+  { t: 'Bluetooth', sub: 'On · Galaxy Buds', g: 'ᛒ', kw: 'bt headphones', toggle: true, on: true },
+  { t: 'Flashlight', sub: 'Quick switch', g: '✺', kw: 'torch light', toggle: true, on: false },
+  { t: 'Do Not Disturb', sub: 'Quick switch', g: '☾', kw: 'dnd silent focus', toggle: true, on: false },
+  { t: 'Battery', sub: 'Settings · 62%', g: '▮', kw: 'power charge' },
+  { t: 'Display', sub: 'Settings · brightness, dark mode', g: '☀', kw: 'brightness screen' },
+  { t: 'Wireless debugging', sub: 'Settings · Developer options', g: '⚙', kw: 'adb developer debug' },
+];
+const PHOTOS = [
+  { src: 'beach.gif', kind: 'GIF', tags: 'beach ocean waves sunset palm trees summer sand', where: 'Download' },
+  { src: 'pool.jpg', kind: 'PHOTO', tags: 'pool palm trees summer manga halftone lounge chairs beach', where: 'Soma art' },
+  { src: 'melsdrive.jpg', kind: 'PHOTO', tags: 'mels drive-in diner sign palm trees night retro neon', where: 'Soma art' },
+  { src: 'sunset.gif', kind: 'GIF', tags: 'sunset city skyline orange sky evening', where: 'Pictures' },
+  { src: 'cat.gif', kind: 'GIF', tags: 'cat night sky stars window sitting black cat', where: 'Pictures' },
+  { src: 'skyline.gif', kind: 'GIF', tags: 'city skyline night lights buildings tokyo', where: 'Pictures' },
+  { src: 'highway.gif', kind: 'VIDEO 0:12', tags: 'highway car driving night road city lights', where: 'DCIM' },
+  { src: 'train.gif', kind: 'GIF', tags: 'train station platform rain anime', where: 'Pictures' },
+  { src: 'cassette.gif', kind: 'GIF', tags: 'cassette tape music retro walkman 80s', where: 'Download' },
+  { src: 'eye.gif', kind: 'GIF', tags: 'eye anime girl close up manga', where: 'Soma art' },
+  { src: 'rooftop.jpg', kind: 'PHOTO', tags: 'girl rooftop sunset city anime', where: 'Soma art' },
+  { src: 'window.gif', kind: 'GIF', tags: 'window rain night room cozy', where: 'Pictures' },
+];
+const FILES = [
+  { t: 'Lease agreement 2026.pdf', sub: 'Documents · 2.1 MB · Sep 3', g: 'PDF', kw: 'lease rent apartment contract', snip: '…the <em>rent</em> of $2,400 is due on the first…' },
+  { t: 'flight-confirmation-HNL.pdf', sub: 'Download · Oct 18', g: 'PDF', kw: 'flight honolulu hawaii trip airport united', snip: 'United UA 1158 · LAX → <em>HNL</em> · Oct 20' },
+  { t: 'page5-lock-color.mp4', sub: 'Movies/Soma · 13 MB · today', g: 'MP4', kw: 'lock screen video manga page' },
+  { t: 'invoice_oct.pdf', sub: 'Download · Oct 2', g: 'PDF', kw: 'invoice bill receipt' },
+  { t: 'omalauncher.md', sub: 'Linux · ~/notes', g: 'MD', kw: 'notes soma ideas launcher', snip: '- <em>search</em> bar that can search anything' },
+  { t: 'README.md', sub: 'Mac Pro · ~/Projects/omalauncher', g: 'MD', kw: 'mac readme omalauncher', mac: true },
+  { t: 'Taxes 2025.xlsx', sub: 'Mac Pro · ~/Documents', g: 'XLS', kw: 'tax taxes spreadsheet', mac: true },
+];
+const NOTES = [
+  { t: 'Soma ideas', sub: 'Sticky note · Page 3', g: '✎', kw: 'ideas soma search raycast', snip: 'raycast <em>search</em> on swipe down' },
+  { t: 'Trip packing', sub: 'Note · Oct 17', g: '✎', kw: 'trip hawaii packing list', snip: 'charger, sunscreen, Fold <em>cable</em>' },
+];
+const CONTACTS = [
+  { t: 'Mom', sub: 'Mobile · call or text', g: '☺', kw: 'mom family' },
+  { t: 'Alex Kim', sub: 'Mobile', g: '☺', kw: 'alex' },
+];
+const CLIPS = [
+  { t: 'https://x.com/typecraft_dev/status/2112…', sub: 'Copied 2 h ago · from X', g: '⎘', kw: 'link x typecraft raycast clipboard' },
+  { t: '1Z999AA10123456784', sub: 'Copied yesterday · tracking number', g: '⎘', kw: 'ups tracking package clipboard' },
+];
+const EMOJI = { fire: '🔥', heart: '❤️', laugh: '😂', lol: '😂', beach: '🏖️', sun: '☀️', cat: '🐈', palm: '🌴', plane: '✈️', thumbs: '👍', party: '🎉' };
+const SCOPES = ['All', 'Photos & videos', 'Files', 'Apps', 'Settings', 'Notes', 'Mac'];
+
+let scope = 'All', sel = 0, rows = [];
+const $ = id => document.getElementById(id);
+const phone = $('phone'), q = $('q'), list = $('list');
+
+function words(s) { return s.toLowerCase().split(/[^a-z0-9+#.%]+/).filter(Boolean); }
+/** A small stand-in for the real ranker: every word of the query begins a word of the item. */
+function score(item, query) {
+  const ws = words(query); if (!ws.length) return 0;
+  const hay = words([item.t || '', item.sub || '', item.kw || '', item.tags || ''].join(' '));
+  let s = 0;
+  for (const w of ws) { const hit = hay.findIndex(h => h.startsWith(w)); if (hit < 0) return 0; s += hit === 0 ? 3 : 1; }
+  if ((item.t || '').toLowerCase().startsWith(query.toLowerCase())) s += 5;
+  return s;
+}
+function pick(arr, query) { return arr.map(i => [score(i, query), i]).filter(x => x[0] > 0).sort((a, b) => b[0] - a[0]).map(x => x[1]); }
+
+/** Calculator, units and currency, as Raycast's inline answers. */
+function answer(query) {
+  const s = query.trim().toLowerCase();
+  let m = s.match(/^([\d.]+)\s*(usd|eur|jpy|krw|gbp)\s*(?:to|in)\s*(usd|eur|jpy|krw|gbp)$/);
+  const fx = { usd: 1, eur: .92, jpy: 151.2, krw: 1382, gbp: .79 };
+  if (m) return { a: (m[1] / fx[m[2]] * fx[m[3]]).toLocaleString(undefined, { maximumFractionDigits: 2 }) + ' ' + m[3].toUpperCase(), why: 'Currency · rate cached today (sample)' };
+  m = s.match(/^([\d.]+)\s*(mi|km|lb|kg|f|c|ft|m)\s*(?:to|in)\s*(mi|km|lb|kg|f|c|ft|m)$/);
+  const u = { 'mi-km': x => x * 1.60934, 'km-mi': x => x / 1.60934, 'lb-kg': x => x * .453592, 'kg-lb': x => x / .453592, 'f-c': x => (x - 32) * 5 / 9, 'c-f': x => x * 9 / 5 + 32, 'ft-m': x => x * .3048, 'm-ft': x => x / .3048 };
+  if (m && u[m[2] + '-' + m[3]]) return { a: +u[m[2] + '-' + m[3]](+m[1]).toFixed(2) + ' ' + m[3], why: 'Units' };
+  m = s.match(/^([\d.]+)\s*%\s*of\s*([\d.]+)$/);
+  if (m) return { a: +(m[1] * m[2] / 100).toFixed(4) + '', why: 'Percentage' };
+  if (/^[\d\s.+\-*/()^]+$/.test(s) && /\d\s*[+\-*/^]\s*[\d(]/.test(s)) {
+    try { const v = Function('return (' + s.replace(/\^/g, '**') + ')')(); if (isFinite(v)) return { a: +v.toFixed(8) + '', why: 'Calculator · tap to copy' }; } catch (e) {}
+  }
+  return null;
+}
+
+function sec(title, more) { return `<div class="sec"><span class="mono">${title}</span>${more ? `<a>${more}</a>` : ''}</div>`; }
+function rowHtml(r, kind) {
+  const i = rows.push({ ...r, kind }) - 1;
+  const ic = kind === 'app' ? `<div class="ic app" style="background:${r.c}">${r.g}</div>` : `<div class="ic">${r.g}</div>`;
+  const right = r.toggle ? `<div class="tog ${r.on ? 'on' : ''}"></div>` : `<span class="k">${kind === 'app' ? (r.sub || 'App') : kind}</span>`;
+  return `<div class="row ${i === sel ? 'sel' : ''}" data-i="${i}">${ic}<div class="t"><b>${r.t}</b>${r.snip ? `<small>${r.snip}</small>` : ''}${r.sub && kind !== 'app' ? `<small>${r.sub}</small>` : ''}</div>${right}</div>`;
+}
+
+function render() {
+  const query = q.value.trim();
+  $('clear').hidden = !query;
+  rows = []; let h = '';
+  const show = s => scope === 'All' || scope === s;
+  if (!query) {
+    $('scopes').style.display = 'none';
+    h += sec('Favorites');
+    h += '<div class="favs">' + APPS.slice(0, 5).map(a => `<div class="fav"><div class="ic" style="background:${a.c}">${a.g}</div>${a.t}</div>`).join('') + '</div>';
+    h += sec('Suggestions');
+    h += rowHtml(COMMANDS[3], 'thread') + rowHtml(APPS[6], 'app') + rowHtml(SETTINGS[2], 'switch') + rowHtml(FILES[1], 'file');
+    h += sec('Recent searches', 'clear');
+    h += '<div class="recent">' + ['beach gif', 'lease', '15% of 84', 'wifi', 'cat at night'].map(s => `<span>${s}</span>`).join('') + '</div>';
+    h += sec('Try');
+    h += '<div class="recent">' + ['palm trees at night', 'flight', '100 usd to jpy', 'fire', 'manga'].map(s => `<span>${s}</span>`).join('') + '</div>';
+    list.innerHTML = h; bind(); return;
+  }
+  $('scopes').style.display = 'flex';
+  const a = answer(query);
+  if (a && scope === 'All') h += `<div class="answer"><div><div class="q">${query} =</div><div class="a display">${a.a}</div><small>${a.why}</small></div></div>`;
+  const emo = Object.entries(EMOJI).filter(([k]) => k.startsWith(query.toLowerCase()));
+  const apps = show('Apps') ? pick(APPS, query) : [];
+  const cmds = scope === 'All' ? pick(COMMANDS, query) : [];
+  const looks = scope === 'All' ? pick(LOOKS, query) : [];
+  const sets = show('Settings') ? pick(SETTINGS, query) : [];
+  const photos = show('Photos & videos') ? pick(PHOTOS, query) : [];
+  const files = show('Files') || scope === 'Mac' ? pick(FILES, query).filter(f => scope !== 'Mac' || f.mac) : [];
+  const notes = show('Notes') ? pick(NOTES, query) : [];
+  const people = scope === 'All' ? pick(CONTACTS, query) : [];
+  const clips = scope === 'All' ? pick(CLIPS, query) : [];
+  // The top hit: the best app or command, as Spotlight's.
+  const top = apps[0] || cmds[0] || sets[0];
+  if (top && scope === 'All') { h += sec('Top hit') + rowHtml(top, apps[0] ? 'app' : cmds[0] ? 'command' : 'setting'); }
+  const rest = (arr, n) => arr.filter(x => x !== top).slice(0, n);
+  if (rest(apps, 4).length) h += sec('Apps') + rest(apps, 4).map(r => rowHtml(r, 'app')).join('');
+  if (rest(cmds, 4).length) h += sec('Soma') + rest(cmds, 4).map(r => rowHtml(r, 'command')).join('');
+  if (looks.length) h += sec('Looks') + looks.slice(0, 4).map(r => rowHtml(r, 'look')).join('');
+  if (rest(sets, 4).length) h += sec('Settings') + rest(sets, 4).map(r => rowHtml(r, 'setting')).join('');
+  if (photos.length) {
+    h += sec('Photos & videos · by what\'s in them', photos.length > 6 ? `all ${photos.length}` : '');
+    h += '<div class="shots">' + photos.slice(0, 6).map(p => {
+      const hit = words(query).map(w => p.tags.split(' ').find(t => t.startsWith(w))).filter(Boolean).join(', ');
+      return `<div class="shot"><img src="${M}${p.src}" loading="lazy"><span class="kind mono">${p.kind}</span><span class="why">${hit} · ${p.where}</span></div>`;
+    }).join('') + '</div>';
+  }
+  if (files.length) h += sec(scope === 'Mac' ? 'Mac Pro' : 'Files', files.length > 4 ? 'more' : '') + files.slice(0, 4).map(r => rowHtml(r, r.mac ? 'mac pro' : 'file')).join('');
+  if (notes.length) h += sec('Notes') + notes.map(r => rowHtml(r, 'note')).join('');
+  if (people.length) h += sec('Contacts') + people.map(r => rowHtml(r, 'contact')).join('');
+  if (clips.length) h += sec('Clipboard') + clips.map(r => rowHtml(r, 'copied')).join('');
+  if (emo.length && scope === 'All') h += sec('Emoji') + `<div class="recent">${emo.map(([k, e]) => `<span style="font-size:24px;border-style:solid">${e}</span>`).join('')}</div>`;
+  h += sec(`Use “${query}” with…`);
+  h += rowHtml({ t: 'Ask Soma', sub: 'Hand it to the agent', g: '✦' }, 'agent');
+  h += rowHtml({ t: 'Search Google', sub: query, g: 'G' }, 'web');
+  h += rowHtml({ t: 'Search on the Mac Pro', sub: 'Spotlight on the Mac, over Tailscale', g: '⌘' }, 'mac');
+  h += rowHtml({ t: 'Search YouTube', sub: query, g: '▶' }, 'web');
+  list.innerHTML = h; bind();
+}
+
+function toast(s) { const n = $('note'); n.textContent = s; n.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => n.classList.remove('show'), 1800); }
+
+function bind() {
+  list.querySelectorAll('.row').forEach(el => {
+    let t;
+    el.onpointerdown = () => { t = setTimeout(() => { t = null; act(rows[+el.dataset.i]); }, 450); };
+    el.onpointerup = () => { if (t) { clearTimeout(t); const r = rows[+el.dataset.i]; if (r.toggle) { r.on = !r.on; render(); toast(`${r.t} ${r.on ? 'on' : 'off'}`); } else toast(`Open: ${r.t}`); } };
+    el.onpointerleave = () => clearTimeout(t);
+  });
+  list.querySelectorAll('.shot').forEach(el => el.onclick = () => toast('Opens in Gallery · long-press to share, copy or set as wallpaper'));
+  list.querySelectorAll('.recent span').forEach(el => el.onclick = () => { if (el.textContent.length < 4 && /\p{Emoji}/u.test(el.textContent)) { toast('Copied ' + el.textContent); return; } q.value = el.textContent; render(); });
+  list.querySelectorAll('.fav').forEach(el => el.onclick = () => toast('Open: ' + el.textContent.trim()));
+  list.querySelectorAll('.answer').forEach(el => el.onclick = () => toast('Copied ' + el.querySelector('.a').textContent));
+}
+
+function act(r) {
+  const common = [['☆', 'Add to favorites'], ['⌗', 'Set alias…'], ['↺', 'Reset ranking'], ['⊘', 'Hide from search', 'red']];
+  const byKind = {
+    app: [['↗', 'Open'], ['▦', 'Pin to home'], ['ⓘ', 'App info']],
+    file: [['↗', 'Open'], ['⇪', 'Share'], ['⎘', 'Copy path'], ['🗀', 'Show in folder']],
+    'mac pro': [['↗', 'Open on the Mac'], ['⇣', 'Bring to the phone']],
+    note: [['↗', 'Open'], ['⎘', 'Copy text']],
+    contact: [['☏', 'Call'], ['✉', 'Message']],
+    copied: [['⎘', 'Copy again'], ['📌', 'Pin']],
+  };
+  const items = (byKind[r.kind] || [['↗', 'Open']]).concat(common);
+  $('actions').innerHTML = `<div class="h"><b>${r.t}</b><span class="mono">${r.kind}</span></div>` + items.map(([g, t, c]) => `<div class="a ${c || ''}"><span>${g}</span>${t}</div>`).join('');
+  phone.classList.add('acting');
+  $('actions').querySelectorAll('.a').forEach(el => el.onclick = () => { phone.classList.remove('acting'); toast(el.textContent.trim()); });
+}
+$('scrim').onclick = () => phone.classList.remove('acting');
+
+$('scopes').innerHTML = SCOPES.map(s => `<span class="${s === scope ? 'on' : ''}">${s}</span>`).join('');
+$('scopes').onclick = e => { if (e.target.tagName !== 'SPAN') return; scope = e.target.textContent; $('scopes').querySelectorAll('span').forEach(s => s.classList.toggle('on', s.textContent === scope)); render(); };
+q.oninput = () => { sel = 0; render(); };
+$('clear').onclick = () => { q.value = ''; render(); q.focus(); };
+list.onscroll = () => $('kb').classList.toggle('away', list.scrollTop > 30);
+list.onpointerdown = () => $('kb').classList.add('away');
+q.onfocus = () => $('kb').classList.remove('away');
+
+function open() { phone.classList.add('open'); $('kb').classList.remove('away'); setTimeout(() => q.focus(), 280); render(); }
+function close() { phone.classList.remove('open'); $('kb').classList.add('away'); q.blur(); q.value = ''; }
+$('hint').onclick = open;
+$('cancel').onclick = close;
+$('kb').classList.add('away');
+
+// Pull down on home: the sheet follows the finger and opens past a third.
+let y0 = null;
+$('home').onpointerdown = e => { y0 = e.clientY; phone.classList.add('drag'); };
+window.onpointermove = e => { if (y0 == null) return; const dy = Math.max(0, e.clientY - y0); $('sheet').style.transform = `translateY(${Math.min(0, dy - phone.clientHeight)}px)`; };
+window.onpointerup = e => { if (y0 == null) return; const dy = e.clientY - y0; y0 = null; phone.classList.remove('drag'); $('sheet').style.transform = ''; if (dy > phone.clientHeight / 4) open(); };
+render();
+</script>
+</body>
+</html>
