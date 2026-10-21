@@ -161,9 +161,9 @@ class PhonePagesTest {
         assertFalse(head.contains("command in"))
         assertFalse(service.contains("requireNoPendingApproval"))
         // Besides admit's, only what answers later asks again as it does: the screenshot, a read put off while the
-        // screen settles, each look of `screen`, each look of a press or a fill as it scrolls to its label, and the
-        // screen read back after a press or a fill.
-        assertEquals(6, service.split("PhoneAccess.requireAccess(").size - 1)
+        // screen settles, each look of `screen`, each look of a press or a fill as it scrolls to its label, the
+        // screen read back after a press or a fill, and the screen read back after a submit (builder B, 2026-10-21).
+        assertEquals(7, service.split("PhoneAccess.requireAccess(").size - 1)
     }
 
     /** Home as the commands see it, recording what they turned to. */
