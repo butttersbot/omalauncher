@@ -68,4 +68,13 @@ class PhotoIndexTest {
             PhotoIndex.words("IMG2041.jpg", "Camera", listOf("MENU tacos", ""), listOf("dog", "beach", "dog")),
         )
     }
+
+    @Test fun weakPhotoMatchesShowOneRowAndNoneForANamedApp() {
+        val strong = listOf(1L to 0.74f, 2L to 0.72f, 3L to 0.70f, 4L to 0.69f)
+        assertEquals(4, PhotoIndex.shown(strong, named = true).size)
+        val weak = listOf(1L to 0.65f, 2L to 0.64f, 3L to 0.64f, 4L to 0.63f, 5L to 0.63f)
+        assertEquals(PhotoIndex.WEAK_MAX, PhotoIndex.shown(weak, named = false).size)
+        assertEquals(0, PhotoIndex.shown(weak, named = true).size)
+        assertEquals(0, PhotoIndex.shown(listOf(1L to 0.6f), named = false).size)
+    }
 }

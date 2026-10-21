@@ -19,10 +19,10 @@ class FileQueryTest {
     }
 
     @Test fun aQueryAsksForEveryWordToBeginAWord() {
-        assertEquals("name:\"lease\"* name:\"agr\"*", FileQuery.match("Lease agr", "name"))
-        assertEquals("body:\"rent\"*", FileQuery.match("  rent ", "body"))
-        // Nothing an operator could be made of reaches the index.
-        assertEquals("name:\"a\"* name:\"or\"* name:\"b\"*", FileQuery.match("a OR-b\"", "name"))
+        assertEquals("name:lease* name:agr*", FileQuery.match("Lease agr", "name"))
+        assertEquals("body:rent*", FileQuery.match("  rent ", "body"))
+        // Nothing an operator could be made of reaches the index: OR is folded to a plain word.
+        assertEquals("name:a* name:or* name:b*", FileQuery.match("a OR-b\"", "name"))
         assertNull(FileQuery.match("  -- ", "name"))
     }
 

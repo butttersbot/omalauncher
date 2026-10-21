@@ -47,7 +47,9 @@ object FileQuery {
 
     /**
      * The index query for the words of [query] in [column] ("name" or "body"): each word begins a word there, all of
-     * them. Null when there is nothing to look for. Quotes keep any word from being read as an operator.
+     * them. Null when there is nothing to look for. Written bare (`name:lease*`): FTS4 finds nothing for a quoted word
+     * with a star after it (`name:"lease"*`, as 105 to 107 asked, 2026-10-21). The words are letters and digits only,
+     * and folded small, so none can be read as an operator (those are capitals: OR, AND, NOT, NEAR).
      */
     fun match(
         query: String,
@@ -55,7 +57,7 @@ object FileQuery {
     ): String? {
         val w = words(query)
         if (w.isEmpty()) return null
-        return w.joinToString(" ") { "$column:\"${it.replace("\"", "")}\"*" }
+        return w.joinToString(" ") { "$column:$it*" }
     }
 
     /**

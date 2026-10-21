@@ -163,6 +163,8 @@ internal fun SearchCard(
             value = emptyList()
             return@produceState
         }
+        // The words are the very name of an app or command: photos only if they are clearly what he means.
+        val named = ranked.firstOrNull()?.let { dev.omalauncher.search.RootMatch.fold(it.c.title) == dev.omalauncher.search.RootMatch.fold(q) } == true
         // A pause in the typing first: the Mac is asked once for what he means, not once a letter.
         kotlinx.coroutines.delay(PHOTO_PAUSE_MS)
         value =
@@ -177,7 +179,7 @@ internal fun SearchCard(
                             emptyList()
                         } else {
                             val all = photoVectors[0] ?: PhotoIndex.vectors(d).also { photoVectors[0] = it }
-                            PhotoIndex.hits(d, PhotoIndex.leaders(PhotoIndex.nearest(all, vector, PHOTOS_MAX)))
+                            PhotoIndex.hits(d, PhotoIndex.shown(PhotoIndex.nearest(all, vector, PHOTOS_MAX), named))
                         }
                     val shown = near.map { it.uri }.toSet()
                     (near + words.filter { it.uri !in shown }).take(PHOTOS_MAX)
@@ -196,15 +198,15 @@ internal fun SearchCard(
                         if (d == null) {
                             FileResults(indexing = true)
                         } else {
-                            fun ranked(hits: List<FileQuery.Hit>, q: String) = FileQuery.rankNames(hits, q, System.currentTimeMillis()) { memory.frecency("file:$it", System.currentTimeMillis()) }.take(RERANK_NAMES)
-                            var names = ranked(FileIndex.byName(d, q), q)
+                            fun byRank(hits: List<FileQuery.Hit>, q: String) = FileQuery.rankNames(hits, q, System.currentTimeMillis()) { memory.frecency("file:$it", System.currentTimeMillis()) }.take(RERANK_NAMES)
+                            var names = byRank(FileIndex.byName(d, q), q)
                             val texts = FileIndex.byText(d, q).filter { t -> names.none { it.path == t.path } }
                             // No name has these words: a typo, read as the name word it was most likely meant to be.
                             var fixed: String? = null
                             if (names.isEmpty() && texts.isEmpty()) {
                                 FileIndex.byNameMisspelt(d, q)?.let { (f, hits) ->
                                     fixed = f
-                                    names = ranked(hits, f)
+                                    names = byRank(hits, f)
                                 }
                             }
                             FileResults(names, texts, indexing = FileIndex.count(d) == 0L, fixed = fixed)

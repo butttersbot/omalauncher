@@ -171,6 +171,24 @@ object PhotoIndex {
         return scored.filter { it.second >= FLOOR && it.second >= top - SPREAD }
     }
 
+    /**
+     * Which leaders to show, by how sure the best of them is: a clear match ([STRONG] or more) shows them all; a weak
+     * one only a row of [WEAK_MAX], and none at all when the words are the very name of an app or command he has
+     * ([named]): "claude" brought a screenful of clouds (2026-10-21, on the phone).
+     */
+    fun shown(
+        scored: List<Pair<Long, Float>>,
+        named: Boolean,
+    ): List<Pair<Long, Float>> {
+        val l = leaders(scored)
+        val top = l.firstOrNull()?.second ?: return emptyList()
+        if (top >= STRONG) return l
+        return if (named) emptyList() else l.take(WEAK_MAX)
+    }
+
+    const val STRONG = 0.67f
+    const val WEAK_MAX = 3
+
     /** A photo's words for searching by them: its name and folder, any text in it, and what the Mac saw in it. */
     fun words(
         name: String,

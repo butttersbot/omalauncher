@@ -86,7 +86,7 @@ object FileIndex {
             words.mapIndexed { i, w ->
                 val found = runCatching {
                         db.compileStatement("SELECT count(*) FROM fts WHERE fts MATCH ?").use {
-                            it.bindString(1, "name:\"$w\"*")
+                            it.bindString(1, "name:$w*")
                             it.simpleQueryForLong()
                         }
                     }.getOrDefault(0)
