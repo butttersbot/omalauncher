@@ -81,6 +81,11 @@ import dev.omalauncher.search.Calculator
 import dev.omalauncher.search.FileIndex
 import dev.omalauncher.search.FileIndexJob
 import dev.omalauncher.search.FileQuery
+import dev.omalauncher.search.PhotoIndex
+import dev.omalauncher.search.PhotoIndexJob
+import dev.omalauncher.search.PhotoMac
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.ui.graphics.asImageBitmap
 import dev.omalauncher.search.Candidate
 import dev.omalauncher.search.Kind
 import dev.omalauncher.search.SearchMemory
@@ -139,7 +144,41 @@ internal fun SearchCard(
     var fileActing by remember { mutableStateOf<FileQuery.Hit?>(null) }
     val db = remember { arrayOfNulls<android.database.sqlite.SQLiteDatabase>(1) }
     DisposableEffect(Unit) { onDispose { synchronized(db) { db[0]?.close(); db[0] = null } } }
-    LaunchedEffect(Unit) { FileIndexJob.schedule(context) }
+    LaunchedEffect(Unit) {
+        FileIndexJob.schedule(context)
+        PhotoIndexJob.schedule(context)
+    }
+    // Photos by what is in them: the search's words made into a vector (on the Mac Pro), compared with every photo's.
+    // The photos' vectors are read once while the card is open, and dropped with it.
+    val photoDb = remember { arrayOfNulls<android.database.sqlite.SQLiteDatabase>(1) }
+    val photoVectors = remember { arrayOfNulls<PhotoIndex.Vectors>(1) }
+    DisposableEffect(Unit) { onDispose { synchronized(photoDb) { photoDb[0]?.close(); photoDb[0] = null; photoVectors[0] = null } } }
+    val photos by androidx.compose.runtime.produceState(emptyList<PhotoIndex.Hit>(), query) {
+        val q = query.trim()
+        if (q.length < 3) {
+            value = emptyList()
+            return@produceState
+        }
+        // A pause in the typing first: the Mac is asked once for what he means, not once a letter.
+        kotlinx.coroutines.delay(PHOTO_PAUSE_MS)
+        value =
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                synchronized(photoDb) {
+                    val d = photoDb[0] ?: PhotoIndex.open(context, writable = false).also { photoDb[0] = it } ?: return@synchronized emptyList()
+                    val words = PhotoIndex.byWords(d, q)
+                    val vector = PhotoMac.text(PhotoMac.base(context), q)
+                    val near =
+                        if (vector == null) {
+                            emptyList()
+                        } else {
+                            val all = photoVectors[0] ?: PhotoIndex.vectors(d).also { photoVectors[0] = it }
+                            PhotoIndex.hits(d, PhotoIndex.leaders(PhotoIndex.nearest(all, vector, PHOTOS_MAX)))
+                        }
+                    val shown = near.map { it.uri }.toSet()
+                    (near + words.filter { it.uri !in shown }).take(PHOTOS_MAX)
+                }
+            }
+    }
     val files by androidx.compose.runtime.produceState(FileResults(), query) {
         val q = query.trim()
         value =
@@ -280,6 +319,10 @@ internal fun SearchCard(
                             item { Section(title, muted) }
                             items(here, key = { it.c.id }) { SearchResult(runtime, it, ink, muted, line, { run(it) }, { acting = it }) }
                         }
+                        if (photos.isNotEmpty()) {
+                            item { Section("Photos & videos", muted) }
+                            item(key = "photos") { PhotoGrid(photos, line) { close() } }
+                        }
                         if (files.names.isNotEmpty() || files.texts.isNotEmpty()) {
                             item { Section("Files", muted) }
                             items(files.names, key = { "fn:" + it.path }) { FileRow(it, ink, muted, line, { openFile(it) }, { fileActing = it }) }
@@ -372,6 +415,57 @@ private const val PER_SECTION = 5
 
 /** How many files show by name, and how many more by what is in them. */
 private const val FILES_SHOWN = 5
+
+/** How long typing rests before photos are looked for, and how many show at most. */
+private const val PHOTO_PAUSE_MS = 250L
+private const val PHOTOS_MAX = 12
+
+/** Photos found, as a grid of small copies: a tap opens one in the gallery. Each copy is read as its cell shows. */
+@Composable
+private fun PhotoGrid(
+    photos: List<PhotoIndex.Hit>,
+    line: Color,
+    onOpen: () -> Unit,
+) {
+    val context = LocalContext.current
+    val across = if (LocalConfiguration.current.screenWidthDp >= 600) 6 else 3
+    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        for (row in photos.chunked(across)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                for (p in row) {
+                    val thumb by androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, p.uri) {
+                        value =
+                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                runCatching { context.contentResolver.loadThumbnail(Uri.parse(p.uri), android.util.Size(256, 256), null).asImageBitmap() }.getOrNull()
+                            }
+                    }
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .aspectRatio(1f)
+                            .border(1.dp, line)
+                            .clickable {
+                                onOpen()
+                                runCatching {
+                                    context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(p.uri), p.mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK))
+                                }
+                            },
+                    ) {
+                        thumb?.let { Image(it, p.name, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop) }
+                        if (p.kind != "image") {
+                            BasicText(
+                                if (p.kind == "gif") "GIF" else "▶",
+                                Modifier.align(Alignment.TopEnd).padding(4.dp).background(Color(0xCC111113)).padding(horizontal = 4.dp),
+                                style = Pack.mono(9.sp, Color.White),
+                            )
+                        }
+                    }
+                }
+                repeat(across - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+    }
+}
 
 /** What the file index found for a query: by name, by text, and whether it is still being made. */
 private class FileResults(

@@ -465,6 +465,12 @@
             android:exported="false"
             android:process=":indexer"
             android:permission="android.permission.BIND_JOB_SERVICE" />
+        <!-- Sends new photos to the Mac Pro to be read for search, and keeps what comes back (search/PhotoIndex.kt). -->
+        <service
+            android:name=".search.PhotoIndexJob"
+            android:exported="false"
+            android:process=":indexer"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
 
         <service
             android:name=".LinuxService"
