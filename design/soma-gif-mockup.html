@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Soma keyboard: GIF search mock-up</title>
+<!--
+  The Soma keyboard's GIF search (Boss, 2026-10-21: "another keyboard button. gif search... tenor is the best imo...
+  id like to see a mock"). Tenor's public API closed on 2026-06-30, so the source here is KLIPY (made by former
+  Tenor people, the one Discord moved to). A mock-up only: the GIFs are drawn placeholders, nothing is sent.
+  The button sits in the keyboard's utility strip, left-justified after the clipboard (keyboard-utility-strip).
+-->
+<style>
+  @font-face { font-family: "M Display"; src: url(../app/src/main/assets/packs/manga/fonts/DelaGothicOne-Regular.ttf); }
+  @font-face { font-family: "M Body"; src: url(../app/src/main/assets/packs/manga/fonts/SchibstedGrotesk.ttf); }
+  @font-face { font-family: "M Mono"; src: url(../app/src/main/assets/packs/manga/fonts/JetBrainsMono.ttf); }
+  :root { --paper: #fdfdfb; --ink: #111113; --muted: #77777e; --red: #d7262d; --board: #d9d9dc; --key: #fff; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: #26262a; overflow: hidden; font: 15px/1.3 "M Body", system-ui, sans-serif; color: var(--ink); }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+  .mono { font-family: "M Mono", monospace; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; }
+
+  .top { position: fixed; top: 0; left: 0; right: 0; z-index: 10; display: flex; justify-content: center; gap: 6px; padding: 6px; flex-wrap: wrap; }
+  .seg { display: flex; background: var(--paper); border: 2px solid var(--ink); }
+  .seg button { padding: 5px 9px; font-size: 12.5px; }
+  .seg button.on { background: var(--ink); color: var(--paper); }
+
+  .phone { position: absolute; left: 50%; top: 52px; bottom: 8px; transform: translateX(-50%); width: min(100vw - 12px, 430px); background: var(--paper); border-radius: 22px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
+
+  /* A chat app above the keyboard, so the GIF has somewhere to go. */
+  .app { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .apphead { padding: 14px 16px 10px; border-bottom: 1.2px solid var(--ink); display: flex; gap: 10px; align-items: center; }
+  .apphead .av { width: 32px; height: 32px; border-radius: 50%; background: #5865f2; color: #fff; display: grid; place-items: center; font-weight: 700; }
+  .msgs { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; justify-content: flex-end; }
+  .b { max-width: 75%; padding: 8px 12px; border-radius: 16px; background: #ececee; align-self: flex-start; }
+  .b.me { align-self: flex-end; background: var(--ink); color: var(--paper); }
+  .b.gif { padding: 0; overflow: hidden; width: 200px; background: none; }
+  .field { margin: 6px 10px 8px; border: 2px solid var(--ink); border-radius: 20px; padding: 9px 14px; color: var(--muted); }
+
+  /* The keyboard. */
+  .kb { background: var(--board); border-top: 3px solid var(--red); }
+  .keys { padding: 8px 4px 2px; }
+  .row { display: flex; gap: 5px; justify-content: center; margin-bottom: 7px; }
+  .k { flex: 1; max-width: 38px; height: 44px; background: var(--key); border: 1.6px solid var(--ink); border-radius: 4px; box-shadow: 0 3px 0 #9a9aa0; display: grid; place-items: center; font-size: 19px; user-select: none; }
+  .k.wide { max-width: 58px; flex: 1.5; font-size: 14px; background: #e9e9ea; }
+  .k.space { max-width: none; flex: 5; font-size: 13px; color: var(--muted); }
+  .k.mic { background: var(--red); color: #fff; }
+  .k.go { background: var(--ink); color: #fff; font-size: 14px; flex: 1.6; max-width: 70px; }
+  .k:active { transform: translateY(2px); box-shadow: 0 1px 0 #9a9aa0; }
+
+  /* The utility strip: tools left-justified, the hide arrow at the right. */
+  .strip { height: 46px; display: flex; align-items: center; gap: 8px; padding: 0 10px 0 12px; }
+  .tool { height: 30px; min-width: 34px; padding: 0 10px; border: 1.5px solid transparent; border-radius: 15px; display: flex; align-items: center; gap: 6px; font-size: 13px; color: #333; }
+  .tool.on { border-color: var(--ink); background: var(--paper); }
+  .tool .gifmark { font: 700 11px "M Mono", monospace; border: 1.5px solid currentColor; border-radius: 3px; padding: 0 3px; }
+  .strip .hide { margin-left: auto; font-size: 18px; color: #333; }
+
+  /* The GIF panel, in the keys' place and as tall as the letters with their bubble room. */
+  .panel { height: 300px; display: flex; flex-direction: column; }
+  .ptop { display: flex; gap: 8px; align-items: center; padding: 8px 10px 6px; }
+  .pill { flex: 1; height: 36px; border-radius: 18px; background: var(--paper); border: 1.5px solid var(--ink); display: flex; align-items: center; gap: 8px; padding: 0 12px; color: var(--muted); }
+  .pill b { color: var(--ink); font-weight: 400; }
+  .pill .caret { width: 2px; height: 18px; background: var(--red); animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .abc { font-size: 13px; padding: 6px 4px; }
+  .chips { display: flex; gap: 6px; padding: 0 10px 8px; overflow-x: auto; scrollbar-width: none; flex: none; }
+  .chips button { flex: none; padding: 4px 10px; border: 1.3px solid var(--ink); border-radius: 14px; font-size: 12.5px; background: var(--paper); }
+  .chips button.on { background: var(--ink); color: var(--paper); }
+  .grid { flex: 1; overflow-y: auto; padding: 0 10px 8px; columns: 2; column-gap: 6px; scrollbar-width: none; }
+  .grid.three { columns: 3; }
+  .g { break-inside: avoid; margin-bottom: 6px; border-radius: 6px; overflow: hidden; position: relative; cursor: pointer; border: 1.3px solid var(--ink); }
+  .g .art { display: grid; place-items: center; font-size: 40px; animation: bob 1.1s ease-in-out infinite alternate; }
+  .g .cap { position: absolute; left: 0; right: 0; bottom: 0; padding: 3px 6px; font: 700 12px "M Body"; color: #fff; text-shadow: 0 1px 2px #000, 0 0 2px #000; text-transform: uppercase; text-align: center; }
+  .g .mine { position: absolute; top: 4px; left: 4px; background: var(--paper); border: 1px solid var(--ink); font: 9px "M Mono"; padding: 0 4px; }
+  @keyframes bob { from { transform: scale(1) rotate(-3deg); } to { transform: scale(1.12) rotate(3deg); } }
+  .credit { text-align: center; color: var(--muted); padding: 2px 0 4px; flex: none; }
+  .band { padding: 8px 10px 4px; }
+  .band .row2 { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin-top: 6px; height: 74px; }
+  .band .row2 .g { flex: none; width: 96px; height: 70px; margin: 0; }
+  .band .row2 .g .art { height: 100%; font-size: 30px; }
+  .sent { position: absolute; left: 50%; top: 40%; transform: translateX(-50%); background: var(--ink); color: var(--paper); padding: 8px 14px; font-size: 13px; z-index: 5; }
+  .note { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 20; background: var(--ink); color: var(--paper); padding: 6px 12px; font-size: 12.5px; max-width: 92vw; text-align: center; }
+</style>
+</head>
+<body>
+<div class="top">
+  <div class="seg" id="states"></div>
+  <div class="seg" id="screens"></div>
+</div>
+<div class="phone" id="phone"></div>
+
+<script>
+// Placeholder GIFs: what each shows, the words it is found by, and its shape.
+const GIFS = [
+  ['😂', 'lol', 'lol laugh funny haha', 1.0, '#ffd23f'], ['🙄', 'ok sure', 'eye roll ok sure whatever', 0.7, '#a0c4ff'],
+  ['🔥', 'this is fine', 'fire fine burning chaos', 1.25, '#ff7b54'], ['👏', 'yes!!', 'yes clap celebrate win', 0.8, '#b9fbc0'],
+  ['🐱', 'typing...', 'cat typing work busy', 1.1, '#ffc6ff'], ['😭', 'no', 'cry sad no', 0.75, '#bdb2ff'],
+  ['🫡', 'on it', 'salute on it yes boss', 0.9, '#caffbf'], ['💀', 'dead', 'dead lol dying skull', 1.2, '#e5e5e5'],
+  ['🤝', 'deal', 'deal handshake agree', 0.7, '#fdffb6'], ['🎉', 'lets go', 'party lets go celebrate hype', 1.0, '#ffadad'],
+  ['🤔', 'hmm', 'think hmm wonder', 0.85, '#9bf6ff'], ['😴', 'gn', 'sleep tired goodnight gn', 1.05, '#d0d1ff'],
+];
+// His own: GIFs already on the phone, found by meaning through Soma's photo index.
+const MINE = [['🌊', 'saved · Oct 14', 'beach wave ocean', 0.9, '#8ecae6'], ['🌃', 'saved · Oct 2', 'city night lights', 1.1, '#3a0ca3'], ['🍜', 'saved · Sep 20', 'ramen food noodles', 0.8, '#ffb703']];
+const CHIPS = ['Trending', 'Recent', 'Yours', 'lol', 'yes', 'no', 'love', 'facepalm', 'hype', 'gn'];
+
+const S = { state: 'strip', screen: innerWidth > 600 ? 'open' : 'cover', chip: 'Trending', q: '', sent: [], toast: '' };
+const STATES = [['strip', 'Strip'], ['panel', 'GIF panel'], ['search', 'Searching'], ['yours', 'Your GIFs']];
+
+function set(p) { Object.assign(S, p); draw(); }
+function shown() {
+  const q = S.q.trim().toLowerCase();
+  if (S.chip === 'Yours') return MINE.map(g => [...g, true]);
+  if (S.chip === 'Recent') return GIFS.slice(0, 4);
+  const word = q || (S.chip === 'Trending' ? '' : S.chip.toLowerCase());
+  return word ? GIFS.filter(g => g[2].includes(word) || g[1].includes(word)) : GIFS;
+}
+function tile(g, i) {
+  const [e, cap, , ratio, bg, mine] = g;
+  return `<div class="g" onclick="send(${i}, ${!!mine})" style="background:${bg}"><div class="art" style="height:${Math.round(110 * ratio)}px">${e}</div>${mine ? `<span class="mine">YOURS</span>` : `<div class="cap">${cap}</div>`}</div>`;
+}
+function send(i, mine) {
+  const g = (mine ? MINE : shown())[i] || GIFS[i];
+  S.sent.push(g); S.state = 'strip'; S.q = ''; S.toast = 'Sent as a GIF (the app took it straight from the keyboard)';
+  draw(); setTimeout(() => set({ toast: '' }), 2200);
+}
+function key(c) { if (S.state !== 'search') return; set({ q: c === '⌫' ? S.q.slice(0, -1) : S.q + c }); }
+
+function keys(go) {
+  const rows = ['qwertyuiop', 'asdfghjkl', 'zxcvbnm'];
+  return `<div class="keys">
+    <div class="row">${[...rows[0]].map(c => `<div class="k" onclick="key('${c}')">${c}</div>`).join('')}</div>
+    <div class="row">${[...rows[1]].map(c => `<div class="k" onclick="key('${c}')">${c}</div>`).join('')}</div>
+    <div class="row"><div class="k wide">⇧</div>${[...rows[2]].map(c => `<div class="k" onclick="key('${c}')">${c}</div>`).join('')}<div class="k wide" onclick="key('⌫')">⌫</div></div>
+    <div class="row"><div class="k wide">123</div><div class="k wide">🙂</div><div class="k space" onclick="key(' ')">space</div><div class="k mic">🎤</div><div class="k go" onclick="${S.state === 'search' ? "set({state:'panel',chip:'Trending'})" : ''}">${go}</div></div>
+  </div>`;
+}
+function strip() {
+  const gifOn = S.state !== 'strip';
+  return `<div class="strip">
+    ${S.screen === 'open' ? `<span class="tool" title="split">▭▭</span>` : ''}
+    <button class="tool" onclick="set({toast:'The clipboard panel (already in 107)'});setTimeout(()=>set({toast:''}),1400)">📋</button>
+    <button class="tool ${gifOn ? 'on' : ''}" onclick="set({state: S.state === 'strip' ? 'panel' : 'strip', chip:'Trending', q:''})"><span class="gifmark">GIF</span></button>
+    <span class="hide">⌄</span>
+  </div>`;
+}
+function draw() {
+  $('states').innerHTML = STATES.map(([k, l]) => `<button class="${S.state === k || (k === 'yours' && S.chip === 'Yours' && S.state === 'panel') ? 'on' : ''}" onclick="set({state:'${k === 'yours' ? 'panel' : k}', chip:'${k === 'yours' ? 'Yours' : 'Trending'}', q:'${k === 'search' ? 'lol' : ''}'})">${l}</button>`).join('');
+  $('screens').innerHTML = [['cover', 'Cover'], ['open', 'Open']].map(([k, l]) => `<button class="${S.screen === k ? 'on' : ''}" onclick="set({screen:'${k}'})">${l}</button>`).join('');
+  const p = $('phone');
+  p.style.width = S.screen === 'open' ? 'min(100vw - 12px, 760px)' : 'min(100vw - 12px, 430px)';
+  const msgs = `<div class="b">did the build pass?</div><div class="b me">all 1677 tests 🎉</div>` + S.sent.map(g => `<div class="b me gif"><div class="g" style="background:${g[4]};margin:0"><div class="art" style="height:${Math.round(150 * g[3])}px;font-size:56px">${g[0]}</div>${g[5] ? '' : `<div class="cap">${g[1]}</div>`}</div></div>`).join('');
+  let board;
+  if (S.state === 'strip') board = keys('go');
+  else if (S.state === 'search') {
+    board = `<div class="band"><div class="pill">⌕ <b>${S.q}</b><span class="caret"></span><span style="margin-left:auto" onclick="set({q:''})">✕</span></div>
+      <div class="row2">${shown().map(tile).join('') || '<span style="color:var(--muted);align-self:center">Nothing for that yet</span>'}</div></div>` + keys('done');
+  } else {
+    const list = shown();
+    board = `<div class="panel">
+      <div class="ptop"><button class="abc" onclick="set({state:'strip'})">ABC</button>
+        <div class="pill" onclick="set({state:'search', q:''})">⌕ ${S.chip === 'Yours' ? 'Search your GIFs by what’s in them' : 'Search GIFs'}</div></div>
+      <div class="chips">${CHIPS.map(c => `<button class="${S.chip === c ? 'on' : ''}" onclick="set({chip:'${c}'})">${c}</button>`).join('')}</div>
+      <div class="grid ${S.screen === 'open' ? 'three' : ''}">${list.map(tile).join('')}</div>
+      <div class="credit mono">${S.chip === 'Yours' ? 'From your phone · found by Soma’s photo search' : 'Powered by KLIPY'}</div>
+    </div>`;
+  }
+  p.innerHTML = `<div class="app"><div class="apphead"><span class="av">B</span><b>#oma-builds</b><span class="mono" style="margin-left:auto;color:var(--muted)">any app</span></div>
+    <div class="msgs">${msgs}</div><div class="field">Message #oma-builds</div></div>
+    <div class="kb">${board}${strip()}</div>${S.toast ? `<div class="sent">${S.toast}</div>` : ''}`;
+  const m = p.querySelector('.msgs'); m.scrollTop = m.scrollHeight;
+}
+const $ = id => document.getElementById(id);
+draw();
+</script>
+</body>
+</html>
