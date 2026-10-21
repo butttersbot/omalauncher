@@ -19,6 +19,9 @@ send     writes TEXT to the agent SESSION on the computer DEVICE (a Claude Code 
          is about, --as the phone builder writing (A or B), which a reply comes back to.
 devices  the computers that take mail, with their addresses.
 It is labeled as an agent's on the other side, never as Boss's.
+Work for a Mac goes to a runner thread (oma threads list; oma threads new NAME PATH --mode auto):
+the runner is always on and hands a thread its mail. A Claude Code session gets mail only while
+its program is running, so mail to one that has ended waits, unread and unannounced.
 USAGE
   exit 2
 }
@@ -109,3 +112,9 @@ answer=${answer%$'\n'*}
 [ "$code" = 200 ] || die "$device answered HTTP $code: $(printf '%s' "$answer" | jq -r '.error // empty' 2>/dev/null)"
 id=$(printf '%s' "$answer" | jq -r '.id // empty | tostring' 2>/dev/null)
 echo "Sent to $target${id:+, mail id $id}."
+# A runner thread id is t and eight hex digits; anything else names a session, which reads mail only while it runs
+# (2026-10-20: work mailed to an ended Mac Pro session sat unread for hours). Say so, so the sender can choose.
+if [ -n "$session" ] && ! [[ $session =~ ^t[0-9a-f]{8}$ ]] && [ "$agent" != grok ]; then
+  echo "Note: $session is a session, not a runner thread. It gets this only while its program is running; if it has" >&2
+  echo "ended, the mail waits unread. For work to be done, use a runner thread: oma threads new NAME PATH --mode auto." >&2
+fi
