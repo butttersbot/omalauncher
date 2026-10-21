@@ -99,13 +99,45 @@
   .layouts { position: absolute; top: 6px; left: 50%; transform: translateX(-50%); z-index: 20; display: flex; background: var(--paper); border: 2px solid var(--ink); box-shadow: 0 3px 12px rgba(0,0,0,.25); }
   .layouts span { padding: 6px 10px; font-size: 13px; cursor: pointer; white-space: nowrap; }
   .layouts span.on { background: var(--ink); color: var(--paper); }
-  .about { position: absolute; top: 44px; left: 12px; right: 12px; z-index: 19; background: var(--ink); color: var(--paper); padding: 8px 12px; font-size: 12.5px; }
+  .about { position: absolute; top: 84px; left: 12px; right: 12px; z-index: 19; background: var(--ink); color: var(--paper); padding: 8px 12px; font-size: 12.5px; }
   .phone.open .about { display: none; }
   /* Card: Raycast's own, a card over the dimmed page. */
   .phone.l-card .sheet { inset: 64px 12px auto; max-height: 58%; border: 2px solid var(--ink); box-shadow: 0 10px 40px rgba(0,0,0,.35); transform: translateY(-140%); }
   .phone.l-card.open .sheet { transform: none; }
   .phone.l-card .bar { padding-top: 10px; }
-  .phone.l-card.open .home, .phone.l-half.open .home, .phone.l-bottom.open .home { filter: brightness(.55); }
+  .phone.l-half.open .home, .phone.l-bottom.open .home { filter: brightness(.55); }
+  .phone.l-card.open .home { filter: brightness(.82); }
+
+  /* Glass: see-through with a frost, in the look's own way, not Apple's milky white (Boss, 2026-10-20). The sheet's
+     colours are re-set so every row, field and panel in it lets the page through. */
+  .sheet.g-clear { --paper: rgba(253,253,251,.42); --tone: rgba(17,17,19,.08); backdrop-filter: blur(18px) saturate(1.15); -webkit-backdrop-filter: blur(18px) saturate(1.15); }
+  .sheet.g-smoke { --paper: rgba(16,16,18,.42); --ink: #f6f6f4; --muted: rgba(246,246,244,.7); --tone: rgba(255,255,255,.12); backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px); color: var(--ink); }
+  .sheet.g-tone { --paper: rgba(253,253,251,.30); --tone: rgba(17,17,19,.09); backdrop-filter: blur(10px) grayscale(1) contrast(1.15); -webkit-backdrop-filter: blur(10px) grayscale(1) contrast(1.15);
+    background-image: radial-gradient(rgba(17,17,19,.22) 1.1px, transparent 1.4px); background-size: 6px 6px; }
+  .sheet.g-paper { --paper: #fdfdfb; }
+  .sheet.g-smoke .row .ic { border-color: rgba(255,255,255,.6); }
+  .sheet.g-smoke .answer, .sheet.g-smoke .field { border-color: rgba(255,255,255,.8); }
+  .phone.l-card .sheet { background-color: var(--paper); }
+  .phone.l-card .sheet .bar, .phone.l-card .sheet .scopes { background: transparent; }
+
+  /* The open Fold: both pages under it, and the card wider, its results at the left and a preview at the right. */
+  .phone.inner { width: min(100vw, 118dvh); height: auto; aspect-ratio: 2176 / 1812; margin: 0 auto; }
+  @media (min-width: 700px) { .phone.inner { width: min(980px, 118vh); height: auto; } }
+  .phone.inner .home { background: url(search-mock/home.png) left top/50% auto no-repeat, url(search-mock/page2.png) right top/50% auto no-repeat; }
+  .phone.inner .home::after { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: rgba(0,0,0,.15); }
+  .phone.inner.l-card .sheet { inset: 9% 14% 9%; max-height: none; display: grid; grid-template-columns: 1fr .85fr; grid-template-rows: auto auto 1fr; }
+  .phone.inner .sheet .bar, .phone.inner .sheet .scopes { grid-column: 1 / -1; }
+  .phone.inner .list { padding-bottom: 16px; border-right: var(--line) solid var(--ink); }
+  .preview { display: none; overflow-y: auto; padding: 14px; }
+  .phone.inner .preview { display: block; }
+  .preview .big { width: 100%; aspect-ratio: 4/3; object-fit: cover; border: var(--line) solid var(--ink); display: block; }
+  .preview h3 { margin: 10px 0 2px; font-size: 18px; }
+  .preview .meta { color: var(--muted); font-size: 13px; }
+  .preview .glyph { width: 76px; height: 76px; display: grid; place-items: center; font-size: 40px; border: var(--line) solid var(--ink); margin-bottom: 6px; color: #fff; }
+  .preview .quote { margin-top: 10px; padding: 10px; border-left: 3px solid var(--red); background: var(--tone); font-size: 13.5px; }
+  .preview .acts { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .preview .acts span { border: var(--line) solid var(--ink); padding: 5px 9px; font-size: 12.5px; cursor: pointer; }
+  .phone.inner .shots { grid-template-columns: repeat(3, 1fr); }
   /* Half: drops halfway, the page still showing under it. */
   .phone.l-half .sheet { bottom: auto; height: 56%; border-bottom: 2px solid var(--ink); box-shadow: 0 8px 30px rgba(0,0,0,.3); }
   /* Bottom: the field just above the keyboard, the best results nearest the thumb, the list growing up. */
@@ -123,7 +155,8 @@
 <div class="phone" id="phone">
   <div class="home" id="home"></div>
   <div class="hint" id="hint">⇣ swipe down on home</div>
-  <div class="layouts" id="layouts"><span data-l="full" class="on">Full</span><span data-l="card">Card</span><span data-l="half">Half</span><span data-l="bottom">Bottom</span></div>
+  <div class="layouts" id="layouts"><span data-s="cover" class="on">Closed</span><span data-s="inner">Open</span></div>
+  <div class="layouts" id="glass" style="top:44px"><span data-g="clear" class="on">Clear</span><span data-g="smoke">Smoke</span><span data-g="tone">Tone</span><span data-g="paper">Paper</span></div>
   <div class="about" id="about"></div>
 
   <div class="sheet" id="sheet">
@@ -137,6 +170,7 @@
     </div>
     <div class="scopes" id="scopes"></div>
     <div class="list" id="list"></div>
+    <div class="preview" id="preview"></div>
   </div>
   <div class="kb" id="kb">Soma keyboard</div>
   <div class="note" id="note"></div>
@@ -330,7 +364,7 @@ function reverseBlocks(h) {
 
 const ABOUT = {
   full: 'Full: the whole screen, like iPhone Spotlight. Most results at once; home hidden.',
-  card: 'Card: Raycast\'s card over the dimmed page. Familiar from the desktop; fewer results show.',
+  card: 'Card, see-through. Switch Closed / Open for the cover or the unfolded Fold, and the glass below. Then swipe down.',
   half: 'Half: drops halfway; the page stays in view below. Quick and light, less room.',
   bottom: 'Bottom: the field sits just over the keyboard and results stack upward, best nearest your thumb. One-handed.',
 };
@@ -338,7 +372,7 @@ let layout = 'full';
 function setLayout(l) {
   layout = l;
   phone.classList.remove('l-full', 'l-card', 'l-half', 'l-bottom'); phone.classList.add('l-' + l);
-  $('layouts').querySelectorAll('span').forEach(s => s.classList.toggle('on', s.dataset.l === l));
+
   $('about').textContent = ABOUT[l];
   render();
 }
@@ -350,10 +384,16 @@ function bind() {
   list.querySelectorAll('.row').forEach(el => {
     let t;
     el.onpointerdown = () => { t = setTimeout(() => { t = null; act(rows[+el.dataset.i]); }, 450); };
-    el.onpointerup = () => { if (t) { clearTimeout(t); const r = rows[+el.dataset.i]; if (r.toggle) { r.on = !r.on; render(); toast(`${r.t} ${r.on ? 'on' : 'off'}`); } else toast(`Open: ${r.t}`); } };
+    el.onpointerup = () => { if (t) { clearTimeout(t); const r = rows[+el.dataset.i];
+      if (screenMode === 'inner' && !r.toggle && sel !== +el.dataset.i) { sel = +el.dataset.i; list.querySelectorAll('.row').forEach(x => x.classList.toggle('sel', x === el)); showPreview(r); return; }
+      if (r.toggle) { r.on = !r.on; render(); toast(`${r.t} ${r.on ? 'on' : 'off'}`); } else toast(`Open: ${r.t}`); } };
     el.onpointerleave = () => clearTimeout(t);
   });
-  list.querySelectorAll('.shot').forEach(el => el.onclick = () => toast('Opens in Gallery · long-press to share, copy or set as wallpaper'));
+  list.querySelectorAll('.shot').forEach(el => el.onclick = () => {
+    if (screenMode === 'inner') { showPhoto(el); return; }
+    toast('Opens in Gallery · long-press to share, copy or set as wallpaper');
+  });
+  if (screenMode === 'inner') { const first = list.querySelector('.shot'); if (rows[sel]) showPreview(rows[sel]); else if (first) showPhoto(first); else $('preview').innerHTML = ''; }
   list.querySelectorAll('.recent span').forEach(el => el.onclick = () => { if (el.textContent.length < 4 && /\p{Emoji}/u.test(el.textContent)) { toast('Copied ' + el.textContent); return; } q.value = el.textContent; render(); });
   list.querySelectorAll('.fav').forEach(el => el.onclick = () => toast('Open: ' + el.textContent.trim()));
   list.querySelectorAll('.answer').forEach(el => el.onclick = () => toast('Copied ' + el.querySelector('.a').textContent));
@@ -395,7 +435,27 @@ let y0 = null;
 $('home').onpointerdown = e => { y0 = e.clientY; phone.classList.add('drag'); };
 window.onpointermove = e => { if (y0 == null) return; const dy = Math.max(0, e.clientY - y0); $('sheet').style.transform = `translateY(${Math.min(0, dy - phone.clientHeight)}px)`; };
 window.onpointerup = e => { if (y0 == null) return; const dy = e.clientY - y0; y0 = null; phone.classList.remove('drag'); $('sheet').style.transform = ''; if (dy > phone.clientHeight / 4) open(); };
-setLayout('full');
+/** The open Fold's preview pane: what a result is, before opening it. */
+function showPreview(r) {
+  const pv = $('preview');
+  const acts = { app: ['Open', 'Pin to home', 'App info'], file: ['Open', 'Share', 'Copy path', 'Show in folder'], 'mac pro': ['Open on the Mac', 'Bring to the phone'], note: ['Open', 'Copy'], contact: ['Call', 'Message'], setting: ['Open'], command: ['Run'], look: ['Use this look'], copied: ['Copy again', 'Pin'], agent: ['Ask'], web: ['Search'], mac: ['Search'] }[r.kind] || ['Open'];
+  const glyph = r.kind === 'app' ? `<div class="glyph" style="background:${r.c};border:0;border-radius:18px">${r.g}</div>` : `<div class="glyph" style="color:inherit">${r.g}</div>`;
+  pv.innerHTML = glyph + `<h3>${r.t}</h3><div class="meta">${r.sub || r.kind}</div>` + (r.snip ? `<div class="quote">${r.snip}</div>` : '') +
+    (r.kind === 'file' && /pdf/i.test(r.g) ? '<div class="quote">Page 1 of 4 · preview of the text inside, with your words marked</div>' : '') +
+    `<div class="acts">${acts.map(a => `<span>${a}</span>`).join('')}</div>`;
+  pv.querySelectorAll('.acts span').forEach(el => el.onclick = () => toast(el.textContent + ': ' + r.t));
+}
+function showPhoto(el) {
+  const img = el.querySelector('img').getAttribute('src'), why = el.querySelector('.why').textContent, kind = el.querySelector('.kind').textContent;
+  $('preview').innerHTML = `<img class="big" src="${img}"><h3>${kind === 'PHOTO' ? 'Photo' : kind}</h3><div class="meta">Matched: ${why}</div><div class="acts">${['Open in Gallery', 'Share', 'Copy', 'Set as wallpaper', 'Send to Mac'].map(a => `<span>${a}</span>`).join('')}</div>`;
+  $('preview').querySelectorAll('.acts span').forEach(b => b.onclick = () => toast(b.textContent));
+}
+
+let screenMode = 'cover', glass = 'clear';
+$('layouts').onclick = e => { const v = e.target.dataset.s; if (!v) return; screenMode = v; phone.classList.toggle('inner', v === 'inner'); $('layouts').querySelectorAll('span').forEach(x => x.classList.toggle('on', x.dataset.s === v)); sel = 0; render(); };
+$('glass').onclick = e => { const v = e.target.dataset.g; if (!v) return; glass = v; $('sheet').className = 'sheet g-' + v; $('glass').querySelectorAll('span').forEach(x => x.classList.toggle('on', x.dataset.g === v)); };
+$('sheet').className = 'sheet g-clear';
+setLayout('card');
 </script>
 </body>
 </html>
