@@ -75,9 +75,10 @@
   @keyframes bob { from { transform: scale(1) rotate(-3deg); } to { transform: scale(1.12) rotate(3deg); } }
   .credit { text-align: center; color: var(--muted); padding: 2px 0 4px; flex: none; }
   .band { padding: 8px 10px 4px; }
-  .band .row2 { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin-top: 6px; height: 74px; }
-  .band .row2 .g { flex: none; width: 96px; height: 70px; margin: 0; }
-  .band .row2 .g .art { height: 100%; font-size: 30px; }
+  /* While searching, the results scroll up and down above the letters (Boss, 2026-10-21: vertical, not sideways). */
+  .band .results { margin-top: 6px; height: 170px; overflow-y: auto; columns: 3; column-gap: 6px; scrollbar-width: none; }
+  .band .results.three { columns: 5; }
+  .band .results .g .art { font-size: 30px; }
   .sent { position: absolute; left: 50%; top: 40%; transform: translateX(-50%); background: var(--ink); color: var(--paper); padding: 8px 14px; font-size: 13px; z-index: 5; }
   .note { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 20; background: var(--ink); color: var(--paper); padding: 6px 12px; font-size: 12.5px; max-width: 92vw; text-align: center; }
 </style>
@@ -100,26 +101,37 @@ const GIFS = [
   ['🤔', 'hmm', 'think hmm wonder', 0.85, '#9bf6ff'], ['😴', 'gn', 'sleep tired goodnight gn', 1.05, '#d0d1ff'],
 ];
 // His own: GIFs already on the phone, found by meaning through Soma's photo index.
-const MINE = [['🌊', 'saved · Oct 14', 'beach wave ocean', 0.9, '#8ecae6'], ['🌃', 'saved · Oct 2', 'city night lights', 1.1, '#3a0ca3'], ['🍜', 'saved · Sep 20', 'ramen food noodles', 0.8, '#ffb703']];
+// (Boss, 2026-10-21: KLIPY "is just not as good as tenor so lets also pull in my local gifs... in recents and in
+// their own pill and in search results where appropriate".) Each is found by what Soma's photo index saw in it.
+const MINE = [['🌊', 'saved · Oct 14', 'beach wave ocean summer', 0.9, '#8ecae6', true], ['🌃', 'saved · Oct 2', 'city night lights vibe', 1.1, '#3a0ca3', true],
+  ['🍜', 'saved · Sep 20', 'ramen food noodles hungry', 0.8, '#ffb703', true], ['😹', 'saved · Sep 9', 'cat laugh lol funny', 1.0, '#ffd6a5', true],
+  ['🙌', 'saved · Aug 30', 'yes hype lets go celebrate', 0.85, '#caffbf', true], ['🛌', 'saved · Aug 2', 'sleep gn tired bed', 1.05, '#d0d1ff', true]];
 const CHIPS = ['Trending', 'Recent', 'Yours', 'lol', 'yes', 'no', 'love', 'facepalm', 'hype', 'gn'];
 
 const S = { state: 'strip', screen: innerWidth > 600 ? 'open' : 'cover', chip: 'Trending', q: '', sent: [], toast: '' };
 const STATES = [['strip', 'Strip'], ['panel', 'GIF panel'], ['search', 'Searching'], ['yours', 'Your GIFs']];
 
 function set(p) { Object.assign(S, p); draw(); }
+// What shows: his own matches first (marked YOURS), then KLIPY's. Recent is what he sent lately, his own or not,
+// then his newest saved ones.
 function shown() {
   const q = S.q.trim().toLowerCase();
-  if (S.chip === 'Yours') return MINE.map(g => [...g, true]);
-  if (S.chip === 'Recent') return GIFS.slice(0, 4);
-  const word = q || (S.chip === 'Trending' ? '' : S.chip.toLowerCase());
-  return word ? GIFS.filter(g => g[2].includes(word) || g[1].includes(word)) : GIFS;
+  const hit = g => !word || g[2].includes(word) || g[1].includes(word);
+  const word = q || (['Trending', 'Recent', 'Yours'].includes(S.chip) ? '' : S.chip.toLowerCase());
+  if (S.chip === 'Yours' && !q) return MINE;
+  if (S.chip === 'Recent' && !q) {
+    const sent = [...S.sent].reverse().filter((g, i, a) => a.indexOf(g) === i);
+    return [...sent, ...MINE.filter(g => !sent.includes(g)).slice(0, 3), ...GIFS.slice(0, 3)];
+  }
+  if (!word) return [...MINE.slice(0, 2), ...GIFS];
+  return [...MINE.filter(hit), ...GIFS.filter(hit)];
 }
 function tile(g, i) {
   const [e, cap, , ratio, bg, mine] = g;
-  return `<div class="g" onclick="send(${i}, ${!!mine})" style="background:${bg}"><div class="art" style="height:${Math.round(110 * ratio)}px">${e}</div>${mine ? `<span class="mine">YOURS</span>` : `<div class="cap">${cap}</div>`}</div>`;
+  return `<div class="g" onclick="send(${i})" style="background:${bg}"><div class="art" style="height:${Math.round(110 * ratio)}px">${e}</div>${mine ? `<span class="mine">YOURS</span>` : `<div class="cap">${cap}</div>`}</div>`;
 }
-function send(i, mine) {
-  const g = (mine ? MINE : shown())[i] || GIFS[i];
+function send(i) {
+  const g = shown()[i];
   S.sent.push(g); S.state = 'strip'; S.q = ''; S.toast = 'Sent as a GIF (the app took it straight from the keyboard)';
   draw(); setTimeout(() => set({ toast: '' }), 2200);
 }
@@ -153,15 +165,15 @@ function draw() {
   if (S.state === 'strip') board = keys('go');
   else if (S.state === 'search') {
     board = `<div class="band"><div class="pill">⌕ <b>${S.q}</b><span class="caret"></span><span style="margin-left:auto" onclick="set({q:''})">✕</span></div>
-      <div class="row2">${shown().map(tile).join('') || '<span style="color:var(--muted);align-self:center">Nothing for that yet</span>'}</div></div>` + keys('done');
+      <div class="results ${S.screen === 'open' ? 'three' : ''}">${shown().map(tile).join('') || '<span style="color:var(--muted)">Nothing for that yet</span>'}</div></div>` + keys('done');
   } else {
     const list = shown();
     board = `<div class="panel">
       <div class="ptop"><button class="abc" onclick="set({state:'strip'})">ABC</button>
-        <div class="pill" onclick="set({state:'search', q:''})">⌕ ${S.chip === 'Yours' ? 'Search your GIFs by what’s in them' : 'Search GIFs'}</div></div>
+        <div class="pill" onclick="set({state:'search', q:''})">⌕ ${S.chip === 'Yours' ? 'Search your GIFs by what’s in them' : 'Search GIFs and yours'}</div></div>
       <div class="chips">${CHIPS.map(c => `<button class="${S.chip === c ? 'on' : ''}" onclick="set({chip:'${c}'})">${c}</button>`).join('')}</div>
       <div class="grid ${S.screen === 'open' ? 'three' : ''}">${list.map(tile).join('')}</div>
-      <div class="credit mono">${S.chip === 'Yours' ? 'From your phone · found by Soma’s photo search' : 'Powered by KLIPY'}</div>
+      <div class="credit mono">${S.chip === 'Yours' ? 'Saved on your phone · found by what’s in them' : 'Yours first · then powered by KLIPY'}</div>
     </div>`;
   }
   p.innerHTML = `<div class="app"><div class="apphead"><span class="av">B</span><b>#oma-builds</b><span class="mono" style="margin-left:auto;color:var(--muted)">any app</span></div>
