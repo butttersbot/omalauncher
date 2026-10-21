@@ -19,6 +19,7 @@ text model gives the same ones when the Mac is away. Listens on the Mac Pro's Ta
 import base64
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -196,7 +197,8 @@ def spotlight(q, n):
     words = [w for w in q.translate(str.maketrans('"*\\', "   ")).split() if w][:6]
     if not words:
         return []
-    each = ['(kMDItemDisplayName == "*%s*"cd || kMDItemTextContent == "%s*"cdw)' % (w, w) for w in words]
+    # Each word begins a word of the name or the text ("lease" finds Lease_2026.pdf, never "release").
+    each = ['(kMDItemDisplayName == "%s*"cdw || kMDItemTextContent == "%s*"cdw)' % (w, w) for w in words]
     try:
         where = [a for r in ROOTS if os.path.isdir(os.path.join(HOME, r)) for a in ("-onlyin", os.path.join(HOME, r))]
         proc = subprocess.Popen(["mdfind", *where, " && ".join(each)], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
@@ -229,7 +231,7 @@ def spotlight(q, n):
         items.append({
             "path": p, "name": name, "kind": "folder" if folder else (os.path.splitext(name)[1][1:].lower() or "file"),
             "modified": int(st.st_mtime * 1000), "size": 0 if folder else st.st_size,
-            "byName": all(w in name.lower() for w in lower),
+            "byName": all(re.search(r"(?:^|[^a-z0-9])" + re.escape(w), name.lower()) for w in lower),
         })
     items.sort(key=lambda it: (not it["byName"], it["kind"] not in DOCUMENTS, -it["modified"]))
     return items[:n]
