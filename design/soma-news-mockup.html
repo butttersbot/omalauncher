@@ -303,8 +303,8 @@ function reader() {
   }
   const bar = `<div class="rbar"><button onclick="set({scene:'stream'})" style="font-size:20px">‹</button><span class="meta" style="flex:1">tailscale.com · 6 min · 5 sources</span><button onclick="toast('Saved to Notes')" style="font-size:18px">☆</button></div>`;
   if (S.layout === 'landscape') {
-    return bar + `<div class="book" id="book"><div class="flow" id="flow"><img src="${P(a.hero)}"><div class="kicker">${a.kicker}</div><h1>${a.title}</h1><p><i>${a.dek}</i></p>${a.paras.map(p => `<p>${p}</p>`).join('')}<blockquote>${a.quote}</blockquote><img src="${P(a.figure[0])}">${a.more.map(p => `<p>${p}</p>`).join('')}</div>
-      <div class="turn l" onclick="turn(-1)"></div><div class="turn r" onclick="turn(1)"></div></div><div class="folio meta"><span id="fl"></span><span id="fr"></span></div>`;
+    // Sideways: the magazine, laid out a line at a time by Pretext and turned a page at a time (news-book.js).
+    return bar + `<div id="bookwrap" style="flex:1;display:flex;min-height:0"></div>`;
   }
   return bar + `<div class="scroll"><div class="reader"><img class="hero" src="${P(a.hero)}"><div class="body"><div class="kicker">${a.kicker}</div><h1>${a.title}</h1><p class="dek">${a.dek}</p>
       ${a.paras.map((p, i) => `<p class="${i ? '' : 'first'}">${p}</p>`).join('')}<blockquote>${a.quote}</blockquote>
@@ -324,6 +324,30 @@ function widgets() {
     </div></div>`;
 }
 
+// The article as the sideways reader sets it: paragraphs, photos in the column (the text flows round them), a pull
+// quote, a photo across the measure. Sample text.
+const BOOK = {
+  hero: P('server'), kicker: 'Self-hosting', title: 'The case for reading the web on your own server again',
+  dek: 'RSS never left. FreshRSS on your tailnet brings back the habit — and gives your agents something to read.',
+  by: 'tailscale.com · 6 min read · merged from 5 sources',
+  next: { title: 'Foldable launchers are having a moment', img: P('fold') },
+  blocks: [
+    { p: 'The feeds are still there. On most of the sites you read every week, somewhere near the bottom of the page or tucked into the blog section, there is a small orange square or a plain link that says RSS. What went away was not the format but the habit, and the readers that made the habit a pleasure instead of one more inbox to clear.' },
+    { p: 'FreshRSS brings both back. It is a small program that fetches every feed you give it on a schedule, keeps what it finds, and hands the lot to whatever reader you like through the old Google Reader interface, which nearly every reading app still speaks.' },
+    { img: P('desk'), side: 'right', frac: 0.5, ratio: 0.82, cap: 'The whole setup: a compose file, a key, two passwords.' },
+    { p: 'The interesting part is where it runs. Put it in a container next to a Tailscale sidecar and it joins your tailnet with a name of its own. Nothing is opened to the internet; there is no port to forward and no certificate to renew. Every device you own can reach it, and nothing else can.' },
+    { p: 'Setting it up takes less time than reading about it. The compose file is ready in the ScaleTail repository; you add an auth key, the name of your tailnet and two passwords to a small settings file, and bring it up. Then you add feeds, which mostly means pasting the address of a site you already read and letting the reader find the feed for itself.' },
+    { quote: 'A reader that knows what you care about, without an algorithm deciding for you.' },
+    { p: 'For the few sites that hide their feeds, the trick is to look where nobody looks: the very bottom of the page, the news or blog section, the source of the page if it comes to that. Newsletters can come in by email address, video channels by their own feeds, and the rest by small bridges that turn a page into a feed.' },
+    { img: P('train'), side: 'left', frac: 0.46, ratio: 0.8, cap: 'Reading as a habit, not a feed.' },
+    { p: 'What changes once it is running is the shape of the day. Instead of a feed that refreshes itself every time you look at it, there is a stack of things you chose, in the order they arrived, that is finished when you get to the bottom. You can read it on the train, put it down, and pick it up on another device exactly where you were.' },
+    { p: 'And because it speaks a plain, documented interface, the reader does not have to be the only thing reading. An agent can log in with the same password, look through what came in overnight, notice that five sites covered the same story, and write one short summary in their place, with a line on why it matters to you in particular.' },
+    { img: P('harbor'), full: true, ratio: 1.9, cap: 'The morning edition, read where the light is good.' },
+    { p: 'That is the part worth building: not another feed, but an edition. A handful of stories in the morning, set like a magazine, with the photographs large and the type given room, and the rest waiting quietly until you ask for it. The web has never been short of things to read; it has been short of places to read them well.' },
+    { p: 'It checks again on the hour. If you want what is new before then, there is a button for that.' },
+  ],
+};
+
 function turn(d) { S.spread = Math.max(0, Math.min(S.spread + d, spreads() - 1)); place(); }
 function spreads() { const b = $('book'), f = $('flow'); return Math.max(1, Math.ceil(f.scrollWidth / (b.clientWidth + 52))); }
 function place() {
@@ -341,6 +365,11 @@ function render() {
   p.innerHTML = ({ stream, reader, widgets })[S.scene]() + (S.toast ? `<div class="toast">${S.toast}</div>` : '');
   if ($('scroll') && S.scene === 'stream') $('scroll').scrollTop = keep;
   if ($('book')) { place(); p.querySelectorAll('.flow img').forEach(i => i.onload = place); }
+  if ($('bookwrap')) {
+    const el = $('bookwrap');
+    // Laid out once the fonts are in, so Pretext measures the type the page shows.
+    (document.fonts ? document.fonts.ready : Promise.resolve()).then(() => import('./news-book.js')).then(m => { if (el.isConnected) m.mount(el, BOOK); });
+  }
   $('layouts').innerHTML = LAYOUTS.map(([k, l]) => `<button class="${S.layout === k ? 'on' : ''}" onclick="set({layout:'${k}',spread:0})">${l}</button>`).join('');
   $('scenes').innerHTML = SCENES.map(([k, l]) => `<button class="${S.scene === k ? 'on' : ''}" onclick="set({scene:'${k}',spread:0})">${l}</button>`).join('');
   const top = document.querySelector('.top').offsetHeight + 8;
