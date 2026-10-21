@@ -747,6 +747,7 @@ fun HomeScreen(
             onDrawerEnd = { velocity -> if (terminals.active == null) state.settle(velocity) },
             // Not under a terminal tile's keyboard either.
             onSearch = { if (terminals.active == null) state.searchOpen = true },
+            scrolls = { item -> item is WidgetItem && engine.instance(item.spec)?.hasTerminal == true },
             pinch = { pinch.value },
             onPinch = { scale ->
                 // The pages are caught as they were when the pinch began.

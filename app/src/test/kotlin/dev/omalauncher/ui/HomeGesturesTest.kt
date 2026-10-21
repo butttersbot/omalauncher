@@ -55,6 +55,9 @@ class HomeGesturesTest {
                 val expected =
                     when {
                         before != Owner.Undecided -> before
+                        start == TouchStart.ScrollingWidget -> Owner.Widget
+                        // Straight up and down are the app list's and the search's from the page, an app or a widget.
+                        (free == Owner.Drawer || free == Owner.Search) && !modes.folderOpen && start == TouchStart.Widget -> free
                         start == TouchStart.Widget -> Owner.Widget
                         // Upwards is the app list's only from the bare page or an app, and not over an open folder.
                         free == Owner.Drawer && (modes.folderOpen || (start != TouchStart.Page && start != TouchStart.Tile)) -> Owner.Nobody
@@ -72,7 +75,7 @@ class HomeGesturesTest {
     /** PRD AC-1: the one touch that opens the app list on home. */
     @Test fun aDragUpwardsOpensTheAppListOnlyWhereNothingElseWantsIt() {
         for ((start, modes) in cases) {
-            val opens = modes == HomeModes() && (start == TouchStart.Page || start == TouchStart.Tile)
+            val opens = modes == HomeModes() && (start == TouchStart.Page || start == TouchStart.Tile || start == TouchStart.Widget)
             for ((dx, dy) in listOf(0f to -40f, 12f to -40f, -26f to -40f, 0f to -21f)) {
                 val owner = touch(start, modes).moved(dx, dy, 0f, slop)
                 assertEquals("$start $modes by $dx,$dy", opens, owner == Owner.Drawer)
@@ -82,8 +85,14 @@ class HomeGesturesTest {
                 assertFalse("$start $modes by $dx,$dy", touch(start, modes).moved(dx, dy, 0f, slop) == Owner.Drawer)
             }
         }
-        // A widget keeps a drag upwards for itself: it may be a list, or a terminal.
-        assertEquals(Owner.Widget, touch(TouchStart.Widget, HomeModes()).moved(0f, -40f, 0f, slop))
+        // A widget gives straight up and down to home, and keeps the rest; one that scrolls (a terminal) keeps them all.
+        assertEquals(Owner.Drawer, touch(TouchStart.Widget, HomeModes()).moved(0f, -40f, 0f, slop))
+        assertEquals(Owner.Search, touch(TouchStart.Widget, HomeModes()).moved(0f, 40f, 0f, slop))
+        assertEquals(Owner.Widget, touch(TouchStart.Widget, HomeModes()).moved(40f, 5f, 0f, slop))
+        assertEquals(Owner.Widget, touch(TouchStart.Widget, HomeModes()).moved(30f, -30f, 0f, slop))
+        assertEquals(Owner.Undecided, touch(TouchStart.Widget, HomeModes()).moved(0f, 15f, 0f, slop))
+        assertEquals(Owner.Widget, touch(TouchStart.ScrollingWidget, HomeModes()).moved(0f, -40f, 0f, slop))
+        assertEquals(Owner.Widget, touch(TouchStart.ScrollingWidget, HomeModes()).moved(0f, 40f, 0f, slop))
         // A tile being edited, its handles and its bar are the editor's; an open folder's and the pen's likewise.
         assertEquals(Owner.Arrange, touch(TouchStart.Selected, HomeModes(editing = true)).moved(0f, -40f, 0f, slop))
         assertEquals(Owner.Resize, touch(TouchStart.Handle, HomeModes(editing = true)).moved(0f, -40f, 0f, slop))

@@ -11,8 +11,15 @@ enum class TouchStart {
     /** An app or a folder, or an app in the open folder: it only takes taps. */
     Tile,
 
-    /** A widget, whose content may take a drag for itself: a slider, a list, a terminal. */
+    /**
+     * A widget, whose content takes a sideways drag for itself (a slider); straight up and down are home's, the app
+     * list and the search, as from the page (Boss, 2026-10-20: "the swipe up and the swipe down... even when I'm on
+     * a widget").
+     */
     Widget,
+
+    /** A widget that scrolls up and down itself, a terminal: it keeps every drag. */
+    ScrollingWidget,
 
     /** The tile being edited. */
     Selected,
@@ -194,16 +201,19 @@ class GestureArbiter {
             Owner.Undecided ->
                 if (!several) {
                     wandered = true
-                    val upwards = dy < 0 && !folder && (start == TouchStart.Page || start == TouchStart.Tile)
+                    val home = start == TouchStart.Page || start == TouchStart.Tile || start == TouchStart.Widget
+                    val upwards = dy < 0 && !folder && home
                     // Downwards from the same places, as steeply and as far, brings the search down: the list's mirror.
-                    val downwards = dy > 0 && !folder && (start == TouchStart.Page || start == TouchStart.Tile)
+                    val downwards = dy > 0 && !folder && home
                     owner =
                         when {
-                            start == TouchStart.Widget -> Owner.Widget
+                            start == TouchStart.ScrollingWidget -> Owner.Widget
                             // Clearly upwards: the app list's, but only once it has gone far enough to be meant. Until
                             // then nothing is decided, and a tap whose finger drifted up is still a tap.
                             upwards && -dy >= DRAWER_STEEP * abs(dx) -> if (hypot(dx, dy) > DRAWER_SLOPS * slop) Owner.Drawer else Owner.Undecided
                             downwards && dy >= DRAWER_STEEP * abs(dx) -> if (hypot(dx, dy) > DRAWER_SLOPS * slop) Owner.Search else Owner.Undecided
+                            // Any other drag on a widget is its own: a slider's, or the pager's through it.
+                            start == TouchStart.Widget -> Owner.Widget
                             // Sideways, or upwards at a slant a thumb's arc has: the pager's.
                             upwards || abs(dx) > abs(dy) -> Owner.Pager
                             else -> Owner.Nobody

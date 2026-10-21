@@ -325,6 +325,8 @@ internal fun HomeGrid(
     onDrawerEnd: (Float) -> Unit = {},
     /** A drag straight down on the page: Soma's search comes down. */
     onSearch: () -> Unit = {},
+    /** Whether a widget scrolls up and down itself (a terminal): then it keeps its vertical drags. */
+    scrolls: (HomeItem) -> Boolean = { false },
     /** The note or sticker the menu just put on a page, which eases in from where it was picked. */
     arrivals: Arrivals? = null,
     /** Told how to find the room each page showing has, for what is drawn onto a page from elsewhere. */
@@ -942,7 +944,7 @@ internal fun HomeGrid(
                         arbiter.down(
                             when (hit?.first) {
                                 null -> TouchStart.Page
-                                is WidgetItem -> TouchStart.Widget
+                                is WidgetItem -> if (scrolls(hit.first)) TouchStart.ScrollingWidget else TouchStart.Widget
                                 else -> TouchStart.Tile
                             },
                             HomeModes(),

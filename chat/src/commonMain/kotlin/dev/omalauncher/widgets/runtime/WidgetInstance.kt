@@ -806,6 +806,9 @@ class WidgetInstance(
     /** [term] is one of this widget's terminals. */
     fun owns(term: WidgetTerminal?) = term != null && term in terminals.values
 
+    /** Whether it shows a terminal, which scrolls up and down: home leaves it its vertical drags. */
+    val hasTerminal get() = terminals.isNotEmpty()
+
     fun stop() {
         services.sound(this, null, null)
         jobs.forEach { it.cancel() }
