@@ -42,6 +42,7 @@ import dev.omalauncher.widgets.annotations.AnnotationBook
 import dev.omalauncher.widgets.annotations.scraps
 import dev.omalauncher.widgets.tileThread
 import androidx.compose.foundation.background
+import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -178,6 +179,25 @@ internal fun Modifier.opensDrawer(
             }
         }
     }
+
+/**
+ * The part of one side of home ([left] or right) that Android's back gesture leaves to the pages: [EDGE_SPAN] tall,
+ * centred on the screen, [EDGE_WIDTH] in from the edge. Android honours at most 200 dp of each edge.
+ */
+@Composable
+private fun Modifier.edgeForPages(left: Boolean): Modifier {
+    val density = LocalDensity.current
+    val span = with(density) { EDGE_SPAN.toPx() }
+    val width = with(density) { EDGE_WIDTH.toPx() }
+    return this.systemGestureExclusion { coords ->
+        val w = coords.size.width.toFloat()
+        val top = (coords.size.height - span) / 2f
+        if (left) androidx.compose.ui.geometry.Rect(0f, top, width, top + span) else androidx.compose.ui.geometry.Rect(w - width, top, w, top + span)
+    }
+}
+
+private val EDGE_SPAN = 200.dp
+private val EDGE_WIDTH = 40.dp
 
 /** How often home looks at the threads for their tiles, and how often it lets the Mac's list be asked for again. */
 private const val AGENT_TILES_EVERY_MS = 2_000L
@@ -528,6 +548,10 @@ fun HomeScreen(
     Box(
         modifier
             .onGloballyPositioned { origin = it.positionInWindow() }
+            // On bare home a swipe in from either edge turns the page, not Android's back (Boss, 2026-10-20: "it doesnt
+            // make sense on the homepage... it should just swipe the page"). Android lets an app take 200 dp of each
+            // edge from its back gesture: the middle of each side, where a quick thumb swipe lands.
+            .then(if (state.bareHome) Modifier.edgeForPages(left = true).edgeForPages(left = false) else Modifier)
             // Sees every press first, without taking it: one outside the active terminal tile ends its turn.
             .pointerInput(terminals) {
                 awaitEachGesture { terminals.pressAt(origin + awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial).position) }
