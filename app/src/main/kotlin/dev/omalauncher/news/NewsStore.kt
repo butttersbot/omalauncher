@@ -128,6 +128,17 @@ object NewsStore {
         val tmp = File(f.parentFile, f.name + ".tmp")
         tmp.writeText(JSONObject().put("updated", System.currentTimeMillis() / 1000).put("stories", JSONArray(stories.map { it.toJson() })).toString())
         tmp.renameTo(f)
+        // The home widget's own small file (a widget reads 1 MB at most): the newest stories, pictures first.
+        val top = (stories.filter { it.image != null }.take(1) + stories).distinctBy { it.id }.take(WIDGET_STORIES)
+        val w = File(f.parentFile, "widget.json")
+        val wtmp = File(f.parentFile, "widget.json.tmp")
+        wtmp.writeText(
+            JSONObject().put("updated", System.currentTimeMillis() / 1000).put(
+                "stories",
+                JSONArray(top.map { JSONObject().put("title", it.title).put("source", it.source).put("image", it.image ?: JSONObject.NULL).put("published", it.published) }),
+            ).toString(),
+        )
+        wtmp.renameTo(w)
     }
 
     /** The Google Reader API's answer as stories, newest first. */
@@ -183,6 +194,9 @@ object NewsStore {
     }
 
     fun unescape(s: String) = s.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&#39;", "'").replace("&#039;", "'")
+
+    /** Stories the home widget's file keeps: the large widget shows a lead and three more. */
+    private const val WIDGET_STORIES = 6
 
     /** Pages read for a picture in one refresh, at most. */
     private const val PAGE_LOOKUPS = 25

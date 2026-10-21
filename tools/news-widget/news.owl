@@ -1,0 +1,108 @@
+widget "news" {
+  size: 4x4
+  minSize: 2x2
+  padding: 0
+  meta { description: "Soma News: the newest stories from your feeds, set like a magazine. Small, medium or large as you size it; tap to read."; version: "1.0"; category: "news"; owl: 10 }
+
+  // Written by the launcher on the hour from FreshRSS on the Mac Pro (news/NewsStore.kt): the newest stories, a lead with a picture first.
+  source n = file("~/.cache/soma-news/widget.json") json
+  source now = clock every 60s
+
+  let stories = n == null || n == "" ? [] : n.stories
+  let lead = len(stories) > 0 ? stories[0] : null
+  let rest = stories.drop(1)
+  let shade = linear(0, 0, 0, 1, [alpha(black, 0), alpha(black, 0.85)])
+
+  onTap: open("l:soma-news")
+
+  if lead == null {
+    Column {
+      padding: 14
+      gap: 6
+      Text { text: "SOMA NEWS"; style: label; color: accent }
+      Text { text: "Nothing yet. Open News and tap ↻."; style: body; color: muted }
+    }
+  } else if cols < 4 {
+    // Small: the lead's picture, its headline over the foot.
+    Box {
+      fill: true
+      align: bottomStart
+      if lead.image != null {
+        Image { src: lead.image; fit: cover; fill: true }
+      }
+      Column {
+        fill: width
+        padding: [10, 28, 10, 10]
+        gap: 3
+        background: shade
+        Text { text: upper(lead.source); fontSize: 9; letterSpacing: 1.2; bold: true; color: "#ffd166"; maxLines: 1 }
+        Text { text: lead.title; font: serif; fontSize: 14; bold: true; color: white; maxLines: 3 }
+      }
+    }
+  } else if rows < 4 {
+    // Medium: the picture at the left, the lead and the next one at the right.
+    Row {
+      fill: true
+      gap: 0
+      Box {
+        width: tileWidth * 0.44
+        fill: height
+        if lead.image != null {
+          Image { src: lead.image; fit: cover; fill: true }
+        }
+      }
+      Column {
+        weight: 1
+        fill: height
+        padding: [12, 10, 12, 10]
+        gap: 5
+        Text { text: upper(lead.source); fontSize: 9; letterSpacing: 1.2; bold: true; color: accent; maxLines: 1 }
+        Text { text: lead.title; font: serif; fontSize: 15; bold: true; maxLines: 3 }
+        Spacer { weight: 1 }
+        if len(rest) > 0 {
+          Text { text: rest[0].title; font: serif; fontSize: 12; color: muted; maxLines: 2 }
+        }
+        Text { text: "${len(stories)} new · ${fmtAgo(n.updated, now)} ago"; style: label; color: muted; maxLines: 1 }
+      }
+    }
+  } else {
+    // Large: the lead as a photo with its headline, then three more with their pictures.
+    Column {
+      fill: true
+      gap: 0
+      Box {
+        fill: width
+        height: tileHeight * 0.52
+        align: bottomStart
+        if lead.image != null {
+          Image { src: lead.image; fit: cover; fill: true }
+        }
+        Column {
+          fill: width
+          padding: [12, 30, 12, 10]
+          gap: 3
+          background: shade
+          Text { text: upper(lead.source); fontSize: 9.5; letterSpacing: 1.2; bold: true; color: "#ffd166"; maxLines: 1 }
+          Text { text: lead.title; font: serif; fontSize: 18; bold: true; color: white; maxLines: 3 }
+        }
+      }
+      Column {
+        weight: 1
+        fill: width
+        padding: [12, 8, 12, 8]
+        gap: 8
+        // As many as fit their room: three in a tall tile, two in a shorter one.
+        for s in rest.take(tileHeight * 0.48 > 190 ? 3 : 2) {
+          Row {
+            gap: 10
+            align: center
+            if s.image != null {
+              Image { src: s.image; fit: cover; width: 40; height: 40; radius: 2 }
+            }
+            Text { text: s.title; font: serif; fontSize: 12.5; maxLines: 2; weight: 1 }
+          }
+        }
+      }
+    }
+  }
+}
