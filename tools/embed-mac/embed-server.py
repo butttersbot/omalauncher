@@ -213,12 +213,16 @@ def spotlight(q, n):
     # Each word begins a word of the name or the text ("lease" finds Lease_2026.pdf, never "release").
     each = ['(kMDItemDisplayName == "%s*"cdw || kMDItemTextContent == "%s*"cdw)' % (w, w) for w in words]
     try:
-        where = [a for r in ROOTS if os.path.isdir(os.path.join(HOME, r)) for a in ("-onlyin", os.path.join(HOME, r))]
-        proc = subprocess.Popen(["mdfind", *where, " && ".join(each)], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        # Asked over all of ~ and kept to [ROOTS] by offered(): scoped to ~/Downloads or iCloud Drive itself, mdfind
+        # waits on macOS's privacy check and never answers (found by the Mac Pro's photo thread, 2026-10-21).
+        proc = subprocess.Popen(["mdfind", "-onlyin", HOME, " && ".join(each)], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
     except OSError:
         return []
     paths = []
     deadline = time.time() + 1.0
+    # Ends mdfind even if a read is somehow still waiting.
+    timer = threading.Timer(1.2, proc.kill)
+    timer.start()
     try:
         while True:
             # The deadline holds even while Spotlight says nothing: a read only waits as long as is left.
@@ -234,6 +238,7 @@ def spotlight(q, n):
                 if len(paths) >= 400:
                     break
     finally:
+        timer.cancel()
         proc.kill()
     lower = [w.lower() for w in words]
     items = []
@@ -282,12 +287,18 @@ class Handler(BaseHTTPRequestHandler):
             size = os.path.getsize(path)
             if size > MAX_FILE:
                 return self.reply(413, {"error": "too large"})
-            self.send_response(200)
-            self.send_header("Content-Type", "application/octet-stream")
-            self.send_header("Content-Length", str(size))
-            self.send_header("Content-Disposition", "attachment; filename*=UTF-8''" + urllib.parse.quote(os.path.basename(path)))
-            self.end_headers()
-            with open(path, "rb") as f:
+            # Opened before answering: if macOS hasn't let this service into the folder, say so instead of a 200 with
+            # nothing after it.
+            try:
+                f = open(path, "rb")
+            except PermissionError:
+                return self.reply(403, {"error": "macOS hasn't let the embed-server into this folder"})
+            with f:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header("Content-Length", str(size))
+                self.send_header("Content-Disposition", "attachment; filename*=UTF-8''" + urllib.parse.quote(os.path.basename(path)))
+                self.end_headers()
                 shutil.copyfileobj(f, self.wfile, 1024 * 1024)
             return None
         self.reply(404, {"error": "not found"})
