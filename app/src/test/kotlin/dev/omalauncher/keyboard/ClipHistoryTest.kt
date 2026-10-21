@@ -56,4 +56,29 @@ class ClipHistoryTest {
         assertEquals("2d", ClipPanel.age(2 * 86_400_000L))
         assertEquals("a b", ClipHistory.oneLine("  a\n\tb "))
     }
+
+    @Test fun clearedStaysClearedThoughThePhoneStillHoldsTheLastCopy() {
+        val f = File.createTempFile("clips", ".json").also { it.delete() }
+        val h = ClipHistory(f)
+        h.add("api key", t)
+        h.clear(now = t + 10)
+        // The keyboard comes up again and reads the same copy, made at t: it stays out.
+        assertFalse(h.add("api key", t))
+        assertEquals(0, h.all(t + 20).size)
+        // Kept out after a restart too; a new copy gets in.
+        val back = ClipHistory(f)
+        assertFalse(back.add("api key", t))
+        assertTrue(back.add("api key", t + 30))
+        f.delete()
+    }
+
+    @Test fun aRemovedClipStaysOutUntilCopiedAgain() {
+        val h = ClipHistory(null)
+        h.add("a", t)
+        h.add("b", t + 1)
+        h.remove("a", now = t + 5)
+        assertFalse(h.add("a", t))
+        assertEquals(listOf("b"), h.all(t + 6).map { it.text })
+        assertTrue(h.add("a", t + 9))
+    }
 }

@@ -21,13 +21,32 @@ class ClipHistory(
 
     private val clips = ArrayList<Clip>()
 
+    /**
+     * Copies made at or before this (ms) aren't taken in again: Clear and a removed clip stay gone, though the phone's
+     * clipboard may still hold the last copy and the keyboard reads it again each time it comes up (Boss, 2026-10-21:
+     * "the clear button on the clipboard doesn't actually clear it").
+     */
+    private var clearedAt = 0L
+    private val removed = HashMap<String, Long>()
+
     init {
         runCatching {
-            val a = JSONArray(file!!.readText())
-            for (i in 0 until a.length()) {
-                val o = a.getJSONObject(i)
-                clips += Clip(o.getString("text"), o.getLong("at"))
+            val text = file!!.readText()
+            if (text.trimStart().startsWith("[")) {
+                read(JSONArray(text))
+            } else {
+                val o = JSONObject(text)
+                read(o.getJSONArray("clips"))
+                clearedAt = o.optLong("clearedAt")
+                o.optJSONObject("removed")?.let { r -> for (k in r.keys()) removed[k] = r.getLong(k) }
             }
+        }
+    }
+
+    private fun read(a: JSONArray) {
+        for (i in 0 until a.length()) {
+            val o = a.getJSONObject(i)
+            clips += Clip(o.getString("text"), o.getLong("at"))
         }
     }
 
@@ -41,6 +60,7 @@ class ClipHistory(
     ): Boolean {
         val t = text.take(MAX_CHARS)
         if (t.isBlank()) return false
+        if (now <= clearedAt || (removed[t] ?: -1L) >= now) return false
         if (clips.firstOrNull()?.text == t) return false
         clips.removeAll { it.text == t }
         clips.add(0, Clip(t, now))
@@ -49,12 +69,22 @@ class ClipHistory(
         return true
     }
 
-    @Synchronized fun remove(text: String) {
-        if (clips.removeAll { it.text == text }) save()
+    /** Takes [text] out, and keeps it out unless it is copied again after [now]. */
+    @Synchronized fun remove(
+        text: String,
+        now: Long = System.currentTimeMillis(),
+    ) {
+        clips.removeAll { it.text == text }
+        removed[text] = now
+        while (removed.size > KEPT) removed.remove(removed.minByOrNull { it.value }!!.key)
+        save()
     }
 
-    @Synchronized fun clear() {
+    /** Empties it, and keeps out everything copied up to [now]. */
+    @Synchronized fun clear(now: Long = System.currentTimeMillis()) {
         clips.clear()
+        removed.clear()
+        clearedAt = now
         save()
     }
 
@@ -72,8 +102,9 @@ class ClipHistory(
     private fun save() {
         val f = file ?: return
         runCatching {
-            val a = JSONArray()
-            for (c in clips) a.put(JSONObject().put("text", c.text).put("at", c.at))
+            val list = JSONArray()
+            for (c in clips) list.put(JSONObject().put("text", c.text).put("at", c.at))
+            val a = JSONObject().put("clips", list).put("clearedAt", clearedAt).put("removed", JSONObject(removed.mapValues { it.value } as Map<*, *>))
             f.parentFile?.mkdirs()
             val tmp = File(f.parentFile, f.name + ".tmp")
             tmp.writeText(a.toString())

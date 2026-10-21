@@ -226,17 +226,8 @@ class GifPanel(
         this.width = width
         text.typeface = k.typeface
 
-        // ABC and the search pill.
-        val headCy = top + HEAD_DP * d / 2
-        text.textSize = 15 * d
-        text.color = c.ink
-        text.textAlign = Paint.Align.LEFT
-        canvas.drawText("ABC", 14 * d, headCy - (text.fontMetrics.ascent + text.fontMetrics.descent) / 2, text)
-        box.set(64 * d, headCy - 17 * d, width - 10 * d, headCy + 17 * d)
-        pill(canvas, box, c.field, c.ink)
-        text.textSize = 14 * d
-        text.color = c.muted
-        canvas.drawText("⌕  Search GIFs and yours", box.left + 14 * d, headCy - (text.fontMetrics.ascent + text.fontMetrics.descent) / 2, text)
+        // The search pill, as the emoji search's (Boss, 2026-10-21: no ABC beside it; the GIF button goes back).
+        field(canvas, top, width, null, c, k)
 
         // The pills: as many as fit.
         val chipCy = top + (HEAD_DP + CHIPS_DP / 2) * d
@@ -286,25 +277,7 @@ class GifPanel(
         bandTop = top
         this.width = width
         text.typeface = k.typeface
-        val cy = top + FIELD_DP * d / 2
-        box.set(10 * d, cy - 17 * d, width - 10 * d, cy + 17 * d)
-        pill(canvas, box, c.field, c.ink)
-        text.textSize = 15 * d
-        text.textAlign = Paint.Align.LEFT
-        val q = host.gifQuery
-        text.color = if (q.isEmpty()) c.muted else c.ink
-        val shown = if (q.isEmpty()) "Search GIFs and yours" else q
-        canvas.drawText("⌕  $shown", box.left + 14 * d, cy - (text.fontMetrics.ascent + text.fontMetrics.descent) / 2, text)
-        if (SystemClock.uptimeMillis() / 500 % 2 == 0L) {
-            paint.color = c.lit
-            val cx = box.left + 14 * d + text.measureText("⌕  " + q) + 2 * d
-            canvas.drawRect(cx, cy - 9 * d, cx + 2 * d, cy + 9 * d, paint)
-        }
-        view.postInvalidateDelayed(500)
-        text.color = c.ink
-        text.textAlign = Paint.Align.RIGHT
-        canvas.drawText("✕", box.right - 14 * d, cy - (text.fontMetrics.ascent + text.fontMetrics.descent) / 2, text)
-        text.textAlign = Paint.Align.LEFT
+        field(canvas, top, width, host.gifQuery, c, k)
         bandCells = grid(canvas, band, top + FIELD_DP * d, top + BAND_DP * d - 4 * d, width, if (host.wide) 5 else 3, c)
     }
 
@@ -371,6 +344,56 @@ class GifPanel(
         }
         canvas.restore()
         return out
+    }
+
+    /**
+     * The search pill, drawn as the emoji search's is (EmojiPicker.drawField): filled, no outline, [FIELD_SIDE_DP]
+     * from the edges and [FIELD_TOP_DP] down, a drawn magnifying glass. [query] null: the panel's, a tap to search;
+     * otherwise the band's field, with its caret and ✕.
+     */
+    private fun field(
+        canvas: Canvas,
+        y: Float,
+        width: Float,
+        query: String?,
+        c: Colors,
+        k: KeyboardLook,
+    ) {
+        val d = density
+        box.set(FIELD_SIDE_DP * d, y + FIELD_TOP_DP * d, width - FIELD_SIDE_DP * d, y + (FIELD_TOP_DP + FIELD_H_DP) * d)
+        paint.color = c.field
+        canvas.drawRoundRect(box, FIELD_H_DP / 2 * d, FIELD_H_DP / 2 * d, paint)
+        val cy = box.centerY()
+        stroke.color = c.muted
+        stroke.strokeWidth = 1.8f * d
+        val gx = box.left + 16 * d
+        canvas.drawCircle(gx, cy - 1.5f * d, 5 * d, stroke)
+        canvas.drawLine(gx + 3.6f * d, cy + 2.1f * d, gx + 7.5f * d, cy + 6 * d, stroke)
+        text.textAlign = Paint.Align.LEFT
+        text.typeface = k.typeface
+        text.textSize = 15 * d
+        val ty = cy - (text.fontMetrics.ascent + text.fontMetrics.descent) / 2
+        val tx = gx + 14 * d
+        if (query.isNullOrEmpty()) {
+            text.color = c.muted
+            canvas.drawText("Search GIFs", tx, ty, text)
+        } else {
+            text.color = c.ink
+            canvas.drawText(query, tx, ty, text)
+        }
+        if (query != null) {
+            if (SystemClock.uptimeMillis() / 500 % 2 == 0L) {
+                val cx = tx + (if (query.isEmpty()) 0f else text.measureText(query) + 1.5f * d)
+                paint.color = c.lit
+                canvas.drawRect(cx, cy - 9 * d, cx + 2 * d, cy + 9 * d, paint)
+            }
+            view.postInvalidateDelayed(500)
+            // ✕: clears the words, or with none, ends the search.
+            val xx = box.right - 16 * d
+            stroke.color = c.muted
+            canvas.drawLine(xx - 5 * d, cy - 5 * d, xx + 5 * d, cy + 5 * d, stroke)
+            canvas.drawLine(xx - 5 * d, cy + 5 * d, xx + 5 * d, cy - 5 * d, stroke)
+        }
     }
 
     private fun pill(
@@ -510,7 +533,7 @@ class GifPanel(
             }
             if (y < top + HEAD_DP * d) {
                 tick()
-                if (x < 60 * d) host.showLetters() else host.startGifSearch()
+                host.startGifSearch()
                 return
             }
             chipBoxes.firstOrNull { it.second.contains(x, y) }?.let { (name, _) ->
@@ -646,13 +669,17 @@ class GifPanel(
 
     companion object {
         val CHIPS = listOf("Trending", "Recent", "Saved", "lol", "yes", "no", "love", "hype", "facepalm", "gn")
-        const val HEAD_DP = 48f
+        /** The search pill's row, its pill and margins: the emoji search's (EmojiPicker's SEARCH_DP and FIELD_*). */
+        const val HEAD_DP = 58f
+        const val FIELD_H_DP = 40f
+        const val FIELD_TOP_DP = 10f
+        const val FIELD_SIDE_DP = 12f
         const val CHIPS_DP = 34f
         const val CREDIT_DP = 18f
-        const val FIELD_DP = 46f
+        const val FIELD_DP = 58f
 
         /** The band over the letters while searching: the field and about two rows of GIFs. */
-        const val BAND_DP = 220f
+        const val BAND_DP = 232f
         const val HEART_DP = 26f
         const val SLOP_DP = 8f
         const val SEARCH_PAUSE_MS = 300L

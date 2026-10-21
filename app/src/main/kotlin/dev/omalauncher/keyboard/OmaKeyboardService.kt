@@ -303,6 +303,9 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host, EmojiPicker.
 
     override fun clearClips() {
         history.clear()
+        // The phone's clipboard too: what was copied last (a key, a password) doesn't linger there either.
+        runCatching { clipboardManager?.clearPrimaryClip() }
+        pastedFresh = null
         view.invalidate()
     }
 

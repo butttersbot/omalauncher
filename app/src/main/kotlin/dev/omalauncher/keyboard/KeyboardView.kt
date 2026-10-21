@@ -274,9 +274,8 @@ class KeyboardView(
             fill.shader = null
             fill.color = blend(base, WHITE, 0.4f)
             canvas.drawRect(0f, top, width.toFloat(), top + 3 * d, fill)
-            fill.color = k.led
-            box.set(6 * d, top + 3 * d, width - 6 * d, top + 6 * d)
-            canvas.drawRoundRect(box, 2 * d, 2 * d, fill)
+            // (The look's LED stripe that ran along the top went, 2026-10-21: Boss, "there's a red line at the top, it
+            // doesn't look good".)
         } else {
             fill.color = if (k.letter != null) k.page else k.board
             canvas.drawRect(0f, top, width.toFloat(), height.toFloat(), fill)
