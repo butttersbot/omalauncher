@@ -28,7 +28,8 @@ data class Candidate(
 /**
  * What search remembers of Boss's use, as Raycast does: how often and how lately each thing was opened (frecency:
  * every opening adds 100, halving every 10 days), the searches that opened it (so "ff" keeps meaning Firefox once
- * he picked it, for 17 days), aliases, favorites in their order, and what he hid. Plain text, one fact a line.
+ * he picked it, for 17 days), aliases, favorites in their order, what he hid, and his last few searches (shown with
+ * nothing typed, to run again). Plain text, one fact a line.
  */
 class SearchMemory {
     private class Opened(var anchor: Double, var at: Long)
@@ -38,6 +39,7 @@ class SearchMemory {
     private val aliases = HashMap<String, String>()
     private val favorites = ArrayList<String>()
     private val hidden = HashSet<String>()
+    private val recent = ArrayList<Pair<String, Long>>()
 
     /** How much [id] is used now ([now] in ms): 1 for never, more the more and the later. */
     fun frecency(
@@ -55,6 +57,7 @@ class SearchMemory {
         val old = opened[id]
         val s = if (old == null) 1.0 else score(maxOf(old.anchor, t), t)
         opened[id] = Opened(t + 86400 * ln(minOf(s + 100, Double.MAX_VALUE)) / LAMBDA, now)
+        searched(query, now)
         val q = query.trim().lowercase()
         if (q.isNotEmpty()) {
             val list = terms.getOrPut(id) { ArrayList() }
@@ -63,6 +66,23 @@ class SearchMemory {
             while (list.size > TERMS_KEPT) list.removeAt(list.lastIndex)
         }
     }
+
+    /** [query] was searched for and something done with it at [now] (ms): it goes first among the recent searches. */
+    fun searched(
+        query: String,
+        now: Long,
+    ) {
+        val q = query.trim().replace('\t', ' ').replace('\n', ' ')
+        if (q.isEmpty()) return
+        recent.removeAll { it.first.equals(q, ignoreCase = true) }
+        recent.add(0, q to now)
+        while (recent.size > RECENT_KEPT) recent.removeAt(recent.lastIndex)
+    }
+
+    /** His last searches, newest first, as he typed them; those older than [RECENT_FOR_MS] are let go. */
+    fun recent(now: Long): List<String> = recent.filter { now - it.second <= RECENT_FOR_MS }.map { it.first }
+
+    fun forgetRecent() = recent.clear()
 
     /** The searches that opened [id], while they still count: it is used, and was opened within 17 days. */
     fun terms(
@@ -112,6 +132,7 @@ class SearchMemory {
             for ((id, a) in aliases) append("a\t").append(id).append('\t').append(a.replace('\t', ' ')).append('\n')
             for (id in favorites) append("f\t").append(id).append('\n')
             for (id in hidden) append("h\t").append(id).append('\n')
+            for ((q, at) in recent) append("r\t").append(q).append('\t').append(at).append('\n')
         }
 
     companion object {
@@ -119,6 +140,8 @@ class SearchMemory {
         val LAMBDA = ln(2.0) / 10
         const val TERMS_KEPT = 8
         const val TERMS_FOR_MS = 17L * 24 * 3600 * 1000
+        const val RECENT_KEPT = 8
+        const val RECENT_FOR_MS = 30L * 24 * 3600 * 1000
 
         fun score(
             anchor: Double,
@@ -135,6 +158,7 @@ class SearchMemory {
                         "a" -> if (p.size == 3) aliases[p[1]] = p[2]
                         "f" -> if (p.size == 2 && p[1] !in favorites) favorites += p[1]
                         "h" -> if (p.size == 2) hidden += p[1]
+                        "r" -> if (p.size == 3 && recent.size < RECENT_KEPT) recent += p[1] to (p[2].toLongOrNull() ?: continue)
                     }
                 }
             }

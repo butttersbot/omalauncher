@@ -49,4 +49,23 @@ class PhotoIndexTest {
         // On the Mac's test machine; the Fold is in the same range. The bar is generous so it never flakes.
         assertTrue("took $ms ms", ms < 150)
     }
+
+    @Test fun aVideoIsAsNearAsItsNearestFrame() {
+        val beach = unit(1f, 0f, 0f)
+        val dog = unit(0f, 1f, 0f)
+        val city = unit(0f, 0f, 1f)
+        // Photo 1 is a city; video 2's first frame is a city too, its last a dog on a beach.
+        val v = PhotoIndex.Vectors(longArrayOf(1, 2, 2, 2), PhotoIndex.quantize(city) + PhotoIndex.quantize(city) + PhotoIndex.quantize(beach) + PhotoIndex.quantize(dog))
+        val near = PhotoIndex.nearest(v, dog, 2)
+        assertEquals(listOf(2L, 1L), near.map { it.first })
+        // Each photo once, at its nearest.
+        assertEquals(2, near.size)
+    }
+
+    @Test fun aPhotosWordsAreItsNameFolderTextAndTags() {
+        assertEquals(
+            "img 2041 jpg Camera MENU tacos dog beach",
+            PhotoIndex.words("IMG2041.jpg", "Camera", listOf("MENU tacos", ""), listOf("dog", "beach", "dog")),
+        )
+    }
 }

@@ -58,6 +58,74 @@ object FileQuery {
         return w.joinToString(" ") { "$column:\"${it.replace("\"", "")}\"*" }
     }
 
+    /**
+     * How many letters apart [a] and [b] are: a letter added, dropped, changed, or two side by side swapped each count
+     * one (Damerau's distance, as typos happen). Stops early past [most], returning more than it.
+     */
+    fun distance(
+        a: String,
+        b: String,
+        most: Int = Int.MAX_VALUE,
+    ): Int {
+        if (kotlin.math.abs(a.length - b.length) > most) return most + 1
+        var before = IntArray(b.length + 1)
+        var row = IntArray(b.length + 1) { it }
+        var next = IntArray(b.length + 1)
+        for (i in 1..a.length) {
+            next[0] = i
+            var low = i
+            for (j in 1..b.length) {
+                val cost = if (a[i - 1] == b[j - 1]) 0 else 1
+                var d = minOf(row[j] + 1, next[j - 1] + 1, row[j - 1] + cost)
+                if (i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1]) d = minOf(d, before[j - 2] + 1)
+                next[j] = d
+                low = minOf(low, d)
+            }
+            if (low > most) return most + 1
+            val t = before
+            before = row
+            row = next
+            next = t
+        }
+        return row[b.length]
+    }
+
+    /** How many typos a word of [length] letters may have and still be read as another: none in a short one. */
+    fun typos(length: Int) =
+        when {
+            length < 4 -> 0
+            length < 7 -> 1
+            else -> 2
+        }
+
+    /**
+     * The word of the index [word] was most likely meant to be, from [terms] (each with how many files have it), or
+     * null if none is near enough. The fewest typos win, then the commoner word. The [last] word may still be being
+     * typed, so it is also compared with the beginnings of longer words.
+     */
+    fun corrected(
+        word: String,
+        terms: List<Pair<String, Int>>,
+        last: Boolean,
+    ): String? {
+        val most = typos(word.length)
+        if (most == 0) return null
+        var best: String? = null
+        var bestD = most + 1
+        var bestN = -1
+        for ((t, n) in terms) {
+            if (t == word) return null
+            var d = distance(word, t, most)
+            if (last && t.length > word.length) d = minOf(d, distance(word, t.substring(0, word.length), most))
+            if (d < bestD || (d == bestD && n > bestN)) {
+                best = t
+                bestD = d
+                bestN = n
+            }
+        }
+        return best.takeIf { bestD <= most }
+    }
+
     /** One file the index found: what it is, and for a match inside it, the words around it. */
     data class Hit(
         val path: String,
@@ -97,6 +165,43 @@ object FileQuery {
             }.sortedWith(compareByDescending<Pair<Hit, Double>> { it.second }.thenBy { it.first.path.length })
             .map { it.first }
     }
+
+    /**
+     * [hits] in a new order once the Mac has said how near each is in meaning to the query ([nearness], one each, in
+     * the model's narrow band): a blend of where each stood ([lexical] of the weight) and how near it is, both scaled
+     * to 0..1 among these hits. What stood first by an exact name stays first.
+     */
+    fun blend(
+        hits: List<Hit>,
+        nearness: FloatArray,
+        lexical: Double,
+        query: String,
+    ): List<Hit> {
+        if (hits.size < 2 || nearness.size != hits.size) return hits
+        val lo = nearness.min()
+        val hi = nearness.max()
+        val q = RootMatch.fold(query.trim())
+        val pinned = hits.first().let { RootMatch.fold(it.name.substringBeforeLast('.', it.name)) == q || RootMatch.fold(it.name) == q }
+        return hits.indices
+            .map { i ->
+                val stood = 1.0 - i.toDouble() / hits.size
+                val near = if (hi - lo < 1e-4f) 0.5 else ((nearness[i] - lo) / (hi - lo)).toDouble()
+                val score = if (pinned && i == 0) Double.MAX_VALUE else lexical * stood + (1 - lexical) * near
+                hits[i] to score
+            }.sortedByDescending { it.second }
+            .map { it.first }
+    }
+
+    /** A hit's words as the Mac compares them with the query: its name's words and folder, and the text around a match. */
+    fun meaning(
+        hit: Hit,
+        folder: String,
+    ): String =
+        buildString {
+            append(nameWords(hit.name.substringBeforeLast('.', hit.name)))
+            if (folder.isNotEmpty()) append(" · ").append(folder)
+            hit.snippet?.let { append(": ").append(it.filter { c -> c != MARK_OPEN && c != MARK_CLOSE }) }
+        }
 
     /** 1 for a file changed today, falling to 0 over about a year. */
     fun recency(

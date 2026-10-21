@@ -32,7 +32,7 @@ import kotlin.math.sin
  * writes that down for a review to suggest from ([KeyboardLearning]); it never moves keys on its own.
  * Nothing is learned in password fields or where the app asks for no learning, and the mic is off in them.
  */
-class OmaKeyboardService : InputMethodService(), KeyboardView.Host, EmojiPicker.Host {
+class OmaKeyboardService : InputMethodService(), KeyboardView.Host, EmojiPicker.Host, ClipPanel.Host {
     private lateinit var view: KeyboardView
     private val prefs: SharedPreferences by lazy { getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
 
@@ -47,6 +47,16 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host, EmojiPicker.
     private val learning = HashMap<Screen, KeyboardLearning>()
     private var speech: Speech? = null
     private var picker: EmojiPicker? = null
+    private var clipPanel: ClipPanel? = null
+
+    /** The clipboard panel is up in the keys' place. */
+    private var showingClips = false
+
+    /** The copy last typed from the strip's pill: it isn't offered again. */
+    private var pastedFresh: String? = null
+    private val history by lazy { ClipHistory.of(this) }
+    private val clipboardManager by lazy { getSystemService(android.content.ClipboardManager::class.java) }
+    private val clipChanged = android.content.ClipboardManager.OnPrimaryClipChangedListener { noteClip() }
 
     /** Searching the emoji: the letter keys type into the picker's search field, not the app's. */
     private var searching = false
@@ -93,6 +103,67 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host, EmojiPicker.
         // The look comes from the launcher's own state, which this process holds once the launcher has run.
         runCatching { (application as App).runtime }
         loadEmoji()
+        runCatching { clipboardManager?.addPrimaryClipChangedListener(clipChanged) }
+    }
+
+    override fun onDestroy() {
+        runCatching { clipboardManager?.removePrimaryClipChangedListener(clipChanged) }
+        super.onDestroy()
+    }
+
+    // ---- The clipboard ----
+
+    /**
+     * Notes what is on the clipboard now in the history, as Android lets the keyboard in use read it. Not a copy
+     * marked sensitive (password managers mark theirs), nor while the field the keyboard has is a password's.
+     */
+    private fun noteClip() {
+        if (secret) return
+        val clip = runCatching { clipboardManager?.primaryClip }.getOrNull() ?: return
+        val description = clip.description
+        if (description?.extras?.getBoolean(android.content.ClipDescription.EXTRA_IS_SENSITIVE) == true) return
+        val text = runCatching { clip.getItemAt(0)?.coerceToText(this)?.toString() }.getOrNull() ?: return
+        val at = description?.timestamp?.takeIf { it > 0 } ?: System.currentTimeMillis()
+        if (history.add(text, at) && ::view.isInitialized) view.invalidate()
+    }
+
+    override fun clips() = history.all(System.currentTimeMillis())
+
+    override val freshClip: String?
+        get() {
+            val c = history.all(System.currentTimeMillis()).firstOrNull() ?: return null
+            return c.text.takeIf { System.currentTimeMillis() - c.at < ClipHistory.FRESH_MS && it != pastedFresh }
+        }
+
+    override fun clipboard(paste: Boolean) {
+        if (paste) {
+            freshClip?.let {
+                pastedFresh = it
+                currentInputConnection?.commitText(it, 1)
+            }
+        } else {
+            showingClips = !showingClips
+            if (showingClips) clipPanel?.opened()
+        }
+        rebuild()
+    }
+
+    override fun pasteClip(text: String) {
+        currentInputConnection?.commitText(text, 1) ?: return
+        pastedFresh = text
+        showingClips = false
+        autoShift()
+        rebuild()
+    }
+
+    override fun forgetClip(text: String) {
+        history.remove(text)
+        view.invalidate()
+    }
+
+    override fun clearClips() {
+        history.clear()
+        view.invalidate()
     }
 
     // ---- The emoji picker ----
@@ -135,6 +206,7 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host, EmojiPicker.
     }
 
     override fun showLetters() {
+        showingClips = false
         layer = Layer.ABC
         autoShift()
         rebuild()
@@ -194,6 +266,7 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host, EmojiPicker.
     override fun onCreateInputView(): View {
         view = KeyboardView(this, this)
         picker = EmojiPicker(view, this).also { view.emoji = it }
+        clipPanel = ClipPanel(view, this).also { view.clips = it }
         return view
     }
 
@@ -211,7 +284,10 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host, EmojiPicker.
         layer = if (cls == InputType.TYPE_CLASS_NUMBER || cls == InputType.TYPE_CLASS_PHONE) Layer.NUM else Layer.ABC
         capsLock = false
         searching = false
+        showingClips = false
         search.clear()
+        // A copy made while no field had the keyboard (the listener only hears while it is bound) is noted now.
+        noteClip()
         autoShift()
         view.look = look()
         view.mech = prefs.getBoolean(MECH, false)
@@ -267,6 +343,7 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host, EmojiPicker.
         view.layout = KeyGeometry.layout(w, screen, layer, view.mech, shift || capsLock, capsLock, if (searching) "done" else returnLabel(), split = prefs.getBoolean(SPLIT, true))
         view.mode =
             when {
+                showingClips -> KeyboardView.Mode.CLIPS
                 searching -> KeyboardView.Mode.SEARCH
                 layer == Layer.EMOJI -> KeyboardView.Mode.EMOJI
                 else -> KeyboardView.Mode.KEYS

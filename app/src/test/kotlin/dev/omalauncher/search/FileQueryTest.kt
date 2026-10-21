@@ -63,4 +63,40 @@ class FileQueryTest {
         assertTrue(FileQuery.skipped(".git") && FileQuery.skipped("node_modules") && FileQuery.skipped(".thumbnails"))
         assertTrue(!FileQuery.skipped("Documents") && !FileQuery.skipped("data"))
     }
+
+    @Test fun typosAreCountedAsTheyHappen() {
+        assertEquals(0, FileQuery.distance("invoice", "invoice"))
+        assertEquals(1, FileQuery.distance("invioce", "invoice"))
+        assertEquals(1, FileQuery.distance("recipt", "receipt"))
+        assertEquals(1, FileQuery.distance("leasse", "lease"))
+        assertEquals(2, FileQuery.distance("aggrement", "agreement"))
+        // Stops early once it is past the most it may be.
+        assertTrue(FileQuery.distance("passport", "invoice", most = 2) > 2)
+    }
+
+    @Test fun aMisspeltWordIsReadAsTheNameWordMeant() {
+        val terms = listOf("invoice" to 12, "invoices" to 2, "involve" to 1, "lease" to 4, "receipt" to 9, "recipe" to 3)
+        assertEquals("invoice", FileQuery.corrected("invioce", terms, last = false))
+        assertEquals("receipt", FileQuery.corrected("reciept", terms, last = false))
+        // A word still being typed matches the start of a longer one.
+        assertEquals("invoice", FileQuery.corrected("invoic", terms, last = true))
+        assertEquals("receipt", FileQuery.corrected("reciep", terms, last = true))
+        // A word the index has is left alone; a short one is never guessed at; nothing near is nothing.
+        assertNull(FileQuery.corrected("lease", terms, last = false))
+        assertNull(FileQuery.corrected("lea", terms, last = true))
+        assertNull(FileQuery.corrected("passport", terms, last = false))
+    }
+
+    @Test fun theMacsReadingReordersButAnExactNameStaysFirst() {
+        val a = FileQuery.Hit("/s/Lease.pdf", "Lease.pdf", now, 1)
+        val b = FileQuery.Hit("/s/notes.txt", "notes.txt", now, 1, "groceries for the week")
+        val c = FileQuery.Hit("/s/contract.txt", "contract.txt", now, 1, "the lease agreement for the flat")
+        // Text matches, newest first from the index; the one about a lease is nearest in meaning.
+        assertEquals(listOf(c, b), FileQuery.blend(listOf(b, c), floatArrayOf(0.58f, 0.74f), lexical = 0.3, query = "lease"))
+        // An exact name first stays first however the Mac reads it.
+        assertEquals(a, FileQuery.blend(listOf(a, b, c), floatArrayOf(0.55f, 0.6f, 0.8f), lexical = 0.6, query = "lease").first())
+        // Nothing to go by: as they were.
+        assertEquals(listOf(b, c), FileQuery.blend(listOf(b, c), floatArrayOf(0.7f), lexical = 0.3, query = "x"))
+        assertEquals("contract · Documents: the lease agreement for the flat", FileQuery.meaning(c, "Documents"))
+    }
 }

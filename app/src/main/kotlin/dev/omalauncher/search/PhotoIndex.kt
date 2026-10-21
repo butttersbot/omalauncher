@@ -51,6 +51,14 @@ object PhotoIndex {
                 db.execSQL("CREATE VIRTUAL TABLE IF NOT EXISTS ptext USING fts4(words, tokenize=unicode61 \"remove_diacritics=1\", prefix=\"2,3\")")
                 db.version = 1
             }
+            if (writable && db.version < 2) {
+                // Which reading of the Mac's each photo has ([PhotoMac.reads]), and a video's other frames' vectors.
+                db.execSQL("ALTER TABLE photos ADD COLUMN reads INTEGER DEFAULT 0")
+                db.execSQL("UPDATE photos SET reads = 1 WHERE vec IS NOT NULL AND length(vec) > 0")
+                db.execSQL("CREATE TABLE IF NOT EXISTS frames(photo INTEGER NOT NULL, vec BLOB NOT NULL)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS frames_photo ON frames(photo)")
+                db.version = 2
+            }
             db
         }.getOrNull()
     }
@@ -76,12 +84,17 @@ object PhotoIndex {
     fun vectors(db: SQLiteDatabase): Vectors {
         val ids = ArrayList<Long>()
         val out = ByteArrayOutputStream()
-        db.rawQuery("SELECT id, vec FROM photos WHERE vec IS NOT NULL", null).use { c ->
-            while (c.moveToNext()) {
-                val v = c.getBlob(1) ?: continue
-                if (v.size != DIM) continue
-                ids += c.getLong(0)
-                out.write(v)
+        // A video's other frames come in under its id too: it is as near as its nearest frame.
+        for (sql in listOf("SELECT id, vec FROM photos WHERE vec IS NOT NULL", "SELECT photo, vec FROM frames")) {
+            runCatching {
+                db.rawQuery(sql, null).use { c ->
+                    while (c.moveToNext()) {
+                        val v = c.getBlob(1) ?: continue
+                        if (v.size != DIM) continue
+                        ids += c.getLong(0)
+                        out.write(v)
+                    }
+                }
             }
         }
         return Vectors(ids.toLongArray(), out.toByteArray())
@@ -92,6 +105,15 @@ object PhotoIndex {
 
     /** The [k] photos nearest [query] (a unit vector), nearest first, with their closeness from -1 to 1. */
     fun nearest(
+        vectors: Vectors,
+        query: FloatArray,
+        k: Int,
+    ): List<Pair<Long, Float>> = nearestRows(vectors, query, k * FRAMES).distinctBy { it.first }.take(k)
+
+    /** A video has up to this many vectors, one a frame. */
+    const val FRAMES = 3
+
+    private fun nearestRows(
         vectors: Vectors,
         query: FloatArray,
         k: Int,
@@ -149,6 +171,14 @@ object PhotoIndex {
         return scored.filter { it.second >= FLOOR && it.second >= top - SPREAD }
     }
 
+    /** A photo's words for searching by them: its name and folder, any text in it, and what the Mac saw in it. */
+    fun words(
+        name: String,
+        folder: String,
+        texts: List<String>,
+        tags: List<String>,
+    ): String = (listOf(FileQuery.nameWords(name), folder) + texts.filter { it.isNotBlank() } + tags.distinct()).joinToString(" ")
+
     const val FLOOR = 0.62f
     const val SPREAD = 0.05f
 }
@@ -188,24 +218,52 @@ object PhotoMac {
 
     private fun floats(a: JSONArray) = FloatArray(a.length()) { a.getDouble(it).toFloat() }
 
+    /** Which reading of photos the Mac gives now (1: vector and text; 2: and tags); 0 if it didn't say. */
+    fun reads(base: String): Int =
+        runCatching {
+            val c = URL("$base/health").openConnection() as HttpURLConnection
+            c.connectTimeout = 800
+            c.readTimeout = 3_000
+            JSONObject(c.inputStream.bufferedReader().use { it.readText() }).optInt("reads", 1)
+        }.getOrDefault(0)
+
+    /** What the Mac read of one photo: its vector, any text in it, and what is in it as words. */
+    class Read(
+        val vector: FloatArray,
+        val text: String,
+        val tags: List<String>,
+    )
+
     /** The vector of a search's words, or null if the Mac didn't answer in time. */
     fun text(
         base: String,
         words: String,
     ): FloatArray? = post(base, "/text", JSONObject().put("texts", JSONArray().put(words)), 2_000)?.optJSONArray("vectors")?.optJSONArray(0)?.let(::floats)
 
-    /** What the Mac reads of each photo ([jpegs] by id): its vector and any text in it. */
+    /** How near in meaning each of [docs] is to [query], by the Mac's model; null if it didn't answer in time. */
+    fun rerank(
+        base: String,
+        query: String,
+        docs: List<String>,
+    ): FloatArray? =
+        post(base, "/rerank", JSONObject().put("query", query).put("docs", JSONArray(docs)), 2_500)
+            ?.optJSONArray("scores")
+            ?.let(::floats)
+            ?.takeIf { it.size == docs.size }
+
+    /** What the Mac reads of each picture ([jpegs] by key). */
     fun images(
         base: String,
-        jpegs: List<Pair<Long, ByteArray>>,
-    ): Map<Long, Pair<FloatArray, String>>? {
+        jpegs: List<Pair<String, ByteArray>>,
+    ): Map<String, Read>? {
         val arr = JSONArray()
-        for ((id, jpeg) in jpegs) arr.put(JSONObject().put("id", id.toString()).put("jpeg", Base64.encodeToString(jpeg, Base64.NO_WRAP)))
+        for ((key, jpeg) in jpegs) arr.put(JSONObject().put("id", key).put("jpeg", Base64.encodeToString(jpeg, Base64.NO_WRAP)))
         val items = post(base, "/images", JSONObject().put("images", arr), 120_000)?.optJSONArray("items") ?: return null
         return buildMap {
             for (i in 0 until items.length()) {
                 val it = items.getJSONObject(i)
-                put(it.getString("id").toLong(), floats(it.getJSONArray("vector")) to it.optString("text"))
+                val tags = it.optJSONArray("tags")?.let { t -> List(t.length()) { n -> t.getString(n) } }.orEmpty()
+                put(it.getString("id"), Read(floats(it.getJSONArray("vector")), it.optString("text"), tags))
             }
         }
     }
@@ -248,6 +306,38 @@ class PhotoIndexJob : JobService() {
             if (js.getPendingJob(NOW) == null) {
                 js.schedule(JobInfo.Builder(NOW, component).setRequiredNetworkType(JobInfo.NETWORK_TYPE_UNMETERED).setOverrideDeadline(5_000).build())
             }
+        }
+
+        private class Todo(val id: Long, val uri: Uri, val name: String, val folder: String, val video: Boolean, val side: Int)
+
+        /** The small copies of a photo to send: one, or for a video three frames, at 15, 50 and 85% of it. */
+        private fun pictures(
+            context: Context,
+            t: Todo,
+        ): List<ByteArray> {
+            fun jpeg(bmp: Bitmap): ByteArray {
+                val out = ByteArrayOutputStream()
+                bmp.compress(Bitmap.CompressFormat.JPEG, 82, out)
+                bmp.recycle()
+                return out.toByteArray()
+            }
+            if (t.video) {
+                val frames =
+                    runCatching {
+                        val r = android.media.MediaMetadataRetriever()
+                        try {
+                            r.setDataSource(context, t.uri)
+                            val ms = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                            listOf(0.15, 0.5, 0.85).mapNotNull { at ->
+                                r.getScaledFrameAtTime((ms * at * 1000).toLong(), android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC, t.side, t.side)?.let(::jpeg)
+                            }
+                        } finally {
+                            r.release()
+                        }
+                    }.getOrDefault(emptyList())
+                if (frames.isNotEmpty()) return frames
+            }
+            return listOfNotNull(runCatching { jpeg(context.contentResolver.loadThumbnail(t.uri, Size(t.side, t.side), null)) }.getOrNull())
         }
 
         private class Media(val uri: Uri, val kind: String, val mime: String, val name: String, val folder: String, val taken: Long)
@@ -309,37 +399,42 @@ class PhotoIndexJob : JobService() {
                 val base = PhotoMac.base(context)
                 if (!PhotoMac.reachable(base)) return
                 PhotoModel.check(context, base)
-                // Newest first, so what he took lately is searchable soonest.
+                val reads = PhotoMac.reads(base).takeIf { it > 0 } ?: return
+                // Newest first, so what he took lately is searchable soonest; then the ones an older reading of the
+                // Mac's saw, to be read again for what it reads now (tags, since 2026-10-21).
                 // A screenshot goes at its full width: the Mac reads its text too, and at 384 pixels that misreads.
-                val todo = ArrayList<Triple<Long, Uri, Int>>()
-                db.rawQuery("SELECT id, uri, name, folder FROM photos WHERE vec IS NULL ORDER BY taken DESC", null).use { c ->
+                val todo = ArrayList<Todo>()
+                db.rawQuery(
+                    "SELECT id, uri, name, folder, kind FROM photos WHERE vec IS NULL OR (length(vec) > 0 AND reads < ?) ORDER BY vec IS NOT NULL, taken DESC",
+                    arrayOf(reads.toString()),
+                ).use { c ->
                     while (c.moveToNext()) {
-                        val shot = (c.getString(2) ?: "").startsWith("Screenshot", ignoreCase = true) || (c.getString(3) ?: "").equals("Screenshots", ignoreCase = true)
-                        todo += Triple(c.getLong(0), Uri.parse(c.getString(1)), if (shot) SCREENSHOT_SIDE else SIDE)
+                        val name = c.getString(2) ?: ""
+                        val folder = c.getString(3) ?: ""
+                        val shot = name.startsWith("Screenshot", ignoreCase = true) || folder.equals("Screenshots", ignoreCase = true)
+                        todo += Todo(c.getLong(0), Uri.parse(c.getString(1)), name, folder, c.getString(4) == "video", if (shot) SCREENSHOT_SIDE else SIDE)
                     }
                 }
                 for (batch in todo.chunked(BATCH)) {
                     if (stopped()) return
-                    val jpegs =
-                        batch.mapNotNull { (id, uri, side) ->
-                            runCatching {
-                                val bmp = context.contentResolver.loadThumbnail(uri, Size(side, side), null)
-                                val out = ByteArrayOutputStream()
-                                bmp.compress(Bitmap.CompressFormat.JPEG, 82, out)
-                                bmp.recycle()
-                                id to out.toByteArray()
-                            }.getOrNull()
-                        }
+                    // A video goes as three frames, keyed "id/0", "id/1", "id/2"; anything else as one picture.
+                    val jpegs = batch.flatMap { t -> pictures(context, t).mapIndexed { n, jpeg -> "${t.id}/$n" to jpeg } }
                     if (jpegs.isEmpty()) continue
                     val read = PhotoMac.images(base, jpegs) ?: return
                     db.beginTransaction()
                     try {
-                        for ((id, r) in read) {
-                            db.execSQL("UPDATE photos SET vec = ? WHERE id = ?", arrayOf<Any>(PhotoIndex.quantize(r.first), id))
-                            if (r.second.isNotBlank()) db.execSQL("UPDATE ptext SET words = words || ' ' || ? WHERE docid = ?", arrayOf<Any>(r.second, id))
+                        for (t in batch) {
+                            val got = (0 until PhotoIndex.FRAMES).mapNotNull { read["${t.id}/$it"] }
+                            if (got.isEmpty()) {
+                                // One the Mac couldn't read gets an empty vector, so it isn't sent again and again.
+                                if (jpegs.none { it.first.startsWith("${t.id}/") } || read.isNotEmpty()) db.execSQL("UPDATE photos SET vec = CASE WHEN vec IS NULL THEN x'' ELSE vec END, reads = ? WHERE id = ?", arrayOf<Any>(reads, t.id))
+                                continue
+                            }
+                            db.execSQL("UPDATE photos SET vec = ?, reads = ? WHERE id = ?", arrayOf<Any>(PhotoIndex.quantize(got[0].vector), reads, t.id))
+                            db.execSQL("DELETE FROM frames WHERE photo = ?", arrayOf<Any>(t.id))
+                            for (f in got.drop(1)) db.execSQL("INSERT INTO frames(photo, vec) VALUES(?, ?)", arrayOf<Any>(t.id, PhotoIndex.quantize(f.vector)))
+                            db.execSQL("UPDATE ptext SET words = ? WHERE docid = ?", arrayOf<Any>(PhotoIndex.words(t.name, t.folder, got.map { it.text }, got.flatMap { it.tags }), t.id))
                         }
-                        // A photo the Mac couldn't read gets an empty vector, so it isn't sent again and again.
-                        for ((id, _) in jpegs) if (id !in read) db.execSQL("UPDATE photos SET vec = x'' WHERE id = ?", arrayOf<Any>(id))
                         db.setTransactionSuccessful()
                     } finally {
                         db.endTransaction()

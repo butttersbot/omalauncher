@@ -88,6 +88,12 @@ class KeyboardView(
         val haptics: Boolean
 
         fun thock(big: Boolean)
+
+        /** What was copied in the last minutes and not pasted yet, for the strip's paste pill; null for none. */
+        val freshClip: String? get() = null
+
+        /** The strip's clipboard pill: the clipboard panel ([ClipPanel]) up, or (with [paste]) the fresh copy typed. */
+        fun clipboard(paste: Boolean) {}
     }
 
     private val density = resources.displayMetrics.density
@@ -115,7 +121,10 @@ class KeyboardView(
     /** The emoji picker, drawn in the keys' place while [mode] is [Mode.EMOJI], and its search band over them in [Mode.SEARCH]. */
     var emoji: EmojiPicker? = null
 
-    enum class Mode { KEYS, EMOJI, SEARCH }
+    /** The clipboard, drawn in the keys' place while [mode] is [Mode.CLIPS]. */
+    var clips: ClipPanel? = null
+
+    enum class Mode { KEYS, EMOJI, SEARCH, CLIPS }
 
     var mode = Mode.KEYS
         set(value) {
@@ -129,7 +138,7 @@ class KeyboardView(
      * Room above the keys for a pressed key's bubble, dp. Touches there go to the app (see the service's insets). The
      * emoji picker has no bubbles and takes that room as its own, so it stands taller than the letters, as Apple's.
      */
-    val headroomDp get() = if (preview || mode == Mode.EMOJI) 0f else bubbleRoomDp
+    val headroomDp get() = if (preview || mode == Mode.EMOJI || mode == Mode.CLIPS) 0f else bubbleRoomDp
     private val bubbleRoomDp get() = (layout?.rowHeight ?: 54f) * 1.3f
     val headroomPx get() = (headroomDp * density).toInt()
 
@@ -140,7 +149,8 @@ class KeyboardView(
     private val boardPx: Int
         get() {
             val keys = layout?.height ?: 240f
-            return if (mode == Mode.EMOJI && emoji != null) ((keys + bubbleRoomDp) * density).toInt() else (keys * density).toInt() + bandPx
+            val tall = (mode == Mode.EMOJI && emoji != null) || (mode == Mode.CLIPS && clips != null)
+            return if (tall) ((keys + bubbleRoomDp) * density).toInt() else (keys * density).toInt() + bandPx
         }
 
     /**
@@ -258,6 +268,12 @@ class KeyboardView(
         } else {
             fill.color = if (k.letter != null) k.page else k.board
             canvas.drawRect(0f, top, width.toFloat(), height.toFloat(), fill)
+        }
+        val panel = clips
+        if (mode == Mode.CLIPS && panel != null) {
+            panel.draw(canvas, top, width.toFloat(), boardPx.toFloat(), k)
+            if (ownStrip) drawStrip(canvas, k, top + boardPx)
+            return
         }
         val picker = emoji
         if (mode == Mode.EMOJI && picker != null) {
@@ -440,6 +456,48 @@ class KeyboardView(
         val ax = width - STRIP_BUTTON_DP / 2 * d
         canvas.drawLine(ax - 7 * d, cy - 3 * d, ax, cy + 4 * d, stroke)
         canvas.drawLine(ax, cy + 4 * d, ax + 7 * d, cy - 3 * d, stroke)
+        drawClipPill(canvas, k, cy)
+    }
+
+    /** Where the strip's clipboard pill is, px, and where its clipboard icon ends (the rest of it pastes). */
+    private val pill = RectF()
+    private var pillIconRight = 0f
+
+    /**
+     * The clipboard pill in the strip's middle: its icon opens the clipboard; with something copied in the last
+     * minutes, the pill also shows the start of it, and a tap there types it, as the iPhone's keyboard offers.
+     */
+    private fun drawClipPill(
+        canvas: Canvas,
+        k: KeyboardLook,
+        cy: Float,
+    ) {
+        val d = density
+        val ink = if (k.letter != null) k.pageInk else k.muted
+        val fresh = if (mode == Mode.CLIPS) null else host.freshClip
+        text.typeface = k.typeface
+        text.textSize = 13 * d
+        val room = width - 2 * STRIP_BUTTON_DP * d - 16 * d
+        val icon = 34 * d
+        val label = fresh?.let { android.text.TextUtils.ellipsize("Paste “" + ClipHistory.oneLine(it), android.text.TextPaint(text), minOf(room - icon - 20 * d, 260 * d), android.text.TextUtils.TruncateAt.END).toString() + "”" }
+        val w = icon + (label?.let { text.measureText(it) + 16 * d } ?: 0f)
+        val h = 30 * d
+        pill.set(width / 2f - w / 2, cy - h / 2, width / 2f + w / 2, cy + h / 2)
+        pillIconRight = pill.left + icon
+        stroke.color = ink
+        stroke.strokeWidth = 1.5f * d
+        if (fresh != null || mode == Mode.CLIPS) canvas.drawRoundRect(pill, h / 2, h / 2, stroke)
+        // The icon: a clipboard, a board with its clip.
+        val ix = pill.left + icon / 2
+        stroke.strokeCap = Paint.Cap.ROUND
+        canvas.drawRoundRect(RectF(ix - 6 * d, cy - 7 * d, ix + 6 * d, cy + 8 * d), 2 * d, 2 * d, stroke)
+        canvas.drawLine(ix - 3 * d, cy - 8 * d, ix + 3 * d, cy - 8 * d, stroke)
+        if (label != null) {
+            text.textAlign = Paint.Align.LEFT
+            text.color = ink
+            canvas.drawText(label, pillIconRight + 4 * d, cy - (text.fontMetrics.ascent + text.fontMetrics.descent) / 2, text)
+            text.textAlign = Paint.Align.CENTER
+        }
     }
 
     private fun labelSize(key: Key): Float {
@@ -504,20 +562,22 @@ class KeyboardView(
         if (e.actionMasked == MotionEvent.ACTION_DOWN) {
             pickerTouch =
                 when {
+                    mode == Mode.CLIPS && clips != null && e.y < headroomPx + boardPx -> Mode.CLIPS
                     picker == null -> null
                     mode == Mode.EMOJI && e.y < headroomPx + boardPx -> Mode.EMOJI
                     mode == Mode.SEARCH && e.y >= headroomPx && e.y < headroomPx + bandPx -> Mode.SEARCH
                     else -> null
                 }
-            if (mode == Mode.EMOJI && pickerTouch == null) {
+            if ((mode == Mode.EMOJI || mode == Mode.CLIPS) && pickerTouch == null) {
                 stripTap(dpX(e.x))
                 return true
             }
         }
         when (pickerTouch) {
             Mode.EMOJI -> return picker?.touch(e) ?: true
+            Mode.CLIPS -> return clips?.touch(e) ?: true
             Mode.SEARCH -> return picker?.touchBand(e) ?: true
-            else -> if (mode == Mode.EMOJI) return true
+            else -> if (mode == Mode.EMOJI || mode == Mode.CLIPS) return true
         }
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
@@ -593,7 +653,11 @@ class KeyboardView(
     /** A touch on the strip under the keys, when it is ours: the split switch and the hide arrow; the rest of it does nothing. */
     private fun stripTap(x: Float) {
         if (!ownStrip) return
-        if (x < STRIP_BUTTON_DP && host.canSplit) {
+        val px = x * density
+        if (px >= pill.left - 8 * density && px <= pill.right + 8 * density) {
+            tick()
+            host.clipboard(paste = px > pillIconRight && mode != Mode.CLIPS && host.freshClip != null)
+        } else if (x < STRIP_BUTTON_DP && host.canSplit) {
             tick()
             host.toggleSplit()
         } else if (x > width / density - STRIP_BUTTON_DP) {

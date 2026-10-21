@@ -25,6 +25,8 @@
     <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
     <!-- Speech input for the agent prompt bar; only recognized text reaches Linux. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- People in search: found by name, called or texted from there (Boss's banked search list, 2026-10-20). -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
 
     <!-- Uninstall from the app drawer's long-press menu (ACTION_DELETE). -->
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />

@@ -34,7 +34,7 @@ object FileIndex {
     /** Whether Android lets Soma read all of shared storage ("All files access"); Linux's files are its own either way. */
     fun storageAllowed() = Environment.isExternalStorageManager()
 
-    private const val SCHEMA = 1
+    private const val SCHEMA = 2
 
     fun open(
         context: Context,
@@ -49,6 +49,8 @@ object FileIndex {
                 db.execSQL("CREATE TABLE IF NOT EXISTS files(id INTEGER PRIMARY KEY, path TEXT UNIQUE NOT NULL, name TEXT NOT NULL, size INTEGER, modified INTEGER, read INTEGER DEFAULT 0)")
                 // The words of each file's name, and its text: prefix searches go through the prefix indexes.
                 db.execSQL("CREATE VIRTUAL TABLE IF NOT EXISTS fts USING fts4(name, body, tokenize=unicode61 \"remove_diacritics=1\", prefix=\"2,3,4\")")
+                // The index's own list of its words, for reading a typo in a name as the word meant.
+                db.execSQL("CREATE VIRTUAL TABLE IF NOT EXISTS terms USING fts4aux(fts)")
                 db.version = SCHEMA
             }
             db
@@ -67,6 +69,43 @@ object FileIndex {
                 buildList { while (c.moveToNext()) add(FileQuery.Hit(c.getString(0), c.getString(1), c.getLong(2), c.getLong(3))) }
             }
         }.getOrDefault(emptyList())
+    }
+
+    /**
+     * For a [query] whose words no file name has: the query with each word no name begins read as the name word it
+     * was most likely meant to be ("invioce" as "invoice"), and the files with those. Null when nothing is near.
+     */
+    fun byNameMisspelt(
+        db: SQLiteDatabase,
+        query: String,
+    ): Pair<String, List<FileQuery.Hit>>? {
+        val words = FileQuery.words(query)
+        if (words.isEmpty()) return null
+        var changed = false
+        val fixed =
+            words.mapIndexed { i, w ->
+                val found = runCatching {
+                        db.compileStatement("SELECT count(*) FROM fts WHERE fts MATCH ?").use {
+                            it.bindString(1, "name:\"$w\"*")
+                            it.simpleQueryForLong()
+                        }
+                    }.getOrDefault(0)
+                if (found > 0) return@mapIndexed w
+                val most = FileQuery.typos(w.length)
+                if (most == 0) return@mapIndexed w
+                // Words with the same first letter and about as long; a first letter mistyped is rare.
+                val near = ArrayList<Pair<String, Int>>()
+                runCatching {
+                    db.rawQuery(
+                        "SELECT term, documents FROM terms WHERE col = 0 AND term >= ? AND term < ? AND length(term) BETWEEN ? AND ?",
+                        arrayOf(w.substring(0, 1), w.substring(0, 1) + "\uffff", (w.length - most).toString(), (w.length + if (i == words.lastIndex) 40 else most).toString()),
+                    ).use { c -> while (c.moveToNext()) near += c.getString(0) to c.getInt(1) }
+                }
+                FileQuery.corrected(w, near, last = i == words.lastIndex)?.also { changed = true } ?: w
+            }
+        if (!changed) return null
+        val q = fixed.joinToString(" ")
+        return byName(db, q).takeIf { it.isNotEmpty() }?.let { q to it }
     }
 
     /** Files with every word of [query] in their text, with the words around the match; newest first. */

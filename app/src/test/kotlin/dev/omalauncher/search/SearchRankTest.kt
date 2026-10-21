@@ -192,4 +192,22 @@ class SearchRankTest {
         assertNull(Calculator.answer("wi-fi"))
         assertNotNull(Calculator.answer("10-4"))
     }
+
+    @Test fun recentSearchesNewestFirstOnceEachAndKept() {
+        val m = SearchMemory()
+        val t = 1_800_000_000_000L
+        m.visit("app:firefox", "ff", t)
+        m.searched("lease agreement", t + 1)
+        m.searched("FF", t + 2)
+        m.searched("  ", t + 3)
+        assertEquals(listOf("FF", "lease agreement"), m.recent(t + 10))
+        val back = SearchMemory.parse(m.toText())
+        assertEquals(listOf("FF", "lease agreement"), back.recent(t + 10))
+        // A month on they are let go.
+        assertEquals(emptyList<String>(), back.recent(t + SearchMemory.RECENT_FOR_MS + 10))
+        repeat(12) { m.searched("q$it", t + 100 + it) }
+        assertEquals(SearchMemory.RECENT_KEPT, m.recent(t + 200).size)
+        m.forgetRecent()
+        assertEquals(emptyList<String>(), m.recent(t + 200))
+    }
 }

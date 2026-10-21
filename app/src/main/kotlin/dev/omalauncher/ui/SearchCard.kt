@@ -81,6 +81,9 @@ import dev.omalauncher.search.Calculator
 import dev.omalauncher.search.FileIndex
 import dev.omalauncher.search.FileIndexJob
 import dev.omalauncher.search.FileQuery
+import dev.omalauncher.search.MacFiles
+import dev.omalauncher.search.People
+import androidx.compose.ui.draw.clip
 import dev.omalauncher.search.PhotoIndex
 import dev.omalauncher.search.PhotoIndexJob
 import dev.omalauncher.search.PhotoMac
@@ -94,6 +97,7 @@ import dev.omalauncher.widgets.CockpitModules
 import dev.omalauncher.widgets.annotations.HomeAnnotations
 import java.io.File
 import kotlin.concurrent.thread
+import kotlinx.coroutines.launch
 
 /**
  * Soma's search, pulled down from home (Boss, 2026-10-20, after typecraft's oma-cast: "a search bar that truly can
@@ -192,14 +196,97 @@ internal fun SearchCard(
                         if (d == null) {
                             FileResults(indexing = true)
                         } else {
-                            val names = FileQuery.rankNames(FileIndex.byName(d, q), q, System.currentTimeMillis()) { memory.frecency("file:$it", System.currentTimeMillis()) }.take(FILES_SHOWN)
-                            val shown = names.map { it.path }.toSet()
-                            val texts = FileIndex.byText(d, q).filter { it.path !in shown }.take(FILES_SHOWN)
-                            FileResults(names, texts, indexing = FileIndex.count(d) == 0L)
+                            fun ranked(hits: List<FileQuery.Hit>, q: String) = FileQuery.rankNames(hits, q, System.currentTimeMillis()) { memory.frecency("file:$it", System.currentTimeMillis()) }.take(RERANK_NAMES)
+                            var names = ranked(FileIndex.byName(d, q), q)
+                            val texts = FileIndex.byText(d, q).filter { t -> names.none { it.path == t.path } }
+                            // No name has these words: a typo, read as the name word it was most likely meant to be.
+                            var fixed: String? = null
+                            if (names.isEmpty() && texts.isEmpty()) {
+                                FileIndex.byNameMisspelt(d, q)?.let { (f, hits) ->
+                                    fixed = f
+                                    names = ranked(hits, f)
+                                }
+                            }
+                            FileResults(names, texts, indexing = FileIndex.count(d) == 0L, fixed = fixed)
                         }
                     }
                 }
             }
+    }
+
+    // When the typing rests, the Mac's model orders the files by what they mean, the text matches especially (the
+    // index has them only newest first). Until it answers, or if it can't be reached, they stay as they were.
+    val reordered by androidx.compose.runtime.produceState<FileResults?>(null, files) {
+        value = null
+        val q = query.trim()
+        if (q.length < 3 || (files.names.size < 2 && files.texts.size < 2)) return@produceState
+        kotlinx.coroutines.delay(RERANK_PAUSE_MS)
+        value =
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val root = FileIndex.storageRoot()
+                val home = FileIndex.linuxHome(context)
+                val all = files.names + files.texts
+                val near = PhotoMac.rerank(PhotoMac.base(context), q, all.map { FileQuery.meaning(it, FileQuery.folder(it.path, root, home)) }) ?: return@withContext null
+                val n = files.names.size
+                FileResults(
+                    FileQuery.blend(files.names, near.copyOfRange(0, n), lexical = 0.6, query = q),
+                    FileQuery.blend(files.texts, near.copyOfRange(n, near.size), lexical = 0.3, query = q),
+                    files.indexing,
+                    files.fixed,
+                )
+            }
+    }
+    val shownFiles = reordered ?: files
+
+    // Files on the Mac Pro, by its Spotlight, when the typing rests; a pick is brought to the phone and opened.
+    val macFiles by androidx.compose.runtime.produceState(emptyList<MacFiles.Hit>(), query) {
+        val q = query.trim()
+        if (q.length < 3) {
+            value = emptyList()
+            return@produceState
+        }
+        kotlinx.coroutines.delay(RERANK_PAUSE_MS)
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { MacFiles.search(PhotoMac.base(context), q) }
+    }
+    // People, by Android's own contacts search, as each letter comes: it is indexed and quick.
+    var contactsAsk by remember { mutableStateOf(SearchStore.askContacts(context)) }
+    val people by androidx.compose.runtime.produceState(emptyList<People.Person>(), query, version) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { People.find(context, query) }
+    }
+    // What was copied lately, as the Soma keyboard kept it.
+    val clipHits = remember(query) { dev.omalauncher.keyboard.ClipHistory.of(context).find(query, System.currentTimeMillis()) }
+    var personActing by remember { mutableStateOf<People.Person?>(null) }
+
+    fun reach(intent: Intent) {
+        memory.searched(query, System.currentTimeMillis())
+        SearchStore.save(context, memory)
+        close()
+        runCatching { context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+    }
+
+    var macActing by remember { mutableStateOf<MacFiles.Hit?>(null) }
+    var bringing by remember { mutableStateOf<String?>(null) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+
+    fun bring(
+        hit: MacFiles.Hit,
+        share: Boolean,
+    ) {
+        if (bringing != null) return
+        bringing = hit.path
+        scope.launch {
+            val dest = File(MacFiles.folder(FileIndex.storageRoot()), hit.name)
+            val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { MacFiles.bring(PhotoMac.base(context), hit, dest) }
+            bringing = null
+            if (ok) {
+                memory.visit("mac:${hit.path}", query, System.currentTimeMillis())
+                SearchStore.save(context, memory)
+                close()
+                handFile(context, dest.path, share)
+            } else {
+                android.widget.Toast.makeText(context, "Couldn't bring ${hit.name} from the Mac Pro", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     fun openFile(hit: FileQuery.Hit) {
@@ -294,7 +381,31 @@ internal fun SearchCard(
                             item { Section("Suggestions", muted) }
                             items(suggestions, key = { "s:" + it.c.id }) { SearchResult(runtime, it, ink, muted, line, { run(it) }, { acting = it }) }
                         }
-                        if (favorites.isEmpty() && suggestions.isEmpty()) {
+                        val recent = memory.recent(now)
+                        if (recent.isNotEmpty()) {
+                            item {
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                    Box(Modifier.weight(1f)) { Section("Recent searches", muted) }
+                                    BasicText(
+                                        "Clear",
+                                        Modifier.clickable {
+                                            memory.forgetRecent()
+                                            SearchStore.save(context, memory)
+                                            version++
+                                        }.padding(horizontal = 14.dp, vertical = 6.dp),
+                                        style = Pack.body(Pack.size.small, Pack.red),
+                                    )
+                                }
+                            }
+                            item {
+                                LazyRow(Modifier.fillMaxWidth(), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    items(recent, key = { "r:$it" }) { r ->
+                                        BasicText(r, Modifier.border(1.dp, line.copy(alpha = 0.6f)).clickable { query = r }.padding(horizontal = 10.dp, vertical = 6.dp), style = Pack.body(Pack.size.small, ink), maxLines = 1)
+                                    }
+                                }
+                            }
+                        }
+                        if (favorites.isEmpty() && suggestions.isEmpty() && recent.isEmpty()) {
                             item { BasicText("Type to search apps, Soma and settings. Long-press a result to make it a favorite.", Modifier.padding(16.dp), style = Pack.body(Pack.size.small, muted)) }
                         }
                     } else {
@@ -320,14 +431,74 @@ internal fun SearchCard(
                             item { Section(title, muted) }
                             items(here, key = { it.c.id }) { SearchResult(runtime, it, ink, muted, line, { run(it) }, { acting = it }) }
                         }
+                        if (people.isNotEmpty()) {
+                            item { Section("People", muted) }
+                            items(people, key = { "p:" + it.id }) { p ->
+                                PersonRow(p, ink, muted, line, onOpen = { reach(People.open(p)) }, onCall = { n -> reach(People.call(n)) }, onText = { n -> reach(People.text(n)) }, onLong = { personActing = p })
+                            }
+                        } else if (contactsAsk && query.trim().length >= 2 && !People.allowed(context)) {
+                            item {
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                    BasicText(
+                                        "Find people here too: tap to let Soma read your contacts.",
+                                        Modifier.weight(1f).clickable {
+                                            activityOf(context)?.requestPermissions(arrayOf(android.Manifest.permission.READ_CONTACTS), CONTACTS_REQUEST)
+                                        }.padding(14.dp),
+                                        style = Pack.body(Pack.size.small, ink),
+                                    )
+                                    BasicText(
+                                        "Not now",
+                                        Modifier.clickable {
+                                            SearchStore.declineContacts(context)
+                                            contactsAsk = false
+                                        }.padding(14.dp),
+                                        style = Pack.body(Pack.size.small, muted),
+                                    )
+                                }
+                            }
+                        }
+                        if (clipHits.isNotEmpty()) {
+                            item { Section("Clipboard", muted) }
+                            items(clipHits, key = { "c:" + it.at }) { c ->
+                                Row(
+                                    Modifier.fillMaxWidth().clickable {
+                                        memory.searched(query, System.currentTimeMillis())
+                                        SearchStore.save(context, memory)
+                                        copyText(context, c.text)
+                                        close()
+                                    }.padding(horizontal = 14.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                ) {
+                                    Box(Modifier.size(36.dp).border(1.dp, line), contentAlignment = Alignment.Center) { BasicText("⧉", style = Pack.body(Pack.size.body, ink)) }
+                                    Column(Modifier.weight(1f)) {
+                                        BasicText(dev.omalauncher.keyboard.ClipHistory.oneLine(c.text), style = Pack.body(Pack.size.body, ink), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                        BasicText("Copied " + android.text.format.DateUtils.getRelativeTimeSpanString(c.at, System.currentTimeMillis(), android.text.format.DateUtils.MINUTE_IN_MILLIS) + " · tap to copy again", style = Pack.body(Pack.size.small, muted), maxLines = 1)
+                                    }
+                                }
+                            }
+                        }
                         if (photos.isNotEmpty()) {
                             item { Section("Photos & videos", muted) }
-                            item(key = "photos") { PhotoGrid(photos, line) { close() } }
+                            item(key = "photos") {
+                                PhotoGrid(photos, line) {
+                                    memory.searched(query, System.currentTimeMillis())
+                                    SearchStore.save(context, memory)
+                                    close()
+                                }
+                            }
                         }
-                        if (files.names.isNotEmpty() || files.texts.isNotEmpty()) {
-                            item { Section("Files", muted) }
-                            items(files.names, key = { "fn:" + it.path }) { FileRow(it, ink, muted, line, { openFile(it) }, { fileActing = it }) }
-                            items(files.texts, key = { "ft:" + it.path }) { FileRow(it, ink, muted, line, { openFile(it) }, { fileActing = it }) }
+                        if (shownFiles.names.isNotEmpty() || shownFiles.texts.isNotEmpty()) {
+                            item { Section(shownFiles.fixed?.let { "Files · for “$it”" } ?: "Files", muted) }
+                            items(shownFiles.names.take(FILES_SHOWN), key = { "fn:" + it.path }) { FileRow(it, ink, muted, line, { openFile(it) }, { fileActing = it }) }
+                            items(shownFiles.texts.take(FILES_SHOWN), key = { "ft:" + it.path }) { FileRow(it, ink, muted, line, { openFile(it) }, { fileActing = it }) }
+                        }
+                        if (macFiles.isNotEmpty()) {
+                            item { Section("On the Mac Pro", muted) }
+                            items(macFiles, key = { "mac:" + it.path }) { m ->
+                                val where = "Mac Pro · " + MacFiles.where(m.path) + if (bringing == m.path) " · bringing it over…" else ""
+                                FileRow(FileQuery.Hit(m.path, m.name, m.modified, m.size), ink, muted, line, { bring(m, share = false) }, { macActing = m }, where = where)
+                            }
                         }
                         if (!FileIndex.storageAllowed()) {
                             item {
@@ -347,7 +518,14 @@ internal fun SearchCard(
                             item { BasicText("Files are still being indexed…", Modifier.padding(14.dp), style = Pack.body(Pack.size.small, muted)) }
                         }
                         item { Section("Use “${query.trim()}” with…", muted) }
-                        items(fallbacks(context, query.trim()), key = { it.c.id }) { f -> SearchResult(runtime, f, ink, muted, line, { close(); f.run() }, null) }
+                        items(fallbacks(context, query.trim()), key = { it.c.id }) { f ->
+                            SearchResult(runtime, f, ink, muted, line, {
+                                memory.searched(query, System.currentTimeMillis())
+                                SearchStore.save(context, memory)
+                                close()
+                                f.run()
+                            }, null)
+                        }
                     }
                 }
             }
@@ -397,6 +575,36 @@ internal fun SearchCard(
                 home,
             ) { fileActing = null }
         }
+        personActing?.let { p ->
+            val n = p.number
+            ActionSheet(
+                p.name,
+                listOfNotNull(
+                    n?.let { "Call $it" to { personActing = null; reach(People.call(it)) } },
+                    n?.let { "Text $it" to { personActing = null; reach(People.text(it)) } },
+                    "Open in Contacts" to { personActing = null; reach(People.open(p)) },
+                    n?.let { "Copy number" to { personActing = null; copyText(context, it) } },
+                ),
+                ink,
+                line,
+                tint,
+                home,
+            ) { personActing = null }
+        }
+        macActing?.let { m ->
+            ActionSheet(
+                m.name,
+                listOf(
+                    "Bring to the phone and open" to { macActing = null; bring(m, share = false) },
+                    "Bring to the phone and share" to { macActing = null; bring(m, share = true) },
+                    "Copy its path on the Mac" to { macActing = null; copyText(context, m.path) },
+                ),
+                ink,
+                line,
+                tint,
+                home,
+            ) { macActing = null }
+        }
         aliasFor?.let { item ->
             AliasEditor(item, memory.alias(item.c.id).orEmpty(), ink, line, tint, home) { alias ->
                 if (alias != null) {
@@ -416,6 +624,10 @@ private const val PER_SECTION = 5
 
 /** How many files show by name, and how many more by what is in them. */
 private const val FILES_SHOWN = 5
+
+/** How many name matches the Mac orders when typing rests (the text matches are the index's 30 newest), and after how long a rest. */
+private const val RERANK_NAMES = 10
+private const val RERANK_PAUSE_MS = 400L
 
 /** How long typing rests before photos are looked for, and how many show at most. */
 private const val PHOTO_PAUSE_MS = 250L
@@ -473,6 +685,8 @@ private class FileResults(
     val names: List<FileQuery.Hit> = emptyList(),
     val texts: List<FileQuery.Hit> = emptyList(),
     val indexing: Boolean = false,
+    /** The query as the names were found by, when it was read as having a typo. */
+    val fixed: String? = null,
 )
 
 /** Hands the file at [path] to the app that opens (or, with [share], shares) its kind, through Soma's file provider. */
@@ -493,6 +707,69 @@ private fun handFile(
     runCatching { context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
 }
 
+/** The activity under [context], for asking a permission from it. */
+private fun activityOf(context: Context): android.app.Activity? {
+    var c: Context? = context
+    while (c is android.content.ContextWrapper) {
+        if (c is android.app.Activity) return c
+        c = c.baseContext
+    }
+    return null
+}
+
+private const val CONTACTS_REQUEST = 7301
+
+/** Someone found: their photo or first letter, name and number, and Call and Text at the side. */
+@Composable
+private fun PersonRow(
+    person: People.Person,
+    ink: Color,
+    muted: Color,
+    line: Color,
+    onOpen: () -> Unit,
+    onCall: (String) -> Unit,
+    onText: (String) -> Unit,
+    onLong: () -> Unit,
+) {
+    val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
+    val photo by androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, person.photo) {
+        value =
+            person.photo?.let { uri ->
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    runCatching { context.contentResolver.openInputStream(Uri.parse(uri))?.use { android.graphics.BitmapFactory.decodeStream(it) }?.asImageBitmap() }.getOrNull()
+                }
+            }
+    }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .combinedClickable(onClick = onOpen, onLongClick = {
+                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                onLong()
+            }).padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(Modifier.size(36.dp).border(1.dp, line, androidx.compose.foundation.shape.CircleShape).clipToBounds(), contentAlignment = Alignment.Center) {
+            val p = photo
+            if (p != null) {
+                Image(p, person.name, Modifier.fillMaxSize().then(Modifier.clip(androidx.compose.foundation.shape.CircleShape)), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+            } else {
+                BasicText(person.name.take(1).uppercase(), style = Pack.body(Pack.size.body, ink))
+            }
+        }
+        Column(Modifier.weight(1f)) {
+            BasicText(person.name, style = Pack.body(Pack.size.body, ink), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            person.number?.let { BasicText(it, style = Pack.body(Pack.size.small, muted), maxLines = 1) }
+        }
+        person.number?.let { n ->
+            BasicText("Call", Modifier.border(1.dp, line).clickable { onCall(n) }.padding(horizontal = 10.dp, vertical = 6.dp), style = Pack.body(Pack.size.small, ink))
+            BasicText("Text", Modifier.border(1.dp, line).clickable { onText(n) }.padding(horizontal = 10.dp, vertical = 6.dp), style = Pack.body(Pack.size.small, ink))
+        }
+    }
+}
+
 /** A file found: its kind, name and folder with when it changed, and for a match inside it, the words around it. */
 @Composable
 private fun FileRow(
@@ -502,6 +779,8 @@ private fun FileRow(
     line: Color,
     onOpen: () -> Unit,
     onLong: () -> Unit,
+    /** Where it is, said otherwise than by its folder on the phone. */
+    where: String? = null,
 ) {
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
@@ -521,9 +800,9 @@ private fun FileRow(
         }
         Column(Modifier.weight(1f)) {
             BasicText(hit.name, style = Pack.body(Pack.size.body, ink), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            val where = FileQuery.folder(hit.path, FileIndex.storageRoot(), FileIndex.linuxHome(context))
+            val place = where ?: FileQuery.folder(hit.path, FileIndex.storageRoot(), FileIndex.linuxHome(context))
             val date = android.text.format.DateUtils.getRelativeTimeSpanString(hit.modified, System.currentTimeMillis(), android.text.format.DateUtils.DAY_IN_MILLIS)
-            BasicText("$where · $date", style = Pack.body(Pack.size.small, muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            BasicText("$place · $date", style = Pack.body(Pack.size.small, muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
             hit.snippet?.let { BasicText(marked(it, ink), style = Pack.body(Pack.size.small, muted), maxLines = 2, overflow = TextOverflow.Ellipsis) }
         }
     }
@@ -833,6 +1112,11 @@ internal object SearchStore {
             }
         }
     }
+
+    /** Whether to offer to read contacts: until he says Not now. */
+    fun askContacts(context: Context) = !context.getSharedPreferences("search", Context.MODE_PRIVATE).getBoolean("contacts_declined", false)
+
+    fun declineContacts(context: Context) = context.getSharedPreferences("search", Context.MODE_PRIVATE).edit().putBoolean("contacts_declined", true).apply()
 
     /** `glass=clear` or `glass=smoke`, from the guest's ~/.config/omalauncher/search.conf: set by an agent when he asks. */
     fun glass(context: Context): String =
