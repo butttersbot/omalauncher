@@ -982,6 +982,13 @@ private fun fallbacks(
     return listOf(
         SearchItem(Candidate("ask:soma", "Ask Soma", Kind.LINK, query), glyph = "✦") { openOmaChat(context, query) },
         web("google", "Search Google", "https://www.google.com/search?q=", "G"),
+        // Apps not installed yet: the Play Store's own search (Boss, 2026-10-20), or its web page if the store is missing.
+        SearchItem(Candidate("web:play", "Search Play Store", Kind.LINK, query), glyph = "▷") {
+            val store = Intent(Intent.ACTION_VIEW, Uri.parse("market://search?c=apps&q=" + Uri.encode(query))).setPackage("com.android.vending").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            runCatching { context.startActivity(store) }.onFailure {
+                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/search?c=apps&q=" + Uri.encode(query))).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            }
+        },
         web("youtube", "Search YouTube", "https://www.youtube.com/results?search_query=", "▶"),
         web("x", "Search X", "https://x.com/search?q=", "𝕏"),
     )
