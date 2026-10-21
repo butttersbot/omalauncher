@@ -260,6 +260,37 @@ def spotlight(q, n):
     return items[:n]
 
 
+def open_soon(path, wait=3.0):
+    """The file opened, or None if macOS is still asking whether this service may read its folder: that open() waits
+    until someone answers the prompt on the Mac, which may be never. A late open is closed by its own thread."""
+    box = {}
+
+    def go():
+        try:
+            f = open(path, "rb")
+        except OSError as e:
+            box["error"] = e
+            return
+        with _open_lock:
+            if box.get("late"):
+                f.close()
+            else:
+                box["file"] = f
+
+    t = threading.Thread(target=go, daemon=True)
+    t.start()
+    t.join(wait)
+    with _open_lock:
+        if "file" not in box and "error" not in box:
+            box["late"] = True
+    if "error" in box:
+        raise box["error"]
+    return box.get("file")
+
+
+_open_lock = threading.Lock()
+
+
 class Handler(BaseHTTPRequestHandler):
     def reply(self, code, body):
         data = json.dumps(body).encode()
@@ -290,8 +321,10 @@ class Handler(BaseHTTPRequestHandler):
             # Opened before answering: if macOS hasn't let this service into the folder, say so instead of a 200 with
             # nothing after it.
             try:
-                f = open(path, "rb")
+                f = open_soon(path)
             except PermissionError:
+                f = None
+            if f is None:
                 return self.reply(403, {"error": "macOS hasn't let the embed-server into this folder"})
             with f:
                 self.send_response(200)
