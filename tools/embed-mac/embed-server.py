@@ -7,7 +7,7 @@ each photo search's words; it keeps what comes back. See docs/SEARCH-PHOTOS-MAC.
   POST /text    {"texts": [...]}                         -> {"vectors": [[...256 floats]]}
   POST /images  {"images": [{"id": "...", "jpeg": "<base64>"}]} -> {"items": [{"id", "vector", "text", "tags"}]}
   POST /rerank  {"query": "...", "docs": ["...", ...]}  -> {"scores": [...]}: how near each doc is to the query
-  GET  /spotlight?q=WORDS&n=12  -> {"items": [{"path", "name", "kind", "modified", "size"}]}: Spotlight, in ~
+  GET  /spotlight?q=WORDS&n=12  -> {"items": [{"path", "name", "kind", "modified", "size"}]}: Spotlight, in his folders
   GET  /file?path=PATH          -> the file itself, for the phone to keep (only under ~, at most 500 MB)
 
 /spotlight and /file answer only devices signed in as this Mac's own Tailscale user (`tailscale whois`, as
@@ -178,20 +178,28 @@ def owner(address):
     return ok
 
 
-# Never offered: the system's and apps' own stores, caches, and package or build trees.
-SKIPPED = ("/Library/", "/.Trash/", "/node_modules/", "/.git/", "/build/", "/DerivedData/", "/Caches/", "/.cache/", "/venv/", "/.venv/", "/__pycache__/")
+# Where his own files are: Spotlight is asked only here, so a search finds his papers, not a library's source.
+ROOTS = ("Desktop", "Documents", "Downloads", "Pictures", "Movies", "Music", "Inbox", "Pocket", "ClaudeSync",
+         "Library/Mobile Documents/com~apple~CloudDocs")
+# Never offered: caches, and package, environment or build trees, wherever they are.
+SKIPPED = ("/.Trash/", "/node_modules/", "/.git/", "/build/", "/DerivedData/", "/Caches/", "/.cache/", "/venv/", "/.venv/",
+           "/__pycache__/", "/site-packages/", "/env/", "/Pods/", "/target/", "/dist/")
+# What a person opens, ahead of code and data when both match as well.
+DOCUMENTS = {"pdf", "doc", "docx", "pages", "key", "numbers", "xls", "xlsx", "ppt", "pptx", "txt", "md", "rtf", "csv",
+             "jpg", "jpeg", "png", "heic", "gif", "mov", "mp4", "m4a", "mp3", "wav", "zip", "epub", "html"}
 
 
 def spotlight(q, n):
-    """Files in ~ whose name or text has every word of [q], by Spotlight's own index (mdfind): names first, then the
-    newest. A second at most: past that what has come is what there is."""
+    """His files (in [ROOTS]) whose name or text has every word of [q], by Spotlight's own index (mdfind): names
+    first, documents before code, then the newest. A second at most: past that what has come is what there is."""
     # Spotlight's query language: quotes, stars and backslashes in a word would change what it asks.
     words = [w for w in q.translate(str.maketrans('"*\\', "   ")).split() if w][:6]
     if not words:
         return []
     each = ['(kMDItemDisplayName == "*%s*"cd || kMDItemTextContent == "%s*"cdw)' % (w, w) for w in words]
     try:
-        proc = subprocess.Popen(["mdfind", "-onlyin", HOME, " && ".join(each)], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        where = [a for r in ROOTS if os.path.isdir(os.path.join(HOME, r)) for a in ("-onlyin", os.path.join(HOME, r))]
+        proc = subprocess.Popen(["mdfind", *where, " && ".join(each)], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
     except OSError:
         return []
     paths = []
@@ -200,7 +208,7 @@ def spotlight(q, n):
         for line in proc.stdout:
             p = line.rstrip("\n")
             rel = p[len(HOME):] + "/"
-            if any(x in rel for x in SKIPPED) or "/." in rel or ".app/" in rel:
+            if any(x in rel for x in SKIPPED) or "/." in rel or ".app/" in rel or ".photoslibrary/" in rel:
                 continue
             paths.append(p)
             if len(paths) >= 400 or time.time() > deadline:
@@ -223,7 +231,7 @@ def spotlight(q, n):
             "modified": int(st.st_mtime * 1000), "size": 0 if folder else st.st_size,
             "byName": all(w in name.lower() for w in lower),
         })
-    items.sort(key=lambda it: (not it["byName"], -it["modified"]))
+    items.sort(key=lambda it: (not it["byName"], it["kind"] not in DOCUMENTS, -it["modified"]))
     return items[:n]
 
 

@@ -25,7 +25,7 @@ loaded for that search and freed after.
   `/health` says `reads`: the phone sends again the photos a server with fewer reads saw (2 = tags).
 - `POST /rerank {"query", "docs"}`: how near each result's words are to the query (documents carry
   `title: none | text:`), for ordering files when typing pauses. Document vectors are cached.
-- `GET /spotlight?q=&n=` (Spotlight over `~`, names first) and `GET /file?path=` (a file under `~`, 500 MB at
+- `GET /spotlight?q=&n=` (Spotlight over his own folders — Desktop, Documents, Downloads, iCloud Drive, Inbox, Pocket, ClaudeSync…; names first, documents before code) and `GET /file?path=` (a file under `~`, 500 MB at
   most) answer only devices of this Mac's own Tailscale user, checked with `tailscale whois`.
 
 ## The phone side (`search/PhotoIndex.kt`)
