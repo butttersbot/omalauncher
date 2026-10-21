@@ -6,7 +6,7 @@ import org.junit.Test
 
 /** While the owner has an approval to answer, the agent may look at the phone but not touch it. */
 class PendingApprovalGuardTest {
-    private val acting = listOf("click", "type", "scroll", "press", "fill", "tap", "swipe", "back", "home", "recents", "notifications", "open")
+    private val acting = listOf("click", "type", "scroll", "press", "fill", "tap", "swipe", "back", "home", "recents", "notifications", "open", "url", "submit")
 
     @Test fun everyPhoneCommandWorksWithNothingPending() {
         for (command in acting + PhoneControlPolicy.whilePending) PhoneControlPolicy.requireNoPendingApproval(0, command)

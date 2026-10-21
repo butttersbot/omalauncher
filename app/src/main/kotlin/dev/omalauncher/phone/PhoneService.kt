@@ -71,6 +71,8 @@ class PhoneService : AccessibilityService() {
     private var stay = false
     /** He took the phone himself since the agent's first move: nothing is brought back over what he chose. */
     private var took = false
+    /** The app the agent last opened (`open`, `url`): its touches are for that app until it says otherwise ([PhoneGuard]). */
+    private var opened: String? = null
     override fun onServiceConnected() {
         PhoneAccess.load(this); instance = this
         PhoneControlHeal.connected(this, paused = !PhoneAccess.active)
@@ -214,7 +216,7 @@ class PhoneService : AccessibilityService() {
     fun workEnded() = main.post {
         val keyguard = getSystemService(android.app.KeyguardManager::class.java)
         val back = phoneBack(origin, place, stay, took, keyguard?.isKeyguardLocked == true)
-        origin = null; stay = false; took = false
+        origin = null; stay = false; took = false; opened = null
         if (back !is PhoneBack.Bring) return@post android.util.Log.i("PhoneService", "Not brought back: ${(back as PhoneBack.Leave).why}").let { }
         runCatching {
             when (val was = back.origin) {
@@ -294,6 +296,8 @@ class PhoneService : AccessibilityService() {
         override fun show(index: Int) {
             HomeDoor.ask(notebook.pages[index].id)
             startActivity(Intent(this@PhoneService, dev.omalauncher.MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            // Home was asked for by name: the agent's touches are no longer for the app it opened before.
+            opened = null
             changed()
         }
     }
@@ -315,6 +319,21 @@ class PhoneService : AccessibilityService() {
         // The same tiles a note is kept clear of, and the notes as the book has them: what `board` tells is what `note` avoids.
         override fun look(page: String, then: (dev.omalauncher.widgets.annotations.PageBoard, dev.omalauncher.widgets.annotations.Annotations?) -> Unit) =
             book.whenRead(page) { read -> then(notebook.board(page), if (read) book.on(page) else null) }
+    }
+    /**
+     * Answers an `open` or `url` once [pkg] is the app in front, so the agent's next step isn't refused for an app still
+     * on its way; after [PhoneTouch.UNTIL_MILLIS] it answers anyway, saying it isn't. With no app to wait for, at once.
+     */
+    private fun whenInFront(pkg: String?, output: JSONObject, reply: (JSONObject) -> Unit) {
+        output.put("opened", pkg.orEmpty())
+        if (pkg == null) { reply(output); return }
+        val deadline = SystemClock.uptimeMillis() + PhoneTouch.UNTIL_MILLIS
+        fun look() {
+            val front = runCatching { rootInActiveWindow?.packageName?.toString() }.getOrNull()
+            if (front == pkg || SystemClock.uptimeMillis() >= deadline) { reply(output.put("inFront", front == pkg).put("front", front.orEmpty())); return }
+            main.postDelayed({ look() }, PhoneTouch.UNTIL_STEP_MILLIS)
+        }
+        look()
     }
     /** Does [command] (click, type or scroll) to the control at [id] of the screen last read; [reply] hears how it went. */
     private fun act(command: String, id: String, input: JSONObject, reply: (JSONObject) -> Unit) {
@@ -394,7 +413,14 @@ class PhoneService : AccessibilityService() {
             // The checks and their order are PhoneRequests.admit's; nothing below runs for a request it didn't let through.
             // A request of a thread on the Mac waits for the owner as the phone builder's does, and its card is on this screen too.
             val route = PhoneRequests.admit(command, { PhoneAccess.requireAccess(this) }) { dev.omalauncher.assist.AgentTasks.pending.size + dev.omalauncher.assist.MacThreads.pending.size }
-            if (route == PhoneRequests.Route.Status) { reply(JSONObject().put("ok", true).put("active", PhoneAccess.active).put("connected", true)); return }
+            // Locked, asleep or paused is said up front, before an agent plans steps that would each fail on it.
+            if (route == PhoneRequests.Route.Status) {
+                reply(JSONObject().put("ok", true).put("active", PhoneAccess.active).put("connected", true)
+                    .put("locked", getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+                    .put("awake", getSystemService(PowerManager::class.java).isInteractive)
+                    .put("opened", opened ?: ""))
+                return
+            }
             if (route == PhoneRequests.Route.Stop) { PhoneAccess.stop(this); reply(JSONObject().put("ok", true)); return }
             // Home's pages: read and turned behind the same gates as everything else, and never while an approval waits.
             if (route == PhoneRequests.Route.Pages) { reply(PhonePages.reply(input, homeBook())); return }
@@ -472,6 +498,10 @@ class PhoneService : AccessibilityService() {
                 if (settle == 0L) capture.run() else main.postDelayed(capture, settle)
                 return
             }
+            // A touch is for the app the agent opened, or the one it names, and never types into his own chat box.
+            PhoneGuard.refusal(command, front = runCatching { rootInActiveWindow?.packageName?.toString() }.getOrNull().orEmpty(),
+                asked = input.optString("in"), any = input.optBoolean("any"), opened = opened, own = packageName, chat = place == PhoneOrigin.Chat)
+                ?.let { error(it) }
             val output = JSONObject().put("ok", true)
             when (command) {
                 "apps" -> {
@@ -483,8 +513,40 @@ class PhoneService : AccessibilityService() {
                     val name = input.getString("package")
                     val intent = if (name == "settings") android.content.Intent(android.provider.Settings.ACTION_SETTINGS)
                         else packageManager.getLaunchIntentForPackage(name) ?: error("No visible launcher activity for this package. Run apps.")
+                    // What opens it is the app the agent's touches are for from here.
+                    opened = PhoneGuard.opened(if (name == "settings") packageManager.resolveActivity(intent, 0)?.activityInfo?.packageName else name)
                     startActivity(intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
                     changed()
+                    whenInFront(opened, output, reply)
+                    return
+                }
+                // A link opened as a link (handoff 2026-10-21): never typed into an address bar.
+                "url" -> {
+                    val link = PhoneGuard.webUrl(input.getString("url")).getOrThrow()
+                    val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(link)).addCategory(Intent.CATEGORY_BROWSABLE)
+                    input.optString("app").takeIf { it.isNotEmpty() }?.let { intent.setPackage(it) }
+                    val handler = packageManager.resolveActivity(intent, 0)?.activityInfo?.packageName
+                        ?: error(if (intent.`package` != null) "${intent.`package`} can't open that link. Nothing was opened." else "No app on the phone opens that link. Nothing was opened.")
+                    opened = PhoneGuard.opened(handler)
+                    startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    changed()
+                    whenInFront(opened, output.put("chooser", opened == null), reply)
+                    return
+                }
+                // The keyboard's own Enter, Go or Search, on the field that has it: no key read off a picture.
+                "submit" -> {
+                    if (Build.VERSION.SDK_INT < 30) error("Submit needs Android 11 or later.")
+                    val field = findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: error("No text field has the keyboard. Fill one first. Nothing was done.")
+                    try {
+                        check(field.isEditable) { "What has the keyboard is not a text field. Nothing was done." }
+                        check(field.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)) { "The field did not take Enter. Read the screen again." }
+                    } finally { field.recycle() }
+                    changed()
+                    settled {
+                        try { PhoneAccess.requireAccess(this); reply(PhoneScreen.brief(read())) }
+                        catch (e: Exception) { reply(JSONObject().put("ok", false).put("error", e.message ?: "Phone control failed")) }
+                    }
+                    return
                 }
                 "read" -> {
                     // Right after one of this service's own actions the screen is still on its way to what the action did.
@@ -519,7 +581,6 @@ class PhoneService : AccessibilityService() {
                 }
                 "press", "fill" -> {
                     val label = input.getString("label")
-                    PhoneScreen.requireFront(read(), input.optString("in"))
                     // One call does the step and gives back what it led to, so the next step starts from the real screen.
                     fun step(id: String, scrolled: Int) = act(if (command == "press") "click" else "type", id, input) { done ->
                         if (!done.optBoolean("ok")) { reply(done); return@act }
@@ -563,6 +624,8 @@ class PhoneService : AccessibilityService() {
                 "back", "home", "recents", "notifications" -> {
                     val action = when (command) { "back" -> GLOBAL_ACTION_BACK; "home" -> GLOBAL_ACTION_HOME; "recents" -> GLOBAL_ACTION_RECENTS; else -> GLOBAL_ACTION_NOTIFICATIONS }
                     check(performGlobalAction(action)) { "Android rejected navigation" }
+                    // Leaving for home, recents or the shade is the agent's own choice: its touches are no longer held to the app.
+                    if (command != "back") opened = null
                     changed()
                 }
                 "tap", "swipe" -> {

@@ -46,6 +46,12 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
+        <!-- The browsers, so oma-phone url can say which app a link opens in (PhoneGuard). -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" />
+        </intent>
         <!-- Lets SpeechRecognizer find the phone's recognition service. -->
         <intent>
             <action android:name="android.speech.RecognitionService" />
