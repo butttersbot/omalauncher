@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Soma News: mock-up</title>
+<!--
+  Soma's personal news (Boss, 2026-10-21, after Tailscale's FreshRSS post: "how do we build the delightful personal
+  news reader?"). FreshRSS on the Mac Pro over the tailnet collects his feeds; Grok brings in the X accounts and lists
+  he picks (X has no RSS); an agent writes the morning digest. A mock-up only: every story here is sample text.
+-->
+<style>
+  @font-face { font-family: "M Display"; src: url(../app/src/main/assets/packs/manga/fonts/DelaGothicOne-Regular.ttf); }
+  @font-face { font-family: "M Body"; src: url(../app/src/main/assets/packs/manga/fonts/SchibstedGrotesk.ttf); }
+  @font-face { font-family: "M Hand"; src: url(../app/src/main/assets/packs/manga/fonts/PatrickHand-Regular.ttf); }
+  @font-face { font-family: "M Mono"; src: url(../app/src/main/assets/packs/manga/fonts/JetBrainsMono.ttf); }
+  :root { --paper: #fdfdfb; --ink: #111113; --muted: #77777e; --red: #d7262d; --tone: #e9e9ea; --line: 1.2px; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: #26262a; overflow: hidden; font: 15px/1.4 "M Body", system-ui, sans-serif; color: var(--ink); }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+  .mono { font-family: "M Mono", monospace; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; }
+  .display { font-family: "M Display", sans-serif; font-weight: normal; }
+  .top { position: fixed; top: 0; left: 0; right: 0; z-index: 50; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; padding: 6px; }
+  .seg { display: flex; background: var(--paper); border: 2px solid var(--ink); }
+  .seg button { padding: 5px 9px; font-size: 12.5px; white-space: nowrap; }
+  .seg button.on { background: var(--ink); color: var(--paper); }
+  .stage { position: fixed; left: 0; right: 0; bottom: 0; display: grid; place-items: center; }
+  .scaler { position: relative; }
+  .phone { position: relative; overflow: hidden; background: var(--paper); border-radius: 22px; box-shadow: 0 10px 40px rgba(0,0,0,.5); transform-origin: top left; display: flex; flex-direction: column; }
+  .phone.cover { width: 412px; height: 960px; }
+  .phone.portrait { width: 700px; height: 840px; }
+  .phone.landscape { width: 840px; height: 700px; }
+  .scroll { flex: 1; overflow-y: auto; scrollbar-width: none; }
+
+  /* Home, with the Morning Edition widget: a front page in the look, not a feed. */
+  .home { flex: 1; background: radial-gradient(rgba(17,17,19,.13) 1px, transparent 1.3px) 0 0/5px 5px, #f3f3f1; padding: 44px 14px 14px; display: grid; gap: 12px; align-content: start; }
+  .phone:not(.cover) .home { grid-template-columns: 1fr 1fr; }
+  .tile { background: var(--paper); border: 2px solid var(--ink); }
+  .edition { padding: 12px 14px 10px; cursor: pointer; grid-row: span 2; }
+  .masthead { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 3px double var(--ink); padding-bottom: 4px; }
+  .masthead h2 { margin: 0; font-size: 22px; }
+  .lead { margin-top: 10px; }
+  .lead .pic { height: 150px; border: var(--line) solid var(--ink); display: grid; place-items: center; font-size: 58px; background: linear-gradient(135deg, #ffd6a5, #fdffb6 60%, #caffbf); }
+  .lead h3 { margin: 8px 0 2px; font-size: 19px; line-height: 1.2; }
+  .lead p { margin: 0; color: #444; font-size: 13.5px; }
+  .heads { margin-top: 10px; border-top: var(--line) solid var(--ink); }
+  .heads div { padding: 7px 0; border-bottom: 1px solid var(--tone); font-size: 14px; display: flex; gap: 8px; }
+  .heads .src { color: var(--red); flex: none; }
+  .more { margin-top: 8px; display: flex; justify-content: space-between; color: var(--muted); }
+  .small { padding: 12px; min-height: 120px; }
+  .small .mono { color: var(--muted); }
+
+  /* The digest: what came in overnight, merged into stories, written for him. */
+  .bar { padding: 40px 18px 10px; border-bottom: 2px solid var(--ink); display: flex; align-items: flex-end; gap: 10px; }
+  .bar h1 { margin: 0; font-size: 28px; flex: 1; }
+  .bar .back { padding: 6px 8px 6px 0; }
+  .note { margin: 12px 16px; padding: 10px 12px; background: var(--ink); color: var(--paper); font-size: 14px; }
+  .note b { color: #ffe680; font-weight: 600; }
+  .story { margin: 0 16px 12px; border: var(--line) solid var(--ink); padding: 12px; position: relative; background: var(--paper); transition: transform .2s; touch-action: pan-y; }
+  .story .k { display: flex; gap: 6px; align-items: center; color: var(--muted); }
+  .story .k .t { border: var(--line) solid currentColor; padding: 0 4px; }
+  .story .k .x { color: #fff; background: var(--ink); border-color: var(--ink); }
+  .story h3 { margin: 6px 0 4px; font-size: 17px; line-height: 1.25; cursor: pointer; }
+  .story p { margin: 0 0 6px; color: #333; font-size: 14px; }
+  .story .why { font-size: 13px; color: var(--ink); background: #fff5bf; padding: 4px 8px; display: inline-block; }
+  .story .srcs { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .story .srcs span { font-size: 12px; border: 1px dashed var(--muted); padding: 1px 6px; color: var(--muted); }
+  .story .post { margin-top: 8px; border-left: 3px solid var(--ink); padding: 4px 10px; font-size: 13.5px; }
+  .story .post b { font-size: 12.5px; }
+  .acts { display: flex; gap: 6px; margin-top: 10px; }
+  .acts button { border: var(--line) solid var(--ink); padding: 4px 9px; font-size: 12.5px; }
+  .acts button.red { background: var(--red); color: #fff; border-color: var(--red); }
+  .swipehint { text-align: center; color: var(--muted); margin: 4px 0 16px; }
+
+  /* The reader: the same one Soma Notes uses. */
+  .reader { padding: 16px 22px 60px; font-size: 17px; line-height: 1.6; }
+  .reader h1 { font-family: "M Display"; font-weight: normal; font-size: 27px; line-height: 1.15; margin: 4px 0 10px; }
+  .reader .by { color: var(--muted); margin-bottom: 14px; }
+  .reader .hero { height: 200px; border: var(--line) solid var(--ink); display: grid; place-items: center; font-size: 80px; background: linear-gradient(135deg, #a0c4ff, #bdb2ff); margin-bottom: 14px; break-inside: avoid; }
+  .reader p { margin: 0 0 12px; }
+  .reader blockquote { margin: 0 0 14px; padding: 8px 14px; border-left: 4px solid var(--red); background: #fbf1f1; break-inside: avoid; }
+  .reader h2 { font-size: 19px; margin: 20px 0 8px; break-after: avoid; }
+  .book { flex: 1; overflow: hidden; margin: 16px 26px 0; position: relative; }
+  .flow { height: 100%; column-fill: auto; transition: transform .35s cubic-bezier(.3,.7,.3,1); }
+  .flow.reader { padding: 0; }
+  .book::after { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: var(--tone); }
+  .turn { position: absolute; top: 0; bottom: 0; width: 22%; z-index: 3; cursor: pointer; }
+  .turn.l { left: 0; } .turn.r { right: 0; }
+  .folio { display: flex; justify-content: space-between; padding: 8px 26px 14px; color: var(--muted); }
+  .rbar { position: absolute; left: 12px; right: 12px; bottom: 14px; display: flex; justify-content: space-around; border: 2px solid var(--ink); background: var(--paper); padding: 6px; box-shadow: 4px 4px 0 var(--ink); z-index: 5; }
+  .rbar button { font-size: 13px; padding: 6px 8px; }
+  .toast { position: absolute; left: 50%; bottom: 80px; transform: translateX(-50%); background: var(--ink); color: var(--paper); padding: 8px 14px; z-index: 60; font-size: 13px; white-space: nowrap; }
+  .sources { padding: 6px 16px 40px; }
+  .src-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--tone); }
+  .src-row .ic { width: 34px; height: 34px; border: var(--line) solid var(--ink); display: grid; place-items: center; flex: none; }
+  .src-row .ic.x { background: var(--ink); color: #fff; font-weight: 700; }
+  .src-row b { display: block; } .src-row small { color: var(--muted); }
+  .src-row .n { margin-left: auto; color: var(--muted); }
+  .addsrc { margin-top: 12px; border: 2px dashed var(--muted); padding: 12px; text-align: center; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="top"><div class="seg" id="layouts"></div><div class="seg" id="scenes"></div></div>
+<div class="stage" id="stage"><div class="scaler" id="scaler"><div class="phone" id="phone"></div></div></div>
+<script>
+const LAYOUTS = [['cover', 'Cover'], ['portrait', 'Open'], ['landscape', 'Open sideways']];
+const SCENES = [['home', 'Home widget'], ['digest', 'Morning digest'], ['reader', 'Reader'], ['sources', 'Sources']];
+const S = { layout: innerWidth < 600 ? 'cover' : innerWidth > innerHeight ? 'landscape' : 'portrait', scene: 'home', spread: 0, toast: '', gone: [] };
+
+// Sample stories, merged across sources as the digest would.
+const STORIES = [
+  { id: 1, emoji: '🛰️', kind: 'Merged · 5 sources', title: 'Tailscale shows how to run a private RSS reader on your own tailnet',
+    sum: 'FreshRSS in Docker, joined to the tailnet with a sidecar, readable from any app that speaks the Google Reader API.',
+    why: 'This is the backend of the reader you are using right now.', srcs: ['tailscale.com', 'Hacker News', 'The Verge', '+2'] },
+  { id: 2, emoji: '📱', kind: 'From X · your Android list', title: 'Foldable launchers are having a moment',
+    sum: 'Three developers you follow posted home-screen setups this week; one thread passed 2k reposts.',
+    why: 'People are asking for exactly what Oma does with pages.', srcs: ['@dev_one', '@foldfan', '@typecraft_dev'], post: ['@typecraft_dev', 'the home screen should be a notebook, not a grid of apps'] },
+  { id: 3, emoji: '🎧', kind: 'Newsletter', title: 'A new open model runs speech-to-text fully on device',
+    sum: 'Smaller than Whisper small, same accuracy on the benchmark the authors chose.',
+    why: 'Could replace the phone fallback for Soma voice.', srcs: ['Import AI'] },
+  { id: 4, emoji: '🍜', kind: 'YouTube', title: 'The ramen shop in Chinatown you saved got a video review',
+    sum: '14 minutes, mostly about the broth; worth it if you go this week.', why: 'You saved this place in Notes.', srcs: ['YouTube · Food Ranger'] },
+];
+
+function set(p) { Object.assign(S, p); render(); }
+function toast(t) { S.toast = t; render(); setTimeout(() => { S.toast = ''; render(); }, 1500); }
+const $ = id => document.getElementById(id);
+
+function home() {
+  const s = STORIES[0];
+  return `<div class="home">
+    <div class="tile edition" onclick="set({scene:'digest'})">
+      <div class="masthead"><h2 class="display">Morning Edition</h2><span class="mono">Wed · Oct 21</span></div>
+      <div class="lead"><div class="pic">${s.emoji}</div><h3>${s.title}</h3><p>${s.sum}</p></div>
+      <div class="heads">${STORIES.slice(1).map(x => `<div><span class="src mono">${x.kind.split('·')[0].trim()}</span><span>${x.title}</span></div>`).join('')}</div>
+      <div class="more"><span class="mono">12 more · 4 min read</span><span class="mono">Read ›</span></div>
+    </div>
+    <div class="tile small"><div class="mono">Weather</div><div class="display" style="font-size:44px">77°</div><div>patchy rain nearby</div></div>
+    <div class="tile small"><div class="mono">Groceries</div><div>☐ Avocados</div><div>☐ Limes</div><div>☐ Oat milk</div></div>
+  </div>`;
+}
+
+function digest() {
+  return `<div class="bar"><button class="back" onclick="set({scene:'home'})">‹</button><h1 class="display">This morning</h1><span class="mono" style="color:var(--muted)">4 stories · from 37 items</span></div>
+    <div class="scroll">
+      <div class="note">Overnight: 37 new items, merged into <b>4 stories</b>. Muted: 9 about crypto, 3 repeats. <span style="opacity:.7">Written by Claude on the Mac Pro at 6:30.</span></div>
+      ${STORIES.filter(s => !S.gone.includes(s.id)).map(s => `<div class="story">
+        <div class="k mono"><span class="t ${s.kind.startsWith('From X') ? 'x' : ''}">${s.kind}</span></div>
+        <h3 onclick="set({scene:'reader', spread:0})">${s.title}</h3>
+        <p>${s.sum}</p>
+        <span class="why">Why you: ${s.why}</span>
+        ${s.post ? `<div class="post"><b>${s.post[0]}</b><br>${s.post[1]}</div>` : ''}
+        <div class="srcs">${s.srcs.map(x => `<span>${x}</span>`).join('')}</div>
+        <div class="acts"><button onclick="set({scene:'reader', spread:0})">Read</button><button onclick="toast('Saved to Notes as an Idea ✦')">→ Notes</button><button onclick="toast('Fewer like this from now on')">Less of this</button><button class="red" onclick="set({gone:[...S.gone, ${s.id}]})">Done</button></div>
+      </div>`).join('')}
+      <div class="swipehint mono">Swipe a story right to save, left when done</div>
+    </div>`;
+}
+
+const ARTICLE = `<div class="by mono">tailscale.com · 6 min · via 5 sources</div>
+  <h1>Your own RSS reader, on your own tailnet</h1>
+  <div class="hero">🛰️</div>
+  <p>RSS never went away; the feeds are still there on most of the sites you read. What disappeared was the habit, and the readers that made it pleasant.</p>
+  <p>FreshRSS brings both back. It fetches every feed you add on a schedule and keeps the articles, and it serves them to any reader app that speaks the Google Reader API.</p>
+  <blockquote>Run it in a container next to a Tailscale sidecar and it gets its own name on your tailnet: no ports opened, nothing on the public internet.</blockquote>
+  <h2>Setting it up</h2>
+  <p>The ScaleTail repository has the compose file ready. Put an auth key, your tailnet's name and two passwords in the env file, and bring it up.</p>
+  <p>Then add feeds: paste a site's address and FreshRSS finds its feed; for the few that hide theirs, look at the bottom of the page or the blog section.</p>
+  <h2>Reading it anywhere</h2>
+  <p>Turn on the API in the settings, give it its own password, and point any reader app at it. Agents can use the same API to read what came in and write you a digest.</p>
+  <p>That last part is the interesting one: a reader that knows what you care about, merges the five sites covering the same story into one, and tells you why it matters to you, without an algorithm deciding for you.</p>`;
+
+function reader() {
+  const bar = `<div class="bar"><button class="back" onclick="set({scene:'digest'})">‹</button><span class="mono" style="flex:1;color:var(--muted)">Reader · same as Notes</span></div>`;
+  const tools = `<div class="rbar"><button onclick="toast('Saved to Notes')">→ Notes</button><button onclick="toast('Sent to the Mac Pro')">→ Mac</button><button onclick="toast('Opens the original')">Original</button><button onclick="toast('Reading it to you')">▶ Listen</button></div>`;
+  if (S.layout === 'landscape') {
+    return bar + `<div class="book" id="book"><div class="flow reader" id="flow">${ARTICLE}</div><div class="turn l" onclick="turn(-1)"></div><div class="turn r" onclick="turn(1)"></div></div>
+      <div class="folio mono"><span id="fl"></span><span id="fr"></span></div>`;
+  }
+  return bar + `<div class="scroll"><div class="reader">${ARTICLE}</div></div>` + tools;
+}
+
+function sources() {
+  const rows = [['RSS', 'tailscale.com', 'blog', 3], ['RSS', 'The Verge', 'tech', 41], ['HN', 'Hacker News', 'front page, 300+ points', 22], ['✉', 'Import AI', 'newsletter by email', 1],
+    ['▶', 'Food Ranger', 'YouTube channel', 2], ['X', 'Android devs', 'your X list, read by Grok', 18], ['X', '@typecraft_dev', 'X account, read by Grok', 4], ['🦋', 'bsky: @dev_one', 'Bluesky, free RSS', 3]];
+  return `<div class="bar"><button class="back" onclick="set({scene:'home'})">‹</button><h1 class="display">Sources</h1></div>
+    <div class="scroll"><div class="sources">
+      ${rows.map(([ic, n, s, c]) => `<div class="src-row"><span class="ic ${ic === 'X' ? 'x' : ''}">${ic}</span><span><b>${n}</b><small>${s}</small></span><span class="n mono">${c} new</span></div>`).join('')}
+      <div class="addsrc">＋ Paste a site, a YouTube channel, a newsletter, or an X account or list</div>
+      <p class="mono" style="color:var(--muted);margin-top:14px;line-height:1.6">Kept by FreshRSS on the Mac Pro, over the tailnet. X has no RSS: Grok reads the accounts and lists you pick, as you, a few times a day.</p>
+    </div></div>`;
+}
+
+function turn(dir) { S.spread = Math.max(0, Math.min(S.spread + dir, spreads() - 1)); place(); }
+function spreads() { const b = $('book'), f = $('flow'); return Math.max(1, Math.ceil(f.scrollWidth / (b.clientWidth + 52))); }
+function place() {
+  const b = $('book'), f = $('flow'); if (!b) return;
+  const w = b.clientWidth;
+  f.style.columnWidth = ((w - 52) / 2) + 'px'; f.style.columnGap = '52px';
+  f.style.transform = `translateX(${-S.spread * (w + 52)}px)`;
+  $('fl').textContent = `page ${S.spread * 2 + 1}`; $('fr').textContent = `${S.spread * 2 + 2} of ${spreads() * 2}`;
+}
+
+function render() {
+  const p = $('phone');
+  p.className = 'phone ' + S.layout;
+  p.innerHTML = ({ home, digest, reader, sources })[S.scene]() + (S.toast ? `<div class="toast">${S.toast}</div>` : '');
+  if ($('book')) place();
+  $('layouts').innerHTML = LAYOUTS.map(([k, l]) => `<button class="${S.layout === k ? 'on' : ''}" onclick="set({layout:'${k}',spread:0})">${l}</button>`).join('');
+  $('scenes').innerHTML = SCENES.map(([k, l]) => `<button class="${S.scene === k ? 'on' : ''}" onclick="set({scene:'${k}',spread:0})">${l}</button>`).join('');
+  const top = document.querySelector('.top').offsetHeight + 8;
+  const st = $('stage'); st.style.top = top + 'px';
+  const w = p.offsetWidth, h = p.offsetHeight;
+  const s = Math.min((innerWidth - 12) / w, (innerHeight - top - 8) / h, 1.6);
+  const sc = $('scaler'); sc.style.width = w * s + 'px'; sc.style.height = h * s + 'px';
+  p.style.transform = `scale(${s})`;
+}
+addEventListener('resize', render);
+render();
+document.fonts && document.fonts.ready.then(render);
+</script>
+</body>
+</html>
