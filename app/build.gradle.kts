@@ -91,6 +91,8 @@ dependencies {
     implementation(libs.commons.compress)
     implementation(libs.androidsvg)
     implementation(libs.zxing.core)
+    // The text of PDFs, for search's file index (search/FileIndex.kt); used only in the indexer's own process.
+    implementation(libs.pdfbox.android)
     implementation(project(":owl"))
     // Soma's chat, shared with the Mac app (cockpit/DESIGN.md).
     implementation(project(":chat"))

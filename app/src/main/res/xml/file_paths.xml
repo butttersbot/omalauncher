@@ -13,4 +13,6 @@
     <cache-path name="pocket" path="pocket/" />
     <!-- What Tailshare received, kept for "Sent to this phone" (herd/ClipInbox.kt). -->
     <files-path name="inbox" path="inbox/" />
+    <!-- Files search found in shared storage, opened or shared from the search card. -->
+    <external-path name="storage" path="." />
 </paths>

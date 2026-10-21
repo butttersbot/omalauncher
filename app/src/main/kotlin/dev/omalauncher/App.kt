@@ -7,6 +7,8 @@ class App : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // The search's file indexer runs in a process of its own (search/FileIndex.kt): none of the launcher starts there.
+        if (Application.getProcessName().endsWith(":indexer")) return
         // The shared canvas model reports an unreadable saved document to Android's log, as it always did.
         dev.omalauncher.upgrade.Versioned.log = { message, error -> android.util.Log.w("versioned", message, error) }
         // The shared chat module draws Nerd Font glyphs with the font this app bundles.

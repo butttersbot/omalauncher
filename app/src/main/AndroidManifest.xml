@@ -3,6 +3,8 @@
 
     <!-- Reading the newest screenshot for "Add to pocket" over the screenshot toolbar; asked for the first time it is used. -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <!-- Search finds files anywhere in shared storage, by name and by their text, once he allows it (search/FileIndex.kt). -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- The lock and home wallpapers in the look's paper, when the owner turns that on in Style. -->
@@ -456,6 +458,13 @@
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
         </service>
+
+        <!-- Keeps search's file index, in a process of its own that ends with each run (search/FileIndex.kt). -->
+        <service
+            android:name=".search.FileIndexJob"
+            android:exported="false"
+            android:process=":indexer"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
 
         <service
             android:name=".LinuxService"

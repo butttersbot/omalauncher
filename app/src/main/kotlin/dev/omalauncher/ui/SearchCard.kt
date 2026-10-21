@@ -69,6 +69,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -77,6 +78,9 @@ import dev.omalauncher.phone.HomeDoor
 import dev.omalauncher.Runtime
 import dev.omalauncher.oma.newChatTab
 import dev.omalauncher.search.Calculator
+import dev.omalauncher.search.FileIndex
+import dev.omalauncher.search.FileIndexJob
+import dev.omalauncher.search.FileQuery
 import dev.omalauncher.search.Candidate
 import dev.omalauncher.search.Kind
 import dev.omalauncher.search.SearchMemory
@@ -130,6 +134,40 @@ internal fun SearchCard(
             if (query.isBlank()) emptyList() else SearchRank.rank(items.map { it.c }, query, memory, now).mapNotNull { c -> items.firstOrNull { it.c.id == c.id } }
         }
     val answer = remember(query) { Calculator.answer(query) }
+
+    // Files, by name and by their text, from the index kept in its own process; read on each query, off the main thread.
+    var fileActing by remember { mutableStateOf<FileQuery.Hit?>(null) }
+    val db = remember { arrayOfNulls<android.database.sqlite.SQLiteDatabase>(1) }
+    DisposableEffect(Unit) { onDispose { synchronized(db) { db[0]?.close(); db[0] = null } } }
+    LaunchedEffect(Unit) { FileIndexJob.schedule(context) }
+    val files by androidx.compose.runtime.produceState(FileResults(), query) {
+        val q = query.trim()
+        value =
+            if (q.isEmpty()) {
+                FileResults()
+            } else {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    synchronized(db) {
+                        val d = db[0] ?: FileIndex.open(context, writable = false).also { db[0] = it }
+                        if (d == null) {
+                            FileResults(indexing = true)
+                        } else {
+                            val names = FileQuery.rankNames(FileIndex.byName(d, q), q, System.currentTimeMillis()) { memory.frecency("file:$it", System.currentTimeMillis()) }.take(FILES_SHOWN)
+                            val shown = names.map { it.path }.toSet()
+                            val texts = FileIndex.byText(d, q).filter { it.path !in shown }.take(FILES_SHOWN)
+                            FileResults(names, texts, indexing = FileIndex.count(d) == 0L)
+                        }
+                    }
+                }
+            }
+    }
+
+    fun openFile(hit: FileQuery.Hit) {
+        memory.visit("file:${hit.path}", query, System.currentTimeMillis())
+        SearchStore.save(context, memory)
+        close()
+        handFile(context, hit.path, share = false)
+    }
 
     fun run(item: SearchItem) {
         memory.visit(item.c.id, query, System.currentTimeMillis())
@@ -242,6 +280,28 @@ internal fun SearchCard(
                             item { Section(title, muted) }
                             items(here, key = { it.c.id }) { SearchResult(runtime, it, ink, muted, line, { run(it) }, { acting = it }) }
                         }
+                        if (files.names.isNotEmpty() || files.texts.isNotEmpty()) {
+                            item { Section("Files", muted) }
+                            items(files.names, key = { "fn:" + it.path }) { FileRow(it, ink, muted, line, { openFile(it) }, { fileActing = it }) }
+                            items(files.texts, key = { "ft:" + it.path }) { FileRow(it, ink, muted, line, { openFile(it) }, { fileActing = it }) }
+                        }
+                        if (!FileIndex.storageAllowed()) {
+                            item {
+                                BasicText(
+                                    "Allow file search: Soma needs All files access to find files on the phone. Tap to allow.",
+                                    Modifier.fillMaxWidth().clickable {
+                                        runCatching {
+                                            context.startActivity(
+                                                Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:" + context.packageName)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                                            )
+                                        }
+                                    }.padding(14.dp),
+                                    style = Pack.body(Pack.size.small, ink),
+                                )
+                            }
+                        } else if (files.indexing) {
+                            item { BasicText("Files are still being indexed…", Modifier.padding(14.dp), style = Pack.body(Pack.size.small, muted)) }
+                        }
                         item { Section("Use “${query.trim()}” with…", muted) }
                         items(fallbacks(context, query.trim()), key = { it.c.id }) { f -> SearchResult(runtime, f, ink, muted, line, { close(); f.run() }, null) }
                     }
@@ -279,6 +339,20 @@ internal fun SearchCard(
                 onDismiss = { acting = null },
             )
         }
+        fileActing?.let { hit ->
+            ActionSheet(
+                hit.name,
+                listOf(
+                    "Open" to { fileActing = null; openFile(hit) },
+                    "Share" to { fileActing = null; handFile(context, hit.path, share = true) },
+                    "Copy path" to { fileActing = null; copyText(context, hit.path) },
+                ),
+                ink,
+                line,
+                tint,
+                home,
+            ) { fileActing = null }
+        }
         aliasFor?.let { item ->
             AliasEditor(item, memory.alias(item.c.id).orEmpty(), ink, line, tint, home) { alias ->
                 if (alias != null) {
@@ -295,6 +369,121 @@ internal fun SearchCard(
 /** How many suggestions show with nothing typed, as Raycast's; and how many of each kind under the top hit. */
 private const val SUGGESTIONS = 6
 private const val PER_SECTION = 5
+
+/** How many files show by name, and how many more by what is in them. */
+private const val FILES_SHOWN = 5
+
+/** What the file index found for a query: by name, by text, and whether it is still being made. */
+private class FileResults(
+    val names: List<FileQuery.Hit> = emptyList(),
+    val texts: List<FileQuery.Hit> = emptyList(),
+    val indexing: Boolean = false,
+)
+
+/** Hands the file at [path] to the app that opens (or, with [share], shares) its kind, through Soma's file provider. */
+private fun handFile(
+    context: Context,
+    path: String,
+    share: Boolean,
+) {
+    val file = File(path)
+    val uri = runCatching { androidx.core.content.FileProvider.getUriForFile(context, context.packageName + ".files", file) }.getOrNull() ?: return
+    val mime = mimeOf(file.name) ?: "*/*"
+    val intent =
+        if (share) {
+            Intent.createChooser(Intent(Intent.ACTION_SEND).setType(mime).putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), file.name)
+        } else {
+            Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+    runCatching { context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+}
+
+/** A file found: its kind, name and folder with when it changed, and for a match inside it, the words around it. */
+@Composable
+private fun FileRow(
+    hit: FileQuery.Hit,
+    ink: Color,
+    muted: Color,
+    line: Color,
+    onOpen: () -> Unit,
+    onLong: () -> Unit,
+) {
+    val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .combinedClickable(onClick = onOpen, onLongClick = {
+                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                onLong()
+            }).padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        val ext = hit.name.substringAfterLast('.', "").uppercase().take(4).ifEmpty { "FILE" }
+        Box(Modifier.size(36.dp).border(1.dp, line), contentAlignment = Alignment.Center) {
+            BasicText(ext, style = Pack.mono(9.sp, ink))
+        }
+        Column(Modifier.weight(1f)) {
+            BasicText(hit.name, style = Pack.body(Pack.size.body, ink), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val where = FileQuery.folder(hit.path, FileIndex.storageRoot(), FileIndex.linuxHome(context))
+            val date = android.text.format.DateUtils.getRelativeTimeSpanString(hit.modified, System.currentTimeMillis(), android.text.format.DateUtils.DAY_IN_MILLIS)
+            BasicText("$where · $date", style = Pack.body(Pack.size.small, muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            hit.snippet?.let { BasicText(marked(it, ink), style = Pack.body(Pack.size.small, muted), maxLines = 2, overflow = TextOverflow.Ellipsis) }
+        }
+    }
+}
+
+/** The index's snippet with its matched words set in the ink, bold, the rest as it was. */
+private fun marked(
+    snippet: String,
+    ink: Color,
+): androidx.compose.ui.text.AnnotatedString =
+    androidx.compose.ui.text.buildAnnotatedString {
+        var bold = false
+        for (c in snippet.replace(Regex("\\s+"), " ")) {
+            when (c) {
+                FileQuery.MARK_OPEN -> bold = true
+                FileQuery.MARK_CLOSE -> bold = false
+                else ->
+                    if (bold) {
+                        withStyle(androidx.compose.ui.text.SpanStyle(color = ink, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)) { append(c) }
+                    } else {
+                        append(c)
+                    }
+            }
+        }
+    }
+
+/** A short list of what can be done with something, on the same glass as the card. */
+@Composable
+private fun ActionSheet(
+    title: String,
+    rows: List<Pair<String, () -> Unit>>,
+    ink: Color,
+    line: Color,
+    tint: Color,
+    home: GraphicsLayer,
+    onDismiss: () -> Unit,
+) {
+    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.25f)).clickable(remember { MutableInteractionSource() }, indication = null, onClick = onDismiss)) {
+        Column(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .imePadding()
+                .padding(12.dp)
+                .fillMaxWidth()
+                .frostedSlice(home, tint)
+                .border(2.dp, line),
+        ) {
+            BasicText(title, Modifier.padding(14.dp), style = Pack.body(Pack.size.body, ink).copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Box(Modifier.fillMaxWidth().height(1.dp).background(line.copy(alpha = 0.5f)))
+            for ((label, action) in rows) {
+                BasicText(label, Modifier.fillMaxWidth().clickable(onClick = action).padding(horizontal = 14.dp, vertical = 13.dp), style = Pack.body(Pack.size.body, ink))
+            }
+        }
+    }
+}
 
 private val SECTIONS = listOf("Apps" to setOf(Kind.APP), "Soma" to setOf(Kind.COMMAND, Kind.LINK), "Settings" to setOf(Kind.SETTING))
 
