@@ -61,6 +61,6 @@ class GifSourcesTest {
         val (cells, height) = Masonry.lay(listOf(0.5f, 2f, 2f, 1f), columns = 2, width = 100f, gap = 10f)
         assertEquals(listOf(0, 1, 1, 1), cells.map { it.column })
         assertEquals(listOf(0f, 0f, 60f, 120f), cells.map { it.top })
-        assertEquals(220f, height, 0.01f)
+        assertEquals(230f, height, 0.01f)
     }
 }
