@@ -4,15 +4,28 @@ set -euo pipefail
 command=${1:-help}
 shift || true
 expect=0
+# Every touch takes --in PACKAGE (refuse unless that app is in front) and --any (not held to the app last opened).
+front=''; any=false
+case "$command" in
+press|fill|click|type|scroll|submit|tap|swipe|back)
+  while :; do
+    case "${1:-}" in
+    --in) front=${2:?Package required: --in PACKAGE}; shift 2;;
+    --any) any=true; shift;;
+    *) break;;
+    esac
+  done;;
+esac
 case "$command" in
 help)
   cat <<'HELP'
-oma-phone apps | open PACKAGE_OR_settings
+oma-phone apps | open PACKAGE_OR_settings | url [--app PACKAGE] URL
 oma-phone status | read | screenshot | back | home | recents | notifications | stay | stop
+oma-phone submit
 oma-phone screen [--until TEXT]
 oma-phone expect TEXT
-oma-phone press [--in PACKAGE] LABEL
-oma-phone fill [--in PACKAGE] LABEL TEXT
+oma-phone press [--in PACKAGE | --any] LABEL
+oma-phone fill [--in PACKAGE | --any] LABEL TEXT
 oma-phone pages | page NAME | where WIDGET_FILE
 oma-phone page-add [NAME] | page-rename NAME --to NEW NAME | page-delete NAME
 oma-phone board [PAGE NAME]
@@ -64,6 +77,14 @@ same for a text field, found by its hint or contents; LABEL "" is the screen's o
 fill is not ok unless the field then shows TEXT.
 --in PACKAGE refuses unless that app is in front. Two controls that answer to
 LABEL are never chosen between: the error lists their ids for click or type.
+url opens a web link (http or https) in the phone's browser, or in --app PACKAGE: never type a link into an
+address bar. It and open answer once the app is in front (inFront says whether it came).
+After open or url, every touch (press, fill, click, type, scroll, submit, tap, swipe, back) is for that app:
+if another app has come to the front, nothing is done and the error says which. Name the app you mean with
+--in PACKAGE, or add --any. home, recents, notifications and page lift that hold.
+submit presses the keyboard's Enter, Go or Search on the field that has the keyboard: use it after fill.
+Nothing types into Soma's own chat box, where the user writes, unless --in names Soma.
+status says locked, awake and active before you plan: a locked phone takes no steps.
 expect waits up to 5 seconds for TEXT to show and fails if it does not, so steps can be chained and
 stop at the first screen that is not the one meant:
   oma-phone press --in PACKAGE "Search" && oma-phone fill "" "milk" && oma-phone expect "results"
@@ -88,13 +109,16 @@ screen)
   if [ "${1:-}" = '--until' ]; then until=${2:?Text required: --until TEXT}; shift 2; fi
   request=$(jq -cn --arg until "$until" '{command:"screen"} + (if $until=="" then {} else {until:$until} end)');;
 press|fill)
-  front=''
-  if [ "${1:-}" = '--in' ]; then front=${2:?Package required: --in PACKAGE}; shift 2; fi
   [ "$#" -ge 1 ] || { echo 'Label required' >&2; exit 2; }
   label=$1; shift
   if [ "$command" = fill ] && [ "$#" -lt 1 ]; then echo 'Text required' >&2; exit 2; fi
   request=$(jq -cn --arg command "$command" --arg label "$label" --arg text "$*" --arg front "$front" \
-    '{command:$command,label:$label} + (if $command=="fill" then {text:$text} else {} end) + (if $front=="" then {} else {in:$front} end)');;
+    '{command:$command,label:$label} + (if $command=="fill" then {text:$text} else {} end)');;
+url)
+  app=''
+  if [ "${1:-}" = '--app' ]; then app=${2:?Package required: --app PACKAGE}; shift 2; fi
+  [ "$#" -ge 1 ] || { echo 'URL required: oma-phone url https://...' >&2; exit 2; }
+  request=$(jq -cn --arg url "$1" --arg app "$app" '{command:"url",url:$url} + (if $app=="" then {} else {app:$app} end)');;
 open)
   request=$(jq -cn --arg package "${1:?Package required}" '{command:"open",package:$package}');;
 page)
@@ -198,10 +222,11 @@ where)
 tap|swipe)
   request=$(jq -cn --arg command "$command" --arg x "${1:?X required}" --arg y "${2:?Y required}" --arg ex "${3:-0}" --arg ey "${4:-0}" --arg ms "${5:-400}" \
     '{command:$command,x:($x|tonumber),y:($y|tonumber)} + (if $command=="swipe" then {endX:($ex|tonumber),endY:($ey|tonumber),duration:($ms|tonumber)} else {} end)');;
-status|pages|apps|read|screenshot|back|home|recents|notifications|stay|stop)
+status|pages|apps|read|screenshot|back|home|recents|notifications|stay|stop|submit)
   request=$(jq -cn --arg command "$command" '{command:$command}');;
 *) echo 'Unknown command. Run oma-phone help.' >&2; exit 2;;
 esac
+request=$(jq -c --arg front "$front" --argjson any "$any" '. + (if $front=="" then {} else {in:$front} end) + (if $any then {any:true} else {} end)' <<<"$request")
 response=$(curl --silent --show-error --max-time 12 --abstract-unix-socket '__SOCKET__' \
   --header 'Content-Type: application/json' --data-binary "$request" http://localhost/phone) || {
   echo 'Phone bridge unavailable or timed out. Open Omalauncher Boss. Read the screen before retrying actions.' >&2; exit 1;
