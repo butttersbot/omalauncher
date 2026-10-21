@@ -1,0 +1,14 @@
+#!/bin/bash
+# Installs and starts Oma's embed-server on the Mac Pro as a login service. See docs/SEARCH-PHOTOS-MAC.md.
+set -euo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
+plist=~/Library/LaunchAgents/dev.omalauncher.embed-server.plist
+cp "$here/dev.omalauncher.embed-server.plist" "$plist"
+launchctl bootout "gui/$(id -u)/dev.omalauncher.embed-server" 2>/dev/null || true
+# A bootstrap right after a bootout fails with "5: Input/output error" until the old one is gone.
+for _ in $(seq 1 20); do
+  launchctl print "gui/$(id -u)/dev.omalauncher.embed-server" >/dev/null 2>&1 || break
+  sleep 0.5
+done
+launchctl bootstrap "gui/$(id -u)" "$plist"
+echo "started; log: ~/Library/Logs/embed-server.log"

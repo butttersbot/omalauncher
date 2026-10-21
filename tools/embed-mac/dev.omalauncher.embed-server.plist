@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Soma's photo search on the Mac Pro: EmbeddingGemma 2 on the Tailscale address only. See docs/SEARCH-PHOTOS-MAC.md. -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>dev.omalauncher.embed-server</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/jackkim/.local/share/embed-server/venv/bin/python3</string>
+        <string>/Users/jackkim/Projects/omalauncher-fold/tools/embed-mac/embed-server.py</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <!-- Restarted whenever it ends, including when Tailscale wasn't up yet and the address couldn't be bound. -->
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>15</integer>
+    <key>StandardOutPath</key>
+    <string>/Users/jackkim/Library/Logs/embed-server.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/jackkim/Library/Logs/embed-server.log</string>
+</dict>
+</plist>
