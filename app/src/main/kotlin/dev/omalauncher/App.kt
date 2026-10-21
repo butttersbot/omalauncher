@@ -27,5 +27,7 @@ class App : Application() {
         dev.omalauncher.widgets.FoldLayouts.install(this)
         // Art from the share sheet and the panel picker hangs in home's panels (piece B).
         dev.omalauncher.ui.MangaHome.install(this)
+        // Soma News on the hour, for the reader and the home widgets, once FreshRSS's settings are there.
+        if (dev.omalauncher.news.NewsStore.config(this) != null) dev.omalauncher.news.NewsJob.schedule(this)
     }
 }
