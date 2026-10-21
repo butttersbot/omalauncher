@@ -185,7 +185,7 @@ ROOTS = ("Desktop", "Documents", "Downloads", "Pictures", "Movies", "Music", "In
          "Library/Mobile Documents/com~apple~CloudDocs")
 # Never offered: caches, and package, environment or build trees, wherever they are.
 SKIPPED = ("/.Trash/", "/node_modules/", "/.git/", "/build/", "/DerivedData/", "/Caches/", "/.cache/", "/venv/", "/.venv/",
-           "/__pycache__/", "/site-packages/", "/env/", "/Pods/", "/target/", "/dist/")
+           "/__pycache__/", "/site-packages/", "/uv-cache/", "/env/", "/Pods/", "/target/", "/dist/")
 # What a person opens, ahead of code and data when both match as well.
 DOCUMENTS = {"pdf", "doc", "docx", "pages", "key", "numbers", "xls", "xlsx", "ppt", "pptx", "txt", "md", "rtf", "csv",
              "jpg", "jpeg", "png", "heic", "gif", "mov", "mp4", "m4a", "mp3", "wav", "zip", "epub", "html"}
