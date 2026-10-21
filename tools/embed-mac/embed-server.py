@@ -20,6 +20,7 @@ import base64
 import json
 import os
 import re
+import select
 import shutil
 import subprocess
 import sys
@@ -219,9 +220,13 @@ def spotlight(q, n):
     paths = []
     deadline = time.time() + 1.0
     try:
-        for line in proc.stdout:
-            # The deadline counts on every line: a word with thousands of skipped hits took 2.5 s otherwise.
-            if time.time() > deadline:
+        while True:
+            # The deadline holds even while Spotlight says nothing: a read only waits as long as is left.
+            left = deadline - time.time()
+            if left <= 0 or not select.select([proc.stdout], [], [], left)[0]:
+                break
+            line = proc.stdout.readline()
+            if not line:
                 break
             p = line.rstrip("\n")
             if offered(os.path.realpath(p)):
