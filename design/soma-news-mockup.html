@@ -79,11 +79,48 @@
   .photo .cap { padding: 8px 18px 0; font-family: var(--serif); font-style: italic; color: #333; font-size: 14px; }
   .end { padding: 26px 18px 60px; text-align: center; color: var(--muted); }
 
-  /* Open and sideways: columns, as a magazine spread. */
-  .phone:not(.cover) .cover-story img { height: 420px; }
-  .phone:not(.cover) .cover-story h1 { font-size: 36px; max-width: 80%; }
-  .phone:not(.cover) .pair { grid-template-columns: 1fr 1fr 1fr; }
-  .phone.landscape .wide { display: grid; grid-template-columns: 1.3fr 1fr; align-items: start; }
+  /* The open Fold, made for it (Boss, 2026-10-21: "optimize the layout for the open inner screen, make it feel designed
+     specifically for this form factor"): two pages either side of the fold, nothing crossing the crease. Each spread is
+     composed as a magazine's: the left page and the right page answer each other. */
+  .spread { display: grid; grid-template-columns: 1fr 1fr; column-gap: 36px; padding: 0 22px; position: relative; }
+  .spread::after { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: linear-gradient(transparent, var(--rule) 12%, var(--rule) 88%, transparent); }
+  .spread + .spread { margin-top: 26px; }
+  .page { min-width: 0; }
+  .s-cover { position: relative; color: #fff; cursor: pointer; height: 100%; min-height: 560px; }
+  .s-cover img { position: absolute; inset: 0; height: 100%; }
+  .s-cover .over { position: absolute; inset: auto 0 0 0; padding: 90px 20px 22px; background: linear-gradient(transparent, rgba(0,0,0,.85)); }
+  .s-cover .kicker { color: #ffd166; }
+  .s-cover h1 { font-family: var(--serif); font-size: 32px; line-height: 1.08; margin: 10px 0 8px; }
+  .s-cover p { margin: 0; font-family: var(--serif); font-style: italic; font-size: 15.5px; opacity: .92; }
+  .tops h5 { margin: 0 0 6px; font: 700 12px "M Mono"; letter-spacing: .14em; text-transform: uppercase; border-bottom: 2px solid var(--ink); padding-bottom: 6px; }
+  .top-item { display: grid; grid-template-columns: 1fr 96px; gap: 12px; padding: 13px 0; border-bottom: 1px solid var(--rule); cursor: pointer; }
+  .top-item img { height: 96px; }
+  .top-item h3 { font-family: var(--serif); font-size: 17px; line-height: 1.2; margin: 5px 0 4px; }
+  .top-item p { margin: 0; font-family: var(--serif); font-size: 13.5px; color: #444; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .s-head { padding: 26px 22px 10px; display: flex; align-items: baseline; gap: 12px; }
+  .s-head h4 { margin: 0; font-family: "M Display"; font-size: 22px; font-weight: normal; }
+  .s-head::after { content: ""; flex: 1; border-top: 1px solid var(--ink); }
+  .duo { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .duo .card img { height: 130px; }
+  .s-quote { background: #111113; color: #f6f4ee; padding: 26px 24px; height: 100%; display: flex; flex-direction: column; justify-content: center; cursor: pointer; }
+  .s-quote .mark { font-family: var(--serif); font-size: 90px; line-height: .55; color: var(--red); }
+  .s-quote blockquote { margin: 10px 0 18px; font-family: var(--serif); font-size: 26px; line-height: 1.25; font-style: italic; }
+  .s-quote .meta { color: #a7a6ad; }
+  .s-feature img { height: 230px; margin-bottom: 10px; }
+  .s-feature h3 { font-family: var(--serif); font-size: 22px; line-height: 1.15; margin: 6px 0 6px; }
+  .s-feature p { margin: 0; font-family: var(--serif); color: #444; font-size: 14.5px; }
+  .s-photo { cursor: pointer; }
+  .s-photo img { height: 380px; }
+  .s-photo .cap { padding-top: 8px; font-family: var(--serif); font-style: italic; color: #333; font-size: 14px; }
+  .phone.landscape .s-cover { min-height: 470px; }
+  .phone.landscape .s-photo img { height: 300px; }
+
+  /* Reading on the open Fold: the stream stays on the left page, the story opens on the right. */
+  .split { flex: 1; display: grid; grid-template-columns: 1fr 1fr; min-height: 0; }
+  .split .list { overflow-y: auto; border-right: 1px solid var(--rule); scrollbar-width: none; padding: 6px 16px 30px; }
+  .split .list .top-item.on { background: #fff3c4; margin: 0 -10px; padding: 13px 10px; }
+  .split .art { overflow-y: auto; scrollbar-width: none; position: relative; }
+  .split .art .hero { height: 240px; }
 
   /* The reader: the one Soma Notes uses, set as a magazine. */
   .rbar { padding: 34px 16px 10px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--ink); }
@@ -163,7 +200,48 @@ function refresh() {
   setTimeout(() => set({ refreshing: false, fresh: 3, updated: '12:31' }), 1400);
 }
 
+function streamWide() {
+  const item = (img, kick, h, p, on) => `<div class="top-item ${on ? 'on' : ''}" onclick="set({scene:'reader',spread:0})"><div><div class="kicker">${kick}</div><h3>${h}</h3><p>${p}</p></div><img src="${P(img)}"></div>`;
+  const card = c => `<div class="card" onclick="set({scene:'reader',spread:0})"><img src="${P(c[0])}"><div class="kicker">${c[1]}</div><h3>${c[2]}</h3><p>${c[3]}</p><div class="meta">${c[4]}</div></div>`;
+  return `<div class="mast"><span class="name">SOMA</span>
+      <span class="refresh ${S.refreshing ? 'spin' : ''}"><span class="meta">${S.refreshing ? 'Updating…' : 'Updated ' + S.updated + ' · hourly'}</span><button class="ic" onclick="refresh()" title="Refresh">↻</button></span></div>
+    <div class="scroll" id="scroll" style="padding-top:18px">
+      ${S.fresh ? `<div class="newpill" onclick="set({fresh:0});document.getElementById('scroll').scrollTop=0">↑ ${S.fresh} new stories</div>` : ''}
+      <div class="spread">
+        <div class="page s-cover" onclick="set({scene:'reader',spread:0})"><img src="${P('server')}"><div class="over"><div class="kicker">Self-hosting · 5 sources</div>
+          <h1>The case for reading the web on your own server again</h1><p>RSS never left. FreshRSS on your tailnet brings back the habit — and gives your agents something to read.</p></div></div>
+        <div class="page tops"><h5>Top stories</h5>
+          ${item('fold', 'Foldables · X', 'Foldable launchers are having a moment', 'Three developers you follow shared home screens built like notebooks.')}
+          ${item('mic', 'Audio · Import AI', 'Speech-to-text that never leaves the phone', 'Smaller than Whisper small, and as accurate on the authors\' benchmark.')}
+          ${item('desk', 'Tools · Hacker News', 'Agents that build on the phone itself', 'A new wave of setups runs the builder where the code is written.')}
+          ${item('ramen', 'Food · YouTube', 'The Chinatown ramen counter you saved, reviewed', 'Fourteen minutes, mostly about the broth.')}
+        </div>
+      </div>
+      <div class="s-head"><h4>Devices</h4></div>
+      <div class="spread">
+        <div class="page duo">${card(['fold', 'Foldables', 'Samsung\'s next cover screen, taller and brighter', 'The leak shows a hinge with less crease.', 'The Verge · 3h'])}${card(['desk', 'Tools', 'A keyboard that keeps your clipboard', 'Why the history belongs in the keyboard.', 'Bluesky · 5h'])}</div>
+        <div class="page duo">${card(['neon', 'Night', 'Rain, neon and the return of the night walk', 'Phones stay in pockets after dark.', 'The Verge · 1d'])}${card(['train', 'Print', 'Why magazines on trains are back in Tokyo', 'The quiet hour has a format.', 'Monocle · 1d'])}</div>
+      </div>
+      <div class="spread" style="margin-top:30px">
+        <div class="page s-quote" onclick="toast('Opens the post on X')"><div class="mark">“</div><blockquote>The home screen should be a notebook, not a grid of apps.</blockquote><div><b>@typecraft_dev</b><div class="meta">From your Android list · 2.1k reposts</div></div></div>
+        <div class="page s-feature card" onclick="set({scene:'reader',spread:0})"><img src="${P('mic')}"><div class="kicker">Audio · Import AI</div><h3>Speech-to-text that never leaves the phone</h3><p>A new open model, smaller than Whisper small, matches it on the authors' benchmark — and could take over Soma's offline voice.</p><div class="meta" style="margin-top:8px">Newsletter · 6 min</div></div>
+      </div>
+      <div class="s-head"><h4>Elsewhere</h4></div>
+      <div class="spread">
+        <div class="page s-photo" onclick="set({scene:'reader',spread:0})"><img src="${P('harbor')}"><div class="cap">The harbor at golden hour, from the 30th floor. <span class="meta">Bluesky · @dev_one</span></div></div>
+        <div class="page"><div class="tops"><h5>In brief</h5></div><div class="briefs" style="padding:0">
+          <div class="brief"><span class="t">Tailscale ships per-device names for shared nodes</span><img src="${P('neon')}"></div>
+          <div class="brief"><span class="t">Samsung's next cover screen leaks, taller and brighter</span><img src="${P('fold')}"></div>
+          <div class="brief"><span class="t">Why magazines on trains are back in Tokyo</span><img src="${P('train')}"></div>
+          <div class="brief"><span class="t">The ramen counter you saved gets its first long review</span><img src="${P('ramen')}"></div>
+        </div></div>
+      </div>
+      <div class="end meta">You're caught up · it checks again every hour · pull or tap ↻ any time</div>
+    </div>`;
+}
+
 function stream() {
+  if (S.layout !== 'cover') return streamWide();
   const pair = (a, b) => `<div class="pair">${[a, b].map(c => `<div class="card" onclick="set({scene:'reader',spread:0})"><img src="${P(c[0])}"><div class="kicker">${c[1]}</div><h3>${c[2]}</h3><p>${c[3]}</p><div class="meta">${c[4]}</div></div>`).join('')}</div>`;
   return `<div class="mast"><span class="name">SOMA</span>
       <span class="refresh ${S.refreshing ? 'spin' : ''}"><span class="meta">${S.refreshing ? 'Updating…' : 'Updated ' + S.updated + ' · hourly'}</span><button class="ic" onclick="refresh()" title="Refresh">↻</button></span></div>
@@ -214,6 +292,15 @@ const ARTICLE = {
 
 function reader() {
   const a = ARTICLE;
+  if (S.layout === 'portrait') {
+    const it = (img, kick, h, on) => `<div class="top-item ${on ? 'on' : ''}" onclick="toast('Opens on the right page')"><div><div class="kicker">${kick}</div><h3 style="font-size:15px">${h}</h3></div><img src="${P(img)}" style="height:70px"></div>`;
+    return `<div class="rbar"><button onclick="set({scene:'stream'})" style="font-size:20px">‹</button><span class="name" style="font-family:'M Display';font-size:18px;flex:1">SOMA</span><span class="meta">tailscale.com · 6 min</span><button onclick="toast('Saved to Notes')" style="font-size:18px;margin-left:10px">☆</button></div>
+      <div class="split"><div class="list">
+        ${it('server', 'Self-hosting', a.title, true)}${it('fold', 'Foldables', 'Foldable launchers are having a moment')}${it('mic', 'Audio', 'Speech-to-text that never leaves the phone')}${it('desk', 'Tools', 'Agents that build on the phone itself')}${it('ramen', 'Food', 'The Chinatown ramen counter you saved, reviewed')}${it('harbor', 'Honolulu', 'The harbor at golden hour')}
+      </div><div class="art"><div class="reader"><img class="hero" src="${P(a.hero)}"><div class="body"><div class="kicker">${a.kicker}</div><h1 style="font-size:26px">${a.title}</h1><p class="dek">${a.dek}</p>
+        ${a.paras.map((p, i) => `<p class="${i ? '' : 'first'}">${p}</p>`).join('')}<blockquote>${a.quote}</blockquote><figure><img src="${P(a.figure[0])}"><figcaption>${a.figure[1]}</figcaption></figure>${a.more.map(p => `<p>${p}</p>`).join('')}</div></div>
+        <div class="tools" style="position:sticky;bottom:14px;left:auto;right:auto;margin:0 12px"><button onclick="toast('Saved to Notes')">→ Notes</button><button onclick="toast('Sent to the Mac Pro')">→ Mac</button><button onclick="toast('Opens the original')">Original</button><button onclick="toast('Reading it to you')">▶ Listen</button></div></div></div>`;
+  }
   const bar = `<div class="rbar"><button onclick="set({scene:'stream'})" style="font-size:20px">‹</button><span class="meta" style="flex:1">tailscale.com · 6 min · 5 sources</span><button onclick="toast('Saved to Notes')" style="font-size:18px">☆</button></div>`;
   if (S.layout === 'landscape') {
     return bar + `<div class="book" id="book"><div class="flow" id="flow"><img src="${P(a.hero)}"><div class="kicker">${a.kicker}</div><h1>${a.title}</h1><p><i>${a.dek}</i></p>${a.paras.map(p => `<p>${p}</p>`).join('')}<blockquote>${a.quote}</blockquote><img src="${P(a.figure[0])}">${a.more.map(p => `<p>${p}</p>`).join('')}</div>
