@@ -11,6 +11,8 @@
     <cache-path name="share" path="share/" />
     <!-- Pocket items pulled from the Mac Pro, to open or copy (herd/Pocket.kt). -->
     <cache-path name="pocket" path="pocket/" />
+    <!-- GIFs the keyboard places in an app's message box (keyboard/GifPanel.kt). -->
+    <cache-path name="gifs" path="gifs/sent/" />
     <!-- What Tailshare received, kept for "Sent to this phone" (herd/ClipInbox.kt). -->
     <files-path name="inbox" path="inbox/" />
     <!-- Files search found in shared storage, opened or shared from the search card. -->

@@ -32,7 +32,7 @@ import kotlin.math.sin
  * writes that down for a review to suggest from ([KeyboardLearning]); it never moves keys on its own.
  * Nothing is learned in password fields or where the app asks for no learning, and the mic is off in them.
  */
-class OmaKeyboardService : InputMethodService(), KeyboardView.Host, EmojiPicker.Host, ClipPanel.Host {
+class OmaKeyboardService : InputMethodService(), KeyboardView.Host, EmojiPicker.Host, ClipPanel.Host, GifPanel.Host {
     private lateinit var view: KeyboardView
     private val prefs: SharedPreferences by lazy { getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
 
@@ -48,6 +48,12 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host, EmojiPicker.
     private var speech: Speech? = null
     private var picker: EmojiPicker? = null
     private var clipPanel: ClipPanel? = null
+    private var gifPanel: GifPanel? = null
+
+    /** The GIFs are up in the keys' place; [gifSearching]: their search, with the letters typing into it. */
+    private var showingGifs = false
+    private var gifSearching = false
+    private val gifWords = StringBuilder()
 
     /** The clipboard panel is up in the keys' place. */
     private var showingClips = false
@@ -135,6 +141,137 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host, EmojiPicker.
             return c.text.takeIf { System.currentTimeMillis() - c.at < ClipHistory.FRESH_MS && it != pastedFresh }
         }
 
+    // ---- GIFs ----
+
+    override val gifQuery get() = gifWords.toString()
+
+    override val wide get() = screen != Screen.COVER
+
+    override val customerId: String
+        get() = prefs.getString(GIF_CUSTOMER, null) ?: java.util.UUID.randomUUID().toString().also { prefs.edit().putString(GIF_CUSTOMER, it).apply() }
+
+    override fun gifTool() {
+        if (showingGifs || gifSearching) {
+            leaveGifs()
+        } else {
+            showingClips = false
+            showingGifs = true
+            gifPanel?.opened()
+        }
+        rebuild()
+    }
+
+    /** Out of the GIFs, back to the letters, their pictures let go. */
+    private fun leaveGifs() {
+        showingGifs = false
+        gifSearching = false
+        gifWords.clear()
+        gifPanel?.closed()
+    }
+
+    override fun startGifSearch() {
+        gifSearching = true
+        showingGifs = false
+        gifWords.clear()
+        layer = Layer.ABC
+        shift = false
+        capsLock = false
+        gifPanel?.queryChanged("")
+        rebuild()
+    }
+
+    override fun endGifSearch() {
+        // What was searched stays showing, now in the full panel.
+        gifWords.toString().trim().takeIf { it.isNotEmpty() }?.let { gifPanel?.showResults(it) }
+        gifSearching = false
+        gifWords.clear()
+        showingGifs = true
+        rebuild()
+    }
+
+    override fun clearGifQuery() {
+        gifWords.clear()
+        gifPanel?.queryChanged("")
+        rebuild()
+    }
+
+    /** A key pressed while searching GIFs: it edits the search, never the app's field. */
+    private fun gifSearchKey(key: Key) {
+        when (val a = key.action) {
+            is KeyAction.Type -> {
+                gifWords.append(if (shift || capsLock) a.text.uppercase() else a.text)
+                if (shift && !capsLock) shift = false
+            }
+            KeyAction.Space -> if (gifWords.isNotEmpty() && !gifWords.endsWith(" ")) gifWords.append(' ')
+            KeyAction.Back -> if (gifWords.isNotEmpty()) gifWords.setLength(gifWords.length - 1)
+            KeyAction.Shift -> {
+                capsLock = false
+                shift = !shift
+            }
+            KeyAction.Layer -> layer = if (layer == Layer.ABC) Layer.NUM else Layer.ABC
+            is KeyAction.Go -> layer = if (a.to == Layer.EMOJI) Layer.ABC else a.to
+            KeyAction.Emoji, KeyAction.Return -> {
+                // Done: the panel again, showing what the search found.
+                endGifSearch()
+                return
+            }
+            KeyAction.Mic -> {}
+        }
+        gifPanel?.queryChanged(gifWords.toString())
+        rebuild()
+    }
+
+    /**
+     * Puts [item] in the app's message box, inline, as a GIF (Boss, 2026-10-21: "tapping on the gif should just
+     * place it inline"); the app's own send sends it. The file is fetched (or read from the phone) into the cache and
+     * handed over through Soma's file provider. An app that takes no pictures from a keyboard gets KLIPY's link typed
+     * instead; for one of the phone's own GIFs there is nothing to type, and it says so.
+     */
+    override fun placeGif(item: GifItem) {
+        val info = currentInputEditorInfo
+        val takes = info != null && androidx.core.view.inputmethod.EditorInfoCompat.getContentMimeTypes(info).any { android.content.ClipDescription.compareMimeTypes("image/gif", it) }
+        leaveGifs()
+        autoShift()
+        rebuild()
+        if (!takes) {
+            if (item.link.isNotEmpty()) currentInputConnection?.commitText(item.link, 1) else Toast.makeText(this, "This app doesn't take GIFs from the keyboard", Toast.LENGTH_SHORT).show()
+            return
+        }
+        Thread {
+            val file = runCatching { gifFile(item) }.getOrNull()
+            android.os.Handler(mainLooper).post {
+                val ic = currentInputConnection ?: return@post
+                if (file == null) {
+                    if (item.link.isNotEmpty()) ic.commitText(item.link, 1) else Toast.makeText(this, "Couldn't read that GIF", Toast.LENGTH_SHORT).show()
+                    return@post
+                }
+                val uri = androidx.core.content.FileProvider.getUriForFile(this, "$packageName.files", file)
+                val content = androidx.core.view.inputmethod.InputContentInfoCompat(uri, android.content.ClipDescription(item.title.ifEmpty { "GIF" }, arrayOf("image/gif")), item.link.takeIf { it.startsWith("http") }?.let(android.net.Uri::parse))
+                val ok = androidx.core.view.inputmethod.InputConnectionCompat.commitContent(ic, currentInputEditorInfo ?: return@post, content, androidx.core.view.inputmethod.InputConnectionCompat.INPUT_CONTENT_GRANT_READ_URI_PERMISSION, null)
+                if (!ok && item.link.isNotEmpty()) ic.commitText(item.link, 1)
+            }
+        }.start()
+    }
+
+    /** The GIF itself, in the cache's gifs/sent: fetched from KLIPY, or copied from the phone's own. */
+    private fun gifFile(item: GifItem): File {
+        val dir = File(cacheDir, "gifs/sent").apply { mkdirs() }
+        val f = File(dir, Integer.toHexString(item.id.hashCode()) + ".gif")
+        if (f.length() > 0) return f
+        val bytes =
+            if (item.full.startsWith("content:")) {
+                contentResolver.openInputStream(android.net.Uri.parse(item.full))!!.use { it.readBytes() }
+            } else {
+                val c = java.net.URL(item.full).openConnection() as java.net.HttpURLConnection
+                c.connectTimeout = 5_000
+                c.readTimeout = 15_000
+                c.inputStream.use { it.readBytes() }
+            }
+        f.writeBytes(bytes)
+        dir.listFiles()?.takeIf { it.size > 60 }?.sortedBy { it.lastModified() }?.take(20)?.forEach { it.delete() }
+        return f
+    }
+
     override fun clipboard(paste: Boolean) {
         if (paste) {
             freshClip?.let {
@@ -143,7 +280,10 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host, EmojiPicker.
             }
         } else {
             showingClips = !showingClips
-            if (showingClips) clipPanel?.opened()
+            if (showingClips) {
+                if (showingGifs || gifSearching) leaveGifs()
+                clipPanel?.opened()
+            }
         }
         rebuild()
     }
@@ -207,6 +347,7 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host, EmojiPicker.
 
     override fun showLetters() {
         showingClips = false
+        if (showingGifs || gifSearching) leaveGifs()
         layer = Layer.ABC
         autoShift()
         rebuild()
@@ -267,6 +408,7 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host, EmojiPicker.
         view = KeyboardView(this, this)
         picker = EmojiPicker(view, this).also { view.emoji = it }
         clipPanel = ClipPanel(view, this).also { view.clips = it }
+        gifPanel = GifPanel(view, this).also { view.gifs = it }
         return view
     }
 
@@ -285,6 +427,7 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host, EmojiPicker.
         capsLock = false
         searching = false
         showingClips = false
+        if (showingGifs || gifSearching) leaveGifs()
         search.clear()
         // A copy made while no field had the keyboard (the listener only hears while it is bound) is noted now.
         noteClip()
@@ -340,10 +483,12 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host, EmojiPicker.
         val was = screen
         screen = Screen.of(w, h)
         if (was != screen || aim == null) aim = loadAim(screen)
-        view.layout = KeyGeometry.layout(w, screen, layer, view.mech, shift || capsLock, capsLock, if (searching) "done" else returnLabel(), split = prefs.getBoolean(SPLIT, true))
+        view.layout = KeyGeometry.layout(w, screen, layer, view.mech, shift || capsLock, capsLock, if (searching || gifSearching) "done" else returnLabel(), split = prefs.getBoolean(SPLIT, true))
         view.mode =
             when {
                 showingClips -> KeyboardView.Mode.CLIPS
+                gifSearching -> KeyboardView.Mode.GIF_SEARCH
+                showingGifs -> KeyboardView.Mode.GIFS
                 searching -> KeyboardView.Mode.SEARCH
                 layer == Layer.EMOJI -> KeyboardView.Mode.EMOJI
                 else -> KeyboardView.Mode.KEYS
@@ -380,6 +525,10 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host, EmojiPicker.
     ) {
         if (searching) {
             searchKey(key)
+            return
+        }
+        if (gifSearching) {
+            gifSearchKey(key)
             return
         }
         val ic = currentInputConnection ?: return
@@ -645,6 +794,7 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host, EmojiPicker.
 
         /** Frequently used emoji and the skin tones picked ([EmojiUsage]). */
         const val EMOJI_USAGE = "emoji_usage"
+        const val GIF_CUSTOMER = "gif_customer"
 
         @Volatile private var emojiCatalog: EmojiCatalog? = null
     }

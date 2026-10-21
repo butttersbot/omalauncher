@@ -94,6 +94,9 @@ class KeyboardView(
 
         /** The strip's clipboard pill: the clipboard panel ([ClipPanel]) up, or (with [paste]) the fresh copy typed. */
         fun clipboard(paste: Boolean) {}
+
+        /** The strip's GIF button: the GIFs ([GifPanel]) up, or back to the letters. */
+        fun gifTool() {}
     }
 
     private val density = resources.displayMetrics.density
@@ -124,7 +127,10 @@ class KeyboardView(
     /** The clipboard, drawn in the keys' place while [mode] is [Mode.CLIPS]. */
     var clips: ClipPanel? = null
 
-    enum class Mode { KEYS, EMOJI, SEARCH, CLIPS }
+    /** The GIFs, drawn in the keys' place while [mode] is [Mode.GIFS], and their search band over them in [Mode.GIF_SEARCH]. */
+    var gifs: GifPanel? = null
+
+    enum class Mode { KEYS, EMOJI, SEARCH, CLIPS, GIFS, GIF_SEARCH }
 
     var mode = Mode.KEYS
         set(value) {
@@ -138,18 +144,24 @@ class KeyboardView(
      * Room above the keys for a pressed key's bubble, dp. Touches there go to the app (see the service's insets). The
      * emoji picker has no bubbles and takes that room as its own, so it stands taller than the letters, as Apple's.
      */
-    val headroomDp get() = if (preview || mode == Mode.EMOJI || mode == Mode.CLIPS) 0f else bubbleRoomDp
+    val headroomDp get() = if (preview || mode == Mode.EMOJI || mode == Mode.CLIPS || mode == Mode.GIFS) 0f else bubbleRoomDp
     private val bubbleRoomDp get() = (layout?.rowHeight ?: 54f) * 1.3f
     val headroomPx get() = (headroomDp * density).toInt()
 
     /** The search band over the letters while searching, px. */
-    private val bandPx get() = if (mode == Mode.SEARCH && emoji != null) (EmojiPicker.BAND_DP * density).toInt() else 0
+    private val bandPx
+        get() =
+            when {
+                mode == Mode.SEARCH && emoji != null -> (EmojiPicker.BAND_DP * density).toInt()
+                mode == Mode.GIF_SEARCH && gifs != null -> (GifPanel.BAND_DP * density).toInt()
+                else -> 0
+            }
 
     /** The board's own height under the headroom, px: the keys (and the band), or the picker. */
     private val boardPx: Int
         get() {
             val keys = layout?.height ?: 240f
-            val tall = (mode == Mode.EMOJI && emoji != null) || (mode == Mode.CLIPS && clips != null)
+            val tall = (mode == Mode.EMOJI && emoji != null) || (mode == Mode.CLIPS && clips != null) || (mode == Mode.GIFS && gifs != null)
             return if (tall) ((keys + bubbleRoomDp) * density).toInt() else (keys * density).toInt() + bandPx
         }
 
@@ -268,6 +280,17 @@ class KeyboardView(
         } else {
             fill.color = if (k.letter != null) k.page else k.board
             canvas.drawRect(0f, top, width.toFloat(), height.toFloat(), fill)
+        }
+        val gifPanel = gifs
+        if (mode == Mode.GIFS && gifPanel != null) {
+            gifPanel.draw(canvas, top, width.toFloat(), boardPx.toFloat(), k)
+            if (ownStrip) drawStrip(canvas, k, top + boardPx)
+            return
+        }
+        if (mode == Mode.GIF_SEARCH && gifPanel != null) {
+            gifPanel.drawBand(canvas, top, width.toFloat(), k)
+            drawKeys(canvas, l, k, top + bandPx)
+            return
         }
         val panel = clips
         if (mode == Mode.CLIPS && panel != null) {
@@ -457,6 +480,35 @@ class KeyboardView(
         canvas.drawLine(ax - 7 * d, cy - 3 * d, ax, cy + 4 * d, stroke)
         canvas.drawLine(ax, cy + 4 * d, ax + 7 * d, cy - 3 * d, stroke)
         drawClipPill(canvas, k, cy, toolsStartPx())
+        drawGifTool(canvas, k, cy, pill.right + TOOL_GAP_DP * density)
+    }
+
+    /** Where the strip's GIF button is, px. */
+    private val gifBox = RectF()
+
+    /** The GIF button, after the clipboard: a boxed "GIF", ringed while the GIFs are up. */
+    private fun drawGifTool(
+        canvas: Canvas,
+        k: KeyboardLook,
+        cy: Float,
+        left: Float,
+    ) {
+        val d = density
+        val ink = if (k.letter != null) k.pageInk else k.muted
+        val on = mode == Mode.GIFS || mode == Mode.GIF_SEARCH
+        gifBox.set(left, cy - 15 * d, left + 50 * d, cy + 15 * d)
+        stroke.color = ink
+        stroke.strokeWidth = 1.5f * d
+        if (on) canvas.drawRoundRect(gifBox, 15 * d, 15 * d, stroke)
+        text.typeface = Typeface.MONOSPACE
+        text.textSize = 11 * d
+        text.isFakeBoldText = true
+        text.color = ink
+        val label = RectF(gifBox.centerX() - 14 * d, cy - 8 * d, gifBox.centerX() + 14 * d, cy + 8 * d)
+        stroke.strokeWidth = 1.3f * d
+        canvas.drawRoundRect(label, 2 * d, 2 * d, stroke)
+        canvas.drawText("GIF", gifBox.centerX(), cy - (text.fontMetrics.ascent + text.fontMetrics.descent) / 2, text)
+        text.isFakeBoldText = false
     }
 
     /**
@@ -572,12 +624,14 @@ class KeyboardView(
             pickerTouch =
                 when {
                     mode == Mode.CLIPS && clips != null && e.y < headroomPx + boardPx -> Mode.CLIPS
+                    mode == Mode.GIFS && gifs != null && e.y < headroomPx + boardPx -> Mode.GIFS
+                    mode == Mode.GIF_SEARCH && gifs != null && e.y >= headroomPx && e.y < headroomPx + bandPx -> Mode.GIF_SEARCH
                     picker == null -> null
                     mode == Mode.EMOJI && e.y < headroomPx + boardPx -> Mode.EMOJI
                     mode == Mode.SEARCH && e.y >= headroomPx && e.y < headroomPx + bandPx -> Mode.SEARCH
                     else -> null
                 }
-            if ((mode == Mode.EMOJI || mode == Mode.CLIPS) && pickerTouch == null) {
+            if ((mode == Mode.EMOJI || mode == Mode.CLIPS || mode == Mode.GIFS) && pickerTouch == null) {
                 stripTap(dpX(e.x))
                 return true
             }
@@ -585,8 +639,10 @@ class KeyboardView(
         when (pickerTouch) {
             Mode.EMOJI -> return picker?.touch(e) ?: true
             Mode.CLIPS -> return clips?.touch(e) ?: true
+            Mode.GIFS -> return gifs?.touch(e) ?: true
+            Mode.GIF_SEARCH -> return gifs?.touchBand(e) ?: true
             Mode.SEARCH -> return picker?.touchBand(e) ?: true
-            else -> if (mode == Mode.EMOJI || mode == Mode.CLIPS) return true
+            else -> if (mode == Mode.EMOJI || mode == Mode.CLIPS || mode == Mode.GIFS) return true
         }
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
@@ -663,7 +719,10 @@ class KeyboardView(
     private fun stripTap(x: Float) {
         if (!ownStrip) return
         val px = x * density
-        if (px >= pill.left && px <= pill.right + 8 * density) {
+        if (px >= gifBox.left - 4 * density && px <= gifBox.right + 4 * density) {
+            tick()
+            host.gifTool()
+        } else if (px >= pill.left && px <= pill.right + 4 * density) {
             tick()
             host.clipboard(paste = px > pillIconRight && mode != Mode.CLIPS && host.freshClip != null)
         } else if (x < STRIP_BUTTON_DP && host.canSplit) {
@@ -734,6 +793,9 @@ class KeyboardView(
 
         /** On the cover, with no split switch, the strip's tools start this far in from the left. */
         private const val STRIP_PAD_DP = 12f
+
+        /** Between one tool in the strip and the next. */
+        private const val TOOL_GAP_DP = 8f
 
         /** The strip's least height while it holds its buttons, dp: Android's own keyboard bar's. */
         private const val STRIP_MIN_DP = 48f
