@@ -125,11 +125,10 @@
   @media (min-width: 700px) { .phone.inner { width: min(980px, 118vh); height: auto; } }
   .phone.inner .home { background: url(search-mock/home.png) left top/50% auto no-repeat, url(search-mock/page2.png) right top/50% auto no-repeat; }
   .phone.inner .home::after { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: rgba(0,0,0,.15); }
-  .phone.inner.l-card .sheet { inset: 9% 14% 9%; max-height: none; display: grid; grid-template-columns: 1fr .85fr; grid-template-rows: auto auto 1fr; }
-  .phone.inner .sheet .bar, .phone.inner .sheet .scopes { grid-column: 1 / -1; }
-  .phone.inner .list { padding-bottom: 16px; border-right: var(--line) solid var(--ink); }
-  .preview { display: none; overflow-y: auto; padding: 14px; }
-  .phone.inner .preview { display: block; }
+  /* Open: the same card, only wider (Boss, 2026-10-20: "one panel... the same but just wider"). */
+  .phone.inner.l-card .sheet { inset: 8% 18% auto; max-height: 64%; }
+  .phone.inner .list { padding-bottom: 16px; }
+  .preview { display: none; }
   .preview .big { width: 100%; aspect-ratio: 4/3; object-fit: cover; border: var(--line) solid var(--ink); display: block; }
   .preview h3 { margin: 10px 0 2px; font-size: 18px; }
   .preview .meta { color: var(--muted); font-size: 13px; }
@@ -137,7 +136,7 @@
   .preview .quote { margin-top: 10px; padding: 10px; border-left: 3px solid var(--red); background: var(--tone); font-size: 13.5px; }
   .preview .acts { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px; }
   .preview .acts span { border: var(--line) solid var(--ink); padding: 5px 9px; font-size: 12.5px; cursor: pointer; }
-  .phone.inner .shots { grid-template-columns: repeat(3, 1fr); }
+  .phone.inner .shots { grid-template-columns: repeat(5, 1fr); }
   /* Half: drops halfway, the page still showing under it. */
   .phone.l-half .sheet { bottom: auto; height: 56%; border-bottom: 2px solid var(--ink); box-shadow: 0 8px 30px rgba(0,0,0,.3); }
   /* Bottom: the field just above the keyboard, the best results nearest the thumb, the list growing up. */
@@ -156,7 +155,7 @@
   <div class="home" id="home"></div>
   <div class="hint" id="hint">⇣ swipe down on home</div>
   <div class="layouts" id="layouts"><span data-s="cover" class="on">Closed</span><span data-s="inner">Open</span></div>
-  <div class="layouts" id="glass" style="top:44px"><span data-g="clear" class="on">Clear</span><span data-g="smoke">Smoke</span><span data-g="tone">Tone</span><span data-g="paper">Paper</span></div>
+  <div class="layouts" id="glass" style="top:44px"><span data-g="clear" class="on">Clear</span><span data-g="smoke">Smoke</span></div>
   <div class="about" id="about"></div>
 
   <div class="sheet" id="sheet">
@@ -364,7 +363,7 @@ function reverseBlocks(h) {
 
 const ABOUT = {
   full: 'Full: the whole screen, like iPhone Spotlight. Most results at once; home hidden.',
-  card: 'Card, see-through. Switch Closed / Open for the cover or the unfolded Fold, and the glass below. Then swipe down.',
+  card: 'The see-through card. Closed or Open for the cover or the unfolded Fold; Clear or Smoke glass. Then swipe down.',
   half: 'Half: drops halfway; the page stays in view below. Quick and light, less room.',
   bottom: 'Bottom: the field sits just over the keyboard and results stack upward, best nearest your thumb. One-handed.',
 };
@@ -385,24 +384,22 @@ function bind() {
     let t;
     el.onpointerdown = () => { t = setTimeout(() => { t = null; act(rows[+el.dataset.i]); }, 450); };
     el.onpointerup = () => { if (t) { clearTimeout(t); const r = rows[+el.dataset.i];
-      if (screenMode === 'inner' && !r.toggle && sel !== +el.dataset.i) { sel = +el.dataset.i; list.querySelectorAll('.row').forEach(x => x.classList.toggle('sel', x === el)); showPreview(r); return; }
       if (r.toggle) { r.on = !r.on; render(); toast(`${r.t} ${r.on ? 'on' : 'off'}`); } else toast(`Open: ${r.t}`); } };
     el.onpointerleave = () => clearTimeout(t);
   });
   list.querySelectorAll('.shot').forEach(el => el.onclick = () => {
-    if (screenMode === 'inner') { showPhoto(el); return; }
     toast('Opens in Gallery · long-press to share, copy or set as wallpaper');
   });
-  if (screenMode === 'inner') { const first = list.querySelector('.shot'); if (rows[sel]) showPreview(rows[sel]); else if (first) showPhoto(first); else $('preview').innerHTML = ''; }
+
   list.querySelectorAll('.recent span').forEach(el => el.onclick = () => { if (el.textContent.length < 4 && /\p{Emoji}/u.test(el.textContent)) { toast('Copied ' + el.textContent); return; } q.value = el.textContent; render(); });
   list.querySelectorAll('.fav').forEach(el => el.onclick = () => toast('Open: ' + el.textContent.trim()));
   list.querySelectorAll('.answer').forEach(el => el.onclick = () => toast('Copied ' + el.querySelector('.a').textContent));
 }
 
 function act(r) {
-  const common = [['☆', 'Add to favorites'], ['⌗', 'Set alias…'], ['↺', 'Reset ranking'], ['⊘', 'Hide from search', 'red']];
+  const common = [['☆', 'Add to favorites'], ['⌗', 'Set alias…'], ['⊘', 'Hide from search', 'red']];
   const byKind = {
-    app: [['↗', 'Open'], ['▦', 'Pin to home'], ['ⓘ', 'App info']],
+    app: [['↗', 'Open']],
     file: [['↗', 'Open'], ['⇪', 'Share'], ['⎘', 'Copy path'], ['🗀', 'Show in folder']],
     'mac pro': [['↗', 'Open on the Mac'], ['⇣', 'Bring to the phone']],
     note: [['↗', 'Open'], ['⎘', 'Copy text']],
