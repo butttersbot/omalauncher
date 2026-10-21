@@ -20,10 +20,18 @@ loaded for that search and freed after.
   Log: `~/Library/Logs/embed-server.log`.
 - `GET /health`; `POST /text {"texts": [...]}`; `POST /images {"images": [{"id", "jpeg": base64}]}`. Vectors are
   the model's first 256 numbers scaled to length 1; queries carry the model's `task: search query | text:` prefix.
+- Each photo also gets Vision's tags (`VNClassifyImageRequest`, confidence 0.3 or more, ten at most: "dog",
+  "beach", "birthday cake"), which the phone keeps as words, so a photo is found by them with the Mac away too.
+  `/health` says `reads`: the phone sends again the photos a server with fewer reads saw (2 = tags).
+- `POST /rerank {"query", "docs"}`: how near each result's words are to the query (documents carry
+  `title: none | text:`), for ordering files when typing pauses. Document vectors are cached.
+- `GET /spotlight?q=&n=` (Spotlight over `~`, names first) and `GET /file?path=` (a file under `~`, 500 MB at
+  most) answer only devices of this Mac's own Tailscale user, checked with `tailscale whois`.
 
 ## The phone side (`search/PhotoIndex.kt`)
 - Photos, videos and GIFs from the phone's media store, as 384-pixel copies, sent in batches while the phone is on
   unmetered Wi-Fi; what comes back (a vector, and any text in the photo) is kept in `files/search/photos.db`.
 - A search asks the Mac for its words' vector (under a second); if the Mac doesn't answer, the phone's own copy of
   the text model is used. Either way the photos are compared on the phone, in a few milliseconds.
+- A video is read from three frames (at 15, 50 and 85% of it); it is found by whichever is nearest.
 - Another server can be named in Linux's `~/.config/omalauncher/embed-server.txt` (one line, `http://host:port`).
