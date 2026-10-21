@@ -19,8 +19,8 @@ import kotlin.math.ceil
 
 /**
  * The keyboard's emoji picker, drawn in [KeyboardView]'s place while it is up, as Apple's is (Boss, 2026-10-20):
- * a "Search Emoji" field at the top; the emoji in five rows that scroll sideways, section after section, each
- * section's title held at the left while it shows; Frequently Used first; under them ABC, the sections' icons (a tap
+ * a "Search Emoji" pill at the top; the emoji big, in four rows that scroll sideways, section after section with no
+ * titles between (Boss, 2026-10-20, from his iPhone's: "remove the headers"); Frequently Used first; under them ABC, the sections' icons (a tap
  * goes to that section, and the one showing is lit) and ⌫, which repeats while held. A long press on an emoji with
  * skin tones offers them above it: slide to one and let go, or let go and tap one; the tone picked is what that
  * emoji shows from then on.
@@ -130,8 +130,7 @@ class EmojiPicker(
             items: List<EmojiItem>,
         ) {
             if (items.isEmpty()) return
-            // Never narrower than its title, so a short Frequently Used doesn't run into the next title.
-            val w = maxOf(ceil(items.size / ROWS.toFloat()) * cell, titleWidth(title) + cell * 0.2f)
+            val w = ceil(items.size / ROWS.toFloat()) * cell
             out += Part(title, icon, items, x, w)
             x += w + GAP_CELLS * cell
         }
@@ -192,7 +191,7 @@ class EmojiPicker(
         viewWidth = width
         bottom = top + height
         barTop = bottom - BAR_DP * d
-        gridTop = top + (SEARCH_DP + TITLE_DP) * d
+        gridTop = top + SEARCH_DP * d
         gridBottom = barTop
         lay(width, gridBottom - gridTop)
         if (scroller.computeScrollOffset()) {
@@ -209,15 +208,13 @@ class EmojiPicker(
         canvas.clipRect(0f, top + SEARCH_DP * d, width, gridBottom)
         text.textSize = cell * GLYPH
         text.typeface = null
+        text.color = col.ink or 0xff000000.toInt()
         val fm = text.fontMetrics
         val lift = (fm.ascent + fm.descent) / 2
         for (p in parts) {
             if (p.start + p.width < scrollX || p.start > scrollX + width) {
                 continue
             }
-            // The title, held at the left while its section shows.
-            val tx = maxOf(p.start, minOf(scrollX + SIDE_DP * d, p.start + p.width - titleWidth(p.title)))
-            drawTitle(canvas, p.title, tx - scrollX + cell * 0.12f, top + (SEARCH_DP + TITLE_DP) * d - 6 * d, col, k)
             val first = ((scrollX - p.start) / cell).toInt().coerceAtLeast(0)
             val last = ((scrollX + width - p.start) / cell).toInt()
             for (c in first..last) {
@@ -256,27 +253,6 @@ class EmojiPicker(
         item: EmojiItem,
     ) = if (p.items === frequent) item.emoji else host.usage.shown(item)
 
-    private fun titleWidth(t: String): Float {
-        text.textSize = 11.5f * density
-        return text.measureText(t.uppercase()) + cell * 0.3f
-    }
-
-    private fun drawTitle(
-        canvas: Canvas,
-        t: String,
-        x: Float,
-        y: Float,
-        col: Colors,
-        k: KeyboardLook,
-    ) {
-        text.textSize = 11.5f * density
-        text.typeface = Typeface.create(k.typeface, Typeface.BOLD)
-        text.color = col.muted
-        text.textAlign = Paint.Align.LEFT
-        canvas.drawText(t.uppercase(), x, y, text)
-        text.textAlign = Paint.Align.CENTER
-    }
-
     /** The search field from [y] down, [SEARCH_DP] tall; [query] null for the picker's own, which only opens a search. */
     private fun drawField(
         canvas: Canvas,
@@ -288,8 +264,9 @@ class EmojiPicker(
     ) {
         val d = density
         paint.color = col.field
-        box.set(SIDE_DP * d + 4 * d, y + 6 * d, width - SIDE_DP * d - 4 * d, y + (SEARCH_DP - 6) * d)
-        canvas.drawRoundRect(box, 10 * d, 10 * d, paint)
+        // A pill, as Apple's, clear of the board's edges and of the emoji below.
+        box.set(FIELD_SIDE_DP * d, y + FIELD_TOP_DP * d, width - FIELD_SIDE_DP * d, y + (FIELD_TOP_DP + FIELD_DP) * d)
+        canvas.drawRoundRect(box, FIELD_DP / 2 * d, FIELD_DP / 2 * d, paint)
         val cy = box.centerY()
         // A magnifying glass.
         stroke.color = col.muted
@@ -368,7 +345,8 @@ class EmojiPicker(
         if (n == 0) return
         val now = current()
         val slot = (width - 2 * sideW()) / n
-        val size = minOf(slot * 0.62f, (BAR_DP - 16) * d)
+        // Small and grey, as Apple's line icons; the section showing on a lit disc.
+        val size = minOf(slot * 0.55f, ICON_DP * d)
         text.typeface = null
         text.textSize = size
         grey.textSize = size
@@ -378,7 +356,7 @@ class EmojiPicker(
             if (i == now) {
                 paint.color = col.lit
                 canvas.drawCircle(cx, cy, size * 0.82f, paint)
-                canvas.drawText(p.icon, cx, cy - (fm.ascent + fm.descent) / 2, text)
+                canvas.drawText(p.icon, cx, cy - (fm.ascent + fm.descent) / 2, grey)
             } else {
                 canvas.drawText(p.icon, cx, cy - (fm.ascent + fm.descent) / 2, grey)
             }
@@ -733,23 +711,31 @@ class EmojiPicker(
     }
 
     companion object {
-        const val ROWS = 5
+        /** Apple's four rows of big emoji (Boss, 2026-10-20, with his iPhone's for reference). */
+        const val ROWS = 4
 
         /** The search field's height, the section titles' and the bar's, dp. */
-        const val SEARCH_DP = 46f
-        const val TITLE_DP = 20f
+        const val SEARCH_DP = 58f
+
+        /** The search pill: its height, and its margins from the board's top and sides. */
+        const val FIELD_DP = 40f
+        const val FIELD_TOP_DP = 10f
+        const val FIELD_SIDE_DP = 12f
+
+        /** The bar's section icons. */
+        const val ICON_DP = 24f
         const val BAR_DP = 44f
 
         /** The search band over the letters: the field and a row of results, dp. */
-        const val BAND_DP = 96f
+        const val BAND_DP = 112f
 
         /** Side margin, and the touch width of ABC and ⌫ in the bar, dp. */
         const val SIDE_DP = 6f
         const val SIDE_BUTTON_DP = 56f
 
         /** How much of a cell an emoji fills, and the gap between sections, in cells. */
-        const val GLYPH = 0.76f
-        const val GAP_CELLS = 0.4f
+        const val GLYPH = 0.72f
+        const val GAP_CELLS = 0.15f
         const val SLOP_DP = 8f
         const val LONG_PRESS_MS = 380L
 
