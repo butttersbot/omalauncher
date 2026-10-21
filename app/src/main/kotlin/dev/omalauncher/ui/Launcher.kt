@@ -6,6 +6,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.drawWithContent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -39,6 +40,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -93,6 +96,7 @@ private fun DesktopScreen(
     }
     BackHandler {
         when {
+            state.searchOpen -> state.searchOpen = false
             // Screens opened from settings return to it; settings itself is last.
             state.shared != null -> state.shared = null
             state.sharing != null -> state.sharing = null
@@ -109,6 +113,18 @@ private fun DesktopScreen(
         }
     }
 
+    // While the search is open, home is drawn through a layer the card blurs a part of: its glass ([SearchCard]).
+    val homeLayer = rememberGraphicsLayer()
+    Box(
+        Modifier.fillMaxSize().drawWithContent {
+            if (state.searchOpen) {
+                homeLayer.record { this@drawWithContent.drawContent() }
+                drawLayer(homeLayer)
+            } else {
+                drawContent()
+            }
+        },
+    ) {
     if (Pack.ownsPage) {
         // A theme pack with its own page: its paper or wallpaper is behind home instead of the theme's, the live one included.
         PagePaper()
@@ -143,6 +159,7 @@ private fun DesktopScreen(
         Column(Modifier.fillMaxSize().safePadding()) {
             HomeScreen(runtime, state, Modifier.weight(1f))
         }
+    }
     }
     HomeMenu(runtime, state)
 
@@ -312,6 +329,12 @@ private fun DesktopScreen(
 
     // Every page at once, over the whole window: over the dock too, and under the ring and the full-screen panels.
     Overview(runtime, state)
+
+    // Soma's search, pulled down from home: over home and its dock, under the full-screen panels.
+    if (state.searchOpen) {
+        LaunchedEffect(Unit) { state.closeNow() }
+        SearchCard(runtime, state, homeLayer)
+    }
 
     // The agent's light along the screen's edge, over home and its dock and in nothing's way: it takes no touch and no room.
     HomeRing()

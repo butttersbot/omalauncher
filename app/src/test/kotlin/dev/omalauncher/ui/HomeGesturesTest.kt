@@ -50,7 +50,7 @@ class HomeGesturesTest {
                 Triple(40f, 5f, Owner.Pager),
                 Triple(-40f, -5f, Owner.Pager),
                 Triple(3f, -40f, Owner.Drawer),
-                Triple(3f, 40f, Owner.Nobody),
+                Triple(3f, 40f, Owner.Search),
             )) {
                 val expected =
                     when {
@@ -58,6 +58,8 @@ class HomeGesturesTest {
                         start == TouchStart.Widget -> Owner.Widget
                         // Upwards is the app list's only from the bare page or an app, and not over an open folder.
                         free == Owner.Drawer && (modes.folderOpen || (start != TouchStart.Page && start != TouchStart.Tile)) -> Owner.Nobody
+                        // Downwards is the search's from the same places only.
+                        free == Owner.Search && (modes.folderOpen || (start != TouchStart.Page && start != TouchStart.Tile)) -> Owner.Nobody
                         else -> free
                     }
                 assertEquals("$start $modes by $dx,$dy", expected, touch(start, modes).also { it.pointers(1) }.moved(dx, dy, 0f, slop))
@@ -115,7 +117,12 @@ class HomeGesturesTest {
         assertEquals(Owner.Pager, drag(10.5f, 0f))
         assertEquals(Owner.Pager, drag(-11f, 3f))
         assertEquals(Owner.Nobody, drag(20f, 20f))
-        assertEquals(Owner.Nobody, drag(0f, 10.5f))
+        // Straight down is the search's, as far and as steep as the list wants upwards.
+        assertEquals(Owner.Undecided, drag(0f, 10.5f))
+        assertEquals(Owner.Undecided, drag(0f, 20f))
+        assertEquals(Owner.Search, drag(0f, 20.5f))
+        assertEquals(Owner.Search, drag(20f, 30f))
+        assertEquals(Owner.Nobody, drag(21f, 30f))
         // Decided once: a swipe that began sideways stays the pager's when it curls upwards, and the other way round.
         val sideways = touch(TouchStart.Page, HomeModes()).also { it.moved(30f, -5f, 0f, slop) }
         assertEquals(Owner.Pager, sideways.moved(30f, -200f, 0f, slop))

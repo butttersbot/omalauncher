@@ -105,8 +105,8 @@ class InkGesturesTest {
     }
 
     @Test fun aNotesDragDoesNotStartFromASwipe() {
-        // Sideways across a note turns the page; upwards opens the app list, as from an app; downwards is nobody's.
-        for ((dx, dy, owner) in listOf(Triple(40f, 5f, Owner.Pager), Triple(-40f, -5f, Owner.Pager), Triple(3f, -40f, Owner.Drawer), Triple(3f, 40f, Owner.Nobody))) {
+        // Sideways across a note turns the page; upwards opens the app list and downwards the search, as from an app.
+        for ((dx, dy, owner) in listOf(Triple(40f, 5f, Owner.Pager), Triple(-40f, -5f, Owner.Pager), Triple(3f, -40f, Owner.Drawer), Triple(3f, 40f, Owner.Search))) {
             val swipe = touch(TouchStart.Tile, HomeModes(), note = true)
             assertEquals(owner, swipe.moved(dx, dy, 0f, slop))
             // However long the finger then rests, the note stays where it is.

@@ -323,6 +323,8 @@ internal fun HomeGrid(
     onDrawerDrag: (Float) -> Unit = {},
     /** That drag let go, at this speed in px/s, negative upwards. */
     onDrawerEnd: (Float) -> Unit = {},
+    /** A drag straight down on the page: Soma's search comes down. */
+    onSearch: () -> Unit = {},
     /** The note or sticker the menu just put on a page, which eases in from where it was picked. */
     arrivals: Arrivals? = null,
     /** Told how to find the room each page showing has, for what is drawn onto a page from elsewhere. */
@@ -355,6 +357,7 @@ internal fun HomeGrid(
     val marked by rememberUpdatedState(marks)
     val pinched by rememberUpdatedState(onPinch to onPinchEnd)
     val drawer by rememberUpdatedState(onDrawerDrag to onDrawerEnd)
+    val search by rememberUpdatedState(onSearch)
     val panelled by rememberUpdatedState(panelLayout to panelLook?.style())
 
     BoxWithConstraints(modifier) {
@@ -465,13 +468,14 @@ internal fun HomeGrid(
                         var pulling = false
                         var lastY = 0f
                         val speed = VelocityTracker()
+                        var searched = false
                         try {
                             while (true) {
                                 val event = awaitPointerEvent(PointerEventPass.Initial)
                                 val pressed = event.changes.filter { it.pressed }
                                 if (pressed.isEmpty()) {
                                     // The fingers' lifting is the pinch's too, or the list's, never a tap on what is under them.
-                                    if (pinching || pulling) event.changes.forEach { it.consume() }
+                                    if (pinching || pulling || searched) event.changes.forEach { it.consume() }
                                     break
                                 }
                                 arbiter.pointers(pressed.size)
@@ -503,9 +507,13 @@ internal fun HomeGrid(
                                             drawer.first(first.position.y - lastY)
                                             lastY = first.position.y
                                         }
+                                        if (arbiter.owner == Owner.Search && !searched) {
+                                            searched = true
+                                            search()
+                                        }
                                     }
                                 }
-                                if (arbiter.owner == Owner.Pinch || arbiter.owner == Owner.Drawer) event.changes.forEach { it.consume() }
+                                if (arbiter.owner == Owner.Pinch || arbiter.owner == Owner.Drawer || arbiter.owner == Owner.Search) event.changes.forEach { it.consume() }
                             }
                         } finally {
                             arbiter.up()

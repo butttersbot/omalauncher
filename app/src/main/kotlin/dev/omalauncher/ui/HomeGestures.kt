@@ -48,7 +48,10 @@ enum class Owner {
     /** A drag upwards from the bare page, an app or a folder: the app list comes up under the finger (PRD AC-1). */
     Drawer,
 
-    /** A drag downwards, or upwards over an open folder, which home has no use for. */
+    /** A drag downwards from the bare page, an app or a folder: Soma's search comes down (Boss, 2026-10-20). */
+    Search,
+
+    /** A slanted drag downwards, or upwards over an open folder, which home has no use for. */
     Nobody,
 
     /** A long press on the bare page: the home menu. */
@@ -192,12 +195,15 @@ class GestureArbiter {
                 if (!several) {
                     wandered = true
                     val upwards = dy < 0 && !folder && (start == TouchStart.Page || start == TouchStart.Tile)
+                    // Downwards from the same places, as steeply and as far, brings the search down: the list's mirror.
+                    val downwards = dy > 0 && !folder && (start == TouchStart.Page || start == TouchStart.Tile)
                     owner =
                         when {
                             start == TouchStart.Widget -> Owner.Widget
                             // Clearly upwards: the app list's, but only once it has gone far enough to be meant. Until
                             // then nothing is decided, and a tap whose finger drifted up is still a tap.
                             upwards && -dy >= DRAWER_STEEP * abs(dx) -> if (hypot(dx, dy) > DRAWER_SLOPS * slop) Owner.Drawer else Owner.Undecided
+                            downwards && dy >= DRAWER_STEEP * abs(dx) -> if (hypot(dx, dy) > DRAWER_SLOPS * slop) Owner.Search else Owner.Undecided
                             // Sideways, or upwards at a slant a thumb's arc has: the pager's.
                             upwards || abs(dx) > abs(dy) -> Owner.Pager
                             else -> Owner.Nobody

@@ -231,6 +231,7 @@ class MainActivity : ComponentActivity() {
         }
         state.close()
         state.closeScreens()
+        state.searchOpen = false
         runtime.widgets.openScreen = null
         state.editing = null
         handleDebugExec(intent)

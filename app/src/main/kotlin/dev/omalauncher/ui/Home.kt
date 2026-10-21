@@ -160,6 +160,11 @@ internal fun Modifier.opensDrawer(
                                 pulling = true
                                 lastY = finger.position.y
                             }
+                            Owner.Search -> {
+                                state.searchOpen = true
+                                event.changes.forEach { it.consume() }
+                                break
+                            }
                             else -> break
                         }
                     }
@@ -740,6 +745,8 @@ fun HomeScreen(
             // Not under a terminal tile's keyboard: the list comes up with no keyboard showing.
             onDrawerDrag = { dy -> if (terminals.active == null) state.dragBy(-dy / windowHeight) },
             onDrawerEnd = { velocity -> if (terminals.active == null) state.settle(velocity) },
+            // Not under a terminal tile's keyboard either.
+            onSearch = { if (terminals.active == null) state.searchOpen = true },
             pinch = { pinch.value },
             onPinch = { scale ->
                 // The pages are caught as they were when the pinch began.

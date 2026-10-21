@@ -25,6 +25,9 @@ class LauncherState {
     var agentsOpen by mutableStateOf(false)
     var storeOpen by mutableStateOf(false)
     var settingsOpen by mutableStateOf(false)
+
+    /** Soma's search, pulled down from home ([SearchCard]). */
+    var searchOpen by mutableStateOf(false)
     var packagesOpen by mutableStateOf(false)
     var licensesOpen by mutableStateOf(false)
 
@@ -62,7 +65,7 @@ class LauncherState {
 
     /** Home as it is with nothing over it or being changed: no list, panel, overview, menu, pen or tile being edited. */
     val bareHome: Boolean
-        get() = drawer.targetValue < 0.5f && !panelOpen && !overviewOpen && !homeMenuOpen && !drawing && editing == null
+        get() = drawer.targetValue < 0.5f && !panelOpen && !overviewOpen && !homeMenuOpen && !drawing && editing == null && !searchOpen
 
     /** Closes every overlay screen (settings and what it opens). */
     fun closeScreens() {
