@@ -85,8 +85,24 @@ class PhoneGuardTest {
     @Test fun agentsAreToldOfUrlSubmitTheHoldAndTheLock() {
         val told = PhoneBridge.INSTRUCTIONS
         for (words in listOf("oma-phone url URL", "oma-phone submit", "never type a link into an address bar", "--in PACKAGE", "--any",
-            "Never type into Soma's own chat box", "If locked is true")) {
+            "Never type into Soma's own chat box", "If locked is true", "oma-phone run -")) {
             assertTrue(words, told.contains(words))
         }
+    }
+
+    /** `run` (oma-phone.sh): many steps in one call, each an ordinary call with its checks, stopping at the first that fails. */
+    @Test fun runTakesOnlyPhoneStepsAndNeverRunsWhatItReads() {
+        val script = java.io.File("src/main/assets/oma-phone.sh").readText()
+        val run = script.substringAfter("if [ \"\$command\" = run ]; then").substringBefore("\nfi\n")
+        // Words are split by xargs, never eval'd, and only phone steps are taken.
+        assertFalse(run.contains("eval"))
+        assertTrue(run.contains("xargs printf"))
+        assertTrue(run.contains("press|fill|submit|back|tap|swipe|expect|screen|open|url|home|page|stay)"))
+        assertTrue(run.contains("can't go in a run"))
+        // Each step is its own oma-phone call, so the hold, --in and the chat-box rule apply to every one; stdin is not theirs.
+        assertTrue(run.contains("\"\$0\" \"\$verb\" \"\${args[@]}\" 2>&1 </dev/null"))
+        assertTrue(run.contains("Step \$step failed"))
+        assertTrue(run.contains("-le 40"))
+        assertTrue(script.contains("oma-phone run [--in PACKAGE | --any] [SCRIPT_FILE | -]"))
     }
 }

@@ -4,6 +4,55 @@ set -euo pipefail
 command=${1:-help}
 shift || true
 expect=0
+# A script of steps, run one after another with no agent turn between them: the speed comes from planning once
+# (Boss, 2026-10-21, after ego lite's one-pass scripts). Each step is an ordinary oma-phone call with every check it
+# has; the run stops at the first step that fails and answers once, with what was done and the screen it ended on.
+if [ "$command" = run ]; then
+  global=()
+  while :; do
+    case "${1:-}" in
+    --in) global+=(--in "${2:?Package required: --in PACKAGE}"); shift 2;;
+    --any) global+=(--any); shift;;
+    *) break;;
+    esac
+  done
+  source=${1:--}
+  if [ "$source" = - ]; then script=$(cat); else [ -f "$source" ] || { echo "No such script: $source" >&2; exit 2; }; script=$(cat "$source"); fi
+  step=0; done_steps=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    line=${line#"${line%%[![:space:]]*}"}
+    case "$line" in ''|'#'*) continue;; esac
+    step=$((step + 1))
+    [ "$step" -le 40 ] || { echo "A run is at most 40 steps. Stopped before step $step; $done_steps done." >&2; exit 1; }
+    # Words as a shell would split them, quotes and all, but nothing in them is ever run.
+    split=$(printf '%s\n' "$line" | xargs printf '%s\036' 2>/dev/null) \
+      || { echo "Step $step can't be read (unbalanced quotes?): $line. $done_steps done." >&2; exit 1; }
+    words=()
+    while IFS= read -r -d $'\036' word; do words+=("$word"); done <<<"$split"
+    [ "${#words[@]}" -ge 1 ] || continue
+    verb=${words[0]}; rest=("${words[@]:1}")
+    case "$verb" in
+    wait)
+      ms=${rest[0]:-500}
+      [[ "$ms" =~ ^[0-9]+$ ]] && [ "$ms" -le 5000 ] || { echo "Step $step: wait takes milliseconds, at most 5000. $done_steps done." >&2; exit 1; }
+      sleep "$(awk -v m="$ms" 'BEGIN{printf "%.3f", m/1000}')";;
+    press|fill|submit|back|tap|swipe|expect|screen|open|url|home|page|stay)
+      case "$verb" in press|fill|submit|back|tap|swipe) args=("${global[@]}" "${rest[@]}");; *) args=("${rest[@]}");; esac
+      if ! out=$("$0" "$verb" "${args[@]}" 2>&1 </dev/null); then
+        why=$(printf '%s\n' "$out" | jq -r 'select(type=="object") | .error // empty' 2>/dev/null | head -1)
+        echo "Step $step failed: $line" >&2
+        echo "${why:-$(printf '%s\n' "$out" | tail -1)}" >&2
+        echo "$done_steps of $step done before it. The screen now:" >&2
+        "$0" screen </dev/null || true
+        exit 1
+      fi;;
+    *) echo "Step $step: $verb can't go in a run (press, fill, submit, back, tap, swipe, expect, screen, open, url, home, page, stay, wait). $done_steps done." >&2; exit 1;;
+    esac
+    done_steps=$step
+  done <<<"$script"
+  echo "{\"ok\":true,\"steps\":$done_steps}"
+  exec "$0" screen
+fi
 # Every touch takes --in PACKAGE (refuse unless that app is in front) and --any (not held to the app last opened).
 front=''; any=false
 case "$command" in
@@ -22,6 +71,7 @@ help)
 oma-phone apps | open PACKAGE_OR_settings | url [--app PACKAGE] URL
 oma-phone status | read | screenshot | back | home | recents | notifications | stay | stop
 oma-phone submit
+oma-phone run [--in PACKAGE | --any] [SCRIPT_FILE | -]
 oma-phone screen [--until TEXT]
 oma-phone expect TEXT
 oma-phone press [--in PACKAGE | --any] LABEL
@@ -83,6 +133,12 @@ After open or url, every touch (press, fill, click, type, scroll, submit, tap, s
 if another app has come to the front, nothing is done and the error says which. Name the app you mean with
 --in PACKAGE, or add --any. home, recents, notifications and page lift that hold.
 submit presses the keyboard's Enter, Go or Search on the field that has the keyboard: use it after fill.
+run takes several steps in one call, one to a line (from a file, or stdin with -), with no turn of yours
+between them: press, fill, submit, back, tap, swipe, expect, screen, open, url, home, page, stay and wait MS.
+Quote words as in a shell; # starts a comment. It stops at the first step that fails, says which and why,
+and shows the screen then; otherwise it answers once with the screen it ended on. --in or --any applies to
+every touch in it. At most 40 steps. Plan the steps you are sure of, run them, then look:
+  printf '%s\n' 'url https://x.com/i/bookmarks' 'expect Bookmarks' 'press "Add to Folder"' 'press "AI Agents"' | oma-phone run -
 Nothing types into Soma's own chat box, where the user writes, unless --in names Soma.
 status says locked, awake and active before you plan: a locked phone takes no steps.
 expect waits up to 5 seconds for TEXT to show and fails if it does not, so steps can be chained and
