@@ -101,17 +101,55 @@ class GifStore(
     private val hearted = ArrayList<GifItem>()
     private val recent = ArrayList<GifItem>()
 
+    /** His tags, in his order (Boss, 2026-10-21: + to add, long press to remove or move); and whether they're open. */
+    private val tags = ArrayList(DEFAULT_TAGS)
+    var tagsOpen = false
+        @Synchronized set(value) {
+            field = value
+            save()
+        }
+
     init {
         runCatching {
             val o = JSONObject(file!!.readText())
             o.optJSONArray("hearted")?.let { a -> for (i in 0 until a.length()) hearted += GifItem.fromJson(a.getJSONObject(i)) }
             o.optJSONArray("recent")?.let { a -> for (i in 0 until a.length()) recent += GifItem.fromJson(a.getJSONObject(i)) }
+            o.optJSONArray("tags")?.let { a ->
+                tags.clear()
+                for (i in 0 until a.length()) tags += a.getString(i)
+            }
+            tagsOpen = o.optBoolean("tagsOpen")
         }
     }
 
     @Synchronized fun hearted(): List<GifItem> = hearted.toList()
 
     @Synchronized fun recent(): List<GifItem> = recent.toList()
+
+    @Synchronized fun tags(): List<String> = tags.toList()
+
+    /** Adds [tag] at the end, once; false if there was nothing to add. */
+    @Synchronized fun addTag(tag: String): Boolean {
+        val t = tag.trim().lowercase()
+        if (t.isEmpty() || t in FIXED.map { it.lowercase() } || tags.any { it.equals(t, ignoreCase = true) }) return false
+        tags += t
+        save()
+        return true
+    }
+
+    @Synchronized fun removeTag(tag: String) {
+        if (tags.remove(tag)) save()
+    }
+
+    /** Moves the tag at [from] to [to], the others making room. */
+    @Synchronized fun moveTag(
+        from: Int,
+        to: Int,
+    ) {
+        if (from !in tags.indices || to !in tags.indices || from == to) return
+        tags.add(to, tags.removeAt(from))
+        save()
+    }
 
     @Synchronized fun isHearted(id: String) = hearted.any { it.id == id }
 
@@ -133,7 +171,9 @@ class GifStore(
     private fun save() {
         val f = file ?: return
         runCatching {
-            val o = JSONObject().put("hearted", JSONArray(hearted.map { it.toJson() })).put("recent", JSONArray(recent.map { it.toJson() }))
+            val o =
+                JSONObject().put("hearted", JSONArray(hearted.map { it.toJson() })).put("recent", JSONArray(recent.map { it.toJson() }))
+                    .put("tags", JSONArray(tags)).put("tagsOpen", tagsOpen)
             f.parentFile?.mkdirs()
             val tmp = File(f.parentFile, f.name + ".tmp")
             tmp.writeText(o.toString())
@@ -143,6 +183,10 @@ class GifStore(
 
     companion object {
         const val RECENT_KEPT = 30
+
+        /** The pills that always come first and can't be moved or taken out. */
+        val FIXED = listOf("Trending", "Recent", "Saved")
+        val DEFAULT_TAGS = listOf("lol", "yes", "no", "love", "hype", "facepalm", "gn")
 
         @Volatile private var shared: GifStore? = null
 

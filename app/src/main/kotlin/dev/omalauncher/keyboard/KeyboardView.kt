@@ -148,6 +148,19 @@ class KeyboardView(
     private val bubbleRoomDp get() = (layout?.rowHeight ?: 54f) * 1.3f
     val headroomPx get() = (headroomDp * density).toInt()
 
+    /**
+     * Where the app's own room ends, px from the view's top: the top of the keys as they normally stand. While the
+     * GIFs are pulled up they lie over the app, which keeps its size and place under them.
+     */
+    val appTopPx: Int
+        get() {
+            if (mode == Mode.GIFS && gifs?.expanded == true) {
+                val normal = (((layout?.height ?: 240f) + bubbleRoomDp) * density).toInt() + stripPx
+                return (height - normal).coerceAtLeast(0)
+            }
+            return headroomPx
+        }
+
     /** The search band over the letters while searching, px. */
     private val bandPx
         get() =
@@ -161,6 +174,8 @@ class KeyboardView(
     private val boardPx: Int
         get() {
             val keys = layout?.height ?: 240f
+            // The GIFs pulled up by their handle: most of the screen, the status bar left clear.
+            if (mode == Mode.GIFS && gifs?.expanded == true) return resources.displayMetrics.heightPixels - stripPx - (EXPANDED_TOP_DP * density).toInt()
             val tall = (mode == Mode.EMOJI && emoji != null) || (mode == Mode.CLIPS && clips != null) || (mode == Mode.GIFS && gifs != null)
             return if (tall) ((keys + bubbleRoomDp) * density).toInt() else (keys * density).toInt() + bandPx
         }
@@ -792,6 +807,9 @@ class KeyboardView(
 
         /** On the cover, with no split switch, the strip's tools start this far in from the left. */
         private const val STRIP_PAD_DP = 12f
+
+        /** Above the GIFs pulled up: room for the status bar. */
+        private const val EXPANDED_TOP_DP = 40f
 
         /** Between one tool in the strip and the next. */
         private const val TOOL_GAP_DP = 8f

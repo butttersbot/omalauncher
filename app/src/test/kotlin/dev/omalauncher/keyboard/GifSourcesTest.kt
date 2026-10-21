@@ -63,4 +63,25 @@ class GifSourcesTest {
         assertEquals(listOf(0f, 0f, 60f, 120f), cells.map { it.top })
         assertEquals(230f, height, 0.01f)
     }
+
+    @Test fun tagsAddedRemovedMovedAndKept() {
+        val f = File.createTempFile("gifs", ".json").also { it.delete() }
+        GifStore(f).apply {
+            assertEquals(GifStore.DEFAULT_TAGS, tags())
+            assertTrue(addTag(" Bruh "))
+            // Once only, and never one of the fixed pills.
+            assertFalse(addTag("bruh"))
+            assertFalse(addTag("Trending"))
+            assertFalse(addTag("  "))
+            removeTag("no")
+            moveTag(tags().indexOf("bruh"), 0)
+            tagsOpen = true
+        }
+        val back = GifStore(f)
+        assertEquals(listOf("bruh", "lol", "yes", "love", "hype", "facepalm", "gn"), back.tags())
+        assertTrue(back.tagsOpen)
+        back.moveTag(0, 2)
+        assertEquals(listOf("lol", "yes", "bruh"), back.tags().take(3))
+        f.delete()
+    }
 }

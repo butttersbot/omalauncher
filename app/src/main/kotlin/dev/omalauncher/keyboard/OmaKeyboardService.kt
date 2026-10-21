@@ -54,6 +54,8 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host, EmojiPicker.
     private var showingGifs = false
     private var gifSearching = false
     private val gifWords = StringBuilder()
+    override var addingTag = false
+        private set
 
     /** The clipboard panel is up in the keys' place. */
     private var showingClips = false
@@ -165,11 +167,18 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host, EmojiPicker.
     private fun leaveGifs() {
         showingGifs = false
         gifSearching = false
+        addingTag = false
         gifWords.clear()
         gifPanel?.closed()
     }
 
-    override fun startGifSearch() {
+    override fun panelResized() {
+        view.requestLayout()
+        view.invalidate()
+    }
+
+    override fun startGifSearch(forTag: Boolean) {
+        addingTag = forTag
         gifSearching = true
         showingGifs = false
         gifWords.clear()
@@ -181,8 +190,9 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host, EmojiPicker.
     }
 
     override fun endGifSearch() {
-        // What was searched stays showing, now in the full panel.
-        gifWords.toString().trim().takeIf { it.isNotEmpty() }?.let { gifPanel?.showResults(it) }
+        // A new tag is added and shown; a search's words stay showing, now in the full panel.
+        gifWords.toString().trim().takeIf { it.isNotEmpty() }?.let { if (addingTag) gifPanel?.addTag(it) else gifPanel?.showResults(it) }
+        addingTag = false
         gifSearching = false
         gifWords.clear()
         showingGifs = true
@@ -509,8 +519,10 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host, EmojiPicker.
         super.onComputeInsets(outInsets)
         if (!::view.isInitialized || !view.isShown) return
         val top = view.headroomPx
-        outInsets.contentTopInsets = top
-        outInsets.visibleTopInsets = top
+        // The GIFs pulled up lie over the app, which keeps the room it had above the keys.
+        val app = view.appTopPx
+        outInsets.contentTopInsets = app
+        outInsets.visibleTopInsets = app
         outInsets.touchableInsets = Insets.TOUCHABLE_INSETS_REGION
         outInsets.touchableRegion.set(0, top, view.width, view.height)
     }

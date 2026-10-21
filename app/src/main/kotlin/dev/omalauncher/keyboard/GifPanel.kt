@@ -42,7 +42,14 @@ class GifPanel(
     interface Host {
         fun placeGif(item: GifItem)
 
-        fun startGifSearch()
+        /** The search over the letters; [forTag]: the words typed become a new tag instead (the + pill). */
+        fun startGifSearch(forTag: Boolean)
+
+        /** True while the search is naming a new tag. */
+        val addingTag: Boolean
+
+        /** The panel went taller or back ([expanded]): the keyboard is laid out again. */
+        fun panelResized()
 
         fun endGifSearch()
 
@@ -134,9 +141,29 @@ class GifPanel(
     private val feed = Feed()
     private val band = Feed()
 
-    /** The pill showing: Trending, Recent, Saved, or a mood. */
-    var chip = CHIPS[0]
+    /** The pill showing: Trending, Recent, Saved, or one of his tags. */
+    var chip = GifStore.FIXED[0]
         private set
+
+    /**
+     * Pulled up by its handle, the panel takes most of the screen, for more GIFs at once (Boss, 2026-10-21: "a little
+     * handle at the top of the gif keyboard so i can go full screen"); pulled down, it is as tall as the letters.
+     */
+    var expanded = false
+        private set
+
+    private fun expand(on: Boolean) {
+        if (expanded == on) return
+        expanded = on
+        view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+        host.panelResized()
+    }
+
+    /** Editing his tags: each shows ✕ to take it out, and a held one is dragged to a new place. */
+    private var editing = false
+    private var draggingTag = -1
+    private var handleDrag = false
+    private var longPress: Runnable? = null
 
     /** What each feed produces: the GIFs, where the next page starts, and what to say if there are none. */
     private fun produce(
@@ -171,8 +198,16 @@ class GifPanel(
 
     /** As the panel comes up: Trending, from the top. */
     fun opened() {
-        chip = CHIPS[0]
+        chip = GifStore.FIXED[0]
+        editing = false
         feed.open(Req.Trending)
+    }
+
+    /** A tag named with the + pill: added, opened, and showing. */
+    fun addTag(tag: String) {
+        store.addTag(tag)
+        store.tagsOpen = true
+        pick(tag.trim().lowercase())
     }
 
     /** The full panel showing what [q] finds, as a search ends with Done. */
@@ -184,6 +219,11 @@ class GifPanel(
     /** As the panel goes away: the GIFs' pictures let go. */
     fun closed() {
         images.clear()
+        editing = false
+        if (expanded) {
+            expanded = false
+            host.panelResized()
+        }
     }
 
     /** The search's words changed: what they find, once the typing rests a moment. */
@@ -206,9 +246,40 @@ class GifPanel(
 
     private var top = 0f
     private var width = 0f
+    private var fieldRight = 0f
+    private var chipsBottom = 0f
+
+    private enum class ChipKind { FIXED, TAG, PLUS, DONE }
+
+    private class Chip(val kind: ChipKind, val name: String, val index: Int, val rect: RectF)
+
+    /** Where each pill goes: in one row while the tags are closed (as many as fit), wrapped in rows while open. */
+    private fun layChips(width: Float) {
+        val d = density
+        chipBoxes.clear()
+        text.textSize = 13 * d
+        val all =
+            GifStore.FIXED.map { Triple(ChipKind.FIXED, it, -1) } +
+                store.tags().mapIndexed { i, t -> Triple(ChipKind.TAG, t, i) } +
+                (if (store.tagsOpen) listOf(Triple(if (editing) ChipKind.DONE else ChipKind.PLUS, if (editing) "Done" else "+", -1)) else emptyList())
+        var x = 10 * d
+        var rowTop = top + (HANDLE_DP + HEAD_DP) * d
+        for ((kind, name, i) in all) {
+            val w = text.measureText(name) + (if (editing && kind == ChipKind.TAG) 34 else 22) * d
+            if (x + w > width - 10 * d) {
+                if (!store.tagsOpen) break
+                x = 10 * d
+                rowTop += CHIPS_DP * d
+            }
+            val cy = rowTop + CHIPS_DP * d / 2
+            chipBoxes += Chip(kind, name, i, RectF(x, cy - 13 * d, x + w, cy + 13 * d))
+            x += w + 6 * d
+        }
+        chipsBottom = rowTop + CHIPS_DP * d
+    }
     private var gridTop = 0f
     private var gridBottom = 0f
-    private val chipBoxes = ArrayList<Pair<String, RectF>>()
+    private val chipBoxes = ArrayList<Chip>()
     private var cells: List<Pair<GifItem, RectF>> = emptyList()
     private var bandTop = 0f
     private var bandCells: List<Pair<GifItem, RectF>> = emptyList()
@@ -226,34 +297,57 @@ class GifPanel(
         this.width = width
         text.typeface = k.typeface
 
-        // The search pill, as the emoji search's (Boss, 2026-10-21: no ABC beside it; the GIF button goes back).
-        field(canvas, top, width, null, c, k)
+        // The handle: pull it up for the tall panel, down for the short one.
+        paint.color = c.muted
+        box.set(width / 2 - 18 * d, top + 6 * d, width / 2 + 18 * d, top + 10 * d)
+        canvas.drawRoundRect(box, 2 * d, 2 * d, paint)
 
-        // The pills: as many as fit.
-        val chipCy = top + (HEAD_DP + CHIPS_DP / 2) * d
-        chipBoxes.clear()
-        var x = 10 * d
+        // The search pill, as the emoji search's (Boss, 2026-10-21: no ABC beside it; the GIF button goes back), with
+        // the arrow that opens and closes the tags at its right end.
+        field(canvas, top + HANDLE_DP * d, width, null, c, k)
+        fieldRight = box.right
+        val ay = box.centerY()
+        val ax = box.right - 18 * d
+        stroke.color = c.ink
+        stroke.strokeWidth = 2 * d
+        val tip = if (store.tagsOpen) -3.5f * d else 3.5f * d
+        canvas.drawLine(ax - 6 * d, ay - tip, ax, ay + tip, stroke)
+        canvas.drawLine(ax, ay + tip, ax + 6 * d, ay - tip, stroke)
+
+        // The pills: Trending, Recent, Saved, then his tags; one row closed, all of them open, with + at the end.
+        layChips(width)
         text.textSize = 13 * d
-        for (name in CHIPS) {
-            val w = text.measureText(name) + 22 * d
-            if (x + w > width - 10 * d) break
-            val r = RectF(x, chipCy - 13 * d, x + w, chipCy + 13 * d)
-            val on = name == chip
-            if (on) {
+        text.textAlign = Paint.Align.CENTER
+        for (ch in chipBoxes) {
+            val r = ch.rect
+            val on = ch.name == chip && ch.kind != ChipKind.PLUS && ch.kind != ChipKind.DONE
+            val lifted = ch.kind == ChipKind.TAG && ch.index == draggingTag
+            if (lifted) {
+                paint.color = 0x33000000
+                canvas.drawRoundRect(RectF(r.left + 2 * d, r.top + 3 * d, r.right + 2 * d, r.bottom + 3 * d), r.height() / 2, r.height() / 2, paint)
+            }
+            if (on || ch.kind == ChipKind.DONE) {
                 paint.color = c.ink
                 canvas.drawRoundRect(r, r.height() / 2, r.height() / 2, paint)
             } else {
                 pill(canvas, r, c.field, c.ink)
             }
-            text.color = if (on) c.field else c.ink
-            text.textAlign = Paint.Align.CENTER
-            canvas.drawText(name, r.centerX(), chipCy - (text.fontMetrics.ascent + text.fontMetrics.descent) / 2, text)
-            chipBoxes += name to r
-            x += w + 6 * d
+            text.color = if (on || ch.kind == ChipKind.DONE) c.field else c.ink
+            val cy = r.centerY() - (text.fontMetrics.ascent + text.fontMetrics.descent) / 2
+            canvas.drawText(ch.name, r.centerX() - if (editing && ch.kind == ChipKind.TAG) 6 * d else 0f, cy, text)
+            if (editing && ch.kind == ChipKind.TAG) {
+                // ✕ to take it out.
+                val xx = r.right - 13 * d
+                stroke.color = if (on) c.field else c.muted
+                stroke.strokeWidth = 1.6f * d
+                canvas.drawLine(xx - 4 * d, r.centerY() - 4 * d, xx + 4 * d, r.centerY() + 4 * d, stroke)
+                canvas.drawLine(xx - 4 * d, r.centerY() + 4 * d, xx + 4 * d, r.centerY() - 4 * d, stroke)
+            }
         }
+        text.textAlign = Paint.Align.LEFT
 
         // The GIFs.
-        gridTop = top + (HEAD_DP + CHIPS_DP + 4) * d
+        gridTop = chipsBottom + 4 * d
         gridBottom = top + height - CREDIT_DP * d
         cells = grid(canvas, feed, gridTop, gridBottom, width, if (host.wide) 3 else 2, c)
 
@@ -277,7 +371,7 @@ class GifPanel(
         bandTop = top
         this.width = width
         text.typeface = k.typeface
-        field(canvas, top, width, host.gifQuery, c, k)
+        field(canvas, top, width, host.gifQuery, c, k, if (host.addingTag) "Name a new tag" else "Search GIFs")
         bandCells = grid(canvas, band, top + FIELD_DP * d, top + BAND_DP * d - 4 * d, width, if (host.wide) 5 else 3, c)
     }
 
@@ -358,6 +452,7 @@ class GifPanel(
         query: String?,
         c: Colors,
         k: KeyboardLook,
+        hint: String = "Search GIFs",
     ) {
         val d = density
         box.set(FIELD_SIDE_DP * d, y + FIELD_TOP_DP * d, width - FIELD_SIDE_DP * d, y + (FIELD_TOP_DP + FIELD_H_DP) * d)
@@ -376,7 +471,7 @@ class GifPanel(
         val tx = gx + 14 * d
         if (query.isNullOrEmpty()) {
             text.color = c.muted
-            canvas.drawText("Search GIFs", tx, ty, text)
+            canvas.drawText(hint, tx, ty, text)
         } else {
             text.color = c.ink
             canvas.drawText(query, tx, ty, text)
@@ -454,8 +549,76 @@ class GifPanel(
     private var lastY = 0f
     private var dragging = false
 
-    /** A touch on the panel; [e]'s coordinates are the view's, px. */
-    fun touch(e: MotionEvent): Boolean = touchIn(e, feed, gridTop, gridBottom, cells, inBand = false)
+    /**
+     * A touch on the panel; [e]'s coordinates are the view's, px. The handle is pulled up or down (or tapped); a tag
+     * held turns editing on and can be dragged to a new place; the rest goes to the grid and the pills.
+     */
+    fun touch(e: MotionEvent): Boolean {
+        val d = density
+        val x = e.x
+        val y = e.y
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                handleDrag = y < top + (HANDLE_DP + 4) * d
+                draggingTag = -1
+                downX = x
+                downY = y
+                if (handleDrag) return true
+                val held = chipBoxes.firstOrNull { it.kind == ChipKind.TAG && it.rect.contains(x, y) }
+                if (held != null) {
+                    val r =
+                        Runnable {
+                            editing = true
+                            store.tagsOpen = true
+                            draggingTag = held.index
+                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                            view.invalidate()
+                        }
+                    longPress = r
+                    main.postDelayed(r, LONG_PRESS_MS)
+                }
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (handleDrag) {
+                    val dy = y - downY
+                    if (dy < -HANDLE_PULL_DP * d) expand(true) else if (dy > HANDLE_PULL_DP * d) expand(false)
+                    return true
+                }
+                if (draggingTag >= 0) {
+                    // The held tag takes the place of the one nearest the finger.
+                    chipBoxes.filter { it.kind == ChipKind.TAG }.minByOrNull { (it.rect.centerX() - x).let { dx -> dx * dx } + (it.rect.centerY() - y).let { dy -> dy * dy } }?.let {
+                        if (it.index != draggingTag) {
+                            store.moveTag(draggingTag, it.index)
+                            draggingTag = it.index
+                            view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                            view.invalidate()
+                        }
+                    }
+                    return true
+                }
+                if (abs(x - downX) > SLOP_DP * d || abs(y - downY) > SLOP_DP * d) cancelLongPress()
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                cancelLongPress()
+                if (handleDrag) {
+                    handleDrag = false
+                    if (e.actionMasked == MotionEvent.ACTION_UP && abs(y - downY) < SLOP_DP * d) expand(!expanded)
+                    return true
+                }
+                if (draggingTag >= 0) {
+                    draggingTag = -1
+                    view.invalidate()
+                    return true
+                }
+            }
+        }
+        return touchIn(e, feed, gridTop, gridBottom, cells, inBand = false)
+    }
+
+    private fun cancelLongPress() {
+        longPress?.let(main::removeCallbacks)
+        longPress = null
+    }
 
     /** A touch on the band while searching. */
     fun touchBand(e: MotionEvent): Boolean = touchIn(e, band, bandTop + FIELD_DP * density, bandTop + BAND_DP * density, bandCells, inBand = true)
@@ -531,15 +694,47 @@ class GifPanel(
                 }
                 return
             }
-            if (y < top + HEAD_DP * d) {
+            if (y < top + (HANDLE_DP + HEAD_DP) * d) {
                 tick()
-                host.startGifSearch()
+                if (x > fieldRight - 44 * d) {
+                    // The arrow: the tags open or close.
+                    store.tagsOpen = !store.tagsOpen
+                    if (!store.tagsOpen) editing = false
+                    view.invalidate()
+                } else {
+                    host.startGifSearch(forTag = false)
+                }
                 return
             }
-            chipBoxes.firstOrNull { it.second.contains(x, y) }?.let { (name, _) ->
-                tick()
-                pick(name)
+            val ch = chipBoxes.firstOrNull { it.rect.contains(x, y) } ?: run {
+                if (editing) {
+                    editing = false
+                    view.invalidate()
+                }
+                return
             }
+            tick()
+            when {
+                ch.kind == ChipKind.PLUS -> host.startGifSearch(forTag = true)
+                ch.kind == ChipKind.DONE -> editing = false
+                editing && ch.kind == ChipKind.TAG -> {
+                    if (x > ch.rect.right - 28 * d) {
+                        store.removeTag(ch.name)
+                        if (chip == ch.name) pick(GifStore.FIXED[0])
+                    }
+                }
+                else -> {
+                    editing = false
+                    pick(ch.name)
+                }
+            }
+            view.invalidate()
+            return
+        }
+        if (editing && !inBand) {
+            // A tap on the GIFs ends editing the tags, and does nothing else.
+            editing = false
+            view.invalidate()
             return
         }
         val (item, rect) = shown.firstOrNull { it.second.contains(x, y) } ?: return
@@ -668,7 +863,10 @@ class GifPanel(
     }
 
     companion object {
-        val CHIPS = listOf("Trending", "Recent", "Saved", "lol", "yes", "no", "love", "hype", "facepalm", "gn")
+        /** The handle's strip at the panel's top, and how far it is pulled before the panel grows or shrinks. */
+        const val HANDLE_DP = 16f
+        const val HANDLE_PULL_DP = 24f
+        const val LONG_PRESS_MS = 450L
         /** The search pill's row, its pill and margins: the emoji search's (EmojiPicker's SEARCH_DP and FIELD_*). */
         const val HEAD_DP = 58f
         const val FIELD_H_DP = 40f
