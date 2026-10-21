@@ -26,6 +26,7 @@ import dev.omalauncher.linux.AudioBridge
 import dev.omalauncher.linux.Bootstrap
 import dev.omalauncher.linux.EDIT_COMMAND
 import dev.omalauncher.linux.FILES_COMMAND
+import dev.omalauncher.linux.NEWS_COMMAND
 import dev.omalauncher.linux.Gpu
 import dev.omalauncher.linux.KEEP_COMMAND
 import dev.omalauncher.linux.KEEP_PYTHON
@@ -559,6 +560,7 @@ class Runtime(
     fun launch(app: LinuxApp) {
         // Our own Files app: open it directly rather than round-tripping through the guest.
         if (app.exec == FILES_COMMAND) return openFiles()
+        if (app.exec == NEWS_COMMAND) return dev.omalauncher.news.NewsActivity.open(context)
         if (app.exec == EDIT_COMMAND) return edit()
         if (app.terminal) return terminal(app.exec, app.name)
         // Like an Android icon: an app that already has a window comes back to it. Single-instance

@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Soma News</title>
+<!--
+  Soma News (Boss, 2026-10-21; the approved mock-up is design/soma-news-mockup.html). The stream set as a magazine
+  from what FreshRSS on the Mac Pro collected: a cover story, pairs, features, briefs and photo essays on the cover;
+  spreads either side of the fold on the open Fold. The reader scrolls on the cover and the open Fold upright (with
+  the stream kept on the left page there), and turns pages, laid out by Pretext, held sideways (news-book.js).
+  Stories come from the app (window.SomaNews); nothing here is sample text.
+-->
+<style>
+  @font-face { font-family: "M Display"; src: url(../packs/manga/fonts/DelaGothicOne-Regular.ttf); }
+  @font-face { font-family: "M Body"; src: url(../packs/manga/fonts/SchibstedGrotesk.ttf); }
+  @font-face { font-family: "M Mono"; src: url(../packs/manga/fonts/JetBrainsMono.ttf); }
+  :root { --paper: #fbfaf6; --ink: #111113; --muted: #74737a; --red: #d7262d; --rule: #d9d6cf; --serif: "Noto Serif", Georgia, "Times New Roman", serif; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--paper); color: var(--ink); font: 15px/1.45 "M Body", system-ui, sans-serif; overflow: hidden; }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+  img { display: block; width: 100%; object-fit: cover; background: #e9e6df; }
+  .kicker { font: 600 10.5px/1.2 "M Mono", monospace; letter-spacing: .12em; text-transform: uppercase; color: var(--red); }
+  .meta { font: 10.5px/1.3 "M Mono", monospace; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  #app { position: fixed; inset: 0; display: flex; flex-direction: column; }
+  .scroll { flex: 1; overflow-y: auto; scrollbar-width: none; position: relative; -webkit-overflow-scrolling: touch; }
+  .scroll::-webkit-scrollbar { display: none; }
+
+  .mast { padding: calc(env(safe-area-inset-top) + 14px) 18px 10px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--ink); background: var(--paper); }
+  .mast .name { font-family: "M Display"; font-size: 22px; flex: 1; }
+  .refresh { display: flex; align-items: center; gap: 8px; }
+  .refresh .ic { width: 36px; height: 36px; border: 1.3px solid var(--ink); border-radius: 50%; display: grid; place-items: center; font-size: 18px; }
+  .refresh.spin .ic { animation: spin .9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .newpill { position: sticky; top: 10px; margin: 0 auto -34px; width: max-content; background: var(--ink); color: var(--paper); padding: 7px 14px; border-radius: 18px; font-size: 13px; z-index: 6; box-shadow: 0 4px 14px rgba(0,0,0,.25); }
+  .empty { padding: 60px 30px; text-align: center; color: var(--muted); font-family: var(--serif); font-size: 17px; }
+
+  /* The cover screen: a magazine's run of layouts. */
+  .cover-story { position: relative; color: #fff; }
+  .cover-story img { height: 440px; }
+  .cover-story .over { position: absolute; left: 0; right: 0; bottom: 0; padding: 80px 20px 20px; background: linear-gradient(transparent, rgba(0,0,0,.84)); }
+  .cover-story .kicker { color: #ffd166; }
+  .cover-story h1 { font-family: var(--serif); font-weight: 700; font-size: 29px; line-height: 1.12; margin: 8px 0 0; }
+  .section { padding: 24px 18px 6px; display: flex; align-items: baseline; gap: 10px; }
+  .section h4 { margin: 0; font: 700 12.5px "M Mono"; letter-spacing: .14em; text-transform: uppercase; }
+  .section::after { content: ""; flex: 1; border-top: 1px solid var(--ink); }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 10px 18px 6px; }
+  .card img { height: 140px; margin-bottom: 8px; }
+  .card h3 { font-family: var(--serif); font-size: 16.5px; line-height: 1.22; margin: 6px 0 4px; }
+  .card .meta { margin-top: 6px; }
+  .feature { display: grid; grid-template-columns: 42% 1fr; gap: 14px; padding: 16px 18px 6px; align-items: start; }
+  .feature img { height: 160px; }
+  .feature h3 { font-family: var(--serif); font-size: 19px; line-height: 1.2; margin: 6px 0 6px; }
+  .feature p, .card p { margin: 0; font-family: var(--serif); color: #444; font-size: 13.5px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .briefs { padding: 6px 18px 4px; counter-reset: b; }
+  .brief { display: flex; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--rule); align-items: center; }
+  .brief::before { counter-increment: b; content: counter(b); font-family: "M Display"; font-size: 22px; color: var(--red); width: 24px; flex: none; }
+  .brief .t { flex: 1; font-family: var(--serif); font-size: 15.5px; line-height: 1.3; }
+  .brief .t .meta { display: block; margin-top: 3px; }
+  .brief img { width: 58px; height: 58px; flex: none; }
+  .photo { margin: 18px 0 6px; }
+  .photo img { height: 290px; }
+  .photo .cap { padding: 8px 18px 0; font-family: var(--serif); font-style: italic; color: #333; font-size: 14.5px; }
+  .end { padding: 26px 18px 60px; text-align: center; }
+
+  /* The open Fold: spreads either side of the fold, nothing across the crease. */
+  .spread { display: grid; grid-template-columns: 1fr 1fr; column-gap: 36px; padding: 0 22px; position: relative; }
+  .spread::after { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: linear-gradient(transparent, var(--rule) 12%, var(--rule) 88%, transparent); }
+  .spread + .spread { margin-top: 26px; }
+  .page { min-width: 0; }
+  .s-cover { position: relative; color: #fff; min-height: 520px; }
+  .s-cover img { position: absolute; inset: 0; height: 100%; }
+  .s-cover .over { position: absolute; inset: auto 0 0 0; padding: 90px 20px 22px; background: linear-gradient(transparent, rgba(0,0,0,.85)); }
+  .s-cover .kicker { color: #ffd166; }
+  .s-cover h1 { font-family: var(--serif); font-size: 30px; line-height: 1.1; margin: 10px 0 0; }
+  .tops h5 { margin: 0 0 6px; font: 700 12px "M Mono"; letter-spacing: .14em; text-transform: uppercase; border-bottom: 2px solid var(--ink); padding-bottom: 6px; }
+  .top-item { display: grid; grid-template-columns: 1fr 92px; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--rule); }
+  .top-item.noimg { grid-template-columns: 1fr; }
+  .top-item img { height: 92px; }
+  .top-item h3 { font-family: var(--serif); font-size: 16.5px; line-height: 1.22; margin: 5px 0 4px; }
+  .s-head { padding: 26px 22px 10px; display: flex; align-items: baseline; gap: 12px; }
+  .s-head h4 { margin: 0; font-family: "M Display"; font-size: 21px; font-weight: normal; }
+  .s-head::after { content: ""; flex: 1; border-top: 1px solid var(--ink); }
+  .duo { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .duo .card img { height: 128px; }
+  .s-feature img { height: 230px; margin-bottom: 10px; }
+  .s-feature h3 { font-family: var(--serif); font-size: 21px; line-height: 1.16; margin: 6px 0 6px; }
+  .s-photo img { height: 360px; }
+  .s-photo .cap { padding-top: 8px; font-family: var(--serif); font-style: italic; color: #333; font-size: 14.5px; }
+
+  /* The reader. */
+  .rbar { padding: calc(env(safe-area-inset-top) + 10px) 14px 10px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--ink); background: var(--paper); }
+  .rbar .back { font-size: 24px; padding: 0 8px 2px 0; }
+  .reader { padding-bottom: 90px; }
+  .reader .hero { max-height: 340px; }
+  .reader .body { padding: 18px 22px 0; font-family: var(--serif); font-size: 18px; line-height: 1.62; max-width: 680px; margin: 0 auto; }
+  .reader h1 { font-family: var(--serif); font-weight: 700; font-size: 28px; line-height: 1.14; margin: 10px 0 8px; }
+  .reader .body p { margin: 0 0 14px; }
+  .reader .body .first::first-letter { float: left; font-family: "M Display"; font-size: 56px; line-height: .85; padding: 6px 8px 0 0; color: var(--red); }
+  .reader .body blockquote { margin: 18px 0; padding: 0 0 0 16px; border-left: 4px solid var(--red); font-size: 21px; font-style: italic; line-height: 1.35; }
+  .reader .body img { width: auto; max-width: 100%; height: auto; margin: 16px auto; }
+  .reader .body figure { margin: 18px 0; }
+  .reader .body figcaption { font-size: 13px; color: var(--muted); font-style: italic; }
+  .reader .body a { color: var(--ink); text-decoration-color: var(--red); }
+  .reader .body h2, .reader .body h3 { font-size: 21px; line-height: 1.25; margin: 24px 0 8px; }
+  .reader .body ul, .reader .body ol { padding-left: 22px; }
+  .reader .orig { margin: 24px 22px; padding: 14px; border: 1.5px solid var(--ink); text-align: center; font-family: var(--serif); }
+  .tools { position: fixed; left: 12px; right: 12px; bottom: calc(env(safe-area-inset-bottom) + 14px); display: flex; justify-content: space-around; border: 1.5px solid var(--ink); background: var(--paper); padding: 6px; box-shadow: 4px 4px 0 var(--ink); z-index: 5; max-width: 520px; margin: 0 auto; }
+  .tools button { font-size: 13.5px; padding: 7px 10px; }
+  .split { flex: 1; display: grid; grid-template-columns: 1fr 1fr; min-height: 0; }
+  .split .list { overflow-y: auto; border-right: 1px solid var(--rule); padding: 6px 16px 30px; scrollbar-width: none; }
+  .split .list .top-item.on { background: #fff3c4; margin: 0 -10px; padding: 12px 10px; }
+  .split .art { overflow-y: auto; scrollbar-width: none; position: relative; }
+  .split .tools { position: sticky; bottom: 14px; margin: 0 12px; left: auto; right: auto; }
+  #bookwrap { flex: 1; display: flex; min-height: 0; }
+  .toast { position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%); background: var(--ink); color: var(--paper); padding: 9px 14px; font-size: 13px; z-index: 60; max-width: 86vw; text-align: center; }
+</style>
+<script src="vendor/hyphen/hyphen.js"></script>
+<script src="vendor/hyphen/en-us.js"></script>
+</head>
+<body>
+<div id="app"></div>
+<script>
+const Native = window.SomaNews || { stream: () => '{"stories":[]}', refresh() {}, original(u) { window.open(u) }, share() {}, toast() {} };
+const S = { stories: [], updated: 0, scene: 'stream', at: -1, refreshing: false, fresh: 0, toast: '' };
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+function layout() { return innerWidth < 600 ? 'cover' : innerWidth > innerHeight ? 'landscape' : 'portrait'; }
+
+function load() {
+  try { const d = JSON.parse(Native.stream()); S.stories = d.stories || []; S.updated = d.updated || 0; } catch (e) { S.stories = []; }
+}
+
+function ago(t) {
+  const s = Date.now() / 1000 - t;
+  if (s < 3600) return Math.max(1, Math.round(s / 60)) + 'm';
+  if (s < 86400) return Math.round(s / 3600) + 'h';
+  return Math.round(s / 86400) + 'd';
+}
+function clock(t) { const d = new Date(t * 1000); return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
+function day(t) {
+  const d = new Date(t * 1000), now = new Date();
+  const days = Math.floor((new Date(now.getFullYear(), now.getMonth(), now.getDate()) - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000);
+  return days <= 0 ? 'Today' : days === 1 ? 'Yesterday' : d.toLocaleDateString([], { weekday: 'long' });
+}
+function text(html) { const d = document.createElement('div'); d.innerHTML = html || ''; return (d.textContent || '').replace(/\s+/g, ' ').trim(); }
+function dek(s, n = 150) { const t = text(s.html); return t.length > n ? t.slice(0, n).replace(/\s\S*$/, '') + '…' : t; }
+function idx(s) { return S.stories.indexOf(s); }
+const open = i => `onclick="openStory(${i})"`;
+
+// ---- The stream, planned from what came in: stories with a picture make the big layouts, the rest the briefs. ----
+function plan() {
+  const pics = S.stories.filter(s => s.image), plain = S.stories.filter(s => !s.image);
+  const take = (from, n) => from.splice(0, n);
+  const out = [];
+  if (pics.length) out.push({ k: 'cover', s: take(pics, 1) });
+  while (pics.length || plain.length) {
+    const head = (pics[0] || plain[0]);
+    out.push({ k: 'section', label: head ? day(head.published) : '' });
+    if (pics.length >= 2) out.push({ k: 'pair', s: take(pics, 2) });
+    if (pics.length) out.push({ k: 'feature', s: take(pics, 1) });
+    const b = take(plain, 4); if (b.length < 3) b.push(...take(pics, 3 - b.length));
+    if (b.length) out.push({ k: 'briefs', s: b });
+    if (pics.length) out.push({ k: 'photo', s: take(pics, 1) });
+  }
+  // One section head per day, not per run.
+  let last = null;
+  return out.filter(b => b.k !== 'section' || (b.label !== last && (last = b.label, true)));
+}
+
+function mast() {
+  return `<div class="mast"><span class="name">SOMA</span>
+    <span class="refresh ${S.refreshing ? 'spin' : ''}"><span class="meta">${S.refreshing ? 'Updating…' : S.updated ? 'Updated ' + clock(S.updated) + ' · hourly' : 'Not updated yet'}</span><button class="ic" onclick="refresh()" aria-label="Refresh">↻</button></span></div>`;
+}
+
+function card(s) {
+  return `<div class="card" ${open(idx(s))}>${s.image ? `<img src="${esc(s.image)}" loading="lazy" onerror="this.remove()">` : ''}<div class="kicker">${esc(s.source)}</div><h3>${esc(s.title)}</h3><p>${esc(dek(s))}</p><div class="meta">${ago(s.published)} ago</div></div>`;
+}
+
+function streamCover() {
+  const blocks = plan().map(b => {
+    const s = b.s && b.s[0];
+    switch (b.k) {
+      case 'cover': return `<div class="cover-story" ${open(idx(s))}><img src="${esc(s.image)}" onerror="this.style.visibility='hidden'"><div class="over"><div class="kicker">${esc(s.source)} · ${ago(s.published)}</div><h1>${esc(s.title)}</h1></div></div>`;
+      case 'section': return `<div class="section"><h4>${esc(b.label)}</h4></div>`;
+      case 'pair': return `<div class="pair">${b.s.map(card).join('')}</div>`;
+      case 'feature': return `<div class="feature" ${open(idx(s))}><img src="${esc(s.image)}" loading="lazy" onerror="this.remove()"><div><div class="kicker">${esc(s.source)}</div><h3>${esc(s.title)}</h3><p>${esc(dek(s, 200))}</p><div class="meta" style="margin-top:8px">${ago(s.published)} ago</div></div></div>`;
+      case 'briefs': return `<div class="briefs">${b.s.map(x => `<div class="brief" ${open(idx(x))}><span class="t">${esc(x.title)}<span class="meta">${esc(x.source)} · ${ago(x.published)}</span></span>${x.image ? `<img src="${esc(x.image)}" loading="lazy" onerror="this.remove()">` : ''}</div>`).join('')}</div>`;
+      case 'photo': return `<div class="photo" ${open(idx(s))}><img src="${esc(s.image)}" loading="lazy" onerror="this.remove()"><div class="cap">${esc(s.title)} <span class="meta">${esc(s.source)}</span></div></div>`;
+    }
+  }).join('');
+  return blocks;
+}
+
+function topItem(s, on) {
+  return `<div class="top-item ${s.image ? '' : 'noimg'} ${on ? 'on' : ''}" ${open(idx(s))}><div><div class="kicker">${esc(s.source)}</div><h3>${esc(s.title)}</h3><div class="meta">${ago(s.published)} ago</div></div>${s.image ? `<img src="${esc(s.image)}" loading="lazy" onerror="this.remove()">` : ''}</div>`;
+}
+
+function streamWide() {
+  const pics = S.stories.filter(s => s.image), plain = S.stories.filter(s => !s.image);
+  const take = (from, n) => from.splice(0, n);
+  let html = '';
+  const cover = take(pics, 1)[0];
+  const tops = [...take(plain, 2), ...take(pics, 2)].sort((a, b) => b.published - a.published);
+  if (cover) html += `<div class="spread"><div class="page s-cover" ${open(idx(cover))}><img src="${esc(cover.image)}"><div class="over"><div class="kicker">${esc(cover.source)} · ${ago(cover.published)}</div><h1>${esc(cover.title)}</h1></div></div><div class="page tops"><h5>Top stories</h5>${tops.map(s => topItem(s)).join('')}</div></div>`;
+  let last = null;
+  while (pics.length || plain.length) {
+    const head = pics[0] || plain[0];
+    const label = day(head.published);
+    if (label !== last) { html += `<div class="s-head"><h4>${esc(label)}</h4></div>`; last = label; }
+    if (pics.length >= 4) html += `<div class="spread"><div class="page duo">${take(pics, 2).map(card).join('')}</div><div class="page duo">${take(pics, 2).map(card).join('')}</div></div>`;
+    const f = take(pics, 1)[0];
+    const b = take(plain, 5); if (b.length < 3) b.push(...take(pics, 3 - b.length));
+    if (f || b.length) html += `<div class="spread" style="margin-top:26px"><div class="page ${f ? 's-feature' : ''}">${f ? `<div class="card" ${open(idx(f))}><img src="${esc(f.image)}" loading="lazy"><div class="kicker">${esc(f.source)}</div><h3>${esc(f.title)}</h3><p>${esc(dek(f, 240))}</p><div class="meta" style="margin-top:8px">${ago(f.published)} ago</div></div>` : ''}</div><div class="page"><div class="tops"><h5>In brief</h5></div><div class="briefs" style="padding:0">${b.map(x => `<div class="brief" ${open(idx(x))}><span class="t">${esc(x.title)}<span class="meta">${esc(x.source)} · ${ago(x.published)}</span></span>${x.image ? `<img src="${esc(x.image)}" loading="lazy" onerror="this.remove()">` : ''}</div>`).join('')}</div></div></div>`;
+    const p = take(pics, 1)[0];
+    if (p) html += `<div class="spread" style="margin-top:26px"><div class="page s-photo" ${open(idx(p))}><img src="${esc(p.image)}" loading="lazy"><div class="cap">${esc(p.title)} <span class="meta">${esc(p.source)}</span></div></div><div class="page tops"><h5>More</h5>${[...take(plain, 3), ...take(pics, 1)].map(s => topItem(s)).join('')}</div></div>`;
+  }
+  return html;
+}
+
+function stream() {
+  const body = !S.stories.length
+    ? `<div class="empty">${S.refreshing ? 'Fetching the news from the Mac Pro…' : 'Nothing here yet. Tap ↻ to fetch from FreshRSS on the Mac Pro.'}</div>`
+    : (layout() === 'cover' ? streamCover() : streamWide()) + `<div class="end meta">You're caught up · it checks again every hour · tap ↻ any time</div>`;
+  return mast() + `<div class="scroll" id="scroll">${S.fresh ? `<div class="newpill" onclick="S.fresh=0;$('scroll').scrollTo({top:0,behavior:'smooth'});draw()">↑ ${S.fresh} new ${S.fresh === 1 ? 'story' : 'stories'}</div>` : ''}${body}</div>`;
+}
+
+// ---- The reader. ----
+
+/** A story's HTML, cleaned to what a reader shows: text, pictures, quotes, lists, links. */
+function clean(html) {
+  const doc = new DOMParser().parseFromString(`<div>${html || ''}</div>`, 'text/html');
+  doc.querySelectorAll('script,style,iframe,form,noscript,svg,video,audio,object,embed,button,input').forEach(n => n.remove());
+  doc.querySelectorAll('*').forEach(n => {
+    for (const a of [...n.attributes]) {
+      const keep = (n.tagName === 'IMG' && (a.name === 'src' || a.name === 'alt')) || (n.tagName === 'A' && a.name === 'href');
+      if (!keep) n.removeAttribute(a.name);
+    }
+    if (n.tagName === 'IMG') {
+      const src = n.getAttribute('src') || '';
+      if (!src.startsWith('https://')) n.remove(); else n.setAttribute('loading', 'lazy');
+    }
+  });
+  return doc.body.firstChild.innerHTML;
+}
+
+function readMinutes(s) { return Math.max(1, Math.round(text(s.html).split(' ').length / 230)); }
+
+function article(s) {
+  let body = clean(s.html);
+  // The hero picture isn't shown twice.
+  if (s.image) body = body.replace(new RegExp(`<img[^>]+src="${s.image.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[^>]*>`), '');
+  const d = document.createElement('div'); d.innerHTML = body;
+  const firstP = d.querySelector('p'); if (firstP) firstP.classList.add('first');
+  const short = text(s.html).length < 600;
+  return `<div class="reader">${s.image ? `<img class="hero" src="${esc(s.image)}">` : ''}<div class="body"><div class="kicker">${esc(s.source)}</div><h1>${esc(s.title)}</h1><div class="meta" style="margin-bottom:16px">${ago(s.published)} ago · ${readMinutes(s)} min read</div>${d.innerHTML}</div>
+    <div class="orig" onclick="Native.original(${esc(JSON.stringify(s.link))})">${short ? 'This feed gives a summary. Read the whole story at ' + esc(s.source) + ' ↗' : 'Read it at ' + esc(s.source) + ' ↗'}</div></div>`;
+}
+
+function tools(s) {
+  return `<div class="tools"><button onclick="Native.share(${esc(JSON.stringify(s.title))}, ${esc(JSON.stringify(s.link))})">Share</button><button onclick="Native.original(${esc(JSON.stringify(s.link))})">Original ↗</button>${S.at + 1 < S.stories.length ? `<button onclick="openStory(S.at + 1)">Next ›</button>` : ''}</div>`;
+}
+
+function reader() {
+  const s = S.stories[S.at];
+  const bar = `<div class="rbar"><button class="back" onclick="somaBack()">‹</button><span class="meta" style="flex:1">${esc(s.source)} · ${readMinutes(s)} min</span></div>`;
+  const l = layout();
+  if (l === 'landscape') return bar.replace('<span class="meta"', '<span class="meta" ') + `<div id="bookwrap"></div>`;
+  if (l === 'portrait') {
+    const near = S.stories.slice(Math.max(0, S.at - 3), S.at + 12);
+    return bar + `<div class="split"><div class="list" id="list">${near.map(x => topItem(x, x === s)).join('')}</div><div class="art" id="art">${article(s)}${tools(s)}</div></div>`;
+  }
+  return bar + `<div class="scroll" id="art">${article(s)}</div>` + tools(s);
+}
+
+/** The story for the turning pages: its text as paragraphs, quotes and pictures (sized once they load). */
+async function bookArticle(s) {
+  const d = document.createElement('div'); d.innerHTML = clean(s.html);
+  const blocks = [];
+  let side = 'right';
+  const pics = [];
+  d.querySelectorAll('p, blockquote, h2, h3, li, img').forEach(n => {
+    if (n.tagName === 'IMG') {
+      if (n.src === s.image) return;
+      const b = { img: n.src }; blocks.push(b); pics.push(b); return;
+    }
+    if (n.closest('blockquote') && n.tagName !== 'BLOCKQUOTE') return;
+    const t = (n.textContent || '').replace(/\s+/g, ' ').trim();
+    if (!t) return;
+    blocks.push(n.tagName === 'BLOCKQUOTE' ? { quote: t } : { p: n.tagName === 'LI' ? '• ' + t : t });
+  });
+  if (!blocks.some(b => b.p)) blocks.push({ p: dek(s, 2000) || s.title });
+  // Each picture's shape before the pages are laid out; one that won't load in time, or is tiny, is left out.
+  await Promise.all(pics.map(b => new Promise(res => {
+    const im = new Image(); const done = ok => { if (ok && im.naturalWidth >= 200) { b.ratio = im.naturalWidth / im.naturalHeight; } else b.drop = true; res(); };
+    im.onload = () => done(true); im.onerror = () => done(false); setTimeout(() => done(im.complete && im.naturalWidth > 0), 2500); im.src = b.img;
+  })));
+  const out = [];
+  for (const b of blocks) {
+    if (b.img) {
+      if (b.drop || !b.ratio) continue;
+      if (b.ratio > 1.6) out.push({ img: b.img, full: true, ratio: b.ratio, cap: '' });
+      else { out.push({ img: b.img, side, frac: 0.48, ratio: b.ratio, cap: '' }); side = side === 'right' ? 'left' : 'right'; }
+    } else out.push(b);
+  }
+  const next = S.stories[S.at + 1];
+  return { hero: s.image, kicker: s.source, title: s.title, dek: dek(s, 160), by: `${s.source} · ${readMinutes(s)} min read · ${ago(s.published)} ago`,
+    next: next ? { title: next.title, img: next.image || '' } : null, blocks: out };
+}
+
+// ---- Drawing, and what the app and his fingers ask. ----
+
+function draw() {
+  const app = $('app');
+  const keep = $('scroll') ? $('scroll').scrollTop : 0;
+  app.innerHTML = (S.scene === 'stream' ? stream() : reader()) + (S.toast ? `<div class="toast">${esc(S.toast)}</div>` : '');
+  if (S.scene === 'stream' && $('scroll')) $('scroll').scrollTop = keep;
+  if ($('bookwrap')) {
+    const el = $('bookwrap'), s = S.stories[S.at];
+    Promise.all([document.fonts ? document.fonts.ready : null, import('./news-book.js'), bookArticle(s)]).then(([, m, a]) => { if (el.isConnected && S.stories[S.at] === s) m.mount(el, a); });
+  }
+  if ($('list')) { const on = $('list').querySelector('.on'); on && on.scrollIntoView({ block: 'center' }); }
+}
+
+function openStory(i) {
+  if (i < 0 || i >= S.stories.length) return;
+  S.scene = 'reader'; S.at = i; draw();
+  if ($('art')) $('art').scrollTop = 0;
+}
+window.somaNext = () => openStory(S.at + 1);
+
+/** Back: from a story to the stream; at the stream, the app closes (false). */
+window.somaBack = function () {
+  if (S.scene === 'reader') { S.scene = 'stream'; draw(); return true; }
+  return false;
+};
+
+function refresh() {
+  if (S.refreshing) return;
+  S.refreshing = true; draw();
+  Native.refresh();
+}
+
+window.somaRefreshed = function (err) {
+  const before = new Set(S.stories.map(s => s.id));
+  load();
+  S.refreshing = false;
+  if (err) { S.toast = err; setTimeout(() => { S.toast = ''; draw(); }, 3500); }
+  else if (before.size) S.fresh = S.stories.filter(s => !before.has(s.id)).length;
+  if (S.scene === 'stream') draw();
+};
+
+let lastLayout = layout();
+addEventListener('resize', () => { const l = layout(); if (l !== lastLayout) { lastLayout = l; draw(); } });
+
+load();
+draw();
+if (!S.stories.length || Date.now() / 1000 - S.updated > 3600) refresh();
+</script>
+</body>
+</html>

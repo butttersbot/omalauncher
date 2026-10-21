@@ -476,6 +476,20 @@
             android:exported="false"
             android:process=":indexer" />
         <!-- Sends new photos to the Mac Pro to be read for search, and keeps what comes back (search/PhotoIndex.kt). -->
+        <!-- Soma News (Boss, 2026-10-21): the reader, and its hourly refresh from FreshRSS on the Mac Pro. -->
+        <activity
+            android:name=".news.NewsActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|density|uiMode"
+            android:exported="false"
+            android:label="News"
+            android:launchMode="singleTask"
+            android:resizeableActivity="true"
+            android:theme="@style/Theme.Omalauncher.Window" />
+        <service
+            android:name=".news.NewsJob"
+            android:exported="false"
+            android:process=":indexer"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
         <service
             android:name=".search.PhotoIndexJob"
             android:exported="false"

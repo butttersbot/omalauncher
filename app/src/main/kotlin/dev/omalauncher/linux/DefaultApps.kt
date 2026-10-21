@@ -7,6 +7,9 @@ import java.io.File
 /** Exec of the Files entry; the launcher opens its own Files app for it (see OpenBridge's shim). */
 const val FILES_COMMAND = "omarchy-files"
 
+/** Exec of the News entry; the launcher opens Soma News for it (Boss, 2026-10-21). */
+const val NEWS_COMMAND = "soma-news"
+
 /** Exec of the Editor entry and Linux's $EDITOR; the launcher's own editor (see OpenBridge's shim). */
 const val EDIT_COMMAND = "omarchy-edit"
 
@@ -30,6 +33,7 @@ private val CURATED =
         "foot" to entry("Terminal", "foot", terminal = false, icon = "foot"),
         "btop" to entry("btop", "btop", icon = "btop"),
         "omarchy-files" to entry("Files", FILES_COMMAND, terminal = false),
+        "soma-news" to entry("News", NEWS_COMMAND, terminal = false),
         "micro" to entry("Editor", EDIT_COMMAND, terminal = false, icon = bundledIcon("editor")),
         "lazygit" to entry("Lazygit", "lazygit"),
         "cliamp" to entry("Cliamp", "cliamp", icon = bundledIcon("cliamp")),
