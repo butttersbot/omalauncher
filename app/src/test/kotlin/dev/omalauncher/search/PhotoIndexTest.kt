@@ -29,10 +29,11 @@ class PhotoIndexTest {
     }
 
     @Test fun onlyClearLeadersShow() {
-        val scored = listOf(1L to 0.42f, 2L to 0.40f, 3L to 0.37f, 4L to 0.30f, 5L to 0.02f)
-        assertEquals(listOf(1L, 2L, 3L), PhotoIndex.leaders(scored).map { it.first })
+        // As the Mac measured "a cat sitting at a window at night": the cat, and the near one after it; not the rest.
+        val scored = listOf(1L to 0.709f, 2L to 0.674f, 3L to 0.643f, 4L to 0.621f, 5L to 0.589f, 6L to 0.557f)
+        assertEquals(listOf(1L, 2L), PhotoIndex.leaders(scored).map { it.first })
         // Nothing near enough: nothing shows, rather than the least bad.
-        assertTrue(PhotoIndex.leaders(listOf(1L to 0.03f, 2L to 0.01f)).isEmpty())
+        assertTrue(PhotoIndex.leaders(listOf(1L to 0.60f, 2L to 0.58f)).isEmpty())
     }
 
     @Test fun aBigLibraryIsComparedQuickly() {

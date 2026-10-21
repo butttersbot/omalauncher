@@ -6,10 +6,15 @@ photo. When the Mac can't be reached, the phone reads a search's words itself wi
 loaded for that search and freed after.
 
 ## The Mac side (`tools/embed-mac/`)
-- `embed-server.py`: EmbeddingGemma 2 (LiteRT-LM, `litert-community/embeddinggemma-2-740m-litert-lm`, the
-  text + vision bundle, in `~/.cache/embeddinggemma-2/embeddinggemma-2-text-vision.litertlm`) and macOS Vision for
-  text in photos. Python venv in `~/.local/share/embed-server/venv` (`litert-lm`, `pyobjc-framework-Vision`,
-  `pyobjc-framework-Quartz`).
+- `embed-server.py`: EmbeddingGemma 2 on LiteRT-LM 0.18.0, the text + vision bundle
+  (`litert-community/embeddinggemma-2-text-vision-440m-litert-lm`, `embeddinggemma-2-text-vision-440m.litertlm`,
+  in `~/.cache/embeddinggemma-2/`), on the GPU (69 ms a photo, 15 ms a query on the M2 Ultra), and macOS Vision
+  for text in photos. Python venv in `~/.local/share/embed-server/venv` (`litert-lm==0.18.0`,
+  `pyobjc-framework-Vision`, `pyobjc-framework-Quartz`).
+- The phone's fallback uses the text-only bundle (`litert-community/embeddinggemma-2-text-270m-litert-lm`,
+  `embeddinggemma-2-text-270m.litertlm`, 164,626,432 bytes): its query vectors are bit-identical to the text +
+  vision bundle's (checked 2026-10-20, five queries, GPU and CPU).
+- Closeness sits in a narrow band (about 0.55 to 0.85; unrelated photos near 0.6): rank, never cut at a fixed value.
 - Listens on the Mac Pro's Tailscale address only, `100.120.219.46:8179`, never 0.0.0.0.
 - A login service, `dev.omalauncher.embed-server`, restarted whenever it ends: `tools/embed-mac/install`.
   Log: `~/Library/Logs/embed-server.log`.

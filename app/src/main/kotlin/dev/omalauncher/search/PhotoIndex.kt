@@ -140,16 +140,17 @@ object PhotoIndex {
     }
 
     /**
-     * Which of the photos nearest a search to show: the clear leaders only. EmbeddingGemma's closeness has no fixed
-     * scale, so a photo shows if it is within [SPREAD] of the best one and above [FLOOR].
+     * Which of the photos nearest a search to show: the clear leaders only. EmbeddingGemma's closeness sits in a narrow
+     * band (about 0.55 to 0.85, unrelated photos near 0.6, measured on the Mac Pro 2026-10-20), so a photo shows if it
+     * is within [SPREAD] of the best one, and the best itself only above [FLOOR].
      */
     fun leaders(scored: List<Pair<Long, Float>>): List<Pair<Long, Float>> {
         val top = scored.firstOrNull()?.second ?: return emptyList()
         return scored.filter { it.second >= FLOOR && it.second >= top - SPREAD }
     }
 
-    const val FLOOR = 0.05f
-    const val SPREAD = 0.06f
+    const val FLOOR = 0.62f
+    const val SPREAD = 0.05f
 }
 
 /** EmbeddingGemma 2 on the Mac Pro, over Tailscale (tools/embed-mac). */
@@ -236,6 +237,7 @@ class PhotoIndexJob : JobService() {
         private const val PERIODIC = 4202
         private const val BATCH = 16
         private const val SIDE = 384
+        private const val SCREENSHOT_SIDE = 1080
 
         fun schedule(context: Context) {
             val js = context.getSystemService(JobScheduler::class.java) ?: return
@@ -305,14 +307,20 @@ class PhotoIndexJob : JobService() {
                 val base = PhotoMac.base(context)
                 if (!PhotoMac.reachable(base)) return
                 // Newest first, so what he took lately is searchable soonest.
-                val todo = ArrayList<Pair<Long, Uri>>()
-                db.rawQuery("SELECT id, uri FROM photos WHERE vec IS NULL ORDER BY taken DESC", null).use { c -> while (c.moveToNext()) todo += c.getLong(0) to Uri.parse(c.getString(1)) }
+                // A screenshot goes at its full width: the Mac reads its text too, and at 384 pixels that misreads.
+                val todo = ArrayList<Triple<Long, Uri, Int>>()
+                db.rawQuery("SELECT id, uri, name, folder FROM photos WHERE vec IS NULL ORDER BY taken DESC", null).use { c ->
+                    while (c.moveToNext()) {
+                        val shot = (c.getString(2) ?: "").startsWith("Screenshot", ignoreCase = true) || (c.getString(3) ?: "").equals("Screenshots", ignoreCase = true)
+                        todo += Triple(c.getLong(0), Uri.parse(c.getString(1)), if (shot) SCREENSHOT_SIDE else SIDE)
+                    }
+                }
                 for (batch in todo.chunked(BATCH)) {
                     if (stopped()) return
                     val jpegs =
-                        batch.mapNotNull { (id, uri) ->
+                        batch.mapNotNull { (id, uri, side) ->
                             runCatching {
-                                val bmp = context.contentResolver.loadThumbnail(uri, Size(SIDE, SIDE), null)
+                                val bmp = context.contentResolver.loadThumbnail(uri, Size(side, side), null)
                                 val out = ByteArrayOutputStream()
                                 bmp.compress(Bitmap.CompressFormat.JPEG, 82, out)
                                 bmp.recycle()

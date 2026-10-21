@@ -20,7 +20,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HOST = os.environ.get("EMBED_HOST", "100.120.219.46")
 PORT = int(os.environ.get("EMBED_PORT", "8179"))
-MODEL = os.path.expanduser(os.environ.get("EMBED_MODEL", "~/.cache/embeddinggemma-2/embeddinggemma-2-text-vision.litertlm"))
+MODEL = os.path.expanduser(os.environ.get("EMBED_MODEL", "~/.cache/embeddinggemma-2/embeddinggemma-2-text-vision-440m.litertlm"))
 DIM = 256
 QUERY = "task: search query | text: "
 MAX_BODY = 64 * 1024 * 1024
@@ -35,7 +35,8 @@ def engine():
     if _engine is None:
         from litert_lm import Backend, EmbeddingEngine  # noqa: PLC0415
 
-        _engine = EmbeddingEngine(MODEL, backend=Backend.GPU())
+        # GPU (Metal) for both parts: on the M2 Ultra a photo takes ~70 ms against ~970 ms on the CPU.
+        _engine = EmbeddingEngine(MODEL, backend=Backend.GPU(), vision_backend=Backend.GPU())
         _engine.__enter__()
     return _engine
 
@@ -52,11 +53,11 @@ def text_vector(text):
 
 
 def image_vector(jpeg):
-    # LiteRT-LM takes an image as input data next to text; see the embedding models guide.
-    from litert_lm import InputData  # noqa: PLC0415
+    # The encoded file's bytes (JPEG, PNG...); LiteRT-LM scales it to the vision encoder. No prefix on images.
+    from litert_lm import Content  # noqa: PLC0415
 
     with _lock:
-        return cut(engine().compute_embedding([InputData.Image(jpeg)]).embedding)
+        return cut(engine().compute_embedding(Content.ImageBytes(jpeg)).embedding)
 
 
 def read_text(jpeg):
