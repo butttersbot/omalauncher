@@ -304,6 +304,9 @@
         <receiver android:name=".phone.OmaToastReceiver" android:exported="true">
             <intent-filter><action android:name="dev.omalauncher.action.TOAST" /></intent-filter>
         </receiver>
+        <!-- The GPU for the phone's photo-search model (LiteRT-LM); without it, its CPU. -->
+        <uses-native-library android:name="libOpenCL.so" android:required="false" />
+        <uses-native-library android:name="libvndksupport.so" android:required="false" />
         <service android:name=".phone.PhoneService" android:exported="true"
             android:label="${appLabel} phone control"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
@@ -465,6 +468,11 @@
             android:exported="false"
             android:process=":indexer"
             android:permission="android.permission.BIND_JOB_SERVICE" />
+        <!-- Reads a photo search's words with the phone's own model when the Mac Pro is away (search/PhotoText.kt). -->
+        <service
+            android:name=".search.PhotoTextService"
+            android:exported="false"
+            android:process=":indexer" />
         <!-- Sends new photos to the Mac Pro to be read for search, and keeps what comes back (search/PhotoIndex.kt). -->
         <service
             android:name=".search.PhotoIndexJob"

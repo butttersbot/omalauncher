@@ -304,8 +304,11 @@ class PhotoIndexJob : JobService() {
                 } finally {
                     db.endTransaction()
                 }
+                // The phone's own text model, for searching while the Mac is away: fetched here, on unmetered Wi-Fi.
+                PhotoModel.download(context, stopped)
                 val base = PhotoMac.base(context)
                 if (!PhotoMac.reachable(base)) return
+                PhotoModel.check(context, base)
                 // Newest first, so what he took lately is searchable soonest.
                 // A screenshot goes at its full width: the Mac reads its text too, and at 384 pixels that misreads.
                 val todo = ArrayList<Triple<Long, Uri, Int>>()

@@ -93,6 +93,8 @@ dependencies {
     implementation(libs.zxing.core)
     // The text of PDFs, for search's file index (search/FileIndex.kt); used only in the indexer's own process.
     implementation(libs.pdfbox.android)
+    // EmbeddingGemma 2's text model on the phone, for photo search while the Mac Pro is away (search/PhotoText.kt).
+    implementation(libs.litertlm.android)
     implementation(project(":owl"))
     // Soma's chat, shared with the Mac app (cockpit/DESIGN.md).
     implementation(project(":chat"))

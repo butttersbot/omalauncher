@@ -166,7 +166,8 @@ internal fun SearchCard(
                 synchronized(photoDb) {
                     val d = photoDb[0] ?: PhotoIndex.open(context, writable = false).also { photoDb[0] = it } ?: return@synchronized emptyList()
                     val words = PhotoIndex.byWords(d, q)
-                    val vector = PhotoMac.text(PhotoMac.base(context), q)
+                    // The Mac reads the words; when it can't be reached, the phone's own copy of the model does.
+                    val vector = PhotoMac.text(PhotoMac.base(context), q) ?: dev.omalauncher.search.PhotoTextService.vector(context, q)
                     val near =
                         if (vector == null) {
                             emptyList()
