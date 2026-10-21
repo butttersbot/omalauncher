@@ -95,6 +95,26 @@
   .actions .a { padding: 13px 14px; display: flex; gap: 12px; cursor: pointer; }
   .actions .a:active { background: var(--tone); }
   .actions .a.red { color: var(--red); }
+  /* The layouts to choose from (Boss, 2026-10-20: "show me the options on the different layouts"). */
+  .layouts { position: absolute; top: 6px; left: 50%; transform: translateX(-50%); z-index: 20; display: flex; background: var(--paper); border: 2px solid var(--ink); box-shadow: 0 3px 12px rgba(0,0,0,.25); }
+  .layouts span { padding: 6px 10px; font-size: 13px; cursor: pointer; white-space: nowrap; }
+  .layouts span.on { background: var(--ink); color: var(--paper); }
+  .about { position: absolute; top: 44px; left: 12px; right: 12px; z-index: 19; background: var(--ink); color: var(--paper); padding: 8px 12px; font-size: 12.5px; }
+  .phone.open .about { display: none; }
+  /* Card: Raycast's own, a card over the dimmed page. */
+  .phone.l-card .sheet { inset: 64px 12px auto; max-height: 58%; border: 2px solid var(--ink); box-shadow: 0 10px 40px rgba(0,0,0,.35); transform: translateY(-140%); }
+  .phone.l-card.open .sheet { transform: none; }
+  .phone.l-card .bar { padding-top: 10px; }
+  .phone.l-card.open .home, .phone.l-half.open .home, .phone.l-bottom.open .home { filter: brightness(.55); }
+  /* Half: drops halfway, the page still showing under it. */
+  .phone.l-half .sheet { bottom: auto; height: 56%; border-bottom: 2px solid var(--ink); box-shadow: 0 8px 30px rgba(0,0,0,.3); }
+  /* Bottom: the field just above the keyboard, the best results nearest the thumb, the list growing up. */
+  .phone.l-bottom .sheet { top: auto; height: 100%; flex-direction: column-reverse; transform: translateY(100%); background: transparent; }
+  .phone.l-bottom.open .sheet { transform: none; }
+  .phone.l-bottom .bar { padding: 8px 12px 10px; background: var(--paper); border-bottom: 0; border-top: 2px solid var(--ink); }
+  .phone.l-bottom .scopes { background: var(--paper); border-bottom: 0; border-top: var(--line) solid var(--ink); }
+  .phone.l-bottom .list { flex: 0 1 auto; max-height: 62%; background: var(--paper); border-top: 2px solid var(--ink); display: flex; flex-direction: column; padding-bottom: 6px; }
+  .phone.l-bottom .sheet { padding-bottom: 0; }
   .note { position: absolute; left: 12px; right: 12px; bottom: calc(var(--kb) + 10px); z-index: 6; background: var(--ink); color: var(--paper); padding: 9px 12px; font-size: 13px; display: none; }
   .note.show { display: block; }
 </style>
@@ -103,6 +123,8 @@
 <div class="phone" id="phone">
   <div class="home" id="home"></div>
   <div class="hint" id="hint">⇣ swipe down on home</div>
+  <div class="layouts" id="layouts"><span data-l="full" class="on">Full</span><span data-l="card">Card</span><span data-l="half">Half</span><span data-l="bottom">Bottom</span></div>
+  <div class="about" id="about"></div>
 
   <div class="sheet" id="sheet">
     <div class="bar">
@@ -255,7 +277,7 @@ function render() {
     h += '<div class="recent">' + ['beach gif', 'lease', '15% of 84', 'wifi', 'cat at night'].map(s => `<span>${s}</span>`).join('') + '</div>';
     h += sec('Try');
     h += '<div class="recent">' + ['palm trees at night', 'flight', '100 usd to jpy', 'fire', 'manga'].map(s => `<span>${s}</span>`).join('') + '</div>';
-    list.innerHTML = h; bind(); return;
+    list.innerHTML = layout === 'bottom' ? reverseBlocks(h) : h; bind(); return;
   }
   $('scopes').style.display = 'flex';
   const a = answer(query);
@@ -295,8 +317,32 @@ function render() {
   h += rowHtml({ t: 'Search Google', sub: query, g: 'G' }, 'web');
   h += rowHtml({ t: 'Search on the Mac Pro', sub: 'Spotlight on the Mac, over Tailscale', g: '⌘' }, 'mac');
   h += rowHtml({ t: 'Search YouTube', sub: query, g: '▶' }, 'web');
-  list.innerHTML = h; bind();
+  list.innerHTML = layout === 'bottom' ? reverseBlocks(h) : h; bind();
 }
+
+/** For Bottom: the same sections, the last first, so the top hit sits just above the field. */
+function reverseBlocks(h) {
+  const box = document.createElement('div'); box.innerHTML = h;
+  const groups = []; let cur = null;
+  for (const el of [...box.children]) { if (el.classList.contains('sec')) { cur = [el]; groups.push(cur); } else if (cur) cur.push(el); else groups.push([el]); }
+  return groups.reverse().map(g => g.map(e => e.outerHTML).join('')).join('');
+}
+
+const ABOUT = {
+  full: 'Full: the whole screen, like iPhone Spotlight. Most results at once; home hidden.',
+  card: 'Card: Raycast\'s card over the dimmed page. Familiar from the desktop; fewer results show.',
+  half: 'Half: drops halfway; the page stays in view below. Quick and light, less room.',
+  bottom: 'Bottom: the field sits just over the keyboard and results stack upward, best nearest your thumb. One-handed.',
+};
+let layout = 'full';
+function setLayout(l) {
+  layout = l;
+  phone.classList.remove('l-full', 'l-card', 'l-half', 'l-bottom'); phone.classList.add('l-' + l);
+  $('layouts').querySelectorAll('span').forEach(s => s.classList.toggle('on', s.dataset.l === l));
+  $('about').textContent = ABOUT[l];
+  render();
+}
+$('layouts').onclick = e => { if (e.target.dataset.l) setLayout(e.target.dataset.l); };
 
 function toast(s) { const n = $('note'); n.textContent = s; n.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => n.classList.remove('show'), 1800); }
 
@@ -349,7 +395,7 @@ let y0 = null;
 $('home').onpointerdown = e => { y0 = e.clientY; phone.classList.add('drag'); };
 window.onpointermove = e => { if (y0 == null) return; const dy = Math.max(0, e.clientY - y0); $('sheet').style.transform = `translateY(${Math.min(0, dy - phone.clientHeight)}px)`; };
 window.onpointerup = e => { if (y0 == null) return; const dy = e.clientY - y0; y0 = null; phone.classList.remove('drag'); $('sheet').style.transform = ''; if (dy > phone.clientHeight / 4) open(); };
-render();
+setLayout('full');
 </script>
 </body>
 </html>
