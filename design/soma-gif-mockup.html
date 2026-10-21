@@ -74,6 +74,10 @@
   .g .cap { position: absolute; left: 0; right: 0; bottom: 0; padding: 3px 6px; font: 700 12px "M Body"; color: #fff; text-shadow: 0 1px 2px #000, 0 0 2px #000; text-transform: uppercase; text-align: center; }
   .g .mine { position: absolute; top: 4px; left: 4px; background: var(--paper); border: 1px solid var(--ink); font: 9px "M Mono"; padding: 0 4px; }
   /* A heart on each KLIPY GIF: tapped, it goes to Saved with the GIFs saved on the phone. */
+  .g.picked { outline: 3px solid var(--red); outline-offset: -1px; }
+  .g .acts { display: flex; gap: 6px; padding: 6px; background: var(--paper); border-top: 1.3px solid var(--ink); }
+  .g .sendbtn { flex: 1; height: 32px; background: var(--ink); color: var(--paper); border-radius: 4px; font-size: 14px; }
+  .g .x { width: 32px; height: 32px; border: 1.3px solid var(--ink); border-radius: 4px; }
   .heart { position: absolute; top: 4px; right: 4px; width: 26px; height: 26px; border-radius: 50%; background: rgba(253,253,251,.9); border: 1px solid var(--ink); display: grid; place-items: center; font-size: 14px; line-height: 1; z-index: 2; }
   .heart.on { background: var(--red); color: #fff; border-color: var(--red); }
   @keyframes bob { from { transform: scale(1) rotate(-3deg); } to { transform: scale(1.12) rotate(3deg); } }
@@ -115,7 +119,7 @@ const CHIPS = ['Trending', 'Recent', 'Saved', 'lol', 'yes', 'no', 'love', 'facep
 // them with the other gifs i favorite").
 const hearted = new Set();
 const saved = () => [...GIFS.filter(g => hearted.has(g)), ...MINE];
-const S = { state: 'strip', screen: innerWidth > 600 ? 'open' : 'cover', chip: 'Trending', q: '', sent: [], toast: '' };
+const S = { state: 'strip', screen: innerWidth > 600 ? 'open' : 'cover', chip: 'Trending', q: '', sent: [], toast: '', pick: -1 };
 const STATES = [['strip', 'Strip'], ['panel', 'GIF panel'], ['search', 'Searching'], ['yours', 'Saved']];
 
 function set(p) { Object.assign(S, p); draw(); }
@@ -137,7 +141,13 @@ function shown() {
 function tile(g, i) {
   const [e, cap, , ratio, bg, mine] = g;
   const heart = mine ? `<span class="mine">SAVED</span>` : `<button class="heart ${hearted.has(g) ? 'on' : ''}" onclick="event.stopPropagation();heart(${i})">${hearted.has(g) ? '♥' : '♡'}</button>`;
-  return `<div class="g" onclick="send(${i})" style="background:${bg}"><div class="art" style="height:${Math.round(110 * ratio)}px">${e}</div>${heart}${mine ? '' : `<div class="cap">${cap}</div>`}</div>`;
+  // A tap opens the quick preview right there in the grid (Boss, 2026-10-21: "quick preview inline"): the tile grows
+  // and plays bigger, with Send under it; a second tap on Send sends, a tap anywhere else moves on.
+  if (i === S.pick) {
+    return `<div class="g picked" style="background:${bg}"><div class="art" style="height:${Math.round(150 * ratio)}px;font-size:58px">${e}</div>${heart}${mine ? '' : `<div class="cap" style="bottom:44px">${cap}</div>`}
+      <div class="acts"><button class="sendbtn" onclick="event.stopPropagation();send(${i})">Send ➤</button><button class="x" onclick="event.stopPropagation();set({pick:-1})">✕</button></div></div>`;
+  }
+  return `<div class="g" onclick="set({pick:${i}})" style="background:${bg}"><div class="art" style="height:${Math.round(110 * ratio)}px">${e}</div>${heart}${mine ? '' : `<div class="cap">${cap}</div>`}</div>`;
 }
 function heart(i) { const g = shown()[i]; hearted.has(g) ? hearted.delete(g) : hearted.add(g); draw(); }
 // Tiles into [n] columns, each next one onto the shortest, so the stacks stay even as they scroll down.
@@ -148,10 +158,10 @@ function columns(list, n) {
 }
 function send(i) {
   const g = shown()[i];
-  S.sent.push(g); S.state = 'strip'; S.q = ''; S.toast = 'Sent as a GIF (the app took it straight from the keyboard)';
+  S.sent.push(g); S.state = 'strip'; S.q = ''; S.pick = -1; S.toast = 'Sent as a GIF (the app took it straight from the keyboard)';
   draw(); setTimeout(() => set({ toast: '' }), 2200);
 }
-function key(c) { if (S.state !== 'search') return; set({ q: c === '⌫' ? S.q.slice(0, -1) : S.q + c }); }
+function key(c) { if (S.state !== 'search') return; set({ pick: -1, q: c === '⌫' ? S.q.slice(0, -1) : S.q + c }); }
 
 function keys(go) {
   const rows = ['qwertyuiop', 'asdfghjkl', 'zxcvbnm'];
@@ -187,7 +197,7 @@ function draw() {
     board = `<div class="panel">
       <div class="ptop"><button class="abc" onclick="set({state:'strip'})">ABC</button>
         <div class="pill" onclick="set({state:'search', q:''})">⌕ ${S.chip === 'Saved' ? 'Search your saved GIFs' : 'Search GIFs and yours'}</div></div>
-      <div class="chips">${CHIPS.map(c => `<button class="${S.chip === c ? 'on' : ''}" onclick="set({chip:'${c}'})">${c}</button>`).join('')}</div>
+      <div class="chips">${CHIPS.map(c => `<button class="${S.chip === c ? 'on' : ''}" onclick="set({chip:'${c}', pick:-1})">${c}</button>`).join('')}</div>
       <div class="grid">${list.length ? columns(list, S.screen === 'open' ? 3 : 2) : '<span style="color:var(--muted);padding:20px">Heart a GIF to keep it here</span>'}</div>
       <div class="credit mono">${S.chip === 'Saved' ? 'Hearted · and saved on your phone' : 'Saved first · then powered by KLIPY'}</div>
     </div>`;
