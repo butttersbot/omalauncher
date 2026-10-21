@@ -1,0 +1,628 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Soma Notes: mock-up</title>
+<!--
+  Soma Notes (Boss, 2026-10-20: "build our own notes app... use our own tail share... a built-in HTML viewer where it
+  formatted things perfectly for my phone", then "one of my own notes... an idea, a thought, a post, shopping lists...
+  the app should cover both"). A mock-up only: every note is sample data, nothing is saved or sent.
+  The three layouts are drawn at the Fold's own sizes in dp and scaled to fit.
+-->
+<style>
+  /* The Manga look's tokens and fonts, from app/src/main/assets/packs/manga/pack.toml. */
+  @font-face { font-family: "M Display"; src: url(../app/src/main/assets/packs/manga/fonts/DelaGothicOne-Regular.ttf); }
+  @font-face { font-family: "M Body"; src: url(../app/src/main/assets/packs/manga/fonts/SchibstedGrotesk.ttf); }
+  @font-face { font-family: "M Hand"; src: url(../app/src/main/assets/packs/manga/fonts/PatrickHand-Regular.ttf); }
+  @font-face { font-family: "M Mono"; src: url(../app/src/main/assets/packs/manga/fonts/JetBrainsMono.ttf); }
+  :root { --paper: #fdfdfb; --ink: #111113; --muted: #77777e; --red: #d7262d; --tone: #e9e9ea; --line: 1.15px; --hl: #ffe680; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: #26262a; overflow: hidden; }
+  body { color: var(--ink); font: 15px/1.35 "M Body", system-ui, sans-serif; }
+  .display { font-family: "M Display", sans-serif; font-weight: normal; }
+  .mono { font-family: "M Mono", monospace; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; }
+  .hand { font-family: "M Hand", cursive; }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+
+  /* The mock-up's own controls, outside the phone. */
+  .top { position: fixed; left: 0; right: 0; top: 0; z-index: 50; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; padding: 6px; }
+  .seg { display: flex; background: var(--paper); border: 2px solid var(--ink); }
+  .seg button { padding: 5px 9px; font-size: 12.5px; white-space: nowrap; }
+  .seg button.on { background: var(--ink); color: var(--paper); }
+  .stage { position: fixed; left: 0; right: 0; bottom: 0; display: grid; place-items: center; }
+  .scaler { position: relative; }
+
+  .phone { position: relative; overflow: hidden; background: var(--paper); border-radius: 22px; box-shadow: 0 10px 40px rgba(0,0,0,.5); display: flex; }
+  .phone.cover { width: 412px; height: 960px; }
+  .phone.portrait { width: 700px; height: 840px; }
+  .phone.landscape { width: 840px; height: 700px; }
+  .status { position: absolute; top: 0; left: 0; right: 0; height: 28px; padding: 6px 18px 0; display: flex; justify-content: space-between; font-size: 12px; z-index: 30; pointer-events: none; }
+  .phone.landscape .status::after, .phone.portrait .status::after { content: ""; }
+
+  /* Panes. On the cover one at a time; open, the stream at the left and the note beside it. */
+  .pane { position: relative; height: 100%; display: flex; flex-direction: column; min-width: 0; }
+  .side { width: 100%; }
+  .phone.portrait .side { width: 38%; border-right: var(--line) solid var(--ink); }
+  .phone.landscape .side { width: 30%; border-right: var(--line) solid var(--ink); }
+  .main { flex: 1; }
+  .scroll { flex: 1; overflow-y: auto; scrollbar-width: none; overscroll-behavior: contain; }
+  .scroll::-webkit-scrollbar { display: none; }
+
+  /* The stream. */
+  .shead { padding: 36px 16px 6px; display: flex; align-items: flex-end; gap: 10px; }
+  .shead h1 { margin: 0; font-size: 30px; flex: 1; }
+  .shead .ic { width: 36px; height: 36px; border: var(--line) solid var(--ink); display: grid; place-items: center; font-size: 17px; }
+  .pull { margin: 4px 12px 8px; border: 1.6px dashed var(--muted); padding: 10px 12px; color: var(--muted); display: flex; gap: 8px; align-items: center; cursor: pointer; }
+  .pull b { color: var(--ink); font-weight: 600; }
+  .chips { display: flex; gap: 6px; padding: 2px 12px 8px; overflow-x: auto; scrollbar-width: none; }
+  .chips button { flex: none; padding: 5px 10px; border: var(--line) solid var(--ink); font-size: 13px; }
+  .chips button.on { background: var(--ink); color: var(--paper); }
+  .resurface { margin: 6px 12px 10px; background: var(--ink); color: var(--paper); padding: 12px 14px; position: relative; }
+  .resurface .mono { color: #bbb; }
+  .resurface p { margin: 6px 0 10px; font-size: 18px; line-height: 1.3; }
+  .resurface .hand { font-size: 21px; }
+  .resurface .acts { display: flex; gap: 14px; font-size: 13px; }
+  .resurface .acts button:first-child { color: var(--hl); }
+  .grp { padding: 12px 16px 4px; color: var(--muted); }
+  .card { margin: 0 12px 8px; border: var(--line) solid var(--ink); padding: 10px 12px; cursor: pointer; position: relative; background: var(--paper); }
+  .card.sel { box-shadow: 4px 4px 0 var(--ink); }
+  .card .k { display: flex; gap: 6px; align-items: center; color: var(--muted); }
+  .card .k .tag { border: var(--line) solid currentColor; padding: 0 4px; }
+  .card .k .tag.agent { color: #fff; background: var(--ink); border-color: var(--ink); }
+  .card .k .tag.red { color: var(--red); }
+  .card h3 { margin: 4px 0 2px; font-size: 16px; font-weight: 700; }
+  .card p { margin: 0; color: #444; font-size: 13.5px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .card .mini { margin-top: 4px; font-size: 13.5px; color: #333; }
+  .card .mini div::before { content: "☐ "; color: var(--muted); }
+  .card .pin { position: absolute; right: 10px; top: 8px; color: var(--red); font-size: 13px; }
+  .fab { position: absolute; right: 16px; bottom: 22px; width: 64px; height: 64px; border-radius: 50%; background: var(--red); color: #fff; display: grid; place-items: center; font-size: 26px; box-shadow: 0 4px 0 var(--ink); border: 2px solid var(--ink); z-index: 12; touch-action: none; user-select: none; -webkit-user-select: none; }
+  .fab small { position: absolute; bottom: -20px; font-size: 10.5px; color: var(--ink); white-space: nowrap; }
+  .side .fab { right: 14px; }
+
+  /* A note. */
+  .nhead { padding: 34px 18px 8px; display: flex; align-items: center; gap: 10px; border-bottom: var(--line) solid var(--ink); }
+  .nhead .back { font-size: 15px; padding: 6px 8px 6px 0; }
+  .nhead .meta { flex: 1; color: var(--muted); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .nhead .ic { width: 34px; height: 34px; border: var(--line) solid var(--ink); display: grid; place-items: center; }
+  .body { padding: 14px 20px 120px; }
+  .body h2.t { margin: 2px 0 6px; font-size: 26px; line-height: 1.15; }
+  .sub { color: var(--muted); font-size: 13.5px; margin-bottom: 12px; }
+  .phone.landscape .body, .phone.portrait .main .body { padding-left: 30px; padding-right: 30px; }
+
+  /* A list that formed itself: by aisle, ticked items sink into the cart. */
+  .aisle { margin: 16px 0 4px; color: var(--muted); display: flex; justify-content: space-between; }
+  .item { display: flex; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--tone); cursor: pointer; transition: opacity .25s; }
+  .item .box { width: 24px; height: 24px; border: 2px solid var(--ink); flex: none; display: grid; place-items: center; font-size: 16px; }
+  .item.done .box { background: var(--ink); color: var(--paper); }
+  .item.done .txt { text-decoration: line-through; color: var(--muted); }
+  .item .txt { flex: 1; font-size: 17px; }
+  .item .by { display: block; font-size: 11.5px; color: var(--red); }
+  .store .item { padding: 15px 0; } .store .item .txt { font-size: 22px; } .store .item .box { width: 32px; height: 32px; font-size: 22px; }
+  .add { display: flex; gap: 8px; margin-top: 14px; }
+  .add input { flex: 1; border: 2px solid var(--ink); padding: 10px; font: 16px "M Body"; background: var(--paper); outline: 0; min-width: 0; }
+  .toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+  .toggle .sw { width: 38px; height: 22px; border: 2px solid var(--ink); border-radius: 12px; position: relative; }
+  .toggle .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--ink); transition: left .15s; }
+  .toggle.on .sw { background: var(--red); border-color: var(--red); } .toggle.on .sw::after { left: 18px; background: #fff; }
+  .widget { margin-top: 22px; border: 2px solid var(--ink); padding: 10px 12px; width: 200px; background: var(--paper); box-shadow: 4px 4px 0 var(--ink); }
+  .widget .mono { color: var(--muted); }
+  .widget div { font-size: 14px; padding: 2px 0; }
+
+  /* A post draft. */
+  .tabs { display: inline-flex; border: 2px solid var(--ink); margin-bottom: 14px; }
+  .tabs button { padding: 6px 12px; font-size: 13px; }
+  .tabs button.on { background: var(--ink); color: var(--paper); }
+  .part { position: relative; border-left: 3px solid var(--ink); padding: 4px 0 4px 12px; margin-bottom: 12px; }
+  .part .ed { outline: 0; font-size: 17px; line-height: 1.45; min-height: 1.4em; }
+  .part .count { display: flex; justify-content: space-between; color: var(--muted); margin-top: 6px; }
+  .part.over { border-left-color: var(--red); } .part.over .count b { color: var(--red); }
+  .xpost { display: flex; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--tone); position: relative; }
+  .xpost .av { width: 40px; height: 40px; border-radius: 50%; background: var(--ink); color: var(--paper); display: grid; place-items: center; flex: none; font-weight: 700; z-index: 1; }
+  .xpost:not(:last-child)::before { content: ""; position: absolute; left: 19px; top: 52px; bottom: -2px; width: 2px; background: var(--tone); }
+  .xpost .who { font-size: 14px; } .xpost .who span { color: var(--muted); }
+  .xpost .tx { font-size: 15px; line-height: 1.4; margin-top: 2px; }
+  .xpost .icons { display: flex; gap: 28px; color: var(--muted); font-size: 13px; margin-top: 8px; }
+  .bar { position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 16px 18px; display: flex; gap: 8px; background: linear-gradient(transparent, var(--paper) 30%); z-index: 5; }
+  .btn { border: 2px solid var(--ink); padding: 10px 14px; font-size: 14.5px; background: var(--paper); }
+  .btn.solid { background: var(--ink); color: var(--paper); }
+  .btn.red { background: var(--red); color: #fff; border-color: var(--ink); box-shadow: 3px 3px 0 var(--ink); }
+  .grow1 { flex: 1; }
+
+  /* An idea, and what grew from it. */
+  .idea { font-family: "M Hand", cursive; font-size: 27px; line-height: 1.25; }
+  .grown { margin-top: 18px; border: 2px solid var(--ink); padding: 12px; display: flex; gap: 12px; align-items: center; cursor: pointer; background: var(--paper); box-shadow: 4px 4px 0 var(--ink); }
+  .grown .g { width: 42px; height: 42px; background: var(--ink); color: var(--paper); display: grid; place-items: center; font-size: 20px; flex: none; }
+  .grown b { display: block; } .grown small { color: var(--muted); }
+  .working { margin-top: 18px; border: 2px dashed var(--muted); padding: 12px; color: var(--muted); display: flex; gap: 10px; align-items: center; }
+  .dots::after { content: "…"; animation: d 1.2s steps(4) infinite; display: inline-block; width: 1.2em; overflow: hidden; vertical-align: bottom; }
+  @keyframes d { from { width: 0 } to { width: 1.2em } }
+
+  /* Sheets over everything: capture, grow, confirm. */
+  .scrim { position: absolute; inset: 0; background: rgba(17,17,19,.4); z-index: 40; }
+  .sheet { position: absolute; left: 0; right: 0; background: var(--paper); z-index: 41; border-bottom: 2px solid var(--ink); }
+  .sheet.topdown { top: 0; padding: 36px 16px 14px; animation: drop .28s cubic-bezier(.25,.8,.25,1); }
+  .phone:not(.cover) .sheet.topdown { left: 18%; right: 18%; top: 34px; border: 2px solid var(--ink); box-shadow: 6px 6px 0 var(--ink); }
+  @keyframes drop { from { transform: translateY(-100%); } }
+  .sheet.bottom { bottom: 0; border-top: 2px solid var(--ink); border-bottom: 0; padding: 16px 16px 22px; animation: rise .25s ease-out; }
+  .phone:not(.cover) .sheet.bottom { left: 22%; right: 22%; bottom: 20px; border: 2px solid var(--ink); box-shadow: 6px 6px 0 var(--ink); }
+  @keyframes rise { from { transform: translateY(100%); } }
+  .cap textarea { width: 100%; border: 0; outline: 0; resize: none; font: 20px/1.35 "M Body"; background: transparent; min-height: 130px; color: var(--ink); }
+  .cap .row { display: flex; align-items: center; gap: 8px; }
+  .becomes { display: inline-flex; gap: 6px; align-items: center; border: var(--line) solid var(--ink); padding: 3px 8px; font-size: 12.5px; }
+  .becomes b { color: var(--red); }
+  .try { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+  .try button { border: 1px dashed var(--muted); padding: 3px 8px; font-size: 12px; color: var(--muted); }
+  .shape { margin-top: 8px; border-top: var(--line) solid var(--ink); padding-top: 8px; font-size: 14px; }
+  .shape .li::before { content: "☐  "; }
+  .listen { display: flex; align-items: center; gap: 10px; font-size: 18px; padding: 30px 0; justify-content: center; }
+  .wave { display: flex; gap: 3px; align-items: center; height: 30px; }
+  .wave i { width: 4px; background: var(--red); animation: w .8s ease-in-out infinite; }
+  .wave i:nth-child(2) { animation-delay: .1s } .wave i:nth-child(3) { animation-delay: .2s } .wave i:nth-child(4) { animation-delay: .3s } .wave i:nth-child(5) { animation-delay: .4s }
+  @keyframes w { 0%,100% { height: 6px } 50% { height: 28px } }
+  .orig { display: inline-block; margin-top: 6px; font-size: 12px; color: var(--muted); border: 1px solid var(--tone); padding: 2px 6px; }
+  .opt { display: flex; gap: 12px; align-items: center; padding: 11px 4px; border-bottom: 1px solid var(--tone); cursor: pointer; }
+  .opt .g { width: 36px; height: 36px; border: var(--line) solid var(--ink); display: grid; place-items: center; flex: none; font-size: 17px; }
+  .opt b { display: block; } .opt small { color: var(--muted); }
+
+  /* The reader: agents' Markdown, made to be read. */
+  .md { font-size: 16.5px; line-height: 1.58; }
+  .md h1 { font-family: "M Display"; font-weight: normal; font-size: 27px; line-height: 1.15; margin: 4px 0 12px; }
+  .md h2 { font-size: 19px; margin: 26px 0 8px; padding-top: 8px; border-top: 2px solid var(--ink); break-after: avoid; }
+  .md p { margin: 0 0 12px; }
+  .md code { font-family: "M Mono"; font-size: .84em; background: var(--tone); padding: 1px 4px; }
+  .md pre { position: relative; background: var(--ink); color: #eee; padding: 12px; overflow-x: auto; font: 12.5px/1.5 "M Mono"; margin: 0 0 14px; break-inside: avoid; }
+  .md pre code { background: none; padding: 0; color: inherit; }
+  .md pre .copy { position: absolute; top: 6px; right: 6px; font: 10px "M Mono"; color: #aaa; border: 1px solid #555; padding: 2px 6px; }
+  .md blockquote { margin: 0 0 14px; padding: 10px 14px; border-left: 4px solid var(--red); background: #fbf1f1; break-inside: avoid; }
+  .md blockquote p { margin: 0; }
+  .md ul, .md ol { margin: 0 0 12px; padding-left: 22px; }
+  .md li { margin: 3px 0; }
+  .md li.task { list-style: none; margin-left: -22px; display: flex; gap: 10px; cursor: pointer; }
+  .md li.task .box { width: 20px; height: 20px; border: 2px solid var(--ink); flex: none; margin-top: 3px; display: grid; place-items: center; font-size: 13px; }
+  .md li.task.done .box { background: var(--ink); color: var(--paper); }
+  .md li.task.done span:last-child { color: var(--muted); text-decoration: line-through; }
+  .md table { border-collapse: collapse; width: 100%; margin: 0 0 14px; font-size: 14.5px; break-inside: avoid; }
+  .md th, .md td { border: var(--line) solid var(--ink); padding: 6px 8px; text-align: left; vertical-align: top; }
+  .md th { background: var(--ink); color: var(--paper); font-weight: 600; }
+  /* On the cover a table is too wide to read: each row becomes a little card. */
+  .phone.cover .md table, .phone.cover .md tbody, .phone.cover .md tr, .phone.cover .md td { display: block; border: 0; }
+  .phone.cover .md thead { display: none; }
+  .phone.cover .md tr { border: var(--line) solid var(--ink); margin-bottom: 8px; padding: 6px 10px; }
+  .phone.cover .md td { padding: 2px 0; }
+  .phone.cover .md td::before { content: attr(data-h); display: block; font: 9.5px "M Mono"; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .phone.cover .md td:first-child { font-weight: 700; font-size: 16px; }
+  .phone.cover .md td:first-child::before { display: none; }
+  .from { display: flex; gap: 8px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+  .from .tag { background: var(--ink); color: var(--paper); padding: 2px 6px; }
+  .from .link { color: var(--red); cursor: pointer; font-size: 13px; }
+  .src { font: 13px/1.55 "M Mono"; white-space: pre-wrap; word-break: break-word; color: #333; }
+  .fmt { position: absolute; left: 12px; right: 12px; bottom: 16px; display: flex; justify-content: space-around; border: 2px solid var(--ink); background: var(--paper); z-index: 6; padding: 6px; box-shadow: 4px 4px 0 var(--ink); }
+  .fmt button { padding: 6px 10px; font-size: 16px; }
+  [contenteditable] { outline: 0; }
+  .outline { position: absolute; right: 12px; top: 74px; background: var(--paper); border: 2px solid var(--ink); z-index: 20; padding: 6px 0; min-width: 200px; box-shadow: 4px 4px 0 var(--ink); }
+  .outline div { padding: 8px 14px; cursor: pointer; font-size: 14px; }
+  .outline div:hover { background: var(--tone); }
+
+  /* Open and sideways: the note as a book, two pages a spread, turned by a tap at either side. */
+  .book { position: relative; flex: 1; overflow: hidden; margin: 16px 26px 0; }
+  .flow { height: 100%; column-fill: auto; transition: transform .35s cubic-bezier(.3,.7,.3,1); }
+  .flow > *:first-child { margin-top: 0; }
+  .book::after { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: var(--tone); }
+  .turn { position: absolute; top: 0; bottom: 0; width: 22%; z-index: 3; cursor: pointer; }
+  .turn.l { left: 0; } .turn.r { right: 0; }
+  .folio { display: flex; justify-content: space-between; padding: 8px 26px 14px; color: var(--muted); }
+
+  /* HTML notes: a sealed frame, as it came or fitted to the phone. */
+  .frame { flex: 1; border: 0; width: 100%; background: #fff; }
+  .htmlbar { padding: 8px 18px; display: flex; gap: 10px; align-items: center; border-bottom: var(--line) solid var(--ink); }
+  .htmlbar small { color: var(--muted); flex: 1; }
+  .empty { margin: auto; color: var(--muted); text-align: center; padding: 40px; }
+  .toast { position: absolute; left: 50%; bottom: 100px; transform: translateX(-50%); background: var(--ink); color: var(--paper); padding: 9px 14px; z-index: 60; font-size: 13.5px; white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="top">
+  <div class="seg" id="layouts"></div>
+  <div class="seg" id="scenes"></div>
+</div>
+<div class="stage" id="stage"><div class="scaler" id="scaler"><div class="phone" id="phone"></div></div></div>
+
+<script>
+const LAYOUTS = [['cover', 'Cover'], ['portrait', 'Open'], ['landscape', 'Open sideways']];
+const SCENES = [['stream', 'Notes'], ['capture', 'Capture'], ['list', 'List'], ['post', 'Post'], ['idea', 'Idea → Grow'], ['agent', 'Agent MD'], ['html', 'HTML']];
+
+const S = {
+  layout: innerWidth < 600 ? 'cover' : innerWidth > innerHeight ? 'landscape' : 'portrait',
+  open: 'list', showNote: false, filter: 'all', store: false,
+  postView: 'write', agentView: 'read', spread: 0, outline: false,
+  grow: 0, sheet: null, cap: { text: '', listening: false, heard: false }, html: 'fit', toast: '',
+};
+
+/* Sample notes. */
+const NOTES = [
+  { id: 'list', kind: 'List', when: 'Pinned', pin: true, title: 'Groceries' },
+  { id: 'agent', kind: 'From Claude', agent: true, when: 'Today · 11:42', title: 'Plan: Soma Notes sync', text: 'Notes are plain Markdown files in ~/Notes on the Mac Pro; the phone keeps a full copy…' },
+  { id: 'post', kind: 'Draft · post', when: 'Today · 9:10', title: 'I turned my Fold into a real Linux workstation', text: 'Arch runs inside the launcher, agents build the launcher on the phone itself…' },
+  { id: 'thought', kind: 'Thought', when: 'Today · 7:55', title: 'Heater clicking again', text: 'Heater makes that clicking noise again at night. Call the landlord Thursday.', voice: '0:14' },
+  { id: 'html', kind: 'From Codex · HTML', agent: true, when: 'Yesterday', title: 'Herd weekly report', text: 'Uptime, builds and threads across the five computers.' },
+  { id: 'idea', kind: 'Idea', when: 'Mon', title: 'Our own notes app', text: 'Synced through Tailshare. My quick notes and lists, plus all the Markdown my agents write…' },
+];
+const FILTERS = [['all', 'All'], ['List', 'Lists'], ['Draft', 'Drafts'], ['Idea', 'Ideas'], ['From', 'From agents']];
+
+let groceries = [
+  { t: 'Avocados', a: 'Produce' }, { t: 'Limes', a: 'Produce' }, { t: 'Cilantro', a: 'Produce' },
+  { t: 'Oat milk', a: 'Dairy & eggs', by: 'Added by voice · Grok on the Mac Pro' }, { t: 'Greek yogurt', a: 'Dairy & eggs' },
+  { t: 'Tortillas', a: 'Bakery' }, { t: 'Black beans', a: 'Pantry' }, { t: 'Coffee beans', a: 'Pantry', done: true },
+];
+const AISLES = { 'Produce': /apple|banana|onion|tomato|lettuce|lemon|lime|pepper|garlic|berr|spinach|potato|carrot/i,
+  'Dairy & eggs': /egg|milk|cheese|butter|yogurt|cream/i, 'Bakery': /bread|bagel|bun|tortilla|croissant/i,
+  'Meat & fish': /chicken|beef|pork|salmon|fish|turkey|bacon/i, 'Pantry': /rice|pasta|beans|oil|salt|sugar|flour|coffee|tea|sauce/i,
+  'Household': /paper|soap|detergent|trash|sponge/i };
+
+let post = [
+  'I turned my Galaxy Fold into a real Linux workstation. Arch runs inside the launcher, agents build the launcher on the phone itself, and new versions install over the top without losing a thing. 🧵',
+  'The part I didn\'t expect: the home screen is a notebook of pages, and every widget is a tiny text file an agent can write. Ask for a widget, it shows up on the phone seconds later.',
+  'Next up: our own notes app that syncs over Tailscale. My notes, and every Markdown file my agents write, finally nice to read on a phone.',
+];
+
+let MD = `# Soma Notes: sync through Tailshare
+
+> **Short version:** every note is a plain Markdown file in \`~/Notes\` on the Mac Pro. The phone keeps a full copy, works offline, and catches up whenever it can reach the Mac.
+
+## Why plain files
+Your notes stay yours. Any editor on the Mac or Omarchy can open them, agents can write them with no special tool, and a note never depends on this app to be read. Markdown is what agents already write, so their notes and yours are the same kind of thing.
+
+The Pocket is the wrong home: it keeps things seven days. Notes get a folder of their own that never empties.
+
+## What changes
+| Piece | Where | Change |
+|---|---|---|
+| tailshare-serve | Mac Pro | New /v1/notes endpoints |
+| Soma Notes | Fold | Full local copy, offline edits |
+| tnote | Every computer | Add to a note from a terminal |
+| Git | Mac Pro | One commit per save, for history |
+
+## Steps
+- [x] Agree the shape with Boss
+- [ ] Add /v1/notes to tailshare-serve
+- [ ] Commit each save, so any note can go back to yesterday
+- [ ] Phone sync: pull on open, push on save
+- [ ] Conflicts: keep both paragraphs, Boss picks
+
+## The API
+\`\`\`
+GET  /v1/notes             all notes, with versions
+GET  /v1/notes/ID          one note's Markdown
+PUT  /v1/notes/ID?base=V   save; refused if V is stale
+GET  /v1/notes/changes?since=T
+\`\`\`
+
+## Offline
+The phone writes to its own copy first, always, so saving never waits on the network. Changes queue up and go out when the Mac answers again. A list ticked on two devices at once merges item by item, so nothing is lost in a supermarket with no signal.
+
+## Open questions
+1. Should lists sync item by item from the start, or after the first version?
+2. Should agent notes live in their own folder, or beside Boss's own with a tag?
+3. Is a week of history per note enough, or keep everything?
+`;
+
+const REPORT = `<html><head><style>body{font-family:Arial;font-size:11px;margin:0}h1{font-size:20px}td,th{border:1px solid #999;padding:4px 10px;white-space:nowrap}.kpi{display:inline-block;width:220px;border:1px solid #ccc;padding:10px;margin:4px}</style></head>
+<body><div style="width:960px;padding:24px"><h1>Herd weekly report</h1><p>Week of Oct 13. Generated by Codex on the Mac Pro.</p>
+<div class="kpi"><b>99.2%</b><br>uptime across 5 computers</div><div class="kpi"><b>41</b><br>builds, 2 failed</div><div class="kpi"><b>17</b><br>threads finished</div>
+<h2>Computers</h2><table><tr><th>Computer</th><th>Uptime</th><th>Builds</th><th>Disk free</th><th>Last seen</th><th>Notes</th></tr>
+<tr><td>jacks-mac-pro</td><td>100%</td><td>29</td><td>412 GB</td><td>now</td><td>Runner, embed-server</td></tr>
+<tr><td>macbook-pro</td><td>97.8%</td><td>9</td><td>88 GB</td><td>2 h ago</td><td>Second runner</td></tr>
+<tr><td>omarchy-mg1</td><td>99.9%</td><td>3</td><td>140 GB</td><td>now</td><td></td></tr>
+<tr><td>omarchy-macpro</td><td>99.1%</td><td>0</td><td>60 GB</td><td>now</td><td></td></tr>
+<tr><td>galaxy-z-fold8</td><td>99.4%</td><td>0</td><td>201 GB</td><td>now</td><td>Soma 107 waiting</td></tr></table>
+<h2>Next week</h2><p>Photo indexing on Wi-Fi; first notes endpoints on tailshare-serve.</p></div></body></html>`;
+const FIT = `<style>html{-webkit-text-size-adjust:100%}body{font:16px/1.5 system-ui,sans-serif!important;margin:0;color:#111}
+[style*="width"]{width:auto!important;padding:16px!important}h1{font-size:24px!important}h2{font-size:18px;margin-top:22px}
+.kpi{display:block!important;width:auto!important;border:2px solid #111!important;margin:8px 0!important;font-size:15px}
+.kpi b{font-size:26px}table{display:block;overflow-x:auto;border-collapse:collapse;font-size:14px}</style>`;
+
+/* A tiny Markdown reader: enough for what agents write. */
+function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function inline(s) { return esc(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/\*([^*]+)\*/g, '<i>$1</i>'); }
+function md(src) {
+  const L = src.split('\n'); let out = '', i = 0, task = 0;
+  while (i < L.length) {
+    const l = L[i];
+    if (l.startsWith('```')) { let c = ''; i++; while (i < L.length && !L[i].startsWith('```')) c += esc(L[i++]) + '\n'; i++; out += `<pre><button class="copy" onclick="toast('Copied')">COPY</button><code>${c}</code></pre>`; continue; }
+    let m;
+    if ((m = l.match(/^(#{1,3}) (.*)/))) { const n = m[1].length; out += `<h${n} id="h${i}">${inline(m[2])}</h${n}>`; i++; continue; }
+    if (l.startsWith('> ')) { let q = ''; while (i < L.length && L[i].startsWith('> ')) q += L[i++].slice(2) + ' '; out += `<blockquote><p>${inline(q)}</p></blockquote>`; continue; }
+    if (l.startsWith('|')) {
+      const rows = []; while (i < L.length && L[i].startsWith('|')) rows.push(L[i++].split('|').slice(1, -1).map(c => c.trim()));
+      const h = rows[0]; out += '<table><thead><tr>' + h.map(c => `<th>${inline(c)}</th>`).join('') + '</tr></thead><tbody>';
+      rows.slice(2).forEach(r => out += '<tr>' + r.map((c, k) => `<td data-h="${esc(h[k])}">${inline(c)}</td>`).join('') + '</tr>');
+      out += '</tbody></table>'; continue;
+    }
+    if (/^(- |\d+\. )/.test(l)) {
+      const ol = /^\d/.test(l); out += ol ? '<ol>' : '<ul>';
+      while (i < L.length && /^(- |\d+\. )/.test(L[i])) {
+        const t = L[i].replace(/^(- |\d+\. )/, ''); const tm = t.match(/^\[( |x)\] (.*)/);
+        if (tm) out += `<li class="task ${tm[1] === 'x' ? 'done' : ''}" onclick="tick(${i})"><span class="box">${tm[1] === 'x' ? '✓' : ''}</span><span>${inline(tm[2])}</span></li>`;
+        else out += `<li>${inline(t)}</li>`;
+        i++;
+      }
+      out += ol ? '</ol>' : '</ul>'; continue;
+    }
+    if (!l.trim()) { i++; continue; }
+    let p = ''; while (i < L.length && L[i].trim() && !/^(#|>|\||- |\d+\. |```)/.test(L[i])) p += L[i++] + ' ';
+    out += `<p>${inline(p.trim())}</p>`;
+  }
+  return out;
+}
+/* Ticking a box in the reader changes the file itself. */
+function tick(line) {
+  const L = MD.split('\n'); L[line] = L[line].includes('[x]') ? L[line].replace('[x]', '[ ]') : L[line].replace('[ ]', '[x]');
+  MD = L.join('\n'); render();
+}
+
+/* What a capture is turning into, as it is typed. */
+function shapeOf(t) {
+  const lines = t.split('\n').map(s => s.trim()).filter(Boolean);
+  if (!lines.length) return null;
+  if (/^(idea|what if)\b/i.test(t.trim())) return 'Idea';
+  if (/(^post:|🧵|#\w|@\w)/i.test(t) || t.length > 180) return 'Post draft';
+  if (lines.length >= 2 && lines.every(s => s.length <= 28 && !/[.?!]$/.test(s))) return 'List';
+  return 'Note';
+}
+
+const $ = id => document.getElementById(id);
+const P = () => $('phone');
+function toast(t) { S.toast = t; render(); setTimeout(() => { S.toast = ''; render(); }, 1600); }
+function set(patch) { Object.assign(S, patch); render(); }
+
+function openNote(id) {
+  if (id === 'capture') return set({ sheet: 'capture', cap: { text: '', listening: false, heard: false } });
+  set({ open: id, showNote: true, sheet: null, spread: 0, outline: false });
+}
+
+/* ---- The stream ---- */
+function stream() {
+  const shown = NOTES.filter(n => S.filter === 'all' || n.kind.startsWith(S.filter));
+  const card = n => `<div class="card ${S.layout !== 'cover' && S.open === n.id ? 'sel' : ''}" onclick="openNote('${n.id}')">
+      ${n.pin ? '<span class="pin mono">PINNED</span>' : ''}
+      <div class="k mono"><span class="tag ${n.agent ? 'agent' : ''} ${n.kind.startsWith('Draft') ? 'red' : ''}">${n.kind}</span>${n.pin ? '' : n.when}${n.voice ? ' · 🎙 ' + n.voice : ''}</div>
+      <h3>${n.title}</h3>
+      ${n.id === 'list' ? `<div class="mini">${groceries.filter(g => !g.done).slice(0, 3).map(g => `<div>${g.t}</div>`).join('')}<small style="color:var(--muted)">+ ${Math.max(0, groceries.filter(g => !g.done).length - 3)} more</small></div>` : `<p>${n.text}</p>`}
+    </div>`;
+  const pinned = shown.filter(n => n.pin), today = shown.filter(n => !n.pin && n.when.startsWith('Today')), earlier = shown.filter(n => !n.pin && !n.when.startsWith('Today'));
+  return `<div class="pane side">
+    <div class="shead"><h1 class="display">Notes</h1><span class="ic">⌕</span></div>
+    <div class="scroll" id="streamScroll">
+      <div class="pull" onclick="openNote('capture')">↓ <span><b>Pull down to write.</b> No title, no folder.</span></div>
+      <div class="chips">${FILTERS.map(([k, l]) => `<button class="${S.filter === k ? 'on' : ''}" onclick="set({filter:'${k}'})">${l}</button>`).join('')}</div>
+      ${S.filter === 'all' ? `<div class="resurface"><div class="mono">3 weeks ago you wrote</div><p class="hand">A tiny manga panel of my day as the watch face.</p>
+        <div class="acts"><button onclick="toast('Opens the idea')">Open it</button><button onclick="toast('Grow sends it to an agent')">Grow ✦</button><button onclick="toast('Back in a month')">Not now</button></div></div>` : ''}
+      ${pinned.map(card).join('')}
+      ${today.length ? '<div class="grp mono">Today</div>' + today.map(card).join('') : ''}
+      ${earlier.length ? '<div class="grp mono">Earlier</div>' + earlier.map(card).join('') : ''}
+      <div style="height:110px"></div>
+    </div>
+    <button class="fab" id="mic">🎙<small>Hold to talk</small></button>
+  </div>`;
+}
+
+/* ---- A note ---- */
+function head(meta, extra = '') {
+  return `<div class="nhead">${S.layout === 'cover' ? `<button class="back" onclick="set({showNote:false})">‹ Notes</button>` : ''}<span class="meta mono">${meta}</span>${extra}</div>`;
+}
+function listNote() {
+  const left = groceries.filter(g => !g.done), cart = groceries.filter(g => g.done);
+  const aisles = [...new Set(left.map(g => g.a))];
+  const row = g => `<div class="item ${g.done ? 'done' : ''}" onclick="toggleItem('${g.t.replace(/'/g, '')}')"><span class="box">${g.done ? '✓' : ''}</span><span class="txt">${g.t}${g.by ? `<span class="by">${g.by}</span>` : ''}</span></div>`;
+  return `<div class="pane main">${head('List · on every device')}
+    <div class="scroll"><div class="body ${S.store ? 'store' : ''}">
+      <h2 class="t display">Groceries</h2>
+      <div class="sub" style="display:flex;justify-content:space-between;align-items:center;gap:10px"><span>${left.length} to get · grouped by aisle</span>
+        <span class="toggle ${S.store ? 'on' : ''}" onclick="set({store:!S.store})"><span class="sw"></span>In the store</span></div>
+      ${aisles.map(a => `<div class="aisle mono"><span>${a}</span><span>${left.filter(g => g.a === a).length}</span></div>` + left.filter(g => g.a === a).map(row).join('')).join('')}
+      <div class="add"><input id="addItem" placeholder="Add… (or say “add eggs” to any agent)" onkeydown="if(event.key==='Enter')addItem()"><button class="btn solid" onclick="addItem()">Add</button></div>
+      ${cart.length ? `<div class="aisle mono"><span>In the cart</span><span>${cart.length}</span></div>` + cart.map(row).join('') : ''}
+      <div class="aisle mono" style="margin-top:26px"><span>Also a home widget, cover screen</span></div>
+      <div class="widget"><div class="mono">Groceries · ${left.length}</div>${left.slice(0, 4).map(g => `<div>☐ ${g.t}</div>`).join('')}</div>
+    </div></div></div>`;
+}
+function toggleItem(t) { const g = groceries.find(g => g.t.replace(/'/g, '') === t); g.done = !g.done; render(); }
+function addItem() {
+  const v = $('addItem').value.trim(); if (!v) return;
+  const a = Object.keys(AISLES).find(k => AISLES[k].test(v)) || 'Other';
+  groceries.push({ t: v[0].toUpperCase() + v.slice(1), a }); render(); setTimeout(() => $('addItem') && $('addItem').focus(), 0);
+}
+
+function postNote() {
+  const write = post.map((p, k) => `<div class="part ${p.length > 280 ? 'over' : ''}"><div class="ed" contenteditable oninput="post[${k}]=this.innerText;countParts()">${esc(p)}</div>
+      <div class="count mono"><span>${k + 1} / ${post.length}</span><b id="c${k}">${p.length} / 280</b></div></div>`).join('');
+  const prev = post.map(p => `<div class="xpost"><div class="av">J</div><div><div class="who"><b>You</b> <span>@you · now</span></div><div class="tx">${esc(p)}</div>
+      <div class="icons"><span>💬</span><span>⟲</span><span>♡</span><span>↗</span></div></div></div>`).join('');
+  return `<div class="pane main">${head('Draft · post · thread of ' + post.length)}
+    <div class="scroll"><div class="body">
+      <div class="tabs"><button class="${S.postView === 'write' ? 'on' : ''}" onclick="set({postView:'write'})">Write</button><button class="${S.postView === 'preview' ? 'on' : ''}" onclick="set({postView:'preview'})">As a post</button></div>
+      ${S.postView === 'write' ? write + `<div class="sub">Splits into posts by itself as it gets long. Drag a line to move a split.</div>` : prev}
+    </div></div>
+    <div class="bar"><button class="btn" onclick="toast('Grok tightens it, you see every change')">Tighten ✦</button><button class="btn red grow1" onclick="set({sheet:'confirm'})">Post thread…</button></div></div>`;
+}
+function countParts() { post.forEach((p, k) => { const c = $('c' + k); if (c) { c.textContent = p.length + ' / 280'; c.closest('.part').classList.toggle('over', p.length > 280); } }); }
+
+function ideaNote() {
+  return `<div class="pane main">${head('Idea · Mon')}
+    <div class="scroll"><div class="body">
+      <div class="idea" contenteditable>Our own notes app, synced through Tailshare. My quick notes and lists, plus all the Markdown my agents write — but actually nice to read on the phone. Cover, open, open sideways.</div>
+      ${S.grow === 1 ? `<div class="working">✦ <span>Claude is writing a plan on the Mac Pro<span class="dots"></span></span></div>` : ''}
+      ${S.grow === 2 ? `<div class="grown" onclick="openNote('agent')"><span class="g">✦</span><span><b>Plan: Soma Notes sync</b><small>Grew from this idea · Claude on the Mac Pro · tap to read</small></span></div>` : ''}
+    </div></div>
+    <div class="bar"><button class="btn red grow1" onclick="set({sheet:'grow'})">Grow this idea ✦</button></div></div>`;
+}
+function thoughtNote() {
+  return `<div class="pane main">${head('Thought · Today 7:55 · spoken')}
+    <div class="scroll"><div class="body"><h2 class="t display">Heater clicking again</h2>
+      <p style="font-size:18px;line-height:1.5">Heater makes that clicking noise again at night. Call the landlord Thursday.</p>
+      <span class="orig">🎙 0:14 · what you said, word for word ▸</span>
+      <div class="grown" style="margin-top:22px" onclick="toast('Thursday 10:00 reminder')"><span class="g">⏰</span><span><b>Remind me Thursday?</b><small>Spotted “Thursday” · one tap</small></span></div>
+    </div></div></div>`;
+}
+
+function agentNote() {
+  const book = S.layout === 'landscape' && S.agentView === 'read';
+  const segs = `<div class="tabs" style="margin:0"><button class="${S.agentView === 'read' ? 'on' : ''}" onclick="set({agentView:'read',spread:0})">Read</button><button class="${S.agentView === 'edit' ? 'on' : ''}" onclick="set({agentView:'edit'})">Edit</button><button class="${S.agentView === 'source' ? 'on' : ''}" onclick="set({agentView:'source'})">.md</button></div>`;
+  const from = `<div class="from mono"><span class="tag">From Claude</span><span>Mac Pro · 11:42</span><span class="link" onclick="openNote('idea')">✦ grew from your idea</span></div>`;
+  const outline = S.outline ? `<div class="outline">${[...MD.matchAll(/^## (.*)$/gm)].map(m => `<div onclick="jump('${esc(m[1]).replace(/'/g, '')}')">${esc(m[1])}</div>`).join('')}</div>` : '';
+  const hd = head('Plan · Markdown', `<button class="ic" title="Outline" onclick="set({outline:!S.outline})">☰</button>`);
+  if (book) {
+    return `<div class="pane main">${hd}<div style="padding:10px 26px 0;display:flex;justify-content:space-between;align-items:center">${segs}<span class="mono" style="color:var(--muted)">tap a side to turn</span></div>
+      <div class="book" id="book"><div class="flow md" id="flow">${from}${md(MD)}</div>
+        <div class="turn l" onclick="turn(-1)"></div><div class="turn r" onclick="turn(1)"></div></div>
+      <div class="folio mono"><span id="fl"></span><span id="fr"></span></div>${outline}</div>`;
+  }
+  let inner;
+  if (S.agentView === 'source') inner = `<div class="src">${esc(MD)}</div>`;
+  else inner = from + `<div class="md" ${S.agentView === 'edit' ? 'contenteditable' : ''}>${md(MD)}</div>`;
+  return `<div class="pane main">${hd}<div style="padding:10px 20px 0">${segs}</div>
+    <div class="scroll" id="agentScroll"><div class="body">${inner}</div></div>${outline}
+    ${S.agentView === 'edit' ? `<div class="fmt"><button><b>B</b></button><button><i>I</i></button><button>H</button><button>•</button><button>☐</button><button>❝</button><button>🔗</button></div>` : ''}</div>`;
+}
+function turn(d) {
+  const flow = $('flow'); if (!flow) return;
+  S.spread = Math.max(0, Math.min(S.spread + d, spreads() - 1)); placeBook();
+}
+function spreads() { const b = $('book'), f = $('flow'); return Math.max(1, Math.ceil(f.scrollWidth / (b.clientWidth + gap()))); }
+function gap() { return 52; }
+function placeBook() {
+  const b = $('book'), f = $('flow'); if (!b) return;
+  const w = b.clientWidth, g = gap();
+  f.style.columnWidth = ((w - g) / 2) + 'px'; f.style.columnGap = g + 'px';
+  f.style.transform = `translateX(${-S.spread * (w + g)}px)`;
+  const n = spreads();
+  $('fl').textContent = `page ${S.spread * 2 + 1}`; $('fr').textContent = `${S.spread * 2 + 2} of ${n * 2}`;
+}
+function jump(title) {
+  S.outline = false;
+  const h = [...P().querySelectorAll('.md h2')].find(e => e.textContent === title);
+  if (!h) return render();
+  if ($('book')) { S.spread = Math.floor(h.offsetLeft / ($('book').clientWidth + gap())); render(); }
+  else { render(); const h2 = [...P().querySelectorAll('.md h2')].find(e => e.textContent === title); h2 && h2.scrollIntoView({ behavior: 'smooth' }); }
+}
+
+function htmlNote() {
+  return `<div class="pane main">${head('From Codex · HTML · sealed: no scripts, no network')}
+    <div class="htmlbar"><div class="tabs" style="margin:0"><button class="${S.html === 'fit' ? 'on' : ''}" onclick="set({html:'fit'})">Fitted to the phone</button><button class="${S.html === 'orig' ? 'on' : ''}" onclick="set({html:'orig'})">As it came</button></div><small></small></div>
+    <iframe class="frame" id="frame" sandbox></iframe></div>`;
+}
+
+function noteView() {
+  return { list: listNote, post: postNote, idea: ideaNote, agent: agentNote, html: htmlNote, thought: thoughtNote }[S.open]();
+}
+
+/* ---- Sheets ---- */
+function captureSheet() {
+  const c = S.cap, sh = shapeOf(c.text);
+  let shape = '';
+  if (sh === 'List') shape = c.text.split('\n').filter(s => s.trim()).map(s => `<div class="li">${esc(s.trim())}</div>`).join('');
+  if (sh === 'Post draft') shape = `<div class="mono" style="color:var(--muted)">${c.text.length} characters · ${Math.max(1, Math.ceil(c.text.length / 270))} post${c.text.length > 270 ? 's' : ''}</div>`;
+  if (sh === 'Idea') shape = `<div class="mono" style="color:var(--muted)">Gets a Grow button: hand it to an agent</div>`;
+  return `<div class="scrim" onclick="set({sheet:null})"></div><div class="sheet topdown cap">
+    ${c.listening ? `<div class="listen"><span class="wave"><i></i><i></i><i></i><i></i><i></i></span> Listening… let go when done</div>` : `
+    <div class="row"><span class="mono" style="flex:1;color:var(--muted)">New · it becomes what you write</span>${sh ? `<span class="becomes mono">Becoming <b>${sh}</b></span>` : ''}</div>
+    <textarea id="capText" placeholder="Anything…" oninput="S.cap.text=this.value;refreshCap()">${esc(c.text)}</textarea>
+    ${c.heard ? `<span class="orig">🎙 0:09 · tidied up · what you said, word for word ▸</span>` : ''}
+    <div id="capShape">${shape ? `<div class="shape">${shape}</div>` : ''}</div>
+    <div class="try"><span class="mono" style="color:var(--muted);align-self:center">Try:</span>
+      <button onclick="tryCap('eggs\\nbread\\nlemons\\ndish soap')">a list</button>
+      <button onclick="tryCap('What if the herd pet took a nap when every Mac is idle')">an idea</button>
+      <button onclick="tryCap(post[0])">a post</button>
+      <button onclick="tryCap('Parking: level 3, row F')">a note</button></div>
+    <div class="row" style="justify-content:flex-end;margin-top:4px"><button class="btn" onclick="set({sheet:null})">Cancel</button><button class="btn solid" onclick="saveCap()">Done</button></div>`}
+  </div>`;
+}
+function refreshCap() {
+  // Only the parts that change, so the cursor stays put.
+  const keep = $('capText'); const pos = keep.selectionStart; render(); const t = $('capText'); if (t) { t.focus(); t.setSelectionRange(pos, pos); }
+}
+function tryCap(t) { S.cap.text = t; render(); }
+function saveCap() {
+  const t = S.cap.text.trim(); const sh = shapeOf(t);
+  if (!t) return set({ sheet: null });
+  if (sh === 'List') {
+    t.split('\n').filter(s => s.trim()).forEach(v => { v = v.trim(); groceries.push({ t: v[0].toUpperCase() + v.slice(1), a: Object.keys(AISLES).find(k => AISLES[k].test(v)) || 'Other' }); });
+    S.sheet = null; toast('Added to Groceries, your open list'); return;
+  }
+  NOTES.splice(1, 0, { id: 'thought', kind: sh === 'Idea' ? 'Idea' : sh === 'Post draft' ? 'Draft · post' : 'Note', when: 'Today · now', title: t.split('\n')[0].slice(0, 48), text: t });
+  S.sheet = null; S.showNote = false; toast('Saved · on every device');
+}
+function growSheet() {
+  const o = (g, b, s, act) => `<div class="opt" onclick="${act}"><span class="g">${g}</span><span><b>${b}</b><small>${s}</small></span></div>`;
+  return `<div class="scrim" onclick="set({sheet:null})"></div><div class="sheet bottom"><div class="mono" style="color:var(--muted);margin-bottom:4px">Grow this idea</div>
+    ${o('✦', 'Make it a plan', 'Claude on the Mac Pro writes it; it comes back here', 'growIt()')}
+    ${o('⌕', 'Research it', 'Grok looks at what exists, with sources', "set({sheet:null});toast('Grok is researching')")}
+    ${o('✎', 'Draft a post about it', 'A new post draft, linked to this', "set({sheet:null});openNote('post')")}
+    ${o('▶', 'Start a project thread', 'A runner thread on the Mac Pro, with this as the brief', "set({sheet:null});toast('Thread started on the Mac Pro')")}
+  </div>`;
+}
+function growIt() { set({ sheet: null, grow: 1 }); setTimeout(() => set({ grow: 2 }), 2200); }
+function confirmSheet() {
+  return `<div class="scrim" onclick="set({sheet:null})"></div><div class="sheet bottom"><h3 style="margin:0 0 6px">Post this thread?</h3>
+    <p style="margin:0 0 14px;color:#444">Grok posts these ${post.length} posts on X as you. Nothing goes out until you press Post.</p>
+    <div style="display:flex;gap:8px"><button class="btn" style="flex:1" onclick="set({sheet:null})">Not yet</button><button class="btn red" style="flex:1" onclick="set({sheet:null});toast('Mock-up: nothing was sent')">Post</button></div></div>`;
+}
+
+/* ---- Drawing ---- */
+function render() {
+  const ph = P(); const scrollTop = $('streamScroll') ? $('streamScroll').scrollTop : 0;
+  ph.className = 'phone ' + S.layout;
+  let html = `<div class="status mono"><span>9:41</span><span>●●● ▮</span></div>`;
+  if (S.layout === 'cover') html += S.showNote ? noteView() : stream();
+  else html += stream() + noteView();
+  if (S.sheet === 'capture') html += captureSheet();
+  if (S.sheet === 'grow') html += growSheet();
+  if (S.sheet === 'confirm') html += confirmSheet();
+  if (S.toast) html += `<div class="toast">${S.toast}</div>`;
+  ph.innerHTML = html;
+  if ($('streamScroll')) $('streamScroll').scrollTop = scrollTop;
+  if ($('frame')) $('frame').srcdoc = S.html === 'fit' ? REPORT.replace('<head>', '<head>' + FIT) : REPORT;
+  if ($('book')) placeBook();
+  wire();
+  $('layouts').innerHTML = LAYOUTS.map(([k, l]) => `<button class="${S.layout === k ? 'on' : ''}" onclick="set({layout:'${k}',spread:0})">${l}</button>`).join('');
+  const cur = S.sheet === 'capture' ? 'capture' : (S.layout === 'cover' && !S.showNote) ? 'stream' : S.open;
+  $('scenes').innerHTML = SCENES.map(([k, l]) => `<button class="${cur === k ? 'on' : ''}" onclick="${k === 'stream' ? "set({showNote:false,sheet:null})" : `openNote('${k}')`}">${l}</button>`).join('');
+  fit();
+}
+
+/* Pull down on the stream to write; hold the mic to talk. */
+function wire() {
+  const sc = $('streamScroll');
+  if (sc) {
+    let y0 = null;
+    sc.onpointerdown = e => { y0 = sc.scrollTop <= 0 ? e.clientY : null; };
+    sc.onpointermove = e => { if (y0 !== null && e.clientY - y0 > 70) { y0 = null; openNote('capture'); } };
+    sc.onpointerup = () => { y0 = null; };
+  }
+  const mic = $('mic');
+  if (mic) {
+    mic.onpointerdown = e => { e.preventDefault(); set({ sheet: 'capture', cap: { text: '', listening: true, heard: false } }); };
+  }
+  if (S.cap.listening) {
+    document.onpointerup = () => {
+      document.onpointerup = null;
+      set({ cap: { text: 'Call the landlord about the heater on Thursday.\nIdea: the herd pet naps when every Mac is idle.', listening: false, heard: true } });
+    };
+  }
+}
+
+function fit() {
+  const top = document.querySelector('.top').offsetHeight + 8;
+  const st = $('stage'); st.style.top = top + 'px';
+  const ph = P(), w = ph.offsetWidth, h = ph.offsetHeight;
+  const s = Math.min((innerWidth - 12) / w, (innerHeight - top - 8) / h, 1.6);
+  const sc = $('scaler'); sc.style.width = w * s + 'px'; sc.style.height = h * s + 'px';
+  ph.style.transform = `scale(${s})`; ph.style.transformOrigin = 'top left';
+}
+addEventListener('resize', render);
+render();
+document.fonts && document.fonts.ready.then(render);
+</script>
+</body>
+</html>
