@@ -1157,7 +1157,8 @@ private fun TaskEntry(
         }
         if (running) {
             Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                BasicText("$label…", style = small.copy(color = Pack.accent))
+                // A long thread name is cut short, never [ stop ] pushed off the edge (Boss, 2026-10-21).
+                BasicText("$label…", Modifier.weight(1f, fill = false), style = small.copy(color = Pack.accent), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (onStop != null) BracketAction("stop", Pack.red, onStop)
             }
         }
