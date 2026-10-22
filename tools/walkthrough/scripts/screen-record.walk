@@ -25,3 +25,4 @@ shot saved-notice
 shell cmd statusbar collapse
 [phone] Add Screen record to Samsung's Quick Settings; tap it, allow, record a few seconds, tap the tile again; the saved notice opens the video in Movies/Soma.
 [phone] Start a recording, lock the phone, unlock it, stop: say whether the lock screen shows in the video.
+[phone] Tap the Screen record tile: Android's prompt asks for the entire screen (no "A single app" choice), and the video is of the whole screen.

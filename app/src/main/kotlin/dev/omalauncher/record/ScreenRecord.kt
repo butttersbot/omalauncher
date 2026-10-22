@@ -112,8 +112,11 @@ class ScreenRecordActivity : Activity() {
         super.onCreate(savedInstanceState)
         if (savedInstanceState != null) return
         val pm = getSystemService(MediaProjectionManager::class.java)
+        // The whole screen, not one app: Android 14's prompt otherwise opens on "A single app" (Boss, 2026-10-22:
+        // "its asking to share an app").
+        val ask = if (Build.VERSION.SDK_INT >= 34) pm.createScreenCaptureIntent(android.media.projection.MediaProjectionConfig.createConfigForDefaultDisplay()) else pm.createScreenCaptureIntent()
         @Suppress("DEPRECATION")
-        startActivityForResult(pm.createScreenCaptureIntent(), ASK)
+        startActivityForResult(ask, ASK)
     }
 
     @Deprecated("The platform's own result call")
