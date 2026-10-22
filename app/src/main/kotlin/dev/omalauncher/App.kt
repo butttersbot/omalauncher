@@ -27,8 +27,8 @@ class App : Application() {
         dev.omalauncher.widgets.FoldLayouts.install(this)
         // Art from the share sheet and the panel picker hangs in home's panels (piece B).
         dev.omalauncher.ui.MangaHome.install(this)
-        // Soma News on the hour, for the reader and the home widgets, once FreshRSS's settings are there.
-        if (dev.omalauncher.news.NewsStore.config(this) != null) dev.omalauncher.news.NewsJob.schedule(this)
+        // Soma News on the hour, from Google News, for the reader and the home widgets.
+        dev.omalauncher.news.NewsJob.schedule(this)
         // The Pet home and Steps widgets: whether the pet is out and what it wears, and today's steps once allowed.
         dev.omalauncher.herd.HerdSheep.restore(this)
         dev.omalauncher.herd.PetWidget.write(this)

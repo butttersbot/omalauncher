@@ -6,7 +6,7 @@
 <title>Soma News</title>
 <!--
   Soma News (Boss, 2026-10-21; the approved mock-up is design/soma-news-mockup.html). The stream set as a magazine
-  from what FreshRSS on the Mac Pro collected: a cover story, pairs, features, briefs and photo essays on the cover;
+  from Google News (top stories and its topics; FreshRSS on the Mac Pro before 2026-10-22): a cover story, pairs, features, briefs and photo essays on the cover;
   spreads either side of the fold on the open Fold. The reader scrolls on the cover and the open Fold upright (with
   the stream kept on the left page there), and turns pages, laid out by Pretext, held sideways (news-book.js).
   Stories come from the app (window.SomaNews); nothing here is sample text.
@@ -47,6 +47,13 @@
   .cover-story .over { position: absolute; left: 0; right: 0; bottom: 0; padding: 80px 20px 20px; background: linear-gradient(transparent, rgba(0,0,0,.84)); }
   .cover-story .kicker { color: #ffd166; }
   .cover-story h1 { font-family: var(--serif); font-weight: 700; font-size: 29px; line-height: 1.12; margin: 8px 0 0; }
+  /* Google News topics (Boss, 2026-10-22): a row of chips to jump, five a topic, Show more for the rest. */
+  .chips { display: flex; gap: 8px; overflow-x: auto; padding: 10px 18px; border-bottom: 1px solid var(--rule); scrollbar-width: none; background: var(--paper); }
+  .chips button { flex: none; font: 600 12px "M Mono"; letter-spacing: .08em; text-transform: uppercase; padding: 7px 12px; border: 1.5px solid var(--ink); border-radius: 16px; }
+  .topic { scroll-margin-top: 8px; }
+  .topic .section .count { font: 11px "M Mono"; color: var(--muted); }
+  .more { display: block; margin: 6px 18px 4px; padding: 10px; width: calc(100% - 36px); border: 1.5px solid var(--ink); font: 600 12.5px "M Mono"; letter-spacing: .1em; text-transform: uppercase; text-align: center; }
+  .spread .more { width: 100%; margin: 10px 0 0; }
   .section { padding: 24px 18px 6px; display: flex; align-items: baseline; gap: 10px; }
   .section h4 { margin: 0; font: 700 12.5px "M Mono"; letter-spacing: .14em; text-transform: uppercase; }
   .section::after { content: ""; flex: 1; border-top: 1px solid var(--ink); }
@@ -244,10 +251,59 @@ function streamWide() {
   return html;
 }
 
+// ---- Google News topics: top stories, then five a topic with Show more. ----
+S.more = {};
+const TOPICS = ['Top stories', 'U.S.', 'World', 'Business', 'Technology', 'Science', 'Health', 'Entertainment', 'Sports'];
+const SHOWN = 5;
+function topics() {
+  const by = {};
+  for (const s of S.stories) (by[s.topic] = by[s.topic] || []).push(s);
+  return TOPICS.filter(t => by[t] && by[t].length).map(t => ({ name: t, all: by[t] }));
+}
+const topicId = t => 'topic-' + t.replace(/[^a-z]/gi, '').toLowerCase();
+function chips(list) {
+  return `<div class="chips" role="tablist">${list.map(t => `<button onclick="jump('${topicId(t.name)}')">${esc(t.name)}</button>`).join('')}</div>`;
+}
+window.jump = id => { const el = $(id), sc = $('scroll'); if (el && sc) sc.scrollTo({ top: el.offsetTop - sc.offsetTop, behavior: 'smooth' }); };
+window.toggleMore = name => { const sc = $('scroll'), at = sc ? sc.scrollTop : 0; S.more[name] = !S.more[name]; draw(); if ($('scroll')) $('scroll').scrollTop = at; };
+function moreButton(t) {
+  if (t.all.length <= SHOWN) return '';
+  return `<button class="more" onclick="toggleMore(${esc(JSON.stringify(t.name))})">${S.more[t.name] ? 'Show less' : `Show ${t.all.length - SHOWN} more`}</button>`;
+}
+function brief(x) {
+  return `<div class="brief" ${open(idx(x))}><span class="t">${esc(x.title)}<span class="meta">${esc(x.source)} · ${ago(x.published)}</span></span>${x.image ? `<img src="${esc(x.image)}" loading="lazy" onerror="this.remove()">` : ''}</div>`;
+}
+function topicCover(t, first) {
+  const shown = S.more[t.name] ? t.all : t.all.slice(0, SHOWN);
+  const lead = shown.find(s => s.image);
+  const rest = shown.filter(s => s !== lead);
+  let html = `<div class="topic" id="${topicId(t.name)}">`;
+  if (first && lead) html += `<div class="cover-story" ${open(idx(lead))}><img src="${esc(lead.image)}" onerror="this.style.visibility='hidden'"><div class="over"><div class="kicker">${esc(lead.source)} · ${ago(lead.published)}</div><h1>${esc(lead.title)}</h1></div></div>`;
+  html += `<div class="section"><h4>${esc(t.name)}</h4><span class="count">${t.all.length}</span></div>`;
+  if (!first && lead) html += `<div class="feature" ${open(idx(lead))}><img src="${esc(lead.image)}" loading="lazy" onerror="this.remove()"><div><div class="kicker">${esc(lead.source)}</div><h3>${esc(lead.title)}</h3><div class="meta" style="margin-top:8px">${ago(lead.published)} ago</div></div></div>`;
+  if (rest.length) html += `<div class="briefs">${rest.map(brief).join('')}</div>`;
+  return html + moreButton(t) + `</div>`;
+}
+function topicWide(t, first) {
+  const shown = S.more[t.name] ? t.all : t.all.slice(0, SHOWN);
+  const lead = shown.find(s => s.image);
+  const rest = shown.filter(s => s !== lead);
+  const left = lead
+    ? (first ? `<div class="page s-cover" ${open(idx(lead))}><img src="${esc(lead.image)}"><div class="over"><div class="kicker">${esc(lead.source)} · ${ago(lead.published)}</div><h1>${esc(lead.title)}</h1></div></div>`
+      : `<div class="page s-feature"><div class="card" ${open(idx(lead))}><img src="${esc(lead.image)}" loading="lazy"><div class="kicker">${esc(lead.source)}</div><h3>${esc(lead.title)}</h3><div class="meta" style="margin-top:8px">${ago(lead.published)} ago</div></div></div>`)
+    : `<div class="page"></div>`;
+  return `<div class="topic" id="${topicId(t.name)}"><div class="s-head"><h4>${esc(t.name)}</h4></div><div class="spread">${left}<div class="page tops">${rest.map(s => topItem(s)).join('')}${moreButton(t)}</div></div></div>`;
+}
+function streamTopics() {
+  const list = topics();
+  const one = layout() === 'cover' ? topicCover : topicWide;
+  return chips(list) + list.map((t, i) => one(t, i === 0)).join('');
+}
+
 function stream() {
   const body = !S.stories.length
-    ? `<div class="empty">${S.refreshing ? 'Fetching the news from the Mac Pro…' : 'Nothing here yet. Tap ↻ to fetch from FreshRSS on the Mac Pro.'}</div>`
-    : (layout() === 'cover' ? streamCover() : streamWide()) + `<div class="end meta">You're caught up · it checks again every hour · tap ↻ any time</div>`;
+    ? `<div class="empty">${S.refreshing ? 'Fetching the news from Google News…' : 'Nothing here yet. Tap ↻ to fetch from Google News.'}</div>`
+    : (S.stories.some(s => s.topic) ? streamTopics() : layout() === 'cover' ? streamCover() : streamWide()) + `<div class="end meta">You're caught up · it checks again every hour · tap ↻ any time</div>`;
   return mast() + `<div class="scroll" id="scroll">${S.fresh ? `<div class="newpill" onclick="S.fresh=0;$('scroll').scrollTo({top:0,behavior:'smooth'});draw()">↑ ${S.fresh} new ${S.fresh === 1 ? 'story' : 'stories'}</div>` : ''}${body}</div>`;
 }
 

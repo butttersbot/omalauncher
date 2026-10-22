@@ -42,6 +42,7 @@ window.NewsContent = (() => {
       n.setAttribute('src', src);
     });
     root.querySelectorAll('h1,h2').forEach(n => { if (text(n) === (story.title || '').trim()) n.remove(); });
+    tidy(root);
     // A BR is a boundary even after the layout engine turns HTML into text.
     root.querySelectorAll('br').forEach(n => n.replaceWith('\n'));
     root.querySelectorAll('*').forEach(n => {
@@ -51,6 +52,38 @@ window.NewsContent = (() => {
       if (n.tagName === 'A' && !/^https?:\/\//.test(n.getAttribute('href') || '')) n.removeAttribute('href');
     });
     return root;
+  }
+  // What a site puts round its story rather than in it (Boss, 2026-10-22: "a bunch of bullet points that were empty",
+  // "other links that you should try ... just remove all of that ... a very clean article reader").
+  const ASIDE = /^(?:related(?: (?:articles?|stories|posts|coverage|reading))?|read (?:more|next|also)|more (?:from|on|stories|news|coverage|like this)\b.*|recommended(?: for you)?|you (?:may|might) (?:also )?like|see also|also read|trending(?: now)?|popular(?: now| stories)?|most (?:read|popular)|top stories|latest(?: news| stories)?|up next|what to read next|keep reading|don'?t miss|editor'?s picks?|sponsored(?: content)?|advertisement|share this(?: article| story)?|follow us\b.*|sign up\b.*|subscribe\b.*|newsletter\b.*|comments?)[:.!]?$/i;
+  const LEAD = /^(?:read more|related|see also|also read|more|recommended|watch|listen|read next|don'?t miss)\s*[:|–—-]/i;
+  /** How much of [n]'s words are inside links: 1 for a list of headlines, near 0 for prose. */
+  const linkShare = n => { const all = text(n).length; if (!all) return 0; return [...n.querySelectorAll('a')].reduce((t, a) => t + text(a).length, 0) / all; };
+  const empty = n => !text(n) && !n.querySelector('img');
+  function tidy(root) {
+    // Empty bullets and wrappers, from the deepest up.
+    [...root.querySelectorAll('li, p, ul, ol, div, span, section, figure, blockquote, h2, h3, h4, h5, h6')].reverse().forEach(n => { if (n.isConnected && empty(n)) n.remove(); });
+    // A heading that only names the site's extras goes, with the list or links under it.
+    root.querySelectorAll('h2, h3, h4, h5, h6, p > strong:only-child, p > b:only-child').forEach(h => {
+      const head = h.matches('strong, b') ? h.parentElement : h;
+      if (!head.isConnected || !ASIDE.test(text(head))) return;
+      let next = head.nextElementSibling;
+      while (next && (next.matches('ul, ol') || linkShare(next) > 0.6)) { const after = next.nextElementSibling; next.remove(); next = after; }
+      head.remove();
+    });
+    // Lists of headlines (mostly links) and lines that are only a link or a "Read more:" pointer.
+    root.querySelectorAll('ul, ol').forEach(l => { const items = l.querySelectorAll('li'); if (l.isConnected && items.length >= 2 && linkShare(l) > 0.7) l.remove(); });
+    root.querySelectorAll('p, li, div').forEach(n => {
+      if (!n.isConnected || n.querySelector('img')) return;
+      const t = text(n);
+      if (t && (LEAD.test(t) || (linkShare(n) > 0.9 && t.length < 160 && n.querySelector('a')) || ASIDE.test(t))) n.remove();
+    });
+    // Whatever trails the story once its prose ends: short scraps, link rows, credits.
+    let last = root.lastElementChild;
+    while (last && !last.querySelector('img') && (empty(last) || linkShare(last) > 0.5 || (text(last).length < 60 && !/[.!?"”]$/.test(text(last))))) {
+      const before = last.previousElementSibling; last.remove(); last = before;
+    }
+    [...root.querySelectorAll('li, ul, ol')].reverse().forEach(n => { if (n.isConnected && empty(n)) n.remove(); });
   }
   function blocks(root) {
     const out = [];
@@ -73,7 +106,7 @@ window.NewsContent = (() => {
       if (['P', 'LI', 'PRE'].includes(n.tagName)) {
         // Don't count the parent's entire text and then count its children again.
         let run = '';
-        const flush = () => { addText('p', (n.tagName === 'LI' ? '• ' : '') + run); run = ''; };
+        const flush = () => { if (run.trim()) addText('p', (n.tagName === 'LI' ? '• ' : '') + run); run = ''; };
         for (const child of n.childNodes) {
           if ((child.nodeType === Node.ELEMENT_NODE && child.querySelector('img')) || child.nodeName === 'IMG') {
             flush(); walk(child);

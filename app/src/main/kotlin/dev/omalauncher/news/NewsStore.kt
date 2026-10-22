@@ -11,12 +11,11 @@ import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
-import java.net.URLEncoder
 import kotlin.concurrent.thread
 
 /**
  * Soma News (Boss, 2026-10-21: "the delightful personal news reader", mock-up approved): what came in, read from
- * FreshRSS on the Mac Pro over the tailnet by its Google Reader API, kept as one JSON file in the guest's
+ * Google News ([GoogleNews]; FreshRSS on the Mac Pro until 2026-10-22, whose reader below stays for its tests), kept as one JSON file in the guest's
  * ~/.cache/soma-news/stream.json. The reader screen and the home widgets both read that file. It is brought up to
  * date on the hour and whenever he taps ↻.
  *
@@ -41,9 +40,11 @@ object NewsStore {
         val image: String?,
         /** The story's HTML as the feed gave it (the reader cleans it), or its summary. */
         val html: String,
+        /** Its Google News topic ([GoogleNews.TOPICS]), "" for a story from elsewhere. */
+        val topic: String = "",
     ) {
         fun toJson(): JSONObject =
-            JSONObject().put("id", id).put("title", title).put("source", source).put("link", link).put("published", published).put("image", image ?: JSONObject.NULL).put("html", html)
+            JSONObject().put("id", id).put("title", title).put("source", source).put("link", link).put("published", published).put("image", image ?: JSONObject.NULL).put("html", html).put("topic", topic)
     }
 
     fun home(context: Context) = File(context.filesDir, "arch/root")
@@ -59,64 +60,47 @@ object NewsStore {
     /** What the file holds now: its JSON as text, or an empty stream. */
     fun cached(context: Context): String = runCatching { file(context).readText() }.getOrNull() ?: JSONObject().put("stories", JSONArray()).put("updated", 0).toString()
 
-    @Volatile private var token: String? = null
-
-    private fun login(c: Config): String? {
-        token?.let { return it }
-        return runCatching {
-            val conn = URL("${c.url}/api/greader.php/accounts/ClientLogin").openConnection() as HttpURLConnection
-            conn.connectTimeout = 5_000
-            conn.readTimeout = 10_000
-            conn.requestMethod = "POST"
-            conn.doOutput = true
-            conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
-            conn.outputStream.use { it.write("Email=${URLEncoder.encode(c.user, "UTF-8")}&Passwd=${URLEncoder.encode(c.password, "UTF-8")}".toByteArray()) }
-            if (conn.responseCode != 200) return null
-            conn.inputStream.bufferedReader().use { it.readText() }.lineSequence().firstOrNull { it.startsWith("Auth=") }?.removePrefix("Auth=")?.trim()
-        }.getOrNull()?.also { token = it }
-    }
-
     /**
-     * Fetches the newest [count] stories and writes the file; the number of stories, or null with the reason it
-     * couldn't (no config, the Mac away, a refused password).
+     * Brings the stream up to date from Google News (Boss, 2026-10-22: Google instead of the FreshRSS feeds): top stories
+     * and every topic, each story once (the first topic that has it keeps it), at most [perTopic] a topic. The stories
+     * the stream shows first ([RESOLVED_FIRST] a topic) get the publisher's address and picture now; the rest when
+     * opened. Addresses and pictures already found are kept from one refresh to the next.
      */
     fun refresh(
         context: Context,
-        count: Int = 80,
+        perTopic: Int = PER_TOPIC,
     ): Result<Int> {
-        val c = config(context) ?: return Result.failure(IllegalStateException("No FreshRSS settings in ~/.config/omalauncher/freshrss.txt"))
-        val auth = login(c) ?: return Result.failure(IllegalStateException("FreshRSS on the Mac Pro didn't answer, or refused the password"))
-        val json =
-            runCatching {
-                val conn = URL("${c.url}/api/greader.php/reader/api/0/stream/contents/user/-/state/com.google/reading-list?n=$count&output=json").openConnection() as HttpURLConnection
-                conn.connectTimeout = 5_000
-                conn.readTimeout = 20_000
-                conn.setRequestProperty("Authorization", "GoogleLogin auth=$auth")
-                if (conn.responseCode == 401) {
-                    token = null
-                    return Result.failure(IllegalStateException("FreshRSS refused the login; trying again next time"))
-                }
-                conn.inputStream.bufferedReader().use { it.readText() }
-            }.getOrElse { return Result.failure(it) }
-        val stories = parse(json)
-        // A story whose feed has no picture keeps the one an earlier refresh found for it.
-        val known = runCatching { JSONObject(cached(context)).getJSONArray("stories") }.getOrNull()
-        val images = HashMap<String, String>()
-        if (known != null) for (i in 0 until known.length()) known.getJSONObject(i).let { o -> if (!o.isNull("image")) images[o.getString("id")] = o.getString("image") }
-        val filled = stories.map { s -> if (s.image == null && images[s.id] != null) s.copy(image = images[s.id]) else s }
-        // The rest get the page's own picture (its og:image), a few at a time, so the stream is pictures, not text.
-        var looked = 0
-        val withPictures =
-            filled.map { s ->
-                if (s.image != null || looked >= PAGE_LOOKUPS || s.link.isEmpty()) {
-                    s
-                } else {
-                    looked++
-                    s.copy(image = pageImage(s.link))
-                }
-            }
-        write(context, withPictures)
-        return Result.success(withPictures.size)
+        val feeds = java.util.concurrent.Executors.newFixedThreadPool(5)
+        val fetched = try {
+            GoogleNews.TOPICS.map { t -> feeds.submit<List<Story>> { GoogleNews.fetch(t)?.let { GoogleNews.parse(it, t.name) }.orEmpty() } }.map { it.get() }
+        } finally {
+            feeds.shutdown()
+        }
+        if (fetched.all { it.isEmpty() }) return Result.failure(IllegalStateException("Google News didn't answer"))
+        val seen = HashSet<String>()
+        val stories = fetched.flatMap { topic -> topic.filter { seen.add(it.id) && seen.add(it.title.lowercase()) }.take(perTopic) }
+        // What earlier refreshes found: the publisher's address and its picture, by story id.
+        val known = HashMap<String, JSONObject>()
+        runCatching { JSONObject(cached(context)).getJSONArray("stories") }.getOrNull()?.let { a -> for (i in 0 until a.length()) a.getJSONObject(i).let { known[it.optString("id")] = it } }
+        val kept = stories.map { s ->
+            val k = known[s.id] ?: return@map s
+            s.copy(link = k.optString("link").takeIf { it.isNotEmpty() && !GoogleNews.isGoogle(it) } ?: s.link, image = if (k.isNull("image")) null else k.optString("image"))
+        }
+        val first = kept.groupBy { it.topic }.values.flatMap { it.take(RESOLVED_FIRST) }.filter { GoogleNews.isGoogle(it.link) || it.image == null }.map { it.id }.toSet()
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(6)
+        val done = try {
+            kept.map { s ->
+                if (s.id !in first) return@map java.util.concurrent.CompletableFuture.completedFuture(s)
+                java.util.concurrent.CompletableFuture.supplyAsync({
+                    val link = if (GoogleNews.isGoogle(s.link)) GoogleNews.resolve(s.link) ?: s.link else s.link
+                    s.copy(link = link, image = s.image ?: link.takeIf { !GoogleNews.isGoogle(it) }?.let(::pageImage))
+                }, pool)
+            }.map { it.get() }
+        } finally {
+            pool.shutdown()
+        }
+        write(context, done)
+        return Result.success(done.size)
     }
 
     private fun write(
@@ -224,6 +208,8 @@ object NewsStore {
      */
     fun page(link: String): String? {
         if (!link.startsWith("https://") && !link.startsWith("http://")) return null
+        // A Google News link is Google's page, not the story: the publisher's address first.
+        if (GoogleNews.isGoogle(link)) return GoogleNews.resolve(link)?.let(::page)
         return runCatching {
             var url = URL(link)
             var conn: HttpURLConnection
@@ -292,8 +278,12 @@ object NewsStore {
     /** Sites give a phone's browser the article; some give an unknown client a wall instead. */
     private const val PHONE_BROWSER = "Mozilla/5.0 (Linux; Android 16; SM-F971U) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36"
 
-    /** Pages read for a picture in one refresh, at most. */
-    private const val PAGE_LOOKUPS = 25
+    /** Stories kept a topic; the reader shows five and "Show more" the rest. */
+    const val PER_TOPIC = 25
+
+    /** Stories a topic whose address and picture are found at refresh, so the stream opens with pictures. */
+    private const val RESOLVED_FIRST = 6
+
 }
 
 /** Brings Soma News up to date on the hour, in the indexer's own process, whenever there is a network. */
