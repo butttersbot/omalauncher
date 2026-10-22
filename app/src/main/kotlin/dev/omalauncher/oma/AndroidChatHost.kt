@@ -122,9 +122,10 @@ class AndroidChatHost(
 
     override fun askFront(prompt: String, chat: String) = QuickLane.ask(context, prompt, chat = chat)
 
-    override fun startMacChat(prompt: String, chat: String, images: List<File>) = MacThreads.startChatDirect(context, prompt, chat, images)
+    // The entry keeps the pictures as guest paths, as a builder's do, so its thumbnails show (Boss, 2026-10-21).
+    override fun startMacChat(prompt: String, chat: String, images: List<File>) = MacThreads.startChatDirect(context, prompt, chat, images, images.mapNotNull(runtime.proot::guestPath))
 
-    override fun sayToMac(prompt: String, thread: String, name: String, chat: String, images: List<File>) = MacThreads.say(context, prompt, thread, name, chat, images)
+    override fun sayToMac(prompt: String, thread: String, name: String, chat: String, images: List<File>) = MacThreads.say(context, prompt, thread, name, chat, images, images.mapNotNull(runtime.proot::guestPath))
 
     override fun stopMac(thread: String, said: (String?) -> Unit) = MacThreads.stop(context, thread, said)
 

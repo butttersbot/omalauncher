@@ -468,13 +468,13 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
      * the build lane's lock as every entry's time is taken, and the words then go the way a hand-over's do:
      * the Mac is asked how it is, and one that does not answer leaves the entry saying so with `[ try again ]`.
      */
-    fun say(prompt: String, threadId: String, name: String, chat: String = "", images: List<java.io.File> = emptyList()) {
+    fun say(prompt: String, threadId: String, name: String, chat: String = "", images: List<java.io.File> = emptyList(), shown: List<String> = emptyList()) {
         restore()
         // "switch to codex" typed on a thread's tab, the whole message, is a switch (DESIGN §4), never words for the agent.
         macSwitchAsked(prompt)?.let { return switchTo(threadId, it, prompt, name, chat) }
         val log = platform.chatLog()
         val time = synchronized(platform.stampLock) {
-            ChatHistory.stamp(log.tasks, System.currentTimeMillis()).also { log.begin(macDirect(it, prompt, threadId, name).copy(chat = chat)) }
+            ChatHistory.stamp(log.tasks, System.currentTimeMillis()).also { log.begin(macDirect(it, prompt, threadId, name).copy(chat = chat, images = shown)) }
         }
         if (images.isNotEmpty()) synchronized(this) { pictures[time] = images }
         send(time, prompt, threadId, away = false)
@@ -1044,14 +1044,15 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
      * first words ([chatDirectName]). Nothing on the phone is needed: no Linux and no agent. With no Mac set up it
      * says so; a Mac out of reach leaves his words unsent with `[ try again ]`, which makes the thread again.
      */
-    fun startChatDirect(prompt: String, chat: String, images: List<java.io.File> = emptyList()) {
+    /** [shown] are the pictures as the chat names them, for the entry's thumbnails; [images] the files that go to the Mac. */
+    fun startChatDirect(prompt: String, chat: String, images: List<java.io.File> = emptyList(), shown: List<String> = emptyList()) {
         restore()
         val log = platform.chatLog()
         val name = chatDirectName(platform.book().names[chatKey(chat)], prompt)
         val setUp = machines().isNotEmpty()
         val time = synchronized(platform.stampLock) {
             ChatHistory.stamp(log.tasks, System.currentTimeMillis()).also { time ->
-                log.begin(if (setUp) macChatDirect(time, prompt, chat, name) else ChatTask(time, QUICK_AGENT, prompt, result = MAC_NOT_SET_UP, status = TaskStatus.Failed, direct = true, chat = chat))
+                log.begin((if (setUp) macChatDirect(time, prompt, chat, name) else ChatTask(time, QUICK_AGENT, prompt, result = MAC_NOT_SET_UP, status = TaskStatus.Failed, direct = true, chat = chat)).copy(images = shown))
             }
         }
         // Pictures go with the first words once the thread is made: send() puts them on the Mac first.

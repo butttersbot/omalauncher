@@ -124,9 +124,9 @@ class DesktopChatHost(
 
     override fun askFront(prompt: String, chat: String) = front.ask(prompt, chat)
 
-    override fun startMacChat(prompt: String, chat: String, images: List<java.io.File>) = engine.startChatDirect(prompt, chat, images)
+    override fun startMacChat(prompt: String, chat: String, images: List<java.io.File>) = engine.startChatDirect(prompt, chat, images, images.map { it.path })
 
-    override fun sayToMac(prompt: String, thread: String, name: String, chat: String, images: List<java.io.File>) = engine.say(prompt, thread, name, chat, images)
+    override fun sayToMac(prompt: String, thread: String, name: String, chat: String, images: List<java.io.File>) = engine.say(prompt, thread, name, chat, images, images.map { it.path })
 
     override fun stopMac(thread: String, said: (String?) -> Unit) = engine.stop(thread, said)
 

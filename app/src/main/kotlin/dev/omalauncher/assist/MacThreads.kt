@@ -87,13 +87,13 @@ object MacThreads {
     fun handOver(context: Context, asked: Long, prompt: String, thread: MacThread, away: Boolean, fresh: Boolean = false, newChat: Boolean = false) =
         engine(context).handOver(asked, prompt, thread, away, fresh, newChat)
 
-    fun say(context: Context, prompt: String, threadId: String, name: String, chat: String = "", images: List<java.io.File> = emptyList()) = engine(context).say(prompt, threadId, name, chat, images)
+    fun say(context: Context, prompt: String, threadId: String, name: String, chat: String = "", images: List<java.io.File> = emptyList(), shown: List<String> = emptyList()) = engine(context).say(prompt, threadId, name, chat, images, shown)
 
     fun tryAgain(context: Context, time: Long) = engine(context).tryAgain(time)
 
     fun startChat(context: Context, asked: Long, prompt: String, away: Boolean, chat: String) = engine(context).startChat(asked, prompt, away, chat)
 
-    fun startChatDirect(context: Context, prompt: String, chat: String, images: List<java.io.File> = emptyList()) = engine(context).startChatDirect(prompt, chat, images)
+    fun startChatDirect(context: Context, prompt: String, chat: String, images: List<java.io.File> = emptyList(), shown: List<String> = emptyList()) = engine(context).startChatDirect(prompt, chat, images, shown)
 
     fun earlier(context: Context, threadId: String): MacEarlierRead = engine(context).earlier(threadId)
 
