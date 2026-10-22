@@ -113,6 +113,14 @@ def run_step(serial, op, args, out, n):
                     time.sleep(0.4)
             if not p:
                 return False, "nothing says " + " or ".join(f"“{w}”" for w in wanted), None
+            # Tap only once it has stopped moving: after a swipe the list glides, and a reflow moves things too.
+            settle = time.time() + 4
+            while time.time() < settle:
+                time.sleep(0.4)
+                q = next((r for r in (find(serial, w, wait_ms=0) for w in wanted) if r), None)
+                if q == p:
+                    break
+                p = q or p
             x, y = p
         adb(serial, "shell", "input", "tap", str(x), str(y)); time.sleep(0.6); return True, "", None
     if op == "swipe":
