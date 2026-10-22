@@ -18,9 +18,14 @@ const result = new Promise(r => { finish = r; });
 const paragraph = 'Samsung announced a reader update that preserves every word at the end of each line. Photos belong beside the text without covering it, and the reader should remember the sentence when its type size changes. ';
 const stories = Array.from({ length: 18 }, (_, i) => ({ id: String(i), title: `Reader regression story ${i + 1}`, source: 'Test source', link: `https://example.test/${i}`, published: Date.now() / 1000, html: `<p>${paragraph.repeat(3)}</p>` }));
 const full = `<article><header><p>Follow</p></header><div id="article-body"><p>${paragraph.repeat(4)}</p><h2>A meaningful heading</h2><blockquote><p>${paragraph.repeat(5)}</p></blockquote><p>Sincerely,<br>The editorial team</p></div><aside>Author biography</aside></article>`;
+const longWord = 'Unbreakable'.repeat(24);
+const longUrl = 'https://example.test/' + 'long-path-component'.repeat(20);
+const awkwardBody = `<p>${longWord} ${longUrl}</p><img src="https://example.test/wide.jpg" width="1200" height="600"><iframe width="1200" src="https://example.test/embed"></iframe><table><tr>${Array.from({length:20},()=>`<td>${longWord}</td>`).join('')}</tr></table><pre>${longUrl}</pre><video width="1200"></video><p>${paragraph}</p>`;
+const awkwardStories = stories.map((s, i) => ({ ...s, title: i % 2 ? longUrl : longWord, html: awkwardBody, ...(i % 3 ? {image:'/photo.svg'} : {}) }));
 const server = createServer(async (req, res) => {
   try {
-    const path = new URL(req.url, 'http://localhost').pathname;
+    const url = new URL(req.url, 'http://localhost');
+    const path = url.pathname;
     if (path === '/results' && req.method === 'POST') {
       let body = ''; for await (const chunk of req) body += chunk;
       const parsed = JSON.parse(body); await writeFile(`${out}/results.json`, JSON.stringify(parsed, null, 2));
@@ -28,7 +33,8 @@ const server = createServer(async (req, res) => {
     }
     if (path === '/reader') {
       const html = await readFile(`${root}/app/src/main/assets/news/index.html`, 'utf8');
-      const native = `<base href="/assets/news/"><script>window.SomaNews={stream:()=>${JSON.stringify(JSON.stringify({ updated: Date.now() / 1000, stories }))},full:()=>'',page:link=>setTimeout(()=>window.somaPage(link,${JSON.stringify(full)}),250),keep(){},refresh(){},original(){},share(){},toast(){}};</script>`;
+      const awkward = url.searchParams.has('awkward');
+      const native = `<base href="/assets/news/"><script>window.SomaNews={stream:()=>${JSON.stringify(JSON.stringify({ updated: Date.now() / 1000, stories: awkward ? awkwardStories : stories }))},full:()=>${JSON.stringify(awkward ? awkwardBody : '')},page:link=>setTimeout(()=>window.somaPage(link,${JSON.stringify(full)}),250),keep(){},refresh(){},original(){},share(){},toast(){}};</script>`;
       res.setHeader('Content-Type', 'text/html'); res.end(html.replace('<head>', '<head>' + native)); return;
     }
     if (path === '/photo.svg') {

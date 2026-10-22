@@ -73,6 +73,34 @@ try {
   assert(Math.abs(w.document.querySelector('#scroll').scrollTop-550)<2, 'back restores stream scroll position');
   assert(w.somaBack()===false && !!w.document.querySelector('#scroll'), 'back exits only when already on the news stream');
   frame.style.display='none'; document.querySelector('#flow').style.display='none';
+  // A wide browser window alone does not exercise the cover viewport or its
+  // intrinsic grid/flex minimum sizes. Use actual narrow iframes and hostile content.
+  const cover=document.createElement('iframe');
+  cover.style.width='412px'; cover.style.height='900px'; cover.src='/reader?awkward=1'; document.body.appendChild(cover);
+  await until(()=>cover.contentWindow.document.querySelector('#scroll'));
+  const cw=cover.contentWindow;
+  await cw.document.fonts.ready;
+  for (const width of [412, 360]) {
+    cover.style.width=width+'px'; await wait(50);
+    const stream=cw.document.querySelector('#scroll');
+    assert(cw.innerWidth===width && stream.scrollWidth<=stream.clientWidth+1, `${width}px cover stream stays within viewport with long words and URLs`);
+    const cards=[...stream.querySelectorAll('.card,.feature,.brief')];
+    assert(cards.length>0 && cards.every(n=>n.getBoundingClientRect().right<=width+1), `${width}px stream cards do not widen their grid or flex columns`);
+    stream.scrollLeft=1000;
+    assert(stream.scrollLeft===0, `${width}px stream has no sideways blank area`);
+  }
+  cover.style.width='412px'; await wait(50);
+  for (const index of [0,1]) {
+    cw.openStory(index);
+    await until(()=>cw.document.querySelector('#flow .pg-line'));
+    const art=cw.document.querySelector('#art'), h1=art.querySelector('h1');
+    assert(art.scrollWidth<=art.clientWidth+1 && h1.scrollWidth<=h1.clientWidth+1, `412px reader wraps ${index ? 'a URL' : 'an unbroken word'} without widening`);
+    art.scrollLeft=1000;
+    assert(art.scrollLeft===0, `412px reader ${index} cannot scroll sideways into blank paper`);
+    assert(!art.querySelector('iframe,video') && art.querySelectorAll('img[width="1200"]').length===0, `412px reader ${index} constrains oversized feed media`);
+    cw.somaBack();
+  }
+  cover.remove();
 } catch(e) { failures.push(e.stack || String(e)); }
 document.querySelector('#results').textContent=`${passed.length} passed; ${failures.length} failed. ${failures.join('; ')}`;
 await fetch('/results',{method:'POST',body:JSON.stringify({passed,failures})});
