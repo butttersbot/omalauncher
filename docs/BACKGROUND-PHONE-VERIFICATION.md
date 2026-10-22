@@ -13,7 +13,8 @@ secure lock screen; full interaction after the main panel sleeps is not achieved
 - Original Soma 114 APK backed up at `/data/local/tmp/soma-before-background-114.apk`
   and `/root/Projects/soma-bgdisplay/before.apk`. App data and logins preserved.
 - Mac candidate 118 includes the clearer sleep limitation and foreground-window
-  guard correction. Check handoff/current install before assuming it was installed.
+  guard correction. It is built and staged, **not installed**. The debugging port
+  closed after the last test; debugging appears off and was left alone.
 
 ## Verified
 
@@ -35,6 +36,11 @@ A bounded visible-lock-screen test returned, before and after its background rea
 `locked=true, awake=true`, with a readable hidden Calculator. Main-display reads
 while locked were refused with `Phone is locked. Unlock it yourself.`
 
+The final actual CLI interaction also passed (phone log retrieved through the
+private agent connection after ADB closed): the Calculator input read
+`Calculator input field 2 Plus 2`, its preview read `4`, its screenshot succeeded,
+main stayed locked and the test input was cleared. The keeper test exited 0.
+
 With `locked=true, awake=false`, hidden screenshots still succeeded, but app
 controls could not be retrieved. Both Settings and Calculator reproduced this,
 including after reopening Calculator on the hidden display. A shell UiAutomation
@@ -50,9 +56,15 @@ screen remained protected; no fallback touches were issued to main.
   invoked, and no lock or permission settings were weakened.
 - Take over/Stop notification UI has not had a complete owner-driven hardware
   journey. Pause/locked/pending-approval policy paths have unit coverage.
-- Final visible-lock-screen Calculator arithmetic test log must be checked in
-  `/root/.cache/oma-keep/bg-verify-lockscreen.log`; do not infer its result from launch.
+- Final proof log: `/root/.cache/oma-keep/bg-verify-lockscreen.log` (exit 0).
 
-The helper is kept as `background-display` through the phone's own paired adb.
-It must be restarted after a reboot; a launcher restart can also end the keeper.
-Later builds must preserve this source branch or deliberately retire the prototype.
+The helper was kept as `background-display` through the phone's own paired adb.
+At the final read-only check (17:33 HST), that job had exited 255, the cached
+loopback port 41211 was offline, and the Mac connection was refused. Do not
+re-enable a manual off. Restart needs an owner-enabled debugging connection and
+its current port. A reboot or launcher restart can also end the helper/keeper.
+
+The phone's source independently advanced to clean `18c520c` on
+`phone/fold-development`. It was not overwritten or merged. This feature is a
+separate branch and bundle; reconcile newer phone changes before a future build
+or promotion. Do not install the old staged 115 over installed 117.
