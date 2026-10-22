@@ -67,4 +67,52 @@ cp app/build/news-ui/book.png "$out/news-ui-$short-$code.png"
 cp app/build/news-ui/results.json "$out/news-ui-$short-$code.json"
 "$ts" file cp "$out/news-ui-$short-$code.png" "$out/news-ui-$short-$code.json" "$phone:"
 echo "Built and tested $short (version $code: $tests tests, 0 failed, $skipped skipped); sent $name.apk to $phone."
+
+# Walk it like a person on the Mac's Fold emulator (Boss, 2026-10-22; tools/walkthrough/README.md): the scripts in
+# the commit's "Walk:" trailer, else all of them. A failed walk is reported, never a reason to hold the build back.
+# Results and screenshots: app/build/walk/ and walk-$short-$code.zip beside the APK.
+walks=()
+if [ -f tools/walkthrough/walk.py ]; then
+  trailer=$(git log -1 --format='%(trailers:key=Walk,valueonly,separator=%x2C)' "$commit" | tr ',' '\n' | sed 's/^ *//; s/ *$//; s/\.walk$//' | sed '/^$/d')
+  if [ -n "$trailer" ]; then
+    while read -r w; do walks+=("$w"); done <<< "$trailer"
+  else
+    for f in tools/walkthrough/scripts/*.walk; do [ -e "$f" ] && walks+=("$(basename "$f" .walk)"); done
+  fi
+fi
+if [ ${#walks[@]} -gt 0 ]; then
+  set +e
+  emu=emulator-5554
+  wdir=app/build/walk
+  rm -rf "$wdir"; mkdir -p "$wdir"
+  started=$(date +%s)
+  # The emulator only: it must answer as one (ro.kernel.qemu), never the phone.
+  if ! adb -s $emu get-state >/dev/null 2>&1; then tools/oma-emu start --headless >/dev/null; fi
+  if [ "$(adb -s $emu shell getprop ro.kernel.qemu 2>/dev/null | tr -d '\r')" != 1 ]; then
+    echo "Walks: not run (no emulator at $emu)." | tee "$wdir/summary.txt"
+  else
+    # Root on the emulator lets a walk open screens that aren't exported (its own test data only).
+    adb -s $emu root >/dev/null 2>&1; adb -s $emu wait-for-device
+    if ! adb -s $emu install -r -t "$apk" >"$wdir/install.log" 2>&1; then
+      echo "Walks: not run (the APK didn't install on the emulator: $(tail -1 "$wdir/install.log"))." | tee "$wdir/summary.txt"
+    else
+      line="Walks on the emulator:"
+      for w in "${walks[@]}"; do
+        script=tools/walkthrough/scripts/$w.walk
+        if [ ! -f "$script" ]; then line="$line $w MISSING;"; continue; fi
+        # Each walk starts on the cover screen, upright, at home.
+        adb -s $emu emu fold >/dev/null; adb -s $emu shell settings put system user_rotation 0
+        adb -s $emu shell input keyevent HOME
+        python3 tools/walkthrough/walk.py "$script" --serial $emu --out "$wdir/$w" > "$wdir/$w.log" 2>&1
+        if [ $? -eq 0 ]; then line="$line $w PASS;"
+        else line="$line $w FAIL ($(grep -c '^FAIL' "$wdir/$w.log") of $(grep -c '^\(PASS\|FAIL\)' "$wdir/$w.log") steps);"; fi
+      done
+      echo "${line%;} ($(( $(date +%s) - started )) s)." | tee "$wdir/summary.txt"
+      grep -h '^FAIL' "$wdir"/*.log | sed 's/^/  /' | tee -a "$wdir/summary.txt"
+    fi
+  fi
+  (cd "$wdir" && zip -qr "../walk-$short-$code.zip" .)
+  cp "app/build/walk-$short-$code.zip" "$out/" && "$ts" file cp "$out/walk-$short-$code.zip" "$phone:"
+  set -e
+fi
 echo "On the phone: oma-macbuild --take, then oma-install."
