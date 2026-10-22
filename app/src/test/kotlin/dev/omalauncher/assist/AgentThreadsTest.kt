@@ -195,11 +195,11 @@ class AgentThreadsTest {
         val tasks = listOf(build(1, TaskStatus.Done), mac(25_000, TaskStatus.Done, threadId = "t-gone"), mac(40_000, TaskStatus.Done, threadId = "t-old"))
         val threads = agentThreads(tasks, BuilderNow(), view, mapOf("t-new" to listOf(ThreadAsk("Bash", "git"))))
         // t-old was sent something after t-new last worked; t-gone is known only by the request once handed to it.
-        assertEquals(listOf(PHONE_THREAD, "mac:t-old", "mac:t-new", "mac:t-gone", "mac:t-never"), threads.map { it.key })
-        assertEquals(ThreadState.NeedsOk, threads[2].state)
-        assertEquals("FF4", threads[3].name)
-        // With no Mac at all there is the builder alone.
-        assertEquals(listOf(PHONE_THREAD), agentThreads(listOf(build(1, TaskStatus.Done)), BuilderNow(), MacView()).map { it.key })
+        assertEquals(listOf(PHONE_THREAD, PHONE_THREAD_B, "mac:t-old", "mac:t-new", "mac:t-gone", "mac:t-never"), threads.map { it.key })
+        assertEquals(ThreadState.NeedsOk, threads[3].state)
+        assertEquals("FF4", threads[4].name)
+        // With no Mac at all there are the builders alone.
+        assertEquals(listOf(PHONE_THREAD, PHONE_THREAD_B), agentThreads(listOf(build(1, TaskStatus.Done)), BuilderNow(), MacView()).map { it.key })
     }
 
     @Test fun anAnswersEndIsPlainWordsCutAtAWord() {
@@ -210,11 +210,14 @@ class AgentThreadsTest {
         assertTrue(endOf("x".repeat(500)).length <= TILE_DOING_CHARS + 1)
     }
 
-    /** Boss 2026-10-13: two builders. B is a thread of its own once it has worked, and the two are then "Phone A" and "Phone B". */
-    @Test fun builderBIsAThreadOfItsOwnOnceItHasWorked() {
+    /** Boss 2026-10-13: two builders, "Phone A" and "Phone B"; since 2026-10-21 B's tab is there always, to be written to while idle. */
+    @Test fun builderBIsAThreadOfItsOwnAlways() {
         val toA = build(1, TaskStatus.Done, result = "Tile made.")
-        // Only A has ever worked: one builder, called "Phone", as before there were two.
-        assertEquals(listOf(AgentThread(PHONE_THREAD, "Phone", ThreadState.Idle, "Tile made.", "done", 1)), phoneThreads(listOf(toA), emptyMap()))
+        // Only A has ever worked: B is there all the same, idle.
+        val idle = phoneThreads(listOf(toA), emptyMap())
+        assertEquals(listOf(PHONE_THREAD, PHONE_THREAD_B), idle.map { it.key })
+        assertEquals(listOf("Phone A", "Phone B"), idle.map { it.name })
+        assertEquals(ThreadState.Idle, idle[1].state)
         val toB = build(2, TaskStatus.Running, "fix the dock", steps = listOf("Edit: ui/Dock.kt")).copy(builder = "B")
         val queuedB = build(3, TaskStatus.Queued, "and the folder").copy(builder = "B")
         val threads = phoneThreads(listOf(toA, toB, queuedB), mapOf(BuilderId.B to BuilderNow(working = true, label = "Using Edit")))
@@ -257,13 +260,13 @@ class AgentThreadsTest {
         val busy = BuilderNow(working = true, label = "Using Edit", since = 20)
         val view = MacView(listOf(thread(MacThreadStatus.Working, threadId = "t-new", name = "FF4 2"), thread()), reachable = true)
         val all = agentThreads(tasks, busy, view, chats = listOf(onMac, fresh), names = mapOf("chat:c3" to "Worktrees"))
-        assertEquals(listOf(PHONE_THREAD, macThreadKey(id), "chat:c2", "chat:c3"), all.map { it.key })
+        assertEquals(listOf(PHONE_THREAD, PHONE_THREAD_B, macThreadKey(id), "chat:c2", "chat:c3"), all.map { it.key })
         val phone = all[0]
         assertEquals(ThreadState.Working, phone.state); assertEquals("working", phone.label)
         // The Mac thread made for a chat is that chat, and not a tab of its own besides.
-        val menu = all[2]
+        val menu = all[3]
         assertEquals(NEW_CHAT_NAME, menu.name); assertEquals(ThreadState.Working, menu.state); assertTrue(menu.mac)
-        assertEquals("Worktrees", all[3].name); assertEquals("done", all[3].label); assertEquals("A second checkout.", all[3].doing)
+        assertEquals("Worktrees", all[4].name); assertEquals("done", all[4].label); assertEquals("A second checkout.", all[4].doing)
         // A chat with nothing in it is new; one whose words wait for a new thread on the Mac is at work, and says so.
         assertEquals("new", agentThreads(emptyList(), BuilderNow(), MacView(), chats = listOf(fresh)).last().label)
         val starting = ChatTask(50, "→ FF4 2", "go", status = TaskStatus.Queued, thread = id, threadName = "FF4 2", fresh = true, chat = "c3")
