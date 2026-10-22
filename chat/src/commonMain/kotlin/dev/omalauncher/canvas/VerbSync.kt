@@ -2,6 +2,7 @@ package dev.omalauncher.canvas
 
 import dev.omalauncher.widgets.Cell
 import dev.omalauncher.widgets.layout.CanvasVerb
+import dev.omalauncher.widgets.layout.ItemKind
 import dev.omalauncher.widgets.layout.LoggedVerb
 import dev.omalauncher.widgets.layout.Notebook
 import dev.omalauncher.widgets.layout.NotebookItem
@@ -156,7 +157,43 @@ fun diffToVerbs(before: Notebook, after: Notebook): List<CanvasVerb> {
         waiting -= going.toSet()
     }
     for (id in beforePages.keys) if (after.pages.none { it.id == id }) verbs += CanvasVerb.PageRemove(id)
-    return verbs
+    return landInOrder(before, verbs) { key -> new[key]?.second?.kind }
+}
+
+/**
+ * [verbs] in an order in which every move lands exactly where it was sent, worked out on [before] as the service will apply
+ * them. A move whose cells something still holds waits for the others; when nothing can go on, one waiting move's item is
+ * taken off and put back ([kindOf] its kind) once the rest have landed. Left as it was, a straight swap of two things
+ * between full pages went to the service with each waiting on the other, the service put one "as near as there was room",
+ * on another page, and that came back to home as his swap undone (Boss, 2026-10-21). What lands as sent is left as it is.
+ */
+internal fun landInOrder(before: Notebook, verbs: List<CanvasVerb>, kindOf: (String) -> ItemKind?): List<CanvasVerb> {
+    var now = before
+    val out = ArrayList<CanvasVerb>()
+    val waiting = ArrayList<CanvasVerb.Move>()
+    val lifted = ArrayList<CanvasVerb.Move>()
+    fun land(v: CanvasVerb): Boolean {
+        val r = applyVerb(now, v, bare = true)
+        if (r.applied) { out += v; now = r.notebook }
+        return r.applied
+    }
+    fun settle() {
+        while (true) { val next = waiting.firstOrNull { applyVerb(now, it, bare = true).applied } ?: return; waiting -= next; land(next) }
+    }
+    for (v in verbs) {
+        if (v is CanvasVerb.Move) { if (!land(v)) waiting += v else settle() } else if (!land(v)) out += v else settle()
+    }
+    while (waiting.isNotEmpty()) {
+        settle()
+        val stuck = waiting.firstOrNull { kindOf(it.key) != null } ?: break
+        waiting -= stuck
+        land(CanvasVerb.Remove(stuck.key))
+        lifted += stuck
+        settle()
+    }
+    for (m in lifted) if (!land(CanvasVerb.Place(m.key, kindOf(m.key)!!, m.page, m.cell))) out += CanvasVerb.Place(m.key, kindOf(m.key)!!, m.page, m.cell)
+    // Anything still not landing goes as it was, for the service to settle as before.
+    return out + waiting
 }
 
 /** Sent as `since` by a screen whose copy the service had lost: what it sends is that screen, whole. */

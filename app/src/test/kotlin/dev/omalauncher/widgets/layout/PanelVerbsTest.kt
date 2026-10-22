@@ -205,6 +205,24 @@ class PanelVerbsTest {
         assertTrue(took.toString(), took.none { it.version == null })
     }
 
+    /** Boss, 2026-10-21: Steps on a full panel page swapped with the weather on a full page went back after a moment. */
+    @Test fun aSwapBetweenTwoFullPagesLandsExactly() {
+        val c = panelCells("beats")
+        val before = book(
+            NotebookPage("x", "X", listOf(NotebookItem("steps.owl", ItemKind.Widget, c[0]), NotebookItem("art", ItemKind.Widget, c[1])), panels = "beats"),
+            NotebookPage("y", "Y", listOf(NotebookItem("today.owl", ItemKind.Widget, Cell(0, 0, 6, 10)))),
+        )
+        val after = book(
+            NotebookPage("x", "X", listOf(NotebookItem("today.owl", ItemKind.Widget, c[0]), NotebookItem("art", ItemKind.Widget, c[1])), panels = "beats"),
+            NotebookPage("y", "Y", listOf(NotebookItem("steps.owl", ItemKind.Widget, Cell(0, 0, 6, 10)))),
+        )
+        val verbs = diffToVerbs(before, after)
+        // Every verb applies as sent, and what they make is his swap, nothing put elsewhere.
+        assertEquals(shape(after), shape(verbs.fold(before) { n, v -> applyVerb(n, v).also { assertTrue("$v: ${it.why}", it.applied) }.notebook }))
+        val (_, took) = appendSent(verbsLog(diffToVerbs(Notebook(rows = 10, pages = emptyList()), before)), verbs.map { SentVerb(0, "fold-1", VerbOrigin("fold", "hand"), it) }, 6, 10)
+        assertTrue(took.toString(), took.none { it.version == null })
+    }
+
     @Test fun theBoardSaysAPagesPanels() {
         val panelled = fitIntoPanels(book(today, later), "p1", "beats").notebook
         val pages = boardJson(panelled, ScreenRules()).getJSONArray("pages")
