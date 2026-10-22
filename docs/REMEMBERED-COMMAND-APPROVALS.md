@@ -44,3 +44,33 @@ with a build, and the sandbox and underlying approval policies remain unchanged.
 - Not verified: the upgraded control on the physical Fold or against a live Codex
   approval request. No live runner restart or app installation occurred. The
   runner tests use a protocol stand-in, not a model account.
+
+## Deployment and source reconciliation — 2026-10-21
+
+The first verification above predates deployment. The Mac Pro runner was later
+reconciled with its newer installed source, with Boss's direct approval, to retain
+native Codex session discovery, question/permission handling and installed app/MCP
+tools. This repository now contains that exact deployed runner, SHA-256
+`1c1217f87f9ed61b9cfe1991fb3ef9382248462ea7bb94a27f4c780c7756590d`.
+The sync preserves the installed default modes and bot policy; it introduces no
+new live policy change or restart.
+
+Live evidence: `tailscale status` produced approval event 1107 with
+`can_remember=true`. Boss's phone decision (1108) was `allow, remembered=true`.
+The exact repeat completed without another card; event 1114 records
+`Saved command approval: tailscale status`. Phone A independently confirmed those
+events and authenticated `/health` returning OK with 17 threads. Soma 119 was
+reported installed on the Fold. Both temporary deployment jobs were removed.
+
+The focused, isolated reconciliation tests are runnable with
+`python3 tools/mac-runner/test-codex-approvals.py`. They exercise saved-scope reuse,
+changed scope, nonce/Stop, and coexistence with native question/permission flows.
+The broader protocol fixture disables native discovery because its stand-in
+models owned turns rather than a native-session catalog, and follows the deployed
+Codex defaults and installed tool availability.
+
+Source-sync validation: all 438 protocol/HTTP integration checks and all five
+focused reconciliation tests passed. Legacy auto-policy expectations were updated
+to the existing deployed routine/critical boundary; manual-mode rejection and
+one-time approval checks remain. The runner file itself matches the live hash
+above byte for byte.
