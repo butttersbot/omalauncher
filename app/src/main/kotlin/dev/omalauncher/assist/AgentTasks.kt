@@ -271,6 +271,8 @@ class Builder(val id: BuilderId) {
     /** Read when taken, not kept: a builder is made while [AgentTasks] itself is still being made. */
     private val lock: Any get() = AgentTasks
     @Volatile var working = false; private set
+    /** Whether the current request publishes Claude's structured tool events; read by the watchdog. */
+    @Volatile var traced = false; private set
     @Volatile var answer = ""; private set
     @Volatile var label = "Ready"; private set
     @Volatile private var process: Process? = null
@@ -343,7 +345,8 @@ class Builder(val id: BuilderId) {
         check(prompt.isNotBlank()) { "Type or speak a request first." }
         if (!working) return start(context, prompt, images, screen, page, queued = null, earlier = earlier, mail = mail, errand = errand)
         check(!stopping) { "The agent is stopping. Send this again in a moment." }
-        val agent = (context.applicationContext as App).runtime.agents.default ?: error("Install and sign in to an agent in Omalauncher first.")
+        val agents = (context.applicationContext as App).runtime.agents
+        val agent = builderAgent(id, agents.installed, agents.default)?.agent ?: error("Install and sign in to an agent in Omalauncher first.")
         val log = ChatLog.of(context)
         val time = ChatHistory.stamp(log.tasks, System.currentTimeMillis())
         check(followUps.add(FollowUp(time, prompt, images, page, earlier, screen, errand))) { FollowUpQueue.FULL }
@@ -367,7 +370,8 @@ class Builder(val id: BuilderId) {
         check(!working) { "An agent is already working. Stop it before starting another task." }
         val runtime = (context.applicationContext as App).runtime
         check(runtime.bootstrap.state.value == LinuxState.Installed) { "Open Omalauncher and finish Linux setup first." }
-        val agent = runtime.agents.default ?: error("Install and sign in to an agent in Omalauncher first.")
+        val choice = builderAgent(id, runtime.agents.installed, runtime.agents.default) ?: error("Install and sign in to an agent in Omalauncher first.")
+        val agent = choice.agent
         val seen = if (screen != null) "\n\nThe attached image is the screen I was looking at when I asked." else ""
         val imagePrompt = earlier + (if (agent.bin == "claude" && images.isNotEmpty()) prompt + "\n\nRead these attached images before answering:\n" + images.joinToString("\n") else prompt) + seen
         val fullPrompt = imagePrompt + "\n\n" + PhoneBridge.INSTRUCTIONS + "\n" + GROKBOT_RULE + "\nAndroid build tools, when installed, are in /opt/android-sdk. Run oma-build-check to check the toolchain. Run Gradle as `oma-gradle TASKS` (oma-build does): one build at a time and small, so Android does not kill the app for memory. Use the approval UI for blocked tools; never ask for blanket permission bypass.\n"
@@ -386,9 +390,9 @@ class Builder(val id: BuilderId) {
             // Which builder this is, for the tools that sign mail (oma msg, oma-macbuild): a reply comes back to it, not to A.
             "export OMA_BUILDER=${id.letter}\n" + (worktree?.let { it.script() + "\n" } ?: "") + claudeStreamCommand(resumed, if (errand) ERRAND_MODEL else null)
         } else {
-            backgroundAgentCommand(agent.bin, fullPrompt, images) // Throws for an agent that can't run here, before the screenshot is touched.
+            backgroundAgentCommand(agent.bin, fullPrompt, images, choice.model) // Validate before the screenshot is touched.
             handed = screen?.let { ScreenShots.handOver(it, runtime.proot.promptAttachments) }
-            backgroundAgentCommand(agent.bin, fullPrompt, images + listOfNotNull(handed?.let(runtime.proot::guestPath)))
+            "export OMA_BUILDER=${id.letter}\n" + backgroundAgentCommand(agent.bin, fullPrompt, images + listOfNotNull(handed?.let(runtime.proot::guestPath)), choice.model)
         }
         val log = ChatLog.of(context)
         val began = System.currentTimeMillis()
@@ -398,6 +402,8 @@ class Builder(val id: BuilderId) {
         asked = page?.let { PageAsk(it, began) }
         if (queued == null) log.begin(ChatTask(time, agent.name, prompt, images, screen = screen != null, newThread = resumed == null, answeredBy = builderName(agent.bin), builder = id.saved, mail = mail))
         else log.update(time, save = true) { it.copy(agent = agent.name, newThread = resumed == null, status = TaskStatus.Running, answeredBy = builderName(agent.bin)) }
+        choice.note?.let { note -> log.update(time, save = true) { it.copy(steps = it.steps + note) } }
+        traced = agent.bin == "claude"
         working = true; stopping = false; ledger.clear(); published(); answer = ""; label = "${agent.name} is working"
         notify(context)
         thread(name = "assistant-agent-" + id.letter.lowercase(), isDaemon = true) {
@@ -786,9 +792,9 @@ const val ERRAND_MODEL = "sonnet"
 fun claudeStreamCommand(resume: String? = null, model: String? = null): String = "claude -p " + (resume?.takeIf(SESSION_ID::matches)?.let { "--resume $it " } ?: "") +
     (model?.let { "--model $it " } ?: "") + "--input-format stream-json --output-format stream-json --verbose --permission-mode auto --permission-prompt-tool stdio --allowedTools ${shellQuote("Bash(oma-phone *)")} Read"
 
-fun backgroundAgentCommand(agent: String, prompt: String, images: List<String> = emptyList()): String = when (agent) {
+fun backgroundAgentCommand(agent: String, prompt: String, images: List<String> = emptyList(), model: String? = null): String = when (agent) {
     "claude" -> "claude -p --permission-mode auto --allowedTools ${shellQuote("Bash(oma-phone *)")} Read -- ${shellQuote(prompt)} < /dev/null"
-    "codex" -> "codex exec --skip-git-repo-check " + images.joinToString(" ") { "--image ${shellQuote(it)}" }.let { if (it.isBlank()) "" else "$it " } + "-- ${shellQuote(prompt)} < /dev/null"
+    "codex" -> "codex exec --skip-git-repo-check " + (model?.let { "--model ${shellQuote(it)} " } ?: "") + images.joinToString(" ") { "--image ${shellQuote(it)}" }.let { if (it.isBlank()) "" else "$it " } + "-- ${shellQuote(prompt)} < /dev/null"
     // Grok as Claude Code is run here, in auto mode with phone commands and reading allowed; nobody answers its prompts in
     // -p, so what auto mode won't allow is refused. It reads an image from its path, so the paths go in its words. The
     // prompt is given as --single= so one starting with a dash is still his words.

@@ -107,7 +107,6 @@ object BuilderWatch {
         val started = AgentTasks.builders.associate { it.id to it.startedAt }
         val procs = builderProcs(rows, AgentTasks.builders.filter { working.getValue(it.id) }.map { started.getValue(it.id) }, android.os.Process.myPid())
         val tasks = ChatLog.of(app).tasks
-        val traced = app.runtime.agents.default?.bin == "claude"
         // Read before this object's lock is taken: a builder's queue is under the build lane's lock, which
         // [notice] holds while it takes this one, so the two are never taken the other way round.
         val approval = AgentTasks.builders.associate { it.id to it.pending.isNotEmpty() }
@@ -122,7 +121,7 @@ object BuilderWatch {
                 val request = if (on) tasks.lastOrNull { it.build && it.builderId == builder.id && it.status == TaskStatus.Running }?.prompt.orEmpty() else ""
                 builder.id to BuilderFacts(
                     now, on, start.takeIf { on }, builder.heardAt.takeIf { on && it > 0 }, builder.lastStep,
-                    builder.lastStepAt.takeIf { on && it > 0 }, traced, own?.pid, track, cpuMs,
+                    builder.lastStepAt.takeIf { on && it > 0 }, builder.traced, own?.pid, track, cpuMs,
                     approval.getValue(builder.id), queued.getValue(builder.id), request, if (builder.id == BuilderId.A) procs.leftovers else emptyList(), procRead,
                 )
             }
