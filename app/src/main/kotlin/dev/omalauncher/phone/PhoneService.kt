@@ -109,9 +109,9 @@ class PhoneService : AccessibilityService() {
 
     private fun displayWindows(id: Int) = if (Build.VERSION.SDK_INT >= 30) windowsOnAllDisplays[id].orEmpty() else windows
     private fun displayRoot(id: Int): AccessibilityNodeInfo? = if (Build.VERSION.SDK_INT < 30) rootInActiveWindow else
-        displayWindows(id).filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+        displayWindows(id)
             .sortedWith(compareByDescending<AccessibilityWindowInfo> { it.isActive || it.isFocused }.thenByDescending { it.layer })
-            .firstNotNullOfOrNull { it.root }
+            .firstOrNull()?.root
     private fun displayMetrics() = android.util.DisplayMetrics().also {
         getSystemService(android.hardware.display.DisplayManager::class.java).getDisplay(displayId)?.getRealMetrics(it)
             ?: error("Display has gone.")
@@ -239,6 +239,9 @@ class PhoneService : AccessibilityService() {
         // Android keeps some Settings pages from services that aren't accessibility tools (Keyboard, Developer options'
         // debugging): no window to read and no taps taken, while everywhere else works. Seen on the Fold, 2026-10-16.
         requireCurrentAccess()
+        if (displayId != 0 && !getSystemService(PowerManager::class.java).isInteractive) {
+            error("This phone does not expose background app controls while asleep. Wake the phone before retrying; no main-screen action was taken. Background screenshots remain available.")
+        }
         return displayRoot(displayId) ?: error("No readable window on display $displayId. Android hides some Settings pages from phone control and ignores taps " +
             "there (Keyboard, Developer options' debugging): if one is in front, ask Boss to do that step. Otherwise try again after the screen settles.")
     }

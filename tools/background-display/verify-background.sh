@@ -13,6 +13,7 @@ else
   jq -e '.locked == true and .awake == false' evidence/locked-status.json >/dev/null
   if oma-phone screen > evidence/main-locked-refusal.json; then echo 'FAIL: main display accepted a locked read'; exit 1; fi
   jq -e '.ok == false and (.error | test("locked"))' evidence/main-locked-refusal.json >/dev/null
+  oma-phone --display bg screen > evidence/locked-before-action.json
   oma-phone --display bg press Search > evidence/locked-press.json
   oma-phone --display bg fill '' soma-background-probe > evidence/locked-fill.json
   oma-phone --display bg submit > evidence/locked-submit.json

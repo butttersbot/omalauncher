@@ -1,5 +1,15 @@
 # Background phone control
 
+Hardware result, 2026-10-21: this is a prototype. Background app launch, read,
+batch commands and screenshots work on the Fold while its main screen is awake.
+When the main screen sleeps, background app controls become unreadable in both
+Soma Accessibility and a shell UiAutomation session. Captures still work, and
+main-display operations remain refused while locked. The original plan's promise
+of continuing full interaction while locked and asleep has **not** been achieved.
+The complete current scrcpy flag combination was also tested without resolving it.
+The phone's `cmd virtualdevice create-device` help requires insecure keyguard;
+that route was not used and no lock settings were changed.
+
 The shell helper in `soma-bgdisplay` creates a separate display named `soma-agent`.
 The main screen retains its lock. A live, authenticated helper is required before
 only the background display is permitted to work while the phone is locked or asleep.
