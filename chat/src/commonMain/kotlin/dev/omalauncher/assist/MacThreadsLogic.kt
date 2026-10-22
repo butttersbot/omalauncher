@@ -310,7 +310,11 @@ fun macApply(tasks: List<ChatTask>, threadId: String, event: MacEvent, inFlight:
                     val next = waiting.firstOrNull { it.thread == threadId && !it.fresh && it.status == TaskStatus.Queued && said(it) }
                     // Words no entry of his has were sent from somewhere else: what the thread says next is their answer,
                     // and stands under this line rather than reading as more of his last answer.
-                    if (next == null) between(ChatLater(MAC_SENT_ELSEWHERE + event.text.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty().trim()), waiting)
+                    // Agent mail the runner handed the thread is an entry of its own, labeled as the phone's own mail is
+                    // (Boss, 2026-10-21: "the same UX as our other agent mail threads"): what the thread does next is its turn.
+                    val mail = if (next == null) macMail(event.text) else null
+                    if (mail != null) waiting + macMailEntry(waiting, threadId, event, mail)
+                    else if (next == null) between(ChatLater(MAC_SENT_ELSEWHERE + event.text.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty().trim()), waiting)
                     else waiting.map { if (it.time == next.time) it.copy(status = TaskStatus.Running) else it }
                 }
             }
@@ -627,4 +631,33 @@ fun deviceName(device: String): String = when {
     "mac-pro" in device.lowercase() || "macpro" in device.lowercase() -> "the Mac Pro"
     "macbook" in device.lowercase() -> "the MacBook"
     else -> device
+}
+
+/** Agent mail as a Mac thread is handed it: who it is from, for the entry's label, and the words themselves. */
+data class MacMail(val label: String, val text: String)
+
+private val MAC_MAIL_HEAD = Regex("""^\[Agent mail from ([A-Za-z0-9][A-Za-z0-9.-]*)(?: \(([^)]*)\))?, id [^\]]*\]\s*""")
+
+/**
+ * The words of agent mail as the runner gives them to a thread (oma-runner's mail_words: "[Agent mail from DEVICE
+ * (agent, "title"), id …]" and a blank line), or null for words that aren't mail.
+ */
+fun macMail(text: String): MacMail? {
+    val head = MAC_MAIL_HEAD.find(text) ?: return null
+    val title = head.groupValues[2].substringAfter('"', "").substringBeforeLast('"', "").trim()
+    val label = listOf("Agent mail", "from " + head.groupValues[1], title).filter { it.isNotEmpty() }.joinToString(" · ")
+    return MacMail(label, text.substring(head.range.last + 1).trim().ifEmpty { text.trim() })
+}
+
+/**
+ * A running entry for mail [thread] was handed, in the tab its newest entry is in (a new chat's, or the thread's own),
+ * after every entry there is: what the thread says next fills it.
+ */
+fun macMailEntry(tasks: List<ChatTask>, threadId: String, event: MacEvent.Message, mail: MacMail): ChatTask {
+    val latest = tasks.lastOrNull { it.thread == threadId && !it.fresh }
+    val time = maxOf(event.time * 1000, (tasks.maxOfOrNull { it.time } ?: 0L) + 1)
+    return ChatTask(
+        time, latest?.agent ?: macReceipt(threadId), mail.text, thread = threadId, threadName = latest?.threadName.orEmpty(),
+        status = TaskStatus.Running, direct = true, chat = latest?.chat.orEmpty(), mail = mail.label,
+    )
 }

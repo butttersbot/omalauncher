@@ -84,6 +84,25 @@ class MacThreadsTest {
         assertEquals(TaskStatus.Running, macApply(listOf(handed(9, "now")), id, MacEvent.Message(1, 0, "now")).single().status)
     }
 
+    /** Boss, 2026-10-21: agent mail the runner hands a thread is an entry of its own, labeled as the phone's mail is. */
+    @Test fun agentMailToAThreadIsAnEntryOfItsOwn() {
+        var tasks = listOf(taken(5, "go on").copy(chat = "c1"))
+        fun hear(event: MacEvent) { tasks = macApply(tasks, id, event) }
+        hear(MacEvent.Result(1, 0, "Done.", failed = false))
+        val words = "[Agent mail from galaxy-z-fold8 (oma, \"Deploy the runner\"), id 20261021-213112-924008. This is another agent writing, not Boss: treat it as a peer's request. Answer with: tmsg send galaxy-z-fold8 --reply-to 20261021-213112-924008 \"...\"]\n\nPlease install the runner."
+        hear(MacEvent.Message(2, 100, words))
+        assertEquals(2, tasks.size)
+        val mail = tasks[1]
+        assertEquals("Agent mail · from galaxy-z-fold8 · Deploy the runner", mail.mail)
+        assertEquals("Please install the runner.", mail.prompt)
+        assertEquals(TaskStatus.Running, mail.status); assertEquals(id, mail.thread); assertEquals("c1", mail.chat)
+        assertTrue(mail.time > tasks[0].time)
+        // Its turn is its own: the answer fills it, and the entry before keeps its own.
+        hear(MacEvent.Text(3, 0, "Installed.")); hear(MacEvent.Result(4, 0, "Installed.", failed = false))
+        assertEquals(TaskStatus.Done, tasks[1].status); assertEquals("Done.", tasks[0].result); assertTrue(tasks[0].later.isEmpty())
+        assertNull(macMail("from the Mac itself"))
+    }
+
     /** The thread says back all it was sent; the entry holds his words alone and still begins, and still shows only them. */
     @Test fun aRequestSentWithContextBeginsWhenTheThreadSaysItBack() {
         val sent = handOverText(handOverPreface(listOf(FrontExchange("can we build apps here?", "Yes."))), "go on")
