@@ -454,6 +454,8 @@ class WidgetServices(
                     // The Pet home widget: the herd pet out on the screen, or home in its room (Boss, 2026-10-21).
                     "pet-out" -> dev.omalauncher.herd.HerdSheep.set(context, true)
                     "pet-home" -> dev.omalauncher.herd.HerdSheep.set(context, false)
+                    // From whatever it is now, not from what the tile last read (it may be a moment behind).
+                    "pet-toggle" -> dev.omalauncher.herd.HerdSheep.set(context, !dev.omalauncher.herd.HerdSheep.shown)
                     // The Steps widget, before the step counter is allowed.
                     "steps-allow" -> dev.omalauncher.steps.StepsAllow.open(context)
                     else -> launcherAction?.invoke(arg)

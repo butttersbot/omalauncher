@@ -19,8 +19,59 @@ import java.io.File
 private const val MAX_FILE_BYTES = 1 shl 20
 
 /**
+ * One inotify watch per folder for the whole process, shared by every file() source in it. Android's FileObservers
+ * on one folder share a watch descriptor, so one source stopping (its page went off screen) silently ended the
+ * watch for the rest, which then saw changes only at their 30 s check (Boss, 2026-10-21: Pet home and Steps both
+ * read ~/.cache/soma-pet, and Pet home's taps acted on a picture up to half a minute old).
+ */
+internal object FolderWatch {
+    private class Watch(val observer: FileObserver, val listeners: MutableSet<(String?) -> Unit>)
+
+    private val watches = HashMap<String, Watch>()
+    private const val MASK = FileObserver.CLOSE_WRITE or FileObserver.MODIFY or FileObserver.MOVED_TO or FileObserver.MOVED_FROM or FileObserver.CREATE or FileObserver.DELETE
+
+    /** Calls [listener] with the name of what changed in [dir]; false if [dir] can't be watched now. */
+    @Synchronized fun add(
+        dir: File,
+        listener: (String?) -> Unit,
+    ): Boolean {
+        if (!dir.isDirectory) return false
+        watches[dir.path]?.let {
+            it.listeners += listener
+            return true
+        }
+        val listeners = java.util.concurrent.CopyOnWriteArraySet<(String?) -> Unit>()
+        listeners += listener
+        val observer =
+            object : FileObserver(dir, MASK) {
+                override fun onEvent(
+                    event: Int,
+                    path: String?,
+                ) {
+                    listeners.forEach { it(path) }
+                }
+            }
+        watches[dir.path] = Watch(observer, listeners)
+        observer.startWatching()
+        return true
+    }
+
+    @Synchronized fun remove(
+        dir: File,
+        listener: (String?) -> Unit,
+    ) {
+        val w = watches[dir.path] ?: return
+        w.listeners -= listener
+        if (w.listeners.isEmpty()) {
+            w.observer.stopWatching()
+            watches.remove(dir.path)
+        }
+    }
+}
+
+/**
  * [file]'s text now and after every change, for `source x = file(...)`.
- * Changes arrive through inotify on its folder, so a file replaced by a rename
+ * Changes arrive through inotify on its folder ([FolderWatch]), so a file replaced by a rename
  * (how editors and `jq ... > tmp && mv` save) is seen too. A stat every few
  * seconds covers a folder that doesn't exist yet or was replaced. A missing
  * file reads as "".
@@ -28,26 +79,14 @@ private const val MAX_FILE_BYTES = 1 shl 20
 fun watchFile(file: File): Flow<String> =
     callbackFlow {
         val changed = Channel<Unit>(Channel.CONFLATED)
-        var observer: FileObserver? = null
+        val listener: (String?) -> Unit = { path -> if (path == file.name) changed.trySend(Unit) }
         var watched: File? = null
 
         fun watch() {
             val dir = file.parentFile ?: return
-            if (observer != null && watched == dir && dir.isDirectory) return
-            observer?.stopWatching()
-            observer = null
-            if (!dir.isDirectory) return
-            val mask = FileObserver.CLOSE_WRITE or FileObserver.MODIFY or FileObserver.MOVED_TO or FileObserver.MOVED_FROM or FileObserver.CREATE or FileObserver.DELETE
-            observer =
-                object : FileObserver(dir, mask) {
-                    override fun onEvent(
-                        event: Int,
-                        path: String?,
-                    ) {
-                        if (path == file.name) changed.trySend(Unit)
-                    }
-                }.also { it.startWatching() }
-            watched = dir
+            if (watched == dir && dir.isDirectory) return
+            watched?.let { FolderWatch.remove(it, listener) }
+            watched = if (FolderWatch.add(dir, listener)) dir else null
         }
 
         val loop =
@@ -61,14 +100,14 @@ fun watchFile(file: File): Flow<String> =
                         stamp = now
                         send(read(file))
                     }
-                    force = withTimeoutOrNull(if (observer != null) 30_000L else 5_000L) { changed.receive() } != null
+                    force = withTimeoutOrNull(if (watched != null) 30_000L else 5_000L) { changed.receive() } != null
                     // A writer may still be at it; read once it's done.
                     if (force) delay(100)
                 }
             }
         awaitClose {
             loop.cancel()
-            observer?.stopWatching()
+            watched?.let { FolderWatch.remove(it, listener) }
         }
     }.flowOn(Dispatchers.IO).distinctUntilChanged()
 

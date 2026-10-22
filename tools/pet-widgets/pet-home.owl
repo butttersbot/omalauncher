@@ -12,12 +12,17 @@ widget "pet home" {
   asset hg = base64"FONT_B64"
 
   let pet = p == null || p == "" ? null : p
-  let out = pet != null && pet.out
+  // A tap shows its answer at once; the file catches up a moment later and has the last word after that.
+  state tappedAt = 0
+  state wanted = false
+  let filed = pet != null && pet.out
+  let out = now - tappedAt < 4 ? wanted : filed
   let hour = int(fmtTime(now, "H"))
   let night = hour >= 19 || hour < 7
   let name = pet == null ? "PET" : pet.name
 
-  onTap: { haptic(); launcher(out ? "pet-home" : "pet-out") }
+  // The launcher flips what is really so (not what this tile last read), so a quick second tap can't go the wrong way.
+  onTap: { haptic(); wanted = !out; tappedAt = now; launcher("pet-toggle") }
 
   Canvas {
     let tiny = rows < 2
