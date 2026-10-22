@@ -307,7 +307,7 @@ private fun ChatScreen(
             // A new chat's first words with no front agent to read them: as they are, to a new thread on the Mac.
             is Outgoing.ChatMac -> host.startMacChat(out.prompt, out.chat)
             // From a Mac thread's own tab: the same sending a hand-over has, with nobody asked first and nothing added.
-            is Outgoing.Mac -> host.sayToMac(out.prompt, out.thread, out.name, to.chat)
+            is Outgoing.Mac -> host.sayToMac(out.prompt, out.thread, out.name, to.chat, images.map { it.file })
             is Outgoing.Terminal -> host.runInTerminal(out.prompt)
         }
         // Sent files stay: the agent reads them while it works, and the saved task names them.
@@ -1238,13 +1238,16 @@ private fun EarlierEntry(turn: MacTurn, on: String = "the Mac") {
 @Composable
 private fun SentImages(paths: List<String>) {
     val host = LocalChatHost.current
+    // A tap opens one over the whole screen.
+    var open by remember { mutableStateOf<String?>(null) }
+    open?.let { path -> ChatImageViewer(host.sentImage(path)) { open = null } }
     Row(Modifier.padding(top = 6.dp).horizontalScroll(rememberScrollState())) {
         paths.forEachIndexed { i, path ->
             val picture by produceState<ImageBitmap?>(null, path) {
                 value = withContext(Dispatchers.IO) { host.thumbnail(host.sentImage(path), 144) }
             }
             val shown = picture
-            Box(Modifier.padding(end = 6.dp).size(48.dp).framed(Pack.hair, Pack.border, Pack.background, radius = 6.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.padding(end = 6.dp).size(48.dp).framed(Pack.hair, Pack.border, Pack.background, radius = 6.dp).clickable(enabled = shown != null) { open = path }, contentAlignment = Alignment.Center) {
                 if (shown != null) Image(shown, "Sent image ${i + 1}", Modifier.size(48.dp), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
                 else BasicText("image", style = Pack.body(Pack.size.small, Pack.muted))
             }
@@ -1263,10 +1266,12 @@ private fun AttachmentPreview(
     val preview by produceState<ImageBitmap?>(null, image.file) {
         value = withContext(Dispatchers.IO) { host.thumbnail(image.file, 160) }
     }
+    var open by remember { mutableStateOf(false) }
+    if (open) ChatImageViewer(image.file) { open = false }
     Column(Modifier.padding(4.dp)) {
         val bitmap = preview
         if (bitmap != null) {
-            Image(bitmap, "Attached image $number", Modifier.size(56.dp))
+            Image(bitmap, "Attached image $number", Modifier.size(56.dp).clickable { open = true })
         } else {
             BasicText("image $number", Modifier.size(56.dp), style = Pack.body(color = Pack.muted))
         }

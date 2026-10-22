@@ -115,7 +115,10 @@ fun sendTo(
 /** Why nothing is sent on a new chat whose thread on the Mac is still being made. */
 const val CHAT_MAKING = "The new thread on the Mac is still being made. Send this in a moment."
 
-/** Why images are not sent from a Mac thread's tab. */
+/** Why nothing is sent while an attached picture is gone from the phone. */
+const val IMAGE_GONE = "An attached image is no longer available. Remove it and attach it again."
+
+/** Why images were not sent from a Mac thread's tab, before they went to the Mac too (kept for older drafts' notices). */
 fun noImagesTo(name: String) = "$name is on the Mac, which takes no images from here. Remove them, or send this from the Soma tab."
 
 /** Why images are not sent in a new chat, whose work is the Mac's. */
@@ -151,7 +154,8 @@ fun outgoing(
     return when {
         busy || prompt.isEmpty() -> Outgoing.Nothing
         to is SendTo.ChatStarting -> Outgoing.Refused(CHAT_MAKING)
-        to is SendTo.Mac -> if (images > 0) Outgoing.Refused(noImagesTo(to.name)) else Outgoing.Mac(prompt, to.thread, to.name)
+        // Pictures go too: they are put on the Mac and the thread is told where (Boss, 2026-10-21).
+        to is SendTo.Mac -> if (imageMissing) Outgoing.Refused(IMAGE_GONE) else Outgoing.Mac(prompt, to.thread, to.name)
         to is SendTo.Chat -> when {
             images > 0 -> Outgoing.Refused(NO_IMAGES_IN_CHAT)
             linux && agent in BACKGROUND_AGENTS && frontFirst(prompt, images, frontReady) -> Outgoing.Front(prompt)
@@ -160,7 +164,7 @@ fun outgoing(
         !linux -> Outgoing.Refused("Open Soma and finish Linux setup first.")
         agent == null -> Outgoing.Refused("Install and sign in to an agent in Soma first.")
         images > 0 && agent !in BACKGROUND_AGENTS -> Outgoing.Refused("Choose Claude Code, Codex or Grok to send images.")
-        imageMissing -> Outgoing.Refused("An attached image is no longer available. Remove it and attach it again.")
+        imageMissing -> Outgoing.Refused(IMAGE_GONE)
         agent in BACKGROUND_AGENTS -> when {
             to == SendTo.Oma && frontFirst(prompt, images, frontReady) -> Outgoing.Front(prompt)
             working -> Outgoing.Queued(prompt)

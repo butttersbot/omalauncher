@@ -27,10 +27,10 @@ class ChatComposerTest {
         assertEquals(Outgoing.Mac("hello", "t-pond", "Pond"), out(linux = false, agent = null, to = pond))
         assertEquals(Outgoing.Mac("hello", "t-pond", "Pond"), out(agent = "grok", working = true, to = pond))
         assertEquals(Outgoing.Nothing, out(draft = " ", to = pond)); assertEquals(Outgoing.Nothing, out(busy = true, to = pond))
-        // The runner takes no images: nothing is sent, he is told why, and they never go to the builder instead.
-        assertEquals(Outgoing.Refused(noImagesTo("Pond")), out(images = 1, to = pond))
-        assertEquals(Outgoing.Refused(noImagesTo("Pond")), out(draft = "", images = 2, working = true, to = pond))
-        assertTrue(noImagesTo("Pond").contains("Pond"))
+        // Pictures go to the thread with the words (Boss, 2026-10-21), never to the builder instead; alone they ask for a description.
+        assertEquals(Outgoing.Mac("hello", "t-pond", "Pond"), out(images = 1, to = pond))
+        assertEquals(Outgoing.Mac("Describe these images.", "t-pond", "Pond"), out(draft = "", images = 2, working = true, to = pond))
+        assertEquals(Outgoing.Refused(IMAGE_GONE), out(images = 1, missing = true, to = pond))
     }
     @Test fun theOmaTabSendsAsItAlwaysDid() {
         for (working in listOf(true, false)) for (ready in listOf(true, false)) for (images in listOf(0, 1)) {

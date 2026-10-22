@@ -41,6 +41,9 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
      * is sent on exactly as it went. In memory only: after a restart the same is made again from the thread.
      */
     private val sentWords = HashMap<Long, String>()
+
+    /** The pictures sent with the entry filed at a time, on their way to the Mac with its words (and again on `[ try again ]`). */
+    private val pictures = HashMap<Long, List<java.io.File>>()
     /** Each project's default agent and model ([macDefaultsFrom]), kept in prefs under [MAC_DEFAULTS_PREF]. Only touched under the lock. */
     private var defaults: Map<String, MacPick> = emptyMap()
     /** The switches under way, by the time of the entry whose thread writes the handoff; kept under [MAC_SWITCHES_PREF]. Under the lock. */
@@ -465,7 +468,7 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
      * the build lane's lock as every entry's time is taken, and the words then go the way a hand-over's do:
      * the Mac is asked how it is, and one that does not answer leaves the entry saying so with `[ try again ]`.
      */
-    fun say(prompt: String, threadId: String, name: String, chat: String = "") {
+    fun say(prompt: String, threadId: String, name: String, chat: String = "", images: List<java.io.File> = emptyList()) {
         restore()
         // "switch to codex" typed on a thread's tab, the whole message, is a switch (DESIGN §4), never words for the agent.
         macSwitchAsked(prompt)?.let { return switchTo(threadId, it, prompt, name, chat) }
@@ -473,6 +476,7 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
         val time = synchronized(platform.stampLock) {
             ChatHistory.stamp(log.tasks, System.currentTimeMillis()).also { log.begin(macDirect(it, prompt, threadId, name).copy(chat = chat)) }
         }
+        if (images.isNotEmpty()) synchronized(this) { pictures[time] = images }
         send(time, prompt, threadId, away = false)
     }
 
@@ -536,6 +540,7 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
             sending = sending + time
             // Only the entries the chat still keeps can be sent on.
             sentWords.keys.retainAll(kept)
+            pictures.keys.retainAll(kept)
             sentWords[time] = text
         }
         thread(name = "oma-mac-send", isDaemon = true) {
@@ -548,9 +553,15 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
                 if (mac != null) heard(mac.id, health)
                 problem = if (mac == null) MAC_NOT_SET_UP else when (macRoute(ThreadHome.Mac, health, startedOnMac = false, phoneHasClone = false)) {
                     MacRoute.RunOnMac -> {
-                        val taken = client.sendMessage(threadId, text)
-                        if (taken is MacAnswer.Ok && taken.value == MacTaken.Now) log.update(time, save = true, change = ::macTaken)
-                        macUnsentReason(taken)
+                        // Pictures sent with his words go up first; the thread is told where, as the phone's builders are.
+                        val attached = synchronized(this) { pictures[time] }.orEmpty()
+                        val kept = attached.map { client.upload(it) }
+                        if (kept.any { it == null }) MAC_IMAGES_NOT_SENT
+                        else {
+                            val taken = client.sendMessage(threadId, withPictures(text, kept.filterNotNull()))
+                            if (taken is MacAnswer.Ok && taken.value == MacTaken.Now) log.update(time, save = true, change = ::macTaken)
+                            macUnsentReason(taken)
+                        }
                     }
                     else -> macUnreachableReason(health)
                 }
@@ -1157,3 +1168,12 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
         }
     }
 }
+
+/** Why a thread's words weren't sent: the pictures with them didn't reach the Mac. */
+const val MAC_IMAGES_NOT_SENT = "The pictures didn't reach the Mac, so nothing was sent. Try again."
+
+/** [text] with where the Mac keeps the pictures sent with it, for the thread's agent to read, as the phone's builders are told. */
+fun withPictures(
+    text: String,
+    paths: List<String>,
+): String = if (paths.isEmpty()) text else text + "\n\nRead these attached images before answering:\n" + paths.joinToString("\n")

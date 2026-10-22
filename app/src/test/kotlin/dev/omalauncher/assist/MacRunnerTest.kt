@@ -528,6 +528,27 @@ class MacRunnerTest {
         }
     }
 
+    @Test fun aPictureGoesUpToTheRunnersFilesAndComesBackAsItsPath() {
+        val picture = Files.createTempFile("shot", ".png").toFile().apply { writeBytes(byteArrayOf(1, 2, 3, 4)) }
+        withServer({ request, out ->
+            val reply = if (request.startsWith("POST /files?name=")) http(200, """{"ok": true, "path": "/Users/boss/Downloads/From Fold/x.png", "bytes": 4}""") else http(500, "{}")
+            out.write(reply.toByteArray())
+        }) { client, asked ->
+            assertEquals("/Users/boss/Downloads/From Fold/x.png", client.upload(picture))
+            assertTrue(asked[0], asked[0].startsWith("POST /files?name=" + picture.name + " HTTP/1.1\r\n"))
+            assertTrue(asked[0], asked[0].contains("\r\nAuthorization: Bearer $key\r\n"))
+            assertTrue(asked[0], asked[0].contains("\r\nContent-Length: 4\r\n"))
+            assertNull(client.upload(File(picture.parentFile, "gone.png")))
+        }
+        withServer({ _, out -> out.write(http(413, """{"ok": false}""").toByteArray()) }) { client, _ -> assertNull(client.upload(picture)) }
+        picture.delete()
+    }
+
+    @Test fun theThreadIsToldWhereItsPicturesAre() {
+        assertEquals("look", withPictures("look", emptyList()))
+        assertEquals("look\n\nRead these attached images before answering:\n/a.png\n/b.png", withPictures("look", listOf("/a.png", "/b.png")))
+    }
+
     @Test fun refusalsComeBackAsAnswersNotExceptions() {
         withServer({ request, out ->
             val reply = when {

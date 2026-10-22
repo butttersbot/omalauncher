@@ -170,8 +170,8 @@ interface ChatHost {
     /** A new chat's first words, as they are, to a new thread on the Mac. */
     fun startMacChat(prompt: String, chat: String)
 
-    /** [prompt] straight to the Mac thread [thread] ([name]), from the new chat [chat] or a thread's own tab (""). */
-    fun sayToMac(prompt: String, thread: String, name: String, chat: String)
+    /** [prompt] straight to the Mac thread [thread] ([name]), from the new chat [chat] or a thread's own tab (""), with the pictures [images] (files here). */
+    fun sayToMac(prompt: String, thread: String, name: String, chat: String, images: List<File> = emptyList())
 
     /** Stops the Mac thread [thread]; [said] gets what there is to tell him. */
     fun stopMac(thread: String, said: (String?) -> Unit)

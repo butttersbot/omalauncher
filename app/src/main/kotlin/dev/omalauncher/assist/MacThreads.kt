@@ -87,7 +87,7 @@ object MacThreads {
     fun handOver(context: Context, asked: Long, prompt: String, thread: MacThread, away: Boolean, fresh: Boolean = false, newChat: Boolean = false) =
         engine(context).handOver(asked, prompt, thread, away, fresh, newChat)
 
-    fun say(context: Context, prompt: String, threadId: String, name: String, chat: String = "") = engine(context).say(prompt, threadId, name, chat)
+    fun say(context: Context, prompt: String, threadId: String, name: String, chat: String = "", images: List<java.io.File> = emptyList()) = engine(context).say(prompt, threadId, name, chat, images)
 
     fun tryAgain(context: Context, time: Long) = engine(context).tryAgain(time)
 

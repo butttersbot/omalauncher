@@ -124,7 +124,7 @@ class AndroidChatHost(
 
     override fun startMacChat(prompt: String, chat: String) = MacThreads.startChatDirect(context, prompt, chat)
 
-    override fun sayToMac(prompt: String, thread: String, name: String, chat: String) = MacThreads.say(context, prompt, thread, name, chat)
+    override fun sayToMac(prompt: String, thread: String, name: String, chat: String, images: List<File>) = MacThreads.say(context, prompt, thread, name, chat, images)
 
     override fun stopMac(thread: String, said: (String?) -> Unit) = MacThreads.stop(context, thread, said)
 

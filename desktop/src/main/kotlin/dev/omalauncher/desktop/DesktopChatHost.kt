@@ -126,7 +126,7 @@ class DesktopChatHost(
 
     override fun startMacChat(prompt: String, chat: String) = engine.startChatDirect(prompt, chat)
 
-    override fun sayToMac(prompt: String, thread: String, name: String, chat: String) = engine.say(prompt, thread, name, chat)
+    override fun sayToMac(prompt: String, thread: String, name: String, chat: String, images: List<java.io.File>) = engine.say(prompt, thread, name, chat, images)
 
     override fun stopMac(thread: String, said: (String?) -> Unit) = engine.stop(thread, said)
 

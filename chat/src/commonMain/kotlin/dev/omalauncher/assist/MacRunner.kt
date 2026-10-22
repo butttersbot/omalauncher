@@ -425,6 +425,28 @@ class MacRunnerClient(private val config: MacRunnerConfig?, private val machine:
     fun fresh(threadId: String): MacAnswer<Unit> = parseMacFresh(send(MacRequests.fresh(own(threadId))))
 
     /**
+     * Puts [file] on the Mac through the runner's `POST /files?name=` (it keeps it in ~/Downloads/From Fold, under a
+     * name of its own when that one is taken), for a picture sent with words to a thread. Where it was kept, or null.
+     */
+    fun upload(file: File): String? {
+        if (!file.isFile) return null
+        val connection = runCatching { prepare(MacRequest("POST", "/files?name=" + URLEncoder.encode(file.name, "UTF-8")), CONNECT_MS, UPLOAD_MS) }.getOrNull() ?: return null
+        return try {
+            connection.doOutput = true
+            connection.setRequestProperty("Content-Type", "application/octet-stream")
+            connection.setFixedLengthStreamingMode(file.length())
+            connection.outputStream.use { out -> file.inputStream().use { it.copyTo(out) } }
+            if (connection.responseCode != 200) return null
+            val answer = JSONObject(connection.inputStream.use { it.readBytes().toString(Charsets.UTF_8) })
+            answer.optString("path").takeIf { answer.optBoolean("ok") && it.startsWith("/") }
+        } catch (problem: Exception) {
+            null
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    /**
      * Follows a thread from event [after] until the link drops or [shouldStop] says so; see [followMacStream].
      * Three keep-alives missed in a row count as a dropped link.
      */
@@ -478,6 +500,9 @@ class MacRunnerClient(private val config: MacRunnerConfig?, private val machine:
         const val HEALTH_LIMIT_MS = 2_000
         const val CONNECT_MS = 5_000
         const val READ_MS = 15_000
+
+        /** A picture going up: as long as a slow link takes for a few megabytes. */
+        const val UPLOAD_MS = 60_000
 
         /** The runner writes a keep-alive every fifteen seconds while nothing happens. */
         const val STREAM_SILENCE_MS = 45_000
