@@ -144,11 +144,14 @@ widget "steps" {
     if saying && allowed {
       let say1 = done ? "${name} grew happier!" : "${name} walked ${fmtNum(steps)} steps."
       let say2 = usual == 0 ? "Keep it up!" : steps > usual ? "More than your usual ${fmtNum(usual)}." : "Your usual is ${fmtNum(usual)}."
-      rect(8, height - 64, width - 16, 56, fill: "#ffffff", radius: 6)
-      rect(8, height - 64, width - 16, 56, stroke: "#4a4242", width: 3, radius: 6)
-      rect(12, height - 60, width - 24, 48, stroke: "#f8d058", width: 2, radius: 4)
-      text(say1, 20, height - 46, size: 14, color: "#5a5a52", font: hg)
-      text(say2, 20, height - 26, size: 14, color: "#5a5a52", font: hg)
+      // A rough burn (Boss, 2026-10-21): about 0.04 kcal a step, a walking pace for an average adult.
+      let say3 = "Burned about ${fmtNum(steps * 0.04)} calories."
+      rect(8, height - 84, width - 16, 76, fill: "#ffffff", radius: 6)
+      rect(8, height - 84, width - 16, 76, stroke: "#4a4242", width: 3, radius: 6)
+      rect(12, height - 80, width - 24, 68, stroke: "#f8d058", width: 2, radius: 4)
+      text(say1, 20, height - 66, size: 14, color: "#5a5a52", font: hg)
+      text(say2, 20, height - 46, size: 14, color: "#5a5a52", font: hg)
+      text(say3, 20, height - 26, size: 14, color: "#5a5a52", font: hg)
     }
   }
 }
