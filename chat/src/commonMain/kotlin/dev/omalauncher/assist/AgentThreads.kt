@@ -181,15 +181,13 @@ fun phoneThread(tasks: List<ChatTask>, builder: BuilderNow, which: BuilderId = B
 }
 
 /**
- * The phone's builders as threads: builder A always, as "Phone" while it is the only one that ever worked, and
- * builder B beside it once [builderBShown], when the two are "Phone A" and "Phone B". [builders] is how each stands.
+ * The phone's builders as threads, "Phone A" and "Phone B", both always (Boss, 2026-10-21: "Phone B's tab always on,
+ * so that I can send him a message whenever, even when he's idle"). [builders] is how each stands.
  * A builder's thread is the entries of no new chat: one an earlier version gave a new chat stays in that chat.
  */
 fun phoneThreads(tasks: List<ChatTask>, builders: Map<BuilderId, BuilderNow>): List<AgentThread> {
     val own = tasks.filter { it.chat.isEmpty() }
     fun thread(id: BuilderId, name: String) = phoneThread(own, builders[id] ?: BuilderNow(), id, name)
-    val b = builders[BuilderId.B] ?: BuilderNow()
-    if (!builderBShown(own, b.working || b.asks.isNotEmpty())) return listOf(thread(BuilderId.A, PHONE_THREAD_NAME))
     return listOf(thread(BuilderId.A, PHONE_THREAD_A_NAME), thread(BuilderId.B, PHONE_THREAD_B_NAME))
 }
 

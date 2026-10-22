@@ -134,6 +134,13 @@ class ChatTabsTest {
         assertEquals(listOf(phone, fresh), shownThreads(listOf(phone), emptyList(), listOf(phone, fresh), emptySet(), wanted = chatNew.key))
     }
 
+    /** Boss, 2026-10-21: Phone B's tab always on, to be written to while idle; a builder that rested past its hours stays. */
+    @Test fun theBuildersTabsAreAlwaysShown() {
+        val b = AgentThread(dev.omalauncher.assist.PHONE_THREAD_B, "Phone B", ThreadState.Idle, "", "idle")
+        assertEquals(listOf(phone, b, pond), shownThreads(listOf(pond), emptyList(), listOf(phone, b, pond)))
+        assertEquals(listOf(phone, b, pond), shownThreads(listOf(phone, pond), emptyList(), listOf(phone, b, pond)))
+    }
+
     /** The critic's case: after ＋ the new tab showed as "NEW C…" and the ＋ was off the strip. */
     @Test fun theStripScrollsTheOpenTabWhollyIntoViewAndNoFurther() {
         // In view already: it stays where it is.

@@ -127,7 +127,8 @@ class TabBookTest {
         val all = agentThreads(tasks, BuilderNow(), MacView(reachable = true), chats = meta.chats, names = meta.names)
         val book = meta.settled(all, tasks, now)
         val live = liveThreads(all, emptyMap(), now, listed = true, book.pinned.toSet(), book.archived.keys)
-        return shownThreads(live, book.pinned, all, book.archived.keys, wanted).map { it.key }
+        // The builders' tabs are always there (ChatTabsTest); these are about the chats and threads beside them.
+        return shownThreads(live, book.pinned, all, book.archived.keys, wanted).map { it.key }.filter { it != PHONE_THREAD && it != dev.omalauncher.assist.PHONE_THREAD_B }
     }
 
     /**

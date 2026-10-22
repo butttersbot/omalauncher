@@ -43,9 +43,13 @@ fun chatTabs(threads: List<AgentThread>, soma: Boolean = true): List<String> = (
 fun shownThreads(live: List<AgentThread>, pinned: List<String>, all: List<AgentThread> = emptyList(), archived: Set<String> = emptySet(), wanted: String? = null): List<AgentThread> {
     // Bots are always shown, first, however long they have rested (soma-bots PRD §6); then the rest as before.
     val bots = (all + live).filter { it.bot != null }.distinctBy { it.key }
-    val rest = live.filter { it.bot == null }
-    val open = all.firstOrNull { it.key == wanted && it.bot == null && it.key !in archived && rest.none { shown -> shown.key == it.key } }
-    val kept = rest + listOfNotNull(open)
+    // The phone's builders are always there too, first, however long they have rested, so either can be written to
+    // while idle (Boss, 2026-10-21: "Phone B's tab always on").
+    fun builder(t: AgentThread) = t.key == PHONE_THREAD || t.key == PHONE_THREAD_B
+    val builders = (live + all).filter(::builder).distinctBy { it.key }.sortedBy { if (it.key == PHONE_THREAD) 0 else 1 }
+    val rest = live.filter { it.bot == null && !builder(it) }
+    val open = all.firstOrNull { it.key == wanted && it.bot == null && !builder(it) && it.key !in archived && rest.none { shown -> shown.key == it.key } }
+    val kept = builders + rest + listOfNotNull(open)
     return bots + kept.filter { it.key in pinned } + kept.filter { it.key !in pinned }
 }
 
