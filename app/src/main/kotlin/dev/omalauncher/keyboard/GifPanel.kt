@@ -1,5 +1,6 @@
 package dev.omalauncher.keyboard
 
+import android.animation.ValueAnimator
 import android.graphics.Canvas
 import android.graphics.ImageDecoder
 import android.graphics.Paint
@@ -48,8 +49,11 @@ class GifPanel(
         /** True while the search is naming a new tag. */
         val addingTag: Boolean
 
-        /** The panel went taller or back ([expanded]): the keyboard is laid out again. */
+        /** The panel went taller or back ([expanded]), or is being pulled ([pull]): the keyboard is laid out again. */
         fun panelResized()
+
+        /** How much taller the pulled-up panel is than the short one, px. */
+        val pullRangePx: Float
 
         fun endGifSearch()
 
@@ -153,6 +157,9 @@ class GifPanel(
         private set
 
     private fun expand(on: Boolean) {
+        settling?.cancel()
+        settling = null
+        pull = null
         if (expanded == on) return
         expanded = on
         walkLog("gif expanded=$on")
@@ -173,6 +180,51 @@ class GifPanel(
     private var handleDownRawY = 0f
     private var lastWalk = ""
     private var handleMoved = false
+
+    /**
+     * While the handle is held, how far the panel stands taller (+) or shorter (-) than [expanded] has it, px: it
+     * follows the finger (Boss, 2026-10-22: "the gif handle needs to follow my finger", it snapped to the top at the
+     * first move), and on letting go settles up or down. Null when nothing pulls it.
+     */
+    var pull: Float? = null
+        private set
+    private var pullLastRawY = 0f
+    private var pullLastTime = 0L
+    private var pullSpeed = 0f
+    private var settling: ValueAnimator? = null
+
+    private fun pullTo(px: Float) {
+        val range = host.pullRangePx
+        pull = if (expanded) px.coerceIn(-range, 0f) else px.coerceIn(0f, range)
+        if (handleDrag && abs(pull!!) in range * 0.1f..range * 0.9f) "gif handle follows".let { if (it != lastWalk) { lastWalk = it; walkLog(it) } }
+        host.panelResized()
+    }
+
+    /** The handle let go: on to the other height if pulled a third of the way or flung, else back; eased there. */
+    private fun settle() {
+        val from = pull ?: return
+        val range = host.pullRangePx
+        val toward = if (expanded) -1f else 1f
+        val flung = abs(pullSpeed) > FLING_PX_S * density
+        val other = if (flung) -pullSpeed * toward > 0 else from * toward > range / 3
+        val to = if (other) toward * range else 0f
+        walkLog("gif handle settles ${if (other) "on" else "back"}")
+        settling =
+            ValueAnimator.ofFloat(from, to).apply {
+                duration = (SETTLE_MS * abs(to - from) / range.coerceAtLeast(1f)).toLong().coerceIn(60L, SETTLE_MS)
+                addUpdateListener { pullTo(it.animatedValue as Float) }
+                addListener(
+                    object : android.animation.AnimatorListenerAdapter() {
+                        override fun onAnimationEnd(a: android.animation.Animator) {
+                            settling = null
+                            pull = null
+                            if (other) expand(!expanded) else host.panelResized()
+                        }
+                    },
+                )
+                start()
+            }
+    }
     private var longPress: Runnable? = null
 
     /** What each feed produces: the GIFs, where the next page starts, and what to say if there are none. */
@@ -239,6 +291,9 @@ class GifPanel(
     fun closed() {
         images.clear()
         editing = false
+        settling?.let { it.removeAllListeners(); it.cancel() }
+        settling = null
+        pull = null
         if (expanded) {
             expanded = false
             host.panelResized()
@@ -598,7 +653,20 @@ class GifPanel(
                 downY = y
                 handleDownRawY = e.rawY
                 handleMoved = false
-                if (handleDrag) return true
+                if (handleDrag) {
+                    // Caught while settling: held where it is.
+                    settling?.let { a ->
+                        settling = null
+                        a.removeAllListeners()
+                        a.cancel()
+                        handleDownRawY = e.rawY + (pull ?: 0f)
+                        handleMoved = true
+                    }
+                    pullLastRawY = e.rawY
+                    pullLastTime = e.eventTime
+                    pullSpeed = 0f
+                    return true
+                }
                 val held = chipBoxes.firstOrNull { it.kind == ChipKind.TAG && it.rect.contains(x, y) }
                 if (held != null) {
                     val r =
@@ -616,12 +684,13 @@ class GifPanel(
             MotionEvent.ACTION_MOVE -> {
                 if (handleDrag) {
                     val dy = e.rawY - handleDownRawY
-                    if (!handleMoved && dy < -HANDLE_PULL_DP * d) {
-                        handleMoved = true
-                        expand(true)
-                    } else if (!handleMoved && dy > HANDLE_PULL_DP * d) {
-                        handleMoved = true
-                        expand(false)
+                    if (!handleMoved && abs(dy) > SLOP_DP * d) handleMoved = true
+                    if (handleMoved) {
+                        val dt = (e.eventTime - pullLastTime).coerceAtLeast(1L)
+                        pullSpeed = 0.6f * pullSpeed + 0.4f * (e.rawY - pullLastRawY) * 1000f / dt
+                        pullLastRawY = e.rawY
+                        pullLastTime = e.eventTime
+                        pullTo(-dy)
                     }
                     return true
                 }
@@ -643,7 +712,12 @@ class GifPanel(
                 cancelLongPress()
                 if (handleDrag) {
                     handleDrag = false
-                    if (e.actionMasked == MotionEvent.ACTION_UP && !handleMoved && abs(e.rawY - handleDownRawY) < SLOP_DP * d) expand(!expanded)
+                    if (handleMoved && pull != null) {
+                        if (e.eventTime - pullLastTime > 80) pullSpeed = 0f
+                        settle()
+                    } else if (e.actionMasked == MotionEvent.ACTION_UP && !handleMoved) {
+                        expand(!expanded)
+                    }
                     handleMoved = false
                     return true
                 }
@@ -940,6 +1014,10 @@ class GifPanel(
         const val CLEAR_FROM_RIGHT_DP = 52f
         const val HANDLE_PULL_DP = 24f
         const val LONG_PRESS_MS = 450L
+
+        /** A pull let go faster than this, dp/s, goes on the way it was going; and the longest settle. */
+        const val FLING_PX_S = 900f
+        const val SETTLE_MS = 220L
         /** The search pill's row, its pill and margins: the emoji search's (EmojiPicker's SEARCH_DP and FIELD_*). */
         const val HEAD_DP = 58f
         const val FIELD_H_DP = 40f

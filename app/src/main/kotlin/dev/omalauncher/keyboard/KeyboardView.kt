@@ -154,12 +154,18 @@ class KeyboardView(
      */
     val appTopPx: Int
         get() {
-            if (mode == Mode.GIFS && gifs?.expanded == true) {
+            if (mode == Mode.GIFS && (gifs?.expanded == true || gifs?.pull != null)) {
                 val normal = (((layout?.height ?: 240f) + bubbleRoomDp) * density).toInt() + stripPx
                 return (height - normal).coerceAtLeast(0)
             }
             return headroomPx
         }
+
+    /** The GIFs pulled up: most of the screen, the status bar left clear, px. */
+    private val gifTallPx get() = resources.displayMetrics.heightPixels - stripPx - (EXPANDED_TOP_DP * density).toInt()
+
+    /** How much taller the pulled-up GIFs stand than the short ones, px. */
+    val gifPullRangePx: Float get() = (gifTallPx - (((layout?.height ?: 240f) + bubbleRoomDp) * density).toInt()).coerceAtLeast(0).toFloat()
 
     /** The search band over the letters while searching, px. */
     private val bandPx
@@ -174,8 +180,15 @@ class KeyboardView(
     private val boardPx: Int
         get() {
             val keys = layout?.height ?: 240f
-            // The GIFs pulled up by their handle: most of the screen, the status bar left clear.
-            if (mode == Mode.GIFS && gifs?.expanded == true) return resources.displayMetrics.heightPixels - stripPx - (EXPANDED_TOP_DP * density).toInt()
+            // The GIFs pulled up by their handle: most of the screen, the status bar left clear; while the handle is
+            // held, as tall as the finger has it.
+            if (mode == Mode.GIFS && gifs != null) {
+                val g = gifs!!
+                val short = ((keys + bubbleRoomDp) * density).toInt()
+                val tall = gifTallPx
+                g.pull?.let { return ((if (g.expanded) tall else short) + it).toInt().coerceIn(short, maxOf(short, tall)) }
+                if (g.expanded) return tall
+            }
             val tall = (mode == Mode.EMOJI && emoji != null) || (mode == Mode.CLIPS && clips != null) || (mode == Mode.GIFS && gifs != null)
             return if (tall) ((keys + bubbleRoomDp) * density).toInt() else (keys * density).toInt() + bandPx
         }
