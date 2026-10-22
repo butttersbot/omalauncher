@@ -105,7 +105,12 @@ def run_step(serial, op, args, out, n):
         else:
             # "A | B": whichever is on screen (Android's own dialogs word things differently by version).
             wanted = [w.strip() for w in " ".join(args).split("|")]
-            p = next((q for q in (find(serial, w, wait_ms=1500) for w in wanted) if q), None)
+            # All the choices watched together, until one deadline: a WebView's labels come up 6-10 s after a fresh start.
+            end, p = time.time() + 8, None
+            while p is None and time.time() < end:
+                p = next((q for q in (find(serial, w, wait_ms=0) for w in wanted) if q), None)
+                if p is None:
+                    time.sleep(0.4)
             if not p:
                 return False, "nothing says " + " or ".join(f"“{w}”" for w in wanted), None
             x, y = p
