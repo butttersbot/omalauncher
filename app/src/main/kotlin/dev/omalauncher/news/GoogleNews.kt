@@ -118,18 +118,32 @@ object GoogleNews {
 
     private fun get(url: String): String? =
         runCatching {
-            val c = URL(url).openConnection() as HttpURLConnection
-            c.connectTimeout = 6_000
-            c.readTimeout = 12_000
-            c.instanceFollowRedirects = false
-            c.setRequestProperty("User-Agent", BROWSER)
-            c.setRequestProperty("Accept-Language", "en-US,en;q=0.9")
-            val code = c.responseCode
-            if (code == 429 || (code in 300..399 && c.getHeaderField("Location").orEmpty().contains("/sorry"))) {
-                quietUntil = System.currentTimeMillis() + QUIET_MS
-                return null
+            // Redirects followed here, so the one to Google's "unusual traffic" page is seen; the topic feeds move to
+            // /rss/topics/… by an ordinary one (131's first build stopped there and lost every topic).
+            var at = URL(url)
+            var c: HttpURLConnection
+            var hops = 0
+            while (true) {
+                c = at.openConnection() as HttpURLConnection
+                c.connectTimeout = 6_000
+                c.readTimeout = 12_000
+                c.instanceFollowRedirects = false
+                c.setRequestProperty("User-Agent", BROWSER)
+                c.setRequestProperty("Accept-Language", "en-US,en;q=0.9")
+                val code = c.responseCode
+                val next = c.getHeaderField("Location").orEmpty()
+                if (code == 429 || (code in 300..399 && next.contains("/sorry"))) {
+                    quietUntil = System.currentTimeMillis() + QUIET_MS
+                    return null
+                }
+                if (code in 300..399 && next.isNotEmpty() && hops++ < 4) {
+                    at = URL(at, next)
+                    c.disconnect()
+                    continue
+                }
+                break
             }
-            if (code != 200) return null
+            if (c.responseCode != 200) return null
             c.inputStream.bufferedReader().use { it.readText() }
         }.getOrNull()
 }
