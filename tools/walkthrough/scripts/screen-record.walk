@@ -10,8 +10,9 @@ shell cmd statusbar click-tile dev.omalauncher.boss/dev.omalauncher.record.Scree
 wait 2500
 expect Share your screen
 shot capture-prompt
-tap Share one app
-tap Share entire screen
+# Since 132 the prompt opens on the entire screen (it asked for one app before).
+expect Share entire screen
+absent Share one app
 tap Share screen
 wait 4500
 shot recording
