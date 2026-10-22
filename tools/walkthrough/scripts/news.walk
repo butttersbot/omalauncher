@@ -51,3 +51,4 @@ rotate portrait
 [phone] Check the top bar sits clear of Samsung's status strip on the cover screen and unfolded.
 [phone] Swipe system Back from an article (back to the stream), then from the stream (back to home).
 [phone] Open three top stories from different publishers: each shows the whole article, not only its headline (Boss, 2026-10-22: in 130 none loaded, because Google had blocked the phone's network after the hourly burst of lookups).
+[phone] The status bar's clock, signal and battery show dark on the reader's paper, on the cover screen and unfolded (they were white and unseen until 131).
