@@ -81,6 +81,9 @@ canvas.pixel { position: absolute; left: 0; top: 0; }
 .head { position: absolute; left: 12px; top: 9px; z-index: 2; }
 .head .row { display: flex; justify-content: space-between; }
 .head .sub { margin-top: 2px; }
+/* White on the sky, with the game's dark drop shadow, so it reads over clouds and hills alike. */
+.head .px { color: #f8f8f8; text-shadow: 1px 0 0 #385078, 0 1px 0 #385078, 1px 1px 0 #385078; }
+.head .px2 { text-shadow: 2px 0 0 #385078, 0 2px 0 #385078, 2px 2px 0 #385078; }
 .head.night .px { color: #f8f8f8; text-shadow: 1px 0 0 #404868, 0 1px 0 #404868, 1px 1px 0 #404868; }
 .head.night .px2 { text-shadow: 2px 0 0 #404868, 0 2px 0 #404868, 2px 2px 0 #404868; }
 .walker { z-index: 2; }
