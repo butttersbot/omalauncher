@@ -1,5 +1,9 @@
 # Soma's screen record tile (123+). Calibrated on the Mac's Fold8 emulator (Android 17), 2026-10-22: click-tile answers
 # only with Quick Settings open, and Android 17 asks "Share one app" -> "Share entire screen" -> "Share screen".
+# A clean start: no shade or dialog left by an earlier walk.
+shell cmd statusbar collapse
+key BACK
+key HOME
 shell cmd statusbar expand-settings
 wait 1000
 shell cmd statusbar click-tile dev.omalauncher.boss/dev.omalauncher.record.ScreenRecordTile

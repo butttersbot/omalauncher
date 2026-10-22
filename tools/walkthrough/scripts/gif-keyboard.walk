@@ -3,6 +3,10 @@
 # panel logs (`log`), and the screenshots are looked at. Positions are for the Fold profile's cover screen, portrait,
 # calibrated on the Fold8 emulator from the 128 walk: the panel's handle at 0.547, its search pill at 0.597; searching,
 # the band's handle at 0.327 and its field at 0.36. Typing goes on the keys (adb's text input goes to the app's field).
+# A clean start: no shade or dialog left by an earlier walk.
+shell cmd statusbar collapse
+key BACK
+key HOME
 ime dev.omalauncher.boss/dev.omalauncher.keyboard.OmaKeyboardService
 launch com.android.settings/.Settings
 tap Search settings

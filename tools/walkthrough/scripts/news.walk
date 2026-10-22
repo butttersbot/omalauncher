@@ -1,5 +1,9 @@
 # Soma News (110+; Google News since 127). Bugs Boss found: empty bullets, related-link tails, sideways scrolling,
 # the drop capital's spacing.
+# A clean start: no shade or dialog left by an earlier walk.
+shell cmd statusbar collapse
+key BACK
+key HOME
 launch dev.omalauncher.boss/dev.omalauncher.news.NewsActivity
 wait 3000
 tap Refresh
@@ -7,8 +11,8 @@ wait 8000
 expect Top stories
 expect Technology
 shot stream-cover-new-stories-pill-clear-of-chips
-scrollto Show
-tap Show
+scrollto Show 20 more
+tap Show 20 more
 wait 800
 scrollto Show less
 shot topic-expanded
