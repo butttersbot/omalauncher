@@ -78,9 +78,10 @@ window.NewsContent = (() => {
       const t = text(n);
       if (t && (LEAD.test(t) || (linkShare(n) > 0.9 && t.length < 160 && n.querySelector('a')) || ASIDE.test(t))) n.remove();
     });
-    // Whatever trails the story once its prose ends: short scraps, link rows, credits.
+    // Whatever trails the story once its prose ends: empty wrappers, rows of links, the site's own extras. A short
+    // closing line of the story itself ("Sincerely, / The team") stays, and the story is never emptied.
     let last = root.lastElementChild;
-    while (last && !last.querySelector('img') && (empty(last) || linkShare(last) > 0.5 || (text(last).length < 60 && !/[.!?"”]$/.test(text(last))))) {
+    while (last && last !== root.firstElementChild && !last.querySelector('img') && (empty(last) || (linkShare(last) > 0.5 && last.querySelector('a')) || ASIDE.test(text(last)))) {
       const before = last.previousElementSibling; last.remove(); last = before;
     }
     [...root.querySelectorAll('li, ul, ol')].reverse().forEach(n => { if (n.isConnected && empty(n)) n.remove(); });

@@ -19,6 +19,11 @@ try {
   assert(root.textContent==='Body paragraph', 'article fallback excludes header footer and related stories');
   root = NewsContent.article('<p>Keep this</p><img src="https://example.test/photo-800x450.jpg"><script>bad()</scr'+'ipt>', { image:'https://example.test/photo-1200x675.jpg?w=1200' });
   assert(!root.querySelector('img,script') && root.textContent==='Keep this', 'hero size variants and executable content removed');
+  // Boss, 2026-10-22: no empty bullets, no "related"/"read more" tails, a clean article.
+  root = NewsContent.article(`<div id="article-body"><p>Story sentence ${prose}</p><ul><li>Real point one.</li><li> </li><li></li></ul><p>Read more: <a href="https://example.test/a">Another story</a></p><h3>Related stories</h3><ul><li><a href="https://example.test/b">Headline B</a></li><li><a href="https://example.test/c">Headline C</a></li></ul><p><a href="https://example.test/d">Sign up for the newsletter</a></p></div>`);
+  const tidyBlocks = NewsContent.blocks(root);
+  assert(root.querySelectorAll('li').length===1 && !tidyBlocks.some(b=>/^•\s*$/.test(b.p||'')), 'empty bullets removed');
+  assert(!/Read more|Related stories|Headline B|Sign up/.test(root.textContent) && root.textContent.includes('Real point one.'), 'related links and read-more tails removed, story kept');
 
   const article = { title:'A reader that keeps every word', kicker:'Soma News', dek:'Regression checks for complete text and pictures.', by:'Test source', hero:'/photo.svg', next:{ title:'A long next-story headline that needs its own room rather than sitting on the final lines of the article', img:'/photo.svg' }, blocks:[{p:prose.repeat(3)},{heading:'Photographs in the story'},{img:'/photo.svg',side:'right',ratio:.8,cap:''},{p:prose.repeat(5)},{quote:prose.repeat(14)},{p:prose.repeat(3)}] };
   const body={size:16,lh:25};
