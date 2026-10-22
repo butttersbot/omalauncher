@@ -21,6 +21,7 @@ class PhoneBridge(private val context: Context, private val proot: Proot) {
     private var started = false
     fun start() {
         if (started) return
+        PhoneDisplays.start(context.applicationContext)
         val server = LocalServerSocket(socketName)
         started = true
         // Once Android has had its time to bind the service: if it is switched on and still not bound, the status file says so.

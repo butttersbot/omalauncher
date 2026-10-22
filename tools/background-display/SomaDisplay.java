@@ -71,6 +71,8 @@ public final class SomaDisplay {
         if (appUid < 10000) throw new IllegalArgumentException("Soma app UID required");
         if (width < 320 || height < 320 || width > 2560 || height > 2560 || dpi < 120 || dpi > 640)
             throw new IllegalArgumentException("Invalid display size or density");
+        DIR.mkdirs();
+        android.system.Os.chmod(DIR.getPath(), 0700);
         byte[] key = Files.readAllBytes(new File(DIR, "key").toPath());
         if (key.length != 64) throw new IllegalArgumentException("Private helper key required");
         ServerSocket server = new ServerSocket(18746, 4, InetAddress.getByName("127.0.0.1"));

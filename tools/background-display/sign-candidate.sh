@@ -3,7 +3,9 @@ set -euo pipefail
 cd /root/Projects/soma-bgdisplay
 tools=/opt/android-sdk/build-tools/36.0.0
 candidate=candidate.apk
-signed=soma-background-116-signed.apk
+code=${1:?Candidate version required}
+[[ $code =~ ^[0-9]+$ ]] || exit 2
+signed=soma-background-$code-signed.apk
 # Ensure the Linux executable libraries are identical to the app being updated.
 python3 - <<'PY'
 import zipfile
@@ -20,6 +22,8 @@ cert=$("$tools/apksigner" -JXmx256m verify --print-certs "$signed" | sed -n 's/.
 [[ $cert == "$(tr -d '[:space:]' < /root/.config/oma-development/working-cert.sha256)" ]] || { echo 'Wrong signer'; exit 1; }
 [[ $cert == 85a7a713578814a4b779ce4fa7d0ed13aa48a81b61cc8e91b139f32dad576a18 ]] || { echo 'Signer does not match installed app'; exit 1; }
 badging=$("$tools/aapt2" dump badging "$signed")
-printf '%s\n' "${badging%%$'\n'*}"
+first=${badging%%$'\n'*}
+[[ $first == *"name='dev.omalauncher.boss'"* && $first == *"versionCode='$code'"* ]] || { echo 'Wrong package or version'; exit 1; }
+printf '%s\n' "$first"
 sha256sum "$signed"
 echo SIGNED_AND_VERIFIED
