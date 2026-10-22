@@ -61,20 +61,22 @@ window.NewsContent = (() => {
   const linkShare = n => { const all = text(n).length; if (!all) return 0; return [...n.querySelectorAll('a')].reduce((t, a) => t + text(a).length, 0) / all; };
   const empty = n => !text(n) && !n.querySelector('img');
   function tidy(root) {
+    // The article isn't in the page yet, so isConnected is always false: "still there" means still inside it.
+    const there = n => root.contains(n);
     // Empty bullets and wrappers, from the deepest up.
-    [...root.querySelectorAll('li, p, ul, ol, div, span, section, figure, blockquote, h2, h3, h4, h5, h6')].reverse().forEach(n => { if (n.isConnected && empty(n)) n.remove(); });
+    [...root.querySelectorAll('li, p, ul, ol, div, span, section, figure, blockquote, h2, h3, h4, h5, h6')].reverse().forEach(n => { if (there(n) && empty(n)) n.remove(); });
     // A heading that only names the site's extras goes, with the list or links under it.
     root.querySelectorAll('h2, h3, h4, h5, h6, p > strong:only-child, p > b:only-child').forEach(h => {
       const head = h.matches('strong, b') ? h.parentElement : h;
-      if (!head.isConnected || !ASIDE.test(text(head))) return;
+      if (!there(head) || !ASIDE.test(text(head))) return;
       let next = head.nextElementSibling;
       while (next && (next.matches('ul, ol') || linkShare(next) > 0.6)) { const after = next.nextElementSibling; next.remove(); next = after; }
       head.remove();
     });
     // Lists of headlines (mostly links) and lines that are only a link or a "Read more:" pointer.
-    root.querySelectorAll('ul, ol').forEach(l => { const items = l.querySelectorAll('li'); if (l.isConnected && items.length >= 2 && linkShare(l) > 0.7) l.remove(); });
+    root.querySelectorAll('ul, ol').forEach(l => { const items = l.querySelectorAll('li'); if (there(l) && items.length >= 2 && linkShare(l) > 0.7) l.remove(); });
     root.querySelectorAll('p, li, div').forEach(n => {
-      if (!n.isConnected || n.querySelector('img')) return;
+      if (!there(n) || n.querySelector('img')) return;
       const t = text(n);
       if (t && (LEAD.test(t) || (linkShare(n) > 0.9 && t.length < 160 && n.querySelector('a')) || ASIDE.test(t))) n.remove();
     });
@@ -84,7 +86,7 @@ window.NewsContent = (() => {
     while (last && last !== root.firstElementChild && !last.querySelector('img') && (empty(last) || (linkShare(last) > 0.5 && last.querySelector('a')) || ASIDE.test(text(last)))) {
       const before = last.previousElementSibling; last.remove(); last = before;
     }
-    [...root.querySelectorAll('li, ul, ol')].reverse().forEach(n => { if (n.isConnected && empty(n)) n.remove(); });
+    [...root.querySelectorAll('li, ul, ol')].reverse().forEach(n => { if (there(n) && empty(n)) n.remove(); });
   }
   function blocks(root) {
     const out = [];
