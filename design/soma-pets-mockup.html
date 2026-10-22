@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pet home + Steps: mock-up</title>
+<!--
+  Two home widgets in the herd pet's HeartGold look (Boss, 2026-10-21):
+  - Pet home: a little house tile. The pet lives in it (off the screen) or is let out to float on the screen; drag it
+    back onto the house, or tap Call, to put it home.
+  - Steps: today's steps, counted by the phone. The pet walks on a grass strip while you walk; a GBA EXP-style bar
+    fills toward the day's goal.
+  Sprites, message boxes and the HGSS font are the herd's own (pet/skins, pet/ui, copied to design/pet-mock).
+-->
+<style>
+@font-face { font-family: "HGSS"; src: url("pet-mock/ui/fonts/font.ttf"); }
+@font-face { font-family: "HGSS Shadow"; src: url("pet-mock/ui/fonts/shadow.ttf"); }
+:root { --k: 2; --text: #5a5a52; --shade: #adbdbd; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; }
+body { background: #1d2230; color: #e8e8e0; font: 14px/1.4 -apple-system, "Inter", sans-serif; overflow-x: hidden; user-select: none; -webkit-user-select: none; }
+.px { font: 400 16px/17px "HGSS", monospace; -webkit-font-smoothing: none; letter-spacing: 0; color: var(--text);
+  text-shadow: 1px 0 0 var(--shade), 0 1px 0 var(--shade), 1px 1px 0 var(--shade); }
+.px2 { font-size: 32px; line-height: 34px; text-shadow: 2px 0 0 var(--shade), 0 2px 0 var(--shade), 2px 2px 0 var(--shade); }
+
+/* The home page the widgets sit on: a 4-column grid, as on the cover screen. */
+#home { position: relative; min-height: 100%; padding: 22px 14px 120px;
+  background: radial-gradient(120% 80% at 20% 0%, #3b4a6b 0%, #222838 60%, #1a1e29 100%); }
+.bar { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin: 0 2px 14px; font-size: 12px; color: #aab; }
+.bar select, .bar button { background: #2c3346; color: #dde; border: 1px solid #44506a; border-radius: 8px; padding: 5px 8px; font: inherit; }
+.grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; max-width: 560px; margin: 0 auto; }
+.lbl { grid-column: 1 / -1; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #8b93a8; margin: 10px 2px -4px; }
+.w2x2 { grid-column: span 2; aspect-ratio: 1; }
+.w4x2 { grid-column: span 4; aspect-ratio: 2; }
+.w2x1 { grid-column: span 2; aspect-ratio: 2; }
+
+/* A widget: the herd's message frame round it, nine-sliced at 2x so its pixels stay square. */
+.tile { position: relative; border-style: solid; border-width: 12px 20px;
+  border-image: url("pet-mock/ui/hgss-message/frame.png") 6 10 6 10 / 12px 20px stretch;
+  background: #fff; background-clip: padding-box; image-rendering: pixelated; }
+.tile.f2 { border-image-source: url("pet-mock/ui/hgss-message-2/frame.png"); }
+.tile.f3 { border-image-source: url("pet-mock/ui/hgss-message-3/frame.png"); }
+.tile.f4 { border-image-source: url("pet-mock/ui/hgss-message-4/frame.png"); }
+.inner { position: absolute; inset: 0; overflow: hidden; }
+
+canvas.pixel, .spr { image-rendering: pixelated; image-rendering: crisp-edges; }
+.spr { position: absolute; background-repeat: no-repeat; }
+
+/* ---------- Pet home ---------- */
+.home-scene { position: absolute; inset: 0; }
+.home-scene canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+.home-cap { position: absolute; left: 6px; right: 6px; bottom: 4px; display: flex; justify-content: space-between; align-items: end; }
+.btn8 { pointer-events: auto; cursor: pointer; padding: 0 2px; }
+.btn8::before { content: "▶"; display: inline-block; width: 12px; opacity: 0; }
+.btn8:hover::before, .btn8.on::before { opacity: 1; }
+.zz { position: absolute; font-size: 16px; opacity: 0; animation: zz 2.4s steps(4) infinite; }
+@keyframes zz { 0% { opacity: 0; transform: translate(0, 0); } 30% { opacity: 1; } 100% { opacity: 0; transform: translate(10px, -18px); } }
+
+/* ---------- Steps ---------- */
+.steps .num { position: absolute; left: 4px; top: 2px; }
+.steps .sub { position: absolute; left: 4px; }
+.hpbar { position: absolute; height: 12px; border: 2px solid #4a4242; background: #4a4242; border-radius: 3px; padding: 1px; }
+.hpbar i { display: block; height: 100%; width: 0; background: linear-gradient(#70f8a8 0 50%, #58d080 50%); border-radius: 1px; transition: width .6s steps(12); }
+.hpbar.mid i { background: linear-gradient(#f8e038 0 50%, #c8a808 50%); }
+.hpbar.done i { background: linear-gradient(#58c8f8 0 50%, #2890e0 50%); }
+.hpbar b { position: absolute; left: -30px; top: -5px; font: 400 16px/16px "HGSS"; color: #f8b000; text-shadow: 1px 1px 0 #a05800; -webkit-font-smoothing: none; }
+.ground { position: absolute; left: 0; right: 0; bottom: 0; }
+.week { position: absolute; display: flex; gap: 6px; align-items: end; }
+.week div { flex: 1; text-align: center; }
+.week i { display: block; margin: 0 auto 3px; width: 10px; background: #58d080; box-shadow: inset -2px 0 0 #2f9a58; }
+.week i.goal { background: #58c8f8; box-shadow: inset -2px 0 0 #2890e0; }
+.week i.today { background: #f8e038; box-shadow: inset -2px 0 0 #c8a808; }
+
+/* The pet loose on the screen (the floating sheep's place). */
+#loose { position: fixed; width: 96px; height: 96px; left: 60%; top: 55%; z-index: 20; touch-action: none; cursor: grab; display: none; }
+#loose.on { display: block; }
+#loose .spr { width: 96px; height: 96px; left: 0; top: 0; }
+#loose.held { cursor: grabbing; }
+#loose.held .spr { animation: dangle .5s ease-in-out infinite; }
+@keyframes dangle { 0%, 100% { transform: rotate(-7deg); } 50% { transform: rotate(7deg); } }
+.tile.target { filter: brightness(1.12) drop-shadow(0 0 10px #f8e038); }
+
+/* A HeartGold text box, typed out: what the pet says. */
+#say { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); width: min(520px, calc(100vw - 24px)); z-index: 30;
+  border-style: solid; border-width: 12px 20px; border-image: url("pet-mock/ui/hgss-message/frame.png") 6 10 6 10 / 12px 20px stretch;
+  background: #fff; background-clip: padding-box; image-rendering: pixelated; padding: 2px 4px 4px; min-height: 76px;
+  opacity: 0; pointer-events: none; transition: opacity .15s; }
+#say.on { opacity: 1; pointer-events: auto; }
+#say .more { position: absolute; right: -8px; bottom: -4px; font: 400 16px "HGSS"; color: #e04040; animation: nudge .8s steps(2) infinite; }
+@keyframes nudge { 50% { transform: translateY(3px); } }
+.note { max-width: 560px; margin: 26px auto 0; color: #8b93a8; font-size: 12.5px; line-height: 1.5; }
+.note b { color: #c9cfdd; }
+</style>
+</head>
+<body>
+<div id="home">
+  <div class="bar">
+    <label>Pet <select id="skin"></select></label>
+    <label>Frame <select id="frame"><option value="">1</option><option value="f2">2</option><option value="f3">3</option><option value="f4">4</option></select></label>
+    <button id="walk">Walk +500</button>
+    <button id="night">Night</button>
+  </div>
+  <div class="grid">
+    <div class="lbl">Pet home</div>
+    <div class="tile w2x2 home" id="homeS"><div class="inner"><div class="home-scene"></div></div></div>
+    <div class="tile w2x1 home" id="homeT"><div class="inner"><div class="home-scene"></div></div></div>
+    <div class="tile w4x2 home" id="homeM"><div class="inner"><div class="home-scene"></div></div></div>
+
+    <div class="lbl">Steps</div>
+    <div class="tile w2x2 steps" id="stepS"><div class="inner"></div></div>
+    <div class="tile w2x1 steps" id="stepT"><div class="inner"></div></div>
+    <div class="tile w4x2 steps" id="stepM"><div class="inner"></div></div>
+  </div>
+  <p class="note"><b>Pet home.</b> Tap the house (or <b>Let out</b>) and the pet hops out and floats on the screen as it does now; it sits over every app until you put it back. Drag it onto the house or tap <b>Call</b> to put it home; inside, it naps (Zz at night). One pet, so every home tile shows the same one.<br><br>
+  <b>Steps.</b> Today's count from the phone's step counter, reset at midnight. The pet walks on the grass while steps are coming in and stands still when you do; the bar fills toward your goal (10,000 for now, long-press to change) and turns blue past it. The wide size adds the week. Tapping it says how today compares, in the game's text box.</p>
+</div>
+
+<div id="loose"><div class="spr"></div></div>
+<div id="say"><div class="px txt"></div><i class="more">▼</i></div>
+
+<script>
+const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+const SKINS = ['pikachu', 'eevee', 'bulbasaur', 'charmander', 'squirtle', 'cyndaquil', 'treecko', 'torchic', 'mudkip', 'togepi', 'gengar', 'snorlax', 'crono'];
+const NAMES = { crono: 'CRONO' };
+let skin = null, sheet = null, out = false, night = false;
+let steps = 6214; const GOAL = 10000;
+const week = [8120, 11402, 5230, 9876, 12510, 7301]; // Mon..Sat (sample), today last
+let walkingUntil = 0;
+
+/* ---------- pixel art for the house and grass, drawn on a 1x canvas and scaled up ---------- */
+const PAL = { '.': null, k: '#4a4242', r: '#d84838', R: '#a83028', w: '#f8f0d8', W: '#d8c8a0', d: '#8a5a30', D: '#5a3818',
+  y: '#f8e038', b: '#88c8f8', B: '#5898d0', g: '#78c850', G: '#48a038', h: '#a8e070', s: '#c8b080', S: '#a08860', c: '#e8e0c8' };
+const HOUSE = [
+  '.......kkkkkkkkkkkkkkkkkk.......',
+  '......krrrrrrrrrrrrrrrrrrk......',
+  '.....krrrrrrrrrrrrrrrrrrrrk.....',
+  '....krrrRrrrrRrrrrRrrrrRrrrk....',
+  '...krrrrrrrrrrrrrrrrrrrrrrrrk...',
+  '..krrRrrrrRrrrrRrrrrRrrrrRrrrk..',
+  '.kRRRRRRRRRRRRRRRRRRRRRRRRRRRRk.',
+  'kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk',
+  '..kwwwwwwwwwwwwwwwwwwwwwwwwwwk..',
+  '..kwwkkkkkkwwwwwwwwwwkkkkkkwwk..',
+  '..kwwkbbbBkwwwwwwwwwwkbbbBkwwk..',
+  '..kwwkbbbBkwwwwwwwwwwkbbbBkwwk..',
+  '..kwwkkkkkkwwwkkkkkwwkkkkkkwwk..',
+  '..kwwwwwwwwwwkdddddkwwwwwwwwwk..',
+  '..kWWWWWWWWWWkdddddkWWWWWWWWWk..',
+  '..kwwwwwwwwwwkdddydkwwwwwwwwwk..',
+  '..kWWWWWWWWWWkdddddkWWWWWWWWWk..',
+  '..kwwwwwwwwwwkdddddkwwwwwwwwwk..',
+  '..kkkkkkkkkkkkkkkkkkkkkkkkkkkk..',
+];
+// The same house with its door open and a warm light inside (the pet is out).
+const OPEN = HOUSE.map((row, i) => i >= 13 && i <= 17 ? row.slice(0, 14) + (i === 13 ? 'DDDDD' : 'Dyyyy') + row.slice(19) : row);
+function art(rows, ctx, x0, y0, n) {
+  rows.forEach((row, y) => [...row].forEach((ch, x) => { const c = PAL[ch]; if (c) { ctx.fillStyle = c; ctx.fillRect((x0 + x) * n, (y0 + y) * n, n, n); } }));
+}
+function grass(ctx, w, y0, h, n, shift = 0) {
+  ctx.fillStyle = PAL.g; ctx.fillRect(0, y0 * n, w * n, h * n);
+  for (let x = 0; x < w; x++) {
+    const xx = (x + shift) | 0;
+    if ((xx * 7) % 5 === 0) { ctx.fillStyle = PAL.h; ctx.fillRect(x * n, y0 * n, n, n); }
+    if ((xx * 13) % 9 === 0) { ctx.fillStyle = PAL.G; ctx.fillRect(x * n, (y0 + 1 + (xx % 3)) * n, n, n); ctx.fillRect(x * n, (y0 + 2 + (xx % 3)) * n, n, n); }
+  }
+  ctx.fillStyle = PAL.G; ctx.fillRect(0, y0 * n, w * n, n);
+}
+function path(ctx, x0, w, y0, h, n) {
+  ctx.fillStyle = PAL.s; ctx.fillRect(x0 * n, y0 * n, w * n, h * n);
+  ctx.fillStyle = PAL.S; for (let i = 0; i < w * h / 6; i++) ctx.fillRect((x0 + (i * 5) % w) * n, (y0 + (i * 3) % h) * n, n, n);
+}
+
+/* ---------- the pet's sprite sheet ---------- */
+async function loadSkin(name) {
+  const meta = await (await fetch(`pet-mock/skins/${name}/skin.json`)).json();
+  const img = new Image(); img.src = `pet-mock/skins/${name}/sheet.png`; await img.decode();
+  skin = meta; sheet = img; skin.cols = img.width / meta.frame[0];
+  draw();
+}
+// One frame of the sheet as a CSS background on el, drawn at size px. facing: down/up/left/right; i: frame index.
+function frame(el, facing, i, size) {
+  const [fw, fh] = skin.frame, z = size / fw;
+  let col, row;
+  if (skin.poses) { const p = skin.poses[facing][i % skin.poses[facing].length]; col = p % skin.cols; row = Math.floor(p / skin.cols); }
+  else { row = skin.rows.indexOf(facing); col = (skin.walk || [0])[i % (skin.walk || [0]).length]; }
+  el.style.backgroundImage = `url(${sheet.src})`;
+  el.style.backgroundSize = `${sheet.width * z}px ${sheet.height * z}px`;
+  el.style.backgroundPosition = `${-col * fw * z}px ${-row * fh * z}px`;
+  el.style.width = size + 'px'; el.style.height = fh * z + 'px';
+}
+const petName = () => NAMES[skin.name] || skin.name.toUpperCase();
+
+/* ---------- Pet home ---------- */
+function drawHome(tile) {
+  const sc = tile.querySelector('.home-scene'), W = sc.clientWidth, H = sc.clientHeight;
+  const n = Math.max(2, Math.floor(Math.min(W / 44, H / 30))); // one art pixel, in CSS px
+  const cw = Math.ceil(W / n), ch = Math.ceil(H / n);
+  sc.innerHTML = '';
+  const cv = document.createElement('canvas'); cv.className = 'pixel'; cv.width = cw * n; cv.height = ch * n;
+  cv.style.width = cw * n + 'px'; cv.style.height = ch * n + 'px'; sc.append(cv);
+  const ctx = cv.getContext('2d');
+  // Sky, then grass with a path to the door.
+  ctx.fillStyle = night ? '#28305a' : '#a8d8f8'; ctx.fillRect(0, 0, cv.width, cv.height);
+  if (night) { ctx.fillStyle = '#f8f0c0'; [[4, 3], [11, 6], [cw - 6, 4], [cw - 13, 2]].forEach(([x, y]) => ctx.fillRect(x * n, y * n, n, n)); ctx.fillRect((cw - 8) * n, 3 * n, 3 * n, 3 * n); }
+  const ground = ch - 7;
+  grass(ctx, cw, ground, 7, n);
+  const wide = tile.id === 'homeM', tiny = tile.id === 'homeT';
+  const hx = wide ? Math.floor(cw * .58 - 16) : Math.floor(cw / 2 - 16), hy = ground - 19 + 1;
+  path(ctx, hx + 13, 7, ground + 1, 6, n);
+  art(out ? OPEN : HOUSE, ctx, hx, hy, n);
+  if (night && !out) { ctx.fillStyle = '#f8e038'; [[5, 10], [5, 11], [22, 10], [22, 11]].forEach(([x, y]) => ctx.fillRect((hx + x) * n, (hy + y) * n, 4 * n, n)); }
+  if (wide) { // a fence and a tree for the wide one
+    ctx.fillStyle = PAL.W; for (let x = 2; x < hx - 2; x += 4) { ctx.fillRect(x * n, (ground - 4) * n, 2 * n, 5 * n); }
+    ctx.fillRect(2 * n, (ground - 3) * n, (hx - 5) * n, n);
+    ctx.fillStyle = PAL.G; ctx.fillRect((hx + 36) * n, (ground - 14) * n, 10 * n, 10 * n); ctx.fillStyle = PAL.g; ctx.fillRect((hx + 37) * n, (ground - 13) * n, 6 * n, 6 * n);
+    ctx.fillStyle = PAL.d; ctx.fillRect((hx + 40) * n, (ground - 4) * n, 3 * n, 5 * n);
+  }
+  // The pet: asleep in the window when home, gone when out.
+  if (!out && !tiny) {
+    const s = document.createElement('div'); s.className = 'spr pet';
+    const size = skin.frame[0] * Math.max(1, Math.round(n * .9)) * (skin.name === 'crono' ? .5 : 1);
+    frame(s, 'down', 0, size);
+    s.style.left = (hx + 13.5 + 2.5) * n - size / 2 + 'px';
+    s.style.top = (ground + 2) * n - parseFloat(s.style.height) + 'px';
+    s.style.animation = 'none';
+    sc.append(s);
+    const z = document.createElement('i'); z.className = 'zz px'; z.textContent = 'z';
+    z.style.left = parseFloat(s.style.left) + size * .7 + 'px'; z.style.top = parseFloat(s.style.top) + 'px';
+    sc.append(z);
+  }
+  if (tiny && !out) { // the 2x1: the pet's face peeking from the door
+    const s = document.createElement('div'); s.className = 'spr';
+    const size = skin.frame[0] * n * .7; frame(s, 'down', 0, size);
+    s.style.left = (hx + 16.5) * n - size / 2 + 'px'; s.style.top = (hy + 12) * n - size * .25 + 'px'; sc.append(s);
+  }
+  // Caption: the pet's name and what to do.
+  const cap = document.createElement('div'); cap.className = 'home-cap';
+  cap.innerHTML = tiny ? `<span class="px btn8 act">${out ? 'CALL' : 'LET OUT'}</span>`
+    : `<span class="px">${petName()}</span><span class="px btn8 act">${out ? 'CALL' : 'LET OUT'}</span>`;
+  cap.style.background = 'linear-gradient(transparent, rgba(255,255,255,.0))';
+  sc.append(cap);
+  // Captions sit on a white strip at the very bottom so they read on the grass.
+  cap.querySelectorAll('.px').forEach(p => { p.style.background = '#fff'; p.style.padding = '0 4px'; });
+  cap.querySelector('.act').onclick = e => { e.stopPropagation(); out ? callHome() : letOut(tile); };
+  sc.onclick = () => out ? say(`${petName()} is out and about!\nDrag it back here, or tap CALL.`) : letOut(tile);
+}
+
+/* ---------- the pet loose on the screen ---------- */
+const loose = $('#loose');
+let lx = 0, ly = 0, wander = null, facing = 'down', step = 0;
+function place() { loose.style.left = lx + 'px'; loose.style.top = ly + 'px'; }
+function letOut(tile) {
+  const r = tile.getBoundingClientRect();
+  out = true; draw();
+  lx = r.left + r.width / 2 - 48; ly = r.top + r.height / 2 - 60; place();
+  loose.classList.add('on');
+  frame(loose.firstChild, 'down', 0, 96 * (skin.name === 'crono' ? 1.4 : 1));
+  // A hop out of the door, then it wanders a little.
+  loose.animate([{ transform: 'translateY(0) scale(.4)' }, { transform: 'translateY(-40px) scale(1)' }, { transform: 'translateY(0)' }], { duration: 450, easing: 'ease-out' });
+  say(`${petName()} came out to play!`);
+  roam();
+}
+function callHome() {
+  const t = $('#homeS').getBoundingClientRect();
+  clearInterval(wander);
+  loose.animate([{ transform: 'none', opacity: 1 }, { transform: `translate(${t.left + t.width / 2 - 48 - lx}px, ${t.top + t.height / 2 - 48 - ly}px) scale(.3)`, opacity: 0 }], { duration: 380, easing: 'ease-in' })
+    .onfinish = () => { loose.classList.remove('on'); out = false; draw(); say(`${petName()} went home for a nap.`); };
+}
+function roam() {
+  clearInterval(wander);
+  let tx = lx, ty = ly, pause = 0;
+  wander = setInterval(() => {
+    if (loose.classList.contains('held')) return;
+    if (pause > 0) { pause--; frame(loose.firstChild, 'down', 0, 96 * (skin.name === 'crono' ? 1.4 : 1)); return; }
+    if (Math.hypot(tx - lx, ty - ly) < 4) {
+      pause = 6 + Math.random() * 14 | 0;
+      tx = Math.max(8, Math.min(innerWidth - 104, lx + (Math.random() - .5) * 220));
+      ty = Math.max(60, Math.min(innerHeight - 200, ly + (Math.random() - .5) * 160));
+      return;
+    }
+    const dx = tx - lx, dy = ty - ly, d = Math.hypot(dx, dy), v = 3;
+    lx += dx / d * v; ly += dy / d * v; place();
+    facing = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+    frame(loose.firstChild, facing, ++step >> 2, 96 * (skin.name === 'crono' ? 1.4 : 1));
+  }, 50);
+}
+// Drag: pick it up anywhere; let go over a Pet home tile and it goes in.
+let grab = null;
+loose.addEventListener('pointerdown', e => { grab = { x: e.clientX - lx, y: e.clientY - ly }; loose.setPointerCapture(e.pointerId); loose.classList.add('held'); });
+loose.addEventListener('pointermove', e => {
+  if (!grab) return; lx = e.clientX - grab.x; ly = e.clientY - grab.y; place();
+  $$('.home').forEach(t => t.classList.toggle('target', over(t, e)));
+});
+loose.addEventListener('pointerup', e => {
+  if (!grab) return; grab = null; loose.classList.remove('held');
+  const home = $$('.home').find(t => over(t, e)); $$('.home').forEach(t => t.classList.remove('target'));
+  if (home) callHome(); else roam();
+});
+const over = (t, e) => { const r = t.getBoundingClientRect(); return e.clientX > r.left && e.clientX < r.right && e.clientY > r.top && e.clientY < r.bottom; };
+
+/* ---------- Steps ---------- */
+let stepTick = 0, scroll = 0;
+function drawSteps(tile) {
+  const inn = tile.querySelector('.inner'), W = inn.clientWidth, H = inn.clientHeight;
+  const tiny = tile.id === 'stepT', wide = tile.id === 'stepM';
+  const n = Math.max(2, Math.floor(H / (tiny ? 22 : 34)));
+  const pct = Math.min(1, steps / GOAL);
+  if (!inn.dataset.built) {
+    inn.dataset.built = 1;
+    inn.innerHTML = `<canvas class="pixel ground"></canvas><div class="spr walker"></div>
+      <div class="px ${tiny ? '' : 'px2'} num"></div><div class="px sub"></div>
+      <div class="hpbar"><b>EXP</b><i></i></div>${wide ? '<div class="week px"></div>' : ''}`;
+  }
+  const num = inn.querySelector('.num'), sub = inn.querySelector('.sub'), bar = inn.querySelector('.hpbar');
+  num.textContent = steps.toLocaleString('en-US');
+  sub.textContent = tiny ? 'STEPS' : steps >= GOAL ? 'GOAL MET!' : `${(GOAL - steps).toLocaleString('en-US')} TO GO`;
+  if (tiny) { num.style.left = W * .42 + 'px'; num.style.top = '4px'; sub.style.left = W * .42 + 'px'; sub.style.top = '22px'; }
+  else { sub.style.top = (wide ? 40 : 38) + 'px'; }
+  bar.className = 'hpbar' + (steps >= GOAL ? ' done' : pct < .5 ? ' mid' : '');
+  bar.querySelector('i').style.width = pct * 100 + '%';
+  if (tiny) { bar.style.left = W * .42 + 30 + 'px'; bar.style.right = '6px'; bar.style.top = '44px'; }
+  else { bar.style.left = '34px'; bar.style.right = wide ? W * .45 + 'px' : '6px'; bar.style.top = (wide ? 64 : 62) + 'px'; }
+  // Ground strip along the bottom, scrolling while walking.
+  const gh = tiny ? H : Math.round(H * .38), cv = inn.querySelector('canvas');
+  const cw = Math.ceil(W / n), chh = Math.ceil(gh / n);
+  cv.width = cw * n; cv.height = chh * n; cv.style.width = cw * n + 'px'; cv.style.height = chh * n + 'px';
+  if (tiny) { cv.style.width = W * .38 + 'px'; cv.width = Math.ceil(W * .38 / n) * n; }
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = night ? '#28305a' : '#a8d8f8'; ctx.fillRect(0, 0, cv.width, cv.height);
+  const gy = Math.max(2, chh - 6);
+  grass(ctx, cw, gy, chh - gy, n, scroll);
+  path(ctx, 0, cw, gy + 2, 2, n);
+  // The walker: faces right and steps while steps come in; stands facing you otherwise.
+  const walker = inn.querySelector('.walker');
+  const moving = Date.now() < walkingUntil;
+  const size = skin.frame[0] * Math.max(1, Math.round(n * (tiny ? .8 : 1))) * (skin.name === 'crono' ? .5 : 1);
+  frame(walker, moving ? 'right' : 'down', moving ? stepTick : 0, size);
+  const wx = tiny ? W * .19 - size / 2 : wide ? W * .12 : W * .5 - size / 2;
+  walker.style.left = wx + 'px';
+  walker.style.top = H - (chh - gy - 3) * n - parseFloat(walker.style.height) + 'px';
+  if (wide) {
+    const wk = inn.querySelector('.week'); const all = [...week, steps], max = Math.max(GOAL, ...all) * 1.05;
+    wk.style.left = W * .58 + 'px'; wk.style.right = '4px'; wk.style.top = '6px'; wk.style.height = (H * .55) + 'px';
+    const hgt = H * .55 - 22;
+    wk.innerHTML = all.map((v, i) => `<div><i class="${i === all.length - 1 ? 'today' : v >= GOAL ? 'goal' : ''}" style="height:${Math.max(3, v / max * hgt)}px"></i>${'MTWTFSS'[i]}</div>`).join('');
+  }
+}
+
+function draw() { if (!skin) return; $$('.home').forEach(drawHome); $$('.steps').forEach(drawSteps); }
+setInterval(() => {
+  if (!skin) return;
+  if (Date.now() < walkingUntil) { stepTick++; scroll += 1; steps += 3; }
+  $$('.steps').forEach(drawSteps);
+}, 180);
+
+/* ---------- the text box ---------- */
+let sayT = null;
+function say(text) {
+  const b = $('#say'), t = b.querySelector('.txt'); b.classList.add('on'); clearInterval(sayT); clearTimeout(b._h);
+  let i = 0; t.textContent = '';
+  t.style.whiteSpace = 'pre-wrap';
+  sayT = setInterval(() => { t.textContent = text.slice(0, ++i); if (i >= text.length) { clearInterval(sayT); b._h = setTimeout(() => b.classList.remove('on'), 3500); } }, 28);
+}
+$('#say').onclick = () => $('#say').classList.remove('on');
+$$('.steps').forEach(t => t.onclick = () => {
+  const avg = Math.round(week.reduce((a, b) => a + b) / week.length);
+  say(steps >= GOAL ? `${petName()} grew happier!\n${steps.toLocaleString('en-US')} steps today. Goal met!`
+    : `${petName()} walked ${steps.toLocaleString('en-US')} steps today.\n${steps > avg ? 'More than' : 'Less than'} your usual ${avg.toLocaleString('en-US')}.`);
+});
+
+/* ---------- controls ---------- */
+$('#skin').innerHTML = SKINS.map(s => `<option>${s}</option>`).join('');
+$('#skin').onchange = e => { $$('.steps .inner').forEach(i => delete i.dataset.built); loadSkin(e.target.value); if (out) frame(loose.firstChild, 'down', 0, 96); };
+$('#frame').onchange = e => $$('.tile').forEach(t => { t.classList.remove('f2', 'f3', 'f4'); if (e.target.value) t.classList.add(e.target.value); });
+$('#walk').onclick = () => { walkingUntil = Date.now() + 5000; };
+$('#night').onclick = e => { night = !night; e.target.textContent = night ? 'Day' : 'Night'; draw(); };
+addEventListener('resize', draw);
+document.fonts.ready.then(() => loadSkin('pikachu'));
+</script>
+</body>
+</html>

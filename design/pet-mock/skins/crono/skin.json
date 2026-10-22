@@ -1,0 +1,1 @@
+{"name": "crono", "frame": [64, 64], "frames": 7, "rows": ["down", "up", "left", "right"], "stand": 0, "walk": [1, 2, 3, 4, 5, 6], "display": 160, "from": "CHRONO TRIGGER", "pixelated": true, "poses": {"down": [0, 4, 5, 6, 7, 8, 9], "up": [3, 22, 23, 24, 25, 26, 27], "left": [1, 10, 11, 12, 13, 14, 15], "right": [2, 16, 17, 18, 19, 20, 21]}}

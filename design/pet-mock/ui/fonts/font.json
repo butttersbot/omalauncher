@@ -1,0 +1,25 @@
+{
+ "family": "HGSS",
+ "px": 16,
+ "ascent": 12,
+ "from": "HEARTGOLD",
+ "file": "a/0/1/6#0",
+ "shadow_family": "HGSS Shadow",
+ "shadow_file": "shadow.ttf",
+ "text_shadow": [
+  [
+   1,
+   0
+  ],
+  [
+   0,
+   1
+  ],
+  [
+   1,
+   1
+  ]
+ ],
+ "note": "font-size px*k for crisp pixels. Shadow: draw the same text in \"HGSS Shadow\" underneath (exact), or CSS text-shadow at the text_shadow offsets times k (close; 15 of 62 alnum glyphs differ by a pixel). Colours are in ui/hgss-message*/ui.json.",
+ "chars": " !\"#%&'()*+,-./0123456789:;=?@ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz~ ¡ª«°·º»¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷øùúûüýþÿŒœŞş‐‘’“”„…₽←↑→↓−□△▶◇○◎☀☁☂☃★♀♂♠♣♥♦♪"
+}
