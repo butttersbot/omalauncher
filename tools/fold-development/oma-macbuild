@@ -40,14 +40,17 @@ case ${1:-} in
   json=$(ls -t /root/Inbox/soma-"$short"-*.json 2>/dev/null | head -n 1 || true)
   if [ -z "$json" ]; then
     # An earlier commit's build still serves when nothing since then goes into the app (notes, these tools).
-    newest=$(ls -t /root/Inbox/soma-*-"$code".json 2>/dev/null | head -n 1 || true)
-    built=$(sed -n 's/.*"commit":"\([0-9a-f]\{40\}\)".*/\1/p' "${newest:-/dev/null}")
-    if [ -n "$built" ] && git -C "$repo" merge-base --is-ancestor "$built" HEAD &&
-      git -C "$repo" diff --quiet "$built" HEAD -- . ':(exclude)tools/fold-development' ':(exclude)tools/walkthrough' ':(exclude)docs' ':(exclude)*.md'; then
-      json=$newest
-      commit=$built
-      echo "Taking the build of ${built:0:9}: nothing since then goes into the app."
-    fi
+    # Any build at this version whose app is HEAD's (files arrive out of order, so not just the newest one saved).
+    for cand in $(ls -t /root/Inbox/soma-*-"$code".json 2>/dev/null); do
+      built=$(sed -n 's/.*"commit":"\([0-9a-f]\{40\}\)".*/\1/p' "$cand")
+      if [ -n "$built" ] && git -C "$repo" merge-base --is-ancestor "$built" HEAD &&
+        git -C "$repo" diff --quiet "$built" HEAD -- . ':(exclude)tools/fold-development' ':(exclude)tools/walkthrough' ':(exclude)docs' ':(exclude)*.md'; then
+        json=$cand
+        commit=$built
+        echo "Taking the build of ${built:0:9}: nothing since then goes into the app."
+        break
+      fi
+    done
   fi
   [ -n "$json" ] || die "Nothing from the Mac for $short yet (looked in ~/Inbox after oma drop get)."
   apk=${json%.json}.apk
