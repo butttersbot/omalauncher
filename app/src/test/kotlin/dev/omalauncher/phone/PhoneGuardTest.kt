@@ -105,4 +105,15 @@ class PhoneGuardTest {
         assertTrue(run.contains("-le 40"))
         assertTrue(script.contains("oma-phone run [--in PACKAGE | --any] [SCRIPT_FILE | -]"))
     }
+
+    @Test fun anAppsOwnPartsAreThatApp() {
+        // Settings' search runs as its own package: still Settings to the agent that opened Settings.
+        assertNull(refused("fill", front = "com.android.settings.intelligence", opened = "com.android.settings"))
+        assertTrue(PhoneGuard.sameApp("com.android.settings", "com.android.settings"))
+        // A name that only starts the same is another app.
+        assertFalse(PhoneGuard.sameApp("com.android.settingsx", "com.android.settings"))
+        assertNotNull(refused("tap", front = "com.android.settingsx", opened = "com.android.settings"))
+        // Named with --in, it is exactly that app.
+        assertNotNull(refused("fill", front = "com.android.settings.intelligence", asked = "com.android.settings"))
+    }
 }

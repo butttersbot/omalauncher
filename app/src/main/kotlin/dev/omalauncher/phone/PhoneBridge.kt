@@ -44,6 +44,10 @@ class PhoneBridge(private val context: Context, private val proot: Proot) {
                                         val link = PhoneAccess.link(context)
                                         result = JSONObject().put("ok", true).put("active", PhoneAccess.active).put("connected", service != null).put("link", link.id)
                                         if (link == PhoneLink.Disconnected) result.put("note", PHONE_DISCONNECTED)
+                                        // Locked or asleep is said up front, before an agent plans steps that would each fail on it.
+                                        result.put("locked", context.getSystemService(android.app.KeyguardManager::class.java).isKeyguardLocked)
+                                            .put("awake", context.getSystemService(android.os.PowerManager::class.java).isInteractive)
+                                            .put("opened", service?.openedApp.orEmpty())
                                         PhoneControlHeal.status(context, result)
                                         latch.countDown()
                                     }

@@ -26,7 +26,7 @@ object PhoneGuard {
     fun refusal(command: String, front: String, asked: String, any: Boolean, opened: String?, own: String, chat: Boolean): String? {
         if (command !in touching) return null
         if (asked.isNotEmpty() && asked != front) return "Expected $asked in front, but ${front.ifEmpty { "nothing readable" }} is. Nothing was done."
-        if (asked.isEmpty() && !any && opened != null && opened != front) {
+        if (asked.isEmpty() && !any && opened != null && !sameApp(front, opened)) {
             return "You opened $opened, but ${front.ifEmpty { "nothing readable" }} is in front now (he may have switched apps, or a step left it). " +
                 "Nothing was done. Run oma-phone screen, then name the app you mean with --in PACKAGE, or add --any."
         }
@@ -36,6 +36,12 @@ object PhoneGuard {
         }
         return null
     }
+
+    /**
+     * Whether [front] is the app [opened] or one of its own parts: Settings' search is com.android.settings.intelligence
+     * (seen on the Fold, 2026-10-21), and is still Settings to the agent that opened it.
+     */
+    fun sameApp(front: String, opened: String): Boolean = front == opened || front.startsWith("$opened.")
 
     /** The app an `open` or `url` leaves an agent's touches held to: none when Android asks which app ([CHOOSER]) or found none. */
     fun opened(handler: String?): String? = handler?.takeUnless { it.isBlank() || it == CHOOSER }

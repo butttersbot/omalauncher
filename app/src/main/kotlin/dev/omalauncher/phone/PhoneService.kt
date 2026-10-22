@@ -73,6 +73,8 @@ class PhoneService : AccessibilityService() {
     private var took = false
     /** The app the agent last opened (`open`, `url`): its touches are for that app until it says otherwise ([PhoneGuard]). */
     private var opened: String? = null
+    /** The app the agent's touches are held to, for `status`; null for none. */
+    val openedApp get() = opened
     override fun onServiceConnected() {
         PhoneAccess.load(this); instance = this
         PhoneControlHeal.connected(this, paused = !PhoneAccess.active)
@@ -335,6 +337,19 @@ class PhoneService : AccessibilityService() {
         }
         look()
     }
+    /** Whether [node] is part of a web page: it or something around it is a WebView, as Chromium-based browsers draw pages. */
+    private fun inWebPage(node: AccessibilityNodeInfo): Boolean {
+        var at: AccessibilityNodeInfo? = node
+        var depth = 0
+        while (at != null && depth < 60) {
+            if (at.className?.toString() == "android.webkit.WebView") { if (at !== node) at.recycle(); return true }
+            val up = at.parent
+            if (at !== node) at.recycle()
+            at = up; depth++
+        }
+        if (at != null && at !== node) at.recycle()
+        return false
+    }
     /** Does [command] (click, type or scroll) to the control at [id] of the screen last read; [reply] hears how it went. */
     private fun act(command: String, id: String, input: JSONObject, reply: (JSONObject) -> Unit) {
         val (node, at) = target(id)
@@ -342,7 +357,9 @@ class PhoneService : AccessibilityService() {
         fun said(answer: JSONObject) = if (at == id) answer else answer.put("moved", true).put("id", at)
         try {
             val done = when (command) {
-                "click" -> node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                // A web page's controls take Android's click and do nothing (Brave, 2026-10-21: "Learn more" on
+                // example.com, clicked twice, never followed), while a finger on them works: a page's control is tapped.
+                "click" -> !inWebPage(node) && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
                 "type" -> {
                     check(node.isEditable && !node.isPassword) { "Only non-password text fields can be typed into." }
                     val text = input.getString("text"); require(text.length <= 10_000) { "Text too long" }
@@ -413,14 +430,7 @@ class PhoneService : AccessibilityService() {
             // The checks and their order are PhoneRequests.admit's; nothing below runs for a request it didn't let through.
             // A request of a thread on the Mac waits for the owner as the phone builder's does, and its card is on this screen too.
             val route = PhoneRequests.admit(command, { PhoneAccess.requireAccess(this) }) { dev.omalauncher.assist.AgentTasks.pending.size + dev.omalauncher.assist.MacThreads.pending.size }
-            // Locked, asleep or paused is said up front, before an agent plans steps that would each fail on it.
-            if (route == PhoneRequests.Route.Status) {
-                reply(JSONObject().put("ok", true).put("active", PhoneAccess.active).put("connected", true)
-                    .put("locked", getSystemService(KeyguardManager::class.java).isKeyguardLocked)
-                    .put("awake", getSystemService(PowerManager::class.java).isInteractive)
-                    .put("opened", opened ?: ""))
-                return
-            }
+            if (route == PhoneRequests.Route.Status) { reply(JSONObject().put("ok", true).put("active", PhoneAccess.active).put("connected", true)); return }
             if (route == PhoneRequests.Route.Stop) { PhoneAccess.stop(this); reply(JSONObject().put("ok", true)); return }
             // Home's pages: read and turned behind the same gates as everything else, and never while an approval waits.
             if (route == PhoneRequests.Route.Pages) { reply(PhonePages.reply(input, homeBook())); return }
