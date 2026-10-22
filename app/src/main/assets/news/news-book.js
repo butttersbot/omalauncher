@@ -467,16 +467,20 @@ export function mount(el, article, onBack) {
     busy = true
     l.el.classList.add('go')
     requestAnimationFrame(() => requestAnimationFrame(() => bend(commit ? 1 : 0, l)))
-    l.el.addEventListener(
-      'transitionend',
-      () => {
-        if (commit) { at = l.to; readingAnchor = null }
-        l.el.remove()
-        show()
-        busy = false
-      },
-      { once: true },
-    )
+    // A cancelled/backgrounded compositor transition may never emit transitionend.
+    // Complete once either way so page turns cannot leave Aa and navigation stuck.
+    let completed = false
+    const finish = () => {
+      if (completed) return
+      completed = true
+      clearTimeout(timeout)
+      if (commit) { at = l.to; readingAnchor = null }
+      l.el.remove()
+      show()
+      busy = false
+    }
+    const timeout = setTimeout(finish, 550)
+    l.el.addEventListener('transitionend', finish, { once: true })
   }
 
   function turn(dir) {
