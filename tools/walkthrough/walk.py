@@ -49,23 +49,52 @@ def nodes(serial):
     return out
 
 def find(serial, wanted, wait_ms=4000):
+    """The centre of what says [wanted] on screen; a web page's nodes scrolled out of view don't count."""
     end = time.time() + wait_ms / 1000
+    w, h = size(serial)
+    w, h = max(w, h), max(w, h)  # rotated or not, a point inside the screen is inside this square
     while True:
         for label, (l, t, r, b) in nodes(serial):
-            if wanted.lower() in label.lower():
-                return (l + r) // 2, (t + b) // 2
+            x, y = (l + r) // 2, (t + b) // 2
+            if wanted.lower() in label.lower() and 0 <= x < w and 0 <= y < h and r > l and b > t:
+                return x, y
         if time.time() > end:
             return None
         time.sleep(0.4)
 
+def display(serial):
+    """The screen in use: with two displays a plain screencap returns a warning, not a picture. The first
+    SurfaceFlinger display is the inner screen, the second the cover (device state 0 = folded)."""
+    ids = re.findall(r"Display (\d+)", adb(serial, "shell", "dumpsys", "SurfaceFlinger", "--display-id"))
+    if len(ids) < 2:
+        return None
+    folded = adb(serial, "shell", "cmd", "device_state", "print-state").strip().endswith("0")
+    return ids[1] if folded else ids[0]
+
+def wake(serial):
+    """An asleep or locked screen screenshots black: keep it on and unlocked (the emulator holds test data only)."""
+    adb(serial, "shell", "input", "keyevent", "WAKEUP")
+    adb(serial, "shell", "wm", "dismiss-keyguard")
+
+def prepare(serial):
+    adb(serial, "shell", "locksettings", "set-disabled", "true")
+    adb(serial, "shell", "svc", "power", "stayon", "true")
+    adb(serial, "shell", "settings", "put", "system", "screen_off_timeout", "1800000")
+    # The emulator has a hardware keyboard, and Android hides soft keyboards while one is attached.
+    adb(serial, "shell", "settings", "put", "secure", "show_ime_with_hard_keyboard", "1")
+    wake(serial)
+
 def shot(serial, path):
+    wake(serial)
+    d = display(serial)
+    cmd = ["adb", "-s", serial, "exec-out", "screencap", "-p"] + (["-d", d] if d else [])
     with open(path, "wb") as f:
-        f.write(subprocess.run(["adb", "-s", serial, "exec-out", "screencap", "-p"], capture_output=True, timeout=60).stdout)
+        f.write(subprocess.run(cmd, capture_output=True, timeout=60).stdout)
 
 def run_step(serial, op, args, out, n):
     """One [emu] step; returns (ok, note, screenshot or None)."""
     if op == "launch":
-        adb(serial, "shell", "am", "start", "-W", "-n", args[0], check=True); time.sleep(1.5); return True, "", None
+        adb(serial, "shell", "am", "start", "-S", "-W", "-n", args[0], check=True); time.sleep(1.5); return True, "", None
     if op == "url":
         adb(serial, "shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", args[0]); time.sleep(1.5); return True, "", None
     if op == "ime":
@@ -120,19 +149,23 @@ def run_step(serial, op, args, out, n):
         time.sleep(int(args[0]) / 1000); return True, "", None
     if op == "rotate":
         adb(serial, "shell", "settings", "put", "system", "accelerometer_rotation", "0")
-        adb(serial, "shell", "settings", "put", "system", "user_rotation", {"portrait": "0", "landscape": "1"}[args[0]]); time.sleep(1.5); return True, "", None
+        # Rotation 0 is the screen's natural shape: the cover is upright, the open Fold's inner screen is wide.
+        w, h = size(serial)
+        turn = (args[0] == "landscape") != (w > h)
+        adb(serial, "shell", "settings", "put", "system", "user_rotation", "1" if turn else "0"); time.sleep(1.5); return True, "", None
     if op == "fold":
         # The Fold profile's two screens: "folded" (cover) or "open" (inner).
-        adb(serial, "emu", "fold" if args[0] == "folded" else "unfold"); time.sleep(2); return True, "", None
+        adb(serial, "emu", "fold" if args[0] == "folded" else "unfold"); time.sleep(2); wake(serial); return True, "", None
     if op in ("shot", "expect", "absent"):
-        name = re.sub(r"\W+", "-", args[0] if op == "shot" else f"{n:02d}-{op}")[:60]
+        words = " ".join(args)
+        name = re.sub(r"\W+", "-", words if op == "shot" else op)[:60]
         path = os.path.join(out, f"{n:02d}-{name}.png")
         shot(serial, path)
         if op == "shot":
             return None, "look at it", path
-        found = find(serial, args[0], wait_ms=4000 if op == "expect" else 800) is not None
+        found = find(serial, words, wait_ms=4000 if op == "expect" else 800) is not None
         ok = found if op == "expect" else not found
-        return ok, "" if ok else (f"“{args[0]}” not on screen" if op == "expect" else f"“{args[0]}” still on screen"), path
+        return ok, "" if ok else (f"“{words}” not on screen" if op == "expect" else f"“{words}” still on screen"), path
     return False, f"unknown step “{op}”", None
 
 def parse(path):
@@ -163,6 +196,7 @@ def main():
                 print(f"[phone] {s['text']}")
         return
     os.makedirs(out, exist_ok=True)
+    prepare(serial)
     results, failed = [], 0
     for n, s in enumerate(steps, 1):
         if s["where"] == "phone":

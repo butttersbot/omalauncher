@@ -46,7 +46,7 @@ walk, of 128, "passed" the GIF keyboard while its swipes had missed the handle a
     tools/walkthrough/walk.py tools/walkthrough/scripts/gif-keyboard.walk --serial emulator-5554 --out /tmp/walk/gif
     tools/walkthrough/walk.py tools/walkthrough/scripts/gif-keyboard.walk --phone     # the [phone] checklist
 
-On the Mac, `soma-macbuild` installs the build on the running emulator (AVD `soma-fold`, the Pixel Fold profile)
+On the Mac, `soma-macbuild` installs the build on the Mac's Fold emulator (AVD `Fold8`, shaped like his phone; docs/EMULATOR.md; started headless when it isn't running)
 and walks the scripts named in the commit's `Walk:` trailer, or every script whose feature the commit touched; the
 results and screenshots come back with the build. Keyboard steps tap by position (the keys are drawn, not labelled):
 when a layout change moves them, fix the coordinates in the script in the same commit.
