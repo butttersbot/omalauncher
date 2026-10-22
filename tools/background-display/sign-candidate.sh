@@ -19,6 +19,7 @@ PY
 cert=$("$tools/apksigner" -JXmx256m verify --print-certs "$signed" | sed -n 's/.*certificate SHA-256 digest: //p' | head -n 1)
 [[ $cert == "$(tr -d '[:space:]' < /root/.config/oma-development/working-cert.sha256)" ]] || { echo 'Wrong signer'; exit 1; }
 [[ $cert == 85a7a713578814a4b779ce4fa7d0ed13aa48a81b61cc8e91b139f32dad576a18 ]] || { echo 'Signer does not match installed app'; exit 1; }
-"$tools/aapt2" dump badging "$signed" | head -n 1
+badging=$("$tools/aapt2" dump badging "$signed")
+printf '%s\n' "${badging%%$'\n'*}"
 sha256sum "$signed"
 echo SIGNED_AND_VERIFIED
