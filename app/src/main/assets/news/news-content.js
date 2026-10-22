@@ -55,7 +55,9 @@ window.NewsContent = (() => {
   }
   // What a site puts round its story rather than in it (Boss, 2026-10-22: "a bunch of bullet points that were empty",
   // "other links that you should try ... just remove all of that ... a very clean article reader").
-  const ASIDE = /^(?:related(?: (?:articles?|stories|posts|coverage|reading))?|read (?:more|next|also)|more (?:from|on|stories|news|coverage|like this)\b.*|recommended(?: for you)?|you (?:may|might) (?:also )?like|see also|also read|trending(?: now)?|popular(?: now| stories)?|most (?:read|popular)|top stories|latest(?: news| stories)?|up next|what to read next|keep reading|don'?t miss|editor'?s picks?|sponsored(?: content)?|advertisement|share this(?: article| story)?|follow us\b.*|sign up\b.*|subscribe\b.*|newsletter\b.*|comments?)[:.!]?$/i;
+  const ASIDE = /^(?:related(?: (?:articles?|stories|posts|coverage|reading))?|read (?:more|next|also)|more (?:from|on|stories|news|coverage|like this)\b.*|recommended\b.*|you (?:may|might) (?:also )?like|see also|also read|trending(?: now)?|popular(?: now| stories)?|most (?:read|popular)|top stories|latest(?: news| stories)?|up next|what to read next|keep reading|don'?t miss|editor'?s picks?|sponsored(?: content)?|advertisement|share this(?: article| story)?|follow us\b.*|sign up\b.*|subscribe\b.*|newsletter\b.*|comments?)[:.!]?$/i;
+  // Screen readers' labels a site leaves round a list it filled by script ("list of 4 items", "end of list").
+  const READER_LABEL = /^(?:list of \d+ items?|end of list|\d+ items?)$/i;
   const LEAD = /^(?:read more|related|see also|also read|more|recommended|watch|listen|read next|don'?t miss)\s*[:|–—-]/i;
   /** How much of [n]'s words are inside links: 1 for a list of headlines, near 0 for prose. */
   const linkShare = n => { const all = text(n).length; if (!all) return 0; return [...n.querySelectorAll('a')].reduce((t, a) => t + text(a).length, 0) / all; };
@@ -78,7 +80,7 @@ window.NewsContent = (() => {
     root.querySelectorAll('p, li, div').forEach(n => {
       if (!there(n) || n.querySelector('img')) return;
       const t = text(n);
-      if (t && (LEAD.test(t) || (linkShare(n) > 0.9 && t.length < 160 && n.querySelector('a')) || ASIDE.test(t))) n.remove();
+      if (t && (READER_LABEL.test(t) || LEAD.test(t) || (linkShare(n) > 0.9 && t.length < 160 && n.querySelector('a')) || ASIDE.test(t))) n.remove();
     });
     // Whatever trails the story once its prose ends: empty wrappers, rows of links, the site's own extras. A short
     // closing line of the story itself ("Sincerely, / The team") stays, and the story is never emptied.

@@ -13,6 +13,9 @@ expect Top stories
 expect Technology
 shot stream-cover-new-stories-pill-clear-of-chips
 scrollto Show 20 more
+# A refresh reflows the stream as pictures load: let it settle so the tap lands on the button.
+wait 1500
+scrollto Show 20 more
 tap Show 20 more
 wait 800
 scrollto Show less

@@ -24,6 +24,9 @@ try {
   const tidyBlocks = NewsContent.blocks(root);
   assert(root.querySelectorAll('li').length===1 && !tidyBlocks.some(b=>/^•\s*$/.test(b.p||'')), 'empty bullets removed');
   assert(!/Read more|Related stories|Headline B|Sign up/.test(root.textContent) && root.textContent.includes('Real point one.'), 'related links and read-more tails removed, story kept');
+  // The 128 walk: Al Jazeera's "Recommended Stories" with its screen-reader list labels, mid-article.
+  root = NewsContent.article(`<div id="article-body"><p>First part ${prose}</p><h2>Recommended Stories</h2><p>list of 4 items</p><ul></ul><p>end of list</p><p>Second part ${prose}</p></div>`);
+  assert(!/Recommended|list of 4 items|end of list/.test(root.textContent) && root.textContent.includes('Second part'), 'mid-article recommended block and its reader labels removed');
 
   const article = { title:'A reader that keeps every word', kicker:'Soma News', dek:'Regression checks for complete text and pictures.', by:'Test source', hero:'/photo.svg', next:{ title:'A long next-story headline that needs its own room rather than sitting on the final lines of the article', img:'/photo.svg' }, blocks:[{p:prose.repeat(3)},{heading:'Photographs in the story'},{img:'/photo.svg',side:'right',ratio:.8,cap:''},{p:prose.repeat(5)},{quote:prose.repeat(14)},{p:prose.repeat(3)}] };
   const body={size:16,lh:25};
