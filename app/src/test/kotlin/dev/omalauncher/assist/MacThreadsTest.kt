@@ -103,6 +103,15 @@ class MacThreadsTest {
         assertNull(macMail("from the Mac itself"))
     }
 
+    /** Boss, 2026-10-21: words sent with a picture come back with where the Mac keeps it; they are still his, not "from elsewhere". */
+    @Test fun wordsSentWithAPictureBeginTheirEntry() {
+        val sent = withPictures("can u read the brief here", listOf("/Users/jackkim/Downloads/From Fold/a.jpg"))
+        val begun = macApply(listOf(handed(6, "can u read the brief here")), id, MacEvent.Message(1, 0, sent))
+        assertEquals(listOf(TaskStatus.Running), begun.map { it.status })
+        assertTrue(begun.single().later.isEmpty())
+        assertEquals("go on", handOverWords(withPictures(handOverText(handOverPreface(listOf(FrontExchange("hi", "Hey."))), "go on"), listOf("/a.png"))))
+    }
+
     /** The thread says back all it was sent; the entry holds his words alone and still begins, and still shows only them. */
     @Test fun aRequestSentWithContextBeginsWhenTheThreadSaysItBack() {
         val sent = handOverText(handOverPreface(listOf(FrontExchange("can we build apps here?", "Yes."))), "go on")

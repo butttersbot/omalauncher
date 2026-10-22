@@ -665,11 +665,14 @@ fun sharedPreface(shared: Boolean, note: String, preface: String) = if (shared) 
  * His words out of [sent], which may be a [handOverText], with a note about shared work before it ([sharedPreface]).
  * A thread on the Mac says back what it was sent, and this is how that is matched to the entry that holds his
  * words alone. The sides of an exchange are one line each and start with a name, so the first closing heading
- * on a line of its own is the real one.
+ * on a line of its own is the real one. Where the Mac keeps pictures sent with them ([withPictures]) is not his
+ * words either (Boss, 2026-10-21: a picture's message read "Mac unreachable" though the thread had it).
  */
 fun handOverWords(sent: String): String {
-    val note = listOf(MAC_SHARED_NOTE, PHONE_SHARED_NOTE).firstOrNull { sent.startsWith(it + "\n") }
-    val after = if (note == null) sent else sent.removePrefix(note + "\n")
+    val pictures = sent.lastIndexOf(PICTURES_NOTE)
+    val words = if (pictures < 0) sent else sent.substring(0, pictures)
+    val note = listOf(MAC_SHARED_NOTE, PHONE_SHARED_NOTE).firstOrNull { words.startsWith(it + "\n") }
+    val after = if (note == null) words else words.removePrefix(note + "\n")
     if (!after.startsWith(CONTEXT_OPEN + "\n")) return after
     val close = "\n" + CONTEXT_CLOSE + "\n"
     val at = after.indexOf(close)

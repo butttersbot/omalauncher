@@ -1188,8 +1188,11 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
 /** Why a thread's words weren't sent: the pictures with them didn't reach the Mac. */
 const val MAC_IMAGES_NOT_SENT = "The pictures didn't reach the Mac, so nothing was sent. Try again."
 
+/** What comes between his words and where the Mac keeps the pictures sent with them. */
+const val PICTURES_NOTE = "\n\nRead these attached images before answering:\n"
+
 /** [text] with where the Mac keeps the pictures sent with it, for the thread's agent to read, as the phone's builders are told. */
 fun withPictures(
     text: String,
     paths: List<String>,
-): String = if (paths.isEmpty()) text else text + "\n\nRead these attached images before answering:\n" + paths.joinToString("\n")
+): String = if (paths.isEmpty()) text else text + PICTURES_NOTE + paths.joinToString("\n")
