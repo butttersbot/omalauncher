@@ -1,7 +1,6 @@
 package dev.omalauncher.news
 
 import android.annotation.SuppressLint
-import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -15,6 +14,12 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
+import android.widget.FrameLayout
+import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import org.json.JSONObject
 import kotlin.concurrent.thread
 
@@ -26,13 +31,15 @@ import kotlin.concurrent.thread
  * The page is the approved mock-up's, from assets/news/, served from a private https origin so its modules load; the
  * stories come from [NewsStore]'s file through [Bridge]. Pictures load from the web as the stream shows them.
  */
-class NewsActivity : Activity() {
+class NewsActivity : ComponentActivity() {
     private lateinit var web: WebView
     private val main = Handler(Looper.getMainLooper())
+    private var backPending = false
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         web = WebView(this)
         web.settings.javaScriptEnabled = true
         web.settings.domStorageEnabled = true
@@ -57,7 +64,34 @@ class NewsActivity : Activity() {
                     return true
                 }
             }
-        setContentView(web, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        // WebView's CSS safe-area values alone do not reserve Samsung's status/
+        // caption strip. Size the whole web viewport inside the actual native bars.
+        val content = FrameLayout(this).apply {
+            setBackgroundColor(0xFFFBFAF6.toInt())
+            addView(web, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(content) { view, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            WindowInsetsCompat.CONSUMED
+        }
+        setContentView(content)
+        ViewCompat.requestApplyInsets(content)
+        // Android's predictive back gesture bypasses the deprecated Activity
+        // override. Route gestures and buttons through the same reader-first back.
+        onBackPressedDispatcher.addCallback(
+            this,
+            object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    if (backPending) return
+                    backPending = true
+                    web.evaluateJavascript("window.somaBack ? window.somaBack() : false") { handled ->
+                        backPending = false
+                        if (!isDestroyed && !isFinishing && handled != "true") finish()
+                    }
+                }
+            },
+        )
         web.loadUrl("https://$HOST/assets/news/index.html")
         NewsJob.schedule(this)
     }
@@ -66,13 +100,6 @@ class NewsActivity : Activity() {
         super.onResume()
         // Back after an hour or more: what came in since.
         if (System.currentTimeMillis() / 1000 - updated() > 3600) refresh()
-    }
-
-    @Deprecated("Back closes the reader before the screen")
-    override fun onBackPressed() {
-        web.evaluateJavascript("window.somaBack ? window.somaBack() : false") { handled ->
-            if (handled != "true") finish()
-        }
     }
 
     override fun onDestroy() {

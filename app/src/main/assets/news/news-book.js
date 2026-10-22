@@ -7,8 +7,8 @@
 //  - Type set as a book is (Bringhurst): justified and hyphenated (no rivers), every line on one baseline grid so the
 //    lines of facing pages line up, photos and quotes sized to whole lines, no first line of a paragraph left alone
 //    at a page's foot, outer margins wider than the spine's.
-//  - The chrome stays out of the way until the middle is tapped (Apple Books, Kindle): then a scrubber over the
-//    pages, time left in the story, and Aa for the type size, which sets the pages again in place.
+//  - A compact top bar holds navigation and Aa. There is no bottom strip: that space belongs to the pages.
+//    Tap the middle to hide or reveal the top bar; the type size keeps the current passage in view.
 //  - The page edges show how much is left, a little thicker on the side still to read.
 //
 // Pretext lays the text out a line at a time, each line as wide as the page leaves it, which is what lets the photos
@@ -23,7 +23,6 @@ const SIZES = [
 ]
 const MARGIN = { spine: 24, outer: 34, top: 44, bottom: 40 }
 const GAP = 14
-const WPM = 230
 const esc = value => String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
 const font = (size, weight = 400, style = 'normal') => `${style} ${weight} ${size}px ${SERIF}`
@@ -339,10 +338,6 @@ const CSS = `
 .bk-top .t { min-width: 0; flex: 1; font: italic 14px ${SERIF}; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bk-top button { font: 15px ${SERIF}; padding: 4px 8px; border: 1px solid #111; background: #fbf9f3; }
 .bk-top button.on { background: #111; color: #fbf9f3; }
-.bk-bottom { order: 2; padding: 10px 22px 12px; background: rgba(251,249,243,.96); border-top: 1px solid #d9d6cf; }
-.bk-bottom input { width: 100%; accent-color: #d7262d; }
-.bk-bottom .row button { padding: 2px 10px; }
-.bk-bottom .row { display: flex; justify-content: space-between; margin-top: 4px; color: #74737a; }
 .pg { position: absolute; inset: 0; font-family: ${SERIF}; color: #1b1a17; }
 .pg > * { position: absolute; margin: 0; }
 .pg-head { top: 18px; border-bottom: .5px solid #cfcac0; padding-bottom: 5px; color: #8a877f; font-size: 9.5px !important; }
@@ -388,14 +383,13 @@ export function mount(el, article, onBack) {
     document.head.appendChild(style)
   }
   el.className = 'bk'
-  el.innerHTML = `<div class="bk-stage"><div class="bk-left"></div><div class="bk-right"></div></div>
-    <div class="bk-chrome bk-top"><button aria-label="Back to news stream" class="back" onclick="window.somaBack && window.somaBack()">‹</button><span class="t">${esc(article.title)}</span><button aria-label="Small text" data-size="0" style="font-size:12px">Aa</button><button aria-label="Medium text" data-size="1">Aa</button><button aria-label="Large text" data-size="2" style="font-size:18px">Aa</button></div>
-    <div class="bk-chrome bk-bottom"><input aria-label="Story progress" type="range" min="0" value="0"><div class="row mono"><button class="prev" aria-label="Previous pages">‹</button><span class="pages" aria-live="polite"></span><span class="left"></span><button class="next" aria-label="Next pages">›</button></div></div>`
+  el.innerHTML = `<div class="bk-stage" role="group" aria-label="Article pages"><div class="bk-left"></div><div class="bk-right"></div></div>
+    <div class="bk-chrome bk-top"><button aria-label="Back to news stream" class="back" onclick="window.somaBack && window.somaBack()">‹</button><span class="t">${esc(article.title)}</span><button class="prev" aria-label="Previous pages">‹</button><button class="next" aria-label="Next pages">›</button><button aria-label="Small text" data-size="0" style="font-size:12px">Aa</button><button aria-label="Medium text" data-size="1">Aa</button><button aria-label="Large text" data-size="2" style="font-size:18px">Aa</button></div>
+    `
   const stage = el.querySelector('.bk-stage')
   const leftEl = el.querySelector('.bk-left')
   const rightEl = el.querySelector('.bk-right')
   const chrome = [...el.querySelectorAll('.bk-chrome')]
-  const scrub = el.querySelector('input')
   let sizeAt = 1
   let pages, html, spreads
   let at = 0
@@ -421,7 +415,6 @@ export function mount(el, article, onBack) {
       }
     }
     at = Math.floor(pageAt / 2)
-    scrub.max = String(spreads - 1)
     el.querySelectorAll('[data-size]').forEach(b => { b.classList.toggle('on', Number(b.dataset.size) === sizeAt); b.setAttribute('aria-pressed', String(Number(b.dataset.size) === sizeAt)); })
     show()
   }
@@ -430,12 +423,9 @@ export function mount(el, article, onBack) {
     leftEl.innerHTML = html[at * 2] || ''
     rightEl.innerHTML = html[at * 2 + 1] || ''
     fitLines(leftEl); fitLines(rightEl)
-    scrub.value = String(at)
     el.querySelector('.prev').disabled = at === 0
     el.querySelector('.next').disabled = at === spreads - 1
-    const words = pages.slice(at * 2).reduce((n, p) => n + p.words, 0)
-    el.querySelector('.pages').textContent = `${at * 2 + 1}–${Math.min(at * 2 + 2, pages.length)} of ${pages.length}`
-    el.querySelector('.left').textContent = words ? `${Math.max(1, Math.round(words / WPM))} min left in the story` : 'The end'
+    stage.setAttribute('aria-label', `Article pages ${at * 2 + 1}–${Math.min(at * 2 + 2, pages.length)} of ${pages.length}`)
   }
 
   // The leaf: the page lifted over the spine, its back the next spread's facing page.
@@ -548,11 +538,6 @@ export function mount(el, article, onBack) {
   stage.addEventListener('pointerup', up)
   stage.addEventListener('pointercancel', up)
 
-  scrub.addEventListener('input', () => {
-    readingAnchor = null
-    at = Number(scrub.value)
-    show()
-  })
   el.querySelector('.prev').addEventListener('click', () => turn(-1))
   el.querySelector('.next').addEventListener('click', () => turn(1))
   el.querySelectorAll('[data-size]').forEach(b =>

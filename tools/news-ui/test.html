@@ -44,9 +44,10 @@ try {
   const book=document.querySelector('#book');
   assert(book.querySelectorAll('[aria-label="Back to news stream"]').length===1 && book.querySelector('[aria-label="Small text"]') && book.querySelector('[aria-label="Large text"]'), 'unique accessible back and size labels');
   const stage=book.querySelector('.bk-stage').getBoundingClientRect();
-  assert(book.querySelector('.bk-top').getBoundingClientRect().bottom<=stage.top && book.querySelector('.bk-bottom').getBoundingClientRect().top>=stage.bottom, 'book chrome stays outside the pages');
+  assert(book.querySelector('.bk-top').getBoundingClientRect().bottom<=stage.top && stage.bottom>=book.getBoundingClientRect().bottom-20, 'top controls stay outside pages and pages use the bottom space');
+  assert(!book.querySelector('.bk-bottom,input[type=range]'), 'no bottom strip or progress bar');
   book.querySelector('.next').click(); await wait(650);
-  assert(book.querySelector('.pages').textContent.startsWith('3–4'), 'forward page turn');
+  assert(book.querySelector('.bk-stage').getAttribute('aria-label').startsWith('Article pages 3–4'), 'forward page turn');
   // The old spread's first line remains somewhere on the resized facing pages.
   const anchor=book.querySelector('.bk-left .pg-line')?.textContent.replace(/-$/,'').trim().split(' ').slice(0,3).join(' ');
   book.querySelector('[data-size="0"]').click(); await wait(30);
@@ -57,7 +58,7 @@ try {
   book.querySelector('[data-size="1"]').click(); await wait(30);
   assert(book.querySelector('[data-size="1"]').getAttribute('aria-pressed')==='true', 'medium size selected');
   book.querySelector('.prev').click(); await wait(650);
-  assert(book.querySelector('.pages').textContent.startsWith('1–2'), 'backward page turn');
+  assert(book.querySelector('.bk-stage').getAttribute('aria-label').startsWith('Article pages 1–2'), 'backward page turn');
 
   const frame=document.querySelector('#reader');
   await until(()=>frame.contentWindow.document.querySelector('#scroll'));
@@ -68,8 +69,9 @@ try {
   assert(!!w.document.querySelector('.fetching'), 'uncached story shows loading state');
   await until(()=>!w.document.querySelector('.fetching') && w.document.querySelector('.pg-heading'));
   assert(!w.document.querySelector('#flow').textContent.includes('Author biography') && w.document.querySelector('#flow').textContent.includes('editorial team'), 'full text replaces excerpt with cleaned article');
-  w.somaBack();
+  assert(w.somaBack()===true, 'back from a story is consumed by the news reader');
   assert(Math.abs(w.document.querySelector('#scroll').scrollTop-550)<2, 'back restores stream scroll position');
+  assert(w.somaBack()===false && !!w.document.querySelector('#scroll'), 'back exits only when already on the news stream');
   frame.style.display='none'; document.querySelector('#flow').style.display='none';
 } catch(e) { failures.push(e.stack || String(e)); }
 document.querySelector('#results').textContent=`${passed.length} passed; ${failures.length} failed. ${failures.join('; ')}`;
