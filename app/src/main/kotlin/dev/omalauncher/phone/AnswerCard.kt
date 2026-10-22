@@ -230,16 +230,21 @@ private fun AnswerCardContent(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            // The chat's own size, and at most a few lines then "…" (Boss, 2026-10-21: the card "is taking up half the
+            // screen"); the whole answer is a tap away in the chat.
             BasicText(
                 text,
-                style = Pack.hand((24 * u).sp, ink).copy(fontWeight = FontWeight.Bold, lineHeight = (26 * u).sp),
-                maxLines = 6,
+                style = Pack.body(Pack.size.body, ink),
+                maxLines = ANSWER_CARD_LINES,
                 overflow = TextOverflow.Ellipsis,
             )
         }
     }
     }
 }
+
+/** Lines of the answer the card shows before it ends in "…". */
+private const val ANSWER_CARD_LINES = 4
 
 /** The easing of the prototype's `.heads`. */
 private val Heads = CubicBezierEasing(0.2f, 0.9f, 0.2f, 1f)
