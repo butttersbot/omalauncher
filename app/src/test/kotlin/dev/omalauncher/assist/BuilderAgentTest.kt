@@ -36,13 +36,18 @@ class BuilderAgentTest {
             val prompt = "Read this; \$(echo injected) `echo unsafe` 'quoted'"
             val image = "/root/a photo's.png"
             val choice = builderAgent(BuilderId.B, listOf(claude, codex), claude)!!
-            val command = backgroundAgentCommand(choice.agent.bin, prompt, listOf(image), choice.model)
+            val command = backgroundAgentCommand(choice.agent.bin, prompt, listOf(image), choice.model, codexFullAccess = true)
             val process = ProcessBuilder("/bin/sh", "-c", command).apply {
                 environment()["PATH"] = dir.path + ":" + environment()["PATH"]
             }.start()
             val args = process.inputStream.bufferedReader().readLines()
             assertEquals(0, process.waitFor())
-            assertEquals(listOf("exec", "--skip-git-repo-check", "--model", "gpt-6.1-sol", "--image", image, "--", prompt), args)
+            assertEquals(listOf("exec", "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox", "--model", "gpt-6.1-sol", "--image", image, "--", prompt), args)
         } finally { dir.deleteRecursively() }
+    }
+
+    @Test fun fullAccessIsLimitedToPhoneBCodexAndDoesNotChangeClaudeFallback() {
+        assertFalse(backgroundAgentCommand("codex", "test").contains("--dangerously-bypass"))
+        assertEquals(backgroundAgentCommand("claude", "test"), backgroundAgentCommand("claude", "test", codexFullAccess = true))
     }
 }

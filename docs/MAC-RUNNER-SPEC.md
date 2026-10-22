@@ -715,3 +715,16 @@ flatpak install/list/info/search/update) with only that program's plain options,
 protontricks, lutris, flatpak run, gamescope, mangohud, opening an app on the screen, scripts, shells, interpreters.
 Uploads (curl -T/-d/-F, wget --post-file/--method) ask. Bots also get agent mail (`mail(to, text)` through tmsg, signed
 with the thread's id) and, on Linux, Boss's desktop session (Wayland, Hyprland, X) for what they run.
+
+
+## Codex full-access auto mode — 2026-10-21 (Boss)
+
+Boss asked to finish `briefs/codex-no-cards.md`. This supersedes the older Codex
+auto-policy descriptions above: new and resumed Codex auto sessions use
+`approvalPolicy: never` and `sandbox: danger-full-access`. Manual sessions retain
+`untrusted` and `workspace-write`. Installed apps, browser, plugins and MCP tools
+remain available; native questions and interactive tool requests still reach Soma.
+Stop and remembered-command revocation remain supported. Other providers keep
+their existing policies. A source change takes effect on the installed service
+only after an idle-only deployment/restart; OS and external-tool permissions
+remain enforced.

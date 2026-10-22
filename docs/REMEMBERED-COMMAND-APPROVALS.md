@@ -28,7 +28,9 @@ Older runners advertise no `can_remember` capability, so upgraded clients show
 only one-time approval. Older clients continue to work against the new runner.
 Both the runner and client must be upgraded to enable saving; an APK update alone
 does not change a Mac runner that is already running. No saved grants are shipped
-with a build, and the sandbox and underlying approval policies remain unchanged.
+with a build. The saved-command feature itself does not change the sandbox or
+underlying approval policy. The later owner-requested full-access change below
+changes Codex auto mode separately.
 
 ## Verification — 2026-10-21
 
@@ -50,7 +52,7 @@ with a build, and the sandbox and underlying approval policies remain unchanged.
 The first verification above predates deployment. The Mac Pro runner was later
 reconciled with its newer installed source, with Boss's direct approval, to retain
 native Codex session discovery, question/permission handling and installed app/MCP
-tools. This repository now contains that exact deployed runner, SHA-256
+tools. That deployment used the reconciled runner, SHA-256
 `1c1217f87f9ed61b9cfe1991fb3ef9382248462ea7bb94a27f4c780c7756590d`.
 The sync preserves the installed default modes and bot policy; it introduces no
 new live policy change or restart.
@@ -74,3 +76,13 @@ focused reconciliation tests passed. Legacy auto-policy expectations were update
 to the existing deployed routine/critical boundary; manual-mode rejection and
 one-time approval checks remain. The runner file itself matches the live hash
 above byte for byte.
+
+## Full-access auto mode — 2026-10-21
+
+Boss subsequently asked to finish `briefs/codex-no-cards.md`. Codex auto mode now
+requests `never` approvals and `danger-full-access`, while manual mode keeps
+`untrusted` and `workspace-write`. Saved grants and revocation remain available
+when Codex sends an approval request; auto execution no longer needs a grant.
+Interactive questions and tool requests still reach Soma. Source verification:
+438 protocol/HTTP checks and six focused native/approval tests passed. Deployment
+of this later policy change must be recorded separately from the earlier hash.

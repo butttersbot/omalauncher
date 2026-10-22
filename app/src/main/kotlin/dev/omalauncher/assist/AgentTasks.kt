@@ -390,9 +390,9 @@ class Builder(val id: BuilderId) {
             // Which builder this is, for the tools that sign mail (oma msg, oma-macbuild): a reply comes back to it, not to A.
             "export OMA_BUILDER=${id.letter}\n" + (worktree?.let { it.script() + "\n" } ?: "") + claudeStreamCommand(resumed, if (errand) ERRAND_MODEL else null)
         } else {
-            backgroundAgentCommand(agent.bin, fullPrompt, images, choice.model) // Validate before the screenshot is touched.
+            backgroundAgentCommand(agent.bin, fullPrompt, images, choice.model, codexFullAccess = id == BuilderId.B) // Validate before the screenshot is touched.
             handed = screen?.let { ScreenShots.handOver(it, runtime.proot.promptAttachments) }
-            "export OMA_BUILDER=${id.letter}\n" + backgroundAgentCommand(agent.bin, fullPrompt, images + listOfNotNull(handed?.let(runtime.proot::guestPath)), choice.model)
+            "export OMA_BUILDER=${id.letter}\n" + backgroundAgentCommand(agent.bin, fullPrompt, images + listOfNotNull(handed?.let(runtime.proot::guestPath)), choice.model, codexFullAccess = id == BuilderId.B)
         }
         val log = ChatLog.of(context)
         val began = System.currentTimeMillis()
@@ -792,9 +792,10 @@ const val ERRAND_MODEL = "sonnet"
 fun claudeStreamCommand(resume: String? = null, model: String? = null): String = "claude -p " + (resume?.takeIf(SESSION_ID::matches)?.let { "--resume $it " } ?: "") +
     (model?.let { "--model $it " } ?: "") + "--input-format stream-json --output-format stream-json --verbose --permission-mode auto --permission-prompt-tool stdio --allowedTools ${shellQuote("Bash(oma-phone *)")} Read"
 
-fun backgroundAgentCommand(agent: String, prompt: String, images: List<String> = emptyList(), model: String? = null): String = when (agent) {
+fun backgroundAgentCommand(agent: String, prompt: String, images: List<String> = emptyList(), model: String? = null, codexFullAccess: Boolean = false): String = when (agent) {
     "claude" -> "claude -p --permission-mode auto --allowedTools ${shellQuote("Bash(oma-phone *)")} Read -- ${shellQuote(prompt)} < /dev/null"
-    "codex" -> "codex exec --skip-git-repo-check " + (model?.let { "--model ${shellQuote(it)} " } ?: "") + images.joinToString(" ") { "--image ${shellQuote(it)}" }.let { if (it.isBlank()) "" else "$it " } + "-- ${shellQuote(prompt)} < /dev/null"
+    // Phone B cannot use Codex's bubblewrap sandbox inside proot. Other callers keep their existing policy.
+    "codex" -> "codex exec --skip-git-repo-check " + (if (codexFullAccess) "--dangerously-bypass-approvals-and-sandbox " else "") + (model?.let { "--model ${shellQuote(it)} " } ?: "") + images.joinToString(" ") { "--image ${shellQuote(it)}" }.let { if (it.isBlank()) "" else "$it " } + "-- ${shellQuote(prompt)} < /dev/null"
     // Grok as Claude Code is run here, in auto mode with phone commands and reading allowed; nobody answers its prompts in
     // -p, so what auto mode won't allow is refused. It reads an image from its path, so the paths go in its words. The
     // prompt is given as --single= so one starting with a dash is still his words.

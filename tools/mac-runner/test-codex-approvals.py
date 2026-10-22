@@ -57,6 +57,25 @@ class ReconciledRunnerTests(unittest.TestCase):
         self.assertEqual({'decision': 'accept'}, self.replies[-1][0][1])
         self.assertTrue(self.events[-1][1]['saved_command'])
 
+    def test_full_access_auto_and_sandboxed_manual_apply_to_new_and_resumed_threads(self):
+        requests = []
+        self.driver.request = lambda method, params: requests.append((method, params))
+        self.driver.notify = lambda *args: None
+        for selected, policy, sandbox in ((None, 'never', 'danger-full-access'),
+                                          ('auto', 'never', 'danger-full-access'),
+                                          ('manual', 'untrusted', 'workspace-write')):
+            self.thread.meta['mode'] = selected
+            self.thread.meta['model'] = 'gpt-6.1-sol'
+            for session in (None, 'native-session'):
+                self.thread.meta['session'] = session
+                self.driver.answered('initialize', {})
+                method, rules = requests[-1]
+                self.assertEqual('thread/resume' if session else 'thread/start', method)
+                self.assertEqual(policy, rules['approvalPolicy'])
+                self.assertEqual(sandbox, rules['sandbox'])
+                self.assertEqual('user', rules['approvalsReviewer'])
+                self.assertEqual('gpt-6.1-sol', rules['model'])
+
     def test_changes_and_compound_commands_ask(self):
         self.assertEqual(200, self.grant()[0])
         for changes in ({'command': "/bin/zsh -lc 'git status --porcelain'"}, {'additionalPermissions': {'network': True}}, {'cwd': str(self.root.parent)}):

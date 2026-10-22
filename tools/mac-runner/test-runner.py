@@ -616,14 +616,14 @@ try:
               and events[-1]['dropped'] == 1 and settle(other, 'idle'))
         check(kind + ': a late allow does nothing', call('POST', '/threads/%s/approvals/%s' % (other, card['approval']), {'decision': 'allow', 'nonce': card['nonce']})[0] == 404)
     codex = [entry for entry in starts() if entry.get('kind') == 'codex'][-1]
-    check('codex: auto by default in the workspace sandbox, with owner approvals and installed MCP tools retained', codex['policy'] == 'on-request'
-          and codex['sandbox'] == 'workspace-write' and codex['reviewer'] == 'user'
+    check('codex: auto by default with full access and installed MCP tools retained', codex['policy'] == 'never'
+          and codex['sandbox'] == 'danger-full-access' and codex['reviewer'] == 'user'
           and 'approvals_reviewer="user"' in codex['arguments'] and 'notify=[]' in codex['arguments'] and 'mcp_servers.paper.enabled=false' not in codex['arguments'])
     code, made = call('POST', '/threads', {'name': 'Codex auto', 'project': str(project), 'kind': 'codex', 'mode': 'auto'})
     call('POST', '/threads/%s/messages' % made['thread']['id'], {'text': 'what files are here'})
     stream(made['thread']['id'])
-    check('codex: auto when asked for by name, asking only for more than the sandbox gives', made['thread']['mode'] == 'auto' and starts()[-1]['policy'] == 'on-request'
-          and starts()[-1]['sandbox'] == 'workspace-write')
+    check('codex: explicit auto runs with full access and no execution approval prompts', made['thread']['mode'] == 'auto' and starts()[-1]['policy'] == 'never'
+          and starts()[-1]['sandbox'] == 'danger-full-access')
 
     # Saved approvals are owner decisions on a nonce-bearing card, scoped to this one literal request.
     saved = made['thread']['id']

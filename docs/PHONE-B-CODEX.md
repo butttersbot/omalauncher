@@ -10,16 +10,25 @@ process is marked `OMA_BUILDER=B`, so replies from phone tools route to B. The
 watchdog uses each running builder's actual event protocol, rather than assuming
 both use the launcher's default provider.
 
-This change retains the existing Codex execution and permission settings. It does
-not implement the blanket sandbox/approval removal in `briefs/codex-no-cards.md`,
-and does not change the Mac runner or restart it.
+Phone B launches Codex with `--dangerously-bypass-approvals-and-sandbox`, as
+requested in `briefs/codex-no-cards.md`. This removes Codex execution approval
+prompts and avoids its incompatible bubblewrap sandbox inside the phone's proot.
+Phone A and non-builder assistant commands retain their existing launch policy.
+
+The Mac runner's Codex auto mode uses `approvalPolicy: never` and
+`sandbox: danger-full-access` for both new and resumed sessions. Manual mode
+retains `untrusted` approvals and the `workspace-write` sandbox. Native questions,
+interactive tool requests, Stop, installed integrations and saved command grants
+remain supported. Full access does not disable operating-system restrictions or
+guarantee that external tools will never request input.
 
 ## Verification limits
 
-Unit tests exercise provider selection, fallback, and the real shell argument
-boundary for model, prompt and image paths. A phone-side reply and a tool request
-through the Phone B UI still require verification after an owner-approved build
-promotion. The brief reports that Codex's Linux sandbox fails inside proot;
-this provider/model change does not resolve that runtime compatibility issue.
+Unit tests exercise provider selection, fallback, the full-access flag, and the
+real shell argument boundary for model, prompt and image paths. Runner tests check
+auto/manual settings on both new and resumed sessions. A phone-side reply and a
+tool request through the Phone B UI still require verification after an
+owner-approved build promotion. The launch flag addresses the reported sandbox
+failure; a successful phone tool journey remains unverified until tested there.
 Do not describe phone-side tool use as verified based on a successful login or a
 plain text model reply.
