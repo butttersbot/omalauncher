@@ -184,6 +184,8 @@ interface ChatHost {
 
     /** His answer to a Mac thread's request; [done] gets how it went. */
     fun answerMac(ticket: String, allow: Boolean, done: (MacApprovalOutcome) -> Unit)
+    fun rememberMacCommand(ticket: String, done: (MacApprovalOutcome) -> Unit) { done(MacApprovalOutcome.Failed) }
+    fun forgetMacCommands(threadId: String, done: (String) -> Unit) { done("Saved command approvals are unavailable on this host") }
 
     /** Opens a terminal with the default agent started on [prompt]. False with no agent. */
     fun runInTerminal(prompt: String): Boolean

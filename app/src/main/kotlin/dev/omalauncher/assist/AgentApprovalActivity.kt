@@ -63,7 +63,8 @@ class AgentApprovalActivity : Activity() {
         }
         val request = entry.request
         val detail = TextView(this).apply {
-            text = "${request.explanation}\n\n${macApprovalDetail(request)}\n\nApprove once allows this action only. Future actions may ask again."
+            text = "${request.explanation}\n\n${macApprovalDetail(request)}\n\nApprove once allows this action only. Future actions may ask again." +
+                if (request.canRemember) "\n\nAlways allow saves this exact command, directory and access for this thread. Revoke from the tab menu → Forget saved commands." else ""
             setPadding(40, 24, 40, 24); setTextIsSelectable(true)
         }
         val app = applicationContext
@@ -72,7 +73,9 @@ class AgentApprovalActivity : Activity() {
             .setView(ScrollView(this).apply { addView(detail) })
             .setPositiveButton("Approve once") { _, _ -> decide(true) }
             .setNegativeButton("Deny") { _, _ -> decide(false) }
-            .setNeutralButton("Later", null).setOnDismissListener { finish() }.show()
+            .apply { if (request.canRemember) setNeutralButton("Always allow this command") { _, _ ->
+                MacThreads.rememberCommand(app, entry.ticket) { outcome -> macApprovalNotice(outcome)?.let { AgentNotices.say(app, it) } }
+            } else setNeutralButton("Later", null) }.setOnDismissListener { finish() }.show()
         // Answered elsewhere, withdrawn or ended while this was open: close without a word.
         handler.post(object : Runnable {
             override fun run() { if (waiting() == null) dialog?.dismiss() else handler.postDelayed(this, 500) }

@@ -158,6 +158,7 @@ enum class TabAction(val label: String) {
     /** Builder processes no task owns ended ([tabMend]). */
     Clean("Clean up leftovers"),
     Copy("Copy last answer"),
+    ForgetCommands("Forget saved commands"),
 
     /** Moves a thread on a computer to another agent or model ([switchThread]), from a page of picks. */
     Switch("Switch agent"),
@@ -183,7 +184,7 @@ enum class TabAction(val label: String) {
  * tab can be neither renamed, pinned nor archived: it is the stream everything else hangs from. No row deletes a
  * word of history or a thread on the Mac, and none answers an approval.
  */
-fun tabMenu(tab: String, pinned: Boolean, stoppable: Boolean, answered: Boolean, archived: Int, mend: TabMend = TabMend(), switchable: Boolean = false, bot: Boolean = false): List<TabAction> =
+fun tabMenu(tab: String, pinned: Boolean, stoppable: Boolean, answered: Boolean, archived: Int, mend: TabMend = TabMend(), switchable: Boolean = false, bot: Boolean = false, forgetCommands: Boolean = false): List<TabAction> =
     if (bot) {
         // A bot's tab is always there and named by its folder: no rename, pin, switch or archive.
         listOfNotNull(TabAction.Instructions, TabAction.Notes, TabAction.Stop.takeIf { stoppable }, TabAction.Copy.takeIf { answered }, TabAction.Fresh)
@@ -198,6 +199,7 @@ fun tabMenu(tab: String, pinned: Boolean, stoppable: Boolean, answered: Boolean,
             TabAction.Clean.takeIf { mend.clean },
             TabAction.Copy.takeIf { answered },
             TabAction.Switch.takeIf { switchable },
+            TabAction.ForgetCommands.takeIf { forgetCommands },
             TabAction.Archive,
             TabAction.Archived.takeIf { archived > 0 },
         )

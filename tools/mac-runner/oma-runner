@@ -5,8 +5,9 @@ It listens on the Mac's Tailscale address only, and every request must carry a k
 asking: each device Boss pairs has a key of its own, and `tailscale whois` must name that device as the caller, so a key
 copied anywhere else opens nothing. The Mac keeps only each key's SHA-256, in ~/agents/claude-code/oma-runner.keys.json,
 so an agent that reads that file cannot use it. It does one thing: run a coding agent (Claude Code, Codex, Cursor or Grok) in a
-named project thread, or talk with a Venice model, under a folder Boss allowed, and stream what it says. It is not a shell: there is no endpoint that runs a command (a bot's shell tool runs one only as a tool call from that bot's own turn, and only a few look-only commands without a card). It
-approves nothing itself: every request for approval waits for the phone's answer, however long that takes.
+named project thread, or talk with a Venice model, under a folder Boss allowed, and stream what it says. It is not a shell: there is no endpoint that runs a command (a bot's shell tool runs one only as a tool call from that bot's own turn, and only a few look-only commands without a card).
+New approval requests wait for the owner's answer. Only exact Codex command scopes the owner explicitly saved may
+reuse that decision; no command prefix or blanket permission is inferred.
 
   GET  /health                           {ok, working, waiting, kinds, models: {venice: [...]}}
   GET  /threads                          every thread: id, name, summary, status, last_worked, tail, pending, bot
@@ -19,7 +20,9 @@ approves nothing itself: every request for approval waits for the phone's answer
   POST /threads/ID/messages   {text}     the owner's words; {taken: "now"} or {taken: "queued", position}
   GET  /threads/ID/stream[?after=N]      server-sent events from event N+1 on (or the Last-Event-ID header)
   GET  /threads/ID/events[?after=N]      the same events as plain JSON, for asking without holding a link
-  POST /threads/ID/approvals/APPROVAL    {decision: "allow"|"deny", nonce}   answers that one request, once
+  POST /threads/ID/approvals/APPROVAL    {decision: "allow"|"deny", nonce, remember?: true}
+                                         remember saves only an eligible exact Codex command for this thread
+  POST /threads/ID/command-approvals/clear {}   forgets that thread's saved command approvals
   POST /threads/ID/stop                  stops the task and drops what was waiting its turn; what was said stays
   POST /files?name=NAME   (the bytes)    a file from the phone, kept in ~/Downloads/From Fold; {path, bytes}
   GET  /projects                         the project registry (~/ClaudeSync/projects/_projects.json): {name, folders, handoff}
@@ -287,6 +290,36 @@ def unwrap(command):
     return words[2] if len(words) == 3 and words[1] in ('-lc', '-c') and words[0].rsplit('/', 1)[-1] in ('sh', 'bash', 'zsh') else (command or '')
 
 
+def command_scope(thread, params):
+    """An exact, thread-local Codex command grant. Never a prefix, shell program, or file-edit grant."""
+    raw, cwd = params.get('command'), params.get('cwd')
+    if not isinstance(raw, str) or not isinstance(cwd, str) or len(raw) > 4096:
+        return None
+    command = unwrap(raw)
+    # A small literal invocation only. Expansions and compound commands must be reviewed each time.
+    if not command.strip() or any(c in command for c in '\x00\n\r;&|><$`*?[]{}~()'):
+        return None
+    try:
+        words = shlex.split(command)
+        directory = pathlib.Path(cwd).resolve(strict=True)
+        project = pathlib.Path(thread.meta['project']).resolve(strict=True)
+        directory.relative_to(project)
+    except (ValueError, OSError):
+        return None
+    if not pathlib.Path(cwd).is_absolute() or not words or '=' in words[0]:
+        return None
+    if pathlib.Path(words[0]).name in ('sh', 'bash', 'zsh', 'fish', 'eval', 'exec', 'env', 'source', '.'):
+        return None
+    # Keep every permission-bearing field; only request identities and presentation may change between turns.
+    context = {key: value for key, value in params.items() if key not in
+               ('threadId', 'turnId', 'itemId', 'reason', 'startedAtMs', 'availableDecisions')}
+    scope = {'project': str(project), 'directory': str(directory), 'request': context}
+    encoded = json.dumps(scope, sort_keys=True, separators=(',', ':'))
+    if len(encoded) > 16_384:
+        return None
+    return {**scope, 'key': hashlib.sha256(encoded.encode()).hexdigest()}
+
+
 def step(block):
     """A tool call as one line of the thread: the tool and what it was pointed at (as the phone writes it)."""
     given = block.get('input') or {}
@@ -505,7 +538,18 @@ class Codex(Talker):
     def asked(self, method, number, params):
         thread = self.thread
         if method == 'item/commandExecution/requestApproval':
-            thread.ask(number, 'Bash', {'command': unwrap(params.get('command')), 'cwd': params.get('cwd')}, params.get('reason') or '')
+            if thread.stopped or closing:
+                self.reply(number, {'decision': 'decline'})
+                return False
+            scope = command_scope(thread, params)
+            if scope is not None and scope in thread.meta.get('command_grants', []):
+                self.reply(number, {'decision': 'accept'})
+                thread.emit('step', tool='Bash', text='Saved command approval: ' + unwrap(params['command']), saved_command=True)
+            else:
+                given = {'command': unwrap(params.get('command')), 'cwd': params.get('cwd')}
+                if scope is not None:
+                    given['access'] = {key: value for key, value in scope['request'].items() if key not in ('command', 'cwd')}
+                thread.ask(number, 'Bash', given, params.get('reason') or '', command_scope=scope)
         elif method == 'item/fileChange/requestApproval':
             changes = (self.items.get(params.get('itemId')) or {}).get('changes') or []
             if not changes:
@@ -1975,7 +2019,7 @@ class Thread:
                 'last_event': len(self.events),
                 'bot': self.bot_fields(),
                 'background': list(self.kept.driver.background.values()) if self.kept and not self.kept.done else [],
-                'pending': [{'approval': key, 'nonce': entry['nonce'], 'tool': entry['tool'], 'input': entry['input'], 'explanation': entry['explanation']} for key, entry in self.pending.items()]}
+                'pending': [{'approval': key, 'nonce': entry['nonce'], 'tool': entry['tool'], 'input': entry['input'], 'explanation': entry['explanation'], 'can_remember': entry.get('command_scope') is not None} for key, entry in self.pending.items()]}
 
     def bot_fields(self):
         """What a device shows of a bot's session: who it is, what's wrong with it if anything, how full its memory is."""
@@ -2000,7 +2044,7 @@ class Thread:
         approval, nonce = 'a' + secrets.token_hex(6), secrets.token_urlsafe(24)
         self.pending[approval] = {'nonce': nonce, 'request': request, 'tool': tool, 'input': given, 'explanation': explanation, **extra}
         self.status('waiting')
-        self.emit('approval', approval=approval, nonce=nonce, tool=tool, input=given, explanation=explanation)
+        self.emit('approval', approval=approval, nonce=nonce, tool=tool, input=given, explanation=explanation, can_remember=extra.get('command_scope') is not None)
 
     def withdraw(self, request):
         """The agent took a request back (or it was settled): its card goes. Call with `changed` held."""
@@ -2593,13 +2637,31 @@ def decide(thread, approval, body, device=None):
             return 403, {'ok': False, 'error': 'wrong nonce'}
         if body.get('decision') not in ('allow', 'deny'):
             return 400, {'ok': False, 'error': 'decision must be "allow" or "deny"'}
+        remember = body.get('remember', False)
+        if not isinstance(remember, bool) or (remember and (body['decision'] != 'allow' or entry.get('command_scope') is None or thread.meta['kind'] != 'codex')):
+            return 400, {'ok': False, 'error': 'only an eligible Codex command can be remembered when allowed'}
+        grants = thread.meta.get('command_grants', [])
+        scope = entry.get('command_scope')
+        if remember and scope not in grants and len(grants) >= 100:
+            return 400, {'ok': False, 'error': 'saved command limit reached; forget saved commands first'}
         del thread.pending[approval]
         if thread.driver is None or not thread.driver.answer(entry, body['decision'] == 'allow'):
             thread.emit('approval_result', approval=approval, decision='withdrawn')
             if not thread.pending:
                 thread.status('working' if thread.worker is not None else 'idle')
             return 409, {'ok': False, 'error': 'the agent did not take the answer (the task ended, or it offered no once-only choice)'}
-        thread.emit('approval_result', approval=approval, decision=body['decision'], **({'device': device} if device else {}))
+        if remember and scope not in grants:
+            thread.meta['command_grants'] = grants + [scope]
+            try:
+                thread.save()
+            except OSError:
+                # The command was allowed once, but a failed save must not become an in-memory grant.
+                thread.meta['command_grants'] = grants
+                thread.emit('approval_result', approval=approval, decision='allow', remembered=False, **({'device': device} if device else {}))
+                if not thread.pending:
+                    thread.status('working')
+                return 500, {'ok': False, 'error': 'command allowed once, but its saved approval could not be written'}
+        thread.emit('approval_result', approval=approval, decision=body['decision'], remembered=remember, **({'device': device} if device else {}))
         if not thread.pending:
             thread.status('working')
         return 200, {'ok': True, 'decision': body['decision']}
@@ -2765,6 +2827,11 @@ class Runner(BaseHTTPRequestHandler):
             return self.answer(200, {'ok': True, **take(thread, text)})
         if parts[2:] == ['stop']:
             return self.answer(200, {'ok': True, 'stopped': stop(thread)})
+        if parts[2:] == ['command-approvals', 'clear']:
+            with changed:
+                thread.meta.pop('command_grants', None)
+                thread.save()
+            return self.answer(200, {'ok': True, 'cleared': True})
         if parts[2:] == ['fresh']:
             with changed:
                 code, result = fresh(thread)

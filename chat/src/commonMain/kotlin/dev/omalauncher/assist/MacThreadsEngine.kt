@@ -1145,18 +1145,31 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
      * phone. The answer goes with that request's own nonce; the card goes only when the Mac says it took the
      * answer or that nothing waits any more, and otherwise stays for him. [told] is called on the main thread.
      */
-    fun answer(ticket: String, allow: Boolean, told: (MacApprovalOutcome) -> Unit) {
+    fun answer(ticket: String, allow: Boolean, told: (MacApprovalOutcome) -> Unit) = decide(ticket, allow, false, told)
+
+    fun rememberCommand(ticket: String, told: (MacApprovalOutcome) -> Unit) = decide(ticket, true, true, told)
+
+    fun forgetCommands(threadId: String, told: (String) -> Unit) {
+        if (platform.locked()) return told("Unlock your phone to forget saved commands")
+        thread(name = "oma-forget-commands", isDaemon = true) {
+            val result = runCatching { client(threadId).clearCommands(threadId) }.getOrNull()
+            platform.post { told(if (result is MacAnswer.Ok && result.value) "Saved command approvals forgotten" else "Could not forget saved commands. Check the runner connection and version.") }
+        }
+    }
+
+    private fun decide(ticket: String, allow: Boolean, remember: Boolean, told: (MacApprovalOutcome) -> Unit) {
         restore()
         if (platform.locked()) return told(MacApprovalOutcome.Locked)
         val entry = synchronized(this) {
             val waiting = book.find(ticket) ?: return told(MacApprovalOutcome.Expired)
+            if (remember && !waiting.request.canRemember) return told(MacApprovalOutcome.Failed)
             if (!answering.add(ticket)) return told(MacApprovalOutcome.Answering)
             waiting
         }
         thread(name = "oma-mac-answer", isDaemon = true) {
             var outcome = MacApprovalOutcome.Unreachable
             try {
-                outcome = macApprovalOutcome(client(entry.threadId).answerApproval(entry.threadId, entry.request.approval, allow, entry.request.nonce))
+                outcome = macApprovalOutcome(client(entry.threadId).answerApproval(entry.threadId, entry.request.approval, allow, entry.request.nonce, remember))
                 if (outcome.over) {
                     val gone = synchronized(this) { book.remove(entry.threadId, entry.request.approval).also { published() } }
                     if (gone != null) platform.withdrawCard(gone)

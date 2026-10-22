@@ -358,7 +358,9 @@ private fun ChatScreen(
         }
     }
 
-    fun macCard(entry: MacPending) = ApprovalCard(entry.request.explanation) { allow -> answerMac(entry, allow) }
+    fun macCard(entry: MacPending) = ApprovalCard(entry.request.explanation, remember = if (entry.request.canRemember) ({
+        host.rememberMacCommand(entry.ticket) { outcome -> notice = macApprovalNotice(outcome); tick++ }
+    }) else null) { allow -> answerMac(entry, allow) }
 
     val pickImages = host.rememberImagePicker(MAX_PROMPT_IMAGES) { uris ->
         if (uris.isEmpty()) return@rememberImagePicker
@@ -691,7 +693,8 @@ private fun ChatScreen(
             }.orEmpty()
             TabMenu(
                 title = tabTitle(key, threads + all),
-                actions = tabMenu(key, key in book.pinned, stop != null, answer != null, archived.size, mend, switchable = switches.isNotEmpty(), bot = thread?.bot != null),
+                actions = tabMenu(key, key in book.pinned, stop != null, answer != null, archived.size, mend, switchable = switches.isNotEmpty(), bot = thread?.bot != null,
+                    forgetCommands = moving?.let { id -> host.macView().threads.any { it.id == id && it.kind == "codex" } } == true),
                 readBot = { told -> macThreadId(key)?.let { host.botFiles(it, told) } ?: told(null) },
                 archived = archived,
                 switches = switches,
@@ -735,6 +738,9 @@ private fun ChatScreen(
                             tick++
                         }
                         TabAction.Copy -> answer?.let { host.copy(it) }
+                        TabAction.ForgetCommands -> moving?.let { id -> host.forgetMacCommands(id) { said ->
+                            notice = said; noticeFine = said == "Saved command approvals forgotten"; tick++
+                        } }
                         TabAction.Archive -> {
                             // Archived after its newest entry, so only what is sent to it from now on brings it back.
                             val at = maxOf(System.currentTimeMillis(), shown.maxOfOrNull { it.time } ?: 0L)
@@ -1069,7 +1075,7 @@ private fun PickMenu(which: String, hosts: List<HostChoice>, chat: NewChat?, onP
 private val LocalChatHost = staticCompositionLocalOf<ChatHost> { error("OmaChatScreen provides the host") }
 
 /** A waiting approval as its card needs it: why the agent asks, and where his tap goes. */
-private class ApprovalCard(val explanation: String, val answer: (Boolean) -> Unit)
+private class ApprovalCard(val explanation: String, val remember: (() -> Unit)? = null, val answer: (Boolean) -> Unit)
 
 /** The card of one waiting approval: what would be done, and the two answers. The same for the phone's builder and a thread on the Mac. */
 @Composable
@@ -1085,11 +1091,15 @@ private fun ApprovalBox(
         val (marks, rest) = cardMarks(card.explanation)
         for (mark in marks) BasicText(mark, Modifier.padding(top = 4.dp), style = Pack.body(Pack.size.small, Pack.red))
         if (rest.isNotBlank()) BasicText(rest.take(300), Modifier.padding(top = 4.dp), style = small)
-        BasicText(detail, Modifier.padding(top = 4.dp), style = Pack.body(), maxLines = 10, overflow = TextOverflow.Ellipsis)
+        BasicText(detail, Modifier.padding(top = 4.dp), style = Pack.body(), maxLines = if (card.remember != null) Int.MAX_VALUE else 10, overflow = TextOverflow.Ellipsis)
         BasicText("Approve once allows this action only.", Modifier.padding(top = 4.dp), style = small)
         Row {
             BracketAction("approve once", Pack.green) { card.answer(true) }
             BracketAction("deny", Pack.red) { card.answer(false) }
+        }
+        card.remember?.let { remember ->
+            BasicText("Save this exact command, directory and access for this thread. Revoke from the tab menu → Forget saved commands.", Modifier.padding(top = 4.dp), style = small)
+            BracketAction("always allow this command", Pack.green, onClick = remember)
         }
     }
 }

@@ -45,6 +45,35 @@ import java.io.File
 
 /** The shared chat screen operated on the desktop: taps and their effects (UI tests only; renders are in ChatScreenRenderTest). */
 class ChatScreenTapTest : ChatScreenTestBase() {
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+    @Test fun rememberingACommandRequiresTheOwnersExplicitTap() = androidx.compose.ui.test.runComposeUiTest {
+        val card = MacApproval("a1", "n1", "Bash", """{"command":"git status --short","cwd":"/project","access":{}}""", "check the project", canRemember = true)
+        val saved = mutableListOf<String>()
+        val forgotten = mutableListOf<String>()
+        val host = object : SampleHost() {
+            override fun tasks() = dev.omalauncher.assist.macAsked(listOf(ChatTask(now, "Codex", "check the project", thread = "mac/t2", threadName = "Build", status = TaskStatus.Running)), "mac/t2", card)
+            override fun threads() = listOf(AgentThread(dev.omalauncher.assist.macThreadKey("mac/t2"), "Build", ThreadState.Working, "check the project", "working", now, mac = true))
+            override fun macView() = MacView(threads = listOf(dev.omalauncher.assist.MacThread("mac/t2", "Build", "/project", dev.omalauncher.assist.ThreadHome.Mac, "codex", "", dev.omalauncher.assist.MacThreadStatus.Working, now / 1000, "", 0, 0, emptyList())))
+            override fun macPending() = listOf(MacPending("mac/t2", "Build", card, "ticket-1", 0))
+            override fun rememberMacCommand(ticket: String, done: (MacApprovalOutcome) -> Unit) { saved += ticket; done(MacApprovalOutcome.Decided) }
+            override fun forgetMacCommands(threadId: String, done: (String) -> Unit) { forgotten += threadId; done("Saved command approvals forgotten") }
+        }
+        mainClock.autoAdvance = false
+        setContent { OmaChatScreen(host, prefill = null, onPrefilled = {}, wanted = dev.omalauncher.assist.macThreadKey("mac/t2"), onTab = {}) }
+        mainClock.advanceTimeBy(1_200)
+        assertEquals(emptyList<String>(), saved)
+        onNodeWithText("[ always allow this command ]").performClick()
+        mainClock.advanceTimeBy(500)
+        assertEquals(listOf("ticket-1"), saved)
+        onNodeWithContentDescription("Show the tabs").performClick()
+        mainClock.advanceTimeBy(500)
+        onAllNodes(hasText("Build") and hasClickAction()).onFirst().performTouchInput { longClick() }
+        mainClock.advanceTimeBy(500)
+        onNodeWithText("Forget saved commands").performClick()
+        mainClock.advanceTimeBy(500)
+        assertEquals(listOf("mac/t2"), forgotten)
+    }
+
     /** He taps the choices and they are kept on the chat: another computer, then another agent it runs. */
     @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
     @Test fun tappingThePicksChangesWhereTheThreadGoes() = androidx.compose.ui.test.runComposeUiTest {

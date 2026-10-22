@@ -217,7 +217,9 @@ private fun withReason(said: String, reason: String) = listOf(said.trim(), reaso
 /** What an approval would do, as its card says it: the command for a shell, otherwise the tool's whole input. */
 fun macApprovalDetail(request: MacApproval): String {
     val input = runCatching { JSONObject(request.input) }.getOrNull() ?: return request.input
-    return input.optString("command").ifBlank { input.toString(2) }
+    val command = input.optString("command").ifBlank { return input.toString(2) }
+    return if (request.canRemember) command + "\nDirectory: " + input.macText("cwd") +
+        "\nRequested access: " + (input.optJSONObject("access")?.toString(2) ?: "{}") else command
 }
 
 /**

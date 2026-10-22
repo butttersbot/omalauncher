@@ -32,7 +32,7 @@ enum class MacDecision(val word: String) {
  * One request for approval waiting on the Mac. [input] is the tool's input as JSON text, so two of these compare
  * by what they say. Only an answer carrying [nonce] is taken, so it is left out of [toString] with the input.
  */
-data class MacApproval(val approval: String, val nonce: String, val tool: String, val input: String, val explanation: String) {
+data class MacApproval(val approval: String, val nonce: String, val tool: String, val input: String, val explanation: String, val canRemember: Boolean = false) {
     override fun toString() = "MacApproval(approval=$approval, tool=$tool)"
 }
 
@@ -95,7 +95,7 @@ internal fun macApproval(json: JSONObject): MacApproval? {
     val approval = json.macText("approval")
     val nonce = json.macText("nonce")
     if (approval.isBlank() || nonce.isBlank()) return null
-    return MacApproval(approval, nonce, json.macText("tool"), json.optJSONObject("input")?.toString() ?: "{}", json.macText("explanation"))
+    return MacApproval(approval, nonce, json.macText("tool"), json.optJSONObject("input")?.toString() ?: "{}", json.macText("explanation"), json.opt("can_remember") == true)
 }
 
 /**

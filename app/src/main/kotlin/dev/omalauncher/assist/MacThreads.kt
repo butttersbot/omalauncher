@@ -106,6 +106,8 @@ object MacThreads {
     fun switchTo(context: Context, threadId: String, to: MacPick) = engine(context).switchTo(threadId, to)
 
     fun answer(context: Context, ticket: String, allow: Boolean, told: (MacApprovalOutcome) -> Unit) = engine(context).answer(ticket, allow, told)
+    fun rememberCommand(context: Context, ticket: String, told: (MacApprovalOutcome) -> Unit) = engine(context).rememberCommand(ticket, told)
+    fun forgetCommands(context: Context, threadId: String, told: (String) -> Unit) = engine(context).forgetCommands(threadId, told)
 }
 
 /** The phone's part of following the threads: the calls MacThreads made itself before the engine was shared. */

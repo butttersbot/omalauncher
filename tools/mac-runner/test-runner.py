@@ -622,6 +622,61 @@ try:
     stream(made['thread']['id'])
     check('codex: auto when asked for by name, asking only for more than the sandbox gives', made['thread']['mode'] == 'auto' and starts()[-1]['policy'] == 'on-request'
           and starts()[-1]['sandbox'] == 'workspace-write')
+
+    # Saved approvals are owner decisions on a nonce-bearing card, scoped to this one literal request.
+    saved = made['thread']['id']
+    def command_request(ident, command='git status --short', cwd=None, context=None):
+        settle(ident, 'idle')
+        last = call('GET', '/threads/' + ident)[1]['thread']['last_event']
+        call('POST', '/threads/%s/messages' % ident, {'text': 'approval-command:' + json.dumps({'command': command, 'cwd': cwd or str(project), 'context': context or {}})})
+        return stream(ident, after=last, until=('approval', 'result', 'error'))
+
+    card = command_request(saved)[-1]
+    path = '/threads/%s/approvals/%s' % (saved, card['approval'])
+    check('saved commands: eligible card advertises owner-only save', card['can_remember'] is True)
+    check('saved commands: a wrong nonce cannot save a grant', call('POST', path, {'decision': 'allow', 'remember': True, 'nonce': 'wrong'})[0] == 403)
+    check('saved commands: deny cannot save a grant', call('POST', path, {'decision': 'deny', 'remember': True, 'nonce': card['nonce']})[0] == 400)
+    call('POST', path, {'decision': 'allow', 'nonce': card['nonce']})
+    stream(saved, after=card['id'])
+    card = command_request(saved)[-1]
+    check('saved commands: approve once still asks next time', card['type'] == 'approval')
+    code, response = call('POST', '/threads/%s/approvals/%s' % (saved, card['approval']), {'decision': 'allow', 'remember': True, 'nonce': card['nonce']})
+    stream(saved, after=card['id'])
+    events = command_request(saved)
+    check('saved commands: exact repeat runs without another card', code == 200 and events[-1]['type'] == 'result' and not any(e['type'] == 'approval' for e in events))
+    check('saved commands: reuse is visible in the event log', any(e.get('saved_command') is True for e in events))
+    for label, command, cwd, context in [
+        ('arguments', 'git status --porcelain', None, None),
+        ('directory', 'git status --short', str(root), None),
+        ('access', 'git status --short', None, {'additionalPermissions': {'network': True}}),
+    ]:
+        card = command_request(saved, command, cwd, context)[-1]
+        check('saved commands: changed ' + label + ' asks again', card['type'] == 'approval')
+        call('POST', '/threads/%s/approvals/%s' % (saved, card['approval']), {'decision': 'deny', 'nonce': card['nonce']})
+        stream(saved, after=card['id'])
+    code, made = call('POST', '/threads', {'name': 'Other command scope', 'project': str(project), 'kind': 'codex'})
+    other_scope = made['thread']['id']
+    card = command_request(other_scope)[-1]
+    check('saved commands: another thread still asks', card['type'] == 'approval')
+    call('POST', '/threads/%s/approvals/%s' % (other_scope, card['approval']), {'decision': 'deny', 'nonce': card['nonce']})
+    stream(other_scope, after=card['id'])
+    for command in ['echo "$HOME"', 'git status; echo bad', 'sh -c pwd', 'git status\necho bad']:
+        card = command_request(saved, command)[-1]
+        check('saved commands: dynamic or compound command cannot be saved: ' + repr(command), card.get('can_remember') is False)
+        check('saved commands: server rejects forged save for ineligible command', call('POST', '/threads/%s/approvals/%s' % (saved, card['approval']), {'decision': 'allow', 'remember': True, 'nonce': card['nonce']})[0] == 400)
+        call('POST', '/threads/%s/approvals/%s' % (saved, card['approval']), {'decision': 'deny', 'nonce': card['nonce']})
+        stream(saved, after=card['id'])
+    # Real runner restart, not a mocked serializer: the saved grant must survive it.
+    settle(saved, 'idle')
+    runner.send_signal(signal.SIGTERM); runner.wait(timeout=10)
+    runner = start()
+    events = command_request(saved)
+    check('saved commands: grant survives a runner restart', events[-1]['type'] == 'result' and not any(e['type'] == 'approval' for e in events))
+    check('saved commands: owner can revoke all grants for this thread', call('POST', '/threads/%s/command-approvals/clear' % saved, {}) == (200, {'ok': True, 'cleared': True}))
+    card = command_request(saved)[-1]
+    check('saved commands: revoked command asks again', card['type'] == 'approval')
+    call('POST', '/threads/%s/approvals/%s' % (saved, card['approval']), {'decision': 'deny', 'nonce': card['nonce']})
+    stream(saved, after=card['id'])
     code, made = call('POST', '/threads', {'name': 'Grok plain', 'project': str(project), 'kind': 'grok'})
     check('grok: a thread is manual', code == 200 and made['thread']['mode'] == 'manual')
     plain = made['thread']['id']

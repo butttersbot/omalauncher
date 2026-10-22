@@ -3,7 +3,7 @@
 acts on words in the prompt as fake-agent does: "write" asks to add written.txt (under every approval policy: it
 stands for a change Codex asks about), "files" lists the folder, "slow" waits, "limit" fails the turn on a usage
 limit. Every turn is added to starts.log, with the flags and the approval policy and sandbox it was given."""
-import json, pathlib, sys, time, uuid
+import json, pathlib, shlex, sys, time, uuid
 
 arguments = sys.argv[1:]
 
@@ -48,7 +48,16 @@ while True:
             out({'method': 'error', 'params': {'error': problem, 'willRetry': False, 'threadId': session, 'turnId': 'turn1'}})
             out({'method': 'turn/completed', 'params': {'threadId': session, 'turn': {'id': 'turn1', 'status': 'failed', 'error': problem, 'items': []}}})
             continue
-        if 'write' in prompt:
+        if prompt.startswith('approval-command:'):
+            spec = json.loads(prompt.split(':', 1)[1])
+            asked = {'threadId': session, 'turnId': uuid.uuid4().hex, 'itemId': uuid.uuid4().hex,
+                     'command': shlex.join(['/bin/zsh', '-lc', spec['command']]), 'cwd': spec.get('cwd', str(pathlib.Path.cwd())),
+                     **spec.get('context', {})}
+            out({'method': 'item/commandExecution/requestApproval', 'id': 0, 'params': asked})
+            reply = read()
+            out({'method': 'serverRequest/resolved', 'params': {'threadId': session, 'requestId': 0}})
+            said('Command accepted' if reply['result']['decision'] == 'accept' else 'Command declined', 'final_answer')
+        elif 'write' in prompt:
             target = str(pathlib.Path.cwd() / 'written.txt')
             out({'method': 'item/started', 'params': {'item': {'type': 'fileChange', 'id': 'edit1', 'changes': [{'path': target, 'kind': {'type': 'add'}, 'diff': 'hi\n'}], 'status': 'inProgress'}}})
             out({'method': 'item/fileChange/requestApproval', 'id': 0, 'params': {'threadId': session, 'turnId': 'turn1', 'itemId': 'edit1', 'startedAtMs': 0, 'reason': None}})

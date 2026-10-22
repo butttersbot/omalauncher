@@ -43,6 +43,16 @@ import java.io.File
  * ChatScreenTapTest.
  */
 class ChatScreenRenderTest : ChatScreenTestBase() {
+    @Test fun rememberedCommandCardFitsTheCoverScreen() {
+        val card = dev.omalauncher.assist.MacApproval("a1", "n1", "Bash", """{"command":"git status --short","cwd":"/Users/boss/Projects/soma","access":{}}""", "check the project", canRemember = true)
+        val host = object : SampleHost() {
+            override fun tasks() = dev.omalauncher.assist.macAsked(listOf(ChatTask(now, "Codex", "check the project", thread = "mac/t2", threadName = "Build", status = TaskStatus.Running)), "mac/t2", card)
+            override fun threads() = listOf(AgentThread(dev.omalauncher.assist.macThreadKey("mac/t2"), "Build", ThreadState.Working, "check the project", "working", now, mac = true))
+            override fun macPending() = listOf(MacPending("mac/t2", "Build", card, "ticket-1", 0))
+        }
+        render(host, dev.omalauncher.assist.macThreadKey("mac/t2"), "remembered-command-cover.png", width = 688)
+    }
+
     /** The chat drawn off-screen at [wanted]'s tab, kept as [name] in build/render. */
     private fun render(host: ChatHost, wanted: String?, name: String, width: Int = 900): ByteArray {
         val png =

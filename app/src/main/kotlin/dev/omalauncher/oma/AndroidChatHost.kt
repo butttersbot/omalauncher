@@ -138,6 +138,8 @@ class AndroidChatHost(
     override fun tryMacAgain(time: Long) = MacThreads.tryAgain(context, time)
 
     override fun answerMac(ticket: String, allow: Boolean, done: (MacApprovalOutcome) -> Unit) = MacThreads.answer(context, ticket, allow, done)
+    override fun rememberMacCommand(ticket: String, done: (MacApprovalOutcome) -> Unit) = MacThreads.rememberCommand(context, ticket, done)
+    override fun forgetMacCommands(threadId: String, done: (String) -> Unit) = MacThreads.forgetCommands(context, threadId, done)
 
     override fun runInTerminal(prompt: String): Boolean {
         val agent = runtime.agents.default ?: return false

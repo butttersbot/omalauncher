@@ -96,11 +96,13 @@ object MacRequests {
 
     fun stream(threadId: String, after: Long) = MacRequest("GET", "/threads/${part(threadId)}/stream${from(after)}")
 
-    fun answerApproval(threadId: String, approval: String, allow: Boolean, nonce: String) = MacRequest(
+    fun answerApproval(threadId: String, approval: String, allow: Boolean, nonce: String, remember: Boolean = false) = MacRequest(
         "POST",
         "/threads/${part(threadId)}/approvals/${part(approval)}",
-        JSONObject().put("decision", if (allow) MacDecision.Allow.word else MacDecision.Deny.word).put("nonce", nonce).toString(),
+        JSONObject().put("decision", if (allow) MacDecision.Allow.word else MacDecision.Deny.word).put("nonce", nonce).apply { if (remember) put("remember", true) }.toString(),
     )
+
+    fun clearCommands(threadId: String) = MacRequest("POST", "/threads/${part(threadId)}/command-approvals/clear", "{}")
 
     /** The runner wants nothing in the body; an empty object is sent because a POST with none is not sent alike everywhere. */
     fun stop(threadId: String) = MacRequest("POST", "/threads/${part(threadId)}/stop", "{}")
@@ -415,8 +417,12 @@ class MacRunnerClient(private val config: MacRunnerConfig?, private val machine:
 
     fun events(threadId: String, after: Long): MacAnswer<MacEventsPage> = parseMacEvents(send(MacRequests.events(own(threadId), after)))
 
-    fun answerApproval(threadId: String, approval: String, allow: Boolean, nonce: String): MacAnswer<MacDecision> =
-        parseMacDecision(send(MacRequests.answerApproval(own(threadId), approval, allow, nonce)))
+    fun answerApproval(threadId: String, approval: String, allow: Boolean, nonce: String, remember: Boolean = false): MacAnswer<MacDecision> =
+        parseMacDecision(send(MacRequests.answerApproval(own(threadId), approval, allow, nonce, remember)))
+
+    fun clearCommands(threadId: String): MacAnswer<Boolean> = macAnswer(send(MacRequests.clearCommands(own(threadId)))) { json ->
+        (json.opt("cleared") as? Boolean)?.takeIf { it }
+    }
 
     fun stop(threadId: String): MacAnswer<Boolean> = parseMacStopped(send(MacRequests.stop(own(threadId))))
 
