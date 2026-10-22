@@ -22,6 +22,8 @@
     <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- Soma's own screen recorder (record/ScreenRecord.kt). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Lets the agent's progress notification ask to be a Live Update (Android 16 QPR1 and later). -->
     <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
@@ -324,6 +326,18 @@
             <intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter>
             <meta-data android:name="android.accessibilityservice" android:resource="@xml/phone_accessibility" />
         </service>
+
+        <!-- Soma's screen recorder: the tile, the invisible ask for the screen, the service that records (record/ScreenRecord.kt). -->
+        <service android:name=".record.ScreenRecordTile" android:exported="true"
+            android:label="Screen record" android:icon="@drawable/ic_screen_record_tile"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>
+        </service>
+        <activity android:name=".record.ScreenRecordActivity" android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true"
+            android:noHistory="false" android:taskAffinity="dev.omalauncher.record" />
+        <service android:name=".record.ScreenRecordService" android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
 
         <!-- The herd sheep on and off (assist/OmaTiles.kt). -->
         <service android:name=".assist.HerdSheepTile" android:exported="true"
