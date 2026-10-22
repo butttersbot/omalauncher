@@ -45,6 +45,20 @@ object NewsStore {
     ) {
         fun toJson(): JSONObject =
             JSONObject().put("id", id).put("title", title).put("source", source).put("link", link).put("published", published).put("image", image ?: JSONObject.NULL).put("html", html).put("topic", topic)
+
+        companion object {
+            fun of(j: JSONObject) =
+                Story(
+                    id = j.optString("id"),
+                    title = j.optString("title"),
+                    source = j.optString("source"),
+                    link = j.optString("link"),
+                    published = j.optLong("published"),
+                    image = if (j.isNull("image")) null else j.optString("image"),
+                    html = j.optString("html"),
+                    topic = j.optString("topic"),
+                )
+        }
     }
 
     fun home(context: Context) = File(context.filesDir, "arch/root")
@@ -70,13 +84,15 @@ object NewsStore {
         context: Context,
         perTopic: Int = PER_TOPIC,
     ): Result<Int> {
-        val feeds = java.util.concurrent.Executors.newFixedThreadPool(5)
-        val fetched = try {
-            GoogleNews.TOPICS.map { t -> feeds.submit<List<Story>> { GoogleNews.fetch(t)?.let { GoogleNews.parse(it, t.name) }.orEmpty() } }.map { it.get() }
-        } finally {
-            feeds.shutdown()
+        // The feeds one after another, a moment apart: side by side they were part of the burst Google turned away.
+        val got = GoogleNews.TOPICS.mapIndexed { i, t ->
+            if (i > 0) Thread.sleep(FEED_GAP_MS)
+            GoogleNews.fetch(t)?.let { GoogleNews.parse(it, t.name) }.orEmpty()
         }
-        if (fetched.all { it.isEmpty() }) return Result.failure(IllegalStateException("Google News didn't answer"))
+        if (got.all { it.isEmpty() }) return Result.failure(IllegalStateException("Google News didn't answer"))
+        // A topic whose feed didn't come keeps what it had: one refresh had every topic but Top stories go (the 131 walk).
+        val before = runCatching { JSONObject(cached(context)).getJSONArray("stories") }.getOrNull()?.let { a -> (0 until a.length()).map { Story.of(a.getJSONObject(it)) } }.orEmpty()
+        val fetched = GoogleNews.TOPICS.mapIndexed { i, t -> got[i].ifEmpty { before.filter { it.topic == t.name } } }
         val seen = HashSet<String>()
         val stories = fetched.flatMap { topic -> topic.filter { seen.add(it.id) && seen.add(it.title.lowercase()) }.take(perTopic) }
         // What earlier refreshes found: the publisher's address and its picture, by story id.
@@ -296,6 +312,7 @@ object NewsStore {
 
     /** Stories a topic whose address and picture are found at refresh, so the stream opens with pictures. */
     private const val RESOLVED_FIRST = 6
+    private const val FEED_GAP_MS = 400L
 
     /** Google addresses looked up in one refresh, at most: found ones are kept, so few are new each hour. */
     private const val RESOLVE_PER_REFRESH = 12
