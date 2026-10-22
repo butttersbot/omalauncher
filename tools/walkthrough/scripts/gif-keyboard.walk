@@ -19,8 +19,8 @@ wait 800
 log gif expanded=true
 nolog gif expanded=false
 shot expanded-after-pull
-# And down again, from the expanded panel's handle (48dp under the top).
-swipe 0.5 48dp 0.5 0.6 900
+# And down again, from the expanded panel's handle (0.087 of the height; above it is Android's status bar).
+swipe 0.5 0.088 0.5 0.6 900
 wait 800
 log gif expanded=false
 shot collapsed-after-pull
