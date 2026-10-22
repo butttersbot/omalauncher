@@ -217,10 +217,80 @@ object NewsStore {
         return out.toByteArray()
     }
 
+    /**
+     * A story's own page, as the site serves it to a phone's browser, for the reader to take the whole article from
+     * (Boss, 2026-10-21: "Can we pull the full articles? I don't want to have to leave to the website"). Null when
+     * it isn't a web page or doesn't answer. Off the main thread.
+     */
+    fun page(link: String): String? {
+        if (!link.startsWith("https://") && !link.startsWith("http://")) return null
+        return runCatching {
+            var url = URL(link)
+            var conn: HttpURLConnection
+            var hops = 0
+            while (true) {
+                conn = url.openConnection() as HttpURLConnection
+                conn.connectTimeout = 6_000
+                conn.readTimeout = 12_000
+                conn.instanceFollowRedirects = false
+                conn.setRequestProperty("User-Agent", PHONE_BROWSER)
+                conn.setRequestProperty("Accept", "text/html,application/xhtml+xml")
+                conn.setRequestProperty("Accept-Language", "en-US,en;q=0.9")
+                val code = conn.responseCode
+                if (code in 300..399 && hops++ < 5) {
+                    val next = conn.getHeaderField("Location") ?: break
+                    url = URL(url, next)
+                    if (url.protocol != "https" && url.protocol != "http") return null
+                    conn.disconnect()
+                    continue
+                }
+                break
+            }
+            if (conn.responseCode != 200) return null
+            val type = conn.contentType.orEmpty()
+            if (type.isNotEmpty() && !type.contains("html", ignoreCase = true)) return null
+            val charset = Regex("charset=([\\w-]+)", RegexOption.IGNORE_CASE).find(type)?.groupValues?.get(1)
+            val bytes = conn.inputStream.use { it.readNBytesCompat(PAGE_BYTES) }
+            String(bytes, runCatching { charset(charset ?: "UTF-8") }.getOrDefault(Charsets.UTF_8))
+        }.getOrNull()
+    }
+
+    private fun fullDir(context: Context) = File(home(context), ".cache/soma-news/full")
+
+    private fun fullFile(context: Context, link: String): File {
+        val hash = java.security.MessageDigest.getInstance("SHA-1").digest(link.toByteArray()).joinToString("") { "%02x".format(it) }
+        return File(fullDir(context), "$hash.html")
+    }
+
+    /** A story's whole article as the reader took it from its page before, or "" when it hasn't yet. */
+    fun full(context: Context, link: String): String = runCatching { fullFile(context, link).readText() }.getOrDefault("")
+
+    /** Keeps the whole article the reader took from [link]'s page, the newest [FULL_KEPT] of them. */
+    fun keepFull(context: Context, link: String, html: String) {
+        if (html.length > PAGE_BYTES) return
+        runCatching {
+            val f = fullFile(context, link)
+            f.parentFile?.mkdirs()
+            val tmp = File(f.parentFile, f.name + ".tmp")
+            tmp.writeText(html)
+            tmp.renameTo(f)
+            fullDir(context).listFiles { x -> x.name.endsWith(".html") }?.sortedByDescending { it.lastModified() }?.drop(FULL_KEPT)?.forEach { it.delete() }
+        }
+    }
+
     fun unescape(s: String) = s.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&#39;", "'").replace("&#039;", "'")
 
     /** Stories the home widget's file keeps: the large widget shows a lead and three more. */
     private const val WIDGET_STORIES = 6
+
+    /** How much of a story's page is read for its article, at most. */
+    private const val PAGE_BYTES = 4_000_000
+
+    /** Whole articles kept on the phone. */
+    private const val FULL_KEPT = 300
+
+    /** Sites give a phone's browser the article; some give an unknown client a wall instead. */
+    private const val PHONE_BROWSER = "Mozilla/5.0 (Linux; Android 16; SM-F971U) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36"
 
     /** Pages read for a picture in one refresh, at most. */
     private const val PAGE_LOOKUPS = 25

@@ -135,6 +135,28 @@ class NewsActivity : Activity() {
             }
         }
 
+        /**
+         * The story's whole page, fetched here (the page itself can't read other sites); it hears back through
+         * window.somaPage(link, html), html "" when the page couldn't be had.
+         */
+        @JavascriptInterface fun page(link: String) {
+            thread(name = "news-page", isDaemon = true) {
+                val html = NewsStore.page(link).orEmpty()
+                main.post { if (!isDestroyed) web.evaluateJavascript("window.somaPage && window.somaPage(${JSONObject.quote(link)}, ${JSONObject.quote(html)})", null) }
+            }
+        }
+
+        /** The whole article taken from [link]'s page before, or "". */
+        @JavascriptInterface fun full(link: String): String = NewsStore.full(this@NewsActivity, link)
+
+        /** Keeps the whole article taken from [link]'s page, so it opens at once, and offline, next time. */
+        @JavascriptInterface fun keep(
+            link: String,
+            html: String,
+        ) {
+            thread(name = "news-keep", isDaemon = true) { NewsStore.keepFull(this@NewsActivity, link, html) }
+        }
+
         @JavascriptInterface fun toast(text: String) = main.post { Toast.makeText(this@NewsActivity, text, Toast.LENGTH_SHORT).show() }
     }
 

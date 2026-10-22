@@ -95,16 +95,33 @@
   .reader .hero { max-height: 340px; }
   .reader .body { padding: 18px 22px 0; font-family: var(--serif); font-size: 18px; line-height: 1.62; max-width: 680px; margin: 0 auto; }
   .reader h1 { font-family: var(--serif); font-weight: 700; font-size: 28px; line-height: 1.14; margin: 10px 0 8px; }
-  .reader .body p { margin: 0 0 14px; }
-  .reader .body .first::first-letter { float: left; font-family: "M Display"; font-size: 56px; line-height: .85; padding: 6px 8px 0 0; color: var(--red); }
-  .reader .body blockquote { margin: 18px 0; padding: 0 0 0 16px; border-left: 4px solid var(--red); font-size: 21px; font-style: italic; line-height: 1.35; }
-  .reader .body img { width: auto; max-width: 100%; height: auto; margin: 16px auto; }
-  .reader .body figure { margin: 18px 0; }
-  .reader .body figcaption { font-size: 13px; color: var(--muted); font-style: italic; }
-  .reader .body a { color: var(--ink); text-decoration-color: var(--red); }
-  .reader .body h2, .reader .body h3 { font-size: 21px; line-height: 1.25; margin: 24px 0 8px; }
-  .reader .body ul, .reader .body ol { padding-left: 22px; }
-  .reader .orig { margin: 24px 22px; padding: 14px; border: 1.5px solid var(--ink); text-align: center; font-family: var(--serif); }
+  .reader .body p { margin: 0 0 16px; }
+  /* The drop capital three lines deep, sized and set by the browser to the lines (Boss, 2026-10-21: "the spacing is off"). */
+  .reader .body .first::first-letter { initial-letter: 3; -webkit-initial-letter: 3; font-family: "M Display"; color: var(--red); margin-right: .14em; }
+  @supports not ((initial-letter: 3) or (-webkit-initial-letter: 3)) {
+    .reader .body .first::first-letter { float: left; font-size: 4.1em; line-height: .8; margin: .06em .12em 0 0; }
+  }
+  .reader .body blockquote { margin: 22px 0; padding: 2px 0 2px 16px; border-left: 4px solid var(--red); font-size: 20px; font-style: italic; line-height: 1.4; }
+  .reader .body blockquote p:last-child { margin-bottom: 0; }
+  /* Pictures stand on their own lines, full column width at most; never beside a line of text. */
+  .reader .body img { display: block; width: auto; max-width: 100%; height: auto; margin: 22px auto; border-radius: 2px; }
+  .reader .body p > img:only-child, .reader .body a > img:only-child { margin: 6px auto; }
+  .reader .body figure { margin: 24px 0; padding: 0; }
+  .reader .body figure img { margin: 0 auto 8px; }
+  .reader .body figcaption { font-size: 13.5px; line-height: 1.45; color: var(--muted); font-style: italic; }
+  .reader .body img.icon { display: inline; height: 1em; width: auto; margin: 0 .15em; vertical-align: -.12em; }
+  .reader .body a { color: var(--ink); text-decoration-color: var(--red); overflow-wrap: anywhere; }
+  .reader .body h2, .reader .body h3, .reader .body h4 { font-size: 21px; line-height: 1.25; margin: 30px 0 10px; }
+  .reader .body ul, .reader .body ol { padding-left: 24px; margin: 0 0 16px; }
+  .reader .body li { margin-bottom: 6px; }
+  .reader .body pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.5; background: #efece4; padding: 12px 14px; margin: 0 0 16px; }
+  .reader .body code { font-size: .86em; overflow-wrap: anywhere; }
+  .reader .body table { display: block; overflow-x: auto; border-collapse: collapse; font-size: 15px; margin: 0 0 16px; }
+  .reader .body td, .reader .body th { border-bottom: 1px solid var(--rule); padding: 6px 10px 6px 0; vertical-align: top; }
+  .reader .body hr { border: 0; border-top: 1px solid var(--rule); margin: 26px 0; }
+  .reader .body > :last-child { margin-bottom: 0; }
+  .reader .orig { margin: 28px 22px 0; padding: 12px; border: 1.5px solid var(--ink); text-align: center; font-family: var(--serif); font-size: 15px; }
+  .reader .fetching { color: var(--muted); font-family: "M Mono"; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; margin: 6px 0 18px; }
   .tools { position: fixed; left: 12px; right: 12px; bottom: calc(env(safe-area-inset-bottom) + 14px); display: flex; justify-content: space-around; border: 1.5px solid var(--ink); background: var(--paper); padding: 6px; box-shadow: 4px 4px 0 var(--ink); z-index: 5; max-width: 520px; margin: 0 auto; }
   .tools button { font-size: 13.5px; padding: 7px 10px; }
   .split { flex: 1; display: grid; grid-template-columns: 1fr 1fr; min-height: 0; }
@@ -115,14 +132,15 @@
   #bookwrap { flex: 1; display: flex; min-height: 0; }
   .toast { position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%); background: var(--ink); color: var(--paper); padding: 9px 14px; font-size: 13px; z-index: 60; max-width: 86vw; text-align: center; }
 </style>
+<script src="vendor/readability/Readability.js"></script>
 <script src="vendor/hyphen/hyphen.js"></script>
 <script src="vendor/hyphen/en-us.js"></script>
 </head>
 <body>
 <div id="app"></div>
 <script>
-const Native = window.SomaNews || { stream: () => '{"stories":[]}', refresh() {}, original(u) { window.open(u) }, share() {}, toast() {} };
-const S = { stories: [], updated: 0, scene: 'stream', at: -1, refreshing: false, fresh: 0, toast: '' };
+const Native = window.SomaNews || { stream: () => '{"stories":[]}', refresh() {}, original(u) { window.open(u) }, share() {}, toast() {}, page() {}, full: () => '', keep() {} };
+const S = { stories: [], updated: 0, scene: 'stream', at: -1, refreshing: false, fresh: 0, toast: '', full: {} };
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
@@ -228,34 +246,90 @@ function stream() {
 
 // ---- The reader. ----
 
-/** A story's HTML, cleaned to what a reader shows: text, pictures, quotes, lists, links. */
+/** A story's HTML, cleaned to what a reader shows: text, pictures, quotes, lists, links, code and tables. */
 function clean(html) {
   const doc = new DOMParser().parseFromString(`<div>${html || ''}</div>`, 'text/html');
-  doc.querySelectorAll('script,style,iframe,form,noscript,svg,video,audio,object,embed,button,input').forEach(n => n.remove());
+  doc.querySelectorAll('script,style,iframe,form,noscript,svg,video,audio,object,embed,button,input,select,textarea,link,meta').forEach(n => n.remove());
+  doc.querySelectorAll('img').forEach(n => {
+    // The picture the page meant: a lazy one's real address, or the largest https one its srcset offers.
+    let src = n.getAttribute('src') || '';
+    const lazy = n.getAttribute('data-src') || n.getAttribute('data-lazy-src') || n.getAttribute('data-original');
+    if (lazy && lazy.startsWith('https://') && !src.startsWith('https://')) src = lazy;
+    if (!src.startsWith('https://') || src.startsWith('data:')) {
+      const set = (n.getAttribute('srcset') || n.getAttribute('data-srcset') || '').split(',').map(x => x.trim().split(/\s+/)).filter(x => (x[0] || '').startsWith('https://'));
+      if (set.length) src = set.sort((a, b) => (parseInt(b[1]) || 0) - (parseInt(a[1]) || 0))[0][0];
+    }
+    const w = parseInt(n.getAttribute('width')) || 0, h = parseInt(n.getAttribute('height')) || 0;
+    // Tracking pixels and spacers go; an icon stays small, in its line.
+    if (!src.startsWith('https://') || (w && w <= 2) || (h && h <= 2)) { n.remove(); return; }
+    n.setAttribute('src', src);
+    if ((w && w <= 48) || (h && h <= 48)) n.setAttribute('class', 'icon');
+  });
   doc.querySelectorAll('*').forEach(n => {
     for (const a of [...n.attributes]) {
-      const keep = (n.tagName === 'IMG' && (a.name === 'src' || a.name === 'alt')) || (n.tagName === 'A' && a.name === 'href');
+      const keep = (n.tagName === 'IMG' && (a.name === 'src' || a.name === 'alt' || a.name === 'class')) || (n.tagName === 'A' && a.name === 'href');
       if (!keep) n.removeAttribute(a.name);
     }
-    if (n.tagName === 'IMG') {
-      const src = n.getAttribute('src') || '';
-      if (!src.startsWith('https://')) n.remove(); else n.setAttribute('loading', 'lazy');
-    }
+    if (n.tagName === 'IMG') n.setAttribute('loading', 'lazy');
   });
+  // Wrappers left empty once their scripts and widgets went.
+  doc.querySelectorAll('div,span,p,section,figure').forEach(n => { if (!n.textContent.trim() && !n.querySelector('img')) n.remove(); });
   return doc.body.firstChild.innerHTML;
 }
 
-function readMinutes(s) { return Math.max(1, Math.round(text(s.html).split(' ').length / 230)); }
+// ---- Whole articles (Boss, 2026-10-21: "Can we pull the full articles? I don't want to have to leave to the website"). ----
+// The app fetches the story's page; Readability (Firefox's reader view) takes the article out of it here, where the
+// page is only parsed, never run. What it took is kept on the phone, so a story opens whole at once next time.
+
+/** What the reader shows of [s]: its whole article once it has it, else what the feed gave. */
+function bodyOf(s) { const f = S.full[s.link]; return f && f.html ? f.html : s.html; }
+
+function want(s) {
+  if (!s || !s.link || S.full[s.link]) return;
+  const kept = Native.full(s.link);
+  if (kept) { S.full[s.link] = { html: kept }; return; }
+  S.full[s.link] = { loading: true };
+  Native.page(s.link);
+}
+
+window.somaPage = function (link, html) {
+  const s = S.stories.find(x => x.link === link);
+  let got = '';
+  if (html && window.Readability) {
+    try {
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      const base = doc.createElement('base'); base.href = link; doc.head.prepend(base);
+      const a = new Readability(doc, { charThreshold: 300, keepClasses: false }).parse();
+      // Only when it is more of the story than the feed gave.
+      if (a && a.content && text(a.content).length > Math.max(400, s ? text(s.html).length * 1.15 : 0)) got = a.content;
+    } catch (e) { got = ''; }
+  }
+  S.full[link] = got ? { html: got } : { failed: true };
+  if (got) Native.keep(link, got);
+  const showing = S.scene === 'reader' && S.stories[S.at] && S.stories[S.at].link === link;
+  if (!showing) return;
+  const art = $('art'), at = art ? art.scrollTop : 0;
+  draw();
+  if ($('art')) $('art').scrollTop = at;
+};
+
+function readMinutes(s) { return Math.max(1, Math.round(text(bodyOf(s)).split(' ').length / 230)); }
 
 function article(s) {
-  let body = clean(s.html);
-  // The hero picture isn't shown twice.
-  if (s.image) body = body.replace(new RegExp(`<img[^>]+src="${s.image.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[^>]*>`), '');
-  const d = document.createElement('div'); d.innerHTML = body;
-  const firstP = d.querySelector('p'); if (firstP) firstP.classList.add('first');
-  const short = text(s.html).length < 600;
-  return `<div class="reader">${s.image ? `<img class="hero" src="${esc(s.image)}">` : ''}<div class="body"><div class="kicker">${esc(s.source)}</div><h1>${esc(s.title)}</h1><div class="meta" style="margin-bottom:16px">${ago(s.published)} ago · ${readMinutes(s)} min read</div>${d.innerHTML}</div>
-    <div class="orig" onclick="Native.original(${esc(JSON.stringify(s.link))})">${short ? 'This feed gives a summary. Read the whole story at ' + esc(s.source) + ' ↗' : 'Read it at ' + esc(s.source) + ' ↗'}</div></div>`;
+  const f = S.full[s.link] || {};
+  const d = document.createElement('div'); d.innerHTML = clean(bodyOf(s));
+  // The hero picture isn't shown twice (the page's copy may be another size of it), nor the headline.
+  const stem = u => (u || '').split('?')[0].replace(/[-_]\d+x\d+(?=\.\w+$)/, '');
+  if (s.image) d.querySelectorAll('img').forEach(im => { if (stem(im.getAttribute('src')) === stem(s.image)) (im.closest('figure') || im).remove(); });
+  const h = d.querySelector('h1, h2'); if (h && h.textContent.trim() === s.title.trim()) h.remove();
+  // The drop capital opens the first real paragraph: one that starts with a letter, not a caption or a dateline.
+  const firstP = [...d.querySelectorAll('p')].find(p => !p.closest('figure, blockquote, li') && p.textContent.trim().length >= 80 && /^[A-Za-z0-9]/.test(p.textContent.trim()));
+  if (firstP) firstP.classList.add('first');
+  const short = text(bodyOf(s)).length < 600;
+  const state = f.loading ? '<div class="fetching">Getting the whole story…</div>' : '';
+  const foot = f.html ? `Read it at ${esc(s.source)} ↗` : short && f.failed ? `${esc(s.source)} didn't give the whole story here. Read it there ↗` : f.loading ? '' : `Read it at ${esc(s.source)} ↗`;
+  return `<div class="reader">${s.image ? `<img class="hero" src="${esc(s.image)}">` : ''}<div class="body"><div class="kicker">${esc(s.source)}</div><h1>${esc(s.title)}</h1><div class="meta" style="margin-bottom:${state ? 6 : 18}px">${ago(s.published)} ago · ${readMinutes(s)} min read</div>${state}${d.innerHTML}</div>
+    ${foot ? `<div class="orig" onclick="Native.original(${esc(JSON.stringify(s.link))})">${foot}</div>` : ''}</div>`;
 }
 
 function tools(s) {
@@ -276,7 +350,7 @@ function reader() {
 
 /** The story for the turning pages: its text as paragraphs, quotes and pictures (sized once they load). */
 async function bookArticle(s) {
-  const d = document.createElement('div'); d.innerHTML = clean(s.html);
+  const d = document.createElement('div'); d.innerHTML = clean(bodyOf(s));
   const blocks = [];
   let side = 'right';
   const pics = [];
@@ -325,7 +399,7 @@ function draw() {
 
 function openStory(i) {
   if (i < 0 || i >= S.stories.length) return;
-  S.scene = 'reader'; S.at = i; draw();
+  S.scene = 'reader'; S.at = i; want(S.stories[i]); draw();
   if ($('art')) $('art').scrollTop = 0;
 }
 window.somaNext = () => openStory(S.at + 1);

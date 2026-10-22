@@ -32,6 +32,33 @@ let hyphenate = t => t
 if (window.createHyphenator && window.hyphenationPatternsEnUs) hyphenate = window.createHyphenator(window.hyphenationPatternsEnUs, { hyphenChar: '­' })
 const shown = t => (t.endsWith('­') ? t.slice(0, -1) + '-' : t).replace(/­/g, '')
 
+/**
+ * A drop capital three lines deep for a body [size] on lines [lh] apart: its font size, where its box goes (x, top,
+ * from the paragraph's first line) and how wide the letter itself is, from the fonts' own measurements.
+ */
+function dropCap(letter, size, lh) {
+  const ctx = document.createElement('canvas').getContext('2d')
+  ctx.font = font(size)
+  const b = ctx.measureText('H')
+  const bodyCap = b.actualBoundingBoxAscent
+  const baseline = (lh - (b.fontBoundingBoxAscent + b.fontBoundingBoxDescent)) / 2 + b.fontBoundingBoxAscent
+  ctx.font = `100px "M Display", sans-serif`
+  const m = ctx.measureText(letter)
+  const per = Math.max(0.3, (m.actualBoundingBoxAscent || 70) / 100)
+  const dropSize = (2 * lh + bodyCap) / per
+  const k = dropSize / 100
+  // The box is one font size tall (line-height 1), so its baseline sits where the font puts it in that box.
+  const fa = (m.fontBoundingBoxAscent || 80) * k
+  const fd = (m.fontBoundingBoxDescent || 20) * k
+  const ownBaseline = (dropSize - (fa + fd)) / 2 + fa
+  return {
+    size: dropSize,
+    top: Math.round(2 * lh + baseline - ownBaseline),
+    x: Math.round((m.actualBoundingBoxLeft || 0) * k),
+    width: ((m.actualBoundingBoxRight || 60) + (m.actualBoundingBoxLeft || 0)) * k,
+  }
+}
+
 /** Lays [article] out on pages [w] × [h] in type [body]; returns each page's pieces, positioned. */
 function paginate(article, w, h, body) {
   const LH = body.lh
@@ -129,9 +156,11 @@ function paginate(article, w, h, body) {
     let text = hyphenate(b.p)
     page.words += b.p.split(/\s+/).length
     if (first) {
-      const dropSize = LH * 3 - 4
-      page.items.push({ kind: 'drop', text: text[0], x: left0, y: y + 2, size: dropSize * 1.05 })
-      floats.push({ side: 'left', x0: 0, x1: Math.round(dropSize * 0.72), y0: y, y1: y + 3 * LH - 1 })
+      // Measured, not guessed (Boss, 2026-10-21: "the large leading letter, the spacing is weird"): its top on the
+      // first line's capitals, its foot on the third line's baseline, the text one gap from its own right edge.
+      const d = dropCap(text[0], body.size, LH)
+      page.items.push({ kind: 'drop', text: text[0], x: left0 + d.x, y: y + d.top, size: d.size })
+      floats.push({ side: 'left', x0: 0, x1: Math.round(d.width + Math.max(6, body.size * 0.45)), y0: y, y1: y + 3 * LH - 1 })
       text = text.slice(1)
       first = false
     }
@@ -239,7 +268,7 @@ const CSS = `
 .pg-title { font: 700 29px/34px ${SERIF}; white-space: nowrap; letter-spacing: -.01em; }
 .pg-dek { font: italic 15px/21px ${SERIF}; white-space: nowrap; }
 .pg-by { font-size: 9.5px !important; }
-.pg-drop { font-family: "M Display", sans-serif; line-height: .86; color: #d7262d; }
+.pg-drop { font-family: "M Display", sans-serif; line-height: 1; color: #d7262d; }
 .pg-line { font-family: ${SERIF}; white-space: nowrap; hyphens: none; }
 .pg-line.j { text-align: justify; text-align-last: justify; white-space: normal; overflow: hidden; }
 .pg-photo img { width: 100%; object-fit: cover; display: block; margin-bottom: 5px; }
