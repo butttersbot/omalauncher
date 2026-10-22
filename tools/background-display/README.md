@@ -29,6 +29,19 @@ to display 0. Soma exposes takeover only through its owner notification activity
 after unlocking and pausing phone control. Keep the shell command under `oma keep`
 on the phone for ordinary operation. A reboot still requires a helper restart.
 
+Keep the ADB server itself alive too when the agent's turn cleanup stops ordinary
+child processes. Use an isolated server port so existing ADB work is unaffected:
+
+```
+oma keep run background-adb -- adb -P 5038 nodaemon server
+oma keep run background-display -- env ADB_SERVER_SOCKET=tcp:localhost:5038 bash /root/wt/builder-b/tools/background-display/start.sh 127.0.0.1:38937
+```
+
+Use the current owner-provided debugging port, and the actual checkout path.
+Check both `oma keep list` and `oma-phone --display bg status` after startup and
+again in the next turn. This arrangement was tested through the awake UI pass;
+survival across a turn boundary has not yet been verified.
+
 `Probe` and `LoopbackProbe` are developer diagnostics run under adb/run-as; no
 debug-exec switch is enabled. They never print the authentication key.
 
