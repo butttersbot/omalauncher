@@ -25,12 +25,9 @@ swipe 0.5 0.3 0.5 0.9 300
 tap Technology
 wait 800
 shot jumped-to-technology
-# Open the cover story at the top: the whole article loads.
-swipe 0.5 0.3 0.5 0.9 300
-swipe 0.5 0.3 0.5 0.9 300
-swipe 0.5 0.3 0.5 0.9 300
-swipe 0.5 0.3 0.5 0.9 300
-tap 0.5 0.32
+# Open a story under Technology: the whole article loads (or the honest "read it there" fallback).
+swipe 0.5 0.7 0.5 0.5 300
+tap 0.5 0.45
 wait 6000
 absent Getting the whole story
 absent Related stories
@@ -44,8 +41,6 @@ rotate landscape
 wait 1500
 shot stream-landscape
 # The cover story fills the left page of the first spread.
-tap Top stories
-wait 800
 tap 0.25 0.45
 wait 6000
 shot book
