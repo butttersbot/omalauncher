@@ -161,8 +161,18 @@ class KeyboardView(
             return headroomPx
         }
 
+    /** The most height the window lets the keyboard have, px, as last measured; 0 before. */
+    private var roomPx = 0
+
     /** The GIFs pulled up: most of the screen, the status bar left clear, px. */
-    private val gifTallPx get() = resources.displayMetrics.heightPixels - stripPx - (EXPANDED_TOP_DP * density).toInt()
+    private val gifTallPx: Int
+        get() {
+            // The room the window gives, not the display's height: on the cover screen that counted more than there
+            // is, and the bottom strip (the GIF button, the hide arrow) went off the screen's foot (the 129 walk).
+            val screen = roomPx.takeIf { it > 0 } ?: resources.displayMetrics.heightPixels
+            val bar = rootWindowInsets?.getInsets(android.view.WindowInsets.Type.statusBars())?.top ?: 0
+            return screen - stripPx - maxOf((EXPANDED_TOP_DP * density).toInt(), bar)
+        }
 
     /** How much taller the pulled-up GIFs stand than the short ones, px. */
     val gifPullRangePx: Float get() = (gifTallPx - (((layout?.height ?: 240f) + bubbleRoomDp) * density).toInt()).coerceAtLeast(0).toFloat()
@@ -263,7 +273,8 @@ class KeyboardView(
         heightMeasureSpec: Int,
     ) {
         val w = MeasureSpec.getSize(widthMeasureSpec)
-        val h = boardPx + headroomPx + stripPx
+        if (MeasureSpec.getMode(heightMeasureSpec) != MeasureSpec.UNSPECIFIED) roomPx = MeasureSpec.getSize(heightMeasureSpec)
+        val h = (boardPx + headroomPx + stripPx).let { if (roomPx > 0) minOf(it, roomPx) else it }
         setMeasuredDimension(w, h)
     }
 
