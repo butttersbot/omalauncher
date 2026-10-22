@@ -60,10 +60,13 @@ function dropCap(letter, size, lh) {
 }
 
 /** Lays [article] out on pages [w] × [h] in type [body]; returns each page's pieces, positioned. */
-function paginate(article, w, h, body) {
+function paginate(article, w, h, body, continuous = false) {
   const LH = body.lh
   const pages = []
   let page, y, floats, col, left0
+  // The scrolling reader (Boss, 2026-10-21: portrait wraps round the photos as the book does): one page as long as the
+  // story, its column the reader's, no opener.
+  const M = continuous ? { spine: 0, outer: 0, top: 0, bottom: 0 } : MARGIN
 
   const grid = v => Math.ceil(v / LH) * LH
 
@@ -72,12 +75,20 @@ function paginate(article, w, h, body) {
     pages.push(page)
     // Even pages are left pages: their outer margin is on the left.
     const isLeft = (pages.length - 1) % 2 === 0
-    left0 = isLeft ? MARGIN.outer : MARGIN.spine
-    col = w - MARGIN.outer - MARGIN.spine
-    y = MARGIN.top
+    left0 = isLeft ? M.outer : M.spine
+    col = w - M.outer - M.spine
+    y = M.top
     floats = []
   }
-  const bottom = () => MARGIN.top + Math.floor((h - MARGIN.top - MARGIN.bottom) / LH) * LH
+  const bottom = () => (continuous ? 1e9 : M.top + Math.floor((h - M.top - M.bottom) / LH) * LH)
+  // Text beside a photo needs room for a real line: else the photo takes the column's width.
+  const sideFrac = 0.42
+  const besideMin = continuous ? Math.max(240, body.size * 13) : Math.max(170, body.size * 10)
+
+  if (continuous) {
+    newPage()
+    return flowBlocks()
+  }
 
   // The opener: the left page given to a photo, the headline set large across its foot.
   newPage()
@@ -102,6 +113,9 @@ function paginate(article, w, h, body) {
 
   // The body begins on the right page.
   newPage()
+  return flowBlocks()
+
+  function flowBlocks() {
   let first = true
 
   function measure(top) {
@@ -121,7 +135,10 @@ function paginate(article, w, h, body) {
   }
 
   for (const b of article.blocks) {
+    // A side photo with too little room beside it is set across the column instead.
+    if (b.img && !b.full && col - Math.round(col * sideFrac) - GAP < besideMin) b.full = true
     if (b.img && b.full) {
+      for (const f of floats) if (f.y1 > y) y = grid(f.y1 - M.top) + M.top
       const cap = caption(b.cap, col)
       // Photo and caption take whole lines, so the text after it is back on the grid.
       const ih = grid(col / b.ratio) - LH
@@ -132,14 +149,20 @@ function paginate(article, w, h, body) {
       continue
     }
     if (b.img) {
-      const fw = Math.round(col * b.frac)
+      const fw = Math.round(col * sideFrac)
       const cap = caption(b.cap, fw)
       const ih = grid(fw / b.ratio)
       const total = ih + Math.max(1, Math.ceil((cap.length * 16 + 6) / LH)) * LH
-      if (y + total > bottom()) newPage()
+      // Never beside another photo: it starts a line below the last one ends, the text running full width between.
+      let at = y
+      for (const f of floats) if (f.y1 > at) at = grid(f.y1 - M.top) + M.top + LH
+      if (at + total > bottom()) {
+        newPage()
+        at = y
+      }
       const x0 = b.side === 'left' ? 0 : col - fw
-      floats.push({ side: b.side, x0, x1: x0 + fw, y0: y, y1: y + total })
-      page.items.push({ kind: 'photo', src: b.img, x: left0 + x0, y: y + 3, w: fw, h: ih - 6, cap })
+      floats.push({ side: b.side, x0, x1: x0 + fw, y0: at, y1: at + total })
+      page.items.push({ kind: 'photo', src: b.img, x: left0 + x0, y: at + 3, w: fw, h: ih - 6, cap })
       continue
     }
     if (b.quote) {
@@ -177,21 +200,35 @@ function paginate(article, w, h, body) {
       if (range === null) break
       const line = materializeLineRange(prepared, range)
       const last = layoutNextLineRange(prepared, 1e6, range.end) === null
-      page.items.push({ kind: 'line', text: shown(line.text), x: left0 + l, y, w: r - l, last })
+      // Beside a photo the line is short: set ragged, as justifying it would open holes between its words.
+      page.items.push({ kind: 'line', text: shown(line.text), x: left0 + l, y, w: r - l, last: last || r - l < col * 0.7 })
       cursor = range.end
       y += LH
     }
   }
+  if (continuous) {
+    for (const f of floats) if (f.y1 > y) y = f.y1
+    page.height = y
+    return pages
+  }
   page.items.push({ kind: 'end', x: left0, y: Math.min(y + 6, bottom() - 76), w: col, next: article.next })
   return pages
+  }
 }
 
 function pageHtml(p, i, total, article, body) {
   const isLeft = i % 2 === 0
   const head = p.opener ? '' : `<div class="pg-head mono" style="${isLeft ? `left:${MARGIN.outer}px;right:${MARGIN.spine}px` : `left:${MARGIN.spine}px;right:${MARGIN.outer}px;text-align:right`}">${isLeft ? 'SOMA' : article.kicker}</div>`
   const folio = p.opener ? '' : `<div class="pg-folio mono" style="${isLeft ? `left:${MARGIN.outer}px` : `right:${MARGIN.outer}px`}">${i + 1}</div>`
-  const parts = p.items
-    .map(it => {
+  const parts = p.items.map(it => itemHtml(it, body)).join('')
+  // The page edges: thicker on the side still to read.
+  const left = isLeft ? i : total - i
+  const edge = Math.min(6, Math.ceil(left / 2))
+  const edges = `<div class="pg-edges ${isLeft ? 'l' : 'r'}" style="width:${edge * 1.5}px"></div>`
+  return `<div class="pg ${p.opener ? 'opener' : ''}">${head}${parts}${folio}${edges}</div>`
+}
+
+function itemHtml(it, body) {
       const at = `left:${it.x}px;top:${it.y}px`
       switch (it.kind) {
         case 'plain':
@@ -219,13 +256,28 @@ function pageHtml(p, i, total, article, body) {
           return `<div class="pg-end" style="${at};width:${it.w}px"><span class="pg-mark">■</span><div class="pg-next" onclick="window.somaNext && window.somaNext()"><span class="mono">Next story</span><b>${it.next.title}</b><img src="${it.next.img}"></div></div>`
       }
       return ''
-    })
-    .join('')
-  // The page edges: thicker on the side still to read.
-  const left = isLeft ? i : total - i
-  const edge = Math.min(6, Math.ceil(left / 2))
-  const edges = `<div class="pg-edges ${isLeft ? 'l' : 'r'}" style="width:${edge * 1.5}px"></div>`
-  return `<div class="pg ${p.opener ? 'opener' : ''}">${head}${parts}${folio}${edges}</div>`
+}
+
+/**
+ * The story's body in the scrolling reader, set by the same engine as the book's pages: a line at a time, each as
+ * wide as the photos beside it leave, a drop capital three lines deep. Laid again when the column's width changes.
+ */
+export function flow(el, article, body) {
+  if (!style) {
+    style = document.createElement('style')
+    style.textContent = CSS
+    document.head.appendChild(style)
+  }
+  let width = 0
+  const lay = () => {
+    const w = Math.floor(el.clientWidth)
+    if (!w || w === width) return
+    width = w
+    const [p] = paginate(article, w, 0, body, true)
+    el.innerHTML = `<div class="pg flow" style="height:${p.height}px">${p.items.map(it => itemHtml(it, body)).join('')}</div>`
+  }
+  lay()
+  new ResizeObserver(lay).observe(el)
 }
 
 const CSS = `
@@ -283,6 +335,7 @@ const CSS = `
 .pg-next img { grid-column: 2; grid-row: 1 / span 2; width: 64px; height: 64px; object-fit: cover; }
 .pg-edges { top: 2px; bottom: 2px; background: repeating-linear-gradient(90deg, #e8e3d7 0 1px, #fbf9f3 1px 1.5px); z-index: 9; }
 .pg-edges.l { left: 0; } .pg-edges.r { right: 0; }
+.pg.flow { position: relative; inset: auto; }
 `
 
 let style

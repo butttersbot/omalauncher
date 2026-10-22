@@ -328,7 +328,7 @@ function article(s) {
   const short = text(bodyOf(s)).length < 600;
   const state = f.loading ? '<div class="fetching">Getting the whole story…</div>' : '';
   const foot = f.html ? `Read it at ${esc(s.source)} ↗` : short && f.failed ? `${esc(s.source)} didn't give the whole story here. Read it there ↗` : f.loading ? '' : `Read it at ${esc(s.source)} ↗`;
-  return `<div class="reader">${s.image ? `<img class="hero" src="${esc(s.image)}">` : ''}<div class="body"><div class="kicker">${esc(s.source)}</div><h1>${esc(s.title)}</h1><div class="meta" style="margin-bottom:${state ? 6 : 18}px">${ago(s.published)} ago · ${readMinutes(s)} min read</div>${state}${d.innerHTML}</div>
+  return `<div class="reader">${s.image ? `<img class="hero" src="${esc(s.image)}">` : ''}<div class="body"><div class="kicker">${esc(s.source)}</div><h1>${esc(s.title)}</h1><div class="meta" style="margin-bottom:${state ? 6 : 18}px">${ago(s.published)} ago · ${readMinutes(s)} min read</div>${state}<div id="flow">${d.innerHTML}</div></div>
     ${foot ? `<div class="orig" onclick="Native.original(${esc(JSON.stringify(s.link))})">${foot}</div>` : ''}</div>`;
 }
 
@@ -393,6 +393,13 @@ function draw() {
   if ($('bookwrap')) {
     const el = $('bookwrap'), s = S.stories[S.at];
     Promise.all([document.fonts ? document.fonts.ready : null, import('./news-book.js'), bookArticle(s)]).then(([, m, a]) => { if (el.isConnected && S.stories[S.at] === s) m.mount(el, a); });
+  }
+  if ($('flow')) {
+    // Portrait too: the body set by the book's engine, wrapping round its photos (Boss, 2026-10-21: "I like the text
+    // wrapping, it's just we didn't do it properly"). Until it's set, the plain HTML shows.
+    const el = $('flow'), s = S.stories[S.at];
+    const body = innerWidth < 600 ? { size: 17.5, lh: 28 } : { size: 18, lh: 29 };
+    Promise.all([document.fonts ? document.fonts.ready : null, import('./news-book.js'), bookArticle(s)]).then(([, m, a]) => { if (el.isConnected && S.stories[S.at] === s) m.flow(el, a, body); });
   }
   if ($('list')) { const on = $('list').querySelector('.on'); on && on.scrollIntoView({ block: 'center' }); }
 }
