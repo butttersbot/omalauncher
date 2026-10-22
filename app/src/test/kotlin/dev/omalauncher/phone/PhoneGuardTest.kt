@@ -100,7 +100,7 @@ class PhoneGuardTest {
         assertTrue(run.contains("press|fill|submit|back|tap|swipe|expect|screen|open|url|home|page|stay)"))
         assertTrue(run.contains("can't go in a run"))
         // Each step is its own oma-phone call, so the hold, --in and the chat-box rule apply to every one; stdin is not theirs.
-        assertTrue(run.contains("\"\$0\" \"\$verb\" \"\${args[@]}\" 2>&1 </dev/null"))
+        assertTrue(run.contains("\"\${self[@]}\" \"\$verb\" \"\${args[@]}\" 2>&1 </dev/null"))
         assertTrue(run.contains("Step \$step failed"))
         assertTrue(run.contains("-le 40"))
         assertTrue(script.contains("oma-phone run [--in PACKAGE | --any] [SCRIPT_FILE | -]"))

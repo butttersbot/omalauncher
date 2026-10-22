@@ -28,11 +28,30 @@ class PhoneService : AccessibilityService() {
         private const val NOTE_WAIT_MILLIS = 6000L
         private const val TAP_MILLIS = 80L
     }
-    private var snapshot = ""
+    private class DisplayState {
+        var snapshot = ""
+        var seen = emptyMap<String, SeenControl>()
+        var acted: Long? = null
+        var lastChange: Long? = null
+        var opened: String? = null
+    }
+    private val displayStates = mutableMapOf(0 to DisplayState())
+    private var displayId = 0
+    private val displayState get() = displayStates.getOrPut(displayId) { DisplayState() }
+    private var busy = false
+    private var requestDeadline = 0L
+    private var requestCommand = ""
+    private var snapshot: String
+        get() = displayState.snapshot
+        set(value) { displayState.snapshot = value }
     /** Each control of the last read, by its id there: what an act checks it is still acting on. */
-    private var seen = emptyMap<String, SeenControl>()
+    private var seen: Map<String, SeenControl>
+        get() = displayState.seen
+        set(value) { displayState.seen = value }
     /** When this service last did something to the screen, by the clock that stops in sleep; null until it has. */
-    private var acted: Long? = null
+    private var acted: Long?
+        get() = displayState.acted
+        set(value) { displayState.acted = value }
     private val main = Handler(Looper.getMainLooper())
     /** The ring over other apps: on unless the stored setting says no. */
     private val ring = RingOverlay(ServiceRingWindow(this), ::ringFacts)
@@ -60,7 +79,9 @@ class PhoneService : AccessibilityService() {
     /** The package of the last window to come to the front: an unbind with his settings there is him switching it off. */
     @Volatile private var front: String? = null
     /** When the screen last said it changed, by the same clock as [acted]: a read waits for it to go quiet ([phoneSettleWait]). */
-    private var lastChange: Long? = null
+    private var lastChange: Long?
+        get() = displayState.lastChange
+        set(value) { displayState.lastChange = value }
     /** The last place he could be brought back to that came to the front ([phoneOrigin]): what an agent's first move leaves. */
     private var place: PhoneOrigin? = null
     /** Where he was when this request came in, which is where he was before the agent's first move if this request is it. */
@@ -72,9 +93,40 @@ class PhoneService : AccessibilityService() {
     /** He took the phone himself since the agent's first move: nothing is brought back over what he chose. */
     private var took = false
     /** The app the agent last opened (`open`, `url`): its touches are for that app until it says otherwise ([PhoneGuard]). */
-    private var opened: String? = null
+    private var opened: String?
+        get() = displayState.opened
+        set(value) { displayState.opened = value }
     /** The app the agent's touches are held to, for `status`; null for none. */
-    val openedApp get() = opened
+    val openedApp get() = displayStates[0]?.opened
+
+    /** Rechecked by every delayed step; pause, vanished helper and newly pending approvals all win. */
+    private fun requireCurrentAccess() {
+        check(busy && SystemClock.elapsedRealtime() < requestDeadline) { "Phone request expired. Read the screen again." }
+        if (displayId != 0) check(PhoneDisplays.background(this).id == displayId) { "Background display changed. Read it again." }
+        PhoneAccess.requireAccess(this, background = displayId != 0, workingApp = opened)
+        PhoneControlPolicy.requireNoPendingApproval(dev.omalauncher.assist.AgentTasks.pending.size + dev.omalauncher.assist.MacThreads.pending.size, requestCommand)
+    }
+
+    private fun displayWindows(id: Int) = if (Build.VERSION.SDK_INT >= 30) windowsOnAllDisplays[id].orEmpty() else windows
+    private fun displayRoot(id: Int): AccessibilityNodeInfo? = if (Build.VERSION.SDK_INT < 30) rootInActiveWindow else
+        displayWindows(id).filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+            .sortedWith(compareByDescending<AccessibilityWindowInfo> { it.isActive || it.isFocused }.thenByDescending { it.layer })
+            .firstNotNullOfOrNull { it.root }
+    private fun displayMetrics() = android.util.DisplayMetrics().also {
+        getSystemService(android.hardware.display.DisplayManager::class.java).getDisplay(displayId)?.getRealMetrics(it)
+            ?: error("Display has gone.")
+    }
+
+    private fun launchOnDisplay(intent: Intent, pkg: String?) {
+        requireCurrentAccess()
+        if (displayId != 0) {
+            val owner = displayRoot(0)
+            try { check(pkg != null && owner?.packageName?.toString() != pkg) { "That app is on your main screen. Wait until you finish using it." } }
+            finally { owner?.recycle() }
+            check(getSystemService(android.app.ActivityManager::class.java).isActivityStartAllowedOnDisplay(this, displayId, intent)) { "This app cannot open on the background display. Nothing was launched." }
+            startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), android.app.ActivityOptions.makeBasic().setLaunchDisplayId(displayId).toBundle())
+        } else startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
     override fun onServiceConnected() {
         PhoneAccess.load(this); instance = this
         PhoneControlHeal.connected(this, paused = !PhoneAccess.active)
@@ -85,12 +137,17 @@ class PhoneService : AccessibilityService() {
     /** A window changed, the lock screen's among them: an overlay that is up looks again at once. */
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
-        lastChange = SystemClock.uptimeMillis()
+        val eventDisplay = if (Build.VERSION.SDK_INT >= 30) {
+            val all = windowsOnAllDisplays
+            (0 until all.size()).firstOrNull { n -> all.valueAt(n).any { it.id == event.windowId } }?.let { all.keyAt(it) }
+        } else 0
+        eventDisplay?.let { displayStates.getOrPut(it) { DisplayState() }.lastChange = SystemClock.uptimeMillis() }
+        if (eventDisplay != null && eventDisplay != 0) return
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             val pkg = event.packageName?.toString()
             pkg?.let { front = it }
             phoneOrigin(pkg, event.className?.toString(), packageName) { HomeDoor.home?.showing }?.let { place = it }
-            if (origin != null && phoneTakenOver(pkg, packageName, SystemClock.uptimeMillis(), acted)) took = true
+            if (origin != null && phoneTakenOver(pkg, packageName, SystemClock.uptimeMillis(), displayStates[0]?.acted)) took = true
         }
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && (ring.shown || answer.shown || sheep.shown)) syncRing()
         // The screenshot toolbar comes as its own window and goes with a change of the windows.
@@ -181,7 +238,8 @@ class PhoneService : AccessibilityService() {
         if (Build.VERSION.SDK_INT >= 33) clearCache()
         // Android keeps some Settings pages from services that aren't accessibility tools (Keyboard, Developer options'
         // debugging): no window to read and no taps taken, while everywhere else works. Seen on the Fold, 2026-10-16.
-        return rootInActiveWindow ?: error("No readable window. Android hides some Settings pages from phone control and ignores taps " +
+        requireCurrentAccess()
+        return displayRoot(displayId) ?: error("No readable window on display $displayId. Android hides some Settings pages from phone control and ignores taps " +
             "there (Keyboard, Developer options' debugging): if one is in front, ask Boss to do that step. Otherwise try again after the screen settles.")
     }
     /** Before Android 13 what is kept can't be thrown away, so each node is asked for again. False: it has gone. */
@@ -202,7 +260,7 @@ class PhoneService : AccessibilityService() {
     private fun changed() {
         snapshot = ""; seen = emptyMap(); acted = SystemClock.uptimeMillis()
         // The agent's first move since its work began: where he was then is what comes back when it ends.
-        if (origin == null) { origin = placeAsked; stay = false; took = false }
+        if (displayId == 0 && origin == null) { origin = placeAsked; stay = false; took = false }
     }
 
     /** Runs [then] once the screen has shown what the last move did ([phoneSettleWait]); at once when nothing was moved. */
@@ -215,10 +273,13 @@ class PhoneService : AccessibilityService() {
      * The agent's work ended (AgentTasks, once no builder works): what he had in front before its first move comes back
      * ([phoneBack]), and the next work starts afresh. Safe from any thread.
      */
-    fun workEnded() = main.post {
+    fun workEnded(): Boolean = main.post {
+        if (busy) { main.postDelayed({ workEnded() }, 200); return@post }
         val keyguard = getSystemService(android.app.KeyguardManager::class.java)
         val back = phoneBack(origin, place, stay, took, keyguard?.isKeyguardLocked == true)
-        origin = null; stay = false; took = false; opened = null
+        origin = null; stay = false; took = false
+        displayStates.values.forEach { it.opened = null; it.snapshot = ""; it.seen = emptyMap() }
+        PhoneAccess.clearIndicator(this)
         if (back !is PhoneBack.Bring) return@post android.util.Log.i("PhoneService", "Not brought back: ${(back as PhoneBack.Leave).why}").let { }
         runCatching {
             when (val was = back.origin) {
@@ -280,8 +341,11 @@ class PhoneService : AccessibilityService() {
     }
     /** One finger along [path] for [duration]; [reply] hears once it has lifted, or that Android cancelled it. */
     private fun stroke(path: Path, duration: Long, reply: (JSONObject) -> Unit) {
+        requireCurrentAccess()
         changed()
-        val gesture = GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, duration)).build()
+        val builder = GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, duration))
+        if (Build.VERSION.SDK_INT >= 30) builder.setDisplayId(displayId)
+        val gesture = builder.build()
         check(dispatchGesture(gesture, object : GestureResultCallback() {
             // The screen starts to change when the finger lifts, not when it lands.
             override fun onCompleted(gestureDescription: GestureDescription?) { changed(); reply(JSONObject().put("ok", true)) }
@@ -331,7 +395,8 @@ class PhoneService : AccessibilityService() {
         if (pkg == null) { reply(output); return }
         val deadline = SystemClock.uptimeMillis() + PhoneTouch.UNTIL_MILLIS
         fun look() {
-            val front = runCatching { rootInActiveWindow?.packageName?.toString() }.getOrNull()
+            val root = runCatching { displayRoot(displayId) }.getOrNull()
+            val front = root?.packageName?.toString(); root?.recycle()
             if (front == pkg || SystemClock.uptimeMillis() >= deadline) { reply(output.put("inFront", front == pkg).put("front", front.orEmpty())); return }
             main.postDelayed({ look() }, PhoneTouch.UNTIL_STEP_MILLIS)
         }
@@ -352,6 +417,7 @@ class PhoneService : AccessibilityService() {
     }
     /** Does [command] (click, type or scroll) to the control at [id] of the screen last read; [reply] hears how it went. */
     private fun act(command: String, id: String, input: JSONObject, reply: (JSONObject) -> Unit) {
+        requireCurrentAccess()
         val (node, at) = target(id)
         // Where the control was acted on: a fill reads its words back there, and the agent is told it had moved.
         fun said(answer: JSONObject) = if (at == id) answer else answer.put("moved", true).put("id", at)
@@ -370,7 +436,7 @@ class PhoneService : AccessibilityService() {
             if (!done && command == "click") {
                 // Not every control takes a click from here, but a finger on its middle is what its owner would do.
                 val bounds = Rect(); node.getBoundsInScreen(bounds)
-                val metrics = resources.displayMetrics
+                val metrics = displayMetrics()
                 val (x, y) = PhoneTouch.middle(bounds.left, bounds.top, bounds.right, bounds.bottom, metrics.widthPixels, metrics.heightPixels)
                     ?: error("Android rejected this click and the control is not on screen to tap. Read the screen again.")
                 stroke(Path().apply { moveTo(x, y) }, TAP_MILLIS) { reply(if (it.optBoolean("ok")) said(it.put("tapped", true)) else it) }
@@ -422,14 +488,32 @@ class PhoneService : AccessibilityService() {
         override val current get() = themes.pickedPack
         override fun pick(id: String) = themes.pickPack(id)
     }
-    fun request(input: JSONObject, reply: (JSONObject) -> Unit) {
+    fun request(input: JSONObject, callback: (JSONObject) -> Unit) {
+        val command = input.optString("command")
+        if (command == "stop") { PhoneAccess.stop(this); callback(JSONObject().put("ok", true)); return }
+        if (busy) { callback(JSONObject().put("ok", false).put("error", "Another phone request is running. Read the screen again.")); return }
+        val selected = input.optString("display", "main")
+        val target = try {
+            require(selected == "main" || selected == "bg") { "Display must be main or bg." }
+            if (selected == "bg") { PhoneBackgroundCommands.requireAllowed(command); PhoneDisplays.background(this).id } else 0
+        } catch (e: Exception) { callback(JSONObject().put("ok", false).put("error", e.message)); return }
+        displayId = target; busy = true; requestCommand = command
+        requestDeadline = SystemClock.elapsedRealtime() + 7500
+        var finished = false
+        val reply: (JSONObject) -> Unit = { output ->
+            if (!finished) {
+                finished = true
+                output.put("displayId", target)
+                displayId = 0; busy = false
+                callback(output)
+            }
+        }
         try {
-            val command = input.getString("command")
             // Where he was as this request came in: if it is the agent's first move, that is where it comes back to.
             placeAsked = place
             // The checks and their order are PhoneRequests.admit's; nothing below runs for a request it didn't let through.
             // A request of a thread on the Mac waits for the owner as the phone builder's does, and its card is on this screen too.
-            val route = PhoneRequests.admit(command, { PhoneAccess.requireAccess(this) }) { dev.omalauncher.assist.AgentTasks.pending.size + dev.omalauncher.assist.MacThreads.pending.size }
+            val route = PhoneRequests.admit(command, { requireCurrentAccess() }) { dev.omalauncher.assist.AgentTasks.pending.size + dev.omalauncher.assist.MacThreads.pending.size }
             if (route == PhoneRequests.Route.Status) { reply(JSONObject().put("ok", true).put("active", PhoneAccess.active).put("connected", true)); return }
             if (route == PhoneRequests.Route.Stop) { PhoneAccess.stop(this); reply(JSONObject().put("ok", true)); return }
             // Home's pages: read and turned behind the same gates as everything else, and never while an approval waits.
@@ -486,13 +570,13 @@ class PhoneService : AccessibilityService() {
                 // It wouldn't come down: no picture is taken with it up.
                 if (settle == CAPTURE_REFUSED) { sheepHeld = false; syncRing(); error("Screenshot unavailable: the ring overlay could not be removed. Try again.") }
                 fun captured() { sheepHeld = false; lookAgain(ring.afterCapture()); syncRing() }
-                val capture = Runnable { try { takeScreenshot(android.view.Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
+                val capture = Runnable { try { requireCurrentAccess(); takeScreenshot(displayId, mainExecutor, object : TakeScreenshotCallback {
                     override fun onFailure(code: Int) { captured(); reply(JSONObject().put("ok", false).put("error", "Screenshot unavailable: $code. Protected screens cannot be captured.")) }
                     override fun onSuccess(result: ScreenshotResult) {
                         captured()
                         val hardware = result.hardwareBuffer
                         try {
-                            PhoneAccess.requireAccess(this@PhoneService)
+                            requireCurrentAccess()
                             val image = Bitmap.wrapHardwareBuffer(hardware, result.colorSpace) ?: error("Screenshot unavailable")
                             val bitmap = image.copy(Bitmap.Config.ARGB_8888, false); image.recycle()
                             val dir = File(filesDir, "attachments").apply { mkdirs() }
@@ -509,7 +593,9 @@ class PhoneService : AccessibilityService() {
                 return
             }
             // A touch is for the app the agent opened, or the one it names, and never types into his own chat box.
-            PhoneGuard.refusal(command, front = runCatching { rootInActiveWindow?.packageName?.toString() }.getOrNull().orEmpty(),
+            val currentRoot = runCatching { displayRoot(displayId) }.getOrNull()
+            val currentFront = currentRoot?.packageName?.toString().orEmpty(); currentRoot?.recycle()
+            PhoneGuard.refusal(command, front = currentFront,
                 asked = input.optString("in"), any = input.optBoolean("any"), opened = opened, own = packageName, chat = place == PhoneOrigin.Chat)
                 ?.let { error(it) }
             val output = JSONObject().put("ok", true)
@@ -525,7 +611,7 @@ class PhoneService : AccessibilityService() {
                         else packageManager.getLaunchIntentForPackage(name) ?: error("No visible launcher activity for this package. Run apps.")
                     // What opens it is the app the agent's touches are for from here.
                     opened = PhoneGuard.opened(if (name == "settings") packageManager.resolveActivity(intent, 0)?.activityInfo?.packageName else name)
-                    startActivity(intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+                    launchOnDisplay(intent, opened)
                     changed()
                     whenInFront(opened, output, reply)
                     return
@@ -538,7 +624,7 @@ class PhoneService : AccessibilityService() {
                     val handler = packageManager.resolveActivity(intent, 0)?.activityInfo?.packageName
                         ?: error(if (intent.`package` != null) "${intent.`package`} can't open that link. Nothing was opened." else "No app on the phone opens that link. Nothing was opened.")
                     opened = PhoneGuard.opened(handler)
-                    startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    launchOnDisplay(intent, opened)
                     changed()
                     whenInFront(opened, output.put("chooser", opened == null), reply)
                     return
@@ -546,14 +632,16 @@ class PhoneService : AccessibilityService() {
                 // The keyboard's own Enter, Go or Search, on the field that has it: no key read off a picture.
                 "submit" -> {
                     if (Build.VERSION.SDK_INT < 30) error("Submit needs Android 11 or later.")
-                    val field = findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: error("No text field has the keyboard. Fill one first. Nothing was done.")
+                    val root = root()
+                    val field = try { root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) } finally { root.recycle() }
+                        ?: error("No text field has the keyboard. Fill one first. Nothing was done.")
                     try {
                         check(field.isEditable) { "What has the keyboard is not a text field. Nothing was done." }
                         check(field.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)) { "The field did not take Enter. Read the screen again." }
                     } finally { field.recycle() }
                     changed()
                     settled {
-                        try { PhoneAccess.requireAccess(this); reply(PhoneScreen.brief(read())) }
+                        try { requireCurrentAccess(); reply(PhoneScreen.brief(read())) }
                         catch (e: Exception) { reply(JSONObject().put("ok", false).put("error", e.message ?: "Phone control failed")) }
                     }
                     return
@@ -561,7 +649,7 @@ class PhoneService : AccessibilityService() {
                 "read" -> {
                     // Right after one of this service's own actions the screen is still on its way to what the action did.
                     settled {
-                        try { PhoneAccess.requireAccess(this); reply(read()) }
+                        try { requireCurrentAccess(); reply(read()) }
                         catch (e: Exception) { reply(JSONObject().put("ok", false).put("error", e.message ?: "Phone control failed")) }
                     }
                     return
@@ -579,7 +667,7 @@ class PhoneService : AccessibilityService() {
                     // Looks again until the words show or the time is up; what it then gives is the screen as it stands.
                     fun look() {
                         try {
-                            PhoneAccess.requireAccess(this)
+                            requireCurrentAccess()
                             val seen = read()
                             val shows = until.isEmpty() || PhoneScreen.says(seen, until)
                             if (!shows && SystemClock.uptimeMillis() < deadline) { main.postDelayed({ look() }, PhoneTouch.UNTIL_STEP_MILLIS); return }
@@ -596,7 +684,7 @@ class PhoneService : AccessibilityService() {
                         if (!done.optBoolean("ok")) { reply(done); return@act }
                         settled {
                             try {
-                                PhoneAccess.requireAccess(this)
+                                requireCurrentAccess()
                                 reply(PhoneScreen.after(read(), command, done.optString("id", id), if (command == "fill") input.getString("text") else null)
                                     .also { if (scrolled > 0) it.put("scrolled", scrolled) })
                             } catch (e: Exception) { reply(JSONObject().put("ok", false).put("error", e.message ?: "Phone control failed")) }
@@ -605,7 +693,7 @@ class PhoneService : AccessibilityService() {
                     // A label below or above what shows is scrolled to, the way a finger would: on, then back, a few pages each way.
                     fun look(forward: Boolean, tries: Int, scrolled: Int) {
                         try {
-                            PhoneAccess.requireAccess(this)
+                            requireCurrentAccess()
                             val seen = read()
                             val nodes = PhoneScreen.nodes(seen)
                             when (val found = if (command == "press") PhoneFind.press(nodes, label) else PhoneFind.field(nodes, label)) {
@@ -639,7 +727,7 @@ class PhoneService : AccessibilityService() {
                     changed()
                 }
                 "tap", "swipe" -> {
-                    val metrics = resources.displayMetrics
+                    val metrics = displayMetrics()
                     fun coordinate(key: String, limit: Int) = input.getDouble(key).toFloat().also { require(it.isFinite() && it >= 0 && it < limit) { "Coordinate outside screen: $key" } }
                     val x = coordinate("x", metrics.widthPixels); val y = coordinate("y", metrics.heightPixels)
                     val path = Path().apply { moveTo(x, y); if (command == "swipe") lineTo(coordinate("endX", metrics.widthPixels), coordinate("endY", metrics.heightPixels)) }

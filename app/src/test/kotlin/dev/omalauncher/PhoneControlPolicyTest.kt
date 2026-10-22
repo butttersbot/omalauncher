@@ -19,4 +19,15 @@ class PhoneControlPolicyTest {
         assertThrows(IllegalStateException::class.java) { PhoneControlPolicy.requireAllowed(true, false, true, true) }
         assertThrows(IllegalStateException::class.java) { PhoneControlPolicy.requireAllowed(true, false, false, false) }
     }
+    @Test fun managedBackgroundDisplayCanWorkWhileMainIsLockedAndOff() {
+        PhoneControlPolicy.requireAllowed(true, false, true, false, background = true)
+        assertThrows(IllegalStateException::class.java) { PhoneControlPolicy.requireAllowed(true, true, true, false, background = true) }
+        assertThrows(IllegalStateException::class.java) { PhoneControlPolicy.requireAllowed(false, false, true, false, background = true) }
+    }
+    @Test fun backgroundMutationsStillWaitForOwnerApproval() {
+        PhoneControlPolicy.requireNoPendingApproval(1, "screen")
+        for (command in listOf("open", "press", "fill", "submit", "tap", "swipe")) {
+            assertThrows(IllegalStateException::class.java) { PhoneControlPolicy.requireNoPendingApproval(1, command) }
+        }
+    }
 }

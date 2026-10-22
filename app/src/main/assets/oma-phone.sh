@@ -1,6 +1,13 @@
 #!/bin/bash
 # Omalauncher: curl/jq are already included in the Linux setup; no TCP listener.
 set -euo pipefail
+display=main
+if [ "${1:-}" = --display ]; then
+  display=${2:?Display required: main or bg}
+  shift 2
+fi
+case "$display" in main|bg) ;; *) echo 'Display must be main or bg.' >&2; exit 2;; esac
+self=("$0" --display "$display")
 command=${1:-help}
 shift || true
 expect=0
@@ -38,12 +45,12 @@ if [ "$command" = run ]; then
       sleep "$(awk -v m="$ms" 'BEGIN{printf "%.3f", m/1000}')";;
     press|fill|submit|back|tap|swipe|expect|screen|open|url|home|page|stay)
       case "$verb" in press|fill|submit|back|tap|swipe) args=("${global[@]}" "${rest[@]}");; *) args=("${rest[@]}");; esac
-      if ! out=$("$0" "$verb" "${args[@]}" 2>&1 </dev/null); then
+      if ! out=$("${self[@]}" "$verb" "${args[@]}" 2>&1 </dev/null); then
         why=$(printf '%s\n' "$out" | jq -r 'select(type=="object") | .error // empty' 2>/dev/null | head -1)
         echo "Step $step failed: $line" >&2
         echo "${why:-$(printf '%s\n' "$out" | tail -1)}" >&2
         echo "$done_steps of $step done before it. The screen now:" >&2
-        "$0" screen </dev/null || true
+        "${self[@]}" screen </dev/null || true
         exit 1
       fi;;
     *) echo "Step $step: $verb can't go in a run (press, fill, submit, back, tap, swipe, expect, screen, open, url, home, page, stay, wait). $done_steps done." >&2; exit 1;;
@@ -51,7 +58,7 @@ if [ "$command" = run ]; then
     done_steps=$step
   done <<<"$script"
   echo "{\"ok\":true,\"steps\":$done_steps}"
-  exec "$0" screen
+  exec "${self[@]}" screen
 fi
 # Every touch takes --in PACKAGE (refuse unless that app is in front) and --any (not held to the app last opened).
 front=''; any=false
@@ -68,6 +75,9 @@ esac
 case "$command" in
 help)
   cat <<'HELP'
+oma-phone [--display main|bg] COMMAND ...
+Background commands stay on the hidden display; unsupported navigation fails without touching main.
+Start the shell display helper first. Stop pauses all phone control.
 oma-phone apps | open PACKAGE_OR_settings | url [--app PACKAGE] URL
 oma-phone status | read | screenshot | back | home | recents | notifications | stay | stop
 oma-phone submit
@@ -282,6 +292,7 @@ status|pages|apps|read|screenshot|back|home|recents|notifications|stay|stop|subm
   request=$(jq -cn --arg command "$command" '{command:$command}');;
 *) echo 'Unknown command. Run oma-phone help.' >&2; exit 2;;
 esac
+request=$(jq -c --arg display "$display" '. + {display:$display}' <<<"$request")
 request=$(jq -c --arg front "$front" --argjson any "$any" '. + (if $front=="" then {} else {in:$front} end) + (if $any then {any:true} else {} end)' <<<"$request")
 response=$(curl --silent --show-error --max-time 12 --abstract-unix-socket '__SOCKET__' \
   --header 'Content-Type: application/json' --data-binary "$request" http://localhost/phone) || {

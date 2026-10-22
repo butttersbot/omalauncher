@@ -36,25 +36,49 @@ object PhoneAccess {
     fun clearIndicator(context: Context) {
         context.getSystemService(NotificationManager::class.java).cancel(40)
     }
-    private fun showIndicator(context: Context) {
+    private fun showIndicator(context: Context, background: Boolean, workingApp: String?) {
         val nm = context.getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel("phone-control", "Agent phone control", NotificationManager.IMPORTANCE_DEFAULT))
         val stop = PendingIntent.getBroadcast(context, 0, Intent(context, StopPhoneControl::class.java), PendingIntent.FLAG_IMMUTABLE)
         val open = PendingIntent.getActivity(context, 0, Intent(context, PhoneControlActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
-        nm.notify(40, Notification.Builder(context, "phone-control")
-            .setSmallIcon(R.drawable.ic_notification).setContentTitle("Agent phone control is available")
-            .setContentText("Enabled automatically for phone tasks · Stop pauses access")
+        val takeover = PendingIntent.getActivity(context, 1, Intent(context, PhoneTakeoverActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), PendingIntent.FLAG_IMMUTABLE)
+        val notice = Notification.Builder(context, "phone-control")
+            .setSmallIcon(R.drawable.ic_notification).setContentTitle(if (background) "Agent is working in ${workingApp ?: "the background"}" else "Agent phone control is available")
+            .setContentText(if (background) "Hidden display · Take over brings the app to your screen" else "Enabled automatically for phone tasks · Stop pauses access")
             .setOnlyAlertOnce(true).setOngoing(true).setContentIntent(open)
-            .addAction(Notification.Action.Builder(null, "Stop", stop).build()).build())
+            .setVisibility(Notification.VISIBILITY_PRIVATE)
+            .addAction(Notification.Action.Builder(null, "Stop", stop).build())
+        if (background) notice.addAction(Notification.Action.Builder(null, "Take over", takeover).build())
+        nm.notify(40, notice.build())
     }
-    fun requireAccess(context: Context) {
+    fun requireAccess(context: Context, background: Boolean = false, workingApp: String? = null) {
         PhoneControlPolicy.requireAllowed(
             connected = PhoneService.instance != null,
             paused = paused,
             locked = context.getSystemService(KeyguardManager::class.java).isKeyguardLocked,
             awake = context.getSystemService(PowerManager::class.java).isInteractive,
+            background = background,
         )
-        showIndicator(context)
+        showIndicator(context, background, workingApp)
+    }
+}
+
+/** A notification action belonging to the owner; never offered through the agent bridge. */
+class PhoneTakeoverActivity : Activity() {
+    override fun onCreate(state: Bundle?) {
+        super.onCreate(state)
+        val message = android.widget.TextView(this).apply { text = "Unlock the phone to take over, then tap Take over again."; setPadding(28, 48, 28, 28) }
+        setContentView(message)
+        if (getSystemService(KeyguardManager::class.java).isKeyguardLocked) return
+        // Pause before moving anything, so queued agent steps cannot follow the app onto the real screen.
+        PhoneAccess.stop(this)
+        kotlin.concurrent.thread(name = "phone-takeover") {
+            val result = runCatching { PhoneDisplays.takeOver(this) }
+            runOnUiThread {
+                if (result.isSuccess) finish()
+                else message.text = "Phone control is paused. Take over failed: ${result.exceptionOrNull()?.message}"
+            }
+        }
     }
 }
 
@@ -79,7 +103,7 @@ class PhoneControlActivity : Activity() {
         }
         fun text(value: String) { layout.addView(android.widget.TextView(this).apply { text = value; textSize = 18f; setPadding(0, 12, 0, 18) }) }
         text("Agent phone control")
-        text("Once Accessibility access is enabled, agents running in Soma can read your screen, take screenshots, tap, swipe and enter text when you ask them to use your phone. No Start button or timer is needed. Screen content may reach your chosen AI provider. Keep the phone unlocked. Protected screens may be unavailable.")
+        text("Once Accessibility access is enabled, agents running in Soma can read your screen, take screenshots, tap, swipe and enter text when you ask them to use your phone. No Start button or timer is needed. Screen content may reach your chosen AI provider. Main-screen tasks need the phone unlocked. Background tasks use a separately configured hidden display and can continue while locked. Take over brings its app to your screen and pauses control. Protected screens may be unavailable.")
         status = android.widget.TextView(this).apply { textSize = 20f }
         layout.addView(status)
         fun button(label: String, action: () -> Unit) { layout.addView(android.widget.Button(this).apply { text = label; setOnClickListener { action() } }) }

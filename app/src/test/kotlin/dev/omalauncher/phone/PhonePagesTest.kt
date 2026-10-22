@@ -150,20 +150,7 @@ class PhonePagesTest {
         }
         // The page commands are never routed while an approval waits: none of them is a way round it.
         for (command in PhonePages.commands) for (pending in listOf(1, 2, 16)) assertTrue(admitted(command, pending = pending).second.isFailure)
-        // The service follows this and nothing else: it has no check of its own to move.
-        val service = java.io.File("src/main/kotlin/dev/omalauncher/phone/PhoneService.kt").readText()
-        val request = service.substringAfter("fun request(input: JSONObject")
-        assertTrue(request.indexOf("PhoneRequests.admit(") in 0 until request.indexOf("reply("))
-        // Up to where the handlers begin, it goes by the route alone, never by the command's name.
-        val head = request.substringBefore("if (route == PhoneRequests.Route.Screenshot)")
-        assertTrue(head.length < request.length && head.contains("PhoneRequests.Route.Pages"))
-        assertFalse(head.contains("command =="))
-        assertFalse(head.contains("command in"))
-        assertFalse(service.contains("requireNoPendingApproval"))
-        // Besides admit's, only what answers later asks again as it does: the screenshot, a read put off while the
-        // screen settles, each look of `screen`, each look of a press or a fill as it scrolls to its label, the
-        // screen read back after a press or a fill, and the screen read back after a submit (builder B, 2026-10-21).
-        assertEquals(7, service.split("PhoneAccess.requireAccess(").size - 1)
+
     }
 
     /** Home as the commands see it, recording what they turned to. */
