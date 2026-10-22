@@ -102,7 +102,73 @@ class NewsActivity : ComponentActivity() {
         if (System.currentTimeMillis() / 1000 - updated() > 3600) refresh()
     }
 
+    private fun answer(
+        link: String,
+        html: String,
+    ) {
+        if (!isDestroyed) web.evaluateJavascript("window.somaPage && window.somaPage(${JSONObject.quote(link)}, ${JSONObject.quote(html)})", null)
+    }
+
+    /** Browsers following a Google link now, one each; let go when they land or give up. */
+    private val following = mutableListOf<WebView>()
+
+    /**
+     * Follows Google's [link] in a browser no one sees, as a phone's browser would, and hands [done] the first address
+     * off Google it is sent to (the publisher's), or null after [FOLLOW_MS]. The page there isn't loaded, and no app is
+     * opened for it. Main thread.
+     */
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun followInBrowser(
+        link: String,
+        done: (String?) -> Unit,
+    ) {
+        val w = WebView(this)
+        following += w
+        var over = false
+        fun finish(url: String?) {
+            if (over) return
+            over = true
+            main.post {
+                following -= w
+                w.stopLoading()
+                w.destroy()
+            }
+            done(url)
+        }
+        fun offGoogle(url: String?) = url != null && (url.startsWith("https://") || url.startsWith("http://")) && !Uri.parse(url).host.orEmpty().let { it == "google.com" || it.endsWith(".google.com") || it == "consent.google.com" }
+        w.settings.javaScriptEnabled = true
+        w.settings.domStorageEnabled = true
+        w.settings.blockNetworkImage = true
+        w.webViewClient =
+            object : WebViewClient() {
+                override fun shouldOverrideUrlLoading(
+                    view: WebView,
+                    request: WebResourceRequest,
+                ): Boolean {
+                    val url = request.url.toString()
+                    if (offGoogle(url)) {
+                        finish(url)
+                        return true
+                    }
+                    // intent:, market: and the like: never an app.
+                    return !(url.startsWith("https://") || url.startsWith("http://"))
+                }
+
+                override fun onPageStarted(
+                    view: WebView,
+                    url: String?,
+                    favicon: android.graphics.Bitmap?,
+                ) {
+                    if (offGoogle(url)) finish(url)
+                }
+            }
+        main.postDelayed({ finish(null) }, FOLLOW_MS)
+        w.loadUrl(link)
+    }
+
     override fun onDestroy() {
+        following.toList().forEach { it.destroy() }
+        following.clear()
         web.destroy()
         super.onDestroy()
     }
@@ -169,7 +235,21 @@ class NewsActivity : ComponentActivity() {
         @JavascriptInterface fun page(link: String) {
             thread(name = "news-page", isDaemon = true) {
                 val html = NewsStore.page(link).orEmpty()
-                main.post { if (!isDestroyed) web.evaluateJavascript("window.somaPage && window.somaPage(${JSONObject.quote(link)}, ${JSONObject.quote(html)})", null) }
+                if (html.isEmpty() && GoogleNews.isGoogle(link)) {
+                    // Google turned the lookup away: a browser still gets through (Boss's phone, 2026-10-22), so the
+                    // link is followed in one, unseen, as far as the publisher's address.
+                    main.post {
+                        if (isDestroyed) return@post
+                        followInBrowser(link) { publisher ->
+                            thread(name = "news-page", isDaemon = true) {
+                                val got = publisher?.let(NewsStore::page).orEmpty()
+                                main.post { answer(link, got) }
+                            }
+                        }
+                    }
+                    return@thread
+                }
+                main.post { answer(link, html) }
             }
         }
 
@@ -193,6 +273,9 @@ class NewsActivity : ComponentActivity() {
     companion object {
         /** The page's private origin: nothing is served from the network under it. */
         const val HOST = "news.soma.local"
+
+        /** How long a Google link is followed in the unseen browser before the reader gives up on it. */
+        const val FOLLOW_MS = 15_000L
 
         fun open(context: Context) = context.startActivity(Intent(context, NewsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
