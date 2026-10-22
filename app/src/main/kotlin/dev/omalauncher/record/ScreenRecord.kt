@@ -180,13 +180,20 @@ class ScreenRecordService : Service() {
         ScreenRecord.refreshTile(this)
         val display = intent.getIntExtra(DISPLAY, Display.DEFAULT_DISPLAY)
         for (left in ScreenRecord.COUNTDOWN downTo 1) {
-            main.postDelayed({ if (ScreenRecord.counting) notify(note("Screen recording starts in $left…", recording = false)) }, (ScreenRecord.COUNTDOWN - left) * 1000L)
+            main.postDelayed({
+                if (ScreenRecord.counting) {
+                    notify(note("Screen recording starts in $left…", recording = false))
+                    RecordPill.countdown(left)
+                }
+            }, (ScreenRecord.COUNTDOWN - left) * 1000L)
         }
         main.postDelayed({ if (ScreenRecord.counting) record(display) }, ScreenRecord.COUNTDOWN * 1000L)
     }
 
     private fun record(displayId: Int) {
         ScreenRecord.counting = false
+        // The countdown off the screen before the first frame is taken.
+        RecordPill.hide()
         val p = projection ?: return finish(save = false)
         val shown = getSystemService(DisplayManager::class.java).getDisplay(displayId) ?: getSystemService(DisplayManager::class.java).getDisplay(Display.DEFAULT_DISPLAY)
         val ctx = createDisplayContext(shown)
@@ -227,10 +234,12 @@ class ScreenRecordService : Service() {
         ScreenRecord.recording = true
         ScreenRecord.refreshTile(this)
         notify(note("Recording the screen", recording = true))
+        RecordPill.recording(startedAt) { finish(save = true) }
     }
 
     private fun finish(save: Boolean) {
         main.removeCallbacksAndMessages(null)
+        RecordPill.hide()
         val was = ScreenRecord.recording
         ScreenRecord.counting = false
         ScreenRecord.recording = false

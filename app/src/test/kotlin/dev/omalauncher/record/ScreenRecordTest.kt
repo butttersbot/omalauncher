@@ -12,4 +12,11 @@ class ScreenRecordTest {
         assertEquals(712 to 1920, ScreenRecord.videoSize(968, 2610))
         assertEquals(720 to 1280, ScreenRecord.videoSize(720, 1280))
     }
+
+    @Test
+    fun pillClock() {
+        assertEquals("0:00", RecordPill.clock(0))
+        assertEquals("0:07", RecordPill.clock(7))
+        assertEquals("12:30", RecordPill.clock(750))
+    }
 }
