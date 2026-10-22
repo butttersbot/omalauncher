@@ -7,7 +7,9 @@ key HOME
 launch dev.omalauncher.boss/dev.omalauncher.news.NewsActivity
 # The reader's controls appear about 3 s after a fresh start (timed on Fold8), but the 131 walk missed Refresh at 6 s.
 wait 10000
-tap Refresh | ↻
+# No Refresh here: twenty walks a day each fetching all of Google News helped get the network held back
+# (2026-10-22). The reader refreshes by itself when its stream is over an hour old; tap ↻ in a walk only for a
+# change to fetching.
 wait 8000
 expect Top stories
 expect Technology
