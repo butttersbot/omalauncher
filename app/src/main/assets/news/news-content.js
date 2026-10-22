@@ -82,6 +82,15 @@ window.NewsContent = (() => {
       const t = text(n);
       if (t && (READER_LABEL.test(t) || LEAD.test(t) || (linkShare(n) > 0.9 && t.length < 160 && n.querySelector('a')) || ASIDE.test(t))) n.remove();
     });
+    // Screen readers' list labels wherever they sit (a span, a bare text node, a div): matched on the text itself.
+    const labels = [];
+    const walk = n => { for (const c of [...n.childNodes]) { if (c.nodeType === 3) { if (READER_LABEL.test(c.textContent.trim())) labels.push(c); } else walk(c); } };
+    walk(root);
+    labels.forEach(t => {
+      let n = t.parentNode;
+      t.remove();
+      while (n && n !== root && empty(n)) { const up = n.parentNode; n.remove(); n = up; }
+    });
     // Whatever trails the story once its prose ends: empty wrappers, rows of links, the site's own extras. A short
     // closing line of the story itself ("Sincerely, / The team") stays, and the story is never emptied.
     let last = root.lastElementChild;
