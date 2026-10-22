@@ -72,6 +72,19 @@ canvas.pixel { position: absolute; left: 0; top: 0; }
 .week i { display: block; margin: 0 auto 3px; width: 8px; background: #58c8f8; box-shadow: inset -2px 0 0 #2890e0, 0 0 0 1px #404040; }
 .week i.goal { background: #70f8a8; box-shadow: inset -2px 0 0 #48c070, 0 0 0 1px #404040; }
 .week i.today { background: #f8e038; box-shadow: inset -2px 0 0 #c8a808, 0 0 0 1px #404040; }
+/* The steps tile's frame is the data box itself: dark edge, pale rim, the notch at its bottom-left corner. */
+.tile.steps { border: 3px solid #404040; border-image: none; border-radius: 10px 10px 10px 0; background: #98d0f8; background-clip: padding-box;
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, .3); }
+.tile.steps .inner { border-radius: 7px 7px 7px 0; }
+.tile.steps::after { content: ""; position: absolute; inset: 0; border-radius: 7px 7px 7px 0; pointer-events: none; z-index: 3;
+  box-shadow: inset 0 0 0 4px #f8f8e0, inset 0 0 0 6px #c8c8a8; }
+.head { position: absolute; left: 12px; top: 9px; z-index: 2; }
+.head .row { display: flex; justify-content: space-between; }
+.head .sub { margin-top: 2px; }
+.head.night .px { color: #f8f8f8; text-shadow: 1px 0 0 #404868, 0 1px 0 #404868, 1px 1px 0 #404868; }
+.head.night .px2 { text-shadow: 2px 0 0 #404868, 0 2px 0 #404868, 2px 2px 0 #404868; }
+.track { position: absolute; margin: 0; z-index: 1; }
+.walker { z-index: 2; }
 .goalline { position: absolute; left: 0; right: 0; border-top: 2px dashed #a0a088; }
 
 /* The pet loose on the screen (the floating sheep's place). */
@@ -115,7 +128,7 @@ canvas.pixel { position: absolute; left: 0; top: 0; }
     <div class="tile w4x2 steps" id="stepM"><div class="inner"></div></div>
   </div>
   <p class="note"><b>Pet home.</b> The pet's room, as in the games: it naps on the bed (Zz), with the window showing day or night. Tap the room or <b>LET OUT</b> and it hops out to float on the screen as it does now; the bed is left empty. Drag it back onto the room or tap <b>CALL</b> to put it home. One pet, so every size shows the same one.<br><br>
-  <b>Steps.</b> A battle screen: today's count in the game's data box, the pet on its platform below, walking while steps come in and standing when you stop. The EXP bar fills toward your goal (10,000 for now; long-press to change) and turns green past it. The wide size adds the week, with the goal as a dashed line. Tap it for how today compares, in the game's text box.</p>
+  <b>Steps.</b> The data box is the widget's frame and the field is inside it. Today's count sits in the sky; the EXP bar runs along the grass to a goal flag, and the pet stands on the bar as far along as you've got (68% of the goal, 68% of the way). It walks while steps come in and faces you when you stop. Past the goal the bar turns green (10,000 for now; long-press to change). The wide size adds the week, with the goal as a dashed line. Tap it for how today compares, in the game's text box.</p>
 </div>
 
 <div id="loose"><div class="spr"></div></div>
@@ -294,16 +307,14 @@ loose.addEventListener('pointerup', e => {
 });
 const over = (t, e) => { const r = t.getBoundingClientRect(); return e.clientX > r.left && e.clientX < r.right && e.clientY > r.top && e.clientY < r.bottom; };
 
-/* ---------- Steps: a battle screen ---------- */
+/* ---------- Steps: the field in the data box's frame; the pet walks the EXP bar ---------- */
 let stepTick = 0, scroll = 0;
-// Sky, far hills and trees, the grass, and the pet's oval platform at (px, py).
-function field(p, px, py, pw) {
+// Sky, far hills and trees, the grass. Hills scroll slowly and the grass faster while walking.
+function field(p, horizon) {
   const { r, cw, ch } = p;
-  const horizon = Math.round(ch * .5);
   const sky = night ? ['#182048', '#28305a', '#384878'] : ['#78b8f0', '#98d0f8', '#b8e0f8'];
   sky.forEach((c, i) => r(0, i * horizon / 3, cw, horizon / 3 + 1, c));
-  if (night) [[5, 3], [17, 6], [31, 2], [44, 5], [58, 3]].forEach(([x, y]) => x < cw && r(x, y, 1, 1, '#f8f0c0'));
-  // Hills scroll slowly, the grass faster: a little parallax while walking.
+  if (night) [[5, 3], [17, 6], [31, 2], [44, 5], [58, 3], [71, 4], [83, 2]].forEach(([x, y]) => x < cw && r(x, y, 1, 1, '#f8f0c0'));
   for (let x = 0; x < cw; x++) {
     const hx = x + Math.floor(scroll / 3);
     const h = 3 + Math.round(2 * Math.sin(hx / 5) + 1.5 * Math.sin(hx / 2.3));
@@ -313,50 +324,53 @@ function field(p, px, py, pw) {
   r(0, horizon, cw, ch - horizon, night ? '#4a7840' : '#88c858');
   for (let y = horizon + 2; y < ch; y += 3)
     for (let x = ((y * 7) % 5) - (scroll % 6); x < cw; x += 6) r(x, y, 2, 1, night ? '#3c6434' : '#70b048');
-  // The platform: a flat oval with a darker rim, as under a battler.
-  const ph = Math.max(3, Math.round(pw / 4));
-  for (let i = 0; i < ph; i++) {
-    const t = (i + .5) / ph * 2 - 1, half = Math.round(pw / 2 * Math.sqrt(1 - t * t));
-    r(px - half, py - ph / 2 + i, half * 2, 1, i >= ph - 2 ? (night ? '#3c6434' : '#589838') : (night ? '#6a9858' : '#b8e088'));
-  }
-  return horizon;
+}
+// The goal flag at the bar's end: a pole with a red pennant, standing on the bar.
+function flag(p, x, y) {
+  const { r } = p;
+  r(x, y - 9, 1, 9, '#404040');
+  r(x + 1, y - 9, 4, 1, '#d84838'); r(x + 1, y - 8, 3, 1, '#d84838'); r(x + 1, y - 7, 2, 1, '#d84838'); r(x + 1, y - 6, 1, 1, '#d84838');
+  r(x - 1, y - 10, 3, 1, '#f8e038');
 }
 function drawSteps(tile) {
   const inn = tile.querySelector('.inner'), W = inn.clientWidth, H = inn.clientHeight;
   const tiny = tile.id === 'stepT', wide = tile.id === 'stepM';
-  const n = Math.max(2, Math.floor(Math.min(W / (wide ? 90 : 46), H / (tiny ? 24 : 46))));
+  const n = Math.max(2, Math.floor(Math.min(W / (wide ? 90 : 46), H / (tiny ? 26 : 46))));
   const pct = Math.min(1, steps / GOAL);
   if (!inn.dataset.built) {
     inn.dataset.built = 1;
-    inn.innerHTML = `<div class="spr walker"></div>
-      <div class="dbox main"><div class="row px"><span>${tiny ? 'TODAY' : 'STEPS TODAY'}</span><span class="lv"></span></div>
-        <div class="row"><span class="px ${tiny ? '' : 'px2'} num"></span></div>
-        <div class="exp"><i></i></div>${tiny ? '' : '<div class="row px"><span class="sub"></span></div>'}</div>
+    inn.innerHTML = `<div class="head"><div class="row px"><span>${tiny ? 'STEPS' : 'STEPS TODAY'}</span><span class="lv"></span></div>
+        <div class="px ${tiny ? 'px2' : 'px2'} num"></div>${tiny ? '' : '<div class="px sub"></div>'}</div>
+      <div class="exp track"><i></i></div><div class="spr walker"></div>
       ${wide ? '<div class="dbox wk"><div class="row px"><span>THIS WEEK</span><span class="avg"></span></div><div class="week px" style="position:relative"></div></div>' : ''}`;
   }
-  const cw = Math.ceil(W / n);
-  // Where the pet stands, in art pixels: bottom right as the player's battler is drawn, bottom left on the 2x1.
-  const pw = tiny ? 18 : 22;
-  const pcx = tiny ? Math.round(pw / 2 + 3) : wide ? Math.round(cw * .3) : Math.round(cw - pw / 2 - 3);
-  const pcy = Math.ceil(H / n) - (tiny ? 4 : 5);
-  field(pixels(inn, W, H, n), pcx, pcy, pw);
+  const ch = Math.ceil(H / n);
+  // The bar runs along the grass near the bottom; on the wide one it stops short of the week.
+  const track = inn.querySelector('.track');
+  const left = 40, right = wide ? Math.round(W * .44) + 6 : 14, bottom = tiny ? 10 : 14;
+  track.style.left = left + 'px'; track.style.right = right + 'px'; track.style.bottom = bottom + 'px';
+  track.classList.toggle('done', steps >= GOAL); track.querySelector('i').style.width = pct * 100 + '%';
+  const barW = W - left - right, barTop = H - bottom - 14;
+  const p = pixels(inn, W, H, n);
+  field(p, Math.round(ch * (tiny ? .55 : .58)));
+  flag(p, Math.round((left + barW - 4) / n), Math.floor(barTop / n));
+  // The pet stands on the bar where today's steps have got it to: 68% of the goal, 68% of the way along.
   const walker = inn.querySelector('.walker'), moving = Date.now() < walkingUntil;
-  const size = petSize(n);
+  const size = petSize(n) * (tiny ? .85 : 1);
   frame(walker, moving ? 'right' : 'down', moving ? stepTick : 0, size);
-  walker.style.left = pcx * n - size / 2 + 'px';
-  walker.style.top = pcy * n - parseFloat(walker.style.height) * .9 + 'px';
-  // The data box: top left as the foe's is drawn; to the right of the pet on the 2x1.
-  const box = inn.querySelector('.main');
-  if (tiny) { box.style.left = (pw + 7) * n + 'px'; box.style.right = '6px'; box.style.top = '50%'; box.style.transform = 'translateY(-50%)'; }
-  else { box.style.left = '6px'; box.style.top = '6px'; box.style.width = wide ? '46%' : 'calc(100% - 12px)'; }
-  box.querySelector('.num').textContent = fmt(steps);
-  box.querySelector('.lv').textContent = steps >= GOAL ? '★' : Math.round(pct * 100) + '%';
-  const sub = box.querySelector('.sub');
+  const h = parseFloat(walker.style.height);
+  walker.style.left = left + Math.min(pct, .96) * barW - size / 2 + 'px';
+  walker.style.top = barTop + 4 - h * .92 + 'px';
+  const head = inn.querySelector('.head');
+  head.classList.toggle('night', night);
+  head.style.right = wide ? Math.round(W * .44) + 'px' : '10px';
+  head.querySelector('.num').textContent = fmt(steps);
+  head.querySelector('.lv').textContent = steps >= GOAL ? '★' : Math.round(pct * 100) + '%';
+  const sub = head.querySelector('.sub');
   if (sub) sub.textContent = steps >= GOAL ? 'GOAL MET!' : `${fmt(GOAL - steps)} TO GO`;
-  const bar = box.querySelector('.exp'); bar.classList.toggle('done', steps >= GOAL); bar.querySelector('i').style.width = pct * 100 + '%';
   if (wide) {
     const wb = inn.querySelector('.wk'), all = [...week, steps], max = Math.max(GOAL, ...all) * 1.08;
-    wb.style.right = '6px'; wb.style.top = '6px'; wb.style.bottom = '6px'; wb.style.width = '40%';
+    wb.style.right = '8px'; wb.style.top = '8px'; wb.style.bottom = '8px'; wb.style.width = '40%';
     const avg = Math.round(week.reduce((a, b) => a + b) / week.length);
     wb.querySelector('.avg').textContent = 'AVG ' + (avg / 1000).toFixed(1) + 'K';
     const wk = wb.querySelector('.week'), hgt = Math.max(30, wb.clientHeight - 48);
