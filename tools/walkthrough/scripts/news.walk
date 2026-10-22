@@ -6,7 +6,7 @@ key BACK
 key HOME
 launch dev.omalauncher.boss/dev.omalauncher.news.NewsActivity
 wait 3000
-tap Refresh
+tap Refresh | ↻
 wait 8000
 expect Top stories
 expect Technology
