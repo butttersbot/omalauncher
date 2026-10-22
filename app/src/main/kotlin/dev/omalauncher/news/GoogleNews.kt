@@ -71,6 +71,15 @@ object GoogleNews {
     fun resolve(link: String): String? {
         if (!isGoogle(link)) return link
         val id = link.substringAfter("/articles/", "").substringBefore('?').ifEmpty { return null }
+        if (busy()) return null
+        // One at a time and spaced: a burst of these (every topic's first stories at once, hourly) got the phone's
+        // network sent to Google's "unusual traffic" page, and then no article opened (Boss, 2026-10-22).
+        synchronized(this) {
+            val wait = lastResolve + RESOLVE_GAP_MS - System.currentTimeMillis()
+            if (wait > 0) Thread.sleep(wait)
+            lastResolve = System.currentTimeMillis()
+        }
+        if (busy()) return null
         val page = get("https://news.google.com/articles/$id") ?: return null
         val sig = Regex("data-n-a-sg=\"([^\"]+)\"").find(page)?.groupValues?.get(1) ?: return null
         val ts = Regex("data-n-a-ts=\"([^\"]+)\"").find(page)?.groupValues?.get(1)?.toLongOrNull() ?: return null
@@ -98,14 +107,29 @@ object GoogleNews {
     fun publisherIn(answer: String): String? =
         Regex("""garturlres\\",\\"(https?://[^\\"]+)""").find(answer)?.groupValues?.get(1)?.takeIf { !isGoogle(it) }
 
+    /** Until when Google is left alone, ms: it sent us to its "unusual traffic" page, or said too many requests. */
+    @Volatile private var quietUntil = 0L
+    private var lastResolve = 0L
+    private const val RESOLVE_GAP_MS = 1_500L
+    private const val QUIET_MS = 30 * 60_000L
+
+    /** True while Google has asked us to slow down; addresses aren't looked up then. */
+    fun busy() = System.currentTimeMillis() < quietUntil
+
     private fun get(url: String): String? =
         runCatching {
             val c = URL(url).openConnection() as HttpURLConnection
             c.connectTimeout = 6_000
             c.readTimeout = 12_000
+            c.instanceFollowRedirects = false
             c.setRequestProperty("User-Agent", BROWSER)
             c.setRequestProperty("Accept-Language", "en-US,en;q=0.9")
-            if (c.responseCode != 200) return null
+            val code = c.responseCode
+            if (code == 429 || (code in 300..399 && c.getHeaderField("Location").orEmpty().contains("/sorry"))) {
+                quietUntil = System.currentTimeMillis() + QUIET_MS
+                return null
+            }
+            if (code != 200) return null
             c.inputStream.bufferedReader().use { it.readText() }
         }.getOrNull()
 }

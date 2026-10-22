@@ -86,13 +86,26 @@ object NewsStore {
             val k = known[s.id] ?: return@map s
             s.copy(link = k.optString("link").takeIf { it.isNotEmpty() && !GoogleNews.isGoogle(it) } ?: s.link, image = if (k.isNull("image")) null else k.optString("image"))
         }
-        val first = kept.groupBy { it.topic }.values.flatMap { it.take(RESOLVED_FIRST) }.filter { GoogleNews.isGoogle(it.link) || it.image == null }.map { it.id }.toSet()
-        val pool = java.util.concurrent.Executors.newFixedThreadPool(6)
+        val first = kept.groupBy { it.topic }.values.flatMap { it.take(RESOLVED_FIRST) }.filter { GoogleNews.isGoogle(it.link) || it.image == null }
+        // Google's addresses one at a time (GoogleNews.resolve spaces them), at most RESOLVE_PER_REFRESH a refresh,
+        // the top stories first; what isn't looked up now is when it's opened, or next hour. The pictures come from the
+        // publishers, so those may go side by side.
+        var asked = 0
+        val linked = first.associate { s ->
+            val link =
+                if (GoogleNews.isGoogle(s.link) && asked < RESOLVE_PER_REFRESH && !GoogleNews.busy()) {
+                    asked++
+                    GoogleNews.resolve(s.link) ?: s.link
+                } else {
+                    s.link
+                }
+            s.id to link
+        }
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(4)
         val done = try {
             kept.map { s ->
-                if (s.id !in first) return@map java.util.concurrent.CompletableFuture.completedFuture(s)
+                val link = linked[s.id] ?: return@map java.util.concurrent.CompletableFuture.completedFuture(s)
                 java.util.concurrent.CompletableFuture.supplyAsync({
-                    val link = if (GoogleNews.isGoogle(s.link)) GoogleNews.resolve(s.link) ?: s.link else s.link
                     s.copy(link = link, image = s.image ?: link.takeIf { !GoogleNews.isGoogle(it) }?.let(::pageImage))
                 }, pool)
             }.map { it.get() }
@@ -283,6 +296,9 @@ object NewsStore {
 
     /** Stories a topic whose address and picture are found at refresh, so the stream opens with pictures. */
     private const val RESOLVED_FIRST = 6
+
+    /** Google addresses looked up in one refresh, at most: found ones are kept, so few are new each hour. */
+    private const val RESOLVE_PER_REFRESH = 12
 
 }
 

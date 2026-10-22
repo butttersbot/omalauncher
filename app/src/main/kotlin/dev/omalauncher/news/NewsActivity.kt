@@ -173,6 +173,9 @@ class NewsActivity : ComponentActivity() {
             }
         }
 
+        /** True while Google News has asked this network to slow down, so its links can't be followed for now. */
+        @JavascriptInterface fun googleBusy(): Boolean = GoogleNews.busy()
+
         /** The whole article taken from [link]'s page before, or "". */
         @JavascriptInterface fun full(link: String): String = NewsStore.full(this@NewsActivity, link)
 

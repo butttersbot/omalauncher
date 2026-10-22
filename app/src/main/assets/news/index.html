@@ -343,7 +343,7 @@ window.somaPage = function (link, html) {
       if (text(content).length > Math.max(400, s ? text(s.html).length * 1.15 : 0)) got = content;
     } catch (e) { got = ''; }
   }
-  S.full[link] = got ? { html: got } : { failed: true };
+  S.full[link] = got ? { html: got } : { failed: true, busy: !html && !!(Native.googleBusy && Native.googleBusy()) };
   if (got) Native.keep(link, got);
   const showing = S.scene === 'reader' && S.stories[S.at] && S.stories[S.at].link === link;
   if (!showing) return;
@@ -361,12 +361,14 @@ function article(s) {
   const stem = u => (u || '').split('?')[0].replace(/[-_]\d+x\d+(?=\.\w+$)/, '');
   if (s.image) d.querySelectorAll('img').forEach(im => { if (stem(im.getAttribute('src')) === stem(s.image)) (im.closest('figure') || im).remove(); });
   const h = d.querySelector('h1, h2'); if (h && h.textContent.trim() === s.title.trim()) h.remove();
+  // Nor as the only paragraph: Google's feed gives the headline as the story, which read twice, drop capital and all.
+  d.querySelectorAll('p').forEach(p => { if (p.textContent.trim() === s.title.trim()) p.remove(); });
   // The drop capital opens the first real paragraph: one that starts with a letter, not a caption or a dateline.
   const firstP = [...d.querySelectorAll('p')].find(p => !p.closest('figure, blockquote, li') && p.textContent.trim().length >= 80 && /^[A-Za-z0-9]/.test(p.textContent.trim()));
   if (firstP) firstP.classList.add('first');
   const short = text(bodyOf(s)).length < 600;
   const state = f.loading ? '<div class="fetching">Getting the whole story…</div>' : '';
-  const foot = f.html ? `Read it at ${esc(s.source)} ↗` : short && f.failed ? `${esc(s.source)} didn't give the whole story here. Read it there ↗` : f.loading ? '' : `Read it at ${esc(s.source)} ↗`;
+  const foot = f.html ? `Read it at ${esc(s.source)} ↗` : short && f.busy ? `Google News is holding this network back for a while, so the story couldn't be fetched. Read it at ${esc(s.source)} ↗` : short && f.failed ? `${esc(s.source)} didn't give the whole story here. Read it there ↗` : f.loading ? '' : `Read it at ${esc(s.source)} ↗`;
   return `<div class="reader">${s.image ? `<img class="hero" src="${esc(s.image)}">` : ''}<div class="body"><div class="kicker">${esc(s.source)}</div><h1>${esc(s.title)}</h1><div class="meta" style="margin-bottom:${state ? 6 : 18}px">${ago(s.published)} ago · ${readMinutes(s)} min read</div>${state}<div id="flow">${d.innerHTML}</div></div>
     ${foot ? `<div class="orig" onclick="Native.original(${esc(JSON.stringify(s.link))})">${foot}</div>` : ''}</div>`;
 }
