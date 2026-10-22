@@ -98,6 +98,7 @@
   .duo .card img { height: 128px; }
   .s-feature img { height: 230px; margin-bottom: 10px; }
   .s-feature h3 { font-family: var(--serif); font-size: 21px; line-height: 1.16; margin: 6px 0 6px; }
+  .s-feature .words h3 { font-size: 34px; line-height: 1.08; margin: 10px 0 12px; }
   .s-photo img { height: 360px; }
   .s-photo .cap { padding-top: 8px; font-family: var(--serif); font-style: italic; color: #333; font-size: 14.5px; }
 
@@ -288,11 +289,15 @@ function topicWide(t, first) {
   const shown = S.more[t.name] ? t.all : t.all.slice(0, SHOWN);
   const lead = shown.find(s => s.image);
   const rest = shown.filter(s => s !== lead);
+  // No picture among them: the first story leads in words, so the left page isn't left empty (the 131 walk, unfolded).
+  const words = !lead && shown[0];
   const left = lead
     ? (first ? `<div class="page s-cover" ${open(idx(lead))}><img src="${esc(lead.image)}"><div class="over"><div class="kicker">${esc(lead.source)} · ${ago(lead.published)}</div><h1>${esc(lead.title)}</h1></div></div>`
       : `<div class="page s-feature"><div class="card" ${open(idx(lead))}><img src="${esc(lead.image)}" loading="lazy"><div class="kicker">${esc(lead.source)}</div><h3>${esc(lead.title)}</h3><div class="meta" style="margin-top:8px">${ago(lead.published)} ago</div></div></div>`)
+    : words ? `<div class="page s-feature"><div class="card words" ${open(idx(words))}><div class="kicker">${esc(words.source)}</div><h3>${esc(words.title)}</h3><div class="meta">${ago(words.published)} ago</div></div></div>`
     : `<div class="page"></div>`;
-  return `<div class="topic" id="${topicId(t.name)}"><div class="s-head"><h4>${esc(t.name)}</h4></div><div class="spread">${left}<div class="page tops">${rest.map(s => topItem(s)).join('')}${moreButton(t)}</div></div></div>`;
+  const others = words ? rest.filter(s => s !== words) : rest;
+  return `<div class="topic" id="${topicId(t.name)}"><div class="s-head"><h4>${esc(t.name)}</h4></div><div class="spread">${left}<div class="page tops">${others.map(s => topItem(s)).join('')}${moreButton(t)}</div></div></div>`;
 }
 function streamTopics() {
   const list = topics();
