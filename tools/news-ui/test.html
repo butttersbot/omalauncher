@@ -24,6 +24,8 @@ try {
   const body={size:16,lh:25};
   const pages=paginate(article,450,500,body);
   const lines=pages.flatMap(p=>p.items.filter(i=>i.kind==='line'));
+  const headingPage=pages.find(p=>p.items.some(i=>i.kind==='heading'));
+  assert(headingPage.items.some(i=>i.kind==='photo'), 'photo heading stays with its picture');
   assert(lines.some(i=>i.last && i.w<300), 'photo excludes space from adjacent text lines');
   const normal = s=>s.replace(/[\s\u00ad-]/g,'');
   const displayed=pages.flatMap(p=>p.items.filter(i=>['line','drop'].includes(i.kind)).map(i=>i.text)).join('');

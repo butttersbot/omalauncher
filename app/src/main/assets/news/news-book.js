@@ -168,8 +168,12 @@ export function paginate(article, w, h, body, continuous = false) {
       continue
     }
     if (b.heading) {
+      for (const f of floats) y = Math.max(y, f.y1)
       const heading = layoutWithLines(prepareWithSegments(b.heading, font(body.size * 1.2, 700)), col, LH)
-      if (y + (heading.lines.length + 2) * LH > bottom()) newPage()
+      const next = article.blocks[blockIndex + 1]
+      const nextWidth = next?.full ? col : Math.round(col * sideFrac)
+      const following = next?.img ? grid(nextWidth / next.ratio) + 2 * LH : 2 * LH
+      if (y + (heading.lines.length + 1) * LH + following > bottom()) newPage()
       for (const line of heading.lines) {
         page.items.push({ kind: 'heading', text: line.text, x: left0, y, w: col, size: body.size * 1.2, lh: LH })
         y += LH
