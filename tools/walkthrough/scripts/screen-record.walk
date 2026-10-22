@@ -4,7 +4,10 @@ shell cmd statusbar add-tile dev.omalauncher.boss/dev.omalauncher.record.ScreenR
 shell cmd statusbar click-tile dev.omalauncher.boss/dev.omalauncher.record.ScreenRecordTile
 wait 1500
 shot capture-prompt
-tap Start
+# Android 14+ asks one app or the entire screen, then Next/Start/Share screen depending on the version.
+tap Share one app | Share entire screen
+tap Share entire screen | Entire screen
+tap Start | Next | Share screen
 wait 4500
 shot recording-notification
 shell cmd statusbar click-tile dev.omalauncher.boss/dev.omalauncher.record.ScreenRecordTile

@@ -5,10 +5,11 @@ tap Refresh
 wait 8000
 expect Top stories
 expect Technology
-shot stream-cover
+shot stream-cover-new-stories-pill-clear-of-chips
+scrollto Show
 tap Show
 wait 800
-expect Show less
+scrollto Show less
 shot topic-expanded
 tap Technology
 wait 800
@@ -22,7 +23,8 @@ absent Related stories
 absent Read more
 shot article
 key BACK
-expect Top stories
+# Back keeps his place in the stream (not the top), and the stream is there.
+expect SOMA
 fold open
 rotate landscape
 wait 1500

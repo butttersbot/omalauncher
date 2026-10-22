@@ -304,7 +304,10 @@ function stream() {
   const body = !S.stories.length
     ? `<div class="empty">${S.refreshing ? 'Fetching the news from Google News…' : 'Nothing here yet. Tap ↻ to fetch from Google News.'}</div>`
     : (S.stories.some(s => s.topic) ? streamTopics() : layout() === 'cover' ? streamCover() : streamWide()) + `<div class="end meta">You're caught up · it checks again every hour · tap ↻ any time</div>`;
-  return mast() + `<div class="scroll" id="scroll">${S.fresh ? `<div class="newpill" onclick="S.fresh=0;$('scroll').scrollTo({top:0,behavior:'smooth'});draw()">↑ ${S.fresh} new ${S.fresh === 1 ? 'story' : 'stories'}</div>` : ''}${body}</div>`;
+  // The "new stories" pill comes after the topic chips, so it never sits on them (the 128 walk's screenshots).
+  const pill = S.fresh ? `<div class="newpill" onclick="S.fresh=0;$('scroll').scrollTo({top:0,behavior:'smooth'});draw()">↑ ${S.fresh} new ${S.fresh === 1 ? 'story' : 'stories'}</div>` : '';
+  const placed = body.startsWith('<div class="chips"') ? body.replace(/^(<div class="chips"[^]*?<\/div>)/, '$1' + pill) : pill + body;
+  return mast() + `<div class="scroll" id="scroll">${placed}</div>`;
 }
 
 // ---- The reader. ----

@@ -155,6 +155,7 @@ class GifPanel(
     private fun expand(on: Boolean) {
         if (expanded == on) return
         expanded = on
+        walkLog("gif expanded=$on")
         view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
         host.panelResized()
     }
@@ -170,6 +171,7 @@ class GifPanel(
      * it back and forth. One pull changes it once.
      */
     private var handleDownRawY = 0f
+    private var lastWalk = ""
     private var handleMoved = false
     private var longPress: Runnable? = null
 
@@ -313,6 +315,8 @@ class GifPanel(
         this.top = top
         this.width = width
         text.typeface = k.typeface
+        // For walkthroughs (tools/walkthrough): what the panel shows, once each time it changes.
+        "gif panel expanded=$expanded query=$shownQuery handle=shown".let { if (it != lastWalk) { lastWalk = it; walkLog(it) } }
 
         // The handle: pull it up for the tall panel, down for the short one.
         paint.color = c.muted
@@ -388,6 +392,7 @@ class GifPanel(
         bandTop = top
         this.width = width
         text.typeface = k.typeface
+        "gif band query=${host.gifQuery} handle=${if (host.addingTag) "none" else "shown"}".let { if (it != lastWalk) { lastWalk = it; walkLog(it) } }
         // The handle here too (Boss, 2026-10-22: it went away once he searched): pulled up, the search is done and its
         // results open full screen.
         if (!host.addingTag) {
@@ -953,4 +958,9 @@ class GifPanel(
         const val MAX_SIDE = 260
         const val RED = 0xFFD7262D.toInt()
     }
+}
+
+/** A line for the walkthroughs to check (tools/walkthrough, `log` steps): the keyboard is drawn, not labelled. */
+internal fun walkLog(line: String) {
+    android.util.Log.i("SomaWalk", line)
 }

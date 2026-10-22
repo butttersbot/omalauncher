@@ -26,15 +26,20 @@ pixels (`540 1800`).
 | `launch PKG/ACTIVITY` | starts an activity and waits for it |
 | `url URL` | opens a link |
 | `ime PKG/SERVICE` | makes that keyboard the current one |
-| `tap TEXT` or `tap X Y` | taps what says TEXT (text or content description), or a point |
+| `tap TEXT` or `tap X Y` | taps what says TEXT (text or content description; `A \| B` for whichever shows), or a point (`48dp` works too) |
 | `swipe X1 Y1 X2 Y2 [MS]` | a drag |
 | `type WORDS` / `key ENTER\|BACK\|DEL…` | typing, through whatever keyboard is up |
 | `wait MS` | pauses |
 | `shell CMD …` | an adb shell command (e.g. `cmd statusbar click-tile PKG/TILE`) |
 | `rotate portrait\|landscape`, `fold folded\|open` | the Fold profile's orientation and screens |
 | `expect TEXT` / `absent TEXT` | fails unless TEXT is (is not) on screen; takes a screenshot |
+| `clearlog`, `log TEXT`, `nolog TEXT` | the app's own account of drawn UI (Log tag `SomaWalk`): clear it, wait for a line with TEXT, or fail if one has come |
+| `scrollto TEXT` | swipes up until TEXT shows (a WebView reports only what is on screen) |
 | `shot NAME` | a screenshot to look at (canvas-drawn UI, like the keyboard, has no text to expect) |
 | `[phone] …` | a step in words for the real Fold, after promotion |
+
+A `shot` is reported **LOOK**, never PASS: a walk counts only once its screenshots have been looked at. (The first
+walk, of 128, "passed" the GIF keyboard while its swipes had missed the handle and pulled down Android's shade.)
 
 ## Running
 

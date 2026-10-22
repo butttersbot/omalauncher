@@ -20,10 +20,17 @@ def size(serial):
     m = re.search(r"(\d+)x(\d+)", adb(serial, "shell", "wm", "size").splitlines()[-1])
     return int(m.group(1)), int(m.group(2))
 
+def density(serial):
+    m = re.findall(r"(\d+)", adb(serial, "shell", "wm", "density"))
+    return int(m[-1]) / 160 if m else 2.625
+
 def point(serial, xs, ys):
-    """'0.5' is a fraction of the screen, '540' pixels."""
+    """'0.5' is a fraction of the screen, '540' pixels, '48dp' density-independent pixels from the top or left."""
     w, h = size(serial)
-    f = lambda v, full: int(float(v) * full) if "." in v else int(v)
+    def f(v, full):
+        if v.endswith("dp"):
+            return int(float(v[:-2]) * density(serial))
+        return int(float(v) * full) if "." in v else int(v)
     return f(xs, w), f(ys, h)
 
 def nodes(serial):
@@ -67,9 +74,11 @@ def run_step(serial, op, args, out, n):
         if len(args) == 2 and re.fullmatch(r"[\d.]+", args[0]) and re.fullmatch(r"[\d.]+", args[1]):
             x, y = point(serial, *args)
         else:
-            p = find(serial, args[0])
+            # "A | B": whichever is on screen (Android's own dialogs word things differently by version).
+            wanted = [w.strip() for w in " ".join(args).split("|")]
+            p = next((q for q in (find(serial, w, wait_ms=1500) for w in wanted) if q), None)
             if not p:
-                return False, f"nothing says “{args[0]}”", None
+                return False, "nothing says " + " or ".join(f"“{w}”" for w in wanted), None
             x, y = p
         adb(serial, "shell", "input", "tap", str(x), str(y)); time.sleep(0.6); return True, "", None
     if op == "swipe":
@@ -80,6 +89,31 @@ def run_step(serial, op, args, out, n):
         adb(serial, "shell", "input", "text", " ".join(args).replace(" ", "%s")); time.sleep(0.5); return True, "", None
     if op == "key":
         adb(serial, "shell", "input", "keyevent", "KEYCODE_" + args[0].upper()); time.sleep(0.6); return True, "", None
+    if op == "scrollto":
+        # Swipes up until TEXT is on screen (a WebView only reports what shows).
+        wanted = " ".join(args)
+        for _ in range(8):
+            if find(serial, wanted, wait_ms=600):
+                return True, "", None
+            w, h = size(serial)
+            adb(serial, "shell", "input", "swipe", str(w // 2), str(int(h * 0.75)), str(w // 2), str(int(h * 0.35)), "400"); time.sleep(0.7)
+        return False, f"“{wanted}” never came on screen", None
+    if op == "nolog":
+        # The app must not have logged TEXT since the last clearlog (a flip back, a second change).
+        wanted = " ".join(args)
+        ok = wanted not in adb(serial, "logcat", "-d", "-s", "SomaWalk:I")
+        return ok, "" if ok else f"the app logged “{wanted}”", None
+    if op in ("log", "clearlog"):
+        # The app's own account of canvas-drawn state (Log tag SomaWalk), for what has no text to read.
+        if op == "clearlog":
+            adb(serial, "logcat", "-c"); return True, "", None
+        wanted = " ".join(args)
+        end = time.time() + 4
+        while time.time() < end:
+            if wanted in adb(serial, "logcat", "-d", "-s", "SomaWalk:I"):
+                return True, "", None
+            time.sleep(0.4)
+        return False, f"the app never logged “{wanted}”", None
     if op == "shell":
         adb(serial, "shell", *args, check=True); time.sleep(1); return True, "", None
     if op == "wait":
@@ -95,7 +129,7 @@ def run_step(serial, op, args, out, n):
         path = os.path.join(out, f"{n:02d}-{name}.png")
         shot(serial, path)
         if op == "shot":
-            return True, "look at it", path
+            return None, "look at it", path
         found = find(serial, args[0], wait_ms=4000 if op == "expect" else 800) is not None
         ok = found if op == "expect" else not found
         return ok, "" if ok else (f"“{args[0]}” not on screen" if op == "expect" else f"“{args[0]}” still on screen"), path
@@ -137,10 +171,15 @@ def main():
             ok, note, png = run_step(serial, s["op"], s["args"], out, n)
         except Exception as e:  # a step that can't run is a failure, never a pass
             ok, note, png = False, str(e)[:300], None
-        failed += not ok
-        results.append({"step": n, "where": "emu", "text": s["text"], "result": "PASS" if ok else "FAIL", "note": note, "screenshot": png})
-        print(f"{'PASS' if ok else 'FAIL'}  {n:02d}  {s['text']}" + (f"  — {note}" if note else ""))
-    json.dump({"script": script, "failed": failed, "steps": results}, open(os.path.join(out, "results.json"), "w"), indent=1)
+        # A screenshot proves nothing by itself: it is LOOK until someone has looked (README).
+        verdict = "LOOK" if ok is None else "PASS" if ok else "FAIL"
+        failed += ok is False
+        results.append({"step": n, "where": "emu", "text": s["text"], "result": verdict, "note": note, "screenshot": png})
+        print(f"{verdict}  {n:02d}  {s['text']}" + (f"  — {note}" if note else ""))
+    looks = sum(r["result"] == "LOOK" for r in results)
+    if looks:
+        print(f"\n{looks} screenshots to look at before this walk counts: a LOOK is not a PASS.")
+    json.dump({"script": script, "failed": failed, "looks": looks, "steps": results}, open(os.path.join(out, "results.json"), "w"), indent=1)
     phone = [s for s in steps if s["where"] == "phone"]
     if phone:
         print(f"\n{len(phone)} [phone] steps wait for the real Fold after promotion (walk.py {script} --phone).")
