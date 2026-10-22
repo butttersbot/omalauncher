@@ -89,7 +89,8 @@ widget "steps" {
       // The pet in the road, as far along it as today's steps: walking right while steps come in, else facing you.
       if pet != null && pet.sprites != null {
         let fw = pet.frame[0]
-        let k = n * (fw > 32 ? 0.75 : 0.5) * (tiny ? 0.85 : 1)
+        // At least a fifth of the tile tall, whatever the art pixel came to on a wide tile.
+        let k = max(n * (fw > 32 ? 0.75 : 0.5) * (tiny ? 0.85 : 1), height * (fw > 32 ? 0.3 : 0.22) / pet.frame[1])
         let along = (x0 + 4 + pct * (x1 - x0 - 10)) * n
         let frames = pet.sprites.right.walk
         let art = walking ? frames[floor(time * 4) % len(frames)] : pet.sprites.down.stand
