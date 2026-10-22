@@ -42,7 +42,7 @@ class BuilderAgentTest {
             }.start()
             val args = process.inputStream.bufferedReader().readLines()
             assertEquals(0, process.waitFor())
-            assertEquals(listOf("exec", "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox", "--model", "gpt-6.1-sol", "--image", image, "--", prompt), args)
+            assertEquals(listOf("exec", "--json", "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox", "--model", "gpt-6.1-sol", "--image", image, "--", prompt), args)
         } finally { dir.deleteRecursively() }
     }
 

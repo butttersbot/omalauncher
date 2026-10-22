@@ -488,6 +488,26 @@ class Builder(val id: BuilderId) {
                         thread = null
                         answer = "The earlier thread is no longer available. Send your request again to start a new one."
                     } else if (stopping && session != null && !errand) thread = session // A stopped request can still be followed up.
+                } else if (agent.bin == "codex") {
+                    child.outputStream.close()
+                    // Its events, as Claude's stream is read: steps as it goes, its words as the answer. Anything else it
+                    // prints (a sign-in problem, a crash) is kept only to say why when no answer came.
+                    var other = ""
+                    child.inputStream.bufferedReader().forEachLine { line ->
+                        heardAt = System.currentTimeMillis()
+                        when (val said = CodexProtocol.read(line)) {
+                            is CodexProtocol.Said.Text -> answer = (answer + said.text + "\n").takeLast(40_000)
+                            is CodexProtocol.Said.Step -> {
+                                lastStep = said.step; lastStepAt = System.currentTimeMillis()
+                                onPhone(phoneToolCall(said.tool, said.command))
+                                log.update(time) { ChatHistory.withStep(it, said.step) }
+                                label = "Using ${said.tool}"; notify(context)
+                            }
+                            is CodexProtocol.Said.Failed -> answer = (answer + said.why + "\n").takeLast(40_000)
+                            null -> if (runCatching { org.json.JSONObject(line) }.isFailure) other = (other + line + "\n").takeLast(4_000)
+                        }
+                    }
+                    if (answer.isBlank()) answer = other.trim()
                 } else {
                     child.outputStream.close()
                     child.inputStream.bufferedReader().forEachLine { heardAt = System.currentTimeMillis(); answer = (answer + it + "\n").takeLast(40_000) }
@@ -795,7 +815,7 @@ fun claudeStreamCommand(resume: String? = null, model: String? = null): String =
 fun backgroundAgentCommand(agent: String, prompt: String, images: List<String> = emptyList(), model: String? = null, codexFullAccess: Boolean = false): String = when (agent) {
     "claude" -> "claude -p --permission-mode auto --allowedTools ${shellQuote("Bash(oma-phone *)")} Read -- ${shellQuote(prompt)} < /dev/null"
     // Phone B cannot use Codex's bubblewrap sandbox inside proot. Other callers keep their existing policy.
-    "codex" -> "codex exec --skip-git-repo-check " + (if (codexFullAccess) "--dangerously-bypass-approvals-and-sandbox " else "") + (model?.let { "--model ${shellQuote(it)} " } ?: "") + images.joinToString(" ") { "--image ${shellQuote(it)}" }.let { if (it.isBlank()) "" else "$it " } + "-- ${shellQuote(prompt)} < /dev/null"
+    "codex" -> "codex exec --json --skip-git-repo-check " + (if (codexFullAccess) "--dangerously-bypass-approvals-and-sandbox " else "") + (model?.let { "--model ${shellQuote(it)} " } ?: "") + images.joinToString(" ") { "--image ${shellQuote(it)}" }.let { if (it.isBlank()) "" else "$it " } + "-- ${shellQuote(prompt)} < /dev/null"
     // Grok as Claude Code is run here, in auto mode with phone commands and reading allowed; nobody answers its prompts in
     // -p, so what auto mode won't allow is refused. It reads an image from its path, so the paths go in its words. The
     // prompt is given as --single= so one starting with a dash is still his words.

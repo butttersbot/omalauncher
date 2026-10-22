@@ -26,7 +26,7 @@ class AssistantCommandTest {
                 assertTrue(output.startsWith(when (agent) {
                     "claude" -> "-p\n--permission-mode\nauto\n--allowedTools\nBash(oma-phone *)\nRead\n--\n"
                     "grok" -> "--permission-mode\nauto\n--allow\nBash(oma-phone *)\n--allow\nRead\n--single=Phone request"
-                    else -> "exec\n--skip-git-repo-check\n--\n"
+                    else -> "exec\n--json\n--skip-git-repo-check\n--\n"
                 }))
                 assertFalse(output.contains("dangerously"))
             }
