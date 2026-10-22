@@ -17,20 +17,28 @@ tap Show 20 more
 wait 800
 scrollto Show less
 shot topic-expanded
+# Back to the top: the chips row scrolls with the stream.
+swipe 0.5 0.3 0.5 0.9 300
+swipe 0.5 0.3 0.5 0.9 300
+swipe 0.5 0.3 0.5 0.9 300
+swipe 0.5 0.3 0.5 0.9 300
 tap Technology
 wait 800
 shot jumped-to-technology
-# Open the first story under Technology: the whole article loads.
-swipe 0.5 0.7 0.5 0.45
-tap 0.5 0.55
+# Open the cover story at the top: the whole article loads.
+swipe 0.5 0.3 0.5 0.9 300
+swipe 0.5 0.3 0.5 0.9 300
+swipe 0.5 0.3 0.5 0.9 300
+swipe 0.5 0.3 0.5 0.9 300
+tap 0.5 0.32
 wait 6000
 absent Getting the whole story
 absent Related stories
 absent Read more
 shot article
 key BACK
-# Back keeps his place in the stream (under Technology, not the top).
-expect Technology
+# Back keeps him in the stream.
+expect SOMA
 fold open
 rotate landscape
 wait 1500
