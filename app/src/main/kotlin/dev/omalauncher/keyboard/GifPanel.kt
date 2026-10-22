@@ -52,6 +52,9 @@ class GifPanel(
         /** The panel went taller or back ([expanded]), or is being pulled ([pull]): the keyboard is laid out again. */
         fun panelResized()
 
+        /** The panel pulled to another height inside the same window: drawn again, not laid out. */
+        fun panelMoved()
+
         /** How much taller the pulled-up panel is than the short one, px. */
         val pullRangePx: Float
 
@@ -195,9 +198,11 @@ class GifPanel(
 
     private fun pullTo(px: Float) {
         val range = host.pullRangePx
+        val first = pull == null
         pull = if (expanded) px.coerceIn(-range, 0f) else px.coerceIn(0f, range)
         if (handleDrag && abs(pull!!) in range * 0.1f..range * 0.9f) "gif handle follows".let { if (it != lastWalk) { lastWalk = it; walkLog(it) } }
-        host.panelResized()
+        // The window goes to the pulled-up height once, as the pull starts; after that only the drawing moves.
+        if (first) host.panelResized() else host.panelMoved()
     }
 
     /** The handle let go: on to the other height if pulled a third of the way or flung, else back; eased there. */

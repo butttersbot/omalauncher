@@ -60,5 +60,6 @@ wait 800
 log gif panel expanded=true query=cat handle=shown
 shot band-handle-pulled-full-screen
 [phone] On the cover screen and unfolded: drag the GIF handle up and down slowly; the panel's top stays under the finger, a short pull let go goes back, a long one or a flick goes on.
+[phone] The pull is smooth, no stutter, on both screens (Boss, 2026-10-22: it stuttered in 129).
 [phone] Search a word, tap Done: the word stays in the field, the handle shows; ✕ beside the arrow goes back to Trending.
 [phone] Tap a GIF in a real chat app: it lands in the message box.

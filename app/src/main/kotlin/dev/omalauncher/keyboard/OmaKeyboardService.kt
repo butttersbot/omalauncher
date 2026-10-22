@@ -174,6 +174,8 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host, EmojiPicker.
 
     override val pullRangePx get() = view.gifPullRangePx
 
+    override fun panelMoved() = view.invalidate()
+
     override fun panelResized() {
         view.requestLayout()
         view.invalidate()

@@ -146,7 +146,15 @@ class KeyboardView(
      */
     val headroomDp get() = if (preview || mode == Mode.EMOJI || mode == Mode.CLIPS || mode == Mode.GIFS) 0f else bubbleRoomDp
     private val bubbleRoomDp get() = (layout?.rowHeight ?: 54f) * 1.3f
-    val headroomPx get() = (headroomDp * density).toInt()
+    val headroomPx: Int
+        get() {
+            // While the GIFs' handle is held the window stands at the pulled-up height and the panel is drawn lower in
+            // it, the room above clear: moving it is a redraw, not a window resize each frame, which stuttered (Boss,
+            // 2026-10-22: "it stutters while going up and down").
+            if (gifPulling) return (gifTallPx - boardPx).coerceAtLeast(0)
+            return (headroomDp * density).toInt()
+        }
+    private val gifPulling get() = mode == Mode.GIFS && gifs?.pull != null
 
     /**
      * Where the app's own room ends, px from the view's top: the top of the keys as they normally stand. While the
