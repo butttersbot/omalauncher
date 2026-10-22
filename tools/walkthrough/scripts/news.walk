@@ -43,7 +43,12 @@ fold open
 rotate landscape
 wait 1500
 shot stream-landscape
-# The cover story fills the left page of the first spread.
+# Back to the top first: turning keeps the scroll, and the 13115c4c1 walk's tap landed on an empty left page
+# lower down. The first spread's left page is the lead story (a picture, or its headline in words).
+swipe 0.5 0.3 0.5 0.9 300
+swipe 0.5 0.3 0.5 0.9 300
+swipe 0.5 0.3 0.5 0.9 300
+wait 800
 tap 0.25 0.45
 wait 6000
 shot book
