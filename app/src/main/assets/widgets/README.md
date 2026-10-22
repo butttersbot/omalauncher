@@ -477,7 +477,7 @@ after it in its block (and blocks inside them), and needs a name not used for a 
 | `haptic()` | a short tap of haptic feedback, if the user has touch feedback on (owl 7) |
 | `sound("https://…/a.mp3")` | plays a sound once, in place of the one playing; `sound("stop")` stops it. Takes a URL, an asset or a file, like `Image`; see Sounds (owl 8) |
 | `torch(true)` | turns the torch on or off; also `torch("toggle")`. Does nothing on a phone without a flash, or while the camera app holds it (owl 7) |
-| `launcher("style")` | opens a launcher screen: `style` (theme, background, home screen, terminal; `themes` too), `agents`, `oma` (the Soma chat), `store`, `drawer` or `linux` (the sheet that installs Linux) |
+| `launcher("style")` | opens a launcher screen: `style` (theme, background, home screen, terminal; `themes` too), `agents`, `oma` (the Soma chat), `store`, `drawer` or `linux` (the sheet that installs Linux). Also `pet-out` and `pet-home` (the herd pet floating on the screen, or home off it; `~/.cache/soma-pet/pet.json` says which, with the skin it wears as sprite rows) and `steps-allow` (asks for the step counter, which fills `~/.cache/soma-steps/steps.json`) |
 | `refresh()` | re-runs this widget's sources now |
 | `screen()` / `close()` | opens the widget's `screen { }` full screen, or closes it (owl 5) |
 | `media("toggle")` | controls what's playing: `toggle`, `play`, `pause`, `next`, `previous`, or `open` (brings up the player app) |

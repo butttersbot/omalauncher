@@ -449,7 +449,15 @@ class WidgetServices(
             "app" -> runtime.launch(arg)
             // Any scheme an app handles: tel:, geo:, mailto:, ... One nothing handles mustn't crash the launcher.
             "url" -> if (!context.openUrl(arg)) Toast.makeText(context, "no app opens $arg", Toast.LENGTH_SHORT).show()
-            "launcher" -> launcherAction?.invoke(arg)
+            "launcher" ->
+                when (arg) {
+                    // The Pet home widget: the herd pet out on the screen, or home in its room (Boss, 2026-10-21).
+                    "pet-out" -> dev.omalauncher.herd.HerdSheep.set(context, true)
+                    "pet-home" -> dev.omalauncher.herd.HerdSheep.set(context, false)
+                    // The Steps widget, before the step counter is allowed.
+                    "steps-allow" -> dev.omalauncher.steps.StepsAllow.open(context)
+                    else -> launcherAction?.invoke(arg)
+                }
             "media" -> media.control(arg)
             "volume" -> volume.control(args[0])
             "notification" -> args.getOrNull(1)?.takeIf { it != Null }?.let { notifications.control(arg, it.toString()) }

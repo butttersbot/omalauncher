@@ -1,0 +1,138 @@
+widget "pet home" {
+  size: 2x2
+  minSize: 2x1
+  padding: 0
+  background: "#00000000"
+  meta { description: "Pet home: the herd pet's room, HeartGold style. It naps here, off the screen, or tap to let it out to float on the screen; tap again to call it home."; version: "1.0"; category: "pets"; owl: 10 }
+
+  // Written by the launcher (herd/PetWidget.kt): whether the pet is out on the screen, and the skin it wears as
+  // sprite rows, from the herd pet's own sheet. The HGSS font is the herd pet's (pet/ui/fonts), as its text box uses.
+  source p = file("~/.cache/soma-pet/pet.json") json
+  source now = clock every 1s
+  asset hg = base64"FONT_B64"
+
+  let pet = p == null || p == "" ? null : p
+  let out = pet != null && pet.out
+  let hour = int(fmtTime(now, "H"))
+  let night = hour >= 19 || hour < 7
+  let name = pet == null ? "PET" : pet.name
+
+  onTap: { haptic(); launcher(out ? "pet-home" : "pet-out") }
+
+  Canvas {
+    let tiny = rows < 2
+    let wide = cols >= 4
+    // One art pixel in dp: the room is about 40 of them wide (72 on the wide tile) and 36 tall (22 on the short one).
+    let n = max(2, floor(min(width / (wide ? 72 : 40), height / (tiny ? 22 : 36))))
+    let cw = ceil(width / n)
+    let ch = ceil(height / n)
+    let wallH = round(ch * (tiny ? 0.42 : 0.45))
+
+    // The frame: the herd's message box edge, dark outline and a gold line inside.
+    rect(0, 0, width, height, fill: "#4a4242", radius: 6)
+    rect(3, 3, width - 6, height - 6, fill: "#f8d058", radius: 4)
+    clip(5, 5, width - 10, height - 10) {
+      // Wallpaper with stripes, a picture rail, the skirting board.
+      rect(0, 0, width, wallH * n, fill: "#f0dca8")
+      for x in range(1, cw, 4) { rect(x * n, 0, n, wallH * n, fill: "#e4c88c") }
+      rect(0, 2 * n, width, n, fill: "#c8a870")
+      rect(0, (wallH - 2) * n, width, 2 * n, fill: "#8a5a30")
+      rect(0, (wallH - 2) * n, width, n, fill: "#a87040")
+      // Floor: planks with staggered seams.
+      rect(0, wallH * n, width, height - wallH * n, fill: "#d0a060")
+      for y, k in range(wallH + 3, ch, 3) {
+        rect(0, y * n, width, n, fill: "#a87840")
+        for x in range((k % 2) * 6, cw, 12) { rect(x * n, (y - 2) * n, n, 2 * n, fill: "#b88848") }
+      }
+      // The window: day sky with a cloud, or night with the moon and stars; red curtains.
+      let wx = wide ? round(cw * 0.38) : round(cw / 2 - 7)
+      let wy = 4
+      let ww = 14
+      let wh = max(7, wallH - 9)
+      rect((wx - 1) * n, (wy - 1) * n, (ww + 2) * n, (wh + 2) * n, fill: "#4a4242")
+      rect(wx * n, wy * n, ww * n, wh * n, fill: night ? "#28305a" : "#98d0f8")
+      if night {
+        rect((wx + 9) * n, (wy + 1) * n, 3 * n, 3 * n, fill: "#f8f0c0")
+        rect((wx + 2) * n, (wy + 2) * n, n, n, fill: "#f8f0c0")
+        rect((wx + 5) * n, (wy + wh - 3) * n, n, n, fill: "#f8f0c0")
+      } else {
+        rect((wx + 2) * n, (wy + 2) * n, 5 * n, 2 * n, fill: "#ffffff")
+        rect((wx + 3) * n, (wy + 1) * n, 3 * n, n, fill: "#ffffff")
+      }
+      rect((wx + 6.5) * n, wy * n, n, wh * n, fill: "#4a4242")
+      rect(wx * n, (wy + floor(wh / 2)) * n, ww * n, n, fill: "#4a4242")
+      rect((wx - 3) * n, (wy - 2) * n, 3 * n, (wh + 4) * n, fill: "#d84838")
+      rect((wx + ww) * n, (wy - 2) * n, 3 * n, (wh + 4) * n, fill: "#d84838")
+      rect((wx - 3) * n, (wy - 2) * n, n, (wh + 4) * n, fill: "#a83028")
+      rect((wx + ww + 2) * n, (wy - 2) * n, n, (wh + 4) * n, fill: "#a83028")
+      rect((wx - 4) * n, (wy - 3) * n, (ww + 8) * n, n, fill: "#8a5a30")
+      if night && !out { rect((wx - 4) * n, wallH * n, (ww + 8) * n, min(6, ch - wallH - 1) * n, fill: alpha("#f8f0c0", 0.18)) }
+      // The rug in the middle of the floor.
+      let rw = wide ? 24 : 18
+      let rx = round(cw / 2 - rw / 2)
+      let ry = wallH + round((ch - wallH) * 0.35)
+      let rh = max(5, round((ch - wallH) * 0.45))
+      rect(rx * n, ry * n, rw * n, rh * n, fill: "#f8e038")
+      rect((rx + 1) * n, (ry + 1) * n, (rw - 2) * n, (rh - 2) * n, fill: "#d84838")
+      for x in range(rx + 3, rx + rw - 3, 3) { rect(x * n, (ry + floor(rh / 2)) * n, n, n, fill: "#f8e038") }
+      // The bed against the wall: headboard, pillow, blue blanket.
+      let bx = 2
+      let by = wallH - 4
+      let bw = 11
+      let bh = min(16, ch - by - 2)
+      if !tiny {
+        rect(bx * n, (by - 2) * n, bw * n, 4 * n, fill: "#8a5a30")
+        rect(bx * n, (by - 2) * n, bw * n, n, fill: "#a87040")
+        rect(bx * n, (by + 2) * n, bw * n, (bh - 2) * n, fill: "#4a4242")
+        rect((bx + 1) * n, (by + 2) * n, (bw - 2) * n, (bh - 3) * n, fill: "#f8f8f8")
+        rect((bx + 1) * n, (by + 6) * n, (bw - 2) * n, (bh - 7) * n, fill: "#5898d0")
+        rect((bx + 1) * n, (by + 6) * n, (bw - 2) * n, n, fill: "#88c8f8")
+        rect((bx + 3) * n, (by + 3) * n, (bw - 6) * n, 2 * n, fill: "#e8e8e8")
+      }
+      // A plant in the corner; on the wide one a TV on its stand too.
+      let px = cw - 7
+      let py = wallH - 5
+      rect((px + 1) * n, (py + 6) * n, 4 * n, 4 * n, fill: "#a05828")
+      rect((px + 1) * n, (py + 6) * n, 4 * n, n, fill: "#c87838")
+      rect(px * n, (py + 1) * n, 6 * n, 5 * n, fill: "#48a038")
+      rect((px + 1) * n, py * n, 4 * n, 2 * n, fill: "#78c850")
+      rect((px + 2) * n, (py + 2) * n, n, 2 * n, fill: "#78c850")
+      if wide {
+        let tx = round(cw * 0.66)
+        rect(tx * n, (wallH - 3) * n, 12 * n, 6 * n, fill: "#8a5a30")
+        rect(tx * n, (wallH - 3) * n, 12 * n, n, fill: "#a87040")
+        rect((tx + 2) * n, (wallH - 10) * n, 8 * n, 7 * n, fill: "#4a4242")
+        rect((tx + 3) * n, (wallH - 9) * n, 6 * n, 5 * n, fill: night ? "#5898d0" : "#384858")
+        rect((tx + 3) * n, (wallH + 1) * n, 4 * n, 2 * n, fill: "#888888")
+      }
+      // The pet napping: on the bed, or on the rug in the short tile. Its frames are 32 art pixels (Crono's 64).
+      if !out && pet != null && pet.sprites != null {
+        let fw = pet.frame[0]
+        let k = n * (fw > 32 ? 0.75 : 0.5)
+        let cx = tiny ? (rx + rw / 2) * n : (bx + bw / 2) * n
+        let cy = tiny ? (ry + rh / 2 + 2) * n : (by + 8) * n
+        let bob = now % 2 == 0 ? 0 : k
+        sprite(pet.sprites.down.stand, cx - fw * k / 2, cy - pet.frame[1] * k * 0.7 + bob, k, palette: pet.sprites.palette)
+        let z = now % 3
+        text("z", cx + fw * k * 0.3 + z * 3, cy - pet.frame[1] * k * 0.8 - z * 5, size: 14 + z * 2, color: "#5a5a52", font: hg)
+      }
+    }
+    // Labels: the pet's name, and what a tap does, in the game's text boxes.
+    let act = out ? "▶CALL" : "▶LET OUT"
+    let label = out ? "OUT PLAYING" : name
+    let cwid = 6.2
+    let aw = len(act) * cwid + 14
+    let lw = len(label) * cwid + 14
+    let by0 = height - 30
+    // The name sits at the bottom left where both fit, else at the top left over the wallpaper.
+    let ly = lw + aw + 24 <= width ? by0 : 10
+    if !tiny || ly == by0 {
+      rect(10, ly, lw, 22, fill: "#ffffff", radius: 3)
+      rect(10, ly, lw, 22, stroke: "#4a4242", width: 2, radius: 3)
+      text(label, 17, ly + 11, size: 14, color: "#5a5a52", font: hg)
+    }
+    rect(width - aw - 10, by0, aw, 22, fill: "#ffffff", radius: 3)
+    rect(width - aw - 10, by0, aw, 22, stroke: "#4a4242", width: 2, radius: 3)
+    text(act, width - aw - 3, by0 + 11, size: 14, color: "#5a5a52", font: hg)
+  }
+}

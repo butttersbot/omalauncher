@@ -71,6 +71,9 @@ sealed interface PetCommand {
     /** Copy, open or remove [name] of "Sent to this phone". */
     data class InboxGet(val name: String, val action: String) : PetCommand
 
+    /** The look the page wears: a skin's description as [PetSkin] reads it, or null for the sheep. */
+    data class Skin(val skin: PetSkin?) : PetCommand
+
     data object Unknown : PetCommand
 }
 
@@ -113,6 +116,7 @@ fun petCommand(json: String): PetCommand {
             val action = o.optString("action").takeIf { it in setOf("copy", "open", "remove") }
             if (name != null && action != null) PetCommand.InboxGet(name, action) else PetCommand.Unknown
         }
+        "skin" -> if (o.isNull("skin")) PetCommand.Skin(null) else PetSkin.parse(o.optJSONObject("skin"))?.let { PetCommand.Skin(it) } ?: PetCommand.Unknown
         else -> PetCommand.Unknown
     }
 }
@@ -264,6 +268,7 @@ object HerdSheep {
         shown = on
         prefs(context).edit().putBoolean(KEY, on).apply()
         changed?.invoke()
+        PetWidget.write(context)
     }
 
     /** Where he left the sheep over other apps: its top-left in screen pixels; null until he has moved it. */

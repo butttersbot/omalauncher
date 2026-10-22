@@ -72,6 +72,7 @@ fun herdPage(
                             PetCommand.PocketPaste -> Pocket.paste(context)
                             is PetCommand.SendClip -> ClipInbox.sendClipboard(context, page, command.device)
                             is PetCommand.InboxGet -> ClipInbox.act(context, page, command.name, command.action)
+                            is PetCommand.Skin -> PetWidget.wear(context, command.skin)
                             PetCommand.Unknown -> {}
                         }
                     }

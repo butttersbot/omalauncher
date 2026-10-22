@@ -511,6 +511,8 @@ function skins() {
 let look = null;
 
 function wear() {
+  // The phone's home widgets draw the pet too (Pet home, Steps): tell the shell what it wears. Only the phone asks.
+  if (window.HerdAndroid) shell({ cmd: 'skin', skin });
   const pet = $('pet'), sprite = $('sprite'), frame = $('frame');
   pet.classList.toggle('skinned', !!skin);
   if (!skin) { look = null; return; }

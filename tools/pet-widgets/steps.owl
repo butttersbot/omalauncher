@@ -1,0 +1,159 @@
+widget "steps" {
+  size: 2x2
+  minSize: 2x1
+  padding: 0
+  background: "#00000000"
+  meta { description: "Steps: today's steps, HeartGold style. The herd pet walks the road toward your goal, as far along it as you've got."; version: "1.0"; category: "pets"; owl: 10 }
+
+  // Written by the launcher (steps/Steps.kt) from the phone's step counter: today's count, the week, and until when
+  // the pet should walk (a step in the last few seconds). And the pet's sprites (herd/PetWidget.kt).
+  source s = file("~/.cache/soma-steps/steps.json") json
+  source p = file("~/.cache/soma-pet/pet.json") json
+  source now = clock every 1s
+  asset hg = base64"FONT_B64"
+  state goal = 10000 persist
+  state saidAt = 0
+
+  let st = s == null || s == "" ? null : s
+  let pet = p == null || p == "" ? null : p
+  let allowed = st != null && st.allowed
+  let steps = allowed ? st.today : 0
+  let pct = min(1, steps / goal)
+  let done = steps >= goal
+  let walking = st != null && now < st.walkingUntil
+  let hour = int(fmtTime(now, "H"))
+  let night = hour >= 19 || hour < 7
+  let week = st == null ? [] : st.week
+  let usual = len(week) > 1 ? round(sum(week.take(len(week) - 1).map(d => d.steps)) / (len(week) - 1)) : 0
+  let name = pet == null ? "YOUR PET" : pet.name
+  let saying = now < saidAt + 5
+
+  onTap: { if !allowed { launcher("steps-allow") } else { saidAt = now } }
+
+  Canvas {
+    let tiny = rows < 2
+    let wide = cols >= 4
+    let n = max(2, floor(min(width / (wide ? 90 : 46), height / (tiny ? 26 : 46))))
+    let cw = ceil(width / n)
+    let ch = ceil(height / n)
+    let horizon = round(ch * (tiny ? 0.5 : 0.55))
+    let roll = walking ? floor(time * 6) : 0
+
+    // The frame is the game's data box: dark edge, pale rim, the notch at its bottom-left corner.
+    rect(0, 0, width, height, fill: "#404040", radius: 10)
+    rect(0, height - 12, 12, 12, fill: "#404040")
+    clip(3, 3, width - 6, height - 6) {
+      // Sky in bands, hills with trees (they scroll slowly while he walks), grass.
+      let sky = night ? ["#182048", "#28305a", "#384878"] : ["#78b8f0", "#98d0f8", "#b8e0f8"]
+      for c, i in sky { rect(0, i * horizon / 3 * n, width, (horizon / 3 + 1) * n, fill: c) }
+      if night {
+        for star in [[5, 3], [17, 6], [31, 2], [44, 5], [58, 3], [71, 4], [83, 2]] { rect(star[0] * n, star[1] * n, n, n, fill: "#f8f0c0") }
+      }
+      for x in range(0, cw) {
+        let hx = x + floor(roll / 3)
+        let h = 3 + round(2 * sin(hx / 5) + 1.5 * sin(hx / 2.3))
+        rect(x * n, (horizon - h) * n, n, h * n, fill: night ? "#305848" : "#58a868")
+        if hx % 9 == 0 {
+          rect(x * n, (horizon - h - 3) * n, 3 * n, (h + 3) * n, fill: night ? "#284038" : "#3f8a50")
+          rect((x + 1) * n, (horizon - h - 4) * n, n, n, fill: night ? "#284038" : "#3f8a50")
+        }
+      }
+      rect(0, horizon * n, width, height, fill: night ? "#4a7840" : "#88c858")
+      for y in range(horizon + 2, ch, 3) {
+        for x in range((y * 7) % 5 - roll % 6, cw, 6) { rect(x * n, y * n, 2 * n, n, fill: night ? "#3c6434" : "#70b048") }
+      }
+      // The road he walks every day: the walked part sunlit with his footprints, the rest shaded and grown over.
+      let rh = tiny ? 8 : 10
+      let x0 = 3
+      let x1 = (wide ? floor(cw * 0.56) : cw) - 4
+      let y0 = ch - rh - 3
+      let at = x0 + round((x1 - x0) * pct)
+      let edge = night ? "#4a4030" : "#8a7048"
+      rect(x0 * n, y0 * n, (x1 - x0) * n, rh * n, fill: night ? "#7a6a50" : "#b8a070")
+      for x in range(x0 + 2, x1, 5) { rect(x * n, (y0 + (x * 3) % (rh - 2) + 1) * n, 2 * n, n, fill: night ? "#5a7040" : "#88b058") }
+      rect(x0 * n, y0 * n, (at - x0) * n, rh * n, fill: done ? (night ? "#c0a848" : "#f8d860") : (night ? "#b8a478" : "#f0dca0"))
+      for x, k in range(x0 + 2, at - 3, 4) { rect(x * n, (y0 + (k % 2 == 1 ? rh - 3 : 2)) * n, 2 * n, n, fill: night ? "#8a7858" : "#c8a868") }
+      rect(x0 * n, y0 * n, (x1 - x0) * n, n, fill: edge)
+      rect(x0 * n, (y0 + rh - 1) * n, (x1 - x0) * n, n, fill: edge)
+      rect((x0 - 1) * n, (y0 + 1) * n, n, (rh - 2) * n, fill: edge)
+      rect(x1 * n, (y0 + 1) * n, n, (rh - 2) * n, fill: edge)
+      // The goal flag at the road's end.
+      let fx = x1 - 7
+      let fy = y0 + 3
+      rect(fx * n, (fy - 9) * n, n, 9 * n, fill: "#404040")
+      rect((fx + 1) * n, (fy - 9) * n, 4 * n, n, fill: "#d84838")
+      rect((fx + 1) * n, (fy - 8) * n, 3 * n, n, fill: "#d84838")
+      rect((fx + 1) * n, (fy - 7) * n, 2 * n, n, fill: "#d84838")
+      rect((fx + 1) * n, (fy - 6) * n, n, n, fill: "#d84838")
+      rect((fx - 1) * n, (fy - 10) * n, 3 * n, n, fill: "#f8e038")
+      // The pet in the road, as far along it as today's steps: walking right while steps come in, else facing you.
+      if pet != null && pet.sprites != null {
+        let fw = pet.frame[0]
+        let k = n * (fw > 32 ? 0.75 : 0.5) * (tiny ? 0.85 : 1)
+        let along = (x0 + 4 + pct * (x1 - x0 - 10)) * n
+        let frames = pet.sprites.right.walk
+        let art = walking ? frames[floor(time * 4) % len(frames)] : pet.sprites.down.stand
+        sprite(art, along - fw * k / 2, (y0 + rh * 0.75) * n - pet.frame[1] * k * 0.9, k, palette: pet.sprites.palette)
+      }
+    }
+    // The pale rim of the data box, over the field's edge.
+    rect(4, 4, width - 8, height - 8, stroke: "#f8f8e0", width: 4, radius: 7)
+    rect(7, 7, width - 14, height - 14, stroke: "#c8c8a8", width: 1.5, radius: 5)
+
+    // Today's count, white with the game's dark shadow, on the sky.
+    let shade = night ? "#404868" : "#385078"
+    let tx = 14
+    let right = wide ? width * 0.56 - 6 : width - 14
+    for o in [[1.5, 0], [0, 1.5], [1.5, 1.5], [0, 0]] {
+      let c = o[0] == 0 && o[1] == 0 ? "#f8f8f8" : shade
+      if !allowed {
+        text("STEPS", tx + o[0], 22 + o[1], size: 15, color: c, font: hg)
+        text("Tap to count", tx + o[0], 46 + o[1], size: tiny ? 18 : 22, color: c, font: hg)
+      } else {
+        // The short tile has room for the count and the share only, above the road.
+        if !tiny { text("STEPS TODAY", tx + o[0], 22 + o[1], size: 15, color: c, font: hg) }
+        let px = tiny ? tx + len(fmtNum(steps)) * 10 + 10 : right
+        text(done ? "★" : "${round(pct * 100)}%", px + o[0], (tiny ? 28 : 22) + o[1], size: 15, color: c, font: hg, align: tiny ? "start" : "end")
+        text(fmtNum(steps), tx + o[0], (tiny ? 24 : 50) + o[1], size: tiny ? 24 : 34, color: c, font: hg)
+        if !tiny {
+          text(done ? "GOAL MET!" : "${fmtNum(goal - steps)} TO GO", tx + o[0], 78 + o[1], size: 15, color: c, font: hg)
+        }
+      }
+    }
+
+    // The week, in its own data box beside the road on the wide tile; the goal as a dashed line.
+    if wide && allowed && len(week) > 0 {
+      let bx = width * 0.58
+      let bw = width - bx - 12
+      let bh = height - 24
+      rect(bx, 12, bw, bh, fill: "#f8f8e0", radius: 6)
+      rect(bx, 12, bw, bh, stroke: "#404040", width: 2, radius: 6)
+      text("THIS WEEK", bx + 10, 28, size: 14, color: "#5a5a52", font: hg)
+      text("AVG ${fmtNum(usual / 1000, 1)}K", bx + bw - 10, 28, size: 14, color: "#5a5a52", font: hg, align: end)
+      let top = max(goal, max(week.map(d => d.steps))) * 1.08
+      let hgt = bh - 64
+      let base = 12 + bh - 26
+      let colw = (bw - 20) / len(week)
+      for d, i in week {
+        let h = max(3, d.steps / top * hgt)
+        let cx = bx + 10 + colw * i + colw / 2
+        rect(cx - 5, base - h, 10, h, fill: i == len(week) - 1 ? "#f8e038" : d.steps >= goal ? "#70f8a8" : "#58c8f8")
+        rect(cx - 5, base - h, 10, h, stroke: "#404040", width: 1)
+        text(d.day, cx, base + 12, size: 13, color: "#5a5a52", font: hg, align: center)
+      }
+      let gy = base - goal / top * hgt
+      for x in range(bx + 8, bx + bw - 8, 8) { line(x, gy, x + 4, gy, stroke: "#a0a088", width: 2) }
+    }
+
+    // A tap: what the pet says about today, in the game's text box.
+    if saying && allowed {
+      let say1 = done ? "${name} grew happier!" : "${name} walked ${fmtNum(steps)} steps."
+      let say2 = usual == 0 ? "Keep it up!" : steps > usual ? "More than your usual ${fmtNum(usual)}." : "Your usual is ${fmtNum(usual)}."
+      rect(8, height - 64, width - 16, 56, fill: "#ffffff", radius: 6)
+      rect(8, height - 64, width - 16, 56, stroke: "#4a4242", width: 3, radius: 6)
+      rect(12, height - 60, width - 24, 48, stroke: "#f8d058", width: 2, radius: 4)
+      text(say1, 20, height - 46, size: 14, color: "#5a5a52", font: hg)
+      text(say2, 20, height - 26, size: 14, color: "#5a5a52", font: hg)
+    }
+  }
+}
