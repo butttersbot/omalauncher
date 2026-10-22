@@ -122,7 +122,7 @@ class AndroidChatHost(
 
     override fun askFront(prompt: String, chat: String) = QuickLane.ask(context, prompt, chat = chat)
 
-    override fun startMacChat(prompt: String, chat: String) = MacThreads.startChatDirect(context, prompt, chat)
+    override fun startMacChat(prompt: String, chat: String, images: List<File>) = MacThreads.startChatDirect(context, prompt, chat, images)
 
     override fun sayToMac(prompt: String, thread: String, name: String, chat: String, images: List<File>) = MacThreads.say(context, prompt, thread, name, chat, images)
 

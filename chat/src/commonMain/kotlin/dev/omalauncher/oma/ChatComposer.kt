@@ -157,7 +157,8 @@ fun outgoing(
         // Pictures go too: they are put on the Mac and the thread is told where (Boss, 2026-10-21).
         to is SendTo.Mac -> if (imageMissing) Outgoing.Refused(IMAGE_GONE) else Outgoing.Mac(prompt, to.thread, to.name)
         to is SendTo.Chat -> when {
-            images > 0 -> Outgoing.Refused(NO_IMAGES_IN_CHAT)
+            // With pictures, straight to a new thread on the Mac, which gets them as a thread's tab sends them (Boss, 2026-10-21).
+            images > 0 -> if (imageMissing) Outgoing.Refused(IMAGE_GONE) else Outgoing.ChatMac(prompt, to.chat)
             linux && agent in BACKGROUND_AGENTS && frontFirst(prompt, images, frontReady) -> Outgoing.Front(prompt)
             else -> Outgoing.ChatMac(prompt, to.chat)
         }

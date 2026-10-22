@@ -1044,7 +1044,7 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
      * first words ([chatDirectName]). Nothing on the phone is needed: no Linux and no agent. With no Mac set up it
      * says so; a Mac out of reach leaves his words unsent with `[ try again ]`, which makes the thread again.
      */
-    fun startChatDirect(prompt: String, chat: String) {
+    fun startChatDirect(prompt: String, chat: String, images: List<java.io.File> = emptyList()) {
         restore()
         val log = platform.chatLog()
         val name = chatDirectName(platform.book().names[chatKey(chat)], prompt)
@@ -1054,6 +1054,8 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
                 log.begin(if (setUp) macChatDirect(time, prompt, chat, name) else ChatTask(time, QUICK_AGENT, prompt, result = MAC_NOT_SET_UP, status = TaskStatus.Failed, direct = true, chat = chat))
             }
         }
+        // Pictures go with the first words once the thread is made: send() puts them on the Mac first.
+        if (setUp && images.isNotEmpty()) synchronized(this) { pictures[time] = images }
         if (setUp) makeForChat(time, prompt, away = false, chat, name)
     }
 

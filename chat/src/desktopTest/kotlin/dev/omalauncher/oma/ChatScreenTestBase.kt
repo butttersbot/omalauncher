@@ -75,7 +75,7 @@ abstract class ChatScreenTestBase {
         override fun lookAtBuilders() {}
         override fun build(prompt: String, images: List<String>, way: BuildWay, builder: BuilderId?) {}
         override fun askFront(prompt: String, chat: String) {}
-        override fun startMacChat(prompt: String, chat: String) {}
+        override fun startMacChat(prompt: String, chat: String, images: List<java.io.File>) {}
         override fun sayToMac(prompt: String, thread: String, name: String, chat: String, images: List<java.io.File>) {}
         override fun stopMac(thread: String, said: (String?) -> Unit) {}
         var switched: Pair<String, dev.omalauncher.assist.MacPick>? = null

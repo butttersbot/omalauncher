@@ -140,8 +140,10 @@ class ChatComposerTest {
         val chat = SendTo.Chat("c1", "New chat")
         assertEquals(Outgoing.Front("hello"), out(frontReady = true, to = chat))
         assertEquals(Outgoing.Front("hello"), out(frontReady = true, working = true, to = chat))
-        assertEquals(Outgoing.Refused(NO_IMAGES_IN_CHAT), out(images = 1, frontReady = true, to = chat))
-        assertEquals(Outgoing.Refused(NO_IMAGES_IN_CHAT), out(images = 1, linux = false, to = chat))
+        // Pictures go to the new thread on the Mac with the words, past the front agent, which can't pass them on.
+        assertEquals(Outgoing.ChatMac("hello", chat.chat), out(images = 1, frontReady = true, to = chat))
+        assertEquals(Outgoing.ChatMac("hello", chat.chat), out(images = 1, linux = false, to = chat))
+        assertEquals(Outgoing.Refused(IMAGE_GONE), out(images = 1, missing = true, to = chat))
         assertEquals(Outgoing.Refused(CHAT_MAKING), out(frontReady = true, to = SendTo.ChatStarting("c1", "N")))
         assertEquals(Outgoing.Mac("hello", "t-new", "Menu"), out(frontReady = true, to = SendTo.Mac("t-new", "Menu", "c1")))
     }

@@ -93,7 +93,7 @@ object MacThreads {
 
     fun startChat(context: Context, asked: Long, prompt: String, away: Boolean, chat: String) = engine(context).startChat(asked, prompt, away, chat)
 
-    fun startChatDirect(context: Context, prompt: String, chat: String) = engine(context).startChatDirect(prompt, chat)
+    fun startChatDirect(context: Context, prompt: String, chat: String, images: List<java.io.File> = emptyList()) = engine(context).startChatDirect(prompt, chat, images)
 
     fun earlier(context: Context, threadId: String): MacEarlierRead = engine(context).earlier(threadId)
 

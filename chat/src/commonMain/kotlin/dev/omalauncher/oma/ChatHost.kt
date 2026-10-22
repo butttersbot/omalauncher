@@ -168,7 +168,7 @@ interface ChatHost {
     fun askFront(prompt: String, chat: String)
 
     /** A new chat's first words, as they are, to a new thread on the Mac. */
-    fun startMacChat(prompt: String, chat: String)
+    fun startMacChat(prompt: String, chat: String, images: List<File> = emptyList())
 
     /** [prompt] straight to the Mac thread [thread] ([name]), from the new chat [chat] or a thread's own tab (""), with the pictures [images] (files here). */
     fun sayToMac(prompt: String, thread: String, name: String, chat: String, images: List<File> = emptyList())

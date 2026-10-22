@@ -305,7 +305,7 @@ private fun ChatScreen(
                 else if (!build(out.prompt, queue = tabWorking)) return
             }
             // A new chat's first words with no front agent to read them: as they are, to a new thread on the Mac.
-            is Outgoing.ChatMac -> host.startMacChat(out.prompt, out.chat)
+            is Outgoing.ChatMac -> host.startMacChat(out.prompt, out.chat, images.map { it.file })
             // From a Mac thread's own tab: the same sending a hand-over has, with nobody asked first and nothing added.
             is Outgoing.Mac -> host.sayToMac(out.prompt, out.thread, out.name, to.chat, images.map { it.file })
             is Outgoing.Terminal -> host.runInTerminal(out.prompt)
