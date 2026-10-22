@@ -39,10 +39,8 @@ widget "steps" {
     let horizon = round(ch * (tiny ? 0.5 : 0.55))
     let roll = walking ? floor(time * 6) : 0
 
-    // The frame is the game's data box: dark edge, pale rim, the notch at its bottom-left corner.
-    rect(0, 0, width, height, fill: "#404040", radius: 10)
-    rect(0, height - 12, 12, 12, fill: "#404040")
-    clip(3, 3, width - 6, height - 6) {
+    // No frame of its own: the field fills its panel to the edges (Boss, 2026-10-21).
+    clip(0, 0, width, height) {
       // Sky in bands, hills with trees (they scroll slowly while he walks), grass.
       let sky = night ? ["#182048", "#28305a", "#384878"] : ["#78b8f0", "#98d0f8", "#b8e0f8"]
       for c, i in sky { rect(0, i * horizon / 3 * n, width, (horizon / 3 + 1) * n, fill: c) }
@@ -97,27 +95,24 @@ widget "steps" {
         sprite(art, along - fw * k / 2, (y0 + rh * 0.75) * n - pet.frame[1] * k * 0.9, k, palette: pet.sprites.palette)
       }
     }
-    // The pale rim of the data box, over the field's edge.
-    rect(4, 4, width - 8, height - 8, stroke: "#f8f8e0", width: 4, radius: 7)
-    rect(7, 7, width - 14, height - 14, stroke: "#c8c8a8", width: 1.5, radius: 5)
 
-    // Today's count, white with the game's dark shadow, on the sky.
+    // Today's count, white with the game's dark shadow, on the sky; low enough to clear a slanted panel's top.
     let shade = night ? "#404868" : "#385078"
     let tx = 14
     let right = wide ? width * 0.56 - 6 : width - 14
     for o in [[1.5, 0], [0, 1.5], [1.5, 1.5], [0, 0]] {
       let c = o[0] == 0 && o[1] == 0 ? "#f8f8f8" : shade
       if !allowed {
-        text("STEPS", tx + o[0], 22 + o[1], size: 15, color: c, font: hg)
-        text("Tap to count", tx + o[0], 46 + o[1], size: tiny ? 18 : 22, color: c, font: hg)
+        text("STEPS", tx + o[0], 36 + o[1], size: 15, color: c, font: hg)
+        text("Tap to count", tx + o[0], 60 + o[1], size: tiny ? 18 : 22, color: c, font: hg)
       } else {
         // The short tile has room for the count and the share only, above the road.
-        if !tiny { text("STEPS TODAY", tx + o[0], 22 + o[1], size: 15, color: c, font: hg) }
+        if !tiny { text("STEPS TODAY", tx + o[0], 36 + o[1], size: 15, color: c, font: hg) }
         let px = tiny ? tx + len(fmtNum(steps)) * 10 + 10 : right
-        text(done ? "★" : "${round(pct * 100)}%", px + o[0], (tiny ? 28 : 22) + o[1], size: 15, color: c, font: hg, align: tiny ? "start" : "end")
-        text(fmtNum(steps), tx + o[0], (tiny ? 24 : 50) + o[1], size: tiny ? 24 : 34, color: c, font: hg)
+        text(done ? "★" : "${round(pct * 100)}%", px + o[0], (tiny ? 38 : 36) + o[1], size: 15, color: c, font: hg, align: tiny ? "start" : "end")
+        text(fmtNum(steps), tx + o[0], (tiny ? 34 : 64) + o[1], size: tiny ? 24 : 34, color: c, font: hg)
         if !tiny {
-          text(done ? "GOAL MET!" : "${fmtNum(goal - steps)} TO GO", tx + o[0], 78 + o[1], size: 15, color: c, font: hg)
+          text(done ? "GOAL MET!" : "${fmtNum(goal - steps)} TO GO", tx + o[0], 92 + o[1], size: 15, color: c, font: hg)
         }
       }
     }
@@ -126,14 +121,13 @@ widget "steps" {
     if wide && allowed && len(week) > 0 {
       let bx = width * 0.58
       let bw = width - bx - 12
-      let bh = height - 24
-      rect(bx, 12, bw, bh, fill: "#f8f8e0", radius: 6)
-      rect(bx, 12, bw, bh, stroke: "#404040", width: 2, radius: 6)
-      text("THIS WEEK", bx + 10, 28, size: 14, color: "#5a5a52", font: hg)
-      text("AVG ${fmtNum(usual / 1000, 1)}K", bx + bw - 10, 28, size: 14, color: "#5a5a52", font: hg, align: end)
+      let bh = height - 40
+      rect(bx, 26, bw, bh, fill: "#f8f8e0", radius: 6)
+      rect(bx, 26, bw, bh, stroke: "#404040", width: 2, radius: 6)
+      text("THIS WEEK", bx + 10, 42, size: 14, color: "#5a5a52", font: hg)
       let top = max(goal, max(week.map(d => d.steps))) * 1.08
       let hgt = bh - 64
-      let base = 12 + bh - 26
+      let base = 26 + bh - 26
       let colw = (bw - 20) / len(week)
       for d, i in week {
         let h = max(3, d.steps / top * hgt)

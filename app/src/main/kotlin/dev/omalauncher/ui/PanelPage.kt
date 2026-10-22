@@ -239,6 +239,15 @@ internal fun PanelPageView(
                 when {
                     art != null -> render(art, Modifier.fillMaxSize(), false)
                     item == null || lifted -> if (lifted || look.empty == PanelEmpty.Screentone) Screentone(look.screentone, ink, lifted, Modifier.fillMaxSize())
+                    // A widget that draws to its own edges (padding 0) fills the whole panel, cut to its ink like art (Boss,
+                    // 2026-10-21: "maybe we just dont use the frame so we can have the panels fully filled"). Laid out a frame
+                    // larger each side, so its own outline is cut away and the panel's ink stands for it.
+                    item is dev.omalauncher.widgets.WidgetItem && item.spec.program?.padding == 0.0 ->
+                        Box(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                            androidx.compose.runtime.CompositionLocalProvider(LocalInPanel provides true) {
+                                render(item, Modifier.requiredSize(with(density) { (box.width + 2 * frame).toDp() }, with(density) { (box.height + 2 * frame).toDp() }), selected == item.key)
+                            }
+                        }
                     else -> {
                         val inner = panel.inner
                         val at = px(PanelPoint(inner.x, inner.y)) - box.topLeft - Offset(frame, frame)
