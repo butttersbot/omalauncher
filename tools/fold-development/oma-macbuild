@@ -43,7 +43,7 @@ case ${1:-} in
     newest=$(ls -t /root/Inbox/soma-*-"$code".json 2>/dev/null | head -n 1 || true)
     built=$(sed -n 's/.*"commit":"\([0-9a-f]\{40\}\)".*/\1/p' "${newest:-/dev/null}")
     if [ -n "$built" ] && git -C "$repo" merge-base --is-ancestor "$built" HEAD &&
-      git -C "$repo" diff --quiet "$built" HEAD -- . ':(exclude)tools/fold-development' ':(exclude)docs' ':(exclude)*.md'; then
+      git -C "$repo" diff --quiet "$built" HEAD -- . ':(exclude)tools/fold-development' ':(exclude)tools/walkthrough' ':(exclude)docs' ':(exclude)*.md'; then
       json=$newest
       commit=$built
       echo "Taking the build of ${built:0:9}: nothing since then goes into the app."
