@@ -383,7 +383,8 @@ class Builder(val id: BuilderId) {
                 shot = java.util.Base64.getEncoder().encodeToString(screen.readBytes())
                 screen.delete()
             }
-            (worktree?.let { it.script() + "\n" } ?: "") + claudeStreamCommand(resumed, if (errand) ERRAND_MODEL else null)
+            // Which builder this is, for the tools that sign mail (oma msg, oma-macbuild): a reply comes back to it, not to A.
+            "export OMA_BUILDER=${id.letter}\n" + (worktree?.let { it.script() + "\n" } ?: "") + claudeStreamCommand(resumed, if (errand) ERRAND_MODEL else null)
         } else {
             backgroundAgentCommand(agent.bin, fullPrompt, images) // Throws for an agent that can't run here, before the screenshot is touched.
             handed = screen?.let { ScreenShots.handOver(it, runtime.proot.promptAttachments) }

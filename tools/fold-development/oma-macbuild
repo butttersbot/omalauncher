@@ -17,6 +17,10 @@ mac=${SOMA_MAC:-jacks-mac-pro}
 thread=${SOMA_MAC_THREAD:-t9f45b731}
 tools=/opt/android-sdk/build-tools/36.0.0
 die() { echo "$1" >&2; exit 1; }
+# The builder asking (A or B): set when a builder starts, else told by its worktree. The Mac's answer goes back to it
+# (Boss, 2026-10-21: builder B's builds were answered to A).
+builder=${OMA_BUILDER:-}
+if [ -z "$builder" ]; then case $PWD in /root/wt/builder-b*) builder=B ;; *) builder=A ;; esac; fi
 
 commit=$(git -C "$repo" rev-parse HEAD)
 short=${commit:0:9}
@@ -27,7 +31,7 @@ case ${1:-} in
   oma-sync
   commit=$(git -C "$repo" rev-parse HEAD)
   short=${commit:0:9}
-  oma msg send "$mac:$thread" --as A --title "Soma build $short" \
+  oma msg send "$mac:$thread" --as "$builder" --title "Soma build $short" \
     "Please build Soma for the phone: in /Users/jackkim/Projects/omalauncher-fold run tools/fold-development/soma-macbuild $commit $code (if the script isn't there yet, the mirror syncs within a minute: wait and try again). It builds and tests that commit in its own worktree and Taildrops the app to the phone. Then answer with its last lines, or what stopped it."
   echo "Asked the Mac Pro to build $short as version $code. When it answers, run: oma-macbuild --take"
   ;;

@@ -66,7 +66,8 @@ esac
 words=()
 reply_to=''
 title=''
-as='oma'
+# A phone builder signs as itself (OMA_BUILDER, set when it starts), so replies find their way back to it.
+as=${OMA_BUILDER:-oma}
 while [ $# -gt 0 ]; do
   case $1 in
     --reply-to) [ $# -ge 2 ] || usage; reply_to=$2; shift 2 ;;
