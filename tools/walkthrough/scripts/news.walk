@@ -5,7 +5,8 @@ shell cmd statusbar collapse
 key BACK
 key HOME
 launch dev.omalauncher.boss/dev.omalauncher.news.NewsActivity
-wait 3000
+# The reader's controls appear about 3 s after a fresh start (timed on Fold8); 6 s is safe.
+wait 6000
 tap Refresh | ↻
 wait 8000
 expect Top stories
