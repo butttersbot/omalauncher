@@ -83,7 +83,6 @@ canvas.pixel { position: absolute; left: 0; top: 0; }
 .head .sub { margin-top: 2px; }
 .head.night .px { color: #f8f8f8; text-shadow: 1px 0 0 #404868, 0 1px 0 #404868, 1px 1px 0 #404868; }
 .head.night .px2 { text-shadow: 2px 0 0 #404868, 0 2px 0 #404868, 2px 2px 0 #404868; }
-.track { position: absolute; margin: 0; z-index: 1; }
 .walker { z-index: 2; }
 .goalline { position: absolute; left: 0; right: 0; border-top: 2px dashed #a0a088; }
 
@@ -128,7 +127,7 @@ canvas.pixel { position: absolute; left: 0; top: 0; }
     <div class="tile w4x2 steps" id="stepM"><div class="inner"></div></div>
   </div>
   <p class="note"><b>Pet home.</b> The pet's room, as in the games: it naps on the bed (Zz), with the window showing day or night. Tap the room or <b>LET OUT</b> and it hops out to float on the screen as it does now; the bed is left empty. Drag it back onto the room or tap <b>CALL</b> to put it home. One pet, so every size shows the same one.<br><br>
-  <b>Steps.</b> The data box is the widget's frame and the field is inside it. Today's count sits in the sky; the EXP bar runs along the grass to a goal flag, and the pet stands on the bar as far along as you've got (68% of the goal, 68% of the way). It walks while steps come in and faces you when you stop. Past the goal the bar turns green (10,000 for now; long-press to change). The wide size adds the week, with the goal as a dashed line. Tap it for how today compares, in the game's text box.</p>
+  <b>Steps.</b> The data box is the widget's frame and the field is inside it. Today's count sits in the sky; the progress bar is the road he walks every day, along the bottom to a goal flag: the walked part is sunlit with his footprints, the rest still shaded and grown over, and he stands in the road as far along as you've got (68% of the goal, 68% of the way). He walks while steps come in and faces you when you stop. Past the goal the road turns gold (10,000 for now; long-press to change). The wide size adds the week, with the goal as a dashed line. Tap it for how today compares, in the game's text box.</p>
 </div>
 
 <div id="loose"><div class="spr"></div></div>
@@ -325,6 +324,16 @@ function field(p, horizon) {
   for (let y = horizon + 2; y < ch; y += 3)
     for (let x = ((y * 7) % 5) - (scroll % 6); x < cw; x += 6) r(x, y, 2, 1, night ? '#3c6434' : '#70b048');
 }
+// The road he walks every day: the walked part sunlit sand with his footprints, the rest shaded and grown over.
+function road(p, x0, x1, y0, h, pct, done) {
+  const { r } = p, w = x1 - x0, at = x0 + Math.round(w * pct);
+  r(x0, y0, w, h, night ? '#7a6a50' : '#b8a070');                       // the way still to go
+  for (let x = x0 + 2; x < x1; x += 5) r(x, y0 + ((x * 3) % (h - 2)) + 1, 2, 1, night ? '#5a7040' : '#88b058');
+  r(x0, y0, at - x0, h, done ? (night ? '#c0a848' : '#f8d860') : (night ? '#b8a478' : '#f0dca0'));  // walked
+  for (let x = x0 + 2, k = 0; x < at - 3; x += 4, k++) r(x, y0 + (k % 2 ? h - 3 : 2), 2, 1, night ? '#8a7858' : '#c8a868');
+  r(x0, y0, w, 1, night ? '#4a4030' : '#8a7048'); r(x0, y0 + h - 1, w, 1, night ? '#4a4030' : '#8a7048');
+  r(x0 - 1, y0 + 1, 1, h - 2, night ? '#4a4030' : '#8a7048'); r(x1, y0 + 1, 1, h - 2, night ? '#4a4030' : '#8a7048');
+}
 // The goal flag at the bar's end: a pole with a red pennant, standing on the bar.
 function flag(p, x, y) {
   const { r } = p;
@@ -341,26 +350,25 @@ function drawSteps(tile) {
     inn.dataset.built = 1;
     inn.innerHTML = `<div class="head"><div class="row px"><span>${tiny ? 'STEPS' : 'STEPS TODAY'}</span><span class="lv"></span></div>
         <div class="px ${tiny ? 'px2' : 'px2'} num"></div>${tiny ? '' : '<div class="px sub"></div>'}</div>
-      <div class="exp track"><i></i></div><div class="spr walker"></div>
+      <div class="spr walker"></div>
       ${wide ? '<div class="dbox wk"><div class="row px"><span>THIS WEEK</span><span class="avg"></span></div><div class="week px" style="position:relative"></div></div>' : ''}`;
   }
   const ch = Math.ceil(H / n);
-  // The bar runs along the grass near the bottom; on the wide one it stops short of the week.
-  const track = inn.querySelector('.track');
-  const left = 40, right = wide ? Math.round(W * .44) + 6 : 14, bottom = tiny ? 10 : 14;
-  track.style.left = left + 'px'; track.style.right = right + 'px'; track.style.bottom = bottom + 'px';
-  track.classList.toggle('done', steps >= GOAL); track.querySelector('i').style.width = pct * 100 + '%';
-  const barW = W - left - right, barTop = H - bottom - 14;
+  // The road runs along the grass at the bottom; on the wide one it stops short of the week. In art pixels.
+  const cw = Math.ceil(W / n), rh = tiny ? 8 : 10;
+  const x0 = 3, x1 = (wide ? Math.floor(cw * .56) : cw) - 4, y0 = ch - rh - 3;
   const p = pixels(inn, W, H, n);
-  field(p, Math.round(ch * (tiny ? .55 : .58)));
-  flag(p, Math.round((left + barW - 4) / n), Math.floor(barTop / n));
-  // The pet stands on the bar where today's steps have got it to: 68% of the goal, 68% of the way along.
+  field(p, Math.round(ch * (tiny ? .5 : .55)));
+  road(p, x0, x1, y0, rh, pct, steps >= GOAL);
+  flag(p, x1 - 3, y0 + 3);
+  // The pet walks in the road, as far along it as today's steps have got him: 68% of the goal, 68% of the way.
   const walker = inn.querySelector('.walker'), moving = Date.now() < walkingUntil;
   const size = petSize(n) * (tiny ? .85 : 1);
   frame(walker, moving ? 'right' : 'down', moving ? stepTick : 0, size);
   const h = parseFloat(walker.style.height);
-  walker.style.left = left + Math.min(pct, .96) * barW - size / 2 + 'px';
-  walker.style.top = barTop + 4 - h * .92 + 'px';
+  const along = x0 + 4 + Math.min(pct, 1) * (x1 - x0 - 10);
+  walker.style.left = along * n - size / 2 + 'px';
+  walker.style.top = (y0 + rh * .75) * n - h * .9 + 'px';
   const head = inn.querySelector('.head');
   head.classList.toggle('night', night);
   head.style.right = wide ? Math.round(W * .44) + 'px' : '10px';
