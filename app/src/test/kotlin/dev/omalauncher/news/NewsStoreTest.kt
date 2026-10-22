@@ -14,7 +14,8 @@ class NewsStoreTest {
           {"id":"2","title":"With an enclosure","published":1791999000,"alternate":[{"href":"https://e.com/2"}],"origin":{"title":"E"},
            "enclosure":[{"href":"https://e.com/big.jpg","type":"image/jpeg"}],"summary":{"content":"<p>text</p>"}},
           {"id":"3","title":"","summary":{"content":"no title"}},
-          {"id":"4","title":"No picture","origin":{"title":"F"},"summary":{"content":"<p>just words <img src=\"http://insecure/x.jpg\"></p>"}}
+          {"id":"4","title":"No picture","origin":{"title":"F"},"summary":{"content":"<p>just words <img src=\"http://insecure/x.jpg\"></p>"}},
+          {"id":"5","title":"FreshRSS 1.27.1","origin":{"title":"FreshRSS releases","streamId":"feed/https://github.com/FreshRSS/FreshRSS/releases.atom"},"summary":{"content":"x"}}
         ]}"""
 
     @Test fun storiesWithTheirSourceLinkAndPicture() {

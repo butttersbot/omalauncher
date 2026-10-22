@@ -152,6 +152,12 @@ object NewsStore {
                 o.optJSONArray("enclosure")?.let { a ->
                     (0 until a.length()).map { a.getJSONObject(it) }.firstOrNull { it.optString("type").startsWith("image") }?.optString("href")
                 }
+            // The installer's own feed (FreshRSS's releases) is the server's business, not news.
+            if (o.optJSONObject("origin")?.optString("streamId").orEmpty().contains("github.com/FreshRSS", ignoreCase = true) ||
+                o.optJSONObject("origin")?.optString("title").orEmpty().startsWith("FreshRSS", ignoreCase = true)
+            ) {
+                return@mapNotNull null
+            }
             Story(
                 id = o.optString("id"),
                 title = unescape(o.optString("title")).ifBlank { return@mapNotNull null },
