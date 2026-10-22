@@ -1,19 +1,23 @@
-# Soma's screen record tile (123+).
-# The tile tapped as Quick Settings does: Android's own capture prompt comes up.
-shell cmd statusbar add-tile dev.omalauncher.boss/dev.omalauncher.record.ScreenRecordTile
+# Soma's screen record tile (123+). Calibrated on the Mac's Fold8 emulator (Android 17), 2026-10-22: click-tile answers
+# only with Quick Settings open, and Android 17 asks "Share one app" -> "Share entire screen" -> "Share screen".
+shell cmd statusbar expand-settings
+wait 1000
 shell cmd statusbar click-tile dev.omalauncher.boss/dev.omalauncher.record.ScreenRecordTile
-wait 1500
+wait 2500
+expect Share your screen
 shot capture-prompt
-# Android 14+ asks one app or the entire screen, then Next/Start/Share screen depending on the version.
-tap Share one app | Share entire screen
-tap Share entire screen | Entire screen
-tap Start | Next | Share screen
+tap Share one app
+tap Share entire screen
+tap Share screen
 wait 4500
-shot recording-notification
+shot recording
+shell cmd statusbar expand-settings
+wait 1000
 shell cmd statusbar click-tile dev.omalauncher.boss/dev.omalauncher.record.ScreenRecordTile
-wait 1500
+wait 2000
 shell cmd statusbar expand-notifications
 expect Screen recording saved
+shot saved-notice
 shell cmd statusbar collapse
 [phone] Add Screen record to Samsung's Quick Settings; tap it, allow, record a few seconds, tap the tile again; the saved notice opens the video in Movies/Soma.
 [phone] Start a recording, lock the phone, unlock it, stop: say whether the lock screen shows in the video.

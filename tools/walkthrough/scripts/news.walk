@@ -1,6 +1,7 @@
 # Soma News (110+; Google News since 127). Bugs Boss found: empty bullets, related-link tails, sideways scrolling,
 # the drop capital's spacing.
 launch dev.omalauncher.boss/dev.omalauncher.news.NewsActivity
+wait 3000
 tap Refresh
 wait 8000
 expect Top stories
@@ -23,13 +24,16 @@ absent Related stories
 absent Read more
 shot article
 key BACK
-# Back keeps his place in the stream (not the top), and the stream is there.
-expect SOMA
+# Back keeps his place in the stream (under Technology, not the top).
+expect Technology
 fold open
 rotate landscape
 wait 1500
 shot stream-landscape
-tap 0.75 0.4
+# The cover story fills the left page of the first spread.
+tap Top stories
+wait 800
+tap 0.25 0.45
 wait 6000
 shot book
 rotate portrait

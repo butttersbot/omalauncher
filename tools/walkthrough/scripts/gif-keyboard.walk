@@ -1,7 +1,8 @@
 # The keyboard's GIF panel (Soma 108+). Bugs Boss found 2026-10-22: the handle jittered while pulled; Done emptied
 # the search; the handle was gone after a search. The keys are drawn, not labelled, so the checks read what the
 # panel logs (`log`), and the screenshots are looked at. Positions are for the Fold profile's cover screen, portrait,
-# calibrated from the 128 walk (handle at 0.54 of the height, the search pill at 0.60).
+# calibrated on the Fold8 emulator from the 128 walk: the panel's handle at 0.547, its search pill at 0.597; searching,
+# the band's handle at 0.327 and its field at 0.36. Typing goes on the keys (adb's text input goes to the app's field).
 ime dev.omalauncher.boss/dev.omalauncher.keyboard.OmaKeyboardService
 launch com.android.settings/.Settings
 tap Search settings
@@ -13,7 +14,7 @@ wait 1200
 log gif panel expanded=false query= handle=shown
 shot gif-panel
 # The handle pulled up slowly: it grows once and stays (no flicking back and forth).
-swipe 0.5 0.54 0.5 0.30 900
+swipe 0.5 0.547 0.5 0.30 900
 wait 800
 log gif expanded=true
 nolog gif expanded=false
@@ -24,21 +25,24 @@ wait 800
 log gif expanded=false
 shot collapsed-after-pull
 # Search, then Done: the words stay in the field, and the handle is there.
-tap 0.4 0.60
+tap 0.4 0.597
 wait 600
 log gif band query= handle=shown
-type cat
+# c, a, t on the keys, then done.
+tap 0.40 0.818
+tap 0.105 0.747
+tap 0.45 0.675
 wait 1200
 log gif band query=cat handle=shown
-key ENTER
+tap 0.905 0.89
 wait 1500
 log gif panel expanded=false query=cat handle=shown
 shot results-keep-cat-and-handle
 # Searching again starts from those words; the band's handle pulled up opens the results full screen.
-tap 0.4 0.60
+tap 0.4 0.597
 wait 800
 log gif band query=cat handle=shown
-swipe 0.5 0.355 0.5 0.12 600
+swipe 0.5 0.327 0.5 0.10 600
 wait 800
 log gif panel expanded=true query=cat handle=shown
 shot band-handle-pulled-full-screen
