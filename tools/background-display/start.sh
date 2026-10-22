@@ -7,4 +7,4 @@ adb connect "$at" >/dev/null
 [[ $(adb -s "$at" shell getprop ro.serialno | tr -d '\r\n') == R5GL85HYY6E ]] || { echo 'Not the configured Fold.' >&2; exit 1; }
 uid=$(adb -s "$at" shell cmd package list packages -U dev.omalauncher.boss | sed -n 's/.*uid:\([0-9]*\).*/\1/p' | tr -d '\r\n')
 [[ $uid =~ ^[0-9]+$ ]] || { echo 'Soma UID unavailable.' >&2; exit 1; }
-exec adb -s "$at" shell "CLASSPATH=/data/local/tmp/soma-display-v3.dex app_process / SomaDisplay 1248 1972 420 $uid"
+exec adb -s "$at" shell "CLASSPATH=/data/local/tmp/soma-display.dex app_process / SomaDisplay 1248 1972 420 $uid"
