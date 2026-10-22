@@ -161,17 +161,21 @@ class KeyboardView(
             return headroomPx
         }
 
-    /** The most height the window lets the keyboard have, px, as last measured; 0 before. */
-    private var roomPx = 0
-
     /** The GIFs pulled up: most of the screen, the status bar left clear, px. */
     private val gifTallPx: Int
         get() {
-            // The room the window gives, not the display's height: on the cover screen that counted more than there
-            // is, and the bottom strip (the GIF button, the hide arrow) went off the screen's foot (the 129 walk).
-            val screen = roomPx.takeIf { it > 0 } ?: resources.displayMetrics.heightPixels
-            val bar = rootWindowInsets?.getInsets(android.view.WindowInsets.Type.statusBars())?.top ?: 0
-            return screen - stripPx - maxOf((EXPANDED_TOP_DP * density).toInt(), bar)
+            // Clear of the status bar as tall as it really is: on the cover screen it is more than EXPANDED_TOP_DP, and the
+            // bottom strip (the GIF button, the hide arrow) went off the screen's foot by the difference (the 129 walk).
+            val type = android.view.WindowInsets.Type.statusBars() or android.view.WindowInsets.Type.displayCutout()
+            val insets = rootWindowInsets
+            val id = resources.getIdentifier("status_bar_height", "dimen", "android")
+            val bar =
+                maxOf(
+                    insets?.getInsets(type)?.top ?: 0,
+                    insets?.getInsetsIgnoringVisibility(type)?.top ?: 0,
+                    if (id != 0) resources.getDimensionPixelSize(id) else 0,
+                )
+            return resources.displayMetrics.heightPixels - stripPx - maxOf((EXPANDED_TOP_DP * density).toInt(), bar)
         }
 
     /** How much taller the pulled-up GIFs stand than the short ones, px. */
@@ -273,8 +277,7 @@ class KeyboardView(
         heightMeasureSpec: Int,
     ) {
         val w = MeasureSpec.getSize(widthMeasureSpec)
-        if (MeasureSpec.getMode(heightMeasureSpec) != MeasureSpec.UNSPECIFIED) roomPx = MeasureSpec.getSize(heightMeasureSpec)
-        val h = (boardPx + headroomPx + stripPx).let { if (roomPx > 0) minOf(it, roomPx) else it }
+        val h = boardPx + headroomPx + stripPx
         setMeasuredDimension(w, h)
     }
 
