@@ -161,7 +161,7 @@ object NewsStore {
             Story(
                 id = o.optString("id"),
                 title = unescape(o.optString("title")).ifBlank { return@mapNotNull null },
-                source = unescape(o.optJSONObject("origin")?.optString("title").orEmpty()),
+                source = sourceName(unescape(o.optJSONObject("origin")?.optString("title").orEmpty())),
                 link = link,
                 published = o.optLong("published"),
                 image = enclosure?.takeIf { it.startsWith("https://") } ?: firstImage(html),
@@ -169,6 +169,24 @@ object NewsStore {
             )
         }
     }
+
+    /**
+     * A feed's name as a reader says it. A feed imported by its address is named by it ("https://www.theverge.com/rss/
+     * index.xml"): that becomes the site ("The Verge" for the ones he follows, else "Theverge").
+     */
+    fun sourceName(title: String): String {
+        if (!title.startsWith("http://") && !title.startsWith("https://")) return title
+        val host = runCatching { URL(title).host.removePrefix("www.").removePrefix("feeds.") }.getOrNull() ?: return title
+        KNOWN[host]?.let { return it }
+        return host.substringBefore('.').replaceFirstChar { it.uppercase() }
+    }
+
+    private val KNOWN =
+        mapOf(
+            "theverge.com" to "The Verge", "tailscale.com" to "Tailscale", "hnrss.org" to "Hacker News", "importai.substack.com" to "Import AI",
+            "androidpolice.com" to "Android Police", "9to5google.com" to "9to5Google", "arstechnica.com" to "Ars Technica",
+            "sammobile.com" to "SamMobile", "simonwillison.net" to "Simon Willison",
+        )
 
     /** The first picture in a story's HTML worth showing: https, and not a tracking pixel or an icon. */
     fun firstImage(html: String): String? =

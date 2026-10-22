@@ -31,4 +31,11 @@ class NewsStoreTest {
         assertEquals("https://e.com/2", s[1].link)
         assertNull(s[2].image)
     }
+
+    @Test fun aFeedNamedByItsAddressIsNamedByItsSite() {
+        assertEquals("The Verge", NewsStore.sourceName("https://www.theverge.com/rss/index.xml"))
+        assertEquals("Ars Technica", NewsStore.sourceName("https://feeds.arstechnica.com/arstechnica/index"))
+        assertEquals("Example", NewsStore.sourceName("https://example.org/feed"))
+        assertEquals("Tailscale Blog", NewsStore.sourceName("Tailscale Blog"))
+    }
 }
