@@ -38,10 +38,10 @@ private const val VIEWER_LONGEST = 2400
  */
 @Composable
 fun ChatImageViewer(
+    host: ChatHost,
     file: File,
     onClose: () -> Unit,
 ) {
-    val host = LocalChatHost.current
     val picture by produceState<ImageBitmap?>(null, file) {
         value = withContext(Dispatchers.IO) { runCatching { host.thumbnail(file, VIEWER_LONGEST) }.getOrNull() }
     }

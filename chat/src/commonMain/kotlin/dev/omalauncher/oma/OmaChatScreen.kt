@@ -1240,7 +1240,7 @@ private fun SentImages(paths: List<String>) {
     val host = LocalChatHost.current
     // A tap opens one over the whole screen.
     var open by remember { mutableStateOf<String?>(null) }
-    open?.let { path -> ChatImageViewer(host.sentImage(path)) { open = null } }
+    open?.let { path -> ChatImageViewer(host, host.sentImage(path)) { open = null } }
     Row(Modifier.padding(top = 6.dp).horizontalScroll(rememberScrollState())) {
         paths.forEachIndexed { i, path ->
             val picture by produceState<ImageBitmap?>(null, path) {
@@ -1267,7 +1267,7 @@ private fun AttachmentPreview(
         value = withContext(Dispatchers.IO) { host.thumbnail(image.file, 160) }
     }
     var open by remember { mutableStateOf(false) }
-    if (open) ChatImageViewer(image.file) { open = false }
+    if (open) ChatImageViewer(host, image.file) { open = false }
     Column(Modifier.padding(4.dp)) {
         val bitmap = preview
         if (bitmap != null) {
