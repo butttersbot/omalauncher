@@ -356,6 +356,8 @@ const CSS = `
 .pg-line.quote { font-style: italic; }
 .pg-heading { font-family: ${SERIF}; font-weight: 700; white-space: pre; }
 .pg-photo img { width: 100%; object-fit: cover; display: block; margin-bottom: 5px; }
+#flow .pg > * { margin: 0; }
+#flow .pg-photo img { width: 100%; margin: 0 0 5px; border-radius: 0; }
 .pg-photo div { font: italic 12px/16px ${SERIF}; color: #6b685f; white-space: nowrap; }
 .pg-quote { border-top: 1.5px solid #1b1a17; border-bottom: 1.5px solid #1b1a17; padding: 8px 0 8px 24px; font-family: ${SERIF}; font-style: italic; color: #1b1a17; }
 .pg-quote::before { content: "“"; position: absolute; left: -3px; top: 4px; font: 700 44px/1 ${SERIF}; color: #d7262d; }
@@ -391,6 +393,7 @@ export function mount(el, article, onBack) {
   let at = 0
   let leaf = null
   let busy = false
+  let readingAnchor = null
 
   const compare = (a, b) => a.block - b.block || a.segmentIndex - b.segmentIndex || a.graphemeIndex - b.graphemeIndex
   const position = () => pages?.slice(at * 2, at * 2 + 2).flatMap(p => p.items).find(i => i.anchor)?.anchor
@@ -463,7 +466,7 @@ export function mount(el, article, onBack) {
     l.el.addEventListener(
       'transitionend',
       () => {
-        if (commit) at = l.to
+        if (commit) { at = l.to; readingAnchor = null }
         l.el.remove()
         show()
         busy = false
@@ -534,6 +537,7 @@ export function mount(el, article, onBack) {
   stage.addEventListener('pointercancel', up)
 
   scrub.addEventListener('input', () => {
+    readingAnchor = null
     at = Number(scrub.value)
     show()
   })
@@ -542,7 +546,8 @@ export function mount(el, article, onBack) {
   el.querySelectorAll('[data-size]').forEach(b =>
     b.addEventListener('click', () => {
       if (busy || leaf) return
-      const keep = position()
+      const keep = readingAnchor || position()
+      readingAnchor = keep
       sizeAt = Number(b.dataset.size)
       lay(keep)
     }),
@@ -550,7 +555,7 @@ export function mount(el, article, onBack) {
   lay(null)
   const observer = new ResizeObserver(() => {
     if (!el.isConnected) { observer.disconnect(); return }
-    if (!busy && !leaf) lay(position())
+    if (!busy && !leaf) lay(readingAnchor || position())
   })
   observer.observe(stage)
 }
