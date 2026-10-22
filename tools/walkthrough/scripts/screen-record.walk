@@ -1,0 +1,16 @@
+# Soma's screen record tile (123+).
+# The tile tapped as Quick Settings does: Android's own capture prompt comes up.
+shell cmd statusbar add-tile dev.omalauncher.boss/dev.omalauncher.record.ScreenRecordTile
+shell cmd statusbar click-tile dev.omalauncher.boss/dev.omalauncher.record.ScreenRecordTile
+wait 1500
+shot capture-prompt
+tap Start
+wait 4500
+shot recording-notification
+shell cmd statusbar click-tile dev.omalauncher.boss/dev.omalauncher.record.ScreenRecordTile
+wait 1500
+shell cmd statusbar expand-notifications
+expect Screen recording saved
+shell cmd statusbar collapse
+[phone] Add Screen record to Samsung's Quick Settings; tap it, allow, record a few seconds, tap the tile again; the saved notice opens the video in Movies/Soma.
+[phone] Start a recording, lock the phone, unlock it, stop: say whether the lock screen shows in the video.

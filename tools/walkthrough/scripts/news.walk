@@ -1,0 +1,35 @@
+# Soma News (110+; Google News since 127). Bugs Boss found: empty bullets, related-link tails, sideways scrolling,
+# the drop capital's spacing.
+launch dev.omalauncher.boss/dev.omalauncher.news.NewsActivity
+tap Refresh
+wait 8000
+expect Top stories
+expect Technology
+shot stream-cover
+tap Show
+wait 800
+expect Show less
+shot topic-expanded
+tap Technology
+wait 800
+shot jumped-to-technology
+# Open the first story under Technology: the whole article loads.
+swipe 0.5 0.7 0.5 0.45
+tap 0.5 0.55
+wait 6000
+absent Getting the whole story
+absent Related stories
+absent Read more
+shot article
+key BACK
+expect Top stories
+fold open
+rotate landscape
+wait 1500
+shot stream-landscape
+tap 0.75 0.4
+wait 6000
+shot book
+rotate portrait
+[phone] Check the top bar sits clear of Samsung's status strip on the cover screen and unfolded.
+[phone] Swipe system Back from an article (back to the stream), then from the stream (back to home).

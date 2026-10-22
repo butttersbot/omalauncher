@@ -1,0 +1,35 @@
+# The keyboard's GIF panel (Soma 108+). Bugs Boss found 2026-10-22: the handle jittered while pulled; Done emptied
+# the search; the handle was gone after a search. Coordinates are for the Fold profile's cover screen, portrait;
+# calibrated on the first emulator run.
+ime dev.omalauncher.boss/dev.omalauncher.keyboard.OmaKeyboardService
+launch com.android.settings/.Settings
+tap Search settings
+wait 800
+shot keyboard-up
+# The GIF button: the bottom strip, after the split switch.
+tap 0.16 0.965
+wait 1200
+shot gif-panel
+# The handle, pulled up slowly: the panel grows once and stays (no flicker back and forth).
+swipe 0.5 0.585 0.5 0.35 900
+wait 600
+shot expanded-after-pull
+swipe 0.5 0.06 0.5 0.4 900
+wait 600
+shot collapsed-after-pull
+# Search, then Done: the words stay in the field and the handle is there.
+tap 0.4 0.62
+type cat
+wait 1500
+shot searching-with-band-handle
+key ENTER
+wait 1500
+shot results-keep-cat-and-handle
+# The band's handle pulled up opens the results full screen.
+tap 0.4 0.62
+swipe 0.5 0.34 0.5 0.1 600
+wait 800
+shot band-handle-pulled-full-screen
+[phone] On the cover screen and unfolded: drag the GIF handle up and down slowly; it moves once per pull, no flicker.
+[phone] Search a word, tap Done: the word stays in the field, the handle shows; ✕ beside the arrow goes back to Trending.
+[phone] Tap a GIF in a real chat app: it lands in the message box.
