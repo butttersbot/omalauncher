@@ -163,6 +163,14 @@ class GifPanel(
     private var editing = false
     private var draggingTag = -1
     private var handleDrag = false
+
+    /**
+     * The pull, in screen coordinates (Boss, 2026-10-22: the handle was "super glitchy"): the panel grows or shrinks
+     * under the finger, so the view's own coordinates jump as it does, which read as a pull the other way and flipped
+     * it back and forth. One pull changes it once.
+     */
+    private var handleDownRawY = 0f
+    private var handleMoved = false
     private var longPress: Runnable? = null
 
     /** What each feed produces: the GIFs, where the next page starts, and what to say if there are none. */
@@ -199,6 +207,7 @@ class GifPanel(
     /** As the panel comes up: Trending, from the top. */
     fun opened() {
         chip = GifStore.FIXED[0]
+        shownQuery = ""
         editing = false
         feed.open(Req.Trending)
     }
@@ -210,9 +219,17 @@ class GifPanel(
         pick(tag.trim().lowercase())
     }
 
+    /**
+     * What the panel shows found for, kept in its field after Done (Boss, 2026-10-22: "the text should stay in there");
+     * "" when it shows a pill. A tap on the field searches again from these words; its ✕ goes back to Trending.
+     */
+    var shownQuery = ""
+        private set
+
     /** The full panel showing what [q] finds, as a search ends with Done. */
     fun showResults(q: String) {
         chip = ""
+        shownQuery = q
         feed.open(Req.Words(q))
     }
 
@@ -304,7 +321,7 @@ class GifPanel(
 
         // The search pill, as the emoji search's (Boss, 2026-10-21: no ABC beside it; the GIF button goes back), with
         // the arrow that opens and closes the tags at its right end.
-        field(canvas, top + HANDLE_DP * d, width, null, c, k)
+        field(canvas, top + HANDLE_DP * d, width, shownQuery.ifEmpty { null }, c, k, caret = false, clearAt = CLEAR_FROM_RIGHT_DP)
         fieldRight = box.right
         val ay = box.centerY()
         val ax = box.right - 18 * d
@@ -371,6 +388,13 @@ class GifPanel(
         bandTop = top
         this.width = width
         text.typeface = k.typeface
+        // The handle here too (Boss, 2026-10-22: it went away once he searched): pulled up, the search is done and its
+        // results open full screen.
+        if (!host.addingTag) {
+            paint.color = c.muted
+            box.set(width / 2 - 18 * d, top + 3 * d, width / 2 + 18 * d, top + 6 * d)
+            canvas.drawRoundRect(box, 2 * d, 2 * d, paint)
+        }
         field(canvas, top, width, host.gifQuery, c, k, if (host.addingTag) "Name a new tag" else "Search GIFs")
         bandCells = grid(canvas, band, top + FIELD_DP * d, top + BAND_DP * d - 4 * d, width, if (host.wide) 5 else 3, c)
     }
@@ -453,6 +477,8 @@ class GifPanel(
         c: Colors,
         k: KeyboardLook,
         hint: String = "Search GIFs",
+        caret: Boolean = true,
+        clearAt: Float = 16f,
     ) {
         val d = density
         box.set(FIELD_SIDE_DP * d, y + FIELD_TOP_DP * d, width - FIELD_SIDE_DP * d, y + (FIELD_TOP_DP + FIELD_H_DP) * d)
@@ -477,14 +503,16 @@ class GifPanel(
             canvas.drawText(query, tx, ty, text)
         }
         if (query != null) {
-            if (SystemClock.uptimeMillis() / 500 % 2 == 0L) {
-                val cx = tx + (if (query.isEmpty()) 0f else text.measureText(query) + 1.5f * d)
-                paint.color = c.lit
-                canvas.drawRect(cx, cy - 9 * d, cx + 2 * d, cy + 9 * d, paint)
+            if (caret) {
+                if (SystemClock.uptimeMillis() / 500 % 2 == 0L) {
+                    val cx = tx + (if (query.isEmpty()) 0f else text.measureText(query) + 1.5f * d)
+                    paint.color = c.lit
+                    canvas.drawRect(cx, cy - 9 * d, cx + 2 * d, cy + 9 * d, paint)
+                }
+                view.postInvalidateDelayed(500)
             }
-            view.postInvalidateDelayed(500)
             // ✕: clears the words, or with none, ends the search.
-            val xx = box.right - 16 * d
+            val xx = box.right - clearAt * d
             stroke.color = c.muted
             canvas.drawLine(xx - 5 * d, cy - 5 * d, xx + 5 * d, cy + 5 * d, stroke)
             canvas.drawLine(xx - 5 * d, cy + 5 * d, xx + 5 * d, cy - 5 * d, stroke)
@@ -563,6 +591,8 @@ class GifPanel(
                 draggingTag = -1
                 downX = x
                 downY = y
+                handleDownRawY = e.rawY
+                handleMoved = false
                 if (handleDrag) return true
                 val held = chipBoxes.firstOrNull { it.kind == ChipKind.TAG && it.rect.contains(x, y) }
                 if (held != null) {
@@ -580,8 +610,14 @@ class GifPanel(
             }
             MotionEvent.ACTION_MOVE -> {
                 if (handleDrag) {
-                    val dy = y - downY
-                    if (dy < -HANDLE_PULL_DP * d) expand(true) else if (dy > HANDLE_PULL_DP * d) expand(false)
+                    val dy = e.rawY - handleDownRawY
+                    if (!handleMoved && dy < -HANDLE_PULL_DP * d) {
+                        handleMoved = true
+                        expand(true)
+                    } else if (!handleMoved && dy > HANDLE_PULL_DP * d) {
+                        handleMoved = true
+                        expand(false)
+                    }
                     return true
                 }
                 if (draggingTag >= 0) {
@@ -602,7 +638,8 @@ class GifPanel(
                 cancelLongPress()
                 if (handleDrag) {
                     handleDrag = false
-                    if (e.actionMasked == MotionEvent.ACTION_UP && abs(y - downY) < SLOP_DP * d) expand(!expanded)
+                    if (e.actionMasked == MotionEvent.ACTION_UP && !handleMoved && abs(e.rawY - handleDownRawY) < SLOP_DP * d) expand(!expanded)
+                    handleMoved = false
                     return true
                 }
                 if (draggingTag >= 0) {
@@ -620,8 +657,32 @@ class GifPanel(
         longPress = null
     }
 
-    /** A touch on the band while searching. */
-    fun touchBand(e: MotionEvent): Boolean = touchIn(e, band, bandTop + FIELD_DP * density, bandTop + BAND_DP * density, bandCells, inBand = true)
+    private var bandHandle = false
+
+    /** A touch on the band while searching: its handle pulled up ends the search full screen; the rest as the panel's. */
+    fun touchBand(e: MotionEvent): Boolean {
+        val d = density
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                bandHandle = !host.addingTag && e.y < bandTop + FIELD_TOP_DP * d && abs(e.x - width / 2) < 60 * d
+                handleDownRawY = e.rawY
+                if (bandHandle) return true
+            }
+            MotionEvent.ACTION_MOVE -> if (bandHandle) {
+                if (e.rawY - handleDownRawY < -HANDLE_PULL_DP * d) {
+                    bandHandle = false
+                    host.endGifSearch()
+                    expand(true)
+                }
+                return true
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> if (bandHandle) {
+                bandHandle = false
+                return true
+            }
+        }
+        return touchIn(e, band, bandTop + FIELD_DP * d, bandTop + BAND_DP * d, bandCells, inBand = true)
+    }
 
     private fun touchIn(
         e: MotionEvent,
@@ -701,6 +762,9 @@ class GifPanel(
                     store.tagsOpen = !store.tagsOpen
                     if (!store.tagsOpen) editing = false
                     view.invalidate()
+                } else if (shownQuery.isNotEmpty() && x > fieldRight - (CLEAR_FROM_RIGHT_DP + 22) * d) {
+                    // ✕ beside the arrow: the search's words go, and Trending comes back.
+                    pick(GifStore.FIXED[0])
                 } else {
                     host.startGifSearch(forTag = false)
                 }
@@ -752,6 +816,7 @@ class GifPanel(
 
     private fun pick(name: String) {
         chip = name
+        shownQuery = ""
         feed.open(
             when (name) {
                 "Trending" -> Req.Trending
@@ -865,6 +930,9 @@ class GifPanel(
     companion object {
         /** The handle's strip at the panel's top, and how far it is pulled before the panel grows or shrinks. */
         const val HANDLE_DP = 16f
+
+        /** Where the panel field's ✕ sits, dp in from its right end, clear of the tags' arrow. */
+        const val CLEAR_FROM_RIGHT_DP = 52f
         const val HANDLE_PULL_DP = 24f
         const val LONG_PRESS_MS = 450L
         /** The search pill's row, its pill and margins: the emoji search's (EmojiPicker's SEARCH_DP and FIELD_*). */

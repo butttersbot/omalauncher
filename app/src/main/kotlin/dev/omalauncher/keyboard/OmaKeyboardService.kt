@@ -182,10 +182,12 @@ class OmaKeyboardService : InputMethodService(), KeyboardView.Host, EmojiPicker.
         gifSearching = true
         showingGifs = false
         gifWords.clear()
+        // Searching again goes on from the words the panel shows (Boss, 2026-10-22: they stay after Done).
+        if (!forTag) gifPanel?.shownQuery?.let { gifWords.append(it) }
         layer = Layer.ABC
         shift = false
         capsLock = false
-        gifPanel?.queryChanged("")
+        gifPanel?.queryChanged(gifWords.toString())
         rebuild()
     }
 
