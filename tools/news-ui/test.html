@@ -1,0 +1,75 @@
+<!doctype html><meta charset="utf-8"><title>Soma News regression checks</title>
+<style>body{margin:0;background:#fbfaf6;font:14px sans-serif}#results{padding:8px}iframe{border:0;display:block;width:475px;height:751px}#book{display:flex;width:932px;height:704px}#flow{width:430px;margin:20px}</style>
+<div id="results">Running…</div><iframe id="reader" src="/reader"></iframe><div id="book"></div><div id="flow"></div>
+<script src="/assets/news/news-content.js"></script><script src="/assets/news/vendor/hyphen/hyphen.js"></script><script src="/assets/news/vendor/hyphen/en-us.js"></script>
+<script type="module">
+import { flow, mount, paginate } from '/assets/news/news-book.js';
+const passed = [], failures = [];
+const assert = (ok, name) => { (ok ? passed : failures).push(name); };
+const wait = ms => new Promise(r => setTimeout(r, ms));
+const until = async fn => { for (let i=0;i<100;i++) { if(fn()) return; await wait(30); } throw Error('Timed out waiting for reader'); };
+const prose = 'Every word matters, including extraordinary hyphenated fragments, punctuation & angle brackets <like these>. Photos leave room for complete lines of text, and changing the type size keeps the same passage available to read. ';
+try {
+  let root = NewsContent.article(`<div><p>Follow</p><div id="article-body"><p>Actual article sentence ${prose}</p><h2>Section heading</h2><blockquote><p>Quoted once.</p></blockquote><p>Sincerely,<br>The team</p><aside>Junk</aside></div><p>Author biography</p></div>`);
+  const blocks = NewsContent.blocks(root);
+  assert(root.textContent.includes('Actual article') && !root.textContent.includes('Follow') && !root.textContent.includes('biography') && !root.textContent.includes('Junk'), 'publisher body excludes furniture');
+  assert(blocks.some(b=>b.heading==='Section heading') && blocks.filter(b=>b.quote==='Quoted once.').length===1, 'headings and quotes survive without duplicates');
+  assert(blocks.some(b=>b.p==='Sincerely,') && blocks.some(b=>b.p==='The team'), 'BR keeps a text boundary');
+  root = NewsContent.article('<article><header>Caption</header><p>Body paragraph</p><footer>Author</footer></article><aside>Related story</aside>');
+  assert(root.textContent==='Body paragraph', 'article fallback excludes header footer and related stories');
+  root = NewsContent.article('<p>Keep this</p><img src="https://example.test/photo-800x450.jpg"><script>bad()</scr'+'ipt>', { image:'https://example.test/photo-1200x675.jpg?w=1200' });
+  assert(!root.querySelector('img,script') && root.textContent==='Keep this', 'hero size variants and executable content removed');
+
+  const article = { title:'A reader that keeps every word', kicker:'Soma News', dek:'Regression checks for complete text and pictures.', by:'Test source', hero:'/photo.svg', next:{ title:'A long next-story headline that needs its own room rather than sitting on the final lines of the article', img:'/photo.svg' }, blocks:[{p:prose.repeat(3)},{heading:'Photographs in the story'},{img:'/photo.svg',side:'right',ratio:.8,cap:''},{p:prose.repeat(5)},{quote:prose.repeat(14)},{p:prose.repeat(3)}] };
+  const body={size:16,lh:25};
+  const pages=paginate(article,450,500,body);
+  const lines=pages.flatMap(p=>p.items.filter(i=>i.kind==='line'));
+  assert(lines.some(i=>i.last && i.w<300), 'photo excludes space from adjacent text lines');
+  const normal = s=>s.replace(/[\s\u00ad-]/g,'');
+  const displayed=pages.flatMap(p=>p.items.filter(i=>['line','drop'].includes(i.kind)).map(i=>i.text)).join('');
+  const source=article.blocks.filter(b=>b.p||b.quote).map(b=>b.p||b.quote).join('');
+  assert(normal(displayed)===normal(source), 'every body and quote character survives pagination');
+  const endPage=pages.find(p=>p.items.some(i=>i.kind==='end'));
+  const end=endPage.items.find(i=>i.kind==='end');
+  assert(endPage.items.filter(i=>i.kind==='line').every(i=>i.y+body.lh<=end.y), 'next-story card follows the final body line');
+  assert(pages.flatMap(p=>p.items).filter(i=>i.kind==='line').every(i=>i.y+body.lh<=475), 'long quotes split across pages instead of clipping');
+  flow(document.querySelector('#flow'),article,{size:17.5,lh:28});
+  assert([...document.querySelectorAll('#flow .pg-line')].every(n=>getComputedStyle(n.firstElementChild).whiteSpace==='pre' && n.firstElementChild.getBoundingClientRect().width<=n.clientWidth+1), 'prebroken scrolling lines neither wrap nor overflow');
+  assert(document.querySelector('#flow').textContent.includes('<like these>'), 'article markup characters render as text');
+
+  mount(document.querySelector('#book'),article);
+  await wait(50);
+  const book=document.querySelector('#book');
+  assert(book.querySelectorAll('[aria-label="Back to news stream"]').length===1 && book.querySelector('[aria-label="Small text"]') && book.querySelector('[aria-label="Large text"]'), 'unique accessible back and size labels');
+  const stage=book.querySelector('.bk-stage').getBoundingClientRect();
+  assert(book.querySelector('.bk-top').getBoundingClientRect().bottom<=stage.top && book.querySelector('.bk-bottom').getBoundingClientRect().top>=stage.bottom, 'book chrome stays outside the pages');
+  book.querySelector('.next').click(); await wait(650);
+  assert(book.querySelector('.pages').textContent.startsWith('3–4'), 'forward page turn');
+  // The old spread's first line remains somewhere on the resized facing pages.
+  const anchor=book.querySelector('.bk-left .pg-line')?.textContent.replace(/-$/,'').trim().split(' ').slice(0,3).join(' ');
+  book.querySelector('[data-size="0"]').click(); await wait(30);
+  assert(book.querySelector('[data-size="0"]').getAttribute('aria-pressed')==='true', 'small size selected');
+  assert(!anchor || book.querySelector('.bk-stage').textContent.replace(/-\s*/g,'').replace(/\s+/g,' ').includes(anchor), 'Aa preserves the passage rather than a page fraction');
+  book.querySelector('[data-size="2"]').click(); await wait(30);
+  assert(book.querySelector('[data-size="2"]').getAttribute('aria-pressed')==='true', 'large size selected');
+  book.querySelector('[data-size="1"]').click(); await wait(30);
+  assert(book.querySelector('[data-size="1"]').getAttribute('aria-pressed')==='true', 'medium size selected');
+  book.querySelector('.prev').click(); await wait(650);
+  assert(book.querySelector('.pages').textContent.startsWith('1–2'), 'backward page turn');
+
+  const frame=document.querySelector('#reader');
+  await until(()=>frame.contentWindow.document.querySelector('#scroll'));
+  const w=frame.contentWindow;
+  w.document.querySelector('#scroll').scrollTop=550;
+  w.openStory(0);
+  await until(()=>w.document.querySelector('.fetching'));
+  assert(!!w.document.querySelector('.fetching'), 'uncached story shows loading state');
+  await until(()=>!w.document.querySelector('.fetching') && w.document.querySelector('.pg-heading'));
+  assert(!w.document.querySelector('#flow').textContent.includes('Author biography') && w.document.querySelector('#flow').textContent.includes('editorial team'), 'full text replaces excerpt with cleaned article');
+  w.somaBack();
+  assert(Math.abs(w.document.querySelector('#scroll').scrollTop-550)<2, 'back restores stream scroll position');
+  frame.style.display='none'; document.querySelector('#flow').style.display='none';
+} catch(e) { failures.push(e.stack || String(e)); }
+document.querySelector('#results').textContent=`${passed.length} passed; ${failures.length} failed. ${failures.join('; ')}`;
+await fetch('/results',{method:'POST',body:JSON.stringify({passed,failures})});
+</script>

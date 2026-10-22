@@ -35,6 +35,11 @@ if [ ! -f local.properties ] && [ -z "${ANDROID_HOME:-}" ]; then
   done
 fi
 
+# Exercise the actual browser layout too; JVM tests cannot detect clipped WebView lines.
+node_bin=$(command -v node || true)
+[ -n "$node_bin" ] || node_bin=/opt/homebrew/bin/node
+"$node_bin" tools/news-ui/check.mjs
+
 rm -rf app/build/test-results/testDebugUnitTest
 SOMA_VERSION_CODE=$code ./gradlew -I "$work/tools/fold-development/mac.init.gradle" --console=plain \
   :app:testDebugUnitTest :app:assembleDebug
@@ -58,5 +63,8 @@ printf '{"commit":"%s","versionCode":%s,"sha256":"%s","tests":%s,"failures":%s,"
 ts=$(command -v tailscale || true)
 [ -n "$ts" ] || ts=/Applications/Tailscale.app/Contents/MacOS/Tailscale
 "$ts" file cp "$out/$name.apk" "$out/$name.json" "$phone:"
+cp app/build/news-ui/book.png "$out/news-ui-$short-$code.png"
+cp app/build/news-ui/results.json "$out/news-ui-$short-$code.json"
+"$ts" file cp "$out/news-ui-$short-$code.png" "$out/news-ui-$short-$code.json" "$phone:"
 echo "Built and tested $short (version $code: $tests tests, 0 failed, $skipped skipped); sent $name.apk to $phone."
 echo "On the phone: oma-macbuild --take, then oma-install."

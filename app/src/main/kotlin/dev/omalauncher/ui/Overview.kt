@@ -696,14 +696,20 @@ private fun PageTile(
             else ->
                 Modifier.pageOutline((if (current) 4.5f * u else 2f * u).dp, if (current) Pack.accent else ink, Pack.paper, (6 * u).dp, lifted = (10 * u).dp)
         }
-    Column(modifier.padding(if (owns) PaddingValues(horizontal = (18 * u).dp, vertical = (8 * u).dp) else PaddingValues(6.dp)), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(
+        modifier
+            .padding(if (owns) PaddingValues(horizontal = (18 * u).dp, vertical = (8 * u).dp) else PaddingValues(6.dp))
+            // The name belongs to the same accessible target as the preview. Previously
+            // tapping its separate label fell through to the overview's dismiss gesture.
+            .then(if (plus && owns) Modifier.semantics { contentDescription = "new page" } else Modifier)
+            .combinedClickable(onClick = onTap, onLongClick = onHold),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
         Box(
             Modifier
                 .fillMaxWidth()
                 .aspectRatio(PAGE_SHAPE)
-                .then(frame)
-                .then(if (plus && owns) Modifier.semantics { contentDescription = "new page" } else Modifier)
-                .combinedClickable(onClick = onTap, onLongClick = onHold),
+                .then(frame),
             contentAlignment = Alignment.Center,
         ) {
             when {

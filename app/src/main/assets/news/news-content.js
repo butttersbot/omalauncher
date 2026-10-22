@@ -1,0 +1,90 @@
+// Shared by the scrolling reader and the book, including articles cached by older versions.
+window.NewsContent = (() => {
+  const text = n => (n.textContent || '').replace(/\s+/g, ' ').trim();
+  const imageKey = u => {
+    try { const a = new URL(u); return a.origin + a.pathname.replace(/[-_]\d+x\d+(?=\.\w+$)/, ''); }
+    catch { return ''; }
+  };
+  function article(html, story = {}) {
+    const doc = new DOMParser().parseFromString(html || '', 'text/html');
+    // Prefer publisher-declared body boundaries to a whole Readability wrapper.
+    const body = doc.querySelector('[itemprop="articleBody"], #article-body, #single-article-content') || doc.querySelector('article') || doc.body;
+    const root = document.createElement('div'); root.innerHTML = body.innerHTML;
+    root.querySelectorAll('script,style,iframe,form,noscript,svg,video,audio,object,embed,button,input,select,textarea,link,meta,nav,header,footer,aside,instaread-player,[hidden],[aria-hidden="true"],[data-nosnippet],[role="navigation"],[role="complementary"],.author-bio,.author-box,.article-author,.related-posts,.related-articles,.social-share,.newsletter,.advertisement').forEach(n => n.remove());
+    root.querySelectorAll('a').forEach(n => {
+      const href = n.getAttribute('href') || '';
+      if (/^skip to (?:main )?content$/i.test(text(n))) (n.closest('p') || n).remove();
+      else if (/\/author\//i.test(href)) {
+        // Old cached extracts retain author links but may have lost their class names.
+        const section = n.closest('footer,aside,[data-nosnippet],.author-bio,.author-box');
+        if (section) section.remove();
+        else if (n.querySelector('img')) {
+          let box = n.parentElement;
+          while (box && box !== root && text(box).length < 1200) {
+            if (box.firstElementChild?.contains(n) && /\bis (?:an?|the)\b.*\b(?:reporter|editor|writer|journalist)\b/i.test(text(box))) { box.remove(); break; }
+            box = box.parentElement;
+          }
+        }
+      }
+      else if (/^\d+\s+comments$/i.test(text(n)) && /#comments$/.test(href)) (n.closest('p') || n).remove();
+    });
+    root.querySelectorAll('img').forEach(n => {
+      let src = n.getAttribute('data-src') || n.getAttribute('data-lazy-src') || n.getAttribute('data-original') || n.getAttribute('src') || '';
+      if (!src.startsWith('https://')) {
+        const set = (n.getAttribute('srcset') || n.getAttribute('data-srcset') || '').split(',').map(s => s.trim().split(/\s+/)).filter(s => s[0].startsWith('https://'));
+        src = set.sort((a, b) => (parseInt(b[1]) || 0) - (parseInt(a[1]) || 0))[0]?.[0] || '';
+      }
+      const w = Number(n.getAttribute('width')), h = Number(n.getAttribute('height'));
+      const duplicate = story.image && imageKey(src) === imageKey(story.image);
+      if (!src.startsWith('https://') || (w > 0 && w <= 2) || (h > 0 && h <= 2) || duplicate) {
+        const figure = n.closest('figure'); (figure || n).remove(); return;
+      }
+      n.setAttribute('src', src);
+    });
+    root.querySelectorAll('h1,h2').forEach(n => { if (text(n) === (story.title || '').trim()) n.remove(); });
+    // A BR is a boundary even after the layout engine turns HTML into text.
+    root.querySelectorAll('br').forEach(n => n.replaceWith('\n'));
+    root.querySelectorAll('*').forEach(n => {
+      for (const a of [...n.attributes]) {
+        if (!((n.tagName === 'IMG' && ['src', 'alt'].includes(a.name)) || (n.tagName === 'A' && a.name === 'href'))) n.removeAttribute(a.name);
+      }
+      if (n.tagName === 'A' && !/^https?:\/\//.test(n.getAttribute('href') || '')) n.removeAttribute('href');
+    });
+    return root;
+  }
+  function blocks(root) {
+    const out = [];
+    const addText = (kind, value) => {
+      for (const part of value.split(/\n+/)) {
+        const t = part.replace(/\s+/g, ' ').trim();
+        if (t) out.push({ [kind]: t });
+      }
+    };
+    function walk(n) {
+      if (n.nodeType === Node.TEXT_NODE) { addText('p', n.textContent); return; }
+      if (n.nodeType !== Node.ELEMENT_NODE) return;
+      if (n.tagName === 'IMG') { out.push({ img: n.getAttribute('src'), cap: '' }); return; }
+      if (n.tagName === 'FIGCAPTION') return;
+      if (n.tagName === 'BLOCKQUOTE') {
+        const paragraphs = [...n.querySelectorAll('p')];
+        addText('quote', paragraphs.length ? paragraphs.map(p => p.textContent).join('\n') : n.textContent); return;
+      }
+      if (/^H[1-6]$/.test(n.tagName)) { addText('heading', n.textContent); return; }
+      if (['P', 'LI', 'PRE'].includes(n.tagName)) {
+        // Don't count the parent's entire text and then count its children again.
+        let run = '';
+        const flush = () => { addText('p', (n.tagName === 'LI' ? '• ' : '') + run); run = ''; };
+        for (const child of n.childNodes) {
+          if ((child.nodeType === Node.ELEMENT_NODE && child.querySelector('img')) || child.nodeName === 'IMG') {
+            flush(); walk(child);
+          } else run += child.textContent || '';
+        }
+        flush(); return;
+      }
+      for (const child of n.childNodes) walk(child);
+    }
+    for (const n of root.childNodes) walk(n);
+    return out;
+  }
+  return { article, blocks };
+})();

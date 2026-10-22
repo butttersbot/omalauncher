@@ -24,6 +24,7 @@ const SIZES = [
 const MARGIN = { spine: 24, outer: 34, top: 44, bottom: 40 }
 const GAP = 14
 const WPM = 230
+const esc = value => String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
 const font = (size, weight = 400, style = 'normal') => `${style} ${weight} ${size}px ${SERIF}`
 
@@ -60,7 +61,7 @@ function dropCap(letter, size, lh) {
 }
 
 /** Lays [article] out on pages [w] × [h] in type [body]; returns each page's pieces, positioned. */
-function paginate(article, w, h, body, continuous = false) {
+export function paginate(article, w, h, body, continuous = false) {
   const LH = body.lh
   const pages = []
   let page, y, floats, col, left0
@@ -134,7 +135,8 @@ function paginate(article, w, h, body, continuous = false) {
     return layoutWithLines(prepareWithSegments(text, font(12, 400, 'italic')), width, 16).lines.map(l => l.text)
   }
 
-  for (const b of article.blocks) {
+  for (const [blockIndex, original] of article.blocks.entries()) {
+    const b = { ...original };
     // A side photo with too little room beside it is set across the column instead.
     if (b.img && !b.full && col - Math.round(col * sideFrac) - GAP < besideMin) b.full = true
     if (b.img && b.full) {
@@ -165,20 +167,22 @@ function paginate(article, w, h, body, continuous = false) {
       page.items.push({ kind: 'photo', src: b.img, x: left0 + x0, y: at + 3, w: fw, h: ih - 6, cap })
       continue
     }
-    if (b.quote) {
-      const q = layoutWithLines(prepareWithSegments(b.quote, font(Math.round(body.size * 1.3), 400, 'italic')), col - 24, Math.round(LH * 1.15))
-      const total = grid(q.lines.length * Math.round(LH * 1.15) + 22) + LH
-      for (const f of floats) if (f.y1 > y) y = grid(f.y1 - MARGIN.top) + MARGIN.top
-      if (y + total > bottom()) newPage()
-      page.items.push({ kind: 'quote', lines: q.lines.map(l => l.text), x: left0, y: y + LH / 2, w: col, size: Math.round(body.size * 1.3), lh: Math.round(LH * 1.15) })
-      y += total
+    if (b.heading) {
+      const heading = layoutWithLines(prepareWithSegments(b.heading, font(body.size * 1.2, 700)), col, LH)
+      if (y + (heading.lines.length + 2) * LH > bottom()) newPage()
+      for (const line of heading.lines) {
+        page.items.push({ kind: 'heading', text: line.text, x: left0, y, w: col, size: body.size * 1.2, lh: LH })
+        y += LH
+      }
+      y += LH
       continue
     }
+    if (b.quote) b.p = b.quote
     // A paragraph: never its first line alone at the foot of a page.
     if (y + 2 * LH > bottom()) newPage()
     let text = hyphenate(b.p)
-    page.words += b.p.split(/\s+/).length
-    if (first) {
+
+    if (!b.quote && first && b.p.length >= 80 && /^\p{L}/u.test(text)) {
       // Measured, not guessed (Boss, 2026-10-21: "the large leading letter, the spacing is weird"): its top on the
       // first line's capitals, its foot on the third line's baseline, the text one gap from its own right edge.
       const d = dropCap(text[0], body.size, LH)
@@ -187,38 +191,45 @@ function paginate(article, w, h, body, continuous = false) {
       text = text.slice(1)
       first = false
     }
-    const prepared = prepareWithSegments(text, font(body.size))
+    const prepared = prepareWithSegments(text, font(body.size, 400, b.quote ? 'italic' : 'normal'))
     let cursor = { segmentIndex: 0, graphemeIndex: 0 }
     for (;;) {
       if (y + LH > bottom()) newPage()
-      const [l, r] = measure(y)
+      let [l, r] = measure(y)
+      if (b.quote) l += 14
       if (r - l < 70) {
         y += LH
         continue
       }
-      const range = layoutNextLineRange(prepared, r - l, cursor)
+      const range = layoutNextLineRange(prepared, r - l - 1, cursor)
       if (range === null) break
       const line = materializeLineRange(prepared, range)
       const last = layoutNextLineRange(prepared, 1e6, range.end) === null
       // Beside a photo the line is short: set ragged, as justifying it would open holes between its words.
-      page.items.push({ kind: 'line', text: shown(line.text), x: left0 + l, y, w: r - l, last: last || r - l < col * 0.7 })
+      page.items.push({ kind: 'line', quote: !!b.quote, anchor: { block: blockIndex, ...cursor }, text: shown(line.text), x: left0 + l, y, w: r - l, last: last || r - l < col * 0.7 })
+      page.words += line.text.trim().split(/\s+/).length
       cursor = range.end
       y += LH
     }
+    y += LH // A paragraph boundary remains visible after HTML is laid out into lines.
   }
   if (continuous) {
     for (const f of floats) if (f.y1 > y) y = f.y1
     page.height = y
     return pages
   }
-  page.items.push({ kind: 'end', x: left0, y: Math.min(y + 6, bottom() - 76), w: col, next: article.next })
+  for (const f of floats) y = Math.max(y, f.y1)
+  const nextLines = article.next ? layoutWithLines(prepareWithSegments(article.next.title, font(15, 700)), Math.max(70, col - 76), 19).lines.length : 0
+  const endHeight = article.next ? 58 + Math.max(64, nextLines * 19 + 20) : 20
+  if (y + 6 + endHeight > bottom()) newPage()
+  page.items.push({ kind: 'end', x: left0, y: y + 6, w: col, next: article.next })
   return pages
   }
 }
 
 function pageHtml(p, i, total, article, body) {
   const isLeft = i % 2 === 0
-  const head = p.opener ? '' : `<div class="pg-head mono" style="${isLeft ? `left:${MARGIN.outer}px;right:${MARGIN.spine}px` : `left:${MARGIN.spine}px;right:${MARGIN.outer}px;text-align:right`}">${isLeft ? 'SOMA' : article.kicker}</div>`
+  const head = p.opener ? '' : `<div class="pg-head mono" style="${isLeft ? `left:${MARGIN.outer}px;right:${MARGIN.spine}px` : `left:${MARGIN.spine}px;right:${MARGIN.outer}px;text-align:right`}">${isLeft ? 'SOMA' : esc(article.kicker)}</div>`
   const folio = p.opener ? '' : `<div class="pg-folio mono" style="${isLeft ? `left:${MARGIN.outer}px` : `right:${MARGIN.outer}px`}">${i + 1}</div>`
   const parts = p.items.map(it => itemHtml(it, body)).join('')
   // The page edges: thicker on the side still to read.
@@ -234,26 +245,28 @@ function itemHtml(it, body) {
         case 'plain':
           return `<div class="pg-plain" style="${at};width:${it.w}px;height:${it.h}px"></div>`
         case 'hero':
-          return `<img class="pg-hero" src="${it.src}" style="${at};width:${it.w}px;height:${it.h}px"><div class="pg-shade"></div>`
+          return `<img class="pg-hero" src="${esc(it.src)}" style="${at};width:${it.w}px;height:${it.h}px"><div class="pg-shade"></div>`
         case 'kicker':
-          return `<div class="pg-kicker" style="${at}">${it.text}</div>`
+          return `<div class="pg-kicker" style="${at}">${esc(it.text)}</div>`
         case 'title':
-          return `<div class="pg-title" style="${at};width:${it.w}px">${it.text}</div>`
+          return `<div class="pg-title" style="${at};width:${it.w}px">${esc(it.text)}</div>`
         case 'dek':
-          return `<div class="pg-dek" style="${at};width:${it.w}px">${it.text}</div>`
+          return `<div class="pg-dek" style="${at};width:${it.w}px">${esc(it.text)}</div>`
         case 'byline':
-          return `<div class="pg-by mono" style="${at}">${it.text}</div>`
+          return `<div class="pg-by mono" style="${at}">${esc(it.text)}</div>`
         case 'drop':
-          return `<div class="pg-drop" style="${at};font-size:${it.size}px">${it.text}</div>`
+          return `<div class="pg-drop" style="${at};font-size:${it.size}px">${esc(it.text)}</div>`
+        case 'heading':
+          return `<div class="pg-heading" style="${at};width:${it.w}px;font-size:${it.size}px;line-height:${it.lh}px">${esc(it.text)}</div>`
         case 'line':
-          return `<div class="pg-line ${it.last ? '' : 'j'}" style="${at};width:${it.w}px;font-size:${body.size}px;line-height:${body.lh}px;height:${body.lh}px">${it.text}</div>`
+          return `<div class="pg-line ${it.last ? '' : 'j'} ${it.quote ? 'quote' : ''}" style="${at};width:${it.w}px;font-size:${body.size}px;line-height:${body.lh}px;height:${body.lh}px"><span>${esc(it.text)}</span></div>`
         case 'photo':
-          return `<figure class="pg-photo" style="${at};width:${it.w}px"><img src="${it.src}" style="height:${it.h}px">${it.cap.map(c => `<div>${c}</div>`).join('')}</figure>`
+          return `<figure class="pg-photo" style="${at};width:${it.w}px"><img src="${esc(it.src)}" style="height:${it.h}px">${it.cap.map(c => `<div>${esc(c)}</div>`).join('')}</figure>`
         case 'quote':
-          return `<div class="pg-quote" style="${at};width:${it.w}px;font-size:${it.size}px;line-height:${it.lh}px">${it.lines.map(l => `<div>${l}</div>`).join('')}</div>`
+          return `<div class="pg-quote" style="${at};width:${it.w}px;font-size:${it.size}px;line-height:${it.lh}px">${it.lines.map(l => `<div>${esc(l)}</div>`).join('')}</div>`
         case 'end':
           if (!it.next) return `<div class="pg-end" style="${at};width:${it.w}px"><span class="pg-mark">■</span></div>`
-          return `<div class="pg-end" style="${at};width:${it.w}px"><span class="pg-mark">■</span><div class="pg-next" onclick="window.somaNext && window.somaNext()"><span class="mono">Next story</span><b>${it.next.title}</b><img src="${it.next.img}"></div></div>`
+          return `<div class="pg-end" style="${at};width:${it.w}px"><span class="pg-mark">■</span><div class="pg-next" role="button" tabindex="0" aria-label="Next story" onclick="window.somaNext && window.somaNext()"><span class="mono">Next story</span><b>${esc(it.next.title)}</b><img src="${esc(it.next.img)}"></div></div>`
       }
       return ''
 }
@@ -275,14 +288,30 @@ export function flow(el, article, body) {
     width = w
     const [p] = paginate(article, w, 0, body, true)
     el.innerHTML = `<div class="pg flow" style="height:${p.height}px">${p.items.map(it => itemHtml(it, body)).join('')}</div>`
+    fitLines(el)
   }
   lay()
   new ResizeObserver(lay).observe(el)
 }
 
+// Pretext already broke the lines. A second browser wrap used to hide the last
+// word in a one-line-high box. Measure the actual DOM glyphs for justification,
+// and keep a small font/rounding mismatch within the line's available width.
+function fitLines(el) {
+  el.querySelectorAll('.pg-line').forEach(line => {
+    const span = line.firstElementChild
+    if (!span) return
+    const width = span.getBoundingClientRect().width
+    const available = line.clientWidth
+    const gaps = (span.textContent.match(/ /g) || []).length
+    if (width > available && width > 0) span.style.transform = `scaleX(${available / width})`
+    else if (line.classList.contains('j') && gaps) span.style.wordSpacing = `${(available - width) / gaps}px`
+  })
+}
+
 const CSS = `
 .bk { position: relative; flex: 1; display: flex; flex-direction: column; background: #2a2926; }
-.bk-stage { position: relative; flex: 1; margin: 12px 16px 16px; perspective: 2400px; touch-action: none; user-select: none; -webkit-user-select: none; }
+.bk-stage { position: relative; order: 1; min-height: 0; flex: 1; margin: 12px 16px 16px; perspective: 2400px; touch-action: none; user-select: none; -webkit-user-select: none; }
 .bk-left, .bk-right { position: absolute; top: 0; bottom: 0; width: 50%; overflow: hidden; background: #fbf9f3; }
 .bk-left { left: 0; border-radius: 3px 0 0 3px; }
 .bk-right { right: 0; border-radius: 0 3px 3px 0; }
@@ -296,14 +325,15 @@ const CSS = `
 .bk-face { position: absolute; inset: 0; backface-visibility: hidden; overflow: hidden; background: #fbf9f3; }
 .bk-face.b { transform: rotateY(180deg); }
 .bk-face .shade { position: absolute; inset: 0; pointer-events: none; z-index: 8; }
-.bk-chrome { position: absolute; left: 0; right: 0; z-index: 20; transition: opacity .2s, transform .2s; }
+.bk-chrome { position: relative; flex: none; z-index: 20; transition: opacity .2s, transform .2s; }
 .bk-chrome.off { opacity: 0; pointer-events: none; }
-.bk-top { top: 0; display: flex; align-items: center; gap: 12px; padding: 10px 18px; background: rgba(251,249,243,.96); border-bottom: 1px solid #d9d6cf; }
-.bk-top .t { flex: 1; font: italic 14px ${SERIF}; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bk-top { order: 0; display: flex; align-items: center; gap: 12px; padding: 10px 18px; background: rgba(251,249,243,.96); border-bottom: 1px solid #d9d6cf; }
+.bk-top .t { min-width: 0; flex: 1; font: italic 14px ${SERIF}; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bk-top button { font: 15px ${SERIF}; padding: 4px 8px; border: 1px solid #111; background: #fbf9f3; }
 .bk-top button.on { background: #111; color: #fbf9f3; }
-.bk-bottom { bottom: 0; padding: 10px 22px 12px; background: rgba(251,249,243,.96); border-top: 1px solid #d9d6cf; }
+.bk-bottom { order: 2; padding: 10px 22px 12px; background: rgba(251,249,243,.96); border-top: 1px solid #d9d6cf; }
 .bk-bottom input { width: 100%; accent-color: #d7262d; }
+.bk-bottom .row button { padding: 2px 10px; }
 .bk-bottom .row { display: flex; justify-content: space-between; margin-top: 4px; color: #74737a; }
 .pg { position: absolute; inset: 0; font-family: ${SERIF}; color: #1b1a17; }
 .pg > * { position: absolute; margin: 0; }
@@ -321,8 +351,10 @@ const CSS = `
 .pg-dek { font: italic 15px/21px ${SERIF}; white-space: nowrap; }
 .pg-by { font-size: 9.5px !important; }
 .pg-drop { font-family: "M Display", sans-serif; line-height: 1; color: #d7262d; }
-.pg-line { font-family: ${SERIF}; white-space: nowrap; hyphens: none; }
-.pg-line.j { text-align: justify; text-align-last: justify; white-space: normal; overflow: hidden; }
+.pg-line { font-family: ${SERIF}; white-space: pre; hyphens: none; }
+.pg-line > span { display: inline-block; white-space: pre; transform-origin: left center; }
+.pg-line.quote { font-style: italic; }
+.pg-heading { font-family: ${SERIF}; font-weight: 700; white-space: pre; }
 .pg-photo img { width: 100%; object-fit: cover; display: block; margin-bottom: 5px; }
 .pg-photo div { font: italic 12px/16px ${SERIF}; color: #6b685f; white-space: nowrap; }
 .pg-quote { border-top: 1.5px solid #1b1a17; border-bottom: 1.5px solid #1b1a17; padding: 8px 0 8px 24px; font-family: ${SERIF}; font-style: italic; color: #1b1a17; }
@@ -347,8 +379,8 @@ export function mount(el, article, onBack) {
   }
   el.className = 'bk'
   el.innerHTML = `<div class="bk-stage"><div class="bk-left"></div><div class="bk-right"></div></div>
-    <div class="bk-chrome bk-top off"><button class="back" onclick="window.somaBack && window.somaBack()">‹</button><span class="t">${article.title}</span><button data-size="0" style="font-size:12px">Aa</button><button data-size="1">Aa</button><button data-size="2" style="font-size:18px">Aa</button></div>
-    <div class="bk-chrome bk-bottom off"><input type="range" min="0" value="0"><div class="row mono"><span class="pages"></span><span class="left"></span></div></div>`
+    <div class="bk-chrome bk-top"><button aria-label="Back to news stream" class="back" onclick="window.somaBack && window.somaBack()">‹</button><span class="t">${esc(article.title)}</span><button aria-label="Small text" data-size="0" style="font-size:12px">Aa</button><button aria-label="Medium text" data-size="1">Aa</button><button aria-label="Large text" data-size="2" style="font-size:18px">Aa</button></div>
+    <div class="bk-chrome bk-bottom"><input aria-label="Story progress" type="range" min="0" value="0"><div class="row mono"><button class="prev" aria-label="Previous pages">‹</button><span class="pages" aria-live="polite"></span><span class="left"></span><button class="next" aria-label="Next pages">›</button></div></div>`
   const stage = el.querySelector('.bk-stage')
   const leftEl = el.querySelector('.bk-left')
   const rightEl = el.querySelector('.bk-right')
@@ -360,23 +392,36 @@ export function mount(el, article, onBack) {
   let leaf = null
   let busy = false
 
-  function lay(keepFraction) {
+  const compare = (a, b) => a.block - b.block || a.segmentIndex - b.segmentIndex || a.graphemeIndex - b.graphemeIndex
+  const position = () => pages?.slice(at * 2, at * 2 + 2).flatMap(p => p.items).find(i => i.anchor)?.anchor
+  function lay(anchor) {
     const pw = Math.floor(stage.clientWidth / 2)
     const ph = stage.clientHeight
     const body = SIZES[sizeAt]
     pages = paginate(article, pw, ph, body)
     html = pages.map((p, i) => pageHtml(p, i, pages.length, article, body))
     spreads = Math.ceil(pages.length / 2)
-    at = Math.min(spreads - 1, Math.round(keepFraction * (spreads - 1)))
+    let pageAt = 0
+    if (anchor) {
+      // Keep the spread containing the same paragraph/cursor, not the same page fraction.
+      for (let i = 0; i < pages.length; i++) {
+        const first = pages[i].items.find(item => item.anchor)?.anchor
+        if (first && compare(first, anchor) <= 0) pageAt = i
+      }
+    }
+    at = Math.floor(pageAt / 2)
     scrub.max = String(spreads - 1)
-    el.querySelectorAll('.bk-top button').forEach(b => b.classList.toggle('on', Number(b.dataset.size) === sizeAt))
+    el.querySelectorAll('[data-size]').forEach(b => { b.classList.toggle('on', Number(b.dataset.size) === sizeAt); b.setAttribute('aria-pressed', String(Number(b.dataset.size) === sizeAt)); })
     show()
   }
 
   function show() {
     leftEl.innerHTML = html[at * 2] || ''
     rightEl.innerHTML = html[at * 2 + 1] || ''
+    fitLines(leftEl); fitLines(rightEl)
     scrub.value = String(at)
+    el.querySelector('.prev').disabled = at === 0
+    el.querySelector('.next').disabled = at === spreads - 1
     const words = pages.slice(at * 2).reduce((n, p) => n + p.words, 0)
     el.querySelector('.pages').textContent = `${at * 2 + 1}–${Math.min(at * 2 + 2, pages.length)} of ${pages.length}`
     el.querySelector('.left').textContent = words ? `${Math.max(1, Math.round(words / WPM))} min left in the story` : 'The end'
@@ -396,6 +441,7 @@ export function mount(el, article, onBack) {
       leftEl.innerHTML = html[to * 2] || ''
     }
     stage.appendChild(l)
+    fitLines(l)
     return { el: l, dir, to }
   }
 
@@ -491,12 +537,20 @@ export function mount(el, article, onBack) {
     at = Number(scrub.value)
     show()
   })
-  el.querySelectorAll('.bk-top button').forEach(b =>
+  el.querySelector('.prev').addEventListener('click', () => turn(-1))
+  el.querySelector('.next').addEventListener('click', () => turn(1))
+  el.querySelectorAll('[data-size]').forEach(b =>
     b.addEventListener('click', () => {
-      const keep = spreads > 1 ? at / (spreads - 1) : 0
+      if (busy || leaf) return
+      const keep = position()
       sizeAt = Number(b.dataset.size)
       lay(keep)
     }),
   )
-  lay(0)
+  lay(null)
+  const observer = new ResizeObserver(() => {
+    if (!el.isConnected) { observer.disconnect(); return }
+    if (!busy && !leaf) lay(position())
+  })
+  observer.observe(stage)
 }
