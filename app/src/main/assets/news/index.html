@@ -273,9 +273,10 @@ window.somaPage = function (link, html) {
     try {
       const doc = new DOMParser().parseFromString(html, 'text/html');
       const base = doc.createElement('base'); base.href = link; doc.head.prepend(base);
-      const a = new Readability(doc, { charThreshold: 300, keepClasses: false }).parse();
+      const a = new Readability(doc, { charThreshold: 300, keepClasses: true }).parse();
       // Only when it is more of the story than the feed gave.
-      if (a && a.content && text(a.content).length > Math.max(400, s ? text(s.html).length * 1.15 : 0)) got = clean(a.content, s);
+      const content = a && a.content ? clean(a.content, s) : '';
+      if (text(content).length > Math.max(400, s ? text(s.html).length * 1.15 : 0)) got = content;
     } catch (e) { got = ''; }
   }
   S.full[link] = got ? { html: got } : { failed: true };

@@ -291,7 +291,11 @@ export function flow(el, article, body) {
     fitLines(el)
   }
   lay()
-  new ResizeObserver(lay).observe(el)
+  const observer = new ResizeObserver(() => {
+    if (!el.isConnected) { observer.disconnect(); return }
+    lay()
+  })
+  observer.observe(el)
 }
 
 // Pretext already broke the lines. A second browser wrap used to hide the last
