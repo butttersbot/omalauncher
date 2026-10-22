@@ -19,7 +19,7 @@ class CodexProtocolTest {
             "Reading additional input from stdin...",
         )
         assertEquals(
-            listOf(Said.Text("I’ll run the command now."), Said.Step("Bash: echo hi", "Bash", "echo hi"), Said.Text("OK")),
+            listOf(Said.Started("01a16278-c8dc-72e0-b256-4de2800ac817"), Said.Text("I’ll run the command now."), Said.Step("Bash: echo hi", "Bash", "echo hi"), Said.Text("OK")),
             lines.mapNotNull(CodexProtocol::read),
         )
     }
@@ -38,5 +38,24 @@ class CodexProtocolTest {
         assertEquals(Said.Failed("Not signed in"), CodexProtocol.read("""{"type":"turn.failed","error":{"message":"Not signed in"}}"""))
         assertNull(CodexProtocol.read("""{"type":"item.started","item":{"type":"reasoning","text":"…"}}"""))
         assertNull(CodexProtocol.read("not json"))
+    }
+
+    /** Boss, 2026-10-21: Phone B on Codex works as the Claude sessions do; his next words go on in the same conversation. */
+    @Test fun aBuildersCodexReadsItsWordsFromStdinAndGoesOnWithItsConversation() {
+        val dir = java.nio.file.Files.createTempDirectory("soma-codex-builder").toFile()
+        try {
+            java.io.File(dir, "codex").apply { writeText("#!/bin/sh\nprintf '%s\\n' \"\$@\"\ncat\n"); setExecutable(true) }
+            fun run(command: String): List<String> {
+                val process = ProcessBuilder("/bin/sh", "-c", command).apply { environment()["PATH"] = dir.path + ":" + environment()["PATH"] }.start()
+                process.outputStream.bufferedWriter().use { it.write("his words; \$(echo no) 'q'") }
+                return process.inputStream.bufferedReader().readLines().also { assertEquals(0, process.waitFor()) }
+            }
+            val id = "01a16278-c8dc-72e0-b256-4de2800ac817"
+            assertEquals(
+                listOf("exec", "resume", "--json", "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox", "--model", "gpt-6.1-sol", "--image", "/root/a b.png", "--", id, "-", "his words; \$(echo no) 'q'"),
+                run(dev.omalauncher.assist.codexBuilderCommand(listOf("/root/a b.png"), "gpt-6.1-sol", id, fullAccess = true)),
+            )
+            assertEquals(listOf("exec", "--json", "--skip-git-repo-check", "--", "-", "his words; \$(echo no) 'q'"), run(dev.omalauncher.assist.codexBuilderCommand(emptyList(), null, null, fullAccess = false)))
+        } finally { dir.deleteRecursively() }
     }
 }

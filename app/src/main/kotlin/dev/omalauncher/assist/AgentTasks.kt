@@ -375,9 +375,14 @@ class Builder(val id: BuilderId) {
         val seen = if (screen != null) "\n\nThe attached image is the screen I was looking at when I asked." else ""
         val imagePrompt = earlier + (if (agent.bin == "claude" && images.isNotEmpty()) prompt + "\n\nRead these attached images before answering:\n" + images.joinToString("\n") else prompt) + seen
         val fullPrompt = imagePrompt + "\n\n" + PhoneBridge.INSTRUCTIONS + "\n" + GROKBOT_RULE + "\nAndroid build tools, when installed, are in /opt/android-sdk. Run oma-build-check to check the toolchain. Run Gradle as `oma-gradle TASKS` (oma-build does): one build at a time and small, so Android does not kill the app for memory. Use the approval UI for blocked tools; never ask for blanket permission bypass.\n"
-        val resumed = thread.takeIf { agent.bin == "claude" && !errand }
+        val resumed = when {
+            errand -> null
+            agent.bin == "claude" -> thread?.takeUnless { it.startsWith(CodexProtocol.THREAD_PREFIX) }
+            agent.bin == "codex" -> thread?.takeIf { it.startsWith(CodexProtocol.THREAD_PREFIX) }?.removePrefix(CodexProtocol.THREAD_PREFIX)
+            else -> null
+        }
         // Decided as it starts, not as it was sent: work that waited may now run alone, or beside the other builder.
-        val worktree = builderWorktree(id).takeIf { builderWorktreeWanted(id, AgentTasks.builders.associate { it.id to it.working }, agent.bin == "claude") }
+        val worktree = builderWorktree(id).takeIf { builderWorktreeWanted(id, AgentTasks.builders.associate { it.id to it.working }, agent.bin == "claude" || agent.bin == "codex") }
         // Claude gets the screenshot inside the message, so its file goes now. Codex can only read a file, which lasts until its task ends.
         var shot: String? = null
         var handed: File? = null
@@ -389,6 +394,11 @@ class Builder(val id: BuilderId) {
             }
             // Which builder this is, for the tools that sign mail (oma msg, oma-macbuild): a reply comes back to it, not to A.
             "export OMA_BUILDER=${id.letter}\n" + (worktree?.let { it.script() + "\n" } ?: "") + claudeStreamCommand(resumed, if (errand) ERRAND_MODEL else null)
+        } else if (agent.bin == "codex") {
+            // As Claude's: its words go in once the worktree step has said where it works (OMA-READY ends that step).
+            handed = screen?.let { ScreenShots.handOver(it, runtime.proot.promptAttachments) }
+            "export OMA_BUILDER=${id.letter}\n" + (worktree?.let { it.script() + "\n" } ?: "") + "echo $CODEX_READY\n" +
+                codexBuilderCommand(images + listOfNotNull(handed?.let(runtime.proot::guestPath)), choice.model, resumed, fullAccess = id == BuilderId.B)
         } else {
             backgroundAgentCommand(agent.bin, fullPrompt, images, choice.model, codexFullAccess = id == BuilderId.B) // Validate before the screenshot is touched.
             handed = screen?.let { ScreenShots.handOver(it, runtime.proot.promptAttachments) }
@@ -489,13 +499,23 @@ class Builder(val id: BuilderId) {
                         answer = "The earlier thread is no longer available. Send your request again to start a new one."
                     } else if (stopping && session != null && !errand) thread = session // A stopped request can still be followed up.
                 } else if (agent.bin == "codex") {
-                    child.outputStream.close()
                     // Its events, as Claude's stream is read: steps as it goes, its words as the answer. Anything else it
                     // prints (a sign-in problem, a crash) is kept only to say why when no answer came.
                     var other = ""
+                    var words = fullPrompt + "\n" + CodexProtocol.NO_QUESTIONS + "\n"
+                    var sent = false
+                    var session: String? = null
                     child.inputStream.bufferedReader().forEachLine { line ->
                         heardAt = System.currentTimeMillis()
+                        if (!sent) {
+                            worktree?.made(line)?.let { words = withWorktreeNote(words, it.note); return@forEachLine }
+                            if (line.trim() != CODEX_READY) return@forEachLine
+                            child.outputStream.bufferedWriter().use { it.write(words) }
+                            sent = true
+                            return@forEachLine
+                        }
                         when (val said = CodexProtocol.read(line)) {
+                            is CodexProtocol.Said.Started -> session = said.thread
                             is CodexProtocol.Said.Text -> answer = (answer + said.text + "\n").takeLast(40_000)
                             is CodexProtocol.Said.Step -> {
                                 lastStep = said.step; lastStepAt = System.currentTimeMillis()
@@ -507,7 +527,17 @@ class Builder(val id: BuilderId) {
                             null -> if (runCatching { org.json.JSONObject(line) }.isFailure) other = (other + line + "\n").takeLast(4_000)
                         }
                     }
+                    if (!sent) child.outputStream.runCatching { close() }
                     if (answer.isBlank()) answer = other.trim()
+                    // Kept for his next words, as Claude's session is: unless the conversation it was asked to go on with is gone.
+                    if (!errand) {
+                        val code = child.waitFor()
+                        thread = when {
+                            session != null && (code == 0 || stopping || resumed != null) -> CodexProtocol.THREAD_PREFIX + session
+                            resumed != null -> null.also { answer = answer.ifBlank { "The earlier thread is no longer available. Send your request again to start a new one." } }
+                            else -> thread
+                        }
+                    }
                 } else {
                     child.outputStream.close()
                     child.inputStream.bufferedReader().forEachLine { heardAt = System.currentTimeMillis(); answer = (answer + it + "\n").takeLast(40_000) }
@@ -811,6 +841,19 @@ const val ERRAND_MODEL = "sonnet"
 
 fun claudeStreamCommand(resume: String? = null, model: String? = null): String = "claude -p " + (resume?.takeIf(SESSION_ID::matches)?.let { "--resume $it " } ?: "") +
     (model?.let { "--model $it " } ?: "") + "--input-format stream-json --output-format stream-json --verbose --permission-mode auto --permission-prompt-tool stdio --allowedTools ${shellQuote("Bash(oma-phone *)")} Read"
+
+/** The line a builder's shell says once the steps before Codex are done, when its words can be given. */
+const val CODEX_READY = "OMA-READY"
+
+/**
+ * A builder's Codex, reading its words from stdin ("-") and saying what it does as JSON events ([CodexProtocol]),
+ * going on with the conversation [resume] when there is one. Phone B runs with [fullAccess]: Codex's own sandbox
+ * cannot work inside proot.
+ */
+fun codexBuilderCommand(images: List<String>, model: String?, resume: String?, fullAccess: Boolean): String =
+    "codex exec " + (if (resume != null) "resume " else "") + "--json --skip-git-repo-check " +
+        (if (fullAccess) "--dangerously-bypass-approvals-and-sandbox " else "") + (model?.let { "--model ${shellQuote(it)} " } ?: "") +
+        images.joinToString("") { "--image ${shellQuote(it)} " } + "-- " + (resume?.let { shellQuote(it) + " " } ?: "") + "-"
 
 fun backgroundAgentCommand(agent: String, prompt: String, images: List<String> = emptyList(), model: String? = null, codexFullAccess: Boolean = false): String = when (agent) {
     "claude" -> "claude -p --permission-mode auto --allowedTools ${shellQuote("Bash(oma-phone *)")} Read -- ${shellQuote(prompt)} < /dev/null"

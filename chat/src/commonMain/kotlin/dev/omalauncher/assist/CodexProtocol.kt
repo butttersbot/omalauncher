@@ -9,6 +9,9 @@ import org.json.JSONObject
  */
 object CodexProtocol {
     sealed interface Said {
+        /** The conversation it runs in, which a follow-up resumes. */
+        data class Started(val thread: String) : Said
+
         /** Words of its answer. */
         data class Text(val text: String) : Said
 
@@ -23,6 +26,7 @@ object CodexProtocol {
     fun read(line: String): Said? {
         val event = runCatching { JSONObject(line) }.getOrNull() ?: return null
         return when (event.optString("type")) {
+            "thread.started" -> event.optString("thread_id").takeIf { THREAD.matches(it) }?.let { Said.Started(it) }
             "item.started" -> step(event.optJSONObject("item"))
             "item.completed" -> event.optJSONObject("item")?.takeIf { it.optString("type") == "agent_message" }
                 ?.optString("text")?.takeIf { it.isNotBlank() }?.let { Said.Text(it.trimEnd()) }
@@ -49,6 +53,16 @@ object CodexProtocol {
             else -> null
         }
     }
+
+    private val THREAD = Regex("[0-9a-fA-F-]{36}")
+
+    /** How a builder's Codex conversation is kept, so one of Claude's is never handed to Codex or the other way round. */
+    const val THREAD_PREFIX = "codex:"
+
+    /** What a builder running Codex is told, as nobody can answer it while it runs: it asks at the end, as Claude does. */
+    const val NO_QUESTIONS = "Nobody can answer a question while you run, and request_user_input reaches no one: never use it or wait " +
+        "for an answer. When you need Boss (a setting only he can change, a choice, a port number), stop there and ask in your " +
+        "final message. His reply comes back to this same conversation."
 
     /** `bash -lc '…'` as Codex wraps every command, unwrapped to what it ran. */
     fun shellBody(command: String): String {
