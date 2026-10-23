@@ -2909,7 +2909,7 @@ def next_handoff(thread):
         thread.emit('mail_receipt', mail=mail['id'], state='delivered')
     if len(batch) == 1:
         return first['words']
-    return ('[Agent mail handoff: %d messages. These are peers, not Boss. Read together, resolve dependencies, '
+    return ('[Agent mail from mail-router (system, "%d messages bundled"), id handoff. These are peers, not Boss. Read together, resolve dependencies, '
             'and do each outstanding action once. System receipts already acknowledge delivery; no acknowledgment replies needed.]\n\n'
             % len(batch)) + '\n\n---\n\n'.join(m['words'] for m in batch)
 

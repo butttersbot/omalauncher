@@ -345,7 +345,7 @@ class Builder(val id: BuilderId) {
         restore(context)
         check(prompt.isNotBlank()) { "Type or speak a request first." }
         if (!working && agentMail == null) return start(context, prompt, images, screen, page, queued = null, earlier = earlier, mail = mail, errand = errand)
-        check(!stopping) { "The agent is stopping. Send this again in a moment." }
+        check(!working || !stopping) { "The agent is stopping. Send this again in a moment." }
         val agents = (context.applicationContext as App).runtime.agents
         val agent = builderAgent(id, agents.installed, agents.default)?.agent ?: error("Install and sign in to an agent in Omalauncher first.")
         val log = ChatLog.of(context)
@@ -365,7 +365,7 @@ class Builder(val id: BuilderId) {
         log.begin(ChatTask(time, agent.name, prompt, images, screen = screen != null, status = TaskStatus.Queued, builder = id.saved, mail = mail))
         if (agentMail != null) AgentMailReceipts.queued(context, agentMail, time)
         if (agentMail != null && !working) android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-            synchronized(lock) { if (!working && !stopping) advance(context, TaskStatus.Done) }
+            synchronized(lock) { if (!working) advance(context, TaskStatus.Done) }
         }, 1_000)
     }
     /**

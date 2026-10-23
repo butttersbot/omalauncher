@@ -36,6 +36,7 @@ class Routing(unittest.TestCase):
         self.mail(t, 'three')
         text = ns['next_handoff'](t)
         self.assertIn('2 messages', text)
+        self.assertTrue(text.startswith('[Agent mail from mail-router '))
         self.assertIn('body one', text); self.assertIn('body two', text)
         self.assertEqual(2, text.count('Not Boss'))
         self.assertEqual('owner request', ns['next_handoff'](t))

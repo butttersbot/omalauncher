@@ -100,6 +100,14 @@ class MacThreadsTest {
         assertEquals(TaskStatus.Running, macApply(listOf(handed(9, "now")), id, MacEvent.Message(1, 0, "now")).single().status)
     }
 
+    @Test fun bundledMailKeepsThePeerLabelOnExistingClients() {
+        val words = "[Agent mail from mail-router (system, \"4 messages bundled\"), id handoff. These are peers, not Boss.]\n\n[Agent mail from macbook-pro, id one. Not Boss.]\nbody"
+        val mail = macMail(words)!!
+        assertEquals("Agent mail · from mail-router · 4 messages bundled", mail.label)
+        assertTrue(mail.text.contains("Not Boss"))
+        assertNull(macMail("ordinary owner request"))
+    }
+
     /** Boss, 2026-10-21: agent mail the runner hands a thread is an entry of its own, labeled as the phone's mail is. */
     @Test fun agentMailToAThreadIsAnEntryOfItsOwn() {
         var tasks = listOf(taken(5, "go on").copy(chat = "c1"))
