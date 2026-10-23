@@ -197,6 +197,12 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(original, self.file.read_bytes())
         starts = [json.loads(line) for line in (self.root / 'starts.log').read_text().splitlines()]
         self.assertTrue(starts[0]['forked'])
+        self.run_phone(t, 'continue from the phone')
+        self.finish_phone(t)
+        self.assertEqual(new, t.meta['session'])
+        starts = [json.loads(line) for line in (self.root / 'starts.log').read_text().splitlines()]
+        self.assertEqual(2, len(starts))
+        self.assertFalse(starts[1]['forked'])
         copy = self.file.with_name(new + '.jsonl')
         copy.write_text(json.dumps({**self.row(), 'sessionId': new}) + '\n')
         self.m['threads'].clear()
@@ -249,6 +255,46 @@ class DiscoveryTests(unittest.TestCase):
                 self.finish_phone(t)
                 self.assertFalse((self.root / 'starts.log').exists())
                 self.assertTrue(any(e['type'] == ('stopped' if cancel else 'error') for e in t.events))
+
+    def test_accepted_wait_rechecks_transient_metadata_without_starting_agent(self):
+        self.write(self.row())
+        t, = self.sync()
+        self.holder(t, 'busy')
+        self.run_phone(t)
+        deadline = time.time() + 3
+        while not getattr(t, 'waiting_native', False) and time.time() < deadline:
+            time.sleep(.01)
+        path = self.root / 'sessions' / ('%d.json' % os.getpid())
+        path.write_text('{')
+        with self.m['changed']:
+            self.m['changed'].notify_all()
+        deadline = time.time() + 3
+        while not any('Rechecking Mac' in e.get('text', '') for e in t.events) and time.time() < deadline:
+            time.sleep(.01)
+        self.assertFalse((self.root / 'starts.log').exists())
+        self.assertIsNotNone(t.worker)
+        self.holder(t, 'idle')
+        with self.m['changed']:
+            self.m['changed'].notify_all()
+        self.finish_phone(t)
+        self.assertNotEqual(self.sid, t.meta['session'])
+        self.assertFalse(any(e['type'] == 'error' for e in t.events))
+
+    def test_persistent_metadata_error_during_wait_fails_without_agent(self):
+        self.write(self.row())
+        t, = self.sync()
+        self.holder(t)
+        self.m['CLAUDE_HOLDER_METADATA_GRACE_SECONDS'] = 0
+        self.run_phone(t)
+        deadline = time.time() + 3
+        while not getattr(t, 'waiting_native', False) and time.time() < deadline:
+            time.sleep(.01)
+        (self.root / 'sessions' / ('%d.json' % os.getpid())).write_text('{')
+        with self.m['changed']:
+            self.m['changed'].notify_all()
+        self.finish_phone(t)
+        self.assertFalse((self.root / 'starts.log').exists())
+        self.assertTrue(any(e.get('code') == 'session_open' for e in t.events))
 
     def test_multiple_holders_busy_and_uncertainty_take_precedence(self):
         self.write(self.row())

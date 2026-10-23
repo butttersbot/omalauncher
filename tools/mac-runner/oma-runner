@@ -2159,6 +2159,7 @@ def claude_process_start(pid):
 
 
 CLAUDE_HOLDER_WAIT_SECONDS = 1800
+CLAUDE_HOLDER_METADATA_GRACE_SECONDS = 10
 
 
 def claude_holder_state(thread):
@@ -2866,6 +2867,7 @@ def claude_turn(thread, text):
     if kept is None:
         deadline = time.monotonic() + CLAUDE_HOLDER_WAIT_SECONDS
         noted = False
+        uncertain_since = None
         with changed:
             thread.waiting_native = True
             try:
@@ -2873,6 +2875,19 @@ def claude_turn(thread, text):
                     if thread.stopped or closing:
                         return
                     state = claude_holder_state(thread)
+                    if state not in (None, 'idle', 'busy'):
+                        # A Claude record can be replaced or removed during this scan. Keep an
+                        # accepted message waiting briefly; never launch while identity is uncertain.
+                        now = time.monotonic()
+                        if uncertain_since is None:
+                            uncertain_since = now
+                            thread.emit('note', text='Rechecking Mac session metadata before sending. No phone agent has started.')
+                        if now - uncertain_since >= CLAUDE_HOLDER_METADATA_GRACE_SECONDS or now >= deadline:
+                            thread.emit('error', code='session_open', text=state)
+                            return
+                        changed.wait(1)
+                        continue
+                    uncertain_since = None
                     if state != 'busy':
                         break
                     if not noted:
