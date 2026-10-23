@@ -183,9 +183,10 @@ class DiscoveryTests(unittest.TestCase):
             self.assertIsNone(t.worker)
 
     def test_dead_and_reused_pid_do_not_hold_session(self):
+        self.m['LINUX'] = True  # /proc identity exclusion, independent of the test host OS.
         self.write(self.row())
         t, = self.sync()
-        self.holder(t)
+        self.holder(t, procStart='old-start')
         with patch.object(self.m['os'], 'kill', side_effect=ProcessLookupError):
             self.assertIsNone(self.m['claude_holder_problem'](t))
         self.m['claude_process_start'] = lambda pid: 'new-start'
@@ -200,6 +201,15 @@ class DiscoveryTests(unittest.TestCase):
         self.assertIsNotNone(self.m['claude_holder_problem'](t))
         t.process = types.SimpleNamespace(pid=pid)
         self.assertIsNone(self.m['claude_holder_problem'](t))
+
+    def test_darwin_ps_uses_utc_matching_claude_records(self):
+        import types
+        self.m['LINUX'] = False
+        result = types.SimpleNamespace(returncode=0, stdout='Thu Oct 22  13:44:00 2026\n')
+        with patch.object(self.m['subprocess'], 'run', return_value=result) as run:
+            self.assertEqual('Thu Oct 22 13:44:00 2026', self.m['claude_process_start'](123))
+        self.assertEqual('UTC', run.call_args.kwargs['env']['TZ'])
+        self.assertEqual('C', run.call_args.kwargs['env']['LC_ALL'])
 
     def test_darwin_start_identity_and_unknown_format(self):
         self.write(self.row())

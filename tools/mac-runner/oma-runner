@@ -2136,8 +2136,9 @@ def claude_process_start(pid):
         except (OSError, IndexError):
             return None
     try:
+        # Claude records Darwin procStart in UTC, independent of the Mac's local timezone.
         result = subprocess.run(['/bin/ps', '-p', str(pid), '-o', 'lstart='],
-                                capture_output=True, text=True, timeout=2, env={**os.environ, 'LC_ALL': 'C'})
+                                capture_output=True, text=True, timeout=2, env={**os.environ, 'LC_ALL': 'C', 'TZ': 'UTC'})
         return ' '.join(result.stdout.split()) if result.returncode == 0 else None
     except (OSError, subprocess.SubprocessError):
         return None

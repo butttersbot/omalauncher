@@ -121,3 +121,38 @@ alive matching Darwin PID is conservatively a holder, even if the record might
 be stale from PID reuse. Dead PIDs still permit handoff. This can produce a false
 refusal, but avoids a false permission and a split conversation. The Mac agent
 has been asked to validate and deploy this conservative revision.
+
+### UTC fix and deployed guard verification
+
+Mac agent verified Claude's Darwin procStart is UTC while plain ps uses local
+Hawaii time. Source now explicitly runs ps with `TZ=UTC, LC_ALL=C`, matching the
+Mac agent's verified one-line deployment patch. A regression test asserts UTC
+regardless of the runner environment. Linux PID-reuse fixture explicitly models
+Linux so its expected exclusion does not fail on Darwin's conservative policy.
+
+Deployed on MacBook: b0d0402 plus Mac-local UTC patch 27613d0, installed SHA1
+b31c57f4501426f294f641c32595e9e84a15010e. Source additionally retains the conservative
+Darwin mismatch fallback from 9c2d54a. Mac agent reports 20 discovery tests, six
+Codex tests and 438 broad checks PASS for its installed revision. Final phone
+source: 20 discovery/guard tests PASS and six Codex approval tests PASS.
+
+- PASS: actual Fold HTTP request to held native session returns 409 with
+  close-on-Mac explanation. Verified zero queued turns and zero guard-test user
+  messages in the remote event log afterward.
+- PASS: actual Soma composer attempt is refused and its tab changes to
+  `needs attention`; no native turn starts. Screenshot viewed:
+  /root/.local/share/omalauncher/attachments/phone-screen-b6f615dc-b186-4af3-9a49-c828d78d70b1.png
+- PARTIAL UI: the selected tab did not visibly show the detailed refusal reason
+  at its current scroll position; the API reason is explicit. Do not claim the
+  reason's inline presentation passed.
+- PASS: after guarded rollout, closed spare accepts another Fold connection check
+  and returns pong: events 24 working, 25 message, 26 text, 27 result, 28 idle.
+- PARTIAL UI: that API-originated (rather than composer-originated) check appeared
+  with two pong lines in Soma, although remote events contain only one text plus
+  normal result. Earlier actual-composer reply appeared once. No duplicate
+  transcript import is claimed from this UI rendering observation.
+
+No real native conversation was closed or interrupted, and no peer credential
+or socket was accessed. Closed-session phone work is verified; shared concurrent
+Mac/phone conversation state is unsupported. A fresh Mac session with a handoff
+is a separate safe workflow; automatic desktop handoff is not implemented.
