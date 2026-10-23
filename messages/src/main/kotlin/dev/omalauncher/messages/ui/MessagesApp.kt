@@ -4,6 +4,7 @@ import androidx.activity.BackEventCompat
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
@@ -25,6 +26,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
@@ -89,8 +92,9 @@ fun MessagesApp(resumed: Int) {
 }
 
 /**
- * A screen over the inbox: it slides in from the right, and Android's back gesture (predictive back) moves it with
- * the finger. Letting go far enough, or flicking, finishes the slide; letting go early puts it back.
+ * A screen over the inbox: it slides in from the right, and Android's back gesture (predictive back) or a drag to the
+ * right anywhere on it moves it with the finger. Letting go far enough, or flicking, finishes the slide; letting go
+ * early puts it back.
  */
 @Composable
 private fun Sliding(
@@ -118,5 +122,56 @@ private fun Sliding(
             throw e
         }
     }
-    Box(Modifier.fillMaxSize().offset { IntOffset(x.value.roundToInt(), 0) }.background(Pack.paper)) { content(back) }
+    // A drag to the right anywhere a message balloon hasn't taken it (they see it first) pulls the screen away too.
+    val fling = with(LocalDensity.current) { BACK_FLING.toPx() }
+    Box(
+        Modifier.fillMaxSize().pointerInput(widthPx) {
+            val velocity = VelocityTracker()
+            var pulling = false
+            var decided = false
+            detectHorizontalDragGestures(
+                onDragStart = {
+                    pulling = false
+                    decided = false
+                    velocity.resetTracking()
+                },
+                onDragEnd = {
+                    if (pulling) {
+                        val v = velocity.calculateVelocity().x
+                        scope.launch {
+                            if (x.value > widthPx * BACK_AT || v > fling) {
+                                x.animateTo(widthPx, Motion.spatial)
+                                onGone()
+                            } else {
+                                x.animateTo(0f, Motion.spatial)
+                            }
+                        }
+                    }
+                    pulling = false
+                },
+                onDragCancel = {
+                    if (pulling) scope.launch { x.animateTo(0f, Motion.spatial) }
+                    pulling = false
+                },
+            ) { change, dx ->
+                // A drag that starts leftward isn't a way back, even if it turns.
+                if (!decided) {
+                    decided = true
+                    pulling = dx > 0f
+                }
+                if (!pulling) return@detectHorizontalDragGestures
+                change.consume()
+                velocity.addPosition(change.uptimeMillis, change.position)
+                scope.launch { x.snapTo((x.value + dx).coerceIn(0f, widthPx)) }
+            }
+        },
+    ) {
+        Box(Modifier.fillMaxSize().offset { IntOffset(x.value.roundToInt(), 0) }.background(Pack.paper)) { content(back) }
+    }
 }
+
+/** How far across the screen the back drag has to go for letting go to finish it. */
+private const val BACK_AT = 0.35f
+
+/** A flick to the right this fast finishes the back drag wherever it is. */
+private val BACK_FLING = 500.dp

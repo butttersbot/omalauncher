@@ -378,7 +378,8 @@ private val REPLY_AT = 64.dp
 
 /**
  * One message: the owner's in ink on the right, others' on the left, outlined where the look draws ink lines; in an
- * inked look the last of a run gets a speech balloon's tail. It follows a drag to the right (a reply) and a long press.
+ * inked look the last of a run gets a speech balloon's tail. The balloon follows a drag to the right (a reply) and a
+ * long press; the empty space beside it leaves both to the conversation's own back drag.
  */
 @Composable
 private fun Balloon(
@@ -400,9 +401,9 @@ private fun Balloon(
     val fill = if (m.fromMe) Pack.foreground else if (inked) Pack.background else Pack.surface
     val ink = if (m.fromMe) Pack.background else Pack.foreground
     val line = Pack.foreground
-    Box(
-        modifier
-            .fillMaxWidth()
+    // Only the balloon itself takes the reply drag; a drag anywhere else in the conversation is the way back.
+    val replyDrag =
+        Modifier
             .pointerInput(m) {
                 var armed = false
                 detectHorizontalDragGestures(
@@ -426,8 +427,8 @@ private fun Balloon(
                     }
                     scope.launch { drag.snapTo(x) }
                 }
-            }.pointerInput(m) { detectTapGestures(onLongPress = { onHold() }) },
-    ) {
+            }.pointerInput(m) { detectTapGestures(onLongPress = { onHold() }) }
+    Box(modifier.fillMaxWidth()) {
         // The reply arrow, uncovered as the message moves.
         val shown = (drag.value / mark).coerceIn(0f, 1f)
         Box(
@@ -442,6 +443,7 @@ private fun Balloon(
             Box(
                 Modifier
                     .widthIn(max = 300.dp)
+                    .then(replyDrag)
                     // The tail is drawn after the balloon and outside its clip, over the balloon's own outline.
                     .drawWithContent {
                         drawContent()
