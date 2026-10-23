@@ -652,6 +652,7 @@ class Codex(Talker):
                 thread.meta['forked_from'] = self.fork_source
                 thread.meta.pop('codex_updated', None)
                 thread.meta['session'] = session
+                thread.meta['codex_copy_history_pending'] = True
                 thread.save()
                 thread.codex_fork_pending = False
                 thread.emit('note', text="Open in Codex on the Mac, so the phone continues in its own copy. The Mac window won't show these messages.")
@@ -662,7 +663,19 @@ class Codex(Talker):
             if session and thread.meta.get('session') != session:
                 thread.meta['session'] = session
                 thread.save()
-            self.request('turn/start', {'threadId': session, 'input': [{'type': 'text', 'text': self.text, 'text_elements': []}]})
+            if thread.meta.get('codex_copy_history_pending'):
+                self.request('thread/turns/list', {'threadId': session, 'limit': 20, 'itemsView': 'full'})
+            else:
+                self.request('turn/start', {'threadId': session, 'input': [{'type': 'text', 'text': self.text, 'text_elements': []}]})
+        elif method == 'thread/turns/list' and thread.meta.get('codex_copy_history_pending'):
+            if not isinstance(result.get('data'), list):
+                thread.emit('error', code='agent', text='The Codex phone copy was made, but its earlier history could not be read. Try this message again.')
+                return True
+            # Import inherited native work BEFORE the phone reply, not after it during discovery.
+            codex_history(thread, result['data'])
+            thread.meta.pop('codex_copy_history_pending', None)
+            thread.save()
+            self.request('turn/start', {'threadId': thread.meta['session'], 'input': [{'type': 'text', 'text': self.text, 'text_elements': []}]})
         return False
 
     def asked(self, method, number, params):
@@ -2543,6 +2556,7 @@ def sync_codex(catalog):
                 thread.meta['name'] = (entry.get('name') or thread.meta['name'])[:160]
                 thread.meta['last_worked'], thread.meta['codex_updated'] = updated, updated
                 codex_history(thread, turns)
+                thread.meta.pop('codex_copy_history_pending', None)
                 thread.save()
         cursor = reply.get('nextCursor')
         if not cursor or (data and data[-1].get('createdAt', 0) <= since):

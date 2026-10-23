@@ -139,9 +139,27 @@ class ReconciledRunnerTests(unittest.TestCase):
         self.assertEqual([self.old], saved['codex_origins'])
         self.assertEqual(self.old, saved['forked_from'])
         self.assertEqual('22222222-2222-4222-8222-222222222222', saved['session'])
+        self.assertEqual('thread/turns/list', self.sent[-1][0])
+        self.driver.answered('thread/turns/list', {'data': [{'items': [{'id': 'native-final', 'type': 'agentMessage', 'text': 'Native task finished'}]}]})
         self.assertEqual('turn/start', self.sent[-1][0])
+        self.assertIn('native-final', self.thread.meta['codex_seen'])
+        self.assertNotIn('codex_copy_history_pending', self.thread.meta)
         self.assertFalse(self.thread.codex_fork_pending)
         self.assertTrue(any('own copy' in kw.get('text', '') for args, kw in self.events))
+
+    def test_copy_history_read_failure_is_retained_and_retried_before_turn(self):
+        self.conflict()
+        new = '22222222-2222-4222-8222-222222222222'
+        self.driver.answered('thread/fork', {'thread': {'id': new}})
+        self.assertTrue(self.driver.answered('thread/turns/list', {'data': None}))
+        self.assertTrue(self.thread.meta['codex_copy_history_pending'])
+        self.assertFalse(any(m == 'turn/start' for m, p in self.sent))
+        self.sent.clear()
+        self.driver.answered('thread/resume', {'thread': {'id': new}})
+        self.assertEqual('thread/turns/list', self.sent[-1][0])
+        self.driver.answered('thread/turns/list', {'data': []})
+        self.assertEqual('turn/start', self.sent[-1][0])
+        self.assertNotIn('codex_copy_history_pending', self.thread.meta)
 
     def test_busy_writer_waits_until_completed_and_cancel_never_forks(self):
         from unittest.mock import patch

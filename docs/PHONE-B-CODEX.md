@@ -44,3 +44,6 @@ Busy work waits with a visible note, Stop, and a thirty-minute timeout. Each rec
 Official protocol reference: [Codex App Server](https://learn.chatgpt.com/docs/app-server), `thread/read`, `thread/fork`, and `lastTurnId`.
 
 Regression coverage includes writer-conflict handling, unknown/other errors, completed-turn anchoring, busy wait/cancel/timeout, writer closing during a wait, strict session IDs, source marker parsing, alias discovery/deduplication, and two messages through actual driver pipes. Local Codex checks:15 PASS. Claude discovery:27 PASS, one Darwin-only skip. Real Mac deployment and the live steps in `tools/walkthrough/scripts/codex-phone-copy.walk` remain pending.
+
+
+The first real busy-copy test passed, but exposed late inherited history: native busy-step messages not yet imported could arrive after the phone result and replace its list preview. Fork setup now imports the inherited tail before starting the phone turn. A persisted pending-history flag allows safe retry if that read fails; discovery also clears it only after importing the history. This preserves the latest phone reply as the latest event. Targeted tests include failed-history retry before any model turn.

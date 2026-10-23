@@ -29,6 +29,8 @@ while True:
     method, number, params = message.get('method'), message.get('id'), message.get('params') or {}
     if method == 'initialize':
         out({'id': number, 'result': {'userAgent': 'fake'}})
+    elif method == 'thread/turns/list':
+        out({'id': number, 'result': {'data': []}})
     elif method == 'thread/read':
         native = pathlib.Path('fake-native.jsonl').resolve()
         if not native.exists():
