@@ -388,10 +388,10 @@ object MacLink {
         picture: Boolean,
     ): File? {
         val at = address ?: return null
-        val name = java.security.MessageDigest.getInstance("SHA-256").digest(id.toByteArray()).take(12).joinToString("") { "%02x".format(it) }
-        val dir = File(context.cacheDir, "shared/mac").apply { mkdirs() }
-        val f = File(dir, name + if (picture) ".jpg" else "")
+        val f = cached(context, id, picture)
         if (f.isFile && f.length() > 0) return f
+        val dir = f.parentFile!!
+        val name = f.name.removeSuffix(".jpg")
         val c = open(at, "/v1/attachments/${path(id)}" + if (picture) "?jpeg=1" else "", timeout = 60_000)
         try {
             if (c.responseCode !in 200..299) return null
@@ -404,6 +404,17 @@ object MacLink {
         } finally {
             c.disconnect()
         }
+    }
+
+    /** Where attachment [id] is kept once fetched ([file]); it may not be there yet. */
+    fun cached(
+        context: Context,
+        id: String,
+        picture: Boolean,
+    ): File {
+        val name = java.security.MessageDigest.getInstance("SHA-256").digest(id.toByteArray()).take(12).joinToString("") { "%02x".format(it) }
+        val dir = File(context.cacheDir, "shared/mac").apply { mkdirs() }
+        return File(dir, name + if (picture) ".jpg" else "")
     }
 
     /** The saved address, in the app's own files. */

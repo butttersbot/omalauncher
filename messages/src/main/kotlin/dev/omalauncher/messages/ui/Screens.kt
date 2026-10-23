@@ -638,7 +638,7 @@ private fun tapFor(
                 if (openLink != null) openLink(Parts.openable(part.url)) else runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(Parts.openable(part.url))).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
             }
         }
-        // Through the Mac there is no other app to open them in (yet: they show here in a later slice).
+        // Through the Mac, photos and videos open from their own frames (Photos, Videos); nothing else to open yet.
         is Part.Website, is Part.Attachment -> if (Messages.linked) null else {
             { Messages.openInOpenBubbles(context, id) }
         }
@@ -659,6 +659,8 @@ private fun PartContent(
             // From the Mac, pictures show as themselves; anything else, by its card.
             if (files.any { it.substringAfter('|').startsWith("image/") }) {
                 Photos(files.filter { it.substringAfter('|').startsWith("image/") })
+            } else if (files.any { it.substringAfter('|').startsWith("video/") }) {
+                Videos(files.filter { it.substringAfter('|').startsWith("video/") }, ink)
             } else {
                 Card(part.summary, if (Messages.linked) null else "Open in OpenBubbles", if (part.kind == "Video") "▶" else "▣", ink)
             }
@@ -710,6 +712,84 @@ private fun Photos(files: List<String>) {
             }
         }
     }
+}
+
+/**
+ * Videos from the Mac (Boss, 2026-10-23: a "1 Video" card that did nothing). Not fetched until tapped, as they can be
+ * large; then kept in the cache, shown by a frame of their own from then on, and played in the phone's own player.
+ */
+@Composable
+private fun Videos(
+    files: List<String>,
+    ink: Color,
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        files.forEach { f ->
+            val id = f.substringBefore('|')
+            val mime = f.substringAfter('|').ifEmpty { "video/*" }
+            var loading by remember(id) { mutableStateOf(false) }
+            var failed by remember(id) { mutableStateOf(false) }
+            var kept by remember(id) { mutableStateOf(MacLink.cached(context, id, picture = false).takeIf { it.isFile && it.length() > 0 }) }
+            val frame by produceState<ImageBitmap?>(null, kept) {
+                value = kept?.let { k -> withContext(Dispatchers.IO) { posterOf(k) } }
+            }
+            fun open() {
+                kept?.let { return play(context, it, mime) }
+                if (loading) return
+                loading = true
+                failed = false
+                scope.launch {
+                    val got = withContext(Dispatchers.IO) { MacLink.file(context, id, picture = false) }
+                    loading = false
+                    if (got == null) failed = true else {
+                        kept = got
+                        play(context, got, mime)
+                    }
+                }
+            }
+            val p = frame
+            if (p != null) {
+                val ratio = (p.height.toFloat() / p.width.coerceAtLeast(1)).coerceIn(0.5f, 1.4f)
+                Box(
+                    Modifier.width(240.dp).height((240 * ratio).dp).clip(composerShape(12.dp)).background(Pack.surface)
+                        .clickable { open() }.semantics { contentDescription = "Video, tap to play" },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Image(p, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                    Box(Modifier.size(48.dp).background(Color.Black.copy(alpha = 0.55f), androidx.compose.foundation.shape.CircleShape), contentAlignment = Alignment.Center) {
+                        BasicText("▶", style = Pack.body(Pack.size.item, Color.White))
+                    }
+                }
+            } else {
+                Box(Modifier.clickable { open() }.semantics { contentDescription = "Video, tap to play" }) {
+                    Card("Video", if (loading) "Getting it from your Mac…" else if (failed) "Couldn't get it from your Mac · tap to try again" else "Tap to play", "▶", ink)
+                }
+            }
+        }
+    }
+}
+
+/** A frame from early in [f], to stand for the video; null when it can't be read. */
+private fun posterOf(f: java.io.File): ImageBitmap? =
+    runCatching {
+        android.media.MediaMetadataRetriever().use { r ->
+            r.setDataSource(f.path)
+            r.getScaledFrameAtTime(500_000, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 720, 720)?.asImageBitmap()
+        }
+    }.getOrNull()
+
+/** Plays [f] in the phone's own video player. */
+private fun play(
+    context: android.content.Context,
+    f: java.io.File,
+    mime: String,
+) {
+    val uri = androidx.core.content.FileProvider.getUriForFile(context, "dev.omalauncher.messages.photos", f)
+    runCatching {
+        context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK))
+    }.onFailure { android.widget.Toast.makeText(context, "No app here plays this video", android.widget.Toast.LENGTH_SHORT).show() }
 }
 
 /** [f] decoded no wider or taller than about [max] pixels. */

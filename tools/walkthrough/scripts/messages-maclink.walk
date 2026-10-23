@@ -79,6 +79,21 @@ wait 1500
 wait 3000
 expect Demo reply to: walk test from the Fold
 shot sent-and-answered
+# Videos (0.7.7; Boss's phone, 2026-10-23: "1 Video" did nothing). The demo's "Clips" chat has one short MP4 from the
+# other person. Not fetched until tapped; then it plays in the phone's player, and is shown by a frame of its own.
+key BACK
+wait 800
+tap Clips
+wait 1500
+expect Tap to play
+tap Tap to play
+wait 5000
+shot video-playing
+key BACK
+wait 1500
+absent Tap to play
+# Look: the video shown by a frame from it, with a play mark.
+shot video-frame
 # Older history (0.7.6): the demo's "Long thread" has 120 messages, "Long #1" (the oldest, "Long thread starts here")
 # to "Long #120"; a page is 50, so scrolling to the top has to load two more pages.
 key BACK
@@ -150,3 +165,4 @@ shot long-thread-seam
 [phone] Hold a message from someone: the six tapbacks show above Reply/Copy; tapping one puts it under the message here and on the Mac; tapping it again takes it off.
 [phone] Open a long chat with a friend and scroll to the top: older messages keep coming past the first 50, in order, with nothing twice.
 [phone] With the Mac asleep (lid closed), send a message: one "Not sent" line under it, and an error bar under the conversation that goes by itself after a few seconds and isn't shown in other conversations. Wake the Mac: if the message went after all, its "Not sent" goes; a new send there clears any error left.
+[phone] Tap a video a friend sent: it comes from the Mac (a moment), plays in the phone's player with sound, and Back returns to the chat, where the video now shows a frame of itself.
