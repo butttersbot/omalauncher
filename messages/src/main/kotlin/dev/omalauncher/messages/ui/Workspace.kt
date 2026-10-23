@@ -98,6 +98,17 @@ private val STRIP = 56.dp
 /** The narrowest the conversation gets beside the panel. */
 private val CHAT_MIN = 360.dp
 
+/** Where the panel rests, whether All is open, and what the panel shows: kept above the workspace, so they outlast a fold. */
+@androidx.compose.runtime.Stable
+class WorkspaceState {
+    var side by mutableStateOf(Side.Beside)
+    var all by mutableStateOf(false)
+
+    /** All opened a folded panel, and folds it again on closing unless something was opened meanwhile. */
+    var allOpenedPanel by mutableStateOf(false)
+    var viewing by mutableStateOf<String?>(null)
+}
+
 @Composable
 fun Workspace(
     book: ConversationBook,
@@ -106,12 +117,12 @@ fun Workspace(
     onPick: (String) -> Unit,
     draft: (String) -> ComposerState,
     pending: Pending,
+    state: WorkspaceState,
 ) {
-    var side by rememberSaveable { mutableStateOf(Side.Beside) }
-    var all by rememberSaveable { mutableStateOf(false) }
-    // All opened a folded panel, and folds it again on closing unless something was opened meanwhile.
-    var allOpenedPanel by rememberSaveable { mutableStateOf(false) }
-    var viewing by rememberSaveable { mutableStateOf<String?>(null) }
+    var side by state::side
+    var all by state::all
+    var allOpenedPanel by state::allOpenedPanel
+    var viewing by state::viewing
     val conversation = shown?.let { book[it] }
     val context = LocalContext.current
 
@@ -205,10 +216,18 @@ fun Workspace(
                     conversation?.let { shared(it) }.orEmpty()
                 }
             val url = viewing
-            when {
-                edgeDp > width - STRIP - 8.dp && !dragging -> StripOf(items) { s -> openShared(s, ::open, onPick, context) }
-                url != null && !all -> Viewer(url, onBack = { viewing = null })
-                else -> Table(items, all, conversation, ::open) { id -> onPick(id); if (all) showAll(false) }
+            val folded = edgeDp > width - STRIP - 8.dp && !dragging
+            // The page stays loaded under the strip and under Across chats, so its place survives folding the panel.
+            if (url != null) Viewer(url, backEnabled = side != Side.Full && !all && !folded, onBack = { viewing = null })
+            if (folded || all || url == null) {
+                // Covers the page and takes its touches while it waits underneath.
+                Box(Modifier.fillMaxSize().background(Pack.paper).pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } }) {
+                    if (folded) {
+                        StripOf(items) { s -> openShared(s, ::open, onPick, context) }
+                    } else {
+                        Table(items, all, conversation, ::open) { id -> onPick(id); if (all) showAll(false) }
+                    }
+                }
             }
         }
 
@@ -429,9 +448,30 @@ private fun StripOf(
 @Composable
 private fun Viewer(
     url: String,
+    backEnabled: Boolean,
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
+    var web by remember { mutableStateOf<WebView?>(null) }
+    // Back goes back through the page's own history first, then to the table.
+    BackHandler(enabled = backEnabled) {
+        val w = web
+        if (w != null && w.canGoBack()) w.goBack() else onBack()
+    }
+    // The page pauses with the app: no video playing on, no timers running, while it's away.
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    androidx.compose.runtime.DisposableEffect(lifecycle) {
+        val watch =
+            androidx.lifecycle.LifecycleEventObserver { _, e ->
+                when (e) {
+                    androidx.lifecycle.Lifecycle.Event.ON_PAUSE -> web?.onPause()
+                    androidx.lifecycle.Lifecycle.Event.ON_RESUME -> web?.onResume()
+                    else -> {}
+                }
+            }
+        lifecycle.addObserver(watch)
+        onDispose { lifecycle.removeObserver(watch) }
+    }
     var copied by remember(url) { mutableStateOf(false) }
     LaunchedEffect(copied) {
         if (copied) {
@@ -457,16 +497,51 @@ private fun Viewer(
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
                         settings.mediaPlaybackRequiresUserGesture = true
-                        // Links inside the page stay in the panel.
-                        webViewClient = WebViewClient()
+                        // Links inside the page stay in the panel; anything that isn't a web page goes to its app.
+                        webViewClient = PanelClient(ctx)
                         loadUrl(url)
+                        web = this
                     }
                 },
-                update = { if (it.url != url && it.originalUrl != url) it.loadUrl(url) },
-                onRelease = { it.destroy() },
+                update = { if (it.tag != url) { it.tag = url; if (it.originalUrl != url) it.loadUrl(url) } },
+                onRelease = {
+                    // Let go of focus first: a focused WebView leaving asks the window for focus while it's being laid out.
+                    it.clearFocus()
+                    it.stopLoading()
+                    it.destroy()
+                    web = null
+                },
                 modifier = Modifier.fillMaxSize(),
             )
         }
+    }
+}
+
+/**
+ * Keeps web pages in the panel. A link to another app (intent:, mailto:, tel:, a store) opens that app the way a browser
+ * would: only through Android's browsable route, never a named component, and with the page's fallback address when
+ * no app takes it.
+ */
+private class PanelClient(
+    private val context: android.content.Context,
+) : WebViewClient() {
+    override fun shouldOverrideUrlLoading(
+        view: WebView,
+        request: android.webkit.WebResourceRequest,
+    ): Boolean {
+        val uri = request.url
+        if (uri.scheme == "http" || uri.scheme == "https") return false
+        val intent =
+            runCatching {
+                if (uri.scheme == "intent") android.content.Intent.parseUri(uri.toString(), android.content.Intent.URI_INTENT_SCHEME) else android.content.Intent(android.content.Intent.ACTION_VIEW, uri)
+            }.getOrNull() ?: return true
+        intent.addCategory(android.content.Intent.CATEGORY_BROWSABLE)
+        intent.component = null
+        intent.selector = null
+        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        val opened = runCatching { context.startActivity(intent) }.isSuccess
+        if (!opened) intent.getStringExtra("browser_fallback_url")?.takeIf { it.startsWith("http") }?.let { view.loadUrl(it) }
+        return true
     }
 }
 

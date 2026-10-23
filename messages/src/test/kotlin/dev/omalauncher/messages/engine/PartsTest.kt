@@ -42,4 +42,12 @@ class PartsTest {
         assertEquals("", Parts.path("https://kiriko.jp/"))
         assertEquals("https://www.x.com", Parts.openable("www.x.com"))
     }
+
+    @Test fun addressEdgeCases() {
+        // One address that begins another leaves nothing behind in the words.
+        assertEquals(listOf(Part.Link("https://a.com/x/y"), Part.Link("https://a.com/x"), Part.Words("both")), Parts.of("both https://a.com/x/y https://a.com/x"))
+        // A bare scheme isn't an address; Wikipedia's brackets stay.
+        assertEquals(listOf(Part.Words("see https:// there")), Parts.of("see https:// there"))
+        assertEquals(listOf("https://en.wikipedia.org/wiki/Kyoto_(city)"), Parts.links("(https://en.wikipedia.org/wiki/Kyoto_(city))"))
+    }
 }

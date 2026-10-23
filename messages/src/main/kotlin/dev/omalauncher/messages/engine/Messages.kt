@@ -145,9 +145,14 @@ object Messages {
         id: String,
         photos: List<android.net.Uri>,
         text: String,
+        beside: Boolean = false,
     ): Intent? {
         if (!openBubblesInstalled(context)) return null
-        val folder = File(context.cacheDir, "shared").apply { deleteRecursively(); mkdirs() }
+        // Each hand-off gets its own folder, so a second one can't delete photos OpenBubbles hasn't read yet; folders
+        // over a day old go.
+        val shared = File(context.cacheDir, "shared")
+        shared.listFiles()?.filter { System.currentTimeMillis() - it.lastModified() > 24 * 60 * 60_000L }?.forEach { it.deleteRecursively() }
+        val folder = File(shared, System.currentTimeMillis().toString()).apply { mkdirs() }
         val resolver = context.contentResolver
         val types = mutableListOf<String>()
         val copies =
@@ -168,6 +173,8 @@ object Messages {
                 .setType(if (kinds.size == 1) "${kinds[0]}/*" else "*/*")
                 .putExtra(Intent.EXTRA_SHORTCUT_ID, id)
                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        // Unfolded, OpenBubbles opens beside this app in split screen, so the conversation stays in view.
+        if (beside) intent.addFlags(Intent.FLAG_ACTIVITY_LAUNCH_ADJACENT or Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
         if (text.isNotBlank()) intent.putExtra(Intent.EXTRA_TEXT, text)
         if (copies.size == 1) {
             intent.putExtra(Intent.EXTRA_STREAM, copies[0])
@@ -178,6 +185,28 @@ object Messages {
             intent.clipData = android.content.ClipData.newUri(resolver, "Photos", copies[0]).apply { copies.drop(1).forEach { addItem(android.content.ClipData.Item(it)) } }
         }
         return intent
+    }
+
+    /** Notes in [id] what was handed to OpenBubbles to send, so the conversation shows it waiting there. */
+    @Synchronized
+    fun handedOff(
+        id: String,
+        texts: List<String>,
+        quote: String?,
+    ) {
+        val now = System.currentTimeMillis()
+        var next = if (samples.value) _book.value else real
+        texts.forEachIndexed { i, t -> next = next.handedOff(id, t, now + i, if (i == 0) quote else null) }
+        if (samples.value) _book.value = next else publish(next)
+    }
+
+    /** Takes back a handed-off message the owner didn't send. */
+    @Synchronized
+    fun drop(
+        id: String,
+        message: Message,
+    ) {
+        if (samples.value) _book.value = _book.value.drop(id, message) else publish(real.drop(id, message))
     }
 
     /** True when a reply can go from here right now. */

@@ -328,6 +328,7 @@ fun rememberComposerState(text: String = "") = remember { ComposerState(text) }
  * through [onSendVoice]; without one, [emptyAction] may draw the app's own button there instead (Soma chat's
  * Dictate). [sendColor] fills Send: the conversation's color, an iMessage blue or a text message green.
  * [above] sits over the field (a quoted reply); [inField] inside it, over the words, as iMessage draws attachments.
+ * [sendsElsewhere] draws Send as ↗ when another app finishes the sending (Soma Messages' photos go to OpenBubbles).
  */
 @Composable
 fun SomaComposer(
@@ -346,6 +347,7 @@ fun SomaComposer(
     now: () -> Long = { System.currentTimeMillis() },
     above: (@Composable () -> Unit)? = null,
     inField: (@Composable () -> Unit)? = null,
+    sendsElsewhere: Boolean = false,
 ) {
     val stage = state.stage
     val action = ComposerRules.action(stage, state.text, attached, voice != null, emptyAction != null)
@@ -444,7 +446,7 @@ fun SomaComposer(
             if (action == ComposerAction.Own) {
                 emptyAction?.invoke()
             } else {
-                EndButton(action, sendColor, onSendColor, ::send, ::act) { state.stage }
+                EndButton(action, sendColor, onSendColor, ::send, ::act, sendsElsewhere) { state.stage }
             }
         }
         }
@@ -549,6 +551,7 @@ private fun EndButton(
     onSendColor: Color,
     send: () -> Unit,
     act: (ComposerAction) -> Unit,
+    elsewhere: Boolean,
     stage: () -> VoiceStage,
 ) {
     val current by rememberUpdatedState(action)
@@ -566,7 +569,7 @@ private fun EndButton(
             ComposerAction.Record -> "Record a voice message"
             ComposerAction.Stop -> "Stop recording"
             ComposerAction.SendVoice -> "Send voice message"
-            else -> "Send"
+            else -> if (elsewhere) "Continue in the app that sends it" else "Send"
         }
     Box(
         Modifier
@@ -605,7 +608,7 @@ private fun EndButton(
             ComposerAction.Record -> MicIcon(Pack.muted)
             ComposerAction.Stop -> Box(Modifier.size(11.dp).clip(Pack.round(2.dp)).background(Color.White))
             ComposerAction.Own -> {}
-            else -> ComposerGlyph(GlyphKind.Up, onSendColor)
+            else -> ComposerGlyph(if (elsewhere && action == ComposerAction.Send) GlyphKind.Out else GlyphKind.Up, onSendColor)
         }
     }
 }
@@ -686,7 +689,7 @@ fun Waveform(
     }
 }
 
-private enum class GlyphKind { Plus, Cross, Up, Play, Pause }
+private enum class GlyphKind { Plus, Cross, Up, Out, Play, Pause }
 
 /** The composer's few marks, drawn on a 24-unit grid like [MicIcon]. */
 @Composable
@@ -702,6 +705,7 @@ private fun ComposerGlyph(
             GlyphKind.Plus -> drawPath(path { line(12, 5, 12, 19, u); line(5, 12, 19, 12, u) }, color, style = stroke)
             GlyphKind.Cross -> drawPath(path { line(6.5f, 6.5f, 17.5f, 17.5f, u); line(17.5f, 6.5f, 6.5f, 17.5f, u) }, color, style = stroke)
             GlyphKind.Up -> drawPath(path { line(12, 19, 12, 6, u); moveTo(6 * u, 11.5f * u); lineTo(12 * u, 5.5f * u); lineTo(18 * u, 11.5f * u) }, color, style = Stroke(3f * u, cap = StrokeCap.Round, join = StrokeJoin.Round))
+            GlyphKind.Out -> drawPath(path { line(7, 17, 17, 7, u); moveTo(9 * u, 7 * u); lineTo(17 * u, 7 * u); lineTo(17 * u, 15 * u) }, color, style = Stroke(3f * u, cap = StrokeCap.Round, join = StrokeJoin.Round))
             GlyphKind.Play -> drawPath(path { moveTo(8 * u, 5 * u); lineTo(19 * u, 12 * u); lineTo(8 * u, 19 * u); close() }, color)
             GlyphKind.Pause -> {
                 pauseBar(color, 7f, u)

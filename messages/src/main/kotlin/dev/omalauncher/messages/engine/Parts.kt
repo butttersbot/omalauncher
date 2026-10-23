@@ -51,14 +51,31 @@ object Parts {
         val links = links(t)
         if (links.isEmpty()) return listOf(Part.Words(t))
         var words = t
-        links.forEach { words = words.replace(it, " ") }
+        // Longest first, so an address that begins another doesn't leave the rest of that one behind.
+        links.sortedByDescending { it.length }.forEach { words = words.replace(it, " ") }
         // The punctuation that ended the address goes with it.
         words = words.replace(Regex("""[ \t]+[.,;:!?)]+(?=\s|$)"""), "").replace(Regex("""[ \t]{2,}"""), " ").lines().joinToString("\n") { it.trim() }.trim()
         return links.map { Part.Link(it) } + listOfNotNull(words.takeIf { it.isNotEmpty() }?.let { Part.Words(it) })
     }
 
     /** The web addresses in [text], in order, without trailing punctuation. */
-    fun links(text: String): List<String> = url.findAll(text).map { it.value.trimEnd('.', ',', '!', '?', ')', ';', ':', '\'', '"') }.filter { it.length > 4 }.distinct().toList()
+    fun links(text: String): List<String> =
+        url.findAll(text).map { trimEnd(it.value) }.filter { host(it).contains('.') }.distinct().toList()
+
+    // Sentence punctuation after an address isn't part of it; a closing bracket is, when the address opened one (Wikipedia).
+    private fun trimEnd(found: String): String {
+        var u = found
+        while (u.isNotEmpty()) {
+            val last = u.last()
+            u =
+                when {
+                    last in ".,!?;:'\"" -> u.dropLast(1)
+                    last == ')' && u.count { it == '(' } < u.count { it == ')' } -> u.dropLast(1)
+                    else -> return u
+                }
+        }
+        return u
+    }
 
     /** [url]'s site, without www. */
     fun host(url: String): String = url.substringAfter("://").substringBefore('/').substringBefore('?').substringBefore('#').removePrefix("www.").lowercase()
@@ -78,8 +95,8 @@ data class Shared(
     val sender: String,
     val time: Long,
 ) {
-    /** The same thing shared twice shows once: links by address, others by message. */
-    val key get() = (part as? Part.Link)?.url?.let(Parts::openable) ?: "$conversation/$time/$part"
+    /** The same thing shared twice in a chat shows once: links by address, others by message. */
+    val key get() = conversation + "|" + ((part as? Part.Link)?.url?.let(Parts::openable) ?: "$time/$part")
 }
 
 /** What was shared in [conversations], newest first, each thing once. */

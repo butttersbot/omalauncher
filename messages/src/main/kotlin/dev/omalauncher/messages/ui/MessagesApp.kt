@@ -6,7 +6,6 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -29,6 +28,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
@@ -60,27 +60,32 @@ fun MessagesApp(resumed: Int) {
     // And its quoted reply and attachments, waiting with it.
     val pending = remember { Pending().apply { Desk.left.value.forEach { (id, l) -> l.quote?.let { quotes[id] = it } } } }
     fun draft(id: String) = drafts.getOrPut(id) { ComposerState(Desk[id].draft) }
+    // The unfolded workspace's panel and what it shows, kept here so folding and unfolding again doesn't lose them.
+    val desk = remember { WorkspaceState() }
+    // Cover or unfolded is decided while composing, from the window's width, never while laying out: switching
+    // screens during layout tore down a focused WebView mid-measure and crashed the app on folding.
+    val widthDp = LocalConfiguration.current.screenWidthDp
 
-    BoxWithConstraints(Modifier.fillMaxSize().background(Pack.paper).windowInsetsPadding(WindowInsets.safeDrawing)) {
+    Box(Modifier.fillMaxSize().background(Pack.paper).windowInsetsPadding(WindowInsets.safeDrawing)) {
         if (!granted && !samples) {
             AccessScreen(openBubbles = Messages.openBubblesInstalled(context))
-            return@BoxWithConstraints
+            return@Box
         }
-        val wide = maxWidth >= 600.dp
+        val wide = widthDp >= 600
         val pick: (String) -> Unit = { id ->
             openId = id
             Messages.read(id)
         }
         if (wide) {
+            // Nothing is picked yet: the newest conversation shows, but stays unread until the owner picks it.
             val shown = openId?.takeIf { book[it] != null } ?: book.conversations.firstOrNull()?.id
-            if (shown != null) LaunchedEffect(shown) { Messages.read(shown) }
-            Workspace(book, shown, samples, pick, ::draft, pending)
+            Workspace(book, shown, samples, pick, ::draft, pending, desk)
         } else {
             Inbox(book, null, samples, pick, Modifier.fillMaxSize())
             val id = openId
             val conversation = id?.let { book[it] }
             if (conversation != null) {
-                Sliding(widthPx = with(LocalDensity.current) { maxWidth.toPx() }, onGone = { openId = null }) { back ->
+                Sliding(widthPx = with(LocalDensity.current) { widthDp.dp.toPx() }, onGone = { openId = null }) { back ->
                     key(conversation.id) { Thread(conversation, draft(conversation.id), pending, onBack = back, Modifier.fillMaxSize()) }
                 }
             }

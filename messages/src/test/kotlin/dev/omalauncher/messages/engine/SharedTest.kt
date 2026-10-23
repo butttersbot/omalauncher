@@ -28,4 +28,9 @@ class SharedTest {
         assertEquals(listOf("chat-mina", "chat-mina", "chat-tahoe"), items.map { it.conversation })
         assertEquals("Ollie", items.last().sender)
     }
+
+    @Test fun theSameLinkInTwoChatsShowsInBoth() {
+        val dad = Conversation("chat-dad", "Dad", false, listOf(Message("https://kiriko.jp/menu", 5_000, "Dad")), 0)
+        assertEquals(listOf("chat-dad", "chat-mina"), shared(mina, dad).filter { it.part is Part.Link && (it.part as Part.Link).url.contains("kiriko") }.map { it.conversation })
+    }
 }

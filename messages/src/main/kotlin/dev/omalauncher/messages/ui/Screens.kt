@@ -40,6 +40,9 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.drop
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberUpdatedState
 import dev.omalauncher.messages.engine.Parts
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -315,7 +318,16 @@ fun Thread(
     val left = remember(c.id) { Desk[c.id] }
     val size = c.messages.size
     val list = rememberLazyListState(if (left.hasPlace) left.index.coerceIn(0, maxOf(0, size - 1)) else maxOf(0, size - 1), if (left.hasPlace) left.offset else 0)
-    val atEnd by remember { derivedStateOf { !list.canScrollForward } }
+    // Whether the owner is following the latest: decided when a scroll ends, not by the list's size, so a composer
+    // that grows (a quote, photos, the keyboard) keeps the latest in view instead of leaving it behind.
+    var latest by remember(c.id) { mutableStateOf(!left.hasPlace) }
+    val currentSize by rememberUpdatedState(size)
+    LaunchedEffect(c.id) {
+        snapshotFlow { list.isScrollInProgress }.drop(1).collect { scrolling -> if (!scrolling) latest = !list.canScrollForward }
+    }
+    LaunchedEffect(c.id) {
+        snapshotFlow { list.layoutInfo.viewportSize }.drop(1).collect { if (latest && currentSize > 0) list.scrollToItem(currentSize - 1) }
+    }
     // Messages that came since the place was left, or while reading further up.
     var fresh by remember(c.id) { mutableIntStateOf(if (left.hasPlace) (size - left.count).coerceAtLeast(0) else 0) }
     var seen by remember(c.id) { mutableIntStateOf(size) }
@@ -324,18 +336,22 @@ fun Thread(
         seen = size
         if (came <= 0) return@LaunchedEffect
         // Following along at the bottom: the new ones come into view. Reading further up: the pill counts them.
-        val last = list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
-        if (last >= size - came - 1) list.animateScrollToItem(size - 1) else fresh += came
+        if (latest) list.animateScrollToItem(size - 1) else fresh += came
     }
-    LaunchedEffect(atEnd) { if (atEnd) fresh = 0 }
-    // The draft, the quote and the place are kept as they change, so a closed app loses none of them.
+    LaunchedEffect(latest) { if (latest) fresh = 0 }
+    // The draft, the quote and the place are kept as they change, and once more on leaving, so a closed app loses none.
+    fun keep() {
+        val place = if (latest) -1 to 0 else list.firstVisibleItemIndex to list.firstVisibleItemScrollOffset
+        Desk.update(c.id) { it.copy(draft = draft.text, quote = pending.quotes[c.id], index = place.first, offset = place.second, count = if (place.first >= 0) currentSize else 0) }
+    }
     LaunchedEffect(c.id) {
-        snapshotFlow { Triple(draft.text, pending.quotes[c.id], if (!list.canScrollForward) -1 to 0 else list.firstVisibleItemIndex to list.firstVisibleItemScrollOffset) }
-            .collectLatest { (text, quote, place) ->
+        snapshotFlow { Triple(draft.text, pending.quotes[c.id], latest to (list.firstVisibleItemIndex to list.firstVisibleItemScrollOffset)) }
+            .collectLatest {
                 delay(300)
-                Desk.update(c.id) { it.copy(draft = text, quote = quote, index = place.first, offset = place.second, count = if (place.first >= 0) c.messages.size else 0) }
+                keep()
             }
     }
+    DisposableEffect(c.id) { onDispose { keep() } }
     fun quoteOf(m: Message) = (if (m.fromMe) "You" else m.sender.ifEmpty { c.title }) + ": " + m.text.take(90)
     val pick =
         rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(MAX_PHOTOS)) { uris ->
@@ -385,11 +401,22 @@ fun Thread(
                             PartContent(part, ink)
                         }
                     }
+                    // Once under a run of handed-off messages, not under each.
+                    if (m.handedOff && next?.handedOff != true) {
+                        BasicText(
+                            Pack.caption("Waiting in OpenBubbles · tap to finish"),
+                            Modifier.fillMaxWidth().clickable { Messages.openInOpenBubbles(context, c.id) }.padding(top = 4.dp, end = 6.dp),
+                            style = Pack.mono(Pack.size.small, Pack.muted).copy(textAlign = androidx.compose.ui.text.style.TextAlign.End),
+                        )
+                    }
                 }
             }
-            if (!atEnd && size > 0) {
+            if (!latest && size > 0) {
                 LatestPill(fresh, Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp)) {
-                    scope.launch { list.animateScrollToItem(size - 1) }
+                    scope.launch {
+                        list.animateScrollToItem(size - 1)
+                        latest = true
+                    }
                 }
             }
             held?.let { m ->
@@ -403,6 +430,15 @@ fun Thread(
                         clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Message", m.text))
                         held = null
                     },
+                    onRemove =
+                        if (m.handedOff) {
+                            {
+                                Messages.drop(c.id, m)
+                                held = null
+                            }
+                        } else {
+                            null
+                        },
                     onDismiss = { held = null },
                 )
             }
@@ -434,22 +470,25 @@ fun Thread(
                     } else {
                         pending.quotes.remove(c.id)
                     }
-                } else if (Messages.samples.value) {
-                    // Examples: show what would have gone, as OpenBubbles would show it back.
-                    Messages.send(context, c.id, summary(context, photos), quote)
-                    if (text.isNotEmpty()) Messages.send(context, c.id, text)
-                    pending.photos.remove(c.id)
-                    pending.quotes.remove(c.id)
                 } else {
-                    scope.launch {
-                        val share = withContext(Dispatchers.IO) { Messages.share(context, c.id, photos, text) }
-                        if (share == null) {
-                            draft.text = text
-                            noOpenBubbles = true
-                        } else {
-                            pending.photos.remove(c.id)
-                            pending.quotes.remove(c.id)
-                            context.startActivity(share)
+                    // Photos go to OpenBubbles' own chat, which sends them; the chat here shows them waiting there.
+                    val handed = listOf(summary(context, photos)) + listOfNotNull(text.ifEmpty { null })
+                    if (Messages.samples.value) {
+                        Messages.handedOff(c.id, handed, quote)
+                        pending.photos.remove(c.id)
+                        pending.quotes.remove(c.id)
+                    } else {
+                        scope.launch {
+                            val share = withContext(Dispatchers.IO) { Messages.share(context, c.id, photos, text, beside = openLink != null) }
+                            if (share == null) {
+                                draft.text = text
+                                noOpenBubbles = true
+                            } else {
+                                Messages.handedOff(c.id, handed, quote)
+                                pending.photos.remove(c.id)
+                                pending.quotes.remove(c.id)
+                                context.startActivity(share)
+                            }
                         }
                     }
                 }
@@ -460,6 +499,7 @@ fun Thread(
             onSendColor = Pack.background,
             onAttach = { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)) },
             attached = photos.isNotEmpty(),
+            sendsElsewhere = photos.isNotEmpty(),
             above = quote?.let { q -> { QuoteBar(q) { pending.quotes.remove(c.id) } } },
             inField =
                 if (photos.isEmpty() && link == null) {
@@ -665,12 +705,14 @@ private fun QuoteBar(
 private fun HoldMenu(
     onReply: () -> Unit,
     onCopy: () -> Unit,
+    onRemove: (() -> Unit)?,
     onDismiss: () -> Unit,
 ) {
     Box(Modifier.fillMaxSize().background(Pack.foreground.copy(alpha = 0.18f)).clickable(onClick = onDismiss), contentAlignment = Alignment.Center) {
         val shape = composerShape(14.dp)
         Row(Modifier.clip(shape).background(Pack.background, shape).border(2.dp, Pack.foreground, shape).padding(4.dp)) {
-            listOf("Reply" to onReply, "Copy" to onCopy).forEach { (label, act) ->
+            // Remove only for a hand-off the owner didn't finish in OpenBubbles: nothing sent is ever taken back from here.
+            (listOf("Reply" to onReply, "Copy" to onCopy) + listOfNotNull(onRemove?.let { "Remove" to it })).forEach { (label, act) ->
                 Box(Modifier.semantics { role = Role.Button }.clickable(onClick = act).padding(horizontal = 18.dp, vertical = 12.dp)) {
                     BasicText(label, style = Pack.body(Pack.size.item).copy(fontWeight = FontWeight.SemiBold))
                 }

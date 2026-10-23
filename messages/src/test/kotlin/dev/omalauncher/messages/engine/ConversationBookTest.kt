@@ -70,4 +70,23 @@ class ConversationBookTest {
         assertEquals(echoed["chat-mina"], ConversationBook.fromJson(echoed.toJson())["chat-mina"])
         assertNull(ConversationBook.fromJson(echoed.toJson())["chat-mina"]!!.messages.first().quote)
     }
+
+    @Test fun aHandOffWaitsUntilOpenBubblesShowsItLater() {
+        val book = ConversationBook().take(mina(SeenMessage("pics?", 1_000, "Mina"))).handedOff("chat-mina", "2 Photos", 10_000)
+        assertTrue(book["chat-mina"]!!.messages.last().handedOff)
+        // OpenBubbles reposts the conversation hours later, when Mina writes again.
+        val later = 10_000 + 3 * 60 * 60_000L
+        val echoed = book.take(mina(SeenMessage("2 Photos", later, null), SeenMessage("cute", later + 5, "Mina")))
+        val messages = echoed["chat-mina"]!!.messages
+        assertEquals(listOf("pics?", "2 Photos", "cute"), messages.map { it.text })
+        assertEquals(false, messages[1].handedOff)
+        assertEquals(echoed["chat-mina"], ConversationBook.fromJson(echoed.toJson())["chat-mina"])
+    }
+
+    @Test fun aHandOffSurvivesASaveAndCanBeTakenBack() {
+        val book = ConversationBook().take(mina(SeenMessage("pics?", 1_000, "Mina"))).handedOff("chat-mina", "1 Photo", 2_000)
+        val back = ConversationBook.fromJson(book.toJson())
+        assertTrue(back["chat-mina"]!!.messages.last().handedOff)
+        assertEquals(listOf("pics?"), back.drop("chat-mina", back["chat-mina"]!!.messages.last())["chat-mina"]!!.messages.map { it.text })
+    }
 }

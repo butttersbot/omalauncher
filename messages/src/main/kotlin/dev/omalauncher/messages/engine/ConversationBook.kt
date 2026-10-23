@@ -12,6 +12,8 @@ data class Message(
     val sentHere: Boolean = false,
     /** The message this one answered ("Mina: are we still on…"), kept on this phone: OpenBubbles' reply action sends words only. */
     val quote: String? = null,
+    /** Handed to OpenBubbles' own chat to send there (photos); it stays marked until OpenBubbles shows it back. */
+    val handedOff: Boolean = false,
 ) {
     val fromMe get() = sender.isEmpty()
 }
@@ -65,7 +67,10 @@ class ConversationBook(
             if (messages.any { it.time == m.time && it.text == m.text && it.sender == sender }) continue
             if (sender.isEmpty()) {
                 // OpenBubbles showing back what was sent from here: the same words within a couple of minutes.
-                val echo = messages.indexOfFirst { it.sentHere && it.text == m.text && kotlin.math.abs(it.time - m.time) <= ECHO_MS }
+                val echo =
+                    messages.indexOfFirst {
+                        it.sentHere && it.text == m.text && (kotlin.math.abs(it.time - m.time) <= ECHO_MS || it.handedOff && m.time >= it.time - ECHO_MS && m.time - it.time <= HANDOFF_MS)
+                    }
                 if (echo >= 0) {
                     messages[echo] = Message(m.text, m.time, "", quote = messages[echo].quote)
                     continue
@@ -98,6 +103,27 @@ class ConversationBook(
         return ConversationBook(byId + (id to old.copy(messages = old.messages + Message(text, time, "", sentHere = true, quote = quote))))
     }
 
+    /** The owner handed [text] to OpenBubbles' own chat [id] at [time], to send there. */
+    fun handedOff(
+        id: String,
+        text: String,
+        time: Long,
+        quote: String? = null,
+    ): ConversationBook {
+        val old = byId[id] ?: return this
+        return ConversationBook(byId + (id to old.copy(messages = old.messages + Message(text, time, "", sentHere = true, quote = quote, handedOff = true))))
+    }
+
+    /** Takes back a handed-off message the owner didn't send after all. */
+    fun drop(
+        id: String,
+        message: Message,
+    ): ConversationBook {
+        val old = byId[id] ?: return this
+        if (!message.handedOff) return this
+        return ConversationBook(byId + (id to old.copy(messages = old.messages - message)))
+    }
+
     /** The owner has looked at [id]. */
     fun read(id: String): ConversationBook {
         val old = byId[id] ?: return this
@@ -117,7 +143,10 @@ class ConversationBook(
                                 "messages",
                                 JSONArray(
                                     c.messages.map { m ->
-                                        JSONObject().put("text", m.text).put("time", m.time).put("sender", m.sender).put("here", m.sentHere).apply { m.quote?.let { put("quote", it) } }
+                                        JSONObject().put("text", m.text).put("time", m.time).put("sender", m.sender).put("here", m.sentHere).apply {
+                                            m.quote?.let { put("quote", it) }
+                                            if (m.handedOff) put("off", true)
+                                        }
                                     },
                                 ),
                             )
@@ -128,6 +157,12 @@ class ConversationBook(
     companion object {
         /** How far apart a message sent from here and OpenBubbles' copy of it may be. */
         const val ECHO_MS = 2 * 60_000L
+
+        /**
+         * How long a handed-off message waits for OpenBubbles to show it back. OpenBubbles reposts a conversation only
+         * when something arrives, so its copy may come much later than a reply's.
+         */
+        const val HANDOFF_MS = 12 * 60 * 60_000L
 
         /** The most messages kept per conversation. */
         const val MAX_MESSAGES = 2_000
@@ -143,7 +178,7 @@ class ConversationBook(
                     val messages =
                         (0 until ms.length()).map { j ->
                             val m = ms.getJSONObject(j)
-                            Message(m.getString("text"), m.getLong("time"), m.getString("sender"), m.optBoolean("here"), m.optString("quote").ifEmpty { null })
+                            Message(m.getString("text"), m.getLong("time"), m.getString("sender"), m.optBoolean("here"), m.optString("quote").ifEmpty { null }, m.optBoolean("off"))
                         }
                     val id = c.getString("id")
                     byId[id] = Conversation(id, c.getString("title"), c.optBoolean("group"), messages, c.optInt("unread"))
