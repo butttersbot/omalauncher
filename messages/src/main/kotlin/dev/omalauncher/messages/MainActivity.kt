@@ -7,6 +7,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.mutableIntStateOf
+import dev.omalauncher.messages.engine.Alerts
+import dev.omalauncher.messages.engine.LinkService
 import dev.omalauncher.messages.engine.MacAddress
 import dev.omalauncher.messages.engine.MacLink
 import dev.omalauncher.messages.engine.Names
@@ -25,12 +27,43 @@ class MainActivity : ComponentActivity() {
         dev.omalauncher.messages.engine.Desk.init(applicationContext)
         Look.use(applicationContext)
         setContent { MessagesApp(resumed.intValue) }
-        if (savedInstanceState == null) offerLink(intent)
+        Alerts.channels(applicationContext)
+        // Linked: kept in touch with the Mac in the background too, and notifications allowed (asked once).
+        LinkService.start(this)
+        if (Messages.linked && !Alerts.allowed(this) && savedInstanceState == null) ask(notifications = true, contacts = false)
+        if (savedInstanceState == null) {
+            offerLink(intent)
+            openFrom(intent)
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         offerLink(intent)
+        openFrom(intent)
+    }
+
+    /** A notification's conversation, opened. */
+    private fun openFrom(intent: Intent?) {
+        intent?.getStringExtra(Alerts.EXTRA_CHAT)?.let { Messages.toOpen.value = it }
+    }
+
+    /** Android's own prompts, for what isn't allowed yet. */
+    private fun ask(
+        notifications: Boolean,
+        contacts: Boolean,
+    ) {
+        val wanted =
+            listOfNotNull(
+                android.Manifest.permission.POST_NOTIFICATIONS.takeIf { notifications && android.os.Build.VERSION.SDK_INT >= 33 && !Alerts.allowed(this) },
+                android.Manifest.permission.READ_CONTACTS.takeIf { contacts && !Names.allowed(this) },
+            )
+        if (wanted.isNotEmpty()) requestPermissions(wanted.toTypedArray(), CONTACTS)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        Alerts.front = false
     }
 
     override fun onRequestPermissionsResult(
@@ -40,10 +73,12 @@ class MainActivity : ComponentActivity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == CONTACTS && Names.allowed(this)) MacLink.refresh()
+        LinkService.start(this)
     }
 
     override fun onResume() {
         super.onResume()
+        Alerts.front = true
         resumed.intValue++
     }
 
@@ -64,8 +99,10 @@ class MainActivity : ComponentActivity() {
             .setMessage("Conversations will come from Messages on that Mac, and your replies and photos will go out through it. OpenBubbles is no longer used here.")
             .setPositiveButton("Link") { _, _ ->
                 Messages.link(applicationContext, at)
+                LinkService.start(this)
                 // The Mac sends numbers and emails only; names come from the phone's contacts, with the owner's OK.
-                if (!Names.allowed(this)) requestPermissions(arrayOf(android.Manifest.permission.READ_CONTACTS), CONTACTS)
+                // New messages notify from here now, also with his OK.
+                ask(notifications = true, contacts = true)
             }
             .setNegativeButton("Not now", null)
             .show()

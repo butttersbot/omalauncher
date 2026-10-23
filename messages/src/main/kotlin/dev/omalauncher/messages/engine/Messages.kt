@@ -56,18 +56,23 @@ object Messages {
     /** True once linked to the Mac: conversations, replies and photos go through it, OpenBubbles isn't used. */
     val linked get() = mac.value != null
 
+    /** A conversation to open, asked for by a tapped notification. */
+    val toOpen = MutableStateFlow<String?>(null)
+
     /** True while example conversations stand in for real ones (for looking at the screens). */
     val samples = MutableStateFlow(false)
 
     private val handles = ConcurrentHashMap<String, Handles>()
     private val io = Executors.newSingleThreadExecutor()
     private var file: File? = null
+    private var app: Context? = null
     private var real = ConversationBook()
 
     /** Loads what was kept, once per process. */
     @Synchronized
     fun init(context: Context) {
         if (file != null) return
+        app = context.applicationContext
         val f = File(context.filesDir, "conversations.json")
         file = f
         real = if (f.isFile) ConversationBook.fromJson(f.readText()) else ConversationBook()
@@ -110,8 +115,13 @@ object Messages {
         incoming: List<Message>,
         unread: Int? = null,
         counting: Boolean = true,
+        notify: Boolean = false,
     ) {
+        val before = real[id]?.messages?.size ?: 0
         publish(real.fromMac(id, title, isGroup, incoming, unread, counting))
+        // A new message from someone else, live: its conversation's notification, unless it is open on screen.
+        val c = real[id] ?: return
+        if (notify && c.messages.size > before && incoming.any { !it.fromMe }) app?.let { Alerts.show(it, c) }
     }
 
     /** The Mac took back messages [ids] in [id]. */
@@ -161,6 +171,7 @@ object Messages {
         }
         publish(real.read(id))
         if (linked) MacLink.opened(id)
+        app?.let { Alerts.clear(it, id) }
     }
 
     /**

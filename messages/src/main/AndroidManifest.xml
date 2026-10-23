@@ -7,6 +7,13 @@
     <!-- Linked to the Mac, chats come with numbers and emails only: names come from the phone's own contacts. -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
 
+    <!-- Once linked to the Mac, new messages notify from here, and the link is kept while the app is in the
+         background, as a quiet foreground service (remote messaging), which comes back after a restart. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
     <!-- OpenBubbles does the iMessage work; this app opens its conversations, so it has to be able to see it. -->
     <queries>
         <package android:name="com.openbubbles.messaging" />
@@ -52,6 +59,25 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/shared_photos" />
         </provider>
+
+        <service
+            android:name=".engine.LinkService"
+            android:exported="false"
+            android:foregroundServiceType="remoteMessaging" />
+
+        <!-- Reply and Mark read from a notification. -->
+        <receiver
+            android:name=".engine.AlertReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".engine.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
 
         <!-- Reads OpenBubbles' message notifications and answers through their Reply action. Android asks the owner
              before it binds, in its notification access settings. -->

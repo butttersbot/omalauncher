@@ -242,7 +242,7 @@ object MacLink {
                 if (m.unsent) {
                     Messages.removed(m.chatId, listOf(m.id))
                 } else {
-                    Messages.fromMac(m.chatId, null, null, messagesOf(m), counting = e.type == "message.new")
+                    Messages.fromMac(m.chatId, null, null, messagesOf(m), counting = e.type == "message.new", notify = e.type == "message.new")
                 }
                 // A conversation not seen before: its name and people come with the chat list.
                 if (!known) io.execute { runCatching { sync(at) } }

@@ -33,6 +33,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import dev.omalauncher.messages.engine.Part
+import dev.omalauncher.messages.engine.Alerts
 import dev.omalauncher.messages.engine.Desk
 import dev.omalauncher.messages.engine.MacLink
 import androidx.compose.runtime.collectAsState
@@ -357,6 +358,12 @@ fun Thread(
             }
     }
     DisposableEffect(c.id) { onDispose { keep() } }
+    // On screen: its new messages need no notification, and any it had go.
+    DisposableEffect(c.id) {
+        Alerts.looking = c.id
+        Alerts.clear(context, c.id)
+        onDispose { if (Alerts.looking == c.id) Alerts.looking = null }
+    }
     fun quoteOf(m: Message) = (if (m.fromMe) "You" else m.sender.ifEmpty { c.title }) + ": " + m.text.take(90)
     val pick =
         rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(MAX_PHOTOS)) { uris ->

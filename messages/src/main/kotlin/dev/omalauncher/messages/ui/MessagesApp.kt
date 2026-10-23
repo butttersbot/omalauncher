@@ -56,6 +56,14 @@ fun MessagesApp(resumed: Int) {
     var granted by remember { mutableStateOf(Messages.granted(context)) }
     LaunchedEffect(resumed) { granted = Messages.granted(context) }
     var openId by rememberSaveable { mutableStateOf<String?>(null) }
+    // A tapped notification opens its conversation.
+    val asked by Messages.toOpen.collectAsState()
+    LaunchedEffect(asked) {
+        val id = asked ?: return@LaunchedEffect
+        openId = id
+        Messages.read(id)
+        Messages.toOpen.value = null
+    }
     // Each conversation keeps its own draft, kept on the phone (Desk) so it outlasts the app.
     val drafts = remember { HashMap<String, ComposerState>() }
     // And its quoted reply and attachments, waiting with it.
