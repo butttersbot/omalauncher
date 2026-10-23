@@ -37,6 +37,16 @@ tap Ana Demo
 wait 2000
 # A threaded reply from the Mac shows the message it answers.
 # The demo keeps every test message, so the older reply sits above them: scroll back up to it.
+# The demo keeps every walk's messages, so the history grows: far enough up for many runs.
+swipe 0.5 0.3 0.5 0.85 400
+swipe 0.5 0.3 0.5 0.85 400
+swipe 0.5 0.3 0.5 0.85 400
+swipe 0.5 0.3 0.5 0.85 400
+swipe 0.5 0.3 0.5 0.85 400
+swipe 0.5 0.3 0.5 0.85 400
+swipe 0.5 0.3 0.5 0.85 400
+swipe 0.5 0.3 0.5 0.85 400
+swipe 0.5 0.3 0.5 0.85 400
 swipe 0.5 0.3 0.5 0.85 400
 swipe 0.5 0.3 0.5 0.85 400
 swipe 0.5 0.3 0.5 0.85 400
