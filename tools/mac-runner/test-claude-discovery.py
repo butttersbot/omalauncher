@@ -250,6 +250,20 @@ class DiscoveryTests(unittest.TestCase):
                 self.assertFalse((self.root / 'starts.log').exists())
                 self.assertTrue(any(e['type'] == ('stopped' if cancel else 'error') for e in t.events))
 
+    def test_multiple_holders_busy_and_uncertainty_take_precedence(self):
+        self.write(self.row())
+        t, = self.sync()
+        folder = self.root / 'sessions'
+        folder.mkdir()
+        self.m['LINUX'] = True
+        self.m['claude_process_start'] = lambda pid: '1234'
+        with patch.object(self.m['os'], 'kill', return_value=None):
+            for pid, status in ((100001, 'idle'), (100002, 'busy')):
+                (folder / ('%d.json' % pid)).write_text(json.dumps(dict(pid=pid, sessionId=self.sid, procStart='1234', status=status)))
+            self.assertEqual('busy', self.m['claude_holder_state'](t))
+            (folder / '100003.json').write_text(json.dumps(dict(pid=100003, sessionId=self.sid, procStart=None, status='idle')))
+            self.assertIsNotNone(self.m['claude_holder_problem'](t))
+
     def test_fork_init_requires_a_new_session_and_normal_resume_remains_strict(self):
         self.write(self.row())
         t, = self.sync()
