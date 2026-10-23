@@ -8,6 +8,11 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebView
+import android.view.WindowInsets
+import android.graphics.Rect
+import android.view.MotionEvent
+import android.view.inputmethod.InputMethodManager
+import android.util.Log
 import android.view.accessibility.AccessibilityNodeInfo
 import java.io.File
 import java.util.concurrent.CountDownLatch
@@ -32,7 +37,17 @@ class PreviewInstrumentation : Instrumentation() {
     private fun click(node: AccessibilityNodeInfo) {
         var current: AccessibilityNodeInfo? = node
         while (current != null) {
-            if (current.isClickable && current.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return
+            if (current.isClickable) {
+                current.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SHOW_ON_SCREEN.id)
+                SystemClock.sleep(250)
+                current.refresh()
+                val bounds = Rect()
+                current.getBoundsInScreen(bounds)
+                val now = SystemClock.uptimeMillis()
+                sendPointerSync(MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, bounds.exactCenterX(), bounds.exactCenterY(), 0))
+                sendPointerSync(MotionEvent.obtain(now, now + 40, MotionEvent.ACTION_UP, bounds.exactCenterX(), bounds.exactCenterY(), 0))
+                return
+            }
             current = current.parent
         }
         error("Fixture control did not accept a click")
@@ -44,9 +59,33 @@ class PreviewInstrumentation : Instrumentation() {
             await("listening-room.html")
             val field = nodes(uiAutomation.rootInActiveWindow).first { it.isEditable }
             check(field.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, "Keep this draft") }))
+            check(field.performAction(AccessibilityNodeInfo.ACTION_FOCUS))
+            runOnMainSync { activity.getSystemService(InputMethodManager::class.java).showSoftInput(activity.currentFocus, InputMethodManager.SHOW_IMPLICIT) }
+            fun imeVisible(): Boolean {
+                var visible = false
+                runOnMainSync { visible = activity.window.decorView.rootWindowInsets?.isVisible(WindowInsets.Type.ime()) == true }
+                return visible
+            }
+            val imeEnd = SystemClock.uptimeMillis() + 5000
+            while (!imeVisible() && SystemClock.uptimeMillis() < imeEnd) SystemClock.sleep(100)
+            check(imeVisible()) { "Test keyboard did not open" }
+            sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+            SystemClock.sleep(500)
+            check(!imeVisible()) { "Back did not hide keyboard" }
+            await("Keep this draft")
+            Log.i("SomaWalk", "artifact IME Back and draft PASS")
             click(await("listening-room.html"))
             click(await("Play sample"))
             await("PLAYING / SIDE A")
+            Log.i("SomaWalk", "artifact HTML JavaScript PASS")
+            click(await("[ source ]"))
+            await("<!doctype html>")
+            click(await("[ files ]"))
+            click(await("interaction-notes.md"))
+            await("Close it to return to the same draft.")
+            click(await("listening-room.html"))
+            await("Play sample")
+            Log.i("SomaWalk", "artifact Files Source Preview PASS")
             uiAutomation.waitForIdle(200, 3000)
             SystemClock.sleep(350)
             val output = File(targetContext.getExternalFilesDir(null), "artifact-android-native.png")
@@ -79,13 +118,23 @@ class PreviewInstrumentation : Instrumentation() {
                     sendStatus(0, Bundle().apply { putString("stream", "Focused fold cycle ${cycle + 1}, narrow=$narrow passed\n") })
                 }
             }
+            Log.i("SomaWalk", "artifact focused fold cycles PASS")
             click(await("[ close ]"))
             await("Keep this draft")
             await("[ send ]")
             await("Dictate")
+            runOnMainSync { activity.narrow = true }
+            waitForIdleSync()
+            click(await("listening-room.html"))
+            await("Play sample")
+            sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+            await("Keep this draft")
+            await("[ send ]")
+            Log.i("SomaWalk", "artifact viewer Back and draft PASS")
             result.putString("stream", "PASS: native HTML and JavaScript; three focused-WebView cover/unfold cycles; close restored draft and existing composer. Screenshot: ${output.name}")
             finish(RESULT_OK, result)
         } catch (problem: Throwable) {
+            Log.e("SomaWalk", "artifact FAIL: ${problem.message}")
             result.putString("stream", "FAIL: ${problem.message}")
             finish(RESULT_CANCELED, result)
         }

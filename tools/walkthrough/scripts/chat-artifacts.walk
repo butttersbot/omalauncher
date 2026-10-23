@@ -1,0 +1,58 @@
+# Native Soma Chat artifact UI in the isolated, fictional fixture. No runners/accounts or real sends.
+# Prerequisite: -PartifactPreview :artifact-preview:assembleDebug installed on this emulator.
+# Fixture uses production OmaChatScreen/WebView; configuration handling matches OmaChatActivity.
+fold open
+rotate portrait
+clearlog
+shell am instrument -w dev.omalauncher.artifactpreview/.PreviewInstrumentation
+log artifact IME Back and draft PASS
+log artifact HTML JavaScript PASS
+log artifact Files Source Preview PASS
+log artifact focused fold cycles PASS
+log artifact viewer Back and draft PASS
+nolog artifact FAIL
+# Physical emulator display transitions and screenshots reviewed separately from automated assertions.
+fold folded
+launch dev.omalauncher.artifactpreview/.PreviewActivity
+# A new fixture launch has fictional, fresh thread metadata. Create its draft here.
+tap ask soma
+type Keep this draft
+key BACK
+expect Keep this draft
+shot artifact-cover-chat
+# The first Back after focusing the composer hides the IME; viewer Back must then return to the same draft.
+tap listening-room.html
+expect listening-room.html
+expect [ source ]
+shot artifact-cover-viewer
+tap [ source ]
+expect <!doctype html>
+shot artifact-cover-source
+tap [ files ]
+expect From this conversation
+tap interaction-notes.md
+expect Close it to return to the same draft.
+key BACK
+expect Keep this draft
+fold open
+tap listening-room.html
+expect [ expand ]
+shot artifact-unfolded-preview
+# A clicked HTML button has native WebView focus before the display is folded.
+# Fold8 unfolded layout, measured from artifact-unfolded-preview: sample button in right pane.
+# API37's uiautomator reconnect can omit WebView virtual nodes. The earlier instrumentation asserts JS;
+# this real tap has a screenshot that must visibly say PLAYING / SIDE A before the walk counts.
+tap 0.624 0.811
+wait 500
+shot artifact-interactive-html
+fold folded
+expect [ close ]
+fold open
+expect [ expand ]
+tap [ close ]
+expect Keep this draft
+shot artifact-unfolded-chat-restored
+[phone] Open an output from an existing Mac Pro conversation: Preview loads through the authenticated runner, Source and Files work; Discuss adds context to the draft without sending.
+[phone] Open an output from this MacBook conversation after its runner update; confirm on-demand file read and interactive HTML without an external app switch.
+[phone] With a web page focused, physically fold/unfold three times. Chat and selected output remain usable; close/Back returns to the existing draft and reading position.
+[phone] On cover, open the composer keyboard, press Back once to dismiss IME, then open an artifact and press Back: viewer closes, draft remains. Verify the Samsung IME and actual fold separately from emulator checks.

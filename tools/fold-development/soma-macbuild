@@ -96,8 +96,23 @@ if [ ${#walks[@]} -gt 0 ]; then
     if ! adb -s $emu install -r -t "$apk" >"$wdir/install.log" 2>&1; then
       echo "Walks: not run (the APK didn't install on the emulator: $(tail -1 "$wdir/install.log"))." | tee "$wdir/summary.txt"
     else
+      # This walk drives the production chat/WebView through fictional outputs, never a real runner/send.
+      # Build without mac.init.gradle: its global .boss suffix belongs only to the working launcher.
+      artifact_fixture=0
+      for w in "${walks[@]}"; do [ "$w" != chat-artifacts ] || artifact_fixture=1; done
+      fixture_ready=1
+      if [ "$artifact_fixture" -eq 1 ]; then
+        SOMA_VERSION_CODE=$code ./gradlew --console=plain -PartifactPreview :artifact-preview:assembleDebug >"$wdir/artifact-fixture-build.log" 2>&1
+        if [ $? -ne 0 ]; then fixture_ready=0
+        else
+          adb -s $emu install -r -t tools/artifact-preview/build/outputs/apk/debug/artifact-preview-debug.apk >"$wdir/artifact-fixture-install.log" 2>&1 || fixture_ready=0
+        fi
+      fi
       line="Walks on the emulator:"
       for w in "${walks[@]}"; do
+        if [ "$w" = chat-artifacts ] && [ "$fixture_ready" -ne 1 ]; then
+          line="$line $w FAIL (fixture build/install; see logs);"; continue
+        fi
         script=tools/walkthrough/scripts/$w.walk
         if [ ! -f "$script" ]; then line="$line $w MISSING;"; continue; fi
         # Each walk starts on the cover screen, upright, at home.
