@@ -206,3 +206,26 @@ Isolated regression coverage includes idle fork and persisted discovery aliases,
 The real idle-holder test returned the first user prompt from inherited context and the phone-copy note; a second message sent through the actual Soma composer returned `phone continuation pong` with the same original context. The closed spare returned `phone C pong` in a normal resume. The busy spare showed the waiting note on the Fold, then safely stopped with a metadata-read error while another test process exited. It did not complete the busy-to-idle path, so that live step remains pending.
 
 An accepted message now rechecks uncertain metadata for at most ten seconds, without starting any agent while uncertain. Initial HTTP admission still refuses unreadable metadata immediately; persistent uncertainty after admission still produces an error. Regression tests cover recovery from a truncated metadata file, persistent failure without starting an agent, and a second phone turn continuing the fork rather than forking again. Local discovery: 27 PASS, one Darwin-only skip; Codex approvals: six PASS. Updated Mac deployment and remaining live cancellation/wait tests are pending.
+
+
+### Real Fold walkthrough after the metadata recheck
+
+The installed phone stayed at version132; this feature is runner-only. Spare sessions were used throughout, never Boss's active desktop conversations. Evidence is saved on the Fold in `/root/handoff/claude-phone-copy-evidence/`.
+
+| Walk step | Result | Evidence |
+| --- | --- | --- |
+| 1. Discover native conversations and visible history | PASS | Spare B and C appeared in Soma alongside existing Claude/Codex threads. |
+| 2. Closed native session resumes normally | PASS | C returned `phone C pong`; Mac peer confirmed normal continuation. |
+| 3. Idle open session copies with full history | PASS | A returned its first user prompt and `phone A pong`; peer confirmed original untouched. |
+| 4. Copy notice and second phone reply | PASS | Actual Soma composer returned original context plus `phone continuation pong`; notice visible; screenshot inspected. |
+| 5. Busy waits, then copies | PASS after fix | B retry events17–23: working, prompt, waiting note, copy notice, reply, result, idle. A second actual Soma composer prompt returned `phone busy retry pong` in events24–28. |
+| 6. Cancel from Soma | PASS | C showed waiting and Stop; actual Stop produced event13 `stopped`, then idle. Mac peer verified holder41819 stayed alive and busy, zero cancelled-prompt transcript rows, and no fork. Screenshots inspected. |
+| 7. Restart and avoid duplicate sessions/history | PASS | Mac peer checked all18 runner threads: one thread per session, no separate thread for either fork origin, no re-import after restart. |
+| 8. Unknown metadata refuses safely | Isolated tests PASS; real corrupted-file step not walked | Admission returns409 for unverified metadata. Accepted waits recover from temporary corruption and stop on persistent uncertainty, without starting an agent. Owner metadata was never corrupted. |
+
+The first busy test failed safely before the recheck fix (B event13, metadata read error). The retry passed. Its first assistant reply asked what the test's conditional phrase “after this phone copy starts” meant; an unambiguous follow-up through Soma then returned the exact test reply. The clarification was a model response, not a runner failure. Full30-minute wall-clock expiry was not waited out; timeout behavior is covered by the isolated regression.
+
+
+Final Mac confirmation (agent mail20261022-154937-a124d2 and follow-up): installed runner equals source7a58f1e byte for byte, SHA1`54af4d8940ccc4fdef2d27522050e30d83528d0d` (also verified locally); no Mac-only patch. A original9a44554a is byte-identical to its pre-test hash; fork1edb4fd9 has77 rows, one sessionId and zero duplicate UUIDs. B fork6b2f6e00 has89 rows, one sessionId and zero duplicate UUIDs; original28e5d033 contains no phone text. B's second phone message resumed the same fork without another copy note. C's cancellation left its native holder alive and busy and wrote no cancelled prompt or fork. The peer closed only its own spare holders afterward; Boss's two native desktop sessions were untouched. Mac discovery/Codex tests passed, and broad runner checks passed438/438.
+
+The runner rollout is complete. The separately built version133 HTTP409 reason UI still requires Boss's promote and its phone walkthrough; this runner feature was verified in the existing installed Soma132.
