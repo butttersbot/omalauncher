@@ -122,10 +122,12 @@ class RingOverlayTest {
         assertEquals(0, sources.values.sumOf { count(it, "allowed = true") } - count(sources.getValue("phone/PhoneService.kt"), "allowed = true"))
         assertEquals(1, count(sources.getValue("phone/PhoneService.kt"), "allowed = true"))
         assertTrue("if (!ringOverlayAllowed(ringPrefs(this))) return OverlayFacts()" in sources.getValue("phone/PhoneService.kt"))
-        // Three overlay windows in all, each added in one place: the ring's, the answer card's, and the herd sheep's
+        // Owner-requested overlay windows, each added in one place: ring, answer card, sheep, screenshot button and recording timer.
         // (Boss, 2026-10-15: "have the pet always on top … even when I'm in an app"), each asked for by the owner.
         // Boss asked for each: the answer card, the floating sheep (2026-10-15) and "Add to pocket" over the screenshot toolbar (2026-10-16).
-        assertEquals(setOf(home, "phone/AnswerCard.kt", "herd/SheepOverlay.kt", "phone/ShotButton.kt"), sources.filterValues { "TYPE_ACCESSIBILITY_OVERLAY" in it }.keys)
+        assertEquals(setOf(home, "phone/AnswerCard.kt", "herd/SheepOverlay.kt", "phone/ShotButton.kt", "record/RecordPill.kt"), sources.filterValues { "TYPE_ACCESSIBILITY_OVERLAY" in it }.keys)
+        // Boss requested the recording countdown, elapsed time and stop control on 2026-10-22.
+        assertEquals(1, count(sources.getValue("record/RecordPill.kt"), "TYPE_ACCESSIBILITY_OVERLAY"))
         assertEquals(1, count(sources.getValue("phone/ShotButton.kt"), "TYPE_ACCESSIBILITY_OVERLAY"))
         assertEquals(1, count(sources.getValue("herd/SheepOverlay.kt"), "TYPE_ACCESSIBILITY_OVERLAY"))
         assertEquals(1, count(sources.getValue("phone/AnswerCard.kt"), "TYPE_ACCESSIBILITY_OVERLAY"))
