@@ -172,16 +172,93 @@ class DiscoveryTests(unittest.TestCase):
         (folder / ('%d.json' % pid)).write_text(json.dumps(record))
         return pid
 
-    def test_busy_and_idle_open_sessions_refuse_before_queue(self):
+    def run_phone(self, t, text='hello from phone'):
+        self.m['AGENT'] = str(Path(__file__).with_name('fake-agent').resolve())
+        self.m['canvas_env'] = lambda thread: {}
+        return self.m['take'](t, text)
+
+    def finish_phone(self, t):
+        deadline = time.time() + 10
+        while (t.worker is not None or t.kept is not None) and time.time() < deadline:
+            time.sleep(.02)
+        self.assertIsNone(t.worker)
+        self.assertIsNone(t.kept)
+
+    def test_idle_holder_forks_and_discovery_keeps_one_thread(self):
+        self.write(self.row())
+        original = self.file.read_bytes()
+        t, = self.sync()
+        self.holder(t, 'idle')
+        self.run_phone(t)
+        self.finish_phone(t)
+        new = t.meta['session']
+        self.assertNotEqual(self.sid, new)
+        self.assertEqual(self.sid, t.meta['forked_from'])
+        self.assertEqual(original, self.file.read_bytes())
+        starts = [json.loads(line) for line in (self.root / 'starts.log').read_text().splitlines()]
+        self.assertTrue(starts[0]['forked'])
+        copy = self.file.with_name(new + '.jsonl')
+        copy.write_text(json.dumps({**self.row(), 'sessionId': new}) + '\n')
+        self.m['threads'].clear()
+        self.m['load']()
+        same, = self.sync()
+        self.assertEqual(t.meta['id'], same.meta['id'])
+        self.assertEqual(new, same.meta['session'])
+        self.assertEqual(1, sum(e.get('text') == 'Hello' for e in same.events))
+
+    def test_busy_wait_then_idle_forks(self):
         self.write(self.row())
         t, = self.sync()
-        for state in ('busy', 'idle'):
-            self.holder(t, state)
-            result = self.m['take'](t, 'phone turn')
-            self.assertEqual('refused', result['taken'])
-            self.assertIn('Close that conversation', result['error'])
-            self.assertEqual([], t.queue)
-            self.assertIsNone(t.worker)
+        self.holder(t, 'busy')
+        self.assertEqual('queued', self.run_phone(t)['taken'])
+        deadline = time.time() + 3
+        while not getattr(t, 'waiting_native', False) and time.time() < deadline:
+            time.sleep(.01)
+        self.assertFalse((self.root / 'starts.log').exists())
+        self.holder(t, 'idle')
+        with self.m['changed']:
+            self.m['changed'].notify_all()
+        self.finish_phone(t)
+        self.assertNotEqual(self.sid, t.meta['session'])
+        self.assertTrue(any('Waiting for the Mac' in e.get('text', '') for e in t.events))
+
+    def test_busy_wait_then_closed_resumes_without_fork(self):
+        self.write(self.row())
+        t, = self.sync()
+        pid = self.holder(t)
+        self.run_phone(t)
+        (self.root / 'sessions' / ('%d.json' % pid)).unlink()
+        with self.m['changed']:
+            self.m['changed'].notify_all()
+        self.finish_phone(t)
+        self.assertEqual(self.sid, t.meta['session'])
+
+    def test_busy_wait_cancellation_and_timeout_never_start_agent(self):
+        for cancel in (True, False):
+            with self.subTest(cancel=cancel):
+                self.write(self.row())
+                t, = self.sync()
+                self.holder(t)
+                self.m['CLAUDE_HOLDER_WAIT_SECONDS'] = 1800 if cancel else 0
+                self.run_phone(t)
+                deadline = time.time() + 3
+                while not getattr(t, 'waiting_native', False) and t.worker is not None and time.time() < deadline:
+                    time.sleep(.01)
+                if cancel:
+                    self.assertTrue(self.m['stop'](t))
+                self.finish_phone(t)
+                self.assertFalse((self.root / 'starts.log').exists())
+                self.assertTrue(any(e['type'] == ('stopped' if cancel else 'error') for e in t.events))
+
+    def test_fork_init_requires_a_new_session_and_normal_resume_remains_strict(self):
+        self.write(self.row())
+        t, = self.sync()
+        driver = self.m['Claude'](t, 'hello', fork=True)
+        self.assertIn('--fork-session', driver.command())
+        for sid in (None, self.sid, 'invalid'):
+            with self.assertRaises(ValueError):
+                driver.heard(dict(type='system', subtype='init', session_id=sid))
+        self.assertEqual(self.sid, t.meta['session'])
 
     def test_dead_and_reused_pid_do_not_hold_session(self):
         self.m['LINUX'] = True  # /proc identity exclusion, independent of the test host OS.
@@ -226,17 +303,17 @@ class DiscoveryTests(unittest.TestCase):
         self.m['LINUX'] = False
         self.m['claude_process_start'] = lambda pid: 'Thu Oct 22 13:44:00 2026'
         self.holder(t, procStart='Thu Oct 22 13:44:00 2026')
-        self.assertIsNotNone(self.m['claude_holder_problem'](t))
+        self.assertEqual('busy', self.m['claude_holder_state'](t))
         self.holder(t, procStart='Thu Oct 22 12:44:00 2026')
         self.assertIsNotNone(self.m['claude_holder_problem'](t))
         self.holder(t, procStart='unrecognized identity format')
         self.assertIsNotNone(self.m['claude_holder_problem'](t))
 
-    def test_http_refuses_open_holder_without_starting_worker(self):
+    def test_http_refuses_unknown_holder_without_starting_worker(self):
         import io
         self.write(self.row())
         t, = self.sync()
-        self.holder(t)
+        self.holder(t, procStart=None)
         request = self.m['Runner'].__new__(self.m['Runner'])
         request.allowed = lambda: True
         request.parts = lambda: (['threads', t.meta['id'], 'messages'], {})

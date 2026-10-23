@@ -1,10 +1,9 @@
-# Owner's native MacBook session and Tailscale connection require the real phone.
-[phone] Open a native Claude Code conversation on the MacBook, with one prompt and visible reply; keep the existing native Codex session. Close the native Mac conversation before phone replies.
-[phone] With no Soma-owned work running or waiting, deploy and restart the updated MacBook runner.
-[phone] In Soma Sessions select MacBook Pro: within two scan periods the already-open Claude conversation must appear alongside Codex. Capture the session list screenshot.
-[phone] Open that Claude conversation: verify prompt/reply; no thinking, tool-result payloads or subagent conversations appear. Capture screenshot.
-[phone] Send a harmless connection-check prompt from Soma. Verify a real reply, unchanged Claude session UUID, no fork, and no duplicate user or assistant text after two scan periods. Capture screenshot.
-[phone] Continue with another harmless phone prompt and verify context from the prior turn. Native Mac Claude remains usable after its view is resumed/refreshed.
-[phone] Restart the idle runner again: verify the same session, preserved history, and another successful phone reply without repeated messages. Capture screenshot.
-[phone] On a spare native session held open on the Mac, try a phone reply: expect an open-on-Mac refusal, no queued turn, no new process. Test both busy and idle holders.
-[phone] Close the spare native process without deleting its transcript, then send a phone prompt: verify success in the same session, retained context, and no duplicate messages.
+# Real native processes, paired runner and owner session history require the phone/Mac.
+[phone] Discover a spare native Claude conversation alongside the existing Codex sessions; verify visible history without private tool or thinking payloads.
+[phone] Close the spare native process, send a harmless phone prompt, and verify a reply in the original session UUID with retained context and no duplicates after two scans.
+[phone] Hold a spare conversation open and idle on the Mac, send a harmless phone prompt, and verify a new UUID on the same Soma thread with full prior context. Verify the original transcript is byte-for-byte unchanged.
+[phone] Verify the copy note explains that the Mac window will not show phone messages. Send a second phone prompt and verify it continues the new UUID without another fork.
+[phone] Hold a spare conversation busy on the Mac, send a harmless phone prompt, and verify a waiting note and no second model process. Let the Mac become idle; verify one forked reply on the same Soma thread.
+[phone] Repeat the busy wait and cancel from Soma. Verify no phone model process starts and the native Mac process continues untouched.
+[phone] Restart the idle runner; verify the phone copy and original alias do not appear as duplicate sessions, with no repeated history after two scans.
+[phone] Verify unreadable or unverified holder metadata returns an explanatory refusal without queueing or starting a model.

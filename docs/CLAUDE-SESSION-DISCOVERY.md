@@ -190,3 +190,12 @@ inventory, not RecordPill reading ring preferences. Commit 5ed8653 adds the alre
 owner-requested recording window to that inventory and asserts one occurrence;
 all setting-isolation checks stay intact. No runtime/security behavior changed.
 Full app build 133 requested at 5ed8653; no phone installation authorized yet.
+
+
+## Automatic phone copy (Boss confirmed, 2026-10-22)
+
+This supersedes the earlier requirement to close an idle Mac conversation. A verified idle native holder now causes an explicit `--resume SID --fork-session`. Only that deliberate fork may adopt a new init session UUID. The same Soma thread persists the new ID and its original IDs; discovery ignores the originals and deduplicates inherited history. The thread explains that its phone copy will not appear in the Mac window.
+
+A verified busy holder waits before starting Claude, with a visible note, cancellation, and a 30-minute timeout. If the holder exits while waiting, the original session resumes normally; if it becomes idle, the phone forks. Cancellation never signals the native holder. Unknown process identity, unknown status and unreadable metadata still refuse before queueing. No peer keys or sockets are read.
+
+Isolated regression coverage includes idle fork and persisted discovery aliases, busy-to-idle fork, busy-to-closed resume, cancellation, timeout, unchanged original transcript, strict init UUID checks and metadata refusals. Real Mac/Fold walkthrough remains pending; use `tools/walkthrough/scripts/claude-discovery.walk` and record its results before calling the rollout done. Process metadata is a snapshot: a person can start a new Mac turn after the check, so simultaneous editing of the same project remains a limitation.

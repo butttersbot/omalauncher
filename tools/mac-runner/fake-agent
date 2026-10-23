@@ -33,13 +33,13 @@ def said(text):
 
 
 arguments = sys.argv[1:]
-session = arguments[arguments.index('--resume') + 1] if '--resume' in arguments else str(uuid.uuid4())
+session = arguments[arguments.index('--resume') + 1] if '--resume' in arguments and '--fork-session' not in arguments else str(uuid.uuid4())
 given = json.loads(sys.stdin.readline())
 prompt = given['message']['content']
 echo = {'user_message_uuid': given['uuid'], 'user_message_uuids': [given['uuid']]} if given.get('uuid') and 'old' not in prompt else {}
 orphan = pathlib.Path('background.running')
 with open('starts.log', 'a') as log:
-    log.write(json.dumps({'prompt': prompt, 'resumed': '--resume' in arguments, 'mode': arguments[arguments.index('--permission-mode') + 1],
+    log.write(json.dumps({'prompt': prompt, 'resumed': '--resume' in arguments, 'forked': '--fork-session' in arguments, 'mode': arguments[arguments.index('--permission-mode') + 1],
                          'deny': json.loads(arguments[arguments.index('--settings') + 1])['permissions']['deny'],
                          'prompt_tool': arguments[arguments.index('--permission-prompt-tool') + 1],
                          'thread_id': os.environ.get('OMA_THREAD_ID'), 'canvas_token': os.environ.get('SOMA_CANVAS_TOKEN'),
