@@ -6,8 +6,9 @@ because its camera cutout reached 152 px and Android uses the larger of the cuto
 
 - `cutout/`: a static overlay with smaller cover cutout (the inner one unchanged). Static, because cutouts are read at boot.
 - `bars/`: 42 dp status bar. Mutable, so it can be put above the emulator's own `pixel_9_pro_fold` overlay (52 dp).
-  Android turns it off at each boot: `tools/oma-emu fold-bars` (run by `oma-emu start` and by `soma-macbuild` before the
-  walks) turns it on again.
+  About 5 s after each boot the emulator's own profile setup switches the other framework overlays off again, so
+  `tools/oma-emu fold-bars` (run by `oma-emu start` and by `soma-macbuild` before the walks) keeps turning it back on
+  until it has held for two checks in a row. Fold/unfold cycles leave it on.
 - Install once with `install.sh` (the emulator must run with `-writable-system`; `oma-emu start` passes it).
 
 Result: cover status bar 110 px. Not matched: the inner screen keeps its 136 px top inset (its cutout; no phone measurement

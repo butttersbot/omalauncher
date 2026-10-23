@@ -19,9 +19,22 @@ display_id() { # inner is the first SurfaceFlinger display, cover the second
 wake() { A shell input keyevent WAKEUP >/dev/null; A shell wm dismiss-keyguard >/dev/null 2>&1 || true; }
 # Boss's Fold's bar heights (cover status bar 110 px): Android turns this overlay off at every boot, so it is turned
 # back on and put above the emulator's pixel_9_pro_fold overlay. Harmless when it isn't installed.
+# A few seconds after boot the emulator's own profile setup switches the other framework overlays off again, so this
+# keeps re-asserting until the overlay has stayed on for two checks in a row (about 30 s at most).
 fold_bars() {
-  A shell cmd overlay enable --user 0 dev.soma.fold8.framework.overlay >/dev/null 2>&1 &&
-    A shell cmd overlay set-priority dev.soma.fold8.framework.overlay highest >/dev/null 2>&1 || true
+  A shell pm path dev.soma.fold8.framework.overlay >/dev/null 2>&1 || return 0
+  local held=0 i
+  for i in $(seq 1 15); do
+    if A shell cmd overlay list android 2>/dev/null | grep -q '\[x\] dev.soma.fold8.framework.overlay'; then
+      held=$((held + 1)); [ $held -ge 2 ] && return 0
+    else
+      held=0
+      A shell cmd overlay enable --user 0 dev.soma.fold8.framework.overlay >/dev/null 2>&1 || true
+      A shell cmd overlay set-priority dev.soma.fold8.framework.overlay highest >/dev/null 2>&1 || true
+    fi
+    sleep 2
+  done
+  echo "fold-bars: the overlay keeps being switched off" >&2
 }
 
 case "${1:-}" in
