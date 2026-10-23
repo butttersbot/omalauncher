@@ -233,8 +233,10 @@ class ScreenRecordService : Service() {
         if (!ok) return finish(save = false)
         ScreenRecord.recording = true
         ScreenRecord.refreshTile(this)
-        notify(note("Recording the screen", recording = true))
-        RecordPill.recording(startedAt) { finish(save = true) }
+        // Nothing of ours over the screen while it records (Boss, 2026-10-22: the stop only at the end, where it can be
+        // cropped): a short buzz says it has started, and the notification in the shade holds the time and Stop.
+        notify(note("Recording · tap to stop", recording = true))
+        buzz()
     }
 
     private fun finish(save: Boolean) {
@@ -293,6 +295,13 @@ class ScreenRecordService : Service() {
             .setContentIntent(stop)
             .addAction(Notification.Action.Builder(null, if (recording) "Stop" else "Cancel", stop).build())
             .build()
+    }
+
+    private fun buzz() {
+        runCatching {
+            val v = if (Build.VERSION.SDK_INT >= 31) getSystemService(android.os.VibratorManager::class.java).defaultVibrator else @Suppress("DEPRECATION") getSystemService(android.os.Vibrator::class.java)
+            v.vibrate(android.os.VibrationEffect.createOneShot(60, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+        }
     }
 
     private fun notify(n: Notification) = getSystemService(NotificationManager::class.java).notify(ScreenRecord.NOTIFICATION, n)

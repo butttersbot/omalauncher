@@ -27,4 +27,4 @@ shell cmd statusbar collapse
 [phone] Add Screen record to Samsung's Quick Settings; tap it, allow, record a few seconds, tap the tile again; the saved notice opens the video in Movies/Soma.
 [phone] Start a recording, lock the phone, unlock it, stop: say whether the lock screen shows in the video.
 [phone] Tap the Screen record tile: Android's prompt asks for the entire screen (no "A single app" choice), and the video is of the whole screen.
-[phone] After Share screen: a big 3, 2, 1 in the middle, then a pill below the status bar with a red dot, the time counting up and Stop; Stop ends it and "Screen recording saved" comes (Boss, 2026-10-22: no timer, no sign of recording, no way to stop but the shade).
+[phone] After Share screen: a big 3, 2, 1 in the middle, gone before recording; a short buzz as it starts; nothing of ours on screen while it records; the shade's notification shows the time and Stop, and Stop (or a tap on it) ends it with "Screen recording saved" (Boss, 2026-10-22).

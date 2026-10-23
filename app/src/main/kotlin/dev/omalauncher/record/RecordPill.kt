@@ -16,10 +16,10 @@ import dev.omalauncher.phone.PhoneService
 
 /**
  * What the screen recording shows on the screen itself (Boss, 2026-10-22: "I couldn't see any timer and I couldn't see
- * when it was recording. I couldn't see how to stop it"): the countdown, large in the middle, then a small pill at the
- * top with a red dot, the time recorded and Stop. A window of the phone-control service's own, so it stays over every
- * app; without that service there is only the notification. The pill is in the video too: Android lets no app keep a
- * window out of a capture. Main thread only.
+ * when it was recording"): the countdown, large in the middle, gone before the first frame. A window of the
+ * phone-control service's own, so it stays over every app. [recording]'s pill (a red dot, the time, Stop) is kept but
+ * not shown: it is in the video, as Android keeps no app's window out of a capture, and Boss wants the stop only at
+ * the end, from the shade. Main thread only.
  */
 object RecordPill {
     private val main = Handler(Looper.getMainLooper())
