@@ -136,4 +136,17 @@ class ConversationBookTest {
         val photo = ConversationBook().fromMac("c2", "Ben", false, listOf(Message("1 Photo", 1, "Ben", id = "p#a", files = listOf("A1|image/heic"))), unread = 0)
         assertEquals(listOf("A1|image/heic"), ConversationBook.fromJson(photo.toJson())["c2"]!!.messages.single().files)
     }
+
+    @Test fun openBubblesCopiesGoOnceLinked() {
+        // The Mac's Kel, and OpenBubbles' Kel from a notification (no Mac ids): only the Mac's stays.
+        val book =
+            ConversationBook()
+                .fromMac("iMessage;-;+1555", "Kel", false, listOf(Message("cutest thing", 5, "Kel", id = "m1")), unread = 1)
+                .take(SeenConversation("ob-kel", "Kel", false, listOf(SeenMessage("cutest thing", 5, "Kel"))))
+        assertEquals(2, book.conversations.size)
+        val only = book.fromMacOnly()
+        assertEquals(listOf("iMessage;-;+1555"), only.conversations.map { it.id })
+        // Nothing to drop: the same book.
+        assertTrue(only.fromMacOnly() === only)
+    }
 }

@@ -233,6 +233,15 @@ class ConversationBook(
         return ConversationBook(byId + (id to old.copy(messages = old.messages - message)))
     }
 
+    /**
+     * Only the conversations that came from the Mac: one whose messages all lack the Mac's ids came from OpenBubbles'
+     * notifications, and would stand beside the Mac's own copy. The same book when there is nothing to drop.
+     */
+    fun fromMacOnly(): ConversationBook {
+        val kept = byId.filterValues { c -> c.messages.isEmpty() || c.messages.any { it.id != null } }
+        return if (kept.size == byId.size) this else ConversationBook(kept)
+    }
+
     /** The owner has looked at [id]. */
     fun read(id: String): ConversationBook {
         val old = byId[id] ?: return this

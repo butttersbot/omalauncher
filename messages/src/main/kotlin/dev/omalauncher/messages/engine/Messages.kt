@@ -80,6 +80,9 @@ object Messages {
         val saved = MacLink.file(context)
         if (saved.isFile) MacAddress.fromJson(saved.readText())?.let { at ->
             mac.value = at
+            // What OpenBubbles' notifications added after linking goes: the Mac has those conversations itself.
+            val mac = real.fromMacOnly()
+            if (mac !== real) publish(mac)
             MacLink.start(context, at)
         }
     }
@@ -159,6 +162,9 @@ object Messages {
         with: Handles,
     ) {
         init(context)
+        // Linked to the Mac, it has every conversation: OpenBubbles' notifications would only add a second copy of each
+        // (Boss, 2026-10-23: "im seeing duplicates of the same messages").
+        if (linked) return
         handles[conversation.id] = with
         publish(real.take(conversation))
     }
