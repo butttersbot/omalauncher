@@ -659,7 +659,10 @@ private fun Photos(files: List<String>) {
                 value = withContext(Dispatchers.IO) { runCatching { decode(got, 1080) }.getOrNull() }
             }
             val shape = composerShape(12.dp)
-            val size = if (one) Modifier.widthIn(max = 260.dp).heightIn(min = 120.dp, max = 320.dp) else Modifier.size(132.dp)
+            // One alone: 240 dp wide, as tall as its shape asks within 120-320 dp; several: 132 dp squares. The picture
+            // fills its frame whatever its own size (a tiny one is scaled up, never drawn at its few pixels).
+            val ratio = picture?.let { it.height.toFloat() / it.width.coerceAtLeast(1) } ?: 0.75f
+            val size = if (one) Modifier.width(240.dp).height((240 * ratio).coerceIn(120f, 320f).dp) else Modifier.size(132.dp)
             Box(
                 size.clip(shape).background(Pack.surface).clickable(enabled = file != null) { file?.let { view(context, it) } }
                     .semantics { contentDescription = "Photo" },
@@ -667,7 +670,7 @@ private fun Photos(files: List<String>) {
             ) {
                 val p = picture
                 if (p != null) {
-                    Image(p, null, if (one) Modifier.widthIn(max = 260.dp) else Modifier.fillMaxSize(), contentScale = if (one) ContentScale.Fit else ContentScale.Crop)
+                    Image(p, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                 } else {
                     BasicText(if (file == null) "Photo" else "", style = Pack.body(Pack.size.small, Pack.muted))
                 }

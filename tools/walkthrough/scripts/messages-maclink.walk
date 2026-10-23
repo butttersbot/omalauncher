@@ -27,6 +27,8 @@ wait 2000
 expect Look at this
 # The photo itself, fetched from the Mac (the demo's is a tiny orange square), in place of a "1 Photo" card.
 expect Photo
+# Not a sliver: the photo fills a 240 dp frame (the demo's 2x2 picture scaled up to an orange block).
+shot photo-fills-its-frame
 expect from your Mac
 shot group-with-photo-card
 key BACK
