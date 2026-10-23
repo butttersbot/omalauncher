@@ -174,7 +174,7 @@ object Messages {
                 .putExtra(Intent.EXTRA_SHORTCUT_ID, id)
                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         // Unfolded, OpenBubbles opens beside this app in split screen, so the conversation stays in view.
-        if (beside) intent.addFlags(Intent.FLAG_ACTIVITY_LAUNCH_ADJACENT or Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+        if (beside) intent.addFlags(Intent.FLAG_ACTIVITY_LAUNCH_ADJACENT or Intent.FLAG_ACTIVITY_NEW_TASK)
         if (text.isNotBlank()) intent.putExtra(Intent.EXTRA_TEXT, text)
         if (copies.size == 1) {
             intent.putExtra(Intent.EXTRA_STREAM, copies[0])

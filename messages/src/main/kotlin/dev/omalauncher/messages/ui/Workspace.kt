@@ -45,6 +45,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
@@ -218,7 +220,13 @@ fun Workspace(
             val url = viewing
             val folded = edgeDp > width - STRIP - 8.dp && !dragging
             // The page stays loaded under the strip and under Across chats, so its place survives folding the panel.
-            if (url != null) Viewer(url, backEnabled = side != Side.Full && !all && !folded, onBack = { viewing = null })
+            if (url != null) {
+                // Under the strip the page keeps the width it had beside the chat, clipped, so it doesn't reflow.
+                val pageWidth = if (folded) width - RAIL - beside else width - edgeDp
+                Box(Modifier.fillMaxSize().clipToBounds()) {
+                    Viewer(url, backEnabled = side != Side.Full && !all && !folded, onBack = { viewing = null }, Modifier.wrapContentWidth(Alignment.Start, unbounded = true).width(pageWidth))
+                }
+            }
             if (folded || all || url == null) {
                 // Covers the page and takes its touches while it waits underneath.
                 Box(Modifier.fillMaxSize().background(Pack.paper).pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } }) {
@@ -450,6 +458,7 @@ private fun Viewer(
     url: String,
     backEnabled: Boolean,
     onBack: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     var web by remember { mutableStateOf<WebView?>(null) }
@@ -479,7 +488,7 @@ private fun Viewer(
             copied = false
         }
     }
-    Column(Modifier.fillMaxSize().padding(start = 18.dp, end = 14.dp, top = 12.dp, bottom = 12.dp)) {
+    Column(modifier.fillMaxHeight().padding(start = 18.dp, end = 14.dp, top = 12.dp, bottom = 12.dp)) {
         Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             HeadButton("‹ Shared", onBack)
             BasicText(Pack.caption(Parts.host(url)), Modifier.weight(1f), style = Pack.mono(10.sp, Pack.muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -535,10 +544,14 @@ private class PanelClient(
             runCatching {
                 if (uri.scheme == "intent") android.content.Intent.parseUri(uri.toString(), android.content.Intent.URI_INTENT_SCHEME) else android.content.Intent(android.content.Intent.ACTION_VIEW, uri)
             }.getOrNull() ?: return true
+        // A page never reaches this app's own files or grants: no content: or file: addresses, and its flags are
+        // replaced, not added to (a page could otherwise ask for a read grant on a photo handed to OpenBubbles).
+        if (intent.data?.scheme == "content" || intent.data?.scheme == "file") return true
         intent.addCategory(android.content.Intent.CATEGORY_BROWSABLE)
         intent.component = null
         intent.selector = null
-        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        intent.clipData = null
+        intent.flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
         val opened = runCatching { context.startActivity(intent) }.isSuccess
         if (!opened) intent.getStringExtra("browser_fallback_url")?.takeIf { it.startsWith("http") }?.let { view.loadUrl(it) }
         return true
