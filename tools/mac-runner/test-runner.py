@@ -367,6 +367,34 @@ try:
           and given['canvas_token'] not in json.dumps(service_calls))
     check('the runner says where its canvas service is, so a device asks it rather than guessing a port',
           call('GET', '/health')[1].get('soma') == environment['OMA_RUNNER_SOMA_SERVICE'])
+    # A busy agent receives the latest five-mail burst as one handoff, without acknowledgment turns.
+    (project / 'hold').write_text('hold active turn')
+    before_mail = len(starts())
+    call('POST', '/threads/%s/messages' % thread, {'text': 'mail batch active work'})
+    for _ in range(50):
+        if len(starts()) > before_mail: break
+        time.sleep(0.1)
+    for n in range(5):
+        route = {'task': 'build'}
+        if n == 4: route['supersedes'] = 'batch-0'
+        text = '[Oma mail routing v1] ' + json.dumps(route) + '\nupdate-%d' % n
+        letter_path = work / 'mail' / 'new' / ('batch-%d.json' % n)
+        letter_path.write_text(json.dumps({**letter, 'id': 'batch-%d' % n, 'text': text}))
+    for _ in range(60):
+        if all((work / 'mail' / 'read' / ('batch-%d.json' % n)).exists() for n in range(5)): break
+        time.sleep(0.1)
+    check('busy mail does not interrupt or start a duplicate agent', len(starts()) == before_mail + 1)
+    (project / 'hold').unlink()
+    check('bundled mail completes', settle(thread, 'idle', 20))
+    batch_starts = starts()[before_mail:]
+    check('five-mail burst becomes one handoff with its explicit replacement removed', len(batch_starts) == 2
+          and '4 messages' in batch_starts[-1]['prompt'] and 'update-0' not in batch_starts[-1]['prompt']
+          and all('update-%d' % n in batch_starts[-1]['prompt'] for n in range(1, 5)))
+    receipt_events = call('GET', '/threads/%s/events' % thread)[1]['events']
+    check('delivery receipts are events, not extra agent turns', any(e['type'] == 'mail_receipt' and e.get('mail') == 'batch-0'
+          and e.get('state') == 'superseded' for e in receipt_events)
+          and sum(e['type'] == 'mail_receipt' and e.get('state') == 'delivered' and e.get('mail', '').startswith('batch-') for e in receipt_events) == 4)
+
     # Slice 8c: the thread's own `soma canvas`, first on its PATH, reaches its screens with its token and nothing more.
     helper = pathlib.Path(given['path'].split(os.pathsep)[0]) / 'soma'
     check('a thread finds `soma` first on its PATH, the runner\'s own helper, runnable by this user alone',

@@ -13,6 +13,15 @@ class AgentMailTest {
            "from": {"device": "macbook-pro", "agent": "claude-code", "session": "b53e204e-1111", "title": "Tailnet device file sharing"},
            "to": {"device": "galaxy-z-fold8", "session": "B"}, "text": "  Hello from the Mac.  ", "reply_to": null}"""
 
+    @Test fun routingRequiresExplicitValidMetadata() {
+        val mail = agentMail(sample)!!
+        assertTrue(mail.routing.isEmpty())
+        assertEquals(mapOf("task" to "launcher", "supersedes" to "old-1"), mail.copy(text =
+            "[Oma mail routing v1] {\"task\":\"launcher\",\"supersedes\":\"old-1\"}\nUse current commit").routing)
+        assertTrue(mail.copy(text = "[Oma mail routing v1] {bad}\nbody").routing.isEmpty())
+        assertTrue(mail.copy(text = "[Oma mail routing v1] {\"task\":\"../../x\"}\nbody").routing.isEmpty())
+    }
+
     @Test
     fun readsTheSpecsMessage() {
         val mail = agentMail(sample)!!

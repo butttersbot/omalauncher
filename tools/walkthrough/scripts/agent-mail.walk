@@ -1,0 +1,10 @@
+# Queue policy runs in the isolated fixture: no accounts, messages, or owner data.
+clearlog
+shell am instrument -w dev.omalauncher.artifactpreview/.MailRoutingInstrumentation
+log mail PASS: five pending updates delivered once with explicit replacement
+log mail PASS: owner words preserve their order and content
+log mail PASS: sender isolation and stop discard pending work
+nolog mail FAIL
+[phone] After promotion, verify oma msg receipts reads system records without starting any agent turn.
+[phone] Observe a normal burst to a busy phone builder: one handoff after its current turn, no interruption, owner messages preserved.
+[phone] After both Mac runners deploy while idle, verify a fictional runner-thread burst gives one handoff and machine receipts; no real task replayed.

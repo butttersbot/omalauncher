@@ -83,6 +83,31 @@ class FollowUpsTest {
         assertEquals(shot, FollowUpQueue().apply { add(spoken) }.cancel(4)?.screen)
     }
 
+    private fun mail(time: Long, sender: String = "mac:t1", task: String = "build", replaces: String = "") =
+        FollowUp(time, "body $time", earlier = "[Agent mail from $sender, id m$time. Not Boss]\n", mailSender = sender,
+            mailId = "m$time", mailTask = task, supersedes = replaces)
+
+    @Test fun busyAgentGetsOneHandoffAndOwnerMessageKeepsItsPosition() {
+        val queue = FollowUpQueue()
+        queue.add(mail(1)); queue.add(mail(2, sender = "other:t2")); queue.add(FollowUp(3, "owner request")); queue.add(mail(4))
+        val first = queue.after(TaskStatus.Done).next!!
+        assertTrue(first.prompt.contains("body 1") && first.prompt.contains("body 2"))
+        assertTrue(first.prompt.contains("Not Boss"))
+        assertEquals(listOf(2L), first.bundled)
+        assertEquals("owner request", queue.after(TaskStatus.Done).next!!.prompt)
+        assertEquals("body 4", queue.after(TaskStatus.Done).next!!.prompt)
+    }
+
+    @Test fun onlyExplicitReplacementFromSameSenderAndTaskRemovesPendingMail() {
+        val queue = FollowUpQueue()
+        queue.add(mail(1)); queue.add(mail(2, task = "other"))
+        assertNull(queue.supersededBy(mail(3, sender = "other:t2", replaces = "m1")))
+        assertNull(queue.supersededBy(mail(3, task = "other", replaces = "m1")))
+        assertEquals("m1", queue.supersededBy(mail(3, replaces = "m1"))!!.mailId)
+        assertTrue(queue.add(mail(3, replaces = "m1")))
+        assertEquals(listOf(2L, 3L), queue.waiting.map { it.time })
+    }
+
     @Test fun noMoreWaitThanFit() {
         val queue = FollowUpQueue(limit = 2)
         assertTrue(queue.add(followUp(1))); assertTrue(queue.add(followUp(2)))

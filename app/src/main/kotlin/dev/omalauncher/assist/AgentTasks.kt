@@ -81,6 +81,7 @@ object AgentTasks {
         if (restored) return
         restored = true
         builders.forEach { it.restore(context) }
+        AgentMailReceipts.interrupted(context)
         AgentNotices.clearStale(context)
     }
 
@@ -149,7 +150,7 @@ object AgentTasks {
         }
         val to = pick(addressed(context, mail))
         if (job != null) of(to).followUp(context, mail.text, page = null, earlier = jobPlaybook(job, mail, to), mail = jobLabel(job, mail))
-        else of(to).followUp(context, mail.text, page = null, earlier = mail.wrapper(to), mail = mail.label)
+        else of(to).followUp(context, mail.text, page = null, earlier = mail.wrapper(to), mail = mail.label, agentMail = mail)
         return to
     }
 
@@ -340,17 +341,32 @@ class Builder(val id: BuilderId) {
      * [screen] is as for [send]: the screenshot of a spoken request, which waits with it and is this object's
      * to delete once this returns.
      */
-    fun followUp(context: Context, prompt: String, images: List<String> = emptyList(), page: String? = HomeDoor.home?.showing, earlier: String = "", screen: File? = null, mail: String = "", errand: Boolean = false): Unit = synchronized(lock) {
+    fun followUp(context: Context, prompt: String, images: List<String> = emptyList(), page: String? = HomeDoor.home?.showing, earlier: String = "", screen: File? = null, mail: String = "", errand: Boolean = false, agentMail: AgentMail? = null): Unit = synchronized(lock) {
         restore(context)
         check(prompt.isNotBlank()) { "Type or speak a request first." }
-        if (!working) return start(context, prompt, images, screen, page, queued = null, earlier = earlier, mail = mail, errand = errand)
+        if (!working && agentMail == null) return start(context, prompt, images, screen, page, queued = null, earlier = earlier, mail = mail, errand = errand)
         check(!stopping) { "The agent is stopping. Send this again in a moment." }
         val agents = (context.applicationContext as App).runtime.agents
         val agent = builderAgent(id, agents.installed, agents.default)?.agent ?: error("Install and sign in to an agent in Omalauncher first.")
         val log = ChatLog.of(context)
         val time = ChatHistory.stamp(log.tasks, System.currentTimeMillis())
-        check(followUps.add(FollowUp(time, prompt, images, page, earlier, screen, errand))) { FollowUpQueue.FULL }
+        if (agentMail != null && AgentMailReceipts.seen(context, agentMail)) return
+        if (agentMail != null && followUps.waiting.any { it.mailSender == agentMail.replyAddress && it.mailId == agentMail.id }) return
+        val routing = agentMail?.routing ?: emptyMap()
+        val incoming = FollowUp(time, prompt, images, page, earlier, screen, errand,
+            mailSender = agentMail?.replyAddress.orEmpty(), mailId = agentMail?.id.orEmpty(),
+            mailTask = routing["task"].orEmpty(), supersedes = routing["supersedes"].orEmpty())
+        val replaced = followUps.supersededBy(incoming)
+        check(followUps.add(incoming)) { FollowUpQueue.FULL }
+        replaced?.let {
+            dropped(context, listOf(it), "Superseded by agent mail ${incoming.mailId} before delivery.")
+            AgentMailReceipts.state(context, listOf(it.time), "superseded")
+        }
         log.begin(ChatTask(time, agent.name, prompt, images, screen = screen != null, status = TaskStatus.Queued, builder = id.saved, mail = mail))
+        if (agentMail != null) AgentMailReceipts.queued(context, agentMail, time)
+        if (agentMail != null && !working) android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            synchronized(lock) { if (!working && !stopping) advance(context, TaskStatus.Done) }
+        }, 1_000)
     }
     /**
      * `[ cancel ]` on a follow-up that still waits: it leaves the queue and the thread says so. One that has
@@ -587,16 +603,25 @@ class Builder(val id: BuilderId) {
         val next = handoff.next ?: return false
         return try {
             start(context, next.prompt, next.images, next.screen, next.page, queued = next.time, earlier = next.earlier, errand = next.errand)
+            AgentMailReceipts.state(context, listOf(next.time) + next.bundled, "delivered")
+            next.bundled.forEach { time ->
+                ChatLog.of(context).update(time, save = true) { it.copy(status = TaskStatus.Done, result = "Delivered in the bundled agent handoff.") }
+            }
             true
         } catch (e: Exception) {
             // What stopped this one from starting would stop the ones behind it too.
             dropped(context, listOf(next) + followUps.drop(), e.message ?: FollowUpQueue.FAILED)
+            AgentMailReceipts.state(context, next.bundled, "not-delivered")
+            next.bundled.forEach { time -> ChatLog.of(context).update(time, save = true) {
+                ChatHistory.dropped(it, e.message ?: FollowUpQueue.FAILED)
+            } }
             false
         }
     }
     /** Marks follow-ups that will never be sent, with the [reason] where their answer would have been. A screenshot that waited with one goes. */
     private fun dropped(context: Context, unsent: List<FollowUp>, reason: String) {
         val log = ChatLog.of(context)
+        AgentMailReceipts.state(context, unsent.map { it.time }, "not-delivered")
         unsent.forEach { followUp ->
             ScreenShots.discard(followUp.screen)
             log.update(followUp.time, save = true) { ChatHistory.dropped(it, reason) }

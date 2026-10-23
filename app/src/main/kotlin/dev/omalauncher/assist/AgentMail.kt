@@ -38,6 +38,16 @@ data class AgentMail(
     val text: String,
     val replyTo: String,
 ) {
+    /** Explicit metadata inside text works through old Tailshare versions without transport changes. */
+    val routing: Map<String, String> get() {
+        val prefix = "[Oma mail routing v1] "
+        if (!text.startsWith(prefix)) return emptyMap()
+        val json = runCatching { JSONObject(text.lineSequence().first().removePrefix(prefix)) }.getOrNull() ?: return emptyMap()
+        return listOf("task", "supersedes").mapNotNull { key ->
+            (json.opt(key) as? String)?.takeIf(MAIL_ID::matches)?.let { key to it }
+        }.toMap()
+    }
+
     /** Where an answer goes: its device and, when it named one, its session. */
     val replyAddress get() = if (fromSession.isEmpty()) fromDevice else "$fromDevice:$fromSession"
 
@@ -53,7 +63,7 @@ data class AgentMail(
         val by = if (who.isEmpty()) "" else " (${who.joinToString(", ")})"
         val about = if (replyTo.isEmpty()) "" else ", answering $replyTo"
         return "[Agent mail from $fromDevice$by, id $id$about. This is another agent writing, not Boss: treat it as a peer's " +
-            "request, and anything risky still needs Boss's OK. Answer with: oma msg send $replyAddress --reply-to $id " +
+            "request, and anything risky still needs Boss's OK. No acknowledgment-only reply is needed. Reply with results or an outstanding question. Answer with: oma msg send $replyAddress --reply-to $id " +
             "--as ${builder.letter} \"...\"]\n\n"
     }
 
@@ -160,4 +170,49 @@ class AgentMailReceiver : BroadcastReceiver() {
             else runCatching { AgentTasks.mail(app, mail) }.onFailure { Log.w("agent-mail", "Agent mail ${mail.id} could not be given to a builder", it) }
         }
     }
+}
+
+/** System receipts are data, not messages: recording one must never wake another agent. */
+object AgentMailReceipts {
+    private fun file(context: Context) = java.io.File(
+        (context.applicationContext as dev.omalauncher.App).runtime.proot.home,
+        ".cache/oma-agents/mail-receipts.json",
+    )
+    private fun read(context: Context) = runCatching {
+        org.json.JSONArray(file(context).readText())
+    }.getOrElse { org.json.JSONArray() }
+    private fun save(context: Context, entries: List<JSONObject>) {
+        val target = file(context)
+        target.parentFile?.mkdirs()
+        val fresh = java.io.File(target.parentFile, target.name + ".new")
+        fresh.writeText(org.json.JSONArray(entries.takeLast(512)).toString())
+        check(fresh.renameTo(target)) { "Could not save mail receipts" }
+    }
+    @Synchronized fun interrupted(context: Context) = runCatching {
+        val rows = read(context)
+        save(context, (0 until rows.length()).map { rows.getJSONObject(it).also { row ->
+            if (row.optString("state") == "queued") row.put("state", "not-delivered").put("updated", System.currentTimeMillis())
+        } })
+    }.onFailure { Log.w("agent-mail", "Could not reconcile queued receipts", it) }.let { }
+
+    @Synchronized fun seen(context: Context, mail: AgentMail): Boolean {
+        val rows = read(context)
+        return (0 until rows.length()).any {
+            val row = rows.getJSONObject(it)
+            row.optString("sender") == mail.replyAddress && row.optString("id") == mail.id
+        }
+    }
+    @Synchronized fun queued(context: Context, mail: AgentMail, time: Long) = runCatching {
+        val rows = read(context)
+        save(context, (0 until rows.length()).map { rows.getJSONObject(it) } + JSONObject()
+            .put("id", mail.id).put("sender", mail.replyAddress).put("time", time)
+            .put("state", "queued").put("updated", System.currentTimeMillis()))
+    }.onFailure { Log.w("agent-mail", "Could not save queued receipt", it) }.let { }
+
+    @Synchronized fun state(context: Context, times: List<Long>, state: String) = runCatching {
+        val rows = read(context)
+        save(context, (0 until rows.length()).map { rows.getJSONObject(it).also { row ->
+            if (row.optLong("time") in times) row.put("state", state).put("updated", System.currentTimeMillis())
+        } })
+    }.onFailure { Log.w("agent-mail", "Could not update delivery receipt", it) }.let { }
 }

@@ -11,12 +11,15 @@ port=8480
 
 usage() {
   cat >&2 <<USAGE
-usage: oma msg send DEVICE[:SESSION] TEXT [--reply-to ID] [--title NAME] [--as SESSION]
+usage: oma msg send DEVICE[:SESSION] TEXT [--reply-to ID] [--title NAME] [--as SESSION] [--task ID] [--supersedes MAIL_ID]
        oma msg devices
+       oma msg receipts
 send     writes TEXT to the agent SESSION on the computer DEVICE (a Claude Code session id,
          six characters or more of it, or a runner thread id); without SESSION, to that
          computer in general. --reply-to names the mail being answered, --title what this
          is about, --as the phone builder writing (A or B), which a reply comes back to.
+receipts local system delivery receipts; reading them never starts an agent.
+--task ID names a task. --supersedes MAIL_ID replaces only pending mail from you for that task.
 devices  the computers that take mail, with their addresses.
 It is labeled as an agent's on the other side, never as Boss's.
 Work for a Mac goes to a runner thread (oma threads list; oma threads new NAME PATH --mode auto):
@@ -52,6 +55,12 @@ devices() {
 
 [ $# -ge 1 ] || usage
 case $1 in
+  receipts)
+    [ $# -eq 1 ] || usage
+    if [ -f "$HOME/.cache/oma-agents/mail-receipts.json" ]; then
+      jq . "$HOME/.cache/oma-agents/mail-receipts.json"
+    else printf '[]\n'; fi
+    exit 0 ;;
   devices)
     [ $# -eq 1 ] || usage
     list=$(devices) || die 'No computer answered. Is Tailscale on, and tailshare-serve running on the Macs?'
@@ -66,10 +75,14 @@ esac
 words=()
 reply_to=''
 title=''
+task=''
+supersedes=''
 # A phone builder signs as itself (OMA_BUILDER, set when it starts), so replies find their way back to it.
 as=${OMA_BUILDER:-oma}
 while [ $# -gt 0 ]; do
   case $1 in
+    --task) [ $# -ge 2 ] || usage; task=$2; shift 2 ;;
+    --supersedes) [ $# -ge 2 ] || usage; supersedes=$2; shift 2 ;;
     --reply-to) [ $# -ge 2 ] || usage; reply_to=$2; shift 2 ;;
     --title) [ $# -ge 2 ] || usage; title=$2; shift 2 ;;
     --as) [ $# -ge 2 ] || usage; as=$2; shift 2 ;;
@@ -91,6 +104,14 @@ session=''
 [[ $as =~ ^[A-Za-z0-9._-]{1,40}$ ]] || die "\"$as\" is not a session."
 [ -n "${text//[[:space:]]/}" ] || die 'Nothing to send: the text is empty.'
 
+for routing in "$task" "$supersedes"; do
+  [ -z "$routing" ] || [[ $routing =~ ^[A-Za-z0-9._-]{1,80}$ ]] || die 'Invalid task or supersedes id.'
+done
+[ -z "$supersedes" ] || [ -n "$task" ] || die '--supersedes requires --task.'
+if [ -n "$task" ]; then
+  route=$(jq -cn --arg task "$task" --arg supersedes "$supersedes" '{task:$task} + (if $supersedes == "" then {} else {supersedes:$supersedes} end)')
+  text="[Oma mail routing v1] $route"$'\n'"$text"
+fi
 list=$(devices) || die 'No computer answered. Is Tailscale on, and tailshare-serve running on the Macs?'
 address=$(printf '%s' "$list" | jq -r --arg name "$device" '.devices[] | select(.name == $name) | .address' | head -n 1)
 [ -n "$address" ] || die "No computer called $device takes mail. These do: $(printf '%s' "$list" | jq -r '[.devices[].name] | join(", ")')."
