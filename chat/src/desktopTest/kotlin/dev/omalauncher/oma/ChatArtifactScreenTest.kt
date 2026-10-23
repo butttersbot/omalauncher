@@ -14,6 +14,30 @@ import java.io.File
 
 @OptIn(ExperimentalTestApi::class)
 class ChatArtifactScreenTest : ChatScreenTestBase() {
+    @Test fun switchingFromSourceToNotesKeepsMarkdownVisibleOnUprightInnerScreen() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        val host = object : SampleHost() {
+            override fun tasks() = listOf(ChatTask(now, "Claude", "Make files", result = "[Page](page.html)\n\n[Notes](notes.md)", status = TaskStatus.Done))
+            override fun readArtifact(thread: String, path: String) = ArtifactRead.Ready(
+                ArtifactDocument(path, if (path.endsWith(".md")) "text/markdown" else "text/html",
+                    (if (path.endsWith(".md")) "# Notes\n\nClose it to return to the same draft." else "<h1>Page</h1>").toByteArray(), "sample"))
+        }
+        setContent { Box(Modifier.size(704.dp, 933.dp)) { OmaChatScreen(host, null, {}, OMA_TAB, {}) } }
+        mainClock.advanceTimeBy(1200)
+        onNodeWithText("[ files · 2 ]").performClick()
+        mainClock.advanceTimeBy(1200)
+        onAllNodesWithText("page.html").onLast().performClick()
+        mainClock.advanceTimeBy(1200)
+        onNodeWithText("[ source ]").performClick()
+        mainClock.advanceTimeBy(1200)
+        onNodeWithText("[ files ]").performClick()
+        mainClock.advanceTimeBy(1200)
+        onAllNodesWithText("notes.md").onLast().performClick()
+        mainClock.advanceTimeBy(1200)
+        waitUntil(timeoutMillis = 5000) { onAllNodesWithText("Close it to return to the same draft.").fetchSemanticsNodes().isNotEmpty() }
+        onNodeWithText("Close it to return to the same draft.").assertIsDisplayed()
+    }
+
     @Test fun filesRemainsAvailableInEmptyPhoneAndMacChatsAndBackReturnsToChat() = runComposeUiTest {
         mainClock.autoAdvance = false
         var tab by mutableStateOf("phone-a")
