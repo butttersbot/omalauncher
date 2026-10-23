@@ -100,7 +100,7 @@ object Alerts {
             ).setSemanticAction(Notification.Action.SEMANTIC_ACTION_MARK_AS_READ).build()
         val n =
             Notification.Builder(context, MESSAGES)
-                .setSmallIcon(android.R.drawable.sym_action_chat)
+                .setSmallIcon(dev.omalauncher.messages.R.drawable.ic_notify)
                 .setStyle(style)
                 .setContentIntent(openIntent(context, c.id))
                 .setCategory(Notification.CATEGORY_MESSAGE)

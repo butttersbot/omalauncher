@@ -26,7 +26,7 @@ class LinkService : Service() {
         Alerts.channels(this)
         val n =
             Notification.Builder(this, Alerts.LINK)
-                .setSmallIcon(android.R.drawable.sym_action_chat)
+                .setSmallIcon(dev.omalauncher.messages.R.drawable.ic_notify)
                 .setContentTitle("Connected to your Mac")
                 .setContentText("New iMessages arrive here")
                 .setContentIntent(Alerts.openIntent(this, null))
