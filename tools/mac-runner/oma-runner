@@ -111,6 +111,9 @@ LIMIT = re.compile(r'usage limit|hit your (\w+ )?limit|limit (reached|exceeded)|
 CODEX_LIMITS = {'usageLimitExceeded', 'rateLimitExceeded', 'serverOverloaded', 'sessionBudgetExceeded'}
 # Codex features that act outside the project or approve on their own; off in runner threads where this Codex has them.
 CODEX_OFF = ['hooks', 'guardian_approval']
+CLAUDE_DISCOVER = os.environ.get('OMA_RUNNER_CLAUDE_DISCOVER', '1') == '1'
+CLAUDE_PROJECTS = pathlib.Path(os.environ.get('CLAUDE_CONFIG_DIR') or HOME / '.claude') / 'projects'
+CLAUDE_SCAN_EVERY = max(1, float(os.environ.get('OMA_RUNNER_CLAUDE_SCAN_EVERY', '15')))
 CODEX_DISCOVER = os.environ.get('OMA_RUNNER_CODEX_DISCOVER', '1') == '1'
 CODEX_SCAN_EVERY = float(os.environ.get('OMA_RUNNER_CODEX_SCAN_EVERY', '15'))
 
@@ -2013,7 +2016,8 @@ class Thread:
         return {'id': self.meta['id'], 'name': self.meta['name'], 'project': self.meta['project'], 'home': 'mac',
                 'kind': self.meta['kind'], 'mode': mode(self.meta), 'model': self.model, 'summary': self.meta.get('summary', ''), 'status': self.meta['status'],
                 'last_worked': self.meta.get('last_worked'), 'tail': self.meta.get('tail', ''), 'waiting_turns': len(self.queue),
-                'last_event': len(self.events), 'external': bool(self.meta.get('codex_external')),
+                'last_event': len(self.events), 'external': bool(self.meta.get('codex_external') or self.meta.get('claude_external')),
+                'read_only': bool(self.meta.get('claude_external')),
                 'bot': self.bot_fields(),
                 'background': list(self.kept.driver.background.values()) if self.kept and not self.kept.done else [],
                 'pending': [{'approval': key, 'nonce': entry['nonce'], 'tool': entry['tool'], 'input': entry['input'], 'explanation': entry['explanation'], 'can_remember': entry.get('command_scope') is not None} for key, entry in self.pending.items()]}
@@ -2105,6 +2109,135 @@ class CodexCatalog:
             self.process.wait()
         self.process.stdin.close()
         self.process.stdout.close()
+
+
+def claude_discovery_start():
+    """Include sessions active in the day before first activation, then retain that boundary."""
+    marker = STATE / 'claude-discovery.json'
+    if not marker.exists():
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        fresh = marker.with_suffix('.new')
+        fresh.write_text(json.dumps({'since': int(time.time()) - 86400}))
+        fresh.replace(marker)
+    return int(json.loads(marker.read_text())['since'])
+
+
+def claude_visible(row):
+    """Only the owner's prompts and visible assistant text, never tool results or thinking."""
+    if row.get('isSidechain') or row.get('isMeta') or row.get('isCompactSummary') or row.get('type') not in ('user', 'assistant'):
+        return ''
+    message = row.get('message')
+    if not isinstance(message, dict):
+        return ''
+    content = message.get('content')
+    if isinstance(content, str):
+        return content if row['type'] == 'user' else ''
+    if not isinstance(content, list):
+        return ''
+    return '\n'.join(b['text'] for b in content if isinstance(b, dict) and b.get('type') == 'text' and isinstance(b.get('text'), str))
+
+
+def sync_claude():
+    since = claude_discovery_start()
+    # Direct project children only: subagent transcripts are never separate conversations.
+    for path in CLAUDE_PROJECTS.glob('*/*.jsonl'):
+        sid = path.stem
+        if not re.fullmatch(r'[a-fA-F0-9-]{36}', sid) or path.is_symlink() or path.parent.is_symlink():
+            continue
+        try:
+            stat_now = path.stat()
+            if stat_now.st_mtime < since:
+                continue
+            with changed:
+                thread = next((t for t in threads.values() if t.meta['kind'] == 'claude' and t.meta.get('session') == sid), None)
+                if thread and (not thread.meta.get('claude_external') or thread.worker is not None):
+                    continue
+                offset = thread.meta.get('claude_offset', 0) if thread else 0
+                identity = [stat_now.st_dev, stat_now.st_ino]
+                if (thread and stat_now.st_size == offset and thread.meta.get('claude_mtime_ns') == stat_now.st_mtime_ns
+                        and thread.meta.get('claude_identity') == identity):
+                    continue
+                if (stat_now.st_size < offset or (thread and thread.meta.get('claude_identity') != identity)
+                        or (thread and stat_now.st_size == offset)):
+                    offset = 0  # compaction/rewrite: UUID deduplication survives the reread
+            rows = []
+            with path.open('rb') as source:
+                source.seek(offset)
+                # Bounded work each scan; never consume an incomplete final record.
+                for _ in range(2000):
+                    if source.tell() - offset >= 8 * 1024 * 1024:
+                        break
+                    start = source.tell()
+                    line = source.readline(4 * 1024 * 1024 + 1)
+                    if not line:
+                        break
+                    oversized = len(line) > 4 * 1024 * 1024
+                    while oversized and line and not line.endswith(b'\n'):
+                        line = source.readline(4 * 1024 * 1024 + 1)
+                    if not line.endswith(b'\n'):
+                        source.seek(start)
+                        break
+                    if oversized:
+                        continue  # large tool payloads must not stall the rest of a session
+                    try:
+                        row = json.loads(line)
+                    except (ValueError, UnicodeDecodeError):
+                        continue
+                    if (isinstance(row, dict) and row.get('sessionId', sid) == sid and not row.get('isSidechain')
+                            and (claude_visible(row).strip() or row.get('type') == 'custom-title')):
+                        rows.append(row)
+                offset = source.tell()
+            if thread is None:
+                first = next((r for r in rows if r.get('cwd') and claude_visible(r).strip()), None)
+                if first is None:
+                    continue
+                project = pathlib.Path(first['cwd']).expanduser().resolve(strict=True)
+                if not project.is_dir():
+                    continue
+            with changed:
+                # A runner turn may have registered the session while the file was being read.
+                current = next((t for t in threads.values() if t.meta['kind'] == 'claude' and t.meta.get('session') == sid), None)
+                if current is not thread:
+                    continue
+                if thread is None:
+                    tid = 't' + hashlib.sha256(('claude:' + sid).encode()).hexdigest()[:16]
+                    if tid in threads:
+                        continue
+                    thread = Thread({'id': tid, 'name': claude_visible(first).strip()[:160], 'project': str(project),
+                                     'kind': 'claude', 'session': sid, 'status': 'idle', 'mode': 'manual',
+                                     'created': int(stat_now.st_mtime), 'summary': '', 'tail': '', 'claude_external': True})
+                    threads[tid] = thread
+                    thread.save()
+                    thread.emit('note', text='Live mirror of Claude Code on the Mac. Read only: reply in Claude Code on the Mac.')
+                seen = set(thread.meta.get('claude_seen', []))
+                for row in rows:
+                    if row.get('type') == 'custom-title' and isinstance(row.get('customTitle'), str):
+                        thread.meta['name'] = row['customTitle'][:160]
+                    text = claude_visible(row).strip()
+                    uid = row.get('uuid')
+                    if not text or not isinstance(uid, str) or uid in seen:
+                        continue
+                    if row['type'] == 'assistant':
+                        thread.model = (row.get('message') or {}).get('model') or thread.model
+                    thread.emit('message' if row['type'] == 'user' else 'text', text=text)
+                    seen.add(uid)
+                thread.meta.update(claude_offset=offset, claude_seen=sorted(seen), last_worked=int(stat_now.st_mtime),
+                                   claude_identity=identity, claude_mtime_ns=stat_now.st_mtime_ns)
+                thread.save()
+        except (OSError, ValueError, TypeError) as problem:
+            log('Claude discovery: ' + str(problem)[:200], once=True)
+
+
+def watch_claude():
+    while not closing:
+        try:
+            sync_claude()
+        except Exception as problem:
+            log('Claude discovery: ' + str(problem)[:200], once=True)
+        for _ in range(max(1, int(CLAUDE_SCAN_EVERY * 2))):
+            if closing:
+                return
+            time.sleep(.5)
 
 
 def codex_discovery_start():
@@ -2445,6 +2578,8 @@ def collect_mail():
 def take(thread, text):
     """The owner's words: at once when the thread is free, otherwise when the turn before them ends."""
     with changed:
+        if thread.meta.get('claude_external'):
+            return {'taken': 'refused', 'error': 'This Claude conversation is mirrored from the Mac. Reply in Claude Code on the Mac.'}
         if isinstance(thread.driver, Codex) and not text.startswith('[Agent mail '):
             for approval, entry in list(thread.pending.items()):
                 if thread.driver.user_input(entry, text):
@@ -2989,6 +3124,8 @@ class Runner(BaseHTTPRequestHandler):
         thread = threads.get(parts[1]) if len(parts) in (3, 4) and parts[0] == 'threads' else None
         if thread is None:
             return self.answer(404, {'ok': False, 'error': 'not found'})
+        if thread.meta.get('claude_external'):
+            return self.answer(409, {'ok': False, 'error': 'This Claude conversation is mirrored from the Mac. Reply in Claude Code on the Mac.'})
         if parts[2:] == ['messages']:
             text = body.get('text')
             if not isinstance(text, str) or not text.strip():
@@ -3224,6 +3361,9 @@ def serve():
     if CODEX_DISCOVER and program('codex'):
         codex_discovery_start()
         threading.Thread(target=watch_codex, daemon=True).start()
+    if CLAUDE_DISCOVER:
+        claude_discovery_start()
+        threading.Thread(target=watch_claude, daemon=True).start()
     if SOMA_SERVICE:
         write_soma_helper()
     # A test may ask for this machine's own loopback; anything else is the tailnet address or nothing.

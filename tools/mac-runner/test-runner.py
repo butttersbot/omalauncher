@@ -22,7 +22,7 @@ environment = {**os.environ, 'OMA_RUNNER_PORT': str(port), 'OMA_RUNNER_TOKEN': s
                'OMA_RUNNER_LOGS': str(work / 'logs'), 'OMA_RUNNER_ROOTS': str(root), 'OMA_RUNNER_AGENT': str(HERE / 'fake-agent'), 'OMA_RUNNER_BIND': '127.0.0.1',
                'OMA_RUNNER_CODEX': str(HERE / 'fake-codex'), 'OMA_RUNNER_CURSOR': str(HERE / 'fake-cursor'), 'OMA_RUNNER_GROK': str(HERE / 'fake-grok'), 'CODEX_HOME': str(work / 'codex'),
                # This fixture models owned turns, not the native session catalog (tested separately).
-               'OMA_RUNNER_CODEX_DISCOVER': '0',
+               'OMA_RUNNER_CODEX_DISCOVER': '0', 'OMA_RUNNER_CLAUDE_DISCOVER': '0',
                'OMA_RUNNER_FILES': str(work / 'From Fold'), 'OMA_RUNNER_MAX_FILE': str(3 * 1024 * 1024),
                'OMA_RUNNER_MAIL': str(work / 'mail'), 'OMA_RUNNER_MAIL_EVERY': '0.2',
                # Per-device keys: the table, who whois says is calling (read only by a loopback runner), this machine's name.
