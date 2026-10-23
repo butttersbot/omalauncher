@@ -1,5 +1,6 @@
 # Soma News (110+; Google News since 127). Bugs Boss found: empty bullets, related-link tails, sideways scrolling,
-# the drop capital's spacing.
+# the drop capital's spacing; in 135, white status-bar icons on the cream paper, Reuters' headline read twice, CNBC's
+# "watch now" video promos.
 # A clean start: no shade or dialog left by an earlier walk.
 shell cmd statusbar collapse
 key BACK
@@ -14,6 +15,8 @@ wait 8000
 expect Top stories
 expect Technology
 shot stream-cover-new-stories-pill-clear-of-chips
+# Look: the clock, signal and battery are drawn DARK on the cream paper (135: white, unseen).
+shot status-icons-dark-on-paper
 scrollto Show 20 more
 # A refresh reflows the stream as pictures load: let it settle so the tap lands on the button.
 wait 1500
@@ -37,6 +40,9 @@ wait 6000
 absent Getting the whole story
 absent Related stories
 absent Read more
+absent watch now
+absent STREAM NOW
+# Look: dark status icons here too, and the headline once only (not again as the first line of the story).
 shot article
 key BACK
 # Back keeps him in the stream.
@@ -59,3 +65,4 @@ rotate portrait
 [phone] Swipe system Back from an article (back to the stream), then from the stream (back to home).
 [phone] Open three top stories from different publishers: each shows the whole article, not only its headline (Boss, 2026-10-22: in 130 none loaded, because Google had blocked the phone's network after the hourly burst of lookups).
 [phone] The status bar's clock, signal and battery show dark on the reader's paper, on the cover screen and unfolded (they were white and unseen until 131).
+[phone] Open a Reuters story and a CNBC story: the headline shows once (not again as the story's first line), no "watch now"/"STREAM NOW" video promos or their pictures, and the status bar's clock and icons are dark on the cream paper (135: white).

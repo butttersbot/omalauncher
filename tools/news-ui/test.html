@@ -24,6 +24,14 @@ try {
   const tidyBlocks = NewsContent.blocks(root);
   assert(root.querySelectorAll('li').length===1 && !tidyBlocks.some(b=>/^•\s*$/.test(b.p||'')), 'empty bullets removed');
   assert(!/Read more|Related stories|Headline B|Sign up/.test(root.textContent) && root.textContent.includes('Real point one.'), 'related links and read-more tails removed, story kept');
+  // The 135 walk: Google News feeds give the headline and publisher as the whole story (Reuters, read twice).
+  root = NewsContent.article('<a href="https://news.google.com/x">Fed holds rates steady as infla\u00ADtion cools</a>&nbsp;&nbsp;<font color="#6f6f6f">Reuters</font>', { title:'Fed holds rates steady as inflation cools', source:'Reuters' });
+  assert(root.textContent.trim()==='', 'feed headline plus publisher is not read as the story');
+  root = NewsContent.article(`<div id="article-body"><h1>Fed holds rates steady - Reuters</h1><p>Fed holds rates steady as officials ${prose}</p></div>`, { title:'Fed holds rates steady', source:'Reuters' });
+  assert(!root.querySelector('h1') && root.textContent.includes('as officials'), 'headline with publisher suffix removed, story that starts with it kept');
+  // The 135 walk: CNBC's video promos ("watch now", "STREAM NOW") and their pictures.
+  root = NewsContent.article(`<div class="ArticleBody-articleBody"><p>Starlink story ${prose}</p><div class="InlineVideo-container"><img src="https://example.test/clip.jpg"><span>watch now</span></div><div><div><img src="https://example.test/promo.jpg"></div><span>STREAM NOW</span></div><div><span>VIDEO</span><span>02:31</span></div><p>Second part ${prose}</p></div>`);
+  assert(!/watch now|STREAM NOW|VIDEO|02:31/i.test(root.textContent) && !root.querySelector('img') && root.textContent.includes('Second part'), 'video promos and their pictures removed, story kept');
   // The 128 walk: Al Jazeera's "Recommended Stories" with its screen-reader list labels, mid-article.
   root = NewsContent.article(`<div id="article-body"><p>First part ${prose}</p><h2>Recommended Stories</h2><div><span>list of 4 items</span><ul></ul><span>end of list</span></div><p>Second part ${prose}</p></div>`);
   assert(!/Recommended|list of 4 items|end of list/.test(root.textContent) && root.textContent.includes('Second part'), 'mid-article recommended block and its reader labels removed');
