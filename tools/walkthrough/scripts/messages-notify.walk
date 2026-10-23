@@ -37,7 +37,7 @@ shot message-notification
 tap Demo reply to: notify test
 wait 2500
 # The tap opens the conversation, and its notification goes.
-expect Perfect, see you there
+expect notify test
 expect Demo reply to: notify test
 shot opened-from-notification
 shell cmd statusbar expand-notifications

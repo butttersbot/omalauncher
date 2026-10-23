@@ -6,6 +6,8 @@ key HOME
 shell pm clear dev.omalauncher.messages
 # Contacts allowed ahead, so Android's prompt (whose title also says Allow) doesn't cover the inbox.
 shell pm grant dev.omalauncher.messages android.permission.READ_CONTACTS
+# 0.7+ asks for notifications when linked; granted here so its prompt does not cover the inbox.
+shell pm grant dev.omalauncher.messages android.permission.POST_NOTIFICATIONS
 # Quoted twice: walk.py hands the line to the phone's shell, which would split the link at '&'.
 shell am start -a android.intent.action.VIEW -d "'soma-messages://link?url=http%3A%2F%2F100.120.219.46%3A8765&token=BON7avwraojOZCR1WT8sLWZg9WTx0RFaqeR3udg1kzA'" dev.omalauncher.messages
 wait 2500
@@ -32,9 +34,17 @@ wait 800
 tap Ana Demo
 wait 2000
 # A threaded reply from the Mac shows the message it answers.
+# The demo keeps every test message, so the older reply sits above them: scroll back up to it.
+swipe 0.5 0.3 0.5 0.85 400
+swipe 0.5 0.3 0.5 0.85 400
+swipe 0.5 0.3 0.5 0.85 400
+wait 600
 expect Perfect, see you there
 expect You: Yes! 7pm
 shot reply-quote
+# Scrolled up, the thread stays put and offers "Latest"; back down before writing, so the answer shows.
+tap Latest
+wait 800
 # The field and the send button by place (cover screen): "Message" would also match the inbox's heading, under
 # the conversation.
 tap 0.5 0.925
