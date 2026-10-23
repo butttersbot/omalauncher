@@ -34,6 +34,20 @@ class PhoneBridge(private val context: Context, private val proot: Proot) {
                         check(socket.peerCredentials.uid == Process.myUid()) { "Caller is not Omalauncher" }
                         socket.soTimeout = 3000
                         val input = JSONObject(PhoneHttp.readBody(socket.inputStream))
+                        // An update handed over by Linux (oma-install, off Wi-Fi): no phone control needed, and done here,
+                        // off the main thread, as the APK is copied to Android's installer.
+                        if (input.optString("command") == "self-install") {
+                            val path = input.optString("path").removePrefix("/")
+                            val apk = File(proot.rootfs, path).canonicalFile
+                            val result = if (path.isEmpty() || !apk.path.startsWith(proot.rootfs.canonicalPath + "/")) {
+                                JSONObject().put("ok", false).put("error", "The APK must be a file in Linux.")
+                            } else {
+                                runCatching { dev.omalauncher.update.SelfInstall.install(context, apk) }
+                                    .getOrElse { JSONObject().put("ok", false).put("error", it.message) }
+                            }
+                            PhoneHttp.reply(socket.outputStream, result.toString())
+                            return@use
+                        }
                         val latch = CountDownLatch(1)
                         val deadline = SystemClock.elapsedRealtime() + 8000
                         var result = JSONObject().put("ok", false).put("error", "Phone request timed out")

@@ -1,0 +1,6 @@
+# Updates Oma installs itself, without Wireless debugging (Soma 134+). Nothing to drive on the emulator: Android's own
+# installer and its prompts are the phone's.
+[phone] With Wi-Fi off (5G only), oma-install says Wireless debugging is not reachable and hands the update to Oma; the first time, Android opens "Install unknown apps" for Omalauncher: Boss turns it on, and oma-install again.
+[phone] The first such update: Android asks Boss to confirm the update of Omalauncher Boss; after it, Oma restarts with Linux, login and settings kept, and oma-install --self --status says installed.
+[phone] The next update the same way: no confirmation is asked (Oma installed the one before), Oma restarts by itself.
+[phone] oma-install --apk FILE with a Soma Messages build installs it as an update the same way, Oma not restarted.

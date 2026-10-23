@@ -17,6 +17,8 @@ class App : Application() {
         dev.omalauncher.ui.PlatformFonts.nerdSymbols = androidx.compose.ui.text.font.FontFamily(androidx.compose.ui.text.font.Font(R.font.nerd_symbols))
         // The lock screen's clock is drawn by this process: it hears the minute from here on.
         dev.omalauncher.theme.LookWidgets.start(this)
+        // An update Oma installed on itself (off Wi-Fi) is written down as in once the new build runs.
+        runCatching { dev.omalauncher.update.SelfInstall.afterStart(this) }
         // An install a phone job scheduled: its sender hears whether it went in (assist/PhoneJobs.kt).
         dev.omalauncher.assist.PhoneJobs.afterInstall(this)
         // Why the process last ended, for `oma status`: the next restart's cause is read, not guessed (assist/AppExits.kt).

@@ -41,17 +41,56 @@ HEAL=r'''  svc=__SERVICE__
   esac'''
 def run(args, timeout=30):
  return subprocess.run(args,capture_output=True,text=True,timeout=timeout)
-if sys.argv[1:] not in ([],['--no-open'],['--status']):sys.exit('Usage: oma-install [--no-open|--status]')
-if not apk.is_file():sys.exit('No working-launcher APK found. Run oma-build first.')
+USAGE='Usage: oma-install [--no-open|--status] [--self] [--apk FILE]'
+args=sys.argv[1:]
+# --apk FILE: another APK than the launcher build, the launcher's or Soma Messages' (dev.omalauncher.messages).
+# --self: Oma installs it itself, through Android's installer, with no Wireless debugging (so off Wi-Fi too; Boss,
+# 2026-10-22). Without --self that route is taken when the adb one can't be reached.
+other=None
+if '--apk' in args:
+ i=args.index('--apk')
+ if i+1>=len(args):sys.exit(USAGE)
+ other=pathlib.Path(args[i+1]).resolve();del args[i:i+2]
+self_route='--self' in args
+args=[a for a in args if a!='--self']
+if args not in ([],['--no-open'],['--status']):sys.exit(USAGE)
+STATE=pathlib.Path('/root/.cache/oma-update/state.json')
+def bridge(request,timeout=300):
+ r=run(['curl','--silent','--show-error','--max-time',str(timeout),'--abstract-unix-socket',package+'.phone','--header','Content-Type: application/json','--data-binary',json.dumps(request),'http://localhost/phone'],timeout+10)
+ if r.returncode:sys.exit('Oma did not answer on the phone bridge: '+(r.stderr.strip() or 'no reply')+'. Is Oma running?')
+ return json.loads(r.stdout)
+def self_status():
+ if not STATE.exists():print('No update has gone through Oma itself yet.');return
+ st=json.loads(STATE.read_text())
+ told={'committed':'handed to Android\'s installer','confirming':'waiting for Boss to confirm on the phone','installed':'installed','failed':'failed'}
+ print('Self-install of %s version %s: %s%s'%(st.get('package'),st.get('version'),told.get(st.get('status'),st.get('status')),(' ('+st['message']+')') if st.get('message') else ''))
+if '--status' in args and self_route:self_status();sys.exit(0)
+if other:apk=other
+if not apk.is_file():sys.exit('No working-launcher APK found. Run oma-build first.' if not other else 'No APK at '+str(other)+'.')
 r=run(['/opt/android-sdk/build-tools/36.0.0/aapt2','dump','badging',str(apk)])
-m=re.search(r"package: name='([^']+)'",r.stdout)
-if r.returncode or not m or m.group(1)!=package:sys.exit('Install refused: APK is not the working launcher package.')
+m=re.search(r"package: name='([^']+)' versionCode='(\d+)'",r.stdout)
+allowed=[package]+(['dev.omalauncher.messages'] if other else [])
+if r.returncode or not m or m.group(1) not in allowed:sys.exit('Install refused: APK is not the working launcher'+(' or Soma Messages' if other else '')+'.')
+target=m.group(1)
 r=run(['/opt/android-sdk/build-tools/36.0.0/apksigner','verify','--print-certs',str(apk)])
 if r.returncode:sys.exit('Install refused: APK signature verification failed.')
 m=re.search(r'Signer #1 certificate SHA-256 digest: ([0-9a-f]+)',r.stdout)
 if not m or m.group(1)!=expected_cert:sys.exit('Install refused: signing identity does not match the working launcher.')
-metadata=json.loads((apk.parent/'output-metadata.json').read_text())
-version=int(metadata['elements'][0]['versionCode'])
+version=int(m.group(2))
+def install_self():
+ # Staged in Linux's own files, which Oma reads as its own; Oma checks package, key and version again itself.
+ stage=pathlib.Path('/root/.cache/oma-update');stage.mkdir(parents=True,exist_ok=True)
+ for old in stage.glob('incoming-*.apk'):old.unlink()
+ staged=stage/('incoming-%s-%d.apk'%(target,version))
+ staged.write_bytes(apk.read_bytes())
+ answer=bridge({'command':'self-install','path':str(staged)})
+ if not answer.get('ok'):sys.exit('Not installed: '+str(answer.get('error')))
+ if target==package:pathlib.Path('/root/.config/oma-development/next-version-code').write_text(str(version+1)+'\n')
+ print('Handed to Android\'s installer through Oma (no Wi-Fi needed): %s version %d.'%(target,version),flush=True)
+ if target==package:print('Oma restarts as it updates; Linux, login and settings stay. The first time, Android asks Boss to confirm on the phone. oma-install --self --status says how it went.',flush=True)
+ else:print('oma-install --self --status says how it went.',flush=True)
+ sys.exit(0)
+if self_route:install_self()
 run(['adb','start-server'])
 def connect(port):
  endpoint='127.0.0.1:'+str(port)
@@ -76,7 +115,14 @@ if not endpoint:
   try:endpoint=connect(port)
   except subprocess.TimeoutExpired:continue
   if endpoint:cache.write_text(str(port));break
-if not endpoint:sys.exit('Local installer is disconnected. Enable Wireless debugging on the Fold while on Wi-Fi, then retry oma-install. Pair again if Android forgot this installer.')
+if not endpoint:
+ if '--status' in args:self_status();sys.exit(0)
+ print('Wireless debugging is not reachable (off Wi-Fi?): Oma installs it itself instead.',flush=True)
+ install_self()
+if target!=package:
+ # Soma Messages over adb: an ordinary update, nothing restarts.
+ r=run(['adb','-s',endpoint,'install','-r',str(apk)],300)
+ sys.exit(0 if 'Success' in r.stdout and not print('Installed '+target+' version '+str(version)+' over adb.') else 'Install failed: '+(r.stdout+r.stderr).strip())
 r=run(['adb','-s',endpoint,'shell','dumpsys','package',package])
 m=re.search(r'versionCode=(\d+)',r.stdout)
 if not m:sys.exit('Working launcher was not found; refusing a new installation.')
