@@ -102,6 +102,18 @@ shot link-opened
 key BACK
 wait 1000
 expect Clips
+# Unfolded, the side panel's "Photos & files": the video plays from there too (it said "Open in OpenBubbles" and did
+# nothing once linked to the Mac). In the chat the video already shows its frame, so "Tap to play" is the panel's.
+fold open
+wait 2500
+expect Photos & files
+tap Tap to play
+wait 4000
+shot panel-video-playing
+key BACK
+wait 1000
+fold folded
+wait 2500
 # Older history (0.7.6): the demo's "Long thread" has 120 messages, "Long #1" (the oldest, "Long thread starts here")
 # to "Long #120"; a page is 50, so scrolling to the top has to load two more pages.
 key BACK

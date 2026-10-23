@@ -279,7 +279,10 @@ fun Workspace(
     }
 }
 
-/** Opens [s]: a link in the panel; an attachment or a previewed page in its chat in OpenBubbles. */
+/**
+ * Opens [s]: a link in the panel; through the Mac, a photo or video as in the chat (the first of them), anything else
+ * by its chat; without the Mac, an attachment or a previewed page in its chat in OpenBubbles.
+ */
 private fun openShared(
     s: Shared,
     open: (String) -> Unit,
@@ -292,7 +295,13 @@ private fun openShared(
             open(Parts.openable(p.url))
             pick(s.conversation)
         }
-        else -> if (Messages.linked) pick(s.conversation) else Messages.openInOpenBubbles(context, s.conversation)
+        else ->
+            if (!Messages.linked) {
+                Messages.openInOpenBubbles(context, s.conversation)
+            } else {
+                val media = s.files.firstOrNull { it.substringAfter('|').let { m -> m.startsWith("image/") || m.startsWith("video/") } && !it.startsWith("local:") }
+                if (media != null) openMedia(context, media) else pick(s.conversation)
+            }
     }
 }
 
@@ -416,7 +425,7 @@ private fun SharedCard(
         when (val p = s.part) {
             is Part.Link -> Card(p.host, p.path.ifEmpty { null }, "↗", Pack.foreground)
             is Part.Website -> Card(p.host.ifEmpty { "Website" }, p.title, "↗", Pack.foreground)
-            is Part.Attachment -> Card(p.summary, if (Messages.linked) null else "Open in OpenBubbles", if (p.kind == "Video") "▶" else "▣", Pack.foreground)
+            is Part.Attachment -> Card(p.summary, if (!Messages.linked) "Open in OpenBubbles" else if (p.kind == "Video") "Tap to play" else if (p.kind == "Photo" || p.kind == "GIF") "Tap to view" else null, if (p.kind == "Video") "▶" else "▣", Pack.foreground)
             is Part.Words -> {}
         }
         BasicText(

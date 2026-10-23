@@ -780,6 +780,33 @@ private fun posterOf(f: java.io.File): ImageBitmap? =
         }
     }.getOrNull()
 
+/**
+ * Opens the Mac's attachment [file] ("id|mime") from outside its balloon (the unfolded table): fetched if it isn't
+ * kept yet, then a picture in the viewer, a video in the player.
+ */
+internal fun openMedia(
+    context: android.content.Context,
+    file: String,
+) {
+    val id = file.substringBefore('|')
+    val mime = file.substringAfter('|')
+    val picture = mime.startsWith("image/")
+    val main = android.os.Handler(android.os.Looper.getMainLooper())
+    if (!MacLink.cached(context, id, picture).let { it.isFile && it.length() > 0 }) {
+        android.widget.Toast.makeText(context, "Getting it from your Mac…", android.widget.Toast.LENGTH_SHORT).show()
+    }
+    kotlin.concurrent.thread(name = "open-media", isDaemon = true) {
+        val f = MacLink.file(context, id, picture)
+        main.post {
+            when {
+                f == null -> android.widget.Toast.makeText(context, "Couldn't get it from your Mac", android.widget.Toast.LENGTH_SHORT).show()
+                picture -> view(context, f)
+                else -> play(context, f, mime)
+            }
+        }
+    }
+}
+
 /** Plays [f] in the phone's own video player. */
 private fun play(
     context: android.content.Context,
