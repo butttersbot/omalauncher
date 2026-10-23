@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Boss's Galaxy Z Fold (SM-F971U1), measured 2026-10-23: cover status bar 110 px at 420 dpi (~42 dp).
+     The cover's camera cutout is made small enough that the 42 dp status bar decides the height. -->
+<resources>
+    <string-array name="config_displayUniqueIdArray" translatable="false">
+        <item>local:4619827259835644672</item>
+        <item>local:4619827551948147201</item>
+    </string-array>
+    <string-array name="config_displayCutoutPathArray" translatable="false">
+        <item>m 2027,80 a 39.5,39.5 0 0 0 -79,0 39.5,39.5 0 0 0 79,0 z @left</item>
+        <item>m 566,50 a 26,26 0 0 0 -52,0 26,26 0 0 0 52,0 z @left</item>
+    </string-array>
+    <string-array name="config_displayCutoutApproximationRectArray" translatable="false">
+        <item>m 0,0 V 136 h -136 V 0 z @right</item>
+        <item>m 508,20 h 64 v 70 h -64 z @left</item>
+    </string-array>
+</resources>

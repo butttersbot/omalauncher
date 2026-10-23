@@ -1,0 +1,5 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="dev.soma.fold8.framework.overlay">
+    <application android:hasCode="false" />
+    <!-- Mutable, so it can be set above the emulator's own pixel_9_pro_fold overlay (which sets a 52 dp status bar). -->
+    <overlay android:targetPackage="android" />
+</manifest>
