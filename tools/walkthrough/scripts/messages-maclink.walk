@@ -81,8 +81,12 @@ expect Demo reply to: walk test from the Fold
 shot sent-and-answered
 # Videos (0.7.7; Boss's phone, 2026-10-23: "1 Video" did nothing). The demo's "Clips" chat has one short MP4 from the
 # other person. Not fetched until tapped; then it plays in the phone's player, and is shown by a frame of its own.
+# Back twice: the first only puts the keyboard away after the send; the second leaves Ana's chat for the inbox.
+key BACK
+wait 600
 key BACK
 wait 800
+expect Clips
 tap Clips
 wait 1500
 expect Tap to play
@@ -115,9 +119,11 @@ wait 1000
 fold folded
 wait 2500
 # Older history (0.7.6): the demo's "Long thread" has 120 messages, "Long #1" (the oldest, "Long thread starts here")
-# to "Long #120"; a page is 50, so scrolling to the top has to load two more pages.
+# to "Long #120"; the first fetch brings 50, the demo's earlier pages fewer, so scrolling to the top loads several.
+# From Clips (no keyboard up): one Back to the inbox.
 key BACK
 wait 800
+expect Long thread
 tap Long thread
 wait 1500
 expect Long #120
@@ -176,8 +182,11 @@ wait 1500
 expect Long thread starts here
 # Look: oldest first at the top, no message twice across the pages' seams (#70/#71, #20/#21), no jump.
 shot long-thread-top
-swipe 0.5 0.85 0.5 0.3 300
+# At the side: the middle of the bottom is where the Latest pill sits.
+swipe 0.2 0.85 0.2 0.3 300
 wait 600
+# No "new" count for history loaded above (0.7.7 walk: "↓ 36 new" after paging).
+absent new
 shot long-thread-seam
 # The Mac stopped: the inbox says so and keeps what it has.
 [phone] With the real service on the MacBook: link from the phone-link file (Taildropped), chats and names are Boss's own, one plain-text send to a chat he picks arrives on his other devices, a reply from him shows within seconds.

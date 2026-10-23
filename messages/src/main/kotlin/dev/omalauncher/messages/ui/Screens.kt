@@ -337,20 +337,25 @@ fun Thread(
     }
     // Messages that came since the place was left, or while reading further up.
     var fresh by remember(c.id) { mutableIntStateOf(if (left.hasPlace) (size - left.count).coerceAtLeast(0) else 0) }
-    var seen by remember(c.id) { mutableIntStateOf(size) }
-    // The oldest message shown, to tell earlier history loaded at the top from new messages at the bottom.
-    var oldest by remember(c.id) { mutableStateOf(c.messages.firstOrNull()) }
+    // The oldest and newest times shown, to tell earlier history loaded at the top from new messages at the bottom by
+    // when they were sent, not by how many more there are: a page of history counted as new ("↓ 36 new", the 0.7.7
+    // walk), and a message replaced by the Mac's copy of it isn't one more.
+    var oldest by remember(c.id) { mutableStateOf(c.messages.firstOrNull()?.time ?: 0L) }
+    var newest by remember(c.id) { mutableStateOf(c.messages.lastOrNull()?.time ?: 0L) }
     LaunchedEffect(size) {
-        val came = size - seen
-        seen = size
         val before = oldest
-        oldest = c.messages.firstOrNull()
+        val after = newest
+        oldest = c.messages.firstOrNull()?.time ?: 0L
+        newest = c.messages.lastOrNull()?.time ?: 0L
         // Earlier history arrived above: the same messages stay in view where the owner is reading.
-        val prepended = before?.let { b -> c.messages.indexOf(b) }?.takeIf { it > 0 } ?: 0
-        if (prepended > 0) {
-            list.scrollToItem(list.firstVisibleItemIndex + prepended, list.firstVisibleItemScrollOffset)
-            if (came - prepended <= 0) return@LaunchedEffect
+        val prepended = if (before > 0) c.messages.count { it.time < before } else 0
+        if (prepended > 0) list.scrollToItem(list.firstVisibleItemIndex + prepended, list.firstVisibleItemScrollOffset)
+        // The first messages into an empty conversation: shown from the latest, nothing counted.
+        if (after == 0L) {
+            if (latest && size > 0) list.scrollToItem(size - 1)
+            return@LaunchedEffect
         }
+        val came = c.messages.count { it.time > after }
         if (came <= 0) return@LaunchedEffect
         // Following along at the bottom: the new ones come into view. Reading further up: the pill counts them.
         if (latest) list.animateScrollToItem(size - 1) else fresh += came
