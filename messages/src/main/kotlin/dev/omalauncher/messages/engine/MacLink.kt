@@ -71,6 +71,9 @@ object MacLink {
     val trouble = MutableStateFlow("")
 
     private val io = Executors.newFixedThreadPool(2)
+
+    /** Sends, one at a time in the order made, so photos and words arrive as written. */
+    private val sends = Executors.newSingleThreadExecutor()
     private var running = false
     private var address: MacAddress? = null
     private var app: Context? = null
@@ -269,58 +272,63 @@ object MacLink {
         onFail: (String) -> Unit,
     ) {
         val at = address ?: return onFail("Not linked to a Mac.")
-        io.execute {
+        sends.execute {
             runCatching {
                 val body = JSONObject().put("text", text).put("clientId", clientId)
                 replyTo?.let { body.put("replyTo", it) }
                 post(at, "/v1/chats/${path(chat)}/messages", body)
             }.onFailure {
                 Log.w(TAG, "sending", it)
-                onFail(it.message.orEmpty())
+                onFail(reason(at, it))
             }
         }
     }
 
-    /** Sends [photos] to [chat], one after another, then [text]; [onFail] at the first the Mac doesn't take. */
-    fun sendFiles(
+    /** Sends one [photo] to [chat] as [clientId]; [onFail] with the Mac's reason when it doesn't take it. */
+    fun sendFile(
         context: Context,
         chat: String,
-        photos: List<Uri>,
-        text: String,
+        photo: Uri,
         clientId: String,
         onFail: (String) -> Unit,
     ) {
         val at = address ?: return onFail("Not linked to a Mac.")
         val resolver = context.contentResolver
-        io.execute {
+        sends.execute {
             runCatching {
-                photos.forEachIndexed { i, uri ->
-                    val type = resolver.getType(uri) ?: "image/jpeg"
-                    val ext = android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(type) ?: "jpg"
-                    val boundary = "soma" + System.nanoTime()
-                    val c = open(at, "/v1/chats/${path(chat)}/attachments", "POST", timeout = 120_000)
-                    try {
-                        c.doOutput = true
-                        c.setChunkedStreamingMode(64 * 1024)
-                        c.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
-                        c.outputStream.buffered().use { out ->
-                            out.write("--$boundary\r\nContent-Disposition: form-data; name=\"clientId\"\r\n\r\n$clientId\r\n".toByteArray())
-                            out.write("--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"photo-${i + 1}.$ext\"\r\nContent-Type: $type\r\n\r\n".toByteArray())
-                            resolver.openInputStream(uri)!!.use { it.copyTo(out) }
-                            out.write("\r\n--$boundary--\r\n".toByteArray())
-                        }
-                        if (c.responseCode !in 200..299) throw IllegalStateException(error(c))
-                        answer(c)
-                    } finally {
-                        c.disconnect()
+                val type = resolver.getType(photo) ?: "image/jpeg"
+                val ext = android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(type) ?: "jpg"
+                val boundary = "soma" + System.nanoTime()
+                val c = open(at, "/v1/chats/${path(chat)}/attachments", "POST", timeout = 120_000)
+                try {
+                    c.doOutput = true
+                    c.setChunkedStreamingMode(64 * 1024)
+                    c.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+                    c.outputStream.buffered().use { out ->
+                        out.write("--$boundary\r\nContent-Disposition: form-data; name=\"clientId\"\r\n\r\n$clientId\r\n".toByteArray())
+                        out.write("--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"photo.$ext\"\r\nContent-Type: $type\r\n\r\n".toByteArray())
+                        resolver.openInputStream(photo)!!.use { it.copyTo(out) }
+                        out.write("\r\n--$boundary--\r\n".toByteArray())
                     }
+                    if (c.responseCode !in 200..299) throw IllegalStateException(error(c))
+                    answer(c)
+                } finally {
+                    c.disconnect()
                 }
-                if (text.isNotBlank()) post(at, "/v1/chats/${path(chat)}/messages", JSONObject().put("text", text).put("clientId", clientId))
             }.onFailure {
-                Log.w(TAG, "sending photos", it)
-                onFail(it.message.orEmpty())
+                Log.w(TAG, "sending a photo", it)
+                onFail(reason(at, it))
             }
         }
+    }
+
+    /** Why a send failed, in words: the Mac's own, and that it is locked when it is (what Messages can't do then). */
+    private fun reason(
+        at: MacAddress,
+        e: Throwable,
+    ): String {
+        val locked = runCatching { JSONObject(get(at, "/v1/health")).optBoolean("screenLocked") }.getOrDefault(false)
+        return if (locked) "your Mac is locked. Unlock it and tap to try again." else e.message.orEmpty().ifEmpty { "your Mac didn't take it." }
     }
 
     /** A tapback of [kind] on message [id] in [chat], or off again with [remove]; [onFail] when the Mac doesn't take it. */

@@ -205,6 +205,16 @@ class ConversationBook(
         return ConversationBook(byId + (id to old.copy(messages = old.messages + Message(text, time, "", sentHere = true, quote = quote, id = "c:$clientId"))))
     }
 
+    /** Message [messageId] in [id] stands for [files] (a photo picked here, until the Mac shows it back). */
+    fun withFiles(
+        id: String,
+        messageId: String,
+        files: List<String>,
+    ): ConversationBook {
+        val old = byId[id] ?: return this
+        return ConversationBook(byId + (id to old.copy(messages = old.messages.map { if (it.id == messageId) it.copy(files = files) else it })))
+    }
+
     /** The Mac didn't take [clientId]'s messages. */
     fun failed(
         id: String,

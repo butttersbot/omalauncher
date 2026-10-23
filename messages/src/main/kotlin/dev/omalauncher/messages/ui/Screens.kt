@@ -420,7 +420,7 @@ fun Thread(
                     if (m.tapbacks.isNotEmpty()) Tapbacks(m)
                     if (m.failed && next?.failed != true) {
                         // Words can go again from here; photos are picked again.
-                        val again = Parts.of(m.text).none { it is Part.Attachment }
+                        val again = Parts.of(m.text).none { it is Part.Attachment } || m.files.any { it.startsWith("local:") }
                         BasicText(
                             Pack.caption(if (again) "Not sent · tap to try again" else "Not sent"),
                             Modifier.fillMaxWidth().clickable(enabled = again) { Messages.retry(context, c.id, m) }.padding(top = 4.dp, end = 6.dp),
@@ -653,10 +653,20 @@ private fun Photos(files: List<String>) {
         files.forEach { f ->
             val id = f.substringBefore('|')
             val context = LocalContext.current
-            val file by produceState<java.io.File?>(null, id) { value = withContext(Dispatchers.IO) { MacLink.file(context, id, picture = true) } }
-            val picture by produceState<ImageBitmap?>(null, file) {
-                val got = file ?: return@produceState
-                value = withContext(Dispatchers.IO) { runCatching { decode(got, 1080) }.getOrNull() }
+            // A photo picked here and still on its way: the phone's own copy. Otherwise the Mac's, fetched once.
+            val local = id.takeIf { it.startsWith("local:") }?.removePrefix("local:")?.let { Uri.parse(it) }
+            val file by produceState<java.io.File?>(null, id) { if (local == null) value = withContext(Dispatchers.IO) { MacLink.file(context, id, picture = true) } }
+            val picture by produceState<ImageBitmap?>(null, file, local) {
+                value =
+                    withContext(Dispatchers.IO) {
+                        runCatching {
+                            if (local != null) {
+                                context.contentResolver.loadThumbnail(local, android.util.Size(720, 720), null).asImageBitmap()
+                            } else {
+                                file?.let { decode(it, 1080) }
+                            }
+                        }.getOrNull()
+                    }
             }
             val shape = composerShape(12.dp)
             // One alone: 240 dp wide, as tall as its shape asks within 120-320 dp; several: 132 dp squares. The picture

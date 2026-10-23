@@ -16,8 +16,8 @@ android {
         applicationId = "dev.omalauncher.messages"
         minSdk = 29
         targetSdk = 37
-        versionCode = 14
-        versionName = "0.7.3"
+        versionCode = 15
+        versionName = "0.7.4"
     }
 
     // android.util.Log and friends are no-ops in JVM tests instead of throwing.

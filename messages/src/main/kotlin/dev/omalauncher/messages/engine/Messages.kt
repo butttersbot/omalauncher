@@ -193,7 +193,10 @@ object Messages {
             val clientId = java.util.UUID.randomUUID().toString()
             publish(real.waiting(id, clientId, text, System.currentTimeMillis(), quote))
             val replyTo = quoting.remove(id)?.takeIf { quote != null }?.removeSuffix("#a")
-            MacLink.send(id, text, replyTo, clientId) { failed(id, clientId) }
+            MacLink.send(id, text, replyTo, clientId) { why ->
+                failed(id, clientId)
+                notice.value = "Not sent: $why"
+            }
             return Sent.Sent
         }
         val h = handles[id]
@@ -278,14 +281,28 @@ object Messages {
         summaries: List<String>,
         quote: String?,
     ) {
-        val clientId = java.util.UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
-        var next = real
-        summaries.forEachIndexed { i, s -> next = next.waiting(id, clientId, s, now + i, if (i == 0) quote else null) }
-        if (text.isNotBlank()) next = next.waiting(id, clientId, text, now + summaries.size)
-        publish(next)
         quoting.remove(id)
-        MacLink.sendFiles(context, id, photos, text, clientId) { failed(id, clientId) }
+        // Each photo, and the words, go on their own: one the Mac can't take doesn't stop the rest. Until the Mac shows a
+        // photo back, the picked one stands for it.
+        photos.forEachIndexed { i, uri ->
+            val clientId = java.util.UUID.randomUUID().toString()
+            val type = context.contentResolver.getType(uri) ?: "image/jpeg"
+            val waiting = real.waiting(id, clientId, summaries.getOrElse(i) { "1 Photo" }, now + i, if (i == 0) quote else null)
+            publish(waiting.withFiles(id, "c:$clientId", listOf("local:$uri|$type")))
+            MacLink.sendFile(context, id, uri, clientId) { why ->
+                failed(id, clientId)
+                notice.value = "Photo not sent: $why"
+            }
+        }
+        if (text.isNotBlank()) {
+            val clientId = java.util.UUID.randomUUID().toString()
+            publish(real.waiting(id, clientId, text, now + photos.size))
+            MacLink.send(id, text, null, clientId) { why ->
+                failed(id, clientId)
+                notice.value = "Not sent: $why"
+            }
+        }
     }
 
     @Synchronized
@@ -315,7 +332,7 @@ object Messages {
         MacLink.tapback(id, macId, kind, remove) { why -> notice.value = "Tapback not sent: $why" }
     }
 
-    /** Tries a failed [message] again. */
+    /** Tries a failed [message] again: its words, or the photo picked here. */
     @Synchronized
     fun retry(
         context: Context,
@@ -323,6 +340,12 @@ object Messages {
         message: Message,
     ) {
         publish(real.without(id, message))
+        val local = message.files.firstOrNull { it.startsWith("local:") }
+        if (local != null) {
+            val uri = android.net.Uri.parse(local.removePrefix("local:").substringBeforeLast('|'))
+            sendPhotos(context, id, listOf(uri), "", listOf(message.text), message.quote)
+            return
+        }
         send(context, id, message.text, message.quote)
     }
 
