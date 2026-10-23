@@ -1,0 +1,5 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="dev.soma.fold8.cutout.overlay">
+    <application android:hasCode="false" />
+    <!-- Static: the display cutouts are read once at boot, so they must be there before anything can enable an overlay. -->
+    <overlay android:targetPackage="android" android:isStatic="true" android:priority="9999" />
+</manifest>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Boss's Galaxy Z Fold (SM-F971U1), measured 2026-10-23: cover status bar 110 px at 420 dpi (~42 dp).
+     The cover's camera cutout is made small enough that the 42 dp status bar decides the height. -->
+<resources>
+    <dimen name="status_bar_height_default">42dp</dimen>
+    <dimen name="status_bar_height_portrait">42dp</dimen>
+    <dimen name="status_bar_height_landscape">42dp</dimen>
+    <!-- Gesture handle only, 39 px on the phone (~15 dp): the bottom inset apps see. -->
+    <dimen name="navigation_bar_height">15dp</dimen>
+    <dimen name="navigation_bar_height_landscape">15dp</dimen>
+</resources>

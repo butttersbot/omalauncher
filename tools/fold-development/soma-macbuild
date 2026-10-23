@@ -93,6 +93,8 @@ if [ ${#walks[@]} -gt 0 ]; then
   else
     # Root on the emulator lets a walk open screens that aren't exported (its own test data only).
     adb -s $emu root >/dev/null 2>&1; adb -s $emu wait-for-device
+    # Boss's Fold's bar heights (tools/fold-development/fold8-overlay); Android turns the overlay off at each boot.
+    tools/oma-emu fold-bars
     if ! adb -s $emu install -r -t "$apk" >"$wdir/install.log" 2>&1; then
       echo "Walks: not run (the APK didn't install on the emulator: $(tail -1 "$wdir/install.log"))." | tee "$wdir/summary.txt"
     else

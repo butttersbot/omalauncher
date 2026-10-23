@@ -4,6 +4,7 @@
 #   oma-emu install [APK]       install a build (default: app/build/outputs/apk/debug/app-debug.apk) and make it home
 #   oma-emu fold | unfold       switch to the cover screen or the inner screen
 #   oma-emu shot inner|cover FILE.png
+#   oma-emu fold-bars           turn the Fold-match bar overlay back on (start does this)
 #   oma-emu adb ARGS...         adb aimed at the emulator only, never the phone
 #   oma-emu stop
 set -euo pipefail
@@ -16,17 +17,25 @@ display_id() { # inner is the first SurfaceFlinger display, cover the second
   A shell dumpsys SurfaceFlinger --display-id | awk '{print $2}' | sed -n "$1p"
 }
 wake() { A shell input keyevent WAKEUP >/dev/null; A shell wm dismiss-keyguard >/dev/null 2>&1 || true; }
+# Boss's Fold's bar heights (cover status bar 110 px): Android turns this overlay off at every boot, so it is turned
+# back on and put above the emulator's pixel_9_pro_fold overlay. Harmless when it isn't installed.
+fold_bars() {
+  A shell cmd overlay enable --user 0 dev.soma.fold8.framework.overlay >/dev/null 2>&1 &&
+    A shell cmd overlay set-priority dev.soma.fold8.framework.overlay highest >/dev/null 2>&1 || true
+}
 
 case "${1:-}" in
   start)
     if A get-state >/dev/null 2>&1; then echo "already running"; exit 0; fi
     extra=(); [ "${2:-}" = --headless ] && extra=(-no-window)
-    nohup "$ANDROID_HOME/emulator/emulator" -avd "$AVD" -no-snapshot-save -no-boot-anim ${extra[@]+"${extra[@]}"} \
+    # -writable-system keeps the Fold-match overlays in /product/overlay (tools/fold-development/fold8-overlay).
+    nohup "$ANDROID_HOME/emulator/emulator" -avd "$AVD" -writable-system -no-snapshot-save -no-boot-anim ${extra[@]+"${extra[@]}"} \
       > "$HOME/.android/avd/$AVD-emulator.log" 2>&1 &
     A wait-for-device
     until [ "$(A shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]; do sleep 2; done
     A shell locksettings set-disabled true >/dev/null
     A shell svc power stayon true
+    fold_bars
     wake; echo "ready" ;;
   install)
     apk="${2:-app/build/outputs/apk/debug/app-debug.apk}"
@@ -39,6 +48,7 @@ case "${1:-}" in
   shot)
     case "${2:-}" in inner) n=1 ;; cover) n=2 ;; *) echo "shot inner|cover FILE" >&2; exit 2 ;; esac
     wake; A exec-out screencap -p -d "$(display_id $n)" > "$3"; echo "$3" ;;
+  fold-bars) fold_bars ;;
   adb) shift; A "$@" ;;
   stop) A emu kill ;;
   *) sed -n '2,9p' "$0"; exit 2 ;;
