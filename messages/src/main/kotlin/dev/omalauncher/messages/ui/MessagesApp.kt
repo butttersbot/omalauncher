@@ -19,6 +19,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import dev.omalauncher.messages.engine.Desk
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -53,10 +55,11 @@ fun MessagesApp(resumed: Int) {
     var granted by remember { mutableStateOf(Messages.granted(context)) }
     LaunchedEffect(resumed) { granted = Messages.granted(context) }
     var openId by rememberSaveable { mutableStateOf<String?>(null) }
-    // Each conversation keeps its own draft while the app runs.
+    // Each conversation keeps its own draft, kept on the phone (Desk) so it outlasts the app.
     val drafts = remember { HashMap<String, ComposerState>() }
     // And its quoted reply and attachments, waiting with it.
-    val pending = remember { Pending() }
+    val pending = remember { Pending().apply { Desk.left.value.forEach { (id, l) -> l.quote?.let { quotes[id] = it } } } }
+    fun draft(id: String) = drafts.getOrPut(id) { ComposerState(Desk[id].draft) }
 
     BoxWithConstraints(Modifier.fillMaxSize().background(Pack.paper).windowInsetsPadding(WindowInsets.safeDrawing)) {
         if (!granted && !samples) {
@@ -74,7 +77,7 @@ fun MessagesApp(resumed: Int) {
                 Inbox(book, shown, samples, pick, Modifier.width(390.dp).fillMaxHeight())
                 if (shown != null) {
                     LaunchedEffect(shown) { Messages.read(shown) }
-                    Thread(book[shown]!!, drafts.getOrPut(shown) { ComposerState() }, pending, onBack = null, Modifier.fillMaxSize())
+                    key(shown) { Thread(book[shown]!!, draft(shown), pending, onBack = null, Modifier.fillMaxSize()) }
                 }
             }
         } else {
@@ -83,7 +86,7 @@ fun MessagesApp(resumed: Int) {
             val conversation = id?.let { book[it] }
             if (conversation != null) {
                 Sliding(widthPx = with(LocalDensity.current) { maxWidth.toPx() }, onGone = { openId = null }) { back ->
-                    Thread(conversation, drafts.getOrPut(conversation.id) { ComposerState() }, pending, onBack = back, Modifier.fillMaxSize())
+                    key(conversation.id) { Thread(conversation, draft(conversation.id), pending, onBack = back, Modifier.fillMaxSize()) }
                 }
             }
         }

@@ -33,6 +33,13 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import dev.omalauncher.messages.engine.Part
+import dev.omalauncher.messages.engine.Desk
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import dev.omalauncher.messages.engine.Parts
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -178,6 +185,7 @@ fun Inbox(
     modifier: Modifier = Modifier,
 ) {
     val conversations = book.conversations
+    val left by Desk.left.collectAsState()
     Column(modifier) {
         Column(Modifier.padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 10.dp)) {
             BasicText(Pack.caption("Soma · メッセージ"), style = Pack.mono(Pack.size.small, Pack.muted))
@@ -200,7 +208,7 @@ fun Inbox(
             }
         }
         LazyColumn(Modifier.fillMaxSize()) {
-            items(conversations, key = { it.id }) { c -> ConversationRow(c, c.id == selected) { onOpen(c.id) } }
+            items(conversations, key = { it.id }) { c -> ConversationRow(c, c.id == selected, left[c.id]?.draft.orEmpty()) { onOpen(c.id) } }
         }
     }
 }
@@ -209,6 +217,7 @@ fun Inbox(
 private fun ConversationRow(
     c: Conversation,
     selected: Boolean,
+    draft: String,
     onClick: () -> Unit,
 ) {
     val last = c.last
@@ -234,13 +243,28 @@ private fun ConversationRow(
                 )
                 if (last != null) BasicText(whenLabel(last.time), style = Pack.mono(Pack.size.small, Pack.muted))
             }
-            val who = if (last != null && c.isGroup && !last.fromMe) last.sender + ": " else ""
-            BasicText(
-                who + (last?.text ?: ""),
-                style = Pack.body(Pack.size.body, if (c.unread > 0) Pack.foreground else Pack.muted),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            // Words waiting to be sent show in place of the last message, as iMessage marks a draft.
+            if (draft.isNotBlank()) {
+                BasicText(
+                    androidx.compose.ui.text.buildAnnotatedString {
+                        pushStyle(androidx.compose.ui.text.SpanStyle(color = Pack.accent, fontWeight = FontWeight.SemiBold))
+                        append("Draft  ")
+                        pop()
+                        append(draft.replace('\n', ' '))
+                    },
+                    style = Pack.body(Pack.size.body, Pack.muted),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            } else {
+                val who = if (last != null && c.isGroup && !last.fromMe) last.sender + ": " else ""
+                BasicText(
+                    who + (last?.text ?: ""),
+                    style = Pack.body(Pack.size.body, if (c.unread > 0) Pack.foreground else Pack.muted),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
         if (c.unread > 0) {
             Spacer(Modifier.size(10.dp))
@@ -285,8 +309,31 @@ fun Thread(
     var stuck by remember(c.id) { mutableStateOf(false) }
     var noOpenBubbles by remember(c.id) { mutableStateOf(false) }
     var held by remember(c.id) { mutableStateOf<Message?>(null) }
-    val list = rememberLazyListState()
-    LaunchedEffect(c.id, c.messages.size) { if (c.messages.isNotEmpty()) list.scrollToItem(c.messages.size - 1) }
+    // Where the owner left it: that place, or the latest.
+    val left = remember(c.id) { Desk[c.id] }
+    val size = c.messages.size
+    val list = rememberLazyListState(if (left.hasPlace) left.index.coerceIn(0, maxOf(0, size - 1)) else maxOf(0, size - 1), if (left.hasPlace) left.offset else 0)
+    val atEnd by remember { derivedStateOf { !list.canScrollForward } }
+    // Messages that came since the place was left, or while reading further up.
+    var fresh by remember(c.id) { mutableIntStateOf(if (left.hasPlace) (size - left.count).coerceAtLeast(0) else 0) }
+    var seen by remember(c.id) { mutableIntStateOf(size) }
+    LaunchedEffect(size) {
+        val came = size - seen
+        seen = size
+        if (came <= 0) return@LaunchedEffect
+        // Following along at the bottom: the new ones come into view. Reading further up: the pill counts them.
+        val last = list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+        if (last >= size - came - 1) list.animateScrollToItem(size - 1) else fresh += came
+    }
+    LaunchedEffect(atEnd) { if (atEnd) fresh = 0 }
+    // The draft, the quote and the place are kept as they change, so a closed app loses none of them.
+    LaunchedEffect(c.id) {
+        snapshotFlow { Triple(draft.text, pending.quotes[c.id], if (!list.canScrollForward) -1 to 0 else list.firstVisibleItemIndex to list.firstVisibleItemScrollOffset) }
+            .collectLatest { (text, quote, place) ->
+                delay(300)
+                Desk.update(c.id) { it.copy(draft = text, quote = quote, index = place.first, offset = place.second, count = if (place.first >= 0) c.messages.size else 0) }
+            }
+    }
     fun quoteOf(m: Message) = (if (m.fromMe) "You" else m.sender.ifEmpty { c.title }) + ": " + m.text.take(90)
     val pick =
         rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(MAX_PHOTOS)) { uris ->
@@ -336,6 +383,11 @@ fun Thread(
                             PartContent(part, ink)
                         }
                     }
+                }
+            }
+            if (!atEnd && size > 0) {
+                LatestPill(fresh, Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp)) {
+                    scope.launch { list.animateScrollToItem(size - 1) }
                 }
             }
             held?.let { m ->
@@ -422,6 +474,24 @@ fun Thread(
                 },
         )
     }
+}
+
+/** Back to the newest message, with how many came since the owner was last there. */
+@Composable
+private fun LatestPill(
+    fresh: Int,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val shape = composerShape(null)
+    Box(
+        modifier
+            .clip(shape)
+            .background(Pack.foreground, shape)
+            .semantics { role = Role.Button; contentDescription = if (fresh > 0) "$fresh new messages, go to the latest" else "Go to the latest message" }
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 7.dp),
+    ) { BasicText(if (fresh > 0) "↓ $fresh new" else "↓ Latest", style = Pack.mono(Pack.size.small, Pack.background)) }
 }
 
 /** "2 Photos & 1 Video", as OpenBubbles words it. */

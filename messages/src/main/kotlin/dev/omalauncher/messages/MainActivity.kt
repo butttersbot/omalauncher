@@ -17,6 +17,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         Messages.init(applicationContext)
+        dev.omalauncher.messages.engine.Desk.init(applicationContext)
         Look.use(applicationContext)
         setContent { MessagesApp(resumed.intValue) }
     }
