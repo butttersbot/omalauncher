@@ -5,6 +5,9 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.ImageBitmap
 import dev.omalauncher.assist.*
 import dev.omalauncher.oma.*
@@ -13,6 +16,7 @@ import java.io.File
 
 /** Isolated, fictional UI fixture. It cannot reach any runner or send a real prompt. */
 class PreviewActivity : ComponentActivity() {
+    var narrow by mutableStateOf(false)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val folder = File(filesDir, "preview-manga").apply { mkdirs() }
@@ -29,7 +33,13 @@ class PreviewActivity : ComponentActivity() {
                 androidx.compose.ui.text.font.FontFamily(androidx.compose.ui.text.font.Font(File(folder, path)))
             }
         }
-        setContent { OmaChatScreen(remember { PreviewHost(this) }, null, {}, OMA_TAB, {}) }
+        setContent {
+            Box(Modifier.fillMaxSize()) {
+                Box(Modifier.fillMaxHeight().then(if (narrow) Modifier.width(400.dp) else Modifier.fillMaxWidth())) {
+                    OmaChatScreen(remember { PreviewHost(this@PreviewActivity) }, null, {}, OMA_TAB, {})
+                }
+            }
+        }
     }
 }
 
