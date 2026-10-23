@@ -25,6 +25,8 @@ data class Message(
     val files: List<String> = emptyList(),
     /** Tapbacks on it, from the Mac: each a kind ("love", "like"… or an emoji), "me:" before the owner's own. */
     val tapbacks: List<String> = emptyList(),
+    /** The phone's id for one sent from here, as the Mac echoes it back: matches the waiting "c:" message. Not kept. */
+    val clientId: String? = null,
 ) {
     val fromMe get() = sender.isEmpty()
 }
@@ -158,9 +160,13 @@ class ConversationBook(
                 messages[at] = m.copy(quote = m.quote ?: messages[at].quote)
                 continue
             }
+            // The Mac's copy of one sent from here: by the client id it echoes, else by the same words close in time.
+            // A "failed" one counts too: a send that timed out here can still have gone (the Mac asleep, then awake),
+            // and its "Not sent" stayed beside the real message (Boss, 2026-10-23: errors stay on earlier messages).
             val echo =
                 if (m.fromMe) {
-                    messages.indexOfFirst { it.id?.startsWith("c:") == true && !it.failed && it.text == m.text && kotlin.math.abs(it.time - m.time) <= ECHO_MS }
+                    m.clientId?.let { c -> messages.indexOfFirst { it.id == "c:$c" } }?.takeIf { it >= 0 }
+                        ?: messages.indexOfFirst { it.id?.startsWith("c:") == true && it.text == m.text && kotlin.math.abs(it.time - m.time) <= (if (it.failed) FAILED_ECHO_MS else ECHO_MS) }
                 } else {
                     -1
                 }
@@ -279,6 +285,9 @@ class ConversationBook(
     companion object {
         /** How far apart a message sent from here and OpenBubbles' copy of it may be. */
         const val ECHO_MS = 2 * 60_000L
+
+        /** How long after a send that failed here the Mac's copy may still show it went (a sleeping Mac, woken). */
+        const val FAILED_ECHO_MS = 30 * 60_000L
 
         /**
          * How long a handed-off message waits for OpenBubbles to show it back. OpenBubbles reposts a conversation only

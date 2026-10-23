@@ -196,12 +196,14 @@ object Messages {
             return Sent.Sent
         }
         if (linked) {
+            // A new try: the last one's error is old news.
+            clearNotice(id)
             val clientId = java.util.UUID.randomUUID().toString()
             publish(real.waiting(id, clientId, text, System.currentTimeMillis(), quote))
             val replyTo = quoting.remove(id)?.takeIf { quote != null }?.removeSuffix("#a")
             MacLink.send(id, text, replyTo, clientId) { why ->
                 failed(id, clientId)
-                notice.value = "Not sent: $why"
+                warn(id, "Not sent: $why")
             }
             return Sent.Sent
         }
@@ -289,6 +291,7 @@ object Messages {
     ) {
         val now = System.currentTimeMillis()
         quoting.remove(id)
+        clearNotice(id)
         // Each photo, and the words, go on their own: one the Mac can't take doesn't stop the rest. Until the Mac shows a
         // photo back, the picked one stands for it.
         photos.forEachIndexed { i, uri ->
@@ -298,7 +301,7 @@ object Messages {
             publish(waiting.withFiles(id, "c:$clientId", listOf("local:$uri|$type")))
             MacLink.sendFile(context, id, uri, clientId) { why ->
                 failed(id, clientId)
-                notice.value = "Photo not sent: $why"
+                warn(id, "Photo not sent: $why")
             }
         }
         if (text.isNotBlank()) {
@@ -306,7 +309,7 @@ object Messages {
             publish(real.waiting(id, clientId, text, now + photos.size))
             MacLink.send(id, text, null, clientId) { why ->
                 failed(id, clientId)
-                notice.value = "Not sent: $why"
+                warn(id, "Not sent: $why")
             }
         }
     }
@@ -317,8 +320,31 @@ object Messages {
         clientId: String,
     ) = publish(real.failed(id, clientId))
 
-    /** What went wrong last, said once on screen (a tapback the Mac didn't take). */
+    /**
+     * What went wrong last, said once on screen in the conversation it happened in ([noticeFor]), until the next try
+     * there, a few seconds pass, or he leaves it (Boss, 2026-10-23: errors stayed on, under later messages).
+     */
     val notice = MutableStateFlow("")
+
+    @Volatile
+    var noticeFor: String? = null
+        private set
+
+    fun warn(
+        id: String,
+        text: String,
+    ) {
+        noticeFor = id
+        notice.value = text
+    }
+
+    /** Takes the notice away; with [id], only one said in that conversation. */
+    fun clearNotice(id: String? = null) {
+        if (id == null || noticeFor == id) {
+            notice.value = ""
+            noticeFor = null
+        }
+    }
 
     /**
      * The owner's tapback [kind] on [message] in [id], through the Mac: shown at once, and off again when it was
@@ -335,7 +361,7 @@ object Messages {
         val remove = mine in message.tapbacks
         val changed = message.copy(tapbacks = message.tapbacks.filterNot { it.startsWith("me:") } + listOfNotNull(mine.takeIf { !remove }))
         publish(real.fromMac(id, null, null, listOf(changed), counting = false))
-        MacLink.tapback(id, macId, kind, remove) { why -> notice.value = "Tapback not sent: $why" }
+        MacLink.tapback(id, macId, kind, remove) { why -> warn(id, "Tapback not sent: $why") }
     }
 
     private val loadingEarlier = ConcurrentHashMap.newKeySet<String>()

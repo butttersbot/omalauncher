@@ -498,10 +498,18 @@ fun Thread(
         }
         val photos = pending.photos[c.id].orEmpty()
         val notice by Messages.notice.collectAsState()
-        if (notice.isNotEmpty()) {
+        // Said a few seconds, in this conversation only; the message that didn't go keeps its own "Not sent" line.
+        LaunchedEffect(notice) {
+            if (notice.isNotEmpty()) {
+                kotlinx.coroutines.delay(NOTICE_MS)
+                if (Messages.notice.value == notice) Messages.clearNotice()
+            }
+        }
+        DisposableEffect(c.id) { onDispose { Messages.clearNotice(c.id) } }
+        if (notice.isNotEmpty() && Messages.noticeFor.let { it == null || it == c.id }) {
             BasicText(
                 notice,
-                Modifier.fillMaxWidth().clickable { Messages.notice.value = "" }.padding(horizontal = 14.dp, vertical = 6.dp),
+                Modifier.fillMaxWidth().clickable { Messages.clearNotice() }.padding(horizontal = 14.dp, vertical = 6.dp),
                 style = Pack.body(Pack.size.small, Pack.accent),
             )
         }
@@ -1018,3 +1026,6 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.tail(
         }
     }
 }
+
+/** How long an error is said under a conversation before it goes by itself. */
+private const val NOTICE_MS = 8_000L

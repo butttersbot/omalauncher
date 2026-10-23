@@ -149,3 +149,4 @@ shot long-thread-seam
 [phone] Mac locked: one plain text and one tapback (later slice) still go; note which don't.
 [phone] Hold a message from someone: the six tapbacks show above Reply/Copy; tapping one puts it under the message here and on the Mac; tapping it again takes it off.
 [phone] Open a long chat with a friend and scroll to the top: older messages keep coming past the first 50, in order, with nothing twice.
+[phone] With the Mac asleep (lid closed), send a message: one "Not sent" line under it, and an error bar under the conversation that goes by itself after a few seconds and isn't shown in other conversations. Wake the Mac: if the message went after all, its "Not sent" goes; a new send there clears any error left.

@@ -137,6 +137,24 @@ class ConversationBookTest {
         assertEquals(listOf("A1|image/heic"), ConversationBook.fromJson(photo.toJson())["c2"]!!.messages.single().files)
     }
 
+    // Boss, 2026-10-23: "Not sent" stayed on messages that had gone (the Mac asleep, the phone timed out, then sent).
+    @Test fun aSendMarkedFailedThatWentAfterAllIsReplacedByTheMacsCopy() {
+        val start = ConversationBook().fromMac("c1", "Mina", false, emptyList(), unread = 0)
+        val byId = start.waiting("c1", "k1", "on my way", 5_000).failed("c1", "k1")
+            .fromMac("c1", null, null, listOf(Message("on my way", 600_000, "", id = "m9", clientId = "k1")))["c1"]!!
+        assertEquals(listOf("m9"), byId.messages.map { it.id })
+        assertTrue(byId.messages.none { it.failed })
+        // Without the client id echoed: the same words within half an hour.
+        val byWords = start.waiting("c1", "k2", "running late", 5_000).failed("c1", "k2")
+            .fromMac("c1", null, null, listOf(Message("running late", 900_000, "", id = "m10")))["c1"]!!
+        assertEquals(listOf("m10"), byWords.messages.map { it.id })
+        // Much later, the same words are a new message, and the one that failed stays failed.
+        val later = start.waiting("c1", "k3", "ok", 5_000).failed("c1", "k3")
+            .fromMac("c1", null, null, listOf(Message("ok", 5_000 + 3_600_000, "", id = "m11")))["c1"]!!
+        assertEquals(2, later.messages.size)
+        assertTrue(later.messages.first().failed)
+    }
+
     @Test fun openBubblesCopiesGoOnceLinked() {
         // The Mac's Kel, and OpenBubbles' Kel from a notification (no Mac ids): only the Mac's stays.
         val book =

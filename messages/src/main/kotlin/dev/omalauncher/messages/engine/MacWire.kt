@@ -142,9 +142,9 @@ object MacWire {
         val quote = m.replyTo?.let(quoteOf)
         val parts =
             listOfNotNull(
-                summary(m.attachments)?.let { Message(it, m.at, sender, id = m.id + "#a", files = m.attachments.map { a -> a.id + "|" + a.mime }) },
+                summary(m.attachments)?.let { Message(it, m.at, sender, id = m.id + "#a", files = m.attachments.map { a -> a.id + "|" + a.mime }, clientId = m.clientId) },
                 // The object replacement character stands where an attachment sat in the words.
-                m.text.replace("￼", "").trim().takeIf { it.isNotEmpty() }?.let { Message(it, m.at, sender, id = m.id) },
+                m.text.replace("￼", "").trim().takeIf { it.isNotEmpty() }?.let { Message(it, m.at, sender, id = m.id, clientId = m.clientId) },
             )
         // The quote goes on the first part, the tapbacks on the last (under the message, as iMessage shows them).
         return parts.mapIndexed { i, p ->
