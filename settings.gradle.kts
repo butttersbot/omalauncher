@@ -31,3 +31,5 @@ include(":app")
 include(":owl")
 include(":chat")
 include(":desktop")
+// Soma Messages: a standalone app beside the launcher, on Soma's shared looks and composer (features/soma-messages in ClaudeSync).
+include(":messages")
