@@ -44,7 +44,7 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(['note', 'message', 'text'], [e['type'] for e in t.events])
         self.assertEqual('Answer', t.events[-1]['text'])
         self.assertTrue(t.view()['external'])
-        self.assertTrue(t.view()['read_only'])
+        self.assertFalse(t.view()['read_only'])
         self.sync()
         self.assertEqual(3, len(t.events))
         partial = json.dumps(self.row('u2', content='Next'))
@@ -89,12 +89,53 @@ class DiscoveryTests(unittest.TestCase):
         t, = self.sync()
         self.assertEqual('My task', t.meta['name'])
 
-    def test_mirror_cannot_start_a_second_claude(self):
+    def test_discovered_session_resumes_through_existing_driver(self):
         self.write(self.row())
         t, = self.sync()
-        self.assertEqual('refused', self.m['take'](t, 'do work')['taken'])
+        self.m['AGENT'] = str(Path(__file__).with_name('fake-agent').resolve())
+        # No real canvas token service or remote model in this test.
+        self.m['canvas_env'] = lambda thread: {}
+        with self.m['changed']:
+            answer = self.m['take'](t, 'hello from phone')
+        self.assertEqual('now', answer['taken'])
+        deadline = time.time() + 10
+        while t.worker is not None and time.time() < deadline:
+            time.sleep(.02)
         self.assertIsNone(t.worker)
-        self.assertEqual([], t.queue)
+        self.assertEqual(self.sid, t.meta['session'])
+        self.assertTrue(any(e['type'] == 'result' for e in t.events))
+        starts = [json.loads(line) for line in (self.root / 'starts.log').read_text().splitlines()]
+        self.assertEqual(1, len(starts))
+        self.assertTrue(starts[0]['resumed'])
+        self.assertEqual('manual', starts[0]['mode'])
+        self.assertEqual('stdio', starts[0]['prompt_tool'])
+        deadline = time.time() + 5
+        while t.kept is not None and time.time() < deadline:
+            time.sleep(.02)
+        self.assertIsNone(t.kept)
+
+    def test_phone_turn_deduplicates_native_transcript(self):
+        self.write(self.row())
+        t, = self.sync()
+        driver = self.m['Claude'](t, 'Phone prompt')
+        t.say = lambda event: None
+        with self.m['changed']:
+            t.emit('message', text='Phone prompt')
+            driver.begin()
+            driver.heard({'type': 'assistant', 'uuid': 'stream-a', 'message': {'id': 'api-a', 'content': [{'type': 'text', 'text': 'Phone answer'}]}})
+        self.write(self.row(driver.uuid, content='Phone prompt'),
+                   dict(self.row('disk-a', 'assistant', [{'type': 'text', 'text': 'Phone answer'}]), message={'id': 'api-a', 'content': [{'type': 'text', 'text': 'Phone answer'}]}), mode='a')
+        self.sync()
+        self.assertEqual(1, sum(e.get('text') == 'Phone prompt' for e in t.events))
+        self.assertEqual(1, sum(e.get('text') == 'Phone answer' for e in t.events))
+
+    def test_wrong_session_is_never_adopted(self):
+        self.write(self.row())
+        t, = self.sync()
+        driver = self.m['Claude'](t, 'Hello')
+        with self.assertRaises(ValueError):
+            driver.heard({'type': 'system', 'subtype': 'init', 'session_id': 'another-session'})
+        self.assertEqual(self.sid, t.meta['session'])
 
     def test_equal_size_rewrite_and_record_filtering(self):
         self.write(self.row())
@@ -108,7 +149,7 @@ class DiscoveryTests(unittest.TestCase):
         self.sync()
         self.assertEqual(3, len(t.events))
 
-    def test_http_rejects_reply_to_mirror(self):
+    def test_http_accepts_reply_for_discovered_session(self):
         import io
         self.write(self.row())
         t, = self.sync()
@@ -120,10 +161,12 @@ class DiscoveryTests(unittest.TestCase):
         request.rfile = io.BytesIO(payload)
         answers = []
         request.answer = lambda code, body: answers.append((code, body))
+        sent = []
+        self.m['take'] = lambda thread, text: sent.append((thread, text)) or {'taken': 'now'}
         request.do_POST()
-        self.assertEqual(409, answers[0][0])
-        self.assertFalse(answers[0][1]['ok'])
-        self.assertEqual([], t.queue)
+        self.assertEqual(200, answers[0][0])
+        self.assertTrue(answers[0][1]['ok'])
+        self.assertEqual([(t, 'do work')], sent)
 
     def test_large_tool_record_does_not_block_next_prompt(self):
         self.write(self.row(), self.row('tool', content=[{'type': 'tool_result', 'content': 'x' * (4 * 1024 * 1024)}]),

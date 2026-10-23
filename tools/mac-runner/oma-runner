@@ -385,6 +385,11 @@ class Claude:
         return clean_environment()
 
     def begin(self):
+        if self.thread.meta.get('claude_external'):
+            seen = set(self.thread.meta.get('claude_seen', []))
+            seen.add(self.uuid)
+            self.thread.meta['claude_seen'] = sorted(seen)
+            self.thread.save()
         self.thread.say({'type': 'user', 'session_id': '', 'uuid': self.uuid, 'message': {'role': 'user', 'content': self.text}})
 
     def answers(self, event):
@@ -403,6 +408,8 @@ class Claude:
         thread, kind = self.thread, event.get('type')
         if kind == 'system' and event.get('subtype') == 'init':
             thread.model = event.get('model') or thread.model
+            if thread.meta.get('claude_external') and event.get('session_id') != thread.meta.get('session'):
+                raise ValueError('Claude did not resume the requested conversation; its original session is kept.')
             if event.get('session_id') and thread.meta.get('session') != event['session_id']:
                 thread.meta['session'] = event['session_id']
                 thread.save()
@@ -411,6 +418,15 @@ class Claude:
         elif kind == 'system' and event.get('subtype') == 'background_tasks_changed':
             self.background = {task.get('task_id'): str(task.get('description') or task.get('task_id')) for task in event.get('tasks') or []}
         elif kind == 'assistant':
+            if thread.meta.get('claude_external'):
+                seen = set(thread.meta.get('claude_seen', []))
+                if isinstance(event.get('uuid'), str):
+                    seen.add(event['uuid'])
+                message_id = (event.get('message') or {}).get('id')
+                if isinstance(message_id, str):
+                    seen.add('message:' + message_id)
+                thread.meta['claude_seen'] = sorted(seen)
+                thread.save()
             self.spoke = True
             if event.get('error') in ('rate_limit', 'billing_error'):
                 self.limited = event['error']
@@ -2017,7 +2033,7 @@ class Thread:
                 'kind': self.meta['kind'], 'mode': mode(self.meta), 'model': self.model, 'summary': self.meta.get('summary', ''), 'status': self.meta['status'],
                 'last_worked': self.meta.get('last_worked'), 'tail': self.meta.get('tail', ''), 'waiting_turns': len(self.queue),
                 'last_event': len(self.events), 'external': bool(self.meta.get('codex_external') or self.meta.get('claude_external')),
-                'read_only': bool(self.meta.get('claude_external')),
+                'read_only': False,
                 'bot': self.bot_fields(),
                 'background': list(self.kept.driver.background.values()) if self.kept and not self.kept.done else [],
                 'pending': [{'approval': key, 'nonce': entry['nonce'], 'tool': entry['tool'], 'input': entry['input'], 'explanation': entry['explanation'], 'can_remember': entry.get('command_scope') is not None} for key, entry in self.pending.items()]}
@@ -2150,7 +2166,7 @@ def sync_claude():
                 continue
             with changed:
                 thread = next((t for t in threads.values() if t.meta['kind'] == 'claude' and t.meta.get('session') == sid), None)
-                if thread and (not thread.meta.get('claude_external') or thread.worker is not None):
+                if thread and (not thread.meta.get('claude_external') or (thread.worker is not None or (thread.kept and not thread.kept.done))):
                     continue
                 offset = thread.meta.get('claude_offset', 0) if thread else 0
                 identity = [stat_now.st_dev, stat_now.st_ino]
@@ -2197,25 +2213,26 @@ def sync_claude():
             with changed:
                 # A runner turn may have registered the session while the file was being read.
                 current = next((t for t in threads.values() if t.meta['kind'] == 'claude' and t.meta.get('session') == sid), None)
-                if current is not thread:
+                if current is not thread or (thread and (thread.worker is not None or (thread.kept and not thread.kept.done))):
                     continue
                 if thread is None:
                     tid = 't' + hashlib.sha256(('claude:' + sid).encode()).hexdigest()[:16]
                     if tid in threads:
                         continue
                     thread = Thread({'id': tid, 'name': claude_visible(first).strip()[:160], 'project': str(project),
-                                     'kind': 'claude', 'session': sid, 'status': 'idle', 'mode': 'manual',
+                                     'kind': 'claude', 'session': sid, 'status': 'idle', 'mode': 'manual', 'model': None,
                                      'created': int(stat_now.st_mtime), 'summary': '', 'tail': '', 'claude_external': True})
                     threads[tid] = thread
                     thread.save()
-                    thread.emit('note', text='Live mirror of Claude Code on the Mac. Read only: reply in Claude Code on the Mac.')
+                    thread.emit('note', text='Claude Code conversation from the Mac. Phone replies resume this same conversation; finish any active Mac turn before sending.')
                 seen = set(thread.meta.get('claude_seen', []))
                 for row in rows:
                     if row.get('type') == 'custom-title' and isinstance(row.get('customTitle'), str):
                         thread.meta['name'] = row['customTitle'][:160]
                     text = claude_visible(row).strip()
                     uid = row.get('uuid')
-                    if not text or not isinstance(uid, str) or uid in seen:
+                    message_id = (row.get('message') or {}).get('id') if row.get('type') == 'assistant' else None
+                    if not text or not isinstance(uid, str) or uid in seen or (message_id and 'message:' + message_id in seen):
                         continue
                     if row['type'] == 'assistant':
                         thread.model = (row.get('message') or {}).get('model') or thread.model
@@ -2578,8 +2595,6 @@ def collect_mail():
 def take(thread, text):
     """The owner's words: at once when the thread is free, otherwise when the turn before them ends."""
     with changed:
-        if thread.meta.get('claude_external'):
-            return {'taken': 'refused', 'error': 'This Claude conversation is mirrored from the Mac. Reply in Claude Code on the Mac.'}
         if isinstance(thread.driver, Codex) and not text.startswith('[Agent mail '):
             for approval, entry in list(thread.pending.items()):
                 if thread.driver.user_input(entry, text):
@@ -3124,8 +3139,6 @@ class Runner(BaseHTTPRequestHandler):
         thread = threads.get(parts[1]) if len(parts) in (3, 4) and parts[0] == 'threads' else None
         if thread is None:
             return self.answer(404, {'ok': False, 'error': 'not found'})
-        if thread.meta.get('claude_external'):
-            return self.answer(409, {'ok': False, 'error': 'This Claude conversation is mirrored from the Mac. Reply in Claude Code on the Mac.'})
         if parts[2:] == ['messages']:
             text = body.get('text')
             if not isinstance(text, str) or not text.strip():
