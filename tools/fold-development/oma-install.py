@@ -72,11 +72,11 @@ m=re.search(r"package: name='([^']+)' versionCode='(\d+)'",r.stdout)
 allowed=[package]+(['dev.omalauncher.messages'] if other else [])
 if r.returncode or not m or m.group(1) not in allowed:sys.exit('Install refused: APK is not the working launcher'+(' or Soma Messages' if other else '')+'.')
 target=m.group(1)
+version=int(m.group(2))
 r=run(['/opt/android-sdk/build-tools/36.0.0/apksigner','verify','--print-certs',str(apk)])
 if r.returncode:sys.exit('Install refused: APK signature verification failed.')
 m=re.search(r'Signer #1 certificate SHA-256 digest: ([0-9a-f]+)',r.stdout)
 if not m or m.group(1)!=expected_cert:sys.exit('Install refused: signing identity does not match the working launcher.')
-version=int(m.group(2))
 def install_self():
  # Staged in Linux's own files, which Oma reads as its own; Oma checks package, key and version again itself.
  stage=pathlib.Path('/root/.cache/oma-update');stage.mkdir(parents=True,exist_ok=True)
