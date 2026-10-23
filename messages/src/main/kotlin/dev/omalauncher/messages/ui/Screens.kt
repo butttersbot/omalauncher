@@ -400,7 +400,8 @@ fun Thread(
             }
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp), state = list) {
+            // Room under the last message for the Latest pill, so it never covers the end of its words (the 0.7.6 walk).
+            LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp), state = list, contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 44.dp)) {
                 itemsIndexed(c.messages) { i, m ->
                     val prev = c.messages.getOrNull(i - 1)
                     val next = c.messages.getOrNull(i + 1)

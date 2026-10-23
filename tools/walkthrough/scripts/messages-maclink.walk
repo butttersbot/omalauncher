@@ -56,8 +56,11 @@ expect You: Yes! 7pm
 # Ana's love tapback on "Yes! 7pm" (the demo's own), under that message.
 expect ❤️
 shot reply-quote
-# Scrolled up, the thread stays put and offers "Latest"; back down before writing, so the answer shows.
-tap Latest
+# Back down before writing, so the answer shows. Swiped, not "tap Latest": a short demo thread is all on one
+# screen, and the pill only shows once scrolled away from the bottom (the 0.7.6 walk failed on it).
+swipe 0.5 0.8 0.5 0.3 200
+swipe 0.5 0.8 0.5 0.3 200
+swipe 0.5 0.8 0.5 0.3 200
 wait 800
 # The field and the send button by place (cover screen): "Message" would also match the inbox's heading, under
 # the conversation.
@@ -76,7 +79,73 @@ wait 1500
 wait 3000
 expect Demo reply to: walk test from the Fold
 shot sent-and-answered
+# Older history (0.7.6): the demo's "Long thread" has 120 messages, "Long #1" (the oldest, "Long thread starts here")
+# to "Long #120"; a page is 50, so scrolling to the top has to load two more pages.
+key BACK
+wait 800
+tap Long thread
+wait 1500
+expect Long #120
+absent Long #60
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+wait 1500
+expect Long thread starts here
+# Look: oldest first at the top, no message twice across the pages' seams (#70/#71, #20/#21), no jump.
+shot long-thread-top
+swipe 0.5 0.85 0.5 0.3 300
+wait 600
+shot long-thread-seam
 # The Mac stopped: the inbox says so and keeps what it has.
 [phone] With the real service on the MacBook: link from the phone-link file (Taildropped), chats and names are Boss's own, one plain-text send to a chat he picks arrives on his other devices, a reply from him shows within seconds.
 [phone] Mac locked: one plain text and one tapback (later slice) still go; note which don't.
 [phone] Hold a message from someone: the six tapbacks show above Reply/Copy; tapping one puts it under the message here and on the Mac; tapping it again takes it off.
+[phone] Open a long chat with a friend and scroll to the top: older messages keep coming past the first 50, in order, with nothing twice.
