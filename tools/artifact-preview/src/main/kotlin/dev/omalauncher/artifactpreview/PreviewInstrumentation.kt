@@ -134,6 +134,11 @@ class PreviewInstrumentation : Instrumentation() {
             result.putString("stream", "PASS: native HTML and JavaScript; three focused-WebView cover/unfold cycles; close restored draft and existing composer. Screenshot: ${output.name}")
             finish(RESULT_OK, result)
         } catch (problem: Throwable) {
+            // Capture before finish() closes the fixture; an external capture can arrive on Home.
+            runCatching {
+                val failure = File(targetContext.getExternalFilesDir(null), "artifact-failure.png")
+                uiAutomation.takeScreenshot().let { bitmap -> failure.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) } }
+            }
             Log.e("SomaWalk", "artifact FAIL: ${problem.message}")
             result.putString("stream", "FAIL: ${problem.message}")
             finish(RESULT_CANCELED, result)
