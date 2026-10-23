@@ -21,6 +21,8 @@ object MacWire {
         val fromMe: Boolean,
         /** The sender's handle, a phone number or an email; null for the owner's own. */
         val sender: String?,
+        /** The sender's name from the Mac's Contacts, when the Mac may read them. */
+        val senderName: String?,
         val text: String,
         val at: Long,
         val attachments: List<Attachment>,
@@ -59,6 +61,7 @@ object MacWire {
             chatId = o.str("chatId").orEmpty(),
             fromMe = o.optBoolean("fromMe"),
             sender = o.str("sender"),
+            senderName = o.str("senderName"),
             text = o.optString("text"),
             at = o.optLong("at"),
             attachments =
@@ -129,7 +132,7 @@ object MacWire {
         quoteOf: (String) -> String? = { null },
     ): List<Message> {
         if (m.unsent || m.system) return emptyList()
-        val sender = if (m.fromMe) "" else m.sender?.let { nameOf(it) ?: it } ?: "Unknown"
+        val sender = if (m.fromMe) "" else m.sender?.let { nameOf(it) } ?: m.senderName ?: m.sender ?: "Unknown"
         val quote = m.replyTo?.let(quoteOf)
         val parts =
             listOfNotNull(

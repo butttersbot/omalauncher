@@ -52,6 +52,10 @@ class MacWireTest {
         assertEquals("Ana: dinner at 7?", kept.quote)
         assertTrue(kept.fromMe)
         // No sender and not the owner's: still someone.
+        // The Mac's name for the sender when the phone has none; the phone's own contacts first.
+        val named = MacWire.msg(JSONObject("""{"id":"n","chatId":"c","fromMe":false,"sender":"+1555","senderName":"Ana Ruiz","text":"hi","at":1}"""))
+        assertEquals("Ana Ruiz", MacWire.toMessages(named).single().sender)
+        assertEquals("Ana", MacWire.toMessages(named, nameOf = { "Ana" }).single().sender)
         assertEquals("Unknown", MacWire.toMessages(MacWire.msg(JSONObject("""{"id":"x","chatId":"c","fromMe":false,"text":"hi","at":1}"""))).single().sender)
     }
 
