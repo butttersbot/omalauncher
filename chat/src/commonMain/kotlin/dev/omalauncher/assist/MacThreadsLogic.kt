@@ -428,7 +428,12 @@ fun macUnsentReason(answer: MacAnswer<MacTaken>): String? = when (answer) {
     MacAnswer.Unauthorized -> MAC_KEY_REFUSED
     MacAnswer.NotFound -> MAC_THREAD_GONE
     is MacAnswer.Refused -> "The Mac refused this request."
-    is MacAnswer.Failed -> if (answer.code == 200) null else "The Mac could not take this (HTTP ${answer.code})."
+    is MacAnswer.Failed -> when {
+        answer.code == 200 -> null
+        // A refused resume has no event stream: keep the runner's explanation in the unsent entry.
+        answer.code == 409 && answer.error.isNotBlank() -> answer.error.trim().take(1200)
+        else -> "The Mac could not take this (HTTP ${answer.code})."
+    }
 }
 
 fun macRefusedText(code: Int) = if (code == 401) "The Mac turned this phone's key down." else if (code == 404) MAC_THREAD_GONE else "The Mac refused to be followed (HTTP $code)."

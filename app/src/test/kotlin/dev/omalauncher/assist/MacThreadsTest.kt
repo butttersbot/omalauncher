@@ -27,6 +27,22 @@ class MacThreadsTest {
 
     private fun taken(time: Long, prompt: String = "prompt $time") = macTaken(handed(time, prompt))
 
+    @Test fun aRefusedResumeKeepsItsReasonInlineWithTheUnsentPrompt() {
+        val reason = "This Claude conversation is still open on the Mac. Close that conversation there before replying from the phone. No phone turn was started."
+        val answer = parseMacTaken(MacReply(409, org.json.JSONObject().put("ok", false).put("error", reason).toString()))
+        val why = macUnsentReason(answer)!!
+        assertEquals(reason, why)
+        val dropped = macUnsent(handed(5, "Continue the project"), why)
+        assertEquals(TaskStatus.Dropped, dropped.status)
+        assertEquals(reason, dropped.result)
+        assertEquals("Continue the project", dropped.prompt)
+        assertEquals(id, dropped.thread)
+        assertEquals(reason, ChatHistory.decode(ChatHistory.encode(listOf(dropped))).single().result)
+        assertTrue(macUnsentReason(parseMacTaken(MacReply(409, "not JSON")))!!.contains("409"))
+        assertTrue(macUnsentReason(MacAnswer.Failed(409, "   "))!!.contains("409"))
+        assertEquals(1200, macUnsentReason(MacAnswer.Failed(409, "x".repeat(2000)))!!.length)
+    }
+
     @Test fun theEntryCarriesAReceiptAndWaitsUntilTheMacTakesIt() {
         val entry = handed(5, "fix the menu")
         assertEquals(ChatTask(5, "→ FF4 mod", "fix the menu", status = TaskStatus.Queued, thread = id, threadName = "FF4 mod"), entry)

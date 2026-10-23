@@ -1,0 +1,19 @@
+# EMULATOR ONLY. Mac build first runs ChatScreenRenderTest, whose parsed HTTP409
+# fixture is chat/build/render/mac-refusal.json. Push it to /data/local/tmp/mac-refusal.json.
+# Back up emulator files/oma-chat.json before this walk and restore it afterward.
+# No runner key or real session is needed; network parsing/persistence is covered by MacThreadsTest.
+shell am force-stop dev.omalauncher.boss
+shell run-as dev.omalauncher.boss cp /data/local/tmp/mac-refusal.json files/oma-chat.json
+fold folded
+launch dev.omalauncher.boss/dev.omalauncher.oma.OmaChatActivity
+expect Continue the project
+expect This Claude conversation is still open on the Mac.
+expect Close that conversation there before replying from the phone.
+expect No phone turn was started.
+absent The Mac could not take this (HTTP 409).
+shot mac-refusal-cover
+fold open
+expect Close that conversation there before replying from the phone.
+shot mac-refusal-inner
+[phone] After promotion, try a harmless reply to a held-open spare Mac conversation: the inline explanation must appear beneath the preserved prompt, not only HTTP409. Verify no remote turn is queued.
+[phone] Close the spare on the Mac, retry the prompt from Soma and verify one real reply in that same session.

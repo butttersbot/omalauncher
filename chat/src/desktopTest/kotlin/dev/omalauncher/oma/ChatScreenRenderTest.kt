@@ -43,6 +43,21 @@ import java.io.File
  * ChatScreenTapTest.
  */
 class ChatScreenRenderTest : ChatScreenTestBase() {
+    @Test fun refusedMacConversationShowsItsReasonOnTheCover() {
+        val reason = "This Claude conversation is still open on the Mac. Close that conversation there before replying from the phone. No phone turn was started."
+        val answer = dev.omalauncher.assist.parseMacTaken(dev.omalauncher.assist.MacReply(409,
+            org.json.JSONObject().put("ok", false).put("error", reason).toString()))
+        val host = object : SampleHost() {
+            override fun working() = false
+            override fun tasks() = listOf(ChatTask(now, "→ MacBook Pro", "Continue the project",
+                status = TaskStatus.Dropped, thread = "macbook-pro/t12345678", threadName = "Pool work",
+                result = dev.omalauncher.assist.macUnsentReason(answer)!!))
+        }
+        render(host, OMA_TAB, "chat-mac-refusal-cover.png", width = 688)
+        val out = File(System.getProperty("render.dir") ?: "build/render").apply { mkdirs() }
+        File(out, "mac-refusal.json").writeText(ChatHistory.encode(host.tasks()))
+    }
+
     @Test fun rememberedCommandCardFitsTheCoverScreen() {
         val card = dev.omalauncher.assist.MacApproval("a1", "n1", "Bash", """{"command":"git status --short","cwd":"/Users/boss/Projects/soma","access":{}}""", "check the project", canRemember = true)
         val host = object : SampleHost() {
