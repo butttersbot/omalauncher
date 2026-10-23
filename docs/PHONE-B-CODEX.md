@@ -47,3 +47,24 @@ Regression coverage includes writer-conflict handling, unknown/other errors, com
 
 
 The first real busy-copy test passed, but exposed late inherited history: native busy-step messages not yet imported could arrive after the phone result and replace its list preview. Fork setup now imports the inherited tail before starting the phone turn. A persisted pending-history flag allows safe retry if that read fails; discovery also clears it only after importing the history. This preserves the latest phone reply as the latest event. Targeted tests include failed-history retry before any model turn.
+
+
+### Real MacBook/Fold verification
+
+Base runner f0bde9d passed the real native-writer cases; follow-up65477f5 imports inherited history before replying. These are runner-only changes; no phone app installation was needed. Evidence is saved at `/root/handoff/codex-phone-copy-evidence/`.
+
+| Walk step | Result | Evidence |
+| --- | --- | --- |
+| 1. Idle open writer creates a phone copy | PASS | XA`t18fe4c5c` returned retained context with a copy notice; the original stayed unchanged. |
+| 2. Second actual Soma composer message stays on the copy | PASS | XA events10–12 returned `XA ready` then `XA follow-up pong`; screenshot inspected. Early UI launch attempts failed before Send and produced no extra messages. |
+| 3. Busy writer waits then copies | PASS | XB`t7705bd53` emitted waiting then copy notes and `XB phone pong`. XF`t632fa906` repeated this on65477f5: native completion event11 precedes phone text12/result13, with `XF phone pong` the latest reply. |
+| 4. Stop cancels only the phone wait | PASS | XE`tb426d16e` actual Soma composer/Stop showed stopped; Mac peer confirmed native holder survived and the cancelled prompt never reached its transcript. Waiting/stopped screenshots inspected. |
+| 5. Closed/crashed native writer resumes normally | PASS | XC`t7aa169d1` and XD`t7d2a6cc3` returned `XC phone pong` / `XD phone pong`; no phone copy was required. |
+| 6. Restart/discovery preserves one mapping | PASS | Mac peer confirmed no duplicate source/copy threads. On65477f5 XF remained at14 events across multiple discovery scans, with `XF phone pong` still last; event-array equality checked from the Fold. |
+
+Local targeted checks after the follow-up:16 Codex PASS; Claude27 PASS and one Darwin-only skip on the Fold. The full30-minute timeout, unknown-log formats, corrupted/missing metadata, and crash-during-wait variants were checked automatically rather than walked for30 minutes or by corrupting owner data. The earlier misleading cross-process RPC `interrupted` status and file-quiet heuristic were rejected before deployment in favor of raw lifecycle markers.
+
+Boss's original `ok lets build it` message in`t68bc8fc8` remains retained and was not replayed during connection tests. The actual failing desktop session was checked read-only for the expected rollout format. Only disposable spare sessions received test messages; Boss's running desktop writers were not stopped.
+
+
+Final65477f5 runtime confirmation: Mac peer reported an exact source match, all focused/broad tests passing, all live cases passing, and only its disposable test holders closed. Local runtime SHA1:`a1d075c9210d0f2f8569af066c98588d47a54124`. XF's event array stayed unchanged after multiple scans; native finish11 precedes phone text12/result13. No late native progress overwrote the phone reply. Actual Soma follow-up and wait/Stop screenshots were inspected. The rollout is complete; no owner build message was replayed and no phone binary was installed for this fix.

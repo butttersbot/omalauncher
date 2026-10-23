@@ -219,6 +219,9 @@ class ReconciledRunnerTests(unittest.TestCase):
             f.write('{')
         self.assertEqual(('busy', None), self.m['codex_source_turn'](str(path), sid))
         self.assertEqual(('unknown', None), self.m['codex_source_turn'](str(path), 'wrong-session'))
+        self.assertEqual(('unknown', None), self.m['codex_source_turn'](str(self.root / 'missing.jsonl'), sid))
+        path.write_text('not json\n')
+        self.assertEqual(('unknown', None), self.m['codex_source_turn'](str(path), sid))
 
     def test_other_resume_errors_keep_original_without_fork(self):
         self.conflict()
