@@ -94,6 +94,14 @@ wait 1500
 absent Tap to play
 # Look: the video shown by a frame from it, with a play mark.
 shot video-frame
+# A shared link (the demo's second "Clips" message, "https://www.tiktok.com/@soma/video/1"): a card, and a tap opens it.
+expect tiktok.com
+tap tiktok.com
+wait 4000
+shot link-opened
+key BACK
+wait 1000
+expect Clips
 # Older history (0.7.6): the demo's "Long thread" has 120 messages, "Long #1" (the oldest, "Long thread starts here")
 # to "Long #120"; a page is 50, so scrolling to the top has to load two more pages.
 key BACK
@@ -166,3 +174,4 @@ shot long-thread-seam
 [phone] Open a long chat with a friend and scroll to the top: older messages keep coming past the first 50, in order, with nothing twice.
 [phone] With the Mac asleep (lid closed), send a message: one "Not sent" line under it, and an error bar under the conversation that goes by itself after a few seconds and isn't shown in other conversations. Wake the Mac: if the message went after all, its "Not sent" goes; a new send there clears any error left.
 [phone] Tap a video a friend sent: it comes from the Mac (a moment), plays in the phone's player with sound, and Back returns to the chat, where the video now shows a frame of itself.
+[phone] Tap a TikTok or Instagram link a friend sent: it opens (in TikTok/Instagram, or beside the chat on the open Fold), and Back returns to the chat.
