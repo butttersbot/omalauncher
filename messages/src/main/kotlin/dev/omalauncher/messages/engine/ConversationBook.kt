@@ -10,6 +10,8 @@ data class Message(
     val sender: String,
     /** Sent from this app; it stays until OpenBubbles shows it back, then the two are one message. */
     val sentHere: Boolean = false,
+    /** The message this one answered ("Mina: are we still on…"), kept on this phone: OpenBubbles' reply action sends words only. */
+    val quote: String? = null,
 ) {
     val fromMe get() = sender.isEmpty()
 }
@@ -65,7 +67,7 @@ class ConversationBook(
                 // OpenBubbles showing back what was sent from here: the same words within a couple of minutes.
                 val echo = messages.indexOfFirst { it.sentHere && it.text == m.text && kotlin.math.abs(it.time - m.time) <= ECHO_MS }
                 if (echo >= 0) {
-                    messages[echo] = Message(m.text, m.time, "")
+                    messages[echo] = Message(m.text, m.time, "", quote = messages[echo].quote)
                     continue
                 }
             } else {
@@ -90,9 +92,10 @@ class ConversationBook(
         id: String,
         text: String,
         time: Long,
+        quote: String? = null,
     ): ConversationBook {
         val old = byId[id] ?: return this
-        return ConversationBook(byId + (id to old.copy(messages = old.messages + Message(text, time, "", sentHere = true))))
+        return ConversationBook(byId + (id to old.copy(messages = old.messages + Message(text, time, "", sentHere = true, quote = quote))))
     }
 
     /** The owner has looked at [id]. */
@@ -114,7 +117,7 @@ class ConversationBook(
                                 "messages",
                                 JSONArray(
                                     c.messages.map { m ->
-                                        JSONObject().put("text", m.text).put("time", m.time).put("sender", m.sender).put("here", m.sentHere)
+                                        JSONObject().put("text", m.text).put("time", m.time).put("sender", m.sender).put("here", m.sentHere).apply { m.quote?.let { put("quote", it) } }
                                     },
                                 ),
                             )
@@ -140,7 +143,7 @@ class ConversationBook(
                     val messages =
                         (0 until ms.length()).map { j ->
                             val m = ms.getJSONObject(j)
-                            Message(m.getString("text"), m.getLong("time"), m.getString("sender"), m.optBoolean("here"))
+                            Message(m.getString("text"), m.getLong("time"), m.getString("sender"), m.optBoolean("here"), m.optString("quote").ifEmpty { null })
                         }
                     val id = c.getString("id")
                     byId[id] = Conversation(id, c.getString("title"), c.optBoolean("group"), messages, c.optInt("unread"))

@@ -103,15 +103,19 @@ object Messages {
         publish(real.read(id))
     }
 
-    /** Answers [id] through OpenBubbles' Reply action. Read receipts are OpenBubbles' business; nothing here marks read. */
+    /**
+     * Answers [id] through OpenBubbles' Reply action. Read receipts are OpenBubbles' business; nothing here marks read.
+     * A [quote] is kept with the message here only: the reply action carries words, not iMessage's threaded reply.
+     */
     @Synchronized
     fun send(
         context: Context,
         id: String,
         text: String,
+        quote: String? = null,
     ): Sent {
         if (samples.value) {
-            _book.value = _book.value.sent(id, text, System.currentTimeMillis())
+            _book.value = _book.value.sent(id, text, System.currentTimeMillis(), quote)
             return Sent.Sent
         }
         val h = handles[id]
@@ -123,7 +127,7 @@ object Messages {
         RemoteInput.addResultsToIntent(inputs, intent, results)
         return try {
             reply.send(context, 0, intent)
-            publish(real.sent(id, text, System.currentTimeMillis()))
+            publish(real.sent(id, text, System.currentTimeMillis(), quote))
             Sent.Sent
         } catch (e: PendingIntent.CanceledException) {
             handles.remove(id)

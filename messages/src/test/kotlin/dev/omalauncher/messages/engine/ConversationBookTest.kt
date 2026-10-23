@@ -62,4 +62,12 @@ class ConversationBookTest {
         assertEquals(book["chat-mina"], back["chat-mina"])
         assertTrue(ConversationBook.fromJson("{not json").conversations.isEmpty())
     }
+
+    @Test fun aQuotedReplyKeepsItsQuoteThroughTheEchoAndASave() {
+        val book = ConversationBook().take(mina(SeenMessage("bring the sake?", 1_000, "Mina"))).sent("chat-mina", "bring it", 5_000, quote = "Mina: bring the sake?")
+        val echoed = book.take(mina(SeenMessage("bring it", 5_500, null)))
+        assertEquals("Mina: bring the sake?", echoed["chat-mina"]!!.messages.last().quote)
+        assertEquals(echoed["chat-mina"], ConversationBook.fromJson(echoed.toJson())["chat-mina"])
+        assertNull(ConversationBook.fromJson(echoed.toJson())["chat-mina"]!!.messages.first().quote)
+    }
 }

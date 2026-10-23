@@ -14,6 +14,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -72,7 +73,7 @@ import kotlinx.coroutines.withTimeoutOrNull
  * for attachments; a field that grows to five lines; inside the field on the right, the microphone while it is
  * empty and Send once there is something to send. The microphone records a voice message to send as audio, never
  * dictation: tap it to record and Stop to end, or hold it and let go. The recording is then played back, sent, or
- * thrown away with ×. Colors, type and line are the active pack's; the pill stays round in every look, as Apple's. Reference: the Soma Messages
+ * thrown away with ×. Colors, type and line are the active pack's; the pill is Apple's, square in a square-cornered look. Reference: the Soma Messages
  * prototype, features/soma-messages/prototype.html in ClaudeSync (`bindComposer`).
  */
 
@@ -342,6 +343,7 @@ fun SomaComposer(
     attached: Boolean = false,
     enabled: Boolean = true,
     now: () -> Long = { System.currentTimeMillis() },
+    above: (@Composable () -> Unit)? = null,
 ) {
     val stage = state.stage
     val action = ComposerRules.action(stage, state.text, attached, voice != null, emptyAction != null)
@@ -386,8 +388,11 @@ fun SomaComposer(
         }
     }
 
+    Column(modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp)) {
+    // What the message will carry, above the field: a quoted reply, attachments.
+    if (above != null) Box(Modifier.fillMaxWidth().padding(bottom = 6.dp)) { above() }
     Row(
-        modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+        Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.Bottom,
     ) {
@@ -402,8 +407,8 @@ fun SomaComposer(
         }
         val line = if (recording) Pack.red else Pack.border
         val fill = if (recording) Pack.red.copy(alpha = 0.07f).compositeOver(Pack.background) else Pack.background
-        // Apple's pill in every look: round whatever the pack's corners, inked as heavily as the pack draws its lines.
-        val pill = RoundedCornerShape(20.dp)
+        // Apple's pill, square in a look whose corners are square (Manga): the field is chrome, the balloons stay round.
+        val pill = composerShape(20.dp)
         val edge = if (Pack.look.line > 0.dp) Pack.mark else 1.dp
         Row(
             Modifier
@@ -427,6 +432,7 @@ fun SomaComposer(
                 EndButton(action, sendColor, onSendColor, ::send, ::act) { state.stage }
             }
         }
+    }
     }
 }
 
@@ -549,7 +555,7 @@ private fun EndButton(
     Box(
         Modifier
             .size(32.dp)
-            .clip(CircleShape)
+            .clip(composerShape(null))
             .background(fill)
             .semantics {
                 role = Role.Button
@@ -588,6 +594,17 @@ private fun EndButton(
     }
 }
 
+/** The composer's shape: [radius] (or a circle for null) in most looks, square in a look whose corners are square. */
+@Composable
+fun composerShape(radius: androidx.compose.ui.unit.Dp?): androidx.compose.ui.graphics.Shape =
+    if (Pack.look.pack.shape.corners == dev.omalauncher.theme.pack.CornerStyle.Edge) {
+        androidx.compose.ui.graphics.RectangleShape
+    } else if (radius == null) {
+        CircleShape
+    } else {
+        RoundedCornerShape(radius)
+    }
+
 /** A round button with [description] for screen readers. */
 @Composable
 private fun RoundButton(
@@ -602,7 +619,7 @@ private fun RoundButton(
     Box(
         modifier
             .size(size.dp)
-            .clip(CircleShape)
+            .clip(composerShape(null))
             .background(fill)
             .semantics {
                 role = Role.Button

@@ -1,5 +1,22 @@
 package dev.omalauncher.messages.ui
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.unit.IntOffset
+import dev.omalauncher.ui.Motion
+import dev.omalauncher.ui.composerShape
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -218,18 +235,24 @@ private fun ConversationRow(
  * A conversation: its messages as balloons, and the shared composer. Replies go through OpenBubbles' own Reply
  * action; until a conversation has had a notification since the app started, that action isn't known, so the app
  * says so and offers to open the conversation in OpenBubbles.
+ *
+ * Drag a message right to reply: it follows the finger, and past the mark it becomes the quote above the field.
+ * Press and hold for Reply and Copy. [quotes] holds each conversation's quote, like its draft.
  */
 @Composable
 fun Thread(
     c: Conversation,
     draft: ComposerState,
+    quotes: MutableMap<String, String>,
     onBack: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     var stuck by remember(c.id) { mutableStateOf(false) }
+    var held by remember(c.id) { mutableStateOf<Message?>(null) }
     val list = rememberLazyListState()
     LaunchedEffect(c.id, c.messages.size) { if (c.messages.isNotEmpty()) list.scrollToItem(c.messages.size - 1) }
+    fun quoteOf(m: Message) = (if (m.fromMe) "You" else m.sender.ifEmpty { c.title }) + ": " + m.text.take(90)
     Column(modifier) {
         Row(Modifier.fillMaxWidth().height(58.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             if (onBack != null) {
@@ -245,21 +268,37 @@ fun Thread(
                 BasicText(Pack.caption("iMessage · through OpenBubbles"), style = Pack.mono(Pack.size.small, Pack.muted))
             }
         }
-        LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp), state = list) {
-            itemsIndexed(c.messages) { i, m ->
-                val prev = c.messages.getOrNull(i - 1)
-                val next = c.messages.getOrNull(i + 1)
-                val first = prev == null || prev.sender != m.sender
-                val tail = next == null || next.sender != m.sender
-                if (prev == null || whenLabel(prev.time) != whenLabel(m.time) && m.time - prev.time > 60 * 60_000L) {
-                    BasicText(
-                        Pack.caption(whenLabel(m.time)),
-                        Modifier.fillMaxWidth().padding(vertical = 10.dp),
-                        style = Pack.mono(Pack.size.small, Pack.muted).copy(textAlign = androidx.compose.ui.text.style.TextAlign.Center),
-                    )
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp), state = list) {
+                itemsIndexed(c.messages) { i, m ->
+                    val prev = c.messages.getOrNull(i - 1)
+                    val next = c.messages.getOrNull(i + 1)
+                    val first = prev == null || prev.sender != m.sender
+                    val tail = next == null || next.sender != m.sender
+                    if (prev == null || whenLabel(prev.time) != whenLabel(m.time) && m.time - prev.time > 60 * 60_000L) {
+                        BasicText(
+                            Pack.caption(whenLabel(m.time)),
+                            Modifier.fillMaxWidth().padding(vertical = 10.dp),
+                            style = Pack.mono(Pack.size.small, Pack.muted).copy(textAlign = androidx.compose.ui.text.style.TextAlign.Center),
+                        )
+                    }
+                    if (c.isGroup && first && !m.fromMe) BasicText(m.sender, Modifier.padding(start = 14.dp, top = 8.dp, bottom = 2.dp), style = Pack.body(Pack.size.small, Pack.muted))
+                    Balloon(m, tail, onReply = { quotes[c.id] = quoteOf(m) }, onHold = { held = m }, Modifier.padding(top = if (first) 8.dp else 2.dp))
                 }
-                if (c.isGroup && first && !m.fromMe) BasicText(m.sender, Modifier.padding(start = 14.dp, top = 8.dp, bottom = 2.dp), style = Pack.body(Pack.size.small, Pack.muted))
-                Balloon(m, tail, Modifier.padding(top = if (first) 8.dp else 2.dp))
+            }
+            held?.let { m ->
+                HoldMenu(
+                    onReply = {
+                        quotes[c.id] = quoteOf(m)
+                        held = null
+                    },
+                    onCopy = {
+                        val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
+                        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Message", m.text))
+                        held = null
+                    },
+                    onDismiss = { held = null },
+                )
             }
         }
         if (stuck || !Messages.canReply(c.id)) {
@@ -272,43 +311,186 @@ fun Thread(
                 TextButton("Open in OpenBubbles", filled = false) { Messages.openInOpenBubbles(context, c.id) }
             }
         }
+        val quote = quotes[c.id]
         SomaComposer(
             draft,
             onSend = { text ->
-                if (Messages.send(context, c.id, text) == Sent.NoReplyPath) {
-                    // Nothing went out: the words go back in the field.
+                if (Messages.send(context, c.id, text, quote) == Sent.NoReplyPath) {
+                    // Nothing went out: the words go back in the field, and the quote stays.
                     draft.text = text
                     stuck = true
+                } else {
+                    quotes.remove(c.id)
                 }
             },
-            Modifier.padding(bottom = 6.dp),
+            Modifier.padding(bottom = 4.dp),
             placeholder = "iMessage",
             sendColor = Pack.foreground,
             onSendColor = Pack.background,
+            above = quote?.let { q -> { QuoteBar(q) { quotes.remove(c.id) } } },
         )
     }
 }
 
-/** One message: the owner's in ink on the right, others' on the left, outlined where the look draws ink lines. */
+/** The quote waiting above the field, with × to drop it. OpenBubbles sends words only, so the quote stays on this phone. */
+@Composable
+private fun QuoteBar(
+    quote: String,
+    onDrop: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 42.dp).background(Pack.surface),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.width(3.dp).height(40.dp).background(Pack.accent))
+        Column(Modifier.weight(1f).padding(horizontal = 10.dp, vertical = 6.dp)) {
+            BasicText(Pack.caption("Replying · quoted on this phone"), style = Pack.mono(Pack.size.small, Pack.accent))
+            BasicText(quote, style = Pack.body(Pack.size.body), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Box(
+            Modifier.size(40.dp).semantics { contentDescription = "Don't reply to this"; role = Role.Button }.clickable(onClick = onDrop),
+            contentAlignment = Alignment.Center,
+        ) { BasicText("✕", style = Pack.body(Pack.size.body, Pack.muted)) }
+    }
+}
+
+/** Press and hold: Reply and Copy, for anyone who'd rather tap than drag. */
+@Composable
+private fun HoldMenu(
+    onReply: () -> Unit,
+    onCopy: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Box(Modifier.fillMaxSize().background(Pack.foreground.copy(alpha = 0.18f)).clickable(onClick = onDismiss), contentAlignment = Alignment.Center) {
+        val shape = composerShape(14.dp)
+        Row(Modifier.clip(shape).background(Pack.background, shape).border(2.dp, Pack.foreground, shape).padding(4.dp)) {
+            listOf("Reply" to onReply, "Copy" to onCopy).forEach { (label, act) ->
+                Box(Modifier.semantics { role = Role.Button }.clickable(onClick = act).padding(horizontal = 18.dp, vertical = 12.dp)) {
+                    BasicText(label, style = Pack.body(Pack.size.item).copy(fontWeight = FontWeight.SemiBold))
+                }
+            }
+        }
+    }
+}
+
+/** How far a message is dragged before letting go makes it a reply. */
+private val REPLY_AT = 64.dp
+
+/**
+ * One message: the owner's in ink on the right, others' on the left, outlined where the look draws ink lines; in an
+ * inked look the last of a run gets a speech balloon's tail. It follows a drag to the right (a reply) and a long press.
+ */
 @Composable
 private fun Balloon(
     m: Message,
     tail: Boolean,
+    onReply: () -> Unit,
+    onHold: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val density = LocalDensity.current
+    val haptics = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
+    val drag = remember { Animatable(0f) }
+    val mark = with(density) { REPLY_AT.toPx() }
     val corner = 20.dp
-    val tip = if (tail) 5.dp else corner
+    val balloon = inked && tail
+    val tip = if (tail && !inked) 5.dp else corner
     val shape = if (m.fromMe) RoundedCornerShape(corner, corner, tip, corner) else RoundedCornerShape(corner, corner, corner, tip)
     val fill = if (m.fromMe) Pack.foreground else if (inked) Pack.background else Pack.surface
     val ink = if (m.fromMe) Pack.background else Pack.foreground
-    Row(modifier.fillMaxWidth(), horizontalArrangement = if (m.fromMe) Arrangement.End else Arrangement.Start) {
+    val line = Pack.foreground
+    Box(
+        modifier
+            .fillMaxWidth()
+            .pointerInput(m) {
+                var armed = false
+                detectHorizontalDragGestures(
+                    onDragEnd = {
+                        if (armed) onReply()
+                        armed = false
+                        scope.launch { drag.animateTo(0f, Motion.spatial) }
+                    },
+                    onDragCancel = {
+                        armed = false
+                        scope.launch { drag.animateTo(0f, Motion.spatial) }
+                    },
+                ) { change, dx ->
+                    change.consume()
+                    val raw = (drag.value + dx).coerceAtLeast(0f)
+                    // Past the mark it gets heavier, as if on a spring.
+                    val x = if (raw <= mark * 1.3f) raw else mark * 1.3f + (raw - mark * 1.3f) * 0.3f
+                    if ((x >= mark) != armed) {
+                        armed = x >= mark
+                        if (armed) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    }
+                    scope.launch { drag.snapTo(x) }
+                }
+            }.pointerInput(m) { detectTapGestures(onLongPress = { onHold() }) },
+    ) {
+        // The reply arrow, uncovered as the message moves.
+        val shown = (drag.value / mark).coerceIn(0f, 1f)
         Box(
-            Modifier
-                .widthIn(max = 300.dp)
-                .clip(shape)
-                .background(fill, shape)
-                .then(if (!m.fromMe && inked) Modifier.border(2.dp, Pack.foreground, shape) else Modifier)
-                .padding(horizontal = 13.dp, vertical = 8.dp),
-        ) { BasicText(m.text, style = Pack.body(Pack.size.item, ink)) }
+            Modifier.align(Alignment.CenterStart).padding(start = 4.dp).size(28.dp).graphicsLayer { alpha = shown; scaleX = 0.5f + shown / 2; scaleY = 0.5f + shown / 2 }
+                .clip(CircleShape).background(if (shown >= 1f) Pack.foreground else Pack.surface),
+            contentAlignment = Alignment.Center,
+        ) { BasicText("↩", style = Pack.body(Pack.size.body, if (shown >= 1f) Pack.background else Pack.foreground)) }
+        Row(
+            Modifier.fillMaxWidth().offset { IntOffset(drag.value.roundToInt(), 0) }.padding(bottom = if (balloon) 11.dp else 0.dp),
+            horizontalArrangement = if (m.fromMe) Arrangement.End else Arrangement.Start,
+        ) {
+            Box(
+                Modifier
+                    .widthIn(max = 300.dp)
+                    // The tail is drawn after the balloon and outside its clip, over the balloon's own outline.
+                    .drawWithContent {
+                        drawContent()
+                        if (balloon) tail(m.fromMe, fill, line, density)
+                    }.clip(shape)
+                    .background(fill, shape)
+                    .then(if (!m.fromMe && inked) Modifier.border(2.dp, line, shape) else Modifier)
+                    .padding(horizontal = 13.dp, vertical = 8.dp),
+            ) {
+                Column {
+                    m.quote?.let { q ->
+                        Row(Modifier.padding(bottom = 6.dp).background(ink.copy(alpha = 0.12f))) {
+                            Box(Modifier.width(3.dp).height(32.dp).background(ink.copy(alpha = 0.6f)))
+                            BasicText(q, Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = Pack.body(Pack.size.small, ink.copy(alpha = 0.85f)), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                    BasicText(m.text, style = Pack.body(Pack.size.item, ink))
+                }
+            }
+        }
+    }
+}
+
+/** A speech balloon's tail under the balloon's lower corner, as the prototype draws it: filled, with an ink edge. */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.tail(
+    mine: Boolean,
+    fill: Color,
+    line: Color,
+    density: androidx.compose.ui.unit.Density,
+) {
+    with(density) {
+        val w = 13.dp.toPx()
+        val h = 13.dp.toPx()
+        val inset = 16.dp.toPx()
+        val stroke = 2.dp.toPx()
+        val y = size.height - stroke
+        // For others' balloons the tail hangs from the lower left, straight down then back along a slant; mirrored for the owner's.
+        val x0 = if (mine) size.width - inset else inset
+        val x1 = if (mine) x0 - w else x0 + w
+        val path = androidx.compose.ui.graphics.Path().apply {
+            moveTo(x0, y)
+            lineTo(x0, y + h)
+            lineTo(x1, y)
+            close()
+        }
+        drawPath(path, fill)
+        if (!mine) {
+            drawLine(line, androidx.compose.ui.geometry.Offset(x0, y), androidx.compose.ui.geometry.Offset(x0, y + h), stroke)
+            drawLine(line, androidx.compose.ui.geometry.Offset(x0, y + h), androidx.compose.ui.geometry.Offset(x1, y), stroke)
+        }
     }
 }
