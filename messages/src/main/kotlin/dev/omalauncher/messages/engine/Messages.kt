@@ -81,8 +81,8 @@ object Messages {
         if (saved.isFile) MacAddress.fromJson(saved.readText())?.let { at ->
             mac.value = at
             // What OpenBubbles' notifications added after linking goes: the Mac has those conversations itself.
-            val mac = real.fromMacOnly()
-            if (mac !== real) publish(mac)
+            val kept = real.fromMacOnly()
+            if (kept !== real) publish(kept)
             MacLink.start(context, at)
         }
     }
