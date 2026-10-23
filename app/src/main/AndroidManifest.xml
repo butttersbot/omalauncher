@@ -513,7 +513,7 @@
             android:label="News"
             android:launchMode="singleTask"
             android:resizeableActivity="true"
-            android:theme="@style/Theme.Omalauncher.Window" />
+            android:theme="@style/Theme.Omalauncher.Paper" />
         <!-- The Steps widget (Boss, 2026-10-21): asking for the step counter, and reading it while the screen is off. -->
         <activity
             android:name=".steps.StepsAllow"

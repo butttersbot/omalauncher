@@ -18,7 +18,7 @@ import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.core.view.ViewCompat
-import androidx.core.view.WindowCompat
+import dev.omalauncher.ui.applySystemBars
 import androidx.core.view.WindowInsetsCompat
 import org.json.JSONObject
 import kotlin.concurrent.thread
@@ -39,13 +39,7 @@ class NewsActivity : ComponentActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        // The paper is always light: Android's clock, signal and battery drawn dark on it (they were white, unseen;
-        // the Mac's look at the 131 walk, and Boss's phone).
-        WindowCompat.getInsetsController(window, window.decorView).apply {
-            isAppearanceLightStatusBars = true
-            isAppearanceLightNavigationBars = true
-        }
+        darkIcons()
         web = WebView(this)
         web.settings.javaScriptEnabled = true
         web.settings.domStorageEnabled = true
@@ -102,8 +96,25 @@ class NewsActivity : ComponentActivity() {
         NewsJob.schedule(this)
     }
 
+    /**
+     * The paper is always light: Android's clock, signal and battery drawn dark on it. Set once at the start they
+     * still came back white on Boss's phone (135), so they are set again whenever the window returns or changes.
+     */
+    private fun darkIcons() = applySystemBars(this, light = true)
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) darkIcons()
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        darkIcons()
+    }
+
     override fun onResume() {
         super.onResume()
+        darkIcons()
         // Back after an hour or more: what came in since.
         if (System.currentTimeMillis() / 1000 - updated() > 3600) refresh()
     }

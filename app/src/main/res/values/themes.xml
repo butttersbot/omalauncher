@@ -10,6 +10,17 @@
         <item name="android:windowBackground">#FF1A1B26</item>
     </style>
 
+    <!-- Soma News' light paper: its bars' clock and icons dark from the first frame (the 135 walk: white, unseen). -->
+    <style name="Theme.Omalauncher.Paper" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#FFFBFAF6</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:enforceStatusBarContrast">false</item>
+        <item name="android:enforceNavigationBarContrast">false</item>
+    </style>
+
     <!-- Only a dialog shows, over the app that opened it. -->
     <style name="Theme.Omalauncher.Dialog" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowBackground">@android:color/transparent</item>

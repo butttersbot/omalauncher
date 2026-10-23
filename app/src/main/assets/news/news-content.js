@@ -5,12 +5,36 @@ window.NewsContent = (() => {
     try { const a = new URL(u); return a.origin + a.pathname.replace(/[-_]\d+x\d+(?=\.\w+$)/, ''); }
     catch { return ''; }
   };
+  // A headline as read: soft hyphens, odd spaces, quotes, punctuation and case don't count.
+  const plain = s => (s || '').replace(/[\u00AD\u200B]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim().toLowerCase();
+  /**
+   * True when [t] only says the story's headline again, with or without the publisher's name after it: Google News
+   * feeds give "<a>Headline</a>&nbsp;&nbsp;<font>Reuters</font>" as the whole story (the 135 walk: Reuters, The Hill).
+   */
+  function isHeadline(t, story = {}) {
+    const title = plain(story.title), said = plain(t);
+    if (!title || !said.startsWith(title)) return false;
+    const rest = said.slice(title.length).trim();
+    return !rest || rest === plain(story.source);
+  }
+  // Video players' promos left in the words (CNBC, the 135 walk: "watch now", "STREAM NOW", a clip's length).
+  const VIDEO = /^(?:watch now|stream now|watch live|video(?:\s*\d{1,2}:\d{2}){0,2})$/i;
   function article(html, story = {}) {
     const doc = new DOMParser().parseFromString(html || '', 'text/html');
     // Prefer publisher-declared body boundaries to a whole Readability wrapper.
     const body = doc.querySelector('[itemprop="articleBody"], #article-body, #single-article-content') || doc.querySelector('article') || doc.body;
     const root = document.createElement('div'); root.innerHTML = body.innerHTML;
     root.querySelectorAll('script,style,iframe,form,noscript,svg,video,audio,object,embed,button,input,select,textarea,link,meta,nav,header,footer,aside,instaread-player,[hidden],[aria-hidden="true"],[data-nosnippet],[role="navigation"],[role="complementary"],.author-bio,.author-box,.article-author,.related-posts,.related-articles,.social-share,.newsletter,.advertisement').forEach(n => n.remove());
+    root.querySelectorAll('[class*="InlineVideo"],[class*="VideoPlayer"],[class*="video-player"],[class*="videoPlayer"],[class*="PlayButton"],[class*="ProPromo"],[class*="ExclusiveContent"],[data-module*="Video"],[data-test*="Video"],[data-testid*="video"]').forEach(n => n.remove());
+    // A promo the selectors missed: the box round its "watch now" goes, the clip's picture with it.
+    const promos = [];
+    const find = n => { for (const c of n.children) { if (VIDEO.test(text(c))) promos.push(c); else find(c); } };
+    find(root);
+    promos.forEach(n => {
+      let box = n;
+      while (box.parentElement && box.parentElement !== root && text(box.parentElement).length < 240 && !box.parentElement.querySelector('p')) box = box.parentElement;
+      if (root.contains(box)) box.remove();
+    });
     root.querySelectorAll('a').forEach(n => {
       const href = n.getAttribute('href') || '';
       if (/^skip to (?:main )?content$/i.test(text(n))) (n.closest('p') || n).remove();
@@ -41,7 +65,9 @@ window.NewsContent = (() => {
       }
       n.setAttribute('src', src);
     });
-    root.querySelectorAll('h1,h2').forEach(n => { if (text(n) === (story.title || '').trim()) n.remove(); });
+    // The headline is shown above the story: not again in it, as a heading or as the feed's only line.
+    root.querySelectorAll('h1,h2,h3,p,li,div').forEach(n => { if (root.contains(n) && !n.querySelector('img') && isHeadline(text(n), story)) n.remove(); });
+    if (isHeadline(text(root), story) && !root.querySelector('img')) root.replaceChildren();
     tidy(root);
     // A BR is a boundary even after the layout engine turns HTML into text.
     root.querySelectorAll('br').forEach(n => n.replaceWith('\n'));
@@ -133,5 +159,5 @@ window.NewsContent = (() => {
     for (const n of root.childNodes) walk(n);
     return out;
   }
-  return { article, blocks };
+  return { article, blocks, isHeadline };
 })();

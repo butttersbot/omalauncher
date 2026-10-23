@@ -178,7 +178,7 @@ function day(t) {
   return days <= 0 ? 'Today' : days === 1 ? 'Yesterday' : d.toLocaleDateString([], { weekday: 'long' });
 }
 function text(html) { const d = document.createElement('div'); d.innerHTML = html || ''; return (d.textContent || '').replace(/\s+/g, ' ').trim(); }
-function dek(s, n = 150) { const t = text(s.html); return t.length > n ? t.slice(0, n).replace(/\s\S*$/, '') + '…' : t; }
+function dek(s, n = 150) { const t = NewsContent.isHeadline(text(s.html), s) ? '' : text(s.html); return t.length > n ? t.slice(0, n).replace(/\s\S*$/, '') + '…' : t; }
 function idx(s) { return S.stories.indexOf(s); }
 const open = i => `onclick="openStory(${i})"`;
 
@@ -365,9 +365,7 @@ function article(s) {
   // The hero picture isn't shown twice (the page's copy may be another size of it), nor the headline.
   const stem = u => (u || '').split('?')[0].replace(/[-_]\d+x\d+(?=\.\w+$)/, '');
   if (s.image) d.querySelectorAll('img').forEach(im => { if (stem(im.getAttribute('src')) === stem(s.image)) (im.closest('figure') || im).remove(); });
-  const h = d.querySelector('h1, h2'); if (h && h.textContent.trim() === s.title.trim()) h.remove();
-  // Nor as the only paragraph: Google's feed gives the headline as the story, which read twice, drop capital and all.
-  d.querySelectorAll('p').forEach(p => { if (p.textContent.trim() === s.title.trim()) p.remove(); });
+  // The headline as a heading or the only paragraph (Google's feed gives it as the story) NewsContent has taken out.
   // The drop capital opens the first real paragraph: one that starts with a letter, not a caption or a dateline.
   const firstP = [...d.querySelectorAll('p')].find(p => !p.closest('figure, blockquote, li') && p.textContent.trim().length >= 80 && /^[A-Za-z0-9]/.test(p.textContent.trim()));
   if (firstP) firstP.classList.add('first');
@@ -400,7 +398,7 @@ async function bookArticle(s) {
   const blocks = NewsContent.blocks(d);
   let side = 'right';
   const pics = blocks.filter(b => b.img);
-  if (!blocks.some(b => b.p)) blocks.push({ p: dek(s, 2000) || s.title });
+  if (!blocks.some(b => b.p)) blocks.push({ p: dek(s, 2000) || `${s.source || 'The site'} didn't give the whole story here.` });
   // Each picture's shape before the pages are laid out; one that won't load in time, or is tiny, is left out.
   await Promise.all(pics.map(b => new Promise(res => {
     const im = new Image(); let finished = false; const done = ok => { if (finished) return; finished = true; if (ok && im.naturalWidth >= 200) { b.ratio = im.naturalWidth / im.naturalHeight; } else b.drop = true; res(); };
