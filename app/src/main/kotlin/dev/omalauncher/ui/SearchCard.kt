@@ -120,6 +120,18 @@ internal fun SearchCard(
     val context = LocalContext.current
     val memory = remember { SearchStore.memory(context) }
     var query by remember { mutableStateOf("") }
+    // A search put away without opening anything is still one of his recent searches (the 135 check: two searches,
+    // nothing opened, and none showed). Two letters or more, as he left it.
+    val left = androidx.compose.runtime.rememberUpdatedState(query)
+    DisposableEffect(Unit) {
+        onDispose {
+            val q = left.value.trim()
+            if (q.length >= 2) {
+                memory.searched(q, System.currentTimeMillis())
+                SearchStore.save(context, memory)
+            }
+        }
+    }
     var acting by remember { mutableStateOf<SearchItem?>(null) }
     var aliasFor by remember { mutableStateOf<SearchItem?>(null) }
     var version by remember { mutableStateOf(0) }
@@ -163,12 +175,12 @@ internal fun SearchCard(
             value = emptyList()
             return@produceState
         }
-        // The words are the very name of an app or command: photos only if they are clearly what he means.
-        val named = ranked.firstOrNull()?.let { dev.omalauncher.search.RootMatch.fold(it.c.title) == dev.omalauncher.search.RootMatch.fold(q) } == true
         // A pause in the typing first: the Mac is asked once for what he means, not once a letter.
         kotlinx.coroutines.delay(PHOTO_PAUSE_MS)
         value =
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                // The words name an app, a command or a person found: photos only if they are clearly what he means.
+                val named = PhotoIndex.names(ranked.take(3).map { it.c.title } + People.find(context, q).map { it.name }, q)
                 synchronized(photoDb) {
                     val d = photoDb[0] ?: PhotoIndex.open(context, writable = false).also { photoDb[0] = it } ?: return@synchronized emptyList()
                     val words = PhotoIndex.byWords(d, q)

@@ -239,7 +239,9 @@ object SearchRank {
             val keywords = c.keywords + listOfNotNull(c.subtitle?.let { "${c.title} $it" }, c.subtitle?.let { "$it ${c.title}" })
             matching = keywords.any { accepted(RootMatch.match(it, q)) }
         }
-        if (!matching) return null
+        // A typo, as a slip of the fingers makes one: "dicsord" for Discord (two letters swapped are no subsequence).
+        val typo = !matching && typo(listOf(c.title) + c.alternateTitles, q)
+        if (!matching && !typo) return null
         val fTitle = RootMatch.fold(c.title)
         var titleExact = title == Match.Exact
         val titlePrefix = !titleExact && (fTitle.startsWith(q) || c.alternateTitles.any { RootMatch.fold(it).startsWith(q) })
@@ -252,6 +254,8 @@ object SearchRank {
         }
         // A prefix counts above any scattered match of the same letters.
         if (titlePrefix) titleScore = maxOf(titleScore, 4 + (q.length - 1) * 3.0)
+        // A typo's match counts below any the letters make as typed.
+        if (typo) titleScore = 0.5
         return Record(
             c,
             aliasExact,
@@ -265,6 +269,23 @@ object SearchRank {
             memory.frecency(c.id, now),
             alias != null,
         )
+    }
+
+    /**
+     * True when [q] is a word of one of [titles] with a typo or two ([FileQuery.typos] for its length), or, while
+     * still being typed, the start of one with a single typo. Only for queries of four letters or more, one word.
+     */
+    private fun typo(
+        titles: List<String>,
+        q: String,
+    ): Boolean {
+        if (q.length < 4 || q.any { it.isWhitespace() }) return false
+        val most = FileQuery.typos(q.length)
+        return titles.any { t ->
+            RootMatch.fold(t).split(Regex("[^\\p{L}\\p{N}]+")).filter { it.length >= 4 }.any { w ->
+                FileQuery.distance(q, w, most) <= most || (q.length >= 5 && w.length > q.length && FileQuery.distance(q, w.take(q.length), 1) <= 1)
+            }
+        }
     }
 
     private fun tiebreak(

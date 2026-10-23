@@ -1,6 +1,7 @@
 package dev.omalauncher.search
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.sqrt
@@ -67,6 +68,16 @@ class PhotoIndexTest {
             "img 2041 jpg Camera MENU tacos dog beach",
             PhotoIndex.words("IMG2041.jpg", "Camera", listOf("MENU tacos", ""), listOf("dog", "beach", "dog")),
         )
+    }
+
+    // The 135 check: "andrew" and "dicsord" brought rows of unrelated photos under what he meant.
+    @Test fun aQueryNamesWhatItFound() {
+        assertTrue(PhotoIndex.names(listOf("Andrew Kim"), "andrew"))
+        assertTrue(PhotoIndex.names(listOf("Andrew Kim"), "kim"))
+        assertTrue(PhotoIndex.names(listOf("Discord"), "dicsord"))
+        assertTrue(PhotoIndex.names(listOf("Samsung Notes"), "note"))
+        assertFalse(PhotoIndex.names(listOf("Calendar"), "beach"))
+        assertFalse(PhotoIndex.names(emptyList(), "beach"))
     }
 
     @Test fun weakPhotoMatchesShowOneRowAndNoneForANamedApp() {
