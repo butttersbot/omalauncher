@@ -125,6 +125,9 @@ interface ChatHost {
     /** The record of what was done in the Mac thread [threadId] before this device came in. Blocks: call off the main thread. */
     fun macEarlier(threadId: String): MacEarlierRead
 
+    /** A file explicitly opened from an agent reply. Blocks: call away from the UI thread. */
+    fun readArtifact(thread: String, path: String): ArtifactRead = ArtifactRead.Failed("Files from this conversation are not available on this device yet.")
+
     /** The computers set up for threads, in their order, each as it last answered. */
     fun hosts(): List<HostChoice>
 

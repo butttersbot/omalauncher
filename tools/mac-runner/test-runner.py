@@ -299,6 +299,38 @@ try:
     check('a thread is made under a root, home mac, in auto mode by default', code == 200 and made['thread']['home'] == 'mac' and made['thread']['status'] == 'idle'
           and made['thread']['mode'] == 'auto')
 
+    # Artifact workspace: real HTTP reads, same device authentication, no agent process started.
+    import base64
+    def artifact(path, token='k' * 40):
+        return call('GET', '/threads/%s/artifact?' % thread + urllib.parse.urlencode({'path': str(path)}), token=token)
+    page = project / 'preview + one.html'
+    page.write_text('<h1>First</h1>')
+    code, preview = artifact(page)
+    check('artifact: an explicitly opened output is read from this thread project', code == 200 and preview['mime'] == 'text/html' and base64.b64decode(preview['data']) == b'<h1>First</h1>')
+    first_version = preview['version']
+    page.write_text('<h1>Second</h1>')
+    check('artifact: refresh returns the actual new version', artifact(page)[1]['version'] != first_version)
+    check('artifact: relative paths resolve in the conversation project', artifact('preview + one.html')[0] == 200)
+    check('artifact: authentication still applies', artifact(page, token=None)[0] == 401)
+    (outside / 'secret.md').write_text('private')
+    (project / 'escape.md').symlink_to(outside / 'secret.md')
+    check('artifact: traversal and symlink escapes are refused', artifact(outside / 'secret.md')[0] == 403 and artifact('../../outside/secret.md')[0] == 403 and artifact('escape.md')[0] == 403)
+    os.link(outside / 'secret.md', project / 'hard.md')
+    check('artifact: a hard link cannot offer a private file elsewhere', artifact('hard.md')[0] == 403)
+    (project / 'hard.md').unlink()
+    (project / '.env.md').write_text('private')
+    check('artifact: private config stays private even with a text extension', artifact('.env.md')[0] == 403)
+    (project / 'missing.md').unlink(missing_ok=True)
+    check('artifact: a missing output is explicit', artifact('missing.md')[0] == 404)
+    (project / 'large.txt').write_bytes(b'x' * (4 * 1024 * 1024 + 1))
+    check('artifact: oversized output is refused', artifact('large.txt')[0] == 413)
+    pipe = project / 'pipe.txt'
+    os.mkfifo(pipe)
+    check('artifact: a pipe is rejected without blocking', artifact('pipe.txt')[0] == 415)
+    check('artifact: no such thread cannot read a file', call('GET', '/threads/doesnotexist/artifact?path=notes.md')[0] == 404)
+    for f in [page, project / 'escape.md', project / '.env.md', project / 'large.txt', pipe]:
+        f.unlink()
+
     check('the owner\'s words are taken at once', call('POST', '/threads/%s/messages' % thread, {'text': 'what files are here'})[1]['taken'] == 'now')
     events = stream(thread)
     check('they reach the agent unchanged', starts()[-1]['prompt'] == 'what files are here' and events[1] == {**events[1], 'type': 'message', 'text': 'what files are here'})

@@ -31,3 +31,9 @@ include(":app")
 include(":owl")
 include(":chat")
 include(":desktop")
+
+// Optional isolated Android UI fixture; never part of a normal launcher build.
+if (providers.gradleProperty("artifactPreview").isPresent) {
+    include(":artifact-preview")
+    project(":artifact-preview").projectDir = file("tools/artifact-preview")
+}

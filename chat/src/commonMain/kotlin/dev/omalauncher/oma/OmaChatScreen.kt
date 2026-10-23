@@ -387,7 +387,28 @@ private fun ChatScreen(
     val talk = host.rememberMicrophone { listen() }
 
     val listening = speech.listening
+    // A Mac thread's tab reads the thread's own record once each time it is opened, to show above the phone's entries
+    // what was done there before this phone came in. Only shown: none of it is kept, sent or answered.
+    val earlierThread = macThreadId(tab)
+    var earlierRead by remember(tab) { mutableStateOf<MacEarlierRead>(MacEarlierRead.Asking) }
+    LaunchedEffect(tab) { if (earlierThread != null) earlierRead = withContext(Dispatchers.IO) { host.macEarlier(earlierThread) } }
+    val earlier = remember(earlierRead, tasks) {
+        (earlierRead as? MacEarlierRead.Read)?.takeIf { earlierThread != null }?.let { macEarlier(it.events, tasks, earlierThread.orEmpty()) }.orEmpty()
+    }
+    val artifacts = remember(tasks, earlier, tab, book) {
+        val local = tabEntries(tasks, tab, book).flatMap { task ->
+            chatArtifacts(task.result, "task:${task.time}", task.thread) +
+                task.later.flatMapIndexed { index, said -> if (said.words) chatArtifacts(said.text, "later:${task.time}:$index", task.thread) else emptyList() }
+        }
+        (local + earlier.flatMap { chatArtifacts(it.answer, "earlier:${it.id}", earlierThread.orEmpty()) }).distinctBy { it.thread to it.location }.takeLast(60).reversed()
+    }
     Box(Modifier.fillMaxSize().background(Pack.background).safeDrawingPadding().padding(PageGap), contentAlignment = Alignment.TopCenter) {
+        CompositionLocalProvider(LocalEarlierThread provides earlierThread.orEmpty()) {
+        ChatArtifactWorkspace(host, tab, artifacts, onDiscuss = { artifact ->
+            // Explicit context is added to this tab's draft, never sent by opening or discussing an output.
+            type(appendSpeech(draft, "Regarding ${artifact.name} (${artifact.location}): "))
+            focusAsked++
+        }) {
         Column(Modifier.fillMaxSize().widthIn(max = ReadingWidth)) {
             // The open tab's name at the left; at the right, a dot for each thread in its state's colour, close together
             // as in the mock-up, and the arrow that drops the tabs down.
@@ -430,14 +451,6 @@ private fun ChatScreen(
                         tick++
                     },
                 )
-            }
-            // A Mac thread's tab reads the thread's own record once each time it is opened, to show above the phone's entries
-            // what was done there before this phone came in. Only shown: none of it is kept, sent or answered.
-            val earlierThread = macThreadId(tab)
-            var earlierRead by remember(tab) { mutableStateOf<MacEarlierRead>(MacEarlierRead.Asking) }
-            LaunchedEffect(tab) { if (earlierThread != null) earlierRead = withContext(Dispatchers.IO) { host.macEarlier(earlierThread) } }
-            val earlier = remember(earlierRead, tasks) {
-                (earlierRead as? MacEarlierRead.Read)?.takeIf { earlierThread != null }?.let { macEarlier(it.events, tasks, earlierThread.orEmpty()) }.orEmpty()
             }
             // Newest at the bottom. A list keeps what is in view where it is when something is added, which would leave
             // a message just sent below the edge, under the field and the keyboard: so a new one is scrolled to.
@@ -665,6 +678,8 @@ private fun ChatScreen(
                 }
             }
         }
+        }
+        } // Artifact workspace; the existing composer above is unchanged.
         // Over everything, as home's menu is.
         val pickChat = (to as? SendTo.Chat)?.chat
         if (picking != null && pickChat != null) PickMenu(picking!!, hosts, book.chat(pickChat), { on, agent, model -> hostPicked(pickChat, on, agent, model) }) { picking = null }
@@ -1187,9 +1202,10 @@ private fun TaskEntry(
             // What stands here for a task that failed or was never sent is an error or the launcher's own words, not the agent's Markdown.
             val answered = task.status != TaskStatus.Failed && task.status != TaskStatus.Dropped
             SelectionContainer {
-                if (answered) MarkdownText(result.trim(), Modifier.padding(top = 6.dp)) else BasicText(result.trim(), Modifier.padding(top = 6.dp), style = Pack.body())
+                if (answered) ArtifactMarkdown(result.trim(), "task:${task.time}", task.thread, Modifier.padding(top = 6.dp)) else BasicText(result.trim(), Modifier.padding(top = 6.dp), style = Pack.body())
             }
         }
+        if (result.isNotBlank()) ChatArtifactLinks(result, "task:${task.time}", task.thread)
         val ended = when (task.status) {
             TaskStatus.Stopped -> "stopped"
             TaskStatus.Failed -> "needs attention"
@@ -1207,8 +1223,11 @@ private fun TaskEntry(
         if (onAgain != null && task.status == TaskStatus.Dropped) BasicText("[ try again ]", Modifier.clickable(onClick = onAgain).padding(vertical = 8.dp), style = small)
         // What its thread on the Mac said after the answer, between his messages: notes and steps quietly, as the
         // steps above are, and the agent's own report on its background work as an answer is.
-        for (said in task.later) {
-            if (said.words) SelectionContainer { MarkdownText(said.text.trim(), Modifier.padding(top = 6.dp)) }
+        for ((index, said) in task.later.withIndex()) {
+            if (said.words) {
+                SelectionContainer { ArtifactMarkdown(said.text.trim(), "later:${task.time}:$index", task.thread, Modifier.padding(top = 6.dp)) }
+                ChatArtifactLinks(said.text, "later:${task.time}:$index", task.thread)
+            }
             else BasicText("· ${said.text}", Modifier.padding(top = 4.dp), style = small, maxLines = 3, overflow = TextOverflow.Ellipsis)
         }
     }
@@ -1231,9 +1250,10 @@ private fun EarlierEntry(turn: MacTurn, on: String = "the Mac") {
             }
         }
         macTurnSteps(turn)?.let { BasicText("· $it", Modifier.padding(top = 4.dp), style = small, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+        if (turn.answer.isNotBlank()) ChatArtifactLinks(turn.answer, "earlier:${turn.id}", LocalEarlierThread.current)
         if (turn.answer.isNotBlank()) {
             SelectionContainer {
-                if (turn.failed) BasicText(turn.answer, Modifier.padding(top = 6.dp), style = Pack.body()) else MarkdownText(turn.answer, Modifier.padding(top = 6.dp))
+                if (turn.failed) BasicText(turn.answer, Modifier.padding(top = 6.dp), style = Pack.body()) else ArtifactMarkdown(turn.answer, "earlier:${turn.id}", LocalEarlierThread.current, Modifier.padding(top = 6.dp))
             }
         }
         val ended = when {

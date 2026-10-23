@@ -78,6 +78,8 @@ class DesktopChatHost(
 
     override fun macLabel(task: ChatTask): String = engine.label(task)
 
+    override fun readArtifact(thread: String, path: String) = engine.artifact(thread, path)
+
     override fun macEarlier(threadId: String): MacEarlierRead = engine.earlier(threadId)
 
     override fun hosts(): List<HostChoice> = engine.hosts().map { seen ->

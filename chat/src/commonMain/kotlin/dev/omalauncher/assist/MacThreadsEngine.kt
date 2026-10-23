@@ -1096,6 +1096,9 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
         return MacEarlierRead.Read(events, cut = after > 0)
     }
 
+    /** One explicitly opened output on the conversation's computer. Blocks off the UI thread. */
+    fun artifact(threadId: String, path: String): dev.omalauncher.oma.ArtifactRead = client(threadId).artifact(threadId, path)
+
     /**
      * `[ stop ]` on an entry of the Mac's: stops that thread's task, which also drops what waited behind it
      * there. The entries end when the thread says it stopped. [told] gets what there is to tell him, null when
