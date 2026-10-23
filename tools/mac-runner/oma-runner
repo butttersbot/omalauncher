@@ -523,6 +523,41 @@ class Talker:
         return False
 
 
+def codex_source_turn(path, sid):
+    """Read native lifecycle markers: cross-process RPC history labels active turns interrupted."""
+    try:
+        source = pathlib.Path(path)
+        if source.suffix != '.jsonl' or source.is_symlink():
+            return 'unknown', None
+        before = source.stat()
+        with source.open('rb') as stream:
+            header = json.loads(stream.readline(1024 * 1024))
+            if header.get('type') != 'session_meta' or (header.get('payload') or {}).get('id') != sid:
+                return 'unknown', None
+            start = max(0, before.st_size - 8 * 1024 * 1024)
+            stream.seek(start)
+            if start:
+                stream.readline()  # The first tail row may be partial.
+            data = stream.read(8 * 1024 * 1024)
+        after = source.stat()
+        if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns) or not data.endswith(b'\n'):
+            return 'busy', None  # Includes a writer halfway through its next start/finish record.
+        for line in reversed(data.splitlines()):
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            payload = row.get('payload') or {}
+            if row.get('type') != 'event_msg' or payload.get('type') not in ('task_started', 'task_complete', 'turn_aborted'):
+                continue
+            turn_id = payload.get('turn_id') or (payload.get('turn_attribution') or {}).get('turn_id')
+            if not isinstance(turn_id, str) or not turn_id:
+                return 'unknown', None
+            return ('busy' if payload['type'] == 'task_started' else 'finished'), turn_id
+    except (OSError, ValueError, TypeError, AttributeError):
+        pass
+    return 'unknown', None
+
+
 class Codex(Talker):
     """Codex's app-server, one per turn. Auto mode runs with full access and no execution approval prompts
     (policy "never", sandbox "danger-full-access"), as requested by the owner. Manual mode keeps the
@@ -533,6 +568,23 @@ class Codex(Talker):
     def __init__(self, thread, text):
         super().__init__(thread, text)
         self.items, self.final, self.last = {}, '', ''
+        self.fork_source, self.fork_deadline, self.fork_noted = None, None, False
+
+    def heard(self, message):
+        method = self.calls.get(message.get('id')) if 'id' in message else None
+        problem = str((message.get('error') or {}).get('message') or '')
+        if (method == 'thread/resume' and self.thread.meta.get('codex_external')
+                and 'already has an active writer' in problem.lower()):
+            self.calls.pop(message['id'])
+            if self.fork_source is None:
+                self.fork_source = self.thread.meta['session']
+                self.fork_deadline = time.monotonic() + 1800
+            self.check_fork_source()
+            return False
+        return super().heard(message)
+
+    def check_fork_source(self):
+        self.request('thread/read', {'threadId': self.fork_source})
 
     def command(self):
         off = [feature for feature in CODEX_OFF if feature in codex_features()]
@@ -562,8 +614,50 @@ class Codex(Talker):
             self.notify('initialized')
             session = thread.meta.get('session')
             self.request('thread/resume', {'threadId': session, 'excludeTurns': True, **self.rules()}) if session else self.request('thread/start', self.rules())
-        elif method in ('thread/start', 'thread/resume'):
+        elif method == 'thread/read' and self.fork_source:
+            detail = result.get('thread') or {}
+            if detail.get('id') != self.fork_source or not isinstance(detail.get('path'), str):
+                thread.emit('error', code='agent', text='Cannot locate the native Codex conversation. No phone agent was started.')
+                return True
+            while True:
+                if thread.stopped or closing:
+                    return True
+                state, last_turn = codex_source_turn(detail['path'], self.fork_source)
+                if state == 'unknown':
+                    thread.emit('error', code='agent', text='Cannot verify whether Codex is still working on the Mac. No phone agent was started.')
+                    return True
+                if state == 'finished':
+                    break
+                if not self.fork_noted:
+                    thread.emit('note', text='Waiting for Codex on the Mac to finish its current step. You can cancel this message.')
+                    self.fork_noted = True
+                if time.monotonic() >= self.fork_deadline:
+                    thread.emit('error', code='mac_wait_timeout', text='Codex is still working on the Mac after 30 minutes. This phone message was not sent.')
+                    return True
+                changed.wait(2)
+                if thread.stopped or closing:
+                    return True
+                # A closed/crashed desktop releases the writer even if its last marker stayed busy.
+                self.request('thread/resume', {'threadId': self.fork_source, 'excludeTurns': True, **self.rules()})
+                return False
+            thread.codex_fork_pending = True
+            self.request('thread/fork', {'threadId': self.fork_source, 'lastTurnId': last_turn, 'excludeTurns': True, **self.rules()})
+        elif method in ('thread/start', 'thread/resume', 'thread/fork'):
             session = (result.get('thread') or {}).get('id')
+            if method == 'thread/fork':
+                if not session or session == self.fork_source:
+                    thread.emit('error', code='agent', text='Codex did not create the requested phone copy. Its original session is kept.')
+                    return True
+                thread.meta['codex_origins'] = sorted(set(thread.meta.get('codex_origins', []) + [self.fork_source]))
+                thread.meta['forked_from'] = self.fork_source
+                thread.meta.pop('codex_updated', None)
+                thread.meta['session'] = session
+                thread.save()
+                thread.codex_fork_pending = False
+                thread.emit('note', text="Open in Codex on the Mac, so the phone continues in its own copy. The Mac window won't show these messages.")
+            elif method == 'thread/resume' and thread.meta.get('codex_external') and session != thread.meta.get('session'):
+                thread.emit('error', code='agent', text='Codex did not resume the requested conversation. Its original session is kept.')
+                return True
             thread.model = result.get('model') or thread.model
             if session and thread.meta.get('session') != session:
                 thread.meta['session'] = session
@@ -2415,6 +2509,8 @@ def sync_codex(catalog):
                 continue  # The owner's native Codex chat already chose this local workspace.
             with changed:
                 thread = next((t for t in threads.values() if t.meta['kind'] == 'codex' and t.meta.get('session') == sid), None)
+                if thread is None and any(sid in t.meta.get('codex_origins', []) or (getattr(t, 'codex_fork_pending', False) and t.worker is not None) for t in threads.values()):
+                    continue
                 if thread is not None and not thread.meta.get('codex_external'):
                     continue  # Soma already owns this conversation.
                 if thread is not None and thread.worker is not None:
@@ -2425,7 +2521,12 @@ def sync_codex(catalog):
             detail = catalog.call('thread/turns/list', {'threadId': sid, 'limit': 20, 'itemsView': 'full'})
             turns = detail.get('data') or []
             with changed:
+                current = next((t for t in threads.values() if t.meta['kind'] == 'codex' and t.meta.get('session') == sid), None)
+                if current is not thread:
+                    continue
                 if thread is None:
+                    if any(sid in t.meta.get('codex_origins', []) or (getattr(t, 'codex_fork_pending', False) and t.worker is not None) for t in threads.values()):
+                        continue
                     tid = 't' + hashlib.sha256(sid.encode()).hexdigest()[:8]
                     salt = 0
                     while tid in threads:

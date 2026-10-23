@@ -32,3 +32,15 @@ owner-approved build promotion. The launch flag addresses the reported sandbox
 failure; a successful phone tool journey remains unverified until tested there.
 Do not describe phone-side tool use as verified based on a successful login or a
 plain text model reply.
+
+## Native Mac Codex continuation
+
+A native desktop conversation can retain a writer even while idle. Its runner resume then fails with `already has an active writer`. For discovered native Codex conversations only, that exact conflict now checks native lifecycle records and creates a phone copy using `thread/fork`. Other errors preserve the original and do not silently start a new conversation.
+
+Cross-process `thread/turns/list` can label a genuinely active turn interrupted on the installed Mac version. The driver instead obtains the native rollout path from `thread/read`, validates the session header, and reads a bounded tail for `task_started`, `task_complete`, or `turn_aborted`. A quiet file with an unmatched start remains busy. Incomplete records wait; unreadable or unknown lifecycle state refuses safely. No peer credentials or messaging sockets are used.
+
+Busy work waits with a visible note, Stop, and a thirty-minute timeout. Each recheck retries normal resume first, so a desktop writer that closes or crashes permits same-session continuation despite an orphaned start marker. An idle open writer forks through the explicit finished-turn ID with Soma's existing permission rules. The new session and its origins stay on the same Soma thread; discovery excludes origins and deduplicates inherited history. The copy notice explains that the Mac window will not show phone messages. As with Claude, an owner starting a new Mac turn immediately after the snapshot can still race; this is not a distributed project-edit lock.
+
+Official protocol reference: [Codex App Server](https://learn.chatgpt.com/docs/app-server), `thread/read`, `thread/fork`, and `lastTurnId`.
+
+Regression coverage includes writer-conflict handling, unknown/other errors, completed-turn anchoring, busy wait/cancel/timeout, writer closing during a wait, strict session IDs, source marker parsing, alias discovery/deduplication, and two messages through actual driver pipes. Local Codex checks:15 PASS. Claude discovery:27 PASS, one Darwin-only skip. Real Mac deployment and the live steps in `tools/walkthrough/scripts/codex-phone-copy.walk` remain pending.

@@ -1,0 +1,7 @@
+# Paired Mac Codex writer ownership and real session history require spare native Mac sessions and the Fold.
+[phone] Open an existing native Codex spare on the Mac and keep its writer open but idle. Send a harmless phone prompt: the active-writer conflict must create a history-preserving phone copy on the same Soma thread, with an explanatory copy notice, instead of 'could not be resumed'.
+[phone] Send a second message through the actual Soma composer. Verify retained context, the same phone-copy session ID, and no extra copy or duplicate history.
+[phone] Keep a spare native Codex turn running, then send from the phone. Verify a waiting note and no phone turn until the native turn completes; verify one copy afterward.
+[phone] Repeat with a busy spare and press Stop from Soma. Verify stopped, no phone model turn, and the native writer remains alive.
+[phone] Close a native spare's writer, send from the phone, and verify normal same-session resume without copying.
+[phone] Restart only the idle runner; verify one Soma thread per session, no original-origin rediscovery, and no duplicate user or assistant rows. Verify original native transcripts unchanged by phone-copy turns.
