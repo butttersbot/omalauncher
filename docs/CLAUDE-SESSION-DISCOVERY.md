@@ -46,9 +46,10 @@ MacBook and Soma after deployment. Until then, live appearance and replying are
 unverified.
 
 Implementation verification on the Fold, 2026-10-22:
-- PASS: 12 isolated discovery/reply tests, including a real fake-agent subprocess
+- PASS: 13 isolated discovery/reply tests, including a real fake-agent subprocess
   round trip through the existing Claude driver, same-session resume, manual
-  stdio approval configuration, HTTP submission and transcript deduplication.
+  stdio approval configuration, HTTP submission, transcript deduplication, and a tool approval that pauses until
+  the phone decision and then completes in the same conversation.
 - PASS: 6 existing Codex approval tests.
 - PARTIAL: broad runner fixture previously passed 203 checks, then stopped at its
   bot shell `made.txt` assertion (line 818, FileNotFoundError). Unchanged HEAD

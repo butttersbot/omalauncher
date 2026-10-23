@@ -114,6 +114,30 @@ class DiscoveryTests(unittest.TestCase):
             time.sleep(.02)
         self.assertIsNone(t.kept)
 
+    def test_discovered_session_forwards_tool_approval(self):
+        self.write(self.row())
+        t, = self.sync()
+        self.m['AGENT'] = str(Path(__file__).with_name('fake-agent').resolve())
+        self.m['canvas_env'] = lambda thread: {}
+        with self.m['changed']:
+            self.m['take'](t, 'write')
+        deadline = time.time() + 10
+        while not t.pending and time.time() < deadline:
+            time.sleep(.02)
+        self.assertTrue(t.pending)
+        self.assertFalse((self.root / 'written.txt').exists())
+        with self.m['changed']:
+            approval, entry = next(iter(t.pending.items()))
+            code, result = self.m['decide'](t, approval, {'nonce': entry['nonce'], 'decision': 'allow'}, 'test-owner')
+        self.assertEqual(200, code)
+        deadline = time.time() + 10
+        while (t.worker is not None or t.kept is not None) and time.time() < deadline:
+            time.sleep(.02)
+        self.assertIsNone(t.worker)
+        self.assertIsNone(t.kept)
+        self.assertTrue((self.root / 'written.txt').exists())
+        self.assertEqual(self.sid, t.meta['session'])
+
     def test_phone_turn_deduplicates_native_transcript(self):
         self.write(self.row())
         t, = self.sync()
