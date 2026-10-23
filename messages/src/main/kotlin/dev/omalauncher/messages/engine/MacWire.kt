@@ -4,149 +4,97 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * What the Mac's iMessage service says, read. The service (soma-imessage-service, on Boss's Mac) answers in Beeper's
- * platform-imessage shapes: threads and messages, and on its event stream (Server-Sent Events) the library's own
- * state_sync events. MacLink asks it; this reads the answers. Nothing here touches the network, so all of it is tested
- * on the JVM.
+ * What the Mac's iMessage service says, read. The service (soma-imessage-service, on Boss's Mac, over Beeper's
+ * platform-imessage) serves the phone's own contract: chats, messages and a stream of events (Server-Sent Events).
+ * MacLink asks it; this reads the answers. Nothing here touches the network, so all of it is tested on the JVM.
  */
 object MacWire {
     class Attachment(
         val id: String,
         val name: String,
         val mime: String,
-        /** Where the service serves it: a path to put after the base address. */
-        val src: String?,
     )
 
     class Msg(
         val id: String,
         val chatId: String,
         val fromMe: Boolean,
-        /** The sender's handle: a phone number or an email. */
+        /** The sender's handle, a phone number or an email; null for the owner's own. */
         val sender: String?,
         val text: String,
         val at: Long,
         val attachments: List<Attachment>,
         /** The message this one replies to, in a threaded reply. */
         val replyTo: String?,
-    )
-
-    class Person(
-        val handle: String,
-        val name: String,
+        /** The phone's own id for a message it sent, echoed back once the Mac has it. */
+        val clientId: String?,
+        val unsent: Boolean,
+        /** A group change or rename, not something anyone wrote. */
+        val system: Boolean,
     )
 
     class Chat(
         val id: String,
-        val title: String?,
+        /** The chat's own name; null for a 1:1 chat, named from the phone's contacts instead. */
+        val name: String?,
+        val participants: List<String>,
         val isGroup: Boolean,
-        val unread: Boolean,
-        val people: List<Person>,
+        val unread: Int,
         val last: Msg?,
-    ) {
-        /** The chat's own name, or the people in it. */
-        val name get() = title?.takeIf { it.isNotBlank() } ?: people.joinToString(", ") { it.name }.ifEmpty { id }
-    }
+    )
 
-    /** One event off the stream: [type] is imessage, ready or resync. */
+    /** One event off the stream: message.new, message.updated, message.deleted, chat.updated, chat.deleted, typing, ready or resync. */
     data class Event(
         val id: String?,
         val type: String,
         val data: String,
     )
 
-    /** A platform-imessage state_sync event: what changed ([objectName], [mutation]) in which thread. */
-    class Sync(
-        val objectName: String,
-        val mutation: String,
-        val chatId: String,
-        val entries: JSONArray,
-    )
-
     private fun JSONObject.str(key: String): String? = if (!has(key) || isNull(key)) null else optString(key).ifEmpty { null }
-
-    private fun items(o: JSONObject?): JSONArray = o?.optJSONArray("items") ?: JSONArray()
-
-    /** A participant's name: as Contacts has it, else the handle. */
-    fun person(o: JSONObject): Person {
-        val handle = o.str("id") ?: o.str("phoneNumber") ?: o.str("email") ?: ""
-        return Person(handle, o.str("fullName") ?: o.str("nickname") ?: o.str("displayText") ?: o.str("phoneNumber") ?: o.str("email") ?: handle)
-    }
-
-    fun attachment(a: JSONObject): Attachment {
-        val name = a.str("fileName").orEmpty()
-        val mime =
-            a.str("mimeType") ?: when (a.str("type")) {
-                "img" -> if (name.endsWith(".gif", true)) "image/gif" else "image/*"
-                "video" -> "video/*"
-                "audio" -> "audio/*"
-                else -> mimeOf(name)
-            }
-        return Attachment(a.str("id") ?: name, name, mime, a.str("srcURL"))
-    }
-
-    private fun mimeOf(name: String): String =
-        when (name.substringAfterLast('.', "").lowercase()) {
-            "jpg", "jpeg", "png", "heic", "heif", "webp" -> "image/*"
-            "gif" -> "image/gif"
-            "mov", "mp4", "m4v" -> "video/*"
-            "m4a", "caf", "mp3", "aac" -> "audio/*"
-            "pdf" -> "application/pdf"
-            else -> "application/octet-stream"
-        }
 
     fun msg(o: JSONObject): Msg {
         val list = o.optJSONArray("attachments") ?: JSONArray()
         return Msg(
             id = o.getString("id"),
-            chatId = o.str("threadID").orEmpty(),
-            fromMe = o.optBoolean("isSender"),
-            sender = o.str("senderID"),
+            chatId = o.str("chatId").orEmpty(),
+            fromMe = o.optBoolean("fromMe"),
+            sender = o.str("sender"),
             text = o.optString("text"),
-            at = o.optLong("timestamp"),
-            attachments = (0 until list.length()).map { attachment(list.getJSONObject(it)) },
-            replyTo = o.str("linkedMessageID"),
+            at = o.optLong("at"),
+            attachments =
+                (0 until list.length()).map {
+                    val a = list.getJSONObject(it)
+                    Attachment(a.getString("id"), a.optString("name"), a.optString("mime"))
+                },
+            replyTo = o.str("replyTo"),
+            clientId = o.str("clientId"),
+            unsent = o.optBoolean("unsent"),
+            system = o.optBoolean("system"),
         )
     }
 
-    fun thread(o: JSONObject): Chat {
-        val people = items(o.optJSONObject("participants")).let { p -> (0 until p.length()).map { person(p.getJSONObject(it)) } }
-        val last = items(o.optJSONObject("messages")).let { m -> if (m.length() == 0) null else msg(m.getJSONObject(m.length() - 1)) }
+    fun chat(c: JSONObject): Chat {
+        val people = c.optJSONArray("participants") ?: JSONArray()
         return Chat(
-            id = o.getString("id"),
-            title = o.str("title"),
-            isGroup = o.optString("type") == "group",
-            unread = o.optBoolean("isUnread"),
-            people = people,
-            last = last,
+            id = c.getString("id"),
+            name = c.str("name"),
+            participants = (0 until people.length()).map { people.getString(it) },
+            isGroup = c.optBoolean("isGroup"),
+            unread = c.optInt("unread"),
+            last = c.optJSONObject("lastMessage")?.let(::msg),
         )
     }
 
-    /** GET /v1/threads. */
+    /** GET /v1/chats. */
     fun chats(text: String): List<Chat> {
-        val list = items(JSONObject(text))
-        return (0 until list.length()).map { thread(list.getJSONObject(it)) }
+        val list = JSONObject(text).getJSONArray("chats")
+        return (0 until list.length()).map { chat(list.getJSONObject(it)) }
     }
 
-    /** GET /v1/threads/:thread/messages, oldest first. */
+    /** GET /v1/chats/{id}/messages, oldest first, each once (a page's boundary can repeat). */
     fun messages(text: String): List<Msg> {
-        val list = items(JSONObject(text))
-        return (0 until list.length()).map { msg(list.getJSONObject(it)) }.sortedBy { it.at }
-    }
-
-    /** What a send answered: the sent messages, or nothing when the service only says it went ({"result":true}). */
-    fun sent(text: String): List<Msg> =
-        runCatching {
-            val list = JSONArray(text)
-            (0 until list.length()).map { msg(list.getJSONObject(it)) }
-        }.getOrDefault(emptyList())
-
-    /** An imessage event's data, when it is a state_sync. */
-    fun sync(data: String): Sync? {
-        val o = runCatching { JSONObject(data) }.getOrNull() ?: return null
-        if (o.optString("type") != "state_sync") return null
-        val chat = o.optJSONObject("objectIDs")?.str("threadID") ?: return null
-        return Sync(o.optString("objectName"), o.optString("mutationType"), chat, o.optJSONArray("entries") ?: JSONArray())
+        val list = JSONObject(text).getJSONArray("messages")
+        return (0 until list.length()).map { msg(list.getJSONObject(it)) }.distinctBy { it.id }.sortedBy { it.at }
     }
 
     /** What the attachments are, worded the way the app shows them: "1 Photo", "2 Photos & 1 Video". */
@@ -172,13 +120,15 @@ object MacWire {
     /**
      * [m] as the app keeps it: its attachments as one message of their own ("2 Photos"), before its words, as iMessage
      * shows them. The words keep the Mac's id; the attachments' message adds "#a" to it. [nameOf] turns a handle into
-     * the person's name; [quoteOf] gives the quote line for the message a reply answers, when it is known here.
+     * the person's name; [quoteOf] gives the quote line for the message a reply answers, when it is known here. An
+     * unsent message and a group change are nothing to show.
      */
     fun toMessages(
         m: Msg,
         nameOf: (String) -> String? = { null },
         quoteOf: (String) -> String? = { null },
     ): List<Message> {
+        if (m.unsent || m.system) return emptyList()
         val sender = if (m.fromMe) "" else m.sender?.let { nameOf(it) ?: it } ?: "Unknown"
         val quote = m.replyTo?.let(quoteOf)
         val parts =
@@ -208,10 +158,8 @@ object MacWire {
 
         fun line(line: String): Event? {
             if (line.isEmpty()) {
-                if (data.isEmpty()) {
-                    type = "message"
-                    return null
-                }
+                // An event with no data ("ready", "resync" may come so) still counts.
+                if (data.isEmpty() && type == "message") return null
                 val e = Event(id, type, data.toString())
                 if (id != null) lastId = id
                 id = null

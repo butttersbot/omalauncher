@@ -75,7 +75,7 @@ object Messages {
         val saved = MacLink.file(context)
         if (saved.isFile) MacAddress.fromJson(saved.readText())?.let { at ->
             mac.value = at
-            MacLink.start(at)
+            MacLink.start(context, at)
         }
     }
 
@@ -98,7 +98,7 @@ object Messages {
             publish(ConversationBook())
         }
         mac.value = at
-        MacLink.start(at)
+        MacLink.start(context, at)
     }
 
     /** What the Mac says about conversation [id] (see [ConversationBook.fromMac]). */
@@ -182,7 +182,7 @@ object Messages {
             val clientId = java.util.UUID.randomUUID().toString()
             publish(real.waiting(id, clientId, text, System.currentTimeMillis(), quote))
             val replyTo = quoting.remove(id)?.takeIf { quote != null }?.removeSuffix("#a")
-            MacLink.send(id, text, replyTo) { failed(id, clientId) }
+            MacLink.send(id, text, replyTo, clientId) { failed(id, clientId) }
             return Sent.Sent
         }
         val h = handles[id]
@@ -274,7 +274,7 @@ object Messages {
         if (text.isNotBlank()) next = next.waiting(id, clientId, text, now + summaries.size)
         publish(next)
         quoting.remove(id)
-        MacLink.sendFiles(context, id, photos, text) { failed(id, clientId) }
+        MacLink.sendFiles(context, id, photos, text, clientId) { failed(id, clientId) }
     }
 
     @Synchronized

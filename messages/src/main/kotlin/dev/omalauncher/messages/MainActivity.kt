@@ -8,6 +8,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.mutableIntStateOf
 import dev.omalauncher.messages.engine.MacAddress
+import dev.omalauncher.messages.engine.MacLink
+import dev.omalauncher.messages.engine.Names
 import dev.omalauncher.messages.engine.Messages
 import dev.omalauncher.messages.look.Look
 import dev.omalauncher.messages.ui.MessagesApp
@@ -31,6 +33,15 @@ class MainActivity : ComponentActivity() {
         offerLink(intent)
     }
 
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == CONTACTS && Names.allowed(this)) MacLink.refresh()
+    }
+
     override fun onResume() {
         super.onResume()
         resumed.intValue++
@@ -51,8 +62,16 @@ class MainActivity : ComponentActivity() {
         AlertDialog.Builder(this)
             .setTitle("Get your iMessages from ${at.host}?")
             .setMessage("Conversations will come from Messages on that Mac, and your replies and photos will go out through it. OpenBubbles is no longer used here.")
-            .setPositiveButton("Link") { _, _ -> Messages.link(applicationContext, at) }
+            .setPositiveButton("Link") { _, _ ->
+                Messages.link(applicationContext, at)
+                // The Mac sends numbers and emails only; names come from the phone's contacts, with the owner's OK.
+                if (!Names.allowed(this)) requestPermissions(arrayOf(android.Manifest.permission.READ_CONTACTS), CONTACTS)
+            }
             .setNegativeButton("Not now", null)
             .show()
+    }
+
+    private companion object {
+        const val CONTACTS = 1
     }
 }

@@ -6,92 +6,88 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** The shapes are the service's demo data (soma-imessage-service DemoBackend), which follow platform-imessage's. */
+/** The shapes are the service's /v1 contract (soma-imessage-service README, "API (v1): the phone's contract"). */
 class MacWireTest {
-    private val threads =
-        """{"items":[
-          {"id":"iMessage;+;chat000000000000000001","title":"Weekend","type":"group","isUnread":true,"folderName":"normal",
-           "participants":{"items":[{"id":"+15555550111","phoneNumber":"+15555550111","fullName":"Ana Ruiz"},{"id":"ben@example.com","email":"ben@example.com"}],"hasMore":false},
-           "messages":{"items":[{"id":"DEMO-4","threadID":"iMessage;+;chat000000000000000001","timestamp":5000,"senderID":"ben@example.com","isSender":false,
-             "attachments":[{"id":"DEMO-ATT-1","type":"img","mimeType":"image/png","fileName":"sunset.png","srcURL":"/v1/files/DEMO-ATT-1"}],"text":"Look at this"}],"hasMore":false},
-           "timestamp":5000},
-          {"id":"iMessage;-;+15555550111","type":"single","isUnread":false,
-           "participants":{"items":[{"id":"+15555550111","phoneNumber":"+15555550111"}],"hasMore":false},
-           "messages":{"items":[],"hasMore":true}}
-        ],"hasMore":false}"""
+    private val chats =
+        """{"chats":[
+          {"id":"iMessage;+;chat0001","name":"Weekend","participants":["+15555550111","ben@example.com"],"isGroup":true,"unread":2,"updatedAt":5000,
+           "lastMessage":{"id":"M4","chatId":"iMessage;+;chat0001","fromMe":false,"sender":"ben@example.com","text":"Look at this","at":5000,
+             "attachments":[{"id":"A1","name":"sunset.png","mime":"image/png","size":120}],"replyTo":null,"tapbacks":[],"edited":false,"unsent":false,"service":"iMessage"}},
+          {"id":"iMessage;-;+15555550111","name":null,"participants":["+15555550111"],"isGroup":false,"unread":0,"updatedAt":4000,"lastMessage":null}
+        ]}"""
 
     @Test
-    fun readsThreads() {
-        val list = MacWire.chats(threads)
+    fun readsChats() {
+        val list = MacWire.chats(chats)
         assertEquals(2, list.size)
-        val group = list[0]
-        assertEquals("Weekend", group.name)
-        assertTrue(group.isGroup)
-        assertTrue(group.unread)
-        assertEquals(mapOf("+15555550111" to "Ana Ruiz", "ben@example.com" to "ben@example.com"), group.people.associate { it.handle to it.name })
-        assertEquals("Look at this", group.last!!.text)
-        assertEquals("/v1/files/DEMO-ATT-1", group.last!!.attachments.single().src)
-        // No title: the people in it.
-        assertEquals("+15555550111", list[1].name)
+        assertEquals("Weekend", list[0].name)
+        assertTrue(list[0].isGroup)
+        assertEquals(2, list[0].unread)
+        assertEquals(listOf("+15555550111", "ben@example.com"), list[0].participants)
+        assertEquals("Look at this", list[0].last!!.text)
+        // A 1:1 chat has no name of its own: the phone names it from contacts.
+        assertNull(list[1].name)
         assertNull(list[1].last)
     }
 
     @Test
     fun attachmentsComeBeforeTheWordsWithNames() {
-        val m = MacWire.chats(threads)[0].last!!
+        val m = MacWire.chats(chats)[0].last!!
         val kept = MacWire.toMessages(m, nameOf = { if (it == "ben@example.com") "Ben" else null })
         assertEquals(listOf("1 Photo", "Look at this"), kept.map { it.text })
-        assertEquals(listOf("DEMO-4#a", "DEMO-4"), kept.map { it.id })
+        assertEquals(listOf("M4#a", "M4"), kept.map { it.id })
         assertTrue(kept.all { it.sender == "Ben" })
         // The app's own reading of the words turns the summary into an attachment bubble.
         assertTrue(Parts.of(kept[0].text).single() is Part.Attachment)
     }
 
     @Test
-    fun aThreadedReplyCarriesItsQuote() {
+    fun aThreadedReplyCarriesItsQuoteAndTheEchoItsClientId() {
         val m =
             MacWire.msg(
-                JSONObject("""{"id":"DEMO-3","threadID":"t","timestamp":3,"senderID":"+1555","isSender":false,"text":"Perfect, see you there","linkedMessageID":"DEMO-2"}"""),
+                JSONObject("""{"id":"M3","chatId":"c","fromMe":true,"sender":null,"text":"Perfect","at":3,"replyTo":"M2","clientId":"k1","attachments":[]}"""),
             )
-        val kept = MacWire.toMessages(m, quoteOf = { if (it == "DEMO-2") "You: Yes! 7pm" else null }).single()
-        assertEquals("You: Yes! 7pm", kept.quote)
-        assertEquals("+1555", kept.sender)
+        assertEquals("k1", m.clientId)
+        val kept = MacWire.toMessages(m, quoteOf = { if (it == "M2") "Ana: dinner at 7?" else null }).single()
+        assertEquals("Ana: dinner at 7?", kept.quote)
+        assertTrue(kept.fromMe)
+        // No sender and not the owner's: still someone.
+        assertEquals("Unknown", MacWire.toMessages(MacWire.msg(JSONObject("""{"id":"x","chatId":"c","fromMe":false,"text":"hi","at":1}"""))).single().sender)
     }
 
     @Test
-    fun kindsAndMarks() {
+    fun unsentAndGroupChangesShowNothing() {
+        assertTrue(MacWire.toMessages(MacWire.msg(JSONObject("""{"id":"u","chatId":"c","fromMe":true,"text":"oops","at":1,"unsent":true}"""))).isEmpty())
+        assertTrue(MacWire.toMessages(MacWire.msg(JSONObject("""{"id":"s","chatId":"c","fromMe":false,"text":"Ana named the chat","at":1,"system":true}"""))).isEmpty())
+    }
+
+    @Test
+    fun kindsAndPlaceholders() {
         val m =
             MacWire.msg(
                 JSONObject(
-                    """{"id":"m","threadID":"t","timestamp":1,"isSender":true,"text":"￼￼","attachments":[
-                    {"id":"a","fileName":"IMG_1.HEIC","type":"img"},{"id":"b","fileName":"clip.mov"},{"id":"c","fileName":"x.gif","type":"img"}]}""",
+                    """{"id":"m","chatId":"t","at":1,"fromMe":true,"text":"￼￼￼","attachments":[
+                    {"id":"a","name":"IMG_1.HEIC","mime":"image/heic"},{"id":"b","name":"clip.mov","mime":"video/quicktime"},{"id":"c","name":"x.gif","mime":"image/gif"}]}""",
                 ),
             )
-        // Only the attachments: the placeholders in the words go.
         assertEquals(listOf("1 Photo & 1 Video & 1 GIF"), MacWire.toMessages(m).map { it.text })
-        assertTrue(MacWire.toMessages(m).single().fromMe)
         assertNull(MacWire.summary(emptyList()))
     }
 
     @Test
-    fun readsSendsAndSyncEvents() {
-        assertEquals(listOf("S1"), MacWire.sent("""[{"id":"S1","threadID":"t","timestamp":1,"isSender":true,"text":"hi"}]""").map { it.id })
-        assertTrue(MacWire.sent("""{"result":true}""").isEmpty())
-        val s = MacWire.sync("""{"type":"state_sync","objectName":"message","mutationType":"delete","objectIDs":{"threadID":"t1"},"entries":["m9"]}""")!!
-        assertEquals("message", s.objectName)
-        assertEquals("delete", s.mutation)
-        assertEquals("t1", s.chatId)
-        assertEquals("m9", s.entries.getString(0))
-        assertNull(MacWire.sync("""{"type":"user_activity","threadID":"t1"}"""))
+    fun aPagesBoundaryRepeatsOnlyOnce() {
+        val page = """{"messages":[{"id":"a","chatId":"c","at":2,"fromMe":true,"text":"two"},{"id":"b","chatId":"c","at":1,"fromMe":true,"text":"one"},{"id":"a","chatId":"c","at":2,"fromMe":true,"text":"two"}]}"""
+        assertEquals(listOf("b", "a"), MacWire.messages(page).map { it.id })
     }
 
     @Test
     fun streamReadsEventsAndRemembersWhereItWas() {
         val s = MacWire.Stream()
-        val lines = listOf(": ping", "id: 3302689d:41", "event: imessage", "data: {\"a\":1,", "data: \"b\":2}", "", "", "event: ready", "data: {}", "")
+        val lines = listOf(": ping", "id: 3302689d:41", "event: message.new", "data: {\"a\":1,", "data: \"b\":2}", "", "", "id: 3302689d:41", "event: ready", "")
         val events = lines.mapNotNull { s.line(it) }
         assertEquals(2, events.size)
-        assertEquals(MacWire.Event("3302689d:41", "imessage", "{\"a\":1,\n\"b\":2}"), events[0])
+        assertEquals(MacWire.Event("3302689d:41", "message.new", "{\"a\":1,\n\"b\":2}"), events[0])
+        // A control event with no data still arrives.
         assertEquals("ready", events[1].type)
         assertEquals("3302689d:41", s.lastId)
         // A broken stream drops the half-read event but keeps the place.
