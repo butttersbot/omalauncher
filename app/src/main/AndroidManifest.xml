@@ -4,6 +4,8 @@
     <!-- Reading the newest screenshot for "Add to pocket" over the screenshot toolbar; asked for the first time it is used. -->
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Without it Android asks Boss to confirm every update Oma installs, even ones it installed before (2026-10-22, Messages 0.5.2). -->
+    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <!-- Search finds files anywhere in shared storage, by name and by their text, once he allows it (search/FileIndex.kt). -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
