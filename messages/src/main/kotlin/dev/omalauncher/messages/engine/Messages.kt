@@ -50,6 +50,12 @@ object Messages {
     /** True while Android has the listener bound. */
     val listening = MutableStateFlow(false)
 
+    /** The Mac the conversations come from, once linked; null while they come through OpenBubbles. */
+    val mac = MutableStateFlow<MacAddress?>(null)
+
+    /** True once linked to the Mac: conversations, replies and photos go through it, OpenBubbles isn't used. */
+    val linked get() = mac.value != null
+
     /** True while example conversations stand in for real ones (for looking at the screens). */
     val samples = MutableStateFlow(false)
 
@@ -66,6 +72,47 @@ object Messages {
         file = f
         real = if (f.isFile) ConversationBook.fromJson(f.readText()) else ConversationBook()
         if (!samples.value) _book.value = real
+        val saved = MacLink.file(context)
+        if (saved.isFile) MacAddress.fromJson(saved.readText())?.let { at ->
+            mac.value = at
+            MacLink.start(at)
+        }
+    }
+
+    /**
+     * Links to the Mac at [at]: kept in the app's own files, and from then on the conversations come from there. What
+     * came through OpenBubbles is left behind, since the Mac has all of it under its own ids.
+     */
+    @Synchronized
+    fun link(
+        context: Context,
+        at: MacAddress,
+    ) {
+        init(context)
+        val f = MacLink.file(context)
+        val tmp = File(f.parentFile, f.name + ".tmp")
+        tmp.writeText(at.toJson())
+        tmp.renameTo(f)
+        if (mac.value == null) {
+            handles.clear()
+            publish(ConversationBook())
+        }
+        mac.value = at
+        MacLink.start(at)
+    }
+
+    /** What the Mac says about conversation [id] (see [ConversationBook.fromMac]). */
+    @Synchronized
+    fun fromMac(
+        id: String,
+        title: String?,
+        isGroup: Boolean?,
+        incoming: List<Message>,
+        unread: Int? = null,
+        answered: Collection<String> = emptyList(),
+        counting: Boolean = true,
+    ) {
+        publish(real.fromMac(id, title, isGroup, incoming, unread, answered, counting))
     }
 
     private fun publish(next: ConversationBook) {
@@ -101,6 +148,7 @@ object Messages {
             return
         }
         publish(real.read(id))
+        if (linked) MacLink.opened(id)
     }
 
     /**
@@ -116,6 +164,12 @@ object Messages {
     ): Sent {
         if (samples.value) {
             _book.value = _book.value.sent(id, text, System.currentTimeMillis(), quote)
+            return Sent.Sent
+        }
+        if (linked) {
+            val clientId = java.util.UUID.randomUUID().toString()
+            publish(real.waiting(id, clientId, text, System.currentTimeMillis(), quote))
+            MacLink.send(id, text, clientId) { failed(id, clientId) }
             return Sent.Sent
         }
         val h = handles[id]
@@ -187,6 +241,41 @@ object Messages {
         return intent
     }
 
+    /** Sends [photos], with [text], through the Mac; [summary] ("2 Photos") stands for them until the Mac shows them back. */
+    @Synchronized
+    fun sendPhotos(
+        context: Context,
+        id: String,
+        photos: List<android.net.Uri>,
+        text: String,
+        summary: String,
+        quote: String?,
+    ) {
+        val clientId = java.util.UUID.randomUUID().toString()
+        val now = System.currentTimeMillis()
+        var next = real.waiting(id, clientId, summary, now, quote)
+        if (text.isNotBlank()) next = next.waiting(id, clientId, text, now + 1)
+        publish(next)
+        MacLink.sendFiles(context, id, photos, text, clientId) { failed(id, clientId) }
+    }
+
+    @Synchronized
+    private fun failed(
+        id: String,
+        clientId: String,
+    ) = publish(real.failed(id, clientId))
+
+    /** Tries a failed [message] again. */
+    @Synchronized
+    fun retry(
+        context: Context,
+        id: String,
+        message: Message,
+    ) {
+        publish(real.without(id, message))
+        send(context, id, message.text, message.quote)
+    }
+
     /** Notes in [id] what was handed to OpenBubbles to send, so the conversation shows it waiting there. */
     @Synchronized
     fun handedOff(
@@ -210,7 +299,7 @@ object Messages {
     }
 
     /** True when a reply can go from here right now. */
-    fun canReply(id: String) = samples.value || handles[id]?.reply != null
+    fun canReply(id: String) = samples.value || linked || handles[id]?.reply != null
 
     /** Opens [id] in OpenBubbles: its own notification's tap when one is known, else OpenBubbles itself. */
     fun openInOpenBubbles(

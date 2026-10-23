@@ -89,4 +89,38 @@ class ConversationBookTest {
         assertTrue(back["chat-mina"]!!.messages.last().handedOff)
         assertEquals(listOf("pics?"), back.drop("chat-mina", back["chat-mina"]!!.messages.last())["chat-mina"]!!.messages.map { it.text })
     }
+
+    @Test fun theMacsMessagesMergeByTheirIds() {
+        val m1 = Message("are we still on?", 1_000, "Mina", id = "m1")
+        var book = ConversationBook().fromMac("c1", "Mina", false, listOf(m1), unread = 1)
+        // The same message again (the stream after the chat list) is not a second one.
+        book = book.fromMac("c1", null, null, listOf(m1, Message("the counter!!", 2_000, "Mina", id = "m2")))
+        val c = book["c1"]!!
+        assertEquals(listOf("are we still on?", "the counter!!"), c.messages.map { it.text })
+        assertEquals(2, c.unread)
+        assertEquals("Mina", c.title)
+        // History counts nothing as unread.
+        val older = book.fromMac("c1", null, null, listOf(Message("hi", 500, "Mina", id = "m0")), counting = false)["c1"]!!
+        assertEquals(2, older.unread)
+        assertEquals("hi", older.messages.first().text)
+    }
+
+    @Test fun aMessageSentThroughTheMacGivesWayToTheMacsCopy() {
+        var book = ConversationBook().fromMac("c1", "Mina", false, listOf(Message("bring it?", 1_000, "Mina", id = "m1")), unread = 0)
+        book = book.waiting("c1", "k1", "2 Photos", 5_000, quote = "Mina: bring it?").waiting("c1", "k1", "here", 5_001)
+        assertEquals(listOf("c:k1", "c:k1"), book["c1"]!!.messages.drop(1).map { it.id })
+        book = book.fromMac("c1", null, null, listOf(Message("2 Photos", 5_400, "", id = "m2#a"), Message("here", 5_400, "", id = "m2")), answered = listOf("k1"))
+        val c = book["c1"]!!
+        assertEquals(listOf("m1", "m2#a", "m2"), c.messages.map { it.id })
+        assertEquals("Mina: bring it?", c.messages[1].quote)
+        assertEquals(0, c.unread)
+    }
+
+    @Test fun aSendTheMacRefusedIsMarkedAndSurvivesSaving() {
+        val book = ConversationBook().fromMac("c1", "Mina", false, emptyList(), unread = 0).waiting("c1", "k1", "hello", 5_000).failed("c1", "k1")
+        val m = ConversationBook.fromJson(book.toJson())["c1"]!!.messages.single()
+        assertTrue(m.failed)
+        assertEquals("c:k1", m.id)
+        assertTrue(book.without("c1", m)["c1"]!!.messages.isEmpty())
+    }
 }

@@ -52,6 +52,7 @@ fun MessagesApp(resumed: Int) {
     val context = LocalContext.current
     val book by Messages.book.collectAsState()
     val samples by Messages.samples.collectAsState()
+    val mac by Messages.mac.collectAsState()
     var granted by remember { mutableStateOf(Messages.granted(context)) }
     LaunchedEffect(resumed) { granted = Messages.granted(context) }
     var openId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -67,7 +68,7 @@ fun MessagesApp(resumed: Int) {
     val widthDp = LocalConfiguration.current.screenWidthDp
 
     Box(Modifier.fillMaxSize().background(Pack.paper).windowInsetsPadding(WindowInsets.safeDrawing)) {
-        if (!granted && !samples) {
+        if (!granted && !samples && mac == null) {
             AccessScreen(openBubbles = Messages.openBubblesInstalled(context))
             return@Box
         }

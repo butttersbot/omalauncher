@@ -1,10 +1,13 @@
 package dev.omalauncher.messages
 
+import android.app.AlertDialog
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.mutableIntStateOf
+import dev.omalauncher.messages.engine.MacAddress
 import dev.omalauncher.messages.engine.Messages
 import dev.omalauncher.messages.look.Look
 import dev.omalauncher.messages.ui.MessagesApp
@@ -20,10 +23,36 @@ class MainActivity : ComponentActivity() {
         dev.omalauncher.messages.engine.Desk.init(applicationContext)
         Look.use(applicationContext)
         setContent { MessagesApp(resumed.intValue) }
+        if (savedInstanceState == null) offerLink(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        offerLink(intent)
     }
 
     override fun onResume() {
         super.onResume()
         resumed.intValue++
+    }
+
+    /**
+     * The link the Mac's service prints (soma-messages://link?url=…&token=…), opened on the phone. A link could come
+     * from anywhere, so the owner says yes to the Mac by name before anything is sent to it.
+     */
+    private fun offerLink(intent: Intent?) {
+        val uri = intent?.data ?: return
+        if (intent.action != Intent.ACTION_VIEW || uri.scheme != "soma-messages" || uri.host != "link") return
+        val at = MacAddress.of(uri.getQueryParameter("url"), uri.getQueryParameter("token"))
+        if (at == null) {
+            AlertDialog.Builder(this).setTitle("Not a link to your Mac").setMessage("Soma Messages links only to a Mac on your tailnet, or over https.").setPositiveButton("OK", null).show()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Get your iMessages from ${at.host}?")
+            .setMessage("Conversations will come from Messages on that Mac, and your replies and photos will go out through it. OpenBubbles is no longer used here.")
+            .setPositiveButton("Link") { _, _ -> Messages.link(applicationContext, at) }
+            .setNegativeButton("Not now", null)
+            .show()
     }
 }

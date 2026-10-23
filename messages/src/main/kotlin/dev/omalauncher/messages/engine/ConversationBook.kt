@@ -14,6 +14,13 @@ data class Message(
     val quote: String? = null,
     /** Handed to OpenBubbles' own chat to send there (photos); it stays marked until OpenBubbles shows it back. */
     val handedOff: Boolean = false,
+    /**
+     * The Mac's id for it, when the conversation comes from the Mac (MacLink): "c:" and the client id while one sent
+     * from here waits for the Mac to show it back.
+     */
+    val id: String? = null,
+    /** Sent from here, but the Mac didn't take it. */
+    val failed: Boolean = false,
 ) {
     val fromMe get() = sender.isEmpty()
 }
@@ -124,6 +131,77 @@ class ConversationBook(
         return ConversationBook(byId + (id to old.copy(messages = old.messages - message)))
     }
 
+    /**
+     * What the Mac says about conversation [id]: its name, and [incoming] messages, each with the Mac's id. One already
+     * here is replaced; one sent from here (`c:` [answered]) gives way to the Mac's copy, keeping its quote. [unread]
+     * is the Mac's count when it gave one, else new messages from others are counted, unless [counting] is off (history).
+     */
+    fun fromMac(
+        id: String,
+        title: String?,
+        isGroup: Boolean?,
+        incoming: List<Message>,
+        unread: Int? = null,
+        answered: Collection<String> = emptyList(),
+        counting: Boolean = true,
+    ): ConversationBook {
+        val old = byId[id]
+        val messages = old?.messages?.toMutableList() ?: mutableListOf()
+        val waiting = messages.filter { m -> answered.any { m.id == "c:$it" } }
+        messages.removeAll(waiting)
+        var fresh = 0
+        for (m in incoming) {
+            val at = messages.indexOfFirst { it.id == m.id }
+            val quote = m.quote ?: waiting.firstOrNull { it.text == m.text }?.quote
+            if (at >= 0) {
+                messages[at] = m.copy(quote = quote ?: messages[at].quote)
+            } else {
+                messages += m.copy(quote = quote)
+                if (!m.fromMe && counting) fresh++
+            }
+        }
+        messages.sortBy { it.time }
+        val conversation =
+            Conversation(
+                id = id,
+                title = title?.takeIf { it.isNotBlank() } ?: old?.title ?: id,
+                isGroup = isGroup ?: old?.isGroup ?: false,
+                messages = messages.takeLast(MAX_MESSAGES),
+                unread = unread ?: ((old?.unread ?: 0) + fresh),
+            )
+        return ConversationBook(byId + (id to conversation))
+    }
+
+    /** The owner sent [text] from here through the Mac, as [clientId]; it waits until the Mac shows it back. */
+    fun waiting(
+        id: String,
+        clientId: String,
+        text: String,
+        time: Long,
+        quote: String? = null,
+    ): ConversationBook {
+        val old = byId[id] ?: return this
+        return ConversationBook(byId + (id to old.copy(messages = old.messages + Message(text, time, "", sentHere = true, quote = quote, id = "c:$clientId"))))
+    }
+
+    /** The Mac didn't take [clientId]'s messages. */
+    fun failed(
+        id: String,
+        clientId: String,
+    ): ConversationBook {
+        val old = byId[id] ?: return this
+        return ConversationBook(byId + (id to old.copy(messages = old.messages.map { if (it.id == "c:$clientId") it.copy(failed = true) else it })))
+    }
+
+    /** Takes [message] out of [id]: a failed send about to be tried again. */
+    fun without(
+        id: String,
+        message: Message,
+    ): ConversationBook {
+        val old = byId[id] ?: return this
+        return ConversationBook(byId + (id to old.copy(messages = old.messages - message)))
+    }
+
     /** The owner has looked at [id]. */
     fun read(id: String): ConversationBook {
         val old = byId[id] ?: return this
@@ -146,6 +224,8 @@ class ConversationBook(
                                         JSONObject().put("text", m.text).put("time", m.time).put("sender", m.sender).put("here", m.sentHere).apply {
                                             m.quote?.let { put("quote", it) }
                                             if (m.handedOff) put("off", true)
+                                            m.id?.let { put("id", it) }
+                                            if (m.failed) put("failed", true)
                                         }
                                     },
                                 ),
@@ -178,7 +258,16 @@ class ConversationBook(
                     val messages =
                         (0 until ms.length()).map { j ->
                             val m = ms.getJSONObject(j)
-                            Message(m.getString("text"), m.getLong("time"), m.getString("sender"), m.optBoolean("here"), m.optString("quote").ifEmpty { null }, m.optBoolean("off"))
+                            Message(
+                                m.getString("text"),
+                                m.getLong("time"),
+                                m.getString("sender"),
+                                m.optBoolean("here"),
+                                m.optString("quote").ifEmpty { null },
+                                m.optBoolean("off"),
+                                m.optString("id").ifEmpty { null },
+                                m.optBoolean("failed"),
+                            )
                         }
                     val id = c.getString("id")
                     byId[id] = Conversation(id, c.getString("title"), c.optBoolean("group"), messages, c.optInt("unread"))

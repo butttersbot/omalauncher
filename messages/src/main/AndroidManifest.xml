@@ -13,11 +13,15 @@
         android:label="Soma Messages"
         android:allowBackup="false"
         android:enableOnBackInvokedCallback="true"
-        android:supportsRtl="true">
+        android:supportsRtl="true"
+        android:usesCleartextTraffic="true">
+        <!-- Plain http only to the Mac's service on the tailnet (100.64.0.0/10, ts.net), which Tailscale encrypts;
+             MacAddress refuses any other plain address. -->
 
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:resizeableActivity="true"
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density|keyboardHidden|uiMode"
@@ -25,6 +29,13 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- The link the Mac's iMessage service prints: soma-messages://link?url=…&token=… -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="soma-messages" android:host="link" />
             </intent-filter>
         </activity>
 

@@ -6,7 +6,8 @@ plugins {
 }
 
 // Soma Messages: a standalone app beside the launcher. It draws in Soma's looks and its shared composer (:chat), and
-// reads and answers iMessages through the installed OpenBubbles (features/soma-messages/PLAN.md in ClaudeSync).
+// reads and answers iMessages through the installed OpenBubbles, or, once linked, through the Mac that runs Messages
+// (MacLink; features/soma-messages/PLAN.md in ClaudeSync).
 android {
     namespace = "dev.omalauncher.messages"
     compileSdk = 37
@@ -15,8 +16,8 @@ android {
         applicationId = "dev.omalauncher.messages"
         minSdk = 29
         targetSdk = 37
-        versionCode = 7
-        versionName = "0.5.2"
+        versionCode = 8
+        versionName = "0.6.0"
     }
 
     // android.util.Log and friends are no-ops in JVM tests instead of throwing.

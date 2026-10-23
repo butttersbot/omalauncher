@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import dev.omalauncher.messages.engine.Part
 import dev.omalauncher.messages.engine.Desk
+import dev.omalauncher.messages.engine.MacLink
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -203,11 +204,15 @@ fun Inbox(
                 BasicText("show mine", style = Pack.mono(Pack.size.small, Pack.accent))
             }
         }
+        val trouble by MacLink.trouble.collectAsState()
+        if (trouble.isNotEmpty() && !samples) {
+            BasicText(trouble, Modifier.padding(horizontal = 18.dp, vertical = 4.dp), style = Pack.mono(Pack.size.small, Pack.muted))
+        }
         if (conversations.isEmpty()) {
             Column(Modifier.fillMaxWidth().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 BasicText(Pack.heading("Nothing yet"), style = Pack.display(20.sp))
                 Spacer(Modifier.height(6.dp))
-                BasicText("Conversations appear here as messages arrive in OpenBubbles.", style = Pack.body(Pack.size.body, Pack.muted))
+                BasicText(if (Messages.linked) "Your conversations are on their way from your Mac." else "Conversations appear here as messages arrive in OpenBubbles.", style = Pack.body(Pack.size.body, Pack.muted))
             }
         }
         LazyColumn(Modifier.fillMaxSize()) {
@@ -369,7 +374,7 @@ fun Thread(
             Spacer(Modifier.size(10.dp))
             Column {
                 BasicText(c.title, style = Pack.body(Pack.size.item).copy(fontWeight = FontWeight.SemiBold), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                BasicText(Pack.caption("iMessage · through OpenBubbles"), style = Pack.mono(Pack.size.small, Pack.muted))
+                BasicText(Pack.caption(if (Messages.linked) "iMessage · from your Mac" else "iMessage · through OpenBubbles"), style = Pack.mono(Pack.size.small, Pack.muted))
             }
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -400,6 +405,15 @@ fun Thread(
                             if (j == 0) m.quote?.let { QuoteInBalloon(it, ink) }
                             PartContent(part, ink)
                         }
+                    }
+                    if (m.failed && next?.failed != true) {
+                        // Words can go again from here; photos are picked again.
+                        val again = Parts.of(m.text).none { it is Part.Attachment }
+                        BasicText(
+                            Pack.caption(if (again) "Not sent · tap to try again" else "Not sent"),
+                            Modifier.fillMaxWidth().clickable(enabled = again) { Messages.retry(context, c.id, m) }.padding(top = 4.dp, end = 6.dp),
+                            style = Pack.mono(Pack.size.small, Pack.accent).copy(textAlign = androidx.compose.ui.text.style.TextAlign.End),
+                        )
                     }
                     // Once under a run of handed-off messages, not under each.
                     if (m.handedOff && next?.handedOff != true) {
@@ -470,6 +484,11 @@ fun Thread(
                     } else {
                         pending.quotes.remove(c.id)
                     }
+                } else if (Messages.linked && !Messages.samples.value) {
+                    // Through the Mac, photos and words go out together, from here.
+                    Messages.sendPhotos(context, c.id, photos, text, summary(context, photos), quote)
+                    pending.photos.remove(c.id)
+                    pending.quotes.remove(c.id)
                 } else {
                     // Photos go to OpenBubbles' own chat, which sends them; the chat here shows them waiting there.
                     val handed = listOf(summary(context, photos)) + listOfNotNull(text.ifEmpty { null })
@@ -564,7 +583,8 @@ private fun tapFor(
                 if (openLink != null) openLink(Parts.openable(part.url)) else runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(Parts.openable(part.url))).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
             }
         }
-        is Part.Website, is Part.Attachment -> {
+        // Through the Mac there is no other app to open them in (yet: they show here in a later slice).
+        is Part.Website, is Part.Attachment -> if (Messages.linked) null else {
             { Messages.openInOpenBubbles(context, id) }
         }
     }
@@ -579,7 +599,7 @@ private fun PartContent(
         is Part.Words -> BasicText(part.text, style = Pack.body(Pack.size.item, ink))
         is Part.Link -> Card(part.host, part.path.ifEmpty { null }, "↗", ink)
         is Part.Website -> Card(part.host.ifEmpty { "Website" }, part.title, "↗", ink)
-        is Part.Attachment -> Card(part.summary, "Open in OpenBubbles", if (part.kind == "Video") "▶" else "▣", ink)
+        is Part.Attachment -> Card(part.summary, if (Messages.linked) null else "Open in OpenBubbles", if (part.kind == "Video") "▶" else "▣", ink)
     }
 }
 
@@ -631,7 +651,7 @@ private fun FieldTiles(
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 photos.forEach { uri -> Tile("Remove photo", { onDropPhoto(uri) }) { Thumb(uri) } }
             }
-            BasicText("Photos open in OpenBubbles' chat, ready to send", Modifier.padding(start = 4.dp), style = Pack.body(Pack.size.small, Pack.muted))
+            BasicText(if (Messages.linked) "Photos go out with the words" else "Photos open in OpenBubbles' chat, ready to send", Modifier.padding(start = 4.dp), style = Pack.body(Pack.size.small, Pack.muted))
         }
         if (link != null) {
             Tile("Remove link preview", { onDropLink(link) }, wide = true) {

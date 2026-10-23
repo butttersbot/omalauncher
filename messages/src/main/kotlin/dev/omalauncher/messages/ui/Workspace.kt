@@ -179,7 +179,7 @@ fun Workspace(
             } else {
                 Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
                     BasicText(Pack.heading("Nothing yet"), style = Pack.display(20.sp))
-                    BasicText("Conversations appear as messages arrive in OpenBubbles.", style = Pack.body(Pack.size.body, Pack.muted))
+                    BasicText(if (Messages.linked) "Your conversations are on their way from your Mac." else "Conversations appear as messages arrive in OpenBubbles.", style = Pack.body(Pack.size.body, Pack.muted))
                 }
             }
         }
@@ -292,7 +292,7 @@ private fun openShared(
             open(Parts.openable(p.url))
             pick(s.conversation)
         }
-        else -> Messages.openInOpenBubbles(context, s.conversation)
+        else -> if (Messages.linked) pick(s.conversation) else Messages.openInOpenBubbles(context, s.conversation)
     }
 }
 
@@ -416,7 +416,7 @@ private fun SharedCard(
         when (val p = s.part) {
             is Part.Link -> Card(p.host, p.path.ifEmpty { null }, "↗", Pack.foreground)
             is Part.Website -> Card(p.host.ifEmpty { "Website" }, p.title, "↗", Pack.foreground)
-            is Part.Attachment -> Card(p.summary, "Open in OpenBubbles", if (p.kind == "Video") "▶" else "▣", Pack.foreground)
+            is Part.Attachment -> Card(p.summary, if (Messages.linked) null else "Open in OpenBubbles", if (p.kind == "Video") "▶" else "▣", Pack.foreground)
             is Part.Words -> {}
         }
         BasicText(
