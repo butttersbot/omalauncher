@@ -6,6 +6,13 @@ import java.util.Base64
 import org.json.JSONObject
 
 class ChatArtifactTest {
+    @Test fun phoneBMockupImageLinksAreDetectedWithTheirOriginalPaths() {
+        val files = chatArtifacts("**Manga**\n![Manga](/root/Inbox/soma-messages-mockups/studio-manga.png)\n\n[All images](/root/Inbox/soma-messages-mockups.zip)", "b-reply", "phone-b")
+        assertEquals(1, files.size)
+        assertEquals("/root/Inbox/soma-messages-mockups/studio-manga.png", files.single().location)
+        assertEquals(ArtifactKind.Image, files.single().kind)
+    }
+
     @Test fun outputsComeFromRepliesNotDirectories() {
         val text = """
             Here is [the preview](/Users/boss/Projects/demo/output%20one.html:12).

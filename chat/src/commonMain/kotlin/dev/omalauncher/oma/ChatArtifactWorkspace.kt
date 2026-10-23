@@ -42,15 +42,18 @@ internal fun ChatArtifactWorkspace(
     var selections by rememberSaveable { mutableStateOf(mapOf<String, String>()) }
     var expanded by rememberSaveable { mutableStateOf(false) }
     var opened by remember { mutableStateOf(mapOf<String, ChatArtifact>()) }
+    var fileLists by rememberSaveable { mutableStateOf(setOf<String>()) }
     LaunchedEffect(tab) { expanded = false }
     val selected = artifacts.firstOrNull { it.id == selections[tab] } ?: opened[tab]?.takeIf { it.id == selections[tab] }
-    val open: (ChatArtifact) -> Unit = { opened = opened + (tab to it); selections = selections + (tab to it.id); expanded = false }
-    val close = { selections = selections - tab; opened = opened - tab; expanded = false }
-    BackHandler(selected != null) { close() }
+    val open: (ChatArtifact) -> Unit = { opened = opened + (tab to it); selections = selections + (tab to it.id); fileLists = fileLists - tab; expanded = false }
+    val close = { selections = selections - tab; opened = opened - tab; fileLists = fileLists - tab; expanded = false }
+    val listing = tab in fileLists
+    val panelOpen = selected != null || listing
+    BackHandler(panelOpen) { close() }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         // Portrait Fold windows still have enough room for two useful reading panes. Cover windows do not.
         val wide = maxWidth >= 680.dp
-        val overlay = selected != null && (!wide || expanded)
+        val overlay = panelOpen && (!wide || expanded)
         val focus = LocalFocusManager.current
         LaunchedEffect(overlay) { if (overlay) focus.clearFocus() }
         Row(Modifier.fillMaxSize()) {
@@ -60,27 +63,55 @@ internal fun ChatArtifactWorkspace(
                     artifacts.firstOrNull { it.location == target }?.let { open(it); true } ?: false
                 }) {
                     Column(Modifier.fillMaxSize().widthIn(max = ReadingWidth)) {
-                        if (artifacts.isNotEmpty()) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                            BracketAction("files · ${artifacts.size}", Pack.accent) { open(selected ?: artifacts.first()) }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            BracketAction("files · ${artifacts.size}", Pack.accent) { fileLists = fileLists + tab; expanded = false }
                         }
                         content()
                     }
                 }
             }
-            if (selected != null && !overlay) {
+            if (panelOpen && !overlay) {
                 Box(Modifier.weight(.92f).fillMaxHeight()) {
-                    ArtifactPanel(host, selected, artifacts, false, { expanded = true }, close, open, onDiscuss)
+                    if (listing) ArtifactFiles(artifacts, close, open)
+                    else if (selected != null) ArtifactPanel(host, selected, artifacts, false, { expanded = true }, close, open, onDiscuss)
                 }
             }
         }
         if (overlay) {
             Box(Modifier.fillMaxSize().background(Pack.background)) {
-                ArtifactPanel(host, selected, artifacts, wide, if (wide) ({ expanded = false }) else null, close, open) {
+                if (listing) ArtifactFiles(artifacts, close, open)
+                else if (selected != null) ArtifactPanel(host, selected, artifacts, wide, if (wide) ({ expanded = false }) else null, close, open) {
                     onDiscuss(it)
                     if (!wide) close() else expanded = false
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ArtifactFiles(artifacts: List<ChatArtifact>, onClose: () -> Unit, onOpen: (ChatArtifact) -> Unit) {
+    Column(Modifier.fillMaxSize().background(Pack.background).framed(Pack.hair, Pack.border, Pack.background)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            BasicText("Files", Modifier.weight(1f), style = Pack.body(Pack.size.small))
+            BracketAction("close", Pack.accent, onClose)
+        }
+        ArtifactFileList(artifacts, onOpen)
+    }
+}
+
+@Composable
+private fun ArtifactFileList(artifacts: List<ChatArtifact>, onOpen: (ChatArtifact) -> Unit) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)) {
+        BasicText("From this conversation", style = Pack.mono(Pack.size.small, Pack.muted))
+        if (artifacts.isEmpty()) {
+            Spacer(Modifier.height(16.dp))
+            BasicText("No files in this conversation yet.", style = Pack.body())
+            Spacer(Modifier.height(8.dp))
+            BasicText("File links and code shared in replies appear here.", style = Pack.body(Pack.size.small, Pack.muted))
+        }
+        for (file in artifacts) BasicText(file.name,
+            Modifier.fillMaxWidth().clickable { onOpen(file) }.padding(vertical = 14.dp), style = Pack.body())
     }
 }
 
@@ -115,11 +146,7 @@ private fun ArtifactPanel(
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when {
-                view == "Files" -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)) {
-                    BasicText("From this conversation", style = Pack.mono(Pack.size.small, Pack.muted))
-                    for (file in artifacts) BasicText(file.name,
-                        Modifier.fillMaxWidth().clickable { onOpen(file); view = "Preview" }.padding(vertical = 14.dp), style = Pack.body(color = if (file.id == artifact.id) Pack.accent else Pack.foreground))
-                }
+                view == "Files" -> ArtifactFileList(artifacts) { onOpen(it); view = "Preview" }
                 artifact.kind == ArtifactKind.Web -> if (view == "Source") ArtifactText(artifact.location) else key(reload) { ArtifactWeb(artifact.location, null, Modifier.fillMaxSize()) }
                 read == null -> Column(Modifier.padding(16.dp)) {
                     BasicText("Reading ${artifact.name}…", style = Pack.mono(Pack.size.small, Pack.muted))

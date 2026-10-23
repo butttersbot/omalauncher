@@ -14,6 +14,44 @@ import java.io.File
 
 @OptIn(ExperimentalTestApi::class)
 class ChatArtifactScreenTest : ChatScreenTestBase() {
+    @Test fun filesRemainsAvailableInEmptyPhoneAndMacChatsAndBackReturnsToChat() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        var tab by mutableStateOf("phone-a")
+        setContent {
+            Box(Modifier.size(475.dp, 751.dp)) {
+                ChatArtifactWorkspace(SampleHost(), tab, emptyList(), {}) {
+                    androidx.compose.foundation.text.BasicText("Conversation $tab")
+                }
+            }
+        }
+        for (target in listOf("phone-a", "phone-b", "mac/thread")) {
+            runOnIdle { tab = target }
+            mainClock.advanceTimeBy(1200)
+            onNodeWithText("[ files · 0 ]").performClick()
+            mainClock.advanceTimeBy(1200)
+            onNodeWithText("No files in this conversation yet.").assertExists()
+            runOnIdle { assertTrue(dev.omalauncher.ui.DesktopBack.press()) }
+            mainClock.advanceTimeBy(1200)
+            onNodeWithText("Conversation $target").assertExists()
+        }
+    }
+
+    @Test fun filesOpensTheConversationListBeforeChoosingAnOutput() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        setContent { Box(Modifier.size(475.dp, 751.dp)) { OmaChatScreen(outputHost(), null, {}, OMA_TAB, {}) } }
+        mainClock.advanceTimeBy(1200)
+        onNode(hasSetTextAction()).performTextInput("keep this draft")
+        onNodeWithText("[ files · 1 ]").performClick()
+        mainClock.advanceTimeBy(1200)
+        onNodeWithText("From this conversation").assertExists()
+        onNodeWithText("snippet-1.md").performClick()
+        mainClock.advanceTimeBy(1200)
+        onNodeWithText("Listening room").assertExists()
+        onNodeWithText("[ close ]").performClick()
+        mainClock.advanceTimeBy(1200)
+        onNode(hasSetTextAction()).assertTextContains("keep this draft")
+    }
+
     private fun outputHost() = object : SampleHost() {
         override fun working() = false
         override fun builders() = emptyMap<dev.omalauncher.assist.BuilderId, BuilderState>()

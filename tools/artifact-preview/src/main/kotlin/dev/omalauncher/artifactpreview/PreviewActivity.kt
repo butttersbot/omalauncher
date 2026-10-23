@@ -36,14 +36,15 @@ class PreviewActivity : ComponentActivity() {
         setContent {
             Box(Modifier.fillMaxSize()) {
                 Box(Modifier.fillMaxHeight().then(if (narrow) Modifier.width(400.dp) else Modifier.fillMaxWidth())) {
-                    OmaChatScreen(remember { PreviewHost(this@PreviewActivity) }, null, {}, OMA_TAB, {})
+                    val empty = intent.getBooleanExtra("empty", false)
+                    OmaChatScreen(remember { PreviewHost(this@PreviewActivity, empty) }, null, {}, if (empty) PHONE_THREAD_B else OMA_TAB, {})
                 }
             }
         }
     }
 }
 
-private class PreviewHost(private val context: Context) : ChatHost {
+private class PreviewHost(private val context: Context, private val empty: Boolean = false) : ChatHost {
         val now = System.currentTimeMillis()
         private val page = """<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1">
 <style>body{margin:0;padding:24px;background:#fdfdfb;color:#111113;font-family:system-ui}small{color:#d7262d;font-size:10px;letter-spacing:.1em}h1{font-size:32px;line-height:1.15;margin:18px 0}p{font-size:14px;line-height:1.6}button{background:#111113;color:#fdfdfb;padding:12px 18px;border:0}section{border:1px solid #111113;padding:18px;margin:22px 0}.record{border-radius:50%;width:100px;height:100px;background:repeating-radial-gradient(#111113 0 3px,#444 4px);margin:15px auto;display:grid;place-items:center}.record:after{content:"";width:28px;height:28px;border:8px solid #fdfdfb;border-radius:50%;background:#d7262d}</style>
@@ -64,7 +65,7 @@ Open the preview to try the layout. We can keep talking while you look at it.
             return ArtifactRead.Ready(ArtifactDocument(path.substringAfterLast('/'), if (html) "text/html" else "text/markdown", content.toByteArray(), "sample-v1"))
         }
 
-        override fun tasks() = thread
+        override fun tasks() = if (empty) emptyList() else thread
         override fun updateTask(time: Long, save: Boolean, change: (ChatTask) -> ChatTask) {}
         override fun working() = false
         override fun builders() = emptyMap<BuilderId, BuilderState>()
@@ -80,6 +81,7 @@ Open the preview to try the layout. We can keep talking while you look at it.
         @Composable override fun linuxInstalled() = true
         override fun frontReady() = true
         override fun threads() = listOf(AgentThread(PHONE_THREAD, "Phone", ThreadState.Working, "running the tests", "working", worked = now)) +
+            (if (empty) listOf(AgentThread(PHONE_THREAD_B, "Phone B", ThreadState.Idle, "", "idle", worked = now)) else emptyList()) +
             book.chats.map { dev.omalauncher.assist.chatThread(it, NEW_CHAT_NAME, thread, MacView()) }
         override fun liveThreads(all: List<AgentThread>, pinned: Set<String>, archived: Set<String>) = all
         var book = TabMeta()

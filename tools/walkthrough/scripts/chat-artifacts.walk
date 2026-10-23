@@ -52,6 +52,22 @@ expect [ expand ]
 tap [ close ]
 expect Keep this draft
 shot artifact-unfolded-chat-restored
+# Regression: Files must be discoverable in Phone B even before it has outputs.
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -n dev.omalauncher.artifactpreview/.PreviewActivity --ez empty true
+expect Phone B
+expect [ files · 0 ]
+tap [ files · 0 ]
+expect No files in this conversation yet.
+shot artifact-phone-b-empty-files-unfolded
+tap [ close ]
+fold folded
+expect [ files · 0 ]
+tap [ files · 0 ]
+expect No files in this conversation yet.
+shot artifact-phone-b-empty-files-cover
+key BACK
+expect [ files · 0 ]
 [phone] Open an output from an existing Mac Pro conversation: Preview loads through the authenticated runner, Source and Files work; Discuss adds context to the draft without sending.
 [phone] Open an output from this MacBook conversation after its runner update; confirm on-demand file read and interactive HTML without an external app switch.
 [phone] With a web page focused, physically fold/unfold three times. Chat and selected output remain usable; close/Back returns to the existing draft and reading position.
