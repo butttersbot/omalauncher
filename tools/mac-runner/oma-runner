@@ -2127,6 +2127,70 @@ class CodexCatalog:
         self.process.stdout.close()
 
 
+def claude_process_start(pid):
+    """Compare the same process identity Claude records; unknown identity is conservative."""
+    if LINUX:
+        try:
+            # Linux /proc start ticks, field 22; comm can contain spaces and parentheses.
+            return pathlib.Path('/proc/%d/stat' % pid).read_text().rsplit(')', 1)[1].split()[19]
+        except (OSError, IndexError):
+            return None
+    try:
+        result = subprocess.run(['/bin/ps', '-p', str(pid), '-o', 'lstart='],
+                                capture_output=True, text=True, timeout=2, env={**os.environ, 'LC_ALL': 'C'})
+        return ' '.join(result.stdout.split()) if result.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def claude_holder_problem(thread):
+    if not thread.meta.get('claude_external'):
+        return None
+    folder = CLAUDE_PROJECTS.parent / 'sessions'
+    own_pid = thread.process.pid if thread.process is not None else None
+    try:
+        records = list(folder.iterdir()) if folder.exists() else []
+    except OSError:
+        return 'Cannot check whether this Claude conversation is open on the Mac. No phone turn was started.'
+    for path in records:
+        if not re.fullmatch(r'[1-9][0-9]*\.json', path.name):
+            continue  # Never read peer keys, sockets, or other session-adjacent files.
+        try:
+            if path.is_symlink() or path.stat().st_size > 65536:
+                continue
+            record = json.loads(path.read_text())
+            if not isinstance(record, dict) or record.get('sessionId') != thread.meta.get('session'):
+                continue
+            pid = int(path.stem)
+            if record.get('pid') != pid:
+                return 'Claude session process metadata is inconsistent. No phone turn was started.'
+            if pid == own_pid:
+                continue  # The runner's kept process already serializes phone turns.
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                continue
+            except PermissionError:
+                pass  # Alive but not inspectable: refuse, do not assume it is gone.
+            actual = claude_process_start(pid)
+            expected = record.get('procStart')
+            if not LINUX and expected is not None:
+                expected = ' '.join(str(expected).split())
+                try:
+                    time.strptime(expected, '%a %b %d %H:%M:%S %Y')
+                    time.strptime(actual or '', '%a %b %d %H:%M:%S %Y')
+                except ValueError:
+                    actual = None  # Unknown format: never mistake an open session for a stale PID.
+            if actual is not None and expected is not None and str(actual) != str(expected):
+                continue  # PID was reused; this stale record holds no session.
+            state = 'working' if record.get('status') == 'busy' else 'still open'
+            return ('This Claude conversation is %s on the Mac. Close that conversation there before replying from the phone; '
+                    'otherwise returning to the old Mac window can fork its history. No phone turn was started.' % state)
+        except (OSError, ValueError, TypeError):
+            return 'Cannot read Claude session process metadata. No phone turn was started.'
+    return None
+
+
 def claude_discovery_start():
     """Include sessions active in the day before first activation, then retain that boundary."""
     marker = STATE / 'claude-discovery.json'
@@ -2595,6 +2659,9 @@ def collect_mail():
 def take(thread, text):
     """The owner's words: at once when the thread is free, otherwise when the turn before them ends."""
     with changed:
+        problem = claude_holder_problem(thread)
+        if problem:
+            return {'taken': 'refused', 'error': problem}
         if isinstance(thread.driver, Codex) and not text.startswith('[Agent mail '):
             for approval, entry in list(thread.pending.items()):
                 if thread.driver.user_input(entry, text):
@@ -2763,6 +2830,11 @@ def claude_turn(thread, text):
         else:
             kept = None
     if kept is None:
+        problem = claude_holder_problem(thread)
+        if problem:
+            with changed:
+                thread.emit('error', code='session_open', text=problem)
+            return
         driver = Claude(thread, text)
         try:
             process = subprocess.Popen(driver.command(), cwd=thread.meta['project'], env={**driver.environment(), 'OMA_THREAD_ID': thread.meta['id'], 'SOMA_AGENT_KIND': thread.meta['kind'], **canvas_env(thread)},
@@ -3143,7 +3215,10 @@ class Runner(BaseHTTPRequestHandler):
             text = body.get('text')
             if not isinstance(text, str) or not text.strip():
                 return self.answer(400, {'ok': False, 'error': 'a JSON body with "text" is needed'})
-            return self.answer(200, {'ok': True, **take(thread, text)})
+            result = take(thread, text)
+            if result.get('taken') == 'refused':
+                return self.answer(409, {'ok': False, **result})
+            return self.answer(200, {'ok': True, **result})
         if parts[2:] == ['stop']:
             return self.answer(200, {'ok': True, 'stopped': stop(thread)})
         if parts[2:] == ['command-approvals', 'clear']:

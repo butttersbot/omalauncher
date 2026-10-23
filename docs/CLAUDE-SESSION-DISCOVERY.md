@@ -22,7 +22,7 @@ rechecks that condition before committing a scan. Runner-owned sessions are not
 duplicated. Custom session titles are used when present; otherwise the first
 prompt is the title.
 
-Finish any active Mac turn before replying from the phone. This resumes the
+Close the native Mac conversation before replying from the phone, even when idle. This resumes the
 conversation through another CLI process, just as existing runner-owned Claude
 threads do; it is not keystroke injection into the Mac terminal. Native activity
 and native permission prompts are not forwarded. New discovered threads use
@@ -79,8 +79,38 @@ Fold verification:
   after scans, desktop reload/continuation and restart after phone turns.
 
 Known limitation: native activity is not detected. A native Mac turn may still be
-working even when Soma says idle. Finish the Mac turn before sending from Soma;
+working even when Soma says idle. Close the native Mac conversation before sending from Soma;
 do not drive the same session simultaneously from the desktop and phone. The
 Claude desktop view may require reopening to see phone turns; continuing a stale
 view may select an older conversation leaf. These are not claimed fixed by the
 successful phone round trips. The owner's live Mac agent was not used for tests.
+
+
+## Open-session guard (supersedes earlier finish-turn advice)
+
+The Mac's stale-leaf test proved a long-lived process does not learn about a
+phone process's turns. Typing in that old process branches around the phone
+turn. Finishing a native turn is therefore insufficient: close that native
+conversation before resuming from Soma, and reopen/resume it afresh when
+returning to the desktop.
+
+For discovered sessions, `take` now reads only numeric `sessions/<pid>.json`
+metadata and refuses before queueing if another live process holds the UUID,
+whether busy or idle. HTTP returns 409 with the explanation. Claude launch
+rechecks after queueing and before a new process starts. The runner's own kept
+process is excluded, preserving serial phone turns. Dead records and verified
+PID reuse are ignored; unknown process identity is conservative and refuses.
+Linux compares /proc start ticks; Darwin compares normalized C-locale `ps lstart`
+when the recorded format is recognized. No `.key` files, peer tokens, or sockets
+are read, and no native process is stopped. This guards observed holders; it
+cannot atomically prevent somebody opening a Mac window immediately after a
+check, so simultaneous desktop/phone use remains unsupported.
+
+The first two phone round trips passed because the spare native session was
+closed, not because overlapping native and phone processes were safe. The Mac
+agent independently confirmed one transcript UUID and no duplicate imported
+phone turns. The repeated native-process stale-leaf probes then intentionally
+forked the spare session only. Those probes are not owner work.
+
+Guard tests: PASS 19 discovery/reply/holder tests on the Fold; deployment and
+open-refusal/closed-reply checks on the Mac pending.

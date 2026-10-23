@@ -161,6 +161,85 @@ class DiscoveryTests(unittest.TestCase):
             driver.heard({'type': 'system', 'subtype': 'init', 'session_id': 'another-session'})
         self.assertEqual(self.sid, t.meta['session'])
 
+    def holder(self, t, status='busy', **extra):
+        folder = self.root / 'sessions'
+        folder.mkdir(exist_ok=True)
+        pid = os.getpid()
+        record = dict(pid=pid, sessionId=t.meta['session'], status=status,
+                      procStart=self.m['claude_process_start'](pid))
+        record.update(extra)
+        (folder / ('%d.json' % pid)).write_text(json.dumps(record))
+        return pid
+
+    def test_busy_and_idle_open_sessions_refuse_before_queue(self):
+        self.write(self.row())
+        t, = self.sync()
+        for state in ('busy', 'idle'):
+            self.holder(t, state)
+            result = self.m['take'](t, 'phone turn')
+            self.assertEqual('refused', result['taken'])
+            self.assertIn('Close that conversation', result['error'])
+            self.assertEqual([], t.queue)
+            self.assertIsNone(t.worker)
+
+    def test_dead_and_reused_pid_do_not_hold_session(self):
+        self.write(self.row())
+        t, = self.sync()
+        self.holder(t)
+        with patch.object(self.m['os'], 'kill', side_effect=ProcessLookupError):
+            self.assertIsNone(self.m['claude_holder_problem'](t))
+        self.m['claude_process_start'] = lambda pid: 'new-start'
+        self.assertIsNone(self.m['claude_holder_problem'](t))
+
+    def test_unknown_identity_refuses_and_own_process_is_excluded(self):
+        import types
+        self.write(self.row())
+        t, = self.sync()
+        pid = self.holder(t)
+        self.m['claude_process_start'] = lambda pid: None
+        self.assertIsNotNone(self.m['claude_holder_problem'](t))
+        t.process = types.SimpleNamespace(pid=pid)
+        self.assertIsNone(self.m['claude_holder_problem'](t))
+
+    def test_darwin_start_identity_and_unknown_format(self):
+        self.write(self.row())
+        t, = self.sync()
+        self.m['LINUX'] = False
+        self.m['claude_process_start'] = lambda pid: 'Thu Oct 22 13:44:00 2026'
+        self.holder(t, procStart='Thu Oct 22 13:44:00 2026')
+        self.assertIsNotNone(self.m['claude_holder_problem'](t))
+        self.holder(t, procStart='Thu Oct 22 12:44:00 2026')
+        self.assertIsNone(self.m['claude_holder_problem'](t))
+        self.holder(t, procStart='unrecognized identity format')
+        self.assertIsNotNone(self.m['claude_holder_problem'](t))
+
+    def test_http_refuses_open_holder_without_starting_worker(self):
+        import io
+        self.write(self.row())
+        t, = self.sync()
+        self.holder(t)
+        request = self.m['Runner'].__new__(self.m['Runner'])
+        request.allowed = lambda: True
+        request.parts = lambda: (['threads', t.meta['id'], 'messages'], {})
+        payload = json.dumps({'text': 'do work'}).encode()
+        request.headers = {'Content-Length': str(len(payload))}
+        request.rfile = io.BytesIO(payload)
+        answers = []
+        request.answer = lambda code, body: answers.append((code, body))
+        request.do_POST()
+        self.assertEqual(409, answers[0][0])
+        self.assertFalse(answers[0][1]['ok'])
+        self.assertEqual([], t.queue)
+        self.assertIsNone(t.worker)
+
+    def test_no_peer_keys_are_read(self):
+        self.write(self.row())
+        t, = self.sync()
+        folder = self.root / 'sessions'
+        folder.mkdir()
+        (folder / '123.peer.key').write_text('NOT JSON: DO NOT READ')
+        self.assertIsNone(self.m['claude_holder_problem'](t))
+
     def test_equal_size_rewrite_and_record_filtering(self):
         self.write(self.row())
         t, = self.sync()

@@ -1,8 +1,10 @@
 # Owner's native MacBook session and Tailscale connection require the real phone.
-[phone] Open a native Claude Code conversation on the MacBook, with one prompt and visible reply; keep the existing native Codex session. Finish the Mac turn before phone replies.
+[phone] Open a native Claude Code conversation on the MacBook, with one prompt and visible reply; keep the existing native Codex session. Close the native Mac conversation before phone replies.
 [phone] With no Soma-owned work running or waiting, deploy and restart the updated MacBook runner.
 [phone] In Soma Sessions select MacBook Pro: within two scan periods the already-open Claude conversation must appear alongside Codex. Capture the session list screenshot.
 [phone] Open that Claude conversation: verify prompt/reply; no thinking, tool-result payloads or subagent conversations appear. Capture screenshot.
 [phone] Send a harmless connection-check prompt from Soma. Verify a real reply, unchanged Claude session UUID, no fork, and no duplicate user or assistant text after two scan periods. Capture screenshot.
 [phone] Continue with another harmless phone prompt and verify context from the prior turn. Native Mac Claude remains usable after its view is resumed/refreshed.
 [phone] Restart the idle runner again: verify the same session, preserved history, and another successful phone reply without repeated messages. Capture screenshot.
+[phone] On a spare native session held open on the Mac, try a phone reply: expect an open-on-Mac refusal, no queued turn, no new process. Test both busy and idle holders.
+[phone] Close the spare native process without deleting its transcript, then send a phone prompt: verify success in the same session, retained context, and no duplicate messages.
