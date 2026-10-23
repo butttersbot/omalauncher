@@ -32,8 +32,8 @@ log gif handle follows
 log gif expanded=true
 nolog gif expanded=false
 shot expanded-after-pull
-# And down again, from the expanded panel's handle (about 0.09 of the height; above it is Android's status bar).
-swipe 0.5 0.095 0.5 0.6 900
+# And down again, from the expanded panel's handle (about 0.066 of the height under the 110 px status bar of the phone and, since 2026-10-23, the emulator; it was 0.095 under the emulator's old 152 px one).
+swipe 0.5 0.066 0.5 0.6 900
 wait 800
 log gif expanded=false
 shot collapsed-after-pull
