@@ -332,6 +332,34 @@ object MacLink {
         }
     }
 
+    /**
+     * Attachment [id] from the Mac, kept in the app's cache (where its file provider can show it in another app); a
+     * picture comes as JPEG, whatever it was taken as. Off the main thread; null when the Mac can't give it.
+     */
+    fun file(
+        context: Context,
+        id: String,
+        picture: Boolean,
+    ): File? {
+        val at = address ?: return null
+        val name = java.security.MessageDigest.getInstance("SHA-256").digest(id.toByteArray()).take(12).joinToString("") { "%02x".format(it) }
+        val dir = File(context.cacheDir, "shared/mac").apply { mkdirs() }
+        val f = File(dir, name + if (picture) ".jpg" else "")
+        if (f.isFile && f.length() > 0) return f
+        val c = open(at, "/v1/attachments/${path(id)}" + if (picture) "?jpeg=1" else "", timeout = 60_000)
+        try {
+            if (c.responseCode !in 200..299) return null
+            val tmp = File(dir, "$name.part")
+            c.inputStream.use { input -> tmp.outputStream().use { input.copyTo(it) } }
+            return if (tmp.renameTo(f)) f else null
+        } catch (e: Exception) {
+            Log.w(TAG, "attachment", e)
+            return null
+        } finally {
+            c.disconnect()
+        }
+    }
+
     /** The saved address, in the app's own files. */
     fun file(context: Context) = File(context.filesDir, "mac.json")
 }

@@ -23,7 +23,8 @@ shot inbox-from-the-mac
 tap Weekend
 wait 2000
 expect Look at this
-expect 1 Photo
+# The photo itself, fetched from the Mac (the demo's is a tiny orange square), in place of a "1 Photo" card.
+expect Photo
 expect from your Mac
 shot group-with-photo-card
 key BACK

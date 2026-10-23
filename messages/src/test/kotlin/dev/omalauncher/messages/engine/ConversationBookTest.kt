@@ -132,5 +132,8 @@ class ConversationBookTest {
         assertTrue(m.failed)
         assertEquals("c:k1", m.id)
         assertTrue(book.without("c1", m)["c1"]!!.messages.isEmpty())
+        // What a message stands for survives saving too.
+        val photo = ConversationBook().fromMac("c2", "Ben", false, listOf(Message("1 Photo", 1, "Ben", id = "p#a", files = listOf("A1|image/heic"))), unread = 0)
+        assertEquals(listOf("A1|image/heic"), ConversationBook.fromJson(photo.toJson())["c2"]!!.messages.single().files)
     }
 }

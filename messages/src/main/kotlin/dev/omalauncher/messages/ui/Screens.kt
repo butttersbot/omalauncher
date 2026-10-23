@@ -60,6 +60,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -413,7 +414,7 @@ fun Thread(
                             modifier = Modifier.padding(top = if (first && j == 0) 8.dp else 2.dp),
                         ) { ink ->
                             if (j == 0) m.quote?.let { QuoteInBalloon(it, ink) }
-                            PartContent(part, ink)
+                            PartContent(part, ink, m.files)
                         }
                     }
                     if (m.failed && next?.failed != true) {
@@ -605,12 +606,76 @@ private fun tapFor(
 private fun PartContent(
     part: Part,
     ink: Color,
+    files: List<String> = emptyList(),
 ) {
     when (part) {
         is Part.Words -> BasicText(part.text, style = Pack.body(Pack.size.item, ink))
         is Part.Link -> Card(part.host, part.path.ifEmpty { null }, "↗", ink)
         is Part.Website -> Card(part.host.ifEmpty { "Website" }, part.title, "↗", ink)
-        is Part.Attachment -> Card(part.summary, if (Messages.linked) null else "Open in OpenBubbles", if (part.kind == "Video") "▶" else "▣", ink)
+        is Part.Attachment ->
+            // From the Mac, pictures show as themselves; anything else, by its card.
+            if (files.any { it.substringAfter('|').startsWith("image/") }) {
+                Photos(files.filter { it.substringAfter('|').startsWith("image/") })
+            } else {
+                Card(part.summary, if (Messages.linked) null else "Open in OpenBubbles", if (part.kind == "Video") "▶" else "▣", ink)
+            }
+    }
+}
+
+/**
+ * Pictures from the Mac, fetched once and kept in the cache: one alone fits a balloon's width, several sit side by side
+ * and scroll. A tap opens the picture in the phone's own viewer.
+ */
+@Composable
+private fun Photos(files: List<String>) {
+    val one = files.size == 1
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        files.forEach { f ->
+            val id = f.substringBefore('|')
+            val context = LocalContext.current
+            val file by produceState<java.io.File?>(null, id) { value = withContext(Dispatchers.IO) { MacLink.file(context, id, picture = true) } }
+            val picture by produceState<ImageBitmap?>(null, file) {
+                val got = file ?: return@produceState
+                value = withContext(Dispatchers.IO) { runCatching { decode(got, 1080) }.getOrNull() }
+            }
+            val shape = composerShape(12.dp)
+            val size = if (one) Modifier.widthIn(max = 260.dp).heightIn(min = 120.dp, max = 320.dp) else Modifier.size(132.dp)
+            Box(
+                size.clip(shape).background(Pack.surface).clickable(enabled = file != null) { file?.let { view(context, it) } }
+                    .semantics { contentDescription = "Photo" },
+                contentAlignment = Alignment.Center,
+            ) {
+                val p = picture
+                if (p != null) {
+                    Image(p, null, if (one) Modifier.widthIn(max = 260.dp) else Modifier.fillMaxSize(), contentScale = if (one) ContentScale.Fit else ContentScale.Crop)
+                } else {
+                    BasicText(if (file == null) "Photo" else "", style = Pack.body(Pack.size.small, Pack.muted))
+                }
+            }
+        }
+    }
+}
+
+/** [f] decoded no wider or taller than about [max] pixels. */
+private fun decode(
+    f: java.io.File,
+    max: Int,
+): ImageBitmap? {
+    val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    android.graphics.BitmapFactory.decodeFile(f.path, bounds)
+    var sample = 1
+    while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= max) sample *= 2
+    return android.graphics.BitmapFactory.decodeFile(f.path, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample })?.asImageBitmap()
+}
+
+/** Opens [f] in the phone's own viewer. */
+private fun view(
+    context: android.content.Context,
+    f: java.io.File,
+) {
+    val uri = androidx.core.content.FileProvider.getUriForFile(context, "dev.omalauncher.messages.photos", f)
+    runCatching {
+        context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, "image/jpeg").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 }
 

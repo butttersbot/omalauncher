@@ -36,6 +36,9 @@ class MacWireTest {
         val kept = MacWire.toMessages(m, nameOf = { if (it == "ben@example.com") "Ben" else null })
         assertEquals(listOf("1 Photo", "Look at this"), kept.map { it.text })
         assertEquals(listOf("M4#a", "M4"), kept.map { it.id })
+        // The attachments' message knows what it stands for, to show the pictures themselves.
+        assertEquals(listOf("A1|image/png"), kept[0].files)
+        assertTrue(kept[1].files.isEmpty())
         assertTrue(kept.all { it.sender == "Ben" })
         // The app's own reading of the words turns the summary into an attachment bubble.
         assertTrue(Parts.of(kept[0].text).single() is Part.Attachment)

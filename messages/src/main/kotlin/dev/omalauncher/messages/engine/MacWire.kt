@@ -136,7 +136,7 @@ object MacWire {
         val quote = m.replyTo?.let(quoteOf)
         val parts =
             listOfNotNull(
-                summary(m.attachments)?.let { Message(it, m.at, sender, id = m.id + "#a") },
+                summary(m.attachments)?.let { Message(it, m.at, sender, id = m.id + "#a", files = m.attachments.map { a -> a.id + "|" + a.mime }) },
                 // The object replacement character stands where an attachment sat in the words.
                 m.text.replace("￼", "").trim().takeIf { it.isNotEmpty() }?.let { Message(it, m.at, sender, id = m.id) },
             )
