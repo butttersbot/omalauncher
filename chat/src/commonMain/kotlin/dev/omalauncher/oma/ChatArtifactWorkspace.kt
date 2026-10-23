@@ -146,7 +146,11 @@ private fun ArtifactPanel(
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when {
-                view == "Files" -> ArtifactFileList(artifacts) { onOpen(it); view = "Preview" }
+                view == "Files" -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)) {
+                    BasicText("From this conversation", style = Pack.mono(Pack.size.small, Pack.muted))
+                    for (file in artifacts) BasicText(file.name,
+                        Modifier.fillMaxWidth().clickable { onOpen(file); view = "Preview" }.padding(vertical = 14.dp), style = Pack.body(color = if (file.id == artifact.id) Pack.accent else Pack.foreground))
+                }
                 artifact.kind == ArtifactKind.Web -> if (view == "Source") ArtifactText(artifact.location) else key(reload) { ArtifactWeb(artifact.location, null, Modifier.fillMaxSize()) }
                 read == null -> Column(Modifier.padding(16.dp)) {
                     BasicText("Reading ${artifact.name}…", style = Pack.mono(Pack.size.small, Pack.muted))
