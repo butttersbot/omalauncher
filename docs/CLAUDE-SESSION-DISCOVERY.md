@@ -199,3 +199,10 @@ This supersedes the earlier requirement to close an idle Mac conversation. A ver
 A verified busy holder waits before starting Claude, with a visible note, cancellation, and a 30-minute timeout. If the holder exits while waiting, the original session resumes normally; if it becomes idle, the phone forks. Cancellation never signals the native holder. Unknown process identity, unknown status and unreadable metadata still refuse before queueing. No peer keys or sockets are read.
 
 Isolated regression coverage includes idle fork and persisted discovery aliases, busy-to-idle fork, busy-to-closed resume, cancellation, timeout, unchanged original transcript, strict init UUID checks and metadata refusals. Real Mac/Fold walkthrough remains pending; use `tools/walkthrough/scripts/claude-discovery.walk` and record its results before calling the rollout done. Process metadata is a snapshot: a person can start a new Mac turn after the check, so simultaneous editing of the same project remains a limitation.
+
+
+### Follow-up after the Fold rate limit
+
+The real idle-holder test returned the first user prompt from inherited context and the phone-copy note; a second message sent through the actual Soma composer returned `phone continuation pong` with the same original context. The closed spare returned `phone C pong` in a normal resume. The busy spare showed the waiting note on the Fold, then safely stopped with a metadata-read error while another test process exited. It did not complete the busy-to-idle path, so that live step remains pending.
+
+An accepted message now rechecks uncertain metadata for at most ten seconds, without starting any agent while uncertain. Initial HTTP admission still refuses unreadable metadata immediately; persistent uncertainty after admission still produces an error. Regression tests cover recovery from a truncated metadata file, persistent failure without starting an agent, and a second phone turn continuing the fork rather than forking again. Local discovery: 27 PASS, one Darwin-only skip; Codex approvals: six PASS. Updated Mac deployment and remaining live cancellation/wait tests are pending.
