@@ -1,6 +1,7 @@
 package dev.omalauncher.artifactpreview
 
 import android.app.Instrumentation
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Intent
 import android.os.Bundle
 import android.os.SystemClock
@@ -25,14 +26,17 @@ class PreviewInstrumentation : Instrumentation() {
         if (node == null) return emptyList()
         return listOf(node) + (0 until node.childCount).flatMap { nodes(node.getChild(it)) }
     }
-    private fun find(text: String): AccessibilityNodeInfo? = nodes(uiAutomation.rootInActiveWindow).firstOrNull { it.text?.contains(text) == true || it.contentDescription?.contains(text) == true }
+    private fun appNodes(): List<AccessibilityNodeInfo> =
+        (uiAutomation.windows.mapNotNull { it.root } + listOfNotNull(uiAutomation.rootInActiveWindow))
+            .flatMap(::nodes).filter { it.packageName == targetContext.packageName }
+    private fun find(text: String): AccessibilityNodeInfo? = appNodes().firstOrNull { it.text?.contains(text) == true || it.contentDescription?.contains(text) == true }
     private fun await(text: String): AccessibilityNodeInfo {
         val end = SystemClock.uptimeMillis() + 12_000
         while (SystemClock.uptimeMillis() < end) {
             find(text)?.let { return it }
             SystemClock.sleep(100)
         }
-        error("Expected fixture UI: $text. Seen: " + nodes(uiAutomation.rootInActiveWindow).mapNotNull { it.text }.joinToString(" | "))
+        error("Expected fixture UI: $text. Seen: " + appNodes().mapNotNull { it.text }.joinToString(" | "))
     }
     private fun click(node: AccessibilityNodeInfo) {
         var current: AccessibilityNodeInfo? = node
@@ -55,6 +59,12 @@ class PreviewInstrumentation : Instrumentation() {
     override fun onStart() {
         val result = Bundle()
         try {
+            // The IME can be the active window while the other pane remains visible. Retrieve
+            // the fixture's application windows and selectable descendants, not just that window.
+            uiAutomation.serviceInfo = uiAutomation.serviceInfo.apply {
+                flags = flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
+                    AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS
+            }
             val activity = startActivitySync(Intent(targetContext, PreviewActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as PreviewActivity
             await("listening-room.html")
             val field = nodes(uiAutomation.rootInActiveWindow).first { it.isEditable }
