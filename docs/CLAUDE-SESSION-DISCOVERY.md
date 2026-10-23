@@ -156,3 +156,12 @@ No real native conversation was closed or interrupted, and no peer credential
 or socket was accessed. Closed-session phone work is verified; shared concurrent
 Mac/phone conversation state is unsupported. A fresh Mac session with a handoff
 is a separate safe workflow; automatic desktop handoff is not implemented.
+
+Follow-up UI observation: after the final result settled, screenshot
+/root/.local/share/omalauncher/attachments/phone-screen-706b0d8a-5bd5-485b-9f65-134eaccbf335.png
+was viewed and shows one final pong line, so the earlier duplicate observation
+was transient; no persistent duplicate was reproduced. The native Darwin ps
+regression now also runs against real ps under a Honolulu parent timezone on
+Mac hosts, and skips on Linux. Final Fold test count: 20 passed, 1 Darwin-only
+check skipped; Mac execution of this final added check is pending (the Mac agent
+already ran its equivalent native timezone regression successfully).

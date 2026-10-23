@@ -2,6 +2,7 @@
 import ast
 import json
 import os
+import sys
 from pathlib import Path
 import tempfile
 import time
@@ -210,6 +211,14 @@ class DiscoveryTests(unittest.TestCase):
             self.assertEqual('Thu Oct 22 13:44:00 2026', self.m['claude_process_start'](123))
         self.assertEqual('UTC', run.call_args.kwargs['env']['TZ'])
         self.assertEqual('C', run.call_args.kwargs['env']['LC_ALL'])
+
+    @unittest.skipUnless(sys.platform == 'darwin', 'real Darwin ps timezone regression')
+    def test_real_darwin_ps_under_honolulu_timezone(self):
+        import subprocess
+        expected = subprocess.check_output(['/bin/ps', '-p', str(os.getpid()), '-o', 'lstart='],
+                                           text=True, env={**os.environ, 'TZ': 'UTC', 'LC_ALL': 'C'})
+        with patch.dict(os.environ, {'TZ': 'Pacific/Honolulu'}):
+            self.assertEqual(' '.join(expected.split()), self.m['claude_process_start'](os.getpid()))
 
     def test_darwin_start_identity_and_unknown_format(self):
         self.write(self.row())
