@@ -338,14 +338,28 @@ fun Thread(
     // Messages that came since the place was left, or while reading further up.
     var fresh by remember(c.id) { mutableIntStateOf(if (left.hasPlace) (size - left.count).coerceAtLeast(0) else 0) }
     var seen by remember(c.id) { mutableIntStateOf(size) }
+    // The oldest message shown, to tell earlier history loaded at the top from new messages at the bottom.
+    var oldest by remember(c.id) { mutableStateOf(c.messages.firstOrNull()) }
     LaunchedEffect(size) {
         val came = size - seen
         seen = size
+        val before = oldest
+        oldest = c.messages.firstOrNull()
+        // Earlier history arrived above: the same messages stay in view where the owner is reading.
+        val prepended = before?.let { b -> c.messages.indexOf(b) }?.takeIf { it > 0 } ?: 0
+        if (prepended > 0) {
+            list.scrollToItem(list.firstVisibleItemIndex + prepended, list.firstVisibleItemScrollOffset)
+            if (came - prepended <= 0) return@LaunchedEffect
+        }
         if (came <= 0) return@LaunchedEffect
         // Following along at the bottom: the new ones come into view. Reading further up: the pill counts them.
         if (latest) list.animateScrollToItem(size - 1) else fresh += came
     }
     LaunchedEffect(latest) { if (latest) fresh = 0 }
+    // Near the top: the Mac's earlier history, a page at a time (the first fetch brings only the latest 50).
+    LaunchedEffect(c.id) {
+        snapshotFlow { list.firstVisibleItemIndex }.collect { if (it <= 2 && currentSize > 0) Messages.loadEarlier(c.id) }
+    }
     // The draft, the quote and the place are kept as they change, and once more on leaving, so a closed app loses none.
     fun keep() {
         val place = if (latest) -1 to 0 else list.firstVisibleItemIndex to list.firstVisibleItemScrollOffset

@@ -214,6 +214,26 @@ object MacLink {
         ms.forEach { Messages.fromMac(id, null, null, messagesOf(it), unread = null, counting = false) }
     }
 
+    /** A page of [chat]'s history before [before]; [done] says whether there was any it didn't have. */
+    fun earlier(
+        chat: String,
+        before: Long,
+        done: (Boolean) -> Unit,
+    ) {
+        val at = address ?: return done(false)
+        io.execute {
+            val more =
+                runCatching {
+                    val had = Messages.book.value[chat]?.messages?.size ?: 0
+                    // Oldest first, as history is, so a reply finds the message it quotes. A failed fetch counts as more to come.
+                    MacWire.messages(get(at, "/v1/chats/${path(chat)}/messages?limit=50&before=$before"))
+                        .forEach { Messages.fromMac(chat, null, null, messagesOf(it), unread = null, counting = false) }
+                    (Messages.book.value[chat]?.messages?.size ?: 0) > had
+                }.onFailure { Log.w(TAG, "earlier", it) }.getOrDefault(true)
+            done(more)
+        }
+    }
+
     /** Holds the event stream open until it drops. */
     private fun listen(at: MacAddress) {
         // The service sends a keep-alive every 20 s; silence for longer than this is a dead link.

@@ -338,6 +338,23 @@ object Messages {
         MacLink.tapback(id, macId, kind, remove) { why -> notice.value = "Tapback not sent: $why" }
     }
 
+    private val loadingEarlier = ConcurrentHashMap.newKeySet<String>()
+    private val allLoaded = ConcurrentHashMap.newKeySet<String>()
+
+    /** The page of [id]'s history from the Mac before its oldest message here; nothing once it has all of it. */
+    fun loadEarlier(id: String) {
+        if (!linked || samples.value || id in allLoaded || !loadingEarlier.add(id)) return
+        val oldest = real[id]?.messages?.firstOrNull { it.id != null && !it.id.startsWith("c:") }?.time
+        if (oldest == null) {
+            loadingEarlier.remove(id)
+            return
+        }
+        MacLink.earlier(id, oldest) { more ->
+            if (!more) allLoaded.add(id)
+            loadingEarlier.remove(id)
+        }
+    }
+
     /** Tries a failed [message] again: its words, or the photo picked here. */
     @Synchronized
     fun retry(
