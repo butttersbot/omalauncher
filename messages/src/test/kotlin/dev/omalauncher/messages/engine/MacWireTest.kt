@@ -63,6 +63,23 @@ class MacWireTest {
     }
 
     @Test
+    fun tapbacksGoUnderTheLastPart() {
+        val m =
+            MacWire.msg(
+                JSONObject(
+                    """{"id":"T","chatId":"c","fromMe":true,"text":"look","at":1,"attachments":[{"id":"a","name":"p.jpg","mime":"image/jpeg"}],
+                    "tapbacks":[{"sender":"+1555","kind":"love","fromMe":false},{"sender":null,"kind":"laugh","fromMe":true},{"sender":"+1666","kind":"🔥","fromMe":false}]}""",
+                ),
+            )
+        val kept = MacWire.toMessages(m)
+        assertTrue(kept[0].tapbacks.isEmpty())
+        assertEquals(listOf("love", "me:laugh", "🔥"), kept[1].tapbacks)
+        // And they outlast saving.
+        val book = ConversationBook().fromMac("c", "Ana", false, kept, unread = 0)
+        assertEquals(listOf("love", "me:laugh", "🔥"), ConversationBook.fromJson(book.toJson())["c"]!!.messages.last().tapbacks)
+    }
+
+    @Test
     fun unsentAndGroupChangesShowNothing() {
         assertTrue(MacWire.toMessages(MacWire.msg(JSONObject("""{"id":"u","chatId":"c","fromMe":true,"text":"oops","at":1,"unsent":true}"""))).isEmpty())
         assertTrue(MacWire.toMessages(MacWire.msg(JSONObject("""{"id":"s","chatId":"c","fromMe":false,"text":"Ana named the chat","at":1,"system":true}"""))).isEmpty())

@@ -417,6 +417,7 @@ fun Thread(
                             PartContent(part, ink, m.files)
                         }
                     }
+                    if (m.tapbacks.isNotEmpty()) Tapbacks(m)
                     if (m.failed && next?.failed != true) {
                         // Words can go again from here; photos are picked again.
                         val again = Parts.of(m.text).none { it is Part.Attachment }
@@ -466,10 +467,29 @@ fun Thread(
                             null
                         },
                     onDismiss = { held = null },
+                    // Through the Mac, a message it knows takes a tapback.
+                    onTapback =
+                        if (Messages.linked && m.id?.startsWith("c:") == false) {
+                            { kind ->
+                                Messages.tapback(c.id, m, kind)
+                                held = null
+                            }
+                        } else {
+                            null
+                        },
+                    mine = m.tapbacks.filter { it.startsWith("me:") }.map { it.removePrefix("me:") },
                 )
             }
         }
         val photos = pending.photos[c.id].orEmpty()
+        val notice by Messages.notice.collectAsState()
+        if (notice.isNotEmpty()) {
+            BasicText(
+                notice,
+                Modifier.fillMaxWidth().clickable { Messages.notice.value = "" }.padding(horizontal = 14.dp, vertical = 6.dp),
+                style = Pack.body(Pack.size.small, Pack.accent),
+            )
+        }
         if (noOpenBubbles) {
             BasicText("OpenBubbles isn't on this phone, so photos can't go out. They're still in the field.", Modifier.padding(horizontal = 14.dp, vertical = 6.dp), style = Pack.body(Pack.size.small, Pack.muted))
         } else if (photos.isEmpty() && (stuck || !Messages.canReply(c.id))) {
@@ -803,9 +823,24 @@ private fun HoldMenu(
     onCopy: () -> Unit,
     onRemove: (() -> Unit)?,
     onDismiss: () -> Unit,
+    onTapback: ((String) -> Unit)? = null,
+    mine: List<String> = emptyList(),
 ) {
     Box(Modifier.fillMaxSize().background(Pack.foreground.copy(alpha = 0.18f)).clickable(onClick = onDismiss), contentAlignment = Alignment.Center) {
         val shape = composerShape(14.dp)
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        // iMessage's six tapbacks, above the actions; the owner's own one is marked, and a second tap takes it off.
+        if (onTapback != null) {
+            Row(Modifier.padding(bottom = 8.dp).clip(shape).background(Pack.background, shape).border(2.dp, Pack.foreground, shape).padding(4.dp)) {
+                TAPBACKS.forEach { (kind, glyph) ->
+                    Box(
+                        Modifier.size(48.dp).clip(CircleShape).background(if (kind in mine) Pack.surface else Pack.background)
+                            .semantics { role = Role.Button; contentDescription = "Tapback $kind" }.clickable { onTapback(kind) },
+                        contentAlignment = Alignment.Center,
+                    ) { BasicText(glyph, style = Pack.body(22.sp)) }
+                }
+            }
+        }
         Row(Modifier.clip(shape).background(Pack.background, shape).border(2.dp, Pack.foreground, shape).padding(4.dp)) {
             // Remove only for a hand-off the owner didn't finish in OpenBubbles: nothing sent is ever taken back from here.
             (listOf("Reply" to onReply, "Copy" to onCopy) + listOfNotNull(onRemove?.let { "Remove" to it })).forEach { (label, act) ->
@@ -813,6 +848,27 @@ private fun HoldMenu(
                     BasicText(label, style = Pack.body(Pack.size.item).copy(fontWeight = FontWeight.SemiBold))
                 }
             }
+        }
+        }
+    }
+}
+
+/** iMessage's tapbacks and how they show. */
+private val TAPBACKS = listOf("love" to "❤️", "like" to "👍", "dislike" to "👎", "laugh" to "😂", "emphasize" to "‼️", "question" to "❓")
+
+/** The tapbacks on [m], small, under its balloon on its side: the owner's own outlined. An emoji tapback shows as itself. */
+@Composable
+private fun Tapbacks(m: Message) {
+    val glyphs = m.tapbacks.map { t -> t.removePrefix("me:").let { k -> TAPBACKS.firstOrNull { it.first == k }?.second ?: k } to t.startsWith("me:") }
+    Row(
+        Modifier.fillMaxWidth().padding(top = 2.dp, start = 10.dp, end = 10.dp),
+        horizontalArrangement = if (m.fromMe) Arrangement.End else Arrangement.Start,
+    ) {
+        glyphs.forEach { (g, mine) ->
+            Box(
+                Modifier.padding(end = 4.dp).clip(CircleShape).background(Pack.surface).then(if (mine) Modifier.border(1.5.dp, Pack.foreground, CircleShape) else Modifier)
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+            ) { BasicText(g, style = Pack.body(Pack.size.small)) }
         }
     }
 }

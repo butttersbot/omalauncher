@@ -323,6 +323,24 @@ object MacLink {
         }
     }
 
+    /** A tapback of [kind] on message [id] in [chat], or off again with [remove]; [onFail] when the Mac doesn't take it. */
+    fun tapback(
+        chat: String,
+        id: String,
+        kind: String,
+        remove: Boolean,
+        onFail: (String) -> Unit,
+    ) {
+        val at = address ?: return onFail("Not linked to a Mac.")
+        io.execute {
+            runCatching { post(at, "/v1/messages/${path(id)}/tapback", JSONObject().put("kind", kind).put("remove", remove).put("chatId", chat)) }
+                .onFailure {
+                    Log.w(TAG, "tapback", it)
+                    onFail(it.message.orEmpty())
+                }
+        }
+    }
+
     /** The owner opened [chat]: its history, and read on the Mac. */
     fun opened(chat: String) {
         val at = address ?: return

@@ -41,6 +41,8 @@ swipe 0.5 0.3 0.5 0.85 400
 wait 600
 expect Perfect, see you there
 expect You: Yes! 7pm
+# Ana's love tapback on "Yes! 7pm" (the demo's own), under that message.
+expect ❤️
 shot reply-quote
 # Scrolled up, the thread stays put and offers "Latest"; back down before writing, so the answer shows.
 tap Latest
@@ -65,3 +67,4 @@ shot sent-and-answered
 # The Mac stopped: the inbox says so and keeps what it has.
 [phone] With the real service on the MacBook: link from the phone-link file (Taildropped), chats and names are Boss's own, one plain-text send to a chat he picks arrives on his other devices, a reply from him shows within seconds.
 [phone] Mac locked: one plain text and one tapback (later slice) still go; note which don't.
+[phone] Hold a message from someone: the six tapbacks show above Reply/Copy; tapping one puts it under the message here and on the Mac; tapping it again takes it off.

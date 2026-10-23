@@ -23,6 +23,8 @@ data class Message(
     val failed: Boolean = false,
     /** The Mac's attachments this message stands for ("2 Photos"), each "id|mime", to show them here. */
     val files: List<String> = emptyList(),
+    /** Tapbacks on it, from the Mac: each a kind ("love", "like"… or an emoji), "me:" before the owner's own. */
+    val tapbacks: List<String> = emptyList(),
 ) {
     val fromMe get() = sender.isEmpty()
 }
@@ -246,6 +248,7 @@ class ConversationBook(
                                             m.id?.let { put("id", it) }
                                             if (m.failed) put("failed", true)
                                             if (m.files.isNotEmpty()) put("files", JSONArray(m.files))
+                                            if (m.tapbacks.isNotEmpty()) put("tapbacks", JSONArray(m.tapbacks))
                                         }
                                     },
                                 ),
@@ -288,6 +291,7 @@ class ConversationBook(
                                 m.optString("id").ifEmpty { null },
                                 m.optBoolean("failed"),
                                 m.optJSONArray("files")?.let { f -> (0 until f.length()).map { f.getString(it) } }.orEmpty(),
+                                m.optJSONArray("tapbacks")?.let { f -> (0 until f.length()).map { f.getString(it) } }.orEmpty(),
                             )
                         }
                     val id = c.getString("id")

@@ -33,6 +33,8 @@ object MacWire {
         val unsent: Boolean,
         /** A group change or rename, not something anyone wrote. */
         val system: Boolean,
+        /** Tapbacks: each a kind, "me:" before the owner's own. */
+        val tapbacks: List<String> = emptyList(),
     )
 
     class Chat(
@@ -73,6 +75,10 @@ object MacWire {
             clientId = o.str("clientId"),
             unsent = o.optBoolean("unsent"),
             system = o.optBoolean("system"),
+            tapbacks =
+                (o.optJSONArray("tapbacks") ?: JSONArray()).let { t ->
+                    (0 until t.length()).mapNotNull { t.optJSONObject(it) }.map { (if (it.optBoolean("fromMe")) "me:" else "") + it.optString("kind") }.filter { !it.endsWith(":") && it.isNotEmpty() }
+                },
         )
     }
 
@@ -140,7 +146,12 @@ object MacWire {
                 // The object replacement character stands where an attachment sat in the words.
                 m.text.replace("￼", "").trim().takeIf { it.isNotEmpty() }?.let { Message(it, m.at, sender, id = m.id) },
             )
-        return parts.mapIndexed { i, p -> if (i == 0 && quote != null) p.copy(quote = quote) else p }
+        // The quote goes on the first part, the tapbacks on the last (under the message, as iMessage shows them).
+        return parts.mapIndexed { i, p ->
+            var q = if (i == 0 && quote != null) p.copy(quote = quote) else p
+            if (i == parts.lastIndex && m.tapbacks.isNotEmpty()) q = q.copy(tapbacks = m.tapbacks)
+            q
+        }
     }
 
     /** Reads the event stream a line at a time; a blank line ends an event, which is then answered. */

@@ -294,6 +294,27 @@ object Messages {
         clientId: String,
     ) = publish(real.failed(id, clientId))
 
+    /** What went wrong last, said once on screen (a tapback the Mac didn't take). */
+    val notice = MutableStateFlow("")
+
+    /**
+     * The owner's tapback [kind] on [message] in [id], through the Mac: shown at once, and off again when it was
+     * already his. The Mac's own copy of the message, with the tapback, replaces it when it comes.
+     */
+    @Synchronized
+    fun tapback(
+        id: String,
+        message: Message,
+        kind: String,
+    ) {
+        val macId = message.id?.takeIf { linked && !it.startsWith("c:") }?.removeSuffix("#a") ?: return
+        val mine = "me:$kind"
+        val remove = mine in message.tapbacks
+        val changed = message.copy(tapbacks = message.tapbacks.filterNot { it.startsWith("me:") } + listOfNotNull(mine.takeIf { !remove }))
+        publish(real.fromMac(id, null, null, listOf(changed), counting = false))
+        MacLink.tapback(id, macId, kind, remove) { why -> notice.value = "Tapback not sent: $why" }
+    }
+
     /** Tries a failed [message] again. */
     @Synchronized
     fun retry(
