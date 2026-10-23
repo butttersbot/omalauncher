@@ -56,3 +56,31 @@ Implementation verification on the Fold, 2026-10-22:
   reproduced it in a separate temporary copy. Remaining checks require a working
   Mac test environment.
 - NOT WALKED: actual MacBook deployment and phone screenshots pending live rollout.
+
+## MacBook deployment and live Fold verification, 2026-10-22
+
+MacBook agent deployed commit 273a50a with its existing per-device PHONE default
+`galaxy-z-fold8`; launchd environment unchanged and all 11 existing threads idle
+before restart. It reports 13/13 discovery, 6/6 Codex approval tests and all 438
+broad runner checks PASS on the Mac. Source now matches the documented PHONE
+default; no key changes or re-pairing required.
+
+Fold verification:
+- PASS: live GET /threads lists four external Claude conversations, read_only=false.
+- PASS: POST to the agent-created spare thread t92a627a2c4a4ef95 returns a real
+  `pong` text/result and idle status. No tools requested.
+- PASS: opened the discovered conversation in Soma and sent a second prompt through
+  its actual composer asking it to remember the previous phone answer. It returned
+  `pong`, proving conversation context. Screenshot viewed:
+  /root/.local/share/omalauncher/attachments/phone-screen-4a013067-fd8b-4298-a5a3-117c470d5329.png
+- PASS: native Claude session visible in the Agents page. Screenshot viewed:
+  /root/.local/share/omalauncher/attachments/phone-screen-59b522fa-7868-429a-aecf-a90d7cdc89aa.png
+- PENDING: Mac agent verification of original transcript UUID, no fork/duplicate
+  after scans, desktop reload/continuation and restart after phone turns.
+
+Known limitation: native activity is not detected. A native Mac turn may still be
+working even when Soma says idle. Finish the Mac turn before sending from Soma;
+do not drive the same session simultaneously from the desktop and phone. The
+Claude desktop view may require reopening to see phone turns; continuing a stale
+view may select an older conversation leaf. These are not claimed fixed by the
+successful phone round trips. The owner's live Mac agent was not used for tests.
