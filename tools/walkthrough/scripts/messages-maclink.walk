@@ -4,15 +4,17 @@ shell cmd statusbar collapse
 key HOME
 # A clean start: not linked yet, no contacts answer.
 shell pm clear dev.omalauncher.messages
-shell am start -a android.intent.action.VIEW -d 'soma-messages://link?url=http%3A%2F%2F100.120.219.46%3A8765&token=BON7avwraojOZCR1WT8sLWZg9WTx0RFaqeR3udg1kzA' dev.omalauncher.messages
+# Contacts allowed ahead, so Android's prompt (whose title also says Allow) doesn't cover the inbox.
+shell pm grant dev.omalauncher.messages android.permission.READ_CONTACTS
+# Quoted twice: walk.py hands the line to the phone's shell, which would split the link at '&'.
+shell am start -a android.intent.action.VIEW -d "'soma-messages://link?url=http%3A%2F%2F100.120.219.46%3A8765&token=BON7avwraojOZCR1WT8sLWZg9WTx0RFaqeR3udg1kzA'" dev.omalauncher.messages
 wait 2500
 # The owner says yes to the Mac by name before anything goes to it.
 expect Get your iMessages from 100.120.219.46?
 shot link-dialog
 tap Link
 wait 1500
-# Names come from the phone's contacts, with his OK; the Mac's names stand in when the phone has none.
-tap Allow | ALLOW
+# Names come from the phone's contacts; the Mac's names stand in when the phone has none.
 wait 4000
 expect Weekend
 expect Ana Demo
@@ -32,9 +34,14 @@ wait 2000
 expect Perfect, see you there
 expect You: Yes! 7pm
 shot reply-quote
-tap Message
+# The field and the send button by place (cover screen): "Message" would also match the inbox's heading, under
+# the conversation.
+tap 0.5 0.925
+wait 600
 type walk test from the Fold
-tap Send
+wait 600
+shot typed
+tap 0.936 0.925
 wait 1000
 expect walk test from the Fold
 # The Mac's copy takes the place of the one sent from here (once, not twice), and the demo answers.
