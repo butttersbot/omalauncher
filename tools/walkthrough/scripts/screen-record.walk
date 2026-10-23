@@ -16,6 +16,14 @@ absent Share one app
 tap Share screen
 wait 4500
 shot recording
+# While it records, the shade holds the time and Stop (the Mac's look at the b27919abe walk).
+shell cmd statusbar expand-notifications
+wait 1200
+expect Recording · tap to stop
+expect Stop
+shot recording-in-shade
+shell cmd statusbar collapse
+wait 800
 shell cmd statusbar expand-settings
 wait 1000
 shell cmd statusbar click-tile dev.omalauncher.boss/dev.omalauncher.record.ScreenRecordTile
