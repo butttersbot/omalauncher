@@ -135,6 +135,51 @@ object Messages {
         }
     }
 
+    /**
+     * Hands [photos] and [text] to OpenBubbles' own conversation [id], where they wait to be sent: its Reply action
+     * carries words only, so photos can't go out from here. Copies are made first, since a picked photo may be read
+     * only by this app. Call it off the main thread; it returns the Intent to start, or null without OpenBubbles.
+     */
+    fun share(
+        context: Context,
+        id: String,
+        photos: List<android.net.Uri>,
+        text: String,
+    ): Intent? {
+        if (!openBubblesInstalled(context)) return null
+        val folder = File(context.cacheDir, "shared").apply { deleteRecursively(); mkdirs() }
+        val resolver = context.contentResolver
+        val types = mutableListOf<String>()
+        val copies =
+            photos.mapIndexedNotNull { i, uri ->
+                runCatching {
+                    val type = resolver.getType(uri) ?: "image/jpeg"
+                    val ext = android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(type) ?: "jpg"
+                    val copy = File(folder, "photo-${i + 1}.$ext")
+                    resolver.openInputStream(uri)!!.use { input -> copy.outputStream().use { input.copyTo(it) } }
+                    types += type
+                    androidx.core.content.FileProvider.getUriForFile(context, "dev.omalauncher.messages.photos", copy)
+                }.onFailure { Log.w(TAG, "copying a photo", it) }.getOrNull()
+            }
+        val kinds = types.map { it.substringBefore('/') }.distinct()
+        val intent =
+            Intent(if (copies.size == 1) Intent.ACTION_SEND else Intent.ACTION_SEND_MULTIPLE)
+                .setPackage(OPENBUBBLES)
+                .setType(if (kinds.size == 1) "${kinds[0]}/*" else "*/*")
+                .putExtra(Intent.EXTRA_SHORTCUT_ID, id)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        if (text.isNotBlank()) intent.putExtra(Intent.EXTRA_TEXT, text)
+        if (copies.size == 1) {
+            intent.putExtra(Intent.EXTRA_STREAM, copies[0])
+        } else if (copies.isNotEmpty()) {
+            intent.putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(copies))
+        }
+        if (copies.isNotEmpty()) {
+            intent.clipData = android.content.ClipData.newUri(resolver, "Photos", copies[0]).apply { copies.drop(1).forEach { addItem(android.content.ClipData.Item(it)) } }
+        }
+        return intent
+    }
+
     /** True when a reply can go from here right now. */
     fun canReply(id: String) = samples.value || handles[id]?.reply != null
 

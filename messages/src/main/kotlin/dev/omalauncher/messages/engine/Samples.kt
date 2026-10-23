@@ -10,7 +10,8 @@ object Samples {
                 "sample-mina", "Mina Park", false,
                 listOf(
                     SeenMessage("are we still on for friday?", at(42), "Mina"),
-                    SeenMessage("Yes! Friday 7:30 at Kiriko. I got us the counter", at(38), null),
+                    SeenMessage("Yes! Friday 7:30 at Kiriko. I got us the counter", at(39), null),
+                    SeenMessage("menu's here https://kiriko-omakase.jp/menu/autumn", at(38), null),
                     SeenMessage("the counter!! ok you win", at(37), "Mina"),
                     SeenMessage("should I bring the sake from Kyoto or save it?", at(2), "Mina"),
                 ),
@@ -29,6 +30,7 @@ object Samples {
                 listOf(
                     SeenMessage("You around later? Want to show you the synth I finished", at(22), "Desmond"),
                     SeenMessage("it has a real spring reverb in it", at(21), "Desmond"),
+                    SeenMessage("2 Photos", at(20), "Desmond"),
                 ),
             ),
             SeenConversation(

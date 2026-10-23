@@ -327,6 +327,7 @@ fun rememberComposerState(text: String = "") = remember { ComposerState(text) }
  * With [onAttach] there is a + on the left. With a [voice] recorder an empty field offers voice messages, sent
  * through [onSendVoice]; without one, [emptyAction] may draw the app's own button there instead (Soma chat's
  * Dictate). [sendColor] fills Send: the conversation's color, an iMessage blue or a text message green.
+ * [above] sits over the field (a quoted reply); [inField] inside it, over the words, as iMessage draws attachments.
  */
 @Composable
 fun SomaComposer(
@@ -344,24 +345,34 @@ fun SomaComposer(
     enabled: Boolean = true,
     now: () -> Long = { System.currentTimeMillis() },
     above: (@Composable () -> Unit)? = null,
+    inField: (@Composable () -> Unit)? = null,
 ) {
     val stage = state.stage
     val action = ComposerRules.action(stage, state.text, attached, voice != null, emptyAction != null)
     val recording = stage is VoiceStage.Recording
 
+    // The button keeps its own handle on send between draws, so send reads what is current: attachments or a quote
+    // added after the words are typed still go with them.
+    val latestOnSend by rememberUpdatedState(onSend)
+    val latestAttached by rememberUpdatedState(attached)
+    val latestEnabled by rememberUpdatedState(enabled)
+
     fun send() {
-        if (!enabled) return
+        if (!latestEnabled) return
         val text = state.takeText()
-        if (text != null || attached) onSend(text.orEmpty())
+        if (text != null || latestAttached) latestOnSend(text.orEmpty())
     }
 
+    val latestVoice by rememberUpdatedState(voice)
+    val latestOnSendVoice by rememberUpdatedState(onSendVoice)
+
     fun act(what: ComposerAction) {
-        if (!enabled) return
-        val mic = voice ?: return
+        if (!latestEnabled) return
+        val mic = latestVoice ?: return
         when (what) {
             ComposerAction.Record -> state.startVoice(mic, now(), held = false)
             ComposerAction.Stop -> state.stopVoice(mic, now())
-            ComposerAction.SendVoice -> state.takeVoice(mic)?.let(onSendVoice)
+            ComposerAction.SendVoice -> state.takeVoice(mic)?.let(latestOnSendVoice)
             else -> {}
         }
     }
@@ -410,14 +421,18 @@ fun SomaComposer(
         // Apple's pill, square in a look whose corners are square (Manga): the field is chrome, the balloons stay round.
         val pill = composerShape(20.dp)
         val edge = if (Pack.look.line > 0.dp) Pack.mark else 1.dp
-        Row(
+        Column(
             Modifier
                 .weight(1f)
                 .heightIn(min = 40.dp)
                 .clip(pill)
                 .background(fill, pill)
-                .border(edge, line, pill)
-                .padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                .border(edge, line, pill),
+        ) {
+        // The field is a grid: what's attached across the top, then the words, with the button at the bottom right.
+        if (inField != null && stage == VoiceStage.Off) Box(Modifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp, top = 6.dp)) { inField() }
+        Row(
+            Modifier.fillMaxWidth().padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.Bottom,
         ) {
@@ -431,6 +446,7 @@ fun SomaComposer(
             } else {
                 EndButton(action, sendColor, onSendColor, ::send, ::act) { state.stage }
             }
+        }
         }
     }
     }

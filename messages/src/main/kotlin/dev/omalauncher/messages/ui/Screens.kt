@@ -17,7 +17,25 @@ import dev.omalauncher.ui.Motion
 import dev.omalauncher.ui.composerShape
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import dev.omalauncher.messages.engine.Part
+import dev.omalauncher.messages.engine.Parts
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -231,28 +249,49 @@ private fun ConversationRow(
     }
 }
 
+/** What each conversation is putting together besides its words: a quoted reply, photos, and link previews put away. */
+@Stable
+class Pending {
+    val quotes = mutableStateMapOf<String, String>()
+    val photos = mutableStateMapOf<String, List<Uri>>()
+
+    /** Addresses whose preview tile was closed: the words keep them, the tile doesn't come back. */
+    val unlinked = mutableStateMapOf<String, Set<String>>()
+}
+
+/** The most photos handed over at once. */
+private const val MAX_PHOTOS = 10
+
 /**
  * A conversation: its messages as balloons, and the shared composer. Replies go through OpenBubbles' own Reply
  * action; until a conversation has had a notification since the app started, that action isn't known, so the app
  * says so and offers to open the conversation in OpenBubbles.
  *
  * Drag a message right to reply: it follows the finger, and past the mark it becomes the quote above the field.
- * Press and hold for Reply and Copy. [quotes] holds each conversation's quote, like its draft.
+ * Press and hold for Reply and Copy. Links and attachments are bubbles of their own, before the words. Photos wait
+ * in the field and go to OpenBubbles' conversation with the words, since its Reply action carries words only.
+ * [pending] holds each conversation's quote and attachments, like its draft.
  */
 @Composable
 fun Thread(
     c: Conversation,
     draft: ComposerState,
-    quotes: MutableMap<String, String>,
+    pending: Pending,
     onBack: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var stuck by remember(c.id) { mutableStateOf(false) }
+    var noOpenBubbles by remember(c.id) { mutableStateOf(false) }
     var held by remember(c.id) { mutableStateOf<Message?>(null) }
     val list = rememberLazyListState()
     LaunchedEffect(c.id, c.messages.size) { if (c.messages.isNotEmpty()) list.scrollToItem(c.messages.size - 1) }
     fun quoteOf(m: Message) = (if (m.fromMe) "You" else m.sender.ifEmpty { c.title }) + ": " + m.text.take(90)
+    val pick =
+        rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(MAX_PHOTOS)) { uris ->
+            if (uris.isNotEmpty()) pending.photos[c.id] = (pending.photos[c.id].orEmpty() + uris).distinct().take(MAX_PHOTOS)
+        }
     Column(modifier) {
         Row(Modifier.fillMaxWidth().height(58.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             if (onBack != null) {
@@ -283,13 +322,26 @@ fun Thread(
                         )
                     }
                     if (c.isGroup && first && !m.fromMe) BasicText(m.sender, Modifier.padding(start = 14.dp, top = 8.dp, bottom = 2.dp), style = Pack.body(Pack.size.small, Pack.muted))
-                    Balloon(m, tail, onReply = { quotes[c.id] = quoteOf(m) }, onHold = { held = m }, Modifier.padding(top = if (first) 8.dp else 2.dp))
+                    val parts = remember(m.text) { Parts.of(m.text) }
+                    parts.forEachIndexed { j, part ->
+                        Balloon(
+                            m,
+                            tail = tail && j == parts.lastIndex,
+                            onReply = { pending.quotes[c.id] = quoteOf(m) },
+                            onHold = { held = m },
+                            onTap = tapFor(part, c.id, context),
+                            modifier = Modifier.padding(top = if (first && j == 0) 8.dp else 2.dp),
+                        ) { ink ->
+                            if (j == 0) m.quote?.let { QuoteInBalloon(it, ink) }
+                            PartContent(part, ink)
+                        }
+                    }
                 }
             }
             held?.let { m ->
                 HoldMenu(
                     onReply = {
-                        quotes[c.id] = quoteOf(m)
+                        pending.quotes[c.id] = quoteOf(m)
                         held = null
                     },
                     onCopy = {
@@ -301,7 +353,10 @@ fun Thread(
                 )
             }
         }
-        if (stuck || !Messages.canReply(c.id)) {
+        val photos = pending.photos[c.id].orEmpty()
+        if (noOpenBubbles) {
+            BasicText("OpenBubbles isn't on this phone, so photos can't go out. They're still in the field.", Modifier.padding(horizontal = 14.dp, vertical = 6.dp), style = Pack.body(Pack.size.small, Pack.muted))
+        } else if (photos.isEmpty() && (stuck || !Messages.canReply(c.id))) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp)) {
                 BasicText(
                     "Replies go out from here once ${c.title.substringBefore(' ')} writes again. Until then, answer in OpenBubbles.",
@@ -311,24 +366,202 @@ fun Thread(
                 TextButton("Open in OpenBubbles", filled = false) { Messages.openInOpenBubbles(context, c.id) }
             }
         }
-        val quote = quotes[c.id]
+        val quote = pending.quotes[c.id]
+        // The first address in the words gets a preview tile, unless its tile was closed.
+        val link = Parts.links(draft.text).firstOrNull { it !in pending.unlinked[c.id].orEmpty() }
         SomaComposer(
             draft,
             onSend = { text ->
-                if (Messages.send(context, c.id, text, quote) == Sent.NoReplyPath) {
-                    // Nothing went out: the words go back in the field, and the quote stays.
-                    draft.text = text
-                    stuck = true
+                if (photos.isEmpty()) {
+                    if (Messages.send(context, c.id, text, quote) == Sent.NoReplyPath) {
+                        // Nothing went out: the words go back in the field, and the quote stays.
+                        draft.text = text
+                        stuck = true
+                    } else {
+                        pending.quotes.remove(c.id)
+                    }
+                } else if (Messages.samples.value) {
+                    // Examples: show what would have gone, as OpenBubbles would show it back.
+                    Messages.send(context, c.id, summary(context, photos), quote)
+                    if (text.isNotEmpty()) Messages.send(context, c.id, text)
+                    pending.photos.remove(c.id)
+                    pending.quotes.remove(c.id)
                 } else {
-                    quotes.remove(c.id)
+                    scope.launch {
+                        val share = withContext(Dispatchers.IO) { Messages.share(context, c.id, photos, text) }
+                        if (share == null) {
+                            draft.text = text
+                            noOpenBubbles = true
+                        } else {
+                            pending.photos.remove(c.id)
+                            pending.quotes.remove(c.id)
+                            context.startActivity(share)
+                        }
+                    }
                 }
             },
             Modifier.padding(bottom = 4.dp),
             placeholder = "iMessage",
             sendColor = Pack.foreground,
             onSendColor = Pack.background,
-            above = quote?.let { q -> { QuoteBar(q) { quotes.remove(c.id) } } },
+            onAttach = { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)) },
+            attached = photos.isNotEmpty(),
+            above = quote?.let { q -> { QuoteBar(q) { pending.quotes.remove(c.id) } } },
+            inField =
+                if (photos.isEmpty() && link == null) {
+                    null
+                } else {
+                    {
+                        FieldTiles(
+                            photos,
+                            link,
+                            onDropPhoto = { uri -> pending.photos[c.id] = photos - uri },
+                            onDropLink = { url -> pending.unlinked[c.id] = pending.unlinked[c.id].orEmpty() + url },
+                        )
+                    }
+                },
         )
+    }
+}
+
+/** "2 Photos & 1 Video", as OpenBubbles words it. */
+private fun summary(
+    context: android.content.Context,
+    photos: List<Uri>,
+): String {
+    val videos = photos.count { context.contentResolver.getType(it)?.startsWith("video/") == true }
+    val stills = photos.size - videos
+    fun n(
+        count: Int,
+        what: String,
+    ) = "$count $what${if (count > 1) "s" else ""}"
+    return listOfNotNull(stills.takeIf { it > 0 }?.let { n(it, "Photo") }, videos.takeIf { it > 0 }?.let { n(it, "Video") }).joinToString(" & ")
+}
+
+/** What a tap on [part] does: a link opens in the browser; an attachment or a previewed page opens the conversation in OpenBubbles. */
+private fun tapFor(
+    part: Part,
+    id: String,
+    context: android.content.Context,
+): (() -> Unit)? =
+    when (part) {
+        is Part.Words -> null
+        is Part.Link -> {
+            {
+                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(Parts.openable(part.url))).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            }
+        }
+        is Part.Website, is Part.Attachment -> {
+            { Messages.openInOpenBubbles(context, id) }
+        }
+    }
+
+/** One part of a message inside its balloon. */
+@Composable
+private fun PartContent(
+    part: Part,
+    ink: Color,
+) {
+    when (part) {
+        is Part.Words -> BasicText(part.text, style = Pack.body(Pack.size.item, ink))
+        is Part.Link -> Card(part.host, part.path.ifEmpty { null }, "↗", ink)
+        is Part.Website -> Card(part.host.ifEmpty { "Website" }, part.title, "↗", ink)
+        is Part.Attachment -> Card(part.summary, "Open in OpenBubbles", if (part.kind == "Video") "▶" else "▣", ink)
+    }
+}
+
+/** A link or attachment: a square mark, a bold line, and a quieter one under it. */
+@Composable
+private fun Card(
+    title: String,
+    detail: String?,
+    mark: String,
+    ink: Color,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(38.dp).border(1.5.dp, ink.copy(alpha = 0.6f), composerShape(8.dp)), contentAlignment = Alignment.Center) {
+            BasicText(mark, style = Pack.body(Pack.size.item, ink))
+        }
+        Spacer(Modifier.size(10.dp))
+        Column(Modifier.widthIn(max = 220.dp)) {
+            BasicText(title, style = Pack.body(Pack.size.item, ink).copy(fontWeight = FontWeight.SemiBold), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (detail != null) BasicText(detail, style = Pack.body(Pack.size.small, ink.copy(alpha = 0.72f)), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+/** The quoted message at the top of a reply's balloon. */
+@Composable
+private fun QuoteInBalloon(
+    q: String,
+    ink: Color,
+) {
+    Row(Modifier.padding(bottom = 6.dp).background(ink.copy(alpha = 0.12f))) {
+        Box(Modifier.width(3.dp).height(32.dp).background(ink.copy(alpha = 0.6f)))
+        BasicText(q, Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = Pack.body(Pack.size.small, ink.copy(alpha = 0.85f)), maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/**
+ * Inside the field, over the words, as iMessage shows them: photos as 72 dp tiles, then the link preview as a wide
+ * one, each with × at its corner. A line under photos says where they go.
+ */
+@Composable
+private fun FieldTiles(
+    photos: List<Uri>,
+    link: String?,
+    onDropPhoto: (Uri) -> Unit,
+    onDropLink: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (photos.isNotEmpty()) {
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                photos.forEach { uri -> Tile("Remove photo", { onDropPhoto(uri) }) { Thumb(uri) } }
+            }
+            BasicText("Photos open in OpenBubbles' chat, ready to send", Modifier.padding(start = 4.dp), style = Pack.body(Pack.size.small, Pack.muted))
+        }
+        if (link != null) {
+            Tile("Remove link preview", { onDropLink(link) }, wide = true) {
+                Box(Modifier.fillMaxSize().background(Pack.surface).padding(horizontal = 10.dp), contentAlignment = Alignment.CenterStart) {
+                    Card(Parts.host(link), Parts.path(link).ifEmpty { null }, "↗", Pack.foreground)
+                }
+            }
+        }
+    }
+}
+
+/** A tile in the field with × at its top right corner. */
+@Composable
+private fun Tile(
+    dropLabel: String,
+    onDrop: () -> Unit,
+    wide: Boolean = false,
+    content: @Composable () -> Unit,
+) {
+    val shape = composerShape(12.dp)
+    Box(
+        (if (wide) Modifier.fillMaxWidth().height(60.dp) else Modifier.size(72.dp))
+            .clip(shape)
+            .border(if (inked) 2.dp else 1.dp, Pack.border, shape),
+    ) {
+        content()
+        Box(
+            Modifier.align(Alignment.TopEnd).padding(3.dp).size(22.dp).clip(composerShape(null)).background(Pack.foreground.copy(alpha = 0.8f))
+                .semantics { contentDescription = dropLabel; role = Role.Button }.clickable(onClick = onDrop),
+            contentAlignment = Alignment.Center,
+        ) { BasicText("✕", style = Pack.body(Pack.size.small, Pack.background)) }
+    }
+}
+
+/** A picked photo or video, small. */
+@Composable
+private fun Thumb(uri: Uri) {
+    val context = LocalContext.current
+    val picture by produceState<ImageBitmap?>(null, uri) {
+        value = withContext(Dispatchers.IO) { runCatching { context.contentResolver.loadThumbnail(uri, android.util.Size(216, 216), null).asImageBitmap() }.getOrNull() }
+    }
+    Box(Modifier.fillMaxSize().background(Pack.surface)) {
+        picture?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
     }
 }
 
@@ -387,7 +620,9 @@ private fun Balloon(
     tail: Boolean,
     onReply: () -> Unit,
     onHold: () -> Unit,
+    onTap: (() -> Unit)?,
     modifier: Modifier = Modifier,
+    content: @Composable (ink: Color) -> Unit,
 ) {
     val density = LocalDensity.current
     val haptics = LocalHapticFeedback.current
@@ -427,7 +662,7 @@ private fun Balloon(
                     }
                     scope.launch { drag.snapTo(x) }
                 }
-            }.pointerInput(m) { detectTapGestures(onLongPress = { onHold() }) }
+            }.pointerInput(m, onTap) { detectTapGestures(onTap = onTap?.let { tap -> { tap() } }, onLongPress = { onHold() }) }
     Box(modifier.fillMaxWidth()) {
         // The reply arrow, uncovered as the message moves.
         val shown = (drag.value / mark).coerceIn(0f, 1f)
@@ -453,15 +688,7 @@ private fun Balloon(
                     .then(if (!m.fromMe && inked) Modifier.border(2.dp, line, shape) else Modifier)
                     .padding(horizontal = 13.dp, vertical = 8.dp),
             ) {
-                Column {
-                    m.quote?.let { q ->
-                        Row(Modifier.padding(bottom = 6.dp).background(ink.copy(alpha = 0.12f))) {
-                            Box(Modifier.width(3.dp).height(32.dp).background(ink.copy(alpha = 0.6f)))
-                            BasicText(q, Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = Pack.body(Pack.size.small, ink.copy(alpha = 0.85f)), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        }
-                    }
-                    BasicText(m.text, style = Pack.body(Pack.size.item, ink))
-                }
+                Column { content(ink) }
             }
         }
     }
