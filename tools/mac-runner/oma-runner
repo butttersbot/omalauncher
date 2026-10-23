@@ -344,6 +344,11 @@ def mode(meta):
     """
     if meta['kind'] in ('cursor', 'grok'):
         return 'manual'
+    # A Mac conversation found by discovery (and its phone copy) is auto, as the phone's own Claude threads are (Boss,
+    # 2026-10-22: "its bombarding me with approval cards"); the ones made before this said manual only by default,
+    # since nothing lets him choose a mode for one.
+    if meta.get('claude_external'):
+        return 'auto'
     return meta.get('mode') or 'auto'
 
 
@@ -2426,7 +2431,7 @@ def sync_claude():
                     if tid in threads:
                         continue
                     thread = Thread({'id': tid, 'name': claude_visible(first).strip()[:160], 'project': str(project),
-                                     'kind': 'claude', 'session': sid, 'status': 'idle', 'mode': 'manual', 'model': None,
+                                     'kind': 'claude', 'session': sid, 'status': 'idle', 'mode': 'auto', 'model': None,
                                      'created': int(stat_now.st_mtime), 'summary': '', 'tail': '', 'claude_external': True})
                     threads[tid] = thread
                     thread.save()

@@ -108,7 +108,7 @@ class DiscoveryTests(unittest.TestCase):
         starts = [json.loads(line) for line in (self.root / 'starts.log').read_text().splitlines()]
         self.assertEqual(1, len(starts))
         self.assertTrue(starts[0]['resumed'])
-        self.assertEqual('manual', starts[0]['mode'])
+        self.assertEqual('auto', starts[0]['mode'])  # Boss, 2026-10-22: phone copies run in auto, not one card per command
         self.assertEqual('stdio', starts[0]['prompt_tool'])
         deadline = time.time() + 5
         while t.kept is not None and time.time() < deadline:
