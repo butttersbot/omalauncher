@@ -2182,7 +2182,10 @@ def claude_holder_problem(thread):
                 except ValueError:
                     actual = None  # Unknown format: never mistake an open session for a stale PID.
             if actual is not None and expected is not None and str(actual) != str(expected):
-                continue  # PID was reused; this stale record holds no session.
+                if LINUX:
+                    continue  # Verified /proc start ticks identify a reused PID.
+                # Darwin record/ps timezone conventions vary: a mismatch alone
+                # must never make a live native conversation look safe to resume.
             state = 'working' if record.get('status') == 'busy' else 'still open'
             return ('This Claude conversation is %s on the Mac. Close that conversation there before replying from the phone; '
                     'otherwise returning to the old Mac window can fork its history. No phone turn was started.' % state)

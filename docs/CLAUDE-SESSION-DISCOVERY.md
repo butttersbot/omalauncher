@@ -114,3 +114,10 @@ forked the spare session only. Those probes are not owner work.
 
 Guard tests: PASS 19 discovery/reply/holder tests on the Fold; deployment and
 open-refusal/closed-reply checks on the Mac pending.
+
+Darwin follow-up: a start-text mismatch does NOT permit a phone reply. Local vs
+UTC conventions are still being verified on the actual Mac. Until then every
+alive matching Darwin PID is conservatively a holder, even if the record might
+be stale from PID reuse. Dead PIDs still permit handoff. This can produce a false
+refusal, but avoids a false permission and a split conversation. The Mac agent
+has been asked to validate and deploy this conservative revision.

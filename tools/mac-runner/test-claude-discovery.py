@@ -209,7 +209,7 @@ class DiscoveryTests(unittest.TestCase):
         self.holder(t, procStart='Thu Oct 22 13:44:00 2026')
         self.assertIsNotNone(self.m['claude_holder_problem'](t))
         self.holder(t, procStart='Thu Oct 22 12:44:00 2026')
-        self.assertIsNone(self.m['claude_holder_problem'](t))
+        self.assertIsNotNone(self.m['claude_holder_problem'](t))
         self.holder(t, procStart='unrecognized identity format')
         self.assertIsNotNone(self.m['claude_holder_problem'](t))
 
