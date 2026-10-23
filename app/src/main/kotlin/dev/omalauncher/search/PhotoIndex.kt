@@ -186,6 +186,24 @@ object PhotoIndex {
         return if (named) emptyList() else l.take(WEAK_MAX)
     }
 
+    /**
+     * True when [query] names one of [names] (the apps, commands and people it found): it begins a word of one, or is
+     * a word of one with a typo. Weak photos then stay out ([shown]): the 135 check, "andrew" and "dicsord" brought
+     * rows of unrelated photos under the contact and the app he meant.
+     */
+    fun names(
+        names: List<String>,
+        query: String,
+    ): Boolean {
+        val q = RootMatch.fold(query.trim())
+        if (q.isEmpty()) return false
+        val most = FileQuery.typos(q.length)
+        return names.any { n ->
+            val folded = RootMatch.fold(n)
+            folded == q || folded.split(Regex("[^\\p{L}\\p{N}]+")).any { w -> w.startsWith(q) || (most > 0 && FileQuery.distance(q, w, most) <= most) }
+        }
+    }
+
     const val STRONG = 0.67f
     const val WEAK_MAX = 3
 

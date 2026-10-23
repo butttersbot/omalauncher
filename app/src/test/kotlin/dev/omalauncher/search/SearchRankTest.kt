@@ -45,6 +45,20 @@ class SearchRankTest {
 
     // ---- The answer first ----
 
+    // The 135 check on the phone: "dicsord" found only photos.
+    @Test fun anAppThroughATypo() {
+        assertEquals("Discord", top("dicsord"))
+        assertEquals("Spotify", top("sptoify"))
+        assertEquals("Tailscale", top("tailsacle"))
+        assertEquals("Instagram", top("isntagram"))
+        // As typed so far, with one slip.
+        assertEquals("Instagram", top("isnta"))
+        // A typo never beats the letters as typed.
+        assertEquals("Gmail", top("gmail"))
+        // Short words have no room for one.
+        assertTrue(SearchRank.rank(all, "xqz", SearchMemory(), now).isEmpty())
+    }
+
     @Test fun anAppByItsName() {
         assertEquals("Discord", top("discord"))
         assertEquals("Discord", top("disc"))

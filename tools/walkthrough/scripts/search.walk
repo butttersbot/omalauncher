@@ -1,0 +1,39 @@
+# Soma's search, pulled down from home (105+). Bugs from the 135 check on Boss's phone: "dicsord" (two letters
+# swapped) didn't find Discord; recent searches never showed when nothing was opened; name searches brought rows of
+# unrelated photos. The emulator has no Discord: Chrome and Settings stand in.
+# A clean start: no shade or dialog left by an earlier walk.
+shell cmd statusbar collapse
+key BACK
+key HOME
+wait 1500
+# Pull search down from the middle of home.
+swipe 0.5 0.35 0.5 0.75 300
+wait 1000
+type chorme
+wait 1500
+expect Chrome
+shot typo-finds-chrome
+key BACK
+key BACK
+wait 800
+# Put away without opening anything: still a recent search.
+swipe 0.5 0.35 0.5 0.75 300
+wait 1000
+expect Recent searches
+expect chorme
+shot recent-searches-shown
+key BACK
+key BACK
+swipe 0.5 0.35 0.5 0.75 300
+wait 1000
+type setitngs
+wait 2500
+expect Settings
+# Look: no row of unrelated photos under Settings.
+shot typo-finds-settings-no-photo-noise
+key BACK
+key BACK
+[phone] Search "dicsord": Discord comes first, and no row of unrelated photos.
+[phone] Search "andrew" (a contact): the contact with Call/Text, and no row of unrelated photos.
+[phone] Search "beach": his beach and marina photos still show.
+[phone] Type a search, put search away without opening anything, pull it down again: the search is under Recent searches.
