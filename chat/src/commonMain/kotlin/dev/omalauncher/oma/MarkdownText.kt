@@ -58,11 +58,12 @@ private class MarkdownLook(
     val code: SpanStyle,
     val link: Color,
     val onLink: LinkInteractionListener,
+    val artifactLinks: Boolean = false,
 ) {
     val strong = body.copy(fontWeight = FontWeight.Bold)
 
     /** The same look with its text in [color]. */
-    fun inked(color: Color) = MarkdownLook(body.copy(color = color), code, link, onLink)
+    fun inked(color: Color) = MarkdownLook(body.copy(color = color), code, link, onLink, artifactLinks)
 
     fun styled(spans: List<MdSpan>): AnnotatedString =
         buildAnnotatedString {
@@ -71,8 +72,8 @@ private class MarkdownLook(
                 if (span.bold) style = style.copy(fontWeight = FontWeight.Bold)
                 if (span.italic) style = style.copy(fontStyle = FontStyle.Italic)
                 if (span.strike) style = style.copy(textDecoration = TextDecoration.LineThrough)
-                // Only a web page opens from here, so only that looks like a link; a file's path keeps its words.
-                val url = span.link?.takeIf(Markdown::isWebLink)
+                // Chat replies can open outputs beside the conversation; other Markdown keeps its web-only behavior.
+                val url = span.link?.takeIf { Markdown.isWebLink(it) || (artifactLinks && artifactPath(it) != null) }
                 if (url != null) {
                     style = style.copy(color = link)
                     pushLink(LinkAnnotation.Clickable(url, linkInteractionListener = onLink))
@@ -85,12 +86,12 @@ private class MarkdownLook(
         }
 }
 
-/** Opens a tapped link where the platform opens web pages ([rememberWebOpener]). */
-private fun webLinks(open: (String) -> Unit) =
+/** The chat may handle a link in its workspace; other web links use the platform opener. */
+private fun webLinks(open: (String) -> Unit, intercept: ((String) -> Boolean)? = null) =
     object : LinkInteractionListener {
         override fun onClick(link: LinkAnnotation) {
-            val url = (link as? LinkAnnotation.Clickable)?.tag?.takeIf(Markdown::isWebLink) ?: return
-            open(url)
+            val url = (link as? LinkAnnotation.Clickable)?.tag ?: return
+            if (intercept?.invoke(url) != true && Markdown.isWebLink(url)) open(url)
         }
     }
 
@@ -106,7 +107,8 @@ fun MarkdownText(
     val blocks = remember(text) { Markdown.parse(text) }
     val open = rememberWebOpener()
     val pack = Pack.look
-    val look = remember(pack, open) { MarkdownLook(Pack.body(), Pack.mono().toSpanStyle().copy(background = Pack.surface), Pack.accent, webLinks(open)) }
+    val intercept = LocalMarkdownArtifactOpen.current
+    val look = remember(pack, open, intercept) { MarkdownLook(Pack.body(), Pack.mono().toSpanStyle().copy(background = Pack.surface), Pack.accent, webLinks(open, intercept), intercept != null) }
     Blocks(blocks, look, modifier)
 }
 

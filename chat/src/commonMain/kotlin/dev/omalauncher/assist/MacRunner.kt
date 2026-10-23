@@ -428,6 +428,13 @@ class MacRunnerClient(private val config: MacRunnerConfig?, private val machine:
 
     fun bot(botId: String): MacAnswer<MacBotFiles> = parseMacBotFiles(send(MacRequests.bot(botId)))
 
+    /** One file the owner opened in a conversation; credentials never enter its preview. */
+    fun artifact(threadId: String, path: String): dev.omalauncher.oma.ArtifactRead {
+        val reply = send(MacRequest("GET", "/threads/" + own(threadId) + "/artifact?path=" + URLEncoder.encode(path, "UTF-8")))
+            ?: return dev.omalauncher.oma.ArtifactRead.Failed("This computer is unreachable. Try again when it reconnects.")
+        return dev.omalauncher.oma.decodeArtifact(reply.code, reply.body)
+    }
+
     fun fresh(threadId: String): MacAnswer<Unit> = parseMacFresh(send(MacRequests.fresh(own(threadId))))
 
     /**
