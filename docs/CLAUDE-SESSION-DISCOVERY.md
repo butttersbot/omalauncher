@@ -165,3 +165,28 @@ regression now also runs against real ps under a Honolulu parent timezone on
 Mac hosts, and skips on Linux. Final Fold test count: 20 passed, 1 Darwin-only
 check skipped; Mac execution of this final added check is pending (the Mac agent
 already ran its equivalent native timezone regression successfully).
+
+## Refusal explanation in Soma (app update)
+
+Boss's installed app showed only "The Mac could not take this (HTTP 409)".
+The runner had correctly returned the reason, but macUnsentReason discarded it.
+Commit e6864ae preserves a nonblank 409 reason as bounded plain text in the unsent
+entry; malformed/blank bodies retain the generic fallback. Prompt, thread and
+unsent status stay intact. No change to the guard or automatic retry policy.
+
+Validation:
+- PASS (Mac): targeted MacThreadsTest regression parses HTTP409, retains reason
+  through dropped-task persistence, and checks blank/malformed fallback and bound.
+- PASS (Mac): ChatScreenRenderTest emits cover render and matching emulator fixture.
+- PASS: all 13 emulator walkthrough steps for mac-refusal.walk, including cover
+  and inner layout. Both LOOK screenshots reviewed by phone B, full explanation
+  visible and wrapping without clipping:
+  /root/handoff/mac-refusal-e6864ae8a/10-mac-refusal-cover.png
+  /root/handoff/mac-refusal-e6864ae8a/13-mac-refusal-inner.png
+- PENDING: real Fold refusal/retry walkthrough after owner promotion.
+
+A pre-existing broad-test failure was the TYPE_ACCESSIBILITY_OVERLAY window
+inventory, not RecordPill reading ring preferences. Commit 5ed8653 adds the already
+owner-requested recording window to that inventory and asserts one occurrence;
+all setting-isolation checks stay intact. No runtime/security behavior changed.
+Full app build 133 requested at 5ed8653; no phone installation authorized yet.
