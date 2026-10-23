@@ -69,3 +69,25 @@ object Parts {
     /** [url] ready to open: an address typed as www.… gets https://. */
     fun openable(url: String): String = if (url.startsWith("http", ignoreCase = true)) url else "https://$url"
 }
+
+/** Something shared in a conversation, for the side panel: a link or attachment, who sent it and when. */
+data class Shared(
+    val part: Part,
+    val conversation: String,
+    val title: String,
+    val sender: String,
+    val time: Long,
+) {
+    /** The same thing shared twice shows once: links by address, others by message. */
+    val key get() = (part as? Part.Link)?.url?.let(Parts::openable) ?: "$conversation/$time/$part"
+}
+
+/** What was shared in [conversations], newest first, each thing once. */
+fun shared(vararg conversations: Conversation): List<Shared> =
+    conversations
+        .flatMap { c ->
+            c.messages.flatMap { m ->
+                Parts.of(m.text).filter { it !is Part.Words }.map { Shared(it, c.id, c.title, if (m.fromMe) "You" else m.sender.ifEmpty { c.title }, m.time) }
+            }
+        }.sortedByDescending { it.time }
+        .distinctBy { it.key }

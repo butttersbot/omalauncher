@@ -73,13 +73,8 @@ fun MessagesApp(resumed: Int) {
         }
         if (wide) {
             val shown = openId?.takeIf { book[it] != null } ?: book.conversations.firstOrNull()?.id
-            Row(Modifier.fillMaxSize()) {
-                Inbox(book, shown, samples, pick, Modifier.width(390.dp).fillMaxHeight())
-                if (shown != null) {
-                    LaunchedEffect(shown) { Messages.read(shown) }
-                    key(shown) { Thread(book[shown]!!, draft(shown), pending, onBack = null, Modifier.fillMaxSize()) }
-                }
-            }
+            if (shown != null) LaunchedEffect(shown) { Messages.read(shown) }
+            Workspace(book, shown, samples, pick, ::draft, pending)
         } else {
             Inbox(book, null, samples, pick, Modifier.fillMaxSize())
             val id = openId

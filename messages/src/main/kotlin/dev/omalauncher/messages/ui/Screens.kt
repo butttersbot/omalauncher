@@ -118,10 +118,10 @@ internal fun whenLabel(
 }
 
 /** Whether the look draws ink lines (Manga, Instrument): bubbles from others then get an outline instead of a fill. */
-private val inked @Composable get() = Pack.look.line > 0.dp
+internal val inked @Composable get() = Pack.look.line > 0.dp
 
 @Composable
-private fun Avatar(
+internal fun Avatar(
     name: String,
     size: Int,
 ) {
@@ -306,6 +306,8 @@ fun Thread(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    // Unfolded, a link opens in the side panel beside the chat; on the cover, in the browser.
+    val openLink = LocalOpenLink.current
     var stuck by remember(c.id) { mutableStateOf(false) }
     var noOpenBubbles by remember(c.id) { mutableStateOf(false) }
     var held by remember(c.id) { mutableStateOf<Message?>(null) }
@@ -376,7 +378,7 @@ fun Thread(
                             tail = tail && j == parts.lastIndex,
                             onReply = { pending.quotes[c.id] = quoteOf(m) },
                             onHold = { held = m },
-                            onTap = tapFor(part, c.id, context),
+                            onTap = tapFor(part, c.id, context, openLink),
                             modifier = Modifier.padding(top = if (first && j == 0) 8.dp else 2.dp),
                         ) { ink ->
                             if (j == 0) m.quote?.let { QuoteInBalloon(it, ink) }
@@ -513,12 +515,13 @@ private fun tapFor(
     part: Part,
     id: String,
     context: android.content.Context,
+    openLink: ((String) -> Unit)?,
 ): (() -> Unit)? =
     when (part) {
         is Part.Words -> null
         is Part.Link -> {
             {
-                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(Parts.openable(part.url))).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                if (openLink != null) openLink(Parts.openable(part.url)) else runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(Parts.openable(part.url))).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
             }
         }
         is Part.Website, is Part.Attachment -> {
@@ -542,7 +545,7 @@ private fun PartContent(
 
 /** A link or attachment: a square mark, a bold line, and a quieter one under it. */
 @Composable
-private fun Card(
+internal fun Card(
     title: String,
     detail: String?,
     mark: String,

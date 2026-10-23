@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Pages and videos open in the side panel beside the chat. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <!-- OpenBubbles does the iMessage work; this app opens its conversations, so it has to be able to see it. -->
     <queries>
         <package android:name="com.openbubbles.messaging" />
