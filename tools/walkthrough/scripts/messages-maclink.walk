@@ -41,11 +41,14 @@ wait 600
 type walk test from the Fold
 wait 600
 shot typed
-tap 0.936 0.925
-wait 1000
-expect walk test from the Fold
-# The Mac's copy takes the place of the one sent from here (once, not twice), and the demo answers.
-wait 3500
+# With words in the field, the arrow is the send button, and says so (TalkBack reads it too).
+expect Send
+# A hardware Enter sends (the on-screen Return breaks the line, as Apple's does); the keyboard moves the arrow.
+key ENTER
+wait 1500
+# Only a message that went gets an answer: the demo replies to each send 2 s later. (The draft in the field would
+# match the sent words too, so they prove nothing.)
+wait 3000
 expect Demo reply to: walk test from the Fold
 shot sent-and-answered
 # The Mac stopped: the inbox says so and keeps what it has.
