@@ -107,13 +107,23 @@ class ConversationBookTest {
 
     @Test fun aMessageSentThroughTheMacGivesWayToTheMacsCopy() {
         var book = ConversationBook().fromMac("c1", "Mina", false, listOf(Message("bring it?", 1_000, "Mina", id = "m1")), unread = 0)
-        book = book.waiting("c1", "k1", "2 Photos", 5_000, quote = "Mina: bring it?").waiting("c1", "k1", "here", 5_001)
+        book = book.waiting("c1", "k1", "1 Photo", 5_000, quote = "Mina: bring it?").waiting("c1", "k1", "here", 5_001)
         assertEquals(listOf("c:k1", "c:k1"), book["c1"]!!.messages.drop(1).map { it.id })
-        book = book.fromMac("c1", null, null, listOf(Message("2 Photos", 5_400, "", id = "m2#a"), Message("here", 5_400, "", id = "m2")), answered = listOf("k1"))
+        // The Mac shows each back as it went: the photo, then the words, by the Mac's own clock.
+        book = book.fromMac("c1", null, null, listOf(Message("1 Photo", 5_400, "", id = "m2#a")))
+        book = book.fromMac("c1", null, null, listOf(Message("here", 5_900, "", id = "m3")))
         val c = book["c1"]!!
-        assertEquals(listOf("m1", "m2#a", "m2"), c.messages.map { it.id })
+        assertEquals(listOf("m1", "m2#a", "m3"), c.messages.map { it.id })
         assertEquals("Mina: bring it?", c.messages[1].quote)
         assertEquals(0, c.unread)
+        // The same words from someone else, or long after, are a message of their own.
+        val other = book.waiting("c1", "k2", "ok", 10_000).fromMac("c1", null, null, listOf(Message("ok", 10_100, "Mina", id = "m4")))
+        assertEquals(listOf("c:k2", "m4"), other["c1"]!!.messages.takeLast(2).map { it.id })
+    }
+
+    @Test fun anUndoneMessageGoesWithItsAttachments() {
+        val book = ConversationBook().fromMac("c1", "Mina", false, listOf(Message("1 Photo", 1, "", id = "m1#a"), Message("look", 1, "", id = "m1"), Message("hi", 2, "", id = "m2")), unread = 0)
+        assertEquals(listOf("m2"), book.removed("c1", listOf("m1"))["c1"]!!.messages.map { it.id })
     }
 
     @Test fun aSendTheMacRefusedIsMarkedAndSurvivesSaving() {

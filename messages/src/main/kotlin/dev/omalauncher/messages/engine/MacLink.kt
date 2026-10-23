@@ -75,6 +75,9 @@ object MacLink {
     private var address: MacAddress? = null
     private val stream = MacWire.Stream()
 
+    /** Each conversation's people, handle to name, from the chat list: a message carries only the sender's handle. */
+    private val names = java.util.concurrent.ConcurrentHashMap<String, Map<String, String>>()
+
     @Synchronized
     fun start(to: MacAddress) {
         address = to
@@ -127,35 +130,60 @@ object MacLink {
         }
     }
 
-    private fun post(
+    /** Sends [body] (JSON, or nothing) and answers with what came back. */
+    private fun call(
         at: MacAddress,
+        method: String,
         path: String,
-        body: JSONObject,
-    ) {
-        val c = open(at, path, "POST")
+        body: JSONObject? = null,
+    ): String {
+        val c = open(at, path, method, timeout = 60_000)
         try {
-            c.doOutput = true
-            c.setRequestProperty("Content-Type", "application/json")
-            c.outputStream.use { it.write(body.toString().toByteArray()) }
+            if (body != null) {
+                c.doOutput = true
+                c.setRequestProperty("Content-Type", "application/json")
+                c.outputStream.use { it.write(body.toString().toByteArray()) }
+            }
             if (c.responseCode !in 200..299) throw IllegalStateException(error(c))
-            val answer = c.inputStream.bufferedReader().use { it.readText() }
-            if (answer.isNotBlank() && !JSONObject(answer).optBoolean("ok", true)) throw IllegalStateException(JSONObject(answer).optString("error"))
+            return c.inputStream.bufferedReader().use { it.readText() }
         } finally {
             c.disconnect()
         }
     }
 
+    /** The service's own words when it says no: {"error":{"message":…}}. */
     private fun error(c: HttpURLConnection): String {
         val text = runCatching { c.errorStream?.bufferedReader()?.use { it.readText() } }.getOrNull().orEmpty()
-        return runCatching { JSONObject(text).optString("error") }.getOrNull()?.ifEmpty { null } ?: "The Mac answered ${c.responseCode}"
+        val said = runCatching { JSONObject(text).optJSONObject("error")?.optString("message") }.getOrNull()
+        return said?.ifEmpty { null } ?: when (c.responseCode) {
+            401 -> "Your Mac didn't take this phone's token."
+            403 -> "Your Mac is set to read only: sending is off there."
+            else -> "Your Mac answered ${c.responseCode}."
+        }
     }
 
     private fun path(id: String) = URLEncoder.encode(id, "UTF-8").replace("+", "%20")
 
+    private fun messagesOf(m: MacWire.Msg): List<Message> {
+        val people = names[m.chatId].orEmpty()
+        val book = Messages.book.value[m.chatId]
+        return MacWire.toMessages(
+            m,
+            nameOf = { people[it] },
+            quoteOf = { id ->
+                book?.messages?.lastOrNull { it.id == id || it.id == "$id#a" }?.let { q -> (if (q.fromMe) "You" else q.sender) + ": " + q.text.take(90) }
+            },
+        )
+    }
+
     /** The chats, and the latest messages of the first few. */
     private fun sync(at: MacAddress) {
-        val chats = MacWire.chats(get(at, "/v1/chats?limit=50"))
-        chats.forEach { c -> Messages.fromMac(c.id, c.name, c.isGroup, c.last?.let(MacWire::toMessages).orEmpty(), c.unread) }
+        val chats = MacWire.chats(get(at, "/v1/threads"))
+        chats.forEach { c ->
+            names[c.id] = c.people.associate { it.handle to it.name }
+            val unread = if (c.unread) maxOf(1, Messages.book.value[c.id]?.unread ?: 0) else 0
+            Messages.fromMac(c.id, c.name, c.isGroup, c.last?.let(::messagesOf).orEmpty(), unread)
+        }
         chats.take(PRIMED).forEach { c -> history(at, c.id) }
         trouble.value = ""
     }
@@ -164,13 +192,14 @@ object MacLink {
         at: MacAddress,
         id: String,
     ) {
-        val ms = MacWire.messages(get(at, "/v1/chats/${path(id)}/messages?limit=50"))
-        Messages.fromMac(id, null, null, ms.flatMap(MacWire::toMessages), unread = null, answered = emptyList(), counting = false)
+        val ms = MacWire.messages(get(at, "/v1/threads/${path(id)}/messages"))
+        // Oldest first, so a reply finds the message it quotes.
+        ms.forEach { Messages.fromMac(id, null, null, messagesOf(it), unread = null, counting = false) }
     }
 
     /** Holds the event stream open until it drops. */
     private fun listen(at: MacAddress) {
-        // The service sends a keep-alive well inside this; silence for longer is a dead link.
+        // The service sends a keep-alive every 20 s; silence for longer than this is a dead link.
         val c = open(at, "/v1/events", timeout = 90_000)
         c.setRequestProperty("Accept", "text/event-stream")
         stream.lastId?.let { c.setRequestProperty("Last-Event-ID", it) }
@@ -193,79 +222,90 @@ object MacLink {
         e: MacWire.Event,
     ) {
         when (e.type) {
-            "message.new", "message.updated" -> {
-                val m = MacWire.msg(JSONObject(e.data))
-                val known = Messages.book.value[m.chatId] != null
-                Messages.fromMac(m.chatId, null, null, MacWire.toMessages(m), answered = listOfNotNull(m.clientId))
-                // A conversation not seen before: its name comes with the chat list.
-                if (!known) io.execute { runCatching { sync(at) } }
+            // The events since the last one seen are gone (the service restarted): everything again.
+            "resync" -> {
+                stream.lastId = null
+                sync(at)
             }
-            "chat.updated" -> {
-                val o = JSONObject(e.data)
-                Messages.fromMac(o.getString("id"), o.optString("name").ifEmpty { null }, if (o.has("isGroup")) o.optBoolean("isGroup") else null, emptyList(), if (o.has("unread")) o.optInt("unread") else null)
+            "imessage" -> {
+                val s = MacWire.sync(e.data) ?: return
+                when (s.objectName to s.mutation) {
+                    "message" to "upsert" -> {
+                        val known = Messages.book.value[s.chatId] != null
+                        val ms = (0 until s.entries.length()).mapNotNull { s.entries.optJSONObject(it) }.map(MacWire::msg)
+                        ms.forEach { Messages.fromMac(s.chatId, null, null, messagesOf(it)) }
+                        // A conversation not seen before: its name and people come with the chat list.
+                        if (!known) io.execute { runCatching { sync(at) } }
+                    }
+                    "message" to "delete" -> Messages.removed(s.chatId, (0 until s.entries.length()).map { s.entries.get(it).toString() })
+                    "thread" to "update" -> {
+                        for (i in 0 until s.entries.length()) {
+                            val patch = s.entries.optJSONObject(i) ?: continue
+                            val unread = if (patch.has("isUnread")) (if (patch.optBoolean("isUnread")) 1 else 0) else null
+                            val title = if (patch.has("title")) patch.optString("title").ifEmpty { null } else null
+                            Messages.fromMac(s.chatId, title, null, emptyList(), unread)
+                        }
+                    }
+                    // Patches to a message (delivered, read, a tapback) change nothing shown yet.
+                }
             }
         }
     }
 
-    /** Sends [text] to [chat]; [onFail] when the Mac doesn't take it. */
+    /** Sends [text] to [chat], as a threaded reply to [replyTo] when given; [onFail] when the Mac doesn't take it. */
     fun send(
         chat: String,
         text: String,
-        clientId: String,
-        onFail: () -> Unit,
+        replyTo: String?,
+        onFail: (String) -> Unit,
     ) {
-        val at = address ?: return onFail()
+        val at = address ?: return onFail("Not linked to a Mac.")
         io.execute {
-            runCatching { post(at, "/v1/chats/${path(chat)}/messages", JSONObject().put("text", text).put("clientId", clientId)) }
-                .onFailure {
-                    Log.w(TAG, "sending", it)
-                    onFail()
-                }
+            runCatching {
+                val body = JSONObject().put("text", text)
+                replyTo?.let { body.put("replyTo", it) }
+                MacWire.sent(call(at, "POST", "/v1/threads/${path(chat)}/messages", body)).forEach { Messages.fromMac(chat, null, null, messagesOf(it)) }
+            }.onFailure {
+                Log.w(TAG, "sending", it)
+                onFail(it.message.orEmpty())
+            }
         }
     }
 
-    /** Sends [photos] (and [text] with them) to [chat] in one go. */
+    /** Sends [photos] to [chat], one after another, then [text]; [onFail] at the first the Mac doesn't take. */
     fun sendFiles(
         context: Context,
         chat: String,
         photos: List<Uri>,
         text: String,
-        clientId: String,
-        onFail: () -> Unit,
+        onFail: (String) -> Unit,
     ) {
-        val at = address ?: return onFail()
+        val at = address ?: return onFail("Not linked to a Mac.")
         val resolver = context.contentResolver
         io.execute {
             runCatching {
-                val boundary = "soma" + System.nanoTime()
-                val c = open(at, "/v1/chats/${path(chat)}/attachments", "POST", timeout = 120_000)
-                try {
-                    c.doOutput = true
-                    c.setChunkedStreamingMode(64 * 1024)
-                    c.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
-                    c.outputStream.buffered().use { out ->
-                        fun field(
-                            name: String,
-                            value: String,
-                        ) = out.write("--$boundary\r\nContent-Disposition: form-data; name=\"$name\"\r\n\r\n$value\r\n".toByteArray())
-                        field("clientId", clientId)
-                        if (text.isNotBlank()) field("text", text)
-                        photos.forEachIndexed { i, uri ->
-                            val type = resolver.getType(uri) ?: "image/jpeg"
-                            val ext = android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(type) ?: "jpg"
-                            out.write("--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"photo-${i + 1}.$ext\"\r\nContent-Type: $type\r\n\r\n".toByteArray())
-                            resolver.openInputStream(uri)!!.use { it.copyTo(out) }
-                            out.write("\r\n".toByteArray())
-                        }
-                        out.write("--$boundary--\r\n".toByteArray())
+                photos.forEachIndexed { i, uri ->
+                    val type = resolver.getType(uri) ?: "image/jpeg"
+                    val ext = android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(type) ?: "jpg"
+                    val c = open(at, "/v1/threads/${path(chat)}/attachments?fileName=photo-${i + 1}.$ext", "POST", timeout = 120_000)
+                    try {
+                        c.doOutput = true
+                        c.setChunkedStreamingMode(64 * 1024)
+                        c.setRequestProperty("Content-Type", type)
+                        c.outputStream.use { out -> resolver.openInputStream(uri)!!.use { it.copyTo(out) } }
+                        if (c.responseCode !in 200..299) throw IllegalStateException(error(c))
+                        val answer = c.inputStream.bufferedReader().use { it.readText() }
+                        MacWire.sent(answer).forEach { Messages.fromMac(chat, null, null, messagesOf(it)) }
+                    } finally {
+                        c.disconnect()
                     }
-                    if (c.responseCode !in 200..299) throw IllegalStateException(error(c))
-                } finally {
-                    c.disconnect()
+                }
+                if (text.isNotBlank()) {
+                    MacWire.sent(call(at, "POST", "/v1/threads/${path(chat)}/messages", JSONObject().put("text", text))).forEach { Messages.fromMac(chat, null, null, messagesOf(it)) }
                 }
             }.onFailure {
                 Log.w(TAG, "sending photos", it)
-                onFail()
+                onFail(it.message.orEmpty())
             }
         }
     }
@@ -275,7 +315,7 @@ object MacLink {
         val at = address ?: return
         io.execute {
             runCatching { history(at, chat) }.onFailure { Log.w(TAG, "history", it) }
-            runCatching { post(at, "/v1/chats/${path(chat)}/read", JSONObject()) }.onFailure { Log.w(TAG, "read", it) }
+            runCatching { call(at, "POST", "/v1/threads/${path(chat)}/read") }.onFailure { Log.w(TAG, "read", it) }
         }
     }
 

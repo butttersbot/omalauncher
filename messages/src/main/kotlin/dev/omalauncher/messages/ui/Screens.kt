@@ -397,7 +397,10 @@ fun Thread(
                         Balloon(
                             m,
                             tail = tail && j == parts.lastIndex,
-                            onReply = { pending.quotes[c.id] = quoteOf(m) },
+                            onReply = {
+                                pending.quotes[c.id] = quoteOf(m)
+                                m.id?.let { Messages.quoting[c.id] = it }
+                            },
                             onHold = { held = m },
                             onTap = tapFor(part, c.id, context, openLink),
                             modifier = Modifier.padding(top = if (first && j == 0) 8.dp else 2.dp),
@@ -437,6 +440,7 @@ fun Thread(
                 HoldMenu(
                     onReply = {
                         pending.quotes[c.id] = quoteOf(m)
+                        m.id?.let { Messages.quoting[c.id] = it }
                         held = null
                     },
                     onCopy = {
@@ -486,7 +490,7 @@ fun Thread(
                     }
                 } else if (Messages.linked && !Messages.samples.value) {
                     // Through the Mac, photos and words go out together, from here.
-                    Messages.sendPhotos(context, c.id, photos, text, summary(context, photos), quote)
+                    Messages.sendPhotos(context, c.id, photos, text, photos.map { summary(context, listOf(it)) }, quote)
                     pending.photos.remove(c.id)
                     pending.quotes.remove(c.id)
                 } else {

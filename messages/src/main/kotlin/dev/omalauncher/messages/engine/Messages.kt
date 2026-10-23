@@ -109,11 +109,23 @@ object Messages {
         isGroup: Boolean?,
         incoming: List<Message>,
         unread: Int? = null,
-        answered: Collection<String> = emptyList(),
         counting: Boolean = true,
     ) {
-        publish(real.fromMac(id, title, isGroup, incoming, unread, answered, counting))
+        publish(real.fromMac(id, title, isGroup, incoming, unread, counting))
     }
+
+    /** The Mac took back messages [ids] in [id]. */
+    @Synchronized
+    fun removed(
+        id: String,
+        ids: Collection<String>,
+    ) = publish(real.removed(id, ids))
+
+    /**
+     * The message each conversation's waiting quote is of, by the Mac's id, so a reply through the Mac is a real
+     * threaded reply. Set with the quote; used and forgotten by the next send.
+     */
+    val quoting = ConcurrentHashMap<String, String>()
 
     private fun publish(next: ConversationBook) {
         real = next
@@ -169,7 +181,8 @@ object Messages {
         if (linked) {
             val clientId = java.util.UUID.randomUUID().toString()
             publish(real.waiting(id, clientId, text, System.currentTimeMillis(), quote))
-            MacLink.send(id, text, clientId) { failed(id, clientId) }
+            val replyTo = quoting.remove(id)?.takeIf { quote != null }?.removeSuffix("#a")
+            MacLink.send(id, text, replyTo) { failed(id, clientId) }
             return Sent.Sent
         }
         val h = handles[id]
@@ -241,22 +254,27 @@ object Messages {
         return intent
     }
 
-    /** Sends [photos], with [text], through the Mac; [summary] ("2 Photos") stands for them until the Mac shows them back. */
+    /**
+     * Sends [photos], then [text], through the Mac. Each photo's [summaries] entry ("1 Photo", "1 Video") stands for it
+     * until the Mac shows it back: the Mac sends each photo as a message of its own.
+     */
     @Synchronized
     fun sendPhotos(
         context: Context,
         id: String,
         photos: List<android.net.Uri>,
         text: String,
-        summary: String,
+        summaries: List<String>,
         quote: String?,
     ) {
         val clientId = java.util.UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
-        var next = real.waiting(id, clientId, summary, now, quote)
-        if (text.isNotBlank()) next = next.waiting(id, clientId, text, now + 1)
+        var next = real
+        summaries.forEachIndexed { i, s -> next = next.waiting(id, clientId, s, now + i, if (i == 0) quote else null) }
+        if (text.isNotBlank()) next = next.waiting(id, clientId, text, now + summaries.size)
         publish(next)
-        MacLink.sendFiles(context, id, photos, text, clientId) { failed(id, clientId) }
+        quoting.remove(id)
+        MacLink.sendFiles(context, id, photos, text) { failed(id, clientId) }
     }
 
     @Synchronized

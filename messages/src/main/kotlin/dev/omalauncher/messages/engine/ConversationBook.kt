@@ -133,8 +133,9 @@ class ConversationBook(
 
     /**
      * What the Mac says about conversation [id]: its name, and [incoming] messages, each with the Mac's id. One already
-     * here is replaced; one sent from here (`c:` [answered]) gives way to the Mac's copy, keeping its quote. [unread]
-     * is the Mac's count when it gave one, else new messages from others are counted, unless [counting] is off (history).
+     * here is replaced. One the owner sent from here (`c:`, waiting) gives way to the Mac's copy of the same words,
+     * keeping its quote: the copy is the owner's own, with the same text, from close to when it went. [unread] is the
+     * Mac's count when it gave one, else new messages from others are counted, unless [counting] is off (history).
      */
     fun fromMac(
         id: String,
@@ -142,23 +143,29 @@ class ConversationBook(
         isGroup: Boolean?,
         incoming: List<Message>,
         unread: Int? = null,
-        answered: Collection<String> = emptyList(),
         counting: Boolean = true,
     ): ConversationBook {
         val old = byId[id]
         val messages = old?.messages?.toMutableList() ?: mutableListOf()
-        val waiting = messages.filter { m -> answered.any { m.id == "c:$it" } }
-        messages.removeAll(waiting)
         var fresh = 0
         for (m in incoming) {
             val at = messages.indexOfFirst { it.id == m.id }
-            val quote = m.quote ?: waiting.firstOrNull { it.text == m.text }?.quote
             if (at >= 0) {
-                messages[at] = m.copy(quote = quote ?: messages[at].quote)
-            } else {
-                messages += m.copy(quote = quote)
-                if (!m.fromMe && counting) fresh++
+                messages[at] = m.copy(quote = m.quote ?: messages[at].quote)
+                continue
             }
+            val echo =
+                if (m.fromMe) {
+                    messages.indexOfFirst { it.id?.startsWith("c:") == true && !it.failed && it.text == m.text && kotlin.math.abs(it.time - m.time) <= ECHO_MS }
+                } else {
+                    -1
+                }
+            if (echo >= 0) {
+                messages[echo] = m.copy(quote = m.quote ?: messages[echo].quote)
+                continue
+            }
+            messages += m
+            if (!m.fromMe && counting) fresh++
         }
         messages.sortBy { it.time }
         val conversation =
@@ -170,6 +177,16 @@ class ConversationBook(
                 unread = unread ?: ((old?.unread ?: 0) + fresh),
             )
         return ConversationBook(byId + (id to conversation))
+    }
+
+    /** The Mac took back messages [ids] in [id] (undo send); an attachment's part ("#a") goes with its message. */
+    fun removed(
+        id: String,
+        ids: Collection<String>,
+    ): ConversationBook {
+        val old = byId[id] ?: return this
+        val gone = ids.flatMap { listOf(it, "$it#a") }.toSet()
+        return ConversationBook(byId + (id to old.copy(messages = old.messages.filter { it.id !in gone })))
     }
 
     /** The owner sent [text] from here through the Mac, as [clientId]; it waits until the Mac shows it back. */
