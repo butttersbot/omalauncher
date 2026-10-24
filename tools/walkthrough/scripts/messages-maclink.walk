@@ -119,7 +119,8 @@ expect tiktok.com
 tap tiktok.com
 wait 4000
 shot link-opened
-key BACK
+# Back to the app by bringing it forward: TikTok's page now opens a "Watch this video" sheet that a Back only closes.
+shell am start -W -n dev.omalauncher.messages/.MainActivity
 wait 1000
 expect Clips
 # Unfolded, the side panel's "Photos & files": the video plays from there too (it said "Open in OpenBubbles" and did
@@ -274,7 +275,8 @@ tap Ana Demo
 wait 1500
 tap 0.5 0.925
 wait 600
-type walk unread test
+# Words without "unread" in them: the inbox row shows the answer, and the checks below look for that word.
+type walk dot test
 key ENTER
 tap 0.06 0.094
 wait 4000
