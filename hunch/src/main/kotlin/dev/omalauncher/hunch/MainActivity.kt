@@ -51,7 +51,7 @@ class MainActivity : Activity() {
     private fun base(title:String) {
         val root=column().apply{setBackgroundColor(paper)}
         root.setOnApplyWindowInsetsListener { v,ins -> v.setPadding(ins.systemWindowInsetLeft,ins.systemWindowInsetTop,ins.systemWindowInsetRight,ins.systemWindowInsetBottom);ins }
-        val scroll=ScrollView(this).apply{isVerticalScrollBarEnabled=false;fillViewport=true}
+        val scroll=ScrollView(this).apply{isVerticalScrollBarEnabled=false;isFillViewport=true}
         page=column().apply{setPadding(dp(16),dp(12),dp(16),dp(16))}
         scroll.addView(page);root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f))
         val tabs=LinearLayout(this)
