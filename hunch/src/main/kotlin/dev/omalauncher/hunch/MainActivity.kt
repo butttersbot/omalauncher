@@ -34,9 +34,23 @@ class MainActivity : Activity() {
         mono=Typeface.createFromAsset(assets,"fonts/JetBrainsMono.ttf")
         fixture=if(BuildConfig.DEBUG) intent.getStringExtra("fixture").orEmpty() else ""
         query=state?.getString("query").orEmpty();chapter=state?.getString("chapter") ?: "Today"
-        category=state?.getString("category") ?: "All";home()
+        category=state?.getString("category") ?: "All"
+        side=state?.getInt("side") ?: 0;budget=state?.getInt("budget") ?: 20
+        window.decorView.systemUiVisibility=View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+        if(android.os.Build.VERSION.SDK_INT>=33)onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT){goBack()}
+        val restored=state?.getString("market")?.let { runCatching { Market.parse(JSONObject(it)).single() }.getOrNull() }
+        if(restored==null)home() else market(restored,listOf(restored))
     }
-    override fun onSaveInstanceState(out:Bundle){out.putString("query",query);out.putString("chapter",chapter);out.putString("category",category);super.onSaveInstanceState(out)}
+    override fun onSaveInstanceState(out:Bundle){
+        out.putString("query",query);out.putString("chapter",chapter);out.putString("category",category);out.putInt("side",side);out.putInt("budget",budget)
+        selected?.let { m ->
+            val row=JSONObject().put("outcome",m.id).put("venue",m.venue).put("name",m.template).put("quoteToken",m.quote)
+                .put("description",m.fields.entries.joinToString("|"){"${it.key}:${it.value}"})
+                .put("sideSpecs",org.json.JSONArray(m.sides.map{JSONObject().put("name",it)}))
+            out.putString("market",JSONObject().put("outcomes",org.json.JSONArray().put(row)).toString())
+        }
+        super.onSaveInstanceState(out)
+    }
     private fun dp(x:Int)=(x*resources.displayMetrics.density).toInt()
     private fun column()=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
     private fun text(words:String,size:Float=16f,color:Int=ink,face:Typeface=body)=TextView(this).apply{
@@ -152,6 +166,7 @@ class MainActivity : Activity() {
         }catch(e:Exception){deliver(token){prices.text="Live orders unavailable. Tap Refresh live orders.";valid=false;previewText()}}}
     }
     private fun friendly(key:String)=key.replace(Regex("([a-z])([A-Z])"),"$1 $2").replaceFirstChar{it.uppercaseChar()}
-    @Deprecated("Android back compatibility")override fun onBackPressed(){if(selected!=null){home()}else if(chapter!="Today"){chapter="Today";home()}else super.onBackPressed()}
+    private fun goBack(){if(selected!=null){home()}else if(chapter!="Today"){chapter="Today";home()}else finish()}
+    @Deprecated("Android back compatibility")override fun onBackPressed(){goBack()}
     override fun onDestroy(){generation++;job?.cancel(true);worker.shutdownNow();super.onDestroy()}
 }
