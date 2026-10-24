@@ -93,9 +93,14 @@ expect Tap to play
 tap Tap to play
 wait 5000
 shot video-playing
+# Back from the player to the chat: the app brought forward, as the number of Backs the player takes varies (the
+# emulator's first full-screen sheet took one of its own).
 key BACK
+wait 800
+shell am start -n dev.omalauncher.messages/.MainActivity
 wait 1500
-absent Tap to play
+expect Video, tap to play
+absent Getting it from your Mac
 # Look: the video shown by a frame from it, with a play mark.
 shot video-frame
 # A shared link (the demo's second "Clips" message, "https://www.tiktok.com/@soma/video/1"): a card, and a tap opens it.
