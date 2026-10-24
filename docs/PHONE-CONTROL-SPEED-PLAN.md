@@ -186,3 +186,9 @@ with the subsequent control snapshot. Open now derives foreground and destinatio
 fresh observation. Read-only `screen until` waits may observe a different package until their bounded
 deadline; they still refuse a final wrong package. Touch admission remains strict and immediate.
 Cancellation, lock/pause and approval guards run on every poll as before.
+
+2026-10-24 (Phone A, Claude, picking up after Phone B): the two Samsung Settings failures of the 144 phone check are fixed
+in 33f2d72, not yet built: storage opens in Settings itself (Samsung's My Files also answers it, so Android showed its
+chooser), and battery accepts Samsung's hand-off to Device Care (com.samsung.android.lool), still checking its words.
+Stages 3-5 still TODO; physical guards (pause/take-over/lock during a plan) and matched 20-trial benchmarks still not walked.
+
