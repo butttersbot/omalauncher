@@ -86,4 +86,30 @@ class TextTest {
         assertEquals(listOf("Soma Notes", "Tailshare", "Other"), got.map { it.first })
         assertEquals(2, got[0].second.size)
     }
+
+    @Test fun searchFindsTitlesFirstThenText() {
+        val notes =
+            listOf(
+                Note("Groceries.md", "Groceries", Wire.MINE, "md", 10, "s"),
+                Note("Agents/omalauncher/Current state.md", "Current state", Wire.AGENT, "md", 20, "s", readonly = true),
+                Note("Old.md", "Old", Wire.MINE, "md", 5, "s", gone = true),
+            )
+        val texts = mapOf("Groceries.md" to "Groceries\n- [ ] Milk", "Agents/omalauncher/Current state.md" to "# Now\nSoma Notes groceries list is next", "Old.md" to "groceries")
+        val hits = Search.find(notes, { texts[it].orEmpty() }, "groceries")
+        assertEquals(listOf("Groceries.md", "Agents/omalauncher/Current state.md"), hits.map { it.id })
+        assertEquals("omalauncher", hits[1].project)
+        assertTrue(hits[1].snippet, "groceries" in hits[1].snippet.lowercase())
+        assertEquals(listOf("Groceries.md"), Search.find(notes, { texts[it].orEmpty() }, "groc", titlesOnly = true).map { it.id })
+        assertTrue(Search.find(notes, { texts[it].orEmpty() }, "milk next").isEmpty())
+    }
+
+    @Test fun readOnlyNotesAreNeverWritten() {
+        val s = Shelf(java.nio.file.Files.createTempDirectory("notes").toFile())
+        s.took(Remote("Agents/x/Brief.md", "Brief", Wire.AGENT, "md", 1, "a", readonly = true), "# Project brief")
+        assertEquals("Brief", s["Agents/x/Brief.md"]!!.title)
+        s.write("Agents/x/Brief.md", "changed")
+        s.delete("Agents/x/Brief.md")
+        assertEquals("# Project brief", s.text("Agents/x/Brief.md"))
+        assertFalse(s["Agents/x/Brief.md"]!!.dirty || s["Agents/x/Brief.md"]!!.gone)
+    }
 }

@@ -10,6 +10,8 @@ data class Remote(
     val ext: String,
     val modified: Long,
     val sha: String,
+    /** A project's BRIEF.md or CURRENT-STATE.md, shown from ClaudeSync on the Mac: read here, edited there. */
+    val readonly: Boolean = false,
 )
 
 /**
@@ -38,6 +40,7 @@ object Wire {
                         ext = n.optString("ext").ifEmpty { id.substringAfterLast('.', "md") },
                         modified = n.optLong("modified"),
                         sha = n.getString("sha"),
+                        readonly = n.optBoolean("readonly"),
                     )
                 }.filter { safe(it.id) }
         }.getOrNull()

@@ -131,7 +131,7 @@ fun Stream(
                     Swipe(
                         n,
                         pin = { Notes.pin(n.id, !n.pinned) },
-                        delete = {
+                        delete = if (n.readonly) null else {
                             going?.let { Notes.delete(it.id) }
                             going = n
                             deleted(n.id)
@@ -161,7 +161,8 @@ fun Stream(
 private fun Swipe(
     n: Note,
     pin: () -> Unit,
-    delete: () -> Unit,
+    /** Null for a note that can't be deleted from here (a project's own file): then it only swipes right. */
+    delete: (() -> Unit)?,
     card: @Composable () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -187,9 +188,9 @@ private fun Swipe(
                                     x.animateTo(0f)
                                     pin()
                                 }
-                                x.value < -w * DELETE_AT -> {
+                                delete != null && x.value < -w * DELETE_AT -> {
                                     x.animateTo(-w)
-                                    delete()
+                                    delete?.invoke()
                                 }
                                 else -> x.animateTo(0f)
                             }
@@ -198,7 +199,7 @@ private fun Swipe(
                     onDragCancel = { scope.launch { x.animateTo(0f) } },
                 ) { change, dx ->
                     change.consume()
-                    scope.launch { x.snapTo((x.value + dx).coerceIn(-width.toFloat(), width * 0.5f)) }
+                    scope.launch { x.snapTo((x.value + dx).coerceIn(if (delete == null) 0f else -width.toFloat(), width * 0.5f)) }
                 }
             },
         ) { card() }
@@ -246,7 +247,11 @@ fun sections(
 ): List<Pair<String?, List<Note>>> {
     val newest = notes.sortedByDescending { it.modified }
     if (!agents) return listOf(null to newest.sortedByDescending { it.pinned })
-    return newest.groupBy(::project).map { (k, v) -> k to v.sortedByDescending { it.pinned } }
+    // In each project its Brief, then its Current state, first; then pinned, then newest.
+    val first = listOf("Brief", "Current state")
+    return newest.groupBy(::project).map { (k, v) ->
+        k to v.sortedWith(compareBy<Note>({ n -> first.indexOf(n.title.takeIf { n.readonly } ?: "").let { if (it < 0) 9 else it } }, { !it.pinned }))
+    }
 }
 
 fun whenOf(

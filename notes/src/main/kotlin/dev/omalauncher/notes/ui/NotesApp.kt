@@ -120,7 +120,7 @@ fun NotesApp(mayListen: () -> Boolean) {
                     val m = Modifier.weight(1f).fillMaxHeight()
                     val note = Notes[o.id]
                     if (o.reading && note != null) {
-                        Reader(o.id, back = { open = null }, edit = if (note.html) null else ({ open = o.copy(reading = false) }), modifier = m)
+                        Reader(o.id, back = { open = null }, edit = if (note.html || note.readonly) null else ({ open = o.copy(reading = false) }), modifier = m)
                     } else {
                         Page(o.id, talk, mayListen, back = { open = null }, read = { open = Open(Notes.now(o.id), reading = true) }, modifier = m)
                     }

@@ -61,5 +61,10 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
+        <!-- Soma's search on home finds notes here; the provider answers only apps signed with this app's key. -->
+        <provider
+            android:name=".SearchProvider"
+            android:authorities="dev.omalauncher.notes.search"
+            android:exported="true" />
     </application>
 </manifest>

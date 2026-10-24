@@ -22,6 +22,8 @@ data class Note(
     val preview: String = "",
     /** Kept at the top of the stream (a swipe right). The phone's own, for now: the Mac doesn't keep pins. */
     val pinned: Boolean = false,
+    /** Mirrored from a project's own files on the Mac: never edited, sent or deleted from here. */
+    val readonly: Boolean = false,
 ) {
     val agent get() = kind == Wire.AGENT
     val html get() = ext == "html"
@@ -64,6 +66,7 @@ class Shelf(private val dir: File) {
                         gone = o.optBoolean("gone"),
                         preview = o.optString("preview"),
                         pinned = o.optBoolean("pinned"),
+                        readonly = o.optBoolean("readonly"),
                     )
                 notes[n.id] = n
             }
@@ -95,6 +98,7 @@ class Shelf(private val dir: File) {
     ): Note {
         val id = now(note)
         val was = notes[id]
+        if (was?.readonly == true) return was
         val n =
             (was ?: Note(id, "", Wire.MINE, "md", at, null)).copy(
                 title = Wire.title(text, if (id.startsWith(Note.LOCAL)) "" else id),
@@ -128,13 +132,14 @@ class Shelf(private val dir: File) {
         notes[remote.id] =
             Note(
                 id = remote.id,
-                title = if (remote.ext == "html") remote.title else Wire.title(text, remote.id),
+                title = if (remote.readonly) Wire.fileTitle(remote.id) else if (remote.ext == "html") remote.title else Wire.title(text, remote.id),
                 kind = remote.kind,
                 ext = remote.ext,
                 modified = remote.modified,
                 sha = remote.sha,
                 preview = if (remote.ext == "html") "" else Wire.preview(text),
                 pinned = notes[remote.id]?.pinned == true,
+                readonly = remote.readonly,
             )
         save()
     }
@@ -189,6 +194,7 @@ class Shelf(private val dir: File) {
     fun delete(note: String) {
         val id = now(note)
         val n = notes[id] ?: return
+        if (n.readonly) return
         if (n.sha == null) {
             forget(id)
         } else {
@@ -211,7 +217,7 @@ class Shelf(private val dir: File) {
             a.put(
                 JSONObject()
                     .put("id", n.id).put("title", n.title).put("kind", n.kind).put("ext", n.ext).put("modified", n.modified)
-                    .put("sha", n.sha ?: "").put("dirty", n.dirty).put("gone", n.gone).put("preview", n.preview).put("pinned", n.pinned),
+                    .put("sha", n.sha ?: "").put("dirty", n.dirty).put("gone", n.gone).put("preview", n.preview).put("pinned", n.pinned).put("readonly", n.readonly),
             )
         }
         val tmp = File(dir, "index.json.tmp")

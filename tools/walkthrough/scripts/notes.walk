@@ -84,6 +84,13 @@ wait 1000
 expect Sideways book
 # Its card, by its preview: "Walk groceries" is still the note open in the right pane on the open Fold.
 absent Milk Eggs
+# A project's own BRIEF.md, mirrored read-only from ClaudeSync (the walk folder's test one: Agents/walk/Brief.md):
+# first in its project, read with no Edit.
+expect Brief
+tap Brief
+wait 2500
+absent Edit
+shot read-only-brief
 tap Sideways book
 wait 2500
 # Look: two pages side by side, a thin line between, page numbers below; a tap at the right turns to the next spread.
