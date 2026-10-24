@@ -49,6 +49,7 @@ class PhoneSpeedInstrumentation : Instrumentation() {
             check(screen.optBoolean("ok") && screen.optBoolean("shows")) { screen.toString() }
             val timing = screen.getJSONObject("timing")
             check(timing.getInt("reads") >= 1 && timing.getInt("nodes") > 0 && timing.getDouble("readMs") >= 0)
+            Log.i("SomaWalk", "speed METRIC open=" + opened.getJSONObject("timing") + " screen=" + timing)
             Log.i("SomaWalk", "speed PASS: actual service opens Display and reports read timing")
             val refused = call(JSONObject().put("command", "open").put("package", "settings:fictional-invalid"))
             check(!refused.optBoolean("ok"))
@@ -57,6 +58,8 @@ class PhoneSpeedInstrumentation : Instrumentation() {
             Log.i("SomaWalk", "speed PASS: unsupported destination refuses without changing screen")
             val absent = call(JSONObject().put("command", "press").put("label", "SOMA FICTIONAL MISSING CONTROL 92631").put("timing", true))
             check(!absent.optBoolean("ok"))
+            check(absent.optString("error").contains("Nothing on screen")) { "Expected search exhaustion, not another failure: $absent" }
+            Log.i("SomaWalk", "speed METRIC absent=" + absent.getJSONObject("timing"))
             val scrolls = absent.getJSONObject("timing").getInt("searchScrolls")
             check(scrolls in 0..12) { "Search exceeded two bounded directions: $scrolls" }
             Log.i("SomaWalk", "speed PASS: actual absent-label search bounded; scrolls=$scrolls")
