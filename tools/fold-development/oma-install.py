@@ -43,7 +43,8 @@ def run(args, timeout=30):
  return subprocess.run(args,capture_output=True,text=True,timeout=timeout)
 USAGE='Usage: oma-install [--no-open|--status] [--self] [--apk FILE]'
 args=sys.argv[1:]
-# --apk FILE: another APK than the launcher build, the launcher's or Soma Messages' (dev.omalauncher.messages).
+# --apk FILE: another APK than the launcher build: the launcher's, Soma Messages' (dev.omalauncher.messages) or Soma
+# Notes' (dev.omalauncher.notes).
 # --self: Oma installs it itself, through Android's installer, with no Wireless debugging (so off Wi-Fi too; Boss,
 # 2026-10-22). Without --self that route is taken when the adb one can't be reached.
 other=None
@@ -69,8 +70,8 @@ if other:apk=other
 if not apk.is_file():sys.exit('No working-launcher APK found. Run oma-build first.' if not other else 'No APK at '+str(other)+'.')
 r=run(['/opt/android-sdk/build-tools/36.0.0/aapt2','dump','badging',str(apk)])
 m=re.search(r"package: name='([^']+)' versionCode='(\d+)'",r.stdout)
-allowed=[package]+(['dev.omalauncher.messages'] if other else [])
-if r.returncode or not m or m.group(1) not in allowed:sys.exit('Install refused: APK is not the working launcher'+(' or Soma Messages' if other else '')+'.')
+allowed=[package]+(['dev.omalauncher.messages','dev.omalauncher.notes'] if other else [])
+if r.returncode or not m or m.group(1) not in allowed:sys.exit('Install refused: APK is not the working launcher'+(', Soma Messages or Soma Notes' if other else '')+'.')
 target=m.group(1)
 version=int(m.group(2))
 r=run(['/opt/android-sdk/build-tools/36.0.0/apksigner','verify','--print-certs',str(apk)])
@@ -120,7 +121,7 @@ if not endpoint:
  print('Wireless debugging is not reachable (off Wi-Fi?): Oma installs it itself instead.',flush=True)
  install_self()
 if target!=package:
- # Soma Messages over adb: an ordinary update, nothing restarts.
+ # Soma Messages or Notes over adb: an ordinary update (or first install), nothing restarts.
  r=run(['adb','-s',endpoint,'install','-r',str(apk)],300)
  sys.exit(0 if 'Success' in r.stdout and not print('Installed '+target+' version '+str(version)+' over adb.') else 'Install failed: '+(r.stdout+r.stderr).strip())
 r=run(['adb','-s',endpoint,'shell','dumpsys','package',package])

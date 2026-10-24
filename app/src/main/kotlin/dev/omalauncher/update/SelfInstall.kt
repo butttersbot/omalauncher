@@ -26,7 +26,8 @@ import java.security.MessageDigest
  */
 object SelfInstall {
     const val ACTION = "dev.omalauncher.update.INSTALLED"
-    private const val MESSAGES = "dev.omalauncher.messages"
+    /** The other Soma apps, signed with Oma's own key: Soma Messages, and Soma Notes (Boss, 2026-10-24). */
+    private val SOMA_APPS = setOf("dev.omalauncher.messages", "dev.omalauncher.notes")
 
     fun stateFile(context: Context) = File(context.filesDir, "arch/root/.cache/oma-update/state.json")
 
@@ -72,7 +73,7 @@ object SelfInstall {
         val flags = PackageManager.GET_SIGNING_CERTIFICATES
         val archive = pm.getPackageArchiveInfo(apk.path, flags) ?: return fail("Not an APK Android can read.")
         val pkg = archive.packageName
-        if (pkg != context.packageName && pkg != MESSAGES) return fail("Only Oma (${context.packageName}) or Soma Messages are installed this way, not $pkg.")
+        if (pkg != context.packageName && pkg !in SOMA_APPS) return fail("Only Oma (${context.packageName}), Soma Messages or Soma Notes are installed this way, not $pkg.")
         val own = certs(runCatching { pm.getPackageInfo(context.packageName, flags) }.getOrNull())
         val theirs = certs(archive)
         if (own.isEmpty() || theirs.isEmpty() || theirs.none { it in own }) return fail("Not signed with this phone's working key.")

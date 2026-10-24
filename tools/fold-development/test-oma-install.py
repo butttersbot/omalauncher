@@ -33,6 +33,11 @@ class InstallerPreflightTest(unittest.TestCase):
         self.assertEqual(result['version'], 3)
         self.assertEqual(result['target'], 'dev.omalauncher.messages')
 
+    def test_separate_notes_app_keeps_its_own_version(self):
+        result = self.preflight('dev.omalauncher.notes', 1, ['--apk', '/tmp/notes.apk'])
+        self.assertEqual(result['version'], 1)
+        self.assertEqual(result['target'], 'dev.omalauncher.notes')
+
     def test_unrelated_package_is_refused(self):
         with self.assertRaises(SystemExit):
             self.preflight('other.app', 500, ['--apk', '/tmp/other.apk'])
