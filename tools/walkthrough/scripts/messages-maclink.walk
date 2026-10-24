@@ -145,7 +145,8 @@ tap Voices
 wait 1500
 expect Voice message
 tap Tap to play
-wait 3000
+# The demo's note is 2 s: looked at while it plays (at 3 s it had already ended, the 0.8.0 walk).
+wait 900
 expect Playing
 shot voice-playing
 tap Playing
@@ -232,6 +233,23 @@ swipe 0.5 0.3 0.5 0.85 300
 wait 400
 swipe 0.5 0.3 0.5 0.85 300
 wait 400
+wait 3000
+swipe 0.5 0.3 0.5 0.85 300
+wait 500
+swipe 0.5 0.3 0.5 0.85 300
+wait 500
+swipe 0.5 0.3 0.5 0.85 300
+wait 500
+swipe 0.5 0.3 0.5 0.85 300
+wait 500
+swipe 0.5 0.3 0.5 0.85 300
+wait 500
+swipe 0.5 0.3 0.5 0.85 300
+wait 500
+swipe 0.5 0.3 0.5 0.85 300
+wait 500
+swipe 0.5 0.3 0.5 0.85 300
+wait 500
 wait 2000
 expect Long thread starts here
 # Look: oldest first at the top, no message twice across the pages' seams (#70/#71, #20/#21), no jump.
