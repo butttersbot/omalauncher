@@ -1,0 +1,4 @@
+# A Mac thread whose agent answered but left work running there (a build, a copy) is at work, not idle (Boss,
+# 2026-10-24: a build left running made its session look idle). The unit test covers the states; this is the look.
+[phone] Ask a Mac Pro thread to run something long in the background (e.g. "run sleep 120 in the background and tell me when it ends"): once it answers, its tile and tab keep a green dot and read "running on the Mac: …", not "done" or idle.
+[phone] When the background work ends and the agent reports it, the thread goes back to resting (grey, "done").
