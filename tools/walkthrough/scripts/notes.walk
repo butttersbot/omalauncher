@@ -5,8 +5,11 @@
 shell cmd statusbar collapse
 rotate portrait
 fold folded
-launch dev.omalauncher.notes/.MainActivity
-wait 2500
+# Never Boss's own notes: a clean app, then the walk's own folder (~/NotesWalk on the Mac Pro, /v1/walk-notes), which
+# only an emulator takes. It keeps one agent note for the sideways book, Agents/walk/Sideways book.md.
+shell pm clear dev.omalauncher.notes
+shell am start -n dev.omalauncher.notes/.MainActivity --es notes_folder walk
+wait 3500
 expect Notes
 # The search field's "Search notes" is a placeholder uiautomator can't read: the filters stand in.
 expect From agents
@@ -74,6 +77,13 @@ rotate landscape
 wait 2000
 tap From agents
 wait 1000
+tap Sideways book
+wait 2500
+# Look: two pages side by side, a thin line between, page numbers below; a tap at the right turns to the next spread.
+shot landscape-book
+tap 0.92 0.5
+wait 1200
+shot landscape-book-turned
 shot landscape-agents
 rotate portrait
 fold folded
@@ -95,10 +105,10 @@ absent PINNED
 # Left, all the way: gone, with Undo; Undo brings it back.
 swipe 0.85 0.34 0.1 0.34 300
 wait 500
-# Undo lasts 5 s and each look at the screen takes about 2: the bar's UNDO by its place (the bar's own words, left of
-# the + button; for "Walk shared link" it sits at 0.57), right after one check; "tap UNDO" would come too late.
+# Undo lasts 5 s and each look at the screen takes about 2: the bar's UNDO by its place, right after one check; "tap
+# UNDO" would come too late. It stays at the bar's right end, just left of the + button, whatever the title.
 expect UNDO
-tap 0.57 0.90
+tap 0.72 0.90
 shot swiped-left-undo-bar
 wait 1200
 expect Walk shared link

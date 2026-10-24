@@ -21,7 +21,7 @@ object Notes {
     data class Reach(val reached: Boolean? = null, val left: Int = 0, val at: Long = 0)
 
     private lateinit var shelf: Shelf
-    private val link: Link = HttpLink()
+    private lateinit var link: Link
     private val rounds = Executors.newSingleThreadScheduledExecutor { Thread(it, "notes-sync").apply { isDaemon = true } }
     private var next: ScheduledFuture<*>? = null
 
@@ -36,6 +36,10 @@ object Notes {
     @Synchronized
     fun init(context: Context) {
         if (::shelf.isInitialized) return
+        // On the emulator a walk may ask for its own folder (launched with --es notes_folder walk); the phone always
+        // syncs with Boss's notes.
+        val walk = emulator() && context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(WALK_FOLDER, false)
+        link = HttpLink(path = if (walk) HttpLink.WALK else HttpLink.NOTES)
         shelf = Shelf(File(context.filesDir, "notes"))
         publish()
     }
@@ -103,5 +107,15 @@ object Notes {
         _all.value = shelf.all().filter { !it.gone && !(it.local && it.title.isEmpty() && shelf.text(it.id).isBlank()) }.sortedByDescending { it.modified }
     }
 
+    /** Before [init]: the emulator walk's own notes folder, for good (an intent extra; see MainActivity). */
+    fun walkFolder(context: Context) {
+        if (emulator()) context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(WALK_FOLDER, true).commit()
+    }
+
+    /** The Mac Pro's Fold emulator (and any other), never a real phone. */
+    fun emulator(): Boolean = android.os.Build.HARDWARE in setOf("ranchu", "goldfish") || android.os.Build.FINGERPRINT.startsWith("generic")
+
+    private const val PREFS = "notes"
+    private const val WALK_FOLDER = "walkFolder"
     private const val SOON_MS = 1_500L
 }

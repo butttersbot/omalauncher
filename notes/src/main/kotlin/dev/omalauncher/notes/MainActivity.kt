@@ -17,6 +17,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        if (intent?.getStringExtra("notes_folder") == "walk") Notes.walkFolder(applicationContext)
         Notes.init(applicationContext)
         Look.use(applicationContext)
         setContent { NotesApp(mayListen = ::mayListen) }
