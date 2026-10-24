@@ -4,6 +4,8 @@ rotate portrait
 shell am start -a android.settings.DISPLAY_SETTINGS
 expect Display
 shot speed-display-unfolded
+# Reset only our fictional fixture so a prior activity cannot retain its old intent.
+shell am force-stop dev.omalauncher.artifactpreview
 shell am start -n dev.omalauncher.artifactpreview/.PreviewActivity --es mail bundled
 expect 4 messages bundled
 expect Combined handoff complete.
