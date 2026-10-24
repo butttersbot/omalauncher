@@ -294,10 +294,11 @@ class AgentThreadsTest {
         assertTrue(bound.mac); assertFalse(bound.unplaced)
     }
 
-    @Test fun aRestingThreadSaysWhatItLeftRunningOnTheMac() {
+    @Test fun aThreadWithWorkLeftRunningOnTheMacIsAtWork() {
         val done = listOf(mac(10, TaskStatus.Done, result = "Copying in the background."))
         val resting = macThreadNow(thread(MacThreadStatus.Idle, lastWorked = 5, tail = "Copying in the background.", background = listOf("copy the games")), id, done, emptyList(), reachable = true)
-        assertEquals(ThreadState.Idle, resting.state)
+        // Not idle while it runs (Boss, 2026-10-24): green, and saying what runs.
+        assertEquals(ThreadState.Working, resting.state)
         assertEquals("running on the Mac: copy the games", resting.doing); assertEquals(MAC_BACKGROUND, resting.label)
         // Once it is over the thread reads as done again.
         val over = macThreadNow(thread(MacThreadStatus.Idle, lastWorked = 5, tail = "Copying in the background."), id, done, emptyList(), reachable = true)

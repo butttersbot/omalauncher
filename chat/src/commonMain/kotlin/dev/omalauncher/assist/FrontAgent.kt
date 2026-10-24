@@ -438,7 +438,8 @@ fun macBoard(threads: List<MacThread>, reachable: Boolean, seen: Long?, now: Lon
 
 private fun macThreadLine(thread: MacThread, now: Long, macs: List<MacSeen> = emptyList()): String {
     val status = when (thread.status) {
-        MacThreadStatus.Idle -> "idle"
+        // Work it left running on the Mac is work: the front agent mustn't call it idle either.
+        MacThreadStatus.Idle -> if (thread.background.isNotEmpty()) "running in the background on the Mac (${thread.background.joinToString("; ").take(BOARD_TAIL_CHARS)})" else "idle"
         MacThreadStatus.Working -> "working"
         MacThreadStatus.Waiting -> "waiting for Boss to approve a step"
         MacThreadStatus.Interrupted -> "interrupted"

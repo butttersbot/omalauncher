@@ -225,10 +225,13 @@ fun macThreadNow(thread: MacThread?, id: String, tasks: List<ChatTask>, asks: Li
     val wants = asks.ifEmpty { thread?.pending.orEmpty().map { ThreadAsk(it.tool, askTarget(it.input)) } }
     val working = if (thread != null) !macResting(thread.status) && thread.status != MacThreadStatus.Unknown else running != null
     val waits = maxOf(thread?.waitingTurns ?: 0, waiting.size)
+    // Work it left running on the Mac (a build, a copy) after its answer: still at work, not idle (Boss, 2026-10-24:
+    // "if a background process is running it doesn't show the session as idle").
+    val background = macBackgroundLine(thread?.background.orEmpty())
     val state = when {
         wants.isNotEmpty() || thread?.status == MacThreadStatus.Waiting -> ThreadState.NeedsOk
         waits > 0 -> ThreadState.Queued
-        working -> ThreadState.Working
+        working || background != null -> ThreadState.Working
         thread?.status == MacThreadStatus.Interrupted -> if (macLastAnswered(last, thread.tail)) ThreadState.Idle else ThreadState.Attention
         last?.status == TaskStatus.Failed || last?.status == TaskStatus.Dropped -> ThreadState.Attention
         else -> ThreadState.Idle
@@ -237,18 +240,18 @@ fun macThreadNow(thread: MacThread?, id: String, tasks: List<ChatTask>, asks: Li
     val step = running?.steps?.lastOrNull() ?: asked.ifBlank { if (working) "Working" else "Sending to the Mac" }
     val doing = when (state) {
         ThreadState.NeedsOk -> wants.firstOrNull()?.let(::wantsLine) ?: "Waiting for your OK"
-        ThreadState.Working -> step.take(TILE_DOING_CHARS)
+        ThreadState.Working -> (if (working) null else background) ?: step.take(TILE_DOING_CHARS)
         ThreadState.Queued -> queuedLine(step, waiting, waits)
         ThreadState.Attention -> endOf(last?.result?.takeIf { it.isNotBlank() } ?: if (thread?.status == MacThreadStatus.Interrupted) MAC_INTERRUPTED else "")
         // An answered request the restart cut keeps the restart's line after its answer: a resting tile shows the answer.
-        ThreadState.Idle -> macBackgroundLine(thread?.background.orEmpty()) ?: endOf(thread?.tail?.takeIf { it.isNotBlank() } ?: last?.result.orEmpty().trim().removeSuffix(MAC_INTERRUPTED))
+        ThreadState.Idle -> endOf(thread?.tail?.takeIf { it.isNotBlank() } ?: last?.result.orEmpty().trim().removeSuffix(MAC_INTERRUPTED))
     }
     val label = when (state) {
         ThreadState.NeedsOk -> NEEDS_OK
-        ThreadState.Working -> "working"
+        ThreadState.Working -> if (working) "working" else MAC_BACKGROUND
         ThreadState.Queued -> "$waits queued"
         ThreadState.Attention -> NEEDS_ATTENTION
-        ThreadState.Idle -> if (thread?.background.orEmpty().isNotEmpty()) MAC_BACKGROUND else restLabel(last, worked = thread?.lastWorked != null)
+        ThreadState.Idle -> restLabel(last, worked = thread?.lastWorked != null)
     }
     val worked = listOfNotNull(thread?.lastWorked?.let { it * 1000 }, entries.maxOfOrNull { it.time }).maxOrNull()
     // The request the Mac is at was sent from here; one he typed on the Mac itself has no start the phone saw.
