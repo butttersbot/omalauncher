@@ -7,7 +7,10 @@ if [ "${1:-}" = --display ]; then
   shift 2
 fi
 case "$display" in main|bg) ;; *) echo 'Display must be main or bg.' >&2; exit 2;; esac
+timing=false
+if [ "${1:-}" = --timing ]; then timing=true; shift; fi
 self=("$0" --display "$display")
+if [ "$timing" = true ]; then self+=(--timing); fi
 command=${1:-help}
 shift || true
 expect=0
@@ -154,6 +157,9 @@ status says locked, awake and active before you plan: a locked phone takes no st
 expect waits up to 5 seconds for TEXT to show and fails if it does not, so steps can be chained and
 stop at the first screen that is not the one meant:
   oma-phone press --in PACKAGE "Search" && oma-phone fill "" "milk" && oma-phone expect "results"
+Open a Settings destination directly: open settings:display (also sound, wifi, bluetooth,
+battery [Battery Saver], storage or apps). Unsupported destinations fail without a fallback.
+Optional --timing before the command adds service/read timings and search counts, without logging contents.
 Prefer press, fill and screen. Use read, click, tap and screenshot when they are not enough.
 When your work ends, the screen the user was on before your first step comes back by itself, unless
 the user took the phone meanwhile. stay leaves the screen you end on up instead: use it only when the
@@ -292,6 +298,7 @@ status|pages|apps|read|screenshot|back|home|recents|notifications|stay|stop|subm
   request=$(jq -cn --arg command "$command" '{command:$command}');;
 *) echo 'Unknown command. Run oma-phone help.' >&2; exit 2;;
 esac
+request=$(jq -c --argjson timing "$timing" '. + (if $timing then {timing:true} else {} end)' <<<"$request")
 request=$(jq -c --arg display "$display" '. + {display:$display}' <<<"$request")
 request=$(jq -c --arg front "$front" --argjson any "$any" '. + (if $front=="" then {} else {in:$front} end) + (if $any then {any:true} else {} end)' <<<"$request")
 response=$(curl --silent --show-error --max-time 12 --abstract-unix-socket '__SOCKET__' \

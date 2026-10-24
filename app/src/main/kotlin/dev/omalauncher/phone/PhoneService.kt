@@ -307,8 +307,15 @@ class PhoneService : AccessibilityService() {
         }
         go(root(), "root", 0)
     }
+    // Per-request counters, returned only when timing is requested.
+    private var readCalls = 0
+    private var readNanos = 0L
+    private var nodesRead = 0
+    private var searchScrolls = 0
     /** The screen's controls, under a new snapshot id. */
     private fun read(): JSONObject {
+        val readStart = SystemClock.elapsedRealtimeNanos()
+        readCalls++
         val nodes = JSONArray(); val next = mutableMapOf<String, SeenControl>()
         walk { path, node ->
             val seenNow = control(path, node)
@@ -321,6 +328,8 @@ class PhoneService : AccessibilityService() {
             next[path] = seenNow
         }
         snapshot = UUID.randomUUID().toString(); seen = next
+        nodesRead += next.size
+        readNanos += SystemClock.elapsedRealtimeNanos() - readStart
         return JSONObject().put("ok", true).put("snapshot", snapshot).put("nodes", nodes)
     }
     /**
@@ -501,12 +510,18 @@ class PhoneService : AccessibilityService() {
             if (selected == "bg") { PhoneBackgroundCommands.requireAllowed(command); PhoneDisplays.background(this).id } else 0
         } catch (e: Exception) { callback(JSONObject().put("ok", false).put("error", e.message)); return }
         displayId = target; busy = true; requestCommand = command
+        val requestStart = SystemClock.elapsedRealtimeNanos()
+        readCalls = 0; readNanos = 0; nodesRead = 0; searchScrolls = 0
         requestDeadline = SystemClock.elapsedRealtime() + 7500
         var finished = false
         val reply: (JSONObject) -> Unit = { output ->
             if (!finished) {
                 finished = true
                 output.put("displayId", target)
+                if (input.optBoolean("timing")) output.put("timing", JSONObject()
+                    .put("serviceMs", (SystemClock.elapsedRealtimeNanos() - requestStart) / 1_000_000.0)
+                    .put("reads", readCalls).put("readMs", readNanos / 1_000_000.0)
+                    .put("nodes", nodesRead).put("searchScrolls", searchScrolls))
                 displayId = 0; busy = false
                 callback(output)
             }
@@ -610,10 +625,13 @@ class PhoneService : AccessibilityService() {
                 }
                 "open" -> {
                     val name = input.getString("package")
-                    val intent = if (name == "settings") android.content.Intent(android.provider.Settings.ACTION_SETTINGS)
+                    val settingsAction = PhoneSettings.action(name)
+                    val intent = if (settingsAction != null) android.content.Intent(settingsAction)
                         else packageManager.getLaunchIntentForPackage(name) ?: error("No visible launcher activity for this package. Run apps.")
                     // What opens it is the app the agent's touches are for from here.
-                    opened = PhoneGuard.opened(if (name == "settings") packageManager.resolveActivity(intent, 0)?.activityInfo?.packageName else name)
+                    val handler = if (settingsAction != null) packageManager.resolveActivity(intent, 0)?.activityInfo?.packageName
+                        ?: error("This Settings destination is unavailable on this phone. Nothing was opened.") else name
+                    opened = PhoneGuard.opened(handler)
                     launchOnDisplay(intent, opened)
                     changed()
                     whenInFront(opened, output, reply)
@@ -694,6 +712,7 @@ class PhoneService : AccessibilityService() {
                         }
                     }
                     // A label below or above what shows is scrolled to, the way a finger would: on, then back, a few pages each way.
+                    val progress = PhoneSearchProgress()
                     fun look(forward: Boolean, tries: Int, scrolled: Int) {
                         try {
                             requireCurrentAccess()
@@ -705,12 +724,15 @@ class PhoneService : AccessibilityService() {
                                 Found.None -> Unit
                             }
                             val list = PhoneScreen.scroller(seen)
-                            val more = if (forward) tries < PHONE_FIND_SCROLLS else tries < 2 * PHONE_FIND_SCROLLS
+                            val repeated = progress.repeated(nodes, forward)
+                            if (forward && (repeated || tries >= PHONE_FIND_SCROLLS)) return look(false, 0, scrolled)
+                            val more = tries < PHONE_FIND_SCROLLS && !repeated
                             if (list == null || !more) {
                                 error("Nothing on screen ${if (command == "press") "says" else "is a text field that says"} \"$label\"${if (scrolled > 0) ", even scrolled through" else ""}. Nothing was done. Run oma-phone screen.")
                             }
                             // At the end of the list Android scrolls it no further: the other way is tried from there.
                             val turned = runCatching {
+                                searchScrolls++
                                 act("scroll", list, JSONObject().put("direction", if (forward) "forward" else "backward")) { settled { look(forward, tries + 1, scrolled + 1) } }
                             }
                             if (turned.isFailure) {

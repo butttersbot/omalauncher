@@ -1,0 +1,17 @@
+# Stage1: public Settings intent, existing controls, and unchanged fixture UI.
+fold open
+rotate portrait
+shell am start -a android.settings.DISPLAY_SETTINGS
+expect Display
+shot speed-display-unfolded
+shell am start -n dev.omalauncher.artifactpreview/.PreviewActivity --es mail bundled
+expect 4 messages bundled
+expect Combined handoff complete.
+shot speed-fixture-unfolded
+fold folded
+expect 4 messages bundled
+shot speed-fixture-cover
+[phone] With --timing, open settings:display, settings:sound, settings:wifi, settings:bluetooth, settings:battery, settings:storage and settings:apps. Verify actual destination and foreground package, without changing any values. Record each PASS/FAIL/unsupported.
+[phone] Compare old and new Settings navigation, fixture navigation, and offscreen/absent-label searches with matched start state and verification. Record wall time, service/read times, scroll count, model turns and retries; no10x claim until measured.
+[phone] Repeated-page and terminal-list search stops early; reverse search still finds a control above the start. Verify original app returns when work ends; no sensitive actions.
+[phone] Check pause, lock/sleep, owner takeover, pending approvals, background unavailable and wrong-app refusal; do not change security permissions or bypass a pause.
