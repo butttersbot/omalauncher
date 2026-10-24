@@ -56,6 +56,9 @@ fun MessagesApp(resumed: Int) {
     var granted by remember { mutableStateOf(Messages.granted(context)) }
     LaunchedEffect(resumed) { granted = Messages.granted(context) }
     var openId by rememberSaveable { mutableStateOf<String?>(null) }
+    // The conversation he picked, so one arriving there while he looks is read at once (not on the inbox, nor the
+    // newest shown unpicked beside it on the open Fold).
+    LaunchedEffect(openId) { Messages.picked = openId }
     // A tapped notification opens its conversation.
     val asked by Messages.toOpen.collectAsState()
     LaunchedEffect(asked) {

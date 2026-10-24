@@ -140,8 +140,11 @@ class ConversationBook(
     /**
      * What the Mac says about conversation [id]: its name, and [incoming] messages, each with the Mac's id. One already
      * here is replaced. One the owner sent from here (`c:`, waiting) gives way to the Mac's copy of the same words,
-     * keeping its quote: the copy is the owner's own, with the same text, from close to when it went. [unread] is the
-     * Mac's count when it gave one, else new messages from others are counted, unless [counting] is off (history).
+     * keeping its quote: the copy is the owner's own, with the same text, from close to when it went. New messages from
+     * others are counted, unless [counting] is off (history). [unread] is the Mac's count when it gave one: it starts a
+     * conversation first seen, and later may only lower the count (read on the Mac or elsewhere), never raise it past what
+     * came in. An update about the owner's own message leaves the count as it was (Boss, 2026-10-24: his own messages put
+     * a red dot on the conversation; the Mac counts its unread sends too). Neither made nor cleared by an outgoing one.
      */
     fun fromMac(
         id: String,
@@ -178,13 +181,20 @@ class ConversationBook(
             if (!m.fromMe && counting) fresh++
         }
         messages.sortBy { it.time }
+        val counted = (old?.unread ?: 0) + fresh
+        val mine = incoming.lastOrNull()?.fromMe == true
         val conversation =
             Conversation(
                 id = id,
                 title = title?.takeIf { it.isNotBlank() } ?: old?.title ?: id,
                 isGroup = isGroup ?: old?.isGroup ?: false,
                 messages = messages.takeLast(MAX_MESSAGES),
-                unread = unread ?: ((old?.unread ?: 0) + fresh),
+                unread =
+                    when {
+                        unread == null || mine -> counted
+                        old == null -> unread
+                        else -> minOf(unread, counted)
+                    },
             )
         return ConversationBook(byId + (id to conversation))
     }
@@ -323,7 +333,9 @@ class ConversationBook(
                             )
                         }
                     val id = c.getString("id")
-                    byId[id] = Conversation(id, c.getString("title"), c.optBoolean("group"), messages, c.optInt("unread"))
+                    // Unread with no message from anyone else among those kept: the owner's own sends counted before 0.8.2.
+                    val unread = if (messages.none { !it.fromMe }) 0 else c.optInt("unread")
+                    byId[id] = Conversation(id, c.getString("title"), c.optBoolean("group"), messages, unread)
                 }
                 ConversationBook(byId)
             }.getOrDefault(ConversationBook())

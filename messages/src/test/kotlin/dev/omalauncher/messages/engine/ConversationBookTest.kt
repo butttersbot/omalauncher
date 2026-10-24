@@ -167,4 +167,54 @@ class ConversationBookTest {
         // Nothing to drop: the same book.
         assertTrue(only.fromMacOnly() === only)
     }
+
+    // Boss, 2026-10-24: his own messages put a red dot on the conversation. The Mac counts its unread sends too.
+    @Test fun theOwnersMessagesAloneNeverMakeUnread() {
+        // First seen with only his own message last, the Mac's count (it counted the send) is not a dot.
+        var book = ConversationBook().fromMac("c1", "Mina", false, listOf(Message("on my way", 1_000, "", id = "m1")), unread = 1)
+        assertEquals(0, book["c1"]!!.unread)
+        // Sent from here, the Mac's copy and its chat update after it: still nothing unread.
+        book = book.waiting("c1", "k1", "5 min", 2_000)
+        book = book.fromMac("c1", null, null, listOf(Message("5 min", 2_100, "", id = "m2", clientId = "k1")))
+        book = book.fromMac("c1", "Mina", false, listOf(Message("5 min", 2_100, "", id = "m2")), unread = 2)
+        assertEquals(0, book["c1"]!!.unread)
+    }
+
+    @Test fun anOutgoingMessageNeitherClearsNorAddsToUnread() {
+        var book = ConversationBook().fromMac("c1", "Mina", false, listOf(Message("are we still on?", 1_000, "Mina", id = "m1")), unread = 1)
+        book = book.fromMac("c1", null, null, listOf(Message("the counter!!", 1_500, "Mina", id = "m2")))
+        assertEquals(2, book["c1"]!!.unread)
+        // He answers (from the Mac, another device, or here): the echo and the Mac's count for it, 0 or 3, change nothing.
+        book = book.fromMac("c1", null, null, listOf(Message("yes!", 2_000, "", id = "m3")))
+        assertEquals(2, book["c1"]!!.unread)
+        assertEquals(2, book.fromMac("c1", null, null, listOf(Message("yes!", 2_000, "", id = "m3")), unread = 0)["c1"]!!.unread)
+        assertEquals(2, book.fromMac("c1", null, null, listOf(Message("yes!", 2_000, "", id = "m3")), unread = 3)["c1"]!!.unread)
+        // Reading clears it.
+        assertEquals(0, book.read("c1")["c1"]!!.unread)
+    }
+
+    @Test fun theMacsCountLowersButNeverRaisesPastWhatCameIn() {
+        var book = ConversationBook().fromMac("c1", "Mina", false, listOf(Message("hi", 1_000, "Mina", id = "m1")), unread = 1)
+        // A new message from her, with the Mac counting his sends as well: one more, not the Mac's four.
+        book = book.fromMac("c1", "Mina", false, listOf(Message("you there?", 2_000, "Mina", id = "m2")), unread = 4)
+        assertEquals(2, book["c1"]!!.unread)
+        // Read on the Mac: its 0 clears the count here too.
+        book = book.fromMac("c1", "Mina", false, listOf(Message("you there?", 2_000, "Mina", id = "m2")), unread = 0)
+        assertEquals(0, book["c1"]!!.unread)
+        // A message from her after reading counts again.
+        book = book.fromMac("c1", null, null, listOf(Message("ok then", 3_000, "Mina", id = "m3")))
+        assertEquals(1, book["c1"]!!.unread)
+    }
+
+    @Test fun aSavedDotOnlyTheOwnersOwnMessagesMadeIsCleared() {
+        // Saved by 0.8.1: unread on a conversation with nothing from anyone else in it.
+        val legacy =
+            ConversationBook().fromMac("c1", "Mina", false, listOf(Message("on my way", 1_000, "Mina", id = "m0")), unread = 1)
+                .read("c1").fromMac("c2", "Ben", false, listOf(Message("sent", 1_000, "", id = "m1")), unread = 0)
+        val json = legacy.toJson().replace("\"unread\":0", "\"unread\":3")
+        val loaded = ConversationBook.fromJson(json)
+        assertEquals(0, loaded["c2"]!!.unread)
+        // Where someone else wrote, the saved count stays: nothing of theirs is marked read.
+        assertEquals(3, loaded["c1"]!!.unread)
+    }
 }

@@ -262,6 +262,31 @@ wait 600
 # No "new" count for history loaded above (0.7.7 walk: "↓ 36 new" after paging).
 absent new
 shot long-thread-seam
+# Unread (0.8.2; Boss, 2026-10-24: his own messages put a red dot on the conversation). The inbox row says the count in
+# its TalkBack words ("Ana Demo, 1 unread"), beside its dot.
+tap 0.06 0.094
+wait 800
+# His sends to Ana and her answers came while her chat was open: nothing unread anywhere (0.8.1 counted her answer).
+absent unread
+shot inbox-nothing-unread
+# His own message, then straight back to the inbox by the arrow's place, before her answer (the demo's, 2 s later).
+tap Ana Demo
+wait 1500
+tap 0.5 0.925
+wait 600
+type walk unread test
+key ENTER
+tap 0.06 0.094
+wait 4000
+# One unread: her answer, which came while he was on the inbox. His own message beside it is not counted.
+expect Ana Demo, 1 unread
+shot inbox-incoming-unread
+# Opened, it is read.
+tap Ana Demo
+wait 1500
+tap 0.06 0.094
+wait 800
+absent unread
 # The Mac stopped: the inbox says so and keeps what it has.
 [phone] With the real service on the MacBook: link from the phone-link file (Taildropped), chats and names are Boss's own, one plain-text send to a chat he picks arrives on his other devices, a reply from him shows within seconds.
 [phone] Mac locked: one plain text and one tapback (later slice) still go; note which don't.

@@ -109,6 +109,15 @@ object Messages {
         MacLink.start(context, at)
     }
 
+    /** The conversation the owner picked and has open (the inbox sets it); null on the inbox itself. */
+    @Volatile
+    var picked: String? = null
+
+    /** A message arriving in the conversation he picked and is looking at is read as it comes: no dot for what he saw. */
+    private fun readIfLooking(id: String) {
+        if (Alerts.front && Alerts.looking == id && picked == id && (real[id]?.unread ?: 0) > 0) read(id)
+    }
+
     /** What the Mac says about conversation [id] (see [ConversationBook.fromMac]). */
     @Synchronized
     fun fromMac(
@@ -122,6 +131,7 @@ object Messages {
     ) {
         val before = real[id]?.messages?.size ?: 0
         publish(real.fromMac(id, title, isGroup, incoming, unread, counting))
+        readIfLooking(id)
         // A new message from someone else, live: its conversation's notification, unless it is open on screen.
         val c = real[id] ?: return
         if (notify && c.messages.size > before && incoming.any { !it.fromMe }) app?.let { Alerts.show(it, c) }
@@ -167,6 +177,7 @@ object Messages {
         if (linked) return
         handles[conversation.id] = with
         publish(real.take(conversation))
+        readIfLooking(conversation.id)
     }
 
     @Synchronized
