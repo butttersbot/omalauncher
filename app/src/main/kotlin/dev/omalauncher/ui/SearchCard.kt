@@ -84,6 +84,7 @@ import dev.omalauncher.search.FileIndex
 import dev.omalauncher.search.FileIndexJob
 import dev.omalauncher.search.FileQuery
 import dev.omalauncher.search.MacFiles
+import dev.omalauncher.search.NotesFound
 import dev.omalauncher.search.People
 import androidx.compose.ui.draw.clip
 import dev.omalauncher.search.PhotoIndex
@@ -274,6 +275,16 @@ internal fun SearchCard(
         kotlinx.coroutines.delay(RERANK_PAUSE_MS)
         value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { MacFiles.search(PhotoMac.base(context), q) }
     }
+    // Soma Notes: in Quick a few whose title matches; in Notes every word in titles and text, when the typing rests.
+    val notesFound by androidx.compose.runtime.produceState(emptyList<NotesFound.Hit>(), query, mode) {
+        val q = query.trim()
+        if (!(mode.quick && q.length >= 2) && !(mode.notes && q.isNotEmpty())) {
+            value = emptyList()
+            return@produceState
+        }
+        if (mode.notes) kotlinx.coroutines.delay(RERANK_PAUSE_MS)
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { NotesFound.find(context, q, titlesOnly = mode.quick, limit = if (mode.quick) NOTES_QUICK else NOTES_SHOWN) }
+    }
     // People, by Android's own contacts search, as each letter comes: it is indexed and quick.
     var contactsAsk by remember { mutableStateOf(SearchStore.askContacts(context)) }
     val people by androidx.compose.runtime.produceState(emptyList<People.Person>(), query, version, mode) {
@@ -390,7 +401,7 @@ internal fun SearchCard(
                         if (query.isNotEmpty()) BasicText("✕", Modifier.clickable { query = "" }.padding(6.dp), style = Pack.body(Pack.size.body, muted))
                     }
                 }
-                // What it looks through: Quick for every new search, Files or Photos when he asks; the words stay.
+                // What it looks through: Quick for every new search, Files, Notes or Photos when he asks; the words stay.
                 Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     for (m in SearchMode.entries) {
                         val on = m == mode
@@ -499,6 +510,10 @@ internal fun SearchCard(
                                 }
                             }
                         }
+                        if (notesFound.isNotEmpty()) {
+                            item { Section("Notes", muted) }
+                            items(notesFound, key = { "n:" + it.id }) { n -> NoteRow(n, ink, muted, line) { reach(NotesFound.open(n)) } }
+                        }
                         if (clipHits.isNotEmpty()) {
                             item { Section("Clipboard", muted) }
                             items(clipHits, key = { "c:" + it.at }) { c ->
@@ -543,6 +558,13 @@ internal fun SearchCard(
                             val q = query.trim()
                             val note = if (q.length < SearchMode.Photos.minimumLetters) "Type a little more to look through photos." else if (photoResults.done) "No photos or videos match “$q”." else "Looking through photos…"
                             item { BasicText(note, Modifier.padding(14.dp), style = Pack.body(Pack.size.small, muted)) }
+                        }
+                    } else if (mode.notes) {
+                        if (notesFound.isNotEmpty()) {
+                            item { Section("Notes", muted) }
+                            items(notesFound, key = { "n:" + it.id }) { n -> NoteRow(n, ink, muted, line) { reach(NotesFound.open(n)) } }
+                        } else if (query.isNotBlank()) {
+                            item { BasicText("No notes match “${query.trim()}”.", Modifier.padding(14.dp), style = Pack.body(Pack.size.small, muted)) }
                         }
                     } else {
                         // Files: names first, the Mac Pro's after them, then what is in them.
@@ -679,6 +701,10 @@ private const val PER_SECTION = 5
 
 /** How many files show by name, and how many more by what is in them. */
 private const val FILES_SHOWN = 5
+
+/** Notes in Quick (titles that match) and in Notes (every match). */
+private const val NOTES_QUICK = 3
+private const val NOTES_SHOWN = 20
 
 /** How many name matches the Mac orders when typing rests (the text matches are the index's 30 newest), and after how long a rest. */
 private const val RERANK_NAMES = 10
@@ -826,6 +852,30 @@ private fun PersonRow(
         person.number?.let { n ->
             BasicText("Call", Modifier.border(1.dp, line).clickable { onCall(n) }.padding(horizontal = 10.dp, vertical = 6.dp), style = Pack.body(Pack.size.small, ink))
             BasicText("Text", Modifier.border(1.dp, line).clickable { onText(n) }.padding(horizontal = 10.dp, vertical = 6.dp), style = Pack.body(Pack.size.small, ink))
+        }
+    }
+}
+
+/** A note found in Soma Notes: its title, whose it is (Mine, or the agent project) and when, and its words around the match. */
+@Composable
+private fun NoteRow(
+    hit: NotesFound.Hit,
+    ink: Color,
+    muted: Color,
+    line: Color,
+    onOpen: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(Modifier.size(36.dp).border(1.dp, line), contentAlignment = Alignment.Center) { BasicText("NOTE", style = Pack.mono(9.sp, ink)) }
+        Column(Modifier.weight(1f)) {
+            BasicText(hit.title.ifEmpty { "Untitled" }, style = Pack.body(Pack.size.body, ink), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val date = android.text.format.DateUtils.getRelativeTimeSpanString(hit.modified, System.currentTimeMillis(), android.text.format.DateUtils.DAY_IN_MILLIS)
+            BasicText("Soma Notes · ${NotesFound.where(hit)} · $date", style = Pack.body(Pack.size.small, muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (hit.snippet.isNotBlank()) BasicText(hit.snippet, style = Pack.body(Pack.size.small, muted), maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }
 }

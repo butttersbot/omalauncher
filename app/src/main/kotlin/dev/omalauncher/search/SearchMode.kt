@@ -9,11 +9,15 @@ package dev.omalauncher.search
 enum class SearchMode(val label: String) {
     Quick("Quick"),
     Files("Files"),
+    Notes("Notes"),
     Photos("Photos"),
     ;
 
     /** The phone's file index and the Mac Pro's Spotlight are searched: names first, what is in them below. */
     val files get() = this == Files
+
+    /** Soma Notes, every word in a note's title or text: his notes, his agents', projects' Brief and Current state. */
+    val notes get() = this == Notes
 
     /** Photos and videos, by their words and by what is in them. */
     val photos get() = this == Photos

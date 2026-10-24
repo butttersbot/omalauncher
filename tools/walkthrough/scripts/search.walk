@@ -96,6 +96,27 @@ absent Photos mode, selected
 shot reopened-on-quick
 key BACK
 key BACK
+# Soma Notes in search (2026-10-24): needs Soma Notes on the emulator with the walk's notes (notes.walk leaves
+# "Sideways book" in its folder). In Notes, every word of a note's title or text; in Quick, titles only.
+clearlog
+swipe 0.5 0.35 0.5 0.75 400
+wait 1500
+log home pull search
+tap Notes mode
+type lighthouse
+wait 2500
+expect Sideways book
+expect Soma Notes · Walk
+shot notes-mode-finds-text
+tap Sideways book
+wait 2500
+# Opened in Soma Notes, on that note.
+expect Sideways book
+shot notes-opened-from-search
+key HOME
+wait 1000
+key BACK
+key BACK
 [phone] Tap the terminal tile on home, leave it (Back), then pull search down from the middle of home: it opens with the keyboard, and stays (it did nothing before 139).
 [phone] Search "dicsord": Discord comes first, and no row of unrelated photos.
 [phone] Search "andrew" (a contact): the contact with Call/Text, and no row of unrelated photos.

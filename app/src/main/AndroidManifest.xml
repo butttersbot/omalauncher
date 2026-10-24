@@ -50,6 +50,8 @@
         <package android:name="com.samsung.systemui.lockstar" />
         <!-- Tailscale, named so the heal can see it is installed and reach its receiver whatever its launcher entry. -->
         <package android:name="com.tailscale.ipn" />
+        <!-- Soma Notes, whose search provider Soma's search asks for notes; see search/NotesFound.kt. -->
+        <package android:name="dev.omalauncher.notes" />
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />

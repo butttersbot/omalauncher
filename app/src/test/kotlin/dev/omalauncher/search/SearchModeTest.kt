@@ -35,8 +35,17 @@ class SearchModeTest {
         assertTrue(p.photosShown(wordsNameSomething = false))
     }
 
-    @Test fun theRowReadsQuickFilesPhotos() {
-        assertEquals(listOf("Quick", "Files", "Photos"), SearchMode.entries.map { it.label })
+    @Test fun theRowReadsQuickFilesNotesPhotos() {
+        assertEquals(listOf("Quick", "Files", "Notes", "Photos"), SearchMode.entries.map { it.label })
+    }
+
+    @Test fun notesLooksThroughNotesOnly() {
+        val n = SearchMode.Notes
+        assertTrue(n.notes)
+        assertFalse(n.files)
+        assertFalse(n.photos)
+        assertFalse(n.quick)
+        assertFalse(SearchMode.Quick.notes)
     }
 
     @Test fun photosStartAfterTwoLetters() {
