@@ -42,9 +42,11 @@ object NewsStore {
         val html: String,
         /** Its Google News topic ([GoogleNews.TOPICS]), "" for a story from elsewhere. */
         val topic: String = "",
+        /** The publisher's site, as Google names it (`<source url>`), to find the story on its own feed. */
+        val site: String = "",
     ) {
         fun toJson(): JSONObject =
-            JSONObject().put("id", id).put("title", title).put("source", source).put("link", link).put("published", published).put("image", image ?: JSONObject.NULL).put("html", html).put("topic", topic)
+            JSONObject().put("id", id).put("title", title).put("source", source).put("link", link).put("published", published).put("image", image ?: JSONObject.NULL).put("html", html).put("topic", topic).put("site", site)
 
         companion object {
             fun of(j: JSONObject) =
@@ -57,6 +59,7 @@ object NewsStore {
                     image = if (j.isNull("image")) null else j.optString("image"),
                     html = j.optString("html"),
                     topic = j.optString("topic"),
+                    site = j.optString("site"),
                 )
         }
     }
@@ -72,7 +75,21 @@ object NewsStore {
     }
 
     /** What the file holds now: its JSON as text, or an empty stream. */
-    fun cached(context: Context): String = runCatching { file(context).readText() }.getOrNull() ?: JSONObject().put("stories", JSONArray()).put("updated", 0).toString()
+    fun cached(context: Context): String {
+        known = context.applicationContext
+        return runCatching { file(context).readText() }.getOrNull() ?: JSONObject().put("stories", JSONArray()).put("updated", 0).toString()
+    }
+
+    /** The app, once the stream has been read: [page] finds a Google link's story (its site and headline) by it. */
+    @Volatile private var known: Context? = null
+
+    /** The kept story whose address is [link], or null. */
+    private fun storyByLink(link: String): Story? {
+        val context = known ?: return null
+        val a = runCatching { JSONObject(cached(context)).getJSONArray("stories") }.getOrNull() ?: return null
+        for (i in 0 until a.length()) a.getJSONObject(i).takeIf { it.optString("link") == link }?.let { return Story.of(it) }
+        return null
+    }
 
     /**
      * Brings the stream up to date from Google News (Boss, 2026-10-22: Google instead of the FreshRSS feeds): top stories
@@ -103,19 +120,11 @@ object NewsStore {
             s.copy(link = k.optString("link").takeIf { it.isNotEmpty() && !GoogleNews.isGoogle(it) } ?: s.link, image = if (k.isNull("image")) null else k.optString("image"))
         }
         val first = kept.groupBy { it.topic }.values.flatMap { it.take(RESOLVED_FIRST) }.filter { GoogleNews.isGoogle(it.link) || it.image == null }
-        // Google's addresses one at a time (GoogleNews.resolve spaces them), at most RESOLVE_PER_REFRESH a refresh,
-        // the top stories first; what isn't looked up now is when it's opened, or next hour. The pictures come from the
-        // publishers, so those may go side by side.
-        var asked = 0
+        // The publisher's own address from its own feed, by the headline (PublisherFeeds), never asked of Google: it
+        // rate-limits that (Boss, 2026-10-23). Each site's feed is fetched once a refresh; a story not found there is
+        // read at its source. The pictures come from the publishers too, so these may go side by side.
         val linked = first.associate { s ->
-            val link =
-                if (GoogleNews.isGoogle(s.link) && asked < RESOLVE_PER_REFRESH && !GoogleNews.busy()) {
-                    asked++
-                    GoogleNews.resolve(s.link) ?: s.link
-                } else {
-                    s.link
-                }
-            s.id to link
+            s.id to (if (GoogleNews.isGoogle(s.link)) PublisherFeeds.find(s.site, s.title) ?: s.link else s.link)
         }
         val pool = java.util.concurrent.Executors.newFixedThreadPool(4)
         val done = try {
@@ -237,8 +246,8 @@ object NewsStore {
      */
     fun page(link: String): String? {
         if (!link.startsWith("https://") && !link.startsWith("http://")) return null
-        // A Google News link is Google's page, not the story: the publisher's address first.
-        if (GoogleNews.isGoogle(link)) return GoogleNews.resolve(link)?.let(::page)
+        // A Google News link is Google's page, not the story: the publisher's own address, from its feed, first.
+        if (GoogleNews.isGoogle(link)) return storyByLink(link)?.let { s -> PublisherFeeds.find(s.site, s.title) }?.let(::page)
         return runCatching {
             var url = URL(link)
             var conn: HttpURLConnection
@@ -305,7 +314,7 @@ object NewsStore {
     private const val FULL_KEPT = 300
 
     /** Sites give a phone's browser the article; some give an unknown client a wall instead. */
-    private const val PHONE_BROWSER = "Mozilla/5.0 (Linux; Android 16; SM-F971U) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36"
+    const val PHONE_BROWSER = "Mozilla/5.0 (Linux; Android 16; SM-F971U) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36"
 
     /** Stories kept a topic; the reader shows five and "Show more" the rest. */
     const val PER_TOPIC = 25
@@ -313,9 +322,6 @@ object NewsStore {
     /** Stories a topic whose address and picture are found at refresh, so the stream opens with pictures. */
     private const val RESOLVED_FIRST = 6
     private const val FEED_GAP_MS = 400L
-
-    /** Google addresses looked up in one refresh, at most: found ones are kept, so few are new each hour. */
-    private const val RESOLVE_PER_REFRESH = 12
 
 }
 

@@ -1,9 +1,7 @@
 package dev.omalauncher.news
 
-import org.json.JSONArray
 import java.net.HttpURLConnection
 import java.net.URL
-import java.net.URLEncoder
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -44,6 +42,7 @@ object GoogleNews {
             val raw = NewsStore.unescape(tag("title").orEmpty()).trim()
             val title = if (source.isNotEmpty() && raw.endsWith(" - $source")) raw.removeSuffix(" - $source") else raw
             val link = tag("link").orEmpty().trim()
+            val site = Regex("<source[^>]*url=\"([^\"]+)\"").find(item)?.groupValues?.get(1)?.let(NewsStore::unescape).orEmpty()
             if (title.isEmpty() || link.isEmpty()) return@mapNotNull null
             NewsStore.Story(
                 id = tag("guid")?.trim()?.ifEmpty { null } ?: link,
@@ -54,6 +53,7 @@ object GoogleNews {
                 image = null,
                 html = "",
                 topic = topic,
+                site = site,
             )
         }.toList()
 
@@ -64,56 +64,11 @@ object GoogleNews {
 
     fun fetch(topic: Topic): String? = get(feedUrl(topic))
 
-    /**
-     * The publisher's address for Google's [link], or null. Google's article page carries a signature and a time for
-     * the story; its own batchexecute call answers those with the real address, as news.google.com does in a browser.
-     */
-    fun resolve(link: String): String? {
-        if (!isGoogle(link)) return link
-        val id = link.substringAfter("/articles/", "").substringBefore('?').ifEmpty { return null }
-        if (busy()) return null
-        // One at a time and spaced: a burst of these (every topic's first stories at once, hourly) got the phone's
-        // network sent to Google's "unusual traffic" page, and then no article opened (Boss, 2026-10-22).
-        synchronized(this) {
-            val wait = lastResolve + RESOLVE_GAP_MS - System.currentTimeMillis()
-            if (wait > 0) Thread.sleep(wait)
-            lastResolve = System.currentTimeMillis()
-        }
-        if (busy()) return null
-        val page = get("https://news.google.com/articles/$id") ?: return null
-        val sig = Regex("data-n-a-sg=\"([^\"]+)\"").find(page)?.groupValues?.get(1) ?: return null
-        val ts = Regex("data-n-a-ts=\"([^\"]+)\"").find(page)?.groupValues?.get(1)?.toLongOrNull() ?: return null
-        val inner = JSONArray(listOf("garturlreq",
-            JSONArray(listOf(JSONArray(listOf("X", "X", JSONArray(listOf("X", "X")), null, null, 1, 1, "US:en", null, 1, null, null, null, null, null, 0, 1)),
-                "X", "X", 1, JSONArray(listOf(1, 1, 1)), 1, 1, null, 0, 0, null, 0)),
-            id, ts, sig)).toString()
-        val req = JSONArray(listOf(JSONArray(listOf(JSONArray(listOf("Fbv4je", inner, null, "generic")))))).toString()
-        val answer = runCatching {
-            val c = URL("https://news.google.com/_/DotsSplashUi/data/batchexecute").openConnection() as HttpURLConnection
-            c.connectTimeout = 6_000
-            c.readTimeout = 10_000
-            c.requestMethod = "POST"
-            c.doOutput = true
-            c.setRequestProperty("User-Agent", BROWSER)
-            c.setRequestProperty("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
-            c.outputStream.use { it.write(("f.req=" + URLEncoder.encode(req, "UTF-8")).toByteArray()) }
-            if (c.responseCode != 200) return null
-            c.inputStream.bufferedReader().use { it.readText() }
-        }.getOrNull() ?: return null
-        return publisherIn(answer)
-    }
-
-    /** The address in batchexecute's answer ("garturlres","https://…"). */
-    fun publisherIn(answer: String): String? =
-        Regex("""garturlres\\",\\"(https?://[^\\"]+)""").find(answer)?.groupValues?.get(1)?.takeIf { !isGoogle(it) }
-
     /** Until when Google is left alone, ms: it sent us to its "unusual traffic" page, or said too many requests. */
     @Volatile private var quietUntil = 0L
-    private var lastResolve = 0L
-    private const val RESOLVE_GAP_MS = 1_500L
     private const val QUIET_MS = 30 * 60_000L
 
-    /** True while Google has asked us to slow down; addresses aren't looked up then. */
+    /** True while Google has asked us to slow down: its feeds aren't asked then. */
     fun busy() = System.currentTimeMillis() < quietUntil
 
     private fun get(url: String): String? =

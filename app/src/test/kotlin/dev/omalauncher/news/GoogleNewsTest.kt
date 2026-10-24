@@ -1,11 +1,10 @@
 package dev.omalauncher.news
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** The shape of Google News's feeds and its link answer, as seen 2026-10-22 (made-up stories). */
+/** The shape of Google News's feeds , as seen 2026-10-22 (made-up stories). */
 class GoogleNewsTest {
     private val feed = """<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>Technology - Latest</title>
         <item><title>Phone maker shows a new folding screen - Example Daily</title><link>https://news.google.com/rss/articles/CBMiAbc?oc=5</link>
@@ -28,19 +27,14 @@ class GoogleNewsTest {
         // The cluster list in the description is Google's, not the story's.
         assertEquals("", s.html)
         assertEquals("A headline with & in it", stories[1].title)
+        // The publisher's site, to find the story on its own feed (PublisherFeeds), not through Google.
+        assertEquals("https://example.com", s.site)
+        assertEquals("https://wire.example", stories[1].site)
     }
 
     @Test fun theTopicsAreTopStoriesThenEightSections() {
         assertEquals(9, GoogleNews.TOPICS.size)
         assertEquals("https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en", GoogleNews.feedUrl(GoogleNews.TOPICS[0]))
         assertTrue(GoogleNews.feedUrl(GoogleNews.TOPICS[4]).contains("/headlines/section/topic/TECHNOLOGY?"))
-    }
-
-    @Test fun thePublishersAddressIsReadFromGooglesAnswer() {
-        val answer = """)]}'
-
-[["wrb.fr","Fbv4je","[\"garturlres\",\"https://example.com/2026/10/21/a-story/\",1]",null,null,null,"generic"]]"""
-        assertEquals("https://example.com/2026/10/21/a-story/", GoogleNews.publisherIn(answer))
-        assertNull(GoogleNews.publisherIn("""[["wrb.fr","Fbv4je",null]]"""))
     }
 }
