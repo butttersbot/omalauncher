@@ -7,8 +7,12 @@
 shell cmd statusbar collapse
 key BACK
 key HOME
+wait 1500
+# Home pressed on home opens the app list (as the gesture bar's swipe up does, on purpose): Back puts it away, or the
+# first pull only closed the list (the Mac Pro, 139).
+key BACK
 # Home settled first.
-wait 3000
+wait 2000
 clearlog
 # Pull search down from the middle of home.
 swipe 0.5 0.35 0.5 0.75 400
