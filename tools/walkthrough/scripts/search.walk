@@ -1,26 +1,19 @@
 # Soma's search, pulled down from home (105+). Bugs from the 135 check on Boss's phone: "dicsord" (two letters
 # swapped) didn't find Discord; recent searches never showed when nothing was opened; name searches brought rows of
 # unrelated photos. The emulator has no Discord: Chrome and Settings stand in.
+# Each pull is checked by the app's own log line (139: a terminal tile that still held the focus made every pull
+# open nothing, the Mac Pro's 138 walks). Typing on home is no way in: it searches the app list, not this.
 # A clean start: no shade or dialog left by an earlier walk.
 shell cmd statusbar collapse
 key BACK
 key HOME
-# Home settled first: the 138 walk's first pull, straight after the GIF walk, opened nothing.
+# Home settled first.
 wait 3000
-# Search opened by typing on home. adb's pull doesn't open it on the Fold8 emulator, on 137 or 138 alike (the Mac Pro,
-# 2026-10-23), while a finger's does on the phone: the pull is a # The pull itself, on the emulator too (logged, as adb's swipes land unevenly): after a terminal tile has had the
-# focus, a pull down still opens search (it did nothing then, the Mac Pro's 138 walks).
-key BACK
-key HOME
-wait 2000
 clearlog
+# Pull search down from the middle of home.
 swipe 0.5 0.35 0.5 0.75 400
 wait 1500
 log home pull search
-shot pull-opens-search
-key BACK
-key BACK
-[phone] step below.
 type chorme
 wait 1500
 expect Chrome
@@ -29,16 +22,20 @@ key BACK
 key BACK
 wait 800
 # Put away without opening anything: still a recent search.
-# Opened empty to see the recent searches: a letter typed, then taken back.
-type c
-wait 800
-key DEL
-wait 800
+clearlog
+swipe 0.5 0.35 0.5 0.75 400
+wait 1500
+log home pull search
 expect Recent searches
 expect chorme
 shot recent-searches-shown
 key BACK
 key BACK
+wait 800
+clearlog
+swipe 0.5 0.35 0.5 0.75 400
+wait 1500
+log home pull search
 type setitngs
 wait 2500
 expect Settings
@@ -46,8 +43,8 @@ expect Settings
 shot typo-finds-settings-no-photo-noise
 key BACK
 key BACK
+[phone] Tap the terminal tile on home, leave it (Back), then pull search down from the middle of home: it opens with the keyboard, and stays (it did nothing before 139).
 [phone] Search "dicsord": Discord comes first, and no row of unrelated photos.
 [phone] Search "andrew" (a contact): the contact with Call/Text, and no row of unrelated photos.
 [phone] Search "beach": his beach and marina photos still show.
 [phone] Type a search, put search away without opening anything, pull it down again: the search is under Recent searches.
-[phone] Pull search down from the middle of home with a finger: it opens with the keyboard, and stays.
