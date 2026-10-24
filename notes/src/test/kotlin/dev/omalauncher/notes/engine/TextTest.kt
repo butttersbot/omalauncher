@@ -63,4 +63,10 @@ class TextTest {
         assertEquals("# Plan\nx", ReaderPage.titled("# Plan\nx"))
         assertEquals("- [ ] Milk", ReaderPage.titled("- [ ] Milk"))
     }
+
+    @Test fun pinnedStackComesFirst() {
+        val now = 1_800_000_000_000L
+        val stacks = dev.omalauncher.notes.ui.stacks(listOf(Note("a.md", "A", Wire.MINE, "md", now, "s"), Note("b.md", "B", Wire.MINE, "md", now - 30L * 86_400_000, "s", pinned = true)), now)
+        assertEquals(listOf("Pinned", "Today"), stacks.map { it.first })
+    }
 }

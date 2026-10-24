@@ -77,6 +77,29 @@ wait 1000
 shot landscape-agents
 rotate portrait
 fold folded
+# Swipes, as Apple's Notes and Mail have them (Boss, 2026-10-24): right pins, left deletes with a moment to undo.
+# The top card's place on the cover (the stream's first card under its stack's name).
+swipe 0.2 0.34 0.75 0.34 300
+wait 1200
+expect PINNED
+shot swiped-right-pinned
+swipe 0.2 0.34 0.75 0.34 300
+wait 1200
+absent PINNED
+# Left, all the way: gone, with Undo; Undo brings it back.
+swipe 0.85 0.34 0.1 0.34 300
+wait 1000
+expect UNDO
+shot swiped-left-undo-bar
+tap UNDO
+wait 1200
+expect Walk shared link
+expect Walk groceries
+# A short swipe springs back and does nothing.
+swipe 0.5 0.34 0.4 0.34 200
+wait 1000
+absent UNDO
+absent PINNED
 # Clean up: delete both walk notes (they go to ~/Notes/.trash on the Mac).
 tap Walk groceries
 wait 1200

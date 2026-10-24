@@ -73,7 +73,14 @@ fun NotesApp(mayListen: () -> Boolean) {
         Row(Modifier.fillMaxSize()) {
             if (wide || open == null) {
                 Box(Modifier.then(if (wide) Modifier.fillMaxWidth(0.38f) else Modifier.fillMaxWidth()).fillMaxHeight()) {
-                    Stream(notes, reach, open?.id?.let(Notes::now), open = { n -> open = Open(n.id, reading = n.agent || n.html) })
+                    Stream(
+                        notes,
+                        reach,
+                        open?.id?.let(Notes::now),
+                        open = { n -> open = Open(n.id, reading = n.agent || n.html) },
+                        // Swiped away while open beside the stream: it closes too.
+                        deleted = { id -> if (open?.id?.let(Notes::now) == id) open = null },
+                    )
                     // New page; held, talk.
                     Box(
                         Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 22.dp).size(64.dp).offset(y = 0.dp)

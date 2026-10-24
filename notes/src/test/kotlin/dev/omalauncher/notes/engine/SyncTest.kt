@@ -117,4 +117,15 @@ class SyncTest {
         assertTrue(Shelf(dir)["A.md"]!!.dirty)
         assertNull(Shelf(File(dir, "other"))["A.md"])
     }
+
+    @Test fun pinsOutlastSyncs() {
+        val s = shelf()
+        val mac = FakeMac().apply { files["A.md"] = "A" }
+        Sync(s, mac).run()
+        s.pin("A.md", true)
+        mac.files["A.md"] = "A\nmore from the Mac"
+        Sync(s, mac).run()
+        assertTrue(s["A.md"]!!.pinned)
+        assertEquals("A\nmore from the Mac", s.text("A.md"))
+    }
 }

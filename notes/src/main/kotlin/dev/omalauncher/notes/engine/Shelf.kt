@@ -20,6 +20,8 @@ data class Note(
     /** Deleted here, still to tell the Mac. */
     val gone: Boolean = false,
     val preview: String = "",
+    /** Kept at the top of the stream (a swipe right). The phone's own, for now: the Mac doesn't keep pins. */
+    val pinned: Boolean = false,
 ) {
     val agent get() = kind == Wire.AGENT
     val html get() = ext == "html"
@@ -61,6 +63,7 @@ class Shelf(private val dir: File) {
                         dirty = o.optBoolean("dirty"),
                         gone = o.optBoolean("gone"),
                         preview = o.optString("preview"),
+                        pinned = o.optBoolean("pinned"),
                     )
                 notes[n.id] = n
             }
@@ -131,7 +134,20 @@ class Shelf(private val dir: File) {
                 modified = remote.modified,
                 sha = remote.sha,
                 preview = if (remote.ext == "html") "" else Wire.preview(text),
+                pinned = notes[remote.id]?.pinned == true,
             )
+        save()
+    }
+
+    /** Note [note] pinned to the top of the stream, or let go. */
+    @Synchronized
+    fun pin(
+        note: String,
+        on: Boolean,
+    ) {
+        val id = now(note)
+        val n = notes[id] ?: return
+        notes[id] = n.copy(pinned = on)
         save()
     }
 
@@ -195,7 +211,7 @@ class Shelf(private val dir: File) {
             a.put(
                 JSONObject()
                     .put("id", n.id).put("title", n.title).put("kind", n.kind).put("ext", n.ext).put("modified", n.modified)
-                    .put("sha", n.sha ?: "").put("dirty", n.dirty).put("gone", n.gone).put("preview", n.preview),
+                    .put("sha", n.sha ?: "").put("dirty", n.dirty).put("gone", n.gone).put("preview", n.preview).put("pinned", n.pinned),
             )
         }
         val tmp = File(dir, "index.json.tmp")

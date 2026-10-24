@@ -69,6 +69,14 @@ object Notes {
         return id
     }
 
+    fun pin(
+        id: String,
+        on: Boolean,
+    ) {
+        shelf.pin(id, on)
+        publish()
+    }
+
     fun delete(id: String) {
         shelf.delete(id)
         publish()
