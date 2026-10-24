@@ -168,13 +168,13 @@
   /* A new note: a whole blank page (Boss, 2026-10-23: "like a blank notes page, full screen"). */
   .page { position: absolute; inset: 0; top: 22px; background: var(--paper); z-index: 30; display: flex; flex-direction: column; }
   .phone:not(.cover) .page { left: 38%; border-left: 2px solid var(--ink); }
-  .page .bar { display: flex; align-items: center; gap: 8px; padding: 10px 14px 6px; }
-  .page .bar .back { font-size: 15px; cursor: pointer; }
+  .page .pbar { display: flex; align-items: center; gap: 8px; padding: 10px 14px 6px; }
+  .page .pbar .back { font-size: 15px; cursor: pointer; }
   .page .when { padding: 0 16px; font-size: 12px; color: var(--muted); }
   .page textarea { flex: 1; width: 100%; border: 0; outline: 0; resize: none; background: transparent; color: var(--ink); padding: 10px 16px; font: 20px/1.45 "M Body"; }
   .page textarea::first-line { font-family: "M Display"; font-size: 26px; }
-  .page .tools { display: flex; gap: 6px; padding: 8px 12px 14px; border-top: var(--line) solid var(--ink); }
-  .page .tools button { border: var(--line) solid var(--ink); width: 40px; height: 36px; font-size: 16px; }
+  .page .ptools { display: flex; gap: 6px; padding: 8px 12px 14px; border-top: var(--line) solid var(--ink); }
+  .page .ptools button { border: var(--line) solid var(--ink); width: 40px; height: 36px; font-size: 16px; }
   .page .shape { margin: 0 16px; }
 
   /* The reader: agents' Markdown, made to be read. */
@@ -556,11 +556,11 @@ function pageSheet() {
   let shape = '';
   if (sh === 'List') shape = c.text.split('\n').filter(s => s.trim()).map(s => `<div class="li">${esc(s.trim())}</div>`).join('');
   return `<div class="page cap">
-    <div class="bar"><span class="back" onclick="saveCap()">‹ Notes</span><span style="flex:1"></span>${sh ? `<span class="becomes mono">Becoming <b>${sh}</b></span>` : ''}<button class="btn solid" onclick="saveCap()">Done</button></div>
+    <div class="pbar"><span class="back" onclick="saveCap()">‹ Notes</span><span style="flex:1"></span>${sh ? `<span class="becomes mono">Becoming <b>${sh}</b></span>` : ''}<button class="btn solid" onclick="saveCap()">Done</button></div>
     <div class="when mono">Today · now · saved as you write</div>
     <textarea id="capText" placeholder="Start writing… the first line is its title." oninput="S.cap.text=this.value;refreshCap()">${esc(c.text)}</textarea>
     <div id="capShape">${shape ? `<div class="shape">${shape}</div>` : ''}</div>
-    <div class="tools"><button title="Checklist" onclick="tryCap((S.cap.text?S.cap.text+'\n':'')+'☐ ')">☑</button><button title="Hold to talk" onclick="toast('Hold to talk: words land where the cursor is')">🎙</button><button title="Photo" onclick="toast('Adds a photo or scan')">▣</button><button title="Pen" onclick="toast('Draw with the pen or a finger')">✎</button><span style="flex:1"></span><button title="Grow" onclick="toast('Grow sends it to an agent')">✦</button></div>
+    <div class="ptools"><button title="Checklist" onclick="tryCap((S.cap.text?S.cap.text+'\n':'')+'☐ ')">☑</button><button title="Hold to talk" onclick="toast('Hold to talk: words land where the cursor is')">🎙</button><button title="Photo" onclick="toast('Adds a photo or scan')">▣</button><button title="Pen" onclick="toast('Draw with the pen or a finger')">✎</button><span style="flex:1"></span><button title="Grow" onclick="toast('Grow sends it to an agent')">✦</button></div>
   </div>`;
 }
 function refreshCap() {
