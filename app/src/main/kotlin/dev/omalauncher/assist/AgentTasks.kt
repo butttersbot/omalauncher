@@ -330,6 +330,8 @@ class Builder(val id: BuilderId) {
      * [page] is the id of the home page he was on when he asked: the one home shows, unless the caller knows better.
      */
     fun send(context: Context, prompt: String, images: List<String> = emptyList(), screen: File? = null, page: String? = HomeDoor.home?.showing): Unit = synchronized(lock) {
+        // Mail may already be collecting while the agent itself is idle. Owner requests keep their place.
+        if (followUps.waiting.isNotEmpty()) return followUp(context, prompt, images, page, screen = screen)
         start(context, prompt, images, screen, page, queued = null)
     }
     /**
@@ -344,7 +346,7 @@ class Builder(val id: BuilderId) {
     fun followUp(context: Context, prompt: String, images: List<String> = emptyList(), page: String? = HomeDoor.home?.showing, earlier: String = "", screen: File? = null, mail: String = "", errand: Boolean = false, agentMail: AgentMail? = null): Unit = synchronized(lock) {
         restore(context)
         check(prompt.isNotBlank()) { "Type or speak a request first." }
-        if (!working && agentMail == null) return start(context, prompt, images, screen, page, queued = null, earlier = earlier, mail = mail, errand = errand)
+        if (!working && agentMail == null && followUps.waiting.isEmpty()) return start(context, prompt, images, screen, page, queued = null, earlier = earlier, mail = mail, errand = errand)
         check(!working || !stopping) { "The agent is stopping. Send this again in a moment." }
         val agents = (context.applicationContext as App).runtime.agents
         val agent = builderAgent(id, agents.installed, agents.default)?.agent ?: error("Install and sign in to an agent in Omalauncher first.")
@@ -364,7 +366,7 @@ class Builder(val id: BuilderId) {
         }
         log.begin(ChatTask(time, agent.name, prompt, images, screen = screen != null, status = TaskStatus.Queued, builder = id.saved, mail = mail))
         if (agentMail != null) AgentMailReceipts.queued(context, agentMail, time)
-        if (agentMail != null && !working) android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+        if (!working) android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
             synchronized(lock) { if (!working) advance(context, TaskStatus.Done) }
         }, 1_000)
     }
