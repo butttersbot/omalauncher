@@ -82,7 +82,8 @@ tap Agents
 wait 1000
 # The agents' notes under a heading for their project (the walk's own: Agents/walk/), and none of Boss's.
 expect Sideways book
-absent Walk groceries
+# Its card, by its preview: "Walk groceries" is still the note open in the right pane on the open Fold.
+absent Milk Eggs
 tap Sideways book
 wait 2500
 # Look: two pages side by side, a thin line between, page numbers below; a tap at the right turns to the next spread.
