@@ -2,7 +2,8 @@ plugins { alias(libs.plugins.android.application) }
 android {
     namespace = "dev.omalauncher.hunch"
     compileSdk = 37
-    defaultConfig { applicationId = "dev.omalauncher.hunch"; minSdk = 29; targetSdk = 37; versionCode = 1; versionName = "0.1.0" }
+    buildFeatures { buildConfig = true }
+    defaultConfig { applicationId = "dev.omalauncher.hunch"; minSdk = 29; targetSdk = 37; versionCode = 2; versionName = "0.2.0" }
 }
 dependencies { testImplementation(libs.junit); testImplementation(libs.org.json) }
 val mangaFonts by tasks.registering(Sync::class) {

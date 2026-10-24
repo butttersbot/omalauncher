@@ -1,10 +1,48 @@
-# Read-only first slice; public network required. Never place an order.
+# Debug-only fictional data, visibly labelled. No account or transaction capabilities.
+fold folded
 launch dev.omalauncher.hunch/.MainActivity
 expect "Today's issue"
-expect Public markets only
-shot hunch-cover-today
+expect Search markets
+shot hunch-live-cover
+# Repeatable fixture exercises details without live market churn.
+shell am force-stop dev.omalauncher.hunch
+shell am start -n dev.omalauncher.hunch/.MainActivity --es fixture demo
+expect HUNCH / FICTIONAL DEMO
+expect Paper Cranes
+shot hunch-demo-cover
+# Match card title (not the filter).
+tap Paper Cranes vs Ink Foxes
+expect Choose an outcome
+expect Cranes outcome, selected
+expect Buy:
+expect Gross illustration
+shot hunch-detail-cover
+key BACK
+expect "Today's issue"
+tap Prices
+expect DEMO above 100?
+tap DEMO above 100?
+expect No asks
+expect No payout estimate
+shot hunch-empty-book
+key BACK
+tap Bets
+expect No bets yet.
+tap Money
+expect No wallet connected.
+shot hunch-money-empty
+tap Today
 fold open
 rotate portrait
 expect "Today's issue"
-shot hunch-unfolded-today
-[phone] Verify live market list and a market's read-only book; no wallet or transaction controls.
+shot hunch-demo-unfolded
+# HTTP error fixture cannot fall back to unlabelled stale data.
+shell am force-stop dev.omalauncher.hunch
+shell am start -n dev.omalauncher.hunch/.MainActivity --es fixture error
+expect Markets unavailable
+shot hunch-offline
+# Leave live read-only app, never the fixture, for a human.
+shell am force-stop dev.omalauncher.hunch
+shell am start -n dev.omalauncher.hunch/.MainActivity
+expect "Today's issue"
+[phone] Verify live market names, search, side selection, empty/one-sided book labels and refresh. No wallet or transaction controls. Check cover/inner readability and back to retained query.
