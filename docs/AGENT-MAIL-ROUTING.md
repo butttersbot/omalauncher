@@ -43,5 +43,21 @@ and phone-builder mail are the paths covered here.
 - `python3 tools/mac-runner/test-runner.py`: loopback fake-agent integration, including a busy five-message burst that
   becomes one four-message handoff after explicit supersession. No production agents or sends.
 - App unit tests `FollowUpsTest`, `AgentMailTest`; isolated Android `MailRoutingInstrumentation` and `agent-mail.walk`.
-- Deploy runner changes only when its turns/queues/native holders are idle; back up installed runner and preserve local
-  modifications. Upgrade the phone through normal build/sign/install gates when Phone A is idle. Never reset source or code.
+- Deploy only after 20 seconds with no runner turns, queued work, or active/waiting runner-owned or adopted native
+  processes. Classify ownership from verified PID/start time, full ancestry and process group. Unknown ownership blocks.
+  An independent Claude Desktop session paused at a verified user question may remain open only when its app ownership
+  and sleeping infrastructure are proved separate; preserve its PID, start time, state, marker hash and question before
+  and after the runner restart. Do not answer or dismiss that question to deploy an unrelated service.
+- Back up the installed runner, enforce the exact baseline hash, preserve unrelated functions and auth/config, and verify
+  the installed hash, actual PID change and authenticated health after restart. Upgrade the phone through normal
+  build/sign/install gates when Phone A is idle. Never reset source or version code.
+
+### Surgical update compatibility
+
+Run the full loopback suite against the **exact assembled service candidate**, in addition to policy tests and the source
+branch's tests. Audit referenced globals and include their helper/constant dependencies. The older Mac Pro baseline lacked
+`claude_holder_state`, `claude_process_start` and `CLAUDE_PROJECTS`; transplanting `collect_mail` alone left a healthy HTTP
+service whose collector raised `NameError` and kept mail unread in `mail/new`. Add the dependencies without overwriting
+existing functions, retest that assembled module, and verify a real burst reaches the deployed runner. HTTP health alone
+is not delivery proof. Do not resend accepted mail during diagnosis: preserve its IDs and let the corrected collector
+process the originals.
