@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Notes sync with tailshare-serve on the Mac Pro, over the tailnet. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Hold to talk: Android's own speech recognition writes what was said into the page. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
+
+    <application
+        android:label="Soma Notes"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:allowBackup="false"
+        android:enableOnBackInvokedCallback="true"
+        android:supportsRtl="true"
+        android:usesCleartextTraffic="true">
+        <!-- Plain http only to tailshare-serve on the tailnet (100.64.0.0/10), which Tailscale encrypts. -->
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:resizeableActivity="true"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density|keyboardHidden|uiMode"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- A new blank page, from the launcher (am start -a dev.omalauncher.notes.NEW). -->
+            <intent-filter>
+                <action android:name="dev.omalauncher.notes.NEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <!-- Quick capture: a sheet dropped over whatever is on screen, from home, the cover or another app's Share. -->
+        <activity
+            android:name=".QuickCaptureActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:taskAffinity="dev.omalauncher.notes.capture"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize|stateVisible"
+            android:theme="@style/QuickCapture">
+            <intent-filter>
+                <action android:name="dev.omalauncher.notes.CAPTURE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter android:label="Soma Notes">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

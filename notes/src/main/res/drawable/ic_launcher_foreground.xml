@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Soma Notes: an ink page with a folded corner and three lines, in the 108 dp adaptive-icon grid (safe zone 66 dp). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FF111111"
+        android:pathData="M36,30h26l14,14v34a4,4 0,0 1,-4 4H36a4,4 0,0 1,-4 -4V34a4,4 0,0 1,4 -4zM60,34v12h12zM40,54v4h28v-4zM40,62v4h28v-4zM40,70v4h18v-4z" />
+</vector>

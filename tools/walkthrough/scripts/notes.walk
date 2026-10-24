@@ -1,0 +1,98 @@
+# Soma Notes 0.1.0 (Boss, 2026-10-23): a standalone app, dev.omalauncher.notes. Notes live in ~/Notes on the Mac Pro,
+# served by tailshare-serve's /v1/notes; the phone keeps a copy and works offline. A new note is a whole blank page,
+# first line the title (Boss: "like a blank notes page, full screen"); Quick capture is the little sheet for later.
+# The emulator reaches the Mac Pro's tailshare-serve through the Mac it runs on.
+shell cmd statusbar collapse
+rotate portrait
+fold folded
+launch dev.omalauncher.notes/.MainActivity
+wait 2500
+expect Notes
+expect Search notes
+shot stream-cover
+# A new note: a whole page, the keyboard up, "Title" waiting.
+tap 0.86 0.88
+wait 1500
+expect ‹ Notes
+expect Hold to talk
+shot new-page-blank
+type Walk groceries
+key ENTER
+tap ☐ List
+type Milk
+key ENTER
+type Eggs
+wait 800
+# Look: the first line set big as the title; two checklist lines; Enter carried the box on.
+shot new-page-typed
+key BACK
+key BACK
+wait 2500
+expect Walk groceries
+expect TODAY
+shot stream-with-note
+# Sent to the Mac within a few seconds (SYNCED at the top; OFFLINE if the Mac Pro's /v1/notes isn't up yet).
+wait 4000
+expect SYNCED
+# Read it: the boxes tick.
+tap Walk groceries
+wait 1500
+tap Read
+wait 2000
+expect Milk
+shot reader-list
+tap Milk
+wait 1500
+shot reader-milk-ticked
+tap Source
+wait 800
+expect - [x] Milk
+key BACK
+wait 800
+# Quick capture, as the launcher or another app's Share opens it.
+shell am start -a android.intent.action.SEND -t text/plain --es android.intent.extra.TEXT "Walk shared link https://example.com" -n dev.omalauncher.notes/.QuickCaptureActivity
+wait 1500
+expect QUICK CAPTURE
+expect Walk shared link
+shot quick-capture-shared
+tap Save
+wait 1500
+launch dev.omalauncher.notes/.MainActivity
+wait 1500
+expect Walk shared link
+# Unfolded: the stream at the left, the note beside it.
+fold open
+wait 2500
+tap Walk groceries
+wait 1500
+expect Hold to talk
+shot unfolded-two-panes
+# Sideways, an agent note reads as a two-page book (needs one in ~/Notes/Agents on the Mac Pro).
+rotate landscape
+wait 2000
+tap From agents
+wait 1000
+shot landscape-agents
+rotate portrait
+fold folded
+# Clean up: delete both walk notes (they go to ~/Notes/.trash on the Mac).
+tap Walk groceries
+wait 1200
+tap Delete
+wait 600
+tap Delete
+wait 1200
+tap Walk shared link
+wait 1500
+tap Delete
+wait 600
+tap Delete
+wait 1500
+absent Walk groceries
+absent Walk shared link
+[phone] Hold the red + and say "buy coffee filters": a page opens with those words (Android asks for the microphone the first time).
+[phone] On a page, hold "Hold to talk", speak, let go: the words go in at the cursor.
+[phone] In Chrome, Share a page to Soma Notes: Quick capture drops down with the link; Save, and it is in the stream.
+[phone] Turn Wi-Fi and mobile data off, write a note: the stream says OFFLINE · 1 TO SEND; back online, it says SYNCED and the note is in ~/Notes on the Mac Pro.
+[phone] Unfolded and sideways, open an agent's Markdown note: two pages a spread, a tap at the right turns the page.
+[phone] Open an agent's HTML note: it fits the screen and pinches to zoom.
