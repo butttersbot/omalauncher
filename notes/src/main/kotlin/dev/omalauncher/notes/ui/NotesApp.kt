@@ -63,6 +63,8 @@ fun NotesApp(mayListen: () -> Boolean) {
         }
     }
     val talk = remember { Talk(context.applicationContext) }
+    // Held here, not in the stream, which leaves the cover while a note is open.
+    val streamView = remember { StreamView() }
     var heard by remember { mutableStateOf<String?>(null) }
     val wide = LocalConfiguration.current.screenWidthDp >= 600
     fun fresh() = Open(Notes.fresh(), reading = false)
@@ -80,6 +82,7 @@ fun NotesApp(mayListen: () -> Boolean) {
                         open = { n -> open = Open(n.id, reading = n.agent || n.html) },
                         // Swiped away while open beside the stream: it closes too.
                         deleted = { id -> if (open?.id?.let(Notes::now) == id) open = null },
+                        view = streamView,
                     )
                     // New page; held, talk.
                     Box(

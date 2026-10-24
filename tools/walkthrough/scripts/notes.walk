@@ -113,6 +113,20 @@ tap Mine
 wait 1000
 expect Walk shared link
 absent Sideways book
+# Back from a note opened on the Agents tab lands on Agents, not Mine (Boss, 2026-10-24): the cover shows the list or
+# the note, never both, and the tab outlives the note.
+tap Agents
+wait 1000
+tap Sideways book
+wait 2500
+key BACK
+wait 1200
+expect Sideways book
+absent Walk shared link
+shot back-to-agents
+tap Mine
+wait 1000
+expect Walk shared link
 # Swipes, as Apple's Notes and Mail have them (Boss, 2026-10-24): right pins, left deletes with a moment to undo.
 # The top card's place on the cover (the stream's first card under its stack's name).
 # Mine is one list with no headings: the top card ("Walk shared link", the newest) sits at about 0.31.

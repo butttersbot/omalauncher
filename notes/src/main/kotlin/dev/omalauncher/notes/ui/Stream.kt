@@ -35,7 +35,6 @@ import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -65,6 +64,9 @@ fun Stream(
     selected: String?,
     open: (Note) -> Unit,
     deleted: (String) -> Unit = {},
+    /** The tab, the search and the scroll, kept by the app: on the cover the list leaves the screen while a note is
+     * open, and back from it he finds the list as he left it (Boss, 2026-10-24: back from an agent note went to Mine). */
+    view: StreamView = remember { StreamView() },
     modifier: Modifier = Modifier,
 ) {
     // Swiped away, waiting a moment for Undo before it really goes.
@@ -78,8 +80,8 @@ fun Stream(
     // Left before the moment is up: it goes all the same.
     DisposableEffect(Unit) { onDispose { going?.let { Notes.delete(it.id) } } }
     // Boss's own notes by default; his agents' notes in a tab of their own, so they never clutter his (Boss, 2026-10-24).
-    var filter by rememberSaveable { mutableStateOf("mine") }
-    var query by rememberSaveable { mutableStateOf("") }
+    var filter by view.filter
+    var query by view.query
     val shown =
         notes
             .filter { it.id != going?.id }
@@ -87,7 +89,7 @@ fun Stream(
             .filter { query.isBlank() || it.title.contains(query, true) || it.preview.contains(query, true) || (query.length > 2 && Notes.text(it.id).contains(query, true)) }
     val stacks = sections(shown, agents = filter == "agents")
     Box(modifier.fillMaxSize()) {
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 120.dp)) {
+        LazyColumn(Modifier.fillMaxSize(), state = view.list, contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 120.dp)) {
             item {
                 Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 6.dp), verticalAlignment = Alignment.Bottom) {
                     BasicText("Notes", Modifier.weight(1f), style = TextStyle(fontFamily = Look.display, fontSize = 30.sp, color = Look.ink))
@@ -230,6 +232,13 @@ private fun Card(
         BasicText(n.title.ifEmpty { "Untitled" }, Modifier.padding(top = 4.dp, bottom = 2.dp), maxLines = 2, overflow = TextOverflow.Ellipsis, style = TextStyle(fontFamily = Look.body, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Look.ink))
         if (n.preview.isNotEmpty()) BasicText(n.preview, maxLines = 2, overflow = TextOverflow.Ellipsis, style = TextStyle(fontFamily = Look.body, fontSize = 13.5.sp, color = Look.ink.copy(alpha = 0.75f), lineHeight = 18.sp))
     }
+}
+
+/** What the stream shows: Mine or Agents, the search, the scroll. */
+class StreamView {
+    val filter = mutableStateOf("mine")
+    val query = mutableStateOf("")
+    val list = androidx.compose.foundation.lazy.LazyListState()
 }
 
 /** The project an agent's note is for: its folder under Agents/ ("Agents/soma-notes/Plan.md" is Soma Notes). */
