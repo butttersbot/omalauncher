@@ -7,10 +7,8 @@ key BACK
 key HOME
 # Home settled first: the 138 walk's first pull, straight after the GIF walk, opened nothing.
 wait 3000
-# Pull search down from the middle of home.
-swipe 0.5 0.35 0.5 0.75 300
-wait 1500
-expect Search anything
+# Search opened by typing on home. adb's pull doesn't open it on the Fold8 emulator, on 137 or 138 alike (the Mac Pro,
+# 2026-10-23), while a finger's does on the phone: the pull is a [phone] step below.
 type chorme
 wait 1500
 expect Chrome
@@ -19,15 +17,16 @@ key BACK
 key BACK
 wait 800
 # Put away without opening anything: still a recent search.
-swipe 0.5 0.35 0.5 0.75 300
-wait 1000
+# Opened empty to see the recent searches: a letter typed, then taken back.
+type c
+wait 800
+key DEL
+wait 800
 expect Recent searches
 expect chorme
 shot recent-searches-shown
 key BACK
 key BACK
-swipe 0.5 0.35 0.5 0.75 300
-wait 1000
 type setitngs
 wait 2500
 expect Settings
@@ -39,3 +38,4 @@ key BACK
 [phone] Search "andrew" (a contact): the contact with Call/Text, and no row of unrelated photos.
 [phone] Search "beach": his beach and marina photos still show.
 [phone] Type a search, put search away without opening anything, pull it down again: the search is under Recent searches.
+[phone] Pull search down from the middle of home with a finger: it opens with the keyboard, and stays.
