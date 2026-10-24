@@ -64,9 +64,26 @@ class TextTest {
         assertEquals("- [ ] Milk", ReaderPage.titled("- [ ] Milk"))
     }
 
-    @Test fun pinnedStackComesFirst() {
+    @Test fun mineIsOneListPinnedFirst() {
         val now = 1_800_000_000_000L
-        val stacks = dev.omalauncher.notes.ui.stacks(listOf(Note("a.md", "A", Wire.MINE, "md", now, "s"), Note("b.md", "B", Wire.MINE, "md", now - 30L * 86_400_000, "s", pinned = true)), now)
-        assertEquals(listOf("Pinned", "Today"), stacks.map { it.first })
+        val got = dev.omalauncher.notes.ui.sections(listOf(Note("a.md", "A", Wire.MINE, "md", now, "s"), Note("b.md", "B", Wire.MINE, "md", now - 30L * 86_400_000, "s", pinned = true)), agents = false)
+        assertEquals(1, got.size)
+        assertEquals(null, got[0].first)
+        assertEquals(listOf("b.md", "a.md"), got[0].second.map { it.id })
+    }
+
+    @Test fun agentNotesAreGroupedByProject() {
+        val got =
+            dev.omalauncher.notes.ui.sections(
+                listOf(
+                    Note("Agents/soma-notes/Banked ideas.md", "B", Wire.AGENT, "md", 30, "s"),
+                    Note("Agents/tailshare/Plan.md", "P", Wire.AGENT, "md", 20, "s"),
+                    Note("Agents/soma-notes/Old.md", "O", Wire.AGENT, "md", 10, "s"),
+                    Note("Agents/loose.md", "L", Wire.AGENT, "md", 5, "s"),
+                ),
+                agents = true,
+            )
+        assertEquals(listOf("Soma Notes", "Tailshare", "Other"), got.map { it.first })
+        assertEquals(2, got[0].second.size)
     }
 }

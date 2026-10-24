@@ -53,8 +53,8 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * The stream: every note, newest first, in stacks that make themselves: what agents wrote lately on top, then today,
- * yesterday, this week and before. Chips narrow it to Boss's own or his agents'; the field searches titles and text.
+ * The stream, newest first, in two tabs: Mine, Boss's own notes, one list; Agents, what his agents wrote, under a
+ * heading for each project. The field searches titles and text.
  * A note swiped right is pinned (or let go), swiped left deleted, with a moment to take it back: the directions of
  * Apple's Notes and Mail, which most apps follow (Boss, 2026-10-24).
  */
@@ -77,14 +77,15 @@ fun Stream(
     }
     // Left before the moment is up: it goes all the same.
     DisposableEffect(Unit) { onDispose { going?.let { Notes.delete(it.id) } } }
-    var filter by rememberSaveable { mutableStateOf("all") }
+    // Boss's own notes by default; his agents' notes in a tab of their own, so they never clutter his (Boss, 2026-10-24).
+    var filter by rememberSaveable { mutableStateOf("mine") }
     var query by rememberSaveable { mutableStateOf("") }
     val shown =
         notes
             .filter { it.id != going?.id }
-            .filter { filter == "all" || (filter == "agents") == it.agent }
+            .filter { (filter == "agents") == it.agent }
             .filter { query.isBlank() || it.title.contains(query, true) || it.preview.contains(query, true) || (query.length > 2 && Notes.text(it.id).contains(query, true)) }
-    val stacks = stacks(shown, System.currentTimeMillis())
+    val stacks = sections(shown, agents = filter == "agents")
     Box(modifier.fillMaxSize()) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 120.dp)) {
             item {
@@ -101,7 +102,7 @@ fun Stream(
             }
             item {
                 Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    for ((key, label) in listOf("all" to "All", "mine" to "Mine", "agents" to "From agents")) {
+                    for ((key, label) in listOf("mine" to "Mine", "agents" to "Agents")) {
                         val on = filter == key
                         BasicText(
                             label,
@@ -114,14 +115,18 @@ fun Stream(
             if (shown.isEmpty()) {
                 item {
                     BasicText(
-                        if (notes.isEmpty()) "No notes yet.\nTap + for a blank page; hold it to talk." else "Nothing matches.",
+                        when {
+                            query.isNotBlank() -> "Nothing matches."
+                            filter == "agents" -> "No agent notes yet.\nAgents file them under Agents/ in ~/Notes on the Mac Pro."
+                            else -> "No notes yet.\nTap + for a blank page; hold it to talk."
+                        },
                         Modifier.fillMaxWidth().padding(40.dp),
                         style = TextStyle(fontFamily = Look.body, fontSize = 15.sp, color = Look.muted, textAlign = androidx.compose.ui.text.style.TextAlign.Center),
                     )
                 }
             }
             for ((name, stack) in stacks) {
-                item(key = "h:$name") { BasicText(name.uppercase(), Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 6.dp), style = mono(Look.muted)) }
+                if (name != null) item(key = "h:$name") { BasicText(name.uppercase(), Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 6.dp), style = mono(Look.muted)) }
                 items(stack, key = { it.id }) { n ->
                     Swipe(
                         n,
@@ -211,10 +216,6 @@ private fun Card(
             .background(if (selected) Look.tone else Look.paper).border(if (selected) 2.5.dp else 1.15.dp, Look.ink).clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            if (n.agent) {
-                BasicText(who(n).uppercase(), Modifier.background(Look.ink).padding(horizontal = 4.dp), style = mono(Look.paper))
-                Spacer(Modifier.width(6.dp))
-            }
             if (n.html) {
                 BasicText("HTML", Modifier.border(1.15.dp, Look.muted).padding(horizontal = 4.dp), style = mono(Look.muted))
                 Spacer(Modifier.width(6.dp))
@@ -228,34 +229,24 @@ private fun Card(
     }
 }
 
-/** "From Claude": the agent's folder under Agents/, when it has one. */
-fun who(n: Note): String {
+/** The project an agent's note is for: its folder under Agents/ ("Agents/soma-notes/Plan.md" is Soma Notes). */
+fun project(n: Note): String {
     val parts = n.id.split('/')
-    val name = if (parts.size > 2) parts[1] else "agent"
-    return "From " + name.replaceFirstChar { it.uppercase() }
+    val name = if (parts.size > 2) parts[1] else "Other"
+    return name.replace('-', ' ').replace('_', ' ').split(' ').filter { it.isNotEmpty() }.joinToString(" ") { it.replaceFirstChar(Char::uppercase) }
 }
 
-/** The stream's stacks, in order: pinned, agents' notes of the last two days, then by day. Pure, for the tests. */
-fun stacks(
+/**
+ * The stream's sections, in order. Boss's own: one list, no headings (sections later, when he wants them), pinned
+ * first. His agents': a heading for each project, the most recently written project first. Pure, for the tests.
+ */
+fun sections(
     notes: List<Note>,
-    now: Long,
-): List<Pair<String, List<Note>>> {
-    val day = startOfDay(now)
-    val out = LinkedHashMap<String, MutableList<Note>>()
-    for (n in notes.sortedByDescending { it.modified }) {
-        val name =
-            when {
-                n.pinned -> "Pinned"
-                n.agent && n.modified >= day - DAY -> "New from agents"
-                n.modified >= day -> "Today"
-                n.modified >= day - DAY -> "Yesterday"
-                n.modified >= day - 6 * DAY -> "This week"
-                else -> "Earlier"
-            }
-        out.getOrPut(name) { ArrayList() } += n
-    }
-    val order = listOf("Pinned", "New from agents", "Today", "Yesterday", "This week", "Earlier")
-    return order.mapNotNull { k -> out[k]?.let { k to it.toList() } }
+    agents: Boolean,
+): List<Pair<String?, List<Note>>> {
+    val newest = notes.sortedByDescending { it.modified }
+    if (!agents) return listOf(null to newest.sortedByDescending { it.pinned })
+    return newest.groupBy(::project).map { (k, v) -> k to v.sortedByDescending { it.pinned } }
 }
 
 fun whenOf(

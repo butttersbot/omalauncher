@@ -66,7 +66,7 @@ fun Reader(
             BasicText("‹ Notes", Modifier.clickable(onClick = back).padding(vertical = 6.dp, horizontal = 2.dp), style = TextStyle(fontFamily = Look.body, fontSize = 15.sp, color = Look.ink))
             Spacer(Modifier.width(10.dp))
             BasicText(
-                listOfNotNull(note?.takeIf { it.agent }?.let(::who), note?.let { whenOf(it.modified, System.currentTimeMillis()) }).joinToString(" · ").uppercase(),
+                listOfNotNull(note?.takeIf { it.agent }?.let(::project), note?.let { whenOf(it.modified, System.currentTimeMillis()) }).joinToString(" · ").uppercase(),
                 Modifier.weight(1f),
                 maxLines = 1,
                 style = mono(Look.muted),
