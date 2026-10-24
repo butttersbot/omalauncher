@@ -49,19 +49,21 @@ th { background: var(--ink); color: var(--paper); font-weight: 600; }
 .narrow td:first-child { font-weight: 700; font-size: 16px; }
 .narrow td:first-child::before { display: none; }
 .book { height: 100vh; overflow: hidden; padding: 0; }
-/* Two columns a spread in the CSS itself, so the book stands even before (or without) the script; with the height
-   fixed, the rest of the note runs on in more columns to the right, which a turn slides into view. */
-.book #wrap { margin: 0 26px; }
-.book #flow { height: calc(100vh - 56px); margin-top: 16px; column-count: 2; column-gap: 52px; column-fill: auto; transition: transform .35s cubic-bezier(.3,.7,.3,1); }
-.book #flow > *:first-child { margin-top: 0; }
+/* The book: the note's blocks dealt into pages by the script (never CSS columns: Chromium drew them blank and died
+   re-laying them out, the Mac Pro's walks 2026-10-24), two pages a spread. */
+.book #flow { display: none; }
+.book #pages { position: fixed; top: 16px; left: 26px; right: 26px; bottom: 40px; display: flex; gap: 52px; }
+.pg { flex: 1; min-width: 0; overflow: hidden; }
+.pg > *:first-child { margin-top: 0; }
 .book #folio { position: fixed; left: 26px; right: 26px; bottom: 10px; display: flex; justify-content: space-between; font: 10.5px M; letter-spacing: .08em; color: var(--muted); }
 .book #spine { position: fixed; top: 16px; bottom: 40px; left: 50%; width: 1px; background: var(--tone); }
-#folio, #spine { display: none; }
-.book #folio, .book #spine { display: flex; }
+#folio, #spine, #pages { display: none; }
+.book #folio, .book #spine, .book #pages { display: flex; }
+.book #spine { display: block; }
 </style></head><body class="${if (book) "book" else ""} ${if (narrow) "narrow" else ""}">
 <div id="wrap"><div id="flow">
 ${Markdown.html(titled(md))}
-</div></div><div id="spine"></div><div id="folio"><span id="pl"></span><span id="pr"></span></div>
+</div></div><div id="pages"></div><div id="spine"></div><div id="folio"><span id="pl"></span><span id="pr"></span></div>
 <script>
 document.addEventListener('click', function (e) {
   var copy = e.target.closest('.copy');
@@ -73,19 +75,46 @@ document.addEventListener('click', function (e) {
   var x = e.clientX / innerWidth;
   if (x < 0.22) turn(-1); else if (x > 0.78) turn(1);
 });
-var spread = 0, spreads = 1;
-/* One spread: the two columns and the gap after them. */
-function step() { return document.getElementById('flow').clientWidth + 52; }
+var spread = 0, spreads = 1, pages = [];
+/* Deals the note's blocks into pages as tall as the screen allows, each as wide as half a spread. */
 function layout() {
   if (!document.body.classList.contains('book')) return;
-  var flow = document.getElementById('flow');
-  if (flow.clientWidth <= 0) return;
-  spreads = Math.max(1, Math.ceil(flow.scrollWidth / step() - 0.01));
+  var w = innerWidth, h = innerHeight;
+  if (w <= 0 || h <= 0) return;
+  var colW = (w - 52 - 52) / 2, pageH = h - 56;
+  var blocks = [].slice.call(document.getElementById('flow').children);
+  var m = document.createElement('div');
+  m.className = 'pg';
+  m.style.cssText = 'position:absolute;left:-20000px;top:0;overflow:visible;width:' + colW + 'px';
+  document.body.appendChild(m);
+  pages = [];
+  var cur = [];
+  blocks.forEach(function (b) {
+    var c = b.cloneNode(true);
+    m.appendChild(c);
+    if (m.scrollHeight > pageH && cur.length) {
+      pages.push(cur);
+      cur = [];
+      m.innerHTML = '';
+      m.appendChild(c);
+    }
+    cur.push(c);
+  });
+  if (cur.length) pages.push(cur);
+  m.parentNode.removeChild(m);
+  spreads = Math.max(1, Math.ceil(pages.length / 2));
   turn(0);
 }
 function turn(d) {
   spread = Math.max(0, Math.min(spreads - 1, spread + d));
-  document.getElementById('flow').style.transform = 'translateX(' + (-spread * step()) + 'px)';
+  var box = document.getElementById('pages');
+  box.innerHTML = '';
+  for (var i = 0; i < 2; i++) {
+    var pg = document.createElement('div');
+    pg.className = 'pg';
+    (pages[spread * 2 + i] || []).forEach(function (n) { pg.appendChild(n); });
+    box.appendChild(pg);
+  }
   document.getElementById('pl').textContent = (spread * 2 + 1);
   document.getElementById('pr').textContent = (spread * 2 + 2) + ' / ' + (spreads * 2);
 }
