@@ -240,7 +240,8 @@ object Messages {
         // Each hand-off gets its own folder, so a second one can't delete photos OpenBubbles hasn't read yet; folders
         // over a day old go.
         val shared = File(context.cacheDir, "shared")
-        shared.listFiles()?.filter { System.currentTimeMillis() - it.lastModified() > 24 * 60 * 60_000L }?.forEach { it.deleteRecursively() }
+        // Not the Mac's attachments, kept there under "mac" (a video's file and its frame went with them).
+        shared.listFiles()?.filter { it.name != "mac" && System.currentTimeMillis() - it.lastModified() > 24 * 60 * 60_000L }?.forEach { it.deleteRecursively() }
         val folder = File(shared, System.currentTimeMillis().toString()).apply { mkdirs() }
         val resolver = context.contentResolver
         val types = mutableListOf<String>()

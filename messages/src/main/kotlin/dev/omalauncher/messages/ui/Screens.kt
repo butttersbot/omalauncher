@@ -35,6 +35,7 @@ import androidx.compose.ui.layout.ContentScale
 import dev.omalauncher.messages.engine.Part
 import dev.omalauncher.messages.engine.Alerts
 import dev.omalauncher.messages.engine.Desk
+import dev.omalauncher.messages.engine.CafOpus
 import dev.omalauncher.messages.engine.MacLink
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
@@ -654,6 +655,7 @@ private fun tapFor(
     }
 
 /** One part of a message inside its balloon. */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun PartContent(
     part: Part,
@@ -671,6 +673,14 @@ private fun PartContent(
                 Photos(files.filter { it.substringAfter('|').startsWith("image/") }, onHold)
             } else if (files.any { it.substringAfter('|').startsWith("video/") }) {
                 Videos(files.filter { it.substringAfter('|').startsWith("video/") }, ink, onHold)
+            } else if (files.any { it.substringAfter('|') == "audio/x-caf" }) {
+                Voice(files.first { it.substringAfter('|') == "audio/x-caf" }, ink, onHold)
+            } else if (Messages.linked && files.any { !it.startsWith("local:") }) {
+                // Anything else from the Mac (a PDF, a document): fetched on a tap and opened in the app for it.
+                val context = LocalContext.current
+                Box(Modifier.combinedClickable(onLongClick = onHold) { openMedia(context, files.first()) }.semantics { contentDescription = part.summary + ", tap to open" }) {
+                    Card(part.summary, "Tap to open", "▣", ink)
+                }
             } else {
                 Card(part.summary, if (Messages.linked) null else "Open in OpenBubbles", if (part.kind == "Video") "▶" else "▣", ink)
             }
@@ -788,14 +798,81 @@ private fun Videos(
     }
 }
 
-/** A frame from early in [f], to stand for the video; null when it can't be read. */
+/**
+ * A frame from early in [f], to stand for the video; null when it can't be read. Kept beside it as a JPEG, so it shows
+ * at once next time, after a restart too (the 0.7.8 walk: after one the video was a plain card again).
+ */
 private fun posterOf(f: java.io.File): ImageBitmap? =
     runCatching {
+        val kept = java.io.File(f.path + ".frame.jpg")
+        if (kept.isFile && kept.length() > 0) {
+            android.graphics.BitmapFactory.decodeFile(kept.path)?.let { return@runCatching it.asImageBitmap() }
+        }
         android.media.MediaMetadataRetriever().use { r ->
             r.setDataSource(f.path)
-            r.getScaledFrameAtTime(500_000, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 720, 720)?.asImageBitmap()
+            r.getScaledFrameAtTime(500_000, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 720, 720)?.also { bmp ->
+                runCatching { kept.outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, it) } }
+            }?.asImageBitmap()
         }
     }.getOrNull()
+
+/**
+ * A voice message (Boss, 2026-10-23: one from a friend couldn't be seen): fetched from the Mac on the first tap,
+ * rewrapped from Apple's CAF as Ogg Opus ([CafOpus]) and kept, then played here, in the conversation; a tap again stops it.
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun Voice(
+    file: String,
+    ink: Color,
+    onHold: () -> Unit,
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val id = file.substringBefore('|')
+    var state by remember(id) { mutableStateOf("Tap to play") }
+    val player = remember(id) { arrayOfNulls<android.media.MediaPlayer>(1) }
+    DisposableEffect(id) { onDispose { player[0]?.release(); player[0] = null } }
+    fun toggle() {
+        player[0]?.let { p ->
+            p.release()
+            player[0] = null
+            state = "Tap to play"
+            return
+        }
+        state = "Getting it from your Mac…"
+        scope.launch {
+            val ogg =
+                withContext(Dispatchers.IO) {
+                    val out = java.io.File(MacLink.cached(context, id, picture = false).path + ".ogg")
+                    if (out.isFile && out.length() > 0) return@withContext out
+                    val caf = MacLink.file(context, id, picture = false) ?: return@withContext null
+                    CafOpus.toOgg(caf.readBytes())?.let { out.writeBytes(it); out }
+                }
+            if (ogg == null) {
+                state = "Couldn't play it · tap to try again"
+                return@launch
+            }
+            runCatching {
+                android.media.MediaPlayer().apply {
+                    setDataSource(ogg.path)
+                    setOnCompletionListener {
+                        it.release()
+                        player[0] = null
+                        state = "Tap to play"
+                    }
+                    prepare()
+                    start()
+                    player[0] = this
+                }
+                state = "Playing · tap to stop"
+            }.onFailure { state = "Couldn't play it · tap to try again" }
+        }
+    }
+    Box(Modifier.combinedClickable(onLongClick = onHold) { toggle() }.semantics { contentDescription = "Voice message, $state" }) {
+        Card("Voice message", state, if (player[0] != null) "■" else "▶", ink)
+    }
+}
 
 /**
  * Opens the Mac's attachment [file] ("id|mime") from outside its balloon (the unfolded table): fetched if it isn't
@@ -824,7 +901,7 @@ internal fun openMedia(
     }
 }
 
-/** Plays [f] in the phone's own video player. */
+/** Plays [f] in the phone's own video player, or opens any other file in the app for its [mime]. */
 private fun play(
     context: android.content.Context,
     f: java.io.File,
@@ -833,7 +910,7 @@ private fun play(
     val uri = androidx.core.content.FileProvider.getUriForFile(context, "dev.omalauncher.messages.photos", f)
     runCatching {
         context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK))
-    }.onFailure { android.widget.Toast.makeText(context, "No app here plays this video", android.widget.Toast.LENGTH_SHORT).show() }
+    }.onFailure { android.widget.Toast.makeText(context, "No app here opens this", android.widget.Toast.LENGTH_SHORT).show() }
 }
 
 /** [f] decoded no wider or taller than about [max] pixels. */

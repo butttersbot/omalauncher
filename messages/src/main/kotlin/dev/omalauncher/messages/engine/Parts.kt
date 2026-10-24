@@ -38,7 +38,7 @@ object Parts {
     private val url = Regex("""(?i)\b(?:https?://|www\.)[^\s<>"]+""")
 
     // OpenBubbles' attachment summaries: "1 Photo", "2 Photos & 1 Video", "1 Contact card, 1 Location, 2 PDFs", "Attachment".
-    private val kinds = "Photo|Video|GIF|PDF|Audio message|Contact card|Contact|Location|Sticker|Link|File|Image|Application|Text"
+    private val kinds = "Photo|Video|GIF|PDF|Voice message|Audio message|Audio|Contact card|Contact|Location|Sticker|Link|File|Image|Application|Text"
     private val one = """\d+ (?:$kinds)s?"""
     private val summary = Regex("""^(?:Attachment|$one(?:(?: & |, )$one)*)$""")
     private val website = Regex("""^Website: (.+?)(?: \(([^()\s]+)\))?$""")

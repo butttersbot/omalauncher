@@ -69,7 +69,8 @@ object MacWire {
             attachments =
                 (0 until list.length()).map {
                     val a = list.getJSONObject(it)
-                    Attachment(a.getString("id"), a.optString("name"), a.optString("mime"))
+                    val name = a.optString("name")
+                    Attachment(a.getString("id"), name, mimeOf(name, a.optString("mime"), a.optBoolean("voiceNote")))
                 },
             replyTo = o.str("replyTo"),
             clientId = o.str("clientId"),
@@ -106,6 +107,33 @@ object MacWire {
         return (0 until list.length()).map { msg(list.getJSONObject(it)) }.distinctBy { it.id }.sortedBy { it.at }
     }
 
+    /**
+     * What an attachment is, for opening it: a voice message (Opus in Apple's CAF, which [CafOpus] makes playable) as
+     * audio/x-caf, and a type from the name's ending when the Mac says only "application/octet-stream".
+     */
+    fun mimeOf(
+        name: String,
+        mime: String,
+        voiceNote: Boolean = false,
+    ): String {
+        val ext = name.substringAfterLast('.', "").lowercase()
+        if (voiceNote || ext == "caf") return "audio/x-caf"
+        if (mime.isNotEmpty() && mime != "application/octet-stream") return mime
+        return KNOWN[ext] ?: mime.ifEmpty { "application/octet-stream" }
+    }
+
+    private val KNOWN =
+        mapOf(
+            "pdf" to "application/pdf", "txt" to "text/plain", "csv" to "text/csv", "zip" to "application/zip",
+            "doc" to "application/msword", "docx" to "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "xls" to "application/vnd.ms-excel", "xlsx" to "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "ppt" to "application/vnd.ms-powerpoint", "pptx" to "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "pages" to "application/vnd.apple.pages", "key" to "application/vnd.apple.keynote", "numbers" to "application/vnd.apple.numbers",
+            "m4a" to "audio/mp4", "mp3" to "audio/mpeg", "wav" to "audio/wav", "mov" to "video/quicktime", "mp4" to "video/mp4",
+            "heic" to "image/heic", "jpg" to "image/jpeg", "jpeg" to "image/jpeg", "png" to "image/png", "gif" to "image/gif",
+            "vcf" to "text/vcard", "ics" to "text/calendar",
+        )
+
     /** What the attachments are, worded the way the app shows them: "1 Photo", "2 Photos & 1 Video". */
     fun summary(attachments: List<Attachment>): String? {
         if (attachments.isEmpty()) return null
@@ -115,7 +143,8 @@ object MacWire {
                     it.mime == "image/gif" -> "GIF"
                     it.mime.startsWith("image/") -> "Photo"
                     it.mime.startsWith("video/") -> "Video"
-                    it.mime.startsWith("audio/") -> "Audio message"
+                    it.mime == "audio/x-caf" -> "Voice message"
+                    it.mime.startsWith("audio/") -> "Audio"
                     it.mime == "application/pdf" -> "PDF"
                     else -> "File"
                 }

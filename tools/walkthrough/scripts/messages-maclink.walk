@@ -236,3 +236,5 @@ shot long-thread-seam
 [phone] Tap a video a friend sent: it comes from the Mac (a moment), plays in the phone's player with sound, and Back returns to the chat, where the video now shows a frame of itself.
 [phone] Tap a TikTok or Instagram link a friend sent: it opens (in TikTok/Instagram, or beside the chat on the open Fold), and Back returns to the chat.
 [phone] Hold a photo a friend sent: the tapback picker shows; pick one: it shows under the photo here and on the Mac.
+[phone] Open the chat with the friend's voice message: it shows as "Voice message · Tap to play"; a tap plays it here, in the conversation, with sound; a second tap stops it. A PDF or document a friend sent says "Tap to open" and opens in the app for it.
+[phone] Play a video, close Soma Messages from recents, open the chat again: the video still shows its own frame, not the plain card.
