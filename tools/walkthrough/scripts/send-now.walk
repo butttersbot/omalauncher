@@ -1,0 +1,5 @@
+# "Send now" on a queued message (Boss, 2026-10-16: like Claude's own). Boss, 2026-10-23: pressed while builder A
+# worked, it started his message in a new agent while the stopped one ran on beside it, both in one conversation.
+# Needs a real agent at work, so the checks are the phone's; the leftover rule itself is BuilderHealthTest's.
+[phone] Ask the agent something long (a build or a search across files); while it works, send a second message (it shows queued) and press Send now on it: the first turn ends within seconds ("Stopping for your message…"), the second starts, and the answer is to the second message only.
+[phone] Right after, `ps -eo pid,args | grep "claude -p"` in the Linux terminal shows one builder agent, not two.

@@ -52,5 +52,25 @@ object RunEnd {
         }
     }
 
+    /**
+     * Ends whatever is left of a stopped run whose agent resumed [sessions] or began at [began] ([lingeringAgents]):
+     * asked, then made, to end, and waited for, so the next request never starts beside it. On the caller's thread.
+     */
+    fun endLingering(
+        sessions: Set<String>,
+        began: Long,
+    ) {
+        fun left() = runCatching { BuilderWatch.rows() }.getOrDefault(emptyList()).let { rows -> lingeringAgents(rows, sessions, began, android.os.Process.myPid()).flatMap { runTree(rows, it.pid) }.distinctBy { it.pid } }
+        val first = left()
+        if (first.isEmpty()) return
+        android.util.Log.w("oma-run-end", "stopped run still had ${first.size} process(es); ending them")
+        first.forEach { runCatching { Os.kill(it.pid, OsConstants.SIGTERM) } }
+        var until = System.currentTimeMillis() + GRACE_MS
+        while (left().isNotEmpty() && System.currentTimeMillis() < until) Thread.sleep(200)
+        left().forEach { runCatching { Os.kill(it.pid, OsConstants.SIGKILL) } }
+        until = System.currentTimeMillis() + GRACE_MS
+        while (left().isNotEmpty() && System.currentTimeMillis() < until) Thread.sleep(200)
+    }
+
     private const val GRACE_MS = 3_000L
 }

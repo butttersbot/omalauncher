@@ -23,6 +23,19 @@ class BuilderHealthTest {
     private fun row(pid: Int, ppid: Int = 1, startedAt: Long = start, cpuMs: Long = 0, argv: List<String> = builderArgv, guest: Boolean = true, tracer: Int = 0) =
         ProcRow(pid, ppid, tracer, startedAt, cpuMs, argv, guest)
 
+    // Boss, 2026-10-23: after "Send now" the stopped agent ran on beside the one started for his message.
+    @Test fun aStoppedRunsAgentIsFoundByItsSessionOrItsStart() {
+        val session = "a9cbaba6-6dd3-473f-84dc-c77e575cbd10"
+        val fresh = listOf("/root/.local/share/mise/installs/claude/latest/claude") + claudeStreamCommand(null).split(' ').drop(1).map { it.trim('\'') }
+        val rows = listOf(row(11), row(12, argv = builderArgv.map { if (it == session) "other-session-0000" else it }), row(13, argv = listOf("bash")), row(14, guest = false))
+        assertEquals(listOf(11), lingeringAgents(rows, setOf(session), start, self = 99).map { it.pid })
+        // A run that began a new conversation: its agent by when it started, not another started long after.
+        val news = listOf(row(21, argv = fresh, startedAt = start + 1_000), row(22, argv = fresh, startedAt = start + 60_000))
+        assertEquals(listOf(21), lingeringAgents(news, emptySet(), start, self = 99).map { it.pid })
+        // Never the launcher itself.
+        assertTrue(lingeringAgents(listOf(row(99)), setOf(session), start, self = 99).isEmpty())
+    }
+
     @Test fun aProcessIsReadFromItsStatStatusAndCmdline() {
         // Real lines from the phone, with a name that has a space and brackets in it to make sure fields are counted from the end of the name.
         val stat = "699 (claude (x) y) S 696 1852 0 0 -1 4194304 311377 3448426 66 761 3117 729 77165 2864 20 0 21 0 2148834 6233235456 98195"

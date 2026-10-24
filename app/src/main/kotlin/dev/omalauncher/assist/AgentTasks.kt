@@ -498,7 +498,7 @@ class Builder(val id: BuilderId) {
                                         }
                                     }
                                 }
-                                "system" -> if (event.optString("subtype") == "init") session = event.optString("session_id").ifBlank { null }
+                                "system" -> if (event.optString("subtype") == "init") session = event.optString("session_id").ifBlank { null }.also { runSession = it }
                                 "result" -> {
                                     // A failed first request may leave no conversation to return to.
                                     if (!errand && (!event.optBoolean("is_error") || resumed != null)) thread = event.optString("session_id").ifBlank { thread }
@@ -567,6 +567,9 @@ class Builder(val id: BuilderId) {
             finally {
                 // A stopped run is idle only once it is gone, so the next request never runs beside it (RunEnd).
                 if (stopping) process?.runCatching { waitFor(8, java.util.concurrent.TimeUnit.SECONDS) }
+                // And its agent with it, by the agent's own processes: one ran on after "Send now" (Boss, 2026-10-23).
+                if (stopping) RunEnd.endLingering(setOfNotNull(resumed, runSession), began)
+                runSession = null
                 // Whatever was still unanswered goes with the task, notifications included.
                 val unanswered = synchronized(lock) { inputWriter?.runCatching { close() }; inputWriter = null; ledger.clear().also { published() } }
                 unanswered.forEach { AgentNotices.withdraw(context, it) }
@@ -707,6 +710,9 @@ class Builder(val id: BuilderId) {
         notify(context)
         return true
     }
+
+    /** The session the running agent said it is in, to end what is left of it after a stop. */
+    @Volatile private var runSession: String? = null
 
     /** The running turn is being ended for a follow-up sent now, which starts after it instead of being dropped. */
     @Volatile private var sendingNow = false

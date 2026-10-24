@@ -102,6 +102,26 @@ fun builderCommand(argv: List<String>): Boolean {
     return "-p" in args && pair("--input-format", "stream-json") && pair("--permission-prompt-tool", "stdio")
 }
 
+/**
+ * A stopped run's agents still alive in [rows] (Boss, 2026-10-23: after "Send now" the stopped agent ran on beside the
+ * one started for his message, both in the same conversation): builder Claude processes resuming one of [sessions],
+ * or, for a run that began a new conversation at [began] (no session in its arguments), one started within
+ * [STARTED_WITHIN] of it. Never [self].
+ */
+fun lingeringAgents(
+    rows: List<ProcRow>,
+    sessions: Set<String>,
+    began: Long,
+    self: Int,
+): List<ProcRow> =
+    rows.filter { it.guest && it.pid != self && builderCommand(it.argv) }.filter { row ->
+        val resume = row.argv.indexOf("--resume").takeIf { it >= 0 }?.let { row.argv.getOrNull(it + 1) }
+        if (resume != null) resume in sessions else sessions.isEmpty() && row.startedAt in (began - 2_000)..(began + STARTED_WITHIN)
+    }
+
+/** How soon after a run began its own agent process has started. */
+const val STARTED_WITHIN = 15_000L
+
 /** The builder processes found: each running task's own, keyed by when that task started, and every other one. */
 data class BuilderProcs(val own: Map<Long, ProcRow>, val leftovers: List<ProcRow>)
 
