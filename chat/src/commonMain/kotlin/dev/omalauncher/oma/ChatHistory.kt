@@ -97,6 +97,8 @@ data class ChatTask(
      * Empty for everything he sent. See assist/AgentMail.kt.
      */
     val mail: String = "",
+    /** Retained for history and receipts, displayed inside this handoff instead of as another row. */
+    val bundledInto: Long = 0L,
 ) {
     /** Answered by the front agent itself, beside the build task: never by it or in its queue. */
     val quick get() = agent == QUICK_AGENT
@@ -115,6 +117,20 @@ data class ChatTask(
 
     /** A request of the build lane's: sent to it, or waiting for it. */
     val build get() = !quick && !undecided && !mac
+}
+
+/** Includes the legacy receipt rows already saved before explicit handoff links existed. */
+fun ChatTask.isBundledMailReceipt(): Boolean = mail.isNotEmpty() && status == TaskStatus.Done &&
+    (bundledInto != 0L || result == "Delivered in the bundled agent handoff.")
+
+/** The first queued row becomes the complete handoff; receipt rows remain available in stored history. */
+fun bundledMailHistory(tasks: List<ChatTask>, next: FollowUp): List<ChatTask> {
+    if (next.bundled.isEmpty()) return tasks
+    return tasks.map { task -> when (task.time) {
+        next.time -> task.copy(prompt = next.prompt, mail = "Agent mail · ${next.bundled.size + 1} messages bundled")
+        in next.bundled -> task.copy(status = TaskStatus.Done, result = "", bundledInto = next.time)
+        else -> task
+    } }
 }
 
 /** One thing a thread said between his messages: a quiet line (a note or a step), or the agent's own [words], which are Markdown. */
@@ -230,6 +246,7 @@ object ChatHistory {
             .apply { if (task.fresh) put("fresh", true) }
             .apply { if (task.chat.isNotEmpty()) put("chat", task.chat) }
             .apply { if (task.mail.isNotEmpty()) put("mail", task.mail) }
+            .apply { if (task.bundledInto != 0L) put("bundledInto", task.bundledInto) }
             .apply { if (task.later.isNotEmpty()) put("later", JSONArray(task.later.map { JSONObject().put("text", it.text).apply { if (it.words) put("words", true) } })) }
     })).toString()
 
@@ -256,6 +273,7 @@ object ChatHistory {
                     fresh = task.optBoolean("fresh"),
                     chat = task.optString("chat"),
                     mail = task.optString("mail").take(MAX_THREAD),
+                    bundledInto = task.optLong("bundledInto"),
                     later = task.optJSONArray("later").let { later -> (0 until (later?.length() ?: 0)).mapNotNull { later?.optJSONObject(it) } }
                         .map { ChatLater(it.optString("text"), it.optBoolean("words")) }.filter { it.text.isNotEmpty() },
                 ))

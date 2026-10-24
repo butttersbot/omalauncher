@@ -98,7 +98,8 @@ fun dotTap(open: String, tapped: String, soma: Boolean = true): String = if (tap
  * and whatever else went to the Mac thread made for it. A request the front agent answered on the Oma tab, or
  * has not decided, is on the Oma tab alone.
  */
-fun tabEntries(tasks: List<ChatTask>, tab: String, meta: TabMeta = TabMeta()): List<ChatTask> {
+fun tabEntries(allTasks: List<ChatTask>, tab: String, meta: TabMeta = TabMeta()): List<ChatTask> {
+    val tasks = allTasks.filterNot { it.isBundledMailReceipt() }
     meta.chatOf(tab)?.let { chat -> return tasks.filter { it.chat == chat.id || (chat.mac.isNotEmpty() && it.thread == chat.mac) } }
     return when {
         tab == OMA_TAB -> tasks

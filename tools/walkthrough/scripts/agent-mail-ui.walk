@@ -1,0 +1,20 @@
+# Fictional mail in production chat UI. No runner, account, prompt or actual send.
+fold open
+rotate portrait
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -n dev.omalauncher.artifactpreview/.PreviewActivity --es mail pending
+expect Fictional update 4
+shot mail-pending-unfolded
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -n dev.omalauncher.artifactpreview/.PreviewActivity --es mail bundled
+expect 4 messages bundled
+expect Combined handoff complete.
+absent Delivered in the bundled agent handoff.
+absent Legacy update
+shot mail-bundled-unfolded
+fold folded
+expect 4 messages bundled
+expect Combined handoff complete.
+absent Delivered in the bundled agent handoff.
+shot mail-bundled-cover
+[phone] After promotion, open Phone B's existing history and confirm the old repeated delivery notices are gone; observe one normal handoff replacing its pending rows.

@@ -37,14 +37,14 @@ class PreviewActivity : ComponentActivity() {
             Box(Modifier.fillMaxSize()) {
                 Box(Modifier.fillMaxHeight().then(if (narrow) Modifier.width(400.dp) else Modifier.fillMaxWidth())) {
                     val empty = intent.getBooleanExtra("empty", false)
-                    OmaChatScreen(remember { PreviewHost(this@PreviewActivity, empty) }, null, {}, if (empty) PHONE_THREAD_B else OMA_TAB, {})
+                    OmaChatScreen(remember { PreviewHost(this@PreviewActivity, empty, intent.getStringExtra("mail")) }, null, {}, if (empty) PHONE_THREAD_B else OMA_TAB, {})
                 }
             }
         }
     }
 }
 
-private class PreviewHost(private val context: Context, private val empty: Boolean = false) : ChatHost {
+private class PreviewHost(private val context: Context, private val empty: Boolean = false, private val mailMode: String? = null) : ChatHost {
         val now = System.currentTimeMillis()
         private val page = """<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1">
 <style>body{margin:0;padding:24px;background:#fdfdfb;color:#111113;font-family:system-ui}small{color:#d7262d;font-size:10px;letter-spacing:.1em}h1{font-size:32px;line-height:1.15;margin:18px 0}p{font-size:14px;line-height:1.6}button{background:#111113;color:#fdfdfb;padding:12px 18px;border:0}section{border:1px solid #111113;padding:18px;margin:22px 0}.record{border-radius:50%;width:100px;height:100px;background:repeating-radial-gradient(#111113 0 3px,#444 4px);margin:15px auto;display:grid;place-items:center}.record:after{content:"";width:28px;height:28px;border:8px solid #fdfdfb;border-radius:50%;background:#d7262d}</style>
@@ -65,7 +65,18 @@ Open the preview to try the layout. We can keep talking while you look at it.
             return ArtifactRead.Ready(ArtifactDocument(path.substringAfterLast('/'), if (html) "text/html" else "text/markdown", content.toByteArray(), "sample-v1"))
         }
 
-        override fun tasks() = if (empty) emptyList() else thread
+        override fun tasks(): List<ChatTask> {
+            if (mailMode != null) {
+                val pending = (1L..4L).map { ChatTask(it, "Codex", "Fictional update $it", mail = "Agent mail", status = TaskStatus.Queued) }
+                if (mailMode == "pending") return pending
+                val queue = FollowUpQueue()
+                pending.forEach { queue.add(FollowUp(it.time, it.prompt, mailSender = "fictional", mailId = "m${it.time}")) }
+                val bundled = bundledMailHistory(pending, queue.after(TaskStatus.Done).next!!)
+                return bundled.map { if (it.time == 1L) it.copy(status = TaskStatus.Done, result = "Combined handoff complete.") else it } +
+                    ChatTask(5, "Codex", "Legacy update", mail = "Agent mail", status = TaskStatus.Done, result = "Delivered in the bundled agent handoff.")
+            }
+            return if (empty) emptyList() else thread
+        }
         override fun updateTask(time: Long, save: Boolean, change: (ChatTask) -> ChatTask) {}
         override fun working() = false
         override fun builders() = emptyMap<BuilderId, BuilderState>()

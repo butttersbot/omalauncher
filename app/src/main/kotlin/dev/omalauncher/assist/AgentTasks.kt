@@ -5,6 +5,7 @@ import dev.omalauncher.App
 import dev.omalauncher.linux.*
 import dev.omalauncher.oma.ApprovalAnswer
 import dev.omalauncher.oma.ChatApproval
+import dev.omalauncher.oma.bundledMailHistory
 import dev.omalauncher.oma.ChatHistory
 import dev.omalauncher.oma.ChatLog
 import dev.omalauncher.oma.ChatTask
@@ -609,9 +610,7 @@ class Builder(val id: BuilderId) {
         return try {
             start(context, next.prompt, next.images, next.screen, next.page, queued = next.time, earlier = next.earlier, errand = next.errand)
             AgentMailReceipts.state(context, listOf(next.time) + next.bundled, "delivered")
-            next.bundled.forEach { time ->
-                ChatLog.of(context).update(time, save = true) { it.copy(status = TaskStatus.Done, result = "Delivered in the bundled agent handoff.") }
-            }
+            ChatLog.of(context).revise { bundledMailHistory(it, next) }
             true
         } catch (e: Exception) {
             // What stopped this one from starting would stop the ones behind it too.

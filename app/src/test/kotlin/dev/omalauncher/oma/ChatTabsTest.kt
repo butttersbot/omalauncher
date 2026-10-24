@@ -24,6 +24,33 @@ class ChatTabsTest {
     private val toPond = ChatTask(6, "→ Pond", "add frogs", thread = "t-pond", threadName = "Pond", direct = true)
     private val tasks = listOf(built, waiting, answered, reading, toFf4, toPond)
 
+    @Test fun bundledMailBecomesOneRowAndSurvivesReload() {
+        val queue = FollowUpQueue()
+        val pending = (1L..4L).map { time ->
+            queue.add(FollowUp(time, "update $time", mailSender = "fictional", mailId = "m$time"))
+            ChatTask(time, "Codex", "update $time", status = TaskStatus.Queued, mail = "Agent mail", builder = "B")
+        }
+        assertEquals(4, tabEntries(pending, PHONE_THREAD_B).size)
+        val next = queue.after(TaskStatus.Done).next!!
+        val history = bundledMailHistory(pending, next)
+        val reloaded = ChatHistory.decode(ChatHistory.encode(history))
+        for (tab in listOf(OMA_TAB, PHONE_THREAD_B)) {
+            val visible = tabEntries(reloaded, tab)
+            assertEquals(1, visible.size)
+            assertTrue((1..4).all { "update $it" in visible.single().prompt })
+            assertEquals("Agent mail · 4 messages bundled", visible.single().mail)
+        }
+        assertEquals(4, reloaded.size) // Receipts and original text are retained.
+    }
+
+    @Test fun oldBundledReceiptsDisappearButOwnerAndUnsentMailRemain() {
+        val old = ChatTask(10, "Codex", "old update", status = TaskStatus.Done,
+            mail = "Agent mail", result = "Delivered in the bundled agent handoff.")
+        val owner = old.copy(time = 11, mail = "")
+        val unsent = old.copy(time = 12, status = TaskStatus.Queued)
+        assertEquals(listOf(owner, unsent), tabEntries(listOf(old, owner, unsent), OMA_TAB))
+    }
+
     @Test fun omaComesFirstThenTheThreadsInTheirOrder() {
         assertEquals(listOf(OMA_TAB, PHONE_THREAD, "mac:t-ff4", "mac:t-pond"), chatTabs(threads))
         assertEquals(listOf(OMA_TAB), chatTabs(emptyList()))
