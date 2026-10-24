@@ -165,6 +165,18 @@
   .opt .g { width: 36px; height: 36px; border: var(--line) solid var(--ink); display: grid; place-items: center; flex: none; font-size: 17px; }
   .opt b { display: block; } .opt small { color: var(--muted); }
 
+  /* A new note: a whole blank page (Boss, 2026-10-23: "like a blank notes page, full screen"). */
+  .page { position: absolute; inset: 0; top: 22px; background: var(--paper); z-index: 30; display: flex; flex-direction: column; }
+  .phone:not(.cover) .page { left: 38%; border-left: 2px solid var(--ink); }
+  .page .bar { display: flex; align-items: center; gap: 8px; padding: 10px 14px 6px; }
+  .page .bar .back { font-size: 15px; cursor: pointer; }
+  .page .when { padding: 0 16px; font-size: 12px; color: var(--muted); }
+  .page textarea { flex: 1; width: 100%; border: 0; outline: 0; resize: none; background: transparent; color: var(--ink); padding: 10px 16px; font: 20px/1.45 "M Body"; }
+  .page textarea::first-line { font-family: "M Display"; font-size: 26px; }
+  .page .tools { display: flex; gap: 6px; padding: 8px 12px 14px; border-top: var(--line) solid var(--ink); }
+  .page .tools button { border: var(--line) solid var(--ink); width: 40px; height: 36px; font-size: 16px; }
+  .page .shape { margin: 0 16px; }
+
   /* The reader: agents' Markdown, made to be read. */
   .md { font-size: 16.5px; line-height: 1.58; }
   .md h1 { font-family: "M Display"; font-weight: normal; font-size: 27px; line-height: 1.15; margin: 4px 0 12px; }
@@ -230,7 +242,7 @@
 
 <script>
 const LAYOUTS = [['cover', 'Cover'], ['portrait', 'Open'], ['landscape', 'Open sideways']];
-const SCENES = [['stream', 'Notes'], ['capture', 'Capture'], ['list', 'List'], ['post', 'Post'], ['idea', 'Idea → Grow'], ['agent', 'Agent MD'], ['html', 'HTML']];
+const SCENES = [['stream', 'Notes'], ['page', 'New note'], ['capture', 'Quick capture'], ['list', 'List'], ['post', 'Post'], ['idea', 'Idea → Grow'], ['agent', 'Agent MD'], ['html', 'HTML']];
 
 const S = {
   layout: innerWidth < 600 ? 'cover' : innerWidth > innerHeight ? 'landscape' : 'portrait',
@@ -378,6 +390,7 @@ function set(patch) { Object.assign(S, patch); render(); }
 
 function openNote(id) {
   if (id === 'capture') return set({ sheet: 'capture', cap: { text: '', listening: false, heard: false } });
+  if (id === 'page') return set({ sheet: 'page', cap: { text: '', listening: false, heard: false } });
   set({ open: id, showNote: true, sheet: null, spread: 0, outline: false });
 }
 
@@ -394,7 +407,7 @@ function stream() {
   return `<div class="pane side">
     <div class="shead"><h1 class="display">Notes</h1><span class="ic">⌕</span></div>
     <div class="scroll" id="streamScroll">
-      <div class="pull" onclick="openNote('capture')">↓ <span><b>Pull down to write.</b> No title, no folder.</span></div>
+      <div class="pull" onclick="openNote('page')">↓ <span><b>Pull down for a new page.</b> No title, no folder.</span></div>
       <div class="chips">${FILTERS.map(([k, l]) => `<button class="${S.filter === k ? 'on' : ''}" onclick="set({filter:'${k}'})">${l}</button>`).join('')}</div>
       ${S.filter === 'all' ? `<div class="resurface"><div class="mono">3 weeks ago you wrote</div><p class="hand">A tiny manga panel of my day as the watch face.</p>
         <div class="acts"><button onclick="toast('Opens the idea')">Open it</button><button onclick="toast('Grow sends it to an agent')">Grow ✦</button><button onclick="toast('Back in a month')">Not now</button></div></div>` : ''}
@@ -526,7 +539,7 @@ function captureSheet() {
   if (sh === 'Idea') shape = `<div class="mono" style="color:var(--muted)">Gets a Grow button: hand it to an agent</div>`;
   return `<div class="scrim" onclick="set({sheet:null})"></div><div class="sheet topdown cap">
     ${c.listening ? `<div class="listen"><span class="wave"><i></i><i></i><i></i><i></i><i></i></span> Listening… let go when done</div>` : `
-    <div class="row"><span class="mono" style="flex:1;color:var(--muted)">New · it becomes what you write</span>${sh ? `<span class="becomes mono">Becoming <b>${sh}</b></span>` : ''}</div>
+    <div class="row"><span class="mono" style="flex:1;color:var(--muted)">Quick capture · from home, the cover or any app</span>${sh ? `<span class="becomes mono">Becoming <b>${sh}</b></span>` : ''}</div>
     <textarea id="capText" placeholder="Anything…" oninput="S.cap.text=this.value;refreshCap()">${esc(c.text)}</textarea>
     ${c.heard ? `<span class="orig">🎙 0:09 · tidied up · what you said, word for word ▸</span>` : ''}
     <div id="capShape">${shape ? `<div class="shape">${shape}</div>` : ''}</div>
@@ -536,6 +549,18 @@ function captureSheet() {
       <button onclick="tryCap(post[0])">a post</button>
       <button onclick="tryCap('Parking: level 3, row F')">a note</button></div>
     <div class="row" style="justify-content:flex-end;margin-top:4px"><button class="btn" onclick="set({sheet:null})">Cancel</button><button class="btn solid" onclick="saveCap()">Done</button></div>`}
+  </div>`;
+}
+function pageSheet() {
+  const c = S.cap, sh = shapeOf(c.text);
+  let shape = '';
+  if (sh === 'List') shape = c.text.split('\n').filter(s => s.trim()).map(s => `<div class="li">${esc(s.trim())}</div>`).join('');
+  return `<div class="page cap">
+    <div class="bar"><span class="back" onclick="saveCap()">‹ Notes</span><span style="flex:1"></span>${sh ? `<span class="becomes mono">Becoming <b>${sh}</b></span>` : ''}<button class="btn solid" onclick="saveCap()">Done</button></div>
+    <div class="when mono">Today · now · saved as you write</div>
+    <textarea id="capText" placeholder="Start writing… the first line is its title." oninput="S.cap.text=this.value;refreshCap()">${esc(c.text)}</textarea>
+    <div id="capShape">${shape ? `<div class="shape">${shape}</div>` : ''}</div>
+    <div class="tools"><button title="Checklist" onclick="tryCap((S.cap.text?S.cap.text+'\n':'')+'☐ ')">☑</button><button title="Hold to talk" onclick="toast('Hold to talk: words land where the cursor is')">🎙</button><button title="Photo" onclick="toast('Adds a photo or scan')">▣</button><button title="Pen" onclick="toast('Draw with the pen or a finger')">✎</button><span style="flex:1"></span><button title="Grow" onclick="toast('Grow sends it to an agent')">✦</button></div>
   </div>`;
 }
 function refreshCap() {
@@ -577,6 +602,7 @@ function render() {
   if (S.layout === 'cover') html += S.showNote ? noteView() : stream();
   else html += stream() + noteView();
   if (S.sheet === 'capture') html += captureSheet();
+  if (S.sheet === 'page') html += pageSheet();
   if (S.sheet === 'grow') html += growSheet();
   if (S.sheet === 'confirm') html += confirmSheet();
   if (S.toast) html += `<div class="toast">${S.toast}</div>`;
@@ -586,7 +612,7 @@ function render() {
   if ($('book')) placeBook();
   wire();
   $('layouts').innerHTML = LAYOUTS.map(([k, l]) => `<button class="${S.layout === k ? 'on' : ''}" onclick="set({layout:'${k}',spread:0})">${l}</button>`).join('');
-  const cur = S.sheet === 'capture' ? 'capture' : (S.layout === 'cover' && !S.showNote) ? 'stream' : S.open;
+  const cur = S.sheet === 'capture' ? 'capture' : S.sheet === 'page' ? 'page' : (S.layout === 'cover' && !S.showNote) ? 'stream' : S.open;
   $('scenes').innerHTML = SCENES.map(([k, l]) => `<button class="${cur === k ? 'on' : ''}" onclick="${k === 'stream' ? "set({showNote:false,sheet:null})" : `openNote('${k}')`}">${l}</button>`).join('');
   fit();
 }
@@ -597,7 +623,7 @@ function wire() {
   if (sc) {
     let y0 = null;
     sc.onpointerdown = e => { y0 = sc.scrollTop <= 0 ? e.clientY : null; };
-    sc.onpointermove = e => { if (y0 !== null && e.clientY - y0 > 70) { y0 = null; openNote('capture'); } };
+    sc.onpointermove = e => { if (y0 !== null && e.clientY - y0 > 70) { y0 = null; openNote('page'); } };
     sc.onpointerup = () => { y0 = null; };
   }
   const mic = $('mic');
