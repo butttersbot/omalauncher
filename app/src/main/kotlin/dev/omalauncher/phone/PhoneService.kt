@@ -413,7 +413,7 @@ class PhoneService : AccessibilityService() {
      * Answers an `open` or `url` once [pkg] is the app in front, so the agent's next step isn't refused for an app still
      * on its way; after [PhoneTouch.UNTIL_MILLIS] it answers anyway, saying it isn't. With no app to wait for, at once.
      */
-    private fun whenInFront(pkg: String?, output: JSONObject, reply: (JSONObject) -> Unit, expected: String = "") {
+    private fun whenInFront(pkg: String?, output: JSONObject, reply: (JSONObject) -> Unit, expected: String = "", handedTo: Set<String> = emptySet()) {
         output.put("opened", pkg.orEmpty()).put("destinationVerified", false)
         if (pkg == null) { reply(output); return }
         val deadline = SystemClock.uptimeMillis() + PhoneTouch.UNTIL_MILLIS
@@ -426,7 +426,9 @@ class PhoneService : AccessibilityService() {
                 // during a transition. A read-only wait may observe another package until its deadline.
                 val observed = read()
                 val front = PhoneScreen.front(observed)
-                val inFront = front == pkg
+                // A page the app handed on to another of its own ([handedTo]) is still the page asked for: touches go there.
+                val inFront = front == pkg || front in handedTo
+                if (inFront && front != pkg) opened = front
                 val shows = inFront && (expected.isEmpty() || PhoneScreen.says(observed, expected))
                 output.put("inFront", inFront).put("front", front)
                     .put("destinationVerified", expected.isNotEmpty() && shows)
@@ -708,12 +710,15 @@ class PhoneService : AccessibilityService() {
                     val expected = input.optString("until")
                     require(expected.length <= 200) { "Expected screen text is too long." }
                     // What opens it is the app the agent's touches are for from here.
-                    val handler = if (settingsAction != null) packageManager.resolveActivity(intent, 0)?.activityInfo?.packageName
-                        ?: error("This Settings destination is unavailable on this phone. Nothing was opened.") else name
+                    val handler = if (settingsAction != null) {
+                        PhoneSettings.handler(packageManager.queryIntentActivities(intent, 0).map { it.activityInfo.packageName }.distinct())
+                            ?.also { intent.setPackage(it) }
+                            ?: error("This Settings destination is unavailable on this phone. Nothing was opened.")
+                    } else name
                     opened = PhoneGuard.opened(handler)
                     launchOnDisplay(intent, opened)
                     changed()
-                    whenInFront(opened, output, reply, expected)
+                    whenInFront(opened, output, reply, expected, if (settingsAction != null) PhoneSettings.handsOverTo(handler) else emptySet())
                     return
                 }
                 // A link opened as a link (handoff 2026-10-21): never typed into an address bar.

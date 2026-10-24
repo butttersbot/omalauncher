@@ -16,6 +16,17 @@ class PhoneSpeedTest {
         }
     }
 
+    @Test fun settingsOpensInSettingsNotTheChooserAndAllowsSamsungsHandOver() {
+        // Samsung's My Files answers storage too: Settings is picked, never Android's "open with" chooser.
+        assertEquals("com.android.settings", PhoneSettings.handler(listOf("com.sec.android.app.myfiles", "com.android.settings")))
+        assertEquals("com.samsung.android.settings", PhoneSettings.handler(listOf("android", "com.samsung.android.settings")))
+        assertNull(PhoneSettings.handler(listOf("android")))
+        assertNull(PhoneSettings.handler(emptyList()))
+        // Battery is handed on to Device Care, and that is still the page asked for.
+        assertTrue("com.samsung.android.lool" in PhoneSettings.handsOverTo("com.android.settings"))
+        assertTrue(PhoneSettings.handsOverTo("com.example.app").isEmpty())
+    }
+
     @Test fun repeatedPagesStopEvenWhenNodePathsChange() {
         val search = PhoneSearchProgress()
         assertFalse(search.repeated(page("Top", "root.1"), true))
