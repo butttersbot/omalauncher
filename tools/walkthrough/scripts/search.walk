@@ -10,8 +10,11 @@ ime dev.omalauncher.boss/dev.omalauncher.keyboard.OmaKeyboardService
 key BACK
 key HOME
 wait 1500
-# Home pressed on home opens the app list (as the gesture bar's swipe up does, on purpose): Back puts it away, or the
-# first pull only closed the list (the Mac Pro, 139).
+# Home pressed on home opens the app list with its search field and keyboard (as the gesture bar's swipe up does, on
+# purpose): one Back puts the keyboard away, a second the list; else the first pull only closed the list (the Mac Pro,
+# 139/140). On home already, a Back does nothing.
+key BACK
+wait 600
 key BACK
 # Home settled first.
 wait 2000
