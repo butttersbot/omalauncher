@@ -1,6 +1,16 @@
 # Stage1: public Settings intent, existing controls, and unchanged fixture UI.
 fold open
 rotate portrait
+# Emulator only: preserve and restore its existing service list around our own instrumented service test.
+shell settings get secure enabled_accessibility_services > /data/local/tmp/soma-speed-accessibility-before
+shell old=$(cat /data/local/tmp/soma-speed-accessibility-before); case ":$old:" in *":dev.omalauncher.boss/dev.omalauncher.phone.PhoneService:"*) ;; *) case "$old" in null|"") old="";; esac; settings put secure enabled_accessibility_services "${old:+$old:}dev.omalauncher.boss/dev.omalauncher.phone.PhoneService";; esac
+clearlog
+shell am instrument -w dev.omalauncher.artifactpreview/.PhoneSpeedInstrumentation
+log speed PASS: actual service opens Display and reports read timing
+log speed PASS: unsupported destination refuses without changing screen
+log speed PASS: actual absent-label search bounded
+nolog speed FAIL
+shell old=$(cat /data/local/tmp/soma-speed-accessibility-before); if [ "$old" = null ]; then settings delete secure enabled_accessibility_services; else settings put secure enabled_accessibility_services "$old"; fi
 shell am start -a android.settings.DISPLAY_SETTINGS
 expect Display
 shot speed-display-unfolded
