@@ -148,10 +148,10 @@ tap Tap to play
 # The demo's note is 2 s: looked at while it plays (at 3 s it had already ended, the 0.8.0 walk).
 wait 900
 expect Playing
-shot voice-playing
-# Settled before the stop tap (the 0.8.0 re-walk's tap came as the label was laid out again).
+# Stopped at once, by place (the bubble, cover screen): a tap by its words waits for the screen to settle, ~12 s,
+# and the note had ended and started again by then (the 0.8.1 walk).
+tap 0.21 0.23
 wait 600
-tap Playing
 wait 800
 expect Tap to play
 # Older history (0.7.6): the demo's "Long thread" has 120 messages, "Long #1" (the oldest, "Long thread starts here")
