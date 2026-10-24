@@ -27,6 +27,26 @@ class PhoneSpeedTest {
         assertTrue(PhoneSettings.handsOverTo("com.example.app").isEmpty())
     }
 
+    @Test fun waitsReadOnlyWhenSomethingChangedOrTheFallbackIsDue() {
+        assertTrue(PhoneWait.readAgain(1_000, lastRead = null, lastChange = null))
+        // Nothing changed since the last read, and it was only now: no read.
+        assertFalse(PhoneWait.readAgain(1_100, lastRead = 1_000, lastChange = 900))
+        // Android said it changed after (or at) the last read: read.
+        assertTrue(PhoneWait.readAgain(1_100, lastRead = 1_000, lastChange = 1_050))
+        assertTrue(PhoneWait.readAgain(1_100, lastRead = 1_000, lastChange = 1_000))
+        // A change that came without an event is caught by the fallback.
+        assertTrue(PhoneWait.readAgain(1_000 + PhoneWait.FALLBACK_MILLIS, lastRead = 1_000, lastChange = 900))
+    }
+
+    @Test fun anUnchangedScreenIsOnlyTheSnapshotTheReaderHas() {
+        assertTrue(PhoneWait.unchanged("s1", "s1", readAt = 1_000, lastChange = 900))
+        assertTrue(PhoneWait.unchanged("s1", "s1", readAt = 1_000, lastChange = null))
+        assertFalse(PhoneWait.unchanged("s1", "s1", readAt = 1_000, lastChange = 1_000))
+        assertFalse(PhoneWait.unchanged("s0", "s1", readAt = 1_000, lastChange = 900))
+        assertFalse(PhoneWait.unchanged("", "", readAt = 1_000, lastChange = 900))
+        assertFalse(PhoneWait.unchanged("s1", "s1", readAt = null, lastChange = null))
+    }
+
     @Test fun repeatedPagesStopEvenWhenNodePathsChange() {
         val search = PhoneSearchProgress()
         assertFalse(search.repeated(page("Top", "root.1"), true))

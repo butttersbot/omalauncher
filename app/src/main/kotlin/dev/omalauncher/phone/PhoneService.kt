@@ -34,6 +34,8 @@ class PhoneService : AccessibilityService() {
         var acted: Long? = null
         var lastChange: Long? = null
         var opened: String? = null
+        /** When [snapshot] was read, by the same clock as [lastChange]. */
+        var readAt: Long? = null
     }
     private val displayStates = mutableMapOf(0 to DisplayState())
     private var displayId = 0
@@ -338,6 +340,7 @@ class PhoneService : AccessibilityService() {
             next[path] = seenNow
         }
         snapshot = UUID.randomUUID().toString(); seen = next
+        displayState.readAt = SystemClock.uptimeMillis()
         nodesRead += next.size
         readNanos += SystemClock.elapsedRealtimeNanos() - readStart
         return JSONObject().put("ok", true).put("snapshot", snapshot).put("nodes", nodes)
@@ -418,10 +421,15 @@ class PhoneService : AccessibilityService() {
         if (pkg == null) { reply(output); return }
         val deadline = SystemClock.uptimeMillis() + PhoneTouch.UNTIL_MILLIS
         val generation = requestGeneration
+        var lastRead: Long? = null
         fun look() {
             if (!busy || generation != requestGeneration) return
             try {
                 requireCurrentAccess()
+                val now = SystemClock.uptimeMillis()
+                // Nothing said it changed since the last look: no read, unless the fallback is due or time is up.
+                if (now < deadline && !PhoneWait.readAgain(now, lastRead, lastChange)) { main.postDelayed({ look() }, PhoneTouch.UNTIL_STEP_MILLIS); return }
+                lastRead = now
                 // Use one observation for both package and destination: activity roots can disagree
                 // during a transition. A read-only wait may observe another package until its deadline.
                 val observed = read()
@@ -769,10 +777,19 @@ class PhoneService : AccessibilityService() {
                 "screen" -> {
                     val until = input.optString("until")
                     val deadline = SystemClock.uptimeMillis() + if (until.isEmpty()) 0L else PhoneTouch.UNTIL_MILLIS
+                    // The reader already has this screen and nothing changed since: say so rather than send it again.
+                    val since = input.optString("since")
+                    if (until.isEmpty() && input.optString("in").isEmpty() && PhoneWait.unchanged(since, snapshot, displayState.readAt, lastChange)) {
+                        reply(JSONObject().put("ok", true).put("snapshot", snapshot).put("unchanged", true)); return
+                    }
+                    var lastRead: Long? = null
                     // Looks again until the words show or the time is up; what it then gives is the screen as it stands.
                     fun look() {
                         try {
                             requireThisRequest()
+                            val now = SystemClock.uptimeMillis()
+                            if (lastRead != null && now < deadline && !PhoneWait.readAgain(now, lastRead, lastChange)) { main.postDelayed({ look() }, PhoneTouch.UNTIL_STEP_MILLIS); return }
+                            lastRead = now
                             val seen = read()
                             val expectedPackage = input.optString("in")
                             val inFront = expectedPackage.isEmpty() || PhoneScreen.front(seen) == expectedPackage

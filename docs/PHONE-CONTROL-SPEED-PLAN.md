@@ -191,4 +191,8 @@ Cancellation, lock/pause and approval guards run on every poll as before.
 in 33f2d72, not yet built: storage opens in Settings itself (Samsung's My Files also answers it, so Android showed its
 chooser), and battery accepts Samsung's hand-off to Device Care (com.samsung.android.lool), still checking its words.
 Stages 3-5 still TODO; physical guards (pause/take-over/lock during a plan) and matched 20-trial benchmarks still not walked.
+Stage 3 IN PROGRESS (Phone A): waits (open --until, screen --until) read only after an accessibility change or a 400 ms
+fallback instead of every 100 ms; `screen --since SNAPSHOT` answers {"unchanged":true} with no read while nothing changed.
+Unit tests (PhoneSpeedTest) and an on-device check in PhoneSpeedInstrumentation ("unchanged screen answered without a
+read"). Not done in stage 3: subtree-filtered events, compact control ids/deltas, label queries, visual fallback.
 

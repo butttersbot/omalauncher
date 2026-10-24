@@ -53,6 +53,21 @@ class PhoneSpeedInstrumentation : Instrumentation() {
             check(timing.getInt("reads") >= 1 && timing.getInt("nodes") > 0 && timing.getDouble("readMs") >= 0)
             Log.i("SomaWalk", "speed METRIC open=" + opened.getJSONObject("timing") + " screen=" + timing)
             Log.i("SomaWalk", "speed PASS: actual service opens Display and reports read timing")
+            // Stage 3: asked again about the snapshot it has, with nothing changed, the service answers "unchanged" without a
+            // read. Settings may still be settling: a few tries, each a real answer, never a fabricated one.
+            var since = screen.getString("snapshot")
+            var quiet: JSONObject? = null
+            repeat(5) {
+                if (quiet != null) return@repeat
+                Thread.sleep(600)
+                val again = call(JSONObject().put("command", "screen").put("since", since).put("timing", true))
+                check(again.optBoolean("ok")) { again.toString() }
+                if (again.optBoolean("unchanged")) quiet = again else since = again.getString("snapshot")
+            }
+            val stood = checkNotNull(quiet) { "A still screen never answered unchanged" }
+            check(stood.getJSONObject("timing").getInt("reads") == 0) { "An unchanged answer read the screen: $stood" }
+            check(!stood.has("nodes") && !stood.has("controls")) { "An unchanged answer sent the screen again: $stood" }
+            Log.i("SomaWalk", "speed PASS: unchanged screen answered without a read")
             val soundAgain = call(JSONObject().put("command", "open").put("package", "settings:sound").put("until", "Sound"))
             check(soundAgain.optBoolean("ok") && soundAgain.optBoolean("destinationVerified")) { soundAgain.toString() }
             val displayAgain = call(JSONObject().put("command", "open").put("package", "settings:display").put("until", "Display"))

@@ -7,6 +7,7 @@ shell 'old=$(cat /data/local/tmp/soma-speed-accessibility-before); case ":$old:"
 clearlog
 shell am instrument -w --no-restart dev.omalauncher.artifactpreview/.PhoneSpeedInstrumentation
 log speed PASS: actual service opens Display and reports read timing
+log speed PASS: unchanged screen answered without a read
 log speed PASS: Sound Display Sound Display transitions reach verified destinations
 log speed PASS: package alone cannot satisfy an open destination assertion
 log speed PASS: unsupported destination refuses without changing screen

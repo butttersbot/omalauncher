@@ -37,6 +37,23 @@ object PhoneSettings {
     }
 }
 
+/**
+ * Stage 3 of docs/PHONE-CONTROL-SPEED-PLAN.md: reads only when they can tell something new. A wait reads the screen
+ * again when Android said it changed since the last read, and otherwise no oftener than [FALLBACK_MILLIS], in case a
+ * change came without an event. A read asked about a snapshot the reader already has, with nothing changed since, is
+ * answered "unchanged" instead of the whole screen again.
+ */
+object PhoneWait {
+    const val FALLBACK_MILLIS = 400L
+
+    fun readAgain(now: Long, lastRead: Long?, lastChange: Long?): Boolean =
+        lastRead == null || (lastChange != null && lastChange >= lastRead) || now - lastRead >= FALLBACK_MILLIS
+
+    /** Whether snapshot [asked] still stands: it is the current one, read at [readAt], and nothing changed after. */
+    fun unchanged(asked: String, current: String, readAt: Long?, lastChange: Long?): Boolean =
+        asked.isNotEmpty() && asked == current && readAt != null && (lastChange == null || lastChange < readAt)
+}
+
 /** Per-search, memory-only progress. One fingerprint per direction; no screen contents are logged or saved. */
 class PhoneSearchProgress {
     private val forward = mutableSetOf<List<String>>()
