@@ -42,10 +42,12 @@ class PhonePlanInstrumentation : Instrumentation() {
             val first = call(p)
             check(first.optBoolean("ok") && first.optInt("completed") == 2) { first.toString() }
             check(first.getJSONObject("screen").optBoolean("shows"))
-            check(call(open("settings:sound")).optBoolean("inFront"))
+            val soundOpened = call(open("settings:sound").put("until", "Sound"))
+            check(soundOpened.optBoolean("ok") && soundOpened.optBoolean("destinationVerified")) { "Sound was not verified before replay: $soundOpened" }
             val again = call(p)
             check(again.optBoolean("ok") && again.optBoolean("replayed"))
-            check(call(screen("Sound")).optBoolean("shows")) { "Retry navigated again instead of returning receipt" }
+            val afterReplay = call(screen("Sound"))
+            check(afterReplay.optBoolean("shows")) { "Sound observation after metadata replay failed: $afterReplay; receipt=$again" }
             val receipt = call(JSONObject().put("command", "plan-receipt").put("id", p.getString("id")))
             check(receipt.optString("state") == "done")
             Log.i("SomaWalk", "plan PASS: native sequence verifies final screen and duplicate id does not replay")
