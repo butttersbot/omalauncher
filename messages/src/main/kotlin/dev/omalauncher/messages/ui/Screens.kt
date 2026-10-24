@@ -50,6 +50,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -434,7 +435,7 @@ fun Thread(
                             modifier = Modifier.padding(top = if (first && j == 0) 8.dp else 2.dp),
                         ) { ink ->
                             if (j == 0) m.quote?.let { QuoteInBalloon(it, ink) }
-                            PartContent(part, ink, m.files)
+                            PartContent(part, ink, m.files, onHold = { held = m })
                         }
                     }
                     if (m.tapbacks.isNotEmpty()) Tapbacks(m)
@@ -655,6 +656,7 @@ private fun PartContent(
     part: Part,
     ink: Color,
     files: List<String> = emptyList(),
+    onHold: () -> Unit = {},
 ) {
     when (part) {
         is Part.Words -> BasicText(part.text, style = Pack.body(Pack.size.item, ink))
@@ -663,9 +665,9 @@ private fun PartContent(
         is Part.Attachment ->
             // From the Mac, pictures show as themselves; anything else, by its card.
             if (files.any { it.substringAfter('|').startsWith("image/") }) {
-                Photos(files.filter { it.substringAfter('|').startsWith("image/") })
+                Photos(files.filter { it.substringAfter('|').startsWith("image/") }, onHold)
             } else if (files.any { it.substringAfter('|').startsWith("video/") }) {
-                Videos(files.filter { it.substringAfter('|').startsWith("video/") }, ink)
+                Videos(files.filter { it.substringAfter('|').startsWith("video/") }, ink, onHold)
             } else {
                 Card(part.summary, if (Messages.linked) null else "Open in OpenBubbles", if (part.kind == "Video") "▶" else "▣", ink)
             }
@@ -676,8 +678,12 @@ private fun PartContent(
  * Pictures from the Mac, fetched once and kept in the cache: one alone fits a balloon's width, several sit side by side
  * and scroll. A tap opens the picture in the phone's own viewer.
  */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun Photos(files: List<String>) {
+private fun Photos(
+    files: List<String>,
+    onHold: () -> Unit = {},
+) {
     val one = files.size == 1
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         files.forEach { f ->
@@ -704,7 +710,8 @@ private fun Photos(files: List<String>) {
             val ratio = picture?.let { it.height.toFloat() / it.width.coerceAtLeast(1) } ?: 0.75f
             val size = if (one) Modifier.width(240.dp).height((240 * ratio).coerceIn(120f, 320f).dp) else Modifier.size(132.dp)
             Box(
-                size.clip(shape).background(Pack.surface).clickable(enabled = file != null) { file?.let { view(context, it) } }
+                // A hold is the balloon's (tapbacks, reply): the picture's own tap would otherwise take it (Boss, 2026-10-23).
+                size.clip(shape).background(Pack.surface).combinedClickable(onLongClick = onHold) { file?.let { view(context, it) } }
                     .semantics { contentDescription = "Photo" },
                 contentAlignment = Alignment.Center,
             ) {
@@ -723,10 +730,12 @@ private fun Photos(files: List<String>) {
  * Videos from the Mac (Boss, 2026-10-23: a "1 Video" card that did nothing). Not fetched until tapped, as they can be
  * large; then kept in the cache, shown by a frame of their own from then on, and played in the phone's own player.
  */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun Videos(
     files: List<String>,
     ink: Color,
+    onHold: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -759,7 +768,7 @@ private fun Videos(
                 val ratio = (p.height.toFloat() / p.width.coerceAtLeast(1)).coerceIn(0.5f, 1.4f)
                 Box(
                     Modifier.width(240.dp).height((240 * ratio).dp).clip(composerShape(12.dp)).background(Pack.surface)
-                        .clickable { open() }.semantics { contentDescription = "Video, tap to play" },
+                        .combinedClickable(onLongClick = onHold) { open() }.semantics { contentDescription = "Video, tap to play" },
                     contentAlignment = Alignment.Center,
                 ) {
                     Image(p, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
@@ -768,7 +777,7 @@ private fun Videos(
                     }
                 }
             } else {
-                Box(Modifier.clickable { open() }.semantics { contentDescription = "Video, tap to play" }) {
+                Box(Modifier.combinedClickable(onLongClick = onHold) { open() }.semantics { contentDescription = "Video, tap to play" }) {
                     Card("Video", if (loading) "Getting it from your Mac…" else if (failed) "Couldn't get it from your Mac · tap to try again" else "Tap to play", "▶", ink)
                 }
             }

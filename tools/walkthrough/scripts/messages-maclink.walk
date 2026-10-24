@@ -103,6 +103,14 @@ expect Video, tap to play
 absent Getting it from your Mac
 # Look: the video shown by a frame from it, with a play mark.
 shot video-frame
+# Held, the video's frame opens the same menu as words: tapbacks, Reply (0.7.8; Boss, 2026-10-23: tapbacks didn't
+# work on pictures, as the picture's own tap took the hold). A long press on the frame, by place (cover, 0.29 down).
+swipe 0.3 0.29 0.3 0.29 900
+wait 800
+expect Reply
+shot hold-menu-on-video
+key BACK
+wait 600
 # A shared link (the demo's second "Clips" message, "https://www.tiktok.com/@soma/video/1"): a card, and a tap opens it.
 expect tiktok.com
 tap tiktok.com
@@ -224,3 +232,4 @@ shot long-thread-seam
 [phone] With the Mac asleep (lid closed), send a message: one "Not sent" line under it, and an error bar under the conversation that goes by itself after a few seconds and isn't shown in other conversations. Wake the Mac: if the message went after all, its "Not sent" goes; a new send there clears any error left.
 [phone] Tap a video a friend sent: it comes from the Mac (a moment), plays in the phone's player with sound, and Back returns to the chat, where the video now shows a frame of itself.
 [phone] Tap a TikTok or Instagram link a friend sent: it opens (in TikTok/Instagram, or beside the chat on the open Fold), and Back returns to the chat.
+[phone] Hold a photo a friend sent: the tapback picker shows; pick one: it shows under the photo here and on the Mac.
