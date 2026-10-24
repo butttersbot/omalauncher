@@ -8,7 +8,19 @@ key HOME
 # Home settled first: the 138 walk's first pull, straight after the GIF walk, opened nothing.
 wait 3000
 # Search opened by typing on home. adb's pull doesn't open it on the Fold8 emulator, on 137 or 138 alike (the Mac Pro,
-# 2026-10-23), while a finger's does on the phone: the pull is a [phone] step below.
+# 2026-10-23), while a finger's does on the phone: the pull is a # The pull itself, on the emulator too (logged, as adb's swipes land unevenly): after a terminal tile has had the
+# focus, a pull down still opens search (it did nothing then, the Mac Pro's 138 walks).
+key BACK
+key HOME
+wait 2000
+clearlog
+swipe 0.5 0.35 0.5 0.75 400
+wait 1500
+log home pull search
+shot pull-opens-search
+key BACK
+key BACK
+[phone] step below.
 type chorme
 wait 1500
 expect Chrome

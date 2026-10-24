@@ -518,6 +518,8 @@ internal fun HomeGrid(
                                 if (arbiter.owner == Owner.Pinch || arbiter.owner == Owner.Drawer || arbiter.owner == Owner.Search) event.changes.forEach { it.consume() }
                             }
                         } finally {
+                            // Who a drag on the pages went to, for the walkthroughs (a pull that opens nothing shows here).
+                            dev.omalauncher.keyboard.walkLog("home gesture owner=${arbiter.owner}")
                             arbiter.up()
                             if (pinching) pinched.second(scale)
                             if (pulling) drawer.second(speed.calculateVelocity().y)

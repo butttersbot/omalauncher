@@ -769,8 +769,15 @@ fun HomeScreen(
             // Not under a terminal tile's keyboard: the list comes up with no keyboard showing.
             onDrawerDrag = { dy -> if (terminals.active == null) state.dragBy(-dy / windowHeight) },
             onDrawerEnd = { velocity -> if (terminals.active == null) state.settle(velocity) },
-            // Not under a terminal tile's keyboard either.
-            onSearch = { if (terminals.active == null) state.searchOpen = true },
+            // A pull down is meant: a terminal tile that still holds the focus gives it back first. It held it unseen,
+            // its keyboard long gone, and every pull did nothing (the Mac Pro's walks, 2026-10-23: search opened
+            // after an install, then stopped once a terminal tile had been tapped).
+            onSearch = {
+                val term = terminals.active != null
+                if (term) terminals.deactivate()
+                dev.omalauncher.keyboard.walkLog("home pull search terminal=$term")
+                state.searchOpen = true
+            },
             scrolls = { item -> item is WidgetItem && engine.instance(item.spec)?.hasTerminal == true },
             pinch = { pinch.value },
             onPinch = { scale ->
