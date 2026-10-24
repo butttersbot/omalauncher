@@ -114,5 +114,16 @@ uninstall/data clear, permission bypass or source reset. Keep existing single-st
 
 ## Current execution state
 
-Plan committed with first implementation. Stage1 IN PROGRESS. Stages2–5 TODO.
+Stage1 IN PROGRESS: direct public Settings destinations, opt-in numeric service/read counters,
+and repeated-page search detection are implemented. Original143 app tests1746/0failed/6skipped.
+The initial UI script retained an old fixture intent; reset fix passed. Actual-service instrumentation
+must use --no-restart (default instrumentation kills the process hosting the service), preserve shell
+program quoting through walk.py shlex, and restore the emulator's original Accessibility list.
+The diagnostic service run passed; final committed fixture/script proof and Samsung checks pending.
+Numeric-only timing logs were added; a missing-label test must report search exhaustion, not merely
+any error, so a timeout cannot masquerade as search success.
+
+Unrelated source updates can invalidate a candidate even when this feature did not change. The final
+normal build must include current source and all tests/walks below, at the unconsumed version.
+Stages2–5 TODO.
 No10x claim yet. No live Settings or app actions benchmarked yet.
