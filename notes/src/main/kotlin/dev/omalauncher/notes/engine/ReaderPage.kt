@@ -57,7 +57,7 @@ th { background: var(--ink); color: var(--paper); font-weight: 600; }
 .book #folio, .book #spine { display: flex; }
 </style></head><body class="${if (book) "book" else ""} ${if (narrow) "narrow" else ""}">
 <div id="wrap"><div id="flow">
-${Markdown.html(md)}
+${Markdown.html(titled(md))}
 </div></div><div id="spine"></div><div id="folio"><span id="pl"></span><span id="pr"></span></div>
 <script>
 document.addEventListener('click', function (e) {
@@ -91,4 +91,18 @@ addEventListener('load', layout);
 addEventListener('resize', layout);
 document.fonts && document.fonts.ready.then(layout);
 </script></body></html>"""
+
+    /**
+     * A note whose first line isn't a heading (Boss's own: the first line is the title) read with that line as one, as
+     * big as the page shows it (the Mac Pro's walk, 2026-10-24: the title read small).
+     */
+    fun titled(md: String): String {
+        val lines = md.split('\n').toMutableList()
+        val i = lines.indexOfFirst { it.isNotBlank() }
+        if (i < 0) return md
+        val first = lines[i].trim()
+        if (first.startsWith("#") || first.startsWith("|") || first.startsWith("```") || Regex("^([-*+]|\\d+[.)]) ").containsMatchIn(first)) return md
+        lines[i] = "# $first"
+        return lines.joinToString("\n")
+    }
 }

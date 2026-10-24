@@ -57,4 +57,10 @@ class TextTest {
         assertEquals("x\n- [ ] a", Markdown.toggle("x\n- [X] a", 1))
         assertEquals("x", Markdown.toggle("x", 0))
     }
+
+    @Test fun firstLineReadsAsTitle() {
+        assertEquals("\n# Groceries\n- [ ] Milk", ReaderPage.titled("\nGroceries\n- [ ] Milk"))
+        assertEquals("# Plan\nx", ReaderPage.titled("# Plan\nx"))
+        assertEquals("- [ ] Milk", ReaderPage.titled("- [ ] Milk"))
+    }
 }
