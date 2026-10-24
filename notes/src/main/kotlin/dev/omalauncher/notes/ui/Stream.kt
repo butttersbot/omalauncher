@@ -132,9 +132,11 @@ fun Stream(
                         n,
                         pin = { Notes.pin(n.id, !n.pinned) },
                         delete = if (n.readonly) null else {
-                            going?.let { Notes.delete(it.id) }
-                            going = n
-                            deleted(n.id)
+                            {
+                                going?.let { Notes.delete(it.id) }
+                                going = n
+                                deleted(n.id)
+                            }
                         },
                     ) { Card(n, n.id == selected) { open(n) } }
                 }

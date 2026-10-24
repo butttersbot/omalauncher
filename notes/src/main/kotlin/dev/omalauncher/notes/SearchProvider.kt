@@ -32,7 +32,7 @@ class SearchProvider : ContentProvider() {
         val titles = uri.getQueryParameter("titles") == "1"
         val limit = uri.getQueryParameter("limit")?.toIntOrNull()?.coerceIn(1, 50) ?: 20
         Notes.init(context.applicationContext)
-        for (h in Search.find(Notes.all.value, Notes::text, q, titles, limit)) out.addRow(arrayOf(h.id, h.title, h.project ?: "", h.snippet, h.modified))
+        for (h in Search.find(Notes.all.value, Notes::text, q, titles, limit)) out.addRow(arrayOf<Any>(h.id, h.title, h.project ?: "", h.snippet, h.modified))
         return out
     }
 
