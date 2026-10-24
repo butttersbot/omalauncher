@@ -93,9 +93,13 @@ function layout() {
     var c = b.cloneNode(true);
     m.appendChild(c);
     if (m.scrollHeight > pageH && cur.length) {
+      // A heading never ends a page: it goes over with the text it heads (the Mac Pro's walk, 2026-10-24).
+      var carry = [];
+      while (cur.length > 1 && /^H[1-6]$/.test(cur[cur.length - 1].tagName)) carry.unshift(cur.pop());
       pages.push(cur);
-      cur = [];
+      cur = carry;
       m.innerHTML = '';
+      carry.forEach(function (n) { m.appendChild(n); });
       m.appendChild(c);
     }
     cur.push(c);
