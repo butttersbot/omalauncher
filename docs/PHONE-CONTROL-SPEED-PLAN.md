@@ -196,3 +196,10 @@ fallback instead of every 100 ms; `screen --since SNAPSHOT` answers {"unchanged"
 Unit tests (PhoneSpeedTest) and an on-device check in PhoneSpeedInstrumentation ("unchanged screen answered without a
 read"). Not done in stage 3: subtree-filtered events, compact control ids/deltas, label queries, visual fallback.
 
+
+Stage 3 part 1 measured (2026-10-24, emulator, single runs on a busy Mac Pro; ±100 ms is noise):
+148 open 2 reads / 660 ms, screen 1 / 21 ms, absent 4 / 776 ms. 149 open 2 / 523 ms, screen 1 / 79 ms,
+absent 4 / 704 ms, native plan 2 / 432 ms. Read counts are the same: these scenarios never wait on an unchanged
+screen, so part 1 shows only in the walk's "unchanged screen answered without a read" check. Fewer reads in
+real use need the phone benchmarks, or a METRIC scenario that waits; parts 2-4 (filtered events, deltas,
+label queries) are where the per-read cost comes down.
