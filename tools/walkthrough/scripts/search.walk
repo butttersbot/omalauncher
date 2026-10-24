@@ -5,6 +5,8 @@
 # open nothing, the Mac Pro's 138 walks). Typing on home is no way in: it searches the app list, not this.
 # A clean start: no shade or dialog left by an earlier walk.
 shell cmd statusbar collapse
+# The Soma keyboard, as on Boss's phone: Gboard autocorrects "chorme" before search sees it (reinstalls reset the IME).
+ime dev.omalauncher.boss/dev.omalauncher.keyboard.OmaKeyboardService
 key BACK
 key HOME
 wait 1500
