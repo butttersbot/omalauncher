@@ -180,3 +180,9 @@ reports destinationVerified=false. Native plans accept the same optional open as
 require their final screen assertion. The actual-service walk must prove Sound → Display → Sound
 → Display, plus refusal of a missing destination assertion. A shell-only launch cannot substitute
 for this regression. The original 2f92976ac version144 candidate is held, not promoted.
+
+Transition race found by repeated emulator walks: a separate root-package lookup could disagree
+with the subsequent control snapshot. Open now derives foreground and destination from the same
+fresh observation. Read-only `screen until` waits may observe a different package until their bounded
+deadline; they still refuse a final wrong package. Touch admission remains strict and immediate.
+Cancellation, lock/pause and approval guards run on every poll as before.

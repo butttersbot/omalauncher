@@ -422,18 +422,16 @@ class PhoneService : AccessibilityService() {
             if (!busy || generation != requestGeneration) return
             try {
                 requireCurrentAccess()
-                val root = displayRoot(displayId)
-                val front = root?.packageName?.toString(); root?.recycle()
+                // Use one observation for both package and destination: activity roots can disagree
+                // during a transition. A read-only wait may observe another package until its deadline.
+                val observed = read()
+                val front = PhoneScreen.front(observed)
                 val inFront = front == pkg
-                output.put("inFront", inFront).put("front", front.orEmpty())
-                if (inFront && expected.isEmpty()) { reply(output); return }
-                if (inFront) {
-                    val seen = read()
-                    PhoneScreen.requireFront(seen, pkg)
-                    val shows = PhoneScreen.says(seen, expected)
-                    output.put("destinationVerified", shows).put("screen", PhoneScreen.brief(seen))
-                    if (shows) { reply(output); return }
-                }
+                val shows = inFront && (expected.isEmpty() || PhoneScreen.says(observed, expected))
+                output.put("inFront", inFront).put("front", front)
+                    .put("destinationVerified", expected.isNotEmpty() && shows)
+                    .put("screen", PhoneScreen.brief(observed))
+                if (shows) { reply(output); return }
                 if (SystemClock.uptimeMillis() >= deadline) {
                     if (expected.isNotEmpty()) output.put("ok", false).put("error", "Requested destination did not show the expected words. Read the screen; do not repeat actions blindly.")
                     reply(output); return
@@ -771,9 +769,11 @@ class PhoneService : AccessibilityService() {
                         try {
                             requireThisRequest()
                             val seen = read()
-                            PhoneScreen.requireFront(seen, input.optString("in"))
-                            val shows = until.isEmpty() || PhoneScreen.says(seen, until)
+                            val expectedPackage = input.optString("in")
+                            val inFront = expectedPackage.isEmpty() || PhoneScreen.front(seen) == expectedPackage
+                            val shows = inFront && (until.isEmpty() || PhoneScreen.says(seen, until))
                             if (!shows && SystemClock.uptimeMillis() < deadline) { main.postDelayed({ look() }, PhoneTouch.UNTIL_STEP_MILLIS); return }
+                            PhoneScreen.requireFront(seen, expectedPackage)
                             reply(PhoneScreen.brief(seen).also { if (until.isNotEmpty()) it.put("shows", shows) })
                         } catch (e: Exception) { reply(JSONObject().put("ok", false).put("error", e.message ?: "Phone control failed")) }
                     }
