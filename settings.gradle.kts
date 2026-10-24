@@ -37,3 +37,6 @@ if (providers.gradleProperty("artifactPreview").isPresent) {
     include(":artifact-preview")
     project(":artifact-preview").projectDir = file("tools/artifact-preview")
 }
+
+// Standalone, read-only outcome browser; no launcher dependency or wallet.
+if (providers.gradleProperty("hunch").isPresent) include(":hunch")

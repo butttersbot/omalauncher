@@ -1,0 +1,10 @@
+# Read-only first slice; public network required. Never place an order.
+launch dev.omalauncher.hunch/.MainActivity
+expect Today's issue
+expect Public markets only
+shot hunch-cover-today
+fold open
+rotate portrait
+expect Today's issue
+shot hunch-unfolded-today
+[phone] Verify live market list and a market's read-only book; no wallet or transaction controls.
