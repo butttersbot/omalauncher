@@ -5,10 +5,12 @@
 shell cmd statusbar collapse
 key BACK
 key HOME
-wait 1500
+# Home settled first: the 138 walk's first pull, straight after the GIF walk, opened nothing.
+wait 3000
 # Pull search down from the middle of home.
 swipe 0.5 0.35 0.5 0.75 300
-wait 1000
+wait 1500
+expect Search anything
 type chorme
 wait 1500
 expect Chrome
