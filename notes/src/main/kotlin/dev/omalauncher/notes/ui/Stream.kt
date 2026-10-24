@@ -137,10 +137,11 @@ fun Stream(
         }
         going?.let { n ->
             Row(
-                Modifier.align(Alignment.BottomStart).padding(start = 12.dp, end = 92.dp, bottom = 26.dp).background(Look.ink).padding(start = 14.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
+                // As wide as it can be beside the + button, UNDO always at its right end, where a thumb (and a walk) finds it.
+                Modifier.align(Alignment.BottomStart).padding(start = 12.dp, end = 92.dp, bottom = 26.dp).fillMaxWidth().background(Look.ink).padding(start = 14.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                BasicText("Deleted “${n.title.take(24)}”", Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis, style = TextStyle(fontFamily = Look.body, fontSize = 14.sp, color = Look.paper))
+                BasicText("Deleted “${n.title.take(24)}”", Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = TextStyle(fontFamily = Look.body, fontSize = 14.sp, color = Look.paper))
                 BasicText("UNDO", Modifier.clickable { going = null }.padding(horizontal = 12.dp, vertical = 10.dp), style = mono(Look.highlight).copy(fontSize = 13.sp))
             }
         }
