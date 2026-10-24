@@ -19,6 +19,7 @@ shot recording
 # While it records, the shade holds the time and Stop (the Mac's look at the b27919abe walk).
 shell cmd statusbar expand-notifications
 wait 1200
+# Android hides private notifications' content while the screen is recorded: this one is public (137 walk: only a bare header showed).
 expect Recording · tap to stop
 expect Stop
 shot recording-in-shade

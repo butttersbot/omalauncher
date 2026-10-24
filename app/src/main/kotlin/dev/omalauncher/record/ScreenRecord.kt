@@ -66,7 +66,7 @@ object ScreenRecord {
 
     fun channel(context: Context) {
         context.getSystemService(NotificationManager::class.java)
-            .createNotificationChannel(NotificationChannel(CHANNEL, "Screen recording", NotificationManager.IMPORTANCE_LOW))
+            .createNotificationChannel(NotificationChannel(CHANNEL, "Screen recording", NotificationManager.IMPORTANCE_LOW).apply { lockscreenVisibility = Notification.VISIBILITY_PUBLIC })
     }
 }
 
@@ -290,6 +290,9 @@ class ScreenRecordService : Service() {
             .setSmallIcon(dev.omalauncher.R.drawable.ic_screen_record_tile)
             .setContentTitle(text)
             .setOngoing(true)
+            // Public: while the screen is being recorded Android hides private notifications' content, and this one's
+            // time and Stop with it (the 137 walk on Android 17). Nothing in it is private.
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setUsesChronometer(recording)
             .setWhen(System.currentTimeMillis())
             .setContentIntent(stop)
