@@ -42,8 +42,10 @@ class PhoneSpeedInstrumentation : Instrumentation() {
                 check(latch.await(10, TimeUnit.SECONDS)) { "Phone service did not reply; do not retry mutations" }
                 return checkNotNull(output)
             }
-            val opened = call(JSONObject().put("command", "open").put("package", "settings:display").put("timing", true))
-            check(opened.optBoolean("ok") && opened.optBoolean("inFront")) { opened.toString() }
+            val sound = call(JSONObject().put("command", "open").put("package", "settings:sound").put("until", "Sound"))
+            check(sound.optBoolean("ok") && sound.optBoolean("destinationVerified")) { sound.toString() }
+            val opened = call(JSONObject().put("command", "open").put("package", "settings:display").put("until", "Display").put("timing", true))
+            check(opened.optBoolean("ok") && opened.optBoolean("inFront") && opened.optBoolean("destinationVerified")) { opened.toString() }
             check(opened.getJSONObject("timing").getDouble("serviceMs") >= 0)
             val screen = call(JSONObject().put("command", "screen").put("until", "Display").put("timing", true))
             check(screen.optBoolean("ok") && screen.optBoolean("shows")) { screen.toString() }
@@ -51,6 +53,14 @@ class PhoneSpeedInstrumentation : Instrumentation() {
             check(timing.getInt("reads") >= 1 && timing.getInt("nodes") > 0 && timing.getDouble("readMs") >= 0)
             Log.i("SomaWalk", "speed METRIC open=" + opened.getJSONObject("timing") + " screen=" + timing)
             Log.i("SomaWalk", "speed PASS: actual service opens Display and reports read timing")
+            val soundAgain = call(JSONObject().put("command", "open").put("package", "settings:sound").put("until", "Sound"))
+            check(soundAgain.optBoolean("ok") && soundAgain.optBoolean("destinationVerified")) { soundAgain.toString() }
+            val displayAgain = call(JSONObject().put("command", "open").put("package", "settings:display").put("until", "Display"))
+            check(displayAgain.optBoolean("ok") && displayAgain.optBoolean("destinationVerified")) { displayAgain.toString() }
+            Log.i("SomaWalk", "speed PASS: Sound Display Sound Display transitions reach verified destinations")
+            val wrong = call(JSONObject().put("command", "open").put("package", "settings:display").put("until", "SOMA FICTIONAL WRONG DESTINATION 6318"))
+            check(!wrong.optBoolean("ok") && !wrong.optBoolean("destinationVerified")) { "Package-only success masqueraded as destination verification: $wrong" }
+            Log.i("SomaWalk", "speed PASS: package alone cannot satisfy an open destination assertion")
             val refused = call(JSONObject().put("command", "open").put("package", "settings:fictional-invalid"))
             check(!refused.optBoolean("ok"))
             val unchanged = call(JSONObject().put("command", "screen").put("until", "Display"))

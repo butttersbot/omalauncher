@@ -170,3 +170,13 @@ Example shape (replace the id with plan-id output):
 
 Stage2 is not ready until tests, actual-service walkthrough and screenshots pass at exact candidate.
 Samsung lock/sleep/takeover checks and20-trial matched end-to-end speed benchmarks remain required.
+
+
+Settings transition regression (144 validation): NEW_TASK alone reused Sound when Display was
+requested, so package foreground was insufficient proof. Settings launches now add CLEAR_TOP
+without clearing the whole Settings task. `open … --until TEXT` checks a fresh observation of the
+requested package and fails if the words never appear; an open without an assertion explicitly
+reports destinationVerified=false. Native plans accept the same optional open assertion and still
+require their final screen assertion. The actual-service walk must prove Sound → Display → Sound
+→ Display, plus refusal of a missing destination assertion. A shell-only launch cannot substitute
+for this regression. The original 2f92976ac version144 candidate is held, not promoted.

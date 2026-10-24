@@ -45,6 +45,14 @@ print(json.dumps({'ok':os.environ.get('SOMA_CLI_FAIL')!='1'}))
         records = self.records();self.assertEqual(len(records),1)
         self.assertEqual(records[0]['request'],dict(data,command='plan',display='bg',timing=True))
         args = records[0]['args'];self.assertEqual(args[args.index('--max-time')+1],'35')
+    def test_open_destination_assertion_is_one_request(self):
+        result = self.run_cli('open', 'settings:display', '--until', 'Display & touch')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.records()[0]['request']['until'], 'Display & touch')
+        self.assertEqual(self.records()[0]['request']['package'], 'settings:display')
+        for args in [('open','settings:display','--until',''), ('open','settings:display','extra')]:
+            self.assertNotEqual(self.run_cli(*args).returncode, 0)
+        self.assertEqual(len(self.records()), 1)
     def test_transport_failure_is_not_retried_or_fallen_back(self):
         self.env['SOMA_CLI_FAIL']='1'
         result=self.run_cli('plan',self.write_plan({'id':'1792830000000-fictional-unique','steps':[]}))

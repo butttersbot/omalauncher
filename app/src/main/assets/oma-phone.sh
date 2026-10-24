@@ -166,8 +166,10 @@ status says locked, awake and active before you plan: a locked phone takes no st
 expect waits up to 5 seconds for TEXT to show and fails if it does not, so steps can be chained and
 stop at the first screen that is not the one meant:
   oma-phone press --in PACKAGE "Search" && oma-phone fill "" "milk" && oma-phone expect "results"
-Open a Settings destination directly: open settings:display (also sound, wifi, bluetooth,
+Open and verify in one call: open settings:display --until Display (also sound, wifi, bluetooth,
 battery [Battery Saver], storage or apps). Unsupported destinations fail without a fallback.
+Without --until, open confirms only the foreground package; destinationVerified is false.
+With --until, a missing destination returns failure; the observed screen is returned on verification.
 Optional --timing before the command adds service/read timings and search counts, without logging contents.
 Native plans: save a JSON object {id,steps,timeoutMs} to a file and use plan FILE.json.
 Get a fresh id ONCE with plan-id, save it with the plan, and reuse that exact id to inspect/retry safely.
@@ -206,7 +208,13 @@ url)
   [ "$#" -ge 1 ] || { echo 'URL required: oma-phone url https://...' >&2; exit 2; }
   request=$(jq -cn --arg url "$1" --arg app "$app" '{command:"url",url:$url} + (if $app=="" then {} else {app:$app} end)');;
 open)
-  request=$(jq -cn --arg package "${1:?Package required}" '{command:"open",package:$package}');;
+  name=${1:?Package or Settings destination required}; shift
+  until=''
+  if [ "$#" -gt 0 ]; then
+    [ "$#" -eq 2 ] && [ "$1" = --until ] && [ -n "$2" ] || { echo 'Usage: open PACKAGE [--until TEXT]' >&2; exit 2; }
+    until=$2
+  fi
+  request=$(jq -cn --arg package "$name" --arg until "$until" '{command:"open",package:$package} + (if $until=="" then {} else {until:$until} end)');;
 page)
   [ "$#" -ge 1 ] || { echo 'Page name required' >&2; exit 2; }
   request=$(jq -cn --arg name "$*" '{command:"page",name:$name}');;

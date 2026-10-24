@@ -27,6 +27,11 @@ class PhonePlanTest {
         refuses(input(JSONObject().put("command", "open").put("package", "settings:unknown"), screen()))
         refuses(input(JSONObject().put("command", "press").put("label", "x").put("in", "com.android.settings").put("any", true), screen()))
     }
+    @Test fun openCanVerifyDestinationButCannotAcceptAnEmptyAssertion() {
+        PhonePlan.parse(input(open().put("until", "Display"), screen()), wall)
+        refuses(input(open().put("until", ""), screen()))
+        refuses(input(open().put("until", "x".repeat(201)), screen()))
+    }
     @Test fun expiredRequestsCannotBecomeNewExecutionsAfterReceiptExpiry() {
         refuses(input(screen()).put("id", "${wall - PhonePlan.MAX_AGE_MS - 1}-fictional-unique"))
         refuses(input(screen()).put("id", "${wall + 120_001}-fictional-unique"))

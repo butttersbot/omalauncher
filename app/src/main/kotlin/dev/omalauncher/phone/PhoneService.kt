@@ -413,22 +413,35 @@ class PhoneService : AccessibilityService() {
      * Answers an `open` or `url` once [pkg] is the app in front, so the agent's next step isn't refused for an app still
      * on its way; after [PhoneTouch.UNTIL_MILLIS] it answers anyway, saying it isn't. With no app to wait for, at once.
      */
-    private fun whenInFront(pkg: String?, output: JSONObject, reply: (JSONObject) -> Unit) {
-        output.put("opened", pkg.orEmpty())
+    private fun whenInFront(pkg: String?, output: JSONObject, reply: (JSONObject) -> Unit, expected: String = "") {
+        output.put("opened", pkg.orEmpty()).put("destinationVerified", false)
         if (pkg == null) { reply(output); return }
         val deadline = SystemClock.uptimeMillis() + PhoneTouch.UNTIL_MILLIS
         val generation = requestGeneration
         fun look() {
             if (!busy || generation != requestGeneration) return
-            try { requireCurrentAccess() } catch (failure: Exception) {
-                reply(JSONObject().put("ok", false).put("error", failure.message)); return
-            }
-            val root = runCatching { displayRoot(displayId) }.getOrNull()
-            val front = root?.packageName?.toString(); root?.recycle()
-            if (front == pkg || SystemClock.uptimeMillis() >= deadline) { reply(output.put("inFront", front == pkg).put("front", front.orEmpty())); return }
-            main.postDelayed({ look() }, PhoneTouch.UNTIL_STEP_MILLIS)
+            try {
+                requireCurrentAccess()
+                val root = displayRoot(displayId)
+                val front = root?.packageName?.toString(); root?.recycle()
+                val inFront = front == pkg
+                output.put("inFront", inFront).put("front", front.orEmpty())
+                if (inFront && expected.isEmpty()) { reply(output); return }
+                if (inFront) {
+                    val seen = read()
+                    PhoneScreen.requireFront(seen, pkg)
+                    val shows = PhoneScreen.says(seen, expected)
+                    output.put("destinationVerified", shows).put("screen", PhoneScreen.brief(seen))
+                    if (shows) { reply(output); return }
+                }
+                if (SystemClock.uptimeMillis() >= deadline) {
+                    if (expected.isNotEmpty()) output.put("ok", false).put("error", "Requested destination did not show the expected words. Read the screen; do not repeat actions blindly.")
+                    reply(output); return
+                }
+                main.postDelayed({ look() }, PhoneTouch.UNTIL_STEP_MILLIS)
+            } catch (failure: Exception) { reply(JSONObject().put("ok", false).put("error", failure.message)) }
         }
-        look()
+        settled { look() }
     }
     /** Whether [node] is part of a web page: it or something around it is a WebView, as Chromium-based browsers draw pages. */
     private fun inWebPage(node: AccessibilityNodeInfo): Boolean {
@@ -691,13 +704,18 @@ class PhoneService : AccessibilityService() {
                     val settingsAction = PhoneSettings.action(name)
                     val intent = if (settingsAction != null) android.content.Intent(settingsAction)
                         else packageManager.getLaunchIntentForPackage(name) ?: error("No visible launcher activity for this package. Run apps.")
+                    // Settings shares a task affinity: NEW_TASK alone can bring a different settings page forward.
+                    // Clear only activities above the requested destination, without clearing the whole task.
+                    if (settingsAction != null) intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                    val expected = input.optString("until")
+                    require(expected.length <= 200) { "Expected screen text is too long." }
                     // What opens it is the app the agent's touches are for from here.
                     val handler = if (settingsAction != null) packageManager.resolveActivity(intent, 0)?.activityInfo?.packageName
                         ?: error("This Settings destination is unavailable on this phone. Nothing was opened.") else name
                     opened = PhoneGuard.opened(handler)
                     launchOnDisplay(intent, opened)
                     changed()
-                    whenInFront(opened, output, reply)
+                    whenInFront(opened, output, reply, expected)
                     return
                 }
                 // A link opened as a link (handoff 2026-10-21): never typed into an address bar.

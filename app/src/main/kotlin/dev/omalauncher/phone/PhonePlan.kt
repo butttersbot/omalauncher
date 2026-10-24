@@ -16,7 +16,7 @@ data class PhonePlan(val id: String, val steps: List<JSONObject>, val timeoutMs:
         const val MAX_AGE_MS = 86_400_000L
         const val MAX_STEPS = 40
         private val fields = mapOf(
-            "open" to setOf("command", "package"), "url" to setOf("command", "url", "app"),
+            "open" to setOf("command", "package", "until"), "url" to setOf("command", "url", "app"),
             "screen" to setOf("command", "until", "in"), "press" to setOf("command", "label", "in"),
             "fill" to setOf("command", "label", "text", "in"),
             "submit" to setOf("command", "in"), "back" to setOf("command", "in"),
@@ -38,7 +38,10 @@ data class PhonePlan(val id: String, val steps: List<JSONObject>, val timeoutMs:
                     require(step.getString("in").isNotBlank()) { "Plan actions and screen assertions require an explicit expected package." }
                 }
                 when (command) {
-                    "open" -> { require(step.getString("package").isNotBlank()); PhoneSettings.action(step.getString("package")) }
+                    "open" -> {
+                        require(step.getString("package").isNotBlank()); PhoneSettings.action(step.getString("package"))
+                        if (step.has("until")) require(step.getString("until").isNotBlank() && step.getString("until").length <= 200)
+                    }
                     "url" -> require(PhoneGuard.webUrl(step.getString("url")).isSuccess) { "Invalid web URL." }
                     "press" -> require(step.getString("label").isNotBlank() && step.getString("label").length <= PhoneFind.MAX_LABEL)
                     "fill" -> { require(step.getString("label").length <= PhoneFind.MAX_LABEL); require(step.getString("text").length <= 10_000) }
