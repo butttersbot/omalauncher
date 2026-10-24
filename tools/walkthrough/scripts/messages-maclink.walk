@@ -97,7 +97,7 @@ shot video-playing
 # emulator's first full-screen sheet took one of its own).
 key BACK
 wait 800
-shell am start -n dev.omalauncher.messages/.MainActivity
+shell am start -W -n dev.omalauncher.messages/.MainActivity
 wait 1500
 expect Video, tap to play
 absent Getting it from your Mac
@@ -112,11 +112,12 @@ key BACK
 wait 1000
 expect Clips
 # Unfolded, the side panel's "Photos & files": the video plays from there too (it said "Open in OpenBubbles" and did
-# nothing once linked to the Mac). In the chat the video already shows its frame, so "Tap to play" is the panel's.
+# nothing once linked to the Mac).
 fold open
 wait 2500
 expect Photos & files
-tap Tap to play
+# The panel's card by its title: "Tap to play" also matches the chat's video ("Video, tap to play"; matching ignores case).
+tap 1 Video
 wait 4000
 shot panel-video-playing
 key BACK
