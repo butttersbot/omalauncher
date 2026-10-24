@@ -149,6 +149,8 @@ tap Tap to play
 wait 900
 expect Playing
 shot voice-playing
+# Settled before the stop tap (the 0.8.0 re-walk's tap came as the label was laid out again).
+wait 600
 tap Playing
 wait 800
 expect Tap to play

@@ -365,7 +365,9 @@ fun Thread(
     LaunchedEffect(latest) { if (latest) fresh = 0 }
     // Near the top: the Mac's earlier history, a page at a time (the first fetch brings only the latest 50).
     LaunchedEffect(c.id) {
-        snapshotFlow { list.firstVisibleItemIndex }.collect { if (it <= 2 && currentSize > 0) Messages.loadEarlier(c.id) }
+        // Asked again as each page arrives too, not only as the place changes: reaching the top while a page was on its
+        // way left the last one never asked for (the Mac Pro's 0.8.0 walk stopped at Long #22).
+        snapshotFlow { list.firstVisibleItemIndex to currentSize }.collect { (first, n) -> if (first <= 5 && n > 0) Messages.loadEarlier(c.id) }
     }
     // The draft, the quote and the place are kept as they change, and once more on leaving, so a closed app loses none.
     fun keep() {
