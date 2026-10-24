@@ -34,9 +34,11 @@ tap Money
 expect No wallet connected.
 shot hunch-money-empty
 tap Today
+tap All
 fold open
 rotate portrait
 expect "Today's issue"
+expect Paper Company
 shot hunch-demo-unfolded
 # HTTP error fixture cannot fall back to unlabelled stale data.
 shell am force-stop dev.omalauncher.hunch

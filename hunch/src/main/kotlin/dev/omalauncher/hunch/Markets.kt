@@ -74,3 +74,10 @@ object Book {
     }
     fun money(n:BigDecimal)=String.format(Locale.US,"$%.2f",n)
 }
+
+object MarketDates {
+    fun display(value:String):String = try {
+        val t=java.time.LocalDateTime.parse(value,java.time.format.DateTimeFormatter.ofPattern("uuuuMMdd-HHmm",Locale.US).withResolverStyle(java.time.format.ResolverStyle.STRICT))
+        t.format(java.time.format.DateTimeFormatter.ofPattern("MMM d, uuuu · HH:mm",Locale.US))+" (venue time)"
+    } catch(_:Exception){value}
+}

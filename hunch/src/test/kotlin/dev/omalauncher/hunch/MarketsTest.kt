@@ -29,4 +29,8 @@ class MarketsTest {
   val m=Market(1,"txyz","companyIpoConfirmed",mapOf("company" to "Paper"),"USDC")
   assertEquals("Trade.xyz",m.venueName);assertEquals("Paper: IPO confirmed?",m.title)
  }
+ @Test fun sourceDatesAreReadableWithoutInventingZone(){
+  assertEquals("Oct 30, 2026 · 13:35 (venue time)",MarketDates.display("20261030-1335"))
+  assertEquals("20260230-0000",MarketDates.display("20260230-0000"))
+ }
 }

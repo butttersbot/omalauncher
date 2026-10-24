@@ -3,7 +3,7 @@ android {
     namespace = "dev.omalauncher.hunch"
     compileSdk = 37
     buildFeatures { buildConfig = true }
-    defaultConfig { applicationId = "dev.omalauncher.hunch"; minSdk = 29; targetSdk = 37; versionCode = 3; versionName = "0.2.1" }
+    defaultConfig { applicationId = "dev.omalauncher.hunch"; minSdk = 29; targetSdk = 37; versionCode = 4; versionName = "0.2.2" }
 }
 dependencies { testImplementation(libs.junit); testImplementation(libs.org.json) }
 val mangaFonts by tasks.registering(Sync::class) {

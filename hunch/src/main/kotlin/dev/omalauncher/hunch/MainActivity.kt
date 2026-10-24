@@ -110,7 +110,7 @@ class MainActivity : Activity() {
                 chips.addView(button("$cat $count"){category=cat;shown=40;show()}.apply{if(cat==category){setBackgroundColor(ink);setTextColor(paper)};contentDescription="$cat filter${if(cat==category)", selected" else ""}"})
             }
             val matches=Market.groups(markets.filter{(category=="All"||it.category==category)&&(it.title+it.fields.values.joinToString(" ")+it.venueName).contains(query,true)})
-            status.text="${matches.size} markets · Updated ${clock(updated)} · tap a panel"
+            status.text="${matches.size} ${if(matches.size==1)"market" else "markets"} · Updated ${clock(updated)} · tap a panel"
             if(matches.isEmpty()){box(rows,panel("No markets match.\nTry another team, coin or topic.",blue));return}
             val wide=resources.configuration.screenWidthDp>=700
             var row:LinearLayout?=null
@@ -118,7 +118,7 @@ class MainActivity : Activity() {
                 val m=group.first();val card=column().apply{background=border();isClickable=true;isFocusable=true;setOnClickListener{market(m,group)};contentDescription="Open market: ${m.title}"}
                 card.addView(text("${m.category.uppercase()} / ${group.joinToString(" + "){it.venueName}}",10f,red,mono))
                 card.addView(text(m.title,if(i==0)22f else 18f,ink,display))
-                card.addView(text("${m.deadline?.let{"Market date: $it"} ?: "Read terms for timing"}\n${m.quote} · Open for live prices",12f,blue))
+                card.addView(text("${m.deadline?.let{"Market date: ${MarketDates.display(it)}"} ?: "Read terms for timing"}\n${m.quote} · Open for live prices",12f,blue))
                 if(wide){if(i%2==0){row=LinearLayout(this);box(rows,row!!)};row!!.addView(card,LinearLayout.LayoutParams(0,-2,1f).apply{marginEnd=dp(8)})}else box(rows,card)
             }
             if(matches.size>shown)box(rows,button("Show more markets"){shown+=40;show()})
@@ -154,7 +154,7 @@ class MainActivity : Activity() {
         })});box(page,preview)
         box(page,button("Refresh live orders"){market(m,venues)})
         box(page,text("HOW THIS MARKET IS DEFINED",12f,red,mono))
-        box(page,panel(if(m.fields.isEmpty())"The venue supplied no descriptive terms. Resolution conditions are unverified." else m.fields.entries.joinToString("\n"){"${friendly(it.key)}: ${it.value}"}))
+        box(page,panel(if(m.fields.isEmpty())"The venue supplied no descriptive terms. Resolution conditions are unverified." else m.fields.entries.joinToString("\n"){"${friendly(it.key)}: ${MarketDates.display(it.value)}"}))
         box(page,text("These are venue-supplied terms, not a verified resolution guarantee. Dates are shown exactly as supplied. Market ${m.id}.",12f,blue))
         box(page,text("No wallet connected. Betting and deposits are unavailable in this edition.",13f))
         task(token){try{val b=request(JSONObject().put("type","l2Book").put("coin",m.coin(side)));val bid=Book.best(b,0);val ask=Book.best(b,1);val levels=Book.levels(b,1)
