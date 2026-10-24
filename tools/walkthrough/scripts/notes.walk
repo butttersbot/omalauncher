@@ -42,7 +42,8 @@ expect SYNCED
 tap Walk groceries
 wait 1500
 tap Read
-wait 2000
+# The reader's WebView reports its words only once drawn: time enough (the Mac Pro's runs, 2026-10-24).
+wait 4000
 expect Milk
 shot reader-list
 tap Milk

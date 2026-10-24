@@ -26,6 +26,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -117,6 +118,21 @@ private fun Sheet(
     modifier: Modifier,
     tick: (Int) -> Unit,
 ) {
+    // A WebView whose renderer died (Chromium stopped it on a fold, the Mac Pro's walk 2026-10-24) is given up and a
+    // new one made, rather than taking the app down with it.
+    var renderer by remember { mutableStateOf(0) }
+    key(renderer) { Frame(page, sealed, modifier, tick) { renderer++ } }
+}
+
+@SuppressLint("SetJavaScriptEnabled")
+@Composable
+private fun Frame(
+    page: String,
+    sealed: Boolean,
+    modifier: Modifier,
+    tick: (Int) -> Unit,
+    gone: () -> Unit,
+) {
     AndroidView(
         factory = { context ->
             WebView(context).apply {
@@ -145,6 +161,25 @@ private fun Sheet(
                                 runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url.toString())).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
                             }
                             return true
+                        }
+
+                        override fun onRenderProcessGone(
+                            view: WebView,
+                            detail: android.webkit.RenderProcessGoneDetail,
+                        ): Boolean {
+                            (view.parent as? android.view.ViewGroup)?.removeView(view)
+                            view.destroy()
+                            gone()
+                            return true
+                        }
+
+                        // The book lays itself out once the page is up; asked again here in case the script's own
+                        // events came before the WebView had its size.
+                        override fun onPageFinished(
+                            view: WebView,
+                            url: String?,
+                        ) {
+                            if (!sealed) view.postDelayed({ runCatching { view.evaluateJavascript("layout()", null) } }, 200)
                         }
                     }
                 tag = ""

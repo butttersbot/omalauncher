@@ -49,7 +49,10 @@ th { background: var(--ink); color: var(--paper); font-weight: 600; }
 .narrow td:first-child { font-weight: 700; font-size: 16px; }
 .narrow td:first-child::before { display: none; }
 .book { height: 100vh; overflow: hidden; padding: 0; }
-.book #flow { height: calc(100vh - 40px); padding: 16px 0 0; column-fill: auto; column-gap: 52px; transition: transform .35s cubic-bezier(.3,.7,.3,1); }
+/* Two columns a spread in the CSS itself, so the book stands even before (or without) the script; with the height
+   fixed, the rest of the note runs on in more columns to the right, which a turn slides into view. */
+.book #wrap { margin: 0 26px; }
+.book #flow { height: calc(100vh - 56px); margin-top: 16px; column-count: 2; column-gap: 52px; column-fill: auto; transition: transform .35s cubic-bezier(.3,.7,.3,1); }
 .book #flow > *:first-child { margin-top: 0; }
 .book #folio { position: fixed; left: 26px; right: 26px; bottom: 10px; display: flex; justify-content: space-between; font: 10.5px M; letter-spacing: .08em; color: var(--muted); }
 .book #spine { position: fixed; top: 16px; bottom: 40px; left: 50%; width: 1px; background: var(--tone); }
@@ -71,25 +74,26 @@ document.addEventListener('click', function (e) {
   if (x < 0.22) turn(-1); else if (x > 0.78) turn(1);
 });
 var spread = 0, spreads = 1;
+/* One spread: the two columns and the gap after them. */
+function step() { return document.getElementById('flow').clientWidth + 52; }
 function layout() {
   if (!document.body.classList.contains('book')) return;
-  var flow = document.getElementById('flow'), w = innerWidth - 52;
-  document.getElementById('wrap').style.margin = '0 26px';
-  flow.style.columnWidth = ((w - 52) / 2) + 'px';
-  flow.style.width = w + 'px';
-  spreads = Math.max(1, Math.ceil(flow.scrollWidth / (w + 52) - 0.01));
+  var flow = document.getElementById('flow');
+  if (flow.clientWidth <= 0) return;
+  spreads = Math.max(1, Math.ceil(flow.scrollWidth / step() - 0.01));
   turn(0);
 }
 function turn(d) {
   spread = Math.max(0, Math.min(spreads - 1, spread + d));
-  var w = innerWidth - 52;
-  document.getElementById('flow').style.transform = 'translateX(' + (-spread * (w + 52)) + 'px)';
+  document.getElementById('flow').style.transform = 'translateX(' + (-spread * step()) + 'px)';
   document.getElementById('pl').textContent = (spread * 2 + 1);
   document.getElementById('pr').textContent = (spread * 2 + 2) + ' / ' + (spreads * 2);
 }
 addEventListener('load', layout);
 addEventListener('resize', layout);
 document.fonts && document.fonts.ready.then(layout);
+layout();
+setTimeout(layout, 300);
 </script></body></html>"""
 
     /**
