@@ -118,9 +118,10 @@ wait 2500
 expect Photos & files
 # The panel's card by its title: "Tap to play" also matches the chat's video ("Video, tap to play"; matching ignores case).
 tap 1 Video
-wait 4000
+wait 7000
 shot panel-video-playing
-key BACK
+# Back to the app as after the first video: the player's full-screen sheet takes a Back of its own.
+shell am start -W -n dev.omalauncher.messages/.MainActivity
 wait 1000
 fold folded
 wait 2500
@@ -184,7 +185,28 @@ swipe 0.5 0.3 0.5 0.85 300
 wait 400
 swipe 0.5 0.3 0.5 0.85 300
 wait 400
-wait 1500
+# Ten more, and a pause for the last page (the 506b24d walk stopped at #22).
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+wait 2000
 expect Long thread starts here
 # Look: oldest first at the top, no message twice across the pages' seams (#70/#71, #20/#21), no jump.
 shot long-thread-top
