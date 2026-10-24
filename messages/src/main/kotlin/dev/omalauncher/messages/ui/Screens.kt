@@ -466,6 +466,9 @@ fun Thread(
                     }
                 }
             }
+            // Back closes the menu, and only the menu: it went to the screen's own back (the slide away), which left the
+            // conversation's taps dead after it (the 0.7.8 walk: a link tapped after closing the menu did nothing).
+            androidx.activity.compose.BackHandler(enabled = held != null) { held = null }
             held?.let { m ->
                 HoldMenu(
                     onReply = {

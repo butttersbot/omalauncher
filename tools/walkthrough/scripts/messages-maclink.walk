@@ -109,8 +109,11 @@ swipe 0.3 0.29 0.3 0.29 900
 wait 800
 expect Reply
 shot hold-menu-on-video
+# Back closes the menu only: the chat stays, and its link still opens after (the 0.7.8 walk: it didn't).
 key BACK
 wait 600
+absent Copy
+expect Clips
 # A shared link (the demo's second "Clips" message, "https://www.tiktok.com/@soma/video/1"): a card, and a tap opens it.
 expect tiktok.com
 tap tiktok.com
