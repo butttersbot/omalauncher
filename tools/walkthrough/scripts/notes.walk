@@ -8,7 +8,8 @@ fold folded
 launch dev.omalauncher.notes/.MainActivity
 wait 2500
 expect Notes
-expect Search notes
+# The search field's "Search notes" is a placeholder uiautomator can't read: the filters stand in.
+expect From agents
 shot stream-cover
 # A new note: a whole page, the keyboard up, "Title" waiting.
 tap 0.86 0.88
@@ -50,7 +51,8 @@ expect - [x] Milk
 key BACK
 wait 800
 # Quick capture, as the launcher or another app's Share opens it.
-shell am start -a android.intent.action.SEND -t text/plain --es android.intent.extra.TEXT "Walk shared link https://example.com" -n dev.omalauncher.notes/.QuickCaptureActivity
+# Quoted twice: walk.py hands the line to the phone's shell, which would split the text at its spaces.
+shell am start -a android.intent.action.SEND -t text/plain --es android.intent.extra.TEXT "'Walk shared link https://example.com'" -n dev.omalauncher.notes/.QuickCaptureActivity
 wait 1500
 expect QUICK CAPTURE
 expect Walk shared link
@@ -80,13 +82,15 @@ tap Walk groceries
 wait 1200
 tap Delete
 wait 600
-tap Delete
+# The dialog's DELETE button by where it is: "tap Delete" would find the title, "Delete this note?", first.
+tap 0.84 0.58
 wait 1200
 tap Walk shared link
 wait 1500
 tap Delete
 wait 600
-tap Delete
+# The dialog's DELETE button by where it is: "tap Delete" would find the title, "Delete this note?", first.
+tap 0.84 0.58
 wait 1500
 absent Walk groceries
 absent Walk shared link
