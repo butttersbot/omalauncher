@@ -52,8 +52,53 @@ expect Settings
 shot typo-finds-settings-no-photo-noise
 key BACK
 key BACK
+wait 800
+# Quick, Files, Photos (Boss, 2026-10-24: "Apple Store" brought a flood of files and photos). A new search opens on
+# Quick: apps, people, the calculator and the web, no files and no photos.
+clearlog
+swipe 0.5 0.35 0.5 0.75 400
+wait 1500
+log home pull search
+expect Quick mode, selected
+type apple store
+wait 2500
+absent Photos & videos
+absent On the Mac Pro
+absent In files
+absent Looking through
+shot quick-apple-store-no-files-or-photos
+# Files, asked for: the words stay; it looks through files (here and on the Mac Pro) and nothing else.
+tap Files mode
+wait 2500
+expect Files mode, selected
+expect apple store
+absent Photos & videos
+shot files-mode-keeps-the-words
+# Photos, asked for: the words stay; photos and videos only.
+tap Photos mode
+wait 3000
+expect Photos mode, selected
+expect apple store
+absent On the Mac Pro
+absent In files
+shot photos-mode-keeps-the-words
+key BACK
+key BACK
+wait 800
+# Put away on Photos and opened again: Quick again, nothing typed.
+clearlog
+swipe 0.5 0.35 0.5 0.75 400
+wait 1500
+log home pull search
+expect Quick mode, selected
+absent Photos mode, selected
+# (The words put away unopened are a recent search now, by design: the row shows them, the field is empty.)
+shot reopened-on-quick
+key BACK
+key BACK
 [phone] Tap the terminal tile on home, leave it (Back), then pull search down from the middle of home: it opens with the keyboard, and stays (it did nothing before 139).
 [phone] Search "dicsord": Discord comes first, and no row of unrelated photos.
 [phone] Search "andrew" (a contact): the contact with Call/Text, and no row of unrelated photos.
-[phone] Search "beach": his beach and marina photos still show.
+[phone] Search "beach", then tap Photos: his beach and marina photos show. On Quick (where every search opens) no photos show.
+[phone] Search "Apple Store": Quick shows the app and the web, no files or photos; Files lists matching files (names first, then the Mac Pro's, then what is in them); the words stay when switching; a new search opens on Quick.
 [phone] Type a search, put search away without opening anything, pull it down again: the search is under Recent searches.

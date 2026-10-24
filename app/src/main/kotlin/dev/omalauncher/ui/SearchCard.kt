@@ -68,6 +68,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.input.ImeAction
@@ -92,6 +94,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import dev.omalauncher.search.Candidate
 import dev.omalauncher.search.Kind
 import dev.omalauncher.search.SearchMemory
+import dev.omalauncher.search.SearchMode
 import dev.omalauncher.search.SearchRank
 import dev.omalauncher.widgets.CockpitModules
 import dev.omalauncher.widgets.annotations.HomeAnnotations
@@ -120,6 +123,9 @@ internal fun SearchCard(
     val context = LocalContext.current
     val memory = remember { SearchStore.memory(context) }
     var query by remember { mutableStateOf("") }
+    // Quick, Files or Photos (Boss, 2026-10-24). The card is made each time it opens, so each search starts on Quick;
+    // changing it keeps the words typed.
+    var mode by remember { mutableStateOf(SearchMode.opening) }
     // A search put away without opening anything is still one of his recent searches (the 135 check: two searches,
     // nothing opened, and none showed). Two letters or more, as he left it.
     val left = androidx.compose.runtime.rememberUpdatedState(query)
@@ -169,18 +175,20 @@ internal fun SearchCard(
     val photoDb = remember { arrayOfNulls<android.database.sqlite.SQLiteDatabase>(1) }
     val photoVectors = remember { arrayOfNulls<PhotoIndex.Vectors>(1) }
     DisposableEffect(Unit) { onDispose { synchronized(photoDb) { photoDb[0]?.close(); photoDb[0] = null; photoVectors[0] = null } } }
-    val photos by androidx.compose.runtime.produceState(emptyList<PhotoIndex.Hit>(), query) {
+    // Only in Photos: a Quick or Files search does none of this work. A new query or mode cancels the last one.
+    val photoResults by androidx.compose.runtime.produceState(Looked<List<PhotoIndex.Hit>>(emptyList()), query, mode) {
         val q = query.trim()
-        if (q.length < 3) {
-            value = emptyList()
+        if (!mode.photos || q.length < mode.minimumLetters) {
+            value = Looked(emptyList())
             return@produceState
         }
+        value = Looked(emptyList(), done = false)
         // A pause in the typing first: the Mac is asked once for what he means, not once a letter.
         kotlinx.coroutines.delay(PHOTO_PAUSE_MS)
-        value =
+        value = Looked(
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                // The words name an app, a command or a person found: photos only if they are clearly what he means.
-                val named = PhotoIndex.names(ranked.take(3).map { it.c.title } + People.find(context, q).map { it.name }, q)
+                // Asked for on purpose: no guessing whether the words meant an app or a person instead.
+                val named = !mode.photosShown(wordsNameSomething = true)
                 synchronized(photoDb) {
                     val d = photoDb[0] ?: PhotoIndex.open(context, writable = false).also { photoDb[0] = it } ?: return@synchronized emptyList()
                     val words = PhotoIndex.byWords(d, q)
@@ -196,12 +204,16 @@ internal fun SearchCard(
                     val shown = near.map { it.uri }.toSet()
                     (near + words.filter { it.uri !in shown }).take(PHOTOS_MAX)
                 }
-            }
+            },
+        )
     }
-    val files by androidx.compose.runtime.produceState(FileResults(), query) {
+    val photos = photoResults.value
+    // Only in Files, like the photos.
+    val files by androidx.compose.runtime.produceState(FileResults(), query, mode) {
         val q = query.trim()
+        if (mode.files && q.isNotEmpty()) value = FileResults(searched = false)
         value =
-            if (q.isEmpty()) {
+            if (!mode.files || q.isEmpty()) {
                 FileResults()
             } else {
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -253,9 +265,9 @@ internal fun SearchCard(
     val shownFiles = reordered ?: files
 
     // Files on the Mac Pro, by its Spotlight, when the typing rests; a pick is brought to the phone and opened.
-    val macFiles by androidx.compose.runtime.produceState(emptyList<MacFiles.Hit>(), query) {
+    val macFiles by androidx.compose.runtime.produceState(emptyList<MacFiles.Hit>(), query, mode) {
         val q = query.trim()
-        if (q.length < 3) {
+        if (!mode.files || q.length < 3) {
             value = emptyList()
             return@produceState
         }
@@ -264,11 +276,11 @@ internal fun SearchCard(
     }
     // People, by Android's own contacts search, as each letter comes: it is indexed and quick.
     var contactsAsk by remember { mutableStateOf(SearchStore.askContacts(context)) }
-    val people by androidx.compose.runtime.produceState(emptyList<People.Person>(), query, version) {
-        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { People.find(context, query) }
+    val people by androidx.compose.runtime.produceState(emptyList<People.Person>(), query, version, mode) {
+        value = if (!mode.quick) emptyList() else kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { People.find(context, query) }
     }
     // What was copied lately, as the Soma keyboard kept it.
-    val clipHits = remember(query) { dev.omalauncher.keyboard.ClipHistory.of(context).find(query, System.currentTimeMillis()) }
+    val clipHits = remember(query, mode) { if (!mode.quick) emptyList() else dev.omalauncher.keyboard.ClipHistory.of(context).find(query, System.currentTimeMillis()) }
     var personActing by remember { mutableStateOf<People.Person?>(null) }
 
     fun reach(intent: Intent) {
@@ -378,6 +390,22 @@ internal fun SearchCard(
                         if (query.isNotEmpty()) BasicText("✕", Modifier.clickable { query = "" }.padding(6.dp), style = Pack.body(Pack.size.body, muted))
                     }
                 }
+                // What it looks through: Quick for every new search, Files or Photos when he asks; the words stay.
+                Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    for (m in SearchMode.entries) {
+                        val on = m == mode
+                        BasicText(
+                            m.label,
+                            Modifier
+                                .semantics { contentDescription = if (on) "${m.label} mode, selected" else "${m.label} mode" }
+                                .then(if (on) Modifier.background(ink) else Modifier)
+                                .border(1.dp, line)
+                                .clickable { mode = m }
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                            style = Pack.body(Pack.size.small, if (on) (if (smoke) Color(0xFF101012) else Pack.paper) else ink),
+                        )
+                    }
+                }
                 Box(Modifier.fillMaxWidth().height(1.dp).background(line.copy(alpha = 0.5f)))
                 LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false).clipToBounds(), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 8.dp)) {
                     if (query.isBlank()) {
@@ -422,7 +450,7 @@ internal fun SearchCard(
                         if (favorites.isEmpty() && suggestions.isEmpty() && recent.isEmpty()) {
                             item { BasicText("Type to search apps, Soma and settings. Long-press a result to make it a favorite.", Modifier.padding(16.dp), style = Pack.body(Pack.size.small, muted)) }
                         }
-                    } else {
+                    } else if (mode.quick) {
                         answer?.let { a ->
                             item {
                                 Column(
@@ -492,6 +520,16 @@ internal fun SearchCard(
                                 }
                             }
                         }
+                        item { Section("Use “${query.trim()}” with…", muted) }
+                        items(fallbacks(context, query.trim()), key = { it.c.id }) { f ->
+                            SearchResult(runtime, f, ink, muted, line, {
+                                memory.searched(query, System.currentTimeMillis())
+                                SearchStore.save(context, memory)
+                                close()
+                                f.run()
+                            }, null)
+                        }
+                    } else if (mode.photos) {
                         if (photos.isNotEmpty()) {
                             item { Section("Photos & videos", muted) }
                             item(key = "photos") {
@@ -501,11 +539,16 @@ internal fun SearchCard(
                                     close()
                                 }
                             }
+                        } else {
+                            val q = query.trim()
+                            val note = if (q.length < SearchMode.Photos.minimumLetters) "Type a little more to look through photos." else if (photoResults.done) "No photos or videos match “$q”." else "Looking through photos…"
+                            item { BasicText(note, Modifier.padding(14.dp), style = Pack.body(Pack.size.small, muted)) }
                         }
-                        if (shownFiles.names.isNotEmpty() || shownFiles.texts.isNotEmpty()) {
+                    } else {
+                        // Files: names first, the Mac Pro's after them, then what is in them.
+                        if (shownFiles.names.isNotEmpty()) {
                             item { Section(shownFiles.fixed?.let { "Files · for “$it”" } ?: "Files", muted) }
                             items(shownFiles.names.take(FILES_SHOWN), key = { "fn:" + it.path }) { FileRow(it, ink, muted, line, { openFile(it) }, { fileActing = it }) }
-                            items(shownFiles.texts.take(FILES_SHOWN), key = { "ft:" + it.path }) { FileRow(it, ink, muted, line, { openFile(it) }, { fileActing = it }) }
                         }
                         if (macFiles.isNotEmpty()) {
                             item { Section("On the Mac Pro", muted) }
@@ -513,6 +556,13 @@ internal fun SearchCard(
                                 val where = "Mac Pro · " + MacFiles.where(m.path) + if (bringing == m.path) " · bringing it over…" else ""
                                 FileRow(FileQuery.Hit(m.path, m.name, m.modified, m.size), ink, muted, line, { bring(m, share = false) }, { macActing = m }, where = where)
                             }
+                        }
+                        if (shownFiles.texts.isNotEmpty()) {
+                            item { Section("In files", muted) }
+                            items(shownFiles.texts.take(FILES_SHOWN), key = { "ft:" + it.path }) { FileRow(it, ink, muted, line, { openFile(it) }, { fileActing = it }) }
+                        }
+                        if (shownFiles.names.isEmpty() && shownFiles.texts.isEmpty() && macFiles.isEmpty() && FileIndex.storageAllowed() && !files.indexing) {
+                            item { BasicText(if (files.searched) "No files match “${query.trim()}”." else "Looking through files…", Modifier.padding(14.dp), style = Pack.body(Pack.size.small, muted)) }
                         }
                         if (!FileIndex.storageAllowed()) {
                             item {
@@ -530,15 +580,6 @@ internal fun SearchCard(
                             }
                         } else if (files.indexing) {
                             item { BasicText("Files are still being indexed…", Modifier.padding(14.dp), style = Pack.body(Pack.size.small, muted)) }
-                        }
-                        item { Section("Use “${query.trim()}” with…", muted) }
-                        items(fallbacks(context, query.trim()), key = { it.c.id }) { f ->
-                            SearchResult(runtime, f, ink, muted, line, {
-                                memory.searched(query, System.currentTimeMillis())
-                                SearchStore.save(context, memory)
-                                close()
-                                f.run()
-                            }, null)
                         }
                     }
                 }
@@ -701,7 +742,12 @@ private class FileResults(
     val indexing: Boolean = false,
     /** The query as the names were found by, when it was read as having a typo. */
     val fixed: String? = null,
+    /** False while the index is still being read for this query, so "no files" isn't said too soon. */
+    val searched: Boolean = true,
 )
+
+/** A search's results, and whether it has finished looking. */
+private class Looked<T>(val value: T, val done: Boolean = true)
 
 /** Hands the file at [path] to the app that opens (or, with [share], shares) its kind, through Soma's file provider. */
 private fun handFile(
