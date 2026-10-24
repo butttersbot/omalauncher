@@ -15,6 +15,7 @@ tap Paper Cranes vs Ink Foxes
 expect Choose an outcome
 expect Cranes outcome, selected
 expect Buy:
+scrollto Gross illustration
 expect Gross illustration
 shot hunch-detail-cover
 key BACK
@@ -23,6 +24,7 @@ tap Prices
 expect DEMO above 100?
 tap DEMO above 100?
 expect No asks
+scrollto No payout estimate
 expect No payout estimate
 shot hunch-empty-book
 key BACK
