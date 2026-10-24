@@ -136,9 +136,24 @@ shell am start -W -n dev.omalauncher.messages/.MainActivity
 wait 1000
 fold folded
 wait 2500
+# A voice message (0.8.0): the demo's "Voices" chat has one, Opus in CAF as iMessage sends them. A tap fetches it,
+# rewraps it as Ogg and plays it here.
+key BACK
+wait 800
+expect Voices
+tap Voices
+wait 1500
+expect Voice message
+tap Tap to play
+wait 3000
+expect Playing
+shot voice-playing
+tap Playing
+wait 800
+expect Tap to play
 # Older history (0.7.6): the demo's "Long thread" has 120 messages, "Long #1" (the oldest, "Long thread starts here")
 # to "Long #120"; the first fetch brings 50, the demo's earlier pages fewer, so scrolling to the top loads several.
-# From Clips (no keyboard up): one Back to the inbox.
+# From Voices (no keyboard up): one Back to the inbox.
 key BACK
 wait 800
 expect Long thread
