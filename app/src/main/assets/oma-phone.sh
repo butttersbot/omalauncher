@@ -76,6 +76,15 @@ press|fill|click|type|scroll|submit|tap|swipe|back)
   done;;
 esac
 case "$command" in
+plan-id)
+  printf '%s-%s\n' "$(date +%s%3N)" "$(cat /proc/sys/kernel/random/uuid)"
+  exit 0;;
+plan-receipt)
+  request=$(jq -cn --arg id "${1:?Plan id required}" '{command:"plan-receipt",id:$id}');;
+plan)
+  file=${1:?JSON plan file required: oma-phone plan FILE.json}
+  [ -f "$file" ] && [ "$(wc -c < "$file")" -le 60000 ] || { echo 'Plan must be a file of at most60000 bytes.' >&2; exit 2; }
+  request=$(jq -ce 'if type=="object" and (.id|type)=="string" and (.steps|type)=="array" then . + {command:"plan"} else error("Plan requires id and steps") end' "$file");;
 help)
   cat <<'HELP'
 oma-phone [--display main|bg] COMMAND ...
@@ -160,6 +169,11 @@ stop at the first screen that is not the one meant:
 Open a Settings destination directly: open settings:display (also sound, wifi, bluetooth,
 battery [Battery Saver], storage or apps). Unsupported destinations fail without a fallback.
 Optional --timing before the command adds service/read timings and search counts, without logging contents.
+Native plans: save a JSON object {id,steps,timeoutMs} to a file and use plan FILE.json.
+Get a fresh id ONCE with plan-id, save it with the plan, and reuse that exact id to inspect/retry safely.
+plan-receipt ID reads its durable outcome even while control is paused. A retry never reruns retained steps.
+Plans: open/url, press/fill/submit/back with explicit in:PACKAGE, and screen with until:TEXT.
+End with a screen assertion. At most40 steps/30seconds; first failure stops. No automatic retries.
 Prefer press, fill and screen. Use read, click, tap and screenshot when they are not enough.
 When your work ends, the screen the user was on before your first step comes back by itself, unless
 the user took the phone meanwhile. stay leaves the screen you end on up instead: use it only when the
@@ -301,7 +315,9 @@ esac
 request=$(jq -c --argjson timing "$timing" '. + (if $timing then {timing:true} else {} end)' <<<"$request")
 request=$(jq -c --arg display "$display" '. + {display:$display}' <<<"$request")
 request=$(jq -c --arg front "$front" --argjson any "$any" '. + (if $front=="" then {} else {in:$front} end) + (if $any then {any:true} else {} end)' <<<"$request")
-response=$(curl --silent --show-error --max-time 12 --abstract-unix-socket '__SOCKET__' \
+limit=12
+if [ "$command" = plan ]; then limit=35; fi
+response=$(curl --silent --show-error --max-time "$limit" --abstract-unix-socket '__SOCKET__' \
   --header 'Content-Type: application/json' --data-binary "$request" http://localhost/phone) || {
   echo 'Phone bridge unavailable or timed out. Open Omalauncher Boss. Read the screen before retrying actions.' >&2; exit 1;
 }

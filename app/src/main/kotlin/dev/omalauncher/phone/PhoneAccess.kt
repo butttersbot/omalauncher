@@ -27,6 +27,7 @@ object PhoneAccess {
     }
     fun stop(context: Context) {
         paused = true
+        PhoneService.instance?.cancelPending()
         context.getSharedPreferences("phone-control", Context.MODE_PRIVATE).edit().putBoolean("paused", true).apply()
         PhoneControlHeal.paused(context)
         clearIndicator(context)

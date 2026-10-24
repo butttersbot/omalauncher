@@ -10,6 +10,13 @@ log speed PASS: actual service opens Display and reports read timing
 log speed PASS: unsupported destination refuses without changing screen
 log speed PASS: actual absent-label search bounded
 nolog speed FAIL
+shell am instrument -w --no-restart dev.omalauncher.artifactpreview/.PhonePlanInstrumentation
+log plan PASS: native sequence verifies final screen and duplicate id does not replay
+log plan PASS: all steps prevalidated and conflicting id refused without navigation
+log plan PASS: failed assertion prevents later navigation
+log plan PASS: bridge status and Stop remain responsive; cancellation persisted while paused
+log plan PASS: restored emulator pause state; cancelled callbacks cannot navigate later
+nolog plan FAIL
 shell 'old=$(cat /data/local/tmp/soma-speed-accessibility-before); if [ "$old" = null ]; then settings delete secure enabled_accessibility_services; else settings put secure enabled_accessibility_services "$old"; fi'
 shell am start -a android.settings.DISPLAY_SETTINGS
 expect Display

@@ -125,5 +125,48 @@ any error, so a timeout cannot masquerade as search success.
 
 Unrelated source updates can invalidate a candidate even when this feature did not change. The final
 normal build must include current source and all tests/walks below, at the unconsumed version.
-Stages2–5 TODO.
+Stage2 IN PROGRESS: native plan executor, receipt journal, bounded concurrent bridge and cancellation guards implemented; tests not yet run. Stages3–5 TODO.
 No10x claim yet. No live Settings or app actions benchmarked yet.
+
+## Native-plan interface (Stage2 implementation in progress)
+
+`oma-phone plan-id` creates an id once. Save it into a JSON file with the steps, then call
+`oma-phone --timing plan FILE.json`. Never recreate the id to retry an uncertain action.
+Example shape (replace the id with plan-id output):
+
+```json
+{"id":"<epoch-milliseconds>-<unique-token>","timeoutMs":15000,"steps":[
+  {"command":"open","package":"settings:display"},
+  {"command":"screen","in":"com.android.settings","until":"Display"}
+]}
+```
+
+- Commands: open, url, press, fill, submit, back, screen. Other commands and unknown step fields reject
+  the entire plan before any action. Screen assertions and touches require an explicit `in` package.
+- A plan ends with a `screen` assertion containing `until`. At most40 steps,60000 UTF8 bytes,30seconds.
+- The existing CLI shell `run` remains supported, including gestures and other steps not in native plans.
+  Native plans are explicit; they never silently fall back to shell execution after an error.
+- One active action request owns the service. Planned steps reuse existing action/admission code.
+  Main-loop yielding between steps allows owner Stop/Take over and accessibility events to run.
+- Four bounded socket workers keep Stop/status responsive while a plan waits. There is no queued
+  worker backlog or new listener. Same-UID peer checks and all app/display/approval gates remain.
+- Generation checks invalidate old delayed reads and gesture callbacks after cancellation/deadline;
+  they cannot continue when a newer request starts. An already dispatched gesture may have run.
+- Results include completion count, first failing step, uncertainty, numeric per-step trace, final
+  observation and id. Read `oma-phone plan-receipt ID` after a disconnect; receipts work while paused.
+- Receipt journal is durable before side effects, atomically replaced and synced. No screen text,
+  selectors, typed data or credentials persist in it. A process token marks abandoned running plans
+  interrupted on restart. Same id+different steps/display rejects; same request returns metadata,
+  never executes again. Metadata-only retry is not fresh screen verification.
+- IDs encode creation time and expire after24hours, with2minutes future-clock allowance. Unexpired
+  receipts are not evicted;1024 live receipts is a fail-closed capacity limit. Expired plans reject
+  even after journal pruning. Corrupt/oversized/unwritable storage refuses further execution.
+- Bridge deadline includes queue time; service deadline is bounded within it. A caller timeout is
+  never a reason to resubmit mutations under a new id. Inspect the receipt and actual screen first.
+- Tests include malformed later steps, wrong app/fields, expired ids, canonical fingerprints,
+  restart/deduplication, corrupt journal, false assertions, duplicate callbacks, late callbacks,
+  pause/cancellation and yielding. Emulator instrumentation exercises the same-UID socket, including
+  responsive Stop during a waiting plan, persisted cancellation while paused, and no navigation on retry.
+
+Stage2 is not ready until tests, actual-service walkthrough and screenshots pass at exact candidate.
+Samsung lock/sleep/takeover checks and20-trial matched end-to-end speed benchmarks remain required.

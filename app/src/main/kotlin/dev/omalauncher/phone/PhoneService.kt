@@ -39,6 +39,11 @@ class PhoneService : AccessibilityService() {
     private var displayId = 0
     private val displayState get() = displayStates.getOrPut(displayId) { DisplayState() }
     private var busy = false
+    private var requestGeneration = 0L
+    private var activePlan: PhonePlanRunner? = null
+    private val planJournal by lazy { PhonePlanJournal(File(filesDir, "phone-plan-receipts.json")) }
+    fun cancelPending() { activePlan?.cancel(reason = "Phone control paused or taken over") }
+    val planState get() = activePlan?.status()
     private var requestDeadline = 0L
     private var requestCommand = ""
     private var snapshot: String
@@ -156,7 +161,7 @@ class PhoneService : AccessibilityService() {
     override fun onInterrupt() = Unit
     /** Folded, unfolded or turned. */
     override fun onConfigurationChanged(newConfig: Configuration) { super.onConfigurationChanged(newConfig); sheep.relayout(); lookAgain(ring.relayout()) }
-    override fun onUnbind(intent: Intent?): Boolean { PhoneControlHeal.unbound(this, front); closeRing(); return super.onUnbind(intent) }
+    override fun onUnbind(intent: Intent?): Boolean { cancelPending(); PhoneControlHeal.unbound(this, front); closeRing(); return super.onUnbind(intent) }
     override fun onDestroy() { instance = null; closeRing(); PhoneAccess.clearIndicator(this); dev.omalauncher.assist.AgentTasks.phoneChanged(this); super.onDestroy() }
 
     private fun watchRing() {
@@ -268,8 +273,13 @@ class PhoneService : AccessibilityService() {
 
     /** Runs [then] once the screen has shown what the last move did ([phoneSettleWait]); at once when nothing was moved. */
     private fun settled(then: () -> Unit) {
-        val wait = phoneSettleWait(SystemClock.uptimeMillis(), acted, lastChange)
-        if (wait == 0L) then() else main.postDelayed({ settled(then) }, minOf(wait, PHONE_SETTLE_STEP_MILLIS))
+        val generation = requestGeneration
+        fun look() {
+            if (!busy || generation != requestGeneration) return
+            val wait = phoneSettleWait(SystemClock.uptimeMillis(), acted, lastChange)
+            if (wait == 0L) then() else main.postDelayed({ look() }, minOf(wait, PHONE_SETTLE_STEP_MILLIS))
+        }
+        look()
     }
 
     /**
@@ -358,10 +368,11 @@ class PhoneService : AccessibilityService() {
         val builder = GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, duration))
         if (Build.VERSION.SDK_INT >= 30) builder.setDisplayId(displayId)
         val gesture = builder.build()
+        val generation = requestGeneration
         check(dispatchGesture(gesture, object : GestureResultCallback() {
             // The screen starts to change when the finger lifts, not when it lands.
-            override fun onCompleted(gestureDescription: GestureDescription?) { changed(); reply(JSONObject().put("ok", true)) }
-            override fun onCancelled(gestureDescription: GestureDescription?) { reply(JSONObject().put("ok", false).put("error", "Gesture cancelled")) }
+            override fun onCompleted(gestureDescription: GestureDescription?) { if (busy && generation == requestGeneration) { changed(); reply(JSONObject().put("ok", true)) } }
+            override fun onCancelled(gestureDescription: GestureDescription?) { if (busy && generation == requestGeneration) reply(JSONObject().put("ok", false).put("error", "Gesture cancelled")) }
         }, null)) { "Android rejected gesture" }
     }
     /** The notebook for the page commands. Turning a page is an explicit start of our own home activity, with nothing in the intent. */
@@ -406,7 +417,12 @@ class PhoneService : AccessibilityService() {
         output.put("opened", pkg.orEmpty())
         if (pkg == null) { reply(output); return }
         val deadline = SystemClock.uptimeMillis() + PhoneTouch.UNTIL_MILLIS
+        val generation = requestGeneration
         fun look() {
+            if (!busy || generation != requestGeneration) return
+            try { requireCurrentAccess() } catch (failure: Exception) {
+                reply(JSONObject().put("ok", false).put("error", failure.message)); return
+            }
             val root = runCatching { displayRoot(displayId) }.getOrNull()
             val front = root?.packageName?.toString(); root?.recycle()
             if (front == pkg || SystemClock.uptimeMillis() >= deadline) { reply(output.put("inFront", front == pkg).put("front", front.orEmpty())); return }
@@ -504,19 +520,32 @@ class PhoneService : AccessibilityService() {
         val command = input.optString("command")
         if (command == "stop") { PhoneAccess.stop(this); callback(JSONObject().put("ok", true)); return }
         if (busy) { callback(JSONObject().put("ok", false).put("error", "Another phone request is running. Read the screen again.")); return }
+        val plan = try { if (command == "plan") PhonePlan.parse(input, System.currentTimeMillis()) else null }
+            catch (failure: Exception) { callback(JSONObject().put("ok", false).put("error", failure.message)); return }
         val selected = input.optString("display", "main")
         val target = try {
             require(selected == "main" || selected == "bg") { "Display must be main or bg." }
-            if (selected == "bg") { PhoneBackgroundCommands.requireAllowed(command); PhoneDisplays.background(this).id } else 0
+            if (selected == "bg") {
+                if (plan != null) plan.steps.forEach { PhoneBackgroundCommands.requireAllowed(it.getString("command")) }
+                else PhoneBackgroundCommands.requireAllowed(command)
+                PhoneDisplays.background(this).id
+            } else 0
         } catch (e: Exception) { callback(JSONObject().put("ok", false).put("error", e.message)); return }
         displayId = target; busy = true; requestCommand = command
+        val generation = ++requestGeneration
         val requestStart = SystemClock.elapsedRealtimeNanos()
         readCalls = 0; readNanos = 0; nodesRead = 0; searchScrolls = 0
-        requestDeadline = SystemClock.elapsedRealtime() + 7500
+        val now = SystemClock.elapsedRealtime()
+        requestDeadline = minOf(now + (plan?.timeoutMs ?: 7500L), input.optLong("_bridgeDeadline", Long.MAX_VALUE))
+        val budget = (requestDeadline - now).coerceAtLeast(0L)
         var finished = false
+        var timeout: Runnable? = null
         val reply: (JSONObject) -> Unit = { output ->
-            if (!finished) {
+            if (!finished && generation == requestGeneration) {
                 finished = true
+                requestGeneration++
+                activePlan = null
+                timeout?.let(main::removeCallbacks)
                 output.put("displayId", target)
                 if (input.optBoolean("timing")) output.put("timing", JSONObject()
                     .put("serviceMs", (SystemClock.elapsedRealtimeNanos() - requestStart) / 1_000_000.0)
@@ -526,12 +555,46 @@ class PhoneService : AccessibilityService() {
                 callback(output)
             }
         }
+        timeout = Runnable {
+            if (activePlan != null) activePlan?.cancel("timed-out", "Plan deadline reached; inspect receipt before retrying.")
+            else reply(JSONObject().put("ok", false).put("error", "Phone request deadline reached; action may have run.").put("actionMayHaveRun", true))
+        }
+        main.postDelayed(timeout!!, budget)
+        if (plan == null) { execute(input, generation, reply); return }
+        try {
+            requireCurrentAccess()
+            val existing = planJournal.begin(plan)
+            if (existing != null) { reply(existing); return }
+            val runner = PhonePlanRunner(plan, SystemClock::elapsedRealtime, {
+                check(busy && generation == requestGeneration) { "Phone request is no longer active" }
+                requireCurrentAccess()
+            }, { step, done -> execute(step, generation, done) }) { result ->
+                try { planJournal.end(plan, result.getString("state"), result.getInt("completed")) }
+                catch (failure: Exception) {
+                    result.put("ok", false).put("error", "Could not finalize receipt; do not replay mutations.")
+                }
+                reply(result)
+            }
+            runner.schedule = { step -> main.post(step) }
+            activePlan = runner
+            runner.start()
+        } catch (failure: Exception) { reply(JSONObject().put("ok", false).put("error", failure.message)) }
+    }
+
+    /** All individual and planned steps share this action implementation and its admission checks. */
+    private fun execute(input: JSONObject, generation: Long, reply: (JSONObject) -> Unit) {
+        val command = input.optString("command")
+        requestCommand = command
+        fun requireThisRequest() {
+            check(busy && generation == requestGeneration) { "Phone request is no longer active" }
+            requireCurrentAccess()
+        }
         try {
             // Where he was as this request came in: if it is the agent's first move, that is where it comes back to.
             placeAsked = place
             // The checks and their order are PhoneRequests.admit's; nothing below runs for a request it didn't let through.
             // A request of a thread on the Mac waits for the owner as the phone builder's does, and its card is on this screen too.
-            val route = PhoneRequests.admit(command, { requireCurrentAccess() }) { dev.omalauncher.assist.AgentTasks.pending.size + dev.omalauncher.assist.MacThreads.pending.size }
+            val route = PhoneRequests.admit(command, { requireThisRequest() }) { dev.omalauncher.assist.AgentTasks.pending.size + dev.omalauncher.assist.MacThreads.pending.size }
             if (route == PhoneRequests.Route.Status) { reply(JSONObject().put("ok", true).put("active", PhoneAccess.active).put("connected", true)); return }
             if (route == PhoneRequests.Route.Stop) { PhoneAccess.stop(this); reply(JSONObject().put("ok", true)); return }
             // Home's pages: read and turned behind the same gates as everything else, and never while an approval waits.
@@ -588,13 +651,13 @@ class PhoneService : AccessibilityService() {
                 // It wouldn't come down: no picture is taken with it up.
                 if (settle == CAPTURE_REFUSED) { sheepHeld = false; syncRing(); error("Screenshot unavailable: the ring overlay could not be removed. Try again.") }
                 fun captured() { sheepHeld = false; lookAgain(ring.afterCapture()); syncRing() }
-                val capture = Runnable { try { requireCurrentAccess(); takeScreenshot(displayId, mainExecutor, object : TakeScreenshotCallback {
+                val capture = Runnable { try { requireThisRequest(); takeScreenshot(displayId, mainExecutor, object : TakeScreenshotCallback {
                     override fun onFailure(code: Int) { captured(); reply(JSONObject().put("ok", false).put("error", "Screenshot unavailable: $code. Protected screens cannot be captured.")) }
                     override fun onSuccess(result: ScreenshotResult) {
                         captured()
                         val hardware = result.hardwareBuffer
                         try {
-                            requireCurrentAccess()
+                            requireThisRequest()
                             val image = Bitmap.wrapHardwareBuffer(hardware, result.colorSpace) ?: error("Screenshot unavailable")
                             val bitmap = image.copy(Bitmap.Config.ARGB_8888, false); image.recycle()
                             val dir = File(filesDir, "attachments").apply { mkdirs() }
@@ -662,7 +725,7 @@ class PhoneService : AccessibilityService() {
                     } finally { field.recycle() }
                     changed()
                     settled {
-                        try { requireCurrentAccess(); reply(PhoneScreen.brief(read())) }
+                        try { requireThisRequest(); reply(PhoneScreen.brief(read())) }
                         catch (e: Exception) { reply(JSONObject().put("ok", false).put("error", e.message ?: "Phone control failed")) }
                     }
                     return
@@ -670,7 +733,7 @@ class PhoneService : AccessibilityService() {
                 "read" -> {
                     // Right after one of this service's own actions the screen is still on its way to what the action did.
                     settled {
-                        try { requireCurrentAccess(); reply(read()) }
+                        try { requireThisRequest(); reply(read()) }
                         catch (e: Exception) { reply(JSONObject().put("ok", false).put("error", e.message ?: "Phone control failed")) }
                     }
                     return
@@ -688,8 +751,9 @@ class PhoneService : AccessibilityService() {
                     // Looks again until the words show or the time is up; what it then gives is the screen as it stands.
                     fun look() {
                         try {
-                            requireCurrentAccess()
+                            requireThisRequest()
                             val seen = read()
+                            PhoneScreen.requireFront(seen, input.optString("in"))
                             val shows = until.isEmpty() || PhoneScreen.says(seen, until)
                             if (!shows && SystemClock.uptimeMillis() < deadline) { main.postDelayed({ look() }, PhoneTouch.UNTIL_STEP_MILLIS); return }
                             reply(PhoneScreen.brief(seen).also { if (until.isNotEmpty()) it.put("shows", shows) })
@@ -705,7 +769,7 @@ class PhoneService : AccessibilityService() {
                         if (!done.optBoolean("ok")) { reply(done); return@act }
                         settled {
                             try {
-                                requireCurrentAccess()
+                                requireThisRequest()
                                 reply(PhoneScreen.after(read(), command, done.optString("id", id), if (command == "fill") input.getString("text") else null)
                                     .also { if (scrolled > 0) it.put("scrolled", scrolled) })
                             } catch (e: Exception) { reply(JSONObject().put("ok", false).put("error", e.message ?: "Phone control failed")) }
@@ -715,7 +779,7 @@ class PhoneService : AccessibilityService() {
                     val progress = PhoneSearchProgress()
                     fun look(forward: Boolean, tries: Int, scrolled: Int) {
                         try {
-                            requireCurrentAccess()
+                            requireThisRequest()
                             val seen = read()
                             val nodes = PhoneScreen.nodes(seen)
                             when (val found = if (command == "press") PhoneFind.press(nodes, label) else PhoneFind.field(nodes, label)) {
