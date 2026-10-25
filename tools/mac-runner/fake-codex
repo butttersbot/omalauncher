@@ -36,8 +36,11 @@ while True:
         out({'id': number, 'result': {'thread': {'id': session}, 'model': params.get('model') or 'gpt-fake'}})
     elif method == 'turn/start':
         prompt = params['input'][0]['text']
+        # A new session's first words come after the runner's note on artifacts: what it acts on is his words alone.
+        told = prompt.startswith('[Soma (the app Boss is using)')
+        prompt = prompt.split(']\n\n', 1)[1] if told else prompt
         with open('starts.log', 'a') as log:
-            log.write(json.dumps({'kind': 'codex', 'prompt': prompt, 'resumed': resumed, 'policy': rules.get('approvalPolicy'), 'sandbox': rules.get('sandbox'),
+            log.write(json.dumps({'kind': 'codex', 'prompt': prompt, 'told': told, 'resumed': resumed, 'policy': rules.get('approvalPolicy'), 'sandbox': rules.get('sandbox'),
                                   'reviewer': rules.get('approvalsReviewer'), 'arguments': arguments}) + '\n')
         out({'id': number, 'result': {'turn': {'id': 'turn1', 'status': 'inProgress'}}})
         said('Heard: ' + prompt)
