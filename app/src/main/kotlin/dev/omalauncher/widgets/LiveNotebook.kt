@@ -265,6 +265,24 @@ class LiveNotebook(
         return true
     }
 
+    /** Where the thread tile [key] is on its page; null for any other key, or one with no cells yet. */
+    fun threadTileCell(key: String): Cell? = if (isThreadTile(key)) cells[key] else null
+
+    /**
+     * Moves thread tiles already on [page] to new cells ([moves]), all in one write: the Agents page laid out in
+     * rank order ([agentTileCells]). Only thread tiles already on that page; anything else asked is left alone.
+     */
+    fun setThreadTileCells(
+        page: String,
+        moves: Map<String, Cell>,
+    ) {
+        if (!opened) return
+        val ok = moves.filterKeys { isThreadTile(it) && home[it] == page && it in cells }
+        if (ok.isEmpty()) return
+        for ((key, cell) in ok) cells[key] = cell
+        save()
+    }
+
     /** Writes the notebook, unless this start isn't kept. */
     fun save() {
         if (opened && kept) persist(NotebookStore.write(snapshot()))

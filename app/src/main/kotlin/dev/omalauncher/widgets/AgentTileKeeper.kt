@@ -53,7 +53,8 @@ class AgentTileKeeper(
     ) {
         if (!notebook.opened || !notebook.kept) return
         val placed = notebook.threadTiles()
-        val plan = agentTilePlan(threads, placed, agentsPage(notebook.pages), stamps, now, listed, pinned, archived)
+        val agents = agentsPage(notebook.pages)
+        val plan = agentTilePlan(threads, placed, agents, stamps, now, listed, pinned, archived, room(agents, placed, scraps) ?: return)
         var writes = agentWrites(notebook.pages, placed, plan)
         if (AgentWrite.MakePage in writes) {
             // The way a page is added and named everywhere else: after the last, then called by its name.
@@ -70,6 +71,12 @@ class AgentTileKeeper(
                 is AgentWrite.Place -> place(write, scraps(write.page) ?: continue)
             }
         }
+        // In rank order: the threads at work first, then the most recent (Boss, 2026-10-24).
+        agentsPage(notebook.pages)?.let { page ->
+            val at = notebook.threadTiles().filterValues { it == page }.keys.mapNotNull { key -> notebook.threadTileCell(key)?.let { key to it } }.toMap()
+            val moves = agentTileCells(plan.order, at)
+            if (moves.isNotEmpty()) notebook.setThreadTileCells(page, moves)
+        }
         // Remembered as the notebook now is, the tiles just placed included: one he takes off before the next look is still known to have been there.
         val there = notebook.threadTiles().keys
         val next = plan.stamps.mapValues { (thread, stamp) -> stamp.copy(placed = threadTileKey(thread) in there) }
@@ -79,6 +86,30 @@ class AgentTileKeeper(
         }
         tiles.keys.retainAll(plan.show.keys)
         for ((key, tile) in plan.show) if (tiles[key] != tile) tiles[key] = tile
+    }
+
+    /**
+     * How many thread tiles the Agents page holds: the ones on it now, and as many more of [AGENT_TILE_SIZE] as fit
+     * in cells nothing else has. Every tile with no page yet; null while its notes and stickers are still being read.
+     */
+    private fun room(
+        agents: String?,
+        placed: Map<String, String>,
+        scraps: (String) -> List<Box>?,
+    ): Int? {
+        agents ?: return Int.MAX_VALUE
+        val lying = scraps(agents) ?: return null
+        val board = notebook.board(agents)
+        val mine = placed.filterValues { it == agents }.keys
+        val taken = board.tiles.filter { it.name !in mine }.map { it.cell } + lying.map(board::cells)
+        val filled = taken.toMutableList()
+        var room = 0
+        while (true) {
+            val cell = firstFit(AGENT_TILE_SIZE.first, AGENT_TILE_SIZE.second, filled, board.columns, board.rows) ?: break
+            filled += cell
+            room++
+        }
+        return room
     }
 
     /**

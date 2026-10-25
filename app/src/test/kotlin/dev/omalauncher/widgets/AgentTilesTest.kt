@@ -520,4 +520,53 @@ class AgentTilesTest {
             assertEquals("listed $listed, pinned $pinned, archived $archived", liveThreads(threads, stamps, now, listed, pinned, archived).map { it.key }.toSet(), tiled)
         }
     }
+
+    // Boss, 2026-10-24: the Agents page fits six; the sessions at work first, then the most recent.
+    @Test fun aFullPageKeepsTheSessionsAtWorkFirstThenTheMostRecent() {
+        val idle = (1..6).map { thread(macThreadKey("t-idle$it"), ThreadState.Idle, worked = now - it * hour) }
+        val placed = idle.associate { tile(it) to "agents" }
+        val busy = thread(macThreadKey("t-busy"), ThreadState.Working).copy(since = now - 60_000)
+        val plan = agentTilePlan(idle + busy, placed, "agents", emptyMap(), now, listed = true, room = 6)
+        // The one at work comes onto the full page; the oldest idle one leaves it.
+        assertEquals(listOf(tile(busy)), plan.add)
+        assertEquals(listOf(tile(idle[5])), plan.remove)
+        assertEquals(listOf(tile(busy)) + idle.take(5).map(::tile), plan.order)
+        assertFalse(tile(idle[5]) in plan.show)
+    }
+
+    @Test fun withNothingAtWorkTheyAreByTimeNewestFirst() {
+        val idle = listOf(3, 1, 2).map { thread(macThreadKey("t-$it"), ThreadState.Idle, worked = now - it * hour) }
+        val plan = agentTilePlan(idle, idle.associate { tile(it) to "agents" }, "agents", emptyMap(), now, listed = true, room = 6)
+        assertEquals(listOf("t-1", "t-2", "t-3").map { threadTileKey(macThreadKey(it)) }, plan.order)
+        assertTrue(plan.add.isEmpty()); assertTrue(plan.remove.isEmpty())
+    }
+
+    @Test fun aSessionAtWorkKeepsItsPlaceWhileItWorks() {
+        // Ranked by when its turn began, not by its busy stamp, which is written again every minute.
+        val a = thread(macThreadKey("t-a"), ThreadState.Working).copy(since = now - 10 * 60_000)
+        val b = thread(macThreadKey("t-b"), ThreadState.Working).copy(since = now - 2 * 60_000)
+        val placed = mapOf(tile(a) to "agents", tile(b) to "agents")
+        val first = agentTilePlan(listOf(a, b), placed, "agents", emptyMap(), now, listed = true, room = 6)
+        val later = agentTilePlan(listOf(a, b), placed, "agents", first.stamps, now + 5 * 60_000, listed = true, room = 6)
+        assertEquals(listOf(tile(b), tile(a)), first.order)
+        assertEquals(first.order, later.order)
+    }
+
+    @Test fun aTileHeCarriedElsewhereIsNeitherCountedNorMoved() {
+        val idle = (1..6).map { thread(macThreadKey("t-idle$it"), ThreadState.Idle, worked = now - it * hour) }
+        val his = thread(macThreadKey("t-his"), ThreadState.Idle, worked = now - 100 * 60_000)
+        val placed = idle.associate { tile(it) to "agents" } + (tile(his) to "today")
+        val plan = agentTilePlan(idle + his, placed, "agents", emptyMap(), now, listed = true, room = 6)
+        assertFalse(tile(his) in plan.order); assertFalse(tile(his) in plan.remove); assertTrue(tile(his) in plan.show)
+    }
+
+    @Test fun theTilesAreDealtIntoThePagesCellsInRankOrder() {
+        val cells = listOf(Cell(0, 0, 3, 3), Cell(3, 0, 3, 3), Cell(0, 3, 3, 3))
+        val at = mapOf("thread:c" to cells[0], "thread:a" to cells[1], "thread:b" to cells[2])
+        assertEquals(mapOf("thread:a" to cells[0], "thread:b" to cells[1], "thread:c" to cells[2]), agentTileCells(listOf("thread:a", "thread:b", "thread:c"), at))
+        // Already in order: nothing to write.
+        assertTrue(agentTileCells(listOf("thread:c", "thread:a", "thread:b"), at).isEmpty())
+        // One he resized: nothing moves.
+        assertTrue(agentTileCells(listOf("thread:a", "thread:b", "thread:c"), at + ("thread:c" to Cell(0, 0, 6, 3))).isEmpty())
+    }
 }

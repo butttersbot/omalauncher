@@ -118,7 +118,25 @@ data class AgentTile(val name: String, val thread: AgentThread?, val fading: Boo
  * What is to be done about the tiles. [show] is every tile there will be, by notebook key; [add] the tiles to
  * place and [remove] the tiles to take off, both by notebook key; [stamps] what to remember from here on.
  */
-data class TilePlan(val show: Map<String, AgentTile>, val add: List<String>, val remove: List<String>, val stamps: Map<String, TileStamp>)
+data class TilePlan(
+    val show: Map<String, AgentTile>,
+    val add: List<String>,
+    val remove: List<String>,
+    val stamps: Map<String, TileStamp>,
+    /** The Agents page's tiles in the order they are laid out, first at the top left ([agentTileRank]). */
+    val order: List<String> = emptyList(),
+)
+
+/**
+ * How the Agents page ranks its tiles (Boss, 2026-10-24: "we can only fit six panels on that page, so we should
+ * prioritize the active sessions … and then … by the most recent"): the threads at work first, then the rest,
+ * each by when they last worked, newest first. The page holds the first ones that fit, in this order.
+ */
+fun agentTileRank(active: Boolean, busy: Long?): Pair<Int, Long> = (if (active) 0 else 1) to -(busy ?: 0L)
+// A thread at work is ranked by when its turn began, which holds still while it works: its busy stamp is written
+// again every minute, and the tiles would trade places as it was.
+
+private val RANKED = compareBy<Pair<Int, Long>>({ it.first }, { it.second })
 
 /**
  * Whether a thread's tile is kept off home from here on. [old] is what was remembered, [there] whether the
@@ -160,8 +178,11 @@ fun agentTilePlan(
     listed: Boolean,
     pinned: Set<String> = emptySet(),
     archived: Set<String> = emptySet(),
+    room: Int = Int.MAX_VALUE,
 ): TilePlan {
     val show = LinkedHashMap<String, AgentTile>()
+    // The tiles that are, or would be, on the Agents page, with their rank: the page keeps the first [room] of them.
+    val ranks = HashMap<String, Pair<Int, Long>>()
     val add = ArrayList<String>()
     val remove = ArrayList<String>()
     val next = HashMap<String, TileStamp>()
@@ -180,10 +201,14 @@ fun agentTilePlan(
         when {
             there && his(tile) -> show[tile] = AgentTile(thread.name, thread)
             life == TileLife.Gone -> if (there) remove += tile
-            there -> show[tile] = AgentTile(thread.name, thread, fading = life == TileLife.Fading)
+            there -> {
+                show[tile] = AgentTile(thread.name, thread, fading = life == TileLife.Fading)
+                ranks[tile] = agentTileRank(active, if (active) thread.since else busy)
+            }
             hidden == TileHidden.No -> {
                 add += tile
                 show[tile] = AgentTile(thread.name, thread, fading = life == TileLife.Fading)
+                ranks[tile] = agentTileRank(active, if (active) thread.since else busy)
             }
         }
         val stays = there && tile !in remove
@@ -200,6 +225,7 @@ fun agentTilePlan(
             there && (his(tile) || !off) -> {
                 show[tile] = AgentTile(old.name, null)
                 next[key] = old.copy(placed = true, hidden = TileHidden.No)
+                if (!his(tile)) ranks[tile] = agentTileRank(false, old.busy)
             }
             there -> {
                 remove += tile
@@ -216,7 +242,31 @@ fun agentTilePlan(
         if (key in known || key in stamps) continue
         if (his(tile)) show[tile] = AgentTile("", null) else remove += tile
     }
-    return TilePlan(show, add, remove, next)
+    // The page holds [room] tiles: the best ranked stay or come; the rest leave it, or aren't put on it, until they rank
+    // high enough again. Nothing he carried to another page is counted or touched.
+    val order = ranks.entries.sortedWith(compareBy(RANKED) { it.value }).map { it.key }
+    for (tile in order.drop(room.coerceAtLeast(0))) {
+        show.remove(tile)
+        if (add.remove(tile)) continue
+        if (tile in placed) remove += tile
+    }
+    return TilePlan(show, add, remove, next, order.take(room.coerceAtLeast(0)))
+}
+
+/**
+ * Where the Agents page's tiles go, in [order]: the cells its tiles [at] hold now, read left to right and top to
+ * bottom, dealt out again so the best ranked is first. Only when every one of them is the same size, so a tile
+ * he resized is never squeezed into another's place; otherwise nothing moves. Tiles already in their place are
+ * left out, so a page in order is not written again.
+ */
+fun agentTileCells(
+    order: List<String>,
+    at: Map<String, Cell>,
+): Map<String, Cell> {
+    val tiles = order.filter { it in at }
+    if (tiles.size < 2 || at.values.map { it.w to it.h }.distinct().size != 1 || tiles.size != at.size) return emptyMap()
+    val places = at.values.sortedWith(compareBy({ it.y }, { it.x }))
+    return tiles.zip(places).filter { (tile, cell) -> at[tile] != cell }.toMap()
 }
 
 /** One change the launcher makes to his pages for the thread tiles. There are these three and no others. */
