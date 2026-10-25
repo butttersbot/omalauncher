@@ -1,0 +1,301 @@
+#!/usr/bin/env python3
+"""oma-adb: is the Fold's Wireless debugging on, and at what address? One line, in a few seconds, never hangs.
+
+  oma-adb                 on the Mac: the Fold (galaxy-z-fold8) over Tailscale
+  oma-adb --host NAME     another phone, by Tailscale name or address
+  oma-adb --fresh         forget the last good address and look again
+  oma-adb --scan-only     skip mDNS (for testing)
+
+On the phone itself (in Soma's Linux) it checks the phone's own adb over loopback instead, and keeps the port where
+oma-install, oma-drop and oma-dev read it (~/.config/oma-development/install-port), checked by device.json's serial.
+Apps may not read /proc/net/tcp or adbd's port property on this Android, so the port is found by connecting.
+
+Wireless debugging takes a new port each time it is switched on, so a cached port proves nothing. In order: the last
+good address, adb's own list, mDNS, then every port from 30000 to 65535 at once. A port counts only when `adb connect`
+works AND `adb -s ADDR shell true` runs: other ports on the phone (pairing and the like) accept a connection and then go
+"offline". Entries adb keeps for that phone that are not the winner are disconnected, so `adb devices` shows one.
+
+Prints one line and exits 0 when on ("on ADDR (...)"); 1 when off; 3 when the phone isn't reachable at all; 4 when
+debugging is on but this computer's adb key isn't authorized (pair again in Developer options).
+"""
+import errno, json, os, pathlib, re, shutil, selectors, socket, struct, subprocess, sys, threading, time
+
+DEADLINE = time.monotonic() + float(os.environ.get('OMA_ADB_BUDGET', '20'))  # a hard stop, whatever happens
+LOCAL_CONFIG = pathlib.Path(os.environ.get('OMA_ADB_LOCAL_CONFIG', '/root/.config/oma-development'))
+LOCAL = os.environ.get('OMA_ADB_LOCAL') == '1' or (os.environ.get('OMA_ADB_LOCAL') != '0' and (LOCAL_CONFIG / 'device.json').exists())
+PORTS = range(int(os.environ.get('OMA_ADB_PORT_LOW', '30000')), int(os.environ.get('OMA_ADB_PORT_HIGH', '65535')) + 1)
+ADB = os.environ.get('OMA_ADB_BIN') or shutil.which('adb') or '/opt/homebrew/bin/adb'
+
+
+def left(most):
+    return max(.2, min(most, DEADLINE - time.monotonic()))
+
+
+def adb(*args, timeout=4.0):
+    """adb's answer, or None when it took too long (the client is killed; adb's server keeps running)."""
+    try:
+        r = subprocess.run([ADB, *args], capture_output=True, text=True, timeout=left(timeout), stdin=subprocess.DEVNULL)
+        return r.returncode, (r.stdout + r.stderr).strip()
+    except subprocess.TimeoutExpired:
+        return None, 'timed out'
+    except OSError as e:
+        return None, str(e)
+
+
+def resolve(host):
+    """A Tailscale name as its address (MagicDNS, else `tailscale ip`), within two seconds."""
+    if re.fullmatch(r'[0-9.]+', host):
+        return host
+    found = []
+    def look():
+        try:
+            found.append(socket.gethostbyname(host))
+        except OSError:
+            pass
+    t = threading.Thread(target=look, daemon=True)
+    t.start(); t.join(2)
+    if found:
+        return found[0]
+    for ts in (shutil.which('tailscale'), '/Applications/Tailscale.app/Contents/MacOS/Tailscale'):
+        if ts and os.path.exists(ts):
+            try:
+                out = subprocess.run([ts, 'ip', '-4', host], capture_output=True, text=True, timeout=left(3)).stdout.split()
+                if out:
+                    return out[0]
+            except (subprocess.TimeoutExpired, OSError):
+                pass
+    return None
+
+
+def knock(ip, port, wait):
+    """'open', 'refused', or None (no answer in time)."""
+    try:
+        with socket.create_connection((ip, port), timeout=wait):
+            return 'open'
+    except ConnectionRefusedError:
+        return 'refused'
+    except OSError:
+        return None
+
+
+def scan(ip, ports, wait, width, rounds=3):
+    """The open ports among [ports], [width] connections at a time. A refusal is final; a port that gave no answer is
+    asked again (Tailscale's tunnel drops some under load), up to [rounds] times. Measured on the Fold over Tailscale:
+    32768-60999 in 3-4 s at width 2048; wider drops more than it saves."""
+    found, todo = [], list(ports)
+    for _ in range(rounds):
+        sel, silent, pending, i = selectors.DefaultSelector(), [], {}, 0
+        while (i < len(todo) or pending) and time.monotonic() < DEADLINE - 6:
+            while i < len(todo) and len(pending) < width:
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.setblocking(False)
+                rc = s.connect_ex((ip, todo[i]))
+                if rc in (0, errno.EINPROGRESS, errno.EWOULDBLOCK):
+                    pending[s] = (todo[i], time.monotonic() + wait)
+                    sel.register(s, selectors.EVENT_WRITE)
+                else:
+                    if rc != errno.ECONNREFUSED:
+                        silent.append(todo[i])
+                    s.close()
+                i += 1
+            for key, _ in sel.select(timeout=.02):
+                s = key.fileobj
+                port = pending.pop(s)[0]
+                sel.unregister(s)
+                err = s.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
+                if err == 0:
+                    found.append(port)
+                elif err != errno.ECONNREFUSED:
+                    silent.append(port)
+                s.close()
+            now = time.monotonic()
+            for s, (port, until) in list(pending.items()):
+                if now > until:
+                    del pending[s]
+                    sel.unregister(s)
+                    s.close()
+                    silent.append(port)
+        for s in pending:
+            s.close()
+        sel.close()
+        todo = silent
+        if not todo:
+            break
+    return sorted(found)
+
+
+def speaks_adb(ip, port, wait=1.0):
+    """Whether adb's wireless port is at [port]: it answers adb's opening (CNXN) with STLS, as adbd does before TLS.
+    The other ports the phone has open (pairing and the like) reset or say nothing, and `adb connect` to them takes ten
+    seconds to fail and leaves an "offline" entry behind, so they are never connected to."""
+    payload = b'host::\0'
+    head = struct.pack('<6I', 0x4e584e43, 0x01000001, 256 * 1024, len(payload), sum(payload), 0x4e584e43 ^ 0xffffffff)
+    got = b''
+    try:
+        with socket.create_connection((ip, port), timeout=wait) as s:
+            s.settimeout(wait)
+            s.sendall(head + payload)
+            while len(got) < 24:
+                part = s.recv(24 - len(got))
+                if not part:
+                    break
+                got += part
+    except OSError:
+        return False
+    return got[:4] in (b'STLS', b'CNXN', b'AUTH')
+
+
+def reachable(ip):
+    """Something on the phone answers (a refusal counts): its door, its herd reporter, or a port nobody uses."""
+    answers = []
+    knocks = [threading.Thread(target=lambda p=p: answers.append(knock(ip, p, 1.5)), daemon=True) for p in (8477, 8479, 9)]
+    for k in knocks: k.start()
+    for k in knocks: k.join(2)
+    return any(answers)
+
+
+def entries(ip):
+    """adb's own list for that phone: {address: state}."""
+    code, out = adb('devices', timeout=4)
+    return {line.split()[0]: line.split()[1] for line in out.splitlines()[1:]
+            if line.startswith(ip + ':') and len(line.split()) >= 2} if code == 0 else {}
+
+
+def verify(address, serial):
+    """'ok' (with its serial and model), 'unauthorized', or None. Connected and a real shell, not just connected."""
+    code, out = adb('connect', address, timeout=4)
+    if code is None or 'connected' not in out or 'cannot' in out or 'failed' in out:
+        return None, None
+    code, out = adb('-s', address, 'shell', 'true', timeout=4)
+    if code != 0:
+        if 'unauthorized' in out:
+            return 'unauthorized', None
+        return None, None
+    code, out = adb('-s', address, 'shell', 'echo "$(getprop ro.serialno) $(getprop ro.product.model)"', timeout=4)
+    found = out.split() if code == 0 else []
+    if serial and (not found or found[0] != serial):
+        return None, None  # some other phone at that address
+    return 'ok', {'serial': found[0] if found else '', 'model': found[1] if len(found) > 1 else ''}
+
+
+def main(argv):
+    host = 'galaxy-z-fold8'
+    if '--host' in argv:
+        host = argv[argv.index('--host') + 1]
+    if '-h' in argv or '--help' in argv:
+        print(__doc__.strip()); return 0
+    fresh, use_mdns = '--fresh' in argv, '--scan-only' not in argv
+
+    if LOCAL:
+        ip, label = '127.0.0.1', 'this phone'
+        serial = json.loads((LOCAL_CONFIG / 'device.json').read_text()).get('serial')
+        cache_file = LOCAL_CONFIG / 'install-port'
+        cached = cache_file.read_text().strip() if cache_file.exists() and not fresh else ''
+        last = '127.0.0.1:' + cached if cached.isdigit() else None
+    else:
+        ip, label = resolve(host), host
+        if not ip:
+            print('off: %s has no Tailscale address here (is Tailscale running on this computer?)' % host); return 3
+        cache_file = pathlib.Path(os.environ.get('OMA_ADB_CACHE', pathlib.Path.home() / '.cache/oma-adb')) / (host + '.json')
+        kept = {}
+        try:
+            kept = json.loads(cache_file.read_text())
+        except (OSError, ValueError):
+            pass
+        serial = kept.get('serial')
+        last = None if fresh else kept.get('address')
+        if last and not last.startswith(ip + ':'):
+            last = None  # the phone's address changed
+
+    adb('start-server', timeout=8)
+    tried, unauthorized, winner, info = [], None, None, None
+
+    def attempt(address):
+        nonlocal unauthorized
+        if address in tried:
+            return None
+        tried.append(address)
+        if not speaks_adb(ip, int(address.rsplit(':', 1)[1])):
+            return None
+        verdict, found = verify(address, serial)
+        if verdict == 'unauthorized':
+            unauthorized = address
+        return found if verdict == 'ok' else None
+
+    # 1. the last good address; 2. what adb already holds as a working device
+    candidates = ([last] if last else []) + [a for a, state in entries(ip).items() if state == 'device']
+    for address in candidates:
+        info = attempt(address)
+        if info:
+            winner = address; break
+
+    if not winner and not LOCAL and not reachable(ip):
+        for address in entries(ip):
+            adb('disconnect', address, timeout=3)
+        print('off: %s is not reachable over Tailscale (asleep, off the network, or Tailscale is off on it)' % label); return 3
+
+    # 3. mDNS (adb's own discovery; it needs the same local network, so over Tailscale it usually finds nothing)
+    if not winner and use_mdns and not LOCAL:
+        code, out = adb('mdns', 'services', timeout=3)
+        for found in re.findall(r'_adb-tls-connect\._tcp\.?\s+(%s:\d+)' % re.escape(ip), out or ''):
+            info = attempt(found)
+            if info:
+                winner = found; break
+
+    # 4. every port: Linux's ephemeral range first (where Android's port lands), then the rest. Open ports are asked
+    # adb's opening all at once and only those answering as adb are connected to.
+    wait, width = (.3, 1024) if LOCAL else (.5, 2048)
+    first = [p for p in PORTS if 32768 <= p <= 60999]
+    for ports in (first, [p for p in PORTS if not 32768 <= p <= 60999]):
+        if winner or not ports:
+            continue
+        opened = [p for p in scan(ip, ports, wait, width) if ip + ':' + str(p) not in tried]
+        adbish = {}
+        knocks = [threading.Thread(target=lambda p=p: adbish.__setitem__(p, speaks_adb(ip, p)), daemon=True) for p in opened]
+        for k in knocks: k.start()
+        for k in knocks: k.join(left(1.5))
+        for port in opened:
+            address = ip + ':' + str(port)
+            if not adbish.get(port):
+                tried.append(address)
+                continue
+            info = attempt(address)
+            if info:
+                winner = address; break
+
+    # Whatever adb still holds for that phone and isn't the winner goes, so it shows one working entry.
+    for address in entries(ip):
+        if address != winner:
+            adb('disconnect', address, timeout=3)
+
+    if winner:
+        if LOCAL:
+            cache_file.write_text(winner.rsplit(':', 1)[1] + '\n')
+            print('on %s (this phone\'s own adb; from a computer on Tailscale it is the same port)' % winner)
+        else:
+            cache_file.parent.mkdir(parents=True, exist_ok=True)
+            cache_file.write_text(json.dumps({'address': winner, 'serial': info.get('serial') or serial,
+                                              'model': info.get('model'), 'checked': int(time.time())}) + '\n')
+            print('on %s (%s%s)' % (winner, host, ', ' + info['model'] if info.get('model') else ''))
+        return 0
+    if unauthorized:
+        print('on at %s, but this %s adb key is not authorized: pair again in Developer options, Wireless debugging'
+              % (unauthorized, 'phone\'s' if LOCAL else 'computer\'s'))
+        return 4
+    print('off: no Wireless debugging on %s (tried %s; mDNS%s; ports %d-%d)'
+          % (label, 'last good ' + last if last else 'no last good address', '' if use_mdns and not LOCAL else ' skipped',
+             PORTS.start, PORTS.stop - 1))
+    return 1
+
+
+if __name__ == '__main__':
+    # A watchdog besides every timeout: past the budget, it says so and stops.
+    def watchdog():
+        time.sleep(max(1, DEADLINE - time.monotonic() + 2))
+        print('off: unknown, oma-adb ran out of time (adb itself may be stuck: adb kill-server)', flush=True)
+        os._exit(5)
+    threading.Thread(target=watchdog, daemon=True).start()
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except KeyboardInterrupt:
+        sys.exit(130)
