@@ -132,7 +132,7 @@ async function showWide(){
      if(i===2){text(panel.children[0],'NO BET SELECTED');text(panel.children[1],'Connect a trading account to see your positions.');return}
      if(i===4||i===5){text(panel.lastElementChild,'—');return}
      if(i===6){panel.querySelectorAll('button').forEach(b=>{b.disabled=true;if(b.textContent.startsWith('CASH OUT'))text(b,'CASH OUT —')});text(panel.lastElementChild,'No trading account is connected.');return}
-    }const inner=panel.querySelector(':scope > svg')?panel.lastElementChild:panel;const headings=name==='Money'?['CASH YOU CAN BET OR TAKE OUT','Daily limit','YOUR WALLET','YOUR RECORD','ACTIVITY']:['MY BETS','YOUR POSITIONS','SETTLED BETS','POSITION DETAILS'];empty(inner,headings[i]||'MY BETS',name==='Money'?'No wallet or trading account is connected.':'No real positions or settled bets are connected.',name==='Money'&&i===2?action('Sign in to Hunch',()=>sendNative({type:'account'})):null)})
+    }const inner=panel.querySelector(':scope > svg')?panel.lastElementChild:panel;const headings=name==='Money'?['CASH YOU CAN BET OR TAKE OUT','Daily limit','YOUR WALLET','YOUR RECORD','ACTIVITY']:['MY BETS','YOUR POSITIONS','SETTLED BETS','POSITION DETAILS'];empty(inner,headings[i]||'MY BETS',name==='Money'?'Trading is not enabled yet. Open your wallet for current balances.':'No real positions or settled bets are connected.',name==='Money'&&i===2?action('Open your wallet',()=>sendNative({type:'wallet'})):null)})
    }
    root.querySelectorAll('nav a').forEach((el,i)=>{text(el,['TODAY','BETS','MONEY'][i]);el.removeAttribute('href');event(el,'click',()=>route(['today','bets','money'][i]))});
   };
