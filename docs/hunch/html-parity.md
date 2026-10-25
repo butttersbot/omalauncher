@@ -21,17 +21,40 @@ Debug `--es design NAME` shows each unmodified reference with a permanent sample
 ribbon. This mode cannot send account or market requests. Original simulated
 interactions are confined to that mode; it never enables trading.
 
-## Verification still required
+## Verification — 2026-10-25
 
-- Exact Android build/unit tests on Mac Pro.
-- hunch-paper, hunch-paper-reference, and hunch-auth walks.
-- Inspect each original/reference screenshot at the canonical viewport, plus
-  live cover/unfolded/landscape, long provider text, search keyboard and OTP.
-- Owner phone account/passkey verification remains separate from fixture walks.
+Final app source: `11d6f047` (vc9 / 0.4.0). Mac Pro built that exact commit once;
+MarketsTest passed 8/8. The final APK's bundled paper assets were compared byte
+for byte against this checkout after signing with the existing phone key.
 
-Do not call this build visually ready until these checks have passed. Original
-mockups depicting deposits, orders, cash-out, settlement, curves and assistant
-actions are reference-only until their real backend slices exist.
+| Walk | Source/build | PASS | FAIL | Screenshots reviewed |
+| --- | --- | ---: | ---: | ---: |
+| hunch-auth | 11d6f047 | 51 | 0 | 7 |
+| hunch-paper | 11d6f047 | 46 | 0 | 12 |
+| hunch-paper-reference | e5779200; reference sources unchanged | 90 | 0 | 15 |
+
+Mac Pro and Phone B reviewed the screenshots: cover/unfolded layouts, chapter
+navigation, lower feed, search, market detail/depth, rotation, email validation,
+wrong/correct demo OTP, keyboard scrolling, recovery email, passkey linking,
+sign-out and reference gallery. Account walks use the fictional backend; no real
+email/passkey action or wallet transaction was performed. Happy DOM checks cover
+all 15 source hashes/templates, live data escaping, pagination, quote expiry,
+keyboard resize focus, mounted input submission and account state scroll reset.
+Four walkthrough-runner regression tests pass.
+
+Unsigned APK SHA-256:
+`769317ba424d5fe09eb0cab7cd60e6162535cc4e0807d4776407f36bbdb12f4b`.
+Phone-signed APK SHA-256:
+`d86e38ce35182014834a1f88737a1417cd2ae071358ca3c9fa2c3447936ec89d`.
+Pocket evidence: final APK `20261025002752-fa66b6`, final walks
+`20261025002754-2c84b5`, reference walk `20261025001655-3644f6`.
+
+Phone installation and physical fold/owner email/passkey checks remain pending:
+the phone was locked/asleep and the background helper unavailable. No main-screen
+fallback or permission change was attempted. Original mockups depicting deposits,
+orders, cash-out, settlement, curves and assistant actions remain reference-only
+until their real backend slices exist. Empty live account panels are truthful;
+mock balances never become user data.
 
 Independent initial-state comparison: all 15 rendered DOM trees match the
 MacBook standalone HTML conversion (archive SHA-256
