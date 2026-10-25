@@ -1,0 +1,40 @@
+#!/bin/bash
+# The background display's helper, kept running (Boss, 2026-10-25: "make sure the helper self heals whenever I'm
+# connected to Wi-Fi if it's not on after a reboot"). Every minute: if `oma-phone --display bg status` says the helper
+# is down, and the phone's own Wireless debugging answers (oma-adb, which needs Wi-Fi), the helper is started again,
+# detached from adb so it keeps running once Wireless debugging goes off. Nothing here turns Wireless debugging on:
+# that stays Boss's switch. Soma starts this with Linux (Runtime.openBgHeal), like oma-herd.
+set -u
+# One watcher at a time: Soma starts one with Linux, and an oma keep job may run another.
+exec 9>/tmp/oma-bg-heal.lock
+flock -n 9 || exit 0
+dex=/data/local/tmp/soma-display.dex
+log() { printf '%s %s\n' "$(date '+%F %T')" "$*"; }
+said=
+while :; do
+  up=$(oma-phone --display bg status 2>/dev/null | jq -r '.backgroundAvailable // false' 2>/dev/null)
+  if [ "$up" != true ]; then
+    at=$(timeout 90 oma-adb 2>/dev/null | sed -n 's/^on \(127\.0\.0\.1:[0-9]*\).*/\1/p')
+    if [ -z "$at" ]; then
+      [ "$said" = off ] || log "helper down; Wireless debugging is off or not trusted, waiting"
+      said=off
+    else
+      uid=$(adb -s "$at" shell cmd package list packages -U dev.omalauncher.boss 2>/dev/null | sed -n 's/.*uid:\([0-9]*\).*/\1/p' | tr -d '\r\n')
+      if [[ $uid =~ ^[0-9]+$ ]] && adb -s "$at" shell "test -r $dex" 2>/dev/null; then
+        adb -s "$at" shell "setsid nohup sh -c 'CLASSPATH=$dex exec app_process / SomaDisplay 1248 1972 420 $uid' > /data/local/tmp/soma-vd/helper.log 2>&1 < /dev/null &"
+        sleep 5
+        up=$(oma-phone --display bg status 2>/dev/null | jq -r '.backgroundAvailable // false' 2>/dev/null)
+        log "helper started over $at: background available=$up"
+        said=started
+      else
+        [ "$said" = nodex ] || log "helper down; $dex or Soma's uid missing on the phone"
+        said=nodex
+      fi
+      adb disconnect "$at" >/dev/null 2>&1
+    fi
+  else
+    [ "$said" = up ] || log "helper up"
+    said=up
+  fi
+  sleep 60
+done

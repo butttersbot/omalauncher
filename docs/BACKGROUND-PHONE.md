@@ -35,3 +35,13 @@ endpoint exists. Android denied cross-UID Unix sockets in either direction on th
 
 Restart the helper after a phone reboot. Neither Bluetooth nor Wi-Fi debugging
 settings are enabled automatically. The normal main-display lock policy is unchanged.
+
+## Default and self-heal (2026-10-25)
+
+Boss chose: without `--display`, `oma-phone` uses the background display while its helper is up and the main
+screen when it is not (with a note on stderr). Home's pages, notes, stickers and looks stay on main. `--display bg`
+still fails closed. Verified on the Fold: a helper started detached (`setsid nohup … app_process …`) keeps working
+after Wireless debugging is switched off. `tools/fold-development/oma-bg-heal` (started by Soma with Linux, one at a
+time) checks every minute and restarts the helper when it is down and Wireless debugging answers. It never turns
+Wireless debugging on. After a reboot the phone needs Wireless debugging on for about a minute; Android also drops a
+debugging key unused for 7 days, which then needs pairing again.

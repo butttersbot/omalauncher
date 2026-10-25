@@ -1,18 +1,39 @@
 #!/bin/bash
 # Omalauncher: curl/jq are already included in the Linux setup; no TCP listener.
 set -euo pipefail
-display=main
+# Without --display: the hidden background display when its helper is up, else the main screen (Boss, 2026-10-25:
+# "default phone control … background", and when the helper is down, the main screen rather than nothing).
+display=auto
 if [ "${1:-}" = --display ]; then
-  display=${2:?Display required: main or bg}
+  display=${2:?Display required: main, bg or auto}
   shift 2
 fi
-case "$display" in main|bg) ;; *) echo 'Display must be main or bg.' >&2; exit 2;; esac
+case "$display" in main|bg|auto) ;; *) echo 'Display must be main, bg or auto.' >&2; exit 2;; esac
 timing=false
 if [ "${1:-}" = --timing ]; then timing=true; shift; fi
-self=("$0" --display "$display")
-if [ "$timing" = true ]; then self+=(--timing); fi
 command=${1:-help}
 shift || true
+if [ "$display" = auto ]; then
+  case "$command" in
+  # Home's own pages, notes, stickers and looks, status and help: the main screen's, as before.
+  help|status|stop|stay|pages|page|page-*|canvas|board|stickers|stick|sticker|ink|note|looks|look|where|widget-install|plan-id|plan-receipt) display=main ;;
+  *)
+    # Asked once every few seconds at most: one status call costs a round trip.
+    seen=/tmp/oma-phone-bg-$(id -u)
+    if [ -f "$seen" ] && [ $(( $(date +%s) - $(stat -c %Y "$seen") )) -lt 5 ]; then up=$(cat "$seen")
+    else
+      up=$("$0" --display bg status 2>/dev/null | jq -r '.backgroundAvailable // false' 2>/dev/null || echo false)
+      printf '%s' "$up" >"$seen" 2>/dev/null || true
+    fi
+    if [ "$up" = true ]; then display=bg
+    else
+      display=main
+      echo 'oma-phone: the background helper is not running, so this goes to the main screen.' >&2
+    fi ;;
+  esac
+fi
+self=("$0" --display "$display")
+if [ "$timing" = true ]; then self+=(--timing); fi
 expect=0
 # A script of steps, run one after another with no agent turn between them: the speed comes from planning once
 # (Boss, 2026-10-21, after ego lite's one-pass scripts). Each step is an ordinary oma-phone call with every check it
@@ -87,7 +108,7 @@ plan)
   request=$(jq -ce 'if type=="object" and (.id|type)=="string" and (.steps|type)=="array" then . + {command:"plan"} else error("Plan requires id and steps") end' "$file");;
 help)
   cat <<'HELP'
-oma-phone [--display main|bg] COMMAND ...
+oma-phone [--display main|bg|auto] COMMAND ...  (default auto: background when its helper is up, else main)
 Background commands stay on the hidden display; unsupported navigation fails without touching main.
 Start the shell display helper first. Stop pauses all phone control.
 oma-phone apps | open PACKAGE_OR_settings | url [--app PACKAGE] URL

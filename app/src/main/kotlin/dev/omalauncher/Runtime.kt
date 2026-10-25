@@ -353,6 +353,7 @@ class Runtime(
         openDoor()
         openKeeper()
         openHerd()
+        openBgHeal()
         refreshApps()
         withContext(Dispatchers.IO) { updates.load() }
         scope.launch {
@@ -421,7 +422,10 @@ class Runtime(
         // A keeper that ended (python3 installed only now, or it failed) is started again when he next looks.
         if (linux) openKeeper()
         // The herd reporter too, so the Fold comes back to the pets' Agents tab without anyone asking.
-        if (linux) openHerd()
+        if (linux) {
+            openHerd()
+            openBgHeal()
+        }
         // Only checks when the last check is hours old; see SystemUpdates.
         if (linux) scope.launch { updates.check() }
     }
@@ -652,6 +656,20 @@ class Runtime(
 
     @Volatile private var herdOpen = false
 
+    /**
+     * Starts the background display's watcher (tools/fold-development/oma-bg-heal) with Linux, once, if it is installed
+     * (Boss, 2026-10-25: the helper "self heals whenever I'm connected to Wi-Fi if it's not on after a reboot"). It only
+     * starts the helper again while Wireless debugging answers; it never turns that on.
+     */
+    private fun openBgHeal() {
+        if (bgHealOpen) return
+        if (!File(proot.rootfs, BG_HEAL_COMMAND).isFile) return
+        bgHealOpen = true
+        launch("oma-bg-heal") { bgHealOpen = false }
+    }
+
+    @Volatile private var bgHealOpen = false
+
     /** Starts `oma keep`'s keeper (see linux/Keeper.kt) in a proot of its own, which a builder turn ending leaves running. */
     private fun openKeeper() {
         if (keeperOpen) return
@@ -684,6 +702,7 @@ class Runtime(
         private const val DOOR_TOKEN = ".config/oma-door/token"
         private const val DOOR_COMMAND = "usr/local/bin/oma-door"
         private const val HERD_COMMAND = "usr/local/bin/oma-herd"
+        private const val BG_HEAL_COMMAND = "usr/local/bin/oma-bg-heal"
         private const val TAG = "runtime"
         private const val SETUP_DONE = "setup_done"
     }
