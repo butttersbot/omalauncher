@@ -38,6 +38,10 @@ shot hunch-paper-money-inner
 tap TODAY
 expect PUBLIC MARKETS
 shot hunch-paper-discover-inner
+tap Paper Cranes
+expect READ ONLY
+shot hunch-paper-market-inner
+tap Back to Today
 tap BETS
 expect No real positions
 shot hunch-paper-bets-inner
