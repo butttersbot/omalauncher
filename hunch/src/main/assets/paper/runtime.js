@@ -4,7 +4,7 @@
 window.Paper = (()=>{
  const cache=new Map();let active=null,queued=false;
  class DCLogic{constructor(props){this.props=props;this.state={}}setState(next){Object.assign(this.state,next);schedule()} }
- function lookup(scope,path){return path.trim().split('.').reduce((v,k)=>v==null?undefined:v[k],scope)}
+ function lookup(scope,path){path=path.trim();if(path==='true')return true;if(path==='false')return false;if(path==='null')return null;if(/^-?\d+(\.\d+)?$/.test(path))return Number(path);return path.split('.').reduce((v,k)=>v==null?undefined:v[k],scope)}
  function value(s,scope){const m=/^\s*{{\s*([^}]+)\s*}}\s*$/.exec(s||'');return m?lookup(scope,m[1]):(s||'').replace(/{{\s*([^}]+)\s*}}/g,(_,k)=>{const v=lookup(scope,k);return v==null?'':String(v)})}
  function fragment(nodes,scope,key){const out=document.createDocumentFragment();Array.from(nodes).forEach((node,i)=>{
    const k=key+'.'+i;
@@ -19,7 +19,7 @@ window.Paper = (()=>{
    const el=node.cloneNode(false);el._paperKey=k;el._paperEvents={};
    for(const attr of Array.from(node.attributes)){
      const v=value(attr.value,scope);
-     if(attr.name.startsWith('on')){el.removeAttribute(attr.name);if(typeof v==='function'){const event=attr.name.slice(2).toLowerCase();el._paperEvents[event]=v;el.addEventListener(event,v)}continue}
+     if(attr.name.startsWith('on')){el.removeAttribute(attr.name);if(typeof v==='function'){const event=attr.name.toLowerCase()==='onchange'?'input':attr.name.slice(2).toLowerCase();el._paperEvents[event]=v;el.addEventListener(event,v)}continue}
      if(attr.name.startsWith('hint-')){el.removeAttribute(attr.name);continue}
      el.setAttribute(attr.name,v==null?'':String(v));
      if(attr.name==='value'&&'value'in el)el.value=v==null?'':v;

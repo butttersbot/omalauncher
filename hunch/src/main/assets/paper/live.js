@@ -6,7 +6,7 @@ function event(el,type,fn){el._paperEvents ||= {};el._paperEvents[type]=fn;el.ad
 function text(el,value){if(el)el.textContent=value}
 function action(label,fn){const b=document.createElement('button');b.type='button';b.className='paper-action';b.textContent=label;event(b,'click',fn);return b}
 function empty(panel,heading,copy,button){const spans=Array.from(panel.querySelectorAll('span,b')).filter(x=>!x.children.length);const titleStyle=spans[0]?.getAttribute('style')||"font:700 11px 'JetBrains Mono'";panel.replaceChildren();const h=document.createElement('span');h.setAttribute('style',titleStyle);h.textContent=heading;const d=document.createElement('span');d.className='empty-copy';d.textContent=copy;panel.append(h,d);if(button)panel.append(button)}
-function requestBook(){if(!Hunch.selected)return;Hunch.book=null;sendNative({type:'book',id:Hunch.selected.id,side:Hunch.side,budget:Hunch.budget})}
+let bookTimer;function requestBook(){clearTimeout(bookTimer);if(!Hunch.selected)return;Hunch.book=null;const request={type:'book',id:Hunch.selected.id,side:Hunch.side,budget:Hunch.budget};bookTimer=setTimeout(()=>sendNative(request),150)}
 function choose(m){Hunch.selected=m;Hunch.side=0;requestBook();showLive()}
 function liveRows(){return Hunch.rows.filter(m=>(Hunch.category==='ALL'||m.category.toUpperCase()===Hunch.category)&&(!Hunch.query||(m.title+' '+m.category+' '+m.venue).toLowerCase().includes(Hunch.query.toLowerCase())))}
 function marketButton(m){const b=action(m.title,()=>choose(m));const sub=document.createElement('small');sub.textContent=m.venue+' · '+m.date;b.append(sub);return b}
