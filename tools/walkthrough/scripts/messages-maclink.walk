@@ -125,8 +125,9 @@ absent Getting it from your Mac
 # Look: the video shown by a frame from it, with a play mark.
 shot video-frame
 # Held, the video's frame opens the same menu as words: tapbacks, Reply (0.7.8; Boss, 2026-10-23: tapbacks didn't
-# work on pictures, as the picture's own tap took the hold). A long press on the frame, by place (cover, 0.29 down).
-swipe 0.3 0.29 0.3 0.29 900
+# work on pictures, as the picture's own tap took the hold). A long press on the frame, by place: since the
+# conversation sits down on the composer (ab49e4e) the frame is about 62-80% down the cover (the 0.8.3 walk).
+swipe 0.3 0.71 0.3 0.71 900
 wait 800
 expect Reply
 shot hold-menu-on-video

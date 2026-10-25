@@ -460,7 +460,8 @@ fun Thread(
                             },
                             onHold = { held = m },
                             onTap = tapFor(part, c.id, context, openLink),
-                            modifier = Modifier.padding(top = if (first && j == 0) 8.dp else 2.dp),
+                            // A photo stands a little clear of the balloon under it (the 0.8.3 walk: 3 px apart).
+                            modifier = Modifier.padding(top = if (first && j == 0) 8.dp else 2.dp, bottom = if (bare) 2.dp else 0.dp),
                         ) { ink ->
                             if (j == 0) m.quote?.let { QuoteInBalloon(it, ink) }
                             PartContent(part, ink, m.files, onHold = { held = m })
@@ -695,6 +696,9 @@ private fun tapFor(
         }
     }
 
+/** A photo's or video's own corners, iMessage's: it stands without a balloon. */
+private val MEDIA_SHAPE = RoundedCornerShape(18.dp)
+
 /** A photo or video, which shows by itself rather than in a balloon. */
 private fun visual(file: String): Boolean = file.substringAfter('|').let { it.startsWith("image/") || it.startsWith("video/") }
 
@@ -761,7 +765,8 @@ private fun Photos(
                         }.getOrNull()
                     }
             }
-            val shape = composerShape(18.dp)
+            // Round in every look, as the balloons are; the composer's square looks square only the field.
+            val shape = MEDIA_SHAPE
             // One alone: 240 dp wide, as tall as its shape asks within 120-320 dp; several: 132 dp squares. The picture
             // fills its frame whatever its own size (a tiny one is scaled up, never drawn at its few pixels).
             val ratio = picture?.let { it.height.toFloat() / it.width.coerceAtLeast(1) } ?: 0.75f
@@ -824,7 +829,7 @@ private fun Videos(
             if (p != null) {
                 val ratio = (p.height.toFloat() / p.width.coerceAtLeast(1)).coerceIn(0.5f, 1.4f)
                 Box(
-                    Modifier.width(240.dp).height((240 * ratio).dp).clip(composerShape(18.dp)).background(Pack.surface)
+                    Modifier.width(240.dp).height((240 * ratio).dp).clip(MEDIA_SHAPE).background(Pack.surface)
                         .combinedClickable(onLongClick = onHold) { open() }.semantics { contentDescription = "Video, tap to play" },
                     contentAlignment = Alignment.Center,
                 ) {
