@@ -1,0 +1,9 @@
+{
+  "appId": "cmvn55im900ik0hif2ohqnjo8",
+  "appClientId": "client-WY6esZEb4ozJP8XxFayWEcJQkZLkptFQCmbhA8DLM84Y8",
+  "applicationId": "dev.omalauncher.hunch",
+  "loginMethod": "passkey",
+  "relyingParty": null,
+  "status": "Public configuration only; SDK sign-in not implemented or tested. Domain and stable signing certificate association pending.",
+  "mode": "development"
+}
