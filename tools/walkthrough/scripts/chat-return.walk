@@ -1,0 +1,18 @@
+# Return in Soma chat starts a new line and does not send (Boss, 2026-10-25: "the return button on the keyboard …
+# go to the next line in the text and not send"). The fictional chat fixture runs production OmaChatScreen; no real
+# sends. Prerequisite: -PartifactPreview :artifact-preview:assembleDebug installed on this emulator.
+fold folded
+rotate portrait
+shell am force-stop dev.omalauncher.artifactpreview
+launch dev.omalauncher.artifactpreview/.PreviewActivity
+tap ask soma
+type first line
+key ENTER
+type second line
+wait 600
+# Both lines are still in the field, one under the other: Return broke the line instead of sending.
+expect first line
+expect second line
+shot return-new-line
+key BACK
+[phone] In Soma chat with the Soma keyboard, type a line, press return, type another: two lines in the field, nothing sent until the send arrow.

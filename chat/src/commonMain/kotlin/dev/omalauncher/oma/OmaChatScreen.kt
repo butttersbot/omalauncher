@@ -65,7 +65,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
@@ -634,9 +634,11 @@ private fun ChatScreen(
                                     true
                                 }
                             }
-                            // A hardware Enter sends; Shift+Enter starts a new line.
+                            // Return starts a new line, from the on-screen keyboard and a hardware one alike: the send button
+                            // sends (Boss, 2026-10-25: "the return button … go to the next line in the text and not send").
+                            // Ctrl+Enter still sends from a hardware keyboard.
                             .onPreviewKeyEvent { e ->
-                                if (e.type == KeyEventType.KeyDown && e.key == Key.Enter && !e.isShiftPressed) {
+                                if (e.type == KeyEventType.KeyDown && e.key == Key.Enter && e.isCtrlPressed) {
                                     send()
                                     true
                                 } else {
