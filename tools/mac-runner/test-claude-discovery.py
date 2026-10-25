@@ -184,35 +184,19 @@ class DiscoveryTests(unittest.TestCase):
         self.assertIsNone(t.worker)
         self.assertIsNone(t.kept)
 
-    def test_idle_holder_forks_and_discovery_keeps_one_thread(self):
+    def test_idle_holder_refuses_without_fork_or_original_changes(self):
         self.write(self.row())
         original = self.file.read_bytes()
         t, = self.sync()
         self.holder(t, 'idle')
         self.run_phone(t)
         self.finish_phone(t)
-        new = t.meta['session']
-        self.assertNotEqual(self.sid, new)
-        self.assertEqual(self.sid, t.meta['forked_from'])
+        self.assertEqual(self.sid, t.meta['session'])
         self.assertEqual(original, self.file.read_bytes())
-        starts = [json.loads(line) for line in (self.root / 'starts.log').read_text().splitlines()]
-        self.assertTrue(starts[0]['forked'])
-        self.run_phone(t, 'continue from the phone')
-        self.finish_phone(t)
-        self.assertEqual(new, t.meta['session'])
-        starts = [json.loads(line) for line in (self.root / 'starts.log').read_text().splitlines()]
-        self.assertEqual(2, len(starts))
-        self.assertFalse(starts[1]['forked'])
-        copy = self.file.with_name(new + '.jsonl')
-        copy.write_text(json.dumps({**self.row(), 'sessionId': new}) + '\n')
-        self.m['threads'].clear()
-        self.m['load']()
-        same, = self.sync()
-        self.assertEqual(t.meta['id'], same.meta['id'])
-        self.assertEqual(new, same.meta['session'])
-        self.assertEqual(1, sum(e.get('text') == 'Hello' for e in same.events))
+        self.assertFalse((self.root / 'starts.log').exists())
+        self.assertTrue(any(e.get('code') == 'session_open' and 'no fork' in e.get('text', '') for e in t.events))
 
-    def test_busy_wait_then_idle_forks(self):
+    def test_busy_wait_then_idle_refuses_without_fork(self):
         self.write(self.row())
         t, = self.sync()
         self.holder(t, 'busy')
@@ -225,7 +209,8 @@ class DiscoveryTests(unittest.TestCase):
         with self.m['changed']:
             self.m['changed'].notify_all()
         self.finish_phone(t)
-        self.assertNotEqual(self.sid, t.meta['session'])
+        self.assertEqual(self.sid, t.meta['session'])
+        self.assertFalse((self.root / 'starts.log').exists())
         self.assertTrue(any('Waiting for the Mac' in e.get('text', '') for e in t.events))
 
     def test_busy_wait_then_closed_resumes_without_fork(self):
@@ -273,11 +258,11 @@ class DiscoveryTests(unittest.TestCase):
             time.sleep(.01)
         self.assertFalse((self.root / 'starts.log').exists())
         self.assertIsNotNone(t.worker)
-        self.holder(t, 'idle')
+        path.unlink()
         with self.m['changed']:
             self.m['changed'].notify_all()
         self.finish_phone(t)
-        self.assertNotEqual(self.sid, t.meta['session'])
+        self.assertEqual(self.sid, t.meta['session'])
         self.assertFalse(any(e['type'] == 'error' for e in t.events))
 
     def test_persistent_metadata_error_during_wait_fails_without_agent(self):

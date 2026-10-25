@@ -3163,14 +3163,17 @@ def claude_turn(thread, text):
                 if state not in (None, 'idle'):
                     thread.emit('error', code='session_open', text=state)
                     return
-                thread.fork_pending = state == 'idle'
+                if state == 'idle':
+                    thread.emit('error', code='session_open', text='The original Claude session is still open on the Mac. This message was not sent and no fork was created. Use Remote Control in the original session, or close it before resuming here.')
+                    return
+                thread.fork_pending = False
             finally:
                 thread.waiting_native = False
         with changed:
             # Serialize cancellation with registration of the runner child. Never stop a native holder.
             if thread.stopped or closing:
                 return
-            driver = Claude(thread, text, fork=thread.fork_pending)
+            driver = Claude(thread, text)
             try:
                 process = subprocess.Popen(driver.command(), cwd=thread.meta['project'], env={**driver.environment(), 'OMA_THREAD_ID': thread.meta['id'], 'SOMA_AGENT_KIND': thread.meta['kind'], **canvas_env(thread)},
                                            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
