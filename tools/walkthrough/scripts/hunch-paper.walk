@@ -18,6 +18,7 @@ tap Search markets
 type Paper Cranes
 expect Paper Cranes
 tap Paper Cranes
+scrollto READ ONLY
 expect READ ONLY
 shot hunch-paper-market
 key BACK
@@ -38,7 +39,8 @@ shot hunch-paper-money-inner
 tap TODAY
 expect PUBLIC MARKETS
 shot hunch-paper-discover-inner
-tap Paper Cranes
+tap OPEN
+scrollto READ ONLY
 expect READ ONLY
 shot hunch-paper-market-inner
 tap Back to Today

@@ -19,3 +19,22 @@ class WebInputNames(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class HumanControlMatches(unittest.TestCase):
+    def find(self, xml, wanted, actionable=False):
+        with patch.object(walk, "adb", return_value=xml), patch.object(walk, "size", return_value=(1246,2600)):
+            return walk.find("emulator", wanted, wait_ms=0, actionable=actionable)
+
+    def test_money_tab_beats_fixture_banner(self):
+        xml = '''<hierarchy><node text="FICTIONAL MARKET DEMO · NO REAL MONEY" bounds="[0,0][1000,80]"/>
+          <node text="Money" clickable="true" class="android.widget.Button" bounds="[800,1800][1200,1950]"/></hierarchy>'''
+        self.assertEqual(self.find(xml,"Money",True),(1000,1875))
+
+    def test_result_button_beats_its_query_in_the_input(self):
+        xml = '''<hierarchy><node text="Paper Cranes" hint="Search markets" class="android.widget.EditText" clickable="true" bounds="[100,100][1000,200]"/>
+          <node text="Paper Cranes vs Ink Foxes" class="android.widget.Button" clickable="true" bounds="[100,400][1000,500]"/></hierarchy>'''
+        self.assertEqual(self.find(xml,"Paper Cranes",True),(550,450))
+
+    def test_typographic_apostrophe_is_the_same_label(self):
+        xml = '''<hierarchy><node text="Today’s issue" bounds="[100,100][900,200]"/></hierarchy>'''
+        self.assertEqual(self.find(xml,"Today's issue"),(500,150))

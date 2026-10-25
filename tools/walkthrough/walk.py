@@ -33,7 +33,7 @@ def point(serial, xs, ys):
         return int(float(v) * full) if "." in v else int(v)
     return f(xs, w), f(ys, h)
 
-def nodes(serial):
+def nodes(serial, detailed=False):
     adb(serial, "shell", "uiautomator", "dump", "/sdcard/walk.xml")
     raw = adb(serial, "shell", "cat", "/sdcard/walk.xml")
     try:
@@ -45,19 +45,33 @@ def nodes(serial):
         label = "\n".join(n.get(key) or "" for key in ("text", "content-desc", "hint"))
         b = re.findall(r"\d+", n.get("bounds") or "")
         if len(b) == 4:
-            out.append((label, [int(v) for v in b]))
+            out.append((label, [int(v) for v in b], dict(n.attrib)) if detailed else (label, [int(v) for v in b]))
     return out
 
-def find(serial, wanted, wait_ms=4000):
+def find(serial, wanted, wait_ms=4000, actionable=False):
     """The centre of what says [wanted] on screen; a web page's nodes scrolled out of view don't count."""
     end = time.time() + wait_ms / 1000
     w, h = size(serial)
     w, h = max(w, h), max(w, h)  # rotated or not, a point inside the screen is inside this square
     while True:
-        for label, (l, t, r, b) in nodes(serial):
+        normalize = lambda text: text.casefold().replace("’", "'").replace("‘", "'").strip()
+        needle = normalize(wanted)
+        matches = []
+        for label, (l, t, r, b), attrs in nodes(serial, detailed=True):
             x, y = (l + r) // 2, (t + b) // 2
-            if wanted.lower() in label.lower() and 0 <= x < w and 0 <= y < h and r > l and b > t:
-                return x, y
+            parts = [normalize(part) for part in label.splitlines()]
+            if any(needle in part for part in parts) and 0 <= x < w and 0 <= y < h and r > l and b > t:
+                exact = needle in parts
+                score = 3 if exact else 1
+                if actionable:
+                    if attrs.get("class") == "android.widget.EditText":
+                        score = 100 if normalize(attrs.get("hint", "")) == needle or normalize(attrs.get("content-desc", "")) == needle else 5
+                    else:
+                        score = 90 if exact else 80 if attrs.get("clickable") == "true" else 40
+                matches.append((score, x, y))
+        if matches:
+            _, x, y = max(matches, key=lambda match: match[0])
+            return x, y
         if time.time() > end:
             return None
         time.sleep(0.4)
@@ -108,7 +122,7 @@ def run_step(serial, op, args, out, n):
             # All the choices watched together, until one deadline: a WebView's labels come up 6-10 s after a fresh start.
             end, p = time.time() + 8, None
             while p is None and time.time() < end:
-                p = next((q for q in (find(serial, w, wait_ms=0) for w in wanted) if q), None)
+                p = next((q for q in (find(serial, w, wait_ms=0, actionable=True) for w in wanted) if q), None)
                 if p is None:
                     time.sleep(0.4)
             if not p:
@@ -117,7 +131,7 @@ def run_step(serial, op, args, out, n):
             settle = time.time() + 4
             while time.time() < settle:
                 time.sleep(0.4)
-                q = next((r for r in (find(serial, w, wait_ms=0) for w in wanted) if r), None)
+                q = next((r for r in (find(serial, w, wait_ms=0, actionable=True) for w in wanted) if r), None)
                 if q == p:
                     break
                 p = q or p
