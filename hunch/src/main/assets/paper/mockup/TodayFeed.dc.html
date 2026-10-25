@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Today's issue, full scroll</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&amp;family=JetBrains+Mono:wght@500;700&amp;family=Zen+Kaku+Gothic+New:wght@400;700&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 354px; display: flex; flex-direction: column; gap: 14px; padding-bottom: 20px; background: #fdfdfb; color: #111113; font-family: 'Zen Kaku Gothic New', system-ui, sans-serif">
+
+  <!-- search + topics -->
+  <label style="height: 44px; border: 1.5px solid #111113; display: flex; align-items: center; gap: 8px; padding: 0 10px">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#111113" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"></circle><path d="M15.5 15.5L21 21"></path></svg>
+    <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Search markets</span>
+    <input type="search" placeholder="Search teams, coins, people…" style="flex: 1; min-width: 0; height: 38px; border: 0; outline: none; background: transparent; font: 400 14px 'Zen Kaku Gothic New', sans-serif">
+  </label>
+  <div style="display: flex; gap: 6px; overflow: hidden">
+    <span style="flex: none; height: 30px; display: grid; place-items: center; padding: 0 9px; background: #111113; color: #fdfdfb; font: 700 10px/1 'JetBrains Mono', monospace; letter-spacing: .04em">ALL 351</span>
+    <span style="flex: none; height: 30px; display: grid; place-items: center; padding: 0 9px; border: 1px solid #111113; font: 700 10px/1 'JetBrains Mono', monospace; letter-spacing: .04em">SPORTS 186</span>
+    <span style="flex: none; height: 30px; display: grid; place-items: center; padding: 0 9px; border: 1px solid #111113; font: 700 10px/1 'JetBrains Mono', monospace; letter-spacing: .04em">PRICES 142</span>
+    <span style="flex: none; height: 30px; display: grid; place-items: center; padding: 0 9px; border: 1px solid #111113; font: 700 10px/1 'JetBrains Mono', monospace; letter-spacing: .04em">COMPANIES 13</span>
+    <span style="flex: none; height: 30px; display: grid; place-items: center; padding: 0 9px; border: 1px solid #111113; font: 700 10px/1 'JetBrains Mono', monospace; letter-spacing: .04em">FED 6</span>
+  </div>
+
+  <!-- cover story -->
+  <div style="position: relative; height: 210px; border: 1.5px solid #111113; overflow: hidden; background: radial-gradient(circle, rgba(17,17,19,.55) .8px, transparent 1.2px) 0 0 / 4px 4px, #c9cacf">
+    <svg width="354" height="210" viewBox="0 0 354 210" style="position: absolute; inset: 0" aria-hidden="true">
+      <polygon points="40,36 0,210 120,210" fill="#fdfdfb" opacity=".55"></polygon>
+      <polygon points="314,36 234,210 354,210" fill="#fdfdfb" opacity=".55"></polygon>
+      <rect x="30" y="22" width="22" height="12" fill="#fdfdfb" stroke="#111113" stroke-width="1.5"></rect>
+      <rect x="302" y="22" width="22" height="12" fill="#fdfdfb" stroke="#111113" stroke-width="1.5"></rect>
+      <line x1="41" y1="34" x2="41" y2="140" stroke="#111113" stroke-width="2"></line>
+      <line x1="313" y1="34" x2="313" y2="140" stroke="#111113" stroke-width="2"></line>
+      <path d="M0 140 Q177 84 354 140 L354 210 L0 210 Z" fill="#111113"></path>
+      <path d="M0 152 Q177 100 354 152" fill="none" stroke="#fdfdfb" stroke-width=".8" stroke-dasharray="2 3"></path>
+      <polygon points="70,210 120,164 234,164 284,210" fill="#fdfdfb" stroke="#111113" stroke-width="1.5"></polygon>
+      <line x1="177" y1="164" x2="177" y2="210" stroke="#111113" stroke-width="1"></line>
+    </svg>
+    <span style="position: absolute; left: 0; top: 0; font: 700 9.5px/1 'JetBrains Mono', monospace; letter-spacing: .06em; background: #fdfdfb; border-right: 1px solid #111113; border-bottom: 1px solid #111113; padding: 6px 8px">ISSUE 1 · COVER STORY · SUN 10 AM PT</span>
+    <span style="position: absolute; left: 12px; right: 12px; bottom: 12px; background: #fdfdfb; border: 1px solid #111113; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px">
+      <span style="display: flex; justify-content: space-between; align-items: center"><span style="font: 400 19px/1 'Dela Gothic One', sans-serif">Texans vs Giants</span><span style="font: 700 12px/1 'JetBrains Mono', monospace">HOU 81%</span></span>
+      <span style="font-size: 12px; color: #3e414b">The busiest market on Hyperliquid: $216K traded today.</span>
+    </span>
+  </div>
+
+  <!-- gut check -->
+  <div style="border: 2.5px solid #111113; padding: 12px 14px; display: grid; grid-template-columns: minmax(0, 1fr) 76px; gap: 10px; align-items: center">
+    <span style="display: flex; flex-direction: column; gap: 5px">
+      <span style="font: 700 10px/1 'JetBrains Mono', monospace; letter-spacing: .08em; color: #d7262d">GUT CHECK · 4 WAITING</span>
+      <span style="font: 400 17px/1.15 'Dela Gothic One', sans-serif">Do the Suns beat the Warriors?</span>
+      <span style="font-size: 12px; color: #565964">Guess first. Then see the price.</span>
+    </span>
+    <span style="height: 64px; border: 1px dashed #111113; display: grid; place-items: center; font: 400 26px/1 'Dela Gothic One', sans-serif; background: radial-gradient(circle, rgba(17,17,19,.3) .6px, transparent .95px) 0 0 / 4px 4px, #fdfdfb">?%</span>
+  </div>
+
+  <!-- looks mispriced -->
+  <div style="border: 1.5px solid #111113; padding: 10px 12px; display: flex; flex-direction: column; gap: 7px">
+    <span style="font: 700 10px/1 'JetBrains Mono', monospace; letter-spacing: .08em; color: #d7262d">LOOKS MISPRICED · VS OUTSIDE PRICES</span>
+    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px"><span style="display: flex; flex-direction: column"><b style="font-size: 13.5px">Anthropic over $2T, day one</b><span style="font: 500 9px/1.3 'JetBrains Mono', monospace; color: #565964">HERE 37¢ · OUTSIDE ~29¢</span></span><span style="font: 400 14px/1 'Dela Gothic One', sans-serif; color: #d7262d">~8¢ NO</span></div>
+    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px"><span style="display: flex; flex-direction: column"><b style="font-size: 13.5px">Anthropic over $1.75T</b><span style="font: 500 9px/1.3 'JetBrains Mono', monospace; color: #565964">HERE 63¢ · OUTSIDE ~52¢</span></span><span style="font: 400 14px/1 'Dela Gothic One', sans-serif; color: #d7262d">~11¢ NO</span></div>
+  </div>
+
+  <!-- trending -->
+  <div style="border: 1.5px solid #111113; padding: 10px 12px 6px; display: flex; flex-direction: column">
+    <span style="font: 700 10px/1 'JetBrains Mono', monospace; letter-spacing: .08em; color: #d7262d; padding-bottom: 4px">TRENDING · MOST TRADED TODAY</span>
+    <div style="display: grid; grid-template-columns: 26px minmax(0, 1fr) 44px; gap: 0 8px; align-items: center">
+      <span style="font: 400 20px/2.3 'Dela Gothic One', sans-serif">1</span><span style="display: flex; flex-direction: column"><b style="font-size: 13.5px">Texans beat the Giants</b><span style="font: 500 9px/1.3 'JetBrains Mono', monospace; color: #565964">$216K · SUN 10 AM</span></span><span style="font: 700 13px/1 'JetBrains Mono', monospace; text-align: right">81%</span>
+      <span style="font: 400 20px/2.3 'Dela Gothic One', sans-serif">2</span><span style="display: flex; flex-direction: column"><b style="font-size: 13.5px">Vikings beat the Colts</b><span style="font: 500 9px/1.3 'JetBrains Mono', monospace; color: #565964">$186K · SUN 10 AM</span></span><span style="font: 700 13px/1 'JetBrains Mono', monospace; text-align: right">72%</span>
+      <span style="font: 400 20px/2.3 'Dela Gothic One', sans-serif">3</span><span style="display: flex; flex-direction: column"><b style="font-size: 13.5px">Jets beat the Dolphins</b><span style="font: 500 9px/1.3 'JetBrains Mono', monospace; color: #565964">$169K · SUN 10 AM</span></span><span style="font: 700 13px/1 'JetBrains Mono', monospace; text-align: right">67%</span>
+      <span style="font: 400 20px/2.3 'Dela Gothic One', sans-serif">4</span><span style="display: flex; flex-direction: column"><b style="font-size: 13.5px">Panthers beat the Bucs</b><span style="font: 500 9px/1.3 'JetBrains Mono', monospace; color: #565964">$122K · SUN 10 AM</span></span><span style="font: 700 13px/1 'JetBrains Mono', monospace; text-align: right">59%</span>
+      <span style="font: 400 20px/2.3 'Dela Gothic One', sans-serif">5</span><span style="display: flex; flex-direction: column"><b style="font-size: 13.5px">Fed holds rates, Oct 28</b><span style="font: 500 9px/1.3 'JetBrains Mono', monospace; color: #565964">$105K · WED</span></span><span style="font: 700 13px/1 'JetBrains Mono', monospace; text-align: right">95%</span>
+    </div>
+  </div>
+
+  <!-- settle in minutes -->
+  <div style="display: flex; flex-direction: column; gap: 6px">
+    <div style="display: flex; justify-content: space-between; align-items: baseline">
+      <span style="font: 700 10px/1 'JetBrains Mono', monospace; letter-spacing: .08em; color: #d7262d">SETTLES IN MINUTES · 3:30 PM</span>
+      <span style="font: 700 9px/1 'JetBrains Mono', monospace; color: #565964">NEW ONES KEEP OPENING</span>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px">
+      <div style="border: 1.5px solid #111113; padding: 9px; display: flex; flex-direction: column; gap: 4px"><span style="font: 400 16px/1 'Dela Gothic One', sans-serif">BTC</span><span style="font: 500 9px/1.3 'JetBrains Mono', monospace; color: #565964">ABOVE $80,461</span><span style="font: 700 20px/1 'JetBrains Mono', monospace; margin-top: 4px">31%</span><span style="font: 700 9px/1 'JetBrains Mono', monospace; background: #111113; color: #fdfdfb; padding: 3px 4px; align-self: flex-start">6 MIN</span></div>
+      <div style="border: 1.5px solid #111113; padding: 9px; display: flex; flex-direction: column; gap: 4px"><span style="font: 400 16px/1 'Dela Gothic One', sans-serif">HYPE</span><span style="font: 500 9px/1.3 'JetBrains Mono', monospace; color: #565964">ABOVE $75.93</span><span style="font: 700 20px/1 'JetBrains Mono', monospace; margin-top: 4px">69%</span><span style="font: 700 9px/1 'JetBrains Mono', monospace; background: #111113; color: #fdfdfb; padding: 3px 4px; align-self: flex-start">6 MIN</span></div>
+      <div style="border: 1.5px solid #111113; padding: 9px; display: flex; flex-direction: column; gap: 4px"><span style="font: 400 16px/1 'Dela Gothic One', sans-serif">ETH</span><span style="font: 500 9px/1.3 'JetBrains Mono', monospace; color: #565964">ABOVE $2,342</span><span style="font: 700 20px/1 'JetBrains Mono', monospace; margin-top: 4px">17%</span><span style="font: 700 9px/1 'JetBrains Mono', monospace; background: #111113; color: #fdfdfb; padding: 3px 4px; align-self: flex-start">6 MIN</span></div>
+    </div>
+  </div>
+
+  <!-- tonight, slanted bottom -->
+  <div style="position: relative; height: 262px">
+    <svg width="354" height="262" viewBox="0 0 354 262" style="position: absolute; inset: 0" aria-hidden="true"><polygon points="0.75,0.75 353.25,0.75 353.25,244 0.75,261.25" fill="#fdfdfb" stroke="#111113" stroke-width="1.5"></polygon></svg>
+    <div style="position: absolute; left: 12px; right: 12px; top: 10px; display: flex; flex-direction: column">
+      <span style="font: 700 10px/1 'JetBrains Mono', monospace; letter-spacing: .08em; color: #d7262d; padding-bottom: 4px">TONIGHT · STARTING SOON</span>
+      <div style="display: grid; grid-template-columns: 50px minmax(0, 1fr) 62px; gap: 0 8px; align-items: center">
+        <span style="font: 700 11px/2.9 'JetBrains Mono', monospace">4:00P</span><span style="display: flex; flex-direction: column"><b style="font-size: 13.5px">T1 vs Dplus KIA</b><span style="font: 500 9px/1.3 'JetBrains Mono', monospace; color: #565964">LOL WORLDS</span></span><span style="font: 700 12px/1 'JetBrains Mono', monospace; text-align: right">T1 58%</span>
+        <span style="font: 700 11px/2.9 'JetBrains Mono', monospace">4:30P</span><span style="display: flex; flex-direction: column"><b style="font-size: 13.5px">Cavaliers vs Nets</b><span style="font: 500 9px/1.3 'JetBrains Mono', monospace; color: #565964">NBA</span></span><span style="font: 700 12px/1 'JetBrains Mono', monospace; text-align: right">CLE 80%</span>
+        <span style="font: 700 11px/2.9 'JetBrains Mono', monospace">4:30P</span><span style="display: flex; flex-direction: column"><b style="font-size: 13.5px">76ers vs Bucks</b><span style="font: 500 9px/1.3 'JetBrains Mono', monospace; color: #565964">NBA</span></span><span style="font: 700 12px/1 'JetBrains Mono', monospace; text-align: right">PHI 85%</span>
+        <span style="font: 700 11px/2.9 'JetBrains Mono', monospace">5:00P</span><span style="display: flex; flex-direction: column"><b style="font-size: 13.5px">Bulls vs Wizards</b><span style="font: 500 9px/1.3 'JetBrains Mono', monospace; color: #565964">NBA · A COIN FLIP</span></span><span style="font: 700 12px/1 'JetBrains Mono', monospace; text-align: right">CHI 52%</span>
+        <span style="font: 700 11px/2.9 'JetBrains Mono', monospace">7:00P</span><span style="display: flex; flex-direction: column"><b style="font-size: 13.5px">Suns vs Warriors</b><span style="font: 500 9px/1.3 'JetBrains Mono', monospace; color: #565964">NBA · YOU HAVE SUNS</span></span><span style="font: 700 12px/1 'JetBrains Mono', monospace; text-align: right">PHX 77%</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- moving today, slanted top -->
+  <div style="position: relative; height: 252px; margin-top: -18px">
+    <svg width="354" height="252" viewBox="0 0 354 252" style="position: absolute; inset: 0" aria-hidden="true"><polygon points="0.75,18 353.25,0.75 353.25,251.25 0.75,251.25" fill="#fdfdfb" stroke="#111113" stroke-width="1.5"></polygon></svg>
+    <div style="position: absolute; left: 12px; right: 12px; top: 26px; display: flex; flex-direction: column; gap: 2px">
+      <div style="display: flex; align-items: center; gap: 8px; padding-bottom: 4px">
+        <span style="font: 700 10px/1 'JetBrains Mono', monospace; letter-spacing: .08em; color: #d7262d; white-space: nowrap">MOVING TODAY</span>
+        <span aria-hidden="true" style="flex: 1; height: 14px; background: repeating-linear-gradient(to bottom, #111113 0 1px, transparent 1px 4px)"></span>
+      </div>
+      <div style="display: grid; grid-template-columns: minmax(0, 1fr) 76px 38px; gap: 0 8px; align-items: center">
+        <span style="display: flex; flex-direction: column; padding: 5px 0"><b style="font-size: 13.5px">ETH above $2,377 tonight</b><span style="font: 500 9px/1.3 'JetBrains Mono', monospace; color: #565964">ETH SLID TO $2,337</span></span><span style="font: 700 12px/1 'JetBrains Mono', monospace; text-align: right">48→8%</span><span style="font: 700 10px/1 'JetBrains Mono', monospace; text-align: center; padding: 4px 0; background: #111113; color: #fdfdfb">−40</span>
+        <span style="display: flex; flex-direction: column; padding: 5px 0"><b style="font-size: 13.5px">HYPE above $76.95 tonight</b><span style="font: 500 9px/1.3 'JetBrains Mono', monospace; color: #565964">11 PM PT</span></span><span style="font: 700 12px/1 'JetBrains Mono', monospace; text-align: right">47→18%</span><span style="font: 700 10px/1 'JetBrains Mono', monospace; text-align: center; padding: 4px 0; background: #111113; color: #fdfdfb">−29</span>
+        <span style="display: flex; flex-direction: column; padding: 5px 0"><b style="font-size: 13.5px">Suns beat the Warriors</b><span style="font: 500 9px/1.3 'JetBrains Mono', monospace; color: #565964">TIPOFF 7 PM</span></span><span style="font: 700 12px/1 'JetBrains Mono', monospace; text-align: right">63→78%</span><span style="font: 700 10px/1 'JetBrains Mono', monospace; text-align: center; padding: 4px 0; background: #d7262d; color: #fdfdfb">+14</span>
+        <span style="display: flex; flex-direction: column; padding: 5px 0"><b style="font-size: 13.5px">Mbappé, Ballon d'Or</b><span style="font: 500 9px/1.3 'JetBrains Mono', monospace; color: #565964">NOV 5</span></span><span style="font: 700 12px/1 'JetBrains Mono', monospace; text-align: right">7→20%</span><span style="font: 700 10px/1 'JetBrains Mono', monospace; text-align: center; padding: 4px 0; background: #d7262d; color: #fdfdfb">+13</span>
+        <span style="display: flex; flex-direction: column; padding: 5px 0"><b style="font-size: 13.5px">Ravens beat the Bengals</b><span style="font: 500 9px/1.3 'JetBrains Mono', monospace; color: #565964">SUN 10 AM</span></span><span style="font: 700 12px/1 'JetBrains Mono', monospace; text-align: right">49→41%</span><span style="font: 700 10px/1 'JetBrains Mono', monospace; text-align: center; padding: 4px 0; background: #111113; color: #fdfdfb">−7</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- watchlist -->
+  <div style="border: 1.5px solid #111113; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px">
+    <span style="font: 700 10px/1 'JetBrains Mono', monospace; letter-spacing: .08em; color: #d7262d">FROM YOUR SOMA WATCHLIST</span>
+    <div style="display: grid; grid-template-columns: 46px minmax(0, 1fr) 40px; gap: 8px; align-items: center">
+      <span style="font: 700 10px/1 'JetBrains Mono', monospace; text-align: center; border: 1px solid #111113; padding: 4px 0">BTC</span><b style="font-size: 13.5px">Above $80,751 tonight</b><span style="font: 700 13px/1 'JetBrains Mono', monospace; text-align: right">29%</span>
+      <span style="font: 700 10px/1 'JetBrains Mono', monospace; text-align: center; border: 1px solid #111113; padding: 4px 0">SPCX</span><b style="font-size: 13.5px">Above $146.64 Sunday</b><span style="font: 700 13px/1 'JetBrains Mono', monospace; text-align: right">53%</span>
+      <span style="font: 700 10px/1 'JetBrains Mono', monospace; text-align: center; border: 1px solid #111113; padding: 4px 0">BTC</span><b style="font-size: 13.5px">Touches $77,500 by Nov 1</b><span style="font: 700 13px/1 'JetBrains Mono', monospace; text-align: right">47%</span>
+    </div>
+  </div>
+
+  <!-- big questions -->
+  <div style="display: flex; flex-direction: column; gap: 6px">
+    <span style="font: 700 10px/1 'JetBrains Mono', monospace; letter-spacing: .08em; color: #d7262d">BIG QUESTIONS · SETTLE LATER</span>
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+      <div style="border: 1.5px solid #111113; padding: 10px; display: flex; flex-direction: column; gap: 5px; min-height: 92px"><span style="font: 500 9px/1 'JetBrains Mono', monospace; color: #565964">WED OCT 28</span><b style="font-size: 13.5px; line-height: 1.25">Fed holds rates</b><span style="margin-top: auto; font: 400 22px/1 'Dela Gothic One', sans-serif">95%</span></div>
+      <div style="border: 1.5px solid #111113; padding: 10px; display: flex; flex-direction: column; gap: 5px; min-height: 92px"><span style="font: 500 9px/1 'JetBrains Mono', monospace; color: #565964">NOV 5</span><b style="font-size: 13.5px; line-height: 1.25">Kane wins the Ballon d'Or</b><span style="margin-top: auto; font: 400 22px/1 'Dela Gothic One', sans-serif">70%</span></div>
+      <div style="border: 1.5px solid #111113; padding: 10px; display: flex; flex-direction: column; gap: 5px; min-height: 92px"><span style="font: 500 9px/1 'JetBrains Mono', monospace; color: #565964">JUNE 2027</span><b style="font-size: 13.5px; line-height: 1.25">Spurs win the NBA title</b><span style="margin-top: auto; font: 400 22px/1 'Dela Gothic One', sans-serif">20%</span></div>
+      <div style="border: 1.5px solid #111113; padding: 10px; display: flex; flex-direction: column; gap: 5px; min-height: 92px"><span style="font: 500 9px/1 'JetBrains Mono', monospace; color: #565964">FEB 2027</span><b style="font-size: 13.5px; line-height: 1.25">Bills win the Super Bowl</b><span style="margin-top: auto; font: 400 22px/1 'Dela Gothic One', sans-serif">11%</span></div>
+    </div>
+  </div>
+
+  <!-- just listed, in pencil -->
+  <div style="border: 1.5px dashed #3d9be0; padding: 10px 12px; display: flex; flex-direction: column; gap: 7px; color: #1f6fb0">
+    <span style="font: 700 10px/1 'JetBrains Mono', monospace; letter-spacing: .08em">JUST LISTED · STILL IN PENCIL</span>
+    <div style="display: flex; justify-content: space-between; align-items: center"><b style="font-size: 13.5px">Bayern vs Magdeburg</b><span style="font: 700 10px/1 'JetBrains Mono', monospace">NO ORDERS YET</span></div>
+    <div style="display: flex; justify-content: space-between; align-items: center"><b style="font-size: 13.5px">Dortmund vs Werder Bremen</b><span style="font: 700 10px/1 'JetBrains Mono', monospace">NO ORDERS YET</span></div>
+    <span style="font-size: 12px; line-height: 1.4">Your offer would be the first price. Hunch suggests one from outside odds.</span>
+  </div>
+
+  <!-- your teams -->
+  <div style="border: 1.5px solid #111113; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; background: radial-gradient(circle, rgba(17,17,19,.18) .6px, transparent .95px) 0 0 / 4px 4px, #fdfdfb">
+    <span style="align-self: flex-start; font: 700 10px/1 'JetBrains Mono', monospace; letter-spacing: .08em; color: #d7262d; background: #fdfdfb; padding: 1px 3px">YOUR TEAMS</span>
+    <span style="align-self: flex-start; font-size: 13px; background: #fdfdfb; padding: 2px 3px">Follow teams to get their games here first. From your bets:</span>
+    <div style="display: flex; gap: 6px; flex-wrap: wrap">
+      <span style="height: 32px; display: grid; place-items: center; padding: 0 10px; border: 1px solid #111113; background: #fdfdfb; font: 700 10.5px/1 'JetBrains Mono', monospace">+ PACKERS</span>
+      <span style="height: 32px; display: grid; place-items: center; padding: 0 10px; border: 1px solid #111113; background: #fdfdfb; font: 700 10.5px/1 'JetBrains Mono', monospace">+ SUNS</span>
+      <span style="height: 32px; display: grid; place-items: center; padding: 0 10px; border: 1px solid #111113; background: #fdfdfb; font: 700 10.5px/1 'JetBrains Mono', monospace">+ BAYERN</span>
+      <span style="height: 32px; display: grid; place-items: center; padding: 0 10px; border: 1px dashed #111113; background: #fdfdfb; font: 700 10.5px/1 'JetBrains Mono', monospace">MORE…</span>
+    </div>
+  </div>
+
+  <!-- end of issue -->
+  <div style="display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 0 4px">
+    <span style="width: 60px; height: 3px; background: #111113"></span>
+    <span style="font: 400 15px/1 'Dela Gothic One', sans-serif">That's today's issue.</span>
+    <span style="font: 700 9.5px/1 'JetBrains Mono', monospace; letter-spacing: .06em; color: #565964">NEXT ISSUE AT 6 AM · FULL LIST UNDER SEARCH</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":354,"height":2360}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+{
+  "v": 3,
+  "createdOnFiles": {"v": 1, "at": "2026-10-24T21:40:00Z"},
+  "title": "Hunch for Soma",
+  "launch": {"view": "canvas"},
+  "pages": [],
+  "boards": {
+    "Discover.dc.html": {"x": 0, "y": 0, "w": 880, "h": 760, "title": "Discover: today's issue (front page)", "is_interactive": true},
+    "Main.dc.html": {"x": 960, "y": 0, "w": 880, "h": 760, "title": "Markets and bet slip (unfolded spread)", "is_interactive": true},
+    "Curve.dc.html": {"x": 1920, "y": 0, "w": 880, "h": 760, "title": "A ladder of markets as one curve", "is_interactive": true},
+    "Home.dc.html": {"x": 2880, "y": 0, "w": 880, "h": 760, "title": "Hunch panels on Soma home"},
+    "Setup.dc.html": {"x": 0, "y": 1200, "w": 390, "h": 844, "title": "Setup: Privy wallet, money, trading key"},
+    "Ask.dc.html": {"x": 470, "y": 1200, "w": 390, "h": 844, "title": "Bet by asking"},
+    "Review.dc.html": {"x": 940, "y": 1200, "w": 390, "h": 844, "title": "Review and hold to place", "is_interactive": true},
+    "Settle.dc.html": {"x": 1410, "y": 1200, "w": 390, "h": 844, "title": "Settlement reveal"},
+    "Edge.dc.html": {"x": 1880, "y": 1200, "w": 390, "h": 844, "title": "Why Hunch flags a market as mispriced"},
+    "Flow.dc.html": {"x": 0, "y": 2470, "w": 860, "h": 900, "title": "One whole flow: open, fund, pick, bet, cash out or lose", "is_interactive": true},
+    "Bets.dc.html": {"x": 0, "y": 3790, "w": 880, "h": 760, "title": "My bets, with five open", "is_interactive": true},
+    "Money.dc.html": {"x": 960, "y": 3790, "w": 880, "h": 760, "title": "Money: cash, limits, wallet, activity", "is_interactive": true},
+    "Nav.dc.html": {"x": 1920, "y": 3790, "w": 1200, "h": 760, "title": "How the pages connect"},
+    "CoverBets.dc.html": {"x": 3200, "y": 3790, "w": 390, "h": 844, "title": "Cover screen: page tabs and my bets", "is_interactive": true},
+    "TodayFeed.dc.html": {"x": 3670, "y": 3790, "w": 354, "h": 2360, "title": "Cover screen: Today's issue, full scroll"}
+  },
+  "order": ["Discover.dc.html", "Main.dc.html", "Curve.dc.html", "Home.dc.html", "Setup.dc.html", "Ask.dc.html", "Review.dc.html", "Settle.dc.html", "Edge.dc.html", "Flow.dc.html", "Bets.dc.html", "Money.dc.html", "Nav.dc.html", "CoverBets.dc.html", "TodayFeed.dc.html"],
+  "notes": {
+    "rowUnfolded": {"x": 0, "y": -300, "text": "Unfolded: inner screen", "kind": "title1", "maxW": 3760},
+    "rowCover": {"x": 0, "y": 900, "text": "Cover screen", "kind": "title1", "maxW": 2270},
+    "rowFlow": {"x": 0, "y": 2170, "text": "The whole flow, start to finish", "kind": "title1", "maxW": 1800},
+    "rowPages": {"x": 0, "y": 3490, "text": "Pages and getting around", "kind": "title1", "maxW": 4024}
+  },
+  "designSystems": []
+}

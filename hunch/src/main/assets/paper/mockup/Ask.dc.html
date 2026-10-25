@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Bet by asking</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&amp;family=JetBrains+Mono:wght@500;700&amp;family=Patrick+Hand&amp;family=Zen+Kaku+Gothic+New:wght@400;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#111113}a:hover{color:#d7262d}
+button{font:inherit}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; overflow: hidden; background: #fdfdfb; color: #111113; font-family: 'Zen Kaku Gothic New', system-ui, sans-serif">
+
+  <!-- 1: what you said -->
+  <div style="position: absolute; left: 18px; top: 18px; width: 354px; height: 186px; box-sizing: border-box; border: 1.5px solid #111113; background: radial-gradient(circle, rgba(17,17,19,.35) .6px, transparent .95px) 0 0 / 4px 4px, #fdfdfb">
+    <div style="position: absolute; left: 0; top: 0; background: #fdfdfb; border-right: 1px solid #111113; border-bottom: 1px solid #111113; padding: 6px 10px; font-size: 12px">Saturday, 2:40 PM.</div>
+    <div style="position: absolute; left: 70px; top: 50px; width: 250px; height: 96px; box-sizing: border-box; background: #fdfdfb; border: 1.5px solid #111113; border-radius: 50% / 46%; display: grid; place-items: center; text-align: center; padding: 0 22px">
+      <span style="font: 400 23px/1.15 'Patrick Hand', cursive">20 on the packers sunday</span>
+    </div>
+    <div style="position: absolute; left: 250px; top: 140px; width: 0; height: 0; border-left: 8px solid transparent; border-right: 8px solid transparent; border-top: 22px solid #111113; transform: skewX(30deg)"></div>
+  </div>
+
+  <!-- 2: what Hunch understood -->
+  <div style="position: absolute; left: 18px; top: 222px; width: 354px; height: 300px; box-sizing: border-box; border: 1.5px solid #111113; padding: 16px; display: flex; flex-direction: column; gap: 7px">
+    <span style="font: 700 10.5px/1 'JetBrains Mono', monospace; letter-spacing: .08em; color: #d7262d">HUNCH FOUND IT</span>
+    <span style="font: 400 24px/1.1 'Dela Gothic One', sans-serif">Packers beat the Lions</span>
+    <span style="font: 500 10.5px/1.3 'JetBrains Mono', monospace; letter-spacing: .04em; color: #565964">SUN OCT 25 · 1:25 PM PT · OVERTIME COUNTS</span>
+    <span style="font: 400 34px/1 'Dela Gothic One', sans-serif; margin-top: 8px">$20 → $54.79</span>
+    <span style="font-size: 13px; line-height: 1.4">36% chance. 36.5¢ a share on out, 0.4¢ cheaper than the same game on trade.xyz.</span>
+    <div style="display: flex; gap: 8px; margin-top: auto">
+      <a href="Review.dc.html" style="flex: 1; height: 48px; display: grid; place-items: center; background: #111113; color: #fdfdfb; text-decoration: none; font: 400 16px/1 'Dela Gothic One', sans-serif; border: 1.5px solid #111113">REVIEW</a>
+      <button type="button" style="flex: 1; height: 48px; background: #fdfdfb; color: #111113; border: 1.5px solid #111113; font: 700 11.5px/1 'JetBrains Mono', monospace; letter-spacing: .04em; cursor: pointer">CHANGE AMOUNT</button>
+    </div>
+  </div>
+
+  <!-- 3: or did you mean -->
+  <div style="position: absolute; left: 18px; top: 540px; width: 354px; height: 150px">
+    <svg width="354" height="150" viewBox="0 0 354 150" style="position: absolute; inset: 0" aria-hidden="true"><polygon points="0.75,0.75 353.25,0.75 353.25,149.25 0.75,132" fill="#fdfdfb" stroke="#111113" stroke-width="1.5"></polygon></svg>
+    <div style="position: absolute; left: 16px; right: 16px; top: 14px; display: flex; flex-direction: column; gap: 8px">
+      <span style="font: 700 10.5px/1 'JetBrains Mono', monospace; letter-spacing: .08em; color: #d7262d">OR DID YOU MEAN</span>
+      <button type="button" style="display: flex; justify-content: space-between; align-items: center; height: 40px; padding: 0 12px; border: 1px solid #111113; background: #fdfdfb; color: #111113; cursor: pointer; font-size: 13.5px; font-weight: 700">Over 52.5 points, same game <span style="font: 700 13px/1 'JetBrains Mono', monospace">54%</span></button>
+      <button type="button" style="display: flex; justify-content: space-between; align-items: center; height: 40px; padding: 0 12px; border: 1px solid #111113; background: #fdfdfb; color: #111113; cursor: pointer; font-size: 13.5px; font-weight: 700">Lions to win instead <span style="font: 700 13px/1 'JetBrains Mono', monospace">64%</span></button>
+    </div>
+  </div>
+
+  <!-- Soma composer -->
+  <div style="position: absolute; left: 18px; top: 716px; width: 354px; height: 110px; box-sizing: border-box; border: 1.5px solid #111113; padding: 12px 12px 12px 14px; display: flex; flex-direction: column; gap: 8px">
+    <label style="font: 700 10px/1 'JetBrains Mono', monospace; letter-spacing: .08em; color: #565964" for="ask-field">ASK HUNCH, OR ANY AGENT</label>
+    <div style="display: flex; gap: 8px; align-items: center">
+      <input id="ask-field" type="text" placeholder="e.g. 10 on BTC staying above 80k tonight" style="flex: 1; min-width: 0; height: 44px; box-sizing: border-box; border: 1px solid #111113; background: #fdfdfb; padding: 0 10px; font: 400 14px 'Zen Kaku Gothic New', sans-serif; color: #111113">
+      <button type="button" aria-label="Send" style="width: 44px; height: 44px; border: 1.5px solid #111113; background: #111113; color: #fdfdfb; display: grid; place-items: center; cursor: pointer; padding: 0">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="M13 6l6 6-6 6"></path></svg>
+      </button>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>
