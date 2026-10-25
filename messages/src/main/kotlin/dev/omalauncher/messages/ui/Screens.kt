@@ -442,9 +442,12 @@ fun Thread(
                     if (c.isGroup && first && !m.fromMe) BasicText(m.sender, Modifier.padding(start = 14.dp, top = 8.dp, bottom = 2.dp), style = Pack.body(Pack.size.small, Pack.muted))
                     val parts = remember(m.text) { Parts.of(m.text) }
                     parts.forEachIndexed { j, part ->
+                        // Photos and videos stand on their own, as iMessage has them: no balloon, no tail (Boss, 2026-10-24).
+                        val bare = part is Part.Attachment && m.files.any { visual(it) }
                         Balloon(
                             m,
-                            tail = tail && j == parts.lastIndex,
+                            tail = tail && j == parts.lastIndex && !bare,
+                            bare = bare,
                             onReply = {
                                 pending.quotes[c.id] = quoteOf(m)
                                 m.id?.let { Messages.quoting[c.id] = it }
@@ -675,6 +678,9 @@ private fun tapFor(
         }
     }
 
+/** A photo or video, which shows by itself rather than in a balloon. */
+private fun visual(file: String): Boolean = file.substringAfter('|').let { it.startsWith("image/") || it.startsWith("video/") }
+
 /** One part of a message inside its balloon. */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -738,7 +744,7 @@ private fun Photos(
                         }.getOrNull()
                     }
             }
-            val shape = composerShape(12.dp)
+            val shape = composerShape(18.dp)
             // One alone: 240 dp wide, as tall as its shape asks within 120-320 dp; several: 132 dp squares. The picture
             // fills its frame whatever its own size (a tiny one is scaled up, never drawn at its few pixels).
             val ratio = picture?.let { it.height.toFloat() / it.width.coerceAtLeast(1) } ?: 0.75f
@@ -801,7 +807,7 @@ private fun Videos(
             if (p != null) {
                 val ratio = (p.height.toFloat() / p.width.coerceAtLeast(1)).coerceIn(0.5f, 1.4f)
                 Box(
-                    Modifier.width(240.dp).height((240 * ratio).dp).clip(composerShape(12.dp)).background(Pack.surface)
+                    Modifier.width(240.dp).height((240 * ratio).dp).clip(composerShape(18.dp)).background(Pack.surface)
                         .combinedClickable(onLongClick = onHold) { open() }.semantics { contentDescription = "Video, tap to play" },
                     contentAlignment = Alignment.Center,
                 ) {
@@ -1143,6 +1149,7 @@ private val REPLY_AT = 64.dp
 private fun Balloon(
     m: Message,
     tail: Boolean,
+    bare: Boolean = false,
     onReply: () -> Unit,
     onHold: () -> Unit,
     onTap: (() -> Unit)?,
@@ -1208,10 +1215,17 @@ private fun Balloon(
                     .drawWithContent {
                         drawContent()
                         if (balloon) tail(m.fromMe, fill, line, density)
-                    }.clip(shape)
-                    .background(fill, shape)
-                    .then(if (!m.fromMe && inked) Modifier.border(2.dp, line, shape) else Modifier)
-                    .padding(horizontal = 13.dp, vertical = 8.dp),
+                    }.then(
+                        // A photo or video draws its own rounded frame; around it, nothing.
+                        if (bare) {
+                            Modifier
+                        } else {
+                            Modifier.clip(shape)
+                                .background(fill, shape)
+                                .then(if (!m.fromMe && inked) Modifier.border(2.dp, line, shape) else Modifier)
+                                .padding(horizontal = 13.dp, vertical = 8.dp)
+                        },
+                    ),
             ) {
                 Column { content(ink) }
             }
@@ -1235,10 +1249,18 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.tail(
         // For others' balloons the tail hangs from the lower left, straight down then back along a slant; mirrored for the owner's.
         val x0 = if (mine) size.width - inset else inset
         val x1 = if (mine) x0 - w else x0 + w
+        // The fill reaches up over the balloon's bottom outline, so no line of it is left across the tail's mouth (Boss,
+        // 2026-10-24: a line through the white balloons' tails). The corner's curve still rises a little where the tail
+        // starts, so it goes half a stroke into the balloon (same colour there); at the slant it stops a stroke short,
+        // where the slant takes the outline over.
+        val top = y - stroke / 2
+        val step = if (mine) stroke else -stroke
         val path = androidx.compose.ui.graphics.Path().apply {
-            moveTo(x0, y)
+            moveTo(x0, top)
             lineTo(x0, y + h)
             lineTo(x1, y)
+            lineTo(x1 + step, y)
+            lineTo(x1 + step, top)
             close()
         }
         drawPath(path, fill)

@@ -28,7 +28,11 @@ expect Look at this
 # The photo itself, fetched from the Mac (the demo's is a tiny orange square), in place of a "1 Photo" card.
 expect Photo
 # Not a sliver: the photo fills a 240 dp frame (the demo's 2x2 picture scaled up to an orange block).
+# Look (0.8.3, Boss 2026-10-24): the photo stands alone with its own rounded corners, as in iMessage: no balloon
+# round it and no tail under it; its words ("Look at this") in their own balloon.
 shot photo-fills-its-frame
+# Look: the white balloons' tails are one piece with the balloon; no line of its outline across the tail's top.
+shot white-balloon-tail
 expect from your Mac
 shot group-with-photo-card
 key BACK
@@ -300,3 +304,5 @@ absent unread
 [phone] Hold a photo a friend sent: the tapback picker shows; pick one: it shows under the photo here and on the Mac.
 [phone] Open the chat with the friend's voice message: it shows as "Voice message · Tap to play"; a tap plays it here, in the conversation, with sound; a second tap stops it. A PDF or document a friend sent says "Tap to open" and opens in the app for it.
 [phone] Play a video, close Soma Messages from recents, open the chat again: the video still shows its own frame, not the plain card.
+[phone] Send a photo and a video: each stands on its own with rounded corners, no balloon or tail round it, as in iMessage; hold one: the tapback picker still shows.
+[phone] A friend's white balloons: the tail at the end of a run has no line through its top.
