@@ -46,6 +46,7 @@ shot hunch-paper-market-inner
 tap Back to Today
 tap BETS
 expect No real positions
+expect NO BET SELECTED
 shot hunch-paper-bets-inner
 rotate landscape
 expect No real positions

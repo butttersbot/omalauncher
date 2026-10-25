@@ -16,9 +16,9 @@ w.Hunch.selected=w.Hunch.rows[0];for(const width of [390,880]){w.innerWidth=widt
 for(const state of [{signed:false,sent:false},{signed:false,sent:true},{signed:true,sent:false},{signed:true,passkey:true}])await w.showAccount({...state,email:'demo@example.invalid',demo:true});
 
 w.innerWidth=390;w.Hunch.selected=w.Hunch.rows[0];
-w.Hunch.selected.terms={rule:'<img src=x onerror=alert(1)>'};
+w.Hunch.selected.terms={rule:'<img src=x onerror=alert(1)>',resolutionDeadline:'20291024-1730'};
 w.Hunch.book={valid:true,time:Date.now(),ask:'0.41',complete:true,payout:'$48.78',spent:'$20.00'};
-await w.showLive();assert.match(w.document.getElementById('scene').textContent,/48\.78/);assert.equal(w.document.getElementById('scene').querySelector('img'),null);
+await w.showLive();assert.match(w.document.getElementById('scene').textContent,/48\.78/);assert.match(w.document.getElementById('scene').textContent,/Resolution Deadline: 2029-10-24 · 17:30 \(venue time\)/);assert.equal(w.document.getElementById('scene').querySelector('img'),null);
 w.Hunch.book.time=Date.now()-61000;w.Paper.render();assert.doesNotMatch(w.document.getElementById('scene').textContent,/48\.78/);
 w.Hunch.book={error:true};w.Paper.render();assert.match(w.document.getElementById('scene').textContent,/No verified executable quote/);
 w.Hunch.selected=null;w.Hunch.chapter='today';await w.showLive();const search=w.document.getElementById('scene').querySelector('input[type=search]');search.focus();search.value='nonexistent';search.dispatchEvent(new w.Event('input'));w.Paper.render();assert.equal(w.document.activeElement,search);assert.match(w.document.getElementById('scene').textContent,/No matching markets/);w.paperResize();await new Promise(resolve=>setTimeout(resolve,180));assert.ok(w.document.activeElement===search,'keyboard resize must preserve the focused search input');
@@ -35,5 +35,9 @@ await w.receiveNative({type:'auth',demo:true,signed:false,sent:true,email:'demo@
 let codeField=w.document.querySelector('[aria-label="Email code"]');codeField.value='123456';codeField.focus();w.Paper.render();
 Array.from(w.document.querySelectorAll('button')).find(b=>b.textContent==='Verify email code').click();
 assert.equal(posts.at(-1).code,'123456');assert.equal(codeField.value,'');
+w.innerWidth=880;w.Hunch.chapter='bets';w.Hunch.selected=null;await w.showLive();
+const betsArt=Array.from(w.document.querySelector('#scene').children).find(x=>x.style.left==='462px'&&x.style.top==='22px');
+assert.equal(betsArt.children[0].textContent,'NO BET SELECTED');assert.equal(betsArt.children[1].style.bottom,'0px');
+assert.equal(w.document.querySelector('#scene').querySelector('button:disabled').textContent,'CASH OUT —');
 assert.deepEqual(errors,[]);console.log('PASS: all 15 original hashes and templates; six live layouts; cover and unfolded detail; account transitions. Visual review still required.');
 await w.happyDOM.abort();
