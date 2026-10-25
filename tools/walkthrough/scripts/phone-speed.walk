@@ -32,6 +32,9 @@ expect 4 messages bundled
 expect Combined handoff complete.
 shot speed-fixture-unfolded
 fold folded
+# Folding can land on the emulator's lock screen (the 153 walk): past it, then the fixture again.
+shell wm dismiss-keyguard
+wait 1500
 expect 4 messages bundled
 shot speed-fixture-cover
 [phone] With --timing, open settings:display, settings:sound, settings:wifi, settings:bluetooth, settings:battery, settings:storage and settings:apps. Verify actual destination and foreground package, without changing any values. Record each PASS/FAIL/unsupported.
