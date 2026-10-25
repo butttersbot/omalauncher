@@ -137,4 +137,13 @@ class SomaArtifactsTest {
         assertEquals(listOf("made other.html · v1", "made a.html · v1", "updated a.html · v60"), steps)
         assertEquals(listOf(StepArtifact("other.html", 1), StepArtifact("a.html", 60)), stepArtifacts(steps))
     }
+
+    @Test fun betweenHisMessagesOneLinePerArtifactAndAFinishedEditLeavesNoLine() {
+        val tasks = listOf(ChatTask(1L, "→ FF4", "make it", thread = "t1", status = TaskStatus.Done, result = "Done.", steps = listOf("made a.html · v1", "editing a.html · v2")))
+        var now = macApply(tasks, "t1", MacEvent.Artifact(5, 10, "a.html", 1, "", "text/html", "ready", settled = true))
+        assertEquals(listOf("made a.html · v1"), now.single().steps)
+        now = macApply(now, "t1", MacEvent.Artifact(6, 11, "a.html", 2, "", "text/html", "ready"))
+        now = macApply(now, "t1", MacEvent.Artifact(7, 12, "a.html", 3, "", "text/html", "ready"))
+        assertEquals(listOf(ChatLater("updated a.html · v3")), now.single().later)
+    }
 }
