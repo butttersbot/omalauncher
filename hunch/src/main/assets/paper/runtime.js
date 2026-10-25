@@ -44,7 +44,7 @@ window.Paper = (()=>{
  function render(){if(!active)return;try{let vals=active.logic.renderVals();if(active.values)vals=active.values(vals);const result=fragment(active.template.childNodes,vals,'root');const holder=document.createElement('div');holder.append(result);const fresh=holder.querySelector('div');if(!fresh)throw Error('Missing scene');fresh.id='scene';if(active.prepare)active.prepare(fresh,vals);const stage=document.getElementById('stage');if(stage.firstChild)morph(stage.firstChild,fresh);else stage.append(fresh);if(active.after)active.after(stage.firstChild,vals);fit();}catch(e){window.paperError?.(e)}}
  function fit(){const scene=document.getElementById('scene');if(!scene||!active)return;const viewport=document.getElementById('viewport');let w=active.props.$preview.width,h=active.props.$preview.height;
    if(active.dimensions){const dim=active.dimensions();w=dim.width;h=dim.height}
-   const scale=Math.min(viewport.clientWidth/w,active.fitHeight?viewport.clientHeight/h:Infinity);scene.style.transform='scale('+scale+')';const stage=document.getElementById('stage');stage.style.width=w*scale+'px';stage.style.height=(active.autoHeight?scene.scrollHeight:h)*scale+'px';
+   const scale=Math.min(active.maxScale||Infinity,viewport.clientWidth/w,active.fitHeight?viewport.clientHeight/h:Infinity);scene.style.transform='scale('+scale+')';const stage=document.getElementById('stage');stage.style.width=w*scale+'px';stage.style.height=(active.autoHeight?scene.scrollHeight:h)*scale+'px';
  }
  window.addEventListener('resize',()=>{fit();window.paperResize?.()});
  return {load,show,render,schedule,fit,get active(){return active},value};

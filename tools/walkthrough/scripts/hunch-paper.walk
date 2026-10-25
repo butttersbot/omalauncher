@@ -3,7 +3,7 @@ fold folded
 rotate portrait
 shell am force-stop dev.omalauncher.hunch
 shell am start -n dev.omalauncher.hunch/.MainActivity --es fixture demo
-expect Today's issue
+expect "Today's issue"
 expect Paper Cranes
 absent 169.30
 shot hunch-paper-cover
@@ -19,7 +19,7 @@ tap Paper Cranes
 expect READ ONLY
 shot hunch-paper-market
 key BACK
-expect Today's issue
+expect "Today's issue"
 tap Bets
 expect No trading account
 shot hunch-paper-bets

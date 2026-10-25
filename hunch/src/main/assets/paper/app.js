@@ -14,3 +14,6 @@ window.receiveNative=async data=>{try{
 let resizeTimer;window.paperResize=()=>{if(!design&&!accountMode){clearTimeout(resizeTimer);resizeTimer=setTimeout(showLive,150)}};
 window.paperBack=()=>{if(design||accountMode)return false;if(Hunch.selected){Hunch.selected=null;showLive();return true}if(Hunch.chapter!=='today'){route('today');return true}return false};
 sendNative({type:'ready'});
+
+// Expired depth must disappear even while the owner leaves the page open.
+setInterval(()=>{if(Hunch.selected&&Hunch.book?.time&&Date.now()-Hunch.book.time>60000)Paper.schedule()},1000);
