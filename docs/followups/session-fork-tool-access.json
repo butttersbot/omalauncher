@@ -1,9 +1,9 @@
 {
   "id": "session-fork-tool-access",
-  "status": "in_progress",
+  "status": "banked_for_another_session",
   "reported": "2026-10-24",
   "title": "Forked Mac session loses browser/screen tools and splits approval context",
-  "owner_request": "Remove automatic forking; provide access to the original session. Investigate Desktop Remote Control and a clean CLI handoff into tmux.",
+  "owner_request": "2026-10-24: Bank this plan for another session. Boss will manually drive the Mac setup now, then return to the HIP4 app. Solution must cover Claude Code and Codex; Boss reports Codex already appears to work and has not shown this issue.",
   "observed": [
     "Original MacBook session e24ffbae-a374-44d1-b2d2-d935fb144656 was used for Hunch planning.",
     "Phone-visible fork macbook-pro/tef7cd716e862103f reported browser and screen-control tools unavailable.",
@@ -46,5 +46,39 @@
       "https://code.claude.com/docs/en/agent-sdk/sessions",
       "https://code.claude.com/docs/en/chrome"
     ]
+  },
+  "scope": {
+    "providers": [
+      "Claude Code",
+      "Codex"
+    ],
+    "required_behavior": [
+      "Continue the chosen original conversation from Soma chat, preserving session identity and history without automatic forks.",
+      "Identify live attachment versus clean resume accurately; do not run concurrent writers against one transcript.",
+      "Deliver replies and scoped owner approval prompts back to Soma with authenticated sender provenance; keep agent mail distinct.",
+      "Verify tool availability after any handoff, especially authenticated browser access."
+    ],
+    "codex_baseline": "Boss reports Codex already works; this is owner-observed behavior, not a new verification. Inspect existing routing and regression-test it before changing anything; do not assume Claude Channels apply to Codex."
+  },
+  "handoff_plan": [
+    "First inspect the existing Codex transport and record a working baseline. Reuse its lifecycle design where appropriate, while preserving provider-specific protocols.",
+    "Claude Desktop exact-process Soma input has no documented path verified. Original MacBook confirmed custom Channels cannot currently be enabled in its running Desktop session; Remote Control serves Claude clients, not Soma.",
+    "Prototype a custom Soma Channel in a separate interactive Claude CLI test session hosted persistently in tmux. Channels remain research preview, require explicit per-session interactive opt-in, and do not load through the current print-mode runner.",
+    "Validate prompt/reply correlation, duplicate suppression, sender authentication, cancellation, reconnect, restart, and one scoped approval allow/deny flow. No peer-to-owner relabeling or blanket permissions.",
+    "Verify CLI Claude in Chrome extension access separately; Desktop built-in browser and computer-use tools do not automatically transfer. Use harmless test pages; do not export browser credentials.",
+    "Only after validation and explicit handoff coordination, close the Desktop original and resume the same session ID in the interactive host without --fork-session. Keep transcript and old fork evidence.",
+    "Regression-test Claude and Codex; report actual capabilities and any unwalked phone behavior. Respect Mac Pro rollout hold and MacBook local approval requirements."
+  ],
+  "rollout_status": {
+    "commits": [
+      "29576b3",
+      "f6963c3"
+    ],
+    "verification": "Mac Pro independently passed all 453 runner checks for both commits; Claude discovery 28 OK, Codex approvals 16 OK and mail routing 4 OK (latter two at 29576b3). Phone broad-suite bot-shell failure also reproduces on unchanged parent.",
+    "deployment": "MacBook reports scoped no-fork patch staged but not installed; awaiting direct owner approval there. Mac Pro already has no fork path and remains under owner hold.",
+    "original_claude_session": "macbook-pro:e24ffbae-a374-44d1-b2d2-d935fb144656",
+    "desktop_title": "HIP4 prediction market UX",
+    "resume_command": "claude --resume e24ffbae-a374-44d1-b2d2-d935fb144656",
+    "warning": "Resume only after original Desktop session closes. Same conversation does not mean same process or tool set."
   }
 }
