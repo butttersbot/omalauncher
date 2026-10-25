@@ -44,7 +44,7 @@ function coverPrepare(root){
 }
 async function showLive(){
  const wide=window.innerWidth>=600;
- if(Hunch.selected)return showMarket(wide);
+ if(Hunch.selected)return wide?showMarket(true):showCoverMarket();
  if(wide)return showWide();
  await Paper.show('CoverBets',logic=>{
   logic.state.tab=Hunch.chapter;const a=Paper.active;
@@ -60,8 +60,8 @@ async function showMarket(wide){
   const a=Paper.active;logic.state.sel=m.id;logic.state.amt=Hunch.budget;logic.state.side=Hunch.side;
   logic.markets=()=>[m,...Hunch.rows.filter(x=>x.id!==m.id)].map(x=>({id:x.id,group:'later',title:x.title,sub:x.category+' · '+x.venue,label:x.venue+' · '+x.date,heading:x.title,question:x.sides.join(' / '),rules:Object.entries(x.terms).map(([k,v])=>k+': '+v).join(' · '),tag:'READ ONLY',lo:0,hi:0,sides:x.sides.map(name=>({name,price:1,chance:'—',ifText:'If '+name+' settles in your favor',fill:'Loading live order book…',venue:x.venue}))}));
   a.values=v=>{const received=Hunch.book;const b=received&&Date.now()-received.time<=60000?received:null;return {...v,tonight:[],sunday:[],later:v.later.map((r,i)=>({...r,pick:()=>choose([m,...Hunch.rows.filter(x=>x.id!==m.id)][i])})),sides:v.sides.map((s,i)=>({...s,cents:i===Hunch.side&&b?.valid?(Number(b.ask)*100).toFixed(2)+'¢ ASK':'NO VERIFIED QUOTE',chance:'—',pick:()=>{Hunch.side=i;logic.state.side=i;requestBook();Paper.schedule()}})),amt:Hunch.budget,amtLabel:'$'+Hunch.budget,payout:b?.valid?b.payout:'—',profit:'—',ifText:'Depth preview · not an order',ctaVerb:'READ ONLY',side:{...v.side,fill:b?.valid?(b.complete?'Full preview at current depth.':'Partial fill at current depth.'):b?'No valid executable quote.':'Loading live order book…',venue:m.venue},chips:v.chips.map((c,i)=>({...c,pick:()=>{Hunch.budget=[5,10,20,50,100][i];logic.state.amt=Hunch.budget;requestBook();Paper.schedule()}})),onRange:e=>{Hunch.budget=Number(e.target.value);logic.state.amt=Hunch.budget;requestBook();Paper.schedule()}}};
-  a.prepare=root=>{root.querySelectorAll('div[style*="height: 292px"],div[style*="width: 236px"]').forEach(p=>p.style.overflowY='auto');root.querySelectorAll('a').forEach(el=>{el.removeAttribute('href');text(el.firstElementChild,'DEPTH PREVIEW');event(el,'click',()=>notice('Trading is not enabled. This is a read-only depth preview.'))});const header=root.querySelector('div[style*="height: 92px"]');if(header)empty(header,'PUBLIC MARKETS',m.venue,action('Back to Today',()=>{Hunch.selected=null;showLive()}));if(!wide){root.style.width='440px';root.style.height='760px';Array.from(root.children).forEach(el=>{const left=parseFloat(el.style.left);if(left>=462)el.style.left=(left-440)+'px';else if(left===22||left===439||left===440)el.remove()});root.append(action('Back to Today',()=>{Hunch.selected=null;showLive()}));} };
-  a.dimensions=()=>({width:wide?880:440,height:760});
+  a.prepare=root=>{const copy={'TONIGHT · SETTLES 11 PM PT':'PUBLIC LISTINGS','SUNDAY · OCT 25':'VENUE TERMS','LATER':'ALL MARKETS','EMPTY MARKETS HIDDEN · SHOW':'READ-ONLY PUBLIC DATA','EMPTY MARKETS HIDDEN ·':'READ-ONLY PUBLIC DATA','SHOW':'REFRESH'};root.querySelectorAll('span,button').forEach(el=>{if(!el.children.length&&copy[el.textContent.trim()]){el.textContent=copy[el.textContent.trim()];if(el.tagName==='BUTTON')el.disabled=true}});root.querySelectorAll('div[style*="height: 292px"],div[style*="width: 236px"]').forEach(p=>p.style.overflowY='auto');root.querySelectorAll('a').forEach(el=>{el.removeAttribute('href');text(el.firstElementChild,'DEPTH PREVIEW');event(el,'click',()=>{requestBook();Paper.schedule()})});const header=root.querySelector('div[style*="height: 92px"]');if(header)empty(header,'PUBLIC MARKETS',m.venue,action('Back to Today',()=>{Hunch.selected=null;showLive()})); };
+  a.dimensions=()=>({width:880,height:760});
  });
 }
 
@@ -123,6 +123,32 @@ async function showWide(){
     panels.forEach((panel,i)=>{const inner=panel.querySelector(':scope > svg')?panel.lastElementChild:panel;const headings=name==='Money'?['CASH YOU CAN BET OR TAKE OUT','Daily limit','YOUR WALLET','YOUR RECORD','ACTIVITY']:['MY BETS','YOUR POSITIONS','SETTLED BETS','POSITION DETAILS'];empty(inner,headings[i]||'MY BETS',name==='Money'?'No wallet or trading account is connected.':'No real positions or settled bets are connected.',name==='Money'&&i===2?action('Sign in to Hunch',()=>sendNative({type:'account'})):null)})
    }
    root.querySelectorAll('nav a').forEach((el,i)=>{text(el,['TODAY','BETS','MONEY'][i]);el.removeAttribute('href');event(el,'click',()=>route(['today','bets','money'][i]))});
+  };
+ });
+}
+
+function cropPhone(root){
+ const phone=root.querySelector('div[style*="width: 390px"]');
+ const content=phone.firstElementChild;
+ root.replaceChildren(phone);root.style.cssText="position:relative;width:390px;min-height:844px;background:#fdfdfb;color:#111113;font-family:'Zen Kaku Gothic New',sans-serif";
+ phone.style.cssText='position:relative;width:390px;min-height:844px;background:#fdfdfb;box-sizing:border-box';
+ content.style.cssText='padding:18px;display:flex;flex-direction:column;gap:14px;min-height:844px;box-sizing:border-box';
+ return content;
+}
+async function showCoverMarket(){
+ await Paper.show('Flow',logic=>{
+  logic.state.step=6;const a=Paper.active;a.autoHeight=true;a.dimensions=()=>({width:390,height:844});
+  a.prepare=root=>{
+   const m=Hunch.selected,b=Hunch.book&&Date.now()-Hunch.book.time<=60000?Hunch.book:null;
+   const body=cropPhone(root),p=Array.from(body.children);
+   text(p[0].lastElementChild,'CASH —');
+   const art=p[1];text(art.querySelector(':scope > span'),m.venue+' · PUBLIC MARKET');const back=art.querySelector('button');back._paperEvents={};back.replaceWith(back.cloneNode(true));const backButton=art.querySelector('button');event(backButton,'click',()=>{Hunch.selected=null;showLive()});
+   text(p[2].children[0],m.category+' · '+m.date);text(p[2].children[1],m.title);
+   Array.from(p[3].children).forEach((el,i)=>{text(el.children[0],m.sides[i]);text(el.children[1],'—');text(el.children[2],i===Hunch.side&&b?.valid?(Number(b.ask)*100).toFixed(2)+'¢ ASK':'NO VERIFIED QUOTE');el.style.background=i===Hunch.side?'#111113':'#fdfdfb';el.style.color=i===Hunch.side?'#fdfdfb':'#111113';el.setAttribute('role','button');el.tabIndex=0;el.setAttribute('aria-pressed',String(i===Hunch.side));const chooseSide=()=>{Hunch.side=i;requestBook();Paper.schedule()};event(el,'click',chooseSide);event(el,'keydown',e=>{if(e.key==='Enter')chooseSide()})});
+   Array.from(p[4].children).slice(1).forEach((el,i)=>{const budget=[10,20,50][i];el.style.background=Hunch.budget===budget?'#111113':'#fdfdfb';el.style.color=Hunch.budget===budget?'#fdfdfb':'#111113';el.setAttribute('role','button');el.tabIndex=0;event(el,'click',()=>{Hunch.budget=budget;requestBook();Paper.schedule()})});
+   text(p[5].children[0],'$'+Hunch.budget+' → '+(b?.valid?b.payout:'—'));text(p[5].children[1],b?.valid?(b.complete?'Full depth preview.':'Partial depth preview.')+' Spend preview: '+b.spent+'. Fees and execution can change.':b?'No verified executable quote.':Hunch.book?'Quote expired. Refresh preview.':'Loading live order book…');
+   const cta=p[6];cta.replaceWith(cta.cloneNode(true));const button=body.lastElementChild;text(button,'READ ONLY · REFRESH');event(button,'click',()=>{requestBook();Paper.schedule()});
+   const terms=document.createElement('div');terms.style.cssText='border:1.5px solid #111113;padding:12px;font-size:12px;line-height:1.4';const title=document.createElement('b');title.textContent='HOW IT SETTLES';terms.append(title);Object.entries(m.terms).forEach(([key,value])=>{const row=document.createElement('p');row.textContent=key+': '+value;terms.append(row)});body.append(terms);
   };
  });
 }

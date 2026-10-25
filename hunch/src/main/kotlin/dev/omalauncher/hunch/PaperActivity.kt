@@ -7,6 +7,7 @@ import android.view.View
 import android.view.WindowInsets
 import android.view.WindowManager
 import android.webkit.*
+import android.widget.FrameLayout
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
 
@@ -37,13 +38,17 @@ abstract class PaperActivity:Activity() {
                 }
                 override fun shouldOverrideUrlLoading(view:WebView,request:WebResourceRequest)=true
             }
+        }
+        val frame=FrameLayout(this).apply{
+            setBackgroundColor(Color.rgb(253,253,251))
+            addView(paper,FrameLayout.LayoutParams(-1,-1))
             setOnApplyWindowInsetsListener{v,i->
                 if(android.os.Build.VERSION.SDK_INT>=30){val b=i.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout() or WindowInsets.Type.ime());v.setPadding(b.left,b.top,b.right,b.bottom)}
                 else v.setPadding(i.systemWindowInsetLeft,i.systemWindowInsetTop,i.systemWindowInsetRight,i.systemWindowInsetBottom)
-                i
+                if(android.os.Build.VERSION.SDK_INT>=30)WindowInsets.CONSUMED else i.consumeSystemWindowInsets()
             }
         }
-        setContentView(paper);paper.requestApplyInsets()
+        setContentView(frame);frame.requestApplyInsets()
         if(android.os.Build.VERSION.SDK_INT>=33)onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT){back()}
     }
     private fun denied()=WebResourceResponse("text/plain","UTF-8",403,"Blocked",mapOf("Cache-Control" to "no-store"),ByteArrayInputStream(byteArrayOf()))

@@ -1,0 +1,1 @@
+Run `npm ci && npm test` here for the offline DOM smoke checks. These verify all 15 original hashes/templates, six primary live layouts without mock balances, both market layouts, and account state transitions. Android walks and screenshot comparison remain required; these checks do not establish visual parity.

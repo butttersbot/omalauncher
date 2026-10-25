@@ -13,7 +13,7 @@ market actions. All non-bundled WebView requests are denied. Provider data is
 inserted as text, never HTML or code. OTPs and tokens are not logged/persisted.
 
 Live routes: CoverBets + TodayFeed on cover; Discover/Bets/Money unfolded; Main
-for market/depth; Flow step 1 for account access. Read-only account/trading
+for unfolded market/depth; Flow steps 6 and 1 for cover market and account access. Read-only account/trading
 limitations require truthful empty states in the original panels. The exported
 mock balances, positions, outside prices and fills never become real user state.
 
