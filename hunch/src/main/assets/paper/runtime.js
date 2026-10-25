@@ -46,6 +46,7 @@ window.Paper = (()=>{
    if(active.dimensions){const dim=active.dimensions();w=dim.width;h=dim.height}
    const scale=Math.min(active.maxScale||Infinity,viewport.clientWidth/w,active.fitHeight?viewport.clientHeight/h:Infinity);scene.style.transform='scale('+scale+')';const stage=document.getElementById('stage');stage.style.width=w*scale+'px';stage.style.height=(active.autoHeight?scene.scrollHeight:h)*scale+'px';
  }
+ document.fonts?.addEventListener('loadingdone',fit);
  window.addEventListener('resize',()=>{fit();window.paperResize?.()});
  return {load,show,render,schedule,fit,get active(){return active},value};
 })();
