@@ -5,7 +5,7 @@ window.notice=text=>{const n=document.getElementById('notice');n.textContent=tex
 function event(el,type,fn){el._paperEvents ||= {};el._paperEvents[type]=fn;el.addEventListener(type,fn)}
 function text(el,value){if(el)el.textContent=value}
 function action(label,fn){const b=document.createElement('button');b.type='button';b.className='paper-action';b.textContent=label;event(b,'click',fn);return b}
-function empty(panel,heading,copy,button){const spans=Array.from(panel.querySelectorAll('span,b')).filter(x=>!x.children.length);const titleStyle=spans[0]?.getAttribute('style')||"font:700 11px 'JetBrains Mono'";panel.replaceChildren();const h=document.createElement('span');h.setAttribute('style',titleStyle);h.textContent=heading;const d=document.createElement('span');d.className='empty-copy';d.textContent=copy;panel.append(h,d);if(button)panel.append(button)}
+function empty(panel,heading,copy,button){if(panel.querySelector(':scope > svg')&&panel.lastElementChild.localName!=='svg')panel=panel.lastElementChild;const spans=Array.from(panel.querySelectorAll('span,b')).filter(x=>!x.children.length);const titleStyle=spans[0]?.getAttribute('style')||"font:700 11px 'JetBrains Mono'";panel.replaceChildren();const h=document.createElement('span');h.setAttribute('style',titleStyle);h.textContent=heading;const d=document.createElement('span');d.className='empty-copy';d.textContent=copy;panel.append(h,d);if(button)panel.append(button);return panel}
 let bookTimer;function requestBook(){clearTimeout(bookTimer);if(!Hunch.selected)return;Hunch.book=null;const request={type:'book',id:Hunch.selected.id,side:Hunch.side,budget:Hunch.budget};bookTimer=setTimeout(()=>sendNative(request),150)}
 function choose(m){Hunch.selected=m;Hunch.side=0;requestBook();showLive()}
 function liveRows(){return Hunch.rows.filter(m=>(Hunch.category==='ALL'||m.category.toUpperCase()===Hunch.category)&&(!Hunch.query||(m.title+' '+m.category+' '+m.venue).toLowerCase().includes(Hunch.query.toLowerCase())))}
@@ -14,7 +14,7 @@ function listInto(panel,rows,max=5){panel.replaceChildren();panel.classList.add(
 function updateFeed(feed){
  const s=Array.from(feed.children);if(s.length<14)return;
  const search=s[0].querySelector('input');if(search){search.value=Hunch.query;search.setAttribute('aria-label','Search markets');event(search,'input',e=>{Hunch.query=e.target.value;Hunch.limit=100;Paper.schedule()})}
- const cats=['ALL',...new Set(Hunch.rows.map(m=>m.category.toUpperCase()))];s[1].replaceChildren();s[1].style.overflowX='auto';cats.forEach(cat=>{const b=action(cat+' '+Hunch.rows.filter(m=>cat==='ALL'||m.category.toUpperCase()===cat).length,()=>{Hunch.category=cat;Hunch.limit=100;Paper.schedule()});b.style.cssText='flex:none;height:30px;min-height:30px;padding:0 9px;font:700 10px "JetBrains Mono";'+(cat===Hunch.category?'background:#111113;color:#fdfdfb':'');s[1].append(b)});
+ const cats=['ALL',...new Set(Hunch.rows.map(m=>m.category.toUpperCase()))];s[1].replaceChildren();s[1].style.overflowX='auto';cats.forEach(cat=>{const b=action(cat+' '+Hunch.rows.filter(m=>cat==='ALL'||m.category.toUpperCase()===cat).length,()=>{Hunch.category=cat;Hunch.limit=100;Paper.schedule()});b.style.cssText='flex:none;height:30px;min-height:30px;padding:0 9px;font:700 10px "JetBrains Mono";letter-spacing:.04em;'+(cat===Hunch.category?'border:0;background:#111113;color:#fdfdfb':'border:1px solid #111113');s[1].append(b)});
  const rows=liveRows(),featured=rows[0];
  // Keep the original stadium drawing, caption frame, ink, type and screen tone.
  const cover=s[2],caption=cover.lastElementChild;const cap=caption?.children;
@@ -27,12 +27,12 @@ function updateFeed(feed){
  const trending=s[5];text(trending.firstElementChild,'MARKETS · '+rows.length+' MATCHING');const grid=trending.lastElementChild;
  if(grid!==trending.firstElementChild){grid.replaceChildren();rows.slice(0,5).forEach((m,i)=>{const n=document.createElement('span');n.textContent=String(i+1).padStart(2,'0');const t=document.createElement('span');const b=document.createElement('b');b.textContent=m.title;const sub=document.createElement('span');sub.style.cssText='display:block;font:9px "JetBrains Mono";color:#565964';sub.textContent=m.category;t.append(b,sub);event(t,'click',()=>choose(m));t.setAttribute('role','button');const price=document.createElement('span');price.textContent='→';grid.append(n,t,price)})}
  empty(s[6],'SETTLES IN MINUTES','Settlement countdowns appear only when the venue provides a verified deadline.');
- empty(s[7],'COMING UP',rows.length?'Open a listing for its exact venue terms.':'Waiting for public listings.');s[7].append(...rows.slice(5,8).map(marketButton));
+ const upcoming=empty(s[7],'MORE MARKETS',rows.length?'Open a listing for its exact venue terms.':'Waiting for public listings.');upcoming.append(...rows.slice(5,8).map(marketButton));
  empty(s[8],'MOVING TODAY','Price history is not connected yet. No movement is estimated.');
  empty(s[9],'YOUR WATCHLIST','No watchlist has been saved.');
- text(s[10].firstElementChild,'BIG QUESTIONS');if(s[10].lastElementChild!==s[10].firstElementChild)listInto(s[10].lastElementChild,rows.slice(8),4);
+ text(s[10].firstElementChild,'BIG QUESTIONS');const questions=s[10].lastElementChild,card=questions.firstElementChild;questions.replaceChildren();rows.slice(8,12).forEach(m=>{const box=card.cloneNode(true);text(box.children[0],m.date);text(box.children[1],m.title);text(box.children[2],'—');box.setAttribute('role','button');box.tabIndex=0;event(box,'click',()=>choose(m));event(box,'keydown',e=>{if(e.key==='Enter')choose(m)});questions.append(box)});if(!questions.children.length){const copy=document.createElement('span');copy.className='empty-copy';copy.textContent=Hunch.error?'Listings are unavailable.':'No more listings in this issue.';questions.append(copy)}
  empty(s[11],'PUBLIC LISTINGS','Listing dates are not provided by every venue.');s[11].append(...rows.slice(-2).map(marketButton));
- empty(s[12],'YOUR TEAMS','Team following is not connected yet.');text(s[13],Hunch.error?'OFFLINE · TRY REFRESH':'END OF THIS ISSUE · PUBLIC MARKETS');
+ empty(s[12],'YOUR TEAMS','Team following is not connected yet.');text(s[13].lastElementChild,Hunch.error?'OFFLINE · TRY REFRESH':'PUBLIC MARKETS · FULL LIST UNDER SEARCH');
  if(Hunch.query||Hunch.category!=='ALL'){s.slice(2).forEach(e=>e.style.display='none');const results=document.createElement('div');results.className='paper-search-results';listInto(results,rows,100);feed.append(results)}
  feed.append(action('Refresh markets',()=>sendNative({type:'markets'})));
 }
