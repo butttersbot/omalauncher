@@ -3795,13 +3795,43 @@ def install():
                         'ExecStart=%s %s serve\nRestart=always\nRestartSec=5\nWorkingDirectory=%s\nEnvironment=PATH=%s\nEnvironment=HOME=%s\n%s'
                         'StandardOutput=append:%s\nStandardError=append:%s\n\n[Install]\nWantedBy=default.target\n'
                         % (python, INSTALLED, HOME, path, HOME, ''.join('Environment=%s=%s\n' % kv for kv in service_env.items()), LOGS / 'runner.log', LOGS / 'runner.log'))
-        stop_service()
-        return start_service()
+        # One restart job that systemd itself carries out: if this install runs from one of the runner's own threads, stopping
+        # the runner stops this process too, and a stop-then-start from here would never reach the start.
+        systemctl('daemon-reload')
+        systemctl('enable', UNIT.name)
+        result = systemctl('restart', UNIT.name)
+        return print('started' if result.returncode == 0 else 'not started: ' + result.stderr.strip())
     PLIST.parent.mkdir(parents=True, exist_ok=True)
     PLIST.write_bytes(plistlib.dumps({
         'Label': LABEL, 'ProgramArguments': [python, str(INSTALLED), 'serve'], 'RunAtLoad': True, 'KeepAlive': True,
         'EnvironmentVariables': {'PATH': path, 'HOME': str(HOME), **service_env}, 'WorkingDirectory': str(HOME),
         'StandardOutPath': str(LOGS / 'runner.log'), 'StandardErrorPath': str(LOGS / 'runner.log')}))
+    reload_detached(python)
+
+
+def reload_detached(python):
+    """Stop and start the launchd job from a process of its own. An install run from one of the runner's own threads is
+    stopped with the runner (2026-10-24: bootout ended it before bootstrap, and the Mac Pro's runner stayed down), so the
+    restart is left to a helper in its own session that outlives the stop; this waits to say how it went if it can."""
+    with open(LOGS / 'runner.log', 'ab') as log:
+        subprocess.Popen([python, str(INSTALLED), 'reload-service'], stdin=subprocess.DEVNULL, stdout=log, stderr=log,
+                         start_new_session=True, close_fds=True)
+    for _ in range(30):
+        time.sleep(1)
+        if service_pid():
+            return print('started')
+    print('not started yet; see ' + str(LOGS / 'runner.log'))
+
+
+def service_pid():
+    """The running job's pid, or None."""
+    out = launchctl('list', LABEL).stdout
+    found = re.search(r'"PID" = (\d+);', out)
+    return int(found.group(1)) if found else None
+
+
+def reload_service():
+    time.sleep(1)  # let the install that started this finish what it prints first
     stop_service()
     start_service()
 
@@ -3959,6 +3989,8 @@ def main():
         venice_ask()
     elif command == 'install':
         install()
+    elif command == 'reload-service':
+        reload_service()
     elif command == 'start':
         start_service()
     elif command == 'stop':

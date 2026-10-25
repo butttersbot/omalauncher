@@ -1351,6 +1351,14 @@ try:
     cut = funcs['top_section'](long)
     check('handoff: Next.js is not Next, and a curly apostrophe still says what is next', funcs['top_section']('# P\n\n## A\n\na\n\n## Next.js\n\nx\n\n## What\u2019s next?\n\nb\n').endswith('b'))
     check('handoff: a top that is all one code block still serves something', funcs['top_section']('# P\n\n## A\n```\n' + 'code\n' * 2000 + '```\n') != '')
+    # 2026-10-24: an install run from one of the runner's own threads was stopped with the runner before it could start the
+    # new one. The restart is left to a helper in its own session (macOS) or to one systemd restart job (Linux).
+    inst = source[source.index('def install():'):source.index('def systemctl(')]
+    check('install: macOS restarts through a detached helper, not stop-then-start in this process',
+          'reload_detached(python)' in inst and 'start_new_session=True' in inst and "'reload-service'" in inst
+          and inst.rstrip().endswith('start_service()') and '    stop_service()\n    start_service()\n\n\ndef reload_detached' not in inst)
+    check('install: Linux restarts with one systemd job', "systemctl('restart', UNIT.name)" in inst)
+    check('install: reload-service is a command', "command == 'reload-service'" in source and 'reload_service()' in source)
     # Slice 11: a reinstall keeps the canvas service the runner was given, from install's own environment or else from the
     # installed runner's login item, so it never comes back without it.
     plist = work / 'service-env.plist'
