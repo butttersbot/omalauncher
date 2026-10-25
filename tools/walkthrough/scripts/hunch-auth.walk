@@ -28,7 +28,10 @@ tap Email code
 type 123456
 wait 1000
 shot hunch-auth-keyboard
-scrollto Verify email code
+# Swipe inside the visible form, ABOVE the IME (generic scrollto starts on its keys).
+swipe 0.5 0.5 0.5 0.15 400
+expect Verify email code
+shot hunch-auth-verify-above-keyboard
 tap Verify email code
 expect Recovery email: demo@example.invalid
 scrollto Your email login stays available for recovery
