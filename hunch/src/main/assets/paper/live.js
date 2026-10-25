@@ -166,8 +166,8 @@ async function showCoverMarket(){
 }
 
 function cashPanel(panel){
- panel.querySelectorAll('span').forEach(el=>{if(el.children.length)return;const value=el.textContent.trim();if(value==='$169.30')text(el,'—');else if(value.startsWith('IN 5 OPEN BETS'))text(el,'No wallet is connected.');else if(value==='SAMPLE')text(el,'READ ONLY')});
- const buttons=panel.querySelectorAll('button');if(buttons[0]){text(buttons[0],'Sign in to Hunch');event(buttons[0],'click',()=>sendNative({type:'account'}))}if(buttons[1]){buttons[1].disabled=true;buttons[1].title='Withdrawals are not enabled'}
+ panel.querySelectorAll('span').forEach(el=>{if(el.children.length)return;const value=el.textContent.trim();if(value==='$169.30')text(el,'—');else if(value.startsWith('IN 5 OPEN BETS'))text(el,'Open your wallet to view verified balances.');else if(value==='SAMPLE')text(el,'READ ONLY')});
+ const buttons=panel.querySelectorAll('button');if(buttons[0]){text(buttons[0],'Add money');event(buttons[0],'click',()=>sendNative({type:'wallet'}))}if(buttons[1]){buttons[1].disabled=true;buttons[1].title='Withdrawals are not enabled'}
 }
 function recordPanel(panel){
  panel.querySelectorAll('polyline').forEach(el=>el.remove());

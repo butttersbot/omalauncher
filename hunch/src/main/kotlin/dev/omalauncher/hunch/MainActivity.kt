@@ -20,6 +20,9 @@ class MainActivity:PaperActivity(){
         design=if(BuildConfig.DEBUG)intent.getStringExtra("design").orEmpty() else ""
         chapter=state?.getString("chapter")?:"today"
         openPaper(if(design.matches(Regex("[A-Za-z]+")))"?design=$design" else "")
+        if(BuildConfig.DEBUG&&intent.getStringExtra("walletFixture")=="demo"){
+            intent.removeExtra("walletFixture");startActivity(Intent(this,WalletActivity::class.java).putExtra("demo",true))
+        }
         if(BuildConfig.DEBUG&&intent.getStringExtra("authFixture")=="demo"){
             intent.removeExtra("authFixture");startActivity(Intent(this,AccountActivity::class.java).putExtra("demo",true))
         }
@@ -31,6 +34,7 @@ class MainActivity:PaperActivity(){
         "route"->if(data.optString("chapter") in listOf("today","bets","money"))chapter=data.getString("chapter")
         "book"->if(design.isEmpty())loadBook(data)
         "account"->if(design.isEmpty())startActivity(Intent(this,AccountActivity::class.java).putExtra("demo",BuildConfig.DEBUG&&fixture=="demo"))
+        "wallet"->if(design.isEmpty())startActivity(Intent(this,WalletActivity::class.java).putExtra("demo",BuildConfig.DEBUG&&fixture=="demo"))
         "live"->{intent.removeExtra("design");design="";chapter="today";openPaper()}
         "close"->finish()
     }}

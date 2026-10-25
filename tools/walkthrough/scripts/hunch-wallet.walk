@@ -1,0 +1,34 @@
+# Fictional authenticated wallet; no Privy account, transfer, signing or order.
+fold folded
+rotate portrait
+shell am force-stop dev.omalauncher.hunch
+shell am start -n dev.omalauncher.hunch/.MainActivity --es walletFixture demo
+wait 1500
+expect FICTIONAL WALLET DEMO
+expect Create your wallet
+expect No wallet address yet
+shot hunch-wallet-before
+scrollto Create Hunch wallet
+tap Create Hunch wallet
+expect Wallet ready
+expect 0x1111111111111111111111111111111111111111
+scrollto Your verified balances
+expect Arbitrum USDC: 12.50 USDC
+expect Hyperliquid spot available: 0 USDC
+shot hunch-wallet-balances
+scrollto Refresh wallet and balances
+tap Refresh wallet and balances
+expect Copy wallet address
+scrollto Copy wallet address
+tap Copy wallet address
+expect Wallet address copied
+shot hunch-wallet-copy
+rotate landscape
+expect Your wallet
+shot hunch-wallet-landscape
+rotate portrait
+expect Your wallet
+scrollto Back to markets
+tap Back to markets
+expect PUBLIC MARKETS
+[phone] Owner signs in using real email OTP and optional passkey. In Money > Add money, create/reopen Hunch wallet. Confirm same address on refresh/reopen, scan QR against displayed address, compare copied address and native USDC/ETH and Hyperliquid balances. Stop before funding or trading: owner performs all real money tests. Never disclose tokens or private keys.

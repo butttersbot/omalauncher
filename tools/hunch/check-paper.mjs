@@ -7,7 +7,7 @@ const w=new Window({url:'https://appassets.androidplatform.net/hunch/paper/index
 w.document.write(fs.readFileSync(base+'index.html','utf8').replace(/<script[^>]*><\/script>/g,''));
 w.fetch=async url=>{const s=fs.readFileSync(base+url,'utf8');return {text:async()=>s,json:async()=>JSON.parse(s)}};
 w.SomaHunch={post:()=>{}};w.console=console;
-for(const f of ['runtime.js','live.js','app.js'])w.eval(fs.readFileSync(base+f,'utf8')+(f==='live.js'?'\nwindow.showLive=showLive;window.showAccount=showAccount;':''));
+for(const f of ['runtime.js','live.js','wallet.js','app.js'])w.eval(fs.readFileSync(base+f,'utf8')+(f==='live.js'?'\nwindow.showLive=showLive;window.showAccount=showAccount;window.cropPhone=cropPhone;window.text=text;window.action=action;window.event=event;':f==='wallet.js'?'\nwindow.showWallet=showWallet;':''));
 let errors=[];w.paperError=e=>{errors.push(e);console.error(e)};
 for(const {name}of JSON.parse(fs.readFileSync(base+'pages.json','utf8'))){const manifest=JSON.parse(fs.readFileSync(base+'pages.json','utf8')).find(p=>p.name===name);assert.equal(createHash('sha256').update(fs.readFileSync(base+'mockup/'+name+'.dc.html')).digest('hex'),manifest.sha256);await w.Paper.show(name);if(!w.document.getElementById('scene'))throw Error(name);console.log(name,w.document.getElementById('scene').textContent.replace(/\s+/g,' ').slice(0,70))}
 w.Hunch.rows=[{id:'123',title:'Test real market',category:'Sports',venue:'Outcome',date:'Read venue terms',sides:['Yes','No'],terms:{rule:'Official settlement'}}];
@@ -37,6 +37,10 @@ Array.from(w.document.querySelectorAll('button')).find(b=>b.textContent==='Verif
 assert.equal(posts.at(-1).code,'123456');assert.equal(codeField.value,'');
 w.document.getElementById('viewport').scrollTop=300;await w.receiveNative({type:'auth',demo:true,signed:true,email:'demo@example.invalid'});w.Paper.render();assert.equal(w.document.getElementById('viewport').scrollTop,0);assert.equal(w.document.querySelector('#scene svg').parentElement.style.height,'164px');
 w.document.getElementById('viewport').scrollTop=250;await w.receiveNative({type:'auth',demo:true,signed:false,sent:false,email:''});w.Paper.render();assert.equal(w.document.getElementById('viewport').scrollTop,0);
+await w.receiveNative({type:'wallet',demo:true,signed:false,busy:false,message:''});w.Paper.render();assert.match(w.document.querySelector('#scene').textContent,/Sign in to Hunch/);
+await w.receiveNative({type:'wallet',demo:true,signed:true,address:'',busy:false});w.Paper.render();assert.match(w.document.querySelector('#scene').textContent,/Create Hunch wallet/);
+await w.receiveNative({type:'wallet',demo:true,signed:true,address:'0x'+'1'.repeat(40),qr:'AAAA',balances:{arbitrumUsdc:'12.50',arbitrumEth:'0.001',hyperliquidTotal:'0',hyperliquidAvailable:'0'}});w.Paper.render();assert.match(w.document.querySelector('#scene').textContent,/Arbitrum USDC: 12.50 USDC/);assert.match(w.document.querySelector('#scene').textContent,/not trading cash/);assert.ok(w.document.querySelector('#scene img').src.startsWith('data:image/png;base64,'));
+await w.receiveNative({type:'wallet',demo:true,signed:true,address:'0x'+'1'.repeat(40),qr:'AAAA',balances:{arbitrumError:true}});w.Paper.render();assert.match(w.document.querySelector('#scene').textContent,/Arbitrum USDC: Unavailable/);assert.doesNotMatch(w.document.querySelector('#scene').textContent,/12.50/);
 w.innerWidth=880;w.Hunch.chapter='bets';w.Hunch.selected=null;await w.showLive();
 const betsArt=Array.from(w.document.querySelector('#scene').children).find(x=>x.style.left==='462px'&&x.style.top==='22px');
 assert.equal(betsArt.children[0].textContent,'NO BET SELECTED');assert.equal(betsArt.children[1].style.bottom,'0px');
