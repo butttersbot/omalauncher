@@ -15,6 +15,6 @@ fun agentThreadsNow(context: Context): List<AgentThread> {
     val book = TabBook.of(context)
     return agentThreads(
         ChatLog.of(context).tasks, now(AgentTasks.of(BuilderId.A)), MacThreads.view, asks, now(AgentTasks.of(BuilderId.B)),
-        book.chats, book.names,
+        book.chats, book.names, now(AgentTasks.of(BuilderId.C)),
     )
 }

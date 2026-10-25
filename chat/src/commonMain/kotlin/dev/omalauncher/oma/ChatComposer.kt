@@ -4,6 +4,7 @@ import dev.omalauncher.assist.AgentThread
 import dev.omalauncher.assist.BuilderId
 import dev.omalauncher.assist.PHONE_THREAD
 import dev.omalauncher.assist.PHONE_THREAD_B
+import dev.omalauncher.assist.PHONE_THREAD_C
 import dev.omalauncher.assist.frontFirst
 import dev.omalauncher.assist.macThreadId
 import dev.omalauncher.linux.MAX_PROMPT_IMAGES
@@ -57,6 +58,9 @@ sealed interface SendTo {
     /** Builder B's tab: straight to builder B. */
     data object PhoneB : SendTo
 
+    /** Builder C's tab: straight to builder C. */
+    data object PhoneC : SendTo
+
     /** A Mac thread's tab, or the tab of the new chat [chat] that thread was made for: straight to that thread. */
     data class Mac(val thread: String, val name: String, val chat: String = "") : SendTo
 
@@ -74,6 +78,7 @@ sealed interface SendTo {
 val SendTo.builder: BuilderId? get() = when (this) {
     SendTo.Phone -> BuilderId.A
     SendTo.PhoneB -> BuilderId.B
+    SendTo.PhoneC -> BuilderId.C
     else -> null
 }
 
@@ -108,6 +113,7 @@ fun sendTo(
     return when (thread.key) {
         PHONE_THREAD -> SendTo.Phone
         PHONE_THREAD_B -> SendTo.PhoneB
+        PHONE_THREAD_C -> SendTo.PhoneC
         else -> macThreadId(thread.key)?.let { SendTo.Mac(it, thread.name) } ?: SendTo.Oma
     }
 }

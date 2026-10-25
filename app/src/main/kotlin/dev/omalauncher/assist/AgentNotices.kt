@@ -24,6 +24,8 @@ internal object AgentNotices {
     private const val BUILDER_B = 45
     /** What canvas sync couldn't do or was told (slice 8b): quiet, replaced each time it changes, gone when there's nothing. */
     private const val CANVAS_SYNC = 46
+    /** The answer of builder C, apart from A's task notification and B's answer. */
+    private const val BUILDER_C = 47
     private const val TASK_CHANNEL = "agent-task-updates"
     private const val APPROVAL_CHANNEL = "agent-approvals"
     private const val ANSWER_CHANNEL = "agent-answers"
@@ -51,7 +53,11 @@ internal object AgentNotices {
         PendingIntent.getActivity(context, 0, dev.omalauncher.oma.OmaChatActivity.intent(context), PendingIntent.FLAG_IMMUTABLE)
 
     /** Which notification a finished task's answer comes up as: builder A's is the task's own, as it always was. */
-    fun answerId(builder: BuilderId) = if (builder == BuilderId.A) TASK else BUILDER_B
+    fun answerId(builder: BuilderId) = when (builder) {
+        BuilderId.A -> TASK
+        BuilderId.B -> BUILDER_B
+        BuilderId.C -> BUILDER_C
+    }
 
     /** The ongoing step while a task runs, replaced by its result when it ends. Its stop stops [about], the builder it is about. */
     fun task(context: Context, working: Boolean, label: String, answer: String, pending: Int, about: BuilderId = BuilderId.A) {

@@ -12,8 +12,11 @@ import dev.omalauncher.oma.ChatTask
  * and does what these say.
  */
 
-/** How many builders the phone runs at once at most. Boss set it: more would load the phone more than he wants. */
-const val PHONE_BUILDERS = 2
+/**
+ * How many builders the phone runs at once at most. Boss set it at two first, then asked for a third, Phone C, on
+ * Claude Code (2026-10-24: the Fold has 16 GB and room for another idle agent).
+ */
+const val PHONE_BUILDERS = 3
 
 /**
  * One of the phone's builders. [letter] is how he, the board and the chat know it, and is saved in the
@@ -22,13 +25,25 @@ const val PHONE_BUILDERS = 2
 enum class BuilderId(val letter: String) {
     A("A"),
     B("B"),
+    C("C"),
     ;
 
     /** What a chat entry saves for it: nothing for A, so every entry of A's keeps the shape it has always had. */
     val saved get() = if (this == A) "" else letter
 
     /** Its key among the threads, which its tab and its tile on the Agents page are known by. Saved: never rename. */
-    val thread get() = if (this == A) PHONE_THREAD else PHONE_THREAD_B
+    val thread get() = when (this) {
+        A -> PHONE_THREAD
+        B -> PHONE_THREAD_B
+        C -> PHONE_THREAD_C
+    }
+
+    /** What its tab and tile are called: "Phone A", "Phone B", "Phone C". */
+    val title get() = when (this) {
+        A -> PHONE_THREAD_A_NAME
+        B -> PHONE_THREAD_B_NAME
+        C -> PHONE_THREAD_C_NAME
+    }
 
     companion object {
         /**
@@ -38,8 +53,12 @@ enum class BuilderId(val letter: String) {
         fun named(name: String?): BuilderId? = when (name?.trim()?.uppercase()) {
             "A", "1" -> A
             "B", "2" -> B
+            "C", "3" -> C
             else -> null
         }
+
+        /** The builder whose thread (and tab) [key] is; null for any other key. */
+        fun ofThread(key: String?): BuilderId? = entries.firstOrNull { it.thread == key }
 
         /** The builder a saved entry, or a notification's stop, names; anything that names none is A, which there always was. */
         fun of(saved: String?): BuilderId = named(saved) ?: A
@@ -51,6 +70,12 @@ const val PHONE_THREAD_B = "phone-b"
 
 /** What builder B's tab and tile are called; A's are "Phone A" beside it, and "Phone" while B has never worked. */
 const val PHONE_THREAD_B_NAME = "Phone B"
+
+/** The key of builder C among the threads. Saved: never rename. */
+const val PHONE_THREAD_C = "phone-c"
+
+/** What builder C's tab and tile are called. */
+const val PHONE_THREAD_C_NAME = "Phone C"
 
 /** Which builder a request of the build lane's went to. */
 val ChatTask.builderId: BuilderId get() = BuilderId.of(builder)
@@ -187,4 +212,8 @@ fun poolLabel(lead: BuilderId, label: String, more: Int): String =
  * Whether builder B is shown at all: on the board, as a tab and as a tile. Only once it has worked, or works
  * now, or has his requests in the chat; until then the phone looks as it did with one builder.
  */
-fun builderBShown(tasks: List<ChatTask>, working: Boolean): Boolean = working || tasks.any { it.build && it.builderId == BuilderId.B }
+fun builderBShown(tasks: List<ChatTask>, working: Boolean): Boolean = builderShown(BuilderId.B, tasks, working)
+
+/** Whether [builder] other than A is on the board and in the status file: once it has worked, or works now. */
+fun builderShown(builder: BuilderId, tasks: List<ChatTask>, working: Boolean): Boolean =
+    builder == BuilderId.A || working || tasks.any { it.build && it.builderId == builder }

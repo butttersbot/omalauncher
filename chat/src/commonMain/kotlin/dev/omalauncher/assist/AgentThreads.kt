@@ -105,7 +105,7 @@ private fun firstLine(text: String) = text.lineSequence().firstOrNull { it.isNot
 
 /** One agent at work as he is shown it: a tab and a dot in the chat, and a tile on home. */
 data class AgentThread(
-    /** [PHONE_THREAD] or [PHONE_THREAD_B], or [macThreadKey] of a thread on the Mac. */
+    /** [PHONE_THREAD], [PHONE_THREAD_B] or [PHONE_THREAD_C], or [macThreadKey] of a thread on the Mac. */
     val key: String,
     val name: String,
     val state: ThreadState,
@@ -181,14 +181,15 @@ fun phoneThread(tasks: List<ChatTask>, builder: BuilderNow, which: BuilderId = B
 }
 
 /**
- * The phone's builders as threads, "Phone A" and "Phone B", both always (Boss, 2026-10-21: "Phone B's tab always on,
+ * The phone's builders as threads, "Phone A", "Phone B" and "Phone C", all always (Boss, 2026-10-21: "Phone B's tab always on,
  * so that I can send him a message whenever, even when he's idle"). [builders] is how each stands.
  * A builder's thread is the entries of no new chat: one an earlier version gave a new chat stays in that chat.
  */
 fun phoneThreads(tasks: List<ChatTask>, builders: Map<BuilderId, BuilderNow>): List<AgentThread> {
     val own = tasks.filter { it.chat.isEmpty() }
     fun thread(id: BuilderId, name: String) = phoneThread(own, builders[id] ?: BuilderNow(), id, name)
-    return listOf(thread(BuilderId.A, PHONE_THREAD_A_NAME), thread(BuilderId.B, PHONE_THREAD_B_NAME))
+    // Phone C too, always, as B is (Boss, 2026-10-24: a third phone agent, on Claude Code).
+    return BuilderId.entries.take(PHONE_BUILDERS).map { thread(it, it.title) }
 }
 
 /** What builder A's tab and tile are called once builder B is shown beside it. */
@@ -340,13 +341,14 @@ fun agentThreads(
     second: BuilderNow = BuilderNow(),
     chats: List<NewChat> = emptyList(),
     names: Map<String, String> = emptyMap(),
+    third: BuilderNow = BuilderNow(),
 ): List<AgentThread> {
     val listed = mac.threads.associateBy { it.id }
     val bound = chats.map { it.mac }.filter { it.isNotEmpty() }.toSet()
     val ids = (mac.threads.map { it.id } + tasks.filter { it.mac && it.chat.isEmpty() }.map { it.thread }).distinct() - bound
     // Each as reachable as its own Mac: one Mac out of reach leaves the other's threads as they are.
     val threads = ids.map { id -> macThreadNow(listed[id], id, tasks.filter { it.chat.isEmpty() }, asks[id].orEmpty(), mac.reachableFor(id)).copy(machine = mac.machineFor(id)) }
-    val builders = mapOf(BuilderId.A to builder, BuilderId.B to second)
+    val builders = mapOf(BuilderId.A to builder, BuilderId.B to second, BuilderId.C to third)
     val chatThreads = chats.map { chatThread(it, names[it.key] ?: NEW_CHAT_NAME, tasks, mac, asks) }
     // A bot's session is named by the bot, with its emoji, and stands first: bots, then the threads by when they worked.
     val withBots = threads.map { thread ->

@@ -17,10 +17,12 @@ mac=${SOMA_MAC:-jacks-mac-pro}
 thread=${SOMA_MAC_THREAD:-t9f45b731}
 tools=/opt/android-sdk/build-tools/36.0.0
 die() { echo "$1" >&2; exit 1; }
-# The builder asking (A or B): set when a builder starts, else told by its worktree. The Mac's answer goes back to it
-# (Boss, 2026-10-21: builder B's builds were answered to A).
+# The builder asking (A, B or C): set when a builder starts, else told by its worktree. The Mac's answer goes back to it
+# (Boss, 2026-10-21: builder B's builds were answered to A). The letter is the mail's sender session (--as), which is
+# also what the Mac Pro keys each builder's own build lane by.
 builder=${OMA_BUILDER:-}
-if [ -z "$builder" ]; then case $PWD in /root/wt/builder-b*) builder=B ;; *) builder=A ;; esac; fi
+if [ -z "$builder" ]; then case $PWD in /root/wt/builder-b*) builder=B ;; /root/wt/builder-c*) builder=C ;; *) builder=A ;; esac; fi
+case $builder in A|B|C) ;; *) die "OMA_BUILDER is \"$builder\": a builder is A, B or C." ;; esac
 
 commit=$(git -C "$repo" rev-parse HEAD)
 short=${commit:0:9}
