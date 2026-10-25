@@ -3,3 +3,6 @@
 
 /* Reference controls belong outside the drawing, never over source content. */
 #reference{height:auto;min-height:32px;box-sizing:border-box;display:flex;flex-wrap:wrap;align-items:center;gap:4px}#reference[hidden]{display:none}body.reference #viewport{height:calc(100% - var(--ribbon-height,32px))}.paper-preview-tools{position:static;z-index:auto;margin:0;padding:0;border:0;background:transparent;max-width:none}.paper-preview-tools select{max-width:110px}
+
+/* A scrollable flex list must not squeeze rows through their own captions. */
+.paper-search-results > *{flex-shrink:0}
