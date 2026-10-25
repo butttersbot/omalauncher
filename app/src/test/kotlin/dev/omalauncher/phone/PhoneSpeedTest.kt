@@ -77,4 +77,16 @@ class PhoneSpeedTest {
         assertFalse(search.repeated(page(""), true))
         assertFalse(search.repeated(page(""), true))
     }
+
+    @Test fun aLabelQueryPressesOnlyWhenExactlyOneControlSaysItWhole() {
+        fun n(text: String, desc: String = "", enabled: Boolean = true) = SeenNode("", text, desc, true, false, enabled)
+        // Android's search matches parts of words too: only the whole one counts, and only if it is alone.
+        assertEquals(1, PhoneFind.quick(listOf(n("Send later"), n("Send")), "send"))
+        assertEquals(0, PhoneFind.quick(listOf(n("", desc = "Send"), n("Sender")), "Send"))
+        assertNull(PhoneFind.quick(listOf(n("Send"), n("send")), "Send"))
+        assertNull(PhoneFind.quick(listOf(n("Send later")), "Send"))
+        assertNull(PhoneFind.quick(listOf(n("Send", enabled = false)), "Send"))
+        assertNull(PhoneFind.quick(emptyList(), "Send"))
+        assertNull(PhoneFind.quick(listOf(n("")), " "))
+    }
 }

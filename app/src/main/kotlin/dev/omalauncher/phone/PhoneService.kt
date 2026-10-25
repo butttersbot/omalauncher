@@ -324,6 +324,7 @@ class PhoneService : AccessibilityService() {
     private var readNanos = 0L
     private var nodesRead = 0
     private var searchScrolls = 0
+    private var quickFinds = 0
     /** The screen's controls, under a new snapshot id. */
     private fun read(): JSONObject {
         val readStart = SystemClock.elapsedRealtimeNanos()
@@ -457,6 +458,36 @@ class PhoneService : AccessibilityService() {
         }
         settled { look() }
     }
+    /**
+     * The id of the one control on screen that says exactly [label] and of what takes its press (itself or the nearest
+     * clickable control around it), found with Android's search by words instead of a whole read; null when there is
+     * not exactly one. Its id is the same path a read would give, and it is noted as seen, so [act] checks it as ever.
+     */
+    private fun quickTarget(label: String): String? = runCatching {
+        val root = root()
+        val found = root.findAccessibilityNodeInfosByText(label).filter { it.isVisibleToUser }
+        val seenNodes = found.map { SeenNode("", it.text?.toString().orEmpty(), it.contentDescription?.toString().orEmpty(), it.isClickable, it.isEditable, it.isEnabled) }
+        val index = PhoneFind.quick(seenNodes, label) ?: return@runCatching null
+        quickFinds++
+        var target: AccessibilityNodeInfo = found[index]
+        var up = target
+        var hops = 0
+        while (!up.isClickable && hops < 6) { up = up.parent ?: break; hops++ }
+        if (up.isClickable && !inWebPage(up)) target = up else if (inWebPage(target)) return@runCatching null
+        // Its path from the root, as [walk] numbers children.
+        val parts = ArrayDeque<Int>()
+        var at = target
+        var depth = 0
+        while (depth < 40) {
+            val parent = at.parent ?: break
+            val i = (0 until parent.childCount).firstOrNull { parent.getChild(it) == at } ?: return@runCatching null
+            parts.addFirst(i); at = parent; depth++
+        }
+        if (at != root) return@runCatching null
+        val path = (listOf("root") + parts.map { it.toString() }).joinToString(".")
+        seen = seen + (path to control(path, target))
+        path
+    }.getOrNull()
     /** Clicks the control on this display whose words are exactly [label] (or the nearest clickable around it). */
     private fun clickSaying(label: String): Boolean {
         if (label.isEmpty()) return false
@@ -570,7 +601,7 @@ class PhoneService : AccessibilityService() {
         displayId = target; busy = true; requestCommand = command
         val generation = ++requestGeneration
         val requestStart = SystemClock.elapsedRealtimeNanos()
-        readCalls = 0; readNanos = 0; nodesRead = 0; searchScrolls = 0
+        readCalls = 0; readNanos = 0; nodesRead = 0; searchScrolls = 0; quickFinds = 0
         val now = SystemClock.elapsedRealtime()
         requestDeadline = minOf(now + (plan?.timeoutMs ?: 7500L), input.optLong("_bridgeDeadline", Long.MAX_VALUE))
         val budget = (requestDeadline - now).coerceAtLeast(0L)
@@ -586,7 +617,7 @@ class PhoneService : AccessibilityService() {
                 if (input.optBoolean("timing")) output.put("timing", JSONObject()
                     .put("serviceMs", (SystemClock.elapsedRealtimeNanos() - requestStart) / 1_000_000.0)
                     .put("reads", readCalls).put("readMs", readNanos / 1_000_000.0)
-                    .put("nodes", nodesRead).put("searchScrolls", searchScrolls))
+                    .put("nodes", nodesRead).put("searchScrolls", searchScrolls).put("quickFinds", quickFinds))
                 displayId = 0; busy = false
                 callback(output)
             }
@@ -860,6 +891,9 @@ class PhoneService : AccessibilityService() {
                             }
                         } catch (e: Exception) { reply(JSONObject().put("ok", false).put("error", e.message ?: "Phone control failed")) }
                     }
+                    // One control that says exactly this, found by Android's own search without reading the whole screen:
+                    // pressed straight away. Anything less certain reads the screen as before.
+                    if (command == "press") quickTarget(label)?.let { return step(it, 0) }
                     look(forward = true, tries = 0, scrolled = 0)
                     return
                 }

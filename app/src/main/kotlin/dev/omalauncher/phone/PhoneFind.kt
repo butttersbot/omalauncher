@@ -42,6 +42,19 @@ object PhoneFind {
         return whole.ifEmpty { able.filter { asked in words(it.text) || asked in words(it.description) } }
     }
 
+    /**
+     * Stage 3 of the speed plan, a label query: of the controls Android's own search by words handed back
+     * ([AccessibilityNodeInfo.findAccessibilityNodeInfosByText], a contains match on text and description), the index
+     * of the one whose whole text or description is [label]; null unless there is exactly one, so anything less
+     * certain falls back to reading the whole screen and [press]'s own rules.
+     */
+    fun quick(candidates: List<SeenNode>, label: String): Int? {
+        val asked = words(label)
+        if (asked.isEmpty() || asked.length > MAX_LABEL) return null
+        val whole = candidates.withIndex().filter { (_, n) -> n.enabled && (words(n.text) == asked || words(n.description) == asked) }
+        return whole.singleOrNull()?.index
+    }
+
     private fun one(ids: List<String>): Found =
         when (ids.size) {
             0 -> Found.None

@@ -88,6 +88,17 @@ class PhoneSpeedInstrumentation : Instrumentation() {
             val scrolls = absent.getJSONObject("timing").getInt("searchScrolls")
             check(scrolls in 0..12) { "Search exceeded two bounded directions: $scrolls" }
             Log.i("SomaWalk", "speed PASS: actual absent-label search bounded; scrolls=$scrolls")
+            // Stage 3 label query: one control that says exactly this is pressed without reading the whole screen first;
+            // the only read is the screen it led to.
+            val display = call(JSONObject().put("command", "open").put("package", "settings:display").put("until", "Display"))
+            check(display.optBoolean("ok")) { display.toString() }
+            val quick = call(JSONObject().put("command", "press").put("label", "Screen timeout").put("timing", true))
+            check(quick.optBoolean("ok")) { "Press by label failed: $quick" }
+            val quickTiming = quick.getJSONObject("timing")
+            Log.i("SomaWalk", "speed METRIC quickPress=" + quickTiming)
+            check(quickTiming.getInt("quickFinds") == 1 && quickTiming.getInt("reads") == 1) { "The label query read the whole screen first: $quickTiming" }
+            call(JSONObject().put("command", "back"))
+            Log.i("SomaWalk", "speed PASS: a press by label found its control without a whole read")
             finish(Activity.RESULT_OK, Bundle().apply { putString("stream", "Phone service speed primitives PASS\n") })
         } catch (problem: Throwable) {
             Log.e("SomaWalk", "speed FAIL", problem)

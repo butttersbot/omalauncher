@@ -203,3 +203,11 @@ absent 4 / 704 ms, native plan 2 / 432 ms. Read counts are the same: these scena
 screen, so part 1 shows only in the walk's "unchanged screen answered without a read" check. Fewer reads in
 real use need the phone benchmarks, or a METRIC scenario that waits; parts 2-4 (filtered events, deltas,
 label queries) are where the per-read cost comes down.
+
+Stage 3 part 2 (2026-10-25, Phone A): label queries. `press LABEL` first asks Android's own search by words
+(findAccessibilityNodeInfosByText); when exactly one visible, enabled control says the whole label it is pressed
+straight away (or the nearest clickable around it), with the same path, guards and refind as ever, so the only read
+is the screen it led to. Anything else (no match, several, parts of words, a web page) reads the screen as before.
+Timing reports quickFinds. Unit test aLabelQueryPressesOnlyWhenExactlyOneControlSaysItWhole; on-device check in
+PhoneSpeedInstrumentation ("a press by label found its control without a whole read"). Still open in stage 3:
+subtree-filtered events, compact ids/deltas, visual fallback.
