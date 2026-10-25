@@ -223,6 +223,9 @@ class DiscoveryTests(unittest.TestCase):
             self.m['changed'].notify_all()
         self.finish_phone(t)
         self.assertEqual(self.sid, t.meta['session'])
+        starts = [json.loads(line) for line in (self.root / 'starts.log').read_text().splitlines()]
+        self.assertEqual(1, len(starts))
+        self.assertFalse(starts[0]['forked'])
 
     def test_busy_wait_cancellation_and_timeout_never_start_agent(self):
         for cancel in (True, False):
