@@ -435,6 +435,14 @@ try:
     check('artifacts: Claude Code writing a file that is an artifact shows it as being edited at once, then its new version',
           [(e['version'], e['state']) for e in events if e['type'] == 'artifact'] == [(3, 'editing'), (3, 'ready')])
 
+    last = call('GET', '/threads/' + thread)[1]['thread']['last_event']
+    call('POST', '/threads/%s/messages' % thread, {'text': 'scripted change'})
+    stream(thread, after=last)
+    check('it goes back to idle after a scripted change', settle(thread, 'idle'))
+    events = call('GET', '/threads/%s/events?after=%d' % (thread, last))[1]['events']
+    check('artifacts: a command that names an artifact\'s file shows it as being edited, then its new version',
+          [(e['version'], e['state']) for e in events if e['type'] == 'artifact'] == [(4, 'editing'), (4, 'ready')])
+
     # The helper's socket: only this user, only with the thread's own token, only names and sizes an artifact may have.
     sock = work / 'state' / 'artifacts.sock'
     if len(str(sock).encode()) >= 100:
@@ -474,7 +482,7 @@ try:
     meta['versions'].append({'v': True, 'time': 1})
     (folder / 'meta.json').write_text(json.dumps(meta))
     code, still, _ = artifact_get('/threads/%s/artifacts/mock.html' % thread)
-    check('artifacts: a record naming other files reads only the versions the runner names', code == 200 and still['v'] == 3)
+    check('artifacts: a record naming other files reads only the versions the runner names', code == 200 and still['v'] == 4)
     (work / 'artifacts' / thread / 'evil.html').mkdir()
     (work / 'artifacts' / thread / 'evil.html' / 'meta.json').symlink_to(work / 'outside' / 'secret.html')
     check('artifacts: a record that is a link is no artifact', 'evil.html' not in json.dumps(call('GET', '/threads/%s/artifacts' % thread)[1]))

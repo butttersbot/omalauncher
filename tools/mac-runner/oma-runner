@@ -286,7 +286,8 @@ ARTIFACT_NOTE = ('Soma (the app Boss is using) shows artifacts beside the chat. 
                  'diagram or anything visual, write ONE self-contained file (HTML with inline CSS and JS: it is shown offline, '
                  'so no CDN scripts, web fonts or network calls) and run `soma-artifact put FILE --title "Short title" --note '
                  '"what this version is"`. Every change is a new put of the same file name, which becomes its next version. '
-                 'Before a long edit you may run `soma-artifact editing NAME`. `soma-artifact list` shows what this conversation has.')
+                 'Before you start changing one, run `soma-artifact editing NAME` so Boss sees you are on it. '
+                 '`soma-artifact list` shows what this conversation has.')
 
 SOMA_ARTIFACT_HELPER = r'''#!/usr/bin/env python3
 """soma-artifact: shows a file beside this conversation in Soma, as an artifact Boss can look at and use.
@@ -629,10 +630,20 @@ def artifact_touched(thread, block):
     edited at once, as `soma-artifact editing` would, so Boss sees the strip without the agent having to say so. The next
     put, or the end of the turn, ends it. Call with `changed` held."""
     given = block.get('input') if isinstance(block.get('input'), dict) else {}
-    if block.get('name') not in ('Write', 'Edit', 'MultiEdit') or not isinstance(given.get('file_path'), str):
-        return
-    name = os.path.basename(given['file_path'])
     thread_id = thread.meta['id']
+    if block.get('name') == 'Bash' and isinstance(given.get('command'), str) and not given['command'].lstrip().startswith('soma-artifact'):
+        # A command that works on an artifact's file by name (a script that rewrites it, then puts it): the first such
+        # artifact of this thread's it names. Looking only at names the thread already has, never anything else.
+        command = given['command'][:20000]
+        names = [entry.name for entry in os.scandir(artifact_folder(thread_id)) if entry.is_dir(follow_symlinks=False)] \
+            if ARTIFACT_STORE_THREAD.fullmatch(thread_id) and artifact_folder(thread_id).is_dir() else []
+        name = next((found for found in sorted(names) if re.search(r'(^|[\s/\'"=<>])' + re.escape(found) + r'($|[\s\'";|&<>)])', command)), None)
+        if name is None:
+            return
+    elif block.get('name') in ('Write', 'Edit', 'MultiEdit') and isinstance(given.get('file_path'), str):
+        name = os.path.basename(given['file_path'])
+    else:
+        return
     if artifact_name(name) is None or not ARTIFACT_STORE_THREAD.fullmatch(thread_id) or not (artifact_folder(thread_id, name) / 'meta.json').is_file():
         return
     meta = artifact_meta(thread_id, name)
