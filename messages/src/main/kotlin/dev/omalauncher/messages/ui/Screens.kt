@@ -10,6 +10,7 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.IntOffset
@@ -409,8 +410,23 @@ fun Thread(
             }
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            // Room under the last message for the Latest pill, so it never covers the end of its words (the 0.7.6 walk).
-            LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp), state = list, contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 44.dp)) {
+            // Room under the last message for the Latest pill, so it never covers the end of its words (the 0.7.6 walk),
+            // but only while the pill is there: kept always, it left a strip of empty paper between the last message and
+            // the composer whenever the owner was at the latest (the Fold, 0.8.2). Its height is the pill's own, measured.
+            val pillShown = !latest && size > 0
+            val density = LocalDensity.current
+            var pillHeight by remember { mutableIntStateOf(0) }
+            val pillRoom by androidx.compose.animation.core.animateDpAsState(
+                if (pillShown) with(density) { pillHeight.toDp() } + PILL_GAP * 2 else 0.dp,
+                label = "pill room",
+            )
+            // A short conversation sits down on the composer too, as in Messages, not up under the name with paper below.
+            LazyColumn(
+                Modifier.fillMaxSize().padding(horizontal = 12.dp),
+                state = list,
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = pillRoom),
+                verticalArrangement = Arrangement.Bottom,
+            ) {
                 itemsIndexed(c.messages) { i, m ->
                     val prev = c.messages.getOrNull(i - 1)
                     val next = c.messages.getOrNull(i + 1)
@@ -461,8 +477,8 @@ fun Thread(
                     }
                 }
             }
-            if (!latest && size > 0) {
-                LatestPill(fresh, Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp)) {
+            if (pillShown) {
+                LatestPill(fresh, Modifier.align(Alignment.BottomCenter).padding(bottom = PILL_GAP).onSizeChanged { pillHeight = it.height }) {
                     scope.launch {
                         list.animateScrollToItem(size - 1)
                         latest = true
@@ -603,6 +619,9 @@ fun Thread(
         )
     }
 }
+
+/** Between the Latest pill and the composer, and again between the pill and the last message above it. */
+private val PILL_GAP = 10.dp
 
 /** Back to the newest message, with how many came since the owner was last there. */
 @Composable
