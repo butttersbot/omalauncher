@@ -19,6 +19,11 @@ class PhoneSpeedTest {
     @Test fun settingsOpensInSettingsNotTheChooserAndAllowsSamsungsHandOver() {
         // Samsung's My Files answers storage too: Settings is picked, never Android's "open with" chooser.
         assertEquals("com.android.settings", PhoneSettings.handler(listOf("com.sec.android.app.myfiles", "com.android.settings")))
+        // Storage itself opens in My Files on Samsung: Settings would hand it on through the chooser (launcher 153).
+        val storage = PhoneSettings.action("settings:storage")!!
+        assertEquals("com.sec.android.app.myfiles", PhoneSettings.handler(listOf("com.android.settings", "com.sec.android.app.myfiles"), storage))
+        assertEquals("com.android.settings", PhoneSettings.handler(listOf("com.android.settings"), storage))
+        assertEquals("com.android.settings", PhoneSettings.handler(listOf("com.sec.android.app.myfiles", "com.android.settings"), PhoneSettings.action("settings:display")!!))
         assertEquals("com.samsung.android.settings", PhoneSettings.handler(listOf("android", "com.samsung.android.settings")))
         assertNull(PhoneSettings.handler(listOf("android")))
         assertNull(PhoneSettings.handler(emptyList()))

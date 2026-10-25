@@ -719,7 +719,7 @@ class PhoneService : AccessibilityService() {
                     require(expected.length <= 200) { "Expected screen text is too long." }
                     // What opens it is the app the agent's touches are for from here.
                     val handler = if (settingsAction != null) {
-                        PhoneSettings.handler(packageManager.queryIntentActivities(intent, 0).map { it.activityInfo.packageName }.distinct())
+                        PhoneSettings.handler(packageManager.queryIntentActivities(intent, 0).map { it.activityInfo.packageName }.distinct(), settingsAction)
                             ?.also { intent.setPackage(it) }
                             ?: error("This Settings destination is unavailable on this phone. Nothing was opened.")
                     } else name

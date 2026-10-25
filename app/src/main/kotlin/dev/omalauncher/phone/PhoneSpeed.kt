@@ -15,12 +15,18 @@ object PhoneSettings {
     /** Android's own Settings app; Samsung's too. */
     const val SETTINGS = "com.android.settings"
 
+    /** Samsung's My Files, whose "Manage storage" is the phone's storage page there. */
+    const val MY_FILES = "com.sec.android.app.myfiles"
+
     /**
-     * The app to open a Settings destination in, of those that answer it: Settings itself before any other (Samsung's My
-     * Files also answers storage, and Android would ask which; the phone walk 2026-10-24), never Android's chooser.
+     * The app to open a Settings destination in, of those that answer it, never Android's chooser. Storage on a Samsung
+     * phone opens in My Files: its Settings answers storage too but hands it on to My Files through the chooser again,
+     * which was still there after "Settings" was picked (the Fold, launcher 153, 2026-10-24). Anything else opens in
+     * Settings itself before any other app.
      */
-    fun handler(candidates: List<String>): String? =
-        candidates.firstOrNull { it == SETTINGS } ?: candidates.firstOrNull { it != PhoneGuard.CHOOSER && "settings" in it }
+    fun handler(candidates: List<String>, action: String = ""): String? =
+        candidates.firstOrNull { it == MY_FILES && action == actions["settings:storage"] }
+            ?: candidates.firstOrNull { it == SETTINGS } ?: candidates.firstOrNull { it != PhoneGuard.CHOOSER && "settings" in it }
             ?: candidates.firstOrNull { it != PhoneGuard.CHOOSER }
 
     /**
