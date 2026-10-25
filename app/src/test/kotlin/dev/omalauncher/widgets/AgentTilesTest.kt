@@ -449,11 +449,52 @@ class AgentTilesTest {
         val keeper = dev.omalauncher.theme.pack.moduleFile("src/main/kotlin/dev/omalauncher/widgets/AgentTileKeeper.kt").readLines()
             .map { it.trim() }.filterNot { it.startsWith("*") || it.startsWith("/*") || it.startsWith("//") }.joinToString("\n")
         assertEquals(
-            listOf("notebook.threadTiles(", "notebook.addPage(", "notebook.renamePage(", "notebook.pageOf(", "notebook.forget(", "notebook.threadTiles(", "notebook.board(", "notebook.placeThreadTile("),
+            listOf(
+                "notebook.threadTiles(", "notebook.addPage(", "notebook.renamePage(", "notebook.pageOf(", "notebook.forget(",
+                // Laying the Agents page out in rank order (Boss, 2026-10-24): its own tiles, moved on that page alone.
+                "notebook.threadTiles(", "notebook.threadTileCell(", "notebook.setThreadTileCells(",
+                // How much the Agents page holds, then placing a tile.
+                "notebook.threadTiles(", "notebook.board(", "notebook.board(", "notebook.placeThreadTile(",
+            ),
             Regex("""\bnotebook\.\w+\(""").findAll(keeper).map { it.value }.toList(),
         )
         assertTrue(keeper.contains("notebook.renamePage(made, AGENTS_PAGE)"))
         assertTrue(keeper.contains("if (isThreadTile(write.tile) && notebook.pageOf(write.tile) == write.page) notebook.forget(write.tile)"))
+        // The reorder is asked of the Agents page only, for the thread tiles on it.
+        assertTrue(keeper.contains("agentsPage(notebook.pages)?.let { page ->"))
+        assertTrue(keeper.contains("notebook.threadTiles().filterValues { it == page }"))
+        assertTrue(keeper.contains("notebook.setThreadTileCells(page, moves)"))
+    }
+
+    /** Moving tiles into rank order touches only thread tiles already on the page named, never anything else. */
+    @Test fun aReorderMovesOnlyThreadTilesOnThatPage() {
+        val home = Home()
+        home.look(phone, ff4)
+        val agents = home.notebook.pages.last().id
+        home.notebook.move("thread:mac:t-ff4", "p1")
+        val before = home.notebook.snapshot()
+        // A widget on his page, a tile on his page, and a key that isn't there: none of them moves.
+        home.notebook.setThreadTileCells(agents, mapOf("clock.owl" to Cell(0, 0, 3, 3), "thread:mac:t-ff4" to Cell(3, 3, 3, 3), "thread:mac:t-none" to Cell(0, 3, 3, 3)))
+        assertEquals(before, home.notebook.snapshot())
+        // The Agents page's own tile does.
+        home.notebook.setThreadTileCells(agents, mapOf("thread:phone" to Cell(3, 3, 3, 3)))
+        assertEquals(Cell(3, 3, 3, 3), home.page("Agents").items.single().cell)
+        assertEquals(before.pages.take(2), home.notebook.snapshot().pages.take(2))
+    }
+
+    /** At work first, then newest: a session that starts work moves to the top left, and nothing else on home moves. */
+    @Test fun theAgentsPageIsLaidOutInRankOrder() {
+        val home = Home()
+        val a = thread(macThreadKey("t-a"), ThreadState.Idle, worked = now - hour)
+        val b = thread(macThreadKey("t-b"), ThreadState.Idle, worked = now - 2 * hour)
+        home.look(phone.copy(state = ThreadState.Idle, worked = now - 3 * hour), a, b)
+        val agents = home.page("Agents")
+        val cellOf = { key: String -> home.page("Agents").items.first { it.key == key }.cell }
+        assertEquals(Cell(0, 0, 3, 3), cellOf(tile(a))); assertEquals(Cell(3, 0, 3, 3), cellOf(tile(b))); assertEquals(Cell(0, 3, 3, 3), cellOf("thread:phone"))
+        home.look(phone.copy(since = home.clock), a, b)
+        assertEquals(Cell(0, 0, 3, 3), cellOf("thread:phone")); assertEquals(Cell(3, 0, 3, 3), cellOf(tile(a))); assertEquals(Cell(0, 3, 3, 3), cellOf(tile(b)))
+        assertEquals(his.pages, home.notebook.snapshot().pages.take(2))
+        assertEquals(agents.items.map { it.key }.toSet(), home.page("Agents").items.map { it.key }.toSet())
     }
 
     /** Boss 2026-10-13: a pinned thread's tile never leaves by itself; an archived one leaves the Agents page until it comes back. */
