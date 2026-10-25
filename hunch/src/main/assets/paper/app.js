@@ -12,7 +12,7 @@ window.receiveNative=async data=>{try{
  if(data.type==='book'&&Hunch.selected?.id===data.id&&Hunch.side===data.side&&Hunch.budget===data.budget){Hunch.book=data;Paper.schedule()}
  if(data.type==='auth'){accountMode=true;clearTimeout(resizeTimer);await showAccount(data)}
  }catch(e){paperError(e)}};
-let resizeTimer;window.paperResize=()=>{ribbonSize();Paper.fit();if(accountMode){const field=document.activeElement;if(field?.tagName==='INPUT')requestAnimationFrame(()=>field.scrollIntoView({block:'center'}));return}if(!design&&!accountMode){clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{if(!accountMode)showLive()},150)}};
+let resizeTimer;window.paperResize=()=>{ribbonSize();Paper.fit();if(accountMode){const field=document.activeElement;if(field?.tagName==='INPUT')requestAnimationFrame(()=>field.scrollIntoView({block:'center'}));return}if(!design&&!accountMode){clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{if(!accountMode){if(Hunch.layoutWide===(window.innerWidth>=600))Paper.render();else showLive()}},150)}};
 window.paperBack=()=>{if(design||accountMode)return false;if(Hunch.selected){Hunch.selected=null;showLive();return true}if(Hunch.chapter!=='today'){route('today');return true}return false};
 sendNative({type:'ready'});
 

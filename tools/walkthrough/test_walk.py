@@ -17,8 +17,6 @@ class WebInputNames(unittest.TestCase):
             self.assertEqual(walk.find("emulator", "Sign-in email", wait_ms=0), (623,1170))
             self.assertEqual(walk.find("emulator", "Send email code", wait_ms=0), (623,1338))
 
-if __name__ == "__main__":
-    unittest.main()
 
 class HumanControlMatches(unittest.TestCase):
     def find(self, xml, wanted, actionable=False):
@@ -38,3 +36,6 @@ class HumanControlMatches(unittest.TestCase):
     def test_typographic_apostrophe_is_the_same_label(self):
         xml = '''<hierarchy><node text="Today’s issue" bounds="[100,100][900,200]"/></hierarchy>'''
         self.assertEqual(self.find(xml,"Today's issue"),(500,150))
+
+if __name__ == "__main__":
+    unittest.main()

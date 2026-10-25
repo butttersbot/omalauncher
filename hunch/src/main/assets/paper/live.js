@@ -43,7 +43,7 @@ function coverPrepare(root){
  else {const panels=Array.from(body.children);cashPanel(panels[0]);empty(panels[1],'Daily limit','Betting permissions are not enabled.');recordPanel(panels[2])}
 }
 async function showLive(){
- const wide=window.innerWidth>=600;
+ const wide=window.innerWidth>=600;Hunch.layoutWide=wide;
  if(Hunch.selected)return wide?showMarket(true):showCoverMarket();
  if(wide)return showWide();
  await Paper.show('CoverBets',logic=>{
