@@ -28,14 +28,15 @@ tap Bets
 expect No trading account
 shot hunch-paper-bets
 tap Money
-expect No wallet is connected
+expect Open your wallet
 shot hunch-paper-money
-tap Sign in to Hunch
-expect Start with email
-shot hunch-paper-auth
+tap Add money
+expect FICTIONAL WALLET DEMO
+expect Create Hunch wallet
+shot hunch-paper-wallet
 key BACK
 fold open
-expect No wallet
+expect Open your wallet
 shot hunch-paper-money-inner
 tap TODAY
 expect PUBLIC MARKETS
