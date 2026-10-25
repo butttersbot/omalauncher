@@ -63,3 +63,24 @@ text, attributes, inline styles and SVG. Only host root ID/scale and equivalent
 whitespace/CSS quote formatting are normalized. Reproduce with
 `tools/hunch/compare-export.mjs`. This establishes template fidelity, not live
 layout/font/interaction readiness.
+
+## Bottom-tab spacing — 0.4.1
+
+Boss accepted installed0.4.0 and requested less blank space below the tabs.
+Source355fc3fc (vc10/0.4.1) reduces the live cover navigation container86->58px
+(the artwork is58px high) and adds28px to the scrolling body. Android's native
+system/gesture insets remain unchanged. Original exported HTML is unchanged.
+
+Exact Mac build/test run passed. hunch-bottom-tabs.walk:14PASS/0FAIL/4LOOK,
+all screenshots reviewed. On the emulator the unused bottom strip shrank by89
+physical pixels; remaining space is the system gesture area. Landscape and
+portrait return checks passed. Evidence Pocket20261025020217-1a8cfa;
+APK20261025020215-d6e097, buildlog20261025020216-9b4b51.
+
+Phone: Settings explicitly verified Version0.4.1 after normal Android update.
+Today, Bets and Money tab navigation and reduced bottom spacing PASS; their
+screenshots were inspected and the gesture handle stays clear. An initial
+accessibility tap was rejected during transition; a fresh read/retry succeeded.
+Physical unfolding and real account actions were not retested for this change.
+Phone-signed APK SHA256:
+3ca591d1e592fc58b70916bae680f99a2127e04d9e98ec01e364c6dedfb9c01d.
