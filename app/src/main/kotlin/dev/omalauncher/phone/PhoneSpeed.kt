@@ -33,7 +33,14 @@ object PhoneSettings {
      * Apps a Settings page may hand over to and still be that page: Samsung sends Battery on to Device Care (lool).
      * The destination's words are still checked in them.
      */
-    fun handsOverTo(handler: String): Set<String> = if (handler == SETTINGS) setOf("com.samsung.android.lool") else emptySet()
+    fun handsOverTo(handler: String): Set<String> = if (handler == SETTINGS) setOf("com.samsung.android.lool", MY_FILES) else emptySet()
+
+    /**
+     * What to pick when Android asks which app should open a Settings destination: Samsung's Settings hands storage on
+     * to My Files through Android's "Complete action using", and "My Files", "Just once" is what he'd tap (the Fold,
+     * launcher 155, 2026-10-25). Nothing for any other destination: there the chooser is reported, not answered.
+     */
+    fun chooserAnswer(action: String?): List<String> = if (action != null && action == actions["settings:storage"]) listOf("My Files", "Just once") else emptyList()
 
     fun action(name: String): String? {
         require(!name.startsWith("settings:") || name in actions) {

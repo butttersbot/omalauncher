@@ -30,6 +30,11 @@ class PhoneSpeedTest {
         // Battery is handed on to Device Care, and that is still the page asked for.
         assertTrue("com.samsung.android.lool" in PhoneSettings.handsOverTo("com.android.settings"))
         assertTrue(PhoneSettings.handsOverTo("com.example.app").isEmpty())
+        // Storage: Samsung's Settings asks Android again, which asks which app; My Files, just once, as he'd tap.
+        assertEquals(listOf("My Files", "Just once"), PhoneSettings.chooserAnswer(PhoneSettings.action("settings:storage")))
+        assertTrue(PhoneSettings.chooserAnswer(PhoneSettings.action("settings:display")).isEmpty())
+        assertTrue(PhoneSettings.chooserAnswer(null).isEmpty())
+        assertTrue("com.sec.android.app.myfiles" in PhoneSettings.handsOverTo("com.android.settings"))
     }
 
     @Test fun waitsReadOnlyWhenSomethingChangedOrTheFallbackIsDue() {

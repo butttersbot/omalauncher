@@ -170,6 +170,10 @@ def verify(address, serial):
     if code != 0:
         if 'unauthorized' in out:
             return 'unauthorized', None
+        # Connected but 'offline': a port that isn't adb (pairing and the like), or adb refusing a key it no longer
+        # trusts (Android drops one unused for 7 days; the Fold, 2026-10-25). Told apart only by what else is found.
+        if 'offline' in out:
+            return 'offline', None
         return None, None
     code, out = adb('-s', address, 'shell', 'echo "$(getprop ro.serialno) $(getprop ro.product.model)"', timeout=4)
     found = out.split() if code == 0 else []
@@ -209,6 +213,7 @@ def main(argv):
 
     adb('start-server', timeout=8)
     tried, unauthorized, winner, info = [], None, None, None
+    offline = []
 
     def attempt(address):
         nonlocal unauthorized
@@ -220,6 +225,8 @@ def main(argv):
         verdict, found = verify(address, serial)
         if verdict == 'unauthorized':
             unauthorized = address
+        if verdict == 'offline':
+            offline.append(address)
         return found if verdict == 'ok' else None
 
     # 1. the last good address; 2. what adb already holds as a working device
@@ -281,6 +288,11 @@ def main(argv):
     if unauthorized:
         print('on at %s, but this %s adb key is not authorized: pair again in Developer options, Wireless debugging'
               % (unauthorized, 'phone\'s' if LOCAL else 'computer\'s'))
+        return 4
+    if offline:
+        print('on?: %s answered but stayed offline, as adb does when it no longer trusts this %s key: pair again '
+              '(Developer options, Wireless debugging, Pair device with pairing code: adb pair 127.0.0.1:PORT CODE)'
+              % (', '.join(offline), 'phone\'s' if LOCAL else 'computer\'s'))
         return 4
     print('off: no Wireless debugging on %s (tried %s; mDNS%s; ports %d-%d)'
           % (label, 'last good ' + last if last else 'no last good address', '' if use_mdns and not LOCAL else ' skipped',

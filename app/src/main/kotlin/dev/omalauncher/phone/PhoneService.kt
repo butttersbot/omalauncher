@@ -416,12 +416,13 @@ class PhoneService : AccessibilityService() {
      * Answers an `open` or `url` once [pkg] is the app in front, so the agent's next step isn't refused for an app still
      * on its way; after [PhoneTouch.UNTIL_MILLIS] it answers anyway, saying it isn't. With no app to wait for, at once.
      */
-    private fun whenInFront(pkg: String?, output: JSONObject, reply: (JSONObject) -> Unit, expected: String = "", handedTo: Set<String> = emptySet()) {
+    private fun whenInFront(pkg: String?, output: JSONObject, reply: (JSONObject) -> Unit, expected: String = "", handedTo: Set<String> = emptySet(), through: List<String> = emptyList()) {
         output.put("opened", pkg.orEmpty()).put("destinationVerified", false)
         if (pkg == null) { reply(output); return }
         val deadline = SystemClock.uptimeMillis() + PhoneTouch.UNTIL_MILLIS
         val generation = requestGeneration
         var lastRead: Long? = null
+        var chose = 0
         fun look() {
             if (!busy || generation != requestGeneration) return
             try {
@@ -434,6 +435,11 @@ class PhoneService : AccessibilityService() {
                 // during a transition. A read-only wait may observe another package until its deadline.
                 val observed = read()
                 val front = PhoneScreen.front(observed)
+                // Android asking which app, for a step that knows its answer ([through]): picked once, as he would.
+                if (front == PhoneGuard.CHOOSER && through.isNotEmpty() && chose < 2) {
+                    if (clickSaying(through.getOrNull(chose).orEmpty())) chose++
+                    main.postDelayed({ look() }, PhoneTouch.UNTIL_STEP_MILLIS); return
+                }
                 // A page the app handed on to another of its own ([handedTo]) is still the page asked for: touches go there.
                 val inFront = front == pkg || front in handedTo
                 if (inFront && front != pkg) opened = front
@@ -450,6 +456,15 @@ class PhoneService : AccessibilityService() {
             } catch (failure: Exception) { reply(JSONObject().put("ok", false).put("error", failure.message)) }
         }
         settled { look() }
+    }
+    /** Clicks the control on this display whose words are exactly [label] (or the nearest clickable around it). */
+    private fun clickSaying(label: String): Boolean {
+        if (label.isEmpty()) return false
+        val root = displayRoot(displayId) ?: return false
+        val found = root.findAccessibilityNodeInfosByText(label).firstOrNull { it.text?.toString() == label || it.contentDescription?.toString() == label } ?: return false
+        var at: AccessibilityNodeInfo? = found
+        while (at != null && !(at.isClickable && at.isEnabled)) at = at.parent
+        return at?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
     }
     /** Whether [node] is part of a web page: it or something around it is a WebView, as Chromium-based browsers draw pages. */
     private fun inWebPage(node: AccessibilityNodeInfo): Boolean {
@@ -726,7 +741,7 @@ class PhoneService : AccessibilityService() {
                     opened = PhoneGuard.opened(handler)
                     launchOnDisplay(intent, opened)
                     changed()
-                    whenInFront(opened, output, reply, expected, if (settingsAction != null) PhoneSettings.handsOverTo(handler) else emptySet())
+                    whenInFront(opened, output, reply, expected, if (settingsAction != null) PhoneSettings.handsOverTo(handler) else emptySet(), PhoneSettings.chooserAnswer(settingsAction))
                     return
                 }
                 // A link opened as a link (handoff 2026-10-21): never typed into an address bar.
