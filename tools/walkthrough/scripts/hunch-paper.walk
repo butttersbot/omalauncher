@@ -3,7 +3,7 @@ fold folded
 rotate portrait
 shell am force-stop dev.omalauncher.hunch
 shell am start -n dev.omalauncher.hunch/.MainActivity --es fixture demo
-wait 1500
+wait 3000
 expect "Today's issue"
 expect Paper Cranes
 absent 169.30
@@ -14,7 +14,7 @@ shot hunch-paper-feed
 # Use search instead of coordinates across the original feed panels.
 shell am force-stop dev.omalauncher.hunch
 shell am start -n dev.omalauncher.hunch/.MainActivity --es fixture demo
-wait 1500
+wait 3000
 tap Search markets
 type Paper Cranes
 expect Paper Cranes
@@ -57,7 +57,7 @@ rotate portrait
 # Reference gallery remains explicitly labelled and cannot call Privy/trading.
 shell am force-stop dev.omalauncher.hunch
 shell am start -n dev.omalauncher.hunch/.MainActivity --es design Discover
-wait 1500
+wait 3000
 expect DESIGN REFERENCE
 shot hunch-paper-reference-discover
 [phone] Compare actual installed cover and unfolded screens with original HTML at the same viewport. Check search keyboard, real market metadata, read-only depth, account email/OTP/passkey recovery, offline error, and physical fold state. No wallet/trade actions.

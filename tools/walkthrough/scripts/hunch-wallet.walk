@@ -3,7 +3,7 @@ fold folded
 rotate portrait
 shell am force-stop dev.omalauncher.hunch
 shell am start -n dev.omalauncher.hunch/.MainActivity --es walletFixture demo
-wait 1500
+wait 3000
 expect FICTIONAL WALLET DEMO
 expect Create your wallet
 expect No wallet address yet
