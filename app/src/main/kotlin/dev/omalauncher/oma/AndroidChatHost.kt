@@ -78,11 +78,14 @@ class AndroidChatHost(
 
     override fun macLabel(task: ChatTask): String = MacThreads.label(task)
 
-    override fun readArtifact(thread: String, path: String) = MacThreads.artifact(context, thread, path)
+    // A phone builder's conversation reads its own store in the guest (an entry of its from before keeps no thread: "").
+    override fun readArtifact(thread: String, path: String) =
+        if (thread.isEmpty() || phoneArtifactThread(thread)) PhoneArtifacts.read(context, thread, path) else MacThreads.artifact(context, thread, path)
 
-    override fun liveArtifacts(): List<ArtifactLive> = MacThreads.liveArtifacts()
+    override fun liveArtifacts(): List<ArtifactLive> = MacThreads.liveArtifacts() + PhoneArtifacts.live(context)
 
-    override fun artifactVersions(thread: String, name: String) = MacThreads.artifactVersions(context, thread, name)
+    override fun artifactVersions(thread: String, name: String) =
+        if (phoneArtifactThread(thread)) PhoneArtifacts.versions(context, thread, name) else MacThreads.artifactVersions(context, thread, name)
 
     override fun macEarlier(threadId: String): MacEarlierRead = MacThreads.earlier(context, threadId)
 

@@ -151,6 +151,7 @@ class Runtime(
                 { keepGuestTools(context, proot.rootfs) },
                 { agentsGuestTools(context, proot.rootfs) },
                 { omaGuestTools(context, proot.rootfs) },
+                { dev.omalauncher.oma.PhoneArtifacts.guestTools(context, proot.rootfs) },
             ),
         )
     val bootstrap = Bootstrap(context, proot, agents, pacman, provisioner)

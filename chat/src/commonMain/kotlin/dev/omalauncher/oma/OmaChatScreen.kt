@@ -409,7 +409,7 @@ private fun ChatScreen(
     }
     // The threads whose entries this tab shows: an artifact one of them makes opens here.
     val artifactThreads = remember(tasks, tab, book, earlierThread) {
-        (tabEntries(tasks, tab, book).map { it.thread } + listOfNotNull(earlierThread)).filter { it.isNotEmpty() }.toSet()
+        (tabEntries(tasks, tab, book).map { artifactThread(it) } + listOfNotNull(earlierThread)).filter { it.isNotEmpty() }.toSet()
     }
     val madeLive = remember(tick) { host.liveArtifacts() }
     Box(Modifier.fillMaxSize().background(Pack.background).safeDrawingPadding().padding(PageGap), contentAlignment = Alignment.TopCenter) {

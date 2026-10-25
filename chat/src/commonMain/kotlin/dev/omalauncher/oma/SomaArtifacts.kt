@@ -1,5 +1,6 @@
 package dev.omalauncher.oma
 
+import dev.omalauncher.assist.builderId
 import org.json.JSONObject
 
 /*
@@ -80,7 +81,10 @@ fun somaArtifact(thread: String, name: String, version: Int): ChatArtifact =
 
 /** The artifacts an entry's steps and quiet later lines say its thread made. */
 fun taskSomaArtifacts(task: ChatTask): List<ChatArtifact> =
-    stepArtifacts(task.steps + task.later.filterNot { it.words }.map { it.text }).map { somaArtifact(task.thread, it.name, it.version) }
+    stepArtifacts(task.steps + task.later.filterNot { it.words }.map { it.text }).map { somaArtifact(artifactThread(task), it.name, it.version) }
+
+/** Whose store an entry's artifacts are in: its Mac thread's, or for a request of a phone builder's, that builder's thread ("phone", "phone-b"). */
+fun artifactThread(task: ChatTask): String = task.thread.ifEmpty { if (task.build) task.builderId.thread else "" }
 
 /** What the card says an artifact is, under its name. */
 fun artifactKindLabel(kind: ArtifactKind): String = when (kind) {

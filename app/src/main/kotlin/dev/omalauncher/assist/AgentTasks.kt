@@ -393,7 +393,7 @@ class Builder(val id: BuilderId) {
         val agent = choice.agent
         val seen = if (screen != null) "\n\nThe attached image is the screen I was looking at when I asked." else ""
         val imagePrompt = earlier + (if (agent.bin == "claude" && images.isNotEmpty()) prompt + "\n\nRead these attached images before answering:\n" + images.joinToString("\n") else prompt) + seen
-        val fullPrompt = imagePrompt + "\n\n" + PhoneBridge.INSTRUCTIONS + "\n" + GROKBOT_RULE + "\nAndroid build tools, when installed, are in /opt/android-sdk. Run oma-build-check to check the toolchain. Run Gradle as `oma-gradle TASKS` (oma-build does): one build at a time and small, so Android does not kill the app for memory. Use the approval UI for blocked tools; never ask for blanket permission bypass.\n"
+        val fullPrompt = imagePrompt + "\n\n" + PhoneBridge.INSTRUCTIONS + "\n" + GROKBOT_RULE + "\nAndroid build tools, when installed, are in /opt/android-sdk. Run oma-build-check to check the toolchain. Run Gradle as `oma-gradle TASKS` (oma-build does): one build at a time and small, so Android does not kill the app for memory. Use the approval UI for blocked tools; never ask for blanket permission bypass.\n" + dev.omalauncher.oma.PhoneArtifacts.INSTRUCTIONS + "\n"
         val resumed = when {
             errand -> null
             agent.bin == "claude" -> thread?.takeUnless { it.startsWith(CodexProtocol.THREAD_PREFIX) }
@@ -412,16 +412,16 @@ class Builder(val id: BuilderId) {
                 screen.delete()
             }
             // Which builder this is, for the tools that sign mail (oma msg, oma-macbuild): a reply comes back to it, not to A.
-            "export OMA_BUILDER=${id.letter}\n" + (worktree?.let { it.script() + "\n" } ?: "") + claudeStreamCommand(resumed, if (errand) ERRAND_MODEL else null)
+            "export OMA_BUILDER=${id.letter} SOMA_THREAD=${id.thread}\n" + (worktree?.let { it.script() + "\n" } ?: "") + claudeStreamCommand(resumed, if (errand) ERRAND_MODEL else null)
         } else if (agent.bin == "codex") {
             // As Claude's: its words go in once the worktree step has said where it works (OMA-READY ends that step).
             handed = screen?.let { ScreenShots.handOver(it, runtime.proot.promptAttachments) }
-            "export OMA_BUILDER=${id.letter}\n" + (worktree?.let { it.script() + "\n" } ?: "") + "echo $CODEX_READY\n" +
+            "export OMA_BUILDER=${id.letter} SOMA_THREAD=${id.thread}\n" + (worktree?.let { it.script() + "\n" } ?: "") + "echo $CODEX_READY\n" +
                 codexBuilderCommand(images + listOfNotNull(handed?.let(runtime.proot::guestPath)), choice.model, resumed, fullAccess = id == BuilderId.B)
         } else {
             backgroundAgentCommand(agent.bin, fullPrompt, images, choice.model, codexFullAccess = id == BuilderId.B) // Validate before the screenshot is touched.
             handed = screen?.let { ScreenShots.handOver(it, runtime.proot.promptAttachments) }
-            "export OMA_BUILDER=${id.letter}\n" + backgroundAgentCommand(agent.bin, fullPrompt, images + listOfNotNull(handed?.let(runtime.proot::guestPath)), choice.model, codexFullAccess = id == BuilderId.B)
+            "export OMA_BUILDER=${id.letter} SOMA_THREAD=${id.thread}\n" + backgroundAgentCommand(agent.bin, fullPrompt, images + listOfNotNull(handed?.let(runtime.proot::guestPath)), choice.model, codexFullAccess = id == BuilderId.B)
         }
         val log = ChatLog.of(context)
         val began = System.currentTimeMillis()
@@ -494,12 +494,17 @@ class Builder(val id: BuilderId) {
                                                 // two phone steps is still phone use, and the ring goes out the moment it turns to anything else.
                                                 onPhone(phoneToolCall(block.optString("name"), block.optJSONObject("input")?.optString("command").orEmpty()))
                                                 log.update(time) { ChatHistory.withStep(it, step) }
+                                                // A file that is one of its artifacts, about to change: the panel says it is being edited.
+                                                val input = block.optJSONObject("input")
+                                                runCatching { dev.omalauncher.oma.PhoneArtifacts.touched(context, id, time, block.optString("name"), input?.optString("file_path").orEmpty(), input?.optString("command").orEmpty(), agent.name) }
                                                 if (approvals.isEmpty()) { label = "Using ${block.optString("name").take(60)}"; notify(context) }
                                             }
                                         }
                                     }
                                 }
                                 "system" -> if (event.optString("subtype") == "init") session = event.optString("session_id").ifBlank { null }.also { runSession = it }
+                                // A tool call's result: anything it put with soma-artifact is told to the chat now, under this entry.
+                                "user" -> runCatching { dev.omalauncher.oma.PhoneArtifacts.poll(context, id, time, agent.name) }
                                 "result" -> {
                                     // A failed first request may leave no conversation to return to.
                                     if (!errand && (!event.optBoolean("is_error") || resumed != null)) thread = event.optString("session_id").ifBlank { thread }
@@ -579,6 +584,8 @@ class Builder(val id: BuilderId) {
                 log.update(time, save = true) { task ->
                     task.copy(result = answer, status = status, approvals = task.approvals.map { if (it.answer == ApprovalAnswer.Waiting) it.copy(answer = ApprovalAnswer.Unanswered) else it })
                 }
+                // What it put is told under its entry, and an edit it never finished stops showing.
+                runCatching { dev.omalauncher.oma.PhoneArtifacts.settle(context, id, time) }
                 // Its work is over, so is its use of the phone: the ring goes out at once.
                 onPhone(false)
                 // One step under the lock, so a follow-up that waited starts before anything else can find the agent idle.
@@ -872,7 +879,7 @@ fun phoneToolCall(tool: String, command: String): Boolean =
 const val ERRAND_MODEL = "sonnet"
 
 fun claudeStreamCommand(resume: String? = null, model: String? = null): String = "claude -p " + (resume?.takeIf(SESSION_ID::matches)?.let { "--resume $it " } ?: "") +
-    (model?.let { "--model $it " } ?: "") + "--input-format stream-json --output-format stream-json --verbose --permission-mode auto --permission-prompt-tool stdio --allowedTools ${shellQuote("Bash(oma-phone *)")} Read"
+    (model?.let { "--model $it " } ?: "") + "--input-format stream-json --output-format stream-json --verbose --permission-mode auto --permission-prompt-tool stdio --allowedTools ${shellQuote("Bash(oma-phone *)")} ${shellQuote("Bash(soma-artifact *)")} Read"
 
 /** The line a builder's shell says once the steps before Codex are done, when its words can be given. */
 const val CODEX_READY = "OMA-READY"
