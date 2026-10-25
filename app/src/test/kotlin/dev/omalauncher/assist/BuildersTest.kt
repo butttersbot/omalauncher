@@ -14,24 +14,24 @@ import org.junit.Test
 class BuildersTest {
     private fun approval(id: String) = AgentApproval(id, "Bash", JSONObject().put("command", "echo $id"), "")
 
-    @Test fun thereAreTwoBuildersAndAIsTheOneThereAlwaysWas() {
-        assertEquals(2, PHONE_BUILDERS)
-        assertEquals(listOf(BuilderId.A, BuilderId.B), AgentTasks.builders.map { it.id })
+    @Test fun thereAreThreeBuildersAndAIsTheOneThereAlwaysWas() {
+        assertEquals(3, PHONE_BUILDERS)
+        assertEquals(listOf(BuilderId.A, BuilderId.B, BuilderId.C), AgentTasks.builders.map { it.id })
         // What was saved before there were two is A's: entries, tile keys and a notification's stop without a builder.
         assertEquals("", BuilderId.A.saved); assertEquals("B", BuilderId.B.saved)
         assertEquals(PHONE_THREAD, BuilderId.A.thread); assertEquals("phone-b", BuilderId.B.thread)
-        for (none in listOf(null, "", "C", "x", "builder")) assertEquals(BuilderId.A, BuilderId.of(none))
+        for (none in listOf(null, "", "D", "x", "builder")) assertEquals(BuilderId.A, BuilderId.of(none))
         assertEquals(BuilderId.B, BuilderId.of("B"))
         for (b in listOf("B", "b", " B ", "2")) assertEquals(b, BuilderId.B, BuilderId.named(b))
         for (a in listOf("A", "a", "1")) assertEquals(a, BuilderId.A, BuilderId.named(a))
-        for (none in listOf(null, "", "C", "3", "AB", "t5e121ba2")) assertNull(none, BuilderId.named(none))
+        for (none in listOf(null, "", "D", "4", "AB", "t5e121ba2")) assertNull(none, BuilderId.named(none))
         assertEquals(BuilderId.A, ChatTask(1, "Claude Code", "x").builderId)
         assertEquals(BuilderId.B, ChatTask(1, "Claude Code", "x", builder = "B").builderId)
     }
 
     @Test fun newWorkGoesToAFreeBuilderAndOnlyWaitsWhenBothAreBusy() {
-        fun loads(a: BuilderLoad, b: BuilderLoad) = mapOf(BuilderId.A to a, BuilderId.B to b)
         val free = BuilderLoad(working = false)
+        fun loads(a: BuilderLoad, b: BuilderLoad, c: BuilderLoad = BuilderLoad(true, 9)) = mapOf(BuilderId.A to a, BuilderId.B to b, BuilderId.C to c)
         // With A free nothing differs from before there were two.
         assertEquals(BuilderId.A, pickBuilder(null, loads(free, free)))
         assertEquals(BuilderId.A, pickBuilder(null, emptyMap()))
@@ -42,6 +42,41 @@ class BuildersTest {
         assertEquals(BuilderId.A, pickBuilder(null, loads(BuilderLoad(true, 1), BuilderLoad(true, 1))))
         assertEquals(BuilderId.B, pickBuilder(null, loads(BuilderLoad(true, 2), BuilderLoad(true, 1))))
         assertEquals(BuilderId.A, pickBuilder(null, loads(BuilderLoad(true, 0), BuilderLoad(true, 4))))
+    }
+
+    @Test fun builderCIsPhoneCOnClaudeAndTakesNewWorkWhenAAndBAreBusy() {
+        assertEquals("C", BuilderId.C.saved)
+        assertEquals(PHONE_THREAD_C, BuilderId.C.thread); assertEquals("phone-c", PHONE_THREAD_C)
+        assertEquals("Phone C", BuilderId.C.title); assertEquals("Phone A", BuilderId.A.title); assertEquals("Phone B", BuilderId.B.title)
+        for (c in listOf("C", "c", " C ", "3")) assertEquals(c, BuilderId.C, BuilderId.named(c))
+        assertEquals(BuilderId.C, ChatTask(1, "Claude Code", "x", builder = "C").builderId)
+        for (id in BuilderId.entries) assertEquals(id, BuilderId.ofThread(id.thread))
+        assertNull(BuilderId.ofThread("mac:t1234abcd")); assertNull(BuilderId.ofThread(null))
+        val free = BuilderLoad(working = false)
+        assertEquals(BuilderId.C, pickBuilder(null, mapOf(BuilderId.A to BuilderLoad(true), BuilderId.B to BuilderLoad(true), BuilderId.C to free)))
+        assertEquals(BuilderId.C, pickBuilder(null, mapOf(BuilderId.A to BuilderLoad(true, 2), BuilderId.B to BuilderLoad(true, 2), BuilderId.C to BuilderLoad(true, 1))))
+        assertEquals(BuilderId.C, pickBuilder(BuilderId.C, mapOf(BuilderId.A to free, BuilderId.C to BuilderLoad(true, 5))))
+        // Its own worktree and branch, as B has.
+        assertEquals(WorktreePlan(PHONE_REPO, "/root/wt/builder-c", "builder-c"), builderWorktree(BuilderId.C))
+        assertEquals("Allow Bash for Builder C?", builderApprovalTitle("Bash", BuilderId.C))
+        assertEquals("Builder C · Using Bash", poolLabel(BuilderId.C, "Using Bash", 0))
+        // Shown on the board once it has worked, as B is.
+        assertFalse(builderShown(BuilderId.C, emptyList(), working = false))
+        assertTrue(builderShown(BuilderId.C, emptyList(), working = true))
+        assertTrue(builderShown(BuilderId.C, listOf(ChatTask(1, "Claude Code", "x", builder = "C", status = TaskStatus.Done)), working = false))
+        assertFalse(builderShown(BuilderId.C, listOf(ChatTask(1, "Claude Code", "x", builder = "B", status = TaskStatus.Done)), working = false))
+    }
+
+    @Test fun phoneCRunsClaudeCodeWithAVisibleFallback() {
+        val claude = dev.omalauncher.linux.AGENTS.first { it.bin == "claude" }
+        val codex = dev.omalauncher.linux.AGENTS.first { it.bin == "codex" }
+        assertEquals(BuilderAgent(claude), builderAgent(BuilderId.C, listOf(codex, claude), codex))
+        val fallback = builderAgent(BuilderId.C, listOf(codex), codex)!!
+        assertEquals(codex, fallback.agent)
+        assertEquals("Claude Code is not installed. Phone C is using Codex.", fallback.note)
+        // A and B are as they were.
+        assertEquals(BuilderAgent(codex), builderAgent(BuilderId.A, listOf(codex, claude), codex))
+        assertEquals(BuilderAgent(codex, PHONE_B_CODEX_MODEL), builderAgent(BuilderId.B, listOf(codex, claude), claude))
     }
 
     @Test fun aFollowUpGoesToItsOwnBuilderWhateverTheOtherIsDoing() {

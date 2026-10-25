@@ -128,7 +128,7 @@ class TabBookTest {
         val book = meta.settled(all, tasks, now)
         val live = liveThreads(all, emptyMap(), now, listed = true, book.pinned.toSet(), book.archived.keys)
         // The builders' tabs are always there (ChatTabsTest); these are about the chats and threads beside them.
-        return shownThreads(live, book.pinned, all, book.archived.keys, wanted).map { it.key }.filter { it != PHONE_THREAD && it != dev.omalauncher.assist.PHONE_THREAD_B }
+        return shownThreads(live, book.pinned, all, book.archived.keys, wanted).map { it.key }.filter { dev.omalauncher.assist.BuilderId.ofThread(it) == null }
     }
 
     /**

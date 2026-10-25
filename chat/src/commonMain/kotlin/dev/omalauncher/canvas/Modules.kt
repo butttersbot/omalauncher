@@ -5,8 +5,6 @@ import dev.omalauncher.assist.NO_PROJECT
 import dev.omalauncher.assist.AgentThread
 import dev.omalauncher.assist.ApprovalOutcome
 import dev.omalauncher.assist.BuilderId
-import dev.omalauncher.assist.PHONE_THREAD
-import dev.omalauncher.assist.PHONE_THREAD_B
 import dev.omalauncher.assist.PendingApproval
 import dev.omalauncher.assist.ThreadState
 import dev.omalauncher.assist.builderApprovalTitle
@@ -176,7 +174,7 @@ fun chatHostModules(
         }
         val phone = host.builders().flatMap { (builder, state) ->
             state.pending.map { p ->
-                ModuleAsk("phone:${p.nonce}", builderApprovalTitle(p.approval.tool, builder), p.approval.detail, if (builder == BuilderId.A) PHONE_THREAD else PHONE_THREAD_B, "Builder ${builder.letter}", p)
+                ModuleAsk("phone:${p.nonce}", builderApprovalTitle(p.approval.tool, builder), p.approval.detail, builder.thread, "Builder ${builder.letter}", p)
             }
         }
         return mac + phone

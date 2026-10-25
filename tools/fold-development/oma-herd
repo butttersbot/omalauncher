@@ -3,7 +3,7 @@
 
 The herd (ClaudeSync projects/herd) has each computer run a reporter on port 8479 and every reporter gathers the
 others, so the pet everywhere lists their sessions. This is the Fold's: it answers GET /v1/status like `herd node`,
-with the phone and its two builders, read from the launcher's own status file (~/.cache/oma-agents/status.json,
+with the phone and its builders (A, B and C), read from the launcher's own status file (~/.cache/oma-agents/status.json,
 `oma status`), and GET /v1/sessions/ID with what that builder was asked and last did. Run it under `oma keep`.
 
 Only Boss's computers are answered: the addresses tailshare-serve lists at GET /v1/devices (as `oma msg devices`),
@@ -23,7 +23,8 @@ STATUS = pathlib.Path.home() / '.cache/oma-agents/status.json'
 RUNNERS = pathlib.Path.home() / '.config/omalauncher'
 HOST_NAME = os.environ.get('HERD_NAME', 'galaxy-z-fold8')
 VERSION = 1
-BUILDERS = (('builder', 'fold-builder-a', 'Phone builder A'), ('builderB', 'fold-builder-b', 'Phone builder B'))
+BUILDERS = (('builder', 'fold-builder-a', 'Phone builder A'), ('builderB', 'fold-builder-b', 'Phone builder B'),
+            ('builderC', 'fold-builder-c', 'Phone builder C'))
 
 allowed = set()
 

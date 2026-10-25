@@ -510,9 +510,10 @@ private const val BOARD_OPEN_QUESTIONS = 2
  * to it, and each idle thread's last words and when it last worked. One that is working, or waiting for an
  * approval, has not finished speaking and is not named. Null when nobody has said anything.
  */
-private fun lastToSpeak(board: BuildBoard, mac: MacBoard, second: BuildBoard?): String? {
+private fun lastToSpeak(board: BuildBoard, mac: MacBoard, second: BuildBoard?, third: BuildBoard? = null): String? {
     fun spoke(who: String, board: BuildBoard) = if (!board.working && board.lastAnswer.isNotBlank() && board.spokeAgo != null) Spoke(who, board.spokeAgo, asks(board.lastAnswer)) else null
-    val builders = if (second == null) listOfNotNull(spoke("the builder", board)) else listOfNotNull(spoke("builder A", board), spoke("builder B", second))
+    val builders = if (second == null && third == null) listOfNotNull(spoke("the builder", board))
+    else listOfNotNull(spoke("builder A", board), second?.let { spoke("builder B", it) }, third?.let { spoke("builder C", it) })
     val threads = mac.threads.filter { it.status == MacThreadStatus.Idle && it.tail.isNotBlank() && it.lastWorked != null }.map {
         Spoke("thread \"${oneLine(it.name).take(BOARD_NAME_CHARS)}\" (id ${it.id})", (mac.now - (it.lastWorked ?: 0L) * 1000).coerceAtLeast(0), asks(it.tail))
     }
@@ -545,11 +546,12 @@ private fun builderLines(board: BuildBoard, name: String, spoken: String): List<
  * [phone] is PhoneControlHeal's line, so the front agent can tell him phone control is off by his own choice, or
  * was off and has been turned back on; null says nothing and leaves the board as it was.
  */
-fun boardText(board: BuildBoard, mac: MacBoard? = null, second: BuildBoard? = null, phone: String? = null): String {
-    val builders = if (second == null) builderLines(board, "Builder", "the builder")
-    else builderLines(board, "Builder A", "builder A") + builderLines(second, "Builder B", "builder B")
+fun boardText(board: BuildBoard, mac: MacBoard? = null, second: BuildBoard? = null, phone: String? = null, third: BuildBoard? = null): String {
+    val builders = if (second == null && third == null) builderLines(board, "Builder", "the builder")
+    else builderLines(board, "Builder A", "builder A") + second?.let { builderLines(it, "Builder B", "builder B") }.orEmpty() +
+        third?.let { builderLines(it, "Builder C", "builder C") }.orEmpty()
     val lines = listOf("[Board, for you only; Boss does not see it]") + builders + listOfNotNull(phone)
-    return (lines + macLines(mac) + listOfNotNull(mac?.let { lastToSpeak(board, it, second) }) + "[Boss says]").joinToString("\n")
+    return (lines + macLines(mac) + listOfNotNull(mac?.let { lastToSpeak(board, it, second, third) }) + "[Boss says]").joinToString("\n")
 }
 
 /**
@@ -564,8 +566,8 @@ fun desktopFrontPrompt(mac: MacBoard?, request: String): String {
 }
 
 /** What the front agent is sent: the board, then [request] exactly as he said it. */
-fun frontPrompt(board: BuildBoard, request: String, mac: MacBoard? = null, second: BuildBoard? = null, phone: String? = null): String =
-    boardText(board, mac, second, phone) + "\n" + request
+fun frontPrompt(board: BuildBoard, request: String, mac: MacBoard? = null, second: BuildBoard? = null, phone: String? = null, third: BuildBoard? = null): String =
+    boardText(board, mac, second, phone, third) + "\n" + request
 
 /**
  * One request the front agent answered itself: [said] is his words and [answered] what it told him. The

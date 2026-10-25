@@ -38,7 +38,7 @@ class BotTabsTest {
         assertEquals("🐧 Linux setup", macs[0].name)
         // Live is only the recent one; bots come first, then the always-visible phone builders.
         val shown = shownThreads(live = macs.filter { it.bot == null }, pinned = emptyList(), all = all)
-        assertEquals(listOf("🐧 Linux setup", "Writer", PHONE_THREAD_A_NAME, PHONE_THREAD_B_NAME, "work"), shown.map { it.name })
+        assertEquals(listOf("🐧 Linux setup", "Writer", PHONE_THREAD_A_NAME, PHONE_THREAD_B_NAME, PHONE_THREAD_C_NAME, "work"), shown.map { it.name })
     }
 
     @Test fun aBotsMenuHasNoRenamePinSwitchOrArchive() {
