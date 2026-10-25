@@ -34,7 +34,7 @@ class AccountActivity:Activity() {
         val retained=lastNonConfigurationInstance as? Retained
         access=retained?.access ?: if(demo)DemoAccount() else LiveAccount(applicationContext)
         email=retained?.email.orEmpty();sent=retained?.sent ?: false
-        run("Checking sign-in…","Could not verify sign-in. Check your connection and try again."){account=access.current()}
+        run("Checking sign-in…","Could not verify sign-in. Check your connection and try again."){account=access.current();message=""}
     }
     private fun dp(n:Int)=(n*resources.displayMetrics.density).toInt()
     private fun label(s:String,size:Float=16f)=TextView(this).apply{
@@ -92,7 +92,7 @@ class AccountActivity:Activity() {
             }
             button("Sign out"){run("Signing out…","Could not sign out. Try again."){access.logout();account=null;email="";sent=false;message="Signed out."}}
         }
-        button("Check sign-in again"){run("Checking sign-in…","Could not verify sign-in. Check your connection and try again."){account=access.current()}}
+        button("Check sign-in again"){run("Checking sign-in…","Could not verify sign-in. Check your connection and try again."){account=access.current();message=""}}
         button("Back to markets"){finish()}
     }
     private fun run(wait:String,failure:String,operation:suspend ()->Unit){
