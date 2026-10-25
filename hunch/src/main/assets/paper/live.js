@@ -67,8 +67,9 @@ async function showMarket(wide){
  });
 }
 
-let authState=null;
+let authState=null,authScreen=null,resetAuthScroll=false;
 async function showAccount(data){
+ const screen=data.signed?'signed':data.sent?'code':'email';if(screen!==authScreen){authScreen=screen;resetAuthScroll=true;document.activeElement?.blur()}
  authState=data;
  if(Paper.active?.account){Paper.schedule();return}
  await Paper.show('Flow',logic=>{
@@ -103,6 +104,7 @@ async function showAccount(data){
    }
    button('Check sign-in again',()=>post('check'));button('Back to markets',()=>sendNative({type:'close'}));
   };
+  a.after=()=>{if(resetAuthScroll){resetAuthScroll=false;document.getElementById('viewport').scrollTop=0}};
   a.autoHeight=true;a.maxScale=1;a.dimensions=()=>({width:390,height:844});
  });
 }
