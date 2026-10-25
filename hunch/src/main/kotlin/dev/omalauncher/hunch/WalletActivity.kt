@@ -19,10 +19,11 @@ class WalletActivity:PaperActivity(){
     private lateinit var access:WalletAccess
     private var demo=false;private var ready=false;private var busy=false;private var identity=WalletIdentity(false)
     private var message="";private var addressQr="";private var balances=JSONObject()
+    override fun onRetainNonConfigurationInstance():Any=access
     override fun onCreate(state:Bundle?){super.onCreate(state)
         demo=BuildConfig.DEBUG&&intent.getBooleanExtra("demo",false)
         if(!demo)window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        access=if(demo)DemoWallet() else LiveWallet(applicationContext)
+        access=(lastNonConfigurationInstance as? WalletAccess) ?: if(demo)DemoWallet() else LiveWallet(applicationContext)
         openPaper("?wallet=1")
     }
     override fun onResume(){super.onResume();if(ready&&!busy)refresh()}
