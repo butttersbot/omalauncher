@@ -31,6 +31,7 @@ class MainActivity:PaperActivity(){
         "route"->if(data.optString("chapter") in listOf("today","bets","money"))chapter=data.getString("chapter")
         "book"->if(design.isEmpty())loadBook(data)
         "account"->if(design.isEmpty())startActivity(Intent(this,AccountActivity::class.java).putExtra("demo",BuildConfig.DEBUG&&fixture=="demo"))
+        "live"->{intent.removeExtra("design");design="";chapter="today";openPaper()}
         "close"->finish()
     }}
     private fun request(body:JSONObject):JSONObject{
