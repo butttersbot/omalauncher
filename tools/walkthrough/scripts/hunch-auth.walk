@@ -11,7 +11,6 @@ tap Send email code
 expect Enter a valid email address
 tap Email address
 type demo@example.invalid
-key BACK
 tap Send email code
 expect Code sent to demo@example.invalid
 shot hunch-auth-code
@@ -21,12 +20,10 @@ rotate portrait
 expect Code sent to demo@example.invalid
 tap Email code
 type 999999
-key BACK
 tap Verify email code
 expect That code could not be verified
 tap Email code
 type 123456
-key BACK
 tap Verify email code
 expect Recovery email: demo@example.invalid
 scrollto Your email login stays available for recovery
