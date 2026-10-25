@@ -2,13 +2,26 @@
 // samples into text, free the model. Whisper runs on the phone's CPU; nothing leaves the phone.
 #include <jni.h>
 #include <android/log.h>
+#include <atomic>
 #include <string>
 #include <vector>
 #include "whisper.h"
+#include "omawhisper-params.h"
 
 #define TAG "omawhisper"
 
 static void quiet(ggml_log_level, const char *, void *) {}
+
+// Set when a dictation ends while a live reading is under way: the accurate reading of the whole of it supersedes
+// that one, so it stops at whisper.cpp's next check instead of holding the model for the rest of its run.
+static std::atomic<bool> stop_live{false};
+
+static bool live_stopped(void *) { return stop_live.load(); }
+
+extern "C" JNIEXPORT void JNICALL
+Java_dev_omalauncher_voice_WhisperNative_stopLive(JNIEnv *, jobject, jboolean stop) {
+    stop_live.store(stop);
+}
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_dev_omalauncher_voice_WhisperNative_load(JNIEnv *env, jobject, jstring path) {
@@ -39,25 +52,12 @@ Java_dev_omalauncher_voice_WhisperNative_transcribe(JNIEnv *env, jobject, jlong 
     std::vector<float> pcm(n);
     env->GetFloatArrayRegion(samples, 0, n, pcm.data());
 
-    // Greedy for the final reading too: beam search was a second too slow after he stops (Boss, 2026-10-15).
-    whisper_full_params wp = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
-    wp.n_threads = threads;
-    wp.language = "en";
-    wp.translate = false;
-    wp.no_context = true;
-    wp.print_progress = false;
-    wp.print_realtime = false;
-    wp.print_special = false;
-    wp.print_timestamps = false;
-    wp.suppress_blank = true;
-    wp.suppress_nst = true;
-    // A reading that loops on a word ("and, and, and…") is read again warmer, live too: whisper.cpp tells a loop by
-    // how little its text compresses (entropy_thold).
-    wp.temperature_inc = 0.2f;
-    // Short audio needs no 30 s window: the encoder is told to look at what there is (as whisper.cpp's stream does).
-    wp.audio_ctx = 0;
     const char *pr = prompt ? env->GetStringUTFChars(prompt, nullptr) : nullptr;
-    wp.initial_prompt = pr;
+    whisper_full_params wp = oma_params((int) pcm.size(), threads, pr, live);
+    if (live) {
+        wp.abort_callback = live_stopped;
+        wp.abort_callback_user_data = nullptr;
+    }
 
     std::string out;
     if (whisper_full(ctx, wp, pcm.data(), (int) pcm.size()) == 0) {

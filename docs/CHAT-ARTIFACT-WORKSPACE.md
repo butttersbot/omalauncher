@@ -52,3 +52,21 @@ The instrumentation checks native HTML rendering, an actual JavaScript interacti
 No installed launcher, runner service, OpenBubbles installation, live agent session or desktop app is modified by this source change. Bundle the app and runner changes through the existing phone promotion process. Keep the working package, signing key, advancing version code, and the phone's matching proot libraries.
 
 The Mac source build proves compilation/tests; its default debug key/version is not a phone release. The worktree has no cached proot binaries. The repository's pinned Termux fetch currently returns 404, so this Mac APK must not be offered as a working-launcher update. Use the established Mac Pro/phone build flow and runtime-library comparison; changing unrelated runtime pins is outside this slice.
+
+## Agent-made artifacts (2026-10-24, features/artifact-panel/PLAN.md slices 1-3)
+
+Agents can now make an artifact on purpose: `soma-artifact put FILE --title "…" --note "…"` (also `editing NAME`,
+`list`). On the Macs and MG1 the runner keeps every version (docs/MAC-RUNNER-SPEC.md, "As built: artifacts") and sends
+an `artifact` event; on the phone, a builder's `soma-artifact` (asset soma-artifact.sh) keeps the same store in the
+guest, /root/.local/share/soma/artifacts/<phone|phone-b|phone-c>/, read by PhoneArtifactStore.
+
+- The event becomes a step of its entry ("made x · v1", "updated x · v3"), which is what the card under the reply and
+  the artifacts list are made from (SomaArtifacts.kt), so they survive restarts. Location `soma-artifact:NAME[?v=N]`.
+- Live state (newest version, an agent editing) is ArtifactLiveBook, read with the chat's 500 ms tick
+  (`ChatHost.liveArtifacts`). Something new within 3 minutes opens beside the chat when the window is wide (unless
+  another artifact is showing there); narrow, a strip above the composer says "Claude is editing x · v4" / "x · v4 is
+  ready" with `[ view ]`, and never covers the chat. Unfolding while the strip shows opens that artifact.
+- Panel: version badge, `versions · N` (every version with its note; a tap shows that one with "Viewing vN, an
+  earlier version [ back to latest ]"), red "Claude is editing · vN" strip over a dimmed preview, "vN ready" toast, a
+  new version loaded into the same WebView. Discuss puts "About NAME vN: " in the draft.
+- The WebView sandbox is unchanged: no JS bridge, no file/content access, network blocked for generated HTML.

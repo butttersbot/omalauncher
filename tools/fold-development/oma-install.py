@@ -91,6 +91,12 @@ def install_self():
  if target==package:print('Oma restarts as it updates; Linux, login and settings stay. The first time, Android asks Boss to confirm on the phone. oma-install --self --status says how it went.',flush=True)
  else:print('oma-install --self --status says how it went.',flush=True)
  sys.exit(0)
+# Builders A, B and C share the one phone and the one place a taken build waits: one oma-install at a time.
+if '--status' not in args:
+ import fcntl
+ install_lock=open('/root/.config/oma-development/install.lock','a')
+ try:fcntl.flock(install_lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+ except BlockingIOError:sys.exit('Another oma-install is running (another builder\'s): wait for it, then oma-install --status.')
 if self_route:install_self()
 run(['adb','start-server'])
 def connect(port):

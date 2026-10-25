@@ -356,11 +356,12 @@ private fun minutesAgo(now: Long, at: Long?) = at?.let { (now - it).coerceAtLeas
  * [tailscale] is why an unreachable Mac is out of reach when Tailscale was found off ([healNote]); it is left
  * out while the Mac answers, since then it no longer explains anything.
  */
-fun agentsStatus(facts: BuilderFacts, mac: MacView?, written: String, second: BuilderFacts? = null, tailscale: String? = null): JSONObject {
+fun agentsStatus(facts: BuilderFacts, mac: MacView?, written: String, second: BuilderFacts? = null, tailscale: String? = null, third: BuilderFacts? = null): JSONObject {
     val now = facts.now
     val root = JSONObject().put("written", written).put("builder", builderStatus(facts))
-    // Builder B, once it has worked; "builder" is then builder A, the one there always was.
+    // Builder B, once it has worked; "builder" is then builder A, the one there always was. Builder C the same.
     if (second != null) root.put("builderB", builderStatus(second))
+    if (third != null) root.put("builderC", builderStatus(third))
     if (mac != null) root.put("mac", JSONObject()
         .put("reachable", mac.reachable).put("lastSeenMinAgo", minutesAgo(now, mac.seen))
         .put("tailscale", tailscale?.takeIf { !mac.reachable })

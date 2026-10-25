@@ -356,6 +356,27 @@ fun macApply(tasks: List<ChatTask>, threadId: String, event: MacEvent, inFlight:
             }
         }
         is MacEvent.Error -> running { it.over(TaskStatus.Failed, withReason(it.result, event.text).ifEmpty { MAC_NO_ANSWER }) }
+        // An artifact the agent made or is editing is a step of the entry whose turn it is, which is what the card under the
+        // reply is made from (SomaArtifacts.kt); made between his messages, it is a quiet line under the newest entry.
+        is MacEvent.Artifact -> if (current != null) running {
+            it.copy(steps = dev.omalauncher.oma.withArtifactStep(it.steps, event.name, event.version, event.state, event.settled).takeLast(ChatHistory.MAX_STEPS))
+        } else macLatest(tasks, threadId)?.let { latest ->
+            // Between his messages: an edit that ended takes its line away from the entry it was on; a new version is one
+            // quiet line per artifact, the newest replacing the one before.
+            val step = dev.omalauncher.oma.artifactStep(event.name, event.version, event.state, event.settled)
+            tasks.map { task ->
+                when {
+                    task.time != latest.time -> task
+                    event.settled -> task.copy(steps = dev.omalauncher.oma.withArtifactStep(task.steps, event.name, event.version, event.state, true))
+                    step == null || event.state != "ready" -> task
+                    else -> {
+                        val before = task.later.indexOfLast { !it.words && dev.omalauncher.oma.stepArtifacts(listOf(it.text)).firstOrNull()?.name == event.name && it.text.startsWith("updated ") }
+                        if (before >= 0 && event.version > 1) task.copy(later = task.later.mapIndexed { index, said -> if (index == before) ChatLater(step) else said })
+                        else macLater(task, ChatLater(step))
+                    }
+                }
+            }
+        } ?: tasks
         is MacEvent.Status, is MacEvent.Other -> tasks
     }
 }

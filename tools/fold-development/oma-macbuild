@@ -2,8 +2,9 @@
 # oma-macbuild: the working launcher, built and tested on the Mac Pro instead of the Fold (Boss, 2026-10-17: the
 # phone's RAM is for Soma, so heavy work goes to another machine).
 #
-#   oma-macbuild          push this checkout's HEAD (oma-sync) and ask the Mac Pro's runner thread to build and
-#                         test it with soma-macbuild, which Taildrops the result here
+#   oma-macbuild          push this checkout's HEAD (oma-sync) and ask this builder's own lane on the Mac Pro (a
+#                         runner thread "Soma build lane A/B/C", made the first time) to build and test it with
+#                         soma-macbuild --lane, which Taildrops the result here; the lanes build at once
 #   oma-macbuild --take   take what came back, check it, sign it with the phone's key and put it where oma-install
 #                         looks; then run oma-install as before
 #
@@ -17,10 +18,27 @@ mac=${SOMA_MAC:-jacks-mac-pro}
 thread=${SOMA_MAC_THREAD:-t9f45b731}
 tools=/opt/android-sdk/build-tools/36.0.0
 die() { echo "$1" >&2; exit 1; }
-# The builder asking (A or B): set when a builder starts, else told by its worktree. The Mac's answer goes back to it
-# (Boss, 2026-10-21: builder B's builds were answered to A).
+# The builder asking (A, B or C): set when a builder starts, else told by its worktree. The Mac's answer goes back to it
+# (Boss, 2026-10-21: builder B's builds were answered to A). The letter is the mail's sender session (--as), which is
+# also what the Mac Pro keys each builder's own build lane by.
 builder=${OMA_BUILDER:-}
-if [ -z "$builder" ]; then case $PWD in /root/wt/builder-b*) builder=B ;; *) builder=A ;; esac; fi
+if [ -z "$builder" ]; then case $PWD in /root/wt/builder-b*) builder=B ;; /root/wt/builder-c*) builder=C ;; *) builder=A ;; esac; fi
+case $builder in A|B|C) ;; *) die "OMA_BUILDER is \"$builder\": a builder is A, B or C." ;; esac
+
+# This builder's lane on the Mac: its thread's id, kept in mac-lane-A (B, C); found by its name or made the first time.
+# Without one (the Mac out of reach, or the file mac-lanes-off here) it asks the one upkeep thread, as before.
+lane_thread() {
+  local kept=$cfg/mac-lane-$builder name="Soma build lane $builder" id
+  [ -e "$cfg/mac-lanes-off" ] && return 1
+  id=$(tr -d '[:space:]' < "$kept" 2>/dev/null || true)
+  [[ $id =~ ^t[0-9a-f]{8}$ ]] && { echo "$id"; return; }
+  id=$(oma threads list 2>/dev/null | awk -F'\t' -v n="$name" '$3 == n && $4 ~ /\/omalauncher-fold$/ {print $1; exit}')
+  [[ $id =~ ^t[0-9a-f]{8}$ ]] ||
+    id=$(oma threads new "$name" '~/Projects/omalauncher-fold' --kind claude --mode auto 2>/dev/null | sed -n 's/.*, id \(t[0-9a-f]\{8\}\), in .*/\1/p')
+  [[ $id =~ ^t[0-9a-f]{8}$ ]] || return 1
+  echo "$id" > "$kept"
+  echo "$id"
+}
 
 commit=$(git -C "$repo" rev-parse HEAD)
 short=${commit:0:9}
@@ -31,9 +49,15 @@ case ${1:-} in
   oma-sync
   commit=$(git -C "$repo" rev-parse HEAD)
   short=${commit:0:9}
-  oma msg send "$mac:$thread" --as "$builder" --title "Soma build $short" \
-    "Please build Soma for the phone: in /Users/jackkim/Projects/omalauncher-fold run tools/fold-development/soma-macbuild $commit $code (if the script isn't there yet, the mirror syncs within a minute: wait and try again). It builds and tests that commit in its own worktree and Taildrops the app to the phone. Then answer with its last lines, or what stopped it."
-  echo "Asked the Mac Pro to build $short as version $code. When it answers, run: oma-macbuild --take"
+  if lane=$(lane_thread) && [ -z "${SOMA_MAC_THREAD:-}" ]; then
+    oma msg send "$mac:$lane" --as "$builder" --title "Soma build $short (lane $builder)" \
+      "Please build Soma for the phone: in /Users/jackkim/Projects/omalauncher-fold run tools/fold-development/soma-macbuild --lane $builder $commit $code (if the script isn't there yet, or has no --lane, the mirror syncs within a minute: wait and try again). It builds and tests that commit in lane $builder's own worktree, at version $code or the next one no other lane has, and Taildrops the app to the phone. Then answer with its last lines, or what stopped it."
+    echo "Asked the Mac Pro's lane $builder to build $short as version $code or above. When it answers, run: oma-macbuild --take"
+  else
+    oma msg send "$mac:$thread" --as "$builder" --title "Soma build $short" \
+      "Please build Soma for the phone: in /Users/jackkim/Projects/omalauncher-fold run tools/fold-development/soma-macbuild $commit $code (if the script isn't there yet, the mirror syncs within a minute: wait and try again). It builds and tests that commit in its own worktree and Taildrops the app to the phone. Then answer with its last lines, or what stopped it."
+    echo "Asked the Mac Pro to build $short as version $code (no lane of its own for builder $builder: the upkeep thread). When it answers, run: oma-macbuild --take"
+  fi
   ;;
 --take)
   oma drop get >/dev/null 2>&1 || true
@@ -42,7 +66,9 @@ case ${1:-} in
     # An earlier commit's build still serves when nothing since then goes into the app (notes, these tools, Hunch:
     # its own app, built only with -Phunch).
     # Any build at this version whose app is HEAD's (files arrive out of order, so not just the newest one saved).
-    for cand in $(ls -t /root/Inbox/soma-*-"$code".json 2>/dev/null); do
+    for cand in $(ls -t /root/Inbox/soma-*.json 2>/dev/null); do
+      built_code=$(sed -n 's/.*"versionCode":\([0-9]\{1,9\}\).*/\1/p' "$cand")
+      [ -n "$built_code" ] && [ "$built_code" -ge "$code" ] || continue
       built=$(sed -n 's/.*"commit":"\([0-9a-f]\{40\}\)".*/\1/p' "$cand")
       if [ -n "$built" ] && git -C "$repo" merge-base --is-ancestor "$built" HEAD &&
         git -C "$repo" diff --quiet "$built" HEAD -- . ':(exclude)tools/fold-development' ':(exclude)tools/walkthrough' ':(exclude)docs' ':(exclude)hunch' ':(exclude)*.md'; then
@@ -62,7 +88,8 @@ meta, apk, commit, code, libs = sys.argv[1:]
 m = json.loads(pathlib.Path(meta).read_text())
 def stop(why): sys.exit('Not taken: ' + why)
 if m.get('commit') != commit: stop('built from ' + str(m.get('commit')) + ', not HEAD ' + commit + '.')
-if m.get('versionCode') != int(code): stop('version ' + str(m.get('versionCode')) + ', the next is ' + code + '.')
+# A lane may have been given a code above the next one (another lane had it): any code from the next one up serves.
+if not isinstance(m.get('versionCode'), int) or m['versionCode'] < int(code): stop('version ' + str(m.get('versionCode')) + ', below the next, ' + code + '.')
 if m.get('failures') != 0 or not m.get('tests'): stop('its tests did not all pass.')
 if hashlib.sha256(pathlib.Path(apk).read_bytes()).hexdigest() != m.get('sha256'): stop('the app is not the one the Mac described.')
 local = sorted(pathlib.Path(libs).glob('*.so'))
@@ -74,6 +101,18 @@ with zipfile.ZipFile(apk) as z:
         if inside != f.read_bytes(): stop(f.name + ' differs from this checkout\'s.')
 print('Mac build of %s: %s tests, %s skipped; proot libraries match.' % (commit[:9], m['tests'], m.get('skipped', 0)))
 PY
+  code=$(sed -n 's/.*"versionCode":\([0-9]\{1,9\}\).*/\1/p' "$json")
+  # One app waits for oma-install at a time, in the one place it looks: a builder never replaces another's newer one.
+  exec 9>>"$cfg/take.lock"
+  if command -v flock >/dev/null; then flock -w 120 9 || die "Not taken: another builder is taking its build; try again in a minute."; fi
+  if [ -f "$cfg/taken.json" ]; then
+    their=$(sed -n 's/.*"versionCode":\([0-9]\{1,9\}\).*/\1/p' "$cfg/taken.json")
+    who=$(sed -n 's/.*"builder":"\([ABC]\)".*/\1/p' "$cfg/taken.json")
+    next=$(tr -d '[:space:]' < "$cfg/next-version-code")
+    if [ -n "$their" ] && [ "$who" != "$builder" ] && [ "$their" -ge "$next" ] && [ "$their" -gt "$code" ]; then
+      die "Not taken: builder $who's version $their waits for oma-install and is newer than this one ($code). Install that first, or build again."
+    fi
+  fi
   badging=$("$tools/aapt2" dump badging "$apk" | head -n 1)
   [[ $badging == *"name='dev.omalauncher.boss'"* && $badging == *"versionCode='$code'"* ]] ||
     die "Not taken: it is not dev.omalauncher.boss version $code."
@@ -85,7 +124,8 @@ PY
   [ "$cert" = "$(tr -d '[:space:]' < "$cfg/working-cert.sha256")" ] || { rm -f "$out/app-debug.apk"; die "Not taken: signed with the wrong key."; }
   printf '{"version":3,"artifactType":{"type":"APK","kind":"Directory"},"applicationId":"dev.omalauncher.boss","variantName":"debug","elements":[{"type":"SINGLE","filters":[],"attributes":[],"versionCode":%s,"outputFile":"app-debug.apk"}],"elementType":"File"}\n' "$code" > "$out/output-metadata.json"
   rm -f "$out/app-debug.apk.idsig"
-  echo "Signed with the phone's key and ready: run oma-install."
+  printf '{"builder":"%s","commit":"%s","versionCode":%s}\n' "$builder" "$commit" "$code" > "$cfg/taken.json"
+  echo "Signed with the phone's key and ready (version $code): run oma-install."
   ;;
 *)
   sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;

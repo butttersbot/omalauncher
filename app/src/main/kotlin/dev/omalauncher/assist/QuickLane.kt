@@ -211,16 +211,27 @@ object QuickLane {
             val b = AgentTasks.of(BuilderId.B)
             // Builder B is on the board once it has worked; until then the board is the one builder's, as it always was.
             val two = builderBShown(log.tasks, b.working)
-            val (healthA, healthB) = BuilderWatch.lines(health, two)
+            // Builder C likewise, once it has worked.
+            val c = AgentTasks.of(BuilderId.C)
+            val three = builderShown(BuilderId.C, log.tasks, c.working)
+            // A's line is under its letter once another builder is shown beside it.
+            val healthA = BuilderWatch.lines(health, two || three).first
+            val healthB = BuilderWatch.line(health, BuilderId.B, two)
+            val healthC = BuilderWatch.line(health, BuilderId.C, three)
             val board = buildBoard(log.tasks, a.working, a.label, began).copy(health = healthA)
             val second = if (two) buildBoard(log.tasks, b.working, b.label, began, BuilderId.B).copy(health = healthB) else null
+            val third = if (three) buildBoard(log.tasks, c.working, c.label, began, BuilderId.C).copy(health = healthC) else null
             // Which builder a plain hand-over answers, decided from the boards it is read with, so what the front
             // agent saw and where his words go agree.
-            val asking = askingBuilder(mapOf(BuilderId.A to board, BuilderId.B to (second ?: buildBoard(log.tasks, b.working, b.label, began, BuilderId.B))))
+            val asking = askingBuilder(mapOf(
+                BuilderId.A to board,
+                BuilderId.B to (second ?: buildBoard(log.tasks, b.working, b.label, began, BuilderId.B)),
+                BuilderId.C to (third ?: buildBoard(log.tasks, c.working, c.label, began, BuilderId.C)),
+            ))
             val filed = waited?.also { time -> log.update(time, save = true) { it.copy(status = TaskStatus.Running) } }
                 ?: ChatHistory.stamp(log.tasks, began).also { log.begin(ChatTask(it, UNDECIDED_AGENT, prompt, chat = chat, mail = mail?.label.orEmpty())) }
             // Its home changes are told apart from a builder's working at the same time (Soma Canvas slice 6).
-            Triple(filed, "OMA_CANVAS_ACTOR=quick " + frontCommand(agent, frontPrompt(board, mail?.let { it.frontWrapper() + it.text } ?: prompt, mac, second, phone), resumed, mac = mac != null, newChat = chat.isNotEmpty(), mail = mail != null), asking)
+            Triple(filed, "OMA_CANVAS_ACTOR=quick " + frontCommand(agent, frontPrompt(board, mail?.let { it.frontWrapper() + it.text } ?: prompt, mac, second, phone, third), resumed, mac = mac != null, newChat = chat.isNotEmpty(), mail = mail != null), asking)
         }
         time = asked; working = true; stopping = false; answer = ""; label = ANSWERING
         // A new chat's work that it answers in prose is not shown, and goes to the Mac as if it had said nothing.

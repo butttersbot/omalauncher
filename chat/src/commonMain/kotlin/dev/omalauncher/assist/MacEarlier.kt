@@ -101,6 +101,7 @@ fun macTurns(events: List<MacEvent>): List<MacTurn> {
                 said = StringBuilder()
             }
             is MacEvent.Stopped -> turn = open(event).copy(stopped = true)
+            is MacEvent.Artifact -> dev.omalauncher.oma.artifactStep(event.name, event.version, event.state, event.settled)?.takeIf { event.state == "ready" }?.let { step(event, it) }
             is MacEvent.Status, is MacEvent.ApprovalResult, is MacEvent.Other -> Unit
         }
     }

@@ -28,6 +28,8 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
     @Volatile var sending: Set<Long> = emptySet(); private set
 
     private val book = MacApprovalBook()
+    /** What the threads' events last said of their artifacts (SomaArtifacts.kt): the panel opens and updates from it. */
+    private val artifacts = dev.omalauncher.oma.ArtifactLiveBook()
     @Volatile private var cursors = MacCursors()
     /** The agents each Mac has, by its id, as its `/health` last said; none until it has. */
     @Volatile private var kinds: Map<String, List<String>> = emptyMap()
@@ -642,7 +644,7 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
                     platform.linkAfter(MacLink.Answered)
                     noted(seen)
                     if (seen.lastEvent < cursors.after(threadId)) {
-                        cursors.forget(threadId)
+                        cursors.forget(threadId); artifacts.forget(threadId)
                         saveCursors()
                     }
                     synced(seen)
@@ -816,6 +818,8 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
                 else if (ended != null) platform.answeredNotice(if (ended.status == TaskStatus.Done) ended.threadName else "${ended.threadName} needs attention", ended.result, front = false)
             }
             is MacEvent.Status -> see() { known -> known.copy(threads = known.threads.map { if (it.id == threadId) it.copy(status = event.status) else it }) }
+            is MacEvent.Artifact -> artifacts.heard(threadId, event.name, event.version, event.state, event.settled, event.title, event.note,
+                dev.omalauncher.oma.artifactAgent(kind), machine(threadId)?.name.orEmpty(), event.time, event.id)
             is MacEvent.Message, is MacEvent.Text, is MacEvent.Step, is MacEvent.Note, is MacEvent.Other -> Unit
         }
         saveCursors()
@@ -1095,6 +1099,13 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
             ?: return MacEarlierRead.Unread
         return MacEarlierRead.Read(events, cut = after > 0)
     }
+
+    /** Every artifact the threads' events have spoken of since the app started, as they last said. */
+    fun liveArtifacts(): List<dev.omalauncher.oma.ArtifactLive> = artifacts.snapshot()
+
+    /** One artifact's versions as its computer keeps them; null when it can't say. Blocks off the UI thread. */
+    fun artifactVersions(threadId: String, name: String): dev.omalauncher.oma.ArtifactVersions? =
+        client(threadId).artifacts(threadId)?.firstOrNull { it.name == name }
 
     /** One explicitly opened output on the conversation's computer. Blocks off the UI thread. */
     fun artifact(threadId: String, path: String): dev.omalauncher.oma.ArtifactRead = client(threadId).artifact(threadId, path)

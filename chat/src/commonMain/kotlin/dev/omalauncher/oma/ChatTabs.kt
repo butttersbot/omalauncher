@@ -3,9 +3,8 @@ package dev.omalauncher.oma
 import dev.omalauncher.assist.AgentThread
 import dev.omalauncher.assist.BuilderFacts
 import dev.omalauncher.assist.BuilderId
-import dev.omalauncher.assist.PHONE_THREAD
-import dev.omalauncher.assist.PHONE_THREAD_B
 import dev.omalauncher.assist.PHONE_THREAD_B_NAME
+import dev.omalauncher.assist.PHONE_THREAD_C_NAME
 import dev.omalauncher.assist.PHONE_THREAD_NAME
 import dev.omalauncher.assist.ThreadState
 import dev.omalauncher.assist.builderId
@@ -24,7 +23,7 @@ import dev.omalauncher.assist.restartable
  * whose rows are decided here too ([tabMenu]).
  */
 
-/** The Oma tab's key. No thread has it: the builders' are "phone" and "phone-b", and a Mac thread's begins "mac:". */
+/** The Oma tab's key. No thread has it: the builders' are "phone", "phone-b" and "phone-c", and a Mac thread's begins "mac:". */
 const val OMA_TAB = "oma"
 
 /**
@@ -45,8 +44,8 @@ fun shownThreads(live: List<AgentThread>, pinned: List<String>, all: List<AgentT
     val bots = (all + live).filter { it.bot != null }.distinctBy { it.key }
     // The phone's builders are always there too, first, however long they have rested, so either can be written to
     // while idle (Boss, 2026-10-21: "Phone B's tab always on").
-    fun builder(t: AgentThread) = t.key == PHONE_THREAD || t.key == PHONE_THREAD_B
-    val builders = (live + all).filter(::builder).distinctBy { it.key }.sortedBy { if (it.key == PHONE_THREAD) 0 else 1 }
+    fun builder(t: AgentThread) = BuilderId.ofThread(t.key) != null
+    val builders = (live + all).filter(::builder).distinctBy { it.key }.sortedBy { BuilderId.ofThread(it.key)?.ordinal ?: 0 }
     val rest = live.filter { it.bot == null && !builder(it) }
     val open = all.firstOrNull { it.key == wanted && it.bot == null && !builder(it) && it.key !in archived && rest.none { shown -> shown.key == it.key } }
     val kept = builders + rest + listOfNotNull(open)
@@ -103,8 +102,7 @@ fun tabEntries(allTasks: List<ChatTask>, tab: String, meta: TabMeta = TabMeta())
     meta.chatOf(tab)?.let { chat -> return tasks.filter { it.chat == chat.id || (chat.mac.isNotEmpty() && it.thread == chat.mac) } }
     return when {
         tab == OMA_TAB -> tasks
-        tab == PHONE_THREAD -> tasks.filter { it.build && it.builderId == BuilderId.A && it.chat.isEmpty() }
-        tab == PHONE_THREAD_B -> tasks.filter { it.build && it.builderId == BuilderId.B && it.chat.isEmpty() }
+        BuilderId.ofThread(tab) != null -> BuilderId.ofThread(tab).let { b -> tasks.filter { it.build && it.builderId == b && it.chat.isEmpty() } }
         else -> macThreadId(tab)?.let { id -> tasks.filter { it.thread == id && it.chat.isEmpty() } }.orEmpty()
     }
 }
@@ -127,6 +125,7 @@ fun fieldHint(to: SendTo, on: String = "the Mac"): String? = when (to) {
     SendTo.Oma -> null
     SendTo.Phone -> "to $PHONE_THREAD_NAME…"
     SendTo.PhoneB -> "to $PHONE_THREAD_B_NAME…"
+    SendTo.PhoneC -> "to $PHONE_THREAD_C_NAME…"
     is SendTo.Mac -> "to ${to.name}…"
     is SendTo.Chat -> "start this chat on $on…"
     is SendTo.ChatStarting -> "starting a new thread on $on…"
@@ -141,7 +140,7 @@ fun fieldHint(to: SendTo, on: String = "the Mac"): String? = when (to) {
  */
 fun fieldStop(to: SendTo, working: Boolean, deciding: Boolean): Boolean = when (to) {
     SendTo.Oma -> working || deciding
-    SendTo.Phone, SendTo.PhoneB -> working
+    SendTo.Phone, SendTo.PhoneB, SendTo.PhoneC -> working
     is SendTo.Chat, is SendTo.ChatStarting -> deciding
     is SendTo.Mac -> false
 }
@@ -214,11 +213,7 @@ fun tabMenu(tab: String, pinned: Boolean, stoppable: Boolean, answered: Boolean,
 data class TabMend(val restart: BuilderId? = null, val clean: Boolean = false)
 
 /** The phone builder whose tab [tab] is; null for every other tab. */
-fun tabBuilder(tab: String): BuilderId? = when (tab) {
-    PHONE_THREAD -> BuilderId.A
-    PHONE_THREAD_B -> BuilderId.B
-    else -> null
-}
+fun tabBuilder(tab: String): BuilderId? = BuilderId.ofThread(tab)
 
 /**
  * What [tab]'s menu offers to mend, from each builder's facts at the last look ([seen]). Only a phone builder's
@@ -267,11 +262,7 @@ sealed interface TabStop {
 fun tabStop(tab: String, thread: AgentThread?, meta: TabMeta): TabStop? {
     if (thread == null || !thread.state.active || thread.state == ThreadState.Attention) return null
     meta.chatOf(tab)?.let { chat -> return chat.mac.takeIf { it.isNotEmpty() }?.let(TabStop::Mac) }
-    return when (tab) {
-        PHONE_THREAD -> TabStop.Builder(BuilderId.A)
-        PHONE_THREAD_B -> TabStop.Builder(BuilderId.B)
-        else -> macThreadId(tab)?.let(TabStop::Mac)
-    }
+    return BuilderId.ofThread(tab)?.let(TabStop::Builder) ?: macThreadId(tab)?.let(TabStop::Mac)
 }
 
 /** The newest finished answer among [entries], as it was written, for Copy last answer; null when none has one. */
@@ -314,7 +305,7 @@ fun lastTurnTab(tasks: List<ChatTask>, meta: TabMeta = TabMeta()): String? {
     return when {
         last.chat.isNotEmpty() -> meta.chat(last.chat)?.let { chatKey(last.chat) }
         last.mac -> meta.chatOnMac(last.thread)?.key ?: macThreadKey(last.thread)
-        last.build -> if (last.builderId == dev.omalauncher.assist.BuilderId.B) PHONE_THREAD_B else PHONE_THREAD
+        last.build -> last.builderId.thread
         else -> null
     }
 }

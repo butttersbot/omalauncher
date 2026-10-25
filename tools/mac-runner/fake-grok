@@ -42,8 +42,11 @@ while True:
         out({'id': number, 'result': {'models': {'currentModelId': 'grok-4.7'}}})
     elif method == 'session/prompt':
         session, prompt = params['sessionId'], params['prompt'][0]['text']
+        # A new session's first words come after the runner's note on artifacts: what it acts on is his words alone.
+        told = prompt.startswith('[Soma (the app Boss is using)')
+        prompt = prompt.split(']\n\n', 1)[1] if told else prompt
         with open('starts.log', 'a') as log:
-            log.write(json.dumps({'kind': 'grok', 'prompt': prompt, 'resumed': resumed, 'argv': sys.argv[1:], 'auto': auto}) + '\n')
+            log.write(json.dumps({'kind': 'grok', 'prompt': prompt, 'told': told, 'resumed': resumed, 'argv': sys.argv[1:], 'auto': auto}) + '\n')
         if 'limit' in prompt:
             out({'id': number, 'error': {'code': -32000, 'message': "You've hit your usage limit for this plan."}})
             continue

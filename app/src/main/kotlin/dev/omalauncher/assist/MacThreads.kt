@@ -97,6 +97,11 @@ object MacThreads {
 
     fun artifact(context: Context, thread: String, path: String) = engine(context).artifact(thread, path)
 
+    /** The artifacts the threads' events spoke of; none before the engine is made. */
+    fun liveArtifacts(): List<dev.omalauncher.oma.ArtifactLive> = made?.liveArtifacts().orEmpty()
+
+    fun artifactVersions(context: Context, thread: String, name: String) = engine(context).artifactVersions(thread, name)
+
     fun earlier(context: Context, threadId: String): MacEarlierRead = engine(context).earlier(threadId)
 
     fun stop(context: Context, threadId: String, told: (String?) -> Unit) = engine(context).stop(threadId, told)

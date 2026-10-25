@@ -27,6 +27,22 @@ scripts, not code bundled into the Android app.
   `oma-macbuild --take` checks it (HEAD's commit, the next version code, no test failed, its checksum, and proot
   libraries byte for byte the same as this checkout's), signs it with the phone's key, and leaves it where
   oma-install looks. Then oma-install as before.
+  Build lanes (2026-10-24): each builder (A, B, C) asks a runner thread of its own, "Soma build lane A/B/C" (its id
+  kept in /root/.config/oma-development/mac-lane-A etc.; found by name or made by `oma threads new` the first time),
+  to run soma-macbuild --lane X, which builds in ~/Projects/omalauncher-fold-build-a/-b/-c, so the three build at
+  once. The Mac gives each build its version code (tools/fold-development/soma-lanes, ~/.local/state/soma-macbuild):
+  the phone's next one, or the first above it no other lane's build has, so two lanes never share a code; --take
+  accepts any code from the next one up. Lanes wait for each other only to fetch (seconds) and to walk on the Mac's
+  one emulator (after the app is sent). On the phone, --take never replaces another builder's newer build waiting for
+  oma-install (taken.json), and only one oma-install runs at a time. The file mac-lanes-off (or SOMA_MAC_THREAD) sends
+  every build to the upkeep thread as before; soma-macbuild without --lane builds exactly as before.
+- oma-adb says in one line whether Wireless debugging is on and at what address (it takes a new port each time it
+  is switched on, so a cached port proves nothing): the last good address, then adb's own list, mDNS, and every port
+  at once; only a port that answers adb's opening and then runs `adb -s ADDR shell true` counts, and adb's other
+  entries for the phone are disconnected. Exit 0 on, 1 off, 3 phone unreachable, 4 not authorized. On the Mac it
+  looks at galaxy-z-fold8 over Tailscale (~1 s when the port is unchanged, 5-7 s when it has to look); here it checks
+  the phone's own adb over loopback and writes the port to install-port for oma-install and oma-drop. Ask it rather
+  than trusting install-port.
 - oma-door is a small private door for the Mac session to reach the agent here when adb can't: it listens on the
   phone's Tailscale address only (port 8477), needs the token in /root/.config/oma-door/token with every request,
   and hands a prompt to the same agent the launcher runs, one job at a time. It runs no command of its own. The

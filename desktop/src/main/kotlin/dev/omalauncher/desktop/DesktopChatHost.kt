@@ -19,8 +19,6 @@ import dev.omalauncher.assist.MacEarlierRead
 import dev.omalauncher.assist.MacPending
 import dev.omalauncher.assist.MacThreadsEngine
 import dev.omalauncher.assist.MacView
-import dev.omalauncher.assist.PHONE_THREAD
-import dev.omalauncher.assist.PHONE_THREAD_B
 import dev.omalauncher.assist.PendingApproval
 import dev.omalauncher.assist.ThreadAsk
 import dev.omalauncher.assist.agentThreads
@@ -80,6 +78,10 @@ class DesktopChatHost(
 
     override fun readArtifact(thread: String, path: String) = engine.artifact(thread, path)
 
+    override fun liveArtifacts() = engine.liveArtifacts()
+
+    override fun artifactVersions(thread: String, name: String) = engine.artifactVersions(thread, name)
+
     override fun macEarlier(threadId: String): MacEarlierRead = engine.earlier(threadId)
 
     override fun hosts(): List<HostChoice> = engine.hosts().map { seen ->
@@ -104,7 +106,7 @@ class DesktopChatHost(
         val book = platform.book()
         val asks = engine.pending.groupBy({ it.threadId }) { ThreadAsk(it.request.tool, askTarget(it.request.input)) }
         // The phone's own threads (its builders) are the phone's: not here.
-        return agentThreads(tasks(), BuilderNow(), engine.view, asks, BuilderNow(), book.chats, book.names).filter { it.key != PHONE_THREAD && it.key != PHONE_THREAD_B }
+        return agentThreads(tasks(), BuilderNow(), engine.view, asks, BuilderNow(), book.chats, book.names).filter { BuilderId.ofThread(it.key) == null }
     }
 
     override fun liveThreads(all: List<AgentThread>, pinned: Set<String>, archived: Set<String>): List<AgentThread> {

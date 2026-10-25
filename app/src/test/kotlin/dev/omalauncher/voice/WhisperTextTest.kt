@@ -64,4 +64,19 @@ class WhisperTextTest {
         assertTrue(pauseEnded(List(5) { 0.5f } + List(8) { 0.02f }, 100))
         assertFalse(pauseEnded(List(5) { 0.5f } + List(6) { 0.02f }, 100))
     }
+
+    @Test fun withTheMacReadingLiveTheLastReadingOfAllOfItIsTheEnd() {
+        // The last live reading was of all of it, from his first word: nothing more to read.
+        assertEquals(Finish.Reuse("and then the build"), finishPlan(true, 1000, 1000, 9000, 1000, 9000, "and then the build"))
+        // More audio came after it: the whole again.
+        assertEquals(Finish.Whole, finishPlan(true, 1000, 1000, 12000, 1000, 9000, "and then the build"))
+        // Words were settled (the anchor moved on): the whole again, as settled words lose accuracy at the cut.
+        assertEquals(Finish.Whole, finishPlan(true, 1000, 5000, 9000, 5000, 9000, "and then"))
+        // Never read live (he stopped at once).
+        assertEquals(Finish.Whole, finishPlan(true, 1000, 1000, 12000, -1, -1, null))
+    }
+
+    @Test fun withThePhoneReadingLiveTheWholeIsReadAgain() {
+        assertEquals(Finish.Whole, finishPlan(false, 1000, 1000, 9000, 1000, 9000, "and then the build"))
+    }
 }

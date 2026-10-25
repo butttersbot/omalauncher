@@ -1,20 +1,53 @@
 #!/bin/bash
-# soma-macbuild COMMIT VERSION_CODE [PHONE]: on the Mac Pro, build and test one commit of the phone's branch
-# (phone/fold-development) as the working launcher, and Taildrop it to the phone, which signs it with its own key
+# soma-macbuild [--lane A|B|C] COMMIT VERSION_CODE [PHONE]: on the Mac Pro, build and test one commit of the phone's
+# branch (phone/fold-development) as the working launcher, and Taildrop it to the phone, which signs it with its own key
 # and installs it (oma-macbuild --take, then oma-install). Builds run here and not on the Fold (Boss, 2026-10-17:
 # the phone's RAM is for Soma). It builds in a worktree of its own beside the mirror at ~/Projects/omalauncher-fold,
 # so the mirror stays clean for mac-sync.py. Nothing is sent when a test fails.
+# --lane: each phone builder has a lane of its own (its own runner thread and worktree, omalauncher-fold-build-a/-b/-c),
+# so the three build at once. Then VERSION_CODE is the lowest it may carry: two lanes never get the same code (the
+# next free one is taken and said). Without --lane it builds in omalauncher-fold-build at exactly VERSION_CODE, as
+# before. Lanes wait for each other only to fetch, and to walk on the Mac's one emulator, after the app is sent.
 set -euo pipefail
-[ $# -ge 2 ] || { sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+here=$(cd "$(dirname "$0")" && pwd)
+lane=
+if [ "${1:-}" = --lane ]; then lane=${2:-}; shift 2 || true; fi
+[ $# -ge 2 ] || { sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+[[ -z $lane || $lane =~ ^[ABC]$ ]] || { echo "\"$lane\" is not a lane: A, B or C." >&2; exit 2; }
 commit=$1
 code=$2
 phone=${3:-galaxy-z-fold8}
 [[ $commit =~ ^[0-9a-f]{7,40}$ ]] || { echo "\"$commit\" is not a commit." >&2; exit 2; }
 [[ $code =~ ^[0-9]{1,9}$ ]] || { echo "\"$code\" is not a version code." >&2; exit 2; }
 [[ $phone =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,62}$ ]] || { echo "\"$phone\" is not a device name." >&2; exit 2; }
-mirror=$HOME/Projects/omalauncher-fold
-work=$HOME/Projects/omalauncher-fold-build
+mirror=${SOMA_MIRROR:-$HOME/Projects/omalauncher-fold}
+legacy=${SOMA_BUILD_ROOT:-$HOME/Projects}/omalauncher-fold-build
+work=$legacy${lane:+-$(echo "$lane" | tr ABC abc)}
+# SOMA_MACBUILD_SEND=0 builds and tests only: nothing goes to the phone and no walk runs (for trying lanes out).
+send=${SOMA_MACBUILD_SEND:-1}
+# The Mac-wide locks and the version codes given, shared by every lane (soma-lanes status shows them).
+state=${SOMA_LANES_STATE:-$HOME/.local/state/soma-macbuild}
+mkdir -p "$state"
+held=
+# hold NAME SECONDS: waits that long at most for the lock NAME, which lasts until let_go NAME or this script ends.
+hold() {
+  local token="$state/$1.lock.$$"
+  rm -f "$token"
+  python3 -I "$here/soma-lanes" hold "$state/$1.lock" "$2" $$ "$token" "lane ${lane:-main} building ${commit:0:9}" </dev/null >/dev/null 2>&1 &
+  local pid=$!
+  while kill -0 "$pid" 2>/dev/null && [ ! -e "$token" ]; do sleep 0.2; done
+  [ -e "$token" ] || return 1
+  eval "held_$1=$pid"; held="$held $pid"
+}
+let_go() { local v="held_$1"; if [ -n "${!v:-}" ]; then kill "${!v}" 2>/dev/null || true; eval "held_$1="; fi; }
+out=
+trap 'for p in $held; do kill $p 2>/dev/null || true; done; [ -z "$out" ] || rm -rf "$out"' EXIT
+busy() { python3 -I "$here/soma-lanes" status "$state" | sed -n "s/^$1 *//p"; }
 
+# One build at a time in a lane's worktree (one lane's agent asked twice).
+hold "lane-${lane:-main}" 3600 || { echo "Lane ${lane:-main} is still busy after an hour: $(busy "lane-${lane:-main}")." >&2; exit 1; }
+# Git's own locks don't let two lanes fetch or make worktrees at once: one at a time, for seconds.
+hold git 600 || { echo "Git stayed locked ten minutes: $(busy git)." >&2; exit 1; }
 # Only what the phone pushed is built.
 git -C "$mirror" fetch --quiet --no-tags fork refs/heads/phone/fold-development:refs/remotes/fork/phone/fold-development
 commit=$(git -C "$mirror" rev-parse --verify --quiet "$commit^{commit}") || { echo "No commit $1 here: has the phone pushed it?" >&2; exit 1; }
@@ -24,9 +57,22 @@ if [ -d "$work" ]; then
 else
   git -C "$mirror" worktree add --quiet --detach "$work" "$commit"
 fi
+let_go git
 cd "$work"
 
-# The proot that runs his Linux is not in Git: the pinned, checksummed copies (the phone checks them again).
+# The version code: never one another lane was given for another commit (the phone takes any code from its next one up).
+asked=$code
+exact=--exact
+[ -z "$lane" ] || exact=
+code=$(python3 -I "$here/soma-lanes" claim "$state/codes.json" "${lane:-main}" "$commit" "$asked" $exact)
+code_note=
+[ "$code" = "$asked" ] || code_note=" (the phone asked for $asked; that went to another lane's build)"
+
+# The proot that runs his Linux is not in Git: the pinned, checksummed copies (the phone checks them again). A new
+# lane takes the copies the first lane already has.
+if [ ! -f app/src/main/jniLibs/arm64-v8a/libproot.so ] && [ "$work" != "$legacy" ] && [ -f "$legacy/app/src/main/jniLibs/arm64-v8a/libproot.so" ]; then
+  mkdir -p app/src/main/jniLibs && cp -R "$legacy/app/src/main/jniLibs/arm64-v8a" app/src/main/jniLibs/
+fi
 [ -f app/src/main/jniLibs/arm64-v8a/libproot.so ] || scripts/fetch-proot.sh
 # Android Studio's place, or Homebrew's command-line tools (the Mac Pro's).
 if [ ! -f local.properties ] && [ -z "${ANDROID_HOME:-}" ]; then
@@ -54,11 +100,14 @@ apk=app/build/outputs/apk/debug/app-debug.apk
 short=${commit:0:9}
 name=soma-$short-$code
 out=$(mktemp -d)
-trap 'rm -rf "$out"' EXIT
 cp "$apk" "$out/$name.apk"
 sha=$(shasum -a 256 "$out/$name.apk" | cut -d' ' -f1)
-printf '{"commit":"%s","versionCode":%s,"sha256":"%s","tests":%s,"failures":%s,"skipped":%s,"builtAt":"%s"}\n' \
-  "$commit" "$code" "$sha" "$tests" "$failures" "$skipped" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$out/$name.json"
+printf '{"commit":"%s","versionCode":%s,"sha256":"%s","tests":%s,"failures":%s,"skipped":%s,"builtAt":"%s","lane":"%s"}\n' \
+  "$commit" "$code" "$sha" "$tests" "$failures" "$skipped" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${lane:-main}" > "$out/$name.json"
+if [ "$send" = 0 ]; then
+  echo "Built and tested $short in lane ${lane:-main} (version $code$code_note: $tests tests, 0 failed, $skipped skipped); not sent (SOMA_MACBUILD_SEND=0)."
+  exit 0
+fi
 
 ts=$(command -v tailscale || true)
 [ -n "$ts" ] || ts=/Applications/Tailscale.app/Contents/MacOS/Tailscale
@@ -66,7 +115,7 @@ ts=$(command -v tailscale || true)
 cp app/build/news-ui/book.png "$out/news-ui-$short-$code.png"
 cp app/build/news-ui/results.json "$out/news-ui-$short-$code.json"
 "$ts" file cp "$out/news-ui-$short-$code.png" "$out/news-ui-$short-$code.json" "$phone:"
-echo "Built and tested $short (version $code: $tests tests, 0 failed, $skipped skipped); sent $name.apk to $phone."
+echo "Built and tested $short${lane:+ in lane $lane} (version $code$code_note: $tests tests, 0 failed, $skipped skipped); sent $name.apk to $phone."
 
 # Walk it like a person on the Mac's Fold emulator (Boss, 2026-10-22; tools/walkthrough/README.md): the scripts in
 # the commit's "Walk:" trailer, else all of them. A failed walk is reported, never a reason to hold the build back.
@@ -79,6 +128,11 @@ if [ -f tools/walkthrough/walk.py ]; then
   else
     for f in tools/walkthrough/scripts/*.walk; do [ -e "$f" ] && walks+=("$(basename "$f" .walk)"); done
   fi
+fi
+# The Mac has one emulator for walks, so lanes walk one at a time (the app is already on its way to the phone).
+if [ ${#walks[@]} -gt 0 ] && ! hold walks 2700; then
+  echo "Walks: not run (the emulator was still walking another lane's build after 45 minutes: $(busy walks))."
+  walks=()
 fi
 if [ ${#walks[@]} -gt 0 ]; then
   set +e

@@ -16,6 +16,8 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 import kotlin.math.sqrt
@@ -35,6 +37,12 @@ object WhisperNative {
         threads: Int,
         live: Boolean,
     ): String
+
+    /**
+     * With [stop], a live reading under way ends at whisper.cpp's next check, and any started after it at once,
+     * until it is set back: for when the dictation ended and its words would not be used.
+     */
+    external fun stopLive(stop: Boolean)
 }
 
 /**
@@ -187,8 +195,9 @@ object WhisperModels {
  * ([WhisperMac]), and by the phone's own models only when the Mac can't be reached. The microphone is read in
  * steps of [STEP_MS]; while he speaks, the audio after the settled words is read again and again, and [onText]
  * gets the words so far (the settled ones never change again). It ends at [stop], or with [hold] false at the
- * first long pause; then the whole of it is read once more, by the accurate model, and [onDone] gets that text.
- * Callbacks come on the main thread.
+ * first long pause. Then the whole of it is read once more, by the accurate model, and [onDone] gets that text;
+ * unless the Mac read it live and its last reading already was of the whole of it ([finishPlan]). Callbacks come
+ * on the main thread.
  */
 class WhisperSession(
     private val context: Context,
@@ -235,6 +244,7 @@ class WhisperSession(
         }
         rec.startRecording()
         WhisperModels.begin()
+        if (WhisperNative.loaded) WhisperNative.stopLive(false)
         thread(name = "oma-whisper-mic", isDaemon = true) { record(rec) }
         thread(name = "oma-whisper-live", isDaemon = true) {
             // However it ends, cancelled too: a cancelled dictation used to leave both models loaded for good.
@@ -303,7 +313,11 @@ class WhisperSession(
     private var mac: String? = null
 
     /** The phone's fast model, loaded on first need; the accurate one is loaded alongside it. */
-    private var liveCtx = 0L
+    @Volatile private var liveCtx = 0L
+
+    private fun stopPhoneReading() {
+        if (WhisperNative.loaded) WhisperNative.stopLive(true)
+    }
 
     private fun localLive(): Long {
         if (liveCtx == 0L) {
@@ -332,13 +346,57 @@ class WhisperSession(
             if (ctx != 0L) return WhisperModels.transcribe(ctx, clip, prompt, threads, false)
         }
         val ctx = localLive()
-        return if (ctx == 0L) null else WhisperModels.transcribe(ctx, clip, prompt, threads, true)
+        return if (ctx == 0L) null else WhisperModels.transcribe(ctx, clip, prompt, threads, !final)
+    }
+
+    /**
+     * A live reading, made on a thread of its own so that a stop needn't wait for it when its words would be
+     * replaced anyway. [onMac]: by the Mac, whose address it was given; else by the phone's model [ctx], loaded
+     * beforehand on the session's own thread (never here, where it could come after the dictation freed them).
+     */
+    private inner class Reading(
+        val from: Int,
+        val to: Int,
+        private val mac: String?,
+        private val ctx: Long,
+    ) {
+        val onMac = mac != null
+        @Volatile var raw: String? = null
+        private val done = CountDownLatch(1)
+
+        init {
+            val clip = audio(from, to)
+            thread(name = "oma-whisper-read", isDaemon = true) {
+                try {
+                    raw =
+                        if (mac != null) {
+                            WhisperMac.transcribe(mac, clip, prompt, LIVE_TIMEOUT_MS)
+                        } else {
+                            if (ctx == 0L) null else WhisperModels.transcribe(ctx, clip, prompt, threads, true)
+                        }
+                } finally {
+                    done.countDown()
+                }
+            }
+        }
+
+        /** Waits for it to finish; false if [give] came true first. */
+        fun await(give: () -> Boolean): Boolean {
+            while (!done.await(20, TimeUnit.MILLISECONDS)) if (give()) return false
+            return true
+        }
     }
 
     private fun readLive() {
         mac = WhisperMac.base(context).takeIf { WhisperMac.reachable(it) }
         if (mac == null) localLive()
         var readAt = 0
+        // The last live reading after the settled words: where it began and ended, and what it heard.
+        var lastFrom = -1
+        var lastTo = -1
+        var lastText: String? = null
+        // A reading still under way when the dictation ended.
+        var pending: Reading? = null
         while (!ending) {
             // Only up to just after his last word: from the quiet after it Whisper makes up words, or loops on
             // one ("and, and, and…", Boss 2026-10-15).
@@ -348,15 +406,35 @@ class WhisperSession(
                 continue
             }
             if (anchor < voiceFrom) anchor = voiceFrom
-            if (end - readAt < RATE * READ_EVERY_MS / 1000 || end - anchor < RATE / 2) {
+            // In a pause (all up to just after his last word is recorded), what came since the last reading is
+            // read however little it is: then the last reading is of all of it, and the end needs no other.
+            val paused = end > readAt && count >= voiceTo + RATE * PAD_MS / 1000
+            if ((end - readAt < RATE * READ_EVERY_MS / 1000 && !paused) || end - anchor < RATE / 2) {
                 Thread.sleep(50)
                 continue
             }
             readAt = end
-            val heard = parseHeard(read(audio(anchor, end), final = false) ?: continue)
+            val r = Reading(anchor, end, mac, if (mac == null) localLive() else 0L)
+            if (!r.await { ending }) {
+                pending = r
+                break
+            }
             if (cancelled) break
+            val raw = r.raw
+            if (raw == null) {
+                // The Mac didn't answer in time: the phone reads the rest of this dictation, this audio first.
+                if (r.onMac) {
+                    mac = null
+                    readAt = 0
+                }
+                continue
+            }
+            val heard = parseHeard(raw)
             val now = heard.joinToString(" ") { it.text }
             live = live.read(now)
+            lastFrom = anchor
+            lastTo = end
+            lastText = now
             // A long stretch is settled up to its last segment, and reading starts again after it.
             if (end - anchor > RATE * SETTLE_AFTER_S && heard.size > 1) {
                 val keep = heard.dropLast(1)
@@ -366,27 +444,67 @@ class WhisperSession(
             val shown = live
             main.post { if (!cancelled) onText(shown) }
         }
-        if (cancelled) return
-        // The whole of it, read once more by the accurate model (the Mac's, or the phone's); the phone's fast one's
-        // reading after the settled words if the accurate one isn't here. From his first word to just after his
-        // last: none of the quiet around it.
-        val all = if (voiceFrom < 0) FloatArray(0) else audio(voiceFrom, minOf(count, voiceTo + RATE * PAD_MS / 1000))
+        if (cancelled) {
+            if (pending?.onMac == false) stopPhoneReading()
+            return
+        }
+        val end = if (voiceFrom < 0) 0 else minOf(count, voiceTo + RATE * PAD_MS / 1000)
+        // Ended before any reading: none of the quiet before his first word either.
+        if (anchor < voiceFrom) anchor = voiceFrom
+        pending?.let { r ->
+            if (r.onMac && r.from == voiceFrom && anchor == voiceFrom && r.to >= end) {
+                // Under way on the Mac, and of all of it: that one is the end of it, so wait for it.
+                if (r.await { false }) {
+                    r.raw?.let {
+                        lastFrom = r.from
+                        lastTo = r.to
+                        lastText = parseHeard(it).joinToString(" ") { h -> h.text }
+                    } ?: run { mac = null }
+                }
+            } else if (!r.onMac) {
+                // The phone's: the whole of it is read again just below, so this one stops now.
+                stopPhoneReading()
+            }
+            // A Mac reading that would be read again anyway is let run out on its own; its words aren't used.
+        }
         val text =
             when {
-                all.size < RATE / 4 -> ""
-                else -> read(all, final = true)?.let { raw -> parseHeard(raw).joinToString(" ") { it.text } } ?: live.text
+                end - maxOf(voiceFrom, 0) < RATE / 4 -> ""
+                else ->
+                    when (val plan = finishPlan(mac != null, voiceFrom, anchor, end, lastFrom, lastTo, lastText)) {
+                        is Finish.Reuse -> plan.text
+                        Finish.Whole -> whole()
+                    }
             }
         main.post { if (!cancelled) onDone(text.trim(), null) }
+    }
+
+    /**
+     * The whole of it, read once more by the accurate model (the Mac's, or the phone's); the phone's fast one's
+     * reading after the settled words if the accurate one isn't here. From his first word to just after his
+     * last: none of the quiet around it.
+     */
+    private fun whole(): String {
+        val all = audio(voiceFrom, minOf(count, voiceTo + RATE * PAD_MS / 1000))
+        return read(all, final = true)?.let { raw -> parseHeard(raw).joinToString(" ") { it.text } } ?: live.text
     }
 
     companion object {
         const val RATE = 16_000
         const val STEP_MS = 100
         const val READ_EVERY_MS = 500
+        /**
+         * A reading of more than this many seconds settles its words but the last segment's. Kept at 15 s, not
+         * shortened: a dictation read live that settled nothing ends without being read again ([finishPlan]),
+         * so a shorter one would make every dictation of 8-15 s wait for a whole reading again when he stops.
+         */
         const val SETTLE_AFTER_S = 15
 
-        /** How long a live reading may take on the Mac before the phone reads instead. */
-        const val LIVE_TIMEOUT_MS = 6_000
+        /**
+         * How long a live reading may take on the Mac before the phone reads instead (it was 6 s). The Mac takes
+         * some 0.4 s whatever the length; the rest is the trip, under half a second through Tailscale's relay.
+         */
+        const val LIVE_TIMEOUT_MS = 2_000
 
         /** Kept before his first word and after his last, so their edges aren't cut. */
         const val PAD_MS = 300

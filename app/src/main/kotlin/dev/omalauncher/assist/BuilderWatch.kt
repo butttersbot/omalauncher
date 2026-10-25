@@ -127,7 +127,7 @@ object BuilderWatch {
             }
         }
         last = seen
-        write(app, seen, builderBShown(tasks, working[BuilderId.B] == true))
+        write(app, seen, builderBShown(tasks, working[BuilderId.B] == true), builderShown(BuilderId.C, tasks, working[BuilderId.C] == true))
         notice(app, seen)
         return seen
     }
@@ -139,7 +139,11 @@ object BuilderWatch {
         return a to b
     }
 
-    private fun write(app: App, seen: Map<BuilderId, BuilderFacts>, twoShown: Boolean) = runCatching {
+    /** [builder]'s health line on the board while it is [shown], under its letter; null otherwise. */
+    fun line(seen: Map<BuilderId, BuilderFacts>, builder: BuilderId, shown: Boolean): String? =
+        if (shown) seen[builder]?.let { healthLine(it, "Builder ${builder.letter}") } else null
+
+    private fun write(app: App, seen: Map<BuilderId, BuilderFacts>, twoShown: Boolean, threeShown: Boolean = false) = runCatching {
         val first = seen.getValue(BuilderId.A)
         val file = File(app.runtime.proot.home, AGENTS_STATUS_FILE)
         file.parentFile?.mkdirs()
@@ -149,7 +153,7 @@ object BuilderWatch {
             view.copy(threads = view.threads.map { macOwnSummary(it, tasks) })
         }
         val next = File(file.parentFile, file.name + ".new")
-        next.writeText(agentsStatus(first, mac, written, seen[BuilderId.B]?.takeIf { twoShown }, TailscaleHeal.note(first.now)).toString(2) + "\n")
+        next.writeText(agentsStatus(first, mac, written, seen[BuilderId.B]?.takeIf { twoShown }, TailscaleHeal.note(first.now), seen[BuilderId.C]?.takeIf { threeShown }).toString(2) + "\n")
         next.renameTo(file)
     }
 
@@ -197,7 +201,8 @@ object BuilderWatch {
             val until = System.currentTimeMillis() + RESTART_WAIT_MS
             while (one.working && System.currentTimeMillis() < until) Thread.sleep(500)
             if (one.working) return@thread told(RESTART_STUCK)
-            val name = if (builder == BuilderId.A && !builderBShown(tasks, AgentTasks.of(BuilderId.B).working)) "the builder" else builderCalled(builder)
+            val alone = !builderBShown(tasks, AgentTasks.of(BuilderId.B).working) && !builderShown(BuilderId.C, tasks, AgentTasks.of(BuilderId.C).working)
+            val name = if (builder == BuilderId.A && alone) "the builder" else builderCalled(builder)
             told(runCatching { AgentTasks.followUp(app, task.prompt, task.images, builder = builder); restartedText(seen, dropped, name) }.getOrElse { it.message ?: RESTART_STUCK })
         }
     }
