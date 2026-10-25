@@ -28,7 +28,7 @@ environment = {**os.environ, 'OMA_RUNNER_PORT': str(port), 'OMA_RUNNER_TOKEN': s
                # Per-device keys: the table, who whois says is calling (read only by a loopback runner), this machine's name.
                'OMA_RUNNER_KEYS': str(work / 'keys.json'), 'OMA_RUNNER_WHOIS_FILE': str(work / 'whois.json'), 'OMA_RUNNER_PHONE': 'phone',
                'OMA_RUNNER_SELF': 'testhost', 'OMA_RUNNER_SOMA_DIR': str(work / 'soma-runners'), 'OMA_RUNNER_PAIR_COMPUTERS': '1',
-               'OMA_RUNNER_PROJECTS': str(work / 'projects.json')}
+               'OMA_RUNNER_PROJECTS': str(work / 'projects.json'), 'OMA_RUNNER_ARTIFACTS': str(work / 'artifacts')}
 # Soma Canvas 8a: a stand-in canvas service on the loopback that writes down every token registration and revocation.
 import http.server, threading
 service_calls = []
@@ -423,6 +423,126 @@ try:
     check('the next turn of the same thread keeps its token, registered once', len([c for c in service_calls if c[1] == '/tokens' and c[3]['thread'] == thread]) == 1)
     check('it goes back to idle after the mail', settle(thread, 'idle'))
 
+    # Artifacts (features/artifact-panel/PLAN.md): the thread's agent makes one with `soma-artifact`, every version is
+    # kept in the store, the devices are told with an `artifact` event, and they read it on its own route.
+    import base64, hashlib as _hashlib
+    given = starts()[-1]
+    check('artifacts: Claude Code is told about `soma-artifact put` beside its own system prompt',
+          'soma-artifact put FILE' in (given['system_prompt'] or '') and 'self-contained' in given['system_prompt'])
+    check('artifacts: making one never needs a card: `soma-artifact` alone is allowed, and nothing else', given['allow'] == ['Bash(soma-artifact *)'])
+    check('artifacts: the agent runs with its thread, an artifact token of its own and `soma-artifact` first on its PATH, runnable by this user alone',
+          given['soma_thread'] == thread and len(given['artifact_token'] or '') == 64 and not given['device_key']
+          and (pathlib.Path(given['path'].split(os.pathsep)[0]) / 'soma-artifact').is_file()
+          and oct((pathlib.Path(given['path'].split(os.pathsep)[0]) / 'soma-artifact').stat().st_mode)[-3:] == '700')
+    before = call('GET', '/threads/' + thread)[1]['thread']['last_event']
+    call('POST', '/threads/%s/messages' % thread, {'text': 'make a mockup please'})
+    events = stream(thread, after=before)
+    made = [e for e in events if e['type'] == 'artifact']
+    check('artifacts: "editing" then the new version reach the stream as `artifact` events, in order',
+          [(e['name'], e['version'], e['state']) for e in made] == [('mock.html', 1, 'editing'), ('mock.html', 1, 'ready')]
+          and made[1]['title'] == 'Mock' and made[1]['mime'] == 'text/html' and made[1]['note'] == 'make a mockup please')
+    check('artifacts: the agent is told it was saved', any(e['type'] == 'text' and e['text'].startswith('ok: Saved mock.html v1') for e in events))
+    folder = work / 'artifacts' / thread / 'mock.html'
+    check('artifacts: kept as v1.html beside meta.json in the thread\'s own folder, for this user alone',
+          (folder / 'v1.html').read_text() == '<!doctype html><title>Mock</title><p>make a mockup please</p>'
+          and oct((folder / 'v1.html').stat().st_mode)[-3:] == '600' and oct(folder.stat().st_mode)[-3:] == '700'
+          and json.loads((folder / 'meta.json').read_text())['versions'][0]['v'] == 1)
+    code, listed_artifacts = call('GET', '/threads/%s/artifacts' % thread)
+    item = listed_artifacts['artifacts'][0] if code == 200 and listed_artifacts['artifacts'] else {}
+    check('artifacts: the list route names each with its title, type, newest version and every version\'s note',
+          item.get('name') == 'mock.html' and item['title'] == 'Mock' and item['mime'] == 'text/html' and item['latest'] == 1 and item['editing'] is None
+          and [v['note'] for v in item['versions']] == ['make a mockup please'] and item['versions'][0]['size'] == (folder / 'v1.html').stat().st_size)
+
+    def artifact_get(path, token='k' * 40):
+        request = urllib.request.Request(base + path, headers={'Authorization': 'Bearer ' + token})
+        try:
+            with urllib.request.urlopen(request, timeout=10) as reply:
+                return reply.status, json.loads(reply.read()), reply.headers.get('Cache-Control')
+        except urllib.error.HTTPError as problem:
+            return problem.code, json.loads(problem.read()), problem.headers.get('Cache-Control')
+    code, one, cache = artifact_get('/threads/%s/artifacts/mock.html' % thread)
+    check('artifacts: one is read whole on its own route, newest by default, never cached',
+          code == 200 and base64.b64decode(one['data']) == (folder / 'v1.html').read_bytes() and one['v'] == 1 and one['latest'] == 1
+          and one['version'] == _hashlib.sha256((folder / 'v1.html').read_bytes()).hexdigest()[:12] and cache == 'no-store')
+    call('POST', '/threads/%s/messages' % thread, {'text': 'another mockup v2'})
+    stream(thread, after=events[-1]['id'])
+    check('it goes back to idle after the second version', settle(thread, 'idle'))
+    code, two, _ = artifact_get('/threads/%s/artifacts/mock.html' % thread)
+    code_old, old, _ = artifact_get('/threads/%s/artifacts/mock.html?v=1' % thread)
+    check('artifacts: a second put is v2, and v1 is still there to read',
+          two['v'] == 2 and b'another mockup v2' in base64.b64decode(two['data']) and code_old == 200 and old['v'] == 1 and old['latest'] == 2
+          and b'make a mockup please' in base64.b64decode(old['data']))
+    check('artifacts: a version that is not there is 404, a word for one 400, a name that is not there 404',
+          artifact_get('/threads/%s/artifacts/mock.html?v=9' % thread)[0] == 404 and artifact_get('/threads/%s/artifacts/mock.html?v=x' % thread)[0] == 400
+          and artifact_get('/threads/%s/artifacts/none.html' % thread)[0] == 404 and artifact_get('/threads/tnothere/artifacts/mock.html')[0] == 404)
+    check('artifacts: the routes need a key, and the key of the device it was given to',
+          artifact_get('/threads/%s/artifacts' % thread, token='x' * 40)[0] == 401)
+    calling_as('macbook-pro')
+    check('artifacts: the phone\'s key from another device is refused', artifact_get('/threads/%s/artifacts/mock.html' % thread)[0] == 401)
+    calling_as('phone')
+    last = call('GET', '/threads/' + thread)[1]['thread']['last_event']
+    call('POST', '/threads/%s/messages' % thread, {'text': 'mockupstuck'})
+    events = stream(thread, after=last)
+    check('it goes back to idle after an edit that never put', settle(thread, 'idle'))
+    events = call('GET', '/threads/%s/events?after=%d' % (thread, last))[1]['events']
+    made = [(e['version'], e['state'], e.get('settled', False)) for e in events if e['type'] == 'artifact']
+    check('artifacts: an "editing" no version follows is over with the turn: the devices are told it is back at the version it had',
+          made == [(3, 'editing', False), (2, 'ready', True)] and call('GET', '/threads/%s/artifacts' % thread)[1]['artifacts'][0]['editing'] is None)
+
+    last = call('GET', '/threads/' + thread)[1]['thread']['last_event']
+    call('POST', '/threads/%s/messages' % thread, {'text': 'restyle it'})
+    stream(thread, after=last)
+    check('it goes back to idle after a restyle', settle(thread, 'idle'))
+    events = call('GET', '/threads/%s/events?after=%d' % (thread, last))[1]['events']
+    check('artifacts: Claude Code writing a file that is an artifact shows it as being edited at once, then its new version',
+          [(e['version'], e['state']) for e in events if e['type'] == 'artifact'] == [(3, 'editing'), (3, 'ready')])
+
+    # The helper's socket: only this user, only with the thread's own token, only names and sizes an artifact may have.
+    sock = work / 'state' / 'artifacts.sock'
+    if len(str(sock).encode()) >= 100:
+        sock = pathlib.Path(tempfile.gettempdir()) / ('oma-artifacts-%s.sock' % _hashlib.sha256(str(work / 'state').encode()).hexdigest()[:12])
+    agent_env = {'PATH': given['path'], 'SOMA_THREAD': thread, 'SOMA_ARTIFACT_TOKEN': given['artifact_token'], 'HOME': os.environ['HOME'], 'SOMA_ARTIFACT_SOCKET': str(sock)}
+    check('artifacts: the helper\'s socket can be opened by this user alone', sock.exists() and oct(sock.stat().st_mode)[-3:] == '600')
+
+    def helper(*words, env=None, data=None):
+        return subprocess.run(['soma-artifact', *words], env=env or agent_env, capture_output=True, text=data is None or isinstance(data, str), input=data, timeout=30, cwd=str(work))
+    (work / 'chart.svg').write_text('<svg/>')
+    ran = helper('put', str(work / 'chart.svg'), '--title', 'Chart')
+    check('artifacts: `soma-artifact put` from a shell with the thread\'s environment saves v1', ran.returncode == 0 and 'chart.svg v1' in ran.stdout)
+    ran = helper('put', '-', '--name', 'notes.md', data='# hi\n')
+    check('artifacts: stdin with --name works', ran.returncode == 0 and 'notes.md v1' in ran.stdout)
+    listed_names = helper('list')
+    check('artifacts: `soma-artifact list` shows them', listed_names.returncode == 0 and all(n in listed_names.stdout for n in ('mock.html', 'chart.svg', 'notes.md')))
+    bad_token = helper('list', env={**agent_env, 'SOMA_ARTIFACT_TOKEN': 'f' * 64})
+    other_thread = helper('list', env={**agent_env, 'SOMA_THREAD': 'tdeadbeef'})
+    check('artifacts: a wrong token, or this token for another thread, is refused', bad_token.returncode != 0 and 'not accepted' in bad_token.stderr
+          and other_thread.returncode != 0 and 'not accepted' in other_thread.stderr)
+    bare = helper('list', env={'PATH': given['path'], 'HOME': os.environ['HOME']})
+    check('artifacts: outside a Soma thread the helper says so', bare.returncode != 0 and 'not a Soma conversation' in bare.stderr)
+    for name in ('../x.html', '.hidden.html', 'x.exe', 'a/b.html', 'noext', 'x.html/', 'x..html', '-x.html'):
+        ran = helper('put', '-', '--name', name, data='x')
+        check('artifacts: the name %r is refused and nothing is written' % name, ran.returncode != 0 and not (work / 'artifacts' / thread / name).exists() and not (work / 'x.html').exists())
+    check('artifacts: an empty file is refused', helper('put', '-', '--name', 'empty.html', data='').returncode != 0)
+    big = helper('put', '-', '--name', 'big.html', data=b'x' * (4 * 1024 * 1024 + 1))
+    check('artifacts: a file over 4 MB is refused', big.returncode != 0 and not (work / 'artifacts' / thread / 'big.html').exists())
+    # What an agent might leave in the store: a link where a version was, a record naming other files.
+    (work / 'outside' / 'secret.html').write_text('SECRET')
+    (folder / 'v1.html').unlink()
+    os.symlink(work / 'outside' / 'secret.html', folder / 'v1.html')
+    code, linked, _ = artifact_get('/threads/%s/artifacts/mock.html?v=1' % thread)
+    check('artifacts: a link left where a version was is never followed', code == 404 and 'SECRET' not in json.dumps(linked))
+    meta = json.loads((folder / 'meta.json').read_text())
+    meta['versions'].append({'v': '../../outside/secret', 'time': 1})
+    meta['versions'].append({'v': True, 'time': 1})
+    (folder / 'meta.json').write_text(json.dumps(meta))
+    code, still, _ = artifact_get('/threads/%s/artifacts/mock.html' % thread)
+    check('artifacts: a record naming other files reads only the versions the runner names', code == 200 and still['v'] == 3)
+    (work / 'artifacts' / thread / 'evil.html').mkdir()
+    (work / 'artifacts' / thread / 'evil.html' / 'meta.json').symlink_to(work / 'outside' / 'secret.html')
+    check('artifacts: a record that is a link is no artifact', 'evil.html' not in json.dumps(call('GET', '/threads/%s/artifacts' % thread)[1]))
+    check('artifacts: the token is in none of the runner\'s logs or records',
+          all(given['artifact_token'] not in f.read_text(errors='replace') for d in ('logs', 'state') for f in (work / d).rglob('*') if f.is_file()))
+
     call('POST', '/threads/%s/messages' % thread, {'text': 'write the file'})
     events = stream(thread, after=listed['last_event'], until=('approval',))
     card = events[-1]
@@ -641,6 +761,8 @@ try:
         call('POST', '/threads/%s/messages' % other, {'text': 'write the file'})
         card = stream(other, after=last, until=('approval',))[-1]
         check(kind + ': a change shows a card and waits', card['tool'] == tool and card['nonce'] and status_of(other) == 'waiting' and not (project / 'written.txt').exists())
+        told = [entry['told'] for entry in starts() if entry.get('kind') == kind][-2:]
+        check(kind + ': a new session is told of `soma-artifact` ahead of his first words, a resumed one is not', told == [True, False])
         path = '/threads/%s/approvals/%s' % (other, card['approval'])
         check(kind + ': a wrong nonce is refused', call('POST', path, {'decision': 'allow', 'nonce': 'guess'})[0] == 403)
         call('POST', path, {'decision': 'deny', 'nonce': card['nonce']})

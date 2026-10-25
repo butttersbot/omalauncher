@@ -41,10 +41,13 @@ orphan = pathlib.Path('background.running')
 with open('starts.log', 'a') as log:
     log.write(json.dumps({'prompt': prompt, 'resumed': '--resume' in arguments, 'forked': '--fork-session' in arguments, 'mode': arguments[arguments.index('--permission-mode') + 1],
                          'deny': json.loads(arguments[arguments.index('--settings') + 1])['permissions']['deny'],
+                         'allow': json.loads(arguments[arguments.index('--settings') + 1])['permissions'].get('allow'),
                          'prompt_tool': arguments[arguments.index('--permission-prompt-tool') + 1],
                          'thread_id': os.environ.get('OMA_THREAD_ID'), 'canvas_token': os.environ.get('SOMA_CANVAS_TOKEN'),
                          'soma_service': os.environ.get('SOMA_SERVICE'), 'device_key': 'k' * 40 in json.dumps(dict(os.environ)),
-                         'path': os.environ.get('PATH', ''), 'screens': os.environ.get('SOMA_CANVAS_SCREENS')}) + '\n')
+                         'path': os.environ.get('PATH', ''), 'screens': os.environ.get('SOMA_CANVAS_SCREENS'),
+                         'soma_thread': os.environ.get('SOMA_THREAD'), 'artifact_token': os.environ.get('SOMA_ARTIFACT_TOKEN'),
+                         'system_prompt': arguments[arguments.index('--append-system-prompt') + 1] if '--append-system-prompt' in arguments else None}) + '\n')
 if '--model' in arguments:
     with open('models.log', 'a') as log:
         log.write(arguments[arguments.index('--model') + 1] + '\n')
@@ -112,6 +115,26 @@ def handle(given):
                 said('Wrote it.')
             else:
                 said('Not allowed, so nothing was written.')
+        elif 'restyle' in prompt:
+            # Claude Code's own Write of a file that is already an artifact, then a put, with no "editing" of its own.
+            import subprocess
+            target = str(pathlib.Path.cwd() / 'mock.html')
+            out({'type': 'assistant', 'message': {'role': 'assistant', 'content': [{'type': 'tool_use', 'id': 'tool2', 'name': 'Write', 'input': {'file_path': target, 'content': 'x'}}]}})
+            time.sleep(0.5)
+            pathlib.Path(target).write_text('<!doctype html><p>restyled</p>')
+            ran = subprocess.run(['soma-artifact', 'put', 'mock.html'], capture_output=True, text=True)
+            said(('ok: ' if ran.returncode == 0 else 'failed: ') + (ran.stdout + ran.stderr).strip())
+        elif 'mockup' in prompt:
+            # An agent making an artifact as the runner tells it to: `soma-artifact` from its PATH, "editing" first.
+            # "mockupstuck": it says it is editing and then never puts a version.
+            import subprocess
+            steps = [['soma-artifact', 'editing', 'mock.html']]
+            if 'mockupstuck' not in prompt:
+                pathlib.Path('mock.html').write_text('<!doctype html><title>Mock</title><p>' + prompt + '</p>')
+                steps.append(['soma-artifact', 'put', 'mock.html', '--title', 'Mock', '--note', prompt[:60]])
+            for step in steps:
+                ran = subprocess.run(step, capture_output=True, text=True)
+                said(('ok: ' if ran.returncode == 0 else 'failed: ') + (ran.stdout + ran.stderr).strip())
         elif 'files' in prompt:
             said('Files here: ' + ', '.join(sorted(path.name for path in pathlib.Path.cwd().iterdir())))
         elif 'background' in prompt:
