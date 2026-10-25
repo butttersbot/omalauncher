@@ -32,3 +32,11 @@ interactions are confined to that mode; it never enables trading.
 Do not call this build visually ready until these checks have passed. Original
 mockups depicting deposits, orders, cash-out, settlement, curves and assistant
 actions are reference-only until their real backend slices exist.
+
+Independent initial-state comparison: all 15 rendered DOM trees match the
+MacBook standalone HTML conversion (archive SHA-256
+`9b3364c1c27843529fd4597fc3eef2c9ff29e90d5635407e32e555e79b091671`), including
+text, attributes, inline styles and SVG. Only host root ID/scale and equivalent
+whitespace/CSS quote formatting are normalized. Reproduce with
+`tools/hunch/compare-export.mjs`. This establishes template fidelity, not live
+layout/font/interaction readiness.
