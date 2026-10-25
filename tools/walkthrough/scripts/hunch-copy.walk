@@ -1,0 +1,29 @@
+# Owner-requested copy removal in all bundled reference screens.
+fold folded
+rotate portrait
+shell am force-stop dev.omalauncher.hunch
+shell am start -n dev.omalauncher.hunch/.MainActivity --es design Setup
+wait 6000
+expect DESIGN REFERENCE
+expect Privy makes a new wallet just for Hunch
+absent NEETbux
+shot hunch-copy-setup
+fold open
+shell am force-stop dev.omalauncher.hunch
+shell am start -n dev.omalauncher.hunch/.MainActivity --es design Money
+wait 6000
+expect DESIGN REFERENCE
+expect Privy wallet
+absent NEETbux
+shot hunch-copy-money
+fold folded
+shell am force-stop dev.omalauncher.hunch
+shell am start -n dev.omalauncher.hunch/.MainActivity --es design Flow
+wait 6000
+expect DESIGN REFERENCE
+tap GET STARTED
+expect STEP 1 OF 3
+expect Privy makes a wallet just for Hunch
+absent NEETbux
+shot hunch-copy-flow
+[phone] After installing0.5.1, owner reopens existing wallet; intro says Your Hunch wallet is ready, no old treasury-brand reference. Wallet/address stay unchanged. Do not create another wallet or send funds.
