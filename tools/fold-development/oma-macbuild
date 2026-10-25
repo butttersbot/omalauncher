@@ -7,6 +7,11 @@
 #                         soma-macbuild --lane, which Taildrops the result here; the lanes build at once
 #   oma-macbuild --take   take what came back, check it, sign it with the phone's key and put it where oma-install
 #                         looks; then run oma-install as before
+#   oma-macbuild --ask TITLE TEXT
+#                         any other build or walk this builder wants on the Mac (Hunch, Soma Messages, Soma Notes, a
+#                         walk rerun): TEXT goes to this builder's own lane, never to the upkeep thread, and the
+#                         answer comes back to this builder (Boss, 2026-10-25: "Phone B and C use their own lanes")
+#   oma-macbuild --lane   print this builder's lane thread (made the first time)
 #
 # The signing key never leaves the phone: the Mac signs with its own debug key and this signs again. What is
 # taken must be HEAD's build (or an earlier one, when nothing since goes into the app), at the next version code, with no test failed, and carry the very proot libraries
@@ -58,6 +63,17 @@ case ${1:-} in
       "Please build Soma for the phone: in /Users/jackkim/Projects/omalauncher-fold run tools/fold-development/soma-macbuild $commit $code (if the script isn't there yet, the mirror syncs within a minute: wait and try again). It builds and tests that commit in its own worktree and Taildrops the app to the phone. Then answer with its last lines, or what stopped it."
     echo "Asked the Mac Pro to build $short as version $code (no lane of its own for builder $builder: the upkeep thread). When it answers, run: oma-macbuild --take"
   fi
+  ;;
+--ask)
+  title=${2:?Usage: oma-macbuild --ask TITLE TEXT}
+  text=${3:?Usage: oma-macbuild --ask TITLE TEXT}
+  lane=$(lane_thread) || die "No lane for builder $builder (the Mac Pro out of reach, or mac-lanes-off): nothing was sent."
+  oma msg send "$mac:$lane" --as "$builder" --title "$title (lane $builder)" "$text"
+  echo "Sent to the Mac Pro's lane $builder ($lane): the answer comes back to builder $builder."
+  ;;
+--lane)
+  lane=$(lane_thread) || die "No lane for builder $builder (the Mac Pro out of reach, or mac-lanes-off)."
+  echo "$lane"
   ;;
 --take)
   oma drop get >/dev/null 2>&1 || true
@@ -129,5 +145,5 @@ PY
   echo "Signed with the phone's key and ready (version $code): run oma-install."
   ;;
 *)
-  sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
+  sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
 esac
