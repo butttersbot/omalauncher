@@ -115,6 +115,15 @@ def handle(given):
                 said('Wrote it.')
             else:
                 said('Not allowed, so nothing was written.')
+        elif 'scripted' in prompt:
+            # A script rewriting an artifact's file and putting it, as one Bash command (how Claude Code often edits one).
+            import subprocess
+            command = "python3 - <<'EOF' && soma-artifact put mock.html\nopen('mock.html','w').write('<p>scripted</p>')\nEOF"
+            out({'type': 'assistant', 'message': {'role': 'assistant', 'content': [{'type': 'tool_use', 'id': 'tool3', 'name': 'Bash', 'input': {'command': command}}]}})
+            time.sleep(0.5)
+            pathlib.Path('mock.html').write_text('<p>scripted</p>')
+            ran = subprocess.run(['soma-artifact', 'put', 'mock.html'], capture_output=True, text=True)
+            said(('ok: ' if ran.returncode == 0 else 'failed: ') + (ran.stdout + ran.stderr).strip())
         elif 'restyle' in prompt:
             # Claude Code's own Write of a file that is already an artifact, then a put, with no "editing" of its own.
             import subprocess

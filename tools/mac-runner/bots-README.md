@@ -54,6 +54,14 @@ If something is wrong, the tab says what. Tell Boss the bot is ready and what it
 So in instructions for a bot with the shell, don't tell it to "ask before" risky steps in words: the card is the ask.
 Tell it to call `run` for each step and say why.
 
+## Artifacts (mockups, pages, charts beside the chat)
+
+Agents Soma runs on this machine (Claude Code, Codex, Cursor, Grok threads) can show Boss a file beside the chat with
+`soma-artifact put FILE --title "…" --note "…"`; each put of the same name is its next version, and every version is
+kept in `~/Soma/artifacts/`. Bots (Venice) can't make artifacts yet: their shell has no `soma-artifact`. If Boss wants a
+bot that makes mockups, say so and suggest a quick session with Claude instead; don't write a workaround into its
+instructions.
+
 ## Never
 
 - Never put a key, token or password in any of these files.
