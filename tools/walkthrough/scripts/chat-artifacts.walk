@@ -45,29 +45,37 @@ shot artifact-unfolded-preview
 tap 0.624 0.811
 wait 500
 shot artifact-interactive-html
+# Folded, the viewer covers the chat with "← chat" to go back (artifact-panel mockup); unfolded it has close/expand.
 fold folded
-expect [ close ]
+# The emulator's fold shows Android's "swipe up to continue" for a moment; the screenshot waits it out.
+wait 2000
+expect [ ← chat ]
+absent [ expand ]
 fold open
 expect [ expand ]
 tap [ close ]
 expect Keep this draft
 shot artifact-unfolded-chat-restored
-# Regression: Files must be discoverable in Phone B even before it has outputs.
+# Regression: the list (now "artifacts · N", artifact-panel slice 1) must be discoverable in Phone B before it has outputs.
 shell am force-stop dev.omalauncher.artifactpreview
 shell am start -n dev.omalauncher.artifactpreview/.PreviewActivity --ez empty true
 expect Phone B
-expect [ files · 0 ]
-tap [ files · 0 ]
-expect No files in this conversation yet.
+expect [ artifacts · 0 ]
+tap [ artifacts · 0 ]
+expect No artifacts in this conversation yet.
 shot artifact-phone-b-empty-files-unfolded
 tap [ close ]
+absent No artifacts in this conversation yet.
 fold folded
-expect [ files · 0 ]
-tap [ files · 0 ]
-expect No files in this conversation yet.
+wait 2000
+expect [ artifacts · 0 ]
+tap [ artifacts · 0 ]
+expect No artifacts in this conversation yet.
+expect [ close ]
 shot artifact-phone-b-empty-files-cover
 key BACK
-expect [ files · 0 ]
+absent No artifacts in this conversation yet.
+expect [ artifacts · 0 ]
 [phone] Open an output from an existing Mac Pro conversation: Preview loads through the authenticated runner, Source and Files work; Discuss adds context to the draft without sending.
 [phone] Open an output from this MacBook conversation after its runner update; confirm on-demand file read and interactive HTML without an external app switch.
 [phone] With a web page focused, physically fold/unfold three times. Chat and selected output remain usable; close/Back returns to the existing draft and reading position.
