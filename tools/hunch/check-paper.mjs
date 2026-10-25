@@ -20,6 +20,7 @@ w.Hunch.selected.terms={rule:'<img src=x onerror=alert(1)>'};
 w.Hunch.book={valid:true,time:Date.now(),ask:'0.41',complete:true,payout:'$48.78',spent:'$20.00'};
 await w.showLive();assert.match(w.document.getElementById('scene').textContent,/48\.78/);assert.equal(w.document.getElementById('scene').querySelector('img'),null);
 w.Hunch.book.time=Date.now()-61000;w.Paper.render();assert.doesNotMatch(w.document.getElementById('scene').textContent,/48\.78/);
+w.Hunch.book={error:true};w.Paper.render();assert.match(w.document.getElementById('scene').textContent,/No verified executable quote/);
 w.Hunch.selected=null;w.Hunch.chapter='today';await w.showLive();const search=w.document.getElementById('scene').querySelector('input[type=search]');search.focus();search.value='nonexistent';search.dispatchEvent(new w.Event('input'));w.Paper.render();assert.equal(w.document.activeElement,search);assert.match(w.document.getElementById('scene').textContent,/No matching markets/);
 w.paperResize();await w.receiveNative({type:'auth',demo:true,signed:false,sent:false,email:''});await new Promise(resolve=>setTimeout(resolve,180));w.Paper.render();assert.match(w.document.getElementById('scene').textContent,/FICTIONAL SIGN-IN DEMO/);
 assert.deepEqual(errors,[]);console.log('PASS: all 15 original hashes and templates; six live layouts; cover and unfolded detail; account transitions. Visual review still required.');

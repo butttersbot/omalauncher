@@ -22,7 +22,7 @@ class AccountActivity:PaperActivity(){
         email=retained?.email.orEmpty();sent=retained?.sent ?: false
         openPaper("?account=1")
     }
-    private fun render(){if(ready)tell(JSONObject().put("type","auth").put("demo",demo).put("busy",busy).put("message",message).put("sent",sent).put("signed",account!=null).put("email",account?.email?:email).put("passkey",account?.passkey?:false))}
+    private fun render(){if(ready)tell(JSONObject().put("type","auth").put("demo",demo).put("busy",busy).put("message",message).put("sent",sent).put("signed",account!=null).put("email",if(account!=null)account?.email.orEmpty() else email).put("passkey",account?.passkey?:false))}
     override fun command(data:JSONObject){
         when(data.optString("type")){
             "ready"->{ready=true;checkAccount()}
