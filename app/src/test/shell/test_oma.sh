@@ -107,7 +107,8 @@ case $1 in
 esac
 case $3 in
   get-state) echo device ;;
-  shell) exec sh -c "${4//\/sdcard/$PHONE/sdcard}" ;;
+  # Only a path that starts a word is the phone's: one already under $PHONE (as waiting() lists them) is left as it is.
+  shell) cmd=${4//\'\/sdcard/\'$PHONE/sdcard}; exec sh -c "${cmd// \/sdcard/ $PHONE/sdcard}" ;;
   pull) exec cp -- "${4/#\/sdcard/$PHONE/sdcard}" "$5" ;;
   *) exit 1 ;;
 esac
@@ -120,6 +121,29 @@ FAKE
 cat >"$root/fake/curl" <<'FAKE'
 #!/bin/bash
 printf 'curl %s\n' "$*" >>"$CALLS"
+# The phone bridge (Oma itself, which reads Taildrop's folders with All files access): stood in for here.
+if [[ " $* " == *" --abstract-unix-socket "* ]]; then
+  [ -n "${BRIDGE_DOWN-}" ] && exit 7
+  [ -n "${NO_FILES_ACCESS-}" ] && { echo '{"ok":false,"error":"Oma has no All files access"}'; exit 0; }
+  data=
+  while [ $# -gt 0 ]; do [ "$1" = --data-binary ] && data=$2; shift; done
+  list=$(jq -r '.list // false' <<<"$data"); to=$(jq -r '.to // ""' <<<"$data"); keep=$(jq -r '.keep // false' <<<"$data")
+  out='[]'
+  for d in "$PHONE/sdcard/Download/Taildrop" "$PHONE/sdcard/Taildrop"; do
+    for f in "$d"/*; do
+      [ -f "$f" ] && [[ $f != *.partial ]] || continue
+      n=${f##*/} b=$(stat -c %s "$f") p= st=listed
+      if [ "$list" != true ]; then
+        p="$to/$n"; [ -e "$p" ] && p="$to/${n%.*} (2).${n##*.}"
+        cp "$f" "$p"
+        if [ "$keep" = true ]; then st=copied; else rm "$f"; st=moved; fi
+      fi
+      out=$(jq -c --arg n "$n" --argjson b "$b" --arg p "$p" --arg st "$st" '. + [{name: $n, bytes: $b, state: $st} + (if $p == "" then {} else {path: $p} end)]' <<<"$out")
+    done
+  done
+  jq -cn --argjson f "$out" '{ok: true, files: $f}'
+  exit 0
+fi
 cat >>"$CURL_STDIN"
 [ -n "${MAC_DOWN-}" ] && exit 7
 url=${!#}
@@ -178,7 +202,20 @@ expect 'drop get moves them into ~/Inbox, never over a file there' 0 \
 echo 1 >"$HOME/.config/oma-development/install-port"
 echo 99999 >"$phone/port"
 printf '#!/bin/sh\necho "oma-dev $*" >>"$CALLS"\n' >"$root/fake/oma-dev"
-expect 'drop get with Wireless debugging off says to turn it on' 1 '' 'Turn on Wireless debugging' -- "$oma" drop get
+expect 'drop get with Wireless debugging off and nothing waiting asks Oma' 0 'Nothing waiting.' '' -- "$oma" drop get
+grep -q -- '--abstract-unix-socket dev.omalauncher.boss.phone' "$calls" || { echo "FAIL Oma was not asked on the phone bridge: $(cat "$calls")"; failed=1; }
+printf 'apk' >"$taildrop/soma-abc-900.apk"
+printf 'part' >"$taildrop/soma-abc-900.json.partial"
+expect 'drop list with Wireless debugging off lists through Oma' 0 $'soma-abc-900.apk\t3 B' '' -- "$oma" drop list
+expect 'drop get with Wireless debugging off still receives, through Oma' 0 "Moved soma-abc-900.apk (3 B) to $HOME/Inbox/soma-abc-900.apk." '' -- "$oma" drop get
+[ "$(cat "$HOME/Inbox/soma-abc-900.apk")" = apk ] && [ ! -e "$taildrop/soma-abc-900.apk" ] && [ -e "$taildrop/soma-abc-900.json.partial" ] ||
+  { echo "FAIL the bridge route did not move the file: $(ls "$taildrop" "$HOME/Inbox")"; failed=1; }
+rm -f "$taildrop/soma-abc-900.json.partial"
+printf 'x' >"$taildrop/later.txt"
+NO_FILES_ACCESS=1 expect 'drop get without adb or All files access says what to allow' 1 '' 'All files access' -- "$oma" drop get
+BRIDGE_DOWN=1 expect 'drop get with neither adb nor Oma says so' 1 '' 'Is Oma running?' -- "$oma" drop get
+[ -e "$taildrop/later.txt" ] || { echo 'FAIL a failed receive removed the file from the phone'; failed=1; }
+rm -f "$taildrop/later.txt"
 
 : >"$calls"
 expect 'drop send with no Mac set up asks nothing' 1 '' 'No Mac is set up on this phone' -- "$oma" drop send "$HOME/Inbox/notes"

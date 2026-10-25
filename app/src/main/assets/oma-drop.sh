@@ -3,7 +3,9 @@
 # could just tell you or the other agents to send something, and then you guys can just do it with the command").
 # Mac to phone is Taildrop: a Mac agent runs `tailscale file cp FILE galaxy-z-fold8:` and the phone's Tailscale saves
 # it in Download/Taildrop, which this Linux cannot see; `get` and `list` reach it through the phone's own adb over
-# loopback, the port oma-dev keeps in ~/.config/oma-development/install-port. Phone to Mac goes to the runner on the
+# loopback (the port oma-adb keeps in ~/.config/oma-development/install-port) when Wireless debugging is on, and else
+# through Oma itself on the phone bridge, which reads that folder with All files access: receiving never needs
+# Wireless debugging, which Android turns off away from Wi-Fi (Boss, 2026-10-24). Phone to Mac goes to the runner on the
 # Mac (docs/MAC-RUNNER-SPEC.md, POST /files), because the phone's Tailscale app has no command line to Taildrop
 # with. The runner's key is read by jq and piped to curl as a config on its standard input, as `oma threads` does:
 # it is never an argument of any command, never in a variable of this script and never in a file of its own.
@@ -50,16 +52,18 @@ quoted() {
   printf "'%s'" "${1//\'/\'\\\'\'}"
 }
 
-# The phone's own adb, over loopback, in $at. adb's server lives only as long as this script, so it connects here
-# every time. A port that went stale (Wireless debugging was turned off and on) is looked for again once by
-# `oma-dev --status`, which writes the new one where it is read.
+# The phone's own adb, over loopback, in $at, when Wireless debugging is on; fails (quietly) when it is not, and
+# receiving goes through Oma instead (via_oma). adb's server lives only as long as this script, so it connects here
+# every time. A port that went stale (Wireless debugging was turned off and on) is looked for again once, by oma-adb
+# (or oma-dev --status where there is no oma-adb), which writes the new one where it is read.
 connect() {
-  command -v adb >/dev/null || die 'adb is not installed in this Linux (pacman -S android-tools).'
+  command -v adb >/dev/null || return 1
   adb start-server >/dev/null 2>&1
-  local tries=1
-  command -v oma-dev >/dev/null && tries=2
+  local tries=1 find=
+  if command -v oma-adb >/dev/null; then find=oma-adb; elif command -v oma-dev >/dev/null; then find='oma-dev --status'; fi
+  [ -n "$find" ] && tries=2
   for try in $(seq "$tries"); do
-    [ "$try" = 2 ] && oma-dev --status >/dev/null 2>&1
+    [ "$try" = 2 ] && $find >/dev/null 2>&1
     local port
     port=$(cat "$port_file" 2>/dev/null)
     if [[ $port =~ ^[0-9]+$ ]]; then
@@ -68,7 +72,39 @@ connect() {
       [ "$(adb -s "$at" get-state 2>/dev/null)" = device ] && return
     fi
   done
-  die "Can't reach the phone's own adb. Turn on Wireless debugging (Settings, Developer options; it needs Wi-Fi), then try again."
+  return 1
+}
+
+# Without adb: Oma itself reads Taildrop's folders (it has All files access) and copies into DIR, through the phone
+# bridge, the socket only this app's own processes can open. MODE is get or list.
+phone_socket=${OMA_PHONE_SOCKET:-dev.omalauncher.boss.phone}
+via_oma() {
+  local mode=$1 dir=${2:-} keep=${3:-} request reply
+  command -v curl >/dev/null && command -v jq >/dev/null || die 'Neither adb nor the phone bridge can be used (curl and jq are needed).'
+  if [ "$mode" = list ]; then
+    request='{"command":"taildrop","list":true}'
+  else
+    request=$(jq -cn --arg to "$dir" --argjson keep "$([ -n "$keep" ] && echo true || echo false)" '{command: "taildrop", to: $to, keep: $keep}')
+  fi
+  reply=$(curl --silent --show-error --max-time 900 --abstract-unix-socket "$phone_socket" --header 'Content-Type: application/json' \
+    --data-binary "$request" http://localhost/phone 2>/dev/null) ||
+    die "Can't reach the phone's own adb (Wireless debugging is off) nor Oma on the phone bridge. Is Oma running?"
+  printf '%s' "$reply" | jq -e '.ok == true' >/dev/null 2>&1 ||
+    die "Wireless debugging is off and Oma could not read Taildrop: $(printf '%s' "$reply" | jq -r '.error // "no answer"' 2>/dev/null)"
+  [ "$(printf '%s' "$reply" | jq '.files | length')" -gt 0 ] || { echo 'Nothing waiting.'; return 0; }
+  local failed=0 state name bytes path got error
+  while IFS=$'\t' read -r state name bytes path got error; do
+    case $state in
+      listed) printf '%s\t%s\n' "$name" "$(size "$bytes")" ;;
+      moved) echo "Moved $name ($(size "$bytes")) to $path." ;;
+      copied)
+        if [ -n "$error" ]; then echo "Copied $name ($(size "$bytes")) to $path, but could not remove it from the phone." >&2; failed=1
+        else echo "Copied $name ($(size "$bytes")) to $path; it stays on the phone."; fi ;;
+      partial) echo "Copied $name only in part ($got of $bytes bytes, kept as $path); it is still on the phone." >&2; failed=1 ;;
+      *) echo "Could not copy $name; it is still on the phone." >&2; failed=1 ;;
+    esac
+  done < <(printf '%s' "$reply" | jq -r '.files[] | [.state, .name, (.bytes|tostring), (.path // ""), ((.got // "")|tostring), (.error // "")] | join("\t")')
+  return "$failed"
 }
 
 # What waits, one "SIZE<tab>NAME" line per file. A name still ending in .partial is a file Tailscale is receiving.
@@ -109,7 +145,7 @@ get() {
   done
   mkdir -p -- "$dir" || die "Could not make $dir."
   dir=$(cd -- "$dir" && pwd)
-  connect
+  connect || { via_oma get "$dir" "$keep"; return; }
   local files
   files=$(waiting) || die 'Could not read the Taildrop folders on the phone.'
   [ -n "$files" ] || { echo 'Nothing waiting.'; return; }
@@ -144,7 +180,7 @@ get() {
 
 list() {
   [ $# -eq 0 ] || bad
-  connect
+  connect || { via_oma list; return; }
   local files bytes name
   files=$(waiting) || die 'Could not read the Taildrop folders on the phone.'
   [ -n "$files" ] || { echo 'Nothing waiting.'; return; }

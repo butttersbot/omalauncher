@@ -53,6 +53,28 @@ class PhoneBridge(private val context: Context, private val proot: Proot) {
                             PhoneHttp.reply(socket.outputStream, result.toString())
                             return@use
                         }
+                        // `oma drop get` / `list` with Wireless debugging off: Oma reads Taildrop's folders in shared
+                        // storage (All files access) and copies into Linux's own folder. No phone control needed.
+                        if (input.optString("command") == "taildrop") {
+                            val root = proot.rootfs.canonicalFile
+                            val listOnly = input.optBoolean("list")
+                            val to = input.optString("to").removePrefix("/")
+                            val dest = if (listOnly) null else File(root, to).canonicalFile
+                            val result = when {
+                                !android.os.Environment.isExternalStorageManager() -> JSONObject().put("ok", false)
+                                    .put("error", "Oma has no All files access, so it can't read Taildrop's folder. Boss allows it once: Settings, Apps, Omalauncher, All files access.")
+                                dest != null && (to.isEmpty() || !dest.path.startsWith(root.path + "/")) ->
+                                    JSONObject().put("ok", false).put("error", "The folder must be in Linux.")
+                                else -> runCatching {
+                                    dev.omalauncher.linux.TaildropInbox.take(
+                                        dev.omalauncher.linux.TaildropInbox.folders(android.os.Environment.getExternalStorageDirectory()),
+                                        dest, input.optBoolean("keep"), listOnly,
+                                    ) { "/" + it.canonicalFile.relativeTo(root).path }
+                                }.getOrElse { JSONObject().put("ok", false).put("error", it.message) }
+                            }
+                            PhoneHttp.reply(socket.outputStream, result.toString())
+                            return@use
+                        }
                         val latch = CountDownLatch(1)
                         val seconds = if (input.optString("command") == "plan") 32L else 8L
                         val deadline = SystemClock.elapsedRealtime() + seconds * 1000
