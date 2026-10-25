@@ -23,5 +23,28 @@
     "Exercise an owner-approved scoped task across fork/original without duplicate changes or blanket permission transfer.",
     "No copied passwords, cookies, tokens or secrets in session messages or diagnostics."
   ],
-  "implemented": "Runner refuses a live idle native Claude holder without spawning a copy; after the holder closes it resumes the original ID. Regression tested locally; Mac rollout and original-session Remote Control still pending."
+  "implemented": "Runner refuses a live idle native Claude holder without spawning a copy; after the holder closes it resumes the original ID. Regression tested locally; Mac rollout and original-session Remote Control still pending.",
+  "bridge_research": {
+    "date": "2026-10-24",
+    "goal": "Prompt the original running session directly from Soma chat, with replies and scoped approval cards; never fork or relabel agent mail as owner input.",
+    "findings": [
+      "Claude Channels documents two-way MCP notifications into an existing running interactive session and optional authenticated permission relay. This is a candidate custom Soma transport, not an implemented integration.",
+      "Custom channels are research preview and require an interactive startup opt-in per channel; the development flag is ignored in print mode and Agent SDK. Current runner print-mode subprocess transport cannot simply enable this flag.",
+      "No documented custom-client Remote Control endpoint or Desktop hot-attach channel path was verified in the reviewed docs. Remote Control alone does not wire Soma chat.",
+      "CLI Chrome integration is documented with --chrome and uses the connected browser login state; this does not establish portability of Desktop in-app browser or screen tools.",
+      "A clean CLI resume can retain the conversation ID after Desktop closes, but changes the running process and requires a capability check. It must not be presented as attaching to the still-running Desktop process."
+    ],
+    "next_validation": [
+      "Original MacBook asked read-only whether Desktop supports a custom channel/prompt endpoint and which browser provider it actually uses; awaiting reply.",
+      "Before building: validate a custom channel with harmless messages, reply correlation, duplicate suppression, sender identity and a denied/allowed scoped tool request in an isolated interactive test session.",
+      "If Desktop cannot opt in, explicitly offer a clean conversation handoff to an interactive CLI host with verified browser tools; do not silently migrate or close the owner session."
+    ],
+    "sources": [
+      "https://code.claude.com/docs/en/channels",
+      "https://code.claude.com/docs/en/channels-reference",
+      "https://code.claude.com/docs/en/remote-control",
+      "https://code.claude.com/docs/en/agent-sdk/sessions",
+      "https://code.claude.com/docs/en/chrome"
+    ]
+  }
 }
