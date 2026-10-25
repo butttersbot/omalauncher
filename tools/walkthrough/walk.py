@@ -42,7 +42,7 @@ def nodes(serial):
         return []
     out = []
     for n in root.iter("node"):
-        label = (n.get("text") or "") + "\n" + (n.get("content-desc") or "")
+        label = "\n".join(n.get(key) or "" for key in ("text", "content-desc", "hint"))
         b = re.findall(r"\d+", n.get("bounds") or "")
         if len(b) == 4:
             out.append((label, [int(v) for v in b]))
