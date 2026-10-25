@@ -162,3 +162,36 @@ fun pauseEnded(
 
 /** A step's level at or below this is quiet. */
 const val SILENCE = 0.08f
+
+/**
+ * What a dictation's end still needs read, once the live readings are over. When the Mac Pro read it live and
+ * nothing was settled yet (the readings were all from his first word, [voiceFrom], in samples), the last reading,
+ * if it was of all of it up to [end], is just what reading the whole once more would give: the same audio, model
+ * and settings; so it is the end of it. Otherwise the whole of it is read once more: words settled from part of
+ * the audio came out 2-4x less accurate (real speech, 20-60 s, through the Mac Pro's whisper-server, 2026-10-24),
+ * Whisper's segment ends being too rough to cut the audio at; and the phone's live readings are its fast model's.
+ */
+sealed interface Finish {
+    /** The whole of it, read again. */
+    data object Whole : Finish
+
+    /** Nothing new: [text], the last live reading, is the end of it. */
+    data class Reuse(
+        val text: String,
+    ) : Finish
+}
+
+fun finishPlan(
+    macLive: Boolean,
+    voiceFrom: Int,
+    anchor: Int,
+    end: Int,
+    lastFrom: Int,
+    lastTo: Int,
+    lastText: String?,
+): Finish =
+    if (macLive && anchor == voiceFrom && lastText != null && lastFrom == voiceFrom && lastTo >= end) {
+        Finish.Reuse(lastText)
+    } else {
+        Finish.Whole
+    }
