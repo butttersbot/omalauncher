@@ -1,0 +1,21 @@
+# Regression: no unused28px strip between the illustrated cover tabs and
+# Android's bottom system inset. Review the bottom edge on all three chapters.
+fold folded
+rotate portrait
+shell am force-stop dev.omalauncher.hunch
+shell am start -n dev.omalauncher.hunch/.MainActivity --es fixture demo
+wait 1500
+expect "Today's issue"
+shot hunch-bottom-today
+tap Bets
+expect No trading account
+shot hunch-bottom-bets
+tap Money
+expect No wallet is connected
+shot hunch-bottom-money
+rotate landscape
+expect No wallet is connected
+shot hunch-bottom-cover-landscape
+rotate portrait
+expect No wallet is connected
+[phone] Installed0.4.1: check Today/Bets/Money tab artwork ends immediately above Samsung's gesture-navigation area; no large white strip remains. Tabs tap normally, content scrolls without being covered, and the gesture handle stays clear.
