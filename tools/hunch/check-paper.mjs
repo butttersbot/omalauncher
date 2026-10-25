@@ -25,5 +25,15 @@ w.Hunch.selected=null;w.Hunch.chapter='today';await w.showLive();const search=w.
 
 const first=w.Hunch.rows[0];w.Hunch.rows=Array.from({length:250},(_,i)=>({...first,id:String(i),title:'Listing '+i,category:i%2?'Prices':'Sports'}));w.Hunch.query='';w.Hunch.chapter='today';w.innerWidth=880;w.Hunch.selected=null;await w.showLive();let listing=w.document.querySelector('.paper-search-results');assert.equal(listing.querySelectorAll('button').length,101);Array.from(listing.querySelectorAll('button')).find(x=>x.textContent==='Show more markets').click();w.Paper.render();listing=w.document.querySelector('.paper-search-results');assert.equal(listing.querySelectorAll('button').length,201);w.Hunch.selected=w.Hunch.rows[0];await w.showLive();assert.ok(Array.from(w.document.querySelectorAll('div')).some(x=>x.style.overflowY==='auto'&&x.style.bottom==='10px'));w.Hunch.selected=null;
 w.paperResize();await w.receiveNative({type:'auth',demo:true,signed:false,sent:false,email:'',message:'Enter a valid email address.'});await new Promise(resolve=>setTimeout(resolve,180));w.Paper.render();assert.match(w.document.getElementById('scene').textContent,/FICTIONAL SIGN-IN DEMO/);assert.equal(w.document.querySelector('[aria-label="Sign-in email"]').tagName,'INPUT');
+// Submission handlers must read the mounted input after a status re-render,
+// not the temporary input used to build the next morph tree.
+const posts=[];w.SomaHunch.post=raw=>posts.push(JSON.parse(raw));
+const emailField=w.document.querySelector('[aria-label="Sign-in email"]');emailField.value='demo@example.invalid';emailField.focus();w.Paper.render();
+Array.from(w.document.querySelectorAll('button')).find(b=>b.textContent==='Send email code').click();
+assert.equal(posts.at(-1).email,'demo@example.invalid');
+await w.receiveNative({type:'auth',demo:true,signed:false,sent:true,email:'demo@example.invalid'});w.Paper.render();
+let codeField=w.document.querySelector('[aria-label="Email code"]');codeField.value='123456';codeField.focus();w.Paper.render();
+Array.from(w.document.querySelectorAll('button')).find(b=>b.textContent==='Verify email code').click();
+assert.equal(posts.at(-1).code,'123456');assert.equal(codeField.value,'');
 assert.deepEqual(errors,[]);console.log('PASS: all 15 original hashes and templates; six live layouts; cover and unfolded detail; account transitions. Visual review still required.');
 await w.happyDOM.abort();
