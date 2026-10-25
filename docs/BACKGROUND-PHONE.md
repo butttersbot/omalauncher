@@ -42,6 +42,7 @@ Boss chose: without `--display`, `oma-phone` uses the background display while i
 screen when it is not (with a note on stderr). Home's pages, notes, stickers and looks stay on main. `--display bg`
 still fails closed. Verified on the Fold: a helper started detached (`setsid nohup … app_process …`) keeps working
 after Wireless debugging is switched off. `tools/fold-development/oma-bg-heal` (started by Soma with Linux, one at a
-time) checks every minute and restarts the helper when it is down and Wireless debugging answers. It never turns
-Wireless debugging on. After a reboot the phone needs Wireless debugging on for about a minute; Android also drops a
-debugging key unused for 7 days, which then needs pairing again.
+time) checks every minute and restarts the helper when it is down and Wireless debugging answers. It doesn't turn
+Wireless debugging on itself: Soma's AdbWifiHeal (since 2026-10-17, with the WRITE_SECURE_SETTINGS Boss granted) puts it
+back on at start and whenever Wi-Fi comes up, and this watcher then restarts the helper, so a reboot needs nothing from
+him. What still does: Android drops a debugging key unused for 7 days, which then needs pairing again.
