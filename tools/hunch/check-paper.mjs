@@ -35,6 +35,8 @@ await w.receiveNative({type:'auth',demo:true,signed:false,sent:true,email:'demo@
 let codeField=w.document.querySelector('[aria-label="Email code"]');codeField.value='123456';codeField.focus();w.Paper.render();
 Array.from(w.document.querySelectorAll('button')).find(b=>b.textContent==='Verify email code').click();
 assert.equal(posts.at(-1).code,'123456');assert.equal(codeField.value,'');
+w.document.getElementById('viewport').scrollTop=300;await w.receiveNative({type:'auth',demo:true,signed:true,email:'demo@example.invalid'});w.Paper.render();assert.equal(w.document.getElementById('viewport').scrollTop,0);
+w.document.getElementById('viewport').scrollTop=250;await w.receiveNative({type:'auth',demo:true,signed:false,sent:false,email:''});w.Paper.render();assert.equal(w.document.getElementById('viewport').scrollTop,0);
 w.innerWidth=880;w.Hunch.chapter='bets';w.Hunch.selected=null;await w.showLive();
 const betsArt=Array.from(w.document.querySelector('#scene').children).find(x=>x.style.left==='462px'&&x.style.top==='22px');
 assert.equal(betsArt.children[0].textContent,'NO BET SELECTED');assert.equal(betsArt.children[1].style.bottom,'0px');
