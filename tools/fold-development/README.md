@@ -27,6 +27,13 @@ scripts, not code bundled into the Android app.
   `oma-macbuild --take` checks it (HEAD's commit, the next version code, no test failed, its checksum, and proot
   libraries byte for byte the same as this checkout's), signs it with the phone's key, and leaves it where
   oma-install looks. Then oma-install as before.
+- oma-adb says in one line whether Wireless debugging is on and at what address (it takes a new port each time it
+  is switched on, so a cached port proves nothing): the last good address, then adb's own list, mDNS, and every port
+  at once; only a port that answers adb's opening and then runs `adb -s ADDR shell true` counts, and adb's other
+  entries for the phone are disconnected. Exit 0 on, 1 off, 3 phone unreachable, 4 not authorized. On the Mac it
+  looks at galaxy-z-fold8 over Tailscale (~1 s when the port is unchanged, 5-7 s when it has to look); here it checks
+  the phone's own adb over loopback and writes the port to install-port for oma-install and oma-drop. Ask it rather
+  than trusting install-port.
 - oma-door is a small private door for the Mac session to reach the agent here when adb can't: it listens on the
   phone's Tailscale address only (port 8477), needs the token in /root/.config/oma-door/token with every request,
   and hands a prompt to the same agent the launcher runs, one job at a time. It runs no command of its own. The
