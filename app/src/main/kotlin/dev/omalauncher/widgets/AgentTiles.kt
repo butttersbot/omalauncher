@@ -125,6 +125,8 @@ data class TilePlan(
     val stamps: Map<String, TileStamp>,
     /** The Agents page's tiles in the order they are laid out, first at the top left ([agentTileRank]). */
     val order: List<String> = emptyList(),
+    /** Tiles that would be on the Agents page but rank below what it holds: not shown until they rank higher. */
+    val left: List<String> = emptyList(),
 )
 
 /**
@@ -182,7 +184,8 @@ fun agentTilePlan(
 ): TilePlan {
     val show = LinkedHashMap<String, AgentTile>()
     // The tiles that are, or would be, on the Agents page, with their rank: the page keeps the first [room] of them.
-    val ranks = HashMap<String, Pair<Int, Long>>()
+    // In the threads' own order, so equals keep their places.
+    val ranks = LinkedHashMap<String, Pair<Int, Long>>()
     val add = ArrayList<String>()
     val remove = ArrayList<String>()
     val next = HashMap<String, TileStamp>()
@@ -245,12 +248,13 @@ fun agentTilePlan(
     // The page holds [room] tiles: the best ranked stay or come; the rest leave it, or aren't put on it, until they rank
     // high enough again. Nothing he carried to another page is counted or touched.
     val order = ranks.entries.sortedWith(compareBy(RANKED) { it.value }).map { it.key }
-    for (tile in order.drop(room.coerceAtLeast(0))) {
+    val left = order.drop(room.coerceAtLeast(0))
+    for (tile in left) {
         show.remove(tile)
         if (add.remove(tile)) continue
         if (tile in placed) remove += tile
     }
-    return TilePlan(show, add, remove, next, order.take(room.coerceAtLeast(0)))
+    return TilePlan(show, add, remove, next, order.take(room.coerceAtLeast(0)), left)
 }
 
 /**

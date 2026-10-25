@@ -54,7 +54,9 @@ class AgentTileKeeper(
         if (!notebook.opened || !notebook.kept) return
         val placed = notebook.threadTiles()
         val agents = agentsPage(notebook.pages)
-        val plan = agentTilePlan(threads, placed, agents, stamps, now, listed, pinned, archived, room(agents, placed, scraps) ?: return)
+        val plan = agentTilePlan(threads, placed, agents, stamps, now, listed, pinned, archived, room(agents, placed, scraps) ?: Int.MAX_VALUE)
+        // Said once for each, as a tile with no cells left for it always was.
+        for (tile in plan.left) if (tile !in placed && unplaced.add(tile)) log("no room on the $AGENTS_PAGE page for $tile: it is not shown")
         var writes = agentWrites(notebook.pages, placed, plan)
         if (AgentWrite.MakePage in writes) {
             // The way a page is added and named everywhere else: after the last, then called by its name.
@@ -90,7 +92,8 @@ class AgentTileKeeper(
 
     /**
      * How many thread tiles the Agents page holds: the ones on it now, and as many more of [AGENT_TILE_SIZE] as fit
-     * in cells nothing else has. Every tile with no page yet; null while its notes and stickers are still being read.
+     * in cells nothing else has. Every tile with no page yet; null while its notes and stickers are still being read,
+     * and the tiles then wait, unplaced, as they always have.
      */
     private fun room(
         agents: String?,
