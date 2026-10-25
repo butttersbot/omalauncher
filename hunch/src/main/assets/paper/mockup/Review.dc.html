@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Review the bet</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&amp;family=JetBrains+Mono:wght@500;700&amp;family=Zen+Kaku+Gothic+New:wght@400;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#111113}a:hover{color:#d7262d}
+button{font:inherit}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; overflow: hidden; background: #fdfdfb; color: #111113; font-family: 'Zen Kaku Gothic New', system-ui, sans-serif">
+
+  <!-- the bet -->
+  <div style="position: absolute; left: 18px; top: 18px; width: 354px; height: 176px; box-sizing: border-box; border: 1.5px solid #111113; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px">
+    <div style="display: flex; justify-content: space-between; align-items: center">
+      <span style="font: 700 10.5px/1 'JetBrains Mono', monospace; letter-spacing: .08em; color: #d7262d">REVIEW THE BET</span>
+      <a href="Main.dc.html" style="font: 700 11px/1 'JetBrains Mono', monospace; letter-spacing: .04em; padding: 10px 0 10px 12px">← BACK</a>
+    </div>
+    <span style="font: 400 30px/1.05 'Dela Gothic One', sans-serif">$20 on the Packers</span>
+    <span style="font-size: 14px; color: #565964">to beat the Lions · Sun Oct 25, 1:25 PM PT</span>
+  </div>
+
+  <!-- win / lose split -->
+  <div style="position: absolute; left: 18px; top: 212px; width: 200px; height: 156px; box-sizing: border-box; border: 1.5px solid #111113; background: #111113; color: #fdfdfb; padding: 14px 16px; display: flex; flex-direction: column; justify-content: space-between">
+    <span style="font: 700 10.5px/1.2 'JetBrains Mono', monospace; letter-spacing: .08em">IF THE PACKERS WIN</span>
+    <span style="display: flex; flex-direction: column; gap: 4px">
+      <span style="font: 400 34px/1 'Dela Gothic One', sans-serif">$54.79</span>
+      <span style="font: 500 11px/1 'JetBrains Mono', monospace">PROFIT $34.79</span>
+    </span>
+  </div>
+  <div style="position: absolute; left: 228px; top: 212px; width: 144px; height: 156px; box-sizing: border-box; border: 1.5px solid #111113; background: radial-gradient(circle, rgba(17,17,19,.5) .6px, transparent .95px) 0 0 / 4px 4px, #fdfdfb; padding: 14px; display: flex; flex-direction: column; justify-content: space-between">
+    <span style="align-self: flex-start; font: 700 10.5px/1 'JetBrains Mono', monospace; letter-spacing: .08em; background: #fdfdfb; padding: 2px 3px">IF NOT</span>
+    <span style="align-self: flex-start; font: 400 34px/1 'Dela Gothic One', sans-serif; background: #fdfdfb; padding: 0 4px">$0</span>
+  </div>
+
+  <!-- fine print -->
+  <div style="position: absolute; left: 18px; top: 386px; width: 354px; height: 270px; box-sizing: border-box; border: 1.5px solid #111113; padding: 14px 16px; display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 9px 12px; align-content: start; font-size: 13px; line-height: 1.35">
+    <span style="font: 700 10px/1.6 'JetBrains Mono', monospace; letter-spacing: .07em; color: #565964">PRICE</span>
+    <span>36.5¢ a share, about 54.8 shares. Worst fill 36.5¢.</span>
+    <span style="font: 700 10px/1.6 'JetBrains Mono', monospace; letter-spacing: .07em; color: #565964">MARKET</span>
+    <span>out, the cheaper of the two listing this game.</span>
+    <span style="font: 700 10px/1.6 'JetBrains Mono', monospace; letter-spacing: .07em; color: #565964">FEE</span>
+    <span>$0 to open.</span>
+    <span style="font: 700 10px/1.6 'JetBrains Mono', monospace; letter-spacing: .07em; color: #565964">SETTLES</span>
+    <span>NFL final score, overtime counts. Paid when official, Nov 1 at the latest.</span>
+    <span style="font: 700 10px/1.6 'JetBrains Mono', monospace; letter-spacing: .07em; color: #565964">SIGNED BY</span>
+    <span>The betting key on this phone. It can't withdraw.</span>
+    <span style="font: 700 10px/1.6 'JetBrains Mono', monospace; letter-spacing: .07em; color: #565964">TODAY</span>
+    <span>$20 of your $100 daily limit.</span>
+  </div>
+
+  <!-- hold to place -->
+  <sc-if value="{{notPlaced}}" hint-placeholder-val="{{ true }}">
+    <button type="button" onPointerDown="{{start}}" onPointerUp="{{stop}}" onPointerLeave="{{stop}}" onKeyDown="{{keyStart}}" onKeyUp="{{stop}}" style="position: absolute; left: 18px; top: 674px; width: 354px; height: 60px; border: 1.5px solid #111113; background: #111113; color: #fdfdfb; cursor: pointer; overflow: hidden; padding: 0; touch-action: none; user-select: none">
+      <span style="position: absolute; left: 0; top: 0; bottom: 0; width: {{progress}}%; background: #d7262d"></span>
+      <span style="position: relative; font: 400 18px/1 'Dela Gothic One', sans-serif; letter-spacing: .02em">{{holdLabel}}</span>
+    </button>
+  </sc-if>
+  <sc-if value="{{placed}}" hint-placeholder-val="{{ false }}">
+    <div role="status" style="position: absolute; left: 18px; top: 674px; width: 354px; height: 60px; box-sizing: border-box; border: 1.5px solid #111113; background: #d7262d; color: #fdfdfb; display: flex; align-items: center; justify-content: space-between; padding: 0 16px">
+      <span style="font: 400 20px/1 'Dela Gothic One', sans-serif">PLACED!</span>
+      <button type="button" onClick="{{reset}}" style="height: 40px; padding: 0 10px; background: #fdfdfb; color: #111113; border: 1px solid #111113; font: 700 11px/1 'JetBrains Mono', monospace; cursor: pointer">TRY AGAIN</button>
+    </div>
+  </sc-if>
+
+  <div style="position: absolute; left: 18px; top: 752px; width: 354px; box-sizing: border-box; border: 1px solid #111113; padding: 9px 12px; font-size: 12.5px; line-height: 1.45">If the network goes quiet, Hunch checks what happened before trying again. It never sends a bet twice.</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { progress: 0, placed: false };
+    this.timer = null;
+  }
+  componentWillUnmount() {
+    if (this.timer) clearInterval(this.timer);
+  }
+  begin() {
+    if (this.timer || this.state.placed) return;
+    this.timer = setInterval(() => {
+      const next = this.state.progress + 6;
+      if (next >= 100) {
+        clearInterval(this.timer);
+        this.timer = null;
+        this.setState({ progress: 100, placed: true });
+      } else {
+        this.setState({ progress: next });
+      }
+    }, 50);
+  }
+  end() {
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+    if (!this.state.placed) this.setState({ progress: 0 });
+  }
+  renderVals() {
+    const p = this.state.progress;
+    return {
+      progress: p,
+      placed: this.state.placed,
+      notPlaced: !this.state.placed,
+      holdLabel: p > 0 ? 'KEEP HOLDING…' : 'HOLD TO PLACE $20',
+      start: () => this.begin(),
+      stop: () => this.end(),
+      keyStart: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); this.begin(); } },
+      reset: () => this.setState({ progress: 0, placed: false })
+    };
+  }
+}
+</script>
+</body>
+</html>

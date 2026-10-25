@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hunch discover</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&amp;family=JetBrains+Mono:wght@500;700&amp;family=Zen+Kaku+Gothic+New:wght@400;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#111113}a:hover{color:#d7262d}
+button{font:inherit}
+input[type=range]{accent-color:#111113}
+input[type=search]::placeholder{color:#6b6e78}
+</style>
+</helmet>
+<div style="position: relative; width: 880px; height: 760px; overflow: hidden; background: #fdfdfb; color: #111113; font-family: 'Zen Kaku Gothic New', system-ui, sans-serif">
+
+  <div style="position: absolute; left: 439px; top: 0; bottom: 0; width: 1px; background: rgba(17,17,19,.10)"></div>
+  <div style="position: absolute; left: 440px; top: 0; bottom: 0; width: 18px; background: linear-gradient(to right, rgba(17,17,19,.07), rgba(17,17,19,0))"></div>
+
+  <!-- Left page: search -->
+  <label style="position: absolute; left: 22px; top: 18px; width: 396px; height: 48px; box-sizing: border-box; border: 1.5px solid #111113; display: flex; align-items: center; gap: 10px; padding: 0 12px; background: #fdfdfb">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#111113" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"></circle><path d="M15.5 15.5L21 21"></path></svg>
+    <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Search markets</span>
+    <input type="search" placeholder="Search: Packers, BTC tonight, Fed, Anthropic…" style="flex: 1; min-width: 0; height: 40px; border: 0; outline: none; background: transparent; font: 400 14.5px 'Zen Kaku Gothic New', sans-serif; color: #111113">
+    <span style="font: 700 9.5px/1 'JetBrains Mono', monospace; letter-spacing: .05em; color: #565964; white-space: nowrap">351 MARKETS</span>
+  </label>
+
+  <!-- Left page: cover story, bleeds off the left edge -->
+  <div style="position: absolute; left: 0; top: 82px; width: 418px; height: 186px; box-sizing: border-box; border-top: 1.5px solid #111113; border-right: 1.5px solid #111113; border-bottom: 1.5px solid #111113; background: radial-gradient(circle, rgba(17,17,19,.7) 1px, transparent 1.4px) 0 0 / 4.5px 4.5px, #b9bbc2">
+    <span style="position: absolute; left: 22px; top: 14px; font: 700 10.5px/1 'JetBrains Mono', monospace; letter-spacing: .08em; background: #fdfdfb; border: 1px solid #111113; padding: 5px 7px">ISSUE 1 · SAT OCT 24</span>
+    <button type="button" style="position: absolute; right: 14px; top: 9px; height: 32px; padding: 0 10px; font: 700 10.5px/1 'JetBrains Mono', monospace; letter-spacing: .06em; background: #111113; color: #fdfdfb; border: 1px solid #111113; cursor: pointer">SURPRISE ME</button>
+    <div style="position: absolute; left: 50%; top: 82px; transform: translate(-50%, -50%) rotate(-3deg); background: #fdfdfb; border: 1.5px solid #111113; padding: 8px 16px; text-align: center; white-space: nowrap">
+      <div style="font: 700 10px/1 'JetBrains Mono', monospace; letter-spacing: .08em; color: #d7262d; margin-bottom: 5px">COVER STORY · SUN 10:00 AM PT</div>
+      <div style="font: 400 27px/1 'Dela Gothic One', sans-serif">Panthers vs Bucs</div>
+    </div>
+    <a href="Main.dc.html" style="position: absolute; left: 22px; right: 14px; bottom: 12px; display: flex; justify-content: space-between; align-items: center; gap: 12px; background: #fdfdfb; border: 1px solid #111113; padding: 7px 10px; text-decoration: none; color: #111113; font-size: 12.5px; line-height: 1.35">
+      <span>Busiest game today: <b>$126K traded</b>. Panthers <b>59%</b>, same as Polymarket.</span>
+      <span style="font: 700 11px/1 'JetBrains Mono', monospace; flex: none">OPEN →</span>
+    </a>
+  </div>
+
+  <!-- Left page: from your watchlist, slanted bottom -->
+  <div style="position: absolute; left: 22px; top: 286px; width: 396px; height: 184px">
+    <svg width="396" height="184" viewBox="0 0 396 184" style="position: absolute; inset: 0" aria-hidden="true"><polygon points="0.75,0.75 395.25,0.75 395.25,162 0.75,183.25" fill="#fdfdfb" stroke="#111113" stroke-width="1.5"></polygon></svg>
+    <div style="position: absolute; left: 8px; right: 8px; top: 10px; display: flex; flex-direction: column; gap: 0">
+      <span style="font: 700 10.5px/1 'JetBrains Mono', monospace; letter-spacing: .08em; color: #d7262d; padding: 2px 10px 5px">FROM YOUR SOMA WATCHLIST</span>
+      <sc-for list="{{watch}}" as="w" hint-placeholder-count="3">
+        <a href="Main.dc.html" style="display: grid; grid-template-columns: 52px minmax(0, 1fr) 48px; align-items: center; gap: 10px; padding: 7px 10px; text-decoration: none; color: #111113">
+          <span style="font: 700 10.5px/1 'JetBrains Mono', monospace; text-align: center; border: 1px solid #111113; padding: 4px 0">{{w.tag}}</span>
+          <span style="display: flex; flex-direction: column; min-width: 0">
+            <b style="font-size: 14px; line-height: 1.2">{{w.title}}</b>
+            <span style="font: 500 9.5px/1.3 'JetBrains Mono', monospace; letter-spacing: .05em; color: #565964">{{w.sub}}</span>
+          </span>
+          <span style="font: 700 15px/1 'JetBrains Mono', monospace; text-align: right">{{w.chance}}</span>
+        </a>
+      </sc-for>
+    </div>
+  </div>
+
+  <!-- Left page: looks mispriced, slanted top -->
+  <div style="position: absolute; left: 22px; top: 466px; width: 396px; height: 272px">
+    <svg width="396" height="272" viewBox="0 0 396 272" style="position: absolute; inset: 0" aria-hidden="true"><polygon points="0.75,23.5 395.25,2.25 395.25,271.25 0.75,271.25" fill="#fdfdfb" stroke="#111113" stroke-width="2.5"></polygon></svg>
+    <div style="position: absolute; left: 8px; right: 8px; top: 32px; bottom: 10px; display: flex; flex-direction: column; gap: 0">
+      <span style="font: 700 10.5px/1 'JetBrains Mono', monospace; letter-spacing: .08em; color: #d7262d; padding: 2px 10px 5px">LOOKS MISPRICED · CHECKED AGAINST OUTSIDE PRICES</span>
+      <sc-for list="{{edges}}" as="e" hint-placeholder-count="3">
+        <a href="Edge.dc.html" style="display: grid; grid-template-columns: minmax(0, 1fr) 74px; align-items: center; gap: 10px; padding: 7px 10px; text-decoration: none; color: #111113; border-bottom: 1px dotted rgba(17,17,19,.3)">
+          <span style="display: flex; flex-direction: column; gap: 2px; min-width: 0">
+            <b style="font-size: 13.5px; line-height: 1.2">{{e.title}}</b>
+            <span style="font: 500 9.5px/1.35 'JetBrains Mono', monospace; letter-spacing: .03em; color: #565964">{{e.sub}}</span>
+          </span>
+          <span style="display: flex; flex-direction: column; align-items: flex-end; gap: 3px">
+            <span style="font: 400 16px/1 'Dela Gothic One', sans-serif; color: #d7262d">{{e.edge}}</span>
+            <span style="font: 700 9.5px/1 'JetBrains Mono', monospace; letter-spacing: .04em">{{e.action}}</span>
+          </span>
+        </a>
+      </sc-for>
+      <span style="margin-top: auto; padding: 0 10px; font-size: 11px; line-height: 1.4; color: #565964">The busy markets match Polymarket and crypto options within about 1¢. These three don't.</span>
+    </div>
+  </div>
+
+  <!-- Right page: gut check -->
+  <div style="position: absolute; left: 462px; top: 18px; width: 374px; height: 432px; box-sizing: border-box; border: 2.5px solid #111113; padding: 16px 18px; display: flex; flex-direction: column; gap: 7px">
+    <div style="display: flex; justify-content: space-between; align-items: center">
+      <span style="font: 700 10.5px/1 'JetBrains Mono', monospace; letter-spacing: .08em; color: #d7262d">GUT CHECK · {{num}} OF {{total}}</span>
+      <span style="font: 700 10px/1 'JetBrains Mono', monospace; letter-spacing: .05em; border: 1px solid #111113; padding: 4px 6px">HUNCHES FOUND {{found}}</span>
+    </div>
+    <span style="font: 500 10.5px/1.2 'JetBrains Mono', monospace; letter-spacing: .05em; color: #565964">{{card.when}}</span>
+    <span style="font: 400 23px/1.15 'Dela Gothic One', sans-serif">{{card.q}}</span>
+    <span style="font-size: 13.5px; color: #565964">Before you see the price: how likely is it?</span>
+    <div style="display: flex; align-items: center; gap: 14px">
+      <span style="font: 400 38px/1 'Dela Gothic One', sans-serif; min-width: 92px">{{guess}}%</span>
+      <label style="flex: 1; display: block">
+        <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Your guess in percent</span>
+        <input type="range" min="1" max="99" step="1" value="{{guess}}" onChange="{{onGuess}}" style="width: 100%; margin: 0">
+      </label>
+    </div>
+
+    <sc-if value="{{hidden}}" hint-placeholder-val="{{ true }}">
+      <div style="margin-top: auto; display: flex; flex-direction: column; gap: 10px">
+        <div style="height: 76px; border: 1px dashed #111113; display: grid; place-items: center; font: 700 11px/1 'JetBrains Mono', monospace; letter-spacing: .06em; color: #565964; background: radial-gradient(circle, rgba(17,17,19,.3) .6px, transparent .95px) 0 0 / 4px 4px, #fdfdfb"><span style="background: #fdfdfb; padding: 3px 6px">THE PRICES ARE UNDER HERE</span></div>
+        <button type="button" onClick="{{reveal}}" style="height: 50px; border: 1.5px solid #111113; background: #111113; color: #fdfdfb; font: 400 17px/1 'Dela Gothic One', sans-serif; cursor: pointer">REVEAL</button>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{revealed}}" hint-placeholder-val="{{ false }}">
+      <div style="margin-top: auto; display: flex; flex-direction: column; gap: 8px">
+        <div style="display: grid; grid-template-columns: 76px minmax(0, 1fr) 40px; gap: 6px 10px; align-items: center; font: 700 10.5px/1 'JetBrains Mono', monospace">
+          <span>YOU</span>
+          <span style="position: relative; display: block; height: 11px; border: 1px solid #111113"><span style="position: absolute; left: 0; top: 0; bottom: 0; width: {{guess}}%; background: #d7262d"></span></span>
+          <span style="text-align: right">{{guess}}%</span>
+          <span>HYPERLIQUID</span>
+          <span style="position: relative; display: block; height: 11px; border: 1px solid #111113"><span style="position: absolute; left: 0; top: 0; bottom: 0; width: {{marketPct}}%; background: #111113"></span></span>
+          <span style="text-align: right">{{marketPct}}%</span>
+          <span>{{refLabel}}</span>
+          <span style="position: relative; display: block; height: 11px; border: 1px {{refStyle}} #111113"><span style="position: absolute; left: 0; top: 0; bottom: 0; width: {{refPct}}%; background: repeating-linear-gradient(45deg, #111113 0 2px, transparent 2px 5px)"></span></span>
+          <span style="text-align: right">{{refText}}</span>
+        </div>
+        <span style="font-size: 13px; line-height: 1.4">{{verdict}}</span>
+        <div style="display: flex; gap: 8px">
+          <sc-if value="{{hasEdge}}" hint-placeholder-val="{{ true }}">
+            <a href="Main.dc.html" style="flex: 1.4; height: 46px; display: grid; place-items: center; background: #d7262d; color: #fdfdfb; text-decoration: none; border: 1.5px solid #111113; font: 400 14px/1 'Dela Gothic One', sans-serif">{{betLabel}}</a>
+          </sc-if>
+          <button type="button" onClick="{{next}}" style="flex: 1; height: 46px; border: 1.5px solid #111113; background: #fdfdfb; color: #111113; font: 700 12px/1 'JetBrains Mono', monospace; letter-spacing: .05em; cursor: pointer">NEXT →</button>
+        </div>
+      </div>
+    </sc-if>
+  </div>
+
+  <!-- Right page: moving today -->
+  <div style="position: absolute; left: 462px; top: 468px; width: 374px; height: 270px; box-sizing: border-box; border: 1.5px solid #111113; padding: 13px 18px; display: flex; flex-direction: column; gap: 4px">
+    <div style="display: flex; align-items: center; gap: 10px">
+      <span style="font: 700 10.5px/1 'JetBrains Mono', monospace; letter-spacing: .08em; color: #d7262d; white-space: nowrap">MOVING TODAY</span>
+      <span aria-hidden="true" style="flex: 1; height: 16px; background: repeating-linear-gradient(to bottom, #111113 0 1px, transparent 1px 4px)"></span>
+    </div>
+    <sc-for list="{{moves}}" as="m" hint-placeholder-count="4">
+      <a href="Main.dc.html" style="display: grid; grid-template-columns: minmax(0, 1fr) 92px 44px; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px dotted rgba(17,17,19,.35); text-decoration: none; color: #111113">
+        <span style="display: flex; flex-direction: column; min-width: 0">
+          <b style="font-size: 14px; line-height: 1.2">{{m.title}}</b>
+          <span style="font: 500 9.5px/1.3 'JetBrains Mono', monospace; letter-spacing: .05em; color: #565964">{{m.sub}}</span>
+        </span>
+        <span style="font: 700 13px/1 'JetBrains Mono', monospace; text-align: right">{{m.from}}% → {{m.to}}%</span>
+        <span style="font: 700 11px/1 'JetBrains Mono', monospace; text-align: center; padding: 4px 0; border: 1px solid #111113; background: {{m.bg}}; color: {{m.fg}}">{{m.delta}}</span>
+      </a>
+    </sc-for>
+  </div>
+
+  <nav aria-label="Hunch pages" style="position: absolute; right: 0; top: 96px; width: 34px; display: flex; flex-direction: column; gap: 6px">
+    <a href="Discover.dc.html" aria-current="page" style="height: 104px; display: grid; place-items: center; border: 1.5px solid #111113; border-right: 0; background: #111113; color: #fdfdfb; text-decoration: none; font: 700 11px/1 'JetBrains Mono', monospace; letter-spacing: .14em; writing-mode: vertical-rl">TODAY</a>
+    <a href="Bets.dc.html" style="height: 104px; display: grid; place-items: center; border: 1.5px solid #111113; border-right: 0; background: #fdfdfb; color: #111113; text-decoration: none; font: 700 11px/1 'JetBrains Mono', monospace; letter-spacing: .14em; writing-mode: vertical-rl">BETS · 5</a>
+    <a href="Money.dc.html" style="height: 104px; display: grid; place-items: center; border: 1.5px solid #111113; border-right: 0; background: #fdfdfb; color: #111113; text-decoration: none; font: 700 11px/1 'JetBrains Mono', monospace; letter-spacing: .14em; writing-mode: vertical-rl">MONEY</a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":880,"height":760}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { idx: 0, guess: 50, revealed: false, found: 0 };
+  }
+  cards() {
+    return [
+      { q: 'Do the Suns beat the Warriors?', when: 'NBA · TONIGHT 7:00 PM PT', p: 0.778, ref: 0.775, refLabel: 'POLYMARKET', yes: 'the Suns', no: 'the Warriors' },
+      { q: 'Does Bayern beat Freiburg?', when: 'BUNDESLIGA · SUN 9:30 AM PT', p: 0.687, ref: 0.685, refLabel: 'POLYMARKET', yes: 'Bayern', no: 'Freiburg or a draw' },
+      { q: 'Is BTC above $80,751 at 11 PM tonight?', when: 'BITCOIN · NOW $80,416', p: 0.288, ref: 0.299, refLabel: 'OPTIONS', yes: 'above', no: 'below' },
+      { q: "Does Mbappé win the Ballon d'Or?", when: "BALLON D'OR · NOV 5", p: 0.212, ref: null, refLabel: 'OUTSIDE', yes: 'Mbappé', no: 'anyone else' }
+    ];
+  }
+  money(n) {
+    return '$' + n.toFixed(2);
+  }
+  renderVals() {
+    const cards = this.cards();
+    const st = this.state;
+    const card = cards[st.idx % cards.length];
+    const marketPct = Math.round(card.p * 100);
+    const hasRef = card.ref !== null;
+    const refPct = hasRef ? Math.round(card.ref * 100) : 0;
+    const diff = st.guess - marketPct;
+    const refNote = hasRef
+      ? (Math.abs(refPct - marketPct) <= 1 ? ' Outside prices agree with Hyperliquid, so the edge is only your own read.' : '')
+      : ' No good outside price for this one, so it’s just you against the market.';
+    let verdict, hasEdge = false, betLabel = '';
+    if (Math.abs(diff) < 8) {
+      verdict = 'You and the market agree. No edge, no nudge.' + refNote;
+    } else if (diff > 0) {
+      hasEdge = true;
+      verdict = 'You’re ' + diff + ' points surer than the market: $10 on ' + card.yes + ' pays about ' + this.money(10 / card.p) + '.' + refNote;
+      betLabel = 'BET $10 ON ' + card.yes.toUpperCase();
+    } else {
+      hasEdge = true;
+      verdict = 'You’re ' + (-diff) + ' points less sure: $10 on ' + card.no + ' pays about ' + this.money(10 / (1 - card.p)) + '.' + refNote;
+      betLabel = 'BET $10 AGAINST';
+    }
+    return {
+      num: (st.idx % cards.length) + 1,
+      total: cards.length,
+      found: st.found,
+      card: { q: card.q, when: card.when },
+      guess: st.guess,
+      marketPct: marketPct,
+      refLabel: card.refLabel,
+      refPct: refPct,
+      refText: hasRef ? refPct + '%' : 'NONE',
+      refStyle: hasRef ? 'solid' : 'dashed',
+      hidden: !st.revealed,
+      revealed: st.revealed,
+      verdict: verdict,
+      hasEdge: hasEdge,
+      betLabel: betLabel,
+      onGuess: (e) => { if (!this.state.revealed) this.setState({ guess: Number(e.target.value) }); },
+      reveal: () => this.setState({ revealed: true, found: st.found + (Math.abs(diff) >= 8 ? 1 : 0) }),
+      next: () => this.setState({ idx: st.idx + 1, guess: 50, revealed: false }),
+      watch: [
+        { tag: 'BTC', title: 'BTC above $80,751 tonight', sub: 'NOW $80,416 · 11 PM PT', chance: '29%' },
+        { tag: 'SPCX', title: 'SPCX above $146.64', sub: 'SUN 1:00 PM PT · OUT', chance: '53%' },
+        { tag: 'HYPE', title: 'HYPE above $76.95 tonight', sub: 'NOW $76.25 · 11 PM PT', chance: '29%' }
+      ],
+      edges: [
+        { title: 'Anthropic worth over $2T on day one', sub: 'HERE 37¢ · OUTSIDE ~29¢ · RULES CHECK', edge: '~8¢', action: 'BET NO' },
+        { title: 'Anthropic IPO by Oct 31', sub: 'BUYERS HERE PAY 2¢ · POLYMARKET 0.3¢', edge: '~2¢', action: 'BET NO' },
+        { title: 'Anthropic worth over $1.75T', sub: 'HERE 63¢ · OUTSIDE ~52¢ · RULES CHECK', edge: '~11¢', action: 'BET NO' }
+      ],
+      moves: [
+        { title: 'BTC above $80,751 tonight', sub: 'BTC SLID TO $80,416', from: 49, to: 29, delta: '−20', bg: '#111113', fg: '#fdfdfb' },
+        { title: 'Suns beat the Warriors', sub: 'NBA · TIPOFF 7 PM PT', from: 63, to: 78, delta: '+15', bg: '#d7262d', fg: '#fdfdfb' },
+        { title: "Mbappé, Ballon d'Or", sub: 'NOV 5 · ONE OF 8 NAMES', from: 7, to: 21, delta: '+14', bg: '#d7262d', fg: '#fdfdfb' },
+        { title: "Kane, Ballon d'Or", sub: 'NOV 5 · STILL THE FAVORITE', from: 77, to: 70, delta: '−7', bg: '#111113', fg: '#fdfdfb' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

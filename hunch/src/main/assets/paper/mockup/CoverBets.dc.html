@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hunch on the cover screen</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&amp;family=JetBrains+Mono:wght@500;700&amp;family=Zen+Kaku+Gothic+New:wght@400;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#111113}a:hover{color:#d7262d}
+button{font:inherit}
+input[type=search]::placeholder{color:#6b6e78}
+.noscroll{scrollbar-width:none}
+.noscroll::-webkit-scrollbar{display:none}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; overflow: hidden; background: #fdfdfb; color: #111113; font-family: 'Zen Kaku Gothic New', system-ui, sans-serif">
+
+  <!-- top line -->
+  <div style="position: absolute; left: 18px; right: 18px; top: 16px; height: 30px; display: flex; justify-content: space-between; align-items: center">
+    <sc-if value="{{zoomed}}" hint-placeholder-val="{{ false }}">
+      <button type="button" onClick="{{back}}" style="height: 34px; padding: 0 10px 0 0; border: 0; background: transparent; font: 700 12px/1 'JetBrains Mono', monospace; cursor: pointer">← MY BETS</button>
+    </sc-if>
+    <sc-if value="{{notZoomed}}" hint-placeholder-val="{{ true }}">
+      <span style="font: 400 20px/1 'Dela Gothic One', sans-serif">{{pageTitle}}</span>
+    </sc-if>
+    <span style="font: 700 11px/1 'JetBrains Mono', monospace; letter-spacing: .04em">CASH $169.30</span>
+  </div>
+
+  <div style="position: absolute; left: 18px; right: 18px; top: 58px; height: 690px; display: flex; flex-direction: column; gap: 12px">
+
+    <!-- ============ BETS LIST ============ -->
+    <sc-if value="{{showList}}" hint-placeholder-val="{{ true }}">
+      <div style="position: relative; height: 112px; border: 2.5px solid #111113; box-sizing: border-box; overflow: hidden; background: radial-gradient(ellipse 30% 46% at 78% 50%, #fdfdfb 70%, transparent 72%), repeating-conic-gradient(from 0deg at 78% 50%, #111113 0deg 1deg, #fdfdfb 1deg 8deg)">
+        <button type="button" onClick="{{next.pick}}" style="position: absolute; left: 0; top: 0; bottom: 0; width: 200px; border: 0; border-right: 1.5px solid #111113; background: #fdfdfb; padding: 10px 12px; text-align: left; cursor: pointer; display: flex; flex-direction: column; gap: 4px">
+          <span style="font: 700 10px/1 'JetBrains Mono', monospace; letter-spacing: .08em; color: #d7262d">SETTLES NEXT · {{next.left}}</span>
+          <span style="font: 400 18px/1.1 'Dela Gothic One', sans-serif">{{next.title}}</span>
+          <span style="font: 500 10px/1.3 'JetBrains Mono', monospace">{{next.sub}}</span>
+        </button>
+        <span style="position: absolute; left: 78%; top: 50%; transform: translate(-50%, -50%); font: 400 30px/1 'Dela Gothic One', sans-serif">{{next.chance}}</span>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 2px 2px 0">
+        <span style="display: flex; flex-direction: column; gap: 3px"><span style="font: 700 9px/1 'JetBrains Mono', monospace; letter-spacing: .06em; color: #565964">PUT IN</span><span style="font: 700 15px/1 'JetBrains Mono', monospace">{{tot.stake}}</span></span>
+        <span style="display: flex; flex-direction: column; gap: 3px"><span style="font: 700 9px/1 'JetBrains Mono', monospace; letter-spacing: .06em; color: #565964">WORTH NOW</span><span style="font: 700 15px/1 'JetBrains Mono', monospace">{{tot.worth}}</span></span>
+        <span style="display: flex; flex-direction: column; gap: 3px"><span style="font: 700 9px/1 'JetBrains Mono', monospace; letter-spacing: .06em; color: #565964">IF ALL HIT</span><span style="font: 700 15px/1 'JetBrains Mono', monospace">{{tot.pays}}</span></span>
+      </div>
+
+      <div style="flex: 1; min-height: 0; border: 1.5px solid #111113; padding: 8px 6px; display: flex; flex-direction: column; gap: 1px; overflow: hidden">
+        <div style="display: flex; gap: 6px; padding: 0 6px 4px">
+          <sc-for list="{{segs}}" as="t" hint-placeholder-count="2">
+            <button type="button" onClick="{{t.pick}}" aria-pressed="{{t.pressed}}" style="height: 32px; padding: 0 10px; border: 1px solid #111113; font: 700 10.5px/1 'JetBrains Mono', monospace; letter-spacing: .05em; cursor: pointer; background: {{t.bg}}; color: {{t.fg}}">{{t.label}}</button>
+          </sc-for>
+          <span style="margin-left: auto; align-self: center; font: 700 9px/1 'JetBrains Mono', monospace; border: 1px solid #111113; padding: 3px 4px">SAMPLE</span>
+        </div>
+        <sc-if value="{{showOpen}}" hint-placeholder-val="{{ true }}">
+          <sc-for list="{{rows}}" as="r" hint-placeholder-count="8">
+            <sc-if value="{{r.head}}" hint-placeholder-val="{{ false }}">
+              <span style="font: 700 9.5px/1 'JetBrains Mono', monospace; letter-spacing: .08em; color: #d7262d; padding: 8px 8px 3px">{{r.label}}</span>
+            </sc-if>
+            <sc-if value="{{r.item}}" hint-placeholder-val="{{ true }}">
+              <button type="button" onClick="{{r.pick}}" style="display: grid; grid-template-columns: minmax(0, 1fr) 46px 66px; align-items: center; gap: 6px; width: 100%; min-height: 48px; text-align: left; padding: 6px 8px; border: 0; border-bottom: 1px dotted rgba(17,17,19,.3); background: transparent; color: #111113; cursor: pointer">
+                <span style="display: flex; flex-direction: column; gap: 2px; min-width: 0">
+                  <span style="display: flex; align-items: center; gap: 5px; min-width: 0">
+                    <b style="font-size: 13.5px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{r.title}}</b>
+                    <sc-if value="{{r.flag}}" hint-placeholder-val="{{ false }}"><span style="flex: none; font: 700 8px/1 'JetBrains Mono', monospace; border: 1px solid #111113; padding: 2px 3px">EDGE</span></sc-if>
+                  </span>
+                  <span style="font: 500 9px/1.3 'JetBrains Mono', monospace; letter-spacing: .03em; color: #565964">{{r.sub}}</span>
+                </span>
+                <span style="display: flex; flex-direction: column; align-items: flex-end; gap: 3px">
+                  <span style="font: 700 13px/1 'JetBrains Mono', monospace">{{r.chance}}</span>
+                  <span style="font: 700 8.5px/1 'JetBrains Mono', monospace; color: #565964">WAS {{r.entryPct}}</span>
+                </span>
+                <span style="display: flex; flex-direction: column; align-items: flex-end; gap: 3px">
+                  <span style="font: 700 13px/1 'JetBrains Mono', monospace">{{r.worth}}</span>
+                  <span style="font: 700 9.5px/1 'JetBrains Mono', monospace; color: {{r.diffColor}}">{{r.diff}}</span>
+                </span>
+              </button>
+            </sc-if>
+          </sc-for>
+        </sc-if>
+        <sc-if value="{{showSettled}}" hint-placeholder-val="{{ false }}">
+          <sc-for list="{{settled}}" as="s" hint-placeholder-count="3">
+            <div style="display: grid; grid-template-columns: minmax(0, 1fr) 84px; align-items: center; gap: 8px; padding: 9px 8px; border-bottom: 1px dotted rgba(17,17,19,.3)">
+              <span style="display: flex; flex-direction: column; gap: 2px"><b style="font-size: 13.5px">{{s.title}}</b><span style="font: 500 9px/1.3 'JetBrains Mono', monospace; color: #565964">{{s.sub}}</span></span>
+              <span style="display: flex; flex-direction: column; align-items: flex-end; gap: 3px">
+                <span style="font: 700 9px/1 'JetBrains Mono', monospace; padding: 3px 4px; border: 1px solid #111113; background: {{s.tagBg}}; color: {{s.tagFg}}">{{s.result}}</span>
+                <span style="font: 700 13px/1 'JetBrains Mono', monospace; color: {{s.color}}">{{s.amount}}</span>
+              </span>
+            </div>
+          </sc-for>
+          <span style="margin: 12px 8px 0; font-size: 12.5px; line-height: 1.45">3 settled: 1 won, 1 lost, 1 cashed out. <b>+$2.30</b> overall.</span>
+        </sc-if>
+      </div>
+    </sc-if>
+
+    <!-- ============ ONE BET, ZOOMED ============ -->
+    <sc-if value="{{zoomed}}" hint-placeholder-val="{{ false }}">
+      <div style="position: relative; height: 130px; border: 1.5px solid #111113; box-sizing: border-box; overflow: hidden; background: radial-gradient(circle, rgba(17,17,19,.6) .9px, transparent 1.3px) 0 0 / 4.5px 4.5px, #c4c6cc">
+        <span style="position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%); font: 700 9.5px/1 'JetBrains Mono', monospace; letter-spacing: .08em; color: #fdfdfb; background: #111113; padding: 5px 7px; white-space: nowrap">{{b.art}}</span>
+        <span style="position: absolute; left: 0; bottom: 0; right: 40px; background: #fdfdfb; border-top: 1px solid #111113; border-right: 1px solid #111113; padding: 6px 9px; font-size: 12px; line-height: 1.35">{{b.note}}</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <span style="font: 700 10px/1 'JetBrains Mono', monospace; letter-spacing: .08em; color: #d7262d">{{b.when}}</span>
+        <span style="font: 400 22px/1.1 'Dela Gothic One', sans-serif">{{b.title}}</span>
+        <span style="font: 500 10.5px/1.3 'JetBrains Mono', monospace">YOU: {{b.sideUp}} · {{b.stake}} AT {{b.entryCents}} · {{b.shares}} SHARES</span>
+      </div>
+      <div style="position: relative; height: 150px; margin-right: 34px; border-left: 1px solid #111113; border-bottom: 1px solid #111113">
+        <div style="position: absolute; left: 0; right: 0; top: {{b.entryY}}px; border-top: 1.5px dashed #d7262d"></div>
+        <span style="position: absolute; left: 6px; top: {{b.entryLabelY}}px; font: 700 9px/1 'JetBrains Mono', monospace; color: #d7262d; background: #fdfdfb; padding: 1px 3px">YOU BOUGHT AT {{b.entryPct}}</span>
+        <svg width="320" height="150" viewBox="0 0 320 150" style="position: absolute; inset: 0; overflow: visible" aria-hidden="true"><polyline points="{{b.poly}}" fill="none" stroke="#111113" stroke-width="2"></polyline></svg>
+        <span style="position: absolute; left: 300px; top: {{b.nowLabelY}}px; font: 700 9.5px/1 'JetBrains Mono', monospace; background: #111113; color: #fdfdfb; padding: 3px 5px; white-space: nowrap">{{b.chance}}</span>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
+        <div style="background: #111113; color: #fdfdfb; padding: 11px 13px; display: flex; flex-direction: column; gap: 6px"><span style="font: 700 9.5px/1 'JetBrains Mono', monospace; letter-spacing: .06em">WORTH NOW</span><span style="font: 400 24px/1 'Dela Gothic One', sans-serif">{{b.worth}}</span><span style="font: 700 10px/1 'JetBrains Mono', monospace">{{b.diff}}</span></div>
+        <div style="border: 1.5px solid #111113; padding: 11px 13px; display: flex; flex-direction: column; gap: 6px"><span style="font: 700 9.5px/1 'JetBrains Mono', monospace; letter-spacing: .06em">PAYS IF RIGHT</span><span style="font: 400 24px/1 'Dela Gothic One', sans-serif">{{b.pays}}</span><span style="font: 700 10px/1 'JetBrains Mono', monospace">{{b.chance}} CHANCE</span></div>
+      </div>
+      <span style="font-size: 11.5px; line-height: 1.4; color: #565964">{{b.rules}}</span>
+      <div style="margin-top: auto; display: flex; gap: 8px">
+        <button type="button" style="flex: 1.4; height: 52px; border: 1.5px solid #111113; background: #111113; color: #fdfdfb; font: 400 14px/1 'Dela Gothic One', sans-serif; cursor: pointer">CASH OUT {{b.worth}}</button>
+        <button type="button" style="flex: 1; height: 52px; border: 1.5px solid #111113; background: #fdfdfb; color: #111113; font: 700 11px/1 'JetBrains Mono', monospace; cursor: pointer">ADD MORE</button>
+      </div>
+    </sc-if>
+
+    <!-- ============ TODAY (compact) ============ -->
+    <sc-if value="{{showToday}}" hint-placeholder-val="{{ false }}">
+      <div class="noscroll" style="flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; margin: 0 -4px; padding: 0 4px">
+        <dc-import name="TodayFeed" hint-size="354px,2360px"></dc-import>
+      </div>
+    </sc-if>
+    <!-- ============ MONEY (compact) ============ -->
+    <sc-if value="{{showMoney}}" hint-placeholder-val="{{ false }}">
+      <div style="border: 2.5px solid #111113; padding: 16px; display: flex; flex-direction: column; gap: 8px">
+        <span style="font: 700 10px/1 'JetBrains Mono', monospace; letter-spacing: .08em; color: #d7262d">CASH YOU CAN BET OR TAKE OUT</span>
+        <span style="font: 400 46px/1 'Dela Gothic One', sans-serif">$169.30</span>
+        <span style="font: 500 10.5px/1.3 'JetBrains Mono', monospace; color: #565964">IN 5 OPEN BETS: $83.00 · WORTH $85.62</span>
+        <div style="display: flex; gap: 8px; margin-top: 6px">
+          <button type="button" style="flex: 1; height: 48px; border: 1.5px solid #111113; background: #111113; color: #fdfdfb; font: 400 14px/1 'Dela Gothic One', sans-serif; cursor: pointer">ADD MONEY</button>
+          <button type="button" style="flex: 1; height: 48px; border: 1.5px solid #111113; background: #fdfdfb; color: #111113; font: 400 14px/1 'Dela Gothic One', sans-serif; cursor: pointer">TAKE OUT</button>
+        </div>
+      </div>
+      <div style="border: 1.5px solid #111113; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px">
+        <div style="display: flex; justify-content: space-between; font-size: 13.5px"><b>Daily limit</b><span style="font: 700 11px/1.5 'JetBrains Mono', monospace">$45 OF $100</span></div>
+        <span style="position: relative; display: block; height: 10px; border: 1px solid #111113"><span style="position: absolute; left: 0; top: 0; bottom: 0; width: 45%; background: #111113"></span></span>
+        <span style="font-size: 12.5px; line-height: 1.4; color: #565964">The betting key can't withdraw. Taking money out asks for your fingerprint.</span>
+      </div>
+      <div style="border: 1.5px solid #111113; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px">
+        <span style="font: 700 10px/1 'JetBrains Mono', monospace; letter-spacing: .08em; color: #d7262d">RECORD · SINCE OCT 18</span>
+        <span style="font: 400 26px/1 'Dela Gothic One', sans-serif">+$2.30</span>
+        <span style="font-size: 12.5px; color: #565964">1 won, 1 lost, 1 cashed out. Prices moved your way after 3 of 5 bets.</span>
+      </div>
+    </sc-if>
+  </div>
+
+  <!-- ============ PAGE TABS (bottom edge) ============ -->
+  <nav aria-label="Hunch pages" style="position: absolute; left: 0; right: 0; bottom: 0; height: 86px; background: #fdfdfb">
+    <div style="position: absolute; left: 0; right: 0; top: 0; height: 1.5px; background: #111113"></div>
+    <div style="position: absolute; left: 15px; top: 0; display: grid; grid-template-columns: repeat(3, 116px); gap: 6px">
+      <sc-for list="{{tabs}}" as="t" hint-placeholder-count="3">
+        <button type="button" onClick="{{t.pick}}" aria-current="{{t.current}}" aria-label="{{t.aria}}" style="position: relative; width: 116px; height: 58px; padding: 0; border: 0; background: transparent; cursor: pointer; color: #111113">
+          <span style="position: absolute; inset: 0; clip-path: polygon(0 0, 100% 0, 100% 52px, 0 52px); background: {{t.tone}}"></span>
+          <svg width="116" height="58" viewBox="0 0 116 58" style="position: absolute; inset: 0; overflow: visible" aria-hidden="true">
+            <rect x="1.5" y="-1" width="113" height="3" fill="{{t.cover}}"></rect>
+            <polygon points="{{t.shape}}" fill="{{t.fill}}" stroke="{{t.outline}}" stroke-width="1.5"></polygon>
+            <polyline points="0.75,0 0.75,56.25 115.25,56.25 115.25,0" fill="none" stroke="{{t.sides}}" stroke-width="2"></polyline>
+          </svg>
+          <span style="position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px; padding-top: {{t.pad}}px">
+            <span style="display: flex; align-items: center; gap: 5px; background: {{t.chip}}; padding: 1px 4px">
+              <sc-if value="{{t.isToday}}" hint-placeholder-val="{{ false }}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#111113" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18"></rect><path d="M4 10h16M12 10v11"></path></svg></sc-if>
+              <sc-if value="{{t.isBets}}" hint-placeholder-val="{{ false }}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#111113" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18v4a2 2 0 0 0 0 4v4H3v-4a2 2 0 0 0 0-4z"></path><path d="M15 6v12" stroke-dasharray="2 2"></path></svg></sc-if>
+              <sc-if value="{{t.isMoney}}" hint-placeholder-val="{{ false }}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#111113" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><path d="M12 7.5v9M14.6 9.6c-.4-.8-1.4-1.3-2.6-1.3-1.5 0-2.5.7-2.5 1.7 0 2.4 5.1 1.2 5.1 3.7 0 1-1.1 1.8-2.6 1.8-1.3 0-2.3-.5-2.7-1.4"></path></svg></sc-if>
+              <span style="font: 400 14px/1 'Dela Gothic One', sans-serif">{{t.label}}</span>
+            </span>
+            <span style="font: 700 8.5px/1 'JetBrains Mono', monospace; letter-spacing: .06em; background: {{t.chip}}; padding: 2px 4px; color: {{t.subColor}}">{{t.sub}}</span>
+          </span>
+          <sc-if value="{{t.hasBadge}}" hint-placeholder-val="{{ false }}">
+            <span style="position: absolute; right: 14px; top: 6px; min-width: 16px; height: 16px; border-radius: 8px; background: #d7262d; color: #fdfdfb; font: 700 9px/16px 'JetBrains Mono', monospace; text-align: center">{{t.badge}}</span>
+          </sc-if>
+        </button>
+      </sc-for>
+    </div>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { tab: 'bets', sel: null, seg: 'open' };
+  }
+  bets() {
+    return [
+      { id: 'suns', group: 'TONIGHT', when: 'NBA · TONIGHT 7:00 PM PT', left: '4H', title: 'Suns beat the Warriors', side: 'Suns', stake: 25, entry: 0.64, bid: 0.775, art: 'TEAM ART · SUNS VS WARRIORS', note: 'Tipoff in about four hours. You got in before the price jumped.', rules: 'Final score with overtime, per the NBA.', hist: [64, 63, 66, 65, 70, 72, 74, 78, 77.5] },
+      { id: 'btc', group: 'TONIGHT', when: 'BITCOIN · TONIGHT 11:00 PM PT', left: '8H', title: 'BTC above $80,751', side: 'Yes', stake: 10, entry: 0.371, bid: 0.278, art: 'ART · BITCOIN', note: 'BTC is $80,416. It needs +$335 by 11 PM.', rules: "Hyperliquid's BTC mark price at 06:00 UTC. Paid right away.", hist: [37, 40, 44, 49, 45, 40, 36, 33, 30, 29] },
+      { id: 'gb', group: 'SUNDAY', when: 'NFL · SUN 1:25 PM PT', left: '1D', title: 'Packers @ Lions', side: 'Packers', stake: 20, entry: 0.365, bid: 0.3647, art: 'TEAM ART · FORD FIELD', note: 'Kickoff tomorrow. The price has barely moved.', rules: 'Final score with overtime, per the NFL.', hist: [36.5, 37, 36, 36.5, 36, 36.5, 36] },
+      { id: 'kane', group: 'LATER', when: "BALLON D'OR · NOV 5", left: '12D', title: "Kane, Ballon d'Or", side: 'Kane', stake: 15, entry: 0.705, bid: 0.7047, art: 'PLAYER ART · HARRY KANE', note: 'Mbappé rose from 7% to 21% today.', rules: "Per France Football's announcement, by Nov 5.", hist: [70.5, 74, 77, 76, 74, 72, 71, 70.5] },
+      { id: 'anth', group: 'LATER', when: 'IPO · LISTS BY JAN 1', left: '68D', title: 'Anthropic over $2T, day one', side: 'No', stake: 13, entry: 0.629, bid: 0.6237, flag: true, art: 'ART · ANTHROPIC', note: 'Edge flag: the outside view says No is worth about 71¢.', rules: 'Check what happens if there is no listing by Jan 1.', hist: [62.9, 63, 62.5, 63, 62.6, 62.4] }
+    ];
+  }
+  money(n) {
+    return '$' + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  }
+  signed(n) {
+    return (n >= 0 ? '+' : '−') + this.money(Math.abs(n));
+  }
+  renderVals() {
+    const all = this.bets();
+    const st = this.state;
+    const calc = (x) => { const s = x.stake / x.entry; return { shares: s, worth: s * x.bid, diff: s * x.bid - x.stake, pays: s }; };
+    let stake = 0, worth = 0, pays = 0;
+    all.forEach((x) => { const c = calc(x); stake += x.stake; worth += c.worth; pays += c.pays; });
+    const rows = [];
+    let last = null;
+    all.forEach((x) => {
+      if (x.group !== last) { rows.push({ head: true, item: false, label: x.group }); last = x.group; }
+      const c = calc(x);
+      rows.push({
+        head: false, item: true, flag: !!x.flag, title: x.title,
+        sub: x.side.toUpperCase() + ' · $' + x.stake + ' AT ' + Math.round(x.entry * 1000) / 10 + '¢',
+        chance: Math.round(x.bid * 100) + '%', entryPct: Math.round(x.entry * 100) + '%',
+        worth: this.money(c.worth), diff: this.signed(c.diff),
+        diffColor: c.diff < -0.005 ? '#d7262d' : '#111113',
+        pick: () => this.setState({ sel: x.id })
+      });
+    });
+    const b = all.find((x) => x.id === st.sel) || all[0];
+    const c = calc(b);
+    const W = 300, H = 150;
+    const lo = Math.min.apply(null, b.hist.concat([b.entry * 100])) - 6;
+    const hi = Math.max.apply(null, b.hist.concat([b.entry * 100])) + 6;
+    const y = (v) => Math.round(H - (v - lo) / (hi - lo) * H);
+    const poly = b.hist.map((v, i) => Math.round(i / (b.hist.length - 1) * W) + ',' + y(v)).join(' ');
+    const entryY = y(b.entry * 100), nowY = y(b.hist[b.hist.length - 1]);
+    const first = all[0];
+    const zoomed = st.tab === 'bets' && st.sel !== null;
+    const tabDefs = [
+      { key: 'today', label: 'TODAY', sub: 'ISSUE 1 · OCT 24', badge: '' },
+      { key: 'bets', label: 'BETS', sub: 'NEXT IN 4H', badge: '5' },
+      { key: 'money', label: 'MONEY', sub: '$169.30', badge: '' }
+    ];
+    const tone = 'radial-gradient(circle, rgba(17,17,19,.45) .7px, transparent 1px) 0 0 / 4px 4px, #ececee';
+    const titles = { today: "Today's issue", bets: 'My bets', money: 'Money' };
+    return {
+      pageTitle: titles[st.tab],
+      zoomed: zoomed,
+      notZoomed: !zoomed,
+      back: () => this.setState({ sel: null }),
+      showList: st.tab === 'bets' && st.sel === null,
+      showToday: st.tab === 'today',
+      showMoney: st.tab === 'money',
+      showOpen: st.seg === 'open',
+      showSettled: st.seg === 'settled',
+      next: {
+        left: first.left, title: first.title,
+        sub: first.side.toUpperCase() + ' · WORTH ' + this.money(calc(first).worth),
+        chance: Math.round(first.bid * 100) + '%',
+        pick: () => this.setState({ sel: first.id })
+      },
+      tot: { stake: this.money(stake), worth: this.money(worth), pays: this.money(pays) },
+      segs: [{ key: 'open', label: 'OPEN · 5' }, { key: 'settled', label: 'SETTLED · 3' }].map((t) => ({
+        label: t.label, pressed: t.key === st.seg ? 'true' : 'false',
+        bg: t.key === st.seg ? '#111113' : '#fdfdfb', fg: t.key === st.seg ? '#fdfdfb' : '#111113',
+        pick: () => this.setState({ seg: t.key })
+      })),
+      rows: rows,
+      settled: [
+        { title: 'Bayern beat Union Berlin', sub: 'BAYERN · $15 AT 80¢ · OCT 18', result: 'WON', amount: '+$3.75', color: '#111113', tagBg: '#111113', tagFg: '#fdfdfb' },
+        { title: 'ETH above $2,400 Thursday', sub: 'YES · $10 AT 41¢ · OCT 22', result: 'LOST', amount: '−$10.00', color: '#d7262d', tagBg: '#fdfdfb', tagFg: '#111113' },
+        { title: "Mbappé, Ballon d'Or", sub: 'BOUGHT 9¢ · SOLD 18¢ · TODAY', result: 'CASHED OUT', amount: '+$8.55', color: '#111113', tagBg: '#fdfdfb', tagFg: '#111113' }
+      ],
+      b: {
+        when: b.when, title: b.title, art: b.art, note: b.note, rules: b.rules,
+        sideUp: b.side.toUpperCase(), stake: '$' + b.stake,
+        entryCents: Math.round(b.entry * 1000) / 10 + '¢', entryPct: Math.round(b.entry * 100) + '%',
+        shares: c.shares.toFixed(1), worth: this.money(c.worth), diff: this.signed(c.diff) + ' VS $' + b.stake,
+        pays: this.money(c.pays), chance: Math.round(b.bid * 100) + '%',
+        poly: poly, entryY: entryY, entryLabelY: Math.max(0, entryY - 15),
+        nowLabelY: Math.max(0, Math.min(H - 16, nowY - 8))
+      },
+      tabs: tabDefs.map((t) => {
+        const on = t.key === st.tab;
+        return {
+          label: t.label, sub: t.sub, current: on ? 'page' : 'false',
+          aria: t.label.charAt(0) + t.label.slice(1).toLowerCase() + (t.badge ? ', ' + t.badge + ' open' : ''),
+          isToday: t.key === 'today', isBets: t.key === 'bets', isMoney: t.key === 'money',
+          hasBadge: !!t.badge && !on, badge: t.badge,
+          tone: on ? 'transparent' : tone,
+          cover: on ? '#fdfdfb' : 'none',
+          shape: on ? '0,0 116,0 116,56.25 0,56.25' : '0.75,0.75 115.25,0.75 115.25,51.25 0.75,51.25',
+          fill: on ? '#fdfdfb' : 'none',
+          outline: on ? 'none' : '#111113',
+          sides: on ? '#111113' : 'none',
+          chip: on ? 'transparent' : '#fdfdfb',
+          subColor: on ? '#d7262d' : '#565964',
+          pad: on ? 13 : 9,
+          pick: () => this.setState({ tab: t.key, sel: null })
+        };
+      })
+    };
+  }
+}
+</script>
+</body>
+</html>

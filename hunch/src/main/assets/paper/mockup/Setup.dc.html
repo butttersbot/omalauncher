@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hunch setup</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&amp;family=JetBrains+Mono:wght@500;700&amp;family=Zen+Kaku+Gothic+New:wght@400;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#111113}a:hover{color:#d7262d}
+button{font:inherit}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; overflow: hidden; background: #fdfdfb; color: #111113; font-family: 'Zen Kaku Gothic New', system-ui, sans-serif">
+
+  <div style="position: absolute; left: 18px; top: 18px; width: 354px; height: 80px; box-sizing: border-box; border: 1.5px solid #111113; padding: 12px 16px; display: flex; flex-direction: column; justify-content: center; gap: 5px">
+    <span style="font: 700 10.5px/1 'JetBrains Mono', monospace; letter-spacing: .08em; color: #d7262d">SETUP · ONCE · ABOUT A MINUTE</span>
+    <span style="font: 400 30px/1 'Dela Gothic One', sans-serif">HUNCH</span>
+  </div>
+
+  <!-- 1 sign in -->
+  <div style="position: absolute; left: 18px; top: 114px; width: 354px; height: 150px; box-sizing: border-box; border: 1.5px solid #111113; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px">
+    <div style="display: flex; align-items: center; gap: 10px">
+      <span style="width: 30px; height: 30px; border-radius: 50%; border: 1.5px solid #111113; display: grid; place-items: center; font: 400 15px/1 'Dela Gothic One', sans-serif">1</span>
+      <span style="font: 400 19px/1 'Dela Gothic One', sans-serif">Sign in</span>
+      <span style="margin-left: auto; font: 700 9.5px/1 'JetBrains Mono', monospace; letter-spacing: .05em; color: #fdfdfb; background: #111113; padding: 4px 6px">DONE</span>
+    </div>
+    <span style="font-size: 13.5px; line-height: 1.45">Privy makes a new wallet just for Hunch, with your passkey. It is separate from the NEETbux treasury.</span>
+    <span style="margin-top: auto; font: 500 10.5px/1 'JetBrains Mono', monospace; color: #565964">WALLET READY · [ADDRESS]</span>
+  </div>
+
+  <!-- 2 add money, slanted bottom -->
+  <div style="position: absolute; left: 18px; top: 280px; width: 354px; height: 186px">
+    <svg width="354" height="186" viewBox="0 0 354 186" style="position: absolute; inset: 0" aria-hidden="true"><polygon points="0.75,0.75 353.25,0.75 353.25,166 0.75,185.25" fill="#fdfdfb" stroke="#111113" stroke-width="1.5"></polygon></svg>
+    <div style="position: absolute; left: 16px; right: 16px; top: 14px; display: flex; flex-direction: column; gap: 8px">
+      <div style="display: flex; align-items: center; gap: 10px">
+        <span style="width: 30px; height: 30px; border-radius: 50%; border: 1.5px solid #111113; display: grid; place-items: center; font: 400 15px/1 'Dela Gothic One', sans-serif">2</span>
+        <span style="font: 400 19px/1 'Dela Gothic One', sans-serif">Add money</span>
+        <span style="margin-left: auto; font: 700 9.5px/1 'JetBrains Mono', monospace; letter-spacing: .05em; color: #fdfdfb; background: #111113; padding: 4px 6px">$250 IN</span>
+      </div>
+      <span style="font-size: 13.5px; line-height: 1.45">Send USDC on Arbitrum, $5 or more. Privy pays the network fee to move it into Hyperliquid.</span>
+      <div style="display: flex; gap: 8px">
+        <button type="button" style="height: 40px; padding: 0 12px; font: 700 11px/1 'JetBrains Mono', monospace; letter-spacing: .04em; border: 1px solid #111113; background: #fdfdfb; color: #111113; cursor: pointer">SHOW ADDRESS</button>
+        <button type="button" style="height: 40px; padding: 0 12px; font: 700 11px/1 'JetBrains Mono', monospace; letter-spacing: .04em; border: 1px solid #111113; background: #fdfdfb; color: #111113; cursor: pointer">FROM COINBASE</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3 one-tap trading, slanted top -->
+  <div style="position: absolute; left: 18px; top: 448px; width: 354px; height: 290px">
+    <svg width="354" height="290" viewBox="0 0 354 290" style="position: absolute; inset: 0" aria-hidden="true"><polygon points="0.75,37 353.25,17.75 353.25,289.25 0.75,289.25" fill="#fdfdfb" stroke="#111113" stroke-width="2.5"></polygon></svg>
+    <div style="position: absolute; left: 16px; right: 16px; top: 48px; bottom: 16px; display: flex; flex-direction: column; gap: 9px">
+      <div style="display: flex; align-items: center; gap: 10px">
+        <span style="width: 30px; height: 30px; border-radius: 50%; border: 1.5px solid #111113; background: #111113; color: #fdfdfb; display: grid; place-items: center; font: 400 15px/1 'Dela Gothic One', sans-serif">3</span>
+        <span style="font: 400 19px/1 'Dela Gothic One', sans-serif">One-tap betting</span>
+      </div>
+      <span style="font-size: 13.5px; line-height: 1.45">Approve a betting key that lives on this phone. It can place and cancel bets. <b>It can never withdraw.</b></span>
+      <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap">
+        <span style="font: 700 10px/1 'JetBrains Mono', monospace; letter-spacing: .08em; color: #d7262d; margin-right: 2px">DAILY LIMIT</span>
+        <button type="button" style="min-width: 52px; height: 34px; font: 700 12px/1 'JetBrains Mono', monospace; border: 1px solid #111113; background: #fdfdfb; color: #111113">$50</button>
+        <button type="button" aria-pressed="true" style="min-width: 52px; height: 34px; font: 700 12px/1 'JetBrains Mono', monospace; border: 1px solid #111113; background: #111113; color: #fdfdfb">$100</button>
+        <button type="button" style="min-width: 52px; height: 34px; font: 700 12px/1 'JetBrains Mono', monospace; border: 1px solid #111113; background: #fdfdfb; color: #111113">$250</button>
+      </div>
+      <span style="font-size: 12px; line-height: 1.4; color: #565964">Past the limit, a bet asks for your fingerprint.</span>
+      <button type="button" style="position: relative; margin-top: auto; height: 52px; border: 1.5px solid #111113; background: #111113; color: #fdfdfb; cursor: pointer; overflow: hidden; padding: 0">
+        <span style="position: absolute; left: 0; top: 0; bottom: 0; width: 34%; background: #d7262d"></span>
+        <span style="position: relative; font: 400 16px/1 'Dela Gothic One', sans-serif; letter-spacing: .02em">HOLD TO APPROVE</span>
+      </button>
+    </div>
+  </div>
+
+  <div style="position: absolute; left: 18px; top: 756px; width: 354px; box-sizing: border-box; border: 1px solid #111113; background: #fdfdfb; padding: 9px 12px; font-size: 12.5px; line-height: 1.45">Taking money out always goes through your Privy wallet and asks for your fingerprint.</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,92 @@
+[
+  {
+    "name": "Ask",
+    "width": 390,
+    "height": 844,
+    "sha256": "5b428537b7003018d2d10e028c4f9fa10ed3d3c164a2a9495ed8b87cf843abc4"
+  },
+  {
+    "name": "Bets",
+    "width": 880,
+    "height": 760,
+    "sha256": "1cf081b105ff6f06f257ca58cc5cfa552acf6f9732b832253c9765653cc74a69"
+  },
+  {
+    "name": "CoverBets",
+    "width": 390,
+    "height": 844,
+    "sha256": "1abde5862cd3cb700f59601369e8aada4e0b31f63be70fd9401e86866bb4d021"
+  },
+  {
+    "name": "Curve",
+    "width": 880,
+    "height": 760,
+    "sha256": "8691ed7223071fadd61d67a298c916b32f4b5f76faa455ec4034a2ec8b62876c"
+  },
+  {
+    "name": "Discover",
+    "width": 880,
+    "height": 760,
+    "sha256": "ca02c4a51e8d024cbc7fd847a775bfb12f915450270b322cc821fc0ff258594a"
+  },
+  {
+    "name": "Edge",
+    "width": 390,
+    "height": 844,
+    "sha256": "09ff3ad777d81f11eb98aa7be66431e743174f54998eeb95e32c0897d5b23470"
+  },
+  {
+    "name": "Flow",
+    "width": 860,
+    "height": 900,
+    "sha256": "28eccc427feb281ef83b029face72257ab91646f67f220f2192330e40e718d2b"
+  },
+  {
+    "name": "Home",
+    "width": 880,
+    "height": 760,
+    "sha256": "e24cf5fc5bfdbf2eacf0b818b6cc5da948ae980840be8d1ae56633bc6893e379"
+  },
+  {
+    "name": "Main",
+    "width": 880,
+    "height": 760,
+    "sha256": "5f9d7388817bce1210be4c5f81fa5d0eb0454300cffe553dedbb1bfbaf9e7547"
+  },
+  {
+    "name": "Money",
+    "width": 880,
+    "height": 760,
+    "sha256": "361b1afa273cf6267f71ec58632c7a03922193947257e9e232fc56c271c4f697"
+  },
+  {
+    "name": "Nav",
+    "width": 1200,
+    "height": 760,
+    "sha256": "c7881046710a5258232d0db0daebf4c841e2f2d0c2eb656b3e7818327b0b44ad"
+  },
+  {
+    "name": "Review",
+    "width": 390,
+    "height": 844,
+    "sha256": "9ea2ba3a8c6e5acdae3c0776bbe2ec428778ba01b206c9f2c7d44c958345abeb"
+  },
+  {
+    "name": "Settle",
+    "width": 390,
+    "height": 844,
+    "sha256": "b1922c821d4b342279df8afd2ef94cfebc6930fc93bf38497f6692a4ff9b2900"
+  },
+  {
+    "name": "Setup",
+    "width": 390,
+    "height": 844,
+    "sha256": "5fe22bdf34eee2639d2bfe95371c40923925ecb351e792ba402c3dd389bbc1be"
+  },
+  {
+    "name": "TodayFeed",
+    "width": 354,
+    "height": 2360,
+    "sha256": "ee4664f20d6b8281886ee20f1a6b0e19b9543f507169d77ad7e5f8775f12f8d4"
+  }
+]

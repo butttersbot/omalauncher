@@ -1,0 +1,51 @@
+# Original exported HTML, live-data adapter, and source-derived account access.
+fold folded
+rotate portrait
+shell am force-stop dev.omalauncher.hunch
+shell am start -n dev.omalauncher.hunch/.MainActivity --es fixture demo
+expect Today's issue
+expect Paper Cranes
+absent 169.30
+shot hunch-paper-cover
+scrollto MARKETS
+shot hunch-paper-feed
+# Use search instead of coordinates across the original feed panels.
+shell am force-stop dev.omalauncher.hunch
+shell am start -n dev.omalauncher.hunch/.MainActivity --es fixture demo
+tap Search markets
+type Paper Cranes
+expect Paper Cranes
+tap Paper Cranes
+expect READ ONLY
+shot hunch-paper-market
+key BACK
+expect Today's issue
+tap Bets
+expect No trading account
+shot hunch-paper-bets
+tap Money
+expect No wallet is connected
+shot hunch-paper-money
+tap Sign in to Hunch
+expect Start with email
+shot hunch-paper-auth
+key BACK
+fold open
+expect No wallet
+shot hunch-paper-money-inner
+tap TODAY
+expect PUBLIC MARKETS
+shot hunch-paper-discover-inner
+tap BETS
+expect No real positions
+shot hunch-paper-bets-inner
+rotate landscape
+expect No real positions
+shot hunch-paper-landscape
+rotate portrait
+# Reference gallery remains explicitly labelled and cannot call Privy/trading.
+shell am force-stop dev.omalauncher.hunch
+shell am start -n dev.omalauncher.hunch/.MainActivity --es design Discover
+expect DESIGN REFERENCE
+shot hunch-paper-reference-discover
+[phone] Compare actual installed cover and unfolded screens with original HTML at the same viewport. Check search keyboard, real market metadata, read-only depth, account email/OTP/passkey recovery, offline error, and physical fold state. No wallet/trade actions.

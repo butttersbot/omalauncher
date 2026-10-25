@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hunch ladder curve</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&amp;family=JetBrains+Mono:wght@500;700&amp;family=Zen+Kaku+Gothic+New:wght@400;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#111113}a:hover{color:#d7262d}
+button{font:inherit}
+input[type=range]{accent-color:#111113}
+</style>
+</helmet>
+<div style="position: relative; width: 880px; height: 760px; overflow: hidden; background: #fdfdfb; color: #111113; font-family: 'Zen Kaku Gothic New', system-ui, sans-serif">
+
+  <div style="position: absolute; left: 439px; top: 0; bottom: 0; width: 1px; background: rgba(17,17,19,.10)"></div>
+  <div style="position: absolute; left: 440px; top: 0; bottom: 0; width: 18px; background: linear-gradient(to right, rgba(17,17,19,.07), rgba(17,17,19,0))"></div>
+
+  <!-- Across the spread: the curve -->
+  <div style="position: absolute; left: 22px; top: 22px; width: 836px; height: 416px; box-sizing: border-box; border: 1.5px solid #111113; background: #fdfdfb">
+    <div style="position: absolute; left: 20px; right: 20px; top: 16px; display: flex; justify-content: space-between; align-items: flex-start; gap: 16px">
+      <div style="display: flex; flex-direction: column; gap: 5px; max-width: 520px">
+        <span style="font: 700 10.5px/1 'JetBrains Mono', monospace; letter-spacing: .08em; color: #d7262d">{{d.kicker}}</span>
+        <span style="font: 400 27px/1.1 'Dela Gothic One', sans-serif">{{d.heading}}</span>
+        <span style="font-size: 13px; line-height: 1.4; color: #565964">{{d.sub}}</span>
+      </div>
+      <div style="display: flex; gap: 6px; flex: none">
+        <sc-for list="{{tabs}}" as="t" hint-placeholder-count="2">
+          <button type="button" onClick="{{t.pick}}" aria-pressed="{{t.pressed}}" style="height: 34px; padding: 0 10px; font: 700 11px/1 'JetBrains Mono', monospace; letter-spacing: .05em; cursor: pointer; border: 1px solid #111113; background: {{t.bg}}; color: {{t.fg}}">{{t.label}}</button>
+        </sc-for>
+      </div>
+    </div>
+
+    <!-- y axis labels -->
+    <span style="position: absolute; left: 16px; top: 128px; font: 500 10px/1 'JetBrains Mono', monospace; color: #565964">100%</span>
+    <span style="position: absolute; left: 22px; top: 193px; font: 500 10px/1 'JetBrains Mono', monospace; color: #565964">75%</span>
+    <span style="position: absolute; left: 22px; top: 258px; font: 500 10px/1 'JetBrains Mono', monospace; color: #565964">50%</span>
+    <span style="position: absolute; left: 22px; top: 323px; font: 500 10px/1 'JetBrains Mono', monospace; color: #565964">25%</span>
+
+    <!-- chart box: 740 x 260 at (60, 132) -->
+    <div style="position: absolute; left: 60px; top: 132px; width: 740px; height: 260px; border-left: 1px solid #111113; border-bottom: 1px solid #111113">
+      <div style="position: absolute; left: 0; right: 0; top: 65px; border-top: 1px dotted rgba(17,17,19,.25)"></div>
+      <div style="position: absolute; left: 0; right: 0; top: 130px; border-top: 1px dotted rgba(17,17,19,.25)"></div>
+      <div style="position: absolute; left: 0; right: 0; top: 195px; border-top: 1px dotted rgba(17,17,19,.25)"></div>
+
+      <div style="position: absolute; inset: 0; background: radial-gradient(circle, rgba(17,17,19,.55) .7px, transparent 1px) 0 0 / 5px 5px; clip-path: {{clip}}"></div>
+      <svg width="740" height="260" viewBox="0 0 740 260" style="position: absolute; inset: 0; overflow: visible" aria-hidden="true"><polyline points="{{poly}}" fill="none" stroke="#111113" stroke-width="2"></polyline></svg>
+
+      <sc-if value="{{d.hasNow}}" hint-placeholder-val="{{ true }}">
+        <div style="position: absolute; top: -6px; bottom: 0; left: {{d.nowX}}px; border-left: 1.5px dotted #111113"></div>
+        <span style="position: absolute; top: -20px; left: {{d.nowX}}px; transform: translateX(-50%); font: 700 10px/1 'JetBrains Mono', monospace; background: #fdfdfb; border: 1px solid #111113; padding: 3px 5px; white-space: nowrap">NOW {{d.nowLabel}}</span>
+      </sc-if>
+
+      <div style="position: absolute; top: 0; bottom: 0; left: {{selX}}px; border-left: 1.5px solid #d7262d"></div>
+
+      <sc-for list="{{pts}}" as="p" hint-placeholder-count="5">
+        <div style="position: absolute; left: {{p.barLeft}}px; top: {{p.barTop}}px; width: 4px; height: {{p.barH}}px; box-sizing: border-box; background: {{p.barFill}}; border: 1px {{p.barStyle}} {{p.barBorder}}"></div>
+        <button type="button" onClick="{{p.pick}}" aria-label="{{p.aria}}" style="position: absolute; left: {{p.dotLeft}}px; top: {{p.dotTop}}px; width: 22px; height: 22px; border-radius: 50%; box-sizing: border-box; padding: 0; cursor: pointer; background: {{p.dotBg}}; border: 2px {{p.barStyle}} {{p.dotBorder}}"></button>
+        <span style="position: absolute; top: 268px; left: {{p.x}}px; transform: translateX(-50%); font: 700 10.5px/1 'JetBrains Mono', monospace; white-space: nowrap; color: {{p.labelColor}}">{{p.label}}</span>
+      </sc-for>
+    </div>
+  </div>
+
+  <!-- Left page: the picked line -->
+  <div style="position: absolute; left: 22px; top: 456px; width: 396px; height: 282px; box-sizing: border-box; border: 1.5px {{s.borderStyle}} {{s.borderColor}}; padding: 16px 18px; display: flex; flex-direction: column; gap: 6px">
+    <span style="font: 700 10.5px/1 'JetBrains Mono', monospace; letter-spacing: .08em; color: #d7262d">PICK A LINE · TAP A DOT OR DRAG</span>
+    <span style="font: 400 24px/1.1 'Dela Gothic One', sans-serif">{{s.title}}</span>
+    <div style="display: flex; align-items: baseline; gap: 10px">
+      <span style="font: 700 40px/1 'JetBrains Mono', monospace; color: {{s.chanceColor}}">{{s.chance}}</span>
+      <span style="font: 500 12px/1.3 'JetBrains Mono', monospace; color: #565964">{{s.cents}}</span>
+    </div>
+    <span style="font-size: 13.5px; line-height: 1.4; color: {{s.noteColor}}">{{s.note}}</span>
+    <label style="display: block; margin-top: auto">
+      <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Line to bet on</span>
+      <input type="range" min="0" max="{{maxIdx}}" step="1" value="{{sel}}" onChange="{{onRange}}" style="width: 100%; margin: 0">
+    </label>
+  </div>
+
+  <!-- Right page: where it lands -->
+  <div style="position: absolute; left: 462px; top: 456px; width: 396px; height: 282px; box-sizing: border-box; border: 1.5px solid #111113; padding: 14px 18px; display: flex; flex-direction: column; gap: 7px">
+    <span style="font: 700 10.5px/1 'JetBrains Mono', monospace; letter-spacing: .08em; color: #d7262d">WHERE IT LANDS</span>
+    <sc-for list="{{buckets}}" as="b" hint-placeholder-count="5">
+      <div style="display: grid; grid-template-columns: minmax(0, 1fr) 64px 92px; align-items: center; gap: 10px">
+        <span style="font-size: 13px; font-weight: 700; line-height: 1.2; color: {{b.color}}">{{b.label}}</span>
+        <span style="font: 700 12px/1 'JetBrains Mono', monospace; text-align: right; color: {{b.color}}">{{b.range}}</span>
+        <span style="position: relative; display: block; height: 10px; border: 1px {{b.style}} {{b.border}}">
+          <span style="position: absolute; top: 0; bottom: 0; left: 0; width: {{b.lo}}%; background: #111113"></span>
+          <span style="position: absolute; top: 0; bottom: 0; left: {{b.lo}}%; width: {{b.span}}%; background: repeating-linear-gradient(45deg, {{b.hatch}} 0 2px, transparent 2px 5px)"></span>
+        </span>
+      </div>
+    </sc-for>
+    <span style="margin-top: auto; font-size: 11.5px; line-height: 1.4; color: #565964">Solid is what buyers already pay; the hatching runs to what sellers ask. Blue pencil means nobody really agrees yet. {{d.hidden}}</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":880,"height":760}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { set: 'anth', sel: 2 };
+  }
+  sets() {
+    return {
+      btc: {
+        tab: 'BTC TONIGHT', kicker: 'BITCOIN · TONIGHT 11:00 PM PT · 3 MARKETS',
+        heading: 'Where BTC lands tonight',
+        sub: "Hyperliquid's own three markets for 11 PM, read as one curve instead of three separate questions.",
+        d0: 78500, d1: 83000, now: 80530, nowLabel: '$80,530', unit: 'BTC',
+        hidden: "Hidden: skew's Oct 30 BTC ladder, which has no orders on any rung.",
+        strikes: [
+          { k: 79136, label: '$79,136', lo: 0.923, hi: 0.982, buy: 0.982 },
+          { k: 80751, label: '$80,751', lo: 0.35, hi: 0.371, buy: 0.371 },
+          { k: 82366, label: '$82,366', lo: 0, hi: 0.099, buy: 0.099, thin: true }
+        ],
+        buckets: [
+          { label: 'Under $79,136', lo: 2, hi: 8 },
+          { label: '$79,136 to $80,751', lo: 55, hi: 63 },
+          { label: '$80,751 to $82,366', lo: 25, hi: 37 },
+          { label: 'Over $82,366', lo: 0, hi: 10, thin: true }
+        ]
+      },
+      anth: {
+        tab: 'ANTHROPIC IPO', kicker: 'IPO · FIRST-DAY VALUE · LISTS BY JAN 1 · 5 MARKETS ON OUT',
+        heading: "Anthropic's first-day value",
+        sub: 'Five separate yes/no markets ("worth more than $X on day one") read as one curve. No listing by Jan 1 counts as No.',
+        d0: 1.25, d1: 2.75, now: null, unit: 'T',
+        hidden: "Hidden: trade.xyz's Dec 31 ladder, where 3 of 5 rungs have no orders.",
+        strikes: [
+          { k: 1.5, label: '$1.5T', lo: 0.61, hi: 0.889, buy: 0.889, thin: true },
+          { k: 1.75, label: '$1.75T', lo: 0.6302, hi: 0.6302, buy: 0.6302 },
+          { k: 2.0, label: '$2T', lo: 0.3748, hi: 0.3775, buy: 0.3775 },
+          { k: 2.25, label: '$2.25T', lo: 0.0039, hi: 0.2494, buy: 0.2494, thin: true },
+          { k: 2.5, label: '$2.5T', lo: 0.0706, hi: 0.0711, buy: 0.0711 }
+        ],
+        buckets: [
+          { label: 'No IPO, or under $1.5T', lo: 11, hi: 39, thin: true },
+          { label: '$1.5T to $1.75T', lo: 0, hi: 26, thin: true },
+          { label: '$1.75T to $2T', lo: 25, hi: 26 },
+          { label: '$2T to $2.25T', lo: 13, hi: 31, thin: true },
+          { label: '$2.25T to $2.5T', lo: 0, hi: 18, thin: true },
+          { label: 'Over $2.5T', lo: 7, hi: 7 }
+        ]
+      }
+    };
+  }
+  money(n) {
+    return '$' + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  }
+  pct(p) {
+    const v = p * 100;
+    return (v < 1 && v > 0 ? v.toFixed(1) : String(Math.round(v))) + '%';
+  }
+  renderVals() {
+    const all = this.sets();
+    const d = all[this.state.set];
+    const W = 740, H = 260;
+    const sel = Math.min(this.state.sel, d.strikes.length - 1);
+    const xOf = (k) => Math.round((k - d.d0) / (d.d1 - d.d0) * W);
+    const yOf = (p) => Math.round(H - p * H);
+    const pts = d.strikes.map((s, i) => {
+      const x = xOf(s.k), mid = (s.lo + s.hi) / 2;
+      const on = i === sel, thin = !!s.thin;
+      const top = yOf(s.hi), bottom = yOf(s.lo);
+      return {
+        x: x, label: s.label, mid: mid, yMid: yOf(mid),
+        barLeft: x - 2, barTop: top, barH: Math.max(4, bottom - top),
+        barFill: thin ? 'transparent' : '#111113', barStyle: thin ? 'dashed' : 'solid', barBorder: thin ? '#3d9be0' : '#111113',
+        dotLeft: x - 11, dotTop: yOf(mid) - 11,
+        dotBg: on ? (thin ? '#1f6fb0' : '#111113') : '#fdfdfb',
+        dotBorder: thin ? '#3d9be0' : '#111113',
+        labelColor: on ? '#d7262d' : (thin ? '#1f6fb0' : '#111113'),
+        aria: 'Above ' + s.label + ', about ' + this.pct(mid),
+        pick: () => this.setState({ sel: i })
+      };
+    });
+    const poly = pts.map((p) => p.x + ',' + p.yMid).join(' ');
+    const first = pts[0], last = pts[pts.length - 1];
+    const clip = 'polygon(' + first.x + 'px ' + H + 'px, ' + pts.map((p) => p.x + 'px ' + p.yMid + 'px').join(', ') + ', ' + last.x + 'px ' + H + 'px)';
+    const s = d.strikes[sel];
+    const thin = !!s.thin;
+    const mid = (s.lo + s.hi) / 2;
+    const offer = Math.round(mid * 100) / 100;
+    const sTitle = 'Above ' + s.label + (d.unit === 'BTC' ? ' at 11 PM' : ' on day one');
+    const sv = thin ? {
+      title: sTitle,
+      chance: this.pct(s.lo) + '–' + this.pct(s.hi),
+      cents: 'buyers ' + (s.lo * 100).toFixed(1) + '¢ · sellers ' + (s.hi * 100).toFixed(1) + '¢',
+      note: 'Still in pencil: no real price yet. Hunch would post an offer at ' + Math.round(offer * 100) + '¢ instead of paying ' + (s.hi * 100).toFixed(1) + '¢. $10 then pays ' + this.money(10 / offer) + '.',
+      chanceColor: '#1f6fb0', noteColor: '#1f6fb0', borderStyle: 'dashed', borderColor: '#3d9be0'
+    } : {
+      title: sTitle,
+      chance: this.pct(mid),
+      cents: (s.buy * 100).toFixed(1) + '¢ a share',
+      note: '$10 → ' + this.money(10 / s.buy) + ' if it lands ' + (d.unit === 'BTC' ? 'above ' : 'above ') + s.label + '. $0 if not.',
+      chanceColor: '#111113', noteColor: '#111113', borderStyle: 'solid', borderColor: '#111113'
+    };
+    const buckets = d.buckets.map((b) => ({
+      label: b.label,
+      range: b.lo === b.hi ? b.lo + '%' : b.lo + '–' + b.hi + '%',
+      lo: b.lo, span: Math.max(0, b.hi - b.lo),
+      color: b.thin ? '#1f6fb0' : '#111113',
+      style: b.thin ? 'dashed' : 'solid',
+      border: b.thin ? '#3d9be0' : '#111113',
+      hatch: b.thin ? '#3d9be0' : '#111113'
+    }));
+    const tabs = Object.keys(all).map((key) => ({
+      label: all[key].tab,
+      pressed: key === this.state.set ? 'true' : 'false',
+      bg: key === this.state.set ? '#111113' : '#fdfdfb',
+      fg: key === this.state.set ? '#fdfdfb' : '#111113',
+      pick: () => this.setState({ set: key, sel: key === 'btc' ? 1 : 2 })
+    }));
+    return {
+      d: {
+        kicker: d.kicker, heading: d.heading, sub: d.sub, hidden: d.hidden,
+        hasNow: d.now !== null, nowX: d.now !== null ? xOf(d.now) : 0, nowLabel: d.nowLabel || ''
+      },
+      tabs: tabs, pts: pts, poly: poly, clip: clip,
+      selX: pts[sel].x, sel: sel, maxIdx: d.strikes.length - 1,
+      s: sv, buckets: buckets,
+      onRange: (e) => this.setState({ sel: Number(e.target.value) })
+    };
+  }
+}
+</script>
+</body>
+</html>
