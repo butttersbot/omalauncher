@@ -63,7 +63,7 @@ internal object WalletReads {
     fun post(url:String,body:JSONObject):JSONObject {
         require(url in listOf("https://arb1.arbitrum.io/rpc","https://api.hyperliquid.xyz/info"))
         val c=URL(url).openConnection() as HttpURLConnection
-        try {c.requestMethod="POST";c.connectTimeout=8000;c.readTimeout=8000;c.doOutput=true;c.setRequestProperty("Content-Type","application/json")
+        try {c.requestMethod="POST";c.connectTimeout=8000;c.readTimeout=8000;c.doOutput=true;c.setRequestProperty("Content-Type","application/json");c.setRequestProperty("User-Agent","Hunch/0.5 Android")
             c.outputStream.use{it.write(body.toString().toByteArray())};check(c.responseCode==200)
             val bytes=c.inputStream.use{s->val out=java.io.ByteArrayOutputStream();val b=ByteArray(8192);while(true){val n=s.read(b);if(n<0)break;check(out.size()+n<=1_000_000);out.write(b,0,n)};out.toByteArray()}
             return JSONObject(String(bytes,Charsets.UTF_8))

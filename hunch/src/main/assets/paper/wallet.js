@@ -28,6 +28,7 @@ async function showWallet(data){
     const b=state.balances||{};
     for(const [label,key,unit]of [['Arbitrum USDC','arbitrumUsdc','USDC'],['Arbitrum gas','arbitrumEth','ETH'],['Hyperliquid spot total','hyperliquidTotal','USDC'],['Hyperliquid spot available','hyperliquidAvailable','USDC']]){const line=document.createElement('span');line.style.fontSize='13px';line.textContent=label+': '+(state.busy?'Checking…':b[key]===undefined?'Unavailable':b[key]+' '+unit);panel.append(line)}
     if(b.arbitrumError||b.hyperliquidError){const error=document.createElement('span');error.textContent='Some balances could not be checked. Refresh before relying on them.';panel.append(error)}
+    if(b.checked&&!state.busy){const checked=document.createElement('span');checked.style.fontSize='12px';checked.textContent='Last checked: '+new Date(b.checked).toLocaleTimeString()+'. Refresh for current balances.';panel.append(checked)}
     const note=document.createElement('span');note.style.cssText='font-size:12px;line-height:1.5;color:#565964';note.textContent='Arbitrum funds are not trading cash. Moving funds to Hyperliquid is a separate transaction. Test wallet setup before sending money.';panel.append(note);body.append(panel);
    }
    button('Refresh wallet and balances','check');const back=action('Back to markets',()=>sendNative({type:'close'}));body.append(back);
