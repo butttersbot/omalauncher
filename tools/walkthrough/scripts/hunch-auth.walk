@@ -10,7 +10,7 @@ shot hunch-auth-start
 # Invalid input never advances to OTP or account.
 tap Send email code
 expect Enter a valid email address
-tap Email address
+tap Sign-in email
 type demo@example.invalid
 tap Send email code
 expect Code sent to demo@example.invalid
