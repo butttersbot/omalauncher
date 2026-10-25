@@ -115,7 +115,7 @@ oma-phone apps | open PACKAGE_OR_settings | url [--app PACKAGE] URL
 oma-phone status | read | screenshot | back | home | recents | notifications | stay | stop
 oma-phone submit
 oma-phone run [--in PACKAGE | --any] [SCRIPT_FILE | -]
-oma-phone screen [--until TEXT | --since SNAPSHOT]
+oma-phone screen [--until TEXT | --since SNAPSHOT [--delta]]
 oma-phone expect TEXT
 oma-phone press [--in PACKAGE | --any] LABEL
 oma-phone fill [--in PACKAGE | --any] LABEL TEXT
@@ -164,7 +164,10 @@ Read after each action. Use screenshot's path with your agent's image tool.
 screen is read cut down to what you act on: the app in front and each control that says something,
 with whether it takes a press, text or a scroll. --until TEXT waits up to 5 seconds for TEXT to show.
 --since SNAPSHOT answers {"unchanged":true} when nothing on the screen changed since that snapshot was read, so a
-second look costs nothing; otherwise the whole screen as usual.
+second look costs nothing; otherwise the whole screen as usual. With --delta as well, a changed screen comes back as
+only what changed since that snapshot: changed (controls new or different, in full), gone (ids no longer there)
+and same (how many stayed as they were); the whole screen still when that snapshot is not the last one this
+display answered.
 press finds the one control that says LABEL (its whole label first, then part of it), presses it and
 answers with the screen that follows: one call per step, no numbers read off a picture. A LABEL that is
 not on the screen is scrolled to first, a few pages down and then up; scrolled says how many. fill does the
@@ -216,10 +219,11 @@ expect)
   expect=1
   request=$(jq -cn --arg until "$*" '{command:"screen",until:$until}');;
 screen)
-  until=''; since=''
+  until=''; since=''; delta=false
   if [ "${1:-}" = '--until' ]; then until=${2:?Text required: --until TEXT}; shift 2; fi
   if [ "${1:-}" = '--since' ]; then since=${2:?Snapshot required: --since SNAPSHOT}; shift 2; fi
-  request=$(jq -cn --arg until "$until" --arg since "$since" '{command:"screen"} + (if $until=="" then {} else {until:$until} end) + (if $since=="" then {} else {since:$since} end)');;
+  if [ "${1:-}" = '--delta' ]; then delta=true; shift; fi
+  request=$(jq -cn --arg until "$until" --arg since "$since" --argjson delta "$delta" '{command:"screen"} + (if $until=="" then {} else {until:$until} end) + (if $since=="" then {} else {since:$since} end) + (if $delta then {delta:true} else {} end)');;
 press|fill)
   [ "$#" -ge 1 ] || { echo 'Label required' >&2; exit 2; }
   label=$1; shift

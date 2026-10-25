@@ -89,4 +89,19 @@ class PhoneSpeedTest {
         assertNull(PhoneFind.quick(emptyList(), "Send"))
         assertNull(PhoneFind.quick(listOf(n("")), " "))
     }
+
+    @Test fun aDeltaIsOnlyWhatChangedSinceTheReadersScreen() {
+        fun c(id: String, says: String, can: String = "press") = org.json.JSONObject().put("id", id).put("says", says).put("can", org.json.JSONArray(listOf(can)))
+        fun brief(snapshot: String, pkg: String, vararg controls: org.json.JSONObject) =
+            org.json.JSONObject().put("ok", true).put("snapshot", snapshot).put("package", pkg).put("controls", org.json.JSONArray(controls.toList()))
+        val before = brief("s1", "app", c("root.0", "Title"), c("root.1", "Off"), c("root.2", "Gone soon"))
+        val now = brief("s2", "app", c("root.0", "Title"), c("root.1", "On"), c("root.3", "New"))
+        val d = PhoneScreen.delta(before, now)!!
+        assertEquals("s2", d.getString("snapshot")); assertEquals("s1", d.getString("since"))
+        assertEquals(listOf("root.1", "root.3"), (0 until d.getJSONArray("changed").length()).map { d.getJSONArray("changed").getJSONObject(it).getString("id") })
+        assertEquals(listOf("root.2"), (0 until d.getJSONArray("gone").length()).map { d.getJSONArray("gone").getString(it) })
+        assertEquals(1, d.getInt("same"))
+        // Another app in front: the whole screen, not a delta.
+        assertNull(PhoneScreen.delta(before, brief("s3", "other", c("root.0", "Title"))))
+    }
 }

@@ -99,6 +99,14 @@ class PhoneSpeedInstrumentation : Instrumentation() {
             check(quickTiming.getInt("quickFinds") == 1 && quickTiming.getInt("reads") == 1) { "The label query read the whole screen first: $quickTiming" }
             call(JSONObject().put("command", "back"))
             Log.i("SomaWalk", "speed PASS: a press by label found its control without a whole read")
+            // Stage 3 deltas: a second look after the screen changed, in the same app, is only what changed.
+            call(JSONObject().put("command", "open").put("package", "settings:display").put("until", "Display"))
+            val first = call(JSONObject().put("command", "screen"))
+            call(JSONObject().put("command", "open").put("package", "settings:sound").put("until", "Sound"))
+            val delta = call(JSONObject().put("command", "screen").put("since", first.getString("snapshot")).put("delta", true))
+            check(delta.has("changed") && delta.has("gone") && !delta.has("controls")) { "Expected a delta: $delta" }
+            Log.i("SomaWalk", "speed METRIC delta changed=" + delta.getJSONArray("changed").length() + " gone=" + delta.getJSONArray("gone").length() + " same=" + delta.getInt("same"))
+            Log.i("SomaWalk", "speed PASS: a changed screen came back as only what changed")
             finish(Activity.RESULT_OK, Bundle().apply { putString("stream", "Phone service speed primitives PASS\n") })
         } catch (problem: Throwable) {
             Log.e("SomaWalk", "speed FAIL", problem)

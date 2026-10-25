@@ -177,6 +177,33 @@ object PhoneScreen {
     }
 
     /**
+     * Stage 3 of the speed plan, deltas: [now] (a [brief]) told as what changed since [before] (the brief the reader
+     * has): the controls that are new or differ, in full; the ids no longer there; how many stayed the same. Null
+     * when [before] is not a brief of the same app, which the reader is then given whole.
+     */
+    fun delta(before: JSONObject, now: JSONObject): JSONObject? {
+        if (before.optString("package") != now.optString("package")) return null
+        fun byId(brief: JSONObject): Map<String, String> {
+            val list = brief.optJSONArray("controls") ?: return emptyMap()
+            return (0 until list.length()).map { list.getJSONObject(it) }.associate { it.getString("id") to it.toString() }
+        }
+        val old = byId(before)
+        val list = now.optJSONArray("controls") ?: JSONArray()
+        val changed = JSONArray()
+        var same = 0
+        val ids = HashSet<String>()
+        for (i in 0 until list.length()) {
+            val control = list.getJSONObject(i)
+            val id = control.getString("id")
+            ids += id
+            if (old[id] == control.toString()) same++ else changed.put(control)
+        }
+        val gone = JSONArray(old.keys.filter { it !in ids })
+        return JSONObject().put("ok", true).put("snapshot", now.optString("snapshot")).put("package", now.optString("package"))
+            .put("since", before.optString("snapshot")).put("changed", changed).put("gone", gone).put("same", same)
+    }
+
+    /**
      * What a press or fill answers once it is done: the screen it led to, and for a fill ([text] not null), not ok
      * unless the field holds the text, with the snapshot to type into it by id.
      */

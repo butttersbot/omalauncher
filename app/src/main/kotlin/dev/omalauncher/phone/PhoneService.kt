@@ -36,6 +36,8 @@ class PhoneService : AccessibilityService() {
         var opened: String? = null
         /** When [snapshot] was read, by the same clock as [lastChange]. */
         var readAt: Long? = null
+        /** The last screen `screen` answered on this display, for `--delta`. */
+        var lastBrief: JSONObject? = null
     }
     private val displayStates = mutableMapOf(0 to DisplayState())
     private var displayId = 0
@@ -842,7 +844,12 @@ class PhoneService : AccessibilityService() {
                             val shows = inFront && (until.isEmpty() || PhoneScreen.says(seen, until))
                             if (!shows && SystemClock.uptimeMillis() < deadline) { main.postDelayed({ look() }, PhoneTouch.UNTIL_STEP_MILLIS); return }
                             PhoneScreen.requireFront(seen, expectedPackage)
-                            reply(PhoneScreen.brief(seen).also { if (until.isNotEmpty()) it.put("shows", shows) })
+                            val brief = PhoneScreen.brief(seen).also { if (until.isNotEmpty()) it.put("shows", shows) }
+                            val before = displayState.lastBrief
+                            displayState.lastBrief = brief
+                            // Only what changed, when asked and the reader has the screen it names.
+                            val delta = if (input.optBoolean("delta") && before != null && since.isNotEmpty() && before.optString("snapshot") == since) PhoneScreen.delta(before, brief) else null
+                            reply(delta?.also { if (until.isNotEmpty()) it.put("shows", shows) } ?: brief)
                         } catch (e: Exception) { reply(JSONObject().put("ok", false).put("error", e.message ?: "Phone control failed")) }
                     }
                     settled { look() }
@@ -857,7 +864,7 @@ class PhoneService : AccessibilityService() {
                             try {
                                 requireThisRequest()
                                 reply(PhoneScreen.after(read(), command, done.optString("id", id), if (command == "fill") input.getString("text") else null)
-                                    .also { if (scrolled > 0) it.put("scrolled", scrolled) })
+                                    .also { if (scrolled > 0) it.put("scrolled", scrolled) }.also { displayState.lastBrief = it })
                             } catch (e: Exception) { reply(JSONObject().put("ok", false).put("error", e.message ?: "Phone control failed")) }
                         }
                     }

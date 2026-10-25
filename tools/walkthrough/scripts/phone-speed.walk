@@ -13,6 +13,7 @@ log speed PASS: package alone cannot satisfy an open destination assertion
 log speed PASS: unsupported destination refuses without changing screen
 log speed PASS: actual absent-label search bounded
 log speed PASS: a press by label found its control without a whole read
+log speed PASS: a changed screen came back as only what changed
 nolog speed FAIL
 shell am instrument -w --no-restart dev.omalauncher.artifactpreview/.PhonePlanInstrumentation
 log plan PASS: native sequence verifies final screen and duplicate id does not replay

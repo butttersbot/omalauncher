@@ -211,3 +211,9 @@ is the screen it led to. Anything else (no match, several, parts of words, a web
 Timing reports quickFinds. Unit test aLabelQueryPressesOnlyWhenExactlyOneControlSaysItWhole; on-device check in
 PhoneSpeedInstrumentation ("a press by label found its control without a whole read"). Still open in stage 3:
 subtree-filtered events, compact ids/deltas, visual fallback.
+
+Stage 3 part 3 (2026-10-25, Phone A): deltas. `screen --since SNAPSHOT --delta`, when the screen changed but the same
+app is in front and SNAPSHOT is the last screen this display answered (a screen, press or fill), answers only
+changed (new or different controls, whole), gone (ids) and same (a count). Otherwise the whole screen, as before.
+Unit test aDeltaIsOnlyWhatChangedSinceTheReadersScreen; on-device check "a changed screen came back as only what
+changed". Still open: subtree-filtered events, visual fallback.
