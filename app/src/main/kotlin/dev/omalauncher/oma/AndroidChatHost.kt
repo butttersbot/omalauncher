@@ -80,6 +80,10 @@ class AndroidChatHost(
 
     override fun readArtifact(thread: String, path: String) = MacThreads.artifact(context, thread, path)
 
+    override fun liveArtifacts(): List<ArtifactLive> = MacThreads.liveArtifacts()
+
+    override fun artifactVersions(thread: String, name: String) = MacThreads.artifactVersions(context, thread, name)
+
     override fun macEarlier(threadId: String): MacEarlierRead = MacThreads.earlier(context, threadId)
 
     override fun hosts(): List<HostChoice> = MacThreads.hosts(context).map { seen ->

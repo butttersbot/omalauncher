@@ -356,6 +356,11 @@ fun macApply(tasks: List<ChatTask>, threadId: String, event: MacEvent, inFlight:
             }
         }
         is MacEvent.Error -> running { it.over(TaskStatus.Failed, withReason(it.result, event.text).ifEmpty { MAC_NO_ANSWER }) }
+        // An artifact the agent made or is editing is a step of the entry whose turn it is, which is what the card under the
+        // reply is made from (SomaArtifacts.kt); made between his messages, it is a quiet line under the newest entry.
+        is MacEvent.Artifact -> if (current != null) running {
+            it.copy(steps = dev.omalauncher.oma.withArtifactStep(it.steps, event.name, event.version, event.state, event.settled).takeLast(ChatHistory.MAX_STEPS))
+        } else dev.omalauncher.oma.artifactStep(event.name, event.version, event.state, event.settled)?.takeIf { event.state == "ready" }?.let { between(ChatLater(it)) } ?: tasks
         is MacEvent.Status, is MacEvent.Other -> tasks
     }
 }
