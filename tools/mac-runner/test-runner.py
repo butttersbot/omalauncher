@@ -505,6 +505,9 @@ try:
     check('artifacts: a command that names an artifact\'s file shows it as being edited, then its new version',
           [(e['version'], e['state']) for e in events if e['type'] == 'artifact'] == [(4, 'editing'), (4, 'ready')])
 
+    check('artifacts: the store is out of reach of the agents\' own file tools (soma-artifact is the way in)',
+          any(str(work / 'artifacts') in rule for rule in given['deny']))
+
     # The helper's socket: only this user, only with the thread's own token, only names and sizes an artifact may have.
     sock = work / 'state' / 'artifacts.sock'
     if len(str(sock).encode()) >= 100:
@@ -521,6 +524,11 @@ try:
     check('artifacts: stdin with --name works', ran.returncode == 0 and 'notes.md v1' in ran.stdout)
     listed_names = helper('list')
     check('artifacts: `soma-artifact list` shows them', listed_names.returncode == 0 and all(n in listed_names.stdout for n in ('mock.html', 'chart.svg', 'notes.md')))
+    got = helper('get', 'mock.html', '--version', '1')
+    newest = helper('get', 'notes.md')
+    check('artifacts: `soma-artifact get` prints a version, the newest by default, and refuses one that is not there',
+          got.returncode == 0 and 'make a mockup please' in got.stdout and newest.stdout == '# hi\n'
+          and helper('get', 'mock.html', '--version', '99').returncode != 0 and helper('get', '../x.html').returncode != 0)
     bad_token = helper('list', env={**agent_env, 'SOMA_ARTIFACT_TOKEN': 'f' * 64})
     other_thread = helper('list', env={**agent_env, 'SOMA_THREAD': 'tdeadbeef'})
     check('artifacts: a wrong token, or this token for another thread, is refused', bad_token.returncode != 0 and 'not accepted' in bad_token.stderr
