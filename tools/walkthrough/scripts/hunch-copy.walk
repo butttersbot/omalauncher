@@ -26,4 +26,13 @@ expect STEP 1 OF 3
 expect Privy makes a wallet just for Hunch
 absent NEETbux
 shot hunch-copy-flow
+# Actual wallet UI copy; fictional wallet only, no real account or funds.
+shell am force-stop dev.omalauncher.hunch
+shell am start -n dev.omalauncher.hunch/.MainActivity --es walletFixture demo
+wait 6000
+expect Create Hunch wallet
+tap Create Hunch wallet
+expect Your Hunch wallet is ready
+absent NEETbux
+shot hunch-copy-wallet
 [phone] After installing0.5.1, owner reopens existing wallet; intro says Your Hunch wallet is ready, no old treasury-brand reference. Wallet/address stay unchanged. Do not create another wallet or send funds.
