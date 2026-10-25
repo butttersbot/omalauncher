@@ -287,13 +287,14 @@ ARTIFACT_NOTE = ('Soma (the app Boss is using) shows artifacts beside the chat. 
                  'so no CDN scripts, web fonts or network calls) and run `soma-artifact put FILE --title "Short title" --note '
                  '"what this version is"`. Every change is a new put of the same file name, which becomes its next version. '
                  'Before you start changing one, run `soma-artifact editing NAME` so Boss sees you are on it. '
-                 '`soma-artifact list` shows what this conversation has.')
+                 '`soma-artifact list` shows what this conversation has; `soma-artifact get NAME --version N` prints an older version.')
 
 SOMA_ARTIFACT_HELPER = r'''#!/usr/bin/env python3
 """soma-artifact: shows a file beside this conversation in Soma, as an artifact Boss can look at and use.
 
   soma-artifact put FILE [--name NAME] [--title TITLE] [--note WHAT]   a new version (FILE "-" reads stdin; then --name)
-  soma-artifact editing NAME [--note WHAT]                            "working on it", before a long edit
+  soma-artifact editing NAME [--note WHAT]                            "working on it", before you change one
+  soma-artifact get NAME [--version N]                                a version's file on stdout (the newest by default)
   soma-artifact list                                                  this conversation's artifacts
 
 One self-contained file per artifact (HTML with its CSS and JS inline: it is shown offline). Each put of the same name
@@ -388,6 +389,12 @@ elif verb == 'editing':
         fail('editing takes one NAME\n' + HELP_LINES)
     answer = ask({'op': 'editing', 'name': rest[0], 'note': given.get('note', '')})
     print('Soma shows %s as being edited (v%d next) until you put it.' % (answer['name'], answer['version']))
+elif verb == 'get':
+    given, rest = options(words, ('--version',))
+    if len(rest) != 1 or (given.get('version') is not None and not given['version'].isdigit()):
+        fail('get takes one NAME and an optional --version N\n' + HELP_LINES)
+    answer = ask({'op': 'get', 'name': rest[0], 'version': int(given['version']) if given.get('version') else None})
+    sys.stdout.buffer.write(base64.b64decode(answer['data']))
 elif verb == 'list':
     options(words, ())
     answer = ask({'op': 'list'})
@@ -712,6 +719,12 @@ def artifact_answer(request):
     op = request.get('op')
     if op == 'list':
         return {'ok': True, 'artifacts': artifact_list(thread_id)}
+    if op == 'get':
+        version = request.get('version')
+        if version is not None and (not isinstance(version, int) or isinstance(version, bool) or version < 1):
+            return {'ok': False, 'error': 'a version is a number from 1'}
+        code, said = artifact_read(thread_id, request.get('name') if isinstance(request.get('name'), str) else '', version)
+        return said if code == 200 else {'ok': False, 'error': said.get('error') or 'no such artifact'}
     if op == 'put':
         try:
             data = base64.b64decode(str(request.get('data') or ''), validate=True)
@@ -734,8 +747,9 @@ def serve_artifacts():
     import socketserver
     path = artifact_socket_path()
     artifact_key()
+    # Whatever was left where the socket goes (an old socket, a stray file or link) is taken away; a folder is not.
     with contextlib.suppress(FileNotFoundError):
-        if stat.S_ISSOCK(os.lstat(path).st_mode):
+        if not stat.S_ISDIR(os.lstat(path).st_mode):
             path.unlink()
 
     class Asked(socketserver.StreamRequestHandler):
@@ -810,7 +824,7 @@ def step(block):
 def outside_reach():
     """Paths no agent may read or write: the keys' digests, the keys this machine's own Soma holds, and the runner's own
     records."""
-    return [str(TOKEN_FILE), str(KEYS_FILE), str(SOMA_RUNNERS) + '/**', str(STATE) + '/**', str(VENICE_CONFIG)]
+    return [str(TOKEN_FILE), str(KEYS_FILE), str(SOMA_RUNNERS) + '/**', str(STATE) + '/**', str(VENICE_CONFIG), str(ARTIFACT_STORE) + '/**']
 
 
 def mode(meta):
@@ -3680,7 +3694,10 @@ def serve():
     if SOMA_SERVICE:
         write_soma_helper()
     write_artifact_helper()
-    serve_artifacts()
+    try:
+        serve_artifacts()
+    except OSError as problem:  # the runner serves its threads without artifacts rather than not at all
+        log('soma-artifact cannot be served at %s: %s' % (artifact_socket_path(), problem))
     # A test may ask for this machine's own loopback; anything else is the tailnet address or nothing.
     address = '127.0.0.1' if os.environ.get('OMA_RUNNER_BIND') == '127.0.0.1' else None
     while address is None:
