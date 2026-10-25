@@ -1,9 +1,10 @@
 # Fictional authenticated wallet; no Privy account, transfer, signing or order.
 fold folded
 rotate portrait
+wait 4000
 shell am force-stop dev.omalauncher.hunch
 shell am start -n dev.omalauncher.hunch/.MainActivity --es walletFixture demo
-wait 3000
+wait 6000
 expect FICTIONAL WALLET DEMO
 expect Create your wallet
 expect No wallet address yet
@@ -11,6 +12,8 @@ shot hunch-wallet-before
 scrollto Create Hunch wallet
 tap Create Hunch wallet
 expect Wallet ready
+expect Your Hunch wallet is ready
+absent NEETbux
 expect 0x1111111111111111111111111111111111111111
 scrollto Your verified balances
 expect Arbitrum USDC: 12.50 USDC
@@ -24,10 +27,12 @@ tap Copy wallet address
 expect Wallet address copied
 shot hunch-wallet-copy
 rotate landscape
+wait 4000
 scrollto Copy wallet address
 expect Copy wallet address
 shot hunch-wallet-landscape
 rotate portrait
+wait 4000
 scrollto Copy wallet address
 expect Copy wallet address
 scrollto Back to markets

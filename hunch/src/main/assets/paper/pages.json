@@ -39,7 +39,7 @@
     "name": "Flow",
     "width": 860,
     "height": 900,
-    "sha256": "28eccc427feb281ef83b029face72257ab91646f67f220f2192330e40e718d2b"
+    "sha256": "f68e3e8289552d0c022f391d40304e95612ee505850ac626427bba025ff88613"
   },
   {
     "name": "Home",
@@ -57,7 +57,7 @@
     "name": "Money",
     "width": 880,
     "height": 760,
-    "sha256": "361b1afa273cf6267f71ec58632c7a03922193947257e9e232fc56c271c4f697"
+    "sha256": "dd9b852bc938c5bf48150e17adbc3898dc6e259e907d90bc80a55ce79a91583a"
   },
   {
     "name": "Nav",
@@ -81,7 +81,7 @@
     "name": "Setup",
     "width": 390,
     "height": 844,
-    "sha256": "5fe22bdf34eee2639d2bfe95371c40923925ecb351e792ba402c3dd389bbc1be"
+    "sha256": "30df244ba687774341d7d9b5234cea7486e6018a3b7b734b9cf4b9f158373e93"
   },
   {
     "name": "TodayFeed",

@@ -45,5 +45,5 @@ w.innerWidth=880;w.Hunch.chapter='bets';w.Hunch.selected=null;await w.showLive()
 const betsArt=Array.from(w.document.querySelector('#scene').children).find(x=>x.style.left==='462px'&&x.style.top==='22px');
 assert.equal(betsArt.children[0].textContent,'NO BET SELECTED');assert.equal(betsArt.children[1].style.bottom,'0px');
 assert.equal(w.document.querySelector('#scene').querySelector('button:disabled').textContent,'CASH OUT —');
-assert.deepEqual(errors,[]);console.log('PASS: all 15 original hashes and templates; six live layouts; cover and unfolded detail; account transitions. Visual review still required.');
+assert.deepEqual(errors,[]);console.log('PASS: all 15 manifest hashes and templates; six live layouts; cover and unfolded detail; account transitions. Visual review still required.');
 await w.happyDOM.abort();
