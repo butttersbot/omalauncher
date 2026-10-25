@@ -81,7 +81,7 @@ class AccountActivity:Activity() {
         }else{
             add(label("Signed in",22f))
             add(label(user.email?.let{"Recovery email: $it"} ?: "No recovery email is linked. Use your email login before adding a passkey.",15f))
-            add(label(if(user.passkey)"Passkey added" else "Add a passkey",21f))
+            add(label(if(user.passkey)"Passkey added" else "Secure your sign-in",21f))
             add(label("Your email login stays available for recovery.",14f))
             if(!user.passkey&&user.email!=null)button("Add a passkey"){
                 run("Waiting for you to create a passkey…","Passkey was not added. Your email login is still available."){account=access.addPasskey(this);message=if(account?.passkey==true)"Passkey added. Email recovery is still available." else "Passkey status has not updated. Check sign-in again."}

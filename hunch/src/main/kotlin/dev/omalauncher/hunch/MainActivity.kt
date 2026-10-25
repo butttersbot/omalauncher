@@ -40,7 +40,7 @@ class MainActivity : Activity() {
         if(android.os.Build.VERSION.SDK_INT>=33)onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT){goBack()}
         val restored=state?.getString("market")?.let { runCatching { Market.parse(JSONObject(it)).single() }.getOrNull() }
         if(restored==null)home() else market(restored,listOf(restored))
-        if(BuildConfig.DEBUG&&intent.getStringExtra("authFixture")=="demo")openAccount(true)
+        if(BuildConfig.DEBUG&&intent.getStringExtra("authFixture")=="demo"){intent.removeExtra("authFixture");openAccount(true)}
     }
     override fun onSaveInstanceState(out:Bundle){
         out.putString("query",query);out.putString("chapter",chapter);out.putString("category",category);out.putInt("side",side);out.putInt("budget",budget)
