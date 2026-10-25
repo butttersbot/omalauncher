@@ -190,7 +190,9 @@ def run_step(serial, op, args, out, n):
         shot(serial, path)
         if op == "shot":
             return None, "look at it", path
-        found = find(serial, words, wait_ms=4000 if op == "expect" else 800) is not None
+        # 8 s: a WebView still loading pictures can leave uiautomator dumps without its words for a few seconds (the
+        # news walk, 149 to 156: "Top stories" on screen, missing from the dump).
+        found = find(serial, words, wait_ms=8000 if op == "expect" else 800) is not None
         ok = found if op == "expect" else not found
         return ok, "" if ok else (f"“{words}” not on screen" if op == "expect" else f"“{words}” still on screen"), path
     return False, f"unknown step “{op}”", None
