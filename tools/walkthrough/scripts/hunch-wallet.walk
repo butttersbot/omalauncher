@@ -24,10 +24,12 @@ tap Copy wallet address
 expect Wallet address copied
 shot hunch-wallet-copy
 rotate landscape
-expect Your wallet
+scrollto Copy wallet address
+expect Copy wallet address
 shot hunch-wallet-landscape
 rotate portrait
-expect Your wallet
+scrollto Copy wallet address
+expect Copy wallet address
 scrollto Back to markets
 tap Back to markets
 expect PUBLIC MARKETS
