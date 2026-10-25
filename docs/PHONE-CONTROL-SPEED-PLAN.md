@@ -217,3 +217,7 @@ app is in front and SNAPSHOT is the last screen this display answered (a screen,
 changed (new or different controls, whole), gone (ids) and same (a count). Otherwise the whole screen, as before.
 Unit test aDeltaIsOnlyWhatChangedSinceTheReadersScreen; on-device check "a changed screen came back as only what
 changed". Still open: subtree-filtered events, visual fallback.
+
+Stage 3 part 4 (2026-10-25, Phone A): subtree-filtered events. System UI's own redraws (clock, battery, icons) no
+longer count as the screen changing, so waits do not read again for them; its windows coming or going still do.
+PhoneWait.counts, unit test. Still open: visual fallback; then the matched benchmarks on the phone.

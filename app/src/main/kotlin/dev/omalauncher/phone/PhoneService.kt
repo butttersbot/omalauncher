@@ -150,7 +150,7 @@ class PhoneService : AccessibilityService() {
             val all = windowsOnAllDisplays
             (0 until all.size()).firstOrNull { n -> all.valueAt(n).any { it.id == event.windowId } }?.let { all.keyAt(it) }
         } else 0
-        eventDisplay?.let { displayStates.getOrPut(it) { DisplayState() }.lastChange = SystemClock.uptimeMillis() }
+        if (PhoneWait.counts(event.packageName?.toString(), event.eventType)) eventDisplay?.let { displayStates.getOrPut(it) { DisplayState() }.lastChange = SystemClock.uptimeMillis() }
         if (eventDisplay != null && eventDisplay != 0) return
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             val pkg = event.packageName?.toString()

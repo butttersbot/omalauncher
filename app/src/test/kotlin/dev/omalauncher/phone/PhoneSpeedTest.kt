@@ -104,4 +104,13 @@ class PhoneSpeedTest {
         // Another app in front: the whole screen, not a delta.
         assertNull(PhoneScreen.delta(before, brief("s3", "other", c("root.0", "Title"))))
     }
+
+    @Test fun systemUisOwnRedrawsDoNotCountAsTheScreenChanging() {
+        val content = android.view.accessibility.AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+        val state = android.view.accessibility.AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+        assertFalse(PhoneWait.counts("com.android.systemui", content))
+        assertTrue(PhoneWait.counts("com.android.systemui", state))
+        assertTrue(PhoneWait.counts("com.android.settings", content))
+        assertTrue(PhoneWait.counts(null, content))
+    }
 }

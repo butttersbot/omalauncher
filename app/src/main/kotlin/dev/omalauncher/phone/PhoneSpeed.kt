@@ -57,6 +57,18 @@ object PhoneSettings {
  * answered "unchanged" instead of the whole screen again.
  */
 object PhoneWait {
+    /** The status bar, navigation and shade: the clock and battery there change all the time, and are not what is read. */
+    const val SYSTEM_UI = "com.android.systemui"
+
+    /**
+     * Whether an accessibility event of [type] from [pkg] says the screen being read may have changed (stage 3,
+     * subtree-filtered events): System UI's own redraws (its clock ticking, the battery, a notification icon) do not,
+     * so waits don't read again for them; a window of its coming or going (the shade, a dialog) still does.
+     */
+    fun counts(pkg: String?, type: Int): Boolean =
+        pkg != SYSTEM_UI || type == android.view.accessibility.AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
+            type == android.view.accessibility.AccessibilityEvent.TYPE_WINDOWS_CHANGED
+
     const val FALLBACK_MILLIS = 400L
 
     fun readAgain(now: Long, lastRead: Long?, lastChange: Long?): Boolean =
