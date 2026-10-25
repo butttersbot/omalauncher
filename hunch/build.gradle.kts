@@ -10,7 +10,7 @@ android {
         buildConfigField("String", "PRIVY_RP", groovy.json.JsonOutput.toJson(publicPrivy["relyingParty"]))
     }
     buildFeatures { buildConfig = true }
-    defaultConfig { applicationId = "dev.omalauncher.hunch"; minSdk = 29; targetSdk = 37; versionCode = 6; versionName = "0.3.1" }
+    defaultConfig { applicationId = "dev.omalauncher.hunch"; minSdk = 29; targetSdk = 37; versionCode = 7; versionName = "0.3.2" }
 }
 dependencies {
     implementation("io.privy:privy-core:0.17.0")

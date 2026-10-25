@@ -45,25 +45,35 @@ treasury's wallet inventory must never be reused. Real money actions require
 separate explicit authorization and fresh provider/region verification.
 
 
-## Passkey setup pending
+## Account access slice
 
-Sign-in is not yet implemented. Native Android passkeys require an owner-controlled
-HTTPS relying-party domain serving `/.well-known/assetlinks.json`, associated with
-`dev.omalauncher.hunch` and the certificate signing the installed app. Register the
-Android key hash in Hunch's Privy settings and enable passkey authentication there.
-Do not change treasury authentication or policies.
+Privy Android SDK 0.17.0 is pinned. Money → Sign in to Hunch opens a separate
+account screen. Email OTP creates/signs into the account first. An authenticated
+user with a recovery email can link a passkey; returning users can log in with a
+passkey or email. There is no passkey-only signup or email-removal action.
+SDK credentials stay SDK-managed; codes are not logged, saved to instance state,
+or included in app notes. The live account screen uses FLAG_SECURE. No wallet
+creation, signatures, deposits, withdrawals or orders are implemented.
 
-The already-tested vc4 APK is signed with an Android Debug certificate (public
-SHA256 `099e8e5897e126eec2c9ca5ef45ea4a1749895945ec2ccb9f1997e932bad6d3c`).
-This is an observation about that artifact, not a chosen permanent signing identity.
-Verify the intended stable signer before generating the final association file;
-never extract a private key or publish a placeholder domain.
+Relying-party origin: `https://hunch.neetware.io`. The HTTPS asset association was
+independently read from the Fold and matches `dev.omalauncher.hunch` and the phone
+signer SHA256 `85a7a713578814a4b779ce4fa7d0ed13aa48a81b61cc8e91b139f32dad576a18`.
+Account setup must use an APK signed with that key. The earlier vc4 artifact has
+the Mac's debug signature and is unsuitable for this association. Private keys
+remain on the phone. The manifest includes Credential Manager asset statements.
 
-Once domain/association is ready, use Privy's Android SDK passkey `signup` for
-first registration and `login` for returning users, passing the current Activity
-for Credential Manager prompts. The owner completes passkey creation/biometrics.
-Verify cancellation, failed login, restart and returning-user login on the Fold.
-No money movement or order submission is authorized by enabling sign-in.
+`hunch-auth.walk` uses a debug-only fictional adapter (no SDK/network or actual
+credentials) to cover email validation, bad code, correct code, retained OTP step
+on rotation, linked recovery email, passkey addition, sign-out, cancelled passkey
+login and cover/inner layouts. The sample `123456` is fictional only. Main's
+`authFixture=demo` extra opens the non-exported account Activity in fixture mode;
+release builds ignore it. No real code is sent by a walk.
+
+The [phone] step requires Boss's own email-code/passkey interaction after promotion.
+Live domain, Privy settings, persistence and real Credential Manager success are
+not established by a fictional walk. Do not claim account access ready until
+these have been tested. Run both `hunch.walk` and `hunch-auth.walk` on the emulator.
 
 Official setup: https://docs.privy.io/basics/android/advanced/setup-passkeys
 API: https://docs.privy.io/authentication/user-authentication/login-methods/passkey
+Android association: https://developer.android.com/identity/credential-manager/prerequisites
