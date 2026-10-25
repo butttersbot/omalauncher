@@ -342,6 +342,45 @@ object MacLink {
         }
     }
 
+    /**
+     * A voice message recorded here, [caf] (Opus in CAF, as an iPhone records them), to [chat]: sent as "Audio
+     * Message.caf" with voiceNote=1, so the Mac sends it as a voice message an iPhone plays in the conversation rather
+     * than as a file (Boss, 2026-10-24). A Mac that doesn't know voiceNote yet sends it as an audio file.
+     */
+    fun sendVoice(
+        chat: String,
+        caf: java.io.File,
+        clientId: String,
+        onFail: (String) -> Unit,
+    ) {
+        val at = address ?: return onFail("Not linked to a Mac.")
+        sends.execute {
+            runCatching {
+                val boundary = "soma" + System.nanoTime()
+                val c = open(at, "/v1/chats/${path(chat)}/attachments", "POST", timeout = 120_000)
+                try {
+                    c.doOutput = true
+                    c.setChunkedStreamingMode(64 * 1024)
+                    c.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+                    c.outputStream.buffered().use { out ->
+                        out.write("--$boundary\r\nContent-Disposition: form-data; name=\"clientId\"\r\n\r\n$clientId\r\n".toByteArray())
+                        out.write("--$boundary\r\nContent-Disposition: form-data; name=\"voiceNote\"\r\n\r\n1\r\n".toByteArray())
+                        out.write("--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"Audio Message.caf\"\r\nContent-Type: audio/x-caf\r\n\r\n".toByteArray())
+                        caf.inputStream().use { it.copyTo(out) }
+                        out.write("\r\n--$boundary--\r\n".toByteArray())
+                    }
+                    if (c.responseCode !in 200..299) throw IllegalStateException(error(c))
+                    answer(c)
+                } finally {
+                    c.disconnect()
+                }
+            }.onFailure {
+                Log.w(TAG, "sending a voice message", it)
+                onFail(reason(at, it))
+            }
+        }
+    }
+
     /** Why a send failed, in words: the Mac's own, and that it is locked when it is (what Messages can't do then). */
     private fun reason(
         at: MacAddress,

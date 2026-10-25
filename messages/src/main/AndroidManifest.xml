@@ -6,6 +6,8 @@
 
     <!-- Linked to the Mac, chats come with numbers and emails only: names come from the phone's own contacts. -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!-- Voice messages: recorded and sent as audio, never turned into words. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <!-- Once linked to the Mac, new messages notify from here, and the link is kept while the app is in the
          background, as a quiet foreground service (remote messaging), which comes back after a restart. -->

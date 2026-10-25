@@ -8,6 +8,7 @@ shell pm clear dev.omalauncher.messages
 shell pm grant dev.omalauncher.messages android.permission.READ_CONTACTS
 # 0.7+ asks for notifications when linked; granted here so its prompt does not cover the inbox.
 shell pm grant dev.omalauncher.messages android.permission.POST_NOTIFICATIONS
+shell pm grant dev.omalauncher.messages android.permission.RECORD_AUDIO
 # Quoted twice: walk.py hands the line to the phone's shell, which would split the link at '&'.
 shell am start -a android.intent.action.VIEW -d "'soma-messages://link?url=http%3A%2F%2F100.120.219.46%3A8765&token=BON7avwraojOZCR1WT8sLWZg9WTx0RFaqeR3udg1kzA'" dev.omalauncher.messages
 wait 2500
@@ -83,6 +84,22 @@ wait 1500
 wait 3000
 expect Demo reply to: walk test from the Fold
 shot sent-and-answered
+# A voice message (0.8.4, Boss 2026-10-24): with the field empty the send arrow is a microphone. Tap to record, Stop,
+# then the recording to play back, send or throw away; it goes as audio (Opus in CAF, an iPhone's own), never words.
+expect Record a voice message
+tap Record a voice message
+wait 2500
+shot voice-recording
+tap Stop recording
+wait 800
+expect Send voice message
+shot voice-review
+tap Send voice message
+wait 1500
+# In the conversation at once, from the recording itself, until the Mac shows it back.
+expect Voice message
+absent Voice message not sent
+shot voice-sent
 # Videos (0.7.7; Boss's phone, 2026-10-23: "1 Video" did nothing). The demo's "Clips" chat has one short MP4 from the
 # other person. Not fetched until tapped; then it plays in the phone's player, and is shown by a frame of its own.
 # Back twice: the first only puts the keyboard away after the send; the second leaves Ana's chat for the inbox.
@@ -307,3 +324,5 @@ absent unread
 [phone] Send a photo and a video: each stands on its own with rounded corners, no balloon or tail round it, as in iMessage; hold one: the tapback picker still shows.
 [phone] A friend's white balloons: the tail at the end of a run has no line through its top.
 [phone] A portrait photo taken on the Fold and sent, and one a friend sends from an iPhone: both show the right way up in the chat, in the side panel and in the viewer; a portrait video's frame too.
+[phone] With the field empty, tap the microphone (Android asks for it the first time), say a few words, Stop, play it back, then send it to a friend on an iPhone: it arrives as a voice message with a play button that plays in the conversation, not as a file, and sounds right.
+[phone] Hold the microphone, speak, let go: the recording is kept for review; × throws it away.

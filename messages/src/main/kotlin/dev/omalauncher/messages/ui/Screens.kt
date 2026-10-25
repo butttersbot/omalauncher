@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import dev.omalauncher.messages.engine.Part
 import dev.omalauncher.messages.engine.Upright
+import dev.omalauncher.messages.engine.Mic
 import dev.omalauncher.messages.engine.Alerts
 import dev.omalauncher.messages.engine.Desk
 import dev.omalauncher.messages.engine.CafOpus
@@ -395,6 +396,10 @@ fun Thread(
         rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(MAX_PHOTOS)) { uris ->
             if (uris.isNotEmpty()) pending.photos[c.id] = (pending.photos[c.id].orEmpty() + uris).distinct().take(MAX_PHOTOS)
         }
+    // The microphone for voice messages: Android asks him once; the tap after he says yes records.
+    val hear = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    val mic = remember { Mic(context.applicationContext) { hear.launch(android.Manifest.permission.RECORD_AUDIO) } }
+    DisposableEffect(mic) { onDispose { mic.stopPlaying() } }
     Column(modifier) {
         Row(Modifier.fillMaxWidth().height(58.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             if (onBack != null) {
@@ -562,6 +567,17 @@ fun Thread(
         val link = Parts.links(draft.text).firstOrNull { it !in pending.unlinked[c.id].orEmpty() }
         SomaComposer(
             draft,
+            // Voice messages go through the Mac only: OpenBubbles' share sheet can't send one as a voice message.
+            voice = if (Messages.linked && !Messages.samples.value) mic else null,
+            onSendVoice = { clip ->
+                clip.file?.let { f ->
+                    mic.handOver()
+                    scope.launch {
+                        withContext(Dispatchers.IO) { Messages.sendVoice(context, c.id, java.io.File(f), quote) }
+                        pending.quotes.remove(c.id)
+                    }
+                }
+            },
             onSend = { text ->
                 if (photos.isEmpty()) {
                     if (Messages.send(context, c.id, text, quote) == Sent.NoReplyPath) {
@@ -878,6 +894,8 @@ private fun Voice(
         scope.launch {
             val ogg =
                 withContext(Dispatchers.IO) {
+                    // One recorded here and still on its way (or not sent): its own recording.
+                    if (id.startsWith("local:")) return@withContext java.io.File(id.removePrefix("local:")).takeIf { it.isFile }
                     val out = java.io.File(MacLink.cached(context, id, picture = false).path + ".ogg")
                     if (out.isFile && out.length() > 0) return@withContext out
                     val caf = MacLink.file(context, id, picture = false) ?: return@withContext null

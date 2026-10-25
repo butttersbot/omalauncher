@@ -326,6 +326,56 @@ object Messages {
         }
     }
 
+    /**
+     * A voice message recorded here ([ogg], the recording) to [id]: rewrapped as an iPhone's (Opus in CAF) and sent
+     * through the Mac. Until the Mac shows it back, the recording stands for it and plays from here. False when it
+     * couldn't be rewrapped, and nothing went.
+     */
+    fun sendVoice(
+        context: Context,
+        id: String,
+        ogg: java.io.File,
+        quote: String?,
+    ): Boolean {
+        val dir = java.io.File(context.filesDir, "voice").apply { mkdirs() }
+        val clientId = java.util.UUID.randomUUID().toString()
+        val kept = java.io.File(dir, "$clientId.ogg")
+        if (!ogg.renameTo(kept)) runCatching { ogg.copyTo(kept, overwrite = true); ogg.delete() }
+        val caf = CafOpus.fromOgg(kept.readBytes())?.let { bytes -> java.io.File(dir, "$clientId.caf").also { it.writeBytes(bytes) } }
+        if (caf == null) {
+            kept.delete()
+            warn(id, "That voice message couldn't be made ready to send.")
+            return false
+        }
+        quoting.remove(id)
+        clearNotice(id)
+        sendVoiceFile(id, clientId, kept, caf, quote)
+        return true
+    }
+
+    private fun sendVoiceFile(
+        id: String,
+        clientId: String,
+        ogg: java.io.File,
+        caf: java.io.File,
+        quote: String?,
+    ) {
+        synchronized(this) {
+            val waiting = real.waiting(id, clientId, VOICE, System.currentTimeMillis(), quote)
+            publish(waiting.withFiles(id, "c:$clientId", listOf("local:${ogg.path}|$VOICE_MIME")))
+        }
+        MacLink.sendVoice(id, caf, clientId) { why ->
+            failed(id, clientId)
+            warn(id, "Voice message not sent: $why")
+        }
+    }
+
+    /** How a voice message is summed up, as the Mac does: Parts knows it as an attachment. */
+    const val VOICE = "1 Voice message"
+
+    /** Apple's voice messages, and ours once rewrapped. */
+    const val VOICE_MIME = "audio/x-caf"
+
     @Synchronized
     private fun failed(
         id: String,
@@ -402,6 +452,18 @@ object Messages {
     ) {
         publish(real.without(id, message))
         val local = message.files.firstOrNull { it.startsWith("local:") }
+        // A voice message recorded here: the same recording, rewrapped again.
+        if (local != null && local.endsWith("|$VOICE_MIME")) {
+            val ogg = java.io.File(local.removePrefix("local:").substringBeforeLast('|'))
+            val caf = java.io.File(ogg.path.removeSuffix(".ogg") + ".caf")
+            if (ogg.isFile && caf.isFile) {
+                val clientId = java.util.UUID.randomUUID().toString()
+                val o = java.io.File(ogg.parentFile, "$clientId.ogg").also { ogg.renameTo(it) }
+                val c = java.io.File(ogg.parentFile, "$clientId.caf").also { caf.renameTo(it) }
+                sendVoiceFile(id, clientId, o, c, message.quote)
+            }
+            return
+        }
         if (local != null) {
             val uri = android.net.Uri.parse(local.removePrefix("local:").substringBeforeLast('|'))
             sendPhotos(context, id, listOf(uri), "", listOf(message.text), message.quote)
