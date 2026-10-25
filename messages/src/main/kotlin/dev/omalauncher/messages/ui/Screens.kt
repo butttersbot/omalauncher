@@ -507,7 +507,9 @@ fun Thread(
                     },
                     onCopy = {
                         val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
-                        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Message", m.text))
+                        // A photo or video copies itself, so it pastes as the picture (Boss, 2026-10-24: Copy on a photo
+                        // copied only "1 Photo"); words copy as words.
+                        clipboard.setPrimaryClip(mediaClip(context, m.files) ?: android.content.ClipData.newPlainText("Message", m.text))
                         held = null
                     },
                     onRemove =
@@ -695,6 +697,28 @@ private fun tapFor(
             { Messages.openInOpenBubbles(context, id) }
         }
     }
+
+/**
+ * The first photo or video of [files] as a clip of the file itself, when the phone has it: one picked here (its own
+ * uri) or one fetched from the Mac and kept (shared through the app's FileProvider). Null when there is none yet.
+ */
+private fun mediaClip(
+    context: android.content.Context,
+    files: List<String>,
+): android.content.ClipData? {
+    val f = files.firstOrNull { visual(it) } ?: return null
+    val id = f.substringBefore('|')
+    val mime = f.substringAfter('|')
+    val uri =
+        if (id.startsWith("local:")) {
+            Uri.parse(id.removePrefix("local:"))
+        } else {
+            val kept = MacLink.cached(context, id, picture = mime.startsWith("image/"))
+            if (!kept.isFile || kept.length() == 0L) return null
+            androidx.core.content.FileProvider.getUriForFile(context, "dev.omalauncher.messages.photos", kept)
+        }
+    return android.content.ClipData(if (mime.startsWith("video/")) "Video" else "Photo", arrayOf(mime), android.content.ClipData.Item(uri))
+}
 
 /** A photo's or video's own corners, iMessage's: it stands without a balloon. */
 private val MEDIA_SHAPE = RoundedCornerShape(18.dp)

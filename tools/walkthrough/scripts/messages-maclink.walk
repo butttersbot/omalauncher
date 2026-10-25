@@ -332,3 +332,4 @@ absent unread
 [phone] A portrait photo taken on the Fold and sent, and one a friend sends from an iPhone: both show the right way up in the chat, in the side panel and in the viewer; a portrait video's frame too.
 [phone] With the field empty, tap the microphone (Android asks for it the first time), say a few words, Stop, play it back, then send it to a friend on an iPhone: it arrives as a voice message with a play button that plays in the conversation, not as a file, and sounds right.
 [phone] Hold the microphone, speak, let go: the recording is kept for review; × throws it away.
+[phone] Hold a photo a friend sent, tap Copy, and paste into another app (Notes, a chat): the photo itself goes in, not "1 Photo". The same for a video that has been opened once.
