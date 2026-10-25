@@ -51,7 +51,9 @@ async function showLive(){
   logic.state.tab=Hunch.chapter;const a=Paper.active;
   a.values=v=>({...v,zoomed:false,notZoomed:true,rows:[],settled:[],tot:{stake:'—',worth:'—',pays:'—'},next:{left:'—',title:'No connected bets',sub:'Read-only markets',chance:'—',pick:()=>{}},segs:v.segs.map((s,i)=>({...s,label:i?'SETTLED':'OPEN'})),tabs:v.tabs.map((t,i)=>({...t,hasBadge:false,badge:'',aria:['Today','Bets','Money'][i],sub:i===0?'PUBLIC MARKETS':i===1?'NO ACCOUNT':'NOT CONNECTED',pick:()=>route(['today','bets','money'][i])}))});
   const height=()=>{const view=document.getElementById('viewport');return view.clientWidth>0?Math.max(300,view.clientHeight/(view.clientWidth/390)):844};
-  a.prepare=root=>{coverPrepare(root);root.style.height=height()+'px';root.children[1].style.height=Math.max(100,height()-154)+'px'};
+  // The source reserves86px for58px tabs. Use the full safe viewport instead
+  // of leaving28px of blank paper below them; native insets protect gestures.
+  a.prepare=root=>{coverPrepare(root);root.style.height=height()+'px';root.children[1].style.height=Math.max(100,height()-126)+'px';root.querySelector('nav[aria-label="Hunch pages"]').style.height='58px'};
   a.dimensions=()=>({width:390,height:height()});
  });
 }
