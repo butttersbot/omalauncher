@@ -53,4 +53,11 @@ class BuilderModelTest {
         assertEquals("Phone A runs Grok, whose model can't be switched from here.", modelReply(ModelCommand.Choose("x"), BuilderId.A, "Grok", "grok", null, null))
         assertFalse(modelSwitchable("grok")); assertTrue(modelSwitchable("claude")); assertTrue(modelSwitchable("codex"))
     }
+
+    /** Every phone builder is told Boss switches models with /model himself, and where Codex is. */
+    @Test fun buildersAreToldAboutModelCommand() {
+        assertTrue(MODEL_COMMAND_RULE.contains("/model NAME"))
+        assertTrue(MODEL_COMMAND_RULE.contains("/model default"))
+        assertTrue(MODEL_COMMAND_RULE.contains("Phone B runs Codex"))
+    }
 }

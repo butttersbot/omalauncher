@@ -425,7 +425,7 @@ class Builder(val id: BuilderId) {
         val model = builderModel(if (errand) ERRAND_MODEL else null, chosenModel(context, agent.bin), choice.model)
         val seen = if (screen != null) "\n\nThe attached image is the screen I was looking at when I asked." else ""
         val imagePrompt = earlier + (if (agent.bin == "claude" && images.isNotEmpty()) prompt + "\n\nRead these attached images before answering:\n" + images.joinToString("\n") else prompt) + seen
-        val fullPrompt = imagePrompt + "\n\n" + PhoneBridge.INSTRUCTIONS + "\n" + GROKBOT_RULE + "\nAndroid build tools, when installed, are in /opt/android-sdk. Run oma-build-check to check the toolchain. Run Gradle as `oma-gradle TASKS` (oma-build does): one build at a time and small, so Android does not kill the app for memory. Use the approval UI for blocked tools; never ask for blanket permission bypass.\n" + dev.omalauncher.oma.PhoneArtifacts.INSTRUCTIONS + "\n"
+        val fullPrompt = imagePrompt + "\n\n" + PhoneBridge.INSTRUCTIONS + "\n" + GROKBOT_RULE + "\n" + MODEL_COMMAND_RULE + "\nAndroid build tools, when installed, are in /opt/android-sdk. Run oma-build-check to check the toolchain. Run Gradle as `oma-gradle TASKS` (oma-build does): one build at a time and small, so Android does not kill the app for memory. Use the approval UI for blocked tools; never ask for blanket permission bypass.\n" + dev.omalauncher.oma.PhoneArtifacts.INSTRUCTIONS + "\n"
         val resumed = when {
             errand -> null
             agent.bin == "claude" -> thread?.takeUnless { it.startsWith(CodexProtocol.THREAD_PREFIX) }

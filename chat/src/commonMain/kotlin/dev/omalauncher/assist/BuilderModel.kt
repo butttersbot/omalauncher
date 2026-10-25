@@ -34,6 +34,18 @@ fun modelCommand(text: String): ModelCommand? {
     return ModelCommand.Choose(name)
 }
 
+/**
+ * What every phone builder is told about /model (Boss, 2026-10-24: agents should know the slash commands). Asked to
+ * switch models, an agent tried to do it itself, or offered a new thread, when Boss can type one line in its tab.
+ */
+const val MODEL_COMMAND_RULE =
+    "Boss switches the model of a phone builder (Phone A, B, C) himself by typing `/model NAME` in its tab, from his next " +
+        "message on, in the same conversation; `/model` alone shows what it runs and the choices, `/model default` goes " +
+        "back. Soma answers these, not you, and you cannot switch your own model. It switches models within the tab's " +
+        "agent only: Phone C runs Claude Code (opus, sonnet, haiku, fable), Phone B runs Codex, Phone A the default agent. " +
+        "When he asks you to " +
+        "switch models, tell him the exact /model line to type; for Codex, that is Phone B's tab."
+
 /** The models offered for [bin] by name; any other name the agent knows works too. */
 fun knownModels(bin: String): List<String> = when (bin) {
     "claude" -> listOf("opus", "sonnet", "haiku", "fable")
