@@ -5,7 +5,7 @@ async function reference(name){document.body.classList.add('reference');document
 document.getElementById('leave-reference').onclick=()=>sendNative({type:'close'});
 document.addEventListener('click',e=>{const a=e.target.closest('a[href]');if(!a)return;e.preventDefault();const match=/([A-Za-z]+)\.dc\.html/.exec(a.getAttribute('href'));if(design&&match)reference(match[1]);else notice('This action is not connected yet.')});
 window.receiveNative=async data=>{try{
- if(data.type==='config'){if(started)return;started=true;Hunch.chapter=data.chapter||'today';if(design)await reference(design);else await showLive()}
+ if(data.type==='config'){if(started)return;started=true;Hunch.chapter=data.chapter||'today';if(design)await reference(design);else{if(data.fixture){document.body.classList.add('reference');const ribbon=document.getElementById('reference');ribbon.hidden=false;ribbon.firstChild.nodeValue=data.fixture==='demo'?'FICTIONAL MARKET DEMO · NO REAL MONEY ':'OFFLINE TEST · NO REAL MONEY ';document.getElementById('leave-reference').textContent='CLOSE DEMO'}await showLive()}}
  if(data.type==='markets'){Hunch.rows=data.rows;Hunch.updated=data.updated;Hunch.error=false;Paper.schedule()}
  if(data.type==='marketError'){Hunch.error=true;Paper.schedule()}
  if(data.type==='book'&&Hunch.selected?.id===data.id&&Hunch.side===data.side&&Hunch.budget===data.budget){Hunch.book=data;Paper.schedule()}
