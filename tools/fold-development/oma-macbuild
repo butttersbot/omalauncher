@@ -66,7 +66,8 @@ case ${1:-} in
     # An earlier commit's build still serves when nothing since then goes into the app (notes, these tools, Hunch:
     # its own app, built only with -Phunch).
     # Any build at this version whose app is HEAD's (files arrive out of order, so not just the newest one saved).
-    for cand in $(ls -t /root/Inbox/soma-*.json 2>/dev/null); do
+    # Line by line: a copy Taildrop saved twice is "name (2).json", which word splitting would break in two.
+    while IFS= read -r cand; do
       built_code=$(sed -n 's/.*"versionCode":\([0-9]\{1,9\}\).*/\1/p' "$cand")
       [ -n "$built_code" ] && [ "$built_code" -ge "$code" ] || continue
       built=$(sed -n 's/.*"commit":"\([0-9a-f]\{40\}\)".*/\1/p' "$cand")
@@ -77,7 +78,7 @@ case ${1:-} in
         echo "Taking the build of ${built:0:9}: nothing since then goes into the app."
         break
       fi
-    done
+    done < <(ls -t /root/Inbox/soma-*.json 2>/dev/null)
   fi
   [ -n "$json" ] || die "Nothing from the Mac for $short yet (looked in ~/Inbox after oma drop get)."
   apk=${json%.json}.apk

@@ -37,9 +37,10 @@ hold() {
   local pid=$!
   while kill -0 "$pid" 2>/dev/null && [ ! -e "$token" ]; do sleep 0.2; done
   [ -e "$token" ] || return 1
-  eval "held_$1=$pid"; held="$held $pid"
+  # A lock's name ("lane-A") as a variable name: the dash is no shell name's.
+  eval "held_${1//[^A-Za-z0-9_]/_}=$pid"; held="$held $pid"
 }
-let_go() { local v="held_$1"; if [ -n "${!v:-}" ]; then kill "${!v}" 2>/dev/null || true; eval "held_$1="; fi; }
+let_go() { local v="held_${1//[^A-Za-z0-9_]/_}"; if [ -n "${!v:-}" ]; then kill "${!v}" 2>/dev/null || true; eval "$v="; fi; }
 out=
 trap 'for p in $held; do kill $p 2>/dev/null || true; done; [ -z "$out" ] || rm -rf "$out"' EXIT
 busy() { python3 -I "$here/soma-lanes" status "$state" | sed -n "s/^$1 *//p"; }
