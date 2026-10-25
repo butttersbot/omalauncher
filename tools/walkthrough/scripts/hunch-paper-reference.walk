@@ -3,89 +3,104 @@ fold folded
 rotate portrait
 shell am force-stop dev.omalauncher.hunch
 shell am start -n dev.omalauncher.hunch/.MainActivity --es design Ask
+wait 1500
 expect DESIGN REFERENCE
 shot hunch-reference-ask
 fold open
 rotate portrait
 shell am force-stop dev.omalauncher.hunch
 shell am start -n dev.omalauncher.hunch/.MainActivity --es design Bets
+wait 1500
 expect DESIGN REFERENCE
 shot hunch-reference-bets
 fold folded
 rotate portrait
 shell am force-stop dev.omalauncher.hunch
 shell am start -n dev.omalauncher.hunch/.MainActivity --es design CoverBets
+wait 1500
 expect DESIGN REFERENCE
 shot hunch-reference-coverbets
 fold open
 rotate portrait
 shell am force-stop dev.omalauncher.hunch
 shell am start -n dev.omalauncher.hunch/.MainActivity --es design Curve
+wait 1500
 expect DESIGN REFERENCE
 shot hunch-reference-curve
 fold open
 rotate portrait
 shell am force-stop dev.omalauncher.hunch
 shell am start -n dev.omalauncher.hunch/.MainActivity --es design Discover
+wait 1500
 expect DESIGN REFERENCE
 shot hunch-reference-discover
 fold folded
 rotate portrait
 shell am force-stop dev.omalauncher.hunch
 shell am start -n dev.omalauncher.hunch/.MainActivity --es design Edge
+wait 1500
 expect DESIGN REFERENCE
 shot hunch-reference-edge
 fold open
 rotate portrait
 shell am force-stop dev.omalauncher.hunch
 shell am start -n dev.omalauncher.hunch/.MainActivity --es design Flow
+wait 1500
 expect DESIGN REFERENCE
 shot hunch-reference-flow
 fold open
 rotate portrait
 shell am force-stop dev.omalauncher.hunch
 shell am start -n dev.omalauncher.hunch/.MainActivity --es design Home
+wait 1500
 expect DESIGN REFERENCE
 shot hunch-reference-home
 fold open
 rotate portrait
 shell am force-stop dev.omalauncher.hunch
 shell am start -n dev.omalauncher.hunch/.MainActivity --es design Main
+wait 1500
 expect DESIGN REFERENCE
 shot hunch-reference-main
 fold open
 rotate portrait
 shell am force-stop dev.omalauncher.hunch
 shell am start -n dev.omalauncher.hunch/.MainActivity --es design Money
+wait 1500
 expect DESIGN REFERENCE
 shot hunch-reference-money
 fold open
 rotate portrait
 shell am force-stop dev.omalauncher.hunch
 shell am start -n dev.omalauncher.hunch/.MainActivity --es design Nav
+wait 1500
 expect DESIGN REFERENCE
 shot hunch-reference-nav
 fold folded
 rotate portrait
 shell am force-stop dev.omalauncher.hunch
 shell am start -n dev.omalauncher.hunch/.MainActivity --es design Review
+wait 1500
 expect DESIGN REFERENCE
 shot hunch-reference-review
 fold folded
 rotate portrait
 shell am force-stop dev.omalauncher.hunch
 shell am start -n dev.omalauncher.hunch/.MainActivity --es design Settle
+wait 1500
 expect DESIGN REFERENCE
 shot hunch-reference-settle
 fold folded
 rotate portrait
 shell am force-stop dev.omalauncher.hunch
 shell am start -n dev.omalauncher.hunch/.MainActivity --es design Setup
+wait 1500
 expect DESIGN REFERENCE
 shot hunch-reference-setup
 fold folded
 rotate portrait
 shell am force-stop dev.omalauncher.hunch
 shell am start -n dev.omalauncher.hunch/.MainActivity --es design TodayFeed
+wait 1500
 expect DESIGN REFERENCE
 shot hunch-reference-todayfeed

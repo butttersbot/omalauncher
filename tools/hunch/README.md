@@ -1,1 +1,3 @@
 Run `npm ci && npm test` here for the offline DOM smoke checks. These verify all 15 original hashes/templates, six primary live layouts without mock balances, both market layouts, and account state transitions. Android walks and screenshot comparison remain required; these checks do not establish visual parity.
+
+For independent export parity, run `node compare-export.mjs /path/to/standalone` against the MacBook standalone HTML conversion and its hunch-ui.js. This compares all rendered elements, text, attributes, inline CSS and SVG at initial state; it ignores only the host root ID/scale, whitespace and equivalent CSS quote/semicolon formatting. Expected: EXACT DOM for all 15. Screenshot/font/interaction review remains necessary.
