@@ -20,7 +20,7 @@ class AccountActivity:PaperActivity(){
         val retained=lastNonConfigurationInstance as? Retained
         access=retained?.access ?: if(demo)DemoAccount() else LiveAccount(applicationContext)
         email=retained?.email.orEmpty();sent=retained?.sent ?: false
-        openPaper()
+        openPaper("?account=1")
     }
     private fun render(){if(ready)tell(JSONObject().put("type","auth").put("demo",demo).put("busy",busy).put("message",message).put("sent",sent).put("signed",account!=null).put("email",account?.email?:email).put("passkey",account?.passkey?:false))}
     override fun command(data:JSONObject){
