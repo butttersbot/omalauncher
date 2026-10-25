@@ -17,19 +17,23 @@ class AccountActivity:Activity() {
     private lateinit var access:AccountAccess
     private lateinit var page:LinearLayout
     private lateinit var body:Typeface
-    private lateinit var display:Typeface
+    private lateinit var headline:Typeface
     private val paper=Color.rgb(253,253,251);private val ink=Color.rgb(17,17,19)
     private var account:Account?=null;private var email="";private var sent=false
     private var busy=false;private var message="";private var demo=false
+    private data class Retained(val access:AccountAccess,val email:String,val sent:Boolean)
+    override fun onRetainNonConfigurationInstance():Any = Retained(access,email,sent)
     override fun onCreate(state:Bundle?) {
         super.onCreate(state)
         window.decorView.systemUiVisibility=View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
         body=Typeface.createFromAsset(assets,"fonts/ZenKakuGothicNew-Regular.ttf")
-        display=Typeface.createFromAsset(assets,"fonts/DelaGothicOne-Regular.ttf")
+        headline=Typeface.createFromAsset(assets,"fonts/DelaGothicOne-Regular.ttf")
         demo=BuildConfig.DEBUG&&intent.getBooleanExtra("demo",false)
         if(!demo)window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         // Never persist the email/code fields or save a pending credential operation in a Bundle.
-        access=if(demo)DemoAccount() else LiveAccount(applicationContext)
+        val retained=lastNonConfigurationInstance as? Retained
+        access=retained?.access ?: if(demo)DemoAccount() else LiveAccount(applicationContext)
+        email=retained?.email.orEmpty();sent=retained?.sent ?: false
         run("Checking sign-in…","Could not verify sign-in. Check your connection and try again."){account=access.current()}
     }
     private fun dp(n:Int)=(n*resources.displayMetrics.density).toInt()
@@ -51,7 +55,7 @@ class AccountActivity:Activity() {
         page=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(16),dp(12),dp(16),dp(24))}
         root.addView(page);setContentView(root);root.requestApplyInsets()
         add(label(if(demo)"HUNCH / FICTIONAL SIGN-IN DEMO" else "HUNCH / YOUR ACCOUNT",12f))
-        add(label("Sign in to Hunch",26f).apply{typeface=display})
+        add(label("Sign in to Hunch",26f).apply{typeface=headline})
         add(label("Sign-in only. Markets remain read-only. No wallet or payment is created here.",14f))
         if(message.isNotEmpty())add(label(message,14f).apply{accessibilityLiveRegion=View.ACCESSIBILITY_LIVE_REGION_POLITE})
         val user=account

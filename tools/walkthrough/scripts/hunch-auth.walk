@@ -15,6 +15,10 @@ key BACK
 tap Send email code
 expect Code sent to demo@example.invalid
 shot hunch-auth-code
+rotate landscape
+expect Code sent to demo@example.invalid
+rotate portrait
+expect Code sent to demo@example.invalid
 tap Email code
 type 999999
 key BACK
