@@ -412,16 +412,16 @@ class Builder(val id: BuilderId) {
                 screen.delete()
             }
             // Which builder this is, for the tools that sign mail (oma msg, oma-macbuild): a reply comes back to it, not to A.
-            "export OMA_BUILDER=${id.letter} SOMA_THREAD=${id.thread}\n" + (worktree?.let { it.script() + "\n" } ?: "") + claudeStreamCommand(resumed, if (errand) ERRAND_MODEL else null)
+            "export OMA_BUILDER=${id.letter}\n" + (worktree?.let { it.script() + "\n" } ?: "") + claudeStreamCommand(resumed, if (errand) ERRAND_MODEL else null)
         } else if (agent.bin == "codex") {
             // As Claude's: its words go in once the worktree step has said where it works (OMA-READY ends that step).
             handed = screen?.let { ScreenShots.handOver(it, runtime.proot.promptAttachments) }
-            "export OMA_BUILDER=${id.letter} SOMA_THREAD=${id.thread}\n" + (worktree?.let { it.script() + "\n" } ?: "") + "echo $CODEX_READY\n" +
+            "export OMA_BUILDER=${id.letter}\n" + (worktree?.let { it.script() + "\n" } ?: "") + "echo $CODEX_READY\n" +
                 codexBuilderCommand(images + listOfNotNull(handed?.let(runtime.proot::guestPath)), choice.model, resumed, fullAccess = id == BuilderId.B)
         } else {
             backgroundAgentCommand(agent.bin, fullPrompt, images, choice.model, codexFullAccess = id == BuilderId.B) // Validate before the screenshot is touched.
             handed = screen?.let { ScreenShots.handOver(it, runtime.proot.promptAttachments) }
-            "export OMA_BUILDER=${id.letter} SOMA_THREAD=${id.thread}\n" + backgroundAgentCommand(agent.bin, fullPrompt, images + listOfNotNull(handed?.let(runtime.proot::guestPath)), choice.model, codexFullAccess = id == BuilderId.B)
+            "export OMA_BUILDER=${id.letter}\n" + backgroundAgentCommand(agent.bin, fullPrompt, images + listOfNotNull(handed?.let(runtime.proot::guestPath)), choice.model, codexFullAccess = id == BuilderId.B)
         }
         val log = ChatLog.of(context)
         val began = System.currentTimeMillis()
@@ -437,7 +437,7 @@ class Builder(val id: BuilderId) {
         notify(context)
         thread(name = "assistant-agent-" + id.letter.lowercase(), isDaemon = true) {
             try {
-                val child = runtime.proot.process(command).start()
+                val child = runtime.proot.process(withSomaArtifacts(command, id)).start()
                 process = child
                 if (stopping) RunEnd.end(child)
                 if (agent.bin == "claude") {
@@ -879,7 +879,14 @@ fun phoneToolCall(tool: String, command: String): Boolean =
 const val ERRAND_MODEL = "sonnet"
 
 fun claudeStreamCommand(resume: String? = null, model: String? = null): String = "claude -p " + (resume?.takeIf(SESSION_ID::matches)?.let { "--resume $it " } ?: "") +
-    (model?.let { "--model $it " } ?: "") + "--input-format stream-json --output-format stream-json --verbose --permission-mode auto --permission-prompt-tool stdio --allowedTools ${shellQuote("Bash(oma-phone *)")} ${shellQuote("Bash(soma-artifact *)")} Read"
+    (model?.let { "--model $it " } ?: "") + "--input-format stream-json --output-format stream-json --verbose --permission-mode auto --permission-prompt-tool stdio --allowedTools ${shellQuote("Bash(oma-phone *)")} Read"
+
+/**
+ * A builder's command with what its `soma-artifact` needs (features/artifact-panel/PLAN.md, slice 3): its thread's key in
+ * SOMA_THREAD, and for Claude Code the command allowed without a card, as `oma-phone` is (it only shows Boss a file).
+ */
+fun withSomaArtifacts(command: String, builder: BuilderId): String =
+    "export SOMA_THREAD=${builder.thread}\n" + command.replaceFirst(" --allowedTools ", " --allowedTools ${shellQuote("Bash(soma-artifact *)")} ")
 
 /** The line a builder's shell says once the steps before Codex are done, when its words can be given. */
 const val CODEX_READY = "OMA-READY"
