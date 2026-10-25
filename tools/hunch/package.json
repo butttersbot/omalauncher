@@ -1,0 +1,9 @@
+{
+  "dependencies": {
+    "happy-dom": "21.0.4"
+  },
+  "private": true,
+  "scripts": {
+    "test": "node check-paper.mjs"
+  }
+}
