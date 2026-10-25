@@ -16,7 +16,7 @@ import java.util.concurrent.Future
 import java.text.SimpleDateFormat
 import java.util.*
 
-/** Separate read-only app: the only network action is POST /info. */
+/** Separate market browser with optional account sign-in; no trading or wallet actions. */
 class MainActivity : Activity() {
     private val ink=Color.rgb(17,17,19);private val paper=Color.rgb(253,253,251)
     private val red=Color.rgb(215,38,45);private val blue=Color.rgb(31,111,176)
@@ -40,6 +40,7 @@ class MainActivity : Activity() {
         if(android.os.Build.VERSION.SDK_INT>=33)onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT){goBack()}
         val restored=state?.getString("market")?.let { runCatching { Market.parse(JSONObject(it)).single() }.getOrNull() }
         if(restored==null)home() else market(restored,listOf(restored))
+        if(BuildConfig.DEBUG&&intent.getStringExtra("authFixture")=="demo")openAccount(true)
     }
     override fun onSaveInstanceState(out:Bundle){
         out.putString("query",query);out.putString("chapter",chapter);out.putString("category",category);out.putInt("side",side);out.putInt("budget",budget)
@@ -92,10 +93,14 @@ class MainActivity : Activity() {
             return JSONObject(String(bytes,Charsets.UTF_8))
         }finally{c.disconnect()}
     }
+    private fun openAccount(demo:Boolean=false){
+        startActivity(android.content.Intent(this,AccountActivity::class.java).putExtra("demo",demo))
+    }
     private fun home() {
         selected=null;val token=next();base(when(chapter){"Bets"->"Your calls";"Money"->"Your money";else->"Today's issue"})
         if(chapter!="Today"){
             box(page,panel(if(chapter=="Bets")"No bets yet.\nThis read-only edition does not place or track bets." else "No wallet connected.\nThere is no balance to display."))
+            if(chapter=="Money")box(page,button("Sign in to Hunch"){openAccount()})
             box(page,button("Back to Today"){chapter="Today";home()});return
         }
         box(page,text("READ-ONLY EDITION · Browse first",11f,blue,mono))

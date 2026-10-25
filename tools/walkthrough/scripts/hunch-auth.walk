@@ -1,0 +1,53 @@
+# Hunch account access: isolated fiction never calls Privy or sends email.
+fold folded
+rotate portrait
+shell am force-stop dev.omalauncher.hunch
+shell am start -n dev.omalauncher.hunch/.MainActivity --es authFixture demo
+expect FICTIONAL SIGN-IN DEMO
+expect Start with email
+shot hunch-auth-start
+# Invalid input never advances to OTP or account.
+tap Send email code
+expect Enter a valid email address
+tap Email address
+type demo@example.invalid
+key BACK
+tap Send email code
+expect Code sent to demo@example.invalid
+shot hunch-auth-code
+tap Email code
+type 999999
+key BACK
+tap Verify email code
+expect That code could not be verified
+tap Email code
+type 123456
+key BACK
+tap Verify email code
+expect Recovery email: demo@example.invalid
+scrollto Your email login stays available for recovery
+expect Your email login stays available for recovery
+shot hunch-auth-add-passkey
+scrollto Add a passkey
+tap Add a passkey
+expect Passkey added
+expect Recovery email: demo@example.invalid
+shot hunch-auth-linked
+scrollto Sign out
+tap Sign out
+expect Start with email
+scrollto Sign in with an existing passkey
+tap Sign in with an existing passkey
+expect Passkey sign-in did not complete
+expect Start with email
+fold open
+rotate portrait
+expect Sign in to Hunch
+shot hunch-auth-inner
+key BACK
+expect "Today's issue"
+# Leave live market mode. No email/credential activity is automatically started.
+shell am force-stop dev.omalauncher.hunch
+shell am start -n dev.omalauncher.hunch/.MainActivity
+expect "Today's issue"
+[phone] Owner explicitly sends own email code, enters it, adds passkey with Credential Manager, cancels once then completes, signs out and signs back in with passkey. Verify recovery email remains linked after restart. Check network failure and cover/unfold transitions without duplicate sends. Real domain must match installed phone signer. No wallet, deposits, orders or signatures.
