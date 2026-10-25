@@ -54,9 +54,18 @@ fun withArtifactStep(steps: List<String>, name: String, version: Int, state: Str
     val editing = steps.indexOfLast { line -> EDITING_STEP.find(line)?.groupValues?.get(1) == name }
     if (settled) return if (editing >= 0) steps.filterIndexed { index, _ -> index != editing } else steps
     val step = artifactStep(name, version, state, false) ?: return steps
-    if (steps.lastOrNull() == step) return steps
-    if (state == "ready" && editing >= 0) return steps.mapIndexed { index, line -> if (index == editing) step else line }
-    return steps + step
+    if (steps.contains(step)) return steps
+    if (state == "editing") return if (editing >= 0) steps.mapIndexed { index, line -> if (index == editing) step else line } else steps + step
+    // A version: at most one "made" and one "updated" line per artifact in an entry, so a run of many versions never
+    // pushes other lines (and other artifacts' cards) out of the entry's capped steps. The versions tab has the rest.
+    val updated = steps.indexOfLast { line -> MADE_STEP.find(line)?.let { it.groupValues[1] == "updated" && it.groupValues[2] == name } == true }
+    val kept = when {
+        editing >= 0 && updated >= 0 -> steps.mapIndexed { index, line -> if (index == updated) step else line }.filterIndexed { index, _ -> index != editing }
+        editing >= 0 -> steps.mapIndexed { index, line -> if (index == editing) step else line }
+        updated >= 0 && version > 1 -> steps.mapIndexed { index, line -> if (index == updated) step else line }
+        else -> steps + step
+    }
+    return kept
 }
 
 /** One artifact a step names: its [name] and the [version] that step made. */
@@ -139,7 +148,8 @@ class ArtifactLiveBook {
             state == "editing" -> (before ?: ArtifactLive(thread, name, 0, null)).copy(editing = version.coerceAtLeast(1))
             state == "ready" -> (before ?: ArtifactLive(thread, name, 0, null)).copy(version = maxOf(version, before?.version ?: 0), editing = null,
                 note = if (settled) before?.note.orEmpty() else note)
-            else -> (before ?: ArtifactLive(thread, name, 0, null)).copy(editing = null)
+            // Never saved and no longer being made: nothing of it is left to show.
+            else -> { known.remove(key); return }
         }
         known[key] = now.copy(title = title.ifBlank { now.title }, agent = agent.ifBlank { now.agent }, where = where.ifBlank { now.where },
             time = if (settled) now.time else time, event = event)
@@ -174,7 +184,13 @@ const val ARTIFACT_FRESH_SECONDS = 180L
  */
 fun artifactNews(seen: Map<String, Pair<Int, Int?>>, live: List<ArtifactLive>, threads: Set<String>, nowSeconds: Long): List<ArtifactLive> =
     live.filter { it.thread in threads && seen[it.key] != (it.version to it.editing) && nowSeconds - it.time <= ARTIFACT_FRESH_SECONDS }
+        // Only something new is news: a newer version, or an edit begun. An edit ending with nothing new is not.
+        .filter { it.version > (seen[it.key]?.first ?: 0) || (it.editing != null && it.editing != seen[it.key]?.second) }
         .sortedByDescending { it.event }
+
+/** What [artifactNews]'s caller keeps as seen after [live]: every artifact of [threads] as it stands now, news or not. */
+fun artifactSeen(seen: Map<String, Pair<Int, Int?>>, live: List<ArtifactLive>, threads: Set<String>): Map<String, Pair<Int, Int?>> =
+    seen + live.filter { it.thread in threads }.associate { it.key to (it.version to it.editing) }
 
 /** One version as the computer keeps it. */
 data class ArtifactVersion(val version: Int, val time: Long, val size: Long, val note: String)

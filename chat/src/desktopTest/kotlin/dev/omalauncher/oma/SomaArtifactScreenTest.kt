@@ -133,6 +133,40 @@ class SomaArtifactScreenTest : ChatScreenTestBase() {
         onNodeWithText("Viewing v1, an earlier version").assertExists()
     }
 
+    @Test fun aClosedPanelStaysClosedWhenTheEditEndsWithNothingNew() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        val host = MadeHost(listOf("made notes.md · v1"))
+        setContent { Box(Modifier.size(933.dp, 704.dp)) { OmaChatScreen(host, null, {}, OMA_TAB, {}) } }
+        mainClock.advanceTimeBy(1200)
+        runOnIdle { host.made(1, editing = 2) }
+        mainClock.advanceTimeBy(1200)
+        onNodeWithText("[ close ]").performClick()
+        mainClock.advanceTimeBy(1200)
+        runOnIdle { host.made(1, editing = null, event = 99) }
+        mainClock.advanceTimeBy(1500)
+        onNodeWithText("[ close ]").assertDoesNotExist()
+    }
+
+    @Test fun foldingWithTheArtifactBesideTheChatGivesTheScreenToTheChatAndOffersItInTheStrip() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        val host = MadeHost(listOf("made notes.md · v1"))
+        var width by mutableStateOf(933.dp)
+        setContent { Box(Modifier.size(width, 704.dp)) { OmaChatScreen(host, null, {}, OMA_TAB, {}) } }
+        mainClock.advanceTimeBy(1200)
+        runOnIdle { host.made(1) }
+        mainClock.advanceTimeBy(1200)
+        waitUntil(timeoutMillis = 5000) { onAllNodesWithText("Version 1").fetchSemanticsNodes().isNotEmpty() }
+        runOnIdle { width = 475.dp }
+        mainClock.advanceTimeBy(1200)
+        onNodeWithText("[ ← chat ]").assertDoesNotExist()
+        onNode(hasSetTextAction()).assertExists()
+        onNodeWithContentDescription("notes · v1 is ready").assertExists()
+        // Unfolding again shows it beside the chat.
+        runOnIdle { width = 933.dp }
+        mainClock.advanceTimeBy(1200)
+        waitUntil(timeoutMillis = 5000) { onAllNodesWithText("[ close ]").fetchSemanticsNodes().isNotEmpty() }
+    }
+
     @Test fun whatWasMadeBeforeTheChatOpenedOpensNothingByItself() = runComposeUiTest {
         mainClock.autoAdvance = false
         val host = MadeHost(listOf("made notes.md · v1"))

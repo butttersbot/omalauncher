@@ -31,7 +31,7 @@ object PhoneArtifacts {
     const val INSTRUCTIONS = "To show Boss a mockup, page, chart, diagram or anything visual, write ONE self-contained file (HTML with inline " +
         "CSS and JS: it is shown offline, so no CDN scripts, web fonts or network calls) and run `soma-artifact put FILE --title \"Short title\" " +
         "--note \"what this version is\"`: it opens beside the chat in Soma. Every change is a new put of the same file name. Before you start " +
-        "changing one, run `soma-artifact editing NAME`."
+        "changing one, run `soma-artifact editing NAME`. `soma-artifact get NAME --version N` prints an older version."
 
     private fun store(context: Context) = PhoneArtifactStore(File((context.applicationContext as App).runtime.proot.home, ".local/share/soma/artifacts"))
 
@@ -58,9 +58,16 @@ object PhoneArtifacts {
         return (own.lastOrNull { it.status == TaskStatus.Running } ?: own.lastOrNull())?.time
     }
 
-    private fun step(context: Context, thread: String, taskTime: Long?, name: String, version: Int, state: String, settled: Boolean) {
+    private fun step(context: Context, thread: String, taskTime: Long?, name: String, version: Int, state: String, settled: Boolean) =
+        steps(context, thread, taskTime, listOf(Triple(name, version, state to settled)))
+
+    /** Several artifact steps onto one entry, written once (a catch-up of many events is one save, not one each). */
+    private fun steps(context: Context, thread: String, taskTime: Long?, changes: List<Triple<String, Int, Pair<String, Boolean>>>) {
+        if (changes.isEmpty()) return
         val time = entryOf(context, thread, taskTime) ?: return
-        ChatLog.of(context).update(time, save = true) { it.copy(steps = withArtifactStep(it.steps, name, version, state, settled).takeLast(ChatHistory.MAX_STEPS)) }
+        ChatLog.of(context).update(time, save = true) { task ->
+            task.copy(steps = changes.fold(task.steps) { steps, (name, version, how) -> withArtifactStep(steps, name, version, how.first, how.second) }.takeLast(ChatHistory.MAX_STEPS))
+        }
     }
 
     /** New events of [builder]'s thread (every builder's when null) into the chat. [agent] says who ("Claude") when known. */
@@ -69,16 +76,22 @@ object PhoneArtifacts {
         val store = store(context)
         var moved = false
         for (thread in builder?.let { listOf(it.thread) } ?: threads()) {
-            // Most ticks nothing changed: only the file's length is looked at.
+            // Most ticks nothing changed: only the file's length is looked at (a part line waits for its length to change).
             val file = eventsFile(context, thread)
             val length = if (file.isFile) file.length() else 0L
-            if (taskTime == null && sizes[thread] == length && length == offsets[thread]) continue
+            if (taskTime == null && sizes[thread] == length) continue
             sizes[thread] = length
             val (events, next) = store.events(thread, offsets[thread] ?: 0L)
+            val changes = ArrayList<Triple<String, Int, Pair<String, Boolean>>>()
+            val versions = HashMap<String, Int>()
             for (event in events) {
+                // A version no file stands for (a line written by hand) is not taken: the card would name one that isn't there.
+                val latest = versions.getOrPut(event.name) { store.versions(thread, event.name)?.latest ?: 0 }
+                if (event.state == "ready" && event.version > latest) continue
                 book.heard(thread, event.name, event.version, event.state, false, event.title, event.note, agent.ifBlank { "Claude" }, "this phone", event.time, ++seq)
-                step(context, thread, taskTime, event.name, event.version, event.state, false)
+                changes += Triple(event.name, event.version, event.state to false)
             }
+            steps(context, thread, taskTime, changes)
             if (next != offsets[thread]) { offsets[thread] = next; moved = true }
         }
         if (moved) context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().apply { offsets.forEach { (key, value) -> putLong(key, value) } }.apply()
@@ -108,10 +121,32 @@ object PhoneArtifacts {
         }
     }
 
-    /** The live state the panel follows, after reading what is new. */
+    private val reader = java.util.concurrent.Executors.newSingleThreadExecutor { Thread(it, "phone-artifacts").apply { isDaemon = true } }
+    private val reading = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** How long an edit no version followed keeps showing when no builder run will end it. */
+    private const val EDITING_MOST_S = 10 * 60L
+
+    /**
+     * The live state the panel follows. Asked on the chat's tick, on the main thread: what is new is read on a thread of
+     * its own (one at a time), and the tick after shows it.
+     */
     fun live(context: Context): List<ArtifactLive> {
-        runCatching { poll(context) }
+        if (reading.compareAndSet(false, true)) reader.execute {
+            try {
+                runCatching { poll(context) }
+                expire()
+            } finally { reading.set(false) }
+        }
         return book.snapshot()
+    }
+
+    /** An edit left showing long after it began, with no builder working that would end it, stops showing. */
+    @Synchronized private fun expire() {
+        val now = System.currentTimeMillis() / 1000
+        val working = dev.omalauncher.assist.AgentTasks.builders.filter { it.working }.map { it.id.thread }.toSet()
+        for (open in book.snapshot().filter { it.editing != null && it.thread !in working && now - it.time > EDITING_MOST_S })
+            book.heard(open.thread, open.name, open.version, "ready", true, "", "", "", "", now, ++seq)
     }
 
     fun read(context: Context, thread: String, path: String): ArtifactRead =

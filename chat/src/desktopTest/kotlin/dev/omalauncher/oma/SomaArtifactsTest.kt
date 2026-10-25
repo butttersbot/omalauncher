@@ -115,4 +115,26 @@ class SomaArtifactsTest {
         assertEquals(listOf(2, 3), listOf(document.v, document.latest))
         assertEquals("NEAT", document.title)
     }
+
+    @Test fun anEditEndingWithNothingNewIsNotNewsAndAnArtifactNeverMadeGoes() {
+        val book = ArtifactLiveBook()
+        book.heard("t1", "a.html", 3, "ready", false, "", "", "Claude", "", 999, 0)
+        book.heard("t1", "a.html", 4, "editing", false, "", "", "Claude", "", 1000, 1)
+        val seen = artifactSeen(emptyMap(), book.snapshot(), setOf("t1"))
+        book.heard("t1", "a.html", 3, "ready", true, "", "", "", "", 1001, 2)
+        assertTrue("the turn ending reopens nothing", artifactNews(seen, book.snapshot(), setOf("t1"), 1002).isEmpty())
+        book.heard("t1", "b.html", 1, "editing", false, "", "", "", "", 1003, 3)
+        book.heard("t1", "b.html", 0, "gone", true, "", "", "", "", 1004, 4)
+        assertEquals(listOf("a.html"), book.snapshot().map { it.name })
+    }
+
+    @Test fun manyVersionsKeepOneLineEachSoOtherArtifactsStay() {
+        var steps = withArtifactStep(emptyList(), "other.html", 1, "ready", false)
+        for (v in 1..60) {
+            steps = withArtifactStep(steps, "a.html", v, "editing", false)
+            steps = withArtifactStep(steps, "a.html", v, "ready", false)
+        }
+        assertEquals(listOf("made other.html · v1", "made a.html · v1", "updated a.html · v60"), steps)
+        assertEquals(listOf(StepArtifact("other.html", 1), StepArtifact("a.html", 60)), stepArtifacts(steps))
+    }
 }

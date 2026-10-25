@@ -3,6 +3,7 @@
 #
 #   soma-artifact put FILE [--name NAME] [--title TITLE] [--note WHAT]   a new version (FILE "-" reads stdin; then --name)
 #   soma-artifact editing NAME [--note WHAT]                            "working on it", before you start changing one
+#   soma-artifact get NAME [--version N]                                a version's file on stdout (the newest by default)
 #   soma-artifact list                                                  this conversation's artifacts
 #
 # One self-contained file per artifact (HTML with its CSS and JS inline: it is shown offline). Each put of the same name is
@@ -17,9 +18,9 @@ KEEP=100
 NAMES=100
 EXTS='html|htm|md|markdown|txt|json|csv|diff|patch|css|js|ts|py|kt|xml|yaml|yml|svg|png|jpg|jpeg|webp|gif'
 
-usage() { sed -n '4,6p' "$0" | sed 's/^# *//' >&2; }
+usage() { sed -n '4,7p' "$0" | sed 's/^# *//' >&2; }
 fail() { printf 'soma-artifact: %s\n' "$1" >&2; exit "${2:-2}"; }
-help() { sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+help() { sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
 
 command -v jq >/dev/null 2>&1 || fail "jq is missing from this Linux; Soma installs it with its core packages." 1
 thread="${SOMA_THREAD:-}"
@@ -29,13 +30,13 @@ printf '%s' "$thread" | grep -Eq '^phone(-[a-z])?$' || fail "this conversation (
 verb="$1"; shift
 case "$verb" in -h|--help|help) help ;; esac
 
-name="" title="" note="" file=""
+name="" title="" note="" file="" version=""
 while [ $# -gt 0 ]; do
     case "$1" in
         -h|--help) help ;;
-        --name|--title|--note)
+        --name|--title|--note|--version)
             [ $# -ge 2 ] || fail "$1 needs a value"
-            case "$1" in --name) name="$2" ;; --title) title="$2" ;; --note) note="$2" ;; esac
+            case "$1" in --name) name="$2" ;; --title) title="$2" ;; --note) note="$2" ;; --version) version="$2" ;; esac
             shift 2 ;;
         --name=*) name="${1#--name=}"; shift ;;
         --title=*) title="${1#--title=}"; shift ;;
@@ -46,9 +47,10 @@ while [ $# -gt 0 ]; do
 done
 
 good_name() {
-    [ "${#1}" -le 80 ] && printf '%s' "$1" | grep -Eq "^[A-Za-z0-9][A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)*\.($EXTS)\$"
+    [ "${#1}" -le 80 ] && printf '%s' "$1" | grep -Eqi "^[A-Za-z0-9][A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)*\.($EXTS)\$"
 }
-one_line() { printf '%s' "$1" | tr '\000-\037\177' ' ' | sed 's/  */ /g; s/^ //; s/ $//' | cut -c1-"$2"; }
+# One line of at most $2 characters (not bytes: a Korean title is cut between letters, never inside one).
+one_line() { printf '%s' "$1" | jq -Rrs --argjson n "$2" 'gsub("[[:cntrl:]]"; " ") | gsub(" +"; " ") | ltrimstr(" ") | rtrimstr(" ") | .[:$n]'; }
 
 folder="$STORE/$thread"
 for part in "$STORE" "$folder"; do
@@ -129,6 +131,20 @@ editing)
     write_meta "$place" "$meta"
     event editing "$version" "$(printf '%s' "$meta" | jq -r '.title // ""')" "$(one_line "$note" 200)"
     echo "Soma shows $name as being edited (v$version next) until you put it."
+    ;;
+get)
+    name="$file"
+    [ -n "$name" ] || { usage; fail "get takes one NAME"; }
+    good_name "$name" || fail "no such artifact"
+    place="$folder/$name"
+    [ -d "$place" ] && [ ! -L "$place" ] || fail "no such artifact" 1
+    meta="$(meta_of "$place")"
+    [ -n "$version" ] || version="$(latest_of "$meta")"
+    printf '%s' "$version" | grep -Eq '^[1-9][0-9]*$' || fail "a version is a number from 1"
+    printf '%s' "$meta" | jq -e --argjson v "$version" 'any(.versions[]; .v == $v)' >/dev/null || fail "no such version" 1
+    ext="${name##*.}"; ext="$(printf '%s' "$ext" | tr 'A-Z' 'a-z')"
+    [ -f "$place/v$version.$ext" ] && [ ! -L "$place/v$version.$ext" ] || fail "that version is gone" 1
+    cat "$place/v$version.$ext"
     ;;
 list)
     found=0

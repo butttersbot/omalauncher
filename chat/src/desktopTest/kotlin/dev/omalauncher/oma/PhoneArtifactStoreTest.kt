@@ -33,6 +33,9 @@ class PhoneArtifactStoreTest {
         assertEquals(0, run("editing", "neat.html").first)
         assertEquals(0, run("put", "-", "--name", "neat.html", "--note", "second", input = "<p>two</p>").first)
         assertTrue(run("list").second.contains("neat.html  v2  NEAT tracker  (second)"))
+        assertEquals(0 to "<p>one</p>", run("get", "neat.html", "--version", "1"))
+        assertEquals(0 to "<p>two</p>", run("get", "neat.html"))
+        assertNotEquals(0, run("get", "neat.html", "--version", "9").first)
 
         val two = (store.read("phone", somaArtifactPath("neat.html")) as ArtifactRead.Ready).document
         assertEquals(listOf("<p>two</p>", "text/html", "2", "2", "NEAT tracker"), listOf(two.text, two.mime, two.v.toString(), two.latest.toString(), two.title))

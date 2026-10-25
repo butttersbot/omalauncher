@@ -644,7 +644,7 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
                     platform.linkAfter(MacLink.Answered)
                     noted(seen)
                     if (seen.lastEvent < cursors.after(threadId)) {
-                        cursors.forget(threadId)
+                        cursors.forget(threadId); artifacts.forget(threadId)
                         saveCursors()
                     }
                     synced(seen)

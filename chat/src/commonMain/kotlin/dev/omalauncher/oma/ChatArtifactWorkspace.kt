@@ -91,14 +91,18 @@ internal fun ChatArtifactWorkspace(
     BackHandler(panelOpen) { close() }
     // What was last seen of each artifact of this tab's threads: what is already there when the tab opens opens nothing.
     var seen by remember(tab) { mutableStateOf(live.filter { it.thread in threads }.associate { it.key to (it.version to it.editing) }) }
-    var peek by remember(tab) { mutableStateOf<String?>(null) }
+    // Kept across a fold or unfold, which may rebuild the screen: the strip, and whether the window was wide before.
+    var peek by rememberSaveable(tab) { mutableStateOf<String?>(null) }
+    var wasWide by rememberSaveable { mutableStateOf<Boolean?>(null) }
+    // What the strip shows for an artifact no event has spoken of yet (one he had open when he folded).
+    var peekAlone by remember { mutableStateOf<ArtifactLive?>(null) }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         // Portrait Fold windows still have enough room for two useful reading panes. Cover windows do not.
         val wide = maxWidth >= 680.dp
         val news = artifactNews(seen, live, threads, System.currentTimeMillis() / 1000)
         LaunchedEffect(news) {
+            seen = artifactSeen(seen, live, threads)
             val newest = news.firstOrNull() ?: return@LaunchedEffect
-            seen = seen + news.associate { it.key to (it.version to it.editing) }
             val artifact = somaArtifact(newest.thread, newest.name, newest.version)
             // Beside the chat, unless he is looking at another artifact there: that one stays.
             if (wide) {
@@ -108,14 +112,23 @@ internal fun ChatArtifactWorkspace(
             } else if (selected?.id != artifact.id) peek = newest.key
         }
         // The strip goes once he has seen the artifact, and a version that is ready goes by itself after a while.
-        val peeked = live.firstOrNull { it.key == peek }
+        val peeked = live.firstOrNull { it.key == peek } ?: peekAlone?.takeIf { it.key == peek }
         LaunchedEffect(peek, peeked?.editing, selected?.id) {
             if (peeked != null && selected?.id == peeked.key) peek = null
             else if (peeked != null && peeked.editing == null) { delay(PEEK_READY_MS); peek = null }
         }
-        // Unfolding while the strip tells of an artifact shows that artifact beside the chat.
-        LaunchedEffect(wide) {
+        // Unfolding while the strip tells of an artifact shows that artifact beside the chat. Folding with an agent's artifact
+        // beside the chat never covers the chat with it: it goes to the strip, one tap away (Boss: the cover screen is the chat's).
+        LaunchedEffect(wide, peek, selected?.id) {
+            val before = wasWide
+            wasWide = wide
             if (wide && peeked != null && selected == null) { open(somaArtifact(peeked.thread, peeked.name, peeked.version)); peek = null }
+            else if (before == true && !wide && !expanded && selected?.soma == true) {
+                val folded = selected
+                peekAlone = ArtifactLive(folded.thread, folded.name, maxOf(folded.version, shownVersion), null, time = System.currentTimeMillis() / 1000)
+                close()
+                peek = folded.id
+            }
         }
         val overlay = panelOpen && (!wide || expanded)
         val focus = LocalFocusManager.current
@@ -146,7 +159,8 @@ internal fun ChatArtifactWorkspace(
                 Box(Modifier.weight(.92f).fillMaxHeight()) {
                     CompositionLocalProvider(LocalArtifactLive provides live, LocalArtifactWhere provides where) {
                         if (listing) ArtifactFiles(artifacts, close, open)
-                        else if (selected != null) ArtifactPanel(host, selected, opens, artifacts, wide = true, canSplit = false, { expanded = true }, close, open, onDiscuss) { shownVersion = it }
+                        else if (selected != null) ArtifactPanel(host, selected, opens, artifacts, wide = true, canSplit = false, { expanded = true }, close, open, onDiscuss,
+                            onShown = { shownVersion = it }, onLatest = { v -> if (selected.version != v) opened = opened + (tab to selected.copy(version = v)) })
                     }
                 }
             }
@@ -159,7 +173,7 @@ internal fun ChatArtifactWorkspace(
                         onDiscuss = {
                             onDiscuss(it)
                             if (!wide) close() else expanded = false
-                        }, onShown = { shownVersion = it })
+                        }, onShown = { shownVersion = it }, onLatest = { v -> if (selected.version != v) opened = opened + (tab to selected.copy(version = v)) })
                 }
             }
         }
@@ -223,6 +237,8 @@ private fun ArtifactPanel(
     onOpen: (ChatArtifact) -> Unit,
     onDiscuss: (ChatArtifact) -> Unit,
     onShown: (Int) -> Unit = {},
+    /** The panel follows the newest version, now [Int]: what is open is that version, so a rebuilt panel follows on too. */
+    onLatest: (Int) -> Unit = {},
 ) {
     var view by rememberSaveable(artifact.id) { mutableStateOf("Preview") }
     var reload by remember(artifact.id) { mutableIntStateOf(0) }
@@ -237,7 +253,7 @@ private fun ArtifactPanel(
     val path = if (artifact.soma) somaArtifactPath(artifact.name, viewing) else artifact.location
     // The version shown stays while the next is read, so a new version replaces it in place instead of flashing.
     var read by remember(artifact.id) { mutableStateOf<ArtifactRead?>(null) }
-    LaunchedEffect(artifact.id, path, latest.takeIf { viewing == null }, reload) {
+    LaunchedEffect(artifact.id, path, maxOf(artifact.version, live?.version ?: 0).takeIf { viewing == null }, reload) {
         if (!artifact.soma) read = null
         // The first version isn't there yet while an agent makes it: nothing to read until it is.
         if (artifact.soma && latest == 0) return@LaunchedEffect
@@ -253,6 +269,7 @@ private fun ArtifactPanel(
     val document = (read as? ArtifactRead.Ready)?.document
     val shownVersion = document?.v?.takeIf { it > 0 } ?: viewing ?: latest
     LaunchedEffect(shownVersion) { onShown(shownVersion) }
+    LaunchedEffect(shownVersion, viewing) { if (artifact.soma && viewing == null && shownVersion > 0) onLatest(shownVersion) }
     // A new version while he is looking at the newest: said quietly over the preview for a moment.
     var toast by remember(artifact.id) { mutableStateOf<String?>(null) }
     var toldOf by remember(artifact.id) { mutableIntStateOf(latest) }
