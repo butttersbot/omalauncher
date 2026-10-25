@@ -33,7 +33,7 @@ class Mic(
         val out = File(File(context.cacheDir, "voice").apply { mkdirs() }, "rec-${System.currentTimeMillis()}.ogg")
         return runCatching {
             recorder =
-                MediaRecorder(context).apply {
+                (if (android.os.Build.VERSION.SDK_INT >= 31) MediaRecorder(context) else @Suppress("DEPRECATION") MediaRecorder()).apply {
                     setAudioSource(MediaRecorder.AudioSource.MIC)
                     setOutputFormat(MediaRecorder.OutputFormat.OGG)
                     setAudioEncoder(MediaRecorder.AudioEncoder.OPUS)

@@ -616,7 +616,7 @@ fun Thread(
                     }
                 }
             },
-            Modifier.padding(bottom = 4.dp),
+            modifier = Modifier.padding(bottom = 4.dp),
             placeholder = "iMessage",
             sendColor = Pack.foreground,
             onSendColor = Pack.background,
