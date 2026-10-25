@@ -306,3 +306,4 @@ absent unread
 [phone] Play a video, close Soma Messages from recents, open the chat again: the video still shows its own frame, not the plain card.
 [phone] Send a photo and a video: each stands on its own with rounded corners, no balloon or tail round it, as in iMessage; hold one: the tapback picker still shows.
 [phone] A friend's white balloons: the tail at the end of a run has no line through its top.
+[phone] A portrait photo taken on the Fold and sent, and one a friend sends from an iPhone: both show the right way up in the chat, in the side panel and in the viewer; a portrait video's frame too.

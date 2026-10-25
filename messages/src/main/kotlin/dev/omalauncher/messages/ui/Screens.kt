@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import dev.omalauncher.messages.engine.Part
+import dev.omalauncher.messages.engine.Upright
 import dev.omalauncher.messages.engine.Alerts
 import dev.omalauncher.messages.engine.Desk
 import dev.omalauncher.messages.engine.CafOpus
@@ -831,13 +832,19 @@ private fun Videos(
  */
 private fun posterOf(f: java.io.File): ImageBitmap? =
     runCatching {
-        val kept = java.io.File(f.path + ".frame.jpg")
+        // ".upright": frames kept before 0.8.3 could be sideways (Boss, 2026-10-24), so those are not read again.
+        val kept = java.io.File(f.path + ".upright.jpg")
         if (kept.isFile && kept.length() > 0) {
             android.graphics.BitmapFactory.decodeFile(kept.path)?.let { return@runCatching it.asImageBitmap() }
         }
         android.media.MediaMetadataRetriever().use { r ->
             r.setDataSource(f.path)
-            r.getScaledFrameAtTime(500_000, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 720, 720)?.also { bmp ->
+            val rotation = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+            val storedW = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
+            val storedH = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
+            r.getScaledFrameAtTime(500_000, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 720, 720)?.let { frame ->
+                if (Upright.frameNeedsTurn(rotation, frame.width, frame.height, storedW, storedH)) turned(frame, rotation, false) else frame
+            }?.also { bmp ->
                 runCatching { kept.outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, it) } }
             }?.asImageBitmap()
         }
@@ -949,7 +956,24 @@ private fun decode(
     android.graphics.BitmapFactory.decodeFile(f.path, bounds)
     var sample = 1
     while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= max) sample *= 2
-    return android.graphics.BitmapFactory.decodeFile(f.path, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample })?.asImageBitmap()
+    val bmp = android.graphics.BitmapFactory.decodeFile(f.path, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }) ?: return null
+    val tag = runCatching { android.media.ExifInterface(f.path).getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, 1) }.getOrDefault(1)
+    val (turn, mirror) = Upright.of(tag)
+    return turned(bmp, turn, mirror).asImageBitmap()
+}
+
+/** [bmp] mirrored if [mirror], then turned [degrees] clockwise; itself when neither. */
+private fun turned(
+    bmp: android.graphics.Bitmap,
+    degrees: Int,
+    mirror: Boolean,
+): android.graphics.Bitmap {
+    if (degrees == 0 && !mirror) return bmp
+    val m = android.graphics.Matrix().apply {
+        if (mirror) postScale(-1f, 1f)
+        postRotate(degrees.toFloat())
+    }
+    return android.graphics.Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true)
 }
 
 /** Opens [f] in the phone's own viewer. */
