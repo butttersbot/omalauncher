@@ -33,7 +33,7 @@ function updateFeed(feed){
  text(s[10].firstElementChild,'BIG QUESTIONS');if(s[10].lastElementChild!==s[10].firstElementChild)listInto(s[10].lastElementChild,rows.slice(8),4);
  empty(s[11],'PUBLIC LISTINGS','Listing dates are not provided by every venue.');s[11].append(...rows.slice(-2).map(marketButton));
  empty(s[12],'YOUR TEAMS','Team following is not connected yet.');text(s[13],Hunch.error?'OFFLINE · TRY REFRESH':'END OF THIS ISSUE · PUBLIC MARKETS');
- if(Hunch.query||Hunch.category!=='ALL'){s.slice(2).forEach(e=>e.hidden=true);const results=document.createElement('div');results.className='paper-search-results';listInto(results,rows,100);feed.append(results)}
+ if(Hunch.query||Hunch.category!=='ALL'){s.slice(2).forEach(e=>e.style.display='none');const results=document.createElement('div');results.className='paper-search-results';listInto(results,rows,100);feed.append(results)}
  feed.append(action('Refresh markets',()=>sendNative({type:'markets'})));
 }
 function coverPrepare(root){
@@ -50,7 +50,7 @@ async function showLive(){
   logic.state.tab=Hunch.chapter;const a=Paper.active;
   a.values=v=>({...v,zoomed:false,notZoomed:true,rows:[],settled:[],tot:{stake:'—',worth:'—',pays:'—'},next:{left:'—',title:'No connected bets',sub:'Read-only markets',chance:'—',pick:()=>{}},segs:v.segs.map((s,i)=>({...s,label:i?'SETTLED':'OPEN'})),tabs:v.tabs.map((t,i)=>({...t,hasBadge:false,badge:'',aria:['Today','Bets','Money'][i],sub:i===0?'PUBLIC MARKETS':i===1?'NO ACCOUNT':'NOT CONNECTED',pick:()=>route(['today','bets','money'][i])}))});
   a.prepare=coverPrepare;
-  a.dimensions=()=>({width:390,height:844});
+  a.dimensions=()=>({width:390,height:844});a.fitHeight=true;
  });
 }
 function route(chapter){Hunch.chapter=chapter;Hunch.selected=null;sendNative({type:'route',chapter});showLive()}
@@ -58,8 +58,8 @@ async function showMarket(wide){
  const m=Hunch.selected;
  await Paper.show('Main',logic=>{
   const a=Paper.active;logic.state.sel=m.id;logic.state.amt=Hunch.budget;logic.state.side=Hunch.side;
-  logic.markets=()=>Hunch.rows.map(x=>({id:x.id,group:'later',title:x.title,sub:x.category+' · '+x.venue,label:x.venue+' · '+x.date,heading:x.title,question:x.sides.join(' / '),rules:Object.entries(x.terms).map(([k,v])=>k+': '+v).join(' · '),tag:'READ ONLY',lo:0,hi:0,sides:x.sides.map(name=>({name,price:1,chance:'—',ifText:'If '+name+' settles in your favor',fill:'Loading live order book…',venue:x.venue}))}));
-  a.values=v=>{const b=Hunch.book;return {...v,tonight:[],sunday:[],later:v.later.map((r,i)=>({...r,pick:()=>choose(Hunch.rows[i])})),sides:v.sides.map((s,i)=>({...s,cents:i===Hunch.side&&b?.valid?(Number(b.ask)*100).toFixed(2)+'¢ ASK':'NO VERIFIED QUOTE',chance:'—',pick:()=>{Hunch.side=i;logic.state.side=i;requestBook();Paper.schedule()}})),amt:Hunch.budget,amtLabel:'$'+Hunch.budget,payout:b?.valid?b.payout:'—',profit:'—',ifText:'Depth preview · not an order',ctaVerb:'READ ONLY',side:{...v.side,fill:b?.valid?(b.complete?'Full preview at current depth.':'Partial fill at current depth.'):b?'No valid executable quote.':'Loading live order book…',venue:m.venue},chips:v.chips.map((c,i)=>({...c,pick:()=>{Hunch.budget=[5,10,20,50,100][i];logic.state.amt=Hunch.budget;requestBook();Paper.schedule()}})),onRange:e=>{Hunch.budget=Number(e.target.value);logic.state.amt=Hunch.budget;requestBook();Paper.schedule()}}};
+  logic.markets=()=>[m,...Hunch.rows.filter(x=>x.id!==m.id)].map(x=>({id:x.id,group:'later',title:x.title,sub:x.category+' · '+x.venue,label:x.venue+' · '+x.date,heading:x.title,question:x.sides.join(' / '),rules:Object.entries(x.terms).map(([k,v])=>k+': '+v).join(' · '),tag:'READ ONLY',lo:0,hi:0,sides:x.sides.map(name=>({name,price:1,chance:'—',ifText:'If '+name+' settles in your favor',fill:'Loading live order book…',venue:x.venue}))}));
+  a.values=v=>{const received=Hunch.book;const b=received&&Date.now()-received.time<=60000?received:null;return {...v,tonight:[],sunday:[],later:v.later.map((r,i)=>({...r,pick:()=>choose([m,...Hunch.rows.filter(x=>x.id!==m.id)][i])})),sides:v.sides.map((s,i)=>({...s,cents:i===Hunch.side&&b?.valid?(Number(b.ask)*100).toFixed(2)+'¢ ASK':'NO VERIFIED QUOTE',chance:'—',pick:()=>{Hunch.side=i;logic.state.side=i;requestBook();Paper.schedule()}})),amt:Hunch.budget,amtLabel:'$'+Hunch.budget,payout:b?.valid?b.payout:'—',profit:'—',ifText:'Depth preview · not an order',ctaVerb:'READ ONLY',side:{...v.side,fill:b?.valid?(b.complete?'Full preview at current depth.':'Partial fill at current depth.'):b?'No valid executable quote.':'Loading live order book…',venue:m.venue},chips:v.chips.map((c,i)=>({...c,pick:()=>{Hunch.budget=[5,10,20,50,100][i];logic.state.amt=Hunch.budget;requestBook();Paper.schedule()}})),onRange:e=>{Hunch.budget=Number(e.target.value);logic.state.amt=Hunch.budget;requestBook();Paper.schedule()}}};
   a.prepare=root=>{root.querySelectorAll('div[style*="height: 292px"],div[style*="width: 236px"]').forEach(p=>p.style.overflowY='auto');root.querySelectorAll('a').forEach(el=>{el.removeAttribute('href');text(el.firstElementChild,'DEPTH PREVIEW');event(el,'click',()=>notice('Trading is not enabled. This is a read-only depth preview.'))});const header=root.querySelector('div[style*="height: 92px"]');if(header)empty(header,'PUBLIC MARKETS',m.venue,action('Back to Today',()=>{Hunch.selected=null;showLive()}));if(!wide){root.style.width='440px';root.style.height='760px';Array.from(root.children).forEach(el=>{const left=parseFloat(el.style.left);if(left>=462)el.style.left=(left-440)+'px';else if(left===22||left===439||left===440)el.remove()});root.append(action('Back to Today',()=>{Hunch.selected=null;showLive()}));} };
   a.dimensions=()=>({width:wide?880:440,height:760});
  });
@@ -101,7 +101,7 @@ async function showAccount(data){
    }
    button('Check sign-in again',()=>post('check'));button('Back to markets',()=>sendNative({type:'close'}));
   };
-  a.autoHeight=true;a.dimensions=()=>({width:390,height:844});
+  a.autoHeight=true;a.maxScale=1;a.dimensions=()=>({width:390,height:844});
  });
 }
 async function showWide(){
