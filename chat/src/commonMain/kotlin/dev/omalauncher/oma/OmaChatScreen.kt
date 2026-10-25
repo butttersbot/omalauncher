@@ -395,18 +395,28 @@ private fun ChatScreen(
     val earlier = remember(earlierRead, tasks) {
         (earlierRead as? MacEarlierRead.Read)?.takeIf { earlierThread != null }?.let { macEarlier(it.events, tasks, earlierThread.orEmpty()) }.orEmpty()
     }
+    // What the agents made on purpose (soma-artifact) comes first in each entry, then what its words link to or show.
+    // One per artifact, whichever entry made which version, so its newest version is the one listed.
     val artifacts = remember(tasks, earlier, tab, book) {
         val local = tabEntries(tasks, tab, book).flatMap { task ->
-            chatArtifacts(task.result, "task:${task.time}", task.thread) +
+            taskSomaArtifacts(task) + chatArtifacts(task.result, "task:${task.time}", task.thread) +
                 task.later.flatMapIndexed { index, said -> if (said.words) chatArtifacts(said.text, "later:${task.time}:$index", task.thread) else emptyList() }
         }
-        (local + earlier.flatMap { chatArtifacts(it.answer, "earlier:${it.id}", earlierThread.orEmpty()) }).distinctBy { it.thread to it.location }.takeLast(60).reversed()
+        val before = earlier.flatMap { turn ->
+            stepArtifacts(turn.steps).map { somaArtifact(earlierThread.orEmpty(), it.name, it.version) } + chatArtifacts(turn.answer, "earlier:${turn.id}", earlierThread.orEmpty())
+        }
+        (before + local).asReversed().distinctBy { it.thread to it.location }.take(60)
     }
+    // The threads whose entries this tab shows: an artifact one of them makes opens here.
+    val artifactThreads = remember(tasks, tab, book, earlierThread) {
+        (tabEntries(tasks, tab, book).map { artifactThread(it) } + listOfNotNull(earlierThread)).filter { it.isNotEmpty() }.toSet()
+    }
+    val madeLive = remember(tick) { host.liveArtifacts() }
     Box(Modifier.fillMaxSize().background(Pack.background).safeDrawingPadding().padding(PageGap), contentAlignment = Alignment.TopCenter) {
         CompositionLocalProvider(LocalEarlierThread provides earlierThread.orEmpty()) {
-        ChatArtifactWorkspace(host, tab, artifacts, onDiscuss = { artifact ->
+        ChatArtifactWorkspace(host, tab, artifacts, live = madeLive, threads = artifactThreads, where = threads.firstOrNull { it.key == tab }?.machine?.ifBlank { null } ?: earlierThread?.let { id -> hosts.firstOrNull { it.id == dev.omalauncher.assist.macMachineOf(id) }?.name }.orEmpty(), onDiscuss = { artifact ->
             // Explicit context is added to this tab's draft, never sent by opening or discussing an output.
-            type(appendSpeech(draft, "Regarding ${artifact.name} (${artifact.location}): "))
+            type(appendSpeech(draft, if (artifact.soma) "About ${artifact.name} v${artifact.version}: " else "Regarding ${artifact.name} (${artifact.location}): "))
             focusAsked++
         }) {
         Column(Modifier.fillMaxSize().widthIn(max = ReadingWidth)) {
@@ -591,6 +601,8 @@ private fun ChatScreen(
                 }
             }
             if (importing) BasicText("adding images…", Modifier.padding(8.dp), style = Pack.body(color = Pack.muted))
+            // On a narrow screen, an agent's artifact is told of here, above the box, and never takes the screen.
+            LocalArtifactPeek.current?.invoke()
             Row(
                 Modifier.fillMaxWidth().heightIn(min = 48.dp).framed(Pack.mark, if (listening || focused) Pack.accent else Pack.border, Pack.surface),
                 verticalAlignment = Alignment.CenterVertically,
@@ -1206,6 +1218,7 @@ private fun TaskEntry(
             }
         }
         if (result.isNotBlank()) ChatArtifactLinks(result, "task:${task.time}", task.thread)
+        SomaArtifactCards(remember(task.steps, task.later, task.thread) { taskSomaArtifacts(task) })
         val ended = when (task.status) {
             TaskStatus.Stopped -> "stopped"
             TaskStatus.Failed -> "needs attention"
@@ -1250,6 +1263,8 @@ private fun EarlierEntry(turn: MacTurn, on: String = "the Mac") {
             }
         }
         macTurnSteps(turn)?.let { BasicText("· $it", Modifier.padding(top = 4.dp), style = small, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+        val earlierThread = LocalEarlierThread.current
+        SomaArtifactCards(remember(turn.steps, earlierThread) { stepArtifacts(turn.steps).map { somaArtifact(earlierThread, it.name, it.version) } })
         if (turn.answer.isNotBlank()) ChatArtifactLinks(turn.answer, "earlier:${turn.id}", LocalEarlierThread.current)
         if (turn.answer.isNotBlank()) {
             SelectionContainer {

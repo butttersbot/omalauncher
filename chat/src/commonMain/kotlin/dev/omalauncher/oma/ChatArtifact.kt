@@ -14,11 +14,17 @@ data class ChatArtifact(
     val thread: String,
     val kind: ArtifactKind,
     val inline: String? = null,
-)
+    /** For an agent-made artifact ([SOMA_ARTIFACT]), the newest version the chat has heard of; 0 for every other output. */
+    val version: Int = 0,
+) {
+    /** Made on purpose with `soma-artifact`, kept with every version on its computer (SomaArtifacts.kt). */
+    val soma get() = location.startsWith(SOMA_ARTIFACT)
+}
 
 enum class ArtifactKind { Html, Markdown, Code, Image, Web }
 
-data class ArtifactDocument(val name: String, val mime: String, val bytes: ByteArray, val version: String) {
+/** [v] and [latest] are an agent-made artifact's version numbers, as its computer said them; 0 for any other output. */
+data class ArtifactDocument(val name: String, val mime: String, val bytes: ByteArray, val version: String, val v: Int = 0, val latest: Int = 0, val title: String = "") {
     val text: String get() = bytes.toString(Charsets.UTF_8)
     val readingText: String get() = text.let { if (it.length <= 128_000) it else it.take(128_000) + "\n\n… Preview limited to 128,000 characters." }
 }
@@ -109,5 +115,6 @@ fun decodeArtifact(code: Int, body: String): ArtifactRead = runCatching {
     require(json.optBoolean("ok"))
     val bytes = Base64.getDecoder().decode(json.getString("data"))
     require(bytes.size <= 4 * 1024 * 1024)
-    ArtifactRead.Ready(ArtifactDocument(json.getString("name"), json.getString("mime"), bytes, json.getString("version")))
+    ArtifactRead.Ready(ArtifactDocument(json.getString("name"), json.getString("mime"), bytes, json.getString("version"),
+        json.optInt("v"), json.optInt("latest"), if (json.isNull("title")) "" else json.optString("title").take(80)))
 }.getOrElse { ArtifactRead.Failed("The computer returned an unreadable artifact. Try again.") }

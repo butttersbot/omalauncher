@@ -728,3 +728,29 @@ Stop and remembered-command revocation remain supported. Other providers keep
 their existing policies. A source change takes effect on the installed service
 only after an idle-only deployment/restart; OS and external-tool permissions
 remain enforced.
+
+## As built: artifacts (2026-10-24, by the Mac Pro session; plan: ClaudeSync features/artifact-panel/PLAN.md)
+
+An agent shows Boss a file beside the chat on purpose, and every version is kept.
+
+- **The helper.** `soma-artifact put FILE [--name N] [--title T] [--note WHAT]` (FILE `-` reads stdin), `soma-artifact
+  editing NAME`, `soma-artifact list`. Written at each start to the runner's `STATE/bin` beside `soma`, first on every
+  thread's PATH. It sends one JSON line over a Unix socket (`STATE/artifacts.sock`, or a per-runner name in this user's
+  temp folder when that path is too long), mode 600, with `SOMA_THREAD` and `SOMA_ARTIFACT_TOKEN` (an HMAC of the thread
+  id under `STATE/artifact.key`, 600). A wrong token, another thread's token, or a Venice thread is refused.
+- **The store.** `~/Soma/artifacts/<thread>/<name>/v<N>.<ext>` + `meta.json` (`OMA_RUNNER_ARTIFACTS` moves it). Names:
+  letters, digits, `- _ .`, one of the known endings (html, md, txt, json, csv, svg, png, jpg, webp, gif, css, js, …).
+  4 MiB a version, 100 versions kept per artifact (oldest let go), 100 artifacts and 256 MiB per thread. Files are
+  written whole (temp + rename), 600 in 700 folders; nothing is read through a link; `meta.json` is checked again on
+  every read, since agents can write under `~/Soma` too.
+- **The event.** `{type: "artifact", name, version, title, mime, state: "editing"|"ready", note}` on the thread's stream.
+  A turn's end turns any edit no version followed back to `ready` at the version it had, with `settled: true` (`gone`
+  when there was none). Claude Code writing or editing a file named as one of the thread's artifacts, or a Bash
+  command naming one, marks it `editing` by itself.
+- **The routes.** `GET /threads/ID/artifacts` lists them with every version's time, size, sha and note;
+  `GET /threads/ID/artifacts/NAME[?v=N]` gives one version (newest by default) as base64 JSON with `v` and `latest`.
+  Same key and whois checks as everything else, `Cache-Control: no-store`. They read the store alone: the project-file
+  route (`/artifact?path=`, on phone/fold-development) keeps its rules.
+- **The agents are told.** Claude Code: `--append-system-prompt` (`ARTIFACT_NOTE`), and `Bash(soma-artifact *)` allowed
+  without a card in either mode. Codex, Cursor, Grok: the same note in brackets ahead of a new session's first words
+  (a resumed session isn't told again). Codex's sandbox may refuse the socket; its card then asks.

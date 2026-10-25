@@ -66,6 +66,16 @@ sealed interface MacEvent {
      */
     data class Note(override val id: Long, override val time: Long, val text: String) : MacEvent
 
+    /**
+     * The agent made or changed an artifact with `soma-artifact` (features/artifact-panel/PLAN.md): [state] "editing"
+     * while it works on [version], "ready" once [version] is kept. [settled] is the runner ending an "editing" that no
+     * version followed, when the turn ended: nothing new was made.
+     */
+    data class Artifact(
+        override val id: Long, override val time: Long, val name: String, val version: Int, val title: String, val mime: String,
+        val state: String, val note: String = "", val settled: Boolean = false,
+    ) : MacEvent
+
     /** The task was stopped; [dropped] messages that were waiting their turn went with it. */
     data class Stopped(override val id: Long, override val time: Long, val dropped: Int) : MacEvent
 
@@ -117,6 +127,10 @@ internal fun macEvent(json: JSONObject, lineId: Long? = null, lineType: String? 
         "result" -> MacEvent.Result(id, time, json.macText("text"), json.optBoolean("failed"), json.macText("kind"), json.macText("model"))
         "note" -> json.macText("text").trim().takeIf { it.isNotEmpty() }?.let { MacEvent.Note(id, time, it) } ?: MacEvent.Other(id, time, type)
         "stopped" -> MacEvent.Stopped(id, time, (json.macWhole("dropped") ?: 0L).toInt())
+        "artifact" -> json.macText("name").takeIf { it.isNotBlank() && it.length <= 80 && '/' !in it }?.let {
+            MacEvent.Artifact(id, time, it, (json.macWhole("version") ?: 0L).toInt(), json.macText("title").take(80), json.macText("mime"), json.macText("state"),
+                json.macText("note").take(200), json.opt("settled") == true)
+        } ?: MacEvent.Other(id, time, type)
         // The runner's code is a number when the agent died and a word when it says why the turn ended.
         "error" -> MacEvent.Error(id, time, json.macText("text"), json.macWhole("code")?.toInt(), (json.opt("code") as? String).orEmpty())
         else -> MacEvent.Other(id, time, type)

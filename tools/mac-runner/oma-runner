@@ -26,6 +26,9 @@ Only exact Codex command scopes the owner explicitly saved may reuse that decisi
   POST /files?name=NAME   (the bytes)    a file from the phone, kept in ~/Downloads/From Fold; {path, bytes}
   GET  /projects                         the project registry (~/ClaudeSync/projects/_projects.json): {name, folders, handoff}
   GET  /projects/NAME/handoff            that project's HANDOFF.md or CURRENT-STATE.md, top section and Next section: {file, updated, text}
+  GET  /threads/ID/artifacts             what the thread's agent made with `soma-artifact put` (features/artifact-panel/PLAN.md):
+                                         {artifacts: [{name, title, mime, latest, editing, versions: [{v, time, size, sha, note}]}]}
+  GET  /threads/ID/artifacts/NAME[?v=N]  one version of one (the newest by default): {name, title, mime, v, latest, note, data, version}
 
 Agent mail for a thread (tailshare's ~/.local/share/tailshare/mail/new/, to.session = the thread's id) is taken and
 given to that thread labeled as another agent's, never as the owner's words. Each thread's agent runs with
@@ -261,6 +264,529 @@ def revoke_canvas_token(token, key=None):
         pass
 
 
+# Artifacts (features/artifact-panel/PLAN.md): what an agent deliberately makes for Boss to look at beside the chat (a
+# mockup, a page, a chart). The agent runs `soma-artifact put FILE`; the helper hands the bytes to this runner over a
+# socket only this user can open, with the thread's own token, and the runner keeps every version in the thread's own
+# folder of the store, tells the thread's devices with an `artifact` event, and serves them on
+# GET /threads/ID/artifacts[/NAME?v=N]. That route reads the store alone, so the project-file route keeps its rules.
+# The store is under Boss's own folders, where his agents can write too, so nothing read back from it is trusted: a
+# version's file is named by the runner from the artifact's checked name and number, and opened without following links.
+ARTIFACT_STORE = pathlib.Path(os.environ.get('OMA_RUNNER_ARTIFACTS') or HOME / 'Soma/artifacts')
+ARTIFACT_STORE_BYTES = 4 * 1024 * 1024  # one version, as the project-file route caps a file
+ARTIFACT_STORE_THREAD_BYTES = 256 * 1024 * 1024  # everything one thread keeps
+ARTIFACT_STORE_NAMES = 100  # artifacts in one thread
+ARTIFACT_STORE_VERSIONS = 100  # versions kept of one artifact; older ones are let go
+ARTIFACT_STORE_NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)*\.([A-Za-z0-9]{1,8})')
+ARTIFACT_STORE_THREAD = re.compile(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}')
+ARTIFACT_STORE_MIMES = {
+    'html': 'text/html', 'htm': 'text/html', 'md': 'text/markdown', 'markdown': 'text/markdown', 'txt': 'text/plain',
+    'json': 'application/json', 'csv': 'text/plain', 'diff': 'text/plain', 'patch': 'text/plain', 'css': 'text/css',
+    'js': 'text/javascript', 'ts': 'text/plain', 'py': 'text/plain', 'kt': 'text/plain', 'xml': 'text/plain',
+    'yaml': 'text/plain', 'yml': 'text/plain', 'svg': 'text/plain', 'png': 'image/png', 'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg', 'webp': 'image/webp', 'gif': 'image/gif',
+}
+ARTIFACT_STORE_EDITING = 15 * 60  # an "editing" that no version follows stops showing after this long
+artifact_store_lock = threading.Lock()
+# What every agent of a thread is told (Claude Code beside its own system prompt; the others before a new session's first
+# message), so asking for a mockup puts one beside the chat.
+ARTIFACT_NOTE = ('Soma (the app Boss is using) shows artifacts beside the chat. When he asks for a mockup, page, chart, '
+                 'diagram or anything visual, write ONE self-contained file (HTML with inline CSS and JS: it is shown offline, '
+                 'so no CDN scripts, web fonts or network calls) and run `soma-artifact put FILE --title "Short title" --note '
+                 '"what this version is"`. Every change is a new put of the same file name, which becomes its next version. '
+                 'Before you start changing one, run `soma-artifact editing NAME` so Boss sees you are on it. '
+                 '`soma-artifact list` shows what this conversation has; `soma-artifact get NAME --version N` prints an older version.')
+
+SOMA_ARTIFACT_HELPER = r'''#!/usr/bin/env python3
+"""soma-artifact: shows a file beside this conversation in Soma, as an artifact Boss can look at and use.
+
+  soma-artifact put FILE [--name NAME] [--title TITLE] [--note WHAT]   a new version (FILE "-" reads stdin; then --name)
+  soma-artifact editing NAME [--note WHAT]                            "working on it", before you change one
+  soma-artifact get NAME [--version N]                                a version's file on stdout (the newest by default)
+  soma-artifact list                                                  this conversation's artifacts
+
+One self-contained file per artifact (HTML with its CSS and JS inline: it is shown offline). Each put of the same name
+is its next version; every version is kept. Only this conversation's artifacts, never anything else."""
+import base64, json, os, socket, sys
+
+HELP_LINES = __doc__.split('\n\n')[1]
+
+
+def fail(text, code=2):
+    sys.stderr.write('soma-artifact: ' + text + '\n')
+    sys.exit(code)
+
+
+def options(words, allowed):
+    found, rest = {}, []
+    while words:
+        word = words.pop(0)
+        if word in ('-h', '--help'):
+            print(__doc__)
+            sys.exit(0)
+        if word.startswith('--') and '=' in word:
+            word, value = word.split('=', 1)
+            words.insert(0, value)
+        if word in allowed:
+            if not words:
+                fail(word + ' needs a value\n' + HELP_LINES)
+            found[word[2:]] = words.pop(0)
+        elif word.startswith('--'):
+            fail('unknown option ' + word + '\n' + HELP_LINES)
+        else:
+            rest.append(word)
+    return found, rest
+
+
+def ask(request):
+    where, token, thread = os.environ.get('SOMA_ARTIFACT_SOCKET'), os.environ.get('SOMA_ARTIFACT_TOKEN'), os.environ.get('SOMA_THREAD')
+    if not where or not token or not thread:
+        fail('this shell is not a Soma conversation (no SOMA_THREAD); only an agent Soma runs can show artifacts.')
+    link = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    link.settimeout(30)
+    try:
+        link.connect(where)
+        link.sendall(json.dumps({**request, 'thread': thread, 'token': token}).encode() + b'\n')
+        link.shutdown(socket.SHUT_WR)
+        answer = b''
+        while len(answer) < 4 * 1024 * 1024:
+            part = link.recv(65536)
+            if not part:
+                break
+            answer += part
+    except OSError as problem:
+        fail('Soma\'s runner could not be reached (%s). It may be restarting; try again in a moment.' % problem, 1)
+    finally:
+        link.close()
+    try:
+        answer = json.loads(answer)
+    except ValueError:
+        fail('the runner gave an answer that could not be read.', 1)
+    if not answer.get('ok'):
+        fail(str(answer.get('error') or 'the runner said no.'), 1)
+    return answer
+
+
+words = sys.argv[1:]
+if not words or words[0] in ('-h', '--help', 'help'):
+    print(__doc__)
+    sys.exit(0)
+verb, words = words[0], words[1:]
+if verb == 'put':
+    given, rest = options(words, ('--name', '--title', '--note'))
+    if len(rest) != 1:
+        fail('put takes one FILE\n' + HELP_LINES)
+    if rest[0] == '-':
+        if not given.get('name'):
+            fail('reading stdin needs --name NAME.html')
+        data = sys.stdin.buffer.read(4 * 1024 * 1024 + 1)
+    else:
+        try:
+            with open(rest[0], 'rb') as stream:
+                data = stream.read(4 * 1024 * 1024 + 1)
+        except OSError as problem:
+            fail('could not read %s: %s' % (rest[0], problem.strerror or problem))
+    if len(data) > 4 * 1024 * 1024:
+        fail('that file is over 4 MB, the most an artifact can be.')
+    name = given.get('name') or os.path.basename(rest[0])
+    answer = ask({'op': 'put', 'name': name, 'title': given.get('title', ''), 'note': given.get('note', ''), 'data': base64.b64encode(data).decode()})
+    print('Saved %s v%d. It shows beside the chat in Soma.' % (answer['name'], answer['version']))
+elif verb == 'editing':
+    given, rest = options(words, ('--note',))
+    if len(rest) != 1:
+        fail('editing takes one NAME\n' + HELP_LINES)
+    answer = ask({'op': 'editing', 'name': rest[0], 'note': given.get('note', '')})
+    print('Soma shows %s as being edited (v%d next) until you put it.' % (answer['name'], answer['version']))
+elif verb == 'get':
+    given, rest = options(words, ('--version',))
+    if len(rest) != 1 or (given.get('version') is not None and not given['version'].isdigit()):
+        fail('get takes one NAME and an optional --version N\n' + HELP_LINES)
+    answer = ask({'op': 'get', 'name': rest[0], 'version': int(given['version']) if given.get('version') else None})
+    sys.stdout.buffer.write(base64.b64decode(answer['data']))
+elif verb == 'list':
+    options(words, ())
+    answer = ask({'op': 'list'})
+    if not answer['artifacts']:
+        print('No artifacts in this conversation yet.')
+    for item in answer['artifacts']:
+        latest = item['versions'][-1] if item['versions'] else {}
+        print('%s  v%d  %s%s' % (item['name'], item['latest'], item.get('title') or '', ('  (%s)' % latest['note']) if latest.get('note') else ''))
+else:
+    fail('unknown command %s\n%s' % (verb, HELP_LINES))
+'''
+
+
+def artifact_told(text):
+    """His first words to a new session of an agent that takes no system prompt, after a bracketed note on artifacts."""
+    return '[' + ARTIFACT_NOTE + ']\n\n' + text
+
+
+def write_artifact_helper():
+    """`soma-artifact`, beside `soma`, written each start, readable and runnable by this user alone."""
+    try:
+        SOMA_BIN.mkdir(parents=True, exist_ok=True)
+        fresh = SOMA_BIN / '.soma-artifact.new'
+        fresh.write_text(SOMA_ARTIFACT_HELPER)
+        fresh.chmod(0o700)
+        fresh.replace(SOMA_BIN / 'soma-artifact')
+    except OSError as problem:
+        log('the `soma-artifact` helper for threads could not be written to %s: %s' % (SOMA_BIN, problem))
+
+
+def artifact_socket_path():
+    """The socket the helper reaches this runner on: beside its state, or (a path too long for a socket) in this user's
+    own temporary folder, named for that state so two runners never share one."""
+    path = STATE / 'artifacts.sock'
+    if len(str(path).encode()) < 100:
+        return path
+    return pathlib.Path(tempfile.gettempdir()) / ('oma-artifacts-%s.sock' % hashlib.sha256(str(STATE).encode()).hexdigest()[:12])
+
+
+def artifact_key():
+    """The secret a thread's token is made from, kept in the runner's state for this user alone, made once."""
+    path = STATE / 'artifact.key'
+    try:
+        return bytes.fromhex(path.read_text().strip())
+    except (OSError, ValueError):
+        pass
+    STATE.mkdir(parents=True, exist_ok=True)
+    key = secrets.token_bytes(32)
+    fresh = STATE / '.artifact.key.new'
+    descriptor = os.open(fresh, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(descriptor, 'w') as stream:
+        stream.write(key.hex())
+    fresh.replace(path)
+    return key
+
+
+def artifact_token(thread_id):
+    return hmac.new(artifact_key(), ('artifact:' + thread_id).encode(), hashlib.sha256).hexdigest()
+
+
+def artifact_env(thread, env):
+    """What a thread's agent is given to make artifacts with: its thread, its own token, the socket and the helper first
+    on its PATH. Venice threads run no commands of their own here, so they are given none of it."""
+    if thread.meta.get('kind') == 'venice' or not ARTIFACT_STORE_THREAD.fullmatch(thread.meta['id']):
+        return {}
+    path = env.get('PATH', os.environ.get('PATH', ''))
+    return {'SOMA_THREAD': thread.meta['id'], 'SOMA_ARTIFACT_TOKEN': artifact_token(thread.meta['id']), 'SOMA_ARTIFACT_SOCKET': str(artifact_socket_path()),
+            'PATH': path if path.split(os.pathsep)[0] == str(SOMA_BIN) else str(SOMA_BIN) + os.pathsep + path}
+
+
+def artifact_name(name):
+    """A name as an artifact may have, with the type its extension says; None for any other."""
+    if not isinstance(name, str) or len(name) > 80:
+        return None
+    found = ARTIFACT_STORE_NAME.fullmatch(name)
+    if not found or found.group(2).lower() not in ARTIFACT_STORE_MIMES:
+        return None
+    return name, ARTIFACT_STORE_MIMES[found.group(2).lower()]
+
+
+def artifact_folder(thread_id, name=None):
+    folder = ARTIFACT_STORE / thread_id
+    return folder / name if name else folder
+
+
+def artifact_open(path, most):
+    """The bytes of one regular file the runner named, never through a link anywhere under the store; None otherwise."""
+    try:
+        relative = path.relative_to(ARTIFACT_STORE)
+        directory = os.open(ARTIFACT_STORE, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    except (ValueError, OSError):
+        return None
+    try:
+        for part in relative.parts[:-1]:
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+            os.close(directory)
+            directory = child
+        descriptor = os.open(relative.parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+    except OSError:
+        return None
+    finally:
+        os.close(directory)
+    with os.fdopen(descriptor, 'rb') as stream:
+        info = os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_size > most:
+            return None
+        data = stream.read(most + 1)
+    return data if len(data) <= most else None
+
+
+def artifact_meta(thread_id, name):
+    """One artifact's record as the runner wrote it, checked again as it is read; None when there is none."""
+    checked = artifact_name(name)
+    if checked is None:
+        return None
+    raw = artifact_open(artifact_folder(thread_id, name) / 'meta.json', 1024 * 1024)
+    try:
+        meta = json.loads(raw) if raw is not None else None
+    except ValueError:
+        meta = None
+    if not isinstance(meta, dict):
+        return None
+    versions = []
+    for entry in meta.get('versions') if isinstance(meta.get('versions'), list) else []:
+        if isinstance(entry, dict) and isinstance(entry.get('v'), int) and entry['v'] > 0 and not isinstance(entry['v'], bool):
+            versions.append({'v': entry['v'], 'time': int(entry.get('time') or 0) if isinstance(entry.get('time'), (int, float)) else 0,
+                             'size': int(entry.get('size') or 0) if isinstance(entry.get('size'), int) else 0,
+                             'sha': str(entry.get('sha') or '')[:12], 'note': one_line(entry.get('note'), 200)})
+    versions.sort(key=lambda entry: entry['v'])
+    editing = meta.get('editing') if isinstance(meta.get('editing'), dict) else None
+    if editing and (not isinstance(editing.get('since'), (int, float)) or time.time() - editing['since'] > ARTIFACT_STORE_EDITING):
+        editing = None
+    latest = versions[-1]['v'] if versions else 0
+    return {'name': name, 'title': one_line(meta.get('title'), 80), 'mime': checked[1], 'latest': latest, 'versions': versions,
+            'editing': latest + 1 if editing else None, 'updated': max([entry['time'] for entry in versions] + [int(editing['since']) if editing else 0])}
+
+
+def artifact_list(thread_id):
+    folder = artifact_folder(thread_id)
+    try:
+        names = [entry.name for entry in os.scandir(folder) if entry.is_dir(follow_symlinks=False)]
+    except OSError:
+        names = []
+    found = [meta for meta in (artifact_meta(thread_id, name) for name in names) if meta is not None and (meta['versions'] or meta['editing'])]
+    return sorted(found, key=lambda meta: -meta['updated'])
+
+
+def artifact_write(path, data):
+    """A file of the store written whole or not at all, never through a link left where it goes."""
+    fresh = path.with_name('.' + path.name + '.' + secrets.token_hex(4))
+    descriptor = os.open(fresh, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, 'wb') as stream:
+        stream.write(data)
+    os.replace(fresh, path)
+
+
+def artifact_record(thread_id, name, change):
+    """Reads one artifact's record, lets [change] alter it and writes it back, with the store's lock held."""
+    folder = artifact_folder(thread_id, name)
+    for part in (ARTIFACT_STORE, artifact_folder(thread_id), folder):
+        if part.is_symlink():
+            raise OSError('a link stands where the artifact store goes')
+        part.mkdir(mode=0o700, exist_ok=True)
+    raw = artifact_open(folder / 'meta.json', 1024 * 1024)
+    try:
+        meta = json.loads(raw) if raw is not None else {}
+    except ValueError:
+        meta = {}
+    if not isinstance(meta, dict) or not isinstance(meta.get('versions'), list):
+        meta = {'versions': []}
+    meta['versions'] = [entry for entry in meta['versions'] if isinstance(entry, dict) and isinstance(entry.get('v'), int) and not isinstance(entry.get('v'), bool)]
+    result = change(meta, folder)
+    meta['name'] = name
+    artifact_write(folder / 'meta.json', json.dumps(meta, indent=1).encode())
+    return result
+
+
+def artifact_put(thread, name, data, title='', note=''):
+    """A new version of one of a thread's artifacts: (200, what the event says) or (code, {'error'})."""
+    import base64
+    checked = artifact_name(name)
+    if checked is None:
+        return 400, {'error': 'a name is letters, numbers, - _ . and one of these endings: ' + ', '.join(sorted(ARTIFACT_STORE_MIMES))}
+    if not data:
+        return 400, {'error': 'that file is empty'}
+    if len(data) > ARTIFACT_STORE_BYTES:
+        return 413, {'error': 'that file is over 4 MB, the most an artifact can be'}
+    thread_id = thread.meta['id']
+    extension = name.rsplit('.', 1)[1].lower()
+    with artifact_store_lock:
+        existing = artifact_list(thread_id)
+        if name not in [meta['name'] for meta in existing] and len(existing) >= ARTIFACT_STORE_NAMES:
+            return 409, {'error': 'this conversation already has %d artifacts, the most it can keep' % ARTIFACT_STORE_NAMES}
+        if sum(entry['size'] for meta in existing for entry in meta['versions']) + len(data) > ARTIFACT_STORE_THREAD_BYTES:
+            return 409, {'error': 'this conversation\'s artifacts are at their size limit (256 MB)'}
+
+        def add(meta, folder):
+            version = max([entry['v'] for entry in meta['versions']] + [0]) + 1
+            artifact_write(folder / ('v%d.%s' % (version, extension)), data)
+            meta['versions'].append({'v': version, 'time': int(time.time()), 'size': len(data), 'sha': hashlib.sha256(data).hexdigest()[:12], 'note': one_line(note, 200)})
+            # Only the newest are kept; the oldest go, file and entry both.
+            for gone in meta['versions'][:-ARTIFACT_STORE_VERSIONS]:
+                with contextlib.suppress(OSError):
+                    (folder / ('v%d.%s' % (gone['v'], extension))).unlink()
+            meta['versions'] = meta['versions'][-ARTIFACT_STORE_VERSIONS:]
+            if one_line(title, 80):
+                meta['title'] = one_line(title, 80)
+            meta.pop('editing', None)
+            return version, meta.get('title') or ''
+        try:
+            version, kept_title = artifact_record(thread_id, name, add)
+        except OSError as problem:
+            return 500, {'error': 'the runner could not keep it: %s' % (problem.strerror or problem)}
+    return 200, {'name': name, 'version': version, 'title': kept_title, 'mime': checked[1], 'state': 'ready', 'note': one_line(note, 200)}
+
+
+def artifact_editing(thread, name, note=''):
+    """A thread's agent says it is working on [name]: (200, what the event says) or (code, {'error'})."""
+    checked = artifact_name(name)
+    if checked is None:
+        return 400, {'error': 'a name is letters, numbers, - _ . and one of these endings: ' + ', '.join(sorted(ARTIFACT_STORE_MIMES))}
+    thread_id = thread.meta['id']
+    with artifact_store_lock:
+        existing = artifact_list(thread_id)
+        if name not in [meta['name'] for meta in existing] and len(existing) >= ARTIFACT_STORE_NAMES:
+            return 409, {'error': 'this conversation already has %d artifacts, the most it can keep' % ARTIFACT_STORE_NAMES}
+
+        def mark(meta, _folder):
+            meta['editing'] = {'since': int(time.time())}
+            return max([entry['v'] for entry in meta['versions']] + [0]) + 1, meta.get('title') or ''
+        try:
+            version, kept_title = artifact_record(thread_id, name, mark)
+        except OSError as problem:
+            return 500, {'error': 'the runner could not note it: %s' % (problem.strerror or problem)}
+    return 200, {'name': name, 'version': version, 'title': kept_title, 'mime': checked[1], 'state': 'editing', 'note': one_line(note, 200)}
+
+
+def artifact_touched(thread, block):
+    """Claude Code is about to write or edit a file named as one of this thread's artifacts: the devices show it as being
+    edited at once, as `soma-artifact editing` would, so Boss sees the strip without the agent having to say so. The next
+    put, or the end of the turn, ends it. Call with `changed` held."""
+    given = block.get('input') if isinstance(block.get('input'), dict) else {}
+    thread_id = thread.meta['id']
+    if block.get('name') == 'Bash' and isinstance(given.get('command'), str) and not given['command'].lstrip().startswith('soma-artifact'):
+        # A command that works on an artifact's file by name (a script that rewrites it, then puts it): the first such
+        # artifact of this thread's it names. Looking only at names the thread already has, never anything else.
+        command = given['command'][:20000]
+        names = [entry.name for entry in os.scandir(artifact_folder(thread_id)) if entry.is_dir(follow_symlinks=False)] \
+            if ARTIFACT_STORE_THREAD.fullmatch(thread_id) and artifact_folder(thread_id).is_dir() else []
+        name = next((found for found in sorted(names) if re.search(r'(^|[\s/\'"=<>])' + re.escape(found) + r'($|[\s\'";|&<>)])', command)), None)
+        if name is None:
+            return
+    elif block.get('name') in ('Write', 'Edit', 'MultiEdit') and isinstance(given.get('file_path'), str):
+        name = os.path.basename(given['file_path'])
+    else:
+        return
+    if artifact_name(name) is None or not ARTIFACT_STORE_THREAD.fullmatch(thread_id) or not (artifact_folder(thread_id, name) / 'meta.json').is_file():
+        return
+    meta = artifact_meta(thread_id, name)
+    if meta is None or not meta['versions'] or meta['editing'] is not None:
+        return
+    try:
+        code, said = artifact_editing(thread, name)
+    except Exception as problem:  # never in the way of the agent's own step
+        log('artifact edit could not be marked: %r' % (problem,))
+        return
+    if code == 200:
+        thread.emit('artifact', **said)
+
+
+def artifacts_settle(thread):
+    """A turn is over: an artifact still marked as being edited, with no new version, is not any more, and the devices
+    are told so (state ready, at the version it already had). Call with `changed` held."""
+    thread_id = thread.meta['id']
+    if not ARTIFACT_STORE_THREAD.fullmatch(thread_id) or not artifact_folder(thread_id).is_dir():
+        return
+    with artifact_store_lock:
+        for meta in artifact_list(thread_id):
+            if meta['editing'] is None:
+                continue
+
+            def unmark(record, _folder):
+                record.pop('editing', None)
+            try:
+                artifact_record(thread_id, meta['name'], unmark)
+            except OSError:
+                continue
+            if meta['latest']:
+                thread.emit('artifact', name=meta['name'], version=meta['latest'], title=meta['title'], mime=meta['mime'], state='ready', note='', settled=True)
+            else:
+                thread.emit('artifact', name=meta['name'], version=0, title=meta['title'], mime=meta['mime'], state='gone', note='', settled=True)
+
+
+def artifact_read(thread_id, name, version=None):
+    """One version of an artifact (the newest when none is named), as the project-file route answers: (code, body)."""
+    import base64
+    meta = artifact_meta(thread_id, name) if ARTIFACT_STORE_THREAD.fullmatch(thread_id) else None
+    if meta is None or not meta['versions']:
+        return 404, {'ok': False, 'error': 'no such artifact'}
+    wanted = meta['latest'] if version is None else version
+    entry = next((entry for entry in meta['versions'] if entry['v'] == wanted), None)
+    if entry is None:
+        return 404, {'ok': False, 'error': 'no such version'}
+    data = artifact_open(artifact_folder(thread_id, name) / ('v%d.%s' % (wanted, name.rsplit('.', 1)[1].lower())), ARTIFACT_STORE_BYTES)
+    if data is None:
+        return 404, {'ok': False, 'error': 'that version is gone'}
+    return 200, {'ok': True, 'name': name, 'title': meta['title'], 'mime': meta['mime'], 'v': wanted, 'latest': meta['latest'],
+                 'note': entry['note'], 'time': entry['time'], 'data': base64.b64encode(data).decode(), 'version': hashlib.sha256(data).hexdigest()[:12]}
+
+
+def artifact_answer(request):
+    """One request from `soma-artifact`, checked against the thread's own token: the answer it is given."""
+    import base64
+    thread_id, token = request.get('thread'), request.get('token')
+    if not isinstance(thread_id, str) or not isinstance(token, str) or not ARTIFACT_STORE_THREAD.fullmatch(thread_id) \
+            or not hmac.compare_digest(token.encode(), artifact_token(thread_id).encode()):
+        return {'ok': False, 'error': 'this conversation\'s artifact key was not accepted'}
+    with changed:
+        thread = threads.get(thread_id)
+    if thread is None or thread.meta.get('kind') == 'venice':
+        return {'ok': False, 'error': 'this conversation is not one of this runner\'s'}
+    op = request.get('op')
+    if op == 'list':
+        return {'ok': True, 'artifacts': artifact_list(thread_id)}
+    if op == 'get':
+        version = request.get('version')
+        if version is not None and (not isinstance(version, int) or isinstance(version, bool) or version < 1):
+            return {'ok': False, 'error': 'a version is a number from 1'}
+        code, said = artifact_read(thread_id, request.get('name') if isinstance(request.get('name'), str) else '', version)
+        return said if code == 200 else {'ok': False, 'error': said.get('error') or 'no such artifact'}
+    if op == 'put':
+        try:
+            data = base64.b64decode(str(request.get('data') or ''), validate=True)
+        except ValueError:
+            return {'ok': False, 'error': 'the file did not arrive whole'}
+        code, said = artifact_put(thread, request.get('name'), data, str(request.get('title') or ''), str(request.get('note') or ''))
+    elif op == 'editing':
+        code, said = artifact_editing(thread, request.get('name'), str(request.get('note') or ''))
+    else:
+        return {'ok': False, 'error': 'unknown request'}
+    if code != 200:
+        return {'ok': False, **said}
+    with changed:
+        thread.emit('artifact', **said)
+    return {'ok': True, **said}
+
+
+def serve_artifacts():
+    """Listens for `soma-artifact` on a socket only this user can open; one JSON line in, one out. Runs beside serve()."""
+    import socketserver
+    path = artifact_socket_path()
+    artifact_key()
+    # Whatever was left where the socket goes (an old socket, a stray file or link) is taken away; a folder is not.
+    with contextlib.suppress(FileNotFoundError):
+        if not stat.S_ISDIR(os.lstat(path).st_mode):
+            path.unlink()
+
+    class Asked(socketserver.StreamRequestHandler):
+        def handle(self):
+            try:
+                line = self.rfile.readline(8 * 1024 * 1024)
+                try:
+                    request = json.loads(line)
+                except ValueError:
+                    request = None
+                answer = artifact_answer(request) if isinstance(request, dict) else {'ok': False, 'error': 'unreadable request'}
+            except Exception as problem:  # one bad request never takes the listener down
+                log('soma-artifact request failed: %r' % (problem,))
+                answer = {'ok': False, 'error': 'the runner failed on this request'}
+            with contextlib.suppress(OSError):
+                self.wfile.write(json.dumps(answer).encode() + b'\n')
+
+    class Listener(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
+        daemon_threads = True
+
+    before = os.umask(0o177)
+    try:
+        server = Listener(str(path), Asked)
+    finally:
+        os.umask(before)
+    os.chmod(path, 0o600)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
 def tailscale_address():
     """The Mac's own address on the tailnet (100.64.0.0/10), found without running anything."""
     probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -335,7 +861,7 @@ def step(block):
 def outside_reach():
     """Paths no agent may read or write: the keys' digests, the keys this machine's own Soma holds, and the runner's own
     records."""
-    return [str(TOKEN_FILE), str(KEYS_FILE), str(SOMA_RUNNERS) + '/**', str(STATE) + '/**', str(VENICE_CONFIG)]
+    return [str(TOKEN_FILE), str(KEYS_FILE), str(SOMA_RUNNERS) + '/**', str(STATE) + '/**', str(VENICE_CONFIG), str(ARTIFACT_STORE) + '/**']
 
 
 def mode(meta):
@@ -382,10 +908,13 @@ class Claude:
 
     def command(self):
         meta = self.thread.meta
-        settings = {'disableAllHooks': True, 'permissions': {'deny': ['%s(/%s)' % (verb, path) for path in outside_reach() for verb in ('Read', 'Edit')]}}
+        # `soma-artifact` only shows Boss a file beside the chat (a new version in this thread's store), so making one
+        # never needs a card, in either mode, as the phone's builders run `oma-phone`.
+        settings = {'disableAllHooks': True, 'permissions': {'deny': ['%s(/%s)' % (verb, path) for path in outside_reach() for verb in ('Read', 'Edit')],
+                                                             'allow': ['Bash(soma-artifact *)']}}
         return [AGENT, '-p'] + (['--resume', meta['session']] if meta.get('session') else []) + (['--fork-session'] if self.fork else []) + (['--model', meta['model']] if meta.get('model') else []) + [
             '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
-            '--permission-mode', mode(meta), '--permission-prompt-tool', 'stdio', '--settings', json.dumps(settings)]
+            '--permission-mode', mode(meta), '--permission-prompt-tool', 'stdio', '--settings', json.dumps(settings), '--append-system-prompt', ARTIFACT_NOTE]
 
     def environment(self):
         return clean_environment()
@@ -454,6 +983,7 @@ class Claude:
                     thread.emit('text', text=block['text'])
                 elif block.get('type') == 'tool_use':
                     thread.emit('step', text=step(block), tool=block.get('name'))
+                    artifact_touched(thread, block)
         elif kind == 'control_request':
             request = event.get('request') or {}
             if request.get('subtype') == 'can_use_tool' and event.get('request_id'):
@@ -671,7 +1201,9 @@ class Codex(Talker):
             if thread.meta.get('codex_copy_history_pending'):
                 self.request('thread/turns/list', {'threadId': session, 'limit': 20, 'itemsView': 'full'})
             else:
-                self.request('turn/start', {'threadId': session, 'input': [{'type': 'text', 'text': self.text, 'text_elements': []}]})
+                # A new session is told once about artifacts, ahead of his first words (Codex takes no system prompt here).
+                text = artifact_told(self.text) if method == 'thread/start' else self.text
+                self.request('turn/start', {'threadId': session, 'input': [{'type': 'text', 'text': text, 'text_elements': []}]})
         elif method == 'thread/turns/list' and thread.meta.get('codex_copy_history_pending'):
             if not isinstance(result.get('data'), list):
                 thread.emit('error', code='agent', text='The Codex phone copy was made, but its earlier history could not be read. Try this message again.')
@@ -842,7 +1374,8 @@ class Cursor(Talker):
                 thread.meta['session'] = session
                 thread.save()
             self.live = True  # what session/load replays of earlier turns came before this and is not shown again
-            self.request('session/prompt', {'sessionId': session, 'prompt': [{'type': 'text', 'text': self.text}]})
+            text = artifact_told(self.text) if method == 'session/new' else self.text
+            self.request('session/prompt', {'sessionId': session, 'prompt': [{'type': 'text', 'text': text}]})
         elif method == 'session/prompt':
             self.flush()
             reason = result.get('stopReason')
@@ -2949,6 +3482,13 @@ def collect_mail():
         time.sleep(MAIL_EVERY)
 
 
+def thread_env(thread, driver):
+    """What a thread's agent runs with: its driver's environment, its thread's id, and what it may arrange the canvas and
+    make artifacts with."""
+    env = {**driver.environment(), 'OMA_THREAD_ID': thread.meta['id'], 'SOMA_AGENT_KIND': thread.meta['kind'], **canvas_env(thread)}
+    return {**env, **artifact_env(thread, env)}
+
+
 def take(thread, text):
     """The owner's words: at once when the thread is free, otherwise when the turn before them ends."""
     with changed:
@@ -2998,6 +3538,10 @@ def drain(thread):
                 thread.emit('error', code='runner', text='The runner failed during this turn: ' + repr(problem)[:500])
         with changed:
             thread.meta['last_worked'] = int(time.time())
+            try:
+                artifacts_settle(thread)
+            except Exception as problem:  # never in the way of the turn's own ending
+                log('artifacts could not be settled: %r' % (problem,))
             if thread.stopped and not closing:
                 dropped = len(thread.queue)
                 del thread.queue[:]
@@ -3175,7 +3719,7 @@ def claude_turn(thread, text):
                 return
             driver = Claude(thread, text)
             try:
-                process = subprocess.Popen(driver.command(), cwd=thread.meta['project'], env={**driver.environment(), 'OMA_THREAD_ID': thread.meta['id'], 'SOMA_AGENT_KIND': thread.meta['kind'], **canvas_env(thread)},
+                process = subprocess.Popen(driver.command(), cwd=thread.meta['project'], env=thread_env(thread, driver),
                                            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
             except OSError as problem:
                 thread.fork_pending = False
@@ -3270,7 +3814,7 @@ def turn(thread, text):
         return claude_turn(thread, text)
     driver = DRIVERS[thread.meta['kind']](thread, text)
     try:
-        process = subprocess.Popen(driver.command(), cwd=thread.meta['project'], env={**driver.environment(), 'OMA_THREAD_ID': thread.meta['id'], 'SOMA_AGENT_KIND': thread.meta['kind'], **canvas_env(thread)},
+        process = subprocess.Popen(driver.command(), cwd=thread.meta['project'], env=thread_env(thread, driver),
                                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
     except OSError as problem:
         with changed:
@@ -3483,6 +4027,8 @@ class Runner(BaseHTTPRequestHandler):
                 return self.answer(404, {'ok': False, 'error': found})
             name, updated, text = found
             return self.answer(200, {'ok': True, 'project': parts[1], 'file': name, 'updated': updated, 'text': text})
+        if len(parts) in (3, 4) and parts[0] == 'threads' and parts[2] == 'artifacts' and parts[1] in threads:
+            return self.artifacts(parts, query)
         thread = threads.get(parts[1]) if len(parts) in (2, 3) and parts[0] == 'threads' else None
         if thread is None:
             return self.answer(404, {'ok': False, 'error': 'not found'})
@@ -3498,6 +4044,26 @@ class Runner(BaseHTTPRequestHandler):
         if parts[2] == 'stream':
             return self.stream(thread, self.after(query))
         self.answer(404, {'ok': False, 'error': 'not found'})
+
+    def artifacts(self, parts, query):
+        """A thread's artifacts (GET /threads/ID/artifacts), or one version of one (…/artifacts/NAME?v=N), from the
+        artifact store alone; never kept by anything between."""
+        if len(parts) == 3:
+            code, body = 200, {'ok': True, 'artifacts': artifact_list(parts[1]) if ARTIFACT_STORE_THREAD.fullmatch(parts[1]) else []}
+        else:
+            given = (query.get('v') or [''])[0]
+            if given and not given.isdigit():
+                code, body = 400, {'ok': False, 'error': 'v is a version number'}
+            else:
+                code, body = artifact_read(parts[1], urllib.parse.unquote(parts[3]), int(given) if given else None)
+        data = json.dumps(body).encode()
+        self.send_response(code)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(data)))
+        self.send_header('Cache-Control', 'no-store')
+        self.end_headers()
+        self.wfile.write(data)
+        self.note(code)
 
     def stream(self, thread, sent):
         self.send_response(200)
@@ -3800,6 +4366,11 @@ def serve():
         threading.Thread(target=watch_claude, daemon=True).start()
     if SOMA_SERVICE:
         write_soma_helper()
+    write_artifact_helper()
+    try:
+        serve_artifacts()
+    except OSError as problem:  # the runner serves its threads without artifacts rather than not at all
+        log('soma-artifact cannot be served at %s: %s' % (artifact_socket_path(), problem))
     # A test may ask for this machine's own loopback; anything else is the tailnet address or nothing.
     address = '127.0.0.1' if os.environ.get('OMA_RUNNER_BIND') == '127.0.0.1' else None
     while address is None:

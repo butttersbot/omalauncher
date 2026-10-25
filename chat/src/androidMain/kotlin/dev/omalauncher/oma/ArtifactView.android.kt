@@ -22,15 +22,21 @@ import androidx.compose.ui.viewinterop.AndroidView
 import dev.omalauncher.ui.BracketAction
 import dev.omalauncher.ui.Pack
 
-/** No native bridge, no file/content access and no runner credential in a WebView. */
+/**
+ * No native bridge, no file/content access and no runner credential in a WebView. A new version of the same generated
+ * HTML loads into the WebView already showing, rather than a new one (features/artifact-panel/PLAN.md, slice 2); the
+ * page itself starts over, as any reload does.
+ */
 @Composable
 internal actual fun ArtifactWeb(url: String?, html: String?, modifier: Modifier) {
     var error by remember(url, html) { mutableStateOf(false) }
-    var retry by remember(url, html) { mutableIntStateOf(0) }
+    var retry by remember(url) { mutableIntStateOf(0) }
+    // What the WebView showing has loaded, so a recomposition with the same HTML loads nothing again.
+    val loaded = remember(url, retry) { arrayOfNulls<String>(1) }
     var owned by remember { mutableStateOf<WebView?>(null) }
     DisposableEffect(Unit) { onDispose { owned?.apply { stopLoading(); destroy() } } }
     Box(modifier) {
-        key(url, html, retry) {
+        key(url, html == null, retry) {
             AndroidView(factory = { context ->
                 WebView(context).apply {
                     owned?.destroy()
@@ -55,7 +61,12 @@ internal actual fun ArtifactWeb(url: String?, html: String?, modifier: Modifier)
                         }
                     }
                     if (url != null) loadUrl(url)
-                    else loadDataWithBaseURL("https://soma-artifact.invalid/", html.orEmpty(), "text/html", "UTF-8", null)
+                    else loadDataWithBaseURL("https://soma-artifact.invalid/", html.orEmpty(), "text/html", "UTF-8", null).also { loaded[0] = html.orEmpty() }
+                }
+            }, update = { view ->
+                if (url == null && html != null && loaded[0] != html) {
+                    loaded[0] = html
+                    view.loadDataWithBaseURL("https://soma-artifact.invalid/", html, "text/html", "UTF-8", null)
                 }
             }, modifier = Modifier.fillMaxSize().clipToBounds(), onRelease = { it.stopLoading(); it.destroy(); if (owned === it) owned = null })
         }

@@ -430,9 +430,20 @@ class MacRunnerClient(private val config: MacRunnerConfig?, private val machine:
 
     /** One file the owner opened in a conversation; credentials never enter its preview. */
     fun artifact(threadId: String, path: String): dev.omalauncher.oma.ArtifactRead {
-        val reply = send(MacRequest("GET", "/threads/" + own(threadId) + "/artifact?path=" + URLEncoder.encode(path, "UTF-8")))
+        // One an agent made with `soma-artifact` is read from the thread's artifact store, never as a project file.
+        val made = dev.omalauncher.oma.parseSomaArtifactPath(path)
+        val address = if (made != null) "/threads/" + own(threadId) + "/artifacts/" + URLEncoder.encode(made.first, "UTF-8") + (made.second?.let { "?v=$it" } ?: "")
+            else if (path.startsWith(dev.omalauncher.oma.SOMA_ARTIFACT)) return dev.omalauncher.oma.ArtifactRead.Failed("This artifact's name can't be read.")
+            else "/threads/" + own(threadId) + "/artifact?path=" + URLEncoder.encode(path, "UTF-8")
+        val reply = send(MacRequest("GET", address))
             ?: return dev.omalauncher.oma.ArtifactRead.Failed("This computer is unreachable. Try again when it reconnects.")
         return dev.omalauncher.oma.decodeArtifact(reply.code, reply.body)
+    }
+
+    /** What a thread's agent made with `soma-artifact`, with every version; null when the computer can't say (an older runner too). */
+    fun artifacts(threadId: String): List<dev.omalauncher.oma.ArtifactVersions>? {
+        val reply = send(MacRequest("GET", "/threads/" + own(threadId) + "/artifacts")) ?: return null
+        return dev.omalauncher.oma.parseArtifactList(reply.code, reply.body)
     }
 
     fun fresh(threadId: String): MacAnswer<Unit> = parseMacFresh(send(MacRequests.fresh(own(threadId))))

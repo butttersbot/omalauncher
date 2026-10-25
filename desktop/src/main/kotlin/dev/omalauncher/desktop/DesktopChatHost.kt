@@ -78,6 +78,10 @@ class DesktopChatHost(
 
     override fun readArtifact(thread: String, path: String) = engine.artifact(thread, path)
 
+    override fun liveArtifacts() = engine.liveArtifacts()
+
+    override fun artifactVersions(thread: String, name: String) = engine.artifactVersions(thread, name)
+
     override fun macEarlier(threadId: String): MacEarlierRead = engine.earlier(threadId)
 
     override fun hosts(): List<HostChoice> = engine.hosts().map { seen ->

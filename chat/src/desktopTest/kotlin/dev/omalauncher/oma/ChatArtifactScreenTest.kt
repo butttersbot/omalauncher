@@ -24,7 +24,7 @@ class ChatArtifactScreenTest : ChatScreenTestBase() {
         }
         setContent { Box(Modifier.size(704.dp, 933.dp)) { OmaChatScreen(host, null, {}, OMA_TAB, {}) } }
         mainClock.advanceTimeBy(1200)
-        onNodeWithText("[ files · 2 ]").performClick()
+        onNodeWithText("[ artifacts · 2 ]").performClick()
         mainClock.advanceTimeBy(1200)
         onAllNodesWithText("page.html").onLast().performClick()
         mainClock.advanceTimeBy(1200)
@@ -51,9 +51,9 @@ class ChatArtifactScreenTest : ChatScreenTestBase() {
         for (target in listOf("phone-a", "phone-b", "mac/thread")) {
             runOnIdle { tab = target }
             mainClock.advanceTimeBy(1200)
-            onNodeWithText("[ files · 0 ]").performClick()
+            onNodeWithText("[ artifacts · 0 ]").performClick()
             mainClock.advanceTimeBy(1200)
-            onNodeWithText("No files in this conversation yet.").assertExists()
+            onNodeWithText("No artifacts in this conversation yet.").assertExists()
             runOnIdle { assertTrue(dev.omalauncher.ui.DesktopBack.press()) }
             mainClock.advanceTimeBy(1200)
             onNodeWithText("Conversation $target").assertExists()
@@ -65,13 +65,13 @@ class ChatArtifactScreenTest : ChatScreenTestBase() {
         setContent { Box(Modifier.size(475.dp, 751.dp)) { OmaChatScreen(outputHost(), null, {}, OMA_TAB, {}) } }
         mainClock.advanceTimeBy(1200)
         onNode(hasSetTextAction()).performTextInput("keep this draft")
-        onNodeWithText("[ files · 1 ]").performClick()
+        onNodeWithText("[ artifacts · 1 ]").performClick()
         mainClock.advanceTimeBy(1200)
         onNodeWithText("From this conversation").assertExists()
         onNodeWithText("snippet-1.md").performClick()
         mainClock.advanceTimeBy(1200)
         onNodeWithText("Listening room").assertExists()
-        onNodeWithText("[ close ]").performClick()
+        onNodeWithText("[ ← chat ]").performClick()
         mainClock.advanceTimeBy(1200)
         onNode(hasSetTextAction()).assertTextContains("keep this draft")
     }
@@ -91,7 +91,7 @@ class ChatArtifactScreenTest : ChatScreenTestBase() {
         onNodeWithText("snippet-1.md").performClick()
         mainClock.advanceTimeBy(1200)
         onNodeWithText("Listening room").assertExists()
-        onNodeWithText("[ close ]").performClick()
+        onNodeWithText("[ ← chat ]").performClick()
         mainClock.advanceTimeBy(1200)
         onNode(hasSetTextAction()).assertTextContains("keep this draft")
         onNodeWithText("[ send ]").assertExists()

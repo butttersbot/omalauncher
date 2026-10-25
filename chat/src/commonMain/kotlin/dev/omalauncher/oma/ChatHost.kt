@@ -128,6 +128,12 @@ interface ChatHost {
     /** A file explicitly opened from an agent reply. Blocks: call away from the UI thread. */
     fun readArtifact(thread: String, path: String): ArtifactRead = ArtifactRead.Failed("Files from this conversation are not available on this device yet.")
 
+    /** What the threads' events last said of agent-made artifacts (SomaArtifacts.kt); read with the chat's tick. */
+    fun liveArtifacts(): List<ArtifactLive> = emptyList()
+
+    /** One agent-made artifact's versions as its computer keeps them; null when they can't be read here. Blocks: never on the main thread. */
+    fun artifactVersions(thread: String, name: String): ArtifactVersions? = null
+
     /** The computers set up for threads, in their order, each as it last answered. */
     fun hosts(): List<HostChoice>
 
