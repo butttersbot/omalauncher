@@ -13,6 +13,7 @@ tap Email address
 type demo@example.invalid
 tap Send email code
 expect Code sent to demo@example.invalid
+absent Create a passkey
 shot hunch-auth-code
 rotate landscape
 expect Code sent to demo@example.invalid
@@ -20,17 +21,21 @@ rotate portrait
 expect Code sent to demo@example.invalid
 tap Email code
 type 999999
-tap Verify email code
+# Enter/Done submits without reaching behind the keyboard.
+key ENTER
 expect That code could not be verified
 tap Email code
 type 123456
+wait 1000
+shot hunch-auth-keyboard
+scrollto Verify email code
 tap Verify email code
 expect Recovery email: demo@example.invalid
 scrollto Your email login stays available for recovery
 expect Your email login stays available for recovery
 shot hunch-auth-add-passkey
-scrollto Add a passkey
-tap Add a passkey
+scrollto Create a passkey
+tap Create a passkey
 expect Passkey added
 expect Recovery email: demo@example.invalid
 shot hunch-auth-linked
