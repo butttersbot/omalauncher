@@ -100,7 +100,10 @@ class MainActivity : ComponentActivity() {
                     statusBarOnLight(barsOnLight, state.heroUnderBar, drawer = state.drawer.value > 0.5f, panel = state.panelOpen || runtime.widgets.openScreen != null)
                 }
             }
-            LaunchedEffect(barsOnLight, statusOnLight) { applySystemBars(this@MainActivity, barsOnLight, statusOnLight) }
+            LaunchedEffect(barsOnLight, statusOnLight) {
+                bars = barsOnLight to statusOnLight
+                applySystemBars(this@MainActivity, barsOnLight, statusOnLight)
+            }
         }
         handleDebugExec(intent)
         handleSharedWidget(intent)
@@ -181,8 +184,32 @@ class MainActivity : ComponentActivity() {
         state.shared = link
     }
 
+    /** The bars' clock and icons as home last wanted them: (all bars on light, the status bar on light). */
+    private var bars: Pair<Boolean, Boolean>? = null
+
+    /**
+     * Puts the bars back as home wants them. Set only when that changes, they came back white over the white Manga
+     * pages on Boss's phone (153): Android goes back to the window theme's dark bars when home returns or gets the
+     * focus again, as it did to News (135).
+     */
+    private fun reapplyBars() {
+        val (light, status) = bars ?: return
+        applySystemBars(this, light, status)
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) reapplyBars()
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        reapplyBars()
+    }
+
     override fun onResume() {
         super.onResume()
+        reapplyBars()
         stoppedSinceResume = false
         // Whether the Mac's Whisper answers, known before the next dictation rather than learned during it.
         dev.omalauncher.voice.WhisperMac.check(this)

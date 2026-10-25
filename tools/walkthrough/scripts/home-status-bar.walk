@@ -1,0 +1,29 @@
+# Home's status bar over a light look's paper. Bug Boss found in 153: on the white Manga pages the clock, signal and
+# battery came back WHITE, unseen, after coming home from another screen: Android puts the window theme's dark bars
+# back on return and focus, and home set its own only when what it wanted changed (News had the same in 135).
+shell cmd statusbar collapse
+key BACK
+key HOME
+# Needs a light look's paper on the emulator: Manga (white) or any look whose page is light. The debug `theme` extra
+# picks Omarchy color themes, not looks, so the look is the profile's own; with a dark look these shots show light
+# icons, which is right, and prove nothing.
+wait 2000
+# Look: the clock, signal and battery DARK on the white paper (a page with no art in a page-wide top panel).
+shot status-icons-dark-on-white-page
+# Away to another app and back: the case that turned them white.
+shell am start -a android.settings.SETTINGS
+wait 2000
+key HOME
+wait 2000
+# Look: still DARK.
+shot status-icons-dark-after-coming-home
+# The app list up and down again.
+swipe 0.5 0.85 0.5 0.2 300
+wait 1000
+key BACK
+wait 1000
+# Look: still DARK.
+shot status-icons-dark-after-app-list
+[phone] On Boss's Manga home: Page 2, 3 and 5 (white paper) show DARK clock, signal and battery, also after opening and leaving the Soma chat, an app, and the notification shade
+[phone] On Page 1 (city hero art) the icons are light, and turn dark again on swiping to Page 2
+[phone] Fold and unfold on a white page: the icons stay DARK

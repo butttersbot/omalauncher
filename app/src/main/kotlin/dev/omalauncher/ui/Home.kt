@@ -455,7 +455,9 @@ fun HomeScreen(
     val heroUnderBar by remember(pages, per, panelLook) {
         derivedStateOf { !state.overviewOpen && !state.homeMenuOpen && pinch.value > 0.99f && heroAcross(pager.currentPage, per, ::heroAt) }
     }
-    SideEffect { state.heroUnderBar = heroUnderBar }
+    // Read here, not only in the effect: a change of it alone (a pinch springing back) recomposes home and passes it on.
+    val heroBar = heroUnderBar
+    SideEffect { state.heroUnderBar = heroBar }
     androidx.compose.runtime.DisposableEffect(state) { onDispose { state.heroUnderBar = false } }
 
     fun openMenu(
