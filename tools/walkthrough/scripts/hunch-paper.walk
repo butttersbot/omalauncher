@@ -8,7 +8,8 @@ expect "Today's issue"
 expect Paper Cranes
 absent 169.30
 shot hunch-paper-cover
-scrollto MARKETS
+scrollto BIG QUESTIONS
+expect BIG QUESTIONS
 shot hunch-paper-feed
 # Use search instead of coordinates across the original feed panels.
 shell am force-stop dev.omalauncher.hunch
