@@ -110,8 +110,10 @@ if [ "$send" = 0 ]; then
   exit 0
 fi
 
-ts=$(command -v tailscale || true)
-[ -n "$ts" ] || ts=/Applications/Tailscale.app/Contents/MacOS/Tailscale
+# The Mac app's own binary first: Homebrew's symlink to it dies on the MacBook Pro ("bundleIdentifier is unknown to the
+# registry"); a Mac with only the Homebrew CLI (the Mac Pro) uses that.
+ts=/Applications/Tailscale.app/Contents/MacOS/Tailscale
+[ -x "$ts" ] || ts=$(command -v tailscale || true)
 "$ts" file cp "$out/$name.apk" "$out/$name.json" "$phone:"
 cp app/build/news-ui/book.png "$out/news-ui-$short-$code.png"
 cp app/build/news-ui/results.json "$out/news-ui-$short-$code.json"
