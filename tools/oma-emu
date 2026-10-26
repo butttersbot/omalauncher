@@ -44,8 +44,14 @@ case "${1:-}" in
     # -writable-system keeps the Fold-match overlays in /product/overlay (tools/fold-development/fold8-overlay).
     nohup "$ANDROID_HOME/emulator/emulator" -avd "$AVD" -writable-system -no-snapshot-save -no-boot-anim ${extra[@]+"${extra[@]}"} \
       > "$HOME/.android/avd/$AVD-emulator.log" 2>&1 &
-    A wait-for-device
-    until [ "$(A shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]; do sleep 2; done
+    emu=$!
+    # Never wait on an emulator that has died (no such AVD, 2026-10-26 on the MacBook): that held the walks lock forever.
+    for i in $(seq 1 150); do
+      [ "$(A shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ] && break
+      kill -0 "$emu" 2>/dev/null || { echo "the emulator stopped: $(tail -1 "$HOME/.android/avd/$AVD-emulator.log")" >&2; exit 1; }
+      [ "$i" -lt 150 ] || { echo "the emulator didn't finish booting in 5 minutes" >&2; exit 1; }
+      sleep 2
+    done
     A shell locksettings set-disabled true >/dev/null
     A shell svc power stayon true
     fold_bars
