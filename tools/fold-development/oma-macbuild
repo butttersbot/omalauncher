@@ -55,7 +55,7 @@ case $builder in A|B|C) ;; *) die "OMA_BUILDER is \"$builder\": a builder is A, 
 lane_thread() {
   local kept=$cfg/mac-lane-$builder$suffix name="Soma build lane $builder" id
   [ -e "$cfg/mac-lanes-off" ] && return 1
-  id=$(tr -d '[:space:]' < "$kept" 2>/dev/null || true)
+  id=$(tr -d '[:space:]' 2>/dev/null < "$kept" || true)
   [[ $id =~ ^t[0-9a-f]{8}$ ]] && { echo "$id"; return; }
   id=$(oma threads list 2>/dev/null | awk -F'\t' -v n="$name" -v m="$mac_name" '$3 == n && $4 ~ /\/omalauncher-fold$/ && (m == "first" ? $1 !~ /\// : $1 ~ "^" m "/") {sub(/.*\//, "", $1); print $1; exit}')
   [[ $id =~ ^t[0-9a-f]{8}$ ]] ||
