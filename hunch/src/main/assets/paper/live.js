@@ -122,6 +122,25 @@ function fixedWide(root,name,panels){
   if(!panel)return;
   const wrapper=document.createElement('section');wrapper.className='wide-box';wrapper.dataset.pane=label;
   const content=document.createElement('div');content.className='wide-box-content';
+  const expanded=Hunch.expandedPane===label;
+  if(name==='Money'){
+   const copy={'Cash':'Open your wallet for verified balances.','Limits':'Betting permissions are not enabled.','Wallet':'Your Hunch wallet and balances.','Your record':'No trading history is connected.','Activity':'No activity yet.'};
+   panel.replaceChildren();panel.style.cssText='padding:10px;display:flex;flex-direction:column;gap:6px';
+   const heading=document.createElement('b');heading.textContent=label.toUpperCase();const detail=document.createElement('span');detail.className='empty-copy';detail.textContent=copy[label];panel.append(heading,detail);
+   if(label==='Cash'||label==='Wallet'){const open=action(label==='Cash'?'Add money':'Open your wallet',()=>sendNative({type:'wallet'}));open.style.cssText='min-height:28px;padding:4px;font-size:11px;flex-shrink:0';panel.append(open)}
+   if(label==='Cash'){const out=action('TAKE OUT',()=>{});out.disabled=true;out.style.cssText='min-height:24px;padding:2px;font-size:10px';panel.append(out)}
+  }else if(name==='Bets'){
+   const copy=label==='Position details'?'No bet selected. Connect a trading account to see your positions.':'No trading account is connected.';
+   panel.replaceChildren();panel.style.cssText='padding:10px;display:flex;flex-direction:column;gap:8px';const heading=document.createElement('b');heading.textContent=label.toUpperCase();const detail=document.createElement('span');detail.className='empty-copy';detail.textContent=copy;panel.append(heading,detail);
+  }
+  if(label==='Gut check'&&Hunch.rows.length&&!expanded){
+   const parts=Array.from(panel.children),reveal=panel.querySelector('button');
+   panel.replaceChildren(parts[0],parts[2],parts[4]);if(reveal)panel.append(reveal);
+   parts[2].style.cssText="font:20px/1.15 'Dela Gothic One';display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden";
+   parts[4].firstElementChild.style.fontSize='24px';
+   if(reveal)reveal.style.cssText="min-height:32px;flex-shrink:0;border:1px solid #111113;background:#111113;color:#fdfdfb;font:14px 'Dela Gothic One'";
+  }
+
   panel.style.position='relative';panel.style.left='auto';panel.style.top='auto';panel.style.right='auto';panel.style.bottom='auto';panel.style.width='100%';panel.style.height='100%';panel.style.boxSizing='border-box';panel.style.overflow='hidden';
   const frame=panel.querySelector(':scope > svg');if(frame){frame.style.width='100%';frame.style.height='100%';frame.setAttribute('preserveAspectRatio','none')}
   content.append(panel);wrapper.append(content);
@@ -131,13 +150,15 @@ function fixedWide(root,name,panels){
  if(name==='Discover'){
   const search=root.querySelector('label');search.style.cssText+=';position:relative;left:auto;top:auto;width:100%;height:44px;flex:none';search.querySelector('input').placeholder='Search markets';left.append(search);
   const hero=panels.find(p=>p.style.top==='82px'),watch=panels.find(p=>p.style.top==='286px'),edge=panels.find(p=>p.style.top==='466px'),gut=panels.find(p=>p.style.left==='462px'&&p.style.top==='18px'),listings=panels.find(p=>p.style.left==='462px'&&p!==gut);
-  const title=hero?.querySelector('div[style*="rotate"]');if(title){Object.assign(title.style,{left:'14px',right:'14px',top:'52px',bottom:'54px',transform:'none',overflow:'hidden',boxSizing:'border-box',display:'flex',flexDirection:'column',justifyContent:'safe center'});title.children[1].style.fontSize='27px'}
+  const title=hero?.querySelector('div[style*="rotate"]');if(title){Object.assign(title.style,{left:'14px',right:'14px',top:'52px',bottom:'54px',transform:'none',overflow:'hidden',boxSizing:'border-box',display:'flex',flexDirection:'column',justifyContent:'safe center'});title.children[1].style.cssText="font:20px/1.15 'Dela Gothic One';display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden"}
   left.append(box(hero,'Featured market'),box(watch,'Watchlist'),box(edge,'Outside prices'));
   right.append(box(gut,'Gut check'),box(listings,'Markets'));
   right.firstElementChild.classList.add('wide-gut');
  }else{
   left.style.gridTemplateRows='repeat('+Math.ceil(panels.length/2)+', minmax(0,1fr))';right.style.gridTemplateRows='repeat('+Math.floor(panels.length/2)+', minmax(0,1fr))';
-  panels.forEach((p,i)=>(i%2?right:left).append(box(p,name+' '+(i+1))));
+  if(name==='Money')left.style.gridTemplateRows='minmax(140px,1.4fr) minmax(92px,1fr) minmax(48px,.6fr)';
+  const labels=name==='Money'?['Cash','Limits','Wallet','Your record','Activity']:['My bets','Positions','Position details','Settled bets','Returns','Payouts','Cash out'];
+  panels.forEach((p,i)=>(i%2?right:left).append(box(p,labels[i])));
  }
  root.replaceChildren(header,left,right);
  const expanded=boxes.find(b=>b.dataset.pane===Hunch.expandedPane);
@@ -145,7 +166,10 @@ function fixedWide(root,name,panels){
   root.classList.add('wide-expanded');const back=action('Back to Hunch',closeWidePane);header.append(back);
   const content=expanded.firstElementChild,panel=content.firstElementChild;
   content.className='wide-expanded-content';panel.style.height='auto';panel.style.minHeight='100%';panel.style.overflow='visible';
-  if(name==='Discover'&&expanded.dataset.pane==='Featured market')panel.style.minHeight='340px';
+  if(name==='Discover'&&expanded.dataset.pane==='Featured market'){
+   panel.style.minHeight='340px';const title=panel.querySelector('div[style*="translate"],div[style*="justify-content"]');if(title){title.style.overflowY='auto';title.lastElementChild.style.display='block';title.lastElementChild.style.fontSize='27px'}
+  }
+  if(expanded.dataset.pane==='Gut check')panel.style.minHeight='440px';
   if(expanded.dataset.pane==='Markets')panel.style.display='flex';
   root.replaceChildren(header,content);
  }
