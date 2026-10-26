@@ -20,6 +20,9 @@ is retired as of 2026-10-17: Boss wants nothing extra running on his Fold. The r
   `oma-emu fold-bars` (cover status bar 110 px like his phone), install the app and make the Soma keyboard the input
   method: `ime enable`/`ime set dev.omalauncher.boss/dev.omalauncher.keyboard.OmaKeyboardService` and
   `settings put secure show_ime_with_hard_keyboard 1` (hw.keyboard=yes otherwise hides it); `oma-emu start`/`install` do both.
+  Then, once, finish Soma's first-run (default theme, no Arch, start) so walks begin at home, and add Soma's Screen
+  Record tile to Quick Settings (`cmd statusbar add-tile` with its TileService): a fresh AVD has neither, and the search,
+  screen-record and chat walks fail on that (MacBook Pro, 2026-10-26).
 
 ## Using it
 `tools/oma-emu` wraps everything and aims adb at the emulator only (`emulator-5554`), never the phone:
