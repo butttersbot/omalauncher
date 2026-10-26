@@ -13,7 +13,10 @@
 #                         answer comes back to this builder (Boss, 2026-10-25: "Phone B and C use their own lanes")
 #   oma-macbuild --lane   print this builder's lane thread (made the first time)
 #
-# When the Mac Pro is out of reach (Tailscale down on it, 2026-10-25), a launcher build falls back to building here with
+# When the Mac Pro is out of reach and the MacBook Pro answers, everything here goes to the MacBook Pro instead: its own
+# lanes ("Soma build lane A/B/C" threads there, kept in mac-lane-A-macbook-pro), the same soma-macbuild (Boss,
+# 2026-10-26: "build tools on the MacBook so we can still be productive while I'm away from the Mac Pro").
+# When neither answers (Tailscale down on it, 2026-10-25), a launcher build falls back to building here with
 # oma-build: one build at a time and small, tests first, then oma-install as usual; no emulator walks run, so a build
 # made here is not "ready" until its walks pass on the Mac (Boss, 2026-10-25: "a fallback for local build"). Set
 # SOMA_NO_LOCAL=1 to refuse instead.
@@ -28,8 +31,15 @@ mac=${SOMA_MAC:-jacks-mac-pro}
 thread=${SOMA_MAC_THREAD:-t9f45b731}
 tools=/opt/android-sdk/build-tools/36.0.0
 die() { echo "$1" >&2; exit 1; }
-# Whether the Mac Pro takes mail now: it is among oma msg's computers only while its Tailscale is up.
-mac_up() { oma msg devices 2>/dev/null | awk -v m="$mac" '$1 == m {f=1} END {exit !f}'; }
+# Whether a Mac (the Mac Pro by default) takes mail now: it is among oma msg's computers only while its Tailscale is up.
+mac_up() { oma msg devices 2>/dev/null | awk -v m="${1:-$mac}" '$1 == m {f=1} END {exit !f}'; }
+# The Mac Pro out of reach: the MacBook Pro builds instead, if it answers (SOMA_MAC names one for good).
+if [ -z "${SOMA_MAC:-}" ] && ! mac_up && mac_up macbook-pro; then
+  mac=macbook-pro
+  echo "The Mac Pro is out of reach: using the MacBook Pro's lanes." >&2
+fi
+# What oma threads calls it, and where its lane ids are kept (the Mac Pro's as before).
+case $mac in jacks-mac-pro) mac_name=first; suffix= ;; *) mac_name=$mac; suffix=-$mac ;; esac
 # The builder asking (A, B or C): set when a builder starts, else told by its worktree. The Mac's answer goes back to it
 # (Boss, 2026-10-21: builder B's builds were answered to A). The letter is the mail's sender session (--as), which is
 # also what the Mac Pro keys each builder's own build lane by.
@@ -40,13 +50,13 @@ case $builder in A|B|C) ;; *) die "OMA_BUILDER is \"$builder\": a builder is A, 
 # This builder's lane on the Mac: its thread's id, kept in mac-lane-A (B, C); found by its name or made the first time.
 # Without one (the Mac out of reach, or the file mac-lanes-off here) it asks the one upkeep thread, as before.
 lane_thread() {
-  local kept=$cfg/mac-lane-$builder name="Soma build lane $builder" id
+  local kept=$cfg/mac-lane-$builder$suffix name="Soma build lane $builder" id
   [ -e "$cfg/mac-lanes-off" ] && return 1
   id=$(tr -d '[:space:]' < "$kept" 2>/dev/null || true)
   [[ $id =~ ^t[0-9a-f]{8}$ ]] && { echo "$id"; return; }
-  id=$(oma threads list 2>/dev/null | awk -F'\t' -v n="$name" '$3 == n && $4 ~ /\/omalauncher-fold$/ {print $1; exit}')
+  id=$(oma threads list 2>/dev/null | awk -F'\t' -v n="$name" -v m="$mac_name" '$3 == n && $4 ~ /\/omalauncher-fold$/ && (m == "first" ? $1 !~ /\// : $1 ~ "^" m "/") {sub(/.*\//, "", $1); print $1; exit}')
   [[ $id =~ ^t[0-9a-f]{8}$ ]] ||
-    id=$(oma threads new "$name" '~/Projects/omalauncher-fold' --kind claude --mode auto 2>/dev/null | sed -n 's/.*, id \(t[0-9a-f]\{8\}\), in .*/\1/p')
+    id=$(oma threads new "$name" '~/Projects/omalauncher-fold' --kind claude --mode auto --mac "$mac_name" 2>/dev/null | sed -n 's/.*, id \([a-z0-9-]*\/\)\{0,1\}\(t[0-9a-f]\{8\}\), in .*/\2/p')
   [[ $id =~ ^t[0-9a-f]{8}$ ]] || return 1
   echo "$id" > "$kept"
   echo "$id"
