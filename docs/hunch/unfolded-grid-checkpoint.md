@@ -22,3 +22,11 @@ Evidence remains on MacBook: /tmp/walk/hunch-62f7ede5/ and /tmp/walk/hunch-62f7e
 Local check-paper.mjs PASS. Lane event 114 reported main walk 60 PASS / 0 FAIL / 12 LOOK. The extra-pane helper and final screenshot review had not returned a verdict when the design hold arrived. No final visual PASS is claimed; no complete expanded-pane coverage is claimed. Lane was instructed to cancel remaining own work and retain evidence, with no Taildrop or promotion. A pending helper is not evidence that those checks passed.
 
 No experiment APK was signed, staged or installed by Phone B. No real accounts, funds or orders were used. Real-phone experiment steps were not run. Wait for Phone A's approved spec before further unfolded implementation.
+
+## Late final report received after hold
+
+MacBook mail 20261026-134615-f05347 reports the 2bc9ce6a follow-up built with --rerun-tasks: 16 unit tests, zero failures/errors/skips; check-paper PASS. Committed hunch.walk: 60 PASS / 0 FAIL / 12 LOOK, all reviewed. Runner's /tmp/hunch-allpanes.walk: 166 PASS / 0 FAIL / 47 LOOK; all grid/swipe screenshots and most expanded panes reviewed, not all 47 screenshots. It opened each of Today's 5, Bets' 7 and Money's 5 See more panes in portrait and landscape, checking Back to Hunch, then finished on cover. Evidence: /tmp/walk/hunch-2bc9ce6a/ and /tmp/walk/hunch-2bc9ce6a-panes/.
+
+Runner observed whole compact Reveal, unclipped featured headline, whole Money actions, descriptive pane labels, no record leftovers, fixed grids under swipes, correct offline, unchanged cover. Remaining design regressions: Bets/Money plain boxes lost the approved comic/paper styling; expanded empty-account panes mostly blank. Cover Gut Check partly behind tabs was observed as pre-existing. Technical walk success does not constitute Canvas approval.
+
+Runner Taildropped hunch-2bc9ce6a-12.apk and .json before processing the queued hold. Mac-signed APK SHA256 1cfc39b550d3c6e29f5728406f335cc871391b9a7aa8083059c48179edc91121, 34948076 bytes, versionCode12/0.5.1. This superseded artifact must NOT be signed, staged or installed. Phone B did not request retrieval or promotion after the hold. Main line remains restored to bac2d18d layout. No further work until the approved spec arrives.
