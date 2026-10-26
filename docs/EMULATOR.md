@@ -16,7 +16,8 @@ is retired as of 2026-10-17: Boss wants nothing extra running on his Fold. The r
   `hw.displayRegion.0.1` 1248x1972 at 0,0; `hw.display1-3` unused; `hw.multi_display_window=no`; hinge
   `hw.sensor.hinge=yes`, areas `1224-0-0-1848`, defaults `180`, postures `1,2,3` at `0-30, 30-150, 150-180`,
   `fold_to_displayRegion.0.1_at_posture=1`, `resizable.config=1`; `showDeviceFrame=no`; `hw.initialOrientation=portrait`;
-  `hw.keyboard=yes`; `hw.ramSize=16384`. Then `oma-emu start`, `fold-development/fold8-overlay/install.sh`, reboot,
+  `hw.keyboard=yes`; `hw.ramSize=16384`; `hw.gpu.enabled=yes`, `hw.gpu.mode=host` (the Mac's GPU: about 5x less CPU
+  than SwiftShader, which stalled and crashed an emulator with three walking, 2026-10-26). Then `oma-emu start`, `fold-development/fold8-overlay/install.sh`, reboot,
   `oma-emu fold-bars` (cover status bar 110 px like his phone), install the app and make the Soma keyboard the input
   method: `ime enable`/`ime set dev.omalauncher.boss/dev.omalauncher.keyboard.OmaKeyboardService` and
   `settings put secure show_ime_with_hard_keyboard 1` (hw.keyboard=yes otherwise hides it); `oma-emu start`/`install` do both.

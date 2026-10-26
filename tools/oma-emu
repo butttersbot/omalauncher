@@ -62,6 +62,11 @@ case "${1:-}" in
     A shell svc power stayon true
     # hw.keyboard=yes counts as a hardware keyboard, which hides on-screen keyboards: show the Soma keyboard anyway.
     A shell settings put secure show_ime_with_hard_keyboard 1
+    # The Soma keyboard again on every start, if Soma is here: Fold8 was found back on Google's (2026-10-26).
+    if A shell pm path dev.omalauncher.boss >/dev/null 2>&1; then
+      A shell ime enable dev.omalauncher.boss/dev.omalauncher.keyboard.OmaKeyboardService >/dev/null 2>&1
+      A shell ime set dev.omalauncher.boss/dev.omalauncher.keyboard.OmaKeyboardService >/dev/null 2>&1
+    fi
     fold_bars
     wake; echo "ready" ;;
   install)
