@@ -57,6 +57,8 @@ wait 5000
 expect OFFLINE TEST · NO REAL MONEY
 expect Markets could not be loaded.
 absent Loading listings
+absent 1 OF 0
+absent OPEN →
 # LOOK: offline hero has only offline copy; grid fills the inner height.
 shot hunch-offline
 # Leave live read-only app, never the fixture, for a human.

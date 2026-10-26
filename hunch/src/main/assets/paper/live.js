@@ -122,10 +122,11 @@ async function showWide(){
    if(name==='Discover'){
     const search=root.querySelector('input[type=search]');search.value=Hunch.query;event(search,'input',e=>{Hunch.query=e.target.value;Hunch.limit=100;Paper.schedule()});text(search.parentElement.lastElementChild,Hunch.rows.length+' MARKETS');
     const cover=panels.find(p=>p.style.top==='82px');const rows=liveRows();
-    if(cover){text(cover.firstElementChild,'PUBLIC MARKETS');const title=cover.querySelector('div[style*="rotate"]');text(title?.children[0],rows[0]?.venue||'HUNCH');text(title?.children[1],rows[0]?.title||'Public markets');if(title)title.style.whiteSpace='normal';const link=cover.querySelector('a');text(link?.firstElementChild,rows[0]?.date||(Hunch.error?'Markets could not be loaded.':'Loading listings…'));if(link){link.removeAttribute('href');event(link,'click',()=>rows[0]&&choose(rows[0]))}const surprise=cover.querySelector('button');if(surprise)event(surprise,'click',()=>rows.length&&choose(rows[Math.floor(Math.random()*rows.length)]))}
+    if(cover){text(cover.firstElementChild,'PUBLIC MARKETS');const title=cover.querySelector('div[style*="rotate"]');text(title?.children[0],rows[0]?.venue||'HUNCH');text(title?.children[1],rows[0]?.title||'Public markets');if(title)title.style.whiteSpace='normal';const link=cover.querySelector('a');text(link?.firstElementChild,rows[0]?.date||(Hunch.error?'Markets could not be loaded.':'Loading listings…'));if(link){link.removeAttribute('href');event(link,'click',()=>rows[0]&&choose(rows[0]))}if(link&&!rows.length){text(link.lastElementChild,'');link.setAttribute('aria-disabled','true')}const surprise=cover.querySelector('button');if(surprise)surprise.disabled=!rows.length;if(surprise)event(surprise,'click',()=>rows.length&&choose(rows[Math.floor(Math.random()*rows.length)]))}
     const watch=panels.find(p=>p.style.top==='286px');if(watch)empty(watch.lastElementChild,'FROM YOUR SOMA WATCHLIST','No watchlist has been connected.');
     const edge=panels.find(p=>p.style.top==='466px');if(edge)empty(edge.lastElementChild,'LOOKS MISPRICED · VS OUTSIDE PRICES','Outside-price comparisons are not connected yet. No edge is claimed.');
     const gut=panels.find(p=>p.style.left==='462px'&&p.style.top==='18px');if(gut){text(gut.children[3],'Guess first. Inspect the live order book next.');gut.querySelectorAll('span').forEach(el=>{if(el.textContent==='THE PRICES ARE UNDER HERE')text(el,'CHECK THE LIVE ORDER BOOK')})}
+    if(gut&&!rows.length)empty(gut,'GUT CHECK',Hunch.error?'Markets are unavailable. Refresh markets to try again.':'Waiting for public listings.');
     const listings=panels.find(p=>p.style.left==='462px'&&p!==gut);if(listings){listings.style.overflowY='auto';listInto(listings,rows,100)}
    }else{
     panels.forEach((panel,i)=>{if(name==='Money'&&i===0){cashPanel(panel);return}if(name==='Money'&&i===3){recordPanel(panel);return}if(name==='Bets'){
@@ -152,7 +153,12 @@ async function showWide(){
     }
     const hero=panels.find(p=>p.style.left==='0px');
     const title=hero?.querySelector('div[style*="rotate"]');
-    if(title)title.style.top=(82*stretch)+'px';
+    if(title){
+     // Reserve separate bands for header controls, the title and the footer.
+     // Long live titles must scroll inside their band, never cover the controls.
+     Object.assign(title.style,{left:'22px',right:'14px',top:'52px',bottom:'60px',transform:'rotate(-3deg)',overflowY:'auto',boxSizing:'border-box',display:'flex',flexDirection:'column',justifyContent:'safe center'});
+     title.children[1].style.fontSize='20px';
+    }
    }
    root.querySelectorAll('nav a').forEach((el,i)=>{text(el,['TODAY','BETS','MONEY'][i]);el.removeAttribute('href');event(el,'click',()=>route(['today','bets','money'][i]))});
   };
