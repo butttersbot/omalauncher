@@ -8,8 +8,10 @@ cd "$(dirname "$0")"
 export ANDROID_HOME="${ANDROID_HOME:-/opt/homebrew/share/android-commandlinetools}"
 BT=$(ls -d "$ANDROID_HOME"/build-tools/* | tail -1)
 JAR=$(ls "$ANDROID_HOME"/platforms/android-3*/android.jar | tail -1)
-A() { adb -s emulator-5554 "$@"; }
-[ "$(A shell getprop ro.kernel.qemu | tr -d '\r')" = 1 ] || { echo "emulator-5554 is not an emulator; nothing done" >&2; exit 1; }
+# The lane's own emulator (SOMA_EMU_LANE=B -> 5556, C -> 5558), as tools/oma-emu picks it; lane A's is 5554.
+case "${SOMA_EMU_LANE:-A}" in B) SERIAL=emulator-5556 ;; C) SERIAL=emulator-5558 ;; *) SERIAL=emulator-5554 ;; esac
+A() { adb -s "$SERIAL" "$@"; }
+[ "$(A shell getprop ro.kernel.qemu | tr -d '\r')" = 1 ] || { echo "$SERIAL is not an emulator; nothing done" >&2; exit 1; }
 out=$(mktemp -d); trap 'rm -rf "$out"' EXIT
 keytool -genkeypair -keystore "$out/k.jks" -storepass overlay -keypass overlay -alias o -keyalg RSA -keysize 2048 \
   -validity 3650 -dname "CN=Soma Fold8 emulator overlay" >/dev/null 2>&1
@@ -21,4 +23,4 @@ for x in cutout bars; do
 done
 A root >/dev/null; sleep 2; A wait-for-device; A remount >/dev/null
 for x in cutout bars; do A push "$out/SomaFold8-$x.apk" "/product/overlay/SomaFold8-$x.apk" >/dev/null; A shell chmod 644 "/product/overlay/SomaFold8-$x.apk"; done
-echo "Installed; reboot the emulator (adb -s emulator-5554 reboot), then: tools/oma-emu fold-bars"
+echo "Installed; reboot the emulator (adb -s $SERIAL reboot), then: tools/oma-emu fold-bars"
