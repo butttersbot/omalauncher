@@ -111,7 +111,7 @@ via_oma() {
 waiting() {
   # Each file as its size and its full path on the phone, from every Taildrop folder there is.
   adb -s "$at" shell "for d in $taildrops; do [ -d \"\$d\" ] || continue; for f in \"\$d\"/*; do [ -f \"\$f\" ] && stat -c '%s	%n' -- \"\$f\"; done; done; exit 0" </dev/null |
-    tr -d '\r' | awk '!/\.partial$/'
+    tr -d '\r' | awk '!/\.partial$/' | awk -F/ '!($NF ~ /^msg-.*\.json$/)'  # agent mail is Soma's own (TaildropMail)
 }
 
 # A name in DIR for NAME that no file has yet: NAME, or "NAME (2)", "NAME (3)"... before the extension.

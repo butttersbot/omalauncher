@@ -15,10 +15,16 @@ object TaildropInbox {
     /** The folders Tailscale saves into: Download/Taildrop, or Taildrop at the storage's top (as on the new Fold). */
     fun folders(storage: File) = listOf(File(storage, "Download/Taildrop"), File(storage, "Taildrop"))
 
-    /** What waits: every whole file of [folders], oldest first. */
+    /** What waits: every whole file of [folders], oldest first, but agent mail, which Soma takes itself ([isMail]). */
     fun waiting(folders: List<File>): List<File> =
-        folders.flatMap { dir -> dir.listFiles()?.filter { it.isFile && !it.name.endsWith(".partial") }.orEmpty() }
+        folders.flatMap { dir -> dir.listFiles()?.filter { it.isFile && !it.name.endsWith(".partial") && !isMail(it.name) }.orEmpty() }
             .sortedBy { it.lastModified() }
+
+    /**
+     * Agent mail as the Macs' `tmsg send` Taildrops it: msg-ID-from-DEVICE.json. Never moved into Linux by `oma drop`
+     * (2026-10-25: 30 messages ended in ~/Inbox unread), and read by Soma itself (assist/AgentMail.kt, TaildropMail).
+     */
+    fun isMail(name: String) = name.startsWith("msg-") && name.endsWith(".json")
 
     /** A name in [dir] for [name] that no file has yet: NAME, or "NAME (2)", "NAME (3)"... before the extension. */
     fun freeName(dir: File, name: String): File {

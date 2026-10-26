@@ -226,6 +226,8 @@ class Runtime(
         dev.omalauncher.phone.PhoneControlHeal.atStart(context)
         // Wireless debugging, which Android turns off at every restart and Wi-Fi drop, is put back on.
         dev.omalauncher.phone.AdbWifiHeal.atStart(context)
+        // Agent mail waiting in Taildrop is read by Soma itself, not only when Tailshare happens to run.
+        dev.omalauncher.assist.TaildropMail.start(context)
         scope.launch {
             withContext(Dispatchers.IO) {
                 launcherFiles.sync()

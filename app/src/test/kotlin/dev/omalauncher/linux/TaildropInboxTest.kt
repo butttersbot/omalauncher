@@ -58,4 +58,15 @@ class TaildropInboxTest {
         val result = TaildropInbox.take(TaildropInbox.folders(tmp.newFolder("empty")), tmp.newFolder("in"), keep = false, listOnly = false) { it.path }
         assertEquals(0, result.getJSONArray("files").length())
     }
+
+    @Test fun agentMailIsNeverMovedIntoLinux() {
+        assertTrue(TaildropInbox.isMail("msg-20261025-161720-9f79e6-from-jacks-mac-pro.json"))
+        assertFalse(TaildropInbox.isMail("soma-af50f6cd0-158.json"))
+        assertFalse(TaildropInbox.isMail("msg-notes.txt"))
+        val dir = kotlin.io.path.createTempDirectory().toFile()
+        java.io.File(dir, "msg-1-from-x.json").writeText("{}")
+        java.io.File(dir, "soma-1.apk").writeText("apk")
+        assertEquals(listOf("soma-1.apk"), TaildropInbox.waiting(listOf(dir)).map { it.name })
+        dir.deleteRecursively()
+    }
 }

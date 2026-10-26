@@ -157,7 +157,32 @@ class AgentMailReceiver : BroadcastReceiver() {
         if (intent.action != ACTION_AGENT_MESSAGE || Build.VERSION.SDK_INT < 34) return
         if (sentFromPackage != AGENT_MAIL_SENDER) return
         val mail = agentMail(intent.getStringExtra(EXTRA_AGENT_MESSAGE)) ?: return
+        AgentMailInbox.deliver(context, mail)
+    }
+}
+
+/**
+ * Where agent mail is handed on, from Tailshare's broadcast or from Soma's own look at Taildrop ([TaildropMail]): each
+ * message once, by its id, whichever got it first.
+ */
+object AgentMailInbox {
+    private const val PREFS = "agent-mail-inbox"
+    private const val SEEN = "seen"
+    private const val KEEP = 400
+
+    /** True the first time [id] is offered; it is remembered across restarts. */
+    @Synchronized
+    fun firstTime(context: Context, id: String): Boolean {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val seen = prefs.getString(SEEN, "").orEmpty().split('\n').filter { it.isNotEmpty() }
+        if (id in seen) return false
+        prefs.edit().putString(SEEN, (seen + id).takeLast(KEEP).joinToString("\n")).apply()
+        return true
+    }
+
+    fun deliver(context: Context, mail: AgentMail) {
         val app = context.applicationContext
+        if (!firstTime(app, mail.id)) return
         Handler(Looper.getMainLooper()).post {
             // Decided outside the build lane's lock: the front agent takes that lock under its own.
             val front = runCatching {
@@ -168,6 +193,42 @@ class AgentMailReceiver : BroadcastReceiver() {
                 runCatching { AgentTasks.mail(app, mail) }
             }
             else runCatching { AgentTasks.mail(app, mail) }.onFailure { Log.w("agent-mail", "Agent mail ${mail.id} could not be given to a builder", it) }
+        }
+    }
+}
+
+/**
+ * Agent mail read straight from Taildrop by Soma (2026-10-25: Tailshare stopped taking it in the background, and 13
+ * messages from the build lanes sat unread for a day until Tailshare was opened). Taildrop only carries files from
+ * Boss's own devices, the same trust Tailshare's hand-off has. Every [EVERY_MS] while Soma runs, with All files access:
+ * each msg-*.json whole for a moment is read, delivered once ([AgentMailInbox]) and removed. One that isn't mail is left.
+ */
+object TaildropMail {
+    const val EVERY_MS = 15_000L
+    @Volatile private var started = false
+
+    fun start(context: Context) {
+        if (started) return
+        started = true
+        val app = context.applicationContext
+        kotlin.concurrent.thread(name = "taildrop-mail", isDaemon = true) {
+            while (true) {
+                runCatching { sweep(app) }.onFailure { Log.w("agent-mail", "Taildrop mail sweep failed", it) }
+                Thread.sleep(EVERY_MS)
+            }
+        }
+    }
+
+    private fun sweep(context: Context) {
+        if (Build.VERSION.SDK_INT < 30 || !android.os.Environment.isExternalStorageManager()) return
+        val now = System.currentTimeMillis()
+        for (dir in dev.omalauncher.linux.TaildropInbox.folders(android.os.Environment.getExternalStorageDirectory())) {
+            val files = dir.listFiles()?.filter { it.isFile && dev.omalauncher.linux.TaildropInbox.isMail(it.name) && now - it.lastModified() > 2_000 }.orEmpty()
+            for (file in files.sortedBy { it.lastModified() }) {
+                val mail = agentMail(runCatching { file.readText() }.getOrNull()) ?: continue
+                AgentMailInbox.deliver(context, mail)
+                file.delete()
+            }
         }
     }
 }

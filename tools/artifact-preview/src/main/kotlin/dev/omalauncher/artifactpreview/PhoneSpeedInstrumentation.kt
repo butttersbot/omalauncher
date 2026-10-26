@@ -53,6 +53,25 @@ class PhoneSpeedInstrumentation : Instrumentation() {
             check(timing.getInt("reads") >= 1 && timing.getInt("nodes") > 0 && timing.getDouble("readMs") >= 0)
             Log.i("SomaWalk", "speed METRIC open=" + opened.getJSONObject("timing") + " screen=" + timing)
             Log.i("SomaWalk", "speed PASS: actual service opens Display and reports read timing")
+            // Stage 3 label query: one control that says exactly this is pressed without reading the whole screen first;
+            // the only read is the screen it led to.
+            val display = call(JSONObject().put("command", "open").put("package", "settings:display").put("until", "Display"))
+            check(display.optBoolean("ok") && display.optBoolean("destinationVerified")) { display.toString() }
+            val quick = call(JSONObject().put("command", "press").put("label", "Screen timeout").put("timing", true))
+            check(quick.optBoolean("ok")) { "Press by label failed: $quick" }
+            val quickTiming = quick.getJSONObject("timing")
+            Log.i("SomaWalk", "speed METRIC quickPress=" + quickTiming)
+            check(quickTiming.getInt("quickFinds") == 1 && quickTiming.getInt("reads") == 1) { "The label query read the whole screen first: $quickTiming" }
+            call(JSONObject().put("command", "open").put("package", "settings:display").put("until", "Display"))
+            Log.i("SomaWalk", "speed PASS: a press by label found its control without a whole read")
+            // Stage 3 deltas: a second look after the screen changed, in the same app, is only what changed.
+            call(JSONObject().put("command", "open").put("package", "settings:display").put("until", "Display"))
+            val first = call(JSONObject().put("command", "screen"))
+            call(JSONObject().put("command", "open").put("package", "settings:sound").put("until", "Sound"))
+            val delta = call(JSONObject().put("command", "screen").put("since", first.getString("snapshot")).put("delta", true))
+            check(delta.has("changed") && delta.has("gone") && !delta.has("controls")) { "Expected a delta: $delta" }
+            Log.i("SomaWalk", "speed METRIC delta changed=" + delta.getJSONArray("changed").length() + " gone=" + delta.getJSONArray("gone").length() + " same=" + delta.getInt("same"))
+            Log.i("SomaWalk", "speed PASS: a changed screen came back as only what changed")
             // Stage 3: asked again about the snapshot it has, with nothing changed, the service answers "unchanged" without a
             // read. Settings may still be settling: a few tries, each a real answer, never a fabricated one.
             var since = screen.getString("snapshot")
@@ -88,25 +107,6 @@ class PhoneSpeedInstrumentation : Instrumentation() {
             val scrolls = absent.getJSONObject("timing").getInt("searchScrolls")
             check(scrolls in 0..12) { "Search exceeded two bounded directions: $scrolls" }
             Log.i("SomaWalk", "speed PASS: actual absent-label search bounded; scrolls=$scrolls")
-            // Stage 3 label query: one control that says exactly this is pressed without reading the whole screen first;
-            // the only read is the screen it led to.
-            val display = call(JSONObject().put("command", "open").put("package", "settings:display").put("until", "Display"))
-            check(display.optBoolean("ok")) { display.toString() }
-            val quick = call(JSONObject().put("command", "press").put("label", "Screen timeout").put("timing", true))
-            check(quick.optBoolean("ok")) { "Press by label failed: $quick" }
-            val quickTiming = quick.getJSONObject("timing")
-            Log.i("SomaWalk", "speed METRIC quickPress=" + quickTiming)
-            check(quickTiming.getInt("quickFinds") == 1 && quickTiming.getInt("reads") == 1) { "The label query read the whole screen first: $quickTiming" }
-            call(JSONObject().put("command", "back"))
-            Log.i("SomaWalk", "speed PASS: a press by label found its control without a whole read")
-            // Stage 3 deltas: a second look after the screen changed, in the same app, is only what changed.
-            call(JSONObject().put("command", "open").put("package", "settings:display").put("until", "Display"))
-            val first = call(JSONObject().put("command", "screen"))
-            call(JSONObject().put("command", "open").put("package", "settings:sound").put("until", "Sound"))
-            val delta = call(JSONObject().put("command", "screen").put("since", first.getString("snapshot")).put("delta", true))
-            check(delta.has("changed") && delta.has("gone") && !delta.has("controls")) { "Expected a delta: $delta" }
-            Log.i("SomaWalk", "speed METRIC delta changed=" + delta.getJSONArray("changed").length() + " gone=" + delta.getJSONArray("gone").length() + " same=" + delta.getInt("same"))
-            Log.i("SomaWalk", "speed PASS: a changed screen came back as only what changed")
             finish(Activity.RESULT_OK, Bundle().apply { putString("stream", "Phone service speed primitives PASS\n") })
         } catch (problem: Throwable) {
             Log.e("SomaWalk", "speed FAIL", problem)
