@@ -174,6 +174,22 @@ if [ ${#walks[@]} -gt 0 ]; then
           adb -s $emu install -r -t tools/artifact-preview/build/outputs/apk/debug/artifact-preview-debug.apk >"$wdir/artifact-fixture-install.log" 2>&1 || fixture_ready=0
         fi
       fi
+      # The hunch* walks drive the separate Hunch app (built only with -Phunch). An emulator without it fails every step
+      # (MacBook Pro, 2026-10-26: the Mac Pro's had one installed by hand), so this commit's Hunch goes on first.
+      hunch_walks=0
+      for w in "${walks[@]}"; do case $w in hunch*) hunch_walks=1 ;; esac; done
+      if [ "$hunch_walks" -eq 1 ]; then
+        if ./gradlew --console=plain -Phunch :hunch:assembleDebug >"$wdir/hunch-build.log" 2>&1; then
+          hunch_apk=$(ls hunch/build/outputs/apk/debug/*.apk 2>/dev/null | head -n 1)
+          if [ -n "$hunch_apk" ] && ! adb -s $emu install -r -t "$hunch_apk" >"$wdir/hunch-install.log" 2>&1; then
+            # Another key's Hunch (an earlier hand install) is replaced; it holds only the emulator's own test data.
+            adb -s $emu uninstall dev.omalauncher.hunch >/dev/null 2>&1
+            adb -s $emu install -r -t "$hunch_apk" >"$wdir/hunch-install.log" 2>&1 || echo "Hunch: didn't install ($(tail -1 "$wdir/hunch-install.log")); the hunch walks will fail on that." >>"$wdir/summary.txt"
+          fi
+        else
+          echo "Hunch: didn't build ($(tail -1 "$wdir/hunch-build.log")); the hunch walks will fail on that." >>"$wdir/summary.txt"
+        fi
+      fi
       # mac-refusal opens a refused Mac conversation that ChatScreenRenderTest writes out (fictional, no runner); the
       # emulator's own chat history is put back after the walks.
       refusal_ready=1
