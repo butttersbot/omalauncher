@@ -14,7 +14,7 @@ usage() {
 usage: oma msg send DEVICE[:SESSION] TEXT [--reply-to ID] [--title NAME] [--as SESSION] [--task ID] [--supersedes MAIL_ID]
        oma msg devices
        oma msg receipts
-send     writes TEXT to the agent SESSION on the computer DEVICE (a Claude Code session id,
+send     writes TEXT to the agent SESSION on the computer DEVICE; phone:A, phone:B, phone:C is a builder on this phone (a Claude Code session id,
          six characters or more of it, or a runner thread id); without SESSION, to that
          computer in general. --reply-to names the mail being answered, --title what this
          is about, --as the phone builder writing (A or B), which a reply comes back to.
@@ -111,6 +111,22 @@ done
 if [ -n "$task" ]; then
   route=$(jq -cn --arg task "$task" --arg supersedes "$supersedes" '{task:$task} + (if $supersedes == "" then {} else {supersedes:$supersedes} end)')
   text="[Oma mail routing v1] $route"$'\n'"$text"
+fi
+# Another agent on this phone (Boss, 2026-10-26: "agent mail lanes between phone agents, so you can get them to keep
+# working"): phone:B, or this phone's own name, goes straight to Soma through the phone bridge, no network.
+if [ "$device" = phone ] || [ "$device" = "${OMA_PHONE_NAME:-galaxy-z-fold8}" ]; then
+  [ -n "$session" ] || die 'Name the phone agent: phone:A, phone:B or phone:C (or grok for the front agent).'
+  agent=oma
+  [ "$as" = grok ] && agent=grok
+  id="$(date +%Y%m%d-%H%M%S)-$(od -An -N3 -tx1 /dev/urandom | tr -d ' \n')"
+  body=$(jq -n --arg id "$id" --arg phone "${OMA_PHONE_NAME:-galaxy-z-fold8}" --arg session "$session" --arg as "$as" --arg agent "$agent" \
+      --arg title "$title" --arg text "$text" --arg reply "$reply_to" \
+    '{v: 1, id: $id, to: {session: $session},
+      from: {device: $phone, agent: $agent, session: $as, title: (if $title == "" then null else $title end)},
+      text: $text, reply_to: (if $reply == "" then null else $reply end)}')
+  answer=$(printf '%s' "$body" | oma-phone --display main mail-deliver 2>&1) || die "Soma didn't take it: $(printf '%s' "$answer" | jq -r '.error // .' 2>/dev/null)"
+  echo "Sent to phone:$session, mail id $id."
+  exit 0
 fi
 list=$(devices) || die 'No computer answered. Is Tailscale on, and tailshare-serve running on the Macs?'
 address=$(printf '%s' "$list" | jq -r --arg name "$device" '.devices[] | select(.name == $name) | .address' | head -n 1)

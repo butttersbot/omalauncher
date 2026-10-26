@@ -53,6 +53,16 @@ class PhoneBridge(private val context: Context, private val proot: Proot) {
                             PhoneHttp.reply(socket.outputStream, result.toString())
                             return@use
                         }
+                        // Mail from one phone agent to another (Boss, 2026-10-26: "agent mail lanes between phone agents"):
+                        // `oma msg send phone:B` hands the mail here instead of to a Mac, and it is delivered as a Mac's
+                        // would be: to the builder it names, started if idle or queued behind its task.
+                        if (input.optString("command") == "mail") {
+                            val mail = dev.omalauncher.assist.agentMail(input.optJSONObject("mail")?.toString())
+                            val result = if (mail == null) JSONObject().put("ok", false).put("error", "Not a mail: version 1, an id, from.device and some text.")
+                            else { dev.omalauncher.assist.AgentMailInbox.deliver(context, mail); JSONObject().put("ok", true).put("id", mail.id) }
+                            PhoneHttp.reply(socket.outputStream, result.toString())
+                            return@use
+                        }
                         // `oma drop get` / `list` with Wireless debugging off: Oma reads Taildrop's folders in shared
                         // storage (All files access) and copies into Linux's own folder. No phone control needed.
                         if (input.optString("command") == "taildrop") {
