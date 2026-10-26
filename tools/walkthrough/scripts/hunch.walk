@@ -43,7 +43,7 @@ expect GUT CHECK
 expect Paper Company
 # LOOK: HUNCH masthead, compact Gut check, fixed boxes: swipe must not scroll the page.
 expect HUNCH
-absent Today's issue
+absent "Today's issue"
 shot hunch-demo-unfolded
 swipe 300 900 300 300 500
 expect HUNCH
