@@ -1,0 +1,285 @@
+#!/usr/bin/env python3
+"""tnote: file a note for Boss into Soma Notes, under Agents/PROJECT/ in ~/Notes on the Mac Pro.
+
+  tnote put PROJECT FILE [--title NAME]   file FILE (.md or .html) as Agents/<project>/<name>.<ext>, replacing this
+                                          note's earlier copy. NAME is --title, else FILE's name without extension
+  tnote put PROJECT - --title NAME        the same from standard input (Markdown; give NAME.html for HTML)
+  tnote ls [PROJECT]                      the agents' notes (one project's, or all), newest first
+  tnote rm PROJECT NAME                   move one to ~/Notes/.trash (nothing is deleted for real)
+  tnote sync                              file what was kept on the phone while the Mac Pro was out of reach
+
+When the Mac Pro is out of reach (Boss, 2026-10-25: "a local store for notes, so we're not blocked when Tailscale goes
+down"), put keeps the note on the phone in ~/.local/share/tnote and says so; every later tnote call files what waits
+there first. If the Mac's copy changed meanwhile, the phone's goes beside it as "NAME (from the phone)", never over it.
+ls then shows the phone's copies, marked "on the phone only".
+
+  --walk     use the emulator walks' notes (~/NotesWalk, /v1/walk-notes) instead of Boss's
+  --host H   the Mac Pro's address (default $TNOTE_HOST, else 100.120.219.46)
+
+PROJECT becomes lower-case with dashes ("Soma Notes" -> soma-notes); NAME stays readable ("Banked ideas.md").
+Soma Notes' Agents tab groups notes by that project folder. Only Agents/ is ever written. Talks to the Mac Pro's
+tailshare-serve (port 8480), which answers only Boss's own devices.
+"""
+import json
+import os
+import re
+import socket
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+
+PORT = 8480
+STORE = os.path.expanduser('~/.local/share/tnote')
+
+
+class Offline(Exception):
+    pass
+HOST = os.environ.get('TNOTE_HOST') or '100.120.219.46'
+EXTS = ('md', 'html')
+
+
+def fail(text):
+    sys.exit('tnote: ' + text)
+
+
+def project_slug(project):
+    slug = re.sub(r'[^a-z0-9]+', '-', project.lower()).strip('-')
+    if not slug:
+        fail('a project name needs a letter or digit: %r' % project)
+    return slug
+
+
+def note_name(name):
+    """A readable file name: no slashes, control characters, leading dots or runs of spaces."""
+    name = re.sub(r'[\x00-\x1f/\\:]+', ' ', name)
+    name = re.sub(r'\s+', ' ', name).lstrip('. ').strip()
+    if not name:
+        fail('a note needs a name')
+    return name[:120]
+
+
+def split_ext(name, default=None):
+    stem, ext = os.path.splitext(name)
+    ext = ext.lstrip('.').lower()
+    if ext in EXTS:
+        return stem, ext
+    return name, default
+
+
+class Api:
+    def __init__(self, host, walk):
+        self.store = os.path.join(STORE, 'walk' if walk else 'notes')
+        self.host, self.up = host, None
+        self.base = 'http://%s:%d/v1/%s' % (host, PORT, 'walk-notes' if walk else 'notes')
+
+    def call(self, method, note_id=None, body=None, headers=None):
+        """(status, headers, bytes). HTTP errors are answers too; only a dead connection stops here."""
+        if self.up is None:
+            # One quick look first, so a Mac out of reach costs seconds, not a 30 s timeout per request.
+            try:
+                socket.create_connection((self.host, PORT), 5).close()
+                self.up = True
+            except OSError as e:
+                self.up = e
+        if self.up is not True:
+            raise Offline("can't reach the notes at %s: %s" % (self.base, self.up))
+        url = self.base + ('/' + urllib.parse.quote(note_id, safe='') if note_id else '')
+        request = urllib.request.Request(url, data=body, method=method, headers=headers or {})
+        try:
+            with urllib.request.urlopen(request, timeout=30) as r:
+                return r.status, r.headers, r.read()
+        except urllib.error.HTTPError as e:
+            return e.code, e.headers, e.read()
+        except OSError as e:
+            raise Offline("can't reach the notes at %s: %s" % (self.base, e))
+
+    def notes(self):
+        status, _, body = self.call('GET')
+        if status != 200:
+            fail('listing the notes: %s' % error(status, body))
+        return json.loads(body)['notes']
+
+
+def error(status, body):
+    try:
+        return '%d %s' % (status, json.loads(body).get('error'))
+    except ValueError:
+        return '%d %s' % (status, body[:200].decode('utf-8', 'replace'))
+
+
+def put(api, project, source, title):
+    if source == '-':
+        if not title:
+            fail('reading standard input needs --title NAME')
+        data = sys.stdin.buffer.read()
+        stem, ext = split_ext(note_name(title), 'md')
+    else:
+        try:
+            with open(source, 'rb') as f:
+                data = f.read()
+        except OSError as e:
+            fail("can't read %s: %s" % (source, e.strerror))
+        _, ext = split_ext(os.path.basename(source))
+        if ext is None:
+            fail('%s is not .md or .html' % source)
+        stem = split_ext(note_name(title or os.path.basename(source)))[0]
+    try:
+        data.decode('utf-8')
+    except UnicodeDecodeError:
+        fail('a note is UTF-8 text')
+    note_id = 'Agents/%s/%s.%s' % (project_slug(project), stem, ext)
+    flush(api)
+    try:
+        filed, sha = file_remote(api, note_id, data)
+        remember(api, filed, data, sha)
+        print('filed %s (%d bytes, sha %s)' % (filed, len(data), sha[:12]))
+    except Offline as e:
+        keep(api, note_id, data)
+        print('NOT in Soma Notes yet: %s. Kept on the phone (%s); filed by the next tnote call that reaches the Mac '
+              'Pro, or tnote sync.' % (e, os.path.join(api.store, 'outbox')))
+
+
+def file_remote(api, note_id, data, base=None):
+    """Put data at note_id; (the id it went to, the sha it got). With base (the sha the phone last saw), a copy changed since is kept."""
+    for attempt in (1, 2):
+        status, headers, body = api.call('GET', note_id)
+        if status == 200:
+            sha = (headers.get('ETag') or '').strip('"')
+            if base is not None and sha != base:
+                stem, ext = note_id.rsplit('.', 1)
+                return file_remote(api, '%s (from the phone).%s' % (stem, ext), data)
+            status, _, body = api.call('PUT', note_id, data, {'If-Match': sha, 'Content-Type': 'text/plain; charset=utf-8'})
+        elif status == 404:
+            status, _, body = api.call('PUT', note_id, data, {'Content-Type': 'text/plain; charset=utf-8'})
+        else:
+            fail('looking up %s: %s' % (note_id, error(status, body)))
+        if status == 200:
+            return note_id, json.loads(body)['sha']
+        if status != 409:
+            break
+    fail('filing %s: %s' % (note_id, error(status, body)))
+
+
+def slot(api, kind, note_id):
+    path = os.path.join(api.store, kind, urllib.parse.quote(note_id, safe=''))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    return path
+
+
+def remember(api, note_id, data, sha):
+    """The phone's copy of what was filed, and the sha the Mac gave it."""
+    with open(slot(api, 'copies', note_id), 'wb') as f:
+        f.write(data)
+    with open(slot(api, 'copies', note_id) + '.sha', 'w') as f:
+        f.write(sha)
+
+
+def keep(api, note_id, data):
+    path = slot(api, 'outbox', note_id)
+    with open(path + '.tmp', 'wb') as f:
+        f.write(data)
+    os.replace(path + '.tmp', path)
+
+
+def waiting(api):
+    box = os.path.join(api.store, 'outbox')
+    names = sorted(n for n in os.listdir(box) if not n.endswith('.tmp')) if os.path.isdir(box) else []
+    return [(urllib.parse.unquote(n), os.path.join(box, n)) for n in names]
+
+
+def flush(api, loud=False):
+    """File what the phone kept while the Mac was out of reach. Stops quietly at the first dead connection."""
+    for note_id, path in waiting(api):
+        with open(path, 'rb') as f:
+            data = f.read()
+        try:
+            base = open(slot(api, 'copies', note_id) + '.sha').read().strip()
+        except OSError:
+            base = None
+        try:
+            filed, sha = file_remote(api, note_id, data, base)
+        except Offline as e:
+            if loud:
+                fail('%s; %d note(s) still wait on the phone' % (e, len(waiting(api))))
+            return
+        remember(api, filed, data, sha)
+        os.remove(path)
+        print('filed %s from the phone (sha %s)%s' % (filed, sha[:12], '' if filed == note_id else
+              ': the Mac\'s %s had changed since, so it stays as it was' % note_id))
+
+
+def ls(api, project):
+    prefix = 'Agents/%s/' % project_slug(project) if project else 'Agents/'
+    flush(api)
+    try:
+        notes = api.notes()
+    except Offline as e:
+        print('(the Mac Pro is out of reach: %s; these are the phone\'s copies)' % e)
+        box = os.path.join(api.store, 'copies')
+        notes = [{'id': urllib.parse.unquote(n), 'size': os.path.getsize(os.path.join(box, n)),
+                  'modified': os.path.getmtime(os.path.join(box, n)) * 1000}
+                 for n in (os.listdir(box) if os.path.isdir(box) else []) if not n.endswith('.sha')]
+    notes = [n for n in notes if n['id'] not in {i for i, _ in waiting(api)}]
+    for note_id, path in waiting(api):
+        notes.append({'id': note_id, 'size': os.path.getsize(path), 'modified': os.path.getmtime(path) * 1000})
+    queued = {i for i, _ in waiting(api)}
+    notes = sorted((n for n in notes if n['id'].startswith(prefix)), key=lambda n: -n['modified'])
+    for n in notes:
+        when = time.strftime('%Y-%m-%d %H:%M', time.localtime(n['modified'] / 1000))
+        print('%s  %7d  %s%s' % (when, n['size'], n['id'][len('Agents/'):], '  (on the phone only)' if n['id'] in queued else ''))
+    if not notes:
+        print('no agent notes%s' % (' for ' + prefix[len('Agents/'):-1] if project else ''))
+
+
+def rm(api, project, name):
+    folder = 'Agents/%s/' % project_slug(project)
+    stem, ext = split_ext(note_name(name))
+    ids = [folder + '%s.%s' % (stem, ext)] if ext else [folder + stem + '.' + e for e in EXTS]
+    try:
+        have = {n['id'] for n in api.notes()}
+    except Offline as e:
+        fail('%s: removing waits for the Mac Pro' % e)
+    found = [i for i in ids if i in have]
+    if not found:
+        fail('no note %s%s' % (folder, name))
+    if len(found) > 1:
+        fail('both %s exist; say which, with its extension' % ' and '.join(found))
+    status, _, body = api.call('DELETE', found[0])
+    if status != 200:
+        fail('removing %s: %s' % (found[0], error(status, body)))
+    print('moved %s to the trash' % found[0])
+
+
+def main(argv):
+    args, walk, host, title = [], False, HOST, None
+    it = iter(argv)
+    for a in it:
+        if a == '--walk':
+            walk = True
+        elif a == '--host':
+            host = next(it, None) or fail('--host needs an address')
+        elif a == '--title':
+            title = next(it, None) or fail('--title needs a name')
+        elif a in ('-h', '--help'):
+            print(__doc__.strip())
+            return
+        else:
+            args.append(a)
+    api = Api(host, walk)
+    if args[:1] == ['put'] and len(args) == 3:
+        return put(api, args[1], args[2], title)
+    if args[:1] == ['ls'] and len(args) <= 2:
+        return ls(api, args[1] if len(args) == 2 else None)
+    if args == ['sync']:
+        flush(api, loud=True)
+        return print('nothing waits on the phone' if not waiting(api) else '')
+    if args[:1] == ['rm'] and len(args) == 3:
+        return rm(api, args[1], args[2])
+    fail('usage: tnote put PROJECT FILE|- [--title NAME] | tnote ls [PROJECT] | tnote rm PROJECT NAME | tnote sync  (--walk, --help)')
+
+
+if __name__ == '__main__':
+    main(sys.argv[1:])
+

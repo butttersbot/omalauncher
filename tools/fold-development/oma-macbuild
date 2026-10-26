@@ -13,6 +13,11 @@
 #                         answer comes back to this builder (Boss, 2026-10-25: "Phone B and C use their own lanes")
 #   oma-macbuild --lane   print this builder's lane thread (made the first time)
 #
+# When the Mac Pro is out of reach (Tailscale down on it, 2026-10-25), a launcher build falls back to building here with
+# oma-build: one build at a time and small, tests first, then oma-install as usual; no emulator walks run, so a build
+# made here is not "ready" until its walks pass on the Mac (Boss, 2026-10-25: "a fallback for local build"). Set
+# SOMA_NO_LOCAL=1 to refuse instead.
+#
 # The signing key never leaves the phone: the Mac signs with its own debug key and this signs again. What is
 # taken must be HEAD's build (or an earlier one, when nothing since goes into the app), at the next version code, with no test failed, and carry the very proot libraries
 # this checkout has, byte for byte, since those run his Linux.
@@ -23,6 +28,8 @@ mac=${SOMA_MAC:-jacks-mac-pro}
 thread=${SOMA_MAC_THREAD:-t9f45b731}
 tools=/opt/android-sdk/build-tools/36.0.0
 die() { echo "$1" >&2; exit 1; }
+# Whether the Mac Pro takes mail now: it is among oma msg's computers only while its Tailscale is up.
+mac_up() { oma msg devices 2>/dev/null | awk -v m="$mac" '$1 == m {f=1} END {exit !f}'; }
 # The builder asking (A, B or C): set when a builder starts, else told by its worktree. The Mac's answer goes back to it
 # (Boss, 2026-10-21: builder B's builds were answered to A). The letter is the mail's sender session (--as), which is
 # also what the Mac Pro keys each builder's own build lane by.
@@ -51,6 +58,11 @@ code=$(tr -d '[:space:]' < "$cfg/next-version-code")
 
 case ${1:-} in
 '')
+  if ! mac_up; then
+    [ -n "${SOMA_NO_LOCAL:-}" ] && die "The Mac Pro is out of reach (its Tailscale is down?) and SOMA_NO_LOCAL is set: nothing was built."
+    echo "The Mac Pro is out of reach (its Tailscale is down?): building $short here on the phone instead, with oma-build (one build at a time, small). No walks run here: walk it on the Mac once it is back before calling it ready." >&2
+    exec oma-build
+  fi
   oma-sync
   commit=$(git -C "$repo" rev-parse HEAD)
   short=${commit:0:9}
@@ -67,6 +79,7 @@ case ${1:-} in
 --ask)
   title=${2:?Usage: oma-macbuild --ask TITLE TEXT}
   text=${3:?Usage: oma-macbuild --ask TITLE TEXT}
+  mac_up || die "The Mac Pro is out of reach (its Tailscale is down?): nothing was sent. A build can be made here with oma-gradle TASKS (one at a time, small); walks wait for the Mac."
   lane=$(lane_thread) || die "No lane for builder $builder (the Mac Pro out of reach, or mac-lanes-off): nothing was sent."
   oma msg send "$mac:$lane" --as "$builder" --title "$title (lane $builder)" "$text"
   echo "Sent to the Mac Pro's lane $builder ($lane): the answer comes back to builder $builder."
