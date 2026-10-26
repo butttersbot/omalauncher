@@ -10,6 +10,15 @@ is retired as of 2026-10-17: Boss wants nothing extra running on his Fold. The r
 - Plain Android, no One UI. Samsung's own screens are not there; Boss is stripping most of them off the phone anyway.
 - SDK: `/opt/homebrew/share/android-commandlinetools` (Homebrew). AVD files: `~/.android/avd/Fold8.avd`.
 - It holds its own test data only: no logins, none of Boss's pages.
+- **To make it again** (as on the MacBook Pro, 2026-10-26; values read off the Mac Pro's on 2026-10-22):
+  `avdmanager create avd -n Fold8 -k 'system-images;android-37.0;google_apis;arm64-v8a' -d pixel_9_pro_fold`, then in
+  `~/.android/avd/Fold8.avd/config.ini`: `hw.lcd.width=2448`, `hw.lcd.height=1848`, `hw.lcd.density=420`; cover
+  `hw.displayRegion.0.1` 1248x1972 at 0,0; `hw.display1-3` unused; `hw.multi_display_window=no`; hinge
+  `hw.sensor.hinge=yes`, areas `1224-0-0-1848`, defaults `180`, postures `1,2,3` at `0-30, 30-150, 150-180`,
+  `fold_to_displayRegion.0.1_at_posture=1`, `resizable.config=1`; `showDeviceFrame=no`; `hw.initialOrientation=portrait`;
+  `hw.keyboard=yes`; `hw.ramSize=16384`. Then `oma-emu start`, `fold-development/fold8-overlay/install.sh`, reboot,
+  `oma-emu fold-bars` (cover status bar 110 px like his phone), install the app and make the Soma keyboard the input
+  method: `ime enable dev.omalauncher.boss/.keyboard.OmaKeyboardService && ime set` (same id).
 
 ## Using it
 `tools/oma-emu` wraps everything and aims adb at the emulator only (`emulator-5554`), never the phone:
