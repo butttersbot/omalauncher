@@ -10,8 +10,14 @@
 set -euo pipefail
 export ANDROID_HOME="${ANDROID_HOME:-/opt/homebrew/share/android-commandlinetools}"
 export ANDROID_SDK_ROOT="$ANDROID_HOME"
-AVD=Fold8
-SERIAL=emulator-5554
+# One emulator per build lane, so lanes walk at the same time (Boss, 2026-10-26): SOMA_EMU_LANE=B uses AVD Fold8-B on
+# port 5556 (C: Fold8-C, 5558); without it, or for lane A, the first one, Fold8 on 5554, as before.
+case "${SOMA_EMU_LANE:-A}" in
+  B) AVD=Fold8-B; PORT=5556 ;;
+  C) AVD=Fold8-C; PORT=5558 ;;
+  *) AVD=Fold8; PORT=5554 ;;
+esac
+SERIAL=emulator-$PORT
 A() { adb -s "$SERIAL" "$@"; }
 display_id() { # inner is the first SurfaceFlinger display, cover the second
   A shell dumpsys SurfaceFlinger --display-id | awk '{print $2}' | sed -n "$1p"
@@ -42,7 +48,7 @@ case "${1:-}" in
     if A get-state >/dev/null 2>&1; then echo "already running"; exit 0; fi
     extra=(); [ "${2:-}" = --headless ] && extra=(-no-window)
     # -writable-system keeps the Fold-match overlays in /product/overlay (tools/fold-development/fold8-overlay).
-    nohup "$ANDROID_HOME/emulator/emulator" -avd "$AVD" -writable-system -no-snapshot-save -no-boot-anim ${extra[@]+"${extra[@]}"} \
+    nohup "$ANDROID_HOME/emulator/emulator" -avd "$AVD" -port "$PORT" -writable-system -no-snapshot-save -no-boot-anim ${extra[@]+"${extra[@]}"} \
       > "$HOME/.android/avd/$AVD-emulator.log" 2>&1 &
     emu=$!
     # Never wait on an emulator that has died (no such AVD, 2026-10-26 on the MacBook): that held the walks lock forever.

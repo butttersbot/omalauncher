@@ -23,6 +23,9 @@ is retired as of 2026-10-17: Boss wants nothing extra running on his Fold. The r
   Then, once, finish Soma's first-run (default theme, no Arch, start) so walks begin at home, and add Soma's Screen
   Record tile to Quick Settings (`cmd statusbar add-tile` with its TileService): a fresh AVD has neither, and the search,
   screen-record and chat walks fail on that (MacBook Pro, 2026-10-26).
+- **One per lane** (2026-10-26): Fold8-B and Fold8-C are copies of Fold8 (same config.ini), on ports 5556 and 5558
+  (`SOMA_EMU_LANE=B tools/oma-emu start`). soma-macbuild walks lane B/C there, each with its own lock, when they exist;
+  otherwise every lane shares Fold8. Each needs the same one-time setup (first-run, tile, overlays, keyboard).
 
 ## Using it
 `tools/oma-emu` wraps everything and aims adb at the emulator only (`emulator-5554`), never the phone:

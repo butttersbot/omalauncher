@@ -170,13 +170,19 @@ if [ -f tools/walkthrough/walk.py ]; then
   fi
 fi
 # The Mac has one emulator for walks, so lanes walk one at a time (the app is already on its way to the phone).
-if [ ${#walks[@]} -gt 0 ] && ! hold walks 2700; then
-  echo "Walks: not run (the emulator was still walking another lane's build after 45 minutes: $(busy walks))."
+# Each lane walks on its own emulator when this Mac has one for it (Fold8-B, Fold8-C beside Fold8), so lanes don't wait
+# for each other; a lane without one shares lane A's, one at a time, as before.
+emu_lane=A
+if [ -n "$lane" ] && [ "$lane" != A ] && [ -d "$HOME/.android/avd/Fold8-$lane.avd" ]; then emu_lane=$lane; fi
+export SOMA_EMU_LANE=$emu_lane
+walks_lock=walks; [ "$emu_lane" = A ] || walks_lock=walks-$emu_lane
+if [ ${#walks[@]} -gt 0 ] && ! hold "$walks_lock" 2700; then
+  echo "Walks: not run (the emulator was still walking another lane's build after 45 minutes: $(busy "$walks_lock"))."
   walks=()
 fi
 if [ ${#walks[@]} -gt 0 ]; then
   set +e
-  emu=emulator-5554
+  case $emu_lane in B) emu=emulator-5556 ;; C) emu=emulator-5558 ;; *) emu=emulator-5554 ;; esac
   wdir=app/build/walk
   rm -rf "$wdir"; mkdir -p "$wdir"
   started=$(date +%s)
