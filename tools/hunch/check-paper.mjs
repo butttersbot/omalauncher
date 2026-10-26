@@ -65,7 +65,7 @@ await w.receiveNative({type:'wallet',demo:true,signed:true,address:'',busy:false
 await w.receiveNative({type:'wallet',demo:true,signed:true,address:'0x'+'1'.repeat(40),qr:'AAAA',balances:{arbitrumUsdc:'12.50',arbitrumEth:'0.001',hyperliquidTotal:'0',hyperliquidAvailable:'0'}});w.Paper.render();assert.match(w.document.querySelector('#scene').textContent,/Arbitrum USDC: 12.50 USDC/);assert.match(w.document.querySelector('#scene').textContent,/not trading cash/);assert.ok(w.document.querySelector('#scene img').src.startsWith('data:image/png;base64,'));
 await w.receiveNative({type:'wallet',demo:true,signed:true,address:'0x'+'1'.repeat(40),qr:'AAAA',balances:{arbitrumError:true}});w.Paper.render();assert.match(w.document.querySelector('#scene').textContent,/Arbitrum USDC: Unavailable/);assert.doesNotMatch(w.document.querySelector('#scene').textContent,/12.50/);
 w.innerWidth=880;w.Hunch.chapter='bets';w.Hunch.selected=null;await w.showLive();
-assert.match(w.document.querySelector('#scene').textContent,/NO BET SELECTED/);
-assert.equal(Array.from(w.document.querySelectorAll('#scene button:disabled')).find(b=>b.textContent==='CASH OUT —').textContent,'CASH OUT —');
+assert.match(w.document.querySelector('#scene').textContent,/No bet selected/);
+assert.match(w.document.querySelector('#scene').textContent,/See more · Cash out/);
 assert.deepEqual(errors,[]);console.log('PASS: all 15 manifest hashes and templates; six live layouts; cover and unfolded detail; account transitions. Visual review still required.');
 await w.happyDOM.abort();
