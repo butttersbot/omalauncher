@@ -221,3 +221,10 @@ changed". Still open: subtree-filtered events, visual fallback.
 Stage 3 part 4 (2026-10-25, Phone A): subtree-filtered events. System UI's own redraws (clock, battery, icons) no
 longer count as the screen changing, so waits do not read again for them; its windows coming or going still do.
 PhoneWait.counts, unit test. Still open: visual fallback; then the matched benchmarks on the phone.
+
+Stage 3 part 5 (2026-10-26, Phone A): visual fallback. When the controls can't say what is there (no readable window,
+nothing in front readable, a label no control answers to or several do, a screen/read/expect of one or two controls),
+oma-phone takes a picture of that display and adds it to the answer as "look" {why, screenshot}; `--no-look` leaves it
+out. The decision is one jq filter over the answer, checked against sample answers (not-found, several, unreadable,
+one control: look; three controls, locked: no look). Stage 3 is complete; next: matched benchmarks on the phone (needs
+Boss's OK on timing), then stage 4 (verified reusable routes).

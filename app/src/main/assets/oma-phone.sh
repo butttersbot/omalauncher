@@ -11,6 +11,8 @@ fi
 case "$display" in main|bg|auto) ;; *) echo 'Display must be main, bg or auto.' >&2; exit 2;; esac
 timing=false
 if [ "${1:-}" = --timing ]; then timing=true; shift; fi
+no_look=0
+if [ "${1:-}" = --no-look ]; then no_look=1; shift; fi
 command=${1:-help}
 shift || true
 if [ "$display" = auto ]; then
@@ -197,6 +199,8 @@ battery [Battery Saver], storage or apps). Unsupported destinations fail without
 Without --until, open confirms only the foreground package; destinationVerified is false.
 With --until, a missing destination returns failure; the observed screen is returned on verification.
 Optional --timing before the command adds service/read timings and search counts, without logging contents.
+Optional --no-look (after --timing) leaves out the picture otherwise added as "look" when the controls cannot say
+what is there: nothing readable, a label no control or several controls answer to, or only one or two controls.
 Native plans: save a JSON object {id,steps,timeoutMs} to a file and use plan FILE.json.
 Get a fresh id ONCE with plan-id, save it with the plan, and reuse that exact id to inspect/retry safely.
 plan-receipt ID reads its durable outcome even while control is paused. A retry never reruns retained steps.
@@ -357,6 +361,21 @@ response=$(curl --silent --show-error --max-time "$limit" --abstract-unix-socket
   --header 'Content-Type: application/json' --data-binary "$request" http://localhost/phone) || {
   echo 'Phone bridge unavailable or timed out. Open Omalauncher Boss. Read the screen before retrying actions.' >&2; exit 1;
 }
+# Visual fallback (phone-control speed, stage 3): when the controls can't say what is there (nothing readable, a
+# label nobody answers to or several do, a screen of one or two controls: a game, a picture, a web page drawn
+# without its words), a picture of that display comes with the answer as "look", so the agent looks before guessing.
+# --no-look leaves it out.
+look_why=$(printf '%s\n' "$response" | jq -r --arg c "$command" '
+  if (.ok != true) and ((.error // "") | test("No readable window|nothing readable is in front|Nothing on screen (says|is a text field)|Several controls answer")) then (.error | split(".")[0])
+  elif (.ok == true) and ($c == "screen" or $c == "read" or $c == "expect") and ((.controls | type) == "array") and ((.controls | length) <= 2) then "only \(.controls | length) readable control(s) on screen"
+  else empty end' 2>/dev/null || true)
+if [ -n "$look_why" ] && [ "$no_look" != 1 ] && [ "$command" != screenshot ]; then
+  shot=$(curl --silent --max-time 12 --abstract-unix-socket '__SOCKET__' --header 'Content-Type: application/json' \
+    --data-binary "$(jq -cn --arg display "$display" '{command:"screenshot",display:$display}')" http://localhost/phone 2>/dev/null || true)
+  path=$(printf '%s\n' "$shot" | jq -r 'select(.ok == true) | .path' 2>/dev/null || true)
+  response=$(printf '%s\n' "$response" | jq -c --arg why "$look_why" --arg path "$path" \
+    '. + {look: ({why: $why} + (if $path == "" then {screenshot: "unavailable (a protected screen?)"} else {screenshot: $path, note: "read this picture with your image tool before the next step"} end))}')
+fi
 # A screen's controls one to a line: the same JSON, about a quarter fewer characters to read after every step.
 printf '%s\n' "$response" | jq -r 'if (.controls | type) == "array" then (del(.controls) | tojson | .[:-1]) + (if (del(.controls) | length) > 0 then "," else "" end) + "\"controls\":[\n" + (.controls | map(tojson) | join(",\n")) + "\n]}" else . end'
 printf '%s\n' "$response" | jq -e '.ok == true' >/dev/null
