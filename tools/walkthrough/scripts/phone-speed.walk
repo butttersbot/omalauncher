@@ -4,6 +4,10 @@ rotate portrait
 # Emulator only: preserve and restore its existing service list around our own instrumented service test.
 shell settings get secure enabled_accessibility_services > /data/local/tmp/soma-speed-accessibility-before
 shell 'old=$(cat /data/local/tmp/soma-speed-accessibility-before); case ":$old:" in *":dev.omalauncher.boss/dev.omalauncher.phone.PhoneService:"*) ;; *) case "$old" in null|"") old="";; esac; settings put secure enabled_accessibility_services "${old:+$old:}dev.omalauncher.boss/dev.omalauncher.phone.PhoneService";; esac'
+# A fresh emulator has accessibility switched off as a whole (MacBook Pro's Fold8, 2026-10-26: 'service was not
+# bound'), and Android takes a moment to bind the service once it is listed.
+shell settings put secure accessibility_enabled 1
+wait 3000
 clearlog
 shell am instrument -w --no-restart dev.omalauncher.artifactpreview/.PhoneSpeedInstrumentation
 log speed PASS: actual service opens Display and reports read timing
