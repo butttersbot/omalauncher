@@ -7,46 +7,51 @@ shot hunch-live-cover
 # Repeatable fixture exercises details without live market churn.
 shell am force-stop dev.omalauncher.hunch
 shell am start -n dev.omalauncher.hunch/.MainActivity --es fixture demo
-expect HUNCH / FICTIONAL DEMO
+expect FICTIONAL MARKET DEMO · NO REAL MONEY
 expect Paper Cranes
 shot hunch-demo-cover
 # Match card title (not the filter).
 tap Paper Cranes vs Ink Foxes
-expect Choose an outcome
-expect Cranes outcome, selected
-expect Buy:
-scrollto Gross illustration
-expect Gross illustration
+# The sheet: both sides, the stake, read-only. The demo's one ask expires, so a side may show either price or no quote.
+expect Foxes — NO VERIFIED QUOTE
+expect PUT IN
+scrollto READ ONLY · REFRESH
+scrollto Resolution Deadline
+expect HOW IT SETTLES
 shot hunch-detail-cover
 key BACK
 expect "Today's issue"
 tap Prices
 expect DEMO above 100?
 tap DEMO above 100?
-expect No asks
-scrollto No payout estimate
-expect No payout estimate
+expect Yes — NO VERIFIED QUOTE
+expect No — NO VERIFIED QUOTE
+expect No verified executable quote.
 shot hunch-empty-book
 key BACK
 tap Bets
-expect No bets yet.
+expect No trading account is connected.
 tap Money
-expect No wallet connected.
+expect Open your wallet to view verified balances.
 shot hunch-money-empty
 tap Today
 tap All
 fold open
 rotate portrait
-expect "Today's issue"
+# Unfolded is the grid, without the cover's "Today's issue" masthead.
+expect GUT CHECK
 expect Paper Company
 shot hunch-demo-unfolded
 # HTTP error fixture cannot fall back to unlabelled stale data.
 shell am force-stop dev.omalauncher.hunch
 shell am start -n dev.omalauncher.hunch/.MainActivity --es fixture error
-expect Markets unavailable
+# A cold start can sit on the splash past expect's 8 s on a loaded Mac.
+wait 5000
+expect OFFLINE TEST · NO REAL MONEY
+expect Markets could not be loaded.
 shot hunch-offline
 # Leave live read-only app, never the fixture, for a human.
 shell am force-stop dev.omalauncher.hunch
 shell am start -n dev.omalauncher.hunch/.MainActivity
-expect "Today's issue"
+expect Search markets
 [phone] Verify live market names, search, side selection, empty/one-sided book labels and refresh. No wallet or transaction controls. Check cover/inner readability and back to retained query.
