@@ -82,7 +82,8 @@ If unsure whether something is load-bearing, keep it out of the UI and list it i
   - top-right red NEEDS YOU with its count. It cycles through what needs Boss across all apps and pages, turning
     to the page and flying to the screen, and opens the thread if there is one.
   - bottom pill: Move, Comment, and the zoom % (which fits all).
-- **Screen card:** a 300×560 frame, the name, the version, and the SHIPPED / APPROVED / PROPOSED switch (a red
+- **Screen card:** a frame shaped like its screen (cover 300×560; unfolded at the inner display's aspect,
+  about 560×505), the name, the version, and the SHIPPED / APPROVED / PROPOSED switch (a red
   dot when waiting). A red outline plus a tilted "NOT BUILT AS APPROVED" flag when drift is set.
 - **Comments, Figma-style:**
   - with the Comment tool, tap a screen to drop a pin and open a thread;
@@ -95,8 +96,8 @@ If unsure whether something is load-bearing, keep it out of the UI and list it i
   - Labels sit in a strip parallel to the bottom edge and never touch a line.
   - It scrolls with no scroll bar, with a hand-lettered folio between pages.
   - On the cover (<640px) it is two plain columns, and names wrap to two lines.
-  - Each panel shows a miniature of the app's newest approved screen, plus page and screen counts and the
-    needs count.
+  - Each panel shows a miniature of the app's main screen: the first approved screen on its first page
+    (Phone C, 2026-10-25; was "newest approved"), plus page and screen counts and the needs count.
 - **Type:** the Manga look's fonts, served locally: Dela Gothic One (display), Schibsted Grotesk (body),
   JetBrains Mono, Patrick Hand. They're embedded in the mockup; also in the omalauncher repo under
   `app/src/main/assets/packs/manga/fonts`. Colours: paper #fdfdfb, ink #111114, muted #77777e, red #d7262d,
