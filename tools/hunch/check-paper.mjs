@@ -17,7 +17,9 @@ w.innerWidth=880;w.Hunch.rows=[];w.Hunch.chapter='today';await w.showLive();
 assert.match(w.document.querySelector('#scene').textContent,/Loading listings/);
 await w.receiveNative({type:'marketError'});w.Paper.render();
 assert.match(w.document.querySelector('#scene').textContent,/Markets could not be loaded/);
-assert.doesNotMatch(w.document.querySelector('#scene').textContent,/Loading listings/);
+assert.doesNotMatch(w.document.querySelector('#scene').textContent,/Loading listings|1 OF 0|OPEN →/);
+assert.equal(w.document.querySelector('#scene input[type=range]'),null);
+assert.equal(w.document.querySelector('#scene button').disabled,true);
 // Tall inner view fills its viewport; resizing restores source geometry without compounding.
 const viewport=w.document.getElementById('viewport');
 Object.defineProperty(viewport,'clientWidth',{configurable:true,value:880});
