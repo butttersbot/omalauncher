@@ -114,7 +114,7 @@ case ${1:-} in
       [ -n "$built_code" ] && [ "$built_code" -ge "$code" ] || continue
       built=$(sed -n 's/.*"commit":"\([0-9a-f]\{40\}\)".*/\1/p' "$cand")
       if [ -n "$built" ] && git -C "$repo" merge-base --is-ancestor "$built" HEAD &&
-        git -C "$repo" diff --quiet "$built" HEAD -- . ':(exclude)tools/fold-development' ':(exclude)tools/walkthrough' ':(exclude)docs' ':(exclude)hunch' ':(exclude)tools/mac-runner' ':(exclude)*.md'; then
+        git -C "$repo" diff --quiet "$built" HEAD -- . ':(exclude)tools/fold-development' ':(exclude)tools/walkthrough' ':(exclude)docs' ':(exclude)hunch' ':(exclude)tools/mac-runner' ':(exclude)tools/oma-emu' ':(exclude)*.md'; then
         json=$cand
         commit=$built
         echo "Taking the build of ${built:0:9}: nothing since then goes into the app."
