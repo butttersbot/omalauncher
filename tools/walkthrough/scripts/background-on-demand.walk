@@ -1,0 +1,10 @@
+# The background display exists only while an agent works in the background (Boss, 2026-10-26: "it should only
+# flip on when we're using it"): Robinhood refused to run beside the always-on display, and FFIV Companion drew its
+# touch screen on it. The helper (tools/background-display/SomaDisplay.java) makes it when Soma asks before a
+# background step and lets it go 2 minutes after the last ask. Real displays, real apps: phone only.
+[phone] With no agent working in the background, `adb shell dumpsys display | grep -c soma-agent` says 0, and `oma-phone status` still says backgroundAvailable true (the helper is up, no display).
+[phone] `oma-phone --display bg open settings:display --until Display` works: the display is made for it (backgroundDisplayId appears in status) and the main screen never changes.
+[phone] Two minutes after the last background step, soma-agent is gone again (dumpsys count 0).
+[phone] Robinhood opens and works with no "screen recording" warning while no background step has run for two minutes.
+[phone] FFIV Companion shows both DS screens on the main screen.
+[phone] A background step while Robinhood is open in front: the step runs on the hidden display; note whether Robinhood complains (expected: it may, while the display is up).

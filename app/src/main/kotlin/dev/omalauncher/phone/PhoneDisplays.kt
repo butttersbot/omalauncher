@@ -73,6 +73,25 @@ internal object PhoneDisplays {
         return PhoneBackgroundDisplay(id, result.getInt("width"), result.getInt("height"))
     }
 
+    /** The helper answered lately, with or without a display up (it makes one on demand). */
+    fun helperUp(): Boolean = verified?.let { android.os.SystemClock.elapsedRealtime() - it.checkedAt <= 2000 } == true
+
+    /**
+     * The background display, made for this step if the helper keeps none up (Boss, 2026-10-26: "it should only flip on
+     * when we're using it"; banking apps refuse to run beside any extra display). Each call keeps it up for the helper's
+     * idle time (2 minutes) more. Not on the main thread: it talks to the helper. An older helper that always keeps its
+     * display needs no asking.
+     */
+    fun ensure(context: Context): PhoneBackgroundDisplay {
+        val checked = verified ?: error(unavailable)
+        check(android.os.SystemClock.elapsedRealtime() - checked.checkedAt <= 2000) { "Background helper stopped answering. Start it again." }
+        if (!checked.info.optBoolean("onDemand")) return background(context)
+        verified = Verified(call(context, "open"), android.os.SystemClock.elapsedRealtime())
+        // Android lists a new display a moment after it is made.
+        repeat(20) { runCatching { return background(context) }; Thread.sleep(100) }
+        return background(context)
+    }
+
     /** Called only from the owner's Take over activity, after the phone is unlocked and control is paused. */
     fun takeOver(context: Context) { background(context); call(context, "takeover") }
 }

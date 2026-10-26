@@ -79,6 +79,9 @@ class PhoneBridge(private val context: Context, private val proot: Proot) {
                         val seconds = if (input.optString("command") == "plan") 32L else 8L
                         val deadline = SystemClock.elapsedRealtime() + seconds * 1000
                         var result = JSONObject().put("ok", false).put("error", "Phone request timed out")
+                        // A background step: the display is made (or kept) now, off the main thread; a failure shows in the step.
+                        if (input.optString("display") == "bg" && input.optString("command") !in setOf("status", "stop", "plan-receipt"))
+                            runCatching { PhoneDisplays.ensure(context) }
                         Handler(Looper.getMainLooper()).post {
                             if (SystemClock.elapsedRealtime() < deadline) {
                                 val service = PhoneService.instance
@@ -96,13 +99,15 @@ class PhoneBridge(private val context: Context, private val proot: Proot) {
                                         result.put("locked", context.getSystemService(android.app.KeyguardManager::class.java).isKeyguardLocked)
                                             .put("awake", context.getSystemService(android.os.PowerManager::class.java).isInteractive)
                                             .put("opened", service?.openedApp.orEmpty()).put("plan", service?.planState ?: JSONObject.NULL)
+                                        // Available = the helper answers; its display is made only when a step needs it.
                                         val bg = runCatching { PhoneDisplays.background(context) }
-                                        result.put("backgroundAvailable", bg.isSuccess)
-                                        result.put("backgroundControlsAvailable", bg.isSuccess && context.getSystemService(android.os.PowerManager::class.java).isInteractive)
+                                        val up = bg.isSuccess || PhoneDisplays.helperUp()
+                                        result.put("backgroundAvailable", up)
+                                        result.put("backgroundControlsAvailable", up && context.getSystemService(android.os.PowerManager::class.java).isInteractive)
                                         bg.onSuccess { result.put("backgroundDisplayId", it.id) }
                                         if (input.optString("display") == "bg") {
                                             bg.onSuccess { result.put("displayId", it.id) }
-                                                .onFailure { result.put("ok", false).put("error", it.message ?: "Start the background display helper.") }
+                                            if (!up) result.put("ok", false).put("error", runCatching { PhoneDisplays.background(context) }.exceptionOrNull()?.message ?: "Start the background display helper.")
                                         }
                                         PhoneControlHeal.status(context, result)
                                         latch.countDown()
