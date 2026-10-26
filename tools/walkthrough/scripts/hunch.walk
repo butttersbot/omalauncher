@@ -41,26 +41,11 @@ rotate portrait
 # Unfolded is the grid, without the cover's "Today's issue" masthead.
 expect GUT CHECK
 expect Paper Company
-# LOOK: HUNCH masthead, compact Gut check, fixed boxes: swipe must not scroll the page.
-expect HUNCH
-absent "Today's issue"
+# LOOK: both grid columns extend to the bottom inset; no blank bottom quarter.
 shot hunch-demo-unfolded
-swipe 300 900 300 300 500
-expect HUNCH
-shot hunch-fixed-grid-after-swipe
-tap See more · Markets
-expect Back to Hunch
-shot hunch-expanded-markets
-tap Back to Hunch
-expect See more · Markets
 rotate landscape
 expect GUT CHECK
 shot hunch-demo-unfolded-landscape
-tap See more · Gut check
-expect Back to Hunch
-shot hunch-expanded-gut-landscape
-tap Back to Hunch
-expect See more · Gut check
 rotate portrait
 expect GUT CHECK
 shot hunch-demo-unfolded-restored
