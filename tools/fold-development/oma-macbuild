@@ -40,6 +40,9 @@ if [ -z "${SOMA_MAC:-}" ] && ! mac_up && mac_up macbook-pro; then
 fi
 # What oma threads calls it, and where its lane ids are kept (the Mac Pro's as before).
 case $mac in jacks-mac-pro) mac_name=first; suffix= ;; *) mac_name=$mac; suffix=-$mac ;; esac
+# The Mac Pro's mirror follows the phone by itself (mac-sync.py); another Mac's is brought up to date first.
+fresh=
+[ "$mac" = jacks-mac-pro ] || fresh="first bring the mirror up to date (git -C ~/Projects/omalauncher-fold pull --ff-only origin phone/fold-development), then "
 # The builder asking (A, B or C): set when a builder starts, else told by its worktree. The Mac's answer goes back to it
 # (Boss, 2026-10-21: builder B's builds were answered to A). The letter is the mail's sender session (--as), which is
 # also what the Mac Pro keys each builder's own build lane by.
@@ -78,8 +81,8 @@ case ${1:-} in
   short=${commit:0:9}
   if lane=$(lane_thread) && [ -z "${SOMA_MAC_THREAD:-}" ]; then
     oma msg send "$mac:$lane" --as "$builder" --title "Soma build $short (lane $builder)" \
-      "Please build Soma for the phone: in /Users/jackkim/Projects/omalauncher-fold run tools/fold-development/soma-macbuild --lane $builder $commit $code (if the script isn't there yet, or has no --lane, the mirror syncs within a minute: wait and try again). It builds and tests that commit in lane $builder's own worktree, at version $code or the next one no other lane has, and Taildrops the app to the phone. Then answer with its last lines, or what stopped it."
-    echo "Asked the Mac Pro's lane $builder to build $short as version $code or above. When it answers, run: oma-macbuild --take"
+      "Please build Soma for the phone: ${fresh}in /Users/jackkim/Projects/omalauncher-fold run tools/fold-development/soma-macbuild --lane $builder $commit $code (if the script isn't there yet, or has no --lane, the mirror syncs within a minute: wait and try again). It builds and tests that commit in lane $builder's own worktree, at version $code or the next one no other lane has, and Taildrops the app to the phone. Then answer with its last lines, or what stopped it."
+    echo "Asked $mac's lane $builder to build $short as version $code or above. When it answers, run: oma-macbuild --take"
   else
     oma msg send "$mac:$thread" --as "$builder" --title "Soma build $short" \
       "Please build Soma for the phone: in /Users/jackkim/Projects/omalauncher-fold run tools/fold-development/soma-macbuild $commit $code (if the script isn't there yet, the mirror syncs within a minute: wait and try again). It builds and tests that commit in its own worktree and Taildrops the app to the phone. Then answer with its last lines, or what stopped it."
