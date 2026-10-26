@@ -12,6 +12,22 @@ let errors=[];w.paperError=e=>{errors.push(e);console.error(e)};
 for(const {name}of JSON.parse(fs.readFileSync(base+'pages.json','utf8'))){const manifest=JSON.parse(fs.readFileSync(base+'pages.json','utf8')).find(p=>p.name===name);assert.equal(createHash('sha256').update(fs.readFileSync(base+'mockup/'+name+'.dc.html')).digest('hex'),manifest.sha256);await w.Paper.show(name);if(!w.document.getElementById('scene'))throw Error(name);console.log(name,w.document.getElementById('scene').textContent.replace(/\s+/g,' ').slice(0,70))}
 w.Hunch.rows=[{id:'123',title:'Test real market',category:'Sports',venue:'Outcome',date:'Read venue terms',sides:['Yes','No'],terms:{rule:'Official settlement'}}];
 for(const width of [390,880]){w.innerWidth=width;for(const chapter of ['today','bets','money']){w.Hunch.chapter=chapter;await w.showLive();assert.doesNotMatch(w.document.getElementById('scene').textContent,/169\.30|Suns beat|Packers|250\.00/);console.log('LIVE',width,chapter,w.document.getElementById('scene').textContent.replace(/\s+/g,' ').slice(0,110))}}
+// Inner offline must replace the hero's loading copy, including on a later error update.
+w.innerWidth=880;w.Hunch.rows=[];w.Hunch.chapter='today';await w.showLive();
+assert.match(w.document.querySelector('#scene').textContent,/Loading listings/);
+await w.receiveNative({type:'marketError'});w.Paper.render();
+assert.match(w.document.querySelector('#scene').textContent,/Markets could not be loaded/);
+assert.doesNotMatch(w.document.querySelector('#scene').textContent,/Loading listings/);
+// Tall inner view fills its viewport; resizing restores source geometry without compounding.
+const viewport=w.document.getElementById('viewport');
+Object.defineProperty(viewport,'clientWidth',{configurable:true,value:880});
+Object.defineProperty(viewport,'clientHeight',{configurable:true,value:1100});w.Paper.render();
+assert.equal(w.document.querySelector('#scene').style.height,'1100px');
+let bottomPanel=Array.from(w.document.querySelector('#scene').children).find(p=>p.style.left==='462px'&&p.classList.contains('paper-search-results'));
+assert.ok(Math.abs(parseFloat(bottomPanel.style.top)+parseFloat(bottomPanel.style.height)-1100*738/760)<.01);
+Object.defineProperty(viewport,'clientHeight',{configurable:true,value:760});w.Paper.render();
+assert.equal(w.document.querySelector('#scene').style.height,'760px');
+w.Hunch.error=false;w.Hunch.rows=[{id:'123',title:'Test real market',category:'Sports',venue:'Outcome',date:'Read venue terms',sides:['Yes','No'],terms:{rule:'Official settlement'}}];
 w.Hunch.selected=w.Hunch.rows[0];for(const width of [390,880]){w.innerWidth=width;await w.showLive();console.log('MARKET',width,w.document.getElementById('scene').textContent.replace(/\s+/g,' ').slice(0,200))}
 for(const state of [{signed:false,sent:false},{signed:false,sent:true},{signed:true,sent:false},{signed:true,passkey:true}])await w.showAccount({...state,email:'demo@example.invalid',demo:true});
 

@@ -41,7 +41,14 @@ rotate portrait
 # Unfolded is the grid, without the cover's "Today's issue" masthead.
 expect GUT CHECK
 expect Paper Company
+# LOOK: both grid columns extend to the bottom inset; no blank bottom quarter.
 shot hunch-demo-unfolded
+rotate landscape
+expect GUT CHECK
+shot hunch-demo-unfolded-landscape
+rotate portrait
+expect GUT CHECK
+shot hunch-demo-unfolded-restored
 # HTTP error fixture cannot fall back to unlabelled stale data.
 shell am force-stop dev.omalauncher.hunch
 shell am start -n dev.omalauncher.hunch/.MainActivity --es fixture error
@@ -49,6 +56,8 @@ shell am start -n dev.omalauncher.hunch/.MainActivity --es fixture error
 wait 5000
 expect OFFLINE TEST · NO REAL MONEY
 expect Markets could not be loaded.
+absent Loading listings
+# LOOK: offline hero has only offline copy; grid fills the inner height.
 shot hunch-offline
 # Leave live read-only app, never the fixture, for a human.
 shell am force-stop dev.omalauncher.hunch
