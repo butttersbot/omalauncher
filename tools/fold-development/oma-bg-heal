@@ -5,6 +5,9 @@
 # detached from adb so it keeps running once Wireless debugging goes off. Nothing here turns Wireless debugging on:
 # that stays Boss's switch. Soma starts this with Linux (Runtime.openBgHeal), like oma-herd.
 set -u
+# Paused while ~/.config/oma-development/bg-paused exists (2026-10-25: Android offers the hidden display to apps as a
+# presentation screen, and FFIV Companion drew its touch screen there): nothing is started until it is removed.
+pause=/root/.config/oma-development/bg-paused
 # One watcher at a time: Soma starts one with Linux, and an oma keep job may run another.
 exec 9>/tmp/oma-bg-heal.lock
 flock -n 9 || exit 0
@@ -13,7 +16,10 @@ log() { printf '%s %s\n' "$(date '+%F %T')" "$*"; }
 said=
 while :; do
   up=$(oma-phone --display bg status 2>/dev/null | jq -r '.backgroundAvailable // false' 2>/dev/null)
-  if [ "$up" != true ]; then
+  if [ -e "$pause" ]; then
+    [ "$said" = paused ] || log "paused ($pause): not starting the helper"
+    said=paused
+  elif [ "$up" != true ]; then
     at=$(timeout 90 oma-adb 2>/dev/null | sed -n 's/^on \(127\.0\.0\.1:[0-9]*\).*/\1/p')
     if [ -z "$at" ]; then
       [ "$said" = off ] || log "helper down; Wireless debugging is off or not trusted, waiting"
