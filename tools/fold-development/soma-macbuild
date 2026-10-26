@@ -135,8 +135,38 @@ if [ -f tools/walkthrough/walk.py ]; then
   trailer=$(git log -1 --format='%(trailers:key=Walk,valueonly,separator=%x2C)' "$commit" | tr ',' '\n' | sed 's/^ *//; s/ *$//; s/\.walk$//' | sed '/^$/d')
   if [ -n "$trailer" ]; then
     while read -r w; do walks+=("$w"); done <<< "$trailer"
-  else
+  elif [ "${SOMA_WALKS:-}" = all ] || [ ! -s "$state/walked-commit" ] ||
+       ! git merge-base --is-ancestor "$(cat "$state/walked-commit")" "$commit" 2>/dev/null; then
+    # Everything: asked for (SOMA_WALKS=all, as before a promote), or nothing walked here yet to compare with.
     for f in tools/walkthrough/scripts/*.walk; do [ -e "$f" ] && walks+=("$(basename "$f" .walk)"); done
+  else
+    # Only the walks what changed since the last walked commit can touch (Boss, 2026-10-26: "do we really need to do
+    # these walks after every little change"; all 24 took ~35 minutes for a change to a tool script). Tools, docs and
+    # Markdown walk nothing; a walk script that changed walks itself; app code walks the walks for its part.
+    changed=$(git diff --name-only "$(cat "$state/walked-commit")" "$commit")
+    pick() { for w in "$@"; do [ -e "tools/walkthrough/scripts/$w.walk" ] && walks+=("$w"); done; }
+    while IFS= read -r f; do
+      case $f in
+        tools/walkthrough/scripts/*.walk) pick "$(basename "$f" .walk)" ;;
+        hunch/*) pick hunch hunch-auth hunch-bottom-tabs hunch-copy hunch-paper hunch-paper-reference hunch-wallet ;;
+        chat/*) pick chat-artifacts chat-return mac-refusal agent-mail-ui codex-phone-copy claude-discovery ;;
+        app/src/main/kotlin/dev/omalauncher/news/*) pick news ;;
+        app/src/main/kotlin/dev/omalauncher/search/*) pick search ;;
+        app/src/main/kotlin/dev/omalauncher/record/*) pick screen-record ;;
+        app/src/main/kotlin/dev/omalauncher/keyboard/*) pick gif-keyboard chat-return ;;
+        app/src/main/kotlin/dev/omalauncher/phone/*|app/src/main/assets/oma-phone.sh|tools/artifact-preview/*) pick phone-speed background-on-demand ;;
+        app/src/main/kotlin/dev/omalauncher/assist/*|app/src/main/assets/oma-msg.sh) pick agent-mail agent-mail-ui agents-page send-now mac-background ;;
+        app/src/main/kotlin/dev/omalauncher/update/*) pick self-install ;;
+        app/src/main/kotlin/dev/omalauncher/ui/*|app/src/main/kotlin/dev/omalauncher/theme/*|app/src/main/res/*) pick home-status-bar agents-page search news ;;
+        tools/*|docs/*|*.md|scripts/*) ;;
+        app/*|build.gradle.kts|settings.gradle.kts|gradle/*) pick home-status-bar chat-return search ;;
+      esac
+    done <<< "$changed"
+    # Each once, in their usual order.
+    if [ ${#walks[@]} -gt 0 ]; then
+      uniq=(); while IFS= read -r w; do uniq+=("$w"); done < <(printf '%s\n' "${walks[@]}" | sort -u); walks=("${uniq[@]}")
+    fi
+    [ ${#walks[@]} -gt 0 ] || echo "Walks: none needed (nothing since $(cut -c1-9 "$state/walked-commit") reaches the app's screens)."
   fi
 fi
 # The Mac has one emulator for walks, so lanes walk one at a time (the app is already on its way to the phone).
@@ -224,6 +254,8 @@ if [ ${#walks[@]} -gt 0 ]; then
       fi
       echo "${line%;} ($(( $(date +%s) - started )) s)." | tee "$wdir/summary.txt"
       grep -h '^FAIL' "$wdir"/*.log | sed 's/^/  /' | tee -a "$wdir/summary.txt"
+      # What the next build compares with, to walk only what changed since (only once walks really ran).
+      echo "$commit" > "$state/walked-commit"
     fi
   fi
   (cd "$wdir" && zip -qr "../walk-$short-$code.zip" .)
