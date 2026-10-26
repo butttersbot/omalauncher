@@ -46,7 +46,9 @@ internal actual fun ArtifactWeb(url: String?, html: String?, modifier: Modifier)
                     settings.javaScriptEnabled = true
                     settings.allowFileAccess = false
                     settings.allowContentAccess = false
-                    settings.domStorageEnabled = false
+                    // A live page (Soma Canvas keeps Boss's sign-in in localStorage, and throws without it) needs its
+                    // own storage, as in a browser; generated HTML gets none.
+                    settings.domStorageEnabled = url != null
                     settings.setSupportMultipleWindows(false)
                     settings.mediaPlaybackRequiresUserGesture = true
                     // Generated HTML is a self-contained preview, with no ambient network or app access.
