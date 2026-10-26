@@ -18,7 +18,8 @@ is retired as of 2026-10-17: Boss wants nothing extra running on his Fold. The r
   `fold_to_displayRegion.0.1_at_posture=1`, `resizable.config=1`; `showDeviceFrame=no`; `hw.initialOrientation=portrait`;
   `hw.keyboard=yes`; `hw.ramSize=16384`. Then `oma-emu start`, `fold-development/fold8-overlay/install.sh`, reboot,
   `oma-emu fold-bars` (cover status bar 110 px like his phone), install the app and make the Soma keyboard the input
-  method: `ime enable dev.omalauncher.boss/.keyboard.OmaKeyboardService && ime set` (same id).
+  method: `ime enable`/`ime set dev.omalauncher.boss/dev.omalauncher.keyboard.OmaKeyboardService` and
+  `settings put secure show_ime_with_hard_keyboard 1` (hw.keyboard=yes otherwise hides it); `oma-emu start`/`install` do both.
 
 ## Using it
 `tools/oma-emu` wraps everything and aims adb at the emulator only (`emulator-5554`), never the phone:
