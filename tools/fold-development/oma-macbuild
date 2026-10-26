@@ -95,7 +95,7 @@ case ${1:-} in
   mac_up || die "The Mac Pro is out of reach (its Tailscale is down?): nothing was sent. A build can be made here with oma-gradle TASKS (one at a time, small); walks wait for the Mac."
   lane=$(lane_thread) || die "No lane for builder $builder (the Mac Pro out of reach, or mac-lanes-off): nothing was sent."
   oma msg send "$mac:$lane" --as "$builder" --title "$title (lane $builder)" "$text"
-  echo "Sent to the Mac Pro's lane $builder ($lane): the answer comes back to builder $builder."
+  echo "Sent to $mac's lane $builder ($lane): the answer comes back to builder $builder."
   ;;
 --lane)
   lane=$(lane_thread) || die "No lane for builder $builder (the Mac Pro out of reach, or mac-lanes-off)."
