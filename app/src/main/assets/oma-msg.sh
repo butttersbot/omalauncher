@@ -118,6 +118,8 @@ if [ "$device" = phone ] || [ "$device" = "${OMA_PHONE_NAME:-galaxy-z-fold8}" ];
   [ -n "$session" ] || die 'Name the phone agent: phone:A, phone:B or phone:C (or grok for the front agent).'
   agent=oma
   [ "$as" = grok ] && agent=grok
+  # A mail without --title is labeled by who sent it ("Phone B"), not "null".
+  [ -n "$title" ] || title="Phone $as"
   id="$(date +%Y%m%d-%H%M%S)-$(od -An -N3 -tx1 /dev/urandom | tr -d ' \n')"
   body=$(jq -n --arg id "$id" --arg phone "${OMA_PHONE_NAME:-galaxy-z-fold8}" --arg session "$session" --arg as "$as" --arg agent "$agent" \
       --arg title "$title" --arg text "$text" --arg reply "$reply_to" \
