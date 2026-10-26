@@ -434,6 +434,9 @@ class PhoneService : AccessibilityService() {
                 // Nothing said it changed since the last look: no read, unless the fallback is due or time is up.
                 if (now < deadline && !PhoneWait.readAgain(now, lastRead, lastChange)) { main.postDelayed({ look() }, PhoneTouch.UNTIL_STEP_MILLIS); return }
                 lastRead = now
+                // A window on its way in (Android's "Complete action using" on the hidden display, seen 2026-10-25) has
+                // nothing to read for a moment: that is waited out like any other look, not answered as a failure.
+                if (now < deadline && run { if (Build.VERSION.SDK_INT >= 33) clearCache(); displayRoot(displayId) == null }) { main.postDelayed({ look() }, PhoneTouch.UNTIL_STEP_MILLIS); return }
                 // Use one observation for both package and destination: activity roots can disagree
                 // during a transition. A read-only wait may observe another package until its deadline.
                 val observed = read()
