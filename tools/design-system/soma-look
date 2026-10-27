@@ -179,6 +179,15 @@ def main():
     port = free_port()
     httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port), H)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    # One hidden display and one Brave: two soma-look runs at once (say Phone B and C) shot each other's pages.
+    # Take turns on a lock; the static checks above ran without it.
+    import fcntl
+    lock = open(os.path.join(CACHE, ".display.lock"), "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        print("soma-look: another soma-look is using the hidden display; waiting for it", file=sys.stderr)
+        fcntl.flock(lock, fcntl.LOCK_EX)
     try:
         for size in [x.strip() for x in o.sizes.split(",") if x.strip()]:
             w, h = SIZES[size]; key = f"{size}{int(time.time() * 1000) % 100000}"
@@ -196,7 +205,7 @@ def main():
             if m:
                 dst = os.path.join(out, f"{size}-{w}x{h}.png"); crop(m.group(1), dst); shots[size] = dst
     finally:
-        httpd.shutdown(); shutil.rmtree(srv, ignore_errors=True)
+        httpd.shutdown(); shutil.rmtree(srv, ignore_errors=True); lock.close()
 
     receipt = {"file": path, "sha256": sha, "at": time.strftime("%Y-%m-%dT%H:%M:%S"), "sizes": SIZES,
                "pngs": shots, "errors": errors, "warnings": warnings, "ok": not errors}
