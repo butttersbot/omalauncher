@@ -16,9 +16,34 @@ object ClaudeProtocol {
         return AgentApproval(id, request.optString("tool_name"), request.optJSONObject("input") ?: JSONObject(),
             request.optString("description").ifBlank { request.optString("decision_reason") })
     }
-    fun decision(approval: AgentApproval, allow: Boolean): JSONObject {
+    fun decision(approval: AgentApproval, allow: Boolean, answers: JSONObject? = null): JSONObject {
+        require(allow || answers == null) { "Denial cannot contain answers" }
+        val updated = JSONObject(approval.input.toString())
+        if (allow && approval.tool == "AskUserQuestion") {
+            val questions = approval.input.optJSONArray("questions")
+            require(questions != null && questions.length() > 0) { "Question form is empty" }
+            val keys = (0 until questions.length()).map { questions.getJSONObject(it).getString("question") }
+            require(keys.all { it.isNotBlank() } && keys.toSet().size == keys.size) { "Question identifiers must be unique" }
+            require(answers != null && answers.keys().asSequence().toSet() == keys.toSet()) { "Answer every question exactly" }
+            val normalized = JSONObject()
+            keys.forEachIndexed { index, key ->
+                val q = questions.getJSONObject(index)
+                val options = q.optJSONArray("options")
+                val labels = if (options == null) emptyList() else (0 until options.length()).map { options.getJSONObject(it).getString("label") }
+                val raw = answers.get(key)
+                val value = if (raw is org.json.JSONArray) {
+                    val selected = (0 until raw.length()).map { raw.get(it) }
+                    require(q.optBoolean("multiSelect") && selected.isNotEmpty() && selected.all { it is String && it in labels } && selected.toSet().size == selected.size) { "Invalid multi-select options" }
+                    selected.joinToString(", ")
+                } else { require(raw is String) { "Answer must be text" }; raw }
+                require(value.isNotBlank() && value.length <= 4096) { "Answer must be nonempty and at most 4096 characters" }
+                require(q.opt("isOtherAllowed") != false || raw is org.json.JSONArray || value in labels) { "Choose a listed option" }
+                normalized.put(key, value)
+            }
+            updated.put("answers", normalized)
+        } else require(answers == null) { "Answers require a question form" }
         val decision = JSONObject().put("behavior", if (allow) "allow" else "deny")
-        if (allow) decision.put("updatedInput", approval.input)
+        if (allow) decision.put("updatedInput", updated)
         else decision.put("message", "The user declined this action. Do not retry it through another tool.")
         return JSONObject().put("type", "control_response").put("response", JSONObject()
             .put("subtype", "success").put("request_id", approval.id).put("response", decision))

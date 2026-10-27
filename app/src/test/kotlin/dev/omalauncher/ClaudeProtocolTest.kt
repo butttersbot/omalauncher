@@ -26,4 +26,19 @@ class ClaudeProtocolTest {
         assertNull(ClaudeProtocol.approval(JSONObject("""{"type":"assistant"}""")))
         assertNull(ClaudeProtocol.approval(JSONObject("""{"type":"control_request","request":{"subtype":"can_use_tool"}}""")))
     }
+    private fun question() = dev.omalauncher.assist.AgentApproval("q1", "AskUserQuestion", JSONObject("""{"questions":[{"question":"Pick checks","multiSelect":true,"options":[{"label":"Cover"},{"label":"Inner"}]}]}"""), "")
+    @Test fun questionAnswersAreNormalizedWithoutMutatingOriginal() {
+        val approval = question()
+        val result = ClaudeProtocol.decision(approval, true, JSONObject("""{"Pick checks":["Cover","Inner"]}"""))
+            .getJSONObject("response").getJSONObject("response").getJSONObject("updatedInput")
+        assertEquals("Cover, Inner", result.getJSONObject("answers").getString("Pick checks"))
+        assertFalse(approval.input.has("answers"))
+    }
+    @Test fun questionRequiresCompleteValidatedAnswers() {
+        for (bad in listOf<JSONObject?>(null, JSONObject(), JSONObject("""{"Pick checks":["Unknown"]}"""))) {
+            try { ClaudeProtocol.decision(question(), true, bad); fail("invalid answer accepted") }
+            catch (_: IllegalArgumentException) { }
+        }
+        assertEquals("deny", ClaudeProtocol.decision(question(), false).getJSONObject("response").getJSONObject("response").getString("behavior"))
+    }
 }

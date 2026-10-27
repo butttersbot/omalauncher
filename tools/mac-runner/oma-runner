@@ -1010,7 +1010,7 @@ class Claude:
         return False
 
     def answer(self, entry, allow):
-        decision = {'behavior': 'allow', 'updatedInput': entry['input']} if allow else {'behavior': 'deny', 'message': DENIED}
+        decision = {'behavior': 'allow', 'updatedInput': {**entry['input'], **({'answers': entry['answers']} if 'answers' in entry else {})}} if allow else {'behavior': 'deny', 'message': DENIED}
         return self.thread.say({'type': 'control_response', 'response': {'subtype': 'success', 'request_id': entry['request'], 'response': decision}})
 
 
@@ -1241,7 +1241,7 @@ class Codex(Talker):
         elif method == 'item/tool/requestUserInput':
             questions = params.get('questions') or []
             thread.ask(number, 'Question', {'questions': questions, 'codex_request': 'questions'},
-                       'Reply in the chat to answer. For multiple questions, send a JSON object mapping question IDs to answers.')
+                       'Answer the question form in Soma, or reply in the chat.')
         elif method == 'mcpServer/elicitation/request':
             thread.ask(number, 'MCP', {'elicitation': params, 'codex_request': 'elicitation'},
                        str(params.get('message') or 'MCP tool needs your input. Reply with a JSON object in the chat, or deny to cancel.'))
@@ -1298,8 +1298,7 @@ class Codex(Talker):
         if kind == 'permissions':
             return self.reply(entry['request'], {'permissions': info.get('permissions', {}) if allow else {}, 'scope': 'turn'})
         if kind == 'questions':
-            # The Approve button is not an answer to a question. Leave the card up for a chat reply.
-            return False if allow else self.reply(entry['request'], {'answers': {}})
+            return self.reply(entry['request'], {'answers': {key: {'answers': [value]} for key, value in entry['answers'].items()}}) if allow and 'answers' in entry else (False if allow else self.reply(entry['request'], {'answers': {}}))
         if kind == 'elicitation':
             return self.reply(entry['request'], {'action': 'cancel' if allow else 'decline'})
         return self.reply(entry['request'], {'decision': 'accept' if allow else 'decline'})
@@ -3895,6 +3894,41 @@ def end(process):
             pass
 
 
+def question_answers(entry, supplied):
+    """Validate a complete answer without consuming the nonce or changing the original tool input."""
+    info = entry.get('input') or {}
+    codex = info.get('codex_request') == 'questions'
+    if entry.get('tool') != 'AskUserQuestion' and not codex:
+        raise ValueError('answers are only accepted for a question form')
+    questions = info.get('questions')
+    if not isinstance(questions, list) or not questions:
+        raise ValueError('question form is empty')
+    keys = [q.get('id' if codex else 'question') for q in questions if isinstance(q, dict)]
+    if len(keys) != len(questions) or any(not isinstance(k, str) or not k for k in keys) or len(set(keys)) != len(keys):
+        raise ValueError('question identifiers must be nonempty and unique')
+    if not isinstance(supplied, dict) or set(supplied) != set(keys):
+        raise ValueError('answers must match every question exactly')
+    result = {}
+    for key, q in zip(keys, questions):
+        value = supplied[key]
+        options = q.get('options') or []
+        if not isinstance(options, list) or any(not isinstance(o, dict) or not isinstance(o.get('label'), str) for o in options):
+            raise ValueError('invalid question options')
+        labels = [o['label'] for o in options]
+        if isinstance(value, list):
+            if not q.get('multiSelect') or not value or any(not isinstance(v, str) or v not in labels for v in value) or len(set(value)) != len(value):
+                raise ValueError('selected labels must be unique options on a multi-select question')
+            value = ', '.join(value)
+        elif not isinstance(value, str):
+            raise ValueError('answer must be text or selected labels')
+        if not value.strip() or len(value) > 4096:
+            raise ValueError('answer must be nonempty and at most 4096 characters')
+        if q.get('isOtherAllowed') is False and not isinstance(supplied[key], list) and value not in labels:
+            raise ValueError('this question requires a listed option')
+        result[key] = value
+    return result
+
+
 def decide(thread, approval, body, device=None):
     """Allow or deny one waiting request. Only an answer carrying that request's nonce is taken, and only once. The result
     names the device that answered ([device]), so another shows "answered on the Fold" rather than an error."""
@@ -3906,11 +3940,19 @@ def decide(thread, approval, body, device=None):
             return 403, {'ok': False, 'error': 'wrong nonce'}
         if body.get('decision') not in ('allow', 'deny'):
             return 400, {'ok': False, 'error': 'decision must be "allow" or "deny"'}
-        if (isinstance(thread.driver, Codex) and (entry.get('input') or {}).get('codex_request') == 'questions'
-                and body['decision'] == 'allow'):
-            return 400, {'ok': False, 'error': 'Reply in the chat to answer this question; approval alone supplies no answer.'}
+        answers = None
+        is_question = entry.get('tool') == 'AskUserQuestion' or (entry.get('input') or {}).get('codex_request') == 'questions'
+        if body['decision'] == 'allow' and (is_question or 'answers' in body):
+            try:
+                answers = question_answers(entry, body.get('answers'))
+            except ValueError as error:
+                return 400, {'ok': False, 'error': str(error)}
+        elif 'answers' in body:
+            return 400, {'ok': False, 'error': 'denial cannot contain answers'}
+        if answers is not None:
+            entry = {**entry, 'answers': answers}
         remember = body.get('remember', False)
-        if not isinstance(remember, bool) or (remember and (body['decision'] != 'allow' or entry.get('command_scope') is None or thread.meta['kind'] != 'codex')):
+        if not isinstance(remember, bool) or (remember and (is_question or body['decision'] != 'allow' or entry.get('command_scope') is None or thread.meta['kind'] != 'codex')):
             return 400, {'ok': False, 'error': 'only an eligible Codex command can be remembered when allowed'}
         grants = thread.meta.get('command_grants', [])
         scope = entry.get('command_scope')
@@ -3933,7 +3975,7 @@ def decide(thread, approval, body, device=None):
                 if not thread.pending:
                     thread.status('working')
                 return 500, {'ok': False, 'error': 'command allowed once, but its saved approval could not be written'}
-        thread.emit('approval_result', approval=approval, decision=body['decision'], remembered=remember, **({'device': device} if device else {}))
+        thread.emit('approval_result', approval=approval, decision=body['decision'], remembered=remember, **({'answers': answers} if answers is not None else {}), **({'device': device} if device else {}))
         if not thread.pending:
             thread.status('working')
         return 200, {'ok': True, 'decision': body['decision']}

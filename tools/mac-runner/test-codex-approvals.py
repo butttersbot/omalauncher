@@ -40,6 +40,53 @@ class ReconciledRunnerTests(unittest.TestCase):
         self.thread.driver = self.driver
         self.params = {'command': "/bin/zsh -lc 'git status --short'", 'cwd': str(root), 'threadId': 't1', 'turnId': 'turn1', 'itemId': 'item1'}
 
+    def question(self, codex=False, multi=False):
+        q = {'id': 'layout', 'question': 'Which layout?', 'options': [{'label': 'Split'}, {'label': 'Stack'}], 'multiSelect': multi}
+        info = {'questions': [q], **({'codex_request': 'questions'} if codex else {})}
+        entry = {'nonce': 'n1', 'request': 12, 'tool': 'Question' if codex else 'AskUserQuestion', 'input': info}
+        self.thread.pending['q1'] = entry
+        if not codex:
+            self.thread.driver = self.m['Claude'](self.thread, 'test')
+            self.thread.say = lambda value: self.replies.append(value) or True
+        return entry
+
+    def test_question_claude_answers_are_delivered_once_without_mutating_input(self):
+        entry = self.question(multi=True)
+        body = {'nonce': 'n1', 'decision': 'allow', 'answers': {'Which layout?': ['Split', 'Stack']}}
+        self.assertEqual(200, self.m['decide'](self.thread, 'q1', body)[0])
+        updated = self.replies[-1]['response']['response']['updatedInput']
+        self.assertEqual({'Which layout?': 'Split, Stack'}, updated['answers'])
+        self.assertNotIn('answers', entry['input'])
+        self.assertEqual(body['answers']['Which layout?'], ['Split', 'Stack'])
+        self.assertEqual(404, self.m['decide'](self.thread, 'q1', body)[0])
+        self.assertEqual({'Which layout?': 'Split, Stack'}, self.events[-1][1]['answers'])
+
+    def test_question_invalid_answers_and_wrong_nonce_keep_form_waiting(self):
+        self.question()
+        for answers in ({}, {'unknown': 'Split'}, {'Which layout?': ''}, {'Which layout?': ['Split']}, {'Which layout?': 7}):
+            self.assertEqual(400, self.m['decide'](self.thread, 'q1', {'nonce': 'n1', 'decision': 'allow', 'answers': answers})[0])
+            self.assertIn('q1', self.thread.pending)
+        self.assertEqual(403, self.m['decide'](self.thread, 'q1', {'nonce': 'wrong', 'decision': 'allow', 'answers': {'Which layout?': 'Split'}})[0])
+        self.assertFalse(self.replies)
+        self.assertEqual(200, self.m['decide'](self.thread, 'q1', {'nonce': 'n1', 'decision': 'allow', 'answers': {'Which layout?': 'My own layout'}})[0])
+
+    def test_question_codex_maps_to_ids_and_skip_denies(self):
+        self.question(codex=True)
+        self.assertEqual(200, self.m['decide'](self.thread, 'q1', {'nonce': 'n1', 'decision': 'allow', 'answers': {'layout': 'Split'}})[0])
+        self.assertEqual({'answers': {'layout': {'answers': ['Split']}}}, self.replies[-1][0][1])
+        self.question(codex=True)
+        self.assertEqual(200, self.m['decide'](self.thread, 'q1', {'nonce': 'n1', 'decision': 'deny'})[0])
+        self.assertEqual({'answers': {}}, self.replies[-1][0][1])
+
+    def test_question_multiselect_rejects_unknown_duplicate_and_forbidden_other(self):
+        entry = self.question(multi=True)
+        for value in (['Unknown'], ['Split', 'Split']):
+            with self.assertRaises(ValueError):
+                self.m['question_answers'](entry, {'Which layout?': value})
+        entry['input']['questions'][0]['isOtherAllowed'] = False
+        with self.assertRaises(ValueError):
+            self.m['question_answers'](entry, {'Which layout?': 'Custom'})
+
     def scope(self, **changes):
         return self.m['command_scope'](self.thread, {**self.params, **changes})
 

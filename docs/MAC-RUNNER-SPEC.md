@@ -57,6 +57,31 @@ is taken. No blanket allow, no auto mode that skips the card for anything the ph
 no answer accepted from anything but the phone's signed request. If the link drops while a request waits, it
 keeps waiting; it is not allowed by timeout.
 
+### Question forms
+
+`AskUserQuestion` and Codex `Question` approvals are forms, not blanket tool permissions.
+The existing nonce-bound `POST /threads/ID/approvals/APPROVAL` accepts
+`{decision:"allow", nonce, answers:{QUESTION_KEY: VALUE}}`. Claude keys are the exact
+question text; Codex keys are its question IDs. Every question must be answered exactly
+once, with no extra keys. VALUE is nonempty free text (Other), a listed label, or a
+nonempty list of unique listed labels for a multiSelect question. Lists become labels
+joined with `, `. Answers are limited to 4096 characters each. `isOtherAllowed:false`
+requires listed options. Invalid forms return 400 and remain pending; wrong nonces
+return 403; a consumed request returns 404. Skip uses deny without answers.
+
+Claude receives `updatedInput` with the original input plus normalized `answers`,
+without mutating its original request. Codex receives `{answers:{ID:{answers:[TEXT]}}}`.
+A successful approval_result includes normalized answers for the chat's answered card.
+No answers are sent to other approval tools; question answers cannot be remembered as
+command grants. The once-only lock, authenticated caller and device attribution remain
+unchanged. Local phone ClaudeProtocol uses the same answer validation and updatedInput.
+
+UI implementation awaits Boss's Canvas approval: pin an N-questions card in chat and
+open a native form in ChatArtifactWorkspace (full screen on cover), with selectable
+options, descriptions, multi-select toggles, Other, Submit and Skip. Back retains draft;
+completion shows the answers given. Do not deploy an unapproved UI merely because the
+protocol is available.
+
 ## Who may call it
 - Listen on the Tailscale interface only, never on the LAN or the public address.
 - A shared secret made on the Mac and given to the phone by Boss (as the debug door's key was), sent with every

@@ -102,6 +102,13 @@ def handle(given):
             out({'type': 'assistant', 'message': {'role': 'assistant', 'content': ['not a block']}})
         if 'slow' in prompt:
             time.sleep(3)
+        if 'question-form' in prompt:
+            form = {'questions': [
+                {'question': 'Which layout should we use?', 'header': 'Layout', 'options': [{'label': 'Split', 'description': 'Chat stays beside the form'}, {'label': 'Full screen', 'description': 'Focus on the question'}], 'multiSelect': False},
+                {'question': 'Which checks should we run?', 'header': 'Checks', 'options': [{'label': 'Cover', 'description': 'Narrow phone'}, {'label': 'Unfolded', 'description': 'Two-pane phone'}], 'multiSelect': True}]}
+            out({'type': 'control_request', 'request_id': 'q-' + uuid.uuid4().hex[:8], 'request': {'subtype': 'can_use_tool', 'tool_name': 'AskUserQuestion', 'input': form}})
+            reply = json.loads(sys.stdin.readline())['response']['response']
+            said('Answers: ' + json.dumps(reply.get('updatedInput', {}).get('answers', {})) if reply['behavior'] == 'allow' else 'Questions skipped.')
         if 'write' in prompt or 'edit' in prompt:
             given = {'file_path': str(pathlib.Path.cwd() / ('written.txt' if 'write' in prompt else 'edited.txt')), 'content': 'hi'}
             out({'type': 'assistant', 'message': {'role': 'assistant', 'content': [{'type': 'tool_use', 'id': 'tool1', 'name': 'Write', 'input': given}]}})
