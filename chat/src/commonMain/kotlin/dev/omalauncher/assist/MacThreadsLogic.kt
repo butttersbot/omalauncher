@@ -70,7 +70,7 @@ fun macFollowed(threads: List<MacThread>, owed: Collection<String>, his: Set<Str
 }
 
 /** Keep discovering external turns even after Stop leaves no Soma task/follower. */
-fun macDiscoveryBusy(threads: List<MacThread>) = threads.any { !macResting(it.status) || it.pending.isNotEmpty() }
+fun macDiscoveryBusy(threads: List<MacThread>) = threads.any { it.status == MacThreadStatus.Working || it.pending.isNotEmpty() }
 
 fun macDiscoveryDelay(threads: List<MacThread>, foreground: Boolean = false, idleRounds: Int = 0): Long = when {
     macDiscoveryBusy(threads) -> 15_000L

@@ -768,6 +768,8 @@ class MacThreadsTest {
             (0..4).map { macDiscoveryDelay(idle, false, it) })
         assertEquals(300_000L, macDiscoveryDelay(idle, false, Int.MAX_VALUE))
         assertEquals(30_000L, macDiscoveryDelay(idle, true, 99))
+        assertEquals(300_000L, macDiscoveryDelay(listOf(thread(MacThreadStatus.Unknown)), false, 99))
+        assertEquals(300_000L, macDiscoveryDelay(listOf(thread(MacThreadStatus.Waiting)), false, 99))
         assertEquals(15_000L, macDiscoveryDelay(listOf(thread(MacThreadStatus.Working)), false, 99))
         assertEquals(15_000L, macDiscoveryDelay(listOf(thread(MacThreadStatus.Idle).copy(pending = listOf(write))), true, 99))
     }
