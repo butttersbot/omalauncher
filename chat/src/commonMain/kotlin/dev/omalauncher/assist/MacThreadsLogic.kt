@@ -69,6 +69,10 @@ fun macFollowed(threads: List<MacThread>, owed: Collection<String>, his: Set<Str
     return ((busy + since).map { it.id } + owed).distinct() - MAC_NEW_THREAD
 }
 
+/** Keep discovering external turns even after Stop leaves no Soma task/follower. */
+fun macDiscoveryDelay(threads: List<MacThread>): Long =
+    if (threads.any { !macResting(it.status) || it.pending.isNotEmpty() }) 15_000L else 30_000L
+
 /** Whether [event] can be the last of a turn, after which the thread may rest: the follower then asks the Mac how it stands. */
 fun macTurnsOver(event: MacEvent) = event is MacEvent.Result || event is MacEvent.Stopped || event is MacEvent.Error || (event is MacEvent.Status && macResting(event.status))
 

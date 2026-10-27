@@ -67,6 +67,7 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
     private val clock = AtomicLong()
     private val answering = HashSet<String>()
     private val refreshing = AtomicBoolean()
+    private val discovering = AtomicBoolean()
     private var restored = false
     @Volatile private var checked = 0L
 
@@ -162,7 +163,20 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
     /** The chat opened, or the launcher started: learn how the Mac stands and pick its working threads up again. */
     fun open() {
         restore()
+        startDiscovery()
         refresh()
+    }
+
+    /** One process-lifetime watcher, independent of UI, owed tasks and per-thread followers. */
+    private fun startDiscovery() {
+        if (!discovering.compareAndSet(false, true)) return
+        thread(name = "oma-mac-discovery", isDaemon = true) {
+            while (true) {
+                pause(macDiscoveryDelay(view.threads))
+                // Config can appear/disappear while Soma runs. One failed read must not kill discovery.
+                runCatching { if (machines().isNotEmpty()) refresh() }
+            }
+        }
     }
 
     /**

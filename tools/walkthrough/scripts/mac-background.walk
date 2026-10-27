@@ -2,3 +2,7 @@
 # 2026-10-24: a build left running made its session look idle). The unit test covers the states; this is the look.
 [phone] Ask a Mac Pro thread to run something long in the background (e.g. "run sleep 120 in the background and tell me when it ends"): once it answers, its tile and tab keep a green dot and read "running on the Mac: …", not "done" or idle.
 [phone] When the background work ends and the agent reports it, the thread goes back to resting (grey, "done").
+
+# External runner turns must not need a local unfinished task or opening their tab.
+[phone] After promotion, using an approved spare runner thread (include a second host such as MG1), start and stop a harmless turn outside Soma via the runner API. Leave Soma on another tab; verify no local unfinished task remains. Start another turn outside Soma that asks for a harmless approval. Without opening its thread or manually refreshing, require the approval card and notification to surface within the next periodic list refresh (idle poll 30s, active poll 15s, plus runner/network time). Record actual delay; do not approve it automatically.
+[phone] After Boss answers the spare approval, verify pending clears and the next externally started approval also surfaces; repeated opening of Soma must not create duplicate cards/notifications or duplicate followers. Check a briefly unreachable host recovers on discovery without obscuring approvals on reachable hosts. If no safe spare host or Boss approval to run the test, mark NOT WALKED.
