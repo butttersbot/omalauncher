@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package dev.omalauncher.ui
 
 import androidx.compose.foundation.text.BasicText

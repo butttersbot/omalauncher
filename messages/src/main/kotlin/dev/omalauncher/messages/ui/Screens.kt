@@ -26,6 +26,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.content.consume
+import androidx.compose.foundation.content.hasMediaType
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Stable
@@ -313,6 +314,7 @@ private const val MAX_PHOTOS = 10
  * in the field and go to OpenBubbles' conversation with the words, since its Reply action carries words only.
  * [pending] holds each conversation's quote and attachments, like its draft.
  */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun Thread(
     c: Conversation,

@@ -340,6 +340,7 @@ fun rememberComposerState(text: String = "") = remember { ComposerState(text) }
  * With [receive] the field takes pictures from the keyboard (a GIF from Soma's keyboard comes in as itself, not its
  * link): [receive] gets them and gives back whatever it leaves for the field, or null when it took it all.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SomaComposer(
     state: ComposerState,
