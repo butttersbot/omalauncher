@@ -1,4 +1,4 @@
-# Approved in a mockup -> recorded on Canvas: signed receipts (contract v2.1, Phone C, 2026-10-26)
+# Approved in a mockup -> recorded on Canvas: signed receipts (contract v2.2, Phone C, 2026-10-26)
 
 Boss's rule (15:37): designs that start on Canvas are approved on Canvas. Designs that start as a plain HTML
 mockup are decided in the mockup (template question block, Submit via soma.answer), then the author agent
@@ -17,9 +17,11 @@ Parties: Soma native (Phone B), Canvas server (lane C), author agents (CLI).
 - Native key: Keystore alias `soma-canvas-receipts`, EC P-256 (secp256r1), PURPOSE_SIGN, digest SHA-256.
   Created on first use.
 - deviceId = lowercase hex sha256 of the SPKI DER public key.
-- JS bridge `window.somaReceipts`, injected ONLY into the artifact-panel WebView and ONLY while its top-level
-  page origin equals Canvas's origin (CANVAS_URL in Soma's config). One method, synchronous:
-  `somaReceipts.publicKey()` -> JSON string `{"deviceId":"<hex>","publicKey":"<base64 SPKI DER>","name":"Soma on <device>"}`.
+- `window.somaReceipts`, present ONLY in the artifact-panel WebView and ONLY while its top-level page origin
+  equals Canvas's origin (CANVAS_URL in Soma's config). Native implements it without a general JS interface
+  (main-frame gesture navigation + per-view token). One method:
+  `await somaReceipts.publicKey()` -> Promise of `{deviceId: "<hex>", publicKey: "<base64 SPKI DER>", name?: string}`.
+  The Link button must await it (and tolerate a JSON string, parsing it).
   It never signs anything. (The public key isn't secret; the bridge exists only so Boss's signed-in Canvas can
   register it.)
 - Canvas shows "Link this Soma" in its owner menu when `window.somaReceipts` exists. The page POSTs
@@ -44,16 +46,22 @@ Only when the submitted answers contain an approval (see 4). Other answers are d
                "sha256":"<lowercase hex sha256 of the exact HTML bytes native loaded into the panel>"},
    "answers":<the submitted answers object, as delivered to the agent>}
   ```
-- Serialize once to a UTF-8 string `receipt` (any key order). `sig` = Keystore `SHA256withECDSA` over exactly
-  those bytes, base64 of the DER signature (Android's native output). No canonicalisation: the server verifies
-  the string's bytes, then parses it.
+- Serialize once to a UTF-8 string `receipt` (native uses sorted keys, no spaces; the server doesn't depend on it).
+  `sig` = Keystore `SHA256withECDSA` over exactly those bytes, base64 of the DER signature. The server verifies
+  the string's bytes as sent, then parses it; it never re-serializes.
 - Deliver with the answer: `canvasReceipt: {"receipt": "<the string>", "sig": "<base64>"}`, plus
   `receiptStatus`: `registered` (with `canvasReceiptId`), `signed-offline` (Canvas unreachable: agents can
   register later), or `unlinked` (Canvas answered 409 unknown device: no device linked; still deliver the answer,
   without a receipt claim). Never invent one.
 - Best effort: `POST {CANVAS_URL}/api/receipts {"receipt": "<string>", "sig": "<base64>"}`, no auth (the
-  signature is the auth) -> `200 {"id":"rc_<16>"}`; idempotent by (deviceId, nonce); `409` unknown/revoked
-  device or bad signature.
+  signature is the auth). Responses:
+  - `200 {"status":"registered","id":"rc_<16>"}`, also on a repeat of the same (deviceId, nonce);
+  - `409 {"status":"unknown-device"|"revoked-device"|"bad-signature"|"bad-receipt","error":"<words>"}`.
+- `GET {CANVAS_URL}/api/devices/:deviceId`, no auth -> `200 {"deviceId","linked":true|false,"revoked":true|false}`
+  (only that id's state; unknown ids answer linked:false). Native uses it to know a link is confirmed.
+- receiptStatus rules for native: `registered` = POST answered 200; `signed-offline` = Canvas unreachable AND
+  this deviceId was confirmed linked before (GET or an earlier 200); `unlinked` = never confirmed, or 409
+  unknown/revoked: no receipt is delivered.
 
 ## 3. Record (author agent, agent token)
 `soma-canvas record-approved CARD FILE.html --receipt RECEIPT.json [--frame F] [--version V]`
