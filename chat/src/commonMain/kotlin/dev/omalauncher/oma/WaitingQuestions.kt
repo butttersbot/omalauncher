@@ -13,7 +13,7 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import dev.omalauncher.ui.BracketAction
@@ -31,6 +31,47 @@ internal fun questionInput(tool: String, input: String): Boolean = runCatching {
     (tool == "AskUserQuestion" || json.optString("codex_request") == "questions") &&
         (json.optJSONArray("questions")?.length() ?: 0) > 0
 }.getOrDefault(false)
+
+/** Owned above both panel branches: moving a form never replaces its draft or in-flight gate. */
+internal class WaitingQuestionDraft {
+    var answers by mutableStateOf(mapOf<String, List<String>>())
+    var others by mutableStateOf(mapOf<String, String>())
+    var sending by mutableStateOf(false)
+    var sent by mutableStateOf(false)
+    var error by mutableStateOf<String?>(null)
+
+    fun json(): JSONObject = JSONObject().put("answers", JSONObject().apply {
+        answers.forEach { (key, values) -> put(key, JSONArray(values)) }
+    }).put("others", JSONObject(others)).put("sending", sending).put("sent", sent)
+
+    companion object {
+        fun restore(json: JSONObject) = WaitingQuestionDraft().apply {
+            val picks = json.optJSONObject("answers") ?: JSONObject()
+            answers = picks.keys().asSequence().associateWith { key ->
+                val values = picks.getJSONArray(key)
+                (0 until values.length()).map { values.getString(it) }
+            }
+            val text = json.optJSONObject("others") ?: JSONObject()
+            others = text.keys().asSequence().associateWith { text.getString(it) }
+            sending = json.optBoolean("sending")
+            sent = json.optBoolean("sent")
+        }
+    }
+}
+
+internal class WaitingQuestionDrafts {
+    private val entries = mutableMapOf<String, WaitingQuestionDraft>()
+    fun get(key: String): WaitingQuestionDraft = entries.getOrPut(key) { WaitingQuestionDraft() }
+    fun json(): String = JSONObject().apply { entries.forEach { (key, draft) -> put(key, draft.json()) } }.toString()
+
+    companion object {
+        fun restore(text: String) = WaitingQuestionDrafts().apply {
+            val json = JSONObject(text)
+            json.keys().forEach { key -> entries[key] = WaitingQuestionDraft.restore(json.getJSONObject(key)) }
+        }
+        val saver = Saver<WaitingQuestionDrafts, String>(save = { it.json() }, restore = { restore(it) })
+    }
+}
 
 /** Re-resolve a saved form's nonce rather than retaining an Activity or an old host callback. */
 internal fun ChatHost.sendWaitingAnswers(key: String, answers: JSONObject, done: (String?) -> Unit) {
@@ -54,7 +95,7 @@ internal fun ChatHost.sendWaitingAnswers(key: String, answers: JSONObject, done:
 
 /** Entirely native: the visible answers and the Send action share the same state. */
 @Composable
-internal fun WaitingQuestionPanel(request: WaitingQuestion, close: () -> Unit) {
+internal fun WaitingQuestionPanel(request: WaitingQuestion, draft: WaitingQuestionDraft, close: () -> Unit) {
     val questions = remember(request.key) { runCatching {
         val json = JSONObject(request.input)
         val array = json.getJSONArray("questions")
@@ -79,11 +120,11 @@ internal fun WaitingQuestionPanel(request: WaitingQuestion, close: () -> Unit) {
         return
     }
     val codex = remember(request.key) { JSONObject(request.input).optString("codex_request") == "questions" }
-    var answers by rememberSaveable(request.key) { mutableStateOf(mapOf<String, List<String>>()) }
-    var others by rememberSaveable(request.key) { mutableStateOf(mapOf<String, String>()) }
-    var sending by remember(request.key) { mutableStateOf(false) }
-    var sent by rememberSaveable(request.key) { mutableStateOf(false) }
-    var error by remember(request.key) { mutableStateOf<String?>(null) }
+    var answers by draft::answers
+    var others by draft::others
+    var sending by draft::sending
+    var sent by draft::sent
+    var error by draft::error
     val keys = (0 until questions.length()).map { i -> questions.getJSONObject(i).let { if (codex) it.getString("id") else it.getString("question") } }
     val ready = keys.all { others[it]?.isNotBlank() == true || !answers[it].isNullOrEmpty() }
     val summary = keys.mapIndexedNotNull { i, key ->

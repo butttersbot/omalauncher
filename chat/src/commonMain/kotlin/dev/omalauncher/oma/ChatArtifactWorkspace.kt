@@ -15,7 +15,6 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -74,7 +73,7 @@ internal fun ChatArtifactWorkspace(
     where: String = "",
     content: @Composable () -> Unit,
 ) {
-    val questionDrafts = rememberSaveableStateHolder()
+    val questionDrafts = rememberSaveable(saver = WaitingQuestionDrafts.saver) { WaitingQuestionDrafts() }
     // Save data, never a callback: after recreation resolve Send against the current nonce book.
     var questionSelection by rememberSaveable(tab) { mutableStateOf<List<String>?>(null) }
     val question = questionSelection?.let { saved ->
@@ -168,7 +167,7 @@ internal fun ChatArtifactWorkspace(
             if (panelOpen && !overlay) {
                 Box(Modifier.weight(.92f).fillMaxHeight()) {
                     CompositionLocalProvider(LocalArtifactLive provides live, LocalArtifactWhere provides where) {
-                        if (question != null) questionDrafts.SaveableStateProvider(question!!.key) { WaitingQuestionPanel(question!!, close) }
+                        if (question != null) WaitingQuestionPanel(question, questionDrafts.get(question.key), close)
                         else if (listing) ArtifactFiles(artifacts, close, open)
                         else if (selected != null) ArtifactPanel(host, selected, opens, artifacts, wide = true, canSplit = false, { expanded = true }, close, open, onDiscuss,
                             onShown = { shownVersion = it }, onLatest = { v -> if (selected.version != v) opened = opened + (tab to selected.copy(version = v)) })
@@ -179,7 +178,7 @@ internal fun ChatArtifactWorkspace(
         if (overlay) {
             Box(Modifier.fillMaxSize().background(Pack.background)) {
                 CompositionLocalProvider(LocalArtifactLive provides live, LocalArtifactWhere provides where) {
-                    if (question != null) questionDrafts.SaveableStateProvider(question!!.key) { WaitingQuestionPanel(question!!, close) }
+                    if (question != null) WaitingQuestionPanel(question, questionDrafts.get(question.key), close)
                         else if (listing) ArtifactFiles(artifacts, close, open)
                     else if (selected != null) ArtifactPanel(host, selected, opens, artifacts, wide, canSplit = wide, if (wide) ({ expanded = false }) else null, close, open,
                         onDiscuss = {
