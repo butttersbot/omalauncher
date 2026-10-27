@@ -199,6 +199,8 @@ p {{ margin: 0; }}
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="soma-pack" content="{pack_id}">
 <meta name="soma-reply-to" content="">
+<!-- Set app/cards/version to the exact proposed screens before enabling approval. -->
+<meta name="soma-canvas-cards" content='{{"app":"your-app","cards":["your-card"],"version":"v1"}}'>
 <title>Mockup title</title>
 <style>
 {css}
@@ -219,8 +221,22 @@ p {{ margin: 0; }}
       <p class="caption" id="soma-reply-status" role="status"></p>
     </form>
   </section>
+  <section class="panel">
+    <h2>Review this mockup</h2>
+    <p>Approve the declared screens, or ask the author for changes.</p>
+    <div class="actions"><button class="action" id="soma-approve">Review approval</button></div>
+    <p class="caption" id="soma-approve-status" role="status"></p>
+  </section>
 </main>
 <script>
+document.getElementById('soma-approve').onclick = function() {{
+  const status = document.getElementById('soma-approve-status');
+  if (window.soma && typeof window.soma.approve === 'function') {{
+    const declared = JSON.parse(document.querySelector('meta[name="soma-canvas-cards"]').content);
+    window.soma.approve(declared);
+    status.textContent = 'Review the exact screens and version in Soma.';
+  }} else status.textContent = 'Approval is unavailable in this preview. Nothing was approved.';
+}};
 document.getElementById('soma-question-form').addEventListener('submit', function(event) {{
   event.preventDefault();
   const text = new FormData(event.target).get('answer').trim();
@@ -375,6 +391,24 @@ an open review. A native review is consumed once, not automatically retried.
 
 Native AskUserQuestion forms use their nonce-bound approval answers instead;
 they do not send a second chat message through the artifact bridge.
+
+## Artifact mockup approval
+
+Declare one `soma-canvas-cards` meta in the head. Its JSON content is exactly
+`{{"app":"hunch","cards":["hunch-today","hunch-market"],"version":"v6"}}`.
+Also declare `soma-reply-to` for the author. `soma.approve({{app,cards,version,note?}})`
+requests native review only, on a main-frame owner gesture. The payload must match
+the static declaration exactly; scripts cannot add cards or change the version.
+
+The review names the app, version and every screen with Approve / Request changes.
+Only Boss's separate native Approve tap authorizes Canvas. Native code resolves the
+cards and checks the exact proposed assets/version before using the owner sign-in;
+no owner key or Canvas API is exposed to HTML. Stale/missing cards fail closed.
+Request changes reviews and relays Boss's note to the fixed author using the reply
+path. Closing review does nothing. Cancel review on artifact version changes;
+consume a confirmation once and never retry an uncertain approval automatically.
+Show partial failures accurately and notify the author only of confirmed results.
+The bridge foundation alone does not implement native review or Canvas submission.
 
 ## The Fold
 

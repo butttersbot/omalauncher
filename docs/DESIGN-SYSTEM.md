@@ -84,6 +84,24 @@ an open review. A native review is consumed once, not automatically retried.
 Native AskUserQuestion forms use their nonce-bound approval answers instead;
 they do not send a second chat message through the artifact bridge.
 
+## Artifact mockup approval
+
+Declare one `soma-canvas-cards` meta in the head. Its JSON content is exactly
+`{"app":"hunch","cards":["hunch-today","hunch-market"],"version":"v6"}`.
+Also declare `soma-reply-to` for the author. `soma.approve({app,cards,version,note?})`
+requests native review only, on a main-frame owner gesture. The payload must match
+the static declaration exactly; scripts cannot add cards or change the version.
+
+The review names the app, version and every screen with Approve / Request changes.
+Only Boss's separate native Approve tap authorizes Canvas. Native code resolves the
+cards and checks the exact proposed assets/version before using the owner sign-in;
+no owner key or Canvas API is exposed to HTML. Stale/missing cards fail closed.
+Request changes reviews and relays Boss's note to the fixed author using the reply
+path. Closing review does nothing. Cancel review on artifact version changes;
+consume a confirmation once and never retry an uncertain approval automatically.
+Show partial failures accurately and notify the author only of confirmed results.
+The bridge foundation alone does not implement native review or Canvas submission.
+
 ## The Fold
 
 | Screen | Device px | CSS px (420 dpi) | Where an artifact goes |

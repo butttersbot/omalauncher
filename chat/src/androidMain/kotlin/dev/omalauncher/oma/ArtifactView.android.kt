@@ -28,8 +28,9 @@ import dev.omalauncher.ui.Pack
  * page itself starts over, as any reload does.
  */
 @Composable
-internal actual fun ArtifactWeb(url: String?, html: String?, modifier: Modifier, onAnswer: ((ArtifactReplyRequest) -> Unit)?) {
+internal actual fun ArtifactWeb(url: String?, html: String?, modifier: Modifier, onAnswer: ((ArtifactReplyRequest) -> Unit)?, onApprove: ((ArtifactCanvasRequest) -> Unit)?) {
     val answerCallback by rememberUpdatedState(onAnswer)
+    val approveCallback by rememberUpdatedState(onApprove)
     val sourceHtml by rememberUpdatedState(html)
     val replyToken by rememberUpdatedState(remember(url, html) { java.util.UUID.randomUUID().toString() })
     var error by remember(url, html) { mutableStateOf(false) }
@@ -58,6 +59,14 @@ internal actual fun ArtifactWeb(url: String?, html: String?, modifier: Modifier,
                     settings.blockNetworkLoads = url == null
                     webViewClient = object : WebViewClient() {
                         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                            if (url == null && approveCallback != null && owned === view) {
+                                val prefix = "soma-approve:$replyToken:"
+                                val address = request.url.toString()
+                                if (address.startsWith(prefix)) ArtifactCanvasApproval.request(sourceHtml.orEmpty(), "soma-approve:" + address.removePrefix(prefix), request.isForMainFrame, request.hasGesture())?.let {
+                                    approveCallback?.invoke(it)
+                                    return true
+                                }
+                            }
                             if (url == null && answerCallback != null && owned === view) {
                                 val prefix = "soma-answer:$replyToken:"
                                 val address = request.url.toString()
@@ -70,10 +79,13 @@ internal actual fun ArtifactWeb(url: String?, html: String?, modifier: Modifier,
                             return url == null || scheme !in listOf("https", "http")
                         }
                         override fun onPageFinished(view: WebView, finishedUrl: String?) {
-                            if (url == null && answerCallback != null && ArtifactReply.recipient(sourceHtml.orEmpty()) != null && owned === view) {
-                                // Only navigation text crosses the boundary. No target argument, native object,
-                                // credentials, file access, eval callback or general message API is exposed.
-                                view.evaluateJavascript("window.soma=Object.freeze({answer:function(text){if(typeof text==='string'&&text.length<=4096)location.href='soma-answer:$replyToken:'+encodeURIComponent(text)}});", null)
+                            if (url == null && owned === view) {
+                                val methods = mutableListOf<String>()
+                                if (answerCallback != null && ArtifactReply.recipient(sourceHtml.orEmpty()) != null)
+                                    methods += "answer:function(text){if(typeof text==='string'&&text.length<=4096)location.href='soma-answer:$replyToken:'+encodeURIComponent(text)}"
+                                if (approveCallback != null && ArtifactCanvasApproval.declared(sourceHtml.orEmpty()))
+                                    methods += "approve:function(value){if(value&&typeof value==='object')location.href='soma-approve:$replyToken:'+encodeURIComponent(JSON.stringify(value))}"
+                                if (methods.isNotEmpty()) view.evaluateJavascript("window.soma=Object.freeze({" + methods.joinToString(",") + "});", null)
                             }
                         }
                         override fun onReceivedError(view: WebView, request: WebResourceRequest, problem: WebResourceError) {

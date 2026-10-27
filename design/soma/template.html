@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="soma-pack" content="manga">
 <meta name="soma-reply-to" content="">
+<!-- Set app/cards/version to the exact proposed screens before enabling approval. -->
+<meta name="soma-canvas-cards" content='{"app":"your-app","cards":["your-card"],"version":"v1"}'>
 <title>Mockup title</title>
 <style>
 /* soma.css: Soma's design system, generated from the active look's pack by tools/design-system/build.py.
@@ -117,8 +119,22 @@ p { margin: 0; }
       <p class="caption" id="soma-reply-status" role="status"></p>
     </form>
   </section>
+  <section class="panel">
+    <h2>Review this mockup</h2>
+    <p>Approve the declared screens, or ask the author for changes.</p>
+    <div class="actions"><button class="action" id="soma-approve">Review approval</button></div>
+    <p class="caption" id="soma-approve-status" role="status"></p>
+  </section>
 </main>
 <script>
+document.getElementById('soma-approve').onclick = function() {
+  const status = document.getElementById('soma-approve-status');
+  if (window.soma && typeof window.soma.approve === 'function') {
+    const declared = JSON.parse(document.querySelector('meta[name="soma-canvas-cards"]').content);
+    window.soma.approve(declared);
+    status.textContent = 'Review the exact screens and version in Soma.';
+  } else status.textContent = 'Approval is unavailable in this preview. Nothing was approved.';
+};
 document.getElementById('soma-question-form').addEventListener('submit', function(event) {
   event.preventDefault();
   const text = new FormData(event.target).get('answer').trim();

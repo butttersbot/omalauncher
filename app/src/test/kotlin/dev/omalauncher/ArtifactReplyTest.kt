@@ -1,6 +1,8 @@
 package dev.omalauncher
 
 import dev.omalauncher.oma.ArtifactReply
+import dev.omalauncher.oma.ArtifactCanvasApproval
+import java.net.URLEncoder
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -23,5 +25,25 @@ class ArtifactReplyTest {
         assertNull(ArtifactReply.request(html, "soma-answer:hi", true, false))
         for (url in listOf("https://evil.invalid", "soma-answer:%", "soma-answer:%00", "soma-answer:%20", "soma-answer:" + "x".repeat(4097)))
             assertNull(ArtifactReply.request(html, url, true, true))
+    }
+
+    private val manifest = """{"app":"hunch","cards":["hunch-today","hunch-market"],"version":"v6"}"""
+    private fun approvalHtml(value: String = manifest) = html.replace("</head>", "<meta name='soma-canvas-cards' content='$value'></head>")
+    private fun approvalUrl(value: String = manifest) = "soma-approve:" + URLEncoder.encode(value, "UTF-8")
+    @Test fun canvasReviewBindsExactDeclaredScreensAndVersion() {
+        val request = ArtifactCanvasApproval.request(approvalHtml(), approvalUrl(), true, true)!!
+        assertEquals("phone:B", request.recipient)
+        assertEquals(listOf("hunch-today", "hunch-market"), request.cards)
+        assertEquals("v6", request.version)
+        for (value in listOf(manifest.replace("v6", "v7"), manifest.replace("hunch-market", "hunch-bets"), manifest.replace("hunch\"", "other\""), manifest.dropLast(1) + ",\"url\":\"https://evil.invalid\"}"))
+            assertNull(ArtifactCanvasApproval.request(approvalHtml(), approvalUrl(value), true, true))
+    }
+    @Test fun canvasReviewRejectsMissingDuplicateAndNonGestureDeclarations() {
+        assertNull(ArtifactCanvasApproval.request(html, approvalUrl(), true, true))
+        assertNull(ArtifactCanvasApproval.request(approvalHtml().replace("</head>", "<meta name='soma-canvas-cards' content='$manifest'></head>"), approvalUrl(), true, true))
+        assertNull(ArtifactCanvasApproval.request(approvalHtml(), approvalUrl(), false, true))
+        assertNull(ArtifactCanvasApproval.request(approvalHtml(), approvalUrl(), true, false))
+        assertFalse(ArtifactCanvasApproval.declared(approvalHtml(manifest.replace("hunch-market", "hunch-today"))))
+        assertFalse(ArtifactCanvasApproval.declared(approvalHtml().replace("soma-reply-to", "irrelevant")))
     }
 }

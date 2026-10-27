@@ -447,7 +447,7 @@ internal fun SomaArtifactCards(made: List<ChatArtifact>) {
 }
 
 @Composable
-internal expect fun ArtifactWeb(url: String?, html: String?, modifier: Modifier, onAnswer: ((ArtifactReplyRequest) -> Unit)? = null)
+internal expect fun ArtifactWeb(url: String?, html: String?, modifier: Modifier, onAnswer: ((ArtifactReplyRequest) -> Unit)? = null, onApprove: ((ArtifactCanvasRequest) -> Unit)? = null)
 
 @Composable
 internal expect fun ArtifactImage(bytes: ByteArray, description: String, modifier: Modifier)
