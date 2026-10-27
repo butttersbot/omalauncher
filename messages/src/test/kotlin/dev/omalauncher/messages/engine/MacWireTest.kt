@@ -135,4 +135,12 @@ class MacWireTest {
         val at = MacAddress("http://100.120.219.46:8765", "secret")
         assertEquals(at, MacAddress.fromJson(at.toJson()))
     }
+
+    @Test
+    fun aGifIsAGifWhateverTheMacCallsIt() {
+        assertEquals("image/gif", MacWire.mimeOf("party.gif", "image/jpeg"))
+        assertEquals("image/gif", MacWire.mimeOf("party.GIF", ""))
+        assertEquals("image/gif", MacWire.mimeOf("IMG_0001", "com.compuserve.gif"))
+        assertEquals("image/jpeg", MacWire.mimeOf("photo.jpg", "image/jpeg"))
+    }
 }

@@ -118,6 +118,8 @@ object MacWire {
     ): String {
         val ext = name.substringAfterLast('.', "").lowercase()
         if (voiceNote || ext == "caf") return "audio/x-caf"
+        // A GIF is always one, whatever the Mac calls it, so it moves in the conversation (Boss, 2026-10-27).
+        if (ext == "gif" || mime.equals("com.compuserve.gif", ignoreCase = true)) return "image/gif"
         if (mime.isNotEmpty() && mime != "application/octet-stream") return mime
         return KNOWN[ext] ?: mime.ifEmpty { "application/octet-stream" }
     }
