@@ -131,7 +131,7 @@ echo "Built and tested $short${lane:+ in lane $lane} (version $code$code_note: $
 # result sat unsent for one to two hours). Each walk is its exit and its FAIL lines; each FAIL line says whether it is
 # this Mac's environment, the walk script, or something to check. SOMA_MACBUILD_REPORT=0 leaves it to the lane thread.
 walk_report() {
-  [ "$send" != 0 ] && [ "${SOMA_MACBUILD_REPORT:-1}" != 0 ] || return 0
+  [ "${send:-1}" != 0 ] && [ "${SOMA_MACBUILD_REPORT:-1}" != 0 ] || return 0
   local tmsg; tmsg=$(command -v tmsg || echo "$HOME/.local/bin/tmsg")
   [ -x "$tmsg" ] || { echo "Walk report: no tmsg here, so it wasn't mailed (see $wdir/report.txt)."; return 0; }
   {
