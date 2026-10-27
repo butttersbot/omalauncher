@@ -6,7 +6,7 @@ not require installing android.jar on the phone. Output: `out/classes.dex`.
 
 The helper takes `WIDTH HEIGHT DPI SOMA_UID`, for example `1248 1972 420 10373`.
 Flags: PUBLIC, OWN_CONTENT_ONLY, SUPPORTS_TOUCH, DESTROY_CONTENT_ON_REMOVAL,
-TRUSTED, OWN_DISPLAY_GROUP, ALWAYS_UNLOCKED and OWN_FOCUS. The physical screen
+TRUSTED, OWN_DISPLAY_GROUP, ALWAYS_UNLOCKED, OWN_FOCUS and STEAL_TOP_FOCUS_DISABLED. The physical screen
 is never mirrored or unlocked. Dimensions and flags were verified on the Fold.
 
 Provision the same random 64-byte hex key, mode 600, in
@@ -47,3 +47,17 @@ debug-exec switch is enabled. They never print the authentication key.
 
 References: [scrcpy display implementation](https://github.com/Genymobile/scrcpy/blob/master/server/src/main/java/com/genymobile/scrcpy/video/NewDisplayCapture.java)
 and [shell context](https://github.com/Genymobile/scrcpy/blob/master/server/src/main/java/com/genymobile/scrcpy/FakeContext.java).
+
+## Main-screen keyboard focus
+
+The agent display has independent window focus but must not become the system's
+ top-focused display. `OWN_FOCUS` alone does not guarantee that: the helper also
+sets `STEAL_TOP_FOCUS_DISABLED` (1 << 16), requiring the existing TRUSTED and
+OWN_FOCUS flags. This prevents launch/touch steps from taking the main display's
+IME target, rather than briefly stealing focus and trying to restore it afterwards.
+See [Android DisplayManager flags](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/android16-release/core/java/android/hardware/display/DisplayManager.java).
+
+A changed flag applies only to newly created displays. Deploy the rebuilt helper
+DEX and let the old display close before testing; updating the launcher APK alone
+does not replace a running shell helper. Keep the on-demand lifetime and Take over
+behavior. Real-Fold keyboard verification lives in background-on-demand.walk.

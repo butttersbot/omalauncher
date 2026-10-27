@@ -31,7 +31,14 @@ public final class SomaDisplay {
     // DisplayManager hidden flags, also used by scrcpy's NewDisplayCapture.
     // How long the display stays after Soma last asked for it.
     private static final long IDLE_MS = 120_000;
-    private static final int FLAGS = 1 | 8 | 64 | 256 | 1024 | 2048 | 4096 | 16384;
+    // OWN_FOCUS keeps a focused window on the agent display, but alone still lets a
+    // launch or injected touch steal the system's top-focused display / IME from Boss.
+    // Android's STEAL_TOP_FOCUS_DISABLED requires TRUSTED + OWN_FOCUS (already set).
+    // Source: android16-release DisplayManager.java, VIRTUAL_DISPLAY_FLAG_*.
+    private static final int OWN_FOCUS = 1 << 14;
+    private static final int STEAL_TOP_FOCUS_DISABLED = 1 << 16;
+    private static final int FLAGS = 1 | 8 | 64 | 256 | 1024 | 2048 | 4096
+            | OWN_FOCUS | STEAL_TOP_FOCUS_DISABLED;
 
     private static Context shellContext() throws Exception {
         Class<?> activityThread = Class.forName("android.app.ActivityThread");

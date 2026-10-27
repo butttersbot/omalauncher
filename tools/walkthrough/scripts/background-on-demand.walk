@@ -8,3 +8,10 @@
 [phone] Robinhood opens and works with no "screen recording" warning while no background step has run for two minutes.
 [phone] FFIV Companion shows both DS screens on the main screen.
 [phone] A background step while Robinhood is open in front: the step runs on the hidden display; note whether Robinhood complains (expected: it may, while the display is up).
+
+# Focus regression: run only awake/unlocked, with Boss's agreement to use the composer.
+# Do not submit, clear or replace his draft. Do not unlock or enable permissions.
+[phone] On the old helper, focus Soma's main-screen composer with the keyboard visible; record dumpsys window mTopFocusedDisplayId and dumpsys input_method focused/served client and input visibility. Launch a harmless URL on bg in a browser not used on main; record whether the IME disappears and whether top focus leaves display 0. If unavailable, mark reproduction NOT RUN.
+[phone] After deploying rebuilt helper with STEAL_TOP_FOCUS_DISABLED and recreating its display, focus the main-screen Soma composer again. Run oma-phone --display bg url about:blank --app com.brave.browser, then bg screen and a harmless bg press/scroll. Check after each step: mTopFocusedDisplayId remains 0, main composer retains input focus, keyboard stays visible with the same IME client, draft unchanged. Do not send text.
+[phone] Repeat with the bg browser already running and after its two-minute idle release/new display creation; main keyboard and focus remain unchanged throughout. Verify bg controls and screenshot still work; no main-screen restore/tap is used.
+[phone] Owner-only Take over still moves the bg task onto main deliberately, after pausing, as before. Mark separately from the no-focus-steal assertions.
