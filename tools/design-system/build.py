@@ -199,8 +199,6 @@ p {{ margin: 0; }}
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="soma-pack" content="{pack_id}">
 <meta name="soma-reply-to" content="">
-<!-- Set app/cards/version to the exact proposed screens before enabling approval. -->
-<meta name="soma-canvas-cards" content='{{"app":"your-app","cards":["your-card"],"version":"v1"}}'>
 <title>Mockup title</title>
 <style>
 {css}
@@ -212,40 +210,44 @@ p {{ margin: 0; }}
     <div class="actions"><button class="action">Do it</button><button class="action secondary">Not now</button></div>
   </section>
   <!-- Question form: replace the empty recipient with phone:A/B/C or a known mac: thread key.
-       Submit opens Soma's native recipient/message review; only the owner's Send tap delivers it. -->
+       The owner's Submit tap delivers to this fixed recipient without a second review. -->
   <section class="panel">
     <h2>Your answer</h2>
     <form id="soma-question-form">
-      <label class="field">Answer<textarea name="answer" required maxlength="4096" rows="3"></textarea></label>
+      <p class="caption">Choose one, or write your own answer.</p>
+      <button class="option" type="button" data-answer="Approve this design" aria-pressed="false"><b>Approve this design</b><small>Build the screens shown in this mockup.</small></button>
+      <button class="option" type="button" data-answer="Request changes" aria-pressed="false"><b>Request changes</b><small>Describe the changes in Other.</small></button>
+      <label class="field">Other<textarea name="answer" maxlength="4096" rows="3"></textarea></label>
       <div class="actions"><button class="action" type="submit">Submit answers</button></div>
       <p class="caption" id="soma-reply-status" role="status"></p>
     </form>
   </section>
-  <section class="panel">
-    <h2>Review this mockup</h2>
-    <p>Approve the declared screens, or ask the author for changes.</p>
-    <div class="actions"><button class="action" id="soma-approve">Review approval</button></div>
-    <p class="caption" id="soma-approve-status" role="status"></p>
-  </section>
 </main>
 <script>
-document.getElementById('soma-approve').onclick = function() {{
-  const status = document.getElementById('soma-approve-status');
-  if (window.soma && typeof window.soma.approve === 'function') {{
-    const declared = JSON.parse(document.querySelector('meta[name="soma-canvas-cards"]').content);
-    window.soma.approve(declared);
-    status.textContent = 'Review the exact screens and version in Soma.';
-  }} else status.textContent = 'Approval is unavailable in this preview. Nothing was approved.';
-}};
+let picked = '';
+document.querySelectorAll('[data-answer]').forEach(function(button) {{
+  button.onclick = function() {{
+    picked = button.dataset.answer;
+    document.querySelectorAll('[data-answer]').forEach(function(option) {{
+      option.classList.toggle('on', option === button);
+      option.setAttribute('aria-pressed', String(option === button));
+    }});
+  }};
+}});
 document.getElementById('soma-question-form').addEventListener('submit', function(event) {{
   event.preventDefault();
-  const text = new FormData(event.target).get('answer').trim();
+  const other = new FormData(event.target).get('answer').trim();
+  const text = [picked, other].filter(Boolean).join(': ');
   const status = document.getElementById('soma-reply-status');
   if (!text) return;
   if (window.soma && typeof window.soma.answer === 'function') {{
     window.soma.answer(text);
-    status.textContent = 'Review the recipient and answer in Soma, then tap Send.';
+    status.textContent = 'Sending answers…';
+    event.target.querySelector('button[type=submit]').disabled = true;
   }} else status.textContent = 'Reply delivery is unavailable in this preview. Open it in updated Soma.';
+}});
+window.addEventListener('soma-answer-result', function(event) {{
+  document.getElementById('soma-reply-status').textContent = event.detail.message;
 }});
 </script></body></html>
 """
@@ -378,37 +380,28 @@ Use one fixed `phone:A`, `phone:B`, `phone:C`, or the exact known `mac:` thread 
 The declared recipient is untrusted until Boss reviews it. An artifact must never
 choose a different recipient from JavaScript or claim that answers were delivered.
 
-The template's Submit calls `soma.answer(text)` on an owner tap. Soma must show a
-native review naming that fixed recipient and the complete text. Only Boss's
-separate Send tap may deliver a normal message to that known thread/builder. Cancel
-sends nothing. A plain browser/offline preview has no bridge and explains that.
-Generated HTML gets no file/content access, credentials or general native API;
-live web URLs cannot opt into this bridge. Subframes and non-gesture requests are
-refused. Text is nonblank, limited to 4096 characters, with control characters
-refused. Missing/duplicate declarations fail closed. Unknown recipients must be
-rejected in native review, never rerouted to another agent. Version changes cancel
-an open review. A native review is consumed once, not automatically retried.
+The template's Submit calls `soma.answer(text)` on Boss's tap. That Submit tap is
+consent to send directly to the fixed recipient. No second review, approval card,
+or navigation away from the mockup. Soma delivers a normal message to the exact
+known thread/builder and reports `soma-answer-result` with `sent` and `message`.
+The page shows “Sent to <agent>” only after confirmed delivery; an offline browser
+has no bridge and explains that. A failed/uncertain delivery is never called sent.
+
+Put questions inside the mockup (a section or Questions tab), with options, Other,
+and one Submit. Without a mockup, use the same question block as its own artifact.
+The native submission id is for duplicate prevention, not by itself an approval
+proof. Only a Canvas-verifiable owner receipt can record a mockup approval there.
+Canvas approvals are separate; `soma.approve` is parked and absent from the template.
+
+Generated HTML gets no file/content access, credentials or general native API.
+Live URLs cannot opt in. Main-frame gesture and per-version token checks apply;
+missing/duplicate declarations, unknown recipients and control characters fail
+closed. Replies are nonblank and at most 4096 characters. Reloads/double taps of
+the same source/version/answer cannot silently deliver again. Delivery errors remain
+visible in the page and agent chat. No background scripts or subframes can submit.
 
 Native AskUserQuestion forms use their nonce-bound approval answers instead;
 they do not send a second chat message through the artifact bridge.
-
-## Artifact mockup approval
-
-Declare one `soma-canvas-cards` meta in the head. Its JSON content is exactly
-`{{"app":"hunch","cards":["hunch-today","hunch-market"],"version":"v6"}}`.
-Also declare `soma-reply-to` for the author. `soma.approve({{app,cards,version,note?}})`
-requests native review only, on a main-frame owner gesture. The payload must match
-the static declaration exactly; scripts cannot add cards or change the version.
-
-The review names the app, version and every screen with Approve / Request changes.
-Only Boss's separate native Approve tap authorizes Canvas. Native code resolves the
-cards and checks the exact proposed assets/version before using the owner sign-in;
-no owner key or Canvas API is exposed to HTML. Stale/missing cards fail closed.
-Request changes reviews and relays Boss's note to the fixed author using the reply
-path. Closing review does nothing. Cancel review on artifact version changes;
-consume a confirmation once and never retry an uncertain approval automatically.
-Show partial failures accurately and notify the author only of confirmed results.
-The bridge foundation alone does not implement native review or Canvas submission.
 
 ## The Fold
 

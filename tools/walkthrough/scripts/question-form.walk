@@ -1,0 +1,37 @@
+# Isolated fixture: production artifact bridge and page, fake delivery; never real agents.
+# Prerequisite: -PartifactPreview :artifact-preview:assembleDebug installed.
+fold folded
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -n dev.omalauncher.artifactpreview/.PreviewActivity --ez questions true
+expect listening-room.html
+tap listening-room.html
+expect Where should the question form open?
+tap Beside chat
+scrollto Which screen sizes should we check?
+tap Cover
+tap Unfolded
+scrollto submit answers
+shot questions-cover-ready
+clearlog
+tap submit answers
+expect Sent to phone:A
+log artifact answer 1 to phone:A
+nolog artifact answer 2
+shot questions-cover-sent
+fold open
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -n dev.omalauncher.artifactpreview/.PreviewActivity --ez questions true
+tap listening-room.html
+expect Where should the question form open?
+tap Full screen
+scrollto Which screen sizes should we check?
+tap Cover
+scrollto submit answers
+shot questions-unfolded-ready
+clearlog
+tap submit answers
+expect Sent to phone:A
+log artifact answer 1 to phone:A
+nolog artifact answer 2
+shot questions-unfolded-sent
+[phone] In a real agent mockup, choose options and Other, Submit once. It stays in the artifact and shows Sent to the declared agent only after delivery; verify that agent received exactly those answers plus source and native receipt. Repeat with a known Mac thread; unreachable runner reports unconfirmed, never sent. Verify double taps/reload do not duplicate, no second review/card, no hidden script/frame/live-URL delivery, and no soma.approve API.

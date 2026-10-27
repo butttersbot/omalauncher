@@ -3,11 +3,15 @@ package dev.omalauncher.oma
 import java.net.URLDecoder
 import org.json.JSONObject
 
-/** Untrusted artifact content may propose exactly one reply. This is never authorization to send. */
+/** Static recipient; the main-frame owner Submit gesture authorizes one delivery. */
 data class ArtifactReplyRequest(val recipient: String, val text: String)
+data class ArtifactReplyResult(val sent: Boolean, val message: String, val receipt: String? = null)
+typealias ArtifactAnswerHandler = (ArtifactReplyRequest, (ArtifactReplyResult) -> Unit) -> Unit
 
 object ArtifactReply {
     const val MAX_TEXT = 4096
+    fun knownRecipient(recipient: String, macThreads: Set<String>): Boolean =
+        recipient in setOf("phone:A", "phone:B", "phone:C") || (recipient.startsWith("mac:") && recipient in macThreads)
     private val target = Regex("[A-Za-z0-9:._-]{1,160}")
     private val meta = Regex("<meta\\b[^>]*>", RegexOption.IGNORE_CASE)
     private val attribute = Regex("([\\w-]+)\\s*=\\s*([\"'])(.*?)\\2", RegexOption.DOT_MATCHES_ALL)

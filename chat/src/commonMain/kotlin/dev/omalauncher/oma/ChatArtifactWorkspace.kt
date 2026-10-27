@@ -335,7 +335,11 @@ private fun ArtifactPanel(
                             when {
                                 view == "Source" && artifact.kind == ArtifactKind.Image -> ArtifactText("${shown.name}\n${shown.mime}\n${shown.bytes.size} bytes")
                                 view == "Source" -> ArtifactText(shown.readingText)
-                                artifact.kind == ArtifactKind.Html -> ArtifactWeb(null, shown.text, Modifier.fillMaxSize())
+                                artifact.kind == ArtifactKind.Html -> ArtifactWeb(null, shown.text, Modifier.fillMaxSize(),
+                                    onAnswer = if (editing != null) null else { request, done ->
+                                        val hash = java.security.MessageDigest.getInstance("SHA-256").digest(shown.bytes).joinToString("") { "%02x".format(it) }
+                                        host.submitArtifactReply("${artifact.id}@${shown.version}:$hash", request, done)
+                                    })
                                 artifact.kind == ArtifactKind.Image -> ArtifactImage(shown.bytes, shown.name, Modifier.fillMaxSize())
                                 artifact.kind == ArtifactKind.Markdown -> SelectionContainer { MarkdownText(shown.readingText, Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) }
                                 else -> ArtifactText(shown.readingText)
@@ -447,7 +451,7 @@ internal fun SomaArtifactCards(made: List<ChatArtifact>) {
 }
 
 @Composable
-internal expect fun ArtifactWeb(url: String?, html: String?, modifier: Modifier, onAnswer: ((ArtifactReplyRequest) -> Unit)? = null, onApprove: ((ArtifactCanvasRequest) -> Unit)? = null)
+internal expect fun ArtifactWeb(url: String?, html: String?, modifier: Modifier, onAnswer: ArtifactAnswerHandler? = null, onApprove: ((ArtifactCanvasRequest) -> Unit)? = null)
 
 @Composable
 internal expect fun ArtifactImage(bytes: ByteArray, description: String, modifier: Modifier)

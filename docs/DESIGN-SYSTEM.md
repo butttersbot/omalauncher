@@ -70,37 +70,28 @@ Use one fixed `phone:A`, `phone:B`, `phone:C`, or the exact known `mac:` thread 
 The declared recipient is untrusted until Boss reviews it. An artifact must never
 choose a different recipient from JavaScript or claim that answers were delivered.
 
-The template's Submit calls `soma.answer(text)` on an owner tap. Soma must show a
-native review naming that fixed recipient and the complete text. Only Boss's
-separate Send tap may deliver a normal message to that known thread/builder. Cancel
-sends nothing. A plain browser/offline preview has no bridge and explains that.
-Generated HTML gets no file/content access, credentials or general native API;
-live web URLs cannot opt into this bridge. Subframes and non-gesture requests are
-refused. Text is nonblank, limited to 4096 characters, with control characters
-refused. Missing/duplicate declarations fail closed. Unknown recipients must be
-rejected in native review, never rerouted to another agent. Version changes cancel
-an open review. A native review is consumed once, not automatically retried.
+The template's Submit calls `soma.answer(text)` on Boss's tap. That Submit tap is
+consent to send directly to the fixed recipient. No second review, approval card,
+or navigation away from the mockup. Soma delivers a normal message to the exact
+known thread/builder and reports `soma-answer-result` with `sent` and `message`.
+The page shows “Sent to <agent>” only after confirmed delivery; an offline browser
+has no bridge and explains that. A failed/uncertain delivery is never called sent.
+
+Put questions inside the mockup (a section or Questions tab), with options, Other,
+and one Submit. Without a mockup, use the same question block as its own artifact.
+The native submission id is for duplicate prevention, not by itself an approval
+proof. Only a Canvas-verifiable owner receipt can record a mockup approval there.
+Canvas approvals are separate; `soma.approve` is parked and absent from the template.
+
+Generated HTML gets no file/content access, credentials or general native API.
+Live URLs cannot opt in. Main-frame gesture and per-version token checks apply;
+missing/duplicate declarations, unknown recipients and control characters fail
+closed. Replies are nonblank and at most 4096 characters. Reloads/double taps of
+the same source/version/answer cannot silently deliver again. Delivery errors remain
+visible in the page and agent chat. No background scripts or subframes can submit.
 
 Native AskUserQuestion forms use their nonce-bound approval answers instead;
 they do not send a second chat message through the artifact bridge.
-
-## Artifact mockup approval
-
-Declare one `soma-canvas-cards` meta in the head. Its JSON content is exactly
-`{"app":"hunch","cards":["hunch-today","hunch-market"],"version":"v6"}`.
-Also declare `soma-reply-to` for the author. `soma.approve({app,cards,version,note?})`
-requests native review only, on a main-frame owner gesture. The payload must match
-the static declaration exactly; scripts cannot add cards or change the version.
-
-The review names the app, version and every screen with Approve / Request changes.
-Only Boss's separate native Approve tap authorizes Canvas. Native code resolves the
-cards and checks the exact proposed assets/version before using the owner sign-in;
-no owner key or Canvas API is exposed to HTML. Stale/missing cards fail closed.
-Request changes reviews and relays Boss's note to the fixed author using the reply
-path. Closing review does nothing. Cancel review on artifact version changes;
-consume a confirmation once and never retry an uncertain approval automatically.
-Show partial failures accurately and notify the author only of confirmed results.
-The bridge foundation alone does not implement native review or Canvas submission.
 
 ## The Fold
 

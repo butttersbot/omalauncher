@@ -28,10 +28,11 @@ import dev.omalauncher.ui.Pack
  * page itself starts over, as any reload does.
  */
 @Composable
-internal actual fun ArtifactWeb(url: String?, html: String?, modifier: Modifier, onAnswer: ((ArtifactReplyRequest) -> Unit)?, onApprove: ((ArtifactCanvasRequest) -> Unit)?) {
+internal actual fun ArtifactWeb(url: String?, html: String?, modifier: Modifier, onAnswer: ArtifactAnswerHandler?, onApprove: ((ArtifactCanvasRequest) -> Unit)?) {
     val answerCallback by rememberUpdatedState(onAnswer)
     val approveCallback by rememberUpdatedState(onApprove)
     val sourceHtml by rememberUpdatedState(html)
+    var submitting by remember(url, html) { mutableStateOf(false) }
     val replyToken by rememberUpdatedState(remember(url, html) { java.util.UUID.randomUUID().toString() })
     var error by remember(url, html) { mutableStateOf(false) }
     var retry by remember(url) { mutableIntStateOf(0) }
@@ -59,7 +60,7 @@ internal actual fun ArtifactWeb(url: String?, html: String?, modifier: Modifier,
                     settings.blockNetworkLoads = url == null
                     webViewClient = object : WebViewClient() {
                         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                            if (url == null && approveCallback != null && owned === view) {
+                            if (false && url == null && approveCallback != null && owned === view) {
                                 val prefix = "soma-approve:$replyToken:"
                                 val address = request.url.toString()
                                 if (address.startsWith(prefix)) ArtifactCanvasApproval.request(sourceHtml.orEmpty(), "soma-approve:" + address.removePrefix(prefix), request.isForMainFrame, request.hasGesture())?.let {
@@ -71,7 +72,18 @@ internal actual fun ArtifactWeb(url: String?, html: String?, modifier: Modifier,
                                 val prefix = "soma-answer:$replyToken:"
                                 val address = request.url.toString()
                                 if (address.startsWith(prefix)) ArtifactReply.request(sourceHtml.orEmpty(), "soma-answer:" + address.removePrefix(prefix), request.isForMainFrame, request.hasGesture())?.let {
-                                    answerCallback?.invoke(it)
+                                    if (submitting) return true
+                                    submitting = true
+                                    val token = replyToken
+                                    fun result(value: ArtifactReplyResult) {
+                                        view.post {
+                                            if (owned !== view || token != replyToken) return@post
+                                            val payload = org.json.JSONObject().put("sent", value.sent).put("message", value.message).put("recipient", it.recipient).put("receipt", value.receipt).toString()
+                                            view.evaluateJavascript("window.dispatchEvent(new CustomEvent('soma-answer-result',{detail:$payload}));var s=document.getElementById('soma-reply-status');if(s)s.textContent=" + org.json.JSONObject.quote(value.message) + ";", null)
+                                        }
+                                    }
+                                    try { answerCallback?.invoke(it, ::result) }
+                                    catch (_: Exception) { result(ArtifactReplyResult(false, "Delivery was not confirmed. Check the agent chat.")) }
                                     return true
                                 }
                             }
@@ -83,7 +95,7 @@ internal actual fun ArtifactWeb(url: String?, html: String?, modifier: Modifier,
                                 val methods = mutableListOf<String>()
                                 if (answerCallback != null && ArtifactReply.recipient(sourceHtml.orEmpty()) != null)
                                     methods += "answer:function(text){if(typeof text==='string'&&text.length<=4096)location.href='soma-answer:$replyToken:'+encodeURIComponent(text)}"
-                                if (approveCallback != null && ArtifactCanvasApproval.declared(sourceHtml.orEmpty()))
+                                if (false && approveCallback != null && ArtifactCanvasApproval.declared(sourceHtml.orEmpty()))
                                     methods += "approve:function(value){if(value&&typeof value==='object')location.href='soma-approve:$replyToken:'+encodeURIComponent(JSON.stringify(value))}"
                                 if (methods.isNotEmpty()) view.evaluateJavascript("window.soma=Object.freeze({" + methods.joinToString(",") + "});", null)
                             }

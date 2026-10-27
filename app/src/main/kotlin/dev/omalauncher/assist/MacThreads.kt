@@ -89,6 +89,9 @@ object MacThreads {
 
     fun say(context: Context, prompt: String, threadId: String, name: String, chat: String = "", images: List<java.io.File> = emptyList(), shown: List<String> = emptyList()) = engine(context).say(prompt, threadId, name, chat, images, shown)
 
+    fun artifactReply(context: Context, prompt: String, threadId: String, name: String, delivered: (Boolean) -> Unit) =
+        engine(context).say(prompt, threadId, name, delivered = delivered)
+
     fun tryAgain(context: Context, time: Long) = engine(context).tryAgain(time)
 
     fun startChat(context: Context, asked: Long, prompt: String, away: Boolean, chat: String) = engine(context).startChat(asked, prompt, away, chat)

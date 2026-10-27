@@ -470,16 +470,16 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
      * the build lane's lock as every entry's time is taken, and the words then go the way a hand-over's do:
      * the Mac is asked how it is, and one that does not answer leaves the entry saying so with `[ try again ]`.
      */
-    fun say(prompt: String, threadId: String, name: String, chat: String = "", images: List<java.io.File> = emptyList(), shown: List<String> = emptyList()) {
+    fun say(prompt: String, threadId: String, name: String, chat: String = "", images: List<java.io.File> = emptyList(), shown: List<String> = emptyList(), delivered: ((Boolean) -> Unit)? = null) {
         restore()
         // "switch to codex" typed on a thread's tab, the whole message, is a switch (DESIGN §4), never words for the agent.
-        macSwitchAsked(prompt)?.let { return switchTo(threadId, it, prompt, name, chat) }
+        if (delivered == null) macSwitchAsked(prompt)?.let { return switchTo(threadId, it, prompt, name, chat) }
         val log = platform.chatLog()
         val time = synchronized(platform.stampLock) {
             ChatHistory.stamp(log.tasks, System.currentTimeMillis()).also { log.begin(macDirect(it, prompt, threadId, name).copy(chat = chat, images = shown)) }
         }
         if (images.isNotEmpty()) synchronized(this) { pictures[time] = images }
-        send(time, prompt, threadId, away = false)
+        send(time, prompt, threadId, away = false, delivered = delivered)
     }
 
     /**
@@ -533,7 +533,7 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
      * words were sent and no answer came back, it is not known whether the Mac has them: the entry waits, and
      * the thread's follower finds out from the Mac itself.
      */
-    private fun send(time: Long, text: String, threadId: String, away: Boolean) {
+    private fun send(time: Long, text: String, threadId: String, away: Boolean, delivered: ((Boolean) -> Unit)? = null) {
         val kept = platform.chatLog().tasks.map { it.time }.toSet()
         // A thread never followed from here is followed from where it stood: its past would otherwise be read as this turn's.
         view.threads.firstOrNull { it.id == threadId }?.let { cursors.start(threadId, it.lastEvent) }
@@ -567,6 +567,8 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
                     }
                     else -> macUnreachableReason(health)
                 }
+            } catch (_: Exception) {
+                problem = MAC_UNREACHABLE
             } finally {
                 synchronized(this) {
                     sentAt[time] = clock.incrementAndGet()
@@ -579,6 +581,7 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
                 log.update(time, save = true) { macUnsent(it, why) }
                 if (away) platform.answeredNotice(NOT_SENT, why, front = true)
             }
+            platform.post { delivered?.invoke(why == null) }
             refresh()
         }
     }

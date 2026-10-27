@@ -21,3 +21,9 @@ val previewPacks by tasks.registering(Sync::class) {
 }
 android.sourceSets["main"].assets.srcDir(layout.buildDirectory.dir("generated/preview-assets").get().asFile)
 tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(previewPacks) }
+
+val previewQuestions by tasks.registering(Sync::class) {
+    from(rootProject.file("docs/question-form/proposal.html"))
+    into(layout.buildDirectory.dir("generated/preview-assets/questions"))
+}
+tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(previewQuestions) }

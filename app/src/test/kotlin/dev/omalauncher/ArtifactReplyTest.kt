@@ -46,4 +46,11 @@ class ArtifactReplyTest {
         assertFalse(ArtifactCanvasApproval.declared(approvalHtml(manifest.replace("hunch-market", "hunch-today"))))
         assertFalse(ArtifactCanvasApproval.declared(approvalHtml().replace("soma-reply-to", "irrelevant")))
     }
+    @Test fun submitNeverReroutesUnknownOrAmbiguousRecipients() {
+        val known = setOf("mac:macbook-pro/t123")
+        assertTrue(ArtifactReply.knownRecipient("phone:B", known))
+        assertTrue(ArtifactReply.knownRecipient("mac:macbook-pro/t123", known))
+        for (recipient in listOf("phone:D", "phone:b", "phone", "mac:t123", "mac:macbook-pro/t124", "https://evil.invalid"))
+            assertFalse(ArtifactReply.knownRecipient(recipient, known))
+    }
 }
