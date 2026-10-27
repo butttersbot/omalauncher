@@ -89,7 +89,7 @@ fun quickSystemPrompt(mac: Boolean = false, newChat: Boolean = false): String =
  * project gets a fresh thread, and what to do with work that has no thread. Each rule is pinned by QuickLaneTest.
  */
 fun quickMacRules(): String =
-    " The board also lists the project threads on the Mac, each with a name and an id, and they change where work goes. The builders " +
+    " The board lists Mac project threads by name and id. The builders " +
         "are for this phone only: the launcher, its widgets, pages, notes and stickers, phone control and anything else about this phone " +
         "still gets $HAND_OVER, except phone errands keep ${handOverMark(Route.PHONE)}. Work on a project that has a thread goes to that thread: reply with the single line " +
         "${handOverMark(Route.mac("ID"))} and nothing else, ID being that thread's id copied exactly from the board. That holds for " +
