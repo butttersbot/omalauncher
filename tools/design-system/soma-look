@@ -1,0 +1,163 @@
+#!/usr/bin/env python3
+"""
+soma-look FILE.html [--sizes cover,unfolded,side] [--out DIR]
+
+Looks at a mockup the way Boss will see it, before anyone sends it: renders FILE at the Fold's sizes
+(cover full screen 475x751, unfolded 932x704, side panel 466x704, in CSS px), checks the page for what keeps going
+wrong, prints a PNG per size, and writes a receipt that `soma-canvas propose` asks for.
+
+Checks, inside the page at each size:
+  empty      content with no height (a fit() that scales to nothing, a height that comes out 0)
+  tiny       text drawn at under 20% scale (transform: scale from a measured height)
+  overflow   the page wider than the screen (sideways scrolling)
+  clipped    text cut off by a box with overflow hidden
+  overlap    two pieces of text drawn over each other
+And on the file: references to the network (http/https in src, href, url(), @import): mockups are offline.
+
+On the phone it uses the hidden display (oma-phone --display bg) and Brave; the artifact panel's WebView differs a
+little (no network, no storage), so treat this as the minimum, not the final word.
+Exit 0: looked, no errors (warnings may remain). Exit 1: errors, fix before sending. Exit 2: couldn't look.
+"""
+import argparse, hashlib, http.server, json, os, re, shutil, socket, subprocess, sys, tempfile, threading, time
+
+SIZES = {"cover": (475, 751), "unfolded": (932, 704), "side": (466, 704)}
+CACHE = os.path.expanduser("~/.cache/soma-look")
+
+HARNESS = r"""<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>html,body{margin:0;background:#ff00ff;overflow:hidden;height:100%}body{padding:8px;box-sizing:border-box}iframe{border:0;transform-origin:0 0;background:#fff;display:block}</style>
+</head><body><iframe id="f"></iframe><script>
+const q=new URLSearchParams(location.search),w=+q.get('w'),h=+q.get('h'),f=document.getElementById('f');
+f.width=w;f.height=h;f.style.width=w+'px';f.style.height=h+'px';
+const s=Math.min((innerWidth-16)/w,(innerHeight-16)/h);f.style.transform='scale('+s+')';
+f.onload=()=>setTimeout(()=>{let r;try{r=check(f.contentDocument,f.contentWindow)}catch(e){r={errors:['could not inspect: '+e],warnings:[]}}
+ r.size=[w,h];fetch('/report?k='+q.get('k'),{method:'POST',body:JSON.stringify(r)})},1200);
+f.src='page.html?'+Date.now();
+function check(d,win){
+ const E=[],W=[],b=d.body;if(!b)return{errors:['no <body>'],warnings:[]};
+ const txt=(b.innerText||'').trim();
+ const vis=[...b.querySelectorAll('*')].filter(e=>{const r=e.getBoundingClientRect();return r.width>1&&r.height>1});
+ let maxB=0;vis.forEach(e=>{const r=e.getBoundingClientRect();maxB=Math.max(maxB,r.bottom)});
+ if(txt&&maxB<24)E.push('empty: the page has text but nothing is drawn taller than 24px (zero-height content?)');
+ const leaves=[];const tw=d.createTreeWalker(b,NodeFilter.SHOW_TEXT);let n;
+ while((n=tw.nextNode())&&leaves.length<600){if(!n.textContent.trim())continue;const rg=d.createRange();rg.selectNodeContents(n);
+  const rs=[...rg.getClientRects()].filter(r=>r.width>0&&r.height>0);if(!rs.length)continue;
+  const el=n.parentElement,cs=win.getComputedStyle(el);if(cs.visibility==='hidden'||+cs.opacity===0)continue;
+  leaves.push({el,rs,t:n.textContent.trim().slice(0,40)});}
+ // tiny: text whose drawn height is far below its font size
+ leaves.forEach(l=>{const fs=parseFloat(win.getComputedStyle(l.el).fontSize)||0,hgt=Math.max(...l.rs.map(r=>r.height));
+  if(fs>=8&&hgt<fs*0.2)E.push('tiny: "'+l.t+'" is drawn at '+Math.round(hgt*10)/10+'px for a '+fs+'px font (scaled to nothing?)')});
+ if(d.documentElement.scrollWidth>w+1)W.push('overflow: the page is '+d.documentElement.scrollWidth+'px wide on a '+w+'px screen');
+ // clipped
+ [...b.querySelectorAll('*')].forEach(e=>{const cs=win.getComputedStyle(e);if(!/(hidden|clip)/.test(cs.overflowX+cs.overflowY))return;
+  if(!(e.innerText||'').trim())return;if(e.scrollWidth>e.clientWidth+2||e.scrollHeight>e.clientHeight+2)
+  W.push('clipped: text cut off in <'+e.tagName.toLowerCase()+(e.className?'.'+String(e.className).split(' ')[0]:'')+'> "'+(e.innerText||'').trim().slice(0,30)+'"')});
+ // overlap
+ const box=l=>l.rs.reduce((a,r)=>({l:Math.min(a.l,r.left),t:Math.min(a.t,r.top),r:Math.max(a.r,r.right),b:Math.max(a.b,r.bottom)}),{l:1e9,t:1e9,r:-1e9,b:-1e9});
+ const bx=leaves.map(box);let ov=0;
+ for(let i=0;i<leaves.length&&ov<12;i++)for(let j=i+1;j<leaves.length&&ov<12;j++){
+  const a=leaves[i],c=leaves[j];if(a.el===c.el||a.el.contains(c.el)||c.el.contains(a.el))continue;
+  for(const r1 of a.rs)for(const r2 of c.rs){const x=Math.min(r1.right,r2.right)-Math.max(r1.left,r2.left),y=Math.min(r1.bottom,r2.bottom)-Math.max(r1.top,r2.top);
+   if(x>3&&y>Math.min(r1.height,r2.height)*0.3){W.push('overlap: "'+a.t+'" and "'+c.t+'" are drawn over each other');ov++;break}}}
+ return{errors:[...new Set(E)].slice(0,20),warnings:[...new Set(W)].slice(0,30),height:Math.round(maxB)};}
+</script></body></html>"""
+
+
+def run(cmd, timeout=60):
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+
+
+def free_port():
+    s = socket.socket(); s.bind(("127.0.0.1", 0)); p = s.getsockname()[1]; s.close(); return p
+
+
+def static_checks(html):
+    errs = []
+    for m in re.finditer(r"""(?:src|href)\s*=\s*["'](https?://[^"']+)|url\(\s*["']?(https?://[^)"']+)|@import\s+["']?(https?://[^"';]+)""", html, re.I):
+        url = next(g for g in m.groups() if g)
+        errs.append(f"network: {url[:80]} (mockups are offline single files)")
+    return errs[:10]
+
+
+def crop(png, out):
+    """The harness draws the page in a frame inside an 8 px magenta margin: find the frame by where the magenta stops."""
+    from PIL import Image
+    im = Image.open(png).convert("RGB"); px = im.load(); W, H = im.size
+    mag = lambda c: c[0] > 220 and c[1] < 60 and c[2] > 220
+    col = [y for y in range(H) if mag(px[3, y])]          # the left margin runs the harness's full height
+    if not col:
+        im.save(out); return False
+    top, bottom = col[0], col[-1]
+    y = top
+    while y < bottom and all(mag(px[x, y]) for x in range(3, min(W, 400), 37)): y += 1   # past the top margin
+    probe = min(bottom - 1, y + 40)
+    x0 = 3
+    while x0 < W - 1 and mag(px[x0, probe]): x0 += 1
+    x1 = x0
+    while x1 < W - 1 and not mag(px[x1, probe]): x1 += 1
+    y1 = y
+    while y1 < bottom and not mag(px[x0 + 5, y1]): y1 += 1
+    if x1 - x0 < 20 or y1 - y < 20:
+        im.save(out); return False
+    im.crop((x0, y, x1, y1)).save(out); return True
+
+
+def main():
+    a = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    a.add_argument("file"); a.add_argument("--sizes", default="cover,unfolded,side"); a.add_argument("--out")
+    o = a.parse_args()
+    path = os.path.abspath(o.file)
+    if not os.path.isfile(path):
+        sys.exit(f"soma-look: no such file: {o.file}")
+    data = open(path, "rb").read(); sha = hashlib.sha256(data).hexdigest()
+    out = o.out or os.path.join(CACHE, sha[:16]); os.makedirs(out, exist_ok=True)
+    errors, warnings, shots = static_checks(data.decode("utf-8", "replace")), [], {}
+
+    srv = tempfile.mkdtemp(prefix="soma-look-")
+    shutil.copy(path, os.path.join(srv, "page.html"))
+    open(os.path.join(srv, "harness.html"), "w").write(HARNESS)
+    reports = {}
+
+    class H(http.server.SimpleHTTPRequestHandler):
+        def __init__(s, *x, **k): super().__init__(*x, directory=srv, **k)
+        def log_message(s, *x): pass
+        def do_POST(s):
+            k = re.search(r"k=(\w+)", s.path).group(1)
+            reports[k] = json.loads(s.rfile.read(int(s.headers["content-length"])))
+            s.send_response(204); s.end_headers()
+
+    port = free_port()
+    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port), H)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        for size in [x.strip() for x in o.sizes.split(",") if x.strip()]:
+            w, h = SIZES[size]; key = f"{size}{int(time.time() * 1000) % 100000}"
+            r = run(["oma-phone", "--display", "bg", "url", f"http://127.0.0.1:{port}/harness.html?w={w}&h={h}&k={key}"])
+            if '"ok": true' not in r.stdout and '"ok":true' not in r.stdout:
+                print(f"soma-look: the hidden display didn't open ({size}): {(r.stdout + r.stderr).strip()[:300]}", file=sys.stderr)
+                sys.exit(2)
+            t0 = time.time()
+            while key not in reports and time.time() - t0 < 30: time.sleep(0.3)
+            rep = reports.get(key) or {"errors": [f"no report from the page at {size} within 30 s (did it crash?)"], "warnings": []}
+            errors += [f"{size}: {e}" for e in rep.get("errors", [])]
+            warnings += [f"{size}: {x}" for x in rep.get("warnings", [])]
+            s = run(["oma-phone", "--display", "bg", "screenshot"])
+            m = re.search(r'"path":\s*"([^"]+)"', s.stdout)
+            if m:
+                dst = os.path.join(out, f"{size}-{w}x{h}.png"); crop(m.group(1), dst); shots[size] = dst
+    finally:
+        httpd.shutdown(); shutil.rmtree(srv, ignore_errors=True)
+
+    receipt = {"file": path, "sha256": sha, "at": time.strftime("%Y-%m-%dT%H:%M:%S"), "sizes": SIZES,
+               "pngs": shots, "errors": errors, "warnings": warnings, "ok": not errors}
+    os.makedirs(CACHE, exist_ok=True)
+    json.dump(receipt, open(os.path.join(CACHE, sha + ".json"), "w"), indent=1)
+    for k, p in shots.items(): print(f"{k:9} {p}")
+    for e in errors: print("ERROR  ", e)
+    for x in warnings: print("warning", x)
+    print(("looked: no errors" if not errors else f"looked: {len(errors)} error(s), fix before sending") +
+          f"; {len(warnings)} warning(s). Now look at the PNGs yourself. Receipt {sha[:12]}.")
+    sys.exit(0 if not errors else 1)
+
+
+if __name__ == "__main__":
+    main()
