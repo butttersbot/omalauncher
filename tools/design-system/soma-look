@@ -12,6 +12,7 @@ Checks, inside the page at each size:
   overflow   the page wider than the screen (sideways scrolling)
   clipped    text cut off by a box with overflow hidden
   overlap    two pieces of text drawn over each other
+  look       made for another look than the active one, or not from the template
 And on the file: references to the network (http/https in src, href, url(), @import): mockups are offline.
 
 On the phone it uses the hidden display (oma-phone --display bg) and Brave; the artifact panel's WebView differs a
@@ -111,6 +112,15 @@ def main():
     data = open(path, "rb").read(); sha = hashlib.sha256(data).hexdigest()
     out = o.out or os.path.join(CACHE, sha[:16]); os.makedirs(out, exist_ok=True)
     errors, warnings, shots = static_checks(data.decode("utf-8", "replace")), [], {}
+    m = re.search(r'<meta name="soma-pack" content="([\w-]+)"', data.decode("utf-8", "replace"))
+    try:
+        active = json.loads(run(["oma-phone", "looks"], 20).stdout).get("look")
+    except Exception:
+        active = None
+    if m and active and m.group(1) != active:
+        warnings.append(f"look: made for the '{m.group(1)}' look but '{active}' is active; rebuild (tools/design-system/build.py) and recopy soma.css")
+    elif not m:
+        warnings.append("look: no <meta name=\"soma-pack\">; start from design/soma/template.html so it follows the active look")
 
     srv = tempfile.mkdtemp(prefix="soma-look-")
     shutil.copy(path, os.path.join(srv, "page.html"))
