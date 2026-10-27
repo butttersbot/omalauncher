@@ -50,3 +50,9 @@ On the Mac, `soma-macbuild` installs the build on the Mac's Fold emulator (AVD `
 and walks the scripts named in the commit's `Walk:` trailer, or every script whose feature the commit touched; the
 results and screenshots come back with the build. Keyboard steps tap by position (the keys are drawn, not labelled):
 when a layout change moves them, fix the coordinates in the script in the same commit.
+
+### Fresh accessibility evidence after WebView transitions
+
+Launch, URL open, `shell am start`, rotation and fold steps wait for a readable app tree. Every lookup makes a new dump: the old `/sdcard/walk.xml` is removed first, dump/read failures and malformed or empty trees retry (at most three attempts, with bounded adb timeouts). A named WebView shell with no readable descendants is not ready, even when its pixels have already rendered. `expect`, `absent` and `scrollto` all use this same fresh lookup. If the tree stays unavailable the step FAILS explicitly; it cannot turn into an `absent` PASS or an ungrounded swipe. These retries do not relax the expected text or turn failures into passes.
+
+Regression: launcher164's Hunch wallet screenshot showed Copy wallet address and Back to markets after rotation while UiAutomation exposed no matching controls. LaneB's b18de027 wallet walk passed35/0, with a similar one-off cold-MainActivity empty-tree delay. The runner correction targets that evidence failure, not wallet behavior. Unit coverage: `python3 -m unittest discover -s tools/walkthrough -p test_walk.py -v` (10 tests passed at implementation). Emulator wallet rerun and broader165 report coverage remain pending the lane checkpoint.

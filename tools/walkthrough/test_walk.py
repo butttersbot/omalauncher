@@ -37,5 +37,50 @@ class HumanControlMatches(unittest.TestCase):
         xml = '''<hierarchy><node text="Today’s issue" bounds="[100,100][900,200]"/></hierarchy>'''
         self.assertEqual(self.find(xml,"Today's issue"),(500,150))
 
+class FreshAccessibilityTrees(unittest.TestCase):
+    ready = '<hierarchy><node class="android.webkit.WebView" content-desc="Hunch" bounds="[0,0][100,200]"><node text="Copy wallet address" bounds="[0,30][100,50]"/></node></hierarchy>'
+    empty = '<hierarchy><node class="android.webkit.WebView" content-desc="Hunch" bounds="[0,0][100,200]"/></hierarchy>'
+
+    def test_named_webview_shell_is_not_a_ready_tree(self):
+        with self.assertRaises(walk.TreeUnavailable):
+            walk.parse_nodes(self.empty)
+
+    def test_empty_webview_retries_before_returning_fresh_controls(self):
+        reads = iter([self.empty, self.ready])
+        def adb(serial, *args, **kwargs):
+            return next(reads) if args[:2] == ("shell", "cat") else ""
+        with patch.object(walk, "adb", side_effect=adb) as call, patch.object(walk.time, "sleep"):
+            self.assertIn("Copy wallet address", walk.nodes("emu", wait_ms=0)[1][0])
+            self.assertEqual(2, sum(c.args[1:4] == ("shell", "rm", "-f") for c in call.call_args_list))
+
+    def test_failed_dump_never_reads_the_previous_xml_file(self):
+        def adb(serial, *args, **kwargs):
+            if args[:2] == ("shell", "uiautomator"):
+                raise RuntimeError("UiAutomation Bad file descriptor")
+            return self.ready  # stale text exists, but must never be read after a failed dump
+        with patch.object(walk, "adb", side_effect=adb) as call, patch.object(walk.time, "sleep"):
+            with self.assertRaises(walk.TreeUnavailable):
+                walk.nodes("emu", wait_ms=0)
+            self.assertFalse(any(c.args[1:3] == ("shell", "cat") for c in call.call_args_list))
+
+    def test_absent_cannot_pass_without_accessibility_evidence(self):
+        with patch.object(walk, "shot"), patch.object(walk, "size", return_value=(100,200)), patch.object(walk, "nodes", side_effect=walk.TreeUnavailable("empty")):
+            with self.assertRaises(walk.TreeUnavailable):
+                walk.run_step("emu", "absent", ["Copy wallet address"], "/tmp", 1)
+
+    def test_scroll_does_not_move_the_screen_on_an_unknown_tree(self):
+        with patch.object(walk, "adb") as adb, patch.object(walk, "find", side_effect=walk.TreeUnavailable("empty")):
+            with self.assertRaises(walk.TreeUnavailable):
+                walk.run_step("emu", "scrollto", ["Copy wallet address"], "/tmp", 1)
+            adb.assert_not_called()
+
+    def test_launch_and_rotate_wait_for_fresh_controls(self):
+        with patch.object(walk, "adb"), patch.object(walk, "size", return_value=(100,200)), patch.object(walk.time, "sleep"), patch.object(walk, "wait_for_tree") as ready:
+            walk.run_step("emu", "launch", ["app/.Activity"], "/tmp", 1)
+            walk.run_step("emu", "shell", ["am", "start", "-n", "app/.Activity"], "/tmp", 2)
+            walk.run_step("emu", "rotate", ["landscape"], "/tmp", 3)
+            self.assertEqual(3, ready.call_count)
+
+
 if __name__ == "__main__":
     unittest.main()

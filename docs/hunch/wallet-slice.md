@@ -41,3 +41,7 @@ Sources verified while implementing:
 Validation: wallet-specific fixture walk, updated paper navigation walk, auth
 regression walk, WalletAmountsTest, and local HTML renderer checks. Real SDK/
 Credential Manager and real wallet creation must be owner tested after install.
+
+## Launcher165 walkthrough-runner correction
+
+Launcher164 evidence `/root/Inbox/hunch-wallet-164-36-expect.png` was personally reviewed: Copy wallet address, balances and Back to markets were visible while the walk reported them missing. LaneB had35 PASS/0 FAIL/4 reviewed LOOK at Hunch b18de027, and rotation diagnostics retained wallet identity/balances. Correct `tools/walkthrough/walk.py`, not the wallet: discard old dump files, retry UiAutomation errors/empty or WebView-shell trees, wait for readable controls after launch/rotation/fold, and refuse to pass `absent` or swipe without a fresh tree. Ten runner tests pass, including stale-file refusal and empty-tree negative assertions. The wallet/emulator rerun is pending; include the eventual result in the165 report without claiming a phone or app fix.

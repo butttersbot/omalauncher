@@ -10,8 +10,8 @@ screenshot per `shot`/`expect` go to --out (default ./walk-out/<script>).
 """
 import json, os, re, shlex, subprocess, sys, time, xml.etree.ElementTree as ET
 
-def adb(serial, *args, text=True, check=False):
-    r = subprocess.run(["adb", "-s", serial, *args], capture_output=True, text=text, timeout=60)
+def adb(serial, *args, text=True, check=False, timeout=60):
+    r = subprocess.run(["adb", "-s", serial, *args], capture_output=True, text=text, timeout=timeout)
     if check and r.returncode != 0:
         raise RuntimeError((r.stderr or r.stdout or "adb failed").strip()[:300])
     return r.stdout
@@ -33,20 +33,54 @@ def point(serial, xs, ys):
         return int(float(v) * full) if "." in v else int(v)
     return f(xs, w), f(ys, h)
 
-def nodes(serial, detailed=False):
-    adb(serial, "shell", "uiautomator", "dump", "/sdcard/walk.xml")
-    raw = adb(serial, "shell", "cat", "/sdcard/walk.xml")
+class TreeUnavailable(RuntimeError):
+    """Missing accessibility evidence must never make an absent assertion pass."""
+
+
+def parse_nodes(raw, detailed=False):
     try:
         root = ET.fromstring(raw[raw.find("<"):])
-    except ET.ParseError:
-        return []
+    except ET.ParseError as e:
+        raise TreeUnavailable("accessibility dump is empty or malformed") from e
+    all_nodes = list(root.iter("node"))
+    label = lambda n: "\n".join(n.get(k) or "" for k in ("text", "content-desc", "hint"))
+    app_nodes = [n for n in all_nodes if n.get("package") != "com.android.systemui"]
+    if not any(label(n).strip() for n in app_nodes):
+        raise TreeUnavailable("accessibility tree has no app controls yet")
+    # After rotation Chromium can expose only its named WebView shell while its pixels are already drawn.
+    for web in (n for n in app_nodes if n.get("class") == "android.webkit.WebView"):
+        if not any(n is not web and label(n).strip() for n in web.iter("node")):
+            raise TreeUnavailable("WebView accessibility children are not ready yet")
     out = []
-    for n in root.iter("node"):
-        label = "\n".join(n.get(key) or "" for key in ("text", "content-desc", "hint"))
+    for n in all_nodes:
         b = re.findall(r"\d+", n.get("bounds") or "")
         if len(b) == 4:
-            out.append((label, [int(v) for v in b], dict(n.attrib)) if detailed else (label, [int(v) for v in b]))
+            out.append((label(n), [int(v) for v in b], dict(n.attrib)) if detailed else (label(n), [int(v) for v in b]))
     return out
+
+
+def nodes(serial, detailed=False, wait_ms=2000):
+    end = time.monotonic() + wait_ms / 1000
+    failure = TreeUnavailable("accessibility tree unavailable")
+    for attempt in range(3):
+        try:
+            # Never read walk.xml left by an earlier successful dump after UiAutomation crashes.
+            adb(serial, "shell", "rm", "-f", "/sdcard/walk.xml", check=True, timeout=4)
+            adb(serial, "shell", "uiautomator", "dump", "/sdcard/walk.xml", check=True, timeout=6)
+            raw = adb(serial, "shell", "cat", "/sdcard/walk.xml", check=True, timeout=4)
+            return parse_nodes(raw, detailed)
+        except (TreeUnavailable, RuntimeError, subprocess.TimeoutExpired) as e:
+            failure = TreeUnavailable(f"fresh accessibility tree unavailable: {str(e)[:180]}")
+        # Always retry once, even if one failed dump used its whole timeout. Never swipe on an unknown tree.
+        if attempt >= 1 and time.monotonic() >= end:
+            break
+        time.sleep(0.25)
+    raise failure
+
+
+def wait_for_tree(serial):
+    nodes(serial, wait_ms=8000)
+
 
 def find(serial, wanted, wait_ms=4000, actionable=False):
     """The centre of what says [wanted] on screen; a web page's nodes scrolled out of view don't count."""
@@ -108,9 +142,9 @@ def shot(serial, path):
 def run_step(serial, op, args, out, n):
     """One [emu] step; returns (ok, note, screenshot or None)."""
     if op == "launch":
-        adb(serial, "shell", "am", "start", "-S", "-W", "-n", args[0], check=True); time.sleep(1.5); return True, "", None
+        adb(serial, "shell", "am", "start", "-S", "-W", "-n", args[0], check=True); time.sleep(1.5); wait_for_tree(serial); return True, "", None
     if op == "url":
-        adb(serial, "shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", args[0]); time.sleep(1.5); return True, "", None
+        adb(serial, "shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", args[0]); time.sleep(1.5); wait_for_tree(serial); return True, "", None
     if op == "ime":
         adb(serial, "shell", "ime", "enable", args[0]); adb(serial, "shell", "ime", "set", args[0], check=True); return True, "", None
     if op == "tap":
@@ -171,7 +205,10 @@ def run_step(serial, op, args, out, n):
             time.sleep(0.4)
         return False, f"the app never logged “{wanted}”", None
     if op == "shell":
-        adb(serial, "shell", *args, check=True); time.sleep(1); return True, "", None
+        adb(serial, "shell", *args, check=True); time.sleep(1)
+        if args[:2] == ["am", "start"]:
+            wait_for_tree(serial)
+        return True, "", None
     if op == "wait":
         time.sleep(int(args[0]) / 1000); return True, "", None
     if op == "rotate":
@@ -179,10 +216,10 @@ def run_step(serial, op, args, out, n):
         # Rotation 0 is the screen's natural shape: the cover is upright, the open Fold's inner screen is wide.
         w, h = size(serial)
         turn = (args[0] == "landscape") != (w > h)
-        adb(serial, "shell", "settings", "put", "system", "user_rotation", "1" if turn else "0"); time.sleep(1.5); return True, "", None
+        adb(serial, "shell", "settings", "put", "system", "user_rotation", "1" if turn else "0"); time.sleep(1.5); wait_for_tree(serial); return True, "", None
     if op == "fold":
         # The Fold profile's two screens: "folded" (cover) or "open" (inner).
-        adb(serial, "emu", "fold" if args[0] == "folded" else "unfold"); time.sleep(2); wake(serial); return True, "", None
+        adb(serial, "emu", "fold" if args[0] == "folded" else "unfold"); time.sleep(2); wake(serial); wait_for_tree(serial); return True, "", None
     if op in ("shot", "expect", "absent"):
         words = " ".join(args)
         name = re.sub(r"\W+", "-", words if op == "shot" else op)[:60]
