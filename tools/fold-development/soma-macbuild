@@ -127,6 +127,38 @@ cp app/build/news-ui/results.json "$out/news-ui-$short-$code.json"
 "$ts" file cp "$out/news-ui-$short-$code.png" "$out/news-ui-$short-$code.json" "$phone:"
 echo "Built and tested $short${lane:+ in lane $lane} (version $code$code_note: $tests tests, 0 failed, $skipped skipped); sent $name.apk to $phone."
 
+# The walks' verdict goes to whoever asked, by mail, the moment they end (Phone A, 2026-10-26: twice that day the
+# result sat unsent for one to two hours). Each walk is its exit and its FAIL lines; each FAIL line says whether it is
+# this Mac's environment, the walk script, or something to check. SOMA_MACBUILD_REPORT=0 leaves it to the lane thread.
+walk_report() {
+  [ "${SOMA_MACBUILD_REPORT:-1}" != 0 ] || return 0
+  local tmsg; tmsg=$(command -v tmsg || echo "$HOME/.local/bin/tmsg")
+  [ -x "$tmsg" ] || { echo "Walk report: no tmsg here, so it wasn't mailed (see $wdir/report.txt)."; return 0; }
+  {
+    echo "Soma $short (version $code${lane:+, lane $lane}): built and tested ($tests tests, 0 failed, $skipped skipped); $name.apk sent."
+    if [ -s "$wdir/verdicts.txt" ]; then
+      echo "Walks on $emu, from each walk's exit and FAIL lines:"
+      sed 's/^/  /' "$wdir/verdicts.txt"
+      for f in "$wdir"/*.log; do
+        w=$(basename "$f" .log); grep -q '^FAIL' "$f" || continue
+        grep '^FAIL' "$f" | while IFS= read -r l; do
+          case $l in
+            *Sideways\ book*|*Soma\ Notes*|*Photos\ mode*|*Files\ mode*|*Notes\ mode*|*apple\ store*) k="environment: the Mac Pro's photos/notes" ;;
+            *"— unknown"*|*"unknown op"*) k="walk script: not a step walk.py knows" ;;
+            *) k="check: app or walk" ;;
+          esac
+          echo "  $w: ${l:0:150} [$k]"
+        done
+      done
+    else
+      cat "$wdir/summary.txt" 2>/dev/null || echo "Walks: none ran."
+    fi
+    echo "Screenshots and logs: walk-$short-$code.zip (Taildropped)."
+  } >"$wdir/report.txt"
+  "$tmsg" send "$phone${lane:+:$lane}" --title "Soma $short walks${lane:+ (lane $lane)}" <"$wdir/report.txt" >/dev/null 2>&1 &&
+    echo "Walk report mailed to $phone${lane:+:$lane}." || echo "Walk report: mailing it failed (see $wdir/report.txt)."
+}
+
 # Walk it like a person on the Mac's Fold emulator (Boss, 2026-10-22; tools/walkthrough/README.md): the scripts in
 # the commit's "Walk:" trailer, else all of them. A failed walk is reported, never a reason to hold the build back.
 # Results and screenshots: app/build/walk/ and walk-$short-$code.zip beside the APK.
@@ -240,10 +272,10 @@ if [ ${#walks[@]} -gt 0 ]; then
       line="Walks on the emulator:"
       for w in "${walks[@]}"; do
         if [ "$w" = chat-artifacts ] && [ "$fixture_ready" -ne 1 ]; then
-          line="$line $w FAIL (fixture build/install; see logs);"; continue
+          line="$line $w FAIL (fixture build/install; see logs);"; echo "$w FAIL (fixture build/install; see logs)" >>"$wdir/verdicts.txt"; continue
         fi
         if [ "$w" = mac-refusal ] && [ "$refusal_ready" -ne 1 ]; then
-          line="$line $w FAIL (fixture build/push; see mac-refusal-fixture.log);"; continue
+          line="$line $w FAIL (fixture build/push; see mac-refusal-fixture.log);"; echo "$w FAIL (fixture build/push; see mac-refusal-fixture.log)" >>"$wdir/verdicts.txt"; continue
         fi
         script=tools/walkthrough/scripts/$w.walk
         if [ ! -f "$script" ]; then line="$line $w MISSING;"; continue; fi
@@ -264,8 +296,11 @@ if [ ${#walks[@]} -gt 0 ]; then
         # The verdict is walk.py's own exit and its FAIL lines, never the $? of the retry check above (that read every
         # walk as PASS since the retry came in, 164's hunch-wallet with 5 FAIL steps among them).
         fails=$(grep -c '^FAIL' "$wdir/$w.log")
-        if [ "$rc" -eq 0 ] && [ "$fails" -eq 0 ]; then line="$line $w PASS;"
-        else line="$line $w FAIL ($fails of $(grep -c '^\(PASS\|FAIL\)' "$wdir/$w.log") steps${rc:+, exit $rc});"; fi
+        if [ "$rc" -eq 0 ] && [ "$fails" -eq 0 ]; then line="$line $w PASS;"; echo "$w PASS" >>"$wdir/verdicts.txt"
+        else
+          line="$line $w FAIL ($fails of $(grep -c '^\(PASS\|FAIL\)' "$wdir/$w.log") steps${rc:+, exit $rc});"
+          echo "$w FAIL ($fails of $(grep -c '^\(PASS\|FAIL\)' "$wdir/$w.log") steps, exit $rc)" >>"$wdir/verdicts.txt"
+        fi
       done
       if [ -s "$wdir/oma-chat.before.json" ]; then
         adb -s $emu push "$wdir/oma-chat.before.json" /data/local/tmp/oma-chat.before.json >/dev/null 2>&1 &&
@@ -279,6 +314,7 @@ if [ ${#walks[@]} -gt 0 ]; then
   fi
   (cd "$wdir" && zip -qr "../walk-$short-$code.zip" .)
   cp "app/build/walk-$short-$code.zip" "$out/" && "$ts" file cp "$out/walk-$short-$code.zip" "$phone:"
+  walk_report
   set -e
 fi
 echo "On the phone: oma-macbuild --take, then oma-install."
