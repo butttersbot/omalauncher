@@ -26,6 +26,7 @@ enum class BuilderId(val letter: String) {
     A("A"),
     B("B"),
     C("C"),
+    D("D"),
     ;
 
     /** What a chat entry saves for it: nothing for A, so every entry of A's keeps the shape it has always had. */
@@ -36,6 +37,7 @@ enum class BuilderId(val letter: String) {
         A -> PHONE_THREAD
         B -> PHONE_THREAD_B
         C -> PHONE_THREAD_C
+        D -> "phone-d"
     }
 
     /** What its tab and tile are called: "Phone A", "Phone B", "Phone C". */
@@ -43,6 +45,7 @@ enum class BuilderId(val letter: String) {
         A -> PHONE_THREAD_A_NAME
         B -> PHONE_THREAD_B_NAME
         C -> PHONE_THREAD_C_NAME
+        D -> "Phone D"
     }
 
     companion object {
@@ -54,6 +57,7 @@ enum class BuilderId(val letter: String) {
             "A", "1" -> A
             "B", "2" -> B
             "C", "3" -> C
+            "D", "4" -> D
             else -> null
         }
 
@@ -101,7 +105,7 @@ fun pickBuilder(named: BuilderId?, loads: Map<BuilderId, BuilderLoad>): BuilderI
  * repositories, so it does while another builder has a task. [working] is whether each builder has one; the
  * receiver's own task does not count, since work that waits behind it never runs beside it.
  */
-fun builderShares(receiver: BuilderId, working: Map<BuilderId, Boolean>): Boolean = working.any { (id, busy) -> id != receiver && busy }
+fun builderShares(receiver: BuilderId, working: Map<BuilderId, Boolean>): Boolean = working.any { (id, busy) -> id != BuilderId.D && id != receiver && busy }
 
 /** The checkout a builder works in unless told otherwise, and the one a builder sharing the phone gets a worktree of. */
 const val PHONE_REPO = "/root/Projects/omalauncher"
@@ -112,7 +116,7 @@ const val PHONE_REPO = "/root/Projects/omalauncher"
  * the worktree was made. Any other agent is given its words on its command line and keeps [PHONE_SHARED_NOTE].
  */
 fun builderWorktreeWanted(receiver: BuilderId, working: Map<BuilderId, Boolean>, claude: Boolean): Boolean =
-    claude && builderShares(receiver, working)
+    receiver != BuilderId.D && claude && builderShares(receiver, working)
 
 /** Where [builder]'s own worktree of [main] goes, on a branch of its own, kept from one task to the next. */
 data class WorktreePlan(val main: String, val path: String, val branch: String) {
@@ -216,4 +220,4 @@ fun builderBShown(tasks: List<ChatTask>, working: Boolean): Boolean = builderSho
 
 /** Whether [builder] other than A is on the board and in the status file: once it has worked, or works now. */
 fun builderShown(builder: BuilderId, tasks: List<ChatTask>, working: Boolean): Boolean =
-    builder == BuilderId.A || working || tasks.any { it.build && it.builderId == builder }
+    builder != BuilderId.D && (builder == BuilderId.A || working || tasks.any { it.build && it.builderId == builder })

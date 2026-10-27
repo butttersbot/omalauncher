@@ -57,6 +57,7 @@ internal object AgentNotices {
         BuilderId.A -> TASK
         BuilderId.B -> BUILDER_B
         BuilderId.C -> BUILDER_C
+        BuilderId.D -> 48
     }
 
     /** The ongoing step while a task runs, replaced by its result when it ends. Its stop stops [about], the builder it is about. */
@@ -65,7 +66,8 @@ internal object AgentNotices {
         val notice = taskNotice(working, label, answer, pending) ?: return nm.cancel(TASK)
         val builder = Notification.Builder(context, TASK_CHANNEL).setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(notice.title).setContentText(notice.text)
-            .setContentIntent(open(context)).setOnlyAlertOnce(notice.ongoing).setOngoing(notice.ongoing).setAutoCancel(!notice.ongoing)
+            .setOnlyAlertOnce(notice.ongoing).setOngoing(notice.ongoing).setAutoCancel(!notice.ongoing)
+        if (about != BuilderId.D) builder.setContentIntent(open(context))
         notice.expanded?.let { builder.setStyle(Notification.BigTextStyle().bigText(it)) }
         if (notice.ongoing) {
             // One request code per builder, so the stop of one is never the other's; A's is the one there always was.

@@ -58,7 +58,7 @@ class AndroidChatHost(
     private val context: Context,
     private val runtime: Runtime,
 ) : ChatHost {
-    override fun tasks(): List<ChatTask> = ChatLog.of(context).tasks
+    override fun tasks(): List<ChatTask> = ChatLog.of(context).tasks.filter { it.builder != "D" }
 
     override fun updateTask(time: Long, save: Boolean, change: (ChatTask) -> ChatTask) {
         ChatLog.of(context).update(time, save = save, change)

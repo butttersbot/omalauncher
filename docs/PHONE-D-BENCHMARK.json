@@ -1,0 +1,97 @@
+{
+  "model": "gpt-6.1-terra",
+  "phone": "galaxy-z-fold8",
+  "tasks": [
+    {
+      "number": 1,
+      "title": "Display",
+      "prompt": "Use ONLY oma-phone; every call starts `oma-phone --display bg`, never --display main. First `oma-phone --display bg status`; if background controls are unavailable, answer RESULT: BG_UNAVAILABLE. If oma-phone says Boss is using that app, or refuses: RESULT: BUSY. No messages, purchases, deletions, sign-ins; change nothing except what the task asks, and put it back. Task: Display: read the screen timeout value.. End with one line: RESULT: <answer>",
+      "expected": "Read and verify current value; no historical expected value supplied.",
+      "status": "NOT_RUN",
+      "wallSeconds": null,
+      "omaPhoneCalls": null,
+      "nonBgCalls": null,
+      "tokens": null,
+      "costUsd": null,
+      "correct": null
+    },
+    {
+      "number": 2,
+      "title": "Ringtone",
+      "prompt": "Use ONLY oma-phone; every call starts `oma-phone --display bg`, never --display main. First `oma-phone --display bg status`; if background controls are unavailable, answer RESULT: BG_UNAVAILABLE. If oma-phone says Boss is using that app, or refuses: RESULT: BUSY. No messages, purchases, deletions, sign-ins; change nothing except what the task asks, and put it back. Task: Ringtone: read the current call ringtone.. End with one line: RESULT: <answer>",
+      "expected": "Galaxy / Atomic Bell was reported on 2026-10-24; verify live.",
+      "status": "NOT_RUN",
+      "wallSeconds": null,
+      "omaPhoneCalls": null,
+      "nonBgCalls": null,
+      "tokens": null,
+      "costUsd": null,
+      "correct": null
+    },
+    {
+      "number": 3,
+      "title": "URL",
+      "prompt": "Use ONLY oma-phone; every call starts `oma-phone --display bg`, never --display main. First `oma-phone --display bg status`; if background controls are unavailable, answer RESULT: BG_UNAVAILABLE. If oma-phone says Boss is using that app, or refuses: RESULT: BUSY. No messages, purchases, deletions, sign-ins; change nothing except what the task asks, and put it back. Task: URL: open https://example.com and read the main heading.. End with one line: RESULT: <answer>",
+      "expected": "Example Domain",
+      "status": "NOT_RUN",
+      "wallSeconds": null,
+      "omaPhoneCalls": null,
+      "nonBgCalls": null,
+      "tokens": null,
+      "costUsd": null,
+      "correct": null
+    },
+    {
+      "number": 4,
+      "title": "Tailscale",
+      "prompt": "Use ONLY oma-phone; every call starts `oma-phone --display bg`, never --display main. First `oma-phone --display bg status`; if background controls are unavailable, answer RESULT: BG_UNAVAILABLE. If oma-phone says Boss is using that app, or refuses: RESULT: BUSY. No messages, purchases, deletions, sign-ins; change nothing except what the task asks, and put it back. Task: Tailscale: read whether connected and which exit node is selected.. End with one line: RESULT: <answer>",
+      "expected": "Connected; None (verify live).",
+      "status": "NOT_RUN",
+      "wallSeconds": null,
+      "omaPhoneCalls": null,
+      "nonBgCalls": null,
+      "tokens": null,
+      "costUsd": null,
+      "correct": null
+    },
+    {
+      "number": 5,
+      "title": "Brave",
+      "prompt": "Use ONLY oma-phone; every call starts `oma-phone --display bg`, never --display main. First `oma-phone --display bg status`; if background controls are unavailable, answer RESULT: BG_UNAVAILABLE. If oma-phone says Boss is using that app, or refuses: RESULT: BUSY. No messages, purchases, deletions, sign-ins; change nothing except what the task asks, and put it back. Task: Read Brave's version from Settings > Apps.. End with one line: RESULT: <answer>",
+      "expected": "Read and verify current installed version.",
+      "status": "NOT_RUN",
+      "wallSeconds": null,
+      "omaPhoneCalls": null,
+      "nonBgCalls": null,
+      "tokens": null,
+      "costUsd": null,
+      "correct": null
+    },
+    {
+      "number": 6,
+      "title": "Battery",
+      "prompt": "Use ONLY oma-phone; every call starts `oma-phone --display bg`, never --display main. First `oma-phone --display bg status`; if background controls are unavailable, answer RESULT: BG_UNAVAILABLE. If oma-phone says Boss is using that app, or refuses: RESULT: BUSY. No messages, purchases, deletions, sign-ins; change nothing except what the task asks, and put it back. Task: Battery: read battery percentage and whether power saving is on.. End with one line: RESULT: <answer>",
+      "expected": "Read and verify current values.",
+      "status": "NOT_RUN",
+      "wallSeconds": null,
+      "omaPhoneCalls": null,
+      "nonBgCalls": null,
+      "tokens": null,
+      "costUsd": null,
+      "correct": null
+    },
+    {
+      "number": 7,
+      "title": "Toggle",
+      "prompt": "Use ONLY oma-phone; every call starts `oma-phone --display bg`, never --display main. First `oma-phone --display bg status`; if background controls are unavailable, answer RESULT: BG_UNAVAILABLE. If oma-phone says Boss is using that app, or refuses: RESULT: BUSY. No messages, purchases, deletions, sign-ins; change nothing except what the task asks, and put it back. Task: Sounds and vibration > Vibrate while ringing: note it, flip it, confirm, flip it back, confirm.. End with one line: RESULT: <answer>",
+      "expected": "Original value restored, both transitions confirmed; was off.",
+      "status": "NOT_RUN",
+      "wallSeconds": null,
+      "omaPhoneCalls": null,
+      "nonBgCalls": null,
+      "tokens": null,
+      "costUsd": null,
+      "correct": null
+    }
+  ]
+}

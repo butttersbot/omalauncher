@@ -34,7 +34,7 @@ import kotlin.concurrent.thread
  * so the threads of the chat are filed one at a time and the approvals' notification slots are never shared.
  */
 object AgentTasks {
-    val builders: List<Builder> = BuilderId.entries.take(PHONE_BUILDERS).map(::Builder)
+    val builders: List<Builder> = BuilderId.entries.map(::Builder)
 
     fun of(id: BuilderId): Builder = builders[id.ordinal]
 
@@ -87,7 +87,10 @@ object AgentTasks {
     }
 
     /** The builder that gets a request for [named], or new work when that is null: see [pickBuilder]. */
-    @Synchronized fun pick(named: BuilderId? = null): BuilderId = pickBuilder(named, builders.associate { it.id to BuilderLoad(it.working, it.waiting) })
+    @Synchronized fun pick(named: BuilderId? = null): BuilderId {
+        check(named != BuilderId.D) { "Phone D takes agent mail only." }
+        return pickBuilder(named, builders.associate { it.id to BuilderLoad(it.working, it.waiting) })
+    }
 
     /**
      * Starts [prompt] now on [builder], or on a free one for new work; refused if that one is working. [screen]
@@ -95,6 +98,7 @@ object AgentTasks {
      */
     @Synchronized fun send(context: Context, prompt: String, images: List<String> = emptyList(), screen: File? = null, page: String? = HomeDoor.home?.showing, builder: BuilderId? = null) {
         restore(context)
+        check(builder != BuilderId.D) { "Phone D takes agent mail only." }
         of(pick(builder)).send(context, prompt, images, screen, page)
     }
 
@@ -144,12 +148,13 @@ object AgentTasks {
     @Synchronized fun mail(context: Context, mail: AgentMail): BuilderId? {
         restore(context)
         // A phone job (PhoneJobs.kt): a ping is Soma's own to answer at once; the rest go to a builder with their steps.
-        val job = phoneJob(mail.text)
+        val addressed = addressed(context, mail)
+        val job = if (addressed == BuilderId.D) null else phoneJob(mail.text)
         if (job?.kind == JobKind.Ping) {
             PhoneJobs.ping(context, mail, builders.associate { it.id to !it.working })
             return null
         }
-        val to = pick(addressed(context, mail))
+        val to = if (addressed == BuilderId.D) BuilderId.D else pick(addressed)
         if (job != null) of(to).followUp(context, mail.text, page = null, earlier = jobPlaybook(job, mail, to), mail = jobLabel(job, mail))
         else of(to).followUp(context, mail.text, page = null, earlier = mail.wrapper(to), mail = mail.label, agentMail = mail)
         return to
@@ -257,7 +262,7 @@ object AgentTasks {
             file.parentFile?.mkdirs()
             val builders = agentStatus(working, label, answer, pending.size, System.currentTimeMillis() / 1000, PhoneAccess.link(context))
             // The builders' line is about the last turn's builder; its tab is where a tap goes.
-            val tab = runCatching { dev.omalauncher.oma.lastTurnTab(ChatLog.of(context).tasks, dev.omalauncher.oma.TabBook.of(context)) }.getOrNull()
+            val tab = runCatching { dev.omalauncher.oma.lastTurnTab(ChatLog.of(context).tasks.filter { it.builder != "D" }, dev.omalauncher.oma.TabBook.of(context)) }.getOrNull()
             file.writeText(omaStatus(builders, mac, tab.orEmpty()).toString())
         }
     }
@@ -422,10 +427,10 @@ class Builder(val id: BuilderId) {
         val choice = builderAgent(id, runtime.agents.installed, runtime.agents.default) ?: error("Install and sign in to an agent in Omalauncher first.")
         val agent = choice.agent
         // What he chose with /model for this builder and agent, if anything; an errand keeps its own fast model.
-        val model = builderModel(if (errand) ERRAND_MODEL else null, chosenModel(context, agent.bin), choice.model)
+        val model = if (id == BuilderId.D) PHONE_D_CODEX_MODEL else builderModel(if (errand) ERRAND_MODEL else null, chosenModel(context, agent.bin), choice.model)
         val seen = if (screen != null) "\n\nThe attached image is the screen I was looking at when I asked." else ""
         val imagePrompt = earlier + (if (agent.bin == "claude" && images.isNotEmpty()) prompt + "\n\nRead these attached images before answering:\n" + images.joinToString("\n") else prompt) + seen
-        val fullPrompt = imagePrompt + "\n\n" + PhoneBridge.INSTRUCTIONS + "\n" + GROKBOT_RULE + "\n" + MODEL_COMMAND_RULE + "\nAndroid build tools, when installed, are in /opt/android-sdk. Run oma-build-check to check the toolchain. Run Gradle as `oma-gradle TASKS` (oma-build does): one build at a time and small, so Android does not kill the app for memory. Use the approval UI for blocked tools; never ask for blanket permission bypass.\n" + dev.omalauncher.oma.PhoneArtifacts.INSTRUCTIONS + "\n"
+        val fullPrompt = if (id == BuilderId.D) PHONE_D_INSTRUCTIONS + "\n\n" + imagePrompt else imagePrompt + "\n\n" + PhoneBridge.INSTRUCTIONS + "\n" + GROKBOT_RULE + "\n" + MODEL_COMMAND_RULE + "\nAndroid build tools, when installed, are in /opt/android-sdk. Run oma-build-check to check the toolchain. Run Gradle as `oma-gradle TASKS` (oma-build does): one build at a time and small, so Android does not kill the app for memory. Use the approval UI for blocked tools; never ask for blanket permission bypass.\n" + dev.omalauncher.oma.PhoneArtifacts.INSTRUCTIONS + "\n"
         val resumed = when {
             errand -> null
             agent.bin == "claude" -> thread?.takeUnless { it.startsWith(CodexProtocol.THREAD_PREFIX) }
@@ -449,11 +454,11 @@ class Builder(val id: BuilderId) {
             // As Claude's: its words go in once the worktree step has said where it works (OMA-READY ends that step).
             handed = screen?.let { ScreenShots.handOver(it, runtime.proot.promptAttachments) }
             "export OMA_BUILDER=${id.letter}\n" + (worktree?.let { it.script() + "\n" } ?: "") + "echo $CODEX_READY\n" +
-                codexBuilderCommand(images + listOfNotNull(handed?.let(runtime.proot::guestPath)), model, resumed, fullAccess = id == BuilderId.B)
+                codexBuilderCommand(images + listOfNotNull(handed?.let(runtime.proot::guestPath)), model, resumed, fullAccess = id == BuilderId.B || id == BuilderId.D)
         } else {
-            backgroundAgentCommand(agent.bin, fullPrompt, images, model, codexFullAccess = id == BuilderId.B) // Validate before the screenshot is touched.
+            backgroundAgentCommand(agent.bin, fullPrompt, images, model, codexFullAccess = id == BuilderId.B || id == BuilderId.D) // Validate before the screenshot is touched.
             handed = screen?.let { ScreenShots.handOver(it, runtime.proot.promptAttachments) }
-            "export OMA_BUILDER=${id.letter}\n" + backgroundAgentCommand(agent.bin, fullPrompt, images + listOfNotNull(handed?.let(runtime.proot::guestPath)), model, codexFullAccess = id == BuilderId.B)
+            "export OMA_BUILDER=${id.letter}\n" + backgroundAgentCommand(agent.bin, fullPrompt, images + listOfNotNull(handed?.let(runtime.proot::guestPath)), model, codexFullAccess = id == BuilderId.B || id == BuilderId.D)
         }
         val log = ChatLog.of(context)
         val began = System.currentTimeMillis()
@@ -561,7 +566,9 @@ class Builder(val id: BuilderId) {
                     var words = fullPrompt + "\n" + CodexProtocol.NO_QUESTIONS + "\n"
                     var sent = false
                     var session: String? = null
+                    val trace = if (id == BuilderId.D) File(context.filesDir, "phone-d/$time.jsonl").also { it.parentFile?.mkdirs() } else null
                     child.inputStream.bufferedReader().forEachLine { line ->
+                        trace?.appendText(line + "\n")
                         heardAt = System.currentTimeMillis()
                         if (!sent) {
                             worktree?.made(line)?.let { words = withWorktreeNote(words, it.note); return@forEachLine }
@@ -613,6 +620,12 @@ class Builder(val id: BuilderId) {
                 unanswered.forEach { AgentNotices.withdraw(context, it) }
                 shot = null; handed?.delete()
                 val status = when { stopping -> TaskStatus.Stopped; label == "Done" -> TaskStatus.Done; else -> TaskStatus.Failed }
+                if (id == BuilderId.D) {
+                    File(context.filesDir, "phone-d").mkdirs()
+                    File(context.filesDir, "phone-d/$time.json").writeText(JSONObject()
+                        .put("startedAt", began).put("wallSeconds", (System.currentTimeMillis() - began) / 1000.0)
+                        .put("model", model).put("status", status.name).put("result", answer).put("task", prompt).toString())
+                }
                 log.update(time, save = true) { task ->
                     task.copy(result = answer, status = status, approvals = task.approvals.map { if (it.answer == ApprovalAnswer.Waiting) it.copy(answer = ApprovalAnswer.Unanswered) else it })
                 }
@@ -631,7 +644,7 @@ class Builder(val id: BuilderId) {
                     // A task the owner stopped says nothing more, and one with a follow-up now running has its answer in
                     // the thread, under a task notification that is ongoing again; any other ending brings its answer to him.
                     val next = advance(context, status)
-                    if (!next && status != TaskStatus.Stopped) AgentNotices.answered(context, label, answer, AgentNotices.answerId(id))
+                    if (!next && id != BuilderId.D && status != TaskStatus.Stopped) AgentNotices.answered(context, label, answer, AgentNotices.answerId(id))
                     // Once no builder works on it any more, the phone goes back to what he had in front (PhoneReturn.kt).
                     if (!next && AgentTasks.builders.none { it.working }) dev.omalauncher.phone.PhoneService.instance?.workEnded()
                 }
@@ -924,7 +937,7 @@ fun claudeStreamCommand(resume: String? = null, model: String? = null): String =
  * SOMA_THREAD, and for Claude Code the command allowed without a card, as `oma-phone` is (it only shows Boss a file).
  */
 fun withSomaArtifacts(command: String, builder: BuilderId): String =
-    "export SOMA_THREAD=${builder.thread}\n" + command.replaceFirst(" --allowedTools ", " --allowedTools ${shellQuote("Bash(soma-artifact *)")} ")
+    if (builder == BuilderId.D) command else "export SOMA_THREAD=${builder.thread}\n" + command.replaceFirst(" --allowedTools ", " --allowedTools ${shellQuote("Bash(soma-artifact *)")} ")
 
 /** The line a builder's shell says once the steps before Codex are done, when its words can be given. */
 const val CODEX_READY = "OMA-READY"

@@ -35,7 +35,7 @@ object PhoneArtifacts {
 
     private fun store(context: Context) = PhoneArtifactStore(File((context.applicationContext as App).runtime.proot.home, ".local/share/soma/artifacts"))
 
-    private fun threads() = BuilderId.entries.map { it.thread }
+    private fun threads() = BuilderId.entries.filter { it != BuilderId.D }.map { it.thread }
 
     private fun eventsFile(context: Context, thread: String) = File((context.applicationContext as App).runtime.proot.home, ".local/share/soma/artifacts/$thread/events.jsonl")
 

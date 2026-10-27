@@ -1,5 +1,5 @@
 #!/bin/bash
-# soma-macbuild [--lane A|B|C] COMMIT VERSION_CODE [PHONE]: on the Mac Pro, build and test one commit of the phone's
+# soma-macbuild [--lane A|B|C|D] COMMIT VERSION_CODE [PHONE]: on the Mac Pro, build and test one commit of the phone's
 # branch (phone/fold-development) as the working launcher, and Taildrop it to the phone, which signs it with its own key
 # and installs it (oma-macbuild --take, then oma-install). Builds run here and not on the Fold (Boss, 2026-10-17:
 # the phone's RAM is for Soma). It builds in a worktree of its own beside the mirror at ~/Projects/omalauncher-fold,
@@ -13,7 +13,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 lane=
 if [ "${1:-}" = --lane ]; then lane=${2:-}; shift 2 || true; fi
 [ $# -ge 2 ] || { sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
-[[ -z $lane || $lane =~ ^[ABC]$ ]] || { echo "\"$lane\" is not a lane: A, B or C." >&2; exit 2; }
+[[ -z $lane || $lane =~ ^[ABCD]$ ]] || { echo "\"$lane\" is not a lane: A, B, C or D." >&2; exit 2; }
 commit=$1
 code=$2
 phone=${3:-galaxy-z-fold8}
@@ -22,7 +22,7 @@ phone=${3:-galaxy-z-fold8}
 [[ $phone =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,62}$ ]] || { echo "\"$phone\" is not a device name." >&2; exit 2; }
 mirror=${SOMA_MIRROR:-$HOME/Projects/omalauncher-fold}
 legacy=${SOMA_BUILD_ROOT:-$HOME/Projects}/omalauncher-fold-build
-work=$legacy${lane:+-$(echo "$lane" | tr ABC abc)}
+work=$legacy${lane:+-$(echo "$lane" | tr ABCD abcd)}
 # SOMA_MACBUILD_SEND=0 builds and tests only: nothing goes to the phone and no walk runs (for trying lanes out).
 send=${SOMA_MACBUILD_SEND:-1}
 # The Mac-wide locks and the version codes given, shared by every lane (soma-lanes status shows them).
@@ -112,7 +112,7 @@ cp "$apk" "$out/$name.apk"
 sha=$(shasum -a 256 "$out/$name.apk" | cut -d' ' -f1)
 printf '{"commit":"%s","versionCode":%s,"sha256":"%s","tests":%s,"failures":%s,"skipped":%s,"builtAt":"%s","lane":"%s"}\n' \
   "$commit" "$code" "$sha" "$tests" "$failures" "$skipped" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${lane:-main}" > "$out/$name.json"
-if [ "$send" = 0 ]; then
+if [ "$send" = 0 ] && [ "${SOMA_MACBUILD_WALK:-0}" != 1 ]; then
   echo "Built and tested $short in lane ${lane:-main} (version $code$code_note: $tests tests, 0 failed, $skipped skipped); not sent (SOMA_MACBUILD_SEND=0)."
   exit 0
 fi
@@ -121,17 +121,17 @@ fi
 # registry"); a Mac with only the Homebrew CLI (the Mac Pro) uses that.
 ts=/Applications/Tailscale.app/Contents/MacOS/Tailscale
 [ -x "$ts" ] || ts=$(command -v tailscale || true)
-"$ts" file cp "$out/$name.apk" "$out/$name.json" "$phone:"
+if [ "$send" != 0 ]; then "$ts" file cp "$out/$name.apk" "$out/$name.json" "$phone:"; fi
 cp app/build/news-ui/book.png "$out/news-ui-$short-$code.png"
 cp app/build/news-ui/results.json "$out/news-ui-$short-$code.json"
-"$ts" file cp "$out/news-ui-$short-$code.png" "$out/news-ui-$short-$code.json" "$phone:"
-echo "Built and tested $short${lane:+ in lane $lane} (version $code$code_note: $tests tests, 0 failed, $skipped skipped); sent $name.apk to $phone."
+if [ "$send" != 0 ]; then "$ts" file cp "$out/news-ui-$short-$code.png" "$out/news-ui-$short-$code.json" "$phone:"; fi
+echo "Built and tested $short${lane:+ in lane $lane} (version $code$code_note: $tests tests, 0 failed, $skipped skipped); send=$send."
 
 # The walks' verdict goes to whoever asked, by mail, the moment they end (Phone A, 2026-10-26: twice that day the
 # result sat unsent for one to two hours). Each walk is its exit and its FAIL lines; each FAIL line says whether it is
 # this Mac's environment, the walk script, or something to check. SOMA_MACBUILD_REPORT=0 leaves it to the lane thread.
 walk_report() {
-  [ "${SOMA_MACBUILD_REPORT:-1}" != 0 ] || return 0
+  [ "$send" != 0 ] && [ "${SOMA_MACBUILD_REPORT:-1}" != 0 ] || return 0
   local tmsg; tmsg=$(command -v tmsg || echo "$HOME/.local/bin/tmsg")
   [ -x "$tmsg" ] || { echo "Walk report: no tmsg here, so it wasn't mailed (see $wdir/report.txt)."; return 0; }
   {
@@ -187,7 +187,7 @@ if [ -f tools/walkthrough/walk.py ]; then
         app/src/main/kotlin/dev/omalauncher/record/*) pick screen-record ;;
         app/src/main/kotlin/dev/omalauncher/keyboard/*) pick gif-keyboard chat-return ;;
         app/src/main/kotlin/dev/omalauncher/phone/*|app/src/main/assets/oma-phone.sh|tools/artifact-preview/*) pick phone-speed background-on-demand ;;
-        app/src/main/kotlin/dev/omalauncher/assist/*|app/src/main/assets/oma-msg.sh) pick agent-mail agent-mail-ui agents-page send-now mac-background ;;
+        app/src/main/kotlin/dev/omalauncher/assist/*|app/src/main/assets/oma-msg.sh) pick agent-mail agent-mail-ui agents-page send-now mac-background phone-d ;;
         app/src/main/kotlin/dev/omalauncher/update/*) pick self-install ;;
         app/src/main/kotlin/dev/omalauncher/ui/*|app/src/main/kotlin/dev/omalauncher/theme/*|app/src/main/res/*) pick home-status-bar agents-page search news ;;
         tools/*|docs/*|*.md|scripts/*) ;;
@@ -233,7 +233,7 @@ if [ ${#walks[@]} -gt 0 ]; then
       # This walk drives the production chat/WebView through fictional outputs, never a real runner/send.
       # Build without mac.init.gradle: its global .boss suffix belongs only to the working launcher.
       artifact_fixture=0
-      for w in "${walks[@]}"; do [ "$w" != chat-artifacts ] || artifact_fixture=1; done
+      for w in "${walks[@]}"; do case $w in chat-artifacts|phone-d) artifact_fixture=1 ;; esac; done
       fixture_ready=1
       if [ "$artifact_fixture" -eq 1 ]; then
         SOMA_VERSION_CODE=$code ./gradlew --console=plain -PartifactPreview :artifact-preview:assembleDebug >"$wdir/artifact-fixture-build.log" 2>&1
@@ -271,7 +271,7 @@ if [ ${#walks[@]} -gt 0 ]; then
       done
       line="Walks on the emulator:"
       for w in "${walks[@]}"; do
-        if [ "$w" = chat-artifacts ] && [ "$fixture_ready" -ne 1 ]; then
+        if { [ "$w" = chat-artifacts ] || [ "$w" = phone-d ]; } && [ "$fixture_ready" -ne 1 ]; then
           line="$line $w FAIL (fixture build/install; see logs);"; echo "$w FAIL (fixture build/install; see logs)" >>"$wdir/verdicts.txt"; continue
         fi
         if [ "$w" = mac-refusal ] && [ "$refusal_ready" -ne 1 ]; then
@@ -313,7 +313,8 @@ if [ ${#walks[@]} -gt 0 ]; then
     fi
   fi
   (cd "$wdir" && zip -qr "../walk-$short-$code.zip" .)
-  cp "app/build/walk-$short-$code.zip" "$out/" && "$ts" file cp "$out/walk-$short-$code.zip" "$phone:"
+  cp "app/build/walk-$short-$code.zip" "$out/"
+  if [ "$send" != 0 ]; then "$ts" file cp "$out/walk-$short-$code.zip" "$phone:"; fi
   walk_report
   set -e
 fi

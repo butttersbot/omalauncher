@@ -1,0 +1,12 @@
+# Headless D must not acquire an owner-facing tab on either Fold display.
+launch dev.omalauncher.boss/dev.omalauncher.oma.OmaChatActivity
+absent Phone D
+shot phone-d-cover
+fold open
+absent Phone D
+shot phone-d-inner
+fold folded
+[phone] Before promotion this check is PENDING: never install this build just to test D.
+[phone] After Boss promotes the bundled launcher, and while Boss is not typing: send oma msg send phone:D "Use ONLY oma-phone. First oma-phone --display bg status. Never use main. If unavailable reply RESULT: BG_UNAVAILABLE; if busy/refused reply RESULT: BUSY; otherwise take a bg screenshot and reply RESULT: READY with the exact call list and path." --title phone-d-smoke
+[phone] Read the sender's mail; require D's reply-to to match, RESULT READY/BG_UNAVAILABLE/BUSY, exact calls, screenshot path or blocked reason. Confirm no Phone D tab, no main calls, and no takeover. Missing reply FAILS this step.
+[phone] Send a second harmless status mail while D works; verify it waits behind the first and both replies return to their original sender exactly once.

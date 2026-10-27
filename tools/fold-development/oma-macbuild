@@ -51,7 +51,7 @@ fresh=
 # also what the Mac Pro keys each builder's own build lane by.
 builder=${OMA_BUILDER:-}
 if [ -z "$builder" ]; then case $PWD in /root/wt/builder-b*) builder=B ;; /root/wt/builder-c*) builder=C ;; *) builder=A ;; esac; fi
-case $builder in A|B|C) ;; *) die "OMA_BUILDER is \"$builder\": a builder is A, B or C." ;; esac
+case $builder in A|B|C|D) ;; *) die "OMA_BUILDER is \"$builder\": a builder is A, B, C or D." ;; esac
 
 # This builder's lane on the Mac: its thread's id, kept in mac-lane-A (B, C); found by its name or made the first time.
 # Without one (the Mac out of reach, or the file mac-lanes-off here) it asks the one upkeep thread, as before.
