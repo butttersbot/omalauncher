@@ -83,6 +83,14 @@ data class AgentMail(
     }
 }
 
+/** The front agent's phone errand uses D's ordinary queued mail and replies to Grok. */
+fun frontPhoneMail(id: String, request: String) = AgentMail(
+    id = id, fromDevice = "phone", fromAgent = "grok", fromSession = FRONT_MAIL_SESSION,
+    fromTitle = "Phone errand", toSession = "D", replyTo = "",
+    text = "Hidden screen only; main-screen fallback is NOT allowed. " +
+        "Return your RESULT, calls and screenshot path to this mail. No messages, purchases, deletions or sign-ins without Boss's explicit OK.\n\n" + request,
+)
+
 /** The session the front agent signs its answers with, so mail answering it comes back to it and not to a builder. */
 const val FRONT_MAIL_SESSION = "grok"
 

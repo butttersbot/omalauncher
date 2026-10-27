@@ -19,6 +19,20 @@ class ErrandTest {
         assertEquals(FrontRoute.Build, frontRoute(Route.BUILD, null))
     }
 
+    @Test fun frontPhoneErrandIsQueuedToDAndRepliesToGrokWithoutMainFallback() {
+        val mail = frontPhoneMail("front-phone-123", "Open Settings")
+        assertEquals("D", mail.toSession)
+        assertEquals("phone:grok", mail.replyAddress)
+        assertTrue(mail.text.endsWith("Open Settings"))
+        assertTrue(mail.text.contains("main-screen fallback is NOT allowed"))
+        assertTrue(mail.wrapper(BuilderId.D).contains("--reply-to front-phone-123 --as D"))
+        val guidance = dev.omalauncher.phone.PhoneBridge.INSTRUCTIONS
+        assertTrue(guidance.contains("oma msg send phone:D"))
+        assertTrue(guidance.contains("walks of your own UI"))
+        assertTrue(guidance.contains("anything Boss asks you to do directly"))
+        assertTrue(guidance.contains("look at the screenshot before reporting success"))
+    }
+
     @Test fun anErrandRunsOnTheFastModelAndResumesNothing() {
         val errand = claudeStreamCommand(null, ERRAND_MODEL)
         assertTrue(errand, errand.startsWith("claude -p --model sonnet --input-format stream-json"))

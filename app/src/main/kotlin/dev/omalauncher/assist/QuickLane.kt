@@ -298,7 +298,7 @@ object QuickLane {
                         // Handed on the moment the mark is whole; the process is not waited for, and what it says after is not read.
                         is FrontRead.HandOver -> {
                             val route = frontRoute(read.to, mac)
-                            handed = if (mail != null) mailOver(context, asked, mail) else if (chat.isNotEmpty()) toChat(context, asked, prompt, away, chat, route) else when (route) {
+                            handed = if (mail != null) mailOver(context, asked, if (route == FrontRoute.Errand) mail.copy(toSession = "D") else mail) else if (chat.isNotEmpty()) toChat(context, asked, prompt, away, chat, route) else when (route) {
                                 FrontRoute.Build -> pass(context, asked, prompt, page, away, asking)
                                 FrontRoute.Errand -> pass(context, asked, prompt, page, away, asking, errand = true)
                                 is FrontRoute.Mac -> passToMac(context, asked, prompt, route.thread, away, route.fresh)
@@ -367,10 +367,10 @@ object QuickLane {
             // What went ahead of his words is from the Oma stream alone: a new chat's talk never reaches a builder.
             val said = log.tasks.filter { it.chat.isEmpty() }
             try {
-                AgentTasks.handOver(context, prompt, page, builder, errand) { to ->
+                if (errand) AgentTasks.mail(context, frontPhoneMail("front-phone-$asked", prompt))
+                else AgentTasks.handOver(context, prompt, page, builder) { to ->
                     val shared = builderShares(to, AgentTasks.builders.associate { it.id to it.working })
-                    // An errand starts with no builder's conversation, so it is told the builders' last answers too.
-                    sharedPreface(shared, PHONE_SHARED_NOTE, handOverPreface(if (errand) errandContext(said, asked) else handOverContext(said, asked, gotBy(to))))
+                    sharedPreface(shared, PHONE_SHARED_NOTE, handOverPreface(handOverContext(said, asked, gotBy(to))))
                 }
                 log.handedOver(asked)
             } catch (e: Exception) {
