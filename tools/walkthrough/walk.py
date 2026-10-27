@@ -33,6 +33,9 @@ def point(serial, xs, ys):
         return int(float(v) * full) if "." in v else int(v)
     return f(xs, w), f(ys, h)
 
+# SystemUI's status bar and its icons: clock, date, battery, Wi-Fi and mobile signal, the shade header's copy of them.
+STATUS_BAR = re.compile(r"status_?bar|system_icons|statusIcons|^clock$|^date$|battery|wifi|mobile")
+
 class TreeUnavailable(RuntimeError):
     """Missing accessibility evidence must never make an absent assertion pass."""
 
@@ -45,7 +48,18 @@ def parse_nodes(raw, detailed=False):
     all_nodes = list(root.iter("node"))
     label = lambda n: "\n".join(n.get(k) or "" for k in ("text", "content-desc", "hint"))
     app_nodes = [n for n in all_nodes if n.get("package") != "com.android.systemui"]
-    if not any(label(n).strip() for n in app_nodes):
+    # Android's own windows are a real screen too (the screen-share prompt, the shade, its notices: 169's screen-record
+    # failed on all of them), but its status bar alone (clock, date, battery, signal) is no screen yet.
+    parent = {c: n for n in all_nodes for c in n}
+    def chrome(n):
+        while n is not None:
+            rid = n.get("resource-id") or ""
+            if rid.startswith("com.android.systemui:id/") and STATUS_BAR.search(rid[len("com.android.systemui:id/"):]):
+                return True
+            n = parent.get(n)
+        return False
+    system_screen = [n for n in all_nodes if n.get("package") == "com.android.systemui" and label(n).strip() and not chrome(n)]
+    if not any(label(n).strip() for n in app_nodes) and not system_screen:
         raise TreeUnavailable("accessibility tree has no app controls yet")
     # After rotation Chromium can expose only its named WebView shell while its pixels are already drawn.
     for web in (n for n in app_nodes if n.get("class") == "android.webkit.WebView"):

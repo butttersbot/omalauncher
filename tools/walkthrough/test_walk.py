@@ -41,6 +41,35 @@ class FreshAccessibilityTrees(unittest.TestCase):
     ready = '<hierarchy><node class="android.webkit.WebView" content-desc="Hunch" bounds="[0,0][100,200]"><node text="Copy wallet address" bounds="[0,30][100,50]"/></node></hierarchy>'
     empty = '<hierarchy><node class="android.webkit.WebView" content-desc="Hunch" bounds="[0,0][100,200]"/></hierarchy>'
 
+    # From emulator-5554's own dumps (169, 2026-10-26): Android's share prompt and shade are all com.android.systemui.
+    share_prompt = ('<hierarchy><node package="com.android.systemui" resource-id="" bounds="[0,0][1080,2400]">'
+                    '<node package="com.android.systemui" text="Share your screen with Omalauncher Boss?" bounds="[90,560][990,700]"/>'
+                    '<node package="com.android.systemui" text="Share entire screen" bounds="[90,760][990,860]"/>'
+                    '<node package="com.android.systemui" text="Cancel" bounds="[520,1200][700,1280]"/>'
+                    '<node package="com.android.systemui" text="Share screen" bounds="[730,1200][990,1280]"/></node></hierarchy>')
+    shade = ('<hierarchy><node package="com.android.systemui" resource-id="com.android.systemui:id/notification_panel" bounds="[0,0][1080,2400]">'
+             '<node package="com.android.systemui" resource-id="com.android.systemui:id/split_shade_status_bar" bounds="[0,0][1080,120]">'
+             '<node package="com.android.systemui" resource-id="com.android.systemui:id/clock" text="9:06" bounds="[20,20][120,100]"/></node>'
+             '<node package="com.android.systemui" resource-id="android:id/title" text="Recording · tap to stop" bounds="[60,400][900,460]"/>'
+             '</node></hierarchy>')
+    status_bar_only = ('<hierarchy><node package="com.android.systemui" resource-id="com.android.systemui:id/status_bar" bounds="[0,0][1080,120]">'
+                       '<node package="com.android.systemui" resource-id="com.android.systemui:id/clock" text="9:06" bounds="[20,20][120,100]"/>'
+                       '<node package="com.android.systemui" resource-id="com.android.systemui:id/system_icons" bounds="[800,20][1060,100]">'
+                       '<node package="com.android.systemui" resource-id="com.android.systemui:id/wifi_signal" content-desc="Wifi signal full." bounds="[820,20][880,100]"/>'
+                       '<node package="com.android.systemui" content-desc="Battery charging, 100 percent." bounds="[900,20][1060,100]"/></node></node>'
+                       '<node package="dev.omalauncher.boss" class="android.widget.FrameLayout" bounds="[0,120][1080,2400]"/></hierarchy>')
+
+    def test_android_share_prompt_is_a_ready_tree(self):
+        labels = [l.strip() for l, _ in walk.parse_nodes(self.share_prompt)]
+        self.assertIn("Share screen", labels)
+
+    def test_android_shade_with_a_notification_is_a_ready_tree(self):
+        self.assertIn("Recording · tap to stop", [l.strip() for l, _ in walk.parse_nodes(self.shade)])
+
+    def test_status_bar_alone_is_not_a_ready_tree(self):
+        with self.assertRaises(walk.TreeUnavailable):
+            walk.parse_nodes(self.status_bar_only)
+
     def test_named_webview_shell_is_not_a_ready_tree(self):
         with self.assertRaises(walk.TreeUnavailable):
             walk.parse_nodes(self.empty)
