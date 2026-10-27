@@ -112,5 +112,18 @@ running helper PID and CLASSPATH, hash the deployed dex against the expected
 SHA above, and dump display flags, window top-focus and input_method clients.
 Verify again after idle recreation and a healer restart. Do not replace a
 running helper or disturb Boss's composer just to obtain this evidence.
-The new guard's real-Fold/IME result is NOT RUN until the bundled launcher is
-promoted and Boss repeats the walkthrough.
+### Guard checkpoint: real Fold launcher 172 (2026-10-26)
+
+Phone A reports launcher 172 (`f4482387`) installed and Boss's composer test
+completed (mail `20261026-225825-8c481b`). Both background URL attempts returned
+`waiting:true`, `reason:boss-typing`; nothing opened. Background `screen` and
+`screenshot` continued to work, and Boss confirmed the keyboard stayed up.
+These steps PASS on the real Fold, as reported by the owner through Phone A;
+Phone B did not repeat the phone actions.
+
+Not established by this checkpoint: background `open`, press, successful launch
+after IME dismissal, plan deferral/receipts, idle recreation/healer restart,
+served-client/top-focus dumpsys values, or the loaded helper dex/flags. The
+helper identity and flag inspection still needs Wi-Fi/ADB. The earlier 171
+unguarded-launch keyboard failure remains valid evidence; this PASS verifies
+launch deferral, not a fix to Samsung's underlying display focus behavior.
