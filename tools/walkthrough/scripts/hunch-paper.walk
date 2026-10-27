@@ -28,30 +28,35 @@ tap Bets
 expect No trading account
 shot hunch-paper-bets
 tap Money
-expect Open your wallet
+expect verified balances
 shot hunch-paper-money
 tap Add money
 expect FICTIONAL WALLET DEMO
 expect Create Hunch wallet
 shot hunch-paper-wallet
 key BACK
+# Approved upright v6 keeps cover-style chapters and bottom tabs.
 fold open
+rotate portrait
 expect Open your wallet
 shot hunch-paper-money-inner
 tap TODAY
 expect PUBLIC MARKETS
 shot hunch-paper-discover-inner
-tap OPEN
+tap Paper Cranes
+swipe 0.75 0.8 0.75 0.3 500
 scrollto READ ONLY
 expect READ ONLY
 shot hunch-paper-market-inner
-tap Back to Today
-tap BETS
-expect No real positions
-expect NO BET SELECTED
+key BACK
+tap Bets
+expect No trading account
 shot hunch-paper-bets-inner
+# Approved landscape v5 has market list left and My bets/slip right, without chapter tabs.
 rotate landscape
-expect No real positions
+expect PUBLIC MARKETS
+expect No trading account
+expect OPEN WALLET
 shot hunch-paper-landscape
 rotate portrait
 # Reference gallery remains explicitly labelled and cannot call Privy/trading.

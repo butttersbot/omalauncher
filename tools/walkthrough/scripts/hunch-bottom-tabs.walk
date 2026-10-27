@@ -11,11 +11,13 @@ tap Bets
 expect No trading account
 shot hunch-bottom-bets
 tap Money
-expect Open your wallet
+expect verified balances
 shot hunch-bottom-money
+# Rotating the cover wide now enters approved v5 two-pane; it has no bottom tabs.
 rotate landscape
-expect Open your wallet
+expect OPEN WALLET
+expect No trading account
 shot hunch-bottom-cover-landscape
 rotate portrait
-expect Open your wallet
-[phone] Installed0.4.1: check Today/Bets/Money tab artwork ends immediately above Samsung's gesture-navigation area; no large white strip remains. Tabs tap normally, content scrolls without being covered, and the gesture handle stays clear.
+expect verified balances
+[phone] Installed Hunch: check Today/Bets/Money tab artwork ends immediately above Samsung's gesture-navigation area; no large white strip remains. Tabs tap normally, content scrolls without being covered, and the gesture handle stays clear.
