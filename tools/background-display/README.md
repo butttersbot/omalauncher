@@ -112,6 +112,7 @@ running helper PID and CLASSPATH, hash the deployed dex against the expected
 SHA above, and dump display flags, window top-focus and input_method clients.
 Verify again after idle recreation and a healer restart. Do not replace a
 running helper or disturb Boss's composer just to obtain this evidence.
+
 ### Guard checkpoint: real Fold launcher 172 (2026-10-26)
 
 Phone A reports launcher 172 (`f4482387`) installed and Boss's composer test
@@ -123,7 +124,27 @@ Phone B did not repeat the phone actions.
 
 Not established by this checkpoint: background `open`, press, successful launch
 after IME dismissal, plan deferral/receipts, idle recreation/healer restart,
-served-client/top-focus dumpsys values, or the loaded helper dex/flags. The
-helper identity and flag inspection still needs Wi-Fi/ADB. The earlier 171
+served-client/top-focus dumpsys values. Helper dex/flag evidence arrived in
+the subsequent Wi-Fi checkpoint below. The earlier 171
 unguarded-launch keyboard failure remains valid evidence; this PASS verifies
 launch deferral, not a fix to Samsung's underlying display focus behavior.
+
+### Wi-Fi helper identity and flag checkpoint (2026-10-26)
+
+Phone A reports a Wi-Fi/dumpsys check at 23:05 (mail
+`20261026-230036-a331e1`): `/data/local/tmp/soma-display.dex` has SHA256
+`098cb9ddd50e2929defd43263bd458b6607d63d2139aebf96605b46dadde1ffe`,
+matching the 56b75ca1 helper build. The live `soma-agent` display,
+`virtual:com.android.shell,2000,soma-agent,39`, displayId 45, carries
+`FLAG_OWN_FOCUS`, `FLAG_STEAL_TOP_FOCUS_DISABLED`, `TRUSTED` and
+`ALWAYS_UNLOCKED`. Phone B records this supplied evidence without rerunning
+the phone test.
+
+The helper flag is loaded and active on One UI, yet the unguarded background
+activity launch reproduced main-IME dismissal at 22:35. Phone A attributes
+that failure to the same deployed helper; the later display-45 dump is not a
+contemporaneous dump of display 44 from the failed launch. The flag alone is
+insufficient protection on this Fold. Launcher 172's main-IME launch-deferral
+guard is the verified fix for the reported URL-launch case; it does not rely
+on the flag to keep Boss's keyboard up. No further reproduction is needed
+for that conclusion. The remaining unwalked cases above stay unclaimed.
