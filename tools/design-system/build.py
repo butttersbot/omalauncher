@@ -198,6 +198,7 @@ p {{ margin: 0; }}
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="soma-pack" content="{pack_id}">
+<meta name="soma-reply-to" content="">
 <title>Mockup title</title>
 <style>
 {css}
@@ -208,7 +209,29 @@ p {{ margin: 0; }}
     <p>What this panel says, in plain words.</p>
     <div class="actions"><button class="action">Do it</button><button class="action secondary">Not now</button></div>
   </section>
-</main></body></html>
+  <!-- Question form: replace the empty recipient with phone:A/B/C or a known mac: thread key.
+       Submit opens Soma's native recipient/message review; only the owner's Send tap delivers it. -->
+  <section class="panel">
+    <h2>Your answer</h2>
+    <form id="soma-question-form">
+      <label class="field">Answer<textarea name="answer" required maxlength="4096" rows="3"></textarea></label>
+      <div class="actions"><button class="action" type="submit">Submit answers</button></div>
+      <p class="caption" id="soma-reply-status" role="status"></p>
+    </form>
+  </section>
+</main>
+<script>
+document.getElementById('soma-question-form').addEventListener('submit', function(event) {{
+  event.preventDefault();
+  const text = new FormData(event.target).get('answer').trim();
+  const status = document.getElementById('soma-reply-status');
+  if (!text) return;
+  if (window.soma && typeof window.soma.answer === 'function') {{
+    window.soma.answer(text);
+    status.textContent = 'Review the recipient and answer in Soma, then tap Send.';
+  }} else status.textContent = 'Reply delivery is unavailable in this preview. Open it in updated Soma.';
+}});
+</script></body></html>
 """
     open(os.path.join(out_dir, "template.html"), "w").write(template)
 
@@ -331,6 +354,27 @@ Actions are Soma's bracketed words in every look (`[ Approve ]`, one line, never
 
 Card line {hair} px, corner {radius} px, shadow `{shadow}`. The faces are embedded in `soma.css` as data URLs
 (Latin only), so a mockup is one offline file; a look that uses system fonts embeds none.
+
+## Artifact question replies
+
+Generated HTML opts in with `<meta name="soma-reply-to" content="phone:B">` in its head.
+Use one fixed `phone:A`, `phone:B`, `phone:C`, or the exact known `mac:` thread key.
+The declared recipient is untrusted until Boss reviews it. An artifact must never
+choose a different recipient from JavaScript or claim that answers were delivered.
+
+The template's Submit calls `soma.answer(text)` on an owner tap. Soma must show a
+native review naming that fixed recipient and the complete text. Only Boss's
+separate Send tap may deliver a normal message to that known thread/builder. Cancel
+sends nothing. A plain browser/offline preview has no bridge and explains that.
+Generated HTML gets no file/content access, credentials or general native API;
+live web URLs cannot opt into this bridge. Subframes and non-gesture requests are
+refused. Text is nonblank, limited to 4096 characters, with control characters
+refused. Missing/duplicate declarations fail closed. Unknown recipients must be
+rejected in native review, never rerouted to another agent. Version changes cancel
+an open review. A native review is consumed once, not automatically retried.
+
+Native AskUserQuestion forms use their nonce-bound approval answers instead;
+they do not send a second chat message through the artifact bridge.
 
 ## The Fold
 

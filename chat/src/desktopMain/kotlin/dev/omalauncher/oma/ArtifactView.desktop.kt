@@ -14,7 +14,7 @@ import dev.omalauncher.ui.Pack
 
 /** Desktop keeps a readable fallback until its browser renderer is integrated; Android has the live WebView. */
 @Composable
-internal actual fun ArtifactWeb(url: String?, html: String?, modifier: Modifier) {
+internal actual fun ArtifactWeb(url: String?, html: String?, modifier: Modifier, onAnswer: ((ArtifactReplyRequest) -> Unit)?) {
     Column(modifier) {
         BasicText("Interactive web previews are available on Android. Source is shown here.", Modifier.padding(16.dp), style = Pack.body(Pack.size.small, Pack.muted))
         ArtifactText(html ?: url.orEmpty())

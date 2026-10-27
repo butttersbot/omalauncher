@@ -63,6 +63,27 @@ Manga, after features/manga-look/manga-mockup.html: every home page is a manga p
 Card line 1.15 px, corner 0 px, shadow `none`. The faces are embedded in `soma.css` as data URLs
 (Latin only), so a mockup is one offline file; a look that uses system fonts embeds none.
 
+## Artifact question replies
+
+Generated HTML opts in with `<meta name="soma-reply-to" content="phone:B">` in its head.
+Use one fixed `phone:A`, `phone:B`, `phone:C`, or the exact known `mac:` thread key.
+The declared recipient is untrusted until Boss reviews it. An artifact must never
+choose a different recipient from JavaScript or claim that answers were delivered.
+
+The template's Submit calls `soma.answer(text)` on an owner tap. Soma must show a
+native review naming that fixed recipient and the complete text. Only Boss's
+separate Send tap may deliver a normal message to that known thread/builder. Cancel
+sends nothing. A plain browser/offline preview has no bridge and explains that.
+Generated HTML gets no file/content access, credentials or general native API;
+live web URLs cannot opt into this bridge. Subframes and non-gesture requests are
+refused. Text is nonblank, limited to 4096 characters, with control characters
+refused. Missing/duplicate declarations fail closed. Unknown recipients must be
+rejected in native review, never rerouted to another agent. Version changes cancel
+an open review. A native review is consumed once, not automatically retried.
+
+Native AskUserQuestion forms use their nonce-bound approval answers instead;
+they do not send a second chat message through the artifact bridge.
+
 ## The Fold
 
 | Screen | Device px | CSS px (420 dpi) | Where an artifact goes |

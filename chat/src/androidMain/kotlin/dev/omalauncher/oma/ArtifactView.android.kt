@@ -23,12 +23,15 @@ import dev.omalauncher.ui.BracketAction
 import dev.omalauncher.ui.Pack
 
 /**
- * No native bridge, no file/content access and no runner credential in a WebView. A new version of the same generated
+ * A single declared-recipient reply-preview navigation, no general native bridge, no file/content access and no runner credential in a WebView. A new version of the same generated
  * HTML loads into the WebView already showing, rather than a new one (features/artifact-panel/PLAN.md, slice 2); the
  * page itself starts over, as any reload does.
  */
 @Composable
-internal actual fun ArtifactWeb(url: String?, html: String?, modifier: Modifier) {
+internal actual fun ArtifactWeb(url: String?, html: String?, modifier: Modifier, onAnswer: ((ArtifactReplyRequest) -> Unit)?) {
+    val answerCallback by rememberUpdatedState(onAnswer)
+    val sourceHtml by rememberUpdatedState(html)
+    val replyToken by rememberUpdatedState(remember(url, html) { java.util.UUID.randomUUID().toString() })
     var error by remember(url, html) { mutableStateOf(false) }
     var retry by remember(url) { mutableIntStateOf(0) }
     // What the WebView showing has loaded, so a recomposition with the same HTML loads nothing again.
@@ -55,8 +58,23 @@ internal actual fun ArtifactWeb(url: String?, html: String?, modifier: Modifier)
                     settings.blockNetworkLoads = url == null
                     webViewClient = object : WebViewClient() {
                         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                            if (url == null && answerCallback != null && owned === view) {
+                                val prefix = "soma-answer:$replyToken:"
+                                val address = request.url.toString()
+                                if (address.startsWith(prefix)) ArtifactReply.request(sourceHtml.orEmpty(), "soma-answer:" + address.removePrefix(prefix), request.isForMainFrame, request.hasGesture())?.let {
+                                    answerCallback?.invoke(it)
+                                    return true
+                                }
+                            }
                             val scheme = request.url.scheme
                             return url == null || scheme !in listOf("https", "http")
+                        }
+                        override fun onPageFinished(view: WebView, finishedUrl: String?) {
+                            if (url == null && answerCallback != null && ArtifactReply.recipient(sourceHtml.orEmpty()) != null && owned === view) {
+                                // Only navigation text crosses the boundary. No target argument, native object,
+                                // credentials, file access, eval callback or general message API is exposed.
+                                view.evaluateJavascript("window.soma=Object.freeze({answer:function(text){if(typeof text==='string'&&text.length<=4096)location.href='soma-answer:$replyToken:'+encodeURIComponent(text)}});", null)
+                            }
                         }
                         override fun onReceivedError(view: WebView, request: WebResourceRequest, problem: WebResourceError) {
                             if (request.isForMainFrame) error = true

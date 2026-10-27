@@ -4,6 +4,7 @@
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="soma-pack" content="manga">
+<meta name="soma-reply-to" content="">
 <title>Mockup title</title>
 <style>
 /* soma.css: Soma's design system, generated from the active look's pack by tools/design-system/build.py.
@@ -106,4 +107,26 @@ p { margin: 0; }
     <p>What this panel says, in plain words.</p>
     <div class="actions"><button class="action">Do it</button><button class="action secondary">Not now</button></div>
   </section>
-</main></body></html>
+  <!-- Question form: replace the empty recipient with phone:A/B/C or a known mac: thread key.
+       Submit opens Soma's native recipient/message review; only the owner's Send tap delivers it. -->
+  <section class="panel">
+    <h2>Your answer</h2>
+    <form id="soma-question-form">
+      <label class="field">Answer<textarea name="answer" required maxlength="4096" rows="3"></textarea></label>
+      <div class="actions"><button class="action" type="submit">Submit answers</button></div>
+      <p class="caption" id="soma-reply-status" role="status"></p>
+    </form>
+  </section>
+</main>
+<script>
+document.getElementById('soma-question-form').addEventListener('submit', function(event) {
+  event.preventDefault();
+  const text = new FormData(event.target).get('answer').trim();
+  const status = document.getElementById('soma-reply-status');
+  if (!text) return;
+  if (window.soma && typeof window.soma.answer === 'function') {
+    window.soma.answer(text);
+    status.textContent = 'Review the recipient and answer in Soma, then tap Send.';
+  } else status.textContent = 'Reply delivery is unavailable in this preview. Open it in updated Soma.';
+});
+</script></body></html>
