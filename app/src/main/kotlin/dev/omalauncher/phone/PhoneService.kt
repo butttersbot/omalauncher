@@ -126,9 +126,22 @@ class PhoneService : AccessibilityService() {
             ?: error("Display has gone.")
     }
 
+    /** Read display 0 explicitly: rootInActiveWindow could be the background app or its IME. */
+    private fun mainImeVisible(): Boolean = displayWindows(0).any { window ->
+        val bounds = android.graphics.Rect()
+        window.getBoundsInScreen(bounds)
+        window.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD && !bounds.isEmpty
+    }
+
+    /** Called on the main thread before the bridge can create a display for a direct launch. */
+    internal fun backgroundLaunchPreflight(command: String): JSONObject? =
+        if (PhoneLaunchPolicy.waits(true, command, mainImeVisible())) PhoneLaunchPolicy.waiting() else null
+
     private fun launchOnDisplay(intent: Intent, pkg: String?) {
         requireCurrentAccess()
         if (displayId != 0) {
+            // Recheck at the last possible point, including launches in a native plan.
+            if (PhoneLaunchPolicy.waits(true, requestCommand, mainImeVisible())) throw PhoneLaunchDeferred()
             val owner = displayRoot(0)
             try { check(pkg != null && owner?.packageName?.toString() != pkg) { "That app is on your main screen. Wait until you finish using it." } }
             finally { owner?.recycle() }
@@ -774,8 +787,9 @@ class PhoneService : AccessibilityService() {
                             ?.also { intent.setPackage(it) }
                             ?: error("This Settings destination is unavailable on this phone. Nothing was opened.")
                     } else name
-                    opened = PhoneGuard.opened(handler)
-                    launchOnDisplay(intent, opened)
+                    val launching = PhoneGuard.opened(handler)
+                    launchOnDisplay(intent, launching)
+                    opened = launching
                     changed()
                     whenInFront(opened, output, reply, expected, if (settingsAction != null) PhoneSettings.handsOverTo(handler) else emptySet(), PhoneSettings.chooserAnswer(settingsAction))
                     return
@@ -787,8 +801,9 @@ class PhoneService : AccessibilityService() {
                     input.optString("app").takeIf { it.isNotEmpty() }?.let { intent.setPackage(it) }
                     val handler = packageManager.resolveActivity(intent, 0)?.activityInfo?.packageName
                         ?: error(if (intent.`package` != null) "${intent.`package`} can't open that link. Nothing was opened." else "No app on the phone opens that link. Nothing was opened.")
-                    opened = PhoneGuard.opened(handler)
-                    launchOnDisplay(intent, opened)
+                    val launching = PhoneGuard.opened(handler)
+                    launchOnDisplay(intent, launching)
+                    opened = launching
                     changed()
                     whenInFront(opened, output.put("chooser", opened == null), reply)
                     return
@@ -926,7 +941,8 @@ class PhoneService : AccessibilityService() {
                 else -> error("Unknown phone command: $command")
             }
             reply(output)
-        } catch (e: Exception) { reply(JSONObject().put("ok", false).put("error", e.message ?: "Phone control failed")) }
+        } catch (e: PhoneLaunchDeferred) { reply(PhoneLaunchPolicy.waiting()) }
+        catch (e: Exception) { reply(JSONObject().put("ok", false).put("error", e.message ?: "Phone control failed")) }
     }
 }
 

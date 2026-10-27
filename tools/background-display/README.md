@@ -53,8 +53,8 @@ and [shell context](https://github.com/Genymobile/scrcpy/blob/master/server/src/
 The agent display has independent window focus but must not become the system's
  top-focused display. `OWN_FOCUS` alone does not guarantee that: the helper also
 sets `STEAL_TOP_FOCUS_DISABLED` (1 << 16), requiring the existing TRUSTED and
-OWN_FOCUS flags. This prevents launch/touch steps from taking the main display's
-IME target, rather than briefly stealing focus and trying to restore it afterwards.
+OWN_FOCUS flags. These kept top focus on display 0 in the AOSP emulator; they do
+not establish Samsung IME isolation. The real Fold test below failed.
 See [Android DisplayManager flags](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/android16-release/core/java/android/hardware/display/DisplayManager.java).
 
 A changed flag applies only to newly created displays. Deploy the rebuilt helper
@@ -79,3 +79,38 @@ Not checked: main IME visible/served client, composer draft retention, oma-phone
 background press/screenshot, idle release/recreate, Samsung One UI. The emulator's
 IME was hidden throughout. Physical phone was asleep/locked when reproduction was
 attempted; no unlock or phone steps taken. These remain in the phone walkthrough.
+
+### Real Fold failure and launch guard (2026-10-26)
+
+Boss tested launcher 171 with the helper deployed at 15:02 (reported source
+56b75ca1). At 22:35:11 `url about:blank` was rejected by the HTTP(S)-only guard
+and launched nothing. At 22:35:42 `url https://example.com` opened Brave on
+display 44 (`inFront:true`); Boss reported that Soma's main keyboard closed.
+This is a Samsung IME FAIL, superseding any inference from the emulator result.
+
+Source trace: `/usr/local/bin/oma-bg-heal` and `tools/background-display/start.sh`
+both load `/data/local/tmp/soma-display.dex`. `SomaDisplay` has one on-demand
+`createVirtualDisplay` call using FLAGS, including TRUSTED, OWN_FOCUS and
+STEAL_TOP_FOCUS_DISABLED. PhoneService's open/url share `launchOnDisplay`, which
+sets launchDisplayId and NEW_TASK; there is no explicit main-display launch or
+IME-hide call on this path. The bridge may create a display before this launch.
+These source findings do not prove the running dex bytes or Samsung's actual
+top-focused display/IME client. Wi-Fi/ADB was unavailable during the failure.
+
+The launcher now checks display 0's accessibility TYPE_INPUT_METHOD windows
+with nonempty bounds before direct bg open/url can ensure a helper display,
+then rechecks immediately before startActivity (also for plan launch steps).
+It returns ok:false, waiting:true, reason:boss-typing, actionMayHaveRun:false
+with “Waiting: Boss is typing”; it neither queues a later launch nor hides the
+keyboard. The caller retries after Boss closes the keyboard. Background
+screen/read/press/screenshot retain their existing admission rules. Main-display
+launches remain explicit. The guard does not claim to stop an app from launching
+its own activity as a consequence of a press.
+
+Before the next real test, with Boss's Wi-Fi/debugging available, capture the
+running helper PID and CLASSPATH, hash the deployed dex against the expected
+SHA above, and dump display flags, window top-focus and input_method clients.
+Verify again after idle recreation and a healer restart. Do not replace a
+running helper or disturb Boss's composer just to obtain this evidence.
+The new guard's real-Fold/IME result is NOT RUN until the bundled launcher is
+promoted and Boss repeats the walkthrough.
