@@ -46,6 +46,7 @@ expect TODAY
 expect BETS
 expect MONEY
 absent "Today's issue"
+# LOOK: page fills full width/height; tabs pinned at bottom, no blank right/bottom strips.
 shot hunch-v6-upright-today
 tap Paper Cranes vs Ink Foxes
 expect BACK

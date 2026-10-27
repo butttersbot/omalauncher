@@ -26,3 +26,9 @@ Validation before the Mac checkpoint: `node tools/hunch/check-paper.mjs` PASS,
 including manifest hashes, cover layouts, inner selection/back and list identity/scroll
 retention, offline state, pagination, quote expiry, and account/wallet checks.
 Android build, emulator screenshots/walk and real Fold checks remain pending.
+
+Mac checkpoint 4a6e3c27: Android build + 16 tests and static check PASS; walk
+79 PASS / 0 FAIL / 17 LOOK, but visual review FAIL for upright. CSS zoom percentages
+were incorrectly divided by 1.3, shrinking both dimensions to 77%. Corrected to
+width/height 100% while retaining zoom 1.3; the corrected visual walk is pending.
+Landscape and cover passed that review; no 4a6e3c27 APK was staged.
