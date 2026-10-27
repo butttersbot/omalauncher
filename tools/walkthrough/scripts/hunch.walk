@@ -38,17 +38,51 @@ tap Today
 tap All
 fold open
 rotate portrait
-# Unfolded is the grid, without the cover's "Today's issue" masthead.
-expect GUT CHECK
-expect Paper Company
-# LOOK: both grid columns extend to the bottom inset; no blank bottom quarter.
-shot hunch-demo-unfolded
+# Boss-approved v5: upright stacks markets above bets, landscape puts them side by side.
+expect HUNCH
+expect Search markets
+expect TRADING NOT CONNECTED
+absent "Today's issue"
+shot hunch-two-pane-portrait
+# LOOK: swipe only the market half; My bets stays in position and masthead stays fixed.
+swipe 0.45 0.43 0.45 0.24 500
+shot hunch-two-pane-portrait-left-scroll
+# Return the list to its hero, open details below, then return inside that pane.
+swipe 0.45 0.25 0.45 0.44 500
+tap Paper Cranes vs Ink Foxes
+expect MY BETS
+shot hunch-two-pane-portrait-detail
+# Hardware Back must return only the detail pane.
+key BACK
+expect TRADING NOT CONNECTED
 rotate landscape
-expect GUT CHECK
-shot hunch-demo-unfolded-landscape
+expect HUNCH
+expect Search markets
+expect TRADING NOT CONNECTED
+shot hunch-two-pane-landscape
+# LOOK: only the left half moves. No page scroll; right side and title remain fixed.
+swipe 0.24 0.82 0.24 0.30 500
+shot hunch-two-pane-landscape-left-scroll
+swipe 0.24 0.30 0.24 0.82 500
+tap Paper Cranes vs Ink Foxes
+expect MY BETS
+shot hunch-two-pane-landscape-detail
+# LOOK: scroll only detail pane to its read-only action and settlement rules.
+swipe 0.75 0.84 0.75 0.30 500
+scrollto READ ONLY · REFRESH
+expect BETTING NOT CONNECTED
+expect HOW IT SETTLES
+shot hunch-two-pane-landscape-detail-scrolled
+scrollto Resolution Deadline
+shot hunch-two-pane-landscape-rules
+# Sticky pane back control returns to bets and leaves the market list in place.
+tap MY BETS
+expect TRADING NOT CONNECTED
+shot hunch-two-pane-landscape-back
 rotate portrait
-expect GUT CHECK
-shot hunch-demo-unfolded-restored
+expect HUNCH
+expect TRADING NOT CONNECTED
+shot hunch-two-pane-portrait-restored
 # HTTP error fixture cannot fall back to unlabelled stale data.
 shell am force-stop dev.omalauncher.hunch
 shell am start -n dev.omalauncher.hunch/.MainActivity --es fixture error
@@ -59,10 +93,10 @@ expect Markets could not be loaded.
 absent Loading listings
 absent 1 OF 0
 absent OPEN →
-# LOOK: offline hero has only offline copy; grid fills the inner height.
+# LOOK: offline copy replaces loading; both independent panes fit the inner height.
 shot hunch-offline
 # Leave live read-only app, never the fixture, for a human.
 shell am force-stop dev.omalauncher.hunch
 shell am start -n dev.omalauncher.hunch/.MainActivity
 expect Search markets
-[phone] Verify live market names, search, side selection, empty/one-sided book labels and refresh. No wallet or transaction controls. Check cover/inner readability and back to retained query.
+[phone] Verify live market names, search, side selection, empty/one-sided book labels and refresh on the Fold. Open wallet from the inner bets pane and return. No orders or trading balances are connected. Check actual fold/rotation, independent pane scrolling, cover unchanged and Back retaining the market query.
