@@ -46,7 +46,7 @@ function coverPrepare(root){
 async function showLive(){
  const wide=window.innerWidth>=600;Hunch.layoutWide=wide;
  if(wide)return showTwoPane();
- const oldPane=document.querySelector('.hunch-two-pane .right');if(oldPane&&paneShown!==null)paneScroll.set(paneShown,oldPane.scrollTop);
+ const oldPane=document.querySelector('.hunch-two-pane .right,.hunch-two-pane .cvbody');if(oldPane&&paneShown!==null)paneScroll.set(paneShown,oldPane.scrollTop);
  if(Hunch.selected)return showCoverMarket();
  await Paper.show('CoverBets',logic=>{
   logic.state.tab=Hunch.chapter;const a=Paper.active;

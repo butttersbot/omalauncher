@@ -1,4 +1,4 @@
-# Hunch unfolded two-pane v5
+# Hunch unfolded: landscape v5, upright v6
 
 Boss approved the design directly in Phone B's chat on 2026-10-26 for this run,
 explicitly allowing real bets to remain disconnected and asking for the HUNCH title.
@@ -7,7 +7,10 @@ This direct instruction supersedes waiting for the Canvas approval click.
 Design source: `/root/Inbox/hunch-2pane-v5.html`; Canvas cards `hunch-today`,
 `hunch-market`, `hunch-bets`, `hunch-today-portrait`. Cover stays on the installed
 bac2d18d rendering. Inner landscape has markets left and bets/details right; upright
-stacks those panes, each scrolling independently below one HUNCH masthead.
+uses v6 enlarged cover-style Today, detail, Bets and Money pages, with pinned
+bottom TODAY/BETS/MONEY tabs and about 1.3x typography/spacing. This correction
+was relayed by Phone A in mail 20261026-153044-31b3b3. Landscape alone has
+independent panes; cover remains unchanged.
 
 The production view uses actual public listings and validated depth previews. It
 has no fictional positions, balances, order submission, funding or withdrawal.

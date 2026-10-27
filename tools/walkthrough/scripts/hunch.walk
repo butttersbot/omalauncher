@@ -38,23 +38,28 @@ tap Today
 tap All
 fold open
 rotate portrait
-# Boss-approved v5: upright stacks markets above bets, landscape puts them side by side.
+# Upright v6: cover-style full pages, enlarged, with pinned bottom chapter tabs.
 expect HUNCH
 expect Search markets
-expect TRADING NOT CONNECTED
+expect GUT CHECK
+expect TODAY
+expect BETS
+expect MONEY
 absent "Today's issue"
-shot hunch-two-pane-portrait
-# LOOK: swipe only the market half; My bets stays in position and masthead stays fixed.
-swipe 0.45 0.43 0.45 0.24 500
-shot hunch-two-pane-portrait-left-scroll
-# Return the list to its hero, open details below, then return inside that pane.
-swipe 0.45 0.25 0.45 0.44 500
+shot hunch-v6-upright-today
 tap Paper Cranes vs Ink Foxes
-expect MY BETS
-shot hunch-two-pane-portrait-detail
-# Hardware Back must return only the detail pane.
+expect BACK
+shot hunch-v6-upright-detail
 key BACK
+expect Search markets
+tap Bets
 expect TRADING NOT CONNECTED
+shot hunch-v6-upright-bets
+tap Money
+expect Trading cash is not connected.
+shot hunch-v6-upright-money
+tap Today
+expect Search markets
 rotate landscape
 expect HUNCH
 expect Search markets
@@ -81,8 +86,10 @@ expect TRADING NOT CONNECTED
 shot hunch-two-pane-landscape-back
 rotate portrait
 expect HUNCH
-expect TRADING NOT CONNECTED
-shot hunch-two-pane-portrait-restored
+expect Search markets
+expect BETS
+expect MONEY
+shot hunch-v6-upright-restored
 # HTTP error fixture cannot fall back to unlabelled stale data.
 shell am force-stop dev.omalauncher.hunch
 shell am start -n dev.omalauncher.hunch/.MainActivity --es fixture error
@@ -99,4 +106,4 @@ shot hunch-offline
 shell am force-stop dev.omalauncher.hunch
 shell am start -n dev.omalauncher.hunch/.MainActivity
 expect Search markets
-[phone] Verify live market names, search, side selection, empty/one-sided book labels and refresh on the Fold. Open wallet from the inner bets pane and return. No orders or trading balances are connected. Check actual fold/rotation, independent pane scrolling, cover unchanged and Back retaining the market query.
+[phone] Verify live market names, search, side selection, empty/one-sided book labels and refresh on the Fold. Open wallet from the inner bets pane and return. No orders or trading balances are connected. Check actual fold/rotation, independent landscape pane scrolling, upright full pages with pinned bottom tabs, cover unchanged and Back retaining the market query.
