@@ -40,8 +40,8 @@ internal object ArtifactReplyDelivery {
         }
         val origin = host.canvasOrigin()
         kotlin.concurrent.thread(name = "artifact-submit-receipt", isDaemon = true) {
-            val proof = runCatching { ArtifactCanvasReceipt.prepare(context, origin, source, request) }.getOrElse { JSONObject().put("receiptStatus", "unlinked") }
-            val message = "Answers from artifact ${source.key}\n\n${request.text}\n\n[Soma submission $id]\n" + proof.toString()
+            val proof = runCatching { ArtifactCanvasReceipt.prepare(context, origin, source, request, id) }.getOrElse { JSONObject().put("receiptStatus", "unlinked") }
+            val message = "Answers from artifact ${source.key}\n\n${request.text}\n\n[Soma submission $id]\n" + if (proof.length() > 0) proof.toString() else ""
             record.put("receiptStatus", proof.optString("receiptStatus"))
             android.os.Handler(android.os.Looper.getMainLooper()).post {
                 try {

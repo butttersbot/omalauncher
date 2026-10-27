@@ -32,3 +32,17 @@ Mac checkpoint 4a6e3c27: Android build + 16 tests and static check PASS; walk
 were incorrectly divided by 1.3, shrinking both dimensions to 77%. Corrected to
 width/height 100% while retaining zoom 1.3; the corrected visual walk is pending.
 Landscape and cover passed that review; no 4a6e3c27 APK was staged.
+
+Final b18de027 checkpoint: build PASS, 16 unit tests PASS, paper check PASS;
+walk 79 PASS / 0 FAIL / 17 LOOK, all reviewed by the Mac lane. Upright fills
+width/height with tabs pinned; independent landscape panes, offline and physical
+cover rendering passed. Extra checks: upright scroll access to all sections and
+detail terms, hardware Back retaining list position, query across tab/rotation,
+keyboard visibility, long live titles. Rotation closes the keyboard but keeps query.
+
+Staged (not installed): `/root/Inbox/hunch-b18de027-13-signed.apk`, package
+dev.omalauncher.hunch, 0.6.0 / 13. Signed SHA256
+`f0bdb7f3095a342bc386fef258f16e611bb5c6fb0f339d9b731d8bfbfc8201aa`;
+signer matches installed certificate `85a7a713…76a18`. Source Mac SHA256
+`4d7961bd061249e3bea8d071b36a948da8974d9a999553bfb8ea6e87fa0e72cc`.
+Real Fold checks and Canvas Shipped publication wait for promotion.

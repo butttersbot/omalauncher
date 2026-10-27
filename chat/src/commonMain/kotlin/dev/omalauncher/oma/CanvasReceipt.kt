@@ -40,10 +40,20 @@ object CanvasReceipt {
         })
         append('"')
     }
-    fun receipt(deviceId: String, nonce: String, at: String, source: ArtifactReplySource, request: ArtifactReplyRequest): JSONObject {
+    fun approval(request: ArtifactReplyRequest): Boolean {
+        val answers = runCatching { request.answers?.let(::JSONObject) }.getOrNull() ?: return request.text.trim().startsWith("Approve", ignoreCase = true)
+        if (answers.optString("decision").lowercase() in setOf("changes", "reject", "deny")) return false
+        return answers.optString("decision").equals("approve", ignoreCase = true) ||
+            listOf("approve", "approved").any { answers.opt(it) == true } ||
+            answers.keys().asSequence().any { key -> (answers.opt(key) as? String)?.trim()?.startsWith("Approve", ignoreCase = true) == true }
+    }
+    fun receipt(deviceId: String, nonce: String, at: Long, source: ArtifactReplySource, request: ArtifactReplyRequest): JSONObject {
         val answers = request.answers?.let(::JSONObject) ?: JSONObject().put("answer", request.text)
+        val version = source.version.toIntOrNull() ?: error("No native artifact version")
+        require(version > 0)
         return JSONObject().put("v", 1).put("deviceId", deviceId).put("nonce", nonce).put("at", at)
-            .put("recipient", request.recipient).put("artifact", JSONObject().put("name", source.name).put("version", source.version).put("sha256", source.sha256))
-            .put("answers", answers).put("answersSha256", sha256(canonical(answers).toByteArray(Charsets.UTF_8)))
+            .put("recipient", request.recipient).put("replyId", nonce)
+            .put("artifact", JSONObject().put("name", source.name).put("version", version).put("sha256", source.sha256))
+            .put("answers", answers)
     }
 }

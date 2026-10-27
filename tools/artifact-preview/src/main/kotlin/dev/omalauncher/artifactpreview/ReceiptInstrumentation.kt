@@ -19,12 +19,12 @@ class ReceiptInstrumentation : Instrumentation() {
             val bytes = Base64.decode(publicInfo.getString("publicKey"), Base64.DEFAULT)
             check(CanvasReceipt.sha256(bytes) == publicInfo.getString("deviceId"))
             val source = ArtifactReplySource("fixture", "mock.html", "1", CanvasReceipt.sha256("fixture".toByteArray()))
-            val signed = CanvasReceiptKeys.sign(source, ArtifactReplyRequest("phone:B", "approve", """{"decision":"approve"}"""))!!
+            val signed = CanvasReceiptKeys.sign(source, ArtifactReplyRequest("phone:B", "approve", """{"decision":"approve"}"""), "fixture-submission")!!
             val key = KeyFactory.getInstance("EC").generatePublic(X509EncodedKeySpec(bytes))
             fun verify(text: String) = Signature.getInstance("SHA256withECDSA").run {
                 initVerify(key); update(text.toByteArray(Charsets.UTF_8)); verify(Base64.decode(signed.getString("sig"), Base64.DEFAULT))
             }
-            val canonical = CanvasReceipt.canonical(signed.getJSONObject("receipt"))
+            val canonical = signed.getString("receipt")
             check(verify(canonical)); check(!verify(canonical.replace("approve", "changes")))
             Log.i("SomaWalk", "artifact receipt signature PASS")
             finish(0, Bundle().apply { putString("result", "PASS") })

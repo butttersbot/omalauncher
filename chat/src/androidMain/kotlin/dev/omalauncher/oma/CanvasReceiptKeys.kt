@@ -5,10 +5,10 @@ import android.security.keystore.KeyProperties
 import android.util.Base64
 import java.security.KeyPairGenerator
 import java.security.KeyStore
-import java.security.SecureRandom
+
 import java.security.Signature
 import java.security.spec.ECGenParameterSpec
-import java.time.Instant
+
 import org.json.JSONObject
 
 /** No signing function is exposed to JavaScript. Private key never leaves Android Keystore. */
@@ -23,16 +23,16 @@ object CanvasReceiptKeys {
         val encoded = store().getCertificate(ALIAS).publicKey.encoded
         return JSONObject().put("publicKey", Base64.encodeToString(encoded, Base64.NO_WRAP)).put("deviceId", CanvasReceipt.sha256(encoded))
     }
-    @Synchronized fun sign(source: ArtifactReplySource, request: ArtifactReplyRequest): JSONObject? {
+    @Synchronized fun sign(source: ArtifactReplySource, request: ArtifactReplyRequest, submissionId: String): JSONObject? {
         val store = store()
         if (!store.containsAlias(ALIAS)) return null // Only owner Link creates the key.
         val encoded = store.getCertificate(ALIAS).publicKey.encoded
-        val nonce = ByteArray(16).also { SecureRandom().nextBytes(it) }.joinToString("") { "%02x".format(it) }
-        val receipt = CanvasReceipt.receipt(CanvasReceipt.sha256(encoded), nonce, Instant.now().toString(), source, request)
+        val receipt = CanvasReceipt.receipt(CanvasReceipt.sha256(encoded), submissionId, System.currentTimeMillis(), source, request)
+        val serialized = CanvasReceipt.canonical(receipt)
         val signature = Signature.getInstance("SHA256withECDSA").apply {
             initSign(store.getKey(ALIAS, null) as java.security.PrivateKey)
-            update(CanvasReceipt.canonical(receipt).toByteArray(Charsets.UTF_8))
+            update(serialized.toByteArray(Charsets.UTF_8))
         }.sign()
-        return JSONObject().put("receipt", receipt).put("sig", Base64.encodeToString(signature, Base64.NO_WRAP))
+        return JSONObject().put("receipt", serialized).put("sig", Base64.encodeToString(signature, Base64.NO_WRAP))
     }
 }
