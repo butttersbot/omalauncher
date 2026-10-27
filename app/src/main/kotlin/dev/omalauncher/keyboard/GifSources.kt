@@ -101,24 +101,22 @@ class GifStore(
     private val hearted = ArrayList<GifItem>()
     private val recent = ArrayList<GifItem>()
 
-    /** His tags, in his order (Boss, 2026-10-21: + to add, long press to remove or move); and whether they're open. */
-    private val tags = ArrayList(DEFAULT_TAGS)
-    var tagsOpen = false
-        @Synchronized set(value) {
-            field = value
-            save()
-        }
+    /**
+     * His tags, in his order (Boss, 2026-10-21: + to add, long press to remove or move). None to begin with (Boss,
+     * 2026-10-27: "remove the prefilled ones"); a store from before loses the names it was given then, keeping his own.
+     */
+    private val tags = ArrayList<String>()
 
     init {
         runCatching {
             val o = JSONObject(file!!.readText())
             o.optJSONArray("hearted")?.let { a -> for (i in 0 until a.length()) hearted += GifItem.fromJson(a.getJSONObject(i)) }
             o.optJSONArray("recent")?.let { a -> for (i in 0 until a.length()) recent += GifItem.fromJson(a.getJSONObject(i)) }
-            o.optJSONArray("tags")?.let { a ->
-                tags.clear()
-                for (i in 0 until a.length()) tags += a.getString(i)
+            o.optJSONArray("tags")?.let { a -> for (i in 0 until a.length()) tags += a.getString(i) }
+            if (o.optInt("tagsVersion") < TAGS_VERSION) {
+                tags.removeAll { it in OLD_DEFAULT_TAGS }
+                save()
             }
-            tagsOpen = o.optBoolean("tagsOpen")
         }
     }
 
@@ -173,7 +171,7 @@ class GifStore(
         runCatching {
             val o =
                 JSONObject().put("hearted", JSONArray(hearted.map { it.toJson() })).put("recent", JSONArray(recent.map { it.toJson() }))
-                    .put("tags", JSONArray(tags)).put("tagsOpen", tagsOpen)
+                    .put("tags", JSONArray(tags)).put("tagsVersion", TAGS_VERSION)
             f.parentFile?.mkdirs()
             val tmp = File(f.parentFile, f.name + ".tmp")
             tmp.writeText(o.toString())
@@ -186,7 +184,10 @@ class GifStore(
 
         /** The pills that always come first and can't be moved or taken out. */
         val FIXED = listOf("Trending", "Recent", "Saved")
-        val DEFAULT_TAGS = listOf("lol", "yes", "no", "love", "hype", "facepalm", "gn")
+
+        /** The tags a store was given before 2026-10-27, taken out of it once (see [tags]). */
+        val OLD_DEFAULT_TAGS = setOf("lol", "yes", "no", "love", "hype", "facepalm", "gn")
+        const val TAGS_VERSION = 2
 
         @Volatile private var shared: GifStore? = null
 

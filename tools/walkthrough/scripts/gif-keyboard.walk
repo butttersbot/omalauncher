@@ -1,5 +1,6 @@
 # The keyboard's GIF panel (Soma 108+). Bugs Boss found 2026-10-22: the handle jittered while pulled; Done emptied
-# the search; the handle was gone after a search. The keys are drawn, not labelled, so the checks read what the
+# the search; the handle was gone after a search. 2026-10-27: his saved GIFs came first in every search; the + pill
+# hid behind the arrow; the mood tags came prefilled; the pills wrapped instead of swiping sideways. The keys are drawn, not labelled, so the checks read what the
 # panel logs (`log`), and the screenshots are looked at. Positions are for the Fold profile's cover screen, portrait,
 # calibrated on the Fold8 emulator from the 128 walk: the panel's handle at 0.547, its search pill at 0.597; searching,
 # the band's handle at 0.327 and its field at 0.36. Typing goes on the keys (adb's text input goes to the app's field).
@@ -16,6 +17,8 @@ clearlog
 tap 0.16 0.965
 wait 1200
 log gif panel expanded=false query= handle=shown
+# No prefilled tags, and + always in the row (no arrow to open first).
+log gif chips tags=0 plus=shown
 shot gif-panel
 # A short pull, let go: the panel follows the finger a little and settles back (Boss, 2026-10-22: it snapped to the
 # top at the first move).
@@ -50,6 +53,8 @@ log gif band query=cat handle=shown
 tap 0.905 0.89
 wait 1500
 log gif panel expanded=false query=cat handle=shown
+# Only KLIPY's GIFs for the words: none of his own forced in first (they stay under Saved).
+log gif results q=cat local=0
 shot results-keep-cat-and-handle
 # Searching again starts from those words; the band's handle pulled up opens the results full screen.
 tap 0.4 0.597
@@ -59,7 +64,17 @@ swipe 0.5 0.327 0.5 0.10 600
 wait 800
 log gif panel expanded=true query=cat handle=shown
 shot band-handle-pulled-full-screen
+# The pill row swipes sideways (Boss, 2026-10-27), and the swipe taps no pill. In the full-screen panel the row is
+# at about 0.176 (handle 0.066 + 83 dp).
+swipe 0.85 0.176 0.15 0.176 500
+wait 600
+log gif chips swiped
+nolog gif panel expanded=true query= handle=shown
+shot chips-swiped
 [phone] On the cover screen and unfolded: drag the GIF handle up and down slowly; the panel's top stays under the finger, a short pull let go goes back, a long one or a flick goes on.
 [phone] The pull is smooth, no stutter, on both screens (Boss, 2026-10-22: it stuttered in 129).
-[phone] Search a word, tap Done: the word stays in the field, the handle shows; ✕ beside the arrow goes back to Trending.
+[phone] Search a word, tap Done: the word stays in the field, the handle shows; ✕ in the field goes back to Trending.
+[phone] With GIFs saved on the phone and some hearted: search a word they don't match: none of them show (no SAVED badge, no red heart forced first); Saved still lists them all.
+[phone] Add tags with + until the row is longer than the screen: the row swipes sideways, the newest tag shows; hold a tag: ✕ and dragging still work, the row slides when the held tag nears either end; a swipe on the row never places a GIF.
+[phone] His tags: the old prefilled ones (lol, yes, no, love, hype, facepalm, gn) are gone after the update; any he added himself are still there.
 [phone] Tap a GIF in a real chat app: it lands in the message box.

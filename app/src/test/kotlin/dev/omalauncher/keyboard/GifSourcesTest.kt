@@ -67,21 +67,32 @@ class GifSourcesTest {
     @Test fun tagsAddedRemovedMovedAndKept() {
         val f = File.createTempFile("gifs", ".json").also { it.delete() }
         GifStore(f).apply {
-            assertEquals(GifStore.DEFAULT_TAGS, tags())
+            // None to begin with (Boss, 2026-10-27: "remove the prefilled ones").
+            assertEquals(emptyList<String>(), tags())
             assertTrue(addTag(" Bruh "))
             // Once only, and never one of the fixed pills.
             assertFalse(addTag("bruh"))
             assertFalse(addTag("Trending"))
             assertFalse(addTag("  "))
-            removeTag("no")
-            moveTag(tags().indexOf("bruh"), 0)
-            tagsOpen = true
+            assertTrue(addTag("cats"))
+            assertTrue(addTag("dogs"))
+            removeTag("cats")
+            moveTag(tags().indexOf("dogs"), 0)
         }
         val back = GifStore(f)
-        assertEquals(listOf("bruh", "lol", "yes", "love", "hype", "facepalm", "gn"), back.tags())
-        assertTrue(back.tagsOpen)
-        back.moveTag(0, 2)
-        assertEquals(listOf("lol", "yes", "bruh"), back.tags().take(3))
+        assertEquals(listOf("dogs", "bruh"), back.tags())
+        back.moveTag(0, 1)
+        assertEquals(listOf("bruh", "dogs"), back.tags())
+        f.delete()
+    }
+
+    @Test fun anOldStoreLosesTheTagsItWasGivenAndKeepsHisOwn() {
+        val f = File.createTempFile("gifs", ".json")
+        f.writeText("""{"hearted":[],"recent":[],"tags":["lol","bruh","yes","no","love","hype","facepalm","gn","cats"],"tagsOpen":true}""")
+        assertEquals(listOf("bruh", "cats"), GifStore(f).tags())
+        // Once: a default name he adds again afterwards stays.
+        GifStore(f).addTag("lol")
+        assertEquals(listOf("bruh", "cats", "lol"), GifStore(f).tags())
         f.delete()
     }
 }
