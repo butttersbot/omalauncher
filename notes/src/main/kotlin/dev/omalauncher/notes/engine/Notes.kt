@@ -25,6 +25,7 @@ object Notes {
     private val rounds = Executors.newSingleThreadScheduledExecutor { Thread(it, "notes-sync").apply { isDaemon = true } }
     private var next: ScheduledFuture<*>? = null
     private var rounded = 0
+    private var backoff = RETRY_MS
 
     private val _all = MutableStateFlow<List<Note>>(emptyList())
     val all: StateFlow<List<Note>> = _all
@@ -99,6 +100,7 @@ object Notes {
                 if (r != null) {
                     Log.i(TAG, "sync reached=${r.reached} sent=${r.sent} took=${r.took} left=${r.left}")
                     _reach.value = Reach(r.reached, r.left, System.currentTimeMillis())
+                    if (r.reached) backoff = RETRY_MS
                     if (r.took > 0) came.value++
                 }
                 publish()
@@ -108,10 +110,16 @@ object Notes {
             }, delayMs, TimeUnit.MILLISECONDS)
     }
 
-    /** Again in a minute, unless a newer round was asked for meanwhile (an edit's own round goes first). */
+    /**
+     * Again later, unless a newer round was asked for meanwhile (an edit's own round goes first). Backs off 1, 2, 4 ...
+     * up to 30 minutes, so a long outage costs a handful of tries an hour, not one a minute (Boss, 2026-10-26: battery).
+     */
     @Synchronized
     private fun retryLater(round: Int) {
-        if (round == rounded) sync(RETRY_MS)
+        if (round != rounded) return
+        val wait = backoff
+        backoff = (backoff * 2).coerceAtMost(RETRY_MAX_MS)
+        sync(wait)
     }
 
     private fun publish() {
@@ -130,4 +138,5 @@ object Notes {
     private const val WALK_FOLDER = "walkFolder"
     private const val SOON_MS = 1_500L
     private const val RETRY_MS = 60_000L
+    private const val RETRY_MAX_MS = 30 * 60_000L
 }
