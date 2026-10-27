@@ -358,7 +358,10 @@ private fun ChatScreen(
         }
     }
 
-    fun macCard(entry: MacPending) = ApprovalCard(entry.request.explanation, remember = if (entry.request.canRemember) ({
+    fun macCard(entry: MacPending) = ApprovalCard(entry.request.explanation,
+        question = if (questionInput(entry.request.tool, entry.request.input)) WaitingQuestion(entry.ticket, entry.threadName, entry.request.input) { answers, done ->
+            host.answerMacQuestions(entry.ticket, answers) { outcome -> done(macApprovalNotice(outcome)); tick++ }
+        } else null, remember = if (entry.request.canRemember) ({
         host.rememberMacCommand(entry.ticket) { outcome -> notice = macApprovalNotice(outcome); tick++ }
     }) else null) { allow -> answerMac(entry, allow) }
 
@@ -554,7 +557,14 @@ private fun ChatScreen(
                         else -> {
                             val by = builders[task.builderId] ?: BuilderState()
                             val running = by.working && task.time == building[task.builderId]
-                            val cards = if (running) by.pending.associate { it.nonce to ApprovalCard(it.approval.explanation) { allow -> answer(it, allow) } } else emptyMap()
+                            val cards = if (running) by.pending.associate { it.nonce to ApprovalCard(it.approval.explanation, question = if (questionInput(it.approval.tool, it.approval.input.toString())) WaitingQuestion(it.nonce, "Phone builder", it.approval.input.toString()) { answers, done ->
+                                val outcome = host.answerBuilderQuestions(it, answers)
+                                done(when (outcome) {
+                                    ApprovalOutcome.Decided -> null
+                                    ApprovalOutcome.Locked -> "Unlock your phone to answer"
+                                    ApprovalOutcome.Expired -> "That request has expired"
+                                }); tick++
+                            } else null) { allow -> answer(it, allow) } } else emptyMap()
                             TaskEntry(
                                 task, running, by.label, if (running) by.answer else task.result, cards,
                                 onCancel = {
@@ -1104,7 +1114,7 @@ private fun PickMenu(which: String, hosts: List<HostChoice>, chat: NewChat?, onP
 private val LocalChatHost = staticCompositionLocalOf<ChatHost> { error("OmaChatScreen provides the host") }
 
 /** A waiting approval as its card needs it: why the agent asks, and where his tap goes. */
-private class ApprovalCard(val explanation: String, val remember: (() -> Unit)? = null, val answer: (Boolean) -> Unit)
+private class ApprovalCard(val explanation: String, val question: WaitingQuestion? = null, val remember: (() -> Unit)? = null, val answer: (Boolean) -> Unit)
 
 /** The card of one waiting approval: what would be done, and the two answers. The same for the phone's builder and a thread on the Mac. */
 @Composable
@@ -1113,6 +1123,14 @@ private fun ApprovalBox(
     detail: String,
     card: ApprovalCard,
 ) {
+    val openQuestion = LocalQuestionOpen.current
+    card.question?.let { question ->
+        Column(Modifier.fillMaxWidth().padding(12.dp)) {
+            BasicText("Questions waiting", style = Pack.body(color = Pack.accent))
+            BracketAction("answer questions", Pack.accent) { openQuestion?.invoke(question) }
+        }
+        return
+    }
     val small = Pack.mono(Pack.size.small, Pack.muted)
     Column(Modifier.fillMaxWidth().padding(top = 8.dp).framed(Pack.mark, Pack.accent, Pack.surface, radius = 12.dp).padding(10.dp)) {
         BasicText(title, style = Pack.body(color = Pack.accent))

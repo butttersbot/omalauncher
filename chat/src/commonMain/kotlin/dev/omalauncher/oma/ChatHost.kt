@@ -199,6 +199,9 @@ interface ChatHost {
     fun tryMacAgain(time: Long)
 
     /** His answer to a Mac thread's request; [done] gets how it went. */
+    fun answerMacQuestions(ticket: String, answers: org.json.JSONObject, done: (MacApprovalOutcome) -> Unit) { done(MacApprovalOutcome.Failed) }
+    fun answerBuilderQuestions(entry: PendingApproval, answers: org.json.JSONObject): ApprovalOutcome = ApprovalOutcome.Expired
+
     fun answerMac(ticket: String, allow: Boolean, done: (MacApprovalOutcome) -> Unit)
     fun rememberMacCommand(ticket: String, done: (MacApprovalOutcome) -> Unit) { done(MacApprovalOutcome.Failed) }
     fun forgetMacCommands(threadId: String, done: (String) -> Unit) { done("Saved command approvals are unavailable on this host") }

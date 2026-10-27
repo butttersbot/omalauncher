@@ -15,6 +15,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -73,6 +74,8 @@ internal fun ChatArtifactWorkspace(
     where: String = "",
     content: @Composable () -> Unit,
 ) {
+    val questionDrafts = rememberSaveableStateHolder()
+    var question by remember { mutableStateOf<WaitingQuestion?>(null) }
     var selections by rememberSaveable { mutableStateOf(mapOf<String, String>()) }
     var expanded by rememberSaveable { mutableStateOf(false) }
     var opened by remember { mutableStateOf(mapOf<String, ChatArtifact>()) }
@@ -81,13 +84,13 @@ internal fun ChatArtifactWorkspace(
     var opens by remember { mutableIntStateOf(0) }
     // The version the panel shows, so only the card of that version says it is showing.
     var shownVersion by remember { mutableIntStateOf(0) }
-    LaunchedEffect(tab) { expanded = false }
+    LaunchedEffect(tab) { expanded = false; question = null }
     val selected = artifacts.firstOrNull { it.id == selections[tab] }?.let { listed -> opened[tab]?.takeIf { it.id == listed.id } ?: listed }
         ?: opened[tab]?.takeIf { it.id == selections[tab] }
-    val open: (ChatArtifact) -> Unit = { opened = opened + (tab to it); selections = selections + (tab to it.id); fileLists = fileLists - tab; expanded = false; opens++ }
-    val close = { selections = selections - tab; opened = opened - tab; fileLists = fileLists - tab; expanded = false }
+    val open: (ChatArtifact) -> Unit = { question = null; opened = opened + (tab to it); selections = selections + (tab to it.id); fileLists = fileLists - tab; expanded = false; opens++ }
+    val close = { question = null; selections = selections - tab; opened = opened - tab; fileLists = fileLists - tab; expanded = false }
     val listing = tab in fileLists
-    val panelOpen = selected != null || listing
+    val panelOpen = question != null || selected != null || listing
     BackHandler(panelOpen) { close() }
     // What was last seen of each artifact of this tab's threads: what is already there when the tab opens opens nothing.
     var seen by remember(tab) { mutableStateOf(live.filter { it.thread in threads }.associate { it.key to (it.version to it.editing) }) }
@@ -140,6 +143,7 @@ internal fun ChatArtifactWorkspace(
             Box(Modifier.weight(1f).fillMaxHeight().then(if (overlay) Modifier.clearAndSetSemantics {} else Modifier), contentAlignment = Alignment.TopCenter) {
                 CompositionLocalProvider(
                     LocalArtifactOpen provides open,
+                    LocalQuestionOpen provides { question = it; expanded = false; fileLists = fileLists - tab },
                     LocalMarkdownArtifactOpen provides { link ->
                         val target = artifactPath(link) ?: link
                         artifacts.firstOrNull { it.location == target }?.let { open(it); true } ?: false
@@ -158,7 +162,8 @@ internal fun ChatArtifactWorkspace(
             if (panelOpen && !overlay) {
                 Box(Modifier.weight(.92f).fillMaxHeight()) {
                     CompositionLocalProvider(LocalArtifactLive provides live, LocalArtifactWhere provides where) {
-                        if (listing) ArtifactFiles(artifacts, close, open)
+                        if (question != null) questionDrafts.SaveableStateProvider(question!!.key) { WaitingQuestionPanel(question!!, close) }
+                        else if (listing) ArtifactFiles(artifacts, close, open)
                         else if (selected != null) ArtifactPanel(host, selected, opens, artifacts, wide = true, canSplit = false, { expanded = true }, close, open, onDiscuss,
                             onShown = { shownVersion = it }, onLatest = { v -> if (selected.version != v) opened = opened + (tab to selected.copy(version = v)) })
                     }
@@ -168,7 +173,8 @@ internal fun ChatArtifactWorkspace(
         if (overlay) {
             Box(Modifier.fillMaxSize().background(Pack.background)) {
                 CompositionLocalProvider(LocalArtifactLive provides live, LocalArtifactWhere provides where) {
-                    if (listing) ArtifactFiles(artifacts, close, open)
+                    if (question != null) questionDrafts.SaveableStateProvider(question!!.key) { WaitingQuestionPanel(question!!, close) }
+                        else if (listing) ArtifactFiles(artifacts, close, open)
                     else if (selected != null) ArtifactPanel(host, selected, opens, artifacts, wide, canSplit = wide, if (wide) ({ expanded = false }) else null, close, open,
                         onDiscuss = {
                             onDiscuss(it)

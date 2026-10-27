@@ -1,0 +1,43 @@
+# Production native waiting-question form; isolated fake host, no runner or real sends.
+fold folded
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -n dev.omalauncher.artifactpreview/.PreviewActivity --es waitingQuestion claude
+clearlog
+expect Questions waiting
+tap answer questions
+expect Before I continue
+tap Beside chat
+scrollto Which screen sizes should we check?
+tap Cover
+tap Unfolded
+expect Send:
+expect Checks: Cover, Unfolded
+nolog waiting question answer
+tap back to chat
+tap answer questions
+expect Layout: Beside chat
+expect Checks: Cover, Unfolded
+shot waiting-question-cover-ready
+tap Send:
+expect Answers sent
+log waiting question answer fixture-ticket
+shot waiting-question-cover-sent
+fold unfolded
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -n dev.omalauncher.artifactpreview/.PreviewActivity --es waitingQuestion codex
+clearlog
+tap answer questions
+expect Before I continue
+tap Full screen
+swipe 0.75 0.8 0.75 0.35 500
+tap Cover
+expect Layout: Full screen
+expect Checks: Cover
+nolog waiting question answer
+shot waiting-question-unfolded-ready
+tap Send:
+expect Answers sent
+log waiting question answer fixture-ticket
+shot waiting-question-unfolded-sent
+# [phone] Fake Mac runner AskUserQuestion and Codex question: Send resumes the waiting call with exact answers; never Allow/Deny or queued chat.
+# [phone] Phone builder question: wrong/expired nonce and locked-device send refuse; valid Send resumes only the owning builder once.

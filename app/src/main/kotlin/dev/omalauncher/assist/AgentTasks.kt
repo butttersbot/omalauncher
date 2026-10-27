@@ -172,9 +172,9 @@ object AgentTasks {
      * nonce is made on the phone for that one request, so no other builder can hold it; one that none holds is
      * answered through builder A, which finds it expired as an approval that ended always was.
      */
-    fun answerApproval(context: Context, id: String, nonce: String, allow: Boolean): ApprovalOutcome {
+    fun answerApproval(context: Context, id: String, nonce: String, allow: Boolean, answers: JSONObject? = null): ApprovalOutcome {
         val holder = synchronized(this) { approvalHolder(waiting(), id, nonce) ?: BuilderId.A }
-        return of(holder).decide(context, id, nonce, allow)
+        return of(holder).decide(context, id, nonce, allow, answers)
     }
 
     /** The builder whose approval [entry] is; null once none holds it. */
@@ -706,7 +706,13 @@ class Builder(val id: BuilderId) {
      * locked phone, and an approval that was already answered, withdrawn, stopped or lost to a restart is
      * [ApprovalOutcome.Expired] and changes nothing.
      */
-    internal fun decide(context: Context, id: String, nonce: String, allow: Boolean): ApprovalOutcome {
+    internal fun decide(context: Context, id: String, nonce: String, allow: Boolean, answers: JSONObject? = null): ApprovalOutcome {
+        // Validate before claiming: malformed answers must leave the request waiting.
+        synchronized(lock) {
+            pending.firstOrNull { it.id == id && it.nonce == nonce }?.let {
+                ClaudeProtocol.decision(it.approval, allow, answers)
+            }
+        }
         val locked = AgentNotices.deviceLocked(context)
         val (entry, told) = synchronized(lock) {
             when (val claim = ledger.claim(id, nonce, locked, active = working && !stopping)) {
@@ -716,7 +722,7 @@ class Builder(val id: BuilderId) {
                     published()
                     label = if (approvals.isEmpty()) "Agent is working" else "Approval needed"
                     // An agent that has just gone can't be told; the request is over either way.
-                    claim.entry to runCatching { writeEvent(ClaudeProtocol.decision(claim.entry.approval, allow)) }.isSuccess
+                    claim.entry to runCatching { writeEvent(ClaudeProtocol.decision(claim.entry.approval, allow, answers)) }.isSuccess
                 }
             }
         }

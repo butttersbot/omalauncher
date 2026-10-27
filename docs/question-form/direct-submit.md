@@ -41,3 +41,11 @@ and updated form were rendered with clean soma-look receipts, personally reviewe
 at cover 475x751, unfolded 932x704 and side 466x704. Mac compile/unit checks, Keystore signature instrumentation and the
 new isolated question-form.walk are pending. Real phone/runner delivery is deferred
 until the launcher is promoted; no real messages were sent during implementation.
+
+## Waiting agent questions (native form)
+
+AskUserQuestion and Codex `codex_request: questions` cards now open a native form in the artifact workspace rather than presenting Allow/Deny. The form uses the active Pack, one or several option buttons, optional Other text, a scrolling question area, and a separate pinned native Send bar showing the actual answers. Drafts survive Back and reopening that request. Send uses the request's existing nonce/ticket through the owning phone builder or Mac runner; it never sends a chat follow-up or mints a Canvas receipt.
+
+Phone validation runs before claiming the one-time nonce. The Mac transport sends the answers object alongside the existing decision and nonce. The runner's question validation must be deployed before the real Mac path is walked; do not restart it while sessions work.
+
+Coverage: `waiting-question.walk` uses isolated Claude and Codex fixtures with the production chat/workspace/form and fake completion only. It checks the cover draft, multi-select, native label, no delivery before Send, then unfolded Codex answers. Compile/unit and critic screenshot review are pending at this checkpoint; real runner and phone-builder nonce/lock steps remain `[phone]`.

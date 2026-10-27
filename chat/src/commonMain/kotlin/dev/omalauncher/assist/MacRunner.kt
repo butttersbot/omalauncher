@@ -96,10 +96,10 @@ object MacRequests {
 
     fun stream(threadId: String, after: Long) = MacRequest("GET", "/threads/${part(threadId)}/stream${from(after)}")
 
-    fun answerApproval(threadId: String, approval: String, allow: Boolean, nonce: String, remember: Boolean = false) = MacRequest(
+    fun answerApproval(threadId: String, approval: String, allow: Boolean, nonce: String, remember: Boolean = false, answers: JSONObject? = null) = MacRequest(
         "POST",
         "/threads/${part(threadId)}/approvals/${part(approval)}",
-        JSONObject().put("decision", if (allow) MacDecision.Allow.word else MacDecision.Deny.word).put("nonce", nonce).apply { if (remember) put("remember", true) }.toString(),
+        JSONObject().put("decision", if (allow) MacDecision.Allow.word else MacDecision.Deny.word).put("nonce", nonce).apply { if (remember) put("remember", true); if (answers != null) put("answers", answers) }.toString(),
     )
 
     fun clearCommands(threadId: String) = MacRequest("POST", "/threads/${part(threadId)}/command-approvals/clear", "{}")
@@ -417,8 +417,8 @@ class MacRunnerClient(private val config: MacRunnerConfig?, private val machine:
 
     fun events(threadId: String, after: Long): MacAnswer<MacEventsPage> = parseMacEvents(send(MacRequests.events(own(threadId), after)))
 
-    fun answerApproval(threadId: String, approval: String, allow: Boolean, nonce: String, remember: Boolean = false): MacAnswer<MacDecision> =
-        parseMacDecision(send(MacRequests.answerApproval(own(threadId), approval, allow, nonce, remember)))
+    fun answerApproval(threadId: String, approval: String, allow: Boolean, nonce: String, remember: Boolean = false, answers: JSONObject? = null): MacAnswer<MacDecision> =
+        parseMacDecision(send(MacRequests.answerApproval(own(threadId), approval, allow, nonce, remember, answers)))
 
     fun clearCommands(threadId: String): MacAnswer<Boolean> = macAnswer(send(MacRequests.clearCommands(own(threadId)))) { json ->
         (json.opt("cleared") as? Boolean)?.takeIf { it }

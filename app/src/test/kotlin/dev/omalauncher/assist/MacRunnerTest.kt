@@ -28,6 +28,16 @@ class MacRunnerTest {
 
     private fun <T> value(answer: MacAnswer<T>): T = (answer as MacAnswer.Ok<T>).value
 
+    @Test fun questionAnswersTravelWithTheWaitingNonce() {
+        val answers = JSONObject().put("Where?", "Beside chat").put("Checks", org.json.JSONArray().put("Cover").put("Unfolded"))
+        val request = MacRequests.answerApproval("t1", "question1", true, "waiting-nonce", answers = answers)
+        val body = JSONObject(request.body!!)
+        assertEquals("waiting-nonce", body.getString("nonce"))
+        assertEquals("allow", body.getString("decision"))
+        assertEquals(answers.toString(), body.getJSONObject("answers").toString())
+        assertFalse(body.has("remember"))
+    }
+
     // Config
 
     @Test fun theConfigIsReadFromItsJson() {

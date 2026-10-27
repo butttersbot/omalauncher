@@ -37,14 +37,14 @@ class PreviewActivity : ComponentActivity() {
             Box(Modifier.fillMaxSize()) {
                 Box(Modifier.fillMaxHeight().then(if (narrow) Modifier.width(400.dp) else Modifier.fillMaxWidth())) {
                     val empty = intent.getBooleanExtra("empty", false)
-                    OmaChatScreen(remember { PreviewHost(this@PreviewActivity, empty, intent.getStringExtra("mail"), intent.getBooleanExtra("questions", false)) }, null, {}, if (empty) PHONE_THREAD_B else OMA_TAB, {})
+                    OmaChatScreen(remember { PreviewHost(this@PreviewActivity, empty, intent.getStringExtra("mail"), intent.getBooleanExtra("questions", false), intent.getStringExtra("waitingQuestion")) }, null, {}, if (empty) PHONE_THREAD_B else OMA_TAB, {})
                 }
             }
         }
     }
 }
 
-private class PreviewHost(private val context: Context, private val empty: Boolean = false, private val mailMode: String? = null, private val questions: Boolean = false) : ChatHost {
+private class PreviewHost(private val context: Context, private val empty: Boolean = false, private val mailMode: String? = null, private val questions: Boolean = false, private val waitingQuestion: String? = null) : ChatHost {
         val now = System.currentTimeMillis()
         private val page = """<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1">
 <style>body{margin:0;padding:24px;background:#fdfdfb;color:#111113;font-family:system-ui}small{color:#d7262d;font-size:10px;letter-spacing:.1em}h1{font-size:32px;line-height:1.15;margin:18px 0}p{font-size:14px;line-height:1.6}button{background:#111113;color:#fdfdfb;padding:12px 18px;border:0}section{border:1px solid #111113;padding:18px;margin:22px 0}.record{border-radius:50%;width:100px;height:100px;background:repeating-radial-gradient(#111113 0 3px,#444 4px);margin:15px auto;display:grid;place-items:center}.record:after{content:"";width:28px;height:28px;border:8px solid #fdfdfb;border-radius:50%;background:#d7262d}</style>
@@ -82,7 +82,14 @@ Open the preview to try the layout. We can keep talking while you look at it.
         override fun builders() = emptyMap<BuilderId, BuilderState>()
         override fun continuing() = false
         override fun front() = FrontState()
-        override fun macPending() = emptyList<MacPending>()
+        private var questionDone by mutableStateOf(false)
+        private val questionJson = org.json.JSONObject("""{"questions":[{"id":"layout","header":"Layout","question":"Where should the form open?","options":[{"label":"Beside chat","description":"Keep the conversation visible"},{"label":"Full screen","description":"Use the whole screen"}]},{"id":"checks","header":"Checks","question":"Which screen sizes should we check?","multiSelect":true,"options":[{"label":"Cover"},{"label":"Unfolded"}]}]}""").apply { if (waitingQuestion == "codex") put("codex_request", "questions") }
+        override fun macPending() = if (waitingQuestion == null || questionDone) emptyList() else listOf(MacPending("fixture", "Fake agent", MacApproval("question-fixture", "fixture-nonce", if (waitingQuestion == "codex") "Question" else "AskUserQuestion", questionJson.toString(), ""), "fixture-ticket", 1))
+        override fun answerMacQuestions(ticket: String, answers: org.json.JSONObject, done: (MacApprovalOutcome) -> Unit) {
+            android.util.Log.i("SomaWalk", "waiting question answer $ticket: $answers")
+            questionDone = true
+            done(MacApprovalOutcome.Decided)
+        }
         override fun macView() = MacView()
         override fun macLabel(task: ChatTask) = ""
         override fun macEarlier(threadId: String): MacEarlierRead = MacEarlierRead.Unread

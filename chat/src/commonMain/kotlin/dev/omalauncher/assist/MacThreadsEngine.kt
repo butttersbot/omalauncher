@@ -1164,6 +1164,8 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
      */
     fun answer(ticket: String, allow: Boolean, told: (MacApprovalOutcome) -> Unit) = decide(ticket, allow, false, told)
 
+    fun answerQuestions(ticket: String, answers: org.json.JSONObject, told: (MacApprovalOutcome) -> Unit) = decide(ticket, true, false, told, answers)
+
     fun rememberCommand(ticket: String, told: (MacApprovalOutcome) -> Unit) = decide(ticket, true, true, told)
 
     fun forgetCommands(threadId: String, told: (String) -> Unit) {
@@ -1174,7 +1176,7 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
         }
     }
 
-    private fun decide(ticket: String, allow: Boolean, remember: Boolean, told: (MacApprovalOutcome) -> Unit) {
+    private fun decide(ticket: String, allow: Boolean, remember: Boolean, told: (MacApprovalOutcome) -> Unit, answers: org.json.JSONObject? = null) {
         restore()
         if (platform.locked()) return told(MacApprovalOutcome.Locked)
         val entry = synchronized(this) {
@@ -1186,7 +1188,7 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
         thread(name = "oma-mac-answer", isDaemon = true) {
             var outcome = MacApprovalOutcome.Unreachable
             try {
-                outcome = macApprovalOutcome(client(entry.threadId).answerApproval(entry.threadId, entry.request.approval, allow, entry.request.nonce, remember))
+                outcome = macApprovalOutcome(client(entry.threadId).answerApproval(entry.threadId, entry.request.approval, allow, entry.request.nonce, remember, answers))
                 if (outcome.over) {
                     val gone = synchronized(this) { book.remove(entry.threadId, entry.request.approval).also { published() } }
                     if (gone != null) platform.withdrawCard(gone)
