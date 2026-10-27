@@ -49,3 +49,10 @@ AskUserQuestion and Codex `codex_request: questions` cards now open a native for
 Phone validation runs before claiming the one-time nonce. The Mac transport sends the answers object alongside the existing decision and nonce. The runner's question validation must be deployed before the real Mac path is walked; do not restart it while sessions work.
 
 Coverage: `waiting-question.walk` uses isolated Claude and Codex fixtures with the production chat/workspace/form and fake completion only. It checks the cover draft, multi-select, native label, no delivery before Send, then unfolded Codex answers. Compile/unit and critic screenshot review are pending at this checkpoint; real runner and phone-builder nonce/lock steps remain `[phone]`.
+
+
+### Native artifact Send checkpoint: 4e8b8353
+
+Mac critic: compilation succeeded on Android and desktop, preview assembled, and all 60 focused tests passed (ArtifactReply 7, CanvasReceipt 4, ClaudeProtocol 5, MacThreads 44). Raw-string DER signature instrumentation passed. Cover and unfolded screenshots were reviewed: option changes updated the native label, no answer callback occurred before the native tap, and successful delivery removed Send; no second answer was logged. The committed walk reported 40 PASS, 1 FAIL, 4 LOOK. Its single failure was an ambiguous “Unfolded” substring tap; a manual tap verified both selecting and clearing it updated the native label. The selector now names that option's unique description; the corrected script has not yet been rerun.
+
+Other typing with a long answer kept the keyboard up and wrapped the native label without sending. Critic noted that the bar obscured part of the focused HTML Other field. Not covered on device: script-only draft changes, null/invalid/version clears, unfolded keyboard, or a double-tap race. Real delivery, Canvas linking and receipt registration remain phone checks after promotion. This result does not cover the newer native waiting-question form at dd6a1078.

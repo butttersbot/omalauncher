@@ -17,7 +17,7 @@ expect Send:
 expect Layout: Beside chat
 expect Checks: Cover
 nolog artifact answer 1
-tap Unfolded
+tap The wide screen with the form beside chat.
 expect Checks: Cover, Unfolded
 nolog artifact answer 1
 shot questions-cover-native-ready
