@@ -12,6 +12,17 @@ let errors=[];w.paperError=e=>{errors.push(e);console.error(e)};
 for(const {name}of JSON.parse(fs.readFileSync(base+'pages.json','utf8'))){const manifest=JSON.parse(fs.readFileSync(base+'pages.json','utf8')).find(p=>p.name===name);assert.equal(createHash('sha256').update(fs.readFileSync(base+'mockup/'+name+'.dc.html')).digest('hex'),manifest.sha256);await w.Paper.show(name);if(!w.document.getElementById('scene'))throw Error(name);console.log(name,w.document.getElementById('scene').textContent.replace(/\s+/g,' ').slice(0,70))}
 w.Hunch.rows=[{id:'123',title:'Test real market',category:'Sports',venue:'Outcome',date:'Read venue terms',sides:['Yes','No'],terms:{rule:'Official settlement'}}];
 for(const width of [390,880]){w.innerWidth=width;for(const chapter of ['today','bets','money']){w.Hunch.chapter=chapter;await w.showLive();assert.doesNotMatch(w.document.getElementById('scene').textContent,/169\.30|Suns beat|Packers|250\.00/);console.log('LIVE',width,chapter,w.document.getElementById('scene').textContent.replace(/\s+/g,' ').slice(0,110))}}
+// Listing asks bind price + implied chance to the actual outcome; empty/stale snapshots never become invented quotes.
+w.innerWidth=880;w.Hunch.selected=null;w.Hunch.chapter='today';
+await w.receiveNative({type:'listingQuote',quote:{id:'123',valid:true,time:Date.now(),ask:'0.415',percent:'41.5',side:'Yes'}});
+await w.showLive();assert.match(w.document.querySelector('.hero').textContent,/41.5%/);
+// Put the same quote on a list row too.
+w.Hunch.rows.push({...w.Hunch.rows[0],id:'124',title:'Second listing'});
+await w.receiveNative({type:'listingQuote',quote:{id:'124',valid:true,time:Date.now(),ask:'0.63',percent:'63',side:'Yes'}});w.Paper.render();
+assert.match(w.document.querySelector('.market-list').textContent,/63%YES 63¢/);
+await w.receiveNative({type:'listingQuote',quote:{id:'124',valid:true,time:Date.now()-61000,ask:'0.63',percent:'63',side:'Yes'}});w.Paper.render();
+assert.doesNotMatch(w.document.querySelector('.market-list').textContent,/YES 63¢/);assert.match(w.document.querySelector('.market-list').textContent,/NO LIVE QUOTE/);
+await w.receiveNative({type:'listingQuote',quote:{id:'123',valid:false}});w.Paper.render();assert.doesNotMatch(w.document.querySelector('.hero').textContent,/41.5%/);
 // Inner offline must replace the hero's loading copy, including on a later error update.
 w.innerWidth=880;w.Hunch.rows=[];w.Hunch.chapter='today';await w.showLive();
 assert.match(w.document.querySelector('#scene').textContent,/Loading listings/);

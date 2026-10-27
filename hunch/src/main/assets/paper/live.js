@@ -10,7 +10,22 @@ function termEntries(terms){return Object.entries(terms).map(([key,value])=>{con
 let bookTimer;function requestBook(){clearTimeout(bookTimer);if(!Hunch.selected)return;Hunch.book=null;const request={type:'book',id:Hunch.selected.id,side:Hunch.side,budget:Hunch.budget};bookTimer=setTimeout(()=>sendNative(request),150)}
 function choose(m){Hunch.selected=m;Hunch.side=0;requestBook();showLive()}
 function liveRows(){return Hunch.rows.filter(m=>(Hunch.category==='ALL'||m.category.toUpperCase()===Hunch.category)&&(!Hunch.query||(m.title+' '+m.category+' '+m.venue).toLowerCase().includes(Hunch.query.toLowerCase())))}
-function marketButton(m){const b=action(m.title,()=>choose(m));const sub=document.createElement('small');sub.textContent=m.venue+' · '+m.date;b.append(sub);return b}
+const listingQuotes=new Map();
+function listingQuote(m){const q=listingQuotes.get(m.id);return q?.valid&&Number(q.ask)>0&&Number(q.ask)<1&&Date.now()-q.time<=60000&&Date.now()-q.time>=-5000?q:null}
+function listingPercent(m){const q=listingQuote(m);return q?Number(q.percent).toLocaleString('en-US',{maximumFractionDigits:2})+'%':'—'}
+function listingPrice(m){const q=listingQuote(m);return q?(q.side||m.sides?.[0]||'Yes').toUpperCase()+' '+(Number(q.ask)*100).toLocaleString('en-US',{maximumFractionDigits:2})+'¢':'NO LIVE QUOTE'}
+function listingIdentity(node,m){node.dataset.marketId=m.id;node.title='Percentage implied by the displayed public ask; not a guaranteed outcome.';return node}
+let quoteTimer;const quoteAsked=new Map();
+window.requestListingQuotes=()=>{clearTimeout(quoteTimer);quoteTimer=setTimeout(()=>{
+ if(accountMode||design)return;
+ const now=Date.now(),ids=[];
+ document.querySelectorAll('[data-market-id]').forEach(el=>{const r=el.getBoundingClientRect(),id=el.dataset.marketId;
+  if(r.bottom>0&&r.top<innerHeight&&r.right>0&&r.left<innerWidth&&!ids.includes(id)&&now-(quoteAsked.get(id)||0)>12000)ids.push(id)
+ });
+ const batch=ids.slice(0,16);if(batch.length){batch.forEach(id=>quoteAsked.set(id,now));sendNative({type:'listingQuotes',ids:batch})}
+ },180)};
+document.addEventListener('scroll',()=>window.requestListingQuotes(),true);
+function marketButton(m){const b=listingIdentity(action(m.title,()=>choose(m)),m);const sub=document.createElement('small');sub.textContent=m.venue+' · '+m.date;b.append(sub);const price=document.createElement('b');price.textContent=listingPercent(m)+' · '+listingPrice(m);b.append(price);return b}
 function listInto(panel,rows,max=5){panel.replaceChildren();panel.classList.add('paper-search-results');if(!rows.length){const d=document.createElement('p');d.className='empty-copy';d.textContent=Hunch.error?'Markets could not be loaded. Check your connection.':Hunch.rows.length?'No matching markets.':'Loading public markets…';panel.append(d)}const limit=max===100?(Hunch.limit||100):max;rows.slice(0,limit).forEach(m=>panel.append(marketButton(m)));if(max===100&&rows.length>limit)panel.append(action('Show more markets',()=>{Hunch.limit=limit+100;Paper.schedule()}))}
 function updateFeed(feed){
  const s=Array.from(feed.children);if(s.length<14)return;
@@ -20,18 +35,18 @@ function updateFeed(feed){
  // Keep the original stadium drawing, caption frame, ink, type and screen tone.
  const cover=s[2],caption=cover.lastElementChild;const cap=caption?.children;
  text(cover.querySelector(':scope > span'),'PUBLIC MARKETS · '+Hunch.rows.length+' LISTED');
- if(cap?.length){text(cap[0].children[0],featured?.title||'Public markets');text(cap[0].children[1],featured?(Hunch.error?'CACHED':'LISTED'):(Hunch.error?'OFFLINE':'LOADING'));text(cap[1],featured?featured.venue+' · '+featured.date:Hunch.error?'Connection unavailable':'Loading the latest listings…')}
- if(featured){cover.setAttribute('role','button');cover.tabIndex=0;event(cover,'click',()=>choose(featured));event(cover,'keydown',e=>{if(e.key==='Enter')choose(featured)})}
+ if(cap?.length){text(cap[0].children[0],featured?.title||'Public markets');text(cap[0].children[1],featured?listingPercent(featured):(Hunch.error?'OFFLINE':'LOADING'));text(cap[1],featured?featured.venue+' · '+featured.date:Hunch.error?'Connection unavailable':'Loading the latest listings…')}
+ if(featured){listingIdentity(cover,featured);cover.setAttribute('role','button');cover.tabIndex=0;event(cover,'click',()=>choose(featured));event(cover,'keydown',e=>{if(e.key==='Enter')choose(featured)})}
  const gut=s[3].querySelector('span');if(gut){text(gut.children[0],'GUT CHECK');text(gut.children[1],rows[1]?.title||'Know something the market doesn’t?');text(gut.children[2],'Open a market to inspect its live order book.')};if(rows[1])event(s[3],'click',()=>choose(rows[1]));
  empty(s[4],'LOOKS MISPRICED · VS OUTSIDE PRICES','Outside-price comparisons are not connected yet. No edge is claimed.');
  // Reuse the original row typography and separators, with listing identity instead of invented prices.
  const trending=s[5];text(trending.firstElementChild,'MARKETS · '+rows.length+' MATCHING');const grid=trending.lastElementChild;
- if(grid!==trending.firstElementChild){grid.replaceChildren();rows.slice(0,5).forEach((m,i)=>{const n=document.createElement('span');n.textContent=String(i+1).padStart(2,'0');const t=document.createElement('span');const b=document.createElement('b');b.textContent=m.title;const sub=document.createElement('span');sub.style.cssText='display:block;font:9px "JetBrains Mono";color:#565964';sub.textContent=m.category;t.append(b,sub);event(t,'click',()=>choose(m));t.setAttribute('role','button');const price=document.createElement('span');price.textContent='→';grid.append(n,t,price)})}
+ if(grid!==trending.firstElementChild){grid.replaceChildren();rows.slice(0,5).forEach((m,i)=>{const n=document.createElement('span');n.textContent=String(i+1).padStart(2,'0');const t=document.createElement('span');const b=document.createElement('b');b.textContent=m.title;const sub=document.createElement('span');sub.style.cssText='display:block;font:9px "JetBrains Mono";color:#565964';sub.textContent=m.category;t.append(b,sub);event(t,'click',()=>choose(m));t.setAttribute('role','button');const price=document.createElement('span');price.textContent=listingPercent(m);listingIdentity(t,m);grid.append(n,t,price)})}
  empty(s[6],'SETTLES IN MINUTES','Settlement countdowns appear only when the venue provides a verified deadline.');
  const upcoming=empty(s[7],'MORE MARKETS',rows.length?'Open a listing for its exact venue terms.':'Waiting for public listings.');upcoming.append(...rows.slice(5,8).map(marketButton));
  empty(s[8],'MOVING TODAY','Price history is not connected yet. No movement is estimated.');
  empty(s[9],'YOUR WATCHLIST','No watchlist has been saved.');
- text(s[10].firstElementChild,'BIG QUESTIONS');const questions=s[10].lastElementChild,card=questions.firstElementChild;questions.replaceChildren();rows.slice(8,12).forEach(m=>{const box=card.cloneNode(true);text(box.children[0],m.date);text(box.children[1],m.title);text(box.children[2],'—');box.setAttribute('role','button');box.tabIndex=0;event(box,'click',()=>choose(m));event(box,'keydown',e=>{if(e.key==='Enter')choose(m)});questions.append(box)});if(!questions.children.length){const copy=document.createElement('span');copy.className='empty-copy';copy.textContent=Hunch.error?'Listings are unavailable.':'No more listings in this issue.';questions.append(copy)}
+ text(s[10].firstElementChild,'BIG QUESTIONS');const questions=s[10].lastElementChild,card=questions.firstElementChild;questions.replaceChildren();rows.slice(8,12).forEach(m=>{const box=card.cloneNode(true);text(box.children[0],m.date);text(box.children[1],m.title);text(box.children[2],listingPercent(m));listingIdentity(box,m);box.setAttribute('role','button');box.tabIndex=0;event(box,'click',()=>choose(m));event(box,'keydown',e=>{if(e.key==='Enter')choose(m)});questions.append(box)});if(!questions.children.length){const copy=document.createElement('span');copy.className='empty-copy';copy.textContent=Hunch.error?'Listings are unavailable.':'No more listings in this issue.';questions.append(copy)}
  empty(s[11],'PUBLIC LISTINGS','Listing dates are not provided by every venue.');s[11].append(...rows.slice(-2).map(marketButton));
  empty(s[12],'YOUR TEAMS','Team following is not connected yet.');text(s[13].lastElementChild,Hunch.error?'OFFLINE · TRY REFRESH':'PUBLIC MARKETS · FULL LIST UNDER SEARCH');
  if(Hunch.query||Hunch.category!=='ALL'){s.slice(2).forEach(e=>e.style.display='none');const results=document.createElement('div');results.className='paper-search-results';listInto(results,rows,100);feed.append(results)}

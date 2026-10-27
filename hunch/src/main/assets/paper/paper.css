@@ -42,3 +42,6 @@
 .hunch-two-pane .cvbody{flex:1 1 0;min-height:0;overscroll-behavior:contain}
 .hunch-two-pane .gut .t{min-width:0}.hunch-two-pane .gut .t b{overflow-wrap:anywhere}
 .hunch-two-pane.upright .hero{min-height:230px}
+
+.hunch-two-pane .quote-head{display:flex;align-items:start;gap:12px;justify-content:space-between}.hunch-two-pane .hero .quote-head>b:first-child{flex:1;min-width:0}.hunch-two-pane .hero .chance{flex:none;white-space:nowrap}.hunch-two-pane .mkt .p{min-width:85px}.paper-search-results button>b{display:block;font:700 12px 'JetBrains Mono';margin-top:5px}
+.hunch-two-pane .mkt .p{max-width:42%;flex-shrink:0}.hunch-two-pane .mkt .p small{white-space:normal;overflow-wrap:anywhere}

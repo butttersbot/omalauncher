@@ -8,6 +8,7 @@ document.addEventListener('click',e=>{const a=e.target.closest('a[href]');if(!a)
 window.receiveNative=async data=>{try{
  if(data.type==='config'){if(started)return;started=true;Hunch.chapter=data.chapter||'today';if(design)await reference(design);else{if(data.fixture){document.body.classList.add('reference');const ribbon=document.getElementById('reference');ribbon.hidden=false;ribbon.firstChild.nodeValue=data.fixture==='demo'?'FICTIONAL MARKET DEMO · NO REAL MONEY ':'OFFLINE TEST · NO REAL MONEY ';document.getElementById('leave-reference').textContent='CLOSE DEMO';ribbonSize()}await showLive()}}
  if(data.type==='markets'){Hunch.rows=data.rows;Hunch.updated=data.updated;Hunch.error=false;Paper.schedule()}
+ if(data.type==='listingQuote'){listingQuotes.set(data.quote.id,data.quote);Paper.schedule()}
  if(data.type==='marketError'){Hunch.error=true;Paper.schedule()}
  if(data.type==='book'&&Hunch.selected?.id===data.id&&Hunch.side===data.side&&Hunch.budget===data.budget){Hunch.book=data;Paper.schedule()}
  if(data.type==='wallet'){accountMode=true;clearTimeout(resizeTimer);await showWallet(data)}
@@ -18,4 +19,4 @@ window.paperBack=()=>{if(design||accountMode)return false;if(Hunch.selected){Hun
 sendNative({type:'ready'});
 
 // Expired depth must disappear even while the owner leaves the page open.
-setInterval(()=>{if(Hunch.selected&&Hunch.book?.time&&Date.now()-Hunch.book.time>60000)Paper.schedule()},1000);
+setInterval(()=>{window.requestListingQuotes?.();let expired=false;for(const q of listingQuotes.values()){if(q.valid&&(Date.now()-q.time>60000||Date.now()-q.time< -5000)){q.valid=false;expired=true}}if(expired)Paper.schedule();if(Hunch.selected&&Hunch.book?.time&&Date.now()-Hunch.book.time>60000)Paper.schedule()},1000);
