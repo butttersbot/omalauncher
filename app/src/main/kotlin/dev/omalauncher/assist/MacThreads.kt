@@ -153,6 +153,9 @@ class AndroidThreadsPlatform(private val context: Context) : ThreadsPlatform {
 
     override fun answeredNotice(label: String, answer: String, front: Boolean) = AgentNotices.answered(context, label, answer, if (front) AgentNotices.FRONT else AgentNotices.MAC)
 
+    override fun foreground(): Boolean = dev.omalauncher.oma.OwnScreens.visible &&
+        context.getSystemService(android.os.PowerManager::class.java).isInteractive && !locked()
+
     override fun locked(): Boolean = AgentNotices.deviceLocked(context)
 
     override fun linkNote(now: Long): String? = TailscaleHeal.note(now)

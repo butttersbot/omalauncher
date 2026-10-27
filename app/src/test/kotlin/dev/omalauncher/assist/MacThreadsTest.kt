@@ -751,8 +751,8 @@ class MacThreadsTest {
         val now = 1_000_000_000_000L
         // A stopped/no-task thread is allowed to lose its follower, but discovery never stops.
         assertTrue(macFollowed(listOf(stopped), emptyList(), noTasks, { 40 }, now).isEmpty())
-        assertEquals(30_000L, macDiscoveryDelay(listOf(stopped)))
-        assertEquals(30_000L, macDiscoveryDelay(emptyList()))
+        assertEquals(60_000L, macDiscoveryDelay(listOf(stopped)))
+        assertEquals(60_000L, macDiscoveryDelay(emptyList()))
         // A subsequent runner-API turn needs neither opening its tab nor a local unfinished task.
         val external = stopped.copy(status = MacThreadStatus.Working, lastEvent = 41)
         assertEquals(15_000L, macDiscoveryDelay(listOf(external)))
@@ -760,6 +760,16 @@ class MacThreadsTest {
         val pending = stopped.copy(pending = listOf(write), lastEvent = 42)
         assertEquals(15_000L, macDiscoveryDelay(listOf(pending)))
         assertEquals(listOf(id), macFollowed(listOf(pending), emptyList(), noTasks, { 40 }, now))
+    }
+
+    @Test fun idleDiscoveryBacksOffButForegroundAndApprovalsStayResponsive() {
+        val idle = listOf(thread(MacThreadStatus.Idle))
+        assertEquals(listOf(60_000L, 120_000L, 240_000L, 300_000L, 300_000L),
+            (0..4).map { macDiscoveryDelay(idle, false, it) })
+        assertEquals(300_000L, macDiscoveryDelay(idle, false, Int.MAX_VALUE))
+        assertEquals(30_000L, macDiscoveryDelay(idle, true, 99))
+        assertEquals(15_000L, macDiscoveryDelay(listOf(thread(MacThreadStatus.Working)), false, 99))
+        assertEquals(15_000L, macDiscoveryDelay(listOf(thread(MacThreadStatus.Idle).copy(pending = listOf(write))), true, 99))
     }
 
     @Test fun aThreadNeverFollowedIsFollowedFromWhereItStood() {

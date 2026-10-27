@@ -45,6 +45,9 @@ interface ThreadsPlatform {
     /** Tells him a request ended or could not be sent, over whatever is in front: [front] for the front agent's, else a thread's. */
     fun answeredNotice(label: String, answer: String, front: Boolean)
 
+    /** Soma is on screen: idle discovery may run every 30s instead of background backoff. */
+    fun foreground(): Boolean = false
+
     /** Whether the device is locked, when nothing may be answered from it. */
     fun locked(): Boolean
 

@@ -68,6 +68,8 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
     private val answering = HashSet<String>()
     private val refreshing = AtomicBoolean()
     private val discovering = AtomicBoolean()
+    private val discoveryWake = Object()
+    private var discoverySignalled = false
     private var restored = false
     @Volatile private var checked = 0L
 
@@ -164,17 +166,38 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
     fun open() {
         restore()
         startDiscovery()
+        wakeDiscovery()
         refresh()
+    }
+
+    private fun wakeDiscovery() = synchronized(discoveryWake) {
+        discoverySignalled = true
+        discoveryWake.notifyAll()
     }
 
     /** One process-lifetime watcher, independent of UI, owed tasks and per-thread followers. */
     private fun startDiscovery() {
         if (!discovering.compareAndSet(false, true)) return
         thread(name = "oma-mac-discovery", isDaemon = true) {
+            var idleRounds = 0
             while (true) {
-                pause(macDiscoveryDelay(view.threads))
-                // Config can appear/disappear while Soma runs. One failed read must not kill discovery.
-                runCatching { if (machines().isNotEmpty()) refresh() }
+                val foreground = platform.foreground()
+                val busy = macDiscoveryBusy(view.threads)
+                if (foreground || busy) idleRounds = 0
+                val delay = macDiscoveryDelay(view.threads, foreground, idleRounds)
+                val signalled = synchronized(discoveryWake) {
+                    val until = System.nanoTime() + delay * 1_000_000L
+                    while (!discoverySignalled) {
+                        val remaining = (until - System.nanoTime()) / 1_000_000L
+                        if (remaining <= 0) break
+                        runCatching { discoveryWake.wait(remaining) }
+                    }
+                    discoverySignalled.also { discoverySignalled = false }
+                }
+                // A foreground open already refreshes; a busy transition already has fresh evidence.
+                if (!signalled) runCatching { if (machines().isNotEmpty()) refresh() }
+                idleRounds = if (signalled || foreground || busy || platform.foreground() || macDiscoveryBusy(view.threads)) 0
+                    else (idleRounds + 1).coerceAtMost(3)
             }
         }
     }
@@ -246,6 +269,8 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
         val moved = synchronized(this) {
             val before = view
             view = change(before)
+            if (!macDiscoveryBusy(before.threads) && macDiscoveryBusy(view.threads))
+                wakeDiscovery()
             before.copy(seen = null) != view.copy(seen = null)
         }
         if (!moved) return

@@ -185,7 +185,11 @@ object OwnScreens : Application.ActivityLifecycleCallbacks {
     @Volatile private var started = 0
     val visible get() = started > 0
 
-    override fun onActivityStarted(activity: Activity) { started++ }
+    override fun onActivityStarted(activity: Activity) {
+        val foregrounded = started == 0
+        started++
+        if (foregrounded) dev.omalauncher.assist.MacThreads.open(activity)
+    }
     override fun onActivityStopped(activity: Activity) { started = maxOf(0, started - 1) }
     override fun onActivityCreated(activity: Activity, state: Bundle?) = Unit
     override fun onActivityResumed(activity: Activity) = Unit
