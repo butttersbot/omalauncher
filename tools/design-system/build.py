@@ -245,6 +245,9 @@ document.querySelectorAll('[data-answer]').forEach(function(button) {{
   }};
 }});
 other.addEventListener('input', fill);
+// Soma installs its bridge after the page loads and says so: hand it any answer already picked or restored.
+window.addEventListener('soma-ready', fill);
+if (window.soma) fill();
 window.addEventListener('soma-answer-result', function(event) {{
   document.getElementById('soma-reply-status').textContent = event.detail.message;
 }});
