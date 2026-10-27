@@ -1,8 +1,15 @@
 # Headless D must not acquire an owner-facing tab on either Fold display.
 launch dev.omalauncher.boss/dev.omalauncher.oma.OmaChatActivity
+tap Show the tabs
+expect Phone A
+expect Phone B
+expect Phone C
 absent Phone D
 shot phone-d-cover
 fold open
+expect Phone A
+expect Phone B
+expect Phone C
 absent Phone D
 shot phone-d-inner
 fold folded

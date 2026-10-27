@@ -64,3 +64,17 @@ to D yet. Phone A must bundle it in the next launcher; Boss controls promotion.
 After promotion run phone-d.walk's physical mail round trip and then this suite.
 The emulator walk checks that Phone D is absent from chat on cover and inner displays;
 it cannot substitute for a live Codex mail round trip or Samsung Settings.
+
+## Build verification (2026-10-26)
+
+Application commits: 47b76f20 and 1b124601, pushed normally to the existing
+phone/fold-development branch after pull --no-rebase; no reset or force push.
+`soma-macbuild --lane D 1b124601 168` with SOMA_MACBUILD_SEND=0 and
+SOMA_MACBUILD_WALK=1 built the working-launcher APK, 1815 tests, 0 failures,
+6 skipped. Browser layout checks passed. On Fold8 emulator-5554, phone-d and
+agent-mail-ui walks passed; their screenshots were inspected. agents-page has
+only physical-phone steps, so its automatic PASS supplies no physical evidence.
+The strengthened phone-d walk was rerun against that same APK: 12 automated
+steps passed, 2 screenshots inspected, A/B/C visible and D absent on both screens.
+No phone delivery, installation or promotion occurred. The real mail reply and
+queued-second-mail checks remain pending, as do all seven benchmark tasks.
