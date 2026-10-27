@@ -243,7 +243,7 @@ document.getElementById('soma-question-form').addEventListener('submit', functio
   if (window.soma && typeof window.soma.answer === 'function') {{
     window.soma.answer(text);
     status.textContent = 'Sending answers…';
-    event.target.querySelector('button[type=submit]').disabled = true;
+    event.target.querySelectorAll('button,input,textarea').forEach(function(field) {{ field.disabled = true; }});
   }} else status.textContent = 'Reply delivery is unavailable in this preview. Open it in updated Soma.';
 }});
 window.addEventListener('soma-answer-result', function(event) {{
