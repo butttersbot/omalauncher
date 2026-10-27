@@ -175,13 +175,15 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
         discoveryWake.notifyAll()
     }
 
+    private fun discoveryForeground(): Boolean = runCatching { platform.foreground() }.getOrDefault(false)
+
     /** One process-lifetime watcher, independent of UI, owed tasks and per-thread followers. */
     private fun startDiscovery() {
         if (!discovering.compareAndSet(false, true)) return
         thread(name = "oma-mac-discovery", isDaemon = true) {
             var idleRounds = 0
             while (true) {
-                val foreground = platform.foreground()
+                val foreground = discoveryForeground()
                 val busy = macDiscoveryBusy(view.threads)
                 if (foreground || busy) idleRounds = 0
                 val delay = macDiscoveryDelay(view.threads, foreground, idleRounds)
@@ -196,7 +198,7 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
                 }
                 // A foreground open already refreshes; a busy transition already has fresh evidence.
                 if (!signalled) runCatching { if (machines().isNotEmpty()) refresh() }
-                idleRounds = if (signalled || foreground || busy || platform.foreground() || macDiscoveryBusy(view.threads)) 0
+                idleRounds = if (signalled || foreground || busy || discoveryForeground() || macDiscoveryBusy(view.threads)) 0
                     else (idleRounds + 1).coerceAtMost(3)
             }
         }
