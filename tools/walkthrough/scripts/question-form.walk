@@ -1,5 +1,9 @@
 # Isolated fixture: production artifact bridge and page, fake delivery; never real agents.
 # Prerequisite: -PartifactPreview :artifact-preview:assembleDebug installed.
+clearlog
+shell am instrument -w dev.omalauncher.artifactpreview/.ReceiptInstrumentation
+log artifact receipt signature PASS
+nolog artifact receipt FAIL
 fold folded
 shell am force-stop dev.omalauncher.artifactpreview
 shell am start -n dev.omalauncher.artifactpreview/.PreviewActivity --ez questions true

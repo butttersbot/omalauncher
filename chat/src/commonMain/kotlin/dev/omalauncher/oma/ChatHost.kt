@@ -182,8 +182,10 @@ interface ChatHost {
     /** [prompt] straight to the Mac thread [thread] ([name]), from the new chat [chat] or a thread's own tab (""), with the pictures [images] (files here). */
     fun sayToMac(prompt: String, thread: String, name: String, chat: String, images: List<File> = emptyList())
 
+    fun canvasOrigin(): String? = null
+
     /** Owner Submit from an artifact, delivered only to its fixed known recipient. */
-    fun submitArtifactReply(source: String, request: ArtifactReplyRequest, done: (ArtifactReplyResult) -> Unit) {
+    fun submitArtifactReply(source: ArtifactReplySource, request: ArtifactReplyRequest, done: (ArtifactReplyResult) -> Unit) {
         done(ArtifactReplyResult(false, "Artifact replies are unavailable on this host."))
     }
 

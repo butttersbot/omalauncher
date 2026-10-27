@@ -309,7 +309,7 @@ private fun ArtifactPanel(
                     viewing = picked.takeIf { it != latest }
                     view = "Preview"
                 }
-                artifact.kind == ArtifactKind.Web -> if (view == "Source") ArtifactText(artifact.location) else key(reload) { ArtifactWeb(artifact.location, null, Modifier.fillMaxSize()) }
+                artifact.kind == ArtifactKind.Web -> if (view == "Source") ArtifactText(artifact.location) else key(reload) { ArtifactWeb(artifact.location, null, Modifier.fillMaxSize(), canvasOrigin = host.canvasOrigin()) }
                 artifact.soma && latest == 0 -> Column(Modifier.fillMaxSize()) {
                     ArtifactEditingStrip("${live?.agent?.ifBlank { null } ?: "The agent"} is making ${artifact.name} · v1")
                     BasicText("It shows here as soon as it is saved.", Modifier.padding(16.dp), style = Pack.body(Pack.size.small, Pack.muted))
@@ -338,7 +338,7 @@ private fun ArtifactPanel(
                                 artifact.kind == ArtifactKind.Html -> ArtifactWeb(null, shown.text, Modifier.fillMaxSize(),
                                     onAnswer = if (editing != null) null else { request, done ->
                                         val hash = java.security.MessageDigest.getInstance("SHA-256").digest(shown.bytes).joinToString("") { "%02x".format(it) }
-                                        host.submitArtifactReply("${artifact.id}@${shown.version}:$hash", request, done)
+                                        host.submitArtifactReply(ArtifactReplySource(artifact.id, artifact.name, shown.v.takeIf { it > 0 }?.toString() ?: shown.version, hash), request, done)
                                     })
                                 artifact.kind == ArtifactKind.Image -> ArtifactImage(shown.bytes, shown.name, Modifier.fillMaxSize())
                                 artifact.kind == ArtifactKind.Markdown -> SelectionContainer { MarkdownText(shown.readingText, Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) }
@@ -451,7 +451,7 @@ internal fun SomaArtifactCards(made: List<ChatArtifact>) {
 }
 
 @Composable
-internal expect fun ArtifactWeb(url: String?, html: String?, modifier: Modifier, onAnswer: ArtifactAnswerHandler? = null, onApprove: ((ArtifactCanvasRequest) -> Unit)? = null)
+internal expect fun ArtifactWeb(url: String?, html: String?, modifier: Modifier, onAnswer: ArtifactAnswerHandler? = null, onApprove: ((ArtifactCanvasRequest) -> Unit)? = null, canvasOrigin: String? = null)
 
 @Composable
 internal expect fun ArtifactImage(bytes: ByteArray, description: String, modifier: Modifier)
