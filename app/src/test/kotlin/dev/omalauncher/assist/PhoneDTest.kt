@@ -9,6 +9,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PhoneDTest {
+    // Terra benchmark, 2026-10-26: D answered BUSY after a label off screen and a refused bg back, and gave up twice.
+    @Test fun aMissingLabelOrRefusedBackgroundStepIsNotBusy() {
+        assertTrue(PHONE_D_INSTRUCTIONS.contains("is NOT busy"))
+        assertTrue(PHONE_D_INSTRUCTIONS.contains("RESULT: FAILED"))
+        assertFalse(PHONE_D_INSTRUCTIONS.contains("or a control refuses, stop and answer RESULT: BUSY"))
+    }
+
     @Test fun mailRoutesToDWithoutOpeningAnOwnerThreadOrTakingGeneralWork() {
         assertEquals(BuilderId.D, mailBuilder("D", emptyMap()))
         assertEquals(BuilderId.D, mailBuilder("phone-d", emptyMap()))
