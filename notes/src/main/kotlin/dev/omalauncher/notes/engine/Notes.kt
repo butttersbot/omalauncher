@@ -24,6 +24,7 @@ object Notes {
     private lateinit var link: Link
     private val rounds = Executors.newSingleThreadScheduledExecutor { Thread(it, "notes-sync").apply { isDaemon = true } }
     private var next: ScheduledFuture<*>? = null
+    private var rounded = 0
 
     private val _all = MutableStateFlow<List<Note>>(emptyList())
     val all: StateFlow<List<Note>> = _all
@@ -91,6 +92,7 @@ object Notes {
     @Synchronized
     fun sync(delayMs: Long = 0) {
         next?.cancel(false)
+        val round = ++rounded
         next =
             rounds.schedule({
                 val r = runCatching { Sync(shelf, link).run() }.onFailure { Log.w(TAG, "sync", it) }.getOrNull()
@@ -100,7 +102,16 @@ object Notes {
                     if (r.took > 0) came.value++
                 }
                 publish()
+                // Mac Pro out of reach with notes still to send: keep trying while the app is alive, so they go as
+                // soon as it is back, not only when Boss next opens a note (Boss, 2026-10-26, away from home).
+                if (r == null || !r.reached && r.left > 0) retryLater(round)
             }, delayMs, TimeUnit.MILLISECONDS)
+    }
+
+    /** Again in a minute, unless a newer round was asked for meanwhile (an edit's own round goes first). */
+    @Synchronized
+    private fun retryLater(round: Int) {
+        if (round == rounded) sync(RETRY_MS)
     }
 
     private fun publish() {
@@ -118,4 +129,5 @@ object Notes {
     private const val PREFS = "notes"
     private const val WALK_FOLDER = "walkFolder"
     private const val SOON_MS = 1_500L
+    private const val RETRY_MS = 60_000L
 }
