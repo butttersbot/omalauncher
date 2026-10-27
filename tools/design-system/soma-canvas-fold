@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Soma Canvas from the Fold: reads which server to use (and who we are) from ~/.config/soma-canvas/env, then runs the
+# real CLI. The token is in ~/.config/soma-canvas/token (mode 600). While the Mac Pro is away the server is the MacBook.
+# `propose` refuses an HTML file nobody has looked at: run `soma-look FILE` first (its receipt, for this exact file,
+# must have no errors). Boss, 2026-10-26: look before you send.
+[ -f "$HOME/.config/soma-canvas/env" ] && set -a && . "$HOME/.config/soma-canvas/env" && set +a
+if [ "${1:-}" = "propose" ]; then
+	for a in "${@:2}"; do
+		case "$a" in *.html|*.htm) ;; *) continue ;; esac
+		[ -f "$a" ] || continue
+		sha=$(sha256sum "$a" | cut -d' ' -f1); r="$HOME/.cache/soma-look/$sha.json"
+		if [ ! -f "$r" ]; then
+			echo "soma-canvas: $a hasn't been looked at. Run: soma-look $a, look at the PNGs it prints, then propose again." >&2; exit 3
+		fi
+		if ! jq -e '.ok == true' "$r" >/dev/null; then
+			echo "soma-canvas: soma-look found errors in $a; fix them first:" >&2; jq -r '.errors[]' "$r" >&2; exit 3
+		fi
+	done
+fi
+exec "$(dirname "$0")/soma-canvas.real" "$@"
