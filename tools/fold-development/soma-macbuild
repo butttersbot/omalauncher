@@ -165,7 +165,9 @@ walk_report() {
 walks=()
 if [ -f tools/walkthrough/walk.py ]; then
   trailer=$(git log -1 --format='%(trailers:key=Walk,valueonly,separator=%x2C)' "$commit" | tr ',' '\n' | sed 's/^ *//; s/ *$//; s/\.walk$//' | sed '/^$/d')
-  if [ -n "$trailer" ]; then
+  # SOMA_WALKS=all (a promote) walks everything even when the commit names its walks: 169 (e56f09b4c, Walk: phone-d)
+  # was asked for all of them and walked phone-d alone.
+  if [ -n "$trailer" ] && [ "${SOMA_WALKS:-}" != all ]; then
     while read -r w; do walks+=("$w"); done <<< "$trailer"
   elif [ "${SOMA_WALKS:-}" = all ] || [ ! -s "$state/walked-commit" ] ||
        ! git merge-base --is-ancestor "$(cat "$state/walked-commit")" "$commit" 2>/dev/null; then
