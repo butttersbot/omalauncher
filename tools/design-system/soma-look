@@ -67,6 +67,44 @@ def run(cmd, timeout=60):
     return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
 
 
+def card_checks(html):
+    """The Canvas cards a review mockup declares (meta soma-canvas-cards, {app, cards, version}) must exist and carry
+    that proposal version, or Boss would approve screens that aren't the ones he's looking at."""
+    m = re.search(r"""<meta\s+name=["']soma-canvas-cards["']\s+content='([^']*)'""", html) or \
+        re.search(r'<meta\s+name=["\']soma-canvas-cards["\']\s+content="([^"]*)"', html)
+    if not m:
+        return []
+    try:
+        decl = json.loads(m.group(1).replace("&quot;", '"'))
+        app, cards, version = decl["app"], decl["cards"], decl["version"]
+    except Exception as e:
+        return [f"cards: soma-canvas-cards isn't {{app, cards, version}} JSON ({e})"]
+    if app == "your-app":
+        return ["cards: soma-canvas-cards still holds the template's placeholder; name the real app, cards and version"]
+    env = os.path.expanduser("~/.config/soma-canvas/env"); url = None
+    if os.path.exists(env):
+        u = re.search(r"CANVAS_URL=(\S+)", open(env).read()); url = u and u.group(1)
+    tok = os.path.expanduser("~/.config/soma-canvas/token")
+    if not url or not os.path.exists(tok):
+        return ["cards: can't reach Soma Canvas to check the declared cards (no ~/.config/soma-canvas)"]
+    out = []
+    for cid in cards:
+        r = run(["curl", "-s", "--max-time", "8", "-H", f"x-canvas-token: {open(tok).read().strip()}", f"{url}/api/cards/{cid}"], 15)
+        try:
+            card = json.loads(r.stdout)
+        except Exception:
+            out.append(f"cards: {cid}: no answer from Soma Canvas"); continue
+        card = card.get("card", card)
+        if card.get("error") or not card.get("id"):
+            out.append(f"cards: {cid}: no such card"); continue
+        prop = (card.get("states") or {}).get("proposed") or card.get("proposed")
+        if not prop:
+            out.append(f"cards: {cid}: has no proposal to approve"); continue
+        if prop.get("version") and prop["version"] != version:
+            out.append(f"cards: {cid}: its proposal is {prop['version']}, the mockup says {version}")
+    return out
+
+
 def free_port():
     s = socket.socket(); s.bind(("127.0.0.1", 0)); p = s.getsockname()[1]; s.close(); return p
 
@@ -122,6 +160,7 @@ def main():
     elif not m:
         warnings.append("look: no <meta name=\"soma-pack\">; start from design/soma/template.html so it follows the active look")
 
+    errors += [e for e in card_checks(data.decode("utf-8", "replace"))]
     srv = tempfile.mkdtemp(prefix="soma-look-")
     shutil.copy(path, os.path.join(srv, "page.html"))
     open(os.path.join(srv, "harness.html"), "w").write(HARNESS)
