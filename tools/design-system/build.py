@@ -209,22 +209,31 @@ p {{ margin: 0; }}
     <p>What this panel says, in plain words.</p>
     <div class="actions"><button class="action">Do it</button><button class="action secondary">Not now</button></div>
   </section>
-  <!-- Question form: replace the empty recipient with phone:A/B/C or a known mac: thread key.
-       The owner's Submit tap delivers to this fixed recipient without a second review. -->
+  <!-- Question block: replace the empty recipient with phone:A/B/C or a known mac: thread key.
+       No Submit here: the page only fills in answers with soma.answer(); Soma draws the Send button itself under
+       the mockup, labelled with what it will send ("Send: Approve"), and sends (and signs an approval) only on
+       Boss's tap there (Boss, 2026-10-26). -->
   <section class="panel">
     <h2>Your answer</h2>
-    <form id="soma-question-form">
-      <p class="caption">Choose one, or write your own answer.</p>
+    <div id="soma-question-form">
+      <p class="caption">Choose one, or write your own answer, then tap Send below.</p>
       <button class="option" type="button" data-answer="approve" aria-pressed="false"><b>Approve this design</b><small>Build the screens shown in this mockup.</small></button>
       <button class="option" type="button" data-answer="changes" aria-pressed="false"><b>Request changes</b><small>Describe the changes in Other.</small></button>
       <label class="field">Other<textarea name="answer" maxlength="4096" rows="3"></textarea></label>
-      <div class="actions"><button class="action" type="submit">Submit answers</button></div>
       <p class="caption" id="soma-reply-status" role="status"></p>
-    </form>
+    </div>
   </section>
 </main>
 <script>
 let picked = '';
+const other = document.querySelector('#soma-question-form textarea');
+function fill() {{
+  // Hands Soma the answers for its native Send button; never sends by itself.
+  const text = other.value.trim();
+  const status = document.getElementById('soma-reply-status');
+  if (window.soma && typeof window.soma.answer === 'function') window.soma.answer(picked || text ? {{decision: picked || "other", other: text}} : null);
+  else status.textContent = 'Sending needs Soma: this preview has no Send button.';
+}}
 document.querySelectorAll('[data-answer]').forEach(function(button) {{
   button.onclick = function() {{
     picked = button.dataset.answer;
@@ -232,20 +241,10 @@ document.querySelectorAll('[data-answer]').forEach(function(button) {{
       option.classList.toggle('on', option === button);
       option.setAttribute('aria-pressed', String(option === button));
     }});
+    fill();
   }};
 }});
-document.getElementById('soma-question-form').addEventListener('submit', function(event) {{
-  event.preventDefault();
-  const other = new FormData(event.target).get('answer').trim();
-  const text = [picked, other].filter(Boolean).join(': ');
-  const status = document.getElementById('soma-reply-status');
-  if (!text) return;
-  if (window.soma && typeof window.soma.answer === 'function') {{
-    window.soma.answer({{decision: picked || "other", other: other}});
-    status.textContent = 'Sending answers…';
-    event.target.querySelectorAll('button,input,textarea').forEach(function(field) {{ field.disabled = true; }});
-  }} else status.textContent = 'Reply delivery is unavailable in this preview. Open it in updated Soma.';
-}});
+other.addEventListener('input', fill);
 window.addEventListener('soma-answer-result', function(event) {{
   document.getElementById('soma-reply-status').textContent = event.detail.message;
 }});
@@ -380,15 +379,16 @@ Use one fixed `phone:A`, `phone:B`, `phone:C`, or the exact known `mac:` thread 
 The declared recipient is untrusted until Boss reviews it. An artifact must never
 choose a different recipient from JavaScript or claim that answers were delivered.
 
-The template's Submit calls `soma.answer(answers)` on Boss's tap. That Submit tap is
-consent to send directly to the fixed recipient. No second review, approval card,
-or navigation away from the mockup. Soma delivers a normal message to the exact
-known thread/builder and reports `soma-answer-result` with `sent` and `message`.
-The page shows “Sent to <agent>” only after confirmed delivery; an offline browser
-has no bridge and explains that. A failed/uncertain delivery is never called sent.
+The page never sends. `soma.answer(answers)` only hands Soma the current answers (call it on every change;
+`null` clears them). Soma draws the Send button itself, under the mockup and outside the page, labelled from the
+answers it will really send ("Send: Approve · Other: …"), and delivers, and signs an approval receipt, only on
+Boss's tap on that native button (Boss, 2026-10-26: one tap, no second review). So a mockup can't send, or show
+one choice and send another. Don't draw a Submit button in the HTML. Soma delivers a normal message to the exact
+known thread/builder and reports `soma-answer-result` with `sent` and `message`. The page shows "Sent to <agent>"
+only after confirmed delivery; a failed/uncertain delivery is never called sent.
 
-Put questions inside the mockup (a section or Questions tab), with options, Other,
-and one Submit. Without a mockup, use the same question block as its own artifact.
+Put questions inside the mockup (a section or Questions tab), with options and Other;
+Soma's native Send button sends them. Without a mockup, use the same question block as its own artifact.
 Pass an object of question keys to selected labels/arrays or Other text. A plain
 string remains supported. Use `decision: "approve"` for a mockup's Approve choice.
 Soma signs a native receipt binding the exact HTML hash, version, answers and fixed

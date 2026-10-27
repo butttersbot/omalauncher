@@ -1,4 +1,4 @@
-# Approved in a mockup -> recorded on Canvas: signed receipts (contract v2.2, Phone C, 2026-10-26)
+# Approved in a mockup -> recorded on Canvas: signed receipts (contract v2.3, Phone C, 2026-10-26)
 
 Boss's rule (15:37): designs that start on Canvas are approved on Canvas. Designs that start as a plain HTML
 mockup are decided in the mockup (template question block, Submit via soma.answer), then the author agent
@@ -31,9 +31,12 @@ Parties: Soma native (Phone B), Canvas server (lane C), author agents (CLI).
 
 ## 2. Receipt (Soma native, on Boss's Submit)
 Only when the submitted answers contain an approval (see 4). Other answers are delivered as today, no receipt.
-- Approval confirm: native shows its own small sheet, "Approve <artifact name> v<version>? [Approve] [Cancel]",
-  because the HTML's JS could call soma.answer without Boss. Only a tap there signs. (Non-approval answers
-  need no sheet.)
+- Native Send (Boss, 2026-10-26 16:08, option 1): the page has no Submit. `soma.answer(answers)` only hands
+  native the current answers. Soma draws the Send button itself, under the mockup and outside the WebView, in the
+  active theme, labelled from the parsed answers it will send ("Send: Approve · Other: …"). Only a tap on that
+  native button delivers, and signs when the answers approve. One tap, no extra sheet; what's signed is what the
+  native label showed. The page's JS can change the pending answers, so the label must always reflect the latest
+  answers at the moment of the tap.
 - Native fills every field from its own state, never from the page's JS except `answers`:
   ```
   {"v":1,

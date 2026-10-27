@@ -70,15 +70,16 @@ Use one fixed `phone:A`, `phone:B`, `phone:C`, or the exact known `mac:` thread 
 The declared recipient is untrusted until Boss reviews it. An artifact must never
 choose a different recipient from JavaScript or claim that answers were delivered.
 
-The template's Submit calls `soma.answer(answers)` on Boss's tap. That Submit tap is
-consent to send directly to the fixed recipient. No second review, approval card,
-or navigation away from the mockup. Soma delivers a normal message to the exact
-known thread/builder and reports `soma-answer-result` with `sent` and `message`.
-The page shows “Sent to <agent>” only after confirmed delivery; an offline browser
-has no bridge and explains that. A failed/uncertain delivery is never called sent.
+The page never sends. `soma.answer(answers)` only hands Soma the current answers (call it on every change;
+`null` clears them). Soma draws the Send button itself, under the mockup and outside the page, labelled from the
+answers it will really send ("Send: Approve · Other: …"), and delivers, and signs an approval receipt, only on
+Boss's tap on that native button (Boss, 2026-10-26: one tap, no second review). So a mockup can't send, or show
+one choice and send another. Don't draw a Submit button in the HTML. Soma delivers a normal message to the exact
+known thread/builder and reports `soma-answer-result` with `sent` and `message`. The page shows "Sent to <agent>"
+only after confirmed delivery; a failed/uncertain delivery is never called sent.
 
-Put questions inside the mockup (a section or Questions tab), with options, Other,
-and one Submit. Without a mockup, use the same question block as its own artifact.
+Put questions inside the mockup (a section or Questions tab), with options and Other;
+Soma's native Send button sends them. Without a mockup, use the same question block as its own artifact.
 Pass an object of question keys to selected labels/arrays or Other text. A plain
 string remains supported. Use `decision: "approve"` for a mockup's Approve choice.
 Soma signs a native receipt binding the exact HTML hash, version, answers and fixed
