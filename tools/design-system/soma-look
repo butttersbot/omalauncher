@@ -80,7 +80,7 @@ def card_checks(html):
     except Exception as e:
         return [f"cards: soma-canvas-cards isn't {{app, cards, version}} JSON ({e})"]
     if app == "your-app":
-        return ["cards: soma-canvas-cards still holds the template's placeholder; name the real app, cards and version"]
+        return []      # the template's placeholder: an ordinary mockup, not a Canvas review
     env = os.path.expanduser("~/.config/soma-canvas/env"); url = None
     if os.path.exists(env):
         u = re.search(r"CANVAS_URL=(\S+)", open(env).read()); url = u and u.group(1)
@@ -160,7 +160,9 @@ def main():
     elif not m:
         warnings.append("look: no <meta name=\"soma-pack\">; start from design/soma/template.html so it follows the active look")
 
-    errors += [e for e in card_checks(data.decode("utf-8", "replace"))]
+    # Approve-from-artifact is parked (Boss, 2026-10-26: mockup decisions are a question block, apart from Canvas
+    # approvals), so a declared card that doesn't match only warns.
+    warnings += card_checks(data.decode("utf-8", "replace"))
     srv = tempfile.mkdtemp(prefix="soma-look-")
     shutil.copy(path, os.path.join(srv, "page.html"))
     open(os.path.join(srv, "harness.html"), "w").write(HARNESS)
