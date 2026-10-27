@@ -251,6 +251,7 @@ if [ ${#walks[@]} -gt 0 ]; then
         adb -s $emu emu fold >/dev/null; adb -s $emu shell settings put system user_rotation 0
         adb -s $emu shell input keyevent HOME
         python3 tools/walkthrough/walk.py "$script" --serial $emu --out "$wdir/$w" > "$wdir/$w.log" 2>&1
+        rc=$?
         # The emulator itself fell over mid-walk (a stalled VM killed by its hang detector, MacBook Pro 2026-10-26):
         # every step after says "device not found". That is no verdict on the app: start it again and walk this once more.
         if ! adb -s $emu get-state >/dev/null 2>&1 || grep -q "device '$emu' not found" "$wdir/$w.log"; then
@@ -258,9 +259,13 @@ if [ ${#walks[@]} -gt 0 ]; then
           tools/oma-emu start --headless >/dev/null 2>&1 && adb -s $emu install -r -t "$apk" >/dev/null 2>&1
           rm -rf "$wdir/$w"
           python3 tools/walkthrough/walk.py "$script" --serial $emu --out "$wdir/$w" > "$wdir/$w.log" 2>&1
+          rc=$?
         fi
-        if [ $? -eq 0 ]; then line="$line $w PASS;"
-        else line="$line $w FAIL ($(grep -c '^FAIL' "$wdir/$w.log") of $(grep -c '^\(PASS\|FAIL\)' "$wdir/$w.log") steps);"; fi
+        # The verdict is walk.py's own exit and its FAIL lines, never the $? of the retry check above (that read every
+        # walk as PASS since the retry came in, 164's hunch-wallet with 5 FAIL steps among them).
+        fails=$(grep -c '^FAIL' "$wdir/$w.log")
+        if [ "$rc" -eq 0 ] && [ "$fails" -eq 0 ]; then line="$line $w PASS;"
+        else line="$line $w FAIL ($fails of $(grep -c '^\(PASS\|FAIL\)' "$wdir/$w.log") steps${rc:+, exit $rc});"; fi
       done
       if [ -s "$wdir/oma-chat.before.json" ]; then
         adb -s $emu push "$wdir/oma-chat.before.json" /data/local/tmp/oma-chat.before.json >/dev/null 2>&1 &&
