@@ -1,17 +1,21 @@
 # Direct answers from artifacts
 
-Boss approved the question-form look and simplified the behavior through Phone A's
-mail 20261026-153605-d13e83: questions live in the mockup, Submit itself authorizes
-sending to its fixed soma-reply-to, and delivery status stays in the page. There is
-no second review or separate approval card. soma.approve is parked; template copies
-contain neither that method nor soma-canvas-cards metadata.
+Boss chose option 1 through Phone A's mail 20261026-160806-c794cf: the mockup
+only supplies current answers; Soma draws the native Send bar below the WebView.
+Cards: soma-question-form and soma-question-form-cover. Active Pack styling and
+both Fold sizes apply. No extra sheet or approval card. The template owns no Submit.
 
-The static declaration, owner main-frame gesture and per-version bridge token are
-still required. Native delivery accepts only phone:A/B/C or an exact known Mac
-thread key. Phone replies use its normal owner follow-up queue; Mac replies use the
-normal chat send/history path, with acknowledgement. Message bodies are literal
-artifact answers, never parsed as model-switch commands. The page gets a delivery
-result event, not credentials or access to a generic native API.
+soma.answer(value) sets untrusted pending answers; null/invalid data clears them.
+It cannot send or sign, and setting a draft needs no gesture. Only the native Send
+tap invokes host delivery. Its label comes from the parsed answers, showing the
+fixed recipient; the full label can wrap and scroll for long answers. A draft
+changed after drawing a label is not sent under that old label. A version change
+clears the pending draft and token. Double taps cannot duplicate delivery.
+
+Native delivery accepts only phone:A/B/C or an exact known Mac thread key. Phone
+replies use its normal owner follow-up queue; Mac replies use normal chat send/
+history with acknowledgement. Literal answer bodies do not switch models. Result
+status stays in the artifact and native bar. soma.approve remains absent/disabled.
 
 Submissions are persisted before handoff and deduplicated by source/version,
 recipient and answer. An uncertain delivery is not retried automatically or called
@@ -23,10 +27,8 @@ exported and no owner key is copied from the Canvas browser session.
 
 Canvas links the public key once in its owner menu. Only a main-frame gesture at
 the configured Canvas origin can obtain publicKey() (Promise), never sign().
-Only an approval answer requests proof; other answers send without a sheet or
-receipt. Boss explicitly requested no extra review (A mail 153605), so native Submit
-gesture validation remains the consent, despite C contract initially describing an
-extra approval sheet. Phone A has been notified of that discrepancy.
+Only an approval answer requests proof, after the native Send tap. Non-approval
+answers use that same native Send with no sheet and no receipt.
 
 A successful /api/receipts response gives registered proof. Network failure after
 previously confirmed registration gives signed-offline proof. Unknown/unlinked or

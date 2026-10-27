@@ -3,7 +3,7 @@ package dev.omalauncher.oma
 import java.net.URLDecoder
 import org.json.JSONObject
 
-/** Static recipient; the main-frame owner Submit gesture authorizes one delivery. */
+/** Untrusted page answers. Only a separate native Send tap authorizes delivery. */
 data class ArtifactReplyRequest(val recipient: String, val text: String, val answers: String? = null)
 data class ArtifactReplyResult(val sent: Boolean, val message: String, val receipt: String? = null)
 typealias ArtifactAnswerHandler = (ArtifactReplyRequest, (ArtifactReplyResult) -> Unit) -> Unit
@@ -30,6 +30,19 @@ object ArtifactReply {
     fun recipient(html: String): String? = declaration(html, "soma-reply-to")?.takeIf(target::matches)
 
     internal fun canvasDeclaration(html: String): String? = declaration(html, "soma-canvas-cards")
+
+    fun pending(html: String, url: String, mainFrame: Boolean): ArtifactReplyRequest? = request(html, url, mainFrame, true)?.takeIf { sendLabel(it).removePrefix("Send:").isNotBlank() }
+    fun sendLabel(request: ArtifactReplyRequest): String {
+        val answers = runCatching { request.answers?.let(::JSONObject) }.getOrNull()
+        val label = answers?.keys()?.asSequence()?.toList()?.sortedBy { if (it == "decision") 0 else 1 }?.asSequence()?.mapNotNull { key ->
+            val value = answers.get(key)
+            val display = if (value is org.json.JSONArray) (0 until value.length()).joinToString(", ") { value.getString(it) } else value.toString()
+            if (display.isBlank()) null else if (key == "decision") when (display.lowercase()) {
+                "approve" -> "Approve"; "changes" -> "Request changes"; "other" -> null; else -> display
+            } else key.replaceFirstChar { it.uppercase() } + ": " + display
+        }?.toList()?.joinToString(" · ") ?: request.text
+        return "Send: $label"
+    }
 
     /** Called only for a main-frame navigation carrying a user gesture. A callback opens native review, never sends. */
     fun request(html: String, url: String, mainFrame: Boolean, userGesture: Boolean): ArtifactReplyRequest? {

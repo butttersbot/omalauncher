@@ -8,10 +8,15 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.webkit.WebResourceError
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -30,10 +35,11 @@ import dev.omalauncher.ui.Pack
 @Composable
 internal actual fun ArtifactWeb(url: String?, html: String?, modifier: Modifier, onAnswer: ArtifactAnswerHandler?, onApprove: ((ArtifactCanvasRequest) -> Unit)?, canvasOrigin: String?) {
     val answerCallback by rememberUpdatedState(onAnswer)
-    val approveCallback by rememberUpdatedState(onApprove)
     val allowedCanvas by rememberUpdatedState(canvasOrigin?.let(CanvasReceipt::origin))
     val sourceHtml by rememberUpdatedState(html)
     var submitting by remember(url, html) { mutableStateOf(false) }
+    var pending by remember(url, html) { mutableStateOf<ArtifactReplyRequest?>(null) }
+    var deliveryStatus by remember(url, html) { mutableStateOf<String?>(null) }
     val replyToken by rememberUpdatedState(remember(url, html) { java.util.UUID.randomUUID().toString() })
     var error by remember(url, html) { mutableStateOf(false) }
     var retry by remember(url) { mutableIntStateOf(0) }
@@ -42,6 +48,8 @@ internal actual fun ArtifactWeb(url: String?, html: String?, modifier: Modifier,
     var owned by remember { mutableStateOf<WebView?>(null) }
     DisposableEffect(Unit) { onDispose { owned?.apply { stopLoading(); destroy() } } }
     Box(modifier) {
+      Column(Modifier.fillMaxSize()) {
+       Box(Modifier.weight(1f).fillMaxWidth()) {
         key(url, html == null, retry) {
             AndroidView(factory = { context ->
                 WebView(context).apply {
@@ -68,31 +76,15 @@ internal actual fun ArtifactWeb(url: String?, html: String?, modifier: Modifier,
                                 view.evaluateJavascript("window.dispatchEvent(new CustomEvent('soma-receipts-key',{detail:${key ?: org.json.JSONObject().put("error", "Device receipt key is unavailable")}}));", null)
                                 return true
                             }
-                            if (false && url == null && approveCallback != null && owned === view) {
-                                val prefix = "soma-approve:$replyToken:"
-                                val address = request.url.toString()
-                                if (address.startsWith(prefix)) ArtifactCanvasApproval.request(sourceHtml.orEmpty(), "soma-approve:" + address.removePrefix(prefix), request.isForMainFrame, request.hasGesture())?.let {
-                                    approveCallback?.invoke(it)
-                                    return true
-                                }
-                            }
                             if (url == null && answerCallback != null && owned === view) {
                                 val prefix = "soma-answer:$replyToken:"
                                 val address = request.url.toString()
-                                if (address.startsWith(prefix)) ArtifactReply.request(sourceHtml.orEmpty(), "soma-answer:" + address.removePrefix(prefix), request.isForMainFrame, request.hasGesture())?.let {
-                                    if (submitting) return true
-                                    submitting = true
-                                    val token = replyToken
-                                    fun result(value: ArtifactReplyResult) {
-                                        view.post {
-                                            if (owned !== view || token != replyToken) return@post
-                                            val payload = org.json.JSONObject().put("sent", value.sent).put("message", value.message).put("recipient", it.recipient).put("receipt", value.receipt).toString()
-                                            view.evaluateJavascript("window.dispatchEvent(new CustomEvent('soma-answer-result',{detail:$payload}));var s=document.getElementById('soma-reply-status');if(s)s.textContent=" + org.json.JSONObject.quote(value.message) + ";", null)
-                                        }
+                                if (address.startsWith(prefix)) {
+                                    if (!submitting) {
+                                        pending = ArtifactReply.pending(sourceHtml.orEmpty(), "soma-answer:" + address.removePrefix(prefix), request.isForMainFrame)
+                                        deliveryStatus = null
                                     }
-                                    try { answerCallback?.invoke(it, ::result) }
-                                    catch (_: Exception) { result(ArtifactReplyResult(false, "Delivery was not confirmed. Check the agent chat.")) }
-                                    return true
+                                    return true // Page data can only update the native draft, never deliver or sign.
                                 }
                             }
                             val scheme = request.url.scheme
@@ -105,10 +97,8 @@ internal actual fun ArtifactWeb(url: String?, html: String?, modifier: Modifier,
                             if (url == null && owned === view) {
                                 val methods = mutableListOf<String>()
                                 if (answerCallback != null && ArtifactReply.recipient(sourceHtml.orEmpty()) != null)
-                                    methods += "answer:function(value){var text=typeof value==='string'?value:'soma-json:'+JSON.stringify(value);if(text&&text.length<=4096)location.href='soma-answer:$replyToken:'+encodeURIComponent(text)}"
-                                if (false && approveCallback != null && ArtifactCanvasApproval.declared(sourceHtml.orEmpty()))
-                                    methods += "approve:function(value){if(value&&typeof value==='object')location.href='soma-approve:$replyToken:'+encodeURIComponent(JSON.stringify(value))}"
-                                if (methods.isNotEmpty()) view.evaluateJavascript("window.soma=Object.freeze({" + methods.joinToString(",") + "});", null)
+                                    methods += "answer:function(value){var text=value===null?'':typeof value==='string'?value:'soma-json:'+JSON.stringify(value);location.href='soma-answer:$replyToken:'+encodeURIComponent(text.length<=4096?text:'')}"
+                                if (methods.isNotEmpty()) view.evaluateJavascript("window.soma=Object.freeze({" + methods.joinToString(",") + "});window.dispatchEvent(new Event('soma-ready'));", null)
                             }
                         }
                         override fun onReceivedError(view: WebView, request: WebResourceRequest, problem: WebResourceError) {
@@ -125,6 +115,39 @@ internal actual fun ArtifactWeb(url: String?, html: String?, modifier: Modifier,
                 }
             }, modifier = Modifier.fillMaxSize().clipToBounds(), onRelease = { it.stopLoading(); it.destroy(); if (owned === it) owned = null })
         }
+       }
+       if (url == null && answerCallback != null && ArtifactReply.recipient(html.orEmpty()) != null) {
+           val displayed = pending
+           Column(Modifier.fillMaxWidth().background(Pack.surface).padding(horizontal = 12.dp, vertical = 8.dp)) {
+               BasicText("To: " + (displayed?.recipient ?: ArtifactReply.recipient(html.orEmpty())), style = Pack.mono(Pack.size.small, Pack.muted))
+               if (displayed != null && !submitting) key(displayed) {
+                   Column(Modifier.fillMaxWidth().heightIn(max = 160.dp).verticalScroll(rememberScrollState())) {
+                       BracketAction(ArtifactReply.sendLabel(displayed), Pack.accent) {
+                           // A draft changed since this label was drawn cannot be sent under an old label.
+                           if (submitting || pending != displayed) return@BracketAction
+                           val send = pending ?: return@BracketAction
+                           val view = owned ?: return@BracketAction
+                           val token = replyToken
+                           submitting = true
+                           deliveryStatus = "Sending…"
+                           view.evaluateJavascript("window.dispatchEvent(new Event('soma-answer-sending'));", null)
+                           fun result(value: ArtifactReplyResult) {
+                               view.post {
+                                   if (owned !== view || token != replyToken) return@post
+                                   deliveryStatus = value.message
+                                   val payload = org.json.JSONObject().put("sent", value.sent).put("message", value.message).put("recipient", send.recipient).put("receipt", value.receipt).toString()
+                                   view.evaluateJavascript("window.dispatchEvent(new CustomEvent('soma-answer-result',{detail:$payload}));var s=document.getElementById('soma-reply-status');if(s)s.textContent=" + org.json.JSONObject.quote(value.message) + ";", null)
+                               }
+                           }
+                           try { answerCallback?.invoke(send, ::result) }
+                           catch (_: Exception) { result(ArtifactReplyResult(false, "Delivery was not confirmed. Check the agent chat.")) }
+                       }
+                   }
+               } else if (!submitting) BasicText("[ Send answers ]", style = Pack.body(color = Pack.muted))
+               BasicText(deliveryStatus ?: if (displayed == null) "Choose answers in the mockup." else "Only this native Send button delivers these answers.", style = Pack.body(Pack.size.small, Pack.muted))
+           }
+       }
+      }
         if (error) Column(Modifier.fillMaxSize().padding(16.dp)) {
             BasicText("This preview could not be loaded.", style = Pack.body())
             BracketAction("try again", Pack.accent) { error = false; retry++ }
@@ -149,7 +172,7 @@ internal actual fun ArtifactImage(bytes: ByteArray, description: String, modifie
 
 private fun isolatedArtifactHtml(html: String): String {
     val policy = """<meta http-equiv="Content-Security-Policy" content="frame-src 'none'; object-src 'none'">"""
-    val head = Regex("<head\\b[^>]*>", RegexOption.IGNORE_CASE).find(html)
+    val head = Regex("""<head\b[^>]*>""", RegexOption.IGNORE_CASE).find(html)
     val offset = head?.range?.last?.plus(1) ?: Regex("<!doctype[^>]*>", RegexOption.IGNORE_CASE).find(html)?.range?.last?.plus(1) ?: 0
     return html.substring(0, offset) + policy + html.substring(offset)
 }

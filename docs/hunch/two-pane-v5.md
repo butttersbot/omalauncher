@@ -46,3 +46,8 @@ dev.omalauncher.hunch, 0.6.0 / 13. Signed SHA256
 signer matches installed certificate `85a7a713…76a18`. Source Mac SHA256
 `4d7961bd061249e3bea8d071b36a948da8974d9a999553bfb8ea6e87fa0e72cc`.
 Real Fold checks and Canvas Shipped publication wait for promotion.
+
+Phone A installed the verified signed b18de027 APK on the real Fold at 16:10
+(20261026-161011-a00294), adb install Success, vc13/0.6.0. Boss is trying it;
+we are not controlling Hunch while he uses it. Physical Fold walk remains pending
+until the app is free; reviewed screenshot publication to Canvas is now requested.

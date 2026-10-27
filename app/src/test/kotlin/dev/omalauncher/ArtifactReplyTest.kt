@@ -53,4 +53,13 @@ class ArtifactReplyTest {
         for (recipient in listOf("phone:D", "phone:b", "phone", "mac:t123", "mac:macbook-pro/t124", "https://evil.invalid"))
             assertFalse(ArtifactReply.knownRecipient(recipient, known))
     }
+    @Test fun pageDraftIsUntrustedDataWithAnExplicitNativeLabel() {
+        val draft = ArtifactReply.pending(html, "soma-answer:" + URLEncoder.encode("soma-json:{\"decision\":\"approve\",\"other\":\"Keep tabs\"}", "UTF-8"), true)!!
+        assertEquals("Send: Approve · Other: Keep tabs", ArtifactReply.sendLabel(draft))
+        assertNull(ArtifactReply.pending(html, "soma-answer:", true))
+        assertNull(ArtifactReply.pending(html, "soma-answer:hello", false))
+        val changed = draft.copy(text = "changes", answers = """{"decision":"changes"}""")
+        assertEquals("Send: Request changes", ArtifactReply.sendLabel(changed))
+        assertNotEquals(draft, changed)
+    }
 }
