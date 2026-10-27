@@ -32,6 +32,7 @@ pixels (`540 1800`).
 | `wait MS` | pauses |
 | `shell CMD …` | an adb shell command (e.g. `cmd statusbar click-tile PKG/TILE`) |
 | `rotate portrait\|landscape`, `fold folded\|open` | the Fold profile's orientation and screens |
+| `corner right\|left TEXT` | fails unless what says TEXT ends near that side of the screen (corner controls that must not drift inward) |
 | `expect TEXT` / `absent TEXT` | fails unless TEXT is (is not) on screen; takes a screenshot |
 | `clearlog`, `log TEXT`, `nolog TEXT` | the app's own account of drawn UI (Log tag `SomaWalk`): clear it, wait for a line with TEXT, or fail if one has come |
 | `scrollto TEXT` | swipes up until TEXT shows (a WebView reports only what is on screen) |

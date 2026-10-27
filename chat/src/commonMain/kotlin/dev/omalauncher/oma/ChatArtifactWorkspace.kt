@@ -292,13 +292,16 @@ private fun ArtifactPanel(
     Column(Modifier.fillMaxSize().background(Pack.background).framed(Pack.hair, Pack.border, Pack.background)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             if (!wide) BracketAction("← chat", Pack.accent, onClose)
-            BasicText(artifact.name, Modifier.weight(1f, fill = false).padding(start = 4.dp).semantics { contentDescription = "Artifact: ${artifact.name}" }, style = Pack.body(Pack.size.small), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (artifact.soma && shownVersion > 0) {
-                BasicText(if (older) "v$shownVersion of $latest" else "v$shownVersion",
-                    Modifier.padding(start = 8.dp).background(if (older) Pack.red else Pack.foreground).padding(horizontal = 6.dp, vertical = 1.dp),
-                    style = Pack.mono(Pack.size.small, Pack.background), maxLines = 1)
+            // Name and version take what is left, so split/close stay in the corner on the wide full screen (Boss,
+            // 2026-10-26). A fill=false name beside a weighted spacer left half the leftover width unused after them.
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                BasicText(artifact.name, Modifier.weight(1f, fill = false).padding(start = 4.dp).semantics { contentDescription = "Artifact: ${artifact.name}" }, style = Pack.body(Pack.size.small), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (artifact.soma && shownVersion > 0) {
+                    BasicText(if (older) "v$shownVersion of $latest" else "v$shownVersion",
+                        Modifier.padding(start = 8.dp).background(if (older) Pack.red else Pack.foreground).padding(horizontal = 6.dp, vertical = 1.dp),
+                        style = Pack.mono(Pack.size.small, Pack.background), maxLines = 1)
+                }
             }
-            Spacer(Modifier.weight(1f))
             if (onExpand != null) BracketAction(if (canSplit) "split" else "expand", Pack.accent, onExpand)
             if (wide) BracketAction("close", Pack.accent, onClose)
         }

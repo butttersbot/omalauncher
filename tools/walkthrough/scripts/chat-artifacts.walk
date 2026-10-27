@@ -53,6 +53,15 @@ expect [ ← chat ]
 absent [ expand ]
 fold open
 expect [ expand ]
+# Boss, 2026-10-26: full screen unfolded put [ split ] and [ close ] in the middle of the header; they stay in the corner.
+tap [ expand ]
+expect [ split ]
+corner right [ close ]
+corner right [ split ]
+shot artifact-unfolded-full-screen-header
+tap [ split ]
+expect [ expand ]
+corner right [ close ]
 tap [ close ]
 expect Keep this draft
 shot artifact-unfolded-chat-restored

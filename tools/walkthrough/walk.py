@@ -220,6 +220,20 @@ def run_step(serial, op, args, out, n):
     if op == "fold":
         # The Fold profile's two screens: "folded" (cover) or "open" (inner).
         adb(serial, "emu", "fold" if args[0] == "folded" else "unfold"); time.sleep(2); wake(serial); wait_for_tree(serial); return True, "", None
+    if op == "corner":
+        # corner right|left TEXT: what says TEXT ends within 12% of that side of the screen, as a corner control should.
+        side, wanted = args[0], " ".join(args[1:]).casefold()
+        w = size(serial)[0]
+        end = time.time() + 4
+        while True:
+            edges = [(r if side == "right" else l) for label, (l, t, r, b) in nodes(serial) if wanted in label.casefold() and r > l]
+            if edges:
+                ok = any(e >= w * 0.88 for e in edges) if side == "right" else any(e <= w * 0.12 for e in edges)
+                if ok or time.time() > end:
+                    return ok, "" if ok else f"“{wanted}” is not in the {side} corner (edge at {edges[0]} of {w})", None
+            elif time.time() > end:
+                return False, f"nothing says “{wanted}”", None
+            time.sleep(0.4)
     if op in ("shot", "expect", "absent"):
         words = " ".join(args)
         name = re.sub(r"\W+", "-", words if op == "shot" else op)[:60]
