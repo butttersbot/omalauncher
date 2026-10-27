@@ -61,3 +61,21 @@ A changed flag applies only to newly created displays. Deploy the rebuilt helper
 DEX and let the old display close before testing; updating the launcher APK alone
 does not replace a running shell helper. Keep the on-demand lifetime and Take over
 behavior. Real-Fold keyboard verification lives in background-on-demand.walk.
+
+### Focus patch checkpoint (56b75ca1, 2026-10-26)
+
+MacBook lane B compiled the helper successfully with android-35 / d8 36.0.0.
+Artifact: `soma-display-56b75ca1.dex`, 17560 bytes, SHA256
+`098cb9ddd50e2929defd43263bd458b6607d63d2139aebf96605b46dadde1ffe`.
+The received phone copy was checksum-verified in `/root/Inbox`; it was not deployed.
+
+Fold8-B AOSP API37 comparison used authenticated helper open/close, launched Hunch
+on the virtual display, then injected a tap on that display. Old helper: top focus
+0 after open, virtual display10 after launch and tap. New helper: top focus0
+through open, launch and tap (virtual display11). Both created/released normally.
+This is an emulator top-focus PASS, not a Samsung keyboard PASS.
+
+Not checked: main IME visible/served client, composer draft retention, oma-phone
+background press/screenshot, idle release/recreate, Samsung One UI. The emulator's
+IME was hidden throughout. Physical phone was asleep/locked when reproduction was
+attempted; no unlock or phone steps taken. These remain in the phone walkthrough.
