@@ -568,7 +568,7 @@ class Builder(val id: BuilderId) {
                     var session: String? = null
                     val trace = if (id == BuilderId.D) File(context.filesDir, "phone-d/$time.jsonl").also { it.parentFile?.mkdirs() } else null
                     child.inputStream.bufferedReader().forEachLine { line ->
-                        trace?.appendText(line + "\n")
+                        trace?.runCatching { appendText(line + "\n") }
                         heardAt = System.currentTimeMillis()
                         if (!sent) {
                             worktree?.made(line)?.let { words = withWorktreeNote(words, it.note); return@forEachLine }
@@ -620,7 +620,7 @@ class Builder(val id: BuilderId) {
                 unanswered.forEach { AgentNotices.withdraw(context, it) }
                 shot = null; handed?.delete()
                 val status = when { stopping -> TaskStatus.Stopped; label == "Done" -> TaskStatus.Done; else -> TaskStatus.Failed }
-                if (id == BuilderId.D) {
+                if (id == BuilderId.D) runCatching {
                     File(context.filesDir, "phone-d").mkdirs()
                     File(context.filesDir, "phone-d/$time.json").writeText(JSONObject()
                         .put("startedAt", began).put("wallSeconds", (System.currentTimeMillis() - began) / 1000.0)

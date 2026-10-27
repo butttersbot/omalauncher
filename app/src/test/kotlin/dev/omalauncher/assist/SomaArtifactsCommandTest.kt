@@ -11,7 +11,7 @@ class SomaArtifactsCommandTest {
         val dir = kotlin.io.path.createTempDirectory("soma-artifacts").toFile()
         try {
             File(dir, "claude").apply { writeText("#!/bin/sh\necho \"thread=\$SOMA_THREAD\"\nprintf '%s\\n' \"\$@\"\n"); setExecutable(true) }
-            for (builder in BuilderId.entries) {
+            for (builder in BuilderId.entries.take(PHONE_BUILDERS)) {
                 val process = ProcessBuilder("/bin/sh", "-c", withSomaArtifacts("export OMA_BUILDER=${builder.letter}\n" + claudeStreamCommand(), builder)).apply {
                     environment()["PATH"] = dir.path + ":" + environment()["PATH"]
                 }.start()

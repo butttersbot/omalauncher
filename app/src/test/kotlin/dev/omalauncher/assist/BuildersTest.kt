@@ -14,17 +14,17 @@ import org.junit.Test
 class BuildersTest {
     private fun approval(id: String) = AgentApproval(id, "Bash", JSONObject().put("command", "echo $id"), "")
 
-    @Test fun thereAreThreeBuildersAndAIsTheOneThereAlwaysWas() {
+    @Test fun threeOwnerBuildersAndOneMailOnlyOperatorKeepACompatible() {
         assertEquals(3, PHONE_BUILDERS)
-        assertEquals(listOf(BuilderId.A, BuilderId.B, BuilderId.C), AgentTasks.builders.map { it.id })
+        assertEquals(listOf(BuilderId.A, BuilderId.B, BuilderId.C, BuilderId.D), AgentTasks.builders.map { it.id })
         // What was saved before there were two is A's: entries, tile keys and a notification's stop without a builder.
         assertEquals("", BuilderId.A.saved); assertEquals("B", BuilderId.B.saved)
         assertEquals(PHONE_THREAD, BuilderId.A.thread); assertEquals("phone-b", BuilderId.B.thread)
-        for (none in listOf(null, "", "D", "x", "builder")) assertEquals(BuilderId.A, BuilderId.of(none))
+        for (none in listOf(null, "", "x", "builder")) assertEquals(BuilderId.A, BuilderId.of(none))
         assertEquals(BuilderId.B, BuilderId.of("B"))
         for (b in listOf("B", "b", " B ", "2")) assertEquals(b, BuilderId.B, BuilderId.named(b))
         for (a in listOf("A", "a", "1")) assertEquals(a, BuilderId.A, BuilderId.named(a))
-        for (none in listOf(null, "", "D", "4", "AB", "t5e121ba2")) assertNull(none, BuilderId.named(none))
+        for (none in listOf(null, "", "AB", "t5e121ba2")) assertNull(none, BuilderId.named(none))
         assertEquals(BuilderId.A, ChatTask(1, "Claude Code", "x").builderId)
         assertEquals(BuilderId.B, ChatTask(1, "Claude Code", "x", builder = "B").builderId)
     }
