@@ -51,3 +51,7 @@ Phone A installed the verified signed b18de027 APK on the real Fold at 16:10
 (20261026-161011-a00294), adb install Success, vc13/0.6.0. Boss is trying it;
 we are not controlling Hunch while he uses it. Physical Fold walk remains pending
 until the app is free; reviewed screenshot publication to Canvas is now requested.
+
+### Shipped Canvas publication
+
+Published from the Fold builder CLI as version 0.6.0, build b18de027, then re-read Canvas and verified all 10 Shipped states carry that version/build. Input archive `hunch-b18de027-canvas.zip` SHA256 `467febfec2236d84eb78099a6463a2338b095d59c8e14e02e56c3fae50932ce7` contains the critic-reviewed walk screenshots and mapping: landscape Today/Market/Bets; upright Today/Market/Bets/Money; cover Today/Market/Money. The cover Bets screenshot was absent, so that card remains on its earlier Shipped state. No `--matches` or owner approval operation was used; Canvas retains drift against older Approved cards. The Mac lane's attempted external write was refused; the documented builder publication path succeeded on the Fold. Real physical-fold checks remain pending owner availability.
