@@ -4,7 +4,7 @@ import java.net.URLDecoder
 import org.json.JSONObject
 
 /** Static recipient; the main-frame owner Submit gesture authorizes one delivery. */
-data class ArtifactReplyRequest(val recipient: String, val text: String)
+data class ArtifactReplyRequest(val recipient: String, val text: String, val answers: String? = null)
 data class ArtifactReplyResult(val sent: Boolean, val message: String, val receipt: String? = null)
 typealias ArtifactAnswerHandler = (ArtifactReplyRequest, (ArtifactReplyResult) -> Unit) -> Unit
 
@@ -37,6 +37,15 @@ object ArtifactReply {
         val to = recipient(html) ?: return null
         val text = runCatching { URLDecoder.decode(url.removePrefix("soma-answer:"), "UTF-8") }.getOrNull() ?: return null
         if (text.isBlank() || text.length > MAX_TEXT || text.any { it == '\u0000' || it == '\u007f' || (it < ' ' && it !in "\n\r\t") }) return null
+        if (text.startsWith("soma-json:")) {
+            val answers = runCatching { JSONObject(text.removePrefix("soma-json:")) }.getOrNull() ?: return null
+            val keys = answers.keys().asSequence().toList()
+            if (keys.size !in 1..20 || keys.any { it.isBlank() || it.length > 160 || it.any { c -> c < ' ' } }) return null
+            if (keys.any { key -> val v = answers.get(key); v !is String && (v !is org.json.JSONArray || (0 until v.length()).any { v.get(it) !is String }) }) return null
+            val strings = keys.flatMap { key -> val v = answers.get(key); if (v is String) listOf(v) else (0 until (v as org.json.JSONArray).length()).map { v.getString(it) } }
+            if (strings.any { value -> value.any { it == '\u007f' || (it < ' ' && it !in "\n\r\t") } }) return null
+            return ArtifactReplyRequest(to, keys.joinToString("\n") { key -> "$key: ${answers.get(key)}" }, answers.toString())
+        }
         return ArtifactReplyRequest(to, text)
     }
 }

@@ -136,7 +136,14 @@ class AndroidChatHost(
 
     override fun sayToMac(prompt: String, thread: String, name: String, chat: String, images: List<File>) = MacThreads.say(context, prompt, thread, name, chat, images, images.mapNotNull(runtime.proot::guestPath))
 
-    override fun submitArtifactReply(source: String, request: ArtifactReplyRequest, done: (ArtifactReplyResult) -> Unit) =
+    override fun canvasOrigin(): String? = runCatching {
+        val file = File(runtime.proot.home, ".config/soma-canvas/env")
+        val value = file.readLines().firstOrNull { it.trim().removePrefix("export ").startsWith("CANVAS_URL=") }
+            ?.trim()?.removePrefix("export ")?.substringAfter('=')?.trim()?.trim { it.code == 34 || it.code == 39 }
+        CanvasReceipt.origin(value)
+    }.getOrNull()
+
+    override fun submitArtifactReply(source: ArtifactReplySource, request: ArtifactReplyRequest, done: (ArtifactReplyResult) -> Unit) =
         ArtifactReplyDelivery.submit(context, this, source, request, done)
 
     override fun stopMac(thread: String, said: (String?) -> Unit) = MacThreads.stop(context, thread, said)

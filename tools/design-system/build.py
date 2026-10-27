@@ -215,8 +215,8 @@ p {{ margin: 0; }}
     <h2>Your answer</h2>
     <form id="soma-question-form">
       <p class="caption">Choose one, or write your own answer.</p>
-      <button class="option" type="button" data-answer="Approve this design" aria-pressed="false"><b>Approve this design</b><small>Build the screens shown in this mockup.</small></button>
-      <button class="option" type="button" data-answer="Request changes" aria-pressed="false"><b>Request changes</b><small>Describe the changes in Other.</small></button>
+      <button class="option" type="button" data-answer="approve" aria-pressed="false"><b>Approve this design</b><small>Build the screens shown in this mockup.</small></button>
+      <button class="option" type="button" data-answer="changes" aria-pressed="false"><b>Request changes</b><small>Describe the changes in Other.</small></button>
       <label class="field">Other<textarea name="answer" maxlength="4096" rows="3"></textarea></label>
       <div class="actions"><button class="action" type="submit">Submit answers</button></div>
       <p class="caption" id="soma-reply-status" role="status"></p>
@@ -241,7 +241,7 @@ document.getElementById('soma-question-form').addEventListener('submit', functio
   const status = document.getElementById('soma-reply-status');
   if (!text) return;
   if (window.soma && typeof window.soma.answer === 'function') {{
-    window.soma.answer(text);
+    window.soma.answer({{decision: picked || "other", other: other}});
     status.textContent = 'Sending answers…';
     event.target.querySelectorAll('button,input,textarea').forEach(function(field) {{ field.disabled = true; }});
   }} else status.textContent = 'Reply delivery is unavailable in this preview. Open it in updated Soma.';
@@ -380,7 +380,7 @@ Use one fixed `phone:A`, `phone:B`, `phone:C`, or the exact known `mac:` thread 
 The declared recipient is untrusted until Boss reviews it. An artifact must never
 choose a different recipient from JavaScript or claim that answers were delivered.
 
-The template's Submit calls `soma.answer(text)` on Boss's tap. That Submit tap is
+The template's Submit calls `soma.answer(answers)` on Boss's tap. That Submit tap is
 consent to send directly to the fixed recipient. No second review, approval card,
 or navigation away from the mockup. Soma delivers a normal message to the exact
 known thread/builder and reports `soma-answer-result` with `sent` and `message`.
@@ -389,8 +389,20 @@ has no bridge and explains that. A failed/uncertain delivery is never called sen
 
 Put questions inside the mockup (a section or Questions tab), with options, Other,
 and one Submit. Without a mockup, use the same question block as its own artifact.
-The native submission id is for duplicate prevention, not by itself an approval
-proof. Only a Canvas-verifiable owner receipt can record a mockup approval there.
+Pass an object of question keys to selected labels/arrays or Other text. A plain
+string remains supported. Use `decision: "approve"` for a mockup's Approve choice.
+Soma signs a native receipt binding the exact HTML hash, version, answers and fixed
+recipient with a non-exportable Android Keystore P-256 key. The agent receives
+`canvasReceipt` and `receiptStatus` (registered / signed-offline / unlinked), plus
+`canvasReceiptId` when Canvas answered. With no confirmed linked device, answers
+still deliver but contain no approval proof. Native never stores an owner key.
+
+Link once through Canvas's owner menu in Soma's artifact panel: `await
+window.somaReceipts.publicKey()` returns only SPKI base64 and deviceId on a
+main-frame owner gesture at the configured CANVAS_URL origin. Canvas does the
+owner-authenticated registration. No signing call is available to the page.
+Agents use a verified receipt with `soma-canvas record-approved`; they cannot
+mint proof themselves. The local submission UUID only prevents duplicate sends.
 Canvas approvals are separate; `soma.approve` is parked and absent from the template.
 
 Generated HTML gets no file/content access, credentials or general native API.

@@ -1,0 +1,38 @@
+package dev.omalauncher.oma
+
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
+import android.util.Base64
+import java.security.KeyPairGenerator
+import java.security.KeyStore
+import java.security.SecureRandom
+import java.security.Signature
+import java.security.spec.ECGenParameterSpec
+import java.time.Instant
+import org.json.JSONObject
+
+/** No signing function is exposed to JavaScript. Private key never leaves Android Keystore. */
+object CanvasReceiptKeys {
+    private const val ALIAS = "soma-canvas-receipts"
+    private fun store() = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+    @Synchronized fun publicKey(): JSONObject {
+        if (!store().containsAlias(ALIAS)) KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_EC, "AndroidKeyStore").apply {
+            initialize(KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_SIGN)
+                .setAlgorithmParameterSpec(ECGenParameterSpec("secp256r1")).setDigests(KeyProperties.DIGEST_SHA256).build())
+        }.generateKeyPair()
+        val encoded = store().getCertificate(ALIAS).publicKey.encoded
+        return JSONObject().put("publicKey", Base64.encodeToString(encoded, Base64.NO_WRAP)).put("deviceId", CanvasReceipt.sha256(encoded))
+    }
+    @Synchronized fun sign(source: ArtifactReplySource, request: ArtifactReplyRequest): JSONObject? {
+        val store = store()
+        if (!store.containsAlias(ALIAS)) return null // Only owner Link creates the key.
+        val encoded = store.getCertificate(ALIAS).publicKey.encoded
+        val nonce = ByteArray(16).also { SecureRandom().nextBytes(it) }.joinToString("") { "%02x".format(it) }
+        val receipt = CanvasReceipt.receipt(CanvasReceipt.sha256(encoded), nonce, Instant.now().toString(), source, request)
+        val signature = Signature.getInstance("SHA256withECDSA").apply {
+            initSign(store.getKey(ALIAS, null) as java.security.PrivateKey)
+            update(CanvasReceipt.canonical(receipt).toByteArray(Charsets.UTF_8))
+        }.sign()
+        return JSONObject().put("receipt", receipt).put("sig", Base64.encodeToString(signature, Base64.NO_WRAP))
+    }
+}

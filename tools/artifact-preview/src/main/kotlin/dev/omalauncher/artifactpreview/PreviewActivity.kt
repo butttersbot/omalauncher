@@ -105,7 +105,7 @@ Open the preview to try the layout. We can keep talking while you look at it.
         override fun startMacChat(prompt: String, chat: String, images: List<java.io.File>) {}
         override fun sayToMac(prompt: String, thread: String, name: String, chat: String, images: List<java.io.File>) {}
         private var answerCount = 0
-        override fun submitArtifactReply(source: String, request: ArtifactReplyRequest, done: (ArtifactReplyResult) -> Unit) {
+        override fun submitArtifactReply(source: ArtifactReplySource, request: ArtifactReplyRequest, done: (ArtifactReplyResult) -> Unit) {
             answerCount++
             android.util.Log.i("SomaWalk", "artifact answer $answerCount to ${request.recipient}: ${request.text}")
             done(ArtifactReplyResult(true, "Sent to ${request.recipient}"))

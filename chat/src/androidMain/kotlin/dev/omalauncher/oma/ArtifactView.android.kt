@@ -28,9 +28,10 @@ import dev.omalauncher.ui.Pack
  * page itself starts over, as any reload does.
  */
 @Composable
-internal actual fun ArtifactWeb(url: String?, html: String?, modifier: Modifier, onAnswer: ArtifactAnswerHandler?, onApprove: ((ArtifactCanvasRequest) -> Unit)?) {
+internal actual fun ArtifactWeb(url: String?, html: String?, modifier: Modifier, onAnswer: ArtifactAnswerHandler?, onApprove: ((ArtifactCanvasRequest) -> Unit)?, canvasOrigin: String?) {
     val answerCallback by rememberUpdatedState(onAnswer)
     val approveCallback by rememberUpdatedState(onApprove)
+    val allowedCanvas by rememberUpdatedState(canvasOrigin?.let(CanvasReceipt::origin))
     val sourceHtml by rememberUpdatedState(html)
     var submitting by remember(url, html) { mutableStateOf(false) }
     val replyToken by rememberUpdatedState(remember(url, html) { java.util.UUID.randomUUID().toString() })
@@ -60,6 +61,13 @@ internal actual fun ArtifactWeb(url: String?, html: String?, modifier: Modifier,
                     settings.blockNetworkLoads = url == null
                     webViewClient = object : WebViewClient() {
                         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                            val publicPrefix = "soma-receipts-public:$replyToken"
+                            if (request.url.toString() == publicPrefix && url != null && allowedCanvas != null &&
+                                CanvasReceipt.origin(view.url) == allowedCanvas && request.isForMainFrame && request.hasGesture()) {
+                                val key = runCatching { CanvasReceiptKeys.publicKey() }.getOrNull()
+                                view.evaluateJavascript("window.dispatchEvent(new CustomEvent('soma-receipts-key',{detail:${key ?: org.json.JSONObject().put("error", "Device receipt key is unavailable")}}));", null)
+                                return true
+                            }
                             if (false && url == null && approveCallback != null && owned === view) {
                                 val prefix = "soma-approve:$replyToken:"
                                 val address = request.url.toString()
@@ -91,10 +99,13 @@ internal actual fun ArtifactWeb(url: String?, html: String?, modifier: Modifier,
                             return url == null || scheme !in listOf("https", "http")
                         }
                         override fun onPageFinished(view: WebView, finishedUrl: String?) {
+                            if (url != null && owned === view && allowedCanvas != null && CanvasReceipt.origin(view.url) == allowedCanvas) {
+                                view.evaluateJavascript("window.somaReceipts=Object.freeze({publicKey:function(){return new Promise(function(resolve,reject){window.addEventListener('soma-receipts-key',function(e){if(e.detail.error)reject(new Error(e.detail.error));else resolve(e.detail)},{once:true});location.href='soma-receipts-public:$replyToken'})}});window.dispatchEvent(new Event('soma-receipts-ready'));", null)
+                            }
                             if (url == null && owned === view) {
                                 val methods = mutableListOf<String>()
                                 if (answerCallback != null && ArtifactReply.recipient(sourceHtml.orEmpty()) != null)
-                                    methods += "answer:function(text){if(typeof text==='string'&&text.length<=4096)location.href='soma-answer:$replyToken:'+encodeURIComponent(text)}"
+                                    methods += "answer:function(value){var text=typeof value==='string'?value:'soma-json:'+JSON.stringify(value);if(text&&text.length<=4096)location.href='soma-answer:$replyToken:'+encodeURIComponent(text)}"
                                 if (false && approveCallback != null && ArtifactCanvasApproval.declared(sourceHtml.orEmpty()))
                                     methods += "approve:function(value){if(value&&typeof value==='object')location.href='soma-approve:$replyToken:'+encodeURIComponent(JSON.stringify(value))}"
                                 if (methods.isNotEmpty()) view.evaluateJavascript("window.soma=Object.freeze({" + methods.joinToString(",") + "});", null)
@@ -105,12 +116,12 @@ internal actual fun ArtifactWeb(url: String?, html: String?, modifier: Modifier,
                         }
                     }
                     if (url != null) loadUrl(url)
-                    else loadDataWithBaseURL("https://soma-artifact.invalid/", html.orEmpty(), "text/html", "UTF-8", null).also { loaded[0] = html.orEmpty() }
+                    else loadDataWithBaseURL("https://soma-artifact.invalid/", isolatedArtifactHtml(html.orEmpty()), "text/html", "UTF-8", null).also { loaded[0] = html.orEmpty() }
                 }
             }, update = { view ->
                 if (url == null && html != null && loaded[0] != html) {
                     loaded[0] = html
-                    view.loadDataWithBaseURL("https://soma-artifact.invalid/", html, "text/html", "UTF-8", null)
+                    view.loadDataWithBaseURL("https://soma-artifact.invalid/", isolatedArtifactHtml(html), "text/html", "UTF-8", null)
                 }
             }, modifier = Modifier.fillMaxSize().clipToBounds(), onRelease = { it.stopLoading(); it.destroy(); if (owned === it) owned = null })
         }
@@ -134,4 +145,11 @@ internal actual fun ArtifactImage(bytes: ByteArray, description: String, modifie
     }
     if (image != null) Image(image, description, modifier, contentScale = ContentScale.Fit)
     else BasicText("This image could not be decoded.", modifier.padding(16.dp), style = Pack.body())
+}
+
+private fun isolatedArtifactHtml(html: String): String {
+    val policy = """<meta http-equiv="Content-Security-Policy" content="frame-src 'none'; object-src 'none'">"""
+    val head = Regex("<head\\b[^>]*>", RegexOption.IGNORE_CASE).find(html)
+    val offset = head?.range?.last?.plus(1) ?: Regex("<!doctype[^>]*>", RegexOption.IGNORE_CASE).find(html)?.range?.last?.plus(1) ?: 0
+    return html.substring(0, offset) + policy + html.substring(offset)
 }
