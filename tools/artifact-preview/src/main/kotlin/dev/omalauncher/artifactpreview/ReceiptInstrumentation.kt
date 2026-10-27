@@ -14,10 +14,10 @@ class ReceiptInstrumentation : Instrumentation() {
     override fun onCreate(arguments: Bundle?) { super.onCreate(arguments); start() }
     override fun onStart() {
         try {
-            val public = CanvasReceiptKeys.publicKey()
-            check(public.toString() == CanvasReceiptKeys.publicKey().toString())
-            val bytes = Base64.decode(public.getString("publicKey"), Base64.DEFAULT)
-            check(CanvasReceipt.sha256(bytes) == public.getString("deviceId"))
+            val publicInfo = CanvasReceiptKeys.publicKey()
+            check(publicInfo.toString() == CanvasReceiptKeys.publicKey().toString())
+            val bytes = Base64.decode(publicInfo.getString("publicKey"), Base64.DEFAULT)
+            check(CanvasReceipt.sha256(bytes) == publicInfo.getString("deviceId"))
             val source = ArtifactReplySource("fixture", "mock.html", "1", CanvasReceipt.sha256("fixture".toByteArray()))
             val signed = CanvasReceiptKeys.sign(source, ArtifactReplyRequest("phone:B", "approve", """{"decision":"approve"}"""))!!
             val key = KeyFactory.getInstance("EC").generatePublic(X509EncodedKeySpec(bytes))
