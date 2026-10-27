@@ -18,6 +18,16 @@ tap answer questions
 expect Layout: Beside chat
 expect Checks: Cover, Unfolded
 shot waiting-question-cover-ready
+rotate landscape
+expect Layout: Beside chat
+expect Checks: Cover, Unfolded
+nolog waiting question answer
+shot waiting-question-rotated-draft
+rotate portrait
+expect Layout: Beside chat
+expect Checks: Cover, Unfolded
+nolog waiting question answer
+shot waiting-question-restored-draft
 tap Send:
 expect Answers sent
 log waiting question answer fixture-ticket

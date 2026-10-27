@@ -1,5 +1,10 @@
 package dev.omalauncher.oma
 
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.ui.focus.onFocusChanged
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -26,6 +31,26 @@ internal fun questionInput(tool: String, input: String): Boolean = runCatching {
     (tool == "AskUserQuestion" || json.optString("codex_request") == "questions") &&
         (json.optJSONArray("questions")?.length() ?: 0) > 0
 }.getOrDefault(false)
+
+/** Re-resolve a saved form's nonce rather than retaining an Activity or an old host callback. */
+internal fun ChatHost.sendWaitingAnswers(key: String, answers: JSONObject, done: (String?) -> Unit) {
+    macPending().firstOrNull { it.ticket == key }?.let { entry ->
+        answerMacQuestions(entry.ticket, answers) { done(dev.omalauncher.assist.macApprovalNotice(it)) }
+        return
+    }
+    builders().values.flatMap { it.pending }.firstOrNull { it.nonce == key }?.let { entry ->
+        val outcome = runCatching { answerBuilderQuestions(entry, answers) }.getOrElse {
+            done("These answers could not be sent. Review every question and try again."); return
+        }
+        done(when (outcome) {
+            dev.omalauncher.assist.ApprovalOutcome.Decided -> null
+            dev.omalauncher.assist.ApprovalOutcome.Locked -> "Unlock your phone to answer"
+            dev.omalauncher.assist.ApprovalOutcome.Expired -> "That request has expired"
+        })
+        return
+    }
+    done("That request has expired")
+}
 
 /** Entirely native: the visible answers and the Send action share the same state. */
 @Composable
@@ -72,7 +97,7 @@ internal fun WaitingQuestionPanel(request: WaitingQuestion, close: () -> Unit) {
         }
         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp)) {
             BasicText(request.title, style = Pack.body(color = Pack.accent))
-            BasicText(if (sent) "Answers sent" else "Before I continue", Modifier.padding(vertical = 12.dp), style = Pack.body())
+            BasicText(if (sent) "Answers sent" else "Before I continue", Modifier.padding(vertical = 12.dp), style = Pack.display(Pack.size.title, Pack.accent))
             if (sent) BasicText(summary, style = Pack.body()) else for (i in keys.indices) {
                 val q = questions.getJSONObject(i); val key = keys[i]
                 BasicText("${i + 1} · ${q.optString("header")}", style = Pack.mono(Pack.size.small, Pack.muted))
@@ -90,7 +115,7 @@ internal fun WaitingQuestionPanel(request: WaitingQuestion, close: () -> Unit) {
                                 if (label in previous) previous - label else previous + label
                             } else listOf(label))
                         }.padding(12.dp)) {
-                        BasicText("${if (selected) "●" else "○"} $label", style = Pack.body())
+                        BasicText("${if (q.optBoolean("multiSelect")) { if (selected) "☑" else "☐" } else { if (selected) "●" else "○" }} $label", style = Pack.body())
                         option.optString("description").takeIf { it.isNotBlank() }?.let {
                             BasicText(it, Modifier.padding(top = 4.dp), style = Pack.body(Pack.size.small, Pack.muted))
                         }
@@ -98,15 +123,24 @@ internal fun WaitingQuestionPanel(request: WaitingQuestion, close: () -> Unit) {
                 }
                 if (q.opt("isOtherAllowed") != false) {
                     BasicText("Other", style = Pack.mono(Pack.size.small, Pack.muted))
+                    val bringIntoView = remember(request.key, key) { BringIntoViewRequester() }
+                    val scope = rememberCoroutineScope()
                     BasicTextField(others[key] ?: "", { value ->
                         others = others + (key to value.take(4096)); answers = answers - key
-                    }, Modifier.fillMaxWidth().padding(vertical = 8.dp).background(Pack.surface).padding(12.dp),
-                        enabled = !sending, textStyle = Pack.body())
+                    }, Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                        .bringIntoViewRequester(bringIntoView).onFocusChanged { focus ->
+                            if (focus.isFocused) scope.launch { delay(300); bringIntoView.bringIntoView() }
+                        }.framed(Pack.mark, Pack.muted, Pack.surface, radius = 8.dp).padding(12.dp),
+                        enabled = !sending, textStyle = Pack.body(), decorationBox = { field ->
+                            Box { if (others[key].isNullOrEmpty()) BasicText("Write your answer", style = Pack.body(color = Pack.muted)); field() }
+                        })
                 }
                 Spacer(Modifier.height(16.dp))
             }
         }
         Column(Modifier.fillMaxWidth().heightIn(max = 180.dp).background(Pack.surface).verticalScroll(rememberScrollState()).padding(12.dp)) {
+            BasicText("To: ${request.title}", style = Pack.mono(Pack.size.small, Pack.muted))
+            if (!ready && !sent) BasicText("Answer every question to send.", style = Pack.mono(Pack.size.small, Pack.muted))
             error?.let { BasicText(it, style = Pack.body(Pack.size.small, Pack.red)) }
             if (!sent) BracketAction(if (sending) "Sending…" else if (ready) "Send: $summary" else "Send answers", if (ready) Pack.accent else Pack.muted) {
                 if (ready && !sending) {

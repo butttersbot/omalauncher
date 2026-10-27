@@ -75,7 +75,13 @@ internal fun ChatArtifactWorkspace(
     content: @Composable () -> Unit,
 ) {
     val questionDrafts = rememberSaveableStateHolder()
-    var question by remember { mutableStateOf<WaitingQuestion?>(null) }
+    // Save data, never a callback: after recreation resolve Send against the current nonce book.
+    var questionSelection by rememberSaveable(tab) { mutableStateOf<List<String>?>(null) }
+    val question = questionSelection?.let { saved ->
+        WaitingQuestion(saved[0], saved[1], saved[2]) { answers, done ->
+            host.sendWaitingAnswers(saved[0], answers, done)
+        }
+    }
     var selections by rememberSaveable { mutableStateOf(mapOf<String, String>()) }
     var expanded by rememberSaveable { mutableStateOf(false) }
     var opened by remember { mutableStateOf(mapOf<String, ChatArtifact>()) }
@@ -84,11 +90,11 @@ internal fun ChatArtifactWorkspace(
     var opens by remember { mutableIntStateOf(0) }
     // The version the panel shows, so only the card of that version says it is showing.
     var shownVersion by remember { mutableIntStateOf(0) }
-    LaunchedEffect(tab) { expanded = false; question = null }
+    LaunchedEffect(tab) { expanded = false }
     val selected = artifacts.firstOrNull { it.id == selections[tab] }?.let { listed -> opened[tab]?.takeIf { it.id == listed.id } ?: listed }
         ?: opened[tab]?.takeIf { it.id == selections[tab] }
-    val open: (ChatArtifact) -> Unit = { question = null; opened = opened + (tab to it); selections = selections + (tab to it.id); fileLists = fileLists - tab; expanded = false; opens++ }
-    val close = { question = null; selections = selections - tab; opened = opened - tab; fileLists = fileLists - tab; expanded = false }
+    val open: (ChatArtifact) -> Unit = { questionSelection = null; opened = opened + (tab to it); selections = selections + (tab to it.id); fileLists = fileLists - tab; expanded = false; opens++ }
+    val close = { questionSelection = null; selections = selections - tab; opened = opened - tab; fileLists = fileLists - tab; expanded = false }
     val listing = tab in fileLists
     val panelOpen = question != null || selected != null || listing
     BackHandler(panelOpen) { close() }
@@ -143,7 +149,7 @@ internal fun ChatArtifactWorkspace(
             Box(Modifier.weight(1f).fillMaxHeight().then(if (overlay) Modifier.clearAndSetSemantics {} else Modifier), contentAlignment = Alignment.TopCenter) {
                 CompositionLocalProvider(
                     LocalArtifactOpen provides open,
-                    LocalQuestionOpen provides { question = it; expanded = false; fileLists = fileLists - tab },
+                    LocalQuestionOpen provides { questionSelection = listOf(it.key, it.title, it.input); expanded = false; fileLists = fileLists - tab },
                     LocalMarkdownArtifactOpen provides { link ->
                         val target = artifactPath(link) ?: link
                         artifacts.firstOrNull { it.location == target }?.let { open(it); true } ?: false
