@@ -30,7 +30,29 @@ internal fun questionInput(tool: String, input: String): Boolean = runCatching {
 /** Entirely native: the visible answers and the Send action share the same state. */
 @Composable
 internal fun WaitingQuestionPanel(request: WaitingQuestion, close: () -> Unit) {
-    val questions = remember(request.key) { JSONObject(request.input).getJSONArray("questions") }
+    val questions = remember(request.key) { runCatching {
+        val json = JSONObject(request.input)
+        val array = json.getJSONArray("questions")
+        require(array.length() in 1..20)
+        val identifiers = (0 until array.length()).map { i ->
+            val q = array.getJSONObject(i)
+            require(q.getString("question").isNotBlank())
+            val options = q.optJSONArray("options") ?: JSONArray()
+            require(options.length() <= 30)
+            val labels = (0 until options.length()).map { options.getJSONObject(it).getString("label") }
+            require(labels.all { it.isNotBlank() } && labels.distinct().size == labels.size)
+            if (json.optString("codex_request") == "questions") q.getString("id") else q.getString("question")
+        }
+        require(identifiers.all { it.isNotBlank() } && identifiers.distinct().size == identifiers.size)
+        array
+    }.getOrNull() }
+    if (questions == null) {
+        Column(Modifier.fillMaxSize().padding(16.dp)) {
+            BasicText("This question form could not be read. Ask the agent to send it again.", style = Pack.body())
+            BracketAction("back to chat", Pack.accent, onClick = close)
+        }
+        return
+    }
     val codex = remember(request.key) { JSONObject(request.input).optString("codex_request") == "questions" }
     var answers by rememberSaveable(request.key) { mutableStateOf(mapOf<String, List<String>>()) }
     var others by rememberSaveable(request.key) { mutableStateOf(mapOf<String, String>()) }
@@ -77,14 +99,14 @@ internal fun WaitingQuestionPanel(request: WaitingQuestion, close: () -> Unit) {
                 if (q.opt("isOtherAllowed") != false) {
                     BasicText("Other", style = Pack.mono(Pack.size.small, Pack.muted))
                     BasicTextField(others[key] ?: "", { value ->
-                        others = others + (key to value); answers = answers - key
+                        others = others + (key to value.take(4096)); answers = answers - key
                     }, Modifier.fillMaxWidth().padding(vertical = 8.dp).background(Pack.surface).padding(12.dp),
                         enabled = !sending, textStyle = Pack.body())
                 }
                 Spacer(Modifier.height(16.dp))
             }
         }
-        Column(Modifier.fillMaxWidth().background(Pack.surface).padding(12.dp)) {
+        Column(Modifier.fillMaxWidth().heightIn(max = 180.dp).background(Pack.surface).verticalScroll(rememberScrollState()).padding(12.dp)) {
             error?.let { BasicText(it, style = Pack.body(Pack.size.small, Pack.red)) }
             if (!sent) BracketAction(if (sending) "Sending…" else if (ready) "Send: $summary" else "Send answers", if (ready) Pack.accent else Pack.muted) {
                 if (ready && !sending) {
