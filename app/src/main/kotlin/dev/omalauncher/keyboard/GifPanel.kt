@@ -262,6 +262,8 @@ class GifPanel(
         chip = GifStore.FIXED[0]
         shownQuery = ""
         editing = false
+        chipScroll = 0f
+        lastChipsWalk = ""
         feed.open(Req.Trending)
     }
 

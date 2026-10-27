@@ -65,7 +65,9 @@ wait 800
 log gif panel expanded=true query=cat handle=shown
 shot band-handle-pulled-full-screen
 # The pill row swipes sideways (Boss, 2026-10-27), and the swipe taps no pill. In the full-screen panel the row is
-# at about 0.176 (handle 0.066 + 83 dp).
+# at about 0.176 under a 110 px status bar (handle 0.066 + 83 dp); 0.198 under the Mac Pro emulator's 152 px one
+# (handle 0.088), measured 2026-10-27.
+clearlog
 swipe 0.85 0.176 0.15 0.176 500
 wait 600
 log gif chips swiped
