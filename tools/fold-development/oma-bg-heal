@@ -12,6 +12,15 @@ pause=/root/.config/oma-development/bg-paused
 exec 9>/tmp/oma-bg-heal.lock
 flock -n 9 || exit 0
 dex=/data/local/tmp/soma-display.dex
+# Agents' own long jobs come back with Linux too (Boss, 2026-10-26: "have the background jobs start on their own after
+# an update"): each line of ~/.config/oma/autostart is "NAME COMMAND [ARG...]", started with oma keep unless a job of
+# that name already runs. Lines starting with # are skipped.
+if [ -r /root/.config/oma/autostart ]; then
+  while read -r name cmd; do
+    case $name in ''|'#'*) continue ;; esac
+    oma keep list 2>/dev/null | grep -q "^$name .*running" || oma keep run "$name" -- $cmd >/dev/null 2>&1
+  done < /root/.config/oma/autostart
+fi
 log() { printf '%s %s\n' "$(date '+%F %T')" "$*"; }
 said=
 while :; do
