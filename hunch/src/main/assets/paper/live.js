@@ -45,8 +45,9 @@ function coverPrepare(root){
 }
 async function showLive(){
  const wide=window.innerWidth>=600;Hunch.layoutWide=wide;
- if(Hunch.selected)return wide?showMarket(true):showCoverMarket();
- if(wide)return showWide();
+ if(wide)return showTwoPane();
+ const oldPane=document.querySelector('.hunch-two-pane .right');if(oldPane&&paneShown!==null)paneScroll.set(paneShown,oldPane.scrollTop);
+ if(Hunch.selected)return showCoverMarket();
  await Paper.show('CoverBets',logic=>{
   logic.state.tab=Hunch.chapter;const a=Paper.active;
   a.values=v=>({...v,zoomed:false,notZoomed:true,rows:[],settled:[],tot:{stake:'—',worth:'—',pays:'—'},next:{left:'—',title:'No connected bets',sub:'Read-only markets',chance:'—',pick:()=>{}},segs:v.segs.map((s,i)=>({...s,label:i?'SETTLED':'OPEN'})),tabs:v.tabs.map((t,i)=>({...t,hasBadge:false,badge:'',aria:['Today','Bets','Money'][i],sub:i===0?'PUBLIC MARKETS':i===1?'NO ACCOUNT':'NOT CONNECTED',pick:()=>route(['today','bets','money'][i])}))});
