@@ -13,7 +13,10 @@ import java.util.concurrent.Executors
 class MainActivity:PaperActivity(){
     private val worker=Executors.newFixedThreadPool(2)
     private var fixture="";private var design="";private var chapter="today"
-    private var markets=emptyList<Market>()
+    @Volatile private var markets=emptyList<Market>()
+    private val quoteWorker=Executors.newFixedThreadPool(2)
+    private val listingQuotes=mutableMapOf<String,Pair<Long,JSONObject>>()
+    private val quoting=mutableSetOf<String>()
     override fun onCreate(state:Bundle?){
         super.onCreate(state)
         fixture=if(BuildConfig.DEBUG)intent.getStringExtra("fixture").orEmpty() else ""
@@ -33,6 +36,7 @@ class MainActivity:PaperActivity(){
         "markets"->if(design.isEmpty())loadMarkets()
         "route"->if(data.optString("chapter") in listOf("today","bets","money"))chapter=data.getString("chapter")
         "book"->if(design.isEmpty())loadBook(data)
+        "listingQuotes"->if(design.isEmpty())loadListingQuotes(data)
         "account"->if(design.isEmpty())startActivity(Intent(this,AccountActivity::class.java).putExtra("demo",BuildConfig.DEBUG&&fixture=="demo"))
         "wallet"->if(design.isEmpty())startActivity(Intent(this,WalletActivity::class.java).putExtra("demo",BuildConfig.DEBUG&&fixture=="demo"))
         "live"->{intent.removeExtra("design");design="";chapter="today";openPaper()}
@@ -53,6 +57,26 @@ class MainActivity:PaperActivity(){
         val result=runCatching{Market.parse(request(JSONObject().put("type","outcomeMeta")))}
         runOnUiThread{if(!isDestroyed){result.fold(onSuccess={found->markets=found;tell(JSONObject().put("type","markets").put("updated",System.currentTimeMillis()).put("rows",JSONArray(found.map{m->JSONObject().put("id",m.id.toString()).put("title",m.title).put("category",m.category).put("venue",m.venueName).put("quote",m.quote).put("date",m.deadline?.let{MarketDates.display(it)}?:"Read venue terms").put("identity",m.identity).put("sides",JSONArray((0..1).map{m.sideLabel(it)})).put("terms",JSONObject(m.fields))})))},onFailure={tell(JSONObject().put("type","marketError"))})}}
     }}
+    private fun loadListingQuotes(data:JSONObject){
+        val ids=data.optJSONArray("ids")?:return
+        if(ids.length()>16)return
+        val now=System.currentTimeMillis()
+        for(i in 0 until ids.length()){
+            val id=ids.optString(i);val market=markets.firstOrNull{it.id.toString()==id}?:continue
+            val cached=listingQuotes[id]
+            if(cached!=null&&now-cached.first<(if(cached.second.optBoolean("valid"))15_000L else 10_000L)){
+                tell(JSONObject().put("type","listingQuote").put("quote",cached.second));continue
+            }
+            // Bound queued HTTP reads even when the owner scrolls rapidly. Detail requests use a separate pool.
+            if(id in quoting||quoting.size>=24)continue
+            quoting.add(id)
+            quoteWorker.submit{
+                val result=runCatching{ListingQuote.read(market,request(JSONObject().put("type","l2Book").put("coin",market.coin(0))),System.currentTimeMillis())}
+                    .getOrElse{JSONObject().put("id",id).put("valid",false)}
+                runOnUiThread{quoting.remove(id);if(!isDestroyed){listingQuotes[id]=System.currentTimeMillis() to result;tell(JSONObject().put("type","listingQuote").put("quote",result))}}
+            }
+        }
+    }
     private fun loadBook(data:JSONObject){
         val id=data.optString("id");val m=markets.find{it.id.toString()==id}?:return
         val side=data.optInt("side",-1);if(side !in 0..1)return
@@ -70,5 +94,5 @@ class MainActivity:PaperActivity(){
             runOnUiThread{if(!isDestroyed)tell(payload)}
         }
     }
-    override fun onDestroy(){worker.shutdownNow();super.onDestroy()}
+    override fun onDestroy(){worker.shutdownNow();quoteWorker.shutdownNow();super.onDestroy()}
 }

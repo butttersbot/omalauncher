@@ -19,14 +19,14 @@ function paneMarkets(upright=false){
  ['ALL',...new Set(Hunch.rows.map(m=>m.category.toUpperCase()))].forEach(cat=>{const count=Hunch.rows.filter(m=>cat==='ALL'||m.category.toUpperCase()===cat).length;const b=paneButton(cat+' '+count,'chip'+(Hunch.category===cat?' on':''),()=>{Hunch.category=cat;Hunch.limit=100;Paper.schedule()});b.setAttribute('aria-pressed',String(Hunch.category===cat));chips.append(b)});inner.append(chips);
  const rows=liveRows(),hero=rows[0];
  if(hero){const b=paneButton('','hero'+(Hunch.selected?.id===hero.id?' sel':''),()=>paneChoose(hero));
- const art=paneNode('div','stadium');art.innerHTML=HUNCH_STADIUM;b.append(...art.childNodes);
+ listingIdentity(b,hero);const art=paneNode('div','stadium');art.innerHTML=HUNCH_STADIUM;b.append(...art.childNodes);
  b.append(paneNode('span','tag','PUBLIC MARKETS · '+rows.length+' LISTED'));
- const card=paneNode('span','card');card.append(paneNode('b','',hero.title),paneNode('span','',hero.category+' · '+hero.venue+' · '+hero.date));b.append(card);inner.append(b);
+ const card=paneNode('span','card');const headline=paneNode('div','quote-head');headline.append(paneNode('b','',hero.title),paneNode('b','chance',listingPercent(hero)));card.append(headline,paneNode('span','',hero.category+' · '+hero.venue+' · '+hero.date));b.append(card);inner.append(b);
  }else inner.append(paneNode('p','empty',Hunch.error?'Markets could not be loaded. Check your connection.':Hunch.rows.length?'No matching markets.':'Loading listings…'));
  if(upright&&rows[1]){const gut=paneButton('','gut',()=>paneChoose(rows[1]));const title=paneNode('span','t');title.append(paneNode('small','','GUT CHECK'),paneNode('b','',rows[1].title),paneNode('span','','Open it to inspect the live order book.'));gut.append(title,paneNode('span','q','?'));inner.append(gut)}
  const heading=paneHeading('MORE MARKETS');heading.append(paneNode('span','',upright?'TAP TO OPEN':'TAP TO OPEN ON THE RIGHT'));inner.append(heading);
  const list=paneNode('div','market-list');const limit=Hunch.limit||100;
- rows.slice(upright?2:1,limit).forEach(m=>{const b=paneButton('','mkt'+(Hunch.selected?.id===m.id?' sel':''),()=>paneChoose(m));const title=paneNode('span','t');title.append(paneNode('b','',m.title),paneNode('small','',m.category+' · '+m.venue+' · '+m.date));const p=paneNode('span','p');p.append(paneNode('b','','→'),paneNode('small','','VIEW BOOK'));b.append(title,p);list.append(b)});
+ rows.slice(upright?2:1,limit).forEach(m=>{const b=paneButton('','mkt'+(Hunch.selected?.id===m.id?' sel':''),()=>paneChoose(m));const title=paneNode('span','t');title.append(paneNode('b','',m.title),paneNode('small','',m.category+' · '+m.venue+' · '+m.date));listingIdentity(b,m);const p=paneNode('span','p');p.append(paneNode('b','',listingPercent(m)),paneNode('small','',listingPrice(m)));b.append(title,p);list.append(b)});
  if(rows.length>limit)list.append(paneButton('Show more markets','rtab',()=>{Hunch.limit=limit+100;Paper.schedule()}));
  inner.append(list,paneButton('Refresh markets','rtab',()=>sendNative({type:'markets'})));return inner;
 }

@@ -1,0 +1,29 @@
+# Verified public-ask quotes; fictional market fixture, never funds/orders.
+fold open
+rotate landscape
+shell am force-stop dev.omalauncher.hunch
+shell am start -n dev.omalauncher.hunch/.MainActivity --es fixture demo
+expect FICTIONAL MARKET DEMO
+expect 41%
+expect YES 41¢
+expect NO LIVE QUOTE
+shot hunch-quotes-landscape
+# Detail remains read-only and uses its own request pool.
+tap Paper Cranes vs Ink Foxes
+expect LIVE ASK
+expect READ ONLY
+shot hunch-quotes-detail
+key BACK
+rotate portrait
+expect 41%
+shot hunch-quotes-upright
+# Quotes and unavailable state must survive returning from a scrolled list/detail.
+tap COMPANIES 1
+expect 41%
+shot hunch-quotes-company
+fold folded
+expect 41%
+shot hunch-quotes-cover
+# [emu] Critic: scroll live public rows; verify real %/side cents, empty/old quotes stay unavailable, no layout clipping on long labels; confirm separate detail stays responsive.
+# [emu] Critic: compare to Approved hunch-today/hunch-market v5 and hunch-today-portrait v6, allowing read-only/no-connected-bets scope only. Do not mark matches before visual comparison.
+# [phone] After owner promotion: public-book row price matches selected-side detail within refresh time; stale/offline quotes disappear, no order can be sent.
