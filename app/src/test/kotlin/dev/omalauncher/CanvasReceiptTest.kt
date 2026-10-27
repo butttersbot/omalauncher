@@ -15,10 +15,14 @@ class CanvasReceiptTest {
     @Test fun signedContentsBindExactArtifactRecipientAndAnswers() {
         val source = ArtifactReplySource("soma:phone:B:mock.html", "mock.html", "6", CanvasReceipt.sha256("exact HTML".toByteArray()))
         val request = ArtifactReplyRequest("phone:B", "decision: approve", """{"decision":"approve"}""")
-        val receipt = CanvasReceipt.receipt("device", "nonce", "2026-10-26T16:00:00Z", source, request)
+        val receipt = CanvasReceipt.receipt("device", "nonce", 1793030400000L, source, request)
         assertEquals(source.sha256, receipt.getJSONObject("artifact").getString("sha256"))
         assertEquals("phone:B", receipt.getString("recipient"))
-        assertEquals(CanvasReceipt.sha256("""{"decision":"approve"}""".toByteArray()), receipt.getString("answersSha256"))
+        assertEquals("approve", receipt.getJSONObject("answers").getString("decision"))
+        assertEquals(6, receipt.getJSONObject("artifact").getInt("version"))
+        assertTrue(CanvasReceipt.approval(request))
+        assertFalse(CanvasReceipt.approval(ArtifactReplyRequest("phone:B", "not approved")))
+        assertFalse(CanvasReceipt.approval(ArtifactReplyRequest("phone:B", "changes", """{"decision":"changes","other":"Approve only after fixing"}""")))
         assertNotEquals(source.sha256, CanvasReceipt.sha256("different HTML".toByteArray()))
     }
     @Test fun structuredSubmitIsValidatedAndKeepsApprovalDecision() {

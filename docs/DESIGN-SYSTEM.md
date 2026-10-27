@@ -81,9 +81,10 @@ Put questions inside the mockup (a section or Questions tab), with options, Othe
 and one Submit. Without a mockup, use the same question block as its own artifact.
 Pass an object of question keys to selected labels/arrays or Other text. A plain
 string remains supported. Use `decision: "approve"` for a mockup's Approve choice.
-Soma signs a native receipt binding the exact HTML hash, version, answers and fixed
-recipient with a non-exportable Android Keystore P-256 key. The agent receives
-`canvasReceipt` and `receiptStatus` (registered / signed-offline / unlinked), plus
+On an approval answer, Soma signs a native receipt binding the exact HTML hash,
+integer version, answers and fixed recipient with a non-exportable Android Keystore P-256 key. The agent receives
+`canvasReceipt` (the exact signed JSON string plus DER signature) and
+`receiptStatus` (registered / signed-offline / unlinked), plus
 `canvasReceiptId` when Canvas answered. With no confirmed linked device, answers
 still deliver but contain no approval proof. Native never stores an owner key.
 

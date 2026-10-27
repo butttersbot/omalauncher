@@ -41,8 +41,8 @@ object ArtifactReply {
             val answers = runCatching { JSONObject(text.removePrefix("soma-json:")) }.getOrNull() ?: return null
             val keys = answers.keys().asSequence().toList()
             if (keys.size !in 1..20 || keys.any { it.isBlank() || it.length > 160 || it.any { c -> c < ' ' } }) return null
-            if (keys.any { key -> val v = answers.get(key); v !is String && (v !is org.json.JSONArray || (0 until v.length()).any { v.get(it) !is String }) }) return null
-            val strings = keys.flatMap { key -> val v = answers.get(key); if (v is String) listOf(v) else (0 until (v as org.json.JSONArray).length()).map { v.getString(it) } }
+            if (keys.any { key -> val v = answers.get(key); v !is String && v !is Boolean && (v !is org.json.JSONArray || (0 until v.length()).any { v.get(it) !is String }) }) return null
+            val strings = keys.flatMap { key -> val v = answers.get(key); if (v is String || v is Boolean) listOf(v.toString()) else (0 until (v as org.json.JSONArray).length()).map { v.getString(it) } }
             if (strings.any { value -> value.any { it == '\u007f' || (it < ' ' && it !in "\n\r\t") } }) return null
             return ArtifactReplyRequest(to, keys.joinToString("\n") { key -> "$key: ${answers.get(key)}" }, answers.toString())
         }

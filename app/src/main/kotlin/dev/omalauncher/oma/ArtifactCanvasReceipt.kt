@@ -7,14 +7,27 @@ import org.json.JSONObject
 
 /** Blocking, best effort. No owner key: a linked device's Keystore signature authenticates the receipt. */
 internal object ArtifactCanvasReceipt {
-    fun prepare(context: Context, origin: String?, source: ArtifactReplySource, request: ArtifactReplyRequest): JSONObject {
+    fun prepare(context: Context, origin: String?, source: ArtifactReplySource, request: ArtifactReplyRequest, submissionId: String): JSONObject {
         fun unlinked() = JSONObject().put("receiptStatus", "unlinked")
+        if (!CanvasReceipt.approval(request)) return JSONObject()
         val base = CanvasReceipt.origin(origin) ?: return unlinked()
-        val signed = runCatching { CanvasReceiptKeys.sign(source, request) }.getOrNull() ?: return unlinked()
-        val device = signed.getJSONObject("receipt").getString("deviceId")
+        val signed = runCatching { CanvasReceiptKeys.sign(source, request, submissionId) }.getOrNull() ?: return unlinked()
+        val device = JSONObject(signed.getString("receipt")).getString("deviceId")
         val preferences = context.getSharedPreferences("canvas-linked-receipts", Context.MODE_PRIVATE)
         val cacheKey = CanvasReceipt.sha256((base + ":" + device).toByteArray())
-        val known = preferences.getBoolean(cacheKey, false)
+        var known = preferences.getBoolean(cacheKey, false)
+        var lookup: HttpURLConnection? = null
+        try {
+            lookup = URL("$base/api/devices/$device").openConnection() as HttpURLConnection
+            lookup.instanceFollowRedirects = false; lookup.connectTimeout = 1000; lookup.readTimeout = 1500
+            if (lookup.responseCode == 200) {
+                val state = JSONObject(lookup.inputStream.bufferedReader().use { it.readText().take(8192) })
+                known = state.optString("deviceId") == device && state.optBoolean("linked") && !state.optBoolean("revoked")
+                preferences.edit().putBoolean(cacheKey, known).commit()
+                if (!known) return unlinked()
+            }
+        } catch (_: Exception) { /* A prior confirmed link can still yield an offline receipt. */ }
+        finally { lookup?.disconnect() }
         var connection: HttpURLConnection? = null
         try {
             connection = URL("$base/api/receipts").openConnection() as HttpURLConnection

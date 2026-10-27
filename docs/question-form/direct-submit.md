@@ -16,14 +16,21 @@ result event, not credentials or access to a generic native API.
 Submissions are persisted before handoff and deduplicated by source/version,
 recipient and answer. An uncertain delivery is not retried automatically or called
 sent. Native Keystore P-256 receipts bind the exact HTML bytes' hash, version,
-fixed recipient, nonce/time and canonical structured answers. No private key is
+fixed recipient, native submission UUID, millisecond timestamp, replyId and
+structured answers. The serialized JSON STRING is signed once and delivered as
+canvasReceipt.receipt with its DER signature; the server verifies those exact bytes. No private key is
 exported and no owner key is copied from the Canvas browser session.
 
 Canvas links the public key once in its owner menu. Only a main-frame gesture at
 the configured Canvas origin can obtain publicKey() (Promise), never sign().
+Only an approval answer requests proof; other answers send without a sheet or
+receipt. Boss explicitly requested no extra review (A mail 153605), so native Submit
+gesture validation remains the consent, despite C contract initially describing an
+extra approval sheet. Phone A has been notified of that discrepancy.
+
 A successful /api/receipts response gives registered proof. Network failure after
 previously confirmed registration gives signed-offline proof. Unknown/unlinked or
-revoked devices give no proof but answers still deliver. First offline submission
+revoked devices give no proof but answers still deliver. Native GET /api/devices/:deviceId also confirms linkage. First offline submission
 without a prior native confirmation is conservatively unlinked; no approval is
 invented. Phone C owns server verification and record-approved.
 
