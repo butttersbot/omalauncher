@@ -7,8 +7,12 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.content.ReceiveContentListener
+import androidx.compose.foundation.content.TransferableContent
+import androidx.compose.foundation.content.contentReceiver
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
@@ -27,6 +31,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.rememberTextFieldState
+import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
@@ -37,6 +44,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -329,6 +337,8 @@ fun rememberComposerState(text: String = "") = remember { ComposerState(text) }
  * Dictate). [sendColor] fills Send: the conversation's color, an iMessage blue or a text message green.
  * [above] sits over the field (a quoted reply); [inField] inside it, over the words, as iMessage draws attachments.
  * [sendsElsewhere] draws Send as ↗ when another app finishes the sending (Soma Messages' photos go to OpenBubbles).
+ * With [receive] the field takes pictures from the keyboard (a GIF from Soma's keyboard comes in as itself, not its
+ * link): [receive] gets them and gives back whatever it leaves for the field, or null when it took it all.
  */
 @Composable
 fun SomaComposer(
@@ -348,6 +358,7 @@ fun SomaComposer(
     above: (@Composable () -> Unit)? = null,
     inField: (@Composable () -> Unit)? = null,
     sendsElsewhere: Boolean = false,
+    receive: ((TransferableContent) -> TransferableContent?)? = null,
 ) {
     val stage = state.stage
     val action = ComposerRules.action(stage, state.text, attached, voice != null, emptyAction != null)
@@ -439,7 +450,7 @@ fun SomaComposer(
             verticalAlignment = Alignment.Bottom,
         ) {
             when (stage) {
-                VoiceStage.Off -> Field(state, placeholder, enabled, ::send)
+                VoiceStage.Off -> if (receive == null) Field(state, placeholder, enabled, ::send) else ReceivingField(state, placeholder, enabled, ::send, receive)
                 is VoiceStage.Recording -> RecordingBar(state, stage, tick)
                 is VoiceStage.Review -> ReviewBar(state, stage, voice, tick, now)
             }
@@ -486,6 +497,53 @@ private fun RowScope.Field(
         decorationBox = { inner ->
             Box {
                 if (state.text.isEmpty()) BasicText(placeholder, style = Pack.body(Pack.size.item, Pack.muted), maxLines = 1)
+                inner()
+            }
+        },
+    )
+}
+
+/**
+ * [Field], for a composer that takes pictures from the keyboard: only the state-based field tells the keyboard it
+ * does (Boss, 2026-10-27: a GIF from Soma's keyboard went into Soma Messages as its link). The draft stays in [state];
+ * the field's own copy follows it both ways.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun RowScope.ReceivingField(
+    state: ComposerState,
+    placeholder: String,
+    enabled: Boolean,
+    send: () -> Unit,
+    receive: (TransferableContent) -> TransferableContent?,
+) {
+    val style = Pack.body(Pack.size.item)
+    val field = rememberTextFieldState(state.text)
+    LaunchedEffect(field) { snapshotFlow { field.text.toString() }.collect { if (it != state.text) state.text = it } }
+    LaunchedEffect(field) { snapshotFlow { state.text }.collect { if (it != field.text.toString()) field.setTextAndPlaceCursorAtEnd(it) } }
+    val latestReceive by rememberUpdatedState(receive)
+    BasicTextField(
+        field,
+        Modifier
+            .weight(1f)
+            .padding(vertical = 6.dp)
+            .semantics { contentDescription = "Message" }
+            .contentReceiver(ReceiveContentListener { latestReceive(it) })
+            .onPreviewKeyEvent { e ->
+                if (e.type == KeyEventType.KeyDown && e.key == Key.Enter && !e.isShiftPressed) {
+                    send()
+                    true
+                } else {
+                    false
+                }
+            },
+        enabled = enabled,
+        textStyle = style,
+        lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = ComposerRules.MAX_LINES),
+        cursorBrush = SolidColor(Pack.foreground),
+        decorator = { inner ->
+            Box {
+                if (field.text.isEmpty()) BasicText(placeholder, style = Pack.body(Pack.size.item, Pack.muted), maxLines = 1)
                 inner()
             }
         },

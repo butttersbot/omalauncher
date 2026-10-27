@@ -25,6 +25,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.content.consume
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Stable
@@ -93,6 +94,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import dev.omalauncher.messages.engine.Conversation
 import dev.omalauncher.messages.engine.ConversationBook
 import dev.omalauncher.messages.engine.Message
@@ -623,6 +625,10 @@ fun Thread(
             sendColor = Pack.foreground,
             onSendColor = Pack.background,
             onAttach = { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)) },
+            // A GIF (or picture) from the keyboard joins the photos waiting to go, as itself (Boss, 2026-10-27).
+            receive = { content ->
+                received(context, content) { uris -> pending.photos[c.id] = (pending.photos[c.id].orEmpty() + uris).distinct().take(MAX_PHOTOS) }
+            },
             attached = photos.isNotEmpty(),
             sendsElsewhere = photos.isNotEmpty(),
             above = quote?.let { q -> { QuoteBar(q) { pending.quotes.remove(c.id) } } },
@@ -776,7 +782,13 @@ private fun Photos(
             val context = LocalContext.current
             // A photo picked here and still on its way: the phone's own copy. Otherwise the Mac's, fetched once.
             val local = id.takeIf { it.startsWith("local:") }?.removePrefix("local:")?.let { Uri.parse(it) }
-            val file by produceState<java.io.File?>(null, id) { if (local == null) value = withContext(Dispatchers.IO) { MacLink.file(context, id, picture = true) } }
+            // A GIF moves, as in iMessage (Boss, 2026-10-27): the Mac's own file, not its still JPEG.
+            val gif = f.substringAfter('|') == "image/gif"
+            val file by produceState<java.io.File?>(null, id) { if (local == null) value = withContext(Dispatchers.IO) { MacLink.file(context, id, picture = !gif) } }
+            val moving by produceState<android.graphics.drawable.Drawable?>(null, file, local) {
+                if (gif) value = withContext(Dispatchers.IO) { runCatching { moving(context, local, file) }.getOrNull() }
+            }
+            DisposableEffect(moving) { onDispose { (moving as? android.graphics.drawable.AnimatedImageDrawable)?.stop() } }
             val picture by produceState<ImageBitmap?>(null, file, local) {
                 value =
                     withContext(Dispatchers.IO) {
@@ -793,7 +805,7 @@ private fun Photos(
             val shape = MEDIA_SHAPE
             // One alone: 240 dp wide, as tall as its shape asks within 120-320 dp; several: 132 dp squares. The picture
             // fills its frame whatever its own size (a tiny one is scaled up, never drawn at its few pixels).
-            val ratio = picture?.let { it.height.toFloat() / it.width.coerceAtLeast(1) } ?: 0.75f
+            val ratio = moving?.let { it.intrinsicHeight.toFloat() / it.intrinsicWidth.coerceAtLeast(1) } ?: picture?.let { it.height.toFloat() / it.width.coerceAtLeast(1) } ?: 0.75f
             val size = if (one) Modifier.width(240.dp).height((240 * ratio).coerceIn(120f, 320f).dp) else Modifier.size(132.dp)
             Box(
                 // A hold is the balloon's (tapbacks, reply): the picture's own tap would otherwise take it (Boss, 2026-10-23).
@@ -802,7 +814,20 @@ private fun Photos(
                 contentAlignment = Alignment.Center,
             ) {
                 val p = picture
-                if (p != null) {
+                val m = moving
+                if (m != null) {
+                    // Not clickable itself, so the tap and the hold stay the frame's.
+                    AndroidView(
+                        { android.widget.ImageView(it).apply { scaleType = android.widget.ImageView.ScaleType.CENTER_CROP } },
+                        Modifier.fillMaxSize(),
+                        update = { v ->
+                            if (v.drawable !== m) {
+                                v.setImageDrawable(m)
+                                (m as? android.graphics.drawable.AnimatedImageDrawable)?.start()
+                            }
+                        },
+                    )
+                } else if (p != null) {
                     Image(p, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                 } else {
                     BasicText(if (file == null) "Photo" else "", style = Pack.body(Pack.size.small, Pack.muted))
@@ -810,6 +835,21 @@ private fun Photos(
             }
         }
     }
+}
+
+/** The GIF [local] (picked or from the keyboard) or [file] (the Mac's), as a drawable that moves; null when neither is here. */
+private fun moving(
+    context: android.content.Context,
+    local: Uri?,
+    file: java.io.File?,
+): android.graphics.drawable.Drawable? {
+    val source =
+        when {
+            local != null -> android.graphics.ImageDecoder.createSource(context.contentResolver, local)
+            file != null -> android.graphics.ImageDecoder.createSource(file)
+            else -> return null
+        }
+    return android.graphics.ImageDecoder.decodeDrawable(source)
 }
 
 /**
@@ -1115,6 +1155,36 @@ private fun Tile(
             contentAlignment = Alignment.Center,
         ) { BasicText("✕", style = Pack.body(Pack.size.small, Pack.background)) }
     }
+}
+
+/**
+ * The pictures in [content], from the keyboard (a GIF from Soma's), copied into the cache at once (the keyboard's
+ * permission to read them is brief) and handed to [add] as the app's own; the rest goes back to the field.
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+private fun received(
+    context: android.content.Context,
+    content: androidx.compose.foundation.content.TransferableContent,
+    add: (List<Uri>) -> Unit,
+): androidx.compose.foundation.content.TransferableContent? {
+    if (!content.hasMediaType(androidx.compose.foundation.content.MediaType.Image)) return content
+    val clip = content.clipEntry.clipData
+    val dir = java.io.File(context.cacheDir, "shared").apply { mkdirs() }
+    val kept = mutableListOf<Uri>()
+    val rest =
+        content.consume { item ->
+            val uri = item.uri ?: return@consume false
+            val type = context.contentResolver.getType(uri) ?: clip.description.takeIf { it.mimeTypeCount > 0 }?.getMimeType(0) ?: "image/gif"
+            if (!type.startsWith("image/")) return@consume false
+            val ext = android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(type) ?: "gif"
+            val f = java.io.File(dir, "keyboard-" + java.util.UUID.randomUUID() + "." + ext)
+            runCatching { context.contentResolver.openInputStream(uri)!!.use { input -> f.outputStream().use { input.copyTo(it) } } }
+                .onFailure { f.delete() }
+                .isSuccess
+                .also { ok -> if (ok) kept += androidx.core.content.FileProvider.getUriForFile(context, "dev.omalauncher.messages.photos", f) }
+        }
+    if (kept.isNotEmpty()) add(kept)
+    return rest
 }
 
 /** A picked photo or video, small. */
