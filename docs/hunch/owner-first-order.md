@@ -73,3 +73,9 @@ and OS lock jointly guard construction and are released on close/failure.
 OrderTickets.prepareFunded now consumes the exact FundingSnapshot verified by
 FundingChecks, so the future owner controller cannot substitute an unchecked
 available-cash number. The lower-level pure calculation remains a testable primitive.
+
+Checkpoint bf9ba291: lane B compile and all27 Hunch tests passed; independent
+second-process probe confirmed exclusion after repeated duplicate opens and a
+canonical-path alias, release on close and exclusion after reopen. No UI/walk or
+live money checks were performed. Follow-up makes the unchecked cash calculation
+private: prepareFunded is the only preparation entry point for app code.
