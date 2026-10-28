@@ -171,14 +171,16 @@ fun main(args: Array<String>) {
     }
     // Keys delivered by `oma-runner pair` go into the Keychain at once, and whenever another arrives. Each import is
     // said, and a file that can't be taken is said once, not at every look.
+    // This thread alone reads the Keychain (RunnerKeys.read), at the start and every ten seconds: the window and the
+    // engine use what it last read, so a Keychain prompt waiting for his OK never holds the window back.
     thread(name = "soma-keys", isDaemon = true) {
         val told = HashSet<String>()
         while (true) {
-            val before = RunnerKeys.machines().map { it.id }
+            val before = RunnerKeys.known
             val taken = RunnerKeys.take()
             taken.added.forEach { notices.say("Soma", it) }
             taken.problems.filter { told.add(it.key) }.forEach { notices.say("Soma", it.text) }
-            if (RunnerKeys.machines().map { it.id } != before) engine.refresh()
+            if (RunnerKeys.read().map { it.id to it.config.key } != before.map { it.id to it.config.key }) engine.refresh()
             Thread.sleep(10_000)
         }
     }

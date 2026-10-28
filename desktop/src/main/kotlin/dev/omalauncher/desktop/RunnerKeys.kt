@@ -25,7 +25,19 @@ object RunnerKeys {
     /** Whether there is somewhere safe to keep keys on this machine. */
     val available: Boolean get() = keyring != null
 
-    /** The runners set up, each with its key, in the order they were set up. One whose key is gone is left out. */
+    /**
+     * The runners as last read from the Keychain ([read]), for everything that asks often or on the window's thread: a
+     * Keychain read can wait on his OK (a new build's signature, a locked keychain), and Soma's window must never wait
+     * with it (Boss, 2026-10-28: the MacBook's Soma showed no window until a Keychain prompt was answered). Empty until
+     * the first read.
+     */
+    @Volatile var known: List<MacMachine> = emptyList()
+        private set
+
+    /** Reads the runners and their keys now, keeps them as [known], and gives them. Blocks: never on the window's thread. */
+    fun read(): List<MacMachine> = machines().also { known = it }
+
+    /** The runners set up, each with its key, in the order they were set up. One whose key is gone is left out. Blocks. */
     fun machines(): List<MacMachine> = list().mapNotNull { (id, name, url) ->
         val key = runCatching { keyring?.getPassword(SERVICE, id) }.getOrNull() ?: return@mapNotNull null
         MacMachine(id, name, MacRunnerConfig(url, key))

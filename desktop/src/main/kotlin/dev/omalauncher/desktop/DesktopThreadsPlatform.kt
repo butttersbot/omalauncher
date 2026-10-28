@@ -14,8 +14,8 @@ import javax.swing.SwingUtilities
 /** The desktop's part of following the threads (ThreadsPlatform): files under ~/.config/soma, the tray's notices. */
 class DesktopThreadsPlatform(
     private val notices: Notices,
-    /** The runners set up: the Keychain's, or a test's own. */
-    private val runners: () -> List<MacMachine> = RunnerKeys::machines,
+    /** The runners set up: the Keychain's as last read off the window's thread ([RunnerKeys.known]), or a test's own. */
+    private val runners: () -> List<MacMachine> = { RunnerKeys.known },
 ) : ThreadsPlatform {
     private val log = ChatStore(SomaHome.chat).also { it.load() }
     @Volatile private var meta: TabMeta = tabMetaFrom(runCatching { SomaHome.book.readText() }.getOrNull())
