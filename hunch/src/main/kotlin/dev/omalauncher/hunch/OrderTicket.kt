@@ -22,6 +22,12 @@ internal data class OrderTicket(
 
 /** Buy-only, limit IOC. Fees and the owner's loss cap include a partial fill; never round size upward. */
 internal object OrderTickets {
+    fun prepareFunded(owner: OwnerOrderLimit, rules: VenueOrderRules, price: BigDecimal,
+                      budget: BigDecimal, feeRateCeiling: BigDecimal, funding: FundingSnapshot, now: Long): OrderTicket {
+        val readiness = FundingChecks.check(funding, owner.wallet, budget, now)
+        require(readiness.tradingCashReady) { readiness.message }
+        return prepare(owner, rules, price, budget, feeRateCeiling, checkNotNull(funding.venueAvailableUsdc), now)
+    }
     fun prepare(owner: OwnerOrderLimit, rules: VenueOrderRules, price: BigDecimal,
                 budget: BigDecimal, feeRateCeiling: BigDecimal, available: BigDecimal, now: Long): OrderTicket {
         require(WalletAmounts.address(owner.wallet)) { "Verify the signing wallet" }

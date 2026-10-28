@@ -20,6 +20,12 @@ class OrderSafetyTest {
         assertEquals("Ioc", t.timeInForce)
         assertTrue(t.fresh(now + 30_000)); assertFalse(t.fresh(now + 30_001)); assertFalse(t.fresh(now - 1))
     }
+    @Test fun fundedPreparationUsesTheSameVerifiedWalletAndVenueSnapshot() {
+        val funding = FundingSnapshot(owner.wallet, now, d("100"), d("1"), d("1"))
+        assertTrue(OrderTickets.prepareFunded(owner, rules, d("0.30"), d("1"), d("0.01"), funding, now).maximumDebit <= d("1"))
+        refuses { OrderTickets.prepareFunded(owner, rules, d("0.30"), d("1"), d("0.01"), funding.copy(venueAvailableUsdc = d("0")), now) }
+        refuses { OrderTickets.prepareFunded(owner, rules, d("0.30"), d("1"), d("0.01"), funding.copy(checkedAt = now - 30_001), now) }
+    }
     @Test fun neverIncreasesBudgetToMeetVenueMinimum() {
         refuses { OrderTickets.prepare(owner, rules.copy(minimumNotional = d("10")), d("0.30"), d("1"), d("0.01"), d("20"), now) }
         refuses { OrderTickets.prepare(owner, rules, d("0.30"), d("2"), d("0"), d("20"), now) }

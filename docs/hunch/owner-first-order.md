@@ -65,3 +65,11 @@ permission is implied. Boss must decide the cap scope before a live controller.
 Clock rollback still blocks stale signing, but read-only reconciliation/cancellation
 may settle a prior Unknown with a nondecreasing journal timestamp; it never sends
 another order or refreshes the original review.
+
+Review-driven lock hardening: a canonical-path process registry now refuses a
+second journal before opening the lock inode. Closing a duplicate descriptor can
+release a POSIX process lock, so the OS lock alone was insufficient. The registry
+and OS lock jointly guard construction and are released on close/failure.
+OrderTickets.prepareFunded now consumes the exact FundingSnapshot verified by
+FundingChecks, so the future owner controller cannot substitute an unchecked
+available-cash number. The lower-level pure calculation remains a testable primitive.
