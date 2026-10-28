@@ -324,8 +324,6 @@ private fun Answers(ask: ModuleAsk, answer: (Boolean) -> Unit, skip: () -> Unit,
             if (ask.question) {
                 ModuleButton("answer", Pack.accent, open)
                 ModuleButton("skip", Pack.accent, skip)
-                ModuleButton("open", Pack.accent, open)
-                ModuleButton("skip", Pack.accent, skip)
             } else {
                 ModuleButton("approve", Pack.green) { answer(true) }
                 ModuleButton("deny", Pack.red) { answer(false) }
@@ -337,8 +335,9 @@ private fun Answers(ask: ModuleAsk, answer: (Boolean) -> Unit, skip: () -> Unit,
     ) { measurables, constraints ->
         val loose = Constraints(maxHeight = constraints.maxHeight)
         val all = measurables.map { it.measure(loose) }
-        val pair = listOf(all[0] to all[1], all[2] to all[3]).firstOrNull { (a, b) -> a.width + b.width <= constraints.maxWidth }
-        val shown = pair?.toList() ?: listOf(all[4])
+        val pairs = if (ask.question) listOf(all[0] to all[1]) else listOf(all[0] to all[1], all[2] to all[3])
+        val pair = pairs.firstOrNull { (a, b) -> a.width + b.width <= constraints.maxWidth }
+        val shown = pair?.toList() ?: listOf(all.last())
         val height = shown.maxOf { it.height }
         layout(shown.sumOf { it.width }.coerceAtMost(constraints.maxWidth), height) {
             var x = 0
