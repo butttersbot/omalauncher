@@ -2,6 +2,7 @@ package dev.omalauncher.oma
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.*
@@ -12,6 +13,29 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class BuilderQuestionSubmitTest : ChatScreenTestBase() {
+    @OptIn(ExperimentalTestApi::class)
+    @Test fun notificationForAnotherBuilderWaitsForItsTabBeforeConsumingNonce() = runComposeUiTest {
+        val approval = AgentApproval("c-request", "AskUserQuestion", JSONObject("""{"questions":[{"question":"Fictional C decision?","options":[{"label":"Keep fixture"}]}]}"""), "")
+        val entry = PendingApproval(approval, "c-ticket", 0)
+        var wanted by mutableStateOf<String?>(BuilderId.A.thread)
+        var requested by mutableStateOf<String?>(null)
+        var opened = 0
+        var sent = 0
+        val host = object : SampleHost() {
+            override fun builders() = mapOf(BuilderId.C to BuilderState(true, listOf(entry)))
+            override fun tasks() = listOf(ChatTask(now, "Claude Code", "Fictional C", builder = BuilderId.C.saved, status = TaskStatus.Running))
+            override fun threads() = listOf(BuilderId.A, BuilderId.C).map { AgentThread(it.thread, it.title, ThreadState.Working, "", "", now) }
+            override fun answerBuilderQuestions(entry: PendingApproval, answers: JSONObject): ApprovalOutcome { sent++; return ApprovalOutcome.Decided }
+        }
+        mainClock.autoAdvance = false
+        setContent { OmaChatScreen(host, null, {}, wanted, {}, wantedQuestion = requested, onQuestionOpened = { opened++; requested = null }) }
+        mainClock.advanceTimeBy(1200)
+        runOnIdle { wanted = BuilderId.C.thread; requested = entry.nonce }
+        mainClock.advanceTimeBy(1200)
+        onNodeWithText("Before I continue").assertExists()
+        onNodeWithText("Fictional C decision?").assertExists()
+        assertEquals(1, opened); assertEquals(0, sent)
+    }
     @OptIn(ExperimentalTestApi::class)
     @Test fun fourLongAnswersUseTheBuilderAllowReplyAndLeaveSendVisibleInShortPanel() = runComposeUiTest {
         val input = JSONObject().put("questions", JSONArray((1..4).map { i -> JSONObject()

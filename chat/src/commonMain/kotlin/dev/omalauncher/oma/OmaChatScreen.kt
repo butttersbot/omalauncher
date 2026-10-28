@@ -430,10 +430,10 @@ private fun ChatScreen(
     val madeLive = remember(tick) { host.liveArtifacts() }
     Box(Modifier.fillMaxSize().background(Pack.background).safeDrawingPadding().padding(PageGap), contentAlignment = Alignment.TopCenter) {
         CompositionLocalProvider(LocalEarlierThread provides earlierThread.orEmpty()) {
-        val requestedQuestion = builders.values.flatMap { it.pending }.firstOrNull { it.nonce == wantedQuestion && questionInput(it.approval.tool, it.approval.input.toString()) }?.let {
+        val requestedQuestion = builders.filterKeys { it.thread == tab }.values.flatMap { it.pending }.firstOrNull { it.nonce == wantedQuestion && questionInput(it.approval.tool, it.approval.input.toString()) }?.let {
             WaitingQuestion(it.nonce, "Phone builder", it.approval.input.toString()) { answers, done -> host.sendWaitingAnswers(it.nonce, answers, done) }
         }
-        ChatArtifactWorkspace(host, tab, artifacts, requestedQuestion = requestedQuestion, onQuestionOpened = onQuestionOpened, waitingQuestions = (macPending.map { it.ticket } + builders.values.flatMap { it.pending }.map { it.nonce }).toSet(), live = madeLive, threads = artifactThreads, where = threads.firstOrNull { it.key == tab }?.machine?.ifBlank { null } ?: earlierThread?.let { id -> hosts.firstOrNull { it.id == dev.omalauncher.assist.macMachineOf(id) }?.name }.orEmpty(), allChatsOpen = allChatsOpen, onAllChatsClose = { allChatsOpen = false }, allChats = { close ->
+        ChatArtifactWorkspace(host, tab, artifacts, requestedQuestion = requestedQuestion, onQuestionOpened = { allChatsOpen = false; onQuestionOpened() }, waitingQuestions = (macPending.map { it.ticket } + builders.values.flatMap { it.pending }.map { it.nonce }).toSet(), live = madeLive, threads = artifactThreads, where = threads.firstOrNull { it.key == tab }?.machine?.ifBlank { null } ?: earlierThread?.let { id -> hosts.firstOrNull { it.id == dev.omalauncher.assist.macMachineOf(id) }?.name }.orEmpty(), allChatsOpen = allChatsOpen, onAllChatsClose = { allChatsOpen = false }, allChats = { close ->
             val now = System.currentTimeMillis()
             val rows = remember(all, book, tick) {
                 allChatRows(all, threads.map { it.key }.toSet(), book.archived.keys,
