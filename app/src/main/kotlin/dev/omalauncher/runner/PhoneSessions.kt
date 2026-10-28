@@ -37,7 +37,7 @@ class PhoneSessions(private val context: Context) : PhoneRunnerSessions {
             JSONObject().put("id", id).put("name", slot?.let { "Phone ${it.id.letter}" } ?: book.names[chatKey(id.removePrefix("chat-"))] ?: "Chat")
                 .put("home", "phone").put("kind", choice?.agent?.bin ?: latest?.agent.orEmpty())
                 .put("model", choice?.model ?: latest?.answeredBy.orEmpty()).put("summary", latest?.prompt.orEmpty().take(240))
-                .put("tail", latest?.result.orEmpty().takeLast(2000)).put("last_worked", latest?.time ?: 0)
+                .put("tail", latest?.result.orEmpty().takeLast(2000)).put("last_worked", (latest?.time ?: 0) / 1000)
                 .put("status", status).put("waiting_turns", slot?.waiting ?: all.count { it.status == TaskStatus.Queued })
                 .put("last_event", log.runnerLast(id)).put("pending", JSONArray(pending.map(::phoneRunnerApproval)))
         }
@@ -64,12 +64,8 @@ class PhoneSessions(private val context: Context) : PhoneRunnerSessions {
     override fun answer(id: String, approval: String, nonce: String, decision: String, answers: JSONObject?): JSONObject {
         val slot = builder(id)?.let(AgentTasks::of) ?: throw RunnerFault(404, "no such approval")
         val pending = slot.pending.firstOrNull { it.nonce == approval } ?: throw RunnerFault(404, "approval already answered")
-        if (nonce != pending.nonce) throw RunnerFault(403, "wrong nonce")
-        val question = pending.approval.tool == "AskUserQuestion" || pending.approval.input.has("questions")
-        if (decision == "deny" && answers != null) throw RunnerFault(400, "deny cannot include answers")
-        val skip = question && decision == "deny"
-        val payload = if (skip) questionSkipAnswers(pending.approval.input.toString()) else answers
-        val outcome = try { slot.decide(context, pending.id, nonce, decision == "allow" || skip, payload) }
+        val reply = phoneRunnerDecision(pending, nonce, decision, answers)
+        val outcome = try { slot.decide(context, pending.id, nonce, reply.allow, reply.answers) }
             catch (_: IllegalArgumentException) { throw RunnerFault(400, "invalid question form") }
         when (outcome) {
             ApprovalOutcome.Decided -> return JSONObject()

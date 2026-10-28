@@ -744,14 +744,27 @@ class Builder(val id: BuilderId) {
                 }
             }
         }
-        record(context, entry, if (!told) ApprovalAnswer.Unanswered else if (allow && questionAnswersSkipped(answers)) ApprovalAnswer.Skipped else if (allow) ApprovalAnswer.Approved else ApprovalAnswer.Denied)
+        record(context, entry, if (!told) ApprovalAnswer.Unanswered else if (allow && questionAnswersSkipped(answers)) ApprovalAnswer.Skipped else if (allow) ApprovalAnswer.Approved else ApprovalAnswer.Denied, if (told && allow) answers else null)
         AgentNotices.withdraw(context, entry)
         notify(context)
         return if (told) ApprovalOutcome.Decided else ApprovalOutcome.Expired
     }
     /** Writes how an approval ended into the thread. */
-    private fun record(context: Context, entry: PendingApproval, answer: ApprovalAnswer) = ChatLog.of(context).update(taskTime, save = true) { task ->
-        task.copy(approvals = task.approvals.map { if (it.key == entry.nonce) it.copy(answer = answer) else it })
+    private fun record(context: Context, entry: PendingApproval, answer: ApprovalAnswer, answers: JSONObject? = null) {
+        val event = JSONObject().put("type", "approval_result").put("approval", entry.nonce)
+            .put("decision", when (answer) {
+                ApprovalAnswer.Approved, ApprovalAnswer.Skipped -> "allow"
+                ApprovalAnswer.Denied -> "deny"
+                else -> "withdrawn"
+            }).put("skipped", answer == ApprovalAnswer.Skipped)
+        if (answers != null) {
+            val normalized = ClaudeProtocol.decision(entry.approval, true, answers).getJSONObject("response")
+                .getJSONObject("response").getJSONObject("updatedInput").optJSONObject("answers")
+            event.put("answers", normalized)
+        }
+        ChatLog.of(context).runnerRecord(taskTime, if (id == BuilderId.D) "phone-d" else "builder-${id.letter.lowercase()}", event) { task ->
+            task.copy(approvals = task.approvals.map { if (it.key == entry.nonce) it.copy(answer = answer) else it })
+        }
     }
     /**
      * "Send now" (Boss, 2026-10-16: "like the Send Now button in the Claude app", for an agent that is stuck or must be

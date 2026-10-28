@@ -319,6 +319,15 @@ class ChatStore(private val file: File, private val maxBytes: Long = ChatHistory
         if (save) save()
     }
 
+    /** One ledger outcome and its UI row, committed as one change in this task log. */
+    @Synchronized fun runnerRecord(time: Long, session: String, event: JSONObject, change: (ChatTask) -> ChatTask) {
+        runner.append(session, event)
+        val next = tasks.map { if (it.time == time) ChatHistory.bounded(change(it)) else it }
+        runner.changed(tasks, next)
+        tasks = next
+        save()
+    }
+
     /**
      * Changes the thread as a whole and saves it: for what a project thread on the Mac says, which can end one
      * request and begin the next in a single step.

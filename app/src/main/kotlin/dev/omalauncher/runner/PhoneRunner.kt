@@ -35,7 +35,7 @@ class PhoneRunnerKeys(context: Context) {
 }
 
 /** TCP lives only on the VPN's concrete address. No wildcard, LAN or loopback listener is ever opened. */
-class PhoneRunner(private val context: Context, private val tailnet: PhoneTailnet) {
+class PhoneRunner(private val context: Context, private val tailnet: PhoneTailnet) : dev.omalauncher.ui.PhoneRunnerPairing {
     val keys = PhoneRunnerKeys(context)
     private val protocol = PhoneRunnerProtocol(PhoneSessions(context))
     private val wake = Object()
@@ -68,11 +68,11 @@ class PhoneRunner(private val context: Context, private val tailnet: PhoneTailne
             }
         }
     }
-    fun devices() = tailnet.devices()
-    fun paired() = keys.keys().map { it.device }
-    fun unpair(device: String) { keys.remove(device); if (keys.keys().isEmpty()) runCatching { server?.close() } }
+    override fun devices() = tailnet.devices()
+    override fun paired() = keys.keys().map { it.device }
+    override fun unpair(device: String) { keys.remove(device); if (keys.keys().isEmpty()) runCatching { server?.close() } }
     /** Called only by the setting's native Pair tap, never an HTTP route. */
-    @Synchronized fun pair(device: String) {
+    @Synchronized override fun pair(device: String) {
         require(device in tailnet.devices()) { "That computer is not one of your tailnet devices" }
         val address = ownAddress() ?: error("Phone is not on Tailscale")
         val key = ByteArray(32).also { SecureRandom().nextBytes(it) }.joinToString("") { "%02x".format(it) }
@@ -130,7 +130,9 @@ class PhoneRunner(private val context: Context, private val tailnet: PhoneTailne
     }
 }
 
-data class RunnerRequest(val method: String, val path: String, val token: String?, val body: String)
+class RunnerRequest(val method: String, val path: String, val token: String?, val body: String) {
+    override fun toString() = "RunnerRequest($method $path, credentials and body hidden)"
+}
 fun readRunnerRequest(socket: Socket): RunnerRequest {
     val input = socket.getInputStream()
     val header = StringBuilder()
