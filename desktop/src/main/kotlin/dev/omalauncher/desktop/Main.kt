@@ -26,7 +26,9 @@ import dev.omalauncher.canvas.cockpitFeeds
 import dev.omalauncher.canvas.moduleProjects
 import dev.omalauncher.oma.somaLinkKey
 import dev.omalauncher.oma.somaLinkTab
-import dev.omalauncher.ui.DesktopBack
+import dev.omalauncher.ui.BackStack
+import dev.omalauncher.ui.LocalBackStack
+import androidx.compose.runtime.CompositionLocalProvider
 import java.awt.MenuItem
 import java.awt.PopupMenu
 import java.awt.SystemTray
@@ -179,35 +181,42 @@ fun main(args: Array<String>) {
                     notices.say("Soma", if (copied == false) said.substringBefore(" Grok's connector details") + " " + details else said)
                 } })
         }
+        // Each window answers Escape from its own stack: an Escape in one never closes something in the other.
+        val chatBack = remember { BackStack() }
+        val dashboardBack = remember { BackStack() }
+        // Bumped to bring the chat window forward when it is open already (a module or [ chat ] in the dashboard).
+        var bring by remember { mutableStateOf(0) }
+        val dashboardState = rememberWindowState(size = DpSize(1240.dp, 820.dp))
+        fun escape(e: androidx.compose.ui.input.key.KeyEvent, back: BackStack, close: () -> Unit) =
+            if (e.type == KeyEventType.KeyDown && e.key == Key.Escape) { if (!back.press()) close(); true } else false
+        // The dashboard first, so at a start with both open the chat window is in front of it.
+        if (dashboardShown) Window(
+            onCloseRequest = { showDashboard(false) },
+            title = "Soma dashboard",
+            state = dashboardState,
+            onPreviewKeyEvent = { e -> escape(e, dashboardBack) { showDashboard(false) } },
+        ) {
+            CompositionLocalProvider(LocalBackStack provides dashboardBack) {
+                // A module's thread opens in the chat window, brought forward.
+                CanvasScreen(canvas, host, source, tick.value, wanted, onTab = { wanted = it; shown = true; bring++ }, chatElsewhere = { shown = true; bring++ })
+            }
+        }
         Window(
             onCloseRequest = { shown = false },
             visible = shown,
             title = "Soma",
             state = rememberWindowState(size = DpSize(1240.dp, 820.dp)),
-            onPreviewKeyEvent = { e ->
-                if (e.type == KeyEventType.KeyDown && e.key == Key.Escape) {
-                    if (!DesktopBack.press()) shown = false
-                    true
-                } else {
-                    false
-                }
-            },
+            onPreviewKeyEvent = { e -> escape(e, chatBack) { shown = false } },
         ) {
             // Each time it is shown, it comes to the screen he is on (Boss, 2026-10-19: after a restart macOS put it on
             // the other monitor's Space, and show only made it visible there).
-            androidx.compose.runtime.LaunchedEffect(shown) { if (shown) toPointerScreen(window) }
+            androidx.compose.runtime.LaunchedEffect(shown, bring) { if (shown) toPointerScreen(window) }
             // The unfolded phone's chat (Boss, 2026-10-28): two panes once there is an artifact, a question or the files beside it.
-            Box(Modifier.fillMaxSize().background(Pack.background)) {
-                OmaChatScreen(host, prefill = null, onPrefilled = {}, wanted = wanted, onTab = { wanted = it.takeIf { tab -> tab != OMA_TAB } })
+            CompositionLocalProvider(LocalBackStack provides chatBack) {
+                Box(Modifier.fillMaxSize().background(Pack.background)) {
+                    OmaChatScreen(host, prefill = null, onPrefilled = {}, wanted = wanted, onTab = { wanted = it.takeIf { tab -> tab != OMA_TAB } })
+                }
             }
-        }
-        if (dashboardShown) Window(
-            onCloseRequest = { showDashboard(false) },
-            title = "Soma dashboard",
-            state = rememberWindowState(size = DpSize(1240.dp, 820.dp)),
-        ) {
-            // A module's thread opens in the chat window.
-            CanvasScreen(canvas, host, source, tick.value, wanted, onTab = { wanted = it; shown = true }, chatElsewhere = { shown = true })
         }
     }
 }

@@ -55,6 +55,8 @@ private fun model(ask: TitleAsk): String? {
     val output = StringBuilder()
     val reader = thread(name = "soma-title-read", isDaemon = true) { runCatching { child.inputStream.bufferedReader().forEachLine { output.appendLine(it) } } }
     if (!child.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+        // Claude Code is the shell's child: ending the shell alone would leave it running (round-1 Critic).
+        child.descendants().forEach { it.destroyForcibly() }
         child.destroyForcibly()
         return null
     }
