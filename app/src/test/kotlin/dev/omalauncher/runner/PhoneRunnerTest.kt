@@ -45,6 +45,7 @@ class PhoneRunnerTest {
         for (path in listOf("/health", "/threads", "/threads/builder-a/messages", "/threads/builder-a/stop")) {
             assertEquals(401, protocol.handle("POST", path, "{}", false).code)
         }
+        assertEquals(401, protocol.handle("POST", "/threads/builder-a/approvals/ticket", "{\"decision\":\"allow\",\"nonce\":\"ticket-1\"}", false).code)
         assertEquals(0, sessions.messages); assertEquals("", sessions.stopped); assertFalse(sessions.answered)
     }
     @Test fun phoneDIsReadableAndStoppableButCannotReceiveWork() {

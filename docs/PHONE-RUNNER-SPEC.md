@@ -77,7 +77,9 @@ adapter translates back to the agent's reusable tool id only inside the existing
 that ledger's validation/claim/reply/withdraw path, including its locked-phone refusal. `deny` of AskUserQuestion
 becomes the existing canonical Skip delegation answer, sent via allow; ordinary tool denial remains denial.
 Results carry normalized question answers and the authenticated computer's device name. There is no HTTP path
-for pairing, new sessions, model changes or approval memory.
+for pairing, new sessions, model changes or approval memory. `MacThreadsTest.nothingButHisTapSendsTheMacAnAnswer`
+explicitly adds only PhoneSessions to its pinned approval-caller allowlist for Boss's 2026-10-28 request; front
+agents remain forbidden, and an unauthenticated request with a valid ticket/nonce cannot reach that adapter.
 
 `ChatStore` persists the cursor journal **inside the existing oma-chat.json task log** (`phoneRunner`), using the
 same store lock and atomic replacement. Producer text, tool steps and artifact changes are appended before the UI tail is trimmed or rewritten; ledger outcomes

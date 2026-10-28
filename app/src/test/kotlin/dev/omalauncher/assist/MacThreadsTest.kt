@@ -415,7 +415,11 @@ class MacThreadsTest {
         // builder's own three callers for the phone's, as before.
         assertEquals(1, calls["MacThreadsEngine.kt"]); assertEquals(1, calls["MacRunner.kt"])
         // The chat's own answer to the phone builder is the phone's chat host's (the shared screen asks it).
-        assertEquals(setOf("MacThreadsEngine.kt", "MacRunner.kt", "AgentApprovalActivity.kt", "AgentNotices.kt", "AndroidChatHost.kt"), calls.keys)
+        // Boss 2026-10-28, PHONE-RUNNER-SPEC: his tap on a paired desktop may also answer the phone's cards.
+        // Only this authenticated HTTP adapter joins the allowlist; it validates the thread ticket + nonce and
+        // delegates to the same phone ledger. Front agents still cannot name or answer approvals below.
+        assertEquals(1, calls["PhoneSessions.kt"])
+        assertEquals(setOf("MacThreadsEngine.kt", "MacRunner.kt", "AgentApprovalActivity.kt", "AgentNotices.kt", "AndroidChatHost.kt", "PhoneSessions.kt"), calls.keys)
         for (front in listOf("assist/FrontAgent.kt", "assist/QuickLane.kt", "assist/QuickLaneRules.kt", "desktop/DesktopFrontAgent.kt")) {
             val code = dev.omalauncher.theme.pack.mainSource(front).also { assertTrue("$front is read", it.isFile) }.readLines().map { it.trim() }.filterNot { it.startsWith("*") || it.startsWith("/*") || it.startsWith("//") }.joinToString("\n")
             for (never in listOf("answerApproval", "MacPending", "MacApprovalBook", ".nonce", ".pending", "MacThreads.answer")) assertFalse("$never in $front", code.contains(never))
