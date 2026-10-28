@@ -18,9 +18,18 @@ import java.io.File
 object Check {
     private const val MINUTES = 4
 
+    private fun runner() = RunnerKeys.machines().let { all -> all.firstOrNull { it.id == SomaHome.machine } ?: all.firstOrNull() }
+
+    /** `soma check stop THREAD`: a scratch thread's turn stopped, and what was waiting its turn dropped, as its tab's stop does. */
+    fun stop(thread: String, say: (String) -> Unit): Int {
+        val machine = runner() ?: return 1.also { say("No runner is paired with this Soma (or its key isn't in the Keychain).") }
+        val answer = MacRunnerClient(machine.config, machine.id).stop(thread)
+        say("stop $thread: $answer")
+        return if (answer is MacAnswer.Ok) 0 else 2
+    }
+
     fun run(say: (String) -> Unit): Int {
-        val machine = RunnerKeys.machines().let { all -> all.firstOrNull { it.id == SomaHome.machine } ?: all.firstOrNull() }
-            ?: return 1.also { say("No runner is paired with this Soma (or its key isn't in the Keychain).") }
+        val machine = runner() ?: return 1.also { say("No runner is paired with this Soma (or its key isn't in the Keychain).") }
         val client = MacRunnerClient(machine.config, machine.id)
         val project = File(System.getProperty("user.home"), "Projects/oma-runner-scratch").apply { mkdirs() }.path
         var failed = 0
