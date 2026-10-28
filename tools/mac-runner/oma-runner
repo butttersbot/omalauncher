@@ -94,6 +94,9 @@ def tailscale_env():
     """The environment the Tailscale CLI is run in: this one, with a TERM, since the app's binary will not run without."""
     return {**os.environ, 'TERM': os.environ.get('TERM') or 'dumb'}
 PLIST = HOME / 'Library/LaunchAgents' / (LABEL + '.plist')
+# The runner as a system daemon (the Mac Pro since 2026-10-27, mac-pro-recovery/install.sh): it comes back after a
+# restart before anyone logs in, and an install must leave its launchd job to it (install, restart_daemon).
+SYSTEM_PLIST = pathlib.Path('/Library/LaunchDaemons') / (LABEL + '.plist')
 UNIT = HOME / '.config/systemd/user/oma-runner.service'
 MAX_BODY = 1_000_000
 # Where `oma drop send` puts files from the phone, and the largest it takes. A folder of its own, so nothing the phone
@@ -116,6 +119,8 @@ CODEX_LIMITS = {'usageLimitExceeded', 'rateLimitExceeded', 'serverOverloaded', '
 CODEX_OFF = ['hooks', 'guardian_approval']
 CLAUDE_DISCOVER = os.environ.get('OMA_RUNNER_CLAUDE_DISCOVER', '1') == '1'
 CLAUDE_PROJECTS = pathlib.Path(os.environ.get('CLAUDE_CONFIG_DIR') or HOME / '.claude') / 'projects'
+# Claude's long-lived token, when Boss has made one for a runner launchd starts before he logs in (claude_token).
+CLAUDE_TOKEN = HOME / '.config/oma-runner/claude-token'
 CLAUDE_SCAN_EVERY = max(1, float(os.environ.get('OMA_RUNNER_CLAUDE_SCAN_EVERY', '15')))
 CODEX_DISCOVER = os.environ.get('OMA_RUNNER_CODEX_DISCOVER', '1') == '1'
 CODEX_SCAN_EVERY = float(os.environ.get('OMA_RUNNER_CODEX_SCAN_EVERY', '15'))
@@ -917,7 +922,7 @@ class Claude:
             '--permission-mode', mode(meta), '--permission-prompt-tool', 'stdio', '--settings', json.dumps(settings), '--append-system-prompt', ARTIFACT_NOTE]
 
     def environment(self):
-        return clean_environment()
+        return {**clean_environment(), **claude_token()}
 
     def begin(self):
         if self.thread.meta.get('claude_external'):
@@ -2612,6 +2617,23 @@ DRIVERS = {'claude': Claude, 'codex': Codex, 'cursor': Cursor, 'grok': Grok, 've
 
 def clean_environment():
     return {key: value for key, value in os.environ.items() if not key.startswith(('CLAUDE', 'ANTHROPIC', 'OMA_RUNNER', 'VENICE'))}
+
+
+def claude_token():
+    """
+    Claude's long-lived token (`claude setup-token`), for Claude threads only, when Boss has put it in CLAUDE_TOKEN
+    himself: a runner started by launchd as a system daemon (so it comes back after a restart before anyone logs in)
+    can't open his login keychain, where Claude keeps its usual login (Boss, 2026-10-27: "Not logged in" on the Mac
+    Pro's Claude lanes). Only a file of his own that nobody else can read counts; otherwise Claude signs in as usual.
+    """
+    try:
+        info = CLAUDE_TOKEN.stat()
+        if info.st_uid != os.getuid() or info.st_mode & 0o077:
+            return {}
+        token = CLAUDE_TOKEN.read_text().strip()
+    except OSError:
+        return {}
+    return {'CLAUDE_CODE_OAUTH_TOKEN': token} if token else {}
 
 
 known = {}
@@ -4504,6 +4526,9 @@ def install():
     LOGS.mkdir(parents=True, exist_ok=True)
     path = ':'.join([str(HOME / '.local/bin'), str(HOME / '.local/share/mise/shims'), str(HOME / '.bun/bin'), '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin'])
     service_env = service_environment()
+    if not LINUX and SYSTEM_PLIST.exists():
+        # A system daemon runs it: no LaunchAgent beside it (two would fight for the port), only the new copy.
+        return restart_daemon()
     if LINUX:
         UNIT.parent.mkdir(parents=True, exist_ok=True)
         UNIT.write_text('[Unit]\nDescription=oma-runner: coding agents for Soma\n\n[Service]\n'
@@ -4522,6 +4547,18 @@ def install():
         'EnvironmentVariables': {'PATH': path, 'HOME': str(HOME), **service_env}, 'WorkingDirectory': str(HOME),
         'StandardOutPath': str(LOGS / 'runner.log'), 'StandardErrorPath': str(LOGS / 'runner.log')}))
     reload_detached(python)
+
+
+def restart_daemon():
+    """The system daemon's runner, ended so launchd (KeepAlive) starts it again from the new copy. The ending is left to a
+    helper in a session of its own: an install run from one of the runner's own threads ends with it."""
+    found = subprocess.run(['pgrep', '-f', str(INSTALLED) + ' serve'], capture_output=True, text=True).stdout.split()
+    pids = [p for p in found if p.isdigit() and int(p) != os.getpid()]
+    if not pids:
+        return print('installed; the system daemon starts it (or: sudo launchctl kickstart -k system/' + LABEL + ')')
+    subprocess.Popen(['/bin/sh', '-c', 'sleep 1; kill ' + ' '.join(pids)], start_new_session=True,
+                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    print('installed; the system daemon starts the new copy in a moment')
 
 
 def reload_detached(python):
