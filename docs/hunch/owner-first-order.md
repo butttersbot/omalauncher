@@ -53,3 +53,9 @@ Primary references checked 2026-10-28:
 Public outcomeMeta was read without an account or signature. No private balance
 or wallet was accessed. Live market minimums/signing compatibility are not yet
 verified. All new tests use fictional values; funding/order walks must use fixtures.
+
+Follow-up hardening: the journal now holds an OS file lock for its whole lifetime;
+a second controller/process fails closed instead of overwriting a stale snapshot.
+The app controller must retain that instance and close it on shutdown. Any write
+failure poisons the instance: close/reopen and reconcile, never continue from an
+in-memory rollback after a possibly completed rename.
