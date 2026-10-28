@@ -35,7 +35,7 @@ class PhoneRunnerKeys(context: Context) {
 }
 
 /** TCP lives only on the VPN's concrete address. No wildcard, LAN or loopback listener is ever opened. */
-class PhoneRunner(private val context: Context, private val tailnet: PhoneTailnet) {
+class PhoneRunner(private val context: Context, private val tailnet: PhoneTailnet) : dev.omalauncher.ui.PhoneRunnerPairing {
     val keys = PhoneRunnerKeys(context)
     private val protocol = PhoneRunnerProtocol(PhoneSessions(context))
     private val wake = Object()
@@ -44,12 +44,16 @@ class PhoneRunner(private val context: Context, private val tailnet: PhoneTailne
     private val workers = ThreadPoolExecutor(0, 8, 30, TimeUnit.SECONDS, SynchronousQueue(),
         { job -> Thread(job, "phone-runner-request").apply { isDaemon = true } })
 
+    private val streams = ThreadPoolExecutor(0, 16, 30, TimeUnit.SECONDS, SynchronousQueue(),
+        { job -> Thread(job, "phone-runner-stream").apply { isDaemon = true } })
+
     @Synchronized fun start() {
         if (started) return
         started = true
         thread(name = "phone-runner-listener", isDaemon = true) {
             while (true) {
-                val address = if (keys.keys().isEmpty()) null else ownAddress()
+                synchronized(wake) { while (keys.keys().isEmpty()) wake.wait() }
+                val address = ownAddress()
                 if (address == null) { synchronized(wake) { wake.wait(30_000) }; continue }
                 runCatching {
                     ServerSocket().use { listener ->
@@ -59,7 +63,7 @@ class PhoneRunner(private val context: Context, private val tailnet: PhoneTailne
                         server = listener
                         while (keys.keys().isNotEmpty() && ownAddress() == address) {
                             val socket = try { listener.accept() } catch (_: java.net.SocketTimeoutException) { continue }
-                            try { workers.execute { socket.use(::serve) } } catch (_: java.util.concurrent.RejectedExecutionException) { socket.close() }
+                            try { workers.execute { try { if (!serve(socket)) socket.close() } catch (_: Exception) { socket.close() } } } catch (_: java.util.concurrent.RejectedExecutionException) { socket.close() }
                         }
                     }
                 }
@@ -68,11 +72,11 @@ class PhoneRunner(private val context: Context, private val tailnet: PhoneTailne
             }
         }
     }
-    fun devices() = tailnet.devices()
-    fun paired() = keys.keys().map { it.device }
-    fun unpair(device: String) { keys.remove(device); if (keys.keys().isEmpty()) runCatching { server?.close() } }
+    override fun devices() = tailnet.devices()
+    override fun paired() = keys.keys().map { it.device }
+    override fun unpair(device: String) { keys.remove(device); if (keys.keys().isEmpty()) runCatching { server?.close() } }
     /** Called only by the setting's native Pair tap, never an HTTP route. */
-    @Synchronized fun pair(device: String) {
+    @Synchronized override fun pair(device: String) {
         require(device in tailnet.devices()) { "That computer is not one of your tailnet devices" }
         val address = ownAddress() ?: error("Phone is not on Tailscale")
         val key = ByteArray(32).also { SecureRandom().nextBytes(it) }.joinToString("") { "%02x".format(it) }
@@ -85,41 +89,53 @@ class PhoneRunner(private val context: Context, private val tailnet: PhoneTailne
         // Wake a listener which was sleeping with no pairings. It is safe to start it immediately here.
         runCatching { server?.close() }
     }
-    private fun authorized(token: String?, address: String): Boolean {
+    private fun caller(token: String?, address: String): RunnerPeer? {
         val entries = keys.keys()
-        // Reject bad tokens without an identity/network lookup, but always require whois for a valid one.
-        if (token.isNullOrBlank() || token.length > 512 || entries.none { java.security.MessageDigest.isEqual(runnerDigest(token).toByteArray(), it.digest.toByteArray()) }) return false
-        return runnerAuthorized(token, runCatching { tailnet.whois(address) }.getOrNull(), entries)
+        if (!tailscaleAddress(address) || token.isNullOrBlank() || token.length > 512 || entries.none {
+                java.security.MessageDigest.isEqual(runnerDigest(token).toByteArray(), it.digest.toByteArray())
+            }) return null
+        val peer = runCatching { tailnet.whois(address) }.getOrNull()
+        return peer?.takeIf { runnerAuthorized(token, it, keys.keys()) }
     }
-    private fun serve(socket: Socket) {
+    /** True transfers ownership to a separate stream worker; ordinary requests never wait behind streams. */
+    private fun serve(socket: Socket): Boolean {
         socket.soTimeout = 10_000
         try {
             val request = readRunnerRequest(socket)
             val address = socket.inetAddress.hostAddress.orEmpty()
-            val allowed = tailscaleAddress(address) && authorized(request.token, address)
-            val response = protocol.handle(request.method, request.path, request.body, allowed)
-            val stream = allowed && request.method == "GET" && request.path.substringBefore('?').endsWith("/stream") && response.code == 200
-            if (!stream) return writeRunnerResponse(socket, response)
-            val out = socket.getOutputStream()
-            out.write("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n".toByteArray())
-            var cursor = request.path.substringAfter("after=", "0").toLongOrNull() ?: 0L
-            val path = request.path.substringBefore('?')
-            val until = System.nanoTime() + TimeUnit.SECONDS.toNanos(25)
-            while (System.nanoTime() < until && authorized(request.token, address)) {
-                val page = protocol.handle("GET", "$path?after=$cursor", "", true)
-                if (page.code != 200) break
-                val events = page.body.optJSONArray("events") ?: JSONArray()
-                for (n in 0 until events.length()) {
-                    val event = events.getJSONObject(n)
-                    cursor = event.getLong("id")
-                    out.write("id: $cursor\nevent: ${event.optString("type")}\ndata: $event\n\n".toByteArray(Charsets.UTF_8))
-                }
-                out.write(": keepalive\n\n".toByteArray()); out.flush()
-                Thread.sleep(1000)
+            val peer = caller(request.token, address)
+            val response = protocol.handle(request.method, request.path, request.body, peer != null, peer?.device.orEmpty())
+            val stream = peer != null && request.method == "GET" && request.path.substringBefore('?').endsWith("/stream") && response.code == 200
+            if (!stream) { writeRunnerResponse(socket, response); return false }
+            try {
+                streams.execute { socket.use { runCatching { serveStream(it, request, address) } } }
+                return true
+            } catch (_: java.util.concurrent.RejectedExecutionException) {
+                writeRunnerResponse(socket, RunnerResponse(503, JSONObject().put("ok", false).put("error", "stream capacity reached")))
             }
         } catch (_: Exception) {
             // Do not log request bodies, authorization headers, keys or question answers.
             runCatching { writeRunnerResponse(socket, RunnerResponse(400, JSONObject().put("ok", false).put("error", "request failed"))) }
+        }
+        return false
+    }
+    private fun serveStream(socket: Socket, request: RunnerRequest, address: String) {
+        val out = socket.getOutputStream()
+        out.write("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n".toByteArray())
+        var cursor = request.path.substringAfter("after=", "0").toLongOrNull() ?: 0L
+        val path = request.path.substringBefore('?')
+        val until = System.nanoTime() + TimeUnit.SECONDS.toNanos(25)
+        while (System.nanoTime() < until && caller(request.token, address) != null) {
+            val page = protocol.handle("GET", "$path?after=$cursor", "", true)
+            if (page.code != 200) break
+            val events = page.body.optJSONArray("events") ?: JSONArray()
+            for (n in 0 until events.length()) {
+                val event = events.getJSONObject(n)
+                cursor = event.getLong("id")
+                out.write("id: $cursor\nevent: ${event.optString("type")}\ndata: $event\n\n".toByteArray(Charsets.UTF_8))
+            }
+            out.write(": keepalive\n\n".toByteArray()); out.flush()
+            Thread.sleep(1000)
         }
     }
     companion object {
@@ -130,7 +146,9 @@ class PhoneRunner(private val context: Context, private val tailnet: PhoneTailne
     }
 }
 
-data class RunnerRequest(val method: String, val path: String, val token: String?, val body: String)
+class RunnerRequest(val method: String, val path: String, val token: String?, val body: String) {
+    override fun toString() = "RunnerRequest($method $path, credentials and body hidden)"
+}
 fun readRunnerRequest(socket: Socket): RunnerRequest {
     val input = socket.getInputStream()
     val header = StringBuilder()

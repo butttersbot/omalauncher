@@ -36,8 +36,19 @@ class PreviewActivity : ComponentActivity() {
         setContent {
             Box(Modifier.fillMaxSize()) {
                 Box(Modifier.fillMaxHeight().then(if (narrow) Modifier.width(400.dp) else Modifier.fillMaxWidth())) {
+                    if (intent.getBooleanExtra("phoneRunner", false)) {
+                        val pairing = remember { object : dev.omalauncher.ui.PhoneRunnerPairing {
+                            private val paired = mutableListOf<String>()
+                            override fun devices() = listOf("jacks-mac-pro", "macbook-pro")
+                            override fun paired() = paired.toList()
+                            override fun pair(device: String) { paired += device; android.util.Log.i("SomaWalk", "fixture pairing tap $device") }
+                            override fun unpair(device: String) { paired -= device; android.util.Log.i("SomaWalk", "fixture unpair tap $device") }
+                        } }
+                        dev.omalauncher.ui.PhoneRunnerSetting(pairing) { finish() }
+                    } else {
                     val empty = intent.getBooleanExtra("empty", false)
                     OmaChatScreen(remember { PreviewHost(this@PreviewActivity, empty, intent.getStringExtra("mail"), intent.getBooleanExtra("questions", false), intent.getStringExtra("waitingQuestion")) }, null, {}, if (empty) PHONE_THREAD_B else OMA_TAB, {})
+                    }
                 }
             }
         }

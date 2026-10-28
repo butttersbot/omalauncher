@@ -177,9 +177,9 @@ object AgentTasks {
      * nonce is made on the phone for that one request, so no other builder can hold it; one that none holds is
      * answered through builder A, which finds it expired as an approval that ended always was.
      */
-    fun answerApproval(context: Context, id: String, nonce: String, allow: Boolean, answers: JSONObject? = null): ApprovalOutcome {
+    fun answerApproval(context: Context, id: String, nonce: String, allow: Boolean, answers: JSONObject? = null, device: String = "phone"): ApprovalOutcome {
         val holder = synchronized(this) { approvalHolder(waiting(), id, nonce) ?: BuilderId.A }
-        return of(holder).decide(context, id, nonce, allow, answers)
+        return of(holder).decide(context, id, nonce, allow, answers, device)
     }
 
     /** The builder whose approval [entry] is; null once none holds it. */
@@ -381,6 +381,13 @@ class Builder(val id: BuilderId) {
             synchronized(lock) { if (!working) advance(context, TaskStatus.Done) }
         }, 1_000)
     }
+    /** Called under AgentTasks' lock, then this lock, as every direct send is. */
+    internal fun queueReceipt(send: () -> Unit): Int? = synchronized(lock) {
+        val before = followUps.waiting.map { it.time }.toSet()
+        send()
+        followUps.waiting.indexOfFirst { it.time !in before }.takeIf { it >= 0 }?.plus(1)
+    }
+
     /** The model he chose with /model for this builder running [bin]; null for its default. */
     private fun chosenModel(context: Context, bin: String): String? =
         context.getSharedPreferences(prefs, Context.MODE_PRIVATE).getString("model-$bin", null)?.takeIf { it.isNotBlank() }
@@ -724,7 +731,7 @@ class Builder(val id: BuilderId) {
      * locked phone, and an approval that was already answered, withdrawn, stopped or lost to a restart is
      * [ApprovalOutcome.Expired] and changes nothing.
      */
-    internal fun decide(context: Context, id: String, nonce: String, allow: Boolean, answers: JSONObject? = null): ApprovalOutcome {
+    internal fun decide(context: Context, id: String, nonce: String, allow: Boolean, answers: JSONObject? = null, device: String = "phone"): ApprovalOutcome {
         // Validate before claiming: malformed answers must leave the request waiting.
         synchronized(lock) {
             pending.firstOrNull { it.id == id && it.nonce == nonce }?.let {
@@ -744,14 +751,27 @@ class Builder(val id: BuilderId) {
                 }
             }
         }
-        record(context, entry, if (!told) ApprovalAnswer.Unanswered else if (allow && questionAnswersSkipped(answers)) ApprovalAnswer.Skipped else if (allow) ApprovalAnswer.Approved else ApprovalAnswer.Denied)
+        record(context, entry, if (!told) ApprovalAnswer.Unanswered else if (allow && questionAnswersSkipped(answers)) ApprovalAnswer.Skipped else if (allow) ApprovalAnswer.Approved else ApprovalAnswer.Denied, if (told && allow) answers else null, device)
         AgentNotices.withdraw(context, entry)
         notify(context)
         return if (told) ApprovalOutcome.Decided else ApprovalOutcome.Expired
     }
     /** Writes how an approval ended into the thread. */
-    private fun record(context: Context, entry: PendingApproval, answer: ApprovalAnswer) = ChatLog.of(context).update(taskTime, save = true) { task ->
-        task.copy(approvals = task.approvals.map { if (it.key == entry.nonce) it.copy(answer = answer) else it })
+    private fun record(context: Context, entry: PendingApproval, answer: ApprovalAnswer, answers: JSONObject? = null, device: String = "phone") {
+        val event = JSONObject().put("type", "approval_result").put("approval", entry.nonce)
+            .put("decision", when (answer) {
+                ApprovalAnswer.Approved, ApprovalAnswer.Skipped -> "allow"
+                ApprovalAnswer.Denied -> "deny"
+                else -> "withdrawn"
+            }).put("skipped", answer == ApprovalAnswer.Skipped).put("device", device)
+        if (answers != null) {
+            val normalized = ClaudeProtocol.decision(entry.approval, true, answers).getJSONObject("response")
+                .getJSONObject("response").getJSONObject("updatedInput").optJSONObject("answers")
+            event.put("answers", normalized)
+        }
+        ChatLog.of(context).runnerRecord(taskTime, if (id == BuilderId.D) "phone-d" else "builder-${id.letter.lowercase()}", event) { task ->
+            task.copy(approvals = task.approvals.map { if (it.key == entry.nonce) it.copy(answer = answer) else it })
+        }
     }
     /**
      * "Send now" (Boss, 2026-10-16: "like the Send Now button in the Claude app", for an agent that is stuck or must be

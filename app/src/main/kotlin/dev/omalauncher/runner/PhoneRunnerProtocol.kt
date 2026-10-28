@@ -18,7 +18,7 @@ interface PhoneRunnerSessions {
     fun list(): List<JSONObject>
     fun events(id: String, after: Long): List<JSONObject>
     fun message(id: String, text: String): JSONObject
-    fun answer(id: String, approval: String, nonce: String, decision: String, answers: JSONObject?): JSONObject
+    fun answer(id: String, approval: String, nonce: String, decision: String, answers: JSONObject?, device: String): JSONObject
     fun stop(id: String)
 }
 class RunnerFault(val code: Int, override val message: String) : RuntimeException(message)
@@ -26,7 +26,7 @@ data class RunnerResponse(val code: Int, val body: JSONObject)
 
 /** Auth happens before route dispatch: an unpaired caller learns nothing, even from /health. */
 class PhoneRunnerProtocol(private val sessions: PhoneRunnerSessions) {
-    fun handle(method: String, path: String, body: String, authorized: Boolean): RunnerResponse {
+    fun handle(method: String, path: String, body: String, authorized: Boolean, device: String = ""): RunnerResponse {
         if (!authorized) return RunnerResponse(401, JSONObject().put("ok", false).put("error", "unauthorized"))
         return try {
             val uri = java.net.URI(path)
@@ -64,7 +64,7 @@ class PhoneRunnerProtocol(private val sessions: PhoneRunnerSessions) {
                     val decision = json.optString("decision")
                     if (decision !in setOf("allow", "deny")) throw RunnerFault(400, "invalid decision")
                     if (json.has("answers") && json.optJSONObject("answers") == null) throw RunnerFault(400, "invalid answers")
-                    ok(sessions.answer(id, parts[3], json.optString("nonce"), decision, json.optJSONObject("answers")))
+                    ok(sessions.answer(id, parts[3], json.optString("nonce"), decision, json.optJSONObject("answers"), device))
                 }
                 else -> throw RunnerFault(404, "not found")
             }

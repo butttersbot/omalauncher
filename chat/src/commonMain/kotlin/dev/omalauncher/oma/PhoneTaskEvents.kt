@@ -22,7 +22,7 @@ class PhoneTaskEvents(saved: JSONObject? = null) {
         val n = (last[id] ?: 0) + 1
         last[id] = n
         val copy = JSONObject(event.toString()).put("id", n)
-        if (!copy.has("time")) copy.put("time", System.currentTimeMillis())
+        if (!copy.has("time")) copy.put("time", System.currentTimeMillis() / 1000)
         rows.getOrPut(id) { mutableListOf() }.add(copy)
         revision++
         bytes += copy.toString().length
@@ -41,32 +41,33 @@ class PhoneTaskEvents(saved: JSONObject? = null) {
             val id = phoneTaskSession(task) ?: return@forEach
             val old = previous[task.time]
             fun event(type: String, text: String = "") = JSONObject().put("type", type).put("text", text).put("task", task.time)
-            if (old == null) append(id, event(if (task.mail.isEmpty()) "message" else "note", task.prompt).put("time", task.time))
-            task.steps.drop(old?.steps?.size ?: 0).forEach { append(id, event("step", it)) }
+            if (old == null) append(id, event(if (task.mail.isEmpty()) "message" else "note", task.prompt).put("time", task.time / 1000))
+            val previousSteps = old?.steps.orEmpty()
+            val overlap = (minOf(previousSteps.size, task.steps.size) downTo 0).first { n -> previousSteps.takeLast(n) == task.steps.take(n) }
+            task.steps.drop(overlap).forEach { step ->
+                val artifact = stepArtifacts(listOf(step)).firstOrNull()
+                if (artifact == null) append(id, event("step", step))
+                else append(id, event("artifact").put("name", artifact.name).put("version", artifact.version)
+                    .put("title", artifact.name).put("mime", "").put("state", "ready"))
+            }
             if (task.result != old?.result && task.result.isNotEmpty()) {
                 if (task.status == TaskStatus.Running) {
                     // The UI's running result is cumulative; the wire text is an append, not repeated prose.
                     val prefix = old?.result.orEmpty()
-                    val delta = if (task.result.startsWith(prefix)) task.result.removePrefix(prefix) else task.result
+                    val delta = phoneTextDelta(prefix, task.result)
                     if (delta.isNotEmpty()) append(id, event("text", delta))
                 }
             }
-            task.approvals.forEachIndexed { index, approval ->
-                val earlier = old?.approvals?.getOrNull(index)
-                if (approval.answer != ApprovalAnswer.Waiting && approval.answer != earlier?.answer) {
-                    append(id, event("approval_result").put("approval", earlier?.key ?: approval.key)
-                        .put("decision", if (approval.answer in setOf(ApprovalAnswer.Approved, ApprovalAnswer.Skipped)) "allow" else "deny")
-                        .put("skipped", approval.answer == ApprovalAnswer.Skipped))
-                }
-            }
-            if (old == null || old.status != task.status) {
-                if (task.status !in setOf(TaskStatus.Running, TaskStatus.Queued)) {
+            if (old == null || old.status != task.status || old.approvals != task.approvals) {
+                if ((old == null || old.status != task.status) && task.status !in setOf(TaskStatus.Running, TaskStatus.Queued)) {
                     append(id, event(if (task.status == TaskStatus.Stopped) "stopped" else "result", task.result)
                         .put("failed", task.status in setOf(TaskStatus.Failed, TaskStatus.Interrupted)).put("kind", task.agent).put("model", task.answeredBy))
                 }
-                append(id, event("status").put("status", when (task.status) {
-                    TaskStatus.Running, TaskStatus.Queued -> "working"
-                    TaskStatus.Interrupted -> "interrupted"
+                val session = after.filter { phoneTaskSession(it) == id }
+                append(id, event("status").put("status", when {
+                    session.any { it.status == TaskStatus.Running && it.approvals.any { a -> a.answer == ApprovalAnswer.Waiting } } -> "waiting"
+                    session.any { it.status in setOf(TaskStatus.Running, TaskStatus.Queued) } -> "working"
+                    task.status == TaskStatus.Interrupted -> "interrupted"
                     else -> "idle"
                 }))
             }
@@ -80,4 +81,18 @@ fun phoneTaskSession(task: ChatTask): String? = when {
     task.chat.isNotEmpty() -> "chat-${task.chat}"
     task.build -> if (task.builder.equals("D", true)) "phone-d" else "builder-${task.builder.ifBlank { "A" }.lowercase()}"
     else -> null
+}
+
+/** The task log keeps a bounded result tail. Find the suffix overlap instead of repeating that tail. */
+fun phoneTextDelta(previous: String, next: String): String {
+    if (next.startsWith(previous)) return next.removePrefix(previous)
+    val joined = next + '\u0000' + previous
+    val prefix = IntArray(joined.length)
+    for (i in 1 until joined.length) {
+        var n = prefix[i - 1]
+        while (n > 0 && joined[i] != joined[n]) n = prefix[n - 1]
+        if (joined[i] == joined[n]) n++
+        prefix[i] = n
+    }
+    return next.drop(prefix.lastOrNull()?.coerceAtMost(next.length) ?: 0)
 }

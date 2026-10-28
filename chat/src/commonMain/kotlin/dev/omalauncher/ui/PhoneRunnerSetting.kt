@@ -11,14 +11,20 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import dev.omalauncher.runner.PhoneRunner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+interface PhoneRunnerPairing {
+    fun devices(): List<String>
+    fun paired(): List<String>
+    fun pair(device: String)
+    fun unpair(device: String)
+}
+
 /** Pair and Unpair are owner taps. Keys never enter Compose state, clipboard, chat or screen text. */
 @Composable
-fun PhoneRunnerSetting(runner: PhoneRunner, dismiss: () -> Unit) {
+fun PhoneRunnerSetting(runner: PhoneRunnerPairing, dismiss: () -> Unit) {
     var devices by remember { mutableStateOf<List<String>>(emptyList()) }
     var paired by remember { mutableStateOf(runner.paired()) }
     var busy by remember { mutableStateOf(true) }

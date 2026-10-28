@@ -23,6 +23,28 @@ class PhoneTaskEventsTest {
         restored.append("builder-a", JSONObject().put("type", "note").put("text", "after restart"))
         assertEquals(all.size.toLong() + 1, restored.last("builder-a"))
     }
+    @Test fun shiftedResultAndStepTailsDoNotLoseNewEvents() {
+        assertEquals(" new", phoneTextDelta("older text", "text new"))
+        val journal = PhoneTaskEvents()
+        val old = ChatTask(1, "claude", "work", steps = listOf("a", "b", "c"))
+        journal.changed(emptyList(), listOf(old))
+        val cursor = journal.last("builder-a")
+        journal.changed(listOf(old), listOf(old.copy(steps = listOf("b", "c", "d"))))
+        assertEquals(listOf("d"), journal.events("builder-a", cursor).filter { it.optString("type") == "step" }.map { it.getString("text") })
+    }
+    @Test fun journalAndApprovalOutcomeSurviveTheTaskStoresOwnSave() {
+        val file = kotlin.io.path.createTempFile("phone-task-log", ".json").toFile()
+        try {
+            val store = ChatStore(file)
+            store.begin(ChatTask(10, "claude", "hello"))
+            store.update(10) { it.copy(result = "partial") }
+            val all = store.runnerEvents("builder-a", 0) // must flush unsaved partial events before exposing cursors
+            val restored = ChatStore(file).apply { load() }
+            assertEquals(all.map { it.toString() }, restored.runnerEvents("builder-a", 0).take(all.size).map { it.toString() })
+            assertTrue(JSONObject(file.readText()).has("phoneRunner"))
+            assertEquals("partial", restored.tasks.single().result)
+        } finally { file.delete() }
+    }
     @Test fun onlyLocalPhoneSessionsAreExposedAndTextIsNotRepeated() {
         val journal = PhoneTaskEvents()
         val task = ChatTask(1, "codex", "work", builder = "B")
