@@ -103,3 +103,10 @@ if (somaSignIdentity != null) {
         }
     }
 }
+
+// The one-jar build for Linux (-PsomaOs=linux-x64 :desktop:packageUberJarForCurrentOS): a dependency's signature files
+// (META-INF/*.SF, *.RSA…) no longer match once everything is in one jar, and Java refused to start it ("Invalid signature
+// file digest", seen 2026-10-28 in a linux/amd64 Temurin 17). They are left out; nothing here is checked against them.
+tasks.matching { it.name.startsWith("packageUberJar") || it.name.startsWith("packageReleaseUberJar") }.configureEach {
+    (this as org.gradle.jvm.tasks.Jar).exclude("META-INF/*.SF", "META-INF/*.RSA", "META-INF/*.DSA", "META-INF/*.EC")
+}

@@ -90,7 +90,9 @@ The service finds Tailscale as the runner does: `OMA_RUNNER_TAILSCALE`, the App 
   again. The name lives in that per-machine file, not in Git.
 - For Linux, built on the Mac Pro: `./gradlew -PsomaOs=linux-x64 :desktop:packageUberJarForCurrentOS` gives one jar with
   Linux's Skia (the file is named after the machine that built it). It runs with `java -jar` on a Java 17+ runtime, which
-  the Omarchy boxes don't have yet.
+  the Omarchy boxes don't have yet, and needs the system's `libGL.so.1` (Mesa; any Omarchy desktop has it). Until
+  2026-10-28 it didn't start at all: a dependency's signature files (META-INF/*.SF) made Java refuse the merged jar; the
+  build now leaves them out. Seen then in a linux/amd64 Temurin 17: Soma's main ran, and Skia loaded and drew.
 
 ## Proven (2026-10-16)
 
