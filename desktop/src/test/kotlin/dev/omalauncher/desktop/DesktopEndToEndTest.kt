@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.toAwtImage
 import dev.omalauncher.assist.MacMachine
 import dev.omalauncher.assist.MacRunnerConfig
 import dev.omalauncher.assist.MacThreadsEngine
+import dev.omalauncher.assist.MacRunnerClient
 import dev.omalauncher.assist.reachableFor
 import dev.omalauncher.oma.OMA_TAB
 import dev.omalauncher.oma.OmaChatScreen
@@ -602,5 +603,55 @@ class DesktopEndToEndTest {
         settle()
         File("build/render").mkdirs()
         javax.imageio.ImageIO.write(onRoot().captureToImage().toAwtImage(), "png", File("build/render/desktop-e2e-names.png"))
+    }
+
+    /**
+     * Slice 2 (Boss, 2026-10-28): a picture pasted or dropped on the desktop's chat is taken as a picked one, shown under
+     * the field, put on the Mac with his words, and the thread is told where it is, as the phone's pictures are.
+     */
+    @Test fun aPastedPictureGoesToTheMacThreadWithHisWords() = runComposeUiTest {
+        val notices = Notices()
+        val machine = MacMachine("testhost", "Test box", MacRunnerConfig("http://127.0.0.1:$port", key))
+        val platform = DesktopThreadsPlatform(notices) { listOf(machine) }
+        val engine = MacThreadsEngine(platform)
+        val host = DesktopChatHost(platform, engine, DesktopFrontAgent(engine, platform, notices, places = emptyList()), notices)
+        engine.open()
+        var wanted: String? by androidx.compose.runtime.mutableStateOf<String?>(null)
+        mainClock.autoAdvance = false
+        setContent { OmaChatScreen(host, prefill = null, onPrefilled = {}, wanted = wanted, onTab = { wanted = it.takeIf { tab -> tab != OMA_TAB } }) }
+        fun settle(ms: Long = 1_200) = mainClock.advanceTimeBy(ms)
+        fun waitFor(what: String, done: () -> Boolean) {
+            val deadline = System.currentTimeMillis() + 40_000
+            while (System.currentTimeMillis() < deadline && !done()) { Thread.sleep(250); settle(500) }
+            assertTrue("$what: ${platform.chatLog().tasks.map { "${it.thread} ${it.status} ${it.result.take(80)}" }}", done())
+        }
+        settle()
+        onNodeWithContentDescription("Show the tabs").performClick(); settle()
+        onNodeWithContentDescription("New chat").performClick(); settle()
+        onNodeWithContentDescription("Attach images").assertExists()
+        val shot = File(work, "screenshot.png").also { javax.imageio.ImageIO.write(java.awt.image.BufferedImage(64, 48, java.awt.image.BufferedImage.TYPE_INT_RGB), "png", it) }
+        val pasted = File(work, "pasted.png").also { shot.copyTo(it) }
+        runOnIdle { assertTrue("the chat took it", host.arrived(listOf(FileImage(shot), FileImage(pasted, temporary = true)))) }
+        waitFor("both pictures under the field") { onAllNodes(androidx.compose.ui.test.hasContentDescription("Remove image 2")).fetchSemanticsNodes().isNotEmpty() }
+        assertTrue("his own file stays", shot.isFile)
+        assertTrue("the pasted copy's temporary file went", !pasted.exists())
+        // Three more pasted: two fit (four at most), the third is let go, its temporary file too (round-1 Critic).
+        val more = (1..3).map { n -> File(work, "more$n.png").also { shot.copyTo(it) } }
+        runOnIdle { assertTrue(host.arrived(more.map { FileImage(it, temporary = true) })) }
+        waitFor("four pictures under the field") { onAllNodes(androidx.compose.ui.test.hasContentDescription("Remove image 4")).fetchSemanticsNodes().isNotEmpty() }
+        assertTrue("none left behind: ${more.filter { it.exists() }}", more.none { it.exists() })
+        onNode(androidx.compose.ui.test.hasSetTextAction()).performTextInput("what is in this picture")
+        settle(); onNodeWithText("[ send ]").performClick(); settle()
+        waitFor("the answer came") { platform.chatLog().tasks.any { it.mac && it.status == dev.omalauncher.oma.TaskStatus.Done } }
+        val entry = platform.chatLog().tasks.first { it.mac }
+        val said = (MacRunnerClient(machine.config, "testhost").events(entry.thread, 0) as dev.omalauncher.assist.MacAnswer.Ok).value.events
+            .filterIsInstance<dev.omalauncher.assist.MacEvent.Message>().first().text
+        assertTrue("his words, then where the pictures are: $said", said.startsWith("what is in this picture") && dev.omalauncher.assist.PICTURES_NOTE.trim() in said)
+        val kept = File(work, "Downloads/From Fold").listFiles().orEmpty()
+        assertEquals("all four pictures are on the Mac", 4, kept.size)
+        assertTrue("the thread is told their paths", kept.all { it.path in said })
+        settle()
+        File("build/render").mkdirs()
+        javax.imageio.ImageIO.write(onRoot().captureToImage().toAwtImage(), "png", File("build/render/desktop-e2e-pictures.png"))
     }
 }

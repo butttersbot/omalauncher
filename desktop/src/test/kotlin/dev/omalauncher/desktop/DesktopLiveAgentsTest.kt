@@ -133,6 +133,24 @@ class DesktopLiveAgentsTest {
         println("LIVE claude thread ${claude.thread} kind=${engine.view.threads.firstOrNull { it.id == claude.thread }?.kind}")
         settle(); shot("claude")
 
+        // 1b. A picture pasted into a new Claude chat: Claude reads the word drawn in it.
+        val picture = File(work, "word.png").also { file ->
+            val image = java.awt.image.BufferedImage(600, 200, java.awt.image.BufferedImage.TYPE_INT_RGB)
+            image.createGraphics().apply {
+                color = java.awt.Color.WHITE; fillRect(0, 0, 600, 200)
+                color = java.awt.Color.BLACK; font = java.awt.Font("SansSerif", java.awt.Font.BOLD, 96); drawString("ZEBRA", 40, 140); dispose()
+            }
+            javax.imageio.ImageIO.write(image, "png", file)
+        }
+        if (onAllNodes(androidx.compose.ui.test.hasContentDescription("Show the tabs")).fetchSemanticsNodes().isNotEmpty()) { onNodeWithContentDescription("Show the tabs").performClick(); settle() }
+        onNodeWithContentDescription("New chat").performClick(); settle()
+        runOnIdle { assertTrue(host.arrived(listOf(FileImage(picture)))) }
+        waitFor("the picture is under the field", 30) { onAllNodes(androidx.compose.ui.test.hasContentDescription("Remove image 1")).fetchSemanticsNodes().isNotEmpty() }
+        onNode(hasSetTextAction()).performTextInput("What single word is written in the attached picture? Reply with just that word."); settle()
+        onNodeWithText("[ send ]").performClick(); settle()
+        waitFor("Claude read the picture") { tasks().any { it.mac && it.status == TaskStatus.Done && "ZEBRA" in it.result.uppercase() } }
+        settle(); shot("picture")
+
         // 2. Codex: picked in the new chat, answers.
         newChat("Reply with exactly the word MANGO and nothing else.", agent = "Codex")
         waitFor("Codex answered") { tasks().any { it.mac && it.status == TaskStatus.Done && "MANGO" in it.result } }
@@ -166,7 +184,7 @@ class DesktopLiveAgentsTest {
         settle(); shot("stopped")
 
         // 5. Named: each chat by this Mac's fast model (or his first words), not "New chat".
-        waitFor("all four chats named", 120) { platform.book().chats.all { dev.omalauncher.oma.chatKey(it.id) in platform.book().names } }
+        waitFor("all five chats named", 120) { platform.book().chats.all { dev.omalauncher.oma.chatKey(it.id) in platform.book().names } }
         println("LIVE names: " + platform.book().names.values)
         settle(); shot("names")
     }

@@ -52,7 +52,7 @@ class DesktopChatHost(
     private val front: DesktopFrontAgent,
     private val notices: Notices,
 ) : ChatHost {
-    override val attaches: Boolean get() = false
+    override val attaches: Boolean get() = true
     override val dictates: Boolean get() = false
 
     // No Soma tab and no front agent here (Boss, 2026-10-19): it opens to a new chat, and he starts each one himself.
@@ -183,12 +183,54 @@ class DesktopChatHost(
 
     override fun drafts(): ChatDrafts = ChatDrafts.of(SomaHome.dir)
 
+    /** A file dialog, several pictures at once; what was chosen goes to [onPicked] (nothing when he cancels). */
     @Composable
-    override fun rememberImagePicker(max: Int, onPicked: (List<PickedImage>) -> Unit): () -> Unit = {}
+    override fun rememberImagePicker(max: Int, onPicked: (List<PickedImage>) -> Unit): () -> Unit {
+        val current by androidx.compose.runtime.rememberUpdatedState(onPicked)
+        return remember {
+            {
+                val dialog = java.awt.FileDialog(null as java.awt.Frame?, "Add pictures", java.awt.FileDialog.LOAD).apply {
+                    isMultipleMode = true
+                    setFilenameFilter { dir, name -> pictureKind(File(dir, name)) != null }
+                }
+                dialog.isVisible = true
+                current(dialog.files.orEmpty().filter { it.isFile }.map { FileImage(it) })
+            }
+        }
+    }
 
-    override fun importImage(picked: PickedImage): PromptImage = error("Pictures aren't attached on the desktop.")
+    /** Where a paste or a drop on the chat window goes: the chat on screen's own taking of pictures, while it is there. */
+    @Volatile private var arrivals: ((List<PickedImage>) -> Unit)? = null
 
-    override fun thumbnail(file: File, longest: Int): ImageBitmap? = null
+    @Composable
+    override fun rememberImageArrivals(onPicked: (List<PickedImage>) -> Unit) {
+        val current by androidx.compose.runtime.rememberUpdatedState(onPicked)
+        androidx.compose.runtime.DisposableEffect(Unit) {
+            val take: (List<PickedImage>) -> Unit = { current(it) }
+            arrivals = take
+            onDispose { if (arrivals === take) arrivals = null }
+        }
+    }
+
+    /** Pictures pasted or dropped on the chat window; false when there were none or no chat to take them (text goes on as before). */
+    fun arrived(pictures: List<FileImage>): Boolean {
+        val take = arrivals
+        if (pictures.isEmpty() || take == null) {
+            pictures.filter { it.temporary }.forEach { it.file.delete() }
+            return false
+        }
+        take(pictures)
+        return true
+    }
+
+    // A pasted picture's temporary file, when it wasn't taken (round-1 Critic: /tmp/soma-paste-* grew).
+    override fun releaseImage(picked: PickedImage) {
+        (picked as? FileImage)?.takeIf { it.temporary }?.file?.delete()
+    }
+
+    override fun importImage(picked: PickedImage): PromptImage = importDesktopImage(picked as FileImage, File(SomaHome.dir, "attachments"))
+
+    override fun thumbnail(file: File, longest: Int): ImageBitmap? = desktopThumbnail(file, longest)
 
     override fun sentImage(path: String): File = File(path)
 
