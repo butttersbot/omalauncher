@@ -55,7 +55,8 @@ fun HerdPet(modifier: Modifier = Modifier) {
     var dy by remember { mutableFloatStateOf(prefs.getFloat("home_dy", 0f)) }
 
     DisposableEffect(Unit) { onDispose { HerdSheep.onHome = null } }
-    BackHandler(enabled = open) { page[0]?.evaluateJavascript("herd.tap()", null) }
+    // Back ends choosing several first (pet.html herd.back), then closes the panel.
+    BackHandler(enabled = open) { page[0]?.evaluateJavascript("herd.back ? herd.back() : herd.tap()", null) }
 
     LaunchedEffect(focused, loaded, open) {
         while (focused && loaded) {
