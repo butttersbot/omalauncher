@@ -21,7 +21,7 @@ class QuestionWithdrawalTest : ChatScreenTestBase() {
         val host = object : SampleHost() { override fun macPending() = pending }
         setContent {
             Box(Modifier.size(475.dp, 751.dp)) {
-                ChatArtifactWorkspace(host, "test", emptyList(), onDiscuss = {}) {
+                ChatArtifactWorkspace(host, "test", emptyList(), waitingQuestions = pending.map { it.ticket }.toSet(), onDiscuss = {}) {
                     val open = LocalQuestionOpen.current
                     BracketAction("open test question", Pack.accent) {
                         open?.invoke(WaitingQuestion("ticket", "agent", input) { _, _ -> error("No local send expected") })

@@ -418,7 +418,7 @@ private fun ChatScreen(
     val madeLive = remember(tick) { host.liveArtifacts() }
     Box(Modifier.fillMaxSize().background(Pack.background).safeDrawingPadding().padding(PageGap), contentAlignment = Alignment.TopCenter) {
         CompositionLocalProvider(LocalEarlierThread provides earlierThread.orEmpty()) {
-        ChatArtifactWorkspace(host, tab, artifacts, live = madeLive, threads = artifactThreads, where = threads.firstOrNull { it.key == tab }?.machine?.ifBlank { null } ?: earlierThread?.let { id -> hosts.firstOrNull { it.id == dev.omalauncher.assist.macMachineOf(id) }?.name }.orEmpty(), onDiscuss = { artifact ->
+        ChatArtifactWorkspace(host, tab, artifacts, waitingQuestions = (macPending.map { it.ticket } + builders.values.flatMap { it.pending }.map { it.nonce }).toSet(), live = madeLive, threads = artifactThreads, where = threads.firstOrNull { it.key == tab }?.machine?.ifBlank { null } ?: earlierThread?.let { id -> hosts.firstOrNull { it.id == dev.omalauncher.assist.macMachineOf(id) }?.name }.orEmpty(), onDiscuss = { artifact ->
             // Explicit context is added to this tab's draft, never sent by opening or discussing an output.
             type(appendSpeech(draft, if (artifact.soma) "About ${artifact.name} v${artifact.version}: " else "Regarding ${artifact.name} (${artifact.location}): "))
             focusAsked++

@@ -71,6 +71,7 @@ internal fun ChatArtifactWorkspace(
     live: List<ArtifactLive> = emptyList(),
     threads: Set<String> = emptySet(),
     where: String = "",
+    waitingQuestions: Set<String>? = null,
     content: @Composable () -> Unit,
 ) {
     val questionDrafts = rememberSaveable(saver = WaitingQuestionDrafts.saver) { WaitingQuestionDrafts() }
@@ -81,16 +82,12 @@ internal fun ChatArtifactWorkspace(
             host.sendWaitingAnswers(saved[0], answers, done)
         }
     }
-    // The runner's normal pending-book update reaches every device, including an already open form.
-    LaunchedEffect(question?.key) {
+    // Reuse the chat's pending snapshot: no extra polling/network to close a remote-settled form.
+    val selectedDraft = question?.let { questionDrafts.get(it.key) }
+    LaunchedEffect(question?.key, waitingQuestions, selectedDraft?.sending, selectedDraft?.sent, selectedDraft?.skipped) {
         val key = question?.key ?: return@LaunchedEffect
-        val draft = questionDrafts.get(key)
-        while (true) {
-            kotlinx.coroutines.delay(250)
-            val waiting = host.macPending().any { it.ticket == key } ||
-                host.builders().values.any { builder -> builder.pending.any { it.nonce == key } }
-            if (draft.closeAfterWithdrawal(waiting)) { questionSelection = null; break }
-        }
+        if (waitingQuestions != null && selectedDraft?.closeAfterWithdrawal(key in waitingQuestions) == true)
+            questionSelection = null
     }
     var selections by rememberSaveable { mutableStateOf(mapOf<String, String>()) }
     var expanded by rememberSaveable { mutableStateOf(false) }
