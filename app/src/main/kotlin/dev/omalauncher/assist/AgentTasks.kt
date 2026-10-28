@@ -739,7 +739,7 @@ class Builder(val id: BuilderId) {
                 }
             }
         }
-        record(context, entry, if (!told) ApprovalAnswer.Unanswered else if (allow) ApprovalAnswer.Approved else ApprovalAnswer.Denied)
+        record(context, entry, if (!told) ApprovalAnswer.Unanswered else if (allow && questionAnswersSkipped(answers)) ApprovalAnswer.Skipped else if (allow) ApprovalAnswer.Approved else ApprovalAnswer.Denied)
         AgentNotices.withdraw(context, entry)
         notify(context)
         return if (told) ApprovalOutcome.Decided else ApprovalOutcome.Expired

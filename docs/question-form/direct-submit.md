@@ -94,3 +94,36 @@ Per-step: request arrival/native question card PASS; automated open BLOCKED by h
 Phone C reports: Link this Soma PASS (device67f81342… linked=true, revoked=false); Boss's approval answer delivered to phone:C with receiptStatus registered, receipt`rc_rsh9kf5psqr99cna`, exact artifact SHA01e5abed… matching its source file. Re-POST idempotency PASS (same receipt id); one-byte signature tampering PASS (409 bad-signature); record-approved with different HTML PASS (409 not the mockup the receipt approved); correct-file record PASS (approvedv1, source PhoneC·receipt, author phone:C, waiting/drift=false), repeat record no-op. Test card receipt-walk-test archived; no remaining test approval ask.
 
 Coverage limits from C: native “Send: Approve” label was not personally seen (Boss tapped; resulting decision approve matched his choice). Page-only/no-native-tap negative was NOT WALKED on the real phone. Do not substitute the44-step native waiting-question walk for artifact JavaScript coverage: the separate41-step artifact form emulator walk checked no answer callback before native Send; script/subframe/token validation also has unit coverage. This record is C's phone/server result, not a claim B repeated its approval or signature mutations.
+
+## Skip a waiting native question (2026-10-27)
+
+Boss requested a native `[ skip ]` beside answering/submitting a question. The
+shared chat card, form footer and full Needs You question entry use the active
+Pack's existing bracket/module actions. Skip requires no selection or Other text.
+It sends `QUESTION_SKIP_ANSWER` for every question key using the same allow +
+answers + pending nonce path as Submit. Claude keys remain question text; Codex
+keys remain question IDs. The answer delegates judgment and asks the agent to
+continue, rather than denying, stopping, cancelling, or queueing a chat message.
+The fixed answer is explicitly accepted even when Other is forbidden; arbitrary
+unlisted answers remain rejected. Normal permission approvals are unaffected.
+
+The runner emits an allowed `approval_result` with `skipped:true` and the answers.
+Updated phone/desktop clients settle the pending book and notification through
+the existing answer/event path, update Needs You from that book, and persist a
+short `skipped` approval line. Parsing also recognizes the fixed answer from
+older runner events. The chat card and open form share their existing draft
+store/in-flight gate; failed delivery retains the draft and exposes an error.
+A successful form Skip returns to chat. No automatic approval or card dismissal
+is used, and locked/wrong/expired nonce protections are unchanged.
+
+Deployment note: restricted-option forms require the matching runner validation
+update as well as the launcher/shared desktop update. No live runner restart or
+installation is authorized by this change. `waiting-question-skip.walk` exercises
+cover card and unfolded form escape paths in the isolated fake-host preview. Its
+phone steps cover the real tool result, other-device closure and Needs You after
+promotion; those must not be inferred from preview screenshots.
+
+Canvas reference read attempted at the configured MacBook server; it was
+unreachable. This is the requested addition to the existing native Pack actions,
+not a new mockup or a Shipped claim. Publish reviewed screenshots against the
+current cards when Canvas is available and the bundled launcher is installed.

@@ -1233,7 +1233,7 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
                 if (outcome.over) {
                     val gone = synchronized(this) { book.remove(entry.threadId, entry.request.approval).also { published() } }
                     if (gone != null) platform.withdrawCard(gone)
-                    val answered = if (outcome != MacApprovalOutcome.Decided) ApprovalAnswer.Unanswered else if (allow) ApprovalAnswer.Approved else ApprovalAnswer.Denied
+                    val answered = if (outcome != MacApprovalOutcome.Decided) ApprovalAnswer.Unanswered else if (allow && questionAnswersSkipped(answers)) ApprovalAnswer.Skipped else if (allow) ApprovalAnswer.Approved else ApprovalAnswer.Denied
                     platform.chatLog().revise { macAnswered(it, entry.threadId, entry.request.approval, answered) }
                 }
             } finally {

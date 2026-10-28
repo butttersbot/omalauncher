@@ -246,7 +246,7 @@ private fun ThreadRow(t: AgentThread, machines: Boolean, onOpen: (String) -> Uni
  * comes back ("That request has expired") is shown at every size but the dot, in place of the ask, until the next look.
  */
 @Composable
-fun NeedsYouModule(asks: List<ModuleAsk>, size: ModuleSize, modifier: Modifier = Modifier, onAnswer: (ModuleAsk, Boolean, (String?) -> Unit) -> Unit, onOpen: (String) -> Unit) {
+fun NeedsYouModule(asks: List<ModuleAsk>, size: ModuleSize, modifier: Modifier = Modifier, onAnswer: (ModuleAsk, Boolean, (String?) -> Unit) -> Unit, onOpen: (String) -> Unit, onSkip: (ModuleAsk, (String?) -> Unit) -> Unit = { _, done -> done("Skip unavailable") }) {
     var said by remember { mutableStateOf<String?>(null) }
     // A note is about the asks it came from: at the next change it goes (a screen kept for ever, the car's, kept it for
     // ever). Not at the change that is the answered ask itself leaving, which comes with the note (round-2 review: an
@@ -261,6 +261,7 @@ fun NeedsYouModule(asks: List<ModuleAsk>, size: ModuleSize, modifier: Modifier =
     }
     val first = asks.firstOrNull()
     val answer = { ask: ModuleAsk, allow: Boolean -> answered[0] = ids; answered[1] = ask.id; onAnswer(ask, allow) { said = it } }
+    val skip = { ask: ModuleAsk -> answered[0] = ids; answered[1] = ask.id; onSkip(ask) { said = it } }
     ModuleFrame("Needs you", if (asks.isEmpty()) "all clear" else "${asks.size} waiting", size, "module:needs", modifier, onOpen = first?.let { { onOpen(it.threadKey) } }) {
         when (size) {
             ModuleSize.Dot -> Dotted(asks.size, "waiting", if (asks.isEmpty()) ThreadState.Idle else ThreadState.NeedsOk)
@@ -278,7 +279,7 @@ fun NeedsYouModule(asks: List<ModuleAsk>, size: ModuleSize, modifier: Modifier =
                     first.wholeDetail -> BasicText("${first.title} · make Needs you bigger to read it", style = Pack.body(), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     else -> Row(verticalAlignment = Alignment.CenterVertically) {
                         BasicText(first.title, Modifier.weight(1f), style = Pack.body(), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Answers(first, { allow -> answer(first, allow) }) { onOpen(first.threadKey) }
+                        Answers(first, { allow -> answer(first, allow) }, { skip(first) }) { onOpen(first.threadKey) }
                     }
                 }
             }
@@ -298,10 +299,10 @@ fun NeedsYouModule(asks: List<ModuleAsk>, size: ModuleSize, modifier: Modifier =
                                 // override, a zero-width space) is shown as its code, never acted on.
                                 BasicText(visibleCommand(ask.detail), style = Pack.mono(Pack.size.small, Pack.foreground), maxLines = 8, overflow = TextOverflow.Ellipsis, onTextLayout = { cut = it.hasVisualOverflow })
                                 if (cut) BasicText("too long to read here: make Needs you bigger", style = Pack.body(Pack.size.small, Pack.muted), maxLines = 1)
-                                else Answers(ask, { allow -> answer(ask, allow) }) { onOpen(ask.threadKey) }
+                                else Answers(ask, { allow -> answer(ask, allow) }, { skip(ask) }) { onOpen(ask.threadKey) }
                             } else {
                                 if (size == ModuleSize.Full) BasicText(ask.detail, style = Pack.mono(Pack.size.small, Pack.muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Answers(ask, { allow -> answer(ask, allow) }) { onOpen(ask.threadKey) }
+                                Answers(ask, { allow -> answer(ask, allow) }, { skip(ask) }) { onOpen(ask.threadKey) }
                             }
                         }
                     }
@@ -316,14 +317,14 @@ fun NeedsYouModule(asks: List<ModuleAsk>, size: ModuleSize, modifier: Modifier =
  * neither and an "open" that takes him to the ask in the chat. Measured in the pack in use, never guessed from a width.
  */
 @Composable
-private fun Answers(ask: ModuleAsk, answer: (Boolean) -> Unit, open: () -> Unit) {
+private fun Answers(ask: ModuleAsk, answer: (Boolean) -> Unit, skip: () -> Unit, open: () -> Unit) {
     Layout(
         modifier = Modifier.semantics { contentDescription = "answers for ${ask.id}" },
         content = {
-            ModuleButton("approve", Pack.green) { answer(true) }
-            ModuleButton("deny", Pack.red) { answer(false) }
-            ModuleButton("yes", Pack.green) { answer(true) }
-            ModuleButton("no", Pack.red) { answer(false) }
+            ModuleButton(if (ask.question) "answer" else "approve", Pack.green) { if (ask.question) open() else answer(true) }
+            ModuleButton(if (ask.question) "skip" else "deny", if (ask.question) Pack.accent else Pack.red) { if (ask.question) skip() else answer(false) }
+            ModuleButton(if (ask.question) "answer" else "yes", Pack.green) { if (ask.question) open() else answer(true) }
+            ModuleButton(if (ask.question) "skip" else "no", if (ask.question) Pack.accent else Pack.red) { if (ask.question) skip() else answer(false) }
             ModuleButton("open", Pack.accent, open)
         },
     ) { measurables, constraints ->

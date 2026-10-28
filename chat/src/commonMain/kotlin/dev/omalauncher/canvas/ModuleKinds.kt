@@ -95,7 +95,7 @@ val LocalModuleFocus = compositionLocalOf { false }
 @Composable
 fun ModuleView(ref: ModuleRef, size: ModuleSize, source: ModuleSource, now: Long, modifier: Modifier = Modifier, onOpen: (String) -> Unit, onNew: () -> Unit) {
     when (ref.kind) {
-        ModuleKind.Needs -> NeedsYouModule(source.asks(), size, modifier, onAnswer = { ask, allow, said -> source.answer(ask, allow, said) }, onOpen = onOpen)
+        ModuleKind.Needs -> NeedsYouModule(source.asks(), size, modifier, onAnswer = { ask, allow, said -> source.answer(ask, allow, said) }, onOpen = onOpen, onSkip = source::skipQuestion)
         ModuleKind.Threads -> ThreadsModule(source.threads(), size, modifier, onOpen = onOpen)
         ModuleKind.Computers -> ComputersModule(source.computers(), size, modifier, door = source.publicDoor(), now = now)
         ModuleKind.Timeline -> TimelineModule(source.events(), size, modifier, onOpen = onOpen)

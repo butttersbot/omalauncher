@@ -148,6 +148,7 @@ internal fun ChatArtifactWorkspace(
             Box(Modifier.weight(1f).fillMaxHeight().then(if (overlay) Modifier.clearAndSetSemantics {} else Modifier), contentAlignment = Alignment.TopCenter) {
                 CompositionLocalProvider(
                     LocalArtifactOpen provides open,
+                    LocalQuestionDraftStore provides questionDrafts,
                     LocalQuestionOpen provides { questionSelection = listOf(it.key, it.title, it.input); expanded = false; fileLists = fileLists - tab },
                     LocalMarkdownArtifactOpen provides { link ->
                         val target = artifactPath(link) ?: link

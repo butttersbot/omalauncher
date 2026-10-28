@@ -3916,6 +3916,9 @@ def end(process):
             pass
 
 
+QUESTION_SKIP_ANSWER = "Boss skipped this question: decide yourself with your best judgment and carry on; only ask again if you truly can't continue without him."
+
+
 def question_answers(entry, supplied):
     """Validate a complete answer without consuming the nonce or changing the original tool input."""
     info = entry.get('input') or {}
@@ -3945,7 +3948,7 @@ def question_answers(entry, supplied):
             raise ValueError('answer must be text or selected labels')
         if not value.strip() or len(value) > 4096:
             raise ValueError('answer must be nonempty and at most 4096 characters')
-        if q.get('isOtherAllowed') is False and not isinstance(supplied[key], list) and value not in labels:
+        if q.get('isOtherAllowed') is False and not isinstance(supplied[key], list) and value not in labels and value != QUESTION_SKIP_ANSWER:
             raise ValueError('this question requires a listed option')
         result[key] = value
     return result
@@ -3997,7 +4000,7 @@ def decide(thread, approval, body, device=None):
                 if not thread.pending:
                     thread.status('working')
                 return 500, {'ok': False, 'error': 'command allowed once, but its saved approval could not be written'}
-        thread.emit('approval_result', approval=approval, decision=body['decision'], remembered=remember, **({'answers': answers} if answers is not None else {}), **({'device': device} if device else {}))
+        thread.emit('approval_result', approval=approval, decision=body['decision'], remembered=remember, **({'answers': answers} if answers is not None else {}), **({'skipped': True} if answers and all(value == QUESTION_SKIP_ANSWER for value in answers.values()) else {}), **({'device': device} if device else {}))
         if not thread.pending:
             thread.status('working')
         return 200, {'ok': True, 'decision': body['decision']}

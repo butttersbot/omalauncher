@@ -24,6 +24,7 @@ import org.json.JSONObject
 
 internal data class WaitingQuestion(val key: String, val title: String, val input: String,
     val send: (JSONObject, (String?) -> Unit) -> Unit)
+internal val LocalQuestionDraftStore = staticCompositionLocalOf<WaitingQuestionDrafts?> { null }
 internal val LocalQuestionOpen = staticCompositionLocalOf<((WaitingQuestion) -> Unit)?> { null }
 
 internal fun questionInput(tool: String, input: String): Boolean = runCatching {
@@ -38,11 +39,12 @@ internal class WaitingQuestionDraft {
     var others by mutableStateOf(mapOf<String, String>())
     var sending by mutableStateOf(false)
     var sent by mutableStateOf(false)
+    var skipped by mutableStateOf(false)
     var error by mutableStateOf<String?>(null)
 
     fun json(): JSONObject = JSONObject().put("answers", JSONObject().apply {
         answers.forEach { (key, values) -> put(key, JSONArray(values)) }
-    }).put("others", JSONObject(others)).put("sending", sending).put("sent", sent)
+    }).put("others", JSONObject(others)).put("sending", sending).put("sent", sent).put("skipped", skipped)
 
     companion object {
         fun restore(json: JSONObject) = WaitingQuestionDraft().apply {
@@ -55,6 +57,7 @@ internal class WaitingQuestionDraft {
             others = text.keys().asSequence().associateWith { text.getString(it) }
             sending = json.optBoolean("sending")
             sent = json.optBoolean("sent")
+            skipped = json.optBoolean("skipped")
         }
     }
 }
@@ -93,7 +96,30 @@ internal fun ChatHost.sendWaitingAnswers(key: String, answers: JSONObject, done:
     done("That request has expired")
 }
 
+/** Shared by the card and form: one in-flight gate, including rotation and double taps. */
+internal fun WaitingQuestionDraft.send(request: WaitingQuestion, payload: JSONObject, skip: Boolean = false, done: () -> Unit = {}) {
+    if (sending || sent) return
+    sending = true; error = null
+    try {
+        request.send(payload) { failure ->
+            sending = false; error = failure; sent = failure == null
+            skipped = sent && skip
+            if (sent) done()
+        }
+    } catch (failure: Exception) {
+        sending = false; error = failure.message ?: "These answers could not be sent. Try again."
+    }
+}
+
+internal fun WaitingQuestionDraft.skip(request: WaitingQuestion, done: () -> Unit = {}) {
+    val payload = runCatching { dev.omalauncher.assist.questionSkipAnswers(request.input) }.getOrElse {
+        error = "This question form could not be skipped: ${it.message}"; return
+    }
+    send(request, payload, skip = true, done = done)
+}
+
 /** Entirely native: the visible answers and the Send action share the same state. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun WaitingQuestionPanel(request: WaitingQuestion, draft: WaitingQuestionDraft, close: () -> Unit) {
     val questions = remember(request.key) { runCatching {
@@ -138,7 +164,7 @@ internal fun WaitingQuestionPanel(request: WaitingQuestion, draft: WaitingQuesti
         }
         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp)) {
             BasicText(request.title, style = Pack.body(color = Pack.accent))
-            BasicText(if (sent) "Answers sent" else "Before I continue", Modifier.padding(vertical = 12.dp), style = Pack.display(Pack.size.title, Pack.accent))
+            BasicText(if (draft.skipped) "Skipped" else if (sent) "Answers sent" else "Before I continue", Modifier.padding(vertical = 12.dp), style = Pack.display(Pack.size.title, Pack.accent))
             if (sent) BasicText(summary, style = Pack.body()) else for (i in keys.indices) {
                 val q = questions.getJSONObject(i); val key = keys[i]
                 BasicText("${i + 1} · ${q.optString("header")}", style = Pack.mono(Pack.size.small, Pack.muted))
@@ -181,17 +207,19 @@ internal fun WaitingQuestionPanel(request: WaitingQuestion, draft: WaitingQuesti
         }
         Column(Modifier.fillMaxWidth().heightIn(max = 180.dp).background(Pack.surface).verticalScroll(rememberScrollState()).padding(12.dp)) {
             BasicText("To: ${request.title}", style = Pack.mono(Pack.size.small, Pack.muted))
-            if (!ready && !sent) BasicText("Answer every question to send.", style = Pack.mono(Pack.size.small, Pack.muted))
+            if (!ready && !sent) BasicText("Answer every question to send, or skip.", style = Pack.mono(Pack.size.small, Pack.muted))
             error?.let { BasicText(it, style = Pack.body(Pack.size.small, Pack.red)) }
-            if (!sent) BracketAction(if (sending) "Sending…" else if (ready) "Send: $summary" else "Send answers", if (ready) Pack.accent else Pack.muted) {
-                if (ready && !sending) {
-                    val payload = JSONObject()
-                    keys.forEachIndexed { i, key ->
-                        val other = others[key]?.takeIf { it.isNotBlank() }
-                        payload.put(key, other ?: if (questions.getJSONObject(i).optBoolean("multiSelect")) JSONArray(answers[key]) else answers.getValue(key).single())
+            if (!sent) FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                BracketAction("skip", if (sending) Pack.muted else Pack.accent) { draft.skip(request, close) }
+                BracketAction(if (sending) "Sending…" else if (ready) "Send: $summary" else "Send answers", if (ready) Pack.accent else Pack.muted) {
+                    if (ready && !sending) {
+                        val payload = JSONObject()
+                        keys.forEachIndexed { i, key ->
+                            val other = others[key]?.takeIf { it.isNotBlank() }
+                            payload.put(key, other ?: if (questions.getJSONObject(i).optBoolean("multiSelect")) JSONArray(answers[key]) else answers.getValue(key).single())
+                        }
+                        draft.send(request, payload)
                     }
-                    sending = true; error = null
-                    request.send(payload) { failure -> sending = false; error = failure; sent = failure == null }
                 }
             }
         }

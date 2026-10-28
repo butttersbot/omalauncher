@@ -335,11 +335,11 @@ fun macApply(tasks: List<ChatTask>, threadId: String, event: MacEvent, inFlight:
             else if (event.text.startsWith(MAC_STILL_RUNNING)) between(ChatLater(event.text))
             else between(ChatLater(event.text)) { entry -> entry.copy(later = entry.later.filterNot { !it.words && it.text.startsWith(MAC_STILL_RUNNING) }) }
         is MacEvent.Approval -> macAsked(tasks, threadId, event.request)
-        is MacEvent.ApprovalResult -> macAnswered(tasks, threadId, event.approval, approvalAnswer(event.decision)).let { answered ->
+        is MacEvent.ApprovalResult -> macAnswered(tasks, threadId, event.approval, if (event.decision == MacDecision.Allow && event.skipped) ApprovalAnswer.Skipped else approvalAnswer(event.decision)).let { answered ->
             // Who answered, on every device, so one that sees the card go knows it was the Fold (or a desktop), not an error.
             val by = deviceName(event.device)
             val said = when (event.decision) {
-                MacDecision.Allow -> "allowed on $by"
+                MacDecision.Allow -> if (event.skipped) "skipped on $by" else "allowed on $by"
                 MacDecision.Deny -> "denied on $by"
                 else -> null
             }

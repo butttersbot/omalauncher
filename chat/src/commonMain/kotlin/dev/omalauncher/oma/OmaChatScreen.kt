@@ -1127,7 +1127,14 @@ private fun ApprovalBox(
     card.question?.let { question ->
         Column(Modifier.fillMaxWidth().padding(12.dp)) {
             BasicText("Questions waiting", style = Pack.body(color = Pack.accent))
-            BracketAction("answer questions", Pack.accent) { openQuestion?.invoke(question) }
+            val store = LocalQuestionDraftStore.current
+            val draft = remember(question.key, store) { store?.get(question.key) ?: WaitingQuestionDraft() }
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                BracketAction("answer questions", Pack.accent) { if (!draft.sending && !draft.sent) openQuestion?.invoke(question) }
+                BracketAction(if (draft.sending) "Sending…" else "skip", Pack.accent) { draft.skip(question) }
+            }
+            draft.error?.let { BasicText(it, style = Pack.body(Pack.size.small, Pack.red)) }
+            if (draft.skipped) BasicText("skipped", style = Pack.mono(Pack.size.small, Pack.muted))
         }
         return
     }

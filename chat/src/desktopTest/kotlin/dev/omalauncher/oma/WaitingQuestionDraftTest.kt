@@ -23,4 +23,30 @@ class WaitingQuestionDraftTest {
         assertFalse(restored.sent)
         assertTrue(workspace.get("ticket:new-nonce").answers.isEmpty())
     }
+    @Test fun skipNeedsNoSelectionsAndSharesTheSendGateWithTheForm() {
+        var calls = 0
+        var callback: ((String?) -> Unit)? = null
+        var closed = 0
+        val request = WaitingQuestion("nonce", "agent", """{"questions":[{"question":"Layout?","isOtherAllowed":false}]}""") { payload, done ->
+            calls++
+            assertTrue(dev.omalauncher.assist.questionAnswersSkipped(payload))
+            callback = done
+        }
+        val draft = WaitingQuestionDraft()
+        draft.others = mapOf("Layout?" to "unsent draft")
+        draft.skip(request) { closed++ }
+        draft.skip(request)
+        assertEquals(1, calls)
+        callback!!("offline")
+        assertFalse(draft.sent)
+        assertEquals("unsent draft", draft.others["Layout?"])
+        draft.skip(request) { closed++ }
+        callback!!(null)
+        draft.skip(request)
+        assertEquals(2, calls)
+        assertEquals(1, closed)
+        assertTrue(draft.sent)
+        assertTrue(draft.skipped)
+        assertTrue(WaitingQuestionDraft.restore(draft.json()).skipped)
+    }
 }

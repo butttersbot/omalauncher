@@ -55,7 +55,7 @@ sealed interface MacEvent {
     data class Approval(override val id: Long, override val time: Long, val request: MacApproval) : MacEvent
 
     /** [device] is the one that answered, as the runner names it (a tailnet name); empty when it doesn't say. */
-    data class ApprovalResult(override val id: Long, override val time: Long, val approval: String, val decision: MacDecision, val device: String = "") : MacEvent
+    data class ApprovalResult(override val id: Long, override val time: Long, val approval: String, val decision: MacDecision, val device: String = "", val skipped: Boolean = false) : MacEvent
 
     /** The turn's answer, with the agent's [kind] and the [model] that answered when the runner says them. */
     data class Result(override val id: Long, override val time: Long, val text: String, val failed: Boolean, val kind: String = "", val model: String = "") : MacEvent
@@ -123,7 +123,7 @@ internal fun macEvent(json: JSONObject, lineId: Long? = null, lineType: String? 
         "text" -> MacEvent.Text(id, time, json.macText("text"), json.macText("kind"), json.macText("model"))
         "step" -> MacEvent.Step(id, time, json.macText("text"), json.macText("tool"))
         "approval" -> macApproval(json)?.let { MacEvent.Approval(id, time, it) } ?: MacEvent.Other(id, time, type)
-        "approval_result" -> MacEvent.ApprovalResult(id, time, json.macText("approval"), MacDecision.of(json.macText("decision")), json.macText("device"))
+        "approval_result" -> MacEvent.ApprovalResult(id, time, json.macText("approval"), MacDecision.of(json.macText("decision")), json.macText("device"), json.optBoolean("skipped") || questionAnswersSkipped(json.optJSONObject("answers")))
         "result" -> MacEvent.Result(id, time, json.macText("text"), json.optBoolean("failed"), json.macText("kind"), json.macText("model"))
         "note" -> json.macText("text").trim().takeIf { it.isNotEmpty() }?.let { MacEvent.Note(id, time, it) } ?: MacEvent.Other(id, time, type)
         "stopped" -> MacEvent.Stopped(id, time, (json.macWhole("dropped") ?: 0L).toInt())

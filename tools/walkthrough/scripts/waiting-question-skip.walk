@@ -1,0 +1,33 @@
+# Production native controls, fake host only. Skip is an answer: no real runner or owner action.
+fold folded
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -n dev.omalauncher.artifactpreview/.PreviewActivity --es waitingQuestion strict
+clearlog
+expect Questions waiting
+expect answer questions
+expect skip
+nolog waiting question answer
+shot question-card-cover-skip
+tap skip
+absent Questions waiting
+expect skipped
+log Boss skipped this question
+shot question-card-cover-skipped
+fold unfolded
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -n dev.omalauncher.artifactpreview/.PreviewActivity --es waitingQuestion codex
+clearlog
+tap answer questions
+expect Before I continue
+expect Send answers
+expect skip
+nolog waiting question answer
+shot question-form-inner-skip
+tap skip
+absent Questions waiting
+absent Before I continue
+expect skipped
+log Boss skipped this question
+shot question-form-inner-skipped
+[phone] After promotion and matching runner update: one harmless AskUserQuestion from a Mac and one from a phone builder, with no options selected and Other forbidden. Tap skip from the card/form. Verify the waiting tool receives the fixed delegation answer for every question once, continues its existing turn (no deny/stop/new queued chat), and pending/card/notification/Needs-you count clear on phone and Soma desktop. Other devices show skipped after the approval_result event. Do not answer real work questions during this test.
+[phone] Check two question cards at once, wrong/expired nonce, locked device and a transport failure. Skip must affect only its own nonce; failure leaves the card and draft with an error/retry; double tap or a competing desktop answer must not deliver twice. Verify skip is reachable on cover, unfolded and desktop even with no answer selected.

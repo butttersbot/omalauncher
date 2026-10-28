@@ -13,6 +13,7 @@ import dev.omalauncher.assist.macApprovalNotice
 import dev.omalauncher.assist.macThreadKey
 import dev.omalauncher.assist.MacHandoff
 import dev.omalauncher.assist.RegisteredProject
+import dev.omalauncher.oma.sendWaitingAnswers
 import dev.omalauncher.oma.ChatHost
 import dev.omalauncher.oma.TabMeta
 
@@ -53,6 +54,7 @@ data class ModuleAsk(
      * shown whole, never beside a line cut short.
      */
     val wholeDetail: Boolean = false,
+    val question: Boolean = false,
 )
 
 /**
@@ -66,6 +68,8 @@ interface ModuleSource {
 
     /** His tap on approve or deny; [said] gets what there is to tell him, or null when there is nothing. */
     fun answer(ask: ModuleAsk, allow: Boolean, said: (String?) -> Unit)
+
+    fun skipQuestion(ask: ModuleAsk, said: (String?) -> Unit) { said("That question cannot be skipped here") }
 
     /** Reads what the slower modules show (herd, the pocket, handoffs) once; blocking, so off the screen's thread. */
     fun refresh(projects: Collection<String> = emptyList()) {}
@@ -170,14 +174,30 @@ fun chatHostModules(
     override fun asks(): List<ModuleAsk> {
         val book = host.changeBook { it }
         val mac = host.macPending().map { p ->
-            ModuleAsk("mac:${p.ticket}", "Allow ${p.request.tool} on ${p.threadName}?", macApprovalDetail(p.request), macTabKey(p.threadId, book), p.threadName, p)
+            ModuleAsk("mac:${p.ticket}", "Allow ${p.request.tool} on ${p.threadName}?", macApprovalDetail(p.request), macTabKey(p.threadId, book), p.threadName, p, question = dev.omalauncher.oma.questionInput(p.request.tool, p.request.input))
         }
         val phone = host.builders().flatMap { (builder, state) ->
             state.pending.map { p ->
-                ModuleAsk("phone:${p.nonce}", builderApprovalTitle(p.approval.tool, builder), p.approval.detail, builder.thread, "Builder ${builder.letter}", p)
+                ModuleAsk("phone:${p.nonce}", builderApprovalTitle(p.approval.tool, builder), p.approval.detail, builder.thread, "Builder ${builder.letter}", p, question = dev.omalauncher.oma.questionInput(p.approval.tool, p.approval.input.toString()))
             }
         }
         return mac + phone
+    }
+
+    override fun skipQuestion(ask: ModuleAsk, said: (String?) -> Unit) {
+        if (!ask.question) return said("That request is not a question")
+        val key = when (val ref = ask.ref) {
+            is dev.omalauncher.assist.MacPending -> ref.ticket
+            is PendingApproval -> ref.nonce
+            else -> return said("That question has expired")
+        }
+        val input = when (val ref = ask.ref) {
+            is dev.omalauncher.assist.MacPending -> ref.request.input
+            is PendingApproval -> ref.approval.input.toString()
+            else -> return said("That question has expired")
+        }
+        val answers = runCatching { dev.omalauncher.assist.questionSkipAnswers(input) }.getOrElse { return said("This question form could not be read") }
+        host.sendWaitingAnswers(key, answers, said)
     }
 
     override fun answer(ask: ModuleAsk, allow: Boolean, said: (String?) -> Unit) {

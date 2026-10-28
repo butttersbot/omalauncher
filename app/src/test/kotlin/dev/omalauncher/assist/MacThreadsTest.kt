@@ -191,6 +191,14 @@ class MacThreadsTest {
         assertEquals(TaskStatus.Dropped, macApply(noted, id, MacEvent.Result(2, 0, "", failed = false)).single().status)
     }
 
+    @Test fun skippedQuestionSettlesAcrossDevicesWithoutStoppingTheTurn() {
+        val before = macAsked(listOf(taken(5)), id, write)
+        val after = macApply(before, id, MacEvent.ApprovalResult(2, 0, write.approval, MacDecision.Allow, "galaxy-z-fold8", skipped = true))
+        assertEquals(ApprovalAnswer.Skipped, after.single().approvals.single().answer)
+        assertEquals(TaskStatus.Running, after.single().status)
+        assertTrue(after.single().steps.any { it.contains("skipped") })
+    }
+
     @Test fun anApprovalIsALineOnTheRunningEntryAndEndsAsTheMacSays() {
         var tasks = listOf(taken(5))
         tasks = macApply(tasks, id, MacEvent.Approval(1, 0, write)); tasks = macAsked(tasks, id, write)

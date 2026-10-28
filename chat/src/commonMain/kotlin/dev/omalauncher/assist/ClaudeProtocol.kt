@@ -37,7 +37,7 @@ object ClaudeProtocol {
                     selected.joinToString(", ")
                 } else { require(raw is String) { "Answer must be text" }; raw }
                 require(value.isNotBlank() && value.length <= 4096) { "Answer must be nonempty and at most 4096 characters" }
-                require(q.opt("isOtherAllowed") != false || raw is org.json.JSONArray || value in labels) { "Choose a listed option" }
+                require(q.opt("isOtherAllowed") != false || raw is org.json.JSONArray || value in labels || value == QUESTION_SKIP_ANSWER) { "Choose a listed option" }
                 normalized.put(key, value)
             }
             updated.put("answers", normalized)

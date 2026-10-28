@@ -70,7 +70,7 @@ class ReconciledRunnerTests(unittest.TestCase):
         self.assertFalse(self.replies)
         self.assertEqual(200, self.m['decide'](self.thread, 'q1', {'nonce': 'n1', 'decision': 'allow', 'answers': {'Which layout?': 'My own layout'}})[0])
 
-    def test_question_codex_maps_to_ids_and_skip_denies(self):
+    def test_question_codex_maps_to_ids_and_explicit_denial_remains_denial(self):
         self.question(codex=True)
         self.assertEqual(200, self.m['decide'](self.thread, 'q1', {'nonce': 'n1', 'decision': 'allow', 'answers': {'layout': 'Split'}})[0])
         self.assertEqual({'answers': {'layout': {'answers': ['Split']}}}, self.replies[-1][0][1])
@@ -86,6 +86,28 @@ class ReconciledRunnerTests(unittest.TestCase):
         entry['input']['questions'][0]['isOtherAllowed'] = False
         with self.assertRaises(ValueError):
             self.m['question_answers'](entry, {'Which layout?': 'Custom'})
+
+    def test_skip_is_a_complete_once_only_answer_even_when_other_is_forbidden(self):
+        for codex in (False, True):
+            self.replies.clear()
+            self.thread.driver = self.driver
+            entry = self.question(codex=codex, multi=True)
+            entry['input']['questions'][0]['isOtherAllowed'] = False
+            key = 'layout' if codex else 'Which layout?'
+            text = self.m['QUESTION_SKIP_ANSWER']
+            body = {'nonce': 'n1', 'decision': 'allow', 'answers': {key: text}}
+            self.assertEqual(200, self.m['decide'](self.thread, 'q1', body)[0])
+            self.assertNotIn('q1', self.thread.pending)
+            self.assertTrue(self.events[-1][1]['skipped'])
+            self.assertEqual('allow', self.events[-1][1]['decision'])
+            if codex:
+                self.assertEqual({'answers': {key: {'answers': [text]}}}, self.replies[-1][0][1])
+            else:
+                decision = self.replies[-1]['response']['response']
+                self.assertEqual('allow', decision['behavior'])
+                self.assertEqual({key: text}, decision['updatedInput']['answers'])
+            self.assertEqual(404, self.m['decide'](self.thread, 'q1', body)[0])
+            self.assertEqual(1, len(self.replies))
 
     def scope(self, **changes):
         return self.m['command_scope'](self.thread, {**self.params, **changes})

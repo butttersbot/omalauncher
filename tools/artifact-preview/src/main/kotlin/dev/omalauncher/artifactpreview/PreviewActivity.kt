@@ -75,7 +75,7 @@ Open the preview to try the layout. We can keep talking while you look at it.
                 return bundled.map { if (it.time == 1L) it.copy(status = TaskStatus.Done, result = "Combined handoff complete.") else it } +
                     ChatTask(5, "Codex", "Legacy update", mail = "Agent mail", status = TaskStatus.Done, result = "Delivered in the bundled agent handoff.")
             }
-            return if (empty) emptyList() else thread
+            return if (empty) emptyList() else if (questionSkipped) thread.map { it.copy(steps = it.steps + "skipped") } else thread
         }
         override fun updateTask(time: Long, save: Boolean, change: (ChatTask) -> ChatTask) {}
         override fun working() = false
@@ -83,11 +83,15 @@ Open the preview to try the layout. We can keep talking while you look at it.
         override fun continuing() = false
         override fun front() = FrontState()
         private var questionDone by mutableStateOf(false)
-        private val questionJson = org.json.JSONObject("""{"questions":[{"id":"layout","header":"Layout","question":"Where should the form open?","options":[{"label":"Beside chat","description":"Keep the conversation visible"},{"label":"Full screen","description":"Use the whole screen"}]},{"id":"checks","header":"Checks","question":"Which screen sizes should we check?","multiSelect":true,"options":[{"label":"Cover"},{"label":"Unfolded"}]}]}""").apply { if (waitingQuestion == "codex") put("codex_request", "questions") }
+        private var questionSkipped by mutableStateOf(false)
+        private val questionJson = org.json.JSONObject("""{"questions":[{"id":"layout","header":"Layout","question":"Where should the form open?","options":[{"label":"Beside chat","description":"Keep the conversation visible"},{"label":"Full screen","description":"Use the whole screen"}]},{"id":"checks","header":"Checks","question":"Which screen sizes should we check?","multiSelect":true,"options":[{"label":"Cover"},{"label":"Unfolded"}]}]}""").apply { if (waitingQuestion == "codex") put("codex_request", "questions")
+            if (waitingQuestion == "strict") getJSONArray("questions").let { qs -> (0 until qs.length()).forEach { qs.getJSONObject(it).put("isOtherAllowed", false) } }
+        }
         override fun macPending() = if (waitingQuestion == null || questionDone) emptyList() else listOf(MacPending("fixture", "Fake agent", MacApproval("question-fixture", "fixture-nonce", if (waitingQuestion == "codex") "Question" else "AskUserQuestion", questionJson.toString(), ""), "fixture-ticket", 1))
         override fun answerMacQuestions(ticket: String, answers: org.json.JSONObject, done: (MacApprovalOutcome) -> Unit) {
             android.util.Log.i("SomaWalk", "waiting question answer $ticket: $answers")
             questionDone = true
+            questionSkipped = questionAnswersSkipped(answers)
             done(MacApprovalOutcome.Decided)
         }
         override fun macView() = MacView()

@@ -26,7 +26,7 @@ enum class TaskStatus(val id: String) {
 
 /** What became of an approval. [id] is saved: never rename. */
 enum class ApprovalAnswer(val id: String, val label: String) {
-    Waiting("waiting", "waiting for you"), Approved("approved", "approved once"), Denied("denied", "denied"),
+    Waiting("waiting", "waiting for you"), Skipped("skipped", "skipped"), Approved("approved", "approved once"), Denied("denied", "denied"),
 
     /** The agent took the request back. */
     Withdrawn("withdrawn", "withdrawn"),
