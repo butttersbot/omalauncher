@@ -142,7 +142,6 @@ class DesktopChatHost(
 
     override fun tryMacAgain(time: Long) = engine.tryAgain(time)
 
-    override fun answerMacQuestions(ticket: String, answers: org.json.JSONObject, done: (MacApprovalOutcome) -> Unit) = engine.answerQuestions(ticket, answers, done)
     override fun answerMac(ticket: String, allow: Boolean, done: (MacApprovalOutcome) -> Unit) = engine.answer(ticket, allow, done)
     // A question form's answers (AskUserQuestion, Codex's questions): without this the form always said the Mac could not take them.
     override fun answerMacQuestions(ticket: String, answers: org.json.JSONObject, done: (MacApprovalOutcome) -> Unit) = engine.answerQuestions(ticket, answers, done)
