@@ -9,13 +9,13 @@ tap Show the tabs
 expect all
 tap All chats
 expect Search chats
-expect Phone
-# Look: All chats over the whole cover: the search field, TODAY, the Phone row with its last words; nothing cut at the edges.
+expect Fold
+# Look: All chats over the whole cover: the search field, TODAY, the Fold row with its last words; nothing cut at the edges.
 shot cover-all-chats
 tap Search chats
 type tests
 expect running the tests
-# Look: "tests" marked in the Phone row's words, and "1 of 1 chat match" under it.
+# Look: "tests" marked in the Fold row's words, and "1 of 1 chat match" under it.
 shot cover-all-chats-search
 key BACK
 key BACK

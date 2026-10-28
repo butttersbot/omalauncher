@@ -434,7 +434,9 @@ private fun ChatScreen(
                         // A chat's agent is its thread's once it has one, else the one he picked.
                         val id = macThreadId(key) ?: book.chatOf(key)?.mac?.ifBlank { null }
                         id?.let { i -> host.macView().threads.firstOrNull { it.id == i }?.kind }?.let(::macKindName)
-                            ?: book.chatOf(key)?.agent?.takeIf { it.isNotBlank() }?.let(::macKindName).orEmpty()
+                            ?: book.chatOf(key)?.agent?.takeIf { it.isNotBlank() }?.let(::macKindName)
+                            // The phone's own builders: who last answered there ("Codex", "Opus"), as their replies are signed.
+                            ?: tabEntries(tasks, key, book).lastOrNull { it.build && it.answeredBy.isNotBlank() }?.answeredBy.orEmpty()
                     },
                     entries = { key -> tabEntries(tasks, key, book) },
                     place = { key ->

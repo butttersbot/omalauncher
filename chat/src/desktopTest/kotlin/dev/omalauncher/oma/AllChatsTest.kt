@@ -42,7 +42,7 @@ class AllChatsTest {
         )
         val rows = allChatRows(all, shown = setOf("phone"), archived = setOf("mac:galaxy-z-fold8/builder-b"), kind = { if (it.startsWith("mac:")) "Claude" else "" }, entries = { emptyList() })
         assertEquals(listOf("Phone A", "Soma desktop parity", "Phone B"), rows.map { it.name })
-        assertEquals("Phone", rows[0].where)
+        assertEquals("Fold", rows[0].where)
         assertTrue(rows[0].open)
         assertTrue(rows[2].archived)
         assertEquals("Mac Pro", rows[1].where)

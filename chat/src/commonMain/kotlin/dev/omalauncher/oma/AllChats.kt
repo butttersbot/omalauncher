@@ -14,6 +14,9 @@ import java.util.Locale
  * it as a tab; an archived one comes back. The decisions are plain functions here; AllChatsPanel draws them.
  */
 
+/** What a row of the phone's own threads (its builders) says it is on, as the mockup has it ("FOLD · CODEX"). */
+const val ALL_CHATS_PHONE = "Fold"
+
 /** One chat or thread in the list: [where] its computer (or the phone), [agent] who runs it, [last] what to show of it. */
 data class AllChatRow(
     val key: String,
@@ -73,7 +76,7 @@ fun allChatRows(
         AllChatRow(
             key = thread.key,
             name = thread.name,
-            where = thread.machine.ifBlank { if (thread.mac) place(thread.key) else "Phone" },
+            where = thread.machine.ifBlank { if (thread.mac) place(thread.key) else ALL_CHATS_PHONE },
             agent = kind(thread.key),
             worked = thread.worked,
             last = Markdown.plain(thread.doing.ifBlank { said.orEmpty() }).lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }.orEmpty(),
