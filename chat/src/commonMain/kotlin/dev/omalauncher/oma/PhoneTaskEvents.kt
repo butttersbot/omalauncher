@@ -35,7 +35,7 @@ class PhoneTaskEvents(saved: JSONObject? = null) {
     fun events(id: String, after: Long): List<JSONObject> = rows[id].orEmpty().filter { it.optLong("id") > after }.map { JSONObject(it.toString()) }
     fun last(id: String): Long = last[id] ?: 0
     fun encode(): JSONObject = JSONObject().apply { rows.forEach { (id, events) -> put(id, JSONObject().put("last", last(id)).put("events", JSONArray(events))) } }
-    fun changed(before: List<ChatTask>, after: List<ChatTask>) {
+    fun changed(before: List<ChatTask>, after: List<ChatTask>, sourceType: String = "") {
         val previous = before.associateBy { it.time }
         after.forEach { task ->
             val id = phoneTaskSession(task) ?: return@forEach
@@ -44,13 +44,13 @@ class PhoneTaskEvents(saved: JSONObject? = null) {
             if (old == null) append(id, event(if (task.mail.isEmpty()) "message" else "note", task.prompt).put("time", task.time / 1000))
             val previousSteps = old?.steps.orEmpty()
             val overlap = (minOf(previousSteps.size, task.steps.size) downTo 0).first { n -> previousSteps.takeLast(n) == task.steps.take(n) }
-            task.steps.drop(overlap).forEach { step ->
+            (if (sourceType == "step") emptyList() else task.steps.drop(overlap)).forEach { step ->
                 val artifact = stepArtifacts(listOf(step)).firstOrNull()
                 if (artifact == null) append(id, event("step", step))
                 else append(id, event("artifact").put("name", artifact.name).put("version", artifact.version)
                     .put("title", artifact.name).put("mime", "").put("state", "ready"))
             }
-            if (task.result != old?.result && task.result.isNotEmpty()) {
+            if (sourceType != "text" && task.result != old?.result && task.result.isNotEmpty()) {
                 if (task.status == TaskStatus.Running) {
                     // The UI's running result is cumulative; the wire text is an append, not repeated prose.
                     val prefix = old?.result.orEmpty()

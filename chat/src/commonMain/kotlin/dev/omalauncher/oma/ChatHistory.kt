@@ -320,12 +320,27 @@ class ChatStore(private val file: File, private val maxBytes: Long = ChatHistory
     }
 
     /** One ledger outcome and its UI row, committed as one change in this task log. */
-    @Synchronized fun runnerRecord(time: Long, session: String, event: JSONObject, change: (ChatTask) -> ChatTask) {
+    @Synchronized fun runnerRecord(time: Long, session: String, event: JSONObject, save: Boolean = true, change: (ChatTask) -> ChatTask) {
         runner.append(session, event)
         val next = tasks.map { if (it.time == time) ChatHistory.bounded(change(it)) else it }
-        runner.changed(tasks, next)
+        runner.changed(tasks, next, event.optString("type"))
         tasks = next
-        save()
+        if (save) save()
+    }
+    @Synchronized fun runnerText(time: Long, text: String, kind: String = "", model: String = "") {
+        val task = tasks.firstOrNull { it.time == time } ?: return
+        val session = phoneTaskSession(task) ?: return
+        runnerRecord(time, session, JSONObject().put("type", "text").put("text", text).put("kind", kind).put("model", model), save = false) {
+            it.copy(result = it.result + text)
+        }
+    }
+    @Synchronized fun runnerStep(time: Long, text: String, tool: String = "") {
+        val task = tasks.firstOrNull { it.time == time } ?: return
+        val session = phoneTaskSession(task)
+        if (session == null) { update(time) { ChatHistory.withStep(it, text) }; return }
+        runnerRecord(time, session, JSONObject().put("type", "step").put("text", text).put("tool", tool), save = false) {
+            ChatHistory.withStep(it, text)
+        }
     }
 
     /**
