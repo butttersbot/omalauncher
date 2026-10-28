@@ -45,3 +45,6 @@ actual fun rememberWebOpener(): (String) -> Unit {
         }
     }
 }
+
+actual fun androidx.compose.ui.Modifier.onSecondaryClick(key: Any?, action: () -> Unit): androidx.compose.ui.Modifier = this
+

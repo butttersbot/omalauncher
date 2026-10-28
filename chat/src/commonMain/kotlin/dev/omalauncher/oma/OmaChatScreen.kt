@@ -234,6 +234,8 @@ private fun ChatScreen(
         keyboard?.hide()
         onTab(key)
     }
+    // All chats (slice 4): opened from the strip's "all", beside the chat or over it, as an artifact is.
+    var allChatsOpen by remember { mutableStateOf(false) }
 
     // What is in the field, one for each tab: switching tabs puts away this tab's words and brings back the other's.
     var typed by rememberSaveable { mutableStateOf(mapOf<String, String>()) }
@@ -424,7 +426,32 @@ private fun ChatScreen(
     val madeLive = remember(tick) { host.liveArtifacts() }
     Box(Modifier.fillMaxSize().background(Pack.background).safeDrawingPadding().padding(PageGap), contentAlignment = Alignment.TopCenter) {
         CompositionLocalProvider(LocalEarlierThread provides earlierThread.orEmpty()) {
-        ChatArtifactWorkspace(host, tab, artifacts, waitingQuestions = (macPending.map { it.ticket } + builders.values.flatMap { it.pending }.map { it.nonce }).toSet(), live = madeLive, threads = artifactThreads, where = threads.firstOrNull { it.key == tab }?.machine?.ifBlank { null } ?: earlierThread?.let { id -> hosts.firstOrNull { it.id == dev.omalauncher.assist.macMachineOf(id) }?.name }.orEmpty(), onDiscuss = { artifact ->
+        ChatArtifactWorkspace(host, tab, artifacts, waitingQuestions = (macPending.map { it.ticket } + builders.values.flatMap { it.pending }.map { it.nonce }).toSet(), live = madeLive, threads = artifactThreads, where = threads.firstOrNull { it.key == tab }?.machine?.ifBlank { null } ?: earlierThread?.let { id -> hosts.firstOrNull { it.id == dev.omalauncher.assist.macMachineOf(id) }?.name }.orEmpty(), allChatsOpen = allChatsOpen, onAllChatsClose = { allChatsOpen = false }, allChats = { close ->
+            val now = System.currentTimeMillis()
+            val rows = remember(all, book, tick) {
+                allChatRows(all, threads.map { it.key }.toSet(), book.archived.keys,
+                    kind = { key ->
+                        // A chat's agent is its thread's once it has one, else the one he picked.
+                        val id = macThreadId(key) ?: book.chatOf(key)?.mac?.ifBlank { null }
+                        id?.let { i -> host.macView().threads.firstOrNull { it.id == i }?.kind }?.let(::macKindName)
+                            ?: book.chatOf(key)?.agent?.takeIf { it.isNotBlank() }?.let(::macKindName).orEmpty()
+                    },
+                    entries = { key -> tabEntries(tasks, key, book) },
+                    place = { key ->
+                        val id = macThreadId(key) ?: book.chatOf(key)?.mac?.ifBlank { null }
+                        val on = id?.let { dev.omalauncher.assist.macMachineOf(it) } ?: book.chatOf(key)?.host
+                        hosts.firstOrNull { it.id == on }?.name ?: hosts.firstOrNull()?.name.orEmpty()
+                    })
+            }
+            AllChatsPanel(rows, { key -> tabEntries(tasks, key, book) }, now,
+                onOpen = { row ->
+                    if (row.archived) host.changeBook { it.restored(row.key, System.currentTimeMillis()) }
+                    close()
+                    pick(row.key)
+                    tick++
+                },
+                onMenu = { menuFor = it }, onClose = close)
+        }, onDiscuss = { artifact ->
             // Explicit context is added to this tab's draft, never sent by opening or discussing an output.
             type(appendSpeech(draft, if (artifact.soma) "About ${artifact.name} v${artifact.version}: " else "Regarding ${artifact.name} (${artifact.location}): "))
             focusAsked++
@@ -463,6 +490,11 @@ private fun ChatScreen(
                     threads, tab, ::pick,
                     soma = host.somaTab,
                     onMenu = { menuFor = it },
+                    onAll = {
+                        focusManager.clearFocus()
+                        keyboard?.hide()
+                        allChatsOpen = true
+                    },
                     onNew = {
                         // An empty new chat is opened again rather than a second one made.
                         onTab(newChatTab(host))
@@ -825,6 +857,7 @@ private fun TabStrip(
     onMenu: (String) -> Unit,
     onNew: () -> Unit,
     soma: Boolean = true,
+    onAll: () -> Unit = {},
 ) {
     val haptics = LocalHapticFeedback.current
     val tabs = chatTabs(threads, soma)
@@ -896,6 +929,17 @@ private fun TabStrip(
                 .clickable(onClick = onNew),
             contentAlignment = Alignment.Center,
         ) { BasicText("+", style = Pack.mono(Pack.size.body, Pack.foreground)) }
+        // Every chat and thread, older ones too, and a search (slice 4).
+        Box(
+            Modifier
+                .padding(start = 6.dp)
+                .fillMaxHeight()
+                .framed(Pack.hair, Pack.accent, Pack.background, radius = 6.dp)
+                .semantics { contentDescription = "All chats" }
+                .clickable(onClick = onAll)
+                .padding(horizontal = 10.dp),
+            contentAlignment = Alignment.Center,
+        ) { BasicText("all", style = Pack.mono(Pack.size.body, Pack.accent)) }
     }
 }
 

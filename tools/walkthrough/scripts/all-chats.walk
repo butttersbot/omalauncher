@@ -1,0 +1,34 @@
+# All chats (desktop parity slice 4; Boss approved design/soma-all-chats-mockup.html, 2026-10-28): the strip's "all" opens
+# every chat and thread, with a search; over the chat on the cover, beside it unfolded; Back closes it. The fictional chat
+# fixture runs production OmaChatScreen. Prerequisite: -PartifactPreview :artifact-preview:assembleDebug installed.
+fold folded
+rotate portrait
+shell am force-stop dev.omalauncher.artifactpreview
+launch dev.omalauncher.artifactpreview/.PreviewActivity
+tap Show the tabs
+expect all
+tap All chats
+expect Search chats
+expect Phone
+# Look: All chats over the whole cover: the search field, TODAY, the Phone row with its last words; nothing cut at the edges.
+shot cover-all-chats
+tap Search chats
+type tests
+expect running the tests
+# Look: "tests" marked in the Phone row's words, and "1 of 1 chat match" under it.
+shot cover-all-chats-search
+key BACK
+key BACK
+absent Search chats
+# Look: back to the chat; the list closed.
+shot cover-all-chats-closed
+fold open
+shell am force-stop dev.omalauncher.artifactpreview
+launch dev.omalauncher.artifactpreview/.PreviewActivity
+tap Show the tabs
+tap All chats
+expect Search chats
+# Look: All chats beside the chat, the chat still in view on the left.
+shot unfolded-all-chats
+key BACK
+[phone] On the Fold: "all" in the strip lists his chats and the Mac's threads, older ones too; a search finds one by a word in it; tapping it opens it, an archived one comes back
