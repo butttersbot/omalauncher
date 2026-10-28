@@ -81,3 +81,11 @@ class PhoneRunnerProtocol(private val sessions: PhoneRunnerSessions) {
         }
     }
 }
+
+/** Addresses must come from Android VPN link properties, never from the carrier's CGNAT interface. */
+fun runnerBindAddress(vpnAddresses: List<String>, whois: (String) -> RunnerPeer?): String? = vpnAddresses.firstOrNull { address ->
+    val parts = address.split('.')
+    val ip = parts.mapNotNull(String::toIntOrNull)
+    parts.size == 4 && ip.size == 4 && ip.all { it in 0..255 } && ip[0] == 100 && ip[1] in 64..127 &&
+        runCatching { whois(address) }.getOrNull()?.let { it.owner && it.device == "galaxy-z-fold8" } == true
+}

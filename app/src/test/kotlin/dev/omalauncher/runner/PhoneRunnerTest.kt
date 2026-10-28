@@ -21,6 +21,14 @@ class PhoneRunnerTest {
         }
         override fun stop(id: String) { stopped = id }
     }
+    @Test fun bindingRequiresAVpnAddressAuthoritativelyNamedAsThisPhone() {
+        val whois: (String) -> RunnerPeer? = { if (it == "100.80.1.2") RunnerPeer("galaxy-z-fold8", true) else null }
+        assertEquals("100.80.1.2", runnerBindAddress(listOf("192.168.1.5", "100.80.1.2"), whois))
+        assertNull(runnerBindAddress(listOf("0.0.0.0", "127.0.0.1", "100.80.999.2"), whois))
+        assertNull(runnerBindAddress(listOf("100.80.1.2")) { RunnerPeer("other-phone", true) })
+        assertNull(runnerBindAddress(listOf("100.80.1.2")) { RunnerPeer("galaxy-z-fold8", false) })
+        assertNull(runnerBindAddress(listOf("100.80.1.2")) { null })
+    }
     @Test fun authenticationRequiresBothThisDevicesKeyAndOwnersWhois() {
         val keys = listOf(RunnerKey("mac-pro", runnerDigest("secret")))
         assertFalse(runnerAuthorized(null, RunnerPeer("mac-pro", true), keys))

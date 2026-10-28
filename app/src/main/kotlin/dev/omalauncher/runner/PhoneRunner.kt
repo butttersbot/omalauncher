@@ -1,8 +1,8 @@
 package dev.omalauncher.runner
 
 import android.content.Context
-import java.net.InetAddress
-import java.net.NetworkInterface
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import java.net.ServerSocket
 import java.net.Socket
 import java.security.SecureRandom
@@ -138,12 +138,15 @@ class PhoneRunner(private val context: Context, private val tailnet: PhoneTailne
             Thread.sleep(1000)
         }
     }
-    companion object {
-        fun ownAddress(): String? = runCatching {
-            NetworkInterface.getNetworkInterfaces().toList().flatMap { it.inetAddresses.toList() }
-                .mapNotNull(InetAddress::getHostAddress).firstOrNull { tailscaleAddress(it) && ':' !in it }
-        }.getOrNull()
-    }
+    @Suppress("DEPRECATION")
+    private fun ownAddress(): String? = runCatching {
+        val connectivity = context.getSystemService(ConnectivityManager::class.java)
+        val addresses = connectivity.allNetworks.filter {
+            connectivity.getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
+        }.flatMap { connectivity.getLinkProperties(it)?.linkAddresses.orEmpty() }
+            .mapNotNull { it.address.hostAddress }
+        runnerBindAddress(addresses, tailnet::whois)
+    }.getOrNull()
 }
 
 class RunnerRequest(val method: String, val path: String, val token: String?, val body: String) {

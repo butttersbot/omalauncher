@@ -65,7 +65,8 @@ Not served (404): `POST /threads` (no new phone sessions from the desktop in thi
 
 The phone implementation is in `dev.omalauncher.runner`. `Runtime` starts a process-lifetime listener alongside
 its existing background runtime. With no paired devices it waits without polling or binding a socket. With a
-pairing it binds only the concrete local Tailscale IPv4 address, port 8478; an absent VPN leaves it unavailable.
+pairing it binds only a concrete IPv4 address from Android VPN link properties, confirmed by authoritative
+whois as owner device galaxy-z-fold8, port 8478 (never a carrier CGNAT interface just because it uses 100.64/10); an absent VPN leaves it unavailable.
 No new wake lock or Android service is introduced. Ordinary HTTP requests and streams use separate bounded
 worker pools so long-lived reads cannot occupy Stop/approval workers. Streams end after 25 seconds and reconnect
 from their cursor; keys are rechecked each heartbeat.
