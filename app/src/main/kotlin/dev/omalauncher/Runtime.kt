@@ -85,6 +85,7 @@ class Runtime(
     private val context: Context,
 ) {
     val proot = Proot(context)
+    val phoneRunner = dev.omalauncher.runner.PhoneRunner(context, dev.omalauncher.runner.MacPhoneTailnet(proot.launcherConfig))
     val wm = WindowManager()
     val server = WaylandServer(proot.waylandSocket.path, wm).also { wm.server = it }
     val keyboard = KeyboardBridge(wm)
@@ -222,6 +223,7 @@ class Runtime(
     fun start() {
         if (started) return
         started = true
+        phoneRunner.start()
         // Phone control switched off by a force-stop or an update, while he wanted it on, is put back: off this thread.
         dev.omalauncher.phone.PhoneControlHeal.atStart(context)
         // Wireless debugging, which Android turns off at every restart and Wi-Fi drop, is put back on.

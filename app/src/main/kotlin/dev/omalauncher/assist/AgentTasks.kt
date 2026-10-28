@@ -699,7 +699,12 @@ class Builder(val id: BuilderId) {
             // No other builder's waiting approval has the slot this one is given, so neither notification replaces the other's.
             when (val admission = ledger.admit(approval, AgentTasks.slotsBesides(this))) {
                 // In the thread as waiting before any reader can see it pending.
-                is Admission.Shown -> { logged(ApprovalAnswer.Waiting, admission.entry.nonce); published(); label = "Approval needed"; admission.entry }
+                is Admission.Shown -> {
+                    logged(ApprovalAnswer.Waiting, admission.entry.nonce)
+                    ChatLog.of(context).runnerAppend(if (id == BuilderId.D) "phone-d" else "builder-${id.letter.lowercase()}",
+                        dev.omalauncher.runner.phoneRunnerApproval(admission.entry).put("type", "approval"))
+                    published(); label = "Approval needed"; admission.entry
+                }
                 Admission.Duplicate -> return
                 Admission.Refused -> {
                     runCatching { writeEvent(ClaudeProtocol.decision(approval, false)) }

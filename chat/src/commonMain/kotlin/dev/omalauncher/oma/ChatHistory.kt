@@ -285,22 +285,37 @@ object ChatHistory {
 /** The thread on disk, in the app's private files. Read and written from the agent's thread and the screen. */
 class ChatStore(private val file: File, private val maxBytes: Long = ChatHistory.MAX_FILE_BYTES) {
     @Volatile var tasks: List<ChatTask> = emptyList(); private set
+    private var runner = PhoneTaskEvents()
+    private var runnerSaved = -1L
+    private fun durableRunner() { if (runnerSaved != runner.revision) check(save()) { "Task log could not be saved" } }
+    @Synchronized fun runnerEvents(id: String, after: Long): List<JSONObject> { durableRunner(); return runner.events(id, after) }
+    @Synchronized fun runnerLast(id: String): Long { durableRunner(); return runner.last(id) }
+    @Synchronized fun runnerAppend(id: String, event: JSONObject) { runner.append(id, event); save() }
 
     /** Reads the thread a previous run left, as [ChatHistory.afterRestart] sees it. */
     @Synchronized fun load() {
-        val saved = runCatching { if (file.length() <= maxBytes)ChatHistory.decode(file.readText()) else emptyList() }
-        tasks = ChatHistory.afterRestart(saved.getOrDefault(emptyList()))
+        val text = runCatching { if (file.length() <= maxBytes) file.readText() else "" }.getOrDefault("")
+        val saved = runCatching { ChatHistory.decode(text) }.getOrDefault(emptyList())
+        val journal = runCatching { JSONObject(text).optJSONObject("phoneRunner") }.getOrNull()
+        runner = PhoneTaskEvents(journal)
+        if (journal == null) runner.changed(emptyList(), saved)
+        tasks = ChatHistory.afterRestart(saved)
+        runner.changed(saved, tasks)
     }
 
     /** A new task, saved at once so its prompt survives the process. */
     @Synchronized fun begin(task: ChatTask) {
-        tasks = ChatHistory.append(tasks, task)
+        val next = ChatHistory.append(tasks, task)
+        runner.changed(tasks, next)
+        tasks = next
         save()
     }
 
     /** Changes the task sent at [time]; written to disk when [save], which steps don't need. */
     @Synchronized fun update(time: Long, save: Boolean = false, change: (ChatTask) -> ChatTask) {
-        tasks = tasks.map { if (it.time == time) ChatHistory.bounded(change(it)) else it }
+        val next = tasks.map { if (it.time == time) ChatHistory.bounded(change(it)) else it }
+        runner.changed(tasks, next)
+        tasks = next
         if (save) save()
     }
 
@@ -311,6 +326,7 @@ class ChatStore(private val file: File, private val maxBytes: Long = ChatHistory
     @Synchronized fun revise(change: (List<ChatTask>) -> List<ChatTask>) {
         val next = change(tasks).map(ChatHistory::bounded)
         if (next == tasks) return
+        runner.changed(tasks, next)
         tasks = next
         save()
     }
@@ -321,13 +337,12 @@ class ChatStore(private val file: File, private val maxBytes: Long = ChatHistory
         save()
     }
 
-    private fun save() {
-        runCatching {
+    private fun save(): Boolean = runCatching {
             val next = File(file.parentFile, file.name + ".new")
-            next.writeText(ChatHistory.encode(tasks))
+            next.writeText(JSONObject(ChatHistory.encode(tasks)).put("phoneRunner", runner.encode()).toString())
             check(next.renameTo(file)) { "Could not replace ${file.name}" }
-        }
-    }
+            runnerSaved = runner.revision
+        }.isSuccess
 }
 
 /** The file names among [drafts] that no saved task refers to: copied in for the chat, never sent, and safe to delete. */

@@ -49,6 +49,8 @@ fun SettingsScreen(
     onLinux: () -> Unit,
     onLicenses: () -> Unit,
 ) {
+    var phoneSessions by remember { mutableStateOf(false) }
+    if (phoneSessions) { PhoneRunnerSetting(runtime.phoneRunner) { phoneSessions = false }; return }
     val context = LocalContext.current
     val linux by runtime.bootstrap.state.collectAsState()
     val installed = linux == LinuxState.Installed
@@ -107,6 +109,7 @@ fun SettingsScreen(
                 Triple("android settings", "the phone's system settings") {
                     context.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 },
+                Triple("phone sessions", "let a computer reach this phone’s sessions") { phoneSessions = true },
                 Triple("licenses", "open source software in Soma", onLicenses),
             )
         if (installed) {
