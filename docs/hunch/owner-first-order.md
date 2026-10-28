@@ -79,3 +79,13 @@ second-process probe confirmed exclusion after repeated duplicate opens and a
 canonical-path alias, release on close and exclusion after reopen. No UI/walk or
 live money checks were performed. Follow-up makes the unchecked cash calculation
 private: prepareFunded is the only preparation entry point for app code.
+
+Final foundation checkpoint7a5ef588: lane B compile/all27 Hunch unit tests PASS.
+Private unchecked calculation verified; every tested preparation uses a fresh
+FundingSnapshot. The unchanged journal retains the independently verified
+cross-process lock result frombf9ba291. No APK, UI walk, install, funds, signature,
+order or testnet transaction was produced. Not a ready-to-trade checkpoint.
+Live controller must bind final owner presence to the exact reviewed immutable
+ticket/wallet and recheck freshness before signing; being signed into Privy alone
+must not count as owner confirmation. UI, SDK compatibility, venue constraints,
+funding route and owner decisions remain unresolved.
