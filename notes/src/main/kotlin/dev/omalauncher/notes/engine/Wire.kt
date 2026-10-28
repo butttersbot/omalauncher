@@ -58,8 +58,8 @@ object Wire {
         id: String = "",
     ): String {
         if (id.endsWith(".html")) {
-            Regex("<title[^>]*>(.*?)</title>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(text)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
-            Regex("<h1[^>]*>(.*?)</h1>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(text)?.groupValues?.get(1)?.replace(Regex("<[^>]+>"), "")?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+            Regex("<title[^>]*>(.*?)</title>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(text)?.groupValues?.get(1)?.let(::plain)?.takeIf { it.isNotEmpty() }?.let { return it }
+            Regex("<h1[^>]*>(.*?)</h1>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(text)?.groupValues?.get(1)?.let(::plain)?.takeIf { it.isNotEmpty() }?.let { return it }
             return fileTitle(id)
         }
         return text.lineSequence().map { it.trim().trimStart('#').trim().removePrefix("- [ ] ").removePrefix("- [x] ") }.firstOrNull { it.any(Char::isLetterOrDigit) }?.take(MAX_TITLE)
@@ -72,6 +72,14 @@ object Wire {
             .joinToString(" ") { it.trimStart('#', '>', ' ').replace(Regex("^[-*] (\\[[ xX]] )?"), "") }
             .replace(Regex("[*_`]"), "")
             .take(220)
+
+    /** An HTML title's words: no tags, the common entities read, spaces collapsed. */
+    private fun plain(html: String): String =
+        html.replace(Regex("<[^>]+>"), "")
+            .replace(Regex("&#(\\d+);")) { m -> m.groupValues[1].toIntOrNull()?.let { String(Character.toChars(it)) } ?: m.value }
+            .replace(Regex("&#[xX]([0-9a-fA-F]+);")) { m -> m.groupValues[1].toIntOrNull(16)?.let { String(Character.toChars(it)) } ?: m.value }
+            .replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&#39;", "'").replace("&nbsp;", " ").replace("&amp;", "&")
+            .replace(Regex("\\s+"), " ").trim().take(MAX_TITLE)
 
     fun fileTitle(id: String): String = id.substringAfterLast('/').substringBeforeLast('.').ifEmpty { "Untitled" }
 

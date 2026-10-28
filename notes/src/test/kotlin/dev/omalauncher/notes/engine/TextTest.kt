@@ -13,6 +13,14 @@ class TextTest {
         assertEquals("Herd weekly", Wire.title("<html><title>Herd weekly</title>", "Agents/r.html"))
     }
 
+    // Boss, 2026-10-28: HTML notes showed their code as the title in the list (one-line pages, entities).
+    @Test fun htmlTitlesAreWords() {
+        val page = "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>SOMA — Why I&#8217;m Building It &amp; Replies</title><style>p{}</style></head>"
+        assertEquals("SOMA — Why I\u2019m Building It & Replies", Wire.title(page, "Agents/o/Why.html"))
+        assertEquals("Brand direction", Wire.title("<body><h1>Brand <em>direction</em></h1>", "Agents/o/b.html"))
+        assertEquals("b", Wire.title("<!doctype html><html><body><p>x</p>", "Agents/o/b.html"))
+    }
+
     @Test fun fileNames() {
         assertEquals("Plan a b.md", Wire.fileFor("Plan: a/b", emptySet()))
         assertEquals("Note.md", Wire.fileFor("???", emptySet()))

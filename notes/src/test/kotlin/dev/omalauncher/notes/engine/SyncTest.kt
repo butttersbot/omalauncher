@@ -128,4 +128,16 @@ class SyncTest {
         assertTrue(s["A.md"]!!.pinned)
         assertEquals("A\nmore from the Mac", s.text("A.md"))
     }
+
+    // The Mac's list gives an HTML file's raw first line as its title; the page's own <title> is what shows.
+    @Test fun htmlNotesAreListedByTheirTitle() {
+        val dir = Files.createTempDirectory("notes").toFile()
+        val page = "<!doctype html><html><head><meta charset=\"utf-8\"><title>SOMA brand direction</title></head><body></body></html>"
+        Shelf(dir).took(Remote("Agents/o/Brand.html", page.take(120), Wire.AGENT, "html", 1, "s1"), page)
+        assertEquals("SOMA brand direction", Shelf(dir)["Agents/o/Brand.html"]!!.title)
+        // A shelf saved by 0.1.9 with the code as the title reads right again.
+        val index = java.io.File(dir, "index.json")
+        index.writeText(index.readText().replace("SOMA brand direction", "<!doctype html><html><head>"))
+        assertEquals("SOMA brand direction", Shelf(dir)["Agents/o/Brand.html"]!!.title)
+    }
 }

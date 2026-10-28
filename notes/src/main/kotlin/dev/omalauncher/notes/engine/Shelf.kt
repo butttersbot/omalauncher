@@ -57,7 +57,7 @@ class Shelf(private val dir: File) {
                 val n =
                     Note(
                         id = o.getString("id"),
-                        title = o.optString("title"),
+                        title = o.optString("title").let { t -> if (t.startsWith("<")) Wire.title(text(o.getString("id")), o.getString("id")) else t },
                         kind = o.optString("kind", Wire.MINE),
                         ext = o.optString("ext", "md"),
                         modified = o.optLong("modified"),
@@ -132,7 +132,7 @@ class Shelf(private val dir: File) {
         notes[remote.id] =
             Note(
                 id = remote.id,
-                title = if (remote.readonly) Wire.fileTitle(remote.id) else if (remote.ext == "html") remote.title else Wire.title(text, remote.id),
+                title = if (remote.readonly) Wire.fileTitle(remote.id) else Wire.title(text, remote.id),
                 kind = remote.kind,
                 ext = remote.ext,
                 modified = remote.modified,
