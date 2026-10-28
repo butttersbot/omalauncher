@@ -53,6 +53,8 @@ import dev.omalauncher.canvas.moduleSize
 import dev.omalauncher.oma.ChatHost
 import dev.omalauncher.oma.OMA_TAB
 import dev.omalauncher.oma.OmaChatScreen
+import dev.omalauncher.widgets.render.WidgetContent
+import dev.omalauncher.widgets.layout.ItemKind
 import dev.omalauncher.oma.newChatTab
 import dev.omalauncher.ui.BackHandler
 import dev.omalauncher.ui.Menu
@@ -121,6 +123,7 @@ fun CanvasScreen(
     wanted: String?,
     onTab: (String?) -> Unit,
     chatElsewhere: (() -> Unit)? = null,
+    widgets: WindowWidgets? = null,
 ) {
     var arranging by remember { mutableStateOf(false) }
     // The right-click menu, and the block it was asked over (null: the page).
@@ -161,6 +164,25 @@ fun CanvasScreen(
         })
         for (item in canvas.items()) {
             val cell = item.cell ?: continue
+            // A library widget (the dashboard window): drawn as the canvas service draws one for the car.
+            if (item.kind == ItemKind.Widget && widgets != null) {
+                key(item.key) {
+                    Block(
+                        item.key, cell, arranging, pitch, Modifier.offset(x(cell.x), y(cell.y)).size(w(cell.w), h(cell.h)),
+                        onRightClick = { menuOver = item.key; menuOpen = true },
+                        onMove = { to -> canvas.apply(CanvasVerb.Move(item.key, canvas.shown, to)) },
+                        onRemove = { canvas.apply(CanvasVerb.Remove(item.key)) },
+                    ) {
+                        // Asked again at each look ([now]): his OK in Needs you, or a file replaced, shows within one.
+                        val inst = remember(item.key, now) { widgets.widget(item.key) }
+                        if (inst != null) WidgetContent(inst, Modifier.fillMaxSize(), cells = cell.w to cell.h)
+                        else Box(Modifier.fillMaxSize().border(1.dp, Pack.muted), contentAlignment = Alignment.Center) {
+                            BasicText(widgets.whyNot(item.key), Modifier.padding(8.dp), style = Pack.mono(Pack.size.small, Pack.muted))
+                        }
+                    }
+                }
+                continue
+            }
             val ref = moduleRef(item.key) ?: continue
             key(item.key) {
                 Block(
@@ -209,6 +231,12 @@ fun CanvasScreen(
     if (menuOpen) {
         val over = menuOver?.let { moduleRef(it) }
         Menu(onDismiss = { menuOpen = false }) {
+            if (menuOver != null && widgets != null && canvas.items().any { it.key == menuOver && it.kind == ItemKind.Widget }) {
+                MenuItem("remove widget · ${menuOver!!.removeSuffix(".owl")}", Pack.red) {
+                    canvas.apply(CanvasVerb.Remove(menuOver!!))
+                    menuOpen = false
+                }
+            }
             if (over != null && over.kind != ModuleKind.Chat) {
                 MenuItem("remove ${over.kind.title.lowercase()}${over.project?.let { " · $it" } ?: ""}", Pack.red) {
                     canvas.apply(CanvasVerb.Remove(menuOver!!))
@@ -218,6 +246,15 @@ fun CanvasScreen(
             MenuItem(if (arranging) "done arranging" else "arrange") {
                 arranging = !arranging
                 menuOpen = false
+            }
+            // The library's widgets not on the canvas yet; one he hasn't approved here waits for his OK in Needs you.
+            val widgetsOffered = widgets?.names().orEmpty().filter { !canvas.has(it) }
+            if (widgetsOffered.isNotEmpty()) MenuTitle("add a widget")
+            for (name in widgetsOffered) {
+                MenuItem(name.removeSuffix(".owl")) {
+                    canvas.addWidget(name)
+                    menuOpen = false
+                }
             }
             val offered = addable(canvas, source.projects())
             if (offered.isNotEmpty()) MenuTitle("add a module")

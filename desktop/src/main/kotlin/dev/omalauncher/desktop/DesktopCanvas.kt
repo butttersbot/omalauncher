@@ -49,6 +49,19 @@ fun desktopSize(kind: ModuleKind): Pair<Int, Int> = when (kind) {
     else -> minOf(DESKTOP_COLUMNS, (kind.size.first * 4 + 2) / 3) to minOf(DESKTOP_ROWS, kind.size.second + 1)
 }
 
+/**
+ * The dashboard window's first page, the chat being in a window of its own: what needs him and how things stand, with the
+ * lower right left free for what he adds (widgets, more modules).
+ */
+fun dashboardStartingVerbs(): List<CanvasVerb> = listOf(
+    CanvasVerb.PageMake(DESKTOP_PAGE, "Soma"),
+    CanvasVerb.Place(moduleKey(ModuleKind.Needs)!!, ItemKind.Module, DESKTOP_PAGE, Cell(0, 0, 5, 4)),
+    CanvasVerb.Place(moduleKey(ModuleKind.Threads)!!, ItemKind.Module, DESKTOP_PAGE, Cell(5, 0, 4, 4)),
+    CanvasVerb.Place(moduleKey(ModuleKind.Computers)!!, ItemKind.Module, DESKTOP_PAGE, Cell(9, 0, 3, 3)),
+    CanvasVerb.Place(moduleKey(ModuleKind.NewThread)!!, ItemKind.Module, DESKTOP_PAGE, Cell(9, 3, 3, 1)),
+    CanvasVerb.Place(moduleKey(ModuleKind.Timeline)!!, ItemKind.Module, DESKTOP_PAGE, Cell(0, 4, 7, 4)),
+)
+
 /** The page a new Soma starts with: the chat on the left, what needs him and how things stand beside it. */
 fun startingVerbs(): List<CanvasVerb> = listOf(
     CanvasVerb.PageMake(DESKTOP_PAGE, "Soma"),
@@ -70,7 +83,7 @@ fun replay(log: VerbLog): Notebook = log.entries.fold(emptyCanvas()) { notebook,
  * The canvas as the window shows it and its log as kept in [file]. [device] names this machine in each verb's origin.
  * Every change goes through [apply]: applied to the page, appended to the log, and the log written, or none of it.
  */
-class DesktopCanvas(private val file: File, private val device: String) : CanvasPad {
+class DesktopCanvas(private val file: File, private val device: String, private val chat: Boolean = true) : CanvasPad {
     var log: VerbLog by mutableStateOf(VerbLog(DESKTOP_PAGE))
         private set
 
@@ -113,9 +126,11 @@ class DesktopCanvas(private val file: File, private val device: String) : Canvas
         }
         log = read ?: VerbLog(DESKTOP_PAGE)
         page = replay(log)
-        if (read == null) startingVerbs().forEach { apply(it, "soma", "start") }
+        if (read == null) (if (chat) startingVerbs() else dashboardStartingVerbs()).forEach { apply(it, "soma", "start") }
+        // The dashboard window (the chat has a window of its own): an older log's chat block goes, freeing its cells.
+        if (!chat && itemsOn(DESKTOP_PAGE).any { it.key == CHAT_BLOCK }) apply(CanvasVerb.Remove(CHAT_BLOCK), "soma", "start")
         // A log that lost the chat (an older Soma's, or one edited by hand) gets it back in the first room there is.
-        if (items().none { it.key == CHAT_BLOCK }) {
+        if (chat && items().none { it.key == CHAT_BLOCK }) {
             if (page.pages.none { it.id == DESKTOP_PAGE }) apply(CanvasVerb.PageMake(DESKTOP_PAGE, "Soma"), "soma", "start")
             spot(desktopSize(ModuleKind.Chat))?.let { apply(CanvasVerb.Place(CHAT_BLOCK, ItemKind.Module, DESKTOP_PAGE, it), "soma", "start") }
         }
@@ -152,7 +167,7 @@ class DesktopCanvas(private val file: File, private val device: String) : Canvas
      * (a taken spot, the chat's removal), nothing changed. The chat's block is never removed.
      */
     fun apply(verb: CanvasVerb, actor: String = "hand", request: String = newRequest()): Applied {
-        if (verb is CanvasVerb.Remove && verb.key == CHAT_BLOCK) return Applied(page, false, "the chat stays")
+        if (chat && verb is CanvasVerb.Remove && verb.key == CHAT_BLOCK) return Applied(page, false, "the chat stays")
         if (verb is CanvasVerb.PageRemove && verb.id == DESKTOP_PAGE) return Applied(page, false, "the chat's page stays")
         // The chat is drawn on every page: nothing on another page goes under it, and it goes over nothing on any page.
         val chat = chatItem()?.cell
@@ -183,6 +198,13 @@ class DesktopCanvas(private val file: File, private val device: String) : Canvas
     @Synchronized private fun newRequest() = "r" + System.currentTimeMillis().toString(36) + "-" + (++requests).toString(36)
 
     /** Adds the module [key] in the first room on the page shown at its size here (smaller if that is all there is). */
+    /** Adds the library widget [name] (a file in the widgets folder) in the first room on the page shown, three by two cells or what fits. */
+    fun addWidget(name: String): Applied {
+        if (has(name)) return Applied(page, false, "already here")
+        val cell = spot(3 to 2) ?: return Applied(page, false, "no room")
+        return apply(CanvasVerb.Place(name, ItemKind.Widget, shown(), cell))
+    }
+
     fun add(key: String): Applied {
         val ref = moduleRef(key) ?: return Applied(page, false, "no such module")
         if (has(key)) return Applied(page, false, "already here")

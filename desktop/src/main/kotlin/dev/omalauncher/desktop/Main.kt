@@ -112,7 +112,7 @@ fun main(args: Array<String>) {
     thread(name = "soma-drafts", isDaemon = true) { runCatching { ChatDrafts.of(SomaHome.dir).sweep(platform.chatLog().tasks) } }
     val engine = MacThreadsEngine(platform)
     // The window's canvas (slice 5), and its modules' one source: the chat's own host, and the slower feeds on a timer.
-    val canvas = DesktopCanvas(SomaHome.canvas, runCatching { InetAddress.getLocalHost().hostName }.getOrDefault("desktop")).also { it.load() }
+    val canvas = DesktopCanvas(SomaHome.canvas, runCatching { InetAddress.getLocalHost().hostName }.getOrDefault("desktop"), chat = false).also { it.load() }
     // Its verbs from the front agent (slice 6), done on the event thread, where the canvas's state lives.
     // Waited on for a while, never for ever: the port's one listener isn't held by a window that has stopped answering.
     door = CanvasDoor(shelf = { RemoteShelf.of(platform.machines()) ?: FileShelf(SomaHome.dir) }) { work ->
@@ -125,6 +125,7 @@ fun main(args: Array<String>) {
     canvas.setAside?.let { notices.say("Soma", "The canvas's saved layout couldn't be read, so it was set aside as ${it.name} and the starting page was laid out.") }
     // What widgets wait for his OK on here (slice 7b) is in Needs you beside the threads' asks.
     val gate = dev.omalauncher.widgets.runtime.CommandGate(SomaHome.approved, SomaHome.machine)
+    val windowWidgets = WindowWidgets(SomaHome.dir, gate)
     val source = dev.omalauncher.canvas.withWidgetAsks(chatHostModules(host, cockpitFeeds(), handoffs = engine::handoffs, registry = engine::projects), gate)
     val tick = mutableStateOf(0L)
     val desk = DesktopSync(canvas, File(SomaHome.dir, "canvas-synced.json"), SomaHome.machine)
@@ -206,7 +207,7 @@ fun main(args: Array<String>) {
         ) {
             CompositionLocalProvider(LocalBackStack provides dashboardBack) {
                 // A module's thread opens in the chat window, brought forward.
-                CanvasScreen(canvas, host, source, tick.value, wanted, onTab = { wanted = it; shown = true; bring++ }, chatElsewhere = { shown = true; bring++ })
+                CanvasScreen(canvas, host, source, tick.value, wanted, onTab = { wanted = it; shown = true; bring++ }, chatElsewhere = { shown = true; bring++ }, widgets = windowWidgets)
             }
         }
         Window(
