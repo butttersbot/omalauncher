@@ -25,6 +25,9 @@ import dev.omalauncher.assist.MacMachine
 import dev.omalauncher.assist.MacRunnerConfig
 import dev.omalauncher.assist.MacThreadsEngine
 import dev.omalauncher.assist.MacRunnerClient
+import dev.omalauncher.assist.MAC_PHONE_MAKES_NOTHING
+import dev.omalauncher.assist.MAC_PHONE_NO_SWITCH
+import dev.omalauncher.oma.started
 import dev.omalauncher.assist.reachableFor
 import dev.omalauncher.oma.OMA_TAB
 import dev.omalauncher.oma.OmaChatScreen
@@ -747,6 +750,62 @@ class DesktopEndToEndTest {
             settle()
             File("build/render").mkdirs()
             javax.imageio.ImageIO.write(onRoot().captureToImage().toAwtImage(), "png", File("build/render/desktop-e2e-fold.png"))
+        } finally {
+            phone.close()
+        }
+    }
+
+    /**
+     * Slice 3, round-1 Critic: no path of the engine makes a thread on the Fold or moves his words to another of its
+     * sessions. A typed switch is refused before anything is sent; a new chat whose words beat the Fold's first answer
+     * (paired first) makes nothing there and tries again on the Mac; with an agent at its limit, words still go to the
+     * session named, and a busy one is sent to (the Fold queues), never a new thread beside it.
+     */
+    @Test fun nothingIsEverMadeOnTheFold() {
+        val phone = FakePhoneRunner("f".repeat(40))
+        try {
+            val notices = Notices()
+            val mac = MacMachine("testhost", "Test box", MacRunnerConfig("http://127.0.0.1:$port", key))
+            val fold = MacMachine("galaxy-z-fold8", "Fold", MacRunnerConfig(phone.url, "f".repeat(40)))
+            val platform = DesktopThreadsPlatform(notices) { listOf(fold, mac) }
+            // Codex at its limit, as heard on any computer.
+            platform.putPref("limits", org.json.JSONObject().put("codex", System.currentTimeMillis() + 3_600_000).toString())
+            val engine = MacThreadsEngine(platform)
+            fun waitFor(what: String, done: () -> Boolean) {
+                val deadline = System.currentTimeMillis() + 40_000
+                while (System.currentTimeMillis() < deadline && !done()) Thread.sleep(200)
+                assertTrue("$what: ${phone.calls.filter { it.method == "POST" }} ${platform.chatLog().tasks.map { "${it.prompt.take(20)} ${it.thread} ${it.status} ${it.result.take(80)}" }}", done())
+            }
+            fun posts(part: String) = phone.calls.filter { it.method == "POST" && part in it.path }
+            fun entry(prompt: String) = platform.chatLog().tasks.firstOrNull { it.prompt == prompt }
+
+            // Words typed before the Fold (paired first) has ever answered: nothing is made there; try again lands on the Mac.
+            platform.changeBook { it.started("c1", System.currentTimeMillis()) }
+            engine.startChatDirect("first words", "c1")
+            waitFor("refused on the Fold") { entry("first words")?.result == MAC_PHONE_MAKES_NOTHING }
+            assertTrue("never POST /threads on the Fold", phone.calls.none { it.method == "POST" && it.path == "/threads" })
+            engine.tryAgain(entry("first words")!!.time)
+            waitFor("made on the Mac") { platform.chatLog().tasks.any { it.prompt == "first words" && it.thread.startsWith("testhost/") } }
+
+            engine.open()
+            waitFor("the Fold's sessions are known") { engine.view.threads.count { it.id.startsWith("galaxy-z-fold8/") } == 4 && !engine.makesThreads("galaxy-z-fold8") }
+
+            // A typed switch on a Fold session: refused, nothing sent to Phone A, nothing made.
+            engine.say("switch to codex", "galaxy-z-fold8/builder-a", "Phone A")
+            waitFor("the switch refused") { platform.chatLog().tasks.any { it.result == MAC_PHONE_NO_SWITCH } }
+            Thread.sleep(1_500)
+            assertTrue("no handoff asked of Phone A", posts("/threads/builder-a/messages").isEmpty())
+
+            // Codex at its limit: words to Phone D (codex) still go to Phone D only (which refuses them), never to Phone A.
+            engine.say("hi D", "galaxy-z-fold8/phone-d", "Phone D")
+            waitFor("sent to Phone D") { posts("/threads/phone-d/messages").isNotEmpty() }
+            Thread.sleep(1_500)
+            assertTrue("never moved to Phone A", posts("/threads/builder-a/messages").none { it.body?.optString("text")?.contains("hi D") == true })
+
+            // A busy codex session (Phone B waits on a request): his words are sent to it, the Fold queues them.
+            engine.say("and then the docs", "galaxy-z-fold8/builder-b", "Phone B")
+            waitFor("sent to Phone B") { posts("/threads/builder-b/messages").any { it.body?.optString("text")?.contains("and then the docs") == true } }
+            assertTrue("never POST /threads on the Fold", phone.calls.none { it.method == "POST" && it.path == "/threads" })
         } finally {
             phone.close()
         }
