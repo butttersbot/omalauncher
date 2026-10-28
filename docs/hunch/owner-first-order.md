@@ -59,3 +59,9 @@ a second controller/process fails closed instead of overwriting a stale snapshot
 The app controller must retain that instance and close it on shutdown. Any write
 failure poisons the instance: close/reopen and reconcile, never continue from an
 in-memory rollback after a possibly completed rename.
+
+The current OwnerOrderLimit is explicitly per order; no aggregate/nightly loss
+permission is implied. Boss must decide the cap scope before a live controller.
+Clock rollback still blocks stale signing, but read-only reconciliation/cancellation
+may settle a prior Unknown with a nondecreasing journal timestamp; it never sends
+another order or refreshes the original review.

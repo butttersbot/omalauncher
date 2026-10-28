@@ -71,12 +71,12 @@ internal class OrderJournal(private val file: File) : java.io.Closeable {
             OrderStage.Resting -> setOf(OrderStage.Filled, OrderStage.Cancelled, OrderStage.Unknown)
             else -> emptySet()
         }
-        require(stage in allowed && now >= old.updated) { "Unsafe order transition" }
+        require(stage in allowed && now >= 0) { "Unsafe order transition" }
         if (stage == OrderStage.Signing || stage == OrderStage.Submitting) {
             require(now >= old.ticket.getLong("reviewedAt") && now - old.ticket.getLong("reviewedAt") <= 30_000) { "Review expired; prepare a new ticket" }
             check(rows.values.none { it.id != id && it.stage in setOf(OrderStage.Signing, OrderStage.Submitting, OrderStage.Unknown) }) { "Another order needs reconciliation" }
         }
-        val next = old.copy(stage = stage, updated = now, venueId = venueId ?: old.venueId)
+        val next = old.copy(stage = stage, updated = maxOf(now, old.updated), venueId = venueId ?: old.venueId)
         rows[id] = next
         persistOrRollback(id, old)
         return next.copy(ticket = JSONObject(next.ticket.toString()))
