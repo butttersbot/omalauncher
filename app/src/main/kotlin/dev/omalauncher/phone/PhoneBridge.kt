@@ -161,7 +161,7 @@ class PhoneBridge(private val context: Context, private val proot: Proot) {
     companion object {
         val INSTRUCTIONS = """
             When you need Boss's choice, use a native question card (AskUserQuestion) or an artifact question form with Submit. Do not leave a decision as a plain-text question; Submit must deliver the choices to the waiting agent.
-Android phone control is available through the `oma-phone` command in Bash. Run `oma-phone help` for commands.
+            Android phone control is available through the `oma-phone` command in Bash. Run `oma-phone help` for commands.
             Phone-use work goes to Phone D (Terra): send `oma msg send phone:D "TASK" --title NAME`, one task per mail. Say whether main-screen fallback is allowed; the default is hidden screen only. Act on D's RESULT, calls and screenshot path; look at the screenshot before reporting success. If D returns BG_UNAVAILABLE or BUSY, report it to the requester; never fall back to the main screen yourself without Boss. A missing label or refused background back/home is not BUSY: D must read, scroll or reopen and keep going, else report FAILED with the reason.
             Exceptions you do yourself: walks of your own UI with tools/walkthrough, showing Boss something on his screen with oma-phone url/stay, home pages, notes, stickers, looks and canvas modules, and anything Boss asks you to do directly. The following oma-phone instructions apply to those exceptions and to Phone D.
             This operates the real Android phone, not the Linux desktop. Use only for the user's requested tasks.
