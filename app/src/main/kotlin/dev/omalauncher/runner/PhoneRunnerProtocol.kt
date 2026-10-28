@@ -6,7 +6,7 @@ import java.security.MessageDigest
 
 /** Identity is from Tailscale whois, never from a request header or a reverse DNS lookup. */
 data class RunnerPeer(val device: String, val owner: Boolean)
-data class RunnerKey(val device: String, val digest: String)
+data class RunnerKey(val device: String, val digest: String, val identity: RunnerCachedIdentity? = null)
 fun runnerDigest(key: String): String = MessageDigest.getInstance("SHA-256").digest(key.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
 fun runnerAuthorized(token: String?, peer: RunnerPeer?, keys: List<RunnerKey>): Boolean {
     if (token.isNullOrBlank() || token.length > 512 || peer?.owner != true) return false

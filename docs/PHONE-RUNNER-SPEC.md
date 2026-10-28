@@ -98,10 +98,18 @@ with Stop dropping only that chat's queued front work and stopping its active fr
 Android's Tailscale VPN supplies the address but no local CLI/daemon API accessible to this app. The phone therefore
 asks an **already paired Mac runner** for authoritative whois, the owner's peer list and Taildrop delivery. It never
 uses a claimed header, DNS name, IP-only allowlist or the selected pairing target as proof of caller identity.
-A missing helper, unknown/non-owner caller or wrong device/key refuses authentication. Positive and negative
-whois responses are cached for at most a minute, as on the Mac runner; unpair checks the live digest table each
-request/heartbeat. The phone retains only digests in its private preferences. Raw generated keys are kept in
-memory for the pairing transfer, not displayed, logged, mailed or written to a phone file.
+Unknown/non-owner callers and wrong device/key are refused. Live whois lookups are cached for at most one minute.
+If every Mac helper is unavailable, a paired key may authenticate only from the address last confirmed for that
+exact key, for at most seven days since that confirmation (Boss's bounded-cache decision, 2026-10-28).
+Cache hits never extend that timestamp. A reachable helper's refusal overrides and clears the matching cached
+proof; address mismatch, expiry and clock rollback fail closed. Rekey/unpair removes that key's old proof.
+Legacy digest-only pairings require an online confirmation before offline use. The phone's own VPN address
+has the same bounded confirmation rule for rebinding; an absent VPN or a different unconfirmed address never binds.
+Loopback and every local interface address are rejected from the raw socket peer before credential lookup,
+including the phone's Linux connecting to its own tailnet address. Forwarding headers are not identity.
+Unpair checks the live digest table each request/heartbeat. Private phone preferences retain only key digests
+and confirmed address/timestamp metadata. Raw generated keys remain in memory for the pairing transfer,
+never displayed, logged, mailed or written to a phone file. New pairing requires a reachable helper.
 
 Confirmed helper contract implemented by desktop thread `jacks-mac-pro:taebc3f66` in f84f67a3 (merged; not yet deployed):
 
@@ -114,7 +122,7 @@ Confirmed helper contract implemented by desktop thread `jacks-mac-pro:taebc3f66
   tailnet identity may use these helpers. Limit: 30 requests/minute; whois and tailnet identity use the runner's
   real Tailscale daemon. Helper tests: 7/7 passed on the Mac; no runner restart has happened in this slice.
 
-A helper-equipped paired Mac must be reachable to pair or validate a previously uncached caller. This is an extra
+A helper-equipped paired Mac must be reachable to pair, confirm a changed caller address, or renew an expired proof. This is an extra
 availability dependency; it deliberately fails closed. The phone endpoint and helper belong in the same final installation; run live auth/pairing checks after promotion. The desktop health change is 33c3560f (MacRunnerTest 41/41 per its author): it narrowly accepts `oma-phone`
 alongside `oma-runner`. Include that change in the final desktop bundle.
 
