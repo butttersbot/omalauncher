@@ -268,7 +268,7 @@ object QuickLane {
                         // What it looks up for an answer that may yet be held back is not shown either.
                         is QuickEvent.Message -> if (!holds) for (step in event.steps) {
                             own()
-                            log.update(asked) { ChatHistory.withStep(it, step) }
+                            log.runnerStep(asked, step)
                             if (!stopping) label = "Looking"
                         }
                         is QuickEvent.Result -> {

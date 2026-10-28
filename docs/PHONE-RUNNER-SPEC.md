@@ -79,11 +79,14 @@ Results carry normalized question answers and the authenticated computer's devic
 for pairing, new sessions, model changes or approval memory.
 
 `ChatStore` persists the cursor journal **inside the existing oma-chat.json task log** (`phoneRunner`), using the
-same store lock and atomic replacement. Updates append immutable events; queued work, completed task edits,
+same store lock and atomic replacement. Producer text and tool steps are appended before the UI tail is trimmed; ledger outcomes
+are recorded by their nonce rather than by an index into the last twenty UI approvals. Updates append immutable events; queued work, completed task edits,
 pruned UI rows and restarts do not renumber ids. A read flushes unsaved live deltas before exposing their ids.
 Like the existing finite phone history, this journal has finite retention (10,000 events / approximately 2 MB
-of serialized characters across sessions); retained ids remain monotonic, not reset to 1 on pruning. The shared
-client's existing gap catch-up handles retained history. Timestamps on the wire are Unix seconds. The native
+of serialized characters across sessions); retained ids remain monotonic, not reset to 1 on pruning. Event pages explicitly mark `first_event`, `history_truncated` and `cursor_reset`; the shared
+client's existing gap catch-up handles retained history. A lower last_event also triggers the existing client reset
+after log loss. A generation token for the rare case where a lost log overtakes an old cursor before reconnect
+remains a contract follow-up; app data clearing also removes pairing digests. Timestamps on the wire are Unix seconds. The native
 front stream and Mac-backed chats are excluded. Phone-local chat sends/stops use that tab's existing routing,
 with Stop dropping only that chat's queued front work and stopping its active front turn.
 

@@ -530,14 +530,18 @@ class Builder(val id: BuilderId) {
                                     if (content != null) for (i in 0 until content.length()) {
                                         val block = content.optJSONObject(i) ?: continue
                                         when (block.optString("type")) {
-                                            "text" -> answer = (answer + block.optString("text") + "\n").takeLast(40_000)
+                                            "text" -> {
+                                                val text = block.optString("text") + "\n"
+                                                answer = (answer + text).takeLast(40_000)
+                                                log.runnerText(time, text, agent.bin, model.orEmpty())
+                                            }
                                             "tool_use" -> {
                                                 val step = ClaudeProtocol.step(block)
                                                 lastStep = step; lastStepAt = System.currentTimeMillis()
                                                 // On the phone from a phone command until its next tool of any other kind: a pause to think between
                                                 // two phone steps is still phone use, and the ring goes out the moment it turns to anything else.
                                                 onPhone(phoneToolCall(block.optString("name"), block.optJSONObject("input")?.optString("command").orEmpty()))
-                                                log.update(time) { ChatHistory.withStep(it, step) }
+                                                log.runnerStep(time, step, block.optString("name"))
                                                 // A file that is one of its artifacts, about to change: the panel says it is being edited.
                                                 val input = block.optJSONObject("input")
                                                 runCatching { dev.omalauncher.oma.PhoneArtifacts.touched(context, id, time, block.optString("name"), input?.optString("file_path").orEmpty(), input?.optString("command").orEmpty(), agent.name) }
@@ -586,14 +590,20 @@ class Builder(val id: BuilderId) {
                         }
                         when (val said = CodexProtocol.read(line)) {
                             is CodexProtocol.Said.Started -> session = said.thread
-                            is CodexProtocol.Said.Text -> answer = (answer + said.text + "\n").takeLast(40_000)
+                            is CodexProtocol.Said.Text -> {
+                                answer = (answer + said.text + "\n").takeLast(40_000)
+                                log.runnerText(time, said.text + "\n", agent.bin, model.orEmpty())
+                            }
                             is CodexProtocol.Said.Step -> {
                                 lastStep = said.step; lastStepAt = System.currentTimeMillis()
                                 onPhone(phoneToolCall(said.tool, said.command))
-                                log.update(time) { ChatHistory.withStep(it, said.step) }
+                                log.runnerStep(time, said.step, said.tool)
                                 label = "Using ${said.tool}"; notify(context)
                             }
-                            is CodexProtocol.Said.Failed -> answer = (answer + said.why + "\n").takeLast(40_000)
+                            is CodexProtocol.Said.Failed -> {
+                                answer = (answer + said.why + "\n").takeLast(40_000)
+                                log.runnerAppend(if (id == BuilderId.D) "phone-d" else "builder-${id.letter.lowercase()}", JSONObject().put("type", "error").put("text", said.why))
+                            }
                             null -> if (runCatching { org.json.JSONObject(line) }.isFailure) other = (other + line + "\n").takeLast(4_000)
                         }
                     }

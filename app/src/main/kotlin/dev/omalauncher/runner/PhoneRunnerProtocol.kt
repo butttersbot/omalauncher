@@ -48,7 +48,11 @@ class PhoneRunnerProtocol(private val sessions: PhoneRunnerSessions) {
                 val query = uri.rawQuery.orEmpty()
                 val after = if (query.isEmpty()) 0L else Regex("after=([0-9]{1,18})").matchEntire(query)?.groupValues?.get(1)?.toLongOrNull()
                     ?: throw RunnerFault(400, "invalid cursor")
-                return ok(JSONObject().put("status", row.optString("status")).put("events", JSONArray(sessions.events(id, after))))
+                val events = sessions.events(id, after)
+                val first = sessions.events(id, 0).firstOrNull()?.optLong("id") ?: 0L
+                return ok(JSONObject().put("status", row.optString("status")).put("events", JSONArray(events))
+                    .put("first_event", first).put("history_truncated", first > after + 1)
+                    .put("cursor_reset", after > row.optLong("last_event")))
             }
             if (method != "POST") throw RunnerFault(404, "not found")
             val json = if (body.isBlank()) JSONObject() else JSONObject(body)

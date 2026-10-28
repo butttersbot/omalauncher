@@ -23,6 +23,38 @@ class PhoneTaskEventsTest {
         restored.append("builder-a", JSONObject().put("type", "note").put("text", "after restart"))
         assertEquals(all.size.toLong() + 1, restored.last("builder-a"))
     }
+    @Test fun producerEventsSurviveFortyStepAndEightThousandCharacterLimits() {
+        val file = kotlin.io.path.createTempFile("phone-producer-log", ".json").toFile()
+        try {
+            val store = ChatStore(file)
+            store.begin(ChatTask(1, "claude", "work"))
+            repeat(45) { store.runnerStep(1, "step $it", "Bash") }
+            repeat(100) { store.runnerText(1, "x".repeat(128), "claude", "model") }
+            val events = store.runnerEvents("builder-a", 0)
+            assertEquals(45, events.count { it.optString("type") == "step" })
+            assertEquals(12_800, events.filter { it.optString("type") == "text" }.sumOf { it.getString("text").length })
+            assertEquals(40, store.tasks.single().steps.size)
+            assertEquals(8_000, store.tasks.single().result.length)
+            assertEquals((1L..events.size.toLong()).toList(), events.map { it.getLong("id") })
+        } finally { file.delete() }
+    }
+    @Test fun twentyFiveApprovalResultsDoNotDependOnTrimmedUiIndices() {
+        val file = kotlin.io.path.createTempFile("phone-approval-log", ".json").toFile()
+        try {
+            val store = ChatStore(file)
+            store.begin(ChatTask(1, "claude", "work"))
+            repeat(25) { n ->
+                val key = "nonce-$n"
+                store.update(1) { it.copy(approvals = it.approvals + ChatApproval("Bash", "pwd", ApprovalAnswer.Waiting, key)) }
+                store.runnerRecord(1, "builder-a", JSONObject().put("type", "approval_result").put("approval", key).put("decision", "allow")) { task ->
+                    task.copy(approvals = task.approvals.map { if (it.key == key) it.copy(answer = ApprovalAnswer.Approved) else it })
+                }
+            }
+            val outcomes = store.runnerEvents("builder-a", 0).filter { it.optString("type") == "approval_result" }
+            assertEquals((0 until 25).map { "nonce-$it" }, outcomes.map { it.getString("approval") })
+            assertEquals(20, store.tasks.single().approvals.size)
+        } finally { file.delete() }
+    }
     @Test fun shiftedResultAndStepTailsDoNotLoseNewEvents() {
         assertEquals(" new", phoneTextDelta("older text", "text new"))
         val journal = PhoneTaskEvents()
