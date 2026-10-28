@@ -1,0 +1,43 @@
+# Phone-builder path, four fictional long-label questions; no Claude session or runner is started.
+fold folded
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -n dev.omalauncher.artifactpreview/.PreviewActivity --es waitingQuestion builder
+clearlog
+expect Questions waiting
+tap answer questions
+expect Questions · 4
+tap Choice 1:
+scrollto Fictional decision 2?
+tap Choice 2:
+scrollto Fictional decision 3?
+tap Choice 3:
+scrollto Fictional decision 4?
+tap Choice 4:
+expect Send answers
+nolog phone builder question allow
+shot builder-question-four-cover
+rotate landscape
+expect Send answers
+shot builder-question-four-landscape
+tap [ Send answers ]
+expect Answers sent
+log phone builder question allow updatedInput answers4
+shot builder-question-four-sent
+fold unfolded
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -n dev.omalauncher.artifactpreview/.PreviewActivity --es waitingQuestion builder
+clearlog
+tap answer questions
+tap Choice 1:
+scrollto Fictional decision 2?
+tap Choice 2:
+scrollto Fictional decision 3?
+tap Choice 3:
+scrollto Fictional decision 4?
+tap Choice 4:
+expect Send answers
+shot builder-question-four-unfolded
+tap [ Send answers ]
+expect Answers sent
+log phone builder question allow updatedInput answers4
+[phone] After combined install: owner asks a phone builder one harmless four-question AskUserQuestion. From the notification Answer questions opens that builder's exact native form, never generic Approve/Deny. Owner selects all four, presses Send answers without sending a chat message, sees receipt and builder receives all four in its tool result without interruption. Do not answer any real financial decision in this walk. Stop/withdraw must show expired rather than claim delivered; no replay or other-builder answer.

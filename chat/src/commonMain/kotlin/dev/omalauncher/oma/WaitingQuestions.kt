@@ -3,6 +3,7 @@ package dev.omalauncher.oma
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.text.style.TextOverflow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import androidx.compose.foundation.background
@@ -209,13 +210,14 @@ internal fun WaitingQuestionPanel(request: WaitingQuestion, draft: WaitingQuesti
                 Spacer(Modifier.height(16.dp))
             }
         }
-        Column(Modifier.fillMaxWidth().heightIn(max = 180.dp).background(Pack.surface).verticalScroll(rememberScrollState()).padding(12.dp)) {
+        Column(Modifier.fillMaxWidth().background(Pack.surface).padding(12.dp)) {
             BasicText("To: ${request.title}", style = Pack.mono(Pack.size.small, Pack.muted))
             if (!ready && !sent) BasicText("Answer every question to send, or skip.", style = Pack.mono(Pack.size.small, Pack.muted))
-            error?.let { BasicText(it, style = Pack.body(Pack.size.small, Pack.red)) }
+            if (summary.isNotBlank() && !sent) BasicText(summary, style = Pack.mono(Pack.size.small, Pack.muted), maxLines = 3, overflow = TextOverflow.Ellipsis)
+            error?.let { BasicText(it, style = Pack.body(Pack.size.small, Pack.red), maxLines = 2, overflow = TextOverflow.Ellipsis) }
             if (!sent) FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 BracketAction("skip", if (sending) Pack.muted else Pack.accent) { draft.skip(request, close) }
-                BracketAction(if (sending) "Sending…" else if (ready) "Send: $summary" else "Send answers", if (ready) Pack.accent else Pack.muted) {
+                BracketAction(if (sending) "Sending…" else "Send answers", if (ready) Pack.accent else Pack.muted) {
                     if (ready && !sending) {
                         val payload = JSONObject()
                         keys.forEachIndexed { i, key ->

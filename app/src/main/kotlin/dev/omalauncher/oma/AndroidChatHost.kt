@@ -157,7 +157,7 @@ class AndroidChatHost(
     override fun tryMacAgain(time: Long) = MacThreads.tryAgain(context, time)
 
     override fun answerMacQuestions(ticket: String, answers: org.json.JSONObject, done: (MacApprovalOutcome) -> Unit) = MacThreads.answerQuestions(context, ticket, answers, done)
-    override fun answerBuilderQuestions(entry: PendingApproval, answers: org.json.JSONObject): ApprovalOutcome = AgentTasks.answerApproval(context, entry.id, entry.nonce, true, answers)
+    override fun answerBuilderQuestions(entry: PendingApproval, answers: org.json.JSONObject): ApprovalOutcome = AgentTasks.answerQuestions(context, entry, answers)
 
     override fun answerMac(ticket: String, allow: Boolean, done: (MacApprovalOutcome) -> Unit) = MacThreads.answer(context, ticket, allow, done)
     override fun rememberMacCommand(ticket: String, done: (MacApprovalOutcome) -> Unit) = MacThreads.rememberCommand(context, ticket, done)

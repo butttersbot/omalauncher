@@ -182,6 +182,12 @@ object AgentTasks {
         return of(holder).decide(context, id, nonce, allow, answers, device)
     }
 
+    /** Question Submit is always allow with validated updatedInput.answers, never a permission Deny. */
+    fun answerQuestions(context: Context, entry: PendingApproval, answers: JSONObject): ApprovalOutcome {
+        require(entry.approval.tool == "AskUserQuestion")
+        return answerApproval(context, entry.id, entry.nonce, true, answers)
+    }
+
     /** The builder whose approval [entry] is; null once none holds it. */
     fun holder(entry: PendingApproval): BuilderId? = approvalHolder(waiting(), entry.id, entry.nonce)
 

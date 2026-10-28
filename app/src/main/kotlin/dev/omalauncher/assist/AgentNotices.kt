@@ -137,7 +137,10 @@ internal object AgentNotices {
             .setStyle(Notification.BigTextStyle().bigText(detail)).setContentIntent(review)
             .setCategory(Notification.CATEGORY_STATUS).setOngoing(true).setAutoCancel(false)
             .setVisibility(Notification.VISIBILITY_PRIVATE).setPublicVersion(locked)
-            .addAction(action(ApprovalVerb.Approve, "Approve once")).addAction(action(ApprovalVerb.Deny, "Deny")).build())
+            .apply {
+                if (approval.tool == "AskUserQuestion") addAction(Notification.Action.Builder(null, "Answer questions", review).build())
+                else { addAction(action(ApprovalVerb.Approve, "Approve once")); addAction(action(ApprovalVerb.Deny, "Deny")) }
+            }.build())
     }
 
     /** Takes down one approval's notification and no other. */

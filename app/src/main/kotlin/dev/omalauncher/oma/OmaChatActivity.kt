@@ -42,6 +42,7 @@ class OmaChatActivity : ComponentActivity() {
 
     /** The key of the thread whose tab was asked for, by a tile or a tap in here; null is the Oma tab. See [openTab]. */
     private var wanted by mutableStateOf<String?>(null)
+    private var wantedQuestion by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -52,11 +53,12 @@ class OmaChatActivity : ComponentActivity() {
         MacThreads.open(this)
         if (savedInstanceState == null) prefill = textOf(intent)
         wanted = if (savedInstanceState == null) opened(intent) else savedInstanceState.getString(STATE_TAB)
+        wantedQuestion = intent.getStringExtra(EXTRA_QUESTION)
         applySystemBars(this, Pack.isLight)
         val host = AndroidChatHost(this, runtime)
         setContent {
             LaunchedEffect(Pack.isLight) { applySystemBars(this@OmaChatActivity, Pack.isLight) }
-            OmaChatScreen(host, prefill, onPrefilled = { prefill = null }, wanted = wanted, onTab = { wanted = it.takeIf { tab -> tab != OMA_TAB } })
+            OmaChatScreen(host, prefill, onPrefilled = { prefill = null }, wanted = wanted, onTab = { wanted = it.takeIf { tab -> tab != OMA_TAB } }, wantedQuestion = wantedQuestion, onQuestionOpened = { wantedQuestion = null })
         }
     }
 
@@ -67,6 +69,7 @@ class OmaChatActivity : ComponentActivity() {
         textOf(intent)?.let { prefill = it }
         // A tile, or a thread named from outside while the chat is open, opens that thread's tab as a start would.
         wanted = opened(intent)
+        wantedQuestion = intent.getStringExtra(EXTRA_QUESTION)
     }
 
     /**
@@ -89,6 +92,7 @@ class OmaChatActivity : ComponentActivity() {
         const val ACTION = "dev.omalauncher.action.OMA_CHAT"
 
         /** The key of the thread whose tab to open ([AgentThread.key]); a key that is no thread's opens Oma. */
+        const val EXTRA_QUESTION = "oma_question_nonce"
         const val EXTRA_THREAD = dev.omalauncher.ui.OMA_CHAT_THREAD
         private const val STATE_TAB = "tab"
 

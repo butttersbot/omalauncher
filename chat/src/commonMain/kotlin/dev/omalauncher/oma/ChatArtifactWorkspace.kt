@@ -72,6 +72,8 @@ internal fun ChatArtifactWorkspace(
     threads: Set<String> = emptySet(),
     where: String = "",
     waitingQuestions: Set<String>? = null,
+    requestedQuestion: WaitingQuestion? = null,
+    onQuestionOpened: () -> Unit = {},
     /** All chats (slice 4), shown where an artifact is: beside the chat when wide, over it when narrow. */
     allChatsOpen: Boolean = false,
     onAllChatsClose: () -> Unit = {},
@@ -81,6 +83,9 @@ internal fun ChatArtifactWorkspace(
     val questionDrafts = rememberSaveable(saver = WaitingQuestionDrafts.saver) { WaitingQuestionDrafts() }
     // Save data, never a callback: after recreation resolve Send against the current nonce book.
     var questionSelection by rememberSaveable(tab) { mutableStateOf<List<String>?>(null) }
+    LaunchedEffect(requestedQuestion?.key) {
+        requestedQuestion?.let { questionSelection = listOf(it.key, it.title, it.input); onQuestionOpened() }
+    }
     val question = questionSelection?.let { saved ->
         WaitingQuestion(saved[0], saved[1], saved[2]) { answers, done ->
             host.sendWaitingAnswers(saved[0], answers, done)

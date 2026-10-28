@@ -142,7 +142,9 @@ fun OmaChatScreen(
     wanted: String?,
     /** A tab was picked in here, by its key. */
     onTab: (String) -> Unit,
-) = CompositionLocalProvider(LocalChatHost provides host) { ChatScreen(host, prefill, onPrefilled, wanted, onTab) }
+    wantedQuestion: String? = null,
+    onQuestionOpened: () -> Unit = {},
+) = CompositionLocalProvider(LocalChatHost provides host) { ChatScreen(host, prefill, onPrefilled, wanted, onTab, wantedQuestion, onQuestionOpened) }
 
 @Composable
 private fun ChatScreen(
@@ -153,6 +155,8 @@ private fun ChatScreen(
     wanted: String?,
     /** A tab was picked in here, by its key. */
     onTab: (String) -> Unit,
+    wantedQuestion: String?,
+    onQuestionOpened: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     // The agent works on its own thread and reports through plain fields, read here twice a second like the home rail does.
@@ -426,7 +430,10 @@ private fun ChatScreen(
     val madeLive = remember(tick) { host.liveArtifacts() }
     Box(Modifier.fillMaxSize().background(Pack.background).safeDrawingPadding().padding(PageGap), contentAlignment = Alignment.TopCenter) {
         CompositionLocalProvider(LocalEarlierThread provides earlierThread.orEmpty()) {
-        ChatArtifactWorkspace(host, tab, artifacts, waitingQuestions = (macPending.map { it.ticket } + builders.values.flatMap { it.pending }.map { it.nonce }).toSet(), live = madeLive, threads = artifactThreads, where = threads.firstOrNull { it.key == tab }?.machine?.ifBlank { null } ?: earlierThread?.let { id -> hosts.firstOrNull { it.id == dev.omalauncher.assist.macMachineOf(id) }?.name }.orEmpty(), allChatsOpen = allChatsOpen, onAllChatsClose = { allChatsOpen = false }, allChats = { close ->
+        val requestedQuestion = builders.values.flatMap { it.pending }.firstOrNull { it.nonce == wantedQuestion && questionInput(it.approval.tool, it.approval.input.toString()) }?.let {
+            WaitingQuestion(it.nonce, "Phone builder", it.approval.input.toString()) { answers, done -> host.sendWaitingAnswers(it.nonce, answers, done) }
+        }
+        ChatArtifactWorkspace(host, tab, artifacts, requestedQuestion = requestedQuestion, onQuestionOpened = onQuestionOpened, waitingQuestions = (macPending.map { it.ticket } + builders.values.flatMap { it.pending }.map { it.nonce }).toSet(), live = madeLive, threads = artifactThreads, where = threads.firstOrNull { it.key == tab }?.machine?.ifBlank { null } ?: earlierThread?.let { id -> hosts.firstOrNull { it.id == dev.omalauncher.assist.macMachineOf(id) }?.name }.orEmpty(), allChatsOpen = allChatsOpen, onAllChatsClose = { allChatsOpen = false }, allChats = { close ->
             val now = System.currentTimeMillis()
             val rows = remember(all, book, tick) {
                 allChatRows(all, threads.map { it.key }.toSet(), book.archived.keys,

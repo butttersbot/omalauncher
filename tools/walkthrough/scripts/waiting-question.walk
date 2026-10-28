@@ -10,7 +10,7 @@ tap Beside chat
 scrollto Which screen sizes should we check?
 tap Cover
 tap Unfolded
-expect Send:
+expect Send answers
 expect Checks: Cover, Unfolded
 nolog waiting question answer
 tap back to chat
@@ -28,7 +28,7 @@ expect Layout: Beside chat
 expect Checks: Cover, Unfolded
 nolog waiting question answer
 shot waiting-question-restored-draft
-tap Send:
+tap [ Send answers ]
 expect Answers sent
 log waiting question answer fixture-ticket
 shot waiting-question-cover-sent
@@ -45,7 +45,7 @@ expect Layout: Full screen
 expect Checks: Cover
 nolog waiting question answer
 shot waiting-question-unfolded-ready
-tap Send:
+tap [ Send answers ]
 expect Answers sent
 log waiting question answer fixture-ticket
 shot waiting-question-unfolded-sent

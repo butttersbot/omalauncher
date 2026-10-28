@@ -30,6 +30,12 @@ class AgentApprovalActivity : Activity() {
         val approval = entry.approval
         // The title names the builder that asks, so he never answers one builder's request thinking it is the other's.
         val builder = AgentTasks.holder(entry) ?: BuilderId.A
+        if (approval.tool == "AskUserQuestion") {
+            startActivity(dev.omalauncher.oma.OmaChatActivity.intent(this)
+                .putExtra(dev.omalauncher.oma.OmaChatActivity.EXTRA_THREAD, builder.thread)
+                .putExtra(dev.omalauncher.oma.OmaChatActivity.EXTRA_QUESTION, entry.nonce))
+            finish(); return
+        }
         val detail = TextView(this).apply {
             text = "${approval.explanation}\n\n${approval.detail}\n\nApprove once allows this action only. Future actions may ask again."
             setPadding(40, 24, 40, 24); setTextIsSelectable(true)
