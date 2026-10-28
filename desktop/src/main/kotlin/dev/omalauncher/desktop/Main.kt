@@ -126,6 +126,8 @@ fun main(args: Array<String>) {
     // What widgets wait for his OK on here (slice 7b) is in Needs you beside the threads' asks.
     val gate = dev.omalauncher.widgets.runtime.CommandGate(SomaHome.approved, SomaHome.machine)
     val windowWidgets = WindowWidgets(SomaHome.dir, gate)
+    // The dashboard's notes, stickers and ink, kept in Soma's folder as this window's own (desktop slice 5b).
+    val scraps = DesktopScraps(canvas)
     val source = dev.omalauncher.canvas.withWidgetAsks(chatHostModules(host, cockpitFeeds(), handoffs = engine::handoffs, registry = engine::projects), gate)
     val tick = mutableStateOf(0L)
     val desk = DesktopSync(canvas, File(SomaHome.dir, "canvas-synced.json"), SomaHome.machine)
@@ -207,7 +209,7 @@ fun main(args: Array<String>) {
         ) {
             CompositionLocalProvider(LocalBackStack provides dashboardBack) {
                 // A module's thread opens in the chat window, brought forward.
-                CanvasScreen(canvas, host, source, tick.value, wanted, onTab = { wanted = it; shown = true; bring++ }, chatElsewhere = { shown = true; bring++ }, widgets = windowWidgets)
+                CanvasScreen(canvas, host, source, tick.value, wanted, onTab = { wanted = it; shown = true; bring++ }, chatElsewhere = { shown = true; bring++ }, widgets = windowWidgets, scraps = scraps)
             }
         }
         Window(

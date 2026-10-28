@@ -641,7 +641,7 @@ fun leaveAgentNote(
     if (page.notes.size - (if (due == null) 0 else 1) >= AnnotationLimits.NOTES) return NoteLeft.Refused("That page has no room for another note. Nothing was written.")
 
     fun spot(without: StickyNote?): Spot {
-        val scraps = page.copy(notes = page.notes.filter { it.id != without?.id }).scraps()
+        val scraps = page.copy(notes = page.notes.filter { it.id != without?.id }).scraps(board.tall)
         return if (near == null) board.noteSpot(scraps) else board.noteSpotAt(scraps, near.first, near.second)
     }
     // A page with no clear place left has no room either: before anything is overlapped, one of the agent's

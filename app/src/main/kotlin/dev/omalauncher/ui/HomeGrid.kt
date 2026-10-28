@@ -1019,8 +1019,9 @@ internal fun HomeGrid(
                 folderLeft.panel?.let { panel -> FolderClosing(panel, { folderShown.value }, folderLeft.tile) }
             }
 
-            // The stroke under the finger, over the pages, redrawn by itself as it grows.
-            if (drawing && marks != null) LiveInk(marks)
+            // The stroke under the finger, over the pages, redrawn by itself as it grows. The back gesture is kept off the
+            // side edges where Android allows (200dp of each), so a line begun there isn't Back.
+            if (drawing && marks != null) LiveInk(marks, Modifier.fillMaxSize().systemGestureExclusion())
 
             // The carried tile floats above the pager, so it stays put while pages turn, and above an open folder it's sorting.
             arrange.carry?.let { carry ->

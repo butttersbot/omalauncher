@@ -172,12 +172,25 @@ data class PageTile(
  * gap is [GAP_SHARE] of the page's width, a cell is a sixth of what is left of the width beside one gap, and a
  * tile starts a gap after its first cell's line and ends on its last cell's (see GridGeometry.bounds). Down,
  * the same gap is a smaller share, as the page is taller than wide.
+ *
+ * Everything defaults to the phone's page: six columns, [NOTEBOOK_MIN_ROWS] rows, [PAGE_TALL]. Soma desktop's
+ * dashboard (desktop slice 5b, 2026-10-28) is twelve columns by eight on a page wider than tall, so it passes its
+ * own [columns], [rows], [tall] and [gap], with a new note ([noteWidth] by [noteHeight]) and sticker ([stickerSize]) the
+ * size they are beside a tile there. A board made with the defaults places exactly as it did.
  */
 class PageBoard(
     rows: Int = NOTEBOOK_MIN_ROWS,
     tiles: List<PageTile> = emptyList(),
     val columns: Int = GRID_COLUMNS,
-    private val tall: Float = PAGE_TALL,
+    /** The page's height over its width: what a share down is worth in shares across. */
+    val tall: Float = PAGE_TALL,
+    /** A new note's width and height, as fractions of the page. */
+    val noteWidth: Float = NOTE_WIDTH,
+    val noteHeight: Float = NOTE_HEIGHT,
+    /** A new sticker's size, as a fraction of the page's width. */
+    val stickerSize: Float = STICKER_SIZE,
+    /** The gap between two tiles and at the page's edge, as a share of the page's width. */
+    gap: Float = GAP_SHARE,
 ) {
     val rows = rows.coerceAtLeast(1)
 
@@ -189,8 +202,11 @@ class PageBoard(
             tile.copy(cell = Cell(tile.cell.x.coerceIn(0, columns - w), tile.cell.y.coerceIn(0, this.rows - h), w, h))
         }
 
-    private val gapAcross = GAP_SHARE
-    private val gapDown = GAP_SHARE / tall
+    private val gapAcross = gap
+
+    /** How far apart the places tried are: a quarter of one of its cells, [PLACING_STEP] on the phone's page. */
+    val step = 1f / (columns * 4)
+    private val gapDown = gap / tall
     private val cellWidth = (1f - gapAcross) / columns
     private val cellHeight = (1f - gapDown) / this.rows
 
@@ -253,11 +269,20 @@ class PageBoard(
             val size = noteSize(across, down)
             val aligned = freeBlocks(across, down).map { box(it).copy(w = size.first, h = size.second) }
             if (aligned.isNotEmpty()) nearestClear(aligned, taken, corner, PLACING_GAP, tall).takeIf { !it.compromised }?.let { return it }
-            clearSpot(taken, size.first, size.second, corner, tall = tall).takeIf { !it.compromised }?.let { return it }
+            clearSpot(taken, size.first, size.second, corner, step = step, tall = tall).takeIf { !it.compromised }?.let { return it }
         }
         val (w, h) = blocks.last().let { noteSize(it.first, it.second) }
-        return clearSpot(taken, w, h, corner, tall = tall)
+        return clearSpot(taken, w, h, corner, step = step, tall = tall)
     }
+
+    /**
+     * Where the owner's new note goes on a page that holds [on], centred on [under], the place he asked for it
+     * (in fractions of the page), where there is room; see [noteSpot].
+     */
+    fun noteSpot(
+        on: Annotations,
+        under: Pair<Float, Float>?,
+    ): Spot = noteSpot(on.scraps(tall), under?.let { it.first - noteWidth / 2f to it.second - noteHeight / 2f })
 
     /** Where a new note goes when it is wanted at the cell in [column] and [row]; see [noteSpot]. */
     fun noteSpotAt(
@@ -270,7 +295,7 @@ class PageBoard(
     private fun noteSize(
         across: Int,
         down: Int,
-    ) = box(Cell(0, 0, across, down)).let { minOf(NOTE_WIDTH, it.w) to minOf(NOTE_HEIGHT, it.h) }
+    ) = box(Cell(0, 0, across, down)).let { minOf(noteWidth, it.w) to minOf(noteHeight, it.h) }
 
     /**
      * The sizes of cell block a note is tried in, the one that gives the biggest note first: from the fewest
@@ -278,8 +303,8 @@ class PageBoard(
      * the one taking fewer cells comes first.
      */
     private fun noteBlocks(): List<Pair<Int, Int>> {
-        val across = (SMALLEST_NOTE_COLUMNS..columns).firstOrNull { box(Cell(0, 0, it, 1)).w >= NOTE_WIDTH } ?: columns
-        val down = (SMALLEST_NOTE_ROWS..rows).firstOrNull { box(Cell(0, 0, 1, it)).h >= NOTE_HEIGHT } ?: rows
+        val across = (SMALLEST_NOTE_COLUMNS..columns).firstOrNull { box(Cell(0, 0, it, 1)).w >= noteWidth } ?: columns
+        val down = (SMALLEST_NOTE_ROWS..rows).firstOrNull { box(Cell(0, 0, 1, it)).h >= noteHeight } ?: rows
         val blocks = (minOf(SMALLEST_NOTE_COLUMNS, across)..across).flatMap { w -> (minOf(SMALLEST_NOTE_ROWS, down)..down).map { h -> w to h } }
         return blocks.sortedWith(compareBy({ (w, h) -> noteSize(w, h).let { -it.first * it.second } }, { (w, h) -> w * h }, { (w, _) -> -w }))
     }

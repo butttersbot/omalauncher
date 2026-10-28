@@ -20,11 +20,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -45,7 +44,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
-import dev.omalauncher.widgets.annotations.HomeStickers
 import dev.omalauncher.widgets.annotations.LibrarySticker
 import dev.omalauncher.widgets.annotations.Picture
 import dev.omalauncher.widgets.annotations.Sticker
@@ -53,6 +51,7 @@ import dev.omalauncher.widgets.annotations.StickerBitmaps
 import dev.omalauncher.widgets.annotations.StickerChoice
 import dev.omalauncher.widgets.annotations.StickerKind
 import dev.omalauncher.widgets.annotations.StickerLibrary
+import dev.omalauncher.widgets.annotations.StickerShelf
 import dev.omalauncher.widgets.annotations.pictureSide
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -67,7 +66,17 @@ import kotlin.math.sin
  * nothing is fetched. They are in the pack's accent, with a hard shadow in its surface color so they stand
  * off any page. After them, the stickers that are pictures of the owner's own: drawn from the launcher's copy
  * of the image, in the image's colors, which no pack changes.
+ *
+ * Shared by the phone's home and Soma desktop's dashboard (desktop slice 5b, 2026-10-28): each hands over its own
+ * shelf of pictures by [LocalStickerShelf].
  */
+
+/**
+ * The stickers' shelf where they are drawn: the library to pick from, the copies stuck on pages and their pixels.
+ * The phone's home gives its HomeStickers; the dashboard window its own under Soma's folder. Without one, a picture
+ * sticker shows as lost and the picker offers the built-in stickers alone.
+ */
+val LocalStickerShelf = staticCompositionLocalOf<StickerShelf?> { null }
 
 /** A point [radius] from the middle of a box [side] across, at [degrees] clockwise from straight up. */
 private fun around(
@@ -142,7 +151,7 @@ private fun DrawScope.drawSticker(kind: StickerKind) {
 
 /** A sticker by itself, for where one is chosen. */
 @Composable
-internal fun StickerGlyph(
+fun StickerGlyph(
     kind: StickerKind,
     modifier: Modifier = Modifier,
 ) {
@@ -154,7 +163,7 @@ internal fun StickerGlyph(
  * and resized by its upright box, like a tilted scrap. A tap selects it.
  */
 @Composable
-internal fun StickerScrap(
+fun StickerScrap(
     sticker: Sticker,
     rect: Rect,
     /** How it eases in or out, if it does: its own layer, after its place and size. */
@@ -203,8 +212,8 @@ private fun pictureSeen(
     file: () -> File,
 ): Seen {
     val side = pictureSide(pixels)
-    val seen by produceState<Seen>(bitmaps.kept(key, side)?.let { Seen.Drawn(it.asImageBitmap()) } ?: Seen.Waiting, key, side) {
-        value = withContext(Dispatchers.IO) { runCatching { bitmaps.load(key, file(), side) }.getOrNull() }?.let { Seen.Drawn(it.asImageBitmap()) } ?: Seen.Lost
+    val seen by produceState<Seen>(bitmaps.kept(key, side)?.let { Seen.Drawn(it) } ?: Seen.Waiting, key, side) {
+        value = withContext(Dispatchers.IO) { runCatching { bitmaps.load(key, file(), side) }.getOrNull() }?.let { Seen.Drawn(it) } ?: Seen.Lost
     }
     return seen
 }
@@ -218,8 +227,9 @@ private fun PictureFace(
     picture: Picture,
     pixels: Int,
 ) {
-    val shelf = HomeStickers.of(LocalContext.current)
-    when (val seen = pictureSeen(shelf.bitmaps, picture.file, pixels) { shelf.snapshots.file(picture.file) }) {
+    val shelf = LocalStickerShelf.current
+    val seen = if (shelf == null) Seen.Lost else pictureSeen(shelf.bitmaps, picture.file, pixels) { shelf.snapshots.file(picture.file) }
+    when (seen) {
         is Seen.Drawn -> Image(seen.image, picture.name, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
         Seen.Lost ->
             Box(
@@ -248,10 +258,10 @@ private val PICKER_HEIGHT = 320.dp
  * which stays on a narrow screen. [onPick] is told where in the window the one picked was.
  */
 @Composable
-internal fun StickerPicker(onPick: (StickerChoice, Offset?) -> Unit) {
-    val shelf = HomeStickers.of(LocalContext.current)
+fun StickerPicker(onPick: (StickerChoice, Offset?) -> Unit) {
+    val shelf = LocalStickerShelf.current
     // Null until the library has been looked at, and for good where there is none: without Linux, which it is in.
-    val found by produceState<StickerLibrary?>(null, shelf) { value = withContext(Dispatchers.IO) { shelf.look() } }
+    val found by produceState<StickerLibrary?>(null, shelf) { value = shelf?.let { withContext(Dispatchers.IO) { it.look() } } }
     val library = found
     val places = remember { HashMap<StickerKind, Offset>() }
     LazyColumn(Modifier.fillMaxWidth().heightIn(max = PICKER_HEIGHT).padding(horizontal = 8.dp, vertical = 6.dp)) {
@@ -271,10 +281,10 @@ internal fun StickerPicker(onPick: (StickerChoice, Offset?) -> Unit) {
                 }
             }
         }
-        if (library == null) return@LazyColumn
+        if (library == null || shelf == null) return@LazyColumn
         if (library.groups.isEmpty()) {
             // Where his own go, said once, while there are none.
-            item { BasicText("pictures in ~/.config/omalauncher/stickers show here", Modifier.padding(horizontal = 4.dp, vertical = 6.dp), style = Pack.mono(Pack.size.small, Pack.muted)) }
+            item { BasicText("pictures in ${shelf.shownAs} show here", Modifier.padding(horizontal = 4.dp, vertical = 6.dp), style = Pack.mono(Pack.size.small, Pack.muted)) }
         }
         for (group in library.groups) {
             if (group.name.isNotEmpty()) {

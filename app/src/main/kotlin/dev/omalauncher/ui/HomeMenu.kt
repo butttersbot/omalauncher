@@ -21,27 +21,6 @@ import dev.omalauncher.Runtime
 import dev.omalauncher.linux.newAppCommand
 import dev.omalauncher.widgets.newWidgetCommand
 
-@Composable
-internal fun EditBar(content: @Composable () -> Unit) {
-    Row(
-        Modifier
-            .panel()
-            .padding(horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) { content() }
-}
-
-@Composable
-internal fun EditAction(
-    label: String,
-    color: androidx.compose.ui.graphics.Color = Pack.foreground,
-    onClick: () -> Unit,
-) {
-    Box(Modifier.clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 10.dp)) {
-        BasicText(label, style = Pack.body(Pack.size.body, color))
-    }
-}
-
 /**
  * The long-press menu for empty home space. Drawn by the launcher over the whole
  * screen (not inside the home page's system-bar padding) so its scrim covers the

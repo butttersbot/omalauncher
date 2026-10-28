@@ -235,7 +235,7 @@ class AnnotationBook(
         var id: String? = null
         change(page) { was ->
             if (was.marks.notes.size >= AnnotationLimits.NOTES) return@change null.also { notice = NO_ROOM_NOTE }
-            val spot = board(page).noteSpot(was.marks.scraps(), near?.let { it.first - NOTE_WIDTH / 2f to it.second - NOTE_HEIGHT / 2f }).box
+            val spot = board(page).noteSpot(was.marks, near).box
             val note = StickyNote(freshId(was.marks, "n", now()), spot.x, spot.y, spot.w, spot.h, "", role, z = top(was.marks) + 1, at = now()).fitted()
             id = note.id
             was.with(was.marks.copy(notes = was.marks.notes + note))
@@ -296,10 +296,11 @@ class AnnotationBook(
             if (was.marks.stickers.size >= AnnotationLimits.STICKERS) return@change null.also { notice = NO_ROOM_STICKER }
             val centre = near ?: STICKER_START
             // The room it takes where it is wanted: a square on screen, so less tall than wide in fractions of the page, or its picture's shape.
-            val wanted = Sticker("", kind, centre.first, centre.second, STICKER_SIZE, picture = picture?.fitted()).taken()
-            val tiles = board(page).let { board -> board.tiles.map { board.box(it.cell) } }
-            val spot = clearSpot(tiles + was.marks.scraps(), wanted.w, wanted.h, wanted.x to wanted.y).box
-            val sticker = Sticker(freshId(was.marks, "s", now()), kind, spot.x + spot.w / 2f, spot.y + spot.h / 2f, STICKER_SIZE, picture = picture).fitted()
+            val board = board(page)
+            val wanted = Sticker("", kind, centre.first, centre.second, board.stickerSize, picture = picture?.fitted()).taken(board.tall)
+            val tiles = board.tiles.map { board.box(it.cell) }
+            val spot = clearSpot(tiles + was.marks.scraps(board.tall), wanted.w, wanted.h, wanted.x to wanted.y, step = board.step, tall = board.tall).box
+            val sticker = Sticker(freshId(was.marks, "s", now()), kind, spot.x + spot.w / 2f, spot.y + spot.h / 2f, board.stickerSize, picture = picture).fitted()
             id = sticker.id
             was.with(was.marks.copy(stickers = was.marks.stickers + sticker))
         }

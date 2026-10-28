@@ -44,6 +44,7 @@ import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import dev.omalauncher.widgets.annotations.HomeStickers
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -71,12 +72,17 @@ fun LauncherRoot(
     val ready = runtime.launcherReady
     // With our live wallpaper active the window is transparent and Android draws the wallpaper behind it.
     val showOwnBackground = !ready || !runtime.themes.liveWallpaperActive
-    Box(
-        Modifier
-            .fillMaxSize()
-            .then(if (showOwnBackground) Modifier.background(Palette.background) else Modifier),
-    ) {
-        if (ready) DesktopScreen(runtime, state) else SetupScreen(runtime)
+    // The stickers' library and copies, for the notes, stickers and ink drawn by the shared code (desktop slice 5b).
+    val context = LocalContext.current
+    val shelf = remember { HomeStickers.of(context) }
+    CompositionLocalProvider(LocalStickerShelf provides shelf) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .then(if (showOwnBackground) Modifier.background(Palette.background) else Modifier),
+        ) {
+            if (ready) DesktopScreen(runtime, state) else SetupScreen(runtime)
+        }
     }
 }
 
