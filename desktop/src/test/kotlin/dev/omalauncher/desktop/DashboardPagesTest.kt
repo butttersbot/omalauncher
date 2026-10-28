@@ -8,6 +8,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.toAwtImage
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
@@ -81,9 +82,13 @@ class DashboardPagesTest {
         assertEquals("Long week", pageNameOf("  Long \n  week "))
         assertNull(pageNameOf("   "))
         assertEquals(PAGE_NAME_CHARS, pageNameOf("x".repeat(80))!!.length)
-        assertEquals(2, droppedAt(0, 1.6f, 4))
-        assertEquals(0, droppedAt(1, -3f, 4))
-        assertEquals(3, droppedAt(1, 9f, 4))
+        // Three across: along a row, down a row, past the edges, past the end.
+        assertEquals(2, droppedAt(0, 1.6f, 0f, 4))
+        assertEquals(0, droppedAt(1, -3f, 0f, 4))
+        assertEquals(2, droppedAt(1, 9f, 0f, 9))
+        assertEquals(4, droppedAt(1, 0f, 1f, 9))
+        assertEquals(3, droppedAt(5, 0f, 1f, 4))
+        assertEquals(1, droppedAt(4, 0f, -1.2f, 9))
         assertNull(removeQuestion("Empty", 0, false))
         assertEquals("click again to remove \"Builds\" with 2 blocks", removeQuestion("Builds", 2, false))
         assertEquals("click again to remove \"Notes\" with its notes, stickers or ink", removeQuestion("Notes", 0, true))
@@ -129,10 +134,12 @@ class DashboardPagesTest {
         canvas.overview = true
         mainClock.advanceTimeBy(300)
         mainClock.autoAdvance = true
+        // As far as from Builds to Money, back.
+        val step = onNodeWithContentDescription("thumbnail Money").getBoundsInRoot().left - onNodeWithContentDescription("thumbnail Builds").getBoundsInRoot().left
         onNodeWithContentDescription("thumbnail Money").performMouseInput {
             moveTo(center)
             press()
-            repeat(20) { moveBy(Offset(-214f * density / 20f, 0f), delayMillis = 16) }
+            repeat(20) { moveBy(Offset(-step.value * density / 20f, 0f), delayMillis = 16) }
             release()
         }
         mainClock.autoAdvance = false
