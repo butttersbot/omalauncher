@@ -136,12 +136,14 @@ Mac Pro lane B reports Android compilation and the requested targeted tests PASS
 QuestionSkipTest, ClaudeProtocolTest, MacThreadsTest, MacRunnerTest and
 ModuleApprovalGuardTest. Shared desktop draft/withdrawal tests, ModuleRulesTest,
 the Needs You Skip tap regression, DesktopQuestionAnswerTest and desktop compile
-also PASS. The original approval guard was preserved. Isolated runner tests:
+also PASS: 121 Kotlin/JVM tests, zero failures. The original approval guard was
+preserved. Isolated runner tests:
 21 PASS, including strict-option Claude/Codex Skip continuing via allow, exactly
 once. DesktopChatHost now actually forwards question answers to the shared engine
 (the previous inherited default failed).
 
-Final isolated Fold8-B preview walks, no real sends:
+Final artifact-preview walks used shared Fold8 on emulator-5554, serialized under
+the walks lock, with no real sends:
 
 - waiting-question-skip: 26 PASS, 0 FAIL, 4 reviewed LOOKs.
 - waiting-question: 44 PASS, 0 FAIL, 6 reviewed LOOKs; normal Submit retained.
