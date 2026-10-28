@@ -139,6 +139,9 @@ sealed interface MacAnswer<out T> {
 
 const val MAC_RUNNER_NAME = "oma-runner"
 
+/** What the Fold's own runner calls itself (PHONE-RUNNER-SPEC): its sessions are one more computer's threads. */
+const val PHONE_RUNNER_NAME = "oma-phone"
+
 /** What `/health` says. [kinds] are the agents installed on the Mac, as the runner names them; empty from a runner that does not say. */
 data class MacHealth(val threads: Int, val working: Int, val waiting: Int, val kinds: List<String> = emptyList(), val models: Map<String, List<String>> = emptyMap())
 
@@ -264,7 +267,7 @@ private fun <T : Any> macAnswer(reply: MacReply?, read: (JSONObject) -> T?): Mac
 
 /** `GET /health`. Something else answering on the runner's port is not the runner. */
 fun parseMacHealth(reply: MacReply?): MacAnswer<MacHealth> = macAnswer(reply) { json ->
-    if (json.macText("runner") != MAC_RUNNER_NAME) null
+    if (json.macText("runner") !in setOf(MAC_RUNNER_NAME, PHONE_RUNNER_NAME)) null
     else {
         val kinds = json.optJSONArray("kinds")
         // The models the runner lists for an agent (Venice's, from Venice itself), by the agent.
