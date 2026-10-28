@@ -37,7 +37,12 @@ class MacPhoneTailnet(
                     val json = bytes?.let { runCatching { JSONObject(it.toString(Charsets.UTF_8)) }.getOrNull() }
                     // Old runners return a generic 404 for a helper route they do not implement.
                     // Only the helper's explicit owner:false is an authoritative whois refusal.
-                    if (code == 404 && path.startsWith("/phone-runner/whois?") && json?.has("owner") != true) return@runCatching null
+                    if (path.startsWith("/phone-runner/whois?")) {
+                        val denied = code in setOf(200, 404) && json?.opt("owner") == false
+                        val confirmed = code == 200 && json?.opt("owner") == true && json.optBoolean("ok") &&
+                            Regex("[a-z0-9][a-z0-9-]{0,62}").matches(json.optString("device"))
+                        if (!denied && !confirmed) return@runCatching null
+                    }
                     if (json == null) Reply(400, JSONObject()) else Reply(code, json)
                 } finally { connection.disconnect() }
             }.getOrNull()
