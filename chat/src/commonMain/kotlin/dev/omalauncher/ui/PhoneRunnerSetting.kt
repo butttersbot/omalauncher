@@ -58,7 +58,7 @@ fun PhoneRunnerSetting(runner: PhoneRunnerPairing, dismiss: () -> Unit) {
                                 paired = runner.paired()
                                 notice = if (result.isSuccess) {
                                     if (existed) "Unpaired $device. Its key no longer works."
-                                    else "Pairing file sent to $device by Taildrop. Open it in Soma desktop."
+                                    else "Pairing file sent to $device. Open it in Soma desktop."
                                 } else "Pairing could not be changed. Check Tailscale and try again."
                                 busy = false
                             }

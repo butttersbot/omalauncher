@@ -65,8 +65,15 @@ object PhoneArtifacts {
     private fun steps(context: Context, thread: String, taskTime: Long?, changes: List<Triple<String, Int, Pair<String, Boolean>>>) {
         if (changes.isEmpty()) return
         val time = entryOf(context, thread, taskTime) ?: return
-        ChatLog.of(context).update(time, save = true) { task ->
-            task.copy(steps = changes.fold(task.steps) { steps, (name, version, how) -> withArtifactStep(steps, name, version, how.first, how.second) }.takeLast(ChatHistory.MAX_STEPS))
+        val log = ChatLog.of(context)
+        val task = log.tasks.firstOrNull { it.time == time } ?: return
+        val session = phoneTaskSession(task) ?: return
+        val events = changes.map { (name, version, how) ->
+            org.json.JSONObject().put("type", "artifact").put("name", name).put("version", version)
+                .put("title", name).put("mime", "").put("state", how.first).put("settled", how.second)
+        }
+        log.runnerRecords(time, session, events) { current ->
+            current.copy(steps = changes.fold(current.steps) { steps, (name, version, how) -> withArtifactStep(steps, name, version, how.first, how.second) }.takeLast(ChatHistory.MAX_STEPS))
         }
     }
 

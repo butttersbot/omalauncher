@@ -33,6 +33,7 @@ class PhoneTaskEvents(saved: JSONObject? = null) {
         }
     }
     fun events(id: String, after: Long): List<JSONObject> = rows[id].orEmpty().filter { it.optLong("id") > after }.map { JSONObject(it.toString()) }
+    fun first(id: String): Long = rows[id]?.firstOrNull()?.optLong("id") ?: 0L
     fun last(id: String): Long = last[id] ?: 0
     fun encode(): JSONObject = JSONObject().apply { rows.forEach { (id, events) -> put(id, JSONObject().put("last", last(id)).put("events", JSONArray(events))) } }
     fun changed(before: List<ChatTask>, after: List<ChatTask>, sourceType: String = "") {
@@ -44,7 +45,7 @@ class PhoneTaskEvents(saved: JSONObject? = null) {
             if (old == null) append(id, event(if (task.mail.isEmpty()) "message" else "note", task.prompt).put("time", task.time / 1000))
             val previousSteps = old?.steps.orEmpty()
             val overlap = (minOf(previousSteps.size, task.steps.size) downTo 0).first { n -> previousSteps.takeLast(n) == task.steps.take(n) }
-            (if (sourceType == "step") emptyList() else task.steps.drop(overlap)).forEach { step ->
+            (if (sourceType in setOf("step", "artifact")) emptyList() else task.steps.drop(overlap)).forEach { step ->
                 val artifact = stepArtifacts(listOf(step)).firstOrNull()
                 if (artifact == null) append(id, event("step", step))
                 else append(id, event("artifact").put("name", artifact.name).put("version", artifact.version)

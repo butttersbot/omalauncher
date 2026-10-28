@@ -11,6 +11,7 @@ class PhoneRunnerTest {
         override fun list() = listOf("builder-a", "builder-b", "builder-c", "phone-d", "chat-local").map {
             JSONObject().put("id", it).put("name", it).put("home", "phone").put("kind", "claude").put("status", "idle")
         }
+        override fun first(id: String) = 1L
         override fun events(id: String, after: Long) = listOf(JSONObject().put("id", 1).put("type", "message").put("text", "hello")).filter { it.getLong("id") > after }
         override fun message(id: String, text: String): JSONObject { messages++; return JSONObject().put("taken", "now") }
         override fun answer(id: String, approval: String, nonce: String, decision: String, answers: JSONObject?, device: String): JSONObject {

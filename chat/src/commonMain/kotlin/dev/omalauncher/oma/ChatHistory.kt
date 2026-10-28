@@ -292,6 +292,7 @@ class ChatStore(private val file: File, private val maxBytes: Long = ChatHistory
     private var runnerSaved = -1L
     private fun durableRunner() { if (runnerSaved != runner.revision) check(save()) { "Task log could not be saved" } }
     @Synchronized fun runnerEvents(id: String, after: Long): List<JSONObject> { durableRunner(); return runner.events(id, after) }
+    @Synchronized fun runnerFirst(id: String): Long { durableRunner(); return runner.first(id) }
     @Synchronized fun runnerLast(id: String): Long { durableRunner(); return runner.last(id) }
     @Synchronized fun runnerAppend(id: String, event: JSONObject) { runner.append(id, event); save() }
 
@@ -324,9 +325,13 @@ class ChatStore(private val file: File, private val maxBytes: Long = ChatHistory
 
     /** One ledger outcome and its UI row, committed as one change in this task log. */
     @Synchronized fun runnerRecord(time: Long, session: String, event: JSONObject, save: Boolean = true, change: (ChatTask) -> ChatTask) {
-        runner.append(session, event)
+        runnerRecords(time, session, listOf(event), save, change)
+    }
+    /** Batch artifact edits can rewrite UI rows in place; append their source events exactly once. */
+    @Synchronized fun runnerRecords(time: Long, session: String, events: List<JSONObject>, save: Boolean = true, change: (ChatTask) -> ChatTask) {
+        events.forEach { runner.append(session, it) }
         val next = tasks.map { if (it.time == time) ChatHistory.bounded(change(it)) else it }
-        runner.changed(tasks, next, event.optString("type"))
+        runner.changed(tasks, next, events.firstOrNull()?.optString("type").orEmpty())
         tasks = next
         if (save) save()
     }

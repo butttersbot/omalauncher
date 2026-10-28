@@ -16,6 +16,7 @@ fun runnerAuthorized(token: String?, peer: RunnerPeer?, keys: List<RunnerKey>): 
 
 interface PhoneRunnerSessions {
     fun list(): List<JSONObject>
+    fun first(id: String): Long
     fun events(id: String, after: Long): List<JSONObject>
     fun message(id: String, text: String): JSONObject
     fun answer(id: String, approval: String, nonce: String, decision: String, answers: JSONObject?, device: String): JSONObject
@@ -49,7 +50,7 @@ class PhoneRunnerProtocol(private val sessions: PhoneRunnerSessions) {
                 val after = if (query.isEmpty()) 0L else Regex("after=([0-9]{1,18})").matchEntire(query)?.groupValues?.get(1)?.toLongOrNull()
                     ?: throw RunnerFault(400, "invalid cursor")
                 val events = sessions.events(id, after)
-                val first = sessions.events(id, 0).firstOrNull()?.optLong("id") ?: 0L
+                val first = sessions.first(id)
                 return ok(JSONObject().put("status", row.optString("status")).put("events", JSONArray(events))
                     .put("first_event", first).put("history_truncated", first > after + 1)
                     .put("cursor_reset", after > row.optLong("last_event")))

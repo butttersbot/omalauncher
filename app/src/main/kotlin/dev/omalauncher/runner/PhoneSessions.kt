@@ -42,6 +42,7 @@ class PhoneSessions(private val context: Context) : PhoneRunnerSessions {
                 .put("last_event", log.runnerLast(id)).put("pending", JSONArray(pending.map(::phoneRunnerApproval)))
         }
     }
+    override fun first(id: String) = log.runnerFirst(id)
     override fun events(id: String, after: Long) = log.runnerEvents(id, after)
     override fun message(id: String, text: String): JSONObject {
         val b = builder(id)

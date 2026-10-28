@@ -23,6 +23,24 @@ class PhoneTaskEventsTest {
         restored.append("builder-a", JSONObject().put("type", "note").put("text", "after restart"))
         assertEquals(all.size.toLong() + 1, restored.last("builder-a"))
     }
+    @Test fun artifactProducerRewritesOneUiLineWithoutReplayingUnrelatedSteps() {
+        val file = kotlin.io.path.createTempFile("phone-artifacts", ".json").toFile()
+        try {
+            val store = ChatStore(file)
+            store.begin(ChatTask(1, "claude", "work", steps = listOf("read a", "read b", "editing neat.html · v4", "ran c")))
+            val cursor = store.runnerLast("builder-a")
+            val artifact = JSONObject().put("type", "artifact").put("name", "neat.html").put("version", 4).put("state", "ready")
+            store.runnerRecords(1, "builder-a", listOf(artifact)) { task ->
+                task.copy(steps = withArtifactStep(task.steps, "neat.html", 4, "ready", false))
+            }
+            val fresh = store.runnerEvents("builder-a", cursor)
+            assertEquals(1, fresh.size)
+            assertEquals("artifact", fresh.single().getString("type"))
+            assertEquals("neat.html", fresh.single().getString("name"))
+            assertEquals(listOf("read a", "read b", "updated neat.html · v4", "ran c"), store.tasks.single().steps)
+            assertEquals(fresh.single().getLong("id"), store.runnerFirst("builder-a") + cursor)
+        } finally { file.delete() }
+    }
     @Test fun concurrentProducersReserveDistinctTaskTimesBeforeBeginningRows() {
         val file = kotlin.io.path.createTempFile("phone-times", ".json").toFile()
         try {

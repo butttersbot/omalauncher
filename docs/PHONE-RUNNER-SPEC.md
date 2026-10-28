@@ -80,7 +80,7 @@ Results carry normalized question answers and the authenticated computer's devic
 for pairing, new sessions, model changes or approval memory.
 
 `ChatStore` persists the cursor journal **inside the existing oma-chat.json task log** (`phoneRunner`), using the
-same store lock and atomic replacement. Producer text and tool steps are appended before the UI tail is trimmed; ledger outcomes
+same store lock and atomic replacement. Producer text, tool steps and artifact changes are appended before the UI tail is trimmed or rewritten; ledger outcomes
 are recorded by their nonce rather than by an index into the last twenty UI approvals. Updates append immutable events; queued work, completed task edits,
 pruned UI rows and restarts do not renumber ids. A read flushes unsaved live deltas before exposing their ids.
 Like the existing finite phone history, this journal has finite retention (10,000 events / approximately 2 MB
@@ -120,7 +120,8 @@ alongside `oma-runner`. Include that change in the final desktop bundle.
 
 `PhoneRunnerTest`, `PhoneRunnerApprovalTest`, `MacPhoneTailnetTest`, `PhoneTaskEventsTest` and `PhoneRunnerSettingTapTest` cover auth
 refusal/wrong device, unsupported routes, Phone D message refusal, nonce reuse, malformed strict forms, locked
-ledger refusal, Skip as allow, cursor/restart/queue stability, bounded tail changes, and no pairing before a native
+ledger refusal, Skip as allow, cursor/restart/queue stability, bounded tail changes, artifact rewrites without replaying unrelated steps,
+global task timestamp reservations, and no pairing before a native
 tap. Results are pending lane B compilation/test execution; no PASS is claimed yet.
 
 `tools/walkthrough/scripts/phone-runner.walk` uses the production native pairing panel with a fictional backend in
