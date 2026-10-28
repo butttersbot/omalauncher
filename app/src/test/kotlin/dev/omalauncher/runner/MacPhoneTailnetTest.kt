@@ -15,6 +15,7 @@ class MacPhoneTailnetTest {
         val seen = CopyOnWriteArrayList<String>()
         val uploads = CopyOnWriteArrayList<JSONObject>()
         var missingRoute = false
+        var helperStatus = 200
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         server.createContext("/phone-runner/") { exchange ->
             val path = exchange.requestURI.path
@@ -25,7 +26,7 @@ class MacPhoneTailnetTest {
                 status = 401; JSONObject().put("ok", false)
             } else when (path) {
                 "/phone-runner/tailnet" -> JSONObject("""{"ok":true,"self":{"name":"galaxy-z-fold8","addresses":["100.80.1.2"],"os":"android","online":true},"runner":"jacks-mac-pro","devices":[{"name":"jacks-mac-pro","addresses":["100.80.1.3"]},{"name":"other/invalid"}]}""")
-                "/phone-runner/whois" -> if (missingRoute) { status = 404; JSONObject().put("error", "not found") } else if (query == "address=100.80.1.3") JSONObject().put("ok", true).put("device", "jacks-mac-pro").put("owner", true)
+                "/phone-runner/whois" -> if (helperStatus != 200) { status = helperStatus; JSONObject().put("error", "helper refused its credential") } else if (missingRoute) { status = 404; JSONObject().put("error", "not found") } else if (query == "address=100.80.1.3") JSONObject().put("ok", true).put("device", "jacks-mac-pro").put("owner", true)
                     else { status = 404; JSONObject().put("ok", false).put("owner", false) }
                 "/phone-runner/taildrop" -> {
                     uploads += JSONObject(exchange.requestBody.bufferedReader().readText())
@@ -62,6 +63,11 @@ class MacPhoneTailnetTest {
             wall += 60_001; nano += 60_001_000_000L
             assertEquals(RunnerIdentityLookup.Unavailable, client.lookup(proof.address))
             assertTrue(runnerIdentityDecision("jacks-mac-pro", proof.address, proof, client.lookup(proof.address), wall).accepted)
+            for (status in listOf(401, 403)) {
+                helperStatus = status
+                wall += 60_001; nano += 60_001_000_000L
+                assertEquals(RunnerIdentityLookup.Unavailable, client.lookup(proof.address))
+            }
             server.stop(0)
             // A fresh unknown caller remains refused when the helper is unavailable.
             assertEquals(RunnerIdentityLookup.Unavailable, client.lookup("100.80.1.10"))

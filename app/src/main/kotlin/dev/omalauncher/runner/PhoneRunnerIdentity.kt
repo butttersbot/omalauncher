@@ -31,10 +31,14 @@ fun runnerIdentityDecision(device: String, address: String, cached: RunnerCached
     if (!runnerTailnetIPv4(address)) return RunnerIdentityDecision(false, cached)
     return when (lookup) {
         is RunnerIdentityLookup.Confirmed -> {
-            val fresh = lookup.peer.owner && lookup.peer.device == device && lookup.at >= 0 &&
-                now >= lookup.at && now - lookup.at <= RUNNER_LIVE_IDENTITY_MS
-            if (fresh) RunnerIdentityDecision(true, RunnerCachedIdentity(address, lookup.at))
-            else RunnerIdentityDecision(false, cached?.takeUnless { it.address == address })
+            val matches = lookup.peer.owner && lookup.peer.device == device
+            val fresh = lookup.at >= 0 && now >= lookup.at && now - lookup.at <= RUNNER_LIVE_IDENTITY_MS
+            when {
+                !matches -> RunnerIdentityDecision(false, cached?.takeUnless { it.address == address })
+                fresh -> RunnerIdentityDecision(true, RunnerCachedIdentity(address, lookup.at))
+                // An aged cached positive is not a revocation. Never renew it or erase a valid lease.
+                else -> runnerIdentityDecision(device, address, cached, RunnerIdentityLookup.Unavailable, now)
+            }
         }
         RunnerIdentityLookup.Rejected -> RunnerIdentityDecision(false, cached?.takeUnless { it.address == address })
         RunnerIdentityLookup.Unavailable -> RunnerIdentityDecision(

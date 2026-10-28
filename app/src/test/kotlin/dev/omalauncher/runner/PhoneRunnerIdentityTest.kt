@@ -60,7 +60,14 @@ class PhoneRunnerIdentityTest {
         val confirmation = RunnerIdentityLookup.Confirmed(RunnerPeer(paired.device, true), at)
         val result = runnerCallerDecision(token, address, phone, listOf(paired), { confirmation }, now)
         assertEquals(at, result.cache!!.at)
-        assertNull(runnerCallerDecision(token, address, phone, listOf(paired), { confirmation }, at + RUNNER_LIVE_IDENTITY_MS + 1).peer)
+        val stale = runnerCallerDecision(token, address, phone, listOf(paired), { confirmation }, at + 3_600_000)
+        assertNotNull(stale.peer)
+        assertEquals(paired.identity, stale.cache)
+        assertNull(runnerCallerDecision(token, address, phone, listOf(paired.copy(identity = null)), { confirmation }, at + 3_600_000).peer)
+        assertNull(runnerCallerDecision(token, address, phone, listOf(paired), { confirmation }, at - 1).peer)
+        val expired = runnerCallerDecision(token, address, phone, listOf(paired), { confirmation }, at + RUNNER_OFFLINE_IDENTITY_MS + 1)
+        assertNull(expired.peer)
+        assertEquals(paired.identity, expired.cache)
     }
     @Test fun diskRecordContainsOnlyTheDigestAndBoundedIdentityNotTheCredential() {
         val record = runnerKeyRecord(paired)
