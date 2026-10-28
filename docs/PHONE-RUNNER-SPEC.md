@@ -166,3 +166,16 @@ e59b2f48 result. These are fictional preview screenshots, not Shipped launcher r
 identity/pairing, live desktop-to-phone sessions, nonce races/notifications across devices, sleep and real performance
 wait for the coordinated launcher/helper promotion. Canvas settings cards could not be read (service timed out);
 no Canvas state or Shipped record was changed. No launcher, desktop or runner was installed or restarted.
+
+### Bounded identity follow-up checkpoint (2026-10-28)
+
+Source `9ff68659` (including `fdbcccde`, `dbde38bd`, `9cb3d257`) passed lane B's compile/auth checkpoint:
+82 requested tests, no failures: PhoneRunnerIdentityTest 7, PhoneRunnerTest 7,
+PhoneRunnerApprovalTest 3, MacPhoneTailnetTest 1, MacThreadsTest 47, ApprovalsTest 14,
+PendingApprovalGuardTest 3. The critic independently probed stale positive confirmations with a valid
+lease, without a lease, and with a mismatched device; all behaved correctly. Review findings resolved:
+read the clock after lookup; distinguish missing/invalid helper service from an authoritative identity
+refusal; preserve but never renew a bounded lease on an aged positive. No UI changed in this follow-up;
+the prior 24-step phone-runner and 26-step question-Skip emulator walks and eight reviewed LOOKs stand.
+The added real-phone offline/local-source walk remains deferred until owner promotion and helper deployment.
+No launcher install, runner restart, actual pairing or live work was performed by this checkpoint.
