@@ -23,31 +23,51 @@ internal class OrderJournal(private val file: File) : java.io.Closeable {
     private var closed = false
     private var failed = false
     private val rows = linkedMapOf<String, JournalOrder>()
+    private val canonicalPath = file.canonicalPath
+    companion object { private val activePaths = mutableSetOf<String>() }
     init {
-        file.absoluteFile.parentFile.mkdirs()
-        lockChannel = FileChannel.open(File(file.absoluteFile.parentFile, file.name + ".lock").toPath(),
-            StandardOpenOption.CREATE, StandardOpenOption.WRITE)
-        lock = try { checkNotNull(lockChannel.tryLock()) { "Order journal already open" } }
-            catch (e: Exception) { lockChannel.close(); throw IllegalStateException("Order journal already open", e) }
-        try { if (file.exists()) {
-            require(file.length() <= 4_000_000) { "Order journal too large; reconcile before trading" }
-            val saved = JSONObject(file.readText())
-            require(saved.getInt("version") == 1)
-            val entries = saved.getJSONArray("orders")
-            for (i in 0 until entries.length()) {
-                val row = entries.getJSONObject(i)
-                val id = row.getString("id")
-                check(id !in rows) { "Duplicate journal id" }
-                val stage = OrderStage.valueOf(row.getString("stage"))
-                rows[id] = JournalOrder(id, row.getString("cloid"),
-                    if (stage == OrderStage.Submitting || stage == OrderStage.Signing) OrderStage.Unknown else stage,
-                    row.getJSONObject("ticket"), row.getLong("updated"), row.optString("venueId").takeIf { it.isNotEmpty() })
+        // POSIX can release process locks when ANY descriptor for that inode closes.
+        // Reject duplicate JVM owners before opening/closing another lock-file descriptor.
+        synchronized(activePaths) { check(activePaths.add(canonicalPath)) { "Order journal already open" } }
+        var channel: FileChannel? = null
+        var acquired: java.nio.channels.FileLock? = null
+        try {
+            file.absoluteFile.parentFile.mkdirs()
+            val opened = FileChannel.open(File(file.absoluteFile.parentFile, file.name + ".lock").toPath(),
+                StandardOpenOption.CREATE, StandardOpenOption.WRITE)
+            channel = opened
+            val held = checkNotNull(opened.tryLock()) { "Order journal already open" }
+            acquired = held
+            lockChannel = opened
+            lock = held
+            if (file.exists()) {
+                require(file.length() <= 4_000_000) { "Order journal too large; reconcile before trading" }
+                val saved = JSONObject(file.readText())
+                require(saved.getInt("version") == 1)
+                val entries = saved.getJSONArray("orders")
+                for (i in 0 until entries.length()) {
+                    val row = entries.getJSONObject(i)
+                    val id = row.getString("id")
+                    check(id !in rows) { "Duplicate journal id" }
+                    val stage = OrderStage.valueOf(row.getString("stage"))
+                    rows[id] = JournalOrder(id, row.getString("cloid"),
+                        if (stage == OrderStage.Submitting || stage == OrderStage.Signing) OrderStage.Unknown else stage,
+                        row.getJSONObject("ticket"), row.getLong("updated"), row.optString("venueId").takeIf { it.isNotEmpty() })
+                }
+                save()
             }
-            save() // Durable recovery before any caller can authorize a new send.
-        } } catch (e: Exception) { lock.release(); lockChannel.close(); throw e }
+        } catch (e: Exception) {
+            runCatching { acquired?.release() }; runCatching { channel?.close() }
+            synchronized(activePaths) { activePaths.remove(canonicalPath) }
+            throw e
+        }
     }
     private fun usable() = check(!closed && !failed) { "Order journal unavailable; close and reconcile before continuing" }
-    @Synchronized override fun close() { if (!closed) { closed = true; lock.release(); lockChannel.close() } }
+    @Synchronized override fun close() { if (!closed) {
+        closed = true
+        try { lock.release() } finally { lockChannel.close() }
+        synchronized(activePaths) { activePaths.remove(canonicalPath) }
+    } }
     @Synchronized fun all(): List<JournalOrder> { usable(); return rows.values.map { it.copy(ticket = JSONObject(it.ticket.toString())) } }
     @Synchronized fun review(ticket: OrderTicket, now: Long): JournalOrder {
         usable()
