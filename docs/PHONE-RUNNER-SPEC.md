@@ -189,3 +189,9 @@ HTTP `text/event-stream`, not the protocol's internal JSON page. It emits id/eve
 keep-alive comments for 25 seconds with per-second identity rechecks, then permits cursor reconnect.
 PhoneRunnerContractTest exercises actual protocol replies through parseMacDecision/parseMacStopped
 and the production stream writer through followMacStream, including a nonzero resume cursor.
+
+Desktop contract checkpoint `d2da64b5`: lane B compile and 62/62 tests passed, including
+PhoneRunnerContractTest and DesktopEndToEndTest.theFoldsSessionsAreReachedLikeAComputersThreads.
+The production SSE writer was accepted by the actual shared desktop reader. Reviewer note: phone stop
+currently acknowledges idempotently with stopped:true even for an idle session, rather than exposing
+whether it had been running. No UI change, new walk, install, pairing or runner deployment occurred.
