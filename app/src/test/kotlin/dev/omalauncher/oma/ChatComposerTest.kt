@@ -146,6 +146,9 @@ class ChatComposerTest {
         assertEquals(Outgoing.Refused(IMAGE_GONE), out(images = 1, missing = true, to = chat))
         assertEquals(Outgoing.Refused(CHAT_MAKING), out(frontReady = true, to = SendTo.ChatStarting("c1", "N")))
         assertEquals(Outgoing.Mac("hello", "t-new", "Menu"), out(frontReady = true, to = SendTo.Mac("t-new", "Menu", "c1")))
+        // /mode is Soma's to answer (slice 6): never the front agent's words, even when it would read the chat's first words.
+        assertEquals(Outgoing.ChatMac("/mode manual", chat.chat), out(draft = "/mode manual", frontReady = true, to = chat))
+        assertEquals(Outgoing.Mac("/mode", "t-new", "Menu"), out(draft = "/mode", frontReady = true, to = SendTo.Mac("t-new", "Menu", "c1")))
     }
 
     /** OPEN-BUGS #13: a new chat's work is the Mac's, so the phone's Linux and agents are not needed to start one. */

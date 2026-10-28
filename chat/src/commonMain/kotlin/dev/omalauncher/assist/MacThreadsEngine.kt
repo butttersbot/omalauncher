@@ -6,6 +6,7 @@ import dev.omalauncher.oma.ChatTask
 import dev.omalauncher.oma.QUICK_AGENT
 import dev.omalauncher.oma.TaskStatus
 import dev.omalauncher.oma.chatKey
+import dev.omalauncher.oma.choseMode
 import dev.omalauncher.oma.onMac
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -531,6 +532,8 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
         restore()
         // "switch to codex" typed on a thread's tab, the whole message, is a switch (DESIGN §4), never words for the agent.
         if (delivered == null) macSwitchAsked(prompt)?.let { return switchTo(threadId, it, prompt, name, chat) }
+        // "/mode", "/mode manual": answered here (slice 6), never words for the agent and never an answer to a request.
+        if (delivered == null) modeCommand(prompt)?.let { return answerMode(it, prompt, chat, threadId, name) }
         val log = platform.chatLog()
         val time = synchronized(platform.stampLock) {
             log.stamp(System.currentTimeMillis()).also { log.begin(macDirect(it, prompt, threadId, name).copy(chat = chat, images = shown)) }
@@ -1110,6 +1113,48 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
     }
 
     /**
+     * Soma's answer to /mode typed in chat [chat]: on its thread [threadId] (from the next message, through the runner), or,
+     * before there is one, kept with the chat for the thread its first words make. Filed as his words with Soma's answer
+     * under them; nothing goes to the agent, and nothing answers a request.
+     */
+    private fun answerMode(command: ModeCommand, prompt: String, chat: String, threadId: String?, name: String) {
+        val log = platform.chatLog()
+        val time = synchronized(platform.stampLock) {
+            log.stamp(System.currentTimeMillis()).also { log.begin(ChatTask(it, QUICK_AGENT, prompt, status = TaskStatus.Running, direct = true, chat = chat, thread = threadId.orEmpty(), threadName = macName(name))) }
+        }
+        fun said(text: String, failed: Boolean = false) =
+            log.update(time, save = true) { it.copy(status = if (failed) TaskStatus.Failed else TaskStatus.Done, result = text, answeredBy = OMA_NAME) }
+        if (command is ModeCommand.Refused) return said(command.why, failed = true)
+        if (threadId == null) {
+            // No thread yet: the chat's agent as it would be made, and the mode kept with the chat.
+            val picked = platform.book().chat(chat)
+            val on = macChatMachine(picked?.host, makers()) ?: MAC_FIRST
+            val kind = macKindOf(picked?.agent?.ifBlank { null } ?: defaultFor(MAC_DEFAULT_PROJECT, on, limited())?.kind ?: macInstalled(kindsOf(on)).firstOrNull() ?: MAC_CLAUDE)
+            return when (command) {
+                ModeCommand.Show -> said(modeShown(kind, macKindName(kind), macModeFor(kind, picked?.mode.orEmpty())))
+                is ModeCommand.Choose -> if (macModes(kind).isEmpty()) said(modeShown(kind, macKindName(kind), ""), failed = true)
+                    else { platform.changeBook { it.choseMode(chat, command.mode) }; said(modeChosen(command.mode, made = false)) }
+                else -> Unit
+            }
+        }
+        val thread = view.threads.firstOrNull { it.id == threadId }
+        val kind = macKindOf(thread?.kind.orEmpty())
+        when (command) {
+            ModeCommand.Show -> said(modeShown(kind, macKindName(kind), thread?.mode?.ifBlank { null } ?: macModeDefault(kind)))
+            is ModeCommand.Choose -> if (thread != null && macModes(kind).isEmpty()) said(modeShown(kind, macKindName(kind), ""), failed = true)
+                else thread(name = "oma-mac-mode", isDaemon = true) {
+                    when (val answer = client(threadId).setMode(threadId, command.mode)) {
+                        is MacAnswer.Ok -> said(modeChosen(answer.value, made = true))
+                        MacAnswer.NotFound -> said("Not changed: this thread's computer doesn't take /mode yet (its runner is older).", failed = true)
+                        is MacAnswer.Failed -> said("Not changed: ${answer.error.ifBlank { "the computer said no" }}.", failed = true)
+                        else -> said("Not changed: the computer can't be reached. Try again when it answers.", failed = true)
+                    }
+                }
+            else -> Unit
+        }
+    }
+
+    /**
      * The first words of the new chat [chat] when no front agent can read them ([dev.omalauncher.oma.Outgoing.ChatMac]):
      * filed as his, then sent as they are to a new thread in [MAC_DEFAULT_PROJECT] called by the chat's name or his
      * first words ([chatDirectName]). Nothing on the phone is needed: no Linux and no agent. With no Mac set up it
@@ -1118,6 +1163,8 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
     /** [shown] are the pictures as the chat names them, for the entry's thumbnails; [images] the files that go to the Mac. */
     fun startChatDirect(prompt: String, chat: String, images: List<java.io.File> = emptyList(), shown: List<String> = emptyList()) {
         restore()
+        // A new chat's "/mode manual": kept with the chat, for the thread its first words make (slice 6).
+        if (images.isEmpty()) modeCommand(prompt)?.let { return answerMode(it, prompt, chat, threadId = null, name = "") }
         val log = platform.chatLog()
         val name = chatDirectName(platform.book().names[chatKey(chat)], prompt)
         val setUp = machines().isNotEmpty()

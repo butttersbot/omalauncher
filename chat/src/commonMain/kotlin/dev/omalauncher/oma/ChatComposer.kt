@@ -165,6 +165,8 @@ fun outgoing(
         to is SendTo.Chat -> when {
             // With pictures, straight to a new thread on the Mac, which gets them as a thread's tab sends them (Boss, 2026-10-21).
             images > 0 -> if (imageMissing) Outgoing.Refused(IMAGE_GONE) else Outgoing.ChatMac(prompt, to.chat)
+            // /mode is Soma's to answer (slice 6), never the front agent's words: it goes where the engine answers it.
+            dev.omalauncher.assist.modeCommand(prompt) != null -> Outgoing.ChatMac(prompt, to.chat)
             linux && agent in BACKGROUND_AGENTS && frontFirst(prompt, images, frontReady) -> Outgoing.Front(prompt)
             else -> Outgoing.ChatMac(prompt, to.chat)
         }

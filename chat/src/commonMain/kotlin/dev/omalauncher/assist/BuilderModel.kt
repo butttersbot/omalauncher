@@ -44,7 +44,10 @@ const val MODEL_COMMAND_RULE =
         "back. Soma answers these, not you, and you cannot switch your own model. It switches models within the tab's " +
         "agent only: Phone C runs Claude Code (opus, sonnet, haiku, fable), Phone B runs Codex, Phone A the default agent. " +
         "When he asks you to " +
-        "switch models, tell him the exact /model line to type; for Codex, that is Phone B's tab."
+        "switch models, tell him the exact /model line to type; for Codex, that is Phone B's tab. In a chat on a computer " +
+        "(a Mac's or an Omarchy box's thread), `/mode` shows whether it acts without asking (auto, the default) or asks " +
+        "before edits and commands (manual), and `/mode manual` or `/mode auto` sets it from his next message; Soma answers " +
+        "those too, and you cannot change your own mode."
 
 /** The models offered for [bin] by name; any other name the agent knows works too. */
 fun knownModels(bin: String): List<String> = when (bin) {

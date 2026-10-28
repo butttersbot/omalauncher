@@ -90,7 +90,21 @@ Open the preview to try the layout. We can keep talking while you look at it.
                 return bundled.map { if (it.time == 1L) it.copy(status = TaskStatus.Done, result = "Combined handoff complete.") else it } +
                     ChatTask(5, "Codex", "Legacy update", mail = "Agent mail", status = TaskStatus.Done, result = "Delivered in the bundled agent handoff.")
             }
-            return if (empty) emptyList() else if (questionSkipped) thread.map { it.copy(steps = it.steps + "skipped") } else thread
+            return (if (empty) emptyList() else if (questionSkipped) thread.map { it.copy(steps = it.steps + "skipped") } else thread) + modeAnswers
+        }
+        // /mode in a new chat (slice 6): answered with the engine's own words, as Soma's answer under his.
+        private var modeAnswers by mutableStateOf(listOf<ChatTask>())
+        private var chatMode = ""
+        private fun answerMode(prompt: String, chat: String): Boolean {
+            val command = dev.omalauncher.assist.modeCommand(prompt) ?: return false
+            val said = when (command) {
+                dev.omalauncher.assist.ModeCommand.Show -> dev.omalauncher.assist.modeShown("claude", "Claude", dev.omalauncher.assist.macModeFor("claude", chatMode))
+                is dev.omalauncher.assist.ModeCommand.Choose -> dev.omalauncher.assist.modeChosen(command.mode, made = false).also { chatMode = command.mode }
+                is dev.omalauncher.assist.ModeCommand.Refused -> command.why
+            }
+            android.util.Log.i("SomaWalk", "mode command: $prompt -> $said")
+            modeAnswers = modeAnswers + ChatTask(System.currentTimeMillis(), dev.omalauncher.oma.QUICK_AGENT, prompt, chat = chat, direct = true, status = TaskStatus.Done, result = said, answeredBy = dev.omalauncher.assist.OMA_NAME)
+            return true
         }
         override fun updateTask(time: Long, save: Boolean, change: (ChatTask) -> ChatTask) {}
         override fun working() = false
@@ -128,7 +142,7 @@ Open the preview to try the layout. We can keep talking while you look at it.
         override fun lookAtBuilders() {}
         override fun build(prompt: String, images: List<String>, way: BuildWay, builder: BuilderId?) {}
         override fun askFront(prompt: String, chat: String) {}
-        override fun startMacChat(prompt: String, chat: String, images: List<java.io.File>) {}
+        override fun startMacChat(prompt: String, chat: String, images: List<java.io.File>) { answerMode(prompt, chat) }
         override fun sayToMac(prompt: String, thread: String, name: String, chat: String, images: List<java.io.File>) {}
         private var answerCount = 0
         override fun submitArtifactReply(source: ArtifactReplySource, request: ArtifactReplyRequest, done: (ArtifactReplyResult) -> Unit) {

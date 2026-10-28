@@ -40,7 +40,8 @@ data class TitleAsk(val message: String, val answer: String? = null)
  * alone, so a long task does not leave the tab "New chat" for its whole run.
  */
 fun titleDue(entries: List<ChatTask>, now: Long): TitleAsk? {
-    val first = entries.firstOrNull() ?: return null
+    // A slash command (/mode, /model) Soma answers says nothing of what the chat is about: named by his first words after it.
+    val first = entries.firstOrNull { !it.prompt.trimStart().startsWith("/") } ?: return null
     val open = first.status == TaskStatus.Running || first.status == TaskStatus.Queued
     if (!open) return TitleAsk(first.prompt, first.result.takeIf { first.status == TaskStatus.Done && it.isNotBlank() })
     return if (now - first.time >= TITLE_WAIT_MS) TitleAsk(first.prompt) else null
