@@ -51,6 +51,8 @@ data class HostChoice(
     val default: dev.omalauncher.assist.MacPick? = null,
     /** The host its runner is reached at (a tailnet name or address), which is how herd's machines are matched to it. */
     val address: String = "",
+    /** Whether threads are made there: false for the Fold's own runner, whose sessions are reached but never made from here. */
+    val makes: Boolean = true,
 )
 
 /** A picture he picked, still on the device's side; [ChatHost.importImage] makes it a [PromptImage]. */

@@ -86,7 +86,7 @@ class DesktopChatHost(
 
     override fun hosts(): List<HostChoice> = engine.hosts().map { seen ->
         val agents = engine.kindsOn(seen.id)
-        HostChoice(seen.id, seen.name, seen.reachable, agents, macInstalled(agents).associateWith { macModels(it, engine.view.threads, engine.modelsOn(seen.id)[it].orEmpty()) }, engine.defaultPick(seen.id), engine.hostAddress(seen.id))
+        HostChoice(seen.id, seen.name, seen.reachable, agents, macInstalled(agents).associateWith { macModels(it, engine.view.threads, engine.modelsOn(seen.id)[it].orEmpty()) }, engine.defaultPick(seen.id), engine.hostAddress(seen.id), makes = engine.makesThreads(seen.id))
     }
 
     override fun agentName(): String? = null

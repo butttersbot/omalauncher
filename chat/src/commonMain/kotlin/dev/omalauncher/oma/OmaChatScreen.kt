@@ -202,7 +202,9 @@ private fun ChatScreen(
     val deciding = frontWorking && tasks.any { it.time == frontTime && it.undecided && (tab == OMA_TAB || it.chat == to.chat) }
     // The computers a new chat's thread can be made on, read with everything else, and the one this tab's would be.
     val hosts = remember(tick) { host.hosts() }
-    val chatOn = (to as? SendTo.Chat)?.let { chatHostShown(hosts, book.chat(it.chat))?.name } ?: "the Mac"
+    // Where a new chat's thread can be made: never the Fold's own runner (PHONE-RUNNER-SPEC).
+    val makers = remember(hosts) { hosts.filter { it.makes } }
+    val chatOn = (to as? SendTo.Chat)?.let { chatHostShown(makers, book.chat(it.chat))?.name } ?: "the Mac"
     // The pick menu open, if any, drawn over everything with the tab menu.
     var picking by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(wanted) { picking = null }
@@ -481,7 +483,7 @@ private fun ChatScreen(
                 if (entries.isEmpty() && earlier.isEmpty()) {
                     // Where its thread will be made and who runs it, picked before the first words (cockpit slice 5). First,
                     // so it sits under the line in this list that grows upwards.
-                    if (to is SendTo.Chat && hosts.isNotEmpty()) item { ChatPicks(hosts, book.chat(to.chat)) { picking = it } }
+                    if (to is SendTo.Chat && makers.isNotEmpty()) item { ChatPicks(makers, book.chat(to.chat)) { picking = it } }
                     item {
                         BasicText(
                             when {
@@ -711,7 +713,7 @@ private fun ChatScreen(
         } // Artifact workspace; the existing composer above is unchanged.
         // Over everything, as home's menu is.
         val pickChat = (to as? SendTo.Chat)?.chat
-        if (picking != null && pickChat != null) PickMenu(picking!!, hosts, book.chat(pickChat), { on, agent, model -> hostPicked(pickChat, on, agent, model) }) { picking = null }
+        if (picking != null && pickChat != null) PickMenu(picking!!, makers, book.chat(pickChat), { on, agent, model -> hostPicked(pickChat, on, agent, model) }) { picking = null }
         menuFor?.let { key ->
             val thread = all.firstOrNull { it.key == key }
             val shown = tabEntries(tasks, key, book)
@@ -732,8 +734,10 @@ private fun ChatScreen(
             val switches = moving?.let { id ->
                 val known = host.macView().threads
                 val now = known.firstOrNull { it.id == id } ?: return@let emptyList()
-                val on = hosts.firstOrNull { it.id == macMachineOf(id) }
-                macSwitchTargets(MacPick(now.kind, now.model), on?.agents.orEmpty(), known, on?.models.orEmpty())
+                // A session on the Fold can't move: nothing is made there.
+                val on = hosts.firstOrNull { it.id == macMachineOf(id) } ?: return@let emptyList()
+                if (!on.makes) return@let emptyList()
+                macSwitchTargets(MacPick(now.kind, now.model), on.agents, known, on.models)
             }.orEmpty()
             TabMenu(
                 title = tabTitle(key, threads + all),

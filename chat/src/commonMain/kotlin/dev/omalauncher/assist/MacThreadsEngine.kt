@@ -33,6 +33,8 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
     @Volatile private var cursors = MacCursors()
     /** The agents each Mac has, by its id, as its `/health` last said; none until it has. */
     @Volatile private var kinds: Map<String, List<String>> = emptyMap()
+    // The computers whose runner is the Fold's own (MacHealth.phone): nothing is made there.
+    @Volatile private var phones: Set<String> = emptySet()
     @Volatile private var offered: Map<String, Map<String, List<String>>> = emptyMap()
     /** How many threads each computer said it has at its last `/health`: a change (a thread or bot made elsewhere) is listed at once. */
     @Volatile private var counts: Map<String, Int> = emptyMap()
@@ -94,6 +96,12 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
 
     /** The agents the computer [machine] said it has at its last answer (`/health`'s kinds); none before it answered. */
     fun kindsOn(machine: String): List<String> = kindsOf(machine)
+
+    /** Whether threads can be made on [machine]: every computer's runner but the Fold's own. */
+    fun makesThreads(machine: String): Boolean = machine !in phones
+
+    /** The computers a new chat's thread can be made on, as they stand. */
+    private fun makers(): List<MacSeen> = macSeen(machines(), view).filter { makesThreads(it.id) }
 
     /** The models the computer [machine]'s runner listed at its last answer, by agent (`/health`'s models: Venice's); none before. */
     fun modelsOn(machine: String): Map<String, List<String>> = offered[machine].orEmpty()
@@ -240,6 +248,7 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
         if (health is MacHealthResult.Up) {
             kinds = kinds + (machine to health.health.kinds)
             offered = offered + (machine to health.health.models)
+            phones = if (health.health.phone) phones + machine else phones - machine
             changed = counts[machine].let { it != null && it != health.health.threads }
             counts = counts + (machine to health.health.threads)
         }
@@ -329,6 +338,7 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
                         if (health is MacHealthResult.Up) {
                             kinds = kinds + (machine.id to health.health.kinds)
                             offered = offered + (machine.id to health.health.models)
+                            phones = if (health.health.phone) phones + machine.id else phones - machine.id
                         }
                         val listed = if (health is MacHealthResult.Up) client.threads() else MacAnswer.Unreachable
                         if (listed is MacAnswer.Ok) {
@@ -1072,7 +1082,7 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
     fun startChat(asked: Long, prompt: String, away: Boolean, chat: String) {
         restore()
         val log = platform.chatLog()
-        val macs = macSeen(machines(), view)
+        val macs = makers()
         val on = macChatMachine(platform.book().chat(chat)?.host, macs)
         when (chatPlace(on != null, macs.any { it.id == on && it.reachable })) {
             ChatPlace.NotSetUp -> log.update(asked, save = true) { it.copy(agent = QUICK_AGENT, result = MAC_NOT_SET_UP, status = TaskStatus.Failed) }
@@ -1115,7 +1125,7 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
     private fun makeForChat(time: Long, prompt: String, away: Boolean, chat: String, given: String? = null, machine: String? = null) {
         val name = given ?: chatThreadName(platform.book().names[chatKey(chat)])
         val picked = platform.book().chat(chat)
-        val on = machine ?: macChatMachine(picked?.host, macSeen(machines(), view)) ?: MAC_FIRST
+        val on = machine ?: macChatMachine(picked?.host, makers()) ?: MAC_FIRST
         val agent = picked?.agent.orEmpty()
         // His pick is used for this chat alone (Boss, 2026-10-28: a pick no longer becomes the default for later chats);
         // with none, the default a switch of agent left, while it can be used.
