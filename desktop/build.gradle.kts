@@ -42,6 +42,8 @@ compose.desktop {
         mainClass = "dev.omalauncher.desktop.MainKt"
         // The Keychain library loads its native half.
         jvmArgs += "--enable-native-access=ALL-UNNAMED"
+        // A trackpad pinch on the dashboard (desktop slice 5c, Pinch.kt) is heard through Apple's gesture listener.
+        jvmArgs += "--add-exports=java.desktop/com.apple.eawt.event=ALL-UNNAMED"
         nativeDistributions {
             // `soma --serve` runs on the JDK's own HTTP server, which a trimmed runtime leaves out unless named.
             modules("jdk.httpserver")

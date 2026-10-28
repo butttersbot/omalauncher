@@ -14,6 +14,7 @@ import dev.omalauncher.widgets.Cell
 import dev.omalauncher.widgets.layout.Applied
 import dev.omalauncher.widgets.layout.CanvasVerb
 import dev.omalauncher.widgets.layout.ItemKind
+import dev.omalauncher.widgets.layout.PAGE_START
 import dev.omalauncher.widgets.layout.Notebook
 import dev.omalauncher.widgets.layout.NotebookItem
 import dev.omalauncher.widgets.layout.VerbJson
@@ -141,6 +142,35 @@ class DesktopCanvas(private val file: File, private val device: String, private 
      * every page at its cells, which no page's blocks may take.
      */
     var shown: String by mutableStateOf(DESKTOP_PAGE)
+
+    /** Whether the window shows its pages small (desktop slice 5c: [ pages ], Cmd-0 or a pinch), rather than the page itself. */
+    var overview: Boolean by mutableStateOf(false)
+
+    /** Shows the [n]th page (1 is the first), as Cmd-1…9 do; false when there is no such page. */
+    fun jump(n: Int): Boolean {
+        val to = page.pages.getOrNull(n - 1) ?: return false
+        shown = to.id
+        overview = false
+        return true
+    }
+
+    /** A new page at the end, called "Page N" (the first N no page is called), shown: its id, or null when it couldn't be made. */
+    fun addPage(): String? {
+        val id = rules.pageId(page)
+        val name = generateSequence(page.pages.size + 1) { it + 1 }.map { "Page $it" }.first { n -> page.pages.none { it.name.equals(n, ignoreCase = true) } }
+        if (!apply(CanvasVerb.PageMake(id, name)).applied) return null
+        shown = id
+        return id
+    }
+
+    /** The page [id] moved to be the [to]th (0 is first) among the pages, as a drag in the overview leaves it. */
+    fun movePage(id: String, to: Int): Applied {
+        val rest = page.pages.filter { it.id != id }
+        if (rest.size == page.pages.size) return Applied(page, false, "the page is gone")
+        val at = to.coerceIn(0, rest.size)
+        if (page.pages.indexOfFirst { it.id == id } == at) return Applied(page, false, "it is there already")
+        return apply(CanvasVerb.PageMove(id, if (at == 0) PAGE_START else rest[at - 1].id))
+    }
 
     /** What is on the page the window shows: the chat, and that page's blocks. */
     fun items(): List<NotebookItem> = blocksOn(shown())

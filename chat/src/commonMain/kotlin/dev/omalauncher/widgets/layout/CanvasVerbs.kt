@@ -31,6 +31,9 @@ sealed interface CanvasVerb {
 
     data class PageRename(val id: String, val name: String) : CanvasVerb
 
+    /** The page [id] moved to just after the page [after] ([PAGE_START]: first; null: last), with everything on it (desktop slice 5c: a drag in the overview). */
+    data class PageMove(val id: String, val after: String? = null) : CanvasVerb
+
     /** The page [id] goes, with everything on it. */
     data class PageRemove(val id: String) : CanvasVerb
 
@@ -91,6 +94,13 @@ fun applyVerb(
         }
         is CanvasVerb.PageRename -> page(verb.id)?.let { Applied(notebook.copy(pages = notebook.pages.map { p -> if (p.id == verb.id) p.copy(name = verb.name) else p }), true) } ?: no("the page is gone")
         is CanvasVerb.PageRemove -> if (page(verb.id) == null) no("the page is gone") else Applied(notebook.copy(pages = notebook.pages.filter { it.id != verb.id }), true)
+        is CanvasVerb.PageMove -> {
+            val moved = page(verb.id) ?: return no("the page is gone")
+            if (verb.after == verb.id) return no("a page can't go after itself")
+            val rest = notebook.pages.filter { it.id != verb.id }
+            val at = if (verb.after == PAGE_START) 0 else verb.after?.let { after -> rest.indexOfFirst { it.id == after }.takeIf { it >= 0 }?.plus(1) ?: return no("the page it goes after is gone") } ?: rest.size
+            Applied(notebook.copy(pages = rest.toMutableList().apply { add(at, moved) }), true)
+        }
         is CanvasVerb.Place -> {
             val to = page(verb.page) ?: return no("the page is gone")
             if (!fits(verb.cell, to, verb.key)) return no("that spot is taken or off the grid")
@@ -141,6 +151,7 @@ object VerbJson {
         is CanvasVerb.PageMake -> JSONObject().put("verb", "page.make").put("id", v.id).put("name", v.name).apply { v.after?.let { put("after", it) } }
         is CanvasVerb.PageRename -> JSONObject().put("verb", "page.rename").put("id", v.id).put("name", v.name)
         is CanvasVerb.PageRemove -> JSONObject().put("verb", "page.remove").put("id", v.id)
+        is CanvasVerb.PageMove -> JSONObject().put("verb", "page.move").put("id", v.id).apply { v.after?.let { put("after", it) } }
         is CanvasVerb.Place -> JSONObject().put("verb", "module.place").put("key", v.key).put("kind", v.kind.name).put("page", v.page).put("cell", cell(v.cell))
         is CanvasVerb.Move -> JSONObject().put("verb", "module.move").put("key", v.key).put("page", v.page).put("cell", cell(v.cell))
         is CanvasVerb.Remove -> JSONObject().put("verb", "module.remove").put("key", v.key)
@@ -155,6 +166,7 @@ object VerbJson {
             "page.make" -> CanvasVerb.PageMake(o.getString("id"), o.getString("name"), o.optString("after").ifEmpty { null })
             "page.rename" -> CanvasVerb.PageRename(o.getString("id"), o.getString("name"))
             "page.remove" -> CanvasVerb.PageRemove(o.getString("id"))
+            "page.move" -> CanvasVerb.PageMove(o.getString("id"), o.optString("after").ifEmpty { null })
             "module.place" -> CanvasVerb.Place(o.getString("key"), ItemKind.valueOf(o.getString("kind")), o.getString("page"), cellOf(o.getJSONObject("cell"))!!)
             "module.move" -> CanvasVerb.Move(o.getString("key"), o.getString("page"), cellOf(o.getJSONObject("cell"))!!)
             "module.remove" -> CanvasVerb.Remove(o.getString("key"))

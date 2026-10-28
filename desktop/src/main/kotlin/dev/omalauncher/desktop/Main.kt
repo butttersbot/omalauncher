@@ -23,6 +23,8 @@ import androidx.compose.foundation.draganddrop.dragAndDropTarget
 import androidx.compose.ui.draganddrop.awtTransferable
 import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.isAltPressed
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
@@ -125,7 +127,9 @@ fun main(args: Array<String>) {
     val canvas = DesktopCanvas(SomaHome.canvas, runCatching { InetAddress.getLocalHost().hostName }.getOrDefault("desktop"), chat = false).also { it.load() }
     // Its verbs from the front agent (slice 6), done on the event thread, where the canvas's state lives.
     // Waited on for a while, never for ever: the port's one listener isn't held by a window that has stopped answering.
-    door = CanvasDoor(shelf = { RemoteShelf.of(platform.machines()) ?: FileShelf(SomaHome.dir) }) { work ->
+    // Templates and LAYOUT.md: the service's shelf when a runner advertises one, else this Soma's own folder. Never on the window's thread.
+    val shelf = { RemoteShelf.of(platform.machines()) ?: FileShelf(SomaHome.dir) }
+    door = CanvasDoor(shelf = shelf) { work ->
         val answer = java.util.concurrent.CompletableFuture<org.json.JSONObject>()
         javax.swing.SwingUtilities.invokeLater { answer.complete(runCatching { work(canvas) }.getOrElse { org.json.JSONObject().put("ok", false).put("error", "Soma couldn't do that.") }) }
         runCatching { answer.get(10, java.util.concurrent.TimeUnit.SECONDS) }.getOrElse { org.json.JSONObject().put("ok", false).put("error", "Soma didn't answer in time; nothing may have changed, or it may yet.") }
@@ -191,7 +195,7 @@ fun main(args: Array<String>) {
         var dashboardShown by dashboard
         fun showDashboard(on: Boolean) { dashboardShown = on; SomaHome.write(SomaHome.settings, SomaHome.read(SomaHome.settings).put("dashboard", on)) }
         remember {
-            notices.tray = Tray.make(onOpen = ::showWindow, onDashboard = { showDashboard(true) }, onQuit = { scraps.close(); Single.release(); exitApplication() }, onLook = { id -> Looks.use(id); SomaHome.write(SomaHome.settings, SomaHome.read(SomaHome.settings).put("pack", id)) },
+            notices.tray = Tray.make(onOpen = ::showWindow, onDashboard = { showDashboard(true) }, onQuit = { scraps.close(); Single.release(); exitApplication() }, onLook = Looks::pick,
                 // The service is asked off the tray's thread; the code or what went wrong comes back as a notice.
                 onCar = { pair -> kotlin.concurrent.thread(name = "soma-car-pairing", isDaemon = true) {
                     notices.say("Soma", if (pair) CarPairing.start(platform.machines()) else CarPairing.end(platform.machines()))
@@ -213,11 +217,13 @@ fun main(args: Array<String>) {
             onCloseRequest = { scraps.flush(); showDashboard(false) },
             title = "Soma dashboard",
             state = dashboardState,
-            onPreviewKeyEvent = { e -> somaEscape(e, dashboardBack) },
+            onPreviewKeyEvent = { e -> pageKeys(e, canvas) || somaEscape(e, dashboardBack) },
         ) {
+            // A pinch on a trackpad shows the pages small, and spreading them shows the page again, as on the phone (slice 5c).
+            androidx.compose.runtime.DisposableEffect(window) { onDispose(Pinch.attach(window.rootPane) { inward -> canvas.overview = inward }) }
             CompositionLocalProvider(LocalBackStack provides dashboardBack) {
                 // A module's thread opens in the chat window, brought forward.
-                CanvasScreen(canvas, host, source, tick.value, wanted, onTab = { wanted = it; showWindow() }, chatElsewhere = ::showWindow, widgets = windowWidgets, scraps = scraps)
+                CanvasScreen(canvas, host, source, tick.value, wanted, onTab = { wanted = it; showWindow() }, chatElsewhere = ::showWindow, widgets = windowWidgets, scraps = scraps, shelf = shelf, pagesOverview = true)
             }
         }
         Window(
@@ -251,6 +257,20 @@ fun main(args: Array<String>) {
                 }
             }
         }
+    }
+}
+
+/**
+ * The dashboard's page keys (desktop slice 5c): Cmd-0 shows the pages small or the page again, Cmd-1…9 the page by its
+ * place. Ctrl as well, for the Linux jar.
+ */
+internal fun pageKeys(event: androidx.compose.ui.input.key.KeyEvent, canvas: DesktopCanvas): Boolean {
+    if (event.type != KeyEventType.KeyDown || !(event.isMetaPressed || event.isCtrlPressed) || event.isShiftPressed || event.isAltPressed) return false
+    val digits = listOf(Key.Zero, Key.One, Key.Two, Key.Three, Key.Four, Key.Five, Key.Six, Key.Seven, Key.Eight, Key.Nine)
+    return when (val n = digits.indexOf(event.key)) {
+        -1 -> false
+        0 -> { canvas.overview = !canvas.overview; true }
+        else -> canvas.jump(n)
     }
 }
 

@@ -395,6 +395,7 @@ fun resolveAsk(n: Notebook, ask: CanvasAsk, rules: ScreenRules): Resolved = when
 fun inverseOf(before: Notebook, verb: CanvasVerb): List<CanvasVerb> = when (verb) {
     is CanvasVerb.PageMake -> listOf(CanvasVerb.PageRemove(verb.id))
     is CanvasVerb.PageRename -> before.pages.firstOrNull { it.id == verb.id }?.let { listOf(CanvasVerb.PageRename(verb.id, it.name)) }.orEmpty()
+    is CanvasVerb.PageMove -> before.pages.indexOfFirst { it.id == verb.id }.takeIf { it >= 0 }?.let { at -> listOf(CanvasVerb.PageMove(verb.id, before.pages.getOrNull(at - 1)?.id ?: PAGE_START)) }.orEmpty()
     is CanvasVerb.PageRemove -> {
         val at = before.pages.indexOfFirst { it.id == verb.id }
         if (at < 0) emptyList() else {
@@ -457,6 +458,7 @@ private fun what(v: CanvasVerb): String = when (v) {
     is CanvasVerb.PageMake -> "the page \"${v.name}\""
     is CanvasVerb.PageRename -> "the page's old name \"${v.name}\""
     is CanvasVerb.PageRemove -> "taking a page away"
+    is CanvasVerb.PageMove -> "the page's place"
     is CanvasVerb.Place -> moduleTitle(v.key)
     is CanvasVerb.Move -> moduleTitle(v.key)
     is CanvasVerb.Remove -> "taking ${moduleTitle(v.key)} off"
@@ -530,6 +532,7 @@ fun nothingLeftOf(now: Notebook, inverses: List<CanvasVerb>): Boolean {
             is CanvasVerb.Place -> !page(v.page)
             is CanvasVerb.PageRemove -> !page(v.id)
             is CanvasVerb.PageRename -> !page(v.id)
+            is CanvasVerb.PageMove -> !page(v.id)
             is CanvasVerb.PageMake -> page(v.id)
             is CanvasVerb.PagePanels -> !page(v.id)
             is CanvasVerb.Unknown -> true
