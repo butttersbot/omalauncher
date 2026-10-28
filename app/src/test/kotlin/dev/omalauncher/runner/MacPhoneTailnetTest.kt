@@ -40,12 +40,18 @@ class MacPhoneTailnetTest {
         server.start()
         try {
             directory.resolve("mac-runner.json").writeText(JSONObject().put("url", "http://127.0.0.1:${server.address.port}").put("key", "fixture-key").toString())
-            val client = MacPhoneTailnet(directory)
+            var wall = 1_000_000L
+            var nano = 0L
+            val client = MacPhoneTailnet(directory, { wall }, { nano })
             assertEquals(listOf("jacks-mac-pro"), client.devices())
             assertEquals(RunnerPeer("jacks-mac-pro", true), client.whois("100.80.1.3"))
             assertEquals(RunnerPeer("jacks-mac-pro", true), client.whois("100.80.1.3"))
             assertEquals(1, seen.count { it == "/phone-runner/whois?address=100.80.1.3" })
-            assertNull(client.whois("100.80.1.9"))
+            assertEquals(RunnerIdentityLookup.Rejected, client.lookup("100.80.1.9"))
+            val proof = client.confirmDevice("jacks-mac-pro")!!
+            assertEquals(RunnerCachedIdentity("100.80.1.3", wall), proof)
+            wall += 30_000; nano += 30_000_000_000L
+            assertEquals(proof.at, (client.lookup(proof.address) as RunnerIdentityLookup.Confirmed).at)
             val pairing = JSONObject().put("url", "http://100.80.1.2:8478").put("key", "fictional-device-key").put("name", "Fold").put("runner", "galaxy-z-fold8")
             client.taildrop("jacks-mac-pro", "soma-runner-galaxy-z-fold8.json", pairing.toString())
             assertEquals("jacks-mac-pro", uploads.single().getString("device"))
@@ -53,7 +59,12 @@ class MacPhoneTailnetTest {
             assertEquals(pairing.toString(), uploads.single().getString("content"))
             server.stop(0)
             // A fresh unknown caller remains refused when the helper is unavailable.
-            assertNull(client.whois("100.80.1.10"))
+            assertEquals(RunnerIdentityLookup.Unavailable, client.lookup("100.80.1.10"))
+            wall += 60_001; nano += 60_001_000_000L
+            val offline = client.lookup(proof.address)
+            assertEquals(RunnerIdentityLookup.Unavailable, offline)
+            assertTrue(runnerIdentityDecision("jacks-mac-pro", proof.address, proof, offline, wall).accepted)
+            assertFalse(runnerIdentityDecision("jacks-mac-pro", proof.address, proof, offline, proof.at + RUNNER_OFFLINE_IDENTITY_MS + 1).accepted)
         } finally { server.stop(0); directory.deleteRecursively() }
     }
 }

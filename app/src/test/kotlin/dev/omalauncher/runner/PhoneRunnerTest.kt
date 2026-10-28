@@ -48,6 +48,23 @@ class PhoneRunnerTest {
         assertEquals(401, protocol.handle("POST", "/threads/builder-a/approvals/ticket", "{\"decision\":\"allow\",\"nonce\":\"ticket-1\"}", false).code)
         assertEquals(0, sessions.messages); assertEquals("", sessions.stopped); assertFalse(sessions.answered)
     }
+    @Test fun localCallerCannotForwardEvenAValidDesktopKeyAndPendingNonce() {
+        val sessions = Sessions(); val protocol = PhoneRunnerProtocol(sessions)
+        val keys = listOf(RunnerKey("mac-pro", runnerDigest("fixture-key")))
+        val local = setOf("127.0.0.1", "100.80.1.2", "100.90.1.2")
+        fun request(address: String, nonce: String = "ticket-1"): Int {
+            val caller = runnerCallerDecision("fixture-key", address, local, keys,
+                { RunnerIdentityLookup.Confirmed(RunnerPeer("mac-pro", true), 1000) }, 1000)
+            return protocol.handle("POST", "/threads/builder-a/approvals/request",
+                JSONObject().put("decision", "allow").put("nonce", nonce).toString(), caller.peer != null, caller.peer?.device.orEmpty()).code
+        }
+        for (address in local) assertEquals(401, request(address))
+        assertFalse(sessions.answered)
+        assertEquals(403, request("100.80.1.3", "wrong"))
+        assertFalse(sessions.answered)
+        assertEquals(200, request("100.80.1.3"))
+        assertEquals(404, request("100.80.1.3"))
+    }
     @Test fun phoneDIsReadableAndStoppableButCannotReceiveWork() {
         val sessions = Sessions(); val protocol = PhoneRunnerProtocol(sessions)
         assertEquals(200, protocol.handle("GET", "/threads/phone-d", "", true).code)
