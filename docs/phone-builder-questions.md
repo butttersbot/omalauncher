@@ -56,3 +56,10 @@ are queued behind lane C's shared emulator lock (held since16:48:29). No other
 lane was disturbed. Cover/unfolded LOOK review and actual-phone owner check remain
 pending. Final single-choice selection is an explicitly labelled send action;
 there is no post-send undo. No real questions/financial choices were answered.
+
+Lifecycle follow-up: OmaChatActivity removes EXTRA_QUESTION when the form opens
+and saves only an unconsumed nonce in instance state. Recreation restores that
+pending nonce instead of rereading the launch intent; closing an unanswered form
+then recreating the activity must not reopen it. A new notification intent can
+still explicitly reopen its live question. This Android-only change does not
+alter the preview APK or shared form; cover/unfolded walks remain onfe6034ca.

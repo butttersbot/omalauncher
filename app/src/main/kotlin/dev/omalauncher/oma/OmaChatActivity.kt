@@ -53,12 +53,12 @@ class OmaChatActivity : ComponentActivity() {
         MacThreads.open(this)
         if (savedInstanceState == null) prefill = textOf(intent)
         wanted = if (savedInstanceState == null) opened(intent) else savedInstanceState.getString(STATE_TAB)
-        wantedQuestion = intent.getStringExtra(EXTRA_QUESTION)
+        wantedQuestion = if (savedInstanceState == null) intent.getStringExtra(EXTRA_QUESTION) else savedInstanceState.getString(STATE_QUESTION)
         applySystemBars(this, Pack.isLight)
         val host = AndroidChatHost(this, runtime)
         setContent {
             LaunchedEffect(Pack.isLight) { applySystemBars(this@OmaChatActivity, Pack.isLight) }
-            OmaChatScreen(host, prefill, onPrefilled = { prefill = null }, wanted = wanted, onTab = { wanted = it.takeIf { tab -> tab != OMA_TAB } }, wantedQuestion = wantedQuestion, onQuestionOpened = { wantedQuestion = null })
+            OmaChatScreen(host, prefill, onPrefilled = { prefill = null }, wanted = wanted, onTab = { wanted = it.takeIf { tab -> tab != OMA_TAB } }, wantedQuestion = wantedQuestion, onQuestionOpened = { wantedQuestion = null; intent.removeExtra(EXTRA_QUESTION) })
         }
     }
 
@@ -82,6 +82,7 @@ class OmaChatActivity : ComponentActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putString(STATE_TAB, wanted)
+        outState.putString(STATE_QUESTION, wantedQuestion)
     }
 
     private fun threadOf(intent: Intent?) = intent?.getStringExtra(EXTRA_THREAD)
@@ -95,6 +96,7 @@ class OmaChatActivity : ComponentActivity() {
         const val EXTRA_QUESTION = "oma_question_nonce"
         const val EXTRA_THREAD = dev.omalauncher.ui.OMA_CHAT_THREAD
         private const val STATE_TAB = "tab"
+        private const val STATE_QUESTION = "question"
 
         fun intent(context: android.content.Context): Intent = Intent(context, OmaChatActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
