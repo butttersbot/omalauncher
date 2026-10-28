@@ -49,4 +49,15 @@ class WaitingQuestionDraftTest {
         assertTrue(draft.skipped)
         assertTrue(WaitingQuestionDraft.restore(draft.json()).skipped)
     }
+    @Test fun remoteWithdrawalClosesUnansweredFormButOwnNormalSendReceiptStays() {
+        val draft = WaitingQuestionDraft()
+        assertFalse(draft.closeAfterWithdrawal(true))
+        assertTrue(draft.closeAfterWithdrawal(false))
+        draft.sending = true
+        assertFalse(draft.closeAfterWithdrawal(false))
+        draft.sending = false; draft.sent = true
+        assertFalse(draft.closeAfterWithdrawal(false))
+        draft.skipped = true
+        assertTrue(draft.closeAfterWithdrawal(false))
+    }
 }

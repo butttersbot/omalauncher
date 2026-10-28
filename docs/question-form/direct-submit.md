@@ -113,7 +113,9 @@ the existing answer/event path, update Needs You from that book, and persist a
 short `skipped` approval line. Parsing also recognizes the fixed answer from
 older runner events. The chat card and open form share their existing draft
 store/in-flight gate; failed delivery retains the draft and exposes an error.
-A successful form Skip returns to chat. No automatic approval or card dismissal
+A successful form Skip returns to chat. An open unanswered form also closes
+when its nonce leaves the shared pending book (for example Skip on another device);
+a successful local normal Send keeps its existing Answers sent receipt view. No automatic approval or card dismissal
 is used, and locked/wrong/expired nonce protections are unchanged.
 
 Deployment note: restricted-option forms require the matching runner validation

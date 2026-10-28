@@ -81,6 +81,17 @@ internal fun ChatArtifactWorkspace(
             host.sendWaitingAnswers(saved[0], answers, done)
         }
     }
+    // The runner's normal pending-book update reaches every device, including an already open form.
+    LaunchedEffect(question?.key) {
+        val key = question?.key ?: return@LaunchedEffect
+        val draft = questionDrafts.get(key)
+        while (true) {
+            kotlinx.coroutines.delay(250)
+            val waiting = host.macPending().any { it.ticket == key } ||
+                host.builders().values.any { builder -> builder.pending.any { it.nonce == key } }
+            if (draft.closeAfterWithdrawal(waiting)) { questionSelection = null; break }
+        }
+    }
     var selections by rememberSaveable { mutableStateOf(mapOf<String, String>()) }
     var expanded by rememberSaveable { mutableStateOf(false) }
     var opened by remember { mutableStateOf(mapOf<String, ChatArtifact>()) }

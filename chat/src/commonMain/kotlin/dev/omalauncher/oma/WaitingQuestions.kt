@@ -96,6 +96,10 @@ internal fun ChatHost.sendWaitingAnswers(key: String, answers: JSONObject, done:
     done("That request has expired")
 }
 
+/** A remote answer/withdrawal closes an unanswered viewer; own normal Send may show its receipt. */
+internal fun WaitingQuestionDraft.closeAfterWithdrawal(stillWaiting: Boolean) =
+    !stillWaiting && !sending && (!sent || skipped)
+
 /** Shared by the card and form: one in-flight gate, including rotation and double taps. */
 internal fun WaitingQuestionDraft.send(request: WaitingQuestion, payload: JSONObject, skip: Boolean = false, done: () -> Unit = {}) {
     if (sending || sent) return
