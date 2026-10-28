@@ -95,6 +95,17 @@ private val BAR = 36.dp
 private val GRIP = 18.dp
 
 /**
+ * The chat block of the dashboard window, where the chat has a window of its own (Boss, 2026-10-28: the chat window is the
+ * unfolded phone's, the widgets a window of their own): a click brings the chat window.
+ */
+@Composable
+private fun ChatElsewhere(open: () -> Unit) {
+    Box(Modifier.fillMaxSize().clickable(onClick = open).semantics { contentDescription = "Chat block" }, contentAlignment = Alignment.Center) {
+        BasicText("[ chat ]", style = Pack.body(color = Pack.accent))
+    }
+}
+
+/**
  * The window as a canvas (slice 5): [canvas]'s page, its chat block drawing the chat on [host] and every other block a
  * module from [source], at the size its cells give it. A tap on a module opens that thread's tab in the chat block; a
  * right-click offers to add a module, remove one or arrange; while arranging, a block is moved by dragging it and resized
@@ -109,6 +120,7 @@ fun CanvasScreen(
     now: Long,
     wanted: String?,
     onTab: (String?) -> Unit,
+    chatElsewhere: (() -> Unit)? = null,
 ) {
     var arranging by remember { mutableStateOf(false) }
     // The right-click menu, and the block it was asked over (null: the page).
@@ -123,7 +135,7 @@ fun CanvasScreen(
     val onTabNow by rememberUpdatedState(onTab)
     val chat = remember(host) { movableContentOf { OmaChatScreen(host, prefill = null, onPrefilled = {}, wanted = wantedNow, onTab = { onTabNow(it.takeIf { tab -> tab != OMA_TAB }) }) } }
     BoxWithConstraints(Modifier.fillMaxSize().background(Pack.background)) {
-        if (maxWidth < CANVAS_ROOM) {
+        if (maxWidth < CANVAS_ROOM && chatElsewhere == null) {
             chat()
             canvas.unkept?.let { why -> Unkept(why, Modifier.align(Alignment.TopEnd)) }
             return@BoxWithConstraints
@@ -163,7 +175,8 @@ fun CanvasScreen(
                     onRemove = { canvas.apply(CanvasVerb.Remove(item.key)) },
                 ) {
                     if (ref.kind == ModuleKind.Chat) {
-                        Box(Modifier.fillMaxSize().semantics { contentDescription = "Chat block" }) { chat() }
+                        if (chatElsewhere != null) ChatElsewhere(chatElsewhere)
+                        else Box(Modifier.fillMaxSize().semantics { contentDescription = "Chat block" }) { chat() }
                     } else {
                         CompositionLocalProvider(LocalModuleFocus provides arranging) {
                             // Measured on the columns beside the chat, as a size word is: a block as wide as that is full.

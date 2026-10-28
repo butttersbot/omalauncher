@@ -438,7 +438,6 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
                 val fallback = if (picked.isNotBlank()) null else defaultFor(named.project, machine, limited)
                 val kind = fallback?.kind ?: macChatKind(picked, kindsOf(machine), limited) ?: macInstalled(kindsOf(machine)).first()
                 val model = if (picked.isNotBlank()) chosen?.model.orEmpty() else fallback?.model.orEmpty()
-                if (picked.isNotBlank()) remember(named.project, MacPick(picked, model))
                 val name = if (kind == MAC_CLAUDE) place.name else macKindThreadName(named.name, kind, threads.map { it.name })
                 // Said only when a limit is why: a thread of another agent's is otherwise simply made as Claude's.
                 val why = macLimitedStep(named.kind, kind).takeIf { picked.isBlank() && fallback == null && kind != macKindOf(named.kind) && macKindOf(named.kind) in limited }
@@ -1118,11 +1117,11 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
         val picked = platform.book().chat(chat)
         val on = machine ?: macChatMachine(picked?.host, macSeen(machines(), view)) ?: MAC_FIRST
         val agent = picked?.agent.orEmpty()
-        // His pick is always used, and becomes the default for new chats; with none, that default while it can be used.
+        // His pick is used for this chat alone (Boss, 2026-10-28: a pick no longer becomes the default for later chats);
+        // with none, the default a switch of agent left, while it can be used.
         val fallback = if (agent.isNotBlank()) null else defaultFor(MAC_DEFAULT_PROJECT, on, limited())
         val kind = fallback?.kind ?: macChatKind(agent, kindsOf(on), limited()) ?: macInstalled(kindsOf(on)).first()
         val model = if (agent.isNotBlank()) picked?.model.orEmpty() else fallback?.model.orEmpty()
-        if (agent.isNotBlank()) remember(MAC_DEFAULT_PROJECT, MacPick(agent, model))
         val named = if (kind == MAC_CLAUDE) name else macKindThreadName(name, kind, view.threads.filter { macMachineOf(it.id) == on }.map { it.name })
         platform.chatLog().update(time, save = true) { macChatStart(it, named) }
         make(time, MacFresh.Make(named, MAC_DEFAULT_PROJECT), away, kind, on, model) { sentText(time, prompt, it) }

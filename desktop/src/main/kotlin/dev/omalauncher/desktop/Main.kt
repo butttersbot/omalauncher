@@ -15,12 +15,20 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import dev.omalauncher.assist.MacThreadsEngine
 import dev.omalauncher.oma.OMA_TAB
+import dev.omalauncher.oma.OmaChatScreen
+import dev.omalauncher.ui.Pack
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Modifier
 import dev.omalauncher.canvas.chatHostModules
 import dev.omalauncher.canvas.cockpitFeeds
 import dev.omalauncher.canvas.moduleProjects
 import dev.omalauncher.oma.somaLinkKey
 import dev.omalauncher.oma.somaLinkTab
-import dev.omalauncher.ui.DesktopBack
+import dev.omalauncher.ui.BackStack
+import dev.omalauncher.ui.LocalBackStack
+import androidx.compose.runtime.CompositionLocalProvider
 import java.awt.MenuItem
 import java.awt.PopupMenu
 import java.awt.SystemTray
@@ -66,6 +74,8 @@ fun main(args: Array<String>) {
         exitProcess(0)
     }
     val shown = mutableStateOf(true)
+    // The dashboard (the canvas of modules and widgets) in a window of its own, opened from the tray; it remembers whether it was open.
+    val dashboard = mutableStateOf(SomaHome.read(SomaHome.settings).optBoolean("dashboard"))
     val wantedTab = mutableStateOf<String?>(null)
     // Set once the engine is up; a link heard before then waits in [early]. Both are only ever touched on the event
     // thread (the listener and the Apple-event handler post there, and so does the code that sets them), so a link that
@@ -155,8 +165,10 @@ fun main(args: Array<String>) {
     application {
         var shown by shown
         var wanted by wantedTab
+        var dashboardShown by dashboard
+        fun showDashboard(on: Boolean) { dashboardShown = on; SomaHome.write(SomaHome.settings, SomaHome.read(SomaHome.settings).put("dashboard", on)) }
         remember {
-            notices.tray = Tray.make(onOpen = { shown = true }, onQuit = { Single.release(); exitApplication() }, onLook = { id -> Looks.use(id); SomaHome.write(SomaHome.settings, SomaHome.read(SomaHome.settings).put("pack", id)) },
+            notices.tray = Tray.make(onOpen = { shown = true }, onDashboard = { showDashboard(true) }, onQuit = { Single.release(); exitApplication() }, onLook = { id -> Looks.use(id); SomaHome.write(SomaHome.settings, SomaHome.read(SomaHome.settings).put("pack", id)) },
                 // The service is asked off the tray's thread; the code or what went wrong comes back as a notice.
                 onCar = { pair -> kotlin.concurrent.thread(name = "soma-car-pairing", isDaemon = true) {
                     notices.say("Soma", if (pair) CarPairing.start(platform.machines()) else CarPairing.end(platform.machines()))
@@ -169,24 +181,42 @@ fun main(args: Array<String>) {
                     notices.say("Soma", if (copied == false) said.substringBefore(" Grok's connector details") + " " + details else said)
                 } })
         }
+        // Each window answers Escape from its own stack: an Escape in one never closes something in the other.
+        val chatBack = remember { BackStack() }
+        val dashboardBack = remember { BackStack() }
+        // Bumped to bring the chat window forward when it is open already (a module or [ chat ] in the dashboard).
+        var bring by remember { mutableStateOf(0) }
+        val dashboardState = rememberWindowState(size = DpSize(1240.dp, 820.dp))
+        fun escape(e: androidx.compose.ui.input.key.KeyEvent, back: BackStack, close: () -> Unit) =
+            if (e.type == KeyEventType.KeyDown && e.key == Key.Escape) { if (!back.press()) close(); true } else false
+        // The dashboard first, so at a start with both open the chat window is in front of it.
+        if (dashboardShown) Window(
+            onCloseRequest = { showDashboard(false) },
+            title = "Soma dashboard",
+            state = dashboardState,
+            onPreviewKeyEvent = { e -> escape(e, dashboardBack) { showDashboard(false) } },
+        ) {
+            CompositionLocalProvider(LocalBackStack provides dashboardBack) {
+                // A module's thread opens in the chat window, brought forward.
+                CanvasScreen(canvas, host, source, tick.value, wanted, onTab = { wanted = it; shown = true; bring++ }, chatElsewhere = { shown = true; bring++ })
+            }
+        }
         Window(
             onCloseRequest = { shown = false },
             visible = shown,
             title = "Soma",
             state = rememberWindowState(size = DpSize(1240.dp, 820.dp)),
-            onPreviewKeyEvent = { e ->
-                if (e.type == KeyEventType.KeyDown && e.key == Key.Escape) {
-                    if (!DesktopBack.press()) shown = false
-                    true
-                } else {
-                    false
-                }
-            },
+            onPreviewKeyEvent = { e -> escape(e, chatBack) { shown = false } },
         ) {
             // Each time it is shown, it comes to the screen he is on (Boss, 2026-10-19: after a restart macOS put it on
             // the other monitor's Space, and show only made it visible there).
-            androidx.compose.runtime.LaunchedEffect(shown) { if (shown) toPointerScreen(window) }
-            CanvasScreen(canvas, host, source, tick.value, wanted, onTab = { wanted = it })
+            androidx.compose.runtime.LaunchedEffect(shown, bring) { if (shown) toPointerScreen(window) }
+            // The unfolded phone's chat (Boss, 2026-10-28): two panes once there is an artifact, a question or the files beside it.
+            CompositionLocalProvider(LocalBackStack provides chatBack) {
+                Box(Modifier.fillMaxSize().background(Pack.background)) {
+                    OmaChatScreen(host, prefill = null, onPrefilled = {}, wanted = wanted, onTab = { wanted = it.takeIf { tab -> tab != OMA_TAB } })
+                }
+            }
         }
     }
 }
@@ -296,12 +326,13 @@ private object Single {
     }
 }
 
-/** The tray icon: Open, the looks, the car's pairing, Grok's connector, Quit. Its notifications are Soma's ([Notices]). */
+/** The tray icon: Open, the dashboard, the looks, the car's pairing, Grok's connector, Quit. Its notifications are Soma's ([Notices]). */
 private object Tray {
-    fun make(onOpen: () -> Unit, onQuit: () -> Unit, onLook: (String) -> Unit, onCar: (pair: Boolean) -> Unit = {}, onGrok: (connect: Boolean) -> Unit = {}): TrayIcon? {
+    fun make(onOpen: () -> Unit, onDashboard: () -> Unit, onQuit: () -> Unit, onLook: (String) -> Unit, onCar: (pair: Boolean) -> Unit = {}, onGrok: (connect: Boolean) -> Unit = {}): TrayIcon? {
         if (!SystemTray.isSupported()) return null
         val menu = PopupMenu()
         menu.add(MenuItem("Open Soma").apply { addActionListener { onOpen() } })
+        menu.add(MenuItem("Dashboard").apply { addActionListener { onDashboard() } })
         val looks = java.awt.Menu("Look")
         for (id in Looks.ids) looks.add(MenuItem(id).apply { addActionListener { onLook(id) } })
         menu.add(looks)

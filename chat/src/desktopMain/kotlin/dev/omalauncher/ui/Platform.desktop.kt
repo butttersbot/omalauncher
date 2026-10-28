@@ -5,6 +5,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.skiaPaint
@@ -34,10 +35,11 @@ actual fun DrawScope.drawTextRightAligned(text: String, x: Float, y: Float, size
 }
 
 /**
- * The desktop's Back is Escape. The window hands each Escape to [press], which gives it to the newest handler
- * still on screen and enabled, as Android gives Back to the innermost one.
+ * The desktop's Back is Escape. A window hands each Escape to its stack's [press], which gives it to the newest handler
+ * still on screen and enabled, as Android gives Back to the innermost one. Each window has a stack of its own
+ * ([LocalBackStack]), so an Escape in one never closes something in another (the chat and dashboard windows, 2026-10-28).
  */
-object DesktopBack {
+open class BackStack {
     private val handlers = ArrayList<() -> Boolean>()
 
     fun add(handler: () -> Boolean) = synchronized(handlers) { handlers.add(handler) }
@@ -48,14 +50,21 @@ object DesktopBack {
     fun press(): Boolean = synchronized(handlers) { handlers.toList() }.asReversed().any { it() }
 }
 
+/** The stack where no window gave one of its own (a test's single screen). */
+object DesktopBack : BackStack()
+
+/** The stack of the window being drawn. */
+val LocalBackStack = staticCompositionLocalOf<BackStack> { DesktopBack }
+
 @Composable
 actual fun BackHandler(enabled: Boolean, onBack: () -> Unit) {
     val current by rememberUpdatedState(onBack)
     val on by rememberUpdatedState(enabled)
-    DisposableEffect(Unit) {
+    val stack = LocalBackStack.current
+    DisposableEffect(stack) {
         val handler = { if (on) { current(); true } else false }
-        DesktopBack.add(handler)
-        onDispose { DesktopBack.remove(handler) }
+        stack.add(handler)
+        onDispose { stack.remove(handler) }
     }
 }
 
