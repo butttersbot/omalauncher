@@ -6,7 +6,8 @@ shell cmd statusbar collapse
 rotate portrait
 fold folded
 # Never Boss's own notes: a clean app, then the walk's own folder (~/NotesWalk on the Mac Pro, /v1/walk-notes), which
-# only an emulator takes. It keeps one agent note for the sideways book, Agents/walk/Sideways book.md.
+# only an emulator takes. It keeps one agent note for the sideways book, Agents/walk/Sideways book.md, and a one-line
+# HTML page, Agents/walk/walk-minified.html, whose title the Agents list must show.
 shell pm clear dev.omalauncher.notes
 shell am start -n dev.omalauncher.notes/.MainActivity --es notes_folder walk
 wait 3500
@@ -82,6 +83,13 @@ tap Agents
 wait 1000
 # The agents' notes under a heading for their project (the walk's own: Agents/walk/), and none of Boss's.
 expect Sideways book
+# An HTML note is listed by its page title, not its code, even minified onto one line (Boss's bug, 0.1.9: the list
+# showed '<!doctype'). The walk folder keeps Agents/walk/walk-minified.html for it, one line:
+# <!doctype html><html><head><meta charset="utf-8"><title>Walk HTML title &amp; check</title></head><body><h1>x</h1></body></html>
+expect Walk HTML title & check
+absent <!doctype
+absent walk-minified
+shot agents-html-title
 # Its card, by its preview: "Walk groceries" is still the note open in the right pane on the open Fold.
 absent Milk Eggs
 # A project's own BRIEF.md, mirrored read-only from ClaudeSync (the walk folder's test one: Agents/walk/Brief.md):
