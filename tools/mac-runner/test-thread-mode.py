@@ -67,6 +67,38 @@ class ThreadMode(unittest.TestCase):
         self.assertEqual({'first, in auto': 'auto', 'second, in manual': 'manual'},
                          {s['prompt'].split('\n')[0]: s['mode'] for s in starts() if s['prompt'].startswith(('first', 'second'))})
 
+    def test_anAgentsCallCantTakeAManualThreadToAutoOnlyHisAnswerOnItsCardCan(self):
+        # A's review of slice 6b: manual to auto is an approval by another name, so it goes by an approval's path.
+        tid = call('POST', '/threads', {'name': 'guarded', 'project': str(work / 'Projects'), 'mode': 'manual'})[1]['thread']['id']
+        # An agent with a device key (the oma CLI, another agent's mail) asks for auto: refused as a switch, a card instead.
+        code, said = call('POST', '/threads/%s/mode' % tid, {'mode': 'auto'})
+        self.assertEqual(200, code, said)
+        self.assertEqual('manual', said['mode'])
+        asked = said['asked']
+        thread = call('GET', '/threads/' + tid)[1]['thread']
+        self.assertEqual('manual', thread['mode'])
+        card = [p for p in thread['pending'] if p['approval'] == asked]
+        self.assertEqual('Mode', card[0]['tool'])
+        # Asked again, the same card; still manual, and its next message runs manual.
+        self.assertEqual(asked, call('POST', '/threads/%s/mode' % tid, {'mode': 'auto'})[1]['asked'])
+        call('POST', '/threads/%s/messages' % tid, {'text': 'third, still manual'})
+        self.assertTrue(until(lambda: any(s['prompt'].startswith('third, still manual') for s in starts())))
+        self.assertEqual('manual', [s for s in starts() if s['prompt'].startswith('third')][0]['mode'])
+        self.assertTrue(until(lambda: call('GET', '/threads/' + tid)[1]['thread']['status'] == 'idle'))
+        # The task's end withdrew the card: ask again, then answer it. A wrong nonce changes nothing.
+        asked = call('POST', '/threads/%s/mode' % tid, {'mode': 'auto'})[1]['asked']
+        nonce = [p for p in call('GET', '/threads/' + tid)[1]['thread']['pending'] if p['approval'] == asked][0]['nonce']
+        self.assertEqual(403, call('POST', '/threads/%s/approvals/%s' % (tid, asked), {'decision': 'allow', 'nonce': 'not-it'})[0])
+        self.assertEqual('manual', call('GET', '/threads/' + tid)[1]['thread']['mode'])
+        # Denied, it stays manual; allowed on a fresh card, auto.
+        self.assertEqual((200, {'ok': True, 'mode': 'manual'}), call('POST', '/threads/%s/approvals/%s' % (tid, asked), {'decision': 'deny', 'nonce': nonce}))
+        asked = call('POST', '/threads/%s/mode' % tid, {'mode': 'auto'})[1]['asked']
+        nonce = [p for p in call('GET', '/threads/' + tid)[1]['thread']['pending'] if p['approval'] == asked][0]['nonce']
+        self.assertEqual((200, {'ok': True, 'mode': 'auto'}), call('POST', '/threads/%s/approvals/%s' % (tid, asked), {'decision': 'allow', 'nonce': nonce}))
+        self.assertEqual('auto', call('GET', '/threads/' + tid)[1]['thread']['mode'])
+        # Auto to manual stays open: no card.
+        self.assertEqual((200, {'ok': True, 'mode': 'manual'}), call('POST', '/threads/%s/mode' % tid, {'mode': 'manual'}))
+
     def test_onlyAutoOrManualAndOnlyClaudeOrCodex(self):
         tid = call('POST', '/threads', {'name': 'mode refused', 'project': str(work / 'Projects')})[1]['thread']['id']
         self.assertEqual(400, call('POST', '/threads/%s/mode' % tid, {'mode': 'yolo'})[0])

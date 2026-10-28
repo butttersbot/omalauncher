@@ -1144,7 +1144,7 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
             is ModeCommand.Choose -> if (thread != null && macModes(kind).isEmpty()) said(modeShown(kind, macKindName(kind), ""), failed = true)
                 else thread(name = "oma-mac-mode", isDaemon = true) {
                     when (val answer = client(threadId).setMode(threadId, command.mode)) {
-                        is MacAnswer.Ok -> said(modeChosen(answer.value, made = true))
+                        is MacAnswer.Ok -> said(if (answer.value == MAC_MODE_ASKED) MODE_ASKED_WORDS else modeChosen(answer.value, made = true))
                         MacAnswer.NotFound -> said("Not changed: this thread's computer doesn't take /mode yet (its runner is older).", failed = true)
                         is MacAnswer.Failed -> said("Not changed: ${answer.error.ifBlank { "the computer said no" }}.", failed = true)
                         else -> said("Not changed: the computer can't be reached. Try again when it answers.", failed = true)

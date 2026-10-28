@@ -504,7 +504,7 @@ private fun ChatScreen(
                 val loose = macPending.filter { waiting -> tasks.none { it.thread == waiting.threadId && it.approvals.any { line -> line.key == waiting.request.approval } } }
                     .filter { tab == OMA_TAB || it.threadId == tabMacThread(tab, book) }
                 items(loose, key = { it.ticket }) { waiting ->
-                    ApprovalBox("Allow ${waiting.request.tool} on ${waiting.threadName}?", macApprovalDetail(waiting.request), macCard(waiting))
+                    ApprovalBox(dev.omalauncher.assist.macApprovalTitle(waiting.request.tool, waiting.threadName), macApprovalDetail(waiting.request), macCard(waiting))
                 }
                 // Work the thread left running on the Mac, quietly under its newest entry, for as long as the Mac says it runs.
                 val background = tabMacThread(tab, book)?.let { id -> macBackgroundLine(host.macView().threads.firstOrNull { it.id == id }?.background.orEmpty()) }
@@ -1215,7 +1215,7 @@ private fun TaskEntry(
         for (approval in task.approvals) {
             val waiting = if (approval.answer == ApprovalAnswer.Waiting) cards[approval.key] else null
             if (waiting != null) {
-                ApprovalBox(if (task.mac) "Allow ${approval.tool} on ${task.threadName}?" else builderApprovalTitle(approval.tool, task.builderId), approval.detail, waiting)
+                ApprovalBox(if (task.mac) dev.omalauncher.assist.macApprovalTitle(approval.tool, task.threadName) else builderApprovalTitle(approval.tool, task.builderId), approval.detail, waiting)
             } else {
                 // A waiting approval that can no longer be answered here reads as not answered.
                 val answer = if (approval.answer == ApprovalAnswer.Waiting && !running) ApprovalAnswer.Unanswered else approval.answer

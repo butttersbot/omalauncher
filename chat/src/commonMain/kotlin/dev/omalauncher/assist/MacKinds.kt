@@ -227,6 +227,12 @@ fun modeShown(agent: String, kindName: String, mode: String): String =
     else "This chat runs ${macModeName(mode)}. Type /mode ${if (mode == MAC_MODE_MANUAL) MAC_MODE_AUTO else MAC_MODE_MANUAL} to change it."
 
 /** What /mode NAME says once it is taken: from the next message when its thread exists ([made]), else from its first. */
+/** What [MacClient.setMode] answers when auto waits for his OK: manual to auto is an approval by another name, so it is one. */
+const val MAC_MODE_ASKED = "asked"
+
+/** Soma's answer when his /mode auto waits for its card. */
+const val MODE_ASKED_WORDS = "Auto waits for your OK: allow it on its card. Until then it asks before edits and commands."
+
 fun modeChosen(mode: String, made: Boolean): String =
     "${if (mode == MAC_MODE_MANUAL) "Manual" else "Auto"} from ${if (made) "the next message" else "its first message"}: ${macModeName(mode).substringAfter(" · ")}."
 

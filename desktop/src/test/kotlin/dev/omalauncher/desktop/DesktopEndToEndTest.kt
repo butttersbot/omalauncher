@@ -849,11 +849,17 @@ class DesktopEndToEndTest {
         type("first words")
         waitFor("made in manual") { starts().any { it.getString("prompt").startsWith("first words") && it.getString("mode") == "manual" } }
         waitFor("answered") { platform.chatLog().tasks.any { it.prompt == "first words" && it.status == dev.omalauncher.oma.TaskStatus.Done } }
-        // On its thread: back to auto from the next message.
+        // On its thread: back to auto is an approval by another name (A's review of slice 6b), so it waits for his OK on a
+        // card, and until then the thread stays manual. Nothing here answers the card: only his tap does.
         type("/mode auto")
-        waitFor("the runner took it") { onAllNodes(hasText("Auto from the next message", substring = true)).fetchSemanticsNodes().isNotEmpty() }
+        waitFor("it waits for his OK") { onAllNodes(hasText("Auto waits for your OK", substring = true)).fetchSemanticsNodes().isNotEmpty() }
+        waitFor("its card") { onAllNodes(hasText("in auto?", substring = true)).fetchSemanticsNodes().isNotEmpty() }
         type("second words")
-        waitFor("the next message ran auto") { starts().any { it.getString("prompt").startsWith("second words") && it.getString("mode") == "auto" } }
+        waitFor("the next message still ran manual") { starts().any { it.getString("prompt").startsWith("second words") && it.getString("mode") == "manual" } }
+        waitFor("answered") { platform.chatLog().tasks.any { it.prompt == "second words" && it.status == dev.omalauncher.oma.TaskStatus.Done } }
+        settle()
+        // One card, however many entries come while it waits.
+        assertEquals(1, onAllNodes(hasText("in auto?", substring = true)).fetchSemanticsNodes().size)
         assertTrue("/mode never reached the agent", starts().none { "/mode" in it.getString("prompt") })
         // Named by his words, not by the command (a fixed title, as the fast model would give).
         DesktopChatTitles(platform) { null }.check()

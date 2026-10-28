@@ -224,7 +224,14 @@ private fun ChatTask.over(status: TaskStatus, result: String) =
 private fun withReason(said: String, reason: String) = listOf(said.trim(), reason.trim()).filter { it.isNotEmpty() }.joinToString("\n\n")
 
 /** What an approval would do, as its card says it: the command for a shell, otherwise the tool's whole input. */
+/** The tool a thread's runner asks his OK with for manual to auto (oma-runner's ask_auto): an approval by another name. */
+const val MAC_MODE_TOOL = "Mode"
+
+/** What a card from a Mac thread asks: "Allow Bash on Fold GPU?", or for [MAC_MODE_TOOL] "Run Fold GPU in auto?". */
+fun macApprovalTitle(tool: String, threadName: String) = if (tool == MAC_MODE_TOOL) "Run $threadName in auto?" else "Allow $tool on $threadName?"
+
 fun macApprovalDetail(request: MacApproval): String {
+    if (request.tool == MAC_MODE_TOOL) return "/mode manual takes it back."
     val input = runCatching { JSONObject(request.input) }.getOrNull() ?: return request.input
     val command = input.optString("command").ifBlank { return input.toString(2) }
     return if (request.canRemember) command + "\nDirectory: " + input.macText("cwd") +
@@ -261,8 +268,10 @@ fun macLater(task: ChatTask, said: ChatLater): ChatTask {
  * of. With none running, a card asked for in the agent's own turn between his messages goes to [macLatest].
  */
 fun macAsked(tasks: List<ChatTask>, threadId: String, request: MacApproval): List<ChatTask> {
+    // Once in the whole chat: a card that outlives the entry it came with (his /mode auto, waiting for his OK) isn't shown
+    // again under the next one.
+    if (tasks.any { task -> task.thread == threadId && task.approvals.any { it.key == request.approval } }) return tasks
     val current = tasks.firstOrNull { it.thread == threadId && it.status == TaskStatus.Running } ?: macLatest(tasks, threadId) ?: return tasks
-    if (current.approvals.any { it.key == request.approval }) return tasks
     val line = ChatApproval(request.tool.ifBlank { "a tool" }, macApprovalDetail(request), ApprovalAnswer.Waiting, request.approval)
     return tasks.map { if (it.time == current.time) it.copy(approvals = it.approvals + line) else it }
 }

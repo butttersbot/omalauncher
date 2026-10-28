@@ -175,7 +175,7 @@ fun chatHostModules(
         val book = host.changeBook { it }
         val mac = host.macPending().map { p ->
             val question = dev.omalauncher.oma.questionInput(p.request.tool, p.request.input)
-            ModuleAsk("mac:${p.ticket}", if (question) "Questions from ${p.threadName}" else "Allow ${p.request.tool} on ${p.threadName}?", macApprovalDetail(p.request), macTabKey(p.threadId, book), p.threadName, p, question = question)
+            ModuleAsk("mac:${p.ticket}", if (question) "Questions from ${p.threadName}" else dev.omalauncher.assist.macApprovalTitle(p.request.tool, p.threadName), macApprovalDetail(p.request), macTabKey(p.threadId, book), p.threadName, p, question = question)
         }
         val phone = host.builders().flatMap { (builder, state) ->
             state.pending.map { p ->

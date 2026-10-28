@@ -2594,6 +2594,19 @@ def choose_model(thread, model):
     return 200, {'ok': True, 'model': thread.meta['model']}
 
 
+def ask_auto(thread):
+    """Manual to auto, asked as an approval is: a card on the thread that only an answer carrying its nonce settles
+    (decide()); the same card again while one waits. Its id. Call with `changed` held."""
+    asked = next((key for key, entry in thread.pending.items() if entry.get('mode_switch')), None)
+    if asked is None:
+        asked, nonce = 'a' + secrets.token_hex(6), secrets.token_urlsafe(24)
+        given = {'mode': 'auto'}
+        explanation = 'Run this thread in auto from its next message: its agent works without asking you first.'
+        thread.pending[asked] = {'nonce': nonce, 'request': None, 'tool': 'Mode', 'input': given, 'explanation': explanation, 'mode_switch': True}
+        thread.emit('approval', approval=asked, nonce=nonce, tool='Mode', input=given, explanation=explanation, can_remember=False)
+    return asked
+
+
 def choose_mode(thread, wanted):
     """POST /threads/ID/mode: how a Claude or Codex thread runs from its next message, auto or manual (Boss, 2026-10-28:
     "just leave them on auto ... a slash command is fine"; Soma's /mode). It never answers a request. A bot keeps its own
@@ -2604,6 +2617,11 @@ def choose_mode(thread, wanted):
         return 400, {'ok': False, 'error': '%s has no mode here: it always asks' % thread.meta['kind']}
     if wanted not in MODES:
         return 400, {'ok': False, 'error': 'the mode is auto or manual'}
+    # Manual to auto is an approval by another name: it goes by an approval's path, a card only his answer (with its
+    # nonce) settles, never by this call alone, whoever holds a key (A's review of slice 6b, 2026-10-28: an agent with
+    # the oma CLI could otherwise take a manual thread to auto). Auto to manual asks less of the agent and stays open.
+    if wanted == 'auto' and mode(thread.meta) != 'auto':
+        return 200, {'ok': True, 'mode': mode(thread.meta), 'asked': ask_auto(thread)}
     thread.meta['mode_choice'] = wanted
     thread.save()
     return 200, {'ok': True, 'mode': mode(thread.meta)}
@@ -3818,6 +3836,10 @@ def bot_command(thread, text):
         if wanted not in ('auto', 'manual'):
             return 'Not changed: the mode is auto or manual.'
         with changed:
+            # Auto asks first, as an approval does (anyone with a key can send these words): his OK on its card switches it.
+            if wanted == 'auto' and now != 'auto':
+                ask_auto(thread)
+                return 'Auto waits for your OK: allow it on the card. Until then every command that changes anything still asks you.'
             thread.meta['mode_choice'] = wanted
             thread.save()
         return ('Auto from the next message: routine commands, scripts, builds and apps run on their own; critical actions still ask you.'
@@ -4013,6 +4035,13 @@ def decide(thread, approval, body, device=None):
         if remember and scope not in grants and len(grants) >= 100:
             return 400, {'ok': False, 'error': 'saved command limit reached; forget saved commands first'}
         del thread.pending[approval]
+        if entry.get('mode_switch'):
+            # His answer to auto (choose_mode): the thread runs auto from its next message, or stays as it is.
+            if body['decision'] == 'allow':
+                thread.meta['mode_choice'] = 'auto'
+                thread.save()
+            thread.emit('approval_result', approval=approval, decision=body['decision'], **({'device': device} if device else {}))
+            return 200, {'ok': True, 'mode': mode(thread.meta)}
         if thread.driver is None or not thread.driver.answer(entry, body['decision'] == 'allow'):
             thread.emit('approval_result', approval=approval, decision='withdrawn')
             if not thread.pending:

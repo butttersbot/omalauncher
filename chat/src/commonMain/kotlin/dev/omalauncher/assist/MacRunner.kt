@@ -439,8 +439,9 @@ class MacRunnerClient(private val config: MacRunnerConfig?, private val machine:
     fun stop(threadId: String): MacAnswer<Boolean> = parseMacStopped(send(MacRequests.stop(own(threadId))))
 
     /** The mode the thread runs from its next message, as the runner took it. */
+    /** The thread's mode now, or [MAC_MODE_ASKED] when auto waits for his OK on its card (manual to auto goes as an approval). */
     fun setMode(threadId: String, mode: String): MacAnswer<String> = macAnswer(send(MacRequests.setMode(own(threadId), mode))) { json ->
-        json.macText("mode").takeIf { it == MAC_MODE_AUTO || it == MAC_MODE_MANUAL }
+        if (json.macText("asked").isNotEmpty()) MAC_MODE_ASKED else json.macText("mode").takeIf { it == MAC_MODE_AUTO || it == MAC_MODE_MANUAL }
     }
 
     fun bot(botId: String): MacAnswer<MacBotFiles> = parseMacBotFiles(send(MacRequests.bot(botId)))

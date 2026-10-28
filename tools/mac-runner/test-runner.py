@@ -1221,7 +1221,17 @@ try:
     check('/model NAME: a model Venice doesn\'t have is refused', 'Not switched' in answer['text'])
     answer, quiet = command(tooly['id'], '/mode')
     check('/mode: says it is manual to begin with, asking Venice nothing', quiet and 'Mode: manual' in answer['text'])
-    answer, _ = command(tooly['id'], '/mode auto')
+    # Auto asks first, as an approval does (A's review of slice 6b): anyone with a key can send these words. While its
+    # card waits the thread is waiting for him, not idle.
+    last = call('GET', '/threads/' + tooly['id'])[1]['thread']['last_event']
+    call('POST', '/threads/%s/messages' % tooly['id'], {'text': '/mode auto'})
+    asked = stream(tooly['id'], after=last, until=('result', 'error'))
+    card = [e for e in asked if e['type'] == 'approval']
+    check('/mode auto: waits for his OK on a card', 'waits for your OK' in asked[-1]['text'] and len(card) == 1 and card[0]['tool'] == 'Mode')
+    told = call('POST', '/threads/%s/approvals/%s' % (tooly['id'], card[0]['approval']), {'decision': 'allow', 'nonce': card[0]['nonce']})
+    check('/mode auto: his OK on the card switches it', told == (200, {'ok': True, 'mode': 'auto'}))
+    answer = {'text': 'Auto from the next message'}
+    settle(tooly['id'], 'idle')
     last = call('GET', '/threads/' + tooly['id'])[1]['thread']['last_event']
     call('POST', '/threads/%s/messages' % tooly['id'], {'text': 'TOOL:touch auto.txt||mkdir -p games'})
     events = stream(tooly['id'], after=last, until=('result', 'error'))
