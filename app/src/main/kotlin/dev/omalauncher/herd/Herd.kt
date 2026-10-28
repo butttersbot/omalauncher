@@ -74,6 +74,12 @@ sealed interface PetCommand {
     /** The look the page wears: a skin's description as [PetSkin] reads it, or null for the sheep. */
     data class Skin(val skin: PetSkin?) : PetCommand
 
+    /** A short buzz, as choosing several starts (Boss, 2026-10-28). */
+    data object Haptic : PetCommand
+
+    /** A line for the walkthroughs (Log tag SomaWalk): the page is a WebView, so its state is told this way. */
+    data class Walk(val line: String) : PetCommand
+
     data object Unknown : PetCommand
 }
 
@@ -117,6 +123,8 @@ fun petCommand(json: String): PetCommand {
             if (name != null && action != null) PetCommand.InboxGet(name, action) else PetCommand.Unknown
         }
         "skin" -> if (o.isNull("skin")) PetCommand.Skin(null) else PetSkin.parse(o.optJSONObject("skin"))?.let { PetCommand.Skin(it) } ?: PetCommand.Unknown
+        "haptic" -> PetCommand.Haptic
+        "walk" -> o.optString("line").take(120).takeIf { Regex("[A-Za-z0-9 =:._-]+").matches(it) }?.let { PetCommand.Walk(it) } ?: PetCommand.Unknown
         else -> PetCommand.Unknown
     }
 }
@@ -282,4 +290,20 @@ object HerdSheep {
         x: Int,
         y: Int,
     ) = prefs(context).edit().putInt("x", x).putInt("y", y).apply()
+}
+
+/**
+ * Whether the sheep's page shows made-up Tailshare files instead of the real pocket and list: only on an emulator,
+ * and only when a walk has set `adb shell setprop debug.soma.herdtest 1` (tools/walkthrough/scripts/herd-multiselect.walk),
+ * so a walk that deletes files never reaches Boss's pocket on the Mac Pro.
+ */
+fun herdTestMode(
+    hardware: String,
+    fingerprint: String,
+    prop: String?,
+): Boolean = prop?.trim() == "1" && (hardware in setOf("ranchu", "goldfish") || fingerprint.startsWith("generic") || "emulator" in fingerprint)
+
+fun herdTestMode(): Boolean {
+    val prop = runCatching { ProcessBuilder("getprop", "debug.soma.herdtest").start().inputStream.bufferedReader().use { it.readText() } }.getOrNull()
+    return herdTestMode(android.os.Build.HARDWARE, android.os.Build.FINGERPRINT, prop)
 }

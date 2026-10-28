@@ -1,0 +1,81 @@
+# The herd's Tailshare tab: choosing several files and deleting them at once (Boss, 2026-10-28: "I need an easy way to
+# multi-select on the herd Tailshare tab. I need to delete multiple files at once."). Made-up files only: with
+# debug.soma.herdtest set, an emulator's sheep shows five test pocket files and two test texts and never reaches the
+# real pocket on the Mac Pro (herd/Herd.kt herdTestMode; the real Fold ignores the prop). Run on the cover screen, then
+# again unfolded (fold open). The sheep sits in home's bottom right corner; 0.88 0.86 is its middle on the cover.
+shell setprop debug.soma.herdtest 1
+shell am force-stop dev.omalauncher.boss
+shell cmd statusbar collapse
+key HOME
+wait 2500
+tap 0.88 0.86
+wait 1500
+tap Tailshare
+wait 1200
+expect test-alpha.txt
+expect test-sent-one.txt
+shot tailshare-test-files
+clearlog
+# A long press starts choosing, with that file chosen; the bar shows the count.
+hold test-alpha.txt
+log herd select n=1
+expect 1 selected
+shot choosing-one
+# Taps add more: two more pocket files and one text from "Sent to this phone".
+tap test-charlie.txt
+tap test-echo.txt
+tap Test text one
+log herd select n=4
+expect 4 selected
+shot choosing-four
+# A tap on a chosen one takes it out again.
+tap test-echo.txt
+log herd select n=3
+# Select all, then none, then all again.
+tap Select all
+log herd select n=7
+expect Select none
+tap Select none
+log herd select n=0
+tap Select all
+log herd select n=7
+# Back leaves choosing (the panel stays open), and nothing was deleted.
+key BACK
+log herd select off
+expect test-alpha.txt
+expect Tailshare
+shot back-left-choosing
+# Choose three, Delete, Cancel: still there.
+hold test-bravo.txt
+tap test-delta.txt
+tap Test text two
+log herd select n=3
+tap Delete
+log herd select n=3 confirm=Delete 3 files
+expect Delete 3 files?
+shot confirm-three
+tap Cancel
+nolog herd deleted
+expect test-bravo.txt
+# Delete, then the confirm's Delete them: the three go, the rest stay.
+tap Delete
+expect Delete 3 files?
+clearlog
+tap Delete them
+log herd deleted 3 failed=0
+absent test-bravo.txt
+absent test-delta.txt
+absent Test text two
+expect test-alpha.txt
+expect Deleted 3 files
+shot after-delete
+# A tap outside the files (the section header) leaves choosing.
+hold test-alpha.txt
+log herd select n=1
+tap Pocket
+log herd select off
+shot outside-left-choosing
+shell setprop debug.soma.herdtest 0
+[phone] On the Fold, with real Pocket items Boss chose to delete: long-press one, tap more, Delete, confirm: they go from the pocket on the Mac and other devices too; nothing else does.
+[phone] The bar and the confirm fit the cover screen and the unfolded one, in his look; the haptic buzz on the long-press feels right.
+[phone] Back while choosing leaves choosing first; a second back closes the panel.

@@ -286,6 +286,27 @@ nav button .count { display: inline-block; min-width: 16px; height: 16px; paddin
 .file em { font-style: normal; color: var(--ink-3); flex: none; }
 .item .actions { padding: 8px 0 0; }
 
+/* Choosing several (Boss, 2026-10-28: "an easy way to multi-select on the herd Tailshare tab ... delete multiple files
+   at once"): a long-press starts it, taps add more; a bar with the count, Select all and Delete; one confirm. */
+.selbar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 10px;
+  background: var(--panel); border-bottom: 1px solid var(--line); }
+.selbar b { font-size: 12px; margin-right: auto; white-space: nowrap; }
+.btn.danger { background: var(--need); color: #fff; border-color: transparent; }
+.btn:disabled { opacity: .45; cursor: default; }
+body.selecting [data-sel] { position: relative; cursor: pointer; -webkit-user-select: none; user-select: none; }
+body.selecting [data-sel]::after { content: ""; position: absolute; top: 4px; left: 4px; z-index: 2; width: 16px; height: 16px;
+  border-radius: 9px; border: 1.5px solid var(--ink-3); background: var(--panel); box-sizing: border-box; }
+body.selecting [data-sel].sel::after { content: "✓"; background: var(--ready); border-color: var(--ready); color: #fff;
+  font-size: 10px; line-height: 13px; text-align: center; font-weight: 700; }
+body.selecting .tile.sel .sq, body.selecting .trow.sel, body.selecting .item.sel { box-shadow: 0 0 0 2px var(--ready); }
+body.selecting .trow, body.selecting .item { padding-left: 26px; }
+.confirm { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: rgba(0, 0, 0, .35); }
+.confirm .sheet { width: min(320px, 100%); padding: 14px; border-radius: 14px; background: var(--panel); border: 1px solid var(--panel-edge);
+  box-shadow: var(--shadow); }
+.confirm .sheet b { display: block; font-size: 14px; margin-bottom: 4px; }
+.confirm .sheet p { margin: 0 0 12px; color: var(--ink-2); font-size: 12px; }
+.confirm .actions { display: flex; justify-content: flex-end; gap: 8px; }
+
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>
 </head>
@@ -404,7 +425,7 @@ function renderJobs() {
 }
 $('jobs').addEventListener('click', e => {
   const id = e.target.dataset?.job; if (!id) return;
-  job = id; detail = null; store.set('job', job); render();
+  job = id; detail = null; store.set('job', job); quitSelect(); render();
 });
 
 function render() {
@@ -460,6 +481,12 @@ $('view').addEventListener('click', e => {
     shell({ cmd: 'pocketget', id: act.dataset.id, name: act.dataset.name, action: act.dataset.action });
     pocketSay({ open: 'Opening ', save: 'Saving ', copy: 'Copying ' }[act.dataset.action] + act.dataset.name + '…');
   }
+  if (a === 'selclose') return endSelect();
+  if (a === 'selall') { const all = Sel.keys(pocket?.items || [], inbox || []); chosen = Sel.all(chosen, all); return render(); }
+  if (a === 'selmore') { const id = Sel.split(chosen).pocket[0], r = act.getBoundingClientRect(); return pocketMenu(id, r.left, r.bottom + 4); }
+  if (a === 'seldelete') { if (chosen.size) { confirming = true; render(); } return; }
+  if (a === 'selcancel') { if (e.target.closest('.sheet') && !e.target.closest('[data-act="selcancel"]')) return; confirming = false; return render(); }
+  if (a === 'selyes') return deleteChosen();
   if (a === 'pocketgrid') { pocketGrid = !pocketGrid; store.set('pocketGrid', pocketGrid); render(); }
   if (a === 'pocketpin') pocketPin(act.dataset.id);
   if (a === 'pocketremove') pocketRemove(act.dataset.id);
@@ -609,6 +636,62 @@ function markInboxSeen() {
   if (newest > (inboxSeen || 0)) { inboxSeen = newest; store.set('inboxSeen', inboxSeen); }
 }
 
+/* ---------------------------------------------------------------- choosing several, to delete them at once */
+// Pure, for tools/herd/select-test.mjs: keys are 'p:ID' (the pocket) and 'i:NAME' (sent to this device).
+// <sel>
+const Sel = {
+  keys: (pocketItems, inboxItems) => [...pocketItems.map(i => 'p:' + i.id), ...inboxItems.map(i => 'i:' + i.name)],
+  toggle(set, key) { const s = new Set(set); if (s.has(key)) s.delete(key); else s.add(key); return s; },
+  // Select all, or with everything already chosen, none.
+  all: (set, keys) => keys.length && keys.every(k => set.has(k)) ? new Set() : new Set(keys),
+  // What is no longer listed (gone meanwhile) drops out.
+  prune(set, keys) { const k = new Set(keys); return new Set([...set].filter(x => k.has(x))); },
+  split(set) { const pocket = [], inbox = []; for (const k of set) (k.startsWith('p:') ? pocket : inbox).push(k.slice(2)); return { pocket, inbox }; },
+  words: n => n === 1 ? 'Delete 1 file?' : `Delete ${n} files?`,
+};
+// </sel>
+let selecting = false, chosen = new Set(), confirming = false;
+function startSelect(key) {
+  selecting = true; confirming = false; chosen = new Set([key]);
+  document.body.classList.add('selecting'); hideMenu();
+  if (job !== 'tailshare') { job = 'tailshare'; detail = null; }
+  shell({ cmd: 'haptic' }); render();
+}
+// What choosing shows, for the walkthroughs (tools/walkthrough `log`), once each time it changes.
+let selSaid = '';
+function selSay() {
+  const line = selecting ? `herd select n=${chosen.size}${confirming ? ' confirm=' + Sel.words(chosen.size).replace(/\?$/, '') : ''}` : 'herd select off';
+  if (line !== selSaid) { selSaid = line; shell({ cmd: 'walk', line }); }
+}
+function quitSelect() { selecting = false; confirming = false; chosen = new Set(); document.body.classList.remove('selecting'); }
+function endSelect() { quitSelect(); render(); }
+// Taps while choosing: on a file, it goes in or out; anywhere else outside the bar, choosing ends.
+document.addEventListener('click', e => {
+  if (!selecting || e.target.closest('#pmenu')) return;
+  // The click that ends the long-press which started choosing: not a tap on the file.
+  if (pressed) { pressed = false; e.stopImmediatePropagation(); e.preventDefault(); return; }
+  if (e.target.closest('.selbar, .confirm')) return;
+  e.stopImmediatePropagation(); e.preventDefault();
+  const t = e.target.closest('[data-sel]');
+  if (!t) return endSelect();
+  chosen = Sel.toggle(chosen, t.dataset.sel);
+  if (!chosen.size) endSelect(); else render();
+}, true);
+// All of them through the same deletes as one at a time: the pocket's DELETE, the list's remove (Trash on the Mac).
+async function deleteChosen() {
+  const { pocket: ids, inbox: names } = Sel.split(chosen), n = chosen.size, phone = !!window.HerdAndroid;
+  if (pocket) pocket.items = pocket.items.filter(i => !ids.includes(i.id));
+  inbox = (inbox || []).filter(i => !names.includes(i.name));
+  endSelect();
+  for (const name of names) if (!caps.test) shell(phone ? { cmd: 'inboxget', name, action: 'remove' } : { cmd: 'trash', name });
+  let failed = 0;
+  if (!caps.test) await Promise.all(ids.map(id => fetch(`${POCKET}/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    .then(r => { if (!r.ok) failed++; }).catch(() => { failed++; })));
+  shell({ cmd: 'walk', line: `herd deleted ${n} failed=${failed}` });
+  pocketSay(failed ? `Deleted ${n - failed} of ${n}; ${failed} couldn't be reached` : `Deleted ${n} ${n === 1 ? 'file' : 'files'}`);
+  if (!caps.test) fetchPocket(); else render();
+}
+
 /* ---------------------------------------------------------------- the pocket: one shared folder on the Mac Pro */
 // Every device with the pet sees the same pocket (tailshare-serve on jacks-mac-pro). Dropping or pasting puts things
 // in; pulling (Open, Save, Copy) is where the actions are. The page reads the list and previews straight from the Mac
@@ -630,9 +713,14 @@ function pocketSay(text, ms = 4000) {
   if (showing()) render();
 }
 
+const TEST_POCKET = () => ({ days: 7, used: 0, cap: 1, host: 'test', items: ['alpha', 'bravo', 'charlie', 'delta', 'echo']
+  .map((w, n) => ({ id: 'test-' + w, name: `test-${w}.txt`, kind: 'file', size: 1000 * (n + 1), t: 1e9 + n, device: 'test' })) });
+const TEST_INBOX = () => ['one', 'two'].map((w, n) => ({ name: `test-sent-${w}.txt`, from: 'test', t: 1e9 + n, kind: 'text', text: 'Test text ' + w }));
 let pocketDrawn = '';   // what the tab last drew from, so a poll that brings nothing new redraws nothing
 
 async function fetchPocket() {
+  // The emulator's walks (caps.test, herd/SheepPage.kt): made-up files, never the real pocket.
+  if (caps.test) { if (!pocket) { pocket = TEST_POCKET(); inbox = TEST_INBOX(); if (showing()) render(); else renderJobs(); } return; }
   const before = pocket;
   try {
     const reply = await fetch(POCKET, { cache: 'no-store' });
@@ -694,14 +782,14 @@ function pocketTile(i, fresh) {
   const id = esc(i.id), name = esc(i.name);
   const face = i.thumb ? `<img src="${POCKET}/${encodeURIComponent(i.id)}/thumb" alt="" loading="lazy" draggable="false">`
                        : `<span class="glyph">${ICONS[i.kind] || ICONS.file}</span>`;
-  return `<div class="tile kind-${i.kind} ${fresh ? 'new' : ''} ${i.pinned ? 'pinned' : ''}" data-act="pocketget" data-action="open"
-    data-id="${id}" data-name="${name}" data-menu="${id}" title="${esc(tileInfo(i))}"><div class="sq">${face}</div>${i.kind === 'image' ? '' : `<span class="cap">${name}</span>`}</div>`;
+  return `<div class="tile kind-${i.kind} ${fresh ? 'new' : ''} ${i.pinned ? 'pinned' : ''} ${chosen.has('p:' + i.id) ? 'sel' : ''}" data-act="pocketget" data-action="open"
+    data-id="${id}" data-name="${name}" data-menu="${id}" data-sel="p:${id}" title="${esc(tileInfo(i))}"><div class="sq">${face}</div>${i.kind === 'image' ? '' : `<span class="cap">${name}</span>`}</div>`;
 }
 
 // Text: a compact row, two lines (click for all of it), with Copy.
 function pocketTextRow(i, fresh) {
   const id = esc(i.id);
-  return `<div class="trow ${fresh ? 'new' : ''}" data-menu="${id}" title="${esc(tileInfo(i))}">${i.pinned ? '<span class="star">★</span>' : ''}
+  return `<div class="trow ${fresh ? 'new' : ''} ${chosen.has('p:' + i.id) ? 'sel' : ''}" data-menu="${id}" data-sel="p:${id}" title="${esc(tileInfo(i))}">${i.pinned ? '<span class="star">★</span>' : ''}
     <div class="ttext ${expanded.has(i.id) ? 'full' : ''}" data-act="expand" data-name="${id}">${esc(i.text)}</div>
     <button class="btn small" data-act="pocketget" data-action="copy" data-id="${id}" data-name="${esc(i.name)}">Copy</button></div>`;
 }
@@ -714,7 +802,7 @@ function pocketMenu(id, x, y) {
   const [first, ...rest] = tileInfo(i).split('\n');
   menu.innerHTML = `<div class="meta"><b>${esc(first)}</b>${esc(rest.join(' '))}</div>
     <button data-do="save">Save</button><button data-do="copy">Copy</button>
-    <button data-do="pin">${i.pinned ? 'Unpin' : 'Pin (keep past 7 days)'}</button><button class="danger" data-do="remove">Remove</button>`;
+    <button data-do="pin">${i.pinned ? 'Unpin' : 'Pin (keep past 7 days)'}</button><button data-do="select">Select several…</button><button class="danger" data-do="remove">Remove</button>`;
   menu.dataset.id = id;
   menu.classList.add('on');
   const w = menu.offsetWidth, h = menu.offsetHeight;
@@ -730,6 +818,7 @@ $('pmenu').addEventListener('click', e => {
   if (d === 'save' || d === 'copy') { shell({ cmd: 'pocketget', id: i.id, name: i.name, action: d }); pocketSay((d === 'save' ? 'Saving ' : 'Copying ') + i.name + '…'); }
   if (d === 'pin') pocketPin(i.id);
   if (d === 'remove') pocketRemove(i.id);
+  if (d === 'select') startSelect('p:' + i.id);
 });
 document.addEventListener('contextmenu', e => {
   const t = e.target.closest?.('[data-menu]');
@@ -739,10 +828,11 @@ document.addEventListener('contextmenu', e => {
 });
 document.addEventListener('pointerdown', e => {
   if (!e.target.closest?.('#pmenu')) hideMenu();
-  const t = e.target.closest?.('[data-menu]');
-  if (!t || e.pointerType === 'mouse') return;
+  // On the phone a long-press starts choosing several, that one first (Boss, 2026-10-28); its menu is the bar's More.
+  const t = e.target.closest?.('[data-sel]');
+  if (!t || e.pointerType === 'mouse' || selecting) return;
   clearTimeout(pressTimer);
-  pressTimer = setTimeout(() => { pressed = true; pocketMenu(t.dataset.menu, e.clientX, e.clientY); }, 500);
+  pressTimer = setTimeout(() => { pressed = true; startSelect(t.dataset.sel); }, 500);
 });
 for (const end of ['pointerup', 'pointercancel', 'pointermove']) document.addEventListener(end, () => clearTimeout(pressTimer));
 // A long-press opened the menu: the click that follows it isn't an Open.
@@ -757,7 +847,16 @@ function renderTailshare(view) {
   const info = 'Drop files on the sheep or this panel, or paste with ⌘V. Everything here shows up on all your devices for '
     + (pocket?.days || 7) + ' days; pin ★ to keep it. Click to open, right-click for Save, Copy, Pin and Remove.'
     + (pocket ? `\n${bytes(pocket.used)} of ${bytes(pocket.cap)} used, on ${pocket.host}.` : '');
-  let html = `<div class="phead"><b>Pocket</b><span class="info" title="${esc(info)}" aria-label="${esc(info)}">ⓘ</span>`
+  if (selecting) chosen = Sel.prune(chosen, Sel.keys(items, inbox || []));
+  const all = Sel.keys(items, inbox || []), n = chosen.size, one = Sel.split(chosen);
+  let html = selecting ? `<div class="selbar"><button class="icon-btn" data-act="selclose" title="Done" aria-label="Done choosing">✕</button>
+    <b>${n} selected</b><button class="btn small" data-act="selall">${n && n === all.length ? 'Select none' : 'Select all'}</button>
+    ${n === 1 && one.pocket.length === 1 ? '<button class="btn small" data-act="selmore">More</button>' : ''}
+    <button class="btn small danger" data-act="seldelete" ${n ? '' : 'disabled'}>Delete</button></div>` : '';
+  if (selecting && confirming) html += `<div class="confirm" data-act="selcancel"><div class="sheet" role="alertdialog" aria-label="${Sel.words(n)}">
+    <b>${Sel.words(n)}</b><p>${one.pocket.length ? 'They go from the pocket on every device' + (one.inbox.length ? ', and from this list.' : '.') : 'They go from this list.'}</p>
+    <div class="actions"><button class="btn" data-act="selcancel">Cancel</button><button class="btn danger" data-act="selyes">${n === 1 ? 'Delete it' : 'Delete them'}</button></div></div></div>`;
+  html += `<div class="phead"><b>Pocket</b><span class="info" title="${esc(info)}" aria-label="${esc(info)}">ⓘ</span>`
     + (tiles.length > 4 ? `<button class="linkbtn" data-act="pocketgrid">${pocketGrid ? 'Collapse ▴' : `All ${tiles.length} ▾`}</button>` : '') + `</div>`;
   for (const [name, b] of pocketBusy)
     html += `<div class="busy ${b.state}">${b.state === 'failed' ? '⚠︎ ' + esc(name || 'Paste') + ': ' + esc(b.error || "didn't go in") : (b.state === 'zipping' ? 'Zipping ' : 'Putting in ') + esc(name) + '…'}</div>`;
@@ -781,7 +880,7 @@ function renderTailshare(view) {
   if (inbox?.length) html += `<div class="section">Sent to this ${phone ? 'phone' : 'Mac'}</div>`;
   for (const i of inbox || []) {
     const name = esc(i.name);
-    html += `<div class="item ${fresh.has(i.name) ? 'new' : ''}"><div class="item-head"><b>${esc(i.from || 'Received')}</b>· ${ago(i.t)}
+    html += `<div class="item ${fresh.has(i.name) ? 'new' : ''} ${chosen.has('i:' + i.name) ? 'sel' : ''}" data-sel="i:${name}"><div class="item-head"><b>${esc(i.from || 'Received')}</b>· ${ago(i.t)}
       <button class="icon-btn" data-act="trash" data-name="${name}" title="Move to Trash" aria-label="Move to Trash">✕</button></div>`;
     if (i.kind === 'text') {
       const long = i.text.length > 280 || i.text.split('\n').length > 5;
@@ -801,6 +900,7 @@ function renderTailshare(view) {
   }
   if (inbox?.length && !phone) html += `<div class="foot"><button class="btn small" data-act="reveal">Open Inbox folder</button></div>`;
   view.innerHTML = html;
+  selSay();
   renderJobs();   // looking at it clears the tab's count
 }
 
@@ -1114,6 +1214,7 @@ window.herd = {
   },
   // ~/Inbox changed (the Mac shell sends it when it does). New arrivals make the sheep say so.
   inbox(json) {
+    if (caps.test) return;   // the walk's made-up list stays
     const list = typeof json === 'string' ? JSON.parse(json) : json;
     const known = inbox;
     inbox = list;
@@ -1159,6 +1260,8 @@ window.herd = {
       pocketSay(r.error ? "Couldn't get it: " + r.error : { copy: 'Copied', save: 'Saved to Downloads/Pocket' }[r.action] + (item ? ': ' + item.name : ''), r.error ? 8000 : 2500);
   },
   tap() { nudge(); toggle(); },
+  // Android's back: it ends choosing first, then closes the panel.
+  back() { if (selecting) endSelect(); else this.tap(); },
   // `herd pet tab NAME`: shows that tab (agents, look, tailshare), opening the panel if it's closed.
   tab(name) { if (!jobs.some(j => j.id === name)) return; job = name; detail = null; store.set('job', job); if (!document.body.classList.contains('open')) toggle(true); else render(); },
   // A note from the Fold's shell in place of its own card (Boss, 2026-10-17: the cards are too big while playing; with the
@@ -1211,7 +1314,7 @@ function toggle(force) {
   document.body.classList.toggle('open', open);
   shell({ cmd: open ? 'expand' : 'collapse' });
   for (const wait of [0, 50, 200, 500]) setTimeout(measure, wait);   // the view grows a moment after it's asked to
-  if (!open) hideMenu();
+  if (!open) { hideMenu(); quitSelect(); }
   if (open) { markSeen(); mood(); render(); hush(); fetchPocket(); }
 }
 $('close').addEventListener('click', () => toggle(false));
@@ -1222,7 +1325,7 @@ let pointerOnPanel = false;
 $('panel').addEventListener('mouseenter', () => { pointerOnPanel = true; });
 $('panel').addEventListener('mouseleave', () => { pointerOnPanel = false; });
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') toggle(false);
+  if (e.key === 'Escape') { if (selecting) endSelect(); else toggle(false); }
   // ⌘V over the open panel puts what's on the clipboard into the pocket (the Mac shell reads the clipboard).
   if (e.metaKey && e.key.toLowerCase() === 'v' && native && !window.HerdAndroid && document.body.classList.contains('open')
       && pointerOnPanel && !e.target.closest?.('input, textarea, [contenteditable]')) {

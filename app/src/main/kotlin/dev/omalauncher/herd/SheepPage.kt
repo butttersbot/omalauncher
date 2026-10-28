@@ -40,7 +40,7 @@ fun herdPage(
                 override fun onPageFinished(view: WebView, url: String) {
                     // The pocket's pulls, uploads and share target are the phone's (Pocket.kt): the page may show its tab.
                     // ClipInbox.kt sends the clipboard and keeps "Sent to this phone".
-                    giveHerd(view, "caps", """{"pocket": true, "sendclip": true}""")
+                    giveHerd(view, "caps", """{"pocket": true, "sendclip": true, "test": ${herdTestMode()}}""")
                     Pocket.attach(view)
                     ClipInbox.show(context, view)
                     onLoaded()
@@ -73,6 +73,8 @@ fun herdPage(
                             is PetCommand.SendClip -> ClipInbox.sendClipboard(context, page, command.device)
                             is PetCommand.InboxGet -> ClipInbox.act(context, page, command.name, command.action)
                             is PetCommand.Skin -> PetWidget.wear(context, command.skin)
+                            PetCommand.Haptic -> page.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                            is PetCommand.Walk -> dev.omalauncher.keyboard.walkLog(command.line)
                             PetCommand.Unknown -> {}
                         }
                     }

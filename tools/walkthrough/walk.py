@@ -208,6 +208,14 @@ def run_step(serial, op, args, out, n):
         p = (p[0] + dx, p[1] + dy)
         x2, y2 = point(serial, *where.split())
         adb(serial, "shell", "input", "draganddrop", str(p[0]), str(p[1]), str(x2), str(y2), "1500"); time.sleep(1.2); return True, "", None
+    if op == "hold":
+        # hold TEXT [MS]: a long press on what says TEXT, without moving (choosing several in a list, a menu).
+        ms = args[-1] if len(args) > 1 and args[-1].isdigit() else "800"
+        wanted = " ".join(args[:-1] if ms == args[-1] and len(args) > 1 and args[-1].isdigit() else args)
+        p = find(serial, wanted, wait_ms=8000)
+        if not p:
+            return False, f"nothing says “{wanted}”", None
+        adb(serial, "shell", "input", "swipe", str(p[0]), str(p[1]), str(p[0]), str(p[1]), ms); time.sleep(0.8); return True, "", None
     if op == "swipe":
         x1, y1 = point(serial, args[0], args[1]); x2, y2 = point(serial, args[2], args[3])
         ms = args[4] if len(args) > 4 else "350"
