@@ -121,6 +121,9 @@ CLAUDE_DISCOVER = os.environ.get('OMA_RUNNER_CLAUDE_DISCOVER', '1') == '1'
 CLAUDE_PROJECTS = pathlib.Path(os.environ.get('CLAUDE_CONFIG_DIR') or HOME / '.claude') / 'projects'
 # Claude's long-lived token, when Boss has made one for a runner launchd starts before he logs in (claude_token).
 CLAUDE_TOKEN = HOME / '.config/oma-runner/claude-token'
+# The canvas service's key for this runner, for the same reason (soma_service_key): the system daemon can't read the
+# Keychain item `Soma --mint-runner-key` makes.
+SOMA_KEY_FILE = HOME / '.config/oma-runner/soma-service-key'
 CLAUDE_SCAN_EVERY = max(1, float(os.environ.get('OMA_RUNNER_CLAUDE_SCAN_EVERY', '15')))
 CODEX_DISCOVER = os.environ.get('OMA_RUNNER_CODEX_DISCOVER', '1') == '1'
 CODEX_SCAN_EVERY = float(os.environ.get('OMA_RUNNER_CODEX_SCAN_EVERY', '15'))
@@ -221,6 +224,8 @@ def soma_service_key():
         found = subprocess.run(command, capture_output=True, text=True, timeout=5).stdout.strip() or None
     except (OSError, subprocess.SubprocessError):
         found = None
+    # A system daemon has only the System keychain (2026-10-27): then a private file of his, as with Claude's token.
+    found = found or private_text(SOMA_KEY_FILE)
     if found is None:
         canvas_key_missing[0] = time.time()
     return found
@@ -2626,14 +2631,19 @@ def claude_token():
     can't open his login keychain, where Claude keeps its usual login (Boss, 2026-10-27: "Not logged in" on the Mac
     Pro's Claude lanes). Only a file of his own that nobody else can read counts; otherwise Claude signs in as usual.
     """
-    try:
-        info = CLAUDE_TOKEN.stat()
-        if info.st_uid != os.getuid() or info.st_mode & 0o077:
-            return {}
-        token = CLAUDE_TOKEN.read_text().strip()
-    except OSError:
-        return {}
+    token = private_text(CLAUDE_TOKEN)
     return {'CLAUDE_CODE_OAUTH_TOKEN': token} if token else {}
+
+
+def private_text(path):
+    """What a file holds, if it is his own and nobody else can read it; else None."""
+    try:
+        info = path.stat()
+        if info.st_uid != os.getuid() or info.st_mode & 0o077:
+            return None
+        return path.read_text().strip() or None
+    except OSError:
+        return None
 
 
 known = {}
@@ -4529,8 +4539,14 @@ def install():
     LOGS.mkdir(parents=True, exist_ok=True)
     path = ':'.join([str(HOME / '.local/bin'), str(HOME / '.local/share/mise/shims'), str(HOME / '.bun/bin'), '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin'])
     service_env = service_environment()
-    if not LINUX and SYSTEM_PLIST.exists():
-        # A system daemon runs it: no LaunchAgent beside it (two would fight for the port), only the new copy.
+    if daemon():
+        # A system daemon runs it: no LaunchAgent beside it (two would fight for the port), only the new copy. Its
+        # settings live in its plist, which only root can change: say so rather than drop what install was given.
+        have = daemon_settings()
+        for name, value in service_env.items():
+            if os.environ.get(name) and have.get(name) != value:
+                print('the system daemon keeps %s=%s; to change it: sudo /usr/libexec/PlistBuddy -c "Set :EnvironmentVariables:%s %s" %s'
+                      % (name, have.get(name, '(unset)'), name, value, SYSTEM_PLIST) + ' (Add instead of Set when unset)')
         return restart_daemon()
     if LINUX:
         UNIT.parent.mkdir(parents=True, exist_ok=True)
@@ -4550,6 +4566,20 @@ def install():
         'EnvironmentVariables': {'PATH': path, 'HOME': str(HOME), **service_env}, 'WorkingDirectory': str(HOME),
         'StandardOutPath': str(LOGS / 'runner.log'), 'StandardErrorPath': str(LOGS / 'runner.log')}))
     reload_detached(python)
+
+
+def daemon():
+    """Whether a system daemon runs the runner here (SYSTEM_PLIST) rather than a LaunchAgent in his session."""
+    return not LINUX and SYSTEM_PLIST.exists()
+
+
+def daemon_settings():
+    """The canvas service settings the system daemon was given."""
+    try:
+        env = plistlib.loads(SYSTEM_PLIST.read_bytes()).get('EnvironmentVariables', {})
+    except (OSError, ValueError, AttributeError, plistlib.InvalidFileException):
+        return {}
+    return {k: v for k, v in env.items() if k in ('OMA_RUNNER_SOMA_SERVICE', 'OMA_RUNNER_SOMA_SCREENS') and isinstance(v, str)} if isinstance(env, dict) else {}
 
 
 def restart_daemon():
@@ -4598,6 +4628,8 @@ def systemctl(*arguments):
 
 
 def start_service():
+    if daemon():
+        return print('the system daemon runs it; to start it: sudo launchctl kickstart system/' + LABEL)
     if LINUX:
         systemctl('daemon-reload')
         result = systemctl('enable', '--now', UNIT.name)
@@ -4612,6 +4644,9 @@ def start_service():
 
 
 def stop_service():
+    if daemon():
+        print('the system daemon runs it (and starts it again if it ends); to stop it: sudo launchctl bootout system/' + LABEL)
+        return False
     if LINUX:
         # Stopping a unit that isn't running succeeds too; only one that was running was stopped.
         running = systemctl('is-active', UNIT.name).stdout.strip() == 'active'
@@ -4721,6 +4756,11 @@ def status():
     if LINUX:
         active = systemctl('is-active', UNIT.name).stdout.strip()
         print('systemd --user: ' + (active or 'not installed') + (' (starts at login, restarts if it dies)' if active == 'active' else ''))
+    elif daemon():
+        loaded = launchctl('print', 'system/' + LABEL).returncode == 0
+        print('launchd system daemon: ' + ('loaded (starts at boot, restarts if it dies)' if loaded else 'not loaded'))
+        if not SOMA_KEY_FILE.exists() and daemon_settings().get('OMA_RUNNER_SOMA_SERVICE'):
+            print('no %s: the daemon cannot read the Keychain, so threads get no canvas token' % SOMA_KEY_FILE)
     else:
         loaded = launchctl('print', 'gui/%d/%s' % (os.getuid(), LABEL)).returncode == 0
         print('launchd: ' + ('loaded (starts at login, restarts if it dies)' if loaded else 'not loaded'))
@@ -4762,6 +4802,8 @@ def main():
         unpair(sys.argv[2])
     elif command == 'devices':
         list_devices()
+    elif command == 'uninstall' and daemon():
+        print('the system daemon runs it; to remove it: sudo launchctl bootout system/%s && sudo rm %s' % (LABEL, SYSTEM_PLIST))
     elif command == 'uninstall':
         stop_service()
         if LINUX:

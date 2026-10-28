@@ -8,7 +8,7 @@ import unittest
 
 source = pathlib.Path(__file__).with_name('oma-runner').read_text()
 module = ast.parse(source)
-functions = ast.Module(body=[n for n in module.body if isinstance(n, ast.FunctionDef) and n.name in {'claude_token', 'clean_environment'}], type_ignores=[])
+functions = ast.Module(body=[n for n in module.body if isinstance(n, ast.FunctionDef) and n.name in {'claude_token', 'private_text', 'clean_environment'}], type_ignores=[])
 
 
 class ClaudeToken(unittest.TestCase):
