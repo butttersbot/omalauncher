@@ -35,3 +35,14 @@ was answered or replayed during this investigation.
 Injected builder guidance now asks for AskUserQuestion or a question-form artifact
 with Submit for owner decisions. Headless D passes structured choices to its
 requesting builder for that card; silence/plain text never grants permission.
+
+Phone A clarified163539: owner selected options, could not find Send, then typed
+in chat; that new turn interrupted the tool. This confirms the missing/hidden
+Submit problem rather than malformed allow/deny wire data. The fixed button is
+always present, even before completeness, with an explicit remaining count and
+helpful no-send feedback if incomplete. When selecting a single-choice answer
+would finish the form, that option explicitly says Choose and send answers and
+sends through the same once-only path. Multi-select and Other text retain explicit
+Send so the first selection/keystroke cannot prematurely submit them. New unit
+cases cover both, and the builder walk covers the final-choice shortcut at both
+Fold sizes.

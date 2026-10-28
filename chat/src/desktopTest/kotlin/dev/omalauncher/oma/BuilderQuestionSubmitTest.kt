@@ -13,6 +13,35 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class BuilderQuestionSubmitTest : ChatScreenTestBase() {
+    @Test fun finalSingleChoiceClearlySendsAllFourAnswersOnce() = exerciseFinalChoice(false)
+    @Test fun finalMultiSelectWaitsForExplicitSend() = exerciseFinalChoice(true)
+
+    @OptIn(ExperimentalTestApi::class)
+    private fun exerciseFinalChoice(multi: Boolean) = runComposeUiTest {
+        val input = JSONObject().put("questions", JSONArray((1..4).map { i -> JSONObject().put("question", "Q$i?")
+            .put("multiSelect", i == 4 && multi).put("options", JSONArray().put(JSONObject().put("label", if (i == 4) "Last choice" else "Earlier $i"))) }))
+        val draft = WaitingQuestionDraft().apply { answers = (1..3).associate { "Q$it?" to listOf("Earlier $it") } }
+        var calls = 0
+        val request = WaitingQuestion("fixture", "Phone A", input.toString()) { payload, done ->
+            val reply = ClaudeProtocol.decision(AgentApproval("q", "AskUserQuestion", input, ""), true, payload)
+            assertEquals(4, reply.getJSONObject("response").getJSONObject("response").getJSONObject("updatedInput").getJSONObject("answers").length())
+            calls++; done(null)
+        }
+        setContent { Box(Modifier.size(475.dp, 751.dp)) { WaitingQuestionPanel(request, draft) {} } }
+        onNodeWithText("[ Send answers ]").assertIsDisplayed().performClick()
+        assertEquals(0, calls)
+        onNodeWithText("Answer every remaining question first. Nothing has been sent.").assertExists()
+        onNodeWithText(if (multi) "☐ Last choice" else "○ Last choice").performScrollTo().performClick()
+        if (multi) {
+            assertEquals(0, calls)
+            onNodeWithText("[ Send answers ]").assertIsDisplayed().performClick()
+        }
+        assertEquals(1, calls)
+        onNodeWithText("Answers sent").assertExists()
+        draft.send(request, JSONObject())
+        assertEquals(1, calls)
+    }
+
     @OptIn(ExperimentalTestApi::class)
     @Test fun notificationForAnotherBuilderWaitsForItsTabBeforeConsumingNonce() = runComposeUiTest {
         val approval = AgentApproval("c-request", "AskUserQuestion", JSONObject("""{"questions":[{"question":"Fictional C decision?","options":[{"label":"Keep fixture"}]}]}"""), "")

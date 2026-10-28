@@ -158,6 +158,15 @@ internal fun WaitingQuestionPanel(request: WaitingQuestion, draft: WaitingQuesti
     var error by draft::error
     val keys = (0 until questions.length()).map { i -> questions.getJSONObject(i).let { if (codex) it.getString("id") else it.getString("question") } }
     val ready = keys.all { others[it]?.isNotBlank() == true || !answers[it].isNullOrEmpty() }
+    fun sendCompleteAnswers() {
+        if (sending || sent || !keys.all { others[it]?.isNotBlank() == true || !answers[it].isNullOrEmpty() }) return
+        val payload = JSONObject()
+        keys.forEachIndexed { i, key ->
+            val other = others[key]?.takeIf { it.isNotBlank() }
+            payload.put(key, other ?: if (questions.getJSONObject(i).optBoolean("multiSelect")) JSONArray(answers[key]) else answers.getValue(key).single())
+        }
+        draft.send(request, payload)
+    }
     val summary = keys.mapIndexedNotNull { i, key ->
         val value = others[key]?.takeIf { it.isNotBlank() } ?: answers[key]?.joinToString(", ")
         value?.let { "${questions.getJSONObject(i).optString("header").ifBlank { "${i + 1}" }}: $it" }
@@ -175,19 +184,24 @@ internal fun WaitingQuestionPanel(request: WaitingQuestion, draft: WaitingQuesti
                 BasicText("${i + 1} · ${q.optString("header")}", style = Pack.mono(Pack.size.small, Pack.muted))
                 BasicText(q.getString("question"), Modifier.padding(vertical = 10.dp), style = Pack.body())
                 val options = q.optJSONArray("options") ?: JSONArray()
+                val sendsOnPick = !q.optBoolean("multiSelect") && !ready && keys.filter { it != key }.all { others[it]?.isNotBlank() == true || !answers[it].isNullOrEmpty() }
+                if (sendsOnPick) BasicText("Choose your final answer to send all choices.", style = Pack.mono(Pack.size.small, Pack.accent))
                 for (j in 0 until options.length()) {
                     val option = options.getJSONObject(j); val label = option.getString("label")
                     val selected = label in (answers[key] ?: emptyList()) && others[key].isNullOrBlank()
                     Column(Modifier.fillMaxWidth().padding(bottom = 8.dp)
                         .framed(Pack.mark, if (selected) Pack.accent else Pack.muted, Pack.surface, radius = 8.dp)
                         .clickable(enabled = !sending) {
+                            error = null
                             others = others - key
                             val previous = answers[key] ?: emptyList()
                             answers = answers + (key to if (q.optBoolean("multiSelect")) {
                                 if (label in previous) previous - label else previous + label
                             } else listOf(label))
+                            if (sendsOnPick) sendCompleteAnswers()
                         }.padding(12.dp)) {
                         BasicText("${if (q.optBoolean("multiSelect")) { if (selected) "☑" else "☐" } else { if (selected) "●" else "○" }} $label", style = Pack.body())
+                        if (sendsOnPick) BasicText("Choose and send answers", style = Pack.mono(Pack.size.small, Pack.accent))
                         option.optString("description").takeIf { it.isNotBlank() }?.let {
                             BasicText(it, Modifier.padding(top = 4.dp), style = Pack.body(Pack.size.small, Pack.muted))
                         }
@@ -198,7 +212,7 @@ internal fun WaitingQuestionPanel(request: WaitingQuestion, draft: WaitingQuesti
                     val bringIntoView = remember(request.key, key) { BringIntoViewRequester() }
                     val scope = rememberCoroutineScope()
                     BasicTextField(others[key] ?: "", { value ->
-                        others = others + (key to value.take(4096)); answers = answers - key
+                        error = null; others = others + (key to value.take(4096)); answers = answers - key
                     }, Modifier.fillMaxWidth().padding(vertical = 8.dp)
                         .bringIntoViewRequester(bringIntoView).onFocusChanged { focus ->
                             if (focus.isFocused) scope.launch { delay(300); bringIntoView.bringIntoView() }
@@ -212,20 +226,14 @@ internal fun WaitingQuestionPanel(request: WaitingQuestion, draft: WaitingQuesti
         }
         Column(Modifier.fillMaxWidth().background(Pack.surface).padding(12.dp)) {
             BasicText("To: ${request.title}", style = Pack.mono(Pack.size.small, Pack.muted))
-            if (!ready && !sent) BasicText("Answer every question to send, or skip.", style = Pack.mono(Pack.size.small, Pack.muted))
+            if (!ready && !sent) BasicText("${keys.count { others[it].isNullOrBlank() && answers[it].isNullOrEmpty() }} of ${keys.size} questions left. Answer every question to send, or skip.", style = Pack.mono(Pack.size.small, Pack.muted))
             if (summary.isNotBlank() && !sent) BasicText(summary, style = Pack.mono(Pack.size.small, Pack.muted), maxLines = 3, overflow = TextOverflow.Ellipsis)
             error?.let { BasicText(it, style = Pack.body(Pack.size.small, Pack.red), maxLines = 2, overflow = TextOverflow.Ellipsis) }
             if (!sent) FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 BracketAction("skip", if (sending) Pack.muted else Pack.accent) { draft.skip(request, close) }
                 BracketAction(if (sending) "Sending…" else "Send answers", if (ready) Pack.accent else Pack.muted) {
-                    if (ready && !sending) {
-                        val payload = JSONObject()
-                        keys.forEachIndexed { i, key ->
-                            val other = others[key]?.takeIf { it.isNotBlank() }
-                            payload.put(key, other ?: if (questions.getJSONObject(i).optBoolean("multiSelect")) JSONArray(answers[key]) else answers.getValue(key).single())
-                        }
-                        draft.send(request, payload)
-                    }
+                    if (ready) sendCompleteAnswers()
+                    else error = "Answer every remaining question first. Nothing has been sent."
                 }
             }
         }
