@@ -185,6 +185,29 @@ def run_step(serial, op, args, out, n):
                 p = q or p
             x, y = p
         adb(serial, "shell", "input", "tap", str(x), str(y)); time.sleep(0.6); return True, "", None
+    if op == "drag":
+        # drag TEXT [offset DX DY] to X Y: a long press on what says TEXT (or that far from it: a sticker has no words, but
+        # its "turn · delete" bar sits a fixed way above it), then carried to the point, as a finger lifts a note, a
+        # sticker or a tile (Android's draganddrop waits out the long press first). Notes and stickers land where the board
+        # puts them, so they are found by what is on them rather than by where they were.
+        words = " ".join(args)
+        if " to " not in words:
+            return False, "drag needs: drag TEXT [offset DX DY] to X Y", None
+        wanted, where = words.rsplit(" to ", 1)
+        dx = dy = 0
+        if " offset " in wanted:
+            wanted, by = wanted.rsplit(" offset ", 1)
+            ox, oy = by.split()
+            sign = lambda v: (-1 if v.startswith("-") else 1, v.lstrip("+-"))
+            (sx, vx), (sy, vy) = sign(ox), sign(oy)
+            dx, dy = point(serial, vx, vy)
+            dx, dy = sx * dx, sy * dy
+        p = find(serial, wanted.strip(), wait_ms=8000)
+        if not p:
+            return False, f"nothing says “{wanted.strip()}”", None
+        p = (p[0] + dx, p[1] + dy)
+        x2, y2 = point(serial, *where.split())
+        adb(serial, "shell", "input", "draganddrop", str(p[0]), str(p[1]), str(x2), str(y2), "1500"); time.sleep(1.2); return True, "", None
     if op == "swipe":
         x1, y1 = point(serial, args[0], args[1]); x2, y2 = point(serial, args[2], args[3])
         ms = args[4] if len(args) > 4 else "350"

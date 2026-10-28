@@ -28,6 +28,7 @@ pixels (`540 1800`).
 | `ime PKG/SERVICE` | makes that keyboard the current one |
 | `tap TEXT` or `tap X Y` | taps what says TEXT (text or content description; `A \| B` for whichever shows), or a point (`48dp` works too) |
 | `swipe X1 Y1 X2 Y2 [MS]` | a drag |
+| `drag TEXT [offset DX DY] to X Y` | a long press on what says TEXT (or DX DY from it, `60dp` works), then carried to the point (lifting a note, a sticker or a tile) |
 | `type WORDS` / `key ENTER\|BACK\|DEL…` | typing, through whatever keyboard is up |
 | `wait MS` | pauses |
 | `shell CMD …` | an adb shell command (e.g. `cmd statusbar click-tile PKG/TILE`) |

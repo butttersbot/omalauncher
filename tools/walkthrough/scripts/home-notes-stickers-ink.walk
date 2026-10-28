@@ -1,0 +1,126 @@
+# Home's notes, stickers and ink. Desktop parity slice 5b (2026-10-28) moved their model and drawing into the shared
+# code (:chat) so the desktop's dashboard draws them too: the phone's home must do all of it as before, cover and
+# unfolded, and what was on its pages must still load. Run before and after such a change and compare the shots.
+fold open
+# Home with nothing open or selected. Home pressed at home opens the app list, so Back after it: Back closes the list
+# and lets go of a selected sticker, and does nothing at plain home.
+key HOME
+wait 1500
+key BACK
+key BACK
+wait 1000
+shot unfolded-home-before
+# A sticky note from the drawing tools, its words typed, kept.
+tap Open drawing tools
+tap sticky note
+expect delete
+type walk note one
+tap done
+expect walk note one
+# Look: the note, pink, with its words, on the page (clear of tiles where the page has room).
+shot unfolded-note-placed
+# Lifted with a long press and carried to the empty right page.
+drag walk note one to 0.70 0.62
+expect walk note one
+# Look: the note now on Page 2, lower right, nothing else moved.
+shot unfolded-note-moved
+# Tapped: its menu; deleted.
+tap walk note one
+expect delete
+tap delete
+absent walk note one
+# A sticker: the heart, second of the drawn ones.
+tap Open drawing tools
+tap sticker
+expect stick on this page
+tap 0.41 0.493
+wait 1200
+# Look: a pink heart on Page 2 under the apps, selected: a handle at its corner and "turn · delete" above it.
+shot unfolded-sticker-placed
+expect delete
+# Carried by its middle, found under its "turn · delete" bar (where it lands depends on what is on the page).
+drag turn offset 20dp 60dp to 0.80 0.66
+wait 800
+# Look: the heart lower down on Page 2, still selected.
+shot unfolded-sticker-moved
+tap delete
+wait 800
+# Look: no heart.
+shot unfolded-sticker-deleted
+# Ink: the pen draws on Page 2's empty part.
+tap Open drawing tools
+expect undo
+swipe 0.55 0.45 0.72 0.62 600
+wait 800
+# Look: a blue stroke on Page 2.
+shot unfolded-ink-drawn
+tap undo
+wait 800
+# Look: the stroke gone.
+shot unfolded-ink-undone
+tap redo
+wait 800
+# Look: the stroke back.
+shot unfolded-ink-redone
+tap undo
+tap close drawing tools
+# The same on the cover screen (its own page, its own tools band).
+fold folded
+key HOME
+wait 1500
+key BACK
+key BACK
+wait 1000
+shot cover-home-before
+tap Open drawing tools
+tap sticky note
+expect delete
+type walk note two
+tap done
+expect walk note two
+# Look: the note on the cover's page, clear of the tiles.
+shot cover-note-placed
+drag walk note two to 0.5 0.62
+expect walk note two
+# Look: the note lower down, nothing else moved.
+shot cover-note-moved
+tap walk note two
+expect delete
+tap delete
+absent walk note two
+tap Open drawing tools
+tap sticker
+expect stick on this page
+tap 0.325 0.494
+wait 1200
+# Look: the heart on the page, selected, "turn · delete" above it.
+shot cover-sticker-placed
+expect delete
+drag turn offset 20dp 60dp to 0.6 0.66
+wait 800
+# Look: the heart lower down, still selected.
+shot cover-sticker-moved
+tap delete
+wait 800
+# Look: no heart.
+shot cover-sticker-deleted
+tap Open drawing tools
+expect undo
+swipe 0.3 0.55 0.7 0.7 600
+wait 800
+# Look: a blue stroke across the cover's empty part.
+shot cover-ink-drawn
+tap undo
+wait 800
+# Look: the stroke gone.
+shot cover-ink-undone
+tap redo
+wait 800
+# Look: the stroke back.
+shot cover-ink-redone
+tap undo
+tap close drawing tools
+fold open
+# Pen marks wiped by the agents' bridge (only on the phone, where Linux and the bridge run).
+[phone] Draw a few strokes on a page, then from Phone A run `oma-phone ink clear`: the strokes go at once, the answer says how many, notes and stickers stay; the tools' undo brings the strokes back
+[phone] On Boss's own home: the notes, stickers and ink already on his pages show after updating, in the same places, with the same words
