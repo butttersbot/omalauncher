@@ -117,7 +117,9 @@ class DesktopChatHost(
 
     override fun changeBook(change: (TabMeta) -> TabMeta): TabMeta = platform.changeBook(change)
 
-    override fun checkTitles() {}
+    private val titles = DesktopChatTitles(platform)
+
+    override fun checkTitles() = titles.check()
 
     override fun builderFacts(): Map<BuilderId, BuilderFacts> = emptyMap()
 

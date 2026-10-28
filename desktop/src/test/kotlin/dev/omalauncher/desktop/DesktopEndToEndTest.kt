@@ -549,4 +549,58 @@ class DesktopEndToEndTest {
         File("build/render").mkdirs()
         javax.imageio.ImageIO.write(shot.toAwtImage(), "png", File("build/render/desktop-canvas-e2e.png"))
     }
+
+    /**
+     * Slice 1 of desktop parity (Boss, 2026-10-28): a chat's pick of agent is its own. A new chat with Codex picked runs
+     * on Codex; the next new chat, picked nothing, shows and runs Claude again, where before the pick became the default.
+     * And chats are named: the fast model's words, or his first words when it can't (every tab said "New chat").
+     */
+    @Test fun aPickIsTheChatsOwnAndChatsAreNamed() = runComposeUiTest {
+        val notices = Notices()
+        val machine = MacMachine("testhost", "Test box", MacRunnerConfig("http://127.0.0.1:$port", key))
+        val platform = DesktopThreadsPlatform(notices) { listOf(machine) }
+        val engine = MacThreadsEngine(platform)
+        val host = DesktopChatHost(platform, engine, DesktopFrontAgent(engine, platform, notices, places = emptyList()), notices)
+        engine.open()
+        var wanted: String? by androidx.compose.runtime.mutableStateOf<String?>(null)
+        mainClock.autoAdvance = false
+        setContent { OmaChatScreen(host, prefill = null, onPrefilled = {}, wanted = wanted, onTab = { wanted = it.takeIf { tab -> tab != OMA_TAB } }) }
+        fun settle(ms: Long = 1_200) = mainClock.advanceTimeBy(ms)
+        fun waitFor(what: String, done: () -> Boolean) {
+            val deadline = System.currentTimeMillis() + 40_000
+            while (System.currentTimeMillis() < deadline && !done()) { Thread.sleep(250); settle(500) }
+            assertTrue("$what: ${platform.chatLog().tasks.map { "${it.chat} ${it.thread} ${it.status}" }} ${engine.view.threads.map { "${it.id} ${it.kind}" }}", done())
+        }
+        fun kindOf(chat: String) = engine.view.threads.firstOrNull { it.id == platform.book().chat(chat)?.mac }?.kind
+        fun newChat() {
+            if (onAllNodes(androidx.compose.ui.test.hasContentDescription("Show the tabs")).fetchSemanticsNodes().isNotEmpty()) { onNodeWithContentDescription("Show the tabs").performClick(); settle() }
+            onNodeWithContentDescription("New chat").performClick(); settle()
+        }
+        settle()
+        waitFor("the runner said it runs Codex") { "codex" in engine.kindsOn("testhost") }
+        settle()
+        newChat()
+        onNodeWithText("[ Claude ]").performClick(); settle()
+        onAllNodes(hasText("Codex") and hasClickAction()).onFirst().performClick(); settle()
+        onNode(androidx.compose.ui.test.hasSetTextAction()).performTextInput("say hello from codex")
+        settle(); onNodeWithText("[ send ]").performClick(); settle()
+        val first = platform.book().chats.last().id
+        waitFor("the first chat runs on Codex") { kindOf(first) == "codex" }
+        newChat()
+        onNodeWithText("[ Claude ]").assertExists()
+        onNode(androidx.compose.ui.test.hasSetTextAction()).performTextInput("what files are here")
+        settle(); onNodeWithText("[ send ]").performClick(); settle()
+        val second = platform.book().chats.last().id
+        assertTrue("a second chat", second != first)
+        waitFor("the next chat, picked nothing, runs on Claude") { kindOf(second) == "claude" }
+        waitFor("both answered") { platform.chatLog().tasks.count { it.mac && it.status == dev.omalauncher.oma.TaskStatus.Done } >= 2 }
+        // Named: by the model where it answers, by his first words where it can't.
+        DesktopChatTitles(platform) { ask -> if ("codex" in ask.message) "Codex Says Hello" else null }.check()
+        waitFor("both chats named") { platform.book().names.keys.containsAll(listOf(dev.omalauncher.oma.chatKey(first), dev.omalauncher.oma.chatKey(second))) }
+        assertEquals("Codex Says Hello", platform.book().names[dev.omalauncher.oma.chatKey(first)])
+        assertEquals("what files are here", platform.book().names[dev.omalauncher.oma.chatKey(second)])
+        settle()
+        File("build/render").mkdirs()
+        javax.imageio.ImageIO.write(onRoot().captureToImage().toAwtImage(), "png", File("build/render/desktop-e2e-names.png"))
+    }
 }

@@ -143,7 +143,7 @@ class DesktopLiveAgentsTest {
         settle(); shot("codex")
 
         // 3. Asked for his OK: Claude's question card, answered from the chat.
-        newChat("Use your AskUserQuestion tool to ask me one question, header \"Fruit\", \"Which fruit?\", with options Apple and Pear. Then reply with the fruit I picked, in capitals.", agent = "Claude", from = "Codex")
+        newChat("Use your AskUserQuestion tool to ask me one question, header \"Fruit\", \"Which fruit?\", with options Apple and Pear. Then reply with the fruit I picked, in capitals.")
         waitFor("the question reached the chat") { onAllNodes(hasText("[ answer questions ]")).fetchSemanticsNodes().isNotEmpty() }
         shot("question")
         onAllNodes(hasText("[ answer questions ]")).onFirst().performClick(); settle()
@@ -164,5 +164,10 @@ class DesktopLiveAgentsTest {
         println("LIVE stop: ${stopped.status} ${stopped.result.take(120)}")
         assertTrue("stopped, not finished: ${stopped.status}", stopped.status != TaskStatus.Done || "finished" !in stopped.result.lowercase())
         settle(); shot("stopped")
+
+        // 5. Named: each chat by this Mac's fast model (or his first words), not "New chat".
+        waitFor("all four chats named", 120) { platform.book().chats.all { dev.omalauncher.oma.chatKey(it.id) in platform.book().names } }
+        println("LIVE names: " + platform.book().names.values)
+        settle(); shot("names")
     }
 }
