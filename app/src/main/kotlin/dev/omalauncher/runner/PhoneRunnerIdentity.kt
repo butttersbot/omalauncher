@@ -61,11 +61,11 @@ fun runnerKeyFromRecord(device: String, record: String): RunnerKey? = runCatchin
 }.getOrNull()
 
 data class RunnerBindIdentity(val address: String?, val cache: RunnerCachedIdentity?)
-fun runnerBindIdentity(vpnAddresses: List<String>, cached: RunnerCachedIdentity?, lookup: (String) -> RunnerIdentityLookup, now: Long): RunnerBindIdentity {
+fun runnerBindIdentity(vpnAddresses: List<String>, cached: RunnerCachedIdentity?, lookup: (String) -> RunnerIdentityLookup, now: Long, currentTime: () -> Long = { now }): RunnerBindIdentity {
     var saved = cached
     for (address in vpnAddresses.filter(::runnerTailnetIPv4)) {
         val result = runnerIdentityDecision(PHONE_RUNNER_DEVICE, address, saved,
-            runCatching { lookup(address) }.getOrDefault(RunnerIdentityLookup.Unavailable), now)
+            runCatching { lookup(address) }.getOrDefault(RunnerIdentityLookup.Unavailable), currentTime())
         saved = result.cache
         if (result.accepted) return RunnerBindIdentity(address, saved)
     }
@@ -74,11 +74,11 @@ fun runnerBindIdentity(vpnAddresses: List<String>, cached: RunnerCachedIdentity?
 
 data class RunnerCallerDecision(val key: RunnerKey? = null, val cache: RunnerCachedIdentity? = null, val peer: RunnerPeer? = null)
 /** The listener uses this gate before protocol dispatch, including for every stream heartbeat. */
-fun runnerCallerDecision(token: String?, address: String, local: Set<String>, keys: List<RunnerKey>, lookup: (String) -> RunnerIdentityLookup, now: Long): RunnerCallerDecision {
+fun runnerCallerDecision(token: String?, address: String, local: Set<String>, keys: List<RunnerKey>, lookup: (String) -> RunnerIdentityLookup, now: Long, currentTime: () -> Long = { now }): RunnerCallerDecision {
     if (!runnerRemoteSource(address, local) || token.isNullOrBlank() || token.length > 512) return RunnerCallerDecision()
     val digest = runnerDigest(token).toByteArray(Charsets.US_ASCII)
     val key = keys.firstOrNull { java.security.MessageDigest.isEqual(digest, it.digest.toByteArray(Charsets.US_ASCII)) } ?: return RunnerCallerDecision()
     val result = runnerIdentityDecision(key.device, address, key.identity,
-        runCatching { lookup(address) }.getOrDefault(RunnerIdentityLookup.Unavailable), now)
+        runCatching { lookup(address) }.getOrDefault(RunnerIdentityLookup.Unavailable), currentTime())
     return RunnerCallerDecision(key, result.cache, if (result.accepted) RunnerPeer(key.device, true) else null)
 }

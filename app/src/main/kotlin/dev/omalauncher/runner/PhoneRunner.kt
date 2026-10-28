@@ -113,7 +113,7 @@ class PhoneRunner(private val context: Context, private val tailnet: PhoneTailne
         runCatching { server?.close() }
     }
     private fun caller(token: String?, address: String, local: Set<String>): RunnerPeer? {
-        val result = runnerCallerDecision(token, address, local, keys.keys(), tailnet::lookup, System.currentTimeMillis())
+        val result = runnerCallerDecision(token, address, local, keys.keys(), tailnet::lookup, System.currentTimeMillis(), System::currentTimeMillis)
         val key = result.key ?: return null
         if (!keys.confirm(key, result.cache)) return null
         return result.peer
@@ -170,7 +170,7 @@ class PhoneRunner(private val context: Context, private val tailnet: PhoneTailne
             connectivity.getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
         }.flatMap { connectivity.getLinkProperties(it)?.linkAddresses.orEmpty() }
             .mapNotNull { it.address.hostAddress }
-        val result = runnerBindIdentity(addresses, keys.ownIdentity(), tailnet::lookup, System.currentTimeMillis())
+        val result = runnerBindIdentity(addresses, keys.ownIdentity(), tailnet::lookup, System.currentTimeMillis(), System::currentTimeMillis)
         keys.ownIdentity(result.cache)
         result.address
     }.getOrNull()

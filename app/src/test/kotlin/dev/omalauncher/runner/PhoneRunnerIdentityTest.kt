@@ -11,6 +11,15 @@ class PhoneRunnerIdentityTest {
     private val paired = RunnerKey("jacks-mac-pro", runnerDigest(token), RunnerCachedIdentity(address, at))
     private val phone = setOf("127.0.0.1", "100.80.1.2", "100.90.1.1", "192.168.1.5")
     private val offline: (String) -> RunnerIdentityLookup = { RunnerIdentityLookup.Unavailable }
+    @Test fun lookupLatencyDoesNotMakeANewConfirmationLookLikeClockRollback() {
+        val key = RunnerKey("mac-pro", runnerDigest("fixture"))
+        val result = runnerCallerDecision("fixture", "100.80.1.3", setOf("100.80.1.2"), listOf(key),
+            { RunnerIdentityLookup.Confirmed(RunnerPeer("mac-pro", true), 2000) }, 1000, { 2000 })
+        assertNotNull(result.peer)
+        val bind = runnerBindIdentity(listOf("100.80.1.2"), null,
+            { RunnerIdentityLookup.Confirmed(RunnerPeer(PHONE_RUNNER_DEVICE, true), 2000) }, 1000, { 2000 })
+        assertEquals("100.80.1.2", bind.address)
+    }
     @Test fun offlineCacheIsBoundToThisKeyAndAddressForAtMostSevenDays() {
         fun ask(key: RunnerKey = paired, ip: String = address, now: Long = at) = runnerCallerDecision(token, ip, phone, listOf(key), offline, now)
         assertNotNull(ask().peer)
