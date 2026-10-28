@@ -129,3 +129,37 @@ Canvas reference read attempted at the configured MacBook server; it was
 unreachable. This is the requested addition to the existing native Pack actions,
 not a new mockup or a Shipped claim. Publish reviewed screenshots against the
 current cards when Canvas is available and the bundled launcher is installed.
+
+### Skip checkpoint at 086f8ae8
+
+Mac Pro lane B reports Android compilation and the requested targeted tests PASS:
+QuestionSkipTest, ClaudeProtocolTest, MacThreadsTest, MacRunnerTest and
+ModuleApprovalGuardTest. Shared desktop draft/withdrawal tests, ModuleRulesTest,
+the Needs You Skip tap regression, DesktopQuestionAnswerTest and desktop compile
+also PASS. The original approval guard was preserved. Isolated runner tests:
+21 PASS, including strict-option Claude/Codex Skip continuing via allow, exactly
+once. DesktopChatHost now actually forwards question answers to the shared engine
+(the previous inherited default failed).
+
+Final isolated Fold8-B preview walks, no real sends:
+
+- waiting-question-skip: 26 PASS, 0 FAIL, 4 reviewed LOOKs.
+- waiting-question: 44 PASS, 0 FAIL, 6 reviewed LOOKs; normal Submit retained.
+
+The critic reviewed all ten LOOKs; Phone B also inspected both contact sheets and
+full-size unfolded/side-panel footer images on the Fold. Skip closes the pending
+card/form and the fake-host chat shows skipped. Normal Send preserves its chosen
+answers and receipt. Sideways-cover footer text wraps to two lines, without
+clipping. The Needs You tap test verifies one Skip node, one question answer,
+no approve/deny call, and an empty pending count afterward. The withdrawal test
+covers an already-open form closing after another device settles its nonce.
+
+Evidence: /root/Inbox/skip-086f8ae8-evidence.zip, SHA256
+5421d1101f0681fda88f067c3482a586b641628bc1921610667e602ca23bdaef.
+These are fake-host preview screenshots, not Shipped launcher records.
+
+NOT WALKED: real desktop plus live runner, real phone/builder question resume,
+notifications/Needs You on multiple real devices, locked/competing-device owner
+interaction. The two phone steps in waiting-question-skip.walk remain deferred
+until the matching launcher/desktop/runner bundle is promoted. Nothing was
+installed on the phone; no live runner/server/Canvas mutation or restart ran.
