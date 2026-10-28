@@ -40,7 +40,7 @@ pair gives DEVICE (its Tailscale machine name) a key of its own, sent to it by T
 before, and a computer running Soma as soma-runner-<this machine>.json. unpair takes it away at once. rekey is pair
 for the phone.
 """
-import queue, contextlib, fcntl, hashlib, hmac, json, os, pathlib, plistlib, re, secrets, select, shlex, shutil, signal, socket, stat, subprocess, sys, tempfile, threading, time, tomllib, urllib.error, urllib.parse, urllib.request, uuid
+import queue, contextlib, fcntl, hashlib, hmac, ipaddress, json, os, pathlib, plistlib, re, secrets, select, shlex, shutil, signal, socket, stat, subprocess, sys, tempfile, threading, time, tomllib, urllib.error, urllib.parse, urllib.request, uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HOME = pathlib.Path.home()
@@ -4087,6 +4087,8 @@ class Runner(BaseHTTPRequestHandler):
             return self.answer(200, {'ok': True, 'runner': 'oma-runner', **({'soma': SOMA_SERVICE} if SOMA_SERVICE else {}), 'threads': len(states), 'working': states.count('working'), 'waiting': states.count('waiting'),
                                      'kinds': [kind for kind in KINDS if program(kind)], 'models': {'venice': venice_models()} if program('venice') else {}, 'files': True,
                                      'bots': [{key: bot[key] for key in ('id', 'name', 'emoji', 'problem')} for bot in found.values()]})
+        if len(parts) == 2 and parts[0] == 'phone-runner' and parts[1] in ('tailnet', 'whois'):
+            return self.phone_runner(parts[1], query, None)
         if parts == ['threads']:
             with changed:
                 sync_bots()
@@ -4178,6 +4180,8 @@ class Runner(BaseHTTPRequestHandler):
             body = None
         if not isinstance(body, dict):
             return self.answer(400, {'ok': False, 'error': 'a JSON object is needed'})
+        if parts == ['phone-runner', 'taildrop']:
+            return self.phone_runner('taildrop', {}, body)
         if parts == ['threads']:
             name = str(body.get('name') or '').strip()[:80]
             project = allowed_project(body.get('project') or '')
@@ -4229,6 +4233,54 @@ class Runner(BaseHTTPRequestHandler):
             return self.answer(code, result)
         self.answer(404, {'ok': False, 'error': 'not found'})
 
+
+    def phone_runner(self, what, query, body):
+        """The phone's Tailscale questions, answered here for it (PHONE-RUNNER-SPEC, "Tailnet helper"): Android's Tailscale
+        gives Soma no whois, status or Taildrop. Only the phone may ask, with its own key from its own address (allowed()),
+        and only so often. Nothing of a pairing file's content is logged or kept."""
+        if self.device != PHONE:
+            return self.answer(403, {'ok': False, 'error': 'only the phone asks these'})
+        if not phone_helper_ask():
+            return self.answer(429, {'ok': False, 'error': 'too many asks; try again in a minute'})
+        try:
+            status = tailnet_status()
+        except Exception:
+            return self.answer(503, {'ok': False, 'error': "this Mac's Tailscale can't be read now"})
+        devices = owner_devices(status)
+        if what == 'tailnet':
+            me = node_name(status.get('Self') or {})
+            caller = next((d for d in devices if d['name'] == self.device), {'name': self.device, 'addresses': [self.client_address[0]]})
+            return self.answer(200, {'ok': True, 'self': caller, 'runner': me, 'devices': [d for d in devices if d['name'] != self.device]})
+        if what == 'whois':
+            address = tailnet_ip((query.get('address') or [''])[0])
+            if address is None:
+                return self.answer(400, {'ok': False, 'error': 'a tailnet address is needed'})
+            name = DEVICES.caller(str(address))
+            return self.answer(200, {'ok': True, 'device': name, 'owner': True}) if name else self.answer(404, {'ok': False, 'owner': False, 'error': 'not one of his devices'})
+        problem = pairing_file_problem(body, self.device, [d['name'] for d in devices])
+        if problem:
+            return self.answer(400, {'ok': False, 'error': problem})
+        target, name, content = body['device'], body['name'], body['content']
+        if target == node_name(status.get('Self') or {}):
+            # This Mac: straight into Soma's folder, as `oma-runner pair` does here.
+            SOMA_RUNNERS.mkdir(parents=True, exist_ok=True)
+            handle, temp = tempfile.mkstemp(dir=SOMA_RUNNERS, prefix='.' + name + '.')
+            with os.fdopen(handle, 'w') as out:
+                out.write(content)
+            os.chmod(temp, 0o600)
+            os.replace(temp, SOMA_RUNNERS / name)
+            return self.answer(200, {'ok': True})
+        with tempfile.TemporaryDirectory() as folder:
+            file = pathlib.Path(folder) / name
+            with os.fdopen(os.open(file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w') as out:
+                out.write(content)
+            try:
+                sent = subprocess.run([TAILSCALE, 'file', 'cp', str(file), target + ':'], capture_output=True, text=True, timeout=120, env=tailscale_env())
+            except (OSError, subprocess.SubprocessError):
+                sent = None
+        if sent is None or sent.returncode != 0:
+            return self.answer(502, {'ok': False, 'error': 'Taildrop to %s did not go' % target})
+        return self.answer(200, {'ok': True})
 
     def receive(self, query):
         """A file from the phone, written to disk as it arrives (it may be gigabytes) under a hidden name, then moved to
@@ -4296,6 +4348,74 @@ def file_name(given):
         stem = (stem if extension else name).encode()[:200 - len(extension) - 1].decode(errors='ignore')
         name = stem + ('.' + extension if extension else '')
     return name or 'file'
+
+
+PHONE_HELPER_PER_MINUTE = 30
+phone_helper_times = []
+phone_helper_lock = threading.Lock()
+
+
+def phone_helper_ask():
+    """Whether the phone may ask the tailnet helper once more now: at most PHONE_HELPER_PER_MINUTE a minute."""
+    now = time.time()
+    with phone_helper_lock:
+        phone_helper_times[:] = [t for t in phone_helper_times if now - t < 60]
+        if len(phone_helper_times) >= PHONE_HELPER_PER_MINUTE:
+            return False
+        phone_helper_times.append(now)
+        return True
+
+
+def tailnet_status():
+    return json.loads(subprocess.run([TAILSCALE, 'status', '--json'], capture_output=True, text=True, timeout=10, env=tailscale_env()).stdout)
+
+
+def node_name(node):
+    """A node's machine name as the tailnet knows it: its MagicDNS name's first label."""
+    return ((node.get('DNSName') or '').split('.')[0] or node.get('HostName') or '').lower()
+
+
+def owner_devices(status):
+    """Boss's own devices in a `tailscale status --json` (this Mac with them): those signed in as the same user."""
+    me = (status.get('Self') or {}).get('UserID')
+    nodes = [status.get('Self') or {}] + list((status.get('Peer') or {}).values())
+    return [{'name': node_name(n), 'addresses': [a for a in n.get('TailscaleIPs') or [] if isinstance(a, str)], 'os': n.get('OS') or '', 'online': bool(n.get('Online'))}
+            for n in nodes if me is not None and n.get('UserID') == me and DEVICE_NAME.fullmatch(node_name(n))]
+
+
+def tailnet_ip(text):
+    """[text] as a Tailscale address (100.64.0.0/10, fd7a:115c:a1e0::/48), or None."""
+    try:
+        address = ipaddress.ip_address(str(text))
+    except ValueError:
+        return None
+    return address if any(address in ipaddress.ip_network(net) for net in ('100.64.0.0/10', 'fd7a:115c:a1e0::/48') if address.version == ipaddress.ip_network(net).version) else None
+
+
+def pairing_file_problem(body, phone, owners):
+    """Why [body] is not a pairing file the phone [phone] may send to one of [owners]; None when it is. Only
+    soma-runner-<phone>.json, only {url, key, name, runner} with runner the phone itself, only to another of his devices."""
+    if not isinstance(body, dict) or set(body) != {'device', 'name', 'content'}:
+        return 'device, name and content are needed, and nothing else'
+    if body['device'] not in owners or body['device'] == phone:
+        return 'not one of his other devices'
+    if body['name'] != 'soma-runner-%s.json' % phone:
+        return 'only soma-runner-%s.json goes this way' % phone
+    content = body['content']
+    if not isinstance(content, str) or len(content.encode()) > 4096:
+        return 'the content is a JSON text of at most 4 KB'
+    try:
+        record = json.loads(content)
+    except ValueError:
+        return 'the content is not JSON'
+    if not isinstance(record, dict) or set(record) != {'url', 'key', 'name', 'runner'} or not all(isinstance(v, str) and v for v in record.values()):
+        return 'the content is {url, key, name, runner}'
+    if record['runner'] != phone:
+        return 'the runner named is not this phone'
+    found = re.fullmatch(r'http://([0-9.]+|\[[0-9a-f:]+\]):(\d{1,5})', record['url'])
+    if not found or tailnet_ip(found.group(1).strip('[]')) is None:
+        return "the url is the phone's tailnet address"
+    return None
 
 
 def digest(key):
