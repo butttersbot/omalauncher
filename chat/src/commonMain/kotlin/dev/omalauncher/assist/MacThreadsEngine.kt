@@ -408,7 +408,8 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
     private fun deliver(time: Long, prompt: String, thread: MacThread, away: Boolean, step: String? = null) {
         val log = platform.chatLog()
         val machine = macMachineOf(thread.id)
-        val instead = macInstead(thread.kind, kindsOf(machine), limited())
+        // A session on the Fold takes its own words, whatever agent is at its limit: nothing else is made or picked there.
+        val instead = if (makesThreads(machine)) macInstead(thread.kind, kindsOf(machine), limited()) else null
         if (instead == null) {
             log.update(time, save = true) { macHandOver(it, thread).let { entry -> if (step == null) entry else ChatHistory.withStep(entry, step) } }
             return send(time, sentText(time, prompt, thread.id), thread.id, away)
@@ -436,6 +437,8 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
         val threads = sameMac(busy.id).let { known -> if (known.any { it.id == busy.id }) known else known + busy }
         val named = threads.first { it.id == busy.id }
         val machine = macMachineOf(busy.id)
+        // The Fold queues words for a busy session itself; a new thread beside it can't be made there.
+        if (!makesThreads(machine)) return deliver(time, prompt, busy, away)
         when (val place = macFresh(named, threads, macOwed(log.tasks, except = time), newChat)) {
             is MacFresh.Same -> deliver(time, prompt, place.thread, away)
             is MacFresh.Queue -> deliver(time, prompt, place.thread, away, macCappedStep(place.working, macFolder(named.project)))
@@ -479,6 +482,9 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
                 val health = client.health()
                 if (mac != null) heard(machine, health)
                 if (health !is MacHealthResult.Up) problem = macUnreachableReason(health)
+                // Heard only now to be the Fold's runner (paired first, his words faster than its first answer): nothing is
+                // made there; [ try again ] then picks a computer that makes threads.
+                else if (!makesThreads(machine)) problem = MAC_PHONE_MAKES_NOTHING
                 else {
                     val answer = client.makeThread(place.name, place.project, kind, model)
                     madeThread = (answer as? MacAnswer.Ok)?.value
@@ -892,6 +898,8 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
         val task = log.tasks.firstOrNull { it.thread == threadId && it.status == TaskStatus.Running } ?: return
         val thread = view.threads.firstOrNull { it.id == threadId }?.takeIf { it.project.isNotBlank() } ?: return
         val machine = macMachineOf(threadId)
+        // A session on the Fold reports its own limit; another agent's thread can't be made there to take over.
+        if (!makesThreads(machine)) return
         val from = macKindOf(thread.kind)
         val now = System.currentTimeMillis()
         val (next, words) = synchronized(this) {
@@ -961,6 +969,11 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
         val shownName = thread?.name ?: name.ifEmpty { name(threadId) }
         val time = synchronized(platform.stampLock) {
             log.stamp(System.currentTimeMillis()).also { log.begin(ChatHistory.withStep(macDirect(it, words, threadId, shownName).copy(chat = chat), macSwitchingStep(pick))) }
+        }
+        // A session on the Fold keeps its agent: the switch would make a thread there. Refused before anything is sent.
+        if (!makesThreads(macMachineOf(threadId))) {
+            log.update(time, save = true) { it.copy(status = TaskStatus.Failed, result = MAC_PHONE_NO_SWITCH, answeredBy = OMA_NAME) }
+            return
         }
         if (thread == null) {
             log.update(time, save = true) { it.copy(status = TaskStatus.Failed, result = MAC_SWITCH_UNKNOWN, answeredBy = OMA_NAME) }
@@ -1253,6 +1266,12 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
         }
     }
 }
+
+/** Why no thread was made: the computer turned out to be the Fold's own runner (PHONE-RUNNER-SPEC), where nothing is made. */
+const val MAC_PHONE_MAKES_NOTHING = "That was the Fold: its sessions are reached from here, but no new thread starts there. Try again to start it on a computer."
+
+/** Why a session on the Fold doesn't switch agent: that would make a new thread there. */
+const val MAC_PHONE_NO_SWITCH = "Sessions on the Fold keep their agent: switching would start a new thread there, and none starts on the Fold."
 
 /** Why a thread's words weren't sent: the pictures with them didn't reach the Mac. */
 const val MAC_IMAGES_NOT_SENT = "The pictures didn't reach the Mac, so nothing was sent. Try again."
