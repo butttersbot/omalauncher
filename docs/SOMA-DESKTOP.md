@@ -35,7 +35,7 @@ most of what it does is shared with the phone from `:chat`.
   shows.
 - **One Soma at a time.** Starting it again, or `soma --toggle`, shows or hides the one that runs. Bind that to a key:
   Hyprland `bind = SUPER, A, exec, soma --toggle`; on the Mac, a Shortcuts or Raycast hotkey. Closing the window hides
-  it; the tray's Quit ends it. Escape closes a menu first, then hides the window.
+  it; the tray's Quit ends it. Escape closes the open menu or panel and never hides the window (2026-10-21, again 2026-10-28). A Dock click, the tray's Open, `soma` again or a link shows the window, un-minimized and raised, on the screen under the pointer.
 - **Looks:** the phone's packs ship in the jar (copied from `app/src/main/assets/packs` at build time); the tray's Look
   menu picks one, kept in `settings.json`. The Nerd Font symbols come from the phone's own font file.
 - **Notices:** a thread's request for his OK, and a request that ended while the window wasn't in front, come as the

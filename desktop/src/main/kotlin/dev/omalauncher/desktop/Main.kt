@@ -50,7 +50,7 @@ import kotlin.system.exitProcess
 /**
  * Soma desktop: the phone's chat in a window, on the Macs and the Omarchy boxes (cockpit/DESIGN.md §6). One runs at a
  * time: starting it again, or `soma --toggle` (a Hyprland bind or a macOS shortcut), shows or hides the window that
- * runs. Closing the window hides it; the tray's Quit ends it. Escape is Back: it closes a menu first, then hides.
+ * runs. Closing the window hides it; the tray's Quit ends it. Escape closes the open menu or panel, never the window.
  */
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 fun main(args: Array<String>) {
@@ -80,6 +80,13 @@ fun main(args: Array<String>) {
         exitProcess(0)
     }
     val shown = mutableStateOf(true)
+    // Bumped by every explicit open (tray, Dock, `soma`, a link, the dashboard): the chat window is shown, un-minimized
+    // and raised even when it is marked shown already (the MacBook's fix of 2026-10-21, 0b159117, brought back here).
+    val bring = mutableStateOf(0)
+    fun showWindow() {
+        shown.value = true
+        bring.value++
+    }
     // The dashboard (the canvas of modules and widgets) in a window of its own, opened from the tray; it remembers whether it was open.
     val dashboard = mutableStateOf(SomaHome.read(SomaHome.settings).optBoolean("dashboard"))
     val wantedTab = mutableStateOf<String?>(null)
@@ -93,15 +100,18 @@ fun main(args: Array<String>) {
     var door: CanvasDoor? = null
     Single.listen(onCanvas = { line -> door?.handle(line) ?: """{"ok":false,"error":"Soma is still starting. Try again in a moment."}""" }) { said ->
         when {
-            said == "toggle" -> shown.value = !shown.value
+            said == "toggle" -> if (shown.value) shown.value = false else showWindow()
             said.startsWith("open ") -> open(said.removePrefix("open "))
-            else -> shown.value = true
+            else -> showWindow()
         }
     }
     // On the Mac a link reaches the running app as an Apple event, never on the command line.
     runCatching {
         val desktop = java.awt.Desktop.getDesktop()
         if (desktop.isSupported(java.awt.Desktop.Action.APP_OPEN_URI)) desktop.setOpenURIHandler { event -> javax.swing.SwingUtilities.invokeLater { open(event.uri.toString()) } }
+        // A click on Soma in the Dock (or `open Soma.app` while it runs) is a reopen event to this process, not a new
+        // start: it shows the chat window (Boss, 2026-10-28: "soma window on mac pro disappeared again").
+        desktop.addAppEventListener(somaReopenListener(::showWindow))
     }
     Looks.fonts()
     // City Pop unless he picked another look from the tray (Boss, 2026-10-16: "start with city pop for desktop too").
@@ -153,7 +163,7 @@ fun main(args: Array<String>) {
         opener = { url ->
             somaLinkTab(url, platform.book())?.let { tab ->
                 wantedTab.value = tab.takeIf { it != OMA_TAB }
-                shown.value = true
+                showWindow()
             }
         }
         early?.let { url -> opener?.invoke(url) }
@@ -179,7 +189,7 @@ fun main(args: Array<String>) {
         var dashboardShown by dashboard
         fun showDashboard(on: Boolean) { dashboardShown = on; SomaHome.write(SomaHome.settings, SomaHome.read(SomaHome.settings).put("dashboard", on)) }
         remember {
-            notices.tray = Tray.make(onOpen = { shown = true }, onDashboard = { showDashboard(true) }, onQuit = { scraps.close(); Single.release(); exitApplication() }, onLook = { id -> Looks.use(id); SomaHome.write(SomaHome.settings, SomaHome.read(SomaHome.settings).put("pack", id)) },
+            notices.tray = Tray.make(onOpen = ::showWindow, onDashboard = { showDashboard(true) }, onQuit = { scraps.close(); Single.release(); exitApplication() }, onLook = { id -> Looks.use(id); SomaHome.write(SomaHome.settings, SomaHome.read(SomaHome.settings).put("pack", id)) },
                 // The service is asked off the tray's thread; the code or what went wrong comes back as a notice.
                 onCar = { pair -> kotlin.concurrent.thread(name = "soma-car-pairing", isDaemon = true) {
                     notices.say("Soma", if (pair) CarPairing.start(platform.machines()) else CarPairing.end(platform.machines()))
@@ -195,21 +205,17 @@ fun main(args: Array<String>) {
         // Each window answers Escape from its own stack: an Escape in one never closes something in the other.
         val chatBack = remember { BackStack() }
         val dashboardBack = remember { BackStack() }
-        // Bumped to bring the chat window forward when it is open already (a module or [ chat ] in the dashboard).
-        var bring by remember { mutableStateOf(0) }
         val dashboardState = rememberWindowState(size = DpSize(1240.dp, 820.dp))
-        fun escape(e: androidx.compose.ui.input.key.KeyEvent, back: BackStack, close: () -> Unit) =
-            if (e.type == KeyEventType.KeyDown && e.key == Key.Escape) { if (!back.press()) close(); true } else false
         // The dashboard first, so at a start with both open the chat window is in front of it.
         if (dashboardShown) Window(
             onCloseRequest = { scraps.flush(); showDashboard(false) },
             title = "Soma dashboard",
             state = dashboardState,
-            onPreviewKeyEvent = { e -> escape(e, dashboardBack) { showDashboard(false) } },
+            onPreviewKeyEvent = { e -> somaEscape(e, dashboardBack) },
         ) {
             CompositionLocalProvider(LocalBackStack provides dashboardBack) {
                 // A module's thread opens in the chat window, brought forward.
-                CanvasScreen(canvas, host, source, tick.value, wanted, onTab = { wanted = it; shown = true; bring++ }, chatElsewhere = { shown = true; bring++ }, widgets = windowWidgets, scraps = scraps)
+                CanvasScreen(canvas, host, source, tick.value, wanted, onTab = { wanted = it; showWindow() }, chatElsewhere = ::showWindow, widgets = windowWidgets, scraps = scraps)
             }
         }
         Window(
@@ -221,12 +227,12 @@ fun main(args: Array<String>) {
                 // A picture on the clipboard (a screenshot, or image files copied in Finder) is pasted into the chat as one
                 // picked; anything else pastes as before.
                 if (e.type == KeyEventType.KeyDown && e.key == Key.V && (e.isMetaPressed || e.isCtrlPressed) && host.arrived(picturesOnClipboard())) true
-                else escape(e, chatBack) { shown = false }
+                else somaEscape(e, chatBack)
             },
         ) {
             // Each time it is shown, it comes to the screen he is on (Boss, 2026-10-19: after a restart macOS put it on
             // the other monitor's Space, and show only made it visible there).
-            androidx.compose.runtime.LaunchedEffect(shown, bring) { if (shown) toPointerScreen(window) }
+            androidx.compose.runtime.LaunchedEffect(shown, bring.value) { if (shown) toPointerScreen(window) }
             // The unfolded phone's chat (Boss, 2026-10-28): two panes once there is an artifact, a question or the files beside it.
             CompositionLocalProvider(LocalBackStack provides chatBack) {
                 // Pictures dropped on the window go into the chat as picked ones.
@@ -247,10 +253,23 @@ fun main(args: Array<String>) {
 }
 
 /**
+ * Escape belongs to the window's innermost open menu or panel ([back]); with none open it is not taken, and it never hides
+ * a window (the MacBook's fix of 2026-10-21, 0b159117: Escape hid Soma, and he thought it had gone). Closing hides it.
+ */
+internal fun somaEscape(event: androidx.compose.ui.input.key.KeyEvent, back: BackStack): Boolean =
+    event.type == KeyEventType.KeyDown && event.key == Key.Escape && back.press()
+
+/** macOS's reopen event (a Dock click while Soma runs), handed to the window's thread. */
+internal fun somaReopenListener(show: () -> Unit) = java.awt.desktop.AppReopenedListener { javax.swing.SwingUtilities.invokeLater(show) }
+
+/**
  * Brings [window] to the screen under the pointer, centered there, unless most of it is on that screen already, and to the
  * front. A window moved onto a monitor goes to that monitor's Space in front.
  */
 internal fun toPointerScreen(window: java.awt.Window) {
+    // Minimized, it is restored first; then it comes to the pointer's screen and the front.
+    if (window is java.awt.Frame) window.extendedState = window.extendedState and java.awt.Frame.ICONIFIED.inv()
+    window.isVisible = true
     val pointer = runCatching { java.awt.MouseInfo.getPointerInfo()?.location }.getOrNull()
     val screens = java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().screenDevices.map { it.defaultConfiguration.bounds }
     val screen = screens.firstOrNull { pointer != null && it.contains(pointer) } ?: screens.firstOrNull()
