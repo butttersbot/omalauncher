@@ -52,6 +52,8 @@ fun main(args: Array<String>) {
         listOfNotNull(System.getenv("SOMA_PUBLIC_URL")?.let { "SOMA_PUBLIC_URL" to it }).toMap()))
     if ("--mint-runner-key" in args) return println(SomaService.mintRunnerKey())
     if ("--keychain-check" in args) return println(RunnerKeys.check())
+    // `soma check`: scratch chats on this Mac's runner, made, answered, approved and stopped with Soma's own key (Check.kt).
+    if (args.firstOrNull() == "check") exitProcess(Check.run(::println))
     if ("--start-at-login" in args) return println(Login.install())
     if ("--no-start-at-login" in args) return println(Login.remove())
     if ("--register-links" in args) return println(Login.registerLinks())

@@ -86,8 +86,8 @@ object MacRequests {
      * A new thread called [name] in [project], running the agent [kind] (`claude`, `codex`, `grok` or `cursor`) on [model];
      * none named is the runner's default, Claude, and no model the agent's own default.
      */
-    fun makeThread(name: String, project: String, kind: String = "", model: String = "") =
-        MacRequest("POST", "/threads", JSONObject().put("name", name).put("project", project).apply { if (kind.isNotEmpty()) put("kind", kind) }.apply { if (model.isNotEmpty()) put("model", model) }.toString())
+    fun makeThread(name: String, project: String, kind: String = "", model: String = "", mode: String = "") =
+        MacRequest("POST", "/threads", JSONObject().put("name", name).put("project", project).apply { if (kind.isNotEmpty()) put("kind", kind) }.apply { if (model.isNotEmpty()) put("model", model) }.apply { if (mode.isNotEmpty()) put("mode", mode) }.toString())
 
     /** The owner's words exactly as he said them: nothing is trimmed or added here. */
     fun sendMessage(threadId: String, text: String) = MacRequest("POST", "/threads/${part(threadId)}/messages", JSONObject().put("text", text).toString())
@@ -411,7 +411,7 @@ class MacRunnerClient(private val config: MacRunnerConfig?, private val machine:
 
     fun handoff(name: String): MacAnswer<MacHandoff> = parseMacHandoff(send(MacRequests.handoff(name)))
 
-    fun makeThread(name: String, project: String, kind: String = "", model: String = ""): MacAnswer<MacThread> = ours(parseMacThread(send(MacRequests.makeThread(name, project, kind, model))))
+    fun makeThread(name: String, project: String, kind: String = "", model: String = "", mode: String = ""): MacAnswer<MacThread> = ours(parseMacThread(send(MacRequests.makeThread(name, project, kind, model, mode))))
 
     fun sendMessage(threadId: String, text: String): MacAnswer<MacTaken> = parseMacTaken(send(MacRequests.sendMessage(own(threadId), text)))
 
