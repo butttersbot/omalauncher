@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Herd's existing pet page in a transparent Wayland layer, without moving the cursor."""
-import json, os, pathlib, subprocess, threading, time
+import json, os, pathlib, re, subprocess, threading, time, urllib.parse, urllib.request
 # This tiny overlay uses software painting, avoiding GPU explicit-sync conflicts on NVIDIA/Wayland.
 os.environ.setdefault('GDK_GL','disable')
 os.environ.setdefault('WEBKIT_DISABLE_DMABUF_RENDERER','1')
@@ -13,6 +13,9 @@ HOME=pathlib.Path.home()
 HERD=HOME/'.local/bin/herd'
 STATE=HOME/'.local/state/herd-pet'
 STATE.mkdir(parents=True,exist_ok=True)
+# The shared pocket on the Mac Pro (tailshare-serve), the same one the Mac's and the phone's pets show (pet.html POCKET).
+POCKET='http://100.120.219.46:8480/v1/pocket'
+PULLED=HOME/'Downloads/Pocket'
 
 class Pet:
     def __init__(self):
@@ -50,7 +53,7 @@ class Pet:
         if self.ready:self.web.evaluate_javascript(name+'('+('' if value is None else json.dumps(value))+')',-1,None,None,None,None,None)
     def loaded(self,web,event):
         if event==WebKit2.LoadEvent.FINISHED:
-            self.ready=True;self.call('herd.caps',{'stroll':True,'room':True,'pocket':False,'sendclip':False})
+            self.ready=True;self.call('herd.caps',{'stroll':True,'room':True,'pocket':True,'sendclip':False,'os':'linux'})
             self.refresh();(STATE/'ready.json').write_text(json.dumps({'pid':os.getpid(),'page_loaded':True,'at':time.time()}))
     def navigation(self,web,decision,kind):
         if kind==WebKit2.PolicyDecisionType.NAVIGATION_ACTION:
@@ -90,6 +93,26 @@ class Pet:
         elif cmd=='show' and isinstance(body.get('id'),str):self.run(['show',body['id'],'--json'],lambda data:self.call('herd.detail',data) or False)
         elif cmd=='copy':Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).set_text(str(body.get('text') or ''),-1)
         elif cmd=='log':print(str(body.get('text') or '')[:300],flush=True)
+        elif cmd=='pocketget':self.pull(str(body.get('id') or ''),str(body.get('name') or ''),str(body.get('action') or ''))
+        elif cmd=='walk':print('walk:',str(body.get('line') or '')[:120],flush=True)
+    def pull(self,item,name,action):
+        # A pocket item fetched into ~/Downloads/Pocket, then opened, kept or put on the clipboard (Boss, 2026-10-28:
+        # Omarchy's pet had no Tailshare tab). Ids and names go into a URL and a path: nothing that could be either.
+        if not re.fullmatch(r'[A-Za-z0-9._-]{1,200}',item) or action not in ('open','save','copy'):return
+        name=re.sub(r'[^A-Za-z0-9._ -]','_',os.path.basename(name or item)).strip(' .') or item
+        def work():
+            error=None
+            try:
+                PULLED.mkdir(parents=True,exist_ok=True);path=PULLED/name
+                with urllib.request.urlopen(POCKET+'/'+urllib.parse.quote(item),timeout=60) as r:
+                    kind=(r.headers.get('Content-Type') or 'application/octet-stream').split(';')[0].strip()
+                    path.write_bytes(r.read())
+                if action=='open':subprocess.Popen(['xdg-open',str(path)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+                elif action=='copy':
+                    with open(path,'rb') as f:subprocess.run(['wl-copy','--type',kind],stdin=f,timeout=10,check=True)
+            except Exception as e:error=str(e)[:200]
+            GLib.idle_add(lambda:self.call('herd.pocketPulled',{'id':item,'action':action,**({'error':error} if error else {})}) or False)
+        threading.Thread(target=work,daemon=True).start()
     def control(self):
         # A private, purpose-built test channel: it can only open/close tabs or take this web view's own snapshot.
         request=STATE/'control.json'

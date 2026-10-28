@@ -877,7 +877,7 @@ function renderTailshare(view) {
   // Sent straight to this device: on the Mac, ~/Inbox (the shell lists it); on the phone, what Tailshare received
   // (the shell passes it in herd.inbox the same way, with an optional src for a picture's preview).
   const phone = !!window.HerdAndroid;
-  if (inbox?.length) html += `<div class="section">Sent to this ${phone ? 'phone' : 'Mac'}</div>`;
+  if (inbox?.length) html += `<div class="section">Sent to this ${caps.os === 'linux' ? 'computer' : phone ? 'phone' : 'Mac'}</div>`;
   for (const i of inbox || []) {
     const name = esc(i.name);
     html += `<div class="item ${fresh.has(i.name) ? 'new' : ''} ${chosen.has('i:' + i.name) ? 'sel' : ''}" data-sel="i:${name}"><div class="item-head"><b>${esc(i.from || 'Received')}</b>· ${ago(i.t)}
@@ -1285,7 +1285,8 @@ window.herd = {
     if (!top) return speak('', moodNow === 'offline' ? "I can't reach the herd. Is Tailscale on?" : 'All quiet. Nobody is working right now.');
     speak(top.title, (parts.join(', ') + '. ').replace(/^./, c => c.toUpperCase()) + (gist(top.last) || ''), { ms: 9000, id: top.id });
   },
-  // The shell's abilities: {stroll: it can walk the window along the screen, room: it can grow for the bubble}.
+  // The shell's abilities: {stroll: it can walk the window along the screen, room: it can grow for the bubble; pocket and
+  // sendclip for the Tailshare tab; os 'linux' for Omarchy's (pet/linux/herd-pet), which also posts as window.HerdAndroid}.
   caps(c) {
     Object.assign(caps, typeof c === 'string' ? JSON.parse(c) : c);
     if (caps.pocket && window.HerdAndroid) { fetchPocket(); renderJobs(); }

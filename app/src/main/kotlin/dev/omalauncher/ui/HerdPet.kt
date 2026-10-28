@@ -37,8 +37,8 @@ private const val HERD_EVERY_MS = 15_000L
 private const val HERD_OPEN_EVERY_MS = 4_000L
 
 /**
- * The herd's sheep in home's corner: the same page the Mac's desktop pet draws (assets/herd/pet.html, a copy of
- * ~/ClaudeSync/projects/herd/pet/web/pet.html), fed what the reporters say. A tap opens its panel of every agent on
+ * The herd's sheep in home's corner: the same page the Mac's desktop pet draws (assets/herd/pet.html, the one source since
+ * 2026-10-28: tools/herd/publish.sh copies it to ClaudeSync's herd project and Omarchy), fed what the reporters say. A tap opens its panel of every agent on
  * every machine; back closes it. It asks only while home has the window.
  */
 @Composable
