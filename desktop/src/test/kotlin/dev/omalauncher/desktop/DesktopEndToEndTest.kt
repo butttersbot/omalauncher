@@ -810,4 +810,54 @@ class DesktopEndToEndTest {
             phone.close()
         }
     }
+
+    /**
+     * Slice 6 (Boss, 2026-10-28): a new chat's mode, picked in a row under agent and model that says what it means. It
+     * only says how the thread is made (the runner's mode): auto by default, manual when he picks it. Nothing answers.
+     */
+    @Test fun aNewChatsModeIsPickedInItsRowAndTheThreadIsMadeSo() = runComposeUiTest {
+        val notices = Notices()
+        val machine = MacMachine("testhost", "Test box", MacRunnerConfig("http://127.0.0.1:$port", key))
+        val platform = DesktopThreadsPlatform(notices) { listOf(machine) }
+        val engine = MacThreadsEngine(platform)
+        val host = DesktopChatHost(platform, engine, DesktopFrontAgent(engine, platform, notices, places = emptyList()), notices)
+        engine.open()
+        var wanted: String? by androidx.compose.runtime.mutableStateOf<String?>(null)
+        mainClock.autoAdvance = false
+        setContent { OmaChatScreen(host, prefill = null, onPrefilled = {}, wanted = wanted, onTab = { wanted = it.takeIf { tab -> tab != OMA_TAB } }) }
+        fun settle(ms: Long = 1_200) = mainClock.advanceTimeBy(ms)
+        fun starts() = File(work, "Projects/starts.log").takeIf { it.isFile }?.readLines().orEmpty().map { org.json.JSONObject(it) }
+        fun waitFor(what: String, done: () -> Boolean) {
+            val deadline = System.currentTimeMillis() + 40_000
+            while (System.currentTimeMillis() < deadline && !done()) { Thread.sleep(250); settle(500) }
+            assertTrue("$what: ${starts()}", done())
+        }
+        fun newChat() {
+            if (onAllNodes(androidx.compose.ui.test.hasContentDescription("Show the tabs")).fetchSemanticsNodes().isNotEmpty()) { onNodeWithContentDescription("Show the tabs").performClick(); settle() }
+            onNodeWithContentDescription("New chat").performClick(); settle()
+        }
+        settle()
+        // By default: auto, and the row says what that means.
+        newChat()
+        onNodeWithText("[ auto · acts without asking ]").assertExists()
+        onNode(androidx.compose.ui.test.hasSetTextAction()).performTextInput("first words")
+        settle(); onNodeWithText("[ send ]").performClick(); settle()
+        waitFor("made in auto") { starts().any { it.getString("prompt").startsWith("first words") && it.getString("mode") == "auto" } }
+        // Manual, picked in the row's menu.
+        newChat()
+        onNodeWithText("[ auto · acts without asking ]").performClick(); settle()
+        onNodeWithText("Claude runs").assertExists()
+        onNodeWithText("manual · asks before each action").performClick(); settle()
+        onNodeWithText("[ manual · asks before each action ]").assertExists()
+        File("build/render").mkdirs()
+        javax.imageio.ImageIO.write(onRoot().captureToImage().toAwtImage(), "png", File("build/render/desktop-e2e-mode-row.png"))
+        onNode(androidx.compose.ui.test.hasSetTextAction()).performTextInput("second words")
+        settle(); onNodeWithText("[ send ]").performClick(); settle()
+        waitFor("made in manual") { starts().any { it.getString("prompt").startsWith("second words") && it.getString("mode") == "manual" } }
+        // Kept with the chat until its thread is made, then nothing changes it.
+        assertEquals("manual", platform.book().chats.first { platform.chatLog().tasks.any { t -> t.chat == it.id && t.prompt == "second words" } }.mode)
+        settle()
+        File("build/render").mkdirs()
+        javax.imageio.ImageIO.write(onRoot().captureToImage().toAwtImage(), "png", File("build/render/desktop-e2e-mode.png"))
+    }
 }

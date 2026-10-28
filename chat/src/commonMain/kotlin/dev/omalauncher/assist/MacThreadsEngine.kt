@@ -455,7 +455,8 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
                 // Said only when a limit is why: a thread of another agent's is otherwise simply made as Claude's.
                 val why = macLimitedStep(named.kind, kind).takeIf { picked.isBlank() && fallback == null && kind != macKindOf(named.kind) && macKindOf(named.kind) in limited }
                 log.update(time, save = true) { macFreshHandOver(it, named, name).let { entry -> if (why == null) entry else ChatHistory.withStep(entry, why) } }
-                make(time, place.copy(name = name), away, kind, machine, model) { sentText(time, prompt, it) }
+                // A new chat's mode pick goes with it (slice 6); otherwise the runner's own default.
+                make(time, place.copy(name = name), away, kind, machine, model, mode = if (chosen != null) macModeFor(kind, chosen.mode) else "") { sentText(time, prompt, it) }
             }
         }
     }
@@ -466,7 +467,7 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
      * thread it waited under says can end it. A Mac that does not answer, turns the key down or refuses the
      * folder leaves the entry saying so with `[ try again ]`.
      */
-    private fun make(time: Long, place: MacFresh.Make, away: Boolean, kind: String, machine: String, model: String = "", made: (MacThread) -> Unit = {}, failed: (String) -> Unit = {}, words: (String) -> String) {
+    private fun make(time: Long, place: MacFresh.Make, away: Boolean, kind: String, machine: String, model: String = "", made: (MacThread) -> Unit = {}, failed: (String) -> Unit = {}, mode: String = "", words: (String) -> String) {
         synchronized(this) {
             sentAt[time] = IN_FLIGHT
             sending = sending + time
@@ -486,7 +487,7 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
                 // made there; [ try again ] then picks a computer that makes threads.
                 else if (!makesThreads(machine)) problem = MAC_PHONE_MAKES_NOTHING
                 else {
-                    val answer = client.makeThread(place.name, place.project, kind, model)
+                    val answer = client.makeThread(place.name, place.project, kind, model, mode)
                     madeThread = (answer as? MacAnswer.Ok)?.value
                     problem = macMadeReason(answer) ?: problem
                 }
@@ -1147,7 +1148,8 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
         val model = if (agent.isNotBlank()) picked?.model.orEmpty() else fallback?.model.orEmpty()
         val named = if (kind == MAC_CLAUDE) name else macKindThreadName(name, kind, view.threads.filter { macMachineOf(it.id) == on }.map { it.name })
         platform.chatLog().update(time, save = true) { macChatStart(it, named) }
-        make(time, MacFresh.Make(named, MAC_DEFAULT_PROJECT), away, kind, on, model) { sentText(time, prompt, it) }
+        // His mode pick, else the agent's default (slice 6): it only says how the thread is made.
+        make(time, MacFresh.Make(named, MAC_DEFAULT_PROJECT), away, kind, on, model, mode = macModeFor(kind, picked?.mode.orEmpty())) { sentText(time, prompt, it) }
     }
 
     /**

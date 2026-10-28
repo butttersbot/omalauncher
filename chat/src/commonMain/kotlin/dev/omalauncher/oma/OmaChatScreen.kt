@@ -713,7 +713,7 @@ private fun ChatScreen(
         } // Artifact workspace; the existing composer above is unchanged.
         // Over everything, as home's menu is.
         val pickChat = (to as? SendTo.Chat)?.chat
-        if (picking != null && pickChat != null) PickMenu(picking!!, makers, book.chat(pickChat), { on, agent, model -> hostPicked(pickChat, on, agent, model) }) { picking = null }
+        if (picking != null && pickChat != null) PickMenu(picking!!, makers, book.chat(pickChat), { on, agent, model -> hostPicked(pickChat, on, agent, model) }, { mode -> host.changeBook { it.choseMode(pickChat, mode) }; tick++ }) { picking = null }
         menuFor?.let { key ->
             val thread = all.firstOrNull { it.key == key }
             val shown = tabEntries(tasks, key, book)
@@ -1046,6 +1046,12 @@ private fun ChatPicks(hosts: List<HostChoice>, chat: NewChat?, onMenu: (String) 
             // The model, where the agent has more than its own default to pick from.
             if (chatModels(on, agent).size > 1) BracketAction(pickName(macModelName(chatModelShown(on, chat))), Pack.accent) { onMenu(PICK_MODEL) }
         }
+        // How its thread is made (slice 6): auto acts without asking, manual asks before each action. Said in the row.
+        val agent = chatAgentShown(on, chat)
+        if (dev.omalauncher.assist.macModes(agent).isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
+            BasicText("runs", style = small)
+            BracketAction(dev.omalauncher.assist.macModeName(dev.omalauncher.assist.macModeFor(agent, chat?.mode.orEmpty())), Pack.accent) { onMenu(PICK_MODE) }
+        }
     }
 }
 
@@ -1056,6 +1062,7 @@ private const val PICK_NAME_CHARS = 18
 private const val PICK_HOST = "host"
 private const val PICK_AGENT = "agent"
 private const val PICK_MODEL = "model"
+private const val PICK_MODE = "mode"
 
 /** The models [agent]'s threads on [on] can be made with, its own default first. */
 fun chatModels(on: HostChoice, agent: String): List<String> = on.models[macKindOf(agent)].orEmpty().ifEmpty { listOf("") }
@@ -1084,7 +1091,7 @@ fun chatAgentShown(on: HostChoice, chat: NewChat?): String {
 
 /** The menu a pick opened, over everything as the tab menu is; Back closes it and never the chat. */
 @Composable
-private fun PickMenu(which: String, hosts: List<HostChoice>, chat: NewChat?, onPick: (String, String, String) -> Unit, onDismiss: () -> Unit) {
+private fun PickMenu(which: String, hosts: List<HostChoice>, chat: NewChat?, onPick: (String, String, String) -> Unit, onMode: (String) -> Unit, onDismiss: () -> Unit) {
     val on = chatHostShown(hosts, chat) ?: return onDismiss()
     BackHandler { onDismiss() }
     Menu(onDismiss) {
@@ -1095,6 +1102,14 @@ private fun PickMenu(which: String, hosts: List<HostChoice>, chat: NewChat?, onP
                     // Another computer may not run the agent picked: then its first is used, on its own default model.
                     val agent = chat?.agent?.takeIf { macKindOf(it) in chatAgents(choice) }.orEmpty()
                     onPick(choice.id, agent, if (agent.isEmpty()) "" else chat?.model.orEmpty())
+                    onDismiss()
+                }
+            }
+        } else if (which == PICK_MODE) {
+            MenuTitle("${macKindName(chatAgentShown(on, chat))} runs")
+            for (mode in dev.omalauncher.assist.macModes(chatAgentShown(on, chat))) {
+                MenuItem(dev.omalauncher.assist.macModeName(mode)) {
+                    onMode(mode)
                     onDismiss()
                 }
             }

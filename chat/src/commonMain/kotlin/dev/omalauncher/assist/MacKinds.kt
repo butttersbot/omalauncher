@@ -173,3 +173,31 @@ fun macLimitHandOver(task: ChatTask, name: String, step: String): ChatTask =
  */
 fun macAllLimitedEntry(task: ChatTask, installed: List<String>): ChatTask =
     task.copy(status = TaskStatus.Dropped, result = macAllLimited(installed), approvals = task.unanswerable())
+
+/*
+ * A new thread's mode (desktop parity slice 6, Boss 2026-10-28: modes beside agent and model, phone and desktop alike).
+ * It only says how the thread is made (the runner's POST /threads mode); nothing here answers a request. Claude and Codex
+ * take either; the runner keeps Cursor and Grok manual and Venice has no tools, so they have no pick.
+ */
+const val MAC_MODE_AUTO = "auto"
+const val MAC_MODE_MANUAL = "manual"
+
+/** The modes a new thread of [agent] can be made in, the default first; empty where there is nothing to pick. */
+fun macModes(agent: String): List<String> =
+    if (macKindOf(agent) in setOf(MAC_CLAUDE, MAC_CODEX)) macModeDefault(agent).let { first -> listOf(first) + listOf(MAC_MODE_AUTO, MAC_MODE_MANUAL).filter { it != first } } else emptyList()
+
+/**
+ * The mode a new thread of [agent] is made in when he picks none: auto, as the runner makes them (Boss, 2026-10-21:
+ * Codex auto with full access; 2026-10-22: "it's bombarding me with approval cards"). One place, to change with his word.
+ */
+fun macModeDefault(agent: String): String = MAC_MODE_AUTO
+
+/** What a mode means, in the pick row and its menu. */
+fun macModeName(mode: String): String = when (mode) {
+    MAC_MODE_MANUAL -> "manual · asks before each action"
+    else -> "auto · acts without asking"
+}
+
+/** The mode a new thread is made in: [picked] when it is one [agent] takes, else its default; empty for an agent with none. */
+fun macModeFor(agent: String, picked: String): String = macModes(agent).let { modes -> picked.takeIf { it in modes } ?: modes.firstOrNull().orEmpty() }
+
