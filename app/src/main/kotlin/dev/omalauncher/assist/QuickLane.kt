@@ -467,6 +467,12 @@ object QuickLane {
      * Ends the request it has now. One still undecided is not sent anywhere; what it had said so far stays in
      * the thread. What waits behind it is read next, as it would have been had this one ended by itself.
      */
+    /** Desktop Stop applies to this chat only, including its queued words. */
+    @Synchronized fun stopChat(context: Context, chat: String) {
+        dropWaiting(context, chat)
+        if (ChatLog.of(context).tasks.firstOrNull { it.time == time }?.chat == chat) stop()
+    }
+
     @Synchronized fun stop() {
         if (!working) return
         stopping = true
