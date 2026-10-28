@@ -48,7 +48,8 @@ class OrderSafetyTest {
             assertEquals(first.cloid, row.cloid); assertEquals(OrderStage.Unknown, row.stage)
             refuses { recovered.transition(row.id, OrderStage.Submitting, now) }
             try { recovered.review(ticket(), now); fail("Uncertain send must block another order") } catch (_: IllegalStateException) {}
-            recovered.transition(row.id, OrderStage.Filled, now + 1, "fixture-order-id")
+            recovered.transition(row.id, OrderStage.Filled, now - 1000, "fixture-order-id")
+            assertEquals(now, recovered.all().single().updated) // reconciliation can record truth after clock rollback
             assertEquals("fixture-order-id", recovered.all().single().venueId)
             assertEquals(2, recovered.run { review(ticket(), now + 2); all().size })
             recovered.close()
