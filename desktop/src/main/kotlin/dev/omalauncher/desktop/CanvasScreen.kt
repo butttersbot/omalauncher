@@ -146,9 +146,18 @@ fun CanvasScreen(
     widgets: WindowWidgets? = null,
     /** The page's notes, stickers and ink (the dashboard window's, desktop slice 5b); without them it has none. */
     scraps: DesktopScraps? = null,
+    /** Where a page kept as a template goes (the overview's "use as template…", desktop slice 5c); without it, not offered. */
+    shelf: (() -> dev.omalauncher.canvas.CanvasShelf)? = null,
+    /** Whether the overview of pages and looks is offered (the dashboard window, desktop slice 5c). */
+    pagesOverview: Boolean = false,
 ) {
     // The stickers' pictures, for the page's stickers and the picker in its menu.
-    CompositionLocalProvider(LocalStickerShelf provides scraps?.shelf) { CanvasPage(canvas, host, source, now, wanted, onTab, chatElsewhere, widgets, scraps) }
+    CompositionLocalProvider(LocalStickerShelf provides scraps?.shelf) {
+        Box(Modifier.fillMaxSize()) {
+            CanvasPage(canvas, host, source, now, wanted, onTab, chatElsewhere, widgets, scraps, pagesOverview)
+            if (pagesOverview && canvas.overview) PagesOverview(canvas, scraps, shelf)
+        }
+    }
 }
 
 @OptIn(ExperimentalComposeUiApi::class)
@@ -163,6 +172,7 @@ private fun CanvasPage(
     chatElsewhere: (() -> Unit)?,
     widgets: WindowWidgets?,
     scraps: DesktopScraps?,
+    pagesOverview: Boolean,
 ) {
     var arranging by remember { mutableStateOf(false) }
     // The right-click menu, and the block it was asked over (null: the page).
@@ -300,13 +310,22 @@ private fun CanvasPage(
             Row(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(BAR).background(Pack.overlay).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                 // The pages, when there is more than one: the one shown in the accent, a click shows another. However
                 // many there are, they scroll in their own part of the strip and never push the arranging controls off it.
-                if (pages.size > 1) Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) { for (p in pages) {
-                    val on = p.id == canvas.shown || (pages.none { it.id == canvas.shown } && p.id == DESKTOP_PAGE)
-                    BasicText(
-                        p.name, Modifier.clickable { canvas.shown = p.id }.padding(end = 14.dp).semantics { contentDescription = "page ${p.name}" },
-                        style = (if (on) Pack.body(Pack.size.small, Pack.accent) else Pack.body(Pack.size.small, Pack.muted)), maxLines = 1,
-                    )
-                } } else Spacer(Modifier.weight(1f))
+                if (pages.size > 1) Row(Modifier.weight(1f, fill = !pagesOverview || arranging).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+                    for (p in pages) {
+                        val on = p.id == canvas.shown || (pages.none { it.id == canvas.shown } && p.id == DESKTOP_PAGE)
+                        BasicText(
+                            p.name, Modifier.clickable { canvas.shown = p.id }.padding(end = 14.dp).semantics { contentDescription = "page ${p.name}" },
+                            style = (if (on) Pack.body(Pack.size.small, Pack.accent) else Pack.body(Pack.size.small, Pack.muted)), maxLines = 1,
+                        )
+                    }
+                    // The pages small, and the looks (desktop slice 5c), as the phone's pinch shows them.
+                    if (pagesOverview) BasicText("[ pages ]", Modifier.clickable { canvas.overview = true }.semantics { contentDescription = "pages overview" }, style = Pack.body(Pack.size.small, Pack.accent), maxLines = 1)
+                }
+                if (pages.size <= 1 || (pagesOverview && !arranging)) Spacer(Modifier.weight(1f))
+                if (pagesOverview && !arranging) BasicText(
+                    if (scraps != null) "right-click: add · arrange · note · sticker · draw" else "right-click: add · arrange",
+                    style = Pack.mono(Pack.size.small, Pack.muted), maxLines = 1,
+                )
                 if (arranging) {
                     BasicText(if (pages.size > 1) "· arranging  " else "arranging · drag a block, its corner resizes it  ", style = Pack.mono(Pack.size.small, Pack.foreground), maxLines = 1)
                     BasicText("[ add ]", Modifier.clickable { menuOver = null; menuOpen = true }, style = Pack.body(Pack.size.small, Pack.accent))
@@ -350,6 +369,12 @@ private fun CanvasPage(
             MenuItem(if (arranging) "done arranging" else "arrange") {
                 arranging = !arranging
                 menuOpen = false
+            }
+            // The pages small and the looks, from the page itself too: with one page there is no bar to find [ pages ] on.
+            if (pagesOverview && menuOver == null) MenuItem("pages and looks") {
+                menuOpen = false
+                arranging = false
+                canvas.overview = true
             }
             // On the page itself: a note, a sticker or ink, as the phone's home menu offers them, on the page shown.
             if (scraps != null && menuOver == null) {

@@ -206,6 +206,7 @@ class FoldSync(
         return when (v) {
             is CanvasVerb.PageMake -> notebook.addPageWithId(v.id, v.name, v.after)
             is CanvasVerb.PageRename -> notebook.renamePage(v.id, v.name)
+            is CanvasVerb.PageMove -> check.applied && (check.notebook.pages.indexOfFirst { it.id == v.id } - notebook.position(v.id)).let { by -> by == 0 || notebook.movePage(v.id, by) }
             // A page goes only once nothing of his is left on it: no tiles, and no notes, stickers or ink.
             is CanvasVerb.PageRemove -> home().pages.firstOrNull { it.id == v.id }?.items?.isEmpty() == true && !marked(v.id) && notebook.withdrawPage(v.id)
             // Apps and folders are never made by sync.

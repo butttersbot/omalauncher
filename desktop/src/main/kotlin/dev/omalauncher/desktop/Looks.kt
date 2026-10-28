@@ -1,7 +1,9 @@
 package dev.omalauncher.desktop
 
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.platform.Font
+import dev.omalauncher.theme.pack.ConsolePack
 import dev.omalauncher.theme.pack.PackEntry
 import dev.omalauncher.theme.pack.PackPick
 import dev.omalauncher.theme.pack.PackRegistry
@@ -41,6 +43,24 @@ object Looks {
     /** The symbol font, from the jar. */
     fun fonts() {
         loader.getResourceAsStream("fonts/nerd_symbols.ttf")?.use { PlatformFonts.nerdSymbols = FontFamily(Font("nerd_symbols", it.readBytes())) }
+    }
+
+    /** A look as the dashboard's overview offers it (desktop slice 5c): its name, and its page, card, ink and accent colors. */
+    class Swatch(val id: String, val name: String, val colors: List<Color>)
+
+    /** Every look in the jar as a [Swatch], read once: Console for one that can't be read. */
+    val swatches: List<Swatch> by lazy {
+        ids.map { id ->
+            val pick = PackRegistry.choose(id, ::source)
+            val pack = pick.load?.pack?.takeIf { !pick.isConsole } ?: ConsolePack.pack
+            Swatch(pick.id, pack.name, with(pack.palette) { listOf(background, surface, foreground, accent) }.map { Color(it.argb) })
+        }.distinctBy { it.id }
+    }
+
+    /** Uses the pack [id] and remembers it: both of Soma's windows restyle at once, as from the tray's Look menu. */
+    fun pick(id: String) {
+        use(id)
+        SomaHome.write(SomaHome.settings, SomaHome.read(SomaHome.settings).put("pack", id))
     }
 
     /** Uses the pack [id] (Console when it isn't there), with its own typefaces. */

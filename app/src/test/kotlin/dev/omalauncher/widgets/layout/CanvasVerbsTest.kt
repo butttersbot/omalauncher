@@ -30,6 +30,24 @@ class CanvasVerbsTest {
         assertEquals(listOf("drive", "first"), n.pages.map { it.id })
     }
 
+    @Test fun aPageMovesWithEverythingOnItAndUndoesBack() {
+        var n = applyVerb(car, CanvasVerb.PageMake("b", "B")).notebook
+        n = applyVerb(n, CanvasVerb.PageMake("c", "C")).notebook
+        // First, after another, last: what is on it goes with it.
+        val first = applyVerb(n, CanvasVerb.PageMove("c", PAGE_START)).also { assertTrue(it.applied) }.notebook
+        assertEquals(listOf("c", "drive", "b"), first.pages.map { it.id })
+        assertEquals(listOf("drive", "c", "b"), applyVerb(n, CanvasVerb.PageMove("c", "drive")).notebook.pages.map { it.id })
+        val last = applyVerb(n, CanvasVerb.PageMove("drive")).notebook
+        assertEquals(listOf("b", "c", "drive"), last.pages.map { it.id })
+        assertEquals(listOf("needs"), last.pages.last().items.map { it.key })
+        // Undone, it is back where it was.
+        val back = dev.omalauncher.canvas.inverseOf(n, CanvasVerb.PageMove("drive")).fold(last) { at, v -> applyVerb(at, v).notebook }
+        assertEquals(n, back)
+        val json = VerbJson.verb(CanvasVerb.PageMove("c", "drive"))
+        assertEquals(CanvasVerb.PageMove("c", "drive"), VerbJson.verbOf(json))
+        assertEquals(CanvasVerb.PageMove("c"), VerbJson.verbOf(VerbJson.verb(CanvasVerb.PageMove("c"))))
+    }
+
     @Test fun aVerbThatCantApplyChangesNothingAndSaysWhy() {
         for (bad in listOf(
             CanvasVerb.Place("x", ItemKind.Widget, "drive", Cell(2, 1, 2, 2)), // onto Needs you
@@ -41,6 +59,9 @@ class CanvasVerbsTest {
             CanvasVerb.PageMake("drive", "Again"),
             CanvasVerb.PageMake("x", "X", after = "gone"),
             CanvasVerb.PageRemove("gone"),
+            CanvasVerb.PageMove("gone"),
+            CanvasVerb.PageMove("drive", after = "gone"),
+            CanvasVerb.PageMove("drive", after = "drive"),
             CanvasVerb.Unknown(JSONObject().put("verb", "page.teleport")),
             CanvasVerb.Place("newapp", ItemKind.App, "drive", Cell(5, 0, 1, 1)), // an app needs its entry
             CanvasVerb.Place("needs", ItemKind.Thread, "drive", Cell(5, 0, 1, 1)), // already a widget here

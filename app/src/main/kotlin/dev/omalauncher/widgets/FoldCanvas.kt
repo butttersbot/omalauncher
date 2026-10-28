@@ -83,6 +83,7 @@ class FoldCanvasPad(
             val v = when (asked) {
                 is CanvasVerb.PageRename -> asked.copy(id = real(asked.id))
                 is CanvasVerb.PageRemove -> asked.copy(id = real(asked.id))
+                is CanvasVerb.PageMove -> asked.copy(id = real(asked.id), after = asked.after?.let { if (it == PAGE_START) it else real(it) })
                 is CanvasVerb.Place -> asked.copy(page = real(asked.page))
                 is CanvasVerb.Move -> asked.copy(page = real(asked.page))
                 is CanvasVerb.PagePanels -> asked.copy(id = real(asked.id))
@@ -108,6 +109,12 @@ class FoldCanvasPad(
                     continue
                 }
                 is CanvasVerb.PageRename -> if (!notebook.renamePage(v.id, v.name)) return "that is not a name a page can have"
+                is CanvasVerb.PageMove -> {
+                    // Where applyVerb put it (checked just above), reached by moving it that many places.
+                    val to = check.notebook.pages.indexOfFirst { it.id == v.id }
+                    val by = to - notebook.position(v.id)
+                    if (by != 0 && !notebook.movePage(v.id, by)) return "home can't move that page now"
+                }
                 is CanvasVerb.PageRemove -> {
                     if (v.id !in made && marked(v.id)) return "the page \"${notebook.name(v.id)}\" has notes, stickers or ink on it, so it stays; he removes it himself in the overview"
                     if (!removePage(v.id)) return "home can't take that page away now"
@@ -176,6 +183,7 @@ fun touchedBy(v: CanvasVerb): String? = when (v) {
     is CanvasVerb.PageMake -> "page:" + v.id
     is CanvasVerb.PageRename -> "page:" + v.id
     is CanvasVerb.PageRemove -> "page:" + v.id
+    is CanvasVerb.PageMove -> "page:" + v.id
     is CanvasVerb.PagePanels -> "page:" + v.id
     is CanvasVerb.Unknown -> null
 }
