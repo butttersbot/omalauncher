@@ -146,7 +146,7 @@ class PhoneRunner(private val context: Context, private val tailnet: PhoneTailne
     }
     private fun serveStream(socket: Socket, request: RunnerRequest, address: String, local: Set<String>) {
         val out = socket.getOutputStream()
-        out.write("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n".toByteArray())
+        writeRunnerStreamHeaders(out)
         var cursor = request.path.substringAfter("after=", "0").toLongOrNull() ?: 0L
         val path = request.path.substringBefore('?')
         val until = System.nanoTime() + TimeUnit.SECONDS.toNanos(25)
@@ -154,12 +154,7 @@ class PhoneRunner(private val context: Context, private val tailnet: PhoneTailne
             val page = protocol.handle("GET", "$path?after=$cursor", "", true)
             if (page.code != 200) break
             val events = page.body.optJSONArray("events") ?: JSONArray()
-            for (n in 0 until events.length()) {
-                val event = events.getJSONObject(n)
-                cursor = event.getLong("id")
-                out.write("id: $cursor\nevent: ${event.optString("type")}\ndata: $event\n\n".toByteArray(Charsets.UTF_8))
-            }
-            out.write(": keepalive\n\n".toByteArray()); out.flush()
+            cursor = writeRunnerStreamPage(out, events, cursor)
             Thread.sleep(1000)
         }
     }

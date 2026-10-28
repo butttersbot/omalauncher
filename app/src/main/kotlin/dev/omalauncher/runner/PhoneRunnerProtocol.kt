@@ -64,12 +64,12 @@ class PhoneRunnerProtocol(private val sessions: PhoneRunnerSessions) {
                     if (text.isBlank() || text.length > 100_000) throw RunnerFault(400, "invalid text")
                     ok(sessions.message(id, text))
                 }
-                parts.size == 3 && parts[2] == "stop" -> { sessions.stop(id); ok(JSONObject()) }
+                parts.size == 3 && parts[2] == "stop" -> { sessions.stop(id); ok(JSONObject().put("stopped", true)) }
                 parts.size == 4 && parts[2] == "approvals" -> {
                     val decision = json.optString("decision")
                     if (decision !in setOf("allow", "deny")) throw RunnerFault(400, "invalid decision")
                     if (json.has("answers") && json.optJSONObject("answers") == null) throw RunnerFault(400, "invalid answers")
-                    ok(sessions.answer(id, parts[3], json.optString("nonce"), decision, json.optJSONObject("answers"), device))
+                    ok(sessions.answer(id, parts[3], json.optString("nonce"), decision, json.optJSONObject("answers"), device).put("decision", decision))
                 }
                 else -> throw RunnerFault(404, "not found")
             }

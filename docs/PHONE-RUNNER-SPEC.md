@@ -179,3 +179,13 @@ refusal; preserve but never renew a bounded lease on an aged positive. No UI cha
 the prior 24-step phone-runner and 26-step question-Skip emulator walks and eight reviewed LOOKs stand.
 The added real-phone offline/local-source walk remains deferred until owner promotion and helper deployment.
 No launcher install, runner restart, actual pairing or live work was performed by this checkpoint.
+
+### Desktop reply compatibility follow-up
+
+Approval success includes `{ok:true,decision:"allow"|"deny"}` echoing the wire decision after the existing
+ledger succeeds; stop success includes `{ok:true,stopped:true}`. These fields are required by the shared
+desktop parsers. The TCP adapter validates/authenticates `/stream` through the protocol and then writes
+HTTP `text/event-stream`, not the protocol's internal JSON page. It emits id/event/data frames and
+keep-alive comments for 25 seconds with per-second identity rechecks, then permits cursor reconnect.
+PhoneRunnerContractTest exercises actual protocol replies through parseMacDecision/parseMacStopped
+and the production stream writer through followMacStream, including a nonzero resume cursor.
