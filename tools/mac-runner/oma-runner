@@ -4552,7 +4552,9 @@ def install():
 def restart_daemon():
     """The system daemon's runner, ended so launchd (KeepAlive) starts it again from the new copy. The ending is left to a
     helper in a session of its own: an install run from one of the runner's own threads ends with it."""
-    found = subprocess.run(['pgrep', '-f', str(INSTALLED) + ' serve'], capture_output=True, text=True).stdout.split()
+    # -a: macOS's pgrep leaves out its own ancestors, and an install run from a runner thread descends from the daemon
+    # (2026-10-27: it missed it, and the old runner kept running).
+    found = subprocess.run(['pgrep', '-a', '-f', str(INSTALLED) + ' serve'], capture_output=True, text=True).stdout.split()
     pids = [p for p in found if p.isdigit() and int(p) != os.getpid()]
     if not pids:
         return print('installed; the system daemon starts it (or: sudo launchctl kickstart -k system/' + LABEL + ')')
