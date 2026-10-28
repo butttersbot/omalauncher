@@ -115,7 +115,7 @@ Confirmed helper contract implemented by desktop thread `jacks-mac-pro:taebc3f66
   real Tailscale daemon. Helper tests: 7/7 passed on the Mac; no runner restart has happened in this slice.
 
 A helper-equipped paired Mac must be reachable to pair or validate a previously uncached caller. This is an extra
-availability dependency; it deliberately fails closed. Do not deploy the phone endpoint before the agreed helper is installed and its live auth/pairing walk is approved. The desktop health change is 33c3560f (MacRunnerTest 41/41 per its author): it narrowly accepts `oma-phone`
+availability dependency; it deliberately fails closed. The phone endpoint and helper belong in the same final installation; run live auth/pairing checks after promotion. The desktop health change is 33c3560f (MacRunnerTest 41/41 per its author): it narrowly accepts `oma-phone`
 alongside `oma-runner`. Include that change in the final desktop bundle.
 
 ### Verification status
@@ -123,11 +123,38 @@ alongside `oma-runner`. Include that change in the final desktop bundle.
 `PhoneRunnerTest`, `PhoneRunnerApprovalTest`, `MacPhoneTailnetTest`, `PhoneTaskEventsTest` and `PhoneRunnerSettingTapTest` cover auth
 refusal/wrong device, unsupported routes, Phone D message refusal, nonce reuse, malformed strict forms, locked
 ledger refusal, Skip as allow, cursor/restart/queue stability, bounded tail changes, artifact rewrites without replaying unrelated steps,
-global task timestamp reservations, and no pairing before a native
-tap. Results are pending lane B compilation/test execution; no PASS is claimed yet.
+global task timestamp reservations, and no pairing before a native tap.
+
+Final lane B checkpoint **e59b2f48: PASS** (contains a27dfc0b, f59d13a3 and the original 5370bb71 implementation).
+Both `:app:compileDebugKotlin` and `:desktop:compileKotlin` pass. App unit tests: 111/111 (PhoneRunnerTest 6,
+PhoneRunnerApprovalTest 3, MacPhoneTailnetTest 1, ApprovalsTest 14, ClaudeProtocolTest 5, PendingApprovalGuardTest 3,
+ChatHistoryTest 32, MacThreadsTest 47). Shared desktop tests: 12/12 at a27dfc0b (PhoneTaskEventsTest 8,
+PhoneRunnerSettingTapTest 1, WaitingQuestionDraftTest 3), reused unchanged by Gradle at e59b2f48. The strict
+approval-caller guard passes with its explicit, documented paired-desktop adapter addition; front agents remain
+forbidden. The isolated real-runner/fake-Tailscale helper suite passes 7/7 on both the Mac and Fold Linux.
+The production MacPhoneTailnet client also passes its loopback HTTP contract test; none of these uses real keys.
 
 `tools/walkthrough/scripts/phone-runner.walk` uses the production native pairing panel with a fictional backend in
 artifact-preview for cover, unfolded and sideways layout/taps. It creates no key, sends no file and calls no tailnet.
 The phone steps cover real pairing, listener binding/auth, desktop session traffic, streaming/reconnect, Stop,
-nonce races, multi-device question closure and unavailable/asleep behavior. All walks are pending. Canvas settings
-cards could not be read (service timed out); no Canvas state or Shipped record was changed. Nothing is installed.
+nonce races, multi-device question closure and unavailable/asleep behavior.
+
+Emulator checkpoint a27dfc0b, artifact-preview only on shared Fold8 / emulator-5554 under the walks lock:
+
+- phone-runner.walk: 24 PASS, 0 FAIL, 4 reviewed LOOKs (cover, paired cover, unfolded, sideways).
+- waiting-question-skip.walk regression: 26 PASS, 0 FAIL, 4 reviewed LOOKs.
+
+The critic reviewed all eight screenshots; Phone B also inspected both contact sheets and a full-size unfolded
+panel image. Native Pair/Unpair work in the fake backend, no pairing happens on viewing, text is readable without
+clipping, and the close control draws the real Nerd Font glyph with the label "Close phone sessions". e59b2f48
+changes only guard tests/documentation: its preview APK is byte-identical to the walked a27dfc0b APK, so no new
+walk was required. Earlier checkpoint test/script failures are superseded by this result.
+
+Evidence copied to `/root/Inbox/phone-runner-a27dfc0b-evidence.zip`, SHA256
+`aade255526bfd1492ca8545b38182cf5e0eee14cbaa0b623a9b26a8b8f89c45d`; final compile/test report is lane B's
+e59b2f48 result. These are fictional preview screenshots, not Shipped launcher records.
+
+**NOT WALKED:** the three real-phone steps in phone-runner.walk and two in the Skip regression. Real Tailscale
+identity/pairing, live desktop-to-phone sessions, nonce races/notifications across devices, sleep and real performance
+wait for the coordinated launcher/helper promotion. Canvas settings cards could not be read (service timed out);
+no Canvas state or Shipped record was changed. No launcher, desktop or runner was installed or restarted.
