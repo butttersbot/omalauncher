@@ -369,6 +369,7 @@ private fun ChatScreen(
     fun takeImages(uris: List<PickedImage>) {
         if (uris.isEmpty()) return
         val (take, tooMany) = imagesToTake(images.size, uris.size)
+        uris.drop(take).forEach(host::releaseImage)
         importing = true
         notice = null
         scope.launch {
@@ -385,7 +386,7 @@ private fun ChatScreen(
     }
     val pickImages = host.rememberImagePicker(MAX_PROMPT_IMAGES, ::takeImages)
     // Pasted or dropped (the desktop): taken as picked ones, while pictures can go somewhere from here.
-    host.rememberImageArrivals { if (host.attaches && !importing) takeImages(it) }
+    host.rememberImageArrivals { if (host.attaches && !importing) takeImages(it) else it.forEach(host::releaseImage) }
 
     fun listen() {
         before = draft

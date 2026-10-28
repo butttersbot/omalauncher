@@ -223,6 +223,11 @@ class DesktopChatHost(
         return true
     }
 
+    // A pasted picture's temporary file, when it wasn't taken (round-1 Critic: /tmp/soma-paste-* grew).
+    override fun releaseImage(picked: PickedImage) {
+        (picked as? FileImage)?.takeIf { it.temporary }?.file?.delete()
+    }
+
     override fun importImage(picked: PickedImage): PromptImage = importDesktopImage(picked as FileImage, File(SomaHome.dir, "attachments"))
 
     override fun thumbnail(file: File, longest: Int): ImageBitmap? = desktopThumbnail(file, longest)

@@ -635,6 +635,11 @@ class DesktopEndToEndTest {
         waitFor("both pictures under the field") { onAllNodes(androidx.compose.ui.test.hasContentDescription("Remove image 2")).fetchSemanticsNodes().isNotEmpty() }
         assertTrue("his own file stays", shot.isFile)
         assertTrue("the pasted copy's temporary file went", !pasted.exists())
+        // Three more pasted: two fit (four at most), the third is let go, its temporary file too (round-1 Critic).
+        val more = (1..3).map { n -> File(work, "more$n.png").also { shot.copyTo(it) } }
+        runOnIdle { assertTrue(host.arrived(more.map { FileImage(it, temporary = true) })) }
+        waitFor("four pictures under the field") { onAllNodes(androidx.compose.ui.test.hasContentDescription("Remove image 4")).fetchSemanticsNodes().isNotEmpty() }
+        assertTrue("none left behind: ${more.filter { it.exists() }}", more.none { it.exists() })
         onNode(androidx.compose.ui.test.hasSetTextAction()).performTextInput("what is in this picture")
         settle(); onNodeWithText("[ send ]").performClick(); settle()
         waitFor("the answer came") { platform.chatLog().tasks.any { it.mac && it.status == dev.omalauncher.oma.TaskStatus.Done } }
@@ -643,7 +648,7 @@ class DesktopEndToEndTest {
             .filterIsInstance<dev.omalauncher.assist.MacEvent.Message>().first().text
         assertTrue("his words, then where the pictures are: $said", said.startsWith("what is in this picture") && dev.omalauncher.assist.PICTURES_NOTE.trim() in said)
         val kept = File(work, "Downloads/From Fold").listFiles().orEmpty()
-        assertEquals("both pictures are on the Mac", 2, kept.size)
+        assertEquals("all four pictures are on the Mac", 4, kept.size)
         assertTrue("the thread is told their paths", kept.all { it.path in said })
         settle()
         File("build/render").mkdirs()

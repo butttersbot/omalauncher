@@ -14,6 +14,7 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import dev.omalauncher.assist.MacThreadsEngine
+import dev.omalauncher.oma.ChatDrafts
 import dev.omalauncher.oma.OMA_TAB
 import dev.omalauncher.oma.OmaChatScreen
 import dev.omalauncher.ui.Pack
@@ -107,6 +108,8 @@ fun main(args: Array<String>) {
     Looks.use(SomaHome.read(SomaHome.settings).optString("pack").ifEmpty { "city-pop" })
     val notices = Notices()
     val platform = DesktopThreadsPlatform(notices)
+    // Pictures copied in and never sent (Soma quit or was ended first) go, as the phone sweeps its own at start.
+    thread(name = "soma-drafts", isDaemon = true) { runCatching { ChatDrafts.of(SomaHome.dir).sweep(platform.chatLog().tasks) } }
     val engine = MacThreadsEngine(platform)
     // The window's canvas (slice 5), and its modules' one source: the chat's own host, and the slower feeds on a timer.
     val canvas = DesktopCanvas(SomaHome.canvas, runCatching { InetAddress.getLocalHost().hostName }.getOrDefault("desktop")).also { it.load() }

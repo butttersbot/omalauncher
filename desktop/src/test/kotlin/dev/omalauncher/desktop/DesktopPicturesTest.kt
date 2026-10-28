@@ -79,4 +79,9 @@ class DesktopPicturesTest {
         assertTrue(picturesIn(transfer(DataFlavor.stringFlavor, "just text")).isEmpty())
         assertTrue(picturesIn(null).isEmpty())
     }
+
+    @Test fun anEmptyFileIsSaidToBeEmpty() {
+        File(dir, "empty.png").writeBytes(ByteArray(0))
+        assertEquals("The selected image is empty.", runCatching { importDesktopImage(FileImage(File(dir, "empty.png")), File(dir, "attachments")) }.exceptionOrNull()?.message)
+    }
 }

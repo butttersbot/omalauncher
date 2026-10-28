@@ -44,8 +44,8 @@ fun importDesktopImage(picked: FileImage, attachments: File): PromptImage {
     try {
         val source = picked.file
         require(source.isFile) { "That picture is gone." }
-        val kind = pictureKind(source) ?: error("Choose a JPEG, PNG, WebP or GIF image.")
         require(source.length() > 0) { "The selected image is empty." }
+        val kind = pictureKind(source) ?: error("Choose a JPEG, PNG, WebP or GIF image.")
         require(source.length() <= MAX_DESKTOP_IMAGE_BYTES) { "Each image must be 20 MB or smaller." }
         check(attachments.mkdirs() || attachments.isDirectory) { "Could not create the attachments folder." }
         // Generated names: nothing of his file's name reaches a path or a shell.

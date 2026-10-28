@@ -259,6 +259,9 @@ interface ChatHost {
     @Composable
     fun rememberImageArrivals(onPicked: (List<PickedImage>) -> Unit) {}
 
+    /** [picked] was not taken (more than fit, or one arrived while others were being added): whatever it holds is let go. */
+    fun releaseImage(picked: PickedImage) {}
+
     /** [picked] copied in for the agent. Blocks; throws with why it couldn't. */
     fun importImage(picked: PickedImage): PromptImage
 
