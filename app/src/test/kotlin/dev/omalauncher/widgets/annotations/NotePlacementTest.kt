@@ -334,14 +334,14 @@ class NotePlacementTest {
         // The cascade that knew nothing of the tiles is gone, and every maker of a note or sticker asks the board.
         val sources = dev.omalauncher.theme.pack.mainSources()
         assertTrue(sources.none { it.readText().contains("cascade(") })
-        val book = java.io.File("src/main/kotlin/dev/omalauncher/widgets/annotations/AnnotationBook.kt").readText()
+        val book = java.io.File("../chat/src/commonMain/kotlin/dev/omalauncher/widgets/annotations/AnnotationBook.kt").readText()
         assertTrue(book.substringAfter("fun addNote(").substringBefore("fun changeNote(").contains("board(page).noteSpot("))
         assertTrue(book.substringAfter("fun addSticker(").substringBefore("fun changeSticker(").contains("clearSpot("))
         assertTrue(book.substringAfter("fun leaveNote(").substringBefore("private fun top(").contains("leaveAgentNote(there.marks, text, now(), board(page), near)"))
         val makers = sources.filter { file -> Regex("StickyNote\\(\\s*(id = )?freshId\\(").containsMatchIn(file.readText()) }.map { it.name }.sorted()
         assertEquals(listOf("AnnotationBook.kt", "Annotations.kt"), makers)
-        // The launcher gives the book the notebook's own tiles.
-        assertTrue(book.contains("board = notebook::board"))
+        // The launcher gives the book the notebook's own tiles (HomeAnnotations, the phone's; the book is shared since slice 5b).
+        assertTrue(java.io.File("src/main/kotlin/dev/omalauncher/widgets/annotations/HomeAnnotations.kt").readText().contains("board = notebook::board"))
     }
 
     @Test fun theNotebookTellsThePagesTilesAsTheyShow() {
