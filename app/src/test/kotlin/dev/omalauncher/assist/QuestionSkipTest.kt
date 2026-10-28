@@ -36,6 +36,7 @@ class QuestionSkipTest {
         val event = parseMacEvent(json.toString()) as MacEvent.ApprovalResult
         assertEquals(MacDecision.Allow, event.decision)
         assertTrue(event.skipped)
+        assertEquals(listOf("skipped"), macTurns(listOf(event)).single().steps)
         assertEquals("skipped", dev.omalauncher.oma.ApprovalAnswer.Skipped.label)
     }
 }

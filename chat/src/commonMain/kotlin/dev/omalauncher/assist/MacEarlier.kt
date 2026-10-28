@@ -102,7 +102,8 @@ fun macTurns(events: List<MacEvent>): List<MacTurn> {
             }
             is MacEvent.Stopped -> turn = open(event).copy(stopped = true)
             is MacEvent.Artifact -> dev.omalauncher.oma.artifactStep(event.name, event.version, event.state, event.settled)?.takeIf { event.state == "ready" }?.let { step(event, it) }
-            is MacEvent.Status, is MacEvent.ApprovalResult, is MacEvent.Other -> Unit
+            is MacEvent.ApprovalResult -> if (event.decision == MacDecision.Allow && event.skipped) step(event, "skipped")
+            is MacEvent.Status, is MacEvent.Other -> Unit
         }
     }
     close()

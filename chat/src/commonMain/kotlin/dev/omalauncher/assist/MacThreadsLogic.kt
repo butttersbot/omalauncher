@@ -343,7 +343,8 @@ fun macApply(tasks: List<ChatTask>, threadId: String, event: MacEvent, inFlight:
                 MacDecision.Deny -> "denied on $by"
                 else -> null
             }
-            if (said == null || event.device.isBlank() || current == null) answered
+            if (event.skipped && event.decision == MacDecision.Allow && current == null) between(ChatLater("skipped"), answered)
+            else if (said == null || event.device.isBlank() || current == null) answered
             else answered.map { if (it.time == current.time) ChatHistory.withStep(it, said) else it }
         }
         // The result is the whole answer, as it is for the phone's builder; with no words, what was said so far stays.
