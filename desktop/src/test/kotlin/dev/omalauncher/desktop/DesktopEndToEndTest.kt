@@ -654,4 +654,101 @@ class DesktopEndToEndTest {
         File("build/render").mkdirs()
         javax.imageio.ImageIO.write(onRoot().captureToImage().toAwtImage(), "png", File("build/render/desktop-e2e-pictures.png"))
     }
+
+    /**
+     * Slice 3 (Boss, 2026-10-28: "the phone sessions need to be reachable from the Mac Pro too"): the Fold's own runner
+     * (PHONE-RUNNER-SPEC, here a stand-in) is one more computer. Its sessions are listed, read and sent to; Phone B's
+     * request is approved only by his tap; Phone C's question form is skipped; a working Phone A is stopped; Phone D
+     * takes no words. No new chat and no switch of agent is ever offered on the Fold.
+     */
+    @Test fun theFoldsSessionsAreReachedLikeAComputersThreads() = runComposeUiTest {
+        val phone = FakePhoneRunner("f".repeat(40))
+        try {
+            val notices = Notices()
+            val mac = MacMachine("testhost", "Test box", MacRunnerConfig("http://127.0.0.1:$port", key))
+            val fold = MacMachine("galaxy-z-fold8", "Fold", MacRunnerConfig(phone.url, "f".repeat(40)))
+            val platform = DesktopThreadsPlatform(notices) { listOf(mac, fold) }
+            val engine = MacThreadsEngine(platform)
+            val host = DesktopChatHost(platform, engine, DesktopFrontAgent(engine, platform, notices, places = emptyList()), notices)
+            engine.open()
+            var wanted: String? by androidx.compose.runtime.mutableStateOf<String?>(null)
+            mainClock.autoAdvance = false
+            setContent { OmaChatScreen(host, prefill = null, onPrefilled = {}, wanted = wanted, onTab = { wanted = it.takeIf { tab -> tab != OMA_TAB } }) }
+            fun settle(ms: Long = 1_200) = mainClock.advanceTimeBy(ms)
+            fun waitFor(what: String, seconds: Int = 40, done: () -> Boolean) {
+                val deadline = System.currentTimeMillis() + seconds * 1000L
+                while (System.currentTimeMillis() < deadline && !done()) { Thread.sleep(250); settle(500) }
+                if (!done()) { File("build/render").mkdirs(); javax.imageio.ImageIO.write(onRoot().captureToImage().toAwtImage(), "png", File("build/render/desktop-e2e-fold-failed.png")) }
+                assertTrue("$what: ${phone.calls.filter { it.method == "POST" }} ${engine.view.threads.map { "${it.id} ${it.status}" }} pending=${host.macPending().map { "${it.threadId} ${it.request.approval}" }} tab=$wanted book=${platform.book().chats.map { it.mac }}", done())
+            }
+            fun tab(name: String) = host.threads().first { it.name == name }.key
+            fun posts(part: String) = phone.calls.filter { it.method == "POST" && part in it.path }
+            settle()
+            waitFor("the Fold's sessions are listed") { listOf("Phone A", "Phone B", "Phone C", "Phone D").all { n -> host.threads().any { it.name == n } } }
+            waitFor("the Fold is known as the phone's runner") { host.hosts().any { it.id == "galaxy-z-fold8" && !it.makes } }
+
+            // No new chat on the Fold: the new chat's computer is the Mac, and the Fold is not in its menu.
+            onNodeWithContentDescription("Show the tabs").performClick(); settle()
+            onNodeWithContentDescription("New chat").performClick(); settle()
+            onNodeWithText("[ Test box ]").performClick(); settle()
+            onNodeWithText("make its thread on").assertExists()
+            // (The Fold's sessions' own tabs say where they are; only the menu's entries count here.)
+            assertTrue("the Fold is never offered", onAllNodes((hasText("Fold") or hasText("Fold · offline")) and !hasText("Phone", substring = true)).fetchSemanticsNodes().isEmpty())
+            onNodeWithText("Test box").assertExists()
+            onNodeWithText("Test box").performClick(); settle()
+
+            // Read and sent to: Phone A's history shows, and his words reach it.
+            wanted = tab("Phone A"); settle()
+            waitFor("Phone A's history") { onAllNodes(hasText("Phone A is ready.", substring = true)).fetchSemanticsNodes().isNotEmpty() }
+            onNode(androidx.compose.ui.test.hasSetTextAction()).performTextInput("hello from the Mac Pro")
+            settle(); onNodeWithText("[ send ]").performClick(); settle()
+            waitFor("his words reached Phone A") { posts("/threads/builder-a/messages").any { it.body?.optString("text") == "hello from the Mac Pro" } }
+            waitFor("its answer shows") { onAllNodes(hasText("heard: hello from the Mac Pro", substring = true)).fetchSemanticsNodes().isNotEmpty() }
+
+            // Phone B's request: nothing answers it but his tap.
+            wanted = tab("Phone B"); settle(2_000)
+            waitFor("Phone B's request shows") { onAllNodes(hasText("[ approve once ]")).fetchSemanticsNodes().isNotEmpty() }
+            assertTrue("nothing was answered before his tap", posts("/approvals/").isEmpty())
+            onAllNodes(hasText("[ approve once ]")).onFirst().performClick(); settle()
+            waitFor("his tap reached the Fold") { posts("/threads/builder-b/approvals/tk-b1").isNotEmpty() }
+            val approved = posts("/approvals/").single().body!!
+            assertEquals("allow", approved.getString("decision"))
+            assertEquals("tk-b1", approved.getString("nonce"))
+
+            // Phone C's question form, skipped from the chat.
+            wanted = tab("Phone C"); settle(2_000)
+            waitFor("Phone C's questions show") { onAllNodes(hasText("[ answer questions ]")).fetchSemanticsNodes().isNotEmpty() }
+            onAllNodes(hasText("[ answer questions ]")).onFirst().performClick(); settle()
+            onAllNodes(hasText("[ skip ]")).onFirst().performClick(); settle()
+            waitFor("the skip reached the Fold") { posts("/threads/builder-c/approvals/tk-c1").isNotEmpty() }
+            val skipped = posts("/threads/builder-c/approvals/tk-c1").single().body!!
+            assertEquals("allow", skipped.getString("decision"))
+            assertEquals(dev.omalauncher.assist.QUESTION_SKIP_ANSWER, skipped.getJSONObject("answers").getString("Which look?"))
+            if (onAllNodes(hasText("[ back to chat ]")).fetchSemanticsNodes().isNotEmpty()) { onAllNodes(hasText("[ back to chat ]")).onFirst().performClick(); settle() }
+
+            // A working Phone A, stopped.
+            wanted = tab("Phone A"); settle()
+            onNode(androidx.compose.ui.test.hasSetTextAction()).performTextInput("work on the release")
+            settle(); onNodeWithText("[ send ]").performClick(); settle()
+            waitFor("Phone A is working") { engine.view.threads.any { it.id == "galaxy-z-fold8/builder-a" && it.status == dev.omalauncher.assist.MacThreadStatus.Working } && onAllNodes(hasText("[ stop ]")).fetchSemanticsNodes().isNotEmpty() }
+            onAllNodes(hasText("[ stop ]")).onFirst().performClick(); settle()
+            waitFor("the stop reached the Fold") { posts("/threads/builder-a/stop").isNotEmpty() }
+
+            // Phone D takes agent mail only: his words are refused there, and said so.
+            wanted = tab("Phone D"); settle()
+            onNode(androidx.compose.ui.test.hasSetTextAction()).performTextInput("hi D")
+            settle(); onNodeWithText("[ send ]").performClick(); settle()
+            waitFor("Phone D refused") { posts("/threads/phone-d/messages").isNotEmpty() && platform.chatLog().tasks.any { it.prompt == "hi D" && it.status != dev.omalauncher.oma.TaskStatus.Running && it.status != dev.omalauncher.oma.TaskStatus.Queued } }
+            assertTrue("never answered as if sent", platform.chatLog().tasks.none { it.prompt == "hi D" && it.status == dev.omalauncher.oma.TaskStatus.Done })
+
+            // Nothing was ever made on the Fold, and only his taps answered.
+            assertTrue("no thread made on the Fold", phone.calls.none { it.method == "POST" && it.path == "/threads" })
+            assertEquals("two answers, both his", 2, posts("/approvals/").size)
+            settle()
+            File("build/render").mkdirs()
+            javax.imageio.ImageIO.write(onRoot().captureToImage().toAwtImage(), "png", File("build/render/desktop-e2e-fold.png"))
+        } finally {
+            phone.close()
+        }
+    }
 }

@@ -143,7 +143,7 @@ class MacRunnerTest {
         assertEquals(MacAnswer.Ok(MacHealth(3, 1, 2)), parseMacHealth(ok("""{"ok": true, "runner": "oma-runner", "threads": 3, "working": 1, "waiting": 2}""")))
         assertEquals(MacAnswer.Ok(MacHealth(0, 0, 0)), parseMacHealth(ok("""{"ok": true, "runner": "oma-runner"}""")))
         // The Fold's own runner (PHONE-RUNNER-SPEC) answers as one more computer.
-        assertEquals(MacAnswer.Ok(MacHealth(4, 1, 0, listOf("claude", "codex"))), parseMacHealth(ok("""{"ok": true, "runner": "oma-phone", "threads": 4, "working": 1, "kinds": ["claude", "codex"]}""")))
+        assertEquals(MacAnswer.Ok(MacHealth(4, 1, 0, listOf("claude", "codex"), phone = true)), parseMacHealth(ok("""{"ok": true, "runner": "oma-phone", "threads": 4, "working": 1, "kinds": ["claude", "codex"]}""")))
         assertEquals(MacAnswer.Ok(MacHealth(1, 0, 0, listOf("claude", "codex", "cursor"))), parseMacHealth(ok("""{"ok": true, "runner": "oma-runner", "threads": 1, "kinds": ["claude", "codex", "cursor"]}""")))
         assertEquals(MacAnswer.Ok(MacHealth(0, 0, 0, listOf("claude"))), parseMacHealth(ok("""{"ok": true, "runner": "oma-runner", "kinds": ["claude", "", null, 3]}""")))
         // Something else on that port is not the runner.

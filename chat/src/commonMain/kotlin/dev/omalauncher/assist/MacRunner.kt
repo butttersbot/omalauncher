@@ -143,7 +143,9 @@ const val MAC_RUNNER_NAME = "oma-runner"
 const val PHONE_RUNNER_NAME = "oma-phone"
 
 /** What `/health` says. [kinds] are the agents installed on the Mac, as the runner names them; empty from a runner that does not say. */
-data class MacHealth(val threads: Int, val working: Int, val waiting: Int, val kinds: List<String> = emptyList(), val models: Map<String, List<String>> = emptyMap())
+data class MacHealth(val threads: Int, val working: Int, val waiting: Int, val kinds: List<String> = emptyList(), val models: Map<String, List<String>> = emptyMap(), val phone: Boolean = false)
+// [phone]: the Fold's own runner (PHONE-RUNNER-SPEC). Its sessions are read, sent to, approved and stopped like a Mac's threads, but no
+// thread is made on it: no new chat and no switch of agent goes there (it answers POST /threads with 404).
 
 /** Where a thread's builder runs, set when the thread is made. [word] is the runner's. */
 enum class ThreadHome(val word: String) { Mac("mac"), Phone("phone") }
@@ -276,7 +278,8 @@ fun parseMacHealth(reply: MacReply?): MacAnswer<MacHealth> = macAnswer(reply) { 
             val names = listed.optJSONArray(agent)
             macKindOf(agent) to (0 until (names?.length() ?: 0)).mapNotNull { (names?.opt(it) as? String)?.takeIf(String::isNotBlank) }
         }.orEmpty()
-        MacHealth(json.macCount("threads"), json.macCount("working"), json.macCount("waiting"), (0 until (kinds?.length() ?: 0)).mapNotNull { (kinds?.opt(it) as? String)?.takeIf(String::isNotBlank) }, models)
+        MacHealth(json.macCount("threads"), json.macCount("working"), json.macCount("waiting"), (0 until (kinds?.length() ?: 0)).mapNotNull { (kinds?.opt(it) as? String)?.takeIf(String::isNotBlank) }, models,
+            phone = json.macText("runner") == PHONE_RUNNER_NAME)
     }
 }
 
