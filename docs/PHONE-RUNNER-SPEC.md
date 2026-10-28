@@ -60,3 +60,64 @@ Not served (404): `POST /threads` (no new phone sessions from the desktop in thi
 - Whether Phone D should take his words from the desktop (here: no, mail only, as PHONE-D.md says).
 - The builders run with approvals bypassed (Phone B's Codex flags); a paired key lets that computer send them work.
   That is the same trust a paired phone has in the Mac's runner, now the other way.
+
+## Phone implementation checkpoint (2026-10-28, not installed)
+
+The phone implementation is in `dev.omalauncher.runner`. `Runtime` starts a process-lifetime listener alongside
+its existing background runtime. With no paired devices it waits without polling or binding a socket. With a
+pairing it binds only the concrete local Tailscale IPv4 address, port 8478; an absent VPN leaves it unavailable.
+No new wake lock or Android service is introduced. Ordinary HTTP requests and streams use separate bounded
+worker pools so long-lived reads cannot occupy Stop/approval workers. Streams end after 25 seconds and reconnect
+from their cursor; keys are rechecked each heartbeat.
+
+Wire ids are **unprefixed** `builder-a`, `builder-b`, `builder-c`, `phone-d`, `chat-ID`; the desktop's machine key
+adds `galaxy-z-fold8/`. An approval's wire id is the unique phone ticket nonce, also provided in `nonce`; the
+adapter translates back to the agent's reusable tool id only inside the existing builder ledger. Decisions use
+that ledger's validation/claim/reply/withdraw path, including its locked-phone refusal. `deny` of AskUserQuestion
+becomes the existing canonical Skip delegation answer, sent via allow; ordinary tool denial remains denial.
+Results carry normalized question answers and the authenticated computer's device name. There is no HTTP path
+for pairing, new sessions, model changes or approval memory.
+
+`ChatStore` persists the cursor journal **inside the existing oma-chat.json task log** (`phoneRunner`), using the
+same store lock and atomic replacement. Updates append immutable events; queued work, completed task edits,
+pruned UI rows and restarts do not renumber ids. A read flushes unsaved live deltas before exposing their ids.
+Like the existing finite phone history, this journal has finite retention (10,000 events / approximately 2 MB
+of serialized characters across sessions); retained ids remain monotonic, not reset to 1 on pruning. The shared
+client's existing gap catch-up handles retained history. Timestamps on the wire are Unix seconds. The native
+front stream and Mac-backed chats are excluded. Phone-local chat sends/stops use that tab's existing routing,
+with Stop dropping only that chat's queued front work and stopping its active front turn.
+
+### Android Tailscale identity dependency
+
+Android's Tailscale VPN supplies the address but no local CLI/daemon API accessible to this app. The phone therefore
+asks an **already paired Mac runner** for authoritative whois, the owner's peer list and Taildrop delivery. It never
+uses a claimed header, DNS name, IP-only allowlist or the selected pairing target as proof of caller identity.
+A missing helper, unknown/non-owner caller or wrong device/key refuses authentication. Positive and negative
+whois responses are cached for at most a minute, as on the Mac runner; unpair checks the live digest table each
+request/heartbeat. The phone retains only digests in its private preferences. Raw generated keys are kept in
+memory for the pairing transfer, not displayed, logged, mailed or written to a phone file.
+
+Proposed helper contract sent to the desktop contract thread `jacks-mac-pro:taebc3f66` (awaiting confirmation):
+
+- Authenticated `GET /phone-runner/tailnet`: `{ok,self:{name,addresses},devices:[{name,addresses}]}`, only the runner owner's peers.
+- Authenticated `GET /phone-runner/whois?address=IP`: `{ok,device,owner}`, derived from actual Tailscale whois and the runner owner's login.
+- Authenticated `POST /phone-runner/taildrop`: `{device,name:"soma-runner-galaxy-z-fold8.json",content:JSON_STRING}`;
+  bounded to that pairing filename and an owner's selected device; no credential-bearing logging.
+
+A helper-equipped paired Mac must be reachable to pair or validate a previously uncached caller. This is an extra
+availability dependency; it deliberately fails closed. Do not deploy the phone endpoint without confirming this
+helper contract and running its auth tests. Also, shared `parseMacHealth` currently requires `oma-runner`; the
+desktop change must narrowly accept the specified `oma-phone` health marker.
+
+### Verification status
+
+`PhoneRunnerTest`, `PhoneRunnerApprovalTest`, `PhoneTaskEventsTest` and `PhoneRunnerSettingTapTest` cover auth
+refusal/wrong device, unsupported routes, Phone D message refusal, nonce reuse, malformed strict forms, locked
+ledger refusal, Skip as allow, cursor/restart/queue stability, bounded tail changes, and no pairing before a native
+tap. Results are pending lane B compilation/test execution; no PASS is claimed yet.
+
+`tools/walkthrough/scripts/phone-runner.walk` uses the production native pairing panel with a fictional backend in
+artifact-preview for cover, unfolded and sideways layout/taps. It creates no key, sends no file and calls no tailnet.
+The phone steps cover real pairing, listener binding/auth, desktop session traffic, streaming/reconnect, Stop,
+nonce races, multi-device question closure and unavailable/asleep behavior. All walks are pending. Canvas settings
+cards could not be read (service timed out); no Canvas state or Shipped record was changed. Nothing is installed.

@@ -48,9 +48,8 @@ class PhoneSessions(private val context: Context) : PhoneRunnerSessions {
         if (b == BuilderId.D) throw RunnerFault(403, "Phone D takes agent mail only")
         return if (b != null) synchronized(AgentTasks) {
             val slot = AgentTasks.of(b)
-            val busy = slot.working
-            AgentTasks.direct(context, text, page = null, builder = b)
-            JSONObject().put("taken", if (busy) "queued" else "now").apply { if (busy) put("position", slot.waiting) }
+            val position = slot.queueReceipt { AgentTasks.direct(context, text, page = null, builder = b) }
+            JSONObject().put("taken", if (position != null) "queued" else "now").apply { if (position != null) put("position", position) }
         } else {
             val chat = id.removePrefix("chat-")
             if (TabBook.of(context).chat(chat)?.mac != "") throw RunnerFault(404, "no such phone chat")
@@ -61,11 +60,11 @@ class PhoneSessions(private val context: Context) : PhoneRunnerSessions {
             }
         }
     }
-    override fun answer(id: String, approval: String, nonce: String, decision: String, answers: JSONObject?): JSONObject {
+    override fun answer(id: String, approval: String, nonce: String, decision: String, answers: JSONObject?, device: String): JSONObject {
         val slot = builder(id)?.let(AgentTasks::of) ?: throw RunnerFault(404, "no such approval")
         val pending = slot.pending.firstOrNull { it.nonce == approval } ?: throw RunnerFault(404, "approval already answered")
         val reply = phoneRunnerDecision(pending, nonce, decision, answers)
-        val outcome = try { slot.decide(context, pending.id, nonce, reply.allow, reply.answers) }
+        val outcome = try { AgentTasks.answerApproval(context, pending.id, nonce, reply.allow, reply.answers, device) }
             catch (_: IllegalArgumentException) { throw RunnerFault(400, "invalid question form") }
         when (outcome) {
             ApprovalOutcome.Decided -> return JSONObject()

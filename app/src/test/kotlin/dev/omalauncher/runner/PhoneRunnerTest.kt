@@ -13,7 +13,7 @@ class PhoneRunnerTest {
         }
         override fun events(id: String, after: Long) = listOf(JSONObject().put("id", 1).put("type", "message").put("text", "hello")).filter { it.getLong("id") > after }
         override fun message(id: String, text: String): JSONObject { messages++; return JSONObject().put("taken", "now") }
-        override fun answer(id: String, approval: String, nonce: String, decision: String, answers: JSONObject?): JSONObject {
+        override fun answer(id: String, approval: String, nonce: String, decision: String, answers: JSONObject?, device: String): JSONObject {
             if (answered) throw RunnerFault(404, "already answered")
             if (nonce != this.nonce) throw RunnerFault(403, "wrong nonce")
             answered = true
