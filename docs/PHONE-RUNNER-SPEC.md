@@ -102,7 +102,7 @@ Unknown/non-owner callers and wrong device/key are refused. Live whois lookups a
 If every Mac helper is unavailable, a paired key may authenticate only from the address last confirmed for that
 exact key, for at most seven days since that confirmation (Boss's bounded-cache decision, 2026-10-28).
 Cache hits never extend that timestamp. A reachable helper's refusal overrides and clears the matching cached
-proof; address mismatch, expiry and clock rollback fail closed. Rekey/unpair removes that key's old proof.
+proof. An older runner's generic missing-route 404 is service unavailability, not an owner refusal; another configured Mac is tried. Address mismatch, expiry and clock rollback fail closed. Rekey/unpair removes that key's old proof.
 Legacy digest-only pairings require an online confirmation before offline use. The phone's own VPN address
 has the same bounded confirmation rule for rebinding; an absent VPN or a different unconfirmed address never binds.
 Loopback and every local interface address are rejected from the raw socket peer before credential lookup,
