@@ -142,6 +142,7 @@ class DesktopChatHost(
 
     override fun tryMacAgain(time: Long) = engine.tryAgain(time)
 
+    override fun answerMacQuestions(ticket: String, answers: org.json.JSONObject, done: (MacApprovalOutcome) -> Unit) = engine.answerQuestions(ticket, answers, done)
     override fun answerMac(ticket: String, allow: Boolean, done: (MacApprovalOutcome) -> Unit) = engine.answer(ticket, allow, done)
     override fun rememberMacCommand(ticket: String, done: (MacApprovalOutcome) -> Unit) = engine.rememberCommand(ticket, done)
     override fun forgetMacCommands(threadId: String, done: (String) -> Unit) = engine.forgetCommands(threadId, done)
