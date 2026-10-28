@@ -1,0 +1,36 @@
+# A new chat's mode (desktop parity slice 6, Boss 2026-10-28): a row under "on" and "with" that says what each mode means;
+# it only sets how the thread is made. The fictional chat fixture runs production OmaChatScreen, with two computers;
+# nothing is sent and nothing is answered. Prerequisite: -PartifactPreview :artifact-preview:assembleDebug installed (its newChat extra opens a new chat).
+fold folded
+rotate portrait
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --ez newChat true
+wait 2500
+expect on
+expect auto · acts without asking
+# Look: under "on [Mac Pro]" and "with [Claude]", "runs [auto · acts without asking]", the same small grey word and accent bracket.
+shot cover-mode-row
+tap auto · acts without asking
+expect Claude runs
+expect manual · asks before edits and commands
+# Look: the menu over the chat, titled "Claude runs", the two modes, each saying what it does.
+shot cover-mode-menu
+tap manual · asks before edits and commands
+expect manual · asks before edits and commands
+absent Claude runs
+# Look: the row now says "[manual · asks before edits and commands]".
+shot cover-mode-manual
+key BACK
+fold open
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --ez newChat true
+wait 2500
+expect auto · acts without asking
+# Look: the three rows centred under the chat's welcome, the mode row last.
+shot unfolded-mode-row
+tap auto · acts without asking
+tap manual · asks before edits and commands
+expect manual · asks before edits and commands
+shot unfolded-mode-manual
+key BACK
+[phone] In Soma chat on the Fold, a new chat shows "runs [auto · acts without asking]"; picking manual and sending makes the thread on the Mac in manual (its first request comes as a card); no card is answered by anything but his tap

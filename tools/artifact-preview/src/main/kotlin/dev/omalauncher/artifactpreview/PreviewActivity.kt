@@ -48,7 +48,10 @@ class PreviewActivity : ComponentActivity() {
                         dev.omalauncher.ui.PhoneRunnerSetting(pairing) { finish() }
                     } else {
                     val empty = intent.getBooleanExtra("empty", false)
-                    OmaChatScreen(remember { PreviewHost(this@PreviewActivity, empty, intent.getStringExtra("mail"), intent.getBooleanExtra("questions", false), intent.getStringExtra("waitingQuestion")) }, null, {}, if (empty) PHONE_THREAD_B else OMA_TAB, {})
+                    val host = remember { PreviewHost(this@PreviewActivity, empty, intent.getStringExtra("mail"), intent.getBooleanExtra("questions", false), intent.getStringExtra("waitingQuestion")) }
+                    // --ez newChat true: opens on a new chat, with its pick rows (computer, agent, model, mode; slice 6).
+                    val start = remember { if (intent.getBooleanExtra("newChat", false)) dev.omalauncher.oma.newChatTab(host) else if (empty) PHONE_THREAD_B else OMA_TAB }
+                    OmaChatScreen(host, null, {}, start, {})
                     }
                 }
             }
