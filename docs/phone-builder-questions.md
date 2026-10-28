@@ -46,3 +46,13 @@ sends through the same once-only path. Multi-select and Other text retain explic
 Send so the first selection/keystroke cannot prematurely submit them. New unit
 cases cover both, and the builder walk covers the final-choice shortcut at both
 Fold sizes.
+
+Checkpointfe6034ca: lane B app/desktop compilation, preview build and all109
+targeted tests PASS, including four BuilderQuestionSubmitTest cases (long footer,
+notification tab/nonce, final single-choice send, multi-select explicit Send).
+Earlierbaf029d4 builder/waiting walks were disrupted (Home screenshots/adb failures),
+so they are not counted as passes; Skip alone passed there. Latest three walks
+are queued behind lane C's shared emulator lock (held since16:48:29). No other
+lane was disturbed. Cover/unfolded LOOK review and actual-phone owner check remain
+pending. Final single-choice selection is an explicitly labelled send action;
+there is no post-send undo. No real questions/financial choices were answered.
