@@ -143,7 +143,13 @@ class DesktopCanvas(private val file: File, private val device: String, private 
     var shown: String by mutableStateOf(DESKTOP_PAGE)
 
     /** What is on the page the window shows: the chat, and that page's blocks. */
-    fun items(): List<NotebookItem> = itemsOn(shown()).let { on -> if (shown() == DESKTOP_PAGE) on else chatItem()?.let { listOf(it) + on } ?: on }
+    fun items(): List<NotebookItem> = blocksOn(shown())
+
+    /** What is on the page [id] as the window shows it: the chat, drawn on every page, and that page's blocks. */
+    fun blocksOn(id: String): List<NotebookItem> = itemsOn(id).let { on -> if (id == DESKTOP_PAGE) on else chatItem()?.let { listOf(it) + on } ?: on }
+
+    /** The page the window shows: [shown], or the first when that one has gone. What is drawn and stuck on a page goes by this id. */
+    val showing: String get() = shown()
 
     private fun itemsOn(id: String) = page.pages.firstOrNull { it.id == id }?.items.orEmpty()
 

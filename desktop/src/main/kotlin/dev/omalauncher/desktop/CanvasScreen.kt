@@ -63,6 +63,23 @@ import dev.omalauncher.ui.MenuTitle
 import dev.omalauncher.ui.Pack
 import dev.omalauncher.widgets.Cell
 import dev.omalauncher.widgets.layout.CanvasVerb
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.layout.boundsInParent
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.zIndex
+import dev.omalauncher.ui.Chosen
+import dev.omalauncher.ui.InkLayer
+import dev.omalauncher.ui.InkToolKeys
+import dev.omalauncher.ui.InkToolWords
+import dev.omalauncher.ui.LiveInk
+import dev.omalauncher.ui.LocalStickerShelf
+import dev.omalauncher.ui.NoteEditor
+import dev.omalauncher.ui.PageScraps
+import dev.omalauncher.ui.StickerPicker
+import dev.omalauncher.widgets.annotations.NoteRole
+import dev.omalauncher.widgets.annotations.PageArea
 import kotlin.math.roundToInt
 
 /** Below this width the window is the chat alone: the canvas is kept as it is and comes back when there is room. */
@@ -112,8 +129,11 @@ private fun ChatElsewhere(open: () -> Unit) {
  * module from [source], at the size its cells give it. A tap on a module opens that thread's tab in the chat block; a
  * right-click offers to add a module, remove one or arrange; while arranging, a block is moved by dragging it and resized
  * by its corner, and every change is a verb in the canvas's log. [now] changes when the modules may show something new.
+ *
+ * With [scraps] (the dashboard window, desktop slice 5b) each page also has the phone home's notes, stickers and ink over
+ * its blocks: the page's right-click menu adds a note or a sticker or draws; a click opens a note's text, a right-click on
+ * a note or sticker selects it (its bar edits, turns or deletes it, its corner resizes it), and a drag moves it.
  */
-@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun CanvasScreen(
     canvas: DesktopCanvas,
@@ -124,12 +144,41 @@ fun CanvasScreen(
     onTab: (String?) -> Unit,
     chatElsewhere: (() -> Unit)? = null,
     widgets: WindowWidgets? = null,
+    /** The page's notes, stickers and ink (the dashboard window's, desktop slice 5b); without them it has none. */
+    scraps: DesktopScraps? = null,
+) {
+    // The stickers' pictures, for the page's stickers and the picker in its menu.
+    CompositionLocalProvider(LocalStickerShelf provides scraps?.shelf) { CanvasPage(canvas, host, source, now, wanted, onTab, chatElsewhere, widgets, scraps) }
+}
+
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+private fun CanvasPage(
+    canvas: DesktopCanvas,
+    host: ChatHost,
+    source: ModuleSource,
+    now: Long,
+    wanted: String?,
+    onTab: (String?) -> Unit,
+    chatElsewhere: (() -> Unit)?,
+    widgets: WindowWidgets?,
+    scraps: DesktopScraps?,
 ) {
     var arranging by remember { mutableStateOf(false) }
     // The right-click menu, and the block it was asked over (null: the page).
     var menuOver by remember { mutableStateOf<String?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
+    // Where on the page the menu was asked for, and the stickers offered in it in place of its items.
+    var menuAt by remember { mutableStateOf<Offset?>(null) }
+    var stickersOffered by remember { mutableStateOf(false) }
+    // Where the page is, for the notes, stickers and ink on it; set as the page is laid out.
+    val sheet = remember { Sheet() }
     BackHandler(enabled = arranging && !menuOpen) { arranging = false }
+    if (scraps != null) {
+        // Escape leaves drawing, then lets go of the note or sticker selected; an open note's own editor takes it first.
+        BackHandler(enabled = scraps.drawing && !menuOpen) { scraps.stopDrawing() }
+        BackHandler(enabled = scraps.marks.selected != null && !menuOpen) { scraps.marks.selected = null }
+    }
     // Escape closes the menu first, as the chat's own menus do, before anything else takes it.
     BackHandler(enabled = menuOpen) { menuOpen = false }
     // One chat, moved between the canvas and the chat-alone window rather than made again: what he was typing, the open
@@ -137,7 +186,7 @@ fun CanvasScreen(
     val wantedNow by rememberUpdatedState(wanted)
     val onTabNow by rememberUpdatedState(onTab)
     val chat = remember(host) { movableContentOf { OmaChatScreen(host, prefill = null, onPrefilled = {}, wanted = wantedNow, onTab = { onTabNow(it.takeIf { tab -> tab != OMA_TAB }) }) } }
-    BoxWithConstraints(Modifier.fillMaxSize().background(Pack.background)) {
+    BoxWithConstraints(Modifier.fillMaxSize().background(Pack.background).then(if (scraps != null) Modifier.scrapsByMouse(scraps, sheet) else Modifier)) {
         if (maxWidth < CANVAS_ROOM && chatElsewhere == null) {
             chat()
             canvas.unkept?.let { why -> Unkept(why, Modifier.align(Alignment.TopEnd)) }
@@ -160,7 +209,8 @@ fun CanvasScreen(
         val pitch = with(density) { Offset((cellW + GAP).toPx(), (cellH + GAP).toPx()) }
         // A right-click on the page itself.
         Box(Modifier.fillMaxSize().onPointerEvent(PointerEventType.Press, PointerEventPass.Initial) { e ->
-            if (e.buttons.isSecondaryPressed) { menuOver = null; menuOpen = true }
+            // Not one a note or sticker took (a right-click selects it).
+            if (e.buttons.isSecondaryPressed && e.changes.none { it.isConsumed }) { menuOver = null; menuAt = e.changes.firstOrNull()?.position; stickersOffered = false; menuOpen = true }
         })
         for (item in canvas.items()) {
             val cell = item.cell ?: continue
@@ -169,7 +219,7 @@ fun CanvasScreen(
                 key(item.key) {
                     Block(
                         item.key, cell, arranging, pitch, Modifier.offset(x(cell.x), y(cell.y)).size(w(cell.w), h(cell.h)),
-                        onRightClick = { menuOver = item.key; menuOpen = true },
+                        onRightClick = { menuOver = item.key; stickersOffered = false; menuOpen = true },
                         onMove = { to -> canvas.apply(CanvasVerb.Move(item.key, canvas.shown, to)) },
                         onRemove = { canvas.apply(CanvasVerb.Remove(item.key)) },
                     ) {
@@ -191,7 +241,7 @@ fun CanvasScreen(
                     // The chat's own right-click is its (paste, copy): the canvas's menu is asked over a module or the page. The
                     // chat's block still takes a right-click, doing nothing, so one on its header or margins never falls through
                     // to the page beneath it (round-2 Critic).
-                    onRightClick = if (ref.kind == ModuleKind.Chat) ({}) else ({ menuOver = item.key; menuOpen = true }),
+                    onRightClick = if (ref.kind == ModuleKind.Chat) ({}) else ({ menuOver = item.key; stickersOffered = false; menuOpen = true }),
                     // On the page it is on: the chat's own, or the one shown.
                     onMove = { to -> canvas.apply(CanvasVerb.Move(item.key, if (ref.kind == ModuleKind.Chat) DESKTOP_PAGE else canvas.shown, to)) },
                     onRemove = { canvas.apply(CanvasVerb.Remove(item.key)) },
@@ -207,6 +257,43 @@ fun CanvasScreen(
                     }
                 }
             }
+        }
+        if (scraps != null) {
+            // The page's notes and stickers over its blocks, and its ink over them all, as on the phone's home (desktop slice
+            // 5b): the page is the blocks' own rectangle, inside the room the pack's shadows are given at the window's edges.
+            val page = canvas.showing
+            val area = with(density) { IntRect(reach.left.roundToPx(), reach.top.roundToPx(), (maxWidth - reach.right).roundToPx(), (maxHeight - strip - reach.bottom).roundToPx()) }
+            scraps.pageWidth = (maxWidth - reach.left - reach.right).value
+            scraps.pageHeight = (maxHeight - strip - reach.top - reach.bottom).value
+            scraps.gap = GAP.value
+            sheet.page = page
+            sheet.area = PageArea(area.left.toFloat(), area.top.toFloat(), area.width.toFloat(), area.height.toFloat())
+            sheet.tall = scraps.pageHeight / scraps.pageWidth
+            val ids = pages.map { it.id }.toSet()
+            LaunchedEffect(scraps, ids) { scraps.pagesAre(ids) }
+            LaunchedEffect(scraps, page) { scraps.book.open(page) }
+            PageScraps(scraps.book, scraps.marks, page, area, constraints.maxWidth, area.bottom, scraps.arrivals, textScale = DESKTOP_TEXT_SCALE)
+            InkLayer(scraps.book.on(page).strokes, area, Modifier.zIndex(1f))
+            if (scraps.drawing) {
+                LiveInk(scraps.marks, Modifier.zIndex(4f))
+                // The drawing tools, above the bar: what a click on them does is theirs, not the pen's.
+                Box(Modifier.align(Alignment.BottomCenter).padding(bottom = strip + GAP).zIndex(5f).onGloballyPositioned { sheet.tools = it.boundsInParent() }) {
+                    fun write(role: NoteRole) {
+                        if (!scraps.book.takes(page)) return
+                        scraps.stopDrawing()
+                        scraps.book.addNote(page, role = role)?.let {
+                            scraps.arrivals.expect(it, null)
+                            scraps.marks.editing = Chosen(page, it)
+                        }
+                    }
+                    val sticker = { menuOver = null; menuAt = null; stickersOffered = true; menuOpen = true }
+                    if (Pack.ownsPage) InkToolKeys(scraps.marks, page, 1f, ::write, sticker, scraps::stopDrawing, Modifier.semantics { contentDescription = "drawing tools" })
+                    else Box(Modifier.widthIn(max = 640.dp)) { InkToolWords(scraps.marks, page, ::write, sticker, scraps::stopDrawing, Modifier.semantics { contentDescription = "drawing tools" }) }
+                }
+            } else {
+                sheet.tools = null
+            }
+            scraps.book.notice?.let { said -> Unkept(said, Modifier.align(Alignment.TopStart).zIndex(5f).clickable { scraps.book.notice = null }) }
         }
         canvas.unkept?.let { why -> Unkept(why, Modifier.align(Alignment.TopEnd)) }
         if (strip > 0.dp) {
@@ -228,7 +315,24 @@ fun CanvasScreen(
             }
         }
     }
-    if (menuOpen) {
+    if (menuOpen && stickersOffered && scraps != null) {
+        // The stickers to pick from, as the phone's home menu turns into them: the one picked goes where the menu was asked.
+        val page = canvas.showing
+        val near = menuAt?.let { sheet.area.across(it.x) to sheet.area.down(it.y) }
+        Menu(onDismiss = { menuOpen = false }) {
+            MenuTitle("stick on this page")
+            StickerPicker { choice, from ->
+                menuOpen = false
+                scraps.stopDrawing()
+                scraps.book.stick(page, choice, near) { stuck ->
+                    if (stuck != null) {
+                        scraps.arrivals.expect(stuck, from)
+                        scraps.marks.selected = Chosen(page, stuck)
+                    }
+                }
+            }
+        }
+    } else if (menuOpen) {
         val over = menuOver?.let { moduleRef(it) }
         Menu(onDismiss = { menuOpen = false }) {
             if (menuOver != null && widgets != null && canvas.items().any { it.key == menuOver && it.kind == ItemKind.Widget }) {
@@ -246,6 +350,28 @@ fun CanvasScreen(
             MenuItem(if (arranging) "done arranging" else "arrange") {
                 arranging = !arranging
                 menuOpen = false
+            }
+            // On the page itself: a note, a sticker or ink, as the phone's home menu offers them, on the page shown.
+            if (scraps != null && menuOver == null) {
+                val page = canvas.showing
+                val near = menuAt?.let { sheet.area.across(it.x) to sheet.area.down(it.y) }
+                MenuItem("add a note") {
+                    menuOpen = false
+                    if (scraps.book.takes(page)) {
+                        scraps.book.addNote(page, near)?.let {
+                            scraps.arrivals.expect(it, null)
+                            scraps.marks.editing = Chosen(page, it)
+                        }
+                    }
+                }
+                MenuItem("add a sticker") { if (scraps.book.takes(page)) stickersOffered = true else menuOpen = false }
+                MenuItem(if (scraps.drawing) "done drawing" else "draw") {
+                    menuOpen = false
+                    if (scraps.drawing) scraps.stopDrawing() else {
+                        scraps.marks.selected = null
+                        scraps.drawing = true
+                    }
+                }
             }
             // The library's widgets not on the canvas yet; one he hasn't approved here waits for his OK in Needs you.
             val widgetsOffered = widgets?.names().orEmpty().filter { !canvas.has(it) }
@@ -266,6 +392,8 @@ fun CanvasScreen(
             }
         }
     }
+    // A note's text, typed in over the window as on the phone.
+    if (scraps != null) NoteEditor(scraps.marks)
 }
 
 /** Says the canvas isn't being kept, top right, at any width. */
@@ -310,7 +438,7 @@ private fun Block(
     Box(
         modifier
             .graphicsLayer { translationX = drag.x; translationY = drag.y }
-            .then(if (onRightClick == null) Modifier else Modifier.onPointerEvent(PointerEventType.Press, PointerEventPass.Initial) { e -> if (e.buttons.isSecondaryPressed) onRightClick() }),
+            .then(if (onRightClick == null) Modifier else Modifier.onPointerEvent(PointerEventType.Press, PointerEventPass.Initial) { e -> if (e.buttons.isSecondaryPressed && e.changes.none { it.isConsumed }) onRightClick() }),
     ) {
         content()
         if (arranging) {
