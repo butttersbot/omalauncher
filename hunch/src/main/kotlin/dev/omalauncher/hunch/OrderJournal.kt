@@ -17,10 +17,19 @@ internal data class JournalOrder(val id: String, val cloid: String, val stage: O
  * Persist Submitting BEFORE touching the exchange. An interrupted send becomes Unknown on reopen.
  * Unknown must be reconciled by cloid; there is deliberately no resubmit transition.
  */
-internal class OrderJournal(private val file: File) {
+internal class OrderJournal(private val file: File) : java.io.Closeable {
+    private val lockChannel: FileChannel
+    private val lock: java.nio.channels.FileLock
+    private var closed = false
+    private var failed = false
     private val rows = linkedMapOf<String, JournalOrder>()
     init {
-        if (file.exists()) {
+        file.absoluteFile.parentFile.mkdirs()
+        lockChannel = FileChannel.open(File(file.absoluteFile.parentFile, file.name + ".lock").toPath(),
+            StandardOpenOption.CREATE, StandardOpenOption.WRITE)
+        lock = try { checkNotNull(lockChannel.tryLock()) { "Order journal already open" } }
+            catch (e: Exception) { lockChannel.close(); throw IllegalStateException("Order journal already open", e) }
+        try { if (file.exists()) {
             require(file.length() <= 4_000_000) { "Order journal too large; reconcile before trading" }
             val saved = JSONObject(file.readText())
             require(saved.getInt("version") == 1)
@@ -35,10 +44,13 @@ internal class OrderJournal(private val file: File) {
                     row.getJSONObject("ticket"), row.getLong("updated"), row.optString("venueId").takeIf { it.isNotEmpty() })
             }
             save() // Durable recovery before any caller can authorize a new send.
-        }
+        } } catch (e: Exception) { lock.release(); lockChannel.close(); throw e }
     }
-    @Synchronized fun all(): List<JournalOrder> = rows.values.map { it.copy(ticket = JSONObject(it.ticket.toString())) }
+    private fun usable() = check(!closed && !failed) { "Order journal unavailable; close and reconcile before continuing" }
+    @Synchronized override fun close() { if (!closed) { closed = true; lock.release(); lockChannel.close() } }
+    @Synchronized fun all(): List<JournalOrder> { usable(); return rows.values.map { it.copy(ticket = JSONObject(it.ticket.toString())) } }
     @Synchronized fun review(ticket: OrderTicket, now: Long): JournalOrder {
+        usable()
         require(ticket.fresh(now)) { "Review expired" }
         check(rows.values.none { it.stage in setOf(OrderStage.Signing, OrderStage.Submitting, OrderStage.Unknown) }) { "Reconcile the previous order first" }
         check(rows.size < 1000) { "Archive reconciled orders before continuing" }
@@ -49,6 +61,7 @@ internal class OrderJournal(private val file: File) {
         return row.copy(ticket = JSONObject(row.ticket.toString()))
     }
     @Synchronized fun transition(id: String, stage: OrderStage, now: Long, venueId: String? = null): JournalOrder {
+        usable()
         val old = checkNotNull(rows[id]) { "Unknown order" }
         val allowed = when (old.stage) {
             OrderStage.Reviewed -> setOf(OrderStage.Signing, OrderStage.Cancelled)
@@ -69,7 +82,7 @@ internal class OrderJournal(private val file: File) {
         return next.copy(ticket = JSONObject(next.ticket.toString()))
     }
     private fun persistOrRollback(id: String, old: JournalOrder?) {
-        try { save() } catch (e: Exception) { if (old == null) rows.remove(id) else rows[id] = old; throw e }
+        try { save() } catch (e: Exception) { failed = true; if (old == null) rows.remove(id) else rows[id] = old; throw e }
     }
     private fun save() {
         file.parentFile?.mkdirs()

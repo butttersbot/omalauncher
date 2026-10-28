@@ -41,14 +41,18 @@ class OrderSafetyTest {
             journal.transition(first.id, OrderStage.Signing, now)
             journal.transition(first.id, OrderStage.Submitting, now)
             assertTrue(file.readText().contains("Submitting"))
+            try { OrderJournal(file); fail("A second controller must not overwrite the journal") } catch (_: IllegalStateException) {}
+            journal.close()
             val recovered = OrderJournal(file)
             val row = recovered.all().single()
             assertEquals(first.cloid, row.cloid); assertEquals(OrderStage.Unknown, row.stage)
             refuses { recovered.transition(row.id, OrderStage.Submitting, now) }
             try { recovered.review(ticket(), now); fail("Uncertain send must block another order") } catch (_: IllegalStateException) {}
             recovered.transition(row.id, OrderStage.Filled, now + 1, "fixture-order-id")
-            assertEquals("fixture-order-id", OrderJournal(file).all().single().venueId)
+            assertEquals("fixture-order-id", recovered.all().single().venueId)
             assertEquals(2, recovered.run { review(ticket(), now + 2); all().size })
+            recovered.close()
+            OrderJournal(file).use { assertEquals("fixture-order-id", it.all().first().venueId) }
         } finally { dir.deleteRecursively() }
     }
     @Test fun expiredReviewNeverSignsAndCorruptJournalNeverStartsEmpty() {
@@ -58,6 +62,7 @@ class OrderSafetyTest {
             val journal = OrderJournal(file)
             val first = journal.review(ticket(), now)
             refuses { journal.transition(first.id, OrderStage.Signing, now + 30_001) }
+            journal.close()
             file.writeText("not-json")
             try { OrderJournal(file); fail("Corruption must block trading") } catch (_: org.json.JSONException) {}
         } finally { dir.deleteRecursively() }
