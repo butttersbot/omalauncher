@@ -10,7 +10,10 @@ class OrderSafetyTest {
     private fun d(s: String) = BigDecimal(s)
     private val owner = OwnerOrderLimit("0x1111111111111111111111111111111111111111", d("1"))
     private val rules = VenueOrderRules(100_000_010, "Fictional market", "Yes", d("0.01"), d("0.1"), d("0.1"), d("0.1"), now)
-    private fun ticket() = OrderTickets.prepare(owner, rules, d("0.30"), d("1"), d("0.01"), d("1"), now)
+    private fun prepare(owner: OwnerOrderLimit, rules: VenueOrderRules, price: BigDecimal, budget: BigDecimal,
+                        fees: BigDecimal, available: BigDecimal, now: Long) =
+        OrderTickets.prepareFunded(owner, rules, price, budget, fees, FundingSnapshot(owner.wallet, now, null, null, available), now)
+    private fun ticket() = prepare(owner, rules, d("0.30"), d("1"), d("0.01"), d("1"), now)
     private fun refuses(block: () -> Unit) { try { block(); fail("Must refuse") } catch (_: IllegalArgumentException) {} }
     @Test fun roundsSizeDownAndIncludesFeesInsideTheOwnersLimit() {
         val t = ticket()
@@ -27,15 +30,15 @@ class OrderSafetyTest {
         refuses { OrderTickets.prepareFunded(owner, rules, d("0.30"), d("1"), d("0.01"), funding.copy(checkedAt = now - 30_001), now) }
     }
     @Test fun neverIncreasesBudgetToMeetVenueMinimum() {
-        refuses { OrderTickets.prepare(owner, rules.copy(minimumNotional = d("10")), d("0.30"), d("1"), d("0.01"), d("20"), now) }
-        refuses { OrderTickets.prepare(owner, rules, d("0.30"), d("2"), d("0"), d("20"), now) }
-        refuses { OrderTickets.prepare(owner, rules, d("0.30"), d("1"), d("0"), d("0.5"), now) }
+        refuses { prepare(owner, rules.copy(minimumNotional = d("10")), d("0.30"), d("1"), d("0.01"), d("20"), now) }
+        refuses { prepare(owner, rules, d("0.30"), d("2"), d("0"), d("20"), now) }
+        refuses { prepare(owner, rules, d("0.30"), d("1"), d("0"), d("0.5"), now) }
     }
     @Test fun refusesStaleFutureMispricedAndUnverifiedOutcomeInputs() {
         for (bad in listOf(rules.copy(checkedAt = now - 30_001), rules.copy(checkedAt = now + 1), rules.copy(asset = 0), rules.copy(sizeStep = d("0")))) {
-            refuses { OrderTickets.prepare(owner, bad, d("0.30"), d("1"), d("0"), d("1"), now) }
+            refuses { prepare(owner, bad, d("0.30"), d("1"), d("0"), d("1"), now) }
         }
-        for (price in listOf("0", "1", "0.301", "-1")) refuses { OrderTickets.prepare(owner, rules, d(price), d("1"), d("0"), d("1"), now) }
+        for (price in listOf("0", "1", "0.301", "-1")) refuses { prepare(owner, rules, d(price), d("1"), d("0"), d("1"), now) }
     }
     @Test fun persistsClientIdBeforeSendAndRecoveryRequiresReconciliation() {
         val dir = Files.createTempDirectory("hunch-order-test").toFile()

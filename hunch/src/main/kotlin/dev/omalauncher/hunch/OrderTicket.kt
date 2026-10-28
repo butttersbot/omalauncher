@@ -28,7 +28,7 @@ internal object OrderTickets {
         require(readiness.tradingCashReady) { readiness.message }
         return prepare(owner, rules, price, budget, feeRateCeiling, checkNotNull(funding.venueAvailableUsdc), now)
     }
-    fun prepare(owner: OwnerOrderLimit, rules: VenueOrderRules, price: BigDecimal,
+    private fun prepare(owner: OwnerOrderLimit, rules: VenueOrderRules, price: BigDecimal,
                 budget: BigDecimal, feeRateCeiling: BigDecimal, available: BigDecimal, now: Long): OrderTicket {
         require(WalletAmounts.address(owner.wallet)) { "Verify the signing wallet" }
         require(owner.maximumLoss.signum() > 0 && budget.signum() > 0 && budget <= owner.maximumLoss) { "Owner's loss limit exceeded" }
