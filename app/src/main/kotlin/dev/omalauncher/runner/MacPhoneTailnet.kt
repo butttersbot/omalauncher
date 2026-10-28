@@ -35,6 +35,9 @@ class MacPhoneTailnet(
                     val stream = if (code == 200) connection.inputStream else connection.errorStream
                     val bytes = stream?.use { it.readBytesLimited(262_144) }
                     val json = bytes?.let { runCatching { JSONObject(it.toString(Charsets.UTF_8)) }.getOrNull() }
+                    // Old runners return a generic 404 for a helper route they do not implement.
+                    // Only the helper's explicit owner:false is an authoritative whois refusal.
+                    if (code == 404 && path.startsWith("/phone-runner/whois?") && json?.has("owner") != true) return@runCatching null
                     if (json == null) Reply(400, JSONObject()) else Reply(code, json)
                 } finally { connection.disconnect() }
             }.getOrNull()
