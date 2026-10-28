@@ -18,6 +18,10 @@ import dev.omalauncher.oma.OMA_TAB
 import dev.omalauncher.oma.OmaChatScreen
 import dev.omalauncher.ui.Pack
 import androidx.compose.foundation.background
+import androidx.compose.foundation.draganddrop.dragAndDropTarget
+import androidx.compose.ui.draganddrop.awtTransferable
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
@@ -47,6 +51,7 @@ import kotlin.system.exitProcess
  * time: starting it again, or `soma --toggle` (a Hyprland bind or a macOS shortcut), shows or hides the window that
  * runs. Closing the window hides it; the tray's Quit ends it. Escape is Back: it closes a menu first, then hides.
  */
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 fun main(args: Array<String>) {
     // `soma canvas …`: Soma's front agent arranging the running Soma's canvas (slice 6). Says its answer and ends; no window.
     if (args.firstOrNull() == "canvas") exitProcess(CanvasDoor.client(args.drop(1)))
@@ -206,14 +211,28 @@ fun main(args: Array<String>) {
             visible = shown,
             title = "Soma",
             state = rememberWindowState(size = DpSize(1240.dp, 820.dp)),
-            onPreviewKeyEvent = { e -> escape(e, chatBack) { shown = false } },
+            onPreviewKeyEvent = { e ->
+                // A picture on the clipboard (a screenshot, or image files copied in Finder) is pasted into the chat as one
+                // picked; anything else pastes as before.
+                if (e.type == KeyEventType.KeyDown && e.key == Key.V && (e.isMetaPressed || e.isCtrlPressed) && host.arrived(picturesOnClipboard())) true
+                else escape(e, chatBack) { shown = false }
+            },
         ) {
             // Each time it is shown, it comes to the screen he is on (Boss, 2026-10-19: after a restart macOS put it on
             // the other monitor's Space, and show only made it visible there).
             androidx.compose.runtime.LaunchedEffect(shown, bring) { if (shown) toPointerScreen(window) }
             // The unfolded phone's chat (Boss, 2026-10-28): two panes once there is an artifact, a question or the files beside it.
             CompositionLocalProvider(LocalBackStack provides chatBack) {
-                Box(Modifier.fillMaxSize().background(Pack.background)) {
+                // Pictures dropped on the window go into the chat as picked ones.
+                val drops = remember {
+                    object : androidx.compose.ui.draganddrop.DragAndDropTarget {
+                        override fun onDrop(event: androidx.compose.ui.draganddrop.DragAndDropEvent): Boolean = host.arrived(picturesIn(event.awtTransferable))
+                    }
+                }
+                Box(Modifier.fillMaxSize().background(Pack.background).dragAndDropTarget(shouldStartDragAndDrop = { event ->
+                    val t = event.awtTransferable
+                    t.isDataFlavorSupported(java.awt.datatransfer.DataFlavor.javaFileListFlavor) || t.isDataFlavorSupported(java.awt.datatransfer.DataFlavor.imageFlavor)
+                }, target = drops)) {
                     OmaChatScreen(host, prefill = null, onPrefilled = {}, wanted = wanted, onTab = { wanted = it.takeIf { tab -> tab != OMA_TAB } })
                 }
             }

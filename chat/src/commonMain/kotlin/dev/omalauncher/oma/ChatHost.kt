@@ -252,6 +252,13 @@ interface ChatHost {
     @Composable
     fun rememberImagePicker(max: Int, onPicked: (List<PickedImage>) -> Unit): () -> Unit
 
+    /**
+     * Pictures that come without the picker, the desktop's paste and drop, go to [onPicked] while the chat is on screen.
+     * The phone has none.
+     */
+    @Composable
+    fun rememberImageArrivals(onPicked: (List<PickedImage>) -> Unit) {}
+
     /** [picked] copied in for the agent. Blocks; throws with why it couldn't. */
     fun importImage(picked: PickedImage): PromptImage
 
