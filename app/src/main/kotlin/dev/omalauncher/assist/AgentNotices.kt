@@ -115,7 +115,7 @@ internal object AgentNotices {
             return
         }
         val approval = entry.approval
-        val title = builderApprovalTitle(approval.tool, builder)
+        val title = if (approval.tool == "AskUserQuestion") "${builder.title} has questions" else builderApprovalTitle(approval.tool, builder)
         val review = PendingIntent.getActivity(context, ApprovalIds.requestCode(entry.slot, ApprovalVerb.Review), reviewIntent(context, entry), FLAGS)
         fun action(verb: ApprovalVerb, label: String): Notification.Action {
             val code = ApprovalIds.requestCode(entry.slot, verb)
@@ -130,7 +130,7 @@ internal object AgentNotices {
         }
         val locked = Notification.Builder(context, APPROVAL_CHANNEL).setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title).setContentText("Unlock to review").build()
-        val detail = listOf(approval.explanation.take(300), approval.detail.take(1200), "Approve once allows this action only.")
+        val detail = listOf(approval.explanation.take(300), approval.detail.take(1200), if (approval.tool == "AskUserQuestion") "Choose your answers and press Send answers. Opening the form sends nothing." else "Approve once allows this action only.")
             .filter { it.isNotBlank() }.joinToString("\n\n")
         manager(context).notify(ApprovalIds.tag(entry.id), entry.notificationId, Notification.Builder(context, APPROVAL_CHANNEL)
             .setSmallIcon(R.drawable.ic_notification).setContentTitle(title).setContentText(approval.detail.take(180))
@@ -253,6 +253,12 @@ class MacApprovalReceiver : BroadcastReceiver() {
 class ApprovalActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val ticket = ApprovalTicket.parse(intent.dataString)?.takeIf { it.verb != ApprovalVerb.Review } ?: return AgentNotices.expired(context)
+        val entry = AgentTasks.pending.firstOrNull { it.id == ticket.id && it.nonce == ticket.nonce }
+        if (entry?.approval?.tool == "AskUserQuestion") {
+            // Old notification intents must open the form, never deny the question or allow it without answers.
+            context.startActivity(AgentNotices.reviewIntent(context, entry))
+            return
+        }
         when (AgentTasks.answerApproval(context, ticket.id, ticket.nonce, allow = ticket.verb == ApprovalVerb.Approve)) {
             ApprovalOutcome.Decided -> Unit
             ApprovalOutcome.Locked -> AgentNotices.locked(context)
