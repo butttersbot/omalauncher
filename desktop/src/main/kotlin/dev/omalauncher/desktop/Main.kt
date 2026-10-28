@@ -127,7 +127,7 @@ fun main(args: Array<String>) {
     val gate = dev.omalauncher.widgets.runtime.CommandGate(SomaHome.approved, SomaHome.machine)
     val windowWidgets = WindowWidgets(SomaHome.dir, gate)
     // The dashboard's notes, stickers and ink, kept in Soma's folder as this window's own (desktop slice 5b).
-    val scraps = DesktopScraps(canvas)
+    val scraps = DesktopScraps(canvas).also { s -> canvas.scrapCells = s::cellsUnder }
     val source = dev.omalauncher.canvas.withWidgetAsks(chatHostModules(host, cockpitFeeds(), handoffs = engine::handoffs, registry = engine::projects), gate)
     val tick = mutableStateOf(0L)
     val desk = DesktopSync(canvas, File(SomaHome.dir, "canvas-synced.json"), SomaHome.machine)
@@ -179,7 +179,7 @@ fun main(args: Array<String>) {
         var dashboardShown by dashboard
         fun showDashboard(on: Boolean) { dashboardShown = on; SomaHome.write(SomaHome.settings, SomaHome.read(SomaHome.settings).put("dashboard", on)) }
         remember {
-            notices.tray = Tray.make(onOpen = { shown = true }, onDashboard = { showDashboard(true) }, onQuit = { Single.release(); exitApplication() }, onLook = { id -> Looks.use(id); SomaHome.write(SomaHome.settings, SomaHome.read(SomaHome.settings).put("pack", id)) },
+            notices.tray = Tray.make(onOpen = { shown = true }, onDashboard = { showDashboard(true) }, onQuit = { scraps.close(); Single.release(); exitApplication() }, onLook = { id -> Looks.use(id); SomaHome.write(SomaHome.settings, SomaHome.read(SomaHome.settings).put("pack", id)) },
                 // The service is asked off the tray's thread; the code or what went wrong comes back as a notice.
                 onCar = { pair -> kotlin.concurrent.thread(name = "soma-car-pairing", isDaemon = true) {
                     notices.say("Soma", if (pair) CarPairing.start(platform.machines()) else CarPairing.end(platform.machines()))
@@ -202,7 +202,7 @@ fun main(args: Array<String>) {
             if (e.type == KeyEventType.KeyDown && e.key == Key.Escape) { if (!back.press()) close(); true } else false
         // The dashboard first, so at a start with both open the chat window is in front of it.
         if (dashboardShown) Window(
-            onCloseRequest = { showDashboard(false) },
+            onCloseRequest = { scraps.flush(); showDashboard(false) },
             title = "Soma dashboard",
             state = dashboardState,
             onPreviewKeyEvent = { e -> escape(e, dashboardBack) { showDashboard(false) } },

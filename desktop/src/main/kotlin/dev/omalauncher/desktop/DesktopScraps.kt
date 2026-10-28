@@ -1,5 +1,7 @@
 package dev.omalauncher.desktop
 
+import dev.omalauncher.widgets.Cell
+import dev.omalauncher.widgets.annotations.scraps
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -145,10 +147,37 @@ class DesktopScraps(
         pages = ids
     }
 
-    /** Draws no more: the stroke under the pointer, if any, is the page's. */
+    /** Draws no more: the stroke under the pointer, if any, is the page's, and what waits to be written is written now. */
     fun stopDrawing() {
         drawing = false
         marks.finish()
+        book.flush()
+    }
+
+    /**
+     * The cells of [page] its notes and stickers cover, so a block added there goes clear of them
+     * ([DesktopCanvas.scrapCells]), as the phone's home places a tile clear of them.
+     */
+    fun cellsUnder(page: String): List<Cell> =
+        book.on(page).scraps(pageHeight / pageWidth).map { box ->
+            val x = (box.x * DESKTOP_COLUMNS).toInt().coerceIn(0, DESKTOP_COLUMNS - 1)
+            val y = (box.y * DESKTOP_ROWS).toInt().coerceIn(0, DESKTOP_ROWS - 1)
+            val right = kotlin.math.ceil((box.x + box.w) * DESKTOP_COLUMNS).toInt().coerceIn(x + 1, DESKTOP_COLUMNS)
+            val bottom = kotlin.math.ceil((box.y + box.h) * DESKTOP_ROWS).toInt().coerceIn(y + 1, DESKTOP_ROWS)
+            Cell(x, y, right - x, bottom - y)
+        }
+
+    /** What waits to be written, written now (the dashboard is closing). Window thread. */
+    fun flush() = book.flush()
+
+    /**
+     * Soma is quitting: what waits is written, and the writing is waited for a moment, since its thread doesn't outlive
+     * the app (round-1 Critic: a note changed just before Quit was lost). Window thread.
+     */
+    fun close() {
+        book.flush()
+        io.shutdown()
+        runCatching { io.awaitTermination(3, java.util.concurrent.TimeUnit.SECONDS) }
     }
 }
 
@@ -191,7 +220,9 @@ fun Modifier.scrapsByMouse(
             if (marks.bar?.contains(IntOffset(at.x.roundToInt(), at.y.roundToInt())) == true) return@awaitEachGesture
             if (marks.editing != null) return@awaitEachGesture
             if (scraps.drawing) {
-                if (event.buttons.isPrimaryPressed) drawByMouse(down, scraps, page, area)
+                // Only on the page: the strip below it (its pages, [ add ], [ done ]) keeps its clicks (round-1 Critic).
+                val onPage = at.x >= area.left && at.x <= area.left + area.width && at.y >= area.top && at.y <= area.top + area.height
+                if (event.buttons.isPrimaryPressed && onPage) drawByMouse(down, scraps, page, area)
                 return@awaitEachGesture
             }
             val under = book.on(page).scrapAt(area.across(at.x), area.down(at.y), sheet.tall)

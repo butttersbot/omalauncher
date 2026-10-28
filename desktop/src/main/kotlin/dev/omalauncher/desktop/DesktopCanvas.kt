@@ -161,9 +161,13 @@ class DesktopCanvas(private val file: File, private val device: String, private 
     /** Whether [key] is anywhere on the canvas. */
     fun has(key: String) = page.pages.any { p -> p.items.any { it.key == key } }
 
+    /** Cells a page's notes and stickers cover (the dashboard's, DesktopScraps.cellsUnder): a new block goes clear of them too, as on the phone's home. */
+    var scrapCells: (page: String) -> List<Cell> = { emptyList() }
+
     /** The first cells of [size] nothing has on the page shown, shrinking to fit when there's no room at that size; null on a full page. */
     fun spot(size: Pair<Int, Int>): Cell? {
-        val taken = items().mapNotNull { it.cell }
+        // Clear of its notes and stickers too (round-1 Critic, slice 5: a module added landed under a note).
+        val taken = items().mapNotNull { it.cell } + scrapCells(shown())
         for (h in size.second downTo 1) for (w in size.first downTo 1) firstFit(w, h, taken, DESKTOP_COLUMNS, DESKTOP_ROWS)?.let { return it }
         return null
     }

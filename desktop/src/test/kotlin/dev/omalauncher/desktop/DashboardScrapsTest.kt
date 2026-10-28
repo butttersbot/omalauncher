@@ -60,7 +60,7 @@ class DashboardScrapsTest {
         val engine = MacThreadsEngine(platform)
         val host = DesktopChatHost(platform, engine, DesktopFrontAgent(engine, platform, notices, places = emptyList()), notices)
         val canvas = DesktopCanvas(SomaHome.canvas, "test", chat = false).also { it.load() }
-        val scraps = DesktopScraps(canvas, SomaHome.dir)
+        val scraps = DesktopScraps(canvas, SomaHome.dir).also { s -> canvas.scrapCells = s::cellsUnder }
         mainClock.autoAdvance = false
         setContent { Box(Modifier.size(1024.dp, 700.dp)) { CanvasScreen(canvas, host, chatHostModules(host), 0L, null, onTab = {}, chatElsewhere = {}, scraps = scraps) } }
         settle { scraps.book.status(canvas.showing) == AnnotationBook.Status.Ready && scraps.book.writable }
@@ -239,5 +239,50 @@ class DashboardScrapsTest {
         settle()
         assertTrue(shown.scraps.book.on(DESKTOP_PAGE).notes.isEmpty())
         assertTrue(hasText("move me").let { m -> onAllNodes(m).fetchSemanticsNodes().isEmpty() })
+    }
+
+    /** Round-1 Critic: a block added goes clear of the page's notes, as a tile does on the phone's home. */
+    @Test fun aModuleAddedGoesClearOfANote() = runComposeUiTest {
+        val shown = dashboard()
+        rightClickPage()
+        onNodeWithText("add a note").performClick()
+        settle()
+        onNode(hasSetTextAction()).performTextInput("do not cover me")
+        settle()
+        onNodeWithText("done").performClick()
+        settle()
+        val note = shown.scraps.book.on(DESKTOP_PAGE).notes.single().box()
+        runOnIdle { assertTrue(shown.canvas.add(dev.omalauncher.canvas.moduleKey(dev.omalauncher.canvas.ModuleKind.Sessions)!!).applied) }
+        settle()
+        val added = blocks(shown, DESKTOP_PAGE)
+        assertTrue("no block over the note: $note in $added", clear(note, added))
+    }
+
+    /** Round-1 Critic: while drawing, the strip under the page keeps its clicks (its pages, [ done ]). */
+    @Test fun whileDrawingTheStripUnderThePageStillWorks() = runComposeUiTest {
+        val shown = dashboard()
+        runOnIdle { shown.canvas.apply(CanvasVerb.PageMake("page2", "Two")) }
+        settle()
+        rightClickPage()
+        onNodeWithText("draw").performClick()
+        settle()
+        assertTrue(shown.scraps.drawing)
+        onNodeWithText("Two").performClick()
+        settle()
+        assertEquals("page2", shown.canvas.shown)
+        assertTrue("no stroke from the click", shown.scraps.book.on(DESKTOP_PAGE).strokes.isEmpty())
+    }
+
+    /** Round-1 Critic: what waits to be written is written when drawing stops, before the save's timer. */
+    @Test fun stoppingDrawingWritesWhatWaits() = runComposeUiTest {
+        val shown = dashboard()
+        rightClickPage()
+        onNodeWithText("draw").performClick()
+        settle()
+        onRoot().performMouseInput { moveTo(Offset(820f, 520f)); press(); moveTo(Offset(900f, 560f)); moveTo(Offset(960f, 600f)); release() }
+        runOnIdle { shown.scraps.stopDrawing() }
+        // Before the 400 ms timer would have: the files' thread alone.
+        Thread.sleep(300)
+        assertTrue("the stroke is on disk", reread(DESKTOP_PAGE).strokes.isNotEmpty())
     }
 }
