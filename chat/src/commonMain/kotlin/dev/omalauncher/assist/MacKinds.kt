@@ -194,7 +194,7 @@ fun macModeDefault(agent: String): String = MAC_MODE_AUTO
 
 /** What a mode means, in the pick row and its menu. */
 fun macModeName(mode: String): String = when (mode) {
-    MAC_MODE_MANUAL -> "manual · asks before each action"
+    MAC_MODE_MANUAL -> "manual · asks before edits and commands"
     else -> "auto · acts without asking"
 }
 

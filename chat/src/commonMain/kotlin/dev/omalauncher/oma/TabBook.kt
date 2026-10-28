@@ -123,11 +123,11 @@ private fun TabMeta.changed(id: String, change: (NewChat) -> NewChat) = copy(cha
  */
 fun TabMeta.onMac(id: String, mac: String): TabMeta = changed(id) { it.copy(mac = mac) }
 
-/** The computer, agent and model he picked for chat [id]'s thread; only a chat with no thread yet takes them. */
 /** The mode he picked for chat [id]'s thread, before its first words: nothing once it is on a thread. */
 fun TabMeta.choseMode(id: String, mode: String): TabMeta =
     changed(id) { if (it.bound || mode !in listOf(dev.omalauncher.assist.MAC_MODE_AUTO, dev.omalauncher.assist.MAC_MODE_MANUAL)) it else it.copy(mode = mode) }
 
+/** The computer, agent and model he picked for chat [id]'s thread; only a chat with no thread yet takes them. */
 fun TabMeta.chose(id: String, host: String, agent: String, model: String = ""): TabMeta =
     changed(id) { if (it.bound) it else it.copy(host = host, agent = agent, model = model.takeIf { m -> dev.omalauncher.assist.macModelOk(m) }.orEmpty()) }
 

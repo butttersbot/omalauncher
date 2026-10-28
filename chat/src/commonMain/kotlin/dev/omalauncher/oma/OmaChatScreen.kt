@@ -1046,7 +1046,7 @@ private fun ChatPicks(hosts: List<HostChoice>, chat: NewChat?, onMenu: (String) 
             // The model, where the agent has more than its own default to pick from.
             if (chatModels(on, agent).size > 1) BracketAction(pickName(macModelName(chatModelShown(on, chat))), Pack.accent) { onMenu(PICK_MODEL) }
         }
-        // How its thread is made (slice 6): auto acts without asking, manual asks before each action. Said in the row.
+        // How its thread is made (slice 6): auto acts without asking, manual asks before edits and commands. Said in the row.
         val agent = chatAgentShown(on, chat)
         if (dev.omalauncher.assist.macModes(agent).isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
             BasicText("runs", style = small)

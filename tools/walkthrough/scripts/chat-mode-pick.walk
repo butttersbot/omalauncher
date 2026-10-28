@@ -12,13 +12,13 @@ expect auto · acts without asking
 shot cover-mode-row
 tap auto · acts without asking
 expect Claude runs
-expect manual · asks before each action
+expect manual · asks before edits and commands
 # Look: the menu over the chat, titled "Claude runs", the two modes, each saying what it does.
 shot cover-mode-menu
-tap manual · asks before each action
-expect manual · asks before each action
+tap manual · asks before edits and commands
+expect manual · asks before edits and commands
 absent Claude runs
-# Look: the row now says "[manual · asks before each action]".
+# Look: the row now says "[manual · asks before edits and commands]".
 shot cover-mode-manual
 key BACK
 fold open
@@ -29,8 +29,8 @@ expect auto · acts without asking
 # Look: the three rows centred under the chat's welcome, the mode row last.
 shot unfolded-mode-row
 tap auto · acts without asking
-tap manual · asks before each action
-expect manual · asks before each action
+tap manual · asks before edits and commands
+expect manual · asks before edits and commands
 shot unfolded-mode-manual
 key BACK
 [phone] In Soma chat on the Fold, a new chat shows "runs [auto · acts without asking]"; picking manual and sending makes the thread on the Mac in manual (its first request comes as a card); no card is answered by anything but his tap

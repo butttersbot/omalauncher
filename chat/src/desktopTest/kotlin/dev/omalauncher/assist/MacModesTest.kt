@@ -20,7 +20,7 @@ class MacModesTest {
         assertEquals("a mode no agent takes is the default", MAC_MODE_AUTO, macModeFor("claude", "yolo"))
         assertEquals("none for an agent without modes", "", macModeFor("grok", MAC_MODE_MANUAL))
         assertEquals("auto · acts without asking", macModeName(MAC_MODE_AUTO))
-        assertEquals("manual · asks before each action", macModeName(MAC_MODE_MANUAL))
+        assertEquals("manual · asks before edits and commands", macModeName(MAC_MODE_MANUAL))
     }
 
     @Test fun thePickIsKeptWithTheChatUntilItsThreadIsMade() {
