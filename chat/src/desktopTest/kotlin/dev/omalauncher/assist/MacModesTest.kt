@@ -23,6 +23,20 @@ class MacModesTest {
         assertEquals("manual · asks before edits and commands", macModeName(MAC_MODE_MANUAL))
     }
 
+    @Test fun slashModeIsReadAndAnswered() {
+        assertEquals(ModeCommand.Show, modeCommand("/mode"))
+        assertEquals(ModeCommand.Show, modeCommand("  /MODE  "))
+        assertEquals(ModeCommand.Choose(MAC_MODE_MANUAL), modeCommand("/mode Manual"))
+        assertEquals(ModeCommand.Choose(MAC_MODE_AUTO), modeCommand("/mode auto"))
+        assertEquals("Not changed: type /mode auto or /mode manual.", (modeCommand("/mode yolo") as ModeCommand.Refused).why)
+        assertEquals(null, modeCommand("/model sonnet"))
+        assertEquals(null, modeCommand("what /mode is it"))
+        assertEquals("This chat runs auto · acts without asking. Type /mode manual to change it.", modeShown("claude", "Claude", MAC_MODE_AUTO))
+        assertEquals("Grok has no mode here: it always asks.", modeShown("grok", "Grok", ""))
+        assertEquals("Manual from the next message: asks before edits and commands.", modeChosen(MAC_MODE_MANUAL, made = true))
+        assertEquals("Auto from its first message: acts without asking.", modeChosen(MAC_MODE_AUTO, made = false))
+    }
+
     @Test fun thePickIsKeptWithTheChatUntilItsThreadIsMade() {
         val book = TabMeta().started("c1", 1L).choseMode("c1", MAC_MODE_MANUAL)
         assertEquals(MAC_MODE_MANUAL, book.chat("c1")!!.mode)

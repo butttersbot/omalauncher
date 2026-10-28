@@ -13,6 +13,7 @@ Only exact Codex command scopes the owner explicitly saved may reuse that decisi
   GET  /bots/ID                          one bot this machine hosts: its settings, instructions and notes (read only)
   POST /threads/ID/fresh                 a bot's session starts over: its conversation is archived, its notes stay
   POST /threads/ID/model   {model}       the Venice model a bot's session runs from its next message ("" for bot.json's)
+  POST /threads/ID/mode    {mode}        auto or manual: how a Claude or Codex thread runs from its next message (Soma's /mode)
   POST /threads   {name, project, kind, model, mode}   makes one under an allowed root; kind claude (default), codex, cursor, grok or venice;
                                          mode auto (default) or manual
   GET  /threads/ID                       one thread
@@ -883,6 +884,9 @@ def mode(meta):
     # A Mac conversation found by discovery (and its phone copy) is auto, as the phone's own Claude threads are (Boss,
     # 2026-10-22: "its bombarding me with approval cards"); the ones made before this said manual only by default,
     # since nothing lets him choose a mode for one.
+    # His own /mode in Soma (POST /threads/ID/mode) wins over every default, discovered conversations' too.
+    if meta.get('mode_choice') in MODES:
+        return meta['mode_choice']
     if meta.get('claude_external'):
         return 'auto'
     return meta.get('mode') or 'auto'
@@ -2590,6 +2594,21 @@ def choose_model(thread, model):
     return 200, {'ok': True, 'model': thread.meta['model']}
 
 
+def choose_mode(thread, wanted):
+    """POST /threads/ID/mode: how a Claude or Codex thread runs from its next message, auto or manual (Boss, 2026-10-28:
+    "just leave them on auto ... a slash command is fine"; Soma's /mode). It never answers a request. A bot keeps its own
+    /mode; Cursor and Grok are always manual. Call with `changed` held."""
+    if thread.meta.get('bot'):
+        return 400, {'ok': False, 'error': 'a bot\'s mode is its own /mode, typed in its tab'}
+    if thread.meta['kind'] not in ('claude', 'codex'):
+        return 400, {'ok': False, 'error': '%s has no mode here: it always asks' % thread.meta['kind']}
+    if wanted not in MODES:
+        return 400, {'ok': False, 'error': 'the mode is auto or manual'}
+    thread.meta['mode_choice'] = wanted
+    thread.save()
+    return 200, {'ok': True, 'mode': mode(thread.meta)}
+
+
 def fresh(thread):
     """A bot's session starts over: its conversation (and summary) go to an archive file in the bot's folder; instructions
     and notes stay. Refused while it works. Call with `changed` held."""
@@ -4222,6 +4241,10 @@ class Runner(BaseHTTPRequestHandler):
         if parts[2:] == ['fresh']:
             with changed:
                 code, result = fresh(thread)
+            return self.answer(code, result)
+        if parts[2:] == ['mode']:
+            with changed:
+                code, result = choose_mode(thread, body.get('mode'))
             return self.answer(code, result)
         if parts[2:] == ['model']:
             venice_specs_now()  # outside the lock: it may ask Venice

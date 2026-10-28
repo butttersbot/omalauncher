@@ -175,9 +175,10 @@ fun macAllLimitedEntry(task: ChatTask, installed: List<String>): ChatTask =
     task.copy(status = TaskStatus.Dropped, result = macAllLimited(installed), approvals = task.unanswerable())
 
 /*
- * A new thread's mode (desktop parity slice 6, Boss 2026-10-28: modes beside agent and model, phone and desktop alike).
- * It only says how the thread is made (the runner's POST /threads mode); nothing here answers a request. Claude and Codex
- * take either; the runner keeps Cursor and Grok manual and Venice has no tools, so they have no pick.
+ * A chat's mode (desktop parity slice 6). Boss, 2026-10-28: "just leave them on auto. we dont need ui for that just a
+ * slash command is fine": /mode in a chat, answered by Soma, phone and desktop alike. It only says how the chat's thread
+ * runs (the runner's POST /threads mode, or POST /threads/ID/mode from its next message); nothing here answers a request.
+ * Claude and Codex take either; the runner keeps Cursor and Grok manual and Venice has no tools, so they have none.
  */
 const val MAC_MODE_AUTO = "auto"
 const val MAC_MODE_MANUAL = "manual"
@@ -200,4 +201,32 @@ fun macModeName(mode: String): String = when (mode) {
 
 /** The mode a new thread is made in: [picked] when it is one [agent] takes, else its default; empty for an agent with none. */
 fun macModeFor(agent: String, picked: String): String = macModes(agent).let { modes -> picked.takeIf { it in modes } ?: modes.firstOrNull().orEmpty() }
+
+/** `/mode` typed in a chat: [Show] what it runs, or [Choose] auto or manual; [Refused] says why not. */
+sealed interface ModeCommand {
+    data object Show : ModeCommand
+
+    data class Choose(val mode: String) : ModeCommand
+
+    data class Refused(val why: String) : ModeCommand
+}
+
+/** [text] as a /mode command, or null when it is anything else and goes to the agent as his words. */
+fun modeCommand(text: String): ModeCommand? {
+    val words = text.trim().split(Regex("\\s+"))
+    if (words.firstOrNull()?.lowercase() != "/mode") return null
+    if (words.size == 1) return ModeCommand.Show
+    val wanted = words[1].lowercase()
+    if (words.size > 2 || wanted !in listOf(MAC_MODE_AUTO, MAC_MODE_MANUAL)) return ModeCommand.Refused("Not changed: type /mode auto or /mode manual.")
+    return ModeCommand.Choose(wanted)
+}
+
+/** What /mode alone says of a chat running [mode] on [agent] ([kindName] its name); [made] is whether its thread exists. */
+fun modeShown(agent: String, kindName: String, mode: String): String =
+    if (macModes(agent).isEmpty()) "$kindName has no mode here: it always asks."
+    else "This chat runs ${macModeName(mode)}. Type /mode ${if (mode == MAC_MODE_MANUAL) MAC_MODE_AUTO else MAC_MODE_MANUAL} to change it."
+
+/** What /mode NAME says once it is taken: from the next message when its thread exists ([made]), else from its first. */
+fun modeChosen(mode: String, made: Boolean): String =
+    "${if (mode == MAC_MODE_MANUAL) "Manual" else "Auto"} from ${if (made) "the next message" else "its first message"}: ${macModeName(mode).substringAfter(" · ")}."
 

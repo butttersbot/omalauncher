@@ -107,6 +107,9 @@ object MacRequests {
     /** The runner wants nothing in the body; an empty object is sent because a POST with none is not sent alike everywhere. */
     fun stop(threadId: String) = MacRequest("POST", "/threads/${part(threadId)}/stop", "{}")
 
+    /** How the thread runs from its next message, auto or manual (Soma's /mode); it answers nothing. */
+    fun setMode(threadId: String, mode: String) = MacRequest("POST", "/threads/${part(threadId)}/mode", JSONObject().put("mode", mode).toString())
+
     /** A bot's settings, instructions and notes, read only. */
     fun bot(botId: String) = MacRequest("GET", "/bots/${part(botId)}")
 
@@ -174,6 +177,8 @@ data class MacThread(
     val model: String = "",
     /** The bot this is the one session of, when it is one (docs/MAC-RUNNER-SPEC.md, "As built: bots"); null for any other thread. */
     val bot: MacBot? = null,
+    /** How it runs, auto or manual, as the runner says; empty from a runner that doesn't. */
+    val mode: String = "",
 )
 
 /**
@@ -244,6 +249,7 @@ internal fun macThread(json: JSONObject): MacThread? {
         background = json.optJSONArray("background").let { list -> (0 until (list?.length() ?: 0)).mapNotNull { (list?.opt(it) as? String)?.trim()?.takeIf(String::isNotEmpty) } },
         model = json.macText("model"),
         bot = macBot(json.optJSONObject("bot")),
+        mode = json.macText("mode"),
     )
 }
 
@@ -431,6 +437,11 @@ class MacRunnerClient(private val config: MacRunnerConfig?, private val machine:
     }
 
     fun stop(threadId: String): MacAnswer<Boolean> = parseMacStopped(send(MacRequests.stop(own(threadId))))
+
+    /** The mode the thread runs from its next message, as the runner took it. */
+    fun setMode(threadId: String, mode: String): MacAnswer<String> = macAnswer(send(MacRequests.setMode(own(threadId), mode))) { json ->
+        json.macText("mode").takeIf { it == MAC_MODE_AUTO || it == MAC_MODE_MANUAL }
+    }
 
     fun bot(botId: String): MacAnswer<MacBotFiles> = parseMacBotFiles(send(MacRequests.bot(botId)))
 

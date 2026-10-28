@@ -1,0 +1,39 @@
+# /mode in a chat (desktop parity slice 6; Boss, 2026-10-28: "just leave them on auto. we dont need ui for that just a
+# slash command is fine"). No mode row among a new chat's picks; /mode is answered by Soma in the chat, never sent to the
+# agent, never an answer to a request. The fictional chat fixture runs production OmaChatScreen and the engine's own
+# answer words. Prerequisite: -PartifactPreview :artifact-preview:assembleDebug installed (newChat opens a new chat).
+fold folded
+rotate portrait
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --ez newChat true
+wait 2500
+expect with
+absent acts without asking
+# Look: "on [Mac Pro]" and "with [Claude]" only, no mode row.
+shot cover-new-chat-no-mode-row
+tap start this chat on Mac Pro
+type /mode
+tap [ send ]
+expect This chat runs auto · acts without asking
+# Look: his "/mode", and under it Soma's answer that it runs auto and how to change it.
+shot cover-mode-shown
+tap start this chat on Mac Pro | to New chat
+type /mode manual
+tap [ send ]
+expect Manual from its first message
+# Look: Soma's answer: manual from its first message, asks before edits and commands.
+shot cover-mode-manual
+key BACK
+fold open
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --ez newChat true
+wait 2500
+absent acts without asking
+tap start this chat on Mac Pro
+type /mode
+tap [ send ]
+expect This chat runs auto · acts without asking
+# Look: the answer on the unfolded screen, nothing clipped.
+shot unfolded-mode-shown
+key BACK
+[phone] In Soma chat on the Fold, in a chat on the Mac: /mode says auto; /mode manual, then words: the Mac thread asks before an edit (a card, answered only by his tap); /mode auto: the next message runs without asking

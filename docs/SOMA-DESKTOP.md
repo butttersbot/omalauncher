@@ -33,6 +33,11 @@ most of what it does is shared with the phone from `:chat`.
 - **No pictures and no microphone** (`ChatHost.attaches`, `dictates`): a computer's own dictation (Wispr Flow, macOS
   dictation) types into the field, and pictures can't reach a thread on another computer from here, so neither button
   shows.
+- **Modes: `/mode`** (Boss, 2026-10-28: "just leave them on auto ... a slash command is fine"). Every new chat's thread
+  runs auto (acts without asking). `/mode` typed in a chat says what it runs; `/mode manual` (asks before edits and
+  commands) or `/mode auto` sets it, from the next message (the runner's POST /threads/ID/mode) or, before the chat has a
+  thread, for the one its first words make. Soma answers these itself, phone and desktop alike: nothing goes to the
+  agent and nothing answers a request. Claude and Codex only; a bot keeps its own `/mode`.
 - **One Soma at a time.** Starting it again, or `soma --toggle`, shows or hides the one that runs. Bind that to a key:
   Hyprland `bind = SUPER, A, exec, soma --toggle`; on the Mac, a Shortcuts or Raycast hotkey. Closing the window hides
   it; the tray's Quit ends it. Escape closes the open menu or panel and never hides the window (2026-10-21, again 2026-10-28). A Dock click, the tray's Open, `soma` again or a link shows the window, un-minimized and raised, on the screen under the pointer.
