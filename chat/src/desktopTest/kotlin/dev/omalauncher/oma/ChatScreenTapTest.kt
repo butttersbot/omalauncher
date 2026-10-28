@@ -305,6 +305,33 @@ class ChatScreenTapTest : ChatScreenTestBase() {
         assertEquals(listOf("ticket-1" to true, "ticket-2" to false), answered)
     }
 
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+    @Test fun needsYouQuestionSkipAnswersOnceWithoutApproveOrDenyAndClearsCount() = androidx.compose.ui.test.runComposeUiTest {
+        val input = """{"questions":[{"question":"Layout?","options":[{"label":"Cover"}],"isOtherAllowed":false}]}"""
+        val asked = dev.omalauncher.assist.MacApproval("question", "nonce", "AskUserQuestion", input, "")
+        var pending by mutableStateOf(listOf(dev.omalauncher.assist.MacPending("mac/t2", "agent", asked, "ticket", 0)))
+        var replies = 0
+        var approvals = 0
+        val host = object : SampleHost() {
+            override fun macPending() = pending
+            override fun answerMac(ticket: String, allow: Boolean, done: (MacApprovalOutcome) -> Unit) { approvals++ }
+            override fun answerMacQuestions(ticket: String, answers: org.json.JSONObject, done: (MacApprovalOutcome) -> Unit) {
+                assertEquals("ticket", ticket)
+                assertTrue(dev.omalauncher.assist.questionAnswersSkipped(answers))
+                replies++; pending = emptyList(); done(MacApprovalOutcome.Decided)
+            }
+        }
+        val source = dev.omalauncher.canvas.chatHostModules(host)
+        setContent { dev.omalauncher.canvas.NeedsYouModule(source.asks(), dev.omalauncher.canvas.ModuleSize.Card,
+            onAnswer = source::answer, onOpen = {}, onSkip = source::skipQuestion) }
+        onNodeWithText("[ skip ]").performClick()
+        waitForIdle()
+        assertEquals(1, replies)
+        assertEquals(0, approvals)
+        assertTrue(source.asks().isEmpty())
+        onNodeWithText("[ skip ]").assertDoesNotExist()
+    }
+
     private val oneTime = dev.omalauncher.assist.MacApproval("a1", "n1", "Bash", """{"command":"swift build"}""", "build the app")
 
     /** (from the slice 3a Critic's probes) A host whose tickets are one-time, as the engine's book is: the first answer takes it, the next is Expired. */

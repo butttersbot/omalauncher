@@ -174,11 +174,13 @@ fun chatHostModules(
     override fun asks(): List<ModuleAsk> {
         val book = host.changeBook { it }
         val mac = host.macPending().map { p ->
-            ModuleAsk("mac:${p.ticket}", "Allow ${p.request.tool} on ${p.threadName}?", macApprovalDetail(p.request), macTabKey(p.threadId, book), p.threadName, p, question = dev.omalauncher.oma.questionInput(p.request.tool, p.request.input))
+            val question = dev.omalauncher.oma.questionInput(p.request.tool, p.request.input)
+            ModuleAsk("mac:${p.ticket}", if (question) "Questions from ${p.threadName}" else "Allow ${p.request.tool} on ${p.threadName}?", macApprovalDetail(p.request), macTabKey(p.threadId, book), p.threadName, p, question = question)
         }
         val phone = host.builders().flatMap { (builder, state) ->
             state.pending.map { p ->
-                ModuleAsk("phone:${p.nonce}", builderApprovalTitle(p.approval.tool, builder), p.approval.detail, builder.thread, "Builder ${builder.letter}", p, question = dev.omalauncher.oma.questionInput(p.approval.tool, p.approval.input.toString()))
+                val question = dev.omalauncher.oma.questionInput(p.approval.tool, p.approval.input.toString())
+                ModuleAsk("phone:${p.nonce}", if (question) "Questions from Phone ${builder.letter}" else builderApprovalTitle(p.approval.tool, builder), p.approval.detail, builder.thread, "Builder ${builder.letter}", p, question = question)
             }
         }
         return mac + phone
