@@ -256,7 +256,9 @@ class ApprovalActionReceiver : BroadcastReceiver() {
         val entry = AgentTasks.pending.firstOrNull { it.id == ticket.id && it.nonce == ticket.nonce }
         if (entry?.approval?.tool == "AskUserQuestion") {
             // Old notification intents must open the form, never deny the question or allow it without answers.
-            context.startActivity(AgentNotices.reviewIntent(context, entry))
+            // Repost a direct Activity PendingIntent; Android disallows notification -> receiver -> Activity trampolines.
+            AgentTasks.holder(entry)?.let { AgentNotices.request(context, entry, it) }
+            AgentNotices.say(context, "Use Answer questions to open the form")
             return
         }
         when (AgentTasks.answerApproval(context, ticket.id, ticket.nonce, allow = ticket.verb == ApprovalVerb.Approve)) {
