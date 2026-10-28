@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+"""Herd's existing pet page in a transparent Wayland layer, without moving the cursor."""
+import json, os, pathlib, subprocess, threading, time
+# This tiny overlay uses software painting, avoiding GPU explicit-sync conflicts on NVIDIA/Wayland.
+os.environ.setdefault('GDK_GL','disable')
+os.environ.setdefault('WEBKIT_DISABLE_DMABUF_RENDERER','1')
+os.environ.setdefault('WEBKIT_DISABLE_COMPOSITING_MODE','1')
+import gi
+gi.require_version('Gtk','3.0');gi.require_version('WebKit2','4.1');gi.require_version('GtkLayerShell','0.1')
+from gi.repository import Gtk,Gdk,GLib,WebKit2,GtkLayerShell
+
+HOME=pathlib.Path.home()
+HERD=HOME/'.local/bin/herd'
+STATE=HOME/'.local/state/herd-pet'
+STATE.mkdir(parents=True,exist_ok=True)
+
+class Pet:
+    def __init__(self):
+        self.ready=False;self.fetching=False;self.open=False;self.right=12;self.bottom=24
+        self.window=Gtk.Window(title='Herd')
+        self.window.set_decorated(False);self.window.set_resizable(False);self.window.set_app_paintable(True)
+        self.window.set_visual(self.window.get_screen().get_rgba_visual())
+        self.window.connect('destroy',Gtk.main_quit)
+        GtkLayerShell.init_for_window(self.window)
+        GtkLayerShell.set_namespace(self.window,'herd-pet')
+        GtkLayerShell.set_layer(self.window,GtkLayerShell.Layer.TOP)
+        for edge in (GtkLayerShell.Edge.RIGHT,GtkLayerShell.Edge.BOTTOM):GtkLayerShell.set_anchor(self.window,edge,True)
+        GtkLayerShell.set_exclusive_zone(self.window,0)
+        GtkLayerShell.set_keyboard_mode(self.window,GtkLayerShell.KeyboardMode.NONE)
+        manager=WebKit2.UserContentManager()
+        manager.connect('script-message-received::herdLinux',self.message)
+        manager.register_script_message_handler('herdLinux')
+        manager.add_script(WebKit2.UserScript.new('window.HerdAndroid={post:s=>window.webkit.messageHandlers.herdLinux.postMessage(JSON.parse(s))};',
+                          WebKit2.UserContentInjectedFrames.TOP_FRAME,WebKit2.UserScriptInjectionTime.START,None,None))
+        self.web=WebKit2.WebView.new_with_user_content_manager(manager)
+        self.web.get_settings().set_hardware_acceleration_policy(WebKit2.HardwareAccelerationPolicy.NEVER)
+        color=Gdk.RGBA();color.parse('rgba(0,0,0,0)');self.web.set_background_color(color)
+        self.web.connect('load-changed',self.loaded)
+        self.web.connect('console-message',lambda *a:False) if hasattr(self.web,'do_console_message') else None
+        self.web.connect('decide-policy',self.navigation)
+        self.window.add(self.web);self.resize(150,150)
+        self.web.load_uri((pathlib.Path(__file__).resolve().parents[1]/'web/pet.html').as_uri())
+        self.window.show_all();GLib.timeout_add_seconds(6,self.refresh)
+        GLib.timeout_add_seconds(1,self.control)
+    def resize(self,w,h):
+        self.web.set_size_request(w,h);self.window.resize(w,h)
+        GtkLayerShell.set_margin(self.window,GtkLayerShell.Edge.RIGHT,self.right)
+        GtkLayerShell.set_margin(self.window,GtkLayerShell.Edge.BOTTOM,self.bottom)
+    def call(self,name,value=None):
+        if self.ready:self.web.evaluate_javascript(name+'('+('' if value is None else json.dumps(value))+')',-1,None,None,None,None,None)
+    def loaded(self,web,event):
+        if event==WebKit2.LoadEvent.FINISHED:
+            self.ready=True;self.call('herd.caps',{'stroll':True,'room':True,'pocket':False,'sendclip':False})
+            self.refresh();(STATE/'ready.json').write_text(json.dumps({'pid':os.getpid(),'page_loaded':True,'at':time.time()}))
+    def navigation(self,web,decision,kind):
+        if kind==WebKit2.PolicyDecisionType.NAVIGATION_ACTION:
+            uri=decision.get_navigation_action().get_request().get_uri()
+            if not uri.startswith('file://'):
+                decision.ignore();return True
+        return False
+    def run(self,args,callback):
+        def work():
+            try:
+                out=subprocess.run([str(HERD),*args],capture_output=True,text=True,timeout=25)
+                result=json.loads(out.stdout) if out.returncode==0 else {'error':out.stderr[-300:]}
+            except Exception as e:result={'error':str(e)}
+            GLib.idle_add(callback,result)
+        threading.Thread(target=work,daemon=True).start()
+    def refresh(self):
+        if not self.ready or self.fetching:return True
+        self.fetching=True
+        def done(data):
+            self.fetching=False
+            if 'machines' in data:
+                self.call('herd.update',data)
+                (STATE/'report.json').write_text(json.dumps({'at':time.time(),'machines':len(data['machines']),'codex':sum(s.get('kind')=='codex' for h in data['machines'] for s in (h.get('report') or {}).get('sessions',[]))}))
+            return False
+        self.run(['--json'],done);return True
+    def message(self,manager,result):
+        try:body=json.loads(result.get_js_value().to_json(0));cmd=body.get('cmd')
+        except Exception:return
+        if cmd in ('expand','collapse'):
+            self.open=cmd=='expand';self.resize(400 if self.open else 150,680 if self.open else 150)
+            GtkLayerShell.set_keyboard_mode(self.window,GtkLayerShell.KeyboardMode.ON_DEMAND if self.open else GtkLayerShell.KeyboardMode.NONE)
+        elif cmd=='room' and not self.open:self.resize(max(150,int(body.get('w') or 150)),max(150,int(body.get('h') or 150)))
+        elif cmd=='stroll' and not self.open:
+            before=self.right;self.right=max(4,min(500,self.right-int(body.get('dx') or 0)))
+            GtkLayerShell.set_margin(self.window,GtkLayerShell.Edge.RIGHT,self.right)
+            self.call('herd.arrived',{'moved':before-self.right})
+        elif cmd=='show' and isinstance(body.get('id'),str):self.run(['show',body['id'],'--json'],lambda data:self.call('herd.detail',data) or False)
+        elif cmd=='copy':Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).set_text(str(body.get('text') or ''),-1)
+        elif cmd=='log':print(str(body.get('text') or '')[:300],flush=True)
+    def control(self):
+        # A private, purpose-built test channel: it can only open/close tabs or take this web view's own snapshot.
+        request=STATE/'control.json'
+        if not request.exists():return True
+        try:
+            command=json.loads(request.read_text());request.unlink()
+            if command.get('cmd')=='open':self.call('herd.tab','agents')
+            elif command.get('cmd')=='close':self.call('herd.tap') if self.open else None
+            elif command.get('cmd')=='shot':
+                path=pathlib.Path(command.get('path','')).resolve()
+                if STATE.resolve() not in path.parents:return True
+                def snap(web,result):
+                    try:web.get_snapshot_finish(result).write_to_png(str(path))
+                    except Exception as e:print('Snapshot:',e,flush=True)
+                self.web.get_snapshot(WebKit2.SnapshotRegion.VISIBLE,WebKit2.SnapshotOptions.TRANSPARENT_BACKGROUND,None,snap)
+        except Exception as e:print('Control:',e,flush=True)
+        return True
+
+Pet();Gtk.main()

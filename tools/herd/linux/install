@@ -1,0 +1,22 @@
+#!/bin/sh
+set -eu
+here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+app="$HOME/.local/share/herd/pet/linux/herd-pet"
+mkdir -p "$HOME/.config/systemd/user" "$HOME/.local/bin" "$HOME/.local/state/herd-pet"
+cat > "$HOME/.config/systemd/user/herd-pet.service" <<EOF
+[Unit]
+Description=Herd animated desktop pet
+After=graphical-session.target herd-node.service
+PartOf=graphical-session.target
+[Service]
+ExecStart=/usr/bin/python3 $app
+Restart=on-failure
+RestartSec=10
+Environment=GDK_BACKEND=wayland
+[Install]
+WantedBy=graphical-session.target
+EOF
+# The desktop's already exported bus and compositor variables are reused, never any account keys.
+systemctl --user daemon-reload
+systemctl --user enable herd-pet.service
+systemctl --user restart herd-pet.service
