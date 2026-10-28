@@ -7,6 +7,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.skiaPaint
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -73,3 +75,17 @@ actual fun rememberWebOpener(): (String) -> Unit =
     remember {
         { url -> runCatching { java.awt.Desktop.getDesktop().browse(java.net.URI(url)) } }
     }
+
+actual fun androidx.compose.ui.Modifier.onSecondaryClick(key: Any?, action: () -> Unit): androidx.compose.ui.Modifier =
+    this.then(androidx.compose.ui.Modifier.pointerInput(key) {
+        awaitPointerEventScope {
+            while (true) {
+                val event = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                if (event.type == androidx.compose.ui.input.pointer.PointerEventType.Press && event.buttons.isSecondaryPressed) {
+                    event.changes.forEach { it.consume() }
+                    action()
+                }
+            }
+        }
+    })
+

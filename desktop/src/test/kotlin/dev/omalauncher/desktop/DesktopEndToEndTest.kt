@@ -28,6 +28,7 @@ import dev.omalauncher.assist.MacRunnerClient
 import dev.omalauncher.assist.MAC_PHONE_MAKES_NOTHING
 import dev.omalauncher.assist.MAC_PHONE_NO_SWITCH
 import dev.omalauncher.oma.started
+import dev.omalauncher.oma.renamed
 import dev.omalauncher.assist.reachableFor
 import dev.omalauncher.oma.OMA_TAB
 import dev.omalauncher.oma.OmaChatScreen
@@ -859,5 +860,57 @@ class DesktopEndToEndTest {
         settle()
         File("build/render").mkdirs()
         javax.imageio.ImageIO.write(onRoot().captureToImage().toAwtImage(), "png", File("build/render/desktop-e2e-mode.png"))
+    }
+
+    /**
+     * Slice 4 (Boss approved design/soma-all-chats-mockup.html, 2026-10-28): the strip's "all" opens All chats beside the
+     * chat; a search finds a chat by what was said in it; tapping a row opens that chat.
+     */
+    @Test fun allChatsListsEveryChatAndFindsOneByItsWords() = runComposeUiTest {
+        val notices = Notices()
+        val machine = MacMachine("testhost", "Test box", MacRunnerConfig("http://127.0.0.1:$port", key))
+        val platform = DesktopThreadsPlatform(notices) { listOf(machine) }
+        val engine = MacThreadsEngine(platform)
+        val host = DesktopChatHost(platform, engine, DesktopFrontAgent(engine, platform, notices, places = emptyList()), notices)
+        engine.open()
+        var wanted: String? by androidx.compose.runtime.mutableStateOf<String?>(null)
+        mainClock.autoAdvance = false
+        setContent { androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.size(1240.dp, 800.dp)) { OmaChatScreen(host, prefill = null, onPrefilled = {}, wanted = wanted, onTab = { wanted = it.takeIf { tab -> tab != OMA_TAB } }) } }
+        fun settle(ms: Long = 1_200) = mainClock.advanceTimeBy(ms)
+        fun waitFor(what: String, done: () -> Boolean) {
+            val deadline = System.currentTimeMillis() + 40_000
+            while (System.currentTimeMillis() < deadline && !done()) { Thread.sleep(250); settle(500) }
+            assertTrue("$what: ${platform.chatLog().tasks.map { "${it.prompt} ${it.status}" }}", done())
+        }
+        fun newChat(words: String) {
+            if (onAllNodes(androidx.compose.ui.test.hasContentDescription("Show the tabs")).fetchSemanticsNodes().isNotEmpty()) { onNodeWithContentDescription("Show the tabs").performClick(); settle() }
+            onNodeWithContentDescription("New chat").performClick(); settle()
+            onNode(androidx.compose.ui.test.hasSetTextAction()).performTextInput(words)
+            settle(); onNodeWithText("[ send ]").performClick(); settle()
+        }
+        settle()
+        newChat("tell me about zebras")
+        newChat("plan the garden beds")
+        waitFor("both answered") { platform.chatLog().tasks.count { it.mac && it.status == dev.omalauncher.oma.TaskStatus.Done } >= 2 }
+        platform.changeBook { b -> b.chats.fold(b) { acc, c -> acc.renamed(c.key, if (platform.chatLog().tasks.any { it.chat == c.id && "zebra" in it.prompt }) "Zebras" else "Garden") } }
+        settle()
+        onNodeWithContentDescription("All chats").performClick(); settle()
+        onNode(hasText("All chats")).assertExists()
+        onNodeWithContentDescription("Open Zebras").assertExists()
+        onNodeWithContentDescription("Open Garden").assertExists()
+        onNodeWithText("TODAY").assertExists()
+        File("build/render").mkdirs()
+        javax.imageio.ImageIO.write(onRoot().captureToImage().toAwtImage(), "png", File("build/render/desktop-e2e-all-chats.png"))
+        // Found by his words in it, not its name.
+        onNodeWithContentDescription("Search chats").performTextInput("ZEBRA")
+        settle()
+        onNodeWithContentDescription("Open Zebras").assertExists()
+        assertTrue("the garden chat is not shown", onAllNodes(androidx.compose.ui.test.hasContentDescription("Open Garden")).fetchSemanticsNodes().isEmpty())
+        onNode(hasText("1 of", substring = true)).assertExists()
+        javax.imageio.ImageIO.write(onRoot().captureToImage().toAwtImage(), "png", File("build/render/desktop-e2e-all-chats-search.png"))
+        onNodeWithContentDescription("Open Zebras").performClick(); settle()
+        val zebra = platform.book().chats.first { platform.chatLog().tasks.any { t -> t.chat == it.id && "zebra" in t.prompt } }
+        assertEquals("its tab is open", zebra.key, wanted)
+        assertTrue("the list closed", onAllNodes(androidx.compose.ui.test.hasContentDescription("Search chats")).fetchSemanticsNodes().isEmpty())
     }
 }

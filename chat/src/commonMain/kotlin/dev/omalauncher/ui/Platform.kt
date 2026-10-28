@@ -26,3 +26,7 @@ expect fun BackHandler(enabled: Boolean = true, onBack: () -> Unit)
 /** Opens a web address where the platform opens web pages; with nowhere to open it, nothing happens. */
 @Composable
 expect fun rememberWebOpener(): (String) -> Unit
+
+/** A right-click, where there is a mouse (the desktop): [action]. The phone has none; its long press does the same. */
+expect fun androidx.compose.ui.Modifier.onSecondaryClick(key: Any?, action: () -> Unit): androidx.compose.ui.Modifier
+
