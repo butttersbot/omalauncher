@@ -24,6 +24,13 @@ class AllChatsTest {
         assertEquals("Earlier", allChatGroup(null, now, zone))
         assertEquals("10:30 AM", allChatWhen(at(0), now, zone))
         assertEquals("FRI", allChatWhen(at(5), now, zone))
+        // Yesterday's by its time, as the mockup has it.
+        assertEquals("10:30 AM", allChatWhen(at(1), now, zone))
+        // A computer's clock a little ahead, past midnight here: today's, never "This week" (a second heading of it
+        // crashed the list, slice 4 review).
+        val tomorrow = now + 10L * 60 * 60 * 1000
+        assertEquals("Today", allChatGroup(tomorrow, now, zone))
+        assertEquals("1:00 AM", allChatWhen(tomorrow, now, zone))
         assertEquals("OCT 19", allChatWhen(at(9), now, zone))
     }
 
@@ -52,6 +59,14 @@ class AllChatsTest {
         assertEquals(3, allChatMatches(rows, " ", "", { emptyList() }).size)
         assertEquals("1 of 3 chats match “build”. Clear the field to see them all, newest first.", allChatCount(1, 3, " build "))
         assertEquals("3 chats, newest first.", allChatCount(3, 3, ""))
+    }
+
+    @Test fun aMatchOnlyInMarkupIsNoMatch() {
+        val all = listOf(thread("mac:m/t1", "Links", at(0)))
+        val said = listOf(ChatTask(1L, "Claude", "where is it", result = "See [the notes](https://example.com/zebra) for more."))
+        val rows = allChatRows(all, emptySet(), emptySet(), { "" }, entries = { said })
+        assertTrue(allChatMatches(rows, "zebra", "", { said }).isEmpty())
+        assertEquals(1, allChatMatches(rows, "notes", "", { said }).size)
     }
 
     @Test fun aComputerPickedLeavesTheOthersOut() {

@@ -105,7 +105,8 @@ internal fun ChatArtifactWorkspace(
     val selected = artifacts.firstOrNull { it.id == selections[tab] }?.let { listed -> opened[tab]?.takeIf { it.id == listed.id } ?: listed }
         ?: opened[tab]?.takeIf { it.id == selections[tab] }
     val open: (ChatArtifact) -> Unit = { questionSelection = null; opened = opened + (tab to it); selections = selections + (tab to it.id); fileLists = fileLists - tab; expanded = false; opens++ }
-    val close = { questionSelection = null; selections = selections - tab; opened = opened - tab; fileLists = fileLists - tab; expanded = false; if (allChatsOpen) onAllChatsClose() }
+    // All chats closes alone: what was open under it (an artifact, the files, a question) is there again (slice 4 review).
+    val close = { if (allChatsOpen) onAllChatsClose() else { questionSelection = null; selections = selections - tab; opened = opened - tab; fileLists = fileLists - tab; expanded = false } }
     val listing = tab in fileLists
     val panelOpen = allChatsOpen || question != null || selected != null || listing
     BackHandler(panelOpen) { close() }

@@ -32,20 +32,22 @@ fun allChatGroup(worked: Long?, now: Long, zone: ZoneId = ZoneId.systemDefault()
     val day = Instant.ofEpochMilli(worked).atZone(zone).toLocalDate()
     val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
     return when {
-        day == today -> "Today"
+        // A day ahead (a computer's clock a little ahead of this one's, past midnight) is today's, never this week's.
+        !day.isBefore(today) -> "Today"
         day == today.minusDays(1) -> "Yesterday"
         day.isAfter(today.minusDays(7)) -> "This week"
         else -> "Earlier"
     }
 }
 
-/** When it last worked, as the row says it: the time today, the weekday this week, else the date. */
+/** When it last worked, as the row says it: the time today and yesterday, the weekday this week, else the date. */
 fun allChatWhen(worked: Long?, now: Long, zone: ZoneId = ZoneId.systemDefault()): String {
     if (worked == null) return ""
     val at = Instant.ofEpochMilli(worked).atZone(zone)
     val today: LocalDate = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
     val pattern = when {
-        at.toLocalDate() == today -> "h:mm a"
+        // Yesterday's by its time too, as the mockup has it; a day ahead (a clock ahead of this one's) as today's.
+        !at.toLocalDate().isBefore(today.minusDays(1)) -> "h:mm a"
         at.toLocalDate().isAfter(today.minusDays(7)) -> "EEE"
         else -> "MMM d"
     }
@@ -88,9 +90,10 @@ fun allChatMatches(rows: List<AllChatRow>, query: String, where: String, entries
     val wanted = query.trim()
     return rows.filter { where.isEmpty() || it.where == where }.mapNotNull { row ->
         if (wanted.isEmpty()) return@mapNotNull row to row.last
-        val texts = listOf(row.name, row.last) + entries(row.key).flatMap { listOf(it.prompt, it.result) }
+        // As they read: a match only in a link's address or the markup isn't one he would see marked (slice 4 review).
+        val texts = listOf(row.name, row.last) + entries(row.key).flatMap { listOf(it.prompt, it.result) }.map { Markdown.plain(it) }
         val hit = texts.firstOrNull { it.contains(wanted, ignoreCase = true) } ?: return@mapNotNull null
-        row to if (hit == row.name) row.last else allChatSnippet(Markdown.plain(hit), wanted)
+        row to if (hit == row.name) row.last else allChatSnippet(hit, wanted)
     }
 }
 

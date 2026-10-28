@@ -56,7 +56,9 @@ internal fun AllChatsPanel(
     var query by rememberSaveable { mutableStateOf("") }
     var where by rememberSaveable { mutableStateOf("") }
     val places = remember(rows) { rows.map { it.where }.filter { it.isNotEmpty() }.distinct() }
-    val shown = remember(rows, query, where) { allChatMatches(rows, query, where, entries) }
+    // A computer picked that has since gone from the list (its chips gone with it) is no pick: never a list left empty.
+    val place = where.takeIf { it in places }.orEmpty()
+    val shown = remember(rows, query, place) { allChatMatches(rows, query, place, entries) }
     Column(Modifier.fillMaxSize().background(Pack.background).framed(Pack.hair, Pack.border, Pack.background).semantics { contentDescription = "All chats" }) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             BasicText("All chats", Modifier.weight(1f), style = Pack.body(Pack.size.small))
@@ -76,7 +78,7 @@ internal fun AllChatsPanel(
         if (places.size > 1) {
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 for (place in listOf("") + places) {
-                    val on = place == where
+                    val on = place == where || (place.isEmpty() && where !in places)
                     BasicText(
                         if (place.isEmpty()) "all" else place,
                         Modifier.framed(Pack.hair, Pack.border, if (on) Pack.foreground else Pack.background)
@@ -92,7 +94,8 @@ internal fun AllChatsPanel(
                 val heading = allChatGroup(row.worked, now)
                 if (heading != group) {
                     group = heading
-                    item(key = "group:$heading") {
+                    // Keyed by its first row too: a heading met twice can never take the same key (slice 4 review).
+                    item(key = "group:$heading:${row.key}") {
                         BasicText(heading.uppercase(), Modifier.padding(start = 12.dp, top = 14.dp, bottom = 4.dp), style = Pack.mono(Pack.size.small, Pack.muted))
                     }
                 }
