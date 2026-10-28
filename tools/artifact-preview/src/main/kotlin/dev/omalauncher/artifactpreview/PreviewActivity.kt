@@ -19,6 +19,7 @@ class PreviewActivity : ComponentActivity() {
     var narrow by mutableStateOf(false)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        dev.omalauncher.ui.PlatformFonts.nerdSymbols = androidx.compose.ui.text.font.FontFamily(androidx.compose.ui.text.font.Font(R.font.nerd_symbols))
         val folder = File(filesDir, "preview-manga").apply { mkdirs() }
         fun copyAssets(path: String, destination: File) {
             val names = assets.list(path).orEmpty()

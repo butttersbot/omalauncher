@@ -18,13 +18,13 @@ class PhoneRunnerSettingTapTest : ChatScreenTestBase() {
             override fun unpair(device: String) { calls += "unpair:$device"; paired -= device }
         }
         setContent { PhoneRunnerSetting(backend) {} }
-        waitUntil(5000) { onAllNodesWithText("[ pair ]").fetchSemanticsNodes().size == 2 }
+        waitUntil(timeoutMillis = 5000) { onAllNodesWithText("[ pair ]").fetchSemanticsNodes().size == 2 }
         assertTrue(calls.isEmpty())
         onAllNodesWithText("[ pair ]").onFirst().performClick()
-        waitUntil(5000) { onAllNodesWithText("[ unpair ]").fetchSemanticsNodes().size == 1 }
+        waitUntil(timeoutMillis = 5000) { onAllNodesWithText("[ unpair ]").fetchSemanticsNodes().size == 1 }
         assertEquals(listOf("pair:jacks-mac-pro"), calls)
         onNodeWithText("[ unpair ]").performClick()
-        waitUntil(5000) { onAllNodesWithText("[ pair ]").fetchSemanticsNodes().size == 2 }
+        waitUntil(timeoutMillis = 5000) { onAllNodesWithText("[ pair ]").fetchSemanticsNodes().size == 2 }
         assertEquals(listOf("pair:jacks-mac-pro", "unpair:jacks-mac-pro"), calls)
         assertTrue(paired.isEmpty())
     }

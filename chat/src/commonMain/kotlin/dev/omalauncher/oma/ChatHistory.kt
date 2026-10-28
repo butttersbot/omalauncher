@@ -285,6 +285,9 @@ object ChatHistory {
 /** The thread on disk, in the app's private files. Read and written from the agent's thread and the screen. */
 class ChatStore(private val file: File, private val maxBytes: Long = ChatHistory.MAX_FILE_BYTES) {
     @Volatile var tasks: List<ChatTask> = emptyList(); private set
+    private var reservedTime = 0L
+    /** Reserve under the store lock: independent builders and Mac engines cannot pick the same millisecond. */
+    @Synchronized fun stamp(now: Long): Long = maxOf(ChatHistory.stamp(tasks, now), reservedTime + 1).also { reservedTime = it }
     private var runner = PhoneTaskEvents()
     private var runnerSaved = -1L
     private fun durableRunner() { if (runnerSaved != runner.revision) check(save()) { "Task log could not be saved" } }

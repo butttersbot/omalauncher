@@ -118,7 +118,7 @@ object QuickLane {
         val log = ChatLog.of(app)
         // Filed under the build lane's lock for the same reason a request read at once is: no two tasks may take one time.
         synchronized(AgentTasks) {
-            val filed = ChatHistory.stamp(log.tasks, System.currentTimeMillis())
+            val filed = log.stamp(System.currentTimeMillis())
             if (!queue.add(FrontWaiting(filed, prompt, page, away, chat))) throw FrontQueueFull()
             mail?.let { mails[filed] = it }
             log.begin(ChatTask(filed, UNDECIDED_AGENT, prompt, status = TaskStatus.Queued, chat = chat, mail = mail?.label.orEmpty()))
@@ -229,7 +229,7 @@ object QuickLane {
                 BuilderId.C to (third ?: buildBoard(log.tasks, c.working, c.label, began, BuilderId.C)),
             ))
             val filed = waited?.also { time -> log.update(time, save = true) { it.copy(status = TaskStatus.Running) } }
-                ?: ChatHistory.stamp(log.tasks, began).also { log.begin(ChatTask(it, UNDECIDED_AGENT, prompt, chat = chat, mail = mail?.label.orEmpty())) }
+                ?: log.stamp(began).also { log.begin(ChatTask(it, UNDECIDED_AGENT, prompt, chat = chat, mail = mail?.label.orEmpty())) }
             // Its home changes are told apart from a builder's working at the same time (Soma Canvas slice 6).
             Triple(filed, "OMA_CANVAS_ACTOR=quick " + frontCommand(agent, frontPrompt(board, mail?.let { it.frontWrapper() + it.text } ?: prompt, mac, second, phone, third), resumed, mac = mac != null, newChat = chat.isNotEmpty(), mail = mail != null), asking)
         }

@@ -516,7 +516,7 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
         if (delivered == null) macSwitchAsked(prompt)?.let { return switchTo(threadId, it, prompt, name, chat) }
         val log = platform.chatLog()
         val time = synchronized(platform.stampLock) {
-            ChatHistory.stamp(log.tasks, System.currentTimeMillis()).also { log.begin(macDirect(it, prompt, threadId, name).copy(chat = chat, images = shown)) }
+            log.stamp(System.currentTimeMillis()).also { log.begin(macDirect(it, prompt, threadId, name).copy(chat = chat, images = shown)) }
         }
         if (images.isNotEmpty()) synchronized(this) { pictures[time] = images }
         send(time, prompt, threadId, away = false, delivered = delivered)
@@ -950,7 +950,7 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
         val thread = view.threads.firstOrNull { it.id == threadId }?.takeIf { it.project.isNotBlank() }
         val shownName = thread?.name ?: name.ifEmpty { name(threadId) }
         val time = synchronized(platform.stampLock) {
-            ChatHistory.stamp(log.tasks, System.currentTimeMillis()).also { log.begin(ChatHistory.withStep(macDirect(it, words, threadId, shownName).copy(chat = chat), macSwitchingStep(pick))) }
+            log.stamp(System.currentTimeMillis()).also { log.begin(ChatHistory.withStep(macDirect(it, words, threadId, shownName).copy(chat = chat), macSwitchingStep(pick))) }
         }
         if (thread == null) {
             log.update(time, save = true) { it.copy(status = TaskStatus.Failed, result = MAC_SWITCH_UNKNOWN, answeredBy = OMA_NAME) }
@@ -1034,7 +1034,7 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
         val chat = platform.book().chatOnMac(old.id)?.id ?: asked.chat
         val words = macHandoffSeed(macReplyName(old.kind, old.model) ?: macKindName(old.kind), handoff, written != null)
         val first = synchronized(platform.stampLock) {
-            ChatHistory.stamp(log.tasks, System.currentTimeMillis()).also { log.begin(macFreshHandOver(ChatTask(it, "", words, direct = true, chat = chat), old, name)) }
+            log.stamp(System.currentTimeMillis()).also { log.begin(macFreshHandOver(ChatTask(it, "", words, direct = true, chat = chat), old, name)) }
         }
         seed(first, log.tasks.first { it.time == first }, pick, asked = time)
     }
@@ -1098,7 +1098,7 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
         val name = chatDirectName(platform.book().names[chatKey(chat)], prompt)
         val setUp = machines().isNotEmpty()
         val time = synchronized(platform.stampLock) {
-            ChatHistory.stamp(log.tasks, System.currentTimeMillis()).also { time ->
+            log.stamp(System.currentTimeMillis()).also { time ->
                 log.begin((if (setUp) macChatDirect(time, prompt, chat, name) else ChatTask(time, QUICK_AGENT, prompt, result = MAC_NOT_SET_UP, status = TaskStatus.Failed, direct = true, chat = chat)).copy(images = shown))
             }
         }

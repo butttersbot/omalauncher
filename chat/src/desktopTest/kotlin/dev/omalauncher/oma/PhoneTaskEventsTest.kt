@@ -23,6 +23,17 @@ class PhoneTaskEventsTest {
         restored.append("builder-a", JSONObject().put("type", "note").put("text", "after restart"))
         assertEquals(all.size.toLong() + 1, restored.last("builder-a"))
     }
+    @Test fun concurrentProducersReserveDistinctTaskTimesBeforeBeginningRows() {
+        val file = kotlin.io.path.createTempFile("phone-times", ".json").toFile()
+        try {
+            val store = ChatStore(file)
+            val times = java.util.Collections.synchronizedSet(mutableSetOf<Long>())
+            val threads = (0 until 4).map { kotlin.concurrent.thread { repeat(100) { times += store.stamp(1000) } } }
+            threads.forEach { it.join() }
+            assertEquals(400, times.size)
+            assertEquals((1000L until 1400L).toSet(), times)
+        } finally { file.delete() }
+    }
     @Test fun producerEventsSurviveFortyStepAndEightThousandCharacterLimits() {
         val file = kotlin.io.path.createTempFile("phone-producer-log", ".json").toFile()
         try {

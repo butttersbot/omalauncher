@@ -101,21 +101,24 @@ whois responses are cached for at most a minute, as on the Mac runner; unpair ch
 request/heartbeat. The phone retains only digests in its private preferences. Raw generated keys are kept in
 memory for the pairing transfer, not displayed, logged, mailed or written to a phone file.
 
-Proposed helper contract sent to the desktop contract thread `jacks-mac-pro:taebc3f66` (awaiting confirmation):
+Confirmed helper contract implemented by desktop thread `jacks-mac-pro:taebc3f66` in f84f67a3 (merged; not yet deployed):
 
-- Authenticated `GET /phone-runner/tailnet`: `{ok,self:{name,addresses},devices:[{name,addresses}]}`, only the runner owner's peers.
+- Authenticated `GET /phone-runner/tailnet`: `{ok,self:{name,addresses,os,online},runner,devices:[{name,addresses,os,online}]}`, self is this phone; devices are the runner owner's other peers.
 - Authenticated `GET /phone-runner/whois?address=IP`: `{ok,device,owner}`, derived from actual Tailscale whois and the runner owner's login.
 - Authenticated `POST /phone-runner/taildrop`: `{device,name:"soma-runner-galaxy-z-fold8.json",content:JSON_STRING}`;
   bounded to that pairing filename and an owner's selected device; no credential-bearing logging.
+  Delivery to the helper runner's own computer writes directly to `~/.config/soma/runners/` with mode 0600;
+  another owned computer receives it by Taildrop. Only the existing phone credential from the phone's actual
+  tailnet identity may use these helpers. Limit: 30 requests/minute; whois and tailnet identity use the runner's
+  real Tailscale daemon. Helper tests: 7/7 passed on the Mac; no runner restart has happened in this slice.
 
 A helper-equipped paired Mac must be reachable to pair or validate a previously uncached caller. This is an extra
-availability dependency; it deliberately fails closed. Do not deploy the phone endpoint without confirming this
-helper contract and running its auth tests. Also, shared `parseMacHealth` currently requires `oma-runner`; the
-desktop change must narrowly accept the specified `oma-phone` health marker.
+availability dependency; it deliberately fails closed. Do not deploy the phone endpoint before the agreed helper is installed and its live auth/pairing walk is approved. The desktop health change is 33c3560f (MacRunnerTest 41/41 per its author): it narrowly accepts `oma-phone`
+alongside `oma-runner`. Include that change in the final desktop bundle.
 
 ### Verification status
 
-`PhoneRunnerTest`, `PhoneRunnerApprovalTest`, `PhoneTaskEventsTest` and `PhoneRunnerSettingTapTest` cover auth
+`PhoneRunnerTest`, `PhoneRunnerApprovalTest`, `MacPhoneTailnetTest`, `PhoneTaskEventsTest` and `PhoneRunnerSettingTapTest` cover auth
 refusal/wrong device, unsupported routes, Phone D message refusal, nonce reuse, malformed strict forms, locked
 ledger refusal, Skip as allow, cursor/restart/queue stability, bounded tail changes, and no pairing before a native
 tap. Results are pending lane B compilation/test execution; no PASS is claimed yet.

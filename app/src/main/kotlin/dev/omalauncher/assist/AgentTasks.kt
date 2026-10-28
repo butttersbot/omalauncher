@@ -362,7 +362,7 @@ class Builder(val id: BuilderId) {
         val agents = (context.applicationContext as App).runtime.agents
         val agent = builderAgent(id, agents.installed, agents.default)?.agent ?: error("Install and sign in to an agent in Omalauncher first.")
         val log = ChatLog.of(context)
-        val time = ChatHistory.stamp(log.tasks, System.currentTimeMillis())
+        val time = log.stamp(System.currentTimeMillis())
         if (agentMail != null && AgentMailReceipts.seen(context, agentMail)) return
         if (agentMail != null && followUps.waiting.any { it.mailSender == agentMail.replyAddress && it.mailId == agentMail.id }) return
         val routing = agentMail?.routing ?: emptyMap()
@@ -409,7 +409,7 @@ class Builder(val id: BuilderId) {
             }.apply()
         }
         val log = ChatLog.of(context)
-        val time = ChatHistory.stamp(log.tasks, System.currentTimeMillis())
+        val time = log.stamp(System.currentTimeMillis())
         log.begin(ChatTask(time, choice.agent.name, prompt, status = TaskStatus.Done, result = reply, answeredBy = "Soma", builder = id.saved))
     }
 
@@ -469,7 +469,7 @@ class Builder(val id: BuilderId) {
         }
         val log = ChatLog.of(context)
         val began = System.currentTimeMillis()
-        val time = queued ?: ChatHistory.stamp(log.tasks, began)
+        val time = queued ?: log.stamp(began)
         taskTime = time
         startedAt = began; heardAt = began; lastStep = ""; lastStepAt = 0L
         asked = page?.let { PageAsk(it, began) }

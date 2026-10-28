@@ -24,6 +24,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -60,7 +62,7 @@ fun OverlayPanel(
                 BasicText(Pack.heading(title), style = Pack.display(Pack.size.title, Pack.accent))
                 Spacer(Modifier.weight(1f))
                 actions()
-                Symbol(Glyph.Close, Pack.red, Modifier.clickable(onClick = onDismiss).padding(8.dp), Pack.size.title)
+                Symbol(Glyph.Close, Pack.red, Modifier.semantics { contentDescription = "Close $title" }.clickable(onClick = onDismiss).padding(8.dp), Pack.size.title)
             }
             Spacer(Modifier.height(8.dp))
             if (contentWidth == Dp.Unspecified) {

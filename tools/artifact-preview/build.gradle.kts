@@ -27,3 +27,11 @@ val previewQuestions by tasks.registering(Sync::class) {
     into(layout.buildDirectory.dir("generated/preview-assets/questions"))
 }
 tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(previewQuestions) }
+
+// Use the very same Nerd Font subset as App.onCreate; preview chrome must not show missing glyphs.
+val previewFonts by tasks.registering(Sync::class) {
+    from(rootProject.file("app/src/main/res/font")) { include("nerd_symbols.ttf"); into("font") }
+    into(layout.buildDirectory.dir("generated/preview-res"))
+}
+android.sourceSets["main"].res.srcDir(layout.buildDirectory.dir("generated/preview-res").get().asFile)
+tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(previewFonts) }
