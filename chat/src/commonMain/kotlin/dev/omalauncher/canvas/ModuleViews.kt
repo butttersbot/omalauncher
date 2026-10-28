@@ -321,10 +321,17 @@ private fun Answers(ask: ModuleAsk, answer: (Boolean) -> Unit, skip: () -> Unit,
     Layout(
         modifier = Modifier.semantics { contentDescription = "answers for ${ask.id}" },
         content = {
-            ModuleButton(if (ask.question) "answer" else "approve", Pack.green) { if (ask.question) open() else answer(true) }
-            ModuleButton(if (ask.question) "skip" else "deny", if (ask.question) Pack.accent else Pack.red) { if (ask.question) skip() else answer(false) }
-            ModuleButton(if (ask.question) "answer" else "yes", Pack.green) { if (ask.question) open() else answer(true) }
-            ModuleButton(if (ask.question) "skip" else "no", if (ask.question) Pack.accent else Pack.red) { if (ask.question) skip() else answer(false) }
+            if (ask.question) {
+                ModuleButton("answer", Pack.accent, open)
+                ModuleButton("skip", Pack.accent, skip)
+                ModuleButton("open", Pack.accent, open)
+                ModuleButton("skip", Pack.accent, skip)
+            } else {
+                ModuleButton("approve", Pack.green) { answer(true) }
+                ModuleButton("deny", Pack.red) { answer(false) }
+                ModuleButton("yes", Pack.green) { answer(true) }
+                ModuleButton("no", Pack.red) { answer(false) }
+            }
             ModuleButton("open", Pack.accent, open)
         },
     ) { measurables, constraints ->
