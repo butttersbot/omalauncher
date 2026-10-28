@@ -11,7 +11,7 @@ import java.io.File
  * `soma check` (Boss, 2026-10-27: "use scratch chats"): what his Soma does with a runner, done for real on this Mac's
  * runner with Soma's own key, with no window and no one at the screen. In ~/Projects/oma-runner-scratch it makes a
  * "Scratch Claude" chat and a "Scratch Codex" one (manual, so it asks), sends each its words and waits for the answer,
- * approves Codex's `touch scratch-ok.txt && echo ok` the way the Approve button does (the runner's approval, its nonce), and stops a long answer
+ * sees Codex ask to run `touch scratch-ok.txt && echo ok` and stops that turn (only his tap approves: MacThreadsTest), and stops a long answer
  * in the Claude one. It says each step and the threads' ids, so the phone can find them and mail one.
  * The key is read here because only Soma's own program opens its Keychain item without asking him.
  */
@@ -53,12 +53,10 @@ object Check {
         client.sendMessage(codex.id, "Scratch check from Soma desktop. Run the shell command `touch scratch-ok.txt && echo ok` in this folder, then reply with SCRATCH-CODEX- followed by its output in capitals.")
         var asked: dev.omalauncher.assist.MacApproval? = null
         step("Codex asked for approval", until { thread(codex.id)?.pending?.firstOrNull()?.also { asked = it } != null })
-        asked?.let { a ->
-            say("      it asked: ${a.tool} ${a.input.take(120)}")
-            val answer = client.answerApproval(codex.id, a.approval, true, a.nonce)
-            step("approved it: $answer", answer is MacAnswer.Ok)
-        }
-        step("Codex answered", until { "SCRATCH-CODEX-OK" in texts(codex.id) })
+        // Only his tap answers a Mac approval (MacThreadsTest.nothingButHisTapSendsTheMacAnAnswer): the check sees the
+        // request arrive, as his Approve button would, and stops the turn rather than approving it itself.
+        asked?.let { a -> say("      it asked: ${a.tool} ${a.input.take(120)}") }
+        step("stopped the waiting Codex turn: ${client.stop(codex.id)}", until(60) { thread(codex.id)?.pending.isNullOrEmpty() })
 
         client.sendMessage(claude.id, "Write a 3000-word story about a lighthouse keeper.")
         step("the long answer started", until(90) { thread(claude.id)?.status == MacThreadStatus.Working })
