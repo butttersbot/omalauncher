@@ -13,7 +13,7 @@ import dev.omalauncher.ui.BracketAction
 import dev.omalauncher.ui.Pack
 import org.junit.Test
 
-class QuestionWithdrawalTest {
+class QuestionWithdrawalTest : ChatScreenTestBase() {
     @OptIn(ExperimentalTestApi::class)
     @Test fun otherDeviceAnswerClosesTheAlreadyOpenQuestionForm() = runComposeUiTest {
         val input = """{"questions":[{"question":"Layout?","options":[{"label":"Cover"}]}]}"""
