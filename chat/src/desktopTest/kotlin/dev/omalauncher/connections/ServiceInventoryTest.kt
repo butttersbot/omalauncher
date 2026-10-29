@@ -44,4 +44,18 @@ class ServiceInventoryTest {
         assertNull(optional.root)
     }
 
+    @Test fun aToolchainFailureDoesNotInventAProviderOutage() {
+        val body = JSONObject(reply("pass").text)
+        val row = body.getJSONArray("services").getJSONObject(0).put("id", "runner")
+        row.getJSONObject("probe").put("checks", JSONArray()
+            .put(JSONObject().put("check", "provider_auth.claude").put("result", "pass"))
+            .put(JSONObject().put("check", "build_toolchain.jdk").put("result", "fail").put("fields", JSONObject().put("reason", "JDK missing"))))
+        val readings = serviceInventoryReadings(ConnectionReply(200, body.toString()), "Mac", "mac", 100_000)
+        assertEquals(ConnectionState.Ready, readings.single { it.capability == Capability.Agents }.state)
+        val builds = readings.single { it.capability == Capability.Builds }
+        assertEquals(ConnectionState.Failed, builds.state)
+        assertEquals("JDK missing", builds.checks.single().fields["reason"])
+        assertNotEquals(readings[0].root, readings[1].root)
+    }
+
 }

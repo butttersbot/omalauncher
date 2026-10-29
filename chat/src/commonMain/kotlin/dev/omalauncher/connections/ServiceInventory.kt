@@ -19,7 +19,7 @@ fun serviceInventoryReadings(reply: ConnectionReply, displayHost: String, source
         val checked = body.getLong("checked_at")
         val services = body.getJSONArray("services"); require(services.length() <= CONNECTION_SERVICE_IDS.size)
         val seen = mutableSetOf<String>()
-        (0 until services.length()).map { i ->
+        (0 until services.length()).flatMap { i ->
             val row = services.getJSONObject(i)
             val id = row.getString("id"); require(id in CONNECTION_SERVICE_IDS && seen.add(id))
             val capability = serviceCapabilities.getValue(id)
@@ -30,30 +30,40 @@ fun serviceInventoryReadings(reply: ConnectionReply, displayHost: String, source
             val checks = (0 until (wireChecks?.length() ?: 0)).map { j ->
                 val check = wireChecks!!.getJSONObject(j)
                 val fields = check.optJSONObject("fields") ?: JSONObject()
-                ConnectionCheck(check.getString("check").take(100), "$host/$id", fields.optInt("http_status").takeIf { it in 100..599 },
-                    check.getString("result").take(40), mapOf("code" to check.optString("code").take(100),
-                        "launchd_state" to row.optString("state").take(100)), check.optString("stderr_tail").take(2048))
+                val name = check.getString("check").take(100)
+                val scope = if (id == "runner" && (fields.optString("capability").equals("Builds", true) ||
+                    name.startsWith("build_toolchain") || name.startsWith("source_freshness"))) Capability.Builds else capability
+                val evidence = linkedMapOf("code" to check.optString("code").take(100))
+                for (key in fields.keys().asSequence().filter { it !in setOf("http_status", "capability") }.take(3))
+                    evidence[key.take(80)] = fields.optString(key).take(2048)
+                if (evidence.size < 4) evidence["launchd_state"] = row.optString("state").take(100)
+                scope to ConnectionCheck(name, "$host/$id", fields.optInt("http_status").takeIf { it in 100..599 },
+                    check.getString("result").take(40), evidence, check.optString("stderr_tail").take(2048))
             }
             val notInstalled = row.has("installed") && !row.optBoolean("installed") && row.optString("state") != "running"
-            val state = when {
-                notInstalled && id == "syncthing" -> ConnectionState.Disabled
-                notInstalled -> ConnectionState.Unknown
-                proofTime <= 0 -> ConnectionState.Unknown
-                checks.any { it.code in setOf(401, 403) || it.result == "auth" } -> ConnectionState.Auth
-                checks.any { it.result == "fail" } -> ConnectionState.Failed
-                checks.isNotEmpty() && checks.all { it.result == "pass" } -> ConnectionState.Ready
-                else -> ConnectionState.Unknown
+            val groups = checks.groupBy({ it.first }, { it.second }).ifEmpty { mapOf(capability to emptyList()) }
+            groups.map { (scope, evidence) ->
+                val state = when {
+                    notInstalled && id == "syncthing" -> ConnectionState.Disabled
+                    notInstalled -> ConnectionState.Unknown
+                    proofTime <= 0 -> ConnectionState.Unknown
+                    evidence.any { it.code in setOf(401, 403) || it.result == "auth" } -> ConnectionState.Auth
+                    evidence.any { it.result == "fail" } -> ConnectionState.Failed
+                    evidence.isNotEmpty() && evidence.all { it.result == "pass" } -> ConnectionState.Ready
+                    else -> ConnectionState.Unknown
+                }
+                val detail = when (state) {
+                    ConnectionState.Ready -> "$id: all required ${scope.title.lowercase()} checks passed."
+                    ConnectionState.Auth -> "$id: reachable, but authenticated ${scope.title.lowercase()} is not verified."
+                    ConnectionState.Failed -> "$id: a required ${scope.title.lowercase()} check failed."
+                    ConnectionState.Disabled -> "$id: optional service is not installed/configured on this host."
+                    else -> "$id: ${scope.title.lowercase()} evidence is incomplete; a running process is not sufficient."
+                }
+                ConnectionReading(scope, state, detail, if (proofTime > 0) proofTime else checked,
+                    if (state in setOf(ConnectionState.Failed, ConnectionState.Auth, ConnectionState.Ready))
+                        "service:$host:$id${if (id == "runner") ":${scope.name}" else ""}" else null,
+                    displayHost, sourceHost, evidence).current(now)
             }
-            val detail = when (state) {
-                ConnectionState.Ready -> "$id: all required capability checks passed."
-                ConnectionState.Auth -> "$id: reachable, but authenticated capability is not verified."
-                ConnectionState.Failed -> "$id: a required capability check failed."
-                ConnectionState.Disabled -> "$id: optional service is not installed/configured on this host."
-                else -> "$id: capability evidence is incomplete; a running process is not sufficient."
-            }
-            ConnectionReading(capability, state, detail, if (proofTime > 0) proofTime else checked,
-                if (state in setOf(ConnectionState.Failed, ConnectionState.Auth, ConnectionState.Ready)) "service:$host:$id" else null,
-                displayHost, sourceHost, checks).current(now)
         }
     }.getOrElse { emptyList() }
 }
