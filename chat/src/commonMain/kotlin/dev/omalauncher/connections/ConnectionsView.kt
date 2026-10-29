@@ -60,20 +60,25 @@ fun ConnectionsModule(size: ModuleSize, now: Long, modifier: Modifier = Modifier
             }
             val bands = if (small) listOf(Capability.Network, Capability.Agents, Capability.Canvas)
                 else listOf(Capability.Network, Capability.Agents, Capability.Canvas, Capability.Phone, Capability.Sync)
-            Row(Modifier.fillMaxWidth().weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceEvenly) {
-                for (capability in bands) {
-                    val row = rows.first { it.capability == capability }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f).semantics { contentDescription = "${capability.title}: ${row.state.label}" }) {
-                        ConnectionText(row.state.mark)
-                        ConnectionText(capability.band.orEmpty(), small = true, lines = 1)
+            if (large) {
+                Column(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically)) {
+                    for (capability in listOf(Capability.Network, Capability.Phone, Capability.Sync, Capability.Canvas)) {
+                        val row = rows.first { it.capability == capability }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            ConnectionText(capability.title, small = true, lines = 1, modifier = Modifier.weight(1f))
+                            ConnectionText("${row.state.mark} ${row.state.label}", small = true, lines = 1)
+                        }
                     }
                 }
-            }
-            if (large) for (capability in listOf(Capability.Network, Capability.Phone, Capability.Sync, Capability.Canvas)) {
-                val row = rows.first { it.capability == capability }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    ConnectionText(capability.title, small = true, lines = 1, modifier = Modifier.weight(1f))
-                    ConnectionText("${row.state.mark} ${row.state.label}", small = true, lines = 1)
+            } else {
+                Row(Modifier.fillMaxWidth().weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceEvenly) {
+                    for (capability in bands) {
+                        val row = rows.first { it.capability == capability }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f).semantics { contentDescription = "${capability.title}: ${row.state.label}" }) {
+                            ConnectionText(row.state.mark)
+                            ConnectionText(capability.band.orEmpty(), small = true, lines = 1)
+                        }
+                    }
                 }
             }
             // A child clickable consumes the tap: Restore does not open the detail modal.
