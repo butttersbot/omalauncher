@@ -79,6 +79,9 @@ rotate portrait
 expect Connections
 expect All capabilities
 shot connections-expanded-portrait
+scrollto Fixture only
+expect Fixture only
+shot connections-portrait-scrolled
 rotate landscape
 expect Connections
 expect All capabilities

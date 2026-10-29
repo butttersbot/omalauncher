@@ -116,7 +116,7 @@ fun ConnectionsDialog(now: Long, close: () -> Unit) {
                     ConnectionAction(if (ConnectionsSource.enabled) "Outage alerts: on" else "Enable outage alerts", { ConnectionsSource.toggleAlerts() })
                     ConnectionText(ConnectionsSource.alerts, small = true, muted = true)
                     ConnectionAction(if (ConnectionsSource.paused) "Resume monitoring" else "Pause monitoring for 1 hour", { ConnectionsSource.togglePause() })
-                    ConnectionText("Unexpected failures wait 60 seconds. One notice per incident, then a verified recovery notice. Intentional pauses stay quiet. No reboot or security setting is changed.", small = true, muted = true)
+                    ConnectionText("Alerts wait 60 seconds and group related failures. Recovery notices require fresh verification. Intentional pauses stay quiet.", small = true, muted = true)
                 }
             }
         }
