@@ -70,14 +70,18 @@ walk.py writes `canvas.json` (screenshot → card, the map `soma-canvas publish`
 Mac lane, after the walks, `design_gate.py run` takes each walk that **PASSed**: its carded screenshots become
 Shipped on Canvas (`soma-canvas publish APP DIR --version CODE --build SHORT`), and each is checked against Approved
 (`soma-canvas check CARD SHOT`, a vision diff on the Canvas side). The answers go to `design-report.json`
-(`design-<short>-<code>.json` beside the walk zip, Taildropped). Any unwaived drift is **DESIGN FAIL**: its own
-verdict beside PASS/FAIL, in report.txt, in the walk mail's title and body, with each card and its numbered
-differences. A failed walk publishes nothing.
+(`design-<short>-<code>.json` beside the walk zip, Taildropped). Two results block, each its own verdict beside
+PASS/FAIL, in report.txt and the walk mail's title and body:
 
-`oma-macbuild --take` and `oma-install` refuse a build whose walked cards drifted, printing the cards and
-differences, until it is built as approved or **Boss waives** the drift on Canvas (install asks Canvas again, so a
-waiver after the take counts). A check that could not run (Canvas down, `check` missing) is shown as "not checked"
-and does not block; a card with nothing Approved yet is published as Shipped only. Tests:
+- **DESIGN FAIL** (drift): the screen differs from Approved; each card is listed with its numbered differences.
+- **DESIGN FAIL: not approved on Canvas**: the card has no Approved state. That is how Connections slipped (approved
+  in chat, never on Canvas, shipped unlike it); only Boss approving the card on Canvas, or his waiver, clears it.
+
+`oma-macbuild --take` and `oma-install` refuse such a build, printing the cards, until it is built as approved or Boss
+approves/waives on Canvas (they ask Canvas again, so what he does after the walk counts). A check that could not run
+(Canvas down, `check` missing), or no design report at all, is **DESIGN UNCHECKED**: it does not block for now, but
+it is printed in report.txt, the mail title and the take/install output, and such a build is not "done" on design
+without saying so. A failed walk publishes nothing. Tests:
 `python3 -m unittest discover -s tools/walkthrough -p 'test_*.py'`.
 
 ### Fresh accessibility evidence after WebView transitions

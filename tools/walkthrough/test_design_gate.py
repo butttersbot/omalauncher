@@ -48,7 +48,7 @@ class Gate(unittest.TestCase):
         self.answer("conn-footer", result="drift", waived=False,
                     differences=[{"n": 1, "what": "Restart sits under the list, Approved has it in the header"}])
         r = gate.run(str(self.wdir), "176", "abc123456")
-        self.assertEqual("drift", r["result"])
+        self.assertEqual("fail", r["result"])
         text = gate.summary(r)
         self.assertTrue(text.startswith("DESIGN FAIL: 1 of 2 walked cards"))
         self.assertIn("conn-footer (connections, 05-footer.png)", text)
@@ -63,19 +63,47 @@ class Gate(unittest.TestCase):
                                                                    "waiver": {"by": "boss", "build": "abc123456"}}))
         self.assertEqual(0, gate.gate(report, "abc123456789"))
 
-    def test_a_check_that_cannot_run_is_reported_but_never_blocks(self):
+    def test_a_check_that_cannot_run_never_blocks_but_says_design_unchecked(self):
         r = gate.run(str(self.wdir), "176", "abc123456")
-        self.assertEqual("error", r["result"])
+        self.assertEqual("unchecked", r["result"])
         self.assertTrue(all(c["result"] == "error" and "check unavailable" in c["error"] for c in r["cards"]))
-        self.assertIn("not checked", gate.summary(r))
-        self.assertEqual(0, gate.gate(str(self.wdir / "design-report.json"), "abc123456"))
+        self.assertIn("DESIGN UNCHECKED: conn-tile, conn-footer", gate.summary(r))
+        with patch("builtins.print") as out:
+            self.assertEqual(0, gate.gate(str(self.wdir / "design-report.json"), "abc123456"))
+        self.assertIn("DESIGN UNCHECKED", " ".join(str(c.args[0]) for c in out.call_args_list))
+        # No report at all (walks still running, or no carded walk) is unchecked too, never silence.
+        with patch("builtins.print") as out:
+            self.assertEqual(0, gate.gate(None))
+        self.assertTrue(out.call_args.args[0].startswith("DESIGN UNCHECKED"))
 
-    def test_no_approved_and_report_for_another_build_hold_nothing(self):
+    def test_a_card_with_nothing_approved_is_a_design_fail_until_boss_approves_it(self):
+        # How Connections slipped: approved in chat, never on Canvas, shipped unlike it.
         self.answer("conn-tile", result="no-approved", waived=False)
         self.answer("conn-footer", result="match", waived=False)
         r = gate.run(str(self.wdir), "176", "abc123456")
-        self.assertEqual("match", r["result"])
-        self.assertIn("nothing Approved yet", gate.summary(r))
+        self.assertEqual("fail", r["result"])
+        self.assertIn("DESIGN FAIL: not approved on Canvas: conn-tile", gate.summary(r))
+        report = str(self.wdir / "design-report.json")
+        (self.t / "conn-tile.waiver.json").write_text(json.dumps({"card": "conn-tile", "result": "no-approved", "waived": False}))
+        self.assertEqual(3, gate.gate(report, "abc123456"))
+        # Boss approves the card on Canvas and Shipped matches it: let through. Approved and it drifts: still refused.
+        (self.t / "conn-tile.waiver.json").write_text(json.dumps({"card": "conn-tile", "result": "drift", "waived": False,
+                                                                 "differences": [{"n": 1, "what": "no Restart"}]}))
+        self.assertEqual(3, gate.gate(report, "abc123456"))
+        (self.t / "conn-tile.waiver.json").write_text(json.dumps({"card": "conn-tile", "result": "match", "waived": False}))
+        self.assertEqual(0, gate.gate(report, "abc123456"))
+        # Or he waives it without approving.
+        (self.t / "conn-tile.waiver.json").write_text(json.dumps({"card": "conn-tile", "result": "no-approved", "waived": True}))
+        self.assertEqual(0, gate.gate(report, "abc123456"))
+
+    def test_canvas_unreachable_at_install_keeps_the_walks_fail(self):
+        self.answer("conn-tile", result="no-approved", waived=False)
+        self.answer("conn-footer", result="match", waived=False)
+        gate.run(str(self.wdir), "176", "abc123456")
+        self.assertEqual(3, gate.gate(str(self.wdir / "design-report.json"), "abc123456"))  # no waiver file: check errors
+
+    def test_report_for_another_build_holds_nothing(self):
+        self.answer("conn-tile", result="match", waived=False)
         self.answer("conn-footer", result="drift", waived=False, differences=[{"n": 1, "what": "x"}])
         gate.run(str(self.wdir), "176", "abc123456")
         self.assertEqual(0, gate.gate(str(self.wdir / "design-report.json"), "fff999000"))
@@ -85,7 +113,6 @@ class Gate(unittest.TestCase):
         self.assertIsNone(gate.inbox_report("abc123456789", "176", str(inbox)))
         (inbox / "design-abc123456-176 (2).json").write_text("{}")
         self.assertTrue(gate.inbox_report("abc123456789", "176", str(inbox)).endswith("(2).json"))
-        self.assertEqual(0, gate.gate(None))
 
     def test_canvas_app_comes_from_the_script_or_the_walk_name(self):
         s = self.t / "c.walk"; s.write_text("# canvas-app: soma-messages\nlaunch x\n")

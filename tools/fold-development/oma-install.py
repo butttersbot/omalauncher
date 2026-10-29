@@ -95,7 +95,7 @@ if target==package and '--status' not in args and gate.is_file():
  except (OSError,ValueError):taken={}
  if taken.get('versionCode')==version and taken.get('commit'):
   if subprocess.run([sys.executable,'-I',str(gate),'gate','--inbox','--build',taken['commit'],'--version',str(version)]).returncode==3:
-   sys.exit('Install refused: design drift on walked cards (above). Build them as Approved, or Boss waives the drift on Canvas.')
+   sys.exit('Install refused: DESIGN FAIL on walked cards (above): drift, or nothing Approved on Canvas. Build them as Approved, or Boss approves or waives on Canvas.')
 def install_self():
  # Staged in Linux's own files, which Oma reads as its own; Oma checks package, key and version again itself.
  stage=pathlib.Path('/root/.cache/oma-update');stage.mkdir(parents=True,exist_ok=True)

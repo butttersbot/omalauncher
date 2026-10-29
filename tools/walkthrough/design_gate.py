@@ -9,11 +9,13 @@ approved design if the agents keep handing back work that doesn't follow the app
 run: for each walk in WDIR that PASSed (verdicts.txt) and has a canvas.json (walk.py writes it from `shot NAME
 card=ID`), publish its screenshots as Shipped (`soma-canvas publish APP DIR`) and check each carded one against
 Approved (`soma-canvas check CARD SHOT`). Writes WDIR/design-report.json and prints a DESIGN FAIL block when a card
-drifted. A failed walk publishes nothing: Shipped is only what passed.
+drifted or has no Approved state on Canvas. A failed walk publishes nothing: Shipped is only what passed.
 
-gate: exit 3 and list the cards when the report has drift Boss has not waived on Canvas (asked again now, since he
-may waive after the walk); exit 0 otherwise. A check that could not run (error) is shown but does not block: only a
-real drift does.
+gate: exit 3 and list the cards when the report has drift, or a card with nothing Approved, that Boss has not
+approved or waived on Canvas (asked again now, since he may do it after the walk); exit 0 otherwise. A card with
+nothing Approved is how Connections slipped (approved in chat, never on Canvas, shipped unlike it): it blocks.
+A check that could not run (error) does not block for now, but prints DESIGN UNCHECKED, so the build can't be
+called done without saying so.
 """
 import json, os, shutil, subprocess, sys
 
@@ -90,31 +92,40 @@ def run(wdir, version, build, walks=None):
     print(summary(report))
     return report
 
+def blocking(c):
+    """Drift, or nothing Approved on Canvas, that Boss hasn't waived: only he clears it (approve or waive)."""
+    return c["result"] in ("drift", "no-approved") and not c["waived"]
+
 def verdict(cards):
-    if any(c["result"] == "drift" and not c["waived"] for c in cards):
-        return "drift"
+    if any(blocking(c) for c in cards):
+        return "fail"
     if any(c["result"] == "error" for c in cards):
-        return "error"
+        return "unchecked"
     return "match" if cards else "none"
 
 def summary(report):
     cards = report["cards"]
     lines = []
     drift = [c for c in cards if c["result"] == "drift" and not c["waived"]]
+    unapproved = [c for c in cards if c["result"] == "no-approved" and not c["waived"]]
+    unchecked = [c for c in cards if c["result"] == "error"]
     if drift:
         lines.append(f"DESIGN FAIL: {len(drift)} of {len(cards)} walked cards are not as approved on Canvas:")
         for c in drift:
             lines.append(f"  {c['card']} ({c.get('walk', '?')}, {c.get('shot', '?')}):")
             lines += [f"    {d.get('n', i)}. {d.get('what', d)}" for i, d in enumerate(c["differences"], 1)]
-    elif cards:
-        lines.append(f"Design: {sum(c['result'] in ('match', 'drift') for c in cards)} of {len(cards)} walked cards checked; none drifted unwaived.")
+    if unapproved:
+        lines.append(f"DESIGN FAIL: not approved on Canvas: {', '.join(c['card'] for c in unapproved)} "
+                     "(nothing Approved to build from; only Boss approving the card, or his waiver, clears it)")
+    if unchecked:
+        lines.append(f"DESIGN UNCHECKED: {', '.join(c['card'] for c in unchecked)} could not be checked against Approved; "
+                     "this build is not done on design until they are")
+        lines += [f"  {c['card']}: {c.get('error', 'error')}" for c in unchecked]
+    if cards and not (drift or unapproved or unchecked):
+        lines.append(f"Design: all {len(cards)} walked cards match Approved (or Boss waived them).")
     for c in cards:
-        if c["result"] == "drift" and c["waived"]:
-            lines.append(f"  {c['card']}: drift waived by Boss on Canvas")
-        elif c["result"] == "no-approved":
-            lines.append(f"  {c['card']}: nothing Approved yet (published as Shipped only)")
-        elif c["result"] == "error":
-            lines.append(f"  {c['card']}: not checked ({c.get('error', 'error')}); not blocking")
+        if c["result"] in ("drift", "no-approved") and c["waived"]:
+            lines.append(f"  {c['card']}: {'drift' if c['result'] == 'drift' else 'not approved'}, waived by Boss on Canvas")
     for w in report["walks"]:
         if w.get("published") is False and w.get("why") != "walk did not PASS":
             lines.append(f"  {w['walk']}: publish failed ({w['why'][:150]})")
@@ -128,28 +139,29 @@ def inbox_report(build, version, inbox="/root/Inbox"):
 
 def gate(path, build=None):
     if not path:
-        print("Design: no design report for this build yet (its walks may still be running); nothing to hold it on.")
+        print("DESIGN UNCHECKED: no design report for this build (no walk names a Canvas card, or its walks are still "
+              "running); nothing to hold it on, but nothing says it is as approved either.")
         return 0
     report = json.load(open(path))
     if build and report.get("build") and not build.startswith(report["build"][:7]) and not report["build"].startswith(build[:7]):
-        print(f"Design report {path} is for {report['build']}, not {build}: no design verdict for this build.")
+        print(f"DESIGN UNCHECKED: design report {path} is for {report['build']}, not {build}: no design verdict for this build.")
         return 0
-    blocked = []
-    for c in report.get("cards", []):
-        if c["result"] != "drift" or c["waived"]:
+    cards = report.get("cards", [])
+    for i, c in enumerate(cards):
+        if not blocking(c):
             continue
-        # Boss may have waived it on Canvas since the walk: ask again (no vision call, the stored check only).
+        # Boss may have approved the card or waived it on Canvas since the walk: ask again (the stored Shipped of
+        # this build, no new screenshot). Whatever Canvas says now replaces the walk's answer, unless it can't answer.
         code, out, err = call(["check", c["card"], "--waiver", "--build", report.get("build", "")], timeout=60)
         now = parse_check(c["card"], code, out, err)
-        if now["result"] != "error" and (now["waived"] or now["result"] == "match"):
-            c["waived"] = True; continue
-        blocked.append(c)
+        if now["result"] != "error":
+            cards[i] = {**c, **now}
+    blocked = [c for c in cards if blocking(c)]
+    print(summary({**report, "cards": cards, "walks": []}))
     if not blocked:
-        print(f"Design: {len(report.get('cards', []))} walked cards, no unwaived drift.")
         return 0
-    print(summary({**report, "cards": blocked, "walks": []}))
-    print("Refused: build it as Approved, or Boss waives the drift on Canvas (" +
-          ", ".join(c["card"] for c in blocked) + ").")
+    print("Refused: build it as Approved; a card with nothing Approved needs Boss to approve it on Canvas; or Boss "
+          "waives it there (" + ", ".join(c["card"] for c in blocked) + ").")
     return 3
 
 def main(a):
