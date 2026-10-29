@@ -9,7 +9,7 @@ import kotlinx.coroutines.delay
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
@@ -35,7 +35,8 @@ internal fun questionInput(tool: String, input: String): Boolean = runCatching {
 }.getOrDefault(false)
 
 /** Owned above both panel branches: moving a form never replaces its draft or in-flight gate. */
-internal class WaitingQuestionDraft {
+internal class WaitingQuestionDraft(initialScroll: Int = 0) {
+    val scroll = ScrollState(initialScroll)
     var answers by mutableStateOf(mapOf<String, List<String>>())
     var others by mutableStateOf(mapOf<String, String>())
     var sending by mutableStateOf(false)
@@ -45,10 +46,10 @@ internal class WaitingQuestionDraft {
 
     fun json(): JSONObject = JSONObject().put("answers", JSONObject().apply {
         answers.forEach { (key, values) -> put(key, JSONArray(values)) }
-    }).put("others", JSONObject(others)).put("sending", sending).put("sent", sent).put("skipped", skipped)
+    }).put("others", JSONObject(others)).put("sending", sending).put("sent", sent).put("skipped", skipped).put("scroll", scroll.value)
 
     companion object {
-        fun restore(json: JSONObject) = WaitingQuestionDraft().apply {
+        fun restore(json: JSONObject) = WaitingQuestionDraft(json.optInt("scroll").coerceAtLeast(0)).apply {
             val picks = json.optJSONObject("answers") ?: JSONObject()
             answers = picks.keys().asSequence().associateWith { key ->
                 val values = picks.getJSONArray(key)
@@ -171,12 +172,14 @@ internal fun WaitingQuestionPanel(request: WaitingQuestion, draft: WaitingQuesti
         val value = others[key]?.takeIf { it.isNotBlank() } ?: answers[key]?.joinToString(", ")
         value?.let { "${questions.getJSONObject(i).optString("header").ifBlank { "${i + 1}" }}: $it" }
     }.joinToString(" · ")
-    Column(Modifier.fillMaxSize().background(Pack.background)) {
+    BoxWithConstraints(Modifier.fillMaxSize().background(Pack.background)) {
+    val shortPanel = maxHeight < 480.dp
+    Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(12.dp)) {
             BasicText("Questions · ${questions.length()}", Modifier.weight(1f), style = Pack.mono(Pack.size.small, Pack.muted))
             BracketAction("back to chat", Pack.accent, onClick = close)
         }
-        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp)) {
+        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(draft.scroll).padding(16.dp)) {
             BasicText(request.title, style = Pack.body(color = Pack.accent))
             BasicText(if (draft.skipped) "Skipped" else if (sent) "Answers sent" else "Before I continue", Modifier.padding(vertical = 12.dp), style = Pack.display(Pack.size.title, Pack.accent))
             if (sent) BasicText(summary, style = Pack.body()) else for (i in keys.indices) {
@@ -225,10 +228,10 @@ internal fun WaitingQuestionPanel(request: WaitingQuestion, draft: WaitingQuesti
             }
         }
         Column(Modifier.fillMaxWidth().background(Pack.surface).padding(12.dp)) {
-            BasicText("To: ${request.title}", style = Pack.mono(Pack.size.small, Pack.muted))
-            if (!ready && !sent) BasicText("${keys.count { others[it].isNullOrBlank() && answers[it].isNullOrEmpty() }} of ${keys.size} questions left. Answer every question to send, or skip.", style = Pack.mono(Pack.size.small, Pack.muted))
-            if (summary.isNotBlank() && !sent) BasicText(summary, style = Pack.mono(Pack.size.small, Pack.muted), maxLines = 3, overflow = TextOverflow.Ellipsis)
-            error?.let { BasicText(it, style = Pack.body(Pack.size.small, Pack.red), maxLines = 2, overflow = TextOverflow.Ellipsis) }
+            BasicText("To: ${request.title}", style = Pack.mono(Pack.size.small, Pack.muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (!ready && !sent) BasicText("${keys.count { others[it].isNullOrBlank() && answers[it].isNullOrEmpty() }} of ${keys.size} questions left. Answer every question to send, or skip.", style = Pack.mono(Pack.size.small, Pack.muted), maxLines = if (shortPanel) 1 else 2, overflow = TextOverflow.Ellipsis)
+            if (summary.isNotBlank() && !sent) BasicText(summary, style = Pack.mono(Pack.size.small, Pack.muted), maxLines = if (shortPanel) 1 else 3, overflow = TextOverflow.Ellipsis)
+            error?.let { BasicText(it, style = Pack.body(Pack.size.small, Pack.red), maxLines = if (shortPanel) 1 else 2, overflow = TextOverflow.Ellipsis) }
             if (!sent) FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 BracketAction("skip", if (sending) Pack.muted else Pack.accent) { draft.skip(request, close) }
                 BracketAction(if (sending) "Sending…" else "Send answers", if (ready) Pack.accent else Pack.muted) {
@@ -238,4 +241,5 @@ internal fun WaitingQuestionPanel(request: WaitingQuestion, draft: WaitingQuesti
             }
         }
     }
+}
 }

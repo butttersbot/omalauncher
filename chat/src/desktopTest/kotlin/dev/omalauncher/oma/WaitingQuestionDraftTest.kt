@@ -10,13 +10,16 @@ class WaitingQuestionDraftTest {
         cover.answers = mapOf("Screens?" to listOf("Cover", "Unfolded"))
         cover.others = mapOf("Layout?" to "Beside chat\n日本語")
         cover.sending = true
+        cover.scroll.dispatchRawDelta(127f)
         val sidePanel = workspace.get("ticket:nonce")
         assertSame(cover, sidePanel)
+        assertEquals(127, sidePanel.scroll.value)
         assertEquals(listOf("Cover", "Unfolded"), sidePanel.answers["Screens?"])
         assertEquals("Beside chat\n日本語", sidePanel.others["Layout?"])
         assertTrue(sidePanel.sending)
 
         val restored = WaitingQuestionDrafts.restore(workspace.json()).get("ticket:nonce")
+        assertEquals(127, restored.scroll.value)
         assertEquals(cover.answers, restored.answers)
         assertEquals(cover.others, restored.others)
         assertTrue(restored.sending)

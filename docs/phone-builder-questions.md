@@ -63,3 +63,18 @@ pending nonce instead of rereading the launch intent; closing an unanswered form
 then recreating the activity must not reopen it. A new notification intent can
 still explicitly reopen its live question. This Android-only change does not
 alter the preview APK or shared form; cover/unfolded walks remain onfe6034ca.
+
+Clean fe6034ca walks: waiting-question44/44PASS (6LOOK), Skip26/26PASS
+(4LOOK); builder28PASS/7FAIL (4LOOK), with failures traced to the script
+scrolling headings rather than options, and scrolling the chat column after
+landscape rotation. Critic and Phone B reviewed all three contact sheets from
+Pocket20261028171141-672c40. The fixed Send control is visible in every shot;
+cover landscape has too much summary chrome and rotation resets the form scroll.
+
+Follow-up: ScrollState belongs to the saved draft above both panel branches,
+not to a newly composed form. Short panels show one summary/status line instead
+of three; footer actions stay outside the scrolling question body. The builder
+walk now scrolls to each actual option, checks landscape Send visibility, returns
+to portrait for its final pick (the runner's center swipe otherwise hits chat),
+and repeats the final-choice send on unfolded. No test failure is waived; a clean
+latest-build rerun is required before reporting this slice complete.
