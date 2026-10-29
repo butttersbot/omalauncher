@@ -30,20 +30,32 @@ class TradeActivity : PaperActivity() {
     private lateinit var review: Button
     private var api: HyperliquidOrders? = null
     private val bg = Color.rgb(253,253,251)
+    private fun dp(value:Int)=(value*resources.displayMetrics.density).toInt()
     private fun text(s: String, points: Float = 16f) = TextView(this).apply {
         text = s; textSize = points; setTextColor(Color.rgb(17,17,19))
-        typeface = Typeface.createFromAsset(assets, "fonts/ZenKakuGothicNew-Regular.ttf")
-        setPadding(0, 8, 0, 8)
+        typeface = Typeface.createFromAsset(assets, if(points>=22f)"fonts/DelaGothicOne-Regular.ttf" else "fonts/ZenKakuGothicNew-Regular.ttf")
+        setPadding(0, dp(8), 0, dp(8))
     }
     private fun styleButton(button:Button) {
         button.setTextColor(Color.rgb(17,17,19)); button.isAllCaps=false
-        button.typeface=Typeface.createFromAsset(assets,"fonts/ZenKakuGothicNew-Bold.ttf")
+        button.typeface=Typeface.createFromAsset(assets,"fonts/JetBrainsMono.ttf")
         button.background=GradientDrawable().apply{setColor(bg);setStroke(3,Color.rgb(17,17,19))}
-        button.setPadding(12,12,12,12)
-        button.minHeight=56
+        button.setPadding(dp(12),dp(12),dp(12),dp(12))
+        button.minHeight=dp(48)
     }
-    private fun choice(values: List<String>) = Spinner(this).apply { adapter = ArrayAdapter(this@TradeActivity, android.R.layout.simple_spinner_dropdown_item, values) }
-    private fun field(label: String) = EditText(this).apply { hint = label; contentDescription = label; setSingleLine(); inputType = 8194; textSize = 20f }
+    private fun choice(values: List<String>) = Spinner(this).apply {
+        adapter = object:ArrayAdapter<String>(this@TradeActivity,android.R.layout.simple_spinner_dropdown_item,values){
+            private fun styled(view:android.view.View):android.view.View { (view as? TextView)?.apply{typeface=Typeface.createFromAsset(assets,"fonts/ZenKakuGothicNew-Regular.ttf");setTextColor(Color.rgb(17,17,19));textSize=16f};return view }
+            override fun getView(position:Int,convertView:android.view.View?,parent:android.view.ViewGroup)=styled(super.getView(position,convertView,parent))
+            override fun getDropDownView(position:Int,convertView:android.view.View?,parent:android.view.ViewGroup)=styled(super.getDropDownView(position,convertView,parent))
+        }
+    }
+    private fun field(label: String) = EditText(this).apply { hint = label; contentDescription = label; setSingleLine(); inputType = 8194; textSize = 20f;typeface=Typeface.createFromAsset(assets,"fonts/JetBrainsMono.ttf") }
+    private fun styledDialog(builder:AlertDialog.Builder) {
+        val dialog=builder.show()
+        dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(bg))
+        for(which in listOf(AlertDialog.BUTTON_POSITIVE,AlertDialog.BUTTON_NEGATIVE))dialog.getButton(which)?.let{styleButton(it)}
+    }
     override fun onCreate(saved: Bundle?) {
         super.onCreate(saved)
         demo=BuildConfig.DEBUG && intent.getBooleanExtra("demo",false)
@@ -52,7 +64,7 @@ class TradeActivity : PaperActivity() {
         // The offline SDK gets no network access and has no private key.
         paper.layoutParams = android.widget.FrameLayout.LayoutParams(1,1)
         paper.loadUrl("https://appassets.androidplatform.net/hunch/paper/trade-sdk.html")
-        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(28, 16, 28, 16); setBackgroundColor(bg) }
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(18),dp(16),dp(18),dp(16)); setBackgroundColor(bg) }
         val scroll = ScrollView(this).apply { addView(root) }
         (paper.parent as android.widget.FrameLayout).addView(scroll, android.widget.FrameLayout.LayoutParams(-1,-1))
         root.addView(text(if(demo)"HUNCH / FICTIONAL TEST ORDER" else "HUNCH / ORDER", 28f)); root.addView(text(intent.getStringExtra("title").orEmpty(),22f))
@@ -120,9 +132,9 @@ class TradeActivity : PaperActivity() {
                 (if(ticket.buy) "Maximum debit / loss: ${ticket.maximumDebit.toPlainString()} USDC" else "Minimum proceeds: ${ticket.notional.subtract(ticket.feeCeiling).toPlainString()} USDC\nValue relinquished: up to ${ticket.shares.toPlainString()} USDC at settlement") +
                 "\n${if(ticket.timeInForce=="Ioc") "IOC: partial fills possible; remainder cancels." else "Limit GTC: may remain open. Use Cancel resting order after checking status."}\n\nConfirm signs and sends this order once. Review expires after 30 seconds."
             val content = text(body).apply { setPadding(28,12,28,12) }
-            AlertDialog.Builder(this@TradeActivity).setTitle("Review order").setView(ScrollView(this@TradeActivity).apply{addView(content)})
+            styledDialog(AlertDialog.Builder(this@TradeActivity).setCustomTitle(text("REVIEW ORDER",22f).apply{setPadding(dp(18),dp(12),dp(18),0)}).setView(ScrollView(this@TradeActivity).apply{addView(content)})
                 .setNegativeButton("Back") { _,_ -> cancelReview() }.setPositiveButton("Confirm") { _,_ -> confirm(row,ticket) }
-                .setOnCancelListener { cancelReview() }.show()
+                .setOnCancelListener { cancelReview() })
             message.text="Review ready. Nothing has been signed or submitted."
         } catch(e:Exception) { message.text=e.message?:"Review unavailable. Nothing sent." }
         finally { if(!signing)review.isEnabled=journal!=null }
@@ -226,11 +238,11 @@ class TradeActivity : PaperActivity() {
                 saved.getString("price").toBigDecimal(),saved.getString("shares").toBigDecimal(),saved.getString("notional").toBigDecimal(),
                 saved.getString("feeCeiling").toBigDecimal(),saved.getString("maximumDebit").toBigDecimal(),now,
                 saved.optBoolean("buy",true),saved.getString("timeInForce"),saved.optBoolean("testnet"))
-            AlertDialog.Builder(this).setTitle("Cancel resting order?")
+            styledDialog(AlertDialog.Builder(this).setCustomTitle(text("CANCEL ORDER?",22f).apply{setPadding(dp(18),dp(12),dp(18),0)})
                 .setMessage("${if(ticket.testnet) "TESTNET" else "MAINNET"}\n${ticket.market} · ${ticket.side}\n${row.cloid}\nAlready-filled shares are not reversed. Confirm signs one cancellation; status is then read from the venue.")
                 .setNegativeButton("Back",null).setPositiveButton("Confirm cancel") {_,_->
                     if(!signing){cancelReview();reviewed=row to ticket;cancelMode=true;api=HyperliquidOrders(ticket.testnet);confirm(row,ticket)}
-                }.show()
+                })
         }catch(e:Exception){message.text=e.message}
     }
     private fun reconcile() {
