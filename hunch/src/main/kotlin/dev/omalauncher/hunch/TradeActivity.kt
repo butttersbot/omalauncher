@@ -143,7 +143,7 @@ class TradeActivity : PaperActivity() {
             val data=JSONObject().put("id",row.id).put("wallet",ticket.wallet).put("asset",ticket.asset).put("buy",ticket.buy)
                 .put("price",ticket.limitPrice.stripTrailingZeros().toPlainString()).put("shares",ticket.shares.stripTrailingZeros().toPlainString())
                 .put("cancel",cancelMode).put("tif",ticket.timeInForce).put("testnet",ticket.testnet).put("cloid",row.cloid).put("nonce",nonce).put("expiresAfter",ticket.reviewedAt+30_000)
-            paper.evaluateJavascript("window.HunchSdk.send($data)",null); message.text="Signing the confirmed order…"
+            paper.evaluateJavascript("window.HunchSdk.send($data)",null); message.text=if(cancelMode)"Signing the confirmed cancellation…" else "Signing the confirmed order…"
         } catch(e:Exception) { message.text=e.message;if(signing)uncertain("Signing did not start. Review again.") else cancelReview() }
     }
     override fun command(data: JSONObject) {
@@ -188,7 +188,7 @@ class TradeActivity : PaperActivity() {
             check(ticket.fresh(System.currentTimeMillis())) {"Review expired"}
             val body=data.getJSONObject("body")
             if(cancelMode)HyperliquidOrders.validateCancel(body,ticket,row.cloid,nonce) else HyperliquidOrders.validate(body,ticket,row.cloid,nonce)
-            if(!cancelMode)journal!!.transition(row.id,OrderStage.Submitting,System.currentTimeMillis());submitted=true;message.text="Order sent once. Reading venue result…"
+            if(!cancelMode)journal!!.transition(row.id,OrderStage.Submitting,System.currentTimeMillis());submitted=true;message.text=if(cancelMode)"Cancellation sent once. Reading venue status…" else "Order sent once. Reading venue result…"
             scope.launch {
                 try {
                     val result=withContext(Dispatchers.IO){if(demo){

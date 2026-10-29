@@ -45,6 +45,19 @@ class HyperliquidOrdersTest {
         val extra=body();extra.getJSONObject("action").getJSONArray("orders").put(JSONObject(extra.getJSONObject("action").getJSONArray("orders").getJSONObject(0).toString()))
         refuses{HyperliquidOrders.validate(extra,ticket,cloid,now)}
     }
+    @Test fun cancellationCannotTargetAnotherOrderAssetOrNonce() {
+        val now=1800000000000L;val cloid="0x11111111111111111111111111111111"
+        val ticket=OrderTicket("0x1111111111111111111111111111111111111111",100000010,"Fixture","Yes",BigDecimal("0.5"),BigDecimal("20"),BigDecimal("10"),BigDecimal.ZERO,BigDecimal("10"),now)
+        fun body()=JSONObject("""{"action":{"type":"cancelByCloid","cancels":[{"asset":100000010,"cloid":"$cloid"}]},"nonce":$now,"expiresAfter":${now+30000}}""")
+        HyperliquidOrders.validateCancel(body(),ticket,cloid,now)
+        for((key,value) in listOf("asset" to 100000011,"cloid" to "0x22222222222222222222222222222222")) {
+            val changed=body();changed.getJSONObject("action").getJSONArray("cancels").getJSONObject(0).put(key,value)
+            refuses{HyperliquidOrders.validateCancel(changed,ticket,cloid,now)}
+        }
+        refuses{HyperliquidOrders.validateCancel(body().put("nonce",now+1),ticket,cloid,now)}
+        val extra=body();extra.getJSONObject("action").getJSONArray("cancels").put(JSONObject("""{"asset":100000011,"cloid":"$cloid"}"""))
+        refuses{HyperliquidOrders.validateCancel(extra,ticket,cloid,now)}
+    }
     @Test fun sellingUsesOwnedFreeSharesAndNeverCreatesAnUncoveredPosition(){
         val now=1800000000000L;val wallet="0x1111111111111111111111111111111111111111"
         val rules=VenueOrderRules(100000010,"Fixture","Yes",BigDecimal("0.01"),BigDecimal.ONE,BigDecimal.ONE,BigDecimal.ONE,now)
