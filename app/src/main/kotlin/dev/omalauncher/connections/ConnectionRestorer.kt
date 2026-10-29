@@ -23,8 +23,12 @@ internal class ConnectionRestorer(private val context: Context, private val runt
         record?.let { ConnectionsSource.diagnostic = it.toString(2) }
     }
     private fun record(service: String, host: String, status: String, reason: String, checks: List<ConnectionCheck> = emptyList()): JSONObject? =
-        runCatching { incidents.record(service, host, status, "Restore $status · details saved for agents.", reason, checks,
-            listOf(ConnectionNextStep("agent", "inspect_restore_evidence", "Read the check evidence; do not repeat an uncertain restart."))) }.getOrNull()
+        runCatching {
+            val steps = mutableListOf(ConnectionNextStep("agent", "inspect_restore_evidence", "Read the check evidence; do not repeat an uncertain restart."))
+            if (checks.any { it.name == "owner_trust" }) steps += ConnectionNextStep("owner", "approve_trust_provisioning", "Verify the native public-key fingerprint and approve protected Mac trust installation in the lane; never enroll remotely.")
+            if (checks.any { it.result == "auth" }) steps += ConnectionNextStep("owner", "provider_or_device_authentication", "An agent must identify the exact authentication boundary first; no login, key replacement or pairing was attempted.")
+            incidents.record(service, host, status, "Restore $status · details saved for agents.", reason, checks, steps)
+        }.getOrNull()
     fun start() {
         if (!busy.compareAndSet(false, true)) { publish("Restore already in progress."); return }
         io.execute {
