@@ -260,12 +260,19 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
                 queued = counts?.let { queued?.plus(it.queued) }
             } else { working = null; queued = null }
             add(Capability.Builds, if (access == ConnectionState.Ready) ConnectionState.Unknown else access,
-                if (access == ConnectionState.Ready) "Runner inventory accessible. Busy/queued is normal; build locks, source sync, toolchain and artifact delivery are not verified by this read. No separate build daemon is assumed."
+                if (access == ConnectionState.Ready) "Runner inventory accessible. Busy/queued is normal. Toolchain, locks and source checks are reported separately; artifact delivery and phone installation require their own receipts."
                 else "Build requests depend on this runner. $detail", if (access == ConnectionState.Ready) null else root, m.name, sourceHost, listOf(checkEvidence(m.config.url.trimEnd('/') + "/threads", threads, access, "build_runner_dependency")))
             val health = runCatching { JSONObject(reply.text) }.getOrNull()
             // Older runners advertise soma in /health; newer deployments may expose /services.
             val services = if (state == ConnectionState.Ready) connectionGet(ConnectionEndpoint(m.config.url.trimEnd('/') + "/services", m.config.key)) else null
-            services?.let { rows += serviceInventoryReadings(it, m.name, sourceHost, System.currentTimeMillis()) }
+            services?.let {
+                val readings = serviceInventoryReadings(it, m.name, sourceHost, System.currentTimeMillis())
+                if (readings.any { r -> r.capability == Capability.Agents && r.checks.any { c -> c.name.startsWith("provider_auth") } }) {
+                    rows.removeAll { r -> r.capability == Capability.Agents && r.host == m.name && r.state == ConnectionState.Unknown &&
+                        r.checks.any { c -> c.name == "runner_identity" } }
+                }
+                rows += readings
+            }
             val advertised = services?.takeIf { it.code == 200 }?.let { runCatching { JSONObject(it.text).optString("soma") }.getOrNull() }?.takeIf { it.isNotBlank() }
                 ?: health?.optString("soma")?.takeIf { it.isNotBlank() }
             val service = advertised?.takeIf { runCatching { URI(it).host.equals(URI(m.config.url).host, true) && URI(it).scheme in listOf("http", "https") }.getOrDefault(false) }
