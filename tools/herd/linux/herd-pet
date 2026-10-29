@@ -1,17 +1,23 @@
 #!/usr/bin/env python3
 """Herd's existing pet page in a transparent Wayland layer, without moving the cursor."""
 import json, os, pathlib, re, subprocess, threading, time, urllib.parse, urllib.request
-# This tiny overlay uses software painting, avoiding GPU explicit-sync conflicts on NVIDIA/Wayland.
-os.environ.setdefault('GDK_GL','disable')
-os.environ.setdefault('WEBKIT_DISABLE_DMABUF_RENDERER','1')
-os.environ.setdefault('WEBKIT_DISABLE_COMPOSITING_MODE','1')
-import gi
+# NVIDIA's EGL kills this overlay ("Error 71 (Protocol error)", explicit sync), and WebKit's no-GL path showed only
+# the parts of the page that changed after the first frame (MG1, 2026-10-29: a dark box for the panel, an invisible
+# sheep). Mesa's EGL (software GL when the GPU is NVIDIA's) draws the whole page: tested on a hidden output.
+MESA_EGL='/usr/share/glvnd/egl_vendor.d/50_mesa.json'
+if os.path.exists(MESA_EGL):os.environ.setdefault('__EGL_VENDOR_LIBRARY_FILENAMES',MESA_EGL)
+else:
+    os.environ.setdefault('GDK_GL','disable')
+    os.environ.setdefault('WEBKIT_DISABLE_DMABUF_RENDERER','1')
+    os.environ.setdefault('WEBKIT_DISABLE_COMPOSITING_MODE','1')
+import cairo, gi
 gi.require_version('Gtk','3.0');gi.require_version('WebKit2','4.1');gi.require_version('GtkLayerShell','0.1')
 from gi.repository import Gtk,Gdk,GLib,WebKit2,GtkLayerShell
 
 HOME=pathlib.Path.home()
 HERD=HOME/'.local/bin/herd'
-STATE=HOME/'.local/state/herd-pet'
+# HERD_PET_STATE and HERD_PET_MONITOR_X are for tests only: a second pet with its own state, on a hidden output.
+STATE=pathlib.Path(os.environ.get('HERD_PET_STATE') or HOME/'.local/state/herd-pet')
 STATE.mkdir(parents=True,exist_ok=True)
 # The shared pocket on the Mac Pro (tailshare-serve), the same one the Mac's and the phone's pets show (pet.html POCKET).
 POCKET='http://100.120.219.46:8480/v1/pocket'
@@ -28,6 +34,10 @@ class Pet:
         GtkLayerShell.init_for_window(self.window)
         GtkLayerShell.set_namespace(self.window,'herd-pet')
         GtkLayerShell.set_layer(self.window,GtkLayerShell.Layer.TOP)
+        if os.environ.get('HERD_PET_MONITOR_X'):
+            d=Gdk.Display.get_default()
+            for i in range(d.get_n_monitors()):
+                if d.get_monitor(i).get_geometry().x==int(os.environ['HERD_PET_MONITOR_X']):GtkLayerShell.set_monitor(self.window,d.get_monitor(i))
         for edge in (GtkLayerShell.Edge.RIGHT,GtkLayerShell.Edge.BOTTOM):GtkLayerShell.set_anchor(self.window,edge,True)
         GtkLayerShell.set_exclusive_zone(self.window,0)
         GtkLayerShell.set_keyboard_mode(self.window,GtkLayerShell.KeyboardMode.NONE)
@@ -37,14 +47,14 @@ class Pet:
         manager.add_script(WebKit2.UserScript.new('window.HerdAndroid={post:s=>window.webkit.messageHandlers.herdLinux.postMessage(JSON.parse(s))};',
                           WebKit2.UserContentInjectedFrames.TOP_FRAME,WebKit2.UserScriptInjectionTime.START,None,None))
         self.web=WebKit2.WebView.new_with_user_content_manager(manager)
-        self.web.get_settings().set_hardware_acceleration_policy(WebKit2.HardwareAccelerationPolicy.NEVER)
         color=Gdk.RGBA();color.parse('rgba(0,0,0,0)');self.web.set_background_color(color)
         self.web.connect('load-changed',self.loaded)
         self.web.connect('console-message',lambda *a:False) if hasattr(self.web,'do_console_message') else None
         self.web.connect('decide-policy',self.navigation)
+        self.web.set_size_request(self.W,self.H);self.window.set_size_request(self.W,self.H)
         self.window.add(self.web);self.resize(150,150)
         self.web.load_uri((pathlib.Path(__file__).resolve().parents[1]/'web/pet.html').as_uri())
-        self.window.show_all();GLib.timeout_add_seconds(6,self.refresh)
+        self.window.show_all();self.shape();GLib.timeout_add_seconds(6,self.refresh)
         GLib.timeout_add_seconds(1,self.control)
     def place(self):
         # Where he last put it down (STATE/position.json), else the corner.
@@ -55,16 +65,26 @@ class Pet:
         try:
             g=Gdk.Display.get_default().get_monitor(0).get_geometry();return g.width,g.height
         except Exception:return 1920,1080
+    # The layer is always the open panel's size and never resized: with software painting (above) a layer that grew
+    # showed only a strip of the panel, the rest unpainted (MG1, Boss 2026-10-29: "some weird rendering issue"). What
+    # takes clicks is cut to fit instead: the sheep's corner (or the room it asked for) while closed, all of it open;
+    # the rest is see-through and clicks fall through it to his windows.
+    W,H=400,680
     def resize(self,w,h):
-        self.w,self.h=w,h
-        self.web.set_size_request(w,h);self.window.set_size_request(w,h);self.window.resize(w,h)
+        self.w,self.h=min(w,self.W),min(h,self.H)
         GtkLayerShell.set_margin(self.window,GtkLayerShell.Edge.RIGHT,self.right)
         GtkLayerShell.set_margin(self.window,GtkLayerShell.Edge.BOTTOM,self.bottom)
-        # Repaint once the compositor has taken the new size (MG1's panel didn't paint when the layer grew, 2026-10-29;
-        # not yet enough on its own: see the herd notes).
-        for wait in (50,250):GLib.timeout_add(wait,self.repaint)
+        self.shape()
     def repaint(self):
         self.window.queue_draw();self.web.queue_draw();return False
+    def settle(self):
+        # Software painting only repaints what the page says changed; after the panel's opening animation part of it
+        # stayed unpainted. A few whole repaints over the first second cover it.
+        for wait in (100,300,600,1000):GLib.timeout_add(wait,self.repaint)
+    def shape(self):
+        if not self.window.get_realized():return
+        if self.open:self.window.input_shape_combine_region(None)
+        else:self.window.input_shape_combine_region(cairo.Region(cairo.RectangleInt(self.W-self.w,self.H-self.h,self.w,self.h)))
     def call(self,name,value=None):
         if self.ready:self.web.evaluate_javascript(name+'('+('' if value is None else json.dumps(value))+')',-1,None,None,None,None,None)
     def loaded(self,web,event):
@@ -99,7 +119,7 @@ class Pet:
         try:body=json.loads(result.get_js_value().to_json(0));cmd=body.get('cmd')
         except Exception:return
         if cmd in ('expand','collapse'):
-            self.open=cmd=='expand';self.resize(400 if self.open else 150,680 if self.open else 150)
+            self.open=cmd=='expand';self.settle();self.resize(400 if self.open else 150,680 if self.open else 150)
             GtkLayerShell.set_keyboard_mode(self.window,GtkLayerShell.KeyboardMode.ON_DEMAND if self.open else GtkLayerShell.KeyboardMode.NONE)
         elif cmd=='room' and not self.open:self.resize(max(150,int(body.get('w') or 150)),max(150,int(body.get('h') or 150)))
         elif cmd=='stroll' and not self.open:
@@ -109,8 +129,8 @@ class Pet:
         elif cmd=='drag' and not self.open:
             # The page says how far the pointer is from where it went down; the layer follows it (margins from the corner).
             sw,sh=self.screen()
-            self.right=max(0,min(sw-self.w,self.right-int(body.get('dx') or 0)))
-            self.bottom=max(0,min(sh-self.h,self.bottom-int(body.get('dy') or 0)))
+            self.right=max(0,min(sw-self.W,self.right-int(body.get('dx') or 0)))
+            self.bottom=max(0,min(sh-self.H,self.bottom-int(body.get('dy') or 0)))
             GtkLayerShell.set_margin(self.window,GtkLayerShell.Edge.RIGHT,self.right)
             GtkLayerShell.set_margin(self.window,GtkLayerShell.Edge.BOTTOM,self.bottom)
         elif cmd=='drop':
