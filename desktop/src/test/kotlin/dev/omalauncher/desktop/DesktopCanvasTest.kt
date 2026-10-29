@@ -76,7 +76,7 @@ class DesktopCanvasTest {
     @Test fun aModuleIsAddedInTheFirstRoomAndSmallerWhenThatIsAllThereIs() {
         val canvas = fresh()
         val offered = addable(canvas, listOf("omalauncher"))
-        assertEquals(listOf("module:sessions", "module:pocket", "module:handoff:omalauncher", "module:project:omalauncher"), offered.map { it.first })
+        assertEquals(listOf("module:connections", "module:sessions", "module:pocket", "module:handoff:omalauncher", "module:project:omalauncher"), offered.map { it.first })
         // The page has only a 3x1 free at the bottom: a 4x4 handoff shrinks into it.
         assertTrue(canvas.add(moduleKey(ModuleKind.Handoff, "omalauncher")!!).applied)
         assertTrue(canvas.items().first { it.key == "module:handoff:omalauncher" }.cell!!.let { it.w * it.h in 1..16 })

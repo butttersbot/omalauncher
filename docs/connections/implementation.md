@@ -193,3 +193,7 @@ Imported scoped provider credential metadata (remote validity stays unverified),
 Local service tests: 79 executed, 69 passed, 10 Mac Swift helper tests skipped. The Mac lane reports 85/85 services and 518/518 runner tests at its upstream checkpoint. These counts cover different source configurations: this checkout deliberately retains the disabled privileged backend and installer. No root broker/installer import or deployment is claimed. Live provider/Canvas credential verification remains blocked by the Mac lane approval review. No login, refresh, service restart, account migration or install was performed.
 
 Local full runner suite at 6f784cbd stopped before the service HTTP cases: test-runner.py line 1064 could not find the mocked bot shell output made.txt after an approved command. No local full-runner PASS is claimed; the Mac lane was asked to verify the merged source.
+
+
+### Tonight’s bundle freeze (Phone A 20261029-005717)
+Connections is frozen for the combined launcher bundle. Privileged helper execution and installation remain disabled in code. No root broker is imported/deployed; owner credential verification is deferred, and absent live provider/Canvas proof must remain UNVERIFIED. Do not request credential-reading permissions for tonight. The desktop addable-module expectation now includes Connections, matching the shared ModuleKind catalog. Full app/chat/desktop suites are required for this checkpoint; subsequent enhancements belong to the next build. No install from builder B.
