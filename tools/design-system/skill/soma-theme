@@ -5,7 +5,7 @@ From MG1's Claude's soma-look draft (2026-10-29), owned with Soma in omalauncher
 with the soma-design skill by install.sh. (soma-look is the Fold's other tool: it renders an HTML file at Fold sizes.)
 
 Run this before any mockup or UI for Soma, herd, Canvas or another Soma app. Don't guess a palette, and don't use the
-Console pack because it's the default: Boss's phone wears a chosen look (Manga as of 2026-10-29).
+base pack because it's the default: Boss's rule is the active Soma theme unless he asks for another style.
 
   soma-theme                      the active look, where its tokens and fonts come from, and Soma Canvas
   soma-theme css [--embed] [--fonts DIR] [--look NAME]
@@ -17,7 +17,7 @@ Console pack because it's the default: Boss's phone wears a chosen look (Manga a
 The active look comes from, in order: --look, $SOMA_LOOK, the phone's own report in the herd (`herd --json`: the Fold's
 machine says soma.look; Soma writes it whenever a look is picked), `oma-phone looks` on the Fold itself, then
 soma-look.json beside this script (a last, hand-kept fallback). Packs come from $SOMA_PACKS, the Soma repo (~/Projects/omalauncher-fold), or the
-newest Soma build in ~/Soma/builds. For Manga, the fonts are Soma Canvas's Latin cuts (projects/soma-canvas/fonts).
+newest Soma build in ~/Soma/builds. Fonts: Soma Canvas's Latin cuts of the look when it has them (projects/soma-canvas/fonts/LOOK).
 """
 import base64
 import json
@@ -152,7 +152,7 @@ def css_colour(rgba):
 
 
 def font_file(packs, look, voice, spec):
-    """The voice's font as (bytes, format). For Manga, Soma Canvas's Latin cut of the same face when there is one."""
+    """The voice's font as (bytes, format): Soma Canvas's Latin cut of the same face when it has one for this look."""
     rel = spec.get('file') or ''
     if not rel:
         return None
