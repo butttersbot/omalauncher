@@ -428,6 +428,12 @@ class PhoneService : AccessibilityService() {
         // The same tiles a note is kept clear of, and the notes as the book has them: what `board` tells is what `note` avoids.
         override fun look(page: String, then: (dev.omalauncher.widgets.annotations.PageBoard, dev.omalauncher.widgets.annotations.Annotations?) -> Unit) =
             book.whenRead(page) { read -> then(notebook.board(page), if (read) book.on(page) else null) }
+        override fun pageOf(widget: String) = if (notebook.opened) notebook.pageOf(widget) else null
+        override fun minSize(widget: String) = (application as dev.omalauncher.App).runtime.widgets.specs.firstOrNull { it.file.name == widget }?.minSize ?: (1 to 1)
+        override fun resize(widget: String, cell: dev.omalauncher.widgets.Cell) {
+            notebook.setCell(widget, cell)
+            notebook.save()
+        }
     }
     /**
      * Answers an `open` or `url` once [pkg] is the app in front, so the agent's next step isn't refused for an app still
@@ -687,6 +693,8 @@ class PhoneService : AccessibilityService() {
             if (route == PhoneRequests.Route.Pages) { reply(PhonePages.reply(input, homeBook())); return }
             // What is where on a home page, behind the same gates as the page commands: it only looks.
             if (route == PhoneRequests.Route.Board) { PhoneBoard.reply(input, notePad(), reply); return }
+            // A widget's tile resized on home, behind the same gates: one tile, from its corner, never over another.
+            if (route == PhoneRequests.Route.Tiles) { PhoneTiles.reply(input, notePad(), reply); return }
             // A sticky note on home, behind the same gates: one note, on one page, and nothing else.
             if (route == PhoneRequests.Route.Note) { PhoneNotes.reply(input, notePad(), reply); return }
             // Stickers on home, behind the same gates: listed, stuck, turned, resized, moved or taken off, and nothing else.

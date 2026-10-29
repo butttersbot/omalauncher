@@ -31,7 +31,7 @@ import kotlin.math.roundToInt
  */
 object PhoneRequests {
     /** Who handles an admitted request. */
-    enum class Route { Status, Stop, Pages, Board, Note, Stickers, PageEdits, Looks, LockStar, Canvas, WidgetInstall, Screenshot, Control }
+    enum class Route { Status, Stop, Pages, Board, Tiles, Note, Stickers, PageEdits, Looks, LockStar, Canvas, WidgetInstall, Screenshot, Control }
 
     /**
      * Runs the checks for [command] in order and says who handles it; throws what the first failing check
@@ -52,6 +52,7 @@ object PhoneRequests {
         return when (command) {
             in PhonePages.commands -> Route.Pages
             PhoneBoard.COMMAND -> Route.Board
+            PhoneTiles.COMMAND -> Route.Tiles
             PhoneNotes.COMMAND -> Route.Note
             PhoneStickers.COMMAND, PhoneStickers.INK -> Route.Stickers
             PhonePageEdits.COMMAND -> Route.PageEdits
@@ -256,6 +257,18 @@ interface NotePad {
         page: String,
         then: (PageBoard, Annotations?) -> Unit,
     )
+
+    /** The id of the page the widget file [widget] is on; null for one the notebook doesn't have. */
+    fun pageOf(widget: String): String? = null
+
+    /** The smallest [widget] may be, columns by rows, as its file says (`minSize`). */
+    fun minSize(widget: String): Pair<Int, Int> = 1 to 1
+
+    /** Gives [widget] the cells [cell] and keeps them, as the owner's own resize on home does. */
+    fun resize(
+        widget: String,
+        cell: Cell,
+    ) {}
 }
 
 /** The page a command that names none is about: the one the running request was asked from, or else the one home shows. */
@@ -819,5 +832,69 @@ object PhoneCanvas {
     ): JSONObject {
         val words = input.optJSONArray("words")?.let { a -> (0 until a.length()).map { a.getString(it) } }.orEmpty()
         return dev.omalauncher.canvas.CanvasCommands.run(words, pad, request, actor)
+    }
+}
+
+/** What came of asking for a tile at a new size: the cells it gets, or why it doesn't. */
+sealed interface TileFit {
+    data class Fits(val cell: Cell) : TileFit
+
+    data class Refused(val reason: String) : TileFit
+}
+
+/**
+ * The bridge's `tile` command: `resize` gives a widget on home a new size, in grid cells, the way the owner's own
+ * long-press and drag does (Phone A, 2026-10-29: the Deco tile needed the mockup's large size and nothing but a
+ * finger could give it). It keeps the tile's top left corner and only grows or shrinks it from there; it is
+ * refused, and nothing is changed, when the size is under the widget's `minSize`, reaches past the page's grid,
+ * or would cover another tile. Only widgets: an app, a folder or a thread's tile isn't touched. No page is turned.
+ */
+object PhoneTiles {
+    const val COMMAND = "tile"
+
+    private val SIZE = Regex("\\s*(\\d{1,2})\\s*[x\u00d7]\\s*(\\d{1,2})\\s*")
+
+    /** Where [name] on [board] would be at [w] by [h], its corner kept, or why it can't be; [min] is its minSize. */
+    internal fun fit(
+        board: PageBoard,
+        name: String,
+        w: Int,
+        h: Int,
+        min: Pair<Int, Int>,
+    ): TileFit {
+        val tile = board.tiles.firstOrNull { it.name == name } ?: return TileFit.Refused("$name isn't on that page. Nothing was changed.")
+        if (tile.kind != "widget") return TileFit.Refused("Only widgets are resized; $name is a ${tile.kind}. Nothing was changed.")
+        if (w < min.first || h < min.second) return TileFit.Refused("$name can't be smaller than ${min.first}x${min.second} (its minSize). Nothing was changed.")
+        val cell = Cell(tile.cell.x, tile.cell.y, w, h)
+        if (cell.x + w > board.columns || cell.y + h > board.rows) {
+            return TileFit.Refused("At column ${cell.x}, row ${cell.y}, a ${w}x$h tile reaches past the page's ${board.columns}x${board.rows} grid. Nothing was changed.")
+        }
+        val inWay = board.tiles.filter { it.name != name && it.cell.overlaps(cell) }
+        if (inWay.isNotEmpty()) return TileFit.Refused("A ${w}x$h $name would cover ${inWay.joinToString(", ") { it.name }}. Nothing was changed.")
+        return TileFit.Fits(cell)
+    }
+
+    fun reply(
+        input: JSONObject,
+        pad: NotePad,
+        reply: (JSONObject) -> Unit,
+    ) {
+        if (input.optString("action") != "resize") error("Usage: oma-phone tile resize WIDGET COLSxROWS")
+        val widget = PhonePages.widgetFile(input.getString("name"))
+        val size = SIZE.matchEntire(input.getString("size")) ?: error("Give the size as COLSxROWS, like 6x5. Nothing was changed.")
+        val (w, h) = size.groupValues[1].toInt() to size.groupValues[2].toInt()
+        val page = pad.pageOf(widget) ?: return reply(JSONObject().put("ok", false).put("error", "$widget isn't on a home page. Nothing was changed."))
+        pad.look(page) { board, _ ->
+            val was = board.tiles.firstOrNull { it.name == widget }?.cell
+            when (val fit = fit(board, widget, w, h, pad.minSize(widget))) {
+                is TileFit.Fits -> {
+                    pad.resize(widget, fit.cell)
+                    val output = JSONObject().put("ok", true).put("page", pad.name(page) ?: "").put("widget", widget).put("cells", cellsJson(fit.cell))
+                    if (was != null) output.put("was", cellsJson(was))
+                    reply(output)
+                }
+                is TileFit.Refused -> reply(JSONObject().put("ok", false).put("error", fit.reason))
+            }
+        }
     }
 }

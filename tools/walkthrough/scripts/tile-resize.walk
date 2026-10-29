@@ -1,0 +1,13 @@
+# `oma-phone tile resize WIDGET COLSxROWS` (Phone A, 2026-10-29: the Deco tile needed the mockup's large size and only a
+# finger could give it one). The command goes through the agents' bridge, which runs only where Linux and the bridge
+# do, so its steps are [phone]; PhoneTilesTest covers the fitting (corner kept, minSize, grid, other tiles, widgets only).
+# On the emulator: the owner's own resize still works as before (the command shares its cells and save).
+shell am force-stop dev.omalauncher.boss
+launch dev.omalauncher.boss/dev.omalauncher.MainActivity
+wait 2500
+shot home-before
+[phone] On a page with one widget and free rows below it (Page 6 with deco.owl), run `oma-phone tile resize deco.owl 6x5`: ok, cells h=5, was h=3; the tile on home grows at once to five rows, its top left corner where it was, and `oma-phone board` says 6x5
+[phone] `oma-phone tile resize deco.owl 6x20` and one that would cover another tile are refused with the reason, and board shows nothing moved
+[phone] `oma-phone tile resize deco.owl 2x2` (under its minSize 3x3) is refused; an app's name is refused as not a widget
+[phone] After closing and reopening Soma the tile keeps its new size (it was saved, as a finger's resize is)
+[phone] Long-press the tile and drag its edge by hand afterwards: the owner's resize still works and wins

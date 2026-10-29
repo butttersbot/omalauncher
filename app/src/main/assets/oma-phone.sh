@@ -18,7 +18,7 @@ shift || true
 if [ "$display" = auto ]; then
   case "$command" in
   # Home's own pages, notes, stickers and looks, status and help: the main screen's, as before.
-  help|status|stop|stay|pages|page|page-*|canvas|board|stickers|stick|sticker|ink|note|looks|look|where|widget-install|plan-id|plan-receipt) display=main ;;
+  help|status|stop|stay|pages|page|page-*|canvas|board|tile|stickers|stick|sticker|ink|note|looks|look|where|widget-install|plan-id|plan-receipt) display=main ;;
   *)
     # Asked once every few seconds at most: one status call costs a round trip.
     seen=/tmp/oma-phone-bg-$(id -u)
@@ -129,6 +129,7 @@ oma-phone widget-install FILE.owl
 oma-phone canvas help | board [PAGE] | modules | place MODULE [SIZE] [WHERE] [--page NAME] | move | resize | remove | page-make | undo | layout.*
 oma-phone lockstar [capture NAME | apply NAME]
 oma-phone note [--near COL,ROW] TEXT
+oma-phone tile resize WIDGET.owl COLSxROWS
 oma-phone stickers
 oma-phone stick [--page NAME] [--near COL,ROW] STICKER
 oma-phone sticker [--page NAME] ID turn DEGREES | size HUNDREDTHS | move COL,ROW | remove
@@ -151,6 +152,9 @@ looks lists the looks home can be drawn in and which is picked; look NAME picks 
 board says what is where on a home page (the one the request came from, or the one named): its
 grid, each tile's cells, each note and sticker (page fractions and the cells it lies on), and
 free, the biggest empty rectangles of cells. It only looks. Run it before placing anything.
+tile resize gives a widget's tile on home a new size in cells (like 6x5), keeping its top left corner, as the
+owner's long-press and drag does. Refused, with nothing changed, under its minSize, past the grid or over
+another tile; only widgets. Do it only when the user asked for that size; check with board after.
 note leaves a short sticky note (plain text, at most 280 characters) on the home page the request
 came from, only when the user asked for one: not to say what was done. It goes
 in free space by itself, never on a widget; the reply says which cells it lies on, and clear is
@@ -274,6 +278,9 @@ look)
   request=$(jq -cn --arg name "$*" '{command:"look",name:$name}');;
 board)
   request=$(jq -cn --arg name "$*" '{command:"board"} + (if $name=="" then {} else {name:$name} end)');;
+tile)
+  [ "${1:-}" = resize ] && [ "$#" -eq 3 ] || { echo 'Usage: oma-phone tile resize WIDGET.owl COLSxROWS' >&2; exit 2; }
+  request=$(jq -cn --arg name "$2" --arg size "$3" '{command:"tile",action:"resize",name:$name,size:$size}');;
 note)
   near=''
   if [ "${1:-}" = '--near' ]; then
