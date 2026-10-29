@@ -35,6 +35,14 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
     private val readers = Executors.newFixedThreadPool(3) { r -> Thread(r, "connections-check").apply { isDaemon = true } }
     private val running = AtomicBoolean(false)
     private val alerts = ConnectionAlerts()
+    internal val incidents = ConnectionIncidentJournal(File(runtime.proot.home, ".local/share/soma/connections/incidents")) {
+        val values = readMacMachines(runtime.proot.launcherConfig).map { it.config.key }.toMutableList()
+        runCatching { File(runtime.proot.home, ".config/soma-canvas/token").readText().trim() }.getOrNull()?.let { values += it }
+        runCatching { JSONObject(File(runtime.proot.launcherConfig, "connections.json").takeIf { it.length() <= 65_536 }!!.readText()).optJSONArray("checks") }.getOrNull()?.let { a ->
+            for (i in 0 until a.length()) a.optJSONObject(i)?.optString("key")?.let { values += it }
+        }
+        values
+    }
     @Volatile private var working: Int? = null
     @Volatile private var queued: Int? = null
     private val nm get() = context.getSystemService(NotificationManager::class.java)
@@ -79,12 +87,23 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
         }
     } }
     private fun check(restore: Boolean) {
-        if (!running.compareAndSet(false, true)) return
+        if (!running.compareAndSet(false, true)) {
+            if (restore) {
+                main.post { ConnectionsSource.repair = "Already checking · details for agents." }
+                readers.execute {
+                    val record = runCatching { incidents.record("restore", "phone", "blocked", "A check is already in progress.", "check_in_flight",
+                        listOf(ConnectionCheck("monitor_guard", "phone", result = "busy")), listOf(ConnectionNextStep("agent", "wait_for_check", "No restart was attempted."))) }.getOrNull()
+                    main.post { ConnectionsSource.diagnostic = record?.toString(2) }
+                }
+            }
+            return
+        }
         main.post { ConnectionsSource.checking = true; if (restore) { ConnectionsSource.repair = "Checking device and active jobs…"; ConnectionsSource.guide = null } }
         readers.execute {
             try {
                 val result = collect()
                 val now = System.currentTimeMillis()
+                val diagnostic = recordChecks(result, now)
                 val quiet = !enabled || paused || !notificationAllowed
                 val previousAlerts = alerts.pending.toMap()
                 val notices = alerts.update(result, now, quiet)
@@ -94,36 +113,38 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
                 val stored = preferences.edit().putString("debounce", saved.toString()).commit()
                 if (stored) for (notice in notices) postNotice(notice, result, now)
                 else { alerts.pending.clear(); alerts.pending.putAll(previousAlerts) }
+                val restoreRecord = if (restore) runCatching {
+                    val advice = connectionRepairAdvice(result, now, working, queued)
+                    incidents.record("restore", advice.guide?.name ?: "paired-services", "blocked",
+                        "Restore blocked; diagnostic saved for agents.", advice.text,
+                        result.readings.flatMap { it.checks }, listOf(ConnectionNextStep(
+                            if (advice.guide != null) "owner" else "agent",
+                            advice.guide?.let { "owner_${it.name.lowercase()}_attention" } ?: "inspect_service_control_and_active_work", advice.text)))
+                }.getOrNull() else null
                 main.post {
                     val before = ConnectionsSource.snapshot.incidents(now).map { it.key to it.readings.map { r -> r.state } }
                     val after = result.incidents(now).map { it.key to it.readings.map { r -> r.state } }
                     if (!restore && before != after) { ConnectionsSource.repair = null; ConnectionsSource.guide = null }
                     ConnectionsSource.snapshot = result
+                    ConnectionsSource.diagnostic = diagnostic?.toString(2)
                     if (restore) {
-                        val advice = connectionRepairAdvice(result, now, working, queued)
-                        ConnectionsSource.repair = advice.text
-                        ConnectionsSource.guide = when (advice.guide) {
-                            ConnectionGuide.PhoneControl -> "Open Phone control" to { openGuide(Intent(context, dev.omalauncher.phone.PhoneControlActivity::class.java)) }
-                            ConnectionGuide.Tailscale -> "Open Tailscale" to {
-                                val intent = context.packageManager.getLaunchIntentForPackage(dev.omalauncher.assist.TAILSCALE_CONNECT.packageName)
-                                if (intent != null) openGuide(intent) else ConnectionsSource.repair = "Tailscale is not installed or cannot be opened. No setting was changed."
-                            }
-                            null -> null
-                        }
+                        ConnectionsSource.diagnostic = restoreRecord?.toString(2) ?: diagnostic?.toString(2)
+                        ConnectionsSource.repair = if (restoreRecord != null) "Restore blocked · details saved for agents."
+                            else "Restore blocked · diagnostic storage unavailable."
+                        ConnectionsSource.guide = null
                     }
                 }
-            } catch (_: Exception) {
-                main.post { ConnectionsSource.repair = "Check failed. Previous readings will become stale; nothing was restarted." }
+            } catch (error: Exception) {
+                val record = runCatching { incidents.record("monitor", "phone", "failed", "Check failed; no restart attempted.", "monitor_exception",
+                    listOf(ConnectionCheck("monitor", "phone", result = error.javaClass.simpleName, stderrTail = error.message.orEmpty())),
+                    listOf(ConnectionNextStep("agent", "inspect_monitor", "Previous readings will become stale until a fresh check succeeds."))) }.getOrNull()
+                main.post { ConnectionsSource.repair = if (record != null) "Check failed · details saved for agents." else "Check failed · diagnostic storage unavailable."; ConnectionsSource.diagnostic = record?.toString(2) }
             } finally {
                 running.set(false)
                 main.post { ConnectionsSource.checking = false }
                 updateSettings()
             }
         }
-    }
-    private fun openGuide(intent: Intent) {
-        runCatching { context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-            .onFailure { ConnectionsSource.repair = "Could not open the owner settings screen. Nothing was changed." }
     }
     private fun postNotice(notice: ConnectionAlerts.Notice, snapshot: ConnectionsSnapshot, now: Long) {
         if (!notificationAllowed) return
@@ -141,8 +162,8 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
 
     private fun collect(): ConnectionsSnapshot {
         val rows = mutableListOf<ConnectionReading>()
-        fun add(c: Capability, state: ConnectionState, detail: String, root: String? = null, host: String = "", sourceHost: String = "") {
-            rows += ConnectionReading(c, state, detail, System.currentTimeMillis(), root, host, sourceHost)
+        fun add(c: Capability, state: ConnectionState, detail: String, root: String? = null, host: String = "", sourceHost: String = "", checks: List<ConnectionCheck> = emptyList()) {
+            rows += ConnectionReading(c, state, detail, System.currentTimeMillis(), root, host, sourceHost, checks)
         }
         if (paused) {
             for (c in Capability.entries) add(c, ConnectionState.Paused, "Monitoring intentionally paused; no outage is inferred.")
@@ -191,7 +212,7 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
             val state = connectionState(reply) { it.optBoolean("ok") && it.optString("runner") == "oma-runner" && it.has("working") }
             val root = "runner:${m.id}"
             val detail = connectionDetail(reply, state, "Authenticated runner health verified. Provider sign-in and build toolchain are separate checks.")
-            add(Capability.Agents, if (state == ConnectionState.Ready) ConnectionState.Unknown else state, detail, if (state == ConnectionState.Ready) null else root, m.name, sourceHost)
+            add(Capability.Agents, if (state == ConnectionState.Ready) ConnectionState.Unknown else state, detail, if (state == ConnectionState.Ready) null else root, m.name, sourceHost, listOf(checkEvidence(endpoint.url, reply, state, "runner_identity")))
             // /threads is the authenticated capability check; it never starts a job.
             val threads = if (state == ConnectionState.Ready) connectionGet(ConnectionEndpoint(m.config.url.trimEnd('/') + "/threads", m.config.key)) else reply
             val access = connectionState(threads) { it.optBoolean("ok") && it.optJSONArray("threads") != null }
@@ -210,7 +231,7 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
             }
             if (threads.code > 0) for (capability in listOf(Capability.Network, Capability.Agents, Capability.Builds)) add(capability,
                 ConnectionState.Ready, "Peer route responded; authenticated capability status is checked separately.", "network", m.name, sourceHost)
-            add(Capability.Network, access, connectionDetail(threads, access, "Authenticated thread inventory read; pairing and this peer route verified."), if (access == ConnectionState.Ready) "runner:${m.id}" else root, m.name, sourceHost)
+            add(Capability.Network, access, connectionDetail(threads, access, "Authenticated thread inventory read; pairing and this peer route verified."), if (access == ConnectionState.Ready) "runner:${m.id}" else root, m.name, sourceHost, listOf(checkEvidence(m.config.url.trimEnd('/') + "/threads", threads, access, "authenticated_thread_inventory")))
             if (access == ConnectionState.Ready) {
                 val counts = runnerWorkCounts(JSONObject(threads.text))
                 working = counts?.let { working?.plus(it.active) }
@@ -218,7 +239,7 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
             } else { working = null; queued = null }
             add(Capability.Builds, if (access == ConnectionState.Ready) ConnectionState.Unknown else access,
                 if (access == ConnectionState.Ready) "Runner inventory accessible. Busy/queued is normal; build locks, source sync, toolchain and artifact delivery are not verified by this read. No separate build daemon is assumed."
-                else "Build requests depend on this runner. $detail", if (access == ConnectionState.Ready) null else root, m.name, sourceHost)
+                else "Build requests depend on this runner. $detail", if (access == ConnectionState.Ready) null else root, m.name, sourceHost, listOf(checkEvidence(m.config.url.trimEnd('/') + "/threads", threads, access, "build_runner_dependency")))
             val health = runCatching { JSONObject(reply.text) }.getOrNull()
             // Older runners advertise soma in /health; newer deployments may expose /services.
             val services = if (state == ConnectionState.Ready) connectionGet(ConnectionEndpoint(m.config.url.trimEnd('/') + "/services", m.config.key)) else null
@@ -231,7 +252,7 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
                 if (s == ConnectionState.Ready) add(Capability.Sync, ConnectionState.Ready,
                     "Authenticated Soma service identity verified again; sync freshness remains separate.", "sync:${m.id}", m.name, sourceHost)
                 add(Capability.Sync, if (s == ConnectionState.Ready) ConnectionState.Unknown else s,
-                    connectionDetail(h, s, "Soma service identity verified; screen sync cursor/ack freshness has not been checked."), if (s == ConnectionState.Ready) null else "sync:${m.id}", m.name, sourceHost)
+                    connectionDetail(h, s, "Soma service identity verified; screen sync cursor/ack freshness has not been checked."), if (s == ConnectionState.Ready) null else "sync:${m.id}", m.name, sourceHost, listOf(checkEvidence(service.trimEnd('/') + "/health", h, s, "workspace_service_identity")))
             }
         }
         configuredChecks(rows, aliases)
@@ -248,6 +269,27 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
             if (r.sourceHost.isNotEmpty() && r.state == ConnectionState.Failed) r.copy(root = "network") else r
         } else rows
         return ConnectionsSnapshot(groupConnectionFailures(groupedRows, alerts.pending.keys.filter { it.startsWith("host:") }.map { it.removePrefix("host:") }.toSet()), System.currentTimeMillis())
+    }
+
+    private fun checkEvidence(url: String, reply: ConnectionReply, state: ConnectionState, name: String): ConnectionCheck {
+        val target = runCatching { val u = URI(url); URI(u.scheme, null, u.host, u.port, u.path, null, null).toString() }.getOrDefault("configured endpoint")
+        return ConnectionCheck(name, target, reply.code, state.label)
+    }
+    private fun recordChecks(snapshot: ConnectionsSnapshot, now: Long): JSONObject? {
+        var newest: JSONObject? = null
+        val problemStates = setOf(ConnectionState.Unknown, ConnectionState.Stale, ConnectionState.Degraded, ConnectionState.Auth, ConnectionState.Failed)
+        val grouped = snapshot.readings.filter { it.state in problemStates }.groupBy { it.root ?: "unverified:${it.capability.name}:${it.host}" }
+        // Write confirmed outages after missing-evidence records so newest points at the actionable failure.
+        for ((root, readings) in grouped.entries.sortedBy { (_, rows) -> if (rows.any { it.state in setOf(ConnectionState.Failed, ConnectionState.Auth) }) 1 else 0 }) {
+            val services = readings.map { it.capability.title }.distinct().joinToString(" + ")
+            val host = readings.map { it.host }.filter(String::isNotBlank).distinct().joinToString().ifEmpty { "phone" }
+            newest = runCatching { incidents.record(services.take(100), host.take(200), "check_${readings.first().state.name.lowercase()}",
+                "$services: ${readings.first().state.label}", root,
+                readings.flatMap { r -> r.checks.ifEmpty { listOf(ConnectionCheck("capability_evidence", r.sourceHost.ifEmpty { "phone" }, result = r.state.label,
+                    fields = mapOf("detail" to r.detail))) } },
+                listOf(ConnectionNextStep("agent", if (readings.any { it.state == ConnectionState.Auth }) "verify_pairing_and_provider_auth" else "diagnose_capability", readings.first().detail)), now) }.getOrNull() ?: newest
+        }
+        return newest
     }
 
     /** Existing app endpoints plus explicit configuration. Never source shell env files. */
@@ -322,7 +364,7 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
             val root = "service:${check.capability.name}:${sourceHost}"
             // Healthy transport observation retained for honest incident recovery, separately from missing end-to-end evidence.
             if (limited) rows += ConnectionReading(check.capability, ConnectionState.Ready, "Previously failing service endpoint passed its schema check.", System.currentTimeMillis(), root, check.name, sourceHost)
-            rows += ConnectionReading(check.capability, state, detail, System.currentTimeMillis(), if (limited) null else root, check.name, sourceHost)
+            rows += ConnectionReading(check.capability, state, detail, System.currentTimeMillis(), if (limited) null else root, check.name, sourceHost, listOf(checkEvidence(check.endpoint.url, reply, verified, check.schema)))
         }
     }
 }

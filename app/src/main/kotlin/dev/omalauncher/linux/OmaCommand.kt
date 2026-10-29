@@ -28,6 +28,7 @@ const val DROP_ASSET = "oma-drop.sh"
 
 /** `oma msg`, agent mail to the computers' agents (assist/AgentMail.kt has the other way), in the app's assets. */
 const val MSG_ASSET = "oma-msg.sh"
+const val CONNECTIONS_ASSET = "oma-connections.py"
 
 /** `grokbot`, Soma's X and content helpers on Grok (Boss, 2026-10-18), the same script as on his computers, in the app's assets. */
 const val GROKBOT_ASSET = "grokbot.sh"
@@ -47,6 +48,7 @@ class OmaPart(val word: String, val lib: String, val oldName: String?, val oldWo
 val OMA_PARTS = listOf(
     OmaPart("threads", "thread", "oma-thread"),
     OmaPart("keep", "keep", "oma-keep"),
+    OmaPart("connections", "connections", oldName = null),
     OmaPart("status", "agents", "oma-agents", oldWord = "status"),
     OmaPart("drop", "drop", oldName = null),
     OmaPart("msg", "msg", oldName = null),
@@ -96,13 +98,14 @@ fun omaAlias(part: OmaPart): String {
  * `oma`, the old names' aliases and `oma drop`'s script as installed in [rootfs], their bytes from [dispatcher] and
  * [drop]: the launcher's own, rewritten with each version.
  */
-fun omaTools(rootfs: File, dispatcher: () -> ByteArray, drop: () -> ByteArray, msg: () -> ByteArray, grokbot: () -> ByteArray): List<Managed> =
+fun omaTools(rootfs: File, dispatcher: () -> ByteArray, drop: () -> ByteArray, msg: () -> ByteArray, grokbot: () -> ByteArray, connections: () -> ByteArray): List<Managed> =
     listOf(Managed(File(rootfs, OMA_COMMAND), Policy.Owned, executable = true, content = dispatcher)) +
         OMA_PARTS.mapNotNull { part ->
             part.oldName?.let { Managed.text(File(rootfs, "usr/local/bin/$it"), Policy.Owned, executable = true) { omaAlias(part) } }
         } +
         Managed(File(rootfs, "$OMA_LIB/drop"), Policy.Owned, executable = true, content = drop) +
         Managed(File(rootfs, "$OMA_LIB/msg"), Policy.Owned, executable = true, content = msg) +
+        Managed(File(rootfs, "$OMA_LIB/connections"), Policy.Owned, executable = true, content = connections) +
         Managed.text(File(rootfs, "$OMA_LIB/front"), Policy.Owned, executable = true) { OMA_FRONT_SCRIPT } +
         Managed(File(rootfs, GROKBOT_COMMAND), Policy.Owned, executable = true, content = grokbot)
 
@@ -114,4 +117,5 @@ fun omaGuestTools(context: Context, rootfs: File): List<Managed> =
         { context.assets.open(DROP_ASSET).use { it.readBytes() } },
         { context.assets.open(MSG_ASSET).use { it.readBytes() } },
         { context.assets.open(GROKBOT_ASSET).use { it.readBytes() } },
+        { context.assets.open(CONNECTIONS_ASSET).use { it.readBytes() } },
     )

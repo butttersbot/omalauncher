@@ -14,7 +14,7 @@ enum class Capability(val title: String, val band: String? = null) {
 }
 data class ConnectionReading(
     val capability: Capability, val state: ConnectionState, val detail: String,
-    val checkedAt: Long, val root: String? = null, val host: String = "", val sourceHost: String = "",
+    val checkedAt: Long, val root: String? = null, val host: String = "", val sourceHost: String = "", val checks: List<ConnectionCheck> = emptyList(),
 ) {
     fun current(now: Long): ConnectionReading = if (state !in setOf(ConnectionState.Disabled, ConnectionState.Paused) &&
         (checkedAt <= 0 || now < checkedAt || now - checkedAt > 90_000)) copy(state = ConnectionState.Stale, detail = "Last check is no longer current. $detail") else this
