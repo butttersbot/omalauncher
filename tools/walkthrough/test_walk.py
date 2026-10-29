@@ -111,13 +111,17 @@ class FreshAccessibilityTrees(unittest.TestCase):
             self.assertEqual(3, ready.call_count)
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class WholeLabelBounds(unittest.TestCase):
-    def test_partial_footer_fails_until_scrolled_into_safe_band(self):
-        for bounds, expected in [([10, 790, 190, 910], False), ([10, 600, 190, 720], True)]:
-            with patch.object(walk, "size", return_value=(200, 1000)), patch.object(walk, "nodes", return_value=[("Fixture only", bounds)]):
-                ok, _, _ = walk.run_step("emu", "within", ["0.1", "0.85", "Fixture", "only"], "/tmp", 1)
+    def test_uses_rotated_capture_and_accepts_left_aligned_footer(self):
+        import tempfile
+        def capture(serial, path):
+            Path(path).write_bytes(b"\x89PNG\r\n\x1a\n" + b"\0" * 8 + (1848).to_bytes(4, "big") + (2448).to_bytes(4, "big"))
+        for bounds, expected in [([90, 1971, 1282, 2012], True), ([90, 1971, 1282, 2200], False)]:
+            with tempfile.TemporaryDirectory() as out, patch.object(walk, "size", return_value=(2448, 1848)), patch.object(walk, "shot", side_effect=capture), patch.object(walk, "nodes", return_value=[("Fixture only", bounds)]):
+                ok, _, _ = walk.run_step("emu", "within", ["0.1", "0.85", "Fixture", "only"], out, 1)
                 self.assertEqual(expected, ok)
+
+if __name__ == "__main__":
+    unittest.main()

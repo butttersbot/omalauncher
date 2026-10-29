@@ -242,12 +242,19 @@ def run_step(serial, op, args, out, n):
         if not 0 <= top < bottom <= 1:
             raise ValueError("within requires 0 <= top < bottom <= 1")
         wanted = " ".join(args[2:]).casefold()
-        w, h = size(serial)
+        # wm size reports the natural orientation on some Fold profiles, even after rotation.
+        image = os.path.join(out, f"{n:02d}-within.png")
+        shot(serial, image)
+        with open(image, "rb") as capture:
+            header = capture.read(24)
+        if header[:8] != b"\x89PNG\r\n\x1a\n" or len(header) != 24:
+            raise TreeUnavailable("cannot establish the active screenshot dimensions")
+        w, h = int.from_bytes(header[16:20], "big"), int.from_bytes(header[20:24], "big")
         matches = [(label, bounds) for label, bounds in nodes(serial)
                    if wanted in label.casefold()]
         ok = any(0 <= l < r <= w and top * h <= t < b <= bottom * h
                  for _, (l, t, r, b) in matches)
-        return ok, "" if ok else f"“{wanted}” is not wholly inside {top}..{bottom}: {matches}", None
+        return ok, "" if ok else f"“{wanted}” is not wholly inside vertical {top}..{bottom} of {w}x{h}: {matches}", image
     if op == "scrollto":
         # Swipes up until TEXT is on screen (a WebView only reports what shows).
         wanted = " ".join(args)
