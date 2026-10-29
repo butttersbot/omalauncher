@@ -2,18 +2,20 @@
 # multi-select on the herd Tailshare tab. I need to delete multiple files at once."). Made-up files only: with
 # debug.soma.herdtest set, an emulator's sheep shows five test pocket files and two test texts and never reaches the
 # real pocket on the Mac Pro (herd/Herd.kt herdTestMode; the real Fold ignores the prop). Run on the cover screen, then
-# again unfolded (fold open). The sheep sits in home's bottom right corner; 0.88 0.86 is its middle on the cover.
+# again unfolded (fold open). The sheep sits in home's bottom right corner: 0.85 0.77 on the cover (measured 2026-10-28,
+# Mac Pro Fold8); unfolded, measure it from a shot first. A walk on the 2026-10-28 build found a long press here lifting
+# the home widget underneath and closing the panel: home's tile long-press now leaves the herd panel alone.
 shell setprop debug.soma.herdtest 1
 shell am force-stop dev.omalauncher.boss
 shell cmd statusbar collapse
 key HOME
 wait 2500
-tap 0.88 0.86
+tap 0.85 0.77
 wait 1500
 tap Tailshare
 wait 1200
 expect test-alpha.txt
-expect test-sent-one.txt
+expect Test text one
 shot tailshare-test-files
 clearlog
 # A long press starts choosing, with that file chosen; the bar shows the count.

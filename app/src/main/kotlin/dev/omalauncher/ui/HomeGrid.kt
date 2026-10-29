@@ -757,6 +757,9 @@ internal fun HomeGrid(
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                         val start = down.position
+                        // Not on the herd sheep or its open panel (as the pinch above): a long press there is the
+                        // panel's own, to choose several files (Boss, 2026-10-28), not a widget lifted under it.
+                        if (gridAt[0]?.takeIf { it.isAttached }?.localToWindow(start)?.let { HerdSheep.onHome?.contains(it) } == true) return@awaitEachGesture
                         val (pages, g, sel) = current
                         val shown = pagesAt(pager.currentPage, pages, g)
                         val side = g.side(start)
