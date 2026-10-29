@@ -6,7 +6,7 @@ private val serviceCapabilities = mapOf(
     "runner" to Capability.Agents, "tailshare-serve" to Capability.Files, "tailshare-receive" to Capability.Files,
     "herd" to Capability.Activity, "embeddings" to Capability.Search, "whisper" to Capability.Voice,
     "soma" to Capability.Sync, "canvas" to Capability.Canvas, "imessage-api" to Capability.Messages,
-    "imessage-transport" to Capability.Messages, "syncthing" to Capability.Sync, "tailscaled" to Capability.Network,
+    "imessage-transport" to Capability.Messages, "syncthing" to Capability.Optional, "tailscaled" to Capability.Network,
 )
 
 /** Health is the capability proof, never launchd running, pid presence, or the inventory endpoint's HTTP 200. */
@@ -34,7 +34,10 @@ fun serviceInventoryReadings(reply: ConnectionReply, displayHost: String, source
                     check.getString("result").take(40), mapOf("code" to check.optString("code").take(100),
                         "launchd_state" to row.optString("state").take(100)), check.optString("stderr_tail").take(2048))
             }
+            val notInstalled = row.has("installed") && !row.optBoolean("installed") && row.optString("state") != "running"
             val state = when {
+                notInstalled && id == "syncthing" -> ConnectionState.Disabled
+                notInstalled -> ConnectionState.Unknown
                 proofTime <= 0 -> ConnectionState.Unknown
                 checks.any { it.code in setOf(401, 403) || it.result == "auth" } -> ConnectionState.Auth
                 checks.any { it.result == "fail" } -> ConnectionState.Failed
@@ -45,6 +48,7 @@ fun serviceInventoryReadings(reply: ConnectionReply, displayHost: String, source
                 ConnectionState.Ready -> "$id: all required capability checks passed."
                 ConnectionState.Auth -> "$id: reachable, but authenticated capability is not verified."
                 ConnectionState.Failed -> "$id: a required capability check failed."
+                ConnectionState.Disabled -> "$id: optional service is not installed/configured on this host."
                 else -> "$id: capability evidence is incomplete; a running process is not sufficient."
             }
             ConnectionReading(capability, state, detail, if (proofTime > 0) proofTime else checked,

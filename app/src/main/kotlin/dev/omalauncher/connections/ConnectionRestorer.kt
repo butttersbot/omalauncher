@@ -67,6 +67,10 @@ internal class ConnectionRestorer(private val context: Context, private val runt
                         val service = services.getJSONObject(i)
                         val id = service.getString("id")
                         require(id in CONNECTION_SERVICE_IDS && seen.add(id))
+                        if (service.has("installed") && !service.optBoolean("installed") && service.optString("state") != "running") {
+                            blocked += ConnectionCheck(id, host, result = "unverified", fields = mapOf("reason" to "Managed service is not installed on this host; no restart inferred."))
+                            continue
+                        }
                         val probe = service.optJSONObject("probe")
                         val proofAge = System.currentTimeMillis() - (probe?.optLong("checked_at", 0) ?: 0)
                         if (probe == null || proofAge !in 0..30_000) {

@@ -32,4 +32,16 @@ class ServiceInventoryTest {
         assertEquals(ConnectionState.Unknown, state(ConnectionReply(200, body.toString()), 200_000))
     }
 
+    @Test fun absentOptionalServiceIsNeutralAndAbsentCoreDoesNotInventAnOutage() {
+        val body = JSONObject(reply("fail").text)
+        val row = body.getJSONArray("services").getJSONObject(0)
+        row.put("installed", false).put("state", "not_loaded")
+        assertEquals(ConnectionState.Unknown, state(ConnectionReply(200, body.toString())))
+        row.put("id", "syncthing")
+        val optional = serviceInventoryReadings(ConnectionReply(200, body.toString()), "Mac", "mac", 100_000).single()
+        assertEquals(Capability.Optional, optional.capability)
+        assertEquals(ConnectionState.Disabled, optional.state)
+        assertNull(optional.root)
+    }
+
 }
