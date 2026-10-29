@@ -8,12 +8,14 @@ import org.junit.Test
 class HyperliquidOrdersTest {
     private fun refuses(block:()->Unit){try{block();fail("Must refuse")}catch(_:IllegalArgumentException){}}
     @Test fun balancesSubtractHoldsAndNeverBorrowOrConfuseSideTokens(){
-        val state=JSONObject("""{"balances":[{"coin":"USDC","total":"12","hold":"2"},{"coin":"+10","total":"4","hold":"1"},{"coin":"+11","total":"90","hold":"0"}]}""")
+        val state=JSONObject("""{"balances":[{"coin":"USDC","token":0,"total":"12","hold":"2"},{"coin":"+10","total":"4","hold":"1"},{"coin":"+11","total":"90","hold":"0"}]}""")
         assertEquals(BigDecimal("10"),HyperliquidOrders.available(state,"USDC"))
         assertEquals(BigDecimal("3"),HyperliquidOrders.available(state,"+10"))
         assertEquals(BigDecimal.ZERO,HyperliquidOrders.available(state,"+20"))
+        val nonCanonical=JSONObject(state.toString());nonCanonical.getJSONArray("balances").getJSONObject(0).put("token",42)
+        refuses{HyperliquidOrders.available(nonCanonical,"USDC")}
         refuses{HyperliquidOrders.available(JSONObject(state.toString()).put("portfolioMarginEnabled",true),"+10")}
-        refuses{HyperliquidOrders.available(JSONObject("""{"balances":[{"coin":"USDC","total":"1","hold":"2"}]}"""),"USDC")}
+        refuses{HyperliquidOrders.available(JSONObject("""{"balances":[{"coin":"USDC","token":0,"total":"1","hold":"2"}]}"""),"USDC")}
     }
     @Test fun responseDistinguishesFilledRestingRejectedAndUnknown(){
         fun reply(s:String)=JSONObject("""{"status":"ok","response":{"type":"order","data":{"statuses":[$s]}}}""")

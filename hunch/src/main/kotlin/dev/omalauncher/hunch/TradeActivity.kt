@@ -90,6 +90,7 @@ class TradeActivity : PaperActivity() {
                     return@withContext service to OrderTickets.prepareFunded(OrderWallet(wallet),rules,limit,shares,BigDecimal("0.0007"),FundingSnapshot(wallet,now,null,null,BigDecimal("10000")),now,buy,chosenTif,true,BigDecimal("100"))
                 }
                 val meta = service.info(JSONObject().put("type","outcomeMeta"))
+                val metaAt=System.currentTimeMillis()
                 val market = Market.parse(meta).singleOrNull { it.id == marketId } ?: error("This market is not listed on the chosen network")
                 require(market.identity==intent.getStringExtra("identity") && market.title==intent.getStringExtra("title") && market.sideLabel(outcomeSide)==intent.getStringExtra("sideLabel")) { "Selected market differs on this network. Return to the market list." }
                 require(market.quote == "USDC") { "Only USDC outcomes are supported" }
@@ -97,15 +98,16 @@ class TradeActivity : PaperActivity() {
                 val asset = Math.toIntExact(Math.addExact(100_000_000L,encoding))
                 require(limit.stripTrailingZeros().precision() <= 5 && limit.stripTrailingZeros().scale() <= 8) { "Price exceeds venue precision" }
                 val balances = service.balances(wallet)
+                val balanceAt=System.currentTimeMillis()
                 val fees = service.info(JSONObject().put("type","userFees").put("user",wallet))
                 val scale = BigDecimal(meta.get("feeScale").toString()); require(scale.signum()>=0)
                 val rate = maxOf(BigDecimal(fees.getString("userSpotCrossRate")),BigDecimal(fees.getString("userSpotAddRate")),BigDecimal.ZERO).multiply(scale)
                 val now = System.currentTimeMillis()
                 // Outcomes use integral shares. Venue enforces its own notional minimum as well;
                 // a rejection is shown, never enlarged/retried. No guessed account spending cap.
-                val rules = VenueOrderRules(asset,market.title,market.sideLabel(outcomeSide),BigDecimal("0.00000001"),BigDecimal.ONE,BigDecimal.ZERO,BigDecimal.ONE,now)
+                val rules = VenueOrderRules(asset,market.title,market.sideLabel(outcomeSide),BigDecimal("0.00000001"),BigDecimal.ONE,BigDecimal.ZERO,BigDecimal.ONE,metaAt)
                 val ticket = OrderTickets.prepareFunded(OrderWallet(wallet),rules,limit,shares,rate,
-                    FundingSnapshot(wallet,now,null,null,HyperliquidOrders.available(balances,"USDC")),now,
+                    FundingSnapshot(wallet,balanceAt,null,null,HyperliquidOrders.available(balances,"USDC")),now,
                     buy,chosenTif,testnet,HyperliquidOrders.available(balances,"+$encoding"))
                 service to ticket
             }
@@ -175,7 +177,9 @@ class TradeActivity : PaperActivity() {
             user.refresh().getOrThrow()
             val wallet=user.embeddedEthereumWallets.singleOrNull { it.address.equals(ticket.wallet,true) } ?: error("Signing wallet changed")
             check(ticket.fresh(System.currentTimeMillis())) { "Review expired before signing" }
-            val signature=wallet.provider.request(EthereumRpcRequest.ethSignTypedDataV4(ticket.wallet,typed.toString())).getOrThrow().data
+            val remaining=ticket.reviewedAt+30_000-System.currentTimeMillis()
+            check(remaining>0) { "Review expired before signing" }
+            val signature=withTimeout(remaining){wallet.provider.request(EthereumRpcRequest.ethSignTypedDataV4(ticket.wallet,typed.toString())).getOrThrow().data}
             check(Regex("0x[0-9a-fA-F]{130}").matches(signature)) { "Invalid signature response" }
             reply(call,signature)
         }catch(e:Exception){reply(call,error=e.message?:"Signing failed");uncertain("Signing cancelled or failed before submission. Nothing sent; review a new order when ready.")}

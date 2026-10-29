@@ -10,7 +10,7 @@ function rpc(kind, body) {
 window.HunchSdk = {
  reply(id,result,error){const p=pending.get(id);if(!p)return;pending.delete(id);error?p.reject(new Error(error)):p.resolve(result);},
  async send(ticket){
-  if(active)throw new Error('An order is already being processed');active=true;
+  if(active){window.SomaHunch.post(JSON.stringify({type:'tradeFailed',id:ticket.id,message:'The previous SDK attempt is still settling; review again shortly.'}));return;}active=true;
   try {
    const config={wallet:{address:ticket.wallet,signTypedData:typed=>rpc('tradeSign',{id:ticket.id,typed:JSON.parse(serializeTypedData({...typed,types:{EIP712Domain:getTypesForEIP712Domain({domain:typed.domain}),...typed.types}}))})},
     nonceManager:()=>ticket.nonce,

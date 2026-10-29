@@ -51,6 +51,7 @@ internal class HyperliquidOrders(val testnet: Boolean) {
             val found = (0 until rows.length()).map { rows.getJSONObject(it) }.filter { it.getString("coin") == coin }
             require(found.size <= 1)
             if (found.isEmpty()) return BigDecimal.ZERO
+            if(coin=="USDC")require(found.single().getInt("token")==0) { "Verify canonical venue USDC" }
             val total = found.single().getString("total").toBigDecimal()
             val hold = found.single().getString("hold").toBigDecimal()
             require(total.signum() >= 0 && hold.signum() >= 0 && total >= hold)
