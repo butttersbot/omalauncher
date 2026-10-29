@@ -590,6 +590,16 @@ class AgentTilesTest {
         assertEquals(listOf(approval, question, working).map { it.key }, liveThreads(input, emptyMap(), now, true).map { it.key })
     }
 
+    @Test fun requestsFromAnOlderRunnerDoNotShuffleWithPeriodicBusyStamps() {
+        val older = thread(macThreadKey("older"), ThreadState.NeedsOk, now - 2000)
+        val newer = thread(macThreadKey("newer"), ThreadState.NeedsOk, now - 1000)
+        val placed = listOf(older, newer).associate { tile(it) to "agents" }
+        val first = agentTilePlan(listOf(older, newer), placed, "agents", emptyMap(), now, true)
+        val later = agentTilePlan(listOf(older, newer), placed, "agents", first.stamps, now + 120000, true)
+        assertEquals(listOf(tile(newer), tile(older)), first.order)
+        assertEquals(first.order, later.order)
+    }
+
     @Test fun withNothingAtWorkTheyAreByTimeNewestFirst() {
         val idle = listOf(3, 1, 2).map { thread(macThreadKey("t-$it"), ThreadState.Idle, worked = now - it * hour) }
         val plan = agentTilePlan(idle, idle.associate { tile(it) to "agents" }, "agents", emptyMap(), now, listed = true, room = 6)

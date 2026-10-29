@@ -206,12 +206,12 @@ fun agentTilePlan(
             life == TileLife.Gone -> if (there) remove += tile
             there -> {
                 show[tile] = AgentTile(thread.name, thread, fading = life == TileLife.Fading)
-                ranks[tile] = dev.omalauncher.assist.agentThreadRank(thread.copy(worked = busy))
+                ranks[tile] = dev.omalauncher.assist.agentThreadRank(thread.copy(worked = if (thread.state == ThreadState.NeedsOk) thread.worked else busy))
             }
             hidden == TileHidden.No -> {
                 add += tile
                 show[tile] = AgentTile(thread.name, thread, fading = life == TileLife.Fading)
-                ranks[tile] = dev.omalauncher.assist.agentThreadRank(thread.copy(worked = busy))
+                ranks[tile] = dev.omalauncher.assist.agentThreadRank(thread.copy(worked = if (thread.state == ThreadState.NeedsOk) thread.worked else busy))
             }
         }
         val stays = there && tile !in remove
