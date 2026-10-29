@@ -201,9 +201,14 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
             ConnectionState.Degraded -> "Phone capability needs verification."
             else -> if (PhoneService.instance == null) "Android is still checking the accessibility binding. No ready state is assumed." else if (PhoneDisplays.helperUp()) "Accessibility bound; background helper answered. Hidden display is created only on demand. Trusted wireless ADB still needs an end-to-end probe." else "Accessibility bound. Background helper is not currently verified; idle/off is not an outage. Trusted wireless ADB still needs an end-to-end probe."
         }, if (phone == ConnectionState.Failed) "phone-binding" else null)
-        add(Capability.Agents, if (runtime.connectionsLinuxRunning) ConnectionState.Unknown else ConnectionState.Disabled,
-            if (runtime.connectionsLinuxRunning) "Phone Linux runtime is running. Keeper and provider sign-in are not verified by runner health."
-            else "Phone Linux runtime is off intentionally.")
+        if (runtime.connectionsLinuxRunning) {
+            val keeper = connectionKeeperProbe(runtime.proot.home)
+            add(Capability.Agents, if (keeper.result == "pass") ConnectionState.Ready else ConnectionState.Unknown,
+                if (keeper.result == "pass") "Phone keeper answered its real list protocol. Provider sign-in remains a separate check."
+                else "Phone keeper protocol is unverified; no running jobs are inferred or terminated.",
+                checks = listOf(keeper))
+            add(Capability.Agents, ConnectionState.Unknown, "Phone provider token validity still needs a provider-specific check.")
+        } else add(Capability.Agents, ConnectionState.Disabled, "Phone Linux runtime is off intentionally.")
         val machines = readMacMachines(runtime.proot.launcherConfig)
         working = if (machines.isEmpty()) null else 0; queued = if (machines.isEmpty()) null else 0
         val aliases = machines.associate { m -> (m.id.ifEmpty { dev.omalauncher.canvas.COCKPIT_POCKET_HOST }) to URI(m.config.url).host }
