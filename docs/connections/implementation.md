@@ -97,3 +97,7 @@ A switch-enabled but disconnected accessibility binding uses the existing phone
 startup-grace policy and becomes a real incident; owner-off, pause and sleep
 remain neutral. Workspace service recovery has its own authenticated identity
 observation while full sync freshness remains Unknown.
+Sleeping observations age into Stale if checking stops; they never remain fresh
+sleep evidence indefinitely. Added a loopback-only HTTP regression proving that
+redirects do not forward the configured bearer credential and an oversized
+HTTP 200 remains reachable/unverified. No remote account is used by that test.

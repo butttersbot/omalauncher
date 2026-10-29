@@ -51,7 +51,8 @@ class ConnectionsTest {
         assertEquals(12, snapshot.rows(100_000).size)
         assertEquals(ConnectionState.Unknown, snapshot.rows(100_000).first { it.capability == Capability.Canvas }.state)
         assertEquals(ConnectionState.Stale, snapshot.rows(200_000).first { it.capability == Capability.Canvas }.state)
-        assertEquals(ConnectionState.Sleeping, row(Capability.Phone, ConnectionState.Sleeping, at = 1).current(200_000).state)
+        assertEquals(ConnectionState.Sleeping, row(Capability.Phone, ConnectionState.Sleeping).current(100_000).state)
+        assertEquals(ConnectionState.Stale, row(Capability.Phone, ConnectionState.Sleeping, at = 1).current(200_000).state)
     }
     @Test fun restoreRequiresKnownIdleJobsAndSupportedControl() {
         assertTrue(restoreGuard(null, 0, true)!!.contains("cannot be verified"))
@@ -82,6 +83,34 @@ class ConnectionsTest {
         assertTrue(groupConnectionFailures(failed).all { it.root == "host:mac" && it.state == ConnectionState.Failed })
         val partial = failed + row(Capability.Canvas, ConnectionState.Ready, root = "canvas").copy(sourceHost = "mac")
         assertEquals(2, ConnectionsSnapshot(groupConnectionFailures(partial)).incidents(100_000).size)
+    }
+    @Test(timeout = 10_000) fun redirectsNeverForwardCredentialsAndOversizedBodiesStayUnverified() {
+        val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1", 0), 0)
+        val targetHits = java.util.concurrent.atomic.AtomicInteger()
+        val observedAuth = java.util.concurrent.atomic.AtomicReference<String>()
+        server.createContext("/redirect") { exchange ->
+            observedAuth.set(exchange.requestHeaders.getFirst("Authorization"))
+            exchange.responseHeaders.set("Location", "/target")
+            exchange.sendResponseHeaders(302, -1); exchange.close()
+        }
+        server.createContext("/target") { exchange ->
+            targetHits.incrementAndGet(); exchange.sendResponseHeaders(200, -1); exchange.close()
+        }
+        server.createContext("/large") { exchange ->
+            val bytes = ByteArray(262_145) { 'x'.code.toByte() }
+            exchange.sendResponseHeaders(200, bytes.size.toLong())
+            exchange.responseBody.use { it.write(bytes) }
+        }
+        server.start()
+        try {
+            val base = "http://127.0.0.1:${server.address.port}"
+            assertEquals(302, connectionGet(ConnectionEndpoint("$base/redirect", "fictional-test-key")).code)
+            assertEquals("Bearer fictional-test-key", observedAuth.get())
+            assertEquals(0, targetHits.get())
+            val oversized = connectionGet(ConnectionEndpoint("$base/large"))
+            assertEquals(200, oversized.code)
+            assertEquals(ConnectionState.Unknown, connectionState(oversized) { true })
+        } finally { server.stop(0) }
     }
     @Test fun endpointNeverPrintsCredentials() {
         assertFalse(ConnectionEndpoint("http://example/health?token=secret", "secret").toString().contains("secret"))
