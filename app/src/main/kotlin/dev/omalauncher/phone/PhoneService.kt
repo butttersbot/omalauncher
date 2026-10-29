@@ -16,6 +16,7 @@ import dev.omalauncher.oma.ring.RingState
 import dev.omalauncher.oma.ring.doneMillis
 import dev.omalauncher.oma.ring.ringState
 import dev.omalauncher.oma.ring.ringStyle
+import dev.omalauncher.widgets.style
 import org.json.*
 import java.io.File
 import java.util.UUID
