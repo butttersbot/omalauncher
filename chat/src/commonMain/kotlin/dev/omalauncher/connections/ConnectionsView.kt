@@ -169,6 +169,9 @@ fun ConnectionsDialog(now: Long, close: () -> Unit) {
         BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding().padding(14.dp), contentAlignment = Alignment.Center) {
             // Two columns from 600dp: unfolded landscape and the inner screen held upright (Canvas: Expanded · Unfolded upright).
             val wide = maxWidth >= 600.dp
+            // The v6 cards give the capability list its own scroll (380px unfolded, 260px cover) so the footer shows;
+            // the inner screen held upright has room for all twelve (card connections-expanded-upright).
+            val listCap = when { !wide -> 260.dp; maxHeight > maxWidth -> null; else -> 380.dp }
             val inset = if (!wide) 16.dp else 20.dp
             Column(Modifier.widthIn(max = if (wide) 880.dp else 447.dp).fillMaxWidth().heightIn(max = maxHeight)
                 .background(Pack.background, Pack.shape()).border(Pack.hair, Pack.border, Pack.shape())) {
@@ -187,11 +190,11 @@ fun ConnectionsDialog(now: Long, close: () -> Unit) {
                     val snapshot = ConnectionsSource.snapshot
                     if (wide) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                         Column(Modifier.weight(1f)) { ConnectionsRepair(snapshot, now) }
-                        Column(Modifier.weight(1f)) { ConnectionsInventory(snapshot, now) }
+                        Column(Modifier.weight(1f)) { ConnectionsInventory(snapshot, now, listCap) }
                     } else {
                         ConnectionsRepair(snapshot, now)
                         Spacer(Modifier.height(24.dp))
-                        ConnectionsInventory(snapshot, now)
+                        ConnectionsInventory(snapshot, now, listCap)
                     }
                     ConnectionsFooter()
                 }
@@ -262,11 +265,13 @@ private fun AgentTools() {
     if (details) Words(ConnectionsSource.diagnostic?.take(24_000) ?: "No diagnostic record yet. Use Check again.", caption(10.sp))
 }
 @Composable
-private fun ConnectionsInventory(snapshot: ConnectionsSnapshot, now: Long) {
+private fun ConnectionsInventory(snapshot: ConnectionsSnapshot, now: Long, cap: androidx.compose.ui.unit.Dp?) {
     val rows = snapshot.rows(now)
     val incidents = snapshot.incidents(now)
     SectionHead("All capabilities", "${rows.size} groups")
-    for (row in rows) ConnectionDisclosure(row, connectionStatus(row, incidents))
+    Column(if (cap == null) Modifier else Modifier.heightIn(max = cap).verticalScroll(rememberScrollState())) {
+        for (row in rows) ConnectionDisclosure(row, connectionStatus(row, incidents))
+    }
 }
 @Composable
 private fun ConnectionDisclosure(row: ConnectionReading, status: ConnectionStatus) {
