@@ -5,7 +5,7 @@ allprojects { p ->
             android.buildToolsVersion = '36.0.0'
             android.defaultConfig.versionCode = new File('/root/.config/oma-development/next-version-code').text.trim().toInteger()
             android.buildTypes.debug.applicationIdSuffix = '.boss'
-            android.buildTypes.debug.manifestPlaceholders['appLabel'] = 'Omalauncher Boss'
+            android.buildTypes.debug.manifestPlaceholders['appLabel'] = 'Soma'
             android.signingConfigs.debug.storeFile = new File('/root/.config/oma-development/working-debug.keystore')
             android.signingConfigs.debug.storePassword = 'android'
             android.signingConfigs.debug.keyAlias = 'androiddebugkey'

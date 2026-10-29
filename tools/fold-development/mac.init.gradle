@@ -9,7 +9,7 @@ allprojects { p ->
             if (code == null || !code.isInteger()) throw new GradleException('SOMA_VERSION_CODE must be the phone\'s next version code')
             android.defaultConfig.versionCode = code.toInteger()
             android.buildTypes.debug.applicationIdSuffix = '.boss'
-            android.buildTypes.debug.manifestPlaceholders['appLabel'] = 'Omalauncher Boss'
+            android.buildTypes.debug.manifestPlaceholders['appLabel'] = 'Soma'
         }
     }
 }
