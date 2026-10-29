@@ -7,7 +7,9 @@ widget "Deco" {
 
   // Live from the main Deco's own API through soma-deco (tools/deco/soma-deco). Never sample numbers: a reading the
   // router didn't give is "—", never 0, and an old one says how old it is.
-  source net = cmd("soma-deco poll --json") json every 60s timeout 40s optional
+  // The poll writes ~/.cache/soma-deco/status.json; the tile shows that file, so a poll or a speed test shows at once.
+  source poll = cmd("soma-deco poll") every 60s timeout 40s optional
+  source net = file("~/.cache/soma-deco/status.json") json
   source now = clock every 30s
   state testing = false
   state testOut = ""
@@ -36,7 +38,10 @@ widget "Deco" {
   let healthColor = live ? green : muted
   let tested = net.lastTestAt != null ? "ROUTER TEST · ${now - net.lastTestAt < 60 ? "JUST NOW" : fmtAgo(net.lastTestAt, now) + " AGO"}" : "NO ROUTER TEST YET"
   // As many devices as the tile has room for beside Test speed: two at 4 rows, three from 5 (the mockup's large).
-  let listed = (rows ?? 4) >= 5 ? 3 : (phoneNewer ? 1 : 2)
+  // At 4 rows the phone's test shares the router's line, so two devices still fit (Phone A, 2026-10-29).
+  let tight = large && (rows ?? 4) < 5
+  let listed = tight ? 2 : 3
+  let testLine = tight && phoneNewer && !testing ? "${tested} · PHONE ${round(p)} MBPS" : tested
   let pr = parseJson(plan)
 
   Column {
@@ -55,8 +60,8 @@ widget "Deco" {
       Spacer { weight: 1 }
       if !compact && live { Text { text: "${len(devices)} devices online"; style: body } }
     }
-    if !short { Text { text: tested; style: label; color: muted; maxLines: 1 } }
-    if !short && (testing || phoneNewer) { Text { text: testing ? "TESTING PHONE WI-FI…" : compact ? "PHONE WI-FI · ${round(p)} MBPS" : phoneLine; style: label; color: muted; maxLines: 1 } }
+    if !short { Text { text: testLine; style: label; color: muted; maxLines: 1 } }
+    if !short && (testing || (phoneNewer && !tight)) { Text { text: testing ? "TESTING PHONE WI-FI…" : compact ? "PHONE WI-FI · ${round(p)} MBPS" : phoneLine; style: label; color: muted; maxLines: 1 } }
     if short {
     } else if live {
       if compact { Text { text: "${len(devices)} devices online"; style: body } }

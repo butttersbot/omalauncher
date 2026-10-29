@@ -28,6 +28,7 @@ HOME = Path.home()
 SECRET = HOME / ".local/share/soma-deco/credentials.json"
 PLAN = HOME / ".local/share/soma-deco/restart-plan.json"
 STATUS = HOME / ".cache/soma-deco/status.json"
+NAMES = HOME / ".config/soma-deco/names.json"   # {"AA:BB:..": "Mac Pro"}: Boss's names for devices the router calls vaguely
 LIB = HOME / ".local/share/soma-deco/lib"     # tplink_deco_api at the inspected commit
 sys.path.insert(0, str(LIB))
 
@@ -87,6 +88,18 @@ def client(c):
     return d
 
 
+def named(devices):
+    """His names first (names.json, by MAC), then no two alike: a name the router gives twice gets the MAC's last four."""
+    try: mine = {k.upper().replace("-", ":"): v for k, v in json.loads(NAMES.read_text()).items()}
+    except Exception: mine = {}
+    for d in devices:
+        d["name"] = mine.get(d["id"].upper().replace("-", ":"), d["name"])
+    counts = {}
+    for d in devices: counts[d["name"]] = counts.get(d["name"], 0) + 1
+    for d in devices:
+        if counts[d["name"]] > 1: d["name"] += " · " + d["id"].replace(":", "").replace("-", "")[-4:]
+    return devices
+
 def link_of(c):
     """How a device is joined, as the router says: Wired, or the Wi-Fi band; None if it doesn't say."""
     if (c.wire_type or "").lower() == "wired" or (c.connection_type or "").lower() == "wired": return "Wired"
@@ -111,7 +124,7 @@ def poll():
         nodes = d.get_device_list()
         # Names only: the router's per-device speeds aren't live (0 for the Fold under a 300 Mbps download, 2026-10-28),
         # so none are shown (Phone A's call, 2026-10-28).
-        devices = sorted(({"id": x.mac, "name": x.name or x.mac, "link": link_of(x)} for x in clients), key=lambda v: v["name"].lower())
+        devices = sorted(named([{"id": x.mac, "name": x.name or x.mac, "link": link_of(x)} for x in clients]), key=lambda v: v["name"].lower())
         s = {**base, "state": "ok", "connected": True, "devices": devices, "deviceNames": [v["name"] for v in devices],
              "nodes": [{"id": n.mac, "name": n.custom_nickname or n.nickname or n.device_model, "role": n.role, "model": n.device_model} for n in nodes]}
         try: rt = router_test(d.request("admin/device", "speedtest", {"operation": "read"}))
