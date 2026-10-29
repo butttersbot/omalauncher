@@ -73,6 +73,7 @@ fun main(args: Array<String>) {
     if (args.firstOrNull() == "--mesh" || args.firstOrNull() == "mesh") exitProcess(when (args.getOrNull(1)) {
         "--prove" -> Mesh.prove(::println)
         "--read" -> Mesh.read(::println)
+        "--list" -> Mesh.list(::println)
         else -> Mesh.run(::println)
     })
     if (args.firstOrNull() == "check") exitProcess(if (args.getOrNull(1) == "stop" && args.size == 3) Check.stop(args[2], ::println) else Check.run(::println))
