@@ -20,6 +20,7 @@ class TradeActivity : PaperActivity() {
     private var journal: OrderJournal? = null
     private var reviewed: Pair<JournalOrder, OrderTicket>? = null
     private var signing = false; private var signatureTaken = false; private var submitted = false
+    private var demo=false
     private var sdkReady=false
     private var nonce = 0L
     private var marketId = -1L; private var outcomeSide = -1
@@ -37,6 +38,7 @@ class TradeActivity : PaperActivity() {
     private fun field(label: String) = EditText(this).apply { hint = label; contentDescription = label; setSingleLine(); inputType = 8194; textSize = 20f }
     override fun onCreate(saved: Bundle?) {
         super.onCreate(saved)
+        demo=BuildConfig.DEBUG && intent.getBooleanExtra("demo",false)
         marketId = intent.getLongExtra("market", -1); outcomeSide = intent.getIntExtra("side", -1)
         if (marketId < 0 || outcomeSide !in 0..1) { finish(); return }
         // The offline SDK gets no network access and has no private key.
@@ -45,9 +47,9 @@ class TradeActivity : PaperActivity() {
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(28, 16, 28, 16); setBackgroundColor(bg) }
         val scroll = ScrollView(this).apply { addView(root) }
         (paper.parent as android.widget.FrameLayout).addView(scroll, android.widget.FrameLayout.LayoutParams(-1,-1))
-        root.addView(text("HUNCH / ORDER", 28f)); root.addView(text(intent.getStringExtra("title").orEmpty(),22f))
+        root.addView(text(if(demo)"HUNCH / FICTIONAL TEST ORDER" else "HUNCH / ORDER", 28f)); root.addView(text(intent.getStringExtra("title").orEmpty(),22f))
         root.addView(text(intent.getStringExtra("sideLabel").orEmpty()))
-        root.addView(text("Network")); network = choice(listOf("TESTNET · test funds", "MAINNET · real funds")); root.addView(network)
+        root.addView(text("Network")); network = choice(listOf("TESTNET · test funds", "MAINNET · real funds")); root.addView(network);network.setSelection(if(demo)0 else 1);if(demo)network.isEnabled=false
         root.addView(text("Action")); direction = choice(listOf("Buy", "Sell owned shares")); root.addView(direction)
         root.addView(text("Order")); tif = choice(listOf("IOC · unfilled part cancels", "Limit · rests until filled or cancelled")); root.addView(tif)
         price = field("Limit price · USDC per share"); root.addView(price)
@@ -56,7 +58,7 @@ class TradeActivity : PaperActivity() {
         root.addView(Button(this).apply { text = "Check previous order status"; setOnClickListener { reconcile() } })
         message = text("Choose the network, action, price and size. Nothing is signed or sent when you open this ticket."); root.addView(message)
         root.addView(Button(this).apply { text = "Back to market"; setOnClickListener { if(!signing)finish() } })
-        try { journal = OrderJournal(File(filesDir,"orders.json")) }
+        try { journal = OrderJournal(File(filesDir,if(demo)"orders-fixture.json" else "orders.json")) }
         catch (_: Exception) { review.isEnabled=false; message.text="Trading disabled: the journal could not be opened. Reconcile before continuing." }
     }
     private fun prepare() {
@@ -69,11 +71,17 @@ class TradeActivity : PaperActivity() {
         if(limit == null || shares == null) { message.text="Enter a price and exact size.";return }
         review.isEnabled=false; message.text="Checking market, fees and available balances…"
         scope.launch { try {
-            val wallet = checkNotNull(LiveWallet(this@TradeActivity).current().address) { "Open your wallet and sign in first" }
+            val wallet = checkNotNull(if(demo)"0x1111111111111111111111111111111111111111" else LiveWallet(this@TradeActivity).current().address) { "Open your wallet and sign in first" }
             val service = HyperliquidOrders(testnet)
             val prepared = withContext(Dispatchers.IO) {
+                if(demo){
+                    val now=System.currentTimeMillis()
+                    val rules=VenueOrderRules(100000010,"Fictional test market","Yes",BigDecimal("0.00000001"),BigDecimal.ONE,BigDecimal.ONE,BigDecimal.ONE,now)
+                    return@withContext service to OrderTickets.prepareFunded(OrderWallet(wallet),rules,limit,shares,BigDecimal("0.0007"),FundingSnapshot(wallet,now,null,null,BigDecimal("10000")),now,buy,chosenTif,true,BigDecimal("100"))
+                }
                 val meta = service.info(JSONObject().put("type","outcomeMeta"))
                 val market = Market.parse(meta).singleOrNull { it.id == marketId } ?: error("This market is not listed on the chosen network")
+                require(market.title==intent.getStringExtra("title") && market.sideLabel(outcomeSide)==intent.getStringExtra("sideLabel")) { "Selected market differs on this network. Return to the market list." }
                 require(market.quote == "USDC") { "Only USDC outcomes are supported" }
                 val encoding = Math.addExact(Math.multiplyExact(marketId,10),outcomeSide.toLong())
                 val asset = Math.toIntExact(Math.addExact(100_000_000L,encoding))
@@ -143,6 +151,7 @@ class TradeActivity : PaperActivity() {
             val domain=typed.getJSONObject("domain");val msg=typed.getJSONObject("message")
             require(domain.getString("name")=="Exchange" && domain.getInt("chainId")==1337 && domain.getString("version")=="1" && domain.getString("verifyingContract")=="0x0000000000000000000000000000000000000000")
             require(typed.getString("primaryType")=="Agent" && msg.getString("source")== (if(ticket.testnet)"b" else "a"))
+            if(demo){reply(call,"0x"+"1".padStart(64,'0')+"1".padStart(64,'0')+"1b");return@launch}
             val privy=PrivySession.get(this@TradeActivity)
             val user=(privy.getAuthState() as? AuthState.Authenticated)?.user ?: error("Wallet sign-in required")
             user.refresh().getOrThrow()
@@ -168,7 +177,7 @@ class TradeActivity : PaperActivity() {
             journal!!.transition(row.id,OrderStage.Submitting,System.currentTimeMillis());submitted=true;message.text="Order sent once. Reading venue result…"
             scope.launch {
                 try {
-                    val result=withContext(Dispatchers.IO){checkNotNull(api).submit(body)}
+                    val result=withContext(Dispatchers.IO){if(demo)JSONObject("""{"status":"ok","response":{"type":"order","data":{"statuses":[{"filled":{"oid":1,"totalSz":"${ticket.shares}","avgPx":"${ticket.limitPrice}"}}]}}}""") else checkNotNull(api).submit(body)}
                     val stage=HyperliquidOrders.replyStage(result)
                     journal!!.transition(row.id,stage.first,System.currentTimeMillis(),stage.second)
                     reply(call,result);message.text="${stage.first}: ${result.toString().take(1800)}\nUse Check previous order status to read back from the venue."
@@ -189,7 +198,7 @@ class TradeActivity : PaperActivity() {
             if(rows.isEmpty()){message.text="No unresolved order in the journal.";return@launch}
             val notes=withContext(Dispatchers.IO){rows.map {row ->
                 val service=HyperliquidOrders(row.ticket.optBoolean("testnet"))
-                val result=service.status(row.ticket.getString("wallet"),row.cloid)
+                val result=if(demo)JSONObject("""{"status":"order","order":{"status":"filled"}}""") else service.status(row.ticket.getString("wallet"),row.cloid)
                 val stage=HyperliquidOrders.statusStage(result)
                 if(stage!=OrderStage.Unknown)journal!!.transition(row.id,stage,System.currentTimeMillis())
                 "${row.cloid}: $stage\n${result.toString().take(1200)}"

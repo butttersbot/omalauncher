@@ -23,6 +23,9 @@ class MainActivity:PaperActivity(){
         design=if(BuildConfig.DEBUG)intent.getStringExtra("design").orEmpty() else ""
         chapter=state?.getString("chapter")?:"today"
         openPaper(if(design.matches(Regex("[A-Za-z]+")))"?design=$design" else "")
+        if(BuildConfig.DEBUG&&intent.getStringExtra("tradeFixture")=="demo"){
+            intent.removeExtra("tradeFixture");startActivity(Intent(this,TradeActivity::class.java).putExtra("demo",true).putExtra("market",1L).putExtra("side",0).putExtra("title","Fictional test market").putExtra("sideLabel","Yes"))
+        }
         if(BuildConfig.DEBUG&&intent.getStringExtra("walletFixture")=="demo"){
             intent.removeExtra("walletFixture");startActivity(Intent(this,WalletActivity::class.java).putExtra("demo",true))
         }
