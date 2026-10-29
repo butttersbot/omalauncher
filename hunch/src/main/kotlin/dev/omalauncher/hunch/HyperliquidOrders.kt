@@ -30,6 +30,16 @@ internal class HyperliquidOrders(val testnet: Boolean) {
     fun balances(wallet: String) = info(JSONObject().put("type", "spotClearinghouseState").put("user", wallet))
     fun status(wallet: String, cloid: String) = info(JSONObject().put("type", "orderStatus").put("user", wallet).put("oid", cloid))
     companion object {
+        /** Validate the SDK transport envelope against the native immutable review before HTTP. */
+        fun validate(body: JSONObject, ticket: OrderTicket, cloid: String, nonce: Long) {
+            val action=body.getJSONObject("action");val orders=action.getJSONArray("orders")
+            require(action.getString("type")=="order" && action.getString("grouping")=="na" && !action.has("builder") && orders.length()==1)
+            val order=orders.getJSONObject(0)
+            require(order.getInt("a")==ticket.asset && order.getBoolean("b")==ticket.buy && !order.getBoolean("r") && order.getString("c")==cloid)
+            require(order.getString("p").toBigDecimal().compareTo(ticket.limitPrice)==0 && order.getString("s").toBigDecimal().compareTo(ticket.shares)==0)
+            require(order.getJSONObject("t").getJSONObject("limit").getString("tif")==ticket.timeInForce)
+            require(body.getLong("nonce")==nonce && body.getLong("expiresAfter")==ticket.reviewedAt+30_000 && body.isNull("vaultAddress"))
+        }
         fun available(state: JSONObject, coin: String): BigDecimal {
             val rows = state.getJSONArray("balances")
             val found = (0 until rows.length()).map { rows.getJSONObject(it) }.filter { it.getString("coin") == coin }

@@ -24,6 +24,20 @@ class HyperliquidOrdersTest {
         assertEquals(OrderStage.Unknown,HyperliquidOrders.statusStage(JSONObject("""{"status":"unknownOid"}""")))
         assertEquals(OrderStage.Cancelled,HyperliquidOrders.statusStage(JSONObject("""{"status":"order","order":{"status":"iocCancelCanceled"}}""")))
     }
+    @Test fun sdkEnvelopeCannotChangeTheNativeReviewOrAddAnOrder() {
+        val now=1800000000000L
+        val ticket=OrderTicket("0x1111111111111111111111111111111111111111",100000010,"Fixture","Yes",BigDecimal("0.5"),BigDecimal("20"),BigDecimal("10"),BigDecimal.ZERO,BigDecimal("10"),now)
+        val cloid="0x11111111111111111111111111111111"
+        fun body()=JSONObject("""{"action":{"type":"order","orders":[{"a":100000010,"b":true,"p":"0.50","s":"20","r":false,"t":{"limit":{"tif":"Ioc"}},"c":"$cloid"}],"grouping":"na"},"nonce":$now,"expiresAfter":${now+30000}}""")
+        HyperliquidOrders.validate(body(),ticket,cloid,now)
+        for((key,value) in listOf("a" to 100000011,"b" to false,"p" to "0.6","s" to "21","r" to true,"c" to "0x22222222222222222222222222222222")) {
+            val changed=body();changed.getJSONObject("action").getJSONArray("orders").getJSONObject(0).put(key,value)
+            refuses{HyperliquidOrders.validate(changed,ticket,cloid,now)}
+        }
+        for(changed in listOf(body().put("nonce",now+1),body().put("expiresAfter",now+30001),body().put("vaultAddress",ticket.wallet)))refuses{HyperliquidOrders.validate(changed,ticket,cloid,now)}
+        val extra=body();extra.getJSONObject("action").getJSONArray("orders").put(JSONObject(extra.getJSONObject("action").getJSONArray("orders").getJSONObject(0).toString()))
+        refuses{HyperliquidOrders.validate(extra,ticket,cloid,now)}
+    }
     @Test fun sellingUsesOwnedFreeSharesAndNeverCreatesAnUncoveredPosition(){
         val now=1800000000000L;val wallet="0x1111111111111111111111111111111111111111"
         val rules=VenueOrderRules(100000010,"Fixture","Yes",BigDecimal("0.01"),BigDecimal.ONE,BigDecimal.ONE,BigDecimal.ONE,now)

@@ -176,12 +176,8 @@ class TradeActivity : PaperActivity() {
         if(!signing || !signatureTaken || submitted || data.optString("id")!=row.id) {reply(call,error="No signed confirmed order");return}
         try {
             check(ticket.fresh(System.currentTimeMillis())) {"Review expired"}
-            val body=data.getJSONObject("body");val action=body.getJSONObject("action");val orders=action.getJSONArray("orders")
-            require(action.getString("type")=="order" && action.getString("grouping")=="na" && !action.has("builder") && orders.length()==1)
-            val order=orders.getJSONObject(0)
-            require(order.getInt("a")==ticket.asset && order.getBoolean("b")==ticket.buy && !order.getBoolean("r") && order.getString("c")==row.cloid)
-            require(order.getString("p").toBigDecimal().compareTo(ticket.limitPrice)==0 && order.getString("s").toBigDecimal().compareTo(ticket.shares)==0)
-            require(order.getJSONObject("t").getJSONObject("limit").getString("tif")==ticket.timeInForce && body.getLong("nonce")==nonce && body.getLong("expiresAfter")==ticket.reviewedAt+30_000 && body.isNull("vaultAddress"))
+            val body=data.getJSONObject("body")
+            HyperliquidOrders.validate(body,ticket,row.cloid,nonce)
             journal!!.transition(row.id,OrderStage.Submitting,System.currentTimeMillis());submitted=true;message.text="Order sent once. Reading venue result…"
             scope.launch {
                 try {
