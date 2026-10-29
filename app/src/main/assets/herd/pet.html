@@ -1322,7 +1322,8 @@ window.herd = {
     if (!top) return speak('', moodNow === 'offline' ? "I can't reach the herd. Is Tailscale on?" : 'All quiet. Nobody is working right now.');
     speak(top.title, (parts.join(', ') + '. ').replace(/^./, c => c.toUpperCase()) + (gist(top.last) || ''), { ms: 9000, id: top.id });
   },
-  // The shell's abilities: {stroll: it can walk the window along the screen, room: it can grow for the bubble; pocket and
+  // The shell's abilities: {stroll: it can walk the window along the screen, room: it can grow for the bubble, drag: the
+  // page carries the window (Omarchy's layer: the shell moves it by the drag messages); pocket and
   // sendclip for the Tailshare tab; os 'linux' for Omarchy's (pet/linux/herd-pet), which also posts as window.HerdAndroid}.
   caps(c) {
     Object.assign(caps, typeof c === 'string' ? JSON.parse(c) : c);
@@ -1377,7 +1378,35 @@ document.addEventListener('keydown', e => {
 const pet = $('pet');
 // On the Mac the shell owns presses on the sheep (tap, drag, menu) and calls herd.tap(); elsewhere a click is a tap.
 const shellOwnsSheep = !!window.webkit?.messageHandlers?.herd;
-pet.addEventListener('click', () => { if (!shellOwnsSheep) { nudge(); toggle(); } });
+// A shell that can move its window but can't see presses on the page (Omarchy's layer, caps.drag) is carried by the page:
+// a press that moves more than a few pixels is a drag, told to the shell as how far the pointer is from where it went
+// down (the window follows, so that stays small), and the click that ends it isn't a tap. Boss, 2026-10-29: "it's also
+// not draggable on MG1".
+let carry = null;
+pet.addEventListener('pointerdown', e => {
+  if (!caps.drag || document.body.classList.contains('open') || e.button !== 0) return;
+  carry = { x: e.clientX, y: e.clientY, moving: false, sent: 0 };
+  pet.setPointerCapture?.(e.pointerId);
+});
+pet.addEventListener('pointermove', e => {
+  if (!carry) return;
+  const dx = Math.round(e.clientX - carry.x), dy = Math.round(e.clientY - carry.y);
+  if (!carry.moving && Math.hypot(dx, dy) < 6) return;
+  if (!carry.moving) { carry.moving = true; herd.held(true); }
+  const now = performance.now();
+  if (now - carry.sent < 16) return;
+  carry.sent = now;
+  shell({ cmd: 'drag', dx, dy });
+});
+const drop = () => {
+  if (!carry) return;
+  const moved = carry.moving;
+  carry = null;
+  if (moved) { shell({ cmd: 'drop' }); herd.held(false); pet.dataset.carried = '1'; setTimeout(() => delete pet.dataset.carried, 300); }
+};
+pet.addEventListener('pointerup', drop);
+pet.addEventListener('pointercancel', drop);
+pet.addEventListener('click', () => { if (!shellOwnsSheep && !pet.dataset.carried) { nudge(); toggle(); } });
 think(1500);
 pet.addEventListener('contextmenu', e => e.preventDefault());
 

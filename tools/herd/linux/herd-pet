@@ -19,7 +19,8 @@ PULLED=HOME/'Downloads/Pocket'
 
 class Pet:
     def __init__(self):
-        self.ready=False;self.fetching=False;self.open=False;self.right=12;self.bottom=24
+        self.ready=False;self.fetching=False;self.open=False;self.right=12;self.bottom=24;self.w=150;self.h=150
+        self.place()
         self.window=Gtk.Window(title='Herd')
         self.window.set_decorated(False);self.window.set_resizable(False);self.window.set_app_paintable(True)
         self.window.set_visual(self.window.get_screen().get_rgba_visual())
@@ -45,7 +46,17 @@ class Pet:
         self.web.load_uri((pathlib.Path(__file__).resolve().parents[1]/'web/pet.html').as_uri())
         self.window.show_all();GLib.timeout_add_seconds(6,self.refresh)
         GLib.timeout_add_seconds(1,self.control)
+    def place(self):
+        # Where he last put it down (STATE/position.json), else the corner.
+        try:
+            p=json.loads((STATE/'position.json').read_text());self.right=int(p['right']);self.bottom=int(p['bottom'])
+        except Exception:pass
+    def screen(self):
+        try:
+            g=Gdk.Display.get_default().get_monitor(0).get_geometry();return g.width,g.height
+        except Exception:return 1920,1080
     def resize(self,w,h):
+        self.w,self.h=w,h
         self.web.set_size_request(w,h);self.window.resize(w,h)
         GtkLayerShell.set_margin(self.window,GtkLayerShell.Edge.RIGHT,self.right)
         GtkLayerShell.set_margin(self.window,GtkLayerShell.Edge.BOTTOM,self.bottom)
@@ -53,7 +64,7 @@ class Pet:
         if self.ready:self.web.evaluate_javascript(name+'('+('' if value is None else json.dumps(value))+')',-1,None,None,None,None,None)
     def loaded(self,web,event):
         if event==WebKit2.LoadEvent.FINISHED:
-            self.ready=True;self.call('herd.caps',{'stroll':True,'room':True,'pocket':True,'sendclip':False,'os':'linux'})
+            self.ready=True;self.call('herd.caps',{'stroll':True,'room':True,'pocket':True,'sendclip':False,'os':'linux','drag':True})
             self.refresh();(STATE/'ready.json').write_text(json.dumps({'pid':os.getpid(),'page_loaded':True,'at':time.time()}))
     def navigation(self,web,decision,kind):
         if kind==WebKit2.PolicyDecisionType.NAVIGATION_ACTION:
@@ -90,6 +101,15 @@ class Pet:
             before=self.right;self.right=max(4,min(500,self.right-int(body.get('dx') or 0)))
             GtkLayerShell.set_margin(self.window,GtkLayerShell.Edge.RIGHT,self.right)
             self.call('herd.arrived',{'moved':before-self.right})
+        elif cmd=='drag' and not self.open:
+            # The page says how far the pointer is from where it went down; the layer follows it (margins from the corner).
+            sw,sh=self.screen()
+            self.right=max(0,min(sw-self.w,self.right-int(body.get('dx') or 0)))
+            self.bottom=max(0,min(sh-self.h,self.bottom-int(body.get('dy') or 0)))
+            GtkLayerShell.set_margin(self.window,GtkLayerShell.Edge.RIGHT,self.right)
+            GtkLayerShell.set_margin(self.window,GtkLayerShell.Edge.BOTTOM,self.bottom)
+        elif cmd=='drop':
+            (STATE/'position.json').write_text(json.dumps({'right':self.right,'bottom':self.bottom}))
         elif cmd=='show' and isinstance(body.get('id'),str):self.run(['show',body['id'],'--json'],lambda data:self.call('herd.detail',data) or False)
         elif cmd=='copy':Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).set_text(str(body.get('text') or ''),-1)
         elif cmd=='log':print(str(body.get('text') or '')[:300],flush=True)
