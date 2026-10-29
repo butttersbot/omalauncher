@@ -362,7 +362,7 @@ limit=12
 if [ "$command" = plan ]; then limit=35; fi
 response=$(curl --silent --show-error --max-time "$limit" --abstract-unix-socket '__SOCKET__' \
   --header 'Content-Type: application/json' --data-binary "$request" http://localhost/phone) || {
-  echo 'Phone bridge unavailable or timed out. Open Omalauncher Boss. Read the screen before retrying actions.' >&2; exit 1;
+  echo 'Phone bridge unavailable or timed out. Open Soma. Read the screen before retrying actions.' >&2; exit 1;
 }
 # Visual fallback (phone-control speed, stage 3): when the controls can't say what is there (nothing readable, a
 # label nobody answers to or several do, a screen of one or two controls: a game, a picture, a web page drawn
