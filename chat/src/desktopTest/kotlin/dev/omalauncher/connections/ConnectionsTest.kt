@@ -112,6 +112,16 @@ class ConnectionsTest {
             assertEquals(ConnectionState.Unknown, connectionState(oversized) { true })
         } finally { server.stop(0) }
     }
+    @Test fun repairAdviceTargetsNetworkPhoneAndAuthWithoutBlindRestart() {
+        val net = ConnectionsSnapshot(listOf(row(Capability.Network, ConnectionState.Failed, root = "network")))
+        assertEquals(ConnectionGuide.Tailscale, connectionRepairAdvice(net, 100_000, null, null).guide)
+        val phone = ConnectionsSnapshot(listOf(row(Capability.Phone, ConnectionState.Failed, root = "phone-binding")))
+        assertEquals(ConnectionGuide.PhoneControl, connectionRepairAdvice(phone, 100_000, null, null).guide)
+        val auth = ConnectionsSnapshot(listOf(row(Capability.Agents, ConnectionState.Auth)))
+        assertTrue(connectionRepairAdvice(auth, 100_000, null, null).text.contains("pairing"))
+        val runner = ConnectionsSnapshot(listOf(row(Capability.Agents, ConnectionState.Failed)))
+        assertTrue(connectionRepairAdvice(runner, 100_000, 1, 0).text.contains("active or queued"))
+    }
     @Test fun endpointNeverPrintsCredentials() {
         assertFalse(ConnectionEndpoint("http://example/health?token=secret", "secret").toString().contains("secret"))
     }

@@ -84,3 +84,22 @@ fun groupConnectionFailures(readings: List<ConnectionReading>, retainedHosts: Se
         if (row.sourceHost in unavailable && row.root != null && row.root != "network") row.copy(root = "host:${row.sourceHost}") else row
     }
 }
+
+enum class ConnectionGuide { PhoneControl, Tailscale }
+data class ConnectionRepairAdvice(val text: String, val guide: ConnectionGuide? = null)
+fun connectionRepairAdvice(snapshot: ConnectionsSnapshot, now: Long, active: Int?, queued: Int?): ConnectionRepairAdvice {
+    val incidents = snapshot.incidents(now)
+    if (incidents.isEmpty()) return ConnectionRepairAdvice("Check complete. No confirmed failure requires a restart; unknown checks still need evidence. Nothing was restarted.")
+    if (incidents.any { it.key == "network" }) return ConnectionRepairAdvice(
+        "No verified tailnet route. Inspect Tailscale on this phone first. No connection, setting or service was changed.", ConnectionGuide.Tailscale)
+    if (incidents.all { it.key == "phone-binding" }) return ConnectionRepairAdvice(
+        "Android accessibility binding needs owner attention. Open Phone control to inspect it. No permission or setting was changed.", ConnectionGuide.PhoneControl)
+    if (incidents.all { i -> i.readings.all { it.state == ConnectionState.Auth } }) return ConnectionRepairAdvice(
+        "The host is reachable, but authenticated capability is unverified. Check this device's pairing on that host; do not restart a service to bypass authentication.")
+    val alternative = if (incidents.any { i -> i.readings.any { it.capability in setOf(Capability.Agents, Capability.Builds) } }) {
+        snapshot.readings.filter { it.capability == Capability.Agents && it.current(now).state == ConnectionState.Ready && it.root != "network" }
+            .map { it.host }.filter(String::isNotBlank).distinct()
+    } else emptyList()
+    val fallback = if (alternative.isEmpty()) "" else " Authenticated alternative: ${alternative.joinToString()}. You can choose another computer for a new chat."
+    return ConnectionRepairAdvice(restoreGuard(active, queued, false).orEmpty() + fallback)
+}

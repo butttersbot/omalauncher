@@ -9,6 +9,7 @@ object ConnectionsSource {
     var snapshot by mutableStateOf(ConnectionsSnapshot())
     var checking by mutableStateOf(false)
     var repair by mutableStateOf<String?>(null)
+    var guide by mutableStateOf<Pair<String, () -> Unit>?>(null)
     var alerts by mutableStateOf("Monitoring is not configured on this screen.")
     var enabled by mutableStateOf(false)
     var paused by mutableStateOf(false)

@@ -80,7 +80,7 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
     } }
     private fun check(restore: Boolean) {
         if (!running.compareAndSet(false, true)) return
-        main.post { ConnectionsSource.checking = true; if (restore) ConnectionsSource.repair = "Checking device and active jobs…" }
+        main.post { ConnectionsSource.checking = true; if (restore) { ConnectionsSource.repair = "Checking device and active jobs…"; ConnectionsSource.guide = null } }
         readers.execute {
             try {
                 val result = collect()
@@ -95,10 +95,22 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
                 if (stored) for (notice in notices) postNotice(notice, result, now)
                 else { alerts.pending.clear(); alerts.pending.putAll(previousAlerts) }
                 main.post {
+                    val before = ConnectionsSource.snapshot.incidents(now).map { it.key to it.readings.map { r -> r.state } }
+                    val after = result.incidents(now).map { it.key to it.readings.map { r -> r.state } }
+                    if (!restore && before != after) { ConnectionsSource.repair = null; ConnectionsSource.guide = null }
                     ConnectionsSource.snapshot = result
-                    if (restore) ConnectionsSource.repair = if (result.incidents(now).isEmpty())
-                        "Check complete. No confirmed failure requires a restart; unknown checks still need evidence. Nothing was restarted."
-                        else restoreGuard(working, queued, false)
+                    if (restore) {
+                        val advice = connectionRepairAdvice(result, now, working, queued)
+                        ConnectionsSource.repair = advice.text
+                        ConnectionsSource.guide = when (advice.guide) {
+                            ConnectionGuide.PhoneControl -> "Open Phone control" to { openGuide(Intent(context, dev.omalauncher.phone.PhoneControlActivity::class.java)) }
+                            ConnectionGuide.Tailscale -> "Open Tailscale" to {
+                                val intent = context.packageManager.getLaunchIntentForPackage(dev.omalauncher.assist.TAILSCALE_CONNECT.packageName)
+                                if (intent != null) openGuide(intent) else ConnectionsSource.repair = "Tailscale is not installed or cannot be opened. No setting was changed."
+                            }
+                            null -> null
+                        }
+                    }
                 }
             } catch (_: Exception) {
                 main.post { ConnectionsSource.repair = "Check failed. Previous readings will become stale; nothing was restarted." }
@@ -108,6 +120,10 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
                 updateSettings()
             }
         }
+    }
+    private fun openGuide(intent: Intent) {
+        runCatching { context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            .onFailure { ConnectionsSource.repair = "Could not open the owner settings screen. Nothing was changed." }
     }
     private fun postNotice(notice: ConnectionAlerts.Notice, snapshot: ConnectionsSnapshot, now: Long) {
         if (!notificationAllowed) return

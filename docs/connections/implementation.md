@@ -101,3 +101,11 @@ Sleeping observations age into Stale if checking stops; they never remain fresh
 sleep evidence indefinitely. Added a loopback-only HTTP regression proving that
 redirects do not forward the configured bearer credential and an oversized
 HTTP 200 remains reachable/unverified. No remote account is used by that test.
+
+Targeted advice selects owner-only Tailscale/Phone control inspection for network
+or binding incidents and pairing inspection for auth refusal, rather than
+suggesting a generic Mac restart. Expanded detail offers the matching existing
+owner screen; opening it changes no setting. Runner incidents retain the active
+job guard and can name another authenticated runner for a new chat, without
+moving or stopping existing work. Automatic refresh clears stale repair advice
+when incident evidence changes.

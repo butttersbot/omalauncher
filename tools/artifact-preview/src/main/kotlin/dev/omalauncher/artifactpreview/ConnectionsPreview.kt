@@ -32,7 +32,7 @@ fun ConnectionsPreview() {
                 else -> "Fictional end-to-end capability verified." }, clock, if (affected) "runner:fixture" else null, if (affected) "Fictional Mac" else "")
     }, clock)
     fun show(s: String) {
-        scenario = s; ConnectionsSource.repair = null
+        scenario = s; ConnectionsSource.repair = null; ConnectionsSource.guide = null
         ConnectionsSource.snapshot = snapshot(when (s) {
             "Auth check" -> ConnectionState.Auth
             "Stale check" -> ConnectionState.Ready

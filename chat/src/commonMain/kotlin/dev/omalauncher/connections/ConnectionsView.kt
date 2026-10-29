@@ -136,6 +136,7 @@ private fun ConnectionsRepair(snapshot: ConnectionsSnapshot, now: Long) {
     }
     ConnectionAction(if (ConnectionsSource.checking) "Checking…" else "Restore", { ConnectionsSource.restore() })
     ConnectionsSource.repair?.let { ConnectionText(it) }
+    ConnectionsSource.guide?.let { (label, action) -> ConnectionAction(label, action) }
     ConnectionText("01  Check device & active jobs\n02  Target the affected service\n03  Verify authenticated capabilities", small = true, muted = true)
     ConnectionAction("Check again", { ConnectionsSource.refresh() })
 }
