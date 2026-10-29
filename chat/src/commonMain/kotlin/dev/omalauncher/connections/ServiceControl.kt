@@ -98,8 +98,11 @@ data class ServiceOperation(val id: String, val approval: String, val service: S
             require(a.length() <= 128) { "Too many verification checks" }
             val checks = (0 until a.length()).map { i ->
                 val c = a.getJSONObject(i)
-                ConnectionCheck(c.optString("code").take(100), approval.host, result = c.optString("state").take(40),
-                    fields = mapOf("detail" to c.optString("detail").take(2048)))
+                val fields = c.optJSONObject("fields") ?: JSONObject()
+                val details = fields.keys().asSequence().take(16).associateWith { fields.optString(it).take(2048) }
+                ConnectionCheck(c.getString("check").take(100), c.optString("target", approval.host).take(100),
+                    fields.optInt("http_status").takeIf { it in 100..599 }, c.getString("result").take(40),
+                    details + ("code" to c.optString("code").take(100)), c.optString("stderr_tail").take(2048))
             }
             val result = ServiceOperation(id, approval.id, approval.service, approval.host, stage, json.optBoolean("verified", false), checks)
             require(stage != "restored" || result.restored) { "Restoration lacks complete capability verification" }

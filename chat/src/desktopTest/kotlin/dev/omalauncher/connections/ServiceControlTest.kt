@@ -44,13 +44,13 @@ class ServiceControlTest {
     @Test fun operationCannotClaimRestoredOnPortOrWrongTargetEvidence() {
         val a = approval()
         fun response() = JSONObject().put("id", "op-12345678").put("approval", a.id).put("service", a.service).put("host", a.host)
-            .put("stage", "restored").put("verified", true).put("checks", org.json.JSONArray().put(JSONObject().put("code", "capability").put("state", "pass")))
+            .put("stage", "restored").put("verified", true).put("checks", org.json.JSONArray().put(JSONObject().put("check", "capability").put("result", "pass")))
         assertTrue(ServiceOperation.parse(response(), "op-12345678", a).restored)
         refuses { ServiceOperation.parse(response().put("verified", false), "op-12345678", a) }
         refuses { ServiceOperation.parse(response().put("checks", org.json.JSONArray()), "op-12345678", a) }
         refuses { ServiceOperation.parse(response().put("host", "another-mac"), "op-12345678", a) }
         refuses { ServiceOperation.parse(response(), "op-87654321", a) }
-        refuses { ServiceOperation.parse(response().put("checks", org.json.JSONArray().put(JSONObject().put("state", "unsupported"))), "op-12345678", a) }
+        refuses { ServiceOperation.parse(response().put("checks", org.json.JSONArray().put(JSONObject().put("check", "capability").put("result", "unsupported"))), "op-12345678", a) }
         val pending = ServiceOperation.parse(response().put("stage", "verifying").put("verified", false), "op-12345678", a)
         assertFalse(pending.terminal); assertFalse(pending.restored)
     }

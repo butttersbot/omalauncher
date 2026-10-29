@@ -62,7 +62,7 @@ internal class ConnectionRestorer(private val context: Context, private val runt
                         val id = service.getString("id")
                         require(id in CONNECTION_SERVICE_IDS && seen.add(id))
                         val checks = service.optJSONObject("probe")?.optJSONArray("checks") ?: JSONArray()
-                        val failed = (0 until checks.length()).any { checks.getJSONObject(it).optString("state") == "fail" }
+                        val failed = (0 until checks.length()).any { checks.getJSONObject(it).optString("result") == "fail" }
                         if (!failed) continue // Unknown, unsupported or stale never authorize an inferred repair.
                         if (service.optJSONObject("restart")?.optBoolean("supported") != true) {
                             blocked += ConnectionCheck(id, host, result = "blocked", fields = mapOf("reason" to service.optJSONObject("restart")?.optString("blocked_reason").orEmpty()))
