@@ -50,10 +50,11 @@ internal class ConnectionRestorer(private val context: Context, private val runt
                     val client = ServiceControlClient(ConnectionEndpoint(machine.config.url, machine.config.key))
                     val reply = client.inventory()
                     if (reply.code != 200) {
-                        blocked += ConnectionCheck("service_inventory", machine.id, reply.code, "unavailable")
+                        blocked += ConnectionCheck("service_inventory", machine.id, reply.code, if (reply.code in setOf(401, 403)) "auth" else "unavailable")
                         continue
                     }
                     val inventory = JSONObject(reply.text)
+                    require(inventory.optBoolean("ok")) { "Service inventory schema unverified" }
                     val age = System.currentTimeMillis() - inventory.getLong("checked_at")
                     require(age in 0..30_000) { "Service inventory is stale or clock differs" }
                     val host = inventory.getString("host")
@@ -83,7 +84,16 @@ internal class ConnectionRestorer(private val context: Context, private val runt
                         }
                         val checks = probe.optJSONArray("checks") ?: JSONArray()
                         val failed = (0 until checks.length()).any { checks.getJSONObject(it).optString("result") == "fail" }
-                        if (!failed) continue // Unknown, unsupported or stale never authorize an inferred repair.
+                        if (!failed) {
+                            for (j in 0 until checks.length()) {
+                                val check = checks.getJSONObject(j)
+                                if (check.optString("result") == "pass") continue
+                                val http = check.optJSONObject("fields")?.optInt("http_status")?.takeIf { it in 100..599 }
+                                blocked += ConnectionCheck(check.optString("check", id), host, http,
+                                    if (http in setOf(401, 403)) "auth" else "unverified", mapOf("code" to check.optString("code")))
+                            }
+                            continue // Missing proof and authentication never infer a restart.
+                        }
                         if ((0 until checks.length()).any { checks.getJSONObject(it).optString("result") !in setOf("pass", "fail", "auth") }) {
                             blocked += ConnectionCheck(id, host, result = "unverified", fields = mapOf("reason" to "At least one required capability proof is unsupported or incomplete."))
                             continue
