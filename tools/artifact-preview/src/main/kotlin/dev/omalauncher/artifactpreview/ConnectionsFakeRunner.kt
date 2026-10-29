@@ -38,9 +38,12 @@ internal class ConnectionsFakeRunner(private val scenario: String) {
             val stage = when (scenario) { "Active jobs" -> "blocked"; "Failed repair" -> "failed"; else -> "restored" }
             if (stage != "blocked") backendCalls++
             val checks = JSONArray()
-            for (name in listOf("work_idle", "runner_identity", "provider_auth", "build_toolchain", "source_freshness")) checks.put(JSONObject()
-                .put("check", name).put("target", "fictional-mac").put("code", if (stage == "restored") "ok" else "fixture_refusal")
-                .put("result", if (stage == "restored") "pass" else "fail").put("fields", JSONObject().put("fixture_only", true)))
+            for (name in listOf("work_idle", "runner_identity", "provider_auth", "build_toolchain", "source_freshness")) {
+                val result = if (name == "work_idle") { if (stage == "blocked") "fail" else "pass" }
+                    else if (stage == "restored") "pass" else if (stage == "blocked") "unverified" else "fail"
+                checks.put(JSONObject().put("check", name).put("target", "fictional-mac").put("code", if (result == "pass") "ok" else "fixture_refusal")
+                    .put("result", result).put("fields", JSONObject().put("fixture_only", true)))
+            }
             operation = JSONObject().put("id", "op-fixture_12345678").put("approval", approval.id).put("service", approval.service).put("host", approval.host)
                 .put("stage", stage).put("verified", stage == "restored").put("checks", checks)
             ConnectionReply(202, JSONObject().put("ok", true).put("operation", operation).toString())
