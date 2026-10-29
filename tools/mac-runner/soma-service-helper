@@ -1,0 +1,20 @@
+#!/bin/sh
+# soma-service-helper: the only root action the Mac runner may ask for (soma_services.LiveBackend.privileged).
+# Installed root:wheel 0755 at /Library/PrivilegedHelperTools/soma-service-helper by install-service-helper.sh, which Boss
+# runs himself at the Mac. One argument, an allowlisted system service id; it restarts that service and nothing else.
+# Its table must match soma_services.SERVICES (test-services.py checks it).
+set -eu
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
+export PATH
+[ "$#" -eq 1 ] || { echo "usage: soma-service-helper SERVICE" >&2; exit 64; }
+case "$1" in
+  tailshare-serve) label=com.tailshare.serve ;;
+  tailshare-receive) label=com.tailshare.receive ;;
+  herd) label=dev.herd.node ;;
+  embeddings) label=dev.omalauncher.embed-server ;;
+  whisper) label=dev.omalauncher.whisper-server ;;
+  tailscaled) label=homebrew.mxcl.tailscale ;;
+  *) echo "not an allowlisted system service" >&2; exit 64 ;;
+esac
+echo "blocked: privileged helper must independently verify a fresh one-use owner signature" >&2
+exit 78

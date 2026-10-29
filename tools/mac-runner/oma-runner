@@ -41,7 +41,7 @@ pair gives DEVICE (its Tailscale machine name) a key of its own, sent to it by T
 before, and a computer running Soma as soma-runner-<this machine>.json. unpair takes it away at once. rekey is pair
 for the phone.
 """
-import queue, contextlib, fcntl, hashlib, hmac, ipaddress, json, os, pathlib, plistlib, re, secrets, select, shlex, shutil, signal, socket, stat, subprocess, sys, tempfile, threading, time, tomllib, urllib.error, urllib.parse, urllib.request, uuid
+import queue, contextlib, fcntl, functools, hashlib, hmac, ipaddress, json, os, pathlib, plistlib, re, secrets, select, shlex, shutil, signal, socket, stat, subprocess, sys, tempfile, threading, time, tomllib, urllib.error, urllib.parse, urllib.request, uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HOME = pathlib.Path.home()
@@ -2710,6 +2710,7 @@ changed = threading.Condition()  # guards every thread's state; told whenever an
 threads = {}
 closing = False
 _services = None
+_services_lock = threading.Lock()
 
 
 def runner_work():
@@ -2729,14 +2730,25 @@ def runner_work():
 def services():
     """The Connections service controller (tools/mac-runner/soma_services.py, installed beside this file)."""
     global _services
-    if _services is None:
-        import importlib.util
-        here = pathlib.Path(__file__).resolve().parent / 'soma_services.py'
-        spec = importlib.util.spec_from_file_location('soma_services', here)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        _services = module.Controller(module.LiveBackend(), runner_work)
-    return _services
+    with _services_lock:  # one controller, so one admission gate
+        if _services is None:
+            import importlib.util
+            here = pathlib.Path(__file__).resolve().parent / 'soma_services.py'
+            spec = importlib.util.spec_from_file_location('soma_services', here)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            test = os.environ.get('OMA_RUNNER_SERVICES_TEST') if os.environ.get('OMA_RUNNER_BIND') == '127.0.0.1' else None
+            if test:  # loopback proof only (test-runner.py): a mock backend, test trust, scripted probes; nothing real is touched
+                folder = pathlib.Path(test)
+                _services = module.Controller(module.MockBackend(), runner_work, records=module.Records(folder / 'state'),
+                                              trust=lambda: module.load_trust(folder / 'trust.json', require_root=False),
+                                              gate=module.WorkGate(folder / 'locks', admission=changed),
+                                              probe=lambda service: json.loads((folder / 'probe.json').read_text()),
+                                              state=lambda service: {'loaded': True, 'state': 'running', 'pid': 1, 'last_exit': 0}, host='testhost')
+            else:
+                probe = functools.partial(module.capability_probe, keys={'soma': soma_service_key})
+                _services = module.Controller(module.LiveBackend(), runner_work, probe=probe, gate=module.WorkGate(admission=changed))
+        return _services
 
 
 class Thread:
@@ -4173,6 +4185,10 @@ class Runner(BaseHTTPRequestHandler):
         if len(parts) == 3 and parts[:2] == ['services', 'operations']:
             op = services().records.get_operation(parts[2])
             return self.answer(200, {'ok': True, 'operation': op}) if op else self.answer(404, {'ok': False, 'error': 'no such operation'})
+        if len(parts) == 4 and parts[:2] == ['services', 'approvals'] and parts[3] == 'operation':
+            # Read-only: a phone whose approval reply was lost looks here; it never replays the restart.
+            op = services().records.operation_for_approval(parts[2])
+            return self.answer(200, {'ok': True, 'operation': op}) if op else self.answer(404, {'ok': False, 'error': 'no operation for this approval'})
         if parts == ['threads']:
             with changed:
                 sync_bots()

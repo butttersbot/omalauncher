@@ -158,6 +158,38 @@ received = work / 'From Fold'
 passed = 0
 
 
+# Owner-approved service restart (soma_services) over HTTP: a mock backend, a test owner key, scripted probes.
+# The runner wires these only when it is bound to loopback; nothing real is restarted, trusted or probed.
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+import base64, fcntl, hashlib
+services_dir = work / 'services'
+(services_dir / 'locks').mkdir(parents=True)
+owner = ec.generate_private_key(ec.SECP256R1())
+owner_der = owner.public_key().public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
+owner_id = hashlib.sha256(owner_der).hexdigest()
+(services_dir / 'trust.json').write_text(json.dumps({'version': 1, 'keys': [{'key_id': owner_id, 'algorithm': 'ecdsa-p256-sha256',
+    'public_key': base64.b64encode(owner_der).decode(), 'label': 'test', 'device': 'phone', 'added_at': 1, 'revoked': False}]}))
+os.chmod(services_dir / 'trust.json', 0o644)
+(services_dir / 'probe.json').write_text(json.dumps([{'check': 'soma_identity', 'target': 'soma', 'code': 'ok', 'result': 'pass', 'fields': {}, 'stderr_tail': ''}]))
+environment['OMA_RUNNER_SERVICES_TEST'] = str(services_dir)
+
+
+def owner_answer(challenge):
+    signature = owner.sign(challenge['payload'].encode(), ec.ECDSA(hashes.SHA256()))
+    return {'approval': challenge['id'], 'nonce': challenge['nonce'], 'decision': 'allow', 'owner_key_id': owner_id,
+            'owner_signature': base64.b64encode(signature).decode()}
+
+
+def operation_by_approval(approval, until, token, seconds=20):
+    deadline = time.time() + seconds
+    while True:
+        code, got = call('GET', '/services/approvals/%s/operation' % approval, token=token)
+        if (code == 200 and got['operation']['stage'] in until) or time.time() > deadline:
+            return code, got
+        time.sleep(0.1)
+
+
 def calling_as(device):
     """What whois will say of the loopback caller from now on: the device the next requests come from."""
     (work / 'whois.json').write_text(json.dumps({'127.0.0.1': device}))
@@ -1501,6 +1533,49 @@ try:
     (project / 'HANDOFF.md').unlink()
     (project / 'handoff.md').write_text('# lower case\n')
     check('handoff: only the exact registered name, not another case of it', call('GET', '/projects/scratch/handoff', token=now)[0] == 404)
+    # Service restart over HTTP. Admission: a held build/walk lock blocks the restart and leaves the gate open afterwards.
+    calling_as('phone')
+    code, made_for_services = call('POST', '/threads', {'name': 'services', 'project': str(project)}, token=now)
+    service_thread = made_for_services['thread']['id']
+
+    def idle_now(seconds=15):  # settle() asks with the key from before the rekey
+        deadline = time.time() + seconds
+        while time.time() < deadline and call('GET', '/threads/' + service_thread, token=now)[1].get('thread', {}).get('status') != 'idle':
+            time.sleep(0.05)
+        return call('GET', '/threads/' + service_thread, token=now)[1].get('thread', {}).get('status') == 'idle'
+    check('services: the thread is idle first', idle_now())
+    code, inventory = call('GET', '/services', token=now)
+    check('services: the fixed allowlist with owner trust ready', code == 200 and 'soma' in [x['id'] for x in inventory['services']] and inventory['owner_trust']['state'] == 'ready')
+    check('services: no operation for an unknown or malformed approval',
+          call('GET', '/services/approvals/svc-%s/operation' % ('0' * 32), token=now)[0] == 404 and call('GET', '/services/approvals/..%2f..%2fx/operation', token=now)[0] == 404)
+    held = open(services_dir / 'locks' / 'walks.lock', 'a')
+    fcntl.flock(held, fcntl.LOCK_EX)
+    code, got = call('POST', '/services/soma/restart', {}, token=now)
+    check('services: an empty request returns a challenge and changes nothing', code == 202 and got['approval']['service'] == 'soma' and got['approval']['host'] == 'testhost')
+    challenge = got['approval']
+    code, got = call('POST', '/services/soma/restart', owner_answer(challenge), token=now)
+    code, found = operation_by_approval(challenge['id'], ('blocked', 'failed', 'restored'), now)
+    check('services: a held walk lock blocks the restart, found by its approval', code == 200 and found['operation']['stage'] == 'blocked'
+          and found['operation']['id'] == got['operation']['id'] and any(c['code'] == 'busy_lock' for c in found['operation']['checks']))
+    fcntl.flock(held, fcntl.LOCK_UN)
+    held.close()
+    check('services: the replayed answer is refused (its challenge was consumed)', call('POST', '/services/soma/restart', owner_answer(challenge), token=now)[0] >= 400)
+    code, got = call('POST', '/threads/%s/messages' % service_thread, {'text': 'after a blocked restart'}, token=now)
+    check('services: a blocked restart leaves admission open', code == 200)
+    check('services: that turn ends', idle_now())
+    # A restart that runs: admission is closed from the idle check until verification ends, then it reopens.
+    challenge = call('POST', '/services/soma/restart', {}, token=now)[1]['approval']
+    code, got = call('POST', '/services/soma/restart', owner_answer(challenge), token=now)
+    check('services: a signed answer starts one operation, bound to its approval', code == 202 and got['operation']['approval'] == challenge['id'])
+    operation_by_approval(challenge['id'], ('verifying', 'restored', 'failed', 'blocked'), now)
+    code, refused = call('POST', '/threads/%s/messages' % service_thread, {'text': 'during the restart'}, token=now)
+    check('services: a message during the restart is refused for maintenance, not queued', code == 409 and 'maintenance' in refused.get('error', ''))
+    code, found = operation_by_approval(challenge['id'], ('restored', 'failed', 'blocked'), now)
+    operation = found['operation']
+    check('services: restored only with verified true and every check passing', operation['stage'] == 'restored' and operation['verified'] is True
+          and operation['host'] == 'testhost' and all(c['result'] == 'pass' for c in operation['checks']))
+    code, got = call('POST', '/threads/%s/messages' % service_thread, {'text': 'after the restart'}, token=now)
+    check('services: admission reopens after verification', code == 200 and idle_now())
     # As the runner ends, every canvas token it gave out is revoked at the service: one minted by this runner for a new turn.
     calling_as('phone')
     before = len(service_calls)

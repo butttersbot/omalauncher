@@ -1,14 +1,27 @@
 #!/usr/bin/env python3
 """Owner-approved service restart (soma_services): every execution is mocked; launchctl, sudo and the process are
 never touched. Owner keys are generated in memory per test; the trust file lives in a temporary directory."""
-import base64, hashlib, importlib.util, json, os, pathlib, stat, tempfile, unittest
-from unittest.mock import patch
-from types import SimpleNamespace
+import base64, hashlib, importlib.util, json, os, pathlib, stat, sys, tempfile, threading, time, unittest, urllib.error, urllib.parse
 
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
 HERE = pathlib.Path(__file__).resolve().parent
+
+# No test may reach a real service: only ports a test opened itself on loopback are allowed.
+import urllib.request as _request
+OWN_PORTS = set()
+_real_urlopen = _request.urlopen
+
+
+def _guarded_urlopen(request, *a, **k):
+    url = urllib.parse.urlsplit(request.full_url if hasattr(request, 'full_url') else request)
+    if url.hostname != '127.0.0.1' or url.port not in OWN_PORTS:
+        raise AssertionError('a test tried to reach a real service: ' + url.geturl())
+    return _real_urlopen(request, *a, **k)
+
+
+_request.urlopen = _guarded_urlopen
 spec = importlib.util.spec_from_file_location('soma_services', HERE / 'soma_services.py')
 S = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(S)
@@ -24,6 +37,12 @@ def sign(private, message):
     return base64.b64encode(private.sign(message.encode(), ec.ECDSA(hashes.SHA256()))).decode()
 
 
+def as_owner(st, uid):
+    fields = list(st)
+    fields[4] = uid
+    return os.stat_result(fields)
+
+
 class Clock:
     def __init__(self, t=1_800_000_000_000):
         self.t = t
@@ -34,7 +53,7 @@ class Clock:
 
 class Base(unittest.TestCase):
     def setUp(self):
-        self.dir = pathlib.Path(tempfile.mkdtemp())
+        self.dir = pathlib.Path(tempfile.mkdtemp()).resolve()  # /var is a symlink on macOS; the trust chain refuses symlinks
         self.private, self.key_id, self.public = owner_key()
         trust_dir = self.dir / 'Soma'
         trust_dir.mkdir(mode=0o755)
@@ -174,18 +193,37 @@ class Trust(Base):
     def test_missing_untrusted_and_ready(self):
         self.assertEqual(S.load_trust(self.dir / 'nope.json').state, 'missing')
         self.assertEqual(S.load_trust(self.trust_file, require_root=False).state, 'ready')
-        original_lstat = os.lstat
-        def nonroot_lstat(path, *args, **kwargs):
-            info = original_lstat(path, *args, **kwargs)
-            return SimpleNamespace(st_mode=info.st_mode, st_uid=501, st_size=info.st_size)
-        with patch.object(S.os, 'lstat', side_effect=nonroot_lstat):
-            self.assertEqual(S.load_trust(self.trust_file, require_root=True).state, 'untrusted')
+        as_user = lambda p: as_owner(os.lstat(p), 501)  # portable: real uid may be 0 (proot), so the owner is faked
+        self.assertEqual(S.load_trust(self.trust_file, require_root=True, lstat=as_user).state, 'untrusted')
+        as_root = lambda p: as_owner(os.lstat(p), 0)
+        self.assertEqual(S.load_trust(self.trust_file, require_root=True, lstat=as_root).state, 'ready')
         os.chmod(self.trust_file, 0o666)
         self.assertIn('writable', S.load_trust(self.trust_file, require_root=False).detail)
         os.chmod(self.trust_file, 0o644)
         link = self.trust_file.parent / 'link.json'
         link.symlink_to(self.trust_file)
         self.assertIn('symlink', S.load_trust(link, require_root=False).detail)
+
+    def test_every_ancestor_must_be_a_root_owned_unwritable_real_directory(self):
+        grand = self.trust_file.parent.parent
+        def writable(p, bits=0o002):
+            st = as_owner(os.lstat(p), 0)
+            if pathlib.Path(p) == grand:
+                fields = list(st); fields[0] |= bits; return os.stat_result(fields)
+            return st
+        detail = S.load_trust(self.trust_file, require_root=True, lstat=writable).detail
+        self.assertIn(f'{grand} is group- or world-writable', detail)
+        def linked(p):
+            st = as_owner(os.lstat(p), 0)
+            if pathlib.Path(p) == grand:
+                fields = list(st); fields[0] = stat.S_IFLNK | 0o755; return os.stat_result(fields)
+            return st
+        self.assertIn(f'{grand} is a symlink', S.load_trust(self.trust_file, require_root=True, lstat=linked).detail)
+        def user_owned(p):
+            return as_owner(os.lstat(p), 501 if pathlib.Path(p) == grand else 0)
+        self.assertIn(f'{grand} is not owned by root', S.load_trust(self.trust_file, require_root=True, lstat=user_owned).detail)
+        self.assertEqual(S.load_trust(pathlib.Path('relative/keys.json'), require_root=False).state, 'untrusted')
+        self.assertEqual(S.load_trust(self.trust_file.parent / '..' / self.trust_file.parent.name / self.trust_file.name, require_root=False).state, 'untrusted')
 
     def test_key_id_must_be_the_spki_digest_and_curve_p256(self):
         data = json.loads(self.trust_file.read_text())
@@ -241,6 +279,57 @@ class Work(Base):
         self.assertTrue(self.control.gate.admit())
 
 
+    def test_a_second_restart_cannot_enter_or_reopen_the_first_ones_gate(self):
+        inside, release, outcome = threading.Event(), threading.Event(), {}
+        def first():
+            with self.control.gate.exclusive(lambda: dict(self.counts)):
+                inside.set()
+                release.wait(5)
+        runner = threading.Thread(target=first)
+        runner.start()
+        self.assertTrue(inside.wait(5))
+        try:  # zero locks held: ownership alone must keep the second out
+            with self.control.gate.exclusive(lambda: dict(self.counts)):
+                outcome['entered'] = True
+        except S.Refused as e:
+            outcome['code'] = e.code
+        self.assertEqual(outcome, {'code': 'restart_in_progress'})
+        self.assertFalse(self.control.gate.admit())  # the loser did not reopen the owner's gate
+        release.set()
+        runner.join(5)
+        self.assertTrue(self.control.gate.admit())
+
+    def test_simultaneous_approvals_run_one_restart(self):
+        gate = threading.Event()
+        self.backend.kickstart_gui = lambda service: (self.backend.calls.append(('gui', service)), gate.wait(2))
+        threads = [threading.Thread(target=self.control.approve, args=(svc, self.approve_body(self.control.request(svc)))) for svc in ('soma', 'syncthing')]
+        for t in threads: t.start()
+        time.sleep(0.3)
+        gate.set()
+        for t in threads: t.join(5)
+        self.assertEqual(len(self.backend.calls), 1)
+
+    def test_closing_waits_for_an_admission_that_is_enqueueing(self):
+        gate = S.WorkGate(self.locks, admission=threading.Lock())
+        result = {}
+        gate.admission.acquire()  # an admission saw the gate open and is mid-enqueue
+        def restart():
+            try:
+                with gate.exclusive(lambda: dict(self.counts)):
+                    result['ran'] = True
+            except S.Refused as e:
+                result['code'] = e.code
+        t = threading.Thread(target=restart)
+        t.start()
+        time.sleep(0.2)
+        self.assertTrue(gate.admit())  # not closed while the admission holds the lock
+        self.counts['queued'] = 1  # ... which then counts itself
+        gate.admission.release()
+        t.join(5)
+        self.assertEqual(result, {'code': 'busy_work'})
+        self.assertTrue(gate.admit())
+
+
 class Modes(Base):
     def test_privileged_service_without_helper_is_blocked_not_pretended(self):
         self.probe_result = [S.mkcheck('x', 'x', 'ok', 'pass')]
@@ -255,8 +344,25 @@ class Modes(Base):
         self.assertEqual(self.backend.calls, [])
 
     def test_service_without_capability_probe_is_blocked_before_any_restart(self):
-        op = self.op(self.control.approve('canvas', self.approve_body(self.control.request('canvas'))))
+        saved, S.PROBED = S.PROBED, S.PROBED - {'canvas'}
+        try:
+            op = self.op(self.control.approve('canvas', self.approve_body(self.control.request('canvas'))))
+        finally:
+            S.PROBED = saved
         self.assertEqual((op['stage'], self.backend.calls), ('blocked', []))
+
+    def test_an_unsupported_check_beside_passes_is_never_restored(self):
+        self.probe_result = [S.mkcheck('soma_identity', 'soma', 'ok', 'pass'), S.mkcheck('extra', 'soma', 'no_capability_probe', 'unsupported')]
+        op = self.op(self.control.approve('soma', self.approve_body(self.control.request('soma'))))
+        self.assertEqual((op['stage'], op['verified']), ('failed', False))
+
+    def test_operation_is_found_by_its_approval_and_bound_to_it(self):
+        c = self.control.request('soma')
+        result = self.control.approve('soma', self.approve_body(c))
+        found = self.control.records.operation_for_approval(c['id'])
+        self.assertEqual((found['id'], found['approval'], found['id']), (result['operation']['id'], c['id'], S.operation_id(c['id'])))
+        self.assertIsNone(self.control.records.operation_for_approval('svc-' + '0' * 32))
+        self.assertIsNone(self.control.records.operation_for_approval('../../etc/passwd'))
 
     def test_failed_verification_is_failed_not_restored(self):
         self.probe_result = [S.mkcheck('soma_identity', 'soma', 'wrong_identity', 'fail')]
@@ -308,7 +414,7 @@ class Records(Base):
         by = {s['id']: s for s in inv['services']}
         self.assertTrue(by['soma']['restart']['supported'])
         self.assertEqual(by['tailscaled']['restart'].get('blocked_reason'), 'privileged_helper_missing')
-        self.assertEqual(by['canvas']['restart'].get('blocked_reason'), 'no_capability_probe')
+        self.assertTrue(by['canvas']['restart']['supported'])
         self.assertNotIn('nonce', json.dumps(inv))
 
 
@@ -325,13 +431,14 @@ class Probes(unittest.TestCase):
 
     def test_oversized_or_incomplete_200_is_reachable_unverified_not_down(self):
         os.environ['OMA_RUNNER_SOMA_SERVICE'] = 'http://127.0.0.1:1'
+        keys = {'soma': lambda: 'runner-device-key-123456'}
         try:
             for why in ('oversized reply', 'incomplete or non-JSON reply'):
-                def fetch(url, why=why): raise S.Unverified(why)
-                (check,) = S.capability_probe('soma', fetch=fetch)
+                def fetch(url, why=why, **k): raise S.Unverified(why)
+                (check,) = S.capability_probe('soma', fetch=fetch, keys=keys)
                 self.assertEqual((check['code'], check['result']), ('reachable_unverified', 'unverified'))
-            def down(url): raise OSError('connection refused')
-            self.assertEqual(S.capability_probe('soma', fetch=down)[0]['result'], 'fail')
+            def down(url, **k): raise OSError('connection refused')
+            self.assertEqual(S.capability_probe('soma', fetch=down, keys=keys)[0]['result'], 'fail')
         finally:
             del os.environ['OMA_RUNNER_SOMA_SERVICE']
 
@@ -348,6 +455,7 @@ class Probes(unittest.TestCase):
         server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
         threading.Thread(target=server.serve_forever, daemon=True).start()
         base = 'http://127.0.0.1:%d' % server.server_address[1]
+        OWN_PORTS.add(server.server_address[1])
         try:
             for path in ('/short', '/big', '/list'):
                 with self.assertRaises(S.Unverified, msg=path):
@@ -357,8 +465,112 @@ class Probes(unittest.TestCase):
             server.shutdown(); server.server_close()
 
     def test_unprobed_service_is_structured_unsupported(self):
-        (check,) = S.capability_probe('canvas')
-        self.assertEqual((check['check'], check['target'], check['code'], check['result']), ('canvas_capability', 'canvas', 'no_capability_probe', 'unsupported'))
+        (check,) = S.capability_probe('not-a-service')
+        self.assertEqual((check['check'], check['target'], check['code'], check['result']), ('not-a-service_capability', 'not-a-service', 'no_capability_probe', 'unsupported'))
+        self.assertEqual(set(S.SERVICES), S.PROBED)  # every allowlisted service has a real probe
+
+    def setUp(self):
+        self.saved_paths, S.TAILSCALE_PATHS = S.TAILSCALE_PATHS, (sys.executable,)  # any existing file: run is faked
+        self.status = {'BackendState': 'Running', 'Self': {'DNSName': 'jacks-mac-pro.tail.ts.net.', 'Online': True, 'TailscaleIPs': ['100.64.0.9', 'fd7a::9'],
+                       'UserID': 7}, 'User': {'7': {'LoginName': 'owner@example.com'}}, 'Peer': {'a': {'Online': True}, 'b': {'Online': False}}}
+        self.run = lambda argv, **k: Fake(returncode=0, stdout=json.dumps(self.status), stderr='')
+
+    def tearDown(self):
+        S.TAILSCALE_PATHS = self.saved_paths
+
+    def test_soma_needs_the_runners_key_sends_it_and_never_records_it(self):
+        os.environ['OMA_RUNNER_SOMA_SERVICE'] = 'http://127.0.0.1:1'
+        try:
+            self.assertEqual(S.capability_probe('soma')[0]['code'], 'no_runner_key')
+            sent = []
+            def fetch(url, headers=None, **k):
+                sent.append(headers)
+                return 200, {'ok': True, 'service': 'soma-serve', 'machine': 'jacks-mac-pro', 'public': {'secret_token': 'zzz-public'}}
+            (check,) = S.capability_probe('soma', fetch=fetch, keys={'soma': lambda: 'runner-device-key-123456'})
+            self.assertEqual(check['result'], 'pass')
+            self.assertEqual(sent, [{'Authorization': 'Bearer runner-device-key-123456'}])
+            self.assertNotIn('runner-device-key', json.dumps(check))
+            self.assertNotIn('zzz-public', json.dumps(check))
+            def refused(url, **k): raise urllib.error.HTTPError(url, 401, 'no', {}, None)
+            (check,) = S.capability_probe('soma', fetch=refused, keys={'soma': lambda: 'k' * 20})
+            self.assertEqual((check['code'], check['result']), ('auth_refused', 'unverified'))
+        finally:
+            del os.environ['OMA_RUNNER_SOMA_SERVICE']
+
+    def test_herd_and_tailshare_keep_only_their_identity_field(self):
+        def fetch(url, **k):
+            self.assertTrue(url.startswith('http://100.64.0.9:'), url)
+            return 200, {'machine': 'jacks-mac-pro', 'name': 'jacks-mac-pro', 'sessions': [{'title': 'PRIVATE prompt text', 'cwd': '/Users/x/secret'}]}
+        for service in ('herd', 'tailshare-serve'):
+            (check,) = S.capability_probe(service, fetch=fetch, run=self.run)
+            self.assertEqual(check['result'], 'pass', service)
+            self.assertNotIn('PRIVATE', json.dumps(check))
+            self.assertNotIn('/Users/x', json.dumps(check))
+
+    def test_tailscaled_keeps_backend_state_never_the_login(self):
+        (check,) = S.capability_probe('tailscaled', run=self.run)
+        self.assertEqual((check['result'], check['fields']), ('pass', {'backend_state': 'Running', 'peers_online': 1}))
+        self.assertNotIn('owner@example.com', json.dumps(check))
+        self.status['BackendState'] = 'Stopped'
+        self.assertEqual(S.capability_probe('tailscaled', run=self.run)[0]['result'], 'fail')
+
+    def test_imessage_needs_send_ready_and_never_records_handles_or_token(self):
+        token = pathlib.Path(tempfile.mkdtemp()) / 'token'
+        token.write_text('imessage-bearer-abcdef\n')
+        saved, S.IMESSAGE_TOKEN = S.IMESSAGE_TOKEN, token
+        try:
+            body = {'ok': True, 'service': 'soma-imessage', 'sendReady': True, 'messagesAccess': True, 'watching': True,
+                    'account': {'handles': ['+15550001111', 'me@example.com']}}
+            sent = []
+            def fetch(url, headers=None, **k):
+                sent.append(headers)
+                return 200, dict(body)
+            (check,) = S.capability_probe('imessage-api', fetch=fetch, run=self.run)
+            self.assertEqual(check['result'], 'pass')
+            self.assertEqual(sent[0], {'Authorization': 'Bearer imessage-bearer-abcdef'})
+            for leak in ('+1555', 'me@example.com', 'imessage-bearer'):
+                self.assertNotIn(leak, json.dumps(check))
+            body['sendReady'] = False
+            self.assertEqual(S.capability_probe('imessage-api', fetch=fetch, run=self.run)[0]['result'], 'fail')
+            token.unlink()
+            self.assertEqual(S.capability_probe('imessage-api', fetch=fetch, run=self.run)[0]['code'], 'no_token')
+        finally:
+            S.IMESSAGE_TOKEN = saved
+
+    def test_open_health_routes_and_process_only_services(self):
+        replies = {'/healthz': {'ok': True, 'uptime': 5}, '/health': {'ok': True, 'model': 'm', 'dim': 768, 'status': 'ok'}}
+        fetch = lambda url, **k: (200, replies[urllib.parse.urlsplit(url).path])
+        for service in ('canvas', 'embeddings', 'whisper'):
+            self.assertEqual([c['result'] for c in S.capability_probe(service, fetch=fetch, run=self.run)], ['pass'], service)
+        replies['/health'] = {'ok': True, 'model': 'm', 'dim': 0, 'status': 'loading'}
+        for service in ('embeddings', 'whisper'):
+            self.assertEqual(S.capability_probe(service, fetch=fetch, run=self.run)[0]['result'], 'fail', service)
+        up = lambda service: {'loaded': True, 'state': 'running', 'pid': 9, 'last_exit': 0}
+        down = lambda service: {'loaded': True, 'state': 'waiting', 'pid': None, 'last_exit': 1}
+        self.assertEqual(S.capability_probe('tailshare-receive', state=up)[0]['result'], 'pass')
+        self.assertEqual(S.capability_probe('tailshare-receive', state=down)[0]['result'], 'fail')
+        saved, S.TRANSPORT_SOCKET = S.TRANSPORT_SOCKET, pathlib.Path(tempfile.mkdtemp()) / 'missing.sock'
+        try:
+            self.assertEqual([c['result'] for c in S.capability_probe('imessage-transport', state=up)], ['pass', 'fail'])
+        finally:
+            S.TRANSPORT_SOCKET = saved
+
+    def test_syncthing_folders_use_the_local_key_only_as_a_header(self):
+        config = pathlib.Path(tempfile.mkdtemp()) / 'config.xml'
+        config.write_text('<configuration><folder id="docs" paused="false"/><folder id="old" paused="true"/>'
+                          '<gui><apikey>syncthing-api-key-xyz</apikey></gui></configuration>')
+        states = {'docs': {'state': 'idle', 'errors': 0, 'pullErrors': 0, 'needFiles': 3}}
+        asked = []
+        def fetch(url, headers=None, **k):
+            asked.append((url, headers))
+            return 200, states[urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)['folder'][0]]
+        check = S.syncthing_folders(fetch, config=config)
+        self.assertEqual((check['result'], check['fields']['states']), ('pass', {'docs': 'idle'}))
+        self.assertEqual(asked, [('http://127.0.0.1:8384/rest/db/status?folder=docs', {'X-API-Key': 'syncthing-api-key-xyz'})])
+        self.assertNotIn('syncthing-api-key', json.dumps(check))
+        states['docs'] = {'state': 'error', 'errors': 2}
+        self.assertEqual(S.syncthing_folders(fetch, config=config)['result'], 'fail')
+        self.assertEqual(S.syncthing_folders(fetch, config=config.parent / 'none.xml')['result'], 'unverified')
 
 
 class Redaction(unittest.TestCase):
@@ -381,6 +593,39 @@ class Redaction(unittest.TestCase):
         tail = S.stderr_tail(stderr, limit=25)
         self.assertNotIn('TAILSECRET', tail)
         self.assertNotIn('SSSS', tail)
+
+
+class PrivilegedHelperSource(unittest.TestCase):
+    """The helper and its installer are only read or run in modes that change nothing; install/remove are never run."""
+    helper, installer = HERE / 'soma-service-helper', HERE / 'install-service-helper.sh'
+
+    def sh(self, *args):
+        import subprocess
+        return subprocess.run(['/bin/sh', *map(str, args)], capture_output=True, text=True, timeout=10)
+
+    def test_the_helper_table_is_exactly_the_privileged_allowlist(self):
+        import re
+        table = dict(re.findall(r'^  ([a-z-]+)\) label=([A-Za-z0-9.-]+) ;;$', self.helper.read_text(), re.M))
+        self.assertEqual(table, {k: v[1] for k, v in S.SERVICES.items() if v[2] == 'privileged'})
+        self.assertIn(str(S.PRIVILEGED_HELPER), self.installer.read_text())
+        self.assertIn(' '.join(table), self.installer.read_text())
+
+    def test_the_helper_refuses_anything_but_one_allowlisted_id_before_launchctl(self):
+        for args in ([], ['canvas'], ['herd', 'extra'], ['system/dev.herd.node'], ['herd;id'], ['../herd']):
+            r = self.sh(self.helper, *args)
+            self.assertEqual(r.returncode, 64, args)
+
+    def test_unsigned_privileged_authority_is_not_installable(self):
+        for script in (self.helper, self.installer):
+            self.assertEqual(self.sh('-n', script).returncode, 0, script)
+        for service in [k for k, v in S.SERVICES.items() if v[2] == 'privileged']:
+            self.assertEqual(self.sh(self.helper, service).returncode, 78)
+        for mode in ('install', 'remove', 'print-sudoers'):
+            result = self.sh(self.installer, mode, 'jackkim')
+            self.assertEqual(result.returncode, 78)
+            self.assertNotIn('NOPASSWD', result.stdout)
+        for bad in ('', 'ALL', 'a b', 'x,y', 'root:wheel'):
+            self.assertEqual(self.sh(self.installer, 'print-sudoers', bad).returncode, 64)
 
 
 class LiveBackendIsNeverUsedHere(unittest.TestCase):

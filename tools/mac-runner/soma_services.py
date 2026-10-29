@@ -12,7 +12,7 @@ Nothing here enrolls or replaces owner keys, runs a shell, takes a path or comma
 service whose restart cannot be verified by that service's own capability check. Times are epoch milliseconds.
 """
 import base64, contextlib, fcntl, hashlib, hmac, json, os, pathlib, re, secrets, socket, stat, subprocess, tempfile, threading, time
-import http.client, urllib.error, urllib.request
+import http.client, urllib.error, urllib.parse, urllib.request
 
 HOME = pathlib.Path.home()
 TRUST_FILE = pathlib.Path('/Library/Application Support/Soma/connections-owner-keys.json')
@@ -26,7 +26,7 @@ MAX_PAYLOAD = 2048
 MAX_KEYS = 8
 KEEP_RECORDS = 200
 LAUNCHCTL = '/bin/launchctl'
-PRIVILEGED_HELPER = pathlib.Path('/Library/Application Support/Soma/soma-service-helper')
+PRIVILEGED_HELPER = pathlib.Path('/Library/PrivilegedHelperTools/soma-service-helper')  # install-service-helper.sh (Boss, by hand)
 
 
 def now_ms():
@@ -65,13 +65,16 @@ def plist_path(service):
 
 
 _HOST = None
+TAILSCALE_PATHS = ('/opt/homebrew/bin/tailscale', '/usr/local/bin/tailscale', '/Applications/Tailscale.app/Contents/MacOS/Tailscale')
+
+
 def host_identity():
     """This runner's fixed identity: the first label of its tailnet DNS name, else the short hostname, lowercase."""
     global _HOST
     if _HOST:
         return _HOST
     name = ''
-    for tailscale in ('/opt/homebrew/bin/tailscale', '/usr/local/bin/tailscale', '/Applications/Tailscale.app/Contents/MacOS/Tailscale'):
+    for tailscale in TAILSCALE_PATHS:
         if not os.path.exists(tailscale):
             continue
         with contextlib.suppress(Exception):
@@ -141,34 +144,62 @@ def _spki_key(der):
     return key
 
 
-def load_trust(path=TRUST_FILE, require_root=True):
-    """The pinned owner public keys. Missing -> setup blocked (never trust-on-first-use); anything unsafe -> untrusted."""
+def _ancestor_problems(path, uids, lstat):
+    """Every directory from the file's own up to / must be a real directory (no symlink), owned by a trusted uid and
+    writable by nobody else: otherwise whoever can write an ancestor could swap in a directory holding their own keys."""
+    problems = []
+    for folder in [path.parent, *path.parent.parents]:
+        try:
+            info = lstat(folder)
+        except OSError:
+            return [f'{folder} unreadable']
+        if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+            problems.append(f'{folder} is a symlink or not a directory')
+        elif info.st_uid not in uids:
+            problems.append(f'{folder} is not owned by root')
+        elif info.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+            problems.append(f'{folder} is group- or world-writable')
+    return problems
+
+
+def load_trust(path=TRUST_FILE, require_root=True, lstat=os.lstat):
+    """The pinned owner public keys. Missing -> setup blocked (never trust-on-first-use); anything unsafe -> untrusted.
+    require_root=False (tests only) also trusts the current user's own files and folders."""
     path = pathlib.Path(path)
+    if not path.is_absolute() or '..' in path.parts:
+        return Trust('untrusted', 'Owner trust path must be absolute and plain.')
+    uids = {0} if require_root else {0, os.geteuid()}
     try:
-        info = os.lstat(path)
+        info = lstat(path)
     except FileNotFoundError:
         return Trust('missing', f'Owner trust is not provisioned ({path}). Restore stays blocked until Boss installs it.')
     except OSError as e:
         return Trust('untrusted', f'Owner trust unreadable: {e.strerror}.')
-    try:
-        parent = os.lstat(path.parent)
-    except OSError:
-        return Trust('untrusted', 'Owner trust directory unreadable.')
     problems = []
     if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
         problems.append('not a regular file (symlinks are refused)')
     if info.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
         problems.append('group- or world-writable')
-    if stat.S_ISLNK(parent.st_mode) or parent.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
-        problems.append('directory is a symlink or group/world-writable')
-    if require_root and (info.st_uid != 0 or parent.st_uid != 0):
+    if info.st_uid not in uids:
         problems.append('not owned by root')
     if info.st_size > 65_536:
         problems.append('larger than 64 KB')
+    problems += _ancestor_problems(path, uids, lstat)
     if problems:
         return Trust('untrusted', 'Owner trust refused: ' + '; '.join(problems) + '.')
+    try:  # read the very file that was checked: no symlink followed, same inode
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        try:
+            opened = os.fstat(fd)
+            if (opened.st_dev, opened.st_ino) != (info.st_dev, info.st_ino):
+                return Trust('untrusted', 'Owner trust changed while it was being read.')
+            raw = os.read(fd, 65_537)
+        finally:
+            os.close(fd)
+    except OSError as e:
+        return Trust('untrusted', f'Owner trust unreadable: {e.strerror}.')
     try:
-        data = json.loads(path.read_bytes())
+        data = json.loads(raw)
         if data.get('version') != 1 or not isinstance(data.get('keys'), list) or len(data['keys']) > MAX_KEYS:
             raise ValueError('version 1 with at most %d keys expected' % MAX_KEYS)
         keys = {}
@@ -292,10 +323,14 @@ class Challenges:
 class WorkGate:
     """Admission is closed and every build/walk lock is held from the idle check until verification ends."""
 
-    def __init__(self, lock_dir=LOCK_DIR):
+    def __init__(self, lock_dir=LOCK_DIR, admission=None):
         self.lock_dir = pathlib.Path(lock_dir)
         self.closed = threading.Event()
         self.held = []
+        # The lock every work admission holds while it checks admit() and enqueues (oma-runner: `changed`). Closing under
+        # it means any admission that saw the gate open has already counted itself before the idle snapshot is taken.
+        self.admission = admission if admission is not None else threading.Lock()
+        self._owner = threading.Lock()  # one restart at a time; a contender never touches the owner's gate
 
     def locks(self):
         return sorted(p for p in self.lock_dir.glob('*.lock')) if self.lock_dir.is_dir() else []
@@ -319,9 +354,12 @@ class WorkGate:
     @contextlib.contextmanager
     def exclusive(self, work):
         """work() -> dict(working, waiting, queued, background) or None if unknown. Raises Refused when not provably idle."""
-        self.closed.set()
+        if not self._owner.acquire(blocking=False):
+            raise Refused('restart_in_progress', 'Another owner-approved restart is running.', 409)
         files = []
         try:
+            with self.admission:
+                self.closed.set()
             for path in self.locks():
                 f = open(path, 'a')
                 try:
@@ -345,6 +383,7 @@ class WorkGate:
                     f.close()
             self.held = []
             self.closed.clear()
+            self._owner.release()
 
 
 # ---- execution backends -------------------------------------------------------------------------------------------
@@ -364,16 +403,8 @@ class LiveBackend:
             raise RuntimeError(f'launchctl kickstart exited {r.returncode}: {stderr_tail(r.stderr, 300)}')
 
     def privileged(self, service):
-        helper = PRIVILEGED_HELPER
-        try:
-            info = os.lstat(helper)
-        except OSError:
-            raise Blocked('privileged_helper_missing') from None
-        if stat.S_ISLNK(info.st_mode) or info.st_uid != 0 or info.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
-            raise Blocked('privileged_helper_untrusted')
-        r = subprocess.run(['/usr/bin/sudo', '-n', str(helper), service], capture_output=True, text=True, timeout=60, check=False)
-        if r.returncode != 0:
-            raise Blocked('privileged_helper_refused')
+        # No unsigned passwordless root helper may be used. A root-owned file alone proves no owner consent.
+        raise Blocked('owner_verifying_privileged_helper_unavailable')
 
     def exit_for_relaunch(self):
         os._exit(75)
@@ -417,8 +448,8 @@ class Unverified(Exception):
     """Reachable (a reply arrived) but its evidence is incomplete: never a pass, never network-down."""
 
 
-def http_json(url, timeout=4):
-    request = urllib.request.Request(url, headers={'Accept': 'application/json'})
+def http_json(url, timeout=4, headers=None):
+    request = urllib.request.Request(url, headers={'Accept': 'application/json', **(headers or {})})
     with urllib.request.urlopen(request, timeout=timeout) as reply:  # noqa: S310 -- fixed local/tailnet URLs only
         try:
             body = reply.read(262_145)
@@ -435,33 +466,157 @@ def http_json(url, timeout=4):
         return reply.status, data
 
 
-def capability_probe(service, fetch=http_json):
-    """Each service's own capability evidence. Unsupported is an honest structured result, never a pass."""
+SYNCTHING_CONFIG = pathlib.Path.home() / 'Library/Application Support/Syncthing/config.xml'
+SYNCTHING_FOLDER_OK = {'idle', 'scanning', 'scan-waiting', 'syncing', 'sync-waiting', 'sync-preparing', 'cleaning', 'clean-waiting'}
+
+
+def syncthing_folders(fetch=http_json, config=SYNCTHING_CONFIG):
+    """Each unpaused folder's state from Syncthing's own API. Its API key is read from the owner's 0600 config into memory
+    for the request header only; it never enters a check, a record or an error."""
+    import xml.etree.ElementTree as ET
     try:
+        root = ET.fromstring(pathlib.Path(config).read_bytes()[:1_048_576])
+    except (OSError, ET.ParseError):
+        return mkcheck('syncthing_folders', 'syncthing', 'config_unreadable', 'unverified', {'reason': 'Syncthing config could not be read'})
+    key = (root.findtext('gui/apikey') or '').strip()
+    if not key:
+        return mkcheck('syncthing_folders', 'syncthing', 'no_api_key', 'unverified', {'reason': 'Syncthing has no API key set'})
+    folders = [f.get('id') for f in root.findall('folder') if f.get('paused', 'false') != 'true' and f.get('id')][:32]
+    states, errors = {}, 0
+    for folder in folders:
+        status, data = fetch('http://127.0.0.1:8384/rest/db/status?folder=' + urllib.parse.quote(folder, safe=''), headers={'X-API-Key': key})
+        if status != 200:
+            return mkcheck('syncthing_folders', 'syncthing', 'api_refused', 'fail', {'http_status': status})
+        states[folder] = str(data.get('state', 'unknown'))[:24]
+        errors += int(data.get('errors') or 0) + int(data.get('pullErrors') or 0)
+    bad = {f: st for f, st in states.items() if st not in SYNCTHING_FOLDER_OK}
+    ok = folders and not bad and not errors
+    return mkcheck('syncthing_folders', 'syncthing', 'ok' if ok else ('no_folders' if not folders else 'folder_problem'),
+                   'pass' if ok else 'fail', {'folders': len(folders), 'states': states, 'errors': errors})
+
+
+def tailscale_status(run=subprocess.run):
+    """`tailscale status --json`, parsed; only whitelisted fields ever leave the probe (it also names the owner's login)."""
+    for tailscale in TAILSCALE_PATHS:
+        if os.path.exists(tailscale):
+            r = run([tailscale, 'status', '--json'], capture_output=True, text=True, timeout=8, check=False)
+            if r.returncode != 0:
+                raise RuntimeError('tailscale status exited %d: %s' % (r.returncode, stderr_tail(r.stderr, 200)))
+            data = json.loads(r.stdout[:4_000_000])
+            if not isinstance(data, dict):
+                raise Unverified('tailscale status is not a JSON object')
+            return data
+    raise FileNotFoundError('tailscale CLI not found')
+
+
+def tailnet_ip(run=subprocess.run):
+    ips = (tailscale_status(run).get('Self') or {}).get('TailscaleIPs') or []
+    four = [ip for ip in ips if re.fullmatch(r'100\.\d+\.\d+\.\d+', str(ip))]
+    if not four:
+        raise Unverified('this Mac has no tailnet IPv4 address')
+    return four[0]
+
+
+IMESSAGE_TOKEN = pathlib.Path.home() / 'Library/Application Support/soma-imessage/token'
+TRANSPORT_SOCKET = pathlib.Path.home() / 'Library/Application Support/soma-imessage/rustpush/bridge.sock'
+
+
+def _read_secret(path):
+    """A local credential, for one request header only: never returned, logged or recorded."""
+    with contextlib.suppress(OSError):
+        return pathlib.Path(path).read_text()[:4096].strip() or None
+    return None
+
+
+def _running(service, state):
+    st = state(service)
+    ok = st.get('state') == 'running' and bool(st.get('pid'))
+    return mkcheck('launchd_running', service, 'running' if ok else 'not_running', 'pass' if ok else 'fail',
+                   {k: st.get(k) for k in ('state', 'pid', 'last_exit')})
+
+
+def capability_probe(service, fetch=http_json, run=subprocess.run, state=None, keys=None):
+    """Each service's own capability evidence, read-only. Bodies never leave the probe: only whitelisted fields do.
+    keys: {name: callable -> secret or None} for bearer credentials the caller already holds (the runner's Soma key).
+    A reachable service whose evidence is incomplete is unverified; refused auth is unverified; down is fail."""
+    keys, state = keys or {}, state or launchd_state
+
+    def check(name, code, ok, fields=None):
+        return mkcheck(name, service, code if not ok else 'ok', 'pass' if ok else 'fail', fields or {})
+
+    try:
+        if service == 'runner':
+            return [check('runner_self', 'ok', True, {'host': host_identity()})]
         if service == 'soma':
             base = os.environ.get('OMA_RUNNER_SOMA_SERVICE', '').rstrip('/')
             if not base:
-                return [mkcheck('soma_identity', 'soma', 'not_configured', 'unsupported', {'missing': 'OMA_RUNNER_SOMA_SERVICE'})]
-            status, data = fetch(base + '/health')
-            ok = status == 200 and data.get('service') == 'soma-serve'
-            return [mkcheck('soma_identity', 'soma', 'ok' if ok else 'wrong_identity', 'pass' if ok else 'fail', {'http_status': status})]
+                return [mkcheck('soma_identity', 'soma', 'not_configured', 'unverified', {'missing': 'OMA_RUNNER_SOMA_SERVICE'})]
+            key = (keys.get('soma') or (lambda: None))()
+            if not key:
+                return [mkcheck('soma_identity', 'soma', 'no_runner_key', 'unverified', {'missing': "the runner's Soma device key"})]
+            status, data = fetch(base + '/health', headers={'Authorization': 'Bearer ' + key})
+            return [check('soma_identity', 'wrong_identity', status == 200 and data.get('service') == 'soma-serve' and data.get('ok') is True,
+                          {'http_status': status, 'service': str(data.get('service', ''))[:40]})]
         if service == 'syncthing':
             status, data = fetch('http://127.0.0.1:8384/rest/noauth/health')
-            ok = status == 200 and data.get('status') == 'OK'
-            return [mkcheck('syncthing_health', 'syncthing', 'ok' if ok else 'unhealthy', 'pass' if ok else 'fail', {'http_status': status}),
-                    mkcheck('syncthing_folders', 'syncthing', 'needs_api_key', 'unsupported', {'missing': 'Syncthing API key (not read by this probe)'})]
-        if service == 'runner':
-            return [mkcheck('runner_self', 'runner', 'ok', 'pass', {'host': host_identity()})]
+            return [check('syncthing_health', 'unhealthy', status == 200 and data.get('status') == 'OK', {'http_status': status}),
+                    syncthing_folders(fetch)]
+        if service == 'canvas':
+            status, data = fetch('http://127.0.0.1:5860/healthz')
+            return [check('canvas_health', 'unhealthy', status == 200 and data.get('ok') is True, {'http_status': status})]
+        if service == 'embeddings':
+            status, data = fetch('http://%s:8179/health' % tailnet_ip(run))
+            dim = data.get('dim')
+            return [check('embed_model', 'model_missing', status == 200 and data.get('ok') is True and isinstance(dim, int) and dim > 0,
+                          {'http_status': status, 'dim': dim if isinstance(dim, int) else None, 'model': str(data.get('model', ''))[:80]})]
+        if service == 'whisper':
+            status, data = fetch('http://%s:8178/health' % tailnet_ip(run))  # whisper.cpp: 200 {"status":"ok"} once the model is loaded
+            return [check('whisper_model', 'model_not_loaded', status == 200 and data.get('status') == 'ok', {'http_status': status})]
+        if service in ('herd', 'tailshare-serve'):
+            # Both admit only the owner's own tailnet devices (tailscale whois); this Mac is one. Only the identity field is kept.
+            port, path, field = (8479, '/v1/status?closed=0', 'machine') if service == 'herd' else (8480, '/v1/hello', 'name')
+            status, data = fetch('http://%s:%d%s' % (tailnet_ip(run), port, path))
+            return [check(service + '_identity', 'wrong_identity', status == 200 and bool(data.get(field)), {'http_status': status, field: str(data.get(field, ''))[:64]})]
+        if service == 'tailscaled':
+            data = tailscale_status(run)
+            me = data.get('Self') or {}
+            peers = data.get('Peer') or {}
+            ok = data.get('BackendState') == 'Running' and me.get('Online') is not False and bool(me.get('TailscaleIPs'))
+            return [check('tailnet_backend', 'not_running', ok, {'backend_state': str(data.get('BackendState', ''))[:24],
+                                                               'peers_online': sum(1 for p in peers.values() if isinstance(p, dict) and p.get('Online'))})]
+        if service == 'imessage-api':
+            token = _read_secret(IMESSAGE_TOKEN)
+            if not token:
+                return [mkcheck('imessage_health', service, 'no_token', 'unverified', {'missing': 'the iMessage service token file'})]
+            status, data = fetch('http://%s:8765/v1/health' % tailnet_ip(run), headers={'Authorization': 'Bearer ' + token})
+            fields = {k: data.get(k) for k in ('ok', 'sendReady', 'messagesAccess', 'watching', 'readOnly') if isinstance(data.get(k), (bool, str))}
+            return [check('imessage_health', 'not_ready', status == 200 and data.get('ok') is True and data.get('sendReady') is True,
+                          {'http_status': status, **fields})]
+        if service == 'imessage-transport':
+            # Its health op is internal to the API process; a running process with its socket is the evidence here.
+            sock = TRANSPORT_SOCKET
+            is_socket = sock.exists() and stat.S_ISSOCK(os.stat(sock).st_mode)
+            return [_running(service, state), check('transport_socket', 'socket_missing', is_socket, {})]
+        if service == 'tailshare-receive':
+            # A loop around `tailscale file get --wait`: it serves nothing, so the evidence is the process being up.
+            return [_running(service, state)]
     except Unverified as e:
         return [mkcheck(service + '_probe', service, 'reachable_unverified', 'unverified', {'reason': str(e)})]
-    except (urllib.error.URLError, OSError) as e:
+    except urllib.error.HTTPError as e:
+        code = 'auth_refused' if e.code in (401, 403) else 'http_error'
+        return [mkcheck(service + '_probe', service, code, 'unverified' if code == 'auth_refused' else 'fail', {'http_status': e.code})]
+    except (urllib.error.URLError, OSError, RuntimeError, json.JSONDecodeError) as e:
         return [mkcheck(service + '_probe', service, 'unreachable', 'fail', {}, stderr=str(e))]
     return [mkcheck(service + '_capability', service, 'no_capability_probe', 'unsupported',
-                    {'reason': 'No capability probe for this service yet; its restart cannot be verified, so it is blocked.'})]
+                    {'reason': 'No capability probe for this service; its restart cannot be verified, so it is blocked.'})]
+
+
+PROBED = {'runner', 'soma', 'syncthing', 'canvas', 'embeddings', 'whisper', 'herd', 'tailshare-serve', 'tailscaled',
+          'imessage-api', 'imessage-transport', 'tailshare-receive'}
 
 
 def verifiable(service):
-    return service in ('soma', 'syncthing', 'runner')
+    return service in PROBED
 
 
 # ---- durable records ----------------------------------------------------------------------------------------------
@@ -488,6 +643,11 @@ def _prune(folder):
             old.unlink()
 
 
+def operation_id(approval):
+    """Bound to the approval, so a phone whose reply was lost can find the operation without ever replaying it."""
+    return 'op-' + hashlib.sha256(('soma-service-operation-v1\n' + approval).encode()).hexdigest()[:32]
+
+
 class Records:
     def __init__(self, root=STATE):
         self.root = pathlib.Path(root)
@@ -506,6 +666,12 @@ class Records:
             return redact(json.loads(path.read_text()))
         except (OSError, json.JSONDecodeError):
             return None
+
+    def operation_for_approval(self, approval):
+        if not re.fullmatch(r'svc-[0-9a-f]{32}', approval or ''):
+            return None
+        op = self.get_operation(operation_id(approval))
+        return op if op and op.get('approval') == approval else None
 
     def incident(self, incident):
         with self.lock:
@@ -545,8 +711,8 @@ class Controller:
             with contextlib.suppress(Exception):
                 launchd = self.state(service)
             blocked = None
-            if mode == 'privileged' and not PRIVILEGED_HELPER.exists():
-                blocked = 'privileged_helper_missing'
+            if mode == 'privileged':
+                blocked = 'owner_verifying_privileged_helper_unavailable'
             elif not verifiable(service):
                 blocked = 'no_capability_probe'
             services.append({'id': service, 'label': label, 'domain': domain, 'plist': str(plist_path(service)),
@@ -565,7 +731,7 @@ class Controller:
         challenge = self.challenges.settle(service, body, self.trust())
         if challenge is None:
             return {'ok': True, 'cancelled': True}
-        op = {'id': 'op-' + secrets.token_hex(16), 'approval': challenge['id'], 'service': service, 'host': self.host,
+        op = {'id': operation_id(challenge['id']), 'approval': challenge['id'], 'service': service, 'host': self.host,
               'stage': 'checking', 'verified': False, 'started_at': self.clock(), 'updated_at': self.clock(), 'checks': []}
         self._save(op)
         self.spawn(self._run, op)
@@ -620,7 +786,7 @@ class Controller:
             checks = []
             with contextlib.suppress(Exception):
                 checks = self.probe(service)
-            if checks and all(c['result'] == 'pass' for c in checks if c['result'] != 'unsupported') and any(c['result'] == 'pass' for c in checks):
+            if checks and all(c['result'] == 'pass' for c in checks):  # unsupported or unverified is never success
                 op['checks'].extend(checks)
                 return self._save(op, stage='restored', verified=True)
         op['checks'].extend(checks or [mkcheck(service + '_probe', service, 'no_result', 'fail')])
