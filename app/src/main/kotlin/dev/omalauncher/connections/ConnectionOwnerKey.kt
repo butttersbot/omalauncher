@@ -38,7 +38,7 @@ internal object ConnectionOwnerKey {
         require(info.isUserAuthenticationRequired && info.userAuthenticationValidityDurationSeconds <= 0) { "Owner key is not auth-per-use" }
         val bytes = store.getCertificate(ALIAS).publicKey.encoded
         val id = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
-        return JSONObject().put("schema", 1).put("algorithm", "SHA256withECDSA-P256")
+        return JSONObject().put("schema", 1).put("algorithm", "ecdsa-p256-sha256")
             .put("key_id", id).put("public_key", Base64.encodeToString(bytes, Base64.NO_WRAP)).put("auth_per_use", true)
     }
     fun exportPublic(home: File): JSONObject {
