@@ -63,6 +63,8 @@ class TradeActivity : PaperActivity() {
         if (marketId < 0 || outcomeSide !in 0..1) { finish(); return }
         // The offline SDK gets no network access and has no private key.
         paper.layoutParams = android.widget.FrameLayout.LayoutParams(1,1)
+        paper.importantForAccessibility=android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+        paper.isFocusable=false;paper.isFocusableInTouchMode=false
         paper.loadUrl("https://appassets.androidplatform.net/hunch/paper/trade-sdk.html")
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(18),dp(16),dp(18),dp(16)); setBackgroundColor(bg) }
         val scroll = ScrollView(this).apply { addView(root) }

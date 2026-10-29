@@ -56,7 +56,7 @@ function coverPrepare(root){
  const top=root.children[0];text(top?.lastElementChild,'CASH —');const body=root.children[1];
  if(Hunch.chapter==='today') {const feed=body.querySelector('.noscroll > div');if(feed)updateFeed(feed)}
  else if(Hunch.chapter==='bets') {const panels=Array.from(body.children);if(panels[0]){const art=panels[0];art.style.background='radial-gradient(circle, rgba(17,17,19,.18) .6px, transparent .95px) 0 0 / 4px 4px, #fdfdfb';art.style.display='flex';art.style.flexDirection='column';art.style.justifyContent='center';art.style.padding='12px';empty(art,'MY BETS','No trading account is connected.');art.querySelectorAll('span').forEach(el=>{el.style.position='static';el.style.transform='none';el.style.width='auto'})}if(panels[2]){const tabs=panels[2].firstElementChild;text(tabs.lastElementChild,'NOT CONNECTED');panels[2].replaceChildren(tabs);const p=document.createElement('p');p.className='empty-copy';p.textContent='Your real positions and settled bets will appear here once trading is connected.';panels[2].append(p)}}
- else {const panels=Array.from(body.children);cashPanel(panels[0]);empty(panels[1],'Daily limit','Betting permissions are not enabled.');recordPanel(panels[2])}
+ else {const panels=Array.from(body.children);cashPanel(panels[0]);empty(panels[1],'Order confirmation','No app spending caps. Every order needs your review and signature.');recordPanel(panels[2])}
 }
 async function showLive(){
  const wide=window.innerWidth>=600;Hunch.layoutWide=wide;

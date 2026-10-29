@@ -69,7 +69,7 @@ const HUNCH_STADIUM='<svg viewBox="0 0 400 220" preserveAspectRatio="xMidYMid sl
 function uprightMoney(){
  const inner=paneNode('div','inner');inner.append(paneNode('h2','h1','Money'));
  const cash=paneBox('CASH YOU CAN BET OR TAKE OUT','—');cash.append(paneNode('p','cap','Trading cash is not connected. Open your wallet for verified balances.'));
- const actions=paneNode('div','mlinks');actions.append(paneButton('Open your wallet','rtab',()=>sendNative({type:'wallet'})));const withdraw=paneButton('TAKE OUT','rtab',()=>{});withdraw.disabled=true;actions.append(withdraw);cash.append(actions);inner.append(cash,paneBox('DAILY LIMIT','Betting permissions are not enabled.'),paneBox('YOUR RECORD','No trading history is connected.'),paneBox('ACTIVITY','No trading activity is connected.'));return inner;
+ const actions=paneNode('div','mlinks');actions.append(paneButton('Open your wallet','rtab',()=>sendNative({type:'wallet'})));const withdraw=paneButton('TAKE OUT','rtab',()=>{});withdraw.disabled=true;actions.append(withdraw);cash.append(actions);inner.append(cash,paneBox('ORDER CONFIRMATION','No app spending caps. Every order needs your review and signature.'),paneBox('YOUR RECORD','No trading history is connected.'),paneBox('ACTIVITY','No trading activity is connected.'));return inner;
 }
 function buildUpright(size){
  const root=paneNode('div','hunch-two-pane upright');root.style.width=size.width+'px';root.style.height=size.height+'px';
