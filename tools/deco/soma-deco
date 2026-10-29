@@ -1,0 +1,163 @@
+#!/usr/bin/env python3
+"""
+The Deco widget's link to Boss's TP-Link Deco mesh (Boss, 2026-10-28; design: /root/handoff/deco, approved v5).
+
+Talks only to the main Deco's own local API (https://192.168.68.1/cgi-bin/luci), through tplink-deco-api
+(github.com/roquerodrigo/tplink-deco-api, inspected at b55c2f8: depends only on `cryptography`, no other hosts).
+Nothing here reads or reuses the Deco app's login.
+
+  soma-deco login           Boss types the Deco owner password himself (no echo); kept 0600 in ~/.local/share/soma-deco,
+                            never in a synced folder, never printed or logged. Checked against the router first.
+  soma-deco poll [--json]   reads the mesh and writes ~/.cache/soma-deco/status.json (and prints it with --json)
+  soma-deco speedtest       starts the router's own speed test, waits for it, records the result
+  soma-deco restart-plan    prints which Decos a restart would interrupt, and a one-time code for restart
+  soma-deco restart CODE    restarts the whole mesh: only with the code restart-plan printed in the last 2 minutes,
+                            which the widget asks for only after Boss's inline confirmation naming the Decos
+  soma-deco logout          forgets the password
+
+Honest states (status.json "state"): unlinked, unreachable, auth-failed, error, ok. A reading the router didn't give is
+null, never 0. Only these router forms are ever called: reads, speedtest write/read, reboot write. Never factory.
+"""
+import getpass, json, os, secrets, sys, time
+from pathlib import Path
+
+HOST = os.environ.get("SOMA_DECO_HOST", "192.168.68.1")
+HOME = Path.home()
+SECRET = HOME / ".local/share/soma-deco/credentials.json"
+PLAN = HOME / ".local/share/soma-deco/restart-plan.json"
+STATUS = HOME / ".cache/soma-deco/status.json"
+LIB = HOME / ".local/share/soma-deco/lib"     # tplink_deco_api at the inspected commit
+sys.path.insert(0, str(LIB))
+
+def now(): return int(time.time())
+
+def write_status(s):
+    STATUS.parent.mkdir(parents=True, exist_ok=True)
+    old = {}
+    try: old = json.loads(STATUS.read_text())
+    except Exception: pass
+    # The last speed test belongs to the network, not this read: it stays until a new test replaces it.
+    for k in ("lastTestMbps", "lastTestUpMbps", "lastTestPingMs", "lastTestAt", "lastTestLabel"):
+        s.setdefault(k, old.get(k))
+    tmp = STATUS.with_suffix(".tmp")
+    tmp.write_text(json.dumps(s))
+    tmp.replace(STATUS)
+    return s
+
+def creds():
+    try:
+        c = json.loads(SECRET.read_text())
+        return c.get("username") or "admin", c["password"]
+    except Exception:
+        return None
+
+def client(c):
+    from tplink_deco_api import DecoClient
+    d = DecoClient(HOST, c[0], c[1], timeout=8)
+    d.login()
+    return d
+
+def kbps_to_mbps(v):
+    return None if v is None else round(v * 8 / 1000, 1)   # the router reports KB/s
+
+def failure(exc):
+    name = type(exc).__name__
+    if "Authentication" in name: return "auth-failed", "The router refused the password"
+    if "Transport" in name or "URLError" in name or "timed out" in str(exc) or "Connection" in name:
+        return "unreachable", "Can't reach the Deco at " + HOST
+    return "error", (name + ": " + str(exc))[:160]
+
+def poll():
+    c = creds()
+    base = {"updatedAt": now(), "host": HOST, "connected": False, "downMbps": None, "upMbps": None, "devices": None, "nodes": None}
+    if not c:
+        return write_status({**base, "state": "unlinked", "message": "Not linked: run soma-deco login"})
+    try:
+        d = client(c)
+        clients = [x for x in d.get_client_list() if x.online]
+        nodes = d.get_device_list()
+        devices = sorted(({"id": x.mac, "name": x.name or x.mac, "downMbps": kbps_to_mbps(x.down_speed), "upMbps": kbps_to_mbps(x.up_speed)}
+                          for x in clients), key=lambda v: -(v["downMbps"] or 0))
+        s = {**base, "state": "ok", "connected": True, "devices": devices,
+             "downMbps": round(sum(v["downMbps"] or 0 for v in devices), 1), "upMbps": round(sum(v["upMbps"] or 0 for v in devices), 1),
+             "nodes": [{"id": n.mac, "name": n.custom_nickname or n.nickname or n.device_model, "role": n.role, "model": n.device_model} for n in nodes]}
+        d.logout()
+        return write_status(s)
+    except Exception as e:
+        state, msg = failure(e)
+        return write_status({**base, "state": state, "message": msg})
+
+def speedtest():
+    c = creds()
+    if not c: print("Not linked"); return 2
+    d = client(c)
+    d.request("admin/device", "speedtest", {"operation": "write"})
+    result = None
+    for _ in range(60):            # the router's test takes about half a minute
+        time.sleep(2)
+        r = d.request("admin/device", "speedtest", {"operation": "read"})
+        status = str(r.get("status", "")).lower()
+        if status in ("idle", "done", "finish", "finished", "complete") and (r.get("down_speed") or r.get("down")):
+            result = r; break
+    d.logout()
+    if not result:
+        print("The router's speed test didn't finish"); return 1
+    down, up = result.get("down_speed") or result.get("down"), result.get("up_speed") or result.get("up")
+    s = json.loads(STATUS.read_text()) if STATUS.exists() else {}
+    s.update({"lastTestMbps": float(down) if down is not None else None, "lastTestUpMbps": float(up) if up is not None else None,
+              "lastTestPingMs": result.get("ping_time"), "lastTestAt": now(), "lastTestLabel": "router test · " + time.strftime("%H:%M"),
+              "rawSpeedtest": result})
+    STATUS.parent.mkdir(parents=True, exist_ok=True); STATUS.write_text(json.dumps(s))
+    print(json.dumps({"down": down, "up": up})); return 0
+
+def restart_plan():
+    c = creds()
+    if not c: print(json.dumps({"ok": False, "message": "Not linked"})); return 2
+    d = client(c); nodes = d.get_device_list(); d.logout()
+    code = secrets.token_hex(4)
+    names = [n.custom_nickname or n.nickname or n.device_model for n in nodes]
+    PLAN.parent.mkdir(parents=True, exist_ok=True)
+    PLAN.write_text(json.dumps({"code": code, "at": now(), "nodes": [n.mac for n in nodes], "names": names})); os.chmod(PLAN, 0o600)
+    print(json.dumps({"ok": True, "code": code, "names": names})); return 0
+
+def restart(code):
+    try: plan = json.loads(PLAN.read_text())
+    except Exception: print("No restart plan"); return 2
+    PLAN.unlink(missing_ok=True)   # one use
+    if not code or code != plan.get("code") or now() - plan.get("at", 0) > 120:
+        print("That restart was not confirmed in time"); return 2
+    c = creds(); d = client(c)
+    master = next((n for n in d.get_device_list() if (n.role or "").lower() == "master"), None)
+    # The master restarts the whole mesh (docs/endpoints/device.md: "the master can reboot the whole group").
+    d.request("admin/device", "reboot", {"operation": "write", "params": {"device_id": "default" if master is None else master.mac}})
+    print("Restarting: " + ", ".join(plan.get("names", []))); return 0
+
+def login():
+    print("Deco owner password (the one the Deco app signs in with). It is not shown, sent anywhere but the router,")
+    print("or written anywhere but " + str(SECRET) + " (only you can read it).")
+    pw = getpass.getpass("Password: ")
+    if not pw: print("Nothing entered"); return 1
+    try:
+        d = client(("admin", pw)); d.logout()
+    except Exception as e:
+        state, msg = failure(e); print("Not saved: " + msg); return 1
+    SECRET.parent.mkdir(parents=True, exist_ok=True); os.chmod(SECRET.parent, 0o700)
+    fd = os.open(SECRET, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f: json.dump({"username": "admin", "password": pw}, f)
+    print("Linked. The Deco widget shows live readings within a minute."); poll(); return 0
+
+def main(a):
+    cmd = a[0] if a else "poll"
+    if cmd == "poll":
+        s = poll()
+        if "--json" in a: print(json.dumps(s))
+        return 0
+    if cmd == "login": return login()
+    if cmd == "logout": SECRET.unlink(missing_ok=True); poll(); print("Forgotten"); return 0
+    if cmd == "speedtest": return speedtest()
+    if cmd == "restart-plan": return restart_plan()
+    if cmd == "restart": return restart(a[1] if len(a) > 1 else "")
+    print(__doc__); return 2
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

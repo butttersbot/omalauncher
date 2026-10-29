@@ -1,0 +1,154 @@
+widget "Deco" {
+  meta { owl: 10; description: "Home network: speed, traffic and devices from the Deco mesh"; version: "0.2.0"; category: "home"; license: "MIT" }
+  size: 6x3
+  minSize: 3x3
+  padding: 10
+  onTap: screen()
+
+  // Live from the main Deco's own API through soma-deco (tools/deco/soma-deco). Never sample numbers: a reading the
+  // router didn't give is "—", never 0, and an old one says how old it is.
+  source net = cmd("soma-deco poll --json") json every 60s timeout 40s optional
+  source now = clock every 30s
+  state testing = false
+  state testOut = ""
+  state showAll = false
+  state plan = ""
+  state restartOut = ""
+
+  let state = net.state ?? "unavailable"
+  let fresh = net.updatedAt != null && now - net.updatedAt < 150
+  let live = fresh && state == "ok"
+  let devices = live ? (net.devices ?? []) : []
+  let nodes = live ? (net.nodes ?? []) : []
+  let compact = (tileWidth ?? 220) < 300
+  let large = (tileHeight ?? 180) >= 260 && !compact
+  // A short tile keeps the reading and Test speed; live usage and the note go first.
+  let short = (tileHeight ?? 180) < 170
+  let t = net.lastTestMbps
+  let testBig = t == null ? "—" : t >= 1000 ? fixed(t / 1000, 2) : "${round(t)}"
+  let testUnit = t == null ? "" : t >= 1000 ? "Gbps" : "Mbps"
+  let down = net.downMbps == null ? "—" : "${net.downMbps >= 10 ? round(net.downMbps) : fixed(net.downMbps, 1)} Mbps"
+  let up = net.upMbps == null ? "—" : "${net.upMbps >= 10 ? round(net.upMbps) : fixed(net.upMbps, 1)} Mbps"
+  let health = live ? "All good" : state == "unlinked" ? "Not linked" : state == "unreachable" ? "Can't reach Deco" : state == "auth-failed" ? "Sign-in refused" : fresh ? "Error" : "No reading"
+  let healthColor = live ? green : muted
+  let tested = net.lastTestAt != null ? "LAST TEST · ${fmtAgo(net.lastTestAt, now)} AGO" : "NO SPEED TEST YET"
+  let pr = parseJson(plan)
+
+  Column {
+    fill: true
+    gap: 3
+    Row {
+      align: center
+      Text { text: "Deco"; style: title; weight: 1 }
+      Text { text: "● ${health}"; style: label; color: healthColor }
+    }
+    Row {
+      align: bottom
+      gap: 4
+      Text { text: testBig; font: display; fontSize: short ? 22 : compact ? 28 : 34 }
+      Text { text: testUnit; style: body }
+      Spacer { weight: 1 }
+      if !compact && live { Text { text: "${len(devices)} devices online"; style: body } }
+    }
+    if !short { Text { text: testing ? "TESTING THROUGH THE ROUTER…" : tested; style: label; color: muted } }
+    if short {
+    } else if live {
+      if compact { Text { text: "${len(devices)} devices online"; style: body } }
+      Row {
+        gap: 10
+        Text { text: "↓ ${down}"; style: body }
+        Text { text: "↑ ${up}"; style: body }
+        if !compact { Text { text: "· LIVE USAGE"; style: label; color: muted } }
+      }
+    } else {
+      Text { text: state == "unlinked" ? "Link your router to see live readings." : (net.message ?? "No reading from the router yet."); style: small; color: muted; maxLines: 2 }
+    }
+    if large && live {
+      Spacer { height: 4 }
+      Text { text: "TOP DEVICES · DOWNLOAD"; style: label; color: muted }
+      for d in take(devices, 3) key d.id {
+        Row { Text { text: d.name; weight: 1; maxLines: 1 } Text { text: d.downMbps == null ? "—" : "${d.downMbps >= 10 ? round(d.downMbps) : fixed(d.downMbps, 1)} Mbps"; bold: true } }
+      }
+      Text { text: "${len(nodes)} Decos online"; style: small; color: muted }
+    }
+    Spacer { weight: 1 }
+    if !short { Box { fill: width; height: 1; background: foreground } }
+    Row {
+      // The only utility on the tile (approved v5): it doesn't open the detail.
+      if state == "unlinked" {
+        Text { text: "[ Link Deco ]"; color: red; onTap: terminal("soma-deco login", "Link Deco") }
+      } else {
+        Text { text: testing ? "[ Testing… ]" : "[ Test speed ]"; color: live && !testing ? red : muted; onTap: { if live && !testing { testing = true; testOut = run("soma-deco speedtest"); } } }
+      }
+    }
+  }
+
+  on testOut != "" { testing = false }
+
+  screen {
+    title: "Your network"
+    Column {
+      fill: true
+      gap: 8
+      Row {
+        align: center
+        Text { text: "Deco"; style: title; weight: 1 }
+        Text { text: "● ${upper(health)}"; style: label; color: healthColor }
+      }
+      Row {
+        align: bottom
+        gap: 4
+        Text { text: testBig; font: display; fontSize: 44 }
+        Text { text: testUnit }
+        Spacer { weight: 1 }
+        if live { Text { text: "${len(devices)} devices online" } }
+      }
+      Text { text: testing ? "TESTING THROUGH THE ROUTER…" : tested; style: label; color: muted }
+      if live {
+        Text { text: "TRAFFIC RIGHT NOW"; style: label; color: muted }
+        Row { gap: 16; Text { text: "↓ ${down}"; style: title } Text { text: "↑ ${up}"; style: title } }
+        Row { Text { text: "USING THE NETWORK"; style: label; color: muted; weight: 1 } Text { text: "DOWNLOAD"; style: label; color: muted } }
+        Column {
+          height: min(300, screenHeight * 0.45)
+          scroll: true
+          gap: 6
+          for d in (showAll ? devices : take(devices, 3)) key d.id {
+            Row { Text { text: d.name; weight: 1; bold: true; maxLines: 1 } Text { text: d.downMbps == null ? "—" : "${d.downMbps >= 10 ? round(d.downMbps) : fixed(d.downMbps, 1)} Mbps"; font: mono } }
+          }
+          if len(devices) > 3 {
+            Text { text: showAll ? "[ Show fewer ]" : "[ ${len(devices) - 3} other devices ]"; onTap: showAll = !showAll }
+          }
+        }
+        Text { text: "${len(nodes)} Deco units online"; style: small; color: muted }
+      } else {
+        Text { text: state == "unlinked" ? "Not linked yet" : health; style: title }
+        Text { text: state == "unlinked" ? "Soma reads your Deco's own local interface with the owner password, which you type yourself in a terminal; it stays on this phone." : (net.message ?? "No reading from the router."); maxLines: 5 }
+      }
+      Spacer { weight: 1 }
+      if pr != null && pr.ok {
+        // Inline confirmation, naming every Deco that drops (Boss decides the timing).
+        Column {
+          gap: 6; padding: 8; border: 1
+          Text { text: "Restart ${join(pr.names, ", ")}?"; bold: true }
+          Text { text: "Wi-Fi and internet drop for every device for about 2–3 minutes while they come back."; style: small; maxLines: 3 }
+          Row {
+            Text { text: "[ Cancel ]"; onTap: plan = "" }
+            Spacer { weight: 1 }
+            Text { text: "[ Restart now ]"; color: red; onTap: { restartOut = run("soma-deco restart ${sh(pr.code)}"); plan = "" } }
+          }
+        }
+      }
+      if restartOut != "" { Text { text: restartOut; style: small; color: muted; maxLines: 2 } }
+      Box { fill: width; height: 1; background: foreground }
+      Row {
+        if state == "unlinked" {
+          Text { text: "[ Link Deco ]"; color: red; onTap: terminal("soma-deco login", "Link Deco") }
+        } else {
+          Text { text: testing ? "[ Testing… ]" : "[ Test speed ]"; color: live && !testing ? red : muted; onTap: { if live && !testing { testing = true; testOut = run("soma-deco speedtest"); } } }
+        }
+        Spacer { weight: 1 }
+        if live && plan == "" { Text { text: "[ Restart ]"; onTap: plan = run("soma-deco restart-plan") } }
+      }
+    }
+  }
+}
