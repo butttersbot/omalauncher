@@ -1,6 +1,7 @@
 # Canvas soma-widgets / Soma Connections v6 (8 cards) + Expanded · Unfolded upright (proposed 2026-10-29).
 # Isolated fictional checks; no production monitors, network or real notifications.
-# Every shot is one Canvas card (canvas.json beside the shots); look at each against its card: green ✓ and
+# canvas-app: soma-widgets
+# Card shots name their Canvas card (design gate, tools/walkthrough/README.md); look at each against its card: green ✓ and
 # statuses, accent △ and count, body sans for lines and rows, mono only for small captions, rules above [ Restore ].
 fold folded
 shell am force-stop dev.omalauncher.artifactpreview
@@ -11,7 +12,7 @@ expect Network
 expect Agents
 expect Canvas
 expect runner not responding
-shot connections-small-cover
+shot connections-small-cover card=connections-small-cover
 tap [ Restore ]
 expect Restore utility used
 expect Repair blocked
@@ -23,7 +24,7 @@ expect Your Fictional Mac is connected.
 expect Its runner needs a restart.
 expect Restart the agent runner
 expect One repair. Two features back.
-shot connections-expanded-cover
+shot connections-expanded-cover card=connections-expanded-cover
 scrollto Details for agents
 expect Check again
 tap Details for agents
@@ -46,13 +47,13 @@ expect Connections fixture
 tap Medium
 expect Phone
 expect Sync
-shot connections-medium-cover
+shot connections-medium-cover card=connections-medium-cover
 tap Large
 expect Device connections
 expect Connected
 expect Synced
 expect Design Canvas
-shot connections-large-cover
+shot connections-large-cover card=connections-large-cover
 tap Active jobs
 tap [ Restore ]
 expect Repair blocked
@@ -95,16 +96,16 @@ fold unfolded
 shell am force-stop dev.omalauncher.artifactpreview
 shell am start -n dev.omalauncher.artifactpreview/.PreviewActivity --ez connections true
 expect Connections fixture
-shot connections-small-unfolded
+shot connections-small-unfolded card=connections-small-unfolded
 tap Medium
-shot connections-medium-unfolded
+shot connections-medium-unfolded card=connections-medium-unfolded
 tap Large
 expect Design Canvas
-shot connections-large-unfolded
+shot connections-large-unfolded card=connections-large-unfolded
 tap Connections
 expect All capabilities
 expect Your Fictional Mac is connected.
-shot connections-expanded-unfolded
+shot connections-expanded-unfolded card=connections-expanded-unfolded
 scrollto Notify me about unexpected outages and recovery
 expect After 60 seconds · one alert per incident
 shot connections-expanded-unfolded-footer
@@ -114,7 +115,7 @@ expect Connections
 expect All capabilities
 expect Your Fictional Mac is connected.
 expect Optional tools
-shot connections-expanded-portrait
+shot connections-expanded-portrait card=connections-expanded-upright
 swipe 0.50 0.70 0.50 0.30 500
 scrollto Pause monitoring for 1 hour
 expect Fixture only
