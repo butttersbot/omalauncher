@@ -10,7 +10,7 @@ android {
         buildConfigField("String", "PRIVY_RP", groovy.json.JsonOutput.toJson(publicPrivy["relyingParty"]))
     }
     buildFeatures { buildConfig = true }
-    defaultConfig { applicationId = "dev.omalauncher.hunch"; minSdk = 29; targetSdk = 37; versionCode = 16; versionName = "0.7.1" }
+    defaultConfig { applicationId = "dev.omalauncher.hunch"; minSdk = 29; targetSdk = 37; versionCode = 17; versionName = "0.7.2" }
 }
 dependencies {
     implementation("com.google.zxing:core:3.5.3")

@@ -1,4 +1,4 @@
-# Debug-only fictional data, visibly labelled. No account or transaction capabilities.
+# Debug-only fictional data and isolated order fixture. No real account or transaction calls.
 fold folded
 launch dev.omalauncher.hunch/.MainActivity
 expect "Today's issue"
@@ -15,6 +15,11 @@ tap Paper Cranes vs Ink Foxes
 # The sheet: both sides, the stake, read-only. The demo's one ask expires, so a side may show either price or no quote.
 expect Foxes — NO VERIFIED QUOTE
 expect PUT IN
+scrollto REVIEW AN ORDER
+tap REVIEW AN ORDER
+expect FICTIONAL TEST ORDER
+scrollto Back to market
+tap Back to market
 scrollto READ ONLY · REFRESH
 scrollto Resolution Deadline
 expect HOW IT SETTLES
