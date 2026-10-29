@@ -33,6 +33,10 @@ fun ConnectionsPreview() {
     }, clock)
     fun show(s: String) {
         scenario = s; ConnectionsSource.repair = null; ConnectionsSource.guide = null
+        ConnectionsSource.diagnostic = org.json.JSONObject().put("schema", 1).put("service", "fictional-runner")
+            .put("host", "Fictional Mac").put("stage", s).put("root_cause", "fixture_only")
+            .put("checks", org.json.JSONArray().put(org.json.JSONObject().put("check", "fixture_probe").put("code", 503)))
+            .put("next_steps", org.json.JSONArray().put(org.json.JSONObject().put("actor", "agent").put("action", "inspect_fixture"))).toString(2)
         ConnectionsSource.snapshot = snapshot(when (s) {
             "Auth check" -> ConnectionState.Auth
             "Stale check" -> ConnectionState.Ready

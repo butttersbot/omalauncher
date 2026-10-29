@@ -8,7 +8,7 @@ expect Network
 expect Agents
 expect Canvas
 shot connections-small-cover
-tap Restore
+tap [ Restore ]
 expect Restore utility used
 expect Blocked
 # Utility must not open the modal.
@@ -16,13 +16,18 @@ absent Close Connections
 tap Connections
 expect All capabilities
 shot connections-expanded-cover
-scrollto Design Canvas
+tap Details for agents
+expect fixture_only
+shot connections-agent-details-cover
+tap Details for agents
+scrollto Optional tools
 tap Design Canvas
 expect CORE Design Canvas
 scrollto Enable outage alerts
 tap Enable outage alerts
+scrollto Fixture only
 expect Fixture only
-back
+key BACK
 expect Connections fixture
 tap Medium
 expect Phone
@@ -33,29 +38,29 @@ expect Device connections
 expect Design Canvas
 shot connections-large-cover
 tap Active jobs
-tap Restore
+tap [ Restore ]
 expect Blocked: active or queued
 tap Failed repair
-tap Restore
+tap [ Restore ]
 expect Failed: fictional
 shot connections-failed-cover
 tap Successful repair
-tap Restore
+tap [ Restore ]
 expect Restored: fictional
 shot connections-restored-cover
 tap Auth check
 tap Connections
 expect Auth required
 shot connections-auth-cover
-back
+key BACK
 tap Stale check
 tap Connections
 expect Stale
-back
+key BACK
 tap Pause checks
 tap Connections
 expect Paused
-back
+key BACK
 # Notification debounce/dedup/recovery and pause are checked in ConnectionsTest; no real Android alerts in this fixture.
 fold unfolded
 shell am force-stop dev.omalauncher.artifactpreview
@@ -74,6 +79,6 @@ rotate landscape
 expect Connections
 expect All capabilities
 shot connections-expanded-rotated
-back
+key BACK
 expect Connections fixture
 [phone] After combined install: add module:connections on an owner-chosen home page via canvas placement; verify real configured peers, core Design Canvas, VPN loss versus auth refusal, helper stale/asleep/paused, source freshness and actual notification permission/channel state. Owner enables alerts in context. Controlled test outage only on an idle test service: wait debounce, observe one local Android alert even with tunnel down, dismiss without repeat, restore externally and verify one recovery. Confirm intentional pause stays quiet and closing detail leaves checks running. Do not stop active builds/agents, toggle security/debugging, reboot hosts or install from this lane. Successful automatic restart remains unavailable until a supported guarded host-control API is deployed.
