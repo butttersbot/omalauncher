@@ -31,7 +31,12 @@ class PreviewActivity : ComponentActivity() {
         dev.omalauncher.ui.ActivePack.choose(pick)
         pick.load?.pack?.type?.let { type ->
             dev.omalauncher.ui.ActivePack.fonts = listOf(type.display, type.body, type.hand, type.mono).map { it.file }.filter { it.isNotBlank() }.distinct().associateWith { path ->
-                androidx.compose.ui.text.font.FontFamily(androidx.compose.ui.text.font.Font(File(folder, path)))
+                // As the launcher loads them (ThemeStore.packFont): a variable font draws each weight itself, so the
+                // walk shows the semi-bold headlines the cards have, not one face at every weight.
+                androidx.compose.ui.text.font.FontFamily(dev.omalauncher.theme.pack.FONT_WEIGHTS.map { w ->
+                    androidx.compose.ui.text.font.Font(File(folder, path), androidx.compose.ui.text.font.FontWeight(w), androidx.compose.ui.text.font.FontStyle.Normal,
+                        androidx.compose.ui.text.font.FontVariation.Settings(androidx.compose.ui.text.font.FontVariation.weight(w)))
+                })
             }
         }
         setContent {

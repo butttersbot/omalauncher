@@ -107,6 +107,7 @@ expect Your Fictional Mac is connected.
 shot connections-expanded-unfolded
 scrollto Notify me about unexpected outages and recovery
 expect After 60 seconds · one alert per incident
+shot connections-expanded-unfolded-footer
 swipe 0.50 0.30 0.50 0.80 500
 rotate portrait
 expect Connections
