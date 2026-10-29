@@ -2,7 +2,9 @@
 
 `npm ci` then `node build.mjs` rebuilds the offline WebView bundle. `node test.mjs`
 checks canonical SDK order fields, EIP-712 network separation and signer recovery
-with an ephemeral test key (no HTTP).
+with an ephemeral test key (no HTTP). `node bridge-test.mjs` exercises the
+actual generated Android asset through the native RPC boundary, including both
+order and cancel-by-cloid envelopes with recovered disposable signatures.
 
 Pinned @nktkas/hyperliquid 0.33.3 is the community TypeScript SDK listed in
 Hyperliquid's official API documentation. It performs canonicalization,

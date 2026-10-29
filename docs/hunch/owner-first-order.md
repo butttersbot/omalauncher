@@ -47,7 +47,7 @@ on the venue's own UI may be a faster owner fallback if his wallet is supported.
 
 Boss tightened the goal via A mail 20261028-182924-c47d0f: a tryable standalone
 Hunch build tonight, Hyperliquid buy/sell with limit or IOC, existing embedded
-wallet, no agent real-money actions. Current source 53643e05 (0.7.0/vc15)
+wallet, no agent real-money actions. Current source 1485444d (0.7.0/vc15)
 contains a native exact-size ticket/review/Confirm, pinned bundled signing SDK,
 private journal-before-send and readback by cloid. Compile/tests/review and
 cover/unfolded walks are pending for the current head; do not call it ready.
@@ -63,14 +63,19 @@ cloid and expiry bind preparation/signing/submission. No builder fee is added.
 Sells consume owned available outcome shares only, with no short/mint route.
 Review shows a conservative fee ceiling from user spot fees × outcome feeScale,
 not an assertion of the eventual actual fee. IOC remainder cancels; GTC can
-rest and currently blocks another order until a venue status settles it. Cancel
-resting GTC on the venue; an in-app cancel action is outside this slice.
+rest and currently blocks another order until a venue status settles it. Owner-confirmed cancellation uses the same SDK cancelByCloid path and records
+its nonce/expiry before signing. The original remains Unknown until a readback
+confirms its actual status; cancelled signing never locally clears a resting order.
 
 A known pre-HTTP cancellation (including a Signing-only crash) becomes Cancelled.
 HTTP cannot start until Submitting is durably recorded; interrupted Submitting
 becomes Unknown. Any terminal clearing after submission requires an explicit
 venue-confirmed result. unknownOid never permits resubmission. Specific venue
 rejection statuses are terminal; generic transport uncertainty stays blocked.
+
+The exact generated Android bundle additionally passed native RPC roundtrip,
+EIP-712 serialization, recovered disposable signer, order envelope and cancel
+envelope tests (two fictional signatures/submissions; zero HTTP).
 
 Local SDK test passed canonical field order, testnet typed-data domain/source,
 signature recovery, exact size/cloid/expiry and sell IOC. A testnet-only signed
