@@ -17,7 +17,9 @@ expect Question second
 expect Newer working
 shot needs-boss-first-strip-cover
 swipefrom Approval first -0.70 0 500
+swipefrom New chat -0.70 0 500
 tap All chats
+expect Search chats
 expect NEEDS YOU
 expect AT WORK
 shot needs-boss-first-all-chats-cover
@@ -32,6 +34,7 @@ expect Question second
 expect Newer working
 shot needs-boss-first-strip-unfolded
 tap All chats
+expect Search chats
 expect NEEDS YOU
 expect AT WORK
 shot needs-boss-first-all-chats-unfolded
