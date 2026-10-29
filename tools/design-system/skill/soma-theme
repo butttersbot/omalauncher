@@ -1,0 +1,271 @@
+#!/usr/bin/env python3
+"""soma-theme: which look Soma is wearing, its design tokens as CSS, and where Soma Canvas is.
+
+From MG1's Claude's soma-look draft (2026-10-29), owned with Soma in omalauncher tools/design-system/skill; installed
+with the soma-design skill by install.sh. (soma-look is the Fold's other tool: it renders an HTML file at Fold sizes.)
+
+Run this before any mockup or UI for Soma, herd, Canvas or another Soma app. Don't guess a palette, and don't use the
+Console pack because it's the default: Boss's phone wears a chosen look (Manga as of 2026-10-29).
+
+  soma-theme                      the active look, where its tokens and fonts come from, and Soma Canvas
+  soma-theme css [--embed] [--fonts DIR] [--look NAME]
+                                  the look as CSS: custom properties (--soma-*) and @font-face rules. --embed inlines
+                                  the fonts (one self-contained file); --fonts DIR copies them into DIR and points there
+  soma-theme toml [--look NAME]    the look's pack.toml, merged over Console the way the launcher reads it
+  soma-theme list                  every look the Soma build carries
+
+The active look comes from, in order: --look, $SOMA_LOOK, the phone's own report in the herd (`herd --json`: the Fold's
+machine says soma.look; Soma writes it whenever a look is picked), `oma-phone looks` on the Fold itself, then
+soma-look.json beside this script (a last, hand-kept fallback). Packs come from $SOMA_PACKS, the Soma repo (~/Projects/omalauncher-fold), or the
+newest Soma build in ~/Soma/builds. For Manga, the fonts are Soma Canvas's Latin cuts (projects/soma-canvas/fonts).
+"""
+import base64
+import json
+import os
+import pathlib
+import re
+import shutil
+import sys
+import tomllib
+import zipfile
+
+HOME = pathlib.Path.home()
+SYNC = HOME / 'ClaudeSync'
+PICK = pathlib.Path(os.environ.get('SOMA_LOOK_PICK', pathlib.Path(__file__).resolve().parent / 'soma-look.json'))
+CANVAS_FONTS = SYNC / 'projects' / 'soma-canvas' / 'fonts'
+CANVAS = [('jacks-mac-pro', 'http://100.120.219.46:5860'), ('macbook-pro', 'http://100.105.137.74:5860')]
+VOICES = ('display', 'body', 'hand', 'mono')
+
+
+def fail(text):
+    sys.exit('soma-theme: ' + text)
+
+
+# ---------------------------------------------------------------- where the packs are
+class Packs:
+    """The packs folder of the Soma repo, or the packs inside the newest Soma build's jar."""
+
+    def __init__(self):
+        self.where, self.dir, self.jar = None, None, None
+        repos = ['Projects/omalauncher-fold', 'Projects/omalauncher', 'wt/builder-c']
+        for d in filter(None, [os.environ.get('SOMA_PACKS')] + [HOME / r / 'app/src/main/assets/packs' for r in repos]):
+            if pathlib.Path(d, 'console', 'pack.toml').exists():
+                self.dir, self.where = pathlib.Path(d), f'{d} (repo)'
+                return
+        jars = sorted((HOME / 'Soma' / 'builds').glob('Soma-*.jar'), key=lambda p: p.stat().st_mtime, reverse=True)
+        if jars:
+            self.jar, self.where = zipfile.ZipFile(jars[0]), f'{jars[0]} (build)'
+            return
+        fail('no Soma packs here: set SOMA_PACKS, or have the Soma repo or a Soma build (~/Soma/builds) on this machine')
+
+    def names(self):
+        if self.dir:
+            return sorted(p.parent.name for p in self.dir.glob('*/pack.toml'))
+        return sorted({n.split('/')[1] for n in self.jar.namelist() if re.fullmatch(r'packs/[^/]+/pack\.toml', n)})
+
+    def read(self, look, rel):
+        if self.dir:
+            p = self.dir / look / rel
+            return p.read_bytes() if p.exists() else None
+        try:
+            return self.jar.read(f'packs/{look}/{rel}')
+        except KeyError:
+            return None
+
+
+def from_herd():
+    """The look the phone reports in the herd: (look, where) or None."""
+    import subprocess
+    for cmd in (['herd', '--json'], [str(HOME / '.local/bin/herd'), '--json']):
+        try:
+            data = json.loads(subprocess.run(cmd, capture_output=True, text=True, timeout=30).stdout)
+        except (OSError, ValueError, subprocess.SubprocessError):
+            continue
+        for m in data.get('machines', []):
+            soma = ((m.get('report') or {}).get('machine') or {}).get('soma') or {}
+            if soma.get('look'):
+                build = f', build {soma["build"]}' if soma.get('build') else ''
+                return soma['look'], f'the herd: {m.get("name")} reports it{build}'
+    return None
+
+
+def from_phone():
+    import subprocess
+    try:
+        got = json.loads(subprocess.run(['oma-phone', '--display', 'main', 'looks'], capture_output=True, text=True, timeout=20).stdout)
+        return (got['look'], 'oma-phone looks (this is the Fold)') if got.get('ok') and got.get('look') else None
+    except (OSError, ValueError, KeyError, subprocess.SubprocessError):
+        return None
+
+
+def active(args):
+    if '--look' in args:
+        return args[args.index('--look') + 1], '--look'
+    if os.environ.get('SOMA_LOOK'):
+        return os.environ['SOMA_LOOK'], '$SOMA_LOOK'
+    for ask in (from_herd, from_phone):
+        got = ask()
+        if got:
+            return got
+    if PICK.exists():
+        pick = json.loads(PICK.read_text())
+        return pick['look'], f'{PICK} (set {pick.get("set", "?")} by {pick.get("by", "?")})'
+    fail(f'no look found: the herd and the phone did not answer, and there is no {PICK}. Ask Boss which look the phone wears')
+
+
+def merged(packs, look):
+    """A pack leaves out what it doesn't change; the launcher fills those from Console, token by token."""
+    def deep(base, over):
+        out = dict(base)
+        for k, v in over.items():
+            out[k] = deep(base[k], v) if isinstance(v, dict) and isinstance(base.get(k), dict) else v
+        return out
+    raw = packs.read(look, 'pack.toml')
+    if raw is None:
+        fail(f'no look "{look}" in {packs.where}; try: soma-theme list')
+    base = tomllib.loads(packs.read('console', 'pack.toml').decode())
+    return deep(base, tomllib.loads(raw.decode())) if look != 'console' else base
+
+
+# ---------------------------------------------------------------- tokens to CSS
+def colour(value, palette, depth=0):
+    """'#rrggbb', '#aarrggbb', a palette name, any of them with '@alpha' -> a CSS colour."""
+    if depth > 8:
+        fail(f'palette loops at {value}')
+    value, _, alpha = str(value).partition('@')
+    if value.startswith('#'):
+        h = value[1:]
+        a, h = (int(h[:2], 16) / 255, h[2:]) if len(h) == 8 else (1.0, h)
+        r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
+    else:
+        if value not in palette:
+            return None
+        r, g, b, a = colour(palette[value], palette, depth + 1)
+    if alpha:
+        a = a * float(alpha)
+    return r, g, b, a
+
+
+def css_colour(rgba):
+    r, g, b, a = rgba
+    return f'#{r:02x}{g:02x}{b:02x}' if a >= 0.999 else f'rgb({r} {g} {b} / {a:.3g})'
+
+
+def font_file(packs, look, voice, spec):
+    """The voice's font as (bytes, format). For Manga, Soma Canvas's Latin cut of the same face when there is one."""
+    rel = spec.get('file') or ''
+    if not rel:
+        return None
+    stem = re.sub(r'[^a-z0-9]', '', pathlib.Path(rel).stem.lower()).removesuffix('regular')
+    cut = CANVAS_FONTS / look
+    if cut.is_dir():
+        for f in cut.glob('*.woff2'):
+            if re.sub(r'[^a-z0-9]', '', f.stem.lower()) == stem:
+                return f.read_bytes(), 'woff2', f.name
+    data = packs.read(look, rel)
+    return (data, 'truetype', pathlib.Path(rel).name) if data else None
+
+
+def css(packs, look, embed=False, fonts_dir=None):
+    pack = merged(packs, look)
+    pal = {**pack['palette'], **pack['palette'].get('extra', {})}
+    pal.pop('extra', None)
+    mode = pal.pop('mode', 'dark')
+    lines = [f'/* Soma look "{pack["pack"]["name"]}" ({look}), from {packs.where}. Generated by soma-theme; do not edit. */']
+    faces = []
+    for voice in VOICES:
+        spec = pack['type'][voice]
+        got = font_file(packs, look, voice, spec)
+        if not got:
+            continue
+        data, fmt, name = got
+        if embed:
+            src = f'url(data:font/{"woff2" if fmt == "woff2" else "ttf"};base64,{base64.b64encode(data).decode()})'
+        else:
+            target = pathlib.Path(fonts_dir or 'fonts')
+            if fonts_dir:
+                target.mkdir(parents=True, exist_ok=True)
+                (target / name).write_bytes(data)
+            src = f'url("{target.name}/{name}")'
+        faces.append(f'@font-face {{ font-family: "soma-{voice}"; font-weight: 100 900; font-display: block; '
+                     f'src: {src} format("{fmt}"); }}')
+    lines += faces
+    v = [f'  --soma-look: "{look}";', f'  --soma-mode: {mode};', f'  color-scheme: {mode};']
+    for name, value in pal.items():
+        c = colour(value, pal)
+        if c:
+            v.append(f'  --soma-{name.replace("_", "-")}: {css_colour(c)};')
+    generic = {'monospace': 'ui-monospace, monospace', 'sans-serif': 'system-ui, sans-serif', 'serif': 'serif', 'cursive': 'cursive'}
+    have = {f.split('"')[1] for f in faces}
+    for voice in VOICES:
+        spec = pack['type'][voice]
+        family = (f'"soma-{voice}", ' if f'soma-{voice}' in have else '') + generic.get(spec.get('family', 'sans-serif'), 'sans-serif')
+        v += [f'  --soma-font-{voice}: {family};',
+              f'  --soma-{voice}-weight: {spec.get("weight", 400)};',
+              f'  --soma-{voice}-tracking: {spec.get("tracking", 0)}em;',
+              f'  --soma-{voice}-case: {"uppercase" if spec.get("uppercase") else "none"};',
+              f'  --soma-{voice}-style: {"italic" if spec.get("italic") else "normal"};']
+    for k, size in pack['type'].get('size', {}).items():
+        v.append(f'  --soma-size-{k}: {size}px;')
+    shape, scrap = pack['shape'], pack['scrap']
+    v += [f'  --soma-radius: {shape["radius"]}px;', f'  --soma-gap: {shape.get("gap", 6)}px;',
+          f'  --soma-line: {scrap["border"]}px;',
+          f'  --soma-line-color: {css_colour(colour(scrap["border_color"], pal))};',
+          f'  --soma-card-fill: {css_colour(colour(scrap["fill"], pal))};',
+          f'  --soma-card-ink: {css_colour(colour(scrap["ink"], pal))};',
+          f'  --soma-focus: {css_colour(colour(scrap["focus_color"], pal))};',
+          f'  --soma-focus-width: {scrap["focus_width"]}px;']
+    ring = pack['ring']
+    v += [f'  --soma-ring-width: {ring["width"]}px;', f'  --soma-ring-glow: {ring["glow"]}px;']
+    for state in ('listening', 'working', 'needs_you', 'done'):
+        s = ring[state]
+        v += [f'  --soma-ring-{state.replace("_", "-")}-1: {css_colour(colour(s["color1"], pal))};',
+              f'  --soma-ring-{state.replace("_", "-")}-2: {css_colour(colour(s["color2"], pal))};',
+              f'  --soma-ring-{state.replace("_", "-")}-period: {s.get("period", 4200)}ms;']
+    lines.append(':root {\n' + '\n'.join(v) + '\n}')
+    return '\n'.join(lines) + '\n'
+
+
+def info(packs, args):
+    look, why = active(args)
+    pack = merged(packs, look)
+    print(f'Active look: {pack["pack"]["name"]} ({look})')
+    print(f'  picked by: {why}')
+    print(f'  tokens:    {packs.where} → packs/{look}/pack.toml')
+    print(f'  fonts:     {CANVAS_FONTS / look if (CANVAS_FONTS / look).is_dir() else "the pack's own files"}')
+    pal = {**pack['palette'], **pack['palette'].get('extra', {})}
+    shown = [f'{k} {css_colour(colour(pal[k], pal))}' for k in ('background', 'foreground', 'accent', 'muted', 'border')]
+    print(f'  palette:   {pack["palette"].get("mode", "dark")}; ' + ', '.join(shown))
+    print('  as CSS:    soma-theme css --embed > look.css')
+    print()
+    print('Soma Canvas (every app\'s Shipped / Approved / Proposed screens; read it before mocking up):')
+    for name, url in CANVAS:
+        print(f'  {url}  ({name})')
+    tok = HOME / '.config' / 'soma-canvas' / 'token'
+    print(f'  token:     {tok}' + ('' if tok.exists() else '  (missing here: copy data/agent-token.txt from the Mac Pro\'s '
+                                                        'soma-canvas checkout; never commit it)'))
+    print(f'  CLI:       {SYNC}/projects/soma-canvas/bin/soma-canvas get APP   (README.md beside it)')
+
+
+def main(args):
+    packs = Packs()
+    cmd = args[0] if args and not args[0].startswith('-') else 'info'
+    if cmd in ('-h', '--help', 'help'):
+        print(__doc__)
+    elif cmd == 'info':
+        info(packs, args)
+    elif cmd == 'list':
+        print('\n'.join(packs.names()))
+    elif cmd == 'toml':
+        look, _ = active(args)
+        print(json.dumps(merged(packs, look), indent=2))
+    elif cmd == 'css':
+        look, _ = active(args)
+        fonts = args[args.index('--fonts') + 1] if '--fonts' in args else None
+        sys.stdout.write(css(packs, look, embed='--embed' in args, fonts_dir=fonts))
+    else:
+        fail(f'unknown command {cmd}; see soma-theme --help')
+
+
+if __name__ == '__main__':
+    main(sys.argv[1:])

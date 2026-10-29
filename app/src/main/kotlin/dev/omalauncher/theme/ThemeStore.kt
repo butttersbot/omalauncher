@@ -185,6 +185,18 @@ class ThemeStore(
     /** Where the pack [id] is read from, or null when there is none. Only assets so far. */
     private fun packSource(id: String): PackSource? = if (id != ConsolePack.ID && id in packIds) AssetPackSource(context.assets, "$PACKS/$id") else null
 
+    /** Tells agents on every machine which look is drawn (LookReport): the guest's ~/.cache/soma/look.json. */
+    private fun reportLook(pick: PackPick) {
+        scope.launch(Dispatchers.IO) {
+            val look = if (pick.isConsole) ConsolePack.ID else pick.id
+            val toml = runCatching { context.assets.open("$PACKS/$look/pack.toml").use { it.readBytes() } }.getOrNull()
+            val name = pick.load?.takeIf { !pick.isConsole }?.pack?.name ?: look
+            @Suppress("DEPRECATION")
+            val build = runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionCode.toLong() }.getOrDefault(0L)
+            LookReport.write(context.filesDir, LookReport.json(look, name, toml, build, System.currentTimeMillis()))
+        }
+    }
+
     /** The looks to pick from, Console first, each with what loading it came to. Reads every pack's manifest. */
     suspend fun packOptions(): List<PackOption> = withContext(Dispatchers.IO) { PackRegistry.options(packIds, ::packSource) }
 
@@ -202,6 +214,7 @@ class ThemeStore(
 
     private fun usePack(pick: PackPick) {
         ActivePack.choose(pick)
+        reportLook(pick)
         val load = pick.load?.takeIf { !pick.isConsole } ?: return
         val source = packSource(pick.id) ?: return
         // Fonts and wallpapers arrive after the first frame; until then each font is its system family and the page its paper color.

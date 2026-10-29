@@ -20,6 +20,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PORT = int(os.environ.get('HERD_PORT', 8479))
 STATUS = pathlib.Path.home() / '.cache/oma-agents/status.json'
+# Which look Soma wears, written by the launcher (theme/LookReport.kt); `oma-phone looks` when that file isn't there yet.
+LOOK = pathlib.Path.home() / '.cache/soma/look.json'
 RUNNERS = pathlib.Path.home() / '.config/omalauncher'
 HOST_NAME = os.environ.get('HERD_NAME', 'galaxy-z-fold8')
 VERSION = 1
@@ -149,8 +151,34 @@ def sessions():
     return out[:8]
 
 
+_look = {'at': 0, 'value': None}
+
+
+def soma_look():
+    """{look, name, pack_digest, build}: the look Boss's phone wears, so agents on every machine design in it (MG1's
+    Claude, 2026-10-29: they defaulted to Console). From the launcher's report, else `oma-phone looks` (once a minute)."""
+    try:
+        report = json.loads(LOOK.read_text())
+        return {k: report[k] for k in ('look', 'name', 'pack_digest', 'build') if k in report}
+    except (OSError, ValueError):
+        pass
+    if time.time() - _look['at'] > 60:
+        _look['at'] = time.time()
+        try:
+            import subprocess
+            r = subprocess.run(['oma-phone', '--display', 'main', 'looks'], capture_output=True, text=True, timeout=15)
+            got = json.loads(r.stdout)
+            _look['value'] = {'look': got['look']} if got.get('ok') and got.get('look') else None
+        except (OSError, ValueError, subprocess.SubprocessError):
+            _look['value'] = None
+    return _look['value']
+
+
 def machine():
     info = {'host': HOST_NAME, 'os': 'android', 'herd': VERSION}
+    look = soma_look()
+    if look:
+        info['soma'] = look
     # proot's /proc/uptime stands still; the boot time in /proc/stat is the phone's own.
     try:
         boot = next(int(line.split()[1]) for line in open('/proc/stat') if line.startswith('btime '))
