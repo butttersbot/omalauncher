@@ -1,5 +1,25 @@
 # Hunch: first owner-placed order, 2026-10-28
 
+## Current owner decisions (supersedes earlier provisional limits)
+
+Phone A mail 20261028-182714-80b5fd relays Boss: “ok just go with ur recs
+dont need limits on bet size tho”. Tonight he uses the venue’s own site himself;
+Hunch continues without a tonight deadline. Hyperliquid first, Hunch’s existing
+embedded wallet, funded by Boss himself. No per-order or nightly application
+caps and no separate budget field. The ticket takes his exact size; off-step or
+below-minimum sizes refuse instead of silently changing it. Fresh venue cash
+must cover price × size plus the fee ceiling. Review shows size, limit price,
+fees and maximum loss before his own signature. Journal-before-send and
+reconciliation without automatic retry remain required. No agent funding,
+signing or orders. The older foundation notes below are historical.
+
+The model now prepares exact shares through prepareFunded; its wallet wrapper
+has no cap. A fictional 1000-share regression verifies no inherited $1 cap,
+while insufficient cash including fees still refuses. No live UI or signing
+adapter has been connected by this change. Existing read-only depth preview
+amount controls are not the order ticket.
+
+
 Verified installed on Fold by read-only package metadata: 0.6.1, version code14.
 Wallet creation was owner-confirmed in the earlier checkpoint. Existing app reads
 Arbitrum native USDC/ETH and Hyperliquid spot USDC, but has no transfer, signing,
