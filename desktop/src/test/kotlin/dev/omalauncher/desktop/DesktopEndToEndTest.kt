@@ -37,6 +37,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import androidx.compose.ui.platform.testTag
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.Modifier
+import org.junit.Assert.assertFalse
 import java.io.File
 import java.net.ServerSocket
 import java.nio.file.Files
@@ -921,5 +925,70 @@ class DesktopEndToEndTest {
         val zebra = platform.book().chats.first { platform.chatLog().tasks.any { t -> t.chat == it.id && "zebra" in t.prompt } }
         assertEquals("its tab is open", zebra.key, wanted)
         assertTrue("the list closed", onAllNodes(androidx.compose.ui.test.hasContentDescription("Search chats")).fetchSemanticsNodes().isEmpty())
+    }
+
+    /**
+     * Shared archive (A, 2026-10-29: a per-device archive was a one-way road): two Somas on one real runner. He archives a
+     * thread from one Soma's All chats; the other Soma's strip drops it and its All chats says archived, with no restart.
+     * Restored on the first, it comes back on the second.
+     */
+    @Test fun anArchiveOnOneSomaHidesTheThreadOnAnother() = runComposeUiTest {
+        val machine = MacMachine("testhost", "Test box", MacRunnerConfig("http://127.0.0.1:$port", key))
+        fun soma(name: String): Pair<DesktopThreadsPlatform, DesktopChatHost> {
+            val notices = Notices()
+            val home = File(work, name).apply { mkdirs() }
+            val platform = DesktopThreadsPlatform(notices, home = { home }) { listOf(machine) }
+            val engine = MacThreadsEngine(platform)
+            return platform to DesktopChatHost(platform, engine, DesktopFrontAgent(engine, platform, notices, places = emptyList()), notices).also { engine.open() }
+        }
+        // A thread that has just worked, so both strips show it.
+        val client = dev.omalauncher.assist.MacRunnerClient(machine.config, machine.id)
+        val made = (client.makeThread("Shared one", File(work, "Projects").path) as dev.omalauncher.assist.MacAnswer.Ok).value
+        client.sendMessage(made.id, "say hello")
+        val key = dev.omalauncher.assist.macThreadKey(made.id)
+        val (bookA, hostA) = soma("soma-a")
+        val (bookB, hostB) = soma("soma-b")
+        mainClock.autoAdvance = false
+        setContent {
+            androidx.compose.foundation.layout.Row {
+                Box(Modifier.size(620.dp, 760.dp).testTag("A")) { OmaChatScreen(hostA, prefill = null, onPrefilled = {}, wanted = null, onTab = {}) }
+                Box(Modifier.size(620.dp, 760.dp).testTag("B")) { OmaChatScreen(hostB, prefill = null, onPrefilled = {}, wanted = null, onTab = {}) }
+            }
+        }
+        fun settle(ms: Long = 800) = mainClock.advanceTimeBy(ms)
+        fun on(soma: String, matcher: androidx.compose.ui.test.SemanticsMatcher) = onAllNodes(matcher and androidx.compose.ui.test.hasAnyAncestor(androidx.compose.ui.test.hasTestTag(soma)))
+        fun inStrip(soma: String) = on(soma, androidx.compose.ui.test.SemanticsMatcher("its tab") { n ->
+            n.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.ContentDescription) { null }?.any { d -> d.startsWith("Shared one") } == true }).fetchSemanticsNodes().isNotEmpty()
+        fun waitFor(what: String, seconds: Int = 40, done: () -> Boolean) {
+            val deadline = System.currentTimeMillis() + seconds * 1000L
+            while (System.currentTimeMillis() < deadline && !done()) { Thread.sleep(250); settle(500) }
+            assertTrue(what, done())
+        }
+        fun look(host: DesktopChatHost) = host.archiveChanged()
+        fun allChats(soma: String) {
+            on(soma, androidx.compose.ui.test.hasContentDescription("Show the tabs")).fetchSemanticsNodes().takeIf { it.isNotEmpty() }?.let {
+                on(soma, androidx.compose.ui.test.hasContentDescription("Show the tabs")).onFirst().performClick(); settle()
+            }
+            on(soma, androidx.compose.ui.test.hasContentDescription("All chats")).onFirst().performClick(); settle()
+        }
+        waitFor("both strips show it") { look(hostA); look(hostB); inStrip("A") && inStrip("B") }
+        // Archived on A, from its All chats: the row's own menu, as he would.
+        allChats("A")
+        on("A", androidx.compose.ui.test.hasContentDescription("Open Shared one")).onFirst().performMouseInput { rightClick() }; settle()
+        on("A", hasText("Archive")).onFirst().performClick(); settle()
+        assertTrue("archived on A", key in bookA.book().archived)
+        // B hears it at its next look, with no restart: gone from its strip, and its All chats says archived.
+        waitFor("B's strip dropped it") { look(hostB); !inStrip("B") }
+        assertTrue("archived in B's book", key in bookB.book().archived)
+        allChats("B")
+        on("B", androidx.compose.ui.test.hasContentDescription("Open Shared one")).onFirst().assertExists()
+        assertTrue("B's All chats says archived", on("B", hasText("archived")).fetchSemanticsNodes().isNotEmpty())
+        File("build/render").mkdirs()
+        javax.imageio.ImageIO.write(onRoot().captureToImage().toAwtImage(), "png", File("build/render/desktop-e2e-shared-archive.png"))
+        // Restored on A (tapping its archived row), it comes back on B.
+        on("A", androidx.compose.ui.test.hasContentDescription("Open Shared one")).onFirst().performClick(); settle()
+        assertFalse("restored on A", key in bookA.book().archived)
+        waitFor("B has it back") { look(hostB); key !in bookB.book().archived }
+        assertTrue("the runner keeps it restored", (client.thread(made.id) as dev.omalauncher.assist.MacAnswer.Ok).value.archived == null)
     }
 }

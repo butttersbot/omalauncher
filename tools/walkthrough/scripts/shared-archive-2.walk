@@ -1,0 +1,20 @@
+# Shared archive, phase 2 of 3: archived on the runner, as a desktop Soma archives it (POST /threads/ID/archive). The
+# Fold's own engine hears it at its next look (foreground poll, 30 s at most): the tab leaves its strip, and its All chats
+# says archived, cover and unfolded alike.
+wait 35000
+absent Walk shared
+# Look: the cover's strip no longer has "Walk shared".
+shot cover-gone
+tap All chats
+expect archived
+# Look: All chats over the cover: "Walk shared" with its "archived" tag.
+shot cover-all-chats-archived
+key BACK
+fold unfolded
+wait 2000
+absent Walk shared
+tap All chats
+expect archived
+# Look: unfolded, All chats beside the chat: "Walk shared" archived; its tab is not in the strip.
+shot unfolded-all-chats-archived
+key BACK

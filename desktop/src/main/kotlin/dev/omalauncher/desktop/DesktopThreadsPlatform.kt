@@ -14,12 +14,16 @@ import javax.swing.SwingUtilities
 /** The desktop's part of following the threads (ThreadsPlatform): files under ~/.config/soma, the tray's notices. */
 class DesktopThreadsPlatform(
     private val notices: Notices,
+    /** Where its files are: Soma's own folder, or a test's second Soma's (two Somas sharing one runner's archive). */
+    private val home: () -> java.io.File = { SomaHome.dir },
     /** The runners set up: the Keychain's as last read off the window's thread ([RunnerKeys.known]), or a test's own. */
     private val runners: () -> List<MacMachine> = { RunnerKeys.known },
 ) : ThreadsPlatform {
-    private val log = ChatStore(SomaHome.chat).also { it.load() }
-    @Volatile private var meta: TabMeta = tabMetaFrom(runCatching { SomaHome.book.readText() }.getOrNull())
-    private val notes: JSONObject = SomaHome.read(SomaHome.notes)
+    private val bookFile get() = java.io.File(home(), SomaHome.book.name)
+    private val notesFile get() = java.io.File(home(), SomaHome.notes.name)
+    private val log = ChatStore(java.io.File(home(), SomaHome.chat.name)).also { it.load() }
+    @Volatile private var meta: TabMeta = tabMetaFrom(runCatching { bookFile.readText() }.getOrNull())
+    private val notes: JSONObject = SomaHome.read(notesFile)
 
     override fun machines(): List<MacMachine> = runners()
 
@@ -31,7 +35,7 @@ class DesktopThreadsPlatform(
         val next = change(meta)
         if (next != meta) {
             meta = next
-            SomaHome.book.writeText(tabMetaText(next))
+            bookFile.writeText(tabMetaText(next))
         }
         return next
     }
@@ -40,9 +44,9 @@ class DesktopThreadsPlatform(
 
     @Synchronized override fun prefLong(key: String): Long = notes.optLong(key, 0L)
 
-    @Synchronized override fun putPref(key: String, value: String) { notes.put(key, value); SomaHome.write(SomaHome.notes, notes) }
+    @Synchronized override fun putPref(key: String, value: String) { notes.put(key, value); SomaHome.write(notesFile, notes) }
 
-    @Synchronized override fun putPref(key: String, value: Long) { notes.put(key, value); SomaHome.write(SomaHome.notes, notes) }
+    @Synchronized override fun putPref(key: String, value: Long) { notes.put(key, value); SomaHome.write(notesFile, notes) }
 
     override val stampLock: Any = Any()
 

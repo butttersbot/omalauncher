@@ -161,6 +161,9 @@ interface ChatHost {
     /** The tab book, after [change], saved when it changed. */
     fun changeBook(change: (TabMeta) -> TabMeta): TabMeta
 
+    /** He archived or restored a tab: its runner is told now rather than at the next look (shared archive). */
+    fun archiveChanged() {}
+
     /** Names new chats in the background, once each. */
     fun checkTitles()
 

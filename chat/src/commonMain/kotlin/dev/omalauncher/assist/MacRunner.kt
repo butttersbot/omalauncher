@@ -115,6 +115,9 @@ object MacRequests {
 
     /** A bot's session starts over: its conversation is archived on its machine, its instructions and notes stay. */
     fun fresh(threadId: String) = MacRequest("POST", "/threads/${part(threadId)}/fresh", "{}")
+
+    /** Archived, or restored, for every Soma alike (shared archive). */
+    fun archive(threadId: String, archived: Boolean) = MacRequest("POST", "/threads/${part(threadId)}/archive", JSONObject().put("archived", archived).toString())
 }
 
 /** What came back: the HTTP status and the body as text. */
@@ -179,6 +182,10 @@ data class MacThread(
     val bot: MacBot? = null,
     /** How it runs, auto or manual, as the runner says; empty from a runner that doesn't. */
     val mode: String = "",
+    /** When it was archived for every Soma (shared archive), or null when it isn't; meaningful only with [sharesArchive]. */
+    val archived: Long? = null,
+    /** Whether its runner keeps the archive for every Soma (it says "archived"); an older one doesn't, and each Soma keeps its own. */
+    val sharesArchive: Boolean = false,
 )
 
 /**
@@ -250,6 +257,8 @@ internal fun macThread(json: JSONObject): MacThread? {
         model = json.macText("model"),
         bot = macBot(json.optJSONObject("bot")),
         mode = json.macText("mode"),
+        archived = json.macWhole("archived"),
+        sharesArchive = json.has("archived"),
     )
 }
 
@@ -465,6 +474,9 @@ class MacRunnerClient(private val config: MacRunnerConfig?, private val machine:
     }
 
     fun fresh(threadId: String): MacAnswer<Unit> = parseMacFresh(send(MacRequests.fresh(own(threadId))))
+
+    /** [threadId] archived or restored on its runner, for every Soma; the thread as it is now. */
+    fun archive(threadId: String, archived: Boolean): MacAnswer<MacThread> = ours(parseMacThread(send(MacRequests.archive(own(threadId), archived))))
 
     /**
      * Puts [file] on the Mac through the runner's `POST /files?name=` (it keeps it in ~/Downloads/From Fold, under a

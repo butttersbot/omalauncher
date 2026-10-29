@@ -69,6 +69,11 @@ data class TabMeta(
     val pinned: List<String> = emptyList(),
     val archived: Map<String, Long> = emptyMap(),
     val chats: List<NewChat> = emptyList(),
+    /**
+     * For a tab whose thread's runner keeps the archive for every Soma (shared archive): whether it was archived when this
+     * Soma and the runner last agreed. A side that differs from it is the one that changed (SharedArchive.kt).
+     */
+    val agreed: Map<String, Boolean> = emptyMap(),
 ) {
     fun chat(id: String) = chats.firstOrNull { it.id == id }
 
@@ -188,6 +193,7 @@ fun tabMetaText(meta: TabMeta): String = JSONObject().apply {
     if (meta.names.isNotEmpty()) put("names", JSONObject(meta.names))
     if (meta.pinned.isNotEmpty()) put("pinned", JSONArray(meta.pinned))
     if (meta.archived.isNotEmpty()) put("archived", JSONObject().apply { for ((key, at) in meta.archived) put(key, at) })
+    if (meta.agreed.isNotEmpty()) put("agreed", JSONObject().apply { for ((key, on) in meta.agreed) put(key, on) })
     if (meta.chats.isNotEmpty()) {
         put("chats", JSONArray(meta.chats.map { chat ->
             JSONObject().put("id", chat.id).put("made", chat.made)
@@ -220,7 +226,8 @@ fun tabMetaFrom(text: String?): TabMeta {
                 mode = o.optString("mode").takeIf { it == dev.omalauncher.assist.MAC_MODE_AUTO || it == dev.omalauncher.assist.MAC_MODE_MANUAL }.orEmpty())
         }
     }.orEmpty().distinctBy { it.id }
-    return TabMeta(names, pinned, archived, chats)
+    val agreed = saved.optJSONObject("agreed")?.let { o -> o.keys().asSequence().map { it to o.optBoolean(it) }.toMap() }.orEmpty()
+    return TabMeta(names, pinned, archived, chats, agreed)
 }
 
 /**

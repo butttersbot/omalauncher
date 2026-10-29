@@ -1,0 +1,11 @@
+# Shared archive, phase 1 of 3 (A, 2026-10-29: one archive for a thread, kept on its runner, read by every Soma). Run by
+# tools/walkthrough/shared-archive-walk.sh: a test runner on this Mac (10.0.2.2) with one thread, "Walk shared", that has
+# just worked; the emulator's real Soma (this branch's build) is given that runner. Its strip shows the thread.
+fold folded
+rotate portrait
+launch dev.omalauncher.boss/dev.omalauncher.oma.OmaChatActivity
+wait 4000
+tap Show the tabs
+expect Walk shared
+# Look: the cover's strip has the "Walk shared" tab (the test runner's thread), nothing cut at the edges.
+shot cover-before

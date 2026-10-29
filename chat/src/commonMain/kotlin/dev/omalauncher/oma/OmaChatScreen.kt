@@ -454,7 +454,7 @@ private fun ChatScreen(
             }
             AllChatsPanel(rows, { key -> tabEntries(tasks, key, book) }, now,
                 onOpen = { row ->
-                    if (row.archived) host.changeBook { it.restored(row.key, System.currentTimeMillis()) }
+                    if (row.archived) { host.changeBook { it.restored(row.key, System.currentTimeMillis()) }; host.archiveChanged() }
                     close()
                     pick(row.key)
                     tick++
@@ -798,6 +798,7 @@ private fun ChatScreen(
                 },
                 onRestore = { back ->
                     host.changeBook { it.restored(back, System.currentTimeMillis()) }
+                    host.archiveChanged()
                     pick(back)
                     tick++
                 },
@@ -834,6 +835,7 @@ private fun ChatScreen(
                             // Archived after its newest entry, so only what is sent to it from now on brings it back.
                             val at = maxOf(System.currentTimeMillis(), shown.maxOfOrNull { it.time } ?: 0L)
                             host.changeBook { it.archivedAs(key, at) }
+                            host.archiveChanged()
                             if (key == tab) pick(OMA_TAB)
                         }
                         TabAction.Fresh -> macThreadId(key)?.let { id ->

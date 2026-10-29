@@ -117,6 +117,8 @@ class DesktopChatHost(
 
     override fun changeBook(change: (TabMeta) -> TabMeta): TabMeta = platform.changeBook(change)
 
+    override fun archiveChanged() = engine.refresh()
+
     private val titles = DesktopChatTitles(platform)
 
     override fun checkTitles() = titles.check()

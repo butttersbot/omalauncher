@@ -24,6 +24,7 @@ Only exact Codex command scopes the owner explicitly saved may reuse that decisi
   POST /threads/ID/approvals/APPROVAL    {decision: "allow"|"deny", nonce, remember?: true}
                                          remember saves only an eligible exact Codex command for this thread
   POST /threads/ID/command-approvals/clear {}   forgets that thread's saved command approvals
+  POST /threads/ID/archive  {archived}  true or false: archived for every Soma alike; the thread's view carries archived (ms or null)
   POST /threads/ID/stop                  stops the task and drops what was waiting its turn; what was said stays
   POST /files?name=NAME   (the bytes)    a file from the phone, kept in ~/Downloads/From Fold; {path, bytes}
   GET  /projects                         the project registry (~/ClaudeSync/projects/_projects.json): {name, folders, handoff}
@@ -2802,6 +2803,8 @@ class Thread:
                 'last_worked': self.meta.get('last_worked'), 'tail': self.meta.get('tail', ''), 'waiting_turns': len(self.queue),
                 'last_event': len(self.events), 'external': bool(self.meta.get('codex_external') or self.meta.get('claude_external')),
                 'read_only': False,
+                # Archived for every Soma alike (two-way roads): when, or null; a device archives or restores it here.
+                'archived': self.meta.get('archived'),
                 'bot': self.bot_fields(),
                 'background': list(self.kept.driver.background.values()) if self.kept and not self.kept.done else [],
                 'pending': [{'approval': key, 'nonce': entry['nonce'], 'tool': entry['tool'], 'input': entry['input'], 'explanation': entry['explanation'], 'can_remember': entry.get('command_scope') is not None} for key, entry in self.pending.items()]}
@@ -4325,6 +4328,17 @@ class Runner(BaseHTTPRequestHandler):
             if result.get('taken') == 'refused':
                 return self.answer(409, {'ok': False, **result})
             return self.answer(200, {'ok': True, **result})
+        if parts[2:] == ['archive']:
+            # One archive for a thread, kept here, read by every Soma (A, 2026-10-29: a per-device archive was a one-way
+            # road). A view state, not an approval: any paired device sets it. Work on it never brings it back; his restore does.
+            if not isinstance(body.get('archived'), bool):
+                return self.answer(400, {'ok': False, 'error': 'archived must be true or false'})
+            with changed:
+                thread.meta['archived'] = int(time.time() * 1000) if body['archived'] else None
+                thread.save()
+                thread.emit('archived', archived=body['archived'])
+                view = thread.view()
+            return self.answer(200, {'ok': True, 'thread': view})
         if parts[2:] == ['stop']:
             return self.answer(200, {'ok': True, 'stopped': stop(thread)})
         if parts[2:] == ['command-approvals', 'clear']:

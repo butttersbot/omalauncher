@@ -70,6 +70,8 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
     private val clock = AtomicLong()
     private val answering = HashSet<String>()
     private val refreshing = AtomicBoolean()
+    /** A look asked while [refreshing]: one more follows it. */
+    private val again = java.util.concurrent.atomic.AtomicBoolean(false)
     private val discovering = AtomicBoolean()
     private val discoveryWake = Object()
     private var discoverySignalled = false
@@ -321,7 +323,9 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
      */
     fun refresh() {
         restore()
-        if (!refreshing.compareAndSet(false, true)) return
+        // One asked while a look is under way (his archive, as a slow Mac holds the look) gets a look of its own right
+        // after, rather than waiting for the next round (shared archive, review round 1).
+        if (!refreshing.compareAndSet(false, true)) { again.set(true); return }
         thread(name = "oma-mac-refresh", isDaemon = true) {
             try {
                 val machines = machines()
@@ -350,6 +354,7 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
                             }
                         }
                         reached(machine.id, listed is MacAnswer.Ok)
+                        if (listed is MacAnswer.Ok) shareArchive(client, listed.value)
                     }
                     // Also how the launcher's start turns Tailscale back on after a reboot: Runtime.start opens this.
                     platform.linkAfter(links.firstOrNull { it == MacLink.Answered } ?: links.first())
@@ -360,8 +365,22 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
                 }
             } finally {
                 refreshing.set(false)
+                if (again.getAndSet(false)) refresh()
             }
         }
+    }
+
+    /**
+     * The archive kept on [client]'s runner and this Soma's book, made one ([archiveShare]): what changed here goes there,
+     * what changed on another Soma comes here. A send that fails is tried again at the next look. On the refresh thread.
+     */
+    private fun shareArchive(client: MacRunnerClient, threads: List<MacThread>) {
+        val share = archiveShare(platform.book(), threads)
+        share.change?.let { platform.changeBook(it) }
+        for ((id, archived) in share.send) {
+            if (client.archive(id, archived) is MacAnswer.Ok) platform.changeBook { it.agreedAs(macThreadKey(id), archived) }
+        }
+        if (share.change != null || share.send.isNotEmpty()) told()
     }
 
     /**

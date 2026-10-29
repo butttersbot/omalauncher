@@ -113,6 +113,8 @@ class AndroidChatHost(
 
     override fun changeBook(change: (TabMeta) -> TabMeta): TabMeta = TabBook.change(context, change)
 
+    override fun archiveChanged() = MacThreads.refresh(context)
+
     override fun checkTitles() = ChatTitles.check(context)
 
     override fun builderFacts(): Map<BuilderId, BuilderFacts> = BuilderWatch.last

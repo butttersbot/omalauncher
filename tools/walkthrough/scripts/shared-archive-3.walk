@@ -1,0 +1,5 @@
+# Shared archive, phase 3 of 3: restored on the runner (as another Soma restores it): back in the Fold's strip.
+wait 35000
+expect Walk shared
+# Look: unfolded, the "Walk shared" tab is back in the strip.
+shot unfolded-back
