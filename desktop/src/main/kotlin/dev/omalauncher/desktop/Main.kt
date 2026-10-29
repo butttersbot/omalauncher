@@ -84,10 +84,18 @@ fun main(args: Array<String>) {
     // Another Soma holds the lock while it runs (the system lets it go however it ends): that one is told, and this one ends.
     val claimed = runCatching { Single.claim() }.getOrElse { fail("Soma can't write to ${SomaHome.dir}: ${it.message ?: it.javaClass.simpleName}") }
     if (!claimed) {
-        if (!Single.handOff(link?.let { "open $it" } ?: if ("--toggle" in args) "toggle" else "show")) fail("Another Soma is running but not answering. Quit it from its tray icon (or end it), then open Soma again.", code = 0)
+        if (!Single.handOff(link?.let { "open $it" } ?: if ("--toggle" in args) "toggle" else if ("--settings" in args) "settings" else "show")) fail("Another Soma is running but not answering. Quit it from its tray icon (or end it), then open Soma again.", code = 0)
         exitProcess(0)
     }
     val shown = mutableStateOf(true)
+    // Its settings, in a window of their own (Boss, 2026-10-29: "there's actually no settings button on the desktop apps"):
+    // the tray's Settings…, the Mac's Soma > Settings… (Cmd+,), Ctrl+, in a window, and `soma --settings`.
+    val settingsShown = mutableStateOf("--settings" in args)
+    val settingsBring = mutableStateOf(0)
+    fun showSettings() {
+        settingsShown.value = true
+        settingsBring.value++
+    }
     // Bumped by every explicit open (tray, Dock, `soma`, a link, the dashboard): the chat window is shown, un-minimized
     // and raised even when it is marked shown already (the MacBook's fix of 2026-10-21, 0b159117, brought back here).
     val bring = mutableStateOf(0)
@@ -109,6 +117,7 @@ fun main(args: Array<String>) {
     Single.listen(onCanvas = { line -> door?.handle(line) ?: """{"ok":false,"error":"Soma is still starting. Try again in a moment."}""" }) { said ->
         when {
             said == "toggle" -> if (shown.value) shown.value = false else showWindow()
+            said == "settings" -> showSettings()
             said.startsWith("open ") -> open(said.removePrefix("open "))
             else -> showWindow()
         }
@@ -120,6 +129,8 @@ fun main(args: Array<String>) {
         // A click on Soma in the Dock (or `open Soma.app` while it runs) is a reopen event to this process, not a new
         // start: it shows the chat window (Boss, 2026-10-28: "soma window on mac pro disappeared again").
         desktop.addAppEventListener(somaReopenListener(::showWindow))
+        // The Mac's own Soma > Settings… with Cmd+, in the app menu.
+        if (desktop.isSupported(java.awt.Desktop.Action.APP_PREFERENCES)) desktop.setPreferencesHandler { javax.swing.SwingUtilities.invokeLater(::showSettings) }
     }
     Looks.fonts()
     // City Pop unless he picked another look from the tray (Boss, 2026-10-16: "start with city pop for desktop too").
@@ -201,7 +212,7 @@ fun main(args: Array<String>) {
         var dashboardShown by dashboard
         fun showDashboard(on: Boolean) { dashboardShown = on; SomaHome.write(SomaHome.settings, SomaHome.read(SomaHome.settings).put("dashboard", on)) }
         remember {
-            notices.tray = Tray.make(onOpen = ::showWindow, onDashboard = { showDashboard(true) }, onQuit = { scraps.close(); Single.release(); exitApplication() }, onLook = Looks::pick,
+            notices.tray = Tray.make(onOpen = ::showWindow, onDashboard = { showDashboard(true) }, onSettings = ::showSettings, onQuit = { scraps.close(); Single.release(); exitApplication() }, onLook = Looks::pick,
                 // The service is asked off the tray's thread; the code or what went wrong comes back as a notice.
                 onCar = { pair -> kotlin.concurrent.thread(name = "soma-car-pairing", isDaemon = true) {
                     notices.say("Soma", if (pair) CarPairing.start(platform.machines()) else CarPairing.end(platform.machines()))
@@ -223,7 +234,7 @@ fun main(args: Array<String>) {
             onCloseRequest = { scraps.flush(); showDashboard(false) },
             title = "Soma dashboard",
             state = dashboardState,
-            onPreviewKeyEvent = { e -> pageKeys(e, canvas) || somaEscape(e, dashboardBack) },
+            onPreviewKeyEvent = { e -> settingsKey(e, ::showSettings) || pageKeys(e, canvas) || somaEscape(e, dashboardBack) },
         ) {
             // A pinch on a trackpad shows the pages small, and spreading them shows the page again, as on the phone (slice 5c).
             androidx.compose.runtime.DisposableEffect(window) { onDispose(Pinch.attach(window.rootPane) { inward -> canvas.overview = inward }) }
@@ -231,6 +242,18 @@ fun main(args: Array<String>) {
                 // A module's thread opens in the chat window, brought forward.
                 CanvasScreen(canvas, host, source, tick.value, wanted, onTab = { wanted = it; showWindow() }, chatElsewhere = ::showWindow, widgets = windowWidgets, scraps = scraps, shelf = shelf, pagesOverview = true)
             }
+        }
+        var settingsOpen by settingsShown
+        val settingsBack = remember { BackStack() }
+        if (settingsOpen) Window(
+            onCloseRequest = { settingsOpen = false },
+            title = "Soma settings",
+            state = rememberWindowState(size = DpSize(640.dp, 720.dp)),
+            onPreviewKeyEvent = { e -> somaEscape(e, settingsBack) },
+        ) {
+            // Brought forward each time it is asked for, as the chat window is.
+            androidx.compose.runtime.LaunchedEffect(settingsBring.value) { window.toFront(); window.requestFocus() }
+            CompositionLocalProvider(LocalBackStack provides settingsBack) { SomaSettings(onClose = { settingsOpen = false }) }
         }
         Window(
             onCloseRequest = { shown = false },
@@ -241,7 +264,7 @@ fun main(args: Array<String>) {
                 // A picture on the clipboard (a screenshot, or image files copied in Finder) is pasted into the chat as one
                 // picked; anything else pastes as before.
                 if (e.type == KeyEventType.KeyDown && e.key == Key.V && (e.isMetaPressed || e.isCtrlPressed) && host.arrived(picturesOnClipboard())) true
-                else somaEscape(e, chatBack)
+                else settingsKey(e, ::showSettings) || somaEscape(e, chatBack)
             },
         ) {
             // Each time it is shown, it comes to the screen he is on (Boss, 2026-10-19: after a restart macOS put it on
@@ -278,6 +301,17 @@ internal fun pageKeys(event: androidx.compose.ui.input.key.KeyEvent, canvas: Des
         0 -> { canvas.overview = !canvas.overview; true }
         else -> canvas.jump(n)
     }
+}
+
+/** Whether [word] is one a second `soma` may hand the running one: show, toggle, settings, or open a soma:// link. */
+internal fun handOffWord(word: String): Boolean =
+    word == "show" || word == "toggle" || word == "settings" || (word.startsWith("open ") && somaLinkKey(word.removePrefix("open ")) != null)
+
+/** Cmd+, on the Mac, Ctrl+, on Linux: Soma's settings ([open]), from any of its windows. */
+internal fun settingsKey(event: androidx.compose.ui.input.key.KeyEvent, open: () -> Unit): Boolean {
+    if (event.type != KeyEventType.KeyDown || event.key != Key.Comma || !(event.isMetaPressed || event.isCtrlPressed) || event.isShiftPressed || event.isAltPressed) return false
+    open()
+    return true
 }
 
 /**
@@ -346,7 +380,7 @@ private object Single {
         return held != null
     }
 
-    /** Tells the Soma that holds the lock to [word] ("show", "toggle" or "open <link>"); true when it answered. One still starting is waited on briefly. */
+    /** Tells the Soma that holds the lock to [word] ("show", "toggle", "settings" or "open <link>"); true when it answered. One still starting is waited on briefly. */
     fun handOff(word: String): Boolean {
         repeat(20) {
             if (tell(word)) return true
@@ -385,7 +419,7 @@ private object Single {
                         client.getOutputStream().write((HELLO + "\n").toByteArray())
                         said
                     }
-                }.getOrNull()?.trim()?.takeIf { it == "show" || it == "toggle" || (it.startsWith("open ") && somaLinkKey(it.removePrefix("open ")) != null) } ?: continue
+                }.getOrNull()?.trim()?.takeIf(::handOffWord) ?: continue
                 javax.swing.SwingUtilities.invokeLater { onWord(word) }
             }
         }
@@ -400,11 +434,12 @@ private object Single {
 
 /** The tray icon: Open, the dashboard, the looks, the car's pairing, Grok's connector, Quit. Its notifications are Soma's ([Notices]). */
 private object Tray {
-    fun make(onOpen: () -> Unit, onDashboard: () -> Unit, onQuit: () -> Unit, onLook: (String) -> Unit, onCar: (pair: Boolean) -> Unit = {}, onGrok: (connect: Boolean) -> Unit = {}): TrayIcon? {
+    fun make(onOpen: () -> Unit, onDashboard: () -> Unit, onSettings: () -> Unit, onQuit: () -> Unit, onLook: (String) -> Unit, onCar: (pair: Boolean) -> Unit = {}, onGrok: (connect: Boolean) -> Unit = {}): TrayIcon? {
         if (!SystemTray.isSupported()) return null
         val menu = PopupMenu()
         menu.add(MenuItem("Open Soma").apply { addActionListener { onOpen() } })
         menu.add(MenuItem("Dashboard").apply { addActionListener { onDashboard() } })
+        menu.add(MenuItem("Settings…").apply { addActionListener { javax.swing.SwingUtilities.invokeLater(onSettings) } })
         val looks = java.awt.Menu("Look")
         for (id in Looks.ids) looks.add(MenuItem(id).apply { addActionListener { onLook(id) } })
         menu.add(looks)

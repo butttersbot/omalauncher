@@ -46,20 +46,30 @@ object Login {
         }
     }
 
+    /** Whether Soma is set to start at login on this machine (its LaunchAgent or autostart entry is there). */
+    fun enabled(): Boolean = if (mac) agent.exists() else autostart.exists()
+
     fun remove(): String {
         val gone = if (mac) agent.delete() else autostart.delete()
         return if (gone) "Soma no longer starts at login." else "Soma wasn't set to start at login."
     }
 
+    /** The launcher entry that opens Soma's settings ([run] is the command that starts this Soma). */
+    internal fun settingsEntry(run: List<String>) =
+        "[Desktop Entry]\nType=Application\nName=Soma Settings\nComment=Soma's look, start at login, computers and keys\n" +
+            "Exec=${run.joinToString(" ") { execArg(it) }} --settings\nCategories=Settings;\n"
+
     /**
      * `soma --register-links`, Linux only: soma:// links open this Soma (an application entry with the scheme, made the
-     * default by xdg-mime). On the Mac the app bundle registers the scheme itself (its Info.plist), so nothing is needed.
+     * default by xdg-mime), and a "Soma Settings" entry opens its settings. On the Mac the app bundle registers the scheme itself (its Info.plist), so nothing is needed.
      */
     fun registerLinks(): String {
         if (mac) return "On the Mac, Soma.app registers soma:// itself: open it once from Applications."
         val entry = File(home, ".local/share/applications/soma.desktop")
         entry.parentFile.mkdirs()
         entry.writeText("[Desktop Entry]\nType=Application\nName=Soma\nExec=${command().joinToString(" ") { execArg(it) }} %u\nMimeType=x-scheme-handler/soma;\nNoDisplay=true\n")
+        // Soma's settings, by name in Walker or any launcher (Boss, 2026-10-29: "is there something like that for the Omarchy?").
+        File(entry.parentFile, "soma-settings.desktop").writeText(settingsEntry(command()))
         val set = runCatching { ProcessBuilder("xdg-mime", "default", "soma.desktop", "x-scheme-handler/soma").inheritIO().start().waitFor() }.getOrDefault(-1)
         return if (set == 0) "soma:// links open Soma now (${entry.path})." else "Wrote ${entry.path}, but xdg-mime didn't take it; run: xdg-mime default soma.desktop x-scheme-handler/soma"
     }
