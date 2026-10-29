@@ -264,6 +264,9 @@ interface NotePad {
     /** The smallest [widget] may be, columns by rows, as its file says (`minSize`). */
     fun minSize(widget: String): Pair<Int, Int> = 1 to 1
 
+    /** [page] drawn in panels (the Manga look): its layout and panels, and the panels of every layout; null on a free page. */
+    fun panelPage(page: String): PanelPage? = null
+
     /** Gives [widget] the cells [cell] and keeps them, as the owner's own resize on home does. */
     fun resize(
         widget: String,
@@ -837,10 +840,18 @@ object PhoneCanvas {
 
 /** What came of asking for a tile at a new size: the cells it gets, or why it doesn't. */
 sealed interface TileFit {
-    data class Fits(val cell: Cell) : TileFit
+    /** [cell] it gets; [panel] says which panel it was moved into, on a panel page. */
+    data class Fits(val cell: Cell, val panel: String? = null) : TileFit
 
     data class Refused(val reason: String) : TileFit
 }
+
+/** A page drawn in panels as `tile resize` sees it: its [layout]'s name, its [panels] (cells), and [layouts], every layout's name with its panels' cells on this grid. */
+class PanelPage(
+    val layout: String,
+    val panels: List<Cell>,
+    val layouts: Map<String, List<Cell>>,
+)
 
 /**
  * The bridge's `tile` command: `resize` gives a widget on home a new size, in grid cells, the way the owner's own
@@ -848,6 +859,10 @@ sealed interface TileFit {
  * finger could give it). It keeps the tile's top left corner and only grows or shrinks it from there; it is
  * refused, and nothing is changed, when the size is under the widget's `minSize`, reaches past the page's grid,
  * or would cover another tile. Only widgets: an app, a folder or a thread's tile isn't touched. No page is turned.
+ *
+ * A page drawn in panels (the Manga look) keeps its panels as they are (Boss, 2026-10-29: "i like the manga panel the
+ * way it is"): there no cell is resized. The tile moves into a free panel of exactly that size on its page, or the
+ * request is refused, naming the page's panel sizes and the layouts that have a panel that size.
  */
 object PhoneTiles {
     const val COMMAND = "tile"
@@ -874,6 +889,25 @@ object PhoneTiles {
         return TileFit.Fits(cell)
     }
 
+    /** Where [name] on the panel page [board] / [panels] would go at [w] by [h]: a free panel that size, or why not. */
+    internal fun fitPanel(
+        board: PageBoard,
+        panels: PanelPage,
+        name: String,
+        w: Int,
+        h: Int,
+    ): TileFit {
+        val tile = board.tiles.firstOrNull { it.name == name } ?: return TileFit.Refused("$name isn't on that page. Nothing was changed.")
+        if (tile.kind != "widget") return TileFit.Refused("Only widgets are resized; $name is a ${tile.kind}. Nothing was changed.")
+        if (tile.cell.w == w && tile.cell.h == h) return TileFit.Fits(tile.cell, "the panel it is in")
+        val free = panels.panels.indexOfFirst { p -> p.w == w && p.h == h && board.tiles.none { it.name != name && it.cell.overlaps(p) } }
+        if (free >= 0) return TileFit.Fits(panels.panels[free], "panel ${free + 1} of ${panels.layout}")
+        val here = panels.panels.joinToString(", ") { "${it.w}x${it.h}" }
+        val with = panels.layouts.filterValues { cells -> cells.any { it.w == w && it.h == h } }.keys
+        val layouts = if (with.isEmpty()) "No layout has a ${w}x$h panel." else "Layouts with a ${w}x$h panel: ${with.joinToString(", ")}."
+        return TileFit.Refused("This page is drawn in panels (${panels.layout}), and panels keep their size: none here is a free ${w}x$h (its panels: $here). $layouts The owner picks a page's layout; then move it there. Nothing was changed.")
+    }
+
     fun reply(
         input: JSONObject,
         pad: NotePad,
@@ -886,10 +920,12 @@ object PhoneTiles {
         val page = pad.pageOf(widget) ?: return reply(JSONObject().put("ok", false).put("error", "$widget isn't on a home page. Nothing was changed."))
         pad.look(page) { board, _ ->
             val was = board.tiles.firstOrNull { it.name == widget }?.cell
-            when (val fit = fit(board, widget, w, h, pad.minSize(widget))) {
+            val panels = pad.panelPage(page)
+            when (val fit = if (panels != null) fitPanel(board, panels, widget, w, h) else fit(board, widget, w, h, pad.minSize(widget))) {
                 is TileFit.Fits -> {
                     pad.resize(widget, fit.cell)
                     val output = JSONObject().put("ok", true).put("page", pad.name(page) ?: "").put("widget", widget).put("cells", cellsJson(fit.cell))
+                    fit.panel?.let { output.put("panel", it) }
                     if (was != null) output.put("was", cellsJson(was))
                     reply(output)
                 }

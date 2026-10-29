@@ -154,7 +154,9 @@ grid, each tile's cells, each note and sticker (page fractions and the cells it 
 free, the biggest empty rectangles of cells. It only looks. Run it before placing anything.
 tile resize gives a widget's tile on home a new size in cells (like 6x5), keeping its top left corner, as the
 owner's long-press and drag does. Refused, with nothing changed, under its minSize, past the grid or over
-another tile; only widgets. Do it only when the user asked for that size; check with board after.
+another tile; only widgets. On a page drawn in panels (Manga) panels keep their size: it moves the tile into a
+free panel of that size on the page, or refuses and names the layouts with one (the owner picks the layout).
+Do it only when the user asked for that size; check with board after.
 note leaves a short sticky note (plain text, at most 280 characters) on the home page the request
 came from, only when the user asked for one: not to say what was done. It goes
 in free space by itself, never on a widget; the reply says which cells it lies on, and clear is

@@ -48,6 +48,40 @@ class PhoneTilesTest {
         assertTrue(PhoneTiles.fit(board(app), "Camera", 2, 2, 1 to 1) is TileFit.Refused)
     }
 
+    // A Manga page: panels 6x3 (deco's), 6x5 and 3x2; panels never change size.
+    private val manga = PanelPage("Splash", listOf(Cell(0, 0, 6, 3), Cell(0, 3, 6, 5), Cell(0, 8, 3, 2)), mapOf("Splash" to listOf(Cell(0, 0, 6, 3), Cell(0, 3, 6, 5)), "Grid" to listOf(Cell(0, 0, 3, 3)), "Tall" to listOf(Cell(0, 0, 6, 7))))
+
+    @Test fun onAPanelPageItMovesIntoAFreePanelThatSize() {
+        assertEquals(TileFit.Fits(Cell(0, 3, 6, 5), "panel 2 of Splash"), PhoneTiles.fitPanel(board(deco), manga, "deco.owl", 6, 5))
+    }
+
+    @Test fun onAPanelPageATakenPanelIsNotFree() {
+        val other = PageTile("notes.owl", Cell(0, 3, 6, 5))
+        val refused = PhoneTiles.fitPanel(board(deco, other), manga, "deco.owl", 6, 5)
+        assertTrue(refused is TileFit.Refused)
+    }
+
+    @Test fun onAPanelPageNoCellIsEverResizedAndTheLayoutsAreNamed() {
+        val refused = PhoneTiles.fitPanel(board(deco), manga, "deco.owl", 6, 7) as TileFit.Refused
+        assertTrue(refused.reason, refused.reason.contains("Tall"))
+        assertFalse(refused.reason, refused.reason.contains("Grid"))
+        assertTrue(refused.reason, refused.reason.contains("6x3, 6x5, 3x2"))
+    }
+
+    @Test fun onAPanelPageTheReplyMovesAndSaysWhere() {
+        val pad = Pad(board(deco), manga)
+        var answer: JSONObject? = null
+        PhoneTiles.reply(JSONObject().put("action", "resize").put("name", "deco.owl").put("size", "6x5"), pad) { answer = it }
+        assertTrue(answer!!.getBoolean("ok"))
+        assertEquals("panel 2 of Splash", answer!!.getString("panel"))
+        assertEquals("deco.owl" to Cell(0, 3, 6, 5), pad.resized)
+
+        val refusing = Pad(board(deco), manga)
+        PhoneTiles.reply(JSONObject().put("action", "resize").put("name", "deco.owl").put("size", "6x4"), refusing) { answer = it }
+        assertFalse(answer!!.getBoolean("ok"))
+        assertNull(refusing.resized)
+    }
+
     @Test fun theReplyResizesOnlyWhatFits() {
         val pad = Pad(board(deco, clock))
         var answer: JSONObject? = null
@@ -65,7 +99,10 @@ class PhoneTilesTest {
 
     private class Pad(
         private val board: PageBoard,
+        private val panels: PanelPage? = null,
     ) : NotePad {
+        override fun panelPage(page: String) = panels
+
         var resized: Pair<String, Cell>? = null
         override val asked: String? = null
         override val showing: String? = "p6"

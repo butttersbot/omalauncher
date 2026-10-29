@@ -430,6 +430,16 @@ class PhoneService : AccessibilityService() {
             book.whenRead(page) { read -> then(notebook.board(page), if (read) book.on(page) else null) }
         override fun pageOf(widget: String) = if (notebook.opened) notebook.pageOf(widget) else null
         override fun minSize(widget: String) = (application as dev.omalauncher.App).runtime.widgets.specs.firstOrNull { it.file.name == widget }?.minSize ?: (1 to 1)
+        override fun panelPage(page: String): PanelPage? {
+            val look = dev.omalauncher.widgets.pickedPanels() ?: return null
+            val layout = notebook.pages.firstOrNull { it.id == page }?.panels ?: return null
+            val style = look.style()
+            val cols = dev.omalauncher.widgets.GRID_COLUMNS
+            val rows = notebook.rows
+            val panels = dev.omalauncher.widgets.panelsOf(layout, cols, rows, style) ?: return null
+            val all = dev.omalauncher.widgets.layout.PanelLayouts.all.associate { it.name to dev.omalauncher.widgets.layout.PanelLayouts.panels(it.id, cols, rows, style).map { p -> p.cell } }.filterValues { it.isNotEmpty() }
+            return PanelPage(dev.omalauncher.widgets.layout.PanelLayouts.name(layout) ?: layout, panels.map { it.cell }, all)
+        }
         override fun resize(widget: String, cell: dev.omalauncher.widgets.Cell) {
             notebook.setCell(widget, cell)
             notebook.save()

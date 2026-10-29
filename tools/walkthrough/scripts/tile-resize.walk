@@ -11,3 +11,6 @@ shot home-before
 [phone] `oma-phone tile resize deco.owl 2x2` (under its minSize 3x3) is refused; an app's name is refused as not a widget
 [phone] After closing and reopening Soma the tile keeps its new size (it was saved, as a finger's resize is)
 [phone] Long-press the tile and drag its edge by hand afterwards: the owner's resize still works and wins
+[phone] Manga look, a page whose layout has a free 6x5 panel: `oma-phone tile resize deco.owl 6x5` answers ok with "panel N of LAYOUT" and the tile now sits in that panel, drawn as the panel; no panel's lines moved (shot before and after)
+[phone] Manga look, asking a size no free panel on the page has (6x4): refused, naming the page's panel sizes and the layouts that have a 6x4 panel; nothing on the page moved, and the panels are still not resizable by hand either
+[phone] Back on a free-grid look (not Manga): the same command resizes the tile from its corner as above
