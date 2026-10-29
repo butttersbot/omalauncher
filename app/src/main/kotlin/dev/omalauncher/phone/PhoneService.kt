@@ -389,6 +389,7 @@ class PhoneService : AccessibilityService() {
         if (Build.VERSION.SDK_INT >= 30) builder.setDisplayId(displayId)
         val gesture = builder.build()
         val generation = requestGeneration
+        dev.omalauncher.oma.BossTouch.agentActed()
         check(dispatchGesture(gesture, object : GestureResultCallback() {
             // The screen starts to change when the finger lifts, not when it lands.
             override fun onCompleted(gestureDescription: GestureDescription?) { if (busy && generation == requestGeneration) { changed(); reply(JSONObject().put("ok", true)) } }
@@ -509,6 +510,7 @@ class PhoneService : AccessibilityService() {
     }.getOrNull()
     /** Clicks the control on this display whose words are exactly [label] (or the nearest clickable around it). */
     private fun clickSaying(label: String): Boolean {
+        dev.omalauncher.oma.BossTouch.agentActed()
         if (label.isEmpty()) return false
         val root = displayRoot(displayId) ?: return false
         val found = root.findAccessibilityNodeInfosByText(label).firstOrNull { it.text?.toString() == label || it.contentDescription?.toString() == label } ?: return false
@@ -532,6 +534,7 @@ class PhoneService : AccessibilityService() {
     /** Does [command] (click, type or scroll) to the control at [id] of the screen last read; [reply] hears how it went. */
     private fun act(command: String, id: String, input: JSONObject, reply: (JSONObject) -> Unit) {
         requireCurrentAccess()
+        dev.omalauncher.oma.BossTouch.agentActed()
         val (node, at) = target(id)
         // Where the control was acted on: a fill reads its words back there, and the agent is told it had moved.
         fun said(answer: JSONObject) = if (at == id) answer else answer.put("moved", true).put("id", at)
@@ -671,6 +674,8 @@ class PhoneService : AccessibilityService() {
     private fun execute(input: JSONObject, generation: Long, reply: (JSONObject) -> Unit) {
         val command = input.optString("command")
         requestCommand = command
+        // Anything an agent does to the screen means the next seconds' sends are not his to sign (BossReceipt).
+        if (command !in PhoneGuard.reading) dev.omalauncher.oma.BossTouch.agentActed()
         fun requireThisRequest() {
             check(busy && generation == requestGeneration) { "Phone request is no longer active" }
             requireCurrentAccess()

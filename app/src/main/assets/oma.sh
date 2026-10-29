@@ -17,6 +17,7 @@ usage: oma threads [list]
        oma drop get [--to DIR] [--keep] | list | send FILE... [--to mac] | help
        oma msg send DEVICE[:SESSION] TEXT [--reply-to ID] [--title NAME] [--as SESSION] | devices
        oma front [grok|haiku]
+       oma receipt [last-boss-message | last-answer | ID | list]
        oma help
 
 threads  the project threads on the Mac: list them, or make one for a folder there
@@ -26,6 +27,8 @@ status   how the phone's builder and the Mac's threads stand, as the launcher la
 drop     files between the Macs and this phone: get what they Taildropped, send to the Mac
 msg      agent mail to an agent on one of the computers; theirs comes to the chat
 front    who answers first in the chat: Grok or Haiku, and why
+receipt  Boss's own words as Soma signed them: what he typed, or how he answered a question card. Pass the file
+         to soma-canvas approve-from-chat --receipt (Soma signs only what his own finger sent, never yours)
 USAGE
 }
 
@@ -42,6 +45,7 @@ case $command in
   drop) exec "$lib/drop" "$@" ;;
   msg) exec "$lib/msg" "$@" ;;
   front) exec "$lib/front" "$@" ;;
+  receipt) exec "$lib/receipt" "$@" ;;
   help | -h | --help) usage ;;
   *)
     echo "oma: no subcommand \"$command\"." >&2

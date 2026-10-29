@@ -266,6 +266,12 @@ class MainActivity : ComponentActivity() {
     }
 
     /** Launcher shortcuts (Super+key), then typing into a terminal tile that has the keyboard. Back stays the launcher's. */
+    // Home's Needs-you module answers question cards: only his own touch lets Soma sign those answers (BossReceipt).
+    override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+        dev.omalauncher.oma.noteTouch(ev)
+        return super.dispatchTouchEvent(ev)
+    }
+
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.isMetaPressed && event.action == KeyEvent.ACTION_DOWN && shortcut(event.keyCode)) return true
         if (event.keyCode != KeyEvent.KEYCODE_BACK && runtime.terminals.active != null && runtime.keyboard.handle(event)) return true

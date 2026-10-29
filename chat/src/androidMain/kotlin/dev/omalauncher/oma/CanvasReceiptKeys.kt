@@ -27,7 +27,20 @@ object CanvasReceiptKeys {
         val store = store()
         if (!store.containsAlias(ALIAS)) return null // Only owner Link creates the key.
         val encoded = store.getCertificate(ALIAS).publicKey.encoded
-        val receipt = CanvasReceipt.receipt(CanvasReceipt.sha256(encoded), submissionId, System.currentTimeMillis(), source, request)
+        return signed(store, CanvasReceipt.receipt(CanvasReceipt.sha256(encoded), submissionId, System.currentTimeMillis(), source, request))
+    }
+
+    /** Boss's own words ([BossReceipt]): null unless his finger sent them and this Soma is linked (holds the key). */
+    @Synchronized fun signBoss(words: BossWords): JSONObject? {
+        if (!words.vouched) return null
+        val store = store()
+        if (!store.containsAlias(ALIAS)) return null
+        val encoded = store.getCertificate(ALIAS).publicKey.encoded
+        val receipt = BossReceipt.receipt(CanvasReceipt.sha256(encoded), System.currentTimeMillis(), java.util.UUID.randomUUID().toString(), words) ?: return null
+        return signed(store, receipt)
+    }
+
+    private fun signed(store: KeyStore, receipt: JSONObject): JSONObject {
         val serialized = CanvasReceipt.canonical(receipt)
         val signature = Signature.getInstance("SHA256withECDSA").apply {
             initSign(store.getKey(ALIAS, null) as java.security.PrivateKey)

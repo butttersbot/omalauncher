@@ -44,6 +44,12 @@ class OmaChatActivity : ComponentActivity() {
     private var wanted by mutableStateOf<String?>(null)
     private var wantedQuestion by mutableStateOf<String?>(null)
 
+    // Whose finger sent what he sends here: only his own touch lets Soma sign it as his (BossReceipt).
+    override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+        noteTouch(ev)
+        return super.dispatchTouchEvent(ev)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         runtime.start()

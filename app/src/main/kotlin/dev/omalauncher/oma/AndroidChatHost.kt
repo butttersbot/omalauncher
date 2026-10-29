@@ -199,6 +199,8 @@ class AndroidChatHost(
 
     override fun copy(text: String) = copied(context, text)
 
+    override fun bossSaid(words: BossWords) = BossReceipts.record(context, words)
+
     override fun drafts(): ChatDrafts = ChatDrafts.of(context)
 
     @Composable
