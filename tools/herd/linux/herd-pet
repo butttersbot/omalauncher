@@ -57,9 +57,14 @@ class Pet:
         except Exception:return 1920,1080
     def resize(self,w,h):
         self.w,self.h=w,h
-        self.web.set_size_request(w,h);self.window.resize(w,h)
+        self.web.set_size_request(w,h);self.window.set_size_request(w,h);self.window.resize(w,h)
         GtkLayerShell.set_margin(self.window,GtkLayerShell.Edge.RIGHT,self.right)
         GtkLayerShell.set_margin(self.window,GtkLayerShell.Edge.BOTTOM,self.bottom)
+        # Repaint once the compositor has taken the new size (MG1's panel didn't paint when the layer grew, 2026-10-29;
+        # not yet enough on its own: see the herd notes).
+        for wait in (50,250):GLib.timeout_add(wait,self.repaint)
+    def repaint(self):
+        self.window.queue_draw();self.web.queue_draw();return False
     def call(self,name,value=None):
         if self.ready:self.web.evaluate_javascript(name+'('+('' if value is None else json.dumps(value))+')',-1,None,None,None,None,None)
     def loaded(self,web,event):
