@@ -78,3 +78,13 @@ cover/unfolded, size, disclosure, restored/failed/blocked and neutral-state chec
 Its synthetic success is explicitly fictional; production has no restart path.
 Canvas read was attempted but 100.105.137.74:5860 refused the connection; approved
 appearance comes from the handed-off v6 package, with no approval changes made.
+
+Second compile checkpoint 00ccf168: app, desktop and preview compile PASS.
+Tests stopped on the new test imports (kotlin.test was not configured here)
+and the store's exact module-name expectation. Converted new tests to the
+repository's JUnit imports and included Connections in the store assertion.
+The unfolded modal now follows v6's repair/inventory columns. Fresh route and
+authenticated-runner observations are retained independently of Unknown
+end-to-end subchecks, allowing honest connection-recovery notices without
+claiming full build/provider/sync health. Multiple unreachable services on the
+same configured host share an incident without guessing sleep or kernel panic.

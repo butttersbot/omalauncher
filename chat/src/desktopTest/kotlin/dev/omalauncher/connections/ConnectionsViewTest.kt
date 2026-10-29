@@ -5,7 +5,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.*
 import androidx.compose.ui.unit.dp
 import dev.omalauncher.canvas.ModuleSize
-import kotlin.test.*
+import org.junit.Assert.*
+import org.junit.Test
 
 @OptIn(ExperimentalTestApi::class)
 class ConnectionsViewTest {

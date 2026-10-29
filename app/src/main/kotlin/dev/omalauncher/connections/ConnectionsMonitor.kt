@@ -122,8 +122,8 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
 
     private fun collect(): ConnectionsSnapshot {
         val rows = mutableListOf<ConnectionReading>()
-        fun add(c: Capability, state: ConnectionState, detail: String, root: String? = null, host: String = "") {
-            rows += ConnectionReading(c, state, detail, System.currentTimeMillis(), root, host)
+        fun add(c: Capability, state: ConnectionState, detail: String, root: String? = null, host: String = "", sourceHost: String = "") {
+            rows += ConnectionReading(c, state, detail, System.currentTimeMillis(), root, host, sourceHost)
         }
         if (paused) {
             for (c in Capability.entries) add(c, ConnectionState.Paused, "Monitoring intentionally paused; no outage is inferred.")
@@ -154,27 +154,34 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
             else "Phone Linux runtime is off intentionally.")
         val machines = readMacMachines(runtime.proot.launcherConfig)
         working = if (machines.isEmpty()) null else 0; queued = if (machines.isEmpty()) null else 0
+        val aliases = machines.associate { m -> (m.id.ifEmpty { dev.omalauncher.canvas.COCKPIT_POCKET_HOST }) to URI(m.config.url).host }
         for (m in machines) {
+            val sourceHost = URI(m.config.url).host
             val endpoint = ConnectionEndpoint(m.config.url.trimEnd('/') + "/health", m.config.key)
             val reply = connectionGet(endpoint)
             val state = connectionState(reply) { it.optBoolean("ok") && it.optString("runner") == "oma-runner" && it.has("working") }
-            val root = if (tunnel == false && state == ConnectionState.Failed) "network" else "runner:${m.id}"
+            val root = "runner:${m.id}"
             val detail = connectionDetail(reply, state, "Authenticated runner health verified. Provider sign-in and build toolchain are separate checks.")
-            add(Capability.Agents, if (state == ConnectionState.Ready) ConnectionState.Unknown else state, detail, if (state == ConnectionState.Ready) null else root, m.name)
+            add(Capability.Agents, if (state == ConnectionState.Ready) ConnectionState.Unknown else state, detail, if (state == ConnectionState.Ready) null else root, m.name, sourceHost)
             // /threads is the authenticated capability check; it never starts a job.
             val threads = if (state == ConnectionState.Ready) connectionGet(ConnectionEndpoint(m.config.url.trimEnd('/') + "/threads", m.config.key)) else reply
             val access = connectionState(threads) { it.optBoolean("ok") && it.optJSONArray("threads") != null }
             if (access == ConnectionState.Ready) {
                 for (capability in listOf(Capability.Agents, Capability.Builds)) add(capability, ConnectionState.Ready,
-                    "Authenticated runner inventory available again; provider/build checks below remain separate.", "runner:${m.id}", m.name)
+                    "Authenticated runner inventory available again; provider/build checks below remain separate.", "runner:${m.id}", m.name, sourceHost)
                 // Android may omit a VPN interface when this app is excluded; an authenticated configured peer is stronger evidence.
                 val firstNetwork = rows.indexOfFirst { it.capability == Capability.Network && it.host.isEmpty() }
-                if (firstNetwork >= 0 && tunnel == false) rows[firstNetwork] = rows[firstNetwork].copy(state = ConnectionState.Ready,
-                    detail = "Authenticated configured peer is reachable despite no visible VPN interface.")
+                if (firstNetwork >= 0) rows[firstNetwork] = rows[firstNetwork].copy(state = ConnectionState.Ready,
+                    detail = "Authenticated configured peer is reachable; VPN interface and pairing evidence checked separately.")
+            }
+            if (threads.code > 0 && tunnel == false) {
+                val firstNetwork = rows.indexOfFirst { it.capability == Capability.Network && it.host.isEmpty() }
+                if (firstNetwork >= 0) rows[firstNetwork] = rows[firstNetwork].copy(state = ConnectionState.Ready,
+                    detail = "Configured peer route responded despite no visible VPN interface. Auth is checked separately.")
             }
             if (threads.code > 0) for (capability in listOf(Capability.Network, Capability.Agents, Capability.Builds)) add(capability,
-                ConnectionState.Ready, "Peer route responded; authenticated capability status is checked separately.", "network", m.name)
-            add(Capability.Network, access, connectionDetail(threads, access, "Authenticated thread inventory read; pairing and this peer route verified."), if (access == ConnectionState.Ready) "runner:${m.id}" else root, m.name)
+                ConnectionState.Ready, "Peer route responded; authenticated capability status is checked separately.", "network", m.name, sourceHost)
+            add(Capability.Network, access, connectionDetail(threads, access, "Authenticated thread inventory read; pairing and this peer route verified."), if (access == ConnectionState.Ready) "runner:${m.id}" else root, m.name, sourceHost)
             if (access == ConnectionState.Ready) {
                 val counts = runnerWorkCounts(JSONObject(threads.text))
                 working = counts?.let { working?.plus(it.active) }
@@ -182,7 +189,7 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
             } else { working = null; queued = null }
             add(Capability.Builds, if (access == ConnectionState.Ready) ConnectionState.Unknown else access,
                 if (access == ConnectionState.Ready) "Runner inventory accessible. Busy/queued is normal; build locks, source sync, toolchain and artifact delivery are not verified by this read. No separate build daemon is assumed."
-                else "Build requests depend on this runner. $detail", if (access == ConnectionState.Ready) null else root, m.name)
+                else "Build requests depend on this runner. $detail", if (access == ConnectionState.Ready) null else root, m.name, sourceHost)
             val health = runCatching { JSONObject(reply.text) }.getOrNull()
             // Older runners advertise soma in /health; newer deployments may expose /services.
             val services = if (state == ConnectionState.Ready) connectionGet(ConnectionEndpoint(m.config.url.trimEnd('/') + "/services", m.config.key)) else null
@@ -193,18 +200,27 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
                 val h = connectionGet(ConnectionEndpoint(service.trimEnd('/') + "/health", m.config.key))
                 val s = connectionState(h) { it.optString("service") == "soma-serve" }
                 add(Capability.Sync, if (s == ConnectionState.Ready) ConnectionState.Unknown else s,
-                    connectionDetail(h, s, "Soma service identity verified; screen sync cursor/ack freshness has not been checked."), "sync:${m.id}", m.name)
+                    connectionDetail(h, s, "Soma service identity verified; screen sync cursor/ack freshness has not been checked."), "sync:${m.id}", m.name, sourceHost)
             }
         }
-        configuredChecks(rows, tunnel == false)
+        configuredChecks(rows, aliases)
         for (c in Capability.entries) if (rows.none { it.capability == c }) add(c, if (c == Capability.Optional) ConnectionState.Disabled else ConnectionState.Unknown,
             if (c == Capability.Optional) "No optional monitor configured. Disabled tools are neutral."
             else "No configured or advertised end-to-end check for this capability. Configure connections.json; no healthy result is assumed.")
-        return ConnectionsSnapshot(rows, System.currentTimeMillis())
+        val hasRoute = rows.any { it.root == "network" && it.state == ConnectionState.Ready }
+        if (tunnel == false && hasRoute) {
+            val firstNetwork = rows.indexOfFirst { it.capability == Capability.Network && it.host.isEmpty() }
+            if (firstNetwork >= 0) rows[firstNetwork] = rows[firstNetwork].copy(state = ConnectionState.Ready,
+                detail = "Configured tailnet peer route responded despite no visible VPN interface. Pairing is checked separately.")
+        }
+        val groupedRows = if (tunnel == false && !hasRoute) rows.map { r ->
+            if (r.sourceHost.isNotEmpty() && r.state == ConnectionState.Failed) r.copy(root = "network") else r
+        } else rows
+        return ConnectionsSnapshot(groupConnectionFailures(groupedRows, alerts.pending.keys.filter { it.startsWith("host:") }.map { it.removePrefix("host:") }.toSet()), System.currentTimeMillis())
     }
 
     /** Existing app endpoints plus explicit configuration. Never source shell env files. */
-    private fun configuredChecks(rows: MutableList<ConnectionReading>, networkDown: Boolean) {
+    private fun configuredChecks(rows: MutableList<ConnectionReading>, aliases: Map<String, String>) {
         data class Check(val capability: Capability, val endpoint: ConnectionEndpoint, val schema: String, val name: String)
         val checks = mutableListOf(
             Check(Capability.Voice, ConnectionEndpoint(dev.omalauncher.voice.WhisperMac.base(context) + "/health"), "voice", "Whisper"),
@@ -247,6 +263,8 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
         // Bound concurrency separately from the coordinator; no UI blocking and no unbounded one-thread-per-endpoint pool.
         val results = checks.map { check -> check to readers.submit<ConnectionReply> { connectionGet(check.endpoint) } }
         for ((check, future) in results) {
+            val endpointHost = URI(check.endpoint.url).host
+            val sourceHost = aliases[endpointHost] ?: endpointHost
             val reply = runCatching { future.get(12, TimeUnit.SECONDS) }.getOrElse { future.cancel(true); ConnectionReply(-1, "") }
             val verified = connectionState(reply) { json -> when (check.schema) {
                 "voice" -> json.optString("status") == "ok" || json.optString("status") == "ready"
@@ -269,11 +287,11 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
                 else -> "Service returned validated capability health."
             })
             if (reply.code > 0) rows += ConnectionReading(check.capability, ConnectionState.Ready,
-                "Service route responded; capability status is checked separately.", System.currentTimeMillis(), "network", check.name)
-            val root = if (networkDown && verified == ConnectionState.Failed) "network" else "service:${check.capability.name}:${URI(check.endpoint.url).host}"
+                "Service route responded; capability status is checked separately.", System.currentTimeMillis(), "network", check.name, sourceHost)
+            val root = "service:${check.capability.name}:${sourceHost}"
             // Healthy transport observation retained for honest incident recovery, separately from missing end-to-end evidence.
-            if (limited) rows += ConnectionReading(check.capability, ConnectionState.Ready, "Previously failing service endpoint passed its schema check.", System.currentTimeMillis(), root, check.name)
-            rows += ConnectionReading(check.capability, state, detail, System.currentTimeMillis(), if (limited) null else root, check.name)
+            if (limited) rows += ConnectionReading(check.capability, ConnectionState.Ready, "Previously failing service endpoint passed its schema check.", System.currentTimeMillis(), root, check.name, sourceHost)
+            rows += ConnectionReading(check.capability, state, detail, System.currentTimeMillis(), if (limited) null else root, check.name, sourceHost)
         }
     }
 }

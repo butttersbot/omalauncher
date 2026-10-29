@@ -14,7 +14,7 @@ enum class Capability(val title: String, val band: String? = null) {
 }
 data class ConnectionReading(
     val capability: Capability, val state: ConnectionState, val detail: String,
-    val checkedAt: Long, val root: String? = null, val host: String = "",
+    val checkedAt: Long, val root: String? = null, val host: String = "", val sourceHost: String = "",
 ) {
     fun current(now: Long): ConnectionReading = if (state !in setOf(ConnectionState.Disabled, ConnectionState.Paused, ConnectionState.Sleeping) &&
         (checkedAt <= 0 || now < checkedAt || now - checkedAt > 90_000)) copy(state = ConnectionState.Stale, detail = "Last check is no longer current. $detail") else this
@@ -71,4 +71,16 @@ fun restoreGuard(working: Int?, queued: Int?, controlSupported: Boolean): String
     working > 0 || queued > 0 -> "Blocked: active or queued work must finish first. No service was restarted."
     !controlSupported -> "Guided repair needed: this host has no supported service-control API. Restart only the affected service on its host, then check again."
     else -> null
+}
+
+/** Group a host's dependent connection failures without guessing whether it slept or panicked. */
+fun groupConnectionFailures(readings: List<ConnectionReading>, retainedHosts: Set<String> = emptySet()): List<ConnectionReading> {
+    val grouped = readings.filter { it.sourceHost.isNotBlank() }.groupBy { it.sourceHost }
+    val unavailable = grouped.filterValues { rows ->
+        rows.filter { it.state == ConnectionState.Failed && it.root != "network" }.map { it.capability }.distinct().size >= 2 &&
+            rows.none { it.state == ConnectionState.Ready }
+    }.keys + retainedHosts
+    return readings.map { row ->
+        if (row.sourceHost in unavailable && row.root != null && row.root != "network") row.copy(root = "host:${row.sourceHost}") else row
+    }
 }

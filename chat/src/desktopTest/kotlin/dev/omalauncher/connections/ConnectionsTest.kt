@@ -1,6 +1,7 @@
 package dev.omalauncher.connections
 
-import kotlin.test.*
+import org.junit.Assert.*
+import org.junit.Test
 import org.json.JSONObject
 
 class ConnectionsTest {
@@ -53,10 +54,10 @@ class ConnectionsTest {
         assertEquals(ConnectionState.Sleeping, row(Capability.Phone, ConnectionState.Sleeping, at = 1).current(200_000).state)
     }
     @Test fun restoreRequiresKnownIdleJobsAndSupportedControl() {
-        assertContains(restoreGuard(null, 0, true)!!, "cannot be verified")
-        assertContains(restoreGuard(1, 0, true)!!, "active or queued")
-        assertContains(restoreGuard(0, 2, true)!!, "active or queued")
-        assertContains(restoreGuard(0, 0, false)!!, "no supported")
+        assertTrue(restoreGuard(null, 0, true)!!.contains("cannot be verified"))
+        assertTrue(restoreGuard(1, 0, true)!!.contains("active or queued"))
+        assertTrue(restoreGuard(0, 2, true)!!.contains("active or queued"))
+        assertTrue(restoreGuard(0, 0, false)!!.contains("no supported"))
         assertNull(restoreGuard(0, 0, true))
     }
     @Test fun monitorGapRestartsSustainedFailureWindow() {
@@ -73,6 +74,14 @@ class ConnectionsTest {
         val wire = JSONObject("""{"threads":[{"status":"waiting","waiting_turns":3,"pending":[{}],"background":[]},{"status":"idle","waiting_turns":0,"pending":[],"background":["build"]}]}""")
         assertEquals(RunnerWorkCounts(2, 3), runnerWorkCounts(wire))
         assertNull(runnerWorkCounts(JSONObject("""{"threads":[{"status":"idle","queued":0}]}""")))
+    }
+    @Test fun sharedHostOutageGroupsDependentsWithoutInventingSleep() {
+        val failed = listOf(row(Capability.Agents, ConnectionState.Failed).copy(sourceHost = "mac"),
+            row(Capability.Voice, ConnectionState.Failed, root = "voice").copy(sourceHost = "mac"))
+        assertEquals(1, ConnectionsSnapshot(groupConnectionFailures(failed)).incidents(100_000).size)
+        assertTrue(groupConnectionFailures(failed).all { it.root == "host:mac" && it.state == ConnectionState.Failed })
+        val partial = failed + row(Capability.Canvas, ConnectionState.Ready, root = "canvas").copy(sourceHost = "mac")
+        assertEquals(2, ConnectionsSnapshot(groupConnectionFailures(partial)).incidents(100_000).size)
     }
     @Test fun endpointNeverPrintsCredentials() {
         assertFalse(ConnectionEndpoint("http://example/health", "secret").toString().contains("secret"))
