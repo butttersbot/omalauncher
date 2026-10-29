@@ -53,7 +53,7 @@ shot connections-failed-details-cover
 key BACK
 tap Successful repair
 tap [ Restore ]
-expect Restored
+expect Service restored
 shot connections-restored-cover
 tap Connections
 expect Restored: fictional
