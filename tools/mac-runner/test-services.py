@@ -2,6 +2,8 @@
 """Owner-approved service restart (soma_services): every execution is mocked; launchctl, sudo and the process are
 never touched. Owner keys are generated in memory per test; the trust file lives in a temporary directory."""
 import base64, hashlib, importlib.util, json, os, pathlib, stat, tempfile, unittest
+from unittest.mock import patch
+from types import SimpleNamespace
 
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -172,7 +174,12 @@ class Trust(Base):
     def test_missing_untrusted_and_ready(self):
         self.assertEqual(S.load_trust(self.dir / 'nope.json').state, 'missing')
         self.assertEqual(S.load_trust(self.trust_file, require_root=False).state, 'ready')
-        self.assertEqual(S.load_trust(self.trust_file, require_root=True).state, 'untrusted')  # not root-owned in a test
+        original_lstat = os.lstat
+        def nonroot_lstat(path, *args, **kwargs):
+            info = original_lstat(path, *args, **kwargs)
+            return SimpleNamespace(st_mode=info.st_mode, st_uid=501, st_size=info.st_size)
+        with patch.object(S.os, 'lstat', side_effect=nonroot_lstat):
+            self.assertEqual(S.load_trust(self.trust_file, require_root=True).state, 'untrusted')
         os.chmod(self.trust_file, 0o666)
         self.assertIn('writable', S.load_trust(self.trust_file, require_root=False).detail)
         os.chmod(self.trust_file, 0o644)
