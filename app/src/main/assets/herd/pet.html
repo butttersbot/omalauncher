@@ -827,6 +827,7 @@ document.addEventListener('contextmenu', e => {
   pocketMenu(t.dataset.menu, e.clientX, e.clientY);
 });
 document.addEventListener('pointerdown', e => {
+  pressed = false;   // a new touch is never the tail of the last long-press
   if (!e.target.closest?.('#pmenu')) hideMenu();
   // On the phone a long-press starts choosing several, that one first (Boss, 2026-10-28); its menu is the bar's More.
   const t = e.target.closest?.('[data-sel]');
@@ -835,6 +836,9 @@ document.addEventListener('pointerdown', e => {
   pressTimer = setTimeout(() => { pressed = true; startSelect(t.dataset.sel); }, 500);
 });
 for (const end of ['pointerup', 'pointercancel', 'pointermove']) document.addEventListener(end, () => clearTimeout(pressTimer));
+// The click a long-press may leave behind is swallowed (below), but Android's WebView sends none after one: so the flag
+// lasts only until just after that press's own lift, never into the next tap (the 2026-10-28 walk lost every first tap).
+for (const end of ['pointerup', 'pointercancel']) document.addEventListener(end, () => { if (pressed) setTimeout(() => { pressed = false; }, 80); });
 // A long-press opened the menu: the click that follows it isn't an Open.
 $('view').addEventListener('click', e => { if (pressed) { pressed = false; e.stopImmediatePropagation(); e.preventDefault(); } }, true);
 $('view').addEventListener('scroll', hideMenu, true);

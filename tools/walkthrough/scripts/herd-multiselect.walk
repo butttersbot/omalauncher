@@ -8,7 +8,8 @@
 shell setprop debug.soma.herdtest 1
 shell am force-stop dev.omalauncher.boss
 shell cmd statusbar collapse
-key HOME
+# Home itself, not HOME: after a force-stop HOME opened All Apps on this build (2026-10-28 walk).
+launch dev.omalauncher.boss/dev.omalauncher.MainActivity
 wait 2500
 tap 0.85 0.77
 wait 1500
@@ -48,6 +49,7 @@ expect test-alpha.txt
 expect Tailshare
 shot back-left-choosing
 # Choose three, Delete, Cancel: still there.
+clearlog
 hold test-bravo.txt
 tap test-delta.txt
 tap Test text two
