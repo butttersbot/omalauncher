@@ -89,7 +89,7 @@ class TradeActivity : PaperActivity() {
                 }
                 val meta = service.info(JSONObject().put("type","outcomeMeta"))
                 val market = Market.parse(meta).singleOrNull { it.id == marketId } ?: error("This market is not listed on the chosen network")
-                require(market.title==intent.getStringExtra("title") && market.sideLabel(outcomeSide)==intent.getStringExtra("sideLabel")) { "Selected market differs on this network. Return to the market list." }
+                require(market.identity==intent.getStringExtra("identity") && market.title==intent.getStringExtra("title") && market.sideLabel(outcomeSide)==intent.getStringExtra("sideLabel")) { "Selected market differs on this network. Return to the market list." }
                 require(market.quote == "USDC") { "Only USDC outcomes are supported" }
                 val encoding = Math.addExact(Math.multiplyExact(marketId,10),outcomeSide.toLong())
                 val asset = Math.toIntExact(Math.addExact(100_000_000L,encoding))
@@ -109,7 +109,7 @@ class TradeActivity : PaperActivity() {
             }
             api = prepared.first
             val ticket = prepared.second
-            reviewed?.let { journal!!.transition(it.first.id,OrderStage.Cancelled,System.currentTimeMillis()) }
+            check(!signing) { "An order is already being signed" };cancelReview()
             val row = journal!!.review(ticket,System.currentTimeMillis()); reviewed = row to ticket
             val body = "${if(ticket.testnet) "TESTNET" else "MAINNET · REAL FUNDS"}\n${ticket.market}\n${if(ticket.buy) "Buy" else "Sell owned"} ${ticket.side}\nWallet ${ticket.wallet}\n\nExact size: ${ticket.shares.toPlainString()} shares\nLimit: ${ticket.limitPrice.toPlainString()} USDC\nFee ceiling: ${ticket.feeCeiling.toPlainString()} USDC\n" +
                 (if(ticket.buy) "Maximum debit / loss: ${ticket.maximumDebit.toPlainString()} USDC" else "Minimum proceeds: ${ticket.notional.subtract(ticket.feeCeiling).toPlainString()} USDC\nValue relinquished: up to ${ticket.shares.toPlainString()} USDC at settlement") +
