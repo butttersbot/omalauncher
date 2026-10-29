@@ -11,7 +11,7 @@ Boss-approved scope (Phone A 20261028-215622, refined 220739; Phone B 20261028-2
 Nothing here enrolls or replaces owner keys, runs a shell, takes a path or command from a request, or restarts a
 service whose restart cannot be verified by that service's own capability check. Times are epoch milliseconds.
 """
-import base64, concurrent.futures, contextlib, fcntl, hashlib, hmac, json, os, pathlib, re, secrets, socket, stat, subprocess, tempfile, threading, time
+import base64, concurrent.futures, contextlib, fcntl, hashlib, hmac, ipaddress, json, os, pathlib, plistlib, re, secrets, socket, stat, subprocess, tempfile, threading, time
 import http.client, urllib.error, urllib.parse, urllib.request
 
 HOME = pathlib.Path.home()
@@ -54,14 +54,85 @@ SERVICES = {
 SERVICE_ID = re.compile(r'[a-z][a-z0-9-]{1,31}')
 
 
+SYSTEM_PLISTS = pathlib.Path('/Library/LaunchDaemons')
+USER_PLISTS = HOME / 'Library/LaunchAgents'
+
+
+def placement(service):
+    """(domain, label, mode) as installed on THIS host: the same label is a root daemon on one Mac and the owner's own
+    agent on another (tailshare and herd are system daemons on the Mac Pro, user agents on the MacBook). A system daemon
+    needs the root helper; a user agent is restarted as the user. Not installed anywhere: the table's default."""
+    default_domain, label, mode = SERVICES[service]
+    for domain, folder in (('system', SYSTEM_PLISTS), ('gui', USER_PLISTS)):
+        if (folder / f'{label}.plist').exists():
+            return domain, label, 'self' if mode == 'self' else ('privileged' if domain == 'system' else 'gui')
+    return default_domain, label, mode
+
+
 def target(service):
-    domain, label, _ = SERVICES[service]
+    domain, label, _ = placement(service)
     return f'system/{label}' if domain == 'system' else f'gui/{os.getuid()}/{label}'
 
 
 def plist_path(service):
-    domain, label, _ = SERVICES[service]
-    return (pathlib.Path('/Library/LaunchDaemons') if domain == 'system' else HOME / 'Library/LaunchAgents') / f'{label}.plist'
+    domain, label, _ = placement(service)
+    return (SYSTEM_PLISTS if domain == 'system' else USER_PLISTS) / f'{label}.plist'
+
+
+OPTIONAL = {'syncthing'}  # per the approved inventory: absent means Disabled, never an outage
+
+
+def installed(service):
+    """Whether this host has the service at all. A label from another host's inventory that isn't here is not an outage."""
+    return service == 'runner' or service not in SERVICES or plist_path(service).exists()
+
+
+# Where each service listens, from its installed launchd plist. Only these argv flags and environment keys are ever read
+# from it; the rest of the plist (other environment values may be secrets) is never kept, returned or logged.
+ENDPOINTS = {  # service: (default host: 'tailnet' | 'loopback', default port, port flag, host flag, port env key, host env key)
+    'canvas': ('loopback', 5860, None, None, 'CANVAS_PORT', None),
+    'embeddings': ('tailnet', 8179, None, None, 'EMBED_PORT', 'EMBED_HOST'),
+    'whisper': ('tailnet', 8178, '--port', '--host', None, None),
+    'herd': ('tailnet', 8479, None, None, 'HERD_PORT', None),
+    'tailshare-serve': ('tailnet', 8480, None, None, None, None),
+    'imessage-api': ('tailnet', 8765, '--port', '--host', None, None),
+    'syncthing': ('loopback', 8384, None, None, None, None),
+}
+
+
+def plist_fields(service, load=None):
+    """The whitelisted endpoint fields of the installed plist, and nothing else."""
+    _, _, port_flag, host_flag, port_env, host_env = ENDPOINTS[service]
+    try:
+        with open(plist_path(service), 'rb') as f:
+            data = (load or plistlib.load)(f)
+    except Exception:  # noqa: BLE001 -- unreadable: the defaults stand
+        return {}
+    args = [str(a) for a in data.get('ProgramArguments') or []][:64]
+    env = data.get('EnvironmentVariables') or {}
+    out = {}
+    for flag, key in ((port_flag, 'port'), (host_flag, 'host')):
+        if flag and flag in args[:-1]:
+            out[key] = args[args.index(flag) + 1]
+    for name, key in ((port_env, 'port'), (host_env, 'host')):
+        if name and isinstance(env.get(name), str):
+            out[key] = env[name]
+    return out
+
+
+def endpoint(service, run=subprocess.run, load=None):
+    default_host, default_port, *_ = ENDPOINTS[service]
+    fields = plist_fields(service, load)
+    port = fields.get('port', '')
+    port = int(port) if str(port).isdigit() and 0 < int(port) < 65536 else default_port
+    host = None
+    with contextlib.suppress(ValueError):
+        ip = ipaddress.ip_address(fields.get('host', ''))
+        if ip.is_loopback or ip in ipaddress.ip_network('100.64.0.0/10'):  # only this Mac's own addresses
+            host = str(ip)
+    if host is None:
+        host = '127.0.0.1' if default_host == 'loopback' else tailnet_ip(run)
+    return host, port
 
 
 _HOST = None
@@ -425,15 +496,15 @@ class LiveBackend:
     live = True
 
     def kickstart_gui(self, service):
-        domain, label, mode = SERVICES[service]
+        domain, label, mode = placement(service)
         assert domain == 'gui' and mode == 'gui'
         r = subprocess.run([LAUNCHCTL, 'kickstart', '-k', target(service)], capture_output=True, text=True, timeout=30, check=False)
         if r.returncode != 0:
             raise RuntimeError(f'launchctl kickstart exited {r.returncode}: {stderr_tail(r.stderr, 300)}')
 
-    def privileged(self, service):
-        # No unsigned passwordless root helper may be used. A root-owned file alone proves no owner consent.
-        raise Blocked('owner_verifying_privileged_helper_unavailable')
+    def privileged(self, service, proof):
+        # Independent owner proof is implemented in Swift; trusted work/admission caller enforcement is not ready.
+        raise Blocked('owner_verified_control_broker_unavailable')
 
     def exit_for_relaunch(self):
         os._exit(75)
@@ -451,7 +522,7 @@ class MockBackend:
         if self.fail:
             raise RuntimeError('mock failure')
 
-    def privileged(self, service):
+    def privileged(self, service, proof):
         if not self.privileged_installed:
             raise Blocked('privileged_helper_missing')
         self.calls.append(('privileged', service))
@@ -499,7 +570,7 @@ SYNCTHING_CONFIG = pathlib.Path.home() / 'Library/Application Support/Syncthing/
 SYNCTHING_FOLDER_OK = {'idle', 'scanning', 'scan-waiting', 'syncing', 'sync-waiting', 'sync-preparing', 'cleaning', 'clean-waiting'}
 
 
-def syncthing_folders(fetch=http_json, config=SYNCTHING_CONFIG):
+def syncthing_folders(fetch=http_json, config=SYNCTHING_CONFIG, base=('127.0.0.1', 8384)):
     """Each unpaused folder's state from Syncthing's own API. Its API key is read from the owner's 0600 config into memory
     for the request header only; it never enters a check, a record or an error."""
     import xml.etree.ElementTree as ET
@@ -513,7 +584,7 @@ def syncthing_folders(fetch=http_json, config=SYNCTHING_CONFIG):
     folders = [f.get('id') for f in root.findall('folder') if f.get('paused', 'false') != 'true' and f.get('id')][:32]
     states, errors = {}, 0
     for folder in folders:
-        status, data = fetch('http://127.0.0.1:8384/rest/db/status?folder=' + urllib.parse.quote(folder, safe=''), headers={'X-API-Key': key})
+        status, data = fetch('http://%s:%d/rest/db/status?folder=' % base + urllib.parse.quote(folder, safe=''), headers={'X-API-Key': key})
         if status != 200:
             return mkcheck('syncthing_folders', 'syncthing', 'api_refused', 'fail', {'http_status': status})
         states[folder] = str(data.get('state', 'unknown'))[:24]
@@ -565,6 +636,14 @@ def _running(service, state):
 
 
 def capability_probe(service, fetch=http_json, run=subprocess.run, state=None, keys=None):
+    """What the service can show, plus a REQUIRED unverified check for every piece of end-to-end evidence it can't yet.
+    A service this host doesn't have gets one neutral not_installed result and is never probed: absence is not an outage."""
+    if not installed(service):
+        return [mkcheck('installed', service, 'disabled' if service in OPTIONAL else 'not_installed', 'not_installed', {'optional': service in OPTIONAL})]
+    return _probe(service, fetch, run, state, keys) + missing_checks(service)
+
+
+def _probe(service, fetch=http_json, run=subprocess.run, state=None, keys=None):
     """Each service's own capability evidence, read-only. Bodies never leave the probe: only whitelisted fields do.
     keys: {name: callable -> secret or None} for bearer credentials the caller already holds (the runner's Soma key).
     A reachable service whose evidence is incomplete is unverified; refused auth is unverified; down is fail."""
@@ -587,24 +666,25 @@ def capability_probe(service, fetch=http_json, run=subprocess.run, state=None, k
             return [check('soma_identity', 'wrong_identity', status == 200 and data.get('service') == 'soma-serve' and data.get('ok') is True,
                           {'http_status': status, 'service': str(data.get('service', ''))[:40]})]
         if service == 'syncthing':
-            status, data = fetch('http://127.0.0.1:8384/rest/noauth/health')
+            base = endpoint(service, run)
+            status, data = fetch('http://%s:%d/rest/noauth/health' % base)
             return [check('syncthing_health', 'unhealthy', status == 200 and data.get('status') == 'OK', {'http_status': status}),
-                    syncthing_folders(fetch)]
+                    syncthing_folders(fetch, base=base)]
         if service == 'canvas':
-            status, data = fetch('http://127.0.0.1:5860/healthz')
+            status, data = fetch('http://%s:%d/healthz' % endpoint(service, run))
             return [check('canvas_health', 'unhealthy', status == 200 and data.get('ok') is True, {'http_status': status})]
         if service == 'embeddings':
-            status, data = fetch('http://%s:8179/health' % tailnet_ip(run))
+            status, data = fetch('http://%s:%d/health' % endpoint(service, run))
             dim = data.get('dim')
             return [check('embed_model', 'model_missing', status == 200 and data.get('ok') is True and isinstance(dim, int) and dim > 0,
                           {'http_status': status, 'dim': dim if isinstance(dim, int) else None, 'model': str(data.get('model', ''))[:80]})]
         if service == 'whisper':
-            status, data = fetch('http://%s:8178/health' % tailnet_ip(run))  # whisper.cpp: 200 {"status":"ok"} once the model is loaded
+            status, data = fetch('http://%s:%d/health' % endpoint(service, run))  # whisper.cpp: 200 {"status":"ok"} once the model is loaded
             return [check('whisper_model', 'model_not_loaded', status == 200 and data.get('status') == 'ok', {'http_status': status})]
         if service in ('herd', 'tailshare-serve'):
             # Both admit only the owner's own tailnet devices (tailscale whois); this Mac is one. Only the identity field is kept.
-            port, path, field = (8479, '/v1/status?closed=0', 'machine') if service == 'herd' else (8480, '/v1/hello', 'name')
-            status, data = fetch('http://%s:%d%s' % (tailnet_ip(run), port, path))
+            path, field = ('/v1/status?closed=0', 'machine') if service == 'herd' else ('/v1/hello', 'name')
+            status, data = fetch('http://%s:%d%s' % (*endpoint(service, run), path))
             return [check(service + '_identity', 'wrong_identity', status == 200 and bool(data.get(field)), {'http_status': status, field: str(data.get(field, ''))[:64]})]
         if service == 'tailscaled':
             data = tailscale_status(run)
@@ -617,7 +697,7 @@ def capability_probe(service, fetch=http_json, run=subprocess.run, state=None, k
             token = _read_secret(IMESSAGE_TOKEN)
             if not token:
                 return [mkcheck('imessage_health', service, 'no_token', 'unverified', {'missing': 'the iMessage service token file'})]
-            status, data = fetch('http://%s:8765/v1/health' % tailnet_ip(run), headers={'Authorization': 'Bearer ' + token})
+            status, data = fetch('http://%s:%d/v1/health' % endpoint(service, run), headers={'Authorization': 'Bearer ' + token})
             fields = {k: data.get(k) for k in ('ok', 'sendReady', 'messagesAccess', 'watching', 'readOnly') if isinstance(data.get(k), (bool, str))}
             return [check('imessage_health', 'not_ready', status == 200 and data.get('ok') is True and data.get('sendReady') is True,
                           {'http_status': status, **fields})]
@@ -640,12 +720,35 @@ def capability_probe(service, fetch=http_json, run=subprocess.run, state=None, k
                     {'reason': 'No capability probe for this service; its restart cannot be verified, so it is blocked.'})]
 
 
+# End-to-end evidence a service's restart needs beyond what its probe can show today. Each becomes a REQUIRED unverified
+# check in every probe, so identity, health or process evidence alone never reads as Ready or Restored, and a restart is
+# refused before it starts (nothing is restarted that could only be half-verified). Remove an entry only with a real probe.
+MISSING_EVIDENCE = {
+    'runner': [('provider_auth', 'agent provider sign-in validity, without reading token bodies'),
+               ('build_toolchain', 'JDK, Android SDK/adb and Gradle wrapper usable by the build lanes'),
+               ('source_freshness', 'age of the source mirrors the lanes build from')],
+    'soma': [('soma_sync', 'a Soma sync cursor or ack; /health shows identity and public-URL liveness only')],
+    'canvas': [('canvas_boards', 'a read-only board list/load with the runner\'s canvas key; /healthz shows the process only')],
+    'tailshare-serve': [('tailshare_delivery', 'a delivery ack; /v1/hello shows identity only')],
+    'tailshare-receive': [('receive_freshness', 'a worker heartbeat or last-delivery ack; the receive loop has no endpoint')],
+    'herd': [('herd_reporter_age', "the reporter's last-report age; /v1/status shows identity and sessions only")],
+    'embeddings': [('embed_inference', 'a model answer; /health checks the model file exists, not that it loads')],
+    'imessage-transport': [('transport_traversal', 'an API health that crosses the transport socket; process and socket only today')],
+}
+
+
+def missing_checks(service):
+    return [mkcheck(name, service, 'evidence_missing', 'unverified', {'required': True, 'missing': what})
+            for name, what in MISSING_EVIDENCE.get(service, [])]
+
+
 PROBED = {'runner', 'soma', 'syncthing', 'canvas', 'embeddings', 'whisper', 'herd', 'tailshare-serve', 'tailscaled',
           'imessage-api', 'imessage-transport', 'tailshare-receive'}
 
 
 def verifiable(service):
-    return service in PROBED
+    """A restart may start only if every piece of its required evidence can be checked afterwards."""
+    return service in PROBED and not MISSING_EVIDENCE.get(service)
 
 
 # ---- durable records ----------------------------------------------------------------------------------------------
@@ -714,7 +817,7 @@ class Records:
         for path in (self.root / 'operations').glob('op-*.json'):
             with contextlib.suppress(OSError, json.JSONDecodeError):
                 op = json.loads(path.read_text())
-                if op.get('stage') in ('restoring', 'verifying'):
+                if op.get('stage') in ('checking', 'restoring', 'verifying'):
                     out.append(op)
         return out
 
@@ -786,16 +889,20 @@ class Controller:
             counts = self.work()
         services = []
         rows = self.probes.snapshot(list(SERVICES), budget)
-        for service, (domain, label, mode) in SERVICES.items():
+        for service in SERVICES:
+            domain, label, mode = placement(service)
             row = rows[service]
             launchd = row['launchd']
             blocked = None
-            if mode == 'privileged':
-                blocked = 'owner_verifying_privileged_helper_unavailable'
+            if not installed(service):
+                blocked = 'not_installed'
+            elif mode == 'privileged':
+                blocked = 'owner_verified_control_broker_unavailable'
             elif not verifiable(service):
-                blocked = 'no_capability_probe'
+                blocked = 'incomplete_capability_proof' if MISSING_EVIDENCE.get(service) else 'no_capability_probe'
             services.append({'id': service, 'label': label, 'domain': domain, 'plist': str(plist_path(service)),
-                             'installed': plist_path(service).exists(), 'state': launchd['state'], 'pid': launchd['pid'],
+                             'installed': installed(service), 'optional': service in OPTIONAL, 'loaded': bool(launchd.get('loaded')),
+                             'running': launchd.get('state') == 'running' and bool(launchd.get('pid')), 'state': launchd['state'], 'pid': launchd['pid'],
                              'restart': {'mode': mode, 'supported': blocked is None and trust.state == 'ready', **({'blocked_reason': blocked} if blocked else {})},
                              'probe': {'checks': row['checks'], 'checked_at': row['checked_at'], 'pending': row['pending']}})
         return redact({'ok': True, 'host': self.host, 'checked_at': self.clock(), 'owner_trust': {'state': trust.state, 'detail': trust.detail},
@@ -813,7 +920,11 @@ class Controller:
         op = {'id': operation_id(challenge['id']), 'approval': challenge['id'], 'service': service, 'host': self.host,
               'stage': 'checking', 'verified': False, 'started_at': self.clock(), 'updated_at': self.clock(), 'checks': []}
         self._save(op)
-        self.spawn(self._run, op)
+        # The owner's proof, for the root helper only: held in memory for this one run, never written to a record.
+        proof = {'approval': challenge['id'], 'nonce': challenge['nonce'], 'service': service, 'host': challenge['host'],
+                 'expires_at': challenge['expires_at'], 'owner_key_id': body['owner_key_id'], 'owner_signature': body['owner_signature'],
+                 **({'owner_payloads': body['owner_payloads']} if body.get('owner_payloads') is not None else {})}
+        self.spawn(self._run, op, proof)
         return {'ok': True, 'operation': {k: op[k] for k in ('id', 'approval', 'service', 'host', 'stage')}}
 
     def _save(self, op, **changes):
@@ -832,11 +943,18 @@ class Controller:
         op['incident'] = incident['id']
         self._save(op)
 
-    def _run(self, op):
+    def _run(self, op, proof=None):
         service = op['service']
-        _, _, mode = SERVICES[service]
+        _, _, mode = placement(service)
         try:
+            if not installed(service):
+                return self._fail(op, 'blocked', 'not_installed', 'This service is not installed on this host. Nothing was restarted.')
             if not verifiable(service):
+                missing = [what for _, what in MISSING_EVIDENCE.get(service, [])]
+                if missing:
+                    op['checks'].extend(missing_checks(service))
+                    return self._fail(op, 'blocked', 'incomplete_capability_proof', 'A restart could not be verified end to end (missing: '
+                                      + '; '.join(missing) + '). Nothing was restarted.')
                 return self._fail(op, 'blocked', 'no_capability_probe', 'This service has no capability check, so a restart could not be verified. Nothing was restarted.')
             with self.gate.exclusive(self.work):
                 op['checks'].append(mkcheck('work_idle', 'runner', 'idle', 'pass', {'working': 0, 'waiting': 0, 'queued': 0, 'background': 0, 'locks_held': len(self.gate.held)}))
@@ -844,7 +962,7 @@ class Controller:
                 if mode == 'gui':
                     self.backend.kickstart_gui(service)
                 elif mode == 'privileged':
-                    self.backend.privileged(service)
+                    self.backend.privileged(service, proof)
                 else:
                     self._save(op, stage='verifying')
                     self.backend.exit_for_relaunch()  # launchd relaunches; resume() verifies from the journal
@@ -854,7 +972,9 @@ class Controller:
         except Refused as e:
             self._fail(op, 'blocked', e.code, e.message + ' Nothing was restarted.')
         except Blocked as e:
-            self._fail(op, 'blocked', str(e), 'This root service needs the Boss-installed privileged helper. Nothing was restarted.')
+            refused = str(e).startswith('privileged_helper_refused')
+            self._fail(op, 'blocked', str(e), 'The root helper did not accept the owner proof. Nothing was restarted.' if refused
+                       else 'This root service needs the Boss-installed privileged helper. Nothing was restarted.')
         except Exception as e:  # noqa: BLE001
             self._fail(op, 'failed', 'restart_error', redact(str(e))[:300])
 
@@ -872,9 +992,24 @@ class Controller:
         self._fail(op, 'failed', 'not_verified', 'The service restarted but its capability check did not pass. Check it before trying again.')
 
     def resume(self):
-        """On start: finish operations a previous process left mid-restart (the runner's own relaunch, a lost route)."""
+        """On start: finish operations a previous process left unfinished, by checking only -- never by restarting.
+        Left at 'checking', the restart never started: it ends 'interrupted' with today's evidence (verified only if every
+        check passes), so the phone's pending marker always resolves and nothing is retried. Left at 'restoring' or
+        'verifying' (the runner's own relaunch, a crash mid-restart), the restart may have run: it is verified as usual."""
         for op in self.records.unfinished():
-            self.spawn(self._verify, op)
+            self.spawn(self._interrupted if op.get('stage') == 'checking' else self._verify, op)
+
+    def _interrupted(self, op):
+        checks = []
+        with contextlib.suppress(Exception):
+            checks = self.probe(op['service'])
+        op['checks'].extend(checks or [mkcheck(op['service'] + '_probe', op['service'], 'no_result', 'fail')])
+        op['restarted'] = False
+        ok = bool(checks) and all(c['result'] == 'pass' for c in checks)
+        self._save(op, stage='interrupted', verified=ok)
+        if not ok:
+            self._fail(op, 'interrupted', 'interrupted_before_restart',
+                       'The runner stopped before this restart began, and the service does not pass its checks now. Nothing was restarted; ask again.')
 
 
 if __name__ == '__main__':  # install-service-helper.sh runs this as the invoking user, never as root

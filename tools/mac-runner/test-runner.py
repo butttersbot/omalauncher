@@ -1550,22 +1550,22 @@ try:
           call('GET', '/services/approvals/svc-%s/operation' % ('0' * 32), token=now)[0] == 404 and call('GET', '/services/approvals/..%2f..%2fx/operation', token=now)[0] == 404)
     held = open(services_dir / 'locks' / 'walks.lock', 'a')
     fcntl.flock(held, fcntl.LOCK_EX)
-    code, got = call('POST', '/services/soma/restart', {}, token=now)
-    check('services: an empty request returns a challenge and changes nothing', code == 202 and got['approval']['service'] == 'soma' and got['approval']['host'] == 'testhost')
+    code, got = call('POST', '/services/syncthing/restart', {}, token=now)
+    check('services: an empty request returns a challenge and changes nothing', code == 202 and got['approval']['service'] == 'syncthing' and got['approval']['host'] == 'testhost')
     challenge = got['approval']
-    code, got = call('POST', '/services/soma/restart', owner_answer(challenge), token=now)
+    code, got = call('POST', '/services/syncthing/restart', owner_answer(challenge), token=now)
     code, found = operation_by_approval(challenge['id'], ('blocked', 'failed', 'restored'), now)
     check('services: a held walk lock blocks the restart, found by its approval', code == 200 and found['operation']['stage'] == 'blocked'
           and found['operation']['id'] == got['operation']['id'] and any(c['code'] == 'busy_lock' for c in found['operation']['checks']))
     fcntl.flock(held, fcntl.LOCK_UN)
     held.close()
-    check('services: the replayed answer is refused (its challenge was consumed)', call('POST', '/services/soma/restart', owner_answer(challenge), token=now)[0] >= 400)
+    check('services: the replayed answer is refused (its challenge was consumed)', call('POST', '/services/syncthing/restart', owner_answer(challenge), token=now)[0] >= 400)
     code, got = call('POST', '/threads/%s/messages' % service_thread, {'text': 'after a blocked restart'}, token=now)
     check('services: a blocked restart leaves admission open', code == 200)
     check('services: that turn ends', idle_now())
     # A restart that runs: admission is closed from the idle check until verification ends, then it reopens.
-    challenge = call('POST', '/services/soma/restart', {}, token=now)[1]['approval']
-    code, got = call('POST', '/services/soma/restart', owner_answer(challenge), token=now)
+    challenge = call('POST', '/services/syncthing/restart', {}, token=now)[1]['approval']
+    code, got = call('POST', '/services/syncthing/restart', owner_answer(challenge), token=now)
     check('services: a signed answer starts one operation, bound to its approval', code == 202 and got['operation']['approval'] == challenge['id'])
     operation_by_approval(challenge['id'], ('verifying', 'restored', 'failed', 'blocked'), now)
     code, refused = call('POST', '/threads/%s/messages' % service_thread, {'text': 'during the restart'}, token=now)
@@ -1576,6 +1576,11 @@ try:
           and operation['host'] == 'testhost' and all(c['result'] == 'pass' for c in operation['checks']))
     code, got = call('POST', '/threads/%s/messages' % service_thread, {'text': 'after the restart'}, token=now)
     check('services: admission reopens after verification', code == 200 and idle_now())
+    challenge = call('POST', '/services/soma/restart', {}, token=now)[1]['approval']
+    code, got = call('POST', '/services/soma/restart', owner_answer(challenge), token=now)
+    code, found = operation_by_approval(challenge['id'], ('blocked', 'failed', 'restored'), now)
+    check('services: a service whose end-to-end proof is incomplete is refused before any restart',
+          found['operation']['stage'] == 'blocked' and any(c['code'] == 'evidence_missing' for c in found['operation']['checks']))
     # As the runner ends, every canvas token it gave out is revoked at the service: one minted by this runner for a new turn.
     calling_as('phone')
     before = len(service_calls)

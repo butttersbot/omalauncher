@@ -54,6 +54,11 @@ class Clock:
 class Base(unittest.TestCase):
     def setUp(self):
         self.dir = pathlib.Path(tempfile.mkdtemp()).resolve()  # /var is a symlink on macOS; the trust chain refuses symlinks
+        # Controller mechanics are tested with every service's evidence complete; MissingEvidence tests the real policy.
+        self.saved_missing, S.MISSING_EVIDENCE = S.MISSING_EVIDENCE, {}
+        self.addCleanup(lambda: setattr(S, 'MISSING_EVIDENCE', self.saved_missing))
+        installed, S.installed = S.installed, lambda service: True  # portable: this host's real plists don't matter here
+        self.addCleanup(lambda: setattr(S, 'installed', installed))
         self.private, self.key_id, self.public = owner_key()
         trust_dir = self.dir / 'Soma'
         trust_dir.mkdir(mode=0o755)
@@ -351,6 +356,24 @@ class Modes(Base):
             S.PROBED = saved
         self.assertEqual((op['stage'], self.backend.calls), ('blocked', []))
 
+    def test_the_root_helper_gets_the_owners_own_proof_which_is_never_recorded(self):
+        seen = []
+        self.backend.privileged = lambda service, proof: seen.append((service, proof))
+        self.probe_result = [S.mkcheck('herd_identity', 'herd', 'ok', 'pass')]
+        c = self.control.request('herd')
+        body = self.approve_body(c)
+        saved, S.PRIVILEGED_HELPER = S.PRIVILEGED_HELPER, self.trust_file  # "installed"
+        try:
+            op = self.op(self.control.approve('herd', body))
+        finally:
+            S.PRIVILEGED_HELPER = saved
+        self.assertEqual(op['stage'], 'restored')
+        self.assertEqual(seen, [('herd', {'approval': c['id'], 'nonce': c['nonce'], 'service': 'herd', 'host': 'jacks-mac-pro', 'expires_at': c['expires_at'],
+                                          'owner_key_id': self.key_id, 'owner_signature': body['owner_signature']})])
+        blob = ''.join(p.read_text() for p in (self.dir / 'state').rglob('*.json'))
+        self.assertNotIn(body['owner_signature'][:20], blob)
+        self.assertNotIn(c['nonce'], blob)
+
     def test_an_unsupported_check_beside_passes_is_never_restored(self):
         self.probe_result = [S.mkcheck('soma_identity', 'soma', 'ok', 'pass'), S.mkcheck('extra', 'soma', 'no_capability_probe', 'unsupported')]
         op = self.op(self.control.approve('soma', self.approve_body(self.control.request('soma'))))
@@ -381,6 +404,30 @@ class Modes(Base):
         self.probe_result = [S.mkcheck('soma_probe', 'soma', 'reachable_unverified', 'unverified')]
         op = self.op(self.control.approve('soma', self.approve_body(self.control.request('soma'))))
         self.assertEqual((op['stage'], op['verified']), ('failed', False))
+
+    def test_a_crash_before_the_restart_began_ends_interrupted_by_checking_only(self):
+        held = []
+        self.control.spawn = lambda fn, *a: held.append((fn, a))  # the worker never starts: the process "crashes" here
+        result = self.control.approve('soma', self.approve_body(self.control.request('soma')))
+        self.assertEqual(self.op(result)['stage'], 'checking')
+        records = S.Records(self.dir / 'state')
+        for passing, stage_verified in ((True, ('interrupted', True)), (False, ('interrupted', False))):
+            if not passing:  # a second crashed operation, on another service, whose check now fails
+                self.control.spawn = lambda fn, *a: held.append((fn, a))
+                result = self.control.approve('syncthing', self.approve_body(self.control.request('syncthing')))
+                self.probe_result = [S.mkcheck('x', 'syncthing', 'down', 'fail')]
+            after = S.Controller(self.backend, lambda: dict(self.counts), records=records, trust=self.control.trust, gate=S.WorkGate(self.locks),
+                                 probe=lambda service: list(self.probe_result), state=lambda service: {}, host='jacks-mac-pro',
+                                 clock=self.clock, sleep=lambda s: None, spawn=lambda fn, *a: fn(*a))
+            after.resume()
+            op = self.op(result)
+            self.assertEqual((op['stage'], op['verified']), stage_verified)
+            self.assertIs(op['restarted'], False)
+        self.assertEqual(self.backend.calls, [])  # zero executions, before or after
+        incident = json.loads((self.dir / 'state' / 'incidents' / 'newest.json').read_text())
+        self.assertEqual(incident['root_cause'], 'interrupted_before_restart')
+        after.resume()
+        self.assertEqual(self.backend.calls, [])  # terminal: nothing left to resume
 
     def test_runner_self_restart_journals_then_exits_and_resume_verifies(self):
         result = self.control.approve('runner', self.approve_body(self.control.request('runner')))
@@ -413,8 +460,7 @@ class Records(Base):
         self.assertEqual(inv['owner_trust']['state'], 'ready')
         by = {s['id']: s for s in inv['services']}
         self.assertTrue(by['soma']['restart']['supported'])
-        self.assertEqual(by['tailscaled']['restart'].get('blocked_reason'), 'owner_verifying_privileged_helper_unavailable')
-        self.assertFalse(by['tailscaled']['restart']['supported'])
+        self.assertEqual(by['tailscaled']['restart'].get('blocked_reason'), 'owner_verified_control_broker_unavailable')
         self.assertTrue(by['canvas']['restart']['supported'])
         self.assertNotIn('nonce', json.dumps(inv))
 
@@ -436,10 +482,10 @@ class Probes(unittest.TestCase):
         try:
             for why in ('oversized reply', 'incomplete or non-JSON reply'):
                 def fetch(url, why=why, **k): raise S.Unverified(why)
-                (check,) = S.capability_probe('soma', fetch=fetch, keys=keys)
+                (check,) = S._probe('soma', fetch=fetch, keys=keys)
                 self.assertEqual((check['code'], check['result']), ('reachable_unverified', 'unverified'))
             def down(url, **k): raise OSError('connection refused')
-            self.assertEqual(S.capability_probe('soma', fetch=down, keys=keys)[0]['result'], 'fail')
+            self.assertEqual(S._probe('soma', fetch=down, keys=keys)[0]['result'], 'fail')
         finally:
             del os.environ['OMA_RUNNER_SOMA_SERVICE']
 
@@ -475,25 +521,27 @@ class Probes(unittest.TestCase):
         self.status = {'BackendState': 'Running', 'Self': {'DNSName': 'jacks-mac-pro.tail.ts.net.', 'Online': True, 'TailscaleIPs': ['100.64.0.9', 'fd7a::9'],
                        'UserID': 7}, 'User': {'7': {'LoginName': 'owner@example.com'}}, 'Peer': {'a': {'Online': True}, 'b': {'Online': False}}}
         self.run = lambda argv, **k: Fake(returncode=0, stdout=json.dumps(self.status), stderr='')
+        self.saved_fields, S.plist_fields = S.plist_fields, lambda service, load=None: {}  # the defaults, whatever is installed here
 
     def tearDown(self):
         S.TAILSCALE_PATHS = self.saved_paths
+        S.plist_fields = self.saved_fields
 
     def test_soma_needs_the_runners_key_sends_it_and_never_records_it(self):
         os.environ['OMA_RUNNER_SOMA_SERVICE'] = 'http://127.0.0.1:1'
         try:
-            self.assertEqual(S.capability_probe('soma')[0]['code'], 'no_runner_key')
+            self.assertEqual(S._probe('soma')[0]['code'], 'no_runner_key')
             sent = []
             def fetch(url, headers=None, **k):
                 sent.append(headers)
                 return 200, {'ok': True, 'service': 'soma-serve', 'machine': 'jacks-mac-pro', 'public': {'secret_token': 'zzz-public'}}
-            (check,) = S.capability_probe('soma', fetch=fetch, keys={'soma': lambda: 'runner-device-key-123456'})
+            (check,) = S._probe('soma', fetch=fetch, keys={'soma': lambda: 'runner-device-key-123456'})
             self.assertEqual(check['result'], 'pass')
             self.assertEqual(sent, [{'Authorization': 'Bearer runner-device-key-123456'}])
             self.assertNotIn('runner-device-key', json.dumps(check))
             self.assertNotIn('zzz-public', json.dumps(check))
             def refused(url, **k): raise urllib.error.HTTPError(url, 401, 'no', {}, None)
-            (check,) = S.capability_probe('soma', fetch=refused, keys={'soma': lambda: 'k' * 20})
+            (check,) = S._probe('soma', fetch=refused, keys={'soma': lambda: 'k' * 20})
             self.assertEqual((check['code'], check['result']), ('auth_refused', 'unverified'))
         finally:
             del os.environ['OMA_RUNNER_SOMA_SERVICE']
@@ -503,17 +551,17 @@ class Probes(unittest.TestCase):
             self.assertTrue(url.startswith('http://100.64.0.9:'), url)
             return 200, {'machine': 'jacks-mac-pro', 'name': 'jacks-mac-pro', 'sessions': [{'title': 'PRIVATE prompt text', 'cwd': '/Users/x/secret'}]}
         for service in ('herd', 'tailshare-serve'):
-            (check,) = S.capability_probe(service, fetch=fetch, run=self.run)
+            (check,) = S._probe(service, fetch=fetch, run=self.run)
             self.assertEqual(check['result'], 'pass', service)
             self.assertNotIn('PRIVATE', json.dumps(check))
             self.assertNotIn('/Users/x', json.dumps(check))
 
     def test_tailscaled_keeps_backend_state_never_the_login(self):
-        (check,) = S.capability_probe('tailscaled', run=self.run)
+        (check,) = S._probe('tailscaled', run=self.run)
         self.assertEqual((check['result'], check['fields']), ('pass', {'backend_state': 'Running', 'peers_online': 1}))
         self.assertNotIn('owner@example.com', json.dumps(check))
         self.status['BackendState'] = 'Stopped'
-        self.assertEqual(S.capability_probe('tailscaled', run=self.run)[0]['result'], 'fail')
+        self.assertEqual(S._probe('tailscaled', run=self.run)[0]['result'], 'fail')
 
     def test_imessage_needs_send_ready_and_never_records_handles_or_token(self):
         token = pathlib.Path(tempfile.mkdtemp()) / 'token'
@@ -526,15 +574,15 @@ class Probes(unittest.TestCase):
             def fetch(url, headers=None, **k):
                 sent.append(headers)
                 return 200, dict(body)
-            (check,) = S.capability_probe('imessage-api', fetch=fetch, run=self.run)
+            (check,) = S._probe('imessage-api', fetch=fetch, run=self.run)
             self.assertEqual(check['result'], 'pass')
             self.assertEqual(sent[0], {'Authorization': 'Bearer imessage-bearer-abcdef'})
             for leak in ('+1555', 'me@example.com', 'imessage-bearer'):
                 self.assertNotIn(leak, json.dumps(check))
             body['sendReady'] = False
-            self.assertEqual(S.capability_probe('imessage-api', fetch=fetch, run=self.run)[0]['result'], 'fail')
+            self.assertEqual(S._probe('imessage-api', fetch=fetch, run=self.run)[0]['result'], 'fail')
             token.unlink()
-            self.assertEqual(S.capability_probe('imessage-api', fetch=fetch, run=self.run)[0]['code'], 'no_token')
+            self.assertEqual(S._probe('imessage-api', fetch=fetch, run=self.run)[0]['code'], 'no_token')
         finally:
             S.IMESSAGE_TOKEN = saved
 
@@ -542,17 +590,17 @@ class Probes(unittest.TestCase):
         replies = {'/healthz': {'ok': True, 'uptime': 5}, '/health': {'ok': True, 'model': 'm', 'dim': 768, 'status': 'ok'}}
         fetch = lambda url, **k: (200, replies[urllib.parse.urlsplit(url).path])
         for service in ('canvas', 'embeddings', 'whisper'):
-            self.assertEqual([c['result'] for c in S.capability_probe(service, fetch=fetch, run=self.run)], ['pass'], service)
+            self.assertEqual([c['result'] for c in S._probe(service, fetch=fetch, run=self.run)], ['pass'], service)
         replies['/health'] = {'ok': True, 'model': 'm', 'dim': 0, 'status': 'loading'}
         for service in ('embeddings', 'whisper'):
-            self.assertEqual(S.capability_probe(service, fetch=fetch, run=self.run)[0]['result'], 'fail', service)
+            self.assertEqual(S._probe(service, fetch=fetch, run=self.run)[0]['result'], 'fail', service)
         up = lambda service: {'loaded': True, 'state': 'running', 'pid': 9, 'last_exit': 0}
         down = lambda service: {'loaded': True, 'state': 'waiting', 'pid': None, 'last_exit': 1}
-        self.assertEqual(S.capability_probe('tailshare-receive', state=up)[0]['result'], 'pass')
-        self.assertEqual(S.capability_probe('tailshare-receive', state=down)[0]['result'], 'fail')
+        self.assertEqual(S._probe('tailshare-receive', state=up)[0]['result'], 'pass')
+        self.assertEqual(S._probe('tailshare-receive', state=down)[0]['result'], 'fail')
         saved, S.TRANSPORT_SOCKET = S.TRANSPORT_SOCKET, pathlib.Path(tempfile.mkdtemp()) / 'missing.sock'
         try:
-            self.assertEqual([c['result'] for c in S.capability_probe('imessage-transport', state=up)], ['pass', 'fail'])
+            self.assertEqual([c['result'] for c in S._probe('imessage-transport', state=up)], ['pass', 'fail'])
         finally:
             S.TRANSPORT_SOCKET = saved
 
@@ -572,6 +620,101 @@ class Probes(unittest.TestCase):
         states['docs'] = {'state': 'error', 'errors': 2}
         self.assertEqual(S.syncthing_folders(fetch, config=config)['result'], 'fail')
         self.assertEqual(S.syncthing_folders(fetch, config=config.parent / 'none.xml')['result'], 'unverified')
+
+
+class MissingEvidence(Base):
+    def setUp(self):
+        super().setUp()
+        S.MISSING_EVIDENCE = self.saved_missing
+
+    def test_identity_or_process_only_services_carry_required_unverified_checks(self):
+        for service in ('soma', 'canvas', 'tailshare-serve', 'tailshare-receive', 'herd', 'embeddings', 'imessage-transport', 'runner'):
+            extra = S.missing_checks(service)
+            self.assertTrue(extra, service)
+            self.assertTrue(all(c['result'] == 'unverified' and c['fields']['required'] is True and c['fields']['missing'] for c in extra), service)
+        self.assertEqual({c['check'] for c in S.missing_checks('runner')}, {'provider_auth', 'build_toolchain', 'source_freshness'})
+        for service in ('syncthing', 'tailscaled', 'whisper', 'imessage-api'):
+            self.assertEqual(S.missing_checks(service), [], service)
+
+    def test_the_probe_appends_them_so_a_passing_identity_is_not_ready(self):
+        checks = S.capability_probe('canvas', fetch=lambda url, **k: (200, {'ok': True}))
+        self.assertEqual([c['result'] for c in checks], ['pass', 'unverified'])
+        self.assertEqual(checks[-1]['code'], 'evidence_missing')
+
+    def test_a_service_not_installed_here_is_refused_and_listed_separately(self):
+        S.installed = lambda service: service != 'herd'
+        op = self.op(self.control.approve('herd', self.approve_body(self.control.request('herd'))))
+        self.assertEqual((op['stage'], self.backend.calls), ('blocked', []))
+        by = {x['id']: x for x in self.control.inventory(budget=2)['services']}
+        self.assertEqual((by['herd']['installed'], by['herd']['restart']['blocked_reason']), (False, 'not_installed'))
+        self.assertEqual((by['syncthing']['optional'], by['syncthing']['loaded'], by['syncthing']['running']), (True, True, True))
+
+    def test_a_restart_that_could_only_be_half_verified_is_refused_before_it_starts(self):
+        op = self.op(self.control.approve('soma', self.approve_body(self.control.request('soma'))))
+        self.assertEqual((op['stage'], op['verified'], self.backend.calls), ('blocked', False, []))
+        self.assertIn('soma_sync', [c['check'] for c in op['checks']])
+        incident = json.loads((self.dir / 'state' / 'incidents' / 'newest.json').read_text())
+        self.assertEqual(incident['root_cause'], 'incomplete_capability_proof')
+        by = {x['id']: x for x in self.control.inventory(budget=2)['services']}
+        self.assertEqual((by['soma']['restart']['supported'], by['soma']['restart']['blocked_reason']), (False, 'incomplete_capability_proof'))
+        self.assertTrue(by['syncthing']['restart']['supported'])
+
+
+class Presence(unittest.TestCase):
+    def setUp(self):
+        self.saved = S.installed, S.plist_path, S.TAILSCALE_PATHS
+        self.dir = pathlib.Path(tempfile.mkdtemp())
+        S.plist_path = lambda service: self.dir / (S.SERVICES[service][1] + '.plist')
+        S.TAILSCALE_PATHS = (sys.executable,)
+
+    def tearDown(self):
+        S.installed, S.plist_path, S.TAILSCALE_PATHS = self.saved
+
+    def test_a_service_this_host_lacks_is_neutral_and_never_probed(self):
+        def fetch(url, **k): raise AssertionError('probed a service that is not installed')
+        (check,) = S.capability_probe('herd', fetch=fetch)
+        self.assertEqual((check['code'], check['result'], check['fields']), ('not_installed', 'not_installed', {'optional': False}))
+        (check,) = S.capability_probe('syncthing', fetch=fetch)
+        self.assertEqual((check['code'], check['result'], check['fields']), ('disabled', 'not_installed', {'optional': True}))
+        self.assertTrue(S.installed('runner'))
+
+    def test_the_same_label_is_a_root_daemon_on_one_mac_and_a_user_agent_on_another(self):
+        S.plist_path = self.saved[1]
+        saved = S.SYSTEM_PLISTS, S.USER_PLISTS
+        S.SYSTEM_PLISTS, S.USER_PLISTS = self.dir / 'daemons', self.dir / 'agents'
+        try:
+            S.SYSTEM_PLISTS.mkdir(); S.USER_PLISTS.mkdir()
+            (S.SYSTEM_PLISTS / 'dev.herd.node.plist').write_text('x')        # Mac Pro
+            (S.USER_PLISTS / 'com.tailshare.serve.plist').write_text('x')    # MacBook
+            self.assertEqual(S.placement('herd'), ('system', 'dev.herd.node', 'privileged'))
+            self.assertEqual(S.target('herd'), 'system/dev.herd.node')
+            self.assertEqual(S.placement('tailshare-serve'), ('gui', 'com.tailshare.serve', 'gui'))  # restarted as the user, no root
+            self.assertEqual(S.target('tailshare-serve'), 'gui/%d/com.tailshare.serve' % os.getuid())
+            (S.USER_PLISTS / 'dev.omalauncher.runner.plist').write_text('x')
+            self.assertEqual(S.placement('runner')[2], 'self')
+            self.assertFalse(S.installed('whisper'))
+            self.assertEqual(S.placement('whisper'), S.SERVICES['whisper'])  # absent: the table's default, and not installed
+        finally:
+            S.SYSTEM_PLISTS, S.USER_PLISTS = saved
+
+    def test_the_port_comes_from_the_installed_plist_and_nothing_else_is_kept(self):
+        plistlib = __import__('plistlib')
+        (self.dir / 'com.jackkim.soma-canvas.plist').write_bytes(plistlib.dumps({'Label': 'com.jackkim.soma-canvas',
+            'ProgramArguments': ['/bin/zsh', '-lc', 'npx tsx src/server/server.ts'],
+            'EnvironmentVariables': {'CANVAS_PORT': '5861', 'CANVAS_OWNER_KEY': 'owner-secret-zzz', 'HOME': '/Users/x'}}))
+        self.assertEqual(S.plist_fields('canvas'), {'port': '5861'})
+        self.assertEqual(S.endpoint('canvas'), ('127.0.0.1', 5861))
+        asked = []
+        checks = S.capability_probe('canvas', fetch=lambda url, **k: (asked.append(url), (200, {'ok': True}))[1])
+        self.assertEqual(asked, ['http://127.0.0.1:5861/healthz'])
+        self.assertNotIn('owner-secret', json.dumps(checks))
+        (self.dir / 'dev.omalauncher.whisper-server.plist').write_bytes(plistlib.dumps({'ProgramArguments': [
+            '/opt/homebrew/bin/whisper-server', '--model', 'm.bin', '--host', '100.64.0.9', '--port', '8188']}))
+        self.assertEqual(S.endpoint('whisper', run=lambda *a, **k: None), ('100.64.0.9', 8188))
+        (self.dir / 'dev.omalauncher.embed-server.plist').write_bytes(plistlib.dumps({'ProgramArguments': ['x'],
+            'EnvironmentVariables': {'EMBED_HOST': '8.8.8.8', 'EMBED_PORT': '99999'}}))  # not this Mac; not a port
+        run = lambda argv, **k: Fake(returncode=0, stdout=json.dumps({'Self': {'TailscaleIPs': ['100.64.0.1']}}), stderr='')
+        self.assertEqual(S.endpoint('embeddings', run=run), ('100.64.0.1', 8179))
 
 
 class Redaction(unittest.TestCase):
@@ -674,37 +817,158 @@ class OwnerKeysForTheInstaller(unittest.TestCase):
         self.assertEqual((r.returncode, r.stdout), (1, ''))
 
 
-class PrivilegedHelperSource(unittest.TestCase):
-    """The helper and its installer are only read or run in modes that change nothing; install/remove are never run."""
-    helper, installer = HERE / 'soma-service-helper', HERE / 'install-service-helper.sh'
+class PrivilegedHelper(unittest.TestCase):
+    """The Swift root helper, built here and run unprivileged in its test mode (SOMA_HELPER_TEST_DIR, ignored as root), where it
+    prints the one command it would run. install/remove are never run by a test."""
+    source, installer = HERE / 'soma-service-helper.swift', HERE / 'install-service-helper.sh'
+    binary = None
 
-    def sh(self, *args):
+    @classmethod
+    def setUpClass(cls):
+        import shutil, subprocess
+        if os.geteuid() == 0 or not shutil.which('swiftc'):
+            return
+        folder = pathlib.Path(tempfile.mkdtemp())
+        for name, flags in (('test', ['-D', 'SOMA_HELPER_TESTING']), ('installed', [])):  # the installer builds the second
+            r = subprocess.run(['swiftc', '-O', *flags, str(cls.source), '-o', str(folder / name)], capture_output=True, text=True, timeout=600)
+            assert r.returncode == 0, r.stderr[-2000:]
+        cls.binary, cls.installed = folder / 'test', folder / 'installed'
+
+    def setUp(self):
+        if not self.binary:
+            self.skipTest('needs swiftc and a non-root user')
+        self.dir = pathlib.Path(tempfile.mkdtemp()).resolve()
+        self.private, self.key_id, public = owner_key()
+        (self.dir / 'connections-owner-keys.json').write_text(json.dumps({'version': 1, 'keys': [
+            {'key_id': self.key_id, 'algorithm': 'ecdsa-p256-sha256', 'public_key': public, 'label': 'Fold', 'device': 'f', 'added_at': 1, 'revoked': False}]}))
+        (self.dir / 'helper.json').write_text(json.dumps({'version': 1, 'host': 'jacks-mac-pro'}))
+        for f in ('connections-owner-keys.json', 'helper.json'):
+            os.chmod(self.dir / f, 0o644)
+
+    def proof(self, service='herd', host='jacks-mac-pro', expires=None, plan=None, sign_service=None, **over):
+        import secrets as _s
+        approval, nonce = 'svc-' + _s.token_hex(16), _s.token_urlsafe(24)
+        expires = expires if expires is not None else int(time.time() * 1000) + 120_000
+        payload = S.canonical_payload(approval, nonce, sign_service or service, host, expires)
+        body = {'approval': approval, 'nonce': nonce, 'service': service, 'host': host, 'expires_at': expires, 'owner_key_id': self.key_id}
+        if plan is not None:
+            items = plan + [base64.b64encode(payload.encode()).decode()]
+            body['owner_payloads'] = items
+            body['owner_signature'] = sign(self.private, S.plan_message(items))
+        else:
+            body['owner_signature'] = sign(self.private, payload)
+        body.update(over)
+        return body
+
+    def run_helper(self, body, args=(), test_dir=True, raw=None, fail=None):
         import subprocess
-        return subprocess.run(['/bin/sh', *map(str, args)], capture_output=True, text=True, timeout=10)
+        env = {'PATH': '/usr/bin:/bin', **({'SOMA_HELPER_TEST_DIR': str(self.dir)} if test_dir else {}), **({'SOMA_HELPER_FAIL': fail} if fail else {})}
+        return subprocess.run([str(self.binary), *args], input=raw if raw is not None else json.dumps(body), capture_output=True, text=True, timeout=20, env=env)
+
+    def test_a_signed_approval_runs_the_one_fixed_command_once(self):
+        body = self.proof('herd')
+        r = self.run_helper(body)
+        self.assertEqual((r.returncode, r.stdout.strip()), (0, 'would run: /bin/launchctl kickstart -k system/dev.herd.node'), r.stderr)
+        r = self.run_helper(body)
+        self.assertEqual((r.returncode, r.stderr.strip()), (65, 'refused: approval_already_used'))
+        self.assertEqual(stat.S_IMODE(os.stat(self.dir / 'used-approvals').st_mode), 0o700)
+
+    def test_unsigned_or_self_asserted_calls_are_refused(self):
+        unsigned = self.proof('tailscaled')
+        del unsigned['owner_signature']
+        for body in (unsigned, {'service': 'tailscaled', 'owner': True}, {'service': 'tailscaled'}, {**self.proof('tailscaled'), 'owner_signature': sign(owner_key()[0], 'x')}):
+            r = self.run_helper(body)
+            self.assertEqual(r.returncode, 65, body.keys())
+            self.assertEqual(r.stdout, '')
+        self.assertEqual(self.run_helper(None, raw='').returncode, 65)
+
+    def test_the_signature_binds_service_host_expiry_and_key(self):
+        cases = {
+            'bad_signature': self.proof('tailscaled', sign_service='herd'),
+            'wrong_host': self.proof('herd', host='other-mac'),
+            'expired': self.proof('herd', expires=int(time.time() * 1000) - 1),
+            'expired ': self.proof('herd', expires=int(time.time() * 1000) + 3_600_000),  # far-future expiry is refused too
+            'owner_key': self.proof('herd', owner_key_id='0' * 64),
+            'bad_request': self.proof('canvas'),  # a gui service is not the root helper's
+        }
+        for want, body in cases.items():
+            r = self.run_helper(body)
+            self.assertEqual((r.returncode, r.stderr.strip()), (65 if want != 'bad_request' else 65, 'refused: ' + want.strip()), want)
+
+    def test_a_signed_plan_covers_its_entries_only(self):
+        other = base64.b64encode(S.canonical_payload('svc-' + 'a' * 32, 'n' * 32, 'whisper', 'jacks-mac-pro', 1).encode()).decode()
+        r = self.run_helper(self.proof('embeddings', plan=[other]))
+        self.assertEqual(r.stdout.strip(), 'would run: /bin/launchctl kickstart -k system/dev.omalauncher.embed-server', r.stderr)
+        body = self.proof('embeddings', plan=[other])
+        body['owner_payloads'] = [other]  # this restart is not in the signed plan
+        self.assertEqual(self.run_helper(body).stderr.strip(), 'refused: bad_plan')
+
+    def test_no_arguments_no_test_mode_unsafe_trust(self):
+        self.assertEqual(self.run_helper(self.proof('herd'), args=['herd']).returncode, 64)
+        self.assertEqual(self.run_helper(self.proof('herd'), test_dir=False).returncode, 77)  # not root, no test dir: nothing
+        os.chmod(self.dir / 'connections-owner-keys.json', 0o666)
+        self.assertEqual(self.run_helper(self.proof('herd')).stderr.strip(), 'refused: unsafe:connections-owner-keys.json')
+        os.chmod(self.dir / 'connections-owner-keys.json', 0o644)
+        (self.dir / 'connections-owner-keys.json').rename(self.dir / 'real.json')
+        (self.dir / 'connections-owner-keys.json').symlink_to(self.dir / 'real.json')
+        self.assertEqual(self.run_helper(self.proof('herd')).stderr.strip(), 'refused: unsafe:connections-owner-keys.json')
+
+    def test_a_use_record_not_durably_written_refuses_and_is_never_retried(self):
+        for failure in ('write', 'fsync', 'dirsync'):
+            body = self.proof('herd')
+            r = self.run_helper(body, fail=failure)
+            self.assertEqual((r.returncode, r.stdout, r.stderr.strip()), (65, '', 'refused: cannot_record_use'), failure)
+            r = self.run_helper(body)  # the same approval, persistence now fine: still used, never retried
+            self.assertEqual(r.stderr.strip(), 'refused: approval_already_used', failure)
+        self.assertEqual(self.run_helper(self.proof('herd')).returncode, 0)
+
+    def test_a_caller_that_never_finishes_its_input_cannot_hold_the_helper(self):
+        import subprocess, signal
+        env = {'PATH': '/usr/bin:/bin', 'SOMA_HELPER_TEST_DIR': str(self.dir)}
+        started = time.monotonic()
+        p = subprocess.Popen([str(self.binary)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+        p.stdin.write(b'{"approval": ')
+        p.stdin.flush()
+        try:
+            code = p.wait(timeout=15)
+        finally:
+            p.kill()
+            p.stdin.close(); p.stdout.close(); p.stderr.close()
+        self.assertEqual(code, -signal.SIGALRM)
+        self.assertLess(time.monotonic() - started, 10)
+
+    def test_the_installed_build_has_no_test_mode(self):
+        import subprocess
+        env = {'PATH': '/usr/bin:/bin', 'SOMA_HELPER_TEST_DIR': str(self.dir)}
+        r = subprocess.run([str(self.installed)], input=json.dumps(self.proof('herd')), capture_output=True, text=True, timeout=20, env=env)
+        self.assertEqual((r.returncode, r.stdout, r.stderr.strip()), (77, '', 'refused: not_root'))
+        self.assertNotIn(b'SOMA_HELPER_TEST_DIR', self.installed.read_bytes())
+        self.assertNotIn(b'SOMA_HELPER_FAIL', self.installed.read_bytes())
+        self.assertNotIn(b'would run', self.installed.read_bytes())
+        self.assertIn(b'SOMA_HELPER_TEST_DIR', self.binary.read_bytes())  # the check above would catch it
+        self.assertNotIn('SOMA_HELPER_TESTING', self.installer.read_text())
+
+    def test_secrets_never_echo(self):
+        body = self.proof('herd', host='other-mac')
+        r = self.run_helper(body)
+        for secret in (body['nonce'], body['owner_signature'][:16]):
+            self.assertNotIn(secret, r.stdout + r.stderr)
 
     def test_the_helper_table_is_exactly_the_privileged_allowlist(self):
         import re
-        table = dict(re.findall(r'^  ([a-z-]+)\) label=([A-Za-z0-9.-]+) ;;$', self.helper.read_text(), re.M))
+        table = dict(re.findall(r'^    "([a-z-]+)": "([A-Za-z0-9.-]+)",$', self.source.read_text(), re.M))
         self.assertEqual(table, {k: v[1] for k, v in S.SERVICES.items() if v[2] == 'privileged'})
-        self.assertIn(str(S.PRIVILEGED_HELPER), self.installer.read_text())
-        self.assertIn(' '.join(table), self.installer.read_text())
 
-    def test_the_helper_refuses_anything_but_one_allowlisted_id_before_launchctl(self):
-        for args in ([], ['canvas'], ['herd', 'extra'], ['system/dev.herd.node'], ['herd;id'], ['../herd']):
-            r = self.sh(self.helper, *args)
-            self.assertEqual(r.returncode, 64, args)
-
-    def test_unsigned_privileged_authority_is_not_installable(self):
-        for script in (self.helper, self.installer):
-            self.assertEqual(self.sh('-n', script).returncode, 0, script)
-        for service in [k for k, v in S.SERVICES.items() if v[2] == 'privileged']:
-            self.assertEqual(self.sh(self.helper, service).returncode, 78)
+class LocalRootControlPolicy(unittest.TestCase):
+    def test_unreviewed_control_broker_cannot_be_installed_or_run(self):
+        import subprocess
         for mode in ('install', 'remove', 'print-sudoers'):
-            result = self.sh(self.installer, mode, 'jackkim')
-            self.assertEqual(result.returncode, 78)
-            self.assertNotIn('NOPASSWD', result.stdout)
-        for bad in ('', 'ALL', 'a b', 'x,y', 'root:wheel'):
-            self.assertEqual(self.sh(self.installer, 'print-sudoers', bad).returncode, 64)
+            r = subprocess.run(['/bin/sh', str(HERE / 'install-service-helper.sh'), mode, 'jackkim'], capture_output=True, text=True, timeout=10)
+            self.assertEqual(r.returncode, 78)
+            self.assertNotIn('NOPASSWD', r.stdout)
+        with self.assertRaises(S.Blocked):
+            S.LiveBackend().privileged('tailscaled', {})
+
 
 
 class LiveBackendIsNeverUsedHere(unittest.TestCase):
