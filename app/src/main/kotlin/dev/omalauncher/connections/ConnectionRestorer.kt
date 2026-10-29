@@ -70,6 +70,10 @@ internal class ConnectionRestorer(private val context: Context, private val runt
                         val checks = service.optJSONObject("probe")?.optJSONArray("checks") ?: JSONArray()
                         val failed = (0 until checks.length()).any { checks.getJSONObject(it).optString("result") == "fail" }
                         if (!failed) continue // Unknown, unsupported or stale never authorize an inferred repair.
+                        if ((0 until checks.length()).any { checks.getJSONObject(it).optString("result") !in setOf("pass", "fail", "auth") }) {
+                            blocked += ConnectionCheck(id, host, result = "unverified", fields = mapOf("reason" to "At least one required capability proof is unsupported or incomplete."))
+                            continue
+                        }
                         val authRequired = (0 until checks.length()).any {
                             val check = checks.getJSONObject(it)
                             check.optString("result") == "auth" || check.optJSONObject("fields")?.optInt("http_status") in setOf(401, 403)
