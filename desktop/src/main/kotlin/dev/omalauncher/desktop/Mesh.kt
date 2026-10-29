@@ -61,7 +61,46 @@ fun meshTable(me: String, runners: List<RunnerSeen>): String {
     return (listOf(header) + lines).joinToString("\n")
 }
 
+/** The name a proof thread goes by (`soma --mesh --prove`), so `--read` on another Soma can find it: who made it, and when. */
+const val MESH_PROOF = "Mesh proof from "
+
 object Mesh {
+    /**
+     * `soma --mesh --prove` (A, 2026-10-29: "prove each with a real create plus a read of that thread from the other Soma"):
+     * a thread made on every runner this Soma has a key for, in the first folder that runner allows, named [MESH_PROOF] and
+     * this machine; nothing is sent to it, so no agent runs. Says each thread's id; 0 when every runner made one.
+     */
+    fun prove(say: (String) -> Unit): Int {
+        val me = tailnet().first ?: SomaHome.machine
+        val stamp = java.time.LocalDateTime.now().withNano(0).toString().replace('T', ' ')
+        var failed = 0
+        for (m in RunnerKeys.read()) {
+            val client = dev.omalauncher.assist.MacRunnerClient(m.config, m.id)
+            // The runner says which folders it allows when asked for one it doesn't: the first of them.
+            val roots = (client.makeThread("x", "/nonexistent-mesh-probe") as? dev.omalauncher.assist.MacAnswer.Refused)?.roots.orEmpty()
+            val made = roots.firstOrNull()?.let { client.makeThread("$MESH_PROOF$me $stamp", it) }
+            val thread = (made as? dev.omalauncher.assist.MacAnswer.Ok)?.value
+            if (thread != null) say("made on ${m.id}: \"${thread.name}\" ${thread.id}") else { failed++; say("FAILED on ${m.id}: ${made ?: "it named no folder to make one in"}") }
+        }
+        return if (failed == 0) 0 else 1
+    }
+
+    /** `soma --mesh --read`: the proof threads on every runner this Soma reaches, whoever made them, read from here. */
+    fun read(say: (String) -> Unit): Int {
+        var failed = 0
+        for (m in RunnerKeys.read()) {
+            when (val listed = dev.omalauncher.assist.MacRunnerClient(m.config, m.id).threads()) {
+                is dev.omalauncher.assist.MacAnswer.Ok -> {
+                    val proofs = listed.value.filter { it.name.startsWith(MESH_PROOF) }
+                    say("${m.id}: ${proofs.size} proof thread${if (proofs.size == 1) "" else "s"}" + proofs.joinToString("") { "\n  ${it.name} (${it.id})" })
+                }
+                else -> { failed++; say("FAILED to read ${m.id}: $listed") }
+            }
+        }
+        return if (failed == 0) 0 else 1
+    }
+
+
     private const val PORT = 8478
 
     /** One authenticated GET (or a bare one with no [key]): its status and body; status 0 when nothing answered. */
@@ -116,7 +155,9 @@ object Mesh {
         if (unknown.isNotEmpty()) say("(${unknown.joinToString()}: an older runner that doesn't say who it lets in; its column shows only this Soma.)")
         val gaps = meshGaps(me, seen)
         seen.filter { it.awaiting }.forEach { say("${it.name}: its phone runner comes with its next bundle; its legs are expected, not missing.") }
-        if (gaps.isEmpty()) return 0.also { say("no missing legs") }
+        // A runner that can't say who it lets in (an older one) may hide another Soma's missing leg: never "none" then.
+        val blind = seen.filter { !it.awaiting && it.lets == null }.map { it.name }
+        if (gaps.isEmpty()) return 0.also { say(if (blind.isEmpty()) "no missing legs" else "no missing legs from this Soma; the others' legs to ${blind.joinToString()} can't be seen from here (run soma --mesh on each, or update those runners)") }
         say("${gaps.size} missing leg${if (gaps.size == 1) "" else "s"}, each made by pairing on the runner it leads to:")
         for (g in gaps) say("  ${g.soma}'s Soma -> ${g.runner}: ${g.fix}")
         return 1

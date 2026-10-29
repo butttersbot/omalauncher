@@ -70,7 +70,11 @@ fun main(args: Array<String>) {
     if ("--keychain-check" in args) return println(RunnerKeys.check())
     // `soma check`: scratch chats on this Mac's runner, made, answered, approved and stopped with Soma's own key (Check.kt).
     // Two-way roads (Boss, 2026-10-28): every leg between this Soma, the other Somas and every runner, by name.
-    if (args.firstOrNull() == "--mesh" || args.firstOrNull() == "mesh") exitProcess(Mesh.run(::println))
+    if (args.firstOrNull() == "--mesh" || args.firstOrNull() == "mesh") exitProcess(when (args.getOrNull(1)) {
+        "--prove" -> Mesh.prove(::println)
+        "--read" -> Mesh.read(::println)
+        else -> Mesh.run(::println)
+    })
     if (args.firstOrNull() == "check") exitProcess(if (args.getOrNull(1) == "stop" && args.size == 3) Check.stop(args[2], ::println) else Check.run(::println))
     if ("--start-at-login" in args) return println(Login.install())
     if ("--no-start-at-login" in args) return println(Login.remove())
