@@ -47,12 +47,13 @@ fun ConnectionsModule(size: ModuleSize, now: Long, modifier: Modifier = Modifier
         .clickable { expanded = true }.semantics { contentDescription = "Connections module" }.padding(12.dp)) {
         val small = maxWidth < 280.dp
         val large = maxHeight > 190.dp && !small
+        val showSummary = maxHeight >= 140.dp
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 BasicText(Pack.heading("Connections"), style = Pack.display(if (small) 14.sp else 15.sp), maxLines = 1)
                 ConnectionText(if (incidents.isNotEmpty()) "△ ${incidents.size}" else if (rows.all { it.state == ConnectionState.Ready || it.state == ConnectionState.Disabled }) "✓" else "?", small = true)
             }
-            if (maxHeight >= 140.dp) {
+            if (showSummary) {
                 ConnectionText(ConnectionsSource.repair ?: bad?.let { "${it.capability.title} unavailable" } ?: if (ConnectionsSource.checking) "Checking connections…" else "Connection check", lines = 1)
                 ConnectionText(bad?.let { listOf(it.host, it.state.label).filter(String::isNotBlank).joinToString(" · ") }
                     ?: if (ConnectionsSource.snapshot.checkedAt == 0L) "Waiting for a real check" else "Tap for verified details", small = true, muted = true, lines = 1)

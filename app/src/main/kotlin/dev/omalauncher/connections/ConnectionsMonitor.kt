@@ -41,6 +41,7 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
     private val channel = "connections"
     private val paused get() = preferences.getLong("paused-until", 0) > System.currentTimeMillis()
     private val enabled get() = preferences.getBoolean("alerts", false)
+    private val notificationAllowed get() = nm.areNotificationsEnabled() && nm.getNotificationChannel(channel)?.importance != NotificationManager.IMPORTANCE_NONE
 
     fun start() {
         runCatching {
@@ -67,7 +68,7 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
         scheduler.scheduleWithFixedDelay({ check(false) }, 1, 30, TimeUnit.SECONDS)
     }
     private fun updateSettings() { main.post {
-        ConnectionsSource.enabled = enabled
+        ConnectionsSource.enabled = enabled && notificationAllowed
         ConnectionsSource.paused = paused
         ConnectionsSource.alerts = when {
             !nm.areNotificationsEnabled() -> "Android notifications are blocked. Enable them in Settings, then enable outage alerts here."
@@ -84,7 +85,7 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
             try {
                 val result = collect()
                 val now = System.currentTimeMillis()
-                val quiet = !enabled || paused
+                val quiet = !enabled || paused || !notificationAllowed
                 val notices = alerts.update(result, now, quiet)
                 val saved = JSONObject()
                 alerts.pending.forEach { (key, value) -> saved.put(key, JSONObject().put("since", value.since).put("announced", value.announced).put("last_seen", value.lastSeen).put("checks", JSONArray(value.checks.toList()))) }
@@ -106,7 +107,7 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
         }
     }
     private fun postNotice(notice: ConnectionAlerts.Notice, snapshot: ConnectionsSnapshot, now: Long) {
-        if (!nm.areNotificationsEnabled()) return
+        if (!notificationAllowed) return
         val affected = snapshot.readings.filter { it.root == notice.key }.map { it.capability.title }.distinct().joinToString(" + ")
         val title = if (notice.recovered) "Connections recovered" else "Connections need attention"
         val detail = if (notice.recovered) "The failed connection passed its authenticated checks. Open Connections for remaining unknown checks." else "$affected unavailable for at least 60 seconds. Open Connections for details."
@@ -140,13 +141,13 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
         if (tunnel == true) add(Capability.Network, ConnectionState.Ready, "Tailscale VPN interface present again; peer health is checked independently.", "network")
         val phonePaused = context.getSharedPreferences("phone-control", Context.MODE_PRIVATE).getBoolean("paused", false)
         val awake = context.getSystemService(PowerManager::class.java).isInteractive
-        val phone = when { phonePaused -> ConnectionState.Paused; !awake -> ConnectionState.Sleeping; PhoneService.instance == null -> ConnectionState.Disabled; !PhoneDisplays.helperUp() -> ConnectionState.Degraded; else -> ConnectionState.Unknown }
+        val phone = when { phonePaused -> ConnectionState.Paused; !awake -> ConnectionState.Sleeping; PhoneService.instance == null -> ConnectionState.Disabled; else -> ConnectionState.Unknown }
         add(Capability.Phone, phone, when (phone) {
             ConnectionState.Paused -> "Phone control intentionally paused."
             ConnectionState.Sleeping -> "Display asleep; Fold app controls are unavailable. No repair attempted."
             ConnectionState.Disabled -> "Accessibility service is not bound. Enable only through owner Settings."
-            ConnectionState.Degraded -> "Accessibility bound; hidden-display helper has no fresh verification. Trusted wireless ADB has not been checked by this monitor."
-            else -> "Accessibility bound and hidden-display helper verified. Trusted wireless ADB transport needs its own end-to-end probe."
+            ConnectionState.Degraded -> "Phone capability needs verification."
+            else -> if (PhoneDisplays.helperUp()) "Accessibility bound; background helper answered. Hidden display is created only on demand. Trusted wireless ADB still needs an end-to-end probe." else "Accessibility bound. Background helper is not currently verified; idle/off is not an outage. Trusted wireless ADB still needs an end-to-end probe."
         }, if (phone == ConnectionState.Degraded) "phone-helper" else null)
         add(Capability.Agents, if (runtime.connectionsLinuxRunning) ConnectionState.Unknown else ConnectionState.Disabled,
             if (runtime.connectionsLinuxRunning) "Phone Linux runtime is running. Keeper and provider sign-in are not verified by runner health."
@@ -163,12 +164,21 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
             // /threads is the authenticated capability check; it never starts a job.
             val threads = if (state == ConnectionState.Ready) connectionGet(ConnectionEndpoint(m.config.url.trimEnd('/') + "/threads", m.config.key)) else reply
             val access = connectionState(threads) { it.optBoolean("ok") && it.optJSONArray("threads") != null }
+            if (access == ConnectionState.Ready) {
+                for (capability in listOf(Capability.Agents, Capability.Builds)) add(capability, ConnectionState.Ready,
+                    "Authenticated runner inventory available again; provider/build checks below remain separate.", "runner:${m.id}", m.name)
+                // Android may omit a VPN interface when this app is excluded; an authenticated configured peer is stronger evidence.
+                val firstNetwork = rows.indexOfFirst { it.capability == Capability.Network && it.host.isEmpty() }
+                if (firstNetwork >= 0 && tunnel == false) rows[firstNetwork] = rows[firstNetwork].copy(state = ConnectionState.Ready,
+                    detail = "Authenticated configured peer is reachable despite no visible VPN interface.")
+            }
+            if (threads.code > 0) for (capability in listOf(Capability.Network, Capability.Agents, Capability.Builds)) add(capability,
+                ConnectionState.Ready, "Peer route responded; authenticated capability status is checked separately.", "network", m.name)
             add(Capability.Network, access, connectionDetail(threads, access, "Authenticated thread inventory read; pairing and this peer route verified."), if (access == ConnectionState.Ready) "runner:${m.id}" else root, m.name)
             if (access == ConnectionState.Ready) {
-                val list = JSONObject(threads.text).getJSONArray("threads")
-                val states = (0 until list.length()).mapNotNull { list.optJSONObject(it)?.optString("status") }
-                working = working?.plus(states.count { it == "working" })
-                queued = queued?.plus((0 until list.length()).sumOf { list.optJSONObject(it)?.optInt("queued", 0) ?: 0 })
+                val counts = runnerWorkCounts(JSONObject(threads.text))
+                working = counts?.let { working?.plus(it.active) }
+                queued = counts?.let { queued?.plus(it.queued) }
             } else { working = null; queued = null }
             add(Capability.Builds, if (access == ConnectionState.Ready) ConnectionState.Unknown else access,
                 if (access == ConnectionState.Ready) "Runner inventory accessible. Busy/queued is normal; build locks, source sync, toolchain and artifact delivery are not verified by this read. No separate build daemon is assumed."
@@ -216,6 +226,15 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
         if (custom != null) for (i in 0 until minOf(custom.length(), 32)) {
             val c = custom.optJSONObject(i) ?: continue
             val capability = Capability.entries.firstOrNull { it.name.equals(c.optString("capability"), true) } ?: continue
+            val intentional = when (c.optString("intentional_state")) {
+                "paused" -> ConnectionState.Paused
+                "sleeping" -> ConnectionState.Sleeping
+                else -> null
+            }
+            if (intentional != null && c.optLong("until") > System.currentTimeMillis()) {
+                rows += ConnectionReading(capability, intentional, "Owner-configured ${intentional.label.lowercase()} until ${java.util.Date(c.getLong("until"))}; no outage inferred.", System.currentTimeMillis())
+                checks.removeAll { it.capability == capability }; continue
+            }
             if (!c.optBoolean("enabled", true)) {
                 rows += ConnectionReading(capability, ConnectionState.Disabled, "Explicitly disabled in Connections configuration.", System.currentTimeMillis())
                 checks.removeAll { it.capability == capability }; continue
@@ -249,6 +268,8 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
                 Capability.Messages -> "Transport health answered. Mac permissions and message freshness need verification."
                 else -> "Service returned validated capability health."
             })
+            if (reply.code > 0) rows += ConnectionReading(check.capability, ConnectionState.Ready,
+                "Service route responded; capability status is checked separately.", System.currentTimeMillis(), "network", check.name)
             val root = if (networkDown && verified == ConnectionState.Failed) "network" else "service:${check.capability.name}:${URI(check.endpoint.url).host}"
             // Healthy transport observation retained for honest incident recovery, separately from missing end-to-end evidence.
             if (limited) rows += ConnectionReading(check.capability, ConnectionState.Ready, "Previously failing service endpoint passed its schema check.", System.currentTimeMillis(), root, check.name)

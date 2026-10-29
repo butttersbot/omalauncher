@@ -37,7 +37,9 @@ class PreviewActivity : ComponentActivity() {
         setContent {
             Box(Modifier.fillMaxSize()) {
                 Box(Modifier.fillMaxHeight().then(if (narrow) Modifier.width(400.dp) else Modifier.fillMaxWidth())) {
-                    if (intent.getBooleanExtra("phoneRunner", false)) {
+                    if (intent.getBooleanExtra("connections", false)) {
+                        ConnectionsPreview()
+                    } else if (intent.getBooleanExtra("phoneRunner", false)) {
                         val pairing = remember { object : dev.omalauncher.ui.PhoneRunnerPairing {
                             private val paired = mutableListOf<String>()
                             override fun devices() = listOf("jacks-mac-pro", "macbook-pro")

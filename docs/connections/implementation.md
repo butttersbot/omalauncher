@@ -65,3 +65,16 @@ cover/unfolded, body versus utility tap, inline inventory, stale/auth/paused and
 unknown evidence, guided/blocked Restore, active-job guard and notification
 state-machine dedup/recovery. Real-phone checks follow the combined install;
 there is no separate launcher install from this lane.
+
+First critic checkpoint 609ede5b: compile stopped at a BoxWithConstraints DSL
+scope error; no tests ran. Fixed by capturing the height condition before the
+Column scope. Review also found waiting_turns/pending/background work was not
+counted correctly and an unverified idle helper could page. The work inventory
+now parses the actual runner wire fields, refuses ambiguous input, and counts
+waiting approvals/questions and background jobs as active. Idle helper state is
+Unknown, never a proactive outage. Added regression coverage for these guards.
+The preview-only Connections fixture and connections.walk accumulate native
+cover/unfolded, size, disclosure, restored/failed/blocked and neutral-state checks.
+Its synthetic success is explicitly fictional; production has no restart path.
+Canvas read was attempted but 100.105.137.74:5860 refused the connection; approved
+appearance comes from the handed-off v6 package, with no approval changes made.
