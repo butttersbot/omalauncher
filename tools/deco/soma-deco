@@ -20,7 +20,7 @@ Nothing here reads or reuses the Deco app's login.
 Honest states (status.json "state"): unlinked, unreachable, auth-failed, error, ok. A reading the router didn't give is
 null, never 0. Only these router forms are ever called: reads (speedtest read included), reboot write. Never factory.
 """
-import getpass, json, os, secrets, subprocess, sys, time
+import contextlib, fcntl, getpass, json, os, secrets, subprocess, sys, time
 from pathlib import Path
 
 HOST = os.environ.get("SOMA_DECO_HOST", "192.168.68.1")
@@ -31,7 +31,9 @@ STATUS = HOME / ".cache/soma-deco/status.json"
 LIB = HOME / ".local/share/soma-deco/lib"     # tplink_deco_api at the inspected commit
 sys.path.insert(0, str(LIB))
 
-TEST_KEYS = ("lastTestMbps", "lastTestUpMbps", "lastTestPingMs", "lastTestAt", "lastTestLabel", "lastTestSource")
+# lastTest*: the router's own last test (the internet line). phoneTest*: Test speed from this phone (its Wi-Fi).
+TEST_KEYS = ("lastTestMbps", "lastTestUpMbps", "lastTestPingMs", "lastTestAt", "lastTestLabel",
+             "phoneTestMbps", "phoneTestUpMbps", "phoneTestPingMs", "phoneTestAt")
 CF = "https://speed.cloudflare.com"
 
 def now(): return int(time.time())
@@ -45,16 +47,25 @@ def router_test(r):
     if not r.get("ever_tested") or not at or down is None: return None
     up = r.get("up_speed")
     return {"lastTestMbps": round(down / 1000, 1), "lastTestUpMbps": None if up is None else round(up / 1000, 1),
-            "lastTestPingMs": r.get("ping_time"), "lastTestAt": int(at), "lastTestLabel": "router test · " + stamp(at), "lastTestSource": "router"}
+            "lastTestPingMs": r.get("ping_time"), "lastTestAt": int(at), "lastTestLabel": "router test · " + stamp(at)}
+
+@contextlib.contextmanager
+def status_lock():
+    """One writer of status.json at a time: the widget's poll and Test speed each read it, change it and write it."""
+    STATUS.parent.mkdir(parents=True, exist_ok=True)
+    with open(STATUS.parent / ".lock", "w") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        yield
 
 def write_status(s, router=None):
-    STATUS.parent.mkdir(parents=True, exist_ok=True)
+    with status_lock(): return _write_status(s, router)
+
+def _write_status(s, router):
     old = {}
     try: old = json.loads(STATUS.read_text())
     except Exception: pass
-    # The last speed test belongs to the network, not this read: it stays until a newer one (his phone test, or the
-    # router's own [router] test) replaces it.
-    if router and router["lastTestAt"] > (old.get("lastTestAt") or 0): old.update(router)
+    # The last speed tests belong to the network, not this read: they stay until a newer one replaces them.
+    if router: old.update(router)
     for k in TEST_KEYS:
         s.setdefault(k, old.get(k))
     tmp = STATUS.with_suffix(".tmp")
@@ -75,8 +86,6 @@ def client(c):
     d.login()
     return d
 
-def kbps_to_mbps(v):
-    return None if v is None else round(v * 8 / 1000, 1)   # the router reports KB/s
 
 def failure(exc):
     name = type(exc).__name__
@@ -87,17 +96,17 @@ def failure(exc):
 
 def poll():
     c = creds()
-    base = {"updatedAt": now(), "host": HOST, "connected": False, "downMbps": None, "upMbps": None, "devices": None, "nodes": None}
+    base = {"updatedAt": now(), "host": HOST, "connected": False, "devices": None, "nodes": None}
     if not c:
         return write_status({**base, "state": "unlinked", "message": "Not linked: run soma-deco login"})
     try:
         d = client(c)
         clients = [x for x in d.get_client_list() if x.online]
         nodes = d.get_device_list()
-        devices = sorted(({"id": x.mac, "name": x.name or x.mac, "downMbps": kbps_to_mbps(x.down_speed), "upMbps": kbps_to_mbps(x.up_speed)}
-                          for x in clients), key=lambda v: -(v["downMbps"] or 0))
-        s = {**base, "state": "ok", "connected": True, "devices": devices,
-             "downMbps": round(sum(v["downMbps"] or 0 for v in devices), 1), "upMbps": round(sum(v["upMbps"] or 0 for v in devices), 1),
+        # Names only: the router's per-device speeds aren't live (0 for the Fold under a 300 Mbps download, 2026-10-28),
+        # so none are shown (Phone A's call, 2026-10-28).
+        devices = sorted(({"id": x.mac, "name": x.name or x.mac} for x in clients), key=lambda v: v["name"].lower())
+        s = {**base, "state": "ok", "connected": True, "devices": devices, "deviceNames": [v["name"] for v in devices],
              "nodes": [{"id": n.mac, "name": n.custom_nickname or n.nickname or n.device_model, "role": n.role, "model": n.device_model} for n in nodes]}
         try: rt = router_test(d.request("admin/device", "speedtest", {"operation": "read"}))
         except Exception: rt = None
@@ -134,11 +143,11 @@ def speedtest():
     down, up = max((x for x in downs if x), default=None), max((x for x in ups if x), default=None)
     if down is None:
         print("The speed test couldn't reach Cloudflare"); return 1
-    s = json.loads(STATUS.read_text()) if STATUS.exists() else {}
-    s.update({"lastTestMbps": down, "lastTestUpMbps": up, "lastTestPingMs": ping, "lastTestAt": now(),
-              "lastTestLabel": "phone test · " + time.strftime("%H:%M"), "lastTestSource": "phone"})
-    s.pop("rawSpeedtest", None)
-    STATUS.parent.mkdir(parents=True, exist_ok=True); STATUS.write_text(json.dumps(s))
+    with status_lock():
+        s = json.loads(STATUS.read_text()) if STATUS.exists() else {}
+        s.update({"phoneTestMbps": down, "phoneTestUpMbps": up, "phoneTestPingMs": ping, "phoneTestAt": now()})
+        s.pop("rawSpeedtest", None)
+        tmp = STATUS.with_suffix(".tmp"); tmp.write_text(json.dumps(s)); tmp.replace(STATUS)
     print(json.dumps({"down": down, "up": up, "pingMs": ping})); return 0
 
 def restart_plan():
