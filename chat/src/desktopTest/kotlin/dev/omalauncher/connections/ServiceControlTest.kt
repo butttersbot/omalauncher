@@ -64,4 +64,18 @@ class ServiceControlTest {
         assertFalse(definitiveServiceRefusal(ConnectionReply(403, """{"ok":false,"error":"bad_signature","operation":{}}""")))
     }
 
+    @Test fun workGuardNeverAsksForOwnerApprovalWithUnknownQueuedWaitingOrLockedWork() {
+        fun idle() = JSONObject().put("working", 0).put("waiting", 0).put("queued", 0).put("background", 0)
+            .put("locks", org.json.JSONArray()).put("admission", "open")
+        assertTrue(serviceWorkEvidence(idle(), "mac").all { it.result == "pass" })
+        for (name in listOf("working", "waiting", "queued", "background")) {
+            assertTrue(serviceWorkEvidence(idle().put(name, 1), "mac").any { it.result == "blocked" })
+            assertTrue(serviceWorkEvidence(idle().apply { remove(name) }, "mac").any { it.result == "unverified" })
+        }
+        assertTrue(serviceWorkEvidence(idle().put("queued", "0"), "mac").any { it.result == "unverified" })
+        assertTrue(serviceWorkEvidence(idle().put("admission", "closed"), "mac").any { it.result != "pass" })
+        assertTrue(serviceWorkEvidence(idle().put("locks", org.json.JSONArray().put(JSONObject().put("held", true).put("name", "walks"))), "mac").any { it.result == "blocked" })
+        assertTrue(serviceWorkEvidence(null, "mac").any { it.result == "unverified" })
+    }
+
 }

@@ -35,6 +35,7 @@ internal class ConnectionRestorer(private val context: Context, private val runt
         }.getOrNull()
     fun start() {
         if (!busy.compareAndSet(false, true)) { publish("Restore already in progress."); return }
+        publish("Checking repair candidates…")
         io.execute {
             try {
                 if (pending().length() > 0) {
@@ -65,6 +66,8 @@ internal class ConnectionRestorer(private val context: Context, private val runt
                             mapOf("owner_key_id" to key.getString("key_id"), "next" to "Owner-approved Mac trust provisioning is required; no remote enrollment."))
                         continue
                     }
+                    val guard = serviceWorkEvidence(inventory.optJSONObject("work"), host)
+                    if (guard.any { it.result != "pass" }) { blocked += guard; continue }
                     val services = inventory.getJSONArray("services")
                     require(services.length() <= CONNECTION_SERVICE_IDS.size)
                     val seen = mutableSetOf<String>()

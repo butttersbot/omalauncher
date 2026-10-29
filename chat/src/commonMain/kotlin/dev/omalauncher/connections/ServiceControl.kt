@@ -120,3 +120,26 @@ fun definitiveServiceRefusal(reply: ConnectionReply): Boolean {
         body.has("ok") && body.get("ok") == false && !body.has("operation") && body.optString("error") in reasons
     }.getOrDefault(false)
 }
+
+/** A cheap early refusal avoids asking the owner to authenticate a repair that cannot currently run.
+ * The server still reacquires its actual locks and rechecks all work immediately before execution. */
+fun serviceWorkEvidence(work: JSONObject?, host: String): List<ConnectionCheck> {
+    val names = listOf("working", "waiting", "queued", "background")
+    val counts = names.associateWith { name -> work?.opt(name) }
+    if (counts.values.any { it !is Int && it !is Long } || counts.values.any { (it as Number).toLong() !in 0..1_000_000 })
+        return listOf(ConnectionCheck("active_work", host, result = "unverified", fields = mapOf("reason" to "Active-work counts missing or invalid")))
+    val locks = work?.optJSONArray("locks") ?: return listOf(ConnectionCheck("build_walk_locks", host, result = "unverified"))
+    if (locks.length() > 128) return listOf(ConnectionCheck("build_walk_locks", host, result = "unverified"))
+    val held = mutableListOf<String>()
+    for (i in 0 until locks.length()) {
+        val lock = locks.optJSONObject(i) ?: return listOf(ConnectionCheck("build_walk_locks", host, result = "unverified"))
+        if (lock.opt("held") !is Boolean) return listOf(ConnectionCheck("build_walk_locks", host, result = "unverified"))
+        if (lock.getBoolean("held")) held += lock.optString("name").take(80)
+    }
+    return listOf(
+        ConnectionCheck("active_work", host, result = if (counts.values.any { (it as Number).toLong() > 0 }) "blocked" else "pass",
+            fields = counts.mapValues { it.value.toString() }),
+        ConnectionCheck("build_walk_locks", host, result = if (held.isEmpty()) "pass" else "blocked", fields = mapOf("held" to held.joinToString(", "))),
+        ConnectionCheck("restart_admission", host, result = if (work?.optString("admission") == "open") "pass" else "blocked"),
+    )
+}

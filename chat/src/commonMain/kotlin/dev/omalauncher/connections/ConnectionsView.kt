@@ -43,6 +43,7 @@ private fun repairCardSummary(text: String): String = when {
     text.contains("blocked", ignoreCase = true) || text.startsWith("No verified", ignoreCase = true) -> "Repair blocked"
     text.startsWith("Owner approval", ignoreCase = true) -> "Owner confirmation"
     text.startsWith("Verifying", ignoreCase = true) -> "Verifying repair…"
+    text.startsWith("Checking", ignoreCase = true) -> "Checking repair…"
     text.startsWith("Already", ignoreCase = true) || text.contains("in progress", ignoreCase = true) -> "Repair in progress…"
     else -> text
 }
