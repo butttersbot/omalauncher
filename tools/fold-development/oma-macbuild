@@ -148,11 +148,11 @@ with zipfile.ZipFile(apk) as z:
 print('Mac build of %s: %s tests, %s skipped; proot libraries match.' % (commit[:9], m['tests'], m.get('skipped', 0)))
 PY
   code=$(sed -n 's/.*"versionCode":\([0-9]\{1,9\}\).*/\1/p' "$json")
-  # The design gate (design/soma-canvas/DESIGN-GATE.md): walked cards that drifted from Approved, or have nothing
-  # Approved, and Boss hasn't approved or waived on Canvas, hold the build back (DESIGN UNCHECKED is printed, not held). No report yet (walks still running) holds nothing; oma-install asks again.
+  # The design gate (design/soma-canvas/DESIGN-GATE.md): walked cards that drifted from Approved, unless Boss waived
+  # it, hold the build back. DESIGN UNAPPROVED and DESIGN UNCHECKED are printed, not held. No report yet (walks still running) holds nothing; oma-install asks again.
   if [ -f "$repo/tools/walkthrough/design_gate.py" ]; then
     python3 -I "$repo/tools/walkthrough/design_gate.py" gate --inbox --build "$commit" --version "$code" ||
-      die "Not taken: DESIGN FAIL on walked cards (above): drift, or nothing Approved on Canvas."
+      die "Not taken: DESIGN FAIL on walked cards (above): they differ from Approved."
   fi
   # One app waits for oma-install at a time, in the one place it looks: a builder never replaces another's newer one.
   exec 9>>"$cfg/take.lock"

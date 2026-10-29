@@ -76,31 +76,40 @@ class Gate(unittest.TestCase):
             self.assertEqual(0, gate.gate(None))
         self.assertTrue(out.call_args.args[0].startswith("DESIGN UNCHECKED"))
 
-    def test_a_card_with_nothing_approved_is_a_design_fail_until_boss_approves_it(self):
-        # How Connections slipped: approved in chat, never on Canvas, shipped unlike it.
+    def test_a_card_with_nothing_approved_is_design_unapproved_and_never_blocks(self):
+        # Amendment 77d43019 (Boss: "I don't want things to be blocked if I forgot to click a few approve buttons").
         self.answer("conn-tile", result="no-approved", waived=False)
         self.answer("conn-footer", result="match", waived=False)
         r = gate.run(str(self.wdir), "176", "abc123456")
-        self.assertEqual("fail", r["result"])
-        self.assertIn("DESIGN FAIL: not approved on Canvas: conn-tile", gate.summary(r))
+        self.assertEqual("unapproved", r["result"])
+        text = gate.summary(r)
+        self.assertIn("DESIGN UNAPPROVED: conn-tile", text)
+        self.assertIn("one native question card", text)
+        self.assertNotIn("DESIGN FAIL", text)
         report = str(self.wdir / "design-report.json")
         (self.t / "conn-tile.waiver.json").write_text(json.dumps({"card": "conn-tile", "result": "no-approved", "waived": False}))
-        self.assertEqual(3, gate.gate(report, "abc123456"))
-        # Boss approves the card on Canvas and Shipped matches it: let through. Approved and it drifts: still refused.
+        with patch("builtins.print") as out:
+            self.assertEqual(0, gate.gate(report, "abc123456"))
+        self.assertIn("DESIGN UNAPPROVED: conn-tile", " ".join(str(c.args[0]) for c in out.call_args_list))
+        # He approves it (chat or Canvas) after the walk and Shipped matches: plain pass, nothing printed as unapproved.
+        (self.t / "conn-tile.waiver.json").write_text(json.dumps({"card": "conn-tile", "result": "match", "waived": False}))
+        with patch("builtins.print") as out:
+            self.assertEqual(0, gate.gate(report, "abc123456"))
+        self.assertNotIn("UNAPPROVED", " ".join(str(c.args[0]) for c in out.call_args_list))
+        # What he approved differs from what shipped: that is drift, and drift still blocks.
         (self.t / "conn-tile.waiver.json").write_text(json.dumps({"card": "conn-tile", "result": "drift", "waived": False,
                                                                  "differences": [{"n": 1, "what": "no Restart"}]}))
         self.assertEqual(3, gate.gate(report, "abc123456"))
-        (self.t / "conn-tile.waiver.json").write_text(json.dumps({"card": "conn-tile", "result": "match", "waived": False}))
-        self.assertEqual(0, gate.gate(report, "abc123456"))
-        # Or he waives it without approving.
-        (self.t / "conn-tile.waiver.json").write_text(json.dumps({"card": "conn-tile", "result": "no-approved", "waived": True}))
-        self.assertEqual(0, gate.gate(report, "abc123456"))
 
-    def test_canvas_unreachable_at_install_keeps_the_walks_fail(self):
+    def test_canvas_unreachable_at_install_keeps_the_walks_answer(self):
         self.answer("conn-tile", result="no-approved", waived=False)
+        self.answer("conn-footer", result="drift", waived=False, differences=[{"n": 1, "what": "x"}])
+        gate.run(str(self.wdir), "176", "abc123456")
+        # No waiver files: every re-ask errors, so drift still refuses and unapproved still passes.
+        self.assertEqual(3, gate.gate(str(self.wdir / "design-report.json"), "abc123456"))
         self.answer("conn-footer", result="match", waived=False)
         gate.run(str(self.wdir), "176", "abc123456")
-        self.assertEqual(3, gate.gate(str(self.wdir / "design-report.json"), "abc123456"))  # no waiver file: check errors
+        self.assertEqual(0, gate.gate(str(self.wdir / "design-report.json"), "abc123456"))
 
     def test_report_for_another_build_holds_nothing(self):
         self.answer("conn-tile", result="match", waived=False)

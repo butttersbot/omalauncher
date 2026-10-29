@@ -9,13 +9,14 @@ approved design if the agents keep handing back work that doesn't follow the app
 run: for each walk in WDIR that PASSed (verdicts.txt) and has a canvas.json (walk.py writes it from `shot NAME
 card=ID`), publish its screenshots as Shipped (`soma-canvas publish APP DIR`) and check each carded one against
 Approved (`soma-canvas check CARD SHOT`). Writes WDIR/design-report.json and prints a DESIGN FAIL block when a card
-drifted or has no Approved state on Canvas. A failed walk publishes nothing: Shipped is only what passed.
+drifted from Approved. A failed walk publishes nothing: Shipped is only what passed.
 
-gate: exit 3 and list the cards when the report has drift, or a card with nothing Approved, that Boss has not
-approved or waived on Canvas (asked again now, since he may do it after the walk); exit 0 otherwise. A card with
-nothing Approved is how Connections slipped (approved in chat, never on Canvas, shipped unlike it): it blocks.
-A check that could not run (error) does not block for now, but prints DESIGN UNCHECKED, so the build can't be
-called done without saying so.
+gate: exit 3 and list the cards when the report has drift Boss has not waived (asked of Canvas again now, since he
+may approve or waive after the walk, in chat or on Canvas); exit 0 otherwise. Neither of these blocks, but each is
+printed so nobody calls the build done without saying so (DESIGN-GATE.md amendment, 2026-10-29: "I don't want things
+to be blocked if I forgot to click a few approve buttons"):
+  DESIGN UNAPPROVED  a carded screen with nothing Approved: ask Boss once, one native question card for the batch;
+  DESIGN UNCHECKED   a check that could not run, or no report.
 """
 import json, os, shutil, subprocess, sys
 
@@ -93,39 +94,44 @@ def run(wdir, version, build, walks=None):
     return report
 
 def blocking(c):
-    """Drift, or nothing Approved on Canvas, that Boss hasn't waived: only he clears it (approve or waive)."""
-    return c["result"] in ("drift", "no-approved") and not c["waived"]
+    """Drift from Approved that Boss hasn't waived: the builder's to fix, only his to waive."""
+    return c["result"] == "drift" and not c["waived"]
+
+def unapproved(c):
+    return c["result"] == "no-approved" and not c["waived"]
 
 def verdict(cards):
     if any(blocking(c) for c in cards):
         return "fail"
     if any(c["result"] == "error" for c in cards):
         return "unchecked"
+    if any(unapproved(c) for c in cards):
+        return "unapproved"
     return "match" if cards else "none"
 
 def summary(report):
     cards = report["cards"]
     lines = []
     drift = [c for c in cards if c["result"] == "drift" and not c["waived"]]
-    unapproved = [c for c in cards if c["result"] == "no-approved" and not c["waived"]]
+    unappr = [c for c in cards if unapproved(c)]
     unchecked = [c for c in cards if c["result"] == "error"]
     if drift:
         lines.append(f"DESIGN FAIL: {len(drift)} of {len(cards)} walked cards are not as approved on Canvas:")
         for c in drift:
             lines.append(f"  {c['card']} ({c.get('walk', '?')}, {c.get('shot', '?')}):")
             lines += [f"    {d.get('n', i)}. {d.get('what', d)}" for i, d in enumerate(c["differences"], 1)]
-    if unapproved:
-        lines.append(f"DESIGN FAIL: not approved on Canvas: {', '.join(c['card'] for c in unapproved)} "
-                     "(nothing Approved to build from; only Boss approving the card, or his waiver, clears it)")
+    if unappr:
+        lines.append(f"DESIGN UNAPPROVED: {', '.join(c['card'] for c in unappr)} have nothing Approved on Canvas "
+                     "(not blocking): ask Boss once, one native question card for the whole batch, with the Canvas link")
     if unchecked:
         lines.append(f"DESIGN UNCHECKED: {', '.join(c['card'] for c in unchecked)} could not be checked against Approved; "
                      "this build is not done on design until they are")
         lines += [f"  {c['card']}: {c.get('error', 'error')}" for c in unchecked]
-    if cards and not (drift or unapproved or unchecked):
+    if cards and not (drift or unappr or unchecked):
         lines.append(f"Design: all {len(cards)} walked cards match Approved (or Boss waived them).")
     for c in cards:
         if c["result"] in ("drift", "no-approved") and c["waived"]:
-            lines.append(f"  {c['card']}: {'drift' if c['result'] == 'drift' else 'not approved'}, waived by Boss on Canvas")
+            lines.append(f"  {c['card']}: {'drift' if c['result'] == 'drift' else 'not approved'}, waived by Boss")
     for w in report["walks"]:
         if w.get("published") is False and w.get("why") != "walk did not PASS":
             lines.append(f"  {w['walk']}: publish failed ({w['why'][:150]})")
@@ -148,7 +154,7 @@ def gate(path, build=None):
         return 0
     cards = report.get("cards", [])
     for i, c in enumerate(cards):
-        if not blocking(c):
+        if not (blocking(c) or unapproved(c)):
             continue
         # Boss may have approved the card or waived it on Canvas since the walk: ask again (the stored Shipped of
         # this build, no new screenshot). Whatever Canvas says now replaces the walk's answer, unless it can't answer.
@@ -160,8 +166,8 @@ def gate(path, build=None):
     print(summary({**report, "cards": cards, "walks": []}))
     if not blocked:
         return 0
-    print("Refused: build it as Approved; a card with nothing Approved needs Boss to approve it on Canvas; or Boss "
-          "waives it there (" + ", ".join(c["card"] for c in blocked) + ").")
+    print("Refused: build it as Approved, or Boss waives the difference (in chat or on Canvas) (" +
+          ", ".join(c["card"] for c in blocked) + ").")
     return 3
 
 def main(a):

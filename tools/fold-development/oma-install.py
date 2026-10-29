@@ -88,14 +88,14 @@ if r.returncode:sys.exit('Install refused: APK signature verification failed.')
 m=re.search(r'Signer #1 certificate SHA-256 digest: ([0-9a-f]+)',r.stdout)
 if not m or m.group(1)!=expected_cert:sys.exit('Install refused: signing identity does not match the working launcher.')
 # The design gate (design/soma-canvas/DESIGN-GATE.md): asked again here, since the walks' report can land after the take
-# and Boss can waive on Canvas in between. Only unwaived drift on walked cards refuses; no report yet holds nothing.
+# and Boss can approve or waive in between. Only unwaived drift refuses; UNAPPROVED/UNCHECKED are printed, not held.
 gate=repo/'tools/walkthrough/design_gate.py'
 if target==package and '--status' not in args and gate.is_file():
  try:taken=json.loads(pathlib.Path('/root/.config/oma-development/taken.json').read_text())
  except (OSError,ValueError):taken={}
  if taken.get('versionCode')==version and taken.get('commit'):
   if subprocess.run([sys.executable,'-I',str(gate),'gate','--inbox','--build',taken['commit'],'--version',str(version)]).returncode==3:
-   sys.exit('Install refused: DESIGN FAIL on walked cards (above): drift, or nothing Approved on Canvas. Build them as Approved, or Boss approves or waives on Canvas.')
+   sys.exit('Install refused: DESIGN FAIL on walked cards (above): they differ from Approved. Build them as Approved, or Boss waives the difference.')
 def install_self():
  # Staged in Linux's own files, which Oma reads as its own; Oma checks package, key and version again itself.
  stage=pathlib.Path('/root/.cache/oma-update');stage.mkdir(parents=True,exist_ok=True)
