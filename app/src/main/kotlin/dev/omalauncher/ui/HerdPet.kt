@@ -76,7 +76,7 @@ fun HerdPet(modifier: Modifier = Modifier) {
     // Closed it is just the sheep; open it is the panel above it, as wide as a phone's screen allows. On a wide screen
     // (unfolded) the window also takes the sheep's column, and the panel (pet.html) stands beside the sheep, full height.
     val wide = screen.screenWidthDp > screen.screenHeightDp
-    val width = if (open) minOf(if (wide) 400 + HERD_SHEEP_COLUMN else 400, screen.screenWidthDp).dp else 150.dp
+    val width = if (open) minOf(if (wide) HERD_WIDE_PANEL + HERD_SHEEP_COLUMN + 16 else 400, screen.screenWidthDp).dp else 150.dp
     val height = if (open) minOf(680, screen.screenHeightDp * 8 / 10).dp else 150.dp
     AndroidView(
         factory = { ctx ->
@@ -106,3 +106,6 @@ fun HerdPet(modifier: Modifier = Modifier) {
 
 /** The sheep's own column beside the open panel on a wide screen (pet.html's #panel right: 140px, and a margin). */
 private const val HERD_SHEEP_COLUMN = 140
+
+/** The open panel's width on a wide screen (pet.html): narrow enough to stay right of the Fold's hinge. */
+private const val HERD_WIDE_PANEL = 318

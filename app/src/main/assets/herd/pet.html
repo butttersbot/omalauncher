@@ -309,9 +309,11 @@ body.selecting .trow, body.selecting .item { padding-left: 26px; }
 
 /* On a wide screen (the Fold unfolded) home gives the window room beside the sheep: the panel stands to its left, down
    to the bottom, instead of above it, so it gets the window's whole height (Phone A, 2026-10-28: the unfolded panel cut
-   off what was sent to the phone). Android only: the Mac's and Linux's windows size themselves. */
-@media (min-width: 520px) {
-  html.android body.open #panel { right: 140px; bottom: 8px; max-height: calc(var(--room, 100vh) - 16px); }
+   off what was sent to the phone). Android only: the Mac's and Linux's windows size themselves.
+   Narrower there (318 px), so it stays right of the Fold's hinge: text across the crease is worse than a narrower list
+   (Phone A, 2026-10-28). */
+@media (min-width: 440px) {
+  html.android body.open #panel { right: 140px; bottom: 8px; width: 318px; max-height: calc(var(--room, 100vh) - 16px); }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>

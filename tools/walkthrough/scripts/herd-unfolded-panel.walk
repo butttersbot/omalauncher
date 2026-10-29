@@ -1,7 +1,7 @@
 # The herd panel unfolded (Phone A, 2026-10-28: "Text being cut off is a bug": the unfolded panel stood above the sheep
 # and cut off what was sent to the phone). Unfolded, the panel now stands beside the sheep, from the top down to the
 # bottom, so the Tailshare tab shows both test texts under "Sent to this phone" without scrolling. Made-up files only
-# (debug.soma.herdtest, emulator only). Run unfolded; the sheep is at 0.93 0.75 there (measured 2026-10-28).
+# (debug.soma.herdtest, emulator only). It is 318 dp wide there, so it stays right of the hinge (its left edge past 0.5). Run unfolded; the sheep is at 0.93 0.75 there (measured 2026-10-28).
 fold open
 shell setprop debug.soma.herdtest 1
 shell am force-stop dev.omalauncher.boss
