@@ -25,13 +25,13 @@ internal data class OrderTicket(
     fun fresh(now: Long) = now >= reviewedAt && now - reviewedAt <= 30_000
 }
 
-/** Buy-only limit IOC for the exact owner-entered size. No application spending caps. */
+/** Buy or owned-share sell, IOC/GTC, for the exact owner-entered size. No application spending caps. */
 internal object OrderTickets {
     fun prepareFunded(owner: OrderWallet, rules: VenueOrderRules, price: BigDecimal,
                       shares: BigDecimal, feeRateCeiling: BigDecimal, funding: FundingSnapshot, now: Long,
                       buy: Boolean = true, timeInForce: String = "Ioc", testnet: Boolean = false,
                       availableShares: BigDecimal? = null): OrderTicket {
-        val ticket = prepare(owner, rules, price, shares, feeRateCeiling, now, buy, timeInForce, testnet, feeRateCeiling)
+        val ticket = prepare(owner, rules, price, shares, feeRateCeiling, now, buy, timeInForce, testnet)
         if (buy) {
             val readiness = FundingChecks.check(funding, owner.wallet, ticket.maximumDebit, now)
             require(readiness.tradingCashReady) { readiness.message }
