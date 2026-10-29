@@ -9,6 +9,7 @@ named project thread, or talk with a Venice model, under a folder Boss allowed, 
 Only exact Codex command scopes the owner explicitly saved may reuse that decision; no command prefix or blanket permission is inferred.
 
   GET  /health                           {ok, working, waiting, kinds, models: {venice: [...]}}
+  GET  /devices                          {runner, devices: [names]}: who this runner lets in, by name only (soma --mesh)
   GET  /threads                          every thread: id, name, summary, status, last_worked, tail, pending, bot
   GET  /bots/ID                          one bot this machine hosts: its settings, instructions and notes (read only)
   POST /threads/ID/fresh                 a bot's session starts over: its conversation is archived, its notes stay
@@ -35,7 +36,7 @@ Agent mail for a thread (tailshare's ~/.local/share/tailshare/mail/new/, to.sess
 given to that thread labeled as another agent's, never as the owner's words. Each thread's agent runs with
 OMA_THREAD_ID set to its thread's id, which `tmsg` signs its mail with, so an answer comes back to the thread.
 
-  oma-runner serve | install | start | stop | status | devices | pair DEVICE | unpair DEVICE | rekey | uninstall
+  oma-runner serve | install | start | stop | status | devices | mesh | pair DEVICE | unpair DEVICE | rekey | uninstall
 
 pair gives DEVICE (its Tailscale machine name) a key of its own, sent to it by Taildrop: the phone as mac-runner.json, as
 before, and a computer running Soma as soma-runner-<this machine>.json. unpair takes it away at once. rekey is pair
@@ -4178,6 +4179,9 @@ class Runner(BaseHTTPRequestHandler):
             return self.answer(200, {'ok': True, 'runner': 'oma-runner', **({'soma': SOMA_SERVICE} if SOMA_SERVICE else {}), 'threads': len(states), 'working': states.count('working'), 'waiting': states.count('waiting'),
                                      'kinds': [kind for kind in KINDS if program(kind)], 'models': {'venice': venice_models()} if program('venice') else {}, 'files': True,
                                      'bots': [{key: bot[key] for key in ('id', 'name', 'emoji', 'problem')} for bot in found.values()]})
+        if parts == ['devices']:
+            # Who this runner lets in, by Tailscale name only (never a digest), so a paired Soma can show every leg (soma --mesh).
+            return self.answer(200, {'ok': True, 'runner': own_name_kept(), 'devices': sorted(d['name'] for d in DEVICES.table())})
         if len(parts) == 2 and parts[0] == 'phone-runner' and parts[1] in ('tailnet', 'whois'):
             return self.phone_runner(parts[1], query, None)
         if parts == ['services']:
@@ -4959,6 +4963,102 @@ def pair_locked(device):
         TOKEN_FILE.write_text(digest(key) + '\n')
     del key
     print('sent a key to %s; this machine keeps only its digest. Other devices keep theirs.' % where)
+    if device not in (PHONE, me):
+        # Two-way roads (Boss, 2026-10-28: "no more partial built lanes"): a computer paired here that runs a runner of its
+        # own must let this machine's Soma in too. That leg is made on that computer, so here it is checked, and a one-way
+        # road is said loudly and fails, never left to be found later.
+        problem = reverse_leg(device, me)
+        if problem:
+            print('ONE-WAY: ' + problem, file=sys.stderr)
+            sys.exit(3)
+
+
+def soma_runner_ids():
+    """The runners this machine's Soma has been given a key for: its runners.json, and any key file still on its way in."""
+    ids = set()
+    try:
+        listed = json.loads((SOMA_RUNNERS.parent / 'runners.json').read_text()).get('runners') or []
+        ids |= {r.get('id') for r in listed if isinstance(r, dict) and r.get('id')}
+    except (OSError, ValueError):
+        pass
+    if SOMA_RUNNERS.is_dir():
+        ids |= {f.name[len('soma-runner-'):-len('.json')] for f in SOMA_RUNNERS.glob('soma-runner-*.json')}
+    return ids
+
+
+def tailnet_peers():
+    """This machine's tailnet peers that are online: {name: address}. Empty when Tailscale can't be asked."""
+    try:
+        status = json.loads(subprocess.run([TAILSCALE, 'status', '--json'], capture_output=True, text=True, timeout=10, env=tailscale_env()).stdout)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return {}
+    peers = {}
+    for peer in (status.get('Peer') or {}).values():
+        name = (peer.get('DNSName') or '').split('.')[0].lower() or (peer.get('HostName') or '').lower()
+        address = next((a for a in peer.get('TailscaleIPs') or [] if '.' in a), None)
+        if name and address and peer.get('Online'):
+            peers[name] = address
+            if (peer.get('OS') or '').lower() == 'android':
+                PHONES.add(name)
+    return peers
+
+
+PHONES = set()  # the phones tailnet_peers() saw: a phone's runner comes with its next bundle (soma --mesh's "awaiting bundle")
+
+
+def runs_runner(address):
+    """Whether an oma-runner answers at [address] (it asks for a key: 401, or lets this machine in: 200)."""
+    try:
+        with urllib.request.urlopen('http://%s:%d/health' % (address, PORT), timeout=4) as reply:
+            return reply.status == 200
+    except urllib.error.HTTPError as answer:
+        return answer.code in (401, 403)
+    except (OSError, ValueError):
+        return False
+
+
+def reverse_leg(device, me):
+    """Why the road back from [device] to this machine is missing, or None when it is there or can't be: [device] runs no
+    runner, or this machine's Soma has its key."""
+    if device in soma_runner_ids():
+        return None
+    address = tailnet_peers().get(device)
+    if address is None or not runs_runner(address):
+        return None
+    return ('%s now reaches this runner, but this machine\'s Soma has no key for %s\'s runner. On %s run '
+            '"OMA_RUNNER_PAIR_COMPUTERS=1 oma-runner pair %s", then check with "oma-runner mesh" on both.' % (device, device, device, me))
+
+
+def mesh():
+    """This machine's legs, by name: for each online tailnet computer that runs a runner, whether this runner lets its
+    Soma in, and whether this machine's Soma has its key. Exit 1 when any is one-way or missing."""
+    me = own_name()
+    accepted = {d['name'] for d in DEVICES.table()}
+    has = soma_runner_ids()
+    online = tailnet_peers()
+    peers = {name: address for name, address in online.items() if runs_runner(address)}
+    fixes = []
+    print('%-24s %-28s %s' % ('runner', '%s lets it in' % me, '%s\'s Soma has its key' % me))
+    for phone in sorted(PHONES - set(peers)):
+        print('%-24s %-28s %s' % (phone, 'awaiting bundle', 'awaiting bundle'))
+    waiting = HOME / 'Downloads'
+    for name in sorted(peers) + [me]:
+        inbound, outbound = name in accepted, name in has
+        if not inbound:
+            fixes.append('on %s: OMA_RUNNER_PAIR_COMPUTERS=1 oma-runner pair %s' % (me, name))
+        if not outbound and name != me:
+            # A key Taildropped here waits in Downloads until he moves it in: Soma never takes keys from there (any download lands there).
+            if (waiting / ('soma-runner-%s.json' % name)).exists():
+                fixes.append('on %s: move ~/Downloads/soma-runner-%s.json into %s (its key is here; Soma takes it from there)' % (me, name, SOMA_RUNNERS))
+            else:
+                fixes.append('on %s: OMA_RUNNER_PAIR_COMPUTERS=1 oma-runner pair %s' % (name, me))
+        print('%-24s %-28s %s' % (name + (' (this one)' if name == me else ''), 'yes' if inbound else 'MISSING', 'yes' if outbound else 'MISSING'))
+    if not fixes:
+        return print('no missing legs')
+    print('%d missing leg%s, each made by pairing on the runner it leads to:' % (len(fixes), '' if len(fixes) == 1 else 's'))
+    for fix in fixes:
+        print('  ' + fix)
+    sys.exit(1)
 
 
 def unpair(device):
@@ -5040,6 +5140,8 @@ def main():
         unpair(sys.argv[2])
     elif command == 'devices':
         list_devices()
+    elif command == 'mesh':
+        mesh()
     elif command == 'uninstall' and daemon():
         print('the system daemon runs it; to remove it: sudo launchctl bootout system/%s && sudo rm %s' % (LABEL, SYSTEM_PLIST))
     elif command == 'uninstall':
