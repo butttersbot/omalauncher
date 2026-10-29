@@ -9,16 +9,18 @@ Nothing here reads or reuses the Deco app's login.
   soma-deco login           Boss types the Deco owner password himself (no echo); kept 0600 in ~/.local/share/soma-deco,
                             never in a synced folder, never printed or logged. Checked against the router first.
   soma-deco poll [--json]   reads the mesh and writes ~/.cache/soma-deco/status.json (and prints it with --json)
-  soma-deco speedtest       starts the router's own speed test, waits for it, records the result
+  soma-deco speedtest       a real speed test from this phone over the home Wi-Fi (Cloudflare's speed test files); the
+                            router's local API only reads its own last test (it starts none: tried 2026-10-28, the Deco
+                            app starts those through TP-Link's cloud), so poll records that one, with its real time
   soma-deco restart-plan    prints which Decos a restart would interrupt, and a one-time code for restart
   soma-deco restart CODE    restarts the whole mesh: only with the code restart-plan printed in the last 2 minutes,
                             which the widget asks for only after Boss's inline confirmation naming the Decos
   soma-deco logout          forgets the password
 
 Honest states (status.json "state"): unlinked, unreachable, auth-failed, error, ok. A reading the router didn't give is
-null, never 0. Only these router forms are ever called: reads, speedtest write/read, reboot write. Never factory.
+null, never 0. Only these router forms are ever called: reads (speedtest read included), reboot write. Never factory.
 """
-import getpass, json, os, secrets, sys, time
+import getpass, json, os, secrets, subprocess, sys, time
 from pathlib import Path
 
 HOST = os.environ.get("SOMA_DECO_HOST", "192.168.68.1")
@@ -29,15 +31,31 @@ STATUS = HOME / ".cache/soma-deco/status.json"
 LIB = HOME / ".local/share/soma-deco/lib"     # tplink_deco_api at the inspected commit
 sys.path.insert(0, str(LIB))
 
+TEST_KEYS = ("lastTestMbps", "lastTestUpMbps", "lastTestPingMs", "lastTestAt", "lastTestLabel", "lastTestSource")
+CF = "https://speed.cloudflare.com"
+
 def now(): return int(time.time())
 
-def write_status(s):
+def stamp(t):
+    return time.strftime("%H:%M" if time.strftime("%Y%m%d", time.localtime(t)) == time.strftime("%Y%m%d") else "%b %-d %H:%M", time.localtime(t))
+
+def router_test(r):
+    """The router's own last speed test (speedtest read), Kbps as it reports them, as status fields; None if it has none."""
+    at, down = r.get("last_speed_test_time"), r.get("down_speed")
+    if not r.get("ever_tested") or not at or down is None: return None
+    up = r.get("up_speed")
+    return {"lastTestMbps": round(down / 1000, 1), "lastTestUpMbps": None if up is None else round(up / 1000, 1),
+            "lastTestPingMs": r.get("ping_time"), "lastTestAt": int(at), "lastTestLabel": "router test · " + stamp(at), "lastTestSource": "router"}
+
+def write_status(s, router=None):
     STATUS.parent.mkdir(parents=True, exist_ok=True)
     old = {}
     try: old = json.loads(STATUS.read_text())
     except Exception: pass
-    # The last speed test belongs to the network, not this read: it stays until a new test replaces it.
-    for k in ("lastTestMbps", "lastTestUpMbps", "lastTestPingMs", "lastTestAt", "lastTestLabel"):
+    # The last speed test belongs to the network, not this read: it stays until a newer one (his phone test, or the
+    # router's own [router] test) replaces it.
+    if router and router["lastTestAt"] > (old.get("lastTestAt") or 0): old.update(router)
+    for k in TEST_KEYS:
         s.setdefault(k, old.get(k))
     tmp = STATUS.with_suffix(".tmp")
     tmp.write_text(json.dumps(s))
@@ -81,34 +99,47 @@ def poll():
         s = {**base, "state": "ok", "connected": True, "devices": devices,
              "downMbps": round(sum(v["downMbps"] or 0 for v in devices), 1), "upMbps": round(sum(v["upMbps"] or 0 for v in devices), 1),
              "nodes": [{"id": n.mac, "name": n.custom_nickname or n.nickname or n.device_model, "role": n.role, "model": n.device_model} for n in nodes]}
+        try: rt = router_test(d.request("admin/device", "speedtest", {"operation": "read"}))
+        except Exception: rt = None
         d.logout()
-        return write_status(s)
+        return write_status(s, rt)
     except Exception as e:
         state, msg = failure(e)
         return write_status({**base, "state": state, "message": msg})
 
+def curl_mbps(args, seconds):
+    """Megabits a second curl moved over [args], or None if it failed."""
+    try:
+        out = subprocess.run(["curl", "-s", "-o", "/dev/null", "-m", str(seconds), "-w", "%{http_code} %{speed_download} %{speed_upload}"] + args,
+                             capture_output=True, text=True, timeout=seconds + 5).stdout.split()
+    except Exception: return None
+    if len(out) != 3 or not out[0].startswith("2"): return None
+    v = max(float(out[1]), float(out[2])) * 8 / 1e6
+    return round(v, 1) if v > 0 else None
+
 def speedtest():
-    c = creds()
-    if not c: print("Not linked"); return 2
-    d = client(c)
-    d.request("admin/device", "speedtest", {"operation": "write"})
-    result = None
-    for _ in range(60):            # the router's test takes about half a minute
-        time.sleep(2)
-        r = d.request("admin/device", "speedtest", {"operation": "read"})
-        status = str(r.get("status", "")).lower()
-        if status in ("idle", "done", "finish", "finished", "complete") and (r.get("down_speed") or r.get("down")):
-            result = r; break
-    d.logout()
-    if not result:
-        print("The router's speed test didn't finish"); return 1
-    down, up = result.get("down_speed") or result.get("down"), result.get("up_speed") or result.get("up")
+    """A real test from this phone over the home Wi-Fi: Cloudflare's speed test download and upload, best of a few."""
+    ping = None
+    try:
+        # Time to the first byte after the connection is up: one round trip, not the TLS setup.
+        out = subprocess.run(["curl", "-s", "-o", "/dev/null", "-m", "5", "-w", "%{time_appconnect} %{time_starttransfer}", CF + "/__down?bytes=0"],
+                             capture_output=True, text=True, timeout=10).stdout.split()
+        ping = round((float(out[1]) - float(out[0])) * 1000, 1)
+    except Exception: pass
+    downs = [curl_mbps([CF + "/__down?bytes=25000000"], 15) for _ in range(3)]    # Cloudflare refuses more than 25 MB at once
+    blob = Path("/tmp/soma-deco-up.bin")
+    blob.write_bytes(os.urandom(10_000_000))
+    ups = [curl_mbps(["--data-binary", "@" + str(blob), CF + "/__up"], 20) for _ in range(3)]
+    blob.unlink(missing_ok=True)
+    down, up = max((x for x in downs if x), default=None), max((x for x in ups if x), default=None)
+    if down is None:
+        print("The speed test couldn't reach Cloudflare"); return 1
     s = json.loads(STATUS.read_text()) if STATUS.exists() else {}
-    s.update({"lastTestMbps": float(down) if down is not None else None, "lastTestUpMbps": float(up) if up is not None else None,
-              "lastTestPingMs": result.get("ping_time"), "lastTestAt": now(), "lastTestLabel": "router test · " + time.strftime("%H:%M"),
-              "rawSpeedtest": result})
+    s.update({"lastTestMbps": down, "lastTestUpMbps": up, "lastTestPingMs": ping, "lastTestAt": now(),
+              "lastTestLabel": "phone test · " + time.strftime("%H:%M"), "lastTestSource": "phone"})
+    s.pop("rawSpeedtest", None)
     STATUS.parent.mkdir(parents=True, exist_ok=True); STATUS.write_text(json.dumps(s))
-    print(json.dumps({"down": down, "up": up})); return 0
+    print(json.dumps({"down": down, "up": up, "pingMs": ping})); return 0
 
 def restart_plan():
     c = creds()

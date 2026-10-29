@@ -31,7 +31,7 @@ widget "Deco" {
   let up = net.upMbps == null ? "—" : "${net.upMbps >= 10 ? round(net.upMbps) : fixed(net.upMbps, 1)} Mbps"
   let health = live ? "All good" : state == "unlinked" ? "Not linked" : state == "unreachable" ? "Can't reach Deco" : state == "auth-failed" ? "Sign-in refused" : fresh ? "Error" : "No reading"
   let healthColor = live ? green : muted
-  let tested = net.lastTestAt != null ? "LAST TEST · ${fmtAgo(net.lastTestAt, now)} AGO" : "NO SPEED TEST YET"
+  let tested = net.lastTestAt != null ? "${net.lastTestSource == "phone" ? "PHONE" : "ROUTER"} TEST · ${fmtAgo(net.lastTestAt, now)} AGO" : "NO SPEED TEST YET"
   let pr = parseJson(plan)
 
   Column {
@@ -50,7 +50,7 @@ widget "Deco" {
       Spacer { weight: 1 }
       if !compact && live { Text { text: "${len(devices)} devices online"; style: body } }
     }
-    if !short { Text { text: testing ? "TESTING THROUGH THE ROUTER…" : tested; style: label; color: muted } }
+    if !short { Text { text: testing ? "TESTING FROM THIS PHONE…" : tested; style: label; color: muted } }
     if short {
     } else if live {
       if compact { Text { text: "${len(devices)} devices online"; style: body } }
@@ -103,7 +103,7 @@ widget "Deco" {
         Spacer { weight: 1 }
         if live { Text { text: "${len(devices)} devices online" } }
       }
-      Text { text: testing ? "TESTING THROUGH THE ROUTER…" : tested; style: label; color: muted }
+      Text { text: testing ? "TESTING FROM THIS PHONE…" : tested; style: label; color: muted }
       if live {
         Text { text: "TRAFFIC RIGHT NOW"; style: label; color: muted }
         Row { gap: 16; Text { text: "↓ ${down}"; style: title } Text { text: "↑ ${up}"; style: title } }
