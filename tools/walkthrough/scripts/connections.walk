@@ -39,15 +39,26 @@ expect Design Canvas
 shot connections-large-cover
 tap Active jobs
 tap [ Restore ]
+expect Repair blocked
+tap Connections
 expect Blocked: active or queued
+key BACK
 tap Failed repair
 tap [ Restore ]
-expect Failed: fictional
+expect Repair failed
 shot connections-failed-cover
+tap Connections
+expect Failed: fictional
+shot connections-failed-details-cover
+key BACK
 tap Successful repair
 tap [ Restore ]
-expect Restored: fictional
+expect Restored · view details
 shot connections-restored-cover
+tap Connections
+expect Restored: fictional
+shot connections-restored-details-cover
+key BACK
 tap Auth check
 tap Connections
 expect Auth required

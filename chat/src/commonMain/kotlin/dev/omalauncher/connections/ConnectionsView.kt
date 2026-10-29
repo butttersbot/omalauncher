@@ -36,6 +36,17 @@ private fun ConnectionAction(label: String, action: () -> Unit, modifier: Modifi
         BasicText("[ $label ]", style = Pack.mono(Pack.size.small, Pack.accent))
     }
 }
+private fun repairCardSummary(text: String): String = when {
+    text.startsWith("Restored", ignoreCase = true) -> "Restored · view details"
+    text.startsWith("Failed", ignoreCase = true) || text.startsWith("Restore failed", ignoreCase = true) -> "Repair failed · view details"
+    text.contains("unverified", ignoreCase = true) || text.startsWith("Restore interrupted", ignoreCase = true) -> "Result unverified · view details"
+    text.contains("blocked", ignoreCase = true) || text.startsWith("No verified", ignoreCase = true) -> "Repair blocked · view details"
+    text.startsWith("Owner approval", ignoreCase = true) -> "Owner confirmation needed"
+    text.startsWith("Verifying", ignoreCase = true) -> "Verifying repair…"
+    text.startsWith("Already", ignoreCase = true) || text.contains("in progress", ignoreCase = true) -> "Repair in progress…"
+    else -> text
+}
+
 @Composable
 fun ConnectionsModule(size: ModuleSize, now: Long, modifier: Modifier = Modifier) {
     var expanded by remember { mutableStateOf(false) }
@@ -54,7 +65,7 @@ fun ConnectionsModule(size: ModuleSize, now: Long, modifier: Modifier = Modifier
                 ConnectionText(if (incidents.isNotEmpty()) "△ ${incidents.size}" else if (rows.all { it.state == ConnectionState.Ready || it.state == ConnectionState.Disabled }) "✓" else "?", small = true)
             }
             if (showSummary) {
-                ConnectionText(ConnectionsSource.repair ?: bad?.let { "${it.capability.title} unavailable" } ?: if (ConnectionsSource.checking) "Checking connections…" else "Connection check", lines = 1)
+                ConnectionText(ConnectionsSource.repair?.let(::repairCardSummary) ?: bad?.let { "${it.capability.title} unavailable" } ?: if (ConnectionsSource.checking) "Checking connections…" else "Connection check", lines = 1)
                 ConnectionText(bad?.let { listOf(it.host, it.state.label).filter(String::isNotBlank).joinToString(" · ") }
                     ?: if (ConnectionsSource.snapshot.checkedAt == 0L) "Waiting for a real check" else "Tap for verified details", small = true, muted = true, lines = 1)
             }
