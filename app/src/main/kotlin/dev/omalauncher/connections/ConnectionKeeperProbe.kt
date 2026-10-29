@@ -14,8 +14,11 @@ internal fun connectionKeeperProbe(home: File): ConnectionCheck {
         socket.outputStream.write("{\"op\":\"list\"}\n".toByteArray())
         socket.outputStream.flush()
         val bytes = java.io.ByteArrayOutputStream()
+        val input = java.io.BufferedInputStream(socket.inputStream)
+        val deadline = android.os.SystemClock.elapsedRealtime() + 3000
         while (bytes.size() <= 262_144) {
-            val byte = socket.inputStream.read()
+            require(android.os.SystemClock.elapsedRealtime() < deadline) { "Keeper response deadline" }
+            val byte = input.read()
             require(byte >= 0) { "Incomplete keeper response" }
             if (byte == 10) break
             bytes.write(byte)
