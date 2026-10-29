@@ -16,6 +16,7 @@ expect Approval first
 expect Question second
 expect Newer working
 shot needs-boss-first-strip-cover
+swipefrom Approval first -0.70 0 500
 tap All chats
 expect NEEDS YOU
 expect AT WORK
@@ -23,8 +24,16 @@ shot needs-boss-first-all-chats-cover
 key BACK
 fold open
 rotate landscape
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --ez rankedSessions true
+tap Show the tabs
+expect Approval first
+expect Question second
+expect Newer working
+shot needs-boss-first-strip-unfolded
 tap All chats
 expect NEEDS YOU
 expect AT WORK
 shot needs-boss-first-all-chats-unfolded
 key BACK
+[phone] After promotion: on Agents, an older unanswered approval/question ranks above newer working sessions; multiple unanswered requests rank newest request first. Confirm the same order in strip, All chats and desktop, with the current chat still selected.

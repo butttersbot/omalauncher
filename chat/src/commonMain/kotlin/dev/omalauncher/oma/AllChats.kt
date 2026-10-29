@@ -114,5 +114,5 @@ fun allChatSnippet(text: String, query: String, around: Int = 40): String {
 
 /** What stands under the list when it is searched: how many of how many match. */
 fun allChatCount(matching: Int, of: Int, query: String): String =
-    if (query.isBlank()) "$of ${if (of == 1) "chat" else "chats"}, newest first."
+    if (query.isBlank()) "$of ${if (of == 1) "chat" else "chats"}, requests for you first."
     else "$matching of $of ${if (of == 1) "chat" else "chats"} match “${query.trim()}”. Clear the field to see them all, requests for you first."

@@ -57,8 +57,8 @@ class AllChatsTest {
         assertTrue("the words around the match: ${build[0].second}", build[0].second.contains("the build went fine"))
         assertEquals(listOf("Keyboard GIFs"), allChatMatches(rows, "gifs", "", { said[it].orEmpty() }).map { it.first.name })
         assertEquals(3, allChatMatches(rows, " ", "", { emptyList() }).size)
-        assertEquals("1 of 3 chats match “build”. Clear the field to see them all, newest first.", allChatCount(1, 3, " build "))
-        assertEquals("3 chats, newest first.", allChatCount(3, 3, ""))
+        assertEquals("1 of 3 chats match “build”. Clear the field to see them all, requests for you first.", allChatCount(1, 3, " build "))
+        assertEquals("3 chats, requests for you first.", allChatCount(3, 3, ""))
     }
 
     @Test fun aMatchOnlyInMarkupIsNoMatch() {
