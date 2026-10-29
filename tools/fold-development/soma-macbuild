@@ -153,11 +153,19 @@ walk_report() {
     else
       cat "$wdir/summary.txt" 2>/dev/null || echo "Walks: none ran."
     fi
-    # DESIGN FAIL is its own verdict beside PASS/FAIL: the walk passed, the screen is not as approved.
+    # DESIGN FAIL is its own verdict beside PASS/FAIL: the walk passed, the screen is not as approved (or has nothing
+    # Approved on Canvas). DESIGN UNCHECKED: a card couldn't be checked, so nobody may call the build done on design.
     [ -s "$wdir/design.txt" ] && cat "$wdir/design.txt"
     echo "Screenshots and logs: walk-$short-$code.zip (Taildropped)."
   } >"$wdir/report.txt"
-  local design=""; grep -q '^DESIGN FAIL' "$wdir/design.txt" 2>/dev/null && design=", DESIGN FAIL"
+  local design=""
+  grep -q '^DESIGN FAIL' "$wdir/design.txt" 2>/dev/null && design=", DESIGN FAIL"
+  grep -q '^DESIGN UNCHECKED' "$wdir/design.txt" 2>/dev/null && design="$design, DESIGN UNCHECKED"
+  # Carded walks ran but the gate itself left no report: that is unchecked too, never silence.
+  if ls "$wdir"/*/canvas.json >/dev/null 2>&1 && [ ! -s "$wdir/design-report.json" ]; then
+    echo "DESIGN UNCHECKED: the design gate left no report (see design.txt)" >>"$wdir/report.txt"
+    case $design in *UNCHECKED*) ;; *) design="$design, DESIGN UNCHECKED" ;; esac
+  fi
   "$tmsg" send "$phone${lane:+:$lane}" --title "Soma $short walks${lane:+ (lane $lane)}$design" <"$wdir/report.txt" >/dev/null 2>&1 &&
     echo "Walk report mailed to $phone${lane:+:$lane}." || echo "Walk report: mailing it failed (see $wdir/report.txt)."
 }
