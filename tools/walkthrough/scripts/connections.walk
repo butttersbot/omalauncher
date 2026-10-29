@@ -75,6 +75,10 @@ shot connections-large-unfolded
 tap Connections
 expect All capabilities
 shot connections-expanded-unfolded
+rotate portrait
+expect Connections
+expect All capabilities
+shot connections-expanded-portrait
 rotate landscape
 expect Connections
 expect All capabilities

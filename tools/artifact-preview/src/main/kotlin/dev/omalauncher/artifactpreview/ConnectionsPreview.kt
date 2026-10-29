@@ -35,8 +35,11 @@ fun ConnectionsPreview() {
         scenario = s; ConnectionsSource.repair = null; ConnectionsSource.guide = null
         ConnectionsSource.diagnostic = org.json.JSONObject().put("schema", 1).put("service", "fictional-runner")
             .put("host", "Fictional Mac").put("stage", s).put("root_cause", "fixture_only")
-            .put("checks", org.json.JSONArray().put(org.json.JSONObject().put("check", "fixture_probe").put("code", 503)))
-            .put("next_steps", org.json.JSONArray().put(org.json.JSONObject().put("actor", "agent").put("action", "inspect_fixture"))).toString(2)
+            .put("id", "$clock-0000000000000000").put("time", clock).put("last_seen", clock).put("occurrences", 1)
+            .put("summary", "Fictional check evidence only; no live service or credentials.").put("checks_truncated", false)
+            .put("checks", org.json.JSONArray().put(org.json.JSONObject().put("check", "fixture_probe").put("target", "fictional-mac/soma").put("code", 503).put("result", "fail")
+                .put("fields", org.json.JSONObject().put("fixture_only", "true")).put("stderr_tail", "")))
+            .put("next_steps", org.json.JSONArray().put(org.json.JSONObject().put("actor", "agent").put("action", "inspect_fixture").put("reason", "Fictional evidence; no live action requested."))).toString(2)
         ConnectionsSource.snapshot = snapshot(when (s) {
             "Auth check" -> ConnectionState.Auth
             "Stale check" -> ConnectionState.Ready
@@ -64,7 +67,7 @@ fun ConnectionsPreview() {
         ConnectionsSource.togglePause = { ConnectionsSource.paused = !ConnectionsSource.paused; receipt = "Fixture pause changed" }
         ConnectionsSource.alerts = "Fixture only: no real alerts or configuration changes."
     }
-    Column(Modifier.fillMaxSize().background(Pack.background).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(Modifier.fillMaxSize().background(Pack.background).windowInsetsPadding(WindowInsets.safeDrawing).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         BasicText("Connections fixture · no live actions", style = Pack.mono(Pack.size.small))
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             for (s in listOf("Small", "Medium", "Large")) FixtureAction(s) { shape = s }
