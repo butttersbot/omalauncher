@@ -48,7 +48,7 @@ class Base(unittest.TestCase):
         self.counts = {'working': 0, 'waiting': 0, 'queued': 0, 'background': 0}
         self.locks = self.dir / 'locks'
         self.locks.mkdir()
-        self.probe_result = [{'code': 'soma_identity', 'state': 'pass', 'detail': 'ok'}]
+        self.probe_result = [S.mkcheck('soma_identity', 'soma', 'ok', 'pass')]
         self.control = S.Controller(self.backend, lambda: dict(self.counts), records=S.Records(self.dir / 'state'),
                                     trust=lambda: S.load_trust(self.trust_file, require_root=False), gate=S.WorkGate(self.locks),
                                     probe=lambda service: list(self.probe_result), state=lambda service: {'loaded': True, 'state': 'running', 'pid': 1},
@@ -243,7 +243,7 @@ class Work(Base):
 
 class Modes(Base):
     def test_privileged_service_without_helper_is_blocked_not_pretended(self):
-        self.probe_result = [{'code': 'x', 'state': 'pass', 'detail': 'ok'}]
+        self.probe_result = [S.mkcheck('x', 'x', 'ok', 'pass')]
         S_verifiable = S.verifiable
         S.verifiable = lambda s: True
         try:
@@ -259,23 +259,35 @@ class Modes(Base):
         self.assertEqual((op['stage'], self.backend.calls), ('blocked', []))
 
     def test_failed_verification_is_failed_not_restored(self):
-        self.probe_result = [{'code': 'soma_identity', 'state': 'fail', 'detail': 'no'}]
+        self.probe_result = [S.mkcheck('soma_identity', 'soma', 'wrong_identity', 'fail')]
         op = self.op(self.control.approve('soma', self.approve_body(self.control.request('soma'))))
         self.assertEqual((op['stage'], op['verified']), ('failed', False))
         self.assertTrue(op.get('incident'))
+        incident = json.loads((self.dir / 'state' / 'incidents' / 'newest.json').read_text())
+        self.assertEqual(set(incident) - {'operation'}, {'schema', 'id', 'time', 'last_seen', 'occurrences', 'service', 'host', 'stage',
+                                                         'summary', 'root_cause', 'checks', 'next_steps', 'checks_truncated'})
+        self.assertEqual((incident['schema'], incident['service'], incident['host'], incident['checks_truncated']), (1, 'soma', 'jacks-mac-pro', False))
+        for check in incident['checks']:
+            self.assertEqual(set(check), {'check', 'target', 'code', 'result', 'fields', 'stderr_tail'})
+        self.assertTrue(all(set(step) == {'actor', 'action', 'reason'} and step['actor'] in ('agent', 'owner') for step in incident['next_steps']))
+
+    def test_reachable_but_unverified_is_never_restored(self):
+        self.probe_result = [S.mkcheck('soma_probe', 'soma', 'reachable_unverified', 'unverified')]
+        op = self.op(self.control.approve('soma', self.approve_body(self.control.request('soma'))))
+        self.assertEqual((op['stage'], op['verified']), ('failed', False))
 
     def test_runner_self_restart_journals_then_exits_and_resume_verifies(self):
         result = self.control.approve('runner', self.approve_body(self.control.request('runner')))
         self.assertEqual(self.backend.calls, [('exit', 'runner')])
         self.assertEqual(self.op(result)['stage'], 'verifying')
-        self.probe_result = [{'code': 'runner_self', 'state': 'pass', 'detail': 'ok'}]
+        self.probe_result = [S.mkcheck('runner_self', 'runner', 'ok', 'pass')]
         self.control.resume()
         self.assertEqual((self.op(result)['stage'], self.op(result)['verified']), ('restored', True))
 
 
 class Records(Base):
     def test_records_are_private_redacted_and_never_hold_nonces_or_signatures(self):
-        self.probe_result = [{'code': 'soma_identity', 'state': 'fail', 'detail': 'Authorization: Bearer abcdefghijklmnop token=supersecret1'}]
+        self.probe_result = [S.mkcheck('soma_identity', 'soma', 'unreachable', 'fail', {'note': 'token=supersecret1'}, stderr='Authorization: Bearer abcdefghijklmnop')]
         c = self.control.request('soma')
         result = self.control.approve('soma', self.approve_body(c))
         root = self.dir / 'state'
@@ -298,6 +310,77 @@ class Records(Base):
         self.assertEqual(by['tailscaled']['restart'].get('blocked_reason'), 'privileged_helper_missing')
         self.assertEqual(by['canvas']['restart'].get('blocked_reason'), 'no_capability_probe')
         self.assertNotIn('nonce', json.dumps(inv))
+
+
+class Fake:
+    def __init__(self, **kw): self.__dict__.update(kw)
+
+
+class Probes(unittest.TestCase):
+    def test_launchctl_print_keeps_only_whitelisted_fields(self):
+        out = ('gui/501/dev.omalauncher.soma.serve = {\n\tstate = running\n\tpid = 4242\n\tlast exit code = 0\n'
+               '\tenvironment = {\n\t\tOPENAI_API_KEY => sk-livelivelivelive\n\t\tHOME => /Users/x\n\t}\n}\n')
+        got = S.launchd_state('soma', runner=lambda *a, **k: Fake(returncode=0, stdout=out, stderr=''))
+        self.assertEqual(got, {'loaded': True, 'state': 'running', 'pid': 4242, 'last_exit': 0})
+
+    def test_oversized_or_incomplete_200_is_reachable_unverified_not_down(self):
+        os.environ['OMA_RUNNER_SOMA_SERVICE'] = 'http://127.0.0.1:1'
+        try:
+            for why in ('oversized reply', 'incomplete or non-JSON reply'):
+                def fetch(url, why=why): raise S.Unverified(why)
+                (check,) = S.capability_probe('soma', fetch=fetch)
+                self.assertEqual((check['code'], check['result']), ('reachable_unverified', 'unverified'))
+            def down(url): raise OSError('connection refused')
+            self.assertEqual(S.capability_probe('soma', fetch=down)[0]['result'], 'fail')
+        finally:
+            del os.environ['OMA_RUNNER_SOMA_SERVICE']
+
+    def test_real_http_200_cut_short_oversized_or_not_json_is_unverified(self):
+        import http.server, threading
+        bodies = {'/short': (b'{"service": "soma-serve"', 100), '/big': (b'{"a": "' + b'x' * 300_000 + b'"}', None),
+                  '/list': (b'[1, 2]', None), '/ok': (b'{"service": "soma-serve"}', None)}
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                body, length = bodies[self.path]
+                self.send_response(200); self.send_header('Content-Length', str(length or len(body))); self.end_headers()
+                self.wfile.write(body)
+            def log_message(self, *a): pass
+        server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        base = 'http://127.0.0.1:%d' % server.server_address[1]
+        try:
+            for path in ('/short', '/big', '/list'):
+                with self.assertRaises(S.Unverified, msg=path):
+                    S.http_json(base + path, timeout=2)
+            self.assertEqual(S.http_json(base + '/ok'), (200, {'service': 'soma-serve'}))
+        finally:
+            server.shutdown(); server.server_close()
+
+    def test_unprobed_service_is_structured_unsupported(self):
+        (check,) = S.capability_probe('canvas')
+        self.assertEqual((check['check'], check['target'], check['code'], check['result']), ('canvas_capability', 'canvas', 'no_capability_probe', 'unsupported'))
+
+
+class Redaction(unittest.TestCase):
+    def test_cookie_and_authorization_lines_are_removed_whole(self):
+        text = 'ok line\nCookie: a=1; session=abcdef123456\nSet-Cookie: sid=zzzzyyyyxxxx; Path=/\nauthorization: Basic dXNlcjpwYXNz\nlast'
+        out = S.redact(text)
+        for secret in ('abcdef123456', 'zzzzyyyyxxxx', 'dXNlcjpwYXNz', 'a=1'):
+            self.assertNotIn(secret, out)
+        self.assertIn('ok line', out); self.assertIn('last', out)
+
+    def test_quoted_json_token_assignments_are_removed(self):
+        out = S.redact('{"access_token": "ya29.abc def", "refresh_token":"1//xyz", "expires_in": 3599}')
+        for secret in ('ya29.abc def', '1//xyz', 'abc def'):
+            self.assertNotIn(secret, out)
+        self.assertIn('3599', out)
+
+    def test_stderr_is_redacted_before_the_tail_is_taken(self):
+        # The cut lands inside the secret: tailing first would keep its unredactable second half.
+        stderr = 'x' * 500 + ' token=' + 'S' * 20 + 'TAILSECRET'
+        tail = S.stderr_tail(stderr, limit=25)
+        self.assertNotIn('TAILSECRET', tail)
+        self.assertNotIn('SSSS', tail)
 
 
 class LiveBackendIsNeverUsedHere(unittest.TestCase):

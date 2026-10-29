@@ -12,7 +12,7 @@ Nothing here enrolls or replaces owner keys, runs a shell, takes a path or comma
 service whose restart cannot be verified by that service's own capability check. Times are epoch milliseconds.
 """
 import base64, contextlib, fcntl, hashlib, hmac, json, os, pathlib, re, secrets, socket, stat, subprocess, tempfile, threading, time
-import urllib.error, urllib.request
+import http.client, urllib.error, urllib.request
 
 HOME = pathlib.Path.home()
 TRUST_FILE = pathlib.Path('/Library/Application Support/Soma/connections-owner-keys.json')
@@ -85,10 +85,12 @@ def host_identity():
 
 
 # ---- redaction ----------------------------------------------------------------------------------------------------
-_SECRETS = [  # applied in order: a header's whole value before the generic key=value rule can take only its first word
+_SECRETS = [  # applied in order: whole credential lines, then a header's whole value, then generic key=value
+    re.compile(r'(?im)^[^\n]*\b(?:set-cookie|cookie|authorization|proxy-authorization)\b[^\n]*$'),
     re.compile(r'(?i)authorization["\']?\s*[:=]\s*["\']?(?:bearer\s+|basic\s+)?[^\s"\',}]+'),
     re.compile(r'(?i)bearer\s+[A-Za-z0-9._~+/=-]{8,}'),
     re.compile(r'(?:sk-|xox[a-z]-|ghp_|gho_|github_pat_)[A-Za-z0-9_-]{8,}'),
+    re.compile(r'(?i)"[a-z_]*(?:token|key|secret|password|nonce|signature|credential)[a-z_]*"\s*:\s*"[^"]*"'),
     re.compile(r'(?i)(?:token|api[_-]?key|key|secret|password|nonce|signature|cookie)["\']?\s*[:=]\s*["\']?[^\s"\',}]{4,}'),
 ]
 _SECRET_FIELDS = {'nonce', 'owner_signature', 'signature', 'owner_payloads', 'payload', 'payload_b64', 'key', 'token', 'secret',
@@ -107,6 +109,18 @@ def redact(value, depth=0):
             value = pattern.sub('[redacted]', value)
         return value[:2000]
     return value
+
+
+def stderr_tail(text, limit=400):
+    """Redacted BEFORE the tail is taken, so a secret split by the cut can never survive half-redacted."""
+    return redact(text or '')[-limit:]
+
+
+def mkcheck(check, target, code, result, fields=None, stderr=None):
+    """One check in the phone incident schema: {check, target, code, result, fields, stderr_tail}.
+    result is pass | fail | unverified (reachable, evidence incomplete) | unsupported (no probe exists)."""
+    return {'check': check, 'target': target, 'code': code, 'result': result, 'fields': redact(fields or {}),
+            'stderr_tail': stderr_tail(stderr) if stderr else ''}
 
 
 # ---- owner trust --------------------------------------------------------------------------------------------------
@@ -347,7 +361,7 @@ class LiveBackend:
         assert domain == 'gui' and mode == 'gui'
         r = subprocess.run([LAUNCHCTL, 'kickstart', '-k', target(service)], capture_output=True, text=True, timeout=30, check=False)
         if r.returncode != 0:
-            raise RuntimeError(f'launchctl kickstart exited {r.returncode}: {redact(r.stderr.strip())[:300]}')
+            raise RuntimeError(f'launchctl kickstart exited {r.returncode}: {stderr_tail(r.stderr, 300)}')
 
     def privileged(self, service):
         helper = PRIVILEGED_HELPER
@@ -391,41 +405,59 @@ def launchd_state(service, runner=subprocess.run):
     r = runner([LAUNCHCTL, 'print', target(service)], capture_output=True, text=True, timeout=10, check=False)
     if r.returncode != 0:
         return {'loaded': False, 'state': 'not_loaded', 'pid': None}
+    # Only these whitelisted fields are parsed; launchctl's full output (environment variables!) is never kept.
     state = re.search(r'^\s*state = (\S+)', r.stdout, re.M)
     pid = re.search(r'^\s*pid = (\d+)', r.stdout, re.M)
-    return {'loaded': True, 'state': state.group(1) if state else 'unknown', 'pid': int(pid.group(1)) if pid else None}
+    exit_code = re.search(r'^\s*last exit code = (-?\d+)', r.stdout, re.M)
+    return {'loaded': True, 'state': state.group(1) if state else 'unknown', 'pid': int(pid.group(1)) if pid else None,
+            'last_exit': int(exit_code.group(1)) if exit_code else None}
+
+
+class Unverified(Exception):
+    """Reachable (a reply arrived) but its evidence is incomplete: never a pass, never network-down."""
 
 
 def http_json(url, timeout=4):
     request = urllib.request.Request(url, headers={'Accept': 'application/json'})
     with urllib.request.urlopen(request, timeout=timeout) as reply:  # noqa: S310 -- fixed local/tailnet URLs only
-        body = reply.read(262_145)
+        try:
+            body = reply.read(262_145)
+        except (http.client.IncompleteRead, TimeoutError, ConnectionError):
+            raise Unverified('reply cut off before its end') from None
         if len(body) > 262_144:
-            raise ValueError('oversized')
-        return reply.status, json.loads(body)
+            raise Unverified('oversized reply')
+        try:
+            data = json.loads(body)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            raise Unverified('incomplete or non-JSON reply') from None
+        if not isinstance(data, dict):
+            raise Unverified('reply is not a JSON object')
+        return reply.status, data
 
 
 def capability_probe(service, fetch=http_json):
     """Each service's own capability evidence. Unsupported is an honest structured result, never a pass."""
-    def check(code, ok, detail):
-        return {'code': code, 'state': 'pass' if ok else 'fail', 'detail': detail}
     try:
         if service == 'soma':
             base = os.environ.get('OMA_RUNNER_SOMA_SERVICE', '').rstrip('/')
             if not base:
-                return [{'code': 'soma_url', 'state': 'unsupported', 'detail': 'OMA_RUNNER_SOMA_SERVICE is not configured.'}]
+                return [mkcheck('soma_identity', 'soma', 'not_configured', 'unsupported', {'missing': 'OMA_RUNNER_SOMA_SERVICE'})]
             status, data = fetch(base + '/health')
-            return [check('soma_identity', status == 200 and data.get('service') == 'soma-serve', 'Soma service identity.')]
+            ok = status == 200 and data.get('service') == 'soma-serve'
+            return [mkcheck('soma_identity', 'soma', 'ok' if ok else 'wrong_identity', 'pass' if ok else 'fail', {'http_status': status})]
         if service == 'syncthing':
             status, data = fetch('http://127.0.0.1:8384/rest/noauth/health')
-            return [check('syncthing_health', status == 200 and data.get('status') == 'OK', 'Syncthing REST health.'),
-                    {'code': 'syncthing_folders', 'state': 'unsupported', 'detail': 'Folder state needs the Syncthing API key; not read by this probe.'}]
+            ok = status == 200 and data.get('status') == 'OK'
+            return [mkcheck('syncthing_health', 'syncthing', 'ok' if ok else 'unhealthy', 'pass' if ok else 'fail', {'http_status': status}),
+                    mkcheck('syncthing_folders', 'syncthing', 'needs_api_key', 'unsupported', {'missing': 'Syncthing API key (not read by this probe)'})]
         if service == 'runner':
-            return [{'code': 'runner_self', 'state': 'pass', 'detail': 'This runner answered after start.'}]
-    except (urllib.error.URLError, OSError, ValueError, json.JSONDecodeError) as e:
-        return [{'code': service + '_probe', 'state': 'fail', 'detail': redact(str(e))[:200]}]
-    return [{'code': service + '_capability', 'state': 'unsupported',
-             'detail': 'No capability probe for this service yet; restart cannot be verified, so it is blocked.'}]
+            return [mkcheck('runner_self', 'runner', 'ok', 'pass', {'host': host_identity()})]
+    except Unverified as e:
+        return [mkcheck(service + '_probe', service, 'reachable_unverified', 'unverified', {'reason': str(e)})]
+    except (urllib.error.URLError, OSError) as e:
+        return [mkcheck(service + '_probe', service, 'unreachable', 'fail', {}, stderr=str(e))]
+    return [mkcheck(service + '_capability', service, 'no_capability_probe', 'unsupported',
+                    {'reason': 'No capability probe for this service yet; its restart cannot be verified, so it is blocked.'})]
 
 
 def verifiable(service):
@@ -543,12 +575,14 @@ class Controller:
         op.update(changes, updated_at=self.clock())
         self.records.operation(op)
 
-    def _fail(self, op, stage, code, detail):
-        op['checks'].append({'code': code, 'state': 'fail', 'detail': detail})
+    def _fail(self, op, stage, code, detail, actor='owner'):
+        op['checks'].append(mkcheck('restart', op['service'], code, 'fail', {'stage': stage}))
         self._save(op, stage=stage)
-        incident = {'id': 'inc-' + secrets.token_hex(8), 'time': self.clock(), 'host': self.host, 'service': op['service'],
-                    'operation': op['id'], 'checks': op['checks'], 'root_cause': code,
-                    'next_steps': [{'actor': 'owner', 'action': detail}]}
+        checks = op['checks'][-24:]
+        incident = {'schema': 1, 'id': 'inc-' + secrets.token_hex(8), 'time': self.clock(), 'last_seen': self.clock(), 'occurrences': 1,
+                    'service': op['service'], 'host': self.host, 'stage': stage, 'summary': detail, 'root_cause': code,
+                    'operation': op['id'], 'checks': checks, 'checks_truncated': len(op['checks']) > len(checks),
+                    'next_steps': [{'actor': actor, 'action': detail, 'reason': code}]}
         self.records.incident(incident)
         op['incident'] = incident['id']
         self._save(op)
@@ -560,7 +594,7 @@ class Controller:
             if not verifiable(service):
                 return self._fail(op, 'blocked', 'no_capability_probe', 'This service has no capability check, so a restart could not be verified. Nothing was restarted.')
             with self.gate.exclusive(self.work):
-                op['checks'].append({'code': 'work_idle', 'state': 'pass', 'detail': 'No active, waiting, queued or background work; build/walk locks held.'})
+                op['checks'].append(mkcheck('work_idle', 'runner', 'idle', 'pass', {'working': 0, 'waiting': 0, 'queued': 0, 'background': 0, 'locks_held': len(self.gate.held)}))
                 self._save(op, stage='restoring')
                 if mode == 'gui':
                     self.backend.kickstart_gui(service)
@@ -586,10 +620,10 @@ class Controller:
             checks = []
             with contextlib.suppress(Exception):
                 checks = self.probe(service)
-            if checks and all(c['state'] == 'pass' for c in checks if c['state'] != 'unsupported') and any(c['state'] == 'pass' for c in checks):
+            if checks and all(c['result'] == 'pass' for c in checks if c['result'] != 'unsupported') and any(c['result'] == 'pass' for c in checks):
                 op['checks'].extend(checks)
                 return self._save(op, stage='restored', verified=True)
-        op['checks'].extend(checks or [{'code': service + '_probe', 'state': 'fail', 'detail': 'No passing capability check after restart.'}])
+        op['checks'].extend(checks or [mkcheck(service + '_probe', service, 'no_result', 'fail')])
         self._fail(op, 'failed', 'not_verified', 'The service restarted but its capability check did not pass. Check it before trying again.')
 
     def resume(self):
