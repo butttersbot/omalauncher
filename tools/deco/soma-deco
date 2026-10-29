@@ -87,6 +87,12 @@ def client(c):
     return d
 
 
+def link_of(c):
+    """How a device is joined, as the router says: Wired, or the Wi-Fi band; None if it doesn't say."""
+    if (c.wire_type or "").lower() == "wired" or (c.connection_type or "").lower() == "wired": return "Wired"
+    band = {"band2_4": "2.4 GHz", "band5": "5 GHz", "band5_2": "5 GHz", "band6": "6 GHz"}.get((c.connection_type or "").lower())
+    return band
+
 def failure(exc):
     name = type(exc).__name__
     if "Authentication" in name: return "auth-failed", "The router refused the password"
@@ -105,7 +111,7 @@ def poll():
         nodes = d.get_device_list()
         # Names only: the router's per-device speeds aren't live (0 for the Fold under a 300 Mbps download, 2026-10-28),
         # so none are shown (Phone A's call, 2026-10-28).
-        devices = sorted(({"id": x.mac, "name": x.name or x.mac} for x in clients), key=lambda v: v["name"].lower())
+        devices = sorted(({"id": x.mac, "name": x.name or x.mac, "link": link_of(x)} for x in clients), key=lambda v: v["name"].lower())
         s = {**base, "state": "ok", "connected": True, "devices": devices, "deviceNames": [v["name"] for v in devices],
              "nodes": [{"id": n.mac, "name": n.custom_nickname or n.nickname or n.device_model, "role": n.role, "model": n.device_model} for n in nodes]}
         try: rt = router_test(d.request("admin/device", "speedtest", {"operation": "read"}))

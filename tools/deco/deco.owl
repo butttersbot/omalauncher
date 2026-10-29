@@ -1,5 +1,5 @@
 widget "Deco" {
-  meta { owl: 10; description: "Home network: line speed and devices from the Deco mesh"; version: "0.3.0"; category: "home"; license: "MIT" }
+  meta { owl: 10; description: "Home network: line speed and devices from the Deco mesh"; version: "0.4.0"; category: "home"; license: "MIT" }
   size: 6x3
   minSize: 3x3
   padding: 10
@@ -43,7 +43,7 @@ widget "Deco" {
     Row {
       align: center
       Text { text: "Deco"; style: title; weight: 1 }
-      Text { text: "● ${health}"; style: label; color: healthColor }
+      Text { spans: [{text: "● ", color: healthColor}, {text: health, color: live ? foreground : muted}]; font: mono; fontSize: 12 }
     }
     Row {
       align: bottom
@@ -62,10 +62,16 @@ widget "Deco" {
       Text { text: state == "unlinked" ? "Link your router to see live readings." : (net.message ?? "No reading from the router yet."); style: small; color: muted; maxLines: 2 }
     }
     if large && live {
-      Spacer { height: 4 }
+      // The mockup's device section (v5 large), without speeds: the router's per-device numbers aren't live, so each
+      // row says how the device is joined (Wired, or the Wi-Fi band), which it does report.
+      Spacer { height: 2 }
+      Box { fill: width; height: 1; background: foreground }
+      Spacer { height: 2 }
       Text { text: "ONLINE NOW"; style: label; color: muted }
-      Text { text: join(take(net.deviceNames ?? [], 4), " · ") + (len(devices) > 4 ? " · +${len(devices) - 4}" : ""); maxLines: 2 }
-      Text { text: "${len(nodes)} Decos online"; style: small; color: muted }
+      for d in take(devices, 3) key d.id {
+        Row { align: center; Text { text: d.name; weight: 1; maxLines: 1 } Text { text: d.link ?? "—"; bold: true } }
+      }
+      Text { text: "${len(nodes)} Decos online${len(devices) > 3 ? " · ${len(devices) - 3} more devices" : ""}"; style: small; color: muted; maxLines: 1 }
     }
     Spacer { weight: 1 }
     if !short { Box { fill: width; height: 1; background: foreground } }
@@ -108,7 +114,7 @@ widget "Deco" {
           scroll: true
           gap: 6
           for d in (showAll ? devices : take(devices, 3)) key d.id {
-            Text { text: d.name; bold: true; maxLines: 1 }
+            Row { align: center; Text { text: d.name; weight: 1; bold: true; maxLines: 1 } Text { text: d.link ?? "—"; font: mono } }
           }
           if len(devices) > 3 {
             Text { text: showAll ? "[ Show fewer ]" : "[ ${len(devices) - 3} other devices ]"; onTap: showAll = !showAll }
