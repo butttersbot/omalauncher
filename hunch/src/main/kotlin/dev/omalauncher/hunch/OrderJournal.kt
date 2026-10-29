@@ -129,6 +129,6 @@ internal class OrderJournal(private val file: File) : java.io.Closeable {
     }
     private fun ticketJson(t: OrderTicket) = JSONObject().put("wallet", t.wallet).put("asset", t.asset)
         .put("market", t.market).put("side", t.side).put("price", t.limitPrice.toPlainString()).put("shares", t.shares.toPlainString())
-        .put("notional", t.notional.toPlainString()).put("feeCeiling", t.feeCeiling.toPlainString())
+        .put("feeRateCeiling",t.feeRateCeiling.toPlainString()).put("notional", t.notional.toPlainString()).put("feeCeiling", t.feeCeiling.toPlainString())
         .put("buy", t.buy).put("testnet", t.testnet).put("maximumDebit", t.maximumDebit.toPlainString()).put("reviewedAt", t.reviewedAt).put("timeInForce", t.timeInForce)
 }

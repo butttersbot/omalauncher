@@ -47,6 +47,15 @@ class HyperliquidOrdersTest {
         val extra=body();extra.getJSONObject("action").getJSONArray("orders").put(JSONObject(extra.getJSONObject("action").getJSONArray("orders").getJSONObject(0).toString()))
         refuses{HyperliquidOrders.validate(extra,ticket,cloid,now)}
     }
+    @Test fun feeCeilingRoundsUpToVenueUsdcPrecisionInsteadOfUnderstatingDebit() {
+        val now=1800000000000L;val wallet="0x1111111111111111111111111111111111111111"
+        val rules=VenueOrderRules(100000010,"Fixture","Yes",BigDecimal("0.01"),BigDecimal.ONE,BigDecimal.ONE,BigDecimal.ONE,now)
+        val funds=FundingSnapshot(wallet,now,null,null,BigDecimal("1.00000001"))
+        val ticket=OrderTickets.prepareFunded(OrderWallet(wallet),rules,BigDecimal("0.5"),BigDecimal("2"),BigDecimal("0.0000000001"),funds,now)
+        assertEquals(0,ticket.feeCeiling.compareTo(BigDecimal("0.00000001")))
+        assertEquals(0,ticket.maximumDebit.compareTo(BigDecimal("1.00000001")))
+        refuses{OrderTickets.prepareFunded(OrderWallet(wallet),rules,BigDecimal("0.5"),BigDecimal("2"),BigDecimal("0.0000000001"),funds.copy(venueAvailableUsdc=BigDecimal.ONE),now)}
+    }
     @Test fun cancellationCannotTargetAnotherOrderAssetOrNonce() {
         val now=1800000000000L;val cloid="0x11111111111111111111111111111111"
         val ticket=OrderTicket("0x1111111111111111111111111111111111111111",100000010,"Fixture","Yes",BigDecimal("0.5"),BigDecimal("20"),BigDecimal("10"),BigDecimal.ZERO,BigDecimal("10"),now)
@@ -67,7 +76,7 @@ class HyperliquidOrdersTest {
         fun ticket(shares:String,available:String,at:Long=now)=OrderTickets.prepareFunded(OrderWallet(wallet),rules,BigDecimal("0.5"),BigDecimal(shares),BigDecimal("0.01"),funds,at,false,"Gtc",true,BigDecimal(available))
         val sell=ticket("4","4")
         assertFalse(sell.buy);assertTrue(sell.testnet);assertEquals("Gtc",sell.timeInForce)
-        assertEquals(BigDecimal.ZERO,sell.maximumDebit);assertEquals(BigDecimal("0.04"),sell.feeCeiling)
+        assertEquals(BigDecimal.ZERO,sell.maximumDebit);assertEquals(0,sell.feeCeiling.compareTo(BigDecimal("0.04")))
         assertEquals(0,sell.minimumProceeds.compareTo(BigDecimal("1.980")))
         val cheap=OrderTickets.prepareFunded(OrderWallet(wallet),rules.copy(priceTick=BigDecimal("0.0001")),BigDecimal("0.0001"),BigDecimal("10000"),BigDecimal("0.01"),funds,now,false,"Ioc",true,BigDecimal("10000"))
         assertEquals(0,cheap.minimumProceeds.compareTo(BigDecimal("0.99")))

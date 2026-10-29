@@ -1,6 +1,7 @@
 package dev.omalauncher.hunch
 
 import java.math.BigDecimal
+import java.math.RoundingMode
 
 /** No defaults for venue rules or owner consent: live adapters must supply verified values. */
 internal data class VenueOrderRules(
@@ -15,11 +16,12 @@ internal data class OrderTicket(
     val limitPrice: BigDecimal, val shares: BigDecimal, val notional: BigDecimal,
     val feeCeiling: BigDecimal, val maximumDebit: BigDecimal, val reviewedAt: Long,
     val buy: Boolean = true, val timeInForce: String = "Ioc", val testnet: Boolean = false,
+    val feeRateCeiling: BigDecimal = BigDecimal.ZERO,
 ) {
     // Sale fees rise with an improved fill price, so subtracting the global fee
     // ceiling from limit proceeds would falsely reject low-price owned shares.
     val minimumProceeds: BigDecimal get() = if (buy) BigDecimal.ZERO else
-        notional.multiply(BigDecimal.ONE.subtract(feeCeiling.divide(shares)))
+        notional.multiply(BigDecimal.ONE.subtract(feeRateCeiling)).setScale(8,RoundingMode.DOWN)
     fun fresh(now: Long) = now >= reviewedAt && now - reviewedAt <= 30_000
 }
 
@@ -29,7 +31,7 @@ internal object OrderTickets {
                       shares: BigDecimal, feeRateCeiling: BigDecimal, funding: FundingSnapshot, now: Long,
                       buy: Boolean = true, timeInForce: String = "Ioc", testnet: Boolean = false,
                       availableShares: BigDecimal? = null): OrderTicket {
-        val ticket = prepare(owner, rules, price, shares, feeRateCeiling, now, buy, timeInForce, testnet)
+        val ticket = prepare(owner, rules, price, shares, feeRateCeiling, now, buy, timeInForce, testnet, feeRateCeiling)
         if (buy) {
             val readiness = FundingChecks.check(funding, owner.wallet, ticket.maximumDebit, now)
             require(readiness.tradingCashReady) { readiness.message }
@@ -52,8 +54,8 @@ internal object OrderTickets {
         require(shares.signum() > 0 && shares.remainder(rules.sizeStep).signum() == 0) { "Size does not match venue rules" }
         val notional = shares.multiply(price)
         require(shares >= rules.minimumShares && notional >= rules.minimumNotional) { "Size is below the venue minimum; choose a new size" }
-        val fees = (if (buy) notional else shares).multiply(feeRateCeiling)
+        val fees = (if (buy) notional else shares).multiply(feeRateCeiling).setScale(8,RoundingMode.CEILING)
         val debit = if (buy) notional.add(fees) else BigDecimal.ZERO
-        return OrderTicket(owner.wallet.lowercase(), rules.asset, rules.market, rules.side, price, shares, notional, fees, debit, now, buy, timeInForce, testnet)
+        return OrderTicket(owner.wallet.lowercase(), rules.asset, rules.market, rules.side, price, shares, notional, fees, debit, now, buy, timeInForce, testnet, feeRateCeiling)
     }
 }

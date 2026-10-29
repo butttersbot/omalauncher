@@ -237,7 +237,7 @@ class TradeActivity : PaperActivity() {
             val ticket=OrderTicket(saved.getString("wallet"),saved.getInt("asset"),saved.getString("market"),saved.getString("side"),
                 saved.getString("price").toBigDecimal(),saved.getString("shares").toBigDecimal(),saved.getString("notional").toBigDecimal(),
                 saved.getString("feeCeiling").toBigDecimal(),saved.getString("maximumDebit").toBigDecimal(),now,
-                saved.optBoolean("buy",true),saved.getString("timeInForce"),saved.optBoolean("testnet"))
+                saved.optBoolean("buy",true),saved.getString("timeInForce"),saved.optBoolean("testnet"),saved.optString("feeRateCeiling","0").toBigDecimal())
             styledDialog(AlertDialog.Builder(this).setCustomTitle(text("CANCEL ORDER?",22f).apply{setPadding(dp(18),dp(12),dp(18),0)})
                 .setMessage("${if(ticket.testnet) "TESTNET" else "MAINNET"}\n${ticket.market} · ${ticket.side}\n${row.cloid}\nAlready-filled shares are not reversed. Confirm signs one cancellation; status is then read from the venue.")
                 .setNegativeButton("Back",null).setPositiveButton("Confirm cancel") {_,_->
