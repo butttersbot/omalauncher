@@ -48,8 +48,8 @@ class OmaPart(val word: String, val lib: String, val oldName: String?, val oldWo
 val OMA_PARTS = listOf(
     OmaPart("threads", "thread", "oma-thread"),
     OmaPart("keep", "keep", "oma-keep"),
-    OmaPart("connections", "connections", oldName = null),
     OmaPart("status", "agents", "oma-agents", oldWord = "status"),
+    OmaPart("connections", "connections", oldName = null),
     OmaPart("drop", "drop", oldName = null),
     OmaPart("msg", "msg", oldName = null),
     OmaPart("front", "front", oldName = null),

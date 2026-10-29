@@ -162,3 +162,12 @@ modal header and unfolded repair/inventory columns look correct. Those script
 fixes are now in the repository; agent-details disclosure is added to the next
 slice's accumulated walkthrough. New actual Restore/auth paths still need their
 own fake-runner success/failure/blocked coverage; no phone install was performed.
+
+Native owner-control protocol source added: fixed service IDs and request paths,
+strict host/service/nonce/expiry/payload binding, bounded sorted approval plan,
+no redirect or arbitrary command support, and auth-per-use P-256 Keystore signing
+through the OS CryptoObject. The public export is separate from incidents and
+contains no private key. New local-source tests exercise target substitution,
+expiry and whole-plan signature binding using in-memory test keys; no live
+service request is made. The controller is not wired into production Restore
+until the Mac endpoint contract and guarded operation status are integrated.
