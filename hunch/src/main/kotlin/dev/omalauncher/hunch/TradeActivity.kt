@@ -20,6 +20,7 @@ class TradeActivity : PaperActivity() {
     private var journal: OrderJournal? = null
     private var reviewed: Pair<JournalOrder, OrderTicket>? = null
     private var signing = false; private var signatureTaken = false; private var submitted = false
+    private var cancelMode=false
     private var demo=false
     private var sdkReady=false
     private var nonce = 0L
@@ -62,6 +63,7 @@ class TradeActivity : PaperActivity() {
         price = field("Limit price · USDC per share"); root.addView(price)
         size = field("Exact number of shares"); root.addView(size)
         review = Button(this).apply { text = "Review order"; setOnClickListener { prepare() } }; root.addView(review)
+        root.addView(Button(this).apply { text = "Cancel resting order"; setOnClickListener { cancelResting() } })
         root.addView(Button(this).apply { text = "Check previous order status"; setOnClickListener { reconcile() } })
         message = text("Choose the network, action, price and size. Nothing is signed or sent when you open this ticket."); root.addView(message)
         root.addView(Button(this).apply { text = "Back to market"; setOnClickListener { if(!signing)finish() } })
@@ -107,13 +109,14 @@ class TradeActivity : PaperActivity() {
                     buy,chosenTif,testnet,HyperliquidOrders.available(balances,"+$encoding"))
                 service to ticket
             }
+            cancelMode=false
             api = prepared.first
             val ticket = prepared.second
             check(!signing) { "An order is already being signed" };cancelReview()
             val row = journal!!.review(ticket,System.currentTimeMillis()); reviewed = row to ticket
             val body = "${if(ticket.testnet) "TESTNET" else "MAINNET · REAL FUNDS"}\n${ticket.market}\n${if(ticket.buy) "Buy" else "Sell owned"} ${ticket.side}\nWallet ${ticket.wallet}\n\nExact size: ${ticket.shares.toPlainString()} shares\nLimit: ${ticket.limitPrice.toPlainString()} USDC\nFee ceiling: ${ticket.feeCeiling.toPlainString()} USDC\n" +
                 (if(ticket.buy) "Maximum debit / loss: ${ticket.maximumDebit.toPlainString()} USDC" else "Minimum proceeds: ${ticket.notional.subtract(ticket.feeCeiling).toPlainString()} USDC\nValue relinquished: up to ${ticket.shares.toPlainString()} USDC at settlement") +
-                "\n${if(ticket.timeInForce=="Ioc") "IOC: partial fills possible; remainder cancels." else "Limit GTC: may remain open. Cancel it on the venue if needed."}\n\nConfirm signs and sends this order once. Review expires after 30 seconds."
+                "\n${if(ticket.timeInForce=="Ioc") "IOC: partial fills possible; remainder cancels." else "Limit GTC: may remain open. Use Cancel resting order after checking status."}\n\nConfirm signs and sends this order once. Review expires after 30 seconds."
             val content = text(body).apply { setPadding(28,12,28,12) }
             AlertDialog.Builder(this@TradeActivity).setTitle("Review order").setView(ScrollView(this@TradeActivity).apply{addView(content)})
                 .setNegativeButton("Back") { _,_ -> cancelReview() }.setPositiveButton("Confirm") { _,_ -> confirm(row,ticket) }
@@ -134,11 +137,12 @@ class TradeActivity : PaperActivity() {
         if(signing || reviewed?.first?.id!=row.id)return
         try {
             check(ticket.fresh(System.currentTimeMillis())) { "Review expired. Review this order again." }
-            journal!!.transition(row.id,OrderStage.Signing,System.currentTimeMillis())
-            signing=true; signatureTaken=false;submitted=false;review.isEnabled=false;nonce=System.currentTimeMillis()
+            nonce=System.currentTimeMillis()
+            if(cancelMode)journal!!.beginCancel(row.id,nonce,ticket.reviewedAt+30_000) else journal!!.transition(row.id,OrderStage.Signing,System.currentTimeMillis())
+            signing=true; signatureTaken=false;submitted=false;review.isEnabled=false
             val data=JSONObject().put("id",row.id).put("wallet",ticket.wallet).put("asset",ticket.asset).put("buy",ticket.buy)
                 .put("price",ticket.limitPrice.stripTrailingZeros().toPlainString()).put("shares",ticket.shares.stripTrailingZeros().toPlainString())
-                .put("tif",ticket.timeInForce).put("testnet",ticket.testnet).put("cloid",row.cloid).put("nonce",nonce).put("expiresAfter",ticket.reviewedAt+30_000)
+                .put("cancel",cancelMode).put("tif",ticket.timeInForce).put("testnet",ticket.testnet).put("cloid",row.cloid).put("nonce",nonce).put("expiresAfter",ticket.reviewedAt+30_000)
             paper.evaluateJavascript("window.HunchSdk.send($data)",null); message.text="Signing the confirmed order…"
         } catch(e:Exception) { message.text=e.message;if(signing)uncertain("Signing did not start. Review again.") else cancelReview() }
     }
@@ -183,12 +187,21 @@ class TradeActivity : PaperActivity() {
         try {
             check(ticket.fresh(System.currentTimeMillis())) {"Review expired"}
             val body=data.getJSONObject("body")
-            HyperliquidOrders.validate(body,ticket,row.cloid,nonce)
-            journal!!.transition(row.id,OrderStage.Submitting,System.currentTimeMillis());submitted=true;message.text="Order sent once. Reading venue result…"
+            if(cancelMode)HyperliquidOrders.validateCancel(body,ticket,row.cloid,nonce) else HyperliquidOrders.validate(body,ticket,row.cloid,nonce)
+            if(!cancelMode)journal!!.transition(row.id,OrderStage.Submitting,System.currentTimeMillis());submitted=true;message.text="Order sent once. Reading venue result…"
             scope.launch {
                 try {
-                    val result=withContext(Dispatchers.IO){if(demo)JSONObject("""{"status":"ok","response":{"type":"order","data":{"statuses":[{"filled":{"oid":1,"totalSz":"${ticket.shares}","avgPx":"${ticket.limitPrice}"}}]}}}""") else checkNotNull(api).submit(body)}
-                    val stage=HyperliquidOrders.replyStage(result)
+                    val result=withContext(Dispatchers.IO){if(demo){
+                        when {
+                            cancelMode -> JSONObject("""{"status":"ok","response":{"type":"cancel","data":{"statuses":["success"]}}}""")
+                            ticket.timeInForce=="Gtc" -> JSONObject("""{"status":"ok","response":{"type":"order","data":{"statuses":[{"resting":{"oid":1}}]}}}""")
+                            else -> JSONObject("""{"status":"ok","response":{"type":"order","data":{"statuses":[{"filled":{"oid":1,"totalSz":"${ticket.shares}","avgPx":"${ticket.limitPrice}"}}]}}}""")
+                        }
+                    } else checkNotNull(api).submit(body)}
+                    val stage=if(cancelMode){
+                        val status=if(demo)JSONObject("""{"status":"order","order":{"status":"canceled"}}""") else withContext(Dispatchers.IO){checkNotNull(api).status(ticket.wallet,row.cloid)}
+                        HyperliquidOrders.statusStage(status) to row.venueId
+                    } else HyperliquidOrders.replyStage(result)
                     journal!!.transition(row.id,stage.first,System.currentTimeMillis(),stage.second,venueConfirmed=true)
                     reply(call,result);message.text="${stage.first}: ${result.toString().take(1800)}\nUse Check previous order status to read back from the venue."
                     signing=false;reviewed=null;review.isEnabled=true
@@ -197,8 +210,24 @@ class TradeActivity : PaperActivity() {
         } catch(e:Exception){reply(call,error=e.message?:"Unsafe request");uncertain("Order could not be sent. Check status before another order.")}
     }
     private fun uncertain(reason:String) {
-        reviewed?.let { runCatching { journal!!.transition(it.first.id,if(submitted)OrderStage.Unknown else OrderStage.Cancelled,System.currentTimeMillis()) } }
+        reviewed?.let { runCatching { journal!!.transition(it.first.id,if(submitted || cancelMode)OrderStage.Unknown else OrderStage.Cancelled,System.currentTimeMillis()) } }
         signing=false;reviewed=null;review.isEnabled=journal!=null;message.text=reason
+    }
+    private fun cancelResting() {
+        if(signing || journal==null || !sdkReady)return
+        try {
+            val row=journal!!.all().lastOrNull{it.stage==OrderStage.Resting} ?: error("Check status first: no confirmed resting order in the journal.")
+            val saved=row.ticket;val now=System.currentTimeMillis()
+            val ticket=OrderTicket(saved.getString("wallet"),saved.getInt("asset"),saved.getString("market"),saved.getString("side"),
+                saved.getString("price").toBigDecimal(),saved.getString("shares").toBigDecimal(),saved.getString("notional").toBigDecimal(),
+                saved.getString("feeCeiling").toBigDecimal(),saved.getString("maximumDebit").toBigDecimal(),now,
+                saved.optBoolean("buy",true),saved.getString("timeInForce"),saved.optBoolean("testnet"))
+            AlertDialog.Builder(this).setTitle("Cancel resting order?")
+                .setMessage("${if(ticket.testnet) "TESTNET" else "MAINNET"}\n${ticket.market} · ${ticket.side}\n${row.cloid}\nAlready-filled shares are not reversed. Confirm signs one cancellation; status is then read from the venue.")
+                .setNegativeButton("Back",null).setPositiveButton("Confirm cancel") {_,_->
+                    if(!signing){cancelReview();reviewed=row to ticket;cancelMode=true;api=HyperliquidOrders(ticket.testnet);confirm(row,ticket)}
+                }.show()
+        }catch(e:Exception){message.text=e.message}
     }
     private fun reconcile() {
         if(signing || journal==null)return

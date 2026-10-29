@@ -34,6 +34,9 @@ shell am force-stop dev.omalauncher.hunch
 shell am start -n dev.omalauncher.hunch/.MainActivity --es tradeFixture demo
 wait 5000
 expect FICTIONAL TEST ORDER
+scrollto IOC
+tap IOC
+tap Limit · rests until filled or cancelled
 scrollto Limit price
 tap Limit price
 type 0.5
@@ -47,5 +50,18 @@ tap Review order
 wait 1500
 expect Confirm
 shot hunch-order-unfolded-review
-tap Back
+tap Confirm
+wait 2000
+scrollto Resting
+expect Resting
+shot hunch-order-unfolded-resting
+swipe 0.5 0.35 0.5 0.85
+scrollto Cancel resting order
+tap Cancel resting order
+expect Confirm cancel
+tap Confirm cancel
+wait 2500
+scrollto Cancelled
+expect Cancelled
+shot hunch-order-unfolded-cancelled
 [phone] Owner opens an actual chosen market, enters the exact action/size/price, checks embedded wallet and network, reads fee ceiling/max loss and confirms/signs himself only. Owner funds wallet. Agents never tap Confirm for a live wallet. Check actual order status by cloid before any subsequent order; unclear result must never be retried. Real-wallet signing and funded testnet acceptance are not covered by emulator fixture.

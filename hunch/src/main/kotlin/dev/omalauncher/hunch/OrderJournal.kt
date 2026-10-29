@@ -80,6 +80,14 @@ internal class OrderJournal(private val file: File) : java.io.Closeable {
         persistOrRollback(id, null)
         return row.copy(ticket = JSONObject(row.ticket.toString()))
     }
+    /** Record the owner-confirmed cancel attempt before its signature/HTTP; the original stays unresolved. */
+    @Synchronized fun beginCancel(id:String, now:Long, expiresAfter:Long=now+30_000):JournalOrder {
+        usable();val old=checkNotNull(rows[id]);require(old.stage==OrderStage.Resting && expiresAfter>=now && expiresAfter-now<=30_000)
+        val ticket=JSONObject(old.ticket.toString()).put("cancelNonce",now).put("cancelExpiresAfter",expiresAfter)
+        val next=old.copy(stage=OrderStage.Unknown,ticket=ticket,updated=maxOf(old.updated,now))
+        rows[id]=next;persistOrRollback(id,old)
+        return next.copy(ticket=JSONObject(next.ticket.toString()))
+    }
     @Synchronized fun transition(id: String, stage: OrderStage, now: Long, venueId: String? = null, venueConfirmed: Boolean = false): JournalOrder {
         usable()
         val old = checkNotNull(rows[id]) { "Unknown order" }

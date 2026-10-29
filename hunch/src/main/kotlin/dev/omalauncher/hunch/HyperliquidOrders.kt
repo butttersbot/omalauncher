@@ -40,6 +40,12 @@ internal class HyperliquidOrders(val testnet: Boolean) {
             require(order.getJSONObject("t").getJSONObject("limit").getString("tif")==ticket.timeInForce)
             require(body.getLong("nonce")==nonce && body.getLong("expiresAfter")==ticket.reviewedAt+30_000 && body.isNull("vaultAddress"))
         }
+        fun validateCancel(body:JSONObject,ticket:OrderTicket,cloid:String,nonce:Long) {
+            val action=body.getJSONObject("action");val cancels=action.getJSONArray("cancels")
+            require(action.getString("type")=="cancelByCloid" && cancels.length()==1 && !action.has("orders"))
+            require(cancels.getJSONObject(0).getInt("asset")==ticket.asset && cancels.getJSONObject(0).getString("cloid")==cloid)
+            require(body.getLong("nonce")==nonce && body.getLong("expiresAfter")==ticket.reviewedAt+30_000 && body.isNull("vaultAddress"))
+        }
         fun available(state: JSONObject, coin: String): BigDecimal {
             val rows = state.getJSONArray("balances")
             val found = (0 until rows.length()).map { rows.getJSONObject(it) }.filter { it.getString("coin") == coin }

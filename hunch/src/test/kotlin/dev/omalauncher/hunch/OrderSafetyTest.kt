@@ -98,6 +98,27 @@ class OrderSafetyTest {
             }
         } finally { dir.deleteRecursively() }
     }
+    @Test fun cancelAttemptIsDurableAndCannotClearTheOriginalOrderWithoutVenueStatus() {
+        val dir=Files.createTempDirectory("hunch-cancel-test").toFile()
+        try {
+            val file=dir.resolve("orders.json");var id=""
+            OrderJournal(file).use{journal ->
+                val row=journal.review(ticket(),now);id=row.id
+                journal.transition(id,OrderStage.Signing,now);journal.transition(id,OrderStage.Submitting,now)
+                journal.transition(id,OrderStage.Resting,now,venueConfirmed=true)
+                val pending=journal.beginCancel(id,now+1000,now+20000)
+                assertEquals(OrderStage.Unknown,pending.stage)
+                assertEquals(now+1000,pending.ticket.getLong("cancelNonce"))
+                assertEquals(now+20000,pending.ticket.getLong("cancelExpiresAfter"))
+                refuses{journal.transition(id,OrderStage.Cancelled,now+1000)}
+            }
+            OrderJournal(file).use{journal ->
+                assertEquals(OrderStage.Unknown,journal.all().single().stage)
+                journal.transition(id,OrderStage.Cancelled,now+2000,venueConfirmed=true)
+                assertEquals(OrderStage.Reviewed,journal.review(ticket(),now+2000).stage)
+            }
+        } finally {dir.deleteRecursively()}
+    }
     @Test fun expiredReviewNeverSignsAndCorruptJournalNeverStartsEmpty() {
         val dir = Files.createTempDirectory("hunch-order-test").toFile()
         try {

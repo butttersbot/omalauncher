@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {order} from '@nktkas/hyperliquid/api/exchange';
+import {order,cancelByCloid} from '@nktkas/hyperliquid/api/exchange';
 import {privateKeyToAccount,generatePrivateKey} from 'viem/accounts';
 import {recoverTypedDataAddress} from 'viem';
 const wallet=privateKeyToAccount(generatePrivateKey()); // ephemeral, never printed or persisted
@@ -13,3 +13,6 @@ assert.equal(envelope.action.orders[0].b,false);assert.equal(envelope.expiresAft
 assert.deepEqual(Object.keys(envelope.action.orders[0]),['a','b','p','s','r','t','c']);
 console.log('PASS SDK canonical order, EIP-712 testnet source, recovered test signer, size, cloid, expiry, sell IOC');
 // Local fixture only. No HTTP calls and no mainnet key.
+
+await cancelByCloid({wallet,nonceManager:()=>1800000000001,transport:{isTestnet:true,request:async(path,body)=>{envelope=body;return {status:'ok',response:{type:'cancel',data:{statuses:['success']}}}}}},{cancels:[{asset:100000010,cloid:'0x11111111111111111111111111111111'}]},{expiresAfter:1800000030000});
+assert.equal(envelope.action.type,'cancelByCloid');assert.equal(envelope.action.cancels.length,1);assert.equal(envelope.action.cancels[0].asset,100000010);assert.equal(envelope.nonce,1800000000001);console.log('PASS SDK cancellation bound to one asset/cloid with expiry');
