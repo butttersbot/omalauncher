@@ -53,11 +53,12 @@ internal object ConnectionOwnerKey {
     fun authenticate(activity: Activity, plan: OwnerServicePlan, description: String,
         done: (Result<Pair<String, String>>) -> Unit): CancellationSignal {
         require(plan.fresh(System.currentTimeMillis())) { "Restore approval expired" }
+        require(description.isNotBlank() && description.length <= 500) { "Repair plan exceeds the complete owner-review display; no signature requested" }
         require(!activity.getSystemService(KeyguardManager::class.java).isKeyguardLocked) { "Owner unlock required" }
         val public = publicKey()
         val signature = Signature.getInstance("SHA256withECDSA").apply { initSign(store().getKey(ALIAS, null) as PrivateKey) }
         val builder = BiometricPrompt.Builder(activity).setTitle("Restore Connections").setSubtitle("Owner approval for this repair only")
-            .setDescription(description.take(500)).setConfirmationRequired(true)
+            .setDescription(description).setConfirmationRequired(true)
         if (Build.VERSION.SDK_INT >= 30) builder.setAllowedAuthenticators(android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_STRONG or android.hardware.biometrics.BiometricManager.Authenticators.DEVICE_CREDENTIAL)
         else builder.setNegativeButton("Cancel", activity.mainExecutor) { _, _ -> done(Result.failure(IllegalStateException("Owner cancelled"))) }
         val cancellation = CancellationSignal()
