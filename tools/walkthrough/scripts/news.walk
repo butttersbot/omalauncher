@@ -23,6 +23,7 @@ tap Refresh
 scrollto Show 20 more
 wait 1500
 scrollto Show 20 more
+shot before-show-more
 tap Show 20 more
 wait 800
 # The tap leaves the stream where it was, the list opening below (not back at the top of the section).
