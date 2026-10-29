@@ -1,0 +1,19 @@
+# "Send clipboard to" offers only the owner's own devices, once each: never Tailscale's funnel ingress or relay nodes
+# (Boss, 2026-10-29: a row of 'funnel-ingress-node' pills once Funnel went on). Logic: tools/herd/targets-test.mjs
+# (node) and the herd's own_hosts test. On the emulator the phone's shell offers the computers the herd reaches.
+# Sheep: 0.85 0.77 on the cover, 0.93 0.75 unfolded (change the taps for that run).
+shell setprop debug.soma.herdtest 1
+shell am force-stop dev.omalauncher.boss
+launch dev.omalauncher.boss/dev.omalauncher.MainActivity
+wait 2500
+tap 0.85 0.77
+wait 1500
+tap Tailshare
+wait 2500
+expect Send clipboard to
+absent funnel-ingress-node
+absent relay-node
+shot sendclip-targets
+shell setprop debug.soma.herdtest 0
+[phone] On the Fold, the Send clipboard row shows jacks-mac-pro, macbook-pro and omarchy-mg1 (the computers), each once, and no funnel-ingress-node
+[phone] On the Mac's and Omarchy's pets (after their pet.html is updated), the row shows his own devices once each and no funnel-ingress-node; sending to one still works
