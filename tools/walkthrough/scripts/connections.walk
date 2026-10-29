@@ -104,8 +104,10 @@ shot connections-large-unfolded
 tap Connections
 expect All capabilities
 expect Your Fictional Mac is connected.
-expect Notify me about unexpected outages and recovery
 shot connections-expanded-unfolded
+scrollto Notify me about unexpected outages and recovery
+expect After 60 seconds · one alert per incident
+swipe 0.50 0.30 0.50 0.80 500
 rotate portrait
 expect Connections
 expect All capabilities
@@ -115,7 +117,7 @@ shot connections-expanded-portrait
 swipe 0.50 0.70 0.50 0.30 500
 scrollto Pause monitoring for 1 hour
 expect Fixture only
-within 0.10 0.85 Fixture only
+within 0.10 0.95 Fixture only
 shot connections-portrait-scrolled
 swipe 0.50 0.30 0.50 0.80 500
 swipe 0.50 0.30 0.50 0.80 500

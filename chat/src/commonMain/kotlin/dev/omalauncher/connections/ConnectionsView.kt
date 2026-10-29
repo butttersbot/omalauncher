@@ -114,10 +114,12 @@ fun ConnectionsModule(size: ModuleSize, now: Long, modifier: Modifier = Modifier
                 Words(flag, caption(11.sp, tone.color), 1)
             }
             if (showSummary) {
-                Words(ConnectionsSource.repair?.let(::repairCardSummary) ?: bad?.let { "${it.capability.title} unavailable" }
+                // Restored and verified: the v6 healthy card, "Everything is ready" over what came back.
+                val restored = incidents.isEmpty() && allReady && repairStage(ConnectionsSource.repair, ConnectionsSource.checking) == 3
+                Words(if (restored) "Everything is ready" else ConnectionsSource.repair?.let(::repairCardSummary) ?: bad?.let { "${it.capability.title} unavailable" }
                     ?: if (ConnectionsSource.checking) "Checking connections…" else if (allReady && snapshot.checkedAt > 0) "Everything is ready" else "Connection check",
                     sans(if (small) 14.sp else 16.sp, weight = FontWeight.SemiBold), 1)
-                Words(bad?.let { connectionCause(it, worst.key) }
+                Words(if (restored) "Service restored · tap for details" else bad?.let { connectionCause(it, worst.key) }
                     ?: if (snapshot.checkedAt == 0L) "Waiting for a real check" else "Tap for verified details",
                     sans(if (small) 11.sp else 12.sp, Pack.muted), if (small) 2 else 1)
             }
