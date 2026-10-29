@@ -24,6 +24,21 @@ val looks by tasks.registering(Sync::class) {
 }
 sourceSets.main { resources.srcDir(looks) }
 
+/**
+ * The commit this build is from and when it was committed (soma-build.properties), which the update pill compares with the
+ * Mac Pro's published build (Updates.kt, tools/soma-release). Asked of Git through providers, so the configuration cache keeps it.
+ */
+val buildStamp by tasks.registering {
+    val commit = providers.exec { commandLine("git", "rev-parse", "--short=8", "HEAD"); isIgnoreExitValue = true }.standardOutput.asText.map { it.trim() }
+    val committed = providers.exec { commandLine("git", "log", "-1", "--format=%ct"); isIgnoreExitValue = true }.standardOutput.asText.map { it.trim() }
+    val out = layout.buildDirectory.dir("generated/stamp")
+    inputs.property("commit", commit)
+    inputs.property("committed", committed)
+    outputs.dir(out)
+    doLast { out.get().file("soma-build.properties").asFile.apply { parentFile.mkdirs(); writeText("commit=${commit.get()}\ncommitted=${committed.get()}\n") } }
+}
+sourceSets.main { resources.srcDir(buildStamp) }
+
 dependencies {
     implementation(project(":chat"))
     // This machine's Skia, or another's for a jar built here to run there: -PsomaOs=linux-x64 (MG1) or linux-arm64.
@@ -35,7 +50,13 @@ dependencies {
     testImplementation("org.jetbrains.compose.ui:ui-test:${libs.versions.compose.multiplatform.get()}")
 }
 
-tasks.test { forkEvery = 1 }
+tasks.test {
+    forkEvery = 1
+    // -PsomaShots=DIR: the update pill's cards as PNGs there, for a walk (UpdatesTest.shots).
+    systemProperty("soma.shots", providers.gradleProperty("somaShots").getOrElse(""))
+    // -PsomaWalk=DIR: the update walk against a real runner and a real published build (UpdateWalkTest), its record there.
+    systemProperty("soma.walk", providers.gradleProperty("somaWalk").getOrElse(""))
+}
 
 compose.desktop {
     application {

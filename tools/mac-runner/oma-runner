@@ -10,6 +10,8 @@ Only exact Codex command scopes the owner explicitly saved may reuse that decisi
 
   GET  /health                           {ok, working, waiting, kinds, models: {venice: [...]}}
   GET  /devices                          {runner, devices: [names]}: who this runner lets in, by name only (soma --mesh)
+  GET  /release                          the latest desktop build published here: {release: {commit, committed, notes, artifacts}}
+  GET  /release/files/NAME               one file that record names (the bytes); nothing else in the folder is served
   GET  /threads                          every thread: id, name, summary, status, last_worked, tail, pending, bot
   GET  /bots/ID                          one bot this machine hosts: its settings, instructions and notes (read only)
   POST /threads/ID/fresh                 a bot's session starts over: its conversation is archived, its notes stay
@@ -134,6 +136,10 @@ CODEX_SCAN_EVERY = float(os.environ.get('OMA_RUNNER_CODEX_SCAN_EVERY', '15'))
 # Soma Canvas (slice 8a, PRD §6): the canvas service a thread's agent may arrange screens through, and which of its screens.
 # With no service named, threads get no canvas token and nothing else changes.
 SOMA_SERVICE = os.environ.get('OMA_RUNNER_SOMA_SERVICE', '').rstrip('/')
+# The latest desktop build (tools/soma-release): its record, latest.json, and the files it names, put here only by a build whose
+# tests passed (the Mac Pro). Each Soma reads it over the runners it already has keys for and offers the update; nothing installs.
+RELEASE = pathlib.Path(os.environ.get('OMA_RUNNER_RELEASE') or HOME / '.local/share/soma-release')
+RELEASE_FILE = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,120}')
 SOMA_SCREENS = [screen for screen in os.environ.get('OMA_RUNNER_SOMA_SCREENS', 'car').split(',') if re.fullmatch(r'[a-z0-9-]{1,40}', screen)]
 canvas_tokens = {}
 canvas_given = []
@@ -4187,8 +4193,10 @@ class Runner(BaseHTTPRequestHandler):
                 states = [thread.meta['status'] for thread in threads.values()]
             # Where this Mac's canvas service is, when it has one: a device asks here rather than guessing a port.
             return self.answer(200, {'ok': True, 'runner': 'oma-runner', **({'soma': SOMA_SERVICE} if SOMA_SERVICE else {}), 'threads': len(states), 'working': states.count('working'), 'waiting': states.count('waiting'),
-                                     'kinds': [kind for kind in KINDS if program(kind)], 'models': {'venice': venice_models()} if program('venice') else {}, 'files': True,
+                                     'build': runner_build(), 'kinds': [kind for kind in KINDS if program(kind)], 'models': {'venice': venice_models()} if program('venice') else {}, 'files': True,
                                      'bots': [{key: bot[key] for key in ('id', 'name', 'emoji', 'problem')} for bot in found.values()]})
+        if parts == ['release'] or (len(parts) == 3 and parts[:2] == ['release', 'files']):
+            return self.release(parts)
         if parts == ['devices']:
             # Who this runner lets in, by Tailscale name only (never a digest), so a paired Soma can show every leg (soma --mesh).
             return self.answer(200, {'ok': True, 'runner': own_name_kept(), 'devices': sorted(d['name'] for d in DEVICES.table())})
@@ -4237,6 +4245,29 @@ class Runner(BaseHTTPRequestHandler):
         if parts[2] == 'stream':
             return self.stream(thread, self.after(query))
         self.answer(404, {'ok': False, 'error': 'not found'})
+
+    def release(self, parts):
+        """The latest desktop build's record (GET /release), or one file it names (GET /release/files/NAME). Only a name the
+        record lists is served, from the release folder itself; anything else is not found."""
+        record = release_record()
+        if record is None:
+            return self.answer(404, {'ok': False, 'error': 'no desktop build is published on this machine'})
+        if len(parts) == 1:
+            return self.answer(200, {'ok': True, 'release': record})
+        name = parts[2]
+        listed = {a.get('file') for a in record.get('artifacts', {}).values() if isinstance(a, dict)}
+        path = RELEASE / record['commit'] / name
+        if not RELEASE_FILE.fullmatch(name) or name not in listed or not path.is_file():
+            return self.answer(404, {'ok': False, 'error': 'not a file of the published build'})
+        size = path.stat().st_size
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/octet-stream')
+        self.send_header('Content-Length', str(size))
+        self.send_header('Cache-Control', 'no-store')
+        self.end_headers()
+        with path.open('rb') as f:
+            shutil.copyfileobj(f, self.wfile, 1 << 20)
+        self.note(200)
 
     def artifacts(self, parts, query):
         """A thread's artifacts (GET /threads/ID/artifacts), or one version of one (…/artifacts/NAME?v=N), from the
@@ -4741,6 +4772,27 @@ def launchctl(*arguments):
     return subprocess.run(['launchctl', *arguments], capture_output=True, text=True)
 
 
+def release_record():
+    """The published desktop build (RELEASE/latest.json), or None when there is none or it can't be read whole."""
+    try:
+        record = json.loads((RELEASE / 'latest.json').read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(record, dict) or not re.fullmatch(r'[0-9a-f]{7,40}', str(record.get('commit', ''))) or not isinstance(record.get('artifacts'), dict):
+        return None
+    return record
+
+
+def runner_build():
+    """The commit this runner was published from (oma-runner.build beside it, written by tools/soma-release), or None for one
+    installed from a checkout."""
+    try:
+        found = (pathlib.Path(__file__).resolve().parent / 'oma-runner.build').read_text().strip()
+    except OSError:
+        return None
+    return found if re.fullmatch(r'[0-9a-f]{7,40}', found) else None
+
+
 def runner_python():
     """A python3 the runner can run on: 3.11 or later, which has tomllib. The one running install first, then Homebrew's,
     then whatever PATH has. Over ssh PATH can put macOS's own 3.9 first, which took the Mac Pro down (2026-10-16)."""
@@ -4787,6 +4839,12 @@ def install():
         shutil.copyfile(__file__, INSTALLED)
         # The Connections service controller is imported from beside the installed runner.
         shutil.copyfile(pathlib.Path(__file__).resolve().parent / 'soma_services.py', INSTALLED.parent / 'soma_services.py')
+        # The commit a published runner came from (tools/soma-release), said by /health; one from a checkout has none.
+        stamp = pathlib.Path(__file__).resolve().parent / 'oma-runner.build'
+        if stamp.is_file():
+            shutil.copyfile(stamp, INSTALLED.parent / 'oma-runner.build')
+        else:
+            (INSTALLED.parent / 'oma-runner.build').unlink(missing_ok=True)
     INSTALLED.chmod(0o755)
     LOGS.mkdir(parents=True, exist_ok=True)
     path = ':'.join([str(HOME / '.local/bin'), str(HOME / '.local/share/mise/shims'), str(HOME / '.bun/bin'), '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin'])

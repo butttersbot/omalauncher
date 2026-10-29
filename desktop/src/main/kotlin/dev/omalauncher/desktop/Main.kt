@@ -26,6 +26,9 @@ import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.isAltPressed
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.Alignment
+import dev.omalauncher.oma.LocalTopBarExtra
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
 import dev.omalauncher.canvas.chatHostModules
@@ -209,6 +212,19 @@ fun main(args: Array<String>) {
         }
     }
     engine.open()
+    // The update pill (Updates.kt): what the last update came to, said once; then the Mac Pro's published build, asked
+    // after the keys thread's first read and every half hour. Nothing installs until he taps it.
+    var quitNow: (() -> Unit)? = null
+    val updateDir = File(SomaHome.dir, "update")
+    val updater = Updater(DesktopUpdateHands({ RunnerKeys.known }, updateDir, quitting = { javax.swing.SwingUtilities.invokeLater { quitNow?.invoke() } }), updateDir)
+    thread(name = "soma-update", isDaemon = true) {
+        runCatching { updater.reportAtStart() }
+        Thread.sleep(15_000)
+        while (true) {
+            runCatching { updater.check() }
+            Thread.sleep(UPDATE_CHECK_MS)
+        }
+    }
     application {
         var shown by shown
         var wanted by wantedTab
@@ -216,6 +232,7 @@ fun main(args: Array<String>) {
         fun showDashboard(on: Boolean) { dashboardShown = on; SomaHome.write(SomaHome.settings, SomaHome.read(SomaHome.settings).put("dashboard", on)) }
         remember {
             val quit = { scraps.close(); LinuxTray.stop(); Single.release(); exitApplication() }
+            quitNow = quit
             // The service is asked off the tray's thread; the code or what went wrong comes back as a notice.
             val car = { pair: Boolean -> kotlin.concurrent.thread(name = "soma-car-pairing", isDaemon = true) {
                 notices.say("Soma", if (pair) CarPairing.start(platform.machines()) else CarPairing.end(platform.machines()))
@@ -258,7 +275,11 @@ fun main(args: Array<String>) {
             androidx.compose.runtime.DisposableEffect(window) { onDispose(Pinch.attach(window.rootPane) { inward -> canvas.overview = inward }) }
             CompositionLocalProvider(LocalBackStack provides dashboardBack) {
                 // A module's thread opens in the chat window, brought forward.
-                CanvasScreen(canvas, host, source, tick.value, wanted, onTab = { wanted = it; showWindow() }, chatElsewhere = ::showWindow, widgets = windowWidgets, scraps = scraps, shelf = shelf, pagesOverview = true)
+                Box(Modifier.fillMaxSize()) {
+                    CanvasScreen(canvas, host, source, tick.value, wanted, onTab = { wanted = it; showWindow() }, chatElsewhere = ::showWindow, widgets = windowWidgets, scraps = scraps, shelf = shelf, pagesOverview = true)
+                    Box(Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 8.dp)) { UpdatePill(updater) }
+                    UpdateSheet(updater, Modifier.align(Alignment.TopEnd).padding(top = 44.dp, end = 12.dp))
+                }
             }
         }
         var settingsOpen by settingsShown
@@ -300,7 +321,10 @@ fun main(args: Array<String>) {
                     val t = event.awtTransferable
                     t.isDataFlavorSupported(java.awt.datatransfer.DataFlavor.javaFileListFlavor) || t.isDataFlavorSupported(java.awt.datatransfer.DataFlavor.imageFlavor)
                 }, target = drops)) {
-                    OmaChatScreen(host, prefill = null, onPrefilled = {}, wanted = wanted, onTab = { wanted = it.takeIf { tab -> tab != OMA_TAB } })
+                    CompositionLocalProvider(LocalTopBarExtra provides { UpdatePill(updater) }) {
+                        OmaChatScreen(host, prefill = null, onPrefilled = {}, wanted = wanted, onTab = { wanted = it.takeIf { tab -> tab != OMA_TAB } })
+                    }
+                    UpdateSheet(updater, Modifier.align(Alignment.TopEnd).padding(top = 44.dp, end = 12.dp))
                 }
             }
         }
@@ -368,6 +392,9 @@ internal fun placeOn(bounds: java.awt.Rectangle, screen: java.awt.Rectangle): ja
 
 /** How often the modules look again at what the app holds, and how often the slower feeds (herd, pocket, handoffs) are read. */
 private const val MODULES_LOOK_MS = 2_000L
+
+/** How often the published desktop build is asked for (the update pill). */
+private const val UPDATE_CHECK_MS = 30 * 60_000L
 private const val MODULE_FEEDS_MS = 30_000L
 
 /**
