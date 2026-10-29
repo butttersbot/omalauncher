@@ -43,5 +43,37 @@ class InstallerPreflightTest(unittest.TestCase):
             self.preflight('other.app', 500, ['--apk', '/tmp/other.apk'])
 
 
+    def test_status_falls_back_when_adb_hangs(self):
+        full = pathlib.Path(__file__).with_name('oma-install.py').read_text()
+        for hanging in ('start-server', 'connect', 'dumpsys', 'cat'):
+            calls = []
+            def fake_run(args, **kwargs):
+                calls.append((args, kwargs['timeout']))
+                if args[0] == 'adb':
+                    if hanging in args:
+                        raise subprocess.TimeoutExpired(args, kwargs['timeout'])
+                    output = 'fixture' if 'getprop' in args else 'versionCode=173'
+                else:
+                    output = ("package: name='dev.omalauncher.boss' versionCode='174'" if 'badging' in args
+                              else 'Signer #1 certificate SHA-256 digest: ' + CERT)
+                return subprocess.CompletedProcess(args, 0, output, '')
+            def read(p):
+                return {'device.json':'{"serial":"fixture"}', 'install-port':'12345',
+                        'pending-install.json':'{"version":174,"log":"fixture.log"}',
+                        'state.json':'{"status":"installed","version":173}'}.get(p.name, CERT)
+            with self.subTest(hanging=hanging), patch('sys.argv', ['oma-install', '--status']), \
+                 patch('pathlib.Path.read_text', autospec=True, side_effect=read), \
+                 patch('pathlib.Path.is_file', return_value=True), \
+                 patch('pathlib.Path.exists', return_value=True), \
+                 patch('concurrent.futures.ThreadPoolExecutor') as pool, \
+                 patch('subprocess.run', side_effect=fake_run):
+                pool.return_value.__enter__.return_value.map.return_value = []
+                with self.assertRaises(SystemExit) as stopped:
+                    exec(compile(full, 'oma-install.py', 'exec'), {'__name__':'status_test'})
+                self.assertEqual(stopped.exception.code, 0)
+                self.assertTrue(all(0 < timeout <= 3 for args, timeout in calls if args[0]=='adb'))
+                self.assertFalse(any('install' in args or 'push' in args for args, _ in calls))
+
+
 if __name__ == '__main__':
     unittest.main()

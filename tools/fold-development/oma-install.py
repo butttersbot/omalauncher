@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import concurrent.futures, json, pathlib, re, socket, subprocess, sys, hashlib, shlex, uuid
+import concurrent.futures, json, pathlib, re, socket, subprocess, sys, hashlib, shlex, uuid, time
 repo=pathlib.Path('/root/Projects/omalauncher')
 apk=repo/'app/build/outputs/apk/debug/app-debug.apk'
 package='dev.omalauncher.boss'
@@ -39,8 +39,17 @@ HEAL=r'''  svc=__SERVICE__
     fi ;;
   *) if wanted; then echo PHONE_CONTROL_LEFT_TO_LAUNCHER; else echo PHONE_CONTROL_OFF; fi ;;
   esac'''
+# Discovery/status must never wait on a wedged adb server. Keep a total budget too,
+# so multiple open loopback ports cannot multiply the wait indefinitely.
+adb_deadline=None
 def run(args, timeout=30):
- return subprocess.run(args,capture_output=True,text=True,timeout=timeout)
+ if args[0]=='adb':
+  if adb_deadline is not None:timeout=min(3, max(0, adb_deadline-time.monotonic()))
+  if timeout<=0:return subprocess.CompletedProcess(args,124,'','ADB discovery timed out')
+ try:return subprocess.run(args,capture_output=True,text=True,timeout=timeout)
+ except (subprocess.TimeoutExpired,FileNotFoundError) as error:
+  if args[0]!='adb':raise
+  return subprocess.CompletedProcess(args,124,'','ADB unavailable: '+str(error))
 USAGE='Usage: oma-install [--no-open|--status] [--self] [--apk FILE]'
 args=sys.argv[1:]
 # --apk FILE: another APK than the launcher build: the launcher's, Soma Messages' (dev.omalauncher.messages) or Soma
@@ -98,7 +107,8 @@ if '--status' not in args:
  try:fcntl.flock(install_lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
  except BlockingIOError:sys.exit('Another oma-install is running (another builder\'s): wait for it, then oma-install --status.')
 if self_route:install_self()
-run(['adb','start-server'])
+adb_deadline=time.monotonic()+8
+adb_ready=run(['adb','start-server']).returncode==0
 def connect(port):
  endpoint='127.0.0.1:'+str(port)
  r=run(['adb','connect',endpoint],10)
@@ -106,19 +116,21 @@ def connect(port):
  r=run(['adb','-s',endpoint,'shell','getprop','ro.serialno'],10)
  return endpoint if r.returncode==0 and r.stdout.strip()==serial else None
 endpoint=None
-if cache.exists():
+if adb_ready and cache.exists():
  try:endpoint=connect(int(cache.read_text().strip()))
  except (ValueError,subprocess.TimeoutExpired):pass
-if not endpoint:
+if adb_ready and not endpoint and time.monotonic()<adb_deadline:
  # Android selects a new local ephemeral TLS port after debugging restarts.
  # Probe loopback only; authenticate and verify the physical serial before use.
  def probe(port):
+  if time.monotonic()>=adb_deadline:return None
   try:
    with socket.create_connection(('127.0.0.1',port),timeout=.03):return port
   except OSError:return None
  with concurrent.futures.ThreadPoolExecutor(max_workers=96) as pool:
   ports=[p for p in pool.map(probe,range(30000,65536)) if p]
  for port in ports:
+  if time.monotonic()>=adb_deadline:break
   try:endpoint=connect(port)
   except subprocess.TimeoutExpired:continue
   if endpoint:cache.write_text(str(port));break
@@ -126,11 +138,13 @@ if not endpoint:
  if '--status' in args:self_status();sys.exit(0)
  print('Wireless debugging is not reachable (off Wi-Fi?): Oma installs it itself instead.',flush=True)
  install_self()
+if '--status' not in args:adb_deadline=None
 if target!=package:
  # Soma Messages or Notes over adb: an ordinary update (or first install), nothing restarts.
  r=run(['adb','-s',endpoint,'install','-r',str(apk)],300)
  sys.exit(0 if 'Success' in r.stdout and not print('Installed '+target+' version '+str(version)+' over adb.') else 'Install failed: '+(r.stdout+r.stderr).strip())
 r=run(['adb','-s',endpoint,'shell','dumpsys','package',package])
+if '--status' in args and r.returncode:self_status();sys.exit(0)
 m=re.search(r'versionCode=(\d+)',r.stdout)
 if not m:sys.exit('Working launcher was not found; refusing a new installation.')
 installed=int(m.group(1))
@@ -139,6 +153,9 @@ if '--status' in sys.argv:
  if pending.exists():
   plan=json.loads(pending.read_text())
   log=run(['adb','-s',endpoint,'shell','cat',plan['log']])
+  if log.returncode:
+   print('ADB update log unavailable; showing the last self-install record instead.')
+   self_status();sys.exit(0)
   print(log.stdout.strip() or 'Update has not completed yet.')
   if installed==plan['version'] and 'INSTALL_SUCCESS' in log.stdout:print('In-place launcher update verified.')
   for mark,told in [('PHONE_CONTROL_BOUND','Phone control reconnected by itself.'),('PHONE_CONTROL_HEALED','Phone control did not reconnect; the installer turned it off and on, and it is connected.'),('PHONE_CONTROL_STILL_DISCONNECTED','Phone control is DISCONNECTED: turning it off and on did not reconnect it. Boss needs to toggle it in Accessibility settings or restart the phone.'),('PHONE_CONTROL_LEFT_TO_LAUNCHER','Phone control was found switched off, but Boss had it on: left to the launcher, which turns it back on by itself.'),('PHONE_CONTROL_OFF','Phone control is switched off in Accessibility settings; left off.')]:

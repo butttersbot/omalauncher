@@ -56,20 +56,24 @@ quoted() {
 # receiving goes through Oma instead (via_oma). adb's server lives only as long as this script, so it connects here
 # every time. A port that went stale (Wireless debugging was turned off and on) is looked for again once, by oma-adb
 # (or oma-dev --status where there is no oma-adb), which writes the new one where it is read.
+adb_call() {
+  timeout --kill-after=1s 3s adb "$@"
+}
+
 connect() {
   command -v adb >/dev/null || return 1
-  adb start-server >/dev/null 2>&1
+  adb_call start-server >/dev/null 2>&1 || return 1
   local tries=1 find=
   if command -v oma-adb >/dev/null; then find=oma-adb; elif command -v oma-dev >/dev/null; then find='oma-dev --status'; fi
   [ -n "$find" ] && tries=2
   for try in $(seq "$tries"); do
-    [ "$try" = 2 ] && $find >/dev/null 2>&1
+    [ "$try" = 2 ] && timeout --kill-after=1s 3s $find >/dev/null 2>&1
     local port
     port=$(cat "$port_file" 2>/dev/null)
     if [[ $port =~ ^[0-9]+$ ]]; then
       at=127.0.0.1:$port
-      adb connect "$at" >/dev/null 2>&1
-      [ "$(adb -s "$at" get-state 2>/dev/null)" = device ] && return
+      adb_call connect "$at" >/dev/null 2>&1 || return 1
+      [ "$(adb_call -s "$at" get-state 2>/dev/null)" = device ] && return
     fi
   done
   return 1
@@ -110,7 +114,7 @@ via_oma() {
 # What waits, one "SIZE<tab>NAME" line per file. A name still ending in .partial is a file Tailscale is receiving.
 waiting() {
   # Each file as its size and its full path on the phone, from every Taildrop folder there is.
-  adb -s "$at" shell "for d in $taildrops; do [ -d \"\$d\" ] || continue; for f in \"\$d\"/*; do [ -f \"\$f\" ] && stat -c '%s	%n' -- \"\$f\"; done; done; exit 0" </dev/null |
+  adb_call -s "$at" shell "for d in $taildrops; do [ -d \"\$d\" ] || continue; for f in \"\$d\"/*; do [ -f \"\$f\" ] && stat -c '%s	%n' -- \"\$f\"; done; done; exit 0" </dev/null |
     tr -d '\r' | awk '!/\.partial$/' | awk -F/ '!($NF ~ /^msg-.*\.json$/)'  # agent mail is Soma's own (TaildropMail)
 }
 
@@ -147,7 +151,7 @@ get() {
   dir=$(cd -- "$dir" && pwd)
   connect || { via_oma get "$dir" "$keep"; return; }
   local files
-  files=$(waiting) || die 'Could not read the Taildrop folders on the phone.'
+  files=$(waiting) || { via_oma get "$dir" "$keep"; return; }
   [ -n "$files" ] || { echo 'Nothing waiting.'; return; }
   local failed=0 bytes name path got
   while IFS=$'\t' read -r bytes name; do
@@ -155,7 +159,7 @@ get() {
     name=${from##*/}
     path=$(free_name "$dir" "$name")
     # adb would read the list this loop reads, so it is given nothing to read.
-    if ! adb -s "$at" pull "$from" "$path" </dev/null >/dev/null 2>&1; then
+    if ! timeout --kill-after=1s 120s adb -s "$at" pull "$from" "$path" </dev/null >/dev/null 2>&1; then
       rm -f -- "$path"
       echo "Could not copy $name; it is still on the phone." >&2
       failed=1
@@ -168,7 +172,7 @@ get() {
       failed=1
     elif [ -n "$keep" ]; then
       echo "Copied $name ($(size "$bytes")) to $path; it stays on the phone."
-    elif adb -s "$at" shell "rm -f -- $(quoted "$from")" </dev/null >/dev/null 2>&1; then
+    elif adb_call -s "$at" shell "rm -f -- $(quoted "$from")" </dev/null >/dev/null 2>&1; then
       echo "Moved $name ($(size "$bytes")) to $path."
     else
       echo "Copied $name ($(size "$bytes")) to $path, but could not remove it from the phone." >&2
@@ -182,7 +186,7 @@ list() {
   [ $# -eq 0 ] || bad
   connect || { via_oma list; return; }
   local files bytes name
-  files=$(waiting) || die 'Could not read the Taildrop folders on the phone.'
+  files=$(waiting) || { via_oma list; return; }
   [ -n "$files" ] || { echo 'Nothing waiting.'; return; }
   while IFS=$'\t' read -r bytes name; do
     printf '%s\t%s\n' "${name##*/}" "$(size "$bytes")"
