@@ -17,6 +17,11 @@ internal class ConnectionPhoneRecovery(private val context: Context, private val
     data class Target(val action: Action, val approval: ServiceApproval)
     private fun noWork(): Boolean = !AgentTasks.working && AgentTasks.builders.all { it.waiting == 0 && it.pending.isEmpty() } &&
         !QuickLane.connectionsHasWork() && runtime.wm.appWindows.isEmpty() && PhoneService.instance?.connectionsBusy != true
+    fun guardEvidence(): ConnectionCheck = ConnectionCheck("phone_recovery_work_guard", "phone", result = if (noWork()) "pass" else "blocked",
+        fields = mapOf("builders_active_or_front" to (AgentTasks.working || QuickLane.connectionsHasWork()).toString(),
+            "queued_turns" to AgentTasks.builders.sumOf { it.waiting }.toString(),
+            "pending_approvals" to AgentTasks.pending.size.toString(),
+            "phone_request_or_linux_window" to (PhoneService.instance?.connectionsBusy == true || runtime.wm.appWindows.isNotEmpty()).toString()))
     fun candidates(): List<Target> {
         if (!runtime.connectionsLinuxRunning || !noWork()) return emptyList()
         val actions = mutableListOf<Action>()

@@ -26,6 +26,10 @@ internal class ConnectionRestorer(private val context: Context, private val runt
         runCatching {
             val steps = mutableListOf(ConnectionNextStep("agent", "inspect_restore_evidence", "Read the check evidence; do not repeat an uncertain restart."))
             if (checks.any { it.name == "owner_trust" }) steps += ConnectionNextStep("owner", "approve_trust_provisioning", "Verify the native public-key fingerprint and approve protected Mac trust installation in the lane; never enroll remotely.")
+            if (checks.any { it.fields["reason"]?.contains("privileged_helper") == true }) {
+                steps += ConnectionNextStep("agent", "verify_privileged_helper_boundary", "Review independent owner-signature and active-work enforcement; do not install an unsigned helper.")
+                steps += ConnectionNextStep("owner", "approve_verified_helper_installation", "Only after source review and passing checks, approve the concrete protected helper installation in the Mac lane.")
+            }
             if (checks.any { it.result == "auth" }) steps += ConnectionNextStep("owner", "provider_or_device_authentication", "An agent must identify the exact authentication boundary first; no login, key replacement or pairing was attempted.")
             incidents.record(service, host, status, "Restore $status · details saved for agents.", reason, checks, steps)
         }.getOrNull()
@@ -104,6 +108,7 @@ internal class ConnectionRestorer(private val context: Context, private val runt
                 }
                 val phoneRecovery = ConnectionPhoneRecovery(context, runtime)
                 val phoneTargets = phoneRecovery.candidates()
+                blocked += phoneRecovery.guardEvidence()
                 if (targets.isEmpty() && phoneTargets.isEmpty()) {
                     val entry = record("restore", "paired-services", "blocked", "No failed service has a verified, owner-trusted repair route.", blocked)
                     publish("No verified repair available · details for agents.", entry)
