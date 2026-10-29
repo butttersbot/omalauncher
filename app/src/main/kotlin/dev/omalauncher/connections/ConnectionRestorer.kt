@@ -107,6 +107,7 @@ internal class ConnectionRestorer(private val context: Context, private val runt
                                 } else if (reply.code in 400..499) {
                                     record(target.approval.service, target.approval.host, "blocked", "Owner-approved request refused (HTTP ${reply.code}).",
                                         listOf(ConnectionCheck("restart_request", target.approval.host, reply.code, "refused")))
+                                    if (definitiveServiceRefusal(reply)) removePending(target.approval.id)
                                 }
                                 // Non-HTTP or 5xx: retain the pre-submit marker and reconcile, never retry.
                             }

@@ -110,3 +110,13 @@ data class ServiceOperation(val id: String, val approval: String, val service: S
         }
     }
 }
+
+/** These errors are emitted only by challenge validation, before an operation is created or executed. */
+fun definitiveServiceRefusal(reply: ConnectionReply): Boolean {
+    if (reply.code !in setOf(400, 403, 404, 410, 423)) return false
+    val reasons = setOf("bad_request", "no_challenge", "nonce_mismatch", "expired", "owner_trust_missing", "owner_trust_untrusted", "owner_key", "bad_plan", "bad_signature")
+    return runCatching {
+        val body = JSONObject(reply.text)
+        body.has("ok") && body.get("ok") == false && !body.has("operation") && body.optString("error") in reasons
+    }.getOrDefault(false)
+}

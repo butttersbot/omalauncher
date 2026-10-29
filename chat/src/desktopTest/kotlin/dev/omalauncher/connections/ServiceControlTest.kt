@@ -55,4 +55,13 @@ class ServiceControlTest {
         assertFalse(pending.terminal); assertFalse(pending.restored)
     }
 
+    @Test fun onlyExplicitPreExecutionRefusalsClearAnUncertainSubmission() {
+        assertTrue(definitiveServiceRefusal(ConnectionReply(403, """{"ok":false,"error":"bad_signature"}""")))
+        assertFalse(definitiveServiceRefusal(ConnectionReply(500, """{"ok":false,"error":"bad_signature"}""")))
+        assertFalse(definitiveServiceRefusal(ConnectionReply(400, """{"ok":false,"error":"restart_error"}""")))
+        assertFalse(definitiveServiceRefusal(ConnectionReply(400, "gateway timeout")))
+        assertFalse(definitiveServiceRefusal(ConnectionReply(-1, "")))
+        assertFalse(definitiveServiceRefusal(ConnectionReply(403, """{"ok":false,"error":"bad_signature","operation":{}}""")))
+    }
+
 }
