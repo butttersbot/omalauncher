@@ -202,6 +202,17 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
             else -> if (PhoneService.instance == null) "Android is still checking the accessibility binding. No ready state is assumed." else if (PhoneDisplays.helperUp()) "Accessibility bound; background helper answered. Hidden display is created only on demand. Trusted wireless ADB still needs an end-to-end probe." else "Accessibility bound. Background helper is not currently verified; idle/off is not an outage. Trusted wireless ADB still needs an end-to-end probe."
         }, if (phone == ConnectionState.Failed) "phone-binding" else null)
         if (runtime.connectionsLinuxRunning) {
+            val adb = runCatching {
+                val config = File(runtime.proot.home, ".config/oma-development")
+                val port = File(config, "install-port").takeIf { it.length() <= 20 }!!.readText().trim().toInt()
+                val serial = JSONObject(File(config, "device.json").takeIf { it.length() <= 4096 }!!.readText()).getString("serial")
+                connectionAdbProbe(port, serial)
+            }.getOrElse { ConnectionCheck("adb_transport_shell_identity", "phone", result = "unverified", fields = mapOf("reason" to "trusted_transport_not_configured")) }
+            add(Capability.Phone, when (adb.result) { "pass" -> ConnectionState.Ready; "auth" -> ConnectionState.Auth; else -> ConnectionState.Unknown },
+                when (adb.result) { "pass" -> "Existing trusted ADB transport executed a read-only shell check and matched this phone."
+                    "auth" -> "The existing ADB key is not authorized. No pairing or setting was changed."
+                    else -> "Existing trusted ADB transport is unverified. No server, scan, pairing or display was started." },
+                if (adb.result in setOf("auth", "pass")) "phone-adb" else null, checks = listOf(adb))
             val keeper = connectionKeeperProbe(runtime.proot.home)
             add(Capability.Agents, if (keeper.result == "pass") ConnectionState.Ready else ConnectionState.Unknown,
                 if (keeper.result == "pass") "Phone keeper answered its real list protocol. Provider sign-in remains a separate check."
