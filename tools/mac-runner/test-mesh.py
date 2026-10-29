@@ -74,6 +74,23 @@ class Mesh(unittest.TestCase):
         self.assertIn('on otherbox: OMA_RUNNER_PAIR_COMPUTERS=1 oma-runner pair testhost', done.stdout)
         self.assertIn('on testhost: OMA_RUNNER_PAIR_COMPUTERS=1 oma-runner pair testhost', done.stdout)
 
+    def test_1b_aKeyWaitingInTheInboxIsNamedWithItsExactMove(self):
+        # Taildrop on a Mac with Homebrew's tailscaled is fetched into ~/Inbox; Soma never takes keys from there.
+        soma_has()
+        inbox = work / 'Inbox'
+        inbox.mkdir(exist_ok=True)
+        old, new = inbox / 'soma-runner-otherbox.json', inbox / 'soma-runner-otherbox (1).json'
+        old.write_text('{}')
+        os.utime(old, (1, 1))
+        new.write_text('{}')
+        try:
+            done = run('mesh')
+            self.assertIn('on testhost: key waiting in ~/Inbox: mv "%s" %s/soma-runner-otherbox.json; rm "%s" (an older, replaced key)'
+                          % (new, work / 'soma' / 'runners', old), done.stdout)
+        finally:
+            old.unlink()
+            new.unlink()
+
     def test_2_devicesSaysWhoItLetsInByNameOnly(self):
         code, said = call('/devices')
         self.assertEqual(200, code, said)

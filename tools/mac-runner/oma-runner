@@ -5041,15 +5041,19 @@ def mesh():
     print('%-24s %-28s %s' % ('runner', '%s lets it in' % me, '%s\'s Soma has its key' % me))
     for phone in sorted(PHONES - set(peers)):
         print('%-24s %-28s %s' % (phone, 'awaiting bundle', 'awaiting bundle'))
-    waiting = HOME / 'Downloads'
+    # Where a Taildropped key lands until he moves it in: ~/Inbox where a collector fetches Taildrop (Homebrew tailscaled on
+    # the Mac Pro, the MacBook), ~/Downloads with Tailscale's app. Soma never takes keys from either (any download lands there).
+    landings = [HOME / 'Inbox', HOME / 'Downloads']
     for name in sorted(peers) + [me]:
         inbound, outbound = name in accepted, name in has
         if not inbound:
             fixes.append('on %s: OMA_RUNNER_PAIR_COMPUTERS=1 oma-runner pair %s' % (me, name))
         if not outbound and name != me:
-            # A key Taildropped here waits in Downloads until he moves it in: Soma never takes keys from there (any download lands there).
-            if (waiting / ('soma-runner-%s.json' % name)).exists():
-                fixes.append('on %s: move ~/Downloads/soma-runner-%s.json into %s (its key is here; Soma takes it from there)' % (me, name, SOMA_RUNNERS))
+            landed = sorted((f for folder in landings for f in folder.glob('soma-runner-%s*.json' % name)), key=lambda f: f.stat().st_mtime)
+            if landed:
+                # The newest is the key that works: an earlier one was replaced when it was paired again.
+                fixes.append('on %s: key waiting in %s: mv "%s" %s/soma-runner-%s.json' % (me, landed[-1].parent.name == 'Inbox' and '~/Inbox' or '~/Downloads', landed[-1], SOMA_RUNNERS, name)
+                             + ''.join('; rm "%s" (an older, replaced key)' % f for f in landed[:-1]))
             else:
                 fixes.append('on %s: OMA_RUNNER_PAIR_COMPUTERS=1 oma-runner pair %s' % (name, me))
         print('%-24s %-28s %s' % (name + (' (this one)' if name == me else ''), 'yes' if inbound else 'MISSING', 'yes' if outbound else 'MISSING'))

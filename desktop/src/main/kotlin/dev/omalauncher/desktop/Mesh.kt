@@ -153,7 +153,16 @@ object Mesh {
         say(meshTable(me, seen))
         val unknown = seen.filter { it.keyed && it.accepted && it.lets == null }.map { it.name }
         if (unknown.isNotEmpty()) say("(${unknown.joinToString()}: an older runner that doesn't say who it lets in; its column shows only this Soma.)")
-        val gaps = meshGaps(me, seen)
+        // A key Taildropped here and waiting to be moved in (Soma never takes keys from ~/Inbox or ~/Downloads): its exact move.
+        val home = java.io.File(System.getProperty("user.home"))
+        val waiting = seen.filter { !it.keyed && !it.awaiting }.associate { r ->
+            r.name to listOf("Inbox", "Downloads").flatMap { d -> java.io.File(home, d).listFiles().orEmpty().filter { it.name.startsWith("soma-runner-${r.name}") && it.name.endsWith(".json") } }.sortedBy { it.lastModified() }
+        }.filterValues { it.isNotEmpty() }
+        val gaps = meshGaps(me, seen).map { g ->
+            val landed = waiting[g.runner]?.takeIf { g.soma == me } ?: return@map g
+            g.copy(fix = "key waiting in ~/${landed.last().parentFile.name}: mv \"${landed.last().path}\" ${java.io.File(SomaHome.dir, "runners").path}/soma-runner-${g.runner}.json" +
+                landed.dropLast(1).joinToString("") { "; rm \"${it.path}\" (an older, replaced key)" })
+        }
         seen.filter { it.awaiting }.forEach { say("${it.name}: its phone runner comes with its next bundle; its legs are expected, not missing.") }
         // A runner that can't say who it lets in (an older one) may hide another Soma's missing leg: never "none" then.
         val blind = seen.filter { !it.awaiting && it.lets == null }.map { it.name }
