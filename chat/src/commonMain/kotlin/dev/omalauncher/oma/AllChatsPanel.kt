@@ -91,7 +91,11 @@ internal fun AllChatsPanel(
         LazyColumn(Modifier.fillMaxSize()) {
             var group = ""
             for ((row, line) in shown) {
-                val heading = allChatGroup(row.worked, now)
+                val heading = when (row.state) {
+                    dev.omalauncher.assist.ThreadState.NeedsOk -> "Needs you"
+                    dev.omalauncher.assist.ThreadState.Working, dev.omalauncher.assist.ThreadState.Queued -> "At work"
+                    else -> allChatGroup(row.worked, now)
+                }
                 if (heading != group) {
                     group = heading
                     // Keyed by its first row too: a heading met twice can never take the same key (slice 4 review).

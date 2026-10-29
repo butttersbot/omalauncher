@@ -575,6 +575,21 @@ class AgentTilesTest {
         assertFalse(tile(idle[5]) in plan.show)
     }
 
+    @Test fun anOlderRedDotSessionOutranksNewerWorkAndNewestRequestWins() {
+        val working = thread(macThreadKey("new-work"), ThreadState.Working, now).copy(since = now)
+        val approval = thread(macThreadKey("old-approval"), ThreadState.NeedsOk, now - 5 * hour)
+            .copy(since = now - 6 * hour, requestedAt = now - 1000)
+        val question = thread(macThreadKey("old-question"), ThreadState.NeedsOk, now - 4 * hour)
+            .copy(requestedAt = now - 2000)
+        val input = listOf(working, question, approval)
+        val ranked = agentTilePlan(input, emptyMap(), "agents", emptyMap(), now, true, room = 3)
+        assertEquals(listOf(approval, question, working).map(::tile), ranked.order)
+        val full = agentTilePlan(input, mapOf(tile(working) to "agents"), "agents", emptyMap(), now, true, room = 1)
+        assertEquals(listOf(tile(approval)), full.order)
+        assertEquals(listOf(tile(working)), full.remove)
+        assertEquals(listOf(approval, question, working).map { it.key }, liveThreads(input, emptyMap(), now, true).map { it.key })
+    }
+
     @Test fun withNothingAtWorkTheyAreByTimeNewestFirst() {
         val idle = listOf(3, 1, 2).map { thread(macThreadKey("t-$it"), ThreadState.Idle, worked = now - it * hour) }
         val plan = agentTilePlan(idle, idle.associate { tile(it) to "agents" }, "agents", emptyMap(), now, listed = true, room = 6)

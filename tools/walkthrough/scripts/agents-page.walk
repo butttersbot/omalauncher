@@ -1,7 +1,30 @@
 # The Agents page holds six tiles (Boss, 2026-10-24: "we can only fit six panels on that page, so we should
-# prioritize the active sessions … and then … by the most recent"). The ranking, the six and the order are unit
+# prioritize the active sessions … and then … by the most recent"). Requests for Boss outrank work (2026-10-29). The ranking, the six and the order are unit
 # tested (AgentTilesTest); staging seven live sessions with one at work needs his own Macs, so this is the look.
 [phone] With six or more sessions on the Agents page, start work in one that has no tile: its tile comes onto the page, top left, and the session that last worked longest ago leaves it.
 [phone] With several at work, those at work fill the top of the page and the resting ones follow, newest first; while they work they keep their places (no tiles trading places every minute).
 [phone] When nothing is at work, the page reads newest first, top left to bottom right.
 [phone] A session tile carried to another page stays there and is not counted among the six.
+
+# Fictional older requests outrank newer working sessions, through the production shared tab/list ranking.
+fold folded
+rotate portrait
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --ez rankedSessions true
+tap Show the tabs
+expect Approval first
+expect Question second
+expect Newer working
+shot needs-boss-first-strip-cover
+tap All chats
+expect NEEDS YOU
+expect AT WORK
+shot needs-boss-first-all-chats-cover
+key BACK
+fold open
+rotate landscape
+tap All chats
+expect NEEDS YOU
+expect AT WORK
+shot needs-boss-first-all-chats-unfolded
+key BACK

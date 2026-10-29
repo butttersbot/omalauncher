@@ -2603,7 +2603,7 @@ def ask_auto(thread):
         asked, nonce = 'a' + secrets.token_hex(6), secrets.token_urlsafe(24)
         given = {'mode': 'auto'}
         explanation = 'Run this thread in auto from its next message: its agent works without asking you first.'
-        thread.pending[asked] = {'nonce': nonce, 'request': None, 'tool': 'Mode', 'input': given, 'explanation': explanation, 'mode_switch': True}
+        thread.pending[asked] = {'nonce': nonce, 'request': None, 'tool': 'Mode', 'input': given, 'explanation': explanation, 'mode_switch': True, 'asked_at': int(time.time())}
         thread.emit('approval', approval=asked, nonce=nonce, tool='Mode', input=given, explanation=explanation, can_remember=False)
     return asked
 
@@ -2806,7 +2806,7 @@ class Thread:
                 'read_only': False,
                 'bot': self.bot_fields(),
                 'background': list(self.kept.driver.background.values()) if self.kept and not self.kept.done else [],
-                'pending': [{'approval': key, 'nonce': entry['nonce'], 'tool': entry['tool'], 'input': entry['input'], 'explanation': entry['explanation'], 'can_remember': entry.get('command_scope') is not None} for key, entry in self.pending.items()]}
+                'pending': [{'approval': key, 'nonce': entry['nonce'], 'tool': entry['tool'], 'input': entry['input'], 'explanation': entry['explanation'], 'can_remember': entry.get('command_scope') is not None, 'asked_at': entry.get('asked_at')} for key, entry in self.pending.items()]}
 
     def bot_fields(self):
         """What a device shows of a bot's session: who it is, what's wrong with it if anything, how full its memory is."""
@@ -2829,7 +2829,7 @@ class Thread:
     def ask(self, request, tool, given, explanation, **extra):
         """An agent asks to do something: a card for the phone, and the task waits for its answer. Call with `changed` held."""
         approval, nonce = 'a' + secrets.token_hex(6), secrets.token_urlsafe(24)
-        self.pending[approval] = {'nonce': nonce, 'request': request, 'tool': tool, 'input': given, 'explanation': explanation, **extra}
+        self.pending[approval] = {'nonce': nonce, 'request': request, 'tool': tool, 'input': given, 'explanation': explanation, 'asked_at': int(time.time()), **extra}
         self.status('waiting')
         self.emit('approval', approval=approval, nonce=nonce, tool=tool, input=given, explanation=explanation, can_remember=extra.get('command_scope') is not None)
 

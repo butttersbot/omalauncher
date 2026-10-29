@@ -50,7 +50,7 @@ class PreviewActivity : ComponentActivity() {
                         dev.omalauncher.ui.PhoneRunnerSetting(pairing) { finish() }
                     } else {
                     val empty = intent.getBooleanExtra("empty", false)
-                    val host = remember { PreviewHost(this@PreviewActivity, empty, intent.getStringExtra("mail"), intent.getBooleanExtra("questions", false), intent.getStringExtra("waitingQuestion")) }
+                    val host = remember { PreviewHost(this@PreviewActivity, empty, intent.getStringExtra("mail"), intent.getBooleanExtra("questions", false), intent.getStringExtra("waitingQuestion"), intent.getBooleanExtra("rankedSessions", false)) }
                     // --ez newChat true: opens on a new chat, with its pick rows (computer, agent, model, mode; slice 6).
                     val start = remember { if (intent.getBooleanExtra("newChat", false)) dev.omalauncher.oma.newChatTab(host) else if (intent.getStringExtra("waitingQuestion") == "builder") PHONE_THREAD else if (empty) PHONE_THREAD_B else OMA_TAB }
                     OmaChatScreen(host, null, {}, start, {})
@@ -61,7 +61,7 @@ class PreviewActivity : ComponentActivity() {
     }
 }
 
-private class PreviewHost(private val context: Context, private val empty: Boolean = false, private val mailMode: String? = null, private val questions: Boolean = false, private val waitingQuestion: String? = null) : ChatHost {
+private class PreviewHost(private val context: Context, private val empty: Boolean = false, private val mailMode: String? = null, private val questions: Boolean = false, private val waitingQuestion: String? = null, private val rankedSessions: Boolean = false) : ChatHost {
         val now = System.currentTimeMillis()
         private val page = """<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1">
 <style>body{margin:0;padding:24px;background:#fdfdfb;color:#111113;font-family:system-ui}small{color:#d7262d;font-size:10px;letter-spacing:.1em}h1{font-size:32px;line-height:1.15;margin:18px 0}p{font-size:14px;line-height:1.6}button{background:#111113;color:#fdfdfb;padding:12px 18px;border:0}section{border:1px solid #111113;padding:18px;margin:22px 0}.record{border-radius:50%;width:100px;height:100px;background:repeating-radial-gradient(#111113 0 3px,#444 4px);margin:15px auto;display:grid;place-items:center}.record:after{content:"";width:28px;height:28px;border:8px solid #fdfdfb;border-radius:50%;background:#d7262d}</style>
@@ -149,7 +149,11 @@ Open the preview to try the layout. We can keep talking while you look at it.
         override fun agentBin() = "claude"
         @Composable override fun linuxInstalled() = true
         override fun frontReady() = true
-        override fun threads() = listOf(AgentThread(PHONE_THREAD, "Phone", ThreadState.Working, "running the tests", "working", worked = now)) +
+        override fun threads() = if (rankedSessions) listOf(
+            AgentThread(PHONE_THREAD, "Newer working", ThreadState.Working, "Working on a fictional task", "working", worked = now, since = now),
+            AgentThread("mac:fixture-question", "Question second", ThreadState.NeedsOk, "Fictional question needs your answer", "needs your answer", worked = now - 300000, requestedAt = now - 2000),
+            AgentThread("mac:fixture-approval", "Approval first", ThreadState.NeedsOk, "Fictional approval needs your OK", "needs your OK", worked = now - 600000, requestedAt = now - 1000),
+        ) else listOf(AgentThread(PHONE_THREAD, "Phone", ThreadState.Working, "running the tests", "working", worked = now)) +
             (if (empty) listOf(AgentThread(PHONE_THREAD_B, "Phone B", ThreadState.Idle, "", "idle", worked = now)) else emptyList()) +
             book.chats.map { dev.omalauncher.assist.chatThread(it, NEW_CHAT_NAME, thread, MacView()) }
         override fun liveThreads(all: List<AgentThread>, pinned: Set<String>, archived: Set<String>) = all

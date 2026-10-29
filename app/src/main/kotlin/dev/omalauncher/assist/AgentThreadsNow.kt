@@ -10,8 +10,8 @@ import dev.omalauncher.oma.TabBook
  * often as they draw; they restore [AgentTasks] and [MacThreads] once, before the first read.
  */
 fun agentThreadsNow(context: Context): List<AgentThread> {
-    fun now(builder: Builder) = BuilderNow(builder.working, builder.label, builder.pending.map { ThreadAsk(it.approval.tool, askTarget(it.approval.input.toString())) }, builder.startedAt)
-    val asks = MacThreads.pending.groupBy({ it.threadId }) { ThreadAsk(it.request.tool, askTarget(it.request.input)) }
+    fun now(builder: Builder) = BuilderNow(builder.working, builder.label, builder.pending.map { ThreadAsk(it.approval.tool, askTarget(it.approval.input.toString()), it.requestedAt.takeIf { at -> at > 0 }) }, builder.startedAt)
+    val asks = MacThreads.pending.groupBy({ it.threadId }) { ThreadAsk(it.request.tool, askTarget(it.request.input), it.request.requestedAt) }
     val book = TabBook.of(context)
     return agentThreads(
         ChatLog.of(context).tasks, now(AgentTasks.of(BuilderId.A)), MacThreads.view, asks, now(AgentTasks.of(BuilderId.B)),

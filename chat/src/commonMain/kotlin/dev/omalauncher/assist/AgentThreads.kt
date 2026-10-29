@@ -50,7 +50,7 @@ enum class ThreadState {
 }
 
 /** A waiting approval as a tile or a dot may know it: which tool, and what it is pointed at. Never its input, its nonce or its id. */
-data class ThreadAsk(val tool: String, val target: String)
+data class ThreadAsk(val tool: String, val target: String, val requestedAt: Long? = null)
 
 /** How many of a path's last parts name an approval's target: enough to know the file, not where the project lives. */
 const val ASK_PATH_PARTS = 3
@@ -127,7 +127,25 @@ data class AgentThread(
     val machine: String = "",
     /** The bot this thread is the session of: its tab is always shown, first, and has a bot's menu. Null for any other. */
     val bot: MacBot? = null,
+    /** Newest unanswered approval/question, epoch milliseconds; independent of the turn start. */
+    val requestedAt: Long? = null,
 )
+
+/** Boss, 2026-10-29: requests for his answer first, then work, then the rest. Stable ties keep existing placement. */
+fun agentThreadRank(thread: AgentThread): Pair<Int, Long> {
+    val group = when (thread.state) {
+        ThreadState.NeedsOk -> 0
+        ThreadState.Working, ThreadState.Queued -> 1
+        else -> 2
+    }
+    val time = when (group) {
+        0 -> thread.requestedAt ?: thread.worked ?: thread.since
+        1 -> thread.since ?: thread.worked
+        else -> thread.worked
+    } ?: 0L
+    return group to -time
+}
+val agentThreadOrder: Comparator<AgentThread> = compareBy({ agentThreadRank(it).first }, { agentThreadRank(it).second })
 
 /** One of the phone's builders as it stands: whether a task runs, its label, what waits for his approval, and when the task began ([since], 0 if none). */
 data class BuilderNow(val working: Boolean = false, val label: String = "", val asks: List<ThreadAsk> = emptyList(), val since: Long = 0L)
@@ -177,7 +195,7 @@ fun phoneThread(tasks: List<ChatTask>, builder: BuilderNow, which: BuilderId = B
         ThreadState.Idle -> restLabel(last, worked = false)
     }
     val since = if (builder.working) builder.since.takeIf { it > 0 } ?: running?.time else null
-    return AgentThread(which.thread, name, state, doing, label, entries.maxOfOrNull { it.time }, since = since)
+    return AgentThread(which.thread, name, state, doing, label, entries.maxOfOrNull { it.time }, since = since, requestedAt = builder.asks.mapNotNull { it.requestedAt }.maxOrNull())
 }
 
 /**
@@ -223,7 +241,7 @@ fun macThreadNow(thread: MacThread?, id: String, tasks: List<ChatTask>, asks: Li
     val waiting = entries.filter { it.status == TaskStatus.Queued }
     val last = entries.lastOrNull { it.status != TaskStatus.Queued }
     val name = thread?.let { macName(it.name) } ?: entries.lastOrNull()?.threadName?.takeIf { it.isNotEmpty() } ?: macName("")
-    val wants = asks.ifEmpty { thread?.pending.orEmpty().map { ThreadAsk(it.tool, askTarget(it.input)) } }
+    val wants = asks.ifEmpty { thread?.pending.orEmpty().map { ThreadAsk(it.tool, askTarget(it.input), it.requestedAt) } }
     val working = if (thread != null) !macResting(thread.status) && thread.status != MacThreadStatus.Unknown else running != null
     val waits = maxOf(thread?.waitingTurns ?: 0, waiting.size)
     // Work it left running on the Mac (a build, a copy) after its answer: still at work, not idle (Boss, 2026-10-24:
@@ -257,7 +275,7 @@ fun macThreadNow(thread: MacThread?, id: String, tasks: List<ChatTask>, asks: Li
     val worked = listOfNotNull(thread?.lastWorked?.let { it * 1000 }, entries.maxOfOrNull { it.time }).maxOrNull()
     // The request the Mac is at was sent from here; one he typed on the Mac itself has no start the phone saw.
     val since = if (working) running?.time else null
-    return AgentThread(macThreadKey(id), name, state, doing, label, worked, reachable, since)
+    return AgentThread(macThreadKey(id), name, state, doing, label, worked, reachable, since, requestedAt = wants.mapNotNull { it.requestedAt }.maxOrNull())
 }
 
 /**
@@ -358,5 +376,5 @@ fun agentThreads(
     val (bots, others) = withBots.partition { it.bot != null }
     val all = phoneThreads(tasks, builders) + bots.sortedBy { it.bot!!.name.lowercase() } +
         others.sortedWith(compareByDescending<AgentThread> { it.worked ?: Long.MIN_VALUE }.thenBy { it.name }.thenBy { it.key }) + chatThreads
-    return all.map { thread -> names[thread.key]?.takeIf { thread.bot == null }?.let { thread.copy(name = it) } ?: thread }
+    return all.map { thread -> names[thread.key]?.takeIf { thread.bot == null }?.let { thread.copy(name = it) } ?: thread }.sortedWith(agentThreadOrder)
 }

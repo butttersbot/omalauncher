@@ -434,7 +434,7 @@ private const val BOARD_FOLDER_CHARS = 40
 
 /** The board's part about the Mac: the newest worked [BOARD_THREADS] of the threads a mark can name. */
 fun macBoard(threads: List<MacThread>, reachable: Boolean, seen: Long?, now: Long, tailscale: String? = null, macs: List<MacSeen> = emptyList()) =
-    MacBoard(threads.filter { macNameable(it.id) }.sortedByDescending { it.lastWorked ?: Long.MIN_VALUE }.take(BOARD_THREADS), reachable, seen, now, tailscale, macs)
+    MacBoard(threads.filter { macNameable(it.id) }.sortedWith { a, b -> agentThreadOrder.compare(macThreadNow(a, a.id, emptyList(), emptyList(), reachable), macThreadNow(b, b.id, emptyList(), emptyList(), reachable)) }.take(BOARD_THREADS), reachable, seen, now, tailscale, macs)
 
 private fun macThreadLine(thread: MacThread, now: Long, macs: List<MacSeen> = emptyList()): String {
     val status = when (thread.status) {

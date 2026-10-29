@@ -46,7 +46,7 @@ object ApprovalIds {
  * drawn for it can't answer a later request the agent sends under the same id; [slot] is free among the
  * live approvals and gives the notification id and request codes.
  */
-data class PendingApproval(val approval: AgentApproval, val nonce: String, val slot: Int) {
+data class PendingApproval(val approval: AgentApproval, val nonce: String, val slot: Int, val requestedAt: Long = 0L) {
     val id: String get() = approval.id
     val notificationId: Int get() = ApprovalIds.notificationId(slot)
     fun ticket(verb: ApprovalVerb) = ApprovalTicket(verb, slot, nonce, id)
@@ -114,7 +114,7 @@ class ApprovalLedger(private val newNonce: () -> String = { UUID.randomUUID().to
         if (approval.id in entries) return Admission.Duplicate
         val taken = entries.values.map { it.slot }.toSet() + busy
         val slot = (0 until ApprovalIds.MAX_LIVE).firstOrNull { it !in taken } ?: return Admission.Refused
-        return Admission.Shown(PendingApproval(approval, newNonce(), slot).also { entries[approval.id] = it })
+        return Admission.Shown(PendingApproval(approval, newNonce(), slot, System.currentTimeMillis()).also { entries[approval.id] = it })
     }
 
     /**

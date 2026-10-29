@@ -87,7 +87,7 @@ fun liveThreads(
     val remembered = stamps.filter { (key, stamp) -> key !in known && stamp.placed && key !in archived && !forgotten(stamp, now, listed) }
         .map { (key, stamp) -> AgentThread(key, stamp.name, ThreadState.Idle, "", NOT_HEARD_FROM, stamp.busy, reachable = false) }
     val (chats, others) = live.partition { chatId(it.key) != null }
-    return others + remembered + chats
+    return (others + remembered + chats).sortedWith(dev.omalauncher.assist.agentThreadOrder)
 }
 
 /** Why a thread has no tile though it could: he took its tile off home, and it stays off until the thread next starts work. */
@@ -131,10 +131,10 @@ data class TilePlan(
 
 /**
  * How the Agents page ranks its tiles (Boss, 2026-10-24: "we can only fit six panels on that page, so we should
- * prioritize the active sessions … and then … by the most recent"): the threads at work first, then the rest,
+ * prioritize the active sessions … and then … by the most recent"). Updated 2026-10-29: requests for Boss first, then work and the rest,
  * each by when they last worked, newest first. The page holds the first ones that fit, in this order.
  */
-fun agentTileRank(active: Boolean, busy: Long?): Pair<Int, Long> = (if (active) 0 else 1) to -(busy ?: 0L)
+fun agentTileRank(active: Boolean, busy: Long?): Pair<Int, Long> = (if (active) 1 else 2) to -(busy ?: 0L)
 // A thread at work is ranked by when its turn began, which holds still while it works: its busy stamp is written
 // again every minute, and the tiles would trade places as it was.
 
@@ -206,12 +206,12 @@ fun agentTilePlan(
             life == TileLife.Gone -> if (there) remove += tile
             there -> {
                 show[tile] = AgentTile(thread.name, thread, fading = life == TileLife.Fading)
-                ranks[tile] = agentTileRank(active, if (active) thread.since else busy)
+                ranks[tile] = dev.omalauncher.assist.agentThreadRank(thread.copy(worked = busy))
             }
             hidden == TileHidden.No -> {
                 add += tile
                 show[tile] = AgentTile(thread.name, thread, fading = life == TileLife.Fading)
-                ranks[tile] = agentTileRank(active, if (active) thread.since else busy)
+                ranks[tile] = dev.omalauncher.assist.agentThreadRank(thread.copy(worked = busy))
             }
         }
         val stays = there && tile !in remove

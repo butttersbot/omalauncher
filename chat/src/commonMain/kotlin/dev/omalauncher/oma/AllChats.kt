@@ -27,6 +27,7 @@ data class AllChatRow(
     val last: String,
     val open: Boolean,
     val archived: Boolean,
+    val state: dev.omalauncher.assist.ThreadState = dev.omalauncher.assist.ThreadState.Idle,
 )
 
 /** Which group a chat last worked at [worked] (ms) falls in at [now]: Today, Yesterday, This week or Earlier. */
@@ -71,7 +72,7 @@ fun allChatRows(
     /** Its computer's name when the thread doesn't say (one computer set up): "" for none. */
     place: (String) -> String = { "" },
 ): List<AllChatRow> =
-    all.filter { it.bot == null }.map { thread ->
+    all.filter { it.bot == null }.sortedWith(dev.omalauncher.assist.agentThreadOrder).map { thread ->
         val said = entries(thread.key).lastOrNull { it.result.isNotBlank() }?.result
         AllChatRow(
             key = thread.key,
@@ -82,8 +83,9 @@ fun allChatRows(
             last = Markdown.plain(thread.doing.ifBlank { said.orEmpty() }).lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }.orEmpty(),
             open = thread.key in shown,
             archived = thread.key in archived,
+            state = thread.state,
         )
-    }.sortedByDescending { it.worked ?: 0L }
+    }
 
 /**
  * The rows that match [query] (case aside: in a name, the row's last words, or his words and the answers in its

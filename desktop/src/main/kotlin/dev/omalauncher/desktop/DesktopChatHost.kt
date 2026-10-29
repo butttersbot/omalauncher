@@ -105,7 +105,7 @@ class DesktopChatHost(
         // The list is asked for again once it is a minute old, as home's tiles do on the phone: the desktop has no tiles.
         engine.glance(System.currentTimeMillis())
         val book = platform.book()
-        val asks = engine.pending.groupBy({ it.threadId }) { ThreadAsk(it.request.tool, askTarget(it.request.input)) }
+        val asks = engine.pending.groupBy({ it.threadId }) { ThreadAsk(it.request.tool, askTarget(it.request.input), it.request.requestedAt) }
         // The phone's own threads (its builders) are the phone's: not here.
         return agentThreads(tasks(), BuilderNow(), engine.view, asks, BuilderNow(), book.chats, book.names).filter { BuilderId.ofThread(it.key) == null }
     }
@@ -114,6 +114,7 @@ class DesktopChatHost(
         val now = System.currentTimeMillis()
         return all.filter { threadLife(it.state, it.worked, now, it.key in pinned, it.key in archived) != TileLife.Gone }
             .sortedBy { if (it.key in pinned) pinned.indexOf(it.key) else Int.MAX_VALUE }
+            .sortedWith(dev.omalauncher.assist.agentThreadOrder)
     }
 
     override fun changeBook(change: (TabMeta) -> TabMeta): TabMeta = platform.changeBook(change)

@@ -32,7 +32,7 @@ enum class MacDecision(val word: String) {
  * One request for approval waiting on the Mac. [input] is the tool's input as JSON text, so two of these compare
  * by what they say. Only an answer carrying [nonce] is taken, so it is left out of [toString] with the input.
  */
-data class MacApproval(val approval: String, val nonce: String, val tool: String, val input: String, val explanation: String, val canRemember: Boolean = false) {
+data class MacApproval(val approval: String, val nonce: String, val tool: String, val input: String, val explanation: String, val canRemember: Boolean = false, val requestedAt: Long? = null) {
     override fun toString() = "MacApproval(approval=$approval, tool=$tool)"
 }
 
@@ -105,7 +105,7 @@ internal fun macApproval(json: JSONObject): MacApproval? {
     val approval = json.macText("approval")
     val nonce = json.macText("nonce")
     if (approval.isBlank() || nonce.isBlank()) return null
-    return MacApproval(approval, nonce, json.macText("tool"), json.optJSONObject("input")?.toString() ?: "{}", json.macText("explanation"), json.opt("can_remember") == true)
+    return MacApproval(approval, nonce, json.macText("tool"), json.optJSONObject("input")?.toString() ?: "{}", json.macText("explanation"), json.opt("can_remember") == true, json.macWhole("asked_at")?.times(1000))
 }
 
 /**
@@ -122,7 +122,7 @@ internal fun macEvent(json: JSONObject, lineId: Long? = null, lineType: String? 
         "message" -> MacEvent.Message(id, time, json.macText("text"))
         "text" -> MacEvent.Text(id, time, json.macText("text"), json.macText("kind"), json.macText("model"))
         "step" -> MacEvent.Step(id, time, json.macText("text"), json.macText("tool"))
-        "approval" -> macApproval(json)?.let { MacEvent.Approval(id, time, it) } ?: MacEvent.Other(id, time, type)
+        "approval" -> macApproval(json)?.let { MacEvent.Approval(id, time, it.copy(requestedAt = it.requestedAt ?: time * 1000)) } ?: MacEvent.Other(id, time, type)
         "approval_result" -> MacEvent.ApprovalResult(id, time, json.macText("approval"), MacDecision.of(json.macText("decision")), json.macText("device"), json.optBoolean("skipped") || questionAnswersSkipped(json.optJSONObject("answers")))
         "result" -> MacEvent.Result(id, time, json.macText("text"), json.optBoolean("failed"), json.macText("kind"), json.macText("model"))
         "note" -> json.macText("text").trim().takeIf { it.isNotEmpty() }?.let { MacEvent.Note(id, time, it) } ?: MacEvent.Other(id, time, type)

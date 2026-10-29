@@ -49,7 +49,7 @@ fun shownThreads(live: List<AgentThread>, pinned: List<String>, all: List<AgentT
     val rest = live.filter { it.bot == null && !builder(it) }
     val open = all.firstOrNull { it.key == wanted && it.bot == null && !builder(it) && it.key !in archived && rest.none { shown -> shown.key == it.key } }
     val kept = builders + rest + listOfNotNull(open)
-    return bots + kept.filter { it.key in pinned } + kept.filter { it.key !in pinned }
+    return (bots + kept.filter { it.key in pinned } + kept.filter { it.key !in pinned }).sortedWith(dev.omalauncher.assist.agentThreadOrder)
 }
 
 /**
