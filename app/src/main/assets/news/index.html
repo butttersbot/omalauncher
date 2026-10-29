@@ -163,6 +163,7 @@ function layout() { return innerWidth < 600 ? 'cover' : innerWidth > innerHeight
 
 function load() {
   try { const d = JSON.parse(Native.stream()); S.stories = d.stories || []; S.updated = d.updated || 0; } catch (e) { S.stories = []; }
+  S.pending = null;
 }
 
 function ago(t) {
@@ -208,7 +209,7 @@ function mast() {
 }
 
 function card(s) {
-  return `<div class="card" ${open(idx(s))}>${s.image ? `<img src="${esc(s.image)}" loading="lazy" onerror="this.remove()">` : ''}<div class="kicker">${esc(s.source)}</div><h3>${esc(s.title)}</h3><p>${esc(dek(s))}</p><div class="meta">${ago(s.published)} ago</div></div>`;
+  return `<div class="card" ${open(idx(s))}>${s.image ? `<img src="${esc(s.image)}" loading="lazy" onerror="this.removeAttribute('src')">` : ''}<div class="kicker">${esc(s.source)}</div><h3>${esc(s.title)}</h3><p>${esc(dek(s))}</p><div class="meta">${ago(s.published)} ago</div></div>`;
 }
 
 function streamCover() {
@@ -218,16 +219,16 @@ function streamCover() {
       case 'cover': return `<div class="cover-story" ${open(idx(s))}><img src="${esc(s.image)}" onerror="this.style.visibility='hidden'"><div class="over"><div class="kicker">${esc(s.source)} · ${ago(s.published)}</div><h1>${esc(s.title)}</h1></div></div>`;
       case 'section': return `<div class="section"><h4>${esc(b.label)}</h4></div>`;
       case 'pair': return `<div class="pair">${b.s.map(card).join('')}</div>`;
-      case 'feature': return `<div class="feature" ${open(idx(s))}><img src="${esc(s.image)}" loading="lazy" onerror="this.remove()"><div><div class="kicker">${esc(s.source)}</div><h3>${esc(s.title)}</h3><p>${esc(dek(s, 200))}</p><div class="meta" style="margin-top:8px">${ago(s.published)} ago</div></div></div>`;
-      case 'briefs': return `<div class="briefs">${b.s.map(x => `<div class="brief" ${open(idx(x))}><span class="t">${esc(x.title)}<span class="meta">${esc(x.source)} · ${ago(x.published)}</span></span>${x.image ? `<img src="${esc(x.image)}" loading="lazy" onerror="this.remove()">` : ''}</div>`).join('')}</div>`;
-      case 'photo': return `<div class="photo" ${open(idx(s))}><img src="${esc(s.image)}" loading="lazy" onerror="this.remove()"><div class="cap">${esc(s.title)} <span class="meta">${esc(s.source)}</span></div></div>`;
+      case 'feature': return `<div class="feature" ${open(idx(s))}><img src="${esc(s.image)}" loading="lazy" onerror="this.removeAttribute('src')"><div><div class="kicker">${esc(s.source)}</div><h3>${esc(s.title)}</h3><p>${esc(dek(s, 200))}</p><div class="meta" style="margin-top:8px">${ago(s.published)} ago</div></div></div>`;
+      case 'briefs': return `<div class="briefs">${b.s.map(x => `<div class="brief" ${open(idx(x))}><span class="t">${esc(x.title)}<span class="meta">${esc(x.source)} · ${ago(x.published)}</span></span>${x.image ? `<img src="${esc(x.image)}" loading="lazy" onerror="this.removeAttribute('src')">` : ''}</div>`).join('')}</div>`;
+      case 'photo': return `<div class="photo" ${open(idx(s))}><img src="${esc(s.image)}" loading="lazy" onerror="this.removeAttribute('src')"><div class="cap">${esc(s.title)} <span class="meta">${esc(s.source)}</span></div></div>`;
     }
   }).join('');
   return blocks;
 }
 
 function topItem(s, on) {
-  return `<div class="top-item ${s.image ? '' : 'noimg'} ${on ? 'on' : ''}" ${open(idx(s))}><div><div class="kicker">${esc(s.source)}</div><h3>${esc(s.title)}</h3><div class="meta">${ago(s.published)} ago</div></div>${s.image ? `<img src="${esc(s.image)}" loading="lazy" onerror="this.remove()">` : ''}</div>`;
+  return `<div class="top-item ${s.image ? '' : 'noimg'} ${on ? 'on' : ''}" ${open(idx(s))}><div><div class="kicker">${esc(s.source)}</div><h3>${esc(s.title)}</h3><div class="meta">${ago(s.published)} ago</div></div>${s.image ? `<img src="${esc(s.image)}" loading="lazy" onerror="this.removeAttribute('src')">` : ''}</div>`;
 }
 
 function streamWide() {
@@ -245,7 +246,7 @@ function streamWide() {
     if (pics.length >= 4) html += `<div class="spread"><div class="page duo">${take(pics, 2).map(card).join('')}</div><div class="page duo">${take(pics, 2).map(card).join('')}</div></div>`;
     const f = take(pics, 1)[0];
     const b = take(plain, 5); if (b.length < 3) b.push(...take(pics, 3 - b.length));
-    if (f || b.length) html += `<div class="spread" style="margin-top:26px"><div class="page ${f ? 's-feature' : ''}">${f ? `<div class="card" ${open(idx(f))}><img src="${esc(f.image)}" loading="lazy"><div class="kicker">${esc(f.source)}</div><h3>${esc(f.title)}</h3><p>${esc(dek(f, 240))}</p><div class="meta" style="margin-top:8px">${ago(f.published)} ago</div></div>` : ''}</div><div class="page"><div class="tops"><h5>In brief</h5></div><div class="briefs" style="padding:0">${b.map(x => `<div class="brief" ${open(idx(x))}><span class="t">${esc(x.title)}<span class="meta">${esc(x.source)} · ${ago(x.published)}</span></span>${x.image ? `<img src="${esc(x.image)}" loading="lazy" onerror="this.remove()">` : ''}</div>`).join('')}</div></div></div>`;
+    if (f || b.length) html += `<div class="spread" style="margin-top:26px"><div class="page ${f ? 's-feature' : ''}">${f ? `<div class="card" ${open(idx(f))}><img src="${esc(f.image)}" loading="lazy"><div class="kicker">${esc(f.source)}</div><h3>${esc(f.title)}</h3><p>${esc(dek(f, 240))}</p><div class="meta" style="margin-top:8px">${ago(f.published)} ago</div></div>` : ''}</div><div class="page"><div class="tops"><h5>In brief</h5></div><div class="briefs" style="padding:0">${b.map(x => `<div class="brief" ${open(idx(x))}><span class="t">${esc(x.title)}<span class="meta">${esc(x.source)} · ${ago(x.published)}</span></span>${x.image ? `<img src="${esc(x.image)}" loading="lazy" onerror="this.removeAttribute('src')">` : ''}</div>`).join('')}</div></div></div>`;
     const p = take(pics, 1)[0];
     if (p) html += `<div class="spread" style="margin-top:26px"><div class="page s-photo" ${open(idx(p))}><img src="${esc(p.image)}" loading="lazy"><div class="cap">${esc(p.title)} <span class="meta">${esc(p.source)}</span></div></div><div class="page tops"><h5>More</h5>${[...take(plain, 3), ...take(pics, 1)].map(s => topItem(s)).join('')}</div></div>`;
   }
@@ -272,7 +273,7 @@ function moreButton(t) {
   return `<button class="more" onclick="toggleMore(${esc(JSON.stringify(t.name))})">${S.more[t.name] ? 'Show less' : `Show ${t.all.length - SHOWN} more`}</button>`;
 }
 function brief(x) {
-  return `<div class="brief" ${open(idx(x))}><span class="t">${esc(x.title)}<span class="meta">${esc(x.source)} · ${ago(x.published)}</span></span>${x.image ? `<img src="${esc(x.image)}" loading="lazy" onerror="this.remove()">` : ''}</div>`;
+  return `<div class="brief" ${open(idx(x))}><span class="t">${esc(x.title)}<span class="meta">${esc(x.source)} · ${ago(x.published)}</span></span>${x.image ? `<img src="${esc(x.image)}" loading="lazy" onerror="this.removeAttribute('src')">` : ''}</div>`;
 }
 function topicCover(t, first) {
   const shown = S.more[t.name] ? t.all : t.all.slice(0, SHOWN);
@@ -281,7 +282,7 @@ function topicCover(t, first) {
   let html = `<div class="topic" id="${topicId(t.name)}">`;
   if (first && lead) html += `<div class="cover-story" ${open(idx(lead))}><img src="${esc(lead.image)}" onerror="this.style.visibility='hidden'"><div class="over"><div class="kicker">${esc(lead.source)} · ${ago(lead.published)}</div><h1>${esc(lead.title)}</h1></div></div>`;
   html += `<div class="section"><h4>${esc(t.name)}</h4><span class="count">${t.all.length}</span></div>`;
-  if (!first && lead) html += `<div class="feature" ${open(idx(lead))}><img src="${esc(lead.image)}" loading="lazy" onerror="this.remove()"><div><div class="kicker">${esc(lead.source)}</div><h3>${esc(lead.title)}</h3><div class="meta" style="margin-top:8px">${ago(lead.published)} ago</div></div></div>`;
+  if (!first && lead) html += `<div class="feature" ${open(idx(lead))}><img src="${esc(lead.image)}" loading="lazy" onerror="this.removeAttribute('src')"><div><div class="kicker">${esc(lead.source)}</div><h3>${esc(lead.title)}</h3><div class="meta" style="margin-top:8px">${ago(lead.published)} ago</div></div></div>`;
   if (rest.length) html += `<div class="briefs">${rest.map(brief).join('')}</div>`;
   return html + moreButton(t) + `</div>`;
 }
@@ -310,7 +311,7 @@ function stream() {
     ? `<div class="empty">${S.refreshing ? 'Fetching the news from Google News…' : 'Nothing here yet. Tap ↻ to fetch from Google News.'}</div>`
     : (S.stories.some(s => s.topic) ? streamTopics() : layout() === 'cover' ? streamCover() : streamWide()) + `<div class="end meta">You're caught up · it checks again every hour · tap ↻ any time</div>`;
   // The "new stories" pill comes after the topic chips, so it never sits on them (the 128 walk's screenshots).
-  const pill = S.fresh ? `<div class="newpill" onclick="S.fresh=0;$('scroll').scrollTo({top:0,behavior:'smooth'});draw()">↑ ${S.fresh} new ${S.fresh === 1 ? 'story' : 'stories'}</div>` : '';
+  const pill = S.fresh ? `<div class="newpill" onclick="takeNew()">↑ ${S.fresh} new ${S.fresh === 1 ? 'story' : 'stories'}</div>` : '';
   const placed = body.startsWith('<div class="chips"') ? body.replace(/^(<div class="chips"[^]*?<\/div>)/, '$1' + pill) : pill + body;
   return mast() + `<div class="scroll" id="scroll">${placed}</div>`;
 }
@@ -440,6 +441,8 @@ function draw() {
 
 function openStory(i) {
   if (i < 0 || i >= S.stories.length) return;
+  // A tap within a moment of the stream being redrawn by itself (a refresh, not him) lands on whatever moved: ignored.
+  if (S.scene === 'stream' && performance.now() - (S.redrawnAt || 0) < 350) return;
   if (S.scene === 'stream' && $('scroll')) S.streamTop = $('scroll').scrollTop;
   S.scene = 'reader'; S.at = i; want(S.stories[i]); draw();
   if ($('art')) $('art').scrollTop = 0;
@@ -458,14 +461,30 @@ function refresh() {
   Native.refresh();
 }
 
-window.somaRefreshed = function (err) {
+// A refresh never moves the stream under his finger: while he is down the stream or reading a story, the new stories
+// wait (the "↑ N new" pill says so) and come in when he goes back to the top or taps the pill. Applied at once, they
+// pushed every story down and a tap meant for "Show 20 more" opened a Politico story (175 walk, 2026-10-29).
+const settled = () => S.scene === 'stream' && (!$('scroll') || $('scroll').scrollTop < 60);
+function takeFresh() {
+  if (!S.pending) return false;
   const before = new Set(S.stories.map(s => s.id));
-  load();
-  S.refreshing = false;
+  S.stories = S.pending.stories || []; S.updated = S.pending.updated || S.updated; S.pending = null;
+  if (before.size) S.fresh = S.stories.filter(s => !before.has(s.id)).length;
+  return true;
+}
+window.somaRefreshed = function (err) {
+  S.refreshing = false; S.redrawnAt = performance.now();
   if (err) { S.toast = err; setTimeout(() => { S.toast = ''; draw(); }, 3500); }
-  else if (before.size) S.fresh = S.stories.filter(s => !before.has(s.id)).length;
+  else {
+    try { S.pending = JSON.parse(Native.stream()); } catch (e) { S.pending = null; }
+    if (S.pending && (!S.stories.length || settled())) takeFresh();
+    else if (S.pending) { const have = new Set(S.stories.map(s => s.id)); S.fresh = (S.pending.stories || []).filter(s => !have.has(s.id)).length; }
+  }
   if (S.scene === 'stream') draw();
 };
+window.takeNew = () => { takeFresh(); S.fresh = 0; draw(); if ($('scroll')) $('scroll').scrollTo({ top: 0, behavior: 'smooth' }); };
+// Back at the top of the stream, the waiting stories come in.
+document.addEventListener('scroll', e => { if (e.target.id === 'scroll' && S.pending && settled() && takeFresh()) draw(); }, true);
 
 let lastLayout = layout();
 addEventListener('resize', () => { const l = layout(); if (l !== lastLayout) { lastLayout = l; draw(); } });
