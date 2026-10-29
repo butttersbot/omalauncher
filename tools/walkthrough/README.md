@@ -41,6 +41,7 @@ pixels (`540 1800`).
 | `within TOP BOTTOM TEXT` | asserts the label’s entire reported bounds are inside a vertical screen band (fractions 0..1); review the screenshot too, since Android may report clipped bounds |
 | `scrollto TEXT` | swipes up until TEXT shows (a WebView reports only what is on screen) |
 | `shot NAME` | a screenshot to look at (canvas-drawn UI, like the keyboard, has no text to expect) |
+| `shot NAME card=CARD-ID` | the same, and this screenshot is that Soma Canvas card: see the design gate below |
 | `[phone] …` | a step in words for the real Fold, after promotion |
 
 A `shot` is reported **LOOK**, never PASS: a walk counts only once its screenshots have been looked at. (The first
@@ -55,6 +56,29 @@ On the Mac, `soma-macbuild` installs the build on the Mac's Fold emulator (AVD `
 and walks the scripts named in the commit's `Walk:` trailer, or every script whose feature the commit touched; the
 results and screenshots come back with the build. Keyboard steps tap by position (the keys are drawn, not labelled):
 when a layout change moves them, fix the coordinates in the script in the same commit.
+
+## The design gate: done = PASS + as approved
+
+Boss, 2026-10-29: "What is the point of having an approved design if the agents keep handing back work that doesn't
+follow the approved design." (design/soma-canvas/DESIGN-GATE.md.) Build a screen only from its **Approved** card on
+Soma Canvas, and name the card in the commit. In the walk, every screenshot of an approved screen names its card:
+
+    # canvas-app: soma              (optional; hunch* walks default to hunch, the rest to soma)
+    shot connections-tile card=connections-tile
+
+walk.py writes `canvas.json` (screenshot → card, the map `soma-canvas publish` reads) beside `results.json`. On the
+Mac lane, after the walks, `design_gate.py run` takes each walk that **PASSed**: its carded screenshots become
+Shipped on Canvas (`soma-canvas publish APP DIR --version CODE --build SHORT`), and each is checked against Approved
+(`soma-canvas check CARD SHOT`, a vision diff on the Canvas side). The answers go to `design-report.json`
+(`design-<short>-<code>.json` beside the walk zip, Taildropped). Any unwaived drift is **DESIGN FAIL**: its own
+verdict beside PASS/FAIL, in report.txt, in the walk mail's title and body, with each card and its numbered
+differences. A failed walk publishes nothing.
+
+`oma-macbuild --take` and `oma-install` refuse a build whose walked cards drifted, printing the cards and
+differences, until it is built as approved or **Boss waives** the drift on Canvas (install asks Canvas again, so a
+waiver after the take counts). A check that could not run (Canvas down, `check` missing) is shown as "not checked"
+and does not block; a card with nothing Approved yet is published as Shipped only. Tests:
+`python3 -m unittest discover -s tools/walkthrough -p 'test_*.py'`.
 
 ### Fresh accessibility evidence after WebView transitions
 

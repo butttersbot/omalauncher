@@ -335,8 +335,20 @@ def parse(path):
         if where == "phone":
             steps.append({"line": i, "where": "phone", "text": rest}); continue
         parts = shlex.split(rest)
-        steps.append({"line": i, "where": "emu", "op": parts[0], "args": parts[1:], "text": rest})
+        step = {"line": i, "where": "emu", "op": parts[0], "args": parts[1:], "text": rest}
+        # "shot NAME card=ID": this screenshot is that Soma Canvas card (DESIGN-GATE.md); the name stays as before.
+        if parts[0] == "shot":
+            card = [a for a in parts[1:] if a.startswith("card=")]
+            if card:
+                step["card"] = card[-1][5:]
+                step["args"] = [a for a in parts[1:] if not a.startswith("card=")]
+        steps.append(step)
     return steps
+
+def canvas_map(results):
+    """Screenshot stem -> card id, the map soma-canvas publish and check read (DIR/canvas.json)."""
+    return {os.path.splitext(os.path.basename(r["screenshot"]))[0]: r["card"]
+            for r in results if r.get("card") and r.get("screenshot") and r["result"] == "LOOK"}
 
 def main():
     a = sys.argv[1:]
@@ -364,12 +376,17 @@ def main():
         # A screenshot proves nothing by itself: it is LOOK until someone has looked (README).
         verdict = "LOOK" if ok is None else "PASS" if ok else "FAIL"
         failed += ok is False
-        results.append({"step": n, "where": "emu", "text": s["text"], "result": verdict, "note": note, "screenshot": png})
+        results.append({"step": n, "where": "emu", "text": s["text"], "result": verdict, "note": note, "screenshot": png,
+                        **({"card": s["card"]} if s.get("card") else {})})
         print(f"{verdict}  {n:02d}  {s['text']}" + (f"  — {note}" if note else ""))
     looks = sum(r["result"] == "LOOK" for r in results)
     if looks:
         print(f"\n{looks} screenshots to look at before this walk counts: a LOOK is not a PASS.")
     json.dump({"script": script, "failed": failed, "looks": looks, "steps": results}, open(os.path.join(out, "results.json"), "w"), indent=1)
+    cards = canvas_map(results)
+    if cards:
+        json.dump(cards, open(os.path.join(out, "canvas.json"), "w"), indent=1)
+        print(f"{len(cards)} screenshots are Canvas cards (canvas.json): published and checked against Approved after a PASS.")
     phone = [s for s in steps if s["where"] == "phone"]
     if phone:
         print(f"\n{len(phone)} [phone] steps wait for the real Fold after promotion (walk.py {script} --phone).")

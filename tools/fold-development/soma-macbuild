@@ -153,9 +153,12 @@ walk_report() {
     else
       cat "$wdir/summary.txt" 2>/dev/null || echo "Walks: none ran."
     fi
+    # DESIGN FAIL is its own verdict beside PASS/FAIL: the walk passed, the screen is not as approved.
+    [ -s "$wdir/design.txt" ] && cat "$wdir/design.txt"
     echo "Screenshots and logs: walk-$short-$code.zip (Taildropped)."
   } >"$wdir/report.txt"
-  "$tmsg" send "$phone${lane:+:$lane}" --title "Soma $short walks${lane:+ (lane $lane)}" <"$wdir/report.txt" >/dev/null 2>&1 &&
+  local design=""; grep -q '^DESIGN FAIL' "$wdir/design.txt" 2>/dev/null && design=", DESIGN FAIL"
+  "$tmsg" send "$phone${lane:+:$lane}" --title "Soma $short walks${lane:+ (lane $lane)}$design" <"$wdir/report.txt" >/dev/null 2>&1 &&
     echo "Walk report mailed to $phone${lane:+:$lane}." || echo "Walk report: mailing it failed (see $wdir/report.txt)."
 }
 
@@ -312,6 +315,16 @@ if [ ${#walks[@]} -gt 0 ]; then
       grep -h '^FAIL' "$wdir"/*.log | sed 's/^/  /' | tee -a "$wdir/summary.txt"
       # What the next build compares with, to walk only what changed since (only once walks really ran).
       echo "$commit" > "$state/walked-commit"
+    fi
+  fi
+  # The design gate (design/soma-canvas/DESIGN-GATE.md): each passed walk's carded screenshots (shot NAME card=ID)
+  # become Shipped on Soma Canvas and are checked against Approved; take and install refuse unwaived drift.
+  if [ -s "$wdir/verdicts.txt" ] && ls "$wdir"/*/canvas.json >/dev/null 2>&1; then
+    python3 tools/walkthrough/design_gate.py run "$wdir" --version "$code" --build "$short" > "$wdir/design.txt" 2>&1
+    cat "$wdir/design.txt"
+    if [ -s "$wdir/design-report.json" ]; then
+      cp "$wdir/design-report.json" "$out/design-$short-$code.json"
+      if [ "$send" != 0 ]; then "$ts" file cp "$out/design-$short-$code.json" "$phone:"; fi
     fi
   fi
   (cd "$wdir" && zip -qr "../walk-$short-$code.zip" .)

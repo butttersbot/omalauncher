@@ -1,0 +1,97 @@
+"""The design gate's walk side against a stand-in soma-canvas (the contract mailed to taebc3f66, 2026-10-29)."""
+import importlib.util, json, os, tempfile, unittest
+from pathlib import Path
+from unittest.mock import patch
+
+spec = importlib.util.spec_from_file_location("design_gate", Path(__file__).with_name("design_gate.py"))
+gate = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(gate)
+
+FAKE = r'''#!/bin/sh
+# Logs each call; answers check from $FAKE_DIR/<card>.json (missing: no such command, as before taebc3f66 ships it).
+echo "$*" >> "$FAKE_DIR/calls"
+case $1 in
+  publish) echo "published"; exit 0 ;;
+  check) if [ "$3" = --waiver ]; then f="$FAKE_DIR/$2.waiver.json"; else f="$FAKE_DIR/$2.json"; fi
+         [ -f "$f" ] || { echo "soma-canvas: unknown command check" >&2; exit 2; }
+         cat "$f"; grep -q '"drift"' "$f" && ! grep -q '"waived": *true' "$f" && exit 3; exit 0 ;;
+esac
+'''
+
+class Gate(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(); t = Path(self.tmp.name)
+        (t / "soma-canvas").write_text(FAKE); (t / "soma-canvas").chmod(0o755)
+        self.env = patch.dict(os.environ, {"SOMA_CANVAS": str(t / "soma-canvas"), "FAKE_DIR": str(t)}); self.env.start()
+        self.t, self.wdir = t, t / "walk"
+        for w, verdict, cards in [("connections", "PASS", {"03-tile": "conn-tile", "05-footer": "conn-footer"}),
+                                  ("news", "FAIL (1 of 9 steps, exit 1)", {"02-book": "news-book"}),
+                                  ("pet", "PASS", None)]:
+            (self.wdir / w).mkdir(parents=True)
+            (self.wdir / w / "results.json").write_text(json.dumps({"script": "x.walk", "steps": []}))
+            if cards:
+                (self.wdir / w / "canvas.json").write_text(json.dumps(cards))
+                for stem in cards: (self.wdir / w / (stem + ".png")).write_bytes(b"png")
+            with open(self.wdir / "verdicts.txt", "a") as f: f.write(f"{w} {verdict}\n")
+
+    def tearDown(self):
+        self.env.stop(); self.tmp.cleanup()
+
+    def answer(self, card, **r):
+        (self.t / f"{card}.json").write_text(json.dumps({"card": card, **r}))
+
+    def calls(self):
+        return (self.t / "calls").read_text().splitlines()
+
+    def test_drift_is_a_design_fail_and_refuses_until_boss_waives_it(self):
+        self.answer("conn-tile", result="match", differences=[], waived=False)
+        self.answer("conn-footer", result="drift", waived=False,
+                    differences=[{"n": 1, "what": "Restart sits under the list, Approved has it in the header"}])
+        r = gate.run(str(self.wdir), "176", "abc123456")
+        self.assertEqual("drift", r["result"])
+        text = gate.summary(r)
+        self.assertTrue(text.startswith("DESIGN FAIL: 1 of 2 walked cards"))
+        self.assertIn("conn-footer (connections, 05-footer.png)", text)
+        self.assertIn("1. Restart sits under the list", text)
+        # Only a passed walk is published or checked: news failed, so its card never reaches Canvas.
+        self.assertFalse(any("news" in c for c in self.calls()))
+        self.assertIn("publish soma " + str(self.wdir / "connections"), " ".join(self.calls()))
+        report = str(self.wdir / "design-report.json")
+        self.assertEqual(3, gate.gate(report, "abc123456789"))
+        # Boss waives it on Canvas after the walk: install asks again and lets it through.
+        (self.t / "conn-footer.waiver.json").write_text(json.dumps({"card": "conn-footer", "result": "drift", "waived": True,
+                                                                   "waiver": {"by": "boss", "build": "abc123456"}}))
+        self.assertEqual(0, gate.gate(report, "abc123456789"))
+
+    def test_a_check_that_cannot_run_is_reported_but_never_blocks(self):
+        r = gate.run(str(self.wdir), "176", "abc123456")
+        self.assertEqual("error", r["result"])
+        self.assertTrue(all(c["result"] == "error" and "check unavailable" in c["error"] for c in r["cards"]))
+        self.assertIn("not checked", gate.summary(r))
+        self.assertEqual(0, gate.gate(str(self.wdir / "design-report.json"), "abc123456"))
+
+    def test_no_approved_and_report_for_another_build_hold_nothing(self):
+        self.answer("conn-tile", result="no-approved", waived=False)
+        self.answer("conn-footer", result="match", waived=False)
+        r = gate.run(str(self.wdir), "176", "abc123456")
+        self.assertEqual("match", r["result"])
+        self.assertIn("nothing Approved yet", gate.summary(r))
+        self.answer("conn-footer", result="drift", waived=False, differences=[{"n": 1, "what": "x"}])
+        gate.run(str(self.wdir), "176", "abc123456")
+        self.assertEqual(0, gate.gate(str(self.wdir / "design-report.json"), "fff999000"))
+
+    def test_inbox_report_finds_taildrops_copy_and_none_holds_nothing(self):
+        inbox = self.t / "inbox"; inbox.mkdir()
+        self.assertIsNone(gate.inbox_report("abc123456789", "176", str(inbox)))
+        (inbox / "design-abc123456-176 (2).json").write_text("{}")
+        self.assertTrue(gate.inbox_report("abc123456789", "176", str(inbox)).endswith("(2).json"))
+        self.assertEqual(0, gate.gate(None))
+
+    def test_canvas_app_comes_from_the_script_or_the_walk_name(self):
+        s = self.t / "c.walk"; s.write_text("# canvas-app: soma-messages\nlaunch x\n")
+        self.assertEqual("soma-messages", gate.canvas_app("chat", {"script": str(s)}))
+        self.assertEqual("hunch", gate.canvas_app("hunch-wallet", {}))
+        self.assertEqual("soma", gate.canvas_app("connections", {}))
+
+if __name__ == "__main__":
+    unittest.main()

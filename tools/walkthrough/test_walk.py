@@ -123,5 +123,23 @@ class WholeLabelBounds(unittest.TestCase):
                 ok, _, _ = walk.run_step("emu", "within", ["0.1", "0.85", "Fixture", "only"], out, 1)
                 self.assertEqual(expected, ok)
 
+class CanvasCards(unittest.TestCase):
+    def test_card_on_a_shot_is_kept_out_of_its_name_and_mapped_by_file_stem(self):
+        import tempfile
+        with tempfile.NamedTemporaryFile("w", suffix=".walk", delete=False) as f:
+            f.write("launch app/.A\nshot market card=hunch-market\nshot \"calls list\" card=phone-calls\nshot plain\n[phone] feel it\n")
+        steps = walk.parse(f.name)
+        self.assertEqual((["market"], "hunch-market"), (steps[1]["args"], steps[1]["card"]))
+        self.assertEqual(["calls list"], steps[2]["args"])
+        self.assertNotIn("card", steps[3])
+        with tempfile.TemporaryDirectory() as out, patch.object(walk, "shot"):
+            _, _, png = walk.run_step("emu", "shot", steps[1]["args"], out, 2)
+            self.assertTrue(png.endswith("02-market.png"))
+        results = [{"result": "LOOK", "screenshot": "/w/02-market.png", "card": "hunch-market"},
+                   {"result": "LOOK", "screenshot": "/w/03-calls-list.png", "card": "phone-calls"},
+                   {"result": "LOOK", "screenshot": "/w/04-plain.png"},
+                   {"result": "FAIL", "screenshot": None, "card": "never-taken"}]
+        self.assertEqual({"02-market": "hunch-market", "03-calls-list": "phone-calls"}, walk.canvas_map(results))
+
 if __name__ == "__main__":
     unittest.main()
