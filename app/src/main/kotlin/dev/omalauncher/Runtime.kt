@@ -174,6 +174,8 @@ class Runtime(
 
     /** Linux is installed and its services run: guest commands (like the update check) can go. */
     private var linux = false
+    val connectionsLinuxRunning: Boolean get() = linux
+    private val connectionsMonitor by lazy { dev.omalauncher.connections.ConnectionsMonitor(context.applicationContext, this) }
 
     /** The Linux install and removal; one at a time. */
     private var linuxJob: Job? = null
@@ -224,6 +226,7 @@ class Runtime(
         if (started) return
         started = true
         phoneRunner.start()
+        connectionsMonitor.start()
         // Phone control switched off by a force-stop or an update, while he wanted it on, is put back: off this thread.
         dev.omalauncher.phone.PhoneControlHeal.atStart(context)
         // Wireless debugging, which Android turns off at every restart and Wi-Fi drop, is put back on.

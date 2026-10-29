@@ -29,6 +29,7 @@ const val MODULE_TILE_KIND = "module"
 enum class ModuleKind(val id: String, val title: String, val blurb: String, val size: Pair<Int, Int>, val perProject: Boolean = false, val chatScreen: Boolean = false, val foldHome: Boolean = false) {
     Needs("needs", "Needs you", "What waits for your OK, from every thread: approve or deny from the tile.", 3 to 2),
     Threads("threads", "Threads", "Every thread and how it stands; tap one to open it in the chat.", 3 to 2),
+    Connections("connections", "Connections", "Verified service health, grouped incidents and targeted recovery.", 3 to 2),
     Computers("computers", "Computers", "Each computer, whether it answers, and how busy it is.", 3 to 2),
     Timeline("timeline", "Timeline", "What you asked and where it went, newest first.", 6 to 2),
     NewThread("newthread", "New thread", "Where a new chat starts; tap to start one.", 3 to 1),
@@ -97,6 +98,7 @@ fun ModuleView(ref: ModuleRef, size: ModuleSize, source: ModuleSource, now: Long
     when (ref.kind) {
         ModuleKind.Needs -> NeedsYouModule(source.asks(), size, modifier, onAnswer = { ask, allow, said -> source.answer(ask, allow, said) }, onOpen = onOpen, onSkip = source::skipQuestion)
         ModuleKind.Threads -> ThreadsModule(source.threads(), size, modifier, onOpen = onOpen)
+        ModuleKind.Connections -> dev.omalauncher.connections.ConnectionsModule(size, now, modifier)
         ModuleKind.Computers -> ComputersModule(source.computers(), size, modifier, door = source.publicDoor(), now = now)
         ModuleKind.Timeline -> TimelineModule(source.events(), size, modifier, onOpen = onOpen)
         ModuleKind.NewThread -> NewThreadModule(source.newThread(), size, modifier, onNew = onNew)

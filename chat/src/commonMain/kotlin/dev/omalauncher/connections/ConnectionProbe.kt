@@ -1,0 +1,47 @@
+package dev.omalauncher.connections
+
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URI
+
+/** A bounded GET; credentials are supplied only by the configured endpoint, never copied across hosts. */
+data class ConnectionEndpoint(val url: String, val key: String = "", val header: String = "Authorization") {
+    override fun toString() = "ConnectionEndpoint(url=$url)"
+}
+data class ConnectionReply(val code: Int, val text: String)
+fun connectionGet(endpoint: ConnectionEndpoint): ConnectionReply {
+    var connection: HttpURLConnection? = null
+    return try {
+        val uri = URI(endpoint.url)
+        require(uri.scheme in listOf("http", "https") && uri.host != null && uri.userInfo == null)
+        connection = uri.toURL().openConnection() as HttpURLConnection
+        connection.connectTimeout = 2500; connection.readTimeout = 3500; connection.instanceFollowRedirects = false
+        if (endpoint.key.isNotEmpty()) connection.setRequestProperty(endpoint.header, if (endpoint.header == "Authorization") "Bearer ${endpoint.key}" else endpoint.key)
+        val code = connection.responseCode
+        val body = (if (code < 400) connection.inputStream else connection.errorStream)?.use {
+            val output = java.io.ByteArrayOutputStream()
+            val buffer = ByteArray(8192)
+            while (output.size() <= 262_144) { val count = it.read(buffer); if (count < 0) break; output.write(buffer, 0, count) }
+            val bytes = output.toByteArray()
+            require(bytes.size <= 262_144) { "Oversized health response" }
+            String(bytes, Charsets.UTF_8)
+        }.orEmpty()
+        ConnectionReply(code, body)
+    } catch (_: Exception) { ConnectionReply(-1, "") } finally { connection?.disconnect() }
+}
+
+/** Schema validators require capability evidence, never just HTTP 200 or an open port. */
+fun connectionState(reply: ConnectionReply, valid: (JSONObject) -> Boolean): ConnectionState = when (reply.code) {
+    401, 403 -> ConnectionState.Auth
+    -1 -> ConnectionState.Failed
+    200 -> if (runCatching { valid(JSONObject(reply.text)) }.getOrDefault(false)) ConnectionState.Ready else ConnectionState.Unknown
+    404 -> ConnectionState.Unknown
+    else -> ConnectionState.Degraded
+}
+fun connectionDetail(reply: ConnectionReply, state: ConnectionState, verified: String): String = when (state) {
+    ConnectionState.Ready -> verified
+    ConnectionState.Auth -> "Reachable, but authenticated capability could not be verified (HTTP ${reply.code})."
+    ConnectionState.Failed -> "No response within the check deadline. Sleep or an intentional disconnect is not assumed."
+    ConnectionState.Unknown -> "Responded, but capability evidence is missing (HTTP ${reply.code})."
+    else -> "Capability check returned HTTP ${reply.code}."
+}
