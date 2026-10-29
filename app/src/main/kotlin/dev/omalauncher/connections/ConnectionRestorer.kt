@@ -69,8 +69,8 @@ internal class ConnectionRestorer(private val context: Context, private val runt
                         require(id in CONNECTION_SERVICE_IDS && seen.add(id))
                         val probe = service.optJSONObject("probe")
                         val proofAge = System.currentTimeMillis() - (probe?.optLong("checked_at", 0) ?: 0)
-                        if (probe == null || probe.optBoolean("pending", true) || proofAge !in 0..30_000) {
-                            blocked += ConnectionCheck(id, host, result = "unverified", fields = mapOf("reason" to "Service proof is pending, absent or stale; no repair inferred."))
+                        if (probe == null || proofAge !in 0..30_000) {
+                            blocked += ConnectionCheck(id, host, result = "unverified", fields = mapOf("reason" to "Service proof is absent or stale; no repair inferred."))
                             continue
                         }
                         val checks = probe.optJSONArray("checks") ?: JSONArray()
