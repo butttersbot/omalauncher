@@ -770,7 +770,22 @@ async function pocketRemove(id) {
   fetchPocket();
 }
 
-const devices = () => [...(data?.machines || []).filter(m => !m.self).map(m => m.name), ...(data?.others || []).filter(h => h.online).map(h => h.name)];
+// <targets>
+// Whom "Send clipboard to" offers: the owner's own devices, each once. Never Tailscale's funnel ingress or relay nodes
+// (two dozen showed once Funnel went on; Boss, 2026-10-29: "we should clean that up"), nor a peer with no IPv4 tailnet
+// address, which `tailscale file cp` can't send to. The herd itself leaves them out too (herd own_hosts); this is the
+// pet's own check, so an older herd can't bring them back. [phone]: the phone's shell offers only the computers.
+const Targets = {
+  service: h => /^(funnel-ingress-node|relay-node)/.test(h.name || '') || !/^\d+\.\d+\.\d+\.\d+$/.test(h.address || ''),
+  list(machines, others, phone) {
+    const hosts = [...(machines || []).filter(m => !m.self && !(phone && ['android', 'iOS'].includes(m.os))), ...(phone ? [] : (others || []).filter(h => h.online))];
+    const names = [];
+    for (const h of hosts) if (!Targets.service(h) && h.name && !names.includes(h.name)) names.push(h.name);
+    return names;
+  },
+};
+// </targets>
+const devices = () => Targets.list(data?.machines, data?.others, false);
 const bytes = n => n < 1024 ? n + ' B' : n < 1048576 ? Math.round(n / 1024) + ' KB' : n < 1073741824 ? (n / 1048576).toFixed(1) + ' MB' : (n / 1073741824).toFixed(1) + ' GB';
 const ICONS = { text: '📝', image: '🖼️', video: '🎞️', file: '📄' };
 
@@ -891,7 +906,7 @@ function renderTailshare(view) {
   if (pocket && pocketError) html += `<div class="note">${esc(pocketError)}</div>`;
 
   // The phone shows it once its shell can send (caps.sendclip), and offers only the computers: they run tailshare-serve.
-  const targets = window.HerdAndroid ? (caps.sendclip ? (data?.machines || []).filter(m => !m.self && !PHONES.includes(m.os)).map(m => m.name) : []) : to;
+  const targets = window.HerdAndroid ? (caps.sendclip ? Targets.list(data?.machines, null, true) : []) : to;
   if (targets.length)
     html += `<div class="sendrow"><span>Send clipboard to</span>${targets.map(d => `<button class="btn small" data-act="sendclip" data-device="${esc(d)}">${esc(d)}</button>`).join('')}</div>`;
   html += `<div class="status" id="sendStatus"></div>`;
