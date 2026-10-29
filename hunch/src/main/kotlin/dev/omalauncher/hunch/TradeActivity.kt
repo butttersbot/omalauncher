@@ -65,13 +65,14 @@ class TradeActivity : PaperActivity() {
         paper.layoutParams = android.widget.FrameLayout.LayoutParams(1,1)
         paper.importantForAccessibility=android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
         paper.isFocusable=false;paper.isFocusableInTouchMode=false
+        paper.visibility=android.view.View.INVISIBLE
         paper.loadUrl("https://appassets.androidplatform.net/hunch/paper/trade-sdk.html")
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(18),dp(16),dp(18),dp(16)); setBackgroundColor(bg) }
         val scroll = ScrollView(this).apply { addView(root) }
         (paper.parent as android.widget.FrameLayout).addView(scroll, android.widget.FrameLayout.LayoutParams(-1,-1))
         root.addView(text(if(demo)"HUNCH / FICTIONAL TEST ORDER" else "HUNCH / ORDER", 28f)); root.addView(text(intent.getStringExtra("title").orEmpty(),22f))
         root.addView(text(intent.getStringExtra("sideLabel").orEmpty()))
-        root.addView(text("Network")); network = choice(listOf("TESTNET · test funds", "MAINNET · real funds")); root.addView(network);network.setSelection(if(demo)0 else 1);if(demo)network.isEnabled=false
+        root.addView(text("Network")); network = choice(listOf("Choose network", "TESTNET · test funds", "MAINNET · real funds")); root.addView(network);network.setSelection(if(demo)1 else 0);if(demo)network.isEnabled=false
         root.addView(text("Action")); direction = choice(listOf("Buy", "Sell owned shares")); root.addView(direction)
         root.addView(text("Order")); tif = choice(listOf("IOC · unfilled part cancels", "Limit · rests until filled or cancelled")); root.addView(tif)
         price = field("Limit price · USDC per share"); root.addView(price)
@@ -88,7 +89,8 @@ class TradeActivity : PaperActivity() {
     private fun prepare() {
         if(signing || journal == null)return
         if(!sdkReady){message.text="Signing SDK is loading; try again shortly.";return}
-        val buy = direction.selectedItemPosition == 0; val testnet = network.selectedItemPosition == 0
+        if(network.selectedItemPosition==0){message.text="Choose TESTNET or MAINNET before reviewing.";return}
+        val buy = direction.selectedItemPosition == 0; val testnet = network.selectedItemPosition == 1
         val chosenTif=if(tif.selectedItemPosition==0)"Ioc" else "Gtc"
         val limit = runCatching { BigDecimal(price.text.toString()) }.getOrNull()
         val shares = runCatching { BigDecimal(size.text.toString()) }.getOrNull()
@@ -221,15 +223,18 @@ class TradeActivity : PaperActivity() {
                         HyperliquidOrders.statusStage(status) to row.venueId
                     } else HyperliquidOrders.replyStage(result)
                     journal!!.transition(row.id,stage.first,System.currentTimeMillis(),stage.second,venueConfirmed=true)
-                    reply(call,result);message.text="${stage.first}: ${HyperliquidOrders.describe(result,stage.first)}\nUse Check previous order status to read back from the venue."
+                    reply(call,result);message.text="${stage.first}: ${HyperliquidOrders.describe(result,stage.first)}\nUse Check previous order status to read back from the venue.";revealResult()
                     signing=false;reviewed=null;review.isEnabled=true
                 } catch(e:Exception){reply(call,error="Result unclear; no retry");uncertain("Result unclear: ${e.message}. Check status; do not submit again.")}
             }
         } catch(e:Exception){reply(call,error=e.message?:"Unsafe request");uncertain("Order could not be sent. Check status before another order.")}
     }
+    private fun revealResult() { message.post {
+        message.requestRectangleOnScreen(android.graphics.Rect(0,0,message.width,minOf(message.height,dp(160))),false)
+    } }
     private fun uncertain(reason:String) {
         reviewed?.let { runCatching { journal!!.transition(it.first.id,if(submitted || cancelMode)OrderStage.Unknown else OrderStage.Cancelled,System.currentTimeMillis()) } }
-        signing=false;reviewed=null;review.isEnabled=journal!=null;message.text=reason
+        signing=false;reviewed=null;review.isEnabled=journal!=null;message.text=reason;revealResult()
     }
     private fun cancelResting() {
         if(signing || journal==null || !sdkReady)return
@@ -262,7 +267,7 @@ class TradeActivity : PaperActivity() {
                 if(stage!=OrderStage.Unknown && row.stage in setOf(OrderStage.Unknown,OrderStage.Resting,OrderStage.Submitting,OrderStage.Signing) && stage!=row.stage)journal!!.transition(row.id,stage,System.currentTimeMillis(),venueConfirmed=true)
                 "${row.ticket.getString("market")} · ${row.ticket.getString("side")}\n$stage · ${row.cloid}\n${HyperliquidOrders.describe(result,stage)}"
             }}
-            message.text=notes.joinToString("\n\n")
+            message.text=notes.joinToString("\n\n");revealResult()
         }catch(e:Exception){message.text="Status unavailable: ${e.message}. No order retried."}finally{review.isEnabled=true}}
     }
     override fun back(){if(!signing)finish()}
