@@ -102,9 +102,11 @@ internal class ConnectionRestorer(private val context: Context, private val runt
                             val signed = result.getOrThrow()
                             require(plan.fresh(System.currentTimeMillis())) { "Owner repair approval expired" }
                             for (target in targets) {
+                                val submittedAt = System.currentTimeMillis()
+                                require(plan.fresh(submittedAt)) { "Remaining repair approvals expired before submission" }
                                 // Persist before the only POST. A dropped reply must never cause a second restart.
                                 savePending(target, null)
-                                val reply = target.client.settle(target.approval, plan, signed.first, signed.second, System.currentTimeMillis())
+                                val reply = target.client.settle(target.approval, plan, signed.first, signed.second, submittedAt)
                                 if (reply.code == 202) {
                                     val operation = ServiceOperation.parse(JSONObject(reply.text).getJSONObject("operation"), null, target.approval)
                                     savePending(target, operation.id)
