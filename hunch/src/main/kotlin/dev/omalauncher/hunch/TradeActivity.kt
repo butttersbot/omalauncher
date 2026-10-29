@@ -49,7 +49,7 @@ class TradeActivity : PaperActivity() {
         marketId = intent.getLongExtra("market", -1); outcomeSide = intent.getIntExtra("side", -1)
         if (marketId < 0 || outcomeSide !in 0..1) { finish(); return }
         // The offline SDK gets no network access and has no private key.
-        paper.layoutParams = android.view.ViewGroup.LayoutParams(1,1)
+        paper.layoutParams = android.widget.FrameLayout.LayoutParams(1,1)
         paper.loadUrl("https://appassets.androidplatform.net/hunch/paper/trade-sdk.html")
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(28, 16, 28, 16); setBackgroundColor(bg) }
         val scroll = ScrollView(this).apply { addView(root) }
