@@ -189,6 +189,7 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
             !awake -> ConnectionState.Sleeping
             link == dev.omalauncher.phone.PhoneLink.Off -> ConnectionState.Disabled
             link == dev.omalauncher.phone.PhoneLink.Disconnected -> ConnectionState.Failed
+            PhoneService.instance != null && PhoneDisplays.helperUp() -> ConnectionState.Ready
             else -> ConnectionState.Unknown
         }
         if (!phonePaused && awake && PhoneService.instance != null) add(Capability.Phone, ConnectionState.Ready,
@@ -199,9 +200,11 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
             ConnectionState.Disabled -> "Phone control is switched off intentionally in Android Settings."
             ConnectionState.Failed -> "Android expects phone control to be on, but its accessibility binding did not recover after the existing startup grace period. Owner Settings are needed; nothing was changed."
             ConnectionState.Degraded -> "Phone capability needs verification."
+            ConnectionState.Ready -> "Accessibility bound and authenticated background helper available. Hidden display opens only on demand; ADB is checked separately."
             else -> if (PhoneService.instance == null) "Android is still checking the accessibility binding. No ready state is assumed." else if (PhoneDisplays.helperUp()) "Accessibility bound; background helper answered. Hidden display is created only on demand. Trusted wireless ADB still needs an end-to-end probe." else "Accessibility bound. Background helper is not currently verified; idle/off is not an outage. Trusted wireless ADB still needs an end-to-end probe."
         }, if (phone == ConnectionState.Failed) "phone-binding" else null)
         if (runtime.connectionsLinuxRunning) {
+            if (!phonePaused && awake && link != dev.omalauncher.phone.PhoneLink.Off) {
             val adb = runCatching {
                 val config = File(runtime.proot.home, ".config/oma-development")
                 val port = File(config, "install-port").takeIf { it.length() <= 20 }!!.readText().trim().toInt()
@@ -213,6 +216,7 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
                     "auth" -> "The existing ADB key is not authorized. No pairing or setting was changed."
                     else -> "Existing trusted ADB transport is unverified. No server, scan, pairing or display was started." },
                 if (adb.result in setOf("auth", "pass")) "phone-adb" else null, checks = listOf(adb))
+            }
             val keeper = connectionKeeperProbe(runtime.proot.home)
             add(Capability.Agents, if (keeper.result == "pass") ConnectionState.Ready else ConnectionState.Unknown,
                 if (keeper.result == "pass") "Phone keeper answered its real list protocol. Provider sign-in remains a separate check."
