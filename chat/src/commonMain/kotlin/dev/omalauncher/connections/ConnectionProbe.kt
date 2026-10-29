@@ -6,11 +6,12 @@ import java.net.URI
 
 /** A bounded GET; credentials are supplied only by the configured endpoint, never copied across hosts. */
 data class ConnectionEndpoint(val url: String, val key: String = "", val header: String = "Authorization") {
-    override fun toString() = "ConnectionEndpoint(url=$url)"
+    override fun toString() = "ConnectionEndpoint(host=${runCatching { URI(url).host }.getOrNull()})"
 }
 data class ConnectionReply(val code: Int, val text: String)
 fun connectionGet(endpoint: ConnectionEndpoint): ConnectionReply {
     var connection: HttpURLConnection? = null
+    var observedCode = -1
     return try {
         val uri = URI(endpoint.url)
         require(uri.scheme in listOf("http", "https") && uri.host != null && uri.userInfo == null)
@@ -18,16 +19,17 @@ fun connectionGet(endpoint: ConnectionEndpoint): ConnectionReply {
         connection.connectTimeout = 2500; connection.readTimeout = 3500; connection.instanceFollowRedirects = false
         if (endpoint.key.isNotEmpty()) connection.setRequestProperty(endpoint.header, if (endpoint.header == "Authorization") "Bearer ${endpoint.key}" else endpoint.key)
         val code = connection.responseCode
+        observedCode = code
         val body = (if (code < 400) connection.inputStream else connection.errorStream)?.use {
             val output = java.io.ByteArrayOutputStream()
             val buffer = ByteArray(8192)
             while (output.size() <= 262_144) { val count = it.read(buffer); if (count < 0) break; output.write(buffer, 0, count) }
             val bytes = output.toByteArray()
-            require(bytes.size <= 262_144) { "Oversized health response" }
+            if (bytes.size > 262_144) return ConnectionReply(code, "")
             String(bytes, Charsets.UTF_8)
         }.orEmpty()
         ConnectionReply(code, body)
-    } catch (_: Exception) { ConnectionReply(-1, "") } finally { connection?.disconnect() }
+    } catch (_: Exception) { ConnectionReply(observedCode, "") } finally { connection?.disconnect() }
 }
 
 /** Schema validators require capability evidence, never just HTTP 200 or an open port. */

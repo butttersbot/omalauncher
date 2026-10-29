@@ -88,3 +88,12 @@ authenticated-runner observations are retained independently of Unknown
 end-to-end subchecks, allowing honest connection-recovery notices without
 claiming full build/provider/sync health. Multiple unreachable services on the
 same configured host share an incident without guessing sleep or kernel panic.
+
+Additional monitor hardening: persist dedup state synchronously before posting,
+retaining the previous state if storage fails; a readable HTTP status followed
+by an incomplete/oversized body is reachable-but-unverified, not a fabricated
+connection outage. Endpoint string representations omit paths, query and keys.
+A switch-enabled but disconnected accessibility binding uses the existing phone
+startup-grace policy and becomes a real incident; owner-off, pause and sleep
+remain neutral. Workspace service recovery has its own authenticated identity
+observation while full sync freshness remains Unknown.

@@ -84,6 +84,6 @@ class ConnectionsTest {
         assertEquals(2, ConnectionsSnapshot(groupConnectionFailures(partial)).incidents(100_000).size)
     }
     @Test fun endpointNeverPrintsCredentials() {
-        assertFalse(ConnectionEndpoint("http://example/health", "secret").toString().contains("secret"))
+        assertFalse(ConnectionEndpoint("http://example/health?token=secret", "secret").toString().contains("secret"))
     }
 }

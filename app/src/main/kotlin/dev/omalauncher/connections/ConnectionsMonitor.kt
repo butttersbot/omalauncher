@@ -86,11 +86,14 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
                 val result = collect()
                 val now = System.currentTimeMillis()
                 val quiet = !enabled || paused || !notificationAllowed
+                val previousAlerts = alerts.pending.toMap()
                 val notices = alerts.update(result, now, quiet)
                 val saved = JSONObject()
                 alerts.pending.forEach { (key, value) -> saved.put(key, JSONObject().put("since", value.since).put("announced", value.announced).put("last_seen", value.lastSeen).put("checks", JSONArray(value.checks.toList()))) }
-                preferences.edit().putString("debounce", saved.toString()).apply()
-                for (notice in notices) postNotice(notice, result, now)
+                // Persist before posting: a process death cannot make an already posted incident page again.
+                val stored = preferences.edit().putString("debounce", saved.toString()).commit()
+                if (stored) for (notice in notices) postNotice(notice, result, now)
+                else { alerts.pending.clear(); alerts.pending.putAll(previousAlerts) }
                 main.post {
                     ConnectionsSource.snapshot = result
                     if (restore) ConnectionsSource.repair = if (result.incidents(now).isEmpty())
@@ -141,14 +144,24 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
         if (tunnel == true) add(Capability.Network, ConnectionState.Ready, "Tailscale VPN interface present again; peer health is checked independently.", "network")
         val phonePaused = context.getSharedPreferences("phone-control", Context.MODE_PRIVATE).getBoolean("paused", false)
         val awake = context.getSystemService(PowerManager::class.java).isInteractive
-        val phone = when { phonePaused -> ConnectionState.Paused; !awake -> ConnectionState.Sleeping; PhoneService.instance == null -> ConnectionState.Disabled; else -> ConnectionState.Unknown }
+        val link = runCatching { PhoneAccess.link(context) }.getOrNull()
+        val phone = when {
+            phonePaused -> ConnectionState.Paused
+            !awake -> ConnectionState.Sleeping
+            link == dev.omalauncher.phone.PhoneLink.Off -> ConnectionState.Disabled
+            link == dev.omalauncher.phone.PhoneLink.Disconnected -> ConnectionState.Failed
+            else -> ConnectionState.Unknown
+        }
+        if (!phonePaused && awake && PhoneService.instance != null) add(Capability.Phone, ConnectionState.Ready,
+            "Android accessibility binding verified; ADB/helper evidence remains separate.", "phone-binding")
         add(Capability.Phone, phone, when (phone) {
             ConnectionState.Paused -> "Phone control intentionally paused."
             ConnectionState.Sleeping -> "Display asleep; Fold app controls are unavailable. No repair attempted."
-            ConnectionState.Disabled -> "Accessibility service is not bound. Enable only through owner Settings."
+            ConnectionState.Disabled -> "Phone control is switched off intentionally in Android Settings."
+            ConnectionState.Failed -> "Android expects phone control to be on, but its accessibility binding did not recover after the existing startup grace period. Owner Settings are needed; nothing was changed."
             ConnectionState.Degraded -> "Phone capability needs verification."
-            else -> if (PhoneDisplays.helperUp()) "Accessibility bound; background helper answered. Hidden display is created only on demand. Trusted wireless ADB still needs an end-to-end probe." else "Accessibility bound. Background helper is not currently verified; idle/off is not an outage. Trusted wireless ADB still needs an end-to-end probe."
-        }, if (phone == ConnectionState.Degraded) "phone-helper" else null)
+            else -> if (PhoneService.instance == null) "Android is still checking the accessibility binding. No ready state is assumed." else if (PhoneDisplays.helperUp()) "Accessibility bound; background helper answered. Hidden display is created only on demand. Trusted wireless ADB still needs an end-to-end probe." else "Accessibility bound. Background helper is not currently verified; idle/off is not an outage. Trusted wireless ADB still needs an end-to-end probe."
+        }, if (phone == ConnectionState.Failed) "phone-binding" else null)
         add(Capability.Agents, if (runtime.connectionsLinuxRunning) ConnectionState.Unknown else ConnectionState.Disabled,
             if (runtime.connectionsLinuxRunning) "Phone Linux runtime is running. Keeper and provider sign-in are not verified by runner health."
             else "Phone Linux runtime is off intentionally.")
@@ -199,8 +212,10 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
             if (service != null) {
                 val h = connectionGet(ConnectionEndpoint(service.trimEnd('/') + "/health", m.config.key))
                 val s = connectionState(h) { it.optString("service") == "soma-serve" }
+                if (s == ConnectionState.Ready) add(Capability.Sync, ConnectionState.Ready,
+                    "Authenticated Soma service identity verified again; sync freshness remains separate.", "sync:${m.id}", m.name, sourceHost)
                 add(Capability.Sync, if (s == ConnectionState.Ready) ConnectionState.Unknown else s,
-                    connectionDetail(h, s, "Soma service identity verified; screen sync cursor/ack freshness has not been checked."), "sync:${m.id}", m.name, sourceHost)
+                    connectionDetail(h, s, "Soma service identity verified; screen sync cursor/ack freshness has not been checked."), if (s == ConnectionState.Ready) null else "sync:${m.id}", m.name, sourceHost)
             }
         }
         configuredChecks(rows, aliases)
