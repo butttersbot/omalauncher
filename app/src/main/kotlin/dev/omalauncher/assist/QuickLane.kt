@@ -39,6 +39,7 @@ object QuickLane {
     @Volatile private var stopping = false
     /** Only touched under the lock. Each one is also a waiting entry in the thread, which is where the chat reads them. */
     private val queue = FrontQueue()
+    @Synchronized internal fun connectionsHasWork(): Boolean = working || queue.waiting.isNotEmpty()
     /** The agent mail a waiting entry is, by its time; only touched under the lock. */
     private val mails = HashMap<Long, AgentMail>()
     private var restored = false

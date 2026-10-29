@@ -175,6 +175,17 @@ class Runtime(
     /** Linux is installed and its services run: guest commands (like the update check) can go. */
     private var linux = false
     val connectionsLinuxRunning: Boolean get() = linux
+    internal val connectionsKeeperStarted: Boolean get() = keeperOpen
+    internal val connectionsBgWatcherStarted: Boolean get() = bgHealOpen
+    /** Missing fixed services only: never kill a live keeper, its kept jobs, or the Linux runtime. */
+    @Synchronized internal fun connectionsEnsureMissingService(keeper: Boolean): Boolean {
+        if (!linux) return false
+        return if (keeper) {
+            if (keeperOpen) false else { openKeeper(); keeperOpen }
+        } else {
+            if (bgHealOpen) false else { openBgHeal(); bgHealOpen }
+        }
+    }
     private val connectionsMonitor by lazy { dev.omalauncher.connections.ConnectionsMonitor(context.applicationContext, this) }
 
     /** The Linux install and removal; one at a time. */
@@ -668,7 +679,7 @@ class Runtime(
      * (Boss, 2026-10-25: the helper "self heals whenever I'm connected to Wi-Fi if it's not on after a reboot"). It only
      * starts the helper again while Wireless debugging answers; it never turns that on.
      */
-    private fun openBgHeal() {
+    @Synchronized private fun openBgHeal() {
         if (bgHealOpen) return
         if (!File(proot.rootfs, BG_HEAL_COMMAND).isFile) return
         bgHealOpen = true
@@ -678,7 +689,7 @@ class Runtime(
     @Volatile private var bgHealOpen = false
 
     /** Starts `oma keep`'s keeper (see linux/Keeper.kt) in a proot of its own, which a builder turn ending leaves running. */
-    private fun openKeeper() {
+    @Synchronized private fun openKeeper() {
         if (keeperOpen) return
         if (listOf(OMA_COMMAND, KEEP_COMMAND, KEEP_PYTHON).any { !File(proot.rootfs, it).isFile }) return
         keeperOpen = true

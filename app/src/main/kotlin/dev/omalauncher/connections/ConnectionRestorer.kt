@@ -88,15 +88,20 @@ internal class ConnectionRestorer(private val context: Context, private val runt
                         targets += Target(machine.id, client, approval)
                     }
                 }
-                if (targets.isEmpty()) {
+                val phoneRecovery = ConnectionPhoneRecovery(context, runtime)
+                val phoneTargets = phoneRecovery.candidates()
+                if (targets.isEmpty() && phoneTargets.isEmpty()) {
                     val entry = record("restore", "paired-services", "blocked", "No failed service has a verified, owner-trusted repair route.", blocked)
                     publish("No verified repair available · details for agents.", entry)
                     busy.set(false); return@execute
                 }
-                val plan = OwnerServicePlan(targets.map { it.approval })
-                val description = targets.joinToString("\n") { "${it.approval.host}: ${it.approval.service}" }
+                val plan = OwnerServicePlan(targets.map { it.approval } + phoneTargets.map { it.approval })
+                val description = (targets.map { "${it.approval.host}: ${it.approval.service}" } + phoneTargets.map {
+                    if (it.action == ConnectionPhoneRecovery.Action.Keeper) "phone: start missing keeper (no jobs terminated)"
+                    else "phone: start missing background watcher; use existing wireless-debugging heal"
+                }).joinToString("\n")
                 main.post {
-                    publish("Owner approval required for ${targets.size} targeted repair(s).")
+                    publish("Owner approval required for ${plan.approvals.size} targeted repair(s).")
                     ConnectionRestoreActivity.launch(context, plan, description) { result -> io.execute repair@ {
                         try {
                             val signed = result.getOrThrow()
@@ -129,6 +134,12 @@ internal class ConnectionRestorer(private val context: Context, private val runt
                                 } while (true)
                             }
                             resumePending()
+                            for (target in phoneTargets) {
+                                val checks = phoneRecovery.recover(target)
+                                val verified = checks.isNotEmpty() && checks.all { it.result == "pass" }
+                                publish(if (verified) "Restored · ${target.approval.service}." else "Phone recovery unverified · details for agents.",
+                                    record(target.approval.service, "phone", if (verified) "restored" else "unknown", "Owner-confirmed missing-service recovery; no live process killed.", checks))
+                            }
                         } catch (error: Exception) {
                             publish("Restore interrupted · details for agents.", record("restore", "phone", "failed", error.message.orEmpty()))
                         } finally { busy.set(false) }

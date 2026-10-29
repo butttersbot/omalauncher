@@ -42,12 +42,13 @@ class PhoneService : AccessibilityService() {
     private val displayStates = mutableMapOf(0 to DisplayState())
     private var displayId = 0
     private val displayState get() = displayStates.getOrPut(displayId) { DisplayState() }
-    private var busy = false
+    @Volatile private var busy = false
     private var requestGeneration = 0L
-    private var activePlan: PhonePlanRunner? = null
+    @Volatile private var activePlan: PhonePlanRunner? = null
     private val planJournal by lazy { PhonePlanJournal(File(filesDir, "phone-plan-receipts.json")) }
     fun cancelPending() { activePlan?.cancel(reason = "Phone control paused or taken over") }
     val planState get() = activePlan?.status()
+    internal val connectionsBusy get() = busy || activePlan != null
     private var requestDeadline = 0L
     private var requestCommand = ""
     private var snapshot: String
