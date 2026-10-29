@@ -154,7 +154,7 @@ class TradeActivity : PaperActivity() {
         try {
             check(ticket.fresh(System.currentTimeMillis())) { "Review expired. Review this order again." }
             nonce=System.currentTimeMillis()
-            if(cancelMode)journal!!.beginCancel(row.id,nonce,ticket.reviewedAt+30_000) else journal!!.transition(row.id,OrderStage.Signing,System.currentTimeMillis())
+            if(cancelMode)journal!!.beginCancel(row.id,nonce,ticket.reviewedAt+30_000) else journal!!.transition(row.id,OrderStage.Signing,nonce)
             signing=true; signatureTaken=false;submitted=false;review.isEnabled=false
             val data=JSONObject().put("id",row.id).put("wallet",ticket.wallet).put("asset",ticket.asset).put("buy",ticket.buy)
                 .put("price",ticket.limitPrice.stripTrailingZeros().toPlainString()).put("shares",ticket.shares.stripTrailingZeros().toPlainString())

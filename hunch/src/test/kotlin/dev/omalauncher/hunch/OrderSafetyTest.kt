@@ -55,6 +55,8 @@ class OrderSafetyTest {
             val first = journal.review(ticket(), now)
             assertTrue(Regex("0x[0-9a-f]{32}").matches(first.cloid))
             journal.transition(first.id, OrderStage.Signing, now)
+            assertEquals(now,journal.all().single().ticket.getLong("nonce"))
+            assertEquals(now+30_000,journal.all().single().ticket.getLong("expiresAfter"))
             journal.transition(first.id, OrderStage.Submitting, now)
             assertTrue(file.readText().contains("Submitting"))
             try { OrderJournal(file); fail("A second controller must not overwrite the journal") } catch (_: IllegalStateException) {}
