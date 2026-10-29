@@ -36,7 +36,12 @@ class ServiceInventoryTest {
         val body = JSONObject(reply("fail").text)
         val row = body.getJSONArray("services").getJSONObject(0)
         row.put("installed", false).put("state", "not_loaded")
-        assertEquals(ConnectionState.Unknown, state(ConnectionReply(200, body.toString())))
+        val core = serviceInventoryReadings(ConnectionReply(200, body.toString()), "MacBook", "macbook", 100_000).single()
+        assertEquals(ConnectionState.Disabled, core.state)
+        assertNull(core.root)
+        // A host without the service must not hide the host that runs it.
+        val ready = ConnectionReading(core.capability, ConnectionState.Ready, "ok", 100_000, null, "Mac Pro")
+        assertEquals(ConnectionState.Ready, ConnectionsSnapshot(listOf(core, ready), 100_000).rows(100_000).single { it.capability == core.capability }.state)
         row.put("id", "syncthing")
         val optional = serviceInventoryReadings(ConnectionReply(200, body.toString()), "Mac", "mac", 100_000).single()
         assertEquals(Capability.Optional, optional.capability)
