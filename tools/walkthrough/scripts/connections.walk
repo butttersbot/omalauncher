@@ -90,7 +90,7 @@ rotate portrait
 expect Connections
 expect All capabilities
 shot connections-expanded-portrait
-scrollto Fixture only
+scrollto Pause monitoring for 1 hour
 expect Fixture only
 shot connections-portrait-scrolled
 rotate landscape
