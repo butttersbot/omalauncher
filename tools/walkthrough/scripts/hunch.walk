@@ -76,7 +76,14 @@ shot hunch-two-pane-landscape-detail
 # LOOK: scroll only detail pane to its read-only action and settlement rules.
 swipe 0.75 0.84 0.75 0.30 500
 scrollto READ ONLY · REFRESH
-expect BETTING NOT CONNECTED
+expect Opening the order ticket sends nothing
+swipe 0.5 0.35 0.5 0.8
+scrollto REVIEW AN ORDER
+tap REVIEW AN ORDER
+expect FICTIONAL TEST ORDER
+scrollto Back to market
+tap Back to market
+expect HUNCH
 expect HOW IT SETTLES
 shot hunch-two-pane-landscape-detail-scrolled
 scrollto Resolution Deadline
@@ -107,4 +114,4 @@ shot hunch-offline
 shell am force-stop dev.omalauncher.hunch
 shell am start -n dev.omalauncher.hunch/.MainActivity
 expect Search markets
-[phone] Verify live market names, search, side selection, empty/one-sided book labels and refresh on the Fold. Open wallet from the inner bets pane and return. No orders or trading balances are connected. Check actual fold/rotation, independent landscape pane scrolling, upright full pages with pinned bottom tabs, cover unchanged and Back retaining the market query.
+[phone] Verify live market names, search, side selection, empty/one-sided book labels and refresh on the Fold. Open wallet from the inner bets pane and return. Do not confirm a live order during a walk; the owner alone funds and signs. Check actual fold/rotation, independent landscape pane scrolling, upright full pages with pinned bottom tabs, cover unchanged and Back retaining the market query.

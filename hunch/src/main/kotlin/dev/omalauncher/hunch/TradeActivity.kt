@@ -221,7 +221,7 @@ class TradeActivity : PaperActivity() {
                         HyperliquidOrders.statusStage(status) to row.venueId
                     } else HyperliquidOrders.replyStage(result)
                     journal!!.transition(row.id,stage.first,System.currentTimeMillis(),stage.second,venueConfirmed=true)
-                    reply(call,result);message.text="${stage.first}: ${result.toString().take(1800)}\nUse Check previous order status to read back from the venue."
+                    reply(call,result);message.text="${stage.first}: ${HyperliquidOrders.describe(result,stage.first)}\nUse Check previous order status to read back from the venue."
                     signing=false;reviewed=null;review.isEnabled=true
                 } catch(e:Exception){reply(call,error="Result unclear; no retry");uncertain("Result unclear: ${e.message}. Check status; do not submit again.")}
             }
@@ -260,7 +260,7 @@ class TradeActivity : PaperActivity() {
                 val result=if(demo)JSONObject("""{"status":"order","order":{"status":"filled"}}""") else service.status(row.ticket.getString("wallet"),row.cloid)
                 val stage=HyperliquidOrders.statusStage(result)
                 if(stage!=OrderStage.Unknown && row.stage in setOf(OrderStage.Unknown,OrderStage.Resting,OrderStage.Submitting,OrderStage.Signing) && stage!=row.stage)journal!!.transition(row.id,stage,System.currentTimeMillis(),venueConfirmed=true)
-                "${row.cloid}: $stage\n${result.toString().take(1200)}"
+                "${row.ticket.getString("market")} · ${row.ticket.getString("side")}\n$stage · ${row.cloid}\n${HyperliquidOrders.describe(result,stage)}"
             }}
             message.text=notes.joinToString("\n\n")
         }catch(e:Exception){message.text="Status unavailable: ${e.message}. No order retried."}finally{review.isEnabled=true}}

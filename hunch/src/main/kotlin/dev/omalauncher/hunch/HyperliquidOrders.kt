@@ -59,6 +59,16 @@ internal class HyperliquidOrders(val testnet: Boolean) {
             require(!state.optBoolean("portfolioMarginEnabled")) { "Portfolio-margin accounts are not supported by this ticket" }
             return total.subtract(hold)
         }
+        fun describe(reply:JSONObject,stage:OrderStage):String {
+            val status=reply.optJSONObject("response")?.optJSONObject("data")?.optJSONArray("statuses")?.optJSONObject(0)
+            return when(stage){
+                OrderStage.Filled -> status?.optJSONObject("filled")?.let{"Filled ${it.optString("totalSz").take(64)} shares at ${it.optString("avgPx").take(64)} USDC. Unfilled IOC quantity is cancelled."} ?: "The venue confirms this order is filled."
+                OrderStage.Resting -> "The limit order is resting at the venue. Check status or use Cancel resting order."
+                OrderStage.Cancelled -> "The venue confirms cancellation. Shares already filled are not reversed."
+                OrderStage.Rejected -> "Venue refused the order: "+(status?.optString("error")?.takeIf{it.isNotBlank()} ?: reply.optString("response","See the venue status")).take(300)
+                else -> "The outcome is not confirmed. Check status before any further order; nothing is automatically retried."
+            }
+        }
         fun replyStage(reply: JSONObject): Pair<OrderStage, String?> {
             if (reply.optString("status") == "err") return OrderStage.Rejected to null
             require(reply.getString("status") == "ok")

@@ -44,14 +44,14 @@ function paneSlip(upright=false){
  const m=Hunch.selected,fragment=document.createDocumentFragment(),tabs=paneNode('div','rtabs');
  tabs.append(paneButton(upright?'← BACK':'← MY BETS','rtab back',()=>{Hunch.selected=null;clearTimeout(bookTimer);showLive()}));
  const label=paneNode('span','rtab on mk');label.append(paneNode('span','',m.title));tabs.append(label);if(upright){const art=paneNode('div','cvart');art.innerHTML=HUNCH_STADIUM;art.append(paneNode('span','tag',m.category+' · PUBLIC MARKET'));const back=tabs.querySelector('button');back.className='back';art.append(back);fragment.append(art)}else fragment.append(tabs);
- const inner=paneNode('div','inner');inner.append(paneButton('ORDER · review exact size','refresh',()=>sendNative({type:'trade',id:Hunch.selected.id,side:Hunch.side})));inner.append(paneNode('div','kicker',m.category+' · '+m.venue+' · '+m.date),paneNode('h2','h1',m.title));
+ const inner=paneNode('div','inner');inner.append(paneNode('div','kicker',m.category+' · '+m.venue+' · '+m.date),paneNode('h2','h1',m.title));
  const received=Hunch.book,b=received&&(!received.valid||Date.now()-received.time<=60000)?received:null;
  const sides=paneNode('div','sides');m.sides.forEach((name,i)=>{const quoted=i===Hunch.side&&b?.valid;const button=paneButton('','sidebtn'+(Hunch.side===i?' on':''),()=>{Hunch.side=i;requestBook();Paper.schedule()});button.setAttribute('aria-pressed',String(Hunch.side===i));button.append(paneNode('b','',name),paneNode('span','c',quoted?(Number(b.ask)*100).toFixed(2)+'¢':'—'),paneNode('small','',quoted?'LIVE ASK':'NO VERIFIED QUOTE'));sides.append(button)});inner.append(sides);
  const amounts=paneNode('div','putin');amounts.append(paneNode('span','','PUT IN'));[5,10,20,50].forEach(amt=>{const b=paneButton('$'+amt,'amt'+(amt===Hunch.budget?' on':''),()=>{Hunch.budget=amt;requestBook();Paper.schedule()});b.setAttribute('aria-pressed',String(amt===Hunch.budget));amounts.append(b)});inner.append(amounts);
  inner.append(paneNode('div','payout','$'+Hunch.budget+' → '+(b?.valid?b.payout:'—')));
  const status=b?.valid?(b.complete?'Full preview at current depth.':'Partial fill at current depth.'):b?'No verified executable quote.':received?'Quote expired. Refresh preview.':'Loading live order book…';
  inner.append(paneNode('p','cap',status+' Depth preview only; this does not place an order.'));
- inner.append(paneButton('READ ONLY · REFRESH','place',()=>{requestBook();Paper.schedule()}),paneNode('p','after','DEPTH PREVIEW · USE THE ORDER TICKET TO REVIEW AND CONFIRM'));
+ inner.append(paneButton('REVIEW AN ORDER','place',()=>sendNative({type:'trade',id:Hunch.selected.id,side:Hunch.side})),paneButton('READ ONLY · REFRESH','refresh',()=>{requestBook();Paper.schedule()}),paneNode('p','after','Opening the order ticket sends nothing. Review your exact size, then Confirm to sign.'));
  const rules=paneNode('section','box');rules.append(paneNode('h4','','HOW IT SETTLES'));termEntries(m.terms).forEach(([k,v])=>rules.append(paneNode('p','',k+': '+v)));inner.append(rules);fragment.append(inner);return fragment;
 }
 function buildTwoPane(){
