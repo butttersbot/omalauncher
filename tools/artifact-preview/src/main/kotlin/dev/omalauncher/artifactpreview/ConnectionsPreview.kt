@@ -13,7 +13,7 @@ import dev.omalauncher.canvas.ModuleSize
 import dev.omalauncher.connections.*
 import dev.omalauncher.ui.Pack
 
-/** Fictional source confined to the preview APK. No monitor, credentials, notification or network code runs. */
+/** Fictional source confined to the preview APK. No live monitor, credentials, notifications or network runs; fake runner transport exercises the real wire client. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ConnectionsPreview() {
@@ -47,15 +47,16 @@ fun ConnectionsPreview() {
     LaunchedEffect(Unit) {
         show("Outage")
         ConnectionsSource.restore = {
-            ConnectionsSource.repair = when (scenario) {
-                "Active jobs" -> restoreGuard(1, 0, true)
-                "Failed repair" -> "Failed: fictional service restart did not pass authenticated verification. Not restored."
-                "Successful repair" -> {
-                    ConnectionsSource.snapshot = snapshot(ConnectionState.Ready)
-                    "Restored: fictional authenticated agent access and build connection verified."
+            ConnectionsSource.repair = if (scenario in setOf("Active jobs", "Failed repair", "Successful repair")) {
+                val result = ConnectionsFakeRunner(scenario).run()
+                ConnectionsSource.diagnostic = org.json.JSONObject().put("fixture_only", true).put("stage", result.stage)
+                    .put("verified", result.verified).put("restart_posts", 1).put("owner_signature_verified", true).toString(2)
+                when {
+                    result.restored -> { ConnectionsSource.snapshot = snapshot(ConnectionState.Ready); "Restored: fictional authenticated agent access and build connection verified." }
+                    result.stage == "blocked" -> "Blocked: active or queued fictional work; nothing restarted."
+                    else -> "Failed: fictional service restart did not pass authenticated verification. Not restored."
                 }
-                else -> restoreGuard(null, null, false)
-            }
+            } else restoreGuard(null, null, false)
             receipt = "Restore utility used; detail stays closed"
         }
         ConnectionsSource.refresh = { receipt = "Fixture checked again" }
