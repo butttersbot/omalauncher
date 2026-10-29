@@ -43,6 +43,51 @@ signing/venue adapter and checks if straightforward. No promise of live readines
 tonight until those uncertainties and owner funding are resolved. A manual order
 on the venue's own UI may be a faster owner fallback if his wallet is supported.
 
+## Owner-confirmed exchange slice in progress
+
+Boss tightened the goal via A mail 20261028-182924-c47d0f: a tryable standalone
+Hunch build tonight, Hyperliquid buy/sell with limit or IOC, existing embedded
+wallet, no agent real-money actions. Current source 53643e05 (0.7.0/vc15)
+contains a native exact-size ticket/review/Confirm, pinned bundled signing SDK,
+private journal-before-send and readback by cloid. Compile/tests/review and
+cover/unfolded walks are pending for the current head; do not call it ready.
+
+Runtime uses @nktkas/hyperliquid 0.33.3, the community TypeScript SDK linked by
+Hyperliquid's official API docs, plus viem EIP-712 JSON serialization. This is
+not falsely described as a Hyperliquid-published Java/Kotlin SDK. No bespoke
+MessagePack, hash, EIP-712 scheme or signature splitting exists in Hunch.
+Privy 0.17 ethSignTypedDataV4 is called only after native Confirm. The selected
+full market identity, wallet, side, direction, size, price, time-in-force, nonce,
+cloid and expiry bind preparation/signing/submission. No builder fee is added.
+
+Sells consume owned available outcome shares only, with no short/mint route.
+Review shows a conservative fee ceiling from user spot fees × outcome feeScale,
+not an assertion of the eventual actual fee. IOC remainder cancels; GTC can
+rest and currently blocks another order until a venue status settles it. Cancel
+resting GTC on the venue; an in-app cancel action is outside this slice.
+
+A known pre-HTTP cancellation (including a Signing-only crash) becomes Cancelled.
+HTTP cannot start until Submitting is durably recorded; interrupted Submitting
+becomes Unknown. Any terminal clearing after submission requires an explicit
+venue-confirmed result. unknownOid never permits resubmission. Specific venue
+rejection statuses are terminal; generic transport uncertainty stays blocked.
+
+Local SDK test passed canonical field order, testnet typed-data domain/source,
+signature recovery, exact size/cloid/expiry and sell IOC. A testnet-only signed
+probe used a generated, disposable, unfunded key in memory, never Boss's wallet.
+Hyperliquid HTTP200 returned status err: user/API wallet
+0xf64e10193c1dea2e48c0cacbb0bc5c4c83138078 does not exist; that exactly matched
+the disposable signer recovered by the exchange. Readback returned unknownOid.
+This proves signing/network request formation, not a funded accepted order,
+partial/full fill, resting cancellation, or real embedded-wallet compatibility.
+No keys/signatures were logged or persisted by the probe. No mainnet order.
+
+The debug tradeFixture=demo uses fictional balances, a dummy signature, fixture
+HTTP responses, testnet labelling and a separate orders-fixture.json. It does
+not call Privy or the exchange. hunch-order.walk covers its review/Confirm on
+cover and unfolded; screenshots must be reviewed before staging an APK as
+tryable. Owner wallet signing and funding remain owner-only [phone] checks.
+
 ## First source slice
 
 OrderTickets: explicit wallet/cap and fresh venue constraints, fee-inclusive
