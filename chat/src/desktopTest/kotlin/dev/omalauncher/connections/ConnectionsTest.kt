@@ -69,6 +69,11 @@ class ConnectionsTest {
         ledger.pending["runner:mac"] = ConnectionAlerts.Pending(1, true, 1, setOf("Agents:Mac", "Builds:Mac"))
         assertTrue(ledger.update(ConnectionsSnapshot(listOf(row(Capability.Agents, ConnectionState.Ready))), 100_000, false).isEmpty())
     }
+    @Test fun waitingQuestionsQueuesAndBackgroundJobsBlockRestore() {
+        val wire = JSONObject("""{"threads":[{"status":"waiting","waiting_turns":3,"pending":[{}],"background":[]},{"status":"idle","waiting_turns":0,"pending":[],"background":["build"]}]}""")
+        assertEquals(RunnerWorkCounts(2, 3), runnerWorkCounts(wire))
+        assertNull(runnerWorkCounts(JSONObject("""{"threads":[{"status":"idle","queued":0}]}""")))
+    }
     @Test fun endpointNeverPrintsCredentials() {
         assertFalse(ConnectionEndpoint("http://example/health", "secret").toString().contains("secret"))
     }

@@ -45,3 +45,21 @@ fun connectionDetail(reply: ConnectionReply, state: ConnectionState, verified: S
     ConnectionState.Unknown -> "Responded, but capability evidence is missing (HTTP ${reply.code})."
     else -> "Capability check returned HTTP ${reply.code}."
 }
+
+/** Read the runner's actual wire fields. A missing/ambiguous inventory can never authorize a restart. */
+data class RunnerWorkCounts(val active: Int, val queued: Int)
+fun runnerWorkCounts(reply: JSONObject): RunnerWorkCounts? = runCatching {
+    val threads = reply.getJSONArray("threads")
+    var active = 0; var queued = 0
+    for (i in 0 until threads.length()) {
+        val thread = threads.getJSONObject(i)
+        val state = thread.getString("status")
+        require(state in setOf("working", "waiting", "idle", "done", "error", "failed", "stopped"))
+        val waiting = thread.getInt("waiting_turns"); require(waiting >= 0)
+        val pending = thread.getJSONArray("pending")
+        val background = thread.getJSONArray("background")
+        if (state in setOf("working", "waiting") || pending.length() > 0 || background.length() > 0) active++
+        queued += waiting
+    }
+    RunnerWorkCounts(active, queued)
+}.getOrNull()
