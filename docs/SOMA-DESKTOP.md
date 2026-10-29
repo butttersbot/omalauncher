@@ -51,8 +51,8 @@ most of what it does is shared with the phone from `:chat`.
   - On the Mac: the tray's Settings…, Soma > Settings… in the app menu, or Cmd+,.
   - On Linux: Ctrl+, in a Soma window, or `soma --settings` (it opens them in the running Soma; good for a Hyprland
     keybind). `soma --register-links` also writes a "Soma Settings" entry for Walker.
-  - Java's tray doesn't show on Omarchy (`SystemTray.isSupported()` is false on MG1): Omarchy's bar takes
-    StatusNotifierItem icons, and Java only speaks XEmbed. There, Soma starts a small helper instead
+  - Java's tray doesn't show on Omarchy (`SystemTray.isSupported()` is false on MG1): Omarchy's bar (Quickshell,
+    `quickshell -p /usr/share/omarchy/shell`, not Waybar; it hosts the StatusNotifierWatcher) takes StatusNotifierItem icons, and Java only speaks XEmbed. There, Soma starts a small helper instead
     (`resources/linux/soma-tray.py`, Python with GLib, copied to `~/.config/soma/bin/`; log in `~/.config/soma/tray.log`).
     - It is a StatusNotifierItem with a dbusmenu, carrying the Mac tray's menu: Open Soma, Dashboard, Settings…, Look,
       Car, Grok, Quit Soma. A click on the icon opens Soma.
