@@ -115,7 +115,9 @@ fun main(args: Array<String>) {
     fun open(url: String) = opener?.invoke(url) ?: run { early = url }
     // The front agent's door to the canvas: set once the canvas is read; a call before then is refused.
     var door: CanvasDoor? = null
-    Single.listen(onCanvas = { line -> door?.handle(line) ?: """{"ok":false,"error":"Soma is still starting. Try again in a moment."}""" }) { said ->
+    // The Linux tray's items (LinuxTray), done by the very actions the Mac tray's are; set once the window's tray is made.
+    var trayDo: ((String) -> Unit)? = null
+    Single.listen(onCanvas = { line -> door?.handle(line) ?: """{"ok":false,"error":"Soma is still starting. Try again in a moment."}""" }, onTray = { item -> trayDo?.invoke(item) }) { said ->
         when {
             said == "toggle" -> if (shown.value) shown.value = false else showWindow()
             said == "settings" -> showSettings()
@@ -213,18 +215,33 @@ fun main(args: Array<String>) {
         var dashboardShown by dashboard
         fun showDashboard(on: Boolean) { dashboardShown = on; SomaHome.write(SomaHome.settings, SomaHome.read(SomaHome.settings).put("dashboard", on)) }
         remember {
-            notices.tray = Tray.make(onOpen = ::showWindow, onDashboard = { showDashboard(true) }, onSettings = ::showSettings, onQuit = { scraps.close(); Single.release(); exitApplication() }, onLook = Looks::pick,
-                // The service is asked off the tray's thread; the code or what went wrong comes back as a notice.
-                onCar = { pair -> kotlin.concurrent.thread(name = "soma-car-pairing", isDaemon = true) {
-                    notices.say("Soma", if (pair) CarPairing.start(platform.machines()) else CarPairing.end(platform.machines()))
-                } },
-                onGrok = { connect -> kotlin.concurrent.thread(name = "soma-grok-connect", isDaemon = true) {
-                    if (!connect) return@thread notices.say("Soma", GrokConnecting.end(platform.machines()))
-                    val (said, details) = GrokConnecting.start(platform.machines())
-                    val copied = details?.let { runCatching { Toolkit.getDefaultToolkit().systemClipboard.setContents(java.awt.datatransfer.StringSelection(it), null) }.isSuccess }
-                    // Said as it is: when the clipboard couldn't take them, the details go in the notice, cut as it may be.
-                    notices.say("Soma", if (copied == false) said.substringBefore(" Grok's connector details") + " " + details else said)
-                } })
+            val quit = { scraps.close(); LinuxTray.stop(); Single.release(); exitApplication() }
+            // The service is asked off the tray's thread; the code or what went wrong comes back as a notice.
+            val car = { pair: Boolean -> kotlin.concurrent.thread(name = "soma-car-pairing", isDaemon = true) {
+                notices.say("Soma", if (pair) CarPairing.start(platform.machines()) else CarPairing.end(platform.machines()))
+            }; Unit }
+            val grok = { connect: Boolean -> kotlin.concurrent.thread(name = "soma-grok-connect", isDaemon = true) {
+                if (!connect) return@thread notices.say("Soma", GrokConnecting.end(platform.machines()))
+                val (said, details) = GrokConnecting.start(platform.machines())
+                val copied = details?.let { runCatching { Toolkit.getDefaultToolkit().systemClipboard.setContents(java.awt.datatransfer.StringSelection(it), null) }.isSuccess }
+                // Said as it is: when the clipboard couldn't take them, the details go in the notice, cut as it may be.
+                notices.say("Soma", if (copied == false) said.substringBefore(" Grok's connector details") + " " + details else said)
+            }; Unit }
+            notices.tray = Tray.make(onOpen = ::showWindow, onDashboard = { showDashboard(true) }, onSettings = ::showSettings, onQuit = quit, onLook = Looks::pick, onCar = car, onGrok = grok)
+            // The Mac tray's items, said by the Linux tray (two-way roads: the same menu on both).
+            trayDo = { item ->
+                when {
+                    item == "show" -> showWindow()
+                    item == "dashboard" -> showDashboard(true)
+                    item == "settings" -> showSettings()
+                    item == "quit" -> quit()
+                    item.startsWith("look ") -> Looks.pick(item.removePrefix("look "))
+                    item.startsWith("car ") -> car(item == "car pair")
+                    item.startsWith("grok ") -> grok(item == "grok connect")
+                }
+            }
+            // Java's tray doesn't show on Omarchy's Waybar: there, a StatusNotifierItem helper carries the same menu.
+            if (notices.tray == null) LinuxTray.start(Single.port)
         }
         // Each window answers Escape from its own stack: an Escape in one never closes something in the other.
         val chatBack = remember { BackStack() }
@@ -402,9 +419,14 @@ private object Single {
         }.getOrDefault(false)
     }
 
-    fun listen(onCanvas: (String) -> String, onWord: (String) -> Unit) {
+    /** The port this Soma listens on, once [listen] has started. */
+    var port = 0
+        private set
+
+    fun listen(onCanvas: (String) -> String, onTray: (String) -> Unit = {}, onWord: (String) -> Unit) {
         val server = ServerSocket(0, 4, InetAddress.getLoopbackAddress())
         SomaHome.socket.writeText(server.localPort.toString())
+        port = server.localPort
         thread(name = "soma-single", isDaemon = true) {
             while (true) {
                 val word = runCatching {
@@ -420,7 +442,10 @@ private object Single {
                         client.getOutputStream().write((HELLO + "\n").toByteArray())
                         said
                     }
-                }.getOrNull()?.trim()?.takeIf(::handOffWord) ?: continue
+                }.getOrNull()?.trim() ?: continue
+                // The Linux tray's items (LinuxTray), with this run's token; anything else is a plain hand-off word.
+                trayWord(word, LinuxTray.token)?.let { item -> javax.swing.SwingUtilities.invokeLater { onTray(item) }; continue }
+                if (!handOffWord(word)) continue
                 javax.swing.SwingUtilities.invokeLater { onWord(word) }
             }
         }
