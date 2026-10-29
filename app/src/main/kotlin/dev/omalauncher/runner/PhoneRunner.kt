@@ -57,7 +57,7 @@ class PhoneRunnerKeys(context: Context) {
 /** TCP lives only on the VPN's concrete address. No wildcard, LAN or loopback listener is ever opened. */
 class PhoneRunner(private val context: Context, private val tailnet: PhoneTailnet) : dev.omalauncher.ui.PhoneRunnerPairing {
     val keys = PhoneRunnerKeys(context)
-    private val protocol = PhoneRunnerProtocol(PhoneSessions(context))
+    private val protocol = PhoneRunnerProtocol(PhoneSessions(context)) { keys.keys().map { it.device } }
     private val wake = Object()
     @Volatile private var started = false
     @Volatile private var server: ServerSocket? = null

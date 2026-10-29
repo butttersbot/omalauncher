@@ -65,6 +65,18 @@ class PhoneRunnerTest {
         assertEquals(200, request("100.80.1.3"))
         assertEquals(404, request("100.80.1.3"))
     }
+    @Test fun devicesSaysWhoItLetsInByNameOnlyLikeTheMacRunner() {
+        val keys = listOf(RunnerKey("mac-pro", runnerDigest("secret"), RunnerCachedIdentity("100.80.1.3", 1000)), RunnerKey("macbook", runnerDigest("other")))
+        val protocol = PhoneRunnerProtocol(Sessions()) { keys.map { it.device } }
+        assertEquals(401, protocol.handle("GET", "/devices", "", false).code)
+        val said = protocol.handle("GET", "/devices", "", true)
+        assertEquals(200, said.code)
+        assertEquals("galaxy-z-fold8", said.body.getString("runner"))
+        assertEquals("[\"mac-pro\",\"macbook\"]", said.body.getJSONArray("devices").toString())
+        assertFalse(said.body.toString().contains(runnerDigest("secret")))
+        assertFalse(said.body.toString().contains("100.80.1.3"))
+        assertEquals(404, protocol.handle("POST", "/devices", "{}", true).code)
+    }
     @Test fun phoneDIsReadableAndStoppableButCannotReceiveWork() {
         val sessions = Sessions(); val protocol = PhoneRunnerProtocol(sessions)
         assertEquals(200, protocol.handle("GET", "/threads/phone-d", "", true).code)
