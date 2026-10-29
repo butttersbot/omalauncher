@@ -413,7 +413,8 @@ class Records(Base):
         self.assertEqual(inv['owner_trust']['state'], 'ready')
         by = {s['id']: s for s in inv['services']}
         self.assertTrue(by['soma']['restart']['supported'])
-        self.assertEqual(by['tailscaled']['restart'].get('blocked_reason'), 'privileged_helper_missing')
+        self.assertEqual(by['tailscaled']['restart'].get('blocked_reason'), 'owner_verifying_privileged_helper_unavailable')
+        self.assertFalse(by['tailscaled']['restart']['supported'])
         self.assertTrue(by['canvas']['restart']['supported'])
         self.assertNotIn('nonce', json.dumps(inv))
 
